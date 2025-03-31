@@ -93,12 +93,15 @@ jobs:
             "https://github.com/buxuku/whisper.cpp/releases/download/latest/${{ matrix.addon_name }}"
           curl -L -o "temp-artifacts/addon-windows-no-cuda.node" \
             "https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-windows-no-cuda.node"
+          curl -L -o "temp-artifacts/addon-macos-arm64-coreml.node" \
+            "https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-macos-arm64-coreml.node"
 
       # 准备 macOS 构建
       - name: Prepare macOS addon
         if: startsWith(matrix.os, 'macos')
         run: |
           cp temp-artifacts/${{ matrix.addon_name }} extraResources/addons/addon.node
+          cp temp-artifacts/addon-macos-arm64-coreml.node extraResources/addons/addon.coreml.node
 
       # 准备 Windows 构建
       - name: Prepare Windows addon
