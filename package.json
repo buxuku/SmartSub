@@ -2,7 +2,7 @@
   "private": true,
   "name": "video-subtitle-master",
   "description": "视频转字幕，字幕翻译软件",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "author": "buxuku <buxuku@gmail.com>",
   "main": "app/background.js",
   "scripts": {
