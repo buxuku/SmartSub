@@ -12,6 +12,7 @@ let isPaused = false;
 let shouldCancel = false;
 let maxConcurrentTasks = 3;
 let hasOpenAiWhisper = false;
+let activeTasksCount = 0;
 
 export function setupTaskProcessor(mainWindow: BrowserWindow) {
   ipcMain.on("handleTask", async (event, { files, formData }) => {
@@ -67,23 +68,38 @@ async function processNextTasks(event) {
     return;
   }
 
-  if (processingQueue.length === 0) {
+  // 当队列为空且没有活动任务时，才完成处理
+  if (processingQueue.length === 0 && activeTasksCount === 0) {
     isProcessing = false;
     event.sender.send("taskComplete", "completed");
     return;
   }
 
-  const tasks = processingQueue.splice(0, maxConcurrentTasks);
-  const translationProviders = store.get('translationProviders');
+  // 计算可以启动的新任务数量
+  const availableSlots = maxConcurrentTasks - activeTasksCount;
+  
+  // 如果有可用槽位且队列中有任务，则启动新任务
+  if (availableSlots > 0 && processingQueue.length > 0) {
+    const tasksToProcess = processingQueue.splice(0, availableSlots);
+    const translationProviders = store.get('translationProviders');
 
-  try {
-    await Promise.all(tasks.map(task => {
-      const provider = translationProviders.find(p => p.id === task.formData.translateProvider);
-      return processFile(event, task.file, task.formData, hasOpenAiWhisper, provider);
-    }));
-  } catch (error) {
-    event.sender.send("message", error);
+    tasksToProcess.forEach(async (task) => {
+      activeTasksCount++;
+      try {
+        const provider = translationProviders.find(p => p.id === task.formData.translateProvider);
+        await processFile(event, task.file, task.formData, hasOpenAiWhisper, provider);
+      } catch (error) {
+        event.sender.send("message", error);
+      } finally {
+        activeTasksCount--;
+        // 处理完一个任务后，检查是否可以启动新任务
+        processNextTasks(event);
+      }
+    });
   }
 
-  processNextTasks(event);
+  // 如果还有正在执行的任务，等待一段时间后再检查
+  if (activeTasksCount > 0) {
+    setTimeout(() => processNextTasks(event), 100);
+  }
 }
