@@ -84,7 +84,9 @@ export async function generateSubtitleWithBuiltinWhisper(
   event.sender.send('taskStatusChange', file, 'extractSubtitle', 'loading');
 
   try {
-    const whisper = await loadWhisperAddon();
+    const { model, sourceLanguage, prompt } = formData;
+    const whisperModel = model?.toLowerCase();
+    const whisper = await loadWhisperAddon(whisperModel);
     const whisperAsync = promisify(whisper);
     const settings = store.get('settings') || { useCuda: false };
     const useCuda = settings.useCuda || false;
@@ -98,9 +100,6 @@ export async function generateSubtitleWithBuiltinWhisper(
     } else if (platform === 'win32' && useCuda) {
       shouldUseGpu = !!(await checkCudaSupport());
     }
-
-    const { model, sourceLanguage, prompt } = formData;
-    const whisperModel = model?.toLowerCase();
     const modelPath = `${getPath('modelsPath')}/ggml-${whisperModel}.bin`;
 
     const whisperParams = {
@@ -109,13 +108,13 @@ export async function generateSubtitleWithBuiltinWhisper(
       fname_inp: audioFile,
       use_gpu: !!shouldUseGpu,
       flash_attn: false,
-      no_prints: true,
+      no_prints: false,
       comma_in_time: false,
       translate: false,
       no_timestamps: false,
       audio_ctx: 0,
       max_len: 0,
-      print_progress: false,
+      print_progress: true,
       prompt,
       progress_callback: (progress) => {
         console.log(`处理进度: ${progress}%`);
