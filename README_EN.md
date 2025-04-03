@@ -32,6 +32,7 @@ This application retains all the features of the original [VideoSubtitleGenerato
   - Microsoft Translator
   - DeepLX Translation (Note: Batch translation may be rate-limited)
   - Local Ollama model translation
+  - AI aggregation platform [DeerAPI] (https://api.deerapi.com/register?aff=QvHM)
   - Support for OpenAI-style API translations (e.g., [deepseek](https://www.deepseek.com/), [azure](https://azure.microsoft.com/))
 - Customizable subtitle file naming for compatibility with various media players
 - Flexible translated subtitle content: choose between pure translation or original + translated subtitles
@@ -56,9 +57,11 @@ Starting from version 1.20.0, Core ML is supported on Apple Silicon, providing f
 
 ## Translation Services
 
-This project supports various translation services, including Baidu Translation, Volcano Engine Translation, DeepLX, local Ollama models, and OpenAI-style APIs. Using these services requires the appropriate API keys or configurations.
+This project supports various translation services, including Baidu Translation, Volcano Engine Translation, DeepLX, local Ollama models, DeepSeek and OpenAI-style APIs. Using these services requires the appropriate API keys or configurations.
 
 For information on obtaining API keys for services like Baidu Translation and Volcano Engine, please refer to https://bobtranslate.com/service/. We appreciate the information provided by [Bob](https://bobtranslate.com/), an excellent software tool.
+
+For AI translation, the translation results are heavily influenced by models and prompt words, so you can try different models and prompt words to find the right combination for you. Recommended to try AI aggregation platform [DeerAPI] (https://api.deerapi.com/register?aff=QvHM), nearly 500 kinds of model to support multiple platforms, choose appropriate model for translation.
 
 ## Model Selection
 
