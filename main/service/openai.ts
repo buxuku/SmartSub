@@ -30,7 +30,7 @@ export async function translateWithOpenAI(
       ],
       temperature: 0.3,
     });
-
+    console.log('completion:', completion);
     const result = completion?.choices?.[0]?.message?.content?.trim();
 
     return result;
