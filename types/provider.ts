@@ -1,11 +1,12 @@
 export type ProviderField = {
   key: string;
   label: string;
-  type: 'text' | 'password' | 'textarea' | 'url' | 'number' | 'switch';
+  type: 'text' | 'password' | 'textarea' | 'url' | 'number' | 'switch' | 'select';
   placeholder?: string;
   required?: boolean;
   defaultValue?: string | number | boolean;
   tips?: string;
+  options?: string[];
 };
 
 export type ProviderType = {
@@ -162,10 +163,11 @@ export const PROVIDER_TYPES: ProviderType[] = [
       {
         key: 'modelName',
         label: 'modelName',
-        type: 'text',
+        type: 'select',
         required: true,
-        placeholder: 'llama2',
+        placeholder: '选择模型',
         defaultValue: 'llama2',
+        options: ['llama2'],
       },
       {
         key:'systemPrompt',

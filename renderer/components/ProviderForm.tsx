@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -6,6 +6,8 @@ import { Eye, EyeOff } from 'lucide-react';
 import { ProviderField } from '../../types';
 import { useTranslation } from 'next-i18next';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import axios from 'axios';
 
 interface ProviderFormProps {
   fields: ProviderField[];
@@ -23,6 +25,34 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
   onTogglePassword,
 }) => {
   const { t } = useTranslation('translateControl');
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  
+  useEffect(() => {
+    // 检查是否是Ollama配置页面
+    const isOllamaProvider = fields.some(field => field.key === 'modelName' && values.type === 'ollama');
+    
+    if (isOllamaProvider) {
+      const apiUrl = values.apiUrl || 'http://localhost:11434';
+      const baseUrl = apiUrl.split('/api/')[0];
+      
+      // 获取Ollama可用模型列表
+      const fetchOllamaModels = async () => {
+        try {
+          const response = await axios.get(`${baseUrl}/api/tags`);
+          if (response.data && response.data.models) {
+            const models = response.data.models.map(model => model.name);
+            setOllamaModels(models);
+          }
+        } catch (error) {
+          console.error('Failed to fetch Ollama models:', error);
+          // 如果获取失败，设置一个默认模型列表
+          setOllamaModels(['llama2', 'mistral', 'gemma']);
+        }
+      };
+      
+      fetchOllamaModels();
+    }
+  }, [fields, values.type, values.apiUrl]);
   
   const renderField = (field: ProviderField) => {
     const value = values[field.key] ?? (field.defaultValue || '');
@@ -78,6 +108,30 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
               )}
             </Button>
           </div>
+        );
+      
+      case 'select':
+        // 如果是modelName字段且当前是Ollama配置，使用获取到的模型列表
+        const options = field.key === 'modelName' && values.type === 'ollama' && ollamaModels.length > 0
+          ? ollamaModels
+          : field.options || [];
+          
+        return (
+          <Select
+            value={value}
+            onValueChange={(value) => onChange(field.key, value)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={field.placeholder} />
+            </SelectTrigger>
+            <SelectContent>
+              {options.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         );
 
       default:
