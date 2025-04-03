@@ -28,5 +28,7 @@
   "testTranslation": "Test Translation",
   "testSuccess": "Test Successful",
   "testFailed": "Test Failed",
-  "ollamaApiUrlTips": "Local Ollama API address, please use the chat interface, usually http://localhost:11434/api/chat"
+  "ollamaApiUrlTips": "Local Ollama API address, please use the chat interface, usually http://localhost:11434/api/chat",
+  "DeerApiUrlTips": "Get API keys with lightning-fast speeds at incredibly low prices. Easy top-up via Alipay/WeChat Pay. Visit <a href='https://api.deerapi.com/register?aff=QvHM' style='color: blue'>DeerAPI</a> to apply!",
+  "testing": "Testing..."
 }

@@ -104,10 +104,12 @@ const TranslateControl: React.FC = () => {
     window?.ipc?.send('setTranslationProviders', updatedProviders);
   };
 
+  const [isTestLoading, setIsTestLoading] = useState(false);
   const handleTestTranslation = async () => {
     const currentProvider = getCurrentProvider();
     if (!currentProvider) return;
-
+  
+    setIsTestLoading(true);
     try {
       const result = await window.ipc.invoke('testTranslation', {
         provider: currentProvider,
@@ -122,6 +124,8 @@ const TranslateControl: React.FC = () => {
       toast.error(t('testFailed'), {
         description: error.message
       });
+    } finally {
+      setIsTestLoading(false);
     }
   };
 
@@ -159,7 +163,7 @@ const TranslateControl: React.FC = () => {
                   : "hover:bg-muted"
               )}
             >
-              <span className="text-xl">{type.icon}</span>
+              <span className="text-xl">{type.iconImg ? (<img src={type.iconImg} className='w-5' />) : type.icon}</span>
               <span>{commonT(`provider.${type.name}`, { defaultValue: type.name })}</span>
             </button>
           ))}
@@ -207,14 +211,15 @@ const TranslateControl: React.FC = () => {
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h1 className="text-2xl font-bold flex items-center space-x-2">
-                <span className="text-2xl">{getCurrentProviderType()?.icon}</span>
-                <span>{getCurrentProviderType()?.name}</span>
+                <span className="text-2xl">{getCurrentProviderType()?.iconImg ? <img src={getCurrentProviderType().iconImg} className='w-6' />: getCurrentProviderType()?.icon}</span>
+                <span>{commonT(`provider.${getCurrentProviderType().name}`, { defaultValue: getCurrentProviderType().name })}</span>
               </h1>
               <Button 
                 variant="outline"
                 onClick={handleTestTranslation}
+                disabled={isTestLoading}
               >
-                {t('testTranslation')}
+                {isTestLoading ? t('testing') : t('testTranslation')}
               </Button>
             </div>
 

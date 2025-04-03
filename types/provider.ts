@@ -16,6 +16,7 @@ export type ProviderType = {
   isBuiltin?: boolean;
   icon?: string;
   isAi?: boolean;
+  iconImg?: string;
 };
 
 export type Provider = {
@@ -166,8 +167,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
         type: 'select',
         required: true,
         placeholder: '选择模型',
-        defaultValue: 'llama2',
-        options: ['llama2'],
+        options: [],
       },
       {
         key:'systemPrompt',
@@ -279,6 +279,55 @@ export const PROVIDER_TYPES: ProviderType[] = [
       },
     ],
   },
+  {
+    id: 'DeerAPI',
+    name: 'DeerAPI',
+    isBuiltin: true,
+    isAi: true,
+    icon: '🐺',
+    iconImg:'/images/deerapi.png',
+    fields: [
+      {
+        key: 'apiUrl',
+        label: 'Base url',
+        type: 'url',
+        required: true,
+        tips: 'DeerApiUrlTips',
+        placeholder: 'https://api.deerapi.com/v1',
+        defaultValue: 'https://api.deerapi.com/v1',
+      },
+      { key: 'apiKey', label: 'API Key', type: 'password', required: true },
+      {
+        key: 'modelName',
+        label: 'modelName',
+        type: 'select',
+        required: true,
+        placeholder: '选择模型',
+        options: [],
+      },
+      {
+        key:'systemPrompt',
+        label:'systemPrompt',
+        type: 'textarea',
+        tips:'systemPromptTips',
+        defaultValue: defaultSystemPrompt,
+      },
+      {
+        key: 'prompt',
+        label: 'prompt',
+        type: 'textarea',
+        defaultValue: defaultUserPrompt,
+        tips: 'userPromptTips',
+      },
+      {
+        key: 'batchSize',
+        label: 'Batch Size',
+        type: 'number',
+        defaultValue: 10,
+        tips: 'batchSizeTip',
+      },
+    ],
+  }, 
 ];
 
 export const CONFIG_TEMPLATES: Record<string, ProviderType> = {
