@@ -32,5 +32,6 @@
   "testFailed": "测试失败",
   "ollamaApiUrlTips": "本地Ollama API 地址，请使用 chat 接口， 一般为 http://localhost:11434/api/chat",
   "DeerApiUrlTips": "DeerAPI 聚合 AI 平台 ，(支持 grok3)密钥，速度飞快，极其便宜，可支付宝/微信充值。 可前往 <a href='https://api.deerapi.com/register?aff=QvHM' style='color: blue'>DeerAPI</a> 申请",
-  "testing": "测试中..."
+  "testing": "测试中...",
+  "searchModel": "搜索模型"
 }

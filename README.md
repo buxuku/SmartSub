@@ -31,6 +31,7 @@
   - 微软翻译器
   - DeepLX 翻译 （批量翻译容易存在被限流的情况）
   - 本地模型 Ollama 翻译
+  - AI聚合平台 [DeerAPI](https://api.deerapi.com/register?aff=QvHM)
   - 支持 OpenAI 风格 API 翻译，如 [deepseek](https://www.deepseek.com/), [azure](https://azure.microsoft.com) 等
 - 自定义字幕文件名，方便兼容不同的播放器挂载字幕识别
 - 自定义翻译后的字幕文件内容，支持纯翻译结果或原字幕+翻译结果
@@ -55,9 +56,11 @@
 
 ## 翻译服务
 
-本项目支持多种翻译服务，包括百度翻译、火山引擎翻译、DeepLX、Ollama 本地模型以及 OpenAI 风格的 API。使用这些服务需要相应的 API 密钥或配置。
+本项目支持多种翻译服务，包括百度翻译、火山引擎翻译、DeepLX、Ollama 本地模型、 DeepSeek 以及 OpenAI 风格的 API。使用这些服务需要相应的 API 密钥或配置。
 
 对于百度翻译、火山引擎等服务的 API 申请方法，可以参考 https://bobtranslate.com/service/ ，感谢 [Bob](https://bobtranslate.com/) 这款优秀的软件提供的信息。
+
+对于 AI 翻译，翻译结果受模型和提示词的影响比较大，你可以尝试不同的模型和提示词，找到适合自己的组合。推荐可以尝试 AI 聚合平台 [DeerAPI](https://api.deerapi.com/register?aff=QvHM), 支持多个平台近 500 种模型，选择合适自己的模型进行翻译。
 
 ## 模型的选择
 
