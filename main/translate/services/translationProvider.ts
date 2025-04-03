@@ -27,6 +27,7 @@ export const TRANSLATOR_MAP = {
   azureopenai: azureOpenaiTranslator,
   openai: openaiTranslator,
   deepseek: openaiTranslator,
+  DeerAPI: openaiTranslator,
 } as const;
 
 export async function translateWithProvider(
