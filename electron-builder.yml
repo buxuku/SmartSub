@@ -10,15 +10,41 @@ files:
       - package.json
       - app
 publish:
-    provider: github
+  - provider: github
     owner: buxuku
     repo: SmartSub
-    generateUpdatesFilesForAllChannels: true
+    private: false
+    channel: mac-arm64
+  - provider: github
+    owner: buxuku
+    repo: SmartSub
+    private: false
+    channel: mac-x64
+  - provider: github
+    owner: buxuku
+    repo: SmartSub
+    private: false
+    channel: win-cuda-11
+  - provider: github
+    owner: buxuku
+    repo: SmartSub
+    private: false
+    channel: win-cuda-12
+  - provider: github
+    owner: buxuku
+    repo: SmartSub
+    private: false
+    channel: win-cuda-12.1
+  - provider: github
+    owner: buxuku
+    repo: SmartSub
+    private: false
+    channel: win-no-cuda
 mac:
   target:
     - zip
     - dmg
-  artifactName: "${productName}_Mac_${version}_${arch}.${ext}"
+  artifactName: "${productName}_Mac_${version}_${arch}_${channel}.${ext}"
   extraResources:
   - from: ./extraResources/addons/
     to: ./extraResources/addons/
@@ -33,7 +59,7 @@ win:
     filter:
       - "**/*"
   requestedExecutionLevel: asInvoker
-  artifactName: "${productName}_Windows_${version}_${arch}_${env.CUDA_VERSION}_${env.CUDA_OPT}.${ext}"
+  artifactName: "${productName}_Windows_${version}_${arch}_${env.CUDA_VERSION ? env.CUDA_VERSION + '_' + env.CUDA_OPT : 'no-cuda'}.${ext}"
 linux:
   target:
     - AppImage
