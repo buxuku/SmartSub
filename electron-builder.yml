@@ -11,6 +11,8 @@ files:
       - app
 publish:
     provider: github
+    owner: buxuku
+    repo: SmartSub
     generateUpdatesFilesForAllChannels: true
 mac:
   target:
