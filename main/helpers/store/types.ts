@@ -16,6 +16,7 @@ export type StoreType = {
     builtinWhisperCommand: string;
     useCuda: boolean;
     modelsPath: string;
+    checkUpdateOnStartup?: boolean; // 是否在启动时检查更新
   };
   providerVersion?: number;
   logs: LogEntry[];

@@ -13,12 +13,15 @@ import { testTranslation } from '../translate';
 
 let downloadingModels = new Set<string>();
 
+import { getBuildInfo } from './buildInfo';
+
 export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   ipcMain.handle('getSystemInfo', async () => {
     return {
       modelsInstalled: getModelsInstalled(),
       modelsPath: getPath('modelsPath'),
       downloadingModels: Array.from(downloadingModels),
+      buildInfo: getBuildInfo(), // 添加构建信息
     };
   });
 

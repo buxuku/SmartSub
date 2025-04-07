@@ -7,6 +7,8 @@ import { setupTaskProcessor } from './helpers/taskProcessor';
 import { setupSystemInfoManager } from './helpers/systemInfoManager';
 import { setupStoreHandlers, store } from './helpers/storeManager';
 import { setupTaskManager } from "./helpers/taskManager";
+import { setupAutoUpdater } from './helpers/updater';
+import { getBuildInfo } from './helpers/buildInfo';
 
 //控制台出现中文乱码，需要去node_modules\electron\cli.js中修改启动代码页
 
@@ -50,6 +52,7 @@ if (isProd) {
   setupTaskProcessor(mainWindow);
   setupSystemInfoManager(mainWindow);
   setupTaskManager();
+  setupAutoUpdater(mainWindow); // 设置自动更新
 })();
 
 app.on("window-all-closed", () => {
