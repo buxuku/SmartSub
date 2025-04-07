@@ -10,6 +10,7 @@ autoUpdater.autoInstallOnAppQuit = true; // 应用退出时自动安装
 // 针对未签名应用的配置
 autoUpdater.allowPrerelease = true; // 允许预发布版本
 autoUpdater.forceDevUpdateConfig = true; // 强制使用开发配置，绕过签名验证
+// autoUpdater.setFeedURL('https://github.com/buxuku/SmartSub/releases/download/v2.0.3/latest-mac.yml')
 
 // 日志设置
 autoUpdater.logger = {
@@ -22,6 +23,29 @@ autoUpdater.logger = {
 import { getBuildInfo } from './buildInfo';
 
 export function setupAutoUpdater(mainWindow: BrowserWindow) {
+  // 根据当前系统平台和架构设置更新通道
+  const buildInfo = getBuildInfo();
+  let updateChannel = 'latest';
+  
+  // 根据不同平台设置对应的更新通道
+  if (buildInfo.platform === 'darwin') {
+    // Mac平台: latest-${arch}
+    updateChannel = `latest-${buildInfo.arch}`;
+  } else if (buildInfo.platform === 'win32') {
+    // Windows平台: latest-${arch}-${env.CUDA_VERSION}-${env.CUDA_OPT}
+    if (buildInfo.cudaVersion) {
+      updateChannel = `latest-${buildInfo.arch}-${buildInfo.cudaVersion}-${buildInfo.cudaOpt || 'generic'}`;
+    } else {
+      updateChannel = `latest-${buildInfo.arch}`;
+    }
+  } else if (buildInfo.platform === 'linux') {
+    // Linux平台: latest
+    updateChannel = 'latest';
+  }
+  
+  // 设置更新通道
+  autoUpdater.channel = updateChannel;
+  logMessage(`Setting update channel to: ${updateChannel}`, 'info');
   // 检查更新
   const checkForUpdates = async (silent = false) => {
     try {
