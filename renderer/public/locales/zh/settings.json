@@ -51,5 +51,10 @@
   "tempDirPlaceholder": "临时目录路径",
   "clearCache": "清除缓存",
   "cacheClearedSuccess": "缓存清除成功",
-  "cacheClearedFailed": "缓存清除失败"
+  "cacheClearedFailed": "缓存清除失败",
+  "advancedSettings": "高级设置",
+  "maxContext": "最大上下文",
+  "maxContextTip": "控制处理音频时的上下文长度。默认值是-1。如果您遇到字幕重复问题，请尝试将其设置为0。",
+  "maxContextPlaceholder": "最大上下文长度",
+  "numberInputTip": "请输入数字"
 }

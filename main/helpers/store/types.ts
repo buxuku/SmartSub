@@ -16,6 +16,7 @@ export type StoreType = {
     builtinWhisperCommand: string;
     useCuda: boolean;
     modelsPath: string;
+    maxContext?: number;
   };
   providerVersion?: number;
   logs: LogEntry[];
