@@ -19,6 +19,7 @@ export const store = new Store<StoreType>({
       builtinWhisperCommand: defaultWhisperCommand,
       useCuda: true,
       modelsPath: path.join(app.getPath('userData'), 'whisper-models'),
+      maxContext: -1,
     },
     logs: [],
   },

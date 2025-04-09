@@ -51,5 +51,10 @@
   "tempDirPlaceholder": "Temporary directory path",
   "clearCache": "Clear Cache",
   "cacheClearedSuccess": "Cache cleared successfully",
-  "cacheClearedFailed": "Failed to clear cache"
+  "cacheClearedFailed": "Failed to clear cache",
+  "advancedSettings": "Advanced Settings",
+  "maxContext": "Maximum Context Length",
+  "maxContextTip": "Controls the context length when Whisper processes audio. Default is -1. If you experience subtitle repetition issues, try setting this to 0.",
+  "maxContextPlaceholder": "Enter maximum context length...",
+  "numberInputTip": "Please enter a valid number"
 }
