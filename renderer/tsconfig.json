@@ -7,6 +7,8 @@
     "paths": {
       "@/components/*": ["components/*"],
       "lib/utils": ["lib/utils"],
+      "utils": ["lib/utils"],
+      "renderer/lib/utils": ["lib/utils"]
     }
   }
 }
