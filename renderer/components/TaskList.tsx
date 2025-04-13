@@ -13,27 +13,35 @@ import { isSubtitleFile } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
 import { Upload, FileUp } from 'lucide-react';
 
-const TaskList = ({ files = [], formData, taskType = 'generateAndTranslate' }) => {
+const TaskList = ({ files = [], formData }) => {
   const { t } = useTranslation('home');
-
+  const { taskType } = formData;
   // 根据任务类型确定要显示的列
   const shouldShowAudioColumn = taskType !== 'translateOnly';
   const shouldShowSubtitleColumn = taskType !== 'translateOnly';
-  const shouldShowTranslateColumn = taskType !== 'generateOnly' && formData.translateProvider !== '-1';
+  const shouldShowTranslateColumn = taskType !== 'generateOnly';
+
+  const handleImport = async () => {
+    const fileType = taskType === 'translateOnly' ? 'srt' : 'media';
+    window?.ipc?.send('openDialog', { dialogType: 'openDialog', fileType });
+  };
 
   // 空状态提示
   if (!files.length) {
     return (
-      <div className="flex flex-col items-center justify-center h-[400px] border-2 border-dashed rounded-lg p-8">
+      <div
+        className="flex flex-col cursor-pointer items-center justify-center h-[400px] border-2 border-dashed rounded-lg p-8"
+        onClick={handleImport}
+      >
         <FileUp className="w-16 h-16 text-gray-400 mb-4" />
         <p className="text-lg text-center text-gray-500 mb-2">
-          {taskType === 'translateOnly' 
-            ? t('dragSubtitleHere') 
+          {taskType === 'translateOnly'
+            ? t('dragSubtitleHere')
             : t('dragMediaHere')}
         </p>
         <p className="text-sm text-center text-gray-400">
-          {taskType === 'translateOnly' 
-            ? t('supportedSubtitleFormats') 
+          {taskType === 'translateOnly'
+            ? t('supportedSubtitleFormats')
             : t('supportedMediaFormats')}
         </p>
       </div>
@@ -47,13 +55,15 @@ const TaskList = ({ files = [], formData, taskType = 'generateAndTranslate' }) =
         <TableRow>
           <TableHead className="w-[500px]">{t('fileName')}</TableHead>
           {shouldShowAudioColumn && (
-            <TableHead>{t('extractAudio')}</TableHead>
+            <TableHead className="w-[100px]">{t('extractAudio')}</TableHead>
           )}
           {shouldShowSubtitleColumn && (
-            <TableHead>{t('extractSubtitle')}</TableHead>
+            <TableHead className="w-[100px]">{t('extractSubtitle')}</TableHead>
           )}
           {shouldShowTranslateColumn && (
-            <TableHead>{t('translateSubtitle')}</TableHead>
+            <TableHead className="w-[100px]">
+              {t('translateSubtitle')}
+            </TableHead>
           )}
         </TableRow>
       </TableHeader>

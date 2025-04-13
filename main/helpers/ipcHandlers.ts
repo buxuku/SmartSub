@@ -3,42 +3,69 @@ import * as fs from 'fs';
 import { createMessageSender } from './messageHandler';
 
 export function setupIpcHandlers(mainWindow: BrowserWindow) {
-  ipcMain.on("message", async (event, arg) => {
-    event.reply("message", `${arg} World!`);
+  ipcMain.on('message', async (event, arg) => {
+    event.reply('message', `${arg} World!`);
   });
 
-  ipcMain.on("openDialog", async (event) => {
+  ipcMain.on('openDialog', async (event, data) => {
+    const { fileType } = data;
+    console.log(fileType, 'fileType')
+    const name = fileType === 'srt' ? 'Subtitle Files' : 'Media Files';
+    const extensions =
+      fileType === 'srt'
+        ? ['srt']
+        : [
+            'mp4',
+            'avi',
+            'mov',
+            'mkv',
+            'flv',
+            'wmv',
+            'webm',
+            'mp3',
+            'wav',
+            'ogg',
+            'aac',
+            'wma',
+            'flac',
+            'm4a',
+            'aiff',
+            'ape',
+            'opus',
+            'ac3',
+            'amr',
+            'au',
+            'mid',
+            '3gp',
+            'asf',
+            'rm',
+            'rmvb',
+            'vob',
+            'ts',
+            'mts',
+            'm2ts',
+          ];
     const result = await dialog.showOpenDialog({
-      properties: ["openFile", "multiSelections"],
+      properties: ['openFile', 'multiSelections'],
       filters: [
-        { 
-          name: "音频、视频和字幕文件", 
-          extensions: [
-            // 视频格式
-            "mp4", "avi", "mov", "mkv", "flv", "wmv", "webm",
-            // 音频格式
-            "mp3", "wav", "ogg", "aac", "wma", "flac", "m4a",
-            "aiff", "ape", "opus", "ac3", "amr", "au", "mid",
-            // 其他常见格式
-            "3gp", "asf", "rm", "rmvb", "vob", "ts", "mts", "m2ts",
-            // 字幕格式
-            "srt", "vtt", "ass", "ssa"
-          ]
+        {
+          name: name,
+          extensions: extensions,
         },
       ],
     });
-    
+
     try {
-      event.sender.send("file-selected", result.filePaths);
+      event.sender.send('file-selected', result.filePaths);
     } catch (error) {
       createMessageSender(event.sender).send('message', {
         type: 'error',
-        message: error.message
+        message: error.message,
       });
     }
   });
 
-  ipcMain.on("openUrl", (event, url) => {
+  ipcMain.on('openUrl', (event, url) => {
     shell.openExternal(url);
   });
 
@@ -60,7 +87,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
 
   ipcMain.handle('selectDirectory', async () => {
     return dialog.showOpenDialog({
-      properties: ['openDirectory']
+      properties: ['openDirectory'],
     });
   });
 }
