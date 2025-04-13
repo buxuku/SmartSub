@@ -7,6 +7,7 @@ import {
 import { renderTemplate } from '../../helpers/utils';
 import { logMessage } from '../../helpers/storeManager';
 import { defaultSystemPrompt, defaultUserPrompt } from '../../../types';
+import { toJson } from 'really-relaxed-json';
 
 export async function handleAISingleTranslation(
   subtitle: Subtitle,
@@ -88,7 +89,7 @@ export async function handleAIBatchTranslation(
           targetLanguage,
           content: fullContent,
         }
-      )
+      );
 
       const translationConfig = {
         ...provider,
@@ -111,15 +112,36 @@ export async function handleAIBatchTranslation(
       // 通过 joson 内容，重新组装成字幕格式内容
       if (match && match[1]) {
         const jsonContent = match[1];
-        const parsedContent = JSON.parse(jsonContent);
-        const batchResults = batch.map((subtitle) => ({
-          id: subtitle.id,
-          startEndTime: subtitle.startEndTime,
-          sourceContent: subtitle.content.join('\n'),
-          targetContent: parsedContent[subtitle.id],
-        }));
-
-        results.push(...batchResults);
+        try {
+          // 尝试使用标准JSON解析
+          const parsedContent = JSON.parse(jsonContent);
+          const batchResults = batch.map((subtitle) => ({
+            id: subtitle.id,
+            startEndTime: subtitle.startEndTime,
+            sourceContent: subtitle.content.join('\n'),
+            targetContent: parsedContent[subtitle.id],
+          }));
+          results.push(...batchResults);
+        } catch (jsonError) {
+          logMessage(
+            `标准JSON解析失败，尝试使用tojson: ${jsonError.message}`,
+            'error'
+          );
+          try {
+            // 使用JSON5进行更宽松的解析
+            const parsedContent = toJson(jsonContent);
+            const batchResults = batch.map((subtitle) => ({
+              id: subtitle.id,
+              startEndTime: subtitle.startEndTime,
+              sourceContent: subtitle.content.join('\n'),
+              targetContent: parsedContent[subtitle.id],
+            }));
+            results.push(...batchResults);
+          } catch (json5Error) {
+            logMessage(`tojson解析也失败: ${json5Error.message}`, 'error');
+            throw new Error(`无法解析AI返回的JSON内容: ${json5Error.message}`);
+          }
+        }
       }
 
       // 更新翻译进度
