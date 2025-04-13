@@ -69,53 +69,6 @@ const CommandInput = ({
   );
 };
 
-// 新增一个 NumberInput 组件
-const NumberInput = ({
-  label,
-  tooltip,
-  value,
-  onChange,
-  onSave,
-  placeholder,
-}: {
-  label: string;
-  tooltip: string;
-  value: number;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onSave: () => void;
-  placeholder?: string;
-}) => {
-  const { t } = useTranslation('settings');
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <span>{label}</span>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger>
-              <HelpCircle className="h-4 w-4 text-muted-foreground" />
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{tooltip}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </div>
-      <div className="flex gap-2">
-        <Input
-          type="number"
-          value={+value}
-          onChange={onChange}
-          onBlur={onSave}
-          className="font-mono text-sm w-full"
-          placeholder={placeholder || ''}
-        />
-      </div>
-    </div>
-  );
-};
-
 const Settings = () => {
   const router = useRouter();
   const { t, i18n } = useTranslation('settings');
@@ -125,7 +78,6 @@ const Settings = () => {
   const [useCuda, setUseCuda] = useState(false);
   const [modelsPath, setModelsPath] = useState('');
   const [tempDir, setTempDir] = useState('');
-  const [maxContext, setMaxContext] = useState(-1);
   const form = useForm({
     defaultValues: {
       language: router.locale,
@@ -142,7 +94,6 @@ const Settings = () => {
         setWhisperCommand(settings.whisperCommand || '');
         setUseCuda(settings.useCuda || false);
         setModelsPath(settings.modelsPath || '');
-        setMaxContext(settings.maxContext ?? -1);
       }
       
       // 获取临时目录路径
@@ -234,22 +185,6 @@ const Settings = () => {
       toast.error(t('cacheClearedFailed'));
     }
   };
-
-  // 添加处理maxContext变化的函数
-  const handleMaxContextChange = (e) => {
-    const value = e.target.value.trim();
-    // 允许空值（将转为默认值-1）或数字
-    if (value === '' || /^-?\d+$/.test(value)) {
-      setMaxContext(value === '' ? -1 : parseInt(value, 10));
-    }
-  };
-
-  const handleMaxContextSave = () => {
-    saveSettings({
-      maxContext,
-    });
-  };
-
 
   return (
     <div className="container mx-auto p-4 space-y-6">
@@ -394,26 +329,6 @@ const Settings = () => {
             </div>
           </div>
 
-        </CardContent>
-      </Card>
-
-      {/* 添加高级设置卡片 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Cog className="mr-2" />
-            {t('advancedSettings')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <NumberInput
-            label={t('maxContext')}
-            tooltip={t('maxContextTip')}
-            value={maxContext}
-            onChange={handleMaxContextChange}
-            onSave={handleMaxContextSave}
-            placeholder={t('maxContextPlaceholder')}
-          />
         </CardContent>
       </Card>
 

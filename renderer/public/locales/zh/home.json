@@ -60,5 +60,20 @@
 	"missingEncoderMlmodelc": "该模型需要对应的 encoder.mlmodelc 文件, 请下载并导入它",
 	"translateRetryTimes": "翻译失败重试次数",
 	"prompt": "字幕生成提示词",
-	"promptTips": "你可以在这里通过提示词来优化生成的字幕，<br />比如源语言为中文，希望生成的字幕是简体中文的，<br/>可以在提示词中添加’以下为简体中文‘"
+	"promptTips": "你可以在这里通过提示词来优化生成的字幕，<br />比如源语言为中文，希望生成的字幕是简体中文的，<br/>可以在提示词中添加'以下为简体中文'",
+	"taskTypeSelection": "任务类型选择",
+	"taskType": "任务类型",
+	"generateAndTranslate": "生成字幕并翻译",
+	"generateOnly": "仅生成字幕",
+	"translateOnly": "仅翻译字幕",
+	"advancedSettings": "高级设置",
+	"maxContext": "最大上下文",
+	"maxContextTip": "设置 Whisper 模型的最大上下文长度，-1 表示不限制，0 表示不使用上下文",
+	"noLimit": "不限制",
+	"noContext": "不使用上下文",
+	"importSubtitles": "导入字幕",
+	"dragSubtitleHere": "拖放字幕文件到这里，或者点击上传",
+	"dragMediaHere": "拖放媒体文件到这里，或者点击上传",
+	"supportedSubtitleFormats": "支持的字幕格式：SRT, VTT",
+	"supportedMediaFormats": "支持的媒体格式：MP4, AVI, MKV, MOV, MP3, WAV"
 }
