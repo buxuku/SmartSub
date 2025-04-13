@@ -78,6 +78,8 @@ const Settings = () => {
   const [useCuda, setUseCuda] = useState(false);
   const [modelsPath, setModelsPath] = useState('');
   const [tempDir, setTempDir] = useState('');
+  const [customTempDir, setCustomTempDir] = useState('');
+  const [useCustomTempDir, setUseCustomTempDir] = useState(false);
   const form = useForm({
     defaultValues: {
       language: router.locale,
@@ -94,6 +96,8 @@ const Settings = () => {
         setWhisperCommand(settings.whisperCommand || '');
         setUseCuda(settings.useCuda || false);
         setModelsPath(settings.modelsPath || '');
+        setUseCustomTempDir(settings.useCustomTempDir || false);
+        setCustomTempDir(settings.customTempDir || '');
       }
       
       // 获取临时目录路径
@@ -150,6 +154,37 @@ const Settings = () => {
     try {
       await window?.ipc?.invoke('setSettings', { modelsPath: selectedPath });
       toast.success(t('modelPathSaved'));
+    } catch (error) {
+      toast.error(t('saveFailed'));
+    }
+  };
+
+  // 选择自定义临时目录
+  const handleSelectCustomTempDir = async () => {
+    const result = await window?.ipc?.invoke('selectDirectory');
+    if (result.canceled) return;
+    
+    const selectedPath = result.filePaths[0];
+    setCustomTempDir(selectedPath);
+    
+    try {
+      await window?.ipc?.invoke('setSettings', { 
+        customTempDir: selectedPath, 
+        useCustomTempDir: true 
+      });
+      setUseCustomTempDir(true);
+      toast.success(t('tempDirSaved'));
+    } catch (error) {
+      toast.error(t('saveFailed'));
+    }
+  };
+
+  // 切换是否使用自定义临时目录
+  const handleCustomTempDirChange = async (checked: boolean) => {
+    setUseCustomTempDir(checked);
+    try {
+      await window?.ipc?.invoke('setSettings', { useCustomTempDir: checked });
+      toast.success(checked ? t('useCustomTempDirEnabled') : t('useCustomTempDirDisabled'));
     } catch (error) {
       toast.error(t('saveFailed'));
     }
@@ -315,17 +350,41 @@ const Settings = () => {
                 </Tooltip>
               </TooltipProvider>
             </div>
-            <div className="flex gap-2">
-              <Input
-                value={tempDir}
-                readOnly
-                className="font-mono text-sm flex-1"
-                placeholder={t('tempDirPlaceholder')}
-              />
-              <Button onClick={handleClearCache} size="sm" className="flex-shrink-0">
-                <Eraser className="mr-2 h-4 w-4" />
-                {t('clearCache')}
-              </Button>
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <span>{t('useCustomTempDir')}</span>
+                <Switch
+                  checked={useCustomTempDir}
+                  onCheckedChange={handleCustomTempDirChange}
+                />
+              </div>
+              
+              {useCustomTempDir ? (
+                <div className="flex gap-2">
+                  <Input
+                    value={customTempDir}
+                    readOnly
+                    className="font-mono text-sm flex-1"
+                    placeholder={t('customTempDirPlaceholder')}
+                  />
+                  <Button onClick={handleSelectCustomTempDir} size="sm" className="flex-shrink-0">
+                    {t('selectPath')}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Input
+                    value={tempDir}
+                    readOnly
+                    className="font-mono text-sm flex-1"
+                    placeholder={t('tempDirPlaceholder')}
+                  />
+                  <Button onClick={handleClearCache} size="sm" className="flex-shrink-0">
+                    <Eraser className="mr-2 h-4 w-4" />
+                    {t('clearCache')}
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 

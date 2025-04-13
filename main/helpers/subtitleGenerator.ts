@@ -84,11 +84,11 @@ export async function generateSubtitleWithBuiltinWhisper(
   event.sender.send('taskStatusChange', file, 'extractSubtitle', 'loading');
 
   try {
-    const { model, sourceLanguage, prompt } = formData;
+    const { model, sourceLanguage, prompt, maxContext } = formData;
     const whisperModel = model?.toLowerCase();
     const whisper = await loadWhisperAddon(whisperModel);
     const whisperAsync = promisify(whisper);
-    const settings = store.get('settings') || { useCuda: false, maxContext: 0 };
+    const settings = store.get('settings');
     const useCuda = settings.useCuda || false;
     const platform = process.platform;
     const arch = process.arch;
@@ -116,7 +116,7 @@ export async function generateSubtitleWithBuiltinWhisper(
       max_len: 0,
       print_progress: true,
       prompt,
-      max_context: +(settings?.maxContext ?? -1),
+      max_context: +(maxContext ?? -1),
       progress_callback: (progress) => {
         console.log(`处理进度: ${progress}%`);
         // 更新UI显示进度

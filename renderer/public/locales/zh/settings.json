@@ -56,5 +56,7 @@
   "maxContext": "最大上下文",
   "maxContextTip": "控制处理音频时的上下文长度。默认值是-1。如果您遇到字幕重复问题，请尝试将其设置为0。",
   "maxContextPlaceholder": "最大上下文长度",
-  "numberInputTip": "请输入数字"
+  "numberInputTip": "请输入数字",
+  "useCustomTempDir": "使用自定义临时文件目录, 请避免出现中文路径，为避免误删文件，自定义临时文件目录请手动清理",
+  "useCustomTempDirDisabled": "已经关闭自定义临时文件目录"
 }
