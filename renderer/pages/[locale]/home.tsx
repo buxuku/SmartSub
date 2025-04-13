@@ -82,8 +82,8 @@ export default function Component() {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
       >
-        <TaskListControl setFiles={setFiles} />
-        <ScrollArea className="max-h-[780px]">
+        <TaskListControl setFiles={setFiles} formData={formData} />
+        <ScrollArea className="max-h-[780px] min-h-[780px] mt-4">
           <TaskList files={files} formData={formData} />
         </ScrollArea>
         <div className="flex-1" />

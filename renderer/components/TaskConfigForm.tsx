@@ -6,12 +6,7 @@ import {
   SelectContent,
   Select,
 } from '@/components/ui/select';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { supportedLanguage } from 'lib/utils';
 import Models from './Models';
@@ -19,12 +14,17 @@ import SavePathNotice from './SavePathNotice';
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
 } from '@/components/ui/form';
 import { useTranslation } from 'next-i18next';
 import ToolTips from './ToolTips';
+import { Switch } from './ui/switch';
+import { Textarea } from './ui/textarea';
+import { Card } from './ui/card';
+import { cn } from 'lib/utils';
 
 // 定义 Provider 类型
 type Provider = {
@@ -38,7 +38,7 @@ type TaskType = 'generateAndTranslate' | 'generateOnly' | 'translateOnly';
 
 const TaskConfigForm = ({ form, formData, systemInfo }) => {
   const [providers, setProviders] = useState<Provider[]>([]);
-  const [taskType, setTaskType] = useState<TaskType>('generateAndTranslate');
+  const { taskType } = formData;
   const [taskTab, setTaskTab] = useState<string>('sourceSubtitle');
   const { t } = useTranslation('home');
   const { t: tCommon } = useTranslation('common');
@@ -53,33 +53,26 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
   };
 
   // 是否需要显示源字幕设置
-  const showSourceSubtitleSettings = taskType === 'generateAndTranslate' || taskType === 'generateOnly';
-  
+  const showSourceSubtitleSettings =
+    taskType === 'generateAndTranslate' || taskType === 'generateOnly';
+
   // 是否需要显示翻译设置
-  const showTranslationSettings = taskType === 'generateAndTranslate' || taskType === 'translateOnly';
+  const showTranslationSettings =
+    taskType === 'generateAndTranslate' || taskType === 'translateOnly';
 
   // 当任务类型变更时，更新表单相关字段
   useEffect(() => {
     if (taskType === 'translateOnly') {
-      // 如果只是翻译，设置不保存源字幕
-      form.setValue('sourceSrtSaveOption', 'noSave');
       setTaskTab('translation');
     } else if (taskType === 'generateOnly') {
-      // 如果只是生成字幕，设置不翻译
-      form.setValue('translateProvider', '-1');
       setTaskTab('sourceSubtitle');
     } else {
       setTaskTab('sourceSubtitle');
     }
-    
-    // 通知父组件任务类型发生变化
-    if (form.setValue) {
-      form.setValue('taskType', taskType);
-    }
   }, [taskType, form]);
 
   if (!providers.length || !systemInfo.modelsPath) return null;
-  
+
   return (
     <Form {...form}>
       <form className="grid w-full items-start gap-6">
@@ -93,31 +86,31 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
               control={form.control}
               name="taskType"
               render={({ field }) => (
-                <FormItem className="flex items-center justify-between space-x-4">
-                  <FormLabel className="flex-shrink-0 mt-2">{t('taskType')}</FormLabel>
+                <FormItem>
                   <FormControl>
-                    <Select 
-                      onValueChange={(value: TaskType) => {
-                        setTaskType(value);
-                        field.onChange(value);
-                      }}
-                      value={field.value || taskType}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('pleaseSelect')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="generateAndTranslate">
-                          {t('generateAndTranslate')}
-                        </SelectItem>
-                        <SelectItem value="generateOnly">
-                          {t('generateOnly')}
-                        </SelectItem>
-                        <SelectItem value="translateOnly">
-                          {t('translateOnly')}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <TaskTypeCard
+                        title={t('generateAndTranslate')}
+                        description={t('generateAndTranslateDesc')}
+                        value="generateAndTranslate"
+                        selected={field.value === 'generateAndTranslate'}
+                        onClick={() => field.onChange('generateAndTranslate')}
+                      />
+                      <TaskTypeCard
+                        title={t('generateOnly')}
+                        description={t('generateOnlyDesc')}
+                        value="generateOnly"
+                        selected={field.value === 'generateOnly'}
+                        onClick={() => field.onChange('generateOnly')}
+                      />
+                      <TaskTypeCard
+                        title={t('translateOnly')}
+                        description={t('translateOnlyDesc')}
+                        value="translateOnly"
+                        selected={field.value === 'translateOnly'}
+                        onClick={() => field.onChange('translateOnly')}
+                      />
+                    </div>
                   </FormControl>
                 </FormItem>
               )}
@@ -126,13 +119,21 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
         </fieldset>
 
         {/* 配置选项 Tabs */}
-        <Tabs value={taskTab} onValueChange={(value) => setTaskTab(value)} className="w-full">
+        <Tabs
+          value={taskTab}
+          onValueChange={(value) => setTaskTab(value)}
+          className="w-full"
+        >
           <TabsList className="w-full justify-start">
             {showSourceSubtitleSettings && (
-              <TabsTrigger value="sourceSubtitle">{t('sourceSubtitleSettings')}</TabsTrigger>
+              <TabsTrigger value="sourceSubtitle">
+                {t('sourceSubtitleSettings')}
+              </TabsTrigger>
             )}
             {showTranslationSettings && (
-              <TabsTrigger value="translation">{t('translationSettings')}</TabsTrigger>
+              <TabsTrigger value="translation">
+                {t('translationSettings')}
+              </TabsTrigger>
             )}
             <TabsTrigger value="advanced">{t('advancedSettings')}</TabsTrigger>
           </TabsList>
@@ -146,8 +147,8 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     control={form.control}
                     name="model"
                     render={({ field }) => (
-                      <FormItem className="flex items-center justify-between space-x-4">
-                        <FormLabel className="flex-shrink-0 mt-2">{t('modelSelection')}</FormLabel>
+                      <FormItem>
+                        <FormLabel>{t('modelSelection')}</FormLabel>
                         <FormControl>
                           <Models
                             onValueChange={field.onChange}
@@ -164,10 +165,13 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     control={form.control}
                     name="sourceLanguage"
                     render={({ field }) => (
-                      <FormItem className="flex items-center justify-between space-x-4">
-                        <FormLabel className="flex-shrink-0 mt-2">{t('originalLanguage')}</FormLabel>
+                      <FormItem>
+                        <FormLabel>{t('originalLanguage')}</FormLabel>
                         <FormControl>
-                          <Select onValueChange={field.onChange} value={field.value}>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                          >
                             <SelectTrigger>
                               <SelectValue placeholder={t('pleaseSelect')} />
                             </SelectTrigger>
@@ -187,43 +191,18 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     )}
                   />
                 </div>
-                <div className="grid gap-3">
-                  <FormField
-                    control={form.control}
-                    name="maxContext"
-                    render={({ field }) => (
-                      <FormItem className="flex items-center justify-between space-x-4">
-                        <FormLabel className="flex-shrink-0 mt-2">
-                          {t('maxContext')}
-                          <ToolTips text={t('maxContextTip')} />
-                        </FormLabel>
-                        <FormControl>
-                          <Select
-                            onValueChange={(value) => field.onChange(Number(value))}
-                            value={String(field.value || -1)}
-                          >
-                            <SelectTrigger className="w-[180px]">
-                              <SelectValue placeholder={t('pleaseSelect')} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="-1">{t('noLimit')}</SelectItem>
-                              <SelectItem value="0">{t('noContext')}</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                
                 <div className="grid gap-3">
                   <FormField
                     control={form.control}
                     name="prompt"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="flex items-center">{t('prompt')} <ToolTips text={t('promptTips')} /></FormLabel>
+                        <FormLabel>
+                          {t('prompt')} <ToolTips text={t('promptTips')} />
+                        </FormLabel>
                         <FormControl>
-                          <Input
+                          <Textarea
                             placeholder={t('pleaseInput')}
                             {...field}
                             value={field.value || ''}
@@ -236,10 +215,42 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                 <div className="grid gap-3">
                   <FormField
                     control={form.control}
+                    name="maxContext"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          {t('maxContext')}
+                          <ToolTips text={t('maxContextTip')} />
+                        </FormLabel>
+                        <FormControl>
+                          <Select
+                            onValueChange={(value) =>
+                              field.onChange(Number(value))
+                            }
+                            value={String(field.value || -1)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder={t('pleaseSelect')} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="-1">{t('noLimit')}</SelectItem>
+                              <SelectItem value="0">
+                                {t('noContext')}
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div className="grid gap-3">
+                  <FormField
+                    control={form.control}
                     name="sourceSrtSaveOption"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="flex items-center">
+                        <FormLabel>
                           {t('sourceSubtitleSaveSettings')}
                           <SavePathNotice />
                         </FormLabel>
@@ -252,7 +263,9 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                               <SelectValue placeholder={t('pleaseSelect')} />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="noSave">{t('noSave')}</SelectItem>
+                              <SelectItem value="noSave">
+                                {t('noSave')}
+                              </SelectItem>
                               <SelectItem value="fileName">
                                 {t('fileName')}
                               </SelectItem>
@@ -276,15 +289,42 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                         <FormItem>
                           <FormControl>
                             <Input
-                              placeholder={t('pleaseInputCustomSourceSrtFileName')}
+                              placeholder={t(
+                                'pleaseInputCustomSourceSrtFileName'
+                              )}
                               {...field}
-                              value={field.value || '${fileName}.${sourceLanguage}'}
+                              value={
+                                field.value || '${fileName}.${sourceLanguage}'
+                              }
                             />
                           </FormControl>
                         </FormItem>
                       )}
                     />
                   )}
+                </div>
+                <div className="grid gap-3">
+                  <FormField
+                    control={form.control}
+                    name="saveAudio"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                        <div className="space-y-0.5">
+                          <FormLabel>{t('saveAudio')}</FormLabel>
+                          <FormDescription>
+                            {t('saveAudioTip')}
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            aria-readonly
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
                 </div>
               </fieldset>
             </TabsContent>
@@ -299,8 +339,8 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     control={form.control}
                     name="translateProvider"
                     render={({ field }) => (
-                      <FormItem className="flex items-center justify-between space-x-4">
-                        <FormLabel className="flex-shrink-0 mt-2">{t('translationService')}</FormLabel>
+                      <FormItem>
+                        <FormLabel>{t('translationService')}</FormLabel>
                         <FormControl>
                           <Select
                             onValueChange={(value) => {
@@ -312,9 +352,11 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                               <SelectValue placeholder={t('pleaseSelect')} />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value={'-1'}>{t('Untranslate')}</SelectItem>
                               {providers.map((provider) => (
-                                <SelectItem key={provider.id} value={provider.id}>
+                                <SelectItem
+                                  key={provider.id}
+                                  value={provider.id}
+                                >
                                   {tCommon(`provider.${provider.name}`, {
                                     defaultValue: provider.name,
                                   })}
@@ -333,8 +375,10 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                       control={form.control}
                       name="targetLanguage"
                       render={({ field }) => (
-                        <FormItem className="flex items-center justify-between space-x-4">
-                          <FormLabel className="flex-shrink-0 mt-2">{t('translationTargetLanguage')}</FormLabel>
+                        <FormItem>
+                          <FormLabel>
+                            {t('translationTargetLanguage')}
+                          </FormLabel>
                           <FormControl>
                             <Select
                               onValueChange={field.onChange}
@@ -345,7 +389,10 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                               </SelectTrigger>
                               <SelectContent>
                                 {supportedLanguage.map((item) => (
-                                  <SelectItem key={item.value} value={item.value}>
+                                  <SelectItem
+                                    key={item.value}
+                                    value={item.value}
+                                  >
                                     {tCommon(`language.${item.value}`)}
                                   </SelectItem>
                                 ))}
@@ -367,7 +414,10 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                           {t('translationOutputSubtitleSettings')}
                         </FormLabel>
                         <FormControl>
-                          <Select onValueChange={field.onChange} value={field.value}>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                          >
                             <SelectTrigger>
                               <SelectValue placeholder={t('pleaseSelect')} />
                             </SelectTrigger>
@@ -430,9 +480,13 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                         <FormItem>
                           <FormControl>
                             <Input
-                              placeholder={t('pleaseInputCustomTargetSrtFileName')}
+                              placeholder={t(
+                                'pleaseInputCustomTargetSrtFileName'
+                              )}
                               {...field}
-                              value={field.value || '${fileName}.${targetLanguage}'}
+                              value={
+                                field.value || '${fileName}.${targetLanguage}'
+                              }
                             />
                           </FormControl>
                         </FormItem>
@@ -444,8 +498,8 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                       control={form.control}
                       name="translateRetryTimes"
                       render={({ field }) => (
-                        <FormItem className="flex items-center justify-between space-x-4">
-                          <FormLabel className="flex-shrink-0 mt-2">{t('translateRetryTimes')}</FormLabel>
+                        <FormItem>
+                          <FormLabel>{t('translateRetryTimes')}</FormLabel>
                           <FormControl>
                             <Input
                               type="number"
@@ -470,8 +524,8 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                 control={form.control}
                 name="maxConcurrentTasks"
                 render={({ field }) => (
-                  <FormItem className="flex items-center justify-between space-x-4">
-                    <FormLabel className="flex-shrink-0 mt-2">{t('maxConcurrentTasks')}</FormLabel>
+                  <FormItem>
+                    <FormLabel>{t('maxConcurrentTasks')}</FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -485,32 +539,27 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="saveAudio"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-2">
-                    <FormControl>
-                      <div className="flex items-center space-x-2">
-                        <Input
-                          type="checkbox"
-                          checked={field.value || false}
-                          onChange={field.onChange}
-                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                        />
-                        <FormLabel className="font-normal">
-                          {t('saveAudio')}
-                        </FormLabel>
-                      </div>
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
             </fieldset>
           </TabsContent>
         </Tabs>
       </form>
     </Form>
+  );
+};
+
+// 任务类型卡片组件
+const TaskTypeCard = ({ title, description, value, selected, onClick }) => {
+  return (
+    <Card 
+      className={cn(
+        "p-2 cursor-pointer transition-all hover:shadow-md border-1", 
+        selected ? "bg-primary/5" : "border-transparent"
+      )}
+      onClick={onClick}
+    >
+      <div className="font-medium text-sm mb-2">{title}</div>
+      <p className="text-xs text-muted-foreground">{description}</p>
+    </Card>
   );
 };
 
