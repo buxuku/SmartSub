@@ -54,5 +54,20 @@
 	"missingEncoderMlmodelc": "Missing encoder.mlmodelc file, please download it and import it.",
 	"translateRetryTimes": "Translate retry times",
 	"prompt": "Subtitle generation prompt",
-	"promptTips": "You can optimize the generated subtitles by using prompt words here.<br /> For example, if the source language is Chinese and you want the generated subtitles to be simplified Chinese, <br /> you can add 'the following is Simplified Chinese' to the prompt words."
+	"promptTips": "You can optimize the generated subtitles by using prompt words here.<br /> For example, if the source language is Chinese and you want the generated subtitles to be simplified Chinese, <br /> you can add 'the following is Simplified Chinese' to the prompt words.",
+	"taskTypeSelection": "Task Type Selection",
+	"taskType": "Task Type",
+	"generateAndTranslate": "Generate Subtitle and Translate",
+	"generateOnly": "Generate Subtitle Only",
+	"translateOnly": "Translate Subtitle Only",
+	"advancedSettings": "Advanced Settings",
+	"maxContext": "Max Context",
+	"maxContextTip": "Set Whisper model max context length, -1 means no limit, 0 means no context",
+	"noLimit": "No Limit",
+	"noContext": "No Context",
+	"importSubtitles": "Import Subtitles",
+	"dragSubtitleHere": "Drag subtitle files here, or click to upload",
+	"dragMediaHere": "Drag media files here, or click to upload",
+	"supportedSubtitleFormats": "Supported subtitle formats: SRT, VTT",
+	"supportedMediaFormats": "Supported media formats: MP4, AVI, MKV, MOV, MP3, WAV"
 }

@@ -4,12 +4,16 @@ import { useTranslation } from 'next-i18next';
 import { useState } from 'react';
 import { LogDialog } from './LogDialog';
 
-const TaskListControl = ({ setFiles }) => {
+const TaskListControl = ({ setFiles, taskType = 'generateAndTranslate' }) => {
   const { t } = useTranslation(['home', 'common']);
   const [showLogs, setShowLogs] = useState(false);
 
   const handleImportVideo = async () => {
-    window?.ipc?.send('openDialog', 'openDialog');
+    const fileTypes = taskType === 'translateOnly' 
+      ? { name: 'Subtitle Files', extensions: ['srt', 'vtt'] }
+      : { name: 'Media Files', extensions: ['mp4', 'avi', 'mkv', 'mov', 'mp3', 'wav', 'flac', 'm4a'] };
+    
+    window?.ipc?.send('openDialog', { dialogType: 'openDialog', fileTypes });
   };
 
   const handleClearList = () => {
@@ -44,7 +48,9 @@ const TaskListControl = ({ setFiles }) => {
           onClick={handleImportVideo}
         >
           <Import className="size-5 mr-2" />
-          {t('importFiles')}
+          {taskType === 'translateOnly' 
+            ? t('importSubtitles') 
+            : t('importFiles')}
         </Button>
       </div>
 
