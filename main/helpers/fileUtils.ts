@@ -55,7 +55,7 @@ export function formatSrtContent(subtitles: [string, string, string][]) {
     .map((subtitle, index) => {
       const [startTime, endTime, text] = subtitle;
       // SRT格式：序号 + 时间码 + 文本 + 空行
-      return `${index + 1}\n${startTime} --> ${endTime}\n${text.trim()}\n`;
+      return `${index + 1}\n${startTime.replace('.', ',')} --> ${endTime.replace('.', ',')}\n${text.trim()}\n`;
     })
     .join('\n');
 }

@@ -54,10 +54,10 @@ export async function translateWithProvider(
     return handleAIBatchTranslation(
         subtitles,
         config,
-        +provider.batchSize || DEFAULT_BATCH_SIZE.AI,
+        +(provider.batchSize || DEFAULT_BATCH_SIZE.AI),
         onProgress
       );
   }
 
-  return handleAPIBatchTranslation(subtitles, config, +provider.batchSize, onProgress);
+  return handleAPIBatchTranslation(subtitles, config, +(provider.batchSize || DEFAULT_BATCH_SIZE.API), onProgress);
 }
