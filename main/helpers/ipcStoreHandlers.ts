@@ -5,6 +5,7 @@ import { defaultUserConfig } from './utils';
 import { getAndInitializeProviders } from './providerManager';
 import { logMessage } from './logger';
 import { LogEntry } from './store/types';
+import { getBuildInfo } from './buildInfo';
 
 console.log(app.getVersion(), 'version');
 export function setupStoreHandlers() {
@@ -20,7 +21,8 @@ export function setupStoreHandlers() {
       totalmem: os.totalmem(),
       freemem: os.freemem(),
       type: os.type(),
-    }
+      buildInfo: getBuildInfo(),
+    };
     logMessage(`osInfo: ${JSON.stringify(osInfo, null, 2)}`, 'info');
     logMessage('Translation providers initialized', 'info');
   });

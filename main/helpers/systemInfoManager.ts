@@ -10,6 +10,7 @@ import path from 'path';
 import { getTempDir } from './fileUtils';
 import { logMessage } from './storeManager';
 import { testTranslation } from '../translate';
+import { getBuildInfo } from './buildInfo';
 
 let downloadingModels = new Set<string>();
 
@@ -19,6 +20,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       modelsInstalled: getModelsInstalled(),
       modelsPath: getPath('modelsPath'),
       downloadingModels: Array.from(downloadingModels),
+      buildInfo: getBuildInfo(),
     };
   });
 

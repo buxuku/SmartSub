@@ -227,7 +227,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                             onValueChange={(value) =>
                               field.onChange(Number(value))
                             }
-                            value={String(field.value || -1)}
+                            value={String(field.value ?? -1)}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder={t('pleaseSelect')} />
