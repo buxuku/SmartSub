@@ -191,7 +191,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     )}
                   />
                 </div>
-                
+
                 <div className="grid gap-3">
                   <FormField
                     control={form.control}
@@ -311,9 +311,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                       <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
                         <div className="space-y-0.5">
                           <FormLabel>{t('saveAudio')}</FormLabel>
-                          <FormDescription>
-                            {t('saveAudioTip')}
-                          </FormDescription>
+                          <FormDescription>{t('saveAudioTip')}</FormDescription>
                         </div>
                         <FormControl>
                           <Switch
@@ -369,6 +367,42 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     )}
                   />
                 </div>
+                {taskType === 'translateOnly' && (
+                  <div className="grid gap-3">
+                    <FormField
+                      control={form.control}
+                      name="sourceLanguage"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('originalLanguage')}</FormLabel>
+                          <FormControl>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder={t('pleaseSelect')} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={'auto'}>
+                                  {t('autoRecognition')}
+                                </SelectItem>
+                                {supportedLanguage.map((item) => (
+                                  <SelectItem
+                                    key={item.value}
+                                    value={item.value}
+                                  >
+                                    {tCommon(`language.${item.value}`)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                )}
                 <div className="grid gap-3">
                   <div className="grid gap-3">
                     <FormField
@@ -550,10 +584,10 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
 // 任务类型卡片组件
 const TaskTypeCard = ({ title, description, value, selected, onClick }) => {
   return (
-    <Card 
+    <Card
       className={cn(
-        "p-2 cursor-pointer transition-all hover:shadow-md border-1", 
-        selected ? "bg-primary/5" : "border-transparent"
+        'p-2 cursor-pointer transition-all hover:shadow-md border-1',
+        selected ? 'bg-primary/5' : 'border-transparent'
       )}
       onClick={onClick}
     >
