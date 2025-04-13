@@ -17,6 +17,8 @@ export type StoreType = {
     useCuda: boolean;
     modelsPath: string;
     maxContext?: number;
+    useCustomTempDir?: boolean;
+    customTempDir?: string;
   };
   providerVersion?: number;
   logs: LogEntry[];

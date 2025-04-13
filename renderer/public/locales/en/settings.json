@@ -56,5 +56,7 @@
   "maxContext": "Maximum Context Length",
   "maxContextTip": "Controls the context length when Whisper processes audio. Default is -1. If you experience subtitle repetition issues, try setting this to 0.",
   "maxContextPlaceholder": "Enter maximum context length...",
-  "numberInputTip": "Please enter a valid number"
+  "numberInputTip": "Please enter a valid number",
+  "useCustomTempDir": "Use custom temporary directory, please avoid using Chinese paths, and manually clean up the custom temporary directory to avoid accidental deletion of files",
+  "useCustomTempDirDisabled": "Custom temporary directory is disabled"
 }

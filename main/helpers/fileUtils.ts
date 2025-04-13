@@ -2,7 +2,7 @@ import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { createHash } from 'crypto';
-import { logMessage } from './storeManager';
+import { logMessage, store } from './storeManager';
 
 /**
  * 计算字符串的MD5哈希值
@@ -15,6 +15,24 @@ export function getMd5(str: string) {
  * 获取临时目录路径
  */
 export function getTempDir() {
+  const settings = store.get('settings');
+  
+  // 判断是否使用自定义临时目录
+  if (settings.useCustomTempDir && settings.customTempDir) {
+    // 确保自定义目录存在
+    const customDir = settings.customTempDir as string;
+    if (!fs.existsSync(customDir)) {
+      try {
+        fs.mkdirSync(customDir, { recursive: true });
+      } catch (error) {
+        logMessage(`无法创建自定义临时目录: ${error.message}，将使用默认临时目录`, 'error');
+        return path.join(app.getPath('temp'), 'whisper-subtitles');
+      }
+    }
+    return customDir;
+  }
+  
+  // 默认临时目录
   return path.join(app.getPath('temp'), 'whisper-subtitles');
 }
 

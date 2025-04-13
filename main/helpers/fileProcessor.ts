@@ -75,6 +75,7 @@ export async function processFile(event, file, formData, hasOpenAiWhisper, provi
     customSourceSrtFileName,
     translateProvider,
     saveAudio,
+    taskType,
   } = formData || {};
   
   try {
@@ -85,10 +86,16 @@ export async function processFile(event, file, formData, hasOpenAiWhisper, provi
 
     const isSubtitleFile = ['.srt', '.vtt', '.ass', '.ssa'].includes(fileExtension);
     let srtFile = filePath;
-    logMessage(`begin process ${fileName}`, 'info');
+    logMessage(`begin process ${fileName} with task type: ${taskType}`, 'info');
 
-    // 处理非字幕文件
-    if (!isSubtitleFile) {
+    // 确定是否需要生成字幕
+    const shouldGenerateSubtitle = taskType === 'generateAndTranslate' || taskType === 'generateOnly';
+    
+    // 确定是否需要翻译字幕
+    const shouldTranslateSubtitle = taskType === 'generateAndTranslate' || taskType === 'translateOnly';
+
+    // 处理非字幕文件 - 需要生成字幕的情况
+    if (!isSubtitleFile && shouldGenerateSubtitle) {
       const templateData = { fileName, sourceLanguage, targetLanguage };
 
       const sourceSrtFileName = getSrtFileName(
@@ -131,7 +138,7 @@ export async function processFile(event, file, formData, hasOpenAiWhisper, provi
         // 这里只需要继续抛出错误，中断后续流程
         throw error;
       }
-    } else {
+    } else if (isSubtitleFile) {
       // 处理字幕文件
       try {
         event.sender.send('taskStatusChange', file, 'prepareSubtitle', 'loading');
@@ -141,10 +148,15 @@ export async function processFile(event, file, formData, hasOpenAiWhisper, provi
         onError(event, file, 'prepareSubtitle', error);
         throw error;
       }
+    } else if (!isSubtitleFile && !shouldGenerateSubtitle) {
+      // 非字幕文件且不需要生成字幕的情况（只翻译模式下传入了视频文件）
+      const errorMsg = '只翻译模式下不能处理视频文件，请提供字幕文件';
+      onError(event, file, 'processFile', new Error(errorMsg));
+      throw new Error(errorMsg);
     }
 
     // 翻译字幕
-    if (translateProvider !== '-1') {
+    if (shouldTranslateSubtitle && translateProvider !== '-1') {
       logMessage(`translate subtitle ${srtFile}`, 'info');
       await translateSubtitle(
         event,
@@ -158,7 +170,7 @@ export async function processFile(event, file, formData, hasOpenAiWhisper, provi
     }
 
     // 清理临时文件
-    if (!isSubtitleFile && sourceSrtSaveOption === 'noSave') {
+    if (!isSubtitleFile && sourceSrtSaveOption === 'noSave' && shouldGenerateSubtitle) {
       logMessage(`delete temp subtitle ${srtFile}`, 'warning');
       fs.unlink(srtFile, (err) => {
         if (err) console.log(err);
