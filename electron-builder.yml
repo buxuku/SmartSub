@@ -11,15 +11,12 @@ files:
       - app
 publish:
   - provider: github
-    channel: latest
-generateUpdatesFilesForAllChannels: true
 electronUpdaterCompatibility: ">=2.16"
 mac:
   target:
     - zip
     - dmg
   artifactName: "${productName}_Mac_${version}_${arch}.${ext}"
-  generateUpdatesFilesForAllChannels: true
   publish:
     - provider: github
       channel: latest-${arch}
