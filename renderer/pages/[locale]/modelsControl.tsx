@@ -21,10 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  getModelDownloadUrl,
-  models,
-} from 'lib/utils';
+import { getModelDownloadUrl, models } from 'lib/utils';
 import { Button } from '@/components/ui/button';
 import { ISystemInfo } from '../../types';
 import DeleteModel from '@/components/DeleteModel';
@@ -44,7 +41,7 @@ import useLocalStorageState from 'hooks/useLocalStorageState';
 
 export enum DownSource {
   HuggingFace = 'huggingface',
-  HfMirror = 'hf-mirror'
+  HfMirror = 'hf-mirror',
 }
 
 const ModelsControl = () => {
@@ -55,10 +52,10 @@ const ModelsControl = () => {
     modelsPath: '',
   });
   const [downSource, setDownSource] = useLocalStorageState<DownSource>(
-		'downSource',
-		DownSource.HuggingFace,
-		val => Object.values(DownSource).includes(val as DownSource)
-	);
+    'downSource',
+    DownSource.HuggingFace,
+    (val) => Object.values(DownSource).includes(val as DownSource),
+  );
 
   useEffect(() => {
     updateSystemInfo();
@@ -140,7 +137,7 @@ const ModelsControl = () => {
               <TableHead className="w-[230px]">{t('modelName')}</TableHead>
               <TableHead>{t('downloadLink')}</TableHead>
               <TableHead>{t('size')}</TableHead>
-              <TableHead className='w-[150px]'>{t('operation')}</TableHead>
+              <TableHead className="w-[150px]">{t('operation')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="max-h-[80vh]">
@@ -153,7 +150,7 @@ const ModelsControl = () => {
                       <span className="mr-2 text-sm">
                         {getModelDownloadUrl(
                           model.name,
-                          source as 'hf-mirror' | 'huggingface'
+                          source as 'hf-mirror' | 'huggingface',
                         )}
                       </span>
                       <TooltipProvider>
@@ -165,8 +162,8 @@ const ModelsControl = () => {
                                 copyToClipboard(
                                   getModelDownloadUrl(
                                     model.name,
-                                    source as 'hf-mirror' | 'huggingface'
-                                  )
+                                    source as 'hf-mirror' | 'huggingface',
+                                  ),
                                 )
                               }
                             />
