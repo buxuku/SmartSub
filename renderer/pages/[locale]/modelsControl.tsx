@@ -40,6 +40,12 @@ import {
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
+import useLocalStorageState from 'hooks/useLocalStorageState';
+
+export enum DownSource {
+  HuggingFace = 'huggingface',
+  HfMirror = 'hf-mirror'
+}
 
 const ModelsControl = () => {
   const { t } = useTranslation('modelsControl');
@@ -48,7 +54,11 @@ const ModelsControl = () => {
     downloadingModels: [],
     modelsPath: '',
   });
-  const [downSource, setDownSource] = useState('huggingface');
+  const [downSource, setDownSource] = useLocalStorageState<DownSource>(
+		'downSource',
+		DownSource.HuggingFace,
+		val => Object.values(DownSource).includes(val as DownSource)
+	);
 
   useEffect(() => {
     updateSystemInfo();
@@ -63,7 +73,7 @@ const ModelsControl = () => {
     systemInfo?.modelsInstalled?.includes(name.toLowerCase());
 
   const handleDownSource = (value: string) => {
-    setDownSource(value);
+    setDownSource(value as DownSource);
   };
 
   const handleImportModel = async () => {
@@ -107,7 +117,7 @@ const ModelsControl = () => {
           <span className="float-right mt-4 flex items-center">
             <span>{t('switchDownloadSource')}:</span>
             <Select onValueChange={handleDownSource} value={downSource}>
-              <SelectTrigger className="w-[250px]">
+              <SelectTrigger className="w-[250px] ml-2">
                 <SelectValue placeholder={t('switchDownloadSource')} />
               </SelectTrigger>
               <SelectContent>
@@ -130,7 +140,7 @@ const ModelsControl = () => {
               <TableHead className="w-[230px]">{t('modelName')}</TableHead>
               <TableHead>{t('downloadLink')}</TableHead>
               <TableHead>{t('size')}</TableHead>
-              <TableHead>{t('operation')}</TableHead>
+              <TableHead className='w-[150px]'>{t('operation')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="max-h-[80vh]">
