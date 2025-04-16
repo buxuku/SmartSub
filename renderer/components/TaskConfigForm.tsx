@@ -198,7 +198,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     name="prompt"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>
+                        <FormLabel className='flex items-center'>
                           {t('prompt')} <ToolTips text={t('promptTips')} />
                         </FormLabel>
                         <FormControl>
@@ -218,7 +218,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     name="maxContext"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>
+                        <FormLabel className='flex items-center'>
                           {t('maxContext')}
                           <ToolTips text={t('maxContextTip')} />
                         </FormLabel>
@@ -250,7 +250,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     name="sourceSrtSaveOption"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>
+                        <FormLabel className='flex items-center'>
                           {t('sourceSubtitleSaveSettings')}
                           <SavePathNotice />
                         </FormLabel>
