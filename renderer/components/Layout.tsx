@@ -128,7 +128,7 @@ const Layout = ({ children }) => {
                   onClick={() =>
                     openUrl('https://github.com/buxuku/SmartSub')
                   }
-                  className="inline-block cursor-pointer"
+                  className="size-5 inline-block cursor-pointer"
                 />
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={5}>
