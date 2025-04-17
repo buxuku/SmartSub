@@ -1,5 +1,5 @@
 import React from 'react';
-import { Info } from 'lucide-react';
+import { CircleHelp } from 'lucide-react';
 import {
     Popover,
     PopoverContent,
@@ -12,7 +12,7 @@ const SavePathNotice = () => {
     return (
         <Popover>
             <PopoverTrigger>
-                <Info className="size-4 ml-4" />
+                <CircleHelp className="size-4 ml-2" />
             </PopoverTrigger>
             <PopoverContent className="w-[600px]">
                 <div className="grid gap-4">
