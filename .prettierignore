@@ -1,0 +1,5 @@
+.git/
+/app/
+dist/
+node_modules/
+/renderer/components/ui/
