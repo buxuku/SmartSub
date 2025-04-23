@@ -4,20 +4,272 @@
  */
 
 .heroBanner {
-  padding: 4rem 0;
-  text-align: center;
+  padding: 6rem 0;
+  text-align: left;
   position: relative;
   overflow: hidden;
 }
 
-@media screen and (max-width: 996px) {
-  .heroBanner {
-    padding: 2rem;
-  }
+.heroContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+}
+
+.heroText {
+  flex: 1;
+  max-width: 600px;
+}
+
+.heroImage {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.heroImage img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.heroTitle {
+  font-size: 3rem;
+  font-weight: 800;
+  margin-bottom: 1rem;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+}
+
+.heroHighlight {
+  background: linear-gradient(90deg, var(--ifm-color-primary) 0%, var(--ifm-color-primary-light) 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.heroSubtitle {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--ifm-color-emphasis-800);
+}
+
+.heroDescription {
+  font-size: 1.1rem;
+  margin-bottom: 2rem;
+  color: var(--ifm-color-emphasis-700);
+  line-height: 1.6;
 }
 
 .buttons {
   display: flex;
   align-items: center;
+  gap: 1rem;
+}
+
+.buttonPrimary {
+  background: linear-gradient(90deg, var(--ifm-color-primary) 0%, var(--ifm-color-primary-light) 100%);
+  border: none;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.buttonPrimary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(67, 97, 238, 0.3);
+}
+
+.buttonSecondary {
+  border-color: var(--ifm-color-primary);
+  color: var(--ifm-color-primary);
+  transition: transform 0.3s ease, background-color 0.3s ease;
+}
+
+.buttonSecondary:hover {
+  transform: translateY(-2px);
+  background-color: rgba(67, 97, 238, 0.05);
+}
+
+/* 工作流程部分 */
+.workflow {
+  padding: 6rem 0;
+  background-color: var(--ifm-background-surface-color);
+}
+
+.sectionHeader {
+  text-align: center;
+  margin-bottom: 4rem;
+}
+
+.sectionTitle {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  background: linear-gradient(90deg, var(--ifm-color-primary) 0%, var(--ifm-color-primary-light) 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.sectionSubtitle {
+  font-size: 1.1rem;
+  max-width: 600px;
+  margin: 0 auto;
+  color: var(--ifm-color-emphasis-700);
+}
+
+.workflowSteps {
+  display: flex;
+  justify-content: space-between;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+.workflowStep {
+  flex: 1;
+  min-width: 200px;
+  text-align: center;
+  padding: 2rem;
+  border-radius: 1rem;
+  background-color: var(--ifm-background-color);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.workflowStep:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.stepNumber {
+  display: flex;
+  align-items: center;
   justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--ifm-color-primary) 0%, var(--ifm-color-primary-light) 100%);
+  color: white;
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 auto 1.5rem;
+}
+
+.stepTitle {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.stepDescription {
+  color: var(--ifm-color-emphasis-700);
+}
+
+/* 平台支持部分 */
+.platforms {
+  padding: 6rem 0;
+}
+
+.platformCards {
+  display: flex;
+  justify-content: space-between;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+.platformCard {
+  flex: 1;
+  min-width: 250px;
+  text-align: center;
+  padding: 3rem 2rem;
+  border-radius: 1rem;
+  background-color: var(--ifm-background-surface-color);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.platformCard:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.platformIcon {
+  font-size: 3rem;
+  color: var(--ifm-color-primary);
+  margin-bottom: 1.5rem;
+}
+
+.platformTitle {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.platformDescription {
+  color: var(--ifm-color-emphasis-700);
+}
+
+/* CTA 部分 */
+.cta {
+  padding: 6rem 0;
+  background: linear-gradient(135deg, rgba(67, 97, 238, 0.1) 0%, rgba(107, 137, 255, 0.05) 100%);
+}
+
+.ctaContent {
+  max-width: 800px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.ctaTitle {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+}
+
+.ctaDescription {
+  font-size: 1.25rem;
+  color: var(--ifm-color-emphasis-700);
+  margin-bottom: 2.5rem;
+}
+
+.ctaButtons {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+}
+
+/* 响应式调整 */
+@media screen and (max-width: 996px) {
+  .heroBanner {
+    padding: 4rem 2rem;
+    text-align: center;
+  }
+
+  .heroContent {
+    flex-direction: column;
+  }
+
+  .heroText {
+    max-width: 100%;
+  }
+
+  .buttons {
+    justify-content: center;
+  }
+
+  .workflowSteps {
+    flex-direction: column;
+  }
+
+  .platformCards {
+    flex-direction: column;
+  }
+
+  .ctaButtons {
+    flex-direction: column;
+    align-items: center;
+  }
 }

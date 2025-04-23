@@ -60,6 +60,13 @@ const config: Config = {
     ],
   ],
 
+  // 添加字体样式表
+  stylesheets: [
+    'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap',
+    'https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&display=swap',
+    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
+  ],
+
   themeConfig: {
     // Replace with your project's social card
     image: 'img/docusaurus-social-card.jpg',

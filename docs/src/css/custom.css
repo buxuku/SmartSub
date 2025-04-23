@@ -6,25 +6,62 @@
 
 /* You can override the default Infima variables here. */
 :root {
-  --ifm-color-primary: #2e8555;
-  --ifm-color-primary-dark: #29784c;
-  --ifm-color-primary-darker: #277148;
-  --ifm-color-primary-darkest: #205d3b;
-  --ifm-color-primary-light: #33925d;
-  --ifm-color-primary-lighter: #359962;
-  --ifm-color-primary-lightest: #3cad6e;
+  --ifm-color-primary: #4361ee;
+  --ifm-color-primary-dark: #2749eb;
+  --ifm-color-primary-darker: #183fea;
+  --ifm-color-primary-darkest: #1333c9;
+  --ifm-color-primary-light: #5f79f1;
+  --ifm-color-primary-lighter: #6e85f2;
+  --ifm-color-primary-lightest: #9aabf6;
+  
+  --ifm-color-success: #38b2ac;
+  --ifm-color-info: #4299e1;
+  --ifm-color-warning: #ed8936;
+  --ifm-color-danger: #e53e3e;
+  
   --ifm-code-font-size: 95%;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  
+  --ifm-font-family-base: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --ifm-font-family-monospace: 'Fira Code', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  
+  --ifm-heading-font-weight: 700;
+  --ifm-navbar-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --ifm-global-spacing: 1.5rem;
+  --ifm-line-height-base: 1.65;
 }
 
 /* For readability concerns, you should choose a lighter palette in dark mode. */
 [data-theme='dark'] {
-  --ifm-color-primary: #25c2a0;
-  --ifm-color-primary-dark: #21af90;
-  --ifm-color-primary-darker: #1fa588;
-  --ifm-color-primary-darkest: #1a8870;
-  --ifm-color-primary-light: #29d5b0;
-  --ifm-color-primary-lighter: #32d8b4;
-  --ifm-color-primary-lightest: #4fddbf;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-color-primary: #6d8aff;
+  --ifm-color-primary-dark: #4a70ff;
+  --ifm-color-primary-darker: #3963ff;
+  --ifm-color-primary-darkest: #0539ff;
+  --ifm-color-primary-light: #90a4ff;
+  --ifm-color-primary-lighter: #a1b1ff;
+  --ifm-color-primary-lightest: #d5dbff;
+  
+  --ifm-background-color: #171923;
+  --ifm-background-surface-color: #1a202c;
+  --ifm-navbar-background-color: rgba(26, 32, 44, 0.8);
+  --ifm-footer-background-color: #171923;
+  
+  --docusaurus-highlighted-code-line-bg: rgba(255, 255, 255, 0.1);
+}
+
+.hero {
+  background: radial-gradient(circle at 10% 20%, rgba(91, 120, 255, 0.13) 0%, rgba(60, 80, 250, 0.05) 95.8%);
+}
+
+[data-theme='dark'] .hero {
+  background: radial-gradient(circle at 10% 20%, rgba(91, 120, 255, 0.10) 0%, rgba(60, 80, 250, 0.03) 95.8%);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* 添加平滑过渡效果 */
+* {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
