@@ -98,7 +98,7 @@
   "startNow": "尽享开始吧",
   "pathConfigTitle": "文件名配置说明",
   "pathConfigDesc": "如果不确定如何配置,请保持默认设置。",
-  "pathConfigDemo": "<p>文件名配置中支持${fileName}, ${sourceLanguage}, ${targetLanguage}, ${model}, ${translateProvider} 等变量</p><p>${fileName} 代表当前处理的文件的文件名</p><p>${sourceLanguage} 代表配置的视频源语言</p><p>${targetLanguage} 代表配置的翻译目标语言</p><p>${model} 代表配置的模型</p><p>${translateProvider} 代表配置的翻译服务ID</p><p>如一个视频名为 demo.mp4 的文件，源语言为英文，翻译语言为中文，配置路径为 ${fileName}.${targetLanguage}</p><p>则生成出来的字幕文件名为： demo.zh.srt</p>",
+  "pathConfigDemo": "<p>文件名配置中支持${fileName}, ${sourceLanguage}, ${targetLanguage}, ${model}, ${translateProvider} 等变量</p><p>${fileName} 代表当前处理的文件的文件名</p><p>${sourceLanguage} 代表配置的视频源语言</p><p>${targetLanguage} 代表配置的翻译目标语言</p><p>${model} 代表配置的模型</p><p>${translateProvider} 代表配置的翻译服务名称</p><p>如一个视频名为 demo.mp4 的文件，源语言为英文，翻译语言为中文，配置路径为 ${fileName}.${targetLanguage}</p><p>则生成出来的字幕文件名为： demo.zh.srt</p>",
   "Error: missingKeyOrSecret": "请先配置 API KEY 和 API SECRET",
   "viewLogs": "查看日志",
   "logs": "日志",
