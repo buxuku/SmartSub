@@ -97,7 +97,7 @@ export async function processFile(event, file, formData, hasOpenAiWhisper, provi
 
     // 处理非字幕文件 - 需要生成字幕的情况
     if (!isSubtitleFile && shouldGenerateSubtitle) {
-      const templateData = { fileName, sourceLanguage, targetLanguage, model, translateProvider };
+      const templateData = { fileName, sourceLanguage, targetLanguage, model, translateProvider: provider.name };
 
       const sourceSrtFileName = getSrtFileName(
         sourceSrtSaveOption,

@@ -37,7 +37,7 @@ export default async function translate(
     const data = await readFileContent(absolutePath);
     const subtitles = parseSubtitles(data);
 
-    const templateData = { fileName, sourceLanguage, targetLanguage, model: '', translateProvider: provider.type };
+    const templateData = { fileName, sourceLanguage, targetLanguage, model: '', translateProvider: provider.name };
     const targetSrtFileName = getSrtFileName(
       targetSrtSaveOption,
       fileName,
