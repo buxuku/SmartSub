@@ -76,8 +76,8 @@
   "noLimit": "尽可能关联上下文语义(-1)",
   "noContext": "尽可能减少字幕重复问题(0)",
   "importSubtitles": "导入字幕",
-  "dragSubtitleHere": "拖放字幕文件到这里，或者点击上传",
-  "dragMediaHere": "拖放媒体文件到这里，或者点击上传",
+  "dragSubtitleHere": "拖放字幕文件或目录到这里，或者点击上传",
+  "dragMediaHere": "拖放媒体文件或目录到这里，或者点击上传",
   "supportedSubtitleFormats": "支持的字幕格式：SRT",
   "supportedMediaFormats": "支持的媒体格式：MP4, AVI, MKV, MOV, MP3, WAV"
 }

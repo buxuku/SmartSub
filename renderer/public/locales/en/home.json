@@ -70,8 +70,8 @@
   "noLimit": "Maximize context semantic(-1)",
   "noContext": "Minimize subtitle repetition(0)",
   "importSubtitles": "Import Subtitles",
-  "dragSubtitleHere": "Drag subtitle files here, or click to upload",
-  "dragMediaHere": "Drag media files here, or click to upload",
+  "dragSubtitleHere": "Drag subtitle files or folders here, or click to upload",
+  "dragMediaHere": "Drag media files or folders here, or click to upload",
   "supportedSubtitleFormats": "Supported subtitle formats: SRT",
   "supportedMediaFormats": "Supported media formats: MP4, AVI, MKV, MOV, MP3, WAV"
 }
