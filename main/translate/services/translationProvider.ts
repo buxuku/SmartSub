@@ -4,7 +4,7 @@ import {
   Subtitle,
   TranslatorFunction,
 } from '../types';
-import { handleAISingleTranslation, handleAIBatchTranslation } from './ai';
+import { handleAIBatchTranslation } from './ai';
 import { handleAPIBatchTranslation } from './api';
 import { logMessage } from '../../helpers/storeManager';
 import {
@@ -37,6 +37,7 @@ export async function translateWithProvider(
   targetLanguage: string,
   translator: TranslatorFunction,
   onProgress?: (progress: number) => void,
+  onTranslationResult?: (result: TranslationResult) => Promise<void>,
 ): Promise<TranslationResult[] | string[]> {
   const config = {
     provider,
@@ -56,6 +57,7 @@ export async function translateWithProvider(
       config,
       +(provider.batchSize || DEFAULT_BATCH_SIZE.AI),
       onProgress,
+      onTranslationResult,
     );
   }
 
@@ -64,5 +66,6 @@ export async function translateWithProvider(
     config,
     +(provider.batchSize || DEFAULT_BATCH_SIZE.API),
     onProgress,
+    onTranslationResult,
   );
 }

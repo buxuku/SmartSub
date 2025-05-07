@@ -58,22 +58,7 @@ export default async function translate(
     const fileSave = path.join(folder, `${targetSrtFileName}.srt`);
     await createOrClearFile(fileSave);
 
-    const results = await translateWithProvider(
-      provider,
-      subtitles,
-      sourceLanguage,
-      targetLanguage,
-      translator,
-      onProgress,
-    );
-
-    //   if (provider.isAi && provider.useBatchTranslation) {
-    // logMessage(`append to file ${fileSave}`)
-    //     await appendToFile(fileSave, (results as string[]).join('\n'));
-    //     return true;
-    //   }
-
-    for (const result of results as TranslationResult[]) {
+    const handleTranslationResult = async (result: TranslationResult) => {
       const content = `${result.id}\n${result.startEndTime}\n${renderTemplate(
         renderContentTemplate,
         {
@@ -83,7 +68,17 @@ export default async function translate(
       )}`;
       logMessage(`append to file ${fileSave}`);
       await appendToFile(fileSave, content);
-    }
+    };
+
+    await translateWithProvider(
+      provider,
+      subtitles,
+      sourceLanguage,
+      targetLanguage,
+      translator,
+      onProgress,
+      handleTranslationResult,
+    );
 
     logMessage('Translation completed', 'info');
     return true;
