@@ -326,8 +326,9 @@ export const filterSupportedFiles = (files: File[]) => {
 };
 
 function fileStatusGetters(file: ITaskFile) {
+  const { taskType, extractAudio, extractSubtitle, translateSubtitle } = file;
+
   function running(): boolean {
-    const { extractAudio, extractSubtitle, translateSubtitle } = file;
     return !ended() && !!(extractAudio || extractSubtitle || translateSubtitle);
   }
 
@@ -336,7 +337,6 @@ function fileStatusGetters(file: ITaskFile) {
   }
 
   function succeed(): boolean {
-    const { taskType, extractAudio, extractSubtitle, translateSubtitle } = file;
     if (taskType === 'generateOnly')
       return extractAudio === 'done' && extractSubtitle === 'done';
     if (taskType === 'translateOnly') return translateSubtitle === 'done';
@@ -349,7 +349,6 @@ function fileStatusGetters(file: ITaskFile) {
   }
 
   function failed(): boolean {
-    const { extractAudio, extractSubtitle, translateSubtitle } = file;
     return (
       extractAudio === 'error' ||
       extractSubtitle === 'error' ||
