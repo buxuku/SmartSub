@@ -7,7 +7,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { BotIcon, FileVideo2, Github, MonitorPlay, Languages, Settings } from 'lucide-react';
+import {
+  BotIcon,
+  FileVideo2,
+  Github,
+  MonitorPlay,
+  Languages,
+  Settings,
+} from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { openUrl } from 'lib/utils';
 import { useRouter } from 'next/router';
@@ -16,9 +23,11 @@ import { Toaster } from '@/components/ui/sonner';
 import { useTranslation } from 'next-i18next';
 import packageInfo from '../../package.json';
 
-
 const Layout = ({ children }) => {
-  const { t, i18n: { language: locale } } = useTranslation('common');
+  const {
+    t,
+    i18n: { language: locale },
+  } = useTranslation('common');
   const { asPath } = useRouter();
   useEffect(() => {
     window?.ipc?.on('message', (res: string) => {
@@ -125,9 +134,7 @@ const Layout = ({ children }) => {
             <Tooltip>
               <TooltipTrigger asChild className="w-10">
                 <Github
-                  onClick={() =>
-                    openUrl('https://github.com/buxuku/SmartSub')
-                  }
+                  onClick={() => openUrl('https://github.com/buxuku/SmartSub')}
                   className="size-5 inline-block cursor-pointer"
                 />
               </TooltipTrigger>
@@ -141,7 +148,10 @@ const Layout = ({ children }) => {
       <div className="flex flex-col">
         <header className="sticky top-0 z-10 flex h-[57px] items-center gap-1 border-b bg-background px-4">
           <h4 className="text-base font-semibold">
-            {t('headerTitle')} <span className="text-xs text-gray-500 ml-2">v{packageInfo.version}</span>
+            {t('headerTitle')}{' '}
+            <span className="text-xs text-gray-500 ml-2">
+              v{packageInfo.version}
+            </span>
           </h4>
         </header>
         <main className="">{children}</main>

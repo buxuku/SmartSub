@@ -11,30 +11,30 @@ files:
       - app
 publish:
   - provider: github
-electronUpdaterCompatibility: ">=2.16"
+electronUpdaterCompatibility: '>=2.16'
 mac:
   target:
     - zip
     - dmg
-  artifactName: "${productName}_Mac_${version}_${arch}.${ext}"
+  artifactName: '${productName}_Mac_${version}_${arch}.${ext}'
   publish:
     - provider: github
       channel: latest-${arch}
   extraResources:
-  - from: ./extraResources/addons/
-    to: ./extraResources/addons/
-    filter:
-      - "**/*"
+    - from: ./extraResources/addons/
+      to: ./extraResources/addons/
+      filter:
+        - '**/*'
 win:
-  target: 
+  target:
     - nsis
   extraResources:
-  - from: ./extraResources/addons/
-    to: ./extraResources/addons/
-    filter:
-      - "**/*"
+    - from: ./extraResources/addons/
+      to: ./extraResources/addons/
+      filter:
+        - '**/*'
   requestedExecutionLevel: asInvoker
-  artifactName: "${productName}_Windows_${version}_${arch}_${env.CUDA_VERSION}_${env.CUDA_OPT}.${ext}"
+  artifactName: '${productName}_Windows_${version}_${arch}_${env.CUDA_VERSION}_${env.CUDA_OPT}.${ext}'
   publish:
     - provider: github
       channel: latest-${arch}-${env.CUDA_VERSION}-${env.CUDA_OPT}
@@ -44,18 +44,18 @@ linux:
     - tar.gz
     - deb
   category: AudioVideo
-  artifactName: "${productName}_Linux_${version}_${arch}.${ext}"
+  artifactName: '${productName}_Linux_${version}_${arch}.${ext}'
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
   deleteAppDataOnUninstall: false
 asarUnpack:
-  - "node_modules/ffmpeg-static/bin/${os}/${arch}/ffmpeg"
-  - "node_modules/ffmpeg-static/index.js"
-  - "node_modules/ffmpeg-static/package.json"
-  - "node_modules/ffmpeg-static/ffmpeg"
-  - "node_modules/ffmpeg-static/ffmpeg.exe"
-  - "node_modules/ffmpeg-static/ffmpeg.macos"
-  - "node_modules/ffmpeg-static/ffmpeg.linux"
-  - "node_modules/ffmpeg-static/ffmpeg.win32"
+  - 'node_modules/ffmpeg-static/bin/${os}/${arch}/ffmpeg'
+  - 'node_modules/ffmpeg-static/index.js'
+  - 'node_modules/ffmpeg-static/package.json'
+  - 'node_modules/ffmpeg-static/ffmpeg'
+  - 'node_modules/ffmpeg-static/ffmpeg.exe'
+  - 'node_modules/ffmpeg-static/ffmpeg.macos'
+  - 'node_modules/ffmpeg-static/ffmpeg.linux'
+  - 'node_modules/ffmpeg-static/ffmpeg.win32'

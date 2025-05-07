@@ -36,7 +36,7 @@ export async function translateWithProvider(
   sourceLanguage: string,
   targetLanguage: string,
   translator: TranslatorFunction,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
 ): Promise<TranslationResult[] | string[]> {
   const config = {
     provider,
@@ -47,17 +47,22 @@ export async function translateWithProvider(
 
   logMessage(
     `Translation started with provider: ${JSON.stringify(provider, null, 2)}`,
-    'info'
+    'info',
   );
   onProgress && onProgress(0);
   if (provider.isAi) {
     return handleAIBatchTranslation(
-        subtitles,
-        config,
-        +(provider.batchSize || DEFAULT_BATCH_SIZE.AI),
-        onProgress
-      );
+      subtitles,
+      config,
+      +(provider.batchSize || DEFAULT_BATCH_SIZE.AI),
+      onProgress,
+    );
   }
 
-  return handleAPIBatchTranslation(subtitles, config, +(provider.batchSize || DEFAULT_BATCH_SIZE.API), onProgress);
+  return handleAPIBatchTranslation(
+    subtitles,
+    config,
+    +(provider.batchSize || DEFAULT_BATCH_SIZE.API),
+    onProgress,
+  );
 }

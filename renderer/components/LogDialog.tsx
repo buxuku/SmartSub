@@ -21,7 +21,7 @@ export function LogDialog({ open, onOpenChange }) {
 
     // 监听新日志
     const handleNewLog = (log: LogEntry) => {
-      setLogs(prev => [...prev, log]);
+      setLogs((prev) => [...prev, log]);
       // 使用 requestAnimationFrame 确保在下一帧更新滚动位置
       requestAnimationFrame(() => {
         if (scrollRef.current) {
@@ -50,13 +50,14 @@ export function LogDialog({ open, onOpenChange }) {
         <ScrollArea ref={scrollRef} className="h-[60vh]">
           <div className="space-y-2 p-4 w-[700px] overflow-x-scroll">
             {logs.map((log, index) => (
-              <div
-                key={index}
-              >
+              <div key={index}>
                 <div
                   className={`text-sm whitespace-pre font-mono inline-block min-w-fit ${
-                    log?.type === 'error' ? 'text-red-500' :
-                    log?.type === 'warning' ? 'text-yellow-500' : 'text-gray-700'
+                    log?.type === 'error'
+                      ? 'text-red-500'
+                      : log?.type === 'warning'
+                        ? 'text-yellow-500'
+                        : 'text-gray-700'
                   }`}
                 >
                   <span className="text-gray-500">
@@ -77,4 +78,4 @@ export function LogDialog({ open, onOpenChange }) {
       </DialogContent>
     </Dialog>
   );
-} 
+}

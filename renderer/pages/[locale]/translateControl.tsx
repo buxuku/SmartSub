@@ -4,12 +4,24 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Plus, Trash2 } from 'lucide-react';
 import { ProviderForm } from '@/components/ProviderForm';
-import { Provider, PROVIDER_TYPES, CONFIG_TEMPLATES, defaultUserPrompt, defaultSystemPrompt } from '../../../types';
+import {
+  Provider,
+  PROVIDER_TYPES,
+  CONFIG_TEMPLATES,
+  defaultUserPrompt,
+  defaultSystemPrompt,
+} from '../../../types';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { cn } from 'lib/utils';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { toast } from "sonner";
+import { toast } from 'sonner';
 
 const TranslateControl: React.FC = () => {
   const { t } = useTranslation('translateControl');
@@ -34,9 +46,14 @@ const TranslateControl: React.FC = () => {
     }
   };
 
-  const handleInputChange = async (key: string, value: string | boolean | number) => {
+  const handleInputChange = async (
+    key: string,
+    value: string | boolean | number,
+  ) => {
     const updatedProviders = providers.map((provider) =>
-      provider.id === selectedProvider ? { ...provider, [key]: value } : provider
+      provider.id === selectedProvider
+        ? { ...provider, [key]: value }
+        : provider,
     );
     setProviders(updatedProviders);
     window?.ipc?.send('setTranslationProviders', updatedProviders);
@@ -50,22 +67,24 @@ const TranslateControl: React.FC = () => {
   };
 
   const getCurrentProvider = () => {
-    return providers.find(p => p.id === selectedProvider);
+    return providers.find((p) => p.id === selectedProvider);
   };
 
   const getCurrentProviderType = () => {
-    const provider = providers.find(p => p.id === selectedProvider);
-    const providerType = PROVIDER_TYPES.find(t => t.id === (provider?.type || selectedProvider));
-    
+    const provider = providers.find((p) => p.id === selectedProvider);
+    const providerType = PROVIDER_TYPES.find(
+      (t) => t.id === (provider?.type || selectedProvider),
+    );
+
     // 如果是自定义服务商，使用配置模板
     if (provider?.type === 'openai') {
       return {
         ...CONFIG_TEMPLATES.openai,
         name: provider.name,
-        icon: '🔌'
+        icon: '🔌',
       };
     }
-    
+
     return providerType;
   };
 
@@ -108,21 +127,21 @@ const TranslateControl: React.FC = () => {
   const handleTestTranslation = async () => {
     const currentProvider = getCurrentProvider();
     if (!currentProvider) return;
-  
+
     setIsTestLoading(true);
     try {
       const result = await window.ipc.invoke('testTranslation', {
         provider: currentProvider,
-        sourceLanguage: 'en',  // 默认使用英语作为源语言
-        targetLanguage: 'zh',  // 默认使用中文作为目标语言
+        sourceLanguage: 'en', // 默认使用英语作为源语言
+        targetLanguage: 'zh', // 默认使用中文作为目标语言
       });
-      
+
       toast.success(t('testSuccess'), {
-        description: result
+        description: result,
       });
     } catch (error) {
       toast.error(t('testFailed'), {
-        description: error.message
+        description: error.message,
       });
     } finally {
       setIsTestLoading(false);
@@ -135,7 +154,7 @@ const TranslateControl: React.FC = () => {
       <div className="w-64 border-r p-4 space-y-2">
         <div className="flex flex-col space-y-4">
           <h2 className="text-lg font-bold">{t('translationServices')}</h2>
-          
+
           {/* 添加新服务商按钮 */}
           <Button
             variant="outline"
@@ -152,54 +171,64 @@ const TranslateControl: React.FC = () => {
           <div className="text-sm font-medium text-muted-foreground mb-2">
             {t('builtinProviders')}
           </div>
-          {PROVIDER_TYPES.filter(t => t.isBuiltin).map((type) => (
+          {PROVIDER_TYPES.filter((t) => t.isBuiltin).map((type) => (
             <button
               key={type.id}
               onClick={() => handleProviderSelect(type.id)}
               className={cn(
-                "w-full text-left px-4 py-2 rounded-lg flex items-center space-x-2",
+                'w-full text-left px-4 py-2 rounded-lg flex items-center space-x-2',
                 selectedProvider === type.id
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-muted"
+                  ? 'bg-primary text-primary-foreground'
+                  : 'hover:bg-muted',
               )}
             >
-              <span className="text-xl">{type.iconImg ? (<img src={type.iconImg} className='w-5' />) : type.icon}</span>
-              <span>{commonT(`provider.${type.name}`, { defaultValue: type.name })}</span>
+              <span className="text-xl">
+                {type.iconImg ? (
+                  <img src={type.iconImg} className="w-5" />
+                ) : (
+                  type.icon
+                )}
+              </span>
+              <span>
+                {commonT(`provider.${type.name}`, { defaultValue: type.name })}
+              </span>
             </button>
           ))}
 
           {/* 自定义服务商 */}
-          {providers.filter(p => p.type === 'openai').length > 0 && (
+          {providers.filter((p) => p.type === 'openai').length > 0 && (
             <>
               <div className="text-sm font-medium text-muted-foreground mt-4 mb-2">
                 {t('customProviders')}
               </div>
-              {providers.filter(p => p.type === 'openai').map((provider) => (
-                <button
-                  key={provider.id}
-                  onClick={() => setSelectedProvider(provider.id)}
-                  className={cn(
-                    "w-full text-left px-4 py-2 rounded-lg flex items-center justify-between group",
-                    selectedProvider === provider.id
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-muted"
-                  )}
-                >
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xl">🔌</span>
-                    <span>{provider.name}</span>
-                  </div>
-                  <span
-                    className="opacity-0 group-hover:opacity-100"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemoveProvider(provider.id);
-                    }}
+              {providers
+                .filter((p) => p.type === 'openai')
+                .map((provider) => (
+                  <button
+                    key={provider.id}
+                    onClick={() => setSelectedProvider(provider.id)}
+                    className={cn(
+                      'w-full text-left px-4 py-2 rounded-lg flex items-center justify-between group',
+                      selectedProvider === provider.id
+                        ? 'bg-primary text-primary-foreground'
+                        : 'hover:bg-muted',
+                    )}
                   >
-                    <Trash2 size={14} />
-                  </span>
-                </button>
-              ))}
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xl">🔌</span>
+                      <span>{provider.name}</span>
+                    </div>
+                    <span
+                      className="opacity-0 group-hover:opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveProvider(provider.id);
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </span>
+                  </button>
+                ))}
             </>
           )}
         </div>
@@ -211,10 +240,23 @@ const TranslateControl: React.FC = () => {
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h1 className="text-2xl font-bold flex items-center space-x-2">
-                <span className="text-2xl">{getCurrentProviderType()?.iconImg ? <img src={getCurrentProviderType().iconImg} className='w-6' />: getCurrentProviderType()?.icon}</span>
-                <span>{commonT(`provider.${getCurrentProviderType().name}`, { defaultValue: getCurrentProviderType().name })}</span>
+                <span className="text-2xl">
+                  {getCurrentProviderType()?.iconImg ? (
+                    <img
+                      src={getCurrentProviderType().iconImg}
+                      className="w-6"
+                    />
+                  ) : (
+                    getCurrentProviderType()?.icon
+                  )}
+                </span>
+                <span>
+                  {commonT(`provider.${getCurrentProviderType().name}`, {
+                    defaultValue: getCurrentProviderType().name,
+                  })}
+                </span>
               </h1>
-              <Button 
+              <Button
                 variant="outline"
                 onClick={handleTestTranslation}
                 disabled={isTestLoading}
@@ -258,13 +300,19 @@ const TranslateControl: React.FC = () => {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setIsAddDialogOpen(false);
-              setNewProviderName('');
-            }}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsAddDialogOpen(false);
+                setNewProviderName('');
+              }}
+            >
               {t('cancel')}
             </Button>
-            <Button onClick={handleAddProvider} disabled={!newProviderName.trim()}>
+            <Button
+              onClick={handleAddProvider}
+              disabled={!newProviderName.trim()}
+            >
               {t('add')}
             </Button>
           </DialogFooter>
@@ -276,5 +324,8 @@ const TranslateControl: React.FC = () => {
 
 export default TranslateControl;
 
-export const getStaticProps = makeStaticProperties(['common', 'translateControl']);
+export const getStaticProps = makeStaticProperties([
+  'common',
+  'translateControl',
+]);
 export { getStaticPaths };

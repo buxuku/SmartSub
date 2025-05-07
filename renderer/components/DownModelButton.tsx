@@ -1,7 +1,7 @@
-import React, { FC } from "react";
-import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import { useTranslation } from "next-i18next";
+import React, { FC } from 'react';
+import { Button } from '@/components/ui/button';
+import { Loader2 } from 'lucide-react';
+import { useTranslation } from 'next-i18next';
 
 interface IProps {
   loading?: boolean;
@@ -16,11 +16,7 @@ const DownModelButton: FC<IProps> = ({
 }) => {
   const { t } = useTranslation('common');
   return (
-    <Button 
-      onClick={handleDownModel} 
-      variant="outline" 
-      disabled={loading}
-    >
+    <Button onClick={handleDownModel} variant="outline" disabled={loading}>
       {loading ? (
         <>
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />

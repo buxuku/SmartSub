@@ -99,7 +99,7 @@ const Settings = () => {
         setUseCustomTempDir(settings.useCustomTempDir || false);
         setCustomTempDir(settings.customTempDir || '');
       }
-      
+
       // 获取临时目录路径
       const tempDirPath = await window?.ipc?.invoke('getTempDir');
       setTempDir(tempDirPath || '');
@@ -117,7 +117,6 @@ const Settings = () => {
       router.push(`/${value}/settings`);
     }
   };
-
 
   const handleClearConfig = async () => {
     const result = await window?.ipc?.invoke('clearConfig');
@@ -147,10 +146,10 @@ const Settings = () => {
   const handleSelectModelsPath = async () => {
     const result = await window?.ipc?.invoke('selectDirectory');
     if (result.canceled) return;
-    
+
     const selectedPath = result.filePaths[0];
     setModelsPath(selectedPath);
-    
+
     try {
       await window?.ipc?.invoke('setSettings', { modelsPath: selectedPath });
       toast.success(t('modelPathSaved'));
@@ -163,14 +162,14 @@ const Settings = () => {
   const handleSelectCustomTempDir = async () => {
     const result = await window?.ipc?.invoke('selectDirectory');
     if (result.canceled) return;
-    
+
     const selectedPath = result.filePaths[0];
     setCustomTempDir(selectedPath);
-    
+
     try {
-      await window?.ipc?.invoke('setSettings', { 
-        customTempDir: selectedPath, 
-        useCustomTempDir: true 
+      await window?.ipc?.invoke('setSettings', {
+        customTempDir: selectedPath,
+        useCustomTempDir: true,
       });
       setUseCustomTempDir(true);
       toast.success(t('tempDirSaved'));
@@ -184,7 +183,9 @@ const Settings = () => {
     setUseCustomTempDir(checked);
     try {
       await window?.ipc?.invoke('setSettings', { useCustomTempDir: checked });
-      toast.success(checked ? t('useCustomTempDirEnabled') : t('useCustomTempDirDisabled'));
+      toast.success(
+        checked ? t('useCustomTempDirEnabled') : t('useCustomTempDirDisabled'),
+      );
     } catch (error) {
       toast.error(t('saveFailed'));
     }
@@ -303,10 +304,7 @@ const Settings = () => {
                 </Tooltip>
               </TooltipProvider>
             </div>
-            <Switch
-              checked={useCuda}
-              onCheckedChange={handleCudaChange}
-            />
+            <Switch checked={useCuda} onCheckedChange={handleCudaChange} />
           </div>
 
           <div className="space-y-2">
@@ -330,7 +328,11 @@ const Settings = () => {
                 className="font-mono text-sm flex-1"
                 placeholder={t('modelsPathPlaceholder')}
               />
-              <Button onClick={handleSelectModelsPath} size="sm" className="flex-shrink-0">
+              <Button
+                onClick={handleSelectModelsPath}
+                size="sm"
+                className="flex-shrink-0"
+              >
                 {t('selectPath')}
               </Button>
             </div>
@@ -358,7 +360,7 @@ const Settings = () => {
                   onCheckedChange={handleCustomTempDirChange}
                 />
               </div>
-              
+
               {useCustomTempDir ? (
                 <div className="flex gap-2">
                   <Input
@@ -367,7 +369,11 @@ const Settings = () => {
                     className="font-mono text-sm flex-1"
                     placeholder={t('customTempDirPlaceholder')}
                   />
-                  <Button onClick={handleSelectCustomTempDir} size="sm" className="flex-shrink-0">
+                  <Button
+                    onClick={handleSelectCustomTempDir}
+                    size="sm"
+                    className="flex-shrink-0"
+                  >
                     {t('selectPath')}
                   </Button>
                 </div>
@@ -379,7 +385,11 @@ const Settings = () => {
                     className="font-mono text-sm flex-1"
                     placeholder={t('tempDirPlaceholder')}
                   />
-                  <Button onClick={handleClearCache} size="sm" className="flex-shrink-0">
+                  <Button
+                    onClick={handleClearCache}
+                    size="sm"
+                    className="flex-shrink-0"
+                  >
                     <Eraser className="mr-2 h-4 w-4" />
                     {t('clearCache')}
                   </Button>
@@ -387,7 +397,6 @@ const Settings = () => {
               )}
             </div>
           </div>
-
         </CardContent>
       </Card>
 

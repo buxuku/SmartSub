@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import OpenAI from 'openai';
 
 type OpenAIProvider = {
   apiUrl: string;
@@ -18,15 +18,17 @@ export async function translateWithOpenAI(
       apiKey: provider.apiKey,
     });
 
-    const sysPrompt = provider.systemPrompt || 'You are a professional subtitle translation tool';
+    const sysPrompt =
+      provider.systemPrompt ||
+      'You are a professional subtitle translation tool';
     const userPrompt = Array.isArray(text) ? text.join('\n') : text;
     console.log('sysPrompt:', sysPrompt);
     console.log('userPrompt:', userPrompt);
     const completion = await openai.chat.completions.create({
-      model: provider.modelName || "gpt-3.5-turbo",
+      model: provider.modelName || 'gpt-3.5-turbo',
       messages: [
-        { role: "system", content: sysPrompt },
-        { role: "user", content: userPrompt }
+        { role: 'system', content: sysPrompt },
+        { role: 'user', content: userPrompt },
       ],
       temperature: 0.3,
     });

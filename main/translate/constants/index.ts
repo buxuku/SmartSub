@@ -6,7 +6,7 @@ export const CONTENT_TEMPLATES = {
 
 export const DEFAULT_BATCH_SIZE = {
   AI: 10,
-  API: 1
+  API: 1,
 } as const;
 
 export const THINK_TAG_REGEX = /<think>[\s\S]*?<\/think>\n/g;

@@ -7,13 +7,16 @@ type MessageType = {
 };
 
 // 统一的消息发送函数
-export function sendMessage(sender: WebContents, message: string | MessageType) {
+export function sendMessage(
+  sender: WebContents,
+  message: string | MessageType,
+) {
   let messageObj: MessageType;
 
   if (typeof message === 'string') {
     messageObj = {
       type: message.toLowerCase().includes('error') ? 'error' : 'info',
-      message
+      message,
     };
   } else {
     messageObj = message;
@@ -35,6 +38,6 @@ export function createMessageSender(sender: WebContents) {
       } else {
         sender.send(channel, message);
       }
-    }
+    },
   };
-} 
+}

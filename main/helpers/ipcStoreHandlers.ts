@@ -67,7 +67,7 @@ export function setupStoreHandlers() {
       };
       store.set('logs', [...logs, newLog]);
       event.sender.send('newLog', newLog);
-    }
+    },
   );
 
   ipcMain.handle('getLogs', async () => {

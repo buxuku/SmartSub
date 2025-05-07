@@ -6,18 +6,15 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square&logo=bookstack)](https://github.com/buxuku/SmartSub/blob/master/LICENSE)
 [![Stars](https://img.shields.io/github/stars/buxuku/SmartSub?style=flat-square&logo=github)](https://github.com/buxuku/SmartSub/stargazers)
 
-[ 🇨🇳 中文](README.md) | [ 🌏 English](README_EN.md) 
-
+[ 🇨🇳 中文](README.md) | [ 🌏 English](README_EN.md)
 
 </div>
 
 **Make every frame speak beautifully**
 
-Smart subtitle generation and multilingual translation solution for video/audio files. 
-
+Smart subtitle generation and multilingual translation solution for video/audio files.
 
 ![preview](./resources/preview-en.png)
-
 
 ## 💥 Features
 
@@ -78,17 +75,17 @@ To generate subtitles from video or audio, you need to use the whisper model. Wh
 
 Please download the appropriate package based on your computer's system, chip, and graphics card.
 
-- The *generic* version is a universal version that theoretically supports most graphics cards
-- The *optimized* version provides optimizations for various graphics card series, providing better compatibility
+- The _generic_ version is a universal version that theoretically supports most graphics cards
+- The _optimized_ version provides optimizations for various graphics card series, providing better compatibility
 
-| System | Chip | Graphics Card | Download Package |
-| ---- | ---- | ---- | ---- |
-| Windows | x64 | CUDA >= 11.8.0 < 12.0.0 | windows-x64_cuda11.8.0 |
-| Windows | x64 | CUDA >= 12.0.0 | windows-x64_cuda12.4.1 |
-| Windows | x64 | CUDA >= 12.2.0 | windows-x64_cuda12.2.0 |
-| Windows | x64 | no CUDA | windows-x64_no_cuda |
-| Mac | Apple | support CoreML | mac-arm64 |
-| Mac | Intel | no support CoreML | mac-x64 |
+| System  | Chip  | Graphics Card           | Download Package       |
+| ------- | ----- | ----------------------- | ---------------------- |
+| Windows | x64   | CUDA >= 11.8.0 < 12.0.0 | windows-x64_cuda11.8.0 |
+| Windows | x64   | CUDA >= 12.0.0          | windows-x64_cuda12.4.1 |
+| Windows | x64   | CUDA >= 12.2.0          | windows-x64_cuda12.2.0 |
+| Windows | x64   | no CUDA                 | windows-x64_no_cuda    |
+| Mac     | Apple | support CoreML          | mac-arm64              |
+| Mac     | Intel | no support CoreML       | mac-x64                |
 
 1. Go to the [releases](https://github.com/buxuku/SmartSub/releases) page and download the appropriate package for your operating system
 2. Install and run the program
@@ -110,10 +107,10 @@ git clone https://github.com/buxuku/SmartSub.git
 
 ```shell
 cd SmartSub
-yarn install 
+yarn install
 ```
 
-If you are on Windows, or Mac intel platform,  please download the node file from https://github.com/buxuku/whisper.cpp/releases/tag/latest and rename it to 'addon.node' and overlay it in the 'extraResources/addons/' directory.
+If you are on Windows, or Mac intel platform, please download the node file from https://github.com/buxuku/whisper.cpp/releases/tag/latest and rename it to 'addon.node' and overlay it in the 'extraResources/addons/' directory.
 
 3️⃣ After installing dependencies, run `yarn dev` or `npm run dev` to launch the project
 
@@ -136,6 +133,7 @@ If you are using an Apple Silicon chip, you need to download the corresponding e
 After downloading, you can import the model files into the application using the "Import Model" feature on the "Model Management" page. Or you can directly copy the model files to the model directory.
 
 Import steps:
+
 1. On the "Model Management" page, click the "Import Model" button.
 2. In the file selector that appears, choose your downloaded model file.
 3. After confirming the import, the model will be added to your list of installed models.
@@ -143,11 +141,13 @@ Import steps:
 ## Common Issues
 
 ##### 1. "The application is damaged and can't be opened" message
+
 Execute the following command in the terminal:
 
 ```shell
 sudo xattr -dr com.apple.quarantine /Applications/Video\ Subtitle\ Master.app
 ```
+
 Then try running the application again.
 
 ## Contributing
@@ -160,9 +160,9 @@ Then try running the application again.
 
 👨‍👨‍👦‍👦 If you have any use problems, welcome to join the wechat communication group, exchange and learn together.
 
-| Alipay donation code                              | WeChat donation code                             | WeChat communication group                                |
-|-------------------------------------|------------------------------------|--------------------------------------|
-| ![支付宝收款码](./resources/donate_alipay.jpg) | ![微信赞赏码](./resources/donate_wechat.jpg) | ![微信交流群](./resources/WechatIMG428.png)  |
+| Alipay donation code                           | WeChat donation code                         | WeChat communication group                  |
+| ---------------------------------------------- | -------------------------------------------- | ------------------------------------------- |
+| ![支付宝收款码](./resources/donate_alipay.jpg) | ![微信赞赏码](./resources/donate_wechat.jpg) | ![微信交流群](./resources/WechatIMG428.png) |
 
 ## License
 

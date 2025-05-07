@@ -15,7 +15,7 @@ export async function generateSubtitleWithLocalWhisper(
   file,
   audioFile,
   srtFile,
-  formData
+  formData,
 ) {
   const { model, sourceLanguage } = formData;
   const whisperModel = model?.toLowerCase();
@@ -59,7 +59,7 @@ export async function generateSubtitleWithLocalWhisper(
       const md5BaseName = path.basename(audioFile, '.wav');
       const tempSrtFile = path.join(
         path.dirname(file?.filePath),
-        `${md5BaseName}.srt`
+        `${md5BaseName}.srt`,
       );
       if (fs.existsSync(tempSrtFile)) {
         fs.renameSync(tempSrtFile, srtFile + '.srt');
@@ -79,7 +79,7 @@ export async function generateSubtitleWithBuiltinWhisper(
   file,
   audioFile,
   srtFile,
-  formData
+  formData,
 ) {
   event.sender.send('taskStatusChange', file, 'extractSubtitle', 'loading');
 
@@ -120,13 +120,18 @@ export async function generateSubtitleWithBuiltinWhisper(
       progress_callback: (progress) => {
         console.log(`处理进度: ${progress}%`);
         // 更新UI显示进度
-        event.sender.send('taskProgressChange', file, 'extractSubtitle', progress);
+        event.sender.send(
+          'taskProgressChange',
+          file,
+          'extractSubtitle',
+          progress,
+        );
       },
     };
 
     logMessage(
       `whisperParams: ${JSON.stringify(whisperParams, null, 2)}`,
-      'info'
+      'info',
     );
     event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
     const result = await whisperAsync(whisperParams);

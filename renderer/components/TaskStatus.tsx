@@ -1,11 +1,16 @@
-import React from "react";
-import { CircleCheck, Loader, Pause, RedoDot, AlertCircle } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
+import React from 'react';
+import { CircleCheck, Loader, Pause, RedoDot, AlertCircle } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from './ui/tooltip';
 
 const TaskStatus = ({ file, checkKey, skip = false }) => {
   if (skip) return <RedoDot className="size-4" />;
-  
-  if (file[checkKey] === "loading") {
+
+  if (file[checkKey] === 'loading') {
     // 检查是否有进度信息
     const progressKey = `${checkKey}Progress`;
     const hasProgress = file[progressKey] !== undefined;
@@ -18,15 +23,15 @@ const TaskStatus = ({ file, checkKey, skip = false }) => {
       </div>
     );
   }
-  
-  if (file[checkKey] === "done") {
+
+  if (file[checkKey] === 'done') {
     return <CircleCheck className="size-4" />;
   }
-  
-  if (file[checkKey] === "error") {
+
+  if (file[checkKey] === 'error') {
     const errorKey = `${checkKey}Error`;
-    const errorMsg = file[errorKey] || "未知错误";
-    
+    const errorMsg = file[errorKey] || '未知错误';
+
     return (
       <TooltipProvider>
         <Tooltip>
@@ -40,8 +45,8 @@ const TaskStatus = ({ file, checkKey, skip = false }) => {
       </TooltipProvider>
     );
   }
-  
-  return <Pause className="size-4" />
+
+  return <Pause className="size-4" />;
 };
 
 export default TaskStatus;

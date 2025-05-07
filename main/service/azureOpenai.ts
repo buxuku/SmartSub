@@ -10,7 +10,7 @@ type AzureOpenAIProvider = {
 
 export async function translateWithAzureOpenAI(
   text: string[],
-  provider: AzureOpenAIProvider
+  provider: AzureOpenAIProvider,
 ) {
   try {
     // 处理Azure OpenAI的endpoint URL

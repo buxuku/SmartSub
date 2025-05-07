@@ -18,10 +18,7 @@ const Models: FC<SelectPrimitive.SelectProps & IProps> = (props) => {
 
   return (
     <Select {...props}>
-      <SelectTrigger
-        className="items-start"
-        id="model"
-      >
+      <SelectTrigger className="items-start" id="model">
         <SelectValue placeholder={t('pleaseSelect')} />
       </SelectTrigger>
       <SelectContent>

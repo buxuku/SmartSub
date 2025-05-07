@@ -6,9 +6,25 @@ import { Eye, EyeOff, Search, Check } from 'lucide-react';
 import { ProviderField } from '../../types';
 import { useTranslation } from 'next-i18next';
 import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Command, CommandInput, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Command,
+  CommandInput,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+} from '@/components/ui/command';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import axios from 'axios';
 
 interface ProviderFormProps {
@@ -30,14 +46,14 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [deerApiModels, setDeerApiModels] = useState<string[]>([]);
   const apiKeyRef = useRef<HTMLInputElement>(null);
-  
+
   // 获取Ollama模型列表
   const fetchOllamaModels = async (apiUrl: string) => {
     try {
       const baseUrl = apiUrl.split('/api/')[0];
       const response = await axios.get(`${baseUrl}/api/tags`);
       if (response.data && response.data.models) {
-        const models = response.data.models.map(model => model.name);
+        const models = response.data.models.map((model) => model.name);
         setOllamaModels(models);
       }
     } catch (error) {
@@ -50,16 +66,16 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
   // 获取DeerAPI模型列表
   const fetchDeerApiModels = async (apiUrl: string, apiKey: string) => {
     if (!apiUrl || !apiKey) return;
-    
+
     try {
       const response = await axios.get(`${apiUrl}/models`, {
         headers: {
-          'Authorization': `Bearer ${apiKey}`
-        }
+          Authorization: `Bearer ${apiKey}`,
+        },
       });
-      
+
       if (response.data && response.data.data) {
-        const models = response.data.data.map(model => model.id);
+        const models = response.data.data.map((model) => model.id);
         setDeerApiModels(models);
       }
     } catch (error) {
@@ -78,41 +94,46 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
 
   useEffect(() => {
     // 检查是否是Ollama配置页面
-    const isOllamaProvider = fields.some(field => field.key === 'modelName' && values.type === 'ollama');
-    
+    const isOllamaProvider = fields.some(
+      (field) => field.key === 'modelName' && values.type === 'ollama',
+    );
+
     if (isOllamaProvider && values.apiUrl) {
       fetchOllamaModels(values.apiUrl);
     }
-    
+
     // 检查是否是DeerAPI配置页面，且已有API Key
-    const isDeerApiProvider = fields.some(field => field.key === 'modelName' && values.type === 'DeerAPI');
-    
+    const isDeerApiProvider = fields.some(
+      (field) => field.key === 'modelName' && values.type === 'DeerAPI',
+    );
+
     if (isDeerApiProvider && values.apiKey && values.apiUrl) {
       fetchDeerApiModels(values.apiUrl, values.apiKey);
     }
   }, [fields, values.type, values.apiUrl]);
-  
+
   // 可搜索的下拉选择框组件
-  const SearchableSelect = ({ 
-    value, 
-    onChange, 
-    options, 
-    placeholder 
-  }: { 
-    value: string, 
-    onChange: (value: string) => void, 
-    options: string[], 
-    placeholder?: string 
+  const SearchableSelect = ({
+    value,
+    onChange,
+    options,
+    placeholder,
+  }: {
+    value: string;
+    onChange: (value: string) => void;
+    options: string[];
+    placeholder?: string;
   }) => {
     const [open, setOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    
+
     // 根据搜索词过滤选项
-    const filteredOptions = searchQuery === '' 
-      ? options 
-      : options.filter((option) =>
-          option.toLowerCase().includes(searchQuery.toLowerCase())
-        );
+    const filteredOptions =
+      searchQuery === ''
+        ? options
+        : options.filter((option) =>
+            option.toLowerCase().includes(searchQuery.toLowerCase()),
+          );
 
     return (
       <Popover open={open} onOpenChange={setOpen}>
@@ -167,12 +188,12 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
       case 'switch':
         return (
           <Switch
-            className='ml-2 -mt-4'
+            className="ml-2 -mt-4"
             checked={!!value}
             onCheckedChange={(checked) => onChange(field.key, checked)}
           />
         );
-        
+
       case 'number':
         return (
           <Input
@@ -182,7 +203,7 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
             placeholder={field.placeholder}
           />
         );
-        
+
       case 'textarea':
         return (
           <Textarea
@@ -218,11 +239,11 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
             </Button>
           </div>
         );
-      
+
       case 'select':
         // 根据不同的提供商选择对应的模型列表
         let options: string[] = [];
-        
+
         if (field.key === 'modelName') {
           if (values.type === 'ollama' && ollamaModels.length > 0) {
             options = ollamaModels;
@@ -231,7 +252,7 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
           } else {
             options = field.options || [];
           }
-          
+
           // 对于模型名称字段，使用可搜索的下拉选择框
           return (
             <SearchableSelect
@@ -243,7 +264,7 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
           );
         } else {
           options = field.options || [];
-          
+
           // 对于其他select字段，使用普通下拉选择框
           return (
             <Select

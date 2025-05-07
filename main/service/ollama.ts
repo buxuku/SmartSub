@@ -9,7 +9,7 @@ interface OllamaConfig {
 
 export default async function translateWithOllama(
   text: string,
-  config: OllamaConfig
+  config: OllamaConfig,
 ) {
   const { apiUrl, modelName, systemPrompt } = config;
   const url = apiUrl.replace('generate', 'chat'); // 兼容旧版本的ollama
@@ -17,15 +17,17 @@ export default async function translateWithOllama(
     const response = await axios.post(`${url}`, {
       model: modelName,
       messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: text }
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: text },
       ],
-      stream: false
+      stream: false,
     });
     if (response.data && response.data.message) {
       return response.data.message?.content?.trim();
     } else {
-      throw new Error(response?.data?.error || 'Unexpected response from Ollama');
+      throw new Error(
+        response?.data?.error || 'Unexpected response from Ollama',
+      );
     }
   } catch (error) {
     throw error;

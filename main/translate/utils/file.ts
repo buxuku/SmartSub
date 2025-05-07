@@ -11,7 +11,10 @@ export async function createOrClearFile(filePath: string): Promise<void> {
   }
 }
 
-export async function appendToFile(filePath: string, content: string): Promise<void> {
+export async function appendToFile(
+  filePath: string,
+  content: string,
+): Promise<void> {
   try {
     await fs.appendFile(filePath, content);
   } catch (error) {
@@ -28,4 +31,4 @@ export async function readFileContent(filePath: string): Promise<string[]> {
     logMessage(`Failed to read file: ${error.message}`, 'error');
     throw error;
   }
-} 
+}

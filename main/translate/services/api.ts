@@ -6,7 +6,7 @@ export async function handleAPIBatchTranslation(
   subtitles: Subtitle[],
   config: TranslationConfig,
   batchSize: number = DEFAULT_BATCH_SIZE.API,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
 ): Promise<TranslationResult[]> {
   const { provider, sourceLanguage, targetLanguage, translator } = config;
   const results: TranslationResult[] = [];
@@ -21,7 +21,7 @@ export async function handleAPIBatchTranslation(
         batchContents,
         provider,
         sourceLanguage,
-        targetLanguage
+        targetLanguage,
       );
 
       const translatedLines = Array.isArray(translatedContent)
@@ -40,9 +40,12 @@ export async function handleAPIBatchTranslation(
       }));
 
       results.push(...batchResults);
-      
+
       // 更新翻译进度
-      const progress = Math.min(((i + batchSize) / subtitles.length) * 100, 100);
+      const progress = Math.min(
+        ((i + batchSize) / subtitles.length) * 100,
+        100,
+      );
       if (onProgress) {
         onProgress(progress);
       }

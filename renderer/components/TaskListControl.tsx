@@ -46,8 +46,8 @@ const TaskListControl = ({ setFiles, formData }) => {
           onClick={handleImportVideo}
         >
           <Import className="size-5 mr-2" />
-          {taskType === 'translateOnly' 
-            ? t('importSubtitles') 
+          {taskType === 'translateOnly'
+            ? t('importSubtitles')
             : t('importFiles')}
         </Button>
       </div>

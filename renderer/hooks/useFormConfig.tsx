@@ -9,13 +9,13 @@ export default function useFormConfig() {
   const [formData, setFormData] = useState(form.getValues());
   const formDataRef = useRef(formData);
 
-  useEffect(() => {(async () => {
-    const storeUserConfig = await window?.ipc?.invoke('getUserConfig')
-    form.reset(storeUserConfig);
-    setFormData(storeUserConfig);
-    formDataRef.current = storeUserConfig;
-  })()
-
+  useEffect(() => {
+    (async () => {
+      const storeUserConfig = await window?.ipc?.invoke('getUserConfig');
+      form.reset(storeUserConfig);
+      setFormData(storeUserConfig);
+      formDataRef.current = storeUserConfig;
+    })();
   }, []);
 
   const handleFormChange = useCallback((values) => {
@@ -32,6 +32,5 @@ export default function useFormConfig() {
     return () => subscription.unsubscribe();
   }, [form, handleFormChange]);
 
-
-  return { form, formData, };
+  return { form, formData };
 }

@@ -1,21 +1,21 @@
-import path from "path";
-import { app } from "electron";
-import serve from "electron-serve";
-import { createWindow } from "./helpers/create-window";
+import path from 'path';
+import { app } from 'electron';
+import serve from 'electron-serve';
+import { createWindow } from './helpers/create-window';
 import { setupIpcHandlers } from './helpers/ipcHandlers';
 import { setupTaskProcessor } from './helpers/taskProcessor';
 import { setupSystemInfoManager } from './helpers/systemInfoManager';
 import { setupStoreHandlers, store } from './helpers/storeManager';
-import { setupTaskManager } from "./helpers/taskManager";
+import { setupTaskManager } from './helpers/taskManager';
 
 //控制台出现中文乱码，需要去node_modules\electron\cli.js中修改启动代码页
 
-const isProd = process.env.NODE_ENV === "production";
+const isProd = process.env.NODE_ENV === 'production';
 
 if (isProd) {
-  serve({ directory: "app" });
+  serve({ directory: 'app' });
 } else {
-  app.setPath("userData", `${app.getPath("userData")}-dev`);
+  app.setPath('userData', `${app.getPath('userData')}-dev`);
 }
 
 (async () => {
@@ -26,11 +26,11 @@ if (isProd) {
   const settings = store.get('settings');
   const userLanguage = settings?.language || 'zh'; // 默认为中文
 
-  const mainWindow = createWindow("main", {
+  const mainWindow = createWindow('main', {
     width: 1400,
     height: 1040,
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, 'preload.js'),
     },
   });
 
@@ -52,7 +52,6 @@ if (isProd) {
   setupTaskManager();
 })();
 
-app.on("window-all-closed", () => {
+app.on('window-all-closed', () => {
   app.quit();
 });
-

@@ -14,7 +14,7 @@ const ToolTips = ({ text }) => {
           <Info className="h-4 w-4 ml-2" />
         </TooltipTrigger>
         <TooltipContent>
-          <p dangerouslySetInnerHTML={{ __html: text }}/>
+          <p dangerouslySetInnerHTML={{ __html: text }} />
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
