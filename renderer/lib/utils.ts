@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import type { ITaskFile } from '../../types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -323,3 +324,47 @@ export const filterSupportedFiles = (files: File[]) => {
     );
   });
 };
+
+class TaskFileWrapper {
+  constructor(public file: ITaskFile) {}
+
+  get running(): boolean {
+    const { extractAudio, extractSubtitle, translateSubtitle } = this.file;
+    return (
+      !this.ended && !!(extractAudio || extractSubtitle || translateSubtitle)
+    );
+  }
+  get ended(): boolean {
+    return this.succeed || this.failed;
+  }
+  get succeed(): boolean {
+    const { taskType, extractAudio, extractSubtitle, translateSubtitle } =
+      this.file;
+    if (taskType === 'generateOnly')
+      return extractAudio === 'done' && extractSubtitle === 'done';
+    if (taskType === 'translateOnly') return translateSubtitle === 'done';
+    if (taskType === 'generateAndTranslate')
+      return (
+        extractAudio === 'done' &&
+        extractSubtitle === 'done' &&
+        translateSubtitle === 'done'
+      );
+  }
+  get failed() {
+    const { extractAudio, extractSubtitle, translateSubtitle } = this.file;
+    return (
+      extractAudio === 'error' ||
+      extractSubtitle === 'error' ||
+      translateSubtitle === 'error'
+    );
+  }
+}
+
+export function getNewTaskFiles(files: ITaskFile[]) {
+  return files.filter((file) => {
+    const f = new TaskFileWrapper(file);
+    if (f.running) return false;
+    if (f.succeed) return false;
+    return true;
+  });
+}

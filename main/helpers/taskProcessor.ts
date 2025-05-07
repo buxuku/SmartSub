@@ -1,12 +1,13 @@
 import fse from 'fs-extra';
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, type IpcMainEvent } from 'electron';
 import { processFile } from './fileProcessor';
 import { checkOpenAiWhisper, getPath } from './whisper';
 import { logMessage, store } from './storeManager';
 import path from 'path';
 import { isAppleSilicon } from './utils';
+import type { ITaskFile } from '../../types';
 
-let processingQueue = [];
+let processingQueue: ITaskFile[] = [];
 let isProcessing = false;
 let isPaused = false;
 let shouldCancel = false;
@@ -15,19 +16,25 @@ let hasOpenAiWhisper = false;
 let activeTasksCount = 0;
 
 export function setupTaskProcessor(mainWindow: BrowserWindow) {
-  ipcMain.on('handleTask', async (event, { files, formData }) => {
-    logMessage(`handleTask start`, 'info');
-    logMessage(`formData: \n ${JSON.stringify(formData, null, 2)}`, 'info');
-    processingQueue.push(...files.map((file) => ({ file, formData })));
-    if (!isProcessing) {
-      isProcessing = true;
-      isPaused = false;
-      shouldCancel = false;
-      hasOpenAiWhisper = await checkOpenAiWhisper();
-      maxConcurrentTasks = formData.maxConcurrentTasks || 3;
-      processNextTasks(event);
-    }
-  });
+  ipcMain.on(
+    'handleTask',
+    async (
+      event,
+      { files, formData }: { files: ITaskFile[]; formData: any },
+    ) => {
+      logMessage(`handleTask start`, 'info');
+      logMessage(`formData: \n ${JSON.stringify(formData, null, 2)}`, 'info');
+      processingQueue.push(...files);
+      if (!isProcessing) {
+        isProcessing = true;
+        isPaused = false;
+        shouldCancel = false;
+        hasOpenAiWhisper = await checkOpenAiWhisper();
+        maxConcurrentTasks = formData.maxConcurrentTasks || 3;
+        processNextTasks(event);
+      }
+    },
+  );
 
   ipcMain.on('pauseTask', () => {
     isPaused = true;
@@ -67,7 +74,7 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
   });
 }
 
-async function processNextTasks(event) {
+async function processNextTasks(event: IpcMainEvent) {
   if (shouldCancel) {
     isProcessing = false;
     event.sender.send('taskComplete', 'cancelled');
@@ -98,16 +105,11 @@ async function processNextTasks(event) {
       activeTasksCount++;
       try {
         const provider = translationProviders.find(
-          (p) => p.id === task.formData.translateProvider,
+          (p) => p.id === task.formData?.translateProvider,
         );
-        await processFile(
-          event,
-          task.file,
-          task.formData,
-          hasOpenAiWhisper,
-          provider,
-        );
+        await processFile(event, task, hasOpenAiWhisper, provider);
       } catch (error) {
+        console.error(error.stack || error);
         event.sender.send('message', error);
       } finally {
         activeTasksCount--;

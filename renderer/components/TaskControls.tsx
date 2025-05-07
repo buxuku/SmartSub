@@ -1,10 +1,21 @@
-import { useEffect, useState } from 'react';
+import {
+  useEffect,
+  useState,
+  type Dispatch,
+  type FC,
+  type SetStateAction,
+} from 'react';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
-import { isSubtitleFile, needsCoreML } from 'lib/utils';
+import { getNewTaskFiles, needsCoreML } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
+import type { ITaskFile } from '../../types';
 
-const TaskControls = ({ files, formData }) => {
+const TaskControls: FC<{
+  files: ITaskFile[];
+  setFiles: Dispatch<SetStateAction<ITaskFile[]>>;
+  formData: any;
+}> = ({ files, setFiles, formData }) => {
   const [taskStatus, setTaskStatus] = useState('idle');
   const { t } = useTranslation(['home', 'common']);
 
@@ -28,30 +39,22 @@ const TaskControls = ({ files, formData }) => {
 
   const handleTask = async () => {
     if (!files?.length) {
-      toast(t('common:notification'), {
-        description: t('home:noTask'),
-      });
-      return;
+      return toast(t('common:notification'), { description: t('home:noTask') });
     }
-    const isAllFilesProcessed = files.every((item) => {
-      const basicProcessingDone = item.extractAudio && item.extractSubtitle;
 
-      if (formData.translateProvider === '-1') {
-        return basicProcessingDone;
-      }
-      if (isSubtitleFile(item?.filePath)) {
-        return item.translateSubtitle;
-      }
-
-      return basicProcessingDone && item.translateSubtitle;
+    // when start task button pressed, persist task config to ITaskFile
+    const updatedFiles = files.map((f) => {
+      return { formData, taskType: formData.taskType, ...f };
     });
+    setFiles(updatedFiles);
 
-    if (isAllFilesProcessed) {
-      toast(t('common:notification'), {
+    const newTaskFiles = getNewTaskFiles(updatedFiles);
+    if (!newTaskFiles.length) {
+      return toast(t('common:notification'), {
         description: t('home:allFilesProcessed'),
       });
-      return;
     }
+
     // if(formData.model && needsCoreML(formData.model)){
     //   const checkMlmodel = await window.ipc.invoke('checkMlmodel', formData.model);
     //   if(!checkMlmodel){
@@ -61,8 +64,9 @@ const TaskControls = ({ files, formData }) => {
     //     return;
     //   }
     // }
+
     setTaskStatus('running');
-    window?.ipc?.send('handleTask', { files, formData });
+    window?.ipc?.send('handleTask', { files: newTaskFiles, formData });
   };
   const handlePause = () => {
     window?.ipc?.send('pauseTask', null);
