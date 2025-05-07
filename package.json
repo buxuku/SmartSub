@@ -14,6 +14,11 @@
     "format": "prettier --write ."
   },
   "dependencies": {
+    "@alicloud/alimt20181012": "^1.3.0",
+    "@alicloud/credentials": "^2.4.3",
+    "@alicloud/openapi-client": "^0.4.14",
+    "@alicloud/tea-typescript": "^1.8.0",
+    "@alicloud/tea-util": "^1.4.10",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@hookform/resolvers": "^3.4.0",
     "@radix-ui/react-alert-dialog": "^1.0.5",

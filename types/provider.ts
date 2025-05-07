@@ -87,6 +87,43 @@ export const PROVIDER_TYPES: ProviderType[] = [
     ],
   },
   {
+    id: 'aliyun',
+    name: 'aliyun',
+    isBuiltin: true,
+    isAi: false,
+    icon: '☁️',
+    fields: [
+      {
+        key: 'apiKey',
+        label: 'AccessKey ID',
+        type: 'password',
+        required: true,
+      },
+      {
+        key: 'apiSecret',
+        label: 'AccessKey Secret',
+        type: 'password',
+        required: true,
+      },
+      {
+        key: 'endpoint',
+        label: 'Endpoint',
+        type: 'text',
+        required: false,
+        defaultValue: 'mt.aliyuncs.com',
+        tips: 'endpointAliyunTips',
+      },
+      {
+        key: 'batchSize',
+        label: 'Batch Size',
+        type: 'number',
+        required: true,
+        defaultValue: 15,
+        tips: 'batchSizeAliyunTips',
+      },
+    ],
+  },
+  {
     id: 'volc',
     name: 'volc',
     isBuiltin: true,
