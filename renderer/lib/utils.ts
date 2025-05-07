@@ -325,21 +325,18 @@ export const filterSupportedFiles = (files: File[]) => {
   });
 };
 
-class TaskFileWrapper {
-  constructor(public file: ITaskFile) {}
+function fileStatusGetters(file: ITaskFile) {
+  function running(): boolean {
+    const { extractAudio, extractSubtitle, translateSubtitle } = file;
+    return !ended() && !!(extractAudio || extractSubtitle || translateSubtitle);
+  }
 
-  get running(): boolean {
-    const { extractAudio, extractSubtitle, translateSubtitle } = this.file;
-    return (
-      !this.ended && !!(extractAudio || extractSubtitle || translateSubtitle)
-    );
+  function ended(): boolean {
+    return succeed() || failed();
   }
-  get ended(): boolean {
-    return this.succeed || this.failed;
-  }
-  get succeed(): boolean {
-    const { taskType, extractAudio, extractSubtitle, translateSubtitle } =
-      this.file;
+
+  function succeed(): boolean {
+    const { taskType, extractAudio, extractSubtitle, translateSubtitle } = file;
     if (taskType === 'generateOnly')
       return extractAudio === 'done' && extractSubtitle === 'done';
     if (taskType === 'translateOnly') return translateSubtitle === 'done';
@@ -350,21 +347,37 @@ class TaskFileWrapper {
         translateSubtitle === 'done'
       );
   }
-  get failed() {
-    const { extractAudio, extractSubtitle, translateSubtitle } = this.file;
+
+  function failed(): boolean {
+    const { extractAudio, extractSubtitle, translateSubtitle } = file;
     return (
       extractAudio === 'error' ||
       extractSubtitle === 'error' ||
       translateSubtitle === 'error'
     );
   }
+
+  return {
+    get running() {
+      return running();
+    },
+    get ended() {
+      return ended();
+    },
+    get succeed() {
+      return succeed();
+    },
+    get failed() {
+      return failed();
+    },
+  };
 }
 
 export function getNewTaskFiles(files: ITaskFile[]) {
   return files.filter((file) => {
-    const f = new TaskFileWrapper(file);
-    if (f.running) return false;
-    if (f.succeed) return false;
-    return true;
+    const { running, succeed } = fileStatusGetters(file);
+    if (running) return false;
+    if (succeed) return false;
+    return true; // rest are un-started | failed
   });
 }
