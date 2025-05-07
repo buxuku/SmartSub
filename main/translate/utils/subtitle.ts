@@ -7,8 +7,12 @@ export function parseSubtitles(data: string[]): Subtitle[] {
   for (let i = 0; i < data.length; i++) {
     const line = data[i]?.trim();
     if (!line) continue;
-
-    if (/^\d+$/.test(line)) {
+    
+    // 检查是否为字幕编号：纯数字且下一行包含 "-->" 或下一行为空但下下行包含 "-->"
+    if (/^\d+$/.test(line) && (
+        (i + 1 < data.length && data[i + 1]?.trim().includes('-->')) || 
+        (i + 1 < data.length && !data[i + 1]?.trim() && i + 2 < data.length && data[i + 2]?.trim().includes('-->'))
+      )) {
       if (currentSubtitle) {
         subtitles.push(currentSubtitle);
       }
