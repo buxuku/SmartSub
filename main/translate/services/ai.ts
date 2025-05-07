@@ -56,6 +56,7 @@ export async function handleAIBatchTranslation(
   config: TranslationConfig,
   batchSize: number = DEFAULT_BATCH_SIZE.AI,
   onProgress?: (progress: number) => void,
+  onTranslationResult?: (result: TranslationResult) => Promise<void>,
 ): Promise<TranslationResult[]> {
   const { provider, sourceLanguage, targetLanguage, translator } = config;
   const results: TranslationResult[] = [];
@@ -121,6 +122,14 @@ export async function handleAIBatchTranslation(
             sourceContent: subtitle.content.join('\n'),
             targetContent: parsedContent[subtitle.id],
           }));
+
+          // 如果提供了结果处理函数，则实时处理每个翻译结果
+          if (onTranslationResult) {
+            for (const result of batchResults) {
+              await onTranslationResult(result);
+            }
+          }
+
           results.push(...batchResults);
         } catch (jsonError) {
           logMessage(
@@ -128,7 +137,7 @@ export async function handleAIBatchTranslation(
             'error',
           );
           try {
-            // 使用JSON5进行更宽松的解析
+            // 使用toJson进行更宽松的解析
             const parsedContent = toJson(jsonContent);
             const batchResults = batch.map((subtitle) => ({
               id: subtitle.id,
@@ -136,12 +145,22 @@ export async function handleAIBatchTranslation(
               sourceContent: subtitle.content.join('\n'),
               targetContent: parsedContent[subtitle.id],
             }));
+
+            // 如果提供了结果处理函数，则实时处理每个翻译结果
+            if (onTranslationResult) {
+              for (const result of batchResults) {
+                await onTranslationResult(result);
+              }
+            }
+
             results.push(...batchResults);
           } catch (json5Error) {
             logMessage(`tojson解析也失败: ${json5Error.message}`, 'error');
             throw new Error(`无法解析AI返回的JSON内容: ${json5Error.message}`);
           }
         }
+      } else {
+        throw new Error('Invalid response format: No JSON content found');
       }
 
       // 更新翻译进度
