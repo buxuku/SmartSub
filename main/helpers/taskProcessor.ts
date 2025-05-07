@@ -42,6 +42,15 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
     isPaused = false;
     processingQueue = [];
   });
+
+  // 添加获取当前任务状态的 IPC 处理程序
+  ipcMain.handle('getTaskStatus', () => {
+    if (shouldCancel) return 'cancelled';
+    if (isPaused) return 'paused';
+    if (isProcessing) return 'running';
+    return 'idle';
+  });
+
   ipcMain.handle('checkMlmodel', async (event, modelName) => {
     // 如果不是苹果芯片，不需要该文件，直接返回true
     if (!isAppleSilicon()) {

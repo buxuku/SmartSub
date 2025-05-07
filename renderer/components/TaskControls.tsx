@@ -7,11 +7,25 @@ import { useTranslation } from 'next-i18next';
 const TaskControls = ({ files, formData }) => {
   const [taskStatus, setTaskStatus] = useState('idle');
   const { t } = useTranslation(['home', 'common']);
+
   useEffect(() => {
-    window?.ipc?.on('taskComplete', (status: string) => {
+    // 获取当前任务状态
+    const getCurrentTaskStatus = async () => {
+      const status = await window?.ipc?.invoke('getTaskStatus');
+      setTaskStatus(status);
+    };
+    getCurrentTaskStatus();
+
+    // 监听任务状态变化
+    const cleanup = window?.ipc?.on('taskComplete', (status: string) => {
       setTaskStatus(status);
     });
+
+    return () => {
+      cleanup?.();
+    };
   }, []);
+
   const handleTask = async () => {
     if (!files?.length) {
       toast(t('common:notification'), {
