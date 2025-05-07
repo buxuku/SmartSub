@@ -1,0 +1,21 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 项目结构指南
+
+这是一个基于 Electron + Next.js 的视频字幕生成和翻译工具。主要目录结构如下：
+
+- `renderer/` - Next.js 渲染进程代码
+- `main/` - 主进程相关代码
+- `types/` - TypeScript 类型定义
+- `resources/` - 静态资源文件
+- `extraResources/` - 额外资源文件，包括 addons 等
+- `public/` - 公共静态资源,国际化语言文件
+
+主要配置文件：
+- [package.json](mdc:package.json) - 项目依赖和脚本配置
+- [nextron.config.js](mdc:nextron.config.js) - Nextron 配置
+- [electron-builder.yml](mdc:electron-builder.yml) - Electron 构建配置
+- [tsconfig.json](mdc:tsconfig.json) - TypeScript 配置

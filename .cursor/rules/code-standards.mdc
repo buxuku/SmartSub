@@ -1,0 +1,47 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 代码规范
+
+## TypeScript 规范
+
+1. 使用 TypeScript 严格模式
+2. 为所有变量和函数添加类型注解
+3. 使用接口定义数据结构
+4. 避免使用 `any` 类型
+
+## React 规范
+
+1. 使用函数组件和 Hooks
+2. 组件文件使用 `.tsx` 扩展名
+3. 使用 TypeScript 类型定义 props
+4. 遵循 React 最佳实践
+
+## 样式规范
+
+1. 使用 Tailwind CSS 进行样式管理
+2. 遵循响应式设计原则
+3. 使用 CSS 变量管理主题
+4. 保持样式的一致性
+
+## 文件组织
+
+1. 组件文件放在 `components/` 目录
+2. 类型定义放在 `types/` 目录
+3. 工具函数放在 `utils/` 目录
+4. 配置文件放在根目录
+
+## 命名规范
+
+1. 组件使用 PascalCase
+2. 函数和变量使用 camelCase
+3. 常量使用 UPPER_SNAKE_CASE
+4. 类型和接口使用 PascalCase
+
+## 代码格式化
+
+1. 使用 Prettier 进行代码格式化
+2. 配置文件：[prettier.config.cjs](mdc:prettier.config.cjs)
+3. 忽略文件：[.prettierignore](mdc:.prettierignore)

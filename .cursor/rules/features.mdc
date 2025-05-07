@@ -1,0 +1,45 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 功能模块说明
+
+## 核心功能
+
+1. 视频字幕生成
+   - 支持多种视频/音频格式
+   - 支持硬件加速（CUDA/Core ML）
+   - 支持多种 Whisper 模型
+
+2. 字幕翻译
+   - 支持多种翻译服务
+   - 支持批量翻译
+   - 支持自定义翻译格式
+
+3. 文件管理
+   - 支持自定义字幕文件名
+   - 支持字幕文件导入导出
+   - 支持模型文件管理
+
+## 翻译服务
+
+支持的翻译服务：
+- 火山引擎翻译
+- 百度翻译
+- 微软翻译器
+- DeepLX
+- Ollama 本地模型
+- DeerAPI
+- OpenAI 风格 API
+
+## 硬件加速
+
+- Windows/Linux: NVIDIA CUDA 支持
+- macOS: Apple Core ML 支持（M系列芯片）
+
+## 国际化
+
+- 支持中英文界面
+- 使用 i18next 进行国际化管理
+- 配置文件：[next-i18next.config.js](mdc:next-i18next.config.js)
