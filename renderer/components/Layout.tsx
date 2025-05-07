@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,6 +14,7 @@ import {
   MonitorPlay,
   Languages,
   Settings,
+  Rocket,
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { openUrl } from 'lib/utils';
@@ -23,12 +24,24 @@ import { Toaster } from '@/components/ui/sonner';
 import { useTranslation } from 'next-i18next';
 import packageInfo from '../../package.json';
 
+// 添加更新状态的类型定义
+interface UpdateStatus {
+  status: string;
+  version?: string;
+  progress?: number;
+  error?: string;
+  releaseNotes?: string;
+}
+
 const Layout = ({ children }) => {
   const {
     t,
     i18n: { language: locale },
   } = useTranslation('common');
   const { asPath } = useRouter();
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [newVersion, setNewVersion] = useState('');
+
   useEffect(() => {
     window?.ipc?.on('message', (res: string) => {
       toast(t('notification'), {
@@ -36,7 +49,28 @@ const Layout = ({ children }) => {
       });
       console.log(res);
     });
+
+    // 监听更新状态
+    window?.ipc?.on('update-status', (status: UpdateStatus) => {
+      if (status.status === 'available') {
+        setUpdateAvailable(true);
+        setNewVersion(status.version || '');
+      }
+    });
+
+    // 清理函数
+    const cleanupUpdateListener = window?.ipc?.on('update-status', () => {});
+    return () => {
+      if (cleanupUpdateListener) {
+        cleanupUpdateListener();
+      }
+    };
   }, []);
+
+  const handleUpdateClick = () => {
+    const releaseUrl = 'https://github.com/buxuku/SmartSub/releases/latest';
+    openUrl(releaseUrl);
+  };
 
   return (
     <div className="grid h-screen w-full pl-[56px]">
@@ -151,6 +185,22 @@ const Layout = ({ children }) => {
             {t('headerTitle')}{' '}
             <span className="text-xs text-gray-500 ml-2">
               v{packageInfo.version}
+              {updateAvailable && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Rocket
+                        className="ml-2 inline-block cursor-pointer text-red-500"
+                        size={18}
+                        onClick={handleUpdateClick}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {t('newVersionAvailable')}: {newVersion}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
             </span>
           </h4>
         </header>

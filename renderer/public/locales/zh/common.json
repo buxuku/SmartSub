@@ -5,6 +5,7 @@
   "translationManagement": "翻译管理",
   "settings": "设置",
   "headerTitle": "妙幕 - SmartSub",
+  "newVersionAvailable": "有新版本可用",
   "provider": {
     "baidu": "百度翻译",
     "volc": "火山翻译",

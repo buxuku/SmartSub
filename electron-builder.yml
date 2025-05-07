@@ -1,5 +1,5 @@
-appId: com.example.video-subtitle-master
-productName: Video Subtitle Master
+appId: com.example.smart-sub
+productName: Smart Sub
 copyright: Copyright © 2024 buxuku
 directories:
   output: dist
@@ -11,6 +11,7 @@ files:
       - app
 publish:
   - provider: github
+generateUpdatesFilesForAllChannels: true
 electronUpdaterCompatibility: '>=2.16'
 mac:
   target:
