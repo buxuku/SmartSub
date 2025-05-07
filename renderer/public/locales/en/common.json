@@ -5,6 +5,7 @@
   "translationManagement": "Translation Management",
   "settings": "Settings",
   "headerTitle": "妙幕 - SmartSub",
+  "newVersionAvailable": "New version available",
   "provider": {
     "baidu": "Baidu",
     "volc": "Volcano",

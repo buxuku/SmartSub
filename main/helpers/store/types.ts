@@ -10,6 +10,7 @@ export type StoreType = {
   translationProviders: Provider[];
   userConfig: Record<string, any>;
   settings: {
+    checkUpdateOnStartup: boolean;
     whisperCommand: string;
     language: string;
     useLocalWhisper: boolean;
