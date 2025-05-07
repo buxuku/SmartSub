@@ -10,7 +10,8 @@
     "volc": "火山翻译",
     "deeplx": "DeepLx",
     "ollama": "Ollama",
-    "azure": "Azure 翻译器"
+    "azure": "Azure 翻译器",
+    "aliyun": "阿里云翻译"
   },
   "language": {
     "zh": "中文",

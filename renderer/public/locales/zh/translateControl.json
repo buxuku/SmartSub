@@ -19,6 +19,8 @@
   "batchSizeBaiduTips": "批量翻译数量是每次翻译的句子数量。如果数量过大，可能会导致翻译失败。最大值为18。",
   "batchSizeVolcTips": "批量翻译数量是每次翻译的句子数量。如果数量过大，可能会导致翻译失败。最大值为16。",
   "batchSizeAzureTips": "批量翻译数量是每次翻译的句子数量。如果数量过大，可能会导致翻译失败。最大值为1000。",
+  "batchSizeAliyunTips": "批量翻译数量是每次翻译的句子数量。如果数量过大，可能会导致翻译失败。建议值为15。",
+  "endpointAliyunTips": "阿里云机器翻译服务的域名，默认为mt.aliyuncs.com，一般无需修改。",
   "Batch Size": "批量翻译数量",
   "ApiUrl": "API 地址",
   "API Key": "API Key",

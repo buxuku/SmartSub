@@ -10,7 +10,8 @@
     "volc": "Volcano",
     "deeplx": "DeepLx",
     "ollama": "Ollama",
-    "azure": "Azure Translator"
+    "azure": "Azure Translator",
+    "aliyun": "Aliyun Translator"
   },
   "language": {
     "zh": "Chinese",

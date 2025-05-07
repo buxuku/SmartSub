@@ -15,6 +15,7 @@ import {
   openaiTranslator,
   azureTranslator,
   azureOpenaiTranslator,
+  aliyunTranslator,
 } from '../../service';
 import { DEFAULT_BATCH_SIZE } from '../constants';
 
@@ -28,6 +29,7 @@ export const TRANSLATOR_MAP = {
   openai: openaiTranslator,
   deepseek: openaiTranslator,
   DeerAPI: openaiTranslator,
+  aliyun: aliyunTranslator,
 } as const;
 
 export async function translateWithProvider(

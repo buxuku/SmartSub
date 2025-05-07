@@ -20,6 +20,8 @@
   "batchSizeBaiduTips": "Batch size is the number of sentences translated at a time. If the number is too large, it may cause translation failure. The maximum value is 18.",
   "batchSizeVolcTips": "Batch size is the number of sentences translated at a time. If the number is too large, it may cause translation failure. The maximum value is 16.",
   "batchSizeAzureTips": "Batch size is the number of sentences translated at a time. If the number is too large, it may cause translation failure. The maximum value is 1000.",
+  "batchSizeAliyunTips": "Batch size is the number of sentences translated at a time. If the number is too large, it may cause translation failure. Recommended value is 15.",
+  "endpointAliyunTips": "Aliyun machine translation service domain, default is mt.aliyuncs.com, usually no need to modify.",
   "ApiUrl": "API Url",
   "API Key": "API Key",
   "systemPrompt": "System Prompt",
