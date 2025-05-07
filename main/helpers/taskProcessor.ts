@@ -15,10 +15,10 @@ let hasOpenAiWhisper = false;
 let activeTasksCount = 0;
 
 export function setupTaskProcessor(mainWindow: BrowserWindow) {
-  ipcMain.on("handleTask", async (event, { files, formData }) => {
+  ipcMain.on('handleTask', async (event, { files, formData }) => {
     logMessage(`handleTask start`, 'info');
     logMessage(`formData: \n ${JSON.stringify(formData, null, 2)}`, 'info');
-    processingQueue.push(...files.map(file => ({ file, formData })));
+    processingQueue.push(...files.map((file) => ({ file, formData })));
     if (!isProcessing) {
       isProcessing = true;
       isPaused = false;
@@ -29,37 +29,39 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
     }
   });
 
-  ipcMain.on("pauseTask", () => {
+  ipcMain.on('pauseTask', () => {
     isPaused = true;
   });
 
-  ipcMain.on("resumeTask", () => {
+  ipcMain.on('resumeTask', () => {
     isPaused = false;
   });
 
-  ipcMain.on("cancelTask", () => {
+  ipcMain.on('cancelTask', () => {
     shouldCancel = true;
     isPaused = false;
     processingQueue = [];
   });
   ipcMain.handle('checkMlmodel', async (event, modelName) => {
     // 如果不是苹果芯片，不需要该文件，直接返回true
-    if(!isAppleSilicon()){
-      return true
+    if (!isAppleSilicon()) {
+      return true;
     }
     // 判断模型目录下是否存在 `ggml-${modelName}-encoder.mlmodelc` 文件或者目录
-    const modelsPath = getPath("modelsPath");
-    const modelPath = path.join(modelsPath, `ggml-${modelName}-encoder.mlmodelc`);
+    const modelsPath = getPath('modelsPath');
+    const modelPath = path.join(
+      modelsPath,
+      `ggml-${modelName}-encoder.mlmodelc`,
+    );
     const exists = await fse.pathExists(modelPath);
-    return exists
+    return exists;
   });
 }
-
 
 async function processNextTasks(event) {
   if (shouldCancel) {
     isProcessing = false;
-    event.sender.send("taskComplete", "cancelled");
+    event.sender.send('taskComplete', 'cancelled');
     return;
   }
 
@@ -71,13 +73,13 @@ async function processNextTasks(event) {
   // 当队列为空且没有活动任务时，才完成处理
   if (processingQueue.length === 0 && activeTasksCount === 0) {
     isProcessing = false;
-    event.sender.send("taskComplete", "completed");
+    event.sender.send('taskComplete', 'completed');
     return;
   }
 
   // 计算可以启动的新任务数量
   const availableSlots = maxConcurrentTasks - activeTasksCount;
-  
+
   // 如果有可用槽位且队列中有任务，则启动新任务
   if (availableSlots > 0 && processingQueue.length > 0) {
     const tasksToProcess = processingQueue.splice(0, availableSlots);
@@ -86,10 +88,18 @@ async function processNextTasks(event) {
     tasksToProcess.forEach(async (task) => {
       activeTasksCount++;
       try {
-        const provider = translationProviders.find(p => p.id === task.formData.translateProvider);
-        await processFile(event, task.file, task.formData, hasOpenAiWhisper, provider);
+        const provider = translationProviders.find(
+          (p) => p.id === task.formData.translateProvider,
+        );
+        await processFile(
+          event,
+          task.file,
+          task.formData,
+          hasOpenAiWhisper,
+          provider,
+        );
       } catch (error) {
-        event.sender.send("message", error);
+        event.sender.send('message', error);
       } finally {
         activeTasksCount--;
         // 处理完一个任务后，检查是否可以启动新任务

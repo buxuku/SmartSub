@@ -1,7 +1,14 @@
 export type ProviderField = {
   key: string;
   label: string;
-  type: 'text' | 'password' | 'textarea' | 'url' | 'number' | 'switch' | 'select';
+  type:
+    | 'text'
+    | 'password'
+    | 'textarea'
+    | 'url'
+    | 'number'
+    | 'switch'
+    | 'select';
   placeholder?: string;
   required?: boolean;
   defaultValue?: string | number | boolean;
@@ -27,7 +34,7 @@ export type Provider = {
   [key: string]: any;
 };
 
-export const defaultUserPrompt  = '${content}';
+export const defaultUserPrompt = '${content}';
 export const defaultSystemPrompt = `# Role: 资深翻译专家
 你是一位经验丰富的字幕翻译专家,精通\${targetLanguage}的翻译,擅长将视频字幕译成流畅易懂的\${targetLanguage}。
 
@@ -53,8 +60,6 @@ Output:
 {\"0\": \"欢迎来到中国\", \"1\": \"中国是一个美丽的国家\"}
 \`\`\`
 `;
-
-
 
 export const PROVIDER_TYPES: ProviderType[] = [
   {
@@ -170,10 +175,10 @@ export const PROVIDER_TYPES: ProviderType[] = [
         options: [],
       },
       {
-        key:'systemPrompt',
-        label:'systemPrompt',
+        key: 'systemPrompt',
+        label: 'systemPrompt',
         type: 'textarea',
-        tips:'systemPromptTips',
+        tips: 'systemPromptTips',
         defaultValue: defaultSystemPrompt,
       },
       {
@@ -285,7 +290,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: true,
     icon: '🐺',
-    iconImg:'/images/deerapi.png',
+    iconImg: '/images/deerapi.png',
     fields: [
       {
         key: 'apiUrl',
@@ -306,10 +311,10 @@ export const PROVIDER_TYPES: ProviderType[] = [
         options: [],
       },
       {
-        key:'systemPrompt',
-        label:'systemPrompt',
+        key: 'systemPrompt',
+        label: 'systemPrompt',
         type: 'textarea',
-        tips:'systemPromptTips',
+        tips: 'systemPromptTips',
         defaultValue: defaultSystemPrompt,
       },
       {
@@ -327,7 +332,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
         tips: 'batchSizeTip',
       },
     ],
-  }, 
+  },
 ];
 
 export const CONFIG_TEMPLATES: Record<string, ProviderType> = {
@@ -343,7 +348,7 @@ export const CONFIG_TEMPLATES: Record<string, ProviderType> = {
         key: 'systemPrompt',
         label: 'systemPrompt',
         type: 'textarea',
-        tips:'systemPromptTips',
+        tips: 'systemPromptTips',
         defaultValue: defaultSystemPrompt,
       },
       {

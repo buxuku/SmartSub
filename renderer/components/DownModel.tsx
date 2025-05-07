@@ -1,4 +1,4 @@
-import React, { useEffect, FC, ReactNode } from "react";
+import React, { useEffect, FC, ReactNode } from 'react';
 
 interface IProps {
   modelName: string;
@@ -8,7 +8,13 @@ interface IProps {
   needsCoreML?: boolean;
 }
 
-const DownModel: FC<IProps> = ({ modelName, callBack, downSource, children, needsCoreML = true }) => {
+const DownModel: FC<IProps> = ({
+  modelName,
+  callBack,
+  downSource,
+  children,
+  needsCoreML = true,
+}) => {
   const [loading, setLoading] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
 
@@ -24,18 +30,17 @@ const DownModel: FC<IProps> = ({ modelName, callBack, downSource, children, need
       }
     };
 
-    window?.ipc?.on("downloadProgress", handleProgress);
-
+    window?.ipc?.on('downloadProgress', handleProgress);
   }, [modelName, callBack]);
 
   const handleDownModel = async () => {
     try {
       setLoading(true);
       console.log(needsCoreML, modelName, 'needsCoreML2');
-      await window?.ipc?.invoke("downloadModel", {
+      await window?.ipc?.invoke('downloadModel', {
         model: modelName,
         source: downSource,
-        needsCoreML
+        needsCoreML,
       });
     } catch (error) {
       console.error('下载模型失败:', error);

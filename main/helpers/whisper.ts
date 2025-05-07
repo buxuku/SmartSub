@@ -34,7 +34,7 @@ export const getModelsInstalled = () => {
       .readdirSync(modelsPath)
       ?.filter((file) => file.startsWith('ggml-') && file.endsWith('.bin'));
     return models.map((model) =>
-      model.replace('ggml-', '').replace('.bin', '')
+      model.replace('ggml-', '').replace('.bin', ''),
     );
   } catch (e) {
     return [];
@@ -46,7 +46,7 @@ export const deleteModel = async (model) => {
   const modelPath = path.join(modelsPath, `ggml-${model}.bin`);
   const coreMLModelPath = path.join(
     modelsPath,
-    `ggml-${model}-encoder.mlmodelc`
+    `ggml-${model}-encoder.mlmodelc`,
   );
 
   return new Promise((resolve, reject) => {
@@ -69,13 +69,13 @@ export const downloadModelSync = async (
   model: string,
   source: string,
   onProcess: (progress: number, message: string) => void,
-  needsCoreML = true
+  needsCoreML = true,
 ) => {
   const modelsPath = getPath('modelsPath');
   const modelPath = path.join(modelsPath, `ggml-${model}.bin`);
   const coreMLModelPath = path.join(
     modelsPath,
-    `ggml-${model}-encoder.mlmodelc`
+    `ggml-${model}-encoder.mlmodelc`,
   );
 
   // 检查模型文件是否已存在
@@ -145,7 +145,7 @@ export const downloadModelSync = async (
             try {
               const zipPath = path.join(
                 modelsPath,
-                `ggml-${model}-encoder.mlmodelc.zip`
+                `ggml-${model}-encoder.mlmodelc.zip`,
               );
               await decompress(zipPath, modelsPath);
               fs.unlinkSync(zipPath); // 删除zip文件
@@ -171,7 +171,7 @@ export const downloadModelSync = async (
     const cleanup = () => {
       win.webContents.session.removeListener(
         'will-download',
-        willDownloadHandler
+        willDownloadHandler,
       );
       win.destroy();
     };
@@ -233,7 +233,7 @@ export const isQuantizedModel = (model) => {
 export const hasEncoderModel = (model) => {
   const encoderModelPath = path.join(
     getPath('modelsPath'),
-    `ggml-${model}-encoder.mlmodelc`
+    `ggml-${model}-encoder.mlmodelc`,
   );
   return fs.existsSync(encoderModelPath);
 };
@@ -259,14 +259,14 @@ export async function loadWhisperAddon(model) {
       addonPath = path.join(
         getExtraResourcesPath(),
         'addons',
-        'addon-no-cuda.node'
+        'addon-no-cuda.node',
       );
     }
   } else if (isAppleSilicon() && hasEncoderModel(model)) {
     addonPath = path.join(
       getExtraResourcesPath(),
       'addons',
-      'addon.coreml.node'
+      'addon.coreml.node',
     );
   } else {
     addonPath = path.join(getExtraResourcesPath(), 'addons', 'addon.node');
@@ -280,6 +280,6 @@ export async function loadWhisperAddon(model) {
   process.dlopen(module, addonPath);
   return module.exports.whisper as (
     params: any,
-    callback: (error: Error | null, result?: any) => void
+    callback: (error: Error | null, result?: any) => void,
   ) => void;
 }

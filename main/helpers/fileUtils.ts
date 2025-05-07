@@ -16,7 +16,7 @@ export function getMd5(str: string) {
  */
 export function getTempDir() {
   const settings = store.get('settings');
-  
+
   // 判断是否使用自定义临时目录
   if (settings.useCustomTempDir && settings.customTempDir) {
     // 确保自定义目录存在
@@ -25,13 +25,16 @@ export function getTempDir() {
       try {
         fs.mkdirSync(customDir, { recursive: true });
       } catch (error) {
-        logMessage(`无法创建自定义临时目录: ${error.message}，将使用默认临时目录`, 'error');
+        logMessage(
+          `无法创建自定义临时目录: ${error.message}，将使用默认临时目录`,
+          'error',
+        );
         return path.join(app.getPath('temp'), 'whisper-subtitles');
       }
     }
     return customDir;
   }
-  
+
   // 默认临时目录
   return path.join(app.getPath('temp'), 'whisper-subtitles');
 }
@@ -75,7 +78,10 @@ export async function createOrClearFile(filePath: string): Promise<void> {
 /**
  * 向文件追加内容
  */
-export async function appendToFile(filePath: string, content: string): Promise<void> {
+export async function appendToFile(
+  filePath: string,
+  content: string,
+): Promise<void> {
   try {
     await fs.promises.appendFile(filePath, content);
   } catch (error) {
@@ -95,4 +101,4 @@ export async function readFileContent(filePath: string): Promise<string[]> {
     logMessage(`Failed to read file: ${error.message}`, 'error');
     throw error;
   }
-} 
+}

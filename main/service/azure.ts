@@ -18,7 +18,7 @@ const azureTranslator = async (
     apiSecret: string;
   },
   sourceLanguage?: string,
-  targetLanguage?: string
+  targetLanguage?: string,
 ): Promise<string | string[]> => {
   try {
     const endpoint = 'https://api.cognitive.microsofttranslator.com';
@@ -27,13 +27,13 @@ const azureTranslator = async (
     // 构建请求参数
     const params = new URLSearchParams({
       'api-version': '3.0',
-      'from': sourceLanguage || 'auto',
-      'to': targetLanguage || 'en'
+      from: sourceLanguage || 'auto',
+      to: targetLanguage || 'en',
     });
 
     // 构建请求体
-    const requestBody: AzureTranslateRequest[] = Array.isArray(texts) 
-      ? texts.map(text => ({ text }))
+    const requestBody: AzureTranslateRequest[] = Array.isArray(texts)
+      ? texts.map((text) => ({ text }))
       : [{ text: texts as string }];
 
     // 发送请求
@@ -48,17 +48,16 @@ const azureTranslator = async (
       },
       params: params,
       data: requestBody,
-      responseType: 'json'
+      responseType: 'json',
     });
     console.log(response, 'response');
 
     // 处理响应
     const results = response.data as AzureTranslateResponse[];
-    const translations = results.map(result => result.translations[0].text);
+    const translations = results.map((result) => result.translations[0].text);
 
     // 根据输入类型返回对应格式
     return Array.isArray(texts) ? translations : translations[0];
-
   } catch (error) {
     console.log(error, 'error');
     if (axios.isAxiosError(error)) {
@@ -69,4 +68,4 @@ const azureTranslator = async (
   }
 };
 
-export default azureTranslator; 
+export default azureTranslator;

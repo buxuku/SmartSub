@@ -198,7 +198,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     name="prompt"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className='flex items-center'>
+                        <FormLabel className="flex items-center">
                           {t('prompt')} <ToolTips text={t('promptTips')} />
                         </FormLabel>
                         <FormControl>
@@ -218,7 +218,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     name="maxContext"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className='flex items-center'>
+                        <FormLabel className="flex items-center">
                           {t('maxContext')}
                           <ToolTips text={t('maxContextTip')} />
                         </FormLabel>
@@ -250,7 +250,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     name="sourceSrtSaveOption"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className='flex items-center'>
+                        <FormLabel className="flex items-center">
                           {t('sourceSubtitleSaveSettings')}
                           <SavePathNotice />
                         </FormLabel>
@@ -290,7 +290,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                           <FormControl>
                             <Input
                               placeholder={t(
-                                'pleaseInputCustomSourceSrtFileName'
+                                'pleaseInputCustomSourceSrtFileName',
                               )}
                               {...field}
                               value={
@@ -515,7 +515,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                           <FormControl>
                             <Input
                               placeholder={t(
-                                'pleaseInputCustomTargetSrtFileName'
+                                'pleaseInputCustomTargetSrtFileName',
                               )}
                               {...field}
                               value={
@@ -587,7 +587,7 @@ const TaskTypeCard = ({ title, description, value, selected, onClick }) => {
     <Card
       className={cn(
         'p-2 cursor-pointer transition-all hover:shadow-md border-1',
-        selected ? 'bg-primary/5' : 'border-transparent'
+        selected ? 'bg-primary/5' : 'border-transparent',
       )}
       onClick={onClick}
     >

@@ -45,9 +45,9 @@ function initializeDefaultProviders(): Provider[] {
       ...Object.fromEntries(
         type.fields
           .filter((field) => field.defaultValue !== undefined)
-          .map((field) => [field.key, field.defaultValue])
+          .map((field) => [field.key, field.defaultValue]),
       ),
-    })
+    }),
   );
 
   store.set('translationProviders', providers);
@@ -81,7 +81,7 @@ function migrateProviders(oldProviders: any[]): Provider[] {
   const customProviders = oldProviders
     .filter(
       (p) =>
-        p.type === 'openai' && !PROVIDER_TYPES.some((type) => type.id === p.id)
+        p.type === 'openai' && !PROVIDER_TYPES.some((type) => type.id === p.id),
     )
     .map((p) => ({
       ...p,
@@ -94,7 +94,7 @@ function migrateProviders(oldProviders: any[]): Provider[] {
   // 添加缺失的内置服务商
   const existingIds = builtinProviders.map((p) => p.id);
   const missingProviders = PROVIDER_TYPES.filter(
-    (type) => type.isBuiltin && !existingIds.includes(type.id)
+    (type) => type.isBuiltin && !existingIds.includes(type.id),
   ).map((type) => ({
     id: type.id,
     name: type.name,
@@ -103,7 +103,7 @@ function migrateProviders(oldProviders: any[]): Provider[] {
     ...Object.fromEntries(
       type.fields
         .filter((field) => field.defaultValue !== undefined)
-        .map((field) => [field.key, field.defaultValue])
+        .map((field) => [field.key, field.defaultValue]),
     ),
   }));
 

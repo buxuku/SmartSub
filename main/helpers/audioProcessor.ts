@@ -12,43 +12,48 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 /**
  * 使用ffmpeg提取音频
  */
-export const extractAudio = (videoPath, audioPath, event = null, file = null) => {
-    const onProgress = (percent = 0) => {
-        logMessage(`extract audio progress ${percent}%`, 'info');
-        if (event && file) {
-            event.sender.send('taskProgressChange', file, 'extractAudio', percent);
-        }
-    };
-    return new Promise((resolve, reject) => {
-        try{
-            ffmpeg(`${videoPath}`)
-                .audioFrequency(16000)
-                .audioChannels(1)
-                .audioCodec('pcm_s16le')
-                .outputOptions('-y')
-                .on('start', function (str) {
-                    onProgress(0);
-                    logMessage(`extract audio start ${str}`, 'info');
-                })
-                .on('progress', function (progress) {
-                    const percent = progress.percent || 0;
-                    onProgress(percent);
-                })
-                .on('end', function (str) {
-                    logMessage(`extract audio done!`, 'info');
-                    onProgress(100);
-                    resolve(true);
-                })
-                .on('error', function (err) {
-                    logMessage(`extract audio error: ${err}`, 'error');
-                    reject(err);
-                })
-                .save(`${audioPath}`);
-        } catch (err) {
-            logMessage(`ffmpeg extract audio error: ${err}`, 'error'); 
-            reject(`${err}: ffmpeg extract audio error!`);
-        }
-    });
+export const extractAudio = (
+  videoPath,
+  audioPath,
+  event = null,
+  file = null,
+) => {
+  const onProgress = (percent = 0) => {
+    logMessage(`extract audio progress ${percent}%`, 'info');
+    if (event && file) {
+      event.sender.send('taskProgressChange', file, 'extractAudio', percent);
+    }
+  };
+  return new Promise((resolve, reject) => {
+    try {
+      ffmpeg(`${videoPath}`)
+        .audioFrequency(16000)
+        .audioChannels(1)
+        .audioCodec('pcm_s16le')
+        .outputOptions('-y')
+        .on('start', function (str) {
+          onProgress(0);
+          logMessage(`extract audio start ${str}`, 'info');
+        })
+        .on('progress', function (progress) {
+          const percent = progress.percent || 0;
+          onProgress(percent);
+        })
+        .on('end', function (str) {
+          logMessage(`extract audio done!`, 'info');
+          onProgress(100);
+          resolve(true);
+        })
+        .on('error', function (err) {
+          logMessage(`extract audio error: ${err}`, 'error');
+          reject(err);
+        })
+        .save(`${audioPath}`);
+    } catch (err) {
+      logMessage(`ffmpeg extract audio error: ${err}`, 'error');
+      reject(`${err}: ffmpeg extract audio error!`);
+    }
+  });
 };
 
 /**
@@ -57,7 +62,7 @@ export const extractAudio = (videoPath, audioPath, event = null, file = null) =>
 export async function extractAudioFromVideo(event, file, filePath) {
   event.sender.send('taskStatusChange', file, 'extractAudio', 'loading');
   const tempDir = ensureTempDir();
-  
+
   logMessage(`tempDir: ${tempDir}`, 'info');
   const md5FileName = getMd5(filePath);
   const tempAudioFile = path.join(tempDir, `${md5FileName}.wav`);

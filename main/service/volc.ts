@@ -4,7 +4,12 @@ import { convertLanguageCode } from '../helpers/utils';
 let service;
 let fetchApi;
 
-export default async function translate(query, proof, sourceLanguage, targetLanguage) {
+export default async function translate(
+  query,
+  proof,
+  sourceLanguage,
+  targetLanguage,
+) {
   const { apiKey: accessKeyId, apiSecret: secretKey } = proof || {};
   if (!accessKeyId || !secretKey) {
     console.log('请先配置 API KEY 和 API SECRET');
@@ -40,10 +45,10 @@ export default async function translate(query, proof, sourceLanguage, targetLang
     if (!res?.TranslationList?.[0]?.Translation) {
       throw new Error(res?.ResponseMetadata?.Error?.Code || '未知错误');
     }
-    
+
     // 如果输入是数组，返回结果数组
     if (Array.isArray(query)) {
-      return res.TranslationList.map(item => item.Translation);
+      return res.TranslationList.map((item) => item.Translation);
     }
     return res.TranslationList[0].Translation;
   } catch (error) {

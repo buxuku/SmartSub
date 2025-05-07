@@ -14,14 +14,14 @@ export function checkCudaSupport() {
     // 检查nvidia-smi是否存在（NVIDIA驱动程序）
     const nsmiResult = execSync('nvidia-smi', { encoding: 'utf8' });
     logMessage(`nsmiResult: ${nsmiResult}`, 'info');
-    
+
     // 从nvidia-smi输出中提取CUDA版本
     const cudaVersionMatch = nsmiResult.match(/CUDA Version: (\d+\.\d+)/);
     logMessage(
       `cudaVersionMatch: ${JSON.stringify(cudaVersionMatch, null, 2)}`,
-      'info'
+      'info',
     );
-    
+
     if (cudaVersionMatch) {
       const cudaVersion = parseFloat(cudaVersionMatch[1]);
       logMessage(`cudaVersion: ${cudaVersion}`, 'info');

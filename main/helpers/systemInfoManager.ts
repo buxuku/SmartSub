@@ -50,7 +50,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
           model?.toLowerCase(),
           source,
           onProcess,
-          needsCoreML
+          needsCoreML,
         );
         downloadingModels.delete(model);
         return true;
@@ -59,7 +59,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
         downloadingModels.delete(model);
         return false;
       }
-    }
+    },
   );
 
   ipcMain.handle('importModel', async (event) => {

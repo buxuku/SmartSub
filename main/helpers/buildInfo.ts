@@ -13,22 +13,24 @@ export function getBuildInfo() {
     const packagePath = app.isPackaged
       ? path.join(process.resourcesPath, 'app.asar', 'package.json')
       : path.join(app.getAppPath(), 'package.json');
-    
+
     const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
     // 返回构建信息，如果不存在则返回基本信息
-    return packageJson.buildInfo || {
-      platform: process.platform,
-      arch: process.arch,
-      version: app.getVersion(),
-      buildDate: null
-    };
+    return (
+      packageJson.buildInfo || {
+        platform: process.platform,
+        arch: process.arch,
+        version: app.getVersion(),
+        buildDate: null,
+      }
+    );
   } catch (error) {
     logMessage(`Error reading build info: ${error}`, 'error');
     return {
       platform: process.platform,
       arch: process.arch,
       version: app.getVersion(),
-      buildDate: null
+      buildDate: null,
     };
   }
 }
@@ -39,13 +41,13 @@ export function getBuildInfo() {
  */
 export function getCudaVersionInfo() {
   const buildInfo = getBuildInfo();
-  
+
   if (buildInfo.platform === 'win32' && buildInfo.cudaVersion) {
     return {
       version: buildInfo.cudaVersion,
-      optimization: buildInfo.cudaOpt || 'generic'
+      optimization: buildInfo.cudaOpt || 'generic',
     };
   }
-  
+
   return null;
 }

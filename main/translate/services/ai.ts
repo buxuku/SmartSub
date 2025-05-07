@@ -11,7 +11,7 @@ import { toJson } from 'really-relaxed-json';
 
 export async function handleAISingleTranslation(
   subtitle: Subtitle,
-  config: TranslationConfig
+  config: TranslationConfig,
 ): Promise<TranslationResult> {
   const { provider, sourceLanguage, targetLanguage, translator } = config;
   const sourceContent = subtitle.content.join('\n');
@@ -34,7 +34,7 @@ export async function handleAISingleTranslation(
       translationContent,
       translationConfig,
       sourceLanguage,
-      targetLanguage
+      targetLanguage,
     );
     logMessage(`AI response: \n ${targetContent}`, 'info');
     targetContent = targetContent.replace(THINK_TAG_REGEX, '').trim();
@@ -55,7 +55,7 @@ export async function handleAIBatchTranslation(
   subtitles: Subtitle[],
   config: TranslationConfig,
   batchSize: number = DEFAULT_BATCH_SIZE.AI,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
 ): Promise<TranslationResult[]> {
   const { provider, sourceLanguage, targetLanguage, translator } = config;
   const results: TranslationResult[] = [];
@@ -71,7 +71,7 @@ export async function handleAIBatchTranslation(
       const fullContent = `\`\`\`json\n${JSON.stringify(
         jsonContent,
         null,
-        2
+        2,
       )}\n\`\`\``;
       const translationContent = renderTemplate(
         provider.prompt || defaultUserPrompt,
@@ -79,7 +79,7 @@ export async function handleAIBatchTranslation(
           sourceLanguage,
           targetLanguage,
           content: fullContent,
-        }
+        },
       );
 
       const systemPrompt = renderTemplate(
@@ -88,7 +88,7 @@ export async function handleAIBatchTranslation(
           sourceLanguage,
           targetLanguage,
           content: fullContent,
-        }
+        },
       );
 
       const translationConfig = {
@@ -101,7 +101,7 @@ export async function handleAIBatchTranslation(
         translationContent,
         translationConfig,
         sourceLanguage,
-        targetLanguage
+        targetLanguage,
       );
       logMessage(`AI response: \n ${responseOrigin}`, 'info');
       const response = responseOrigin.replace(THINK_TAG_REGEX, '').trim();
@@ -125,7 +125,7 @@ export async function handleAIBatchTranslation(
         } catch (jsonError) {
           logMessage(
             `标准JSON解析失败，尝试使用tojson: ${jsonError.message}`,
-            'error'
+            'error',
           );
           try {
             // 使用JSON5进行更宽松的解析
@@ -147,7 +147,7 @@ export async function handleAIBatchTranslation(
       // 更新翻译进度
       const progress = Math.min(
         ((i + batchSize) / subtitles.length) * 100,
-        100
+        100,
       );
       if (onProgress) {
         onProgress(progress);

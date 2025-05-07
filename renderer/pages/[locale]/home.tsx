@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { cn } from "lib/utils";
+import { cn } from 'lib/utils';
 
 import { ScrollArea } from '@/components/ui/scroll-area';
-
 
 import useSystemInfo from 'hooks/useStystemInfo';
 import useFormConfig from 'hooks/useFormConfig';
@@ -11,10 +10,8 @@ import TaskControls from '@/components/TaskControls';
 import TaskList from '@/components/TaskList';
 import TaskConfigForm from '@/components/TaskConfigForm';
 import TaskListControl from '@/components/TaskListControl';
-import { getStaticPaths, makeStaticProperties } from '../../lib/get-static'
+import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { filterSupportedFiles } from 'lib/utils';
-
-
 
 export default function Component() {
   const [files, setFiles] = useState([]);
@@ -33,9 +30,9 @@ export default function Component() {
   useEffect(() => {
     window.ipc.send('setTasks', files);
   }, [files]);
-  
+
   const [isDragging, setIsDragging] = useState(false);
-  
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -49,17 +46,17 @@ export default function Component() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    
+
     const droppedFiles = filterSupportedFiles(Array.from(e.dataTransfer.files));
-    
+
     if (droppedFiles.length > 0) {
-      const fileList = droppedFiles.map(file => file.path);
+      const fileList = droppedFiles.map((file) => file.path);
       window?.ipc?.invoke('getDroppedFiles', fileList).then((filePaths) => {
-        const newFiles = filePaths.map(filePath => ({
+        const newFiles = filePaths.map((filePath) => ({
           uuid: Math.random().toString(36).substring(2),
-          filePath
+          filePath,
         }));
-        setFiles(prevFiles => [...prevFiles, ...newFiles]);
+        setFiles((prevFiles) => [...prevFiles, ...newFiles]);
       });
     }
   };
@@ -73,10 +70,10 @@ export default function Component() {
           systemInfo={systemInfo}
         />
       </div>
-      <div 
+      <div
         className={cn(
-          "relative flex h-full min-h-[50vh] border flex-col rounded-xl p-4 lg:col-span-2",
-          isDragging && "border-2 border-dashed border-primary bg-muted/50"
+          'relative flex h-full min-h-[50vh] border flex-col rounded-xl p-4 lg:col-span-2',
+          isDragging && 'border-2 border-dashed border-primary bg-muted/50',
         )}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
@@ -94,6 +91,6 @@ export default function Component() {
   );
 }
 
-export const getStaticProps = makeStaticProperties(['common', 'home'])
+export const getStaticProps = makeStaticProperties(['common', 'home']);
 
-export { getStaticPaths }
+export { getStaticPaths };

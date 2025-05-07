@@ -1,7 +1,7 @@
-import path from "path";
-import { app } from "electron";
-import os from "os";
-import { spawn } from "child_process";
+import path from 'path';
+import { app } from 'electron';
+import os from 'os';
+import { spawn } from 'child_process';
 
 // 将字符串转成模板字符串
 export const renderTemplate = (template, data) => {
@@ -13,19 +13,19 @@ export const renderTemplate = (template, data) => {
   return result;
 };
 
-export const isDarwin = () => os.platform() === "darwin";
+export const isDarwin = () => os.platform() === 'darwin';
 
-export const isWin32 = () => os.platform() === "win32";
+export const isWin32 = () => os.platform() === 'win32';
 
 export const isAppleSilicon = () => {
   return os.platform() === 'darwin' && os.arch() === 'arm64';
 };
 
 export const getExtraResourcesPath = () => {
-  const isProd = process.env.NODE_ENV === "production";
+  const isProd = process.env.NODE_ENV === 'production';
   return isProd
-    ? path.join(process.resourcesPath, "extraResources")
-    : path.join(app.getAppPath(), "extraResources");
+    ? path.join(process.resourcesPath, 'extraResources')
+    : path.join(app.getAppPath(), 'extraResources');
 };
 
 export function runCommand(command, args, onProcess = undefined) {
@@ -34,21 +34,19 @@ export function runCommand(command, args, onProcess = undefined) {
     const sendProgress = throttle((data) => {
       onProcess && onProcess(data?.toString());
     }, 300);
-    child.stdout.on("data", (data) => {
+    child.stdout.on('data', (data) => {
       // console.log(`${data} \n`);
       sendProgress(data);
     });
 
-    child.stderr.on("data", (data) => {
+    child.stderr.on('data', (data) => {
       // console.error(`${data} \n`);
       sendProgress(data);
     });
 
-    child.on("close", (code) => {
+    child.on('close', (code) => {
       if (code !== 0) {
-        reject(
-          new Error(`${command} ${args.join(" ")} process error ${code}`),
-        );
+        reject(new Error(`${command} ${args.join(' ')} process error ${code}`));
       } else {
         resolve(true);
       }
@@ -82,24 +80,24 @@ function throttle(func, limit) {
 // 删除 processFile 函数
 
 export const defaultUserConfig = {
-    sourceLanguage: 'en',
-    targetLanguage: 'zh',
-    customTargetSrtFileName: '${fileName}.${targetLanguage}',
-    customSourceSrtFileName: '${fileName}.${sourceLanguage}',
-    model: 'tiny',
-    translateProvider: 'baidu',
-    translateContent: 'onlyTranslate',
-    maxConcurrentTasks: 1,
-    sourceSrtSaveOption: 'noSave',
-    targetSrtSaveOption: 'fileNameWithLang',
-}
+  sourceLanguage: 'en',
+  targetLanguage: 'zh',
+  customTargetSrtFileName: '${fileName}.${targetLanguage}',
+  customSourceSrtFileName: '${fileName}.${sourceLanguage}',
+  model: 'tiny',
+  translateProvider: 'baidu',
+  translateContent: 'onlyTranslate',
+  maxConcurrentTasks: 1,
+  sourceSrtSaveOption: 'noSave',
+  targetSrtSaveOption: 'fileNameWithLang',
+};
 
 export function getSrtFileName(
   option: string,
   fileName: string,
   language: string,
   customFileName: string,
-  templateData: { [key: string]: string }
+  templateData: { [key: string]: string },
 ): string {
   switch (option) {
     case 'noSave':
@@ -127,7 +125,7 @@ export const supportedLanguage = [
   { name: '俄语', value: 'ru', baidu: 'ru', volc: 'ru' },
   { name: '葡萄牙语', value: 'pt', baidu: 'pt', volc: 'pt' },
   { name: '意大利语', value: 'it', baidu: 'it', volc: 'it' },
-  
+
   // 其他欧洲语言
   { name: '荷兰语', value: 'nl', baidu: 'nl', volc: 'nl' },
   { name: '波兰语', value: 'pl', baidu: 'pl', volc: 'pl' },
@@ -149,7 +147,7 @@ export const supportedLanguage = [
   { name: '爱沙尼亚语', value: 'et', baidu: 'est', volc: 'et' },
   { name: '拉脱维亚语', value: 'lv', baidu: null, volc: 'lv' },
   { name: '立陶宛语', value: 'lt', baidu: null, volc: 'lt' },
-  
+
   // 亚洲语言
   { name: '印地语', value: 'hi', baidu: null, volc: 'hi' },
   { name: '泰语', value: 'th', baidu: 'th', volc: 'th' },
@@ -159,12 +157,12 @@ export const supportedLanguage = [
   { name: '泰米尔语', value: 'ta', baidu: null, volc: 'ta' },
   { name: '乌尔都语', value: 'ur', baidu: null, volc: 'ur' },
   { name: '马拉地语', value: 'mr', baidu: null, volc: 'mr' },
-  
+
   // 中东语言
   { name: '阿拉伯语', value: 'ar', baidu: 'ara', volc: 'ar' },
   { name: '希伯来语', value: 'he', baidu: null, volc: 'he' },
   { name: '波斯语', value: 'fa', baidu: null, volc: 'fa' },
-  
+
   // 其他语言
   { name: '阿非利堪斯语', value: 'af', baidu: null, volc: 'af' },
   { name: '加泰罗尼亚语', value: 'ca', baidu: null, volc: 'ca' },
@@ -177,7 +175,7 @@ export const supportedLanguage = [
 
 // 语言代码转换函数
 export const convertLanguageCode = (code: string, target: 'baidu' | 'volc') => {
-  const lang = supportedLanguage.find(lang => lang.value === code);
+  const lang = supportedLanguage.find((lang) => lang.value === code);
   if (!lang) return code;
   return lang[target];
 };

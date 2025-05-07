@@ -4,7 +4,10 @@ import { logMessage, store } from './storeManager';
 import { createMessageSender } from './messageHandler';
 import { getSrtFileName } from './utils';
 import { extractAudioFromVideo } from './audioProcessor';
-import { generateSubtitleWithLocalWhisper, generateSubtitleWithBuiltinWhisper } from './subtitleGenerator';
+import {
+  generateSubtitleWithLocalWhisper,
+  generateSubtitleWithBuiltinWhisper,
+} from './subtitleGenerator';
 import translate from '../translate';
 
 /**
@@ -26,15 +29,34 @@ function onError(event, file, key, error) {
 /**
  * 生成字幕
  */
-async function generateSubtitle(event, file, audioFile, srtFile, formData, hasOpenAiWhisper) {
+async function generateSubtitle(
+  event,
+  file,
+  audioFile,
+  srtFile,
+  formData,
+  hasOpenAiWhisper,
+) {
   const settings = store.get('settings');
   const useLocalWhisper = settings?.useLocalWhisper;
 
   try {
     if (hasOpenAiWhisper && useLocalWhisper && settings?.whisperCommand) {
-      return await generateSubtitleWithLocalWhisper(event, file, audioFile, srtFile, formData);
+      return await generateSubtitleWithLocalWhisper(
+        event,
+        file,
+        audioFile,
+        srtFile,
+        formData,
+      );
     } else {
-      return await generateSubtitleWithBuiltinWhisper(event, file, audioFile, srtFile, formData);
+      return await generateSubtitleWithBuiltinWhisper(
+        event,
+        file,
+        audioFile,
+        srtFile,
+        formData,
+      );
     }
   } catch (error) {
     onError(event, file, 'extractSubtitle', error);
@@ -45,39 +67,79 @@ async function generateSubtitle(event, file, audioFile, srtFile, formData, hasOp
 /**
  * 翻译字幕
  */
-async function translateSubtitle(event, file, directory, fileName, srtFile, formData, provider, retry = 0) {
+async function translateSubtitle(
+  event,
+  file,
+  directory,
+  fileName,
+  srtFile,
+  formData,
+  provider,
+  retry = 0,
+) {
   event.sender.send('taskStatusChange', file, 'translateSubtitle', 'loading');
 
   const onProgress = (progress) => {
-    event.sender.send('taskProgressChange', file, 'translateSubtitle', Math.min(progress, 100));
+    event.sender.send(
+      'taskProgressChange',
+      file,
+      'translateSubtitle',
+      Math.min(progress, 100),
+    );
   };
   try {
-    await translate(event, directory, fileName, srtFile, formData, provider, onProgress);
+    await translate(
+      event,
+      directory,
+      fileName,
+      srtFile,
+      formData,
+      provider,
+      onProgress,
+    );
     event.sender.send('taskStatusChange', file, 'translateSubtitle', 'done');
   } catch (error) {
     if (retry >= +(formData?.translateRetryTimes || 0)) {
       onError(event, file, 'translateSubtitle', error);
       return;
     }
-    logMessage(`translateSubtitle error: ${error.message}, retry ${retry + 1}`, 'error');
-    await translateSubtitle(event, file, directory, fileName, srtFile, formData, provider, retry + 1);
+    logMessage(
+      `translateSubtitle error: ${error.message}, retry ${retry + 1}`,
+      'error',
+    );
+    await translateSubtitle(
+      event,
+      file,
+      directory,
+      fileName,
+      srtFile,
+      formData,
+      provider,
+      retry + 1,
+    );
   }
 }
 
 /**
  * 处理文件
  */
-export async function processFile(event, file, formData, hasOpenAiWhisper, provider) {
-	const {
-		sourceLanguage,
-		targetLanguage,
-		sourceSrtSaveOption,
-		customSourceSrtFileName,
-		model,
-		translateProvider,
-		saveAudio,
-		taskType,
-	} = formData || {};
+export async function processFile(
+  event,
+  file,
+  formData,
+  hasOpenAiWhisper,
+  provider,
+) {
+  const {
+    sourceLanguage,
+    targetLanguage,
+    sourceSrtSaveOption,
+    customSourceSrtFileName,
+    model,
+    translateProvider,
+    saveAudio,
+    taskType,
+  } = formData || {};
 
   try {
     const { filePath } = file;
@@ -85,26 +147,36 @@ export async function processFile(event, file, formData, hasOpenAiWhisper, provi
     let fileName = path.basename(filePath, path.extname(filePath));
     const fileExtension = path.extname(filePath).toLowerCase();
 
-    const isSubtitleFile = ['.srt', '.vtt', '.ass', '.ssa'].includes(fileExtension);
+    const isSubtitleFile = ['.srt', '.vtt', '.ass', '.ssa'].includes(
+      fileExtension,
+    );
     let srtFile = filePath;
     logMessage(`begin process ${fileName} with task type: ${taskType}`, 'info');
 
     // 确定是否需要生成字幕
-    const shouldGenerateSubtitle = taskType === 'generateAndTranslate' || taskType === 'generateOnly';
+    const shouldGenerateSubtitle =
+      taskType === 'generateAndTranslate' || taskType === 'generateOnly';
 
     // 确定是否需要翻译字幕
-    const shouldTranslateSubtitle = taskType === 'generateAndTranslate' || taskType === 'translateOnly';
+    const shouldTranslateSubtitle =
+      taskType === 'generateAndTranslate' || taskType === 'translateOnly';
 
     // 处理非字幕文件 - 需要生成字幕的情况
     if (!isSubtitleFile && shouldGenerateSubtitle) {
-      const templateData = { fileName, sourceLanguage, targetLanguage, model, translateProvider: provider.name };
+      const templateData = {
+        fileName,
+        sourceLanguage,
+        targetLanguage,
+        model,
+        translateProvider: provider.name,
+      };
 
       const sourceSrtFileName = getSrtFileName(
         sourceSrtSaveOption,
         fileName,
         sourceLanguage,
         customSourceSrtFileName,
-        templateData
+        templateData,
       );
 
       srtFile = path.join(directory, `${sourceSrtFileName}`);
@@ -113,7 +185,11 @@ export async function processFile(event, file, formData, hasOpenAiWhisper, provi
         // 提取音频
         logMessage(`extract audio for ${fileName}`, 'info');
         event.sender.send('taskStatusChange', file, 'extractAudio', 'loading');
-        const tempAudioFile = await extractAudioFromVideo(event, file, filePath);
+        const tempAudioFile = await extractAudioFromVideo(
+          event,
+          file,
+          filePath,
+        );
         event.sender.send('taskStatusChange', file, 'extractAudio', 'done');
 
         // 如果开启了保存音频选项，则复制一份到视频同目录
@@ -132,7 +208,7 @@ export async function processFile(event, file, formData, hasOpenAiWhisper, provi
           tempAudioFile,
           srtFile,
           formData,
-          hasOpenAiWhisper
+          hasOpenAiWhisper,
         );
       } catch (error) {
         // 如果是提取音频或生成字幕过程中出错，已经在各自的函数中处理了错误状态
@@ -142,7 +218,12 @@ export async function processFile(event, file, formData, hasOpenAiWhisper, provi
     } else if (isSubtitleFile) {
       // 处理字幕文件
       try {
-        event.sender.send('taskStatusChange', file, 'prepareSubtitle', 'loading');
+        event.sender.send(
+          'taskStatusChange',
+          file,
+          'prepareSubtitle',
+          'loading',
+        );
         // 这里可以添加字幕格式转换的逻辑，如果需要的话
         event.sender.send('taskStatusChange', file, 'prepareSubtitle', 'done');
       } catch (error) {
@@ -166,12 +247,16 @@ export async function processFile(event, file, formData, hasOpenAiWhisper, provi
         fileName,
         srtFile,
         formData,
-        provider
+        provider,
       );
     }
 
     // 清理临时文件
-    if (!isSubtitleFile && sourceSrtSaveOption === 'noSave' && shouldGenerateSubtitle) {
+    if (
+      !isSubtitleFile &&
+      sourceSrtSaveOption === 'noSave' &&
+      shouldGenerateSubtitle
+    ) {
       logMessage(`delete temp subtitle ${srtFile}`, 'warning');
       fs.unlink(srtFile, (err) => {
         if (err) console.log(err);

@@ -9,7 +9,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
 
   ipcMain.on('openDialog', async (event, data) => {
     const { fileType } = data;
-    console.log(fileType, 'fileType')
+    console.log(fileType, 'fileType');
     const name = fileType === 'srt' ? 'Subtitle Files' : 'Media Files';
     const extensions =
       fileType === 'srt'
@@ -79,7 +79,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         } catch {
           return null;
         }
-      })
+      }),
     );
 
     return validPaths.filter(Boolean);

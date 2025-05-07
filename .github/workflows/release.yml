@@ -100,8 +100,8 @@ jobs:
       - name: Prepare macOS addon
         if: startsWith(matrix.os, 'macos')
         env:
-          BUILD_PLATFORM: "darwin"
-          BUILD_ARCH: "${{ matrix.arch }}"
+          BUILD_PLATFORM: 'darwin'
+          BUILD_ARCH: '${{ matrix.arch }}'
         run: |
           cp temp-artifacts/${{ matrix.addon_name }} extraResources/addons/addon.node
           cp temp-artifacts/addon-macos-arm64-coreml.node extraResources/addons/addon.coreml.node
@@ -112,10 +112,10 @@ jobs:
       - name: Prepare Windows addon
         if: matrix.os == 'windows-2019'
         env:
-          BUILD_PLATFORM: "win32"
-          BUILD_ARCH: "${{ matrix.arch }}"
-          CUDA_VERSION: "${{ matrix.cuda_version }}"
-          CUDA_OPT: "${{ matrix.cuda_opt }}"
+          BUILD_PLATFORM: 'win32'
+          BUILD_ARCH: '${{ matrix.arch }}'
+          CUDA_VERSION: '${{ matrix.cuda_version }}'
+          CUDA_OPT: '${{ matrix.cuda_opt }}'
         run: |
           Copy-Item -Path "temp-artifacts/${{ matrix.addon_name }}" -Destination "extraResources/addons/addon.node"
           Copy-Item -Path "temp-artifacts/addon-windows-no-cuda.node" -Destination "extraResources/addons/addon-no-cuda.node"

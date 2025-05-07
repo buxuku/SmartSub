@@ -4,7 +4,7 @@ import { LogEntry } from './store/types';
 
 export function logMessage(
   message: string | Error,
-  type: 'info' | 'error' | 'warning' = 'info'
+  type: 'info' | 'error' | 'warning' = 'info',
 ) {
   const logs = store.get('logs');
   const messageStr =

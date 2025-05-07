@@ -19,10 +19,10 @@ export interface TranslationConfig {
 }
 
 export type TranslatorFunction = (
-  text: string[], 
-  config: any, 
-  from: string, 
-  to: string
+  text: string[],
+  config: any,
+  from: string,
+  to: string,
 ) => Promise<string>;
 
 export interface Provider {
@@ -35,4 +35,4 @@ export interface Provider {
   useBatchTranslation?: boolean;
   batchSize?: number;
   [key: string]: any;
-} 
+}
