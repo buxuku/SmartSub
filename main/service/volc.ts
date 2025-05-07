@@ -36,7 +36,7 @@ export default async function translate(
     });
   }
   const postBody = {
-    SourceLanguage: formatSourceLanguage,
+    SourceLanguage: formatSourceLanguage == 'auto' ? undefined : formatSourceLanguage,
     TargetLanguage: formatTargetLanguage,
     TextList: Array.isArray(query) ? query : [query],
   };
