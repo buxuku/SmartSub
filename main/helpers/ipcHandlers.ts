@@ -6,17 +6,45 @@ import { createMessageSender } from './messageHandler';
 // 定义支持的文件扩展名常量
 export const MEDIA_EXTENSIONS = [
   // 视频格式
-  '.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm',
+  '.mp4',
+  '.avi',
+  '.mov',
+  '.mkv',
+  '.flv',
+  '.wmv',
+  '.webm',
   // 音频格式
-  '.mp3', '.wav', '.ogg', '.aac', '.wma', '.flac', '.m4a',
-  '.aiff', '.ape', '.opus', '.ac3', '.amr', '.au', '.mid',
+  '.mp3',
+  '.wav',
+  '.ogg',
+  '.aac',
+  '.wma',
+  '.flac',
+  '.m4a',
+  '.aiff',
+  '.ape',
+  '.opus',
+  '.ac3',
+  '.amr',
+  '.au',
+  '.mid',
   // 其他常见视频格式
-  '.3gp', '.asf', '.rm', '.rmvb', '.vob', '.ts', '.mts', '.m2ts',
+  '.3gp',
+  '.asf',
+  '.rm',
+  '.rmvb',
+  '.vob',
+  '.ts',
+  '.mts',
+  '.m2ts',
 ];
 
 export const SUBTITLE_EXTENSIONS = [
   // 字幕格式
-  '.srt', '.vtt', '.ass', '.ssa',
+  '.srt',
+  '.vtt',
+  '.ass',
+  '.ssa',
 ];
 
 // 判断文件是否为媒体文件
@@ -32,23 +60,30 @@ export function isSubtitleFile(filePath: string): boolean {
 }
 
 // 递归获取文件夹中的符合任务类型的文件
-async function getMediaFilesFromDirectory(directoryPath: string, taskType: string): Promise<string[]> {
+async function getMediaFilesFromDirectory(
+  directoryPath: string,
+  taskType: string,
+): Promise<string[]> {
   // 根据任务类型选择扩展名
-  const supportedExtensions = taskType === 'translate' 
-    ? SUBTITLE_EXTENSIONS 
-    : MEDIA_EXTENSIONS;
-  
+  const supportedExtensions =
+    taskType === 'translate' ? SUBTITLE_EXTENSIONS : MEDIA_EXTENSIONS;
+
   const files: string[] = [];
-  
+
   try {
-    const entries = await fs.promises.readdir(directoryPath, { withFileTypes: true });
-    
+    const entries = await fs.promises.readdir(directoryPath, {
+      withFileTypes: true,
+    });
+
     for (const entry of entries) {
       const fullPath = path.join(directoryPath, entry.name);
-      
+
       if (entry.isDirectory()) {
         // 递归处理子目录
-        const subDirFiles = await getMediaFilesFromDirectory(fullPath, taskType);
+        const subDirFiles = await getMediaFilesFromDirectory(
+          fullPath,
+          taskType,
+        );
         files.push(...subDirFiles);
       } else if (entry.isFile()) {
         // 检查文件扩展名是否受支持
@@ -61,7 +96,7 @@ async function getMediaFilesFromDirectory(directoryPath: string, taskType: strin
   } catch (error) {
     console.error(`读取目录 ${directoryPath} 时出错:`, error);
   }
-  
+
   return files;
 }
 
@@ -74,12 +109,13 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     const { fileType } = data;
     console.log(fileType, 'fileType');
     const name = fileType === 'srt' ? 'Subtitle Files' : 'Media Files';
-    
+
     // 使用已定义的常量获取扩展名
-    const extensions = fileType === 'srt'
-      ? SUBTITLE_EXTENSIONS.map(ext => ext.substring(1)) // 移除前面的点
-      : MEDIA_EXTENSIONS.map(ext => ext.substring(1));
-    
+    const extensions =
+      fileType === 'srt'
+        ? SUBTITLE_EXTENSIONS.map((ext) => ext.substring(1)) // 移除前面的点
+        : MEDIA_EXTENSIONS.map((ext) => ext.substring(1));
+
     const result = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections'],
       filters: [
@@ -107,20 +143,25 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
   ipcMain.handle('getDroppedFiles', async (event, { files, taskType }) => {
     // 处理文件和文件夹
     const allValidPaths: string[] = [];
-    
+
     for (const filePath of files) {
       try {
         const stats = await fs.promises.stat(filePath);
-        
+
         if (stats.isDirectory()) {
           // 如果是文件夹，递归获取所有符合任务类型的文件
-          const filteredFiles = await getMediaFilesFromDirectory(filePath, taskType);
+          const filteredFiles = await getMediaFilesFromDirectory(
+            filePath,
+            taskType,
+          );
           allValidPaths.push(...filteredFiles);
         } else if (stats.isFile()) {
           // 如果是文件，根据任务类型过滤
           // 根据任务类型决定添加哪种文件
-          if ((taskType === 'translate' && isSubtitleFile(filePath)) || 
-              (taskType !== 'translate' && isMediaFile(filePath))) {
+          if (
+            (taskType === 'translate' && isSubtitleFile(filePath)) ||
+            (taskType !== 'translate' && isMediaFile(filePath))
+          ) {
             allValidPaths.push(filePath);
           }
         }
@@ -129,7 +170,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         continue;
       }
     }
-    
+
     return allValidPaths;
   });
 

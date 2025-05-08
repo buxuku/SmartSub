@@ -3,11 +3,3 @@ export interface ISystemInfo {
   modelsPath: string;
   downloadingModels: string[];
 }
-
-export interface IFiles {
-  uuid: string;
-  filePath: string;
-  extractAudio?: boolean;
-  extractSubtitle?: boolean;
-  translateSubtitle?: boolean;
-}

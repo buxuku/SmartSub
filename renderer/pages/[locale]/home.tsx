@@ -12,9 +12,10 @@ import TaskConfigForm from '@/components/TaskConfigForm';
 import TaskListControl from '@/components/TaskListControl';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { filterSupportedFiles } from 'lib/utils';
+import type { ITaskFile } from '../../../types';
 
 export default function Component() {
-  const [files, setFiles] = useState([]);
+  const [files, setFiles] = useState<ITaskFile[]>([]);
   const { systemInfo } = useSystemInfo();
   const { form, formData } = useFormConfig();
   useIpcCommunication(setFiles);
@@ -84,17 +85,19 @@ export default function Component() {
       // 根据translateOnly任务类型决定是否只处理字幕文件
       const isTranslateOnly = formData.taskType === 'translateOnly';
       const taskType = isTranslateOnly ? 'translate' : 'media';
-      
-      window?.ipc?.invoke('getDroppedFiles', { 
-        files: paths, 
-        taskType 
-      }).then((filePaths) => {
-        const newFiles = filePaths.map((filePath) => ({
-          uuid: Math.random().toString(36).substring(2),
-          filePath,
-        }));
-        setFiles((prevFiles) => [...prevFiles, ...newFiles]);
-      });
+
+      window?.ipc
+        ?.invoke('getDroppedFiles', {
+          files: paths,
+          taskType,
+        })
+        .then((filePaths) => {
+          const newFiles = filePaths.map((filePath) => ({
+            uuid: crypto.randomUUID(),
+            filePath,
+          }));
+          setFiles((prevFiles) => [...prevFiles, ...newFiles]);
+        });
     }
   };
 
@@ -121,7 +124,7 @@ export default function Component() {
           <TaskList files={files} formData={formData} />
         </ScrollArea>
         <div className="flex-1" />
-        <TaskControls formData={formData} files={files} />
+        <TaskControls formData={formData} files={files} setFiles={setFiles} />
       </div>
       {/* <Guide systemInfo={systemInfo} updateSystemInfo={updateSystemInfo} /> */}
     </div>

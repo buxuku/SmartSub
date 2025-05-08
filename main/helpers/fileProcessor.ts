@@ -9,6 +9,8 @@ import {
   generateSubtitleWithBuiltinWhisper,
 } from './subtitleGenerator';
 import translate from '../translate';
+import type { IpcMainEvent } from 'electron';
+import type { ITaskFile, Provider } from '../../types';
 
 /**
  * 处理任务错误
@@ -124,12 +126,13 @@ async function translateSubtitle(
  * 处理文件
  */
 export async function processFile(
-  event,
-  file,
-  formData,
-  hasOpenAiWhisper,
-  provider,
+  event: IpcMainEvent,
+  file: ITaskFile,
+  hasOpenAiWhisper: boolean,
+  provider: Provider,
 ) {
+  const { formData = {} } = file;
+
   const {
     sourceLanguage,
     targetLanguage,
@@ -202,14 +205,14 @@ export async function processFile(
 
         // 生成字幕
         logMessage(`generate subtitle ${srtFile}`, 'info');
-        srtFile = await generateSubtitle(
+        srtFile = (await generateSubtitle(
           event,
           file,
           tempAudioFile,
           srtFile,
           formData,
           hasOpenAiWhisper,
-        );
+        )) as string;
       } catch (error) {
         // 如果是提取音频或生成字幕过程中出错，已经在各自的函数中处理了错误状态
         // 这里只需要继续抛出错误，中断后续流程

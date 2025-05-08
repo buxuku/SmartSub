@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
-import { IFiles } from 'types';
+import { useEffect, type Dispatch, type SetStateAction } from 'react';
+import type { ITaskFile } from '../../types';
 
-export default function useIpcCommunication(setFiles) {
+export default function useIpcCommunication(
+  setFiles: Dispatch<SetStateAction<ITaskFile[]>>,
+) {
   useEffect(() => {
     window?.ipc?.on('file-selected', (res: string[]) => {
       setFiles((prevFiles) => [
@@ -14,7 +16,7 @@ export default function useIpcCommunication(setFiles) {
     });
 
     const handleTaskStatusChange = (
-      res: IFiles,
+      res: ITaskFile,
       key: string,
       status: string,
     ) => {
@@ -27,7 +29,7 @@ export default function useIpcCommunication(setFiles) {
     };
 
     const handleTaskProgressChange = (
-      res: IFiles,
+      res: ITaskFile,
       key: string,
       progress: number,
     ) => {
@@ -41,7 +43,7 @@ export default function useIpcCommunication(setFiles) {
     };
 
     const handleTaskErrorChange = (
-      res: IFiles,
+      res: ITaskFile,
       key: string,
       errorMsg: string,
     ) => {
