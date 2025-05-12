@@ -1,5 +1,6 @@
 import path from 'path';
-import { app } from 'electron';
+import { app, protocol } from 'electron';
+import fs from 'fs';
 import serve from 'electron-serve';
 import { createWindow } from './helpers/create-window';
 import { setupIpcHandlers } from './helpers/ipcHandlers';
@@ -22,6 +23,18 @@ if (isProd) {
 (async () => {
   await app.whenReady();
 
+  // 注册自定义协议处理本地媒体文件
+  protocol.registerFileProtocol('media', (request, callback) => {
+    const url = request.url.substr(8); // 移除 "media://" 部分
+    try {
+      const decodedUrl = decodeURIComponent(url);
+      return callback({ path: decodedUrl });
+    } catch (error) {
+      console.error('Protocol handler error:', error);
+      return callback({ error: -2 });
+    }
+  });
+
   setupStoreHandlers();
 
   const settings = store.get('settings');
@@ -32,6 +45,8 @@ if (isProd) {
     height: 1040,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      // 允许加载本地资源
+      webSecurity: false,
     },
   });
 

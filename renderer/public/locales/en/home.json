@@ -73,5 +73,16 @@
   "dragSubtitleHere": "Drag subtitle files or folders here, or click to upload",
   "dragMediaHere": "Drag media files or folders here, or click to upload",
   "supportedSubtitleFormats": "Supported subtitle formats: SRT",
-  "supportedMediaFormats": "Supported media formats: MP4, AVI, MKV, MOV, MP3, WAV"
+  "supportedMediaFormats": "Supported media formats: MP4, AVI, MKV, MOV, MP3, WAV",
+  "proofread": "Proofread",
+  "subtitleProofread": "Subtitle Proofreading",
+  "sourceSubtitle": "Source Subtitle",
+  "targetSubtitle": "Translated Subtitle",
+  "subtitleTimeline": "Subtitle Timeline",
+  "saveChanges": "Save Changes",
+  "discardChanges": "Discard Changes",
+  "videoPlayer": "Video Player",
+  "subtitleEditor": "Subtitle Editor",
+  "originalText": "Original Text",
+  "translatedText": "Translated Text"
 }
