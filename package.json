@@ -59,6 +59,7 @@
     "openai": "^4.0.0",
     "react-hook-form": "^7.51.4",
     "react-i18next": "^15.0.2",
+    "react-player": "^2.16.0",
     "really-relaxed-json": "^0.3.2",
     "regenerator-runtime": "^0.14.1",
     "sonner": "^1.4.41",
