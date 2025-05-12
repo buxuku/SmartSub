@@ -50,6 +50,7 @@
     "fs-extra": "^11.3.0",
     "i18next": "^23.15.2",
     "isomorphic-git": "^1.25.10",
+    "jsonrepair": "^3.12.0",
     "lodash": "^4.17.21",
     "lucide-react": "^0.378.0",
     "next-i18next": "^15.3.1",

@@ -75,7 +75,6 @@ async function translateSubtitle(
   srtFile,
   formData,
   provider,
-  retry = 0,
 ) {
   event.sender.send('taskStatusChange', file, 'translateSubtitle', 'loading');
 
@@ -87,6 +86,7 @@ async function translateSubtitle(
       Math.min(progress, 100),
     );
   };
+
   try {
     await translate(
       event,
@@ -99,24 +99,7 @@ async function translateSubtitle(
     );
     event.sender.send('taskStatusChange', file, 'translateSubtitle', 'done');
   } catch (error) {
-    if (retry >= +(formData?.translateRetryTimes || 0)) {
-      onError(event, file, 'translateSubtitle', error);
-      return;
-    }
-    logMessage(
-      `translateSubtitle error: ${error.message}, retry ${retry + 1}`,
-      'error',
-    );
-    await translateSubtitle(
-      event,
-      file,
-      directory,
-      fileName,
-      srtFile,
-      formData,
-      provider,
-      retry + 1,
-    );
+    onError(event, file, 'translateSubtitle', error);
   }
 }
 

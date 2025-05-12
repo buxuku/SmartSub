@@ -18,6 +18,7 @@ export default async function translate(
   formData: any,
   provider: Provider,
   onProgress?: (progress: number) => void,
+  maxRetries?: number,
 ): Promise<boolean> {
   const {
     translateContent,
@@ -25,8 +26,16 @@ export default async function translate(
     customTargetSrtFileName,
     sourceLanguage,
     targetLanguage,
+    translateRetryTimes,
   } = formData || {};
 
+  // 如果参数中有指定重试次数，则使用参数值，否则使用表单中的值或默认为2
+  const retryCount =
+    maxRetries !== undefined
+      ? maxRetries
+      : translateRetryTimes
+        ? parseInt(translateRetryTimes)
+        : 2;
   const renderContentTemplate = CONTENT_TEMPLATES[translateContent];
 
   try {
@@ -35,7 +44,10 @@ export default async function translate(
       throw new Error(`Unknown translation provider: ${provider.type}`);
     }
 
-    logMessage(`Translation started using ${provider.type}`, 'info');
+    logMessage(
+      `Translation started using ${provider.type}, max retries: ${retryCount}`,
+      'info',
+    );
 
     const data = await readFileContent(absolutePath);
     const subtitles = parseSubtitles(data);
@@ -78,6 +90,7 @@ export default async function translate(
       translator,
       onProgress,
       handleTranslationResult,
+      retryCount,
     );
 
     logMessage('Translation completed', 'info');
