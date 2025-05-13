@@ -123,12 +123,14 @@ interface SubtitleProofreadProps {
   file: any;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  taskType: string;
 }
 
 const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
   file,
   open,
   onOpenChange,
+  taskType,
 }) => {
   const { t } = useTranslation('home');
   const [originalSubtitles, setOriginalSubtitles] = useState<Subtitle[]>([]);
@@ -147,6 +149,9 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
   const [videoInfo, setVideoInfo] = useState({ fileName: '', extension: '' });
   const [hasTranslationFile, setHasTranslationFile] = useState(false);
   const playerRef = useRef<ReactPlayer>(null);
+
+  // 是否需要显示翻译内容
+  const shouldShowTranslation = taskType !== 'generateOnly';
 
   useEffect(() => {
     if (file && open) {
@@ -243,24 +248,32 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
 
       // 加载原始字幕和翻译字幕
       const originalSrtFile = path.join(directory, `${fileName}.srt`);
-      let translatedFileName = '';
 
-      // 寻找翻译后的字幕文件（一般有语言代码后缀）
-      const files = await getDirectoryFiles(directory);
-      setTranslatedFiles(files);
+      // 只有在需要显示翻译内容时才寻找翻译文件
+      if (shouldShowTranslation) {
+        let translatedFileName = '';
 
-      const translatedSrtFile = files.find(
-        (f) =>
-          f.startsWith(fileName) &&
-          f.endsWith('.srt') &&
-          f !== `${fileName}.srt`,
-      );
+        // 寻找翻译后的字幕文件（一般有语言代码后缀）
+        const files = await getDirectoryFiles(directory);
+        setTranslatedFiles(files);
 
-      // 设置是否有翻译文件的状态
-      setHasTranslationFile(!!translatedSrtFile);
+        const translatedSrtFile = files.find(
+          (f) =>
+            f.startsWith(fileName) &&
+            f.endsWith('.srt') &&
+            f !== `${fileName}.srt`,
+        );
 
-      if (translatedSrtFile) {
-        translatedFileName = path.join(directory, translatedSrtFile);
+        // 设置是否有翻译文件的状态
+        setHasTranslationFile(!!translatedSrtFile);
+
+        if (translatedSrtFile) {
+          translatedFileName = path.join(directory, translatedSrtFile);
+        }
+      } else {
+        // 如果不需要翻译，则直接设置为无翻译文件
+        setHasTranslationFile(false);
+        setTranslatedFiles([]);
       }
 
       // 读取字幕文件
@@ -271,44 +284,66 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
             const subtitles = parseSubtitles(data.content.split('\n'));
             setOriginalSubtitles(subtitles);
 
-            // 读取翻译字幕
-            if (translatedFileName) {
-              const removeTranslatedListener = window.ipc.on(
-                'readSubtitleFileReply',
-                (translatedData: SubtitleFileResponse) => {
-                  if (!translatedData.error && translatedData.content) {
-                    const translatedSubs = parseSubtitles(
-                      translatedData.content.split('\n'),
-                    );
-                    setTranslatedSubtitles(translatedSubs);
-
-                    // 合并字幕，匹配相同的时间码
-                    const merged = subtitles.map((sub, index) => {
-                      const translated =
-                        translatedSubs.find(
-                          (ts) => ts.startEndTime === sub.startEndTime,
-                        ) || translatedSubs[index];
-                      return {
-                        ...sub,
-                        sourceContent: sub.content.join('\n'),
-                        targetContent: translated
-                          ? translated.content.join('\n')
-                          : '',
-                        isEditing: false,
-                      };
-                    });
-
-                    setMergedSubtitles(merged);
-                  }
-                  removeTranslatedListener(); // 移除监听器
-                },
+            // 读取翻译字幕 - 只在需要显示翻译内容和有翻译文件时进行
+            if (shouldShowTranslation && hasTranslationFile) {
+              const translatedFileName = translatedFiles.find(
+                (f) =>
+                  f.startsWith(fileName) &&
+                  f.endsWith('.srt') &&
+                  f !== `${fileName}.srt`,
               );
 
-              window.ipc.send('readSubtitleFile', {
-                filePath: translatedFileName,
-              });
+              if (translatedFileName) {
+                const translatedFilePath = path.join(
+                  directory,
+                  translatedFileName,
+                );
+                const removeTranslatedListener = window.ipc.on(
+                  'readSubtitleFileReply',
+                  (translatedData: SubtitleFileResponse) => {
+                    if (!translatedData.error && translatedData.content) {
+                      const translatedSubs = parseSubtitles(
+                        translatedData.content.split('\n'),
+                      );
+                      setTranslatedSubtitles(translatedSubs);
+
+                      // 合并字幕，匹配相同的时间码
+                      const merged = subtitles.map((sub, index) => {
+                        const translated =
+                          translatedSubs.find(
+                            (ts) => ts.startEndTime === sub.startEndTime,
+                          ) || translatedSubs[index];
+                        return {
+                          ...sub,
+                          sourceContent: sub.content.join('\n'),
+                          targetContent: translated
+                            ? translated.content.join('\n')
+                            : '',
+                          isEditing: false,
+                        };
+                      });
+
+                      setMergedSubtitles(merged);
+                    }
+                    removeTranslatedListener(); // 移除监听器
+                  },
+                );
+
+                window.ipc.send('readSubtitleFile', {
+                  filePath: translatedFilePath,
+                });
+              } else {
+                // 没有翻译字幕，但需要显示翻译区域
+                const merged = subtitles.map((sub) => ({
+                  ...sub,
+                  sourceContent: sub.content.join('\n'),
+                  targetContent: '',
+                  isEditing: false,
+                }));
+                setMergedSubtitles(merged);
+              }
             } else {
-              // 如果没有翻译字幕，只显示原始字幕
+              // 如果不需要翻译字幕，只显示原始字幕
               const merged = subtitles.map((sub) => ({
                 ...sub,
                 sourceContent: sub.content.join('\n'),
@@ -361,42 +396,56 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
         endTimeInSeconds: sub.endTimeInSeconds,
       }));
 
-      // 更新翻译字幕
-      const updatedTranslatedSubtitles = mergedSubtitles.map((sub) => ({
-        id: sub.id,
-        startEndTime: sub.startEndTime,
-        content: sub.targetContent ? sub.targetContent.split('\n') : [],
-        startTimeInSeconds: sub.startTimeInSeconds,
-        endTimeInSeconds: sub.endTimeInSeconds,
-      }));
+      // 更新翻译字幕，只在需要显示翻译内容时才处理
+      if (shouldShowTranslation) {
+        const updatedTranslatedSubtitles = mergedSubtitles.map((sub) => ({
+          id: sub.id,
+          startEndTime: sub.startEndTime,
+          content: sub.targetContent ? sub.targetContent.split('\n') : [],
+          startTimeInSeconds: sub.startTimeInSeconds,
+          endTimeInSeconds: sub.endTimeInSeconds,
+        }));
 
-      // 将字幕转换为SRT格式
-      const originalSrtContent = formatSubtitleToSrt(updatedOriginalSubtitles);
-      const translatedSrtContent = formatSubtitleToSrt(
-        updatedTranslatedSubtitles.filter((sub) => sub.content.length > 0),
-      );
+        // 将字幕转换为SRT格式
+        const originalSrtContent = formatSubtitleToSrt(
+          updatedOriginalSubtitles,
+        );
+        const translatedSrtContent = formatSubtitleToSrt(
+          updatedTranslatedSubtitles.filter((sub) => sub.content.length > 0),
+        );
 
-      // 保存原始字幕
-      const originalSrtFile = path.join(directory, `${fileName}.srt`);
-      window.ipc.send('saveSubtitleFile', {
-        filePath: originalSrtFile,
-        content: originalSrtContent,
-      });
-
-      // 寻找翻译后的字幕文件
-      const translatedSrtFile = translatedFiles.find(
-        (f) =>
-          f.startsWith(fileName) &&
-          f.endsWith('.srt') &&
-          f !== `${fileName}.srt`,
-      );
-
-      // 保存翻译字幕
-      if (translatedSrtFile) {
-        const translatedFilePath = path.join(directory, translatedSrtFile);
+        // 保存原始字幕
+        const originalSrtFile = path.join(directory, `${fileName}.srt`);
         window.ipc.send('saveSubtitleFile', {
-          filePath: translatedFilePath,
-          content: translatedSrtContent,
+          filePath: originalSrtFile,
+          content: originalSrtContent,
+        });
+
+        // 寻找翻译后的字幕文件
+        const translatedSrtFile = translatedFiles.find(
+          (f) =>
+            f.startsWith(fileName) &&
+            f.endsWith('.srt') &&
+            f !== `${fileName}.srt`,
+        );
+
+        // 保存翻译字幕
+        if (translatedSrtFile) {
+          const translatedFilePath = path.join(directory, translatedSrtFile);
+          window.ipc.send('saveSubtitleFile', {
+            filePath: translatedFilePath,
+            content: translatedSrtContent,
+          });
+        }
+      } else {
+        // 如果不需要翻译内容，只保存原字幕
+        const originalSrtContent = formatSubtitleToSrt(
+          updatedOriginalSubtitles,
+        );
+        const originalSrtFile = path.join(directory, `${fileName}.srt`);
+        window.ipc.send('saveSubtitleFile', {
+          filePath: originalSrtFile,
+          content: originalSrtContent,
         });
       }
 
@@ -450,10 +499,15 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
   // 计算字幕统计信息
   const getSubtitleStats = () => {
     const total = mergedSubtitles.length;
-    const withTranslation = mergedSubtitles.filter(
-      (sub) => sub.targetContent && sub.targetContent.trim() !== '',
-    ).length;
-    const percent = total > 0 ? Math.round((withTranslation / total) * 100) : 0;
+    const withTranslation = shouldShowTranslation
+      ? mergedSubtitles.filter(
+          (sub) => sub.targetContent && sub.targetContent.trim() !== '',
+        ).length
+      : 0;
+    const percent =
+      total > 0 && shouldShowTranslation
+        ? Math.round((withTranslation / total) * 100)
+        : 0;
 
     return { total, withTranslation, percent };
   };
@@ -511,7 +565,8 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
                         {mergedSubtitles[currentSubtitleIndex].sourceContent}
                       </div>
                     )}
-                    {hasTranslationFile &&
+                    {shouldShowTranslation &&
+                      hasTranslationFile &&
                       mergedSubtitles[currentSubtitleIndex].targetContent && (
                         <div className="p-1 bg-background rounded border-l-2 border-secondary text-sm">
                           {mergedSubtitles[currentSubtitleIndex].targetContent}
@@ -623,8 +678,12 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
                 <div className="text-sm mb-1">字幕统计</div>
                 <div className="grid grid-cols-3 gap-1 text-xs">
                   <div>总数: {getSubtitleStats().total}</div>
-                  <div>已翻译: {getSubtitleStats().withTranslation}</div>
-                  <div>完成率: {getSubtitleStats().percent}%</div>
+                  {shouldShowTranslation && (
+                    <>
+                      <div>已翻译: {getSubtitleStats().withTranslation}</div>
+                      <div>完成率: {getSubtitleStats().percent}%</div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -661,8 +720,8 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
                     />
                   )}
 
-                  {/* 只在有翻译文件时显示翻译字幕框 */}
-                  {hasTranslationFile && (
+                  {/* 只在需要显示翻译内容时显示翻译字幕框 */}
+                  {shouldShowTranslation && (
                     <Textarea
                       className={`text-sm ${subtitle.targetContent ? 'min-h-[40px]' : 'min-h-[30px]'}`}
                       value={subtitle.targetContent || ''}

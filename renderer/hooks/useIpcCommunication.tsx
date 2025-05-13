@@ -1,16 +1,10 @@
 import { useEffect } from 'react';
-import { IFiles } from 'types';
+import { IFiles } from '../../types';
 
 export default function useIpcCommunication(setFiles) {
   useEffect(() => {
-    window?.ipc?.on('file-selected', (res: string[]) => {
-      setFiles((prevFiles) => [
-        ...prevFiles,
-        ...res.map((file) => ({
-          uuid: Math.random().toString(36).substring(2),
-          filePath: file,
-        })),
-      ]);
+    window?.ipc?.on('file-selected', (res: IFiles[]) => {
+      setFiles((prevFiles) => [...prevFiles, ...res]);
     });
 
     const handleTaskStatusChange = (

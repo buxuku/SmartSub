@@ -102,3 +102,17 @@ export async function readFileContent(filePath: string): Promise<string[]> {
     throw error;
   }
 }
+
+/**
+ * 封装文件对象
+ */
+export function wrapFileObject(filePath: string) {
+  return {
+    filePath,
+    fileName: path.basename(filePath, path.extname(filePath)),
+    fileNameWithoutExtension: path.basename(filePath),
+    fileExtension: path.extname(filePath),
+    directory: path.dirname(filePath),
+    uuid: Math.random().toString(36).substring(2),
+  };
+}

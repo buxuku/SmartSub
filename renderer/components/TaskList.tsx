@@ -40,6 +40,15 @@ const TaskList: React.FC<TaskListProps> = ({ files = [], formData }) => {
   const shouldShowSubtitleColumn = taskType !== 'translateOnly';
   const shouldShowTranslateColumn = taskType !== 'generateOnly';
 
+  // 判断校对按钮是否禁用
+  const isProofreadDisabled = (file) => {
+    if (taskType === 'generateOnly') {
+      return !(file?.extractSubtitle === 'done');
+    } else {
+      return !(file?.translateSubtitle === 'done');
+    }
+  };
+
   const handleImport = async () => {
     const fileType = taskType === 'translateOnly' ? 'srt' : 'media';
     window?.ipc?.send('openDialog', { dialogType: 'openDialog', fileType });
@@ -134,7 +143,7 @@ const TaskList: React.FC<TaskListProps> = ({ files = [], formData }) => {
                   size="sm"
                   className="flex items-center gap-1"
                   onClick={() => handleProofread(file)}
-                  // disabled={!(file?.status?.extractSubtitle?.done && file?.status?.translateSubtitle?.done)}
+                  disabled={isProofreadDisabled(file)}
                 >
                   <Edit2 className="h-4 w-4" />
                   {t('proofread') || '校对'}
@@ -150,6 +159,7 @@ const TaskList: React.FC<TaskListProps> = ({ files = [], formData }) => {
           file={currentFile}
           open={proofreadOpen}
           onOpenChange={setProofreadOpen}
+          taskType={taskType}
         />
       )}
     </>

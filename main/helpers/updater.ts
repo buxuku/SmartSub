@@ -65,7 +65,6 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
         'info',
       );
       const result = await autoUpdater.checkForUpdates();
-      console.log(result, 'update result');
       return result;
     } catch (error) {
       logMessage(`Error checking for updates: ${error.message}`, 'error');

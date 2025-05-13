@@ -9,12 +9,11 @@ import {
 } from './services/translationProvider';
 import { getSrtFileName, renderTemplate } from '../helpers/utils';
 import { logMessage } from '../helpers/storeManager';
+import { IFiles } from '../../types';
 
 export default async function translate(
   event,
-  folder: string,
-  fileName: string,
-  absolutePath: string,
+  file: IFiles,
   formData: any,
   provider: Provider,
   onProgress?: (progress: number) => void,
@@ -28,6 +27,7 @@ export default async function translate(
     targetLanguage,
     translateRetryTimes,
   } = formData || {};
+  const { fileName, directory, srtFile } = file;
 
   // 如果参数中有指定重试次数，则使用参数值，否则使用表单中的值或默认为2
   const retryCount =
@@ -49,7 +49,7 @@ export default async function translate(
       'info',
     );
 
-    const data = await readFileContent(absolutePath);
+    const data = await readFileContent(srtFile);
     const subtitles = parseSubtitles(data);
 
     const templateData = {
@@ -67,7 +67,7 @@ export default async function translate(
       templateData,
     );
 
-    const fileSave = path.join(folder, `${targetSrtFileName}.srt`);
+    const fileSave = path.join(directory, `${targetSrtFileName}.srt`);
     await createOrClearFile(fileSave);
 
     const handleTranslationResult = async (result: TranslationResult) => {

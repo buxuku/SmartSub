@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/select';
 import { getModelDownloadUrl, models } from 'lib/utils';
 import { Button } from '@/components/ui/button';
-import { ISystemInfo } from '../../types';
+import { ISystemInfo } from '../../../types/types';
 import DeleteModel from '@/components/DeleteModel';
 import DownModel from '@/components/DownModel';
 import DownModelButton from '@/components/DownModelButton';

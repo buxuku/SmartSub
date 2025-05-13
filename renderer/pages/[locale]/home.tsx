@@ -84,17 +84,15 @@ export default function Component() {
       // 根据translateOnly任务类型决定是否只处理字幕文件
       const isTranslateOnly = formData.taskType === 'translateOnly';
       const taskType = isTranslateOnly ? 'translate' : 'media';
-      
-      window?.ipc?.invoke('getDroppedFiles', { 
-        files: paths, 
-        taskType 
-      }).then((filePaths) => {
-        const newFiles = filePaths.map((filePath) => ({
-          uuid: Math.random().toString(36).substring(2),
-          filePath,
-        }));
-        setFiles((prevFiles) => [...prevFiles, ...newFiles]);
-      });
+
+      window?.ipc
+        ?.invoke('getDroppedFiles', {
+          files: paths,
+          taskType,
+        })
+        .then((files) => {
+          setFiles((prevFiles) => [...prevFiles, ...files]);
+        });
     }
   };
 
