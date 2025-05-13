@@ -177,36 +177,35 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
   });
 
   // 读取字幕文件
-  ipcMain.on('readSubtitleFile', async (event, { filePath }) => {
+  ipcMain.handle('readSubtitleFile', async (event, { filePath }) => {
     try {
       if (!fs.existsSync(filePath)) {
         logMessage(`读取字幕文件失败: 文件不存在 ${filePath}`, 'error');
-        event.reply('readSubtitleFileReply', { error: '文件不存在' });
-        return;
+        return { error: '文件不存在' };
       }
 
       const content = await fs.promises.readFile(filePath, 'utf-8');
       logMessage(`读取字幕文件成功: ${filePath}`, 'info');
-      event.reply('readSubtitleFileReply', { content });
+      return { content };
     } catch (error) {
       logMessage(`读取字幕文件错误: ${error.message}`, 'error');
-      event.reply('readSubtitleFileReply', {
+      return {
         error: `读取字幕文件错误: ${error.message}`,
-      });
+      };
     }
   });
 
   // 保存字幕文件
-  ipcMain.on('saveSubtitleFile', async (event, { filePath, content }) => {
+  ipcMain.handle('saveSubtitleFile', async (event, { filePath, content }) => {
     try {
       await fs.promises.writeFile(filePath, content, 'utf-8');
       logMessage(`保存字幕文件成功: ${filePath}`, 'info');
-      event.reply('saveSubtitleFileReply', { success: true });
+      return { success: true };
     } catch (error) {
       logMessage(`保存字幕文件错误: ${error.message}`, 'error');
-      event.reply('saveSubtitleFileReply', {
+      return {
         error: `保存字幕文件错误: ${error.message}`,
-      });
+      };
     }
   });
 

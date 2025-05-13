@@ -160,6 +160,7 @@ const TaskList: React.FC<TaskListProps> = ({ files = [], formData }) => {
           open={proofreadOpen}
           onOpenChange={setProofreadOpen}
           taskType={taskType}
+          formData={formData}
         />
       )}
     </>

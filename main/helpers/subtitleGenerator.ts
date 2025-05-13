@@ -7,6 +7,7 @@ import { getPath, loadWhisperAddon } from './whisper';
 import { checkCudaSupport } from './cudaUtils';
 import { logMessage, store } from './storeManager';
 import { formatSrtContent } from './fileUtils';
+import { IFiles } from '../../types';
 
 /**
  * 使用本地Whisper命令行工具生成字幕
@@ -35,7 +36,7 @@ export async function generateSubtitleWithLocalWhisper(event, file, formData) {
 
   console.log(runShell, 'runShell');
   logMessage(`run shell ${runShell}`, 'info');
-  event.sender.send('taskStatusChange', file, 'extractSubtitle', 'loading');
+  event.sender.send('taskFileChange', { ...file, extractSubtitle: 'loading' });
 
   return new Promise((resolve, reject) => {
     exec(runShell, (error, stdout, stderr) => {
@@ -58,7 +59,7 @@ export async function generateSubtitleWithLocalWhisper(event, file, formData) {
         fs.renameSync(tempSrtFile, srtFile);
       }
 
-      event.sender.send('taskStatusChange', file, 'extractSubtitle', 'done');
+      event.sender.send('taskFileChange', { ...file, extractSubtitle: 'done' });
       resolve(srtFile);
     });
   });
@@ -69,10 +70,10 @@ export async function generateSubtitleWithLocalWhisper(event, file, formData) {
  */
 export async function generateSubtitleWithBuiltinWhisper(
   event,
-  file,
+  file: IFiles,
   formData,
 ) {
-  event.sender.send('taskStatusChange', file, 'extractSubtitle', 'loading');
+  event.sender.send('taskFileChange', { ...file, extractSubtitle: 'loading' });
 
   try {
     const { tempAudioFile, srtFile } = file;
@@ -136,7 +137,7 @@ export async function generateSubtitleWithBuiltinWhisper(
     // 写入格式化后的内容
     await fs.promises.writeFile(srtFile, formattedSrt);
 
-    event.sender.send('taskStatusChange', file, 'extractSubtitle', 'done');
+    event.sender.send('taskFileChange', { ...file, extractSubtitle: 'done' });
     logMessage(`generate subtitle done!`, 'info');
 
     return srtFile;
