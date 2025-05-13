@@ -5,6 +5,7 @@ import { checkOpenAiWhisper, getPath } from './whisper';
 import { logMessage, store } from './storeManager';
 import path from 'path';
 import { isAppleSilicon } from './utils';
+import { IFiles } from '../../types';
 
 let processingQueue = [];
 let isProcessing = false;
@@ -15,19 +16,23 @@ let hasOpenAiWhisper = false;
 let activeTasksCount = 0;
 
 export function setupTaskProcessor(mainWindow: BrowserWindow) {
-  ipcMain.on('handleTask', async (event, { files, formData }) => {
-    logMessage(`handleTask start`, 'info');
-    logMessage(`formData: \n ${JSON.stringify(formData, null, 2)}`, 'info');
-    processingQueue.push(...files.map((file) => ({ file, formData })));
-    if (!isProcessing) {
-      isProcessing = true;
-      isPaused = false;
-      shouldCancel = false;
-      hasOpenAiWhisper = await checkOpenAiWhisper();
-      maxConcurrentTasks = formData.maxConcurrentTasks || 3;
-      processNextTasks(event);
-    }
-  });
+  ipcMain.on(
+    'handleTask',
+    async (event, { files, formData }: { files: IFiles[]; formData: any }) => {
+      console.log('handleTask start', files);
+      logMessage(`handleTask start`, 'info');
+      logMessage(`formData: \n ${JSON.stringify(formData, null, 2)}`, 'info');
+      processingQueue.push(...files.map((file) => ({ file, formData })));
+      if (!isProcessing) {
+        isProcessing = true;
+        isPaused = false;
+        shouldCancel = false;
+        hasOpenAiWhisper = await checkOpenAiWhisper();
+        maxConcurrentTasks = formData.maxConcurrentTasks || 3;
+        processNextTasks(event);
+      }
+    },
+  );
 
   ipcMain.on('pauseTask', () => {
     isPaused = true;
@@ -102,7 +107,7 @@ async function processNextTasks(event) {
         );
         await processFile(
           event,
-          task.file,
+          task.file as IFiles,
           task.formData,
           hasOpenAiWhisper,
           provider,

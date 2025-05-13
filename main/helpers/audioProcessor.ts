@@ -59,13 +59,15 @@ export const extractAudio = (
 /**
  * 从视频中提取音频
  */
-export async function extractAudioFromVideo(event, file, filePath) {
+export async function extractAudioFromVideo(event, file) {
+  const { filePath } = file;
   event.sender.send('taskStatusChange', file, 'extractAudio', 'loading');
   const tempDir = ensureTempDir();
 
   logMessage(`tempDir: ${tempDir}`, 'info');
   const md5FileName = getMd5(filePath);
   const tempAudioFile = path.join(tempDir, `${md5FileName}.wav`);
+  file.tempAudioFile = tempAudioFile;
 
   if (fs.existsSync(tempAudioFile)) {
     logMessage(`Using existing audio file: ${tempAudioFile}`, 'info');
@@ -75,6 +77,5 @@ export async function extractAudioFromVideo(event, file, filePath) {
 
   await extractAudio(filePath, tempAudioFile, event, file);
   event.sender.send('taskStatusChange', file, 'extractAudio', 'done');
-
   return tempAudioFile;
 }

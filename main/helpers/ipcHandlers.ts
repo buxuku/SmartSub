@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createMessageSender } from './messageHandler';
 import { logMessage } from './storeManager';
+import { wrapFileObject } from './fileUtils';
 
 // 定义支持的文件扩展名常量
 export const MEDIA_EXTENSIONS = [
@@ -128,7 +129,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     });
 
     try {
-      event.sender.send('file-selected', result.filePaths);
+      event.sender.send('file-selected', result.filePaths.map(wrapFileObject));
     } catch (error) {
       createMessageSender(event.sender).send('message', {
         type: 'error',
@@ -172,7 +173,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
       }
     }
 
-    return allValidPaths;
+    return allValidPaths.map(wrapFileObject);
   });
 
   // 读取字幕文件
