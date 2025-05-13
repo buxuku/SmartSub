@@ -1,0 +1,214 @@
+/**
+ * CSS files with the .module.css suffix will be treated as CSS modules
+ * and scoped locally.
+ */
+
+/**
+ * CSS modules 包含针对首页的CSS样式
+ */
+
+.heroBanner {
+  padding: 4rem 0;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+@media screen and (max-width: 996px) {
+  .heroBanner {
+    padding: 2rem;
+  }
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.section {
+  padding: 3rem 0;
+}
+
+.sectionTitle {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  font-size: 2rem;
+}
+
+.sectionDescription {
+  text-align: center;
+  max-width: 800px;
+  margin: 0 auto 2rem;
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+/* 特性部分样式 */
+.featuresSection {
+  padding: 4rem 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(240, 245, 255, 0.8),
+    rgba(240, 245, 255, 0)
+  );
+}
+
+.featuresHeading {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.featuresHeading h2 {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  color: var(--ifm-color-primary);
+}
+
+.featuresHeading p {
+  font-size: 1.1rem;
+  max-width: 800px;
+  margin: 0 auto;
+  opacity: 0.8;
+}
+
+/* 图标容器 */
+.featureIconContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 1.5rem;
+  border-radius: 50%;
+  background: linear-gradient(
+    135deg,
+    var(--ifm-color-primary-light),
+    var(--ifm-color-primary)
+  );
+  color: white;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(69, 104, 220, 0.2);
+}
+
+.featureIcon {
+  width: 40px;
+  height: 40px;
+}
+
+/* 截图区域样式 */
+.screenshotContainer {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.screenshotWrapper {
+  position: relative;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  transition: all 0.5s ease;
+}
+
+.screenshotWrapper:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.2);
+}
+
+.screenshotOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    45deg,
+    rgba(69, 104, 220, 0.05),
+    rgba(176, 106, 179, 0.05)
+  );
+  pointer-events: none;
+}
+
+/* 步骤部分 */
+.stepsContainer {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 30px;
+  margin-top: 2rem;
+}
+
+.step {
+  text-align: center;
+  width: 225px;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  background-color: white;
+  transition: all 0.3s ease;
+}
+
+.step:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.stepNumber {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: var(--ifm-color-primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 1.5rem;
+  margin: 0 auto 1rem;
+  box-shadow: 0 4px 8px rgba(69, 104, 220, 0.3);
+}
+
+.ctaSection {
+  background: linear-gradient(to right, #4568dc, #b06ab3);
+  padding: 4rem 0;
+  text-align: center;
+  color: white;
+}
+
+.ctaButtons {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 2rem;
+}
+
+/* 深色模式适配 */
+[data-theme='dark'] .step {
+  background: var(--ifm-card-background-color);
+}
+
+[data-theme='dark'] .featuresSection {
+  background: linear-gradient(
+    to bottom,
+    rgba(20, 30, 50, 0.5),
+    rgba(20, 30, 50, 0)
+  );
+}
+
+@media screen and (max-width: 768px) {
+  .featureIconContainer {
+    width: 70px;
+    height: 70px;
+  }
+
+  .featureIcon {
+    width: 35px;
+    height: 35px;
+  }
+
+  .step {
+    width: 100%;
+    max-width: 300px;
+  }
+}
