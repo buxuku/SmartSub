@@ -24,6 +24,7 @@ import {
   FileVideo,
 } from 'lucide-react';
 import path from 'path';
+import { IFiles } from '../../types';
 
 // 类型定义
 interface SubtitleFileResponse {
@@ -120,10 +121,11 @@ const formatTime = (seconds: number): string => {
 };
 
 interface SubtitleProofreadProps {
-  file: any;
+  file: IFiles;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   taskType: string;
+  formData: any;
 }
 
 const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
@@ -131,12 +133,10 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
   open,
   onOpenChange,
   taskType,
+  formData,
 }) => {
   const { t } = useTranslation('home');
-  const [originalSubtitles, setOriginalSubtitles] = useState<Subtitle[]>([]);
-  const [translatedSubtitles, setTranslatedSubtitles] = useState<Subtitle[]>(
-    [],
-  );
+  console.log(file, 'files--33');
   const [mergedSubtitles, setMergedSubtitles] = useState<
     (Subtitle & { isEditing?: boolean })[]
   >([]);
@@ -145,7 +145,6 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentSubtitleIndex, setCurrentSubtitleIndex] = useState(-1);
-  const [translatedFiles, setTranslatedFiles] = useState<string[]>([]);
   const [videoInfo, setVideoInfo] = useState({ fileName: '', extension: '' });
   const [hasTranslationFile, setHasTranslationFile] = useState(false);
   const playerRef = useRef<ReactPlayer>(null);
@@ -195,169 +194,198 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
     setPlaybackRate(newRate);
   };
 
-  // 检查文件是否存在
-  const checkFileExists = async (filePath: string): Promise<boolean> => {
+  // 读取字幕文件
+  const readSubtitleFile = async (filePath: string): Promise<Subtitle[]> => {
     try {
-      const result = await window.ipc.invoke('checkFileExists', { filePath });
-      return result.exists;
+      const result: SubtitleFileResponse = await window.ipc.invoke(
+        'readSubtitleFile',
+        { filePath },
+      );
+      if (!result.error && result.content) {
+        return parseSubtitles(result.content.split('\n'));
+      }
+      return [];
     } catch (error) {
-      console.error('Error checking file existence:', error);
-      return false;
+      console.error('Error reading subtitle file:', error);
+      return [];
     }
   };
 
-  // 获取目录中的文件列表
-  const getDirectoryFiles = async (
-    directoryPath: string,
-  ): Promise<string[]> => {
-    try {
-      const result = await window.ipc.invoke('getDirectoryFiles', {
-        directoryPath,
-      });
-      return result.files;
-    } catch (error) {
-      console.error('Error getting directory files:', error);
-      return [];
-    }
+  // 处理双语字幕，拆分为原文和翻译
+  const processBilingualSubtitles = (
+    subtitles: Subtitle[],
+  ): { sourceSubtitles: Subtitle[]; targetSubtitles: Subtitle[] } => {
+    return subtitles
+      .map((sub) => {
+        // 检测双语字幕：如果一个字幕项包含空行，可能是双语分隔
+        const contentLines = sub.content;
+        let sourceLines = [];
+        let targetLines = [];
+
+        if (contentLines.length > 0) {
+          // 寻找空行作为分隔符
+          const emptyLineIndex = contentLines.findIndex(
+            (line) => line.trim() === '',
+          );
+
+          if (
+            emptyLineIndex !== -1 &&
+            emptyLineIndex < contentLines.length - 1
+          ) {
+            // 根据formData.translateContent的配置决定哪部分是原文，哪部分是翻译
+            if (formData?.translateContent === 'sourceAndTranslate') {
+              // 原文在前，翻译在后
+              sourceLines = contentLines.slice(0, emptyLineIndex);
+              targetLines = contentLines.slice(emptyLineIndex + 1);
+            } else {
+              // 翻译在前，原文在后
+              targetLines = contentLines.slice(0, emptyLineIndex);
+              sourceLines = contentLines.slice(emptyLineIndex + 1);
+            }
+          } else {
+            // 没找到明确分隔，假设全部是翻译内容
+            targetLines = contentLines;
+          }
+        }
+
+        return {
+          sourceSubtitle: {
+            ...sub,
+            content: sourceLines,
+          },
+          targetSubtitle: {
+            ...sub,
+            content: targetLines,
+          },
+        };
+      })
+      .reduce(
+        (acc, item) => {
+          acc.sourceSubtitles.push(item.sourceSubtitle);
+          acc.targetSubtitles.push(item.targetSubtitle);
+          return acc;
+        },
+        { sourceSubtitles: [], targetSubtitles: [] },
+      );
   };
 
   // 加载文件
   const loadFiles = async () => {
     try {
       // 获取文件路径
-      const { filePath } = file;
+      const { filePath, srtFile, tempSrtFile, translatedSrtFile } = file;
       const directory = path.dirname(filePath);
       const fileName = path.basename(filePath, path.extname(filePath));
 
-      // 如果是字幕文件，则寻找相同目录下的视频文件
-      if (isSubtitleFile(filePath)) {
-        // 获取视频文件（假设视频文件和字幕文件同名但扩展名不同）
-        const videoExtensions = ['.mp4', '.webm', '.mov', '.mkv', '.avi'];
-        for (const ext of videoExtensions) {
-          const potentialVideoPath = path.join(directory, `${fileName}${ext}`);
-          const exists = await checkFileExists(potentialVideoPath);
-          if (exists) {
-            setVideoPath(potentialVideoPath);
-            break;
-          }
-        }
-      } else {
-        // 如果是视频文件，直接使用
+      // 如果不是字幕文件，直接使用作为视频文件
+      if (!isSubtitleFile(filePath)) {
         setVideoPath(filePath);
       }
 
-      // 加载原始字幕和翻译字幕
-      const originalSrtFile = path.join(directory, `${fileName}.srt`);
+      // 确定是否需要翻译内容（基于taskType和formData.translateContent）
+      const isDoubleLangSubtitle =
+        formData?.translateContent === 'sourceAndTranslate' ||
+        formData?.translateContent === 'translateAndSource';
+      const needsTranslation = shouldShowTranslation && !isDoubleLangSubtitle;
 
-      // 只有在需要显示翻译内容时才寻找翻译文件
-      if (shouldShowTranslation) {
-        let translatedFileName = '';
+      // 确定原始字幕和翻译字幕的文件路径
+      let originalSrtFilePath = null;
+      let translatedSrtFilePath = null;
 
-        // 寻找翻译后的字幕文件（一般有语言代码后缀）
-        const files = await getDirectoryFiles(directory);
-        setTranslatedFiles(files);
-
-        const translatedSrtFile = files.find(
-          (f) =>
-            f.startsWith(fileName) &&
-            f.endsWith('.srt') &&
-            f !== `${fileName}.srt`,
-        );
-
-        // 设置是否有翻译文件的状态
-        setHasTranslationFile(!!translatedSrtFile);
-
-        if (translatedSrtFile) {
-          translatedFileName = path.join(directory, translatedSrtFile);
-        }
-      } else {
-        // 如果不需要翻译，则直接设置为无翻译文件
+      // 根据任务类型和配置选择正确的字幕文件
+      if (taskType === 'generateOnly') {
+        // 仅生成字幕，只需要读取原始字幕
+        originalSrtFilePath =
+          srtFile || path.join(directory, `${fileName}.srt`);
         setHasTranslationFile(false);
-        setTranslatedFiles([]);
+      } else {
+        // 对于生成并翻译或仅翻译的任务
+        originalSrtFilePath =
+          tempSrtFile || srtFile || path.join(directory, `${fileName}.srt`);
+
+        if (isDoubleLangSubtitle) {
+          // 如果是双语字幕，只需要读取翻译后的文件
+          originalSrtFilePath = translatedSrtFile;
+          setHasTranslationFile(false);
+        } else if (translatedSrtFile) {
+          // 有翻译文件，设置翻译字幕路径
+          translatedSrtFilePath = translatedSrtFile;
+          setHasTranslationFile(true);
+        }
       }
 
-      // 读取字幕文件
-      const removeOriginalListener = window.ipc.on(
-        'readSubtitleFileReply',
-        (data: SubtitleFileResponse) => {
-          if (!data.error && data.content) {
-            const subtitles = parseSubtitles(data.content.split('\n'));
-            setOriginalSubtitles(subtitles);
+      console.log('Paths:', {
+        originalSrtFilePath,
+        translatedSrtFilePath,
+        isDoubleLangSubtitle,
+      });
 
-            // 读取翻译字幕 - 只在需要显示翻译内容和有翻译文件时进行
-            if (shouldShowTranslation && hasTranslationFile) {
-              const translatedFileName = translatedFiles.find(
-                (f) =>
-                  f.startsWith(fileName) &&
-                  f.endsWith('.srt') &&
-                  f !== `${fileName}.srt`,
-              );
+      // 读取原始字幕文件
+      if (originalSrtFilePath) {
+        const subtitles = await readSubtitleFile(originalSrtFilePath);
+        console.log('原始字幕:', subtitles);
 
-              if (translatedFileName) {
-                const translatedFilePath = path.join(
-                  directory,
-                  translatedFileName,
-                );
-                const removeTranslatedListener = window.ipc.on(
-                  'readSubtitleFileReply',
-                  (translatedData: SubtitleFileResponse) => {
-                    if (!translatedData.error && translatedData.content) {
-                      const translatedSubs = parseSubtitles(
-                        translatedData.content.split('\n'),
-                      );
-                      setTranslatedSubtitles(translatedSubs);
+        if (subtitles.length > 0) {
+          // 检查原始字幕是否是双语字幕
+          const originalIsDoubleLang =
+            isDoubleLangSubtitle ||
+            subtitles.some(
+              (sub) =>
+                sub.content.some((line) => line.trim() === '') &&
+                sub.content.length > 2,
+            );
 
-                      // 合并字幕，匹配相同的时间码
-                      const merged = subtitles.map((sub, index) => {
-                        const translated =
-                          translatedSubs.find(
-                            (ts) => ts.startEndTime === sub.startEndTime,
-                          ) || translatedSubs[index];
-                        return {
-                          ...sub,
-                          sourceContent: sub.content.join('\n'),
-                          targetContent: translated
-                            ? translated.content.join('\n')
-                            : '',
-                          isEditing: false,
-                        };
-                      });
+          if (originalIsDoubleLang) {
+            // 处理原始文件中的双语字幕，拆分为源和目标字幕
+            console.log('处理双语字幕');
+            const { sourceSubtitles, targetSubtitles } =
+              processBilingualSubtitles(subtitles);
 
-                      setMergedSubtitles(merged);
-                    }
-                    removeTranslatedListener(); // 移除监听器
-                  },
-                );
+            // 创建合并的字幕数据
+            const merged = sourceSubtitles.map((sub, index) => ({
+              ...sub,
+              sourceContent: sub.content.join('\n'),
+              targetContent: targetSubtitles[index].content.join('\n'),
+              isEditing: false,
+            }));
 
-                window.ipc.send('readSubtitleFile', {
-                  filePath: translatedFilePath,
-                });
-              } else {
-                // 没有翻译字幕，但需要显示翻译区域
-                const merged = subtitles.map((sub) => ({
-                  ...sub,
-                  sourceContent: sub.content.join('\n'),
-                  targetContent: '',
-                  isEditing: false,
-                }));
-                setMergedSubtitles(merged);
-              }
-            } else {
-              // 如果不需要翻译字幕，只显示原始字幕
-              const merged = subtitles.map((sub) => ({
+            setMergedSubtitles(merged);
+            setHasTranslationFile(true);
+          } else if (needsTranslation && translatedSrtFilePath) {
+            // 处理常规翻译场景：分别读取原文和翻译文件
+            const translatedSubs = await readSubtitleFile(
+              translatedSrtFilePath,
+            );
+            console.log('翻译字幕:', translatedSubs);
+
+            // 合并字幕，匹配相同的时间码
+            const merged = subtitles.map((sub, index) => {
+              const translated =
+                translatedSubs.find(
+                  (ts) => ts.startEndTime === sub.startEndTime,
+                ) || translatedSubs[index];
+              return {
                 ...sub,
                 sourceContent: sub.content.join('\n'),
-                targetContent: '',
+                targetContent: translated ? translated.content.join('\n') : '',
                 isEditing: false,
-              }));
-              setMergedSubtitles(merged);
-            }
-          }
-          removeOriginalListener(); // 移除监听器
-        },
-      );
+              };
+            });
 
-      window.ipc.send('readSubtitleFile', { filePath: originalSrtFile });
+            setMergedSubtitles(merged);
+          } else {
+            // 不需要处理翻译字幕或没有翻译文件
+            const merged = subtitles.map((sub) => ({
+              ...sub,
+              sourceContent: sub.content.join('\n'),
+              targetContent: '',
+              isEditing: false,
+            }));
+
+            setMergedSubtitles(merged);
+          }
+        }
+      }
     } catch (error) {
       console.error('Error loading files:', error);
     }
@@ -383,9 +411,14 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
   const handleSave = async () => {
     try {
       // 获取文件路径
-      const { filePath } = file;
+      const { filePath, srtFile, tempSrtFile, translatedSrtFile } = file;
       const directory = path.dirname(filePath);
       const fileName = path.basename(filePath, path.extname(filePath));
+
+      // 确定是否是双语字幕配置
+      const isDoubleLangSubtitle =
+        formData?.translateContent === 'sourceAndTranslate' ||
+        formData?.translateContent === 'translateAndSource';
 
       // 更新原始字幕
       const updatedOriginalSubtitles = mergedSubtitles.map((sub) => ({
@@ -396,57 +429,99 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
         endTimeInSeconds: sub.endTimeInSeconds,
       }));
 
-      // 更新翻译字幕，只在需要显示翻译内容时才处理
-      if (shouldShowTranslation) {
-        const updatedTranslatedSubtitles = mergedSubtitles.map((sub) => ({
-          id: sub.id,
-          startEndTime: sub.startEndTime,
-          content: sub.targetContent ? sub.targetContent.split('\n') : [],
-          startTimeInSeconds: sub.startTimeInSeconds,
-          endTimeInSeconds: sub.endTimeInSeconds,
-        }));
+      // 确定原始字幕和翻译字幕的保存路径
+      let originalSrtFilePath = null;
+      let translatedSrtFilePath = null;
 
-        // 将字幕转换为SRT格式
-        const originalSrtContent = formatSubtitleToSrt(
-          updatedOriginalSubtitles,
-        );
-        const translatedSrtContent = formatSubtitleToSrt(
-          updatedTranslatedSubtitles.filter((sub) => sub.content.length > 0),
-        );
+      if (taskType === 'generateOnly') {
+        // 仅生成字幕，只需要保存原始字幕
+        originalSrtFilePath =
+          srtFile || path.join(directory, `${fileName}.srt`);
+      } else {
+        // 对于生成并翻译或仅翻译的任务
+        originalSrtFilePath =
+          tempSrtFile || srtFile || path.join(directory, `${fileName}.srt`);
 
-        // 保存原始字幕
-        const originalSrtFile = path.join(directory, `${fileName}.srt`);
-        window.ipc.send('saveSubtitleFile', {
-          filePath: originalSrtFile,
-          content: originalSrtContent,
+        if (translatedSrtFile) {
+          // 使用文件对象中的翻译字幕路径
+          translatedSrtFilePath = translatedSrtFile;
+        }
+      }
+
+      // 将字幕转换为SRT格式
+      const originalSrtContent = formatSubtitleToSrt(updatedOriginalSubtitles);
+
+      // 处理双语字幕的情况
+      if (isDoubleLangSubtitle && translatedSrtFilePath) {
+        // 对于双语字幕，我们只需要保存翻译字幕文件，但内容包含双语内容
+        // 先将源内容和目标内容合并到翻译字幕内容中
+        const doubleLangSubtitles = mergedSubtitles.map((sub) => {
+          let content = [];
+          if (formData?.translateContent === 'sourceAndTranslate') {
+            // 先原文后翻译
+            content = [...sub.sourceContent.split('\n')];
+            if (sub.targetContent && sub.targetContent.trim() !== '') {
+              content.push(''); // 添加空行分隔
+              content = [...content, ...sub.targetContent.split('\n')];
+            }
+          } else {
+            // 先翻译后原文
+            content = sub.targetContent ? sub.targetContent.split('\n') : [];
+            if (
+              sub.sourceContent &&
+              sub.sourceContent.trim() !== '' &&
+              content.length > 0
+            ) {
+              content.push(''); // 添加空行分隔
+              content = [...content, ...sub.sourceContent.split('\n')];
+            }
+          }
+          return {
+            id: sub.id,
+            startEndTime: sub.startEndTime,
+            content: content,
+            startTimeInSeconds: sub.startTimeInSeconds,
+            endTimeInSeconds: sub.endTimeInSeconds,
+          };
         });
 
-        // 寻找翻译后的字幕文件
-        const translatedSrtFile = translatedFiles.find(
-          (f) =>
-            f.startsWith(fileName) &&
-            f.endsWith('.srt') &&
-            f !== `${fileName}.srt`,
-        );
+        const doubleLangSrtContent = formatSubtitleToSrt(doubleLangSubtitles);
 
-        // 保存翻译字幕
-        if (translatedSrtFile) {
-          const translatedFilePath = path.join(directory, translatedSrtFile);
+        // 保存双语字幕
+        window.ipc.send('saveSubtitleFile', {
+          filePath: translatedSrtFilePath,
+          content: doubleLangSrtContent,
+        });
+      } else {
+        // 非双语情况，分别保存原始字幕和翻译字幕
+
+        // 保存原始字幕
+        if (originalSrtFilePath) {
           window.ipc.send('saveSubtitleFile', {
-            filePath: translatedFilePath,
+            filePath: originalSrtFilePath,
+            content: originalSrtContent,
+          });
+        }
+
+        // 保存翻译字幕（只在需要显示翻译内容且有翻译文件时）
+        if (shouldShowTranslation && translatedSrtFilePath) {
+          const updatedTranslatedSubtitles = mergedSubtitles.map((sub) => ({
+            id: sub.id,
+            startEndTime: sub.startEndTime,
+            content: sub.targetContent ? sub.targetContent.split('\n') : [],
+            startTimeInSeconds: sub.startTimeInSeconds,
+            endTimeInSeconds: sub.endTimeInSeconds,
+          }));
+
+          const translatedSrtContent = formatSubtitleToSrt(
+            updatedTranslatedSubtitles.filter((sub) => sub.content.length > 0),
+          );
+
+          window.ipc.send('saveSubtitleFile', {
+            filePath: translatedSrtFilePath,
             content: translatedSrtContent,
           });
         }
-      } else {
-        // 如果不需要翻译内容，只保存原字幕
-        const originalSrtContent = formatSubtitleToSrt(
-          updatedOriginalSubtitles,
-        );
-        const originalSrtFile = path.join(directory, `${fileName}.srt`);
-        window.ipc.send('saveSubtitleFile', {
-          filePath: originalSrtFile,
-          content: originalSrtContent,
-        });
       }
 
       // 显示成功消息

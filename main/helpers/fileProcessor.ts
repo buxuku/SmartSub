@@ -56,7 +56,10 @@ async function generateSubtitle(
  * 翻译字幕
  */
 async function translateSubtitle(event, file: IFiles, formData, provider) {
-  event.sender.send('taskStatusChange', file, 'translateSubtitle', 'loading');
+  event.sender.send('taskFileChange', {
+    ...file,
+    translateSubtitle: 'loading',
+  });
 
   const onProgress = (progress) => {
     event.sender.send(
@@ -68,7 +71,7 @@ async function translateSubtitle(event, file: IFiles, formData, provider) {
   };
   try {
     await translate(event, file, formData, provider, onProgress);
-    event.sender.send('taskStatusChange', file, 'translateSubtitle', 'done');
+    event.sender.send('taskFileChange', { ...file, translateSubtitle: 'done' });
   } catch (error) {
     onError(event, file, 'translateSubtitle', error);
   }
@@ -135,9 +138,12 @@ export async function processFile(
       try {
         // 提取音频
         logMessage(`extract audio for ${fileName}`, 'info');
-        event.sender.send('taskStatusChange', file, 'extractAudio', 'loading');
+        event.sender.send('taskFileChange', {
+          ...file,
+          extractAudio: 'loading',
+        });
         const tempAudioFile = await extractAudioFromVideo(event, file);
-        event.sender.send('taskStatusChange', file, 'extractAudio', 'done');
+        event.sender.send('taskFileChange', { ...file, extractAudio: 'done' });
 
         // 如果开启了保存音频选项，则复制一份到视频同目录
         if (saveAudio) {
@@ -158,15 +164,17 @@ export async function processFile(
       }
     } else if (isSubtitleFile) {
       // 处理字幕文件
+      file.srtFile = filePath;
       try {
-        event.sender.send(
-          'taskStatusChange',
-          file,
-          'prepareSubtitle',
-          'loading',
-        );
+        event.sender.send('taskFileChange', {
+          ...file,
+          prepareSubtitle: 'loading',
+        });
         // 这里可以添加字幕格式转换的逻辑，如果需要的话
-        event.sender.send('taskStatusChange', file, 'prepareSubtitle', 'done');
+        event.sender.send('taskFileChange', {
+          ...file,
+          prepareSubtitle: 'done',
+        });
       } catch (error) {
         onError(event, file, 'prepareSubtitle', error);
         throw error;
@@ -183,7 +191,6 @@ export async function processFile(
       logMessage(`translate subtitle ${file.srtFile}`, 'info');
       await translateSubtitle(event, file, formData, provider);
     }
-
     // 清理临时文件
     if (
       !isSubtitleFile &&
@@ -197,6 +204,7 @@ export async function processFile(
       const md5FileName = getMd5(filePath);
       const tempSrtFile = path.join(tempDir, `${md5FileName}.srt`);
       file.tempSrtFile = tempSrtFile;
+      event.sender.send('taskFileChange', file);
       fs.copyFileSync(srtFile, tempSrtFile);
       fs.unlink(srtFile, (err) => {
         if (err) console.log(err);

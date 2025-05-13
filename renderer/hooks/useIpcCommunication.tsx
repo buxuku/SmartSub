@@ -48,10 +48,19 @@ export default function useIpcCommunication(setFiles) {
       });
     };
 
+    const handleFileChange = (res: IFiles) => {
+      setFiles((prevFiles) => {
+        const updatedFiles = prevFiles.map((file) =>
+          file.uuid === res?.uuid ? { ...file, ...res } : file,
+        );
+        return updatedFiles;
+      });
+    };
+
     window?.ipc?.on('taskStatusChange', handleTaskStatusChange);
     window?.ipc?.on('taskProgressChange', handleTaskProgressChange);
     window?.ipc?.on('taskErrorChange', handleTaskErrorChange);
-
+    window?.ipc?.on('taskFileChange', handleFileChange);
     return () => {};
   }, []);
 }

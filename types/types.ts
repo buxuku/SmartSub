@@ -17,4 +17,5 @@ export interface IFiles {
   srtFile?: string;
   tempSrtFile?: string;
   tempAudioFile?: string;
+  translatedSrtFile?: string;
 }

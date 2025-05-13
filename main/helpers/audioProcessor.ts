@@ -61,7 +61,7 @@ export const extractAudio = (
  */
 export async function extractAudioFromVideo(event, file) {
   const { filePath } = file;
-  event.sender.send('taskStatusChange', file, 'extractAudio', 'loading');
+  event.sender.send('taskFileChange', { ...file, extractAudio: 'loading' });
   const tempDir = ensureTempDir();
 
   logMessage(`tempDir: ${tempDir}`, 'info');
@@ -71,11 +71,11 @@ export async function extractAudioFromVideo(event, file) {
 
   if (fs.existsSync(tempAudioFile)) {
     logMessage(`Using existing audio file: ${tempAudioFile}`, 'info');
-    event.sender.send('taskStatusChange', file, 'extractAudio', 'done');
+    event.sender.send('taskFileChange', { ...file, extractAudio: 'done' });
     return tempAudioFile;
   }
 
   await extractAudio(filePath, tempAudioFile, event, file);
-  event.sender.send('taskStatusChange', file, 'extractAudio', 'done');
+  event.sender.send('taskFileChange', { ...file, extractAudio: 'done' });
   return tempAudioFile;
 }

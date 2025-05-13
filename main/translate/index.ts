@@ -68,6 +68,7 @@ export default async function translate(
     );
 
     const fileSave = path.join(directory, `${targetSrtFileName}.srt`);
+    file.translatedSrtFile = fileSave;
     await createOrClearFile(fileSave);
 
     const handleTranslationResult = async (result: TranslationResult) => {
