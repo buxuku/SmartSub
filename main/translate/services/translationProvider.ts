@@ -39,7 +39,7 @@ export async function translateWithProvider(
   targetLanguage: string,
   translator: TranslatorFunction,
   onProgress?: (progress: number) => void,
-  onTranslationResult?: (result: TranslationResult) => Promise<void>,
+  onTranslationResult?: (results: TranslationResult[]) => Promise<void>,
   maxRetries: number = 3,
 ): Promise<TranslationResult[] | string[]> {
   const config = {

@@ -25,12 +25,7 @@ import {
 } from 'lucide-react';
 import path from 'path';
 import { IFiles } from '../../types';
-
-// 类型定义
-interface SubtitleFileResponse {
-  content?: string;
-  error?: string;
-}
+import { toast } from 'sonner';
 
 // 字幕格式接口
 interface Subtitle {
@@ -42,75 +37,6 @@ interface Subtitle {
   startTimeInSeconds?: number;
   endTimeInSeconds?: number;
 }
-
-// 将时间码转换为秒数
-const timeToSeconds = (timeString: string): number => {
-  const pattern = /(\d{2}):(\d{2}):(\d{2}),(\d{3})/;
-  const match = timeString.match(pattern);
-
-  if (!match) return 0;
-
-  const hours = parseInt(match[1], 10);
-  const minutes = parseInt(match[2], 10);
-  const seconds = parseInt(match[3], 10);
-  const milliseconds = parseInt(match[4], 10);
-
-  return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
-};
-
-// 解析字幕文件内容
-const parseSubtitles = (data: string[]): Subtitle[] => {
-  const subtitles: Subtitle[] = [];
-  let currentSubtitle: Subtitle | null = null;
-
-  for (let i = 0; i < data.length; i++) {
-    const line = data[i]?.trim();
-    if (!line) continue;
-
-    if (
-      /^\d+$/.test(line) &&
-      ((i + 1 < data.length && data[i + 1]?.trim().includes('-->')) ||
-        (i + 1 < data.length &&
-          !data[i + 1]?.trim() &&
-          i + 2 < data.length &&
-          data[i + 2]?.trim().includes('-->')))
-    ) {
-      if (currentSubtitle) {
-        subtitles.push(currentSubtitle);
-      }
-      currentSubtitle = {
-        id: line,
-        startEndTime: '',
-        content: [],
-      };
-    } else if (line.includes('-->')) {
-      if (currentSubtitle) {
-        currentSubtitle.startEndTime = line;
-        // 提取开始和结束时间并转换为秒
-        const [startTime, endTime] = line.split(' --> ');
-        currentSubtitle.startTimeInSeconds = timeToSeconds(startTime);
-        currentSubtitle.endTimeInSeconds = timeToSeconds(endTime);
-      }
-    } else if (currentSubtitle) {
-      currentSubtitle.content.push(line);
-    }
-  }
-
-  if (currentSubtitle) {
-    subtitles.push(currentSubtitle);
-  }
-
-  return subtitles;
-};
-
-// 格式化字幕内容为SRT格式
-const formatSubtitleToSrt = (subtitles: Subtitle[]): string => {
-  return subtitles
-    .map((subtitle) => {
-      return `${subtitle.id}\n${subtitle.startEndTime}\n${subtitle.content.join('\n')}\n`;
-    })
-    .join('\n');
-};
 
 // 格式化时间为 MM:SS 格式
 const formatTime = (seconds: number): string => {
@@ -197,14 +123,10 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
   // 读取字幕文件
   const readSubtitleFile = async (filePath: string): Promise<Subtitle[]> => {
     try {
-      const result: SubtitleFileResponse = await window.ipc.invoke(
-        'readSubtitleFile',
-        { filePath },
-      );
-      if (!result.error && result.content) {
-        return parseSubtitles(result.content.split('\n'));
-      }
-      return [];
+      const result: Subtitle[] = await window.ipc.invoke('readSubtitleFile', {
+        filePath,
+      });
+      return result;
     } catch (error) {
       console.error('Error reading subtitle file:', error);
       return [];
@@ -212,68 +134,18 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
   };
 
   // 处理双语字幕，拆分为原文和翻译
-  const processBilingualSubtitles = (
-    subtitles: Subtitle[],
-  ): { sourceSubtitles: Subtitle[]; targetSubtitles: Subtitle[] } => {
-    return subtitles
-      .map((sub) => {
-        // 检测双语字幕：如果一个字幕项包含空行，可能是双语分隔
-        const contentLines = sub.content;
-        let sourceLines = [];
-        let targetLines = [];
-
-        if (contentLines.length > 0) {
-          // 寻找空行作为分隔符
-          const emptyLineIndex = contentLines.findIndex(
-            (line) => line.trim() === '',
-          );
-
-          if (
-            emptyLineIndex !== -1 &&
-            emptyLineIndex < contentLines.length - 1
-          ) {
-            // 根据formData.translateContent的配置决定哪部分是原文，哪部分是翻译
-            if (formData?.translateContent === 'sourceAndTranslate') {
-              // 原文在前，翻译在后
-              sourceLines = contentLines.slice(0, emptyLineIndex);
-              targetLines = contentLines.slice(emptyLineIndex + 1);
-            } else {
-              // 翻译在前，原文在后
-              targetLines = contentLines.slice(0, emptyLineIndex);
-              sourceLines = contentLines.slice(emptyLineIndex + 1);
-            }
-          } else {
-            // 没找到明确分隔，假设全部是翻译内容
-            targetLines = contentLines;
-          }
-        }
-
-        return {
-          sourceSubtitle: {
-            ...sub,
-            content: sourceLines,
-          },
-          targetSubtitle: {
-            ...sub,
-            content: targetLines,
-          },
-        };
-      })
-      .reduce(
-        (acc, item) => {
-          acc.sourceSubtitles.push(item.sourceSubtitle);
-          acc.targetSubtitles.push(item.targetSubtitle);
-          return acc;
-        },
-        { sourceSubtitles: [], targetSubtitles: [] },
-      );
-  };
 
   // 加载文件
   const loadFiles = async () => {
     try {
       // 获取文件路径
-      const { filePath, srtFile, tempSrtFile, translatedSrtFile } = file;
+      const {
+        filePath,
+        srtFile,
+        tempSrtFile,
+        translatedSrtFile,
+        tempTranslatedSrtFile,
+      } = file;
       const directory = path.dirname(filePath);
       const fileName = path.basename(filePath, path.extname(filePath));
 
@@ -282,33 +154,25 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
         setVideoPath(filePath);
       }
 
-      // 确定是否需要翻译内容（基于taskType和formData.translateContent）
-      const isDoubleLangSubtitle =
-        formData?.translateContent === 'sourceAndTranslate' ||
-        formData?.translateContent === 'translateAndSource';
-      const needsTranslation = shouldShowTranslation && !isDoubleLangSubtitle;
-
-      // 确定原始字幕和翻译字幕的文件路径
+      // 确定原始字幕文件路径
       let originalSrtFilePath = null;
       let translatedSrtFilePath = null;
 
-      // 根据任务类型和配置选择正确的字幕文件
+      // 根据任务类型确定使用哪个原始字幕文件
       if (taskType === 'generateOnly') {
-        // 仅生成字幕，只需要读取原始字幕
         originalSrtFilePath =
           srtFile || path.join(directory, `${fileName}.srt`);
         setHasTranslationFile(false);
       } else {
-        // 对于生成并翻译或仅翻译的任务
+        // 对于需要翻译的任务，优先使用临时原始字幕文件
         originalSrtFilePath =
           tempSrtFile || srtFile || path.join(directory, `${fileName}.srt`);
 
-        if (isDoubleLangSubtitle) {
-          // 如果是双语字幕，只需要读取翻译后的文件
-          originalSrtFilePath = translatedSrtFile;
-          setHasTranslationFile(false);
+        // 翻译字幕直接使用tempTranslatedSrtFile
+        if (tempTranslatedSrtFile) {
+          translatedSrtFilePath = tempTranslatedSrtFile;
+          setHasTranslationFile(true);
         } else if (translatedSrtFile) {
-          // 有翻译文件，设置翻译字幕路径
           translatedSrtFilePath = translatedSrtFile;
           setHasTranslationFile(true);
         }
@@ -317,74 +181,49 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
       console.log('Paths:', {
         originalSrtFilePath,
         translatedSrtFilePath,
-        isDoubleLangSubtitle,
       });
 
       // 读取原始字幕文件
+      let originalSubtitles = [];
+      let translatedSubtitles = [];
+
       if (originalSrtFilePath) {
-        const subtitles = await readSubtitleFile(originalSrtFilePath);
-        console.log('原始字幕:', subtitles);
+        originalSubtitles = await readSubtitleFile(originalSrtFilePath);
+        console.log('原始字幕:', originalSubtitles);
+      }
 
-        if (subtitles.length > 0) {
-          // 检查原始字幕是否是双语字幕
-          const originalIsDoubleLang =
-            isDoubleLangSubtitle ||
-            subtitles.some(
-              (sub) =>
-                sub.content.some((line) => line.trim() === '') &&
-                sub.content.length > 2,
-            );
+      // 读取翻译字幕文件（如果存在）
+      if (shouldShowTranslation && translatedSrtFilePath) {
+        translatedSubtitles = await readSubtitleFile(translatedSrtFilePath);
+        console.log('翻译字幕:', translatedSubtitles);
+      }
 
-          if (originalIsDoubleLang) {
-            // 处理原始文件中的双语字幕，拆分为源和目标字幕
-            console.log('处理双语字幕');
-            const { sourceSubtitles, targetSubtitles } =
-              processBilingualSubtitles(subtitles);
+      // 合并字幕，匹配相同的时间码
+      if (originalSubtitles.length > 0) {
+        // 创建翻译字幕的时间码映射，提高查找效率
+        const translatedMap = new Map();
+        translatedSubtitles.forEach((sub) => {
+          translatedMap.set(sub.startEndTime, sub);
+        });
 
-            // 创建合并的字幕数据
-            const merged = sourceSubtitles.map((sub, index) => ({
-              ...sub,
-              sourceContent: sub.content.join('\n'),
-              targetContent: targetSubtitles[index].content.join('\n'),
-              isEditing: false,
-            }));
+        // 创建合并的字幕数据
+        const merged = originalSubtitles.map((sub, index) => {
+          // 直接从Map中获取对应时间码的翻译字幕
+          const translated =
+            translatedMap.get(sub.startEndTime) ||
+            (index < translatedSubtitles.length
+              ? translatedSubtitles[index]
+              : null);
 
-            setMergedSubtitles(merged);
-            setHasTranslationFile(true);
-          } else if (needsTranslation && translatedSrtFilePath) {
-            // 处理常规翻译场景：分别读取原文和翻译文件
-            const translatedSubs = await readSubtitleFile(
-              translatedSrtFilePath,
-            );
-            console.log('翻译字幕:', translatedSubs);
+          return {
+            ...sub,
+            sourceContent: sub.content.join('\n'),
+            targetContent: translated ? translated.content.join('\n') : '',
+            isEditing: false,
+          };
+        });
 
-            // 合并字幕，匹配相同的时间码
-            const merged = subtitles.map((sub, index) => {
-              const translated =
-                translatedSubs.find(
-                  (ts) => ts.startEndTime === sub.startEndTime,
-                ) || translatedSubs[index];
-              return {
-                ...sub,
-                sourceContent: sub.content.join('\n'),
-                targetContent: translated ? translated.content.join('\n') : '',
-                isEditing: false,
-              };
-            });
-
-            setMergedSubtitles(merged);
-          } else {
-            // 不需要处理翻译字幕或没有翻译文件
-            const merged = subtitles.map((sub) => ({
-              ...sub,
-              sourceContent: sub.content.join('\n'),
-              targetContent: '',
-              isEditing: false,
-            }));
-
-            setMergedSubtitles(merged);
-          }
-        }
+        setMergedSubtitles(merged);
       }
     } catch (error) {
       console.error('Error loading files:', error);
@@ -411,124 +250,51 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
   const handleSave = async () => {
     try {
       // 获取文件路径
-      const { filePath, srtFile, tempSrtFile, translatedSrtFile } = file;
-      const directory = path.dirname(filePath);
-      const fileName = path.basename(filePath, path.extname(filePath));
+      const { srtFile, tempSrtFile, translatedSrtFile, tempTranslatedSrtFile } =
+        file;
 
-      // 确定是否是双语字幕配置
-      const isDoubleLangSubtitle =
-        formData?.translateContent === 'sourceAndTranslate' ||
-        formData?.translateContent === 'translateAndSource';
+      // 保存原始字幕
+      if (srtFile && formData.sourceSrtSaveOption !== 'noSave') {
+        console.log('保存原始字幕', srtFile);
+        window.ipc.invoke('saveSubtitleFile', {
+          filePath: srtFile,
+          subtitles: mergedSubtitles,
+          contentType: 'source',
+        });
+      }
+      if (tempSrtFile) {
+        console.log('保存临时原始字幕', tempSrtFile);
+        window.ipc.invoke('saveSubtitleFile', {
+          filePath: tempSrtFile,
+          subtitles: mergedSubtitles,
+          contentType: 'source',
+        });
+      }
 
-      // 更新原始字幕
-      const updatedOriginalSubtitles = mergedSubtitles.map((sub) => ({
-        id: sub.id,
-        startEndTime: sub.startEndTime,
-        content: sub.sourceContent.split('\n'),
-        startTimeInSeconds: sub.startTimeInSeconds,
-        endTimeInSeconds: sub.endTimeInSeconds,
-      }));
-
-      // 确定原始字幕和翻译字幕的保存路径
-      let originalSrtFilePath = null;
-      let translatedSrtFilePath = null;
-
-      if (taskType === 'generateOnly') {
-        // 仅生成字幕，只需要保存原始字幕
-        originalSrtFilePath =
-          srtFile || path.join(directory, `${fileName}.srt`);
-      } else {
-        // 对于生成并翻译或仅翻译的任务
-        originalSrtFilePath =
-          tempSrtFile || srtFile || path.join(directory, `${fileName}.srt`);
-
+      // 保存翻译字幕（只在需要显示翻译内容且有翻译内容时）
+      if (shouldShowTranslation) {
+        // 保存到翻译字幕文件
         if (translatedSrtFile) {
-          // 使用文件对象中的翻译字幕路径
-          translatedSrtFilePath = translatedSrtFile;
-        }
-      }
-
-      // 将字幕转换为SRT格式
-      const originalSrtContent = formatSubtitleToSrt(updatedOriginalSubtitles);
-
-      // 处理双语字幕的情况
-      if (isDoubleLangSubtitle && translatedSrtFilePath) {
-        // 对于双语字幕，我们只需要保存翻译字幕文件，但内容包含双语内容
-        // 先将源内容和目标内容合并到翻译字幕内容中
-        const doubleLangSubtitles = mergedSubtitles.map((sub) => {
-          let content = [];
-          if (formData?.translateContent === 'sourceAndTranslate') {
-            // 先原文后翻译
-            content = [...sub.sourceContent.split('\n')];
-            if (sub.targetContent && sub.targetContent.trim() !== '') {
-              content.push(''); // 添加空行分隔
-              content = [...content, ...sub.targetContent.split('\n')];
-            }
-          } else {
-            // 先翻译后原文
-            content = sub.targetContent ? sub.targetContent.split('\n') : [];
-            if (
-              sub.sourceContent &&
-              sub.sourceContent.trim() !== '' &&
-              content.length > 0
-            ) {
-              content.push(''); // 添加空行分隔
-              content = [...content, ...sub.sourceContent.split('\n')];
-            }
-          }
-          return {
-            id: sub.id,
-            startEndTime: sub.startEndTime,
-            content: content,
-            startTimeInSeconds: sub.startTimeInSeconds,
-            endTimeInSeconds: sub.endTimeInSeconds,
-          };
-        });
-
-        const doubleLangSrtContent = formatSubtitleToSrt(doubleLangSubtitles);
-
-        // 保存双语字幕
-        window.ipc.send('saveSubtitleFile', {
-          filePath: translatedSrtFilePath,
-          content: doubleLangSrtContent,
-        });
-      } else {
-        // 非双语情况，分别保存原始字幕和翻译字幕
-
-        // 保存原始字幕
-        if (originalSrtFilePath) {
-          window.ipc.send('saveSubtitleFile', {
-            filePath: originalSrtFilePath,
-            content: originalSrtContent,
+          window.ipc.invoke('saveSubtitleFile', {
+            filePath: translatedSrtFile,
+            subtitles: mergedSubtitles,
+            contentType: formData.translateContent,
           });
         }
 
-        // 保存翻译字幕（只在需要显示翻译内容且有翻译文件时）
-        if (shouldShowTranslation && translatedSrtFilePath) {
-          const updatedTranslatedSubtitles = mergedSubtitles.map((sub) => ({
-            id: sub.id,
-            startEndTime: sub.startEndTime,
-            content: sub.targetContent ? sub.targetContent.split('\n') : [],
-            startTimeInSeconds: sub.startTimeInSeconds,
-            endTimeInSeconds: sub.endTimeInSeconds,
-          }));
-
-          const translatedSrtContent = formatSubtitleToSrt(
-            updatedTranslatedSubtitles.filter((sub) => sub.content.length > 0),
-          );
-
-          window.ipc.send('saveSubtitleFile', {
-            filePath: translatedSrtFilePath,
-            content: translatedSrtContent,
+        // 如果有指定的临时翻译文件且不同于主翻译文件，也保存一份
+        if (tempTranslatedSrtFile) {
+          window.ipc.invoke('saveSubtitleFile', {
+            filePath: tempTranslatedSrtFile,
+            subtitles: mergedSubtitles,
+            contentType: 'onlyTranslate',
           });
         }
       }
-
-      // 显示成功消息
-      window.ipc.send('message', { type: 'success', message: '字幕保存成功' });
+      toast.success(t('subtitleSavedSuccess'));
     } catch (error) {
       console.error('Error saving subtitles:', error);
-      window.ipc.send('message', { type: 'error', message: '保存字幕失败' });
+      toast.error(t('saveFailed'));
     }
   };
 

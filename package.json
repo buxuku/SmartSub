@@ -66,6 +66,7 @@
     "sonner": "^1.4.41",
     "tailwind-merge": "^2.3.0",
     "tailwindcss-animate": "^1.0.7",
+    "uuid": "^11.1.0",
     "vaul": "^0.9.1",
     "zod": "^3.23.8"
   },
@@ -73,6 +74,7 @@
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^20.11.16",
     "@types/react": "^18.2.52",
+    "@types/uuid": "^10.0.0",
     "autoprefixer": "^10.4.19",
     "electron": "^30.1.0",
     "electron-builder": "^24.13.3",
