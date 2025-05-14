@@ -168,26 +168,26 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>{t('originalLanguage')}</FormLabel>
-                        <FormControl>
-                          <Select
-                            onValueChange={field.onChange}
-                            value={field.value}
-                          >
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
+                          <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder={t('pleaseSelect')} />
                             </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value={'auto'}>
-                                {t('autoRecognition')}
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value={'auto'}>
+                              {t('autoRecognition')}
+                            </SelectItem>
+                            {supportedLanguage.map((item) => (
+                              <SelectItem key={item.value} value={item.value}>
+                                {tCommon(`language.${item.value}`)}
                               </SelectItem>
-                              {supportedLanguage.map((item) => (
-                                <SelectItem key={item.value} value={item.value}>
-                                  {tCommon(`language.${item.value}`)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </FormControl>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </FormItem>
                     )}
                   />
@@ -223,24 +223,22 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                           {t('maxContext')}
                           <ToolTips text={t('maxContextTip')} />
                         </FormLabel>
-                        <FormControl>
-                          <Select
-                            onValueChange={(value) =>
-                              field.onChange(Number(value))
-                            }
-                            value={String(field.value ?? -1)}
-                          >
+                        <Select
+                          onValueChange={(value) =>
+                            field.onChange(Number(value))
+                          }
+                          value={String(field.value ?? -1)}
+                        >
+                          <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder={t('pleaseSelect')} />
                             </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="-1">{t('noLimit')}</SelectItem>
-                              <SelectItem value="0">
-                                {t('noContext')}
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </FormControl>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="-1">{t('noLimit')}</SelectItem>
+                            <SelectItem value="0">{t('noContext')}</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </FormItem>
                     )}
                   />
@@ -255,32 +253,32 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                           {t('sourceSubtitleSaveSettings')}
                           <SavePathNotice />
                         </FormLabel>
-                        <FormControl>
-                          <Select
-                            onValueChange={field.onChange}
-                            value={field.value || 'fileName'}
-                          >
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value || 'fileName'}
+                        >
+                          <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder={t('pleaseSelect')} />
                             </SelectTrigger>
-                            <SelectContent>
-                              {taskType !== 'generateOnly' && (
-                                <SelectItem value="noSave">
-                                  {t('noSave')}
-                                </SelectItem>
-                              )}
-                              <SelectItem value="fileName">
-                                {t('fileName')}
+                          </FormControl>
+                          <SelectContent>
+                            {taskType !== 'generateOnly' && (
+                              <SelectItem value="noSave">
+                                {t('noSave')}
                               </SelectItem>
-                              <SelectItem value="fileNameWithLang">
-                                {t('fileNameWithLang')}
-                              </SelectItem>
-                              <SelectItem value="custom">
-                                {t('customSettings')}
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </FormControl>
+                            )}
+                            <SelectItem value="fileName">
+                              {t('fileName')}
+                            </SelectItem>
+                            <SelectItem value="fileNameWithLang">
+                              {t('fileNameWithLang')}
+                            </SelectItem>
+                            <SelectItem value="custom">
+                              {t('customSettings')}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
                       </FormItem>
                     )}
                   />
@@ -342,30 +340,27 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>{t('translationService')}</FormLabel>
-                        <FormControl>
-                          <Select
-                            onValueChange={(value) => {
-                              field.onChange(value);
-                            }}
-                            value={field.value}
-                          >
+                        <Select
+                          onValueChange={(value) => {
+                            field.onChange(value);
+                          }}
+                          value={field.value}
+                        >
+                          <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder={t('pleaseSelect')} />
                             </SelectTrigger>
-                            <SelectContent>
-                              {providers.map((provider) => (
-                                <SelectItem
-                                  key={provider.id}
-                                  value={provider.id}
-                                >
-                                  {tCommon(`provider.${provider.name}`, {
-                                    defaultValue: provider.name,
-                                  })}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </FormControl>
+                          </FormControl>
+                          <SelectContent>
+                            {providers.map((provider) => (
+                              <SelectItem key={provider.id} value={provider.id}>
+                                {tCommon(`provider.${provider.name}`, {
+                                  defaultValue: provider.name,
+                                })}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </FormItem>
                     )}
                   />
@@ -378,29 +373,26 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>{t('originalLanguage')}</FormLabel>
-                          <FormControl>
-                            <Select
-                              onValueChange={field.onChange}
-                              value={field.value}
-                            >
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                          >
+                            <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder={t('pleaseSelect')} />
                               </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value={'auto'}>
-                                  {t('autoRecognition')}
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value={'auto'}>
+                                {t('autoRecognition')}
+                              </SelectItem>
+                              {supportedLanguage.map((item) => (
+                                <SelectItem key={item.value} value={item.value}>
+                                  {tCommon(`language.${item.value}`)}
                                 </SelectItem>
-                                {supportedLanguage.map((item) => (
-                                  <SelectItem
-                                    key={item.value}
-                                    value={item.value}
-                                  >
-                                    {tCommon(`language.${item.value}`)}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </FormControl>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </FormItem>
                       )}
                     />
@@ -416,26 +408,23 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                           <FormLabel>
                             {t('translationTargetLanguage')}
                           </FormLabel>
-                          <FormControl>
-                            <Select
-                              onValueChange={field.onChange}
-                              value={field.value}
-                            >
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                          >
+                            <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder={t('pleaseSelect')} />
                               </SelectTrigger>
-                              <SelectContent>
-                                {supportedLanguage.map((item) => (
-                                  <SelectItem
-                                    key={item.value}
-                                    value={item.value}
-                                  >
-                                    {tCommon(`language.${item.value}`)}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </FormControl>
+                            </FormControl>
+                            <SelectContent>
+                              {supportedLanguage.map((item) => (
+                                <SelectItem key={item.value} value={item.value}>
+                                  {tCommon(`language.${item.value}`)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </FormItem>
                       )}
                     />
@@ -450,27 +439,27 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                         <FormLabel>
                           {t('translationOutputSubtitleSettings')}
                         </FormLabel>
-                        <FormControl>
-                          <Select
-                            onValueChange={field.onChange}
-                            value={field.value}
-                          >
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
+                          <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder={t('pleaseSelect')} />
                             </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="onlyTranslate">
-                                {t('onlyOutputTranslationSubtitle')}
-                              </SelectItem>
-                              <SelectItem value="sourceAndTranslate">
-                                {t('sourceAndTranslate')}
-                              </SelectItem>
-                              <SelectItem value="translateAndSource">
-                                {t('translateAndSource')}
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </FormControl>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="onlyTranslate">
+                              {t('onlyOutputTranslationSubtitle')}
+                            </SelectItem>
+                            <SelectItem value="sourceAndTranslate">
+                              {t('sourceAndTranslate')}
+                            </SelectItem>
+                            <SelectItem value="translateAndSource">
+                              {t('translateAndSource')}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
                       </FormItem>
                     )}
                   />
@@ -485,27 +474,27 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                           {t('translationSubtitleSaveSettings')}
                           <SavePathNotice />
                         </FormLabel>
-                        <FormControl>
-                          <Select
-                            onValueChange={field.onChange}
-                            value={field.value || 'fileNameWithLang'}
-                          >
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value || 'fileNameWithLang'}
+                        >
+                          <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder={t('pleaseSelect')} />
                             </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="fileName">
-                                {t('fileName')}
-                              </SelectItem>
-                              <SelectItem value="fileNameWithLang">
-                                {t('fileNameWithLang')}
-                              </SelectItem>
-                              <SelectItem value="custom">
-                                {t('customSettings')}
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </FormControl>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="fileName">
+                              {t('fileName')}
+                            </SelectItem>
+                            <SelectItem value="fileNameWithLang">
+                              {t('fileNameWithLang')}
+                            </SelectItem>
+                            <SelectItem value="custom">
+                              {t('customSettings')}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
                       </FormItem>
                     )}
                   />
