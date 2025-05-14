@@ -18,4 +18,17 @@ export interface IFiles {
   tempSrtFile?: string;
   tempAudioFile?: string;
   translatedSrtFile?: string;
+  tempTranslatedSrtFile?: string;
+}
+
+export interface IFormData {
+  translateContent:
+    | 'onlyTranslate'
+    | 'sourceAndTranslate'
+    | 'translateAndSource';
+  targetSrtSaveOption: string;
+  customTargetSrtFileName: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+  translateRetryTimes: string;
 }

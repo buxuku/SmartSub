@@ -38,7 +38,7 @@ type TaskType = 'generateAndTranslate' | 'generateOnly' | 'translateOnly';
 
 const TaskConfigForm = ({ form, formData, systemInfo }) => {
   const [providers, setProviders] = useState<Provider[]>([]);
-  const { taskType } = formData;
+  const { taskType, sourceSrtSaveOption } = formData;
   const [taskTab, setTaskTab] = useState<string>('sourceSubtitle');
   const { t } = useTranslation('home');
   const { t: tCommon } = useTranslation('common');
@@ -66,6 +66,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
       setTaskTab('translation');
     } else if (taskType === 'generateOnly') {
       setTaskTab('sourceSubtitle');
+      form.setValue('sourceSrtSaveOption', 'fileName');
     } else {
       setTaskTab('sourceSubtitle');
     }
@@ -257,15 +258,17 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                         <FormControl>
                           <Select
                             onValueChange={field.onChange}
-                            value={field.value || 'noSave'}
+                            value={field.value || 'fileName'}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder={t('pleaseSelect')} />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="noSave">
-                                {t('noSave')}
-                              </SelectItem>
+                              {taskType !== 'generateOnly' && (
+                                <SelectItem value="noSave">
+                                  {t('noSave')}
+                                </SelectItem>
+                              )}
                               <SelectItem value="fileName">
                                 {t('fileName')}
                               </SelectItem>

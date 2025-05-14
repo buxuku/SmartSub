@@ -84,5 +84,7 @@
   "videoPlayer": "Video Player",
   "subtitleEditor": "Subtitle Editor",
   "originalText": "Original Text",
-  "translatedText": "Translated Text"
+  "translatedText": "Translated Text",
+  "subtitleSavedSuccess": "Subtitle saved successfully",
+  "saveFailed": "Save failed"
 }

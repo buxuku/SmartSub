@@ -15,7 +15,7 @@ export async function handleAIBatchTranslation(
   config: TranslationConfig,
   batchSize: number = DEFAULT_BATCH_SIZE.AI,
   onProgress?: (progress: number) => void,
-  onTranslationResult?: (result: TranslationResult) => Promise<void>,
+  onTranslationResult?: (results: TranslationResult[]) => Promise<void>,
   maxRetries: number = 3,
 ): Promise<TranslationResult[]> {
   const { provider, sourceLanguage, targetLanguage, translator } = config;
@@ -99,9 +99,7 @@ export async function handleAIBatchTranslation(
 
           // 如果提供了结果处理函数，则实时处理每个翻译结果
           if (onTranslationResult) {
-            for (const result of batchResults) {
-              await onTranslationResult(result);
-            }
+            await onTranslationResult(batchResults);
           }
 
           results.push(...batchResults);
@@ -137,9 +135,7 @@ export async function handleAIBatchTranslation(
 
           // 对失败的结果也进行处理和保存
           if (onTranslationResult) {
-            for (const result of failedResults) {
-              await onTranslationResult(result);
-            }
+            await onTranslationResult(failedResults);
           }
 
           results.push(...failedResults);

@@ -90,5 +90,7 @@
   "videoPlayer": "视频播放器",
   "subtitleEditor": "字幕编辑器",
   "originalText": "原文",
-  "translatedText": "译文"
+  "translatedText": "译文",
+  "subtitleSavedSuccess": "字幕保存成功",
+  "saveFailed": "保存失败"
 }
