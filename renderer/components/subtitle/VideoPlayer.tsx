@@ -7,6 +7,13 @@ interface VideoPlayerProps {
   playerRef: React.RefObject<ReactPlayer>;
   isPlaying: boolean;
   playbackRate: number;
+  subtitleTracks?: Array<{
+    kind: string;
+    src: string;
+    srcLang: string;
+    default?: boolean;
+    label: string;
+  }>;
   togglePlay: () => void;
   goToNextSubtitle: () => void;
   goToPreviousSubtitle: () => void;
@@ -22,11 +29,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   playerRef,
   isPlaying,
   playbackRate,
+  subtitleTracks,
   handleProgress,
   setDuration,
 }) => {
   const { t } = useTranslation('home');
-
   return (
     <div className="flex flex-col">
       <div className="relative aspect-video bg-black mb-2">
@@ -42,6 +49,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             onProgress={handleProgress}
             onDuration={setDuration}
             progressInterval={100}
+            key={subtitleTracks?.[0]?.src}
+            config={{
+              file: {
+                tracks: subtitleTracks,
+              },
+            }}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-gray-500">

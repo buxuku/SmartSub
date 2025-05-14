@@ -47,6 +47,7 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
     videoInfo,
     hasTranslationFile,
     shouldShowTranslation,
+    subtitleTracksForPlayer,
     handleSubtitleChange,
     handleSave,
     getSubtitleStats,
@@ -107,6 +108,7 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
               setDuration={setDuration}
               changePlaybackRate={changePlaybackRate}
               setPlaybackRate={setPlaybackRate}
+              subtitleTracks={subtitleTracksForPlayer}
             />
 
             {/* 当前字幕预览组件 */}

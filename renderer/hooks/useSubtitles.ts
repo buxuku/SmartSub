@@ -3,6 +3,7 @@ import path from 'path';
 import { isSubtitleFile } from 'lib/utils';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
+import toWebVTT from 'srt-webvtt';
 import { IFiles } from '../../types';
 
 // 字幕格式接口
@@ -21,6 +22,15 @@ export interface SubtitleStats {
   total: number;
   withTranslation: number;
   percent: number;
+}
+
+// 新增：播放器字幕轨道接口
+export interface PlayerSubtitleTrack {
+  kind: string;
+  src: string;
+  srcLang: string;
+  label: string;
+  default?: boolean;
 }
 
 // 将时间字符串转换为秒
@@ -60,6 +70,9 @@ export const useSubtitles = (
   const [currentSubtitleIndex, setCurrentSubtitleIndex] = useState(-1);
   const [videoInfo, setVideoInfo] = useState({ fileName: '', extension: '' });
   const [hasTranslationFile, setHasTranslationFile] = useState(false);
+  const [subtitleTracksForPlayer, setSubtitleTracksForPlayer] = useState<
+    PlayerSubtitleTrack[]
+  >([]);
 
   // 是否需要显示翻译内容
   const shouldShowTranslation = taskType !== 'generateOnly';
@@ -68,6 +81,16 @@ export const useSubtitles = (
     if (file && open) {
       loadFiles();
     }
+
+    // 4. 管理 Object URL 的生命周期
+    return () => {
+      subtitleTracksForPlayer.forEach((track) => {
+        if (track.src && track.src.startsWith('blob:')) {
+          URL.revokeObjectURL(track.src);
+        }
+      });
+      setSubtitleTracksForPlayer([]); // 清空轨道信息
+    };
   }, [file, open]);
 
   // 获取视频文件信息
@@ -112,48 +135,101 @@ export const useSubtitles = (
       }
 
       // 确定原始字幕文件路径
-      let originalSrtFilePath = null;
-      let translatedSrtFilePath = null;
+      let originalSrtPath: string | null | undefined = null;
+      let translatedSrtPath: string | null | undefined = null;
 
       // 根据任务类型确定使用哪个原始字幕文件
       if (taskType === 'generateOnly') {
-        originalSrtFilePath =
-          srtFile || path.join(directory, `${fileName}.srt`);
+        originalSrtPath = srtFile || path.join(directory, `${fileName}.srt`);
         setHasTranslationFile(false);
       } else {
         // 对于需要翻译的任务，优先使用临时原始字幕文件
-        originalSrtFilePath =
+        originalSrtPath =
           tempSrtFile || srtFile || path.join(directory, `${fileName}.srt`);
 
         // 翻译字幕直接使用tempTranslatedSrtFile
         if (tempTranslatedSrtFile) {
-          translatedSrtFilePath = tempTranslatedSrtFile;
+          translatedSrtPath = tempTranslatedSrtFile;
           setHasTranslationFile(true);
         } else if (translatedSrtFile) {
-          translatedSrtFilePath = translatedSrtFile;
+          translatedSrtPath = translatedSrtFile;
           setHasTranslationFile(true);
         }
       }
 
       console.log('Paths:', {
-        originalSrtFilePath,
-        translatedSrtFilePath,
+        originalSrtPath,
+        translatedSrtPath,
       });
 
       // 读取原始字幕文件
       let originalSubtitles = [];
       let translatedSubtitles = [];
 
-      if (originalSrtFilePath) {
-        originalSubtitles = await readSubtitleFile(originalSrtFilePath);
+      // 用于播放器的字幕轨道
+      const playerTracks: PlayerSubtitleTrack[] = [];
+
+      const createPlayerTrack = async (
+        srtPath: string | null | undefined,
+        language: string,
+        isDefault?: boolean,
+      ): Promise<PlayerSubtitleTrack | null> => {
+        if (!srtPath) return null;
+        try {
+          const result = await window.ipc.invoke('readRawFileContent', {
+            filePath: srtPath,
+          });
+          if (result.error || !result.content) {
+            console.error(`无法读取字幕文件 ${srtPath}:`, result.error);
+            toast.error(
+              t('errorReadSubtitle', { file: path.basename(srtPath) }),
+            );
+            return null;
+          }
+          const srtContent = result.content;
+          const srtBlob = new Blob([srtContent], { type: 'text/plain' });
+          const vttUrl = await toWebVTT(srtBlob);
+          return {
+            kind: 'subtitles',
+            src: vttUrl,
+            srcLang: language,
+            label: `(${language})`,
+            default: isDefault,
+          };
+        } catch (error) {
+          console.error(`转换字幕 ${srtPath} 到 VTT 失败:`, error);
+          toast.error(t('errorConvertToVTT', { file: path.basename(srtPath) }));
+          return null;
+        }
+      };
+
+      if (originalSrtPath) {
+        originalSubtitles = await readSubtitleFile(originalSrtPath);
+        if (formData.sourceLanguage) {
+          const track = await createPlayerTrack(
+            originalSrtPath,
+            formData.sourceLanguage,
+            true,
+          );
+          if (track) playerTracks.push(track);
+        }
         console.log('原始字幕:', originalSubtitles);
       }
 
       // 读取翻译字幕文件（如果存在）
-      if (shouldShowTranslation && translatedSrtFilePath) {
-        translatedSubtitles = await readSubtitleFile(translatedSrtFilePath);
+      if (shouldShowTranslation && translatedSrtPath) {
+        translatedSubtitles = await readSubtitleFile(translatedSrtPath);
+        if (formData.targetLanguage) {
+          const track = await createPlayerTrack(
+            translatedSrtPath,
+            formData.targetLanguage,
+          );
+          if (track) playerTracks.push(track);
+        }
         console.log('翻译字幕:', translatedSubtitles);
       }
+
+      setSubtitleTracksForPlayer(playerTracks);
 
       // 合并字幕，匹配相同的时间码
       if (originalSubtitles.length > 0) {
@@ -287,6 +363,7 @@ export const useSubtitles = (
     videoInfo,
     hasTranslationFile,
     shouldShowTranslation,
+    subtitleTracksForPlayer,
     handleSubtitleChange,
     handleSave,
     getSubtitleStats,

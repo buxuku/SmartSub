@@ -37,7 +37,7 @@ export default async function translate(
       ? maxRetries
       : translateRetryTimes
         ? parseInt(translateRetryTimes)
-        : 2;
+        : 0;
   const renderContentTemplate = CONTENT_TEMPLATES[translateContent];
 
   try {
