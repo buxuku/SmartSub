@@ -194,6 +194,21 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     }
   });
 
+  // 读取文件原始内容
+  ipcMain.handle('readRawFileContent', async (event, { filePath }) => {
+    try {
+      if (!fs.existsSync(filePath)) {
+        logMessage(`读取文件失败: 文件不存在 ${filePath}`, 'error');
+        return { error: `File not found: ${filePath}` };
+      }
+      const content = await fs.promises.readFile(filePath, 'utf-8');
+      return { content };
+    } catch (error) {
+      logMessage(`读取文件错误: ${error.message}`, 'error');
+      return { error: `Error reading file: ${error.message}` };
+    }
+  });
+
   // 保存字幕文件
   ipcMain.handle(
     'saveSubtitleFile',
