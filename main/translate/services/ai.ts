@@ -16,7 +16,7 @@ export async function handleAIBatchTranslation(
   batchSize: number = DEFAULT_BATCH_SIZE.AI,
   onProgress?: (progress: number) => void,
   onTranslationResult?: (results: TranslationResult[]) => Promise<void>,
-  maxRetries: number = 3,
+  maxRetries: number = 0,
 ): Promise<TranslationResult[]> {
   const { provider, sourceLanguage, targetLanguage, translator } = config;
   const results: TranslationResult[] = [];
