@@ -1,5 +1,5 @@
-appId: com.example.smart-sub
-productName: Smart Sub
+appId: com.example.smartsub
+productName: SmartSub
 copyright: Copyright © 2024 buxuku
 directories:
   output: dist

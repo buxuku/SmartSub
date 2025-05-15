@@ -270,15 +270,20 @@ jobs:
               // Sort files to ensure deterministic order, e.g., by URL
               platformYamlData[platform].sort((a, b) => a.url.localeCompare(b.url));
 
+              let outputFileName = `latest-${platform}.yml`;
+              if (platform === 'windows') {
+                outputFileName = 'latest.yml';
+              }
+
               const finalYaml = {
                 version: packageVersion,
                 files: platformYamlData[platform],
-                path: `latest-${platform}.yml`, // This is the conventional name for the update file itself
+                path: outputFileName, // Use the determined output file name
                 releaseDate: releaseDate,
               };
-              const yamlPath = path.join(finalReleaseAssetsDir, `latest-${platform}.yml`);
+              const yamlPath = path.join(finalReleaseAssetsDir, outputFileName);
               fs.writeFileSync(yamlPath, yaml.dump(finalYaml));
-              console.log(`Generated ${yamlPath} with ${finalYaml.files.length} entries.`);
+              console.log(`Generated ${yamlPath} for ${platform} with ${finalYaml.files.length} entries.`);
             }
           }
           console.log('Final release assets prepared in:', finalReleaseAssetsDir);

@@ -1,6 +1,6 @@
 {
   "private": true,
-  "name": "smart-sub",
+  "name": "smartsub",
   "description": "视频转字幕，字幕翻译软件",
   "version": "2.3.4",
   "author": "buxuku <buxuku@gmail.com>",
