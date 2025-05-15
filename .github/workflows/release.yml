@@ -148,6 +148,9 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
+      - name: Compile application code
+        run: yarn build # Assumes 'yarn build' compiles TS to JS, e.g., into the 'app' directory
+
       - name: Build Electron app
         shell: bash # Use bash for consistency if possible, or powershell for windows if needed
         run: |
