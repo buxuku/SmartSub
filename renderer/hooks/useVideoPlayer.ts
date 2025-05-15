@@ -29,9 +29,7 @@ export const useVideoPlayer = (
           sub.startTimeInSeconds <= currentTime &&
           sub.endTimeInSeconds > currentTime,
       );
-      console.log(currentTime, mergedSubtitles, index, 'find currentTime');
       if (index !== -1 && index !== currentSubtitleIndex) {
-        console.log(index, 'process index');
         setCurrentSubtitleIndex(index);
         // 滚动到当前字幕
         const element = document.getElementById(`subtitle-${index}`);
@@ -53,16 +51,7 @@ export const useVideoPlayer = (
 
   // 点击字幕跳转到对应时间点
   const handleSubtitleClick = (index: number) => {
-    console.log(
-      mergedSubtitles[index],
-      playerRef.current,
-      index,
-      'mergedSubtitles',
-    );
     if (playerRef.current && index >= 0 && index < mergedSubtitles.length) {
-      // 立即更新当前选中的字幕索引
-      // setCurrentSubtitleIndex(index);
-
       // 获取字幕的开始时间
       const startTime = mergedSubtitles[index]?.startTimeInSeconds ?? 0;
 

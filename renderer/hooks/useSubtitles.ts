@@ -157,11 +157,6 @@ export const useSubtitles = (
         }
       }
 
-      console.log('Paths:', {
-        originalSrtPath,
-        translatedSrtPath,
-      });
-
       // 读取原始字幕文件
       let originalSubtitles = [];
       let translatedSubtitles = [];
@@ -209,11 +204,10 @@ export const useSubtitles = (
           const track = await createPlayerTrack(
             originalSrtPath,
             formData.sourceLanguage,
-            true,
+            !shouldShowTranslation,
           );
           if (track) playerTracks.push(track);
         }
-        console.log('原始字幕:', originalSubtitles);
       }
 
       // 读取翻译字幕文件（如果存在）
@@ -223,10 +217,10 @@ export const useSubtitles = (
           const track = await createPlayerTrack(
             translatedSrtPath,
             formData.targetLanguage,
+            true,
           );
           if (track) playerTracks.push(track);
         }
-        console.log('翻译字幕:', translatedSubtitles);
       }
 
       setSubtitleTracksForPlayer(playerTracks);
@@ -262,7 +256,6 @@ export const useSubtitles = (
           };
         });
 
-        console.log('合并后的字幕（包含时间戳）:', merged);
         setMergedSubtitles(merged);
       }
     } catch (error) {
@@ -295,7 +288,6 @@ export const useSubtitles = (
 
       // 保存原始字幕
       if (srtFile && formData.sourceSrtSaveOption !== 'noSave') {
-        console.log('保存原始字幕', srtFile);
         window.ipc.invoke('saveSubtitleFile', {
           filePath: srtFile,
           subtitles: mergedSubtitles,
@@ -303,7 +295,6 @@ export const useSubtitles = (
         });
       }
       if (tempSrtFile) {
-        console.log('保存临时原始字幕', tempSrtFile);
         window.ipc.invoke('saveSubtitleFile', {
           filePath: tempSrtFile,
           subtitles: mergedSubtitles,
