@@ -49,7 +49,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             onProgress={handleProgress}
             onDuration={setDuration}
             progressInterval={100}
-            key={subtitleTracks?.[0]?.src}
+            key={subtitleTracks?.[0]?.label}
             config={{
               file: {
                 tracks: subtitleTracks,

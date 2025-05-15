@@ -64,6 +64,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
   useEffect(() => {
     if (taskType === 'translateOnly') {
       setTaskTab('translation');
+      form.setValue('targetSrtSaveOption', 'fileNameWithLang');
     } else if (taskType === 'generateOnly') {
       setTaskTab('sourceSubtitle');
       form.setValue('sourceSrtSaveOption', 'fileName');
@@ -484,9 +485,11 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="fileName">
-                              {t('fileName')}
-                            </SelectItem>
+                            {taskType === 'generateAndTranslate' && (
+                              <SelectItem value="fileName">
+                                {t('fileName')}
+                              </SelectItem>
+                            )}
                             <SelectItem value="fileNameWithLang">
                               {t('fileNameWithLang')}
                             </SelectItem>

@@ -91,45 +91,49 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
           <DialogTitle>{t('subtitleProofread')}</DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-2 flex-1 overflow-hidden">
+        <div
+          className={`grid gap-2 flex-1 overflow-hidden ${taskType === 'translateOnly' ? 'grid-cols-1' : 'grid-cols-2'}`}
+        >
           {/* 左侧：视频播放器和控制区域 */}
-          <div className="flex flex-col">
-            {/* 视频播放器组件 */}
-            <VideoPlayer
-              videoPath={videoPath}
-              playerRef={playerRef}
-              isPlaying={isPlaying}
-              playbackRate={playbackRate}
-              togglePlay={togglePlay}
-              goToNextSubtitle={goToNextSubtitle}
-              goToPreviousSubtitle={goToPreviousSubtitle}
-              seekVideo={seekVideo}
-              handleProgress={handleProgress}
-              setDuration={setDuration}
-              changePlaybackRate={changePlaybackRate}
-              setPlaybackRate={setPlaybackRate}
-              subtitleTracks={subtitleTracksForPlayer}
-            />
+          {taskType !== 'translateOnly' && (
+            <div className="flex flex-col">
+              {/* 视频播放器组件 */}
+              <VideoPlayer
+                videoPath={videoPath}
+                playerRef={playerRef}
+                isPlaying={isPlaying}
+                playbackRate={playbackRate}
+                togglePlay={togglePlay}
+                goToNextSubtitle={goToNextSubtitle}
+                goToPreviousSubtitle={goToPreviousSubtitle}
+                seekVideo={seekVideo}
+                handleProgress={handleProgress}
+                setDuration={setDuration}
+                changePlaybackRate={changePlaybackRate}
+                setPlaybackRate={setPlaybackRate}
+                subtitleTracks={subtitleTracksForPlayer}
+              />
 
-            {/* 当前字幕预览组件 */}
-            <CurrentSubtitle
-              currentSubtitleIndex={currentSubtitleIndex}
-              currentTime={currentTime}
-              duration={duration}
-              mergedSubtitles={mergedSubtitles}
-              shouldShowTranslation={shouldShowTranslation}
-              hasTranslationFile={hasTranslationFile}
-            />
+              {/* 当前字幕预览组件 */}
+              <CurrentSubtitle
+                currentSubtitleIndex={currentSubtitleIndex}
+                currentTime={currentTime}
+                duration={duration}
+                mergedSubtitles={mergedSubtitles}
+                shouldShowTranslation={shouldShowTranslation}
+                hasTranslationFile={hasTranslationFile}
+              />
 
-            {/* 视频信息和字幕统计组件 */}
-            <VideoInfo
-              fileName={videoInfo.fileName}
-              extension={videoInfo.extension}
-              duration={duration}
-              subtitleStats={getSubtitleStats()}
-              shouldShowTranslation={shouldShowTranslation}
-            />
-          </div>
+              {/* 视频信息和字幕统计组件 */}
+              <VideoInfo
+                fileName={videoInfo.fileName}
+                extension={videoInfo.extension}
+                duration={duration}
+                subtitleStats={getSubtitleStats()}
+                shouldShowTranslation={shouldShowTranslation}
+              />
+            </div>
+          )}
 
           {/* 右侧：字幕列表组件 */}
           <SubtitleList

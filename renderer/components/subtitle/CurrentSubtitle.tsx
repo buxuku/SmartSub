@@ -21,7 +21,6 @@ const CurrentSubtitle: React.FC<CurrentSubtitleProps> = ({
   hasTranslationFile,
 }) => {
   const { t } = useTranslation('home');
-  console.log(currentSubtitleIndex, 'currentSubtitleIndex');
 
   // 获取当前字幕对象，添加边界检查
   const currentSubtitle =
