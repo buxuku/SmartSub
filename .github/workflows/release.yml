@@ -20,12 +20,14 @@ jobs:
             arch: arm64
             addon_name: addon-macos-arm64.node
             build_args: '--arm64'
+            is_primary_builder: true
 
           # macOS Intel
           - os: macos-13
             arch: x64
             addon_name: addon-macos-x64.node
             build_args: '--x64'
+            is_primary_builder: false
 
           # Windows no-cuda
           - os: windows-2019
@@ -33,6 +35,7 @@ jobs:
             addon_name: addon-windows-no-cuda.node
             cuda_version: no-cuda
             cuda_opt: generic
+            is_primary_builder: false
 
           # Windows CUDA 11.8.0 optimized
           - os: windows-2019
@@ -40,6 +43,7 @@ jobs:
             addon_name: addon-windows-cuda-1180-optimized.node
             cuda_version: 11.8.0
             cuda_opt: optimized
+            is_primary_builder: false
 
           # Windows CUDA 11.8.0 generic
           - os: windows-2019
@@ -47,6 +51,7 @@ jobs:
             addon_name: addon-windows-cuda-1180-generic.node
             cuda_version: 11.8.0
             cuda_opt: generic
+            is_primary_builder: false
 
           # Windows CUDA 12.2.0 optimized
           - os: windows-2019
@@ -54,6 +59,7 @@ jobs:
             addon_name: addon-windows-cuda-1220-optimized.node
             cuda_version: 12.2.0
             cuda_opt: optimized
+            is_primary_builder: false
 
           # Windows CUDA 12.2.0 generic
           - os: windows-2019
@@ -61,6 +67,7 @@ jobs:
             addon_name: addon-windows-cuda-1220-generic.node
             cuda_version: 12.2.0
             cuda_opt: generic
+            is_primary_builder: false
 
           # Windows CUDA 12.4.1 optimized
           - os: windows-2019
@@ -68,6 +75,7 @@ jobs:
             addon_name: addon-windows-cuda-1241-optimized.node
             cuda_version: 12.4.1
             cuda_opt: optimized
+            is_primary_builder: false
 
           # Windows CUDA 12.4.1 generic
           - os: windows-2019
@@ -75,6 +83,7 @@ jobs:
             addon_name: addon-windows-cuda-1241-generic.node
             cuda_version: 12.4.1
             cuda_opt: generic
+            is_primary_builder: false
 
     steps:
       - name: Check out Git repository
@@ -130,7 +139,7 @@ jobs:
         with:
           args: ${{ matrix.build_args }}
           github_token: ${{ secrets.TOKEN }}
-          release: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          release: ${{ startsWith(github.ref, 'refs/tags/v') && matrix.is_primary_builder == true }}
 
       - name: Build/release Electron app - Windows
         uses: samuelmeuli/action-electron-builder@v1.6.0
@@ -140,5 +149,5 @@ jobs:
           CUDA_OPT: ${{ matrix.cuda_opt }}
         with:
           github_token: ${{ secrets.TOKEN }}
-          release: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          release: false
           max_attempts: 5

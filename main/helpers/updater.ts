@@ -33,10 +33,11 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
     autoUpdater.autoInstallOnAppQuit = false;
   }
   // 根据当前系统平台和架构设置更新通道
-  const buildInfo = getBuildInfo();
-  let updateChannel = 'latest';
+  // const buildInfo = getBuildInfo(); // 此行不再用于确定channel
+  // let updateChannel = 'latest'; // 旧的声明方式
 
-  // 根据不同平台设置对应的更新通道
+  // 以下动态设置 updateChannel 的代码块被移除或注释
+  /*
   if (buildInfo.platform === 'darwin') {
     // Mac平台: latest-${arch}
     console.log(buildInfo.arch, `latest-${buildInfo.arch}`);
@@ -52,16 +53,18 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
     // Linux平台: latest
     updateChannel = 'latest';
   }
+  */
 
   // 设置更新通道
-  autoUpdater.channel = updateChannel;
-  logMessage(`Setting update channel to: ${updateChannel}`, 'info');
+  autoUpdater.channel = 'latest'; // 直接将 channel 设置为 'latest'
+  logMessage(`Setting update channel to: ${autoUpdater.channel}`, 'info');
+
   // 检查更新
   const checkForUpdates = async (silent = false) => {
     try {
-      const buildInfo = getBuildInfo();
+      const buildInfo = getBuildInfo(); // buildInfo 仍用于日志记录
       logMessage(
-        `Checking for updates... Platform: ${buildInfo.platform}, Arch: ${buildInfo.arch}${buildInfo.cudaVersion ? `, CUDA: ${buildInfo.cudaVersion}` : ''}`,
+        `Checking for updates... Platform: ${buildInfo.platform}, Arch: ${buildInfo.arch}${buildInfo.cudaVersion ? `, CUDA: ${buildInfo.cudaVersion}` : ''} on channel '${autoUpdater.channel}'`,
         'info',
       );
       const result = await autoUpdater.checkForUpdates();
@@ -171,7 +174,7 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
   });
 
   autoUpdater.on('error', (error) => {
-    logMessage(`Update error: ${error.message}`, 'error');
+    logMessage(`Update error: ${error.message}`, 'error'); // Restored original log message for error
     mainWindow.webContents.send('update-status', {
       status: 'error',
       error: error.message,
