@@ -145,6 +145,9 @@ jobs:
           Copy-Item -Path "temp-artifacts/addon-windows-no-cuda.node" -Destination "extraResources/addons/addon-no-cuda.node"
           node scripts/inject-build-info.js
 
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
       - name: Build Electron app
         shell: bash # Use bash for consistency if possible, or powershell for windows if needed
         run: |
@@ -154,7 +157,6 @@ jobs:
             export CUDA_VERSION="${{ matrix.cuda_version }}"
             export CUDA_OPT="${{ matrix.cuda_opt }}"
           fi
-          # yarn install --frozen-lockfile # Run if not part of setup-node or if dependencies need reinstalling
           yarn run electron-builder --${{ matrix.os_build_arg }} --${{ matrix.arch }} ${{ matrix.build_args || '' }} --publish never
 
       - name: Stage Artifacts
