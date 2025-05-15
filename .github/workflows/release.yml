@@ -12,6 +12,8 @@ jobs:
       ELECTRON_BUILDER_HTTP_TIMEOUT: 6000000
       ELECTRON_MIRROR: 'https://npmmirror.com/mirrors/electron/'
       GH_TOKEN: ${{ secrets.TOKEN }}
+      USE_HARD_LINKS: false
+      ELECTRON_BUILDER_RELEASE_ID: ${{ github.ref }}_${{ github.sha }}
     strategy:
       matrix:
         include:
@@ -123,10 +125,29 @@ jobs:
           # 更新 package.json 添加构建信息
           node scripts/inject-build-info.js
 
+      # 设置环境变量
+      - name: Set env
+        run: echo "GH_RELEASE_TAG=${{ github.ref_name }}" >> $GITHUB_ENV
+        shell: bash
+
+      # 为 MacOS ARM64 任务设置创建发布标志
+      - name: Set create release flag for first job
+        if: matrix.os == 'macos-latest' && matrix.arch == 'arm64'
+        run: echo "SHOULD_CREATE_RELEASE=true" >> $GITHUB_ENV
+        shell: bash
+
+      # 为其他任务设置更新发布标志
+      - name: Set update release flag for other jobs
+        if: matrix.os != 'macos-latest' || matrix.arch != 'arm64'
+        run: echo "SHOULD_CREATE_RELEASE=false" >> $GITHUB_ENV
+        shell: bash
+
       # 构建应用程序
       - name: Build/release Electron app - macOS
         uses: samuelmeuli/action-electron-builder@v1.6.0
         if: startsWith(matrix.os, 'macos')
+        env:
+          ELECTRON_BUILDER_CREATE_RELEASE: ${{ env.SHOULD_CREATE_RELEASE }}
         with:
           args: ${{ matrix.build_args }}
           github_token: ${{ secrets.TOKEN }}
@@ -138,6 +159,7 @@ jobs:
         env:
           CUDA_VERSION: ${{ matrix.cuda_version }}
           CUDA_OPT: ${{ matrix.cuda_opt }}
+          ELECTRON_BUILDER_CREATE_RELEASE: ${{ env.SHOULD_CREATE_RELEASE }}
         with:
           github_token: ${{ secrets.TOKEN }}
           release: ${{ startsWith(github.ref, 'refs/tags/v') }}
