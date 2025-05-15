@@ -300,10 +300,10 @@ jobs:
         with:
           # token: ${{ secrets.GITHUB_TOKEN }} # Provided by default
           tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
           # body: | # Optional: Add release notes here
           #   Automated release for version ${{ github.ref_name }}
-          draft: false # Set to true if you want to manually review before publishing
+          draft: true # Set to true if you want to manually review before publishing
           prerelease: false # Set to true if this is a pre-release
           files: |
             final_release_assets/*
