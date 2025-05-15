@@ -32,6 +32,7 @@ jobs:
             arch: x64
             addon_name: addon-windows-no-cuda.node
             cuda_version: no-cuda
+            cuda_opt: generic
 
           # Windows CUDA 11.8.0 optimized
           - os: windows-2019

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ISystemInfo } from 'types';
+import { ISystemInfo } from '../../types/types';
 
 export default function useSystemInfo() {
   const [systemInfo, setSystemInfo] = useState<ISystemInfo>({
