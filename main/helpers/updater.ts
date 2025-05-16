@@ -26,34 +26,13 @@ import { getBuildInfo } from './buildInfo';
 export function setupAutoUpdater(mainWindow: BrowserWindow) {
   // 针对Mac平台的特殊处理
   const isMacOS = process.platform === 'darwin';
+  const buildInfo = getBuildInfo(); // buildInfo 仍用于日志记录
 
   // 如果是Mac平台，禁用自动下载和安装
   if (isMacOS) {
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
   }
-  // 根据当前系统平台和架构设置更新通道
-  // const buildInfo = getBuildInfo(); // 此行不再用于确定channel
-  // let updateChannel = 'latest'; // 旧的声明方式
-
-  // 以下动态设置 updateChannel 的代码块被移除或注释
-  /*
-  if (buildInfo.platform === 'darwin') {
-    // Mac平台: latest-${arch}
-    console.log(buildInfo.arch, `latest-${buildInfo.arch}`);
-    updateChannel = `latest-${buildInfo.arch}`;
-  } else if (buildInfo.platform === 'win32') {
-    // Windows平台: latest-${arch}-${env.CUDA_VERSION}-${env.CUDA_OPT}
-    if (buildInfo.cudaVersion) {
-      updateChannel = `latest-${buildInfo.arch}-${buildInfo.cudaVersion}-${buildInfo.cudaOpt || 'generic'}`;
-    } else {
-      updateChannel = `latest-${buildInfo.arch}`;
-    }
-  } else if (buildInfo.platform === 'linux') {
-    // Linux平台: latest
-    updateChannel = 'latest';
-  }
-  */
 
   // 设置更新通道
   autoUpdater.channel = 'latest'; // 直接将 channel 设置为 'latest'
@@ -62,7 +41,6 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
   // 检查更新
   const checkForUpdates = async (silent = false) => {
     try {
-      const buildInfo = getBuildInfo(); // buildInfo 仍用于日志记录
       logMessage(
         `Checking for updates... Platform: ${buildInfo.platform}, Arch: ${buildInfo.arch}${buildInfo.cudaVersion ? `, CUDA: ${buildInfo.cudaVersion}` : ''} on channel '${autoUpdater.channel}'`,
         'info',
@@ -128,7 +106,73 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
         .then(({ response }) => {
           if (response === 0) {
             // 用户选择下载
-            autoUpdater.downloadUpdate();
+            if (
+              buildInfo.platform === 'win32' &&
+              buildInfo.cudaVersion &&
+              buildInfo.cudaOpt &&
+              info.files &&
+              info.files.length > 0
+            ) {
+              // 记录原始文件列表
+              const fileUrls = info.files.map((f) => f.url).join(', ');
+              logMessage(
+                `[Updater] Sorting ${info.files.length} files. Original order: ${fileUrls}`,
+                'info',
+              );
+
+              // 找到匹配的文件并移动到第一个位置
+              const matchedIndex = info.files.findIndex((file) => {
+                const fileNameLower = file.url.toLowerCase();
+                const cudaVersionLower = buildInfo.cudaVersion.toLowerCase();
+                const cudaOptLower = buildInfo.cudaOpt.toLowerCase();
+                const archPattern = `_${buildInfo.arch.toLowerCase()}_`;
+
+                // 检查文件名是否包含架构、CUDA版本和优化选项
+                return (
+                  fileNameLower.includes(archPattern) &&
+                  fileNameLower.includes(cudaVersionLower) &&
+                  fileNameLower.includes(cudaOptLower)
+                );
+              });
+
+              if (matchedIndex > 0) {
+                // 如果找到匹配的文件，将其移动到第一个位置
+                const matchedFile = info.files.splice(matchedIndex, 1)[0];
+                info.files.unshift(matchedFile);
+                logMessage(
+                  `[Updater] Moved matched file to first position: ${matchedFile.url}`,
+                  'info',
+                );
+              } else if (matchedIndex === 0) {
+                // 如果匹配的文件已经在第一个位置，只记录一次
+                logMessage(
+                  `[Updater] Matched file already in first position: ${info.files[0].url}`,
+                  'info',
+                );
+              } else {
+                // 如果没有找到匹配的文件，记录警告
+                logMessage(
+                  `[Updater] No exact match found for CUDA ${buildInfo.cudaVersion} ${buildInfo.cudaOpt}. Using default order.`,
+                  'warning',
+                );
+              }
+            }
+
+            // 使用无参数的 downloadUpdate()，它将下载 info.files 中的第一个文件
+            logMessage(
+              `[Updater] Downloading update. First file is now: ${info.files[0]?.url || 'unknown'}`,
+              'info',
+            );
+            autoUpdater.downloadUpdate().catch((err) => {
+              logMessage(
+                `[Updater] Error downloading update: ${err.message}`,
+                'error',
+              );
+              dialog.showErrorBox(
+                '下载更新失败',
+                `下载更新失败: ${err.message}。请尝试手动下载。`,
+              );
+            });
           } else if (response === 2) {
             // 用户选择查看更新内容
             const releaseUrl = `https://github.com/buxuku/SmartSub/releases/tag/v${info.version}`;
