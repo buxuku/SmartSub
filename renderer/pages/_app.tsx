@@ -6,12 +6,14 @@ import { getStaticPaths, makeStaticProperties } from '../lib/get-static';
 import { ThemeProvider } from 'next-themes';
 
 import '../styles/globals.css';
+import { UpdateNotification } from '@/components/UpdateNotification';
 
 function MyApp({ Component, pageProps }: AppProps) {
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <Layout {...pageProps}>
         <Component {...pageProps} />
+        <UpdateNotification />
       </Layout>
     </ThemeProvider>
   );

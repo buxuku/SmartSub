@@ -106,5 +106,17 @@
   "logs": "日志",
   "clearLogs": "清空日志",
   "toggleTheme": "切换主题",
-  "noModelsInstalled": "没有下载任何模型"
+  "noModelsInstalled": "没有下载任何模型",
+  "checkForUpdates": "检查更新",
+  "updateReady": "更新已就绪",
+  "updateReadyDesc": "新版本 {version} 已下载完成，可以立即安装。",
+  "installNow": "立即安装",
+  "updateError": "更新出错",
+  "updateCheckError": "检查更新失败",
+  "updateDownloadError": "下载更新失败",
+  "updateInstallError": "安装更新失败",
+  "newVersionDesc": "发现新版本 {version}，是否立即下载？",
+  "later": "稍后再说",
+  "downloadingUpdate": "正在下载更新",
+  "downloadingUpdateDesc": "正在下载版本 {version}，下载完成后将提示安装。"
 }
