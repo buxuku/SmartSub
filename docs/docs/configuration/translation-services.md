@@ -31,7 +31,7 @@ title: 翻译服务配置
 
 ### 火山引擎翻译
 
-[火山引擎](https://www.volcengine.com/product/translation)提供高质量的机器翻译服务，对中文支持较好。
+[火山引擎](https://www.volcengine.com/product/machine-translation)提供高质量的机器翻译服务，对中文支持较好。
 
 #### 申请步骤：
 
@@ -159,11 +159,12 @@ DeepLX 在批量翻译时容易受到限流，建议降低并行请求数，或�
 #### 配置方法：
 
 1. 在妙幕设置中选择"翻译服务"选项卡
-2. 找到"OpenAI 风格 API"部分
+2. 找到 OpenAI 风格的服务端，如 DeepSeek 部分，你也可以点击添加自定义的 OpenAI 服务
 3. 输入 API 密钥
 4. 输入 API 端点（如 `https://api.deepseek.com`）
 5. 选择模型名称（如 `deepseek-chat`）
-6. 点击"保存"按钮
+6. 根据需要调整系统提示词和用户提示词
+7. 点击"保存"按钮
 
 <div className="img-container">
   <img src="/img/screenshots/openai-style-setting.png" alt="OpenAI 风格 API 设置" />
@@ -181,34 +182,34 @@ DeepLX 在批量翻译时容易受到限流，建议降低并行请求数，或�
 
 妙幕使用提示词模板来指导 AI 模型进行翻译。模板中可以使用以下变量：
 
-- `{{text}}` - 要翻译的文本
-- `{{source_lang}}` - 源语言
-- `{{target_lang}}` - 目标语言
+- `${content}` - 要翻译的文本
+- `${sourceLanguage}` - 源语言
+- `${targetLanguage}` - 目标语言
 
 ### 示例提示词
 
 #### 基础翻译提示词：
 
 ```
-将以下{{source_lang}}文本翻译成{{target_lang}}，保持原文的语气和风格：
+将以下${sourceLanguage}文本翻译成${targetLanguage}，保持原文的语气和风格：
 
-{{text}}
+${content}
 ```
 
 #### 字幕优化提示词：
 
 ```
-你是一位专业的视频字幕翻译专家。请将以下{{source_lang}}字幕翻译成{{target_lang}}，确保翻译简洁、自然且适合显示为字幕。保持原文的语气和风格，但可以适当调整以符合目标语言的表达习惯。
+你是一位专业的视频字幕翻译专家。请将以下${sourceLanguage}字幕翻译成${targetLanguage}，确保翻译简洁、自然且适合显示为字幕。保持原文的语气和风格，但可以适当调整以符合目标语言的表达习惯。
 
-{{text}}
+${content}
 ```
 
 #### 专业领域翻译提示词：
 
 ```
-作为一名专业的技术文档翻译者，请将以下{{source_lang}}技术内容翻译成{{target_lang}}。请确保准确翻译所有专业术语，并保持文本的技术准确性：
+作为一名专业的技术文档翻译者，请将以下${sourceLanguage}技术内容翻译成${targetLanguage}。请确保准确翻译所有专业术语，并保持文本的技术准确性：
 
-{{text}}
+${content}
 ```
 
 ## 翻译服务选择建议
