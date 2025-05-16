@@ -10,7 +10,7 @@ title: 模型配置
 ## 模型管理界面
 
 <div className="img-container">
-  <img src="/img/screenshots/model-management.png" alt="模型管理界面" />
+  <img src="/img/screenshots/model-download.png" alt="模型管理界面" />
 </div>
 
 ## Whisper 模型简介
@@ -76,11 +76,13 @@ title: 模型配置
 
 ## 模型目录位置
 
-妙幕的模型文件存储在以下位置：
+妙幕的模型文件默认存储在以下位置：
 
 - **Windows**: `%APPDATA%\Smart Sub\models\`
 - **macOS**: `~/Library/Application Support/Smart Sub/models/`
 - **Linux**: `~/.config/Smart Sub/models/`
+
+你也可以在设置里面修改模型的保存位置，把它修改为你磁盘上面的其它目录。但请 **不要使用中文路径**
 
 ## 模型选择指南
 
@@ -111,7 +113,7 @@ title: 模型配置
 
 如果您的设备有 NVIDIA 显卡并安装了相应的 CUDA Toolkit：
 
-1. 在"设置"中选择"通用"选项卡
+1. 在"设置"中选择"系统设置"选项卡
 2. 将"音频设备"设置为"CUDA"
 3. 较大模型（如 `medium` 或 `large`）会特别受益于 CUDA 加速
 

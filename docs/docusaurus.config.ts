@@ -57,7 +57,7 @@ const config: Config = {
       title: '妙幕 / SmartSub',
       logo: {
         alt: 'SmartSub Logo',
-        src: 'img/logo.svg',
+        src: 'img/icon.png',
       },
       items: [
         {

@@ -54,12 +54,11 @@ CUDA Toolkit 版本应与您的显卡驱动兼容。通常，更新的 CUDA 版�
 ### 在妙幕中启用 CUDA 加速
 
 1. 启动妙幕应用
-2. 进入"设置" > "通用"选项卡
-3. 在"音频设备"选项中选择 "CUDA"
-4. 保存设置
+2. 进入"设置" > "系统设置"卡片栏
+3. 在"启用 CUDA"选项中选择 "CUDA"
 
 <div className="img-container">
-  <img src="/img/screenshots/cuda-settings.png" alt="CUDA设置界面" />
+  <img src="/img/screenshots/settings-overview.png" alt="CUDA设置界面" />
 </div>
 
 ### 验证 CUDA 是否正常工作
@@ -120,10 +119,6 @@ q5 或 q8 系列的量化模型（如 small.q5_0）不需要额外的 encoder.ml
 2. 在"设置" > "通用"中，"音频设备"应自动显示为 "Core ML"
 3. 启动一个字幕生成任务
 4. 查看处理日志，应该会显示使用 Core ML 进行处理
-
-<div className="img-container">
-  <img src="/img/screenshots/coreml-settings.png" alt="Core ML设置界面" />
-</div>
 
 ### Core ML 性能优化
 

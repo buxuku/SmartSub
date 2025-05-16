@@ -152,6 +152,11 @@
   box-shadow: var(--card-shadow-hover);
 }
 
+a p {
+  margin-bottom: 0;
+  padding: 12px 0;
+}
+
 /* 响应式调整 */
 @media (max-width: 768px) {
   .hero__title {

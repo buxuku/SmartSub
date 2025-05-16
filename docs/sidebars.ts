@@ -22,11 +22,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: '功能与特性',
-      items: [
-        'features/subtitle-generation',
-        'features/subtitle-translation',
-        'features/batch-processing',
-      ],
+      items: ['features/subtitle-generation', 'features/subtitle-translation'],
     },
     {
       type: 'category',
@@ -39,17 +35,12 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: '任务模式',
-      items: [
-        'tasks/audio-video-to-subtitle',
-        'tasks/subtitle-translation',
-        'tasks/batch-processing',
-      ],
-    },
-    {
-      type: 'category',
       label: '进阶使用',
-      items: ['advanced/hardware-acceleration', 'advanced/custom-prompts'],
+      items: [
+        'advanced/hardware-acceleration',
+        'advanced/custom-prompts',
+        'advanced/build-addon',
+      ],
     },
     {
       type: 'doc',
