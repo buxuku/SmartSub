@@ -3,20 +3,16 @@ import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import { AlertCircle, Download, RefreshCw } from 'lucide-react';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { Download, X } from 'lucide-react';
 
 type UpdateStatus = {
-  status: 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+  status:
+    | 'checking'
+    | 'available'
+    | 'not-available'
+    | 'downloading'
+    | 'downloaded'
+    | 'error';
   version?: string;
   releaseNotes?: string;
   progress?: number;
@@ -26,68 +22,51 @@ type UpdateStatus = {
 export function UpdateNotification() {
   const { t } = useTranslation('common');
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
-  const [showUpdateDialog, setShowUpdateDialog] = useState(false);
+  const [showProgressIndicator, setShowProgressIndicator] = useState(false);
 
   useEffect(() => {
     // 监听来自主进程的更新状态消息
-    const removeListener = window?.ipc?.on('update-status', (status: UpdateStatus) => {
-      console.log('Update status:', status);
-      setUpdateStatus(status);
+    const removeListener = window?.ipc?.on(
+      'update-status',
+      (status: UpdateStatus) => {
+        console.log('Update status:', status);
+        setUpdateStatus(status);
 
-      // 当有新版本可用时，显示对话框
-      if (status.status === 'available') {
-        setShowUpdateDialog(true);
-      }
+        // 当开始下载更新时，显示进度指示器
+        if (status.status === 'downloading') {
+          setShowProgressIndicator(true);
+        }
 
-      // 当更新下载完成时，显示通知
-      if (status.status === 'downloaded') {
-        toast(t('updateReady'), {
-          description: t('updateReadyDesc', { version: status.version }),
-          action: {
-            label: t('installNow'),
-            onClick: () => installUpdate(),
-          },
-        });
-      }
+        // 当下载结束（完成或错误）时，隐藏进度指示器
+        if (status.status === 'downloaded' || status.status === 'error') {
+          setShowProgressIndicator(false);
+        }
 
-      // 当更新出错时，显示通知
-      if (status.status === 'error') {
-        toast.error(t('updateError'), {
-          description: status.error,
-        });
-      }
-    });
+        // 当更新下载完成时，显示通知
+        if (status.status === 'downloaded') {
+          toast(t('updateReady'), {
+            description: t('updateReadyDesc', { version: status.version }),
+            action: {
+              label: t('installNow'),
+              onClick: () => installUpdate(),
+            },
+          });
+        }
+
+        // 当更新出错时，显示通知
+        if (status.status === 'error') {
+          toast.error(t('updateError'), {
+            description: status.error,
+          });
+        }
+      },
+    );
 
     // 组件卸载时移除监听器
     return () => {
       if (removeListener) removeListener();
     };
   }, [t]);
-
-  // 检查更新
-  const checkForUpdates = async () => {
-    try {
-      await window?.ipc?.invoke('check-for-updates');
-    } catch (error) {
-      console.error('Error checking for updates:', error);
-      toast.error(t('updateCheckError'), {
-        description: error.message,
-      });
-    }
-  };
-
-  // 下载更新
-  const downloadUpdate = async () => {
-    try {
-      setShowUpdateDialog(false);
-      await window?.ipc?.invoke('download-update');
-    } catch (error) {
-      console.error('Error downloading update:', error);
-      toast.error(t('updateDownloadError'), {
-        description: error.message,
-      });
-    }
-  };
 
   // 安装更新
   const installUpdate = async () => {
@@ -103,46 +82,36 @@ export function UpdateNotification() {
 
   return (
     <>
-      {/* 更新检查按钮 */}
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={checkForUpdates}
-        className="rounded-lg"
-        aria-label={t('checkForUpdates')}
-      >
-        <RefreshCw className={`size-5 ${updateStatus?.status === 'checking' ? 'animate-spin' : ''}`} />
-      </Button>
-
       {/* 下载进度指示器 */}
-      {updateStatus?.status === 'downloading' && (
-        <div className="fixed bottom-4 right-4 z-50 w-64 rounded-lg bg-background p-4 shadow-lg border">
+      {showProgressIndicator && updateStatus?.status === 'downloading' && (
+        <div className="fixed bottom-4 right-4 z-50 w-80 rounded-lg bg-background p-4 shadow-lg border border-accent animate-in slide-in-from-bottom-5">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium">{t('downloadingUpdate')}</span>
-            <span className="text-sm">{Math.round(updateStatus.progress || 0)}%</span>
+            <div className="flex items-center gap-2">
+              <Download className="size-4 text-primary animate-pulse" />
+              <span className="text-sm font-medium">
+                {t('downloadingUpdate')}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold">
+                {Math.round(updateStatus.progress || 0)}%
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-6 p-0 hover:bg-accent hover:text-accent-foreground"
+                onClick={() => setShowProgressIndicator(false)}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
           </div>
           <Progress value={updateStatus.progress} className="h-2" />
+          <div className="mt-2 text-xs text-muted-foreground">
+            {t('downloadingUpdateDesc', { version: updateStatus.version })}
+          </div>
         </div>
       )}
-
-      {/* 更新可用对话框 */}
-      <AlertDialog open={showUpdateDialog} onOpenChange={setShowUpdateDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('newVersionAvailable')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('newVersionDesc', { version: updateStatus?.version })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('later')}</AlertDialogCancel>
-            <AlertDialogAction onClick={downloadUpdate}>
-              <Download className="mr-2 h-4 w-4" />
-              {t('downloadNow')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

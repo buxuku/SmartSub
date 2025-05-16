@@ -106,5 +106,17 @@
   "logs": "Logs",
   "clearLogs": "Clear Logs",
   "toggleTheme": "Toggle Theme",
-  "noModelsInstalled": "No Models Installed"
+  "noModelsInstalled": "No Models Installed",
+  "checkForUpdates": "Check for Updates",
+  "updateReady": "Update Ready",
+  "updateReadyDesc": "New version {version} has been downloaded and is ready to install.",
+  "installNow": "Install Now",
+  "updateError": "Update Error",
+  "updateCheckError": "Failed to Check for Updates",
+  "updateDownloadError": "Failed to Download Update",
+  "updateInstallError": "Failed to Install Update",
+  "newVersionDesc": "New version {version} is available. Do you want to download it now?",
+  "later": "Later",
+  "downloadingUpdate": "Downloading Update",
+  "downloadingUpdateDesc": "Downloading version {version}. You will be prompted to install when complete."
 }
