@@ -106,5 +106,6 @@
   "total": "Total",
   "translated": "Translated",
   "completionRate": "Completion rate",
-  "originalSubtitle": "Original subtitle"
+  "originalSubtitle": "Original subtitle",
+  "autoStartNewTaskWhenRunning": "Auto tart new tasks"
 }
