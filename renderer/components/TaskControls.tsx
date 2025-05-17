@@ -44,7 +44,7 @@ const TaskControls: FC<{
     };
   }, []);
 
-  const handleTask = async (options?: { silentNoNewTask?: boolean }) => {
+  const handleTask = async () => {
     if (!files?.length) {
       return toast(t('common:notification'), { description: t('home:noTask') });
     }
@@ -62,12 +62,9 @@ const TaskControls: FC<{
 
     const newTaskFiles = getNewTaskFiles(updatedFiles);
     if (!newTaskFiles.length) {
-      if (!options?.silentNoNewTask) {
-        toast(t('common:notification'), {
-          description: t('home:allFilesProcessed'),
-        });
-      }
-      return;
+      return toast(t('common:notification'), {
+        description: t('home:allFilesProcessed'),
+      });
     }
 
     // if(formData.model && needsCoreML(formData.model)){
@@ -108,16 +105,17 @@ const TaskControls: FC<{
     if (
       taskStatus === 'running' &&
       autoStartNewTaskWhenRunning &&
-      files.length
+      files.length &&
+      files.some((f) => !f.sent)
     ) {
-      handleTask({ silentNoNewTask: true });
+      handleTask();
     }
   }, [files.length]);
 
   return (
     <div className="flex gap-2 ml-auto">
       {(taskStatus === 'idle' || taskStatus === 'completed') && (
-        <Button onClick={() => handleTask()} disabled={!files.length}>
+        <Button onClick={handleTask} disabled={!files.length}>
           {t('home:startTask')}
         </Button>
       )}
@@ -147,7 +145,7 @@ const TaskControls: FC<{
         </>
       )}
       {taskStatus === 'cancelled' && (
-        <Button onClick={() => handleTask()} disabled={!files.length}>
+        <Button onClick={handleTask} disabled={!files.length}>
           {t('home:restartTask')}
         </Button>
       )}
