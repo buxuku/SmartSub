@@ -2,6 +2,11 @@ import { ipcMain, BrowserWindow, dialog, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createMessageSender } from './messageHandler';
+import { logMessage } from './storeManager';
+import { readFileContent, wrapFileObject } from './fileUtils';
+import { CONTENT_TEMPLATES } from '../translate/constants';
+import { renderTemplate } from './utils';
+import { parseSubtitles } from '../translate/utils/subtitle';
 
 // 定义支持的文件扩展名常量
 export const MEDIA_EXTENSIONS = [
@@ -127,7 +132,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     });
 
     try {
-      event.sender.send('file-selected', result.filePaths);
+      event.sender.send('file-selected', result.filePaths.map(wrapFileObject));
     } catch (error) {
       createMessageSender(event.sender).send('message', {
         type: 'error',
@@ -171,7 +176,90 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
       }
     }
 
-    return allValidPaths;
+    return allValidPaths.map(wrapFileObject);
+  });
+
+  // 读取字幕文件
+  ipcMain.handle('readSubtitleFile', async (event, { filePath }) => {
+    try {
+      if (!fs.existsSync(filePath)) {
+        logMessage(`读取字幕文件失败: 文件不存在 ${filePath}`, 'error');
+        return [];
+      }
+      const content = await readFileContent(filePath);
+      return parseSubtitles(content);
+    } catch (error) {
+      logMessage(`读取字幕文件错误: ${error.message}`, 'error');
+      return [];
+    }
+  });
+
+  // 读取文件原始内容
+  ipcMain.handle('readRawFileContent', async (event, { filePath }) => {
+    try {
+      if (!fs.existsSync(filePath)) {
+        logMessage(`读取文件失败: 文件不存在 ${filePath}`, 'error');
+        return { error: `File not found: ${filePath}` };
+      }
+      const content = await fs.promises.readFile(filePath, 'utf-8');
+      return { content };
+    } catch (error) {
+      logMessage(`读取文件错误: ${error.message}`, 'error');
+      return { error: `Error reading file: ${error.message}` };
+    }
+  });
+
+  // 保存字幕文件
+  ipcMain.handle(
+    'saveSubtitleFile',
+    async (event, { filePath, subtitles, contentType = 'source' }) => {
+      try {
+        const content = subtitles
+          .map(
+            (subtitle) =>
+              `${subtitle.id}\n${subtitle.startEndTime}\n${
+                contentType === 'source'
+                  ? `${subtitle.sourceContent}\n\n`
+                  : renderTemplate(CONTENT_TEMPLATES[contentType], {
+                      sourceContent: subtitle.sourceContent,
+                      targetContent: subtitle.targetContent,
+                    })
+              }`,
+          )
+          .join('');
+        console.log('saveSubtitleFile', filePath, content);
+        await fs.promises.writeFile(filePath, content, 'utf-8');
+        logMessage(`保存字幕文件成功: ${filePath}`, 'info');
+        return { success: true };
+      } catch (error) {
+        logMessage(`保存字幕文件错误: ${error.message}`, 'error');
+        return {
+          error: `保存字幕文件错误: ${error.message}`,
+        };
+      }
+    },
+  );
+
+  // 检查文件是否存在
+  ipcMain.handle('checkFileExists', async (event, { filePath }) => {
+    try {
+      const exists = fs.existsSync(filePath);
+      return { exists };
+    } catch (error) {
+      logMessage(`检查文件是否存在错误: ${error.message}`, 'error');
+      return { exists: false, error: error.message };
+    }
+  });
+
+  // 获取目录中的文件列表
+  ipcMain.handle('getDirectoryFiles', async (event, { directoryPath }) => {
+    try {
+      const files = await fs.promises.readdir(directoryPath);
+      return { files };
+    } catch (error) {
+      logMessage(`获取目录文件列表错误: ${error.message}`, 'error');
+      return { files: [], error: error.message };
+    }
   });
 
   ipcMain.handle('selectDirectory', async () => {

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Table,
   TableBody,
@@ -11,19 +11,52 @@ import {
 import TaskStatus from './TaskStatus';
 import { isSubtitleFile } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
-import { Upload, FileUp } from 'lucide-react';
+import { Upload, FileUp, Edit2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import dynamic from 'next/dynamic';
 
-const TaskList = ({ files = [], formData }) => {
+// 动态导入SubtitleProofread组件，避免服务端渲染问题
+const SubtitleProofread = dynamic(
+  () => import('@/components/SubtitleProofread'),
+  {
+    ssr: false,
+    loading: () => <div>Loading...</div>,
+  },
+);
+
+interface TaskListProps {
+  files: any[];
+  formData: any;
+}
+
+const TaskList: React.FC<TaskListProps> = ({ files = [], formData }) => {
   const { t } = useTranslation('home');
   const { taskType } = formData;
+  const [proofreadOpen, setProofreadOpen] = useState(false);
+  const [currentFile, setCurrentFile] = useState(null);
+
   // 根据任务类型确定要显示的列
   const shouldShowAudioColumn = taskType !== 'translateOnly';
   const shouldShowSubtitleColumn = taskType !== 'translateOnly';
   const shouldShowTranslateColumn = taskType !== 'generateOnly';
 
+  // 判断校对按钮是否禁用
+  const isProofreadDisabled = (file) => {
+    if (taskType === 'generateOnly') {
+      return !(file?.extractSubtitle === 'done');
+    } else {
+      return !(file?.translateSubtitle === 'done');
+    }
+  };
+
   const handleImport = async () => {
     const fileType = taskType === 'translateOnly' ? 'srt' : 'media';
     window?.ipc?.send('openDialog', { dialogType: 'openDialog', fileType });
+  };
+
+  const handleProofread = (file) => {
+    setCurrentFile(file);
+    setProofreadOpen(true);
   };
 
   // 空状态提示
@@ -49,59 +82,88 @@ const TaskList = ({ files = [], formData }) => {
   }
 
   return (
-    <Table>
-      <TableCaption>{t('taskList')}</TableCaption>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-[500px]">{t('fileName')}</TableHead>
-          {shouldShowAudioColumn && (
-            <TableHead className="w-[100px]">{t('extractAudio')}</TableHead>
-          )}
-          {shouldShowSubtitleColumn && (
-            <TableHead className="w-[100px]">{t('extractSubtitle')}</TableHead>
-          )}
-          {shouldShowTranslateColumn && (
-            <TableHead className="w-[100px]">
-              {t('translateSubtitle')}
-            </TableHead>
-          )}
-        </TableRow>
-      </TableHeader>
-      <TableBody className="max-h-[80vh]">
-        {files.map((file) => (
-          <TableRow key={file?.uuid}>
-            <TableCell className="font-medium">{file?.filePath}</TableCell>
+    <>
+      <Table>
+        <TableCaption>{t('taskList')}</TableCaption>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[500px]">{t('fileName')}</TableHead>
             {shouldShowAudioColumn && (
-              <TableCell>
-                <TaskStatus
-                  file={file}
-                  checkKey="extractAudio"
-                  skip={isSubtitleFile(file?.filePath)}
-                />
-              </TableCell>
+              <TableHead className="w-[100px]">{t('extractAudio')}</TableHead>
             )}
             {shouldShowSubtitleColumn && (
-              <TableCell>
-                <TaskStatus
-                  file={file}
-                  checkKey="extractSubtitle"
-                  skip={isSubtitleFile(file?.filePath)}
-                />
-              </TableCell>
+              <TableHead className="w-[100px]">
+                {t('extractSubtitle')}
+              </TableHead>
             )}
             {shouldShowTranslateColumn && (
-              <TableCell>
-                <TaskStatus
-                  file={file}
-                  checkKey="translateSubtitle"
-                  skip={formData.translateProvider === '-1'}
-                />
-              </TableCell>
+              <TableHead className="w-[100px]">
+                {t('translateSubtitle')}
+              </TableHead>
             )}
+            <TableHead className="w-[100px]">
+              {t('proofread') || '校对'}
+            </TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody className="max-h-[80vh]">
+          {files.map((file) => (
+            <TableRow key={file?.uuid}>
+              <TableCell className="font-medium">{file?.filePath}</TableCell>
+              {shouldShowAudioColumn && (
+                <TableCell>
+                  <TaskStatus
+                    file={file}
+                    checkKey="extractAudio"
+                    skip={isSubtitleFile(file?.filePath)}
+                  />
+                </TableCell>
+              )}
+              {shouldShowSubtitleColumn && (
+                <TableCell>
+                  <TaskStatus
+                    file={file}
+                    checkKey="extractSubtitle"
+                    skip={isSubtitleFile(file?.filePath)}
+                  />
+                </TableCell>
+              )}
+              {shouldShowTranslateColumn && (
+                <TableCell>
+                  <TaskStatus
+                    file={file}
+                    checkKey="translateSubtitle"
+                    skip={formData.translateProvider === '-1'}
+                  />
+                </TableCell>
+              )}
+              <TableCell>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex items-center gap-1"
+                  onClick={() => handleProofread(file)}
+                  disabled={isProofreadDisabled(file)}
+                >
+                  <Edit2 className="h-4 w-4" />
+                  {t('proofread') || '校对'}
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      {proofreadOpen && (
+        <SubtitleProofread
+          file={currentFile}
+          open={proofreadOpen}
+          onOpenChange={setProofreadOpen}
+          taskType={taskType}
+          formData={formData}
+        />
+      )}
+    </>
   );
 };
 export default TaskList;

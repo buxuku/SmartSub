@@ -1,5 +1,5 @@
-appId: com.example.smart-sub
-productName: Smart Sub
+appId: com.example.smartsub
+productName: SmartSub
 copyright: Copyright © 2024 buxuku
 directories:
   output: dist
@@ -20,7 +20,7 @@ mac:
   artifactName: '${productName}_Mac_${version}_${arch}.${ext}'
   publish:
     - provider: github
-      channel: latest-${arch}
+      channel: latest
   extraResources:
     - from: ./extraResources/addons/
       to: ./extraResources/addons/
@@ -38,7 +38,7 @@ win:
   artifactName: '${productName}_Windows_${version}_${arch}_${env.CUDA_VERSION}_${env.CUDA_OPT}.${ext}'
   publish:
     - provider: github
-      channel: latest-${arch}-${env.CUDA_VERSION}-${env.CUDA_OPT}
+      channel: latest
 linux:
   target:
     - AppImage
@@ -46,11 +46,15 @@ linux:
     - deb
   category: AudioVideo
   artifactName: '${productName}_Linux_${version}_${arch}.${ext}'
+  publish:
+    - provider: github
+      channel: latest
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
   deleteAppDataOnUninstall: false
+  differentialPackage: false
 asarUnpack:
   - 'node_modules/ffmpeg-static/bin/${os}/${arch}/ffmpeg'
   - 'node_modules/ffmpeg-static/index.js'

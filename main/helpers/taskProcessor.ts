@@ -5,9 +5,9 @@ import { checkOpenAiWhisper, getPath } from './whisper';
 import { logMessage, store } from './storeManager';
 import path from 'path';
 import { isAppleSilicon } from './utils';
-import type { ITaskFile } from '../../types';
+import type { IFiles } from '../../types';
 
-let processingQueue: ITaskFile[] = [];
+let processingQueue: IFiles[] = [];
 let isProcessing = false;
 let isPaused = false;
 let shouldCancel = false;
@@ -18,10 +18,8 @@ let activeTasksCount = 0;
 export function setupTaskProcessor(mainWindow: BrowserWindow) {
   ipcMain.on(
     'handleTask',
-    async (
-      event,
-      { files, formData }: { files: ITaskFile[]; formData: any },
-    ) => {
+    async (event, { files, formData }: { files: IFiles[]; formData: any }) => {
+      console.log('handleTask start', files);
       logMessage(`handleTask start`, 'info');
       logMessage(`formData: \n ${JSON.stringify(formData, null, 2)}`, 'info');
       processingQueue.push(...files);

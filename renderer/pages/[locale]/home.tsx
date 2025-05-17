@@ -12,10 +12,10 @@ import TaskConfigForm from '@/components/TaskConfigForm';
 import TaskListControl from '@/components/TaskListControl';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { filterSupportedFiles } from 'lib/utils';
-import type { ITaskFile } from '../../../types';
+import type { IFiles } from '../../../types';
 
 export default function Component() {
-  const [files, setFiles] = useState<ITaskFile[]>([]);
+  const [files, setFiles] = useState<IFiles[]>([]);
   const { systemInfo } = useSystemInfo();
   const { form, formData } = useFormConfig();
   useIpcCommunication(setFiles);
@@ -91,12 +91,8 @@ export default function Component() {
           files: paths,
           taskType,
         })
-        .then((filePaths) => {
-          const newFiles = filePaths.map((filePath) => ({
-            uuid: crypto.randomUUID(),
-            filePath,
-          }));
-          setFiles((prevFiles) => [...prevFiles, ...newFiles]);
+        .then((files) => {
+          setFiles((prevFiles) => [...prevFiles, ...files]);
         });
     }
   };

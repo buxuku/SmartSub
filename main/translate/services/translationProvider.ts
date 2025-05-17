@@ -39,7 +39,8 @@ export async function translateWithProvider(
   targetLanguage: string,
   translator: TranslatorFunction,
   onProgress?: (progress: number) => void,
-  onTranslationResult?: (result: TranslationResult) => Promise<void>,
+  onTranslationResult?: (results: TranslationResult[]) => Promise<void>,
+  maxRetries: number = 0,
 ): Promise<TranslationResult[] | string[]> {
   const config = {
     provider,
@@ -60,6 +61,7 @@ export async function translateWithProvider(
       +(provider.batchSize || DEFAULT_BATCH_SIZE.AI),
       onProgress,
       onTranslationResult,
+      maxRetries,
     );
   }
 
@@ -69,5 +71,6 @@ export async function translateWithProvider(
     +(provider.batchSize || DEFAULT_BATCH_SIZE.API),
     onProgress,
     onTranslationResult,
+    maxRetries,
   );
 }

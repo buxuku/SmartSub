@@ -1,22 +1,16 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react';
-import type { ITaskFile } from '../../types';
+import type { IFiles } from '../../types';
 
 export default function useIpcCommunication(
-  setFiles: Dispatch<SetStateAction<ITaskFile[]>>,
+  setFiles: Dispatch<SetStateAction<IFiles[]>>,
 ) {
   useEffect(() => {
-    window?.ipc?.on('file-selected', (res: string[]) => {
-      setFiles((prevFiles) => [
-        ...prevFiles,
-        ...res.map((file) => ({
-          uuid: Math.random().toString(36).substring(2),
-          filePath: file,
-        })),
-      ]);
+    window?.ipc?.on('file-selected', (res: IFiles[]) => {
+      setFiles((prevFiles) => [...prevFiles, ...res]);
     });
 
     const handleTaskStatusChange = (
-      res: ITaskFile,
+      res: IFiles,
       key: string,
       status: string,
     ) => {
@@ -29,7 +23,7 @@ export default function useIpcCommunication(
     };
 
     const handleTaskProgressChange = (
-      res: ITaskFile,
+      res: IFiles,
       key: string,
       progress: number,
     ) => {
@@ -43,7 +37,7 @@ export default function useIpcCommunication(
     };
 
     const handleTaskErrorChange = (
-      res: ITaskFile,
+      res: IFiles,
       key: string,
       errorMsg: string,
     ) => {
@@ -56,10 +50,19 @@ export default function useIpcCommunication(
       });
     };
 
+    const handleFileChange = (res: IFiles) => {
+      setFiles((prevFiles) => {
+        const updatedFiles = prevFiles.map((file) =>
+          file.uuid === res?.uuid ? { ...file, ...res } : file,
+        );
+        return updatedFiles;
+      });
+    };
+
     window?.ipc?.on('taskStatusChange', handleTaskStatusChange);
     window?.ipc?.on('taskProgressChange', handleTaskProgressChange);
     window?.ipc?.on('taskErrorChange', handleTaskErrorChange);
-
+    window?.ipc?.on('taskFileChange', handleFileChange);
     return () => {};
   }, []);
 }

@@ -1,3 +1,4 @@
+import { dialog } from 'electron';
 import { exec } from 'child_process';
 import path from 'path';
 import fs from 'fs';
@@ -6,28 +7,24 @@ import { getPath, loadWhisperAddon } from './whisper';
 import { checkCudaSupport } from './cudaUtils';
 import { logMessage, store } from './storeManager';
 import { formatSrtContent } from './fileUtils';
+import { IFiles } from '../../types';
 
 /**
  * 使用本地Whisper命令行工具生成字幕
  */
-export async function generateSubtitleWithLocalWhisper(
-  event,
-  file,
-  audioFile,
-  srtFile,
-  formData,
-) {
+export async function generateSubtitleWithLocalWhisper(event, file, formData) {
   const { model, sourceLanguage } = formData;
   const whisperModel = model?.toLowerCase();
   const settings = store.get('settings');
   const whisperCommand = settings?.whisperCommand;
+  const { tempAudioFile, srtFile, directory } = file;
 
   let runShell = whisperCommand
-    .replace(/\${audioFile}/g, audioFile)
+    .replace(/\${audioFile}/g, tempAudioFile)
     .replace(/\${whisperModel}/g, whisperModel)
     .replace(/\${srtFile}/g, srtFile)
     .replace(/\${sourceLanguage}/g, sourceLanguage || 'auto')
-    .replace(/\${outputDir}/g, path.dirname(srtFile));
+    .replace(/\${outputDir}/g, directory);
 
   runShell = runShell.replace(/("[^"]*")|(\S+)/g, (match, quoted, unquoted) => {
     if (quoted) return quoted;
@@ -39,7 +36,7 @@ export async function generateSubtitleWithLocalWhisper(
 
   console.log(runShell, 'runShell');
   logMessage(`run shell ${runShell}`, 'info');
-  event.sender.send('taskStatusChange', file, 'extractSubtitle', 'loading');
+  event.sender.send('taskFileChange', { ...file, extractSubtitle: 'loading' });
 
   return new Promise((resolve, reject) => {
     exec(runShell, (error, stdout, stderr) => {
@@ -56,17 +53,14 @@ export async function generateSubtitleWithLocalWhisper(
       }
       logMessage(`generate subtitle done!`, 'info');
 
-      const md5BaseName = path.basename(audioFile, '.wav');
-      const tempSrtFile = path.join(
-        path.dirname(file?.filePath),
-        `${md5BaseName}.srt`,
-      );
+      const md5BaseName = path.basename(tempAudioFile, '.wav');
+      const tempSrtFile = path.join(directory, `${md5BaseName}.srt`);
       if (fs.existsSync(tempSrtFile)) {
-        fs.renameSync(tempSrtFile, srtFile + '.srt');
+        fs.renameSync(tempSrtFile, srtFile);
       }
 
-      event.sender.send('taskStatusChange', file, 'extractSubtitle', 'done');
-      resolve(`${srtFile}.srt`);
+      event.sender.send('taskFileChange', { ...file, extractSubtitle: 'done' });
+      resolve(srtFile);
     });
   });
 }
@@ -76,14 +70,14 @@ export async function generateSubtitleWithLocalWhisper(
  */
 export async function generateSubtitleWithBuiltinWhisper(
   event,
-  file,
-  audioFile,
-  srtFile,
+  file: IFiles,
   formData,
 ) {
-  event.sender.send('taskStatusChange', file, 'extractSubtitle', 'loading');
+  event.sender.send('taskFileChange', { ...file, extractSubtitle: 'loading' });
 
   try {
+    const { tempAudioFile, srtFile } = file;
+    console.log(tempAudioFile, srtFile, file, 'tempAudioFile, srtFile');
     const { model, sourceLanguage, prompt, maxContext } = formData;
     const whisperModel = model?.toLowerCase();
     const whisper = await loadWhisperAddon(whisperModel);
@@ -105,7 +99,7 @@ export async function generateSubtitleWithBuiltinWhisper(
     const whisperParams = {
       language: sourceLanguage || 'auto',
       model: modelPath,
-      fname_inp: audioFile,
+      fname_inp: tempAudioFile,
       use_gpu: !!shouldUseGpu,
       flash_attn: false,
       no_prints: false,
@@ -141,12 +135,12 @@ export async function generateSubtitleWithBuiltinWhisper(
     const formattedSrt = formatSrtContent(result);
 
     // 写入格式化后的内容
-    await fs.promises.writeFile(srtFile + '.srt', formattedSrt);
+    await fs.promises.writeFile(srtFile, formattedSrt);
 
-    event.sender.send('taskStatusChange', file, 'extractSubtitle', 'done');
+    event.sender.send('taskFileChange', { ...file, extractSubtitle: 'done' });
     logMessage(`generate subtitle done!`, 'info');
 
-    return `${srtFile}.srt`;
+    return srtFile;
   } catch (error) {
     logMessage(`generate subtitle error: ${error}`, 'error');
     throw error;

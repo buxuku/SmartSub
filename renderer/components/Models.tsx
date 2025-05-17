@@ -13,12 +13,15 @@ interface IProps {
   modelsInstalled?: string[];
 }
 
-const Models: FC<SelectPrimitive.SelectProps & IProps> = (props) => {
+const Models = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Trigger>,
+  SelectPrimitive.SelectProps & IProps
+>((props, ref) => {
   const { t } = useTranslation('common');
 
   return (
     <Select {...props}>
-      <SelectTrigger className="items-start" id="model">
+      <SelectTrigger className="items-start" id="model" ref={ref}>
         <SelectValue placeholder={t('pleaseSelect')} />
       </SelectTrigger>
       <SelectContent>
@@ -36,6 +39,8 @@ const Models: FC<SelectPrimitive.SelectProps & IProps> = (props) => {
       </SelectContent>
     </Select>
   );
-};
+});
+
+Models.displayName = 'Models';
 
 export default Models;

@@ -145,7 +145,7 @@ yarn dev
 在终端中执行以下命令：
 
 ```shell
-sudo xattr -dr com.apple.quarantine /Applications/Video\ Subtitle\ Master.app
+sudo xattr -dr com.apple.quarantine /Applications/Smart\ Sub.app
 ```
 
 然后再次运行应用程序。

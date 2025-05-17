@@ -8,174 +8,169 @@ import { renderTemplate } from '../../helpers/utils';
 import { logMessage } from '../../helpers/storeManager';
 import { defaultSystemPrompt, defaultUserPrompt } from '../../../types';
 import { toJson } from 'really-relaxed-json';
-
-export async function handleAISingleTranslation(
-  subtitle: Subtitle,
-  config: TranslationConfig,
-): Promise<TranslationResult> {
-  const { provider, sourceLanguage, targetLanguage, translator } = config;
-  const sourceContent = subtitle.content.join('\n');
-
-  try {
-    const translationContent = provider.prompt
-      ? renderTemplate(provider.prompt, {
-          sourceLanguage,
-          targetLanguage,
-          content: sourceContent,
-        })
-      : sourceContent;
-
-    const translationConfig = {
-      ...provider,
-      systemPrompt: provider.systemPrompt,
-    };
-    logMessage(`AI translate single: \n ${translationContent}`, 'info');
-    let targetContent = await translator(
-      translationContent,
-      translationConfig,
-      sourceLanguage,
-      targetLanguage,
-    );
-    logMessage(`AI response: \n ${targetContent}`, 'info');
-    targetContent = targetContent.replace(THINK_TAG_REGEX, '').trim();
-
-    return {
-      id: subtitle.id,
-      startEndTime: subtitle.startEndTime,
-      sourceContent,
-      targetContent: targetContent.trim(),
-    };
-  } catch (error) {
-    logMessage(`Single translation error: ${error.message}`, 'error');
-    throw error;
-  }
-}
+import { jsonrepair } from 'jsonrepair';
 
 export async function handleAIBatchTranslation(
   subtitles: Subtitle[],
   config: TranslationConfig,
   batchSize: number = DEFAULT_BATCH_SIZE.AI,
   onProgress?: (progress: number) => void,
-  onTranslationResult?: (result: TranslationResult) => Promise<void>,
+  onTranslationResult?: (results: TranslationResult[]) => Promise<void>,
+  maxRetries: number = 0,
 ): Promise<TranslationResult[]> {
   const { provider, sourceLanguage, targetLanguage, translator } = config;
   const results: TranslationResult[] = [];
+  const totalBatches = Math.ceil(subtitles.length / batchSize);
 
   for (let i = 0; i < subtitles.length; i += batchSize) {
     const batch = subtitles.slice(i, i + batchSize);
+    const currentBatchIndex = Math.floor(i / batchSize) + 1;
+    let retryCount = 0;
+    let batchSuccess = false;
 
-    try {
-      let jsonContent = {};
-      batch.forEach((item) => {
-        jsonContent[item.id] = item.content.join('\n');
-      });
-      const fullContent = `\`\`\`json\n${JSON.stringify(
-        jsonContent,
-        null,
-        2,
-      )}\n\`\`\``;
-      const translationContent = renderTemplate(
-        provider.prompt || defaultUserPrompt,
-        {
+    while (!batchSuccess && retryCount <= maxRetries) {
+      try {
+        let batchJsonContent: Record<string, string> = {};
+        batch.forEach((item) => {
+          batchJsonContent[item.id] = item.content.join('\n');
+        });
+        const fullContent = `${JSON.stringify(batchJsonContent, null, 2)}`;
+        const translationContent = renderTemplate(
+          provider.prompt || defaultUserPrompt,
+          {
+            sourceLanguage,
+            targetLanguage,
+            content: fullContent,
+          },
+        );
+
+        const systemPrompt = renderTemplate(
+          provider.systemPrompt || defaultSystemPrompt,
+          {
+            sourceLanguage,
+            targetLanguage,
+            content: fullContent,
+          },
+        );
+
+        // 更新配置，启用JSON模式
+        const translationConfig = {
+          ...provider,
+          systemPrompt,
+          useJsonMode: true,
+        };
+
+        logMessage(
+          `AI translate batch ${currentBatchIndex}/${totalBatches} (尝试 ${retryCount + 1}/${maxRetries + 1}): \n ${translationContent}`,
+          'info',
+        );
+        const responseOrigin = await translator(
+          translationContent,
+          translationConfig,
           sourceLanguage,
           targetLanguage,
-          content: fullContent,
-        },
-      );
+        );
+        logMessage(`AI response: \n ${responseOrigin}`, 'info');
+        const response = responseOrigin.replace(THINK_TAG_REGEX, '').trim();
 
-      const systemPrompt = renderTemplate(
-        provider.systemPrompt || defaultSystemPrompt,
-        {
-          sourceLanguage,
-          targetLanguage,
-          content: fullContent,
-        },
-      );
+        // 解析响应, 从结果中提取 json 里面的内容
+        const match = response.match(JSON_CONTENT_REGEX);
+        const responseJsonString = match ? match[1] : response;
 
-      const translationConfig = {
-        ...provider,
-        systemPrompt,
-      };
+        // 尝试解析JSON
+        const parsedContent = parseJsonWithFallbacks(responseJsonString);
 
-      logMessage(`AI translate batch ${i}: \n ${translationContent}`, 'info');
-      const responseOrigin = await translator(
-        translationContent,
-        translationConfig,
-        sourceLanguage,
-        targetLanguage,
-      );
-      logMessage(`AI response: \n ${responseOrigin}`, 'info');
-      const response = responseOrigin.replace(THINK_TAG_REGEX, '').trim();
-      // 解析响应, 从结果中提取 json 里面的内容
-      const match = response.match(JSON_CONTENT_REGEX);
+        // 检查解析结果是否有效
+        if (parsedContent && typeof parsedContent === 'object') {
+          logMessage(`JSON parsing successful`, 'info');
 
-      logMessage(`AI response: ${responseOrigin}`, 'info');
-      // 通过 joson 内容，重新组装成字幕格式内容
-      if (match && match[1]) {
-        const jsonContent = match[1];
-        try {
-          // 尝试使用标准JSON解析
-          const parsedContent = JSON.parse(jsonContent);
-          const batchResults = batch.map((subtitle) => ({
+          const parsedValues = Object.values(parsedContent);
+
+          const batchResults = batch.map((subtitle, index) => ({
             id: subtitle.id,
             startEndTime: subtitle.startEndTime,
             sourceContent: subtitle.content.join('\n'),
-            targetContent: parsedContent[subtitle.id],
+            // 优先使用ID匹配，如果没有则使用数组索引
+            targetContent:
+              parsedContent[subtitle.id] !== undefined
+                ? parsedContent[subtitle.id]
+                : parsedValues[index] || `[翻译结果缺失]`,
           }));
 
           // 如果提供了结果处理函数，则实时处理每个翻译结果
           if (onTranslationResult) {
-            for (const result of batchResults) {
-              await onTranslationResult(result);
-            }
+            await onTranslationResult(batchResults);
           }
 
           results.push(...batchResults);
-        } catch (jsonError) {
+          batchSuccess = true;
+        } else {
+          throw new Error(
+            'Invalid response format: Failed to parse JSON structure',
+          );
+        }
+      } catch (error) {
+        retryCount++;
+        if (retryCount <= maxRetries) {
           logMessage(
-            `标准JSON解析失败，尝试使用tojson: ${jsonError.message}`,
+            `批次 ${currentBatchIndex}/${totalBatches} 翻译失败，重试 ${retryCount}/${maxRetries}: ${error.message}`,
+            'warning',
+          );
+          // 添加短暂延迟，避免频繁重试
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * retryCount),
+          );
+        } else {
+          logMessage(
+            `批次 ${currentBatchIndex}/${totalBatches} 翻译失败，已达到最大重试次数 ${maxRetries}，跳过该批次: ${error.message}`,
             'error',
           );
-          try {
-            // 使用toJson进行更宽松的解析
-            const parsedContent = toJson(jsonContent);
-            const batchResults = batch.map((subtitle) => ({
-              id: subtitle.id,
-              startEndTime: subtitle.startEndTime,
-              sourceContent: subtitle.content.join('\n'),
-              targetContent: parsedContent[subtitle.id],
-            }));
+          // 如果全部重试都失败，则添加失败记录，并继续下一批
+          const failedResults = batch.map((subtitle) => ({
+            id: subtitle.id,
+            startEndTime: subtitle.startEndTime,
+            sourceContent: subtitle.content.join('\n'),
+            targetContent: `[翻译失败: ${error.message}]`,
+          }));
 
-            // 如果提供了结果处理函数，则实时处理每个翻译结果
-            if (onTranslationResult) {
-              for (const result of batchResults) {
-                await onTranslationResult(result);
-              }
-            }
-
-            results.push(...batchResults);
-          } catch (json5Error) {
-            logMessage(`tojson解析也失败: ${json5Error.message}`, 'error');
-            throw new Error(`无法解析AI返回的JSON内容: ${json5Error.message}`);
+          // 对失败的结果也进行处理和保存
+          if (onTranslationResult) {
+            await onTranslationResult(failedResults);
           }
-        }
-      } else {
-        throw new Error('Invalid response format: No JSON content found');
-      }
 
-      // 更新翻译进度
-      const progress = Math.min(
-        ((i + batchSize) / subtitles.length) * 100,
-        100,
-      );
-      if (onProgress) {
-        onProgress(progress);
+          results.push(...failedResults);
+          batchSuccess = true; // 标记为完成，继续下一批次
+        }
       }
-    } catch (error) {
-      logMessage(`AI batch translation error: ${error.message}`, 'error');
-      throw error;
+    }
+
+    // 更新翻译进度
+    const progress = Math.min(((i + batchSize) / subtitles.length) * 100, 100);
+    if (onProgress) {
+      onProgress(progress);
     }
   }
 
   return results;
+}
+
+// 辅助函数：尝试多种方式解析JSON内容
+function parseJsonWithFallbacks(jsonContent: string): any {
+  try {
+    // 第一次尝试：使用标准JSON解析
+    return JSON.parse(jsonContent);
+  } catch (jsonError) {
+    try {
+      // 第二次尝试：使用toJson进行更宽松的解析
+      return toJson(jsonContent);
+    } catch (json5Error) {
+      try {
+        // 第三次尝试：使用jsonrepair进行修复和解析
+        const repairedJson = jsonrepair(jsonContent);
+        return JSON.parse(repairedJson);
+      } catch (jsonRepairError) {
+        throw new Error(`无法解析AI返回的JSON内容: ${jsonRepairError.message}`);
+      }
+    }
+  }
 }

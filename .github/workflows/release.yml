@@ -6,111 +6,135 @@ on:
       - 'v*'
 
 jobs:
-  release:
+  build_artifacts:
+    name: Build ${{ matrix.os }} ${{ matrix.arch }} ${{ matrix.cuda_version || '' }} ${{ matrix.cuda_opt || '' }}
     runs-on: ${{ matrix.os }}
     env:
       ELECTRON_BUILDER_HTTP_TIMEOUT: 6000000
       ELECTRON_MIRROR: 'https://npmmirror.com/mirrors/electron/'
-      GH_TOKEN: ${{ secrets.TOKEN }}
+      # GH_TOKEN is not strictly needed here if --publish never is used
     strategy:
+      fail-fast: false # Allow other jobs to continue if one fails
       matrix:
         include:
           # macOS ARM64
           - os: macos-latest
             arch: arm64
+            os_build_arg: mac
             addon_name: addon-macos-arm64.node
             build_args: '--arm64'
+            artifact_suffix: macos-arm64
 
           # macOS Intel
-          - os: macos-13
+          - os: macos-13 # Use macos-13 for Intel as per original config
             arch: x64
+            os_build_arg: mac
             addon_name: addon-macos-x64.node
             build_args: '--x64'
+            artifact_suffix: macos-x64
 
           # Windows no-cuda
           - os: windows-2019
             arch: x64
+            os_build_arg: win
             addon_name: addon-windows-no-cuda.node
-            cuda_version: no-cuda
+            cuda_version: 'no-cuda'
+            cuda_opt: 'generic'
+            artifact_suffix: windows-x64-nocuda-generic
 
           # Windows CUDA 11.8.0 optimized
           - os: windows-2019
             arch: x64
+            os_build_arg: win
             addon_name: addon-windows-cuda-1180-optimized.node
-            cuda_version: 11.8.0
-            cuda_opt: optimized
+            cuda_version: '11.8.0'
+            cuda_opt: 'optimized'
+            artifact_suffix: windows-x64-cuda1180-optimized
 
           # Windows CUDA 11.8.0 generic
           - os: windows-2019
             arch: x64
+            os_build_arg: win
             addon_name: addon-windows-cuda-1180-generic.node
-            cuda_version: 11.8.0
-            cuda_opt: generic
+            cuda_version: '11.8.0'
+            cuda_opt: 'generic'
+            artifact_suffix: windows-x64-cuda1180-generic
 
           # Windows CUDA 12.2.0 optimized
           - os: windows-2019
             arch: x64
+            os_build_arg: win
             addon_name: addon-windows-cuda-1220-optimized.node
-            cuda_version: 12.2.0
-            cuda_opt: optimized
+            cuda_version: '12.2.0'
+            cuda_opt: 'optimized'
+            artifact_suffix: windows-x64-cuda1220-optimized
 
           # Windows CUDA 12.2.0 generic
           - os: windows-2019
             arch: x64
+            os_build_arg: win
             addon_name: addon-windows-cuda-1220-generic.node
-            cuda_version: 12.2.0
-            cuda_opt: generic
+            cuda_version: '12.2.0'
+            cuda_opt: 'generic'
+            artifact_suffix: windows-x64-cuda1220-generic
 
           # Windows CUDA 12.4.1 optimized
           - os: windows-2019
             arch: x64
+            os_build_arg: win
             addon_name: addon-windows-cuda-1241-optimized.node
-            cuda_version: 12.4.1
-            cuda_opt: optimized
+            cuda_version: '12.4.1'
+            cuda_opt: 'optimized'
+            artifact_suffix: windows-x64-cuda1241-optimized
 
           # Windows CUDA 12.4.1 generic
           - os: windows-2019
             arch: x64
+            os_build_arg: win
             addon_name: addon-windows-cuda-1241-generic.node
-            cuda_version: 12.4.1
-            cuda_opt: generic
+            cuda_version: '12.4.1'
+            cuda_opt: 'generic'
+            artifact_suffix: windows-x64-cuda1241-generic
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Node.js, NPM and Yarn
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20.14.0
 
-      # 下载对应的 addon
-      - name: Download addon from whisper.cpp repo
-        shell: bash # 指定使用 bash shell
+      - name: Download addon
+        shell: bash
         run: |
           mkdir -p temp-artifacts
           curl -L -o "temp-artifacts/${{ matrix.addon_name }}" \
             "https://github.com/buxuku/whisper.cpp/releases/download/latest/${{ matrix.addon_name }}"
-          curl -L -o "temp-artifacts/addon-windows-no-cuda.node" \
-            "https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-windows-no-cuda.node"
-          curl -L -o "temp-artifacts/addon-macos-arm64-coreml.node" \
-            "https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-macos-arm64-coreml.node"
+          # Ensure other addons are downloaded if needed by specific builds, or simplify if not all are always needed
+          if [[ "${{ matrix.os_build_arg }}" == "win" ]]; then
+            curl -L -o "temp-artifacts/addon-windows-no-cuda.node" \
+              "https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-windows-no-cuda.node"
+          fi
+          if [[ "${{ matrix.os_build_arg }}" == "mac" && "${{ matrix.arch }}" == "arm64" ]]; then
+             curl -L -o "temp-artifacts/addon-macos-arm64-coreml.node" \
+              "https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-macos-arm64-coreml.node"
+          fi
 
-      # 准备 macOS 构建
       - name: Prepare macOS addon
-        if: startsWith(matrix.os, 'macos')
+        if: matrix.os_build_arg == 'mac'
         env:
           BUILD_PLATFORM: 'darwin'
           BUILD_ARCH: '${{ matrix.arch }}'
         run: |
           cp temp-artifacts/${{ matrix.addon_name }} extraResources/addons/addon.node
-          cp temp-artifacts/addon-macos-arm64-coreml.node extraResources/addons/addon.coreml.node
-          # 更新 package.json 添加构建信息
+          if [[ "${{ matrix.arch }}" == "arm64" ]]; then
+            cp temp-artifacts/addon-macos-arm64-coreml.node extraResources/addons/addon.coreml.node
+          fi
           node scripts/inject-build-info.js
 
-      # 准备 Windows 构建
       - name: Prepare Windows addon
-        if: matrix.os == 'windows-2019'
+        if: matrix.os_build_arg == 'win'
         env:
           BUILD_PLATFORM: 'win32'
           BUILD_ARCH: '${{ matrix.arch }}'
@@ -119,25 +143,172 @@ jobs:
         run: |
           Copy-Item -Path "temp-artifacts/${{ matrix.addon_name }}" -Destination "extraResources/addons/addon.node"
           Copy-Item -Path "temp-artifacts/addon-windows-no-cuda.node" -Destination "extraResources/addons/addon-no-cuda.node"
-          # 更新 package.json 添加构建信息
           node scripts/inject-build-info.js
 
-      # 构建应用程序
-      - name: Build/release Electron app - macOS
-        uses: samuelmeuli/action-electron-builder@v1.6.0
-        if: startsWith(matrix.os, 'macos')
-        with:
-          args: ${{ matrix.build_args }}
-          github_token: ${{ secrets.TOKEN }}
-          release: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
 
-      - name: Build/release Electron app - Windows
-        uses: samuelmeuli/action-electron-builder@v1.6.0
-        if: matrix.os == 'windows-2019'
-        env:
-          CUDA_VERSION: ${{ matrix.cuda_version }}
-          CUDA_OPT: ${{ matrix.cuda_opt }}
+      - name: Compile application code
+        run: yarn build # Assumes 'yarn build' compiles TS to JS, e.g., into the 'app' directory
+
+      - name: Build Electron app
+        shell: bash # Use bash for consistency if possible, or powershell for windows if needed
+        run: |
+          export BUILD_PLATFORM=${{ matrix.os_build_arg == 'mac' && 'darwin' || 'win32' }}
+          export BUILD_ARCH=${{ matrix.arch }}
+          if [[ "${{ matrix.os_build_arg }}" == "win" ]]; then
+            export CUDA_VERSION="${{ matrix.cuda_version }}"
+            export CUDA_OPT="${{ matrix.cuda_opt }}"
+          fi
+          yarn run electron-builder --${{ matrix.os_build_arg }} --${{ matrix.arch }} ${{ matrix.build_args || '' }} --publish never
+
+      - name: Stage Artifacts
+        shell: bash
+        run: |
+          mkdir staging
+          cp dist/*.{dmg,exe,AppImage,zip,tar.gz,deb,snap} staging/ 2>/dev/null || true # Copy main packages
+          cp dist/*latest*.yml staging/ 2>/dev/null || true # Copy generated YML
+          ls -R staging # List files for debugging
+
+      - name: Upload application package artifact
+        uses: actions/upload-artifact@v4
         with:
-          github_token: ${{ secrets.TOKEN }}
-          release: ${{ startsWith(github.ref, 'refs/tags/v') }}
-          max_attempts: 5
+          name: app-pkg-${{ matrix.artifact_suffix }}
+          path: |
+            staging/*.dmg
+            staging/*.exe
+            staging/*.AppImage
+            staging/*.zip
+            staging/*.tar.gz
+            staging/*.deb
+            staging/*.snap
+          if-no-files-found: error # Important: fail if no package found
+
+      - name: Upload update YAML artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-yaml-${{ matrix.artifact_suffix }}
+          path: staging/*latest*.yml
+          if-no-files-found: error # Important: fail if no YML found
+
+  publish_release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: build_artifacts
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write # Required for softprops/action-gh-release
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x # Or your preferred Node version for the script
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all_build_artifacts # This will download each artifact into its own subdirectory
+
+      - name: List downloaded artifacts for debugging
+        run: ls -R all_build_artifacts
+
+      - name: Create YAML merge script
+        run: |
+          cat <<'EOF' > merge-yaml-and-prepare-release.js
+          const fs = require('fs');
+          const path = require('path');
+          const yaml = require('js-yaml');
+
+          const artifactsDownloadDir = path.join('.', 'all_build_artifacts');
+          const finalReleaseAssetsDir = path.join('.', 'final_release_assets');
+          fs.mkdirSync(finalReleaseAssetsDir, { recursive: true });
+
+          const platformYamlData = { mac: [], windows: [], linux: [] };
+          let packageVersion = process.env.GITHUB_REF_NAME.startsWith('v') ? process.env.GITHUB_REF_NAME.substring(1) : process.env.GITHUB_REF_NAME;
+
+          fs.readdirSync(artifactsDownloadDir).forEach(artifactSubDir => {
+            const artifactPath = path.join(artifactsDownloadDir, artifactSubDir);
+            fs.readdirSync(artifactPath).forEach(file => {
+              const filePath = path.join(artifactPath, file);
+              if (file.endsWith('.yml')) {
+                console.log(`Processing YAML: ${filePath} from ${artifactSubDir}`);
+                try {
+                  const ymlContent = yaml.load(fs.readFileSync(filePath, 'utf8'));
+                  if (!packageVersion && ymlContent.version) packageVersion = ymlContent.version; // Fallback if GITHUB_REF_NAME is not a version tag
+
+                  let platformKey = '';
+                  if (artifactSubDir.includes('-macos-') || file.includes('-mac')) platformKey = 'mac';
+                  else if (artifactSubDir.includes('-windows-') || file.includes('-windows') || file.includes('-win')) platformKey = 'windows';
+                  else if (artifactSubDir.includes('-linux-') || file.includes('-linux')) platformKey = 'linux';
+                  
+                  if (platformKey && ymlContent.files && Array.isArray(ymlContent.files)) {
+                    ymlContent.files.forEach(fileEntry => {
+                      // Ensure the URL is just the filename for the release asset
+                      fileEntry.url = path.basename(fileEntry.url);
+                      platformYamlData[platformKey].push(fileEntry);
+                    });
+                  } else {
+                    console.warn(`Could not determine platform or parse files for ${filePath}`);
+                  }
+                } catch (e) {
+                  console.error(`Error processing YAML file ${filePath}:`, e);
+                }
+              } else {
+                console.log(`Copying package: ${file} to ${finalReleaseAssetsDir}`);
+                fs.copyFileSync(filePath, path.join(finalReleaseAssetsDir, file));
+              }
+            });
+          });
+
+          const releaseDate = new Date().toISOString();
+
+          for (const platform of ['mac', 'windows', 'linux']) {
+            if (platformYamlData[platform].length > 0) {
+              // Sort files to ensure deterministic order, e.g., by URL
+              platformYamlData[platform].sort((a, b) => a.url.localeCompare(b.url));
+
+              let outputFileName = `latest-${platform}.yml`;
+              if (platform === 'windows') {
+                outputFileName = 'latest.yml';
+              }
+
+              const finalYaml = {
+                version: packageVersion,
+                files: platformYamlData[platform],
+                path: outputFileName, // Use the determined output file name
+                releaseDate: releaseDate,
+              };
+              const yamlPath = path.join(finalReleaseAssetsDir, outputFileName);
+              fs.writeFileSync(yamlPath, yaml.dump(finalYaml));
+              console.log(`Generated ${yamlPath} for ${platform} with ${finalYaml.files.length} entries.`);
+            }
+          }
+          console.log('Final release assets prepared in:', finalReleaseAssetsDir);
+          EOF
+
+      - name: Install script dependencies
+        run: npm install js-yaml
+
+      - name: Run YAML merge script
+        run: node merge-yaml-and-prepare-release.js
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }} # Pass tag to script
+
+      - name: List final assets for debugging
+        run: ls -R final_release_assets
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2 # Updated to a newer version
+        with:
+          # token: ${{ secrets.GITHUB_TOKEN }} # Provided by default
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          # body: | # Optional: Add release notes here
+          #   Automated release for version ${{ github.ref_name }}
+          draft: true # Set to true if you want to manually review before publishing
+          prerelease: false # Set to true if this is a pre-release
+          files: |
+            final_release_assets/*

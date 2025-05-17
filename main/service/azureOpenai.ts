@@ -1,4 +1,5 @@
 import { AzureOpenAI } from 'openai';
+import { TRANSLATION_JSON_SCHEMA } from '../translate/constants/schema';
 
 type AzureOpenAIProvider = {
   apiUrl: string;
@@ -6,6 +7,7 @@ type AzureOpenAIProvider = {
   modelName?: string;
   prompt?: string;
   systemPrompt?: string;
+  useJsonMode?: boolean;
 };
 
 export async function translateWithAzureOpenAI(
@@ -32,14 +34,28 @@ export async function translateWithAzureOpenAI(
       'You are a professional subtitle translation tool';
     const userPrompt = Array.isArray(text) ? text.join('\n') : text;
 
-    const completion = await openai.chat.completions.create({
+    // 创建请求参数
+    const requestParams: any = {
       model: undefined,
       messages: [
         { role: 'system', content: sysPrompt },
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.3,
-    });
+    };
+
+    // 如果启用了JSON模式，添加相关参数
+    if (provider.useJsonMode !== false) {
+      // 确保apiVersion支持JSON模式
+      if (parseFloat(apiVersion) >= 2023.12) {
+        // Azure OpenAI API支持的JSON模式参数
+        requestParams.response_format = { type: 'json_object' };
+
+        requestParams.response_format.schema = TRANSLATION_JSON_SCHEMA;
+      }
+    }
+
+    const completion = await openai.chat.completions.create(requestParams);
 
     const result = completion?.choices?.[0]?.message?.content?.trim();
 

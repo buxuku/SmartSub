@@ -1,0 +1,173 @@
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-centric websites.
+ */
+
+/* You can override the default Infima variables here. */
+:root {
+  --ifm-color-primary: #4568dc;
+  --ifm-color-primary-dark: #3456c9;
+  --ifm-color-primary-darker: #2f50be;
+  --ifm-color-primary-darkest: #274296;
+  --ifm-color-primary-light: #5c7be0;
+  --ifm-color-primary-lighter: #6884e3;
+  --ifm-color-primary-lightest: #8ba0e9;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --ifm-font-family-base: 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+  --card-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+  --card-shadow-hover: 0 12px 24px rgba(0, 0, 0, 0.15);
+  --transition-normal: all 0.3s ease;
+}
+
+/* For readability concerns, you should choose a lighter palette in dark mode. */
+[data-theme='dark'] {
+  --ifm-color-primary: #7082e8;
+  --ifm-color-primary-dark: #5569e3;
+  --ifm-color-primary-darker: #475de0;
+  --ifm-color-primary-darkest: #1f39d4;
+  --ifm-color-primary-light: #8b9bed;
+  --ifm-color-primary-lighter: #99a7f0;
+  --ifm-color-primary-lightest: #c2caf6;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --card-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+  --card-shadow-hover: 0 12px 24px rgba(0, 0, 0, 0.3);
+}
+
+/* 自定义首页样式 */
+.hero__title {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.hero__subtitle {
+  font-size: 1.5rem;
+  margin-bottom: 2rem;
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.hero {
+  background: linear-gradient(135deg, #4568dc, #b06ab3);
+  color: white;
+  padding: 6rem 0;
+}
+
+.hero .button {
+  background-color: white;
+  color: var(--ifm-color-primary);
+  border: none;
+  transition: var(--transition-normal);
+  font-weight: 600;
+  padding: 12px 24px;
+}
+
+.hero .button:hover {
+  background-color: rgba(255, 255, 255, 0.9);
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
+}
+
+.hero .button--outline {
+  background-color: transparent;
+  border: 2px solid white;
+  color: white;
+}
+
+.hero .button--outline:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 特性卡片 */
+.features-container {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 30px;
+  margin: 40px 0;
+}
+
+.feature-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  padding: 32px 24px;
+  flex: 1 1 300px;
+  max-width: 350px;
+  transition: var(--transition-normal);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.feature-card:hover {
+  transform: translateY(-8px);
+  box-shadow: var(--card-shadow-hover);
+}
+
+.feature-card h3 {
+  color: var(--ifm-color-primary);
+  margin: 16px 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.feature-card p {
+  color: var(--ifm-color-secondary-darkest);
+  line-height: 1.6;
+  margin-bottom: 0;
+}
+
+[data-theme='dark'] .feature-card {
+  background: var(--ifm-card-background-color);
+}
+
+/* 截图区域 */
+.screenshot {
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  margin: 30px 0;
+  width: 100%;
+  transition: var(--transition-normal);
+}
+
+/* 文档内图片 */
+.img-container {
+  display: flex;
+  justify-content: center;
+  margin: 20px 0;
+}
+
+.img-container img {
+  max-width: 100%;
+  border-radius: 8px;
+  box-shadow: var(--card-shadow);
+  transition: var(--transition-normal);
+}
+
+.img-container img:hover {
+  box-shadow: var(--card-shadow-hover);
+}
+
+a p {
+  margin-bottom: 0;
+  padding: 12px 0;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .hero__title {
+    font-size: 2.5rem;
+  }
+
+  .hero__subtitle {
+    font-size: 1.2rem;
+  }
+
+  .feature-card {
+    padding: 24px 20px;
+  }
+}
