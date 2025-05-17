@@ -374,6 +374,7 @@ function fileStatusGetters(file: IFiles) {
 
 export function getNewTaskFiles(files: IFiles[]) {
   return files.filter((file) => {
+    if (!file.sent) return true; // not sent yet
     const { running, succeed } = fileStatusGetters(file);
     if (running) return false;
     if (succeed) return false;

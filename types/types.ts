@@ -28,8 +28,8 @@ export interface IFiles {
   translatedSrtFile?: string;
   tempTranslatedSrtFile?: string;
 
+  sent?: boolean; // 是否已发送
   taskType?: ITaskType;
-  formData?: any; // 任务配置
 }
 
 export interface IFormData {

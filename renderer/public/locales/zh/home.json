@@ -112,5 +112,6 @@
   "total": "总数",
   "translated": "已翻译",
   "completionRate": "完成率",
-  "originalSubtitle": "原文字幕"
+  "originalSubtitle": "原文字幕",
+  "autoStartNewTaskWhenRunning": "自动开始新任务"
 }

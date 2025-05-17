@@ -9,9 +9,8 @@ import {
   generateSubtitleWithBuiltinWhisper,
 } from './subtitleGenerator';
 import translate from '../translate';
-import type { IpcMainEvent } from 'electron';
-import type { Provider, IFiles } from '../../types';
 import { ensureTempDir, getMd5 } from './fileUtils';
+import { IFiles } from '../../types';
 
 /**
  * 处理任务错误
@@ -82,13 +81,12 @@ async function translateSubtitle(event, file: IFiles, formData, provider) {
  * 处理文件
  */
 export async function processFile(
-  event: IpcMainEvent,
+  event,
   file: IFiles,
-  hasOpenAiWhisper: boolean,
-  provider: Provider,
+  formData,
+  hasOpenAiWhisper,
+  provider,
 ) {
-  const { formData = {} } = file;
-
   const {
     sourceLanguage,
     targetLanguage,

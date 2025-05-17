@@ -1,13 +1,13 @@
 import fse from 'fs-extra';
-import { ipcMain, BrowserWindow, type IpcMainEvent } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { processFile } from './fileProcessor';
 import { checkOpenAiWhisper, getPath } from './whisper';
 import { logMessage, store } from './storeManager';
 import path from 'path';
 import { isAppleSilicon } from './utils';
-import type { IFiles } from '../../types';
+import { IFiles } from '../../types';
 
-let processingQueue: IFiles[] = [];
+let processingQueue = [];
 let isProcessing = false;
 let isPaused = false;
 let shouldCancel = false;
@@ -22,7 +22,7 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
       console.log('handleTask start', files);
       logMessage(`handleTask start`, 'info');
       logMessage(`formData: \n ${JSON.stringify(formData, null, 2)}`, 'info');
-      processingQueue.push(...files);
+      processingQueue.push(...files.map((file) => ({ file, formData })));
       if (!isProcessing) {
         isProcessing = true;
         isPaused = false;
@@ -72,7 +72,7 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
   });
 }
 
-async function processNextTasks(event: IpcMainEvent) {
+async function processNextTasks(event) {
   if (shouldCancel) {
     isProcessing = false;
     event.sender.send('taskComplete', 'cancelled');
@@ -103,11 +103,16 @@ async function processNextTasks(event: IpcMainEvent) {
       activeTasksCount++;
       try {
         const provider = translationProviders.find(
-          (p) => p.id === task.formData?.translateProvider,
+          (p) => p.id === task.formData.translateProvider,
         );
-        await processFile(event, task, hasOpenAiWhisper, provider);
+        await processFile(
+          event,
+          task.file as IFiles,
+          task.formData,
+          hasOpenAiWhisper,
+          provider,
+        );
       } catch (error) {
-        console.error(error.stack || error);
         event.sender.send('message', error);
       } finally {
         activeTasksCount--;
