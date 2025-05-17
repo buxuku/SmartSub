@@ -1,6 +1,6 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import type { ITaskFile } from '../../types';
+import type { IFiles } from '../../types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -325,7 +325,7 @@ export const filterSupportedFiles = (files: File[]) => {
   });
 };
 
-function fileStatusGetters(file: ITaskFile) {
+function fileStatusGetters(file: IFiles) {
   const { taskType, extractAudio, extractSubtitle, translateSubtitle } = file;
 
   function running(): boolean {
@@ -372,7 +372,7 @@ function fileStatusGetters(file: ITaskFile) {
   };
 }
 
-export function getNewTaskFiles(files: ITaskFile[]) {
+export function getNewTaskFiles(files: IFiles[]) {
   return files.filter((file) => {
     const { running, succeed } = fileStatusGetters(file);
     if (running) return false;

@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
-import type { ITaskFile } from '../../types';
+import type { IFiles } from '../../types';
 
-let taskList: ITaskFile[] = [];
+let taskList: IFiles[] = [];
 
 export function setupTaskManager() {
   ipcMain.handle('getTasks', () => {

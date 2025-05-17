@@ -9,11 +9,11 @@ import { Button } from './ui/button';
 import { toast } from 'sonner';
 import { getNewTaskFiles, needsCoreML } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
-import type { ITaskFile } from '../../types';
+import type { IFiles } from '../../types';
 
 const TaskControls: FC<{
-  files: ITaskFile[];
-  setFiles: Dispatch<SetStateAction<ITaskFile[]>>;
+  files: IFiles[];
+  setFiles: Dispatch<SetStateAction<IFiles[]>>;
   formData: any;
 }> = ({ files, setFiles, formData }) => {
   const [taskStatus, setTaskStatus] = useState('idle');
@@ -42,7 +42,7 @@ const TaskControls: FC<{
       return toast(t('common:notification'), { description: t('home:noTask') });
     }
 
-    // when start task button pressed, persist task config to ITaskFile
+    // when start task button pressed, persist task config to IFiles
     const updatedFiles = files.map((f) => {
       return { formData, taskType: formData.taskType, ...f };
     });
