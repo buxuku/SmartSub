@@ -88,12 +88,13 @@ Please download the appropriate package based on your computer's system, chip, a
 | Mac     | Intel | no support CoreML       | mac-x64                |
 
 1. Go to the [releases](https://github.com/buxuku/SmartSub/releases) page and download the appropriate package for your operating system
-2. Install and run the program
-3. Download the model
-4. Configure the desired translation services within the application
-5. Select the video or subtitle files you want to process
-6. Set relevant parameters (e.g., source language, target language, model)
-7. Start the processing task
+2. Or use the cloud disk [Quark](https://pan.quark.cn/s/0b16479b40ca) to download the corresponding version
+3. Install and run the program
+4. Download the model
+5. Configure the desired translation services within the application
+6. Select the video or subtitle files you want to process
+7. Set relevant parameters (e.g., source language, target language, model)
+8. Start the processing task
 
 ## 🔦 Usage (For Developers)
 
