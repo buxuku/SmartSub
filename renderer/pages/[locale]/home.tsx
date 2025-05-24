@@ -12,9 +12,10 @@ import TaskConfigForm from '@/components/TaskConfigForm';
 import TaskListControl from '@/components/TaskListControl';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { filterSupportedFiles } from 'lib/utils';
+import type { IFiles } from '../../../types';
 
 export default function Component() {
-  const [files, setFiles] = useState([]);
+  const [files, setFiles] = useState<IFiles[]>([]);
   const { systemInfo } = useSystemInfo();
   const { form, formData } = useFormConfig();
   useIpcCommunication(setFiles);
@@ -119,7 +120,7 @@ export default function Component() {
           <TaskList files={files} formData={formData} />
         </ScrollArea>
         <div className="flex-1" />
-        <TaskControls formData={formData} files={files} />
+        <TaskControls formData={formData} files={files} setFiles={setFiles} />
       </div>
       {/* <Guide systemInfo={systemInfo} updateSystemInfo={updateSystemInfo} /> */}
     </div>

@@ -4,21 +4,32 @@ export interface ISystemInfo {
   downloadingModels: string[];
 }
 
+export type StepKeyPossibleValues = 'loading' | 'done' | 'error';
+
+// 任务类型枚举
+export type ITaskType =
+  | 'generateAndTranslate'
+  | 'generateOnly'
+  | 'translateOnly';
+
 export interface IFiles {
   uuid: string;
   filePath: string;
   fileName: string;
   fileExtension: string;
   directory: string;
-  extractAudio?: boolean;
-  extractSubtitle?: boolean;
-  translateSubtitle?: boolean;
+  extractAudio?: StepKeyPossibleValues;
+  extractSubtitle?: StepKeyPossibleValues;
+  translateSubtitle?: StepKeyPossibleValues;
   audioFile?: string;
   srtFile?: string;
   tempSrtFile?: string;
   tempAudioFile?: string;
   translatedSrtFile?: string;
   tempTranslatedSrtFile?: string;
+
+  sent?: boolean; // 是否已发送
+  taskType?: ITaskType;
 }
 
 export interface IFormData {
