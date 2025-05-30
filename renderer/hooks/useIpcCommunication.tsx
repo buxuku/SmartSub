@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
-import { IFiles } from '../../types';
+import { useEffect, type Dispatch, type SetStateAction } from 'react';
+import type { IFiles } from '../../types';
 
-export default function useIpcCommunication(setFiles) {
+export default function useIpcCommunication(
+  setFiles: Dispatch<SetStateAction<IFiles[]>>,
+) {
   useEffect(() => {
     window?.ipc?.on('file-selected', (res: IFiles[]) => {
       setFiles((prevFiles) => [...prevFiles, ...res]);

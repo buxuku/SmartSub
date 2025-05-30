@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import type { IFiles } from '../../types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -323,3 +324,60 @@ export const filterSupportedFiles = (files: File[]) => {
     );
   });
 };
+
+function fileStatusGetters(file: IFiles) {
+  const { taskType, extractAudio, extractSubtitle, translateSubtitle } = file;
+
+  function running(): boolean {
+    return !ended() && !!(extractAudio || extractSubtitle || translateSubtitle);
+  }
+
+  function ended(): boolean {
+    return succeed() || failed();
+  }
+
+  function succeed(): boolean {
+    if (taskType === 'generateOnly')
+      return extractAudio === 'done' && extractSubtitle === 'done';
+    if (taskType === 'translateOnly') return translateSubtitle === 'done';
+    if (taskType === 'generateAndTranslate')
+      return (
+        extractAudio === 'done' &&
+        extractSubtitle === 'done' &&
+        translateSubtitle === 'done'
+      );
+  }
+
+  function failed(): boolean {
+    return (
+      extractAudio === 'error' ||
+      extractSubtitle === 'error' ||
+      translateSubtitle === 'error'
+    );
+  }
+
+  return {
+    get running() {
+      return running();
+    },
+    get ended() {
+      return ended();
+    },
+    get succeed() {
+      return succeed();
+    },
+    get failed() {
+      return failed();
+    },
+  };
+}
+
+export function getNewTaskFiles(files: IFiles[]) {
+  return files.filter((file) => {
+    if (!file.sent) return true; // not sent yet
+    const { running, succeed } = fileStatusGetters(file);
+    if (running) return false;
+    if (succeed) return false;
+    return true; // rest are un-started | failed
+  });
+}

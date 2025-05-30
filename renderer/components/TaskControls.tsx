@@ -1,12 +1,30 @@
-import { useEffect, useState } from 'react';
+import {
+  useEffect,
+  useState,
+  type Dispatch,
+  type FC,
+  type SetStateAction,
+} from 'react';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
-import { isSubtitleFile, needsCoreML } from 'lib/utils';
+import { getNewTaskFiles, needsCoreML } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
+import type { IFiles } from '../../types';
+import { Switch } from './ui/switch';
+import useLocalStorageState from 'hooks/useLocalStorageState';
+import { useUpdateEffect } from 'ahooks';
 
-const TaskControls = ({ files, formData }) => {
-  const [taskStatus, setTaskStatus] = useState('idle');
+type TaskStatus = 'idle' | 'running' | 'paused' | 'cancelled' | 'completed';
+
+const TaskControls: FC<{
+  files: IFiles[];
+  setFiles: Dispatch<SetStateAction<IFiles[]>>;
+  formData: any;
+}> = ({ files, setFiles, formData }) => {
+  const [taskStatus, setTaskStatus] = useState<TaskStatus>('idle');
   const { t } = useTranslation(['home', 'common']);
+  const [autoStartNewTaskWhenRunning, setAutoStartNewTaskWhenRunning] =
+    useLocalStorageState<boolean>('auto-start-new-task-when-running', false);
 
   useEffect(() => {
     // 获取当前任务状态
@@ -17,7 +35,7 @@ const TaskControls = ({ files, formData }) => {
     getCurrentTaskStatus();
 
     // 监听任务状态变化
-    const cleanup = window?.ipc?.on('taskComplete', (status: string) => {
+    const cleanup = window?.ipc?.on('taskComplete', (status: TaskStatus) => {
       setTaskStatus(status);
     });
 
@@ -28,30 +46,27 @@ const TaskControls = ({ files, formData }) => {
 
   const handleTask = async () => {
     if (!files?.length) {
-      toast(t('common:notification'), {
-        description: t('home:noTask'),
-      });
-      return;
+      return toast(t('common:notification'), { description: t('home:noTask') });
     }
-    const isAllFilesProcessed = files.every((item) => {
-      const basicProcessingDone = item.extractAudio && item.extractSubtitle;
 
-      if (formData.translateProvider === '-1') {
-        return basicProcessingDone;
-      }
-      if (isSubtitleFile(item?.filePath)) {
-        return item.translateSubtitle;
-      }
+    // when start task button pressed, persist taskType to IFiles
+    const needPersist = files.some((f) => !f.taskType);
+    let updatedFiles = files;
+    if (needPersist) {
+      updatedFiles = files.map((f) => {
+        if (f.taskType) return f;
+        return { ...f, taskType: formData.taskType };
+      });
+      setFiles(updatedFiles);
+    }
 
-      return basicProcessingDone && item.translateSubtitle;
-    });
-
-    if (isAllFilesProcessed) {
-      toast(t('common:notification'), {
+    const newTaskFiles = getNewTaskFiles(updatedFiles);
+    if (!newTaskFiles.length) {
+      return toast(t('common:notification'), {
         description: t('home:allFilesProcessed'),
       });
-      return;
     }
+
     // if(formData.model && needsCoreML(formData.model)){
     //   const checkMlmodel = await window.ipc.invoke('checkMlmodel', formData.model);
     //   if(!checkMlmodel){
@@ -61,8 +76,15 @@ const TaskControls = ({ files, formData }) => {
     //     return;
     //   }
     // }
+
     setTaskStatus('running');
-    window?.ipc?.send('handleTask', { files, formData });
+    setFiles((files) =>
+      files.map((f) => {
+        if (f.sent) return f;
+        return { ...f, sent: true };
+      }),
+    );
+    window?.ipc?.send('handleTask', { files: newTaskFiles, formData });
   };
   const handlePause = () => {
     window?.ipc?.send('pauseTask', null);
@@ -78,6 +100,18 @@ const TaskControls = ({ files, formData }) => {
     window?.ipc?.send('cancelTask', null);
     setTaskStatus('cancelled');
   };
+
+  useUpdateEffect(() => {
+    if (
+      taskStatus === 'running' &&
+      autoStartNewTaskWhenRunning &&
+      files.length &&
+      files.some((f) => !f.sent)
+    ) {
+      handleTask();
+    }
+  }, [files.length]);
+
   return (
     <div className="flex gap-2 ml-auto">
       {(taskStatus === 'idle' || taskStatus === 'completed') && (
@@ -87,6 +121,19 @@ const TaskControls = ({ files, formData }) => {
       )}
       {taskStatus === 'running' && (
         <>
+          <span className="inline-flex items-center justify-center gap-x-1 mr-1">
+            <Switch
+              id="auto-start-new-task-when-running"
+              checked={autoStartNewTaskWhenRunning}
+              onCheckedChange={setAutoStartNewTaskWhenRunning}
+            />
+            <label
+              htmlFor="auto-start-new-task-when-running"
+              className="cursor-pointer select-none"
+            >
+              {t('home:autoStartNewTaskWhenRunning')}
+            </label>
+          </span>
           <Button onClick={handlePause}>{t('home:pauseTask')}</Button>
           <Button onClick={handleCancel}>{t('home:cancelTask')}</Button>
         </>

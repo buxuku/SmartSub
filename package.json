@@ -36,6 +36,7 @@
     "@radix-ui/react-tabs": "^1.1.4",
     "@radix-ui/react-tooltip": "^1.0.7",
     "@volcengine/openapi": "^1.18.3",
+    "ahooks": "^3.8.4",
     "axios": "^1.6.8",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
