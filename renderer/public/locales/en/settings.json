@@ -58,5 +58,12 @@
   "maxContextPlaceholder": "Enter maximum context length...",
   "numberInputTip": "Please enter a valid number",
   "useCustomTempDir": "Use custom temporary directory, please avoid using Chinese paths, and manually clean up the custom temporary directory to avoid accidental deletion of files",
-  "useCustomTempDirDisabled": "Custom temporary directory is disabled"
+  "useCustomTempDirDisabled": "Custom temporary directory is disabled",
+  "checkUpdateOnStartup": "Check for updates on startup",
+  "checkUpdateOnStartupTip": "Automatically check for new version updates when the application starts",
+  "checkUpdateOnStartupEnabled": "Startup update checking enabled",
+  "checkUpdateOnStartupDisabled": "Startup update checking disabled",
+  "customTempDirPlaceholder": "Select custom temporary directory",
+  "tempDirSaved": "Temporary directory saved successfully",
+  "useCustomTempDirEnabled": "Custom temporary directory enabled"
 }

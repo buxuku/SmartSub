@@ -58,5 +58,12 @@
   "maxContextPlaceholder": "最大上下文长度",
   "numberInputTip": "请输入数字",
   "useCustomTempDir": "使用自定义临时文件目录, 请避免出现中文路径，为避免误删文件，自定义临时文件目录请手动清理",
-  "useCustomTempDirDisabled": "已经关闭自定义临时文件目录"
+  "useCustomTempDirDisabled": "已经关闭自定义临时文件目录",
+  "checkUpdateOnStartup": "启动时检查更新",
+  "checkUpdateOnStartupTip": "应用程序启动时自动检查是否有新版本可用",
+  "checkUpdateOnStartupEnabled": "已启用启动时检查更新",
+  "checkUpdateOnStartupDisabled": "已禁用启动时检查更新",
+  "customTempDirPlaceholder": "选择自定义临时目录",
+  "tempDirSaved": "临时目录保存成功",
+  "useCustomTempDirEnabled": "已启用自定义临时目录"
 }
