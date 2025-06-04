@@ -80,6 +80,7 @@ const Settings = () => {
   const [tempDir, setTempDir] = useState('');
   const [customTempDir, setCustomTempDir] = useState('');
   const [useCustomTempDir, setUseCustomTempDir] = useState(false);
+  const [checkUpdateOnStartup, setCheckUpdateOnStartup] = useState(true);
   const form = useForm({
     defaultValues: {
       language: router.locale,
@@ -98,6 +99,7 @@ const Settings = () => {
         setModelsPath(settings.modelsPath || '');
         setUseCustomTempDir(settings.useCustomTempDir || false);
         setCustomTempDir(settings.customTempDir || '');
+        setCheckUpdateOnStartup(settings.checkUpdateOnStartup !== false);
       }
 
       // 获取临时目录路径
@@ -185,6 +187,23 @@ const Settings = () => {
       await window?.ipc?.invoke('setSettings', { useCustomTempDir: checked });
       toast.success(
         checked ? t('useCustomTempDirEnabled') : t('useCustomTempDirDisabled'),
+      );
+    } catch (error) {
+      toast.error(t('saveFailed'));
+    }
+  };
+
+  // 切换启动时检查更新
+  const handleCheckUpdateOnStartupChange = async (checked: boolean) => {
+    setCheckUpdateOnStartup(checked);
+    try {
+      await window?.ipc?.invoke('setSettings', {
+        checkUpdateOnStartup: checked,
+      });
+      toast.success(
+        checked
+          ? t('checkUpdateOnStartupEnabled')
+          : t('checkUpdateOnStartupDisabled'),
       );
     } catch (error) {
       toast.error(t('saveFailed'));
@@ -305,6 +324,26 @@ const Settings = () => {
               </TooltipProvider>
             </div>
             <Switch checked={useCuda} onCheckedChange={handleCudaChange} />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span>{t('checkUpdateOnStartup')}</span>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{t('checkUpdateOnStartupTip')}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <Switch
+              checked={checkUpdateOnStartup}
+              onCheckedChange={handleCheckUpdateOnStartupChange}
+            />
           </div>
 
           <div className="space-y-2">
