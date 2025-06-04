@@ -51,6 +51,10 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
     handleSubtitleChange,
     handleSave,
     getSubtitleStats,
+    isTranslationFailed,
+    getFailedTranslationIndices,
+    goToNextFailedTranslation,
+    goToPreviousFailedTranslation,
   } = useSubtitles(file, open, taskType, formData);
 
   // 使用自定义Hook获取视频播放器相关状态和方法
@@ -142,6 +146,10 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
             shouldShowTranslation={shouldShowTranslation}
             handleSubtitleClick={handleSubtitleClick}
             handleSubtitleChange={handleSubtitleChange}
+            isTranslationFailed={isTranslationFailed}
+            getFailedTranslationIndices={getFailedTranslationIndices}
+            goToNextFailedTranslation={goToNextFailedTranslation}
+            goToPreviousFailedTranslation={goToPreviousFailedTranslation}
           />
         </div>
 

@@ -112,5 +112,9 @@
   "total": "总数",
   "translated": "已翻译",
   "completionRate": "完成率",
-  "originalSubtitle": "原文字幕"
+  "originalSubtitle": "原文字幕",
+  "translationFailed": "翻译失败",
+  "currentPlaying": "(当前播放)",
+  "translationFailedLabel": "(翻译失败)",
+  "translationFailedPlaceholder": "翻译失败，请手动输入"
 }

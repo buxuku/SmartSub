@@ -106,5 +106,9 @@
   "total": "Total",
   "translated": "Translated",
   "completionRate": "Completion rate",
-  "originalSubtitle": "Original subtitle"
+  "originalSubtitle": "Original subtitle",
+  "translationFailed": "Translation Failed",
+  "currentPlaying": "(Current Playing)",
+  "translationFailedLabel": "(Translation Failed)",
+  "translationFailedPlaceholder": "Translation failed, please enter manually"
 }
