@@ -372,6 +372,55 @@ export const PROVIDER_TYPES: ProviderType[] = [
       },
     ],
   },
+  {
+    id: 'Gemini',
+    name: 'Gemini',
+    isBuiltin: true,
+    isAi: true,
+    icon: '🌀',
+    fields: [
+      {
+        key: 'apiUrl',
+        label: 'Base url',
+        type: 'url',
+        required: true,
+        placeholder: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+        defaultValue:
+          'https://generativelanguage.googleapis.com/v1beta/openai/',
+      },
+      { key: 'apiKey', label: 'API Key', type: 'password', required: true },
+      {
+        key: 'modelName',
+        label: 'modelName',
+        type: 'text',
+        required: true,
+        placeholder: 'gemini-2.0-flash',
+        defaultValue: 'gemini-2.0-flash',
+      },
+      {
+        key: 'systemPrompt',
+        label: 'systemPrompt',
+        type: 'textarea',
+        tips: 'systemPromptTips',
+        defaultValue: defaultSystemPrompt,
+      },
+      {
+        key: 'prompt',
+        label: 'prompt',
+        type: 'textarea',
+        defaultValue: defaultUserPrompt,
+        tips: 'userPromptTips',
+      },
+
+      {
+        key: 'batchSize',
+        label: 'Batch Size',
+        type: 'number',
+        defaultValue: 1,
+        tips: 'batchSizeTip',
+      },
+    ],
+  },
 ];
 
 export const CONFIG_TEMPLATES: Record<string, ProviderType> = {
