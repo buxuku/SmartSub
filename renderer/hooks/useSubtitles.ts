@@ -345,6 +345,59 @@ export const useSubtitles = (
     return { total, withTranslation, percent };
   };
 
+  // 检查字幕是否翻译失败
+  const isTranslationFailed = (subtitle: Subtitle): boolean => {
+    if (!shouldShowTranslation) return false;
+    return (
+      subtitle.sourceContent &&
+      subtitle.sourceContent.trim() !== '' &&
+      (!subtitle.targetContent || subtitle.targetContent.trim() === '')
+    );
+  };
+
+  // 获取所有翻译失败的字幕索引
+  const getFailedTranslationIndices = (): number[] => {
+    if (!shouldShowTranslation) return [];
+    return mergedSubtitles
+      .map((subtitle, index) => (isTranslationFailed(subtitle) ? index : -1))
+      .filter((index) => index !== -1);
+  };
+
+  // 导航到下一条翻译失败的字幕
+  const goToNextFailedTranslation = (): void => {
+    const failedIndices = getFailedTranslationIndices();
+    if (failedIndices.length === 0) return;
+
+    const nextIndex = failedIndices.find(
+      (index) => index > currentSubtitleIndex,
+    );
+    if (nextIndex !== undefined) {
+      setCurrentSubtitleIndex(nextIndex);
+    } else {
+      // 如果没有更后面的失败项，跳转到第一个失败项
+      setCurrentSubtitleIndex(failedIndices[0]);
+    }
+  };
+
+  // 导航到上一条翻译失败的字幕
+  const goToPreviousFailedTranslation = (): void => {
+    const failedIndices = getFailedTranslationIndices();
+    if (failedIndices.length === 0) return;
+
+    // 反向查找比当前索引小的失败项
+    const previousIndex = failedIndices
+      .slice()
+      .reverse()
+      .find((index) => index < currentSubtitleIndex);
+
+    if (previousIndex !== undefined) {
+      setCurrentSubtitleIndex(previousIndex);
+    } else {
+      // 如果没有更前面的失败项，跳转到最后一个失败项
+      setCurrentSubtitleIndex(failedIndices[failedIndices.length - 1]);
+    }
+  };
+
   return {
     mergedSubtitles,
     setMergedSubtitles,
@@ -358,5 +411,10 @@ export const useSubtitles = (
     handleSubtitleChange,
     handleSave,
     getSubtitleStats,
+    // 新增翻译失败相关功能
+    isTranslationFailed,
+    getFailedTranslationIndices,
+    goToNextFailedTranslation,
+    goToPreviousFailedTranslation,
   };
 };

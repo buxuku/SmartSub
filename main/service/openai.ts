@@ -1,5 +1,9 @@
 import OpenAI from 'openai';
-import { TRANSLATION_JSON_SCHEMA } from '../translate/constants/schema';
+import { zodResponseFormat } from 'openai/helpers/zod';
+import {
+  TRANSLATION_JSON_SCHEMA,
+  TranslationResultSchema,
+} from '../translate/constants/schema';
 
 type OpenAIProvider = {
   apiUrl: string;
@@ -8,7 +12,68 @@ type OpenAIProvider = {
   prompt?: string;
   systemPrompt?: string;
   useJsonMode?: boolean;
+  providerType?: 'openai' | 'gemini' | 'generic';
 };
+
+async function callGeminiAPI(
+  openai: OpenAI,
+  baseParams: any,
+): Promise<string | undefined> {
+  console.log('Using Gemini-style API with zod schema');
+  try {
+    const completion = await openai.beta.chat.completions.parse({
+      ...baseParams,
+      response_format: zodResponseFormat(
+        TranslationResultSchema,
+        'translation',
+      ),
+    });
+
+    console.log('Gemini completion:', completion?.choices);
+    const parsed = completion?.choices?.[0]?.message?.parsed;
+    return typeof parsed === 'object'
+      ? JSON.stringify(parsed)
+      : parsed?.toString();
+  } catch (parseError) {
+    console.warn(
+      'Gemini-style parse failed, falling back to regular API:',
+      parseError,
+    );
+    const fallbackCompletion = await openai.chat.completions.create({
+      ...baseParams,
+      response_format: { type: 'json_object' },
+    });
+    return fallbackCompletion?.choices?.[0]?.message?.content?.trim();
+  }
+}
+
+async function callStandardAPI(
+  openai: OpenAI,
+  baseParams: any,
+  provider: OpenAIProvider,
+): Promise<string | undefined> {
+  console.log('Using standard OpenAI API');
+  const requestParams: any = { ...baseParams };
+
+  if (provider.useJsonMode !== false) {
+    requestParams.response_format = { type: 'json_object' };
+
+    if (provider.modelName && provider.providerType === 'openai') {
+      requestParams.response_format.schema = TRANSLATION_JSON_SCHEMA;
+    }
+  }
+
+  const completion = await openai.chat.completions.create(requestParams);
+  console.log('Standard completion:', completion?.choices);
+  return completion?.choices?.[0]?.message?.content?.trim();
+}
+
+function isGeminiProvider(provider: OpenAIProvider): boolean {
+  return (
+    provider.providerType === 'gemini' ||
+    provider.apiUrl?.includes('generativelanguage.googleapis.com')
+  );
+}
 
 export async function translateWithOpenAI(
   text: string[],
@@ -27,36 +92,33 @@ export async function translateWithOpenAI(
     console.log('sysPrompt:', sysPrompt);
     console.log('userPrompt:', userPrompt);
 
-    // 创建请求参数
-    const requestParams: any = {
+    // 根据provider类型确定是否使用beta API和zod格式
+    const isGeminiStyle = isGeminiProvider(provider);
+
+    // 创建基础请求参数
+    const baseParams = {
       model: provider.modelName || 'gpt-3.5-turbo',
       messages: [
         { role: 'system', content: sysPrompt },
         { role: 'user', content: userPrompt },
-      ],
+      ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
       temperature: 0.3,
     };
 
-    // 如果启用了JSON模式，添加相关参数
-    if (provider.useJsonMode !== false) {
-      // OpenAI API支持的JSON模式参数
-      requestParams.response_format = { type: 'json_object' };
+    let result: string | undefined;
 
-      // 添加JSON schema参数 (适用于支持schema的模型)
-      if (provider.modelName) {
-        requestParams.response_format.schema = TRANSLATION_JSON_SCHEMA;
-      }
+    if (isGeminiStyle && provider.useJsonMode !== false) {
+      result = await callGeminiAPI(openai, baseParams);
+    } else {
+      result = await callStandardAPI(openai, baseParams, provider);
     }
-
-    const completion = await openai.chat.completions.create(requestParams);
-
-    console.log('completion:', completion?.choices);
-    const result = completion?.choices?.[0]?.message?.content?.trim();
 
     return result;
   } catch (error) {
     console.error('OpenAI translation error:', error);
-    throw new Error(`OpenAI translation failed: ${error.message}`);
+    throw new Error(
+      `OpenAI translation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    );
   }
 }
 
