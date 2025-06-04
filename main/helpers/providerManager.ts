@@ -6,7 +6,7 @@ import {
 import { store } from './store';
 import { logMessage } from './logger';
 
-const CURRENT_PROVIDER_VERSION = 3; // 如果新增或者修改了翻译服务商，请更新版本号
+const CURRENT_PROVIDER_VERSION = 5; // 如果新增或者修改了翻译服务商，请更新版本号
 
 export async function getAndInitializeProviders(): Promise<Provider[]> {
   try {

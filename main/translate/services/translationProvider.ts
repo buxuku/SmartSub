@@ -30,6 +30,7 @@ export const TRANSLATOR_MAP = {
   deepseek: openaiTranslator,
   DeerAPI: openaiTranslator,
   aliyun: aliyunTranslator,
+  Gemini: openaiTranslator,
 } as const;
 
 export async function translateWithProvider(
