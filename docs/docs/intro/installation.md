@@ -72,7 +72,7 @@ title: 下载与安装
 2. 执行以下命令：
 
 ```bash
-sudo xattr -dr com.apple.quarantine /Applications/Smart\ Sub.app
+sudo xattr -dr com.apple.quarantine /Applications/SmartSub.app
 ```
 
 3. 输入您的管理员密码

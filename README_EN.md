@@ -146,7 +146,7 @@ Import steps:
 Execute the following command in the terminal:
 
 ```shell
-sudo xattr -dr com.apple.quarantine /Applications/Smart\ Sub.app
+sudo xattr -dr com.apple.quarantine /Applications/SmartSub.app
 ```
 
 Then try running the application again.

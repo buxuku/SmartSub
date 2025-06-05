@@ -18,7 +18,7 @@ title: 常见问题
 1. 打开终端（Terminal）
 2. 执行以下命令：
    ```bash
-   sudo xattr -dr com.apple.quarantine /Applications/Smart\ Sub.app
+   sudo xattr -dr com.apple.quarantine /Applications/SmartSub.app
    ```
 3. 输入您的管理员密码
 4. 再次尝试打开应用
