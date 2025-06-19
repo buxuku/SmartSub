@@ -421,6 +421,53 @@ export const PROVIDER_TYPES: ProviderType[] = [
       },
     ],
   },
+  {
+    id: 'qwen',
+    name: '通义千问',
+    isBuiltin: true,
+    isAi: true,
+    icon: '🐋',
+    fields: [
+      {
+        key: 'apiUrl',
+        label: 'Base url',
+        type: 'url',
+        required: true,
+        placeholder: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        defaultValue: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      },
+      { key: 'apiKey', label: 'API Key', type: 'password', required: true },
+      {
+        key: 'modelName',
+        label: 'modelName',
+        type: 'text',
+        required: true,
+        placeholder: 'qwen-turbo',
+        defaultValue: 'qwen-turbo',
+      },
+      {
+        key: 'systemPrompt',
+        label: 'systemPrompt',
+        type: 'textarea',
+        tips: 'systemPromptTips',
+        defaultValue: defaultSystemPrompt,
+      },
+      {
+        key: 'prompt',
+        label: 'prompt',
+        type: 'textarea',
+        defaultValue: defaultUserPrompt,
+        tips: 'userPromptTips',
+      },
+      {
+        key: 'batchSize',
+        label: 'Batch Size',
+        type: 'number',
+        defaultValue: 1,
+        tips: 'batchSizeTip',
+      },
+    ],
+  },
 ];
 
 export const CONFIG_TEMPLATES: Record<string, ProviderType> = {

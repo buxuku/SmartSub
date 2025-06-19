@@ -12,7 +12,8 @@
     "deeplx": "DeepLx",
     "ollama": "Ollama",
     "azure": "Azure 翻译器",
-    "aliyun": "阿里云翻译"
+    "aliyun": "阿里云翻译",
+    "qwen": "通义千问"
   },
   "language": {
     "zh": "中文",

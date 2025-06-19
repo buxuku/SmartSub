@@ -31,6 +31,7 @@ export const TRANSLATOR_MAP = {
   DeerAPI: openaiTranslator,
   aliyun: aliyunTranslator,
   Gemini: openaiTranslator,
+  qwen: openaiTranslator,
 } as const;
 
 export async function translateWithProvider(
