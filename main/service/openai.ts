@@ -12,10 +12,73 @@ type OpenAIProvider = {
   prompt?: string;
   systemPrompt?: string;
   useJsonMode?: boolean;
-  providerType?: 'openai' | 'gemini' | 'generic';
+  providerType?: string;
+  id?: string;
 };
 
-async function callGeminiAPI(
+/**
+ * 获取特定provider的额外参数
+ */
+function getProviderSpecificParams(
+  provider: OpenAIProvider,
+): Record<string, any> {
+  const params: Record<string, any> = {};
+
+  // 通义千问需要禁用thinking模式
+  if (
+    provider.id === 'qwen' ||
+    provider.apiUrl?.includes('dashscope.aliyuncs.com')
+  ) {
+    params.enable_thinking = false;
+  }
+
+  return params;
+}
+
+/**
+ * 判断是否为Gemini风格的API
+ */
+function isGeminiProvider(provider: OpenAIProvider): boolean {
+  return (
+    provider.providerType === 'gemini' ||
+    provider.id === 'Gemini' ||
+    provider.apiUrl?.includes('generativelanguage.googleapis.com')
+  );
+}
+
+/**
+ * 判断是否应该使用JSON模式
+ */
+function shouldUseJsonMode(provider: OpenAIProvider): boolean {
+  return provider.useJsonMode !== false;
+}
+
+/**
+ * 创建基础请求参数
+ */
+function createBaseParams(text: string[], provider: OpenAIProvider) {
+  const sysPrompt =
+    provider.systemPrompt || 'You are a professional subtitle translation tool';
+  const userPrompt = Array.isArray(text) ? text.join('\n') : text;
+
+  const baseParams = {
+    model: provider.modelName || 'gpt-3.5-turbo',
+    messages: [
+      { role: 'system', content: sysPrompt },
+      { role: 'user', content: userPrompt },
+    ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+    temperature: 0.3,
+    stream: false,
+    ...getProviderSpecificParams(provider),
+  };
+
+  return baseParams;
+}
+
+/**
+ * 使用Gemini风格的API（带zod schema解析）
+ */
+async function callWithGeminiStyle(
   openai: OpenAI,
   baseParams: any,
 ): Promise<string | undefined> {
@@ -31,89 +94,85 @@ async function callGeminiAPI(
 
     console.log('Gemini completion:', completion?.choices);
     const parsed = completion?.choices?.[0]?.message?.parsed;
-    return typeof parsed === 'object'
-      ? JSON.stringify(parsed)
-      : parsed?.toString();
+    if (parsed && typeof parsed === 'object') {
+      return JSON.stringify(parsed);
+    }
+    return parsed ? String(parsed) : undefined;
   } catch (parseError) {
     console.warn(
       'Gemini-style parse failed, falling back to regular API:',
       parseError,
     );
-    const fallbackCompletion = await openai.chat.completions.create({
+    // 回退到标准API
+    const fallbackCompletion = (await openai.chat.completions.create({
       ...baseParams,
       response_format: { type: 'json_object' },
-    });
+    })) as OpenAI.Chat.Completions.ChatCompletion;
     return fallbackCompletion?.choices?.[0]?.message?.content?.trim();
   }
 }
 
-async function callStandardAPI(
+/**
+ * 使用标准OpenAI API
+ */
+async function callWithStandardAPI(
   openai: OpenAI,
   baseParams: any,
   provider: OpenAIProvider,
 ): Promise<string | undefined> {
-  console.log('Using standard OpenAI API');
+  console.log('Using standard OpenAI-compatible API');
+
   const requestParams: any = { ...baseParams };
 
-  if (provider.useJsonMode !== false) {
+  // 添加JSON响应格式
+  if (shouldUseJsonMode(provider)) {
     requestParams.response_format = { type: 'json_object' };
 
-    if (provider.modelName && provider.providerType === 'openai') {
+    // 对于官方OpenAI API，添加schema
+    if (provider.providerType === 'openai' || provider.id === 'openai') {
       requestParams.response_format.schema = TRANSLATION_JSON_SCHEMA;
     }
   }
 
-  const completion = await openai.chat.completions.create(requestParams);
+  const completion = (await openai.chat.completions.create(
+    requestParams,
+  )) as OpenAI.Chat.Completions.ChatCompletion;
   console.log('Standard completion:', completion?.choices);
   return completion?.choices?.[0]?.message?.content?.trim();
 }
 
-function isGeminiProvider(provider: OpenAIProvider): boolean {
-  return (
-    provider.providerType === 'gemini' ||
-    provider.apiUrl?.includes('generativelanguage.googleapis.com')
-  );
-}
-
+/**
+ * 主要的翻译函数
+ */
 export async function translateWithOpenAI(
   text: string[],
   provider: OpenAIProvider,
-) {
+): Promise<string | undefined> {
   try {
+    console.log('Provider config:', {
+      id: provider.id,
+      apiUrl: provider.apiUrl,
+      modelName: provider.modelName,
+    });
+
     const openai = new OpenAI({
       baseURL: provider.apiUrl,
       apiKey: provider.apiKey,
     });
 
-    const sysPrompt =
-      provider.systemPrompt ||
-      'You are a professional subtitle translation tool';
-    const userPrompt = Array.isArray(text) ? text.join('\n') : text;
-    console.log('sysPrompt:', sysPrompt);
-    console.log('userPrompt:', userPrompt);
+    const baseParams = createBaseParams(text, provider);
+    console.log('Request params:', {
+      model: baseParams.model,
+      temperature: baseParams.temperature,
+      additionalParams: getProviderSpecificParams(provider),
+    });
 
-    // 根据provider类型确定是否使用beta API和zod格式
-    const isGeminiStyle = isGeminiProvider(provider);
-
-    // 创建基础请求参数
-    const baseParams = {
-      model: provider.modelName || 'gpt-3.5-turbo',
-      messages: [
-        { role: 'system', content: sysPrompt },
-        { role: 'user', content: userPrompt },
-      ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
-      temperature: 0.3,
-    };
-
-    let result: string | undefined;
-
-    if (isGeminiStyle && provider.useJsonMode !== false) {
-      result = await callGeminiAPI(openai, baseParams);
+    // 根据provider类型选择合适的API调用方式
+    if (isGeminiProvider(provider) && shouldUseJsonMode(provider)) {
+      return await callWithGeminiStyle(openai, baseParams);
     } else {
-      result = await callStandardAPI(openai, baseParams, provider);
+      return await callWithStandardAPI(openai, baseParams, provider);
     }
-
-    return result;
   } catch (error) {
     console.error('OpenAI translation error:', error);
     throw new Error(
