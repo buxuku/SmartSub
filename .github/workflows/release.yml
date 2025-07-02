@@ -34,7 +34,7 @@ jobs:
             artifact_suffix: macos-x64
 
           # Windows no-cuda
-          - os: windows-2019
+          - os: windows-2022
             arch: x64
             os_build_arg: win
             addon_name: addon-windows-no-cuda.node
@@ -43,7 +43,7 @@ jobs:
             artifact_suffix: windows-x64-nocuda-generic
 
           # Windows CUDA 11.8.0 optimized
-          - os: windows-2019
+          - os: windows-2022
             arch: x64
             os_build_arg: win
             addon_name: addon-windows-cuda-1180-optimized.node
@@ -52,7 +52,7 @@ jobs:
             artifact_suffix: windows-x64-cuda1180-optimized
 
           # Windows CUDA 11.8.0 generic
-          - os: windows-2019
+          - os: windows-2022
             arch: x64
             os_build_arg: win
             addon_name: addon-windows-cuda-1180-generic.node
@@ -61,7 +61,7 @@ jobs:
             artifact_suffix: windows-x64-cuda1180-generic
 
           # Windows CUDA 12.2.0 optimized
-          - os: windows-2019
+          - os: windows-2022
             arch: x64
             os_build_arg: win
             addon_name: addon-windows-cuda-1220-optimized.node
@@ -70,7 +70,7 @@ jobs:
             artifact_suffix: windows-x64-cuda1220-optimized
 
           # Windows CUDA 12.2.0 generic
-          - os: windows-2019
+          - os: windows-2022
             arch: x64
             os_build_arg: win
             addon_name: addon-windows-cuda-1220-generic.node
@@ -79,7 +79,7 @@ jobs:
             artifact_suffix: windows-x64-cuda1220-generic
 
           # Windows CUDA 12.4.1 optimized
-          - os: windows-2019
+          - os: windows-2022
             arch: x64
             os_build_arg: win
             addon_name: addon-windows-cuda-1241-optimized.node
@@ -88,7 +88,7 @@ jobs:
             artifact_suffix: windows-x64-cuda1241-optimized
 
           # Windows CUDA 12.4.1 generic
-          - os: windows-2019
+          - os: windows-2022
             arch: x64
             os_build_arg: win
             addon_name: addon-windows-cuda-1241-generic.node
