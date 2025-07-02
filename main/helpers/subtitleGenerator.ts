@@ -1,4 +1,3 @@
-import { dialog } from 'electron';
 import { exec } from 'child_process';
 import path from 'path';
 import fs from 'fs';
@@ -96,6 +95,26 @@ export async function generateSubtitleWithBuiltinWhisper(
     }
     const modelPath = `${getPath('modelsPath')}/ggml-${whisperModel}.bin`;
 
+    // VAD 模型路径 - 使用内置的 VAD 模型
+    const vadModelPath =
+      process.env.NODE_ENV === 'development'
+        ? path.join(process.cwd(), 'extraResources', 'ggml-silero-v5.1.2.bin')
+        : path.join(
+            process.resourcesPath,
+            'extraResources',
+            'ggml-silero-v5.1.2.bin',
+          );
+
+    // 获取VAD设置
+    const vadSettings = {
+      useVAD: settings.useVAD !== false, // 默认启用
+      vadThreshold: settings.vadThreshold || 0.5,
+      vadMinSpeechDuration: settings.vadMinSpeechDuration || 250,
+      vadMinSilenceDuration: settings.vadMinSilenceDuration || 100,
+      vadMaxSpeechDuration: settings.vadMaxSpeechDuration || Number.MAX_VALUE, // 0表示无限制
+      vadSpeechPad: settings.vadSpeechPad || 30,
+      vadSamplesOverlap: settings.vadSamplesOverlap || 0.1,
+    };
     const whisperParams = {
       language: sourceLanguage || 'auto',
       model: modelPath,
@@ -111,6 +130,15 @@ export async function generateSubtitleWithBuiltinWhisper(
       print_progress: true,
       prompt,
       max_context: +(maxContext ?? -1),
+      // VAD 参数
+      vad: vadSettings.useVAD,
+      vad_model: vadModelPath,
+      vad_threshold: vadSettings.vadThreshold,
+      vad_min_speech_duration_ms: vadSettings.vadMinSpeechDuration,
+      vad_min_silence_duration_ms: vadSettings.vadMinSilenceDuration,
+      vad_max_speech_duration_s: vadSettings.vadMaxSpeechDuration,
+      vad_speech_pad_ms: vadSettings.vadSpeechPad,
+      vad_samples_overlap: vadSettings.vadSamplesOverlap,
       progress_callback: (progress) => {
         console.log(`处理进度: ${progress}%`);
         // 更新UI显示进度
@@ -132,7 +160,7 @@ export async function generateSubtitleWithBuiltinWhisper(
     console.log(result, 'result');
 
     // 格式化字幕内容
-    const formattedSrt = formatSrtContent(result);
+    const formattedSrt = formatSrtContent(result?.transcription || []);
 
     // 写入格式化后的内容
     await fs.promises.writeFile(srtFile, formattedSrt);

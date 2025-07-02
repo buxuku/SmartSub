@@ -10,7 +10,6 @@ export type StoreType = {
   translationProviders: Provider[];
   userConfig: Record<string, any>;
   settings: {
-    checkUpdateOnStartup: boolean;
     whisperCommand: string;
     language: string;
     useLocalWhisper: boolean;
@@ -20,6 +19,14 @@ export type StoreType = {
     maxContext?: number;
     useCustomTempDir?: boolean;
     customTempDir?: string;
+    useVAD: boolean;
+    checkUpdateOnStartup: boolean;
+    vadThreshold: number;
+    vadMinSpeechDuration: number;
+    vadMinSilenceDuration: number;
+    vadMaxSpeechDuration: number;
+    vadSpeechPad: number;
+    vadSamplesOverlap: number;
   };
   providerVersion?: number;
   logs: LogEntry[];

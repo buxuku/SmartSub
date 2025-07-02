@@ -65,5 +65,21 @@
   "checkUpdateOnStartupDisabled": "Startup update checking disabled",
   "customTempDirPlaceholder": "Select custom temporary directory",
   "tempDirSaved": "Temporary directory saved successfully",
-  "useCustomTempDirEnabled": "Custom temporary directory enabled"
+  "useCustomTempDirEnabled": "Custom temporary directory enabled",
+  "vadSettings": "VAD (Voice Activity Detection) Settings",
+  "enableVad": "Enable VAD",
+  "enableVadTip": "Voice Activity Detection can improve transcription accuracy by automatically detecting speech segments and filtering out silence",
+  "vadThreshold": "VAD Threshold",
+  "vadThresholdTip": "Speech detection threshold (0.0-1.0). Higher values require stronger speech signals",
+  "vadMinSpeechDuration": "Minimum Speech Duration (ms)",
+  "vadMinSpeechDurationTip": "Minimum duration for a segment to be considered speech",
+  "vadMinSilenceDuration": "Minimum Silence Duration (ms)",
+  "vadMinSilenceDurationTip": "Minimum duration of silence to split speech segments",
+  "vadMaxSpeechDuration": "Maximum Speech Duration (s)",
+  "vadMaxSpeechDurationTip": "Maximum duration for a single speech segment. Use 0 for unlimited",
+  "vadSpeechPad": "Speech Padding (ms)",
+  "vadSpeechPadTip": "Padding added around detected speech segments",
+  "vadSamplesOverlap": "Samples Overlap",
+  "vadSamplesOverlapTip": "Overlap ratio between consecutive audio analysis windows (0.0-1.0)",
+  "vadSettingsSaved": "VAD settings saved successfully"
 }
