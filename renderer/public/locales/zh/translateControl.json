@@ -35,5 +35,7 @@
   "ollamaApiUrlTips": "本地Ollama API 地址，请使用 chat 接口， 一般为 http://localhost:11434/api/chat",
   "DeerApiUrlTips": "DeerAPI 聚合 AI 平台 ，(支持 grok3)密钥，速度飞快，极其便宜，可支付宝/微信充值。 可前往 <a href='https://api.deerapi.com/register?aff=QvHM' style='color: blue'>DeerAPI</a> 申请",
   "testing": "测试中...",
-  "searchModel": "搜索模型"
+  "searchModel": "搜索模型",
+  "googleApiKeyTips": "Google Cloud Translation API 密钥，可在 Google Cloud Console 中获取",
+  "batchSizeGoogleTips": "Google Translate 批处理大小，建议 50 以下以避免超过请求限制"
 }

@@ -9,10 +9,16 @@
   "provider": {
     "baidu": "Baidu",
     "volc": "Volcano",
-    "deeplx": "DeepLx",
-    "ollama": "Ollama",
     "azure": "Azure Translator",
-    "aliyun": "Aliyun Translator"
+    "aliyun": "Aliyun Translator",
+    "Google Translate": "Google Translate",
+    "DeepLX": "DeepLX",
+    "Ollama": "Ollama",
+    "Deepseek": "Deepseek",
+    "Azure OpenAI": "Azure OpenAI",
+    "DeerAPI": "DeerAPI",
+    "Gemini": "Gemini",
+    "通义千问": "Tongyi Qianwen"
   },
   "language": {
     "zh": "Chinese",
