@@ -1,6 +1,7 @@
 import { TranslationConfig, TranslationResult, Subtitle } from '../types';
 import { DEFAULT_BATCH_SIZE } from '../constants';
 import { logMessage } from '../../helpers/storeManager';
+import { isConfigurationError } from '../utils/error';
 
 export async function handleAPIBatchTranslation(
   subtitles: Subtitle[],
@@ -58,6 +59,13 @@ export async function handleAPIBatchTranslation(
         results.push(...batchResults);
         batchSuccess = true;
       } catch (error) {
+        // 检查是否是配置错误，如果是则直接抛出，不进行重试
+        if (isConfigurationError(error)) {
+          throw new Error(
+            `翻译服务配置不完整，请检查相关配置: ${error.message}`,
+          );
+        }
+
         retryCount++;
         if (retryCount <= maxRetries) {
           logMessage(
