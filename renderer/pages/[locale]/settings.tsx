@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
-import { Globe, Trash2, Cog, HelpCircle, Eraser } from 'lucide-react';
+import { Globe, Trash2, Cog, HelpCircle, Eraser, Activity } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import {
   Tooltip,
@@ -81,6 +81,13 @@ const Settings = () => {
   const [customTempDir, setCustomTempDir] = useState('');
   const [useCustomTempDir, setUseCustomTempDir] = useState(false);
   const [checkUpdateOnStartup, setCheckUpdateOnStartup] = useState(true);
+  const [useVAD, setUseVAD] = useState(true);
+  const [vadThreshold, setVADThreshold] = useState(0.5);
+  const [vadMinSpeechDuration, setVADMinSpeechDuration] = useState(250);
+  const [vadMinSilenceDuration, setVADMinSilenceDuration] = useState(100);
+  const [vadMaxSpeechDuration, setVADMaxSpeechDuration] = useState(0);
+  const [vadSpeechPad, setVADSpeechPad] = useState(30);
+  const [vadSamplesOverlap, setVADSamplesOverlap] = useState(0.1);
   const form = useForm({
     defaultValues: {
       language: router.locale,
@@ -100,6 +107,13 @@ const Settings = () => {
         setUseCustomTempDir(settings.useCustomTempDir || false);
         setCustomTempDir(settings.customTempDir || '');
         setCheckUpdateOnStartup(settings.checkUpdateOnStartup !== false);
+        setUseVAD(settings.useVAD !== false);
+        setVADThreshold(settings.vadThreshold || 0.5);
+        setVADMinSpeechDuration(settings.vadMinSpeechDuration || 250);
+        setVADMinSilenceDuration(settings.vadMinSilenceDuration || 100);
+        setVADMaxSpeechDuration(settings.vadMaxSpeechDuration || 0);
+        setVADSpeechPad(settings.vadSpeechPad || 30);
+        setVADSamplesOverlap(settings.vadSamplesOverlap || 0.1);
       }
 
       // 获取临时目录路径
@@ -238,6 +252,36 @@ const Settings = () => {
       }
     } catch (error) {
       toast.error(t('cacheClearedFailed'));
+    }
+  };
+
+  const handleVADChange = async (checked: boolean) => {
+    setUseVAD(checked);
+    try {
+      await window?.ipc?.invoke('setSettings', { useVAD: checked });
+      toast.success(t('vadSettingsSaved'));
+    } catch (error) {
+      toast.error(t('saveFailed'));
+    }
+  };
+
+  const handleVADSettingChange = async (setting: string, value: number) => {
+    const settingMap = {
+      vadThreshold: setVADThreshold,
+      vadMinSpeechDuration: setVADMinSpeechDuration,
+      vadMinSilenceDuration: setVADMinSilenceDuration,
+      vadMaxSpeechDuration: setVADMaxSpeechDuration,
+      vadSpeechPad: setVADSpeechPad,
+      vadSamplesOverlap: setVADSamplesOverlap,
+    };
+
+    settingMap[setting]?.(value);
+
+    try {
+      await window?.ipc?.invoke('setSettings', { [setting]: value });
+      toast.success(t('vadSettingsSaved'));
+    } catch (error) {
+      toast.error(t('saveFailed'));
     }
   };
 
@@ -436,6 +480,209 @@ const Settings = () => {
               )}
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Activity className="mr-2" />
+            {t('vadSettings')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span>{t('enableVad')}</span>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{t('enableVadTip')}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <Switch checked={useVAD} onCheckedChange={handleVADChange} />
+          </div>
+
+          {useVAD && (
+            <>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span>{t('vadThreshold')}</span>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('vadThresholdTip')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="1"
+                  value={vadThreshold}
+                  onChange={(e) =>
+                    handleVADSettingChange(
+                      'vadThreshold',
+                      Number(e.target.value),
+                    )
+                  }
+                  className="font-mono text-sm"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span>{t('vadMinSpeechDuration')}</span>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('vadMinSpeechDurationTip')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Input
+                  type="number"
+                  min="0"
+                  value={vadMinSpeechDuration}
+                  onChange={(e) =>
+                    handleVADSettingChange(
+                      'vadMinSpeechDuration',
+                      Number(e.target.value),
+                    )
+                  }
+                  className="font-mono text-sm"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span>{t('vadMinSilenceDuration')}</span>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('vadMinSilenceDurationTip')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Input
+                  type="number"
+                  min="0"
+                  value={vadMinSilenceDuration}
+                  onChange={(e) =>
+                    handleVADSettingChange(
+                      'vadMinSilenceDuration',
+                      Number(e.target.value),
+                    )
+                  }
+                  className="font-mono text-sm"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span>{t('vadMaxSpeechDuration')}</span>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('vadMaxSpeechDurationTip')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Input
+                  type="number"
+                  min="0"
+                  value={vadMaxSpeechDuration}
+                  onChange={(e) =>
+                    handleVADSettingChange(
+                      'vadMaxSpeechDuration',
+                      Number(e.target.value),
+                    )
+                  }
+                  className="font-mono text-sm"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span>{t('vadSpeechPad')}</span>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('vadSpeechPadTip')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Input
+                  type="number"
+                  min="0"
+                  value={vadSpeechPad}
+                  onChange={(e) =>
+                    handleVADSettingChange(
+                      'vadSpeechPad',
+                      Number(e.target.value),
+                    )
+                  }
+                  className="font-mono text-sm"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span>{t('vadSamplesOverlap')}</span>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{t('vadSamplesOverlapTip')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="1"
+                  value={vadSamplesOverlap}
+                  onChange={(e) =>
+                    handleVADSettingChange(
+                      'vadSamplesOverlap',
+                      Number(e.target.value),
+                    )
+                  }
+                  className="font-mono text-sm"
+                />
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 

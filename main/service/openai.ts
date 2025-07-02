@@ -148,6 +148,9 @@ export async function translateWithOpenAI(
   text: string[],
   provider: OpenAIProvider,
 ): Promise<string | undefined> {
+  if (!provider.apiKey) {
+    throw new Error('OpenAI API key is required');
+  }
   try {
     console.log('Provider config:', {
       id: provider.id,

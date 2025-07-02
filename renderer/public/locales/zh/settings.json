@@ -65,5 +65,21 @@
   "checkUpdateOnStartupDisabled": "已禁用启动时检查更新",
   "customTempDirPlaceholder": "选择自定义临时目录",
   "tempDirSaved": "临时目录保存成功",
-  "useCustomTempDirEnabled": "已启用自定义临时目录"
+  "useCustomTempDirEnabled": "已启用自定义临时目录",
+  "vadSettings": "VAD (语音活动检测) 设置",
+  "enableVad": "启用 VAD",
+  "enableVadTip": "语音活动检测可以通过自动检测语音片段并过滤静音来提高转录准确性",
+  "vadThreshold": "VAD 阈值",
+  "vadThresholdTip": "语音检测阈值 (0.0-1.0)。较高值需要更强的语音信号",
+  "vadMinSpeechDuration": "最小语音持续时间 (毫秒)",
+  "vadMinSpeechDurationTip": "片段被认为是语音的最小持续时间",
+  "vadMinSilenceDuration": "最小静音持续时间 (毫秒)",
+  "vadMinSilenceDurationTip": "分割语音片段的最小静音持续时间",
+  "vadMaxSpeechDuration": "最大语音持续时间 (秒)",
+  "vadMaxSpeechDurationTip": "单个语音片段的最大持续时间。使用 0 表示无限制",
+  "vadSpeechPad": "语音填充 (毫秒)",
+  "vadSpeechPadTip": "在检测到的语音片段周围添加的填充",
+  "vadSamplesOverlap": "样本重叠",
+  "vadSamplesOverlapTip": "连续音频分析窗口之间的重叠比率 (0.0-1.0)",
+  "vadSettingsSaved": "VAD 设置保存成功"
 }
