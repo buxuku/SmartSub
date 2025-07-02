@@ -8,12 +8,17 @@
   "newVersionAvailable": "有新版本可用",
   "provider": {
     "baidu": "百度翻译",
-    "volc": "火山翻译",
-    "deeplx": "DeepLx",
-    "ollama": "Ollama",
-    "azure": "Azure 翻译器",
     "aliyun": "阿里云翻译",
-    "qwen": "通义千问"
+    "Google Translate": "谷歌翻译",
+    "volc": "火山翻译",
+    "DeepLX": "DeepLX",
+    "azure": "微软翻译",
+    "Ollama": "Ollama",
+    "Deepseek": "深度求索",
+    "Azure OpenAI": "Azure OpenAI",
+    "DeerAPI": "DeerAPI",
+    "Gemini": "Gemini",
+    "通义千问": "通义千问"
   },
   "language": {
     "zh": "中文",

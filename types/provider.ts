@@ -89,6 +89,30 @@ export const PROVIDER_TYPES: ProviderType[] = [
     ],
   },
   {
+    id: 'google',
+    name: 'Google Translate',
+    isBuiltin: true,
+    isAi: false,
+    icon: '🇬',
+    fields: [
+      {
+        key: 'apiKey',
+        label: 'API Key',
+        type: 'password',
+        required: true,
+        tips: 'googleApiKeyTips',
+      },
+      {
+        key: 'batchSize',
+        label: 'Batch Size',
+        type: 'number',
+        required: true,
+        defaultValue: 50,
+        tips: 'batchSizeGoogleTips',
+      },
+    ],
+  },
+  {
     id: 'aliyun',
     name: 'aliyun',
     isBuiltin: true,

@@ -1,7 +1,7 @@
 {
   "translateControl": "Translation Control",
   "translationServices": "Translation Services",
-  "builtinProviders": "Builtin Providers",
+  "builtinProviders": "Built-in Providers",
   "customProviders": "Custom Providers",
   "addCustomProvider": "Add Custom OpenAI Service",
   "providerName": "Provider Name",
@@ -13,7 +13,7 @@
   "cancel": "Cancel",
   "confirmDelete": "Confirm Delete",
   "confirmDeleteMessage": "Are you sure you want to delete this provider?",
-  "enterProviderName": "Please enter provider name",
+  "enterProviderName": "Enter provider name",
   "addProviderSuccess": "Add successfully, please configure the provider information in the right panel",
   "batchSize": "Batch Size",
   "Batch Size": "Batch Size",
@@ -33,5 +33,7 @@
   "ollamaApiUrlTips": "Local Ollama API address, please use the chat interface, usually http://localhost:11434/api/chat",
   "DeerApiUrlTips": "Get API keys with lightning-fast speeds at incredibly low prices. Easy top-up via Alipay/WeChat Pay. Visit <a href='https://api.deerapi.com/register?aff=QvHM' style='color: blue'>DeerAPI</a> to apply!",
   "testing": "Testing...",
-  "searchModel": "Search Model"
+  "searchModel": "Search Model",
+  "googleApiKeyTips": "Google Cloud Translation API key, can be obtained from Google Cloud Console",
+  "batchSizeGoogleTips": "Google Translate batch size, recommended under 50 to avoid request limits"
 }
