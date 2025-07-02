@@ -9,6 +9,7 @@ import { logMessage } from '../../helpers/storeManager';
 import { defaultSystemPrompt, defaultUserPrompt } from '../../../types';
 import { toJson } from 'really-relaxed-json';
 import { jsonrepair } from 'jsonrepair';
+import { isConfigurationError } from '../utils/error';
 
 export async function handleAIBatchTranslation(
   subtitles: Subtitle[],
@@ -110,6 +111,13 @@ export async function handleAIBatchTranslation(
           );
         }
       } catch (error) {
+        // 检查是否是配置错误，如果是则直接抛出，不进行重试
+        if (isConfigurationError(error)) {
+          throw new Error(
+            `翻译服务配置不完整，请检查相关配置: ${error.message}`,
+          );
+        }
+
         retryCount++;
         if (retryCount <= maxRetries) {
           logMessage(
