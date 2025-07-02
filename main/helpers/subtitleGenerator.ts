@@ -7,6 +7,7 @@ import { checkCudaSupport } from './cudaUtils';
 import { logMessage, store } from './storeManager';
 import { formatSrtContent } from './fileUtils';
 import { IFiles } from '../../types';
+import { getExtraResourcesPath } from './utils';
 
 /**
  * 使用本地Whisper命令行工具生成字幕
@@ -96,14 +97,10 @@ export async function generateSubtitleWithBuiltinWhisper(
     const modelPath = `${getPath('modelsPath')}/ggml-${whisperModel}.bin`;
 
     // VAD 模型路径 - 使用内置的 VAD 模型
-    const vadModelPath =
-      process.env.NODE_ENV === 'development'
-        ? path.join(process.cwd(), 'extraResources', 'ggml-silero-v5.1.2.bin')
-        : path.join(
-            process.resourcesPath,
-            'extraResources',
-            'ggml-silero-v5.1.2.bin',
-          );
+    const vadModelPath = path.join(
+      getExtraResourcesPath(),
+      'ggml-silero-v5.1.2.bin',
+    );
 
     // 获取VAD设置
     const vadSettings = {
