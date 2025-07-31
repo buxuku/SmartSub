@@ -424,8 +424,8 @@ export const ParameterPreviewSystemDemo: React.FC = () => {
             <CardHeader>
               <CardTitle>System Integration</CardTitle>
               <p className="text-muted-foreground">
-                Demonstrates seamless integration between preview, editor, and
-                template systems
+                Demonstrates seamless integration between preview and editor
+                systems
               </p>
             </CardHeader>
             <CardContent className="space-y-6">
