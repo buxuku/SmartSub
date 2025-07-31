@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from './ui/dialog';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import { useTranslation } from 'next-i18next';
@@ -46,6 +52,10 @@ export function LogDialog({ open, onOpenChange }) {
       <DialogContent className="max-w-3xl max-h-[80vh]">
         <DialogHeader>
           <DialogTitle>{t('logs')}</DialogTitle>
+          <DialogDescription>
+            View application logs and system messages for debugging and
+            monitoring.
+          </DialogDescription>
         </DialogHeader>
         <ScrollArea ref={scrollRef} className="h-[60vh]">
           <div className="space-y-2 p-4 w-[700px] overflow-x-scroll">

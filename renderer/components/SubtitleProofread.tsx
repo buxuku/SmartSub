@@ -4,6 +4,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -93,6 +94,9 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
       <DialogContent className="max-w-6xl h-[920px] flex flex-col">
         <DialogHeader>
           <DialogTitle>{t('subtitleProofread')}</DialogTitle>
+          <DialogDescription>
+            Review and edit translated subtitles with video playback support.
+          </DialogDescription>
         </DialogHeader>
 
         <div

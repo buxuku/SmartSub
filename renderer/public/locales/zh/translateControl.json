@@ -37,5 +37,12 @@
   "testing": "测试中...",
   "searchModel": "搜索模型",
   "googleApiKeyTips": "Google Cloud Translation API 密钥，可在 Google Cloud Console 中获取",
-  "batchSizeGoogleTips": "Google Translate 批处理大小，建议 50 以下以避免超过请求限制"
+  "batchSizeGoogleTips": "Google Translate 批处理大小，建议 50 以下以避免超过请求限制",
+  "customParameters": "自定义参数",
+  "configureParameters": "配置参数",
+  "customParameterConfiguration": "自定义参数配置",
+  "customParametersTip": "为此服务商配置额外的请求头和请求体参数",
+  "translationResult": "翻译结果",
+  "provider": "提供商",
+  "model": "模型"
 }

@@ -137,7 +137,7 @@ export async function testTranslation(
   provider: Provider,
   sourceLanguage: string,
   targetLanguage: string,
-): Promise<string> {
+): Promise<{ translation: string; analysis?: any }> {
   const testSubtitle = {
     id: '1',
     startEndTime: '00:00:01,000 --> 00:00:04,000',
@@ -150,6 +150,7 @@ export async function testTranslation(
       throw new Error(`Unknown translation provider: ${provider.type}`);
     }
 
+    const startTime = Date.now();
     const results = await translateWithProvider(
       provider,
       [testSubtitle],
@@ -158,11 +159,24 @@ export async function testTranslation(
       translator,
     );
 
+    let translation: string;
     if (provider.isAi && provider.useBatchTranslation) {
-      return (results as string[])[0];
+      translation = (results as string[])[0];
     } else {
-      return (results as TranslationResult[])[0].targetContent;
+      translation = (results as TranslationResult[])[0].targetContent;
     }
+
+    // For now, return basic result until we implement full analysis
+    // TODO: Add thinking mode analysis when we have access to raw API response
+    return {
+      translation,
+      analysis: {
+        response_time_ms: Date.now() - startTime,
+        provider_name: provider.name,
+        model_name: provider.modelName,
+        test_completed: true,
+      },
+    };
   } catch (error) {
     throw error;
   }

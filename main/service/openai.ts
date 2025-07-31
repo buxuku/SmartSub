@@ -4,6 +4,8 @@ import {
   TRANSLATION_JSON_SCHEMA,
   TranslationResultSchema,
 } from '../translate/constants/schema';
+import { ParameterProcessor } from '../helpers/parameterProcessor';
+import { ExtendedProvider } from '../../types/provider';
 
 type OpenAIProvider = {
   apiUrl: string;
@@ -17,22 +19,68 @@ type OpenAIProvider = {
 };
 
 /**
- * 获取特定provider的额外参数
+ * Convert OpenAIProvider to ExtendedProvider for parameter processing
+ */
+function toExtendedProvider(provider: OpenAIProvider): ExtendedProvider {
+  return {
+    id: provider.id || 'unknown',
+    name: provider.id || 'Unknown Provider',
+    type: provider.providerType || 'openai',
+    isAi: true,
+    apiKey: provider.apiKey,
+    apiUrl: provider.apiUrl,
+    modelName: provider.modelName,
+    // Include any additional properties from the original provider
+    ...provider,
+  } as ExtendedProvider;
+}
+
+/**
+ * 获取特定provider的额外参数 (Enhanced with Parameter Processor)
  */
 function getProviderSpecificParams(
   provider: OpenAIProvider,
 ): Record<string, any> {
-  const params: Record<string, any> = {};
+  // Convert to ExtendedProvider for parameter processing
+  const extendedProvider = toExtendedProvider(provider);
 
+  // Base parameters for backward compatibility
+  const baseParams: Record<string, any> = {};
+
+  // Original hard-coded logic (maintained for backward compatibility)
   // 通义千问需要禁用thinking模式
   if (
     provider.id === 'qwen' ||
     provider.apiUrl?.includes('dashscope.aliyuncs.com')
   ) {
-    params.enable_thinking = false;
+    baseParams.enable_thinking = false;
   }
 
-  return params;
+  // Process custom parameters if available
+  if (extendedProvider.customParameters) {
+    console.log('Processing custom parameters for provider:', provider.id);
+    const processed = ParameterProcessor.processCustomParameters(
+      extendedProvider,
+      baseParams,
+    );
+
+    // Log parameter processing results
+    if (processed.appliedParameters.length > 0) {
+      console.log('Applied parameters:', processed.appliedParameters);
+    }
+    if (processed.skippedParameters.length > 0) {
+      console.log('Skipped parameters:', processed.skippedParameters);
+    }
+    if (processed.validationErrors.length > 0) {
+      console.warn('Parameter validation errors:', processed.validationErrors);
+    }
+
+    // Return the processed body parameters (headers will be handled separately)
+    return processed.body;
+  }
+
+  // Fallback to base parameters if no custom parameters
+  return baseParams;
 }
 
 /**
@@ -54,7 +102,31 @@ function shouldUseJsonMode(provider: OpenAIProvider): boolean {
 }
 
 /**
- * 创建基础请求参数
+ * 获取自定义HTTP头部参数
+ */
+function getCustomHeaders(provider: OpenAIProvider): Record<string, string> {
+  const extendedProvider = toExtendedProvider(provider);
+
+  if (extendedProvider.customParameters) {
+    const processed = ParameterProcessor.processCustomParameters(
+      extendedProvider,
+      {},
+    );
+
+    // Convert header values to strings for HTTP headers
+    const headers: Record<string, string> = {};
+    Object.entries(processed.headers).forEach(([key, value]) => {
+      headers[key] = String(value);
+    });
+
+    return headers;
+  }
+
+  return {};
+}
+
+/**
+ * 创建基础请求参数 (Enhanced with Parameter Processor)
  */
 function createBaseParams(text: string[], provider: OpenAIProvider) {
   const sysPrompt =
@@ -142,7 +214,7 @@ async function callWithStandardAPI(
 }
 
 /**
- * 主要的翻译函数
+ * 主要的翻译函数 (Enhanced with Parameter Processor)
  */
 export async function translateWithOpenAI(
   text: string[],
@@ -158,17 +230,50 @@ export async function translateWithOpenAI(
       modelName: provider.modelName,
     });
 
+    // Get custom headers for the request
+    const customHeaders = getCustomHeaders(provider);
+
     const openai = new OpenAI({
       baseURL: provider.apiUrl,
       apiKey: provider.apiKey,
+      defaultHeaders: {
+        ...customHeaders, // Apply custom headers from parameter processor
+      },
     });
 
     const baseParams = createBaseParams(text, provider);
+
+    // Get detailed parameter processing information
+    const extendedProvider = toExtendedProvider(provider);
+    const processedParams = extendedProvider.customParameters
+      ? ParameterProcessor.processCustomParameters(extendedProvider, {})
+      : null;
+
     console.log('Request params:', {
       model: baseParams.model,
       temperature: baseParams.temperature,
       additionalParams: getProviderSpecificParams(provider),
+      customHeaders:
+        Object.keys(customHeaders).length > 0 ? customHeaders : 'none',
     });
+
+    // Enhanced logging for custom parameters
+    if (processedParams) {
+      console.log('Custom parameter processing results:', {
+        appliedParameters: processedParams.appliedParameters,
+        skippedParameters: processedParams.skippedParameters,
+        validationErrors:
+          processedParams.validationErrors.length > 0
+            ? processedParams.validationErrors
+            : 'none',
+        finalBodyParams:
+          Object.keys(processedParams.body).length > 0
+            ? processedParams.body
+            : 'none',
+      });
+    } else {
+      console.log('No custom parameters configured for this provider');
+    }
 
     // 根据provider类型选择合适的API调用方式
     if (isGeminiProvider(provider) && shouldUseJsonMode(provider)) {

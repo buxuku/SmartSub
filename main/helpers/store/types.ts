@@ -1,4 +1,4 @@
-import { Provider } from '../../../types/provider';
+import { Provider, CustomParameterConfig } from '../../../types/provider';
 
 export type LogEntry = {
   timestamp: number;
@@ -30,5 +30,6 @@ export type StoreType = {
   };
   providerVersion?: number;
   logs: LogEntry[];
+  customParameters?: Record<string, CustomParameterConfig>;
   [key: string]: any;
 };

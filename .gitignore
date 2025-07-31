@@ -8,3 +8,8 @@ dist
 .vscode
 .env
 docs/.docusaurus
+.claude
+.cursor
+.husky
+Project
+sample
