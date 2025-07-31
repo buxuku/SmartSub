@@ -18,6 +18,12 @@ Smart subtitle generation and multilingual translation solution for video/audio 
 
 ## 💥 Features
 
+### Add Custom Parameters Function
+
+The Dynamic Parameter System extends SmartSub's existing provider configuration architecture to support user-configurable AI model parameters without code modification. The system introduces a flexible parameter management interface that seamlessly integrates with the current Electron + Next.js architecture, leveraging existing form management, storage, and IPC communication patterns.
+
+## v2.5.2 Version
+
 This application retains all the features of the original [VideoSubtitleGenerator](https://github.com/buxuku/VideoSubtitleGenerator) command-line tool, with the following enhancements:
 
 - Batch processing of video/audio/subtitle files
