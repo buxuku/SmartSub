@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Eye, EyeOff, Search, Check } from 'lucide-react';
+import { Eye, EyeOff, Search, Check, Settings2 } from 'lucide-react';
 import { ProviderField } from '../../types';
 import { useTranslation } from 'next-i18next';
 import { Switch } from '@/components/ui/switch';
@@ -25,6 +25,15 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { CustomParameterEditor } from './CustomParameterEditor';
 import axios from 'axios';
 
 interface ProviderFormProps {
@@ -33,6 +42,7 @@ interface ProviderFormProps {
   onChange: (key: string, value: string | boolean | number) => void;
   showPassword: Record<string, boolean>;
   onTogglePassword: (key: string) => void;
+  providerId?: string;
 }
 
 export const ProviderForm: React.FC<ProviderFormProps> = ({
@@ -41,6 +51,7 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
   onChange,
   showPassword,
   onTogglePassword,
+  providerId = '',
 }) => {
   const { t } = useTranslation('translateControl');
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
@@ -326,6 +337,42 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
           </div>
         );
       })}
+
+      {/* Custom Parameter Editor Section */}
+      {providerId && (
+        <div className="space-y-2 pt-4 border-t">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium">
+              {t('customParameters')}
+            </label>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex items-center gap-2"
+                >
+                  <Settings2 className="h-4 w-4" />
+                  {t('configureParameters')}
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl max-h-[80vh] overflow-auto">
+                <DialogHeader>
+                  <DialogTitle>
+                    {t('customParameterConfiguration')} - {providerId}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Configure custom headers and body parameters for this AI
+                    provider.
+                  </DialogDescription>
+                </DialogHeader>
+                <CustomParameterEditor providerId={providerId} />
+              </DialogContent>
+            </Dialog>
+          </div>
+          <p className="text-xs text-gray-500">{t('customParametersTip')}</p>
+        </div>
+      )}
     </div>
   );
 };

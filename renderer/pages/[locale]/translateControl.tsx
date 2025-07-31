@@ -18,6 +18,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -136,8 +137,28 @@ const TranslateControl: React.FC = () => {
         targetLanguage: 'zh', // 默认使用中文作为目标语言
       });
 
+      // Handle enhanced result format
+      const translation =
+        typeof result === 'string' ? result : result.translation;
+      const analysis = typeof result === 'object' ? result.analysis : null;
+
+      // Create enhanced success message
+      let description = `${t('translationResult')}: "${translation}"`;
+
+      if (analysis) {
+        const responseTime = analysis.response_time_ms
+          ? ` (${(analysis.response_time_ms / 1000).toFixed(2)}s)`
+          : '';
+        description += `\n${t('provider')}: ${analysis.provider_name}${responseTime}`;
+
+        if (analysis.model_name) {
+          description += `\n${t('model')}: ${analysis.model_name}`;
+        }
+      }
+
       toast.success(t('testSuccess'), {
-        description: result,
+        description,
+        duration: 5000, // Show longer to read analysis
       });
     } catch (error) {
       toast.error(t('testFailed'), {
@@ -273,6 +294,7 @@ const TranslateControl: React.FC = () => {
                   onChange={handleInputChange}
                   showPassword={showPassword}
                   onTogglePassword={togglePasswordVisibility}
+                  providerId={selectedProvider || ''}
                 />
               </CardContent>
             </Card>
@@ -285,6 +307,10 @@ const TranslateControl: React.FC = () => {
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle>{t('addCustomProvider')}</DialogTitle>
+            <DialogDescription>
+              Create a new custom translation provider with your preferred
+              settings.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">

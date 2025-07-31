@@ -9,6 +9,8 @@ import { setupSystemInfoManager } from './helpers/systemInfoManager';
 import { setupStoreHandlers, store } from './helpers/storeManager';
 import { setupTaskManager } from './helpers/taskManager';
 import { setupAutoUpdater } from './helpers/updater';
+import { setupParameterHandlers } from './helpers/ipcParameterHandlers';
+import { configurationManager } from './service/configurationManager';
 
 //控制台出现中文乱码，需要去node_modules\electron\cli.js中修改启动代码页
 
@@ -36,6 +38,15 @@ if (isProd) {
   });
 
   setupStoreHandlers();
+  setupParameterHandlers();
+
+  // Initialize configuration manager
+  try {
+    await configurationManager.initialize();
+    console.log('Configuration Manager initialized');
+  } catch (error) {
+    console.error('Failed to initialize Configuration Manager:', error);
+  }
 
   const settings = store.get('settings');
   const userLanguage = settings?.language || 'zh'; // 默认为中文

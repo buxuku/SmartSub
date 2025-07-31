@@ -34,6 +34,59 @@ export type Provider = {
   [key: string]: any;
 };
 
+export type ParameterValue = string | number | boolean | object | any[];
+
+export interface CustomParameterConfig {
+  headerParameters: Record<string, ParameterValue>;
+  bodyParameters: Record<string, ParameterValue>;
+  configVersion: string;
+  lastModified: number;
+}
+
+export interface ExtendedProvider extends Provider {
+  customParameters?: CustomParameterConfig;
+}
+
+export interface ParameterDefinition {
+  key: string;
+  type: 'string' | 'integer' | 'float' | 'boolean' | 'object' | 'array';
+  category: 'core' | 'behavior' | 'response' | 'provider' | 'performance';
+  required: boolean;
+  defaultValue?: ParameterValue;
+  validation?: ValidationRule;
+  description: string;
+  providerSupport: string[];
+}
+
+export interface ValidationRule {
+  min?: number;
+  max?: number;
+  enum?: any[];
+  pattern?: string;
+  dependencies?: Record<string, any>;
+}
+
+export type ParameterCategory =
+  | 'provider'
+  | 'performance'
+  | 'quality'
+  | 'experimental';
+
+export interface ProcessedParameters {
+  headers: Record<string, string | number>;
+  body: Record<string, any>;
+  appliedParameters: string[];
+  skippedParameters: string[];
+  validationErrors: ValidationError[];
+}
+
+export interface ValidationError {
+  key: string;
+  type: 'type' | 'range' | 'format' | 'dependency' | 'system';
+  message: string;
+  suggestion?: string;
+}
+
 export const defaultUserPrompt = '${content}';
 export const defaultSystemPrompt = `# Role: 资深翻译专家
 你是一位经验丰富的字幕翻译专家,精通\${targetLanguage}的翻译,擅长将视频字幕译成流畅易懂的\${targetLanguage}。

@@ -6,6 +6,7 @@
     "baseUrl": ".",
     "paths": {
       "@/components/*": ["components/*"],
+      "@/lib/*": ["lib/*"],
       "lib/utils": ["lib/utils"],
       "utils": ["lib/utils"],
       "renderer/lib/utils": ["lib/utils"]

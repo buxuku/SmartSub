@@ -35,5 +35,12 @@
   "testing": "Testing...",
   "searchModel": "Search Model",
   "googleApiKeyTips": "Google Cloud Translation API key, can be obtained from Google Cloud Console",
-  "batchSizeGoogleTips": "Google Translate batch size, recommended under 50 to avoid request limits"
+  "batchSizeGoogleTips": "Google Translate batch size, recommended under 50 to avoid request limits",
+  "customParameters": "Custom Parameters",
+  "configureParameters": "Configure Parameters",
+  "customParameterConfiguration": "Custom Parameter Configuration",
+  "customParametersTip": "Configure additional headers and body parameters for this provider",
+  "translationResult": "Translation Result",
+  "provider": "Provider",
+  "model": "Model"
 }
