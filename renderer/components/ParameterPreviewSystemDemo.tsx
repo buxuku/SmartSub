@@ -11,8 +11,7 @@ import {
   PreviewRequest,
 } from './ParameterPreviewSystem';
 import { CustomParameterEditor } from './CustomParameterEditor';
-import { ParameterTemplateManager } from './ParameterTemplateManager';
-import { CustomParameterConfig, ParameterTemplate } from '../../types/provider';
+import { CustomParameterConfig } from '../../types/provider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,7 +31,6 @@ import {
   Zap,
   Code,
   Send,
-  Sparkles,
   Activity,
   FileText,
 } from 'lucide-react';
@@ -129,16 +127,6 @@ export const ParameterPreviewSystemDemo: React.FC = () => {
   // Handle configuration changes
   const handleConfigChange = (config: CustomParameterConfig) => {
     setCurrentConfig(config);
-  };
-
-  // Handle template application
-  const handleTemplateApply = (template: ParameterTemplate) => {
-    setCurrentConfig({
-      headerParameters: template.headerParameters,
-      bodyParameters: template.bodyParameters,
-      configVersion: '1.0.0',
-      lastModified: Date.now(),
-    });
   };
 
   // Handle request sending
@@ -299,7 +287,7 @@ export const ParameterPreviewSystemDemo: React.FC = () => {
 
       {/* Main Interface */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="preview" className="flex items-center gap-2">
             <Eye className="w-4 h-4" />
             Preview System
@@ -307,10 +295,6 @@ export const ParameterPreviewSystemDemo: React.FC = () => {
           <TabsTrigger value="editor" className="flex items-center gap-2">
             <Settings className="w-4 h-4" />
             Parameter Editor
-          </TabsTrigger>
-          <TabsTrigger value="templates" className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4" />
-            Templates
           </TabsTrigger>
           <TabsTrigger value="history" className="flex items-center gap-2">
             <Activity className="w-4 h-4" />
@@ -350,25 +334,6 @@ export const ParameterPreviewSystemDemo: React.FC = () => {
                 onSave={() =>
                   console.log('Configuration saved:', currentConfig)
                 }
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="templates" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Parameter Templates</CardTitle>
-              <p className="text-muted-foreground">
-                Apply pre-configured templates to quickly set up parameters for{' '}
-                {currentProvider?.name}.
-              </p>
-            </CardHeader>
-            <CardContent>
-              <ParameterTemplateManager
-                providerId={selectedProvider}
-                currentConfig={currentConfig}
-                onTemplateApply={handleTemplateApply}
               />
             </CardContent>
           </Card>
@@ -529,15 +494,6 @@ export const ParameterPreviewSystemDemo: React.FC = () => {
                     </p>
                   </div>
                   <div className="p-4 border rounded-lg">
-                    <h4 className="font-medium mb-2">
-                      ⚡ Template Integration
-                    </h4>
-                    <p className="text-sm text-muted-foreground">
-                      Apply templates instantly and see the results in the
-                      preview. Seamless workflow from template to request.
-                    </p>
-                  </div>
-                  <div className="p-4 border rounded-lg">
                     <h4 className="font-medium mb-2">📋 Request History</h4>
                     <p className="text-sm text-muted-foreground">
                       Track all your test requests with full request and
@@ -566,13 +522,6 @@ export const ParameterPreviewSystemDemo: React.FC = () => {
                   >
                     <Settings className="w-4 h-4 mr-2" />
                     Edit Parameters
-                  </Button>
-                  <Button
-                    onClick={() => setActiveTab('templates')}
-                    variant="outline"
-                  >
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    Browse Templates
                   </Button>
                   <Button
                     onClick={() => setActiveTab('history')}
