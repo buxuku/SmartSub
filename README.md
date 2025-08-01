@@ -31,7 +31,7 @@
   - 本地模型 Ollama 翻译
   - AI聚合平台 [DeerAPI](https://api.deerapi.com/register?aff=QvHM)
   - 支持 OpenAI 风格 API 翻译，如 [deepseek](https://www.deepseek.com/), [azure](https://azure.microsoft.com) 等
-- **🎯 自定义参数配置**: 无需代码修改，直接在界面配置 AI 模型参数 [v2.5.3-release-brief.md](changelog/v2.5.3-release-brief.md)
+- **🎯 自定义参数配置**: 无需代码修改，直接在界面配置 AI 模型参数 [v2.5.3-release-brief.md](./changelog/v2.5.3-release-brief.md)
   - 支持自定义请求头和请求体参数
   - 支持多种参数类型（文本、数字、开关、JSON对象等）
   - 实时参数验证和错误提示
