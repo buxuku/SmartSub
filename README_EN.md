@@ -18,12 +18,6 @@ Smart subtitle generation and multilingual translation solution for video/audio 
 
 ## 💥 Features
 
-### Add Custom Parameters Function
-
-The Dynamic Parameter System extends SmartSub's existing provider configuration architecture to support user-configurable AI model parameters without code modification. The system introduces a flexible parameter management interface that seamlessly integrates with the current Electron + Next.js architecture, leveraging existing form management, storage, and IPC communication patterns.
-
-## v2.5.2 Version
-
 This application retains all the features of the original [VideoSubtitleGenerator](https://github.com/buxuku/VideoSubtitleGenerator) command-line tool, with the following enhancements:
 
 - Batch processing of video/audio/subtitle files
@@ -35,8 +29,13 @@ This application retains all the features of the original [VideoSubtitleGenerato
   - Microsoft Translator
   - DeepLX Translation (Note: Batch translation may be rate-limited)
   - Local Ollama model translation
-  - AI aggregation platform [DeerAPI] (https://api.deerapi.com/register?aff=QvHM)
+  - AI aggregation platform [DeerAPI](https://api.deerapi.com/register?aff=QvHM)
   - Support for OpenAI-style API translations (e.g., [deepseek](https://www.deepseek.com/), [azure](https://azure.microsoft.com/))
+- **🎯 Custom Parameter Configuration**: Configure AI model parameters directly in the UI without code modification
+  - Support custom HTTP headers and request body parameters
+  - Support multiple parameter types (String、Float、Boolean、Array、Object、Integer)
+  - Real-time parameter validation with error feedback
+  - Configuration export/import functionality
 - Customizable subtitle file naming for compatibility with various media players
 - Flexible translated subtitle content: choose between pure translation or original + translated subtitles
 - Hardware acceleration is supported
@@ -64,7 +63,16 @@ This project supports various translation services, including Baidu Translation,
 
 For information on obtaining API keys for services like Baidu Translation and Volcano Engine, please refer to https://bobtranslate.com/service/. We appreciate the information provided by [Bob](https://bobtranslate.com/), an excellent software tool.
 
-For AI translation, the translation results are heavily influenced by models and prompt words, so you can try different models and prompt words to find the right combination for you. Recommended to try AI aggregation platform [DeerAPI] (https://api.deerapi.com/register?aff=QvHM), nearly 500 kinds of model to support multiple platforms, choose appropriate model for translation.
+For AI translation, the translation results are heavily influenced by models and prompt words, so you can try different models and prompt words to find the right combination for you. Recommended to try AI aggregation platform [DeerAPI](https://api.deerapi.com/register?aff=QvHM), nearly 500 kinds of model to support multiple platforms, choose appropriate model for translation.
+
+### Custom Parameter Configuration (v2.5.3)
+
+SmartSub now supports configuring custom parameters for each AI translation service, allowing you to precisely control model behavior:
+
+- **Flexible Parameter Setup**: Add and manage custom parameters directly in the interface without code modification
+- **Parameter Type Support**: Supported "String、Float、Boolean、Array、Object、Integer" parameter types
+- **Real-time Validation**: Real-time validation when modifying parameters to prevent invalid configurations
+- **Configuration Management**: Support for exporting and importing configurations for team sharing and backup
 
 ## Model Selection
 
