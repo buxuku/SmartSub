@@ -31,7 +31,7 @@ This application retains all the features of the original [VideoSubtitleGenerato
   - Local Ollama model translation
   - AI aggregation platform [DeerAPI](https://api.deerapi.com/register?aff=QvHM)
   - Support for OpenAI-style API translations (e.g., [deepseek](https://www.deepseek.com/), [azure](https://azure.microsoft.com/))
-- **🎯 Custom Parameter Configuration**: Configure AI model parameters directly in the UI without code modification
+- **🎯 Custom Parameter Configuration**: Configure AI model parameters directly in the UI without code modification [v2.5.3-release-brief.md](./Changelog/v2.5.3-release-brief.md)
   - Support custom HTTP headers and request body parameters
   - Support multiple parameter types (String、Float、Boolean、Array、Object、Integer)
   - Real-time parameter validation with error feedback
