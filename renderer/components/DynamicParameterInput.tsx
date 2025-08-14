@@ -30,7 +30,7 @@ import {
   ParameterValue,
   ParameterDefinition,
   ValidationError,
-} from '../../types/provider';
+} from '../../types';
 import { cn } from 'lib/utils';
 
 export interface DynamicParameterInputProps {
@@ -70,13 +70,22 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
 }) => {
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [isJsonValid, setIsJsonValid] = useState(true);
+  const [touched, setTouched] = useState(false);
 
   // Determine the parameter type
   const parameterType = definition?.type || 'string';
   const hasErrors = errors.length > 0;
   const isRequired = definition?.required || false;
 
-  // Validate JSON input for object and array types
+  // Clear validation state when value changes from parent (fixes stale validation errors)
+  useEffect(() => {
+    if (parameterType === 'array') {
+      setJsonError(null);
+      setIsJsonValid(true);
+    }
+  }, [value, parameterType]);
+
+  // Validate JSON input for array types
   const validateJson = useCallback((jsonString: string): boolean => {
     if (!jsonString.trim()) {
       setJsonError(null);
@@ -101,6 +110,7 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
   // Handle string input changes
   const handleStringChange = useCallback(
     (newValue: string) => {
+      setTouched(true);
       onChange(parameterKey, newValue);
     },
     [parameterKey, onChange],
@@ -109,6 +119,7 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
   // Handle integer input changes
   const handleIntegerChange = useCallback(
     (newValue: string) => {
+      setTouched(true);
       const numericValue = parseInt(newValue, 10);
       onChange(parameterKey, isNaN(numericValue) ? 0 : numericValue);
     },
@@ -118,6 +129,7 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
   // Handle float input changes
   const handleFloatChange = useCallback(
     (newValue: string) => {
+      setTouched(true);
       const numericValue = parseFloat(newValue);
       onChange(parameterKey, isNaN(numericValue) ? 0 : numericValue);
     },
@@ -127,21 +139,34 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
   // Handle boolean input changes
   const handleBooleanChange = useCallback(
     (checked: boolean) => {
+      setTouched(true);
       onChange(parameterKey, checked);
     },
     [parameterKey, onChange],
   );
 
-  // Handle object/array JSON input changes
+  // Format JSON for display
+  const formatJsonValue = useCallback(
+    (val: any): string => {
+      if (val === null || val === undefined) {
+        return parameterType === 'array' ? '[]' : '';
+      }
+      try {
+        return JSON.stringify(val, null, 2);
+      } catch {
+        return parameterType === 'array' ? '[]' : String(val || '');
+      }
+    },
+    [parameterType],
+  );
+
+  // Handle array JSON input changes
   const handleJsonChange = useCallback(
     (jsonString: string) => {
+      setTouched(true);
       if (validateJson(jsonString)) {
         try {
-          const parsedValue = jsonString.trim()
-            ? JSON.parse(jsonString)
-            : parameterType === 'array'
-              ? []
-              : {};
+          const parsedValue = jsonString.trim() ? JSON.parse(jsonString) : [];
           onChange(parameterKey, parsedValue);
         } catch {
           // Keep the current value if JSON is invalid
@@ -151,23 +176,9 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
     [parameterKey, onChange, validateJson, parameterType],
   );
 
-  // Format JSON for display
-  const formatJsonValue = useCallback(
-    (val: any): string => {
-      if (val === null || val === undefined) {
-        return parameterType === 'array' ? '[]' : '{}';
-      }
-      try {
-        return JSON.stringify(val, null, 2);
-      } catch {
-        return parameterType === 'array' ? '[]' : '{}';
-      }
-    },
-    [parameterType],
-  );
-
   // Array item management for array types
   const handleArrayItemAdd = useCallback(() => {
+    setTouched(true);
     const currentArray = Array.isArray(value) ? value : [];
     const newArray = [...currentArray, ''];
     onChange(parameterKey, newArray);
@@ -175,6 +186,7 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
 
   const handleArrayItemChange = useCallback(
     (index: number, itemValue: string) => {
+      setTouched(true);
       const currentArray = Array.isArray(value) ? value : [];
       const newArray = [...currentArray];
       newArray[index] = itemValue;
@@ -185,12 +197,30 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
 
   const handleArrayItemRemove = useCallback(
     (index: number) => {
+      setTouched(true);
       const currentArray = Array.isArray(value) ? value : [];
       const newArray = currentArray.filter((_, i) => i !== index);
       onChange(parameterKey, newArray);
     },
     [value, parameterKey, onChange],
   );
+
+  // Helper function to detect empty/default values
+  const isEmptyOrDefault = useCallback((val: any, type: string): boolean => {
+    switch (type) {
+      case 'string':
+        return !val || (typeof val === 'string' && val.trim().length === 0);
+      case 'integer':
+      case 'float':
+        return val === 0; // Default initial value
+      case 'boolean':
+        return false; // Boolean values are never empty once touched
+      case 'array':
+        return Array.isArray(val) && val.length === 0;
+      default:
+        return !val;
+    }
+  }, []);
 
   // Render validation messages
   const renderValidationMessages = () => {
@@ -204,16 +234,17 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
       });
     }
 
-    // Check if there's meaningful input before showing "Valid" status
-    const hasValue = value !== null && value !== undefined && value !== '';
-    const isCompleteInput =
-      hasValue &&
-      ((typeof value === 'string' && value.trim().length > 0) ||
-        typeof value === 'number' ||
-        typeof value === 'boolean' ||
-        (typeof value === 'object' && value !== null));
+    // Only show "Valid" status if:
+    // 1. User has interacted with the input (touched)
+    // 2. No validation errors
+    // 3. Value is not empty/default
+    const hasValue = value !== null && value !== undefined;
+    const isNotEmptyOrDefault =
+      hasValue && !isEmptyOrDefault(value, parameterType);
+    const shouldShowValid =
+      touched && allErrors.length === 0 && isJsonValid && isNotEmptyOrDefault;
 
-    if (allErrors.length === 0 && isJsonValid && isCompleteInput) {
+    if (shouldShowValid) {
       return (
         <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
           <CheckCircle2 className="h-3 w-3" />
@@ -378,24 +409,6 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
               disabled={disabled}
               className={cn(baseClassName, 'font-mono text-sm min-h-[100px]')}
               rows={5}
-            />
-          </div>
-        );
-
-      case 'object':
-        return (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Code className="h-3 w-3" />
-              <span>JSON Object Editor</span>
-            </div>
-            <Textarea
-              value={formatJsonValue(value)}
-              onChange={(e) => handleJsonChange(e.target.value)}
-              placeholder={placeholder || '{}'}
-              disabled={disabled}
-              className={cn(baseClassName, 'font-mono text-sm min-h-[120px]')}
-              rows={6}
             />
           </div>
         );
