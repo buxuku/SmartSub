@@ -13,3 +13,4 @@ docs/.docusaurus
 .husky
 Project
 sample
+.specs/
