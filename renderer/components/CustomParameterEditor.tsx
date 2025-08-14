@@ -14,7 +14,7 @@ import {
   ParameterDefinition,
   ValidationError,
   CustomParameterConfig,
-} from '../../types/provider';
+} from '../../types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -62,13 +62,7 @@ export interface CustomParameterEditorProps {
 }
 
 type ParameterCategory = 'headers' | 'body';
-type ParameterType =
-  | 'string'
-  | 'integer'
-  | 'float'
-  | 'boolean'
-  | 'object'
-  | 'array';
+type ParameterType = 'string' | 'integer' | 'float' | 'boolean' | 'array';
 
 interface NewParameterForm {
   key: string;
@@ -121,8 +115,6 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
           return 0.0;
         case 'array':
           return [];
-        case 'object':
-          return {};
         default:
           return '';
       }
@@ -265,12 +257,6 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
             : parseFloat(String(value)) || 0.0;
         case 'array':
           return Array.isArray(value) ? value : [];
-        case 'object':
-          return typeof value === 'object' &&
-            value !== null &&
-            !Array.isArray(value)
-            ? value
-            : {};
         default:
           return String(value);
       }
@@ -407,7 +393,6 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
         return Number.isInteger(value) ? 'integer' : 'float';
       }
       if (Array.isArray(value)) return 'array';
-      if (typeof value === 'object' && value !== null) return 'object';
       return 'string';
     },
     [],
@@ -607,7 +592,6 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
                     <SelectItem value="integer">Integer</SelectItem>
                     <SelectItem value="float">Float</SelectItem>
                     <SelectItem value="boolean">Boolean</SelectItem>
-                    <SelectItem value="object">Object</SelectItem>
                     <SelectItem value="array">Array</SelectItem>
                   </SelectContent>
                 </Select>
