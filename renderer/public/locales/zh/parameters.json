@@ -1,5 +1,6 @@
 {
   "title": "自定义参数",
+  "titleWithProvider": "自定义参数配置 - {{providerName}}",
   "subtitle": "为此提供商配置自定义头部和请求体参数",
   "actions": {
     "export": "导出",
@@ -37,6 +38,9 @@
     "placeholders": {
       "key": "例如：temperature, max_tokens",
       "initialValue": "输入初始值"
+    },
+    "tooltips": {
+      "initialValue": "新参数的初始值"
     }
   },
   "types": {

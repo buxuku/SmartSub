@@ -55,6 +55,7 @@ import {
 
 export interface CustomParameterEditorProps {
   providerId: string;
+  providerName?: string;
   initialConfig?: CustomParameterConfig;
   onConfigChange?: (config: CustomParameterConfig) => void;
   onSave?: () => void;
@@ -74,6 +75,7 @@ interface NewParameterForm {
 
 export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
   providerId,
+  providerName,
   initialConfig,
   onConfigChange,
   onSave,
@@ -437,7 +439,11 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">{t('title')}</h2>
+          <h2 className="text-2xl font-bold tracking-tight">
+            {providerName
+              ? t('titleWithProvider', { providerName })
+              : t('title')}
+          </h2>
           <p className="text-muted-foreground">{t('subtitle')}</p>
         </div>
 
@@ -617,7 +623,7 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
                     type: newParameter.type,
                     category: 'core',
                     required: false,
-                    description: 'Initial value for new parameter',
+                    description: t('addDialog.tooltips.initialValue'),
                     providerSupport: [providerId],
                   }}
                   onChange={(_, value) =>

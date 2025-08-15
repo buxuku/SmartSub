@@ -1,5 +1,6 @@
 {
   "title": "Custom Parameters",
+  "titleWithProvider": "Custom Parameters - {{providerName}}",
   "subtitle": "Configure custom headers and body parameters for this provider",
   "actions": {
     "export": "Export",
@@ -37,6 +38,9 @@
     "placeholders": {
       "key": "e.g., temperature, max_tokens",
       "initialValue": "Enter initial value"
+    },
+    "tooltips": {
+      "initialValue": "Initial value for new parameter"
     }
   },
   "types": {
