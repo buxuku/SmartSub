@@ -87,6 +87,18 @@ export interface ValidationError {
   suggestion?: string;
 }
 
+export interface ParameterTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: ParameterCategory;
+  headerParameters: Record<string, ParameterValue>;
+  bodyParameters: Record<string, ParameterValue>;
+  modelCompatibility?: string[];
+  useCase?: string;
+  provider?: string;
+}
+
 export const defaultUserPrompt = '${content}';
 export const defaultSystemPrompt = `# Role: 资深翻译专家
 你是一位经验丰富的字幕翻译专家,精通\${targetLanguage}的翻译,擅长将视频字幕译成流畅易懂的\${targetLanguage}。
