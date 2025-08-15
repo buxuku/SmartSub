@@ -362,11 +362,13 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
                     {t('customParameterConfiguration')} - {providerId}
                   </DialogTitle>
                   <DialogDescription>
-                    Configure custom headers and body parameters for this AI
-                    provider.
+                    {t('customParametersTip')}
                   </DialogDescription>
                 </DialogHeader>
-                <CustomParameterEditor providerId={providerId} />
+                <CustomParameterEditor
+                  providerId={providerId}
+                  providerName={values.name}
+                />
               </DialogContent>
             </Dialog>
           </div>
