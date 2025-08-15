@@ -444,6 +444,7 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
               ? t('titleWithProvider', { providerName })
               : t('title')}
           </h2>
+          <p className="text-muted-foreground">{t('subtitle')}</p>
         </div>
 
         <div className="flex items-center gap-2">
