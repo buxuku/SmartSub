@@ -359,16 +359,13 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
               <DialogContent className="max-w-4xl max-h-[80vh] overflow-auto">
                 <DialogHeader>
                   <DialogTitle>
-                    {t('customParameterConfiguration')} - {providerId}
+                    {t('customParameterConfiguration')} - {values.name}
                   </DialogTitle>
                   <DialogDescription>
                     {t('customParametersTip')}
                   </DialogDescription>
                 </DialogHeader>
-                <CustomParameterEditor
-                  providerId={providerId}
-                  providerName={values.name}
-                />
+                <CustomParameterEditor providerId={providerId} />
               </DialogContent>
             </Dialog>
           </div>

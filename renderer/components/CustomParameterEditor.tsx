@@ -55,7 +55,6 @@ import {
 
 export interface CustomParameterEditorProps {
   providerId: string;
-  providerName?: string;
   initialConfig?: CustomParameterConfig;
   onConfigChange?: (config: CustomParameterConfig) => void;
   onSave?: () => void;
@@ -75,7 +74,6 @@ interface NewParameterForm {
 
 export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
   providerId,
-  providerName,
   initialConfig,
   onConfigChange,
   onSave,
@@ -436,17 +434,8 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
 
   return (
     <div className={`space-y-6 ${className}`}>
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">
-            {providerName
-              ? t('titleWithProvider', { providerName })
-              : t('title')}
-          </h2>
-          <p className="text-muted-foreground">{t('subtitle')}</p>
-        </div>
-
+      {/* Actions */}
+      <div className="flex items-center justify-end">
         <div className="flex items-center gap-2">
           {/* Actions */}
           <Button
