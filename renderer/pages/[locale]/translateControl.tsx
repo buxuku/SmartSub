@@ -353,5 +353,6 @@ export default TranslateControl;
 export const getStaticProps = makeStaticProperties([
   'common',
   'translateControl',
+  'parameters',
 ]);
 export { getStaticPaths };

@@ -7,6 +7,7 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import { useTranslation } from 'next-i18next';
 import { DynamicParameterInput } from './DynamicParameterInput';
 import { useParameterConfig } from '../hooks/useParameterConfig';
 import {
@@ -79,6 +80,7 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
   disabled = false,
   className = '',
 }) => {
+  const { t } = useTranslation('parameters');
   const {
     state,
     loadConfig,
@@ -435,12 +437,8 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">
-            Custom Parameters
-          </h2>
-          <p className="text-muted-foreground">
-            Configure custom headers and body parameters for this provider
-          </p>
+          <h2 className="text-2xl font-bold tracking-tight">{t('title')}</h2>
+          <p className="text-muted-foreground">{t('subtitle')}</p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -452,14 +450,14 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
             disabled={disabled}
           >
             <Download className="w-4 h-4 mr-2" />
-            Export
+            {t('actions.export')}
           </Button>
 
           <label className="inline-flex">
             <Button variant="outline" size="sm" disabled={disabled} asChild>
               <span>
                 <Upload className="w-4 h-4 mr-2" />
-                Import
+                {t('actions.import')}
               </span>
             </Button>
             <input
@@ -477,7 +475,9 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
               {state.saveStatus === 'saving' && (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span className="text-muted-foreground">Saving...</span>
+                  <span className="text-muted-foreground">
+                    {t('status.saving')}
+                  </span>
                 </>
               )}
               {state.saveStatus === 'saved' && (
@@ -485,7 +485,7 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
                   <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center">
                     <div className="w-2 h-2 rounded-full bg-white"></div>
                   </div>
-                  <span className="text-green-600">Saved</span>
+                  <span className="text-green-600">{t('status.saved')}</span>
                 </>
               )}
               {state.saveStatus === 'error' && (
@@ -493,7 +493,7 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
                   <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center">
                     <div className="w-2 h-2 rounded-full bg-white"></div>
                   </div>
-                  <span className="text-red-600">Error</span>
+                  <span className="text-red-600">{t('status.error')}</span>
                 </>
               )}
             </div>
@@ -506,7 +506,7 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
             disabled={disabled}
           >
             <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh
+            {t('actions.refresh')}
             {state.hasUnsavedChanges &&
               state.saveStatus !== 'error' &&
               state.saveStatus !== 'saving' && (
@@ -521,7 +521,7 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search parameters..."
+            placeholder={t('search.placeholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-8"
@@ -533,20 +533,20 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
           <AlertDialogTrigger asChild>
             <Button disabled={disabled}>
               <Plus className="w-4 h-4 mr-2" />
-              Add Parameter
+              {t('actions.addParameter')}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Add New Parameter</AlertDialogTitle>
+              <AlertDialogTitle>{t('addDialog.title')}</AlertDialogTitle>
               <AlertDialogDescription>
-                Create a new custom parameter for this provider.
+                {t('addDialog.description')}
               </AlertDialogDescription>
             </AlertDialogHeader>
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="param-key">Parameter Key</Label>
+                <Label htmlFor="param-key">{t('addDialog.fields.key')}</Label>
                 <Input
                   id="param-key"
                   value={newParameter.key}
@@ -556,12 +556,14 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
                       key: e.target.value,
                     }))
                   }
-                  placeholder="e.g., temperature, max_tokens"
+                  placeholder={t('addDialog.placeholders.key')}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="param-category">Category</Label>
+                <Label htmlFor="param-category">
+                  {t('addDialog.fields.category')}
+                </Label>
                 <Select
                   value={newParameter.category}
                   onValueChange={(value: ParameterCategory) =>
@@ -572,14 +574,16 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="headers">Headers</SelectItem>
-                    <SelectItem value="body">Body</SelectItem>
+                    <SelectItem value="headers">
+                      {t('categories.headers')}
+                    </SelectItem>
+                    <SelectItem value="body">{t('categories.body')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="param-type">Type</Label>
+                <Label htmlFor="param-type">{t('addDialog.fields.type')}</Label>
                 <Select
                   value={newParameter.type}
                   onValueChange={handleTypeChange}
@@ -588,17 +592,23 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="string">String</SelectItem>
-                    <SelectItem value="integer">Integer</SelectItem>
-                    <SelectItem value="float">Float</SelectItem>
-                    <SelectItem value="boolean">Boolean</SelectItem>
-                    <SelectItem value="array">Array</SelectItem>
+                    <SelectItem value="string">{t('types.string')}</SelectItem>
+                    <SelectItem value="integer">
+                      {t('types.integer')}
+                    </SelectItem>
+                    <SelectItem value="float">{t('types.float')}</SelectItem>
+                    <SelectItem value="boolean">
+                      {t('types.boolean')}
+                    </SelectItem>
+                    <SelectItem value="array">{t('types.array')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="param-value">Initial Value</Label>
+                <Label htmlFor="param-value">
+                  {t('addDialog.fields.initialValue')}
+                </Label>
                 <DynamicParameterInput
                   parameterKey="new-param-value"
                   value={newParameter.value}
@@ -613,15 +623,15 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
                   onChange={(_, value) =>
                     setNewParameter((prev) => ({ ...prev, value }))
                   }
-                  placeholder="Enter initial value"
+                  placeholder={t('addDialog.placeholders.initialValue')}
                 />
               </div>
             </div>
 
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel>{t('actions.cancel')}</AlertDialogCancel>
               <AlertDialogAction onClick={handleAddParameter}>
-                Add Parameter
+                {t('actions.addParameter')}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -637,13 +647,13 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
       >
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="headers" className="flex items-center gap-2">
-            Headers
+            {t('tabs.headers')}
             <Badge variant="secondary" className="ml-1">
               {getParameterCount('headers')}
             </Badge>
           </TabsTrigger>
           <TabsTrigger value="body" className="flex items-center gap-2">
-            Body Parameters
+            {t('tabs.bodyParameters')}
             <Badge variant="secondary" className="ml-1">
               {getParameterCount('body')}
             </Badge>
@@ -655,19 +665,18 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Settings className="w-5 h-5" />
-                HTTP Headers
+                {t('headers.title')}
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                Custom headers sent with API requests (e.g., authentication, API
-                versioning)
+                {t('headers.description')}
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
               {filteredParameters.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   {searchQuery
-                    ? 'No headers match your search.'
-                    : 'No custom headers configured.'}
+                    ? t('emptyStates.noHeadersSearch')
+                    : t('emptyStates.noHeadersConfigured')}
                 </div>
               ) : (
                 filteredParameters.map(([key, value]) => (
@@ -693,7 +702,7 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
                         className="h-7 px-2"
                       >
                         <Copy className="w-3 h-3 mr-1" />
-                        Duplicate
+                        {t('actions.duplicate')}
                       </Button>
                     </div>
 
@@ -710,19 +719,18 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Settings className="w-5 h-5" />
-                Request Body Parameters
+                {t('bodyParameters.title')}
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                Custom parameters included in the API request body (e.g., model
-                settings, behavior controls)
+                {t('bodyParameters.description')}
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
               {filteredParameters.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   {searchQuery
-                    ? 'No body parameters match your search.'
-                    : 'No custom body parameters configured.'}
+                    ? t('emptyStates.noBodyParamsSearch')
+                    : t('emptyStates.noBodyParamsConfigured')}
                 </div>
               ) : (
                 filteredParameters.map(([key, value]) => (
@@ -748,7 +756,7 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
                         className="h-7 px-2"
                       >
                         <Copy className="w-3 h-3 mr-1" />
-                        Duplicate
+                        {t('actions.duplicate')}
                       </Button>
                     </div>
 
@@ -768,24 +776,30 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
             Object.keys(state.config.bodyParameters || {}).length > 0))) && (
         <Card>
           <CardHeader>
-            <CardTitle>Configuration Summary</CardTitle>
+            <CardTitle>{t('summary.title')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="font-medium">Total Parameters:</span>{' '}
+                <span className="font-medium">
+                  {t('summary.totalParameters')}
+                </span>{' '}
                 {getParameterCount('headers') + getParameterCount('body')}
               </div>
               <div>
-                <span className="font-medium">Headers:</span>{' '}
+                <span className="font-medium">{t('summary.headers')}</span>{' '}
                 {getParameterCount('headers')}
               </div>
               <div>
-                <span className="font-medium">Body Parameters:</span>{' '}
+                <span className="font-medium">
+                  {t('summary.bodyParameters')}
+                </span>{' '}
                 {getParameterCount('body')}
               </div>
               <div>
-                <span className="font-medium">Validation Errors:</span>{' '}
+                <span className="font-medium">
+                  {t('summary.validationErrors')}
+                </span>{' '}
                 <span
                   className={
                     state.validationErrors.length > 0
@@ -801,35 +815,41 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
             {/* Save Status Indicator */}
             <div className="mt-4 pt-4 border-t">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-sm">Save Status:</span>
+                <span className="font-medium text-sm">
+                  {t('summary.saveStatus')}
+                </span>
                 {state.saveStatus === 'idle' && !state.hasUnsavedChanges && (
                   <div className="flex items-center gap-1 text-gray-500">
                     <div className="w-2 h-2 rounded-full bg-gray-400"></div>
-                    <span className="text-sm">Up to date</span>
+                    <span className="text-sm">{t('status.upToDate')}</span>
                   </div>
                 )}
                 {state.saveStatus === 'idle' && state.hasUnsavedChanges && (
                   <div className="flex items-center gap-1 text-yellow-600">
                     <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
-                    <span className="text-sm">Unsaved changes</span>
+                    <span className="text-sm">
+                      {t('status.unsavedChanges')}
+                    </span>
                   </div>
                 )}
                 {state.saveStatus === 'saving' && (
                   <div className="flex items-center gap-1 text-blue-600">
                     <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-                    <span className="text-sm">Saving...</span>
+                    <span className="text-sm">{t('status.saving')}</span>
                   </div>
                 )}
                 {state.saveStatus === 'saved' && (
                   <div className="flex items-center gap-1 text-green-600">
                     <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                    <span className="text-sm">Saved automatically</span>
+                    <span className="text-sm">
+                      {t('status.savedAutomatically')}
+                    </span>
                   </div>
                 )}
                 {state.saveStatus === 'error' && (
                   <div className="flex items-center gap-1 text-red-600">
                     <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                    <span className="text-sm">Save failed</span>
+                    <span className="text-sm">{t('status.saveFailed')}</span>
                   </div>
                 )}
               </div>
@@ -840,7 +860,8 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
               )}
               {state.lastSaved && (
                 <div className="mt-1 text-xs text-muted-foreground">
-                  Last saved: {new Date(state.lastSaved).toLocaleTimeString()}
+                  {t('summary.lastSaved')}{' '}
+                  {new Date(state.lastSaved).toLocaleTimeString()}
                 </div>
               )}
             </div>
@@ -854,21 +875,19 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-orange-500" />
-              Unsaved Changes
+              {t('unsavedChangesDialog.title')}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              You have unsaved changes that will be lost if you refresh. The
-              changes are being automatically saved, but refreshing now will
-              discard any recent modifications.
+              {t('unsavedChangesDialog.description')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('actions.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmRefresh}
               className="bg-orange-600 hover:bg-orange-700"
             >
-              Refresh Anyway
+              {t('unsavedChangesDialog.refreshAnyway')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

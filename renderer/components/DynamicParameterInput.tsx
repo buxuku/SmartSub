@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
+import { useTranslation } from 'next-i18next';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
@@ -68,6 +69,7 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
   showRemove = false,
   className,
 }) => {
+  const { t } = useTranslation('parameters');
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [isJsonValid, setIsJsonValid] = useState(true);
   const [touched, setTouched] = useState(false);
@@ -100,7 +102,9 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
       return true;
     } catch (error) {
       setJsonError(
-        `Invalid JSON: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        t('validation.invalidJson', {
+          message: error instanceof Error ? error.message : 'Unknown error',
+        }),
       );
       setIsJsonValid(false);
       return false;
@@ -248,7 +252,7 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
       return (
         <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
           <CheckCircle2 className="h-3 w-3" />
-          <span>Valid</span>
+          <span>{t('validation.valid')}</span>
         </div>
       );
     }
@@ -297,7 +301,9 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
             type="text"
             value={typeof value === 'string' ? value : ''}
             onChange={(e) => handleStringChange(e.target.value)}
-            placeholder={placeholder || `Enter ${parameterKey}`}
+            placeholder={
+              placeholder || t('placeholders.enterValue', { key: parameterKey })
+            }
             disabled={disabled}
             className={baseClassName}
           />
@@ -365,7 +371,9 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
                     onChange={(e) =>
                       handleArrayItemChange(index, e.target.value)
                     }
-                    placeholder={`Item ${index + 1}`}
+                    placeholder={t('placeholders.itemNumber', {
+                      number: index + 1,
+                    })}
                     disabled={disabled}
                     className="flex-1"
                   />
@@ -390,7 +398,7 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
                 className="w-full"
               >
                 <Plus className="h-3 w-3 mr-1" />
-                Add Item
+                {t('arrayEditor.addItem')}
               </Button>
             </div>
           );
@@ -400,12 +408,12 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Code className="h-3 w-3" />
-              <span>JSON Array Editor</span>
+              <span>{t('arrayEditor.jsonArrayEditor')}</span>
             </div>
             <Textarea
               value={formatJsonValue(value)}
               onChange={(e) => handleJsonChange(e.target.value)}
-              placeholder={placeholder || '[]'}
+              placeholder={placeholder || t('placeholders.jsonArray')}
               disabled={disabled}
               className={cn(baseClassName, 'font-mono text-sm min-h-[100px]')}
               rows={5}
@@ -419,7 +427,9 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
             type="text"
             value={String(value || '')}
             onChange={(e) => handleStringChange(e.target.value)}
-            placeholder={placeholder || `Enter ${parameterKey}`}
+            placeholder={
+              placeholder || t('placeholders.enterValue', { key: parameterKey })
+            }
             disabled={disabled}
             className={baseClassName}
           />

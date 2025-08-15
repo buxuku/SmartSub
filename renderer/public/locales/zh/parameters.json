@@ -1,0 +1,96 @@
+{
+  "title": "自定义参数",
+  "subtitle": "为此提供商配置自定义头部和请求体参数",
+  "actions": {
+    "export": "导出",
+    "import": "导入",
+    "refresh": "刷新",
+    "addParameter": "添加参数",
+    "duplicate": "复制",
+    "cancel": "取消",
+    "save": "保存"
+  },
+  "tabs": {
+    "headers": "请求头",
+    "bodyParameters": "请求体参数"
+  },
+  "headers": {
+    "title": "HTTP 请求头",
+    "description": "随 API 请求发送的自定义头部（例如：身份验证、API 版本控制）"
+  },
+  "bodyParameters": {
+    "title": "请求体参数",
+    "description": "包含在 API 请求体中的自定义参数（例如：模型设置、行为控制）"
+  },
+  "search": {
+    "placeholder": "搜索参数..."
+  },
+  "addDialog": {
+    "title": "添加新参数",
+    "description": "为此提供商创建新的自定义参数。",
+    "fields": {
+      "key": "参数键",
+      "category": "类别",
+      "type": "类型",
+      "initialValue": "初始值"
+    },
+    "placeholders": {
+      "key": "例如：temperature, max_tokens",
+      "initialValue": "输入初始值"
+    }
+  },
+  "types": {
+    "string": "字符串",
+    "integer": "整数",
+    "float": "浮点数",
+    "boolean": "布尔值",
+    "array": "数组"
+  },
+  "categories": {
+    "headers": "请求头",
+    "body": "请求体"
+  },
+  "status": {
+    "saving": "保存中...",
+    "saved": "已保存",
+    "error": "错误",
+    "upToDate": "已是最新",
+    "unsavedChanges": "有未保存的更改",
+    "savedAutomatically": "自动保存成功",
+    "saveFailed": "保存失败"
+  },
+  "summary": {
+    "title": "配置摘要",
+    "totalParameters": "参数总数：",
+    "headers": "请求头：",
+    "bodyParameters": "请求体参数：",
+    "validationErrors": "验证错误：",
+    "saveStatus": "保存状态：",
+    "lastSaved": "最后保存："
+  },
+  "validation": {
+    "valid": "有效",
+    "invalidJson": "无效的 JSON：{message}",
+    "pleaseConfigure": "请提供有效的 JSON 语法"
+  },
+  "placeholders": {
+    "enterValue": "输入 {key}",
+    "jsonArray": "[]",
+    "itemNumber": "项目 {number}"
+  },
+  "arrayEditor": {
+    "addItem": "添加项目",
+    "jsonArrayEditor": "JSON 数组编辑器"
+  },
+  "emptyStates": {
+    "noHeadersSearch": "没有匹配搜索的请求头。",
+    "noHeadersConfigured": "未配置自定义请求头。",
+    "noBodyParamsSearch": "没有匹配搜索的请求体参数。",
+    "noBodyParamsConfigured": "未配置自定义请求体参数。"
+  },
+  "unsavedChangesDialog": {
+    "title": "未保存的更改",
+    "description": "您有未保存的更改，刷新后将丢失。更改正在自动保存中，但现在刷新将丢弃任何最近的修改。",
+    "refreshAnyway": "仍然刷新"
+  }
+}

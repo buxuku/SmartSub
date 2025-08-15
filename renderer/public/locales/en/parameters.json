@@ -1,0 +1,96 @@
+{
+  "title": "Custom Parameters",
+  "subtitle": "Configure custom headers and body parameters for this provider",
+  "actions": {
+    "export": "Export",
+    "import": "Import",
+    "refresh": "Refresh",
+    "addParameter": "Add Parameter",
+    "duplicate": "Duplicate",
+    "cancel": "Cancel",
+    "save": "Save"
+  },
+  "tabs": {
+    "headers": "Headers",
+    "bodyParameters": "Body Parameters"
+  },
+  "headers": {
+    "title": "HTTP Headers",
+    "description": "Custom headers sent with API requests (e.g., authentication, API versioning)"
+  },
+  "bodyParameters": {
+    "title": "Request Body Parameters",
+    "description": "Custom parameters included in the API request body (e.g., model settings, behavior controls)"
+  },
+  "search": {
+    "placeholder": "Search parameters..."
+  },
+  "addDialog": {
+    "title": "Add New Parameter",
+    "description": "Create a new custom parameter for this provider.",
+    "fields": {
+      "key": "Parameter Key",
+      "category": "Category",
+      "type": "Type",
+      "initialValue": "Initial Value"
+    },
+    "placeholders": {
+      "key": "e.g., temperature, max_tokens",
+      "initialValue": "Enter initial value"
+    }
+  },
+  "types": {
+    "string": "String",
+    "integer": "Integer",
+    "float": "Float",
+    "boolean": "Boolean",
+    "array": "Array"
+  },
+  "categories": {
+    "headers": "Headers",
+    "body": "Body"
+  },
+  "status": {
+    "saving": "Saving...",
+    "saved": "Saved",
+    "error": "Error",
+    "upToDate": "Up to date",
+    "unsavedChanges": "Unsaved changes",
+    "savedAutomatically": "Saved automatically",
+    "saveFailed": "Save failed"
+  },
+  "summary": {
+    "title": "Configuration Summary",
+    "totalParameters": "Total Parameters:",
+    "headers": "Headers:",
+    "bodyParameters": "Body Parameters:",
+    "validationErrors": "Validation Errors:",
+    "saveStatus": "Save Status:",
+    "lastSaved": "Last saved:"
+  },
+  "validation": {
+    "valid": "Valid",
+    "invalidJson": "Invalid JSON: {message}",
+    "pleaseConfigure": "Please provide valid JSON syntax"
+  },
+  "placeholders": {
+    "enterValue": "Enter {key}",
+    "jsonArray": "[]",
+    "itemNumber": "Item {number}"
+  },
+  "arrayEditor": {
+    "addItem": "Add Item",
+    "jsonArrayEditor": "JSON Array Editor"
+  },
+  "emptyStates": {
+    "noHeadersSearch": "No headers match your search.",
+    "noHeadersConfigured": "No custom headers configured.",
+    "noBodyParamsSearch": "No body parameters match your search.",
+    "noBodyParamsConfigured": "No custom body parameters configured."
+  },
+  "unsavedChangesDialog": {
+    "title": "Unsaved Changes",
+    "description": "You have unsaved changes that will be lost if you refresh. The changes are being automatically saved, but refreshing now will discard any recent modifications.",
+    "refreshAnyway": "Refresh Anyway"
+  }
+}

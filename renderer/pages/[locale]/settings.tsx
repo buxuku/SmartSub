@@ -718,6 +718,10 @@ const Settings = () => {
 
 export default Settings;
 
-export const getStaticProps = makeStaticProperties(['common', 'settings']);
+export const getStaticProps = makeStaticProperties([
+  'common',
+  'settings',
+  'parameters',
+]);
 
 export { getStaticPaths };
