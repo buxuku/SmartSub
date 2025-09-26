@@ -113,6 +113,7 @@
   "clearLogs": "Clear Logs",
   "toggleTheme": "Toggle Theme",
   "noModelsInstalled": "No Models Installed",
+  "noModelsAvailable": "No Models Available",
   "checkForUpdates": "Check for Updates",
   "updateReady": "Update Ready",
   "updateReadyDesc": "New version {version} has been downloaded and is ready to install.",

@@ -8,9 +8,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useTranslation } from 'next-i18next';
+import { models } from 'lib/utils';
 
 interface IProps {
   modelsInstalled?: string[];
+  useLocalWhisper?: boolean;
 }
 
 const Models = React.forwardRef<
@@ -19,21 +21,36 @@ const Models = React.forwardRef<
 >((props, ref) => {
   const { t } = useTranslation('common');
 
+  // 根据是否使用内置 whisper 决定显示的模型列表
+  const getAvailableModels = () => {
+    if (props.useLocalWhisper) {
+      // 使用内置 whisper 时，显示所有可用模型
+      return models.map((model) => model.name);
+    } else {
+      // 不使用内置 whisper 时，只显示已下载的模型
+      return props?.modelsInstalled || [];
+    }
+  };
+
+  const availableModels = getAvailableModels();
+
   return (
     <Select {...props}>
       <SelectTrigger className="items-start" id="model" ref={ref}>
         <SelectValue placeholder={t('pleaseSelect')} />
       </SelectTrigger>
       <SelectContent>
-        {props?.modelsInstalled?.length > 0 ? (
-          props?.modelsInstalled.map((model) => (
+        {availableModels.length > 0 ? (
+          availableModels.map((model) => (
             <SelectItem value={model.toLowerCase()} key={model}>
               {model}
             </SelectItem>
           ))
         ) : (
           <SelectItem value="no-models" disabled>
-            {t('noModelsInstalled')}
+            {props.useLocalWhisper
+              ? t('noModelsAvailable')
+              : t('noModelsInstalled')}
           </SelectItem>
         )}
       </SelectContent>
