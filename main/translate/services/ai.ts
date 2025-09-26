@@ -54,11 +54,13 @@ export async function handleAIBatchTranslation(
           },
         );
 
-        // 更新配置，启用JSON模式
+        // 更新配置，保持原有的结构化输出设置
         const translationConfig = {
           ...provider,
           systemPrompt,
-          useJsonMode: true,
+          // 保留原有的 useJsonMode 配置或 structuredOutput 配置
+          // 如果没有配置，默认启用 JSON 模式以保持向后兼容
+          useJsonMode: provider.useJsonMode !== false,
         };
 
         logMessage(

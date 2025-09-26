@@ -6,7 +6,7 @@ import {
 import { store } from './store';
 import { logMessage } from './logger';
 
-const CURRENT_PROVIDER_VERSION = 9; // 如果新增或者修改了翻译服务商，请更新版本号
+const CURRENT_PROVIDER_VERSION = 10; // 添加了structuredOutput字段，需要更新版本号
 
 export async function getAndInitializeProviders(): Promise<Provider[]> {
   try {
@@ -74,6 +74,12 @@ function migrateProviders(oldProviders: any[]): Provider[] {
           useBatchTranslation: false,
           batchTranslationSize: 10,
           systemPrompt: defaultSystemPrompt,
+          // 添加structuredOutput字段，使用模板中定义的默认值
+          structuredOutput:
+            p.structuredOutput ||
+            template.fields.find((f) => f.key === 'structuredOutput')
+              ?.defaultValue ||
+            'json_object',
         }),
       };
     });
@@ -89,6 +95,8 @@ function migrateProviders(oldProviders: any[]): Provider[] {
       useBatchTranslation: false,
       batchTranslationSize: 10,
       systemPrompt: defaultSystemPrompt,
+      // 为自定义OpenAI provider设置默认的structuredOutput
+      structuredOutput: p.structuredOutput || 'json_schema',
     }));
 
   // 添加缺失的内置服务商
