@@ -317,6 +317,15 @@ export const PROVIDER_TYPES: ProviderType[] = [
         tips: 'userPromptTips',
       },
       {
+        key: 'structuredOutput',
+        label: 'structuredOutput',
+        type: 'select',
+        required: false,
+        defaultValue: 'json_object',
+        options: ['disabled', 'json_object', 'json_schema'],
+        tips: 'structuredOutputTips',
+      },
+      {
         key: 'batchSize',
         label: 'Batch Size',
         type: 'number',
@@ -363,7 +372,15 @@ export const PROVIDER_TYPES: ProviderType[] = [
         defaultValue: defaultUserPrompt,
         tips: 'userPromptTips',
       },
-
+      {
+        key: 'structuredOutput',
+        label: 'structuredOutput',
+        type: 'select',
+        required: false,
+        defaultValue: 'json_object',
+        options: ['disabled', 'json_object', 'json_schema'],
+        tips: 'structuredOutputTips',
+      },
       {
         key: 'batchSize',
         label: 'Batch Size',
@@ -402,6 +419,15 @@ export const PROVIDER_TYPES: ProviderType[] = [
         type: 'textarea',
         defaultValue: defaultUserPrompt,
         tips: 'userPromptTips',
+      },
+      {
+        key: 'structuredOutput',
+        label: 'structuredOutput',
+        type: 'select',
+        required: false,
+        defaultValue: 'json_schema',
+        options: ['disabled', 'json_object', 'json_schema'],
+        tips: 'structuredOutputTips',
       },
       {
         key: 'batchSize',
@@ -453,6 +479,15 @@ export const PROVIDER_TYPES: ProviderType[] = [
         tips: 'userPromptTips',
       },
       {
+        key: 'structuredOutput',
+        label: 'structuredOutput',
+        type: 'select',
+        required: false,
+        defaultValue: 'json_object',
+        options: ['disabled', 'json_object', 'json_schema'],
+        tips: 'structuredOutputTips',
+      },
+      {
         key: 'batchSize',
         label: 'Batch Size',
         type: 'number',
@@ -500,7 +535,15 @@ export const PROVIDER_TYPES: ProviderType[] = [
         defaultValue: defaultUserPrompt,
         tips: 'userPromptTips',
       },
-
+      {
+        key: 'structuredOutput',
+        label: 'structuredOutput',
+        type: 'select',
+        required: false,
+        defaultValue: 'json_schema',
+        options: ['disabled', 'json_object', 'json_schema'],
+        tips: 'structuredOutputTips',
+      },
       {
         key: 'batchSize',
         label: 'Batch Size',
@@ -549,6 +592,15 @@ export const PROVIDER_TYPES: ProviderType[] = [
         tips: 'userPromptTips',
       },
       {
+        key: 'structuredOutput',
+        label: 'structuredOutput',
+        type: 'select',
+        required: false,
+        defaultValue: 'json_object',
+        options: ['disabled', 'json_object', 'json_schema'],
+        tips: 'structuredOutputTips',
+      },
+      {
         key: 'batchSize',
         label: 'Batch Size',
         type: 'number',
@@ -568,6 +620,15 @@ export const CONFIG_TEMPLATES: Record<string, ProviderType> = {
       { key: 'apiUrl', label: 'Base url', type: 'url', required: true },
       { key: 'apiKey', label: 'API Key', type: 'password', required: true },
       { key: 'modelName', label: 'modelName', type: 'text', required: true },
+      {
+        key: 'structuredOutput',
+        label: 'structuredOutput',
+        type: 'select',
+        required: false,
+        defaultValue: 'json_schema',
+        options: ['disabled', 'json_object', 'json_schema'],
+        tips: 'structuredOutputTips',
+      },
       {
         key: 'systemPrompt',
         label: 'systemPrompt',

@@ -44,5 +44,7 @@
   "customParametersTip": "为此服务商配置额外的请求头和请求体参数",
   "translationResult": "翻译结果",
   "provider": "提供商",
-  "model": "模型"
+  "model": "模型",
+  "structuredOutput": "结构化输出",
+  "structuredOutputTips": "选择AI服务提供商支持的结构化输出类型：<br/>• <strong>Disabled</strong> - 不使用结构化输出，模型自由返回内容<br/>• <strong>JSON Object</strong> - 使用标准JSON对象格式（适用于DeepSeek、Qwen等）<br/>• <strong>JSON Schema</strong> - 使用严格的JSON模式验证（适用于OpenAI、Azure OpenAI、Gemini等）<br/><br/>不同的AI服务商对结构化输出支持不同，选择错误的类型可能导致翻译失败。"
 }

@@ -104,6 +104,7 @@ const TranslateControl: React.FC = () => {
       useBatchTranslation: false,
       batchSize: 10,
       systemPrompt: defaultSystemPrompt,
+      structuredOutput: 'json_schema', // 为新的自定义OpenAI provider设置默认值
     };
 
     const updatedProviders = [...providers, newProviderData];

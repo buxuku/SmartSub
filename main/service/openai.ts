@@ -13,7 +13,8 @@ type OpenAIProvider = {
   modelName?: string;
   prompt?: string;
   systemPrompt?: string;
-  useJsonMode?: boolean;
+  useJsonMode?: boolean; // 保留向后兼容
+  structuredOutput?: 'disabled' | 'json_object' | 'json_schema';
   providerType?: string;
   id?: string;
 };
@@ -84,21 +85,36 @@ function getProviderSpecificParams(
 }
 
 /**
- * 判断是否为Gemini风格的API
+ * 获取结构化输出配置
  */
-function isGeminiProvider(provider: OpenAIProvider): boolean {
-  return (
+function getStructuredOutputMode(
+  provider: OpenAIProvider,
+): 'disabled' | 'json_object' | 'json_schema' {
+  // 优先使用新的structuredOutput配置
+  if (provider.structuredOutput) {
+    return provider.structuredOutput;
+  }
+
+  // 兼容旧的useJsonMode配置
+  if (provider.useJsonMode === false) {
+    return 'disabled';
+  }
+
+  // 根据provider类型设置默认值，保持向后兼容
+  if (
     provider.providerType === 'gemini' ||
     provider.id === 'Gemini' ||
     provider.apiUrl?.includes('generativelanguage.googleapis.com')
-  );
-}
+  ) {
+    return 'json_schema';
+  }
 
-/**
- * 判断是否应该使用JSON模式
- */
-function shouldUseJsonMode(provider: OpenAIProvider): boolean {
-  return provider.useJsonMode !== false;
+  if (provider.id === 'deepseek' || provider.apiUrl?.includes('deepseek.com')) {
+    return 'json_object';
+  }
+
+  // 默认使用json_object
+  return 'json_object';
 }
 
 /**
@@ -148,13 +164,13 @@ function createBaseParams(text: string[], provider: OpenAIProvider) {
 }
 
 /**
- * 使用Gemini风格的API（带zod schema解析）
+ * 使用JSON Schema方式调用API（支持结构化解析）
  */
-async function callWithGeminiStyle(
+async function callWithJsonSchema(
   openai: OpenAI,
   baseParams: any,
 ): Promise<string | undefined> {
-  console.log('Using Gemini-style API with zod schema');
+  console.log('Using JSON Schema API with zod schema');
   try {
     const completion = await openai.beta.chat.completions.parse({
       ...baseParams,
@@ -164,7 +180,7 @@ async function callWithGeminiStyle(
       ),
     });
 
-    console.log('Gemini completion:', completion?.choices);
+    console.log('JSON Schema completion:', completion?.choices);
     const parsed = completion?.choices?.[0]?.message?.parsed;
     if (parsed && typeof parsed === 'object') {
       return JSON.stringify(parsed);
@@ -172,10 +188,10 @@ async function callWithGeminiStyle(
     return parsed ? String(parsed) : undefined;
   } catch (parseError) {
     console.warn(
-      'Gemini-style parse failed, falling back to regular API:',
+      'JSON Schema parse failed, falling back to json_object API:',
       parseError,
     );
-    // 回退到标准API
+    // 回退到json_object模式
     const fallbackCompletion = (await openai.chat.completions.create({
       ...baseParams,
       response_format: { type: 'json_object' },
@@ -185,26 +201,28 @@ async function callWithGeminiStyle(
 }
 
 /**
- * 使用标准OpenAI API
+ * 使用标准OpenAI API（支持json_object和disabled模式）
  */
 async function callWithStandardAPI(
   openai: OpenAI,
   baseParams: any,
-  provider: OpenAIProvider,
+  structuredOutputMode: 'disabled' | 'json_object' | 'json_schema',
 ): Promise<string | undefined> {
-  console.log('Using standard OpenAI-compatible API');
+  console.log(
+    `Using standard OpenAI-compatible API with mode: ${structuredOutputMode}`,
+  );
 
   const requestParams: any = { ...baseParams };
 
-  // 添加JSON响应格式
-  if (shouldUseJsonMode(provider)) {
+  // 根据结构化输出模式设置response_format
+  if (structuredOutputMode === 'json_object') {
     requestParams.response_format = { type: 'json_object' };
-
-    // 对于官方OpenAI API，添加schema
-    if (provider.providerType === 'openai' || provider.id === 'openai') {
-      requestParams.response_format.schema = TRANSLATION_JSON_SCHEMA;
-    }
+    console.log('Using json_object response format');
+  } else if (structuredOutputMode === 'disabled') {
+    // 不设置response_format，让模型自由输出
+    console.log('Structured output disabled, using free-form response');
   }
+  // json_schema模式由callWithJsonSchema函数处理
 
   const completion = (await openai.chat.completions.create(
     requestParams,
@@ -223,6 +241,7 @@ export async function translateWithOpenAI(
   if (!provider.apiKey) {
     throw new Error('OpenAI API key is required');
   }
+  console.log('translateWithOpenAI', text, provider);
   try {
     console.log('Provider config:', {
       id: provider.id,
@@ -275,11 +294,17 @@ export async function translateWithOpenAI(
       console.log('No custom parameters configured for this provider');
     }
 
-    // 根据provider类型选择合适的API调用方式
-    if (isGeminiProvider(provider) && shouldUseJsonMode(provider)) {
-      return await callWithGeminiStyle(openai, baseParams);
+    // 根据结构化输出配置选择合适的API调用方式
+    const structuredOutputMode = getStructuredOutputMode(provider);
+
+    if (structuredOutputMode === 'json_schema') {
+      return await callWithJsonSchema(openai, baseParams);
     } else {
-      return await callWithStandardAPI(openai, baseParams, provider);
+      return await callWithStandardAPI(
+        openai,
+        baseParams,
+        structuredOutputMode,
+      );
     }
   } catch (error) {
     console.error('OpenAI translation error:', error);
