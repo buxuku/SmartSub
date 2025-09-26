@@ -113,6 +113,7 @@
   "clearLogs": "清空日志",
   "toggleTheme": "切换主题",
   "noModelsInstalled": "没有下载任何模型",
+  "noModelsAvailable": "没有可用的模型",
   "checkForUpdates": "检查更新",
   "updateReady": "更新已就绪",
   "updateReadyDesc": "新版本 {version} 已下载完成，可以立即安装。",

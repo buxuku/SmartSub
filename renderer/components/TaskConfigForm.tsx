@@ -38,6 +38,7 @@ type TaskType = 'generateAndTranslate' | 'generateOnly' | 'translateOnly';
 
 const TaskConfigForm = ({ form, formData, systemInfo }) => {
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [useLocalWhisper, setUseLocalWhisper] = useState(false);
   const { taskType, sourceSrtSaveOption } = formData;
   const [taskTab, setTaskTab] = useState<string>('sourceSubtitle');
   const { t } = useTranslation('home');
@@ -45,11 +46,19 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
 
   useEffect(() => {
     loadProviders();
+    loadSettings();
   }, []);
 
   const loadProviders = async () => {
     const storedProviders = await window.ipc.invoke('getTranslationProviders');
     setProviders(storedProviders);
+  };
+
+  const loadSettings = async () => {
+    const settings = await window?.ipc?.invoke('getSettings');
+    if (settings) {
+      setUseLocalWhisper(settings.useLocalWhisper || false);
+    }
   };
 
   // 是否需要显示源字幕设置
@@ -156,6 +165,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                             onValueChange={field.onChange}
                             value={field.value}
                             modelsInstalled={systemInfo.modelsInstalled}
+                            useLocalWhisper={useLocalWhisper}
                           />
                         </FormControl>
                       </FormItem>
