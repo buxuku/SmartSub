@@ -22,12 +22,24 @@ export async function handleAIBatchTranslation(
   const { provider, sourceLanguage, targetLanguage, translator } = config;
   const results: TranslationResult[] = [];
   const totalBatches = Math.ceil(subtitles.length / batchSize);
+  let processedSubtitles = 0;
+
+  logMessage(
+    `开始AI批量翻译：总共 ${subtitles.length} 条字幕，分为 ${totalBatches} 个批次，每批次 ${batchSize} 条`,
+    'info',
+  );
 
   for (let i = 0; i < subtitles.length; i += batchSize) {
     const batch = subtitles.slice(i, i + batchSize);
     const currentBatchIndex = Math.floor(i / batchSize) + 1;
     let retryCount = 0;
     let batchSuccess = false;
+    let batchResults: TranslationResult[] = [];
+
+    logMessage(
+      `处理批次 ${currentBatchIndex}/${totalBatches}，包含 ${batch.length} 条字幕`,
+      'info',
+    );
 
     while (!batchSuccess && retryCount <= maxRetries) {
       try {
@@ -89,7 +101,7 @@ export async function handleAIBatchTranslation(
 
           const parsedValues = Object.values(parsedContent);
 
-          const batchResults = batch.map((subtitle, index) => ({
+          batchResults = batch.map((subtitle, index) => ({
             id: subtitle.id,
             startEndTime: subtitle.startEndTime,
             sourceContent: subtitle.content.join('\n'),
@@ -106,7 +118,13 @@ export async function handleAIBatchTranslation(
           }
 
           results.push(...batchResults);
+          processedSubtitles += batch.length;
           batchSuccess = true;
+
+          logMessage(
+            `批次 ${currentBatchIndex}/${totalBatches} 翻译成功，已处理 ${processedSubtitles}/${subtitles.length} 条字幕`,
+            'info',
+          );
         } else {
           throw new Error(
             'Invalid response format: Failed to parse JSON structure',
@@ -136,7 +154,7 @@ export async function handleAIBatchTranslation(
             'error',
           );
           // 如果全部重试都失败，则添加失败记录，并继续下一批
-          const failedResults = batch.map((subtitle) => ({
+          batchResults = batch.map((subtitle) => ({
             id: subtitle.id,
             startEndTime: subtitle.startEndTime,
             sourceContent: subtitle.content.join('\n'),
@@ -145,21 +163,40 @@ export async function handleAIBatchTranslation(
 
           // 对失败的结果也进行处理和保存
           if (onTranslationResult) {
-            await onTranslationResult(failedResults);
+            await onTranslationResult(batchResults);
           }
 
-          results.push(...failedResults);
+          results.push(...batchResults);
+          processedSubtitles += batch.length;
           batchSuccess = true; // 标记为完成，继续下一批次
+
+          logMessage(
+            `批次 ${currentBatchIndex}/${totalBatches} 已标记为失败完成，继续下一批次`,
+            'warning',
+          );
         }
       }
     }
 
-    // 更新翻译进度
-    const progress = Math.min(((i + batchSize) / subtitles.length) * 100, 100);
+    // 更新翻译进度 - 使用实际处理的字幕数量计算
+    const progress = Math.min(
+      (processedSubtitles / subtitles.length) * 100,
+      100,
+    );
     if (onProgress) {
       onProgress(progress);
     }
+
+    logMessage(
+      `进度更新: ${progress.toFixed(2)}% (${processedSubtitles}/${subtitles.length})`,
+      'info',
+    );
   }
+
+  logMessage(
+    `AI批量翻译完成：共处理 ${processedSubtitles} 条字幕，成功 ${results.filter((r) => !r.targetContent.startsWith('[翻译失败:')).length} 条`,
+    'info',
+  );
 
   return results;
 }

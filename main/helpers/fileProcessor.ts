@@ -56,23 +56,43 @@ async function generateSubtitle(
  * 翻译字幕
  */
 async function translateSubtitle(event, file: IFiles, formData, provider) {
+  // 强制发送翻译开始状态
   event.sender.send('taskFileChange', {
     ...file,
     translateSubtitle: 'loading',
+    translateSubtitleProgress: 0,
   });
 
+  // 强制发送初始进度
+  event.sender.send('taskProgressChange', file, 'translateSubtitle', 0);
+
   const onProgress = (progress) => {
+    const normalizedProgress = Math.min(Math.max(progress, 0), 100);
     event.sender.send(
       'taskProgressChange',
       file,
       'translateSubtitle',
-      Math.min(progress, 100),
+      normalizedProgress,
     );
   };
+
   try {
     await translate(event, file, formData, provider, onProgress);
-    event.sender.send('taskFileChange', { ...file, translateSubtitle: 'done' });
+
+    // 确保最终状态的正确发送
+    event.sender.send('taskProgressChange', file, 'translateSubtitle', 100);
+    event.sender.send('taskFileChange', {
+      ...file,
+      translateSubtitle: 'done',
+      translateSubtitleProgress: 100,
+    });
+
+    logMessage(
+      `Translation completed successfully for ${file.fileName}`,
+      'info',
+    );
   } catch (error) {
+    // 确保错误状态下也发送当前进度（从文件状态获取）
     onError(event, file, 'translateSubtitle', error);
   }
 }

@@ -10,25 +10,40 @@ import {
 const TaskStatus = ({ file, checkKey, skip = false }) => {
   if (skip) return <RedoDot className="size-4" />;
 
-  if (file[checkKey] === 'loading') {
+  // 状态调试：检查进度与状态的一致性
+  const progressKey = `${checkKey}Progress`;
+  const progress = file[progressKey];
+  const status = file[checkKey];
+
+  // 调试日志（仅在开发环境）
+  if (process.env.NODE_ENV === 'development') {
+    // 检查状态不一致的情况
+    if (status === 'done' && progress !== undefined && progress < 100) {
+      console.warn(`状态不一致: ${checkKey} 状态为 done 但进度为 ${progress}%`);
+    }
+    if (status === 'loading' && progress === undefined) {
+      console.warn(`状态不一致: ${checkKey} 状态为 loading 但没有进度信息`);
+    }
+  }
+
+  if (status === 'loading') {
     // 检查是否有进度信息
-    const progressKey = `${checkKey}Progress`;
-    const hasProgress = file[progressKey] !== undefined;
+    const hasProgress = progress !== undefined && progress !== null;
+    const displayProgress = hasProgress ? Number(progress).toFixed(2) : '0.00';
+
     return (
       <div className="flex items-center gap-1">
         <Loader className="animate-spin size-4" />
-        {hasProgress && (
-          <span className="text-xs">{file[progressKey].toFixed(2)}%</span>
-        )}
+        <span className="text-xs">{displayProgress}%</span>
       </div>
     );
   }
 
-  if (file[checkKey] === 'done') {
+  if (status === 'done') {
     return <CircleCheck className="size-4" />;
   }
 
-  if (file[checkKey] === 'error') {
+  if (status === 'error') {
     const errorKey = `${checkKey}Error`;
     const errorMsg = file[errorKey] || '未知错误';
 
@@ -40,6 +55,9 @@ const TaskStatus = ({ file, checkKey, skip = false }) => {
           </TooltipTrigger>
           <TooltipContent>
             <p>{errorMsg}</p>
+            {progress !== undefined && (
+              <p className="text-xs text-gray-500 mt-1">进度：{progress}%</p>
+            )}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
