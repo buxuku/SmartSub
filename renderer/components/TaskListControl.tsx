@@ -1,4 +1,4 @@
-import { Import, FileText } from 'lucide-react';
+import { Import, FileText, Trash2 } from 'lucide-react';
 import { Button } from './ui/button';
 import { useTranslation } from 'next-i18next';
 import { useState } from 'react';
@@ -37,6 +37,7 @@ const TaskListControl = ({ setFiles, formData }) => {
           variant="outline"
           onClick={handleClearList}
         >
+          <Trash2 className="size-5 mr-2" />
           {t('clearList')}
         </Button>
         <Button
