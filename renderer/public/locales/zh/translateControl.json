@@ -13,7 +13,7 @@
   "operation": "操作",
   "confirmDelete": "确认删除",
   "confirmDeleteMessage": "确定要删除这个服务商吗？",
-  "enterProviderName": "请输入服务商名称",
+  "enterProviderName": "请输入服务商名称（建议8字以内）",
   "addProviderSuccess": "添加成功，请在右侧面板配置服务商信息",
   "batchSize": "批量翻译数量",
   "batchSizeBaiduTips": "批量翻译数量是每次翻译的句子数量。如果数量过大，可能会导致翻译失败。最大值为18。",

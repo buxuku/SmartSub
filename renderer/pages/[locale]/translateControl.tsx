@@ -236,12 +236,14 @@ const TranslateControl: React.FC = () => {
                         : 'hover:bg-muted',
                     )}
                   >
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xl">🔌</span>
-                      <span>{provider.name}</span>
+                    <div className="flex items-center space-x-2 min-w-0 flex-1">
+                      <span className="text-xl flex-shrink-0">🔌</span>
+                      <span className="truncate" title={provider.name}>
+                        {provider.name}
+                      </span>
                     </div>
                     <span
-                      className="opacity-0 group-hover:opacity-100"
+                      className="opacity-0 group-hover:opacity-100 flex-shrink-0 ml-2 cursor-pointer"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleRemoveProvider(provider.id);
