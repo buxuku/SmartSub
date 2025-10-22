@@ -13,7 +13,7 @@
   "cancel": "Cancel",
   "confirmDelete": "Confirm Delete",
   "confirmDeleteMessage": "Are you sure you want to delete this provider?",
-  "enterProviderName": "Enter provider name",
+  "enterProviderName": "Enter provider name (recommended within 8 characters)",
   "addProviderSuccess": "Add successfully, please configure the provider information in the right panel",
   "batchSize": "Batch Size",
   "Batch Size": "Batch Size",
