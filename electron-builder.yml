@@ -26,8 +26,8 @@ mac:
       to: ./extraResources/addons/
       filter:
         - '**/*'
-    - from: ./extraResources/ggml-silero-v5.1.2.bin
-      to: ./extraResources/ggml-silero-v5.1.2.bin
+    - from: ./extraResources/ggml-silero-v6.2.0.bin
+      to: ./extraResources/ggml-silero-v6.2.0.bin
 win:
   target:
     - nsis
@@ -36,8 +36,8 @@ win:
       to: ./extraResources/addons/
       filter:
         - '**/*'
-    - from: ./extraResources/ggml-silero-v5.1.2.bin
-      to: ./extraResources/ggml-silero-v5.1.2.bin
+    - from: ./extraResources/ggml-silero-v6.2.0.bin
+      to: ./extraResources/ggml-silero-v6.2.0.bin
   requestedExecutionLevel: asInvoker
   artifactName: '${productName}_Windows_${version}_${arch}_${env.CUDA_VERSION}_${env.CUDA_OPT}.${ext}'
   publish:
@@ -58,8 +58,8 @@ linux:
       to: ./extraResources/addons/
       filter:
         - '**/*'
-    - from: ./extraResources/ggml-silero-v5.1.2.bin
-      to: ./extraResources/ggml-silero-v5.1.2.bin
+    - from: ./extraResources/ggml-silero-v6.2.0.bin
+      to: ./extraResources/ggml-silero-v6.2.0.bin
 nsis:
   oneClick: false
   perMachine: false
