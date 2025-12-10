@@ -99,7 +99,7 @@ export async function generateSubtitleWithBuiltinWhisper(
     // VAD 模型路径 - 使用内置的 VAD 模型
     const vadModelPath = path.join(
       getExtraResourcesPath(),
-      'ggml-silero-v5.1.2.bin',
+      'ggml-silero-v6.2.0.bin',
     );
 
     // 获取VAD设置
