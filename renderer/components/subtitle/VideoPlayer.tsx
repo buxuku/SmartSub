@@ -35,14 +35,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 }) => {
   const { t } = useTranslation('home');
   return (
-    <div className="flex flex-col">
-      <div className="relative aspect-video bg-black mb-2">
+    <div className="flex flex-col flex-shrink-0">
+      <div className="relative bg-black mb-2 max-h-[38.5vh] flex items-center justify-center">
         {videoPath ? (
           <ReactPlayer
             ref={playerRef}
             url={`media://${encodeURIComponent(videoPath)}`}
             width="100%"
             height="100%"
+            style={{ maxHeight: '38.5vh' }}
             playing={isPlaying}
             controls={true}
             playbackRate={playbackRate}

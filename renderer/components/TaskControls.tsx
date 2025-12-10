@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
-import { isSubtitleFile, needsCoreML } from 'lib/utils';
+import { isSubtitleFile, needsCoreML, cn } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
 
-const TaskControls = ({ files, formData }) => {
+interface TaskControlsProps {
+  files: any[];
+  formData: any;
+  className?: string;
+}
+
+const TaskControls = ({ files, formData, className }: TaskControlsProps) => {
   const [taskStatus, setTaskStatus] = useState('idle');
   const { t } = useTranslation(['home', 'common']);
 
@@ -79,7 +85,7 @@ const TaskControls = ({ files, formData }) => {
     setTaskStatus('cancelled');
   };
   return (
-    <div className="flex gap-2 ml-auto">
+    <div className={cn('flex gap-2 ml-auto', className)}>
       {(taskStatus === 'idle' || taskStatus === 'completed') && (
         <Button onClick={handleTask} disabled={!files.length}>
           {t('home:startTask')}

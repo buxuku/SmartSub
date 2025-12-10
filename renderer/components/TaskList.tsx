@@ -14,6 +14,20 @@ import { useTranslation } from 'next-i18next';
 import { Upload, FileUp, Edit2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import dynamic from 'next/dynamic';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+
+// 从完整路径中提取文件名
+const getFileName = (filePath: string): string => {
+  if (!filePath) return '';
+  // 支持 Windows 和 Unix 路径分隔符
+  const parts = filePath.split(/[/\\]/);
+  return parts[parts.length - 1] || filePath;
+};
 
 // 动态导入SubtitleProofread组件，避免服务端渲染问题
 const SubtitleProofread = dynamic(
@@ -83,35 +97,50 @@ const TaskList: React.FC<TaskListProps> = ({ files = [], formData }) => {
 
   return (
     <>
-      <Table>
+      <Table className="table-fixed w-full">
         <TableCaption>{t('taskList')}</TableCaption>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-[500px]">{t('fileName')}</TableHead>
+            <TableHead className="w-auto">{t('fileName')}</TableHead>
             {shouldShowAudioColumn && (
-              <TableHead className="w-[100px]">{t('extractAudio')}</TableHead>
+              <TableHead className="w-[90px] text-center">
+                {t('extractAudio')}
+              </TableHead>
             )}
             {shouldShowSubtitleColumn && (
-              <TableHead className="w-[100px]">
+              <TableHead className="w-[90px] text-center">
                 {t('extractSubtitle')}
               </TableHead>
             )}
             {shouldShowTranslateColumn && (
-              <TableHead className="w-[100px]">
+              <TableHead className="w-[90px] text-center">
                 {t('translateSubtitle')}
               </TableHead>
             )}
-            <TableHead className="w-[100px]">
+            <TableHead className="w-[80px] text-center">
               {t('proofread') || '校对'}
             </TableHead>
           </TableRow>
         </TableHeader>
-        <TableBody className="max-h-[80vh]">
+        <TableBody>
           {files.map((file) => (
             <TableRow key={file?.uuid}>
-              <TableCell className="font-medium">{file?.filePath}</TableCell>
+              <TableCell className="font-medium truncate max-w-0">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="cursor-default truncate block">
+                        {getFileName(file?.filePath)}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-md">
+                      <p className="break-all">{file?.filePath}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </TableCell>
               {shouldShowAudioColumn && (
-                <TableCell>
+                <TableCell className="text-center">
                   <TaskStatus
                     file={file}
                     checkKey="extractAudio"
@@ -120,7 +149,7 @@ const TaskList: React.FC<TaskListProps> = ({ files = [], formData }) => {
                 </TableCell>
               )}
               {shouldShowSubtitleColumn && (
-                <TableCell>
+                <TableCell className="text-center">
                   <TaskStatus
                     file={file}
                     checkKey="extractSubtitle"
@@ -129,7 +158,7 @@ const TaskList: React.FC<TaskListProps> = ({ files = [], formData }) => {
                 </TableCell>
               )}
               {shouldShowTranslateColumn && (
-                <TableCell>
+                <TableCell className="text-center">
                   <TaskStatus
                     file={file}
                     checkKey="translateSubtitle"
@@ -137,16 +166,15 @@ const TaskList: React.FC<TaskListProps> = ({ files = [], formData }) => {
                   />
                 </TableCell>
               )}
-              <TableCell>
+              <TableCell className="text-center">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex items-center gap-1"
+                  className="flex items-center gap-1 mx-auto"
                   onClick={() => handleProofread(file)}
                   disabled={isProofreadDisabled(file)}
                 >
-                  <Edit2 className="h-4 w-4" />
-                  {t('proofread') || '校对'}
+                  <Edit2 className="h-3 w-3" />
                 </Button>
               </TableCell>
             </TableRow>

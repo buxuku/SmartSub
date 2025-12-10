@@ -91,8 +91,8 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl h-[920px] flex flex-col">
-        <DialogHeader>
+      <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>{t('subtitleProofread')}</DialogTitle>
           <DialogDescription>
             Review and edit translated subtitles with video playback support.
@@ -100,11 +100,11 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
         </DialogHeader>
 
         <div
-          className={`grid gap-2 flex-1 overflow-hidden ${taskType === 'translateOnly' ? 'grid-cols-1' : 'grid-cols-2'}`}
+          className={`grid gap-2 flex-1 overflow-auto min-h-0 ${taskType === 'translateOnly' ? 'grid-cols-1' : 'grid-cols-2'}`}
         >
           {/* 左侧：视频播放器和控制区域 */}
           {taskType !== 'translateOnly' && (
-            <div className="flex flex-col">
+            <div className="flex flex-col overflow-auto min-h-0">
               {/* 视频播放器组件 */}
               <VideoPlayer
                 videoPath={videoPath}
@@ -157,7 +157,7 @@ const SubtitleProofread: React.FC<SubtitleProofreadProps> = ({
           />
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex-shrink-0 border-t pt-4 mt-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t('cancel')}
           </Button>

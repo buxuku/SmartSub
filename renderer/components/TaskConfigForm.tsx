@@ -86,20 +86,20 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
 
   return (
     <Form {...form}>
-      <form className="grid w-full items-start gap-6">
+      <form className="grid w-full items-start gap-4">
         {/* 任务类型选择 */}
-        <fieldset className="grid gap-4 rounded-lg border p-4">
+        <fieldset className="grid gap-3 rounded-lg border p-3">
           <legend className="-ml-1 px-1 text-sm font-medium">
             {t('taskTypeSelection')}
           </legend>
-          <div className="grid gap-3">
+          <div className="grid gap-2">
             <FormField
               control={form.control}
               name="taskType"
               render={({ field }) => (
                 <FormItem>
                   <FormControl>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                       <TaskTypeCard
                         title={t('generateAndTranslate')}
                         description={t('generateAndTranslateDesc')}
@@ -151,9 +151,9 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
 
           {/* 源字幕设置 Tab */}
           {showSourceSubtitleSettings && (
-            <TabsContent value="sourceSubtitle" className="mt-4">
-              <fieldset className="grid gap-4 rounded-lg border p-4">
-                <div className="grid gap-3">
+            <TabsContent value="sourceSubtitle" className="mt-3">
+              <fieldset className="grid gap-3 rounded-lg border p-3">
+                <div className="grid gap-2">
                   <FormField
                     control={form.control}
                     name="model"
@@ -172,7 +172,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     )}
                   />
                 </div>
-                <div className="grid gap-3">
+                <div className="grid gap-2">
                   <FormField
                     control={form.control}
                     name="sourceLanguage"
@@ -204,7 +204,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                   />
                 </div>
 
-                <div className="grid gap-3">
+                <div className="grid gap-2">
                   <FormField
                     control={form.control}
                     name="prompt"
@@ -218,13 +218,14 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                             placeholder={t('pleaseInput')}
                             {...field}
                             value={field.value || ''}
+                            className="min-h-[60px]"
                           />
                         </FormControl>
                       </FormItem>
                     )}
                   />
                 </div>
-                <div className="grid gap-3">
+                <div className="grid gap-2">
                   <FormField
                     control={form.control}
                     name="maxContext"
@@ -254,7 +255,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     )}
                   />
                 </div>
-                <div className="grid gap-3">
+                <div className="grid gap-2">
                   <FormField
                     control={form.control}
                     name="sourceSrtSaveOption"
@@ -315,15 +316,17 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     />
                   )}
                 </div>
-                <div className="grid gap-3">
+                <div className="grid gap-2">
                   <FormField
                     control={form.control}
                     name="saveAudio"
                     render={({ field }) => (
-                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-2 shadow-sm">
                         <div className="space-y-0.5">
                           <FormLabel>{t('saveAudio')}</FormLabel>
-                          <FormDescription>{t('saveAudioTip')}</FormDescription>
+                          <FormDescription className="text-xs">
+                            {t('saveAudioTip')}
+                          </FormDescription>
                         </div>
                         <FormControl>
                           <Switch
@@ -342,9 +345,9 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
 
           {/* 翻译设置 Tab */}
           {showTranslationSettings && (
-            <TabsContent value="translation" className="mt-4">
-              <fieldset className="grid gap-4 rounded-lg border p-4">
-                <div className="grid gap-3">
+            <TabsContent value="translation" className="mt-3">
+              <fieldset className="grid gap-3 rounded-lg border p-3">
+                <div className="grid gap-2">
                   <FormField
                     control={form.control}
                     name="translateProvider"
@@ -377,7 +380,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                   />
                 </div>
                 {taskType === 'translateOnly' && (
-                  <div className="grid gap-3">
+                  <div className="grid gap-2">
                     <FormField
                       control={form.control}
                       name="sourceLanguage"
@@ -409,39 +412,35 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     />
                   </div>
                 )}
-                <div className="grid gap-3">
-                  <div className="grid gap-3">
-                    <FormField
-                      control={form.control}
-                      name="targetLanguage"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>
-                            {t('translationTargetLanguage')}
-                          </FormLabel>
-                          <Select
-                            onValueChange={field.onChange}
-                            value={field.value}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder={t('pleaseSelect')} />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {supportedLanguage.map((item) => (
-                                <SelectItem key={item.value} value={item.value}>
-                                  {tCommon(`language.${item.value}`)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </FormItem>
-                      )}
-                    />
-                  </div>
+                <div className="grid gap-2">
+                  <FormField
+                    control={form.control}
+                    name="targetLanguage"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('translationTargetLanguage')}</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={t('pleaseSelect')} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {supportedLanguage.map((item) => (
+                              <SelectItem key={item.value} value={item.value}>
+                                {tCommon(`language.${item.value}`)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                    )}
+                  />
                 </div>
-                <div className="grid gap-3">
+                <div className="grid gap-2">
                   <FormField
                     control={form.control}
                     name="translateContent"
@@ -475,7 +474,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                     )}
                   />
                 </div>
-                <div className="grid gap-3">
+                <div className="grid gap-2">
                   <FormField
                     control={form.control}
                     name="targetSrtSaveOption"
@@ -532,33 +531,31 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                       )}
                     />
                   )}
-                  <div className="grid gap-3">
-                    <FormField
-                      control={form.control}
-                      name="translateRetryTimes"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t('translateRetryTimes')}</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              placeholder={t('pleaseInput')}
-                              {...field}
-                              value={field.value || 0}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                  </div>
+                  <FormField
+                    control={form.control}
+                    name="translateRetryTimes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('translateRetryTimes')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            placeholder={t('pleaseInput')}
+                            {...field}
+                            value={field.value || 0}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
                 </div>
               </fieldset>
             </TabsContent>
           )}
 
           {/* 高级设置 Tab */}
-          <TabsContent value="advanced" className="mt-4">
-            <fieldset className="grid gap-4 rounded-lg border p-4">
+          <TabsContent value="advanced" className="mt-3">
+            <fieldset className="grid gap-3 rounded-lg border p-3">
               <FormField
                 control={form.control}
                 name="maxConcurrentTasks"
@@ -596,8 +593,10 @@ const TaskTypeCard = ({ title, description, value, selected, onClick }) => {
       )}
       onClick={onClick}
     >
-      <div className="font-medium text-sm mb-2">{title}</div>
-      <p className="text-xs text-muted-foreground">{description}</p>
+      <div className="font-medium text-sm mb-1">{title}</div>
+      <p className="text-xs text-muted-foreground leading-tight">
+        {description}
+      </p>
     </Card>
   );
 };
