@@ -3,8 +3,19 @@ import { Button } from './ui/button';
 import { useTranslation } from 'next-i18next';
 import { useState } from 'react';
 import { LogDialog } from './LogDialog';
+import { cn } from 'lib/utils';
 
-const TaskListControl = ({ setFiles, formData }) => {
+interface TaskListControlProps {
+  setFiles: (files: any[]) => void;
+  formData: any;
+  className?: string;
+}
+
+const TaskListControl = ({
+  setFiles,
+  formData,
+  className,
+}: TaskListControlProps) => {
   const { t } = useTranslation(['home', 'common']);
   const [showLogs, setShowLogs] = useState(false);
   const { taskType } = formData;
@@ -21,7 +32,9 @@ const TaskListControl = ({ setFiles, formData }) => {
 
   return (
     <>
-      <div className="align-middle items-center flex justify-end">
+      <div
+        className={cn('align-middle items-center flex justify-end', className)}
+      >
         <Button
           className="text-sm"
           size="sm"

@@ -179,8 +179,8 @@ const Layout = ({ children }) => {
           </TooltipProvider>
         </nav>
       </aside>
-      <div className="flex flex-col">
-        <header className="sticky top-0 z-10 flex h-[57px] items-center gap-1 border-b bg-background px-4">
+      <div className="flex flex-col h-screen overflow-hidden">
+        <header className="flex-shrink-0 z-10 flex h-[57px] items-center gap-1 border-b bg-background px-4">
           <h4 className="text-base font-semibold">
             {t('headerTitle')}{' '}
             <span className="text-xs text-gray-500 ml-2">
@@ -204,7 +204,7 @@ const Layout = ({ children }) => {
             </span>
           </h4>
         </header>
-        <main className="">{children}</main>
+        <main className="flex-1 min-h-0 overflow-hidden">{children}</main>
         <Toaster />
       </div>
     </div>

@@ -52,8 +52,10 @@ if (isProd) {
   const userLanguage = settings?.language || 'zh'; // 默认为中文
 
   const mainWindow = createWindow('main', {
-    width: 1400,
-    height: 1040,
+    width: 1280,
+    height: 900,
+    minWidth: 1024,
+    minHeight: 700,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       // 允许加载本地资源

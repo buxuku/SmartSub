@@ -97,8 +97,8 @@ export default function Component() {
   };
 
   return (
-    <div className="grid flex-1 gap-4 overflow-auto p-4 md:grid-cols-2 lg:grid-cols-3">
-      <div className="relative hidden flex-col items-start gap-8 md:flex">
+    <div className="grid h-full gap-4 p-4 md:grid-cols-2 lg:grid-cols-3 overflow-hidden">
+      <div className="relative hidden h-full flex-col items-start gap-4 md:flex overflow-auto">
         <TaskConfigForm
           form={form}
           formData={formData}
@@ -107,19 +107,26 @@ export default function Component() {
       </div>
       <div
         className={cn(
-          'relative flex h-full min-h-[50vh] border flex-col rounded-xl p-4 lg:col-span-2',
+          'relative flex h-full border flex-col rounded-xl p-4 lg:col-span-2 overflow-hidden',
           isDragging && 'border-2 border-dashed border-primary bg-muted/50',
         )}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
       >
-        <TaskListControl setFiles={setFiles} formData={formData} />
-        <ScrollArea className="max-h-[780px] min-h-[780px] mt-4">
+        <TaskListControl
+          setFiles={setFiles}
+          formData={formData}
+          className="flex-shrink-0"
+        />
+        <ScrollArea className="flex-1 min-h-0 mt-4">
           <TaskList files={files} formData={formData} />
         </ScrollArea>
-        <div className="flex-1" />
-        <TaskControls formData={formData} files={files} />
+        <TaskControls
+          formData={formData}
+          files={files}
+          className="mt-auto flex-shrink-0 pt-4"
+        />
       </div>
       {/* <Guide systemInfo={systemInfo} updateSystemInfo={updateSystemInfo} /> */}
     </div>
