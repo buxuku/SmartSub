@@ -49,9 +49,9 @@ This application retains all the features of the original [VideoSubtitleGenerato
 
 Because I use an Apple Silicon chip, I lack a Windows CUDA development environment. For CUDA support, there are many scenarios that are difficult to cover both in development and testing.
 
-- Currently, CUDA 11.8.0 and 12.4.1 versions are provided through GitHub Actions, which may have compatibility issues with the environment
+- Currently, CUDA 11.8.0 and 12.4.0 versions are provided through GitHub Actions, which may have compatibility issues with the environment
 - To enable CUDA, you need to determine if your computer supports CUDA and has installed the CUDA toolkit. [CUDA download](https://developer.nvidia.com/cuda-downloads)
-- The version of the CUDA toolkit theoretically supports backward compatibility. Please choose the appropriate 11.8.0 or 12.4.1 version based on your graphics card support
+- The version of the CUDA toolkit theoretically supports backward compatibility. Please choose the appropriate 11.8.0 or 12.4.0 version based on your graphics card support
 - If you have problems downloading generic usage, you can download optimized Version, which is optimized for better compatibility across a variety of graphics card families
 
 ## Core ML support
@@ -96,7 +96,7 @@ Please download the appropriate package based on your computer's system, chip, a
 | System  | Chip  | Graphics Card           | Download Package       |
 | ------- | ----- | ----------------------- | ---------------------- |
 | Windows | x64   | CUDA >= 11.8.0 < 12.0.0 | windows-x64_cuda11.8.0 |
-| Windows | x64   | CUDA >= 12.0.0          | windows-x64_cuda12.4.1 |
+| Windows | x64   | CUDA >= 12.0.0          | windows-x64_cuda12.4.0 |
 | Windows | x64   | CUDA >= 12.2.0          | windows-x64_cuda12.2.0 |
 | Windows | x64   | no CUDA                 | windows-x64_no_cuda    |
 | Mac     | Apple | support CoreML          | mac-arm64              |

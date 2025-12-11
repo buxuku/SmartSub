@@ -178,71 +178,99 @@ export const needsCoreML = (model: string) => {
   return modelInfo ? modelInfo.needsCoreML : false;
 };
 
+/**
+ * 支持的语言列表（前端使用）
+ * 优化结构：默认使用 value 作为各平台的语言代码
+ * 只有当某平台的代码与 value 不同时才显式定义，不支持则定义为 null
+ */
 export const supportedLanguage = [
   // 最常用语言
-  { name: '中文', value: 'zh', baidu: 'zh', volc: 'zh' },
-  { name: '英语', value: 'en', baidu: 'en', volc: 'en' },
-  { name: '日语', value: 'ja', baidu: 'jp', volc: 'ja' },
-  { name: '韩语', value: 'ko', baidu: 'kor', volc: 'ko' },
-  { name: '法语', value: 'fr', baidu: 'fra', volc: 'fr' },
-  { name: '德语', value: 'de', baidu: 'de', volc: 'de' },
-  { name: '西班牙语', value: 'es', baidu: 'spa', volc: 'es' },
-  { name: '俄语', value: 'ru', baidu: 'ru', volc: 'ru' },
-  { name: '葡萄牙语', value: 'pt', baidu: 'pt', volc: 'pt' },
-  { name: '意大利语', value: 'it', baidu: 'it', volc: 'it' },
+  { name: '中文', value: 'zh' },
+  { name: '英语', value: 'en' },
+  { name: '日语', value: 'ja', baidu: 'jp' },
+  { name: '韩语', value: 'ko', baidu: 'kor' },
+  { name: '法语', value: 'fr', baidu: 'fra' },
+  { name: '德语', value: 'de' },
+  { name: '西班牙语', value: 'es', baidu: 'spa' },
+  { name: '俄语', value: 'ru' },
+  { name: '葡萄牙语', value: 'pt' },
+  { name: '意大利语', value: 'it' },
 
   // 其他欧洲语言
-  { name: '荷兰语', value: 'nl', baidu: 'nl', volc: 'nl' },
-  { name: '波兰语', value: 'pl', baidu: 'pl', volc: 'pl' },
-  { name: '土耳其语', value: 'tr', baidu: null, volc: 'tr' },
-  { name: '瑞典语', value: 'sv', baidu: 'swe', volc: 'sv' },
-  { name: '捷克语', value: 'cs', baidu: 'cs', volc: 'cs' },
-  { name: '丹麦语', value: 'da', baidu: 'dan', volc: 'da' },
-  { name: '芬兰语', value: 'fi', baidu: 'fin', volc: 'fi' },
-  { name: '希腊语', value: 'el', baidu: 'el', volc: 'el' },
-  { name: '匈牙利语', value: 'hu', baidu: 'hu', volc: 'hu' },
-  { name: '挪威语', value: 'no', baidu: null, volc: 'no' },
-  { name: '罗马尼亚语', value: 'ro', baidu: 'rom', volc: 'ro' },
-  { name: '斯洛伐克语', value: 'sk', baidu: null, volc: 'sk' },
-  { name: '克罗地亚语', value: 'hr', baidu: null, volc: 'hr' },
-  { name: '塞尔维亚语', value: 'sr', baidu: null, volc: 'sr' },
-  { name: '斯洛文尼亚语', value: 'sl', baidu: 'slo', volc: 'sl' },
-  { name: '保加利亚语', value: 'bg', baidu: 'bul', volc: 'bg' },
-  { name: '乌克兰语', value: 'uk', baidu: null, volc: 'uk' },
-  { name: '爱沙尼亚语', value: 'et', baidu: 'est', volc: 'et' },
-  { name: '拉脱维亚语', value: 'lv', baidu: null, volc: 'lv' },
-  { name: '立陶宛语', value: 'lt', baidu: null, volc: 'lt' },
+  { name: '荷兰语', value: 'nl' },
+  { name: '波兰语', value: 'pl' },
+  { name: '土耳其语', value: 'tr', baidu: null },
+  { name: '瑞典语', value: 'sv', baidu: 'swe' },
+  { name: '捷克语', value: 'cs' },
+  { name: '丹麦语', value: 'da', baidu: 'dan' },
+  { name: '芬兰语', value: 'fi', baidu: 'fin' },
+  { name: '希腊语', value: 'el' },
+  { name: '匈牙利语', value: 'hu' },
+  { name: '挪威语', value: 'no', baidu: null },
+  { name: '罗马尼亚语', value: 'ro', baidu: 'rom' },
+  { name: '斯洛伐克语', value: 'sk', baidu: null },
+  { name: '克罗地亚语', value: 'hr', baidu: null },
+  { name: '塞尔维亚语', value: 'sr', baidu: null },
+  { name: '斯洛文尼亚语', value: 'sl', baidu: 'slo' },
+  { name: '保加利亚语', value: 'bg', baidu: 'bul' },
+  { name: '乌克兰语', value: 'uk', baidu: null },
+  { name: '爱沙尼亚语', value: 'et', baidu: 'est' },
+  { name: '拉脱维亚语', value: 'lv', baidu: null },
+  { name: '立陶宛语', value: 'lt', baidu: null },
 
   // 亚洲语言
-  { name: '印地语', value: 'hi', baidu: null, volc: 'hi' },
-  { name: '泰语', value: 'th', baidu: 'th', volc: 'th' },
-  { name: '越南语', value: 'vi', baidu: 'vie', volc: 'vi' },
-  { name: '印度尼西亚语', value: 'id', baidu: null, volc: 'id' },
-  { name: '马来语', value: 'ms', baidu: null, volc: 'ms' },
-  { name: '泰米尔语', value: 'ta', baidu: null, volc: 'ta' },
-  { name: '乌尔都语', value: 'ur', baidu: null, volc: 'ur' },
-  { name: '马拉地语', value: 'mr', baidu: null, volc: 'mr' },
+  { name: '印地语', value: 'hi', baidu: null },
+  { name: '泰语', value: 'th' },
+  { name: '越南语', value: 'vi', baidu: 'vie' },
+  { name: '印度尼西亚语', value: 'id', baidu: null },
+  { name: '马来语', value: 'ms', baidu: null },
+  { name: '泰米尔语', value: 'ta', baidu: null },
+  { name: '乌尔都语', value: 'ur', baidu: null },
+  { name: '马拉地语', value: 'mr', baidu: null },
 
   // 中东语言
-  { name: '阿拉伯语', value: 'ar', baidu: 'ara', volc: 'ar' },
-  { name: '希伯来语', value: 'he', baidu: null, volc: 'he' },
-  { name: '波斯语', value: 'fa', baidu: null, volc: 'fa' },
+  { name: '阿拉伯语', value: 'ar', baidu: 'ara' },
+  { name: '希伯来语', value: 'he', baidu: null },
+  { name: '波斯语', value: 'fa', baidu: null },
 
   // 其他语言
-  { name: '阿非利堪斯语', value: 'af', baidu: null, volc: 'af' },
-  { name: '加泰罗尼亚语', value: 'ca', baidu: null, volc: 'ca' },
-  { name: '加利西亚语', value: 'gl', baidu: null, volc: 'gl' },
-  { name: '塔加洛语', value: 'tl', baidu: null, volc: 'tl' },
-  { name: '斯瓦希里语', value: 'sw', baidu: null, volc: 'sw' },
-  { name: '威尔士语', value: 'cy', baidu: null, volc: 'cy' },
-  { name: '蒙古语', value: 'Mongolian', baidu: null, volc: null },
+  { name: '阿非利堪斯语', value: 'af', baidu: null },
+  { name: '加泰罗尼亚语', value: 'ca', baidu: null },
+  { name: '加利西亚语', value: 'gl', baidu: null },
+  { name: '塔加洛语', value: 'tl', baidu: null },
+  { name: '斯瓦希里语', value: 'sw', baidu: null },
+  { name: '威尔士语', value: 'cy', baidu: null },
+  { name: '蒙古语', value: 'mn', baidu: null, volc: null },
+  {
+    name: '繁体中文',
+    value: 'zh-Hant',
+    baidu: 'cht',
+    aliyun: 'zh-tw',
+    google: 'zh-TW',
+  },
 ];
 
-// 语言代码转换函数
-export const convertLanguageCode = (code: string, target: 'baidu' | 'volc') => {
+// 翻译平台类型
+type TranslateProvider = 'baidu' | 'volc' | 'aliyun' | 'google' | 'doubao';
+
+/**
+ * 语言代码转换函数
+ * 优化逻辑：如果平台有显式定义则使用定义值（包括 null 表示不支持），否则使用 value 作为默认值
+ */
+export const convertLanguageCode = (
+  code: string,
+  target: TranslateProvider,
+): string | null => {
   const lang = supportedLanguage.find((lang) => lang.value === code);
   if (!lang) return code;
-  return lang[target] || code;
+
+  // 检查是否有显式定义该平台的映射（包括 null）
+  if (target in lang) {
+    return lang[target] as string | null;
+  }
+
+  // 没有显式定义，使用 value 作为默认值
+  return lang.value;
 };
 
 export const openUrl = (url) => {

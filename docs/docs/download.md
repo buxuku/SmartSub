@@ -21,10 +21,10 @@ import TabItem from '@theme/TabItem';
         <div className="col col--6" style={{marginBottom: '1rem'}}>
           <div className="card">
             <div className="card__header">
-              <h3>Windows (NVIDIA CUDA 12.4.1+)</h3>
+              <h3>Windows (NVIDIA CUDA 12.4.0+)</h3>
             </div>
             <div className="card__body">
-              <p>适用于 Windows x64 系统，需 NVIDIA 显卡及 CUDA Toolkit 12.4.1 或更高版本。</p>
+              <p>适用于 Windows x64 系统，需 NVIDIA 显卡及 CUDA Toolkit 12.4.0 或更高版本。</p>
             </div>
             <div className="card__footer">
               <a href="https://github.com/buxuku/SmartSub/releases/download/v2.3.7/SmartSub_Windows_2.3.7_x64_12.4.1_optimized.exe" className="button button--primary button--block">

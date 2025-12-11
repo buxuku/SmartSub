@@ -44,5 +44,8 @@
   "provider": "Provider",
   "model": "Model",
   "structuredOutput": "Structured Output",
-  "structuredOutputTips": "Select the structured output type supported by your AI service provider:<br/>• <strong>Disabled</strong> - No structured output, model returns content freely<br/>• <strong>JSON Object</strong> - Standard JSON object format (suitable for DeepSeek, Qwen, etc.)<br/>• <strong>JSON Schema</strong> - Strict JSON schema validation (suitable for OpenAI, Azure OpenAI, Gemini, etc.)<br/><br/>Different AI providers support different structured output types. Selecting the wrong type may cause translation failures."
+  "structuredOutputTips": "Select the structured output type supported by your AI service provider:<br/>• <strong>Disabled</strong> - No structured output, model returns content freely<br/>• <strong>JSON Object</strong> - Standard JSON object format (suitable for DeepSeek, Qwen, etc.)<br/>• <strong>JSON Schema</strong> - Strict JSON schema validation (suitable for OpenAI, Azure OpenAI, Gemini, etc.)<br/><br/>Different AI providers support different structured output types. Selecting the wrong type may cause translation failures.",
+  "doubaoApiKeyTips": "Doubao Translation API Key, can be obtained from <a href='https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey' style='color: blue'>Volcano Ark Console</a>",
+  "doubaoModelNameTips": "Doubao translation model name, default is doubao-seed-translation-250915, usually no need to modify",
+  "batchSizeDoubaoTips": "Doubao translation batch size, due to API limits, recommended to set to 1"
 }

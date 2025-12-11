@@ -6,7 +6,7 @@ import {
 import { store } from './store';
 import { logMessage } from './logger';
 
-const CURRENT_PROVIDER_VERSION = 10; // 添加了structuredOutput字段，需要更新版本号
+const CURRENT_PROVIDER_VERSION = 11; // 添加了structuredOutput字段，需要更新版本号
 
 export async function getAndInitializeProviders(): Promise<Provider[]> {
   try {

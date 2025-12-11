@@ -46,5 +46,8 @@
   "provider": "提供商",
   "model": "模型",
   "structuredOutput": "结构化输出",
-  "structuredOutputTips": "选择AI服务提供商支持的结构化输出类型：<br/>• <strong>Disabled</strong> - 不使用结构化输出，模型自由返回内容<br/>• <strong>JSON Object</strong> - 使用标准JSON对象格式（适用于DeepSeek、Qwen等）<br/>• <strong>JSON Schema</strong> - 使用严格的JSON模式验证（适用于OpenAI、Azure OpenAI、Gemini等）<br/><br/>不同的AI服务商对结构化输出支持不同，选择错误的类型可能导致翻译失败。"
+  "structuredOutputTips": "选择AI服务提供商支持的结构化输出类型：<br/>• <strong>Disabled</strong> - 不使用结构化输出，模型自由返回内容<br/>• <strong>JSON Object</strong> - 使用标准JSON对象格式（适用于DeepSeek、Qwen等）<br/>• <strong>JSON Schema</strong> - 使用严格的JSON模式验证（适用于OpenAI、Azure OpenAI、Gemini等）<br/><br/>不同的AI服务商对结构化输出支持不同，选择错误的类型可能导致翻译失败。",
+  "doubaoApiKeyTips": "豆包翻译 API Key，可在 <a href='https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey' style='color: blue'>火山方舟控制台</a> 获取",
+  "doubaoModelNameTips": "豆包翻译模型名称，默认为 doubao-seed-translation-250915，一般无需修改",
+  "batchSizeDoubaoTips": "豆包翻译批量大小，由于 API 限制，建议设置为 1"
 }
