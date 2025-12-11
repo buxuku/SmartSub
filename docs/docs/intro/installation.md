@@ -28,7 +28,7 @@ title: 下载与安装
 | 系统    | 芯片  | 显卡                    | 下载安装包             |
 | ------- | ----- | ----------------------- | ---------------------- |
 | Windows | x64   | CUDA >= 11.8.0 < 12.0.0 | windows-x64_cuda11.8.0 |
-| Windows | x64   | CUDA >= 12.4.1          | windows-x64_cuda12.4.1 |
+| Windows | x64   | CUDA >= 12.4.0          | windows-x64_cuda12.4.0 |
 | Windows | x64   | CUDA >= 12.2.0          | windows-x64_cuda12.2.0 |
 | Windows | x64   | 无 CUDA                 | windows-x64_no_cuda    |
 | Mac     | Apple | 支持 CoreML             | mac-arm64              |

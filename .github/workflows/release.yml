@@ -26,7 +26,7 @@ jobs:
             artifact_suffix: macos-arm64
 
           # macOS Intel
-          - os: macos-13 # Use macos-13 for Intel as per original config
+          - os: macos-15-intel # Use macos-13 for Intel as per original config
             arch: x64
             os_build_arg: mac
             addon_name: addon-macos-x64.node
@@ -78,23 +78,23 @@ jobs:
             cuda_opt: 'generic'
             artifact_suffix: windows-x64-cuda1220-generic
 
-          # Windows CUDA 12.4.1 optimized
+          # Windows CUDA 12.4.0 optimized
           - os: windows-2022
             arch: x64
             os_build_arg: win
-            addon_name: addon-windows-cuda-1241-optimized.node
-            cuda_version: '12.4.1'
+            addon_name: addon-windows-cuda-1240-optimized.node
+            cuda_version: '12.4.0'
             cuda_opt: 'optimized'
-            artifact_suffix: windows-x64-cuda1241-optimized
+            artifact_suffix: windows-x64-cuda1240-optimized
 
-          # Windows CUDA 12.4.1 generic
+          # Windows CUDA 12.4.0 generic
           - os: windows-2022
             arch: x64
             os_build_arg: win
-            addon_name: addon-windows-cuda-1241-generic.node
-            cuda_version: '12.4.1'
+            addon_name: addon-windows-cuda-1240-generic.node
+            cuda_version: '12.4.0'
             cuda_opt: 'generic'
-            artifact_suffix: windows-x64-cuda1241-generic
+            artifact_suffix: windows-x64-cuda1240-generic
 
     steps:
       - name: Check out Git repository

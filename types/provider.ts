@@ -244,6 +244,38 @@ export const PROVIDER_TYPES: ProviderType[] = [
     ],
   },
   {
+    id: 'doubao',
+    name: '豆包翻译',
+    isBuiltin: true,
+    isAi: false,
+    icon: '🫛',
+    fields: [
+      {
+        key: 'apiKey',
+        label: 'API Key',
+        type: 'password',
+        required: true,
+        tips: 'doubaoApiKeyTips',
+      },
+      {
+        key: 'modelName',
+        label: 'modelName',
+        type: 'text',
+        required: false,
+        defaultValue: 'doubao-seed-translation-250915',
+        tips: 'doubaoModelNameTips',
+      },
+      {
+        key: 'batchSize',
+        label: 'Batch Size',
+        type: 'number',
+        required: true,
+        defaultValue: 1,
+        tips: 'batchSizeDoubaoTips',
+      },
+    ],
+  },
+  {
     id: 'deeplx',
     name: 'DeepLX',
     isBuiltin: true,

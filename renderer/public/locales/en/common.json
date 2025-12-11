@@ -18,7 +18,8 @@
     "Azure OpenAI": "Azure OpenAI",
     "DeerAPI": "DeerAPI",
     "Gemini": "Gemini",
-    "通义千问": "Tongyi Qianwen"
+    "通义千问": "Tongyi Qianwen",
+    "豆包翻译": "Doubao Translation"
   },
   "language": {
     "zh": "Chinese",
@@ -68,7 +69,8 @@
     "tl": "Tagalog",
     "sw": "Swahili",
     "cy": "Welsh",
-    "Mongolian": "Mongolian"
+    "mn": "Mongolian",
+    "zh-Hant": "Traditional Chinese"
   },
   "modelDesc": {
     "tiny": "Fast text output, average transcription quality.",
