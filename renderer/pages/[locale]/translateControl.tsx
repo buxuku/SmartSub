@@ -171,9 +171,9 @@ const TranslateControl: React.FC = () => {
   };
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full overflow-hidden">
       {/* 左侧服务商列表 */}
-      <div className="w-64 border-r p-4 space-y-2">
+      <div className="w-64 border-r p-4 space-y-2 overflow-auto">
         <div className="flex flex-col space-y-4">
           <h2 className="text-lg font-bold">{t('translationServices')}</h2>
 
@@ -259,7 +259,7 @@ const TranslateControl: React.FC = () => {
       </div>
 
       {/* 右侧配置面板 */}
-      <div className="flex-1 p-6">
+      <div className="flex-1 p-6 overflow-auto">
         {selectedProvider && getCurrentProviderType() && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">

@@ -179,7 +179,7 @@ const Layout = ({ children }) => {
           </TooltipProvider>
         </nav>
       </aside>
-      <div className="flex flex-col h-screen overflow-hidden">
+      <div className="flex flex-col h-screen">
         <header className="flex-shrink-0 z-10 flex h-[57px] items-center gap-1 border-b bg-background px-4">
           <h4 className="text-base font-semibold">
             {t('headerTitle')}{' '}
@@ -204,7 +204,7 @@ const Layout = ({ children }) => {
             </span>
           </h4>
         </header>
-        <main className="flex-1 min-h-0 overflow-hidden">{children}</main>
+        <main className="flex-1 min-h-0 overflow-auto">{children}</main>
         <Toaster />
       </div>
     </div>
