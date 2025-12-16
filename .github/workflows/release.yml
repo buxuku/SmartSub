@@ -96,6 +96,24 @@ jobs:
             cuda_opt: 'generic'
             artifact_suffix: windows-x64-cuda1240-generic
 
+          # Windows CUDA 13.0.2 optimized
+          - os: windows-2022
+            arch: x64
+            os_build_arg: win
+            addon_name: addon-windows-cuda-1302-optimized.node
+            cuda_version: '13.0.2'
+            cuda_opt: 'optimized'
+            artifact_suffix: windows-x64-cuda1302-optimized
+
+          # Windows CUDA 13.0.2 generic
+          - os: windows-2022
+            arch: x64
+            os_build_arg: win
+            addon_name: addon-windows-cuda-1302-generic.node
+            cuda_version: '13.0.2'
+            cuda_opt: 'generic'
+            artifact_suffix: windows-x64-cuda1302-generic
+
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4

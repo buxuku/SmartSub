@@ -64,7 +64,7 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-  deleteAppDataOnUninstall: false
+  deleteAppDataOnUninstall: true
   differentialPackage: false
 asarUnpack:
   - 'node_modules/ffmpeg-static/bin/${os}/${arch}/ffmpeg'
