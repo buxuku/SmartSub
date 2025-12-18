@@ -272,5 +272,6 @@
   "timeSplitPosition": "时间拆分点",
   "part1Duration": "第一部分",
   "part2Duration": "第二部分",
-  "confirmSplit": "确认拆分"
+  "confirmSplit": "确认拆分",
+  "saveAndBack": "保存并返回"
 }

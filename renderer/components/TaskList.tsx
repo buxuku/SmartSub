@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Table,
   TableBody,
@@ -11,15 +11,15 @@ import {
 import TaskStatus from './TaskStatus';
 import { isSubtitleFile } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
-import { Upload, FileUp, Edit2 } from 'lucide-react';
+import { FileUp, Edit2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import dynamic from 'next/dynamic';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { IFiles } from '../../types';
 
 // 从完整路径中提取文件名
 const getFileName = (filePath: string): string => {
@@ -29,25 +29,19 @@ const getFileName = (filePath: string): string => {
   return parts[parts.length - 1] || filePath;
 };
 
-// 动态导入SubtitleProofread组件，避免服务端渲染问题
-const SubtitleProofread = dynamic(
-  () => import('@/components/SubtitleProofread'),
-  {
-    ssr: false,
-    loading: () => <div>Loading...</div>,
-  },
-);
-
 interface TaskListProps {
   files: any[];
   formData: any;
+  onProofread?: (file: IFiles) => void;
 }
 
-const TaskList: React.FC<TaskListProps> = ({ files = [], formData }) => {
+const TaskList: React.FC<TaskListProps> = ({
+  files = [],
+  formData,
+  onProofread,
+}) => {
   const { t } = useTranslation('home');
   const { taskType } = formData;
-  const [proofreadOpen, setProofreadOpen] = useState(false);
-  const [currentFile, setCurrentFile] = useState(null);
 
   // 根据任务类型确定要显示的列
   const shouldShowAudioColumn = taskType !== 'translateOnly';
@@ -68,9 +62,10 @@ const TaskList: React.FC<TaskListProps> = ({ files = [], formData }) => {
     window?.ipc?.send('openDialog', { dialogType: 'openDialog', fileType });
   };
 
-  const handleProofread = (file) => {
-    setCurrentFile(file);
-    setProofreadOpen(true);
+  const handleProofread = (file: IFiles) => {
+    if (onProofread) {
+      onProofread(file);
+    }
   };
 
   // 空状态提示
@@ -181,16 +176,6 @@ const TaskList: React.FC<TaskListProps> = ({ files = [], formData }) => {
           ))}
         </TableBody>
       </Table>
-
-      {proofreadOpen && (
-        <SubtitleProofread
-          file={currentFile}
-          open={proofreadOpen}
-          onOpenChange={setProofreadOpen}
-          taskType={taskType}
-          formData={formData}
-        />
-      )}
     </>
   );
 };

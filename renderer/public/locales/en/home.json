@@ -266,5 +266,6 @@
   "timeSplitPosition": "Time split point",
   "part1Duration": "Part 1",
   "part2Duration": "Part 2",
-  "confirmSplit": "Confirm Split"
+  "confirmSplit": "Confirm Split",
+  "saveAndBack": "Save and Back"
 }

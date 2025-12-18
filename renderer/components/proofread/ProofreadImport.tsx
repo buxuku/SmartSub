@@ -20,6 +20,7 @@ interface PendingFile {
   sourceLanguage?: string;
   targetLanguage?: string;
   status: 'pending' | 'proofreading' | 'completed';
+  isSubtitleOnlyMode?: boolean; // 字幕导入模式，源字幕不可切换
 }
 
 interface ProofreadImportProps {
@@ -92,78 +93,76 @@ export default function ProofreadImport({
 
       if (!result || result.canceled || result.filePaths.length === 0) return;
 
-      // 检测每个文件的语言
-      const allSubtitles: Array<{
-        filePath: string;
-        type: 'source' | 'translated' | 'unknown';
-        language?: string;
-        confidence: number;
-      }> = [];
-
-      for (const filePath of result.filePaths) {
-        const langResult = await window.ipc.invoke('detectLanguage', {
-          filePath,
-        });
-        const lang = langResult.success ? langResult.data?.code : undefined;
-        // 英语作为源字幕，其他作为翻译字幕
-        const type = lang === 'en' ? 'source' : lang ? 'translated' : 'unknown';
-        allSubtitles.push({
-          filePath,
-          type: type as 'source' | 'translated' | 'unknown',
-          language: lang,
-          confidence: lang ? 90 : 80,
-        });
-      }
-
-      // 匹配字幕对
-      const matchResult = await window.ipc.invoke('matchSubtitleFiles', {
-        files: result.filePaths,
-      });
-
       const files: PendingFile[] = [];
 
-      if (matchResult.success && matchResult.data.length > 0) {
-        // 有匹配结果，按匹配分组
-        for (const match of matchResult.data) {
-          // 找到这个匹配组相关的所有字幕
-          const relatedSubtitles = allSubtitles.filter(
-            (s) => s.filePath === match.source || s.filePath === match.target,
-          );
-
-          files.push({
-            id: uuidv4(),
-            fileName: match.baseName,
-            // 包含所有导入的字幕，让用户可以选择
-            detectedSubtitles: allSubtitles,
-            selectedSource: match.source,
-            selectedTarget: match.target,
-            sourceLanguage: match.sourceLanguage,
-            targetLanguage: match.targetLanguage,
-            status: 'pending',
-          });
-        }
-      } else {
-        // 无法匹配，创建一个条目，包含所有字幕供选择
-        const sourceSubtitle =
-          allSubtitles.find((s) => s.type === 'source') || allSubtitles[0];
-        const targetSubtitle = allSubtitles.find(
-          (s) =>
-            s.type === 'translated' && s.filePath !== sourceSubtitle?.filePath,
+      // 每个导入的字幕文件作为一个独立的源字幕条目
+      for (const sourceFilePath of result.filePaths) {
+        const sourceFileName = sourceFilePath.split('/').pop() || '';
+        const sourceBaseName = sourceFileName.replace(/\.[^.]+$/, '');
+        const sourceDir = sourceFilePath.substring(
+          0,
+          sourceFilePath.lastIndexOf('/'),
         );
+
+        // 检测源字幕语言
+        const sourceLangResult = await window.ipc.invoke('detectLanguage', {
+          filePath: sourceFilePath,
+        });
+        const sourceLanguage = sourceLangResult.success
+          ? sourceLangResult.data?.code
+          : undefined;
+
+        // 使用与视频导入相同的逻辑：以源字幕文件名为基准，检测同目录下的其他字幕
+        // 调用 detectSubtitles，把源字幕路径当作"视频"来检测关联字幕
+        const detectResult = await window.ipc.invoke('detectSubtitles', {
+          videoPath: sourceFilePath.replace(/\.[^.]+$/, '.mp4'), // 伪造视频路径以复用检测逻辑
+        });
+
+        let detectedSubtitles: Array<{
+          filePath: string;
+          type: 'source' | 'translated' | 'unknown';
+          language?: string;
+          confidence: number;
+        }> = [];
+
+        if (detectResult.success && detectResult.data.detectedSubtitles) {
+          detectedSubtitles = detectResult.data.detectedSubtitles;
+        }
+
+        // 确保源字幕在列表中（标记为 source，置信度 100%）
+        const sourceInList = detectedSubtitles.find(
+          (s) => s.filePath === sourceFilePath,
+        );
+        if (!sourceInList) {
+          detectedSubtitles.unshift({
+            filePath: sourceFilePath,
+            type: 'source',
+            language: sourceLanguage,
+            confidence: 100,
+          });
+        } else {
+          // 更新源字幕信息
+          sourceInList.type = 'source';
+          sourceInList.confidence = 100;
+        }
+
+        // 找到置信度最高的翻译字幕（排除源字幕）
+        const translatedSubtitles = detectedSubtitles
+          .filter((s) => s.filePath !== sourceFilePath && s.type !== 'source')
+          .sort((a, b) => b.confidence - a.confidence);
+
+        const bestTranslated = translatedSubtitles[0];
 
         files.push({
           id: uuidv4(),
-          fileName:
-            sourceSubtitle?.filePath
-              .split('/')
-              .pop()
-              ?.replace(/\.[^.]+$/, '') || 'Subtitles',
-          detectedSubtitles: allSubtitles,
-          selectedSource: sourceSubtitle?.filePath,
-          selectedTarget: targetSubtitle?.filePath,
-          sourceLanguage: sourceSubtitle?.language,
-          targetLanguage: targetSubtitle?.language,
+          fileName: sourceBaseName,
+          detectedSubtitles,
+          selectedSource: sourceFilePath,
+          selectedTarget: bestTranslated?.filePath,
+          sourceLanguage,
+          targetLanguage: bestTranslated?.language,
           status: 'pending',
+          isSubtitleOnlyMode: true, // 标记为字幕导入模式
         });
       }
 
