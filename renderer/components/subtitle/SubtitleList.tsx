@@ -1,7 +1,19 @@
 import React, { useEffect, useRef } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react';
+import {
+  ChevronUp,
+  ChevronDown,
+  AlertTriangle,
+  Sparkles,
+  Scissors,
+} from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Subtitle } from '../../hooks/useSubtitles';
 import { useTranslation } from 'next-i18next';
 
@@ -20,6 +32,8 @@ interface SubtitleListProps {
   goToNextFailedTranslation: () => void;
   goToPreviousFailedTranslation: () => void;
   onCursorPositionChange?: (position: number) => void;
+  onAiOptimizeClick?: (index: number) => void;
+  onSplitClick?: (index: number) => void;
 }
 
 const SubtitleList: React.FC<SubtitleListProps> = ({
@@ -33,6 +47,8 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   goToNextFailedTranslation,
   goToPreviousFailedTranslation,
   onCursorPositionChange,
+  onAiOptimizeClick,
+  onSplitClick,
 }) => {
   const { t } = useTranslation('home');
 
@@ -121,7 +137,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
               <div
                 key={`${subtitle.id}-${index}`}
                 id={`subtitle-${index}`}
-                className={`mb-1 p-1 rounded-md transition-colors cursor-pointer ${
+                className={`mb-1 p-1 rounded-md transition-colors cursor-pointer group ${
                   currentSubtitleIndex === index
                     ? 'bg-accent'
                     : isFailed
@@ -142,6 +158,51 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                       {isFailed && ` ${t('translationFailedLabel')}`}
                     </span>
                   </div>
+                  {/* 单条字幕操作按钮 */}
+                  <TooltipProvider delayDuration={200}>
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {shouldShowTranslation && onAiOptimizeClick && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onAiOptimizeClick(index);
+                              }}
+                            >
+                              <Sparkles className="h-3 w-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">
+                            {t('aiOptimize') || 'AI 优化'}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {onSplitClick && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSplitClick(index);
+                              }}
+                            >
+                              <Scissors className="h-3 w-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">
+                            {t('split') || '拆分'}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  </TooltipProvider>
                 </div>
 
                 <Textarea
