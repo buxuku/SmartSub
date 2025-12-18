@@ -51,26 +51,33 @@ export const useVideoPlayer = (
 
   // 点击字幕跳转到对应时间点
   const handleSubtitleClick = (index: number) => {
-    if (playerRef.current && index >= 0 && index < mergedSubtitles.length) {
-      // 获取字幕的开始时间
-      const startTime = mergedSubtitles[index]?.startTimeInSeconds ?? 0;
+    if (index >= 0 && index < mergedSubtitles.length) {
+      // 无论是否有视频，都要更新当前字幕索引
+      setCurrentSubtitleIndex(index);
 
-      // 确保即使是0时间点也能触发跳转
-      playerRef.current.seekTo(startTime);
+      // 如果有视频播放器，跳转到对应时间点
+      if (playerRef.current) {
+        const startTime = mergedSubtitles[index]?.startTimeInSeconds ?? 0;
+        playerRef.current.seekTo(startTime);
+      }
     }
   };
 
-  // 跳转到下一个或上一个字幕
+  // 跳转到下一个字幕
   const goToNextSubtitle = () => {
-    if (currentSubtitleIndex < mergedSubtitles.length - 1) {
-      const nextIndex = currentSubtitleIndex + 1;
+    const nextIndex = Math.min(
+      currentSubtitleIndex + 1,
+      mergedSubtitles.length - 1,
+    );
+    if (nextIndex !== currentSubtitleIndex && nextIndex >= 0) {
       handleSubtitleClick(nextIndex);
     }
   };
 
+  // 跳转到上一个字幕
   const goToPreviousSubtitle = () => {
-    if (currentSubtitleIndex > 0) {
-      const prevIndex = currentSubtitleIndex - 1;
+    const prevIndex = Math.max(currentSubtitleIndex - 1, 0);
+    if (prevIndex !== currentSubtitleIndex) {
       handleSubtitleClick(prevIndex);
     }
   };

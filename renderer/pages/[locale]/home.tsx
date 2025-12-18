@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { cn } from 'lib/utils';
+import React, { useEffect, useState, useMemo } from 'react';
+import { cn, isSubtitleFile } from 'lib/utils';
 
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -10,11 +10,15 @@ import TaskControls from '@/components/TaskControls';
 import TaskList from '@/components/TaskList';
 import TaskConfigForm from '@/components/TaskConfigForm';
 import TaskListControl from '@/components/TaskListControl';
+import { ProofreadEditor } from '@/components/proofread';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { filterSupportedFiles } from 'lib/utils';
+import { IFiles } from '../../../types';
+import path from 'path';
 
 export default function Component() {
   const [files, setFiles] = useState([]);
+  const [proofreadFile, setProofreadFile] = useState<IFiles | null>(null);
   const { systemInfo } = useSystemInfo();
   const { form, formData } = useFormConfig();
   useIpcCommunication(setFiles);
@@ -96,6 +100,57 @@ export default function Component() {
     }
   };
 
+  // 将 IFiles 转换为 ProofreadEditor 需要的 PendingFile 格式
+  const pendingFileForProofread = useMemo(() => {
+    if (!proofreadFile) return null;
+
+    const { taskType } = formData;
+    const isTranslateOnly = taskType === 'translateOnly';
+    const isGenerateOnly = taskType === 'generateOnly';
+
+    // 确定视频路径
+    const videoPath = isSubtitleFile(proofreadFile.filePath)
+      ? undefined
+      : proofreadFile.filePath;
+
+    // 确定源字幕路径
+    const sourceSubtitlePath =
+      proofreadFile.tempSrtFile ||
+      proofreadFile.srtFile ||
+      (isSubtitleFile(proofreadFile.filePath)
+        ? proofreadFile.filePath
+        : path.join(proofreadFile.directory, `${proofreadFile.fileName}.srt`));
+
+    // 确定翻译字幕路径（仅在需要翻译时）
+    const targetSubtitlePath = isGenerateOnly
+      ? undefined
+      : proofreadFile.tempTranslatedSrtFile || proofreadFile.translatedSrtFile;
+
+    return {
+      id: proofreadFile.uuid,
+      videoPath,
+      fileName: proofreadFile.fileName,
+      selectedSource: sourceSubtitlePath,
+      selectedTarget: targetSubtitlePath,
+      sourceLanguage: formData.sourceLanguage,
+      targetLanguage: formData.targetLanguage,
+      status: 'proofreading' as const,
+    };
+  }, [proofreadFile, formData]);
+
+  // 如果正在校对，显示校对编辑器
+  if (proofreadFile && pendingFileForProofread) {
+    return (
+      <div className="h-full p-4">
+        <ProofreadEditor
+          file={pendingFileForProofread}
+          onMarkComplete={() => setProofreadFile(null)}
+          onBack={() => setProofreadFile(null)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="grid h-full gap-4 p-4 md:grid-cols-2 lg:grid-cols-3 overflow-hidden">
       <div className="relative hidden h-full flex-col items-start gap-4 md:flex overflow-auto">
@@ -120,7 +175,11 @@ export default function Component() {
           className="flex-shrink-0"
         />
         <ScrollArea className="flex-1 min-h-0 mt-4">
-          <TaskList files={files} formData={formData} />
+          <TaskList
+            files={files}
+            formData={formData}
+            onProofread={(file) => setProofreadFile(file)}
+          />
         </ScrollArea>
         <TaskControls
           formData={formData}

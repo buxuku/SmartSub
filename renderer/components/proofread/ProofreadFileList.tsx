@@ -57,6 +57,7 @@ interface PendingFile {
   sourceLanguage?: string;
   targetLanguage?: string;
   status: 'pending' | 'proofreading' | 'completed';
+  isSubtitleOnlyMode?: boolean; // 字幕导入模式，源字幕不可切换
 }
 
 interface ProofreadFileListProps {
@@ -102,15 +103,36 @@ export default function ProofreadFileList({
         const langResult = await window.ipc.invoke('detectLanguage', {
           filePath,
         });
-        onUpdateFile(index, {
+        const language = langResult.success ? langResult.data?.code : undefined;
+
+        // 检查是否已存在于 detectedSubtitles 中
+        const file = files[index];
+        const exists = file.detectedSubtitles.some(
+          (s) => s.filePath === filePath,
+        );
+
+        const updates: Partial<PendingFile> = {
           selectedSource: filePath,
-          sourceLanguage: langResult.success
-            ? langResult.data?.code
-            : undefined,
-        });
+          sourceLanguage: language,
+        };
+
+        // 如果不存在，添加到 detectedSubtitles
+        if (!exists) {
+          updates.detectedSubtitles = [
+            ...file.detectedSubtitles,
+            {
+              filePath,
+              type: 'source' as const,
+              language,
+              confidence: 100, // 手动上传的置信度设为 100
+            },
+          ];
+        }
+
+        onUpdateFile(index, updates);
       }
     },
-    [onUpdateFile],
+    [files, onUpdateFile],
   );
 
   // 手动选择翻译字幕
@@ -125,15 +147,36 @@ export default function ProofreadFileList({
         const langResult = await window.ipc.invoke('detectLanguage', {
           filePath,
         });
-        onUpdateFile(index, {
+        const language = langResult.success ? langResult.data?.code : undefined;
+
+        // 检查是否已存在于 detectedSubtitles 中
+        const file = files[index];
+        const exists = file.detectedSubtitles.some(
+          (s) => s.filePath === filePath,
+        );
+
+        const updates: Partial<PendingFile> = {
           selectedTarget: filePath,
-          targetLanguage: langResult.success
-            ? langResult.data?.code
-            : undefined,
-        });
+          targetLanguage: language,
+        };
+
+        // 如果不存在，添加到 detectedSubtitles
+        if (!exists) {
+          updates.detectedSubtitles = [
+            ...file.detectedSubtitles,
+            {
+              filePath,
+              type: 'translated' as const,
+              language,
+              confidence: 100, // 手动上传的置信度设为 100
+            },
+          ];
+        }
+
+        onUpdateFile(index, updates);
       }
     },
-    [onUpdateFile],
+    [files, onUpdateFile],
   );
 
   // 从下拉菜单选择字幕
@@ -434,7 +477,22 @@ export default function ProofreadFileList({
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      {effectiveSourceOptions.length > 0 ? (
+                      {/* 字幕导入模式：源字幕固定不可切换 */}
+                      {file.isSubtitleOnlyMode ? (
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="text-sm truncate max-w-[200px]"
+                            title={file.selectedSource}
+                          >
+                            {formatFileName(file.selectedSource || '')}
+                          </span>
+                          {file.sourceLanguage && (
+                            <Badge variant="outline" className="text-xs">
+                              {file.sourceLanguage}
+                            </Badge>
+                          )}
+                        </div>
+                      ) : effectiveSourceOptions.length > 0 ? (
                         <Select
                           value={file.selectedSource || ''}
                           onValueChange={(v) =>
@@ -486,15 +544,18 @@ export default function ProofreadFileList({
                           {t('noSubtitle') || '无字幕'}
                         </span>
                       )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => handleSelectSourceSubtitle(index)}
-                        title={t('uploadSubtitle') || '上传字幕'}
-                      >
-                        <Upload className="w-4 h-4" />
-                      </Button>
+                      {/* 字幕导入模式下隐藏上传按钮 */}
+                      {!file.isSubtitleOnlyMode && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => handleSelectSourceSubtitle(index)}
+                          title={t('uploadSubtitle') || '上传字幕'}
+                        >
+                          <Upload className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>

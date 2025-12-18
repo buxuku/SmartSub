@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import path from 'path';
 import { isSubtitleFile } from 'lib/utils';
 import { toast } from 'sonner';
@@ -68,11 +68,23 @@ export const useSubtitles = (
   const [mergedSubtitles, setMergedSubtitles] = useState<Subtitle[]>([]);
   const [videoPath, setVideoPath] = useState<string>('');
   const [currentSubtitleIndex, setCurrentSubtitleIndex] = useState(-1);
+  const [previousSubtitleIndex, setPreviousSubtitleIndex] = useState(-1);
   const [videoInfo, setVideoInfo] = useState({ fileName: '', extension: '' });
   const [hasTranslationFile, setHasTranslationFile] = useState(false);
   const [subtitleTracksForPlayer, setSubtitleTracksForPlayer] = useState<
     PlayerSubtitleTrack[]
   >([]);
+
+  // 撤销/重做历史
+  const [history, setHistory] = useState<Subtitle[][]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const maxHistoryLength = 50;
+
+  // 记录编辑前的快照（用于失焦记录）
+  const [editSnapshot, setEditSnapshot] = useState<Subtitle[] | null>(null);
+
+  // 光标位置（用于拆分功能）
+  const cursorPositionRef = useRef(0);
 
   // 是否需要显示翻译内容
   const shouldShowTranslation = taskType !== 'generateOnly';
@@ -263,12 +275,17 @@ export const useSubtitles = (
     }
   };
 
-  // 更新字幕内容
+  // 更新字幕内容（带失焦记录支持）
   const handleSubtitleChange = (
     index: number,
     field: 'sourceContent' | 'targetContent',
     value: string,
   ) => {
+    // 首次编辑时保存快照
+    if (!editSnapshot) {
+      setEditSnapshot(JSON.parse(JSON.stringify(mergedSubtitles)));
+    }
+
     const newSubtitles = [...mergedSubtitles];
     newSubtitles[index][field] = value;
     // 更新content数组
@@ -398,9 +415,215 @@ export const useSubtitles = (
     }
   };
 
+  // ============ 编辑增强功能 ============
+
+  // 秒数转时间戳字符串
+  const secondsToTime = (seconds: number): string => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = (seconds % 60).toFixed(3);
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.padStart(6, '0').replace('.', ',')}`;
+  };
+
+  // 保存到历史记录（用于撤销/重做）
+  const pushToHistory = useCallback(
+    (oldState: Subtitle[], newState: Subtitle[]) => {
+      setHistory((prev) => {
+        const newHistory = prev.slice(0, historyIndex + 1);
+        if (newHistory.length === 0) {
+          newHistory.push(JSON.parse(JSON.stringify(oldState)));
+        }
+        newHistory.push(JSON.parse(JSON.stringify(newState)));
+        while (newHistory.length > maxHistoryLength) {
+          newHistory.shift();
+        }
+        return newHistory;
+      });
+      setHistoryIndex((prev) => {
+        if (prev === -1) return 1;
+        return Math.min(prev + 1, maxHistoryLength - 1);
+      });
+    },
+    [historyIndex],
+  );
+
+  // 更新字幕（带历史记录）
+  const updateSubtitles = useCallback(
+    (newSubtitles: Subtitle[]) => {
+      pushToHistory(mergedSubtitles, newSubtitles);
+      setMergedSubtitles(newSubtitles);
+    },
+    [mergedSubtitles, pushToHistory],
+  );
+
+  // 撤销
+  const handleUndo = useCallback(() => {
+    if (historyIndex > 0 && history.length > 0) {
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      setMergedSubtitles(JSON.parse(JSON.stringify(history[newIndex])));
+      setEditSnapshot(null);
+    }
+  }, [historyIndex, history]);
+
+  // 重做
+  const handleRedo = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      const newIndex = historyIndex + 1;
+      setHistoryIndex(newIndex);
+      setMergedSubtitles(JSON.parse(JSON.stringify(history[newIndex])));
+      setEditSnapshot(null);
+    }
+  }, [historyIndex, history]);
+
+  // 是否可以撤销/重做
+  const canUndo = historyIndex > 0 && history.length > 1;
+  const canRedo = historyIndex < history.length - 1 && historyIndex >= 0;
+
+  // 失焦记录：当切换字幕时，如果有编辑过，保存到历史
+  useEffect(() => {
+    if (
+      previousSubtitleIndex !== -1 &&
+      previousSubtitleIndex !== currentSubtitleIndex &&
+      editSnapshot
+    ) {
+      const hasChanged =
+        JSON.stringify(editSnapshot) !== JSON.stringify(mergedSubtitles);
+      if (hasChanged) {
+        pushToHistory(editSnapshot, mergedSubtitles);
+      }
+      setEditSnapshot(null);
+    }
+    setPreviousSubtitleIndex(currentSubtitleIndex);
+  }, [currentSubtitleIndex, editSnapshot, mergedSubtitles, pushToHistory]);
+
+  // 合并字幕
+  const handleMergeSubtitles = useCallback(
+    (startIndex: number, endIndex: number) => {
+      if (
+        startIndex < 0 ||
+        endIndex > mergedSubtitles.length ||
+        startIndex >= endIndex
+      )
+        return;
+
+      const toMerge = mergedSubtitles.slice(startIndex, endIndex);
+      if (toMerge.length < 2) return;
+
+      const mergedContent = toMerge
+        .map((s) => s.sourceContent)
+        .filter(Boolean)
+        .join('\n');
+      const mergedTarget = toMerge
+        .map((s) => s.targetContent)
+        .filter(Boolean)
+        .join('\n');
+
+      const startTime = toMerge[0].startTimeInSeconds || 0;
+      const endTime = toMerge[toMerge.length - 1].endTimeInSeconds || 0;
+
+      const merged: Subtitle = {
+        ...toMerge[0],
+        sourceContent: mergedContent,
+        targetContent: mergedTarget,
+        content: mergedContent.split('\n'),
+        startEndTime: `${secondsToTime(startTime)} --> ${secondsToTime(endTime)}`,
+        startTimeInSeconds: startTime,
+        endTimeInSeconds: endTime,
+      };
+
+      const newSubtitles = [
+        ...mergedSubtitles.slice(0, startIndex),
+        merged,
+        ...mergedSubtitles.slice(endIndex),
+      ];
+
+      newSubtitles.forEach((sub, idx) => {
+        sub.id = String(idx + 1);
+      });
+
+      updateSubtitles(newSubtitles);
+      toast.success(t('mergeSuccess') || '字幕已合并');
+    },
+    [mergedSubtitles, updateSubtitles, t],
+  );
+
+  // 拆分字幕（支持自定义时间拆分点）
+  const handleSplitSubtitle = useCallback(
+    (index: number, splitPoint: number, splitTime?: number) => {
+      if (index < 0 || index >= mergedSubtitles.length) return;
+
+      const subtitle = mergedSubtitles[index];
+      const content = subtitle.sourceContent || '';
+      const targetContent = subtitle.targetContent || '';
+
+      if (content.length < 2) return;
+
+      const content1 = content.slice(0, splitPoint);
+      const content2 = content.slice(splitPoint);
+      const targetSplitPoint = Math.floor(
+        targetContent.length * (splitPoint / Math.max(content.length, 1)),
+      );
+      const target1 = targetContent.slice(0, targetSplitPoint);
+      const target2 = targetContent.slice(targetSplitPoint);
+
+      const startTime = subtitle.startTimeInSeconds || 0;
+      const endTime = subtitle.endTimeInSeconds || 0;
+      const midTime =
+        splitTime !== undefined
+          ? splitTime
+          : startTime + (endTime - startTime) / 2;
+
+      const sub1: Subtitle = {
+        ...subtitle,
+        sourceContent: content1,
+        targetContent: target1,
+        content: content1.split('\n'),
+        startEndTime: `${secondsToTime(startTime)} --> ${secondsToTime(midTime)}`,
+        endTimeInSeconds: midTime,
+      };
+
+      const sub2: Subtitle = {
+        ...subtitle,
+        id: String(index + 2),
+        sourceContent: content2,
+        targetContent: target2,
+        content: content2.split('\n'),
+        startEndTime: `${secondsToTime(midTime)} --> ${secondsToTime(endTime)}`,
+        startTimeInSeconds: midTime,
+      };
+
+      const newSubtitles = [
+        ...mergedSubtitles.slice(0, index),
+        sub1,
+        sub2,
+        ...mergedSubtitles.slice(index + 1),
+      ];
+
+      newSubtitles.forEach((sub, idx) => {
+        sub.id = String(idx + 1);
+      });
+
+      updateSubtitles(newSubtitles);
+      toast.success(t('splitSuccess') || '字幕已拆分');
+    },
+    [mergedSubtitles, updateSubtitles, t],
+  );
+
+  // 更新光标位置
+  const handleCursorPositionChange = useCallback((position: number) => {
+    cursorPositionRef.current = position;
+  }, []);
+
+  // 获取当前光标位置
+  const getCursorPosition = useCallback(() => {
+    return cursorPositionRef.current;
+  }, []);
+
   return {
     mergedSubtitles,
     setMergedSubtitles,
+    updateSubtitles,
     videoPath,
     currentSubtitleIndex,
     setCurrentSubtitleIndex,
@@ -411,10 +634,19 @@ export const useSubtitles = (
     handleSubtitleChange,
     handleSave,
     getSubtitleStats,
-    // 新增翻译失败相关功能
+    // 翻译失败相关功能
     isTranslationFailed,
     getFailedTranslationIndices,
     goToNextFailedTranslation,
     goToPreviousFailedTranslation,
+    // 编辑增强功能
+    handleUndo,
+    handleRedo,
+    canUndo,
+    canRedo,
+    handleMergeSubtitles,
+    handleSplitSubtitle,
+    handleCursorPositionChange,
+    getCursorPosition,
   };
 };

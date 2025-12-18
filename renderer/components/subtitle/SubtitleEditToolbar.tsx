@@ -465,7 +465,6 @@ export default function SubtitleEditToolbar({
             ) {
               const subtitle = subtitles[currentSubtitleIndex];
               const content = subtitle.sourceContent || '';
-              // 尝试获取光标位置，否则默认中间
               const cursorPos = getCursorPosition
                 ? getCursorPosition()
                 : Math.floor(content.length / 2);
