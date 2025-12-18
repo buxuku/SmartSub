@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Check, Save, Loader2 } from 'lucide-react';
@@ -104,6 +104,40 @@ export default function ProofreadEditor({
   // 是否有视频
   const hasVideo = !!videoPath;
 
+  // 外部触发器状态
+  const [triggerAiOptimize, setTriggerAiOptimize] = useState(false);
+  const [triggerSplit, setTriggerSplit] = useState(false);
+
+  // 处理从字幕列表点击 AI 优化按钮
+  const handleAiOptimizeClick = useCallback(
+    (index: number) => {
+      handleSubtitleClick(index);
+      // 使用 setTimeout 确保 currentSubtitleIndex 已更新
+      setTimeout(() => {
+        setTriggerAiOptimize(true);
+      }, 0);
+    },
+    [handleSubtitleClick],
+  );
+
+  // 处理从字幕列表点击拆分按钮
+  const handleSplitClick = useCallback(
+    (index: number) => {
+      handleSubtitleClick(index);
+      // 使用 setTimeout 确保 currentSubtitleIndex 已更新
+      setTimeout(() => {
+        setTriggerSplit(true);
+      }, 0);
+    },
+    [handleSubtitleClick],
+  );
+
+  // 重置触发器
+  const handleTriggerHandled = useCallback(() => {
+    setTriggerAiOptimize(false);
+    setTriggerSplit(false);
+  }, []);
+
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -148,6 +182,9 @@ export default function ProofreadEditor({
         onSplitSubtitle={handleSplitSubtitle}
         shouldShowTranslation={shouldShowTranslation}
         getCursorPosition={getCursorPosition}
+        triggerAiOptimize={triggerAiOptimize}
+        triggerSplit={triggerSplit}
+        onTriggerHandled={handleTriggerHandled}
       />
 
       {/* 主内容区 - 复用原有布局 */}
@@ -209,6 +246,8 @@ export default function ProofreadEditor({
           goToNextFailedTranslation={goToNextFailedTranslation}
           goToPreviousFailedTranslation={goToPreviousFailedTranslation}
           onCursorPositionChange={handleCursorPositionChange}
+          onAiOptimizeClick={handleAiOptimizeClick}
+          onSplitClick={handleSplitClick}
         />
       </div>
     </div>
