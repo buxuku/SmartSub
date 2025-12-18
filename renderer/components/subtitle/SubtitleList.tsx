@@ -19,6 +19,7 @@ interface SubtitleListProps {
   getFailedTranslationIndices: () => number[];
   goToNextFailedTranslation: () => void;
   goToPreviousFailedTranslation: () => void;
+  onCursorPositionChange?: (position: number) => void;
 }
 
 const SubtitleList: React.FC<SubtitleListProps> = ({
@@ -31,6 +32,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   getFailedTranslationIndices,
   goToNextFailedTranslation,
   goToPreviousFailedTranslation,
+  onCursorPositionChange,
 }) => {
   const { t } = useTranslation('home');
 
@@ -40,6 +42,16 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
 
   // 滚动容器引用
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // 处理光标位置变化
+  const handleSelectionChange = (
+    e: React.SyntheticEvent<HTMLTextAreaElement>,
+  ) => {
+    const target = e.target as HTMLTextAreaElement;
+    if (onCursorPositionChange) {
+      onCursorPositionChange(target.selectionStart || 0);
+    }
+  };
 
   // 处理字幕点击
   const onSubtitleClick = (index: number) => {
@@ -55,19 +67,10 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
         `subtitle-${currentSubtitleIndex}`,
       );
       if (element) {
-        const container = scrollContainerRef.current;
-
-        // 计算元素相对于容器的位置
-        const elementTop = element.offsetTop;
-        const elementHeight = element.offsetHeight;
-        const containerHeight = container.clientHeight;
-
-        // 将元素滚动到容器中央
-        const scrollTop = elementTop - containerHeight / 2 + elementHeight / 2;
-
-        container.scrollTo({
-          top: scrollTop,
+        // 使用 scrollIntoView 确保元素可见
+        element.scrollIntoView({
           behavior: 'smooth',
+          block: 'center',
         });
       }
     }
@@ -147,6 +150,8 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                   onChange={(e) =>
                     handleSubtitleChange(index, 'sourceContent', e.target.value)
                   }
+                  onClick={handleSelectionChange}
+                  onKeyUp={handleSelectionChange}
                   placeholder={t('originalSubtitle')}
                 />
 

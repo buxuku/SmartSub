@@ -262,9 +262,130 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     }
   });
 
-  ipcMain.handle('selectDirectory', async () => {
-    return dialog.showOpenDialog({
-      properties: ['openDirectory'],
-    });
-  });
+  ipcMain.handle(
+    'selectDirectory',
+    async (event, options?: { title?: string }) => {
+      const result = await dialog.showOpenDialog({
+        properties: ['openDirectory'],
+        title: options?.title,
+      });
+      return {
+        directoryPath: result.filePaths[0] || null,
+        canceled: result.canceled,
+      };
+    },
+  );
+
+  // 选择单个文件
+  ipcMain.handle(
+    'selectFile',
+    async (
+      event,
+      options: { type: 'video' | 'subtitle' | 'any'; title?: string },
+    ) => {
+      const { type, title } = options;
+
+      let filters: { name: string; extensions: string[] }[] = [];
+
+      if (type === 'video') {
+        filters = [
+          {
+            name: 'Video Files',
+            extensions: MEDIA_EXTENSIONS.filter((ext) =>
+              [
+                '.mp4',
+                '.avi',
+                '.mov',
+                '.mkv',
+                '.flv',
+                '.wmv',
+                '.webm',
+                '.3gp',
+                '.ts',
+              ].includes(ext),
+            ).map((ext) => ext.substring(1)),
+          },
+        ];
+      } else if (type === 'subtitle') {
+        filters = [
+          {
+            name: 'Subtitle Files',
+            extensions: SUBTITLE_EXTENSIONS.map((ext) => ext.substring(1)),
+          },
+        ];
+      }
+
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        title,
+        filters: filters.length > 0 ? filters : undefined,
+      });
+
+      return {
+        filePath: result.filePaths[0] || null,
+        canceled: result.canceled,
+      };
+    },
+  );
+
+  // 选择多个文件
+  ipcMain.handle(
+    'selectFiles',
+    async (
+      event,
+      options: {
+        type: 'video' | 'subtitle' | 'any';
+        title?: string;
+        multiple?: boolean;
+      },
+    ) => {
+      const { type, title, multiple = true } = options;
+
+      let filters: { name: string; extensions: string[] }[] = [];
+
+      if (type === 'video') {
+        filters = [
+          {
+            name: 'Video Files',
+            extensions: MEDIA_EXTENSIONS.filter((ext) =>
+              [
+                '.mp4',
+                '.avi',
+                '.mov',
+                '.mkv',
+                '.flv',
+                '.wmv',
+                '.webm',
+                '.3gp',
+                '.ts',
+              ].includes(ext),
+            ).map((ext) => ext.substring(1)),
+          },
+        ];
+      } else if (type === 'subtitle') {
+        filters = [
+          {
+            name: 'Subtitle Files',
+            extensions: SUBTITLE_EXTENSIONS.map((ext) => ext.substring(1)),
+          },
+        ];
+      }
+
+      const properties: ('openFile' | 'multiSelections')[] = ['openFile'];
+      if (multiple) {
+        properties.push('multiSelections');
+      }
+
+      const result = await dialog.showOpenDialog({
+        properties,
+        title,
+        filters: filters.length > 0 ? filters : undefined,
+      });
+
+      return {
+        filePaths: result.filePaths,
+        canceled: result.canceled,
+      };
+    },
+  );
 }

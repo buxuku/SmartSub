@@ -10,6 +10,7 @@ import { setupStoreHandlers, store } from './helpers/storeManager';
 import { setupTaskManager } from './helpers/taskManager';
 import { setupAutoUpdater } from './helpers/updater';
 import { setupParameterHandlers } from './helpers/ipcParameterHandlers';
+import { setupProofreadHandlers } from './helpers/ipcProofreadHandlers';
 import { configurationManager } from './service/configurationManager';
 
 //控制台出现中文乱码，需要去node_modules\electron\cli.js中修改启动代码页
@@ -39,6 +40,7 @@ if (isProd) {
 
   setupStoreHandlers();
   setupParameterHandlers();
+  setupProofreadHandlers();
 
   // Initialize configuration manager
   try {
