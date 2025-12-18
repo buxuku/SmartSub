@@ -15,6 +15,7 @@ import {
   Languages,
   Settings,
   Rocket,
+  Edit3,
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { openUrl } from 'lib/utils';
@@ -139,6 +140,25 @@ const Layout = ({ children }) => {
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={5}>
                 {t('translationManagement')}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link href={`/${locale}/proofread`}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`rounded-lg ${
+                      asPath.includes('proofread') ? 'bg-muted' : ''
+                    }`}
+                    aria-label="Proofread"
+                  >
+                    <Edit3 className="size-5" />
+                  </Button>
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={5}>
+                {t('subtitleProofread')}
               </TooltipContent>
             </Tooltip>
             <Tooltip>

@@ -127,5 +127,6 @@
   "newVersionDesc": "New version {version} is available. Do you want to download it now?",
   "later": "Later",
   "downloadingUpdate": "Downloading Update",
-  "downloadingUpdateDesc": "Downloading version {version}. You will be prompted to install when complete."
+  "downloadingUpdateDesc": "Downloading version {version}. You will be prompted to install when complete.",
+  "subtitleProofread": "Subtitle Proofreading"
 }

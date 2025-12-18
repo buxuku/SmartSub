@@ -127,5 +127,6 @@
   "newVersionDesc": "发现新版本 {version}，是否立即下载？",
   "later": "稍后再说",
   "downloadingUpdate": "正在下载更新",
-  "downloadingUpdateDesc": "正在下载版本 {version}，下载完成后将提示安装。"
+  "downloadingUpdateDesc": "正在下载版本 {version}，下载完成后将提示安装。",
+  "subtitleProofread": "字幕校对"
 }

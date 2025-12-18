@@ -1,4 +1,5 @@
 import { Provider, CustomParameterConfig } from '../../../types/provider';
+import { ProofreadHistory, ProofreadTask } from '../../../types/proofread';
 
 export type LogEntry = {
   timestamp: number;
@@ -31,5 +32,7 @@ export type StoreType = {
   providerVersion?: number;
   logs: LogEntry[];
   customParameters?: Record<string, CustomParameterConfig>;
+  proofreadHistories?: ProofreadHistory[]; // 旧版，保留兼容
+  proofreadTasks?: ProofreadTask[]; // 新版批量任务
   [key: string]: any;
 };
