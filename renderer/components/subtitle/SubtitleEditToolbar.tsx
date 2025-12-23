@@ -36,9 +36,11 @@ import {
   Scissors,
   Sparkles,
   Loader2,
+  Wand2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Subtitle } from '../../hooks/useSubtitles';
+import BatchAiOptimizeDialog from './BatchAiOptimizeDialog';
 
 interface SubtitleEditToolbarProps {
   subtitles: Subtitle[];
@@ -115,6 +117,9 @@ export default function SubtitleEditToolbar({
   const [showCustomPrompt, setShowCustomPrompt] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
   const [isCustomPromptLoaded, setIsCustomPromptLoaded] = useState(false);
+
+  // 批量 AI 优化状态
+  const [showBatchOptimize, setShowBatchOptimize] = useState(false);
 
   // 默认优化/翻译提示词模板（支持条件模板）
   const defaultOptimizePrompt = `You are a professional subtitle translator and proofreader.
@@ -447,6 +452,23 @@ Only respond with the translated/improved text, nothing else.`;
     toast.success(t('optimizationAccepted') || '已采纳优化结果');
   }, [optimizedText, currentSubtitleIndex, subtitles, onSubtitlesChange, t]);
 
+  // 应用批量优化结果
+  const handleApplyBatchOptimizations = useCallback(
+    (optimizations: Array<{ index: number; targetContent: string }>) => {
+      const newSubtitles = [...subtitles];
+      optimizations.forEach(({ index, targetContent }) => {
+        if (index >= 0 && index < newSubtitles.length) {
+          newSubtitles[index] = {
+            ...newSubtitles[index],
+            targetContent,
+          };
+        }
+      });
+      onSubtitlesChange(newSubtitles);
+    },
+    [subtitles, onSubtitlesChange],
+  );
+
   return (
     <div className="flex items-center gap-1 p-2 border-b bg-muted/30">
       {/* 撤销/重做 */}
@@ -732,7 +754,7 @@ Only respond with the translated/improved text, nothing else.`;
         </DialogContent>
       </Dialog>
 
-      {/* AI 优化按钮和对话框 */}
+      {/* AI 单条优化按钮和对话框 */}
       {shouldShowTranslation && (
         <Dialog open={showAiOptimize} onOpenChange={setShowAiOptimize}>
           <Button
@@ -906,6 +928,31 @@ Only respond with the translated/improved text, nothing else.`;
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* 批量 AI 优化按钮 */}
+      {shouldShowTranslation && (
+        <>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8"
+            onClick={() => setShowBatchOptimize(true)}
+            disabled={subtitles.length === 0}
+            title={t('batchAiOptimize') || '全文 AI 优化'}
+          >
+            <Wand2 className="h-4 w-4 mr-1" />
+            {t('batchAiOptimize') || '全文优化'}
+          </Button>
+
+          <BatchAiOptimizeDialog
+            open={showBatchOptimize}
+            onOpenChange={setShowBatchOptimize}
+            subtitles={subtitles}
+            onApplyOptimizations={handleApplyBatchOptimizations}
+            shouldShowTranslation={shouldShowTranslation}
+          />
+        </>
       )}
     </div>
   );

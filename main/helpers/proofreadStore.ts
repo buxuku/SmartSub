@@ -33,12 +33,14 @@ export function getProofreadTaskById(id: string): ProofreadTask | undefined {
 
 /**
  * 创建新任务
+ * @param items 校对项目数据，可以包含可选的 status 字段
+ * @param name 任务名称
  */
 export function createProofreadTask(
-  items: Omit<
+  items: (Omit<
     ProofreadItem,
-    'id' | 'status' | 'lastPosition' | 'totalCount' | 'modifiedCount'
-  >[],
+    'id' | 'lastPosition' | 'totalCount' | 'modifiedCount'
+  > & { status?: ProofreadItem['status'] })[],
   name?: string,
 ): ProofreadTask {
   const tasks = getProofreadTasks();
@@ -47,20 +49,16 @@ export function createProofreadTask(
   // 生成任务名称，默认取第一个文件名
   const taskName = name || generateTaskName(items[0]);
 
-  // 创建校对项目
-  const proofreadItems: ProofreadItem[] = items.map((item) => ({
+  // 创建校对项目，保留传入的 status（如果有）
+  const proofreadItems: ProofreadItem[] = items.map((item, index) => ({
     ...item,
     id: uuidv4(),
-    status: 'pending' as const,
+    // 如果传入了 status，使用传入的值；否则第一个为 in_progress，其他为 pending
+    status: item.status || (index === 0 ? 'in_progress' : 'pending'),
     lastPosition: 0,
     totalCount: 0,
     modifiedCount: 0,
   }));
-
-  // 设置第一个为进行中
-  if (proofreadItems.length > 0) {
-    proofreadItems[0].status = 'in_progress';
-  }
 
   const newTask: ProofreadTask = {
     id: uuidv4(),
@@ -96,8 +94,26 @@ export function updateProofreadTask(
 
   if (index < 0) return null;
 
+  const existingTask = tasks[index];
+
+  // 如果更新包含 items，需要保留或生成 ID
+  if (updates.items) {
+    updates.items = updates.items.map((item, i) => {
+      // 如果 item 已有 ID，保留它
+      if (item.id) {
+        return item;
+      }
+      // 如果原任务的相同索引位置有 item，使用其 ID
+      if (existingTask.items[i]?.id) {
+        return { ...item, id: existingTask.items[i].id };
+      }
+      // 否则生成新 ID
+      return { ...item, id: uuidv4() };
+    });
+  }
+
   const updated: ProofreadTask = {
-    ...tasks[index],
+    ...existingTask,
     ...updates,
     updatedAt: Date.now(),
   };

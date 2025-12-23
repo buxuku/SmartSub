@@ -109,7 +109,7 @@ export async function handleAIBatchTranslation(
             targetContent:
               parsedContent[subtitle.id] !== undefined
                 ? parsedContent[subtitle.id]
-                : parsedValues[index] || `[翻译结果缺失]`,
+                : parsedValues[index] || '',
           }));
 
           // 如果提供了结果处理函数，则实时处理每个翻译结果

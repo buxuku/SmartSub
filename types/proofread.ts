@@ -56,6 +56,8 @@ export interface ProofreadItem {
   totalCount: number; // 总字幕数
   modifiedCount: number; // 修改次数
   status: 'pending' | 'in_progress' | 'completed';
+  // 可选字幕列表（包含检测到的和用户上传的）
+  detectedSubtitles?: DetectedSubtitle[];
 }
 
 // 校对任务（包含多个项目）

@@ -58,7 +58,9 @@ export const useVideoPlayer = (
       // 如果有视频播放器，跳转到对应时间点
       if (playerRef.current) {
         const startTime = mergedSubtitles[index]?.startTimeInSeconds ?? 0;
-        playerRef.current.seekTo(startTime);
+        // 增加微小偏移（10ms），避免正好落在前后字幕的边界时间点上
+        // 这样可以确保视频播放器的字幕轨道只显示当前字幕
+        playerRef.current.seekTo(startTime + 0.01);
       }
     }
   };

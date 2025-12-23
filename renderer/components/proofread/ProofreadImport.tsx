@@ -4,24 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Video, FileText, FolderOpen } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { toast } from 'sonner';
-
-interface PendingFile {
-  id: string;
-  videoPath?: string;
-  fileName: string;
-  detectedSubtitles: Array<{
-    filePath: string;
-    type: 'source' | 'translated' | 'unknown';
-    language?: string;
-    confidence: number;
-  }>;
-  selectedSource?: string;
-  selectedTarget?: string;
-  sourceLanguage?: string;
-  targetLanguage?: string;
-  status: 'pending' | 'proofreading' | 'completed';
-  isSubtitleOnlyMode?: boolean; // 字幕导入模式，源字幕不可切换
-}
+import {
+  PendingFile,
+  DetectedSubtitle,
+  createPendingFileFromVideo,
+  createPendingFileFromSubtitle,
+  selectBestSubtitles,
+} from '@/lib/proofreadUtils';
 
 interface ProofreadImportProps {
   onImportComplete: (files: PendingFile[], type: 'video' | 'subtitle') => void;
@@ -42,38 +31,12 @@ export default function ProofreadImport({
 
       if (!result || result.canceled || result.filePaths.length === 0) return;
 
-      const files: PendingFile[] = [];
-
-      for (const videoPath of result.filePaths) {
-        // 检测关联的字幕
-        const detectResult = await window.ipc.invoke('detectSubtitles', {
-          videoPath,
-        });
-
-        const detectedSubtitles = detectResult.success
-          ? detectResult.data.detectedSubtitles
-          : [];
-
-        // 按置信度排序，选择最佳的源字幕和翻译字幕
-        const sourceSubtitles = detectedSubtitles
-          .filter((s: any) => s.type === 'source' || s.type === 'unknown')
-          .sort((a: any, b: any) => b.confidence - a.confidence);
-        const translatedSubtitles = detectedSubtitles
-          .filter((s: any) => s.type === 'translated')
-          .sort((a: any, b: any) => b.confidence - a.confidence);
-
-        files.push({
-          id: uuidv4(),
-          videoPath,
-          fileName: videoPath.split('/').pop() || '',
-          detectedSubtitles,
-          selectedSource: sourceSubtitles[0]?.filePath,
-          selectedTarget: translatedSubtitles[0]?.filePath,
-          sourceLanguage: sourceSubtitles[0]?.language,
-          targetLanguage: translatedSubtitles[0]?.language,
-          status: 'pending',
-        });
-      }
+      // 使用工具函数创建 PendingFile
+      const files = await Promise.all(
+        result.filePaths.map((videoPath: string) =>
+          createPendingFileFromVideo(videoPath),
+        ),
+      );
 
       if (files.length > 0) {
         onImportComplete(files, 'video');
@@ -93,78 +56,12 @@ export default function ProofreadImport({
 
       if (!result || result.canceled || result.filePaths.length === 0) return;
 
-      const files: PendingFile[] = [];
-
-      // 每个导入的字幕文件作为一个独立的源字幕条目
-      for (const sourceFilePath of result.filePaths) {
-        const sourceFileName = sourceFilePath.split('/').pop() || '';
-        const sourceBaseName = sourceFileName.replace(/\.[^.]+$/, '');
-        const sourceDir = sourceFilePath.substring(
-          0,
-          sourceFilePath.lastIndexOf('/'),
-        );
-
-        // 检测源字幕语言
-        const sourceLangResult = await window.ipc.invoke('detectLanguage', {
-          filePath: sourceFilePath,
-        });
-        const sourceLanguage = sourceLangResult.success
-          ? sourceLangResult.data?.code
-          : undefined;
-
-        // 使用与视频导入相同的逻辑：以源字幕文件名为基准，检测同目录下的其他字幕
-        // 调用 detectSubtitles，把源字幕路径当作"视频"来检测关联字幕
-        const detectResult = await window.ipc.invoke('detectSubtitles', {
-          videoPath: sourceFilePath.replace(/\.[^.]+$/, '.mp4'), // 伪造视频路径以复用检测逻辑
-        });
-
-        let detectedSubtitles: Array<{
-          filePath: string;
-          type: 'source' | 'translated' | 'unknown';
-          language?: string;
-          confidence: number;
-        }> = [];
-
-        if (detectResult.success && detectResult.data.detectedSubtitles) {
-          detectedSubtitles = detectResult.data.detectedSubtitles;
-        }
-
-        // 确保源字幕在列表中（标记为 source，置信度 100%）
-        const sourceInList = detectedSubtitles.find(
-          (s) => s.filePath === sourceFilePath,
-        );
-        if (!sourceInList) {
-          detectedSubtitles.unshift({
-            filePath: sourceFilePath,
-            type: 'source',
-            language: sourceLanguage,
-            confidence: 100,
-          });
-        } else {
-          // 更新源字幕信息
-          sourceInList.type = 'source';
-          sourceInList.confidence = 100;
-        }
-
-        // 找到置信度最高的翻译字幕（排除源字幕）
-        const translatedSubtitles = detectedSubtitles
-          .filter((s) => s.filePath !== sourceFilePath && s.type !== 'source')
-          .sort((a, b) => b.confidence - a.confidence);
-
-        const bestTranslated = translatedSubtitles[0];
-
-        files.push({
-          id: uuidv4(),
-          fileName: sourceBaseName,
-          detectedSubtitles,
-          selectedSource: sourceFilePath,
-          selectedTarget: bestTranslated?.filePath,
-          sourceLanguage,
-          targetLanguage: bestTranslated?.language,
-          status: 'pending',
-          isSubtitleOnlyMode: true, // 标记为字幕导入模式
-        });
-      }
+      // 使用工具函数创建 PendingFile
+      const files = await Promise.all(
+        result.filePaths.map((filePath: string) =>
+          createPendingFileFromSubtitle(filePath),
+        ),
+      );
 
       if (files.length > 0) {
         onImportComplete(files, 'subtitle');
@@ -197,49 +94,21 @@ export default function ProofreadImport({
         return;
       }
 
-      const files: PendingFile[] = [];
-
       // 智能检测：如果有视频，按视频模式处理
       if (videos.length > 0) {
-        for (const videoPath of videos) {
-          const detectResult = await window.ipc.invoke('detectSubtitles', {
-            videoPath,
-          });
-          const detectedSubtitles = detectResult.success
-            ? detectResult.data.detectedSubtitles
-            : [];
-
-          const sourceSubtitles = detectedSubtitles
-            .filter((s: any) => s.type === 'source' || s.type === 'unknown')
-            .sort((a: any, b: any) => b.confidence - a.confidence);
-          const translatedSubtitles = detectedSubtitles
-            .filter((s: any) => s.type === 'translated')
-            .sort((a: any, b: any) => b.confidence - a.confidence);
-
-          files.push({
-            id: uuidv4(),
-            videoPath,
-            fileName: videoPath.split('/').pop() || '',
-            detectedSubtitles,
-            selectedSource: sourceSubtitles[0]?.filePath,
-            selectedTarget: translatedSubtitles[0]?.filePath,
-            sourceLanguage: sourceSubtitles[0]?.language,
-            targetLanguage: translatedSubtitles[0]?.language,
-            status: 'pending',
-          });
-        }
+        // 使用工具函数创建 PendingFile
+        const files = await Promise.all(
+          videos.map((videoPath: string) =>
+            createPendingFileFromVideo(videoPath),
+          ),
+        );
 
         if (files.length > 0) {
           onImportComplete(files, 'video');
         }
       } else {
         // 没有视频，按字幕模式处理
-        const allSubtitles: Array<{
-          filePath: string;
-          type: 'source' | 'translated' | 'unknown';
-          language?: string;
-          confidence: number;
-        }> = [];
+        const allSubtitles: DetectedSubtitle[] = [];
 
         for (const filePath of subtitles) {
           const langResult = await window.ipc.invoke('detectLanguage', {
@@ -260,6 +129,8 @@ export default function ProofreadImport({
         const matchResult = await window.ipc.invoke('matchSubtitleFiles', {
           files: subtitles,
         });
+
+        const files: PendingFile[] = [];
 
         if (matchResult.success && matchResult.data.length > 0) {
           for (const match of matchResult.data) {
@@ -370,7 +241,7 @@ export default function ProofreadImport({
             </CardTitle>
           </CardHeader>
           <CardContent className="text-center text-sm text-muted-foreground">
-            {t('importFolderDesc') || '扫描文件夹，批量导入字幕文件'}
+            {t('importFolderDesc') || '批量导入视频和字幕文件'}
           </CardContent>
         </Card>
       </div>
