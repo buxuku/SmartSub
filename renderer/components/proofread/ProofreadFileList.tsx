@@ -39,26 +39,12 @@ import {
 import { Label } from '@/components/ui/label';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
-
-interface DetectedSubtitle {
-  filePath: string;
-  type: 'source' | 'translated' | 'unknown';
-  language?: string;
-  confidence: number;
-}
-
-interface PendingFile {
-  id: string;
-  videoPath?: string;
-  fileName: string;
-  detectedSubtitles: DetectedSubtitle[];
-  selectedSource?: string;
-  selectedTarget?: string;
-  sourceLanguage?: string;
-  targetLanguage?: string;
-  status: 'pending' | 'proofreading' | 'completed';
-  isSubtitleOnlyMode?: boolean; // 字幕导入模式，源字幕不可切换
-}
+import {
+  PendingFile,
+  DetectedSubtitle,
+  createPendingFileFromVideo,
+  selectBestSubtitles,
+} from '@/lib/proofreadUtils';
 
 interface ProofreadFileListProps {
   files: PendingFile[];
@@ -229,35 +215,12 @@ export default function ProofreadFileList({
 
         if (!result || result.canceled || result.filePaths.length === 0) return;
 
-        const newFiles: PendingFile[] = [];
-
-        for (const videoPath of result.filePaths) {
-          const detectResult = await window.ipc.invoke('detectSubtitles', {
-            videoPath,
-          });
-          const detectedSubtitles = detectResult.success
-            ? detectResult.data.detectedSubtitles
-            : [];
-
-          const sourceSubtitles = detectedSubtitles
-            .filter((s: any) => s.type === 'source' || s.type === 'unknown')
-            .sort((a: any, b: any) => b.confidence - a.confidence);
-          const translatedSubtitles = detectedSubtitles
-            .filter((s: any) => s.type === 'translated')
-            .sort((a: any, b: any) => b.confidence - a.confidence);
-
-          newFiles.push({
-            id: uuidv4(),
-            videoPath,
-            fileName: videoPath.split('/').pop() || '',
-            detectedSubtitles,
-            selectedSource: sourceSubtitles[0]?.filePath,
-            selectedTarget: translatedSubtitles[0]?.filePath,
-            sourceLanguage: sourceSubtitles[0]?.language,
-            targetLanguage: translatedSubtitles[0]?.language,
-            status: 'pending',
-          });
-        }
+        // 使用工具函数创建 PendingFile
+        const newFiles = await Promise.all(
+          result.filePaths.map((videoPath: string) =>
+            createPendingFileFromVideo(videoPath),
+          ),
+        );
 
         if (newFiles.length > 0) {
           onAddFiles(newFiles);
@@ -271,12 +234,7 @@ export default function ProofreadFileList({
 
         if (!result || result.canceled || result.filePaths.length === 0) return;
 
-        const allSubtitles: Array<{
-          filePath: string;
-          type: 'source' | 'translated' | 'unknown';
-          language?: string;
-          confidence: number;
-        }> = [];
+        const allSubtitles: DetectedSubtitle[] = [];
 
         for (const filePath of result.filePaths) {
           const langResult = await window.ipc.invoke('detectLanguage', {
@@ -293,12 +251,16 @@ export default function ProofreadFileList({
           });
         }
 
-        const sourceSubtitle =
-          allSubtitles.find((s) => s.type === 'source') || allSubtitles[0];
-        const targetSubtitle = allSubtitles.find(
-          (s) =>
-            s.type === 'translated' && s.filePath !== sourceSubtitle?.filePath,
-        );
+        // 使用工具函数选择最佳字幕
+        const { bestSource, bestTarget } = selectBestSubtitles(allSubtitles);
+        const sourceSubtitle = bestSource || allSubtitles[0];
+        const targetSubtitle =
+          bestTarget ||
+          allSubtitles.find(
+            (s) =>
+              s.type === 'translated' &&
+              s.filePath !== sourceSubtitle?.filePath,
+          );
 
         const newFile: PendingFile = {
           id: uuidv4(),

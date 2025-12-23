@@ -6,29 +6,19 @@ import ProofreadFileList from '@/components/proofread/ProofreadFileList';
 import ProofreadEditor from '@/components/proofread/ProofreadEditor';
 import ProofreadTaskList from '@/components/proofread/ProofreadTaskList';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ProofreadTask, ProofreadItem } from '../../../types/proofread';
+import { ProofreadTask } from '../../../types/proofread';
 import { Plus, History } from 'lucide-react';
+import {
+  PendingFile,
+  loadPendingFileFromItem,
+  pendingFileToSaveFormat,
+} from '@/lib/proofreadUtils';
 
 // 工作流阶段
 type WorkflowStage = 'import' | 'list' | 'edit';
 
-// 待校对文件项
-export interface PendingFile {
-  id: string;
-  videoPath?: string;
-  fileName: string;
-  detectedSubtitles: Array<{
-    filePath: string;
-    type: 'source' | 'translated' | 'unknown';
-    language?: string;
-    confidence: number;
-  }>;
-  selectedSource?: string;
-  selectedTarget?: string;
-  sourceLanguage?: string;
-  targetLanguage?: string;
-  status: 'pending' | 'proofreading' | 'completed';
-}
+// 重新导出 PendingFile 类型供其他组件使用
+export type { PendingFile } from '@/lib/proofreadUtils';
 
 export default function ProofreadPage() {
   const { t } = useTranslation('home');
@@ -43,20 +33,16 @@ export default function ProofreadPage() {
   const [importType, setImportType] = useState<'video' | 'subtitle'>('video');
 
   // 从历史任务加载
-  const handleLoadTask = useCallback((task: ProofreadTask) => {
-    const files: PendingFile[] = task.items.map((item) => ({
-      id: item.id,
-      videoPath: item.videoPath,
-      fileName: item.videoPath
-        ? item.videoPath.split('/').pop() || ''
-        : item.sourceSubtitlePath.split('/').pop() || '',
-      detectedSubtitles: [],
-      selectedSource: item.sourceSubtitlePath,
-      selectedTarget: item.targetSubtitlePath,
-      sourceLanguage: item.sourceLanguage,
-      targetLanguage: item.targetLanguage,
-      status: item.status === 'completed' ? 'completed' : 'pending',
-    }));
+  const handleLoadTask = useCallback(async (task: ProofreadTask) => {
+    // 使用工具函数为每个项目加载可用字幕
+    const files: PendingFile[] = await Promise.all(
+      task.items.map((item) => loadPendingFileFromItem(item)),
+    );
+
+    // 判断导入类型
+    const hasVideo = task.items.some((item) => item.videoPath);
+    setImportType(hasVideo ? 'video' : 'subtitle');
+
     setPendingFiles(files);
     setSavedTaskId(task.id);
     setTaskName(task.name);
@@ -133,13 +119,8 @@ export default function ProofreadPage() {
 
   // 保存任务
   const handleSaveTask = useCallback(async () => {
-    const items = pendingFiles.map((file) => ({
-      videoPath: file.videoPath,
-      sourceSubtitlePath: file.selectedSource || '',
-      targetSubtitlePath: file.selectedTarget,
-      sourceLanguage: file.sourceLanguage,
-      targetLanguage: file.targetLanguage,
-    }));
+    // 使用工具函数转换为保存格式
+    const items = pendingFiles.map(pendingFileToSaveFormat);
 
     if (savedTaskId) {
       // 更新现有任务

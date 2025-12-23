@@ -204,10 +204,10 @@ export function setupProofreadHandlers(): void {
         items,
         name,
       }: {
-        items: Omit<
+        items: (Omit<
           ProofreadItem,
-          'id' | 'status' | 'lastPosition' | 'totalCount' | 'modifiedCount'
-        >[];
+          'id' | 'lastPosition' | 'totalCount' | 'modifiedCount'
+        > & { status?: ProofreadItem['status'] })[];
         name?: string;
       },
     ) => {
@@ -598,5 +598,330 @@ Only respond with the translation, nothing else.`;
     },
   );
 
+  // 批量优化字幕
+  ipcMain.handle(
+    'batchOptimizeSubtitles',
+    async (
+      event,
+      {
+        subtitles,
+        providerId,
+        customPrompt,
+        batchSize = 5,
+        maxRetries = 2,
+      }: {
+        subtitles: Array<{
+          id: string;
+          index: number;
+          sourceContent: string;
+          targetContent: string;
+        }>;
+        providerId?: string;
+        customPrompt?: string;
+        batchSize?: number;
+        maxRetries?: number;
+      },
+    ) => {
+      try {
+        logMessage(
+          `Starting batch optimization: ${subtitles.length} subtitles in batches of ${batchSize}`,
+          'info',
+        );
+
+        // 获取用户配置
+        const userConfig = store.get('userConfig') || {};
+        const translateProviderId = providerId || userConfig.translateProvider;
+
+        if (!translateProviderId || translateProviderId === '-1') {
+          return {
+            success: false,
+            error: '请先选择一个 AI 翻译服务',
+          };
+        }
+
+        // 获取翻译提供商
+        const providers = store.get('translationProviders') || [];
+        const provider = providers.find(
+          (p: Provider) => p.id === translateProviderId,
+        );
+
+        if (!provider) {
+          return {
+            success: false,
+            error: '未找到选择的翻译服务',
+          };
+        }
+
+        if (!provider.isAi) {
+          return {
+            success: false,
+            error: 'AI 优化功能仅支持 AI 翻译服务',
+          };
+        }
+
+        const translator =
+          TRANSLATOR_MAP[provider.type as keyof typeof TRANSLATOR_MAP];
+        if (!translator) {
+          return {
+            success: false,
+            error: `不支持的翻译服务类型: ${provider.type}`,
+          };
+        }
+
+        const sourceLanguage = userConfig.sourceLanguage || 'en';
+        const targetLanguage = userConfig.targetLanguage || 'zh';
+
+        // 构建默认批量优化提示词
+        const defaultBatchPrompt = `You are a professional subtitle translator and proofreader. Optimize the following subtitle translations.
+
+For each subtitle, improve the translation to:
+1. More accurately convey the original meaning
+2. Use natural and fluent expressions
+3. Be appropriate for subtitle display (concise but complete)
+4. Maintain the original tone and style
+
+Input format: JSON object with subtitle IDs as keys and {source, target} as values
+Output format: JSON object with the same IDs and optimized translations as values
+
+IMPORTANT: You MUST return a valid JSON object. Do NOT include any text before or after the JSON. Only output the JSON object.`;
+
+        const results: Array<{
+          id: string;
+          index: number;
+          sourceContent: string;
+          originalTarget: string;
+          optimizedTarget: string;
+          status: 'success' | 'error' | 'skipped';
+          error?: string;
+        }> = [];
+
+        const totalBatches = Math.ceil(subtitles.length / batchSize);
+        let processedCount = 0;
+
+        // 分批处理
+        for (let i = 0; i < subtitles.length; i += batchSize) {
+          const batch = subtitles.slice(i, i + batchSize);
+          const currentBatchIndex = Math.floor(i / batchSize) + 1;
+          let retryCount = 0;
+          let batchSuccess = false;
+
+          logMessage(
+            `Processing batch ${currentBatchIndex}/${totalBatches} with ${batch.length} subtitles`,
+            'info',
+          );
+
+          // 发送进度更新
+          const progress = Math.round(
+            (processedCount / subtitles.length) * 100,
+          );
+          event.sender.send('batchOptimizeProgress', {
+            progress,
+            currentBatch: currentBatchIndex,
+            totalBatches,
+            processedCount,
+            totalCount: subtitles.length,
+          });
+
+          while (!batchSuccess && retryCount <= maxRetries) {
+            try {
+              // 构建批量输入
+              const batchInput: Record<
+                string,
+                { source: string; target: string }
+              > = {};
+              batch.forEach((sub) => {
+                batchInput[sub.id] = {
+                  source: sub.sourceContent,
+                  target: sub.targetContent || '',
+                };
+              });
+
+              // 构建提示词
+              let optimizePrompt = customPrompt || defaultBatchPrompt;
+              optimizePrompt = optimizePrompt
+                .replace(/\{\{sourceLanguage\}\}/g, sourceLanguage)
+                .replace(/\{\{targetLanguage\}\}/g, targetLanguage);
+
+              const fullPrompt = `${optimizePrompt}\n\nSubtitles to optimize:\n${JSON.stringify(batchInput, null, 2)}`;
+
+              // 配置翻译器
+              const optimizedProvider = {
+                ...provider,
+                systemPrompt:
+                  'You are a professional subtitle optimizer. Output ONLY valid JSON. No explanations, no markdown, just the JSON object.',
+                useJsonMode: true,
+                structuredOutput: 'disabled' as const,
+              };
+
+              logMessage(
+                `Batch ${currentBatchIndex} attempt ${retryCount + 1}/${maxRetries + 1}`,
+                'info',
+              );
+
+              const response = await translator(
+                fullPrompt,
+                optimizedProvider,
+                sourceLanguage,
+                targetLanguage,
+              );
+
+              logMessage(
+                `Batch ${currentBatchIndex} response: ${response}`,
+                'info',
+              );
+
+              // 解析响应
+              const parsedResponse = parseOptimizationResponse(response);
+
+              if (parsedResponse && typeof parsedResponse === 'object') {
+                // 处理结果
+                batch.forEach((sub) => {
+                  const optimized = parsedResponse[sub.id];
+                  if (optimized !== undefined) {
+                    results.push({
+                      id: sub.id,
+                      index: sub.index,
+                      sourceContent: sub.sourceContent,
+                      originalTarget: sub.targetContent,
+                      optimizedTarget:
+                        typeof optimized === 'string'
+                          ? optimized
+                          : optimized?.target ||
+                            optimized?.translation ||
+                            String(optimized),
+                      status: 'success',
+                    });
+                  } else {
+                    results.push({
+                      id: sub.id,
+                      index: sub.index,
+                      sourceContent: sub.sourceContent,
+                      originalTarget: sub.targetContent,
+                      optimizedTarget: sub.targetContent,
+                      status: 'skipped',
+                      error: '未在响应中找到对应结果',
+                    });
+                  }
+                });
+
+                processedCount += batch.length;
+                batchSuccess = true;
+                logMessage(
+                  `Batch ${currentBatchIndex}/${totalBatches} completed successfully`,
+                  'info',
+                );
+              } else {
+                throw new Error('无法解析 AI 响应');
+              }
+            } catch (error) {
+              retryCount++;
+              if (retryCount <= maxRetries) {
+                logMessage(
+                  `Batch ${currentBatchIndex} failed, retry ${retryCount}/${maxRetries}: ${error}`,
+                  'warning',
+                );
+                await new Promise((resolve) =>
+                  setTimeout(resolve, 1000 * retryCount),
+                );
+              } else {
+                logMessage(
+                  `Batch ${currentBatchIndex} failed after ${maxRetries} retries: ${error}`,
+                  'error',
+                );
+                // 批次失败，标记所有字幕为错误
+                batch.forEach((sub) => {
+                  results.push({
+                    id: sub.id,
+                    index: sub.index,
+                    sourceContent: sub.sourceContent,
+                    originalTarget: sub.targetContent,
+                    optimizedTarget: sub.targetContent,
+                    status: 'error',
+                    error: String(error),
+                  });
+                });
+                processedCount += batch.length;
+                batchSuccess = true; // 继续下一批
+              }
+            }
+          }
+        }
+
+        // 发送完成进度
+        event.sender.send('batchOptimizeProgress', {
+          progress: 100,
+          currentBatch: totalBatches,
+          totalBatches,
+          processedCount: subtitles.length,
+          totalCount: subtitles.length,
+          completed: true,
+        });
+
+        logMessage(
+          `Batch optimization completed: ${results.filter((r) => r.status === 'success').length}/${subtitles.length} successful`,
+          'info',
+        );
+
+        return {
+          success: true,
+          data: {
+            results,
+            summary: {
+              total: subtitles.length,
+              success: results.filter((r) => r.status === 'success').length,
+              error: results.filter((r) => r.status === 'error').length,
+              skipped: results.filter((r) => r.status === 'skipped').length,
+            },
+          },
+        };
+      } catch (error) {
+        logMessage(`Error in batch optimization: ${error}`, 'error');
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+  );
+
   logMessage('Proofread IPC handlers initialized', 'info');
+}
+
+// 辅助函数：解析优化响应
+function parseOptimizationResponse(
+  response: string,
+): Record<string, any> | null {
+  const cleanResponse = response
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .trim();
+
+  // 尝试直接解析
+  try {
+    return JSON.parse(cleanResponse);
+  } catch {}
+
+  // 尝试提取 JSON 块
+  const jsonMatch = cleanResponse.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[1].trim());
+    } catch {}
+  }
+
+  // 尝试找到 JSON 对象
+  const objectMatch = cleanResponse.match(/\{[\s\S]*\}/);
+  if (objectMatch) {
+    try {
+      return JSON.parse(objectMatch[0]);
+    } catch {
+      // 尝试修复常见的 JSON 错误
+      try {
+        const { jsonrepair } = require('jsonrepair');
+        const repaired = jsonrepair(objectMatch[0]);
+        return JSON.parse(repaired);
+      } catch {}
+    }
+  }
+
+  return null;
 }
