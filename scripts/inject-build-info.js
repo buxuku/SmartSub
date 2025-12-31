@@ -26,8 +26,8 @@ try {
     buildDate: new Date().toISOString(),
   };
 
-  // 如果是Windows平台且有CUDA版本信息，则添加CUDA相关信息
-  if (platform === 'win32' && cudaVersion) {
+  // 如果是Windows或Linux平台且有CUDA版本信息，则添加CUDA相关信息
+  if ((platform === 'win32' || platform === 'linux') && cudaVersion) {
     buildInfo.cudaVersion = cudaVersion;
     if (cudaOpt) {
       buildInfo.cudaOpt = cudaOpt;

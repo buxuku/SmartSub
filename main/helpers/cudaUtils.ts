@@ -5,7 +5,9 @@ import { logMessage } from './storeManager';
  * 检查系统是否支持CUDA并返回支持的版本
  */
 export function checkCudaSupport() {
-  if (process.platform !== 'win32') return false;
+  // 仅支持 Windows 和 Linux 平台
+  if (process.platform !== 'win32' && process.platform !== 'linux')
+    return false;
 
   try {
     // 检查nvcc是否存在（CUDA Toolkit的编译器）
