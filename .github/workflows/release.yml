@@ -114,6 +114,51 @@ jobs:
             cuda_opt: 'generic'
             artifact_suffix: windows-x64-cuda1302-generic
 
+          # Linux x64 no-cuda
+          - os: ubuntu-22.04
+            arch: x64
+            os_build_arg: linux
+            addon_name: addon-linux-x64.node
+            cuda_version: 'no-cuda'
+            cuda_opt: 'generic'
+            artifact_suffix: linux-x64-nocuda-generic
+
+          # Linux CUDA 12.4.0 optimized
+          - os: ubuntu-22.04
+            arch: x64
+            os_build_arg: linux
+            addon_name: addon-linux-cuda-1240-optimized.node
+            cuda_version: '12.4.0'
+            cuda_opt: 'optimized'
+            artifact_suffix: linux-x64-cuda1240-optimized
+
+          # Linux CUDA 12.4.0 generic
+          - os: ubuntu-22.04
+            arch: x64
+            os_build_arg: linux
+            addon_name: addon-linux-cuda-1240-generic.node
+            cuda_version: '12.4.0'
+            cuda_opt: 'generic'
+            artifact_suffix: linux-x64-cuda1240-generic
+
+          # Linux CUDA 13.0.2 optimized
+          - os: ubuntu-22.04
+            arch: x64
+            os_build_arg: linux
+            addon_name: addon-linux-cuda-1302-optimized.node
+            cuda_version: '13.0.2'
+            cuda_opt: 'optimized'
+            artifact_suffix: linux-x64-cuda1302-optimized
+
+          # Linux CUDA 13.0.2 generic
+          - os: ubuntu-22.04
+            arch: x64
+            os_build_arg: linux
+            addon_name: addon-linux-cuda-1302-generic.node
+            cuda_version: '13.0.2'
+            cuda_opt: 'generic'
+            artifact_suffix: linux-x64-cuda1302-generic
+
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4
@@ -133,6 +178,10 @@ jobs:
           if [[ "${{ matrix.os_build_arg }}" == "win" ]]; then
             curl -L -o "temp-artifacts/addon-windows-no-cuda.node" \
               "https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-windows-no-cuda.node"
+          fi
+          if [[ "${{ matrix.os_build_arg }}" == "linux" ]]; then
+            curl -L -o "temp-artifacts/addon-linux-x64.node" \
+              "https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-linux-x64.node"
           fi
           if [[ "${{ matrix.os_build_arg }}" == "mac" && "${{ matrix.arch }}" == "arm64" ]]; then
              curl -L -o "temp-artifacts/addon-macos-arm64-coreml.node" \
@@ -163,6 +212,18 @@ jobs:
           Copy-Item -Path "temp-artifacts/addon-windows-no-cuda.node" -Destination "extraResources/addons/addon-no-cuda.node"
           node scripts/inject-build-info.js
 
+      - name: Prepare Linux addon
+        if: matrix.os_build_arg == 'linux'
+        env:
+          BUILD_PLATFORM: 'linux'
+          BUILD_ARCH: '${{ matrix.arch }}'
+          CUDA_VERSION: '${{ matrix.cuda_version }}'
+          CUDA_OPT: '${{ matrix.cuda_opt }}'
+        run: |
+          cp temp-artifacts/${{ matrix.addon_name }} extraResources/addons/addon.node
+          cp temp-artifacts/addon-linux-x64.node extraResources/addons/addon-no-cuda.node
+          node scripts/inject-build-info.js
+
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
@@ -172,9 +233,15 @@ jobs:
       - name: Build Electron app
         shell: bash # Use bash for consistency if possible, or powershell for windows if needed
         run: |
-          export BUILD_PLATFORM=${{ matrix.os_build_arg == 'mac' && 'darwin' || 'win32' }}
+          if [[ "${{ matrix.os_build_arg }}" == "mac" ]]; then
+            export BUILD_PLATFORM="darwin"
+          elif [[ "${{ matrix.os_build_arg }}" == "win" ]]; then
+            export BUILD_PLATFORM="win32"
+          else
+            export BUILD_PLATFORM="linux"
+          fi
           export BUILD_ARCH=${{ matrix.arch }}
-          if [[ "${{ matrix.os_build_arg }}" == "win" ]]; then
+          if [[ "${{ matrix.os_build_arg }}" == "win" || "${{ matrix.os_build_arg }}" == "linux" ]]; then
             export CUDA_VERSION="${{ matrix.cuda_version }}"
             export CUDA_OPT="${{ matrix.cuda_opt }}"
           fi
