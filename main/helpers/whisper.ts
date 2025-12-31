@@ -248,7 +248,7 @@ export async function loadWhisperAddon(model) {
 
   let addonPath;
 
-  if (platform === 'win32' && useCuda) {
+  if ((platform === 'win32' || platform === 'linux') && useCuda) {
     // 检查 CUDA 支持
     const hasCudaSupport = await checkCudaSupport();
 

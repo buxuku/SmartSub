@@ -91,7 +91,7 @@ export async function generateSubtitleWithBuiltinWhisper(
     let shouldUseGpu = false;
     if (platform === 'darwin' && arch === 'arm64') {
       shouldUseGpu = true;
-    } else if (platform === 'win32' && useCuda) {
+    } else if ((platform === 'win32' || platform === 'linux') && useCuda) {
       shouldUseGpu = !!(await checkCudaSupport());
     }
     const modelPath = `${getPath('modelsPath')}/ggml-${whisperModel}.bin`;

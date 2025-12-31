@@ -37,12 +37,15 @@ export function getBuildInfo() {
 
 /**
  * 获取当前应用的CUDA版本信息
- * 仅在Windows平台且有CUDA支持时返回版本信息
+ * 在Windows或Linux平台且有CUDA支持时返回版本信息
  */
 export function getCudaVersionInfo() {
   const buildInfo = getBuildInfo();
 
-  if (buildInfo.platform === 'win32' && buildInfo.cudaVersion) {
+  if (
+    (buildInfo.platform === 'win32' || buildInfo.platform === 'linux') &&
+    buildInfo.cudaVersion
+  ) {
     return {
       version: buildInfo.cudaVersion,
       optimization: buildInfo.cudaOpt || 'generic',
