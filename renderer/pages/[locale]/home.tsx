@@ -113,18 +113,18 @@ export default function Component() {
       ? undefined
       : proofreadFile.filePath;
 
-    // 确定源字幕路径
+    // 确定源字幕路径 - 优先使用目标目录的文件
     const sourceSubtitlePath =
-      proofreadFile.tempSrtFile ||
       proofreadFile.srtFile ||
+      proofreadFile.tempSrtFile ||
       (isSubtitleFile(proofreadFile.filePath)
         ? proofreadFile.filePath
         : path.join(proofreadFile.directory, `${proofreadFile.fileName}.srt`));
 
-    // 确定翻译字幕路径（仅在需要翻译时）
+    // 确定翻译字幕路径（仅在需要翻译时）- 优先使用目标目录的文件
     const targetSubtitlePath = isGenerateOnly
       ? undefined
-      : proofreadFile.tempTranslatedSrtFile || proofreadFile.translatedSrtFile;
+      : proofreadFile.translatedSrtFile || proofreadFile.tempTranslatedSrtFile;
 
     return {
       id: proofreadFile.uuid,
