@@ -163,7 +163,7 @@ const Settings = () => {
     const result = await window?.ipc?.invoke('selectDirectory');
     if (result.canceled) return;
 
-    const selectedPath = result.filePaths[0];
+    const selectedPath = result.directoryPath;
     setModelsPath(selectedPath);
 
     try {
@@ -179,7 +179,7 @@ const Settings = () => {
     const result = await window?.ipc?.invoke('selectDirectory');
     if (result.canceled) return;
 
-    const selectedPath = result.filePaths[0];
+    const selectedPath = result.directoryPath;
     setCustomTempDir(selectedPath);
 
     try {

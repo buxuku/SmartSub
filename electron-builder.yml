@@ -46,7 +46,7 @@ win:
 linux:
   target:
     - AppImage
-    - tar.gz
+    # - tar.gz
     - deb
   category: AudioVideo
   artifactName: '${productName}_Linux_${version}_${arch}_${env.CUDA_VERSION}_${env.CUDA_OPT}.${ext}'

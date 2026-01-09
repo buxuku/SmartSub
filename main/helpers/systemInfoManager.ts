@@ -98,7 +98,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
 
       // 只删除 .wav 文件，保留目录结构
       for (const file of files) {
-        if (file.endsWith('.wav')) {
+        if (file.endsWith('.wav') || file.endsWith('.srt')) {
           const filePath = path.join(tempDir, file);
           await fse.unlink(filePath);
           logMessage(`Deleted cache file: ${filePath}`, 'info');
