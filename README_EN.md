@@ -136,6 +136,30 @@ Please download the appropriate package based on your computer's system, chip, a
 | Linux   | x64   | CUDA >= 12.4.0          | linux-x64_cuda12.4.0   |
 | Linux   | x64   | no CUDA                 | linux-x64_no_cuda      |
 
+### Install via Homebrew (macOS)
+
+macOS users can quickly install via Homebrew, which automatically downloads the correct version based on chip type (Intel/Apple Silicon):
+
+```bash
+# Add tap (only needed once)
+brew tap buxuku/tap
+
+# Install
+brew install --cask smartsub
+```
+
+Upgrade and uninstall:
+
+```bash
+# Upgrade to latest version
+brew upgrade --cask smartsub
+
+# Uninstall
+brew uninstall --cask smartsub
+```
+
+### Manual Download
+
 1. Go to the [releases](https://github.com/buxuku/SmartSub/releases) page and download the appropriate package for your operating system
 2. Or use the cloud disk [Quark](https://pan.quark.cn/s/0b16479b40ca) to download the corresponding version
 3. Install and run the program

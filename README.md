@@ -137,6 +137,30 @@ SmartSub 现在支持为每个 AI 翻译服务配置自定义参数，让您能�
 | Linux   | x64   | CUDA >= 12.4.0          | linux-x64_cuda12.4.0   |
 | Linux   | x64   | 无 CUDA                 | linux-x64_no_cuda      |
 
+### macOS 用户通过 Homebrew 安装
+
+macOS 用户可以通过 Homebrew 快速安装，会自动根据芯片类型（Intel/Apple Silicon）下载对应版本：
+
+```bash
+# 添加 tap（只需执行一次）
+brew tap buxuku/tap
+
+# 安装
+brew install --cask smartsub
+```
+
+升级和卸载：
+
+```bash
+# 升级到最新版本
+brew upgrade --cask smartsub
+
+# 卸载
+brew uninstall --cask smartsub
+```
+
+### 手动下载安装
+
 1. 前往 [release](https://github.com/buxuku/SmartSub/releases) 页面根据自己的操作系统下载安装包
 2. 或者使用网盘 [夸克](https://pan.quark.cn/s/0b16479b40ca) 选择对应的版本进行下载
 3. 安装并运行程序
