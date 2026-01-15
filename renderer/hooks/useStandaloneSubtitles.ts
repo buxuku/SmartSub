@@ -16,6 +16,8 @@ interface StandaloneSubtitlesConfig {
   targetSubtitlePath?: string;
   sourceLanguage?: string;
   targetLanguage?: string;
+  finalTargetSubtitlePath?: string; // 目标翻译文件（用户配置格式，可能是双语）
+  translateContent?: string; // 翻译内容格式设置
 }
 
 // 将时间字符串转换为秒
@@ -253,12 +255,22 @@ export const useStandaloneSubtitles = (
         });
       }
 
-      // 保存翻译字幕
+      // 保存翻译字幕（纯翻译内容到临时文件）
       if (config.targetSubtitlePath && shouldShowTranslation) {
         await window.ipc.invoke('saveSubtitleFile', {
           filePath: config.targetSubtitlePath,
           subtitles: mergedSubtitles,
           contentType: 'onlyTranslate',
+        });
+      }
+
+      // 保存到目标翻译文件（按用户配置格式，可能是双语）
+      if (config.finalTargetSubtitlePath && shouldShowTranslation) {
+        const contentType = config.translateContent || 'onlyTranslate';
+        await window.ipc.invoke('saveSubtitleFile', {
+          filePath: config.finalTargetSubtitlePath,
+          subtitles: mergedSubtitles,
+          contentType,
         });
       }
 
