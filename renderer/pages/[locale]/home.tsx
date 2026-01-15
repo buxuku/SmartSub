@@ -121,10 +121,15 @@ export default function Component() {
         ? proofreadFile.filePath
         : path.join(proofreadFile.directory, `${proofreadFile.fileName}.srt`));
 
-    // 确定翻译字幕路径（仅在需要翻译时）- 优先使用目标目录的文件
+    // 确定翻译字幕路径（仅在需要翻译时）- 优先使用临时目录的纯翻译文件
     const targetSubtitlePath = isGenerateOnly
       ? undefined
-      : proofreadFile.translatedSrtFile || proofreadFile.tempTranslatedSrtFile;
+      : proofreadFile.tempTranslatedSrtFile || proofreadFile.translatedSrtFile;
+
+    // 目标翻译文件路径（用户配置格式，可能是双语）
+    const finalTargetPath = isGenerateOnly
+      ? undefined
+      : proofreadFile.translatedSrtFile;
 
     return {
       id: proofreadFile.uuid,
@@ -135,6 +140,8 @@ export default function Component() {
       sourceLanguage: formData.sourceLanguage,
       targetLanguage: formData.targetLanguage,
       status: 'proofreading' as const,
+      finalTargetPath,
+      translateContent: formData.translateContent,
     };
   }, [proofreadFile, formData]);
 

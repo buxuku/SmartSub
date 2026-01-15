@@ -21,6 +21,8 @@ interface PendingFile {
   sourceLanguage?: string;
   targetLanguage?: string;
   status: 'pending' | 'proofreading' | 'completed';
+  finalTargetPath?: string; // 目标翻译文件路径（用户配置格式）
+  translateContent?: string; // 翻译内容格式设置
 }
 
 interface ProofreadEditorProps {
@@ -44,6 +46,8 @@ export default function ProofreadEditor({
       targetSubtitlePath: file.selectedTarget,
       sourceLanguage: file.sourceLanguage,
       targetLanguage: file.targetLanguage,
+      finalTargetSubtitlePath: file.finalTargetPath,
+      translateContent: file.translateContent,
     }),
     [file],
   );

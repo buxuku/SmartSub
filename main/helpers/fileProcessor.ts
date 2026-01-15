@@ -224,6 +224,8 @@ export async function processFile(
       const md5FileName = getMd5(filePath);
       const tempSrtFile = path.join(tempDir, `${md5FileName}.srt`);
       file.tempSrtFile = tempSrtFile;
+      // 清除已删除文件的路径，确保校对时使用临时目录的文件
+      file.srtFile = undefined;
       event.sender.send('taskFileChange', file);
       fs.copyFileSync(srtFile, tempSrtFile);
       fs.unlink(srtFile, (err) => {
