@@ -136,7 +136,7 @@ Please download the appropriate package based on your computer's system, chip, a
 | Linux   | x64   | CUDA >= 12.4.0          | linux-x64_cuda12.4.0   |
 | Linux   | x64   | no CUDA                 | linux-x64_no_cuda      |
 
-### Install via Homebrew (macOS)
+### Install via Homebrew (macOS) (Recommended)
 
 macOS users can quickly install via Homebrew, which automatically downloads the correct version based on chip type (Intel/Apple Silicon):
 

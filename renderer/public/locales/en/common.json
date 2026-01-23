@@ -129,5 +129,15 @@
   "downloadingUpdate": "Downloading Update",
   "downloadingUpdateDesc": "Downloading version {version}. You will be prompted to install when complete.",
   "subtitleProofread": "Subtitle Proofreading",
-  "subtitleMerge": "Merge Subtitles"
+  "subtitleMerge": "Merge Subtitles",
+  "updateDialogTitle": "New Version Available",
+  "currentVersion": "Current Version",
+  "latestVersion": "Latest Version",
+  "updateViaHomebrew": "Update via Homebrew",
+  "copyCommand": "Copy Command",
+  "copied": "Copied",
+  "copyFailed": "Copy Failed",
+  "downloadUpdate": "Download Update",
+  "releaseNotes": "Release Notes",
+  "viewOnGitHub": "View on GitHub"
 }

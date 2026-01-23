@@ -137,7 +137,7 @@ SmartSub 现在支持为每个 AI 翻译服务配置自定义参数，让您能�
 | Linux   | x64   | CUDA >= 12.4.0          | linux-x64_cuda12.4.0   |
 | Linux   | x64   | 无 CUDA                 | linux-x64_no_cuda      |
 
-### macOS 用户通过 Homebrew 安装
+### macOS 用户通过 Homebrew 安装）（推荐）
 
 macOS 用户可以通过 Homebrew 快速安装，会自动根据芯片类型（Intel/Apple Silicon）下载对应版本：
 

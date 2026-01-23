@@ -129,5 +129,15 @@
   "downloadingUpdate": "正在下载更新",
   "downloadingUpdateDesc": "正在下载版本 {version}，下载完成后将提示安装。",
   "subtitleProofread": "字幕校对",
-  "subtitleMerge": "视频合字幕"
+  "subtitleMerge": "视频合字幕",
+  "updateDialogTitle": "发现新版本",
+  "currentVersion": "当前版本",
+  "latestVersion": "最新版本",
+  "updateViaHomebrew": "通过 Homebrew 更新",
+  "copyCommand": "复制命令",
+  "copied": "已复制",
+  "copyFailed": "复制失败",
+  "downloadUpdate": "下载更新",
+  "releaseNotes": "更新内容",
+  "viewOnGitHub": "在 GitHub 上查看"
 }
