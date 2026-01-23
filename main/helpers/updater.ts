@@ -62,124 +62,12 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
   });
 
   autoUpdater.on('update-available', (info) => {
+    // 只通知渲染进程，不弹出系统对话框，由渲染进程的 UpdateDialog 组件处理
     mainWindow.webContents.send('update-status', {
       status: 'available',
       version: info.version,
       releaseNotes: info.releaseNotes,
     });
-
-    // 针对Mac平台的特殊处理
-    if (process.platform === 'darwin') {
-      // Mac平台直接提示用户手动下载
-      dialog
-        .showMessageBox(mainWindow, {
-          type: 'info',
-          title: '发现新版本',
-          message: `发现新版本: ${info.version}`,
-          detail: `当前版本: ${app.getVersion()}\n由于macOS系统限制，请前往GitHub手动下载并安装新版本。`,
-          buttons: ['前往下载', '稍后提醒', '查看更新内容'],
-          cancelId: 1,
-        })
-        .then(({ response }) => {
-          if (response === 0) {
-            // 用户选择前往下载
-            const releaseUrl =
-              'https://github.com/buxuku/SmartSub/releases/latest';
-            require('electron').shell.openExternal(releaseUrl);
-          } else if (response === 2) {
-            // 用户选择查看更新内容
-            const releaseUrl = `https://github.com/buxuku/SmartSub/releases/tag/v${info.version}`;
-            require('electron').shell.openExternal(releaseUrl);
-          }
-        });
-    } else {
-      // 非Mac平台显示正常更新提示对话框
-      dialog
-        .showMessageBox(mainWindow, {
-          type: 'info',
-          title: '发现新版本',
-          message: `发现新版本: ${info.version}`,
-          detail: `当前版本: ${app.getVersion()}\n是否下载新版本？`,
-          buttons: ['下载', '稍后提醒', '查看更新内容'],
-          cancelId: 1,
-        })
-        .then(({ response }) => {
-          if (response === 0) {
-            // 用户选择下载
-            if (
-              buildInfo.platform === 'win32' &&
-              buildInfo.cudaVersion &&
-              buildInfo.cudaOpt &&
-              info.files &&
-              info.files.length > 0
-            ) {
-              // 记录原始文件列表
-              const fileUrls = info.files.map((f) => f.url).join(', ');
-              logMessage(
-                `[Updater] Sorting ${info.files.length} files. Original order: ${fileUrls}`,
-                'info',
-              );
-
-              // 找到匹配的文件并移动到第一个位置
-              const matchedIndex = info.files.findIndex((file) => {
-                const fileNameLower = file.url.toLowerCase();
-                const cudaVersionLower = buildInfo.cudaVersion.toLowerCase();
-                const cudaOptLower = buildInfo.cudaOpt.toLowerCase();
-                const archPattern = `_${buildInfo.arch.toLowerCase()}_`;
-
-                // 检查文件名是否包含架构、CUDA版本和优化选项
-                return (
-                  fileNameLower.includes(archPattern) &&
-                  fileNameLower.includes(cudaVersionLower) &&
-                  fileNameLower.includes(cudaOptLower)
-                );
-              });
-
-              if (matchedIndex > 0) {
-                // 如果找到匹配的文件，将其移动到第一个位置
-                const matchedFile = info.files.splice(matchedIndex, 1)[0];
-                info.files.unshift(matchedFile);
-                logMessage(
-                  `[Updater] Moved matched file to first position: ${matchedFile.url}`,
-                  'info',
-                );
-              } else if (matchedIndex === 0) {
-                // 如果匹配的文件已经在第一个位置，只记录一次
-                logMessage(
-                  `[Updater] Matched file already in first position: ${info.files[0].url}`,
-                  'info',
-                );
-              } else {
-                // 如果没有找到匹配的文件，记录警告
-                logMessage(
-                  `[Updater] No exact match found for CUDA ${buildInfo.cudaVersion} ${buildInfo.cudaOpt}. Using default order.`,
-                  'warning',
-                );
-              }
-            }
-
-            // 使用无参数的 downloadUpdate()，它将下载 info.files 中的第一个文件
-            logMessage(
-              `[Updater] Downloading update. First file is now: ${info.files[0]?.url || 'unknown'}`,
-              'info',
-            );
-            autoUpdater.downloadUpdate().catch((err) => {
-              logMessage(
-                `[Updater] Error downloading update: ${err.message}`,
-                'error',
-              );
-              dialog.showErrorBox(
-                '下载更新失败',
-                `下载更新失败: ${err.message}。请尝试手动下载。`,
-              );
-            });
-          } else if (response === 2) {
-            // 用户选择查看更新内容
-            const releaseUrl = `https://github.com/buxuku/SmartSub/releases/tag/v${info.version}`;
-            require('electron').shell.openExternal(releaseUrl);
-          }
-        });
-    }
   });
 
   autoUpdater.on('update-not-available', () => {

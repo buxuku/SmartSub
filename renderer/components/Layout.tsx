@@ -24,6 +24,7 @@ import { useRouter } from 'next/router';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
 import { useTranslation } from 'next-i18next';
+import { UpdateDialog } from './UpdateDialog';
 import packageInfo from '../../package.json';
 
 // 添加更新状态的类型定义
@@ -43,6 +44,8 @@ const Layout = ({ children }) => {
   const { asPath } = useRouter();
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newVersion, setNewVersion] = useState('');
+  const [releaseNotes, setReleaseNotes] = useState('');
+  const [showUpdateDialog, setShowUpdateDialog] = useState(false);
 
   useEffect(() => {
     window?.ipc?.on('message', (res: string) => {
@@ -57,6 +60,7 @@ const Layout = ({ children }) => {
       if (status.status === 'available') {
         setUpdateAvailable(true);
         setNewVersion(status.version || '');
+        setReleaseNotes(status.releaseNotes || '');
       }
     });
 
@@ -70,8 +74,7 @@ const Layout = ({ children }) => {
   }, []);
 
   const handleUpdateClick = () => {
-    const releaseUrl = 'https://github.com/buxuku/SmartSub/releases/latest';
-    openUrl(releaseUrl);
+    setShowUpdateDialog(true);
   };
 
   return (
@@ -247,6 +250,14 @@ const Layout = ({ children }) => {
         <main className="flex-1 min-h-0 overflow-auto">{children}</main>
         <Toaster />
       </div>
+
+      {/* Update Dialog */}
+      <UpdateDialog
+        open={showUpdateDialog}
+        onOpenChange={setShowUpdateDialog}
+        version={newVersion}
+        releaseNotes={releaseNotes}
+      />
     </div>
   );
 };
