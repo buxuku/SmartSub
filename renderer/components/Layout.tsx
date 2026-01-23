@@ -16,6 +16,7 @@ import {
   Settings,
   Rocket,
   Edit3,
+  Film,
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { openUrl } from 'lib/utils';
@@ -159,6 +160,25 @@ const Layout = ({ children }) => {
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={5}>
                 {t('subtitleProofread')}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link href={`/${locale}/subtitleMerge`}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`rounded-lg ${
+                      asPath.includes('subtitleMerge') ? 'bg-muted' : ''
+                    }`}
+                    aria-label="Subtitle Merge"
+                  >
+                    <Film className="size-5" />
+                  </Button>
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={5}>
+                {t('subtitleMerge')}
               </TooltipContent>
             </Tooltip>
             <Tooltip>
