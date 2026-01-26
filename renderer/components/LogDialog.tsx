@@ -9,6 +9,8 @@ import {
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import { useTranslation } from 'next-i18next';
+import { Copy, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 type LogEntry = {
   timestamp: number;
@@ -47,6 +49,29 @@ export function LogDialog({ open, onOpenChange }) {
     setLogs([]);
   };
 
+  const handleCopyLogs = async () => {
+    if (logs.length === 0) {
+      toast.info(t('noLogsToCopy'));
+      return;
+    }
+
+    const logsText = logs
+      .map((log) => {
+        const timestamp = new Date(log.timestamp).toLocaleString();
+        const type = log.type ? `[${log.type.toUpperCase()}]` : '[INFO]';
+        return `${timestamp} ${type} ${log.message}`;
+      })
+      .join('\n');
+
+    try {
+      await navigator.clipboard.writeText(logsText);
+      toast.success(t('copySuccess'));
+    } catch (error) {
+      console.error('Failed to copy logs:', error);
+      toast.error(t('copyFailed'));
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[80vh]">
@@ -81,7 +106,12 @@ export function LogDialog({ open, onOpenChange }) {
           </div>
         </ScrollArea>
         <div className="flex justify-end space-x-2 mt-4">
+          <Button variant="outline" onClick={handleCopyLogs}>
+            <Copy className="h-4 w-4 mr-2" />
+            {t('copyLogs')}
+          </Button>
           <Button variant="destructive" onClick={handleClearLogs}>
+            <Trash2 className="h-4 w-4 mr-2" />
             {t('clearLogs')}
           </Button>
         </div>
