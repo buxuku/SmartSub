@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron';
 import { store } from './store';
 import { LogEntry } from './store/types';
+import { sanitizeLogMessage } from './utils';
 
 export function logMessage(
   message: string | Error,
@@ -10,8 +11,11 @@ export function logMessage(
   const messageStr =
     message instanceof Error ? message.message : String(message);
 
+  // 对日志消息进行脱敏处理，防止泄露敏感信息
+  const sanitizedMessage = sanitizeLogMessage(messageStr);
+
   const newLog: LogEntry = {
-    message: messageStr,
+    message: sanitizedMessage,
     type,
     timestamp: Date.now(),
   };

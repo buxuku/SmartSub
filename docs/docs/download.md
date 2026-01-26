@@ -11,113 +11,9 @@ title: 下载软件
 
 当前最新稳定版本：[![Release](https://img.shields.io/github/v/release/buxuku/SmartSub?style=flat-square&logo=github&color=blue)](https://github.com/buxuku/SmartSub/releases/latest)
 
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
+import DownloadCards from '@site/src/components/DownloadCards';
 
-<div className="download-section" style={{marginTop: '40px', marginBottom: '40px'}}>
-  <Tabs groupId="os-choice" queryString="os">
-    <TabItem value="windows" label="Windows" default>
-      <div className="row" style={{marginBottom: '1rem'}}>
-        <div className="col col--6" style={{marginBottom: '1rem'}}>
-          <div className="card">
-            <div className="card__header">
-              <h3>Windows (NVIDIA CUDA 12.4.0+)</h3>
-            </div>
-            <div className="card__body">
-              <p>适用于 Windows x64 系统，需 NVIDIA 显卡及 CUDA Toolkit 12.4.0 或更高版本。</p>
-            </div>
-            <div className="card__footer">
-              <a href="https://github.com/buxuku/SmartSub/releases/download/v2.3.7/SmartSub_Windows_2.3.7_x64_12.4.1_optimized.exe" className="button button--primary button--block">
-                下载 (EXE)
-              </a>
-            </div>
-          </div>
-        </div>
-        <div className="col col--6" style={{marginBottom: '1rem'}}>
-          <div className="card">
-            <div className="card__header">
-              <h3>Windows (NVIDIA CUDA 12.2.0+)</h3>
-            </div>
-            <div className="card__body">
-              <p>适用于 Windows x64 系统，需 NVIDIA 显卡及 CUDA Toolkit 12.2.0 或更高版本。</p>
-            </div>
-            <div className="card__footer">
-              <a href="https://github.com/buxuku/SmartSub/releases/download/v2.3.7/SmartSub_Windows_2.3.7_x64_12.2.0_optimized.exe" className="button button--primary button--block">
-                下载 (EXE)
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="row">
-        <div className="col col--6" style={{marginBottom: '1rem'}}>
-          <div className="card">
-            <div className="card__header">
-              <h3>Windows (NVIDIA CUDA 11.8.0)</h3>
-            </div>
-            <div className="card__body">
-              <p>适用于 Windows x64 系统，需 NVIDIA 显卡及 CUDA Toolkit 11.8.0 版本。</p>
-            </div>
-            <div className="card__footer">
-              <a href="https://github.com/buxuku/SmartSub/releases/download/v2.3.7/SmartSub_Windows_2.3.7_x64_11.8.0_optimized.exe" className="button button--primary button--block">
-                下载 (EXE)
-              </a>
-            </div>
-          </div>
-        </div>
-        <div className="col col--6" style={{marginBottom: '1rem'}}>
-          <div className="card">
-            <div className="card__header">
-              <h3>Windows (无 CUDA)</h3>
-            </div>
-            <div className="card__body">
-              <p>适用于 Windows x64 系统。如果您没有 NVIDIA 显卡，或不确定 CUDA 版本，请选择此版本。</p>
-            </div>
-            <div className="card__footer">
-              <a href="https://github.com/buxuku/SmartSub/releases/download/v2.3.7/SmartSub_Windows_2.3.7_x64_no_cuda_optimized.exe" className="button button--primary button--block">
-                下载 (EXE)
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </TabItem>
-    <TabItem value="macos" label="macOS">
-      <div className="row">
-        <div className="col col--6" style={{marginBottom: '1rem'}}>
-          <div className="card">
-            <div className="card__header">
-              <h3>Mac (Apple Silicon)</h3>
-            </div>
-            <div className="card__body">
-              <p>适用于配备 Apple Silicon (M系列) 芯片的 Mac。</p>
-            </div>
-            <div className="card__footer">
-              <a href="https://github.com/buxuku/SmartSub/releases/download/v2.3.7/SmartSub_Mac_2.3.7_arm64.dmg" className="button button--primary button--block">
-                下载 (DMG)
-              </a>
-            </div>
-          </div>
-        </div>
-        <div className="col col--6" style={{marginBottom: '1rem'}}>
-          <div className="card">
-            <div className="card__header">
-              <h3>Mac (Intel)</h3>
-            </div>
-            <div className="card__body">
-              <p>适用于配备 Intel 处理器的 Mac。</p>
-            </div>
-            <div className="card__footer">
-              <a href="https://github.com/buxuku/SmartSub/releases/download/v2.3.7/SmartSub_Mac_2.3.7_x64.dmg" className="button button--primary button--block">
-                下载 (DMG)
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </TabItem>
-  </Tabs>
-</div>
+<DownloadCards />
 
 ## 安装前准备
 
@@ -125,8 +21,9 @@ import TabItem from '@theme/TabItem';
 
 - **Windows**: Windows 10/11 (64位)
 - **macOS**: macOS 11.0 或更高版本
+- **Linux**: Ubuntu 22.04 或更高版本（其他发行版可能也支持，但未经完整测试）
 - **硬件加速**:
-  - **NVIDIA CUDA**: 需要支持 CUDA 的 NVIDIA 显卡并安装 CUDA Toolkit
+  - **NVIDIA CUDA**: 需要支持 CUDA 的 NVIDIA 显卡并安装 CUDA Toolkit（支持 Windows 和 Linux）
   - **Apple Core ML**: 需要 Apple Silicon (M系列) 芯片的 Mac 设备
 
 ### 下载 CUDA Toolkit (如需 CUDA 加速)

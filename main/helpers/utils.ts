@@ -3,6 +3,152 @@ import { app } from 'electron';
 import os from 'os';
 import { spawn } from 'child_process';
 
+/**
+ * 敏感字段列表（小写形式，用于不区分大小写匹配）
+ * 包含 API 密钥、密码、令牌等敏感信息的字段名
+ */
+const SENSITIVE_FIELDS = [
+  'apikey',
+  'apisecret',
+  'secret',
+  'secretkey',
+  'password',
+  'token',
+  'accesstoken',
+  'accesskey',
+  'accesskeysecret',
+  'authorization',
+  'bearer',
+  'credential',
+  'credentials',
+  'privatekey',
+  'private_key',
+  'api_key',
+  'api_secret',
+  'secret_key',
+  'access_token',
+  'access_key',
+];
+
+/**
+ * 检查字段名是否为敏感字段
+ */
+function isSensitiveField(fieldName: string): boolean {
+  const lowerFieldName = fieldName.toLowerCase();
+  return SENSITIVE_FIELDS.some(
+    (sensitive) =>
+      lowerFieldName === sensitive || lowerFieldName.includes(sensitive),
+  );
+}
+
+/**
+ * 对敏感值进行脱敏处理
+ * 保留前2位和后2位，中间用 **** 替换
+ */
+function maskValue(value: string): string {
+  if (!value || typeof value !== 'string') {
+    return value;
+  }
+
+  const length = value.length;
+  if (length <= 4) {
+    return '****';
+  }
+
+  const visibleChars = Math.min(2, Math.floor(length / 4));
+  const prefix = value.substring(0, visibleChars);
+  const suffix = value.substring(length - visibleChars);
+  return `${prefix}****${suffix}`;
+}
+
+/**
+ * 递归处理对象，对敏感字段进行脱敏
+ * @param obj 要处理的对象
+ * @param maxDepth 最大递归深度，防止循环引用
+ */
+export function sanitizeObject(obj: any, maxDepth: number = 10): any {
+  if (maxDepth <= 0) {
+    return '[Max depth exceeded]';
+  }
+
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  if (typeof obj !== 'object') {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map((item) => sanitizeObject(item, maxDepth - 1));
+  }
+
+  const sanitized: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (isSensitiveField(key)) {
+      // 对敏感字段进行脱敏
+      sanitized[key] =
+        typeof value === 'string' ? maskValue(value) : '[REDACTED]';
+    } else if (typeof value === 'object' && value !== null) {
+      // 递归处理嵌套对象
+      sanitized[key] = sanitizeObject(value, maxDepth - 1);
+    } else {
+      sanitized[key] = value;
+    }
+  }
+
+  return sanitized;
+}
+
+/**
+ * 对日志消息进行脱敏处理
+ * 支持处理字符串中的 JSON 对象和常见敏感值模式
+ */
+export function sanitizeLogMessage(message: string): string {
+  if (!message || typeof message !== 'string') {
+    return message;
+  }
+
+  let sanitized = message;
+
+  // 尝试检测和处理 JSON 对象
+  const jsonPattern = /\{[\s\S]*\}/g;
+  const jsonMatches = message.match(jsonPattern);
+
+  if (jsonMatches) {
+    for (const jsonStr of jsonMatches) {
+      try {
+        const parsed = JSON.parse(jsonStr);
+        const sanitizedObj = sanitizeObject(parsed);
+        sanitized = sanitized.replace(
+          jsonStr,
+          JSON.stringify(sanitizedObj, null, 2),
+        );
+      } catch {
+        // 不是有效的 JSON，继续处理下一个
+      }
+    }
+  }
+
+  // 处理常见的敏感值模式（如 apiKey: "xxx", "apiKey": "xxx"）
+  const sensitivePatterns = SENSITIVE_FIELDS.map((field) => {
+    // 匹配 key: "value" 或 key: 'value' 或 "key": "value" 等模式
+    const pattern = new RegExp(
+      `(["']?${field}["']?\\s*[:=]\\s*)["']([^"']+)["']`,
+      'gi',
+    );
+    return { field, pattern };
+  });
+
+  for (const { pattern } of sensitivePatterns) {
+    sanitized = sanitized.replace(pattern, (match, prefix, value) => {
+      return `${prefix}"${maskValue(value)}"`;
+    });
+  }
+
+  return sanitized;
+}
+
 // 将字符串转成模板字符串
 export const renderTemplate = (template, data) => {
   let result = template;
