@@ -184,7 +184,7 @@ cd SmartSub
 yarn install
 ```
 
-Windows / Linux、または Mac Intel プラットフォームの場合は、https://github.com/buxuku/whisper.cpp/releases/tag/latest から node ファイルをダウンロードし、'addon.node' にリネームして 'extraResources/addons/' ディレクトリに配置してください。
+Windows / Linux、または Mac Intel プラットフォームの場合は、https://github.com/buxuku/whisper.cpp/releases/tag/latest から node ファイルをダウンロードし、`addon.node` にリネームして `extraResources/addons/` ディレクトリに配置してください。
 
 3️⃣ 依存関係をインストール後、`yarn dev` または `npm run dev` を実行してプロジェクトを起動
 
