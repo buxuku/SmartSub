@@ -4,10 +4,23 @@ import fs from 'fs';
 import { logMessage } from './storeManager';
 
 /**
- * 获取构建信息
- * 从package.json中读取构建时写入的平台、架构和CUDA版本信息
+ * 构建信息接口
  */
-export function getBuildInfo() {
+export interface BuildInfo {
+  platform: string;
+  arch: string;
+  buildDate: string | null;
+  version?: string;
+}
+
+/**
+ * 获取构建信息
+ * 从package.json中读取构建时写入的平台和架构信息
+ *
+ * 注意：CUDA 加速包已改为运行时动态下载，不再在构建时绑定
+ * CUDA 相关信息请使用 addonManager 模块获取
+ */
+export function getBuildInfo(): BuildInfo {
   try {
     // 在生产环境中，package.json位于应用程序资源目录
     const packagePath = app.isPackaged
@@ -33,24 +46,4 @@ export function getBuildInfo() {
       buildDate: null,
     };
   }
-}
-
-/**
- * 获取当前应用的CUDA版本信息
- * 在Windows或Linux平台且有CUDA支持时返回版本信息
- */
-export function getCudaVersionInfo() {
-  const buildInfo = getBuildInfo();
-
-  if (
-    (buildInfo.platform === 'win32' || buildInfo.platform === 'linux') &&
-    buildInfo.cudaVersion
-  ) {
-    return {
-      version: buildInfo.cudaVersion,
-      optimization: buildInfo.cudaOpt || 'generic',
-    };
-  }
-
-  return null;
 }

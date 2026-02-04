@@ -2,7 +2,7 @@
   "private": true,
   "name": "smartsub",
   "description": "视频转字幕，字幕翻译软件",
-  "version": "2.11.1",
+  "version": "2.12.0-beta.0",
   "author": "buxuku <buxuku@gmail.com>",
   "main": "app/background.js",
   "scripts": {
@@ -80,6 +80,7 @@
     "@types/react": "^18.2.52",
     "@types/uuid": "^10.0.0",
     "autoprefixer": "^10.4.19",
+    "dotenv": "^17.2.3",
     "electron": "^30.1.0",
     "electron-builder": "^24.13.3",
     "husky": "^9.1.7",

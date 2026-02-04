@@ -1,3 +1,8 @@
+// 在最开始加载环境变量（仅开发模式）
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config({ path: '.env.development.local' });
+}
+
 import path from 'path';
 import { app, protocol } from 'electron';
 import fs from 'fs';
@@ -13,6 +18,10 @@ import { setupParameterHandlers } from './helpers/ipcParameterHandlers';
 import { setupProofreadHandlers } from './helpers/ipcProofreadHandlers';
 import { setupSubtitleMergeHandlers } from './helpers/ipcSubtitleMergeHandlers';
 import { configurationManager } from './service/configurationManager';
+import {
+  registerAddonIpcHandlers,
+  setMainWindowForAddon,
+} from './helpers/ipcAddonHandlers';
 
 //控制台出现中文乱码，需要去node_modules\electron\cli.js中修改启动代码页
 
@@ -42,6 +51,7 @@ if (isProd) {
   setupStoreHandlers();
   setupParameterHandlers();
   setupProofreadHandlers();
+  registerAddonIpcHandlers();
 
   // Initialize configuration manager
   try {
@@ -84,6 +94,7 @@ if (isProd) {
   setupTaskManager();
   setupAutoUpdater(mainWindow);
   setupSubtitleMergeHandlers(mainWindow);
+  setMainWindowForAddon(mainWindow);
 })();
 
 app.on('window-all-closed', () => {

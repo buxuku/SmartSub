@@ -7,6 +7,7 @@ dist
 .DS_Store
 .vscode
 .env
+.env.*
 docs/.docusaurus
 .claude
 .cursor
@@ -14,3 +15,4 @@ docs/.docusaurus
 Project
 sample
 .specs/
+.agents/

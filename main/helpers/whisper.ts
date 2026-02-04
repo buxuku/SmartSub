@@ -5,8 +5,14 @@ import { isAppleSilicon, isWin32, getExtraResourcesPath } from './utils';
 import { BrowserWindow, DownloadItem } from 'electron';
 import decompress from 'decompress';
 import fs from 'fs-extra';
-import { store } from './storeManager';
-import { checkCudaSupport } from './cudaUtils';
+import { store, logMessage } from './storeManager';
+import { getEffectivePlatform, isPlatformCudaCapable } from './cudaUtils';
+import {
+  getSelectedAddonVersion,
+  getAddonVersionDir,
+  hasDependentLibs,
+  isAddonInstalled,
+} from './addonManager';
 
 export const getPath = (key?: string) => {
   const userDataPath = app.getPath('userData');
@@ -239,47 +245,111 @@ export const hasEncoderModel = (model) => {
 };
 
 /**
- * 加载适合当前系统的Whisper Addon
+ * 设置动态链接库搜索路径
+ * 必须在 dlopen 之前调用
  */
-export async function loadWhisperAddon(model) {
-  const platform = process.platform;
+function setupLibraryPath(addonDir: string): void {
+  const platform = getEffectivePlatform();
+  const absoluteAddonDir = path.resolve(addonDir);
+
+  if (platform === 'win32') {
+    // Windows: 将 addon 目录添加到 PATH 前面（优先级最高）
+    const currentPath = process.env.PATH || '';
+    if (!currentPath.includes(absoluteAddonDir)) {
+      process.env.PATH = `${absoluteAddonDir};${currentPath}`;
+      logMessage(`Added ${absoluteAddonDir} to PATH for DLL loading`, 'info');
+    }
+  } else if (platform === 'linux') {
+    // Linux: 将 addon 目录添加到 LD_LIBRARY_PATH 前面
+    const currentLdPath = process.env.LD_LIBRARY_PATH || '';
+    if (!currentLdPath.includes(absoluteAddonDir)) {
+      process.env.LD_LIBRARY_PATH = `${absoluteAddonDir}:${currentLdPath}`;
+      logMessage(
+        `Added ${absoluteAddonDir} to LD_LIBRARY_PATH for SO loading`,
+        'info',
+      );
+    }
+  }
+}
+
+/**
+ * 加载适合当前系统的Whisper Addon
+ *
+ * 加载优先级：
+ * 1. 如果启用 CUDA 且已安装加速包，从用户数据目录加载
+ * 2. 否则从 extraResources 加载默认版本
+ */
+export async function loadWhisperAddon(model: string) {
+  const platform = getEffectivePlatform();
   const settings = store.get('settings') || { useCuda: false };
   const useCuda = settings.useCuda || false;
 
-  let addonPath;
+  let addonPath: string;
 
-  if ((platform === 'win32' || platform === 'linux') && useCuda) {
-    // 检查 CUDA 支持
-    const hasCudaSupport = await checkCudaSupport();
+  // 检查是否是可能支持 CUDA 的平台
+  if (isPlatformCudaCapable() && useCuda) {
+    // 获取用户选择的加速包版本
+    const selectedVersion = getSelectedAddonVersion();
 
-    if (hasCudaSupport) {
-      addonPath = path.join(getExtraResourcesPath(), 'addons', 'addon.node');
+    if (selectedVersion && isAddonInstalled(selectedVersion)) {
+      // 从用户数据目录加载
+      const versionDir = getAddonVersionDir(selectedVersion);
+      const userAddonPath = path.join(versionDir, 'addon.node');
+
+      if (fs.existsSync(userAddonPath)) {
+        // 检查并设置依赖库路径（必须在 dlopen 之前）
+        if (hasDependentLibs(versionDir)) {
+          setupLibraryPath(versionDir);
+        }
+
+        addonPath = userAddonPath;
+        logMessage(`Loading CUDA addon from userData: ${addonPath}`, 'info');
+      } else {
+        // 用户数据目录的 addon 不存在，回退到默认版本
+        logMessage(
+          `Selected addon version ${selectedVersion} not found, falling back to default`,
+          'warning',
+        );
+        addonPath = path.join(getExtraResourcesPath(), 'addons', 'addon.node');
+      }
     } else {
-      // 如果不支持 CUDA，使用 no-cuda 版本
-      addonPath = path.join(
-        getExtraResourcesPath(),
-        'addons',
-        'addon-no-cuda.node',
-      );
+      // 没有安装加速包，使用默认的 no-cuda 版本
+      addonPath = path.join(getExtraResourcesPath(), 'addons', 'addon.node');
+      logMessage('No CUDA addon installed, using default addon', 'info');
     }
-  } else if (isAppleSilicon() && hasEncoderModel(model)) {
+  } else if (
+    platform === 'darwin' &&
+    isAppleSilicon() &&
+    hasEncoderModel(model)
+  ) {
+    // macOS Apple Silicon with CoreML
     addonPath = path.join(
       getExtraResourcesPath(),
       'addons',
       'addon.coreml.node',
     );
+    logMessage('Loading CoreML addon for Apple Silicon', 'info');
   } else {
+    // 默认：从 extraResources 加载
     addonPath = path.join(getExtraResourcesPath(), 'addons', 'addon.node');
+    logMessage('Loading default addon from extraResources', 'info');
   }
 
   if (!addonPath) {
     throw new Error('Unsupported platform or architecture');
   }
 
+  if (!fs.existsSync(addonPath)) {
+    throw new Error(`Addon not found: ${addonPath}`);
+  }
+
+  logMessage(`Loading whisper addon from: ${addonPath}`, 'info');
+
   const module = { exports: { whisper: null } };
   process.dlopen(module, addonPath);
+
   return module.exports.whisper as (
-    params: any,
-    callback: (error: Error | null, result?: any) => void,
+    params: Record<string, unknown>,
+    callback: (error: Error | null, result?: unknown) => void,
   ) => void;
 }

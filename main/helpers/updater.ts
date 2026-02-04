@@ -42,7 +42,7 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
   const checkForUpdates = async (silent = false) => {
     try {
       logMessage(
-        `Checking for updates... Platform: ${buildInfo.platform}, Arch: ${buildInfo.arch}${buildInfo.cudaVersion ? `, CUDA: ${buildInfo.cudaVersion}` : ''} on channel '${autoUpdater.channel}'`,
+        `Checking for updates... Platform: ${buildInfo.platform}, Arch: ${buildInfo.arch} on channel '${autoUpdater.channel}'`,
         'info',
       );
       const result = await autoUpdater.checkForUpdates();

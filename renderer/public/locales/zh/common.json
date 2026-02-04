@@ -142,5 +142,7 @@
   "copyFailed": "复制失败",
   "downloadUpdate": "下载更新",
   "releaseNotes": "更新内容",
-  "viewOnGitHub": "在 GitHub 上查看"
+  "viewOnGitHub": "在 GitHub 上查看",
+  "downloadAccelerationPack": "下载加速包",
+  "downloadAccelerationPackTip": "检测到您的设备支持 CUDA 加速，点击下载加速包以提升处理速度"
 }

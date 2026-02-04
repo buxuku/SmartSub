@@ -17,6 +17,7 @@ import {
   Rocket,
   Edit3,
   Film,
+  Zap,
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { openUrl } from 'lib/utils';
@@ -41,14 +42,17 @@ const Layout = ({ children }) => {
     t,
     i18n: { language: locale },
   } = useTranslation('common');
-  const { asPath } = useRouter();
+  const router = useRouter();
+  const { asPath } = router;
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newVersion, setNewVersion] = useState('');
   const [releaseNotes, setReleaseNotes] = useState('');
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
+  const [showAddonPrompt, setShowAddonPrompt] = useState(false);
 
   useEffect(() => {
-    window?.ipc?.on('message', (res: string) => {
+    // 监听消息通知
+    const cleanupMessage = window?.ipc?.on('message', (res: string) => {
       toast(t('notification'), {
         description: t(res),
       });
@@ -56,22 +60,45 @@ const Layout = ({ children }) => {
     });
 
     // 监听更新状态
-    window?.ipc?.on('update-status', (status: UpdateStatus) => {
-      if (status.status === 'available') {
-        setUpdateAvailable(true);
-        setNewVersion(status.version || '');
-        setReleaseNotes(status.releaseNotes || '');
-      }
-    });
+    const cleanupUpdateStatus = window?.ipc?.on(
+      'update-status',
+      (status: UpdateStatus) => {
+        if (status.status === 'available') {
+          setUpdateAvailable(true);
+          setNewVersion(status.version || '');
+          setReleaseNotes(status.releaseNotes || '');
+        }
+      },
+    );
 
-    // 清理函数
-    const cleanupUpdateListener = window?.ipc?.on('update-status', () => {});
-    return () => {
-      if (cleanupUpdateListener) {
-        cleanupUpdateListener();
+    // 检查是否需要显示加速包下载提示
+    const checkAddonStatus = async () => {
+      try {
+        const cudaEnv = await window?.ipc?.invoke('get-cuda-environment');
+        const addonSummary = await window?.ipc?.invoke('get-addon-summary');
+
+        // 如果支持 CUDA 但没有安装任何加速包，显示提示
+        if (
+          cudaEnv?.recommendation?.canUseCuda &&
+          !addonSummary?.hasInstalled
+        ) {
+          setShowAddonPrompt(true);
+        } else {
+          setShowAddonPrompt(false);
+        }
+      } catch (error) {
+        console.error('Failed to check addon status:', error);
       }
     };
-  }, []);
+
+    checkAddonStatus();
+
+    // 清理函数
+    return () => {
+      cleanupMessage?.();
+      cleanupUpdateStatus?.();
+    };
+  }, [t]);
 
   const handleUpdateClick = () => {
     setShowUpdateDialog(true);
@@ -246,6 +273,29 @@ const Layout = ({ children }) => {
               )}
             </span>
           </h4>
+          {/* GPU 加速包下载提示 - 放在最右侧 */}
+          {showAddonPrompt && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto"
+                    onClick={() =>
+                      router.push(`/${locale}/settings#gpu-acceleration`)
+                    }
+                  >
+                    <Zap className="w-4 h-4 mr-1 text-yellow-500" />
+                    {t('downloadAccelerationPack')}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {t('downloadAccelerationPackTip')}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </header>
         <main className="flex-1 min-h-0 overflow-auto">{children}</main>
         <Toaster />

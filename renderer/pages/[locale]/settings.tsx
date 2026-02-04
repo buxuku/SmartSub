@@ -22,6 +22,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
+import { GpuAccelerationCard } from '@/components/settings';
 
 // 新增一个 CommandInput 组件
 const CommandInput = ({
@@ -75,7 +76,6 @@ const Settings = () => {
   const [currentLanguage, setCurrentLanguage] = useState(router.locale);
   const [useLocalWhisper, setUseLocalWhisper] = useState(false);
   const [whisperCommand, setWhisperCommand] = useState('');
-  const [useCuda, setUseCuda] = useState(false);
   const [modelsPath, setModelsPath] = useState('');
   const [tempDir, setTempDir] = useState('');
   const [customTempDir, setCustomTempDir] = useState('');
@@ -102,7 +102,6 @@ const Settings = () => {
         setCurrentLanguage(settings.language || router.locale);
         setUseLocalWhisper(settings.useLocalWhisper || false);
         setWhisperCommand(settings.whisperCommand || '');
-        setUseCuda(settings.useCuda || false);
         setModelsPath(settings.modelsPath || '');
         setUseCustomTempDir(settings.useCustomTempDir || false);
         setCustomTempDir(settings.customTempDir || '');
@@ -150,13 +149,6 @@ const Settings = () => {
       whisperCommand: whisperCommand,
     });
     setUseLocalWhisper(checked);
-  };
-
-  const handleCudaChange = async (checked: boolean) => {
-    await window?.ipc?.invoke('setSettings', {
-      useCuda: checked,
-    });
-    setUseCuda(checked);
   };
 
   const handleSelectModelsPath = async () => {
@@ -355,23 +347,6 @@ const Settings = () => {
 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span>{t('useCuda')}</span>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{t('useCudaTip')}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-            <Switch checked={useCuda} onCheckedChange={handleCudaChange} />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
               <span>{t('checkUpdateOnStartup')}</span>
               <TooltipProvider>
                 <Tooltip>
@@ -482,6 +457,9 @@ const Settings = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* GPU 加速设置卡片 */}
+      <GpuAccelerationCard />
 
       <Card>
         <CardHeader>

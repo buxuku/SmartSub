@@ -7,14 +7,13 @@ on:
 
 jobs:
   build_artifacts:
-    name: Build ${{ matrix.os }} ${{ matrix.arch }} ${{ matrix.cuda_version || '' }} ${{ matrix.cuda_opt || '' }}
+    name: Build ${{ matrix.os }} ${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
     env:
       ELECTRON_BUILDER_HTTP_TIMEOUT: 6000000
       ELECTRON_MIRROR: 'https://npmmirror.com/mirrors/electron/'
-      # GH_TOKEN is not strictly needed here if --publish never is used
     strategy:
-      fail-fast: false # Allow other jobs to continue if one fails
+      fail-fast: false
       matrix:
         include:
           # macOS ARM64
@@ -26,138 +25,26 @@ jobs:
             artifact_suffix: macos-arm64
 
           # macOS Intel
-          - os: macos-15-intel # Use macos-13 for Intel as per original config
+          - os: macos-15-intel
             arch: x64
             os_build_arg: mac
             addon_name: addon-macos-x64.node
             build_args: '--x64'
             artifact_suffix: macos-x64
 
-          # Windows no-cuda
+          # Windows x64 (通用版本，不包含 CUDA)
           - os: windows-2022
             arch: x64
             os_build_arg: win
-            addon_name: addon-windows-no-cuda.node
-            cuda_version: 'no-cuda'
-            cuda_opt: 'generic'
-            artifact_suffix: windows-x64-nocuda-generic
+            addon_name: addon-windows-x64.node
+            artifact_suffix: windows-x64
 
-          # Windows CUDA 11.8.0 optimized
-          - os: windows-2022
-            arch: x64
-            os_build_arg: win
-            addon_name: addon-windows-cuda-1180-optimized.node
-            cuda_version: '11.8.0'
-            cuda_opt: 'optimized'
-            artifact_suffix: windows-x64-cuda1180-optimized
-
-          # Windows CUDA 11.8.0 generic
-          - os: windows-2022
-            arch: x64
-            os_build_arg: win
-            addon_name: addon-windows-cuda-1180-generic.node
-            cuda_version: '11.8.0'
-            cuda_opt: 'generic'
-            artifact_suffix: windows-x64-cuda1180-generic
-
-          # Windows CUDA 12.2.0 optimized
-          - os: windows-2022
-            arch: x64
-            os_build_arg: win
-            addon_name: addon-windows-cuda-1220-optimized.node
-            cuda_version: '12.2.0'
-            cuda_opt: 'optimized'
-            artifact_suffix: windows-x64-cuda1220-optimized
-
-          # Windows CUDA 12.2.0 generic
-          - os: windows-2022
-            arch: x64
-            os_build_arg: win
-            addon_name: addon-windows-cuda-1220-generic.node
-            cuda_version: '12.2.0'
-            cuda_opt: 'generic'
-            artifact_suffix: windows-x64-cuda1220-generic
-
-          # Windows CUDA 12.4.0 optimized
-          - os: windows-2022
-            arch: x64
-            os_build_arg: win
-            addon_name: addon-windows-cuda-1240-optimized.node
-            cuda_version: '12.4.0'
-            cuda_opt: 'optimized'
-            artifact_suffix: windows-x64-cuda1240-optimized
-
-          # Windows CUDA 12.4.0 generic
-          - os: windows-2022
-            arch: x64
-            os_build_arg: win
-            addon_name: addon-windows-cuda-1240-generic.node
-            cuda_version: '12.4.0'
-            cuda_opt: 'generic'
-            artifact_suffix: windows-x64-cuda1240-generic
-
-          # Windows CUDA 13.0.2 optimized
-          - os: windows-2022
-            arch: x64
-            os_build_arg: win
-            addon_name: addon-windows-cuda-1302-optimized.node
-            cuda_version: '13.0.2'
-            cuda_opt: 'optimized'
-            artifact_suffix: windows-x64-cuda1302-optimized
-
-          # Windows CUDA 13.0.2 generic
-          - os: windows-2022
-            arch: x64
-            os_build_arg: win
-            addon_name: addon-windows-cuda-1302-generic.node
-            cuda_version: '13.0.2'
-            cuda_opt: 'generic'
-            artifact_suffix: windows-x64-cuda1302-generic
-
-          # Linux x64 no-cuda
+          # Linux x64 (通用版本，不包含 CUDA)
           - os: ubuntu-22.04
             arch: x64
             os_build_arg: linux
             addon_name: addon-linux-x64.node
-            cuda_version: 'no-cuda'
-            cuda_opt: 'generic'
-            artifact_suffix: linux-x64-nocuda-generic
-
-          # Linux CUDA 12.4.0 optimized
-          - os: ubuntu-22.04
-            arch: x64
-            os_build_arg: linux
-            addon_name: addon-linux-cuda-1240-optimized.node
-            cuda_version: '12.4.0'
-            cuda_opt: 'optimized'
-            artifact_suffix: linux-x64-cuda1240-optimized
-
-          # Linux CUDA 12.4.0 generic
-          - os: ubuntu-22.04
-            arch: x64
-            os_build_arg: linux
-            addon_name: addon-linux-cuda-1240-generic.node
-            cuda_version: '12.4.0'
-            cuda_opt: 'generic'
-            artifact_suffix: linux-x64-cuda1240-generic
-
-          # Linux CUDA 13.0.2 optimized
-          - os: ubuntu-22.04
-            arch: x64
-            os_build_arg: linux
-            addon_name: addon-linux-cuda-1302-optimized.node
-            cuda_version: '13.0.2'
-            cuda_opt: 'optimized'
-            artifact_suffix: linux-x64-cuda1302-optimized
-
-          # Linux CUDA 13.0.2 generic
-          - os: ubuntu-22.04
-            arch: x64
-            os_build_arg: linux
-            addon_name: addon-linux-cuda-1302-generic.node
-            cuda_version: '13.0.2'
-            cuda_opt: 'generic'
-            artifact_suffix: linux-x64-cuda1302-generic
+            artifact_suffix: linux-x64
 
     steps:
       - name: Check out Git repository
@@ -172,17 +59,10 @@ jobs:
         shell: bash
         run: |
           mkdir -p temp-artifacts
+          # 下载主 addon 文件
           curl -L -o "temp-artifacts/${{ matrix.addon_name }}" \
             "https://github.com/buxuku/whisper.cpp/releases/download/latest/${{ matrix.addon_name }}"
-          # Ensure other addons are downloaded if needed by specific builds, or simplify if not all are always needed
-          if [[ "${{ matrix.os_build_arg }}" == "win" ]]; then
-            curl -L -o "temp-artifacts/addon-windows-no-cuda.node" \
-              "https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-windows-no-cuda.node"
-          fi
-          if [[ "${{ matrix.os_build_arg }}" == "linux" ]]; then
-            curl -L -o "temp-artifacts/addon-linux-x64.node" \
-              "https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-linux-x64.node"
-          fi
+          # macOS ARM64 需要额外下载 CoreML 版本
           if [[ "${{ matrix.os_build_arg }}" == "mac" && "${{ matrix.arch }}" == "arm64" ]]; then
              curl -L -o "temp-artifacts/addon-macos-arm64-coreml.node" \
               "https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-macos-arm64-coreml.node"
@@ -205,11 +85,8 @@ jobs:
         env:
           BUILD_PLATFORM: 'win32'
           BUILD_ARCH: '${{ matrix.arch }}'
-          CUDA_VERSION: '${{ matrix.cuda_version }}'
-          CUDA_OPT: '${{ matrix.cuda_opt }}'
         run: |
           Copy-Item -Path "temp-artifacts/${{ matrix.addon_name }}" -Destination "extraResources/addons/addon.node"
-          Copy-Item -Path "temp-artifacts/addon-windows-no-cuda.node" -Destination "extraResources/addons/addon-no-cuda.node"
           node scripts/inject-build-info.js
 
       - name: Prepare Linux addon
@@ -217,11 +94,8 @@ jobs:
         env:
           BUILD_PLATFORM: 'linux'
           BUILD_ARCH: '${{ matrix.arch }}'
-          CUDA_VERSION: '${{ matrix.cuda_version }}'
-          CUDA_OPT: '${{ matrix.cuda_opt }}'
         run: |
           cp temp-artifacts/${{ matrix.addon_name }} extraResources/addons/addon.node
-          cp temp-artifacts/addon-linux-x64.node extraResources/addons/addon-no-cuda.node
           node scripts/inject-build-info.js
 
       - name: Install dependencies
@@ -231,7 +105,7 @@ jobs:
         run: yarn build # Assumes 'yarn build' compiles TS to JS, e.g., into the 'app' directory
 
       - name: Build Electron app
-        shell: bash # Use bash for consistency if possible, or powershell for windows if needed
+        shell: bash
         run: |
           if [[ "${{ matrix.os_build_arg }}" == "mac" ]]; then
             export BUILD_PLATFORM="darwin"
@@ -241,10 +115,6 @@ jobs:
             export BUILD_PLATFORM="linux"
           fi
           export BUILD_ARCH=${{ matrix.arch }}
-          if [[ "${{ matrix.os_build_arg }}" == "win" || "${{ matrix.os_build_arg }}" == "linux" ]]; then
-            export CUDA_VERSION="${{ matrix.cuda_version }}"
-            export CUDA_OPT="${{ matrix.cuda_opt }}"
-          fi
           yarn run electron-builder --${{ matrix.os_build_arg }} --${{ matrix.arch }} ${{ matrix.build_args || '' }} --publish never
 
       - name: Stage Artifacts
@@ -385,6 +255,15 @@ jobs:
       - name: List final assets for debugging
         run: ls -R final_release_assets
 
+      - name: Check if beta release
+        id: check_beta
+        run: |
+          if [[ "${{ github.ref_name }}" == *"beta"* ]]; then
+            echo "is_beta=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_beta=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Publish Release
         uses: softprops/action-gh-release@v2 # Updated to a newer version
         with:
@@ -393,8 +272,8 @@ jobs:
           name: ${{ github.ref_name }}
           # body: | # Optional: Add release notes here
           #   Automated release for version ${{ github.ref_name }}
-          draft: false # Set to true if you want to manually review before publishing
-          prerelease: false # Set to true if this is a pre-release
+          draft: ${{ steps.check_beta.outputs.is_beta == 'true' }}
+          prerelease: ${{ steps.check_beta.outputs.is_beta == 'true' }}
           files: |
             final_release_assets/*
 
@@ -402,7 +281,7 @@ jobs:
     name: Update Homebrew Tap
     runs-on: ubuntu-latest
     needs: publish_release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, 'beta')
     steps:
       - name: Extract version from tag
         id: version

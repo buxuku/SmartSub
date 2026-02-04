@@ -142,5 +142,7 @@
   "copyFailed": "Copy Failed",
   "downloadUpdate": "Download Update",
   "releaseNotes": "Release Notes",
-  "viewOnGitHub": "View on GitHub"
+  "viewOnGitHub": "View on GitHub",
+  "downloadAccelerationPack": "Get Acceleration Pack",
+  "downloadAccelerationPackTip": "Your device supports CUDA acceleration. Download an acceleration pack to boost processing speed."
 }

@@ -1,6 +1,8 @@
 /**
  * 构建信息注入脚本
- * 从环境变量中读取构建平台、架构和CUDA版本信息，然后将这些信息写入package.json
+ * 从环境变量中读取构建平台和架构信息，然后将这些信息写入package.json
+ *
+ * 注意：CUDA 加速包已改为运行时动态下载，不再在构建时绑定特定版本
  */
 
 const fs = require('fs');
@@ -16,8 +18,6 @@ try {
   // 从环境变量中获取构建信息
   const platform = process.env.BUILD_PLATFORM;
   const arch = process.env.BUILD_ARCH;
-  const cudaVersion = process.env.CUDA_VERSION;
-  const cudaOpt = process.env.CUDA_OPT;
 
   // 创建buildInfo对象
   const buildInfo = {
@@ -25,14 +25,6 @@ try {
     arch,
     buildDate: new Date().toISOString(),
   };
-
-  // 如果是Windows或Linux平台且有CUDA版本信息，则添加CUDA相关信息
-  if ((platform === 'win32' || platform === 'linux') && cudaVersion) {
-    buildInfo.cudaVersion = cudaVersion;
-    if (cudaOpt) {
-      buildInfo.cudaOpt = cudaOpt;
-    }
-  }
 
   // 将buildInfo写入package.json
   packageJson.buildInfo = buildInfo;

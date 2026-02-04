@@ -39,7 +39,7 @@ win:
     - from: ./extraResources/ggml-silero-v6.2.0.bin
       to: ./extraResources/ggml-silero-v6.2.0.bin
   requestedExecutionLevel: asInvoker
-  artifactName: '${productName}_Windows_${version}_${arch}_${env.CUDA_VERSION}_${env.CUDA_OPT}.${ext}'
+  artifactName: '${productName}_Windows_${version}_${arch}.${ext}'
   publish:
     - provider: github
       channel: latest
@@ -49,7 +49,7 @@ linux:
     # - tar.gz
     - deb
   category: AudioVideo
-  artifactName: '${productName}_Linux_${version}_${arch}_${env.CUDA_VERSION}_${env.CUDA_OPT}.${ext}'
+  artifactName: '${productName}_Linux_${version}_${arch}.${ext}'
   publish:
     - provider: github
       channel: latest
