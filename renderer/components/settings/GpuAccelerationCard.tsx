@@ -34,6 +34,11 @@ import {
   Check,
   ZapOff,
   CloudDownload,
+  FolderOpen,
+  FileCode,
+  ExternalLink,
+  Info,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type {
@@ -82,6 +87,7 @@ const GpuAccelerationCard: React.FC = () => {
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [downloadingVersion, setDownloadingVersion] =
     useState<CudaVersion | null>(null);
+  const [customAddonPath, setCustomAddonPath] = useState<string | null>(null);
   const lastToastStatus = useRef<string | null>(null);
   const downloadingVersionRef = useRef<CudaVersion | null>(null);
 
@@ -118,6 +124,10 @@ const GpuAccelerationCard: React.FC = () => {
       // 获取当前选中的版本
       const selected = await window?.ipc?.invoke('get-selected-addon-version');
       setSelectedVersion(selected);
+
+      // 获取自定义 addon 路径
+      const customPath = await window?.ipc?.invoke('get-custom-addon-path');
+      setCustomAddonPath(customPath);
 
       // 获取设置
       const settings = await window?.ipc?.invoke('getSettings');
@@ -165,6 +175,7 @@ const GpuAccelerationCard: React.FC = () => {
               await window?.ipc?.invoke('setSettings', { useCuda: true });
               setUseCuda(true);
               setSelectedVersion(completedVersion);
+              notifyGpuSettingsChanged();
             } catch (error) {
               console.error('Failed to enable CUDA after download:', error);
             }
@@ -193,27 +204,40 @@ const GpuAccelerationCard: React.FC = () => {
     };
   }, [loadData, t]);
 
+  // 通知 Layout 组件 GPU 设置已变更
+  const notifyGpuSettingsChanged = () => {
+    window.dispatchEvent(new Event('gpu-settings-changed'));
+  };
+
   // 选择禁用 CUDA（选中"不启用"卡片）
   const handleDisableCuda = async () => {
     try {
       await window?.ipc?.invoke('setSettings', { useCuda: false });
       await window?.ipc?.invoke('select-addon-version', null);
+      // 同时清除自定义路径
+      if (customAddonPath) {
+        await window?.ipc?.invoke('set-custom-addon-path', null);
+        setCustomAddonPath(null);
+      }
       setUseCuda(false);
       setSelectedVersion(null);
+      notifyGpuSettingsChanged();
       toast.info(t('gpuAcceleration.cudaDisabled'));
     } catch (error) {
       toast.error(t('saveFailed'));
     }
   };
 
-  // 选择版本（同时启用 CUDA）
+  // 选择版本（同时启用 CUDA，并清除自定义路径）
   const handleVersionSelect = async (version: CudaVersion) => {
     try {
       // 同时设置选中版本和启用 CUDA
       await window?.ipc?.invoke('select-addon-version', version);
       await window?.ipc?.invoke('setSettings', { useCuda: true });
       setSelectedVersion(version);
+      setCustomAddonPath(null); // 互斥：选择版本时清除自定义路径
       setUseCuda(true);
+      notifyGpuSettingsChanged();
       toast.success(t('gpuAcceleration.versionSelected'));
       toast.info(t('gpuAcceleration.restartRequired'));
     } catch (error) {
@@ -285,6 +309,48 @@ const GpuAccelerationCard: React.FC = () => {
       toast.error(t('gpuAcceleration.checkUpdatesFailed'));
     } finally {
       setCheckingUpdates(false);
+    }
+  };
+
+  // 选择自定义 addon.node 文件
+  const handleSelectCustomAddon = async () => {
+    try {
+      const result = await window?.ipc?.invoke('select-addon-file');
+      if (result?.canceled || !result?.filePath) return;
+
+      const setResult = await window?.ipc?.invoke(
+        'set-custom-addon-path',
+        result.filePath,
+      );
+      if (setResult?.success) {
+        setCustomAddonPath(result.filePath);
+        setSelectedVersion(null);
+        // 同时启用 CUDA
+        await window?.ipc?.invoke('setSettings', { useCuda: true });
+        setUseCuda(true);
+        notifyGpuSettingsChanged();
+        toast.success(t('gpuAcceleration.customAddonSet'));
+        toast.info(t('gpuAcceleration.restartRequired'));
+      } else {
+        toast.error(
+          setResult?.error || t('gpuAcceleration.customAddonSetFailed'),
+        );
+      }
+    } catch (error) {
+      toast.error(t('gpuAcceleration.customAddonSetFailed'));
+    }
+  };
+
+  // 清除自定义 addon.node 路径
+  const handleClearCustomAddon = async () => {
+    try {
+      await window?.ipc?.invoke('set-custom-addon-path', null);
+      setCustomAddonPath(null);
+      notifyGpuSettingsChanged();
+      toast.info(t('gpuAcceleration.customAddonCleared'));
+      loadData();
+    } catch (error) {
+      console.error('Failed to clear custom addon path:', error);
     }
   };
 
@@ -454,7 +520,7 @@ const GpuAccelerationCard: React.FC = () => {
 
   // 渲染"不启用"卡片
   const renderDisabledCard = () => {
-    const isSelected = !useCuda || !selectedVersion;
+    const isSelected = !useCuda || (!selectedVersion && !customAddonPath);
 
     return (
       <div
@@ -511,7 +577,8 @@ const GpuAccelerationCard: React.FC = () => {
   const renderVersionCard = (version: CudaVersion) => {
     const installed = isVersionInstalled(version);
     const versionInfo = getVersionInfo(version);
-    const isSelected = useCuda && version === selectedVersion;
+    const isSelected =
+      useCuda && version === selectedVersion && !customAddonPath;
     const isRecommended =
       version === cudaEnv?.recommendation.recommendedVersion;
     const hasUpdate = updates.find(
@@ -595,9 +662,16 @@ const GpuAccelerationCard: React.FC = () => {
                 {t('gpuAcceleration.installed')}
               </Badge>
             </div>
-            {/* 大小信息 */}
+            {/* 版本号和大小信息 */}
             <div className="text-[10px] text-muted-foreground text-center">
-              {versionInfo && formatSize(versionInfo.info.size)}
+              {versionInfo?.info.remoteVersion && (
+                <span>v{versionInfo.info.remoteVersion}</span>
+              )}
+              {versionInfo?.info.remoteVersion &&
+                versionInfo?.info.size > 0 && <span> · </span>}
+              {versionInfo &&
+                versionInfo.info.size > 0 &&
+                formatSize(versionInfo.info.size)}
             </div>
             {/* 操作按钮 */}
             <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -742,6 +816,9 @@ const GpuAccelerationCard: React.FC = () => {
                 {t('gpuAcceleration.selectAcceleration')}
               </h4>
               <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  {t('gpuAcceleration.downloadSource')}
+                </span>
                 <Select
                   value={downloadSource}
                   onValueChange={(v) => setDownloadSource(v as DownloadSource)}
@@ -758,14 +835,16 @@ const GpuAccelerationCard: React.FC = () => {
                 </Select>
                 {installedAddons.length > 0 && (
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
+                    className="h-8 text-xs"
                     onClick={handleCheckUpdates}
                     disabled={checkingUpdates}
                   >
                     <RefreshCw
-                      className={`w-4 h-4 ${checkingUpdates ? 'animate-spin' : ''}`}
+                      className={`w-3.5 h-3.5 mr-1 ${checkingUpdates ? 'animate-spin' : ''}`}
                     />
+                    {t('gpuAcceleration.checkNewVersion')}
                   </Button>
                 )}
               </div>
@@ -779,6 +858,88 @@ const GpuAccelerationCard: React.FC = () => {
 
             {/* 下载进度 */}
             {renderDownloadProgress()}
+
+            {/* 自定义加速包 */}
+            <div className="mt-4 pt-4 border-t border-dashed">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <FileCode className="w-4 h-4 text-muted-foreground" />
+                  <h4 className="text-sm font-medium">
+                    {t('gpuAcceleration.customAddonPath')}
+                  </h4>
+                </div>
+                <a
+                  href="https://github.com/buxuku/whisper.cpp/releases/tag/latest"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  {t('gpuAcceleration.downloadPackageUrl')}
+                </a>
+              </div>
+
+              {/* 提示信息 */}
+              <div className="flex items-start gap-2 p-2.5 bg-muted/50 rounded-md mb-3">
+                <Info className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                <div className="text-[11px] text-muted-foreground space-y-1">
+                  <p>{t('gpuAcceleration.customAddonTip')}</p>
+                  <p>{t('gpuAcceleration.customAddonDllTip')}</p>
+                </div>
+              </div>
+
+              {customAddonPath ? (
+                <div
+                  className={`flex items-center gap-2 p-2.5 rounded-lg border-2 ${
+                    useCuda ? 'border-primary bg-primary/5' : 'border-muted'
+                  }`}
+                >
+                  <div className="w-7 h-7 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
+                    <CheckCircle className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium truncate">
+                      {t('gpuAcceleration.customAddonActive')}
+                    </div>
+                    <div
+                      className="text-[11px] text-muted-foreground truncate"
+                      title={customAddonPath}
+                    >
+                      {customAddonPath}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={handleSelectCustomAddon}
+                    >
+                      <FolderOpen className="w-3.5 h-3.5 mr-1" />
+                      {t('gpuAcceleration.selectAddonFile')}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                      onClick={handleClearCustomAddon}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-9 text-xs"
+                  onClick={handleSelectCustomAddon}
+                >
+                  <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
+                  {t('gpuAcceleration.selectAddonFile')}
+                </Button>
+              )}
+            </div>
           </div>
         )}
 

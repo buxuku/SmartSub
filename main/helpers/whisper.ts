@@ -12,6 +12,7 @@ import {
   getAddonVersionDir,
   hasDependentLibs,
   isAddonInstalled,
+  getCustomAddonPath,
 } from './addonManager';
 
 export const getPath = (key?: string) => {
@@ -288,34 +289,58 @@ export async function loadWhisperAddon(model: string) {
 
   // 检查是否是可能支持 CUDA 的平台
   if (isPlatformCudaCapable() && useCuda) {
-    // 获取用户选择的加速包版本
-    const selectedVersion = getSelectedAddonVersion();
+    // 优先检查自定义 addon.node 路径
+    const customPath = getCustomAddonPath();
 
-    if (selectedVersion && isAddonInstalled(selectedVersion)) {
-      // 从用户数据目录加载
-      const versionDir = getAddonVersionDir(selectedVersion);
-      const userAddonPath = path.join(versionDir, 'addon.node');
-
-      if (fs.existsSync(userAddonPath)) {
-        // 检查并设置依赖库路径（必须在 dlopen 之前）
-        if (hasDependentLibs(versionDir)) {
-          setupLibraryPath(versionDir);
-        }
-
-        addonPath = userAddonPath;
-        logMessage(`Loading CUDA addon from userData: ${addonPath}`, 'info');
-      } else {
-        // 用户数据目录的 addon 不存在，回退到默认版本
-        logMessage(
-          `Selected addon version ${selectedVersion} not found, falling back to default`,
-          'warning',
-        );
-        addonPath = path.join(getExtraResourcesPath(), 'addons', 'addon.node');
+    if (customPath && fs.existsSync(customPath)) {
+      // 使用自定义路径
+      const customDir = path.dirname(customPath);
+      if (hasDependentLibs(customDir)) {
+        setupLibraryPath(customDir);
       }
-    } else {
-      // 没有安装加速包，使用默认的 no-cuda 版本
+      addonPath = customPath;
+      logMessage(`Loading custom addon from: ${addonPath}`, 'info');
+    } else if (customPath) {
+      // 自定义路径已设置但文件不存在
+      logMessage(
+        `Custom addon path not found: ${customPath}, falling back to default`,
+        'warning',
+      );
       addonPath = path.join(getExtraResourcesPath(), 'addons', 'addon.node');
-      logMessage('No CUDA addon installed, using default addon', 'info');
+    } else {
+      // 获取用户选择的加速包版本
+      const selectedVersion = getSelectedAddonVersion();
+
+      if (selectedVersion && isAddonInstalled(selectedVersion)) {
+        // 从用户数据目录加载
+        const versionDir = getAddonVersionDir(selectedVersion);
+        const userAddonPath = path.join(versionDir, 'addon.node');
+
+        if (fs.existsSync(userAddonPath)) {
+          // 检查并设置依赖库路径（必须在 dlopen 之前）
+          if (hasDependentLibs(versionDir)) {
+            setupLibraryPath(versionDir);
+          }
+
+          addonPath = userAddonPath;
+          logMessage(`Loading CUDA addon from userData: ${addonPath}`, 'info');
+        } else {
+          // 用户数据目录的 addon 不存在，回退到默认版本
+          logMessage(
+            `Selected addon version ${selectedVersion} not found, falling back to default`,
+            'warning',
+          );
+          addonPath = path.join(
+            getExtraResourcesPath(),
+            'addons',
+            'addon.node',
+          );
+        }
+      } else {
+        // 没有安装加速包，使用默认的 no-cuda 版本
+        addonPath = path.join(getExtraResourcesPath(), 'addons', 'addon.node');
+        logMessage('No CUDA addon installed, using default addon', 'info');
+      }
     }
   } else if (
     platform === 'darwin' &&

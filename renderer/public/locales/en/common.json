@@ -144,5 +144,9 @@
   "releaseNotes": "Release Notes",
   "viewOnGitHub": "View on GitHub",
   "downloadAccelerationPack": "Get Acceleration Pack",
-  "downloadAccelerationPackTip": "Your device supports CUDA acceleration. Download an acceleration pack to boost processing speed."
+  "downloadAccelerationPackTip": "Your device supports CUDA acceleration. Download an acceleration pack to boost processing speed.",
+  "gpuAccelerationEnabled": "GPU Acceleration On",
+  "gpuAccelerationDisabled": "GPU Acceleration Off",
+  "gpuAccelerationEnabledTip": "GPU acceleration is enabled, using CUDA for faster processing",
+  "gpuAccelerationDisabledTip": "Your device supports GPU acceleration. Click to enable in settings."
 }

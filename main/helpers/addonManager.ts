@@ -172,7 +172,7 @@ export function registerInstalledAddon(
 }
 
 /**
- * 选择加速包版本
+ * 选择加速包版本（与自定义路径互斥）
  */
 export function selectAddonVersion(version: CudaVersion | null): void {
   const config = getAddonConfig();
@@ -183,8 +183,54 @@ export function selectAddonVersion(version: CudaVersion | null): void {
   }
 
   config.selectedVersion = version;
+  // 选择版本时清除自定义路径（互斥）
+  if (version) {
+    config.customAddonPath = null;
+  }
   saveAddonConfig(config);
   logMessage(`Selected addon version: ${version}`, 'info');
+}
+
+/**
+ * 设置自定义 addon.node 文件路径（与版本选择互斥）
+ */
+export function setCustomAddonPath(filePath: string | null): void {
+  const config = getAddonConfig();
+
+  if (filePath) {
+    // 验证文件是否存在
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+    // 验证文件扩展名
+    if (!filePath.endsWith('.node')) {
+      throw new Error('File must have .node extension');
+    }
+  }
+
+  config.customAddonPath = filePath;
+  // 设置自定义路径时清除版本选择（互斥）
+  if (filePath) {
+    config.selectedVersion = null;
+  }
+  saveAddonConfig(config);
+  logMessage(`Custom addon path set: ${filePath}`, 'info');
+}
+
+/**
+ * 获取自定义 addon.node 文件路径
+ */
+export function getCustomAddonPath(): string | null {
+  const config = getAddonConfig();
+  const customPath = config.customAddonPath;
+
+  // 验证路径是否仍然有效
+  if (customPath && !fs.existsSync(customPath)) {
+    logMessage(`Custom addon path no longer exists: ${customPath}`, 'warning');
+    return customPath; // 仍然返回路径，让 UI 层决定如何处理
+  }
+
+  return customPath || null;
 }
 
 /**
@@ -355,14 +401,17 @@ export function getAddonSummary(): {
   selectedVersion: CudaVersion | null;
   installedCount: number;
   installedVersions: CudaVersion[];
+  customAddonPath: string | null;
 } {
   const installed = getInstalledAddons();
   const selected = getSelectedAddonVersion();
+  const customPath = getCustomAddonPath();
 
   return {
     hasInstalled: installed.length > 0,
     selectedVersion: selected,
     installedCount: installed.length,
     installedVersions: installed.map((i) => i.version),
+    customAddonPath: customPath,
   };
 }

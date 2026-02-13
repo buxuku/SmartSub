@@ -120,6 +120,7 @@
     "dismiss": "Dismiss",
     "downloadStarted": "Starting download",
     "checkUpdates": "Check Updates",
+    "checkNewVersion": "Check New Version",
     "noUpdates": "All acceleration packs are up to date",
     "updatesAvailable": "Updates available",
     "checkUpdatesFailed": "Failed to check updates",
@@ -129,7 +130,18 @@
     "removeFailed": "Failed to remove",
     "versionSelected": "Version switched successfully",
     "restartRequired": "Please restart the application for changes to take effect",
-    "cudaNotAvailable": "CUDA acceleration is not available on this device. You can still use CPU for processing."
+    "cudaNotAvailable": "CUDA acceleration is not available on this device. You can still use CPU for processing.",
+    "customAddonPath": "Custom Addon",
+    "customAddonPathDesc": "Manually specify a downloaded addon.node file path",
+    "selectAddonFile": "Browse",
+    "customAddonActive": "Custom addon enabled",
+    "customAddonFileNotFound": "File not found, please select again",
+    "customAddonSet": "Custom addon set, restart the app to take effect",
+    "customAddonCleared": "Custom addon cleared",
+    "customAddonSetFailed": "Failed to set custom addon",
+    "customAddonTip": "You can download acceleration packs from the link below. After downloading, extract the addon.node file.",
+    "customAddonDllTip": "Tip: If the pack includes DLL/SO dependencies, ensure they are in the same directory as addon.node",
+    "downloadPackageUrl": "Download Packs"
   },
   "cancel": "Cancel",
   "delete": "Delete"

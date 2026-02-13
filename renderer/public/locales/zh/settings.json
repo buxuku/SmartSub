@@ -120,6 +120,7 @@
     "dismiss": "关闭",
     "downloadStarted": "开始下载加速包",
     "checkUpdates": "检查更新",
+    "checkNewVersion": "检查新版本",
     "noUpdates": "所有加速包已是最新版本",
     "updatesAvailable": "发现可用更新",
     "checkUpdatesFailed": "检查更新失败",
@@ -129,7 +130,18 @@
     "removeFailed": "删除失败",
     "versionSelected": "版本切换成功",
     "restartRequired": "需要重启应用以使更改生效",
-    "cudaNotAvailable": "当前设备不支持 CUDA 加速，您仍可以使用 CPU 进行处理"
+    "cudaNotAvailable": "当前设备不支持 CUDA 加速，您仍可以使用 CPU 进行处理",
+    "customAddonPath": "自定义加速包",
+    "customAddonPathDesc": "手动指定已下载的 addon.node 文件路径",
+    "selectAddonFile": "选择文件",
+    "customAddonActive": "已启用自定义加速包",
+    "customAddonFileNotFound": "文件不存在，请重新选择",
+    "customAddonSet": "自定义加速包已设置，重启应用后生效",
+    "customAddonCleared": "已取消自定义加速包",
+    "customAddonSetFailed": "设置自定义加速包失败",
+    "customAddonTip": "您可以从下方地址下载加速包，下载后需要解压出 addon.node 文件",
+    "customAddonDllTip": "提示：如果加速包包含 DLL/SO 依赖库，请确保它们与 addon.node 在同一目录下",
+    "downloadPackageUrl": "下载加速包"
   },
   "cancel": "取消",
   "delete": "删除"

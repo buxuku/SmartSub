@@ -18,6 +18,7 @@ import {
   Edit3,
   Film,
   Zap,
+  ZapOff,
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { openUrl } from 'lib/utils';
@@ -48,7 +49,8 @@ const Layout = ({ children }) => {
   const [newVersion, setNewVersion] = useState('');
   const [releaseNotes, setReleaseNotes] = useState('');
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
-  const [showAddonPrompt, setShowAddonPrompt] = useState(false);
+  const [cudaCapable, setCudaCapable] = useState(false);
+  const [cudaEnabled, setCudaEnabled] = useState(false);
 
   useEffect(() => {
     // 监听消息通知
@@ -71,20 +73,21 @@ const Layout = ({ children }) => {
       },
     );
 
-    // 检查是否需要显示加速包下载提示
+    // 检查 GPU 加速状态
     const checkAddonStatus = async () => {
       try {
         const cudaEnv = await window?.ipc?.invoke('get-cuda-environment');
-        const addonSummary = await window?.ipc?.invoke('get-addon-summary');
+        const canUseCuda = cudaEnv?.recommendation?.canUseCuda || false;
+        setCudaCapable(canUseCuda);
 
-        // 如果支持 CUDA 但没有安装任何加速包，显示提示
-        if (
-          cudaEnv?.recommendation?.canUseCuda &&
-          !addonSummary?.hasInstalled
-        ) {
-          setShowAddonPrompt(true);
-        } else {
-          setShowAddonPrompt(false);
+        if (canUseCuda) {
+          const settings = await window?.ipc?.invoke('getSettings');
+          const addonSummary = await window?.ipc?.invoke('get-addon-summary');
+          // 加速已启用：useCuda 开启且（选择了版本或设置了自定义路径）
+          const isEnabled =
+            settings?.useCuda &&
+            (addonSummary?.selectedVersion || addonSummary?.customAddonPath);
+          setCudaEnabled(!!isEnabled);
         }
       } catch (error) {
         console.error('Failed to check addon status:', error);
@@ -93,10 +96,20 @@ const Layout = ({ children }) => {
 
     checkAddonStatus();
 
+    // 监听 GPU 设置变更事件（由设置页面触发）
+    const handleGpuSettingsChanged = () => {
+      checkAddonStatus();
+    };
+    window.addEventListener('gpu-settings-changed', handleGpuSettingsChanged);
+
     // 清理函数
     return () => {
       cleanupMessage?.();
       cleanupUpdateStatus?.();
+      window.removeEventListener(
+        'gpu-settings-changed',
+        handleGpuSettingsChanged,
+      );
     };
   }, [t]);
 
@@ -273,25 +286,37 @@ const Layout = ({ children }) => {
               )}
             </span>
           </h4>
-          {/* GPU 加速包下载提示 - 放在最右侧 */}
-          {showAddonPrompt && (
+          {/* GPU 加速状态指示器 */}
+          {cudaCapable && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
-                    className="ml-auto"
+                    className={`ml-auto h-7 text-xs gap-1.5 ${
+                      cudaEnabled
+                        ? 'text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
                     onClick={() =>
                       router.push(`/${locale}/settings#gpu-acceleration`)
                     }
                   >
-                    <Zap className="w-4 h-4 mr-1 text-yellow-500" />
-                    {t('downloadAccelerationPack')}
+                    {cudaEnabled ? (
+                      <Zap className="w-3.5 h-3.5" />
+                    ) : (
+                      <ZapOff className="w-3.5 h-3.5" />
+                    )}
+                    {cudaEnabled
+                      ? t('gpuAccelerationEnabled')
+                      : t('gpuAccelerationDisabled')}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {t('downloadAccelerationPackTip')}
+                  {cudaEnabled
+                    ? t('gpuAccelerationEnabledTip')
+                    : t('gpuAccelerationDisabledTip')}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>

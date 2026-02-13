@@ -113,27 +113,27 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
     });
 
     // 当自动更新出错时，提供手动下载选项
-    if (process.platform === 'darwin') {
-      // 针对Mac平台的特殊处理
-      dialog
-        .showMessageBox(mainWindow, {
-          type: 'info',
-          title: '更新失败',
-          message: '自动更新失败',
-          detail:
-            '由于macOS系统限制，自动更新失败。您可以手动下载并安装最新版本。',
-          buttons: ['手动下载', '取消'],
-          cancelId: 1,
-        })
-        .then(({ response }) => {
-          if (response === 0) {
-            // 打开GitHub发布页面，让用户手动下载
-            const releaseUrl =
-              'https://github.com/buxuku/SmartSub/releases/latest';
-            require('electron').shell.openExternal(releaseUrl);
-          }
-        });
-    }
+    // if (process.platform === 'darwin') {
+    //   // 针对Mac平台的特殊处理
+    //   dialog
+    //     .showMessageBox(mainWindow, {
+    //       type: 'info',
+    //       title: '更新失败',
+    //       message: '自动更新失败',
+    //       detail:
+    //         '由于macOS系统限制，自动更新失败。您可以手动下载并安装最新版本。',
+    //       buttons: ['手动下载', '取消'],
+    //       cancelId: 1,
+    //     })
+    //     .then(({ response }) => {
+    //       if (response === 0) {
+    //         // 打开GitHub发布页面，让用户手动下载
+    //         const releaseUrl =
+    //           'https://github.com/buxuku/SmartSub/releases/latest';
+    //         require('electron').shell.openExternal(releaseUrl);
+    //       }
+    //     });
+    // }
   });
 
   // 设置IPC处理程序

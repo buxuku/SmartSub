@@ -144,5 +144,9 @@
   "releaseNotes": "更新内容",
   "viewOnGitHub": "在 GitHub 上查看",
   "downloadAccelerationPack": "下载加速包",
-  "downloadAccelerationPackTip": "检测到您的设备支持 CUDA 加速，点击下载加速包以提升处理速度"
+  "downloadAccelerationPackTip": "检测到您的设备支持 CUDA 加速，点击下载加速包以提升处理速度",
+  "gpuAccelerationEnabled": "显卡加速已开启",
+  "gpuAccelerationDisabled": "显卡加速未启用",
+  "gpuAccelerationEnabledTip": "GPU 加速已启用，正在使用 CUDA 加速处理",
+  "gpuAccelerationDisabledTip": "您的设备支持 GPU 加速，点击前往设置启用"
 }

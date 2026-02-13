@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, dialog } from 'electron';
 import { logMessage } from './storeManager';
 import { getCudaEnvironment, isPlatformCudaCapable } from './cudaUtils';
 import {
@@ -9,6 +9,8 @@ import {
   removeAddon,
   registerInstalledAddon,
   getAddonSummary,
+  setCustomAddonPath,
+  getCustomAddonPath,
 } from './addonManager';
 import {
   getAddonDownloader,
@@ -110,7 +112,8 @@ export function registerAddonIpcHandlers(): void {
             const remoteInfo = await getRemoteVersionInfo(config.cudaVersion);
             registerInstalledAddon(
               config.cudaVersion,
-              remoteInfo?.version || new Date().toISOString().split('T')[0],
+              remoteInfo?.version ||
+                new Date().toISOString().split('T')[0].replace(/-/g, '.'),
             );
             // 自动选中刚下载的版本
             selectAddonVersion(config.cudaVersion);
@@ -218,6 +221,55 @@ export function registerAddonIpcHandlers(): void {
       }
     },
   );
+
+  // 选择自定义 addon.node 文件
+  ipcMain.handle('select-addon-file', async () => {
+    try {
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        title: 'Select addon.node file',
+        filters: [
+          {
+            name: 'Node Addon',
+            extensions: ['node'],
+          },
+        ],
+      });
+
+      if (result.canceled || !result.filePaths[0]) {
+        return { filePath: null, canceled: true };
+      }
+
+      return { filePath: result.filePaths[0], canceled: false };
+    } catch (error) {
+      logMessage(`Error selecting addon file: ${error}`, 'error');
+      return { filePath: null, canceled: true, error: String(error) };
+    }
+  });
+
+  // 设置自定义 addon.node 路径
+  ipcMain.handle(
+    'set-custom-addon-path',
+    async (event, filePath: string | null) => {
+      try {
+        setCustomAddonPath(filePath);
+        return { success: true };
+      } catch (error) {
+        logMessage(`Error setting custom addon path: ${error}`, 'error');
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  // 获取自定义 addon.node 路径
+  ipcMain.handle('get-custom-addon-path', async () => {
+    try {
+      return getCustomAddonPath();
+    } catch (error) {
+      logMessage(`Error getting custom addon path: ${error}`, 'error');
+      return null;
+    }
+  });
 
   logMessage('Addon IPC handlers registered', 'info');
 }

@@ -124,6 +124,15 @@ function shouldForceUpdate(): boolean {
 }
 
 /**
+ * 标准化版本号格式
+ * 统一将分隔符转换为点号，以便正确比较
+ * 例如 "2026-02-06" -> "2026.02.06"
+ */
+function normalizeVersion(version: string): string {
+  return version.replace(/-/g, '.');
+}
+
+/**
  * 检查指定版本是否有更新
  */
 export async function checkVersionUpdate(
@@ -154,7 +163,10 @@ export async function checkVersionUpdate(
   }
 
   const remoteInfo = remoteVersions[version];
-  const hasUpdate = remoteInfo.version > installedInfo.remoteVersion;
+  // 标准化版本号格式后再比较，避免 "2026.02.06" vs "2026-02-06" 因分隔符不同导致误判
+  const normalizedRemote = normalizeVersion(remoteInfo.version);
+  const normalizedLocal = normalizeVersion(installedInfo.remoteVersion);
+  const hasUpdate = normalizedRemote > normalizedLocal;
 
   return {
     cudaVersion: version,

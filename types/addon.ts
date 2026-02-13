@@ -90,6 +90,8 @@ export interface AddonConfig {
   selectedVersion: CudaVersion | null;
   /** 已安装的加速包 */
   installed: Record<string, InstalledAddon>;
+  /** 自定义 addon.node 文件路径 */
+  customAddonPath?: string | null;
 }
 
 /**
