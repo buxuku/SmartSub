@@ -7,6 +7,7 @@ import ffmpegStatic from 'ffmpeg-static';
 import ffmpeg from 'fluent-ffmpeg';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { logMessage } from './storeManager';
 import type {
   SubtitleStyle,
@@ -138,13 +139,56 @@ export function buildForceStyle(style: SubtitleStyle): string {
 export function escapeSubtitlePath(subtitlePath: string): string {
   // 将反斜杠转换为正斜杠
   let escaped = subtitlePath.replace(/\\/g, '/');
-  // 转义特殊字符: : \ ' [
+  // 转义特殊字符: : ' [
+  // 注意: 先转义 : 和 [，再转义 '（避免引入的 \ 被重复转义）
+  // 此时路径中不应有反斜杠（已全部转为正斜杠），所以不需要转义 \
   escaped = escaped
     .replace(/:/g, '\\:')
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'")
-    .replace(/\[/g, '\\[');
+    .replace(/\[/g, '\\[')
+    .replace(/'/g, "\\'");
   return escaped;
+}
+
+/**
+ * 将字幕文件复制到临时目录，使用安全的文件名（无特殊字符）
+ * 返回临时文件路径。调用方需要在使用完毕后清理临时文件。
+ *
+ * 这是处理包含特殊字符（如单引号 ' ）路径的最可靠方式，
+ * 因为 ffmpeg 的滤镜字符串解析在不同版本和不同库封装下行为可能不一致。
+ */
+export function createSafeSubtitleCopy(subtitlePath: string): string {
+  const ext = path.extname(subtitlePath);
+  const tmpDir = path.join(os.tmpdir(), 'video-subtitle-master');
+  if (!fs.existsSync(tmpDir)) {
+    fs.mkdirSync(tmpDir, { recursive: true });
+  }
+  const safeName = `subtitle_${Date.now()}${ext}`;
+  const tmpPath = path.join(tmpDir, safeName);
+  fs.copyFileSync(subtitlePath, tmpPath);
+  logMessage(`创建临时字幕文件: ${tmpPath}`, 'info');
+  return tmpPath;
+}
+
+/**
+ * 清理临时字幕文件
+ */
+export function cleanupTempSubtitle(tmpPath: string): void {
+  try {
+    if (tmpPath.includes('video-subtitle-master') && fs.existsSync(tmpPath)) {
+      fs.unlinkSync(tmpPath);
+      logMessage(`清理临时字幕文件: ${tmpPath}`, 'info');
+    }
+  } catch (err) {
+    logMessage(`清理临时文件失败: ${err}`, 'warning');
+  }
+}
+
+/**
+ * 判断路径是否包含需要特殊处理的字符
+ */
+function pathNeedsSafeCopy(filePath: string): boolean {
+  // 包含单引号、反斜杠（非路径分隔符）、冒号（非Windows盘符）等特殊字符
+  return /['\[\];,]/.test(filePath);
 }
 
 /**
@@ -179,21 +223,49 @@ export function getVideoInfo(videoPath: string): Promise<VideoInfo> {
 /**
  * 合并字幕到视频
  */
-export function mergeSubtitleToVideo(
+export async function mergeSubtitleToVideo(
   config: MergeConfig,
   onProgress?: (progress: MergeProgress) => void,
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const { videoPath, subtitlePath, outputPath, style } = config;
+  const { videoPath, subtitlePath, outputPath, style } = config;
 
+  // 获取视频分辨率，用于显式设置 original_size
+  // 防止滤镜重新初始化时因自动检测失败而报错
+  let originalSize = '';
+  try {
+    const videoInfo = await getVideoInfo(videoPath);
+    if (videoInfo.width > 0 && videoInfo.height > 0) {
+      originalSize = `:original_size=${videoInfo.width}x${videoInfo.height}`;
+    }
+  } catch (err) {
+    logMessage(
+      `获取视频分辨率失败，跳过 original_size 设置: ${err}`,
+      'warning',
+    );
+  }
+
+  // 如果字幕路径包含特殊字符（如单引号），则复制到临时目录使用安全文件名
+  // 这是最可靠的方式，因为 ffmpeg 的滤镜字符串解析对特殊字符的处理在
+  // 不同版本、不同平台、不同库封装下行为可能不一致
+  let actualSubPath = subtitlePath;
+  let tmpSubPath: string | null = null;
+  if (pathNeedsSafeCopy(subtitlePath)) {
+    tmpSubPath = createSafeSubtitleCopy(subtitlePath);
+    actualSubPath = tmpSubPath;
+  }
+
+  return new Promise((resolve, reject) => {
     const forceStyle = buildForceStyle(style);
-    const escapedSubPath = escapeSubtitlePath(subtitlePath);
-    const subtitlesFilter = `subtitles='${escapedSubPath}':force_style='${forceStyle}'`;
+    const escapedSubPath = escapeSubtitlePath(actualSubPath);
+    const subtitlesFilter = `subtitles='${escapedSubPath}'${originalSize}:force_style='${forceStyle}'`;
 
     logMessage(`开始合并字幕: ${videoPath}`, 'info');
     logMessage(`字幕文件: ${subtitlePath}`, 'info');
+    if (tmpSubPath) {
+      logMessage(`使用临时字幕文件: ${tmpSubPath}`, 'info');
+    }
     logMessage(`输出文件: ${outputPath}`, 'info');
-    logMessage(`force_style: ${forceStyle}`, 'info');
+    logMessage(`subtitles filter: ${subtitlesFilter}`, 'info');
 
     // 发送初始进度
     onProgress?.({
@@ -224,6 +296,10 @@ export function mergeSubtitleToVideo(
         });
       })
       .on('end', () => {
+        // 清理临时文件
+        if (tmpSubPath) {
+          cleanupTempSubtitle(tmpSubPath);
+        }
         logMessage('字幕合并完成', 'info');
         onProgress?.({
           percent: 100,
@@ -234,6 +310,10 @@ export function mergeSubtitleToVideo(
         resolve(outputPath);
       })
       .on('error', (err) => {
+        // 清理临时文件
+        if (tmpSubPath) {
+          cleanupTempSubtitle(tmpSubPath);
+        }
         logMessage(`字幕合并失败: ${err.message}`, 'error');
         onProgress?.({
           percent: 0,

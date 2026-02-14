@@ -141,7 +141,8 @@
     "customAddonSetFailed": "Failed to set custom addon",
     "customAddonTip": "You can download acceleration packs from the link below. After downloading, extract the addon.node file.",
     "customAddonDllTip": "Tip: If the pack includes DLL/SO dependencies, ensure they are in the same directory as addon.node",
-    "downloadPackageUrl": "Download Packs"
+    "downloadPackageUrl": "Download Packs",
+    "crashTip": "If the app crashes after enabling acceleration, try switching to a different version or disabling GPU acceleration"
   },
   "cancel": "Cancel",
   "delete": "Delete"

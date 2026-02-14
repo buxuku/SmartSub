@@ -141,7 +141,8 @@
     "customAddonSetFailed": "设置自定义加速包失败",
     "customAddonTip": "您可以从下方地址下载加速包，下载后需要解压出 addon.node 文件",
     "customAddonDllTip": "提示：如果加速包包含 DLL/SO 依赖库，请确保它们与 addon.node 在同一目录下",
-    "downloadPackageUrl": "下载加速包"
+    "downloadPackageUrl": "下载加速包",
+    "crashTip": "如果启用加速后运行闪退，请尝试切换其他版本的加速包或关闭 GPU 加速"
   },
   "cancel": "取消",
   "delete": "删除"

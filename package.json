@@ -2,7 +2,7 @@
   "private": true,
   "name": "smartsub",
   "description": "视频转字幕，字幕翻译软件",
-  "version": "2.14.0-beta.0",
+  "version": "2.14.0",
   "author": "buxuku <buxuku@gmail.com>",
   "main": "app/background.js",
   "scripts": {

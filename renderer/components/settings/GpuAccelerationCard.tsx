@@ -169,9 +169,14 @@ const GpuAccelerationCard: React.FC = () => {
           // 刷新数据
           await loadData();
 
-          // 自动启用 CUDA（因为后端已经选中了刚下载的版本）
+          // 自动启用 CUDA 并选中刚下载的版本
           if (completedVersion) {
             try {
+              // 显式通过 IPC 持久化选中版本，避免依赖后端异步回调的竞态问题
+              await window?.ipc?.invoke(
+                'select-addon-version',
+                completedVersion,
+              );
               await window?.ipc?.invoke('setSettings', { useCuda: true });
               setUseCuda(true);
               setSelectedVersion(completedVersion);
@@ -858,6 +863,14 @@ const GpuAccelerationCard: React.FC = () => {
 
             {/* 下载进度 */}
             {renderDownloadProgress()}
+
+            {/* 闪退提示 */}
+            <div className="flex items-start gap-2 p-2.5 bg-amber-50 dark:bg-amber-950/30 rounded-md mt-4 border border-amber-200 dark:border-amber-800">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
+              <span className="text-[11px] text-amber-700 dark:text-amber-400">
+                {t('gpuAcceleration.crashTip')}
+              </span>
+            </div>
 
             {/* 自定义加速包 */}
             <div className="mt-4 pt-4 border-t border-dashed">

@@ -166,25 +166,37 @@ function compareVersions(v1: string, v2: string): number {
 }
 
 /**
+ * 提取版本号的 major.minor 部分
+ * 例如 "13.0.2" -> "13.0", "12.4.0" -> "12.4"
+ */
+function getMajorMinor(version: string): string {
+  const parts = version.split('.');
+  return `${parts[0] || '0'}.${parts[1] || '0'}`;
+}
+
+/**
  * 获取推荐的加速包版本
- * 根据用户的 CUDA 版本，找到不超过该版本的最大可用版本
+ * 根据用户的 CUDA 版本，找到最合适的可用版本
  *
- * @param userCudaVersion 用户的 CUDA 版本 (如 "12.6")
+ * nvidia-smi 报告的 CUDA 版本 (如 "13.0") 表示驱动支持的最高 CUDA 运行时版本族，
+ * 即 13.0.x 系列的补丁版本都是兼容的。因此匹配时只比较 major.minor，忽略 patch。
+ *
+ * 同时，新架构的 GPU（如 Blackwell）可能不被旧版 CUDA toolkit 支持，
+ * 所以在兼容范围内优先推荐最高版本。
+ *
+ * @param userCudaVersion 用户的 CUDA 版本 (如 "12.6" 或 "13.0")
  * @returns 推荐的加速包版本，如果没有合适的则返回 null
  */
 export function getRecommendedAddonVersion(
   userCudaVersion: string,
 ): CudaVersion | null {
-  // 将用户版本标准化为三段式 (如 "12.6" -> "12.6.0")
-  const normalizedVersion = userCudaVersion.includes('.')
-    ? userCudaVersion.split('.').length === 2
-      ? `${userCudaVersion}.0`
-      : userCudaVersion
-    : `${userCudaVersion}.0.0`;
+  const userMajorMinor = getMajorMinor(userCudaVersion);
 
-  // 从高到低遍历可用版本，找到第一个不超过用户版本的
+  // 从高到低遍历可用版本，找到第一个 major.minor 不超过用户版本的
+  // 这样同系列的 patch 版本（如 13.0.2 对应驱动 13.0）也能正确匹配
   for (const version of [...AVAILABLE_CUDA_VERSIONS].reverse()) {
-    if (compareVersions(version, normalizedVersion) <= 0) {
+    const addonMajorMinor = getMajorMinor(version);
+    if (compareVersions(addonMajorMinor, userMajorMinor) <= 0) {
       return version;
     }
   }
