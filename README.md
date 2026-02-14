@@ -8,7 +8,7 @@
 [![Release](https://img.shields.io/github/v/release/buxuku/SmartSub?style=flat-square&logo=github&color=blue&label=Release)](https://github.com/buxuku/SmartSub/releases/latest)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square&logo=opensourceinitiative&logoColor=white)](https://github.com/buxuku/SmartSub/blob/master/LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square&logo=electron&logoColor=white)](https://github.com/buxuku/SmartSub/releases)
-[![i18n](https://img.shields.io/badge/i18n-中文%20%7C%20English-orange?style=flat-square&logo=googletranslate&logoColor=white)](https://github.com/buxuku/SmartSub)
+[![i18n](https://img.shields.io/badge/i18n-中文%20%7C%20English%20%7C%20日本語-orange?style=flat-square&logo=googletranslate&logoColor=white)](https://github.com/buxuku/SmartSub)
 
 <!-- 第二行：功能特性 - 模型/翻译服务/硬件加速 -->
 
@@ -78,12 +78,11 @@
 
 ## 关于 CUDA 的支持
 
-因为本人使用的是苹果芯片，缺少 window CUDA 的开发环境，对于 CUDA 的支持，开发测试都存在较多场景无法兼顾的情况。
+软件已内置 GPU 加速包管理功能，无须手动安装 CUDA Toolkit。
 
-- 目前提供了 CUDA 11.8.0 和 12.2.0 及 12.4.0 版本的编译，是通过 github action 自动编译的，可能存在环境的兼容问题
-- 要启用 CUDA，需要确定自己的电脑支持 CUDA, 并安装了 CUDA toolkit. [CUDA download](https://developer.nvidia.com/cuda-downloads)
-- CUDA toolkit 的版本理论上是向后兼容，请根据你显卡支持的版本，选择合适的版本
-- 如果下载 generic 使用有问题，可以下载 optimized 版本，这个版本是针对各个系列显卡的优化版本，兼容性更强
+- 安装软件后，在「设置 → GPU 加速」中，软件会自动检测你的显卡并推荐合适的加速包版本
+- 点击下载对应的加速包即可启用 GPU 加速，支持 CUDA 11.8.0 / 12.2.0 / 12.4.0 / 13.0.2
+- 如果启用加速后出现闪退，请尝试切换其他版本的加速包或关闭 GPU 加速
 
 ## 关于 Core ML 的支持
 
@@ -120,24 +119,16 @@ SmartSub 现在支持为每个 AI 翻译服务配置自定义参数，让您能�
 
 ## 🔦使用 (普通用户)
 
-请根据自己的电脑系统，芯片，显卡，选择下载对应安装包。
+请根据自己的电脑系统和芯片，选择下载对应安装包。GPU 加速包无须在下载安装包时选择，安装软件后可在应用内下载。
 
-- 带 _generic_ 的版本，是通用的版本，理论上支持常见的显卡
-- 带 _optimized_ 的版本，是优化版本，提供了针对各个系列显卡的优化，兼容性更强
+| 系统    | 芯片  | 下载安装包  | 说明                                  |
+| ------- | ----- | ----------- | ------------------------------------- |
+| Windows | x64   | windows-x64 | NVIDIA 用户安装后可在应用内下载加速包 |
+| Mac     | Apple | mac-arm64   | 自动启用 Core ML 加速                 |
+| Mac     | Intel | mac-x64     | 不支持 GPU 加速                       |
+| Linux   | x64   | linux-x64   | NVIDIA 用户安装后可在应用内下载加速包 |
 
-| 系统    | 芯片  | 显卡                    | 下载安装包             |
-| ------- | ----- | ----------------------- | ---------------------- |
-| Windows | x64   | CUDA >= 11.8.0 < 12.0.0 | windows-x64_cuda11.8.0 |
-| Windows | x64   | CUDA >= 12.4.0          | windows-x64_cuda12.4.0 |
-| Windows | x64   | CUDA >= 12.2.0          | windows-x64_cuda12.2.0 |
-| Windows | x64   | 无 CUDA                 | windows-x64_no_cuda    |
-| Mac     | Apple | 支持 CoreML             | mac-arm64              |
-| Mac     | Intel | 不支持 CoreML           | mac-x64                |
-| Linux   | x64   | CUDA >= 13.0.2          | linux-x64_cuda13.0.2   |
-| Linux   | x64   | CUDA >= 12.4.0          | linux-x64_cuda12.4.0   |
-| Linux   | x64   | 无 CUDA                 | linux-x64_no_cuda      |
-
-### macOS 用户通过 Homebrew 安装）（推荐）
+### macOS 用户通过 Homebrew 安装（推荐）
 
 macOS 用户可以通过 Homebrew 快速安装，会自动根据芯片类型（Intel/Apple Silicon）下载对应版本：
 

@@ -8,7 +8,7 @@
 [![Release](https://img.shields.io/github/v/release/buxuku/SmartSub?style=flat-square&logo=github&color=blue&label=Release)](https://github.com/buxuku/SmartSub/releases/latest)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square&logo=opensourceinitiative&logoColor=white)](https://github.com/buxuku/SmartSub/blob/master/LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square&logo=electron&logoColor=white)](https://github.com/buxuku/SmartSub/releases)
-[![i18n](https://img.shields.io/badge/i18n-中文%20%7C%20English-orange?style=flat-square&logo=googletranslate&logoColor=white)](https://github.com/buxuku/SmartSub)
+[![i18n](https://img.shields.io/badge/i18n-中文%20%7C%20English%20%7C%20日本語-orange?style=flat-square&logo=googletranslate&logoColor=white)](https://github.com/buxuku/SmartSub)
 
 <!-- Row 2: Features - Models/Translation/Hardware Acceleration -->
 
@@ -76,14 +76,13 @@ This application retains all the features of the original [VideoSubtitleGenerato
 - Support for running locally installed `whisper` command
 - Customizable number of concurrent tasks
 
-## About CUDA support
+## About CUDA Support
 
-Because I use an Apple Silicon chip, I lack a Windows CUDA development environment. For CUDA support, there are many scenarios that are difficult to cover both in development and testing.
+The application includes a built-in GPU acceleration pack manager — no need to manually install the CUDA Toolkit.
 
-- Currently, CUDA 11.8.0 and 12.4.0 versions are provided through GitHub Actions, which may have compatibility issues with the environment
-- To enable CUDA, you need to determine if your computer supports CUDA and has installed the CUDA toolkit. [CUDA download](https://developer.nvidia.com/cuda-downloads)
-- The version of the CUDA toolkit theoretically supports backward compatibility. Please choose the appropriate 11.8.0 or 12.4.0 version based on your graphics card support
-- If you have problems downloading generic usage, you can download optimized Version, which is optimized for better compatibility across a variety of graphics card families
+- After installation, go to "Settings → GPU Acceleration" where the app will automatically detect your GPU and recommend a suitable acceleration pack
+- Download the recommended pack to enable GPU acceleration. Supported versions: CUDA 11.8.0 / 12.2.0 / 12.4.0 / 13.0.2
+- If the app crashes after enabling acceleration, try switching to a different version or disabling GPU acceleration
 
 ## Core ML support
 
@@ -119,22 +118,14 @@ To generate subtitles from video or audio, you need to use the whisper model. Wh
 
 ## 🔦 Usage (For End Users)
 
-Please download the appropriate package based on your computer's system, chip, and graphics card.
+Download the appropriate package based on your system and chip. GPU acceleration packs can be downloaded within the app after installation.
 
-- The _generic_ version is a universal version that theoretically supports most graphics cards
-- The _optimized_ version provides optimizations for various graphics card series, providing better compatibility
-
-| System  | Chip  | Graphics Card           | Download Package       |
-| ------- | ----- | ----------------------- | ---------------------- |
-| Windows | x64   | CUDA >= 11.8.0 < 12.0.0 | windows-x64_cuda11.8.0 |
-| Windows | x64   | CUDA >= 12.0.0          | windows-x64_cuda12.4.0 |
-| Windows | x64   | CUDA >= 12.2.0          | windows-x64_cuda12.2.0 |
-| Windows | x64   | no CUDA                 | windows-x64_no_cuda    |
-| Mac     | Apple | support CoreML          | mac-arm64              |
-| Mac     | Intel | no support CoreML       | mac-x64                |
-| Linux   | x64   | CUDA >= 13.0.2          | linux-x64_cuda13.0.2   |
-| Linux   | x64   | CUDA >= 12.4.0          | linux-x64_cuda12.4.0   |
-| Linux   | x64   | no CUDA                 | linux-x64_no_cuda      |
+| System  | Chip  | Download Package | Notes                                                   |
+| ------- | ----- | ---------------- | ------------------------------------------------------- |
+| Windows | x64   | windows-x64      | NVIDIA users can download acceleration packs in the app |
+| Mac     | Apple | mac-arm64        | Core ML acceleration enabled automatically              |
+| Mac     | Intel | mac-x64          | No GPU acceleration support                             |
+| Linux   | x64   | linux-x64        | NVIDIA users can download acceleration packs in the app |
 
 ### Install via Homebrew (macOS) (Recommended)
 
