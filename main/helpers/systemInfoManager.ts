@@ -1,10 +1,7 @@
 import { ipcMain, BrowserWindow, dialog } from 'electron';
-import {
-  getModelsInstalled,
-  getPath,
-  deleteModel,
-  downloadModelSync,
-} from './whisper';
+import os from 'os';
+import { getModelsInstalled, getPath, deleteModel } from './whisper';
+import { getModelDownloader } from './modelDownloader';
 import fse from 'fs-extra';
 import path from 'path';
 import { getTempDir } from './fileUtils';
@@ -15,12 +12,15 @@ import { getBuildInfo } from './buildInfo';
 let downloadingModels = new Set<string>();
 
 export function setupSystemInfoManager(mainWindow: BrowserWindow) {
+  const modelDownloader = getModelDownloader(mainWindow);
+
   ipcMain.handle('getSystemInfo', async () => {
     return {
       modelsInstalled: getModelsInstalled(),
       modelsPath: getPath('modelsPath'),
       downloadingModels: Array.from(downloadingModels),
       buildInfo: getBuildInfo(),
+      totalMemoryGB: Math.round(os.totalmem() / (1024 * 1024 * 1024)),
     };
   });
 
@@ -32,35 +32,32 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   ipcMain.handle(
     'downloadModel',
     async (event, { model, source, needsCoreML }) => {
-      if (downloadingModels.has(model)) {
-        return false; // 如果模型已经在下载中，则返回 false
+      if (downloadingModels.size > 0) {
+        return { success: false, error: 'anotherDownloadInProgress' };
       }
 
       downloadingModels.add(model);
-      const onProcess = (progress: number, message: string) => {
-        if (progress > 0.0) {
-          event.sender.send('downloadProgress', model, progress);
-        }
-        if (message?.includes?.('Done') || message?.includes?.('main')) {
-          event.sender.send('downloadProgress', model, 1);
-        }
-      };
       try {
-        await downloadModelSync(
+        await modelDownloader.download(
           model?.toLowerCase(),
           source,
-          onProcess,
           needsCoreML,
         );
         downloadingModels.delete(model);
-        return true;
+        return { success: true };
       } catch (error) {
-        event.sender.send('message', 'download error, please try again');
+        logMessage(`Model download error: ${error}`, 'error');
         downloadingModels.delete(model);
-        return false;
+        return { success: false, error: String(error) };
       }
     },
   );
+
+  ipcMain.handle('cancelModelDownload', async () => {
+    modelDownloader.cancel();
+    downloadingModels.clear();
+    return true;
+  });
 
   ipcMain.handle('importModel', async (event) => {
     const result = await dialog.showOpenDialog(mainWindow, {

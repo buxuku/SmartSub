@@ -6,6 +6,7 @@ import { getAndInitializeProviders } from './providerManager';
 import { logMessage } from './logger';
 import { LogEntry } from './store/types';
 import { getBuildInfo } from './buildInfo';
+import { exportConfig, importConfig } from './configExporter';
 
 console.log(app.getVersion(), 'version');
 export function setupStoreHandlers() {
@@ -83,5 +84,14 @@ export function setupStoreHandlers() {
   ipcMain.handle('clearConfig', async () => {
     store.clear();
     return true;
+  });
+
+  // 配置导入导出
+  ipcMain.handle('exportConfig', async (_event, password: string) => {
+    return exportConfig(password);
+  });
+
+  ipcMain.handle('importConfig', async (_event, password: string) => {
+    return importConfig(password);
   });
 }
