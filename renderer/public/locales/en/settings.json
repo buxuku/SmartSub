@@ -142,7 +142,14 @@
     "customAddonTip": "You can download acceleration packs from the link below. After downloading, extract the addon.node file.",
     "customAddonDllTip": "Tip: If the pack includes DLL/SO dependencies, ensure they are in the same directory as addon.node",
     "downloadPackageUrl": "Download Packs",
-    "crashTip": "If the app crashes after enabling acceleration, try switching to a different version or disabling GPU acceleration"
+    "crashTip": "If the app crashes after enabling acceleration, try switching to a different version or disabling GPU acceleration",
+    "liteEdition": "Lite",
+    "fullEdition": "Full",
+    "switchToFull": "Switch to Full",
+    "switchToLite": "Switch to Lite",
+    "downloadFull": "Download Full",
+    "downloadFullTip": "Download full package with bundled runtime libraries for better compatibility",
+    "toolkitCompatTip": "CUDA Toolkit detected on your system. The lite version will be downloaded by default. If you encounter compatibility issues (e.g. crashes), hover over the installed version and switch to the full version which includes bundled runtime libraries."
   },
   "cancel": "Cancel",
   "delete": "Delete"

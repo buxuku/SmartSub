@@ -2,11 +2,12 @@ import {
   Provider,
   PROVIDER_TYPES,
   defaultSystemPrompt,
+  HISTORICAL_DEFAULT_PROMPTS,
 } from '../../types/provider';
 import { store } from './store';
 import { logMessage } from './logger';
 
-const CURRENT_PROVIDER_VERSION = 11; // 添加了structuredOutput字段，需要更新版本号
+const CURRENT_PROVIDER_VERSION = 15;
 
 export async function getAndInitializeProviders(): Promise<Provider[]> {
   try {
@@ -55,6 +56,20 @@ function initializeDefaultProviders(): Provider[] {
   return providers;
 }
 
+/**
+ * 判断用户的 systemPrompt 是否需要更新为新的默认值
+ * 如果用户的值为空、等于当前默认值、或匹配任意历史默认值 → 更新
+ * 否则说明用户自定义过 → 保留
+ */
+function shouldUpdateSystemPrompt(currentPrompt: string | undefined): boolean {
+  if (!currentPrompt) return true;
+  const trimmed = currentPrompt.trim();
+  if (trimmed === defaultSystemPrompt.trim()) return false;
+  return HISTORICAL_DEFAULT_PROMPTS.some(
+    (historical) => trimmed === historical.trim(),
+  );
+}
+
 function migrateProviders(oldProviders: any[]): Provider[] {
   // 分离内置和自定义服务商
   const builtinProviders = oldProviders
@@ -63,18 +78,17 @@ function migrateProviders(oldProviders: any[]): Provider[] {
       const template = PROVIDER_TYPES.find((type) => type.id === p.id)!;
       return {
         ...p,
-        type: p.id, // 确保 type 与 id 一致
+        type: p.id,
         isAi: template.isAi || false,
-        // 为不同服务商设置默认批量大小
         ...(p.id === 'baidu' && { batchSize: 18 }),
         ...(p.id === 'volc' && { batchSize: 16 }),
         ...(p.id === 'azure' && { batchSize: 50 }),
-        // 为 AI 提供商添加新字段
         ...(template.isAi && {
           useBatchTranslation: false,
           batchTranslationSize: 10,
-          systemPrompt: defaultSystemPrompt,
-          // 添加structuredOutput字段，使用模板中定义的默认值
+          systemPrompt: shouldUpdateSystemPrompt(p.systemPrompt)
+            ? defaultSystemPrompt
+            : p.systemPrompt,
           structuredOutput:
             p.structuredOutput ||
             template.fields.find((f) => f.key === 'structuredOutput')
@@ -94,8 +108,9 @@ function migrateProviders(oldProviders: any[]): Provider[] {
       isAi: true,
       useBatchTranslation: false,
       batchTranslationSize: 10,
-      systemPrompt: defaultSystemPrompt,
-      // 为自定义OpenAI provider设置默认的structuredOutput
+      systemPrompt: shouldUpdateSystemPrompt(p.systemPrompt)
+        ? defaultSystemPrompt
+        : p.systemPrompt,
       structuredOutput: p.structuredOutput || 'json_schema',
     }));
 

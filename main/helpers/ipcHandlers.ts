@@ -114,15 +114,21 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     const { fileType } = data;
     console.log(fileType, 'fileType');
     const name = fileType === 'srt' ? 'Subtitle Files' : 'Media Files';
+    const taskType = fileType === 'srt' ? 'translate' : 'media';
 
-    // 使用已定义的常量获取扩展名
     const extensions =
       fileType === 'srt'
-        ? SUBTITLE_EXTENSIONS.map((ext) => ext.substring(1)) // 移除前面的点
+        ? SUBTITLE_EXTENSIONS.map((ext) => ext.substring(1))
         : MEDIA_EXTENSIONS.map((ext) => ext.substring(1));
 
+    // macOS 支持同时选择文件和文件夹；Windows/Linux 两者互斥，仅支持选择文件
+    const properties: Electron.OpenDialogOptions['properties'] =
+      process.platform === 'darwin'
+        ? ['openFile', 'openDirectory', 'multiSelections']
+        : ['openFile', 'multiSelections'];
+
     const result = await dialog.showOpenDialog({
-      properties: ['openFile', 'multiSelections'],
+      properties,
       filters: [
         {
           name: name,
@@ -131,14 +137,21 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
       ],
     });
 
-    try {
-      event.sender.send('file-selected', result.filePaths.map(wrapFileObject));
-    } catch (error) {
-      createMessageSender(event.sender).send('message', {
-        type: 'error',
-        message: error.message,
-      });
+    const allValidPaths: string[] = [];
+    for (const filePath of result.filePaths) {
+      try {
+        const stats = await fs.promises.stat(filePath);
+        if (stats.isDirectory()) {
+          const dirFiles = await getMediaFilesFromDirectory(filePath, taskType);
+          allValidPaths.push(...dirFiles);
+        } else if (stats.isFile()) {
+          allValidPaths.push(filePath);
+        }
+      } catch (error) {
+        console.error(`Failed to stat file ${filePath}:`, error);
+      }
     }
+    event.sender.send('file-selected', allValidPaths.map(wrapFileObject));
   });
 
   ipcMain.on('openUrl', (event, url) => {

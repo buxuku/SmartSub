@@ -142,7 +142,14 @@
     "customAddonTip": "您可以从下方地址下载加速包，下载后需要解压出 addon.node 文件",
     "customAddonDllTip": "提示：如果加速包包含 DLL/SO 依赖库，请确保它们与 addon.node 在同一目录下",
     "downloadPackageUrl": "下载加速包",
-    "crashTip": "如果启用加速后运行闪退，请尝试切换其他版本的加速包或关闭 GPU 加速"
+    "crashTip": "如果启用加速后运行闪退，请尝试切换其他版本的加速包或关闭 GPU 加速",
+    "liteEdition": "轻量版",
+    "fullEdition": "完整版",
+    "switchToFull": "切换为完整版",
+    "switchToLite": "切换为轻量版",
+    "downloadFull": "下载完整版",
+    "downloadFullTip": "下载包含运行时库的完整版，兼容性更好",
+    "toolkitCompatTip": "已检测到本机 CUDA Toolkit，默认下载轻量版。如遇兼容性问题（如闪退），可将鼠标悬停在已安装的版本上，切换为包含运行时库的完整版。"
   },
   "cancel": "取消",
   "delete": "删除"

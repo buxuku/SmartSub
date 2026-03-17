@@ -4,12 +4,17 @@ import {
   DEFAULT_BATCH_SIZE,
   JSON_CONTENT_REGEX,
 } from '../constants';
-import { renderTemplate } from '../../helpers/utils';
+import { renderTemplate, supportedLanguage } from '../../helpers/utils';
 import { logMessage } from '../../helpers/storeManager';
 import { defaultSystemPrompt, defaultUserPrompt } from '../../../types';
 import { toJson } from 'really-relaxed-json';
 import { jsonrepair } from 'jsonrepair';
 import { isConfigurationError } from '../utils/error';
+
+function getLanguageName(code: string): string {
+  const lang = supportedLanguage.find((l) => l.value === code);
+  return lang?.name || code;
+}
 
 export async function handleAIBatchTranslation(
   subtitles: Subtitle[],
@@ -20,6 +25,8 @@ export async function handleAIBatchTranslation(
   maxRetries: number = 0,
 ): Promise<TranslationResult[]> {
   const { provider, sourceLanguage, targetLanguage, translator } = config;
+  const sourceLanguageName = getLanguageName(sourceLanguage);
+  const targetLanguageName = getLanguageName(targetLanguage);
   const results: TranslationResult[] = [];
   const totalBatches = Math.ceil(subtitles.length / batchSize);
   let processedSubtitles = 0;
@@ -29,12 +36,19 @@ export async function handleAIBatchTranslation(
     'info',
   );
 
+  const requestInterval = +(provider.requestInterval || 0) * 1000;
+
   for (let i = 0; i < subtitles.length; i += batchSize) {
     const batch = subtitles.slice(i, i + batchSize);
     const currentBatchIndex = Math.floor(i / batchSize) + 1;
     let retryCount = 0;
     let batchSuccess = false;
     let batchResults: TranslationResult[] = [];
+
+    if (requestInterval > 0 && i > 0) {
+      logMessage(`等待 ${provider.requestInterval}s (请求间隔)`, 'info');
+      await new Promise((resolve) => setTimeout(resolve, requestInterval));
+    }
 
     logMessage(
       `处理批次 ${currentBatchIndex}/${totalBatches}，包含 ${batch.length} 条字幕`,
@@ -51,8 +65,8 @@ export async function handleAIBatchTranslation(
         const translationContent = renderTemplate(
           provider.prompt || defaultUserPrompt,
           {
-            sourceLanguage,
-            targetLanguage,
+            sourceLanguage: sourceLanguageName,
+            targetLanguage: targetLanguageName,
             content: fullContent,
           },
         );
@@ -60,8 +74,8 @@ export async function handleAIBatchTranslation(
         const systemPrompt = renderTemplate(
           provider.systemPrompt || defaultSystemPrompt,
           {
-            sourceLanguage,
-            targetLanguage,
+            sourceLanguage: sourceLanguageName,
+            targetLanguage: targetLanguageName,
             content: fullContent,
           },
         );

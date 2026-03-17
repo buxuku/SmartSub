@@ -524,6 +524,27 @@ export class AddonDownloader {
   }
 
   /**
+   * 清理版本目录中的旧文件，保留目录本身
+   */
+  private cleanVersionDir(destDir: string): void {
+    try {
+      const files = fs.readdirSync(destDir);
+      for (const file of files) {
+        const filePath = path.join(destDir, file);
+        const stat = fs.statSync(filePath);
+        if (stat.isDirectory()) {
+          fs.rmSync(filePath, { recursive: true, force: true });
+        } else {
+          fs.unlinkSync(filePath);
+        }
+      }
+      logMessage(`Cleaned version directory: ${destDir}`, 'info');
+    } catch (error) {
+      logMessage(`Error cleaning version directory: ${error}`, 'warning');
+    }
+  }
+
+  /**
    * 解压文件
    */
   private async extractFile(
@@ -531,17 +552,16 @@ export class AddonDownloader {
     destDir: string,
     downloadType: 'node.gz' | 'tar.gz',
   ): Promise<void> {
+    this.cleanVersionDir(destDir);
+
     if (downloadType === 'tar.gz') {
-      // 解压 tar.gz 文件
       await tar.extract({
         file: filePath,
         cwd: destDir,
       });
 
-      // 重命名 .node 文件为 addon.node
       await this.renameNodeFile(destDir);
     } else {
-      // 解压 .node.gz 文件
       const destPath = path.join(destDir, 'addon.node');
       await this.gunzipFile(filePath, destPath);
     }

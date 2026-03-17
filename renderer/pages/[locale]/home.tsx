@@ -51,36 +51,13 @@ export default function Component() {
     e.preventDefault();
     setIsDragging(false);
 
-    // 获取所有拖放的项目（文件和文件夹）
-    const items = e.dataTransfer.items;
     const paths: string[] = [];
-
-    if (items) {
-      // 使用DataTransferItemList接口获取所有文件和文件夹
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        // 如果是文件系统条目
-        if (item.kind === 'file') {
-          const fileSystemEntry = item.webkitGetAsEntry();
-          // 将文件或文件夹的路径添加到列表中
-          if (fileSystemEntry) {
-            // @ts-ignore - 获取文件路径，这是Electron特有的属性
-            const path = item.getAsFile()?.path;
-            if (path) {
-              paths.push(path);
-            }
-          }
-        }
-      }
-    } else {
-      // 回退到标准File API（不支持WebkitGetAsEntry的情况）
-      const files = e.dataTransfer.files;
-      for (let i = 0; i < files.length; i++) {
-        // @ts-ignore - 获取文件路径，这是Electron特有的属性
-        const path = files[i].path;
-        if (path) {
-          paths.push(path);
-        }
+    const droppedFiles = e.dataTransfer.files;
+    for (let i = 0; i < droppedFiles.length; i++) {
+      // @ts-ignore - Electron File 对象包含 path 属性，支持文件和文件夹
+      const filePath = droppedFiles[i].path;
+      if (filePath) {
+        paths.push(filePath);
       }
     }
 
@@ -186,6 +163,9 @@ export default function Component() {
             files={files}
             formData={formData}
             onProofread={(file) => setProofreadFile(file)}
+            onDelete={(uuid) =>
+              setFiles((prev) => prev.filter((f) => f.uuid !== uuid))
+            }
           />
         </ScrollArea>
         <TaskControls
