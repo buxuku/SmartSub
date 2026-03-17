@@ -55,71 +55,100 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
 }) => {
   const { t } = useTranslation('translateControl');
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
-  const [deerApiModels, setDeerApiModels] = useState<string[]>([]);
+  const [openaiCompatModels, setOpenaiCompatModels] = useState<
+    Record<string, string[]>
+  >({});
   const apiKeyRef = useRef<HTMLInputElement>(null);
 
-  // 获取Ollama模型列表
+  const OPENAI_COMPAT_PROVIDERS: Record<
+    string,
+    {
+      params?: Record<string, string>;
+      fallbackModels?: string[];
+    }
+  > = {
+    DeerAPI: { fallbackModels: ['gpt-3.5-turbo', 'gpt-4'] },
+    deepseek: {
+      fallbackModels: ['deepseek-chat', 'deepseek-reasoner'],
+    },
+    siliconflow: {
+      params: { sub_type: 'chat' },
+      fallbackModels: [
+        'deepseek-ai/DeepSeek-V3',
+        'Qwen/Qwen2.5-7B-Instruct',
+        'THUDM/glm-4-9b-chat',
+      ],
+    },
+    qwen: {
+      fallbackModels: ['qwen-turbo', 'qwen-plus', 'qwen-max'],
+    },
+  };
+
   const fetchOllamaModels = async (apiUrl: string) => {
     try {
       const baseUrl = apiUrl.split('/api/')[0];
       const response = await axios.get(`${baseUrl}/api/tags`);
-      if (response.data && response.data.models) {
-        const models = response.data.models.map((model) => model.name);
-        setOllamaModels(models);
+      if (response.data?.models) {
+        setOllamaModels(response.data.models.map((model) => model.name));
       }
     } catch (error) {
       console.error('Failed to fetch Ollama models:', error);
-      // 如果获取失败，设置一个默认模型列表
       setOllamaModels(['llama2', 'mistral', 'gemma']);
     }
   };
 
-  // 获取DeerAPI模型列表
-  const fetchDeerApiModels = async (apiUrl: string, apiKey: string) => {
+  const fetchOpenAICompatModels = async (
+    providerType: string,
+    apiUrl: string,
+    apiKey: string,
+  ) => {
     if (!apiUrl || !apiKey) return;
+    const config = OPENAI_COMPAT_PROVIDERS[providerType];
+    if (!config) return;
 
     try {
-      const response = await axios.get(`${apiUrl}/models`, {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
+      const baseUrl = apiUrl.replace(/\/+$/, '');
+      const response = await axios.get(`${baseUrl}/models`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        ...(config.params && { params: config.params }),
       });
-
-      if (response.data && response.data.data) {
+      if (response.data?.data) {
         const models = response.data.data.map((model) => model.id);
-        setDeerApiModels(models);
+        setOpenaiCompatModels((prev) => ({ ...prev, [providerType]: models }));
       }
     } catch (error) {
-      console.error('Failed to fetch DeerAPI models:', error);
-      // 如果获取失败，设置一个默认模型列表
-      setDeerApiModels(['gpt-3.5-turbo', 'gpt-4']);
+      console.error(`Failed to fetch ${providerType} models:`, error);
+      if (config.fallbackModels) {
+        setOpenaiCompatModels((prev) => ({
+          ...prev,
+          [providerType]: config.fallbackModels!,
+        }));
+      }
     }
   };
 
-  // 处理API Key输入框失去焦点事件
   const handleApiKeyBlur = () => {
-    if (values.type === 'DeerAPI' && values.apiKey && values.apiUrl) {
-      fetchDeerApiModels(values.apiUrl, values.apiKey);
+    if (
+      OPENAI_COMPAT_PROVIDERS[values.type] &&
+      values.apiKey &&
+      values.apiUrl
+    ) {
+      fetchOpenAICompatModels(values.type, values.apiUrl, values.apiKey);
     }
   };
 
   useEffect(() => {
-    // 检查是否是Ollama配置页面
-    const isOllamaProvider = fields.some(
-      (field) => field.key === 'modelName' && values.type === 'ollama',
-    );
+    const hasModelField = fields.some((f) => f.key === 'modelName');
+    if (!hasModelField) return;
 
-    if (isOllamaProvider && values.apiUrl) {
+    if (values.type === 'ollama' && values.apiUrl) {
       fetchOllamaModels(values.apiUrl);
-    }
-
-    // 检查是否是DeerAPI配置页面，且已有API Key
-    const isDeerApiProvider = fields.some(
-      (field) => field.key === 'modelName' && values.type === 'DeerAPI',
-    );
-
-    if (isDeerApiProvider && values.apiKey && values.apiUrl) {
-      fetchDeerApiModels(values.apiUrl, values.apiKey);
+    } else if (
+      OPENAI_COMPAT_PROVIDERS[values.type] &&
+      values.apiKey &&
+      values.apiUrl
+    ) {
+      fetchOpenAICompatModels(values.type, values.apiUrl, values.apiKey);
     }
   }, [fields, values.type, values.apiUrl]);
 
@@ -194,7 +223,7 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
   };
 
   const renderField = (field: ProviderField) => {
-    const value = values[field.key] ?? (field.defaultValue || '');
+    const value = values[field.key] ?? field.defaultValue ?? '';
     switch (field.type) {
       case 'switch':
         return (
@@ -258,8 +287,8 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
         if (field.key === 'modelName') {
           if (values.type === 'ollama' && ollamaModels.length > 0) {
             options = ollamaModels;
-          } else if (values.type === 'DeerAPI' && deerApiModels.length > 0) {
-            options = deerApiModels;
+          } else if (openaiCompatModels[values.type]?.length > 0) {
+            options = openaiCompatModels[values.type];
           } else {
             options = field.options || [];
           }

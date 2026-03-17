@@ -39,8 +39,10 @@ import {
   ExternalLink,
   Info,
   X,
+  Package,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { openUrl } from '@/lib/utils';
 import type {
   CudaEnvironment,
   DownloadProgress,
@@ -250,13 +252,15 @@ const GpuAccelerationCard: React.FC = () => {
     }
   };
 
-  // 开始下载
-  const handleDownload = async (version: CudaVersion) => {
+  // 开始下载，forceType 允许用户显式选择包类型
+  const handleDownload = async (
+    version: CudaVersion,
+    forceType?: 'node.gz' | 'tar.gz',
+  ) => {
     if (!version) return;
 
-    const downloadType = cudaEnv?.recommendation.needsDlls
-      ? 'tar.gz'
-      : 'node.gz';
+    const downloadType =
+      forceType ?? (cudaEnv?.recommendation.needsDlls ? 'tar.gz' : 'node.gz');
     setDownloadingVersion(version);
     downloadingVersionRef.current = version;
 
@@ -661,10 +665,23 @@ const GpuAccelerationCard: React.FC = () => {
         {installed ? (
           <div className="space-y-1">
             {/* 状态标签 */}
-            <div className="flex justify-center gap-1">
+            <div className="flex justify-center gap-1 flex-wrap">
               <Badge variant="default" className="text-[10px] px-1.5 py-0">
                 <CheckCircle className="w-2.5 h-2.5 mr-0.5" />
                 {t('gpuAcceleration.installed')}
+              </Badge>
+              <Badge
+                variant="outline"
+                className={`text-[10px] px-1.5 py-0 ${
+                  versionInfo?.info.hasDlls
+                    ? 'border-green-300 text-green-700 dark:border-green-700 dark:text-green-400'
+                    : 'border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-400'
+                }`}
+              >
+                <Package className="w-2.5 h-2.5 mr-0.5" />
+                {versionInfo?.info.hasDlls
+                  ? t('gpuAcceleration.fullEdition')
+                  : t('gpuAcceleration.liteEdition')}
               </Badge>
             </div>
             {/* 版本号和大小信息 */}
@@ -679,7 +696,7 @@ const GpuAccelerationCard: React.FC = () => {
                 formatSize(versionInfo.info.size)}
             </div>
             {/* 操作按钮 */}
-            <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex items-center justify-center gap-1 flex-wrap opacity-0 group-hover:opacity-100 transition-opacity">
               {hasUpdate && !isDownloading && (
                 <Button
                   variant="ghost"
@@ -695,6 +712,36 @@ const GpuAccelerationCard: React.FC = () => {
                   {t('gpuAcceleration.update')}
                 </Button>
               )}
+              {/* 切换包类型：轻量版可切换到完整版；完整版仅在已安装 Toolkit 时可切换到轻量版 */}
+              {!isDownloading &&
+                !hasUpdate &&
+                (versionInfo?.info.hasDlls
+                  ? cudaEnv?.cudaToolkit.installed
+                  : true) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-[10px] text-muted-foreground hover:text-foreground"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const targetType = versionInfo?.info.hasDlls
+                        ? 'node.gz'
+                        : 'tar.gz';
+                      handleDownload(version, targetType);
+                    }}
+                    disabled={!!downloadingVersion}
+                    title={
+                      versionInfo?.info.hasDlls
+                        ? t('gpuAcceleration.switchToLite')
+                        : t('gpuAcceleration.switchToFull')
+                    }
+                  >
+                    <Package className="w-3 h-3 mr-1" />
+                    {versionInfo?.info.hasDlls
+                      ? t('gpuAcceleration.switchToLite')
+                      : t('gpuAcceleration.switchToFull')}
+                  </Button>
+                )}
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
@@ -744,26 +791,44 @@ const GpuAccelerationCard: React.FC = () => {
               </span>
             </div>
             {/* 下载按钮或下载状态 */}
-            <div className="h-6 flex items-center justify-center">
+            <div className="flex items-center justify-center">
               {isDownloading ? (
-                <div className="flex items-center text-[10px] text-muted-foreground">
+                <div className="flex items-center text-[10px] text-muted-foreground h-6">
                   <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
                   {t('gpuAcceleration.downloading')}
                 </div>
               ) : (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full h-6 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDownload(version);
-                  }}
-                  disabled={!!downloadingVersion}
-                >
-                  <Download className="w-3 h-3 mr-1" />
-                  {t('gpuAcceleration.download')}
-                </Button>
+                <div className="flex flex-col items-center gap-0.5 w-full opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full h-6 text-[10px]"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownload(version);
+                    }}
+                    disabled={!!downloadingVersion}
+                  >
+                    <Download className="w-3 h-3 mr-1" />
+                    {t('gpuAcceleration.download')}
+                  </Button>
+                  {cudaEnv?.cudaToolkit.installed && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full h-6 text-[10px] text-muted-foreground hover:text-foreground"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDownload(version, 'tar.gz');
+                      }}
+                      disabled={!!downloadingVersion}
+                      title={t('gpuAcceleration.downloadFullTip')}
+                    >
+                      <Package className="w-3 h-3 mr-1" />
+                      {t('gpuAcceleration.downloadFull')}
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -872,6 +937,16 @@ const GpuAccelerationCard: React.FC = () => {
               </span>
             </div>
 
+            {/* Toolkit 已安装时的兼容性提示 */}
+            {cudaEnv?.cudaToolkit.installed && (
+              <div className="flex items-start gap-2 p-2.5 bg-blue-50 dark:bg-blue-950/30 rounded-md mt-2 border border-blue-200 dark:border-blue-800">
+                <Info className="w-3.5 h-3.5 text-blue-500 mt-0.5 shrink-0" />
+                <span className="text-[11px] text-blue-700 dark:text-blue-400">
+                  {t('gpuAcceleration.toolkitCompatTip')}
+                </span>
+              </div>
+            )}
+
             {/* 自定义加速包 */}
             <div className="mt-4 pt-4 border-t border-dashed">
               <div className="flex items-center justify-between mb-3">
@@ -881,15 +956,18 @@ const GpuAccelerationCard: React.FC = () => {
                     {t('gpuAcceleration.customAddonPath')}
                   </h4>
                 </div>
-                <a
-                  href="https://github.com/buxuku/whisper.cpp/releases/tag/latest"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                <button
+                  type="button"
+                  onClick={() =>
+                    openUrl(
+                      'https://github.com/buxuku/whisper.cpp/releases/tag/latest',
+                    )
+                  }
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline cursor-pointer"
                 >
                   <ExternalLink className="w-3 h-3" />
                   {t('gpuAcceleration.downloadPackageUrl')}
-                </a>
+                </button>
               </div>
 
               {/* 提示信息 */}

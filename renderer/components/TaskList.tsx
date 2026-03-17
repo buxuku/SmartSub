@@ -11,7 +11,7 @@ import {
 import TaskStatus from './TaskStatus';
 import { isSubtitleFile } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
-import { FileUp, Edit2 } from 'lucide-react';
+import { FileUp, Edit2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -21,24 +21,18 @@ import {
 } from '@/components/ui/tooltip';
 import { IFiles } from '../../types';
 
-// 从完整路径中提取文件名
-const getFileName = (filePath: string): string => {
-  if (!filePath) return '';
-  // 支持 Windows 和 Unix 路径分隔符
-  const parts = filePath.split(/[/\\]/);
-  return parts[parts.length - 1] || filePath;
-};
-
 interface TaskListProps {
   files: any[];
   formData: any;
   onProofread?: (file: IFiles) => void;
+  onDelete?: (uuid: string) => void;
 }
 
 const TaskList: React.FC<TaskListProps> = ({
   files = [],
   formData,
   onProofread,
+  onDelete,
 }) => {
   const { t } = useTranslation('home');
   const { taskType } = formData;
@@ -93,7 +87,9 @@ const TaskList: React.FC<TaskListProps> = ({
   return (
     <>
       <Table className="table-fixed w-full">
-        <TableCaption>{t('taskList')}</TableCaption>
+        <TableCaption>
+          {t('taskList')} ({files.length})
+        </TableCaption>
         <TableHeader>
           <TableRow>
             <TableHead className="w-auto">{t('fileName')}</TableHead>
@@ -119,20 +115,33 @@ const TaskList: React.FC<TaskListProps> = ({
         </TableHeader>
         <TableBody>
           {files.map((file) => (
-            <TableRow key={file?.uuid}>
-              <TableCell className="font-medium truncate max-w-0">
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="cursor-default truncate block">
-                        {getFileName(file?.filePath)}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" className="max-w-md">
-                      <p className="break-all">{file?.filePath}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+            <TableRow key={file?.uuid} className="group">
+              <TableCell className="font-medium max-w-0 overflow-hidden">
+                <div className="flex items-center gap-1 min-w-0">
+                  <button
+                    type="button"
+                    className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete?.(file?.uuid);
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="cursor-default truncate block min-w-0">
+                          {file?.fileName}
+                          {file?.fileExtension}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-md">
+                        <p className="break-all">{file?.filePath}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
               </TableCell>
               {shouldShowAudioColumn && (
                 <TableCell className="text-center">

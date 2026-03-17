@@ -34,6 +34,7 @@ export const TRANSLATOR_MAP = {
   aliyun: aliyunTranslator,
   Gemini: openaiTranslator,
   qwen: openaiTranslator,
+  siliconflow: openaiTranslator,
   google: googleTranslator,
   doubao: doubaoTranslator,
 } as const;

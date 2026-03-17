@@ -15,12 +15,19 @@ export async function handleAPIBatchTranslation(
   const results: TranslationResult[] = [];
   const totalBatches = Math.ceil(subtitles.length / batchSize);
 
+  const requestInterval = +(provider.requestInterval || 0) * 1000;
+
   for (let i = 0; i < subtitles.length; i += batchSize) {
     const batch = subtitles.slice(i, i + batchSize);
     const batchContents = batch.map((s) => s.content.join('\n'));
     const currentBatchIndex = Math.floor(i / batchSize) + 1;
     let retryCount = 0;
     let batchSuccess = false;
+
+    if (requestInterval > 0 && i > 0) {
+      logMessage(`等待 ${provider.requestInterval}s (请求间隔)`, 'info');
+      await new Promise((resolve) => setTimeout(resolve, requestInterval));
+    }
 
     while (!batchSuccess && retryCount <= maxRetries) {
       try {

@@ -100,8 +100,43 @@ export interface ParameterTemplate {
 }
 
 export const defaultUserPrompt = '${content}';
-export const defaultSystemPrompt = `# Role: 资深翻译专家
+
+/**
+ * 历史版本的默认系统提示词，用于迁移时判断用户是否修改过
+ * 每次修改 defaultSystemPrompt 时，将旧版本追加到此数组末尾
+ */
+export const HISTORICAL_DEFAULT_PROMPTS: string[] = [
+  `# Role: 资深翻译专家
 你是一位经验丰富的字幕翻译专家,精通\${targetLanguage}的翻译,擅长将视频字幕译成流畅易懂的\${targetLanguage}。
+
+# Attention:
+在整个翻译过程中，你需要注意以下几点：
+
+1. 保持每条字幕的独立性和完整性，不合并或拆分。
+2. 使用口语化的\${targetLanguage}，避免过于书面化的表达，以符合字幕的特点。
+3. 适当使用标点符号，如逗号、句号，甚至省略号，来增强语气和节奏感。
+4. 确保专业术语的准确性，并且在上下文中保持一致性。
+
+# 输出格式要求：
+1. 你必须严格按照输入的JSON格式进行输出，保留原始的键（ID），仅翻译值的内容。
+2. 不要添加任何额外的文本、注释或解释，只返回纯JSON。
+3. 不要改变键值对的数量，确保输出的JSON对象与输入包含相同数量的键值对。
+4. 确保输出是有效的JSON格式，不能有语法错误。
+
+最后，你需要检查整个翻译是否流畅，是否有语法错误，以及是否忠实于原文意思。特别是要注意译文与原文之间的差异，比如英语中常用被动语态，而中文则更多使用主动语态，所以在翻译时可能会做一些调整，以适应\${targetLanguage}的表达习惯。
+
+# Examples
+
+Input:
+{"0": "Welcome to China", "1": "China is a beautiful country"}
+
+Output:
+{"0": "欢迎来到中国", "1": "中国是一个美丽的国家"}
+`,
+];
+
+export const defaultSystemPrompt = `# Role: 资深翻译专家
+你是一位经验丰富的字幕翻译专家,精通\${sourceLanguage}的翻译,擅长将视频字幕译成流畅易懂的\${targetLanguage}。
 
 # Attention:
 在整个翻译过程中，你需要注意以下几点：
@@ -128,6 +163,81 @@ Output:
 {\"0\": \"欢迎来到中国\", \"1\": \"中国是一个美丽的国家\"}
 `;
 
+// ============================================================
+// 共享字段定义
+// ============================================================
+
+const FIELD_REQUEST_INTERVAL: ProviderField = {
+  key: 'requestInterval',
+  label: 'requestInterval',
+  type: 'number',
+  defaultValue: 0,
+  tips: 'requestIntervalTip',
+};
+
+const FIELD_SYSTEM_PROMPT: ProviderField = {
+  key: 'systemPrompt',
+  label: 'systemPrompt',
+  type: 'textarea',
+  tips: 'systemPromptTips',
+  defaultValue: defaultSystemPrompt,
+};
+
+const FIELD_USER_PROMPT: ProviderField = {
+  key: 'prompt',
+  label: 'prompt',
+  type: 'textarea',
+  defaultValue: defaultUserPrompt,
+  tips: 'userPromptTips',
+};
+
+const batchSizeField = (
+  defaultValue: number = 1,
+  tips: string = 'batchSizeTip',
+): ProviderField => ({
+  key: 'batchSize',
+  label: 'Batch Size',
+  type: 'number',
+  defaultValue,
+  tips,
+});
+
+const structuredOutputField = (
+  defaultValue: string = 'json_object',
+): ProviderField => ({
+  key: 'structuredOutput',
+  label: 'structuredOutput',
+  type: 'select',
+  required: false,
+  defaultValue,
+  options: ['disabled', 'json_object', 'json_schema'],
+  tips: 'structuredOutputTips',
+});
+
+const aiCommonFields = (overrides?: {
+  batchSize?: number;
+  batchSizeTips?: string;
+  structuredOutput?: string;
+}): ProviderField[] => [
+  FIELD_SYSTEM_PROMPT,
+  FIELD_USER_PROMPT,
+  structuredOutputField(overrides?.structuredOutput),
+  batchSizeField(overrides?.batchSize, overrides?.batchSizeTips),
+  FIELD_REQUEST_INTERVAL,
+];
+
+const apiBatchFields = (
+  defaultBatchSize: number,
+  batchSizeTips: string,
+): ProviderField[] => [
+  batchSizeField(defaultBatchSize, batchSizeTips),
+  FIELD_REQUEST_INTERVAL,
+];
+
+// ============================================================
+// Provider 定义
+// ============================================================
+
 export const PROVIDER_TYPES: ProviderType[] = [
   {
     id: 'baidu',
@@ -143,14 +253,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
         type: 'password',
         required: true,
       },
-      {
-        key: 'batchSize',
-        label: 'Batch Size',
-        type: 'number',
-        required: true,
-        defaultValue: 18,
-        tips: 'batchSizeBaiduTips',
-      },
+      ...apiBatchFields(18, 'batchSizeBaiduTips'),
     ],
   },
   {
@@ -167,14 +270,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
         required: true,
         tips: 'googleApiKeyTips',
       },
-      {
-        key: 'batchSize',
-        label: 'Batch Size',
-        type: 'number',
-        required: true,
-        defaultValue: 50,
-        tips: 'batchSizeGoogleTips',
-      },
+      ...apiBatchFields(50, 'batchSizeGoogleTips'),
     ],
   },
   {
@@ -204,14 +300,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
         defaultValue: 'mt.aliyuncs.com',
         tips: 'endpointAliyunTips',
       },
-      {
-        key: 'batchSize',
-        label: 'Batch Size',
-        type: 'number',
-        required: true,
-        defaultValue: 15,
-        tips: 'batchSizeAliyunTips',
-      },
+      ...apiBatchFields(15, 'batchSizeAliyunTips'),
     ],
   },
   {
@@ -233,14 +322,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
         type: 'password',
         required: true,
       },
-      {
-        key: 'batchSize',
-        label: 'Batch Size',
-        type: 'number',
-        required: true,
-        defaultValue: 15,
-        tips: 'batchSizeVolcTips',
-      },
+      ...apiBatchFields(15, 'batchSizeVolcTips'),
     ],
   },
   {
@@ -265,14 +347,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
         defaultValue: 'doubao-seed-translation-250915',
         tips: 'doubaoModelNameTips',
       },
-      {
-        key: 'batchSize',
-        label: 'Batch Size',
-        type: 'number',
-        required: true,
-        defaultValue: 1,
-        tips: 'batchSizeDoubaoTips',
-      },
+      ...apiBatchFields(1, 'batchSizeDoubaoTips'),
     ],
   },
   {
@@ -300,14 +375,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     fields: [
       { key: 'apiKey', label: 'API Key', type: 'password', required: true },
       { key: 'apiSecret', label: 'Region', type: 'password', required: true },
-      {
-        key: 'batchSize',
-        label: 'Batch Size',
-        type: 'number',
-        required: true,
-        defaultValue: 20,
-        tips: 'batchSizeAzureTips',
-      },
+      ...apiBatchFields(20, 'batchSizeAzureTips'),
     ],
   },
   {
@@ -334,36 +402,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
         placeholder: '选择模型',
         options: [],
       },
-      {
-        key: 'systemPrompt',
-        label: 'systemPrompt',
-        type: 'textarea',
-        tips: 'systemPromptTips',
-        defaultValue: defaultSystemPrompt,
-      },
-      {
-        key: 'prompt',
-        label: 'prompt',
-        type: 'textarea',
-        defaultValue: defaultUserPrompt,
-        tips: 'userPromptTips',
-      },
-      {
-        key: 'structuredOutput',
-        label: 'structuredOutput',
-        type: 'select',
-        required: false,
-        defaultValue: 'json_object',
-        options: ['disabled', 'json_object', 'json_schema'],
-        tips: 'structuredOutputTips',
-      },
-      {
-        key: 'batchSize',
-        label: 'Batch Size',
-        type: 'number',
-        defaultValue: 10,
-        tips: 'batchSizeTip',
-      },
+      ...aiCommonFields({ batchSize: 10 }),
     ],
   },
   {
@@ -385,41 +424,12 @@ export const PROVIDER_TYPES: ProviderType[] = [
       {
         key: 'modelName',
         label: 'modelName',
-        type: 'text',
-        required: true,
-        placeholder: 'deepseek-chat',
-        defaultValue: 'deepseek-chat',
-      },
-      {
-        key: 'systemPrompt',
-        label: 'systemPrompt',
-        type: 'textarea',
-        tips: 'systemPromptTips',
-        defaultValue: defaultSystemPrompt,
-      },
-      {
-        key: 'prompt',
-        label: 'prompt',
-        type: 'textarea',
-        defaultValue: defaultUserPrompt,
-        tips: 'userPromptTips',
-      },
-      {
-        key: 'structuredOutput',
-        label: 'structuredOutput',
         type: 'select',
-        required: false,
-        defaultValue: 'json_object',
-        options: ['disabled', 'json_object', 'json_schema'],
-        tips: 'structuredOutputTips',
+        required: true,
+        placeholder: '选择模型',
+        options: [],
       },
-      {
-        key: 'batchSize',
-        label: 'Batch Size',
-        type: 'number',
-        defaultValue: 1,
-        tips: 'batchSizeTip',
-      },
+      ...aiCommonFields(),
     ],
   },
   {
@@ -438,36 +448,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
           'https://{your-resource-name}.openai.azure.com/openai/deployments/{deployment-id}',
       },
       { key: 'apiKey', label: 'API Key', type: 'password', required: true },
-      {
-        key: 'systemPrompt',
-        label: 'systemPrompt',
-        type: 'textarea',
-        tips: 'systemPromptTips',
-        defaultValue: defaultSystemPrompt,
-      },
-      {
-        key: 'prompt',
-        label: 'prompt',
-        type: 'textarea',
-        defaultValue: defaultUserPrompt,
-        tips: 'userPromptTips',
-      },
-      {
-        key: 'structuredOutput',
-        label: 'structuredOutput',
-        type: 'select',
-        required: false,
-        defaultValue: 'json_schema',
-        options: ['disabled', 'json_object', 'json_schema'],
-        tips: 'structuredOutputTips',
-      },
-      {
-        key: 'batchSize',
-        label: 'Batch Size',
-        type: 'number',
-        defaultValue: 1,
-        tips: 'batchSizeTip',
-      },
+      ...aiCommonFields({ structuredOutput: 'json_schema' }),
     ],
   },
   {
@@ -496,36 +477,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
         placeholder: '选择模型',
         options: [],
       },
-      {
-        key: 'systemPrompt',
-        label: 'systemPrompt',
-        type: 'textarea',
-        tips: 'systemPromptTips',
-        defaultValue: defaultSystemPrompt,
-      },
-      {
-        key: 'prompt',
-        label: 'prompt',
-        type: 'textarea',
-        defaultValue: defaultUserPrompt,
-        tips: 'userPromptTips',
-      },
-      {
-        key: 'structuredOutput',
-        label: 'structuredOutput',
-        type: 'select',
-        required: false,
-        defaultValue: 'json_object',
-        options: ['disabled', 'json_object', 'json_schema'],
-        tips: 'structuredOutputTips',
-      },
-      {
-        key: 'batchSize',
-        label: 'Batch Size',
-        type: 'number',
-        defaultValue: 10,
-        tips: 'batchSizeTip',
-      },
+      ...aiCommonFields({ batchSize: 10 }),
     ],
   },
   {
@@ -553,36 +505,34 @@ export const PROVIDER_TYPES: ProviderType[] = [
         placeholder: 'gemini-2.0-flash',
         defaultValue: 'gemini-2.0-flash',
       },
+      ...aiCommonFields({ structuredOutput: 'json_schema' }),
+    ],
+  },
+  {
+    id: 'siliconflow',
+    name: 'SiliconFlow',
+    isBuiltin: true,
+    isAi: true,
+    icon: '🔮',
+    fields: [
       {
-        key: 'systemPrompt',
-        label: 'systemPrompt',
-        type: 'textarea',
-        tips: 'systemPromptTips',
-        defaultValue: defaultSystemPrompt,
+        key: 'apiUrl',
+        label: 'Base url',
+        type: 'url',
+        required: true,
+        placeholder: 'https://api.siliconflow.cn/v1',
+        defaultValue: 'https://api.siliconflow.cn/v1',
       },
+      { key: 'apiKey', label: 'API Key', type: 'password', required: true },
       {
-        key: 'prompt',
-        label: 'prompt',
-        type: 'textarea',
-        defaultValue: defaultUserPrompt,
-        tips: 'userPromptTips',
-      },
-      {
-        key: 'structuredOutput',
-        label: 'structuredOutput',
+        key: 'modelName',
+        label: 'modelName',
         type: 'select',
-        required: false,
-        defaultValue: 'json_schema',
-        options: ['disabled', 'json_object', 'json_schema'],
-        tips: 'structuredOutputTips',
+        required: true,
+        placeholder: '选择模型',
+        options: [],
       },
-      {
-        key: 'batchSize',
-        label: 'Batch Size',
-        type: 'number',
-        defaultValue: 1,
-        tips: 'batchSizeTip',
-      },
+      ...aiCommonFields(),
     ],
   },
   {
@@ -604,41 +554,12 @@ export const PROVIDER_TYPES: ProviderType[] = [
       {
         key: 'modelName',
         label: 'modelName',
-        type: 'text',
-        required: true,
-        placeholder: 'qwen-turbo',
-        defaultValue: 'qwen-turbo',
-      },
-      {
-        key: 'systemPrompt',
-        label: 'systemPrompt',
-        type: 'textarea',
-        tips: 'systemPromptTips',
-        defaultValue: defaultSystemPrompt,
-      },
-      {
-        key: 'prompt',
-        label: 'prompt',
-        type: 'textarea',
-        defaultValue: defaultUserPrompt,
-        tips: 'userPromptTips',
-      },
-      {
-        key: 'structuredOutput',
-        label: 'structuredOutput',
         type: 'select',
-        required: false,
-        defaultValue: 'json_object',
-        options: ['disabled', 'json_object', 'json_schema'],
-        tips: 'structuredOutputTips',
+        required: true,
+        placeholder: '选择模型',
+        options: [],
       },
-      {
-        key: 'batchSize',
-        label: 'Batch Size',
-        type: 'number',
-        defaultValue: 1,
-        tips: 'batchSizeTip',
-      },
+      ...aiCommonFields(),
     ],
   },
 ];
@@ -652,36 +573,7 @@ export const CONFIG_TEMPLATES: Record<string, ProviderType> = {
       { key: 'apiUrl', label: 'Base url', type: 'url', required: true },
       { key: 'apiKey', label: 'API Key', type: 'password', required: true },
       { key: 'modelName', label: 'modelName', type: 'text', required: true },
-      {
-        key: 'structuredOutput',
-        label: 'structuredOutput',
-        type: 'select',
-        required: false,
-        defaultValue: 'json_schema',
-        options: ['disabled', 'json_object', 'json_schema'],
-        tips: 'structuredOutputTips',
-      },
-      {
-        key: 'systemPrompt',
-        label: 'systemPrompt',
-        type: 'textarea',
-        tips: 'systemPromptTips',
-        defaultValue: defaultSystemPrompt,
-      },
-      {
-        key: 'prompt',
-        label: 'prompt',
-        type: 'textarea',
-        defaultValue: defaultUserPrompt,
-        tips: 'userPromptTips',
-      },
-      {
-        key: 'batchSize',
-        label: 'Batch Size',
-        type: 'number',
-        defaultValue: 1,
-        tips: 'batchSizeTip',
-      },
+      ...aiCommonFields({ structuredOutput: 'json_schema' }),
     ],
   },
 };
