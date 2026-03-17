@@ -13,7 +13,16 @@ import { Button } from '@/components/ui/button';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
-import { Globe, Trash2, Cog, HelpCircle, Eraser, Activity } from 'lucide-react';
+import {
+  Globe,
+  Trash2,
+  Cog,
+  HelpCircle,
+  Eraser,
+  Activity,
+  Download,
+  Upload,
+} from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import {
   Tooltip,
@@ -23,6 +32,14 @@ import {
 } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { GpuAccelerationCard } from '@/components/settings';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 // 新增一个 CommandInput 组件
 const CommandInput = ({
@@ -274,6 +291,71 @@ const Settings = () => {
       toast.success(t('vadSettingsSaved'));
     } catch (error) {
       toast.error(t('saveFailed'));
+    }
+  };
+
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [exportPassword, setExportPassword] = useState('');
+  const [exportConfirmPassword, setExportConfirmPassword] = useState('');
+  const [importPassword, setImportPassword] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+
+  const handleExport = async () => {
+    if (!exportPassword) {
+      toast.error(t('passwordRequired'));
+      return;
+    }
+    if (exportPassword !== exportConfirmPassword) {
+      toast.error(t('passwordMismatch'));
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const result = await window?.ipc?.invoke('exportConfig', exportPassword);
+      if (result?.success) {
+        toast.success(t('exportSuccess'));
+        setExportDialogOpen(false);
+        setExportPassword('');
+        setExportConfirmPassword('');
+      } else if (result?.error === 'canceled') {
+        toast.info(t('exportCanceled'));
+      } else {
+        toast.error(t('exportFailed'));
+      }
+    } catch {
+      toast.error(t('exportFailed'));
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!importPassword) {
+      toast.error(t('passwordRequired'));
+      return;
+    }
+    setIsImporting(true);
+    try {
+      const result = await window?.ipc?.invoke('importConfig', importPassword);
+      if (result?.success) {
+        toast.success(t('importSuccess'));
+        setImportDialogOpen(false);
+        setImportPassword('');
+      } else if (result?.error === 'canceled') {
+        toast.info(t('importCanceled'));
+      } else if (result?.error === 'invalidPassword') {
+        toast.error(t('invalidPassword'));
+      } else if (result?.error === 'invalidConfigFile') {
+        toast.error(t('invalidConfigFile'));
+      } else {
+        toast.error(t('importFailed'));
+      }
+    } catch {
+      toast.error(t('importFailed'));
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -663,6 +745,126 @@ const Settings = () => {
           )}
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Download className="mr-2" />
+            {t('configImportExport')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            {t('configImportExportDescription')}
+          </p>
+          <div className="flex gap-4">
+            <Button
+              onClick={() => setExportDialogOpen(true)}
+              className="flex items-center"
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              {t('exportConfig')}
+            </Button>
+            <Button
+              onClick={() => setImportDialogOpen(true)}
+              variant="outline"
+              className="flex items-center"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              {t('importConfig')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog
+        open={exportDialogOpen}
+        onOpenChange={(open) => {
+          setExportDialogOpen(open);
+          if (!open) {
+            setExportPassword('');
+            setExportConfirmPassword('');
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('enterPasswordForExport')}</DialogTitle>
+            <DialogDescription>
+              {t('enterPasswordForExportDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <Input
+              type="password"
+              placeholder={t('passwordPlaceholder')}
+              value={exportPassword}
+              onChange={(e) => setExportPassword(e.target.value)}
+            />
+            <Input
+              type="password"
+              placeholder={t('confirmPasswordPlaceholder')}
+              value={exportConfirmPassword}
+              onChange={(e) => setExportConfirmPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleExport();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setExportDialogOpen(false)}
+            >
+              {t('cancel')}
+            </Button>
+            <Button onClick={handleExport} disabled={isExporting}>
+              {isExporting ? t('exporting') : t('confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={importDialogOpen}
+        onOpenChange={(open) => {
+          setImportDialogOpen(open);
+          if (!open) {
+            setImportPassword('');
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('enterPasswordForImport')}</DialogTitle>
+            <DialogDescription>
+              {t('enterPasswordForImportDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <Input
+              type="password"
+              placeholder={t('passwordPlaceholder')}
+              value={importPassword}
+              onChange={(e) => setImportPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleImport();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setImportDialogOpen(false)}
+            >
+              {t('cancel')}
+            </Button>
+            <Button onClick={handleImport} disabled={isImporting}>
+              {isImporting ? t('importing') : t('confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Card className="border-destructive">
         <CardHeader>

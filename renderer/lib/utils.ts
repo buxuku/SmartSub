@@ -5,173 +5,248 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export const models = [
+export interface ModelInfo {
+  name: string;
+  size: string;
+  needsCoreML: boolean;
+  isQuantized?: boolean;
+  isEnglishOnly?: boolean;
+}
+
+export interface ModelCategory {
+  id: string;
+  speed: number;
+  quality: number;
+  minRAM: number;
+  models: ModelInfo[];
+}
+
+export const modelCategories: ModelCategory[] = [
   {
-    name: 'tiny',
-    size: '75 MB',
-    needsCoreML: true,
+    id: 'tiny',
+    speed: 5,
+    quality: 2,
+    minRAM: 2,
+    models: [
+      { name: 'tiny', size: '75 MB', needsCoreML: true },
+      {
+        name: 'tiny-q5_1',
+        size: '32.2 MB',
+        needsCoreML: false,
+        isQuantized: true,
+      },
+      {
+        name: 'tiny-q8_0',
+        size: '43.5 MB',
+        needsCoreML: false,
+        isQuantized: true,
+      },
+      {
+        name: 'tiny.en',
+        size: '77.7 MB',
+        needsCoreML: true,
+        isEnglishOnly: true,
+      },
+      {
+        name: 'tiny.en-q5_1',
+        size: '32.2 MB',
+        needsCoreML: false,
+        isQuantized: true,
+        isEnglishOnly: true,
+      },
+      {
+        name: 'tiny.en-q8_0',
+        size: '43.6 MB',
+        needsCoreML: false,
+        isQuantized: true,
+        isEnglishOnly: true,
+      },
+    ],
   },
   {
-    name: 'tiny-q5_1',
-    size: '32.2 MB',
-    needsCoreML: false,
+    id: 'base',
+    speed: 4,
+    quality: 3,
+    minRAM: 4,
+    models: [
+      { name: 'base', size: '148 MB', needsCoreML: true },
+      {
+        name: 'base-q5_1',
+        size: '59.7 MB',
+        needsCoreML: false,
+        isQuantized: true,
+      },
+      {
+        name: 'base-q8_0',
+        size: '81.8 MB',
+        needsCoreML: false,
+        isQuantized: true,
+      },
+      {
+        name: 'base.en',
+        size: '148 MB',
+        needsCoreML: true,
+        isEnglishOnly: true,
+      },
+      {
+        name: 'base.en-q5_1',
+        size: '59.7 MB',
+        needsCoreML: false,
+        isQuantized: true,
+        isEnglishOnly: true,
+      },
+      {
+        name: 'base.en-q8_0',
+        size: '81.8 MB',
+        needsCoreML: false,
+        isQuantized: true,
+        isEnglishOnly: true,
+      },
+    ],
   },
   {
-    name: 'tiny-q8_0',
-    size: '43.5 MB',
-    needsCoreML: false,
+    id: 'small',
+    speed: 3,
+    quality: 4,
+    minRAM: 6,
+    models: [
+      { name: 'small', size: '488 MB', needsCoreML: true },
+      {
+        name: 'small-q5_1',
+        size: '190 MB',
+        needsCoreML: false,
+        isQuantized: true,
+      },
+      {
+        name: 'small-q8_0',
+        size: '264 MB',
+        needsCoreML: false,
+        isQuantized: true,
+      },
+      {
+        name: 'small.en',
+        size: '488 MB',
+        needsCoreML: true,
+        isEnglishOnly: true,
+      },
+      {
+        name: 'small.en-q5_1',
+        size: '190 MB',
+        needsCoreML: false,
+        isQuantized: true,
+        isEnglishOnly: true,
+      },
+      {
+        name: 'small.en-q8_0',
+        size: '264 MB',
+        needsCoreML: false,
+        isQuantized: true,
+        isEnglishOnly: true,
+      },
+    ],
   },
   {
-    name: 'tiny.en',
-    size: '77.7 MB',
-    needsCoreML: true,
+    id: 'medium',
+    speed: 2,
+    quality: 5,
+    minRAM: 10,
+    models: [
+      { name: 'medium', size: '1.53 GB', needsCoreML: true },
+      {
+        name: 'medium-q5_0',
+        size: '539 MB',
+        needsCoreML: false,
+        isQuantized: true,
+      },
+      {
+        name: 'medium-q8_0',
+        size: '823 MB',
+        needsCoreML: false,
+        isQuantized: true,
+      },
+      {
+        name: 'medium.en',
+        size: '1.53 GB',
+        needsCoreML: true,
+        isEnglishOnly: true,
+      },
+      {
+        name: 'medium.en-q5_0',
+        size: '539 MB',
+        needsCoreML: false,
+        isQuantized: true,
+        isEnglishOnly: true,
+      },
+      {
+        name: 'medium.en-q8_0',
+        size: '823 MB',
+        needsCoreML: false,
+        isQuantized: true,
+        isEnglishOnly: true,
+      },
+    ],
   },
   {
-    name: 'tiny.en-q5_1',
-    size: '32.2 MB',
-    needsCoreML: false,
+    id: 'largeTurbo',
+    speed: 3,
+    quality: 5,
+    minRAM: 10,
+    models: [
+      { name: 'large-v3-turbo', size: '1.62 GB', needsCoreML: true },
+      {
+        name: 'large-v3-turbo-q5_0',
+        size: '574 MB',
+        needsCoreML: false,
+        isQuantized: true,
+      },
+      {
+        name: 'large-v3-turbo-q8_0',
+        size: '874 MB',
+        needsCoreML: false,
+        isQuantized: true,
+      },
+    ],
   },
   {
-    name: 'tiny.en-q8_0',
-    size: '43.6 MB',
-    needsCoreML: false,
-  },
-  {
-    name: 'base',
-    size: '148 MB',
-    needsCoreML: true,
-  },
-  {
-    name: 'base-q5_1',
-    size: '59.7 MB',
-    needsCoreML: false,
-  },
-  {
-    name: 'base-q8_0',
-    size: '81.8 MB',
-    needsCoreML: false,
-  },
-  {
-    name: 'base.en',
-    size: '148 MB',
-    needsCoreML: true,
-  },
-  {
-    name: 'base.en-q5_1',
-    size: '59.7 MB',
-    needsCoreML: false,
-  },
-  {
-    name: 'base.en-q8_0',
-    size: '81.8 MB',
-    needsCoreML: false,
-  },
-  {
-    name: 'small',
-    size: '488 MB',
-    needsCoreML: true,
-  },
-  {
-    name: 'small-q5_1',
-    size: '190 MB',
-    needsCoreML: false,
-  },
-  {
-    name: 'small-q8_0',
-    size: '264 MB',
-    needsCoreML: false,
-  },
-  {
-    name: 'small.en',
-    size: '488 MB',
-    needsCoreML: true,
-  },
-  {
-    name: 'small.en-q5_1',
-    size: '190 MB',
-    needsCoreML: false,
-  },
-  {
-    name: 'small.en-q8_0',
-    size: '264 MB',
-    needsCoreML: false,
-  },
-  {
-    name: 'medium',
-    size: '1.53 GB',
-    needsCoreML: true,
-  },
-  {
-    name: 'medium-q5_0',
-    size: '539 MB',
-    needsCoreML: false,
-  },
-  {
-    name: 'medium-q8_0',
-    size: '823 MB',
-    needsCoreML: false,
-  },
-  {
-    name: 'medium.en',
-    size: '1.53 GB',
-    needsCoreML: true,
-  },
-  {
-    name: 'medium.en-q5_0',
-    size: '539 MB',
-    needsCoreML: false,
-  },
-  {
-    name: 'medium.en-q8_0',
-    size: '823 MB',
-    needsCoreML: false,
-  },
-  {
-    name: 'large-v1',
-    size: '3.09 GB',
-    needsCoreML: true,
-  },
-  {
-    name: 'large-v2',
-    size: '3.09 GB',
-    needsCoreML: true,
-  },
-  {
-    name: 'large-v2-q5_0',
-    size: '1.08 GB',
-    needsCoreML: false,
-  },
-  {
-    name: 'large-v2-q8_0',
-    size: '1.66 GB',
-    needsCoreML: false,
-  },
-  {
-    name: 'large-v3',
-    size: '3.1 GB',
-    needsCoreML: true,
-  },
-  {
-    name: 'large-v3-q5_0',
-    size: '1.08 GB',
-    needsCoreML: false,
-  },
-  {
-    name: 'large-v3-turbo',
-    size: '1.62 GB',
-    needsCoreML: true,
-  },
-  {
-    name: 'large-v3-turbo-q5_0',
-    size: '574 MB',
-    needsCoreML: false,
-  },
-  {
-    name: 'large-v3-turbo-q8_0',
-    size: '874 MB',
-    needsCoreML: false,
+    id: 'large',
+    speed: 1,
+    quality: 5,
+    minRAM: 16,
+    models: [
+      { name: 'large-v3', size: '3.1 GB', needsCoreML: true },
+      {
+        name: 'large-v3-q5_0',
+        size: '1.08 GB',
+        needsCoreML: false,
+        isQuantized: true,
+      },
+      { name: 'large-v2', size: '3.09 GB', needsCoreML: true },
+      {
+        name: 'large-v2-q5_0',
+        size: '1.08 GB',
+        needsCoreML: false,
+        isQuantized: true,
+      },
+      {
+        name: 'large-v2-q8_0',
+        size: '1.66 GB',
+        needsCoreML: false,
+        isQuantized: true,
+      },
+      { name: 'large-v1', size: '3.09 GB', needsCoreML: true },
+    ],
   },
 ];
+
+export const models = modelCategories.flatMap((cat) => cat.models);
+
+export function getRecommendedCategory(totalMemoryGB: number): string {
+  if (totalMemoryGB >= 16) return 'largeTurbo';
+  if (totalMemoryGB >= 10) return 'small';
+  if (totalMemoryGB >= 6) return 'small';
+  if (totalMemoryGB >= 4) return 'base';
+  return 'tiny';
+}
 
 export const needsCoreML = (model: string) => {
   const modelInfo = models.find((m) => m.name === model);

@@ -2,6 +2,7 @@ export interface ISystemInfo {
   modelsInstalled: string[];
   modelsPath: string;
   downloadingModels: string[];
+  totalMemoryGB?: number;
 }
 
 export interface IFiles {
