@@ -1,6 +1,19 @@
 {
   "sourceSubtitleSettings": "源始字幕设置",
   "modelSelection": "模型选择",
+  "transcriptionProvider": "转录方式",
+  "transcriptionProviders": {
+    "builtin-whisper": "内置 Whisper",
+    "local-whisper-command": "本地 Whisper 命令",
+    "openrouter": "OpenRouter GPT-4o Transcribe",
+    "reazonspeech-k2": "ReazonSpeech K2 v2（日语）"
+  },
+  "transcriptionProviderDesc": {
+    "builtin-whisper": "使用软件内置 whisper.cpp，需要先下载 Whisper 模型。",
+    "local-whisper-command": "调用设置里的本地 whisper 命令，适合已有 Python Whisper 环境。",
+    "openrouter": "通过 OpenRouter 的 openai/gpt-4o-transcribe API 转录，需要在设置中填写 API Key。",
+    "reazonspeech-k2": "使用本地 ReazonSpeech K2 v2 日语 ASR，需要先在模型管理中下载模型。"
+  },
   "translationProviders": "翻译服务商",
   "addTranslationProvider": "添加翻译服务商",
   "editTranslationProvider": "编辑翻译服务商",

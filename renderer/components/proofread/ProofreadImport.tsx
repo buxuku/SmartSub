@@ -9,7 +9,8 @@ import {
   DetectedSubtitle,
   createPendingFileFromVideo,
   createPendingFileFromSubtitle,
-  selectBestSubtitles,
+  getPreferredProofreadLanguages,
+  getSubtitleTypeForLanguage,
 } from '@/lib/proofreadUtils';
 
 interface ProofreadImportProps {
@@ -108,6 +109,7 @@ export default function ProofreadImport({
         }
       } else {
         // 没有视频，按字幕模式处理
+        const preferredLanguages = await getPreferredProofreadLanguages();
         const allSubtitles: DetectedSubtitle[] = [];
 
         for (const filePath of subtitles) {
@@ -115,8 +117,7 @@ export default function ProofreadImport({
             filePath,
           });
           const lang = langResult.success ? langResult.data?.code : undefined;
-          const type =
-            lang === 'en' ? 'source' : lang ? 'translated' : 'unknown';
+          const type = getSubtitleTypeForLanguage(lang, preferredLanguages);
           allSubtitles.push({
             filePath,
             type: type as 'source' | 'translated' | 'unknown',
@@ -128,6 +129,7 @@ export default function ProofreadImport({
         // 匹配字幕对
         const matchResult = await window.ipc.invoke('matchSubtitleFiles', {
           files: subtitles,
+          ...preferredLanguages,
         });
 
         const files: PendingFile[] = [];
@@ -155,7 +157,9 @@ export default function ProofreadImport({
                         {
                           filePath: match.source,
                           type: 'source' as const,
-                          language: match.sourceLanguage,
+                          language:
+                            match.sourceLanguage ||
+                            preferredLanguages.sourceLanguage,
                           confidence: 90,
                         },
                         ...(match.target
@@ -163,7 +167,9 @@ export default function ProofreadImport({
                               {
                                 filePath: match.target,
                                 type: 'translated' as const,
-                                language: match.targetLanguage,
+                                language:
+                                  match.targetLanguage ||
+                                  preferredLanguages.targetLanguage,
                                 confidence: 90,
                               },
                             ]
@@ -171,8 +177,11 @@ export default function ProofreadImport({
                       ],
                 selectedSource: match.source,
                 selectedTarget: match.target,
-                sourceLanguage: match.sourceLanguage,
-                targetLanguage: match.targetLanguage,
+                sourceLanguage:
+                  match.sourceLanguage || preferredLanguages.sourceLanguage,
+                targetLanguage: match.target
+                  ? match.targetLanguage || preferredLanguages.targetLanguage
+                  : undefined,
                 status: 'pending',
               });
             }

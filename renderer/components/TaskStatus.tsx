@@ -1,5 +1,12 @@
 import React from 'react';
-import { CircleCheck, Loader, Pause, RedoDot, AlertCircle } from 'lucide-react';
+import {
+  AlertCircle,
+  CircleCheck,
+  CircleX,
+  Loader,
+  Pause,
+  RedoDot,
+} from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -58,6 +65,24 @@ const TaskStatus = ({ file, checkKey, skip = false }) => {
             {progress !== undefined && (
               <p className="text-xs text-gray-500 mt-1">进度：{progress}%</p>
             )}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  if (status === 'cancelled') {
+    const errorKey = `${checkKey}Error`;
+    const errorMsg = file[errorKey] || '任务已取消';
+
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <CircleX className="size-4 text-muted-foreground" />
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{errorMsg}</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>

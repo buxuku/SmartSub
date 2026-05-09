@@ -1,8 +1,13 @@
 node_modules
 *.log
+*.tsbuildinfo
 .next
 app
 dist
+staging/
+temp-artifacts/
+all_build_artifacts/
+final_release_assets/
 .idea
 .DS_Store
 .vscode

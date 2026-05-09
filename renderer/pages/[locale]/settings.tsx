@@ -105,6 +105,16 @@ const Settings = () => {
   const [vadMaxSpeechDuration, setVADMaxSpeechDuration] = useState(0);
   const [vadSpeechPad, setVADSpeechPad] = useState(30);
   const [vadSamplesOverlap, setVADSamplesOverlap] = useState(0.1);
+  const [openRouterApiKey, setOpenRouterApiKey] = useState('');
+  const [openRouterBaseUrl, setOpenRouterBaseUrl] = useState(
+    'https://openrouter.ai/api/v1',
+  );
+  const [openRouterSiteUrl, setOpenRouterSiteUrl] = useState('');
+  const [openRouterAppName, setOpenRouterAppName] = useState('SmartSub');
+  const [reazonSpeechPythonCommand, setReazonSpeechPythonCommand] =
+    useState('python3');
+  const [reazonSpeechDevice, setReazonSpeechDevice] = useState('cpu');
+  const [reazonSpeechPrecision, setReazonSpeechPrecision] = useState('int8');
   const form = useForm({
     defaultValues: {
       language: router.locale,
@@ -130,6 +140,17 @@ const Settings = () => {
         setVADMaxSpeechDuration(settings.vadMaxSpeechDuration || 0);
         setVADSpeechPad(settings.vadSpeechPad || 30);
         setVADSamplesOverlap(settings.vadSamplesOverlap || 0.1);
+        setOpenRouterApiKey(settings.openRouterApiKey || '');
+        setOpenRouterBaseUrl(
+          settings.openRouterBaseUrl || 'https://openrouter.ai/api/v1',
+        );
+        setOpenRouterSiteUrl(settings.openRouterSiteUrl || '');
+        setOpenRouterAppName(settings.openRouterAppName || 'SmartSub');
+        setReazonSpeechPythonCommand(
+          settings.reazonSpeechPythonCommand || 'python3',
+        );
+        setReazonSpeechDevice(settings.reazonSpeechDevice || 'cpu');
+        setReazonSpeechPrecision(settings.reazonSpeechPrecision || 'int8');
       }
 
       // 获取临时目录路径
@@ -247,6 +268,24 @@ const Settings = () => {
     saveSettings({
       useLocalWhisper,
       whisperCommand,
+    });
+  };
+
+  const handleOpenRouterTranscriptionSave = () => {
+    saveSettings({
+      openRouterApiKey,
+      openRouterBaseUrl,
+      openRouterSiteUrl,
+      openRouterAppName,
+    });
+  };
+
+  const handleReazonSpeechSave = () => {
+    saveSettings({
+      reazonSpeechPythonCommand,
+      reazonSpeechDevice,
+      reazonSpeechPrecision,
+      reazonSpeechLanguage: 'ja',
     });
   };
 
@@ -536,6 +575,122 @@ const Settings = () => {
                 </div>
               )}
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Activity className="mr-2" />
+            {t('transcriptionSettings')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-3">
+            <div>
+              <div className="font-medium">{t('openRouterTranscription')}</div>
+              <p className="text-sm text-muted-foreground">
+                {t('openRouterTranscriptionDesc')}
+              </p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-2">
+                <span>{t('openRouterApiKey')}</span>
+                <Input
+                  type="password"
+                  value={openRouterApiKey}
+                  onChange={(e) => setOpenRouterApiKey(e.target.value)}
+                  placeholder={t('openRouterApiKeyPlaceholder')}
+                  className="font-mono text-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <span>{t('openRouterBaseUrl')}</span>
+                <Input
+                  value={openRouterBaseUrl}
+                  onChange={(e) => setOpenRouterBaseUrl(e.target.value)}
+                  placeholder="https://openrouter.ai/api/v1"
+                  className="font-mono text-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <span>{t('openRouterSiteUrl')}</span>
+                <Input
+                  value={openRouterSiteUrl}
+                  onChange={(e) => setOpenRouterSiteUrl(e.target.value)}
+                  placeholder="https://example.com"
+                  className="font-mono text-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <span>{t('openRouterAppName')}</span>
+                <Input
+                  value={openRouterAppName}
+                  onChange={(e) => setOpenRouterAppName(e.target.value)}
+                  placeholder="SmartSub"
+                  className="font-mono text-sm"
+                />
+              </div>
+            </div>
+            <Button onClick={handleOpenRouterTranscriptionSave} size="sm">
+              {t('saveOpenRouterTranscription')}
+            </Button>
+          </div>
+
+          <div className="space-y-3 border-t pt-5">
+            <div>
+              <div className="font-medium">{t('reazonSpeechSettings')}</div>
+              <p className="text-sm text-muted-foreground">
+                {t('reazonSpeechSettingsDesc')}
+              </p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="space-y-2">
+                <span>{t('reazonSpeechPythonCommand')}</span>
+                <Input
+                  value={reazonSpeechPythonCommand}
+                  onChange={(e) => setReazonSpeechPythonCommand(e.target.value)}
+                  placeholder="python3"
+                  className="font-mono text-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <span>{t('reazonSpeechDevice')}</span>
+                <Select
+                  value={reazonSpeechDevice}
+                  onValueChange={setReazonSpeechDevice}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cpu">CPU</SelectItem>
+                    <SelectItem value="cuda">CUDA</SelectItem>
+                    <SelectItem value="coreml">Core ML</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <span>{t('reazonSpeechPrecision')}</span>
+                <Select
+                  value={reazonSpeechPrecision}
+                  onValueChange={setReazonSpeechPrecision}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="int8">int8</SelectItem>
+                    <SelectItem value="fp32">fp32</SelectItem>
+                    <SelectItem value="int8-fp32">int8-fp32</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <Button onClick={handleReazonSpeechSave} size="sm">
+              {t('saveReazonSpeech')}
+            </Button>
           </div>
         </CardContent>
       </Card>

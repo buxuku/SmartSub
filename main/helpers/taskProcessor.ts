@@ -16,6 +16,36 @@ let shouldCancel = false;
 let maxConcurrentTasks = 3;
 let hasOpenAiWhisper = false;
 let activeTasksCount = 0;
+let processingTimer: ReturnType<typeof setTimeout> | null = null;
+let completionSent = false;
+let currentTaskEvent = null;
+
+function clearProcessingTimer() {
+  if (processingTimer) {
+    clearTimeout(processingTimer);
+    processingTimer = null;
+  }
+}
+
+function isCancellationRequested() {
+  return shouldCancel;
+}
+
+function completeProcessingRun(event, status: 'completed' | 'cancelled') {
+  if (completionSent) return;
+  completionSent = true;
+  clearProcessingTimer();
+  isProcessing = false;
+  event.sender.send('taskComplete', status);
+}
+
+function scheduleProcessNextTasks(event, delay = 100) {
+  if (processingTimer) return;
+  processingTimer = setTimeout(() => {
+    processingTimer = null;
+    processNextTasks(event);
+  }, delay);
+}
 
 /**
  * Load custom parameters for a provider and create an ExtendedProvider
@@ -76,13 +106,18 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
       logMessage(`handleTask start`, 'info');
       logMessage(`formData: \n ${JSON.stringify(formData, null, 2)}`, 'info');
       processingQueue.push(...files.map((file) => ({ file, formData })));
+      currentTaskEvent = event;
       if (!isProcessing) {
         isProcessing = true;
         isPaused = false;
         shouldCancel = false;
+        completionSent = false;
+        clearProcessingTimer();
         hasOpenAiWhisper = await checkOpenAiWhisper();
         maxConcurrentTasks = formData.maxConcurrentTasks || 3;
         processNextTasks(event);
+      } else {
+        scheduleProcessNextTasks(event, 0);
       }
     },
   );
@@ -99,6 +134,9 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
     shouldCancel = true;
     isPaused = false;
     processingQueue = [];
+    if (currentTaskEvent) {
+      scheduleProcessNextTasks(currentTaskEvent, 0);
+    }
   });
 
   // 添加获取当前任务状态的 IPC 处理程序
@@ -127,20 +165,22 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
 
 async function processNextTasks(event) {
   if (shouldCancel) {
-    isProcessing = false;
-    event.sender.send('taskComplete', 'cancelled');
+    if (activeTasksCount === 0) {
+      completeProcessingRun(event, 'cancelled');
+    } else {
+      scheduleProcessNextTasks(event);
+    }
     return;
   }
 
   if (isPaused) {
-    setTimeout(() => processNextTasks(event), 1000);
+    scheduleProcessNextTasks(event, 1000);
     return;
   }
 
   // 当队列为空且没有活动任务时，才完成处理
   if (processingQueue.length === 0 && activeTasksCount === 0) {
-    isProcessing = false;
-    event.sender.send('taskComplete', 'completed');
+    completeProcessingRun(event, 'completed');
     return;
   }
 
@@ -155,12 +195,20 @@ async function processNextTasks(event) {
     tasksToProcess.forEach(async (task) => {
       activeTasksCount++;
       try {
-        const baseProvider = translationProviders.find(
-          (p) => p.id === task.formData.translateProvider,
-        );
+        const shouldTranslate =
+          (task.formData.taskType === 'generateAndTranslate' ||
+            task.formData.taskType === 'translateOnly') &&
+          task.formData.translateProvider !== '-1';
 
-        // Create extended provider with custom parameters
-        const extendedProvider = await createExtendedProvider(baseProvider);
+        const baseProvider = shouldTranslate
+          ? translationProviders.find(
+              (p) => p.id === task.formData.translateProvider,
+            )
+          : null;
+
+        const extendedProvider = baseProvider
+          ? await createExtendedProvider(baseProvider)
+          : { id: '-1', name: '', type: 'none', isAi: false };
 
         await processFile(
           event,
@@ -168,6 +216,7 @@ async function processNextTasks(event) {
           task.formData,
           hasOpenAiWhisper,
           extendedProvider,
+          isCancellationRequested,
         );
       } catch (error) {
         event.sender.send('message', error);
@@ -181,6 +230,6 @@ async function processNextTasks(event) {
 
   // 如果还有正在执行的任务，等待一段时间后再检查
   if (activeTasksCount > 0) {
-    setTimeout(() => processNextTasks(event), 100);
+    scheduleProcessNextTasks(event);
   }
 }

@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import { supportedLanguage } from 'lib/utils';
+import { models as whisperModels, supportedLanguage } from 'lib/utils';
 import Models from './Models';
 import SavePathNotice from './SavePathNotice';
 import {
@@ -25,6 +25,13 @@ import { Switch } from './ui/switch';
 import { Textarea } from './ui/textarea';
 import { Card } from './ui/card';
 import { cn } from 'lib/utils';
+import {
+  apiTranscriptionModels,
+  DEFAULT_TRANSCRIPTION_PROVIDER,
+  reazonSpeechModels,
+  transcriptionProviders,
+  type TranscriptionProviderId,
+} from '../../types';
 
 // 定义 Provider 类型
 type Provider = {
@@ -36,10 +43,61 @@ type Provider = {
 // 任务类型枚举
 type TaskType = 'generateAndTranslate' | 'generateOnly' | 'translateOnly';
 
+type ModelOption = {
+  value: string;
+  label: string;
+};
+
+export function getTranscriptionModelOptions(
+  provider: TranscriptionProviderId,
+  modelsInstalled: string[] = [],
+  _useLocalWhisper = false,
+): ModelOption[] {
+  if (provider === 'openrouter') {
+    return apiTranscriptionModels.map((model) => ({
+      value: model.id,
+      label: model.name,
+    }));
+  }
+
+  if (provider === 'reazonspeech-k2') {
+    const installed = new Set(
+      modelsInstalled.map((model) => model.toLowerCase()),
+    );
+    return reazonSpeechModels
+      .filter((model) => installed.has(model.id.toLowerCase()))
+      .map((model) => ({
+        value: model.id,
+        label: model.name,
+      }));
+  }
+
+  if (provider === 'local-whisper-command') {
+    return whisperModels.map((model) => ({
+      value: model.name.toLowerCase(),
+      label: model.name,
+    }));
+  }
+
+  const reazonIds = new Set(
+    reazonSpeechModels.map((model) => model.id.toLowerCase()),
+  );
+  return modelsInstalled
+    .filter((model) => !reazonIds.has(model.toLowerCase()))
+    .map((model) => ({
+      value: model.toLowerCase(),
+      label: model,
+    }));
+}
+
 const TaskConfigForm = ({ form, formData, systemInfo }) => {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [useLocalWhisper, setUseLocalWhisper] = useState(false);
   const { taskType, sourceSrtSaveOption } = formData;
+  const activeTranscriptionProvider = (formData.transcriptionProvider ||
+    (useLocalWhisper
+      ? 'local-whisper-command'
+      : DEFAULT_TRANSCRIPTION_PROVIDER)) as TranscriptionProviderId;
   const [taskTab, setTaskTab] = useState<string>('sourceSubtitle');
   const { t } = useTranslation('home');
   const { t: tCommon } = useTranslation('common');
@@ -58,7 +116,28 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
     const settings = await window?.ipc?.invoke('getSettings');
     if (settings) {
       setUseLocalWhisper(settings.useLocalWhisper || false);
+      if (!form.getValues('transcriptionProvider')) {
+        form.setValue(
+          'transcriptionProvider',
+          settings.useLocalWhisper
+            ? 'local-whisper-command'
+            : DEFAULT_TRANSCRIPTION_PROVIDER,
+        );
+      }
     }
+  };
+
+  const pickModelForProvider = (provider: TranscriptionProviderId) => {
+    const options = getTranscriptionModelOptions(
+      provider,
+      systemInfo.modelsInstalled || [],
+      useLocalWhisper,
+    );
+    const currentModel = form.getValues('model');
+    const currentAvailable = options.some(
+      (option) => option.value === currentModel,
+    );
+    return currentAvailable ? currentModel : options[0]?.value || '';
   };
 
   // 是否需要显示源字幕设置
@@ -156,6 +235,51 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                 <div className="grid gap-2">
                   <FormField
                     control={form.control}
+                    name="transcriptionProvider"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('transcriptionProvider')}</FormLabel>
+                        <Select
+                          onValueChange={(value) => {
+                            const provider = value as TranscriptionProviderId;
+                            field.onChange(provider);
+                            form.setValue(
+                              'model',
+                              pickModelForProvider(provider),
+                            );
+                          }}
+                          value={field.value || activeTranscriptionProvider}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={t('pleaseSelect')} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {transcriptionProviders.map((provider) => (
+                              <SelectItem key={provider.id} value={provider.id}>
+                                {t(`transcriptionProviders.${provider.id}`, {
+                                  defaultValue: provider.name,
+                                })}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription className="text-xs">
+                          {t(
+                            `transcriptionProviderDesc.${activeTranscriptionProvider}`,
+                            {
+                              defaultValue: '',
+                            },
+                          )}
+                        </FormDescription>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <FormField
+                    control={form.control}
                     name="model"
                     render={({ field }) => (
                       <FormItem>
@@ -166,6 +290,7 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                             value={field.value}
                             modelsInstalled={systemInfo.modelsInstalled}
                             useLocalWhisper={useLocalWhisper}
+                            transcriptionProvider={activeTranscriptionProvider}
                           />
                         </FormControl>
                       </FormItem>

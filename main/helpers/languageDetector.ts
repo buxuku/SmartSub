@@ -214,7 +214,11 @@ export function getSupportedLanguages(): Array<{ code: string; name: string }> {
 /**
  * 从多个字幕文件中检测语言对
  */
-export function detectLanguagePair(subtitleFiles: string[]): {
+export function detectLanguagePair(
+  subtitleFiles: string[],
+  preferredSourceLanguage: string = 'ja',
+  preferredTargetLanguage: string = 'zh',
+): {
   source?: string;
   target?: string;
 } {
@@ -229,14 +233,39 @@ export function detectLanguagePair(subtitleFiles: string[]): {
 
   // 如果检测到两种不同的语言，尝试确定源语言和目标语言
   if (languages.length >= 2) {
-    // 优先将英语作为源语言，中文作为目标语言
-    const enIndex = languages.findIndex((l) => l.lang.code === 'en');
-    const zhIndex = languages.findIndex((l) => l.lang.code === 'zh');
+    const preferredSource = normalizeLanguageCode(preferredSourceLanguage);
+    const preferredTarget = normalizeLanguageCode(preferredTargetLanguage);
+    const sourceIndex = preferredSource
+      ? languages.findIndex((l) => l.lang.code === preferredSource)
+      : -1;
+    const targetIndex = preferredTarget
+      ? languages.findIndex((l) => l.lang.code === preferredTarget)
+      : -1;
 
-    if (enIndex >= 0 && zhIndex >= 0) {
+    if (sourceIndex >= 0 && targetIndex >= 0) {
       return {
-        source: 'en',
-        target: 'zh',
+        source: preferredSource,
+        target: preferredTarget,
+      };
+    }
+
+    if (sourceIndex >= 0) {
+      const target = languages.find(
+        (l, index) => index !== sourceIndex && l.lang.code !== preferredSource,
+      );
+      return {
+        source: preferredSource,
+        target: target?.lang.code,
+      };
+    }
+
+    if (targetIndex >= 0) {
+      const source = languages.find(
+        (l, index) => index !== targetIndex && l.lang.code !== preferredTarget,
+      );
+      return {
+        source: source?.lang.code,
+        target: preferredTarget,
       };
     }
 

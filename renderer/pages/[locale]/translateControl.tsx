@@ -132,10 +132,11 @@ const TranslateControl: React.FC = () => {
 
     setIsTestLoading(true);
     try {
+      const userConfig = await window.ipc.invoke('getUserConfig');
       const result = await window.ipc.invoke('testTranslation', {
         provider: currentProvider,
-        sourceLanguage: 'en', // 默认使用英语作为源语言
-        targetLanguage: 'zh', // 默认使用中文作为目标语言
+        sourceLanguage: userConfig?.sourceLanguage || 'ja',
+        targetLanguage: userConfig?.targetLanguage || 'zh',
       });
 
       // Handle enhanced result format

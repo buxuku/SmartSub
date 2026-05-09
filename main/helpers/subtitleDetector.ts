@@ -10,7 +10,10 @@ import {
   SubtitleDetectionResult,
   SubtitleMatchResult,
 } from '../../types/proofread';
-import { detectLanguageFromFilename } from './languageDetector';
+import {
+  detectLanguageFromFilename,
+  normalizeLanguageCode,
+} from './languageDetector';
 
 // 支持的字幕格式
 const SUBTITLE_EXTENSIONS = ['.srt', '.vtt', '.ass', '.ssa'];
@@ -34,6 +37,29 @@ const TRANSLATED_KEYWORDS = ['translated', '翻译', 'target', 'trans'];
 
 // 常见的原始字幕关键词
 const SOURCE_KEYWORDS = ['source', '原文', 'original', 'orig'];
+
+function getPreferredLanguage(language?: string): string | undefined {
+  return language
+    ? normalizeLanguageCode(language) || language.trim().toLowerCase()
+    : undefined;
+}
+
+function classifySubtitleType(
+  detectedLanguage: string | undefined,
+  sourceLanguage?: string,
+  targetLanguage?: string,
+): DetectedSubtitle['type'] {
+  const detected = getPreferredLanguage(detectedLanguage);
+  if (!detected) return 'unknown';
+
+  const source = getPreferredLanguage(sourceLanguage);
+  const target = getPreferredLanguage(targetLanguage);
+
+  if (source && detected === source) return 'source';
+  if (target && detected === target) return 'translated';
+
+  return 'unknown';
+}
 
 /**
  * 判断文件是否为视频文件
@@ -130,9 +156,11 @@ function analyzeSubtitleFile(
     const baseName = fileNameLower.replace(/\.[a-z]{2}(?:-[a-z]{2,4})?$/i, '');
 
     if (baseName === videoNameLower || fileNameLower.includes(videoNameLower)) {
-      // 根据检测到的语言判断类型
-      // 英语通常作为源语言，其他语言作为翻译
-      const type = detectedLangCode === 'en' ? 'source' : 'translated';
+      const type = classifySubtitleType(
+        detectedLangCode,
+        sourceLanguage,
+        targetLanguage,
+      );
       return {
         type,
         filePath,
@@ -209,8 +237,8 @@ function extractBaseName(fileName: string): string {
  */
 export async function matchSubtitlesByRules(
   files: string[],
-  _sourceLanguage?: string,
-  _targetLanguage?: string,
+  sourceLanguage: string = 'ja',
+  targetLanguage: string = 'zh',
 ): Promise<SubtitleMatchResult[]> {
   // 按目录和基础文件名分组
   const fileGroups = new Map<string, string[]>();
@@ -240,28 +268,51 @@ export async function matchSubtitlesByRules(
     const filesWithLang: Array<{
       file: string;
       lang: string | undefined;
-      isEnglish: boolean;
     }> = groupFiles.map((file) => {
       const detection = detectLanguageFromFilename(file);
       return {
         file,
         lang: detection?.code,
-        isEnglish: detection?.code === 'en',
       };
     });
 
-    // 查找英语字幕作为源语言（通常是原文）
-    const englishFile = filesWithLang.find((f) => f.isEnglish);
-    // 查找非英语字幕作为翻译
-    const translatedFile = filesWithLang.find((f) => f.lang && !f.isEnglish);
+    const preferredSource = getPreferredLanguage(sourceLanguage);
+    const preferredTarget = getPreferredLanguage(targetLanguage);
 
-    if (englishFile) {
-      match.source = englishFile.file;
-      match.sourceLanguage = 'en';
+    const sourceFile = preferredSource
+      ? filesWithLang.find((f) => f.lang === preferredSource)
+      : undefined;
+    const translatedFile = preferredTarget
+      ? filesWithLang.find((f) => f.lang === preferredTarget)
+      : undefined;
+
+    if (sourceFile) {
+      match.source = sourceFile.file;
+      match.sourceLanguage = sourceFile.lang;
     }
     if (translatedFile) {
       match.target = translatedFile.file;
       match.targetLanguage = translatedFile.lang;
+    }
+
+    if (!match.source) {
+      const inferredSource = filesWithLang.find(
+        (f) => f.lang && f.lang !== preferredTarget,
+      );
+      if (inferredSource) {
+        match.source = inferredSource.file;
+        match.sourceLanguage = inferredSource.lang;
+      }
+    }
+
+    if (!match.target) {
+      const inferredTarget = filesWithLang.find(
+        (f) => f.lang && f.file !== match.source && f.lang !== preferredSource,
+      );
+      if (inferredTarget) {
+        match.target = inferredTarget.file;
+        match.targetLanguage = inferredTarget.lang;
+      }
     }
 
     // 如果没有检测到语言，按关键词匹配

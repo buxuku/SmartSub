@@ -31,9 +31,21 @@ import {
   detectLanguagePair,
 } from './languageDetector';
 import { logMessage, store } from './storeManager';
+import { getUserConfigWithJapaneseDefaults } from './userConfig';
 import { ProofreadItem } from '../../types/proofread';
 import { TRANSLATOR_MAP } from '../translate/services/translationProvider';
 import { Provider } from '../translate/types';
+
+function getPreferredProofreadLanguages(args?: {
+  sourceLanguage?: string;
+  targetLanguage?: string;
+}): { sourceLanguage: string; targetLanguage: string } {
+  const userConfig = getUserConfigWithJapaneseDefaults();
+  return {
+    sourceLanguage: args?.sourceLanguage || userConfig.sourceLanguage || 'ja',
+    targetLanguage: args?.targetLanguage || userConfig.targetLanguage || 'zh',
+  };
+}
 
 /**
  * 设置字幕校对相关的 IPC 处理器
@@ -41,14 +53,26 @@ import { Provider } from '../translate/types';
 export function setupProofreadHandlers(): void {
   // ============ 字幕检测相关 ============
 
-  // 检测视频对应的字幕文件（不再需要语言参数）
   ipcMain.handle(
     'detectSubtitles',
-    async (_event, { videoPath }: { videoPath: string }) => {
+    async (
+      _event,
+      args: {
+        videoPath: string;
+        sourceLanguage?: string;
+        targetLanguage?: string;
+      },
+    ) => {
       try {
+        const { videoPath } = args;
+        const { sourceLanguage, targetLanguage } =
+          getPreferredProofreadLanguages(args);
         logMessage(`Detecting subtitles for video: ${videoPath}`, 'info');
-        // 使用空字符串让检测器自动从文件名推断
-        const result = await detectSubtitlesForVideo(videoPath, '', '');
+        const result = await detectSubtitlesForVideo(
+          videoPath,
+          sourceLanguage,
+          targetLanguage,
+        );
         logMessage(
           `Found ${result.detectedSubtitles.length} subtitle files`,
           'info',
@@ -61,13 +85,26 @@ export function setupProofreadHandlers(): void {
     },
   );
 
-  // 根据规则匹配字幕文件（不再需要语言参数）
   ipcMain.handle(
     'matchSubtitleFiles',
-    async (_event, { files }: { files: string[] }) => {
+    async (
+      _event,
+      args: {
+        files: string[];
+        sourceLanguage?: string;
+        targetLanguage?: string;
+      },
+    ) => {
       try {
+        const { files } = args;
+        const { sourceLanguage, targetLanguage } =
+          getPreferredProofreadLanguages(args);
         logMessage(`Matching ${files.length} subtitle files`, 'info');
-        const result = await matchSubtitlesByRules(files, '', '');
+        const result = await matchSubtitlesByRules(
+          files,
+          sourceLanguage,
+          targetLanguage,
+        );
         logMessage(`Matched ${result.length} subtitle pairs`, 'info');
         return { success: true, data: result };
       } catch (error) {
@@ -147,9 +184,23 @@ export function setupProofreadHandlers(): void {
   // 从多个字幕文件检测语言对
   ipcMain.handle(
     'detectLanguagePair',
-    async (_event, { files }: { files: string[] }) => {
+    async (
+      _event,
+      args: {
+        files: string[];
+        sourceLanguage?: string;
+        targetLanguage?: string;
+      },
+    ) => {
       try {
-        const result = detectLanguagePair(files);
+        const { files } = args;
+        const { sourceLanguage, targetLanguage } =
+          getPreferredProofreadLanguages(args);
+        const result = detectLanguagePair(
+          files,
+          sourceLanguage,
+          targetLanguage,
+        );
         return { success: true, data: result };
       } catch (error) {
         logMessage(`Error detecting language pair: ${error}`, 'error');

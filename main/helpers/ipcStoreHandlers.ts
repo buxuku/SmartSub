@@ -1,7 +1,7 @@
 import { app, ipcMain } from 'electron';
 import os from 'os';
 import { store } from './store';
-import { defaultUserConfig } from './utils';
+import { getUserConfigWithJapaneseDefaults } from './userConfig';
 import { getAndInitializeProviders } from './providerManager';
 import { logMessage } from './logger';
 import { LogEntry } from './store/types';
@@ -43,8 +43,7 @@ export function setupStoreHandlers() {
   });
 
   ipcMain.handle('getUserConfig', async () => {
-    const storedConfig = store.get('userConfig');
-    return { ...defaultUserConfig, ...storedConfig };
+    return getUserConfigWithJapaneseDefaults();
   });
 
   // 设置相关处理

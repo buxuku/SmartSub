@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { REAZON_SPEECH_K2_V2_MODEL } from '../../types';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -373,6 +374,10 @@ export const getModelDownloadUrl = (
   source: 'hf-mirror' | 'huggingface',
 ) => {
   const domain = source === 'hf-mirror' ? 'hf-mirror.com' : 'huggingface.co';
+  if (modelName.toLowerCase() === REAZON_SPEECH_K2_V2_MODEL) {
+    return `https://${domain}/reazon-research/reazonspeech-k2-v2`;
+  }
+
   return `https://${domain}/ggerganov/whisper.cpp/resolve/main/ggml-${modelName.toLowerCase()}.bin?download=true`;
 };
 

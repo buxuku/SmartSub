@@ -226,7 +226,8 @@ function throttle(func, limit) {
 // 删除 processFile 函数
 
 export const defaultUserConfig = {
-  sourceLanguage: 'en',
+  transcriptionProvider: 'builtin-whisper',
+  sourceLanguage: 'ja',
   targetLanguage: 'zh',
   customTargetSrtFileName: '${fileName}.${targetLanguage}',
   customSourceSrtFileName: '${fileName}.${sourceLanguage}',

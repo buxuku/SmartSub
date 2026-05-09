@@ -3,6 +3,7 @@ import { StoreType } from './types';
 import { defaultUserConfig, isAppleSilicon } from '../utils';
 import path from 'path';
 import { app } from 'electron';
+import { OPENROUTER_GPT4O_TRANSCRIBE_MODEL } from '../../../types';
 
 const defaultWhisperCommand = isAppleSilicon()
   ? 'whisper "${audioFile}" --model ${whisperModel} --output_format srt --output_dir "${outputDir}" --language ${sourceLanguage}'
@@ -30,6 +31,15 @@ export const store = new Store<StoreType>({
       vadMaxSpeechDuration: 0,
       vadSpeechPad: 30,
       vadSamplesOverlap: 0.1,
+      openRouterApiKey: '',
+      openRouterBaseUrl: 'https://openrouter.ai/api/v1',
+      openRouterTranscriptionModel: OPENROUTER_GPT4O_TRANSCRIBE_MODEL,
+      openRouterSiteUrl: '',
+      openRouterAppName: 'SmartSub',
+      reazonSpeechPythonCommand: 'python3',
+      reazonSpeechDevice: 'cpu',
+      reazonSpeechPrecision: 'int8',
+      reazonSpeechLanguage: 'ja',
     },
     logs: [],
   },

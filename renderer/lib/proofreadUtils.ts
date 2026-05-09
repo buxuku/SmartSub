@@ -30,28 +30,92 @@ export interface PendingFile {
 // 支持的字幕类型
 export type SubtitleType = 'source' | 'translated' | 'bilingual' | 'unknown';
 
+export interface PreferredProofreadLanguages {
+  sourceLanguage: string;
+  targetLanguage: string;
+}
+
+function normalizeLanguageForCompare(language?: string): string | undefined {
+  return language?.trim().toLowerCase();
+}
+
+export async function getPreferredProofreadLanguages(): Promise<PreferredProofreadLanguages> {
+  try {
+    const userConfig = await window.ipc.invoke('getUserConfig');
+    return {
+      sourceLanguage: userConfig?.sourceLanguage || 'ja',
+      targetLanguage: userConfig?.targetLanguage || 'zh',
+    };
+  } catch {
+    return {
+      sourceLanguage: 'ja',
+      targetLanguage: 'zh',
+    };
+  }
+}
+
+export function getSubtitleTypeForLanguage(
+  language?: string,
+  preferredLanguages: PreferredProofreadLanguages = {
+    sourceLanguage: 'ja',
+    targetLanguage: 'zh',
+  },
+): SubtitleType {
+  const normalized = normalizeLanguageForCompare(language);
+  if (!normalized) return 'unknown';
+
+  if (
+    normalized ===
+    normalizeLanguageForCompare(preferredLanguages.sourceLanguage)
+  ) {
+    return 'source';
+  }
+
+  if (
+    normalized ===
+    normalizeLanguageForCompare(preferredLanguages.targetLanguage)
+  ) {
+    return 'translated';
+  }
+
+  return 'unknown';
+}
+
 /**
  * 从检测到的字幕列表中选择最佳的源字幕和翻译字幕
  */
 export function selectBestSubtitles(
   detectedSubtitles: DetectedSubtitle[],
   excludeSource?: string,
+  preferredLanguages: PreferredProofreadLanguages = {
+    sourceLanguage: 'ja',
+    targetLanguage: 'zh',
+  },
 ): {
   bestSource: DetectedSubtitle | undefined;
   bestTarget: DetectedSubtitle | undefined;
 } {
   // 源字幕优先选择 source 或 unknown 类型
   const sourceSubtitles = detectedSubtitles
-    .filter((s) => s.type === 'source' || s.type === 'unknown')
+    .filter((s) => {
+      if (s.type === 'source') return true;
+      if (s.type !== 'unknown') return false;
+      const type = getSubtitleTypeForLanguage(s.language, preferredLanguages);
+      return type === 'source' || !s.language;
+    })
     .sort((a, b) => b.confidence - a.confidence);
 
   // 翻译字幕优先选择 translated 类型
   const translatedSubtitles = detectedSubtitles
-    .filter(
-      (s) =>
-        s.type === 'translated' &&
-        (!excludeSource || s.filePath !== excludeSource),
-    )
+    .filter((s) => {
+      if (excludeSource && s.filePath === excludeSource) return false;
+      if (s.type === 'translated') return true;
+      if (s.type !== 'unknown') return false;
+      return (
+        getSubtitleTypeForLanguage(s.language, preferredLanguages) ===
+        'translated'
+      );
+    })
     .sort((a, b) => b.confidence - a.confidence);
 
   return {
@@ -66,16 +130,23 @@ export function selectBestSubtitles(
 export async function createPendingFileFromVideo(
   videoPath: string,
 ): Promise<PendingFile> {
+  const preferredLanguages = await getPreferredProofreadLanguages();
+
   // 检测关联的字幕
   const detectResult = await window.ipc.invoke('detectSubtitles', {
     videoPath,
+    ...preferredLanguages,
   });
 
   const detectedSubtitles: DetectedSubtitle[] = detectResult.success
     ? detectResult.data.detectedSubtitles
     : [];
 
-  const { bestSource, bestTarget } = selectBestSubtitles(detectedSubtitles);
+  const { bestSource, bestTarget } = selectBestSubtitles(
+    detectedSubtitles,
+    undefined,
+    preferredLanguages,
+  );
 
   return {
     id: uuidv4(),
@@ -84,7 +155,7 @@ export async function createPendingFileFromVideo(
     detectedSubtitles,
     selectedSource: bestSource?.filePath,
     selectedTarget: bestTarget?.filePath,
-    sourceLanguage: bestSource?.language,
+    sourceLanguage: bestSource?.language || preferredLanguages.sourceLanguage,
     targetLanguage: bestTarget?.language,
     status: 'pending',
   };
@@ -99,6 +170,7 @@ export async function createPendingFileFromSubtitle(
   sourceFilePath: string,
   detectRelated: boolean = true,
 ): Promise<PendingFile> {
+  const preferredLanguages = await getPreferredProofreadLanguages();
   const sourceFileName = sourceFilePath.split('/').pop() || '';
   const sourceBaseName = sourceFileName.replace(/\.[^.]+$/, '');
 
@@ -107,8 +179,8 @@ export async function createPendingFileFromSubtitle(
     filePath: sourceFilePath,
   });
   const sourceLanguage = sourceLangResult.success
-    ? sourceLangResult.data?.code
-    : undefined;
+    ? sourceLangResult.data?.code || preferredLanguages.sourceLanguage
+    : preferredLanguages.sourceLanguage;
 
   let detectedSubtitles: DetectedSubtitle[] = [];
 
@@ -116,6 +188,7 @@ export async function createPendingFileFromSubtitle(
     // 使用检测逻辑获取同目录下的相关字幕
     const detectResult = await window.ipc.invoke('detectSubtitles', {
       videoPath: sourceFilePath.replace(/\.[^.]+$/, '.mp4'), // 伪造视频路径以复用检测逻辑
+      ...preferredLanguages,
     });
 
     if (detectResult.success && detectResult.data.detectedSubtitles) {
@@ -140,12 +213,11 @@ export async function createPendingFileFromSubtitle(
     sourceInList.confidence = 100;
   }
 
-  // 找到置信度最高的翻译字幕（排除源字幕）
-  const translatedSubtitles = detectedSubtitles
-    .filter((s) => s.filePath !== sourceFilePath && s.type !== 'source')
-    .sort((a, b) => b.confidence - a.confidence);
-
-  const bestTranslated = translatedSubtitles[0];
+  const { bestTarget: bestTranslated } = selectBestSubtitles(
+    detectedSubtitles,
+    sourceFilePath,
+    preferredLanguages,
+  );
 
   return {
     id: uuidv4(),
@@ -166,7 +238,10 @@ export async function createPendingFileFromSubtitle(
  */
 export async function getAvailableSubtitles(
   subtitlePath: string,
+  preferredLanguages?: PreferredProofreadLanguages,
 ): Promise<DetectedSubtitle[]> {
+  const languages =
+    preferredLanguages || (await getPreferredProofreadLanguages());
   const dir = subtitlePath.substring(0, subtitlePath.lastIndexOf('/'));
 
   const scanResult = await window.ipc.invoke('scanDirectorySubtitles', {
@@ -203,11 +278,7 @@ export async function getAvailableSubtitles(
         filePath,
         type: (filePath === subtitlePath
           ? 'source'
-          : lang === 'en'
-            ? 'source'
-            : lang
-              ? 'translated'
-              : 'unknown') as SubtitleType,
+          : getSubtitleTypeForLanguage(lang, languages)) as SubtitleType,
         language: lang,
         confidence,
       };
@@ -278,13 +349,18 @@ export async function loadPendingFileFromItem(item: {
       // 有视频：使用视频检测
       const detectResult = await window.ipc.invoke('detectSubtitles', {
         videoPath: item.videoPath,
+        sourceLanguage: item.sourceLanguage,
+        targetLanguage: item.targetLanguage,
       });
       if (detectResult.success) {
         detectedSubtitles = detectResult.data.detectedSubtitles || [];
       }
     } else if (item.sourceSubtitlePath) {
       // 仅字幕：检测同目录下的其他字幕文件
-      detectedSubtitles = await getAvailableSubtitles(item.sourceSubtitlePath);
+      detectedSubtitles = await getAvailableSubtitles(item.sourceSubtitlePath, {
+        sourceLanguage: item.sourceLanguage || 'ja',
+        targetLanguage: item.targetLanguage || 'zh',
+      });
     }
   }
 

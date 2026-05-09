@@ -6,46 +6,14 @@ on:
       - 'v*'
 
 jobs:
-  build_artifacts:
-    name: Build ${{ matrix.os }} ${{ matrix.arch }}
-    runs-on: ${{ matrix.os }}
+  build_windows:
+    name: Build Windows x64
+    runs-on: windows-2022
     env:
       ELECTRON_BUILDER_HTTP_TIMEOUT: 6000000
       ELECTRON_MIRROR: 'https://npmmirror.com/mirrors/electron/'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # macOS ARM64
-          - os: macos-latest
-            arch: arm64
-            os_build_arg: mac
-            addon_name: addon-macos-arm64.node
-            build_args: '--arm64'
-            artifact_suffix: macos-arm64
-
-          # macOS Intel
-          - os: macos-15-intel
-            arch: x64
-            os_build_arg: mac
-            addon_name: addon-macos-x64.node
-            build_args: '--x64'
-            artifact_suffix: macos-x64
-
-          # Windows x64 (通用版本，不包含 CUDA)
-          - os: windows-2022
-            arch: x64
-            os_build_arg: win
-            addon_name: addon-windows-x64.node
-            artifact_suffix: windows-x64
-
-          # Linux x64 (通用版本，不包含 CUDA)
-          - os: ubuntu-22.04
-            arch: x64
-            os_build_arg: linux
-            addon_name: addon-linux-x64.node
-            artifact_suffix: linux-x64
-
+      BUILD_PLATFORM: win32
+      BUILD_ARCH: x64
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4
@@ -55,305 +23,89 @@ jobs:
         with:
           node-version: 20.14.0
 
-      - name: Download addon
-        shell: bash
+      - name: Download Windows addon
+        shell: pwsh
         run: |
-          mkdir -p temp-artifacts
-          # 下载主 addon 文件
-          curl -L -o "temp-artifacts/${{ matrix.addon_name }}" \
-            "https://github.com/buxuku/whisper.cpp/releases/download/latest/${{ matrix.addon_name }}"
-          # macOS ARM64 需要额外下载 CoreML 版本
-          if [[ "${{ matrix.os_build_arg }}" == "mac" && "${{ matrix.arch }}" == "arm64" ]]; then
-             curl -L -o "temp-artifacts/addon-macos-arm64-coreml.node" \
-              "https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-macos-arm64-coreml.node"
-          fi
-
-      - name: Prepare macOS addon
-        if: matrix.os_build_arg == 'mac'
-        env:
-          BUILD_PLATFORM: 'darwin'
-          BUILD_ARCH: '${{ matrix.arch }}'
-        run: |
-          cp temp-artifacts/${{ matrix.addon_name }} extraResources/addons/addon.node
-          if [[ "${{ matrix.arch }}" == "arm64" ]]; then
-            cp temp-artifacts/addon-macos-arm64-coreml.node extraResources/addons/addon.coreml.node
-          fi
-          node scripts/inject-build-info.js
+          New-Item -ItemType Directory -Force temp-artifacts
+          Invoke-WebRequest `
+            -Uri "https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-windows-x64.node" `
+            -OutFile "temp-artifacts/addon-windows-x64.node"
 
       - name: Prepare Windows addon
-        if: matrix.os_build_arg == 'win'
-        env:
-          BUILD_PLATFORM: 'win32'
-          BUILD_ARCH: '${{ matrix.arch }}'
+        shell: pwsh
         run: |
-          Copy-Item -Path "temp-artifacts/${{ matrix.addon_name }}" -Destination "extraResources/addons/addon.node"
-          node scripts/inject-build-info.js
-
-      - name: Prepare Linux addon
-        if: matrix.os_build_arg == 'linux'
-        env:
-          BUILD_PLATFORM: 'linux'
-          BUILD_ARCH: '${{ matrix.arch }}'
-        run: |
-          cp temp-artifacts/${{ matrix.addon_name }} extraResources/addons/addon.node
+          Copy-Item -Path "temp-artifacts/addon-windows-x64.node" -Destination "extraResources/addons/addon.node"
           node scripts/inject-build-info.js
 
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
       - name: Compile application code
-        run: yarn build # Assumes 'yarn build' compiles TS to JS, e.g., into the 'app' directory
+        run: yarn build
 
       - name: Build Electron app
-        shell: bash
-        run: |
-          if [[ "${{ matrix.os_build_arg }}" == "mac" ]]; then
-            export BUILD_PLATFORM="darwin"
-          elif [[ "${{ matrix.os_build_arg }}" == "win" ]]; then
-            export BUILD_PLATFORM="win32"
-          else
-            export BUILD_PLATFORM="linux"
-          fi
-          export BUILD_ARCH=${{ matrix.arch }}
-          yarn run electron-builder --${{ matrix.os_build_arg }} --${{ matrix.arch }} ${{ matrix.build_args || '' }} --publish never
+        shell: pwsh
+        run: yarn run electron-builder --win --x64 --publish never
 
-      - name: Stage Artifacts
-        shell: bash
+      - name: Stage Windows artifacts
+        shell: pwsh
         run: |
-          mkdir staging
-          cp dist/*.{dmg,exe,AppImage,zip,tar.gz,deb,snap} staging/ 2>/dev/null || true # Copy main packages
-          cp dist/*latest*.yml staging/ 2>/dev/null || true # Copy generated YML
-          ls -R staging # List files for debugging
+          New-Item -ItemType Directory -Force staging
+          Copy-Item "dist/*.exe" staging -ErrorAction SilentlyContinue
+          Copy-Item "dist/*latest*.yml" staging -ErrorAction SilentlyContinue
+          Get-ChildItem -Recurse staging
 
-      - name: Upload application package artifact
+      - name: Upload Windows package artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-pkg-${{ matrix.artifact_suffix }}
-          path: |
-            staging/*.dmg
-            staging/*.exe
-            staging/*.AppImage
-            staging/*.zip
-            staging/*.tar.gz
-            staging/*.deb
-            staging/*.snap
-          if-no-files-found: error # Important: fail if no package found
+          name: app-pkg-windows-x64
+          path: staging/*.exe
+          if-no-files-found: error
 
-      - name: Upload update YAML artifact
+      - name: Upload Windows update YAML artifact
         uses: actions/upload-artifact@v4
         with:
-          name: update-yaml-${{ matrix.artifact_suffix }}
+          name: update-yaml-windows-x64
           path: staging/*latest*.yml
-          if-no-files-found: error # Important: fail if no YML found
+          if-no-files-found: error
 
   publish_release:
     name: Publish GitHub Release
-    runs-on: ubuntu-latest
-    needs: build_artifacts
+    runs-on: windows-2022
+    needs: build_windows
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
-      contents: write # Required for softprops/action-gh-release
+      contents: write
     steps:
-      - name: Check out Git repository
-        uses: actions/checkout@v4
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20.x # Or your preferred Node version for the script
-
-      - name: Download all build artifacts
+      - name: Download Windows build artifacts
         uses: actions/download-artifact@v4
         with:
-          path: all_build_artifacts # This will download each artifact into its own subdirectory
+          path: all_build_artifacts
 
-      - name: List downloaded artifacts for debugging
-        run: ls -R all_build_artifacts
-
-      - name: Create YAML merge script
+      - name: Prepare release assets
+        shell: pwsh
         run: |
-          cat <<'EOF' > merge-yaml-and-prepare-release.js
-          const fs = require('fs');
-          const path = require('path');
-          const yaml = require('js-yaml');
-
-          const artifactsDownloadDir = path.join('.', 'all_build_artifacts');
-          const finalReleaseAssetsDir = path.join('.', 'final_release_assets');
-          fs.mkdirSync(finalReleaseAssetsDir, { recursive: true });
-
-          const platformYamlData = { mac: [], windows: [], linux: [] };
-          let packageVersion = process.env.GITHUB_REF_NAME.startsWith('v') ? process.env.GITHUB_REF_NAME.substring(1) : process.env.GITHUB_REF_NAME;
-
-          fs.readdirSync(artifactsDownloadDir).forEach(artifactSubDir => {
-            const artifactPath = path.join(artifactsDownloadDir, artifactSubDir);
-            fs.readdirSync(artifactPath).forEach(file => {
-              const filePath = path.join(artifactPath, file);
-              if (file.endsWith('.yml')) {
-                console.log(`Processing YAML: ${filePath} from ${artifactSubDir}`);
-                try {
-                  const ymlContent = yaml.load(fs.readFileSync(filePath, 'utf8'));
-                  if (!packageVersion && ymlContent.version) packageVersion = ymlContent.version; // Fallback if GITHUB_REF_NAME is not a version tag
-
-                  let platformKey = '';
-                  if (artifactSubDir.includes('-macos-') || file.includes('-mac')) platformKey = 'mac';
-                  else if (artifactSubDir.includes('-windows-') || file.includes('-windows') || file.includes('-win')) platformKey = 'windows';
-                  else if (artifactSubDir.includes('-linux-') || file.includes('-linux')) platformKey = 'linux';
-                  
-                  if (platformKey && ymlContent.files && Array.isArray(ymlContent.files)) {
-                    ymlContent.files.forEach(fileEntry => {
-                      // Ensure the URL is just the filename for the release asset
-                      fileEntry.url = path.basename(fileEntry.url);
-                      platformYamlData[platformKey].push(fileEntry);
-                    });
-                  } else {
-                    console.warn(`Could not determine platform or parse files for ${filePath}`);
-                  }
-                } catch (e) {
-                  console.error(`Error processing YAML file ${filePath}:`, e);
-                }
-              } else {
-                console.log(`Copying package: ${file} to ${finalReleaseAssetsDir}`);
-                fs.copyFileSync(filePath, path.join(finalReleaseAssetsDir, file));
-              }
-            });
-          });
-
-          const releaseDate = new Date().toISOString();
-
-          for (const platform of ['mac', 'windows', 'linux']) {
-            if (platformYamlData[platform].length > 0) {
-              // Sort files to ensure deterministic order, e.g., by URL
-              platformYamlData[platform].sort((a, b) => a.url.localeCompare(b.url));
-
-              let outputFileName = `latest-${platform}.yml`;
-              if (platform === 'windows') {
-                outputFileName = 'latest.yml';
-              }
-
-              const finalYaml = {
-                version: packageVersion,
-                files: platformYamlData[platform],
-                path: outputFileName, // Use the determined output file name
-                releaseDate: releaseDate,
-              };
-              const yamlPath = path.join(finalReleaseAssetsDir, outputFileName);
-              fs.writeFileSync(yamlPath, yaml.dump(finalYaml));
-              console.log(`Generated ${yamlPath} for ${platform} with ${finalYaml.files.length} entries.`);
-            }
-          }
-          console.log('Final release assets prepared in:', finalReleaseAssetsDir);
-          EOF
-
-      - name: Install script dependencies
-        run: npm install js-yaml
-
-      - name: Run YAML merge script
-        run: node merge-yaml-and-prepare-release.js
-        env:
-          GITHUB_REF_NAME: ${{ github.ref_name }} # Pass tag to script
-
-      - name: List final assets for debugging
-        run: ls -R final_release_assets
+          New-Item -ItemType Directory -Force final_release_assets
+          Get-ChildItem -Path all_build_artifacts -Recurse -File |
+            Where-Object { $_.Extension -eq ".exe" -or $_.Name -like "*latest*.yml" } |
+            Copy-Item -Destination final_release_assets
+          Get-ChildItem -Recurse final_release_assets
 
       - name: Check if beta release
         id: check_beta
+        shell: pwsh
         run: |
-          if [[ "${{ github.ref_name }}" == *"beta"* ]]; then
-            echo "is_beta=true" >> $GITHUB_OUTPUT
-          else
-            echo "is_beta=false" >> $GITHUB_OUTPUT
-          fi
+          if ("${{ github.ref_name }}" -like "*beta*") {
+            "is_beta=true" >> $env:GITHUB_OUTPUT
+          } else {
+            "is_beta=false" >> $env:GITHUB_OUTPUT
+          }
 
       - name: Publish Release
-        uses: softprops/action-gh-release@v2 # Updated to a newer version
+        uses: softprops/action-gh-release@v2
         with:
-          # token: ${{ secrets.GITHUB_TOKEN }} # Provided by default
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          # body: | # Optional: Add release notes here
-          #   Automated release for version ${{ github.ref_name }}
           draft: ${{ steps.check_beta.outputs.is_beta == 'true' }}
           prerelease: ${{ steps.check_beta.outputs.is_beta == 'true' }}
-          files: |
-            final_release_assets/*
-
-  update_homebrew_tap:
-    name: Update Homebrew Tap
-    runs-on: ubuntu-latest
-    needs: publish_release
-    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, 'beta')
-    steps:
-      - name: Extract version from tag
-        id: version
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Extracted version: $VERSION"
-
-      - name: Download macOS DMG files and calculate SHA256
-        id: sha256
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-
-          # Download ARM64 DMG
-          echo "Downloading ARM64 DMG..."
-          curl -L -o "SmartSub_Mac_${VERSION}_arm64.dmg" \
-            "https://github.com/buxuku/SmartSub/releases/download/v${VERSION}/SmartSub_Mac_${VERSION}_arm64.dmg"
-
-          # Download x64 DMG
-          echo "Downloading x64 DMG..."
-          curl -L -o "SmartSub_Mac_${VERSION}_x64.dmg" \
-            "https://github.com/buxuku/SmartSub/releases/download/v${VERSION}/SmartSub_Mac_${VERSION}_x64.dmg"
-
-          # Calculate SHA256
-          SHA256_ARM64=$(shasum -a 256 "SmartSub_Mac_${VERSION}_arm64.dmg" | awk '{print $1}')
-          SHA256_X64=$(shasum -a 256 "SmartSub_Mac_${VERSION}_x64.dmg" | awk '{print $1}')
-
-          echo "SHA256 ARM64: $SHA256_ARM64"
-          echo "SHA256 x64: $SHA256_X64"
-
-          echo "sha256_arm64=$SHA256_ARM64" >> $GITHUB_OUTPUT
-          echo "sha256_x64=$SHA256_X64" >> $GITHUB_OUTPUT
-
-      - name: Checkout Homebrew Tap
-        uses: actions/checkout@v4
-        with:
-          repository: buxuku/homebrew-tap
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          path: homebrew-tap
-
-      - name: Update Cask file
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          SHA256_ARM64="${{ steps.sha256.outputs.sha256_arm64 }}"
-          SHA256_X64="${{ steps.sha256.outputs.sha256_x64 }}"
-
-          CASK_FILE="homebrew-tap/Casks/smartsub.rb"
-
-          # Update version
-          sed -i "s/version \".*\"/version \"${VERSION}\"/" "$CASK_FILE"
-
-          # Update SHA256 for Intel (x64) - appears first in on_intel block
-          sed -i "/on_intel do/,/end/ s/sha256 \"[a-f0-9]*\"/sha256 \"${SHA256_X64}\"/" "$CASK_FILE"
-
-          # Update SHA256 for ARM - appears in on_arm block
-          sed -i "/on_arm do/,/end/ s/sha256 \"[a-f0-9]*\"/sha256 \"${SHA256_ARM64}\"/" "$CASK_FILE"
-
-          echo "Updated Cask file:"
-          cat "$CASK_FILE"
-
-      - name: Commit and Push changes
-        run: |
-          cd homebrew-tap
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add Casks/smartsub.rb
-
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "Update smartsub to ${{ steps.version.outputs.version }}"
-            git push
-            echo "Successfully updated homebrew-tap"
-          fi
+          files: final_release_assets/*

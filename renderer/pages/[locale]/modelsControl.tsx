@@ -49,6 +49,7 @@ import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import useLocalStorageState from 'hooks/useLocalStorageState';
+import { REAZON_SPEECH_K2_V2_MODEL } from '../../../types';
 
 export enum DownSource {
   HuggingFace = 'huggingface',
@@ -369,6 +370,17 @@ const ModelsControl = () => {
   };
 
   const recommendedId = getRecommendedCategory(systemInfo.totalMemoryGB ?? 8);
+  const reazonModel: ModelInfo = {
+    name: REAZON_SPEECH_K2_V2_MODEL,
+    size: '775 MB',
+    needsCoreML: false,
+  };
+  const isReazonInstalled = !!systemInfo?.modelsInstalled?.includes(
+    REAZON_SPEECH_K2_V2_MODEL,
+  );
+  const isReazonDownloading = !!systemInfo?.downloadingModels?.includes(
+    REAZON_SPEECH_K2_V2_MODEL,
+  );
 
   return (
     <div className="container mx-auto p-4 space-y-4">
@@ -426,6 +438,36 @@ const ModelsControl = () => {
       </div>
 
       <div className="space-y-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base">
+                {t('reazonSpeechK2Title')}
+              </CardTitle>
+              {isReazonInstalled && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                  <CheckCircle2 className="h-3 w-3 mr-0.5" />
+                  {t('installed')}
+                </Badge>
+              )}
+            </div>
+            <CardDescription className="text-xs">
+              {t('reazonSpeechK2Desc')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ModelRow
+              model={reazonModel}
+              isInstalled={isReazonInstalled}
+              isDownloading={isReazonDownloading}
+              downSource={downSource}
+              onUpdate={updateSystemInfo}
+              t={t}
+              globalDownloading={globalDownloading}
+            />
+          </CardContent>
+        </Card>
+
         {modelCategories.map((category) => (
           <CategoryCard
             key={category.id}

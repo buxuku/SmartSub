@@ -43,6 +43,8 @@ import {
   PendingFile,
   DetectedSubtitle,
   createPendingFileFromVideo,
+  getPreferredProofreadLanguages,
+  getSubtitleTypeForLanguage,
   selectBestSubtitles,
 } from '@/lib/proofreadUtils';
 
@@ -234,6 +236,7 @@ export default function ProofreadFileList({
 
         if (!result || result.canceled || result.filePaths.length === 0) return;
 
+        const preferredLanguages = await getPreferredProofreadLanguages();
         const allSubtitles: DetectedSubtitle[] = [];
 
         for (const filePath of result.filePaths) {
@@ -241,8 +244,7 @@ export default function ProofreadFileList({
             filePath,
           });
           const lang = langResult.success ? langResult.data?.code : undefined;
-          const type =
-            lang === 'en' ? 'source' : lang ? 'translated' : 'unknown';
+          const type = getSubtitleTypeForLanguage(lang, preferredLanguages);
           allSubtitles.push({
             filePath,
             type: type as 'source' | 'translated' | 'unknown',
@@ -252,7 +254,11 @@ export default function ProofreadFileList({
         }
 
         // 使用工具函数选择最佳字幕
-        const { bestSource, bestTarget } = selectBestSubtitles(allSubtitles);
+        const { bestSource, bestTarget } = selectBestSubtitles(
+          allSubtitles,
+          undefined,
+          preferredLanguages,
+        );
         const sourceSubtitle = bestSource || allSubtitles[0];
         const targetSubtitle =
           bestTarget ||
@@ -272,7 +278,8 @@ export default function ProofreadFileList({
           detectedSubtitles: allSubtitles,
           selectedSource: sourceSubtitle?.filePath,
           selectedTarget: targetSubtitle?.filePath,
-          sourceLanguage: sourceSubtitle?.language,
+          sourceLanguage:
+            sourceSubtitle?.language || preferredLanguages.sourceLanguage,
           targetLanguage: targetSubtitle?.language,
           status: 'pending',
         };

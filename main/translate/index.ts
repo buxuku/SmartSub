@@ -138,10 +138,29 @@ export async function testTranslation(
   sourceLanguage: string,
   targetLanguage: string,
 ): Promise<{ translation: string; analysis?: any }> {
+  const getTestSubtitleContent = (language: string): string => {
+    switch ((language || '').toLowerCase()) {
+      case 'ja':
+      case 'jp':
+        return 'こんにちは。今日はいい天気ですね。';
+      case 'zh':
+      case 'zh-cn':
+      case 'zh-hans':
+        return '你好，今天天气很好。';
+      case 'zh-hant':
+      case 'zh-tw':
+        return '你好，今天天氣很好。';
+      case 'ko':
+        return '안녕하세요. 오늘은 날씨가 좋네요.';
+      default:
+        return 'Hello China';
+    }
+  };
+
   const testSubtitle = {
     id: '1',
     startEndTime: '00:00:01,000 --> 00:00:04,000',
-    content: ['Hello China'],
+    content: [getTestSubtitleContent(sourceLanguage)],
   };
 
   try {

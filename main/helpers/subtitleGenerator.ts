@@ -2,8 +2,7 @@ import { exec } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { promisify } from 'util';
-import { getPath, loadWhisperAddon } from './whisper';
-import { checkCudaSupport } from './cudaUtils';
+import { getPath, loadWhisperAddonRuntime } from './whisper';
 import { logMessage, store } from './storeManager';
 import { formatSrtContent } from './fileUtils';
 import { IFiles } from '../../types';
@@ -12,7 +11,12 @@ import { getExtraResourcesPath } from './utils';
 /**
  * 使用本地Whisper命令行工具生成字幕
  */
-export async function generateSubtitleWithLocalWhisper(event, file, formData) {
+export async function generateSubtitleWithLocalWhisper(
+  event,
+  file,
+  formData,
+  isCancellationRequested?: () => boolean,
+) {
   const { model, sourceLanguage } = formData;
   const whisperModel = model?.toLowerCase();
   const settings = store.get('settings');
@@ -39,10 +43,30 @@ export async function generateSubtitleWithLocalWhisper(event, file, formData) {
   event.sender.send('taskFileChange', { ...file, extractSubtitle: 'loading' });
 
   return new Promise((resolve, reject) => {
-    exec(runShell, (error, stdout, stderr) => {
+    if (isCancellationRequested?.()) {
+      reject(new Error('任务已取消'));
+      return;
+    }
+
+    let settled = false;
+    let cancelTimer: ReturnType<typeof setInterval>;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(cancelTimer);
+      callback();
+    };
+
+    const child = exec(runShell, (error, stdout, stderr) => {
+      if (isCancellationRequested?.()) {
+        finish(() => reject(new Error('任务已取消')));
+        return;
+      }
       if (error) {
-        logMessage(`generate subtitle error: ${error}`, 'error');
-        reject(error);
+        finish(() => {
+          logMessage(`generate subtitle error: ${error}`, 'error');
+          reject(error);
+        });
         return;
       }
       if (stderr) {
@@ -60,8 +84,15 @@ export async function generateSubtitleWithLocalWhisper(event, file, formData) {
       }
 
       event.sender.send('taskFileChange', { ...file, extractSubtitle: 'done' });
-      resolve(srtFile);
+      finish(() => resolve(srtFile));
     });
+
+    cancelTimer = setInterval(() => {
+      if (isCancellationRequested?.()) {
+        child.kill();
+        finish(() => reject(new Error('任务已取消')));
+      }
+    }, 500);
   });
 }
 
@@ -72,28 +103,23 @@ export async function generateSubtitleWithBuiltinWhisper(
   event,
   file: IFiles,
   formData,
+  isCancellationRequested?: () => boolean,
 ) {
   event.sender.send('taskFileChange', { ...file, extractSubtitle: 'loading' });
 
   try {
+    if (isCancellationRequested?.()) {
+      throw new Error('任务已取消');
+    }
+
     const { tempAudioFile, srtFile } = file;
     console.log(tempAudioFile, srtFile, file, 'tempAudioFile, srtFile');
     const { model, sourceLanguage, prompt, maxContext } = formData;
     const whisperModel = model?.toLowerCase();
-    const whisper = await loadWhisperAddon(whisperModel);
-    const whisperAsync = promisify(whisper);
+    const runtime = await loadWhisperAddonRuntime(whisperModel);
+    const whisperAsync = promisify(runtime.whisper);
     const settings = store.get('settings');
-    const useCuda = settings.useCuda || false;
-    const platform = process.platform;
-    const arch = process.arch;
-
-    // 修改 GPU 判断逻辑
-    let shouldUseGpu = false;
-    if (platform === 'darwin' && arch === 'arm64') {
-      shouldUseGpu = true;
-    } else if ((platform === 'win32' || platform === 'linux') && useCuda) {
-      shouldUseGpu = !!(await checkCudaSupport());
-    }
+    const shouldUseGpu = runtime.supportsGpu;
     const modelPath = `${getPath('modelsPath')}/ggml-${whisperModel}.bin`;
 
     // VAD 模型路径 - 使用内置的 VAD 模型
@@ -108,10 +134,21 @@ export async function generateSubtitleWithBuiltinWhisper(
       vadThreshold: settings.vadThreshold || 0.5,
       vadMinSpeechDuration: settings.vadMinSpeechDuration || 250,
       vadMinSilenceDuration: settings.vadMinSilenceDuration || 100,
-      vadMaxSpeechDuration: settings.vadMaxSpeechDuration || Number.MAX_VALUE, // 0表示无限制
+      vadMaxSpeechDuration:
+        settings.vadMaxSpeechDuration === undefined
+          ? 0
+          : Number(settings.vadMaxSpeechDuration),
       vadSpeechPad: settings.vadSpeechPad || 30,
       vadSamplesOverlap: settings.vadSamplesOverlap || 0.1,
     };
+    const hasVadModel = fs.existsSync(vadModelPath);
+    if (vadSettings.useVAD && !hasVadModel) {
+      logMessage(
+        `VAD model not found: ${vadModelPath}; VAD disabled`,
+        'warning',
+      );
+    }
+
     const whisperParams = {
       language: sourceLanguage || 'auto',
       model: modelPath,
@@ -128,7 +165,7 @@ export async function generateSubtitleWithBuiltinWhisper(
       prompt,
       max_context: +(maxContext ?? -1),
       // VAD 参数
-      vad: vadSettings.useVAD,
+      vad: vadSettings.useVAD && hasVadModel,
       vad_model: vadModelPath,
       vad_threshold: vadSettings.vadThreshold,
       vad_min_speech_duration_ms: vadSettings.vadMinSpeechDuration,
@@ -153,11 +190,19 @@ export async function generateSubtitleWithBuiltinWhisper(
       'info',
     );
     event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
-    const result = await whisperAsync(whisperParams);
+    const result = (await whisperAsync(whisperParams)) as {
+      transcription?: [string, string, string][];
+    };
+    if (isCancellationRequested?.()) {
+      throw new Error('任务已取消');
+    }
     console.log(result, 'result');
 
     // 格式化字幕内容
     const formattedSrt = formatSrtContent(result?.transcription || []);
+    if (!formattedSrt.trim()) {
+      throw new Error('转录结果为空，无法生成字幕');
+    }
 
     // 写入格式化后的内容
     await fs.promises.writeFile(srtFile, formattedSrt);

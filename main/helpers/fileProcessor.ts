@@ -1,16 +1,37 @@
 import path from 'path';
 import fs from 'fs';
-import { logMessage, store } from './storeManager';
+import { logMessage } from './storeManager';
 import { createMessageSender } from './messageHandler';
 import { getSrtFileName } from './utils';
 import { extractAudioFromVideo } from './audioProcessor';
-import {
-  generateSubtitleWithLocalWhisper,
-  generateSubtitleWithBuiltinWhisper,
-} from './subtitleGenerator';
+import { generateSubtitleWithTranscriptionProvider } from './transcription';
 import translate from '../translate';
 import { ensureTempDir, getMd5 } from './fileUtils';
 import { IFiles } from '../../types';
+
+class TaskCancelledError extends Error {
+  constructor() {
+    super('任务已取消');
+    this.name = 'TaskCancelledError';
+  }
+}
+
+function isTaskCancelledError(error: unknown) {
+  return error instanceof Error && error.name === 'TaskCancelledError';
+}
+
+function throwIfCancelled(
+  event,
+  file: IFiles,
+  key: string,
+  isCancellationRequested?: () => boolean,
+) {
+  if (!isCancellationRequested?.()) return;
+
+  event.sender.send('taskStatusChange', file, key, 'cancelled');
+  event.sender.send('taskErrorChange', file, key, '任务已取消');
+  throw new TaskCancelledError();
+}
 
 /**
  * 处理任务错误
@@ -36,16 +57,16 @@ async function generateSubtitle(
   file: IFiles,
   formData,
   hasOpenAiWhisper,
+  isCancellationRequested?: () => boolean,
 ) {
-  const settings = store.get('settings');
-  const useLocalWhisper = settings?.useLocalWhisper;
-
   try {
-    if (hasOpenAiWhisper && useLocalWhisper && settings?.whisperCommand) {
-      return await generateSubtitleWithLocalWhisper(event, file, formData);
-    } else {
-      return await generateSubtitleWithBuiltinWhisper(event, file, formData);
-    }
+    return await generateSubtitleWithTranscriptionProvider(
+      event,
+      file,
+      formData,
+      hasOpenAiWhisper,
+      isCancellationRequested,
+    );
   } catch (error) {
     onError(event, file, 'extractSubtitle', error);
     throw error; // 继续抛出错误，以便上层函数知道发生了错误
@@ -94,6 +115,7 @@ async function translateSubtitle(event, file: IFiles, formData, provider) {
   } catch (error) {
     // 确保错误状态下也发送当前进度（从文件状态获取）
     onError(event, file, 'translateSubtitle', error);
+    throw error;
   }
 }
 
@@ -106,6 +128,7 @@ export async function processFile(
   formData,
   hasOpenAiWhisper,
   provider,
+  isCancellationRequested?: () => boolean,
 ) {
   const {
     sourceLanguage,
@@ -126,6 +149,7 @@ export async function processFile(
       fileExtension,
     );
     logMessage(`begin process ${fileName} with task type: ${taskType}`, 'info');
+    throwIfCancelled(event, file, 'processFile', isCancellationRequested);
 
     // 确定是否需要生成字幕
     const shouldGenerateSubtitle =
@@ -142,7 +166,7 @@ export async function processFile(
         sourceLanguage,
         targetLanguage,
         model,
-        translateProvider: provider.name,
+        translateProvider: provider?.name || '',
       };
 
       const sourceSrtFileName = getSrtFileName(
@@ -162,8 +186,13 @@ export async function processFile(
           ...file,
           extractAudio: 'loading',
         });
-        const tempAudioFile = await extractAudioFromVideo(event, file);
+        const tempAudioFile = await extractAudioFromVideo(
+          event,
+          file,
+          isCancellationRequested,
+        );
         event.sender.send('taskFileChange', { ...file, extractAudio: 'done' });
+        throwIfCancelled(event, file, 'extractAudio', isCancellationRequested);
 
         // 如果开启了保存音频选项，则复制一份到视频同目录
         if (saveAudio) {
@@ -176,7 +205,19 @@ export async function processFile(
 
         // 生成字幕
         logMessage(`generate subtitle ${file.srtFile}`, 'info');
-        await generateSubtitle(event, file, formData, hasOpenAiWhisper);
+        await generateSubtitle(
+          event,
+          file,
+          formData,
+          hasOpenAiWhisper,
+          isCancellationRequested,
+        );
+        throwIfCancelled(
+          event,
+          file,
+          'extractSubtitle',
+          isCancellationRequested,
+        );
       } catch (error) {
         // 如果是提取音频或生成字幕过程中出错，已经在各自的函数中处理了错误状态
         // 这里只需要继续抛出错误，中断后续流程
@@ -195,6 +236,12 @@ export async function processFile(
           ...file,
           prepareSubtitle: 'done',
         });
+        throwIfCancelled(
+          event,
+          file,
+          'prepareSubtitle',
+          isCancellationRequested,
+        );
       } catch (error) {
         onError(event, file, 'prepareSubtitle', error);
         throw error;
@@ -208,8 +255,20 @@ export async function processFile(
 
     // 翻译字幕
     if (shouldTranslateSubtitle && translateProvider !== '-1') {
+      throwIfCancelled(
+        event,
+        file,
+        'translateSubtitle',
+        isCancellationRequested,
+      );
       logMessage(`translate subtitle ${file.srtFile}`, 'info');
       await translateSubtitle(event, file, formData, provider);
+      throwIfCancelled(
+        event,
+        file,
+        'translateSubtitle',
+        isCancellationRequested,
+      );
     }
     // 清理临时文件
     if (
@@ -235,6 +294,11 @@ export async function processFile(
 
     logMessage(`process file done ${fileName}`, 'info');
   } catch (error) {
+    if (isTaskCancelledError(error)) {
+      logMessage(`process file cancelled ${file.fileName}`, 'warning');
+      return;
+    }
+
     // 使用通用错误处理方法
     createMessageSender(event.sender).send('message', {
       type: 'error',

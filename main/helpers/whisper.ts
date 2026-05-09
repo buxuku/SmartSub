@@ -6,7 +6,11 @@ import { BrowserWindow, DownloadItem } from 'electron';
 import decompress from 'decompress';
 import fs from 'fs-extra';
 import { store, logMessage } from './storeManager';
-import { getEffectivePlatform, isPlatformCudaCapable } from './cudaUtils';
+import {
+  checkCudaSupport,
+  getEffectivePlatform,
+  isPlatformCudaCapable,
+} from './cudaUtils';
 import {
   getSelectedAddonVersion,
   getAddonVersionDir,
@@ -14,6 +18,10 @@ import {
   isAddonInstalled,
   getCustomAddonPath,
 } from './addonManager';
+import {
+  REAZON_SPEECH_K2_V2_FILES,
+  REAZON_SPEECH_K2_V2_MODEL,
+} from '../../types';
 
 export const getPath = (key?: string) => {
   const userDataPath = app.getPath('userData');
@@ -40,9 +48,20 @@ export const getModelsInstalled = () => {
     const models = fs
       .readdirSync(modelsPath)
       ?.filter((file) => file.startsWith('ggml-') && file.endsWith('.bin'));
-    return models.map((model) =>
+    const installedModels = models.map((model) =>
       model.replace('ggml-', '').replace('.bin', ''),
     );
+
+    const reazonModelDir = path.join(modelsPath, REAZON_SPEECH_K2_V2_MODEL);
+    if (
+      REAZON_SPEECH_K2_V2_FILES.every((file) =>
+        fs.existsSync(path.join(reazonModelDir, file)),
+      )
+    ) {
+      installedModels.push(REAZON_SPEECH_K2_V2_MODEL);
+    }
+
+    return installedModels;
   } catch (e) {
     return [];
   }
@@ -50,6 +69,18 @@ export const getModelsInstalled = () => {
 
 export const deleteModel = async (model) => {
   const modelsPath = getPath('modelsPath');
+  if (model === REAZON_SPEECH_K2_V2_MODEL) {
+    return new Promise((resolve, reject) => {
+      try {
+        fs.removeSync(path.join(modelsPath, REAZON_SPEECH_K2_V2_MODEL));
+        resolve('ok');
+      } catch (error) {
+        console.error('删除 ReazonSpeech 模型失败:', error);
+        reject(error);
+      }
+    });
+  }
+
   const modelPath = path.join(modelsPath, `ggml-${model}.bin`);
   const coreMLModelPath = path.join(
     modelsPath,
@@ -249,6 +280,18 @@ export const hasEncoderModel = (model) => {
  * 设置动态链接库搜索路径
  * 必须在 dlopen 之前调用
  */
+type WhisperCallback = (
+  params: Record<string, unknown>,
+  callback: (error: Error | null, result?: unknown) => void,
+) => void;
+
+export interface WhisperAddonRuntime {
+  whisper: WhisperCallback;
+  addonPath: string;
+  supportsGpu: boolean;
+  acceleration: 'cpu' | 'cuda' | 'coreml';
+}
+
 function setupLibraryPath(addonDir: string): void {
   const platform = getEffectivePlatform();
   const absoluteAddonDir = path.resolve(addonDir);
@@ -273,97 +316,7 @@ function setupLibraryPath(addonDir: string): void {
   }
 }
 
-/**
- * 加载适合当前系统的Whisper Addon
- *
- * 加载优先级：
- * 1. 如果启用 CUDA 且已安装加速包，从用户数据目录加载
- * 2. 否则从 extraResources 加载默认版本
- */
-export async function loadWhisperAddon(model: string) {
-  const platform = getEffectivePlatform();
-  const settings = store.get('settings') || { useCuda: false };
-  const useCuda = settings.useCuda || false;
-
-  let addonPath: string;
-
-  // 检查是否是可能支持 CUDA 的平台
-  if (isPlatformCudaCapable() && useCuda) {
-    // 优先检查自定义 addon.node 路径
-    const customPath = getCustomAddonPath();
-
-    if (customPath && fs.existsSync(customPath)) {
-      // 使用自定义路径
-      const customDir = path.dirname(customPath);
-      if (hasDependentLibs(customDir)) {
-        setupLibraryPath(customDir);
-      }
-      addonPath = customPath;
-      logMessage(`Loading custom addon from: ${addonPath}`, 'info');
-    } else if (customPath) {
-      // 自定义路径已设置但文件不存在
-      logMessage(
-        `Custom addon path not found: ${customPath}, falling back to default`,
-        'warning',
-      );
-      addonPath = path.join(getExtraResourcesPath(), 'addons', 'addon.node');
-    } else {
-      // 获取用户选择的加速包版本
-      const selectedVersion = getSelectedAddonVersion();
-
-      if (selectedVersion && isAddonInstalled(selectedVersion)) {
-        // 从用户数据目录加载
-        const versionDir = getAddonVersionDir(selectedVersion);
-        const userAddonPath = path.join(versionDir, 'addon.node');
-
-        if (fs.existsSync(userAddonPath)) {
-          // 检查并设置依赖库路径（必须在 dlopen 之前）
-          if (hasDependentLibs(versionDir)) {
-            setupLibraryPath(versionDir);
-          }
-
-          addonPath = userAddonPath;
-          logMessage(`Loading CUDA addon from userData: ${addonPath}`, 'info');
-        } else {
-          // 用户数据目录的 addon 不存在，回退到默认版本
-          logMessage(
-            `Selected addon version ${selectedVersion} not found, falling back to default`,
-            'warning',
-          );
-          addonPath = path.join(
-            getExtraResourcesPath(),
-            'addons',
-            'addon.node',
-          );
-        }
-      } else {
-        // 没有安装加速包，使用默认的 no-cuda 版本
-        addonPath = path.join(getExtraResourcesPath(), 'addons', 'addon.node');
-        logMessage('No CUDA addon installed, using default addon', 'info');
-      }
-    }
-  } else if (
-    platform === 'darwin' &&
-    isAppleSilicon() &&
-    hasEncoderModel(model)
-  ) {
-    // macOS Apple Silicon with CoreML
-    addonPath = path.join(
-      getExtraResourcesPath(),
-      'addons',
-      'addon.coreml.node',
-    );
-    logMessage('Loading CoreML addon for Apple Silicon', 'info');
-  } else {
-    // 默认：从 extraResources 加载
-    addonPath = path.join(getExtraResourcesPath(), 'addons', 'addon.node');
-    logMessage('Loading default addon from extraResources', 'info');
-  }
-
-  if (!addonPath) {
-    throw new Error('Unsupported platform or architecture');
-  }
-
+function loadWhisperAddonFromPath(addonPath: string): WhisperCallback {
   if (!fs.existsSync(addonPath)) {
     throw new Error(`Addon not found: ${addonPath}`);
   }
@@ -373,8 +326,148 @@ export async function loadWhisperAddon(model: string) {
   const module = { exports: { whisper: null } };
   process.dlopen(module, addonPath);
 
-  return module.exports.whisper as (
-    params: Record<string, unknown>,
-    callback: (error: Error | null, result?: unknown) => void,
-  ) => void;
+  if (typeof module.exports.whisper !== 'function') {
+    throw new Error(`Invalid whisper addon: ${addonPath}`);
+  }
+
+  return module.exports.whisper as WhisperCallback;
+}
+
+/**
+ * 加载适合当前系统的Whisper Addon
+ *
+ * 加载优先级：
+ * 1. 如果启用 CUDA 且已安装加速包，从用户数据目录加载
+ * 2. 否则从 extraResources 加载默认版本
+ */
+export async function loadWhisperAddonRuntime(
+  model: string,
+): Promise<WhisperAddonRuntime> {
+  const platform = getEffectivePlatform();
+  const settings = store.get('settings') || { useCuda: false };
+  const useCuda = settings.useCuda || false;
+  const defaultAddonPath = path.join(
+    getExtraResourcesPath(),
+    'addons',
+    'addon.node',
+  );
+
+  const loadDefaultCpuAddon = (reason?: string): WhisperAddonRuntime => {
+    if (reason) {
+      logMessage(`${reason}. Falling back to default CPU addon`, 'warning');
+    }
+
+    return {
+      whisper: loadWhisperAddonFromPath(defaultAddonPath),
+      addonPath: defaultAddonPath,
+      supportsGpu: false,
+      acceleration: 'cpu',
+    };
+  };
+
+  // 检查是否是可能支持 CUDA 的平台
+  if (isPlatformCudaCapable() && useCuda) {
+    const cudaSupport = checkCudaSupport();
+
+    if (cudaSupport) {
+      // 优先检查自定义 addon.node 路径
+      const customPath = getCustomAddonPath();
+
+      if (customPath && fs.existsSync(customPath)) {
+        try {
+          const customDir = path.dirname(customPath);
+          if (hasDependentLibs(customDir)) {
+            setupLibraryPath(customDir);
+          }
+          logMessage(`Loading custom addon from: ${customPath}`, 'info');
+          return {
+            whisper: loadWhisperAddonFromPath(customPath),
+            addonPath: customPath,
+            supportsGpu: true,
+            acceleration: 'cuda',
+          };
+        } catch (error) {
+          return loadDefaultCpuAddon(`Failed to load custom addon: ${error}`);
+        }
+      } else if (customPath) {
+        return loadDefaultCpuAddon(
+          `Custom addon path not found: ${customPath}`,
+        );
+      }
+
+      // 获取用户选择的加速包版本
+      const selectedVersion = getSelectedAddonVersion();
+
+      if (selectedVersion && isAddonInstalled(selectedVersion)) {
+        const versionDir = getAddonVersionDir(selectedVersion);
+        const userAddonPath = path.join(versionDir, 'addon.node');
+
+        if (fs.existsSync(userAddonPath)) {
+          try {
+            if (hasDependentLibs(versionDir)) {
+              setupLibraryPath(versionDir);
+            }
+
+            logMessage(
+              `Loading CUDA addon from userData: ${userAddonPath}`,
+              'info',
+            );
+            return {
+              whisper: loadWhisperAddonFromPath(userAddonPath),
+              addonPath: userAddonPath,
+              supportsGpu: true,
+              acceleration: 'cuda',
+            };
+          } catch (error) {
+            return loadDefaultCpuAddon(
+              `Failed to load CUDA addon ${selectedVersion}: ${error}`,
+            );
+          }
+        } else {
+          logMessage(
+            `Selected addon version ${selectedVersion} not found, falling back to default`,
+            'warning',
+          );
+        }
+      } else {
+        logMessage('No CUDA addon installed, using default addon', 'info');
+      }
+    } else {
+      logMessage(
+        'CUDA requested but no compatible CUDA GPU was detected',
+        'warning',
+      );
+    }
+  } else if (
+    platform === 'darwin' &&
+    isAppleSilicon() &&
+    hasEncoderModel(model)
+  ) {
+    // macOS Apple Silicon with CoreML
+    const coreMlAddonPath = path.join(
+      getExtraResourcesPath(),
+      'addons',
+      'addon.coreml.node',
+    );
+
+    try {
+      logMessage('Loading CoreML addon for Apple Silicon', 'info');
+      return {
+        whisper: loadWhisperAddonFromPath(coreMlAddonPath),
+        addonPath: coreMlAddonPath,
+        supportsGpu: true,
+        acceleration: 'coreml',
+      };
+    } catch (error) {
+      return loadDefaultCpuAddon(`Failed to load CoreML addon: ${error}`);
+    }
+  }
+
+  logMessage('Loading default addon from extraResources', 'info');
+  return loadDefaultCpuAddon();
+}
+
+export async function loadWhisperAddon(model: string) {
+  const runtime = await loadWhisperAddonRuntime(model);
+  return runtime.whisper;
 }

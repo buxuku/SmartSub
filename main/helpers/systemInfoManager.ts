@@ -8,6 +8,7 @@ import { getTempDir } from './fileUtils';
 import { logMessage } from './storeManager';
 import { testTranslation } from '../translate';
 import { getBuildInfo } from './buildInfo';
+import { fetchOpenRouterTranscriptionModels } from './transcription/openRouter';
 
 let downloadingModels = new Set<string>();
 
@@ -85,6 +86,16 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   // 获取临时目录路径
   ipcMain.handle('getTempDir', async () => {
     return getTempDir();
+  });
+
+  ipcMain.handle('getOpenRouterTranscriptionModels', async () => {
+    try {
+      const models = await fetchOpenRouterTranscriptionModels();
+      return { success: true, data: models };
+    } catch (error) {
+      logMessage(`OpenRouter model discovery error: ${error}`, 'warning');
+      return { success: false, error: String(error), data: [] };
+    }
   });
 
   // 清除缓存
