@@ -1,27 +1,111 @@
-name: Build/release
+name: Release Windows
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version. Leave empty to use package.json version. If set, it must match package.json.'
+        required: false
+        type: string
+      prerelease:
+        description: 'Mark the manual draft release as a prerelease.'
+        required: true
+        default: true
+        type: boolean
+      release_notes:
+        description: 'Optional release notes.'
+        required: false
+        type: string
   push:
     tags:
       - 'v*'
 
+concurrency:
+  group: release-windows-${{ github.ref }}-${{ github.event.inputs.version || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
-  build_windows:
-    name: Build Windows x64
+  build-windows:
+    name: Build Windows release assets
     runs-on: windows-2022
+    timeout-minutes: 60
     env:
       ELECTRON_BUILDER_HTTP_TIMEOUT: 6000000
       ELECTRON_MIRROR: 'https://npmmirror.com/mirrors/electron/'
       BUILD_PLATFORM: win32
       BUILD_ARCH: x64
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+      artifact_name: ${{ steps.version.outputs.artifact_name }}
+      draft: ${{ steps.version.outputs.draft }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+
     steps:
-      - name: Check out Git repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Node.js, NPM and Yarn
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20.14.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Resolve release version
+        id: version
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          INPUT_PRERELEASE: ${{ github.event.inputs.prerelease }}
+        run: |
+          $packageVersion = (node -p "require('./package.json').version").Trim()
+          $inputVersion = "$env:INPUT_VERSION".Trim()
+          if ($inputVersion.StartsWith("v")) {
+            $inputVersion = $inputVersion.Substring(1)
+          }
+
+          if ($env:EVENT_NAME -eq "push") {
+            $tagName = "$env:REF_NAME"
+            if (-not $tagName.StartsWith("v")) {
+              throw "Release tags must start with 'v'. Got '$tagName'."
+            }
+            $version = $tagName.Substring(1)
+            if ($version -ne $packageVersion) {
+              throw "Pushed tag '$tagName' does not match package.json version '$packageVersion'."
+            }
+            $isPrerelease = $tagName -like "*beta*"
+            $isDraft = $isPrerelease
+          } else {
+            if ($inputVersion) {
+              if ($inputVersion -ne $packageVersion) {
+                throw "Input version '$inputVersion' does not match package.json version '$packageVersion'. Update package.json first or leave version empty."
+              }
+              $version = $inputVersion
+            } else {
+              $version = $packageVersion
+            }
+
+            $tagName = "v$version"
+            $isPrerelease = "$env:INPUT_PRERELEASE" -eq "true"
+            $isDraft = $true
+          }
+
+          $artifactName = "smartsub-release-windows-$tagName"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag_name=$tagName" >> $env:GITHUB_OUTPUT
+          "artifact_name=$artifactName" >> $env:GITHUB_OUTPUT
+          "draft=$($isDraft.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "prerelease=$($isPrerelease.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          Write-Host "Release version: $version"
+          Write-Host "Release tag: $tagName"
+          Write-Host "Draft release: $isDraft"
+          Write-Host "Prerelease: $isPrerelease"
 
       - name: Download Windows addon
         shell: pwsh
@@ -38,74 +122,172 @@ jobs:
           node scripts/inject-build-info.js
 
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: npm ci
+
+      - name: Verify Japanese defaults
+        run: npm run verify:japanese
+
+      - name: Verify transcription providers
+        run: npm run verify:transcription
+
+      - name: Verify upstream issue regressions
+        run: npm run verify:upstream-issues
 
       - name: Compile application code
-        run: yarn build
+        run: npm run build
 
-      - name: Build Electron app
+      - name: Build Windows installer
         shell: pwsh
-        run: yarn run electron-builder --win --x64 --publish never
+        run: npx --no-install electron-builder --win --x64 --publish never
 
-      - name: Stage Windows artifacts
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force staging
-          Copy-Item "dist/*.exe" staging -ErrorAction SilentlyContinue
-          Copy-Item "dist/*latest*.yml" staging -ErrorAction SilentlyContinue
-          Get-ChildItem -Recurse staging
-
-      - name: Upload Windows package artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-pkg-windows-x64
-          path: staging/*.exe
-          if-no-files-found: error
-
-      - name: Upload Windows update YAML artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: update-yaml-windows-x64
-          path: staging/*latest*.yml
-          if-no-files-found: error
-
-  publish_release:
-    name: Publish GitHub Release
-    runs-on: windows-2022
-    needs: build_windows
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
-    steps:
-      - name: Download Windows build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: all_build_artifacts
-
-      - name: Prepare release assets
+      - name: Validate and checksum Windows release assets
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force final_release_assets
-          Get-ChildItem -Path all_build_artifacts -Recurse -File |
-            Where-Object { $_.Extension -eq ".exe" -or $_.Name -like "*latest*.yml" } |
-            Copy-Item -Destination final_release_assets
-          Get-ChildItem -Recurse final_release_assets
+          $artifactRoot = Join-Path $PWD "out\artifacts\windows-package"
+          New-Item -ItemType Directory -Force $artifactRoot
 
-      - name: Check if beta release
-        id: check_beta
-        shell: pwsh
-        run: |
-          if ("${{ github.ref_name }}" -like "*beta*") {
-            "is_beta=true" >> $env:GITHUB_OUTPUT
-          } else {
-            "is_beta=false" >> $env:GITHUB_OUTPUT
+          $distRoot = Join-Path $PWD "dist"
+          if (-not (Test-Path $distRoot)) {
+            throw "Electron builder output directory was not created: $distRoot"
           }
 
-      - name: Publish Release
-        uses: softprops/action-gh-release@v2
+          $installers = @(Get-ChildItem $distRoot -File -Filter "*.exe")
+          $updateYamls = @(Get-ChildItem $distRoot -File -Filter "*latest*.yml")
+
+          if ($installers.Count -ne 1) {
+            throw "Windows release assets must include exactly one installer .exe. Found $($installers.Count)."
+          }
+          if ($updateYamls.Count -ne 1) {
+            throw "Windows release assets must include exactly one update YAML matching '*latest*.yml'. Found $($updateYamls.Count)."
+          }
+
+          Copy-Item -Path $installers[0].FullName -Destination $artifactRoot
+          Copy-Item -Path $updateYamls[0].FullName -Destination $artifactRoot
+
+          Push-Location $artifactRoot
+          Get-FileHash -Algorithm SHA256 * |
+            Sort-Object Path |
+            ForEach-Object { "$($_.Hash.ToLowerInvariant())  $(Split-Path $_.Path -Leaf)" } |
+            Set-Content -Path "SHA256SUMS.txt" -Encoding utf8
+          Pop-Location
+
+          Write-Host "Windows release assets:"
+          Get-ChildItem $artifactRoot -File | Sort-Object Name | ForEach-Object { Write-Host "- $($_.Name)" }
+
+      - name: Upload Windows release assets
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          draft: ${{ steps.check_beta.outputs.is_beta == 'true' }}
-          prerelease: ${{ steps.check_beta.outputs.is_beta == 'true' }}
-          files: final_release_assets/*
+          name: ${{ steps.version.outputs.artifact_name }}
+          path: out/artifacts/windows-package/**
+          if-no-files-found: error
+          retention-days: 30
+
+  create-release:
+    name: Create GitHub release
+    runs-on: windows-2022
+    needs:
+      - build-windows
+    permissions:
+      contents: write
+    timeout-minutes: 15
+
+    steps:
+      - name: Download Windows release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-windows.outputs.artifact_name }}
+          path: out/artifacts/windows-package
+
+      - name: Ensure release does not already exist
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ needs.build-windows.outputs.tag_name }}
+        run: |
+          gh release view $env:TAG_NAME *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "GitHub release '$env:TAG_NAME' already exists."
+          }
+          Write-Host "No existing GitHub release found for '$env:TAG_NAME'."
+          exit 0
+
+      - name: Validate downloaded release assets
+        id: assets
+        shell: pwsh
+        run: |
+          $artifactRoot = Join-Path $PWD "out\artifacts\windows-package"
+          if (-not (Test-Path $artifactRoot)) {
+            throw "Downloaded Windows release artifact directory was not created: $artifactRoot"
+          }
+
+          $artifactRootPath = (Resolve-Path $artifactRoot).Path
+          $installers = @(Get-ChildItem $artifactRootPath -File -Filter "*.exe")
+          $updateYamls = @(Get-ChildItem $artifactRootPath -File -Filter "*latest*.yml")
+          $checksums = @(Get-ChildItem $artifactRootPath -File -Filter "SHA256SUMS.txt")
+
+          if ($installers.Count -ne 1) {
+            throw "Windows release assets must include exactly one installer .exe."
+          }
+          if ($updateYamls.Count -ne 1) {
+            throw "Windows release assets must include exactly one update YAML matching '*latest*.yml'."
+          }
+          if ($checksums.Count -ne 1) {
+            throw "Downloaded Windows release assets must include exactly one SHA256SUMS.txt file."
+          }
+
+          $releaseAssets = @(Get-ChildItem $artifactRootPath -File | Sort-Object FullName)
+          $assetListPath = Join-Path $PWD "release-assets.txt"
+          $releaseAssets.FullName | Set-Content -Path $assetListPath -Encoding utf8
+          "asset_list=$assetListPath" >> $env:GITHUB_OUTPUT
+
+          Write-Host "Windows release assets:"
+          $releaseAssets | ForEach-Object { Write-Host "- $($_.Name)" }
+
+      - name: Write release notes
+        shell: pwsh
+        env:
+          TAG_NAME: ${{ needs.build-windows.outputs.tag_name }}
+          RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
+        run: |
+          $notesPath = Join-Path $PWD "release-notes.md"
+          if ("$env:RELEASE_NOTES".Trim()) {
+            "$env:RELEASE_NOTES" | Set-Content -Path $notesPath -Encoding utf8
+          } else {
+            @(
+              "# SmartSub $env:TAG_NAME"
+              ""
+              "Windows installer and update metadata."
+            ) | Set-Content -Path $notesPath -Encoding utf8
+          }
+
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ needs.build-windows.outputs.tag_name }}
+          DRAFT: ${{ needs.build-windows.outputs.draft }}
+          PRERELEASE: ${{ needs.build-windows.outputs.prerelease }}
+          ASSET_LIST: ${{ steps.assets.outputs.asset_list }}
+        run: |
+          $assets = @(Get-Content $env:ASSET_LIST | Where-Object { $_.Trim() })
+          if ($assets.Count -eq 0) {
+            throw "No release assets were found."
+          }
+
+          $ghArgs = @("release", "create", $env:TAG_NAME)
+          $ghArgs += $assets
+          $ghArgs += @(
+            "--title", "SmartSub $env:TAG_NAME",
+            "--notes-file", "release-notes.md",
+            "--target", "${{ github.sha }}"
+          )
+          if ($env:DRAFT -eq "true") {
+            $ghArgs += "--draft"
+          }
+          if ($env:PRERELEASE -eq "true") {
+            $ghArgs += "--prerelease"
+          }
+
+          gh @ghArgs
