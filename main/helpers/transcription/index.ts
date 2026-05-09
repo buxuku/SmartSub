@@ -1,6 +1,8 @@
 import fs from 'fs-extra';
 import {
   DEFAULT_TRANSCRIPTION_PROVIDER,
+  normalizeTranscriptionProvider,
+  resetRemovedTranscriptionModel,
   type TranscriptionProviderId,
   type TranscriptionResult,
 } from '../../../types';
@@ -10,7 +12,6 @@ import {
 } from '../subtitleGenerator';
 import { logMessage } from '../storeManager';
 import { transcribeWithOpenRouter } from './openRouter';
-import { transcribeWithReazonSpeech } from './reazonSpeech';
 import { formatTranscriptionResultAsSrt } from './srt';
 
 export async function generateSubtitleWithTranscriptionProvider(
@@ -20,14 +21,20 @@ export async function generateSubtitleWithTranscriptionProvider(
   hasOpenAiWhisper,
   isCancellationRequested?: () => boolean,
 ): Promise<string> {
-  const provider = (formData?.transcriptionProvider ||
-    DEFAULT_TRANSCRIPTION_PROVIDER) as TranscriptionProviderId;
+  const provider = normalizeTranscriptionProvider(
+    formData?.transcriptionProvider || DEFAULT_TRANSCRIPTION_PROVIDER,
+  ) as TranscriptionProviderId;
+  const normalizedFormData = {
+    ...formData,
+    transcriptionProvider: provider,
+    model: resetRemovedTranscriptionModel(formData?.model),
+  };
 
   if (provider === 'local-whisper-command') {
     return (await generateSubtitleWithLocalWhisper(
       event,
       file,
-      formData,
+      normalizedFormData,
       isCancellationRequested,
     )) as string;
   }
@@ -36,7 +43,7 @@ export async function generateSubtitleWithTranscriptionProvider(
     return (await generateSubtitleWithBuiltinWhisper(
       event,
       file,
-      formData,
+      normalizedFormData,
       isCancellationRequested,
     )) as string;
   }
@@ -57,14 +64,7 @@ export async function generateSubtitleWithTranscriptionProvider(
   if (provider === 'openrouter') {
     result = await transcribeWithOpenRouter(
       file.tempAudioFile,
-      formData,
-      reportProgress,
-      isCancellationRequested,
-    );
-  } else if (provider === 'reazonspeech-k2') {
-    result = await transcribeWithReazonSpeech(
-      file.tempAudioFile,
-      formData,
+      normalizedFormData,
       reportProgress,
       isCancellationRequested,
     );

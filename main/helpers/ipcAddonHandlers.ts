@@ -16,10 +16,11 @@ import {
   getAddonDownloader,
   getDownloadUrl,
   getAddonFileName,
+  getAddonDownloadSourceStatus,
 } from './addonDownloader';
 import {
   fetchRemoteVersions,
-  checkAllUpdates,
+  checkAllUpdatesResult,
   getRemoteVersionInfo,
 } from './addonVersions';
 import type {
@@ -103,6 +104,12 @@ export function registerAddonIpcHandlers(): void {
     async (event, config: DownloadConfig) => {
       try {
         const downloader = getAddonDownloader(mainWindow || undefined);
+        const sourceStatus = getAddonDownloadSourceStatus(config.source);
+        if (!sourceStatus.configured) {
+          return { success: false, error: sourceStatus.error };
+        }
+
+        getDownloadUrl(config.source, config.cudaVersion, config.type);
 
         // 异步启动下载，不等待完成
         downloader
@@ -124,6 +131,15 @@ export function registerAddonIpcHandlers(): void {
           })
           .catch((error) => {
             logMessage(`Download failed: ${error}`, 'error');
+            mainWindow?.webContents.send('addon-download-progress', {
+              status: 'error',
+              progress: 0,
+              downloaded: 0,
+              total: 0,
+              speed: 0,
+              eta: 0,
+              error: String(error),
+            });
           });
 
         // 立即返回，表示下载已启动
@@ -161,13 +177,19 @@ export function registerAddonIpcHandlers(): void {
   // 检查加速包更新
   ipcMain.handle('check-addon-updates', async () => {
     try {
-      const updates = await checkAllUpdates();
-      return updates;
+      return await checkAllUpdatesResult();
     } catch (error) {
       logMessage(`Error checking addon updates: ${error}`, 'error');
-      return [];
+      return { success: false, updates: [], error: String(error) };
     }
   });
+
+  ipcMain.handle(
+    'get-addon-download-source-status',
+    async (event, source: DownloadSource = 'official') => {
+      return getAddonDownloadSourceStatus(source);
+    },
+  );
 
   // 获取远程版本信息
   ipcMain.handle('get-remote-addon-versions', async () => {

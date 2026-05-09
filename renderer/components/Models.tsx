@@ -11,7 +11,6 @@ import { useTranslation } from 'next-i18next';
 import { models } from 'lib/utils';
 import {
   apiTranscriptionModels,
-  reazonSpeechModels,
   type TranscriptionProviderId,
 } from '../../types';
 
@@ -98,18 +97,6 @@ const Models = React.forwardRef<
       return availableModels;
     }
 
-    if (transcriptionProvider === 'reazonspeech-k2') {
-      const installed = new Set(
-        modelsInstalled.map((model) => model.toLowerCase()),
-      );
-      return reazonSpeechModels
-        .filter((model) => installed.has(model.id.toLowerCase()))
-        .map((model) => ({
-          value: model.id,
-          label: model.name,
-        }));
-    }
-
     if (transcriptionProvider === 'local-whisper-command') {
       return models.map((model) => ({
         value: model.name.toLowerCase(),
@@ -117,15 +104,10 @@ const Models = React.forwardRef<
       }));
     }
 
-    const reazonIds = new Set(
-      reazonSpeechModels.map((model) => model.id.toLowerCase()),
-    );
-    return modelsInstalled
-      .filter((model) => !reazonIds.has(model.toLowerCase()))
-      .map((model) => ({
-        value: model.toLowerCase(),
-        label: model,
-      }));
+    return modelsInstalled.map((model) => ({
+      value: model.toLowerCase(),
+      label: model,
+    }));
   };
 
   const availableModels = getAvailableModels();

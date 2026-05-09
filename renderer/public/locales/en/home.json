@@ -5,14 +5,12 @@
   "transcriptionProviders": {
     "builtin-whisper": "Built-in Whisper",
     "local-whisper-command": "Local Whisper Command",
-    "openrouter": "OpenRouter GPT-4o Transcribe",
-    "reazonspeech-k2": "ReazonSpeech K2 v2 (Japanese)"
+    "openrouter": "OpenRouter GPT-4o Transcribe"
   },
   "transcriptionProviderDesc": {
     "builtin-whisper": "Use the bundled whisper.cpp runtime. A Whisper model must be downloaded first.",
     "local-whisper-command": "Call the local Whisper command configured in Settings.",
-    "openrouter": "Use OpenRouter openai/gpt-4o-transcribe. Configure the API key in Settings first.",
-    "reazonspeech-k2": "Use local ReazonSpeech K2 v2 Japanese ASR. Download the model in Model Management first."
+    "openrouter": "Use OpenRouter openai/gpt-4o-transcribe. Configure the API key in Settings first."
   },
   "translationProviders": "Translation Providers",
   "addTranslationProvider": "Add Translation Provider",

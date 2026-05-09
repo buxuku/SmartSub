@@ -406,7 +406,7 @@ export class MigrationManager {
         /^[a-f0-9]{32,}$/i, // Hex tokens
         /^sk-[a-zA-Z0-9]{20,}$/, // OpenAI-style
         /^xoxb-[a-zA-Z0-9-]+$/, // Slack tokens
-        /^ghp_[a-zA-Z0-9]{36}$/, // GitHub tokens
+        /^ghp_[a-zA-Z0-9]{36}$/, // Personal access tokens
       ];
 
       const hasValuePattern = credentialValuePatterns.some((pattern) =>

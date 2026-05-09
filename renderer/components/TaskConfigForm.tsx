@@ -28,7 +28,8 @@ import { cn } from 'lib/utils';
 import {
   apiTranscriptionModels,
   DEFAULT_TRANSCRIPTION_PROVIDER,
-  reazonSpeechModels,
+  normalizeTranscriptionProvider,
+  resetRemovedTranscriptionModel,
   transcriptionProviders,
   type TranscriptionProviderId,
 } from '../../types';
@@ -60,18 +61,6 @@ export function getTranscriptionModelOptions(
     }));
   }
 
-  if (provider === 'reazonspeech-k2') {
-    const installed = new Set(
-      modelsInstalled.map((model) => model.toLowerCase()),
-    );
-    return reazonSpeechModels
-      .filter((model) => installed.has(model.id.toLowerCase()))
-      .map((model) => ({
-        value: model.id,
-        label: model.name,
-      }));
-  }
-
   if (provider === 'local-whisper-command') {
     return whisperModels.map((model) => ({
       value: model.name.toLowerCase(),
@@ -79,25 +68,22 @@ export function getTranscriptionModelOptions(
     }));
   }
 
-  const reazonIds = new Set(
-    reazonSpeechModels.map((model) => model.id.toLowerCase()),
-  );
-  return modelsInstalled
-    .filter((model) => !reazonIds.has(model.toLowerCase()))
-    .map((model) => ({
-      value: model.toLowerCase(),
-      label: model,
-    }));
+  return modelsInstalled.map((model) => ({
+    value: model.toLowerCase(),
+    label: model,
+  }));
 }
 
 const TaskConfigForm = ({ form, formData, systemInfo }) => {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [useLocalWhisper, setUseLocalWhisper] = useState(false);
   const { taskType, sourceSrtSaveOption } = formData;
-  const activeTranscriptionProvider = (formData.transcriptionProvider ||
-    (useLocalWhisper
-      ? 'local-whisper-command'
-      : DEFAULT_TRANSCRIPTION_PROVIDER)) as TranscriptionProviderId;
+  const activeTranscriptionProvider = normalizeTranscriptionProvider(
+    formData.transcriptionProvider ||
+      (useLocalWhisper
+        ? 'local-whisper-command'
+        : DEFAULT_TRANSCRIPTION_PROVIDER),
+  ) as TranscriptionProviderId;
   const [taskTab, setTaskTab] = useState<string>('sourceSubtitle');
   const { t } = useTranslation('home');
   const { t: tCommon } = useTranslation('common');
@@ -116,13 +102,21 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
     const settings = await window?.ipc?.invoke('getSettings');
     if (settings) {
       setUseLocalWhisper(settings.useLocalWhisper || false);
-      if (!form.getValues('transcriptionProvider')) {
-        form.setValue(
-          'transcriptionProvider',
-          settings.useLocalWhisper
+      const normalizedProvider = normalizeTranscriptionProvider(
+        form.getValues('transcriptionProvider') ||
+          (settings.useLocalWhisper
             ? 'local-whisper-command'
-            : DEFAULT_TRANSCRIPTION_PROVIDER,
-        );
+            : DEFAULT_TRANSCRIPTION_PROVIDER),
+      );
+      if (normalizedProvider !== form.getValues('transcriptionProvider')) {
+        form.setValue('transcriptionProvider', normalizedProvider);
+      }
+
+      const normalizedModel = resetRemovedTranscriptionModel(
+        form.getValues('model'),
+      );
+      if (normalizedModel !== form.getValues('model')) {
+        form.setValue('model', normalizedModel);
       }
     }
   };

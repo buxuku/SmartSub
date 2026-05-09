@@ -5,16 +5,26 @@ import type {
   RemoteAddonVersions,
   CudaVersion,
   AddonUpdateInfo,
+  AddonUpdateCheckResult,
 } from '../../types/addon';
 import { getAddonConfig, getInstalledAddons } from './addonManager';
 
-/**
- * 远程版本文件 URL
- */
-const VERSIONS_URL =
-  'https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-versions.json';
-const VERSIONS_URL_PROXY =
-  'https://ghfast.top/https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-versions.json';
+const ADDON_VERSIONS_ENV = 'SMARTSUB_ADDON_VERSIONS_URL';
+const ADDON_VERSIONS_MIRROR_ENV = 'SMARTSUB_ADDON_VERSIONS_MIRROR_URL';
+
+function getConfiguredVersionsUrl(useMirror: boolean): string {
+  const envName = useMirror ? ADDON_VERSIONS_MIRROR_ENV : ADDON_VERSIONS_ENV;
+  const fallbackName = ADDON_VERSIONS_ENV;
+  const url = (process.env[envName] || process.env[fallbackName] || '').trim();
+
+  if (!url) {
+    throw new Error(
+      `Remote addon version source is not configured. Set ${envName}.`,
+    );
+  }
+
+  return url;
+}
 
 /**
  * 缓存的远程版本信息
@@ -34,9 +44,8 @@ export async function fetchRemoteVersions(
     return cachedVersions;
   }
 
-  const url = useProxy ? VERSIONS_URL_PROXY : VERSIONS_URL;
-
   try {
+    const url = getConfiguredVersionsUrl(useProxy);
     const content = await fetchJson(url);
     cachedVersions = content as RemoteAddonVersions;
     lastFetchTime = Date.now();
@@ -181,17 +190,41 @@ export async function checkVersionUpdate(
  * 检查所有已安装版本的更新
  */
 export async function checkAllUpdates(): Promise<AddonUpdateInfo[]> {
+  const result = await checkAllUpdatesResult();
+  return result.success ? result.updates : [];
+}
+
+export async function checkAllUpdatesResult(): Promise<AddonUpdateCheckResult> {
   const installed = getInstalledAddons();
   const updates: AddonUpdateInfo[] = [];
+  const remoteVersions = await fetchRemoteVersions();
 
-  for (const { version } of installed) {
-    const updateInfo = await checkVersionUpdate(version);
-    if (updateInfo) {
-      updates.push(updateInfo);
-    }
+  if (!remoteVersions) {
+    return {
+      success: false,
+      updates,
+      error: 'Remote addon version source is not configured or unavailable.',
+    };
   }
 
-  return updates;
+  for (const { version, info: installedInfo } of installed) {
+    const remoteInfo = remoteVersions[version];
+    if (!installedInfo || !remoteInfo) {
+      continue;
+    }
+
+    const normalizedRemote = normalizeVersion(remoteInfo.version);
+    const normalizedLocal = normalizeVersion(installedInfo.remoteVersion);
+    updates.push({
+      cudaVersion: version,
+      hasUpdate: normalizedRemote > normalizedLocal,
+      localVersion: installedInfo.remoteVersion,
+      remoteVersion: remoteInfo.version,
+      updateNotes: remoteInfo.updateNotes,
+    });
+  }
+
+  return { success: true, updates };
 }
 
 /**

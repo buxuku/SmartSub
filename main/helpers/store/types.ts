@@ -33,10 +33,6 @@ export type StoreType = {
     openRouterTranscriptionModel?: string;
     openRouterSiteUrl?: string;
     openRouterAppName?: string;
-    reazonSpeechPythonCommand?: string;
-    reazonSpeechDevice?: string;
-    reazonSpeechPrecision?: string;
-    reazonSpeechLanguage?: string;
   };
   providerVersion?: number;
   logs: LogEntry[];

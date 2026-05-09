@@ -151,7 +151,16 @@ export interface DownloadProgress {
 /**
  * 下载源类型
  */
-export type DownloadSource = 'github' | 'ghproxy';
+export type DownloadSource = 'official' | 'mirror';
+
+export interface AddonDownloadSourceStatus {
+  source: DownloadSource;
+  configured: boolean;
+  envName: string;
+  fallbackEnvName: string;
+  baseUrl?: string;
+  error?: string;
+}
 
 /**
  * 下载配置
@@ -179,6 +188,12 @@ export interface AddonUpdateInfo {
   remoteVersion: string;
   /** 更新说明 */
   updateNotes?: string;
+}
+
+export interface AddonUpdateCheckResult {
+  success: boolean;
+  updates: AddonUpdateInfo[];
+  error?: string;
 }
 
 /**

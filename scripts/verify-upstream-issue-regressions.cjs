@@ -56,11 +56,6 @@ assertMatches(
   /transcribeWithOpenRouter\([\s\S]*reportProgress[\s\S]*\);/,
   'OpenRouter transcription should receive a progress callback.',
 );
-assertMatches(
-  transcriptionIndex,
-  /transcribeWithReazonSpeech\([\s\S]*reportProgress[\s\S]*\);/,
-  'ReazonSpeech transcription should receive a progress callback.',
-);
 
 const openRouter = read('main/helpers/transcription/openRouter.ts');
 assertIncludes(
@@ -79,21 +74,44 @@ assertIncludes(
   'OpenRouter adapter should stop between chunks when a task is cancelled.',
 );
 
-const reazon = read('main/helpers/transcription/reazonSpeech.ts');
+const addonDownloader = read('main/helpers/addonDownloader.ts');
 assertIncludes(
-  reazon,
-  'onProgress?: (progress: number) => void',
-  'ReazonSpeech adapter should expose chunk progress reporting.',
+  addonDownloader,
+  'getAddonDownloadSourceStatus',
+  'Addon downloader should expose source preflight status before starting downloads.',
+);
+
+const addonIpc = read('main/helpers/ipcAddonHandlers.ts');
+assertIncludes(
+  addonIpc,
+  'get-addon-download-source-status',
+  'Addon IPC should let the renderer query whether automatic addon downloads are configured.',
 );
 assertIncludes(
-  reazon,
-  'runReazonPython(modelDir, [chunkPath])',
-  'ReazonSpeech should process chunks incrementally so progress can update.',
+  addonIpc,
+  'addon-download-progress',
+  'Addon IPC should surface asynchronous download failures back to the renderer progress channel.',
+);
+
+const addonVersions = read('main/helpers/addonVersions.ts');
+assertIncludes(
+  addonVersions,
+  'checkAllUpdatesResult',
+  'Addon update checks should return structured failure details instead of looking like no updates.',
+);
+
+const gpuAccelerationCard = read(
+  'renderer/components/settings/GpuAccelerationCard.tsx',
 );
 assertIncludes(
-  reazon,
-  'throwIfReazonCancelled',
-  'ReazonSpeech adapter should stop between chunks when a task is cancelled.',
+  gpuAccelerationCard,
+  'addonDownloadSourceStatus',
+  'GPU acceleration UI should know whether the selected addon download source is configured.',
+);
+assertIncludes(
+  gpuAccelerationCard,
+  'result?.success',
+  'GPU acceleration UI should not toast download started unless IPC reports success.',
 );
 
 const subtitleGenerator = read('main/helpers/subtitleGenerator.ts');

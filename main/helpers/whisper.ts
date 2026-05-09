@@ -18,10 +18,6 @@ import {
   isAddonInstalled,
   getCustomAddonPath,
 } from './addonManager';
-import {
-  REAZON_SPEECH_K2_V2_FILES,
-  REAZON_SPEECH_K2_V2_MODEL,
-} from '../../types';
 
 export const getPath = (key?: string) => {
   const userDataPath = app.getPath('userData');
@@ -52,15 +48,6 @@ export const getModelsInstalled = () => {
       model.replace('ggml-', '').replace('.bin', ''),
     );
 
-    const reazonModelDir = path.join(modelsPath, REAZON_SPEECH_K2_V2_MODEL);
-    if (
-      REAZON_SPEECH_K2_V2_FILES.every((file) =>
-        fs.existsSync(path.join(reazonModelDir, file)),
-      )
-    ) {
-      installedModels.push(REAZON_SPEECH_K2_V2_MODEL);
-    }
-
     return installedModels;
   } catch (e) {
     return [];
@@ -69,18 +56,6 @@ export const getModelsInstalled = () => {
 
 export const deleteModel = async (model) => {
   const modelsPath = getPath('modelsPath');
-  if (model === REAZON_SPEECH_K2_V2_MODEL) {
-    return new Promise((resolve, reject) => {
-      try {
-        fs.removeSync(path.join(modelsPath, REAZON_SPEECH_K2_V2_MODEL));
-        resolve('ok');
-      } catch (error) {
-        console.error('删除 ReazonSpeech 模型失败:', error);
-        reject(error);
-      }
-    });
-  }
-
   const modelPath = path.join(modelsPath, `ggml-${model}.bin`);
   const coreMLModelPath = path.join(
     modelsPath,

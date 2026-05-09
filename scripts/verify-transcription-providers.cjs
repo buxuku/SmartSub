@@ -36,18 +36,8 @@ assertIncludes(
 );
 assertIncludes(
   transcriptionTypes,
-  "'reazonspeech-k2'",
-  'ReazonSpeech K2 should be a first-class transcription provider.',
-);
-assertIncludes(
-  transcriptionTypes,
   'openai/gpt-4o-transcribe',
   'OpenRouter GPT-4o Transcribe model should be in the catalog.',
-);
-assertIncludes(
-  transcriptionTypes,
-  'reazonspeech-k2-v2',
-  'ReazonSpeech K2 v2 model should be in the catalog.',
 );
 
 assertFile(
@@ -59,10 +49,6 @@ assertFile(
   'OpenRouter transcription adapter should exist.',
 );
 assertFile(
-  'main/helpers/transcription/reazonSpeech.ts',
-  'ReazonSpeech K2 transcription adapter should exist.',
-);
-assertFile(
   'main/helpers/transcription/srt.ts',
   'Shared SRT formatting helpers should exist.',
 );
@@ -71,7 +57,7 @@ const openRouter = read('main/helpers/transcription/openRouter.ts');
 assertIncludes(
   openRouter,
   'https://openrouter.ai/api/v1/audio/transcriptions',
-  'OpenRouter adapter should use the official transcription endpoint.',
+  'OpenRouter adapter should use the official STT transcription endpoint.',
 );
 assertIncludes(
   openRouter,
@@ -91,7 +77,7 @@ assertIncludes(
 assertIncludes(
   openRouter,
   'output_modalities=transcription',
-  'OpenRouter model discovery should be scoped to transcription models.',
+  'OpenRouter model discovery should query transcription-capable models.',
 );
 assertIncludes(
   openRouter,
@@ -105,8 +91,13 @@ assertIncludes(
 );
 assertIncludes(
   openRouter,
-  'makeApproximateSegments',
-  'OpenRouter adapter should build chunk-offset subtitle segments instead of a single whole-file estimate.',
+  'silencedetect',
+  'OpenRouter adapter should split audio on detected silence instead of fixed-time cuts only.',
+);
+assertIncludes(
+  openRouter,
+  'speechWindows',
+  'OpenRouter adapter should use speech windows to refine subtitle timing inside chunks.',
 );
 assertIncludes(
   openRouter,
@@ -119,65 +110,11 @@ assertIncludes(
   'OpenRouter adapter should preserve generation ids in error/debug context.',
 );
 
-const reazon = read('main/helpers/transcription/reazonSpeech.ts');
-assertIncludes(
-  reazon,
-  'reazonspeech.k2.asr',
-  'Reazon adapter should use the official ReazonSpeech K2 Python interface.',
-);
-assertIncludes(
-  reazon,
-  'sherpa_onnx.OfflineRecognizer.from_transducer',
-  'Reazon adapter should load SmartSub-downloaded ONNX files directly.',
-);
-assertIncludes(
-  reazon,
-  'encoder-epoch-99-avg-1.int8.onnx',
-  'Reazon adapter should support the official int8 K2 v2 file layout.',
-);
-assertIncludes(
-  reazon,
-  'reazonspeech-k2-v2',
-  'Reazon adapter should require the K2 v2 model.',
-);
-assertIncludes(
-  reazon,
-  'REAZON_K2_MAX_SEGMENT_SECONDS',
-  'Reazon adapter should encode the official short-segment constraint.',
-);
-assertIncludes(
-  reazon,
-  'ensureReazonSpeechRuntimeReady',
-  'Reazon adapter should preflight Python package readiness before transcription.',
-);
-assertIncludes(
-  reazon,
-  'importlib.import_module',
-  'Reazon preflight should verify required Python modules are importable.',
-);
-assertIncludes(
-  reazon,
-  'offsetSeconds',
-  'Reazon segment offsets should be based on actual chunk duration.',
-);
-
 const subtitleGenerator = read('main/helpers/fileProcessor.ts');
 assertIncludes(
   subtitleGenerator,
   'generateSubtitleWithTranscriptionProvider',
   'Subtitle generation should dispatch through the transcription provider framework.',
-);
-
-const modelDownloader = read('main/helpers/modelDownloader.ts');
-assertIncludes(
-  modelDownloader,
-  'downloadReazonSpeechModel',
-  'Model downloader should support ReazonSpeech model downloads.',
-);
-assertIncludes(
-  modelDownloader,
-  'reazonspeech-k2-v2',
-  'Model downloader should know the ReazonSpeech K2 v2 model id.',
 );
 
 const taskConfig = read('renderer/components/TaskConfigForm.tsx');
@@ -226,6 +163,31 @@ assertIncludes(
   settings,
   'openRouterApiKey',
   'Settings UI should expose OpenRouter API key for transcription.',
+);
+const removedProviderStem = 'rea' + 'zonSpeech';
+assertNotIncludes(
+  settings,
+  removedProviderStem,
+  'Settings UI should no longer expose removed local provider settings.',
+);
+
+const userConfig = read('main/helpers/userConfig.ts');
+assertIncludes(
+  userConfig,
+  'normalizeTranscriptionProvider',
+  'User config should normalize removed or unknown transcription providers.',
+);
+assertIncludes(
+  userConfig,
+  'resetRemovedTranscriptionModel',
+  'User config should reset removed transcription model ids during migration.',
+);
+
+const transcriptionIndex = read('main/helpers/transcription/index.ts');
+assertIncludes(
+  transcriptionIndex,
+  'normalizeTranscriptionProvider',
+  'Transcription execution should guard against stale removed provider ids.',
 );
 
 console.log('Transcription provider checks passed.');

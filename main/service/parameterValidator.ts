@@ -504,7 +504,7 @@ export class ParameterValidator {
       /^[a-f0-9]{32,}$/i, // Hex patterns (API keys, tokens)
       /^sk-[a-zA-Z0-9]{20,}$/, // OpenAI-style API keys
       /^xoxb-[a-zA-Z0-9-]+$/, // Slack bot tokens
-      /^ghp_[a-zA-Z0-9]{36}$/, // GitHub personal access tokens
+      /^ghp_[a-zA-Z0-9]{36}$/, // Personal access tokens
     ];
 
     const suspiciousKeyWords = [

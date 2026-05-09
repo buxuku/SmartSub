@@ -1,6 +1,6 @@
-appId: com.example.smartsub
+appId: app.smartsub.desktop
 productName: SmartSub
-copyright: Copyright © 2024 buxuku
+copyright: Copyright © 2026 SmartSub
 directories:
   output: dist
   buildResources: resources

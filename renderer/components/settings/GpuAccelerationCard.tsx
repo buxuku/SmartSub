@@ -36,18 +36,17 @@ import {
   CloudDownload,
   FolderOpen,
   FileCode,
-  ExternalLink,
   Info,
   X,
   Package,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { openUrl } from '@/lib/utils';
 import type {
   CudaEnvironment,
   DownloadProgress,
   CudaVersion,
   DownloadSource,
+  AddonDownloadSourceStatus,
   AddonUpdateInfo,
 } from '../../../types/addon';
 
@@ -83,7 +82,9 @@ const GpuAccelerationCard: React.FC = () => {
   const [downloadProgress, setDownloadProgress] =
     useState<DownloadProgress | null>(null);
   const [downloadSource, setDownloadSource] =
-    useState<DownloadSource>('github');
+    useState<DownloadSource>('official');
+  const [addonDownloadSourceStatus, setAddonDownloadSourceStatus] =
+    useState<AddonDownloadSourceStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [updates, setUpdates] = useState<AddonUpdateInfo[]>([]);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
@@ -144,6 +145,49 @@ const GpuAccelerationCard: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    let mounted = true;
+    const statusRequest = window?.ipc?.invoke(
+      'get-addon-download-source-status',
+      downloadSource,
+    );
+
+    if (!statusRequest) {
+      setAddonDownloadSourceStatus({
+        source: downloadSource,
+        configured: false,
+        envName: '',
+        fallbackEnvName: '',
+        error: t('gpuAcceleration.downloadSourceNotConfigured'),
+      });
+      return () => {
+        mounted = false;
+      };
+    }
+
+    statusRequest
+      .then((status: AddonDownloadSourceStatus) => {
+        if (mounted) {
+          setAddonDownloadSourceStatus(status);
+        }
+      })
+      .catch((error) => {
+        if (mounted) {
+          setAddonDownloadSourceStatus({
+            source: downloadSource,
+            configured: false,
+            envName: '',
+            fallbackEnvName: '',
+            error: String(error),
+          });
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [downloadSource, t]);
 
   // 单独监听下载进度
   useEffect(() => {
@@ -261,15 +305,30 @@ const GpuAccelerationCard: React.FC = () => {
 
     const downloadType =
       forceType ?? (cudaEnv?.recommendation.needsDlls ? 'tar.gz' : 'node.gz');
+
+    if (addonDownloadSourceStatus && !addonDownloadSourceStatus.configured) {
+      toast.error(
+        addonDownloadSourceStatus.error ||
+          t('gpuAcceleration.downloadSourceNotConfigured'),
+      );
+      return;
+    }
+
     setDownloadingVersion(version);
     downloadingVersionRef.current = version;
 
     try {
-      await window?.ipc?.invoke('start-addon-download', {
+      const result = await window?.ipc?.invoke('start-addon-download', {
         source: downloadSource,
         cudaVersion: version,
         type: downloadType,
       });
+      if (!result?.success) {
+        toast.error(result?.error || t('gpuAcceleration.downloadFailed'));
+        setDownloadingVersion(null);
+        downloadingVersionRef.current = null;
+        return;
+      }
       toast.info(t('gpuAcceleration.downloadStarted'));
     } catch (error) {
       toast.error(t('gpuAcceleration.downloadFailed'));
@@ -306,7 +365,13 @@ const GpuAccelerationCard: React.FC = () => {
   const handleCheckUpdates = async () => {
     setCheckingUpdates(true);
     try {
-      const updateInfo = await window?.ipc?.invoke('check-addon-updates');
+      const result = await window?.ipc?.invoke('check-addon-updates');
+      if (result && !Array.isArray(result) && !result.success) {
+        toast.error(result.error || t('gpuAcceleration.checkUpdatesFailed'));
+        setUpdates([]);
+        return;
+      }
+      const updateInfo = Array.isArray(result) ? result : result?.updates || [];
       setUpdates(updateInfo || []);
       const hasUpdates = updateInfo?.some((u: AddonUpdateInfo) => u.hasUpdate);
       if (hasUpdates) {
@@ -595,6 +660,7 @@ const GpuAccelerationCard: React.FC = () => {
     );
     const isDownloading = isVersionDownloading(version);
     const canSelect = installed && !isDownloading;
+    const canDownloadAddon = !!addonDownloadSourceStatus?.configured;
 
     return (
       <div
@@ -706,7 +772,7 @@ const GpuAccelerationCard: React.FC = () => {
                     e.stopPropagation();
                     handleUpdateAddon(version);
                   }}
-                  disabled={!!downloadingVersion}
+                  disabled={!!downloadingVersion || !canDownloadAddon}
                 >
                   <RefreshCw className="w-3 h-3 mr-1" />
                   {t('gpuAcceleration.update')}
@@ -729,7 +795,7 @@ const GpuAccelerationCard: React.FC = () => {
                         : 'tar.gz';
                       handleDownload(version, targetType);
                     }}
-                    disabled={!!downloadingVersion}
+                    disabled={!!downloadingVersion || !canDownloadAddon}
                     title={
                       versionInfo?.info.hasDlls
                         ? t('gpuAcceleration.switchToLite')
@@ -807,7 +873,7 @@ const GpuAccelerationCard: React.FC = () => {
                       e.stopPropagation();
                       handleDownload(version);
                     }}
-                    disabled={!!downloadingVersion}
+                    disabled={!!downloadingVersion || !canDownloadAddon}
                   >
                     <Download className="w-3 h-3 mr-1" />
                     {t('gpuAcceleration.download')}
@@ -821,7 +887,7 @@ const GpuAccelerationCard: React.FC = () => {
                         e.stopPropagation();
                         handleDownload(version, 'tar.gz');
                       }}
-                      disabled={!!downloadingVersion}
+                      disabled={!!downloadingVersion || !canDownloadAddon}
                       title={t('gpuAcceleration.downloadFullTip')}
                     >
                       <Package className="w-3 h-3 mr-1" />
@@ -897,9 +963,11 @@ const GpuAccelerationCard: React.FC = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="github">GitHub</SelectItem>
-                    <SelectItem value="ghproxy">
-                      {t('gpuAcceleration.ghProxy')}
+                    <SelectItem value="official">
+                      {t('gpuAcceleration.officialSource')}
+                    </SelectItem>
+                    <SelectItem value="mirror">
+                      {t('gpuAcceleration.mirrorSource')}
                     </SelectItem>
                   </SelectContent>
                 </Select>
@@ -925,6 +993,16 @@ const GpuAccelerationCard: React.FC = () => {
               {renderDisabledCard()}
               {AVAILABLE_VERSIONS.map((version) => renderVersionCard(version))}
             </div>
+
+            {addonDownloadSourceStatus &&
+              !addonDownloadSourceStatus.configured && (
+                <div className="flex items-start gap-2 p-2.5 bg-muted/50 rounded-md mt-4 border border-dashed">
+                  <Info className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                  <span className="text-[11px] text-muted-foreground">
+                    {t('gpuAcceleration.downloadSourceNotConfigured')}
+                  </span>
+                </div>
+              )}
 
             {/* 下载进度 */}
             {renderDownloadProgress()}
@@ -956,18 +1034,6 @@ const GpuAccelerationCard: React.FC = () => {
                     {t('gpuAcceleration.customAddonPath')}
                   </h4>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    openUrl(
-                      'https://github.com/buxuku/whisper.cpp/releases/tag/latest',
-                    )
-                  }
-                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline cursor-pointer"
-                >
-                  <ExternalLink className="w-3 h-3" />
-                  {t('gpuAcceleration.downloadPackageUrl')}
-                </button>
               </div>
 
               {/* 提示信息 */}

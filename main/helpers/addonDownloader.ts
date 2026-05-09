@@ -7,6 +7,7 @@ import * as zlib from 'zlib';
 import * as tar from 'tar';
 import { logMessage } from './storeManager';
 import type {
+  AddonDownloadSourceStatus,
   DownloadProgress,
   DownloadState,
   DownloadSource,
@@ -16,14 +17,55 @@ import type {
 import { getEffectivePlatform } from './cudaUtils';
 import { createHash } from 'crypto';
 
-/**
- * 下载源配置
- */
-const DOWNLOAD_SOURCES: Record<DownloadSource, string> = {
-  github: 'https://github.com/buxuku/whisper.cpp/releases/download/latest/',
-  ghproxy:
-    'https://ghfast.top/https://github.com/buxuku/whisper.cpp/releases/download/latest/',
+const DOWNLOAD_SOURCE_ENV: Record<DownloadSource, string> = {
+  official: 'SMARTSUB_ADDON_RELEASE_BASE_URL',
+  mirror: 'SMARTSUB_ADDON_RELEASE_MIRROR_BASE_URL',
 };
+
+function normalizeBaseUrl(value?: string): string {
+  const trimmed = (value || '').trim();
+  if (!trimmed) {
+    return '';
+  }
+  return trimmed.endsWith('/') ? trimmed : `${trimmed}/`;
+}
+
+function getDownloadBaseUrl(source: DownloadSource): string {
+  const status = getAddonDownloadSourceStatus(source);
+  if (!status.configured || !status.baseUrl) {
+    throw new Error(status.error);
+  }
+
+  return status.baseUrl;
+}
+
+export function getAddonDownloadSourceStatus(
+  source: DownloadSource,
+): AddonDownloadSourceStatus {
+  const envName = DOWNLOAD_SOURCE_ENV[source];
+  const fallbackEnvName = DOWNLOAD_SOURCE_ENV.official;
+  const baseUrl =
+    normalizeBaseUrl(process.env[envName]) ||
+    normalizeBaseUrl(process.env[fallbackEnvName]);
+
+  if (!baseUrl) {
+    return {
+      source,
+      configured: false,
+      envName,
+      fallbackEnvName,
+      error: `Acceleration package download source is not configured. Set ${envName}.`,
+    };
+  }
+
+  return {
+    source,
+    configured: true,
+    envName,
+    fallbackEnvName,
+    baseUrl,
+  };
+}
 
 /**
  * 获取下载状态文件路径
@@ -101,7 +143,7 @@ export function getDownloadUrl(
   cudaVersion: CudaVersion,
   downloadType: 'node.gz' | 'tar.gz',
 ): string {
-  const baseUrl = DOWNLOAD_SOURCES[source];
+  const baseUrl = getDownloadBaseUrl(source);
   const fileName = getAddonFileName(cudaVersion, downloadType);
   return `${baseUrl}${fileName}`;
 }

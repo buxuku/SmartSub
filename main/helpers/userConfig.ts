@@ -1,21 +1,31 @@
 import { store } from './store';
 import { defaultUserConfig } from './utils';
-import { DEFAULT_TRANSCRIPTION_PROVIDER } from '../../types';
+import {
+  DEFAULT_TRANSCRIPTION_PROVIDER,
+  normalizeTranscriptionProvider,
+  resetRemovedTranscriptionModel,
+} from '../../types';
 
 const JAPANESE_DEFAULTS_MIGRATED = 'japaneseDefaultsMigrated';
 
 export function getUserConfigWithJapaneseDefaults(): Record<string, any> {
   const storedConfig = store.get('userConfig') || {};
-  const settings = store.get('settings') || {};
+  const settings = (store.get('settings') || {}) as Record<string, any>;
+  const rawProvider =
+    storedConfig.transcriptionProvider ||
+    (settings.useLocalWhisper
+      ? 'local-whisper-command'
+      : DEFAULT_TRANSCRIPTION_PROVIDER);
+  const normalizedProvider = normalizeTranscriptionProvider(rawProvider);
   const mergedConfig = {
     ...defaultUserConfig,
     ...storedConfig,
-    transcriptionProvider:
-      storedConfig.transcriptionProvider ||
-      (settings.useLocalWhisper
-        ? 'local-whisper-command'
-        : DEFAULT_TRANSCRIPTION_PROVIDER),
+    transcriptionProvider: normalizedProvider,
+    model: resetRemovedTranscriptionModel(storedConfig.model),
   };
+  const didNormalizeConfig =
+    rawProvider !== normalizedProvider ||
+    storedConfig.model !== mergedConfig.model;
 
   if (
     !settings[JAPANESE_DEFAULTS_MIGRATED] &&
@@ -35,6 +45,10 @@ export function getUserConfigWithJapaneseDefaults(): Record<string, any> {
     });
 
     return migratedConfig;
+  }
+
+  if (didNormalizeConfig) {
+    store.set('userConfig', mergedConfig);
   }
 
   return mergedConfig;

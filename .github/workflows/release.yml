@@ -37,6 +37,7 @@ jobs:
       ELECTRON_MIRROR: 'https://npmmirror.com/mirrors/electron/'
       BUILD_PLATFORM: win32
       BUILD_ARCH: x64
+      WINDOWS_ADDON_URL: ${{ vars.WINDOWS_ADDON_URL }}
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag_name: ${{ steps.version.outputs.tag_name }}
@@ -110,9 +111,12 @@ jobs:
       - name: Download Windows addon
         shell: pwsh
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_ADDON_URL)) {
+            throw "WINDOWS_ADDON_URL repository variable is required for Windows release builds."
+          }
           New-Item -ItemType Directory -Force temp-artifacts
           Invoke-WebRequest `
-            -Uri "https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-windows-x64.node" `
+            -Uri "$env:WINDOWS_ADDON_URL" `
             -OutFile "temp-artifacts/addon-windows-x64.node"
 
       - name: Prepare Windows addon
@@ -183,7 +187,7 @@ jobs:
           retention-days: 30
 
   create-release:
-    name: Create GitHub release
+    name: Create release
     runs-on: windows-2022
     needs:
       - build-windows
@@ -207,9 +211,9 @@ jobs:
         run: |
           gh release view $env:TAG_NAME *> $null
           if ($LASTEXITCODE -eq 0) {
-            throw "GitHub release '$env:TAG_NAME' already exists."
+            throw "Release '$env:TAG_NAME' already exists."
           }
-          Write-Host "No existing GitHub release found for '$env:TAG_NAME'."
+          Write-Host "No existing release found for '$env:TAG_NAME'."
           exit 0
 
       - name: Validate downloaded release assets
@@ -261,7 +265,7 @@ jobs:
             ) | Set-Content -Path $notesPath -Encoding utf8
           }
 
-      - name: Create GitHub release
+      - name: Create release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -7,10 +7,6 @@ import decompress from 'decompress';
 import { logMessage } from './storeManager';
 import { getPath } from './whisper';
 import { isAppleSilicon } from './utils';
-import {
-  REAZON_SPEECH_K2_V2_FILES,
-  REAZON_SPEECH_K2_V2_MODEL,
-} from '../../types';
 
 export interface ModelDownloadProgress {
   status: 'idle' | 'downloading' | 'extracting' | 'completed' | 'error';
@@ -154,10 +150,6 @@ export class ModelDownloader {
     source: string,
     needsCoreML: boolean,
   ): Promise<boolean> {
-    if (model === REAZON_SPEECH_K2_V2_MODEL) {
-      return this.downloadReazonSpeechModel(model, source);
-    }
-
     const modelsPath = getPath('modelsPath') as string;
     const modelPath = path.join(modelsPath, `ggml-${model}.bin`);
     const coreMLModelPath = path.join(
@@ -285,103 +277,6 @@ export class ModelDownloader {
         };
       }
 
-      this.sendFinalProgress(model, 1);
-      logMessage(`Model ${model} download failed: ${errorMessage}`, 'error');
-      this.currentModel = null;
-      throw error;
-    }
-  }
-
-  async downloadReazonSpeechModel(
-    model: string,
-    source: string,
-  ): Promise<boolean> {
-    const modelsPath = getPath('modelsPath') as string;
-    const modelDir = path.join(modelsPath, model);
-    const baseUrl = `https://${
-      source === 'huggingface' ? 'huggingface.co' : 'hf-mirror.com'
-    }/reazon-research/reazonspeech-k2-v2/resolve/main`;
-
-    if (model !== REAZON_SPEECH_K2_V2_MODEL) {
-      throw new Error(`Unsupported ReazonSpeech model: ${model}`);
-    }
-
-    fs.mkdirSync(modelDir, { recursive: true });
-
-    const missingFiles = REAZON_SPEECH_K2_V2_FILES.filter(
-      (file) => !fs.existsSync(path.join(modelDir, file)),
-    );
-
-    if (missingFiles.length === 0) {
-      return true;
-    }
-
-    this.currentModel = model;
-    this.abortController = new AbortController();
-    this.lastSpeedCalcTime = Date.now();
-    this.lastSpeedCalcBytes = 0;
-    this.updateProgress({
-      status: 'downloading',
-      progress: 0,
-      downloaded: 0,
-      total: 0,
-      speed: 0,
-      eta: 0,
-      error: undefined,
-    });
-
-    try {
-      for (const file of missingFiles) {
-        const url = `${baseUrl}/${file}`;
-        const destPath = path.join(modelDir, file);
-        const tempPath = `${destPath}.download`;
-        const existingState = readDownloadState();
-        let startByte = 0;
-
-        if (
-          existingState &&
-          existingState.url === url &&
-          existingState.model === model &&
-          existingState.tempPath === tempPath &&
-          fs.existsSync(existingState.tempPath)
-        ) {
-          startByte = fs.statSync(existingState.tempPath).size;
-          if (existingState.total > 0 && startByte >= existingState.total) {
-            fs.renameSync(tempPath, destPath);
-            saveDownloadState(null);
-            continue;
-          }
-        } else if (fs.existsSync(tempPath)) {
-          fs.unlinkSync(tempPath);
-        }
-        logMessage(`Downloading ReazonSpeech K2 v2 file: ${file}`, 'info');
-        await this.downloadFile(url, tempPath, startByte, model);
-        fs.renameSync(tempPath, destPath);
-        saveDownloadState(null);
-      }
-
-      this.currentProgress = {
-        ...this.currentProgress,
-        status: 'completed',
-        progress: 100,
-        speed: 0,
-        eta: 0,
-      };
-      this.sendFinalProgress(model, 1);
-      logMessage(`Model ${model} download completed`, 'info');
-      this.currentModel = null;
-      return true;
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-
-      this.currentProgress = {
-        ...this.currentProgress,
-        status: errorMessage === 'Download cancelled' ? 'idle' : 'error',
-        error: errorMessage,
-        speed: 0,
-        eta: 0,
-      };
       this.sendFinalProgress(model, 1);
       logMessage(`Model ${model} download failed: ${errorMessage}`, 'error');
       this.currentModel = null;

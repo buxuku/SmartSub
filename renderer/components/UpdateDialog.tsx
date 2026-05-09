@@ -10,8 +10,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Copy, Check, Download, ExternalLink } from 'lucide-react';
-import { openUrl } from 'lib/utils';
+import { Download } from 'lucide-react';
 import packageInfo from '../../package.json';
 
 interface UpdateDialogProps {
@@ -39,14 +38,6 @@ function parseReleaseNotes(html: string): string {
   return html;
 }
 
-// 检测是否为 Mac 平台
-function isMacPlatform(): boolean {
-  if (typeof navigator !== 'undefined') {
-    return navigator.userAgent.includes('Mac');
-  }
-  return false;
-}
-
 export function UpdateDialog({
   open,
   onOpenChange,
@@ -54,42 +45,20 @@ export function UpdateDialog({
   releaseNotes,
 }: UpdateDialogProps) {
   const { t } = useTranslation('common');
-  const [copied, setCopied] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  const isMac = useMemo(() => isMacPlatform(), []);
   const parsedReleaseNotes = useMemo(
     () => parseReleaseNotes(releaseNotes),
     [releaseNotes],
   );
-
-  const brewCommand = 'brew upgrade --cask smartsub';
-
-  const handleCopyCommand = async () => {
-    try {
-      await navigator.clipboard.writeText(brewCommand);
-      setCopied(true);
-      toast.success(t('copied'));
-      setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.error('Failed to copy command:', error);
-      toast.error(t('copyFailed'));
-    }
-  };
 
   const handleDownload = async () => {
     setIsDownloading(true);
     try {
       const result = await window?.ipc?.invoke('download-update');
       if (result?.success) {
-        if (result.manualDownload) {
-          // Mac 平台会打开 GitHub 页面
-          onOpenChange(false);
-        } else {
-          // Windows 平台开始下载
-          toast.success(t('downloadingUpdate'));
-          onOpenChange(false);
-        }
+        toast.success(t('downloadingUpdate'));
+        onOpenChange(false);
       } else if (result?.error) {
         toast.error(t('updateDownloadError'), {
           description: result.error,
@@ -101,11 +70,6 @@ export function UpdateDialog({
     } finally {
       setIsDownloading(false);
     }
-  };
-
-  const handleViewOnGitHub = () => {
-    const releaseUrl = `https://github.com/buxuku/SmartSub/releases/tag/v${version}`;
-    openUrl(releaseUrl);
   };
 
   return (
@@ -140,48 +104,13 @@ export function UpdateDialog({
 
         {/* Platform-specific update section */}
         <div className="space-y-3 pt-2">
-          {isMac ? (
-            // Mac Platform: Show brew command
-            <div className="space-y-2">
-              <h4 className="text-sm font-medium">{t('updateViaHomebrew')}</h4>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 rounded-md bg-muted px-3 py-2 text-sm font-mono">
-                  {brewCommand}
-                </code>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handleCopyCommand}
-                  className="shrink-0"
-                >
-                  {copied ? (
-                    <Check className="h-4 w-4 text-green-500" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            // Windows Platform: Show download button
-            <Button
-              className="w-full"
-              onClick={handleDownload}
-              disabled={isDownloading}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              {isDownloading ? t('downloadingUpdate') : t('downloadUpdate')}
-            </Button>
-          )}
-
-          {/* View on GitHub link */}
           <Button
-            variant="outline"
             className="w-full"
-            onClick={handleViewOnGitHub}
+            onClick={handleDownload}
+            disabled={isDownloading}
           >
-            <ExternalLink className="mr-2 h-4 w-4" />
-            {t('viewOnGitHub')}
+            <Download className="mr-2 h-4 w-4" />
+            {isDownloading ? t('downloadingUpdate') : t('downloadUpdate')}
           </Button>
         </div>
       </DialogContent>

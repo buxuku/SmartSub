@@ -10,7 +10,6 @@ import {
 import {
   BotIcon,
   FileVideo2,
-  Github,
   MonitorPlay,
   Languages,
   Settings,
@@ -21,7 +20,6 @@ import {
   ZapOff,
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
-import { openUrl } from 'lib/utils';
 import { useRouter } from 'next/router';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
@@ -247,19 +245,6 @@ const Layout = ({ children }) => {
         </nav>
         <nav className="mt-auto grid gap-1 p-2">
           <ThemeToggle />
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild className="w-10">
-                <Github
-                  onClick={() => openUrl('https://github.com/buxuku/SmartSub')}
-                  className="size-5 inline-block cursor-pointer"
-                />
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={5}>
-                Github
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
         </nav>
       </aside>
       <div className="flex flex-col h-screen">

@@ -10,7 +10,7 @@ autoUpdater.autoInstallOnAppQuit = true; // 应用退出时自动安装
 
 // 针对未签名应用的配置
 // autoUpdater.allowPrerelease = false; // 允许预发布版本
-autoUpdater.forceDevUpdateConfig = true; // 强制使用开发配置，绕过签名验证
+autoUpdater.forceDevUpdateConfig = false;
 // autoUpdater.allowDowngrade = true; // 允许降级安装，有助于解决某些版本问题
 
 // 日志设置
@@ -111,29 +111,6 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
       status: 'error',
       error: error.message,
     });
-
-    // 当自动更新出错时，提供手动下载选项
-    // if (process.platform === 'darwin') {
-    //   // 针对Mac平台的特殊处理
-    //   dialog
-    //     .showMessageBox(mainWindow, {
-    //       type: 'info',
-    //       title: '更新失败',
-    //       message: '自动更新失败',
-    //       detail:
-    //         '由于macOS系统限制，自动更新失败。您可以手动下载并安装最新版本。',
-    //       buttons: ['手动下载', '取消'],
-    //       cancelId: 1,
-    //     })
-    //     .then(({ response }) => {
-    //       if (response === 0) {
-    //         // 打开GitHub发布页面，让用户手动下载
-    //         const releaseUrl =
-    //           'https://github.com/buxuku/SmartSub/releases/latest';
-    //         require('electron').shell.openExternal(releaseUrl);
-    //       }
-    //     });
-    // }
   });
 
   // 设置IPC处理程序
@@ -142,12 +119,11 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
   });
 
   ipcMain.handle('download-update', async () => {
-    // 针对Mac平台的特殊处理
     if (process.platform === 'darwin') {
-      // 打开GitHub发布页面，让用户手动下载
-      const releaseUrl = 'https://github.com/buxuku/SmartSub/releases/latest';
-      require('electron').shell.openExternal(releaseUrl);
-      return { success: true, manualDownload: true };
+      return {
+        success: false,
+        error: '当前版本仅支持 Windows 自动更新下载。',
+      };
     }
 
     try {

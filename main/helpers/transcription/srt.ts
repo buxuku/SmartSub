@@ -4,6 +4,13 @@ import { promisify } from 'util';
 import { TranscriptionResult, TranscriptionSegment } from '../../../types';
 
 const execFileAsync = promisify(execFile);
+const TARGET_SUBTITLE_CHARS = 34;
+const HARD_SUBTITLE_CHARS = 56;
+
+export interface SpeechWindow {
+  start: number;
+  end: number;
+}
 
 function pad(number: number, size = 2): string {
   return String(Math.max(0, Math.floor(number))).padStart(size, '0');
@@ -94,30 +101,112 @@ function splitTranscriptionText(text: string): string[] {
     normalized,
   ];
   const chunks: string[] = [];
-  let current = '';
 
   for (const sentence of sentenceMatches) {
-    const next = `${current}${sentence}`.trim();
-    if (next.length > 42 && current) {
-      chunks.push(current.trim());
-      current = sentence.trim();
-    } else {
-      current = next;
+    const parts = splitLongSubtitleSentence(sentence.trim());
+    for (const part of parts) {
+      const previous = chunks[chunks.length - 1] || '';
+      const merged = `${previous}${part}`.trim();
+      if (previous && Array.from(merged).length <= TARGET_SUBTITLE_CHARS) {
+        chunks[chunks.length - 1] = merged;
+      } else {
+        chunks.push(part);
+      }
     }
   }
 
-  if (current) chunks.push(current.trim());
   return chunks.length > 0 ? chunks : [normalized];
+}
+
+function splitLongSubtitleSentence(sentence: string): string[] {
+  const chars = Array.from(sentence);
+  if (chars.length <= HARD_SUBTITLE_CHARS) return [sentence];
+
+  const parts: string[] = [];
+  let rest = sentence;
+
+  while (Array.from(rest).length > HARD_SUBTITLE_CHARS) {
+    const restChars = Array.from(rest);
+    const limit = Math.min(TARGET_SUBTITLE_CHARS, restChars.length);
+    const head = restChars.slice(0, limit).join('');
+    const breakAt = Math.max(
+      head.lastIndexOf('、'),
+      head.lastIndexOf('，'),
+      head.lastIndexOf(','),
+      head.lastIndexOf('；'),
+      head.lastIndexOf(';'),
+      head.lastIndexOf('：'),
+      head.lastIndexOf(':'),
+      head.lastIndexOf(' '),
+    );
+    const splitAt = breakAt >= 12 ? breakAt + 1 : limit;
+    parts.push(restChars.slice(0, splitAt).join('').trim());
+    rest = restChars.slice(splitAt).join('').trim();
+  }
+
+  if (rest) parts.push(rest);
+  return parts.filter(Boolean);
+}
+
+function normalizeSpeechWindows(
+  windows: SpeechWindow[] | undefined,
+  durationSeconds: number,
+): SpeechWindow[] {
+  const safeDuration = Math.max(durationSeconds || 0, 0);
+  if (!windows?.length || safeDuration <= 0) return [];
+
+  return windows
+    .map((window) => ({
+      start: Math.max(0, Math.min(safeDuration, window.start)),
+      end: Math.max(0, Math.min(safeDuration, window.end)),
+    }))
+    .filter((window) => window.end - window.start >= 0.2)
+    .sort((a, b) => a.start - b.start);
+}
+
+function getSpeechTimelineDuration(windows: SpeechWindow[]): number {
+  return windows.reduce(
+    (total, window) => total + Math.max(0, window.end - window.start),
+    0,
+  );
+}
+
+function mapSpeechOffsetToTime(
+  windows: SpeechWindow[],
+  offset: number,
+): number {
+  let cursor = Math.max(0, offset);
+
+  for (const window of windows) {
+    const duration = window.end - window.start;
+    if (cursor <= duration) {
+      return window.start + cursor;
+    }
+    cursor -= duration;
+  }
+
+  const last = windows[windows.length - 1];
+  return last ? last.end : 0;
 }
 
 export function makeApproximateSegments(
   text: string,
   durationSeconds: number,
+  speechWindows?: SpeechWindow[],
 ): TranscriptionSegment[] {
   const chunks = splitTranscriptionText(text);
   if (chunks.length === 0) return [];
 
   const safeDuration = Math.max(durationSeconds || chunks.length * 4, 1);
+  const normalizedSpeechWindows = normalizeSpeechWindows(
+    speechWindows,
+    safeDuration,
+  );
+  const speechTimelineDuration = getSpeechTimelineDuration(
+    normalizedSpeechWindows,
+  );
+  const timelineDuration =
+    speechTimelineDuration > 0 ? speechTimelineDuration : safeDuration;
   const totalWeight = chunks.reduce(
     (total, chunk) => total + Math.max(chunk.length, 1),
     0,
@@ -128,16 +217,25 @@ export function makeApproximateSegments(
     const isLast = index === chunks.length - 1;
     const weight = Math.max(chunk.length, 1) / totalWeight;
     const segmentDuration = isLast
-      ? Math.max(0.8, safeDuration - cursor)
-      : safeDuration * weight;
-    const start = cursor;
-    const end = isLast
-      ? safeDuration
-      : Math.max(start + 0.8, start + segmentDuration);
-    cursor = end;
+      ? Math.max(0.8, timelineDuration - cursor)
+      : timelineDuration * weight;
+    const start =
+      normalizedSpeechWindows.length > 0
+        ? mapSpeechOffsetToTime(normalizedSpeechWindows, cursor)
+        : cursor;
+    const virtualEnd = isLast
+      ? timelineDuration
+      : Math.max(cursor + 0.8, cursor + segmentDuration);
+    const end =
+      normalizedSpeechWindows.length > 0
+        ? mapSpeechOffsetToTime(normalizedSpeechWindows, virtualEnd)
+        : isLast
+          ? safeDuration
+          : virtualEnd;
+    cursor = virtualEnd;
     return {
       start,
-      end,
+      end: Math.max(end, start + 0.5),
       text: chunk,
     };
   });
