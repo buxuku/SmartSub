@@ -6,7 +6,11 @@ import { BrowserWindow, DownloadItem } from 'electron';
 import decompress from 'decompress';
 import fs from 'fs-extra';
 import { store, logMessage } from './storeManager';
-import { getEffectivePlatform, isPlatformCudaCapable } from './cudaUtils';
+import {
+  checkCudaSupport,
+  getEffectivePlatform,
+  isPlatformCudaCapable,
+} from './cudaUtils';
 import {
   getSelectedAddonVersion,
   getAddonVersionDir,
@@ -280,15 +284,17 @@ function setupLibraryPath(addonDir: string): void {
  * 1. 如果启用 CUDA 且已安装加速包，从用户数据目录加载
  * 2. 否则从 extraResources 加载默认版本
  */
-export async function loadWhisperAddon(model: string) {
+export async function loadWhisperAddon(model: string, canUseCuda?: boolean) {
   const platform = getEffectivePlatform();
   const settings = store.get('settings') || { useCuda: false };
   const useCuda = settings.useCuda || false;
+  const shouldUseCuda =
+    canUseCuda ?? (isPlatformCudaCapable() && useCuda && !!checkCudaSupport());
 
   let addonPath: string;
 
   // 检查是否是可能支持 CUDA 的平台
-  if (isPlatformCudaCapable() && useCuda) {
+  if (isPlatformCudaCapable() && shouldUseCuda) {
     // 优先检查自定义 addon.node 路径
     const customPath = getCustomAddonPath();
 
@@ -342,6 +348,12 @@ export async function loadWhisperAddon(model: string) {
         logMessage('No CUDA addon installed, using default addon', 'info');
       }
     }
+  } else if (isPlatformCudaCapable() && useCuda && !shouldUseCuda) {
+    addonPath = path.join(getExtraResourcesPath(), 'addons', 'addon.node');
+    logMessage(
+      'CUDA requested but unavailable, falling back to CPU addon',
+      'info',
+    );
   } else if (
     platform === 'darwin' &&
     isAppleSilicon() &&

@@ -9,6 +9,27 @@ import { formatSrtContent } from './fileUtils';
 import { IFiles } from '../../types';
 import { getExtraResourcesPath } from './utils';
 
+function getNumericSetting(value: unknown, defaultValue: number): number {
+  return typeof value === 'number' && isFinite(value) ? value : defaultValue;
+}
+
+function getWhisperLanguage(language?: string): string {
+  if (!language || language === 'auto') {
+    return 'auto';
+  }
+
+  const normalized = language.toLowerCase();
+  if (normalized === 'zh-hant') {
+    return 'yue';
+  }
+
+  if (normalized === 'zh-tw' || normalized === 'zh-cn') {
+    return 'zh';
+  }
+
+  return normalized;
+}
+
 /**
  * 使用本地Whisper命令行工具生成字幕
  */
@@ -23,7 +44,7 @@ export async function generateSubtitleWithLocalWhisper(event, file, formData) {
     .replace(/\${audioFile}/g, tempAudioFile)
     .replace(/\${whisperModel}/g, whisperModel)
     .replace(/\${srtFile}/g, srtFile)
-    .replace(/\${sourceLanguage}/g, sourceLanguage || 'auto')
+    .replace(/\${sourceLanguage}/g, getWhisperLanguage(sourceLanguage))
     .replace(/\${outputDir}/g, directory);
 
   runShell = runShell.replace(/("[^"]*")|(\S+)/g, (match, quoted, unquoted) => {
@@ -80,8 +101,6 @@ export async function generateSubtitleWithBuiltinWhisper(
     console.log(tempAudioFile, srtFile, file, 'tempAudioFile, srtFile');
     const { model, sourceLanguage, prompt, maxContext } = formData;
     const whisperModel = model?.toLowerCase();
-    const whisper = await loadWhisperAddon(whisperModel);
-    const whisperAsync = promisify(whisper);
     const settings = store.get('settings');
     const useCuda = settings.useCuda || false;
     const platform = process.platform;
@@ -89,11 +108,15 @@ export async function generateSubtitleWithBuiltinWhisper(
 
     // 修改 GPU 判断逻辑
     let shouldUseGpu = false;
+    let canUseCuda = false;
     if (platform === 'darwin' && arch === 'arm64') {
       shouldUseGpu = true;
     } else if ((platform === 'win32' || platform === 'linux') && useCuda) {
-      shouldUseGpu = !!(await checkCudaSupport());
+      canUseCuda = !!(await checkCudaSupport());
+      shouldUseGpu = canUseCuda;
     }
+    const whisper = await loadWhisperAddon(whisperModel, canUseCuda);
+    const whisperAsync = promisify(whisper);
     const modelPath = `${getPath('modelsPath')}/ggml-${whisperModel}.bin`;
 
     // VAD 模型路径 - 使用内置的 VAD 模型
@@ -105,15 +128,21 @@ export async function generateSubtitleWithBuiltinWhisper(
     // 获取VAD设置
     const vadSettings = {
       useVAD: settings.useVAD !== false, // 默认启用
-      vadThreshold: settings.vadThreshold || 0.5,
-      vadMinSpeechDuration: settings.vadMinSpeechDuration || 250,
-      vadMinSilenceDuration: settings.vadMinSilenceDuration || 100,
-      vadMaxSpeechDuration: settings.vadMaxSpeechDuration || Number.MAX_VALUE, // 0表示无限制
-      vadSpeechPad: settings.vadSpeechPad || 30,
-      vadSamplesOverlap: settings.vadSamplesOverlap || 0.1,
+      vadThreshold: getNumericSetting(settings.vadThreshold, 0.5),
+      vadMinSpeechDuration: getNumericSetting(
+        settings.vadMinSpeechDuration,
+        250,
+      ),
+      vadMinSilenceDuration: getNumericSetting(
+        settings.vadMinSilenceDuration,
+        100,
+      ),
+      vadMaxSpeechDuration: getNumericSetting(settings.vadMaxSpeechDuration, 0), // 0表示无限制
+      vadSpeechPad: getNumericSetting(settings.vadSpeechPad, 30),
+      vadSamplesOverlap: getNumericSetting(settings.vadSamplesOverlap, 0.1),
     };
     const whisperParams = {
-      language: sourceLanguage || 'auto',
+      language: getWhisperLanguage(sourceLanguage),
       model: modelPath,
       fname_inp: tempAudioFile,
       use_gpu: !!shouldUseGpu,
