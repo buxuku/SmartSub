@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { convertLanguageCode } from '../helpers/utils';
+import { TRANSLATION_REQUEST_TIMEOUT } from '../translate/constants';
 
 const DOUBAO_API_URL = 'https://ark.cn-beijing.volces.com/api/v3/responses';
 const DEFAULT_MODEL = 'doubao-seed-translation-250915';
@@ -54,6 +55,7 @@ export default async function translate(
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
         },
+        timeout: TRANSLATION_REQUEST_TIMEOUT,
       });
 
       // 解析响应

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { TRANSLATION_REQUEST_TIMEOUT } from '../translate/constants';
 
 interface AzureTranslateResponse {
   translations: {
@@ -49,6 +50,7 @@ const azureTranslator = async (
       params: params,
       data: requestBody,
       responseType: 'json',
+      timeout: TRANSLATION_REQUEST_TIMEOUT,
     });
     console.log(response, 'response');
 
