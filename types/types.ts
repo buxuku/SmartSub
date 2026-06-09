@@ -32,4 +32,5 @@ export interface IFormData {
   sourceLanguage: string;
   targetLanguage: string;
   translateRetryTimes: string;
+  subtitleOutputFormat?: 'srt' | 'vtt' | 'ass' | 'lrc' | 'txt';
 }

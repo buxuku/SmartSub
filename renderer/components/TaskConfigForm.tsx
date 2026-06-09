@@ -575,6 +575,35 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
                   </FormItem>
                 )}
               />
+              <FormField
+                control={form.control}
+                name="subtitleOutputFormat"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex items-center">
+                      {t('subtitleOutputFormat')}
+                      <ToolTips text={t('subtitleOutputFormatTip')} />
+                    </FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value || 'srt'}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder={t('pleaseSelect')} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="srt">{t('format_srt')}</SelectItem>
+                        <SelectItem value="vtt">{t('format_vtt')}</SelectItem>
+                        <SelectItem value="ass">{t('format_ass')}</SelectItem>
+                        <SelectItem value="lrc">{t('format_lrc')}</SelectItem>
+                        <SelectItem value="txt">{t('format_txt')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+              />
             </fieldset>
           </TabsContent>
         </Tabs>

@@ -236,6 +236,7 @@ export const defaultUserConfig = {
   maxConcurrentTasks: 1,
   sourceSrtSaveOption: 'noSave',
   targetSrtSaveOption: 'fileNameWithLang',
+  subtitleOutputFormat: 'srt',
 };
 
 export function getSrtFileName(

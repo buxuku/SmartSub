@@ -7,7 +7,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import path from 'path';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
-import toWebVTT from 'srt-webvtt';
 import { Subtitle, SubtitleStats, PlayerSubtitleTrack } from './useSubtitles';
 
 interface StandaloneSubtitlesConfig {
@@ -91,16 +90,15 @@ export const useStandaloneSubtitles = (
   ): Promise<PlayerSubtitleTrack | null> => {
     if (!srtPath) return null;
     try {
-      const result = await window.ipc.invoke('readRawFileContent', {
+      const result = await window.ipc.invoke('getSubtitleAsVtt', {
         filePath: srtPath,
       });
       if (result.error || !result.content) {
         console.error(`无法读取字幕文件 ${srtPath}:`, result.error);
         return null;
       }
-      const srtContent = result.content;
-      const srtBlob = new Blob([srtContent], { type: 'text/plain' });
-      const vttUrl = await toWebVTT(srtBlob);
+      const vttBlob = new Blob([result.content], { type: 'text/vtt' });
+      const vttUrl = URL.createObjectURL(vttBlob);
       return {
         kind: 'subtitles',
         src: vttUrl,

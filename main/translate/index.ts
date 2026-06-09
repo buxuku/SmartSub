@@ -1,9 +1,13 @@
 import path from 'path';
+import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { Provider, TranslationResult } from './types';
 import { CONTENT_TEMPLATES } from './constants';
-import { parseSubtitles } from './utils/subtitle';
-import { createOrClearFile, appendToFile, readFileContent } from './utils/file';
+import { createOrClearFile, appendToFile } from './utils/file';
+import {
+  detectSubtitleFormat,
+  parseSubtitleEntries,
+} from '../helpers/subtitleFormats';
 import {
   translateWithProvider,
   TRANSLATOR_MAP,
@@ -51,8 +55,12 @@ export default async function translate(
       'info',
     );
 
-    const data = await readFileContent(srtFile);
-    const subtitles = parseSubtitles(data);
+    // 源字幕按扩展名自动识别格式（srt/vtt/ass/lrc），统一解析为内部 Subtitle 结构
+    const rawSourceContent = await fs.promises.readFile(srtFile, 'utf-8');
+    const subtitles = parseSubtitleEntries(
+      rawSourceContent,
+      detectSubtitleFormat(srtFile),
+    );
 
     const templateData = {
       fileName,
