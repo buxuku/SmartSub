@@ -11,6 +11,12 @@ import {
 import translate from '../translate';
 import { ensureTempDir, getMd5 } from './fileUtils';
 import { IFiles } from '../../types';
+import {
+  convertSubtitleContent,
+  getFormatExtension,
+  isSupportedSubtitleFormat,
+  SubtitleFormat,
+} from './subtitleFormats';
 
 /**
  * 处理任务错误
@@ -50,6 +56,39 @@ async function generateSubtitle(
     onError(event, file, 'extractSubtitle', error);
     throw error; // 继续抛出错误，以便上层函数知道发生了错误
   }
+}
+
+/**
+ * 解析用户选择的输出字幕格式，非法值回退为 srt。
+ */
+function resolveOutputFormat(formData): SubtitleFormat {
+  const fmt = formData?.subtitleOutputFormat;
+  return isSupportedSubtitleFormat(fmt) ? fmt : 'srt';
+}
+
+/**
+ * 将规范 SRT 交付字幕转换为目标格式，写入新扩展名文件并删除原 .srt。
+ * 整个处理流程内部始终使用 SRT，仅在最终交付物上做一次格式转换，
+ * 以隔离各格式差异、最大限度降低对既有流程的影响。
+ * 返回转换后的新文件路径。
+ */
+async function convertDeliverable(
+  srtPath: string,
+  format: SubtitleFormat,
+): Promise<string> {
+  const ext = getFormatExtension(format);
+  const newPath = srtPath.replace(/\.srt$/i, ext);
+  const content = await fs.promises.readFile(srtPath, 'utf-8');
+  const converted = convertSubtitleContent(content, 'srt', format);
+  await fs.promises.writeFile(newPath, converted, 'utf-8');
+  if (newPath !== srtPath) {
+    try {
+      fs.unlinkSync(srtPath);
+    } catch (err) {
+      logMessage(`删除中间 srt 文件失败: ${err}`, 'warning');
+    }
+  }
+  return newPath;
 }
 
 /**
@@ -122,7 +161,7 @@ export async function processFile(
     const { filePath, fileName, fileExtension, directory } = file;
     console.log('filePath', file);
 
-    const isSubtitleFile = ['.srt', '.vtt', '.ass', '.ssa'].includes(
+    const isSubtitleFile = ['.srt', '.vtt', '.ass', '.ssa', '.lrc'].includes(
       fileExtension,
     );
     logMessage(`begin process ${fileName} with task type: ${taskType}`, 'info');
@@ -211,6 +250,48 @@ export async function processFile(
       logMessage(`translate subtitle ${file.srtFile}`, 'info');
       await translateSubtitle(event, file, formData, provider);
     }
+
+    // 将交付字幕转换为用户选择的输出格式（内部流程始终为 SRT，此处仅转换最终交付物）
+    const outputFormat = resolveOutputFormat(formData);
+    if (outputFormat !== 'srt') {
+      // 源字幕：仅在由 ASR 生成且需要保存时转换（noSave 时源字幕会被清理，保持 srt）
+      if (
+        !isSubtitleFile &&
+        shouldGenerateSubtitle &&
+        sourceSrtSaveOption !== 'noSave' &&
+        file.srtFile &&
+        fs.existsSync(file.srtFile)
+      ) {
+        try {
+          file.srtFile = await convertDeliverable(file.srtFile, outputFormat);
+          logMessage(`source subtitle converted to ${outputFormat}`, 'info');
+        } catch (err) {
+          logMessage(`转换源字幕格式失败: ${err}`, 'error');
+        }
+      }
+      // 翻译字幕交付物
+      if (
+        shouldTranslateSubtitle &&
+        translateProvider !== '-1' &&
+        file.translatedSrtFile &&
+        fs.existsSync(file.translatedSrtFile)
+      ) {
+        try {
+          file.translatedSrtFile = await convertDeliverable(
+            file.translatedSrtFile,
+            outputFormat,
+          );
+          logMessage(
+            `translated subtitle converted to ${outputFormat}`,
+            'info',
+          );
+        } catch (err) {
+          logMessage(`转换翻译字幕格式失败: ${err}`, 'error');
+        }
+      }
+      event.sender.send('taskFileChange', file);
+    }
+
     // 清理临时文件
     if (
       !isSubtitleFile &&

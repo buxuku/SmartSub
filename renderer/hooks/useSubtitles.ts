@@ -3,7 +3,6 @@ import path from 'path';
 import { isSubtitleFile } from 'lib/utils';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
-import toWebVTT from 'srt-webvtt';
 import { IFiles } from '../../types';
 
 // 字幕格式接口
@@ -183,7 +182,7 @@ export const useSubtitles = (
       ): Promise<PlayerSubtitleTrack | null> => {
         if (!srtPath) return null;
         try {
-          const result = await window.ipc.invoke('readRawFileContent', {
+          const result = await window.ipc.invoke('getSubtitleAsVtt', {
             filePath: srtPath,
           });
           if (result.error || !result.content) {
@@ -193,9 +192,8 @@ export const useSubtitles = (
             );
             return null;
           }
-          const srtContent = result.content;
-          const srtBlob = new Blob([srtContent], { type: 'text/plain' });
-          const vttUrl = await toWebVTT(srtBlob);
+          const vttBlob = new Blob([result.content], { type: 'text/vtt' });
+          const vttUrl = URL.createObjectURL(vttBlob);
           return {
             kind: 'subtitles',
             src: vttUrl,

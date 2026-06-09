@@ -130,15 +130,15 @@ const LANGUAGE_ALIASES: Record<string, string> = {
 // 文件名中常见的语言标记模式
 const LANGUAGE_PATTERNS = [
   // 标准后缀格式：video.en.srt, video.zh-CN.srt
-  /\.([a-z]{2}(?:-[a-z]{2,4})?)\.(?:srt|vtt|ass|ssa)$/i,
+  /\.([a-z]{2}(?:-[a-z]{2,4})?)\.(?:srt|vtt|ass|ssa|lrc)$/i,
   // 下划线格式：video_en.srt, video_chinese.srt
-  /_([a-z]{2,10})\.(?:srt|vtt|ass|ssa)$/i,
+  /_([a-z]{2,10})\.(?:srt|vtt|ass|ssa|lrc)$/i,
   // 方括号格式：video[en].srt, video[chinese].srt
-  /\[([a-z]{2,10})\]\.(?:srt|vtt|ass|ssa)$/i,
+  /\[([a-z]{2,10})\]\.(?:srt|vtt|ass|ssa|lrc)$/i,
   // 括号格式：video(en).srt, video(chinese).srt
-  /\(([a-z]{2,10})\)\.(?:srt|vtt|ass|ssa)$/i,
+  /\(([a-z]{2,10})\)\.(?:srt|vtt|ass|ssa|lrc)$/i,
   // 点分隔但在扩展名之前：video.english.srt
-  /\.([a-z]{2,10})\.(?:srt|vtt|ass|ssa)$/i,
+  /\.([a-z]{2,10})\.(?:srt|vtt|ass|ssa|lrc)$/i,
 ];
 
 /**

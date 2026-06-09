@@ -3,10 +3,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createMessageSender } from './messageHandler';
 import { logMessage } from './storeManager';
-import { readFileContent, wrapFileObject } from './fileUtils';
+import { wrapFileObject } from './fileUtils';
 import { CONTENT_TEMPLATES } from '../translate/constants';
 import { renderTemplate } from './utils';
-import { parseSubtitles } from '../translate/utils/subtitle';
+import {
+  detectSubtitleFormat,
+  parseSubtitleEntries,
+  parseStartEndTime,
+  getSubtitleFileHeader,
+  serializeCue,
+  convertSubtitleContent,
+} from './subtitleFormats';
 
 // 定义支持的文件扩展名常量
 export const MEDIA_EXTENSIONS = [
@@ -50,6 +57,7 @@ export const SUBTITLE_EXTENSIONS = [
   '.vtt',
   '.ass',
   '.ssa',
+  '.lrc',
 ];
 
 // 判断文件是否为媒体文件
@@ -192,18 +200,35 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     return allValidPaths.map(wrapFileObject);
   });
 
-  // 读取字幕文件
+  // 读取字幕文件（按扩展名自动识别 srt/vtt/ass/lrc 格式）
   ipcMain.handle('readSubtitleFile', async (event, { filePath }) => {
     try {
       if (!fs.existsSync(filePath)) {
         logMessage(`读取字幕文件失败: 文件不存在 ${filePath}`, 'error');
         return [];
       }
-      const content = await readFileContent(filePath);
-      return parseSubtitles(content);
+      const content = await fs.promises.readFile(filePath, 'utf-8');
+      const format = detectSubtitleFormat(filePath);
+      return parseSubtitleEntries(content, format);
     } catch (error) {
       logMessage(`读取字幕文件错误: ${error.message}`, 'error');
       return [];
+    }
+  });
+
+  // 读取任意字幕文件并转换为 WebVTT 文本（供播放器内嵌字幕轨道使用）
+  ipcMain.handle('getSubtitleAsVtt', async (event, { filePath }) => {
+    try {
+      if (!fs.existsSync(filePath)) {
+        return { error: `File not found: ${filePath}` };
+      }
+      const content = await fs.promises.readFile(filePath, 'utf-8');
+      const format = detectSubtitleFormat(filePath);
+      const vtt = convertSubtitleContent(content, format, 'vtt');
+      return { content: vtt };
+    } catch (error) {
+      logMessage(`转换字幕为 VTT 失败: ${error.message}`, 'error');
+      return { error: `Error converting subtitle: ${error.message}` };
     }
   });
 
@@ -222,25 +247,41 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     }
   });
 
-  // 保存字幕文件
+  // 保存字幕文件（按目标文件扩展名序列化为对应格式）
   ipcMain.handle(
     'saveSubtitleFile',
     async (event, { filePath, subtitles, contentType = 'source' }) => {
       try {
-        const content = subtitles
-          .map(
-            (subtitle) =>
-              `${subtitle.id}\n${subtitle.startEndTime}\n${
-                contentType === 'source'
-                  ? `${subtitle.sourceContent}\n\n`
-                  : renderTemplate(CONTENT_TEMPLATES[contentType], {
-                      sourceContent: subtitle.sourceContent,
-                      targetContent: subtitle.targetContent,
-                    })
-              }`,
-          )
-          .join('');
-        console.log('saveSubtitleFile', filePath, content);
+        const format = detectSubtitleFormat(filePath);
+        // 计算每条字幕实际要写入的可见文本（去掉模板带来的尾部空行，分隔交给序列化器处理）
+        const buildText = (subtitle): string => {
+          if (contentType === 'source') {
+            return subtitle.sourceContent ?? '';
+          }
+          return renderTemplate(CONTENT_TEMPLATES[contentType], {
+            sourceContent: subtitle.sourceContent ?? '',
+            targetContent: subtitle.targetContent ?? '',
+          }).replace(/\n+$/, '');
+        };
+
+        const content =
+          getSubtitleFileHeader(format) +
+          subtitles
+            .map((subtitle) => {
+              const { startMs, endMs } = parseStartEndTime(
+                subtitle.startEndTime,
+              );
+              return serializeCue(
+                {
+                  id: subtitle.id,
+                  startMs,
+                  endMs,
+                  text: buildText(subtitle),
+                },
+                format,
+              );
+            })
+            .join('');
         await fs.promises.writeFile(filePath, content, 'utf-8');
         logMessage(`保存字幕文件成功: ${filePath}`, 'info');
         return { success: true };

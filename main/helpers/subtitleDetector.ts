@@ -13,7 +13,7 @@ import {
 import { detectLanguageFromFilename } from './languageDetector';
 
 // 支持的字幕格式
-const SUBTITLE_EXTENSIONS = ['.srt', '.vtt', '.ass', '.ssa'];
+const SUBTITLE_EXTENSIONS = ['.srt', '.vtt', '.ass', '.ssa', '.lrc'];
 
 // 支持的视频格式
 const VIDEO_EXTENSIONS = [
