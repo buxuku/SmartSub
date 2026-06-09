@@ -59,6 +59,10 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   // 滚动容器引用
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  // 用户主动点击字幕时跳过一次自动滚动：被点击的字幕已经在视野内，
+  // 再触发 scrollIntoView 会冒泡到外层 overflow-auto 容器导致整页跳动
+  const skipNextAutoScrollRef = useRef(false);
+
   // 处理光标位置变化
   const handleSelectionChange = (
     e: React.SyntheticEvent<HTMLTextAreaElement>,
@@ -71,22 +75,29 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
 
   // 处理字幕点击
   const onSubtitleClick = (index: number) => {
-    console.log(`点击字幕 #${index}, ID: ${mergedSubtitles[index]?.id}`);
+    // 用户主动点击：标记跳过本次自动滚动（仅在索引真正变化时）
+    if (index !== currentSubtitleIndex) {
+      skipNextAutoScrollRef.current = true;
+    }
     // 调用父组件提供的处理函数
     handleSubtitleClick(index);
   };
 
-  // 自动滚动到当前字幕
+  // 自动滚动到当前字幕（播放跟随 / 失败翻译跳转 / 上下条导航时生效）
+  // 用户主动点击的字幕不滚动，避免冒泡到外层 overflow-auto 容器导致整页跳动
   useEffect(() => {
+    if (skipNextAutoScrollRef.current) {
+      skipNextAutoScrollRef.current = false;
+      return;
+    }
     if (currentSubtitleIndex >= 0 && scrollContainerRef.current) {
       const element = document.getElementById(
         `subtitle-${currentSubtitleIndex}`,
       );
       if (element) {
-        // 使用 scrollIntoView 确保元素可见
         element.scrollIntoView({
           behavior: 'smooth',
-          block: 'center',
+          block: 'nearest',
         });
       }
     }
