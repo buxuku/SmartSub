@@ -30,12 +30,9 @@ export const useVideoPlayer = (
           sub.endTimeInSeconds > currentTime,
       );
       if (index !== -1 && index !== currentSubtitleIndex) {
+        // 仅更新索引；滚动统一交给 SubtitleList 的自动滚动 effect 处理，
+        // 避免两处 scrollIntoView 同时触发导致滚动位置冲突
         setCurrentSubtitleIndex(index);
-        // 滚动到当前字幕
-        const element = document.getElementById(`subtitle-${index}`);
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
       }
     }
   }, [currentTime, mergedSubtitles]);
@@ -60,7 +57,9 @@ export const useVideoPlayer = (
         const startTime = mergedSubtitles[index]?.startTimeInSeconds ?? 0;
         // 增加微小偏移（10ms），避免正好落在前后字幕的边界时间点上
         // 这样可以确保视频播放器的字幕轨道只显示当前字幕
-        playerRef.current.seekTo(startTime + 0.01);
+        // 必须显式传入 'seconds'：react-player 在 amount∈(0,1) 且未指定 type 时
+        // 会把它当作「百分比」跳转（duration * amount），导致第一条字幕(<1s)跳到视频末尾
+        playerRef.current.seekTo(startTime + 0.01, 'seconds');
       }
     }
   };
@@ -88,7 +87,8 @@ export const useVideoPlayer = (
   const seekVideo = (seconds: number) => {
     if (playerRef.current) {
       const currentTime = playerRef.current.getCurrentTime();
-      playerRef.current.seekTo(currentTime + seconds);
+      // 同样显式传入 'seconds'，避免快进/快退到 (0,1) 秒区间时被当作百分比跳转
+      playerRef.current.seekTo(currentTime + seconds, 'seconds');
     }
   };
 
