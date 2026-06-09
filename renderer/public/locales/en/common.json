@@ -71,7 +71,8 @@
     "sw": "Swahili",
     "cy": "Welsh",
     "mn": "Mongolian",
-    "zh-Hant": "Traditional Chinese"
+    "zh-Hant": "Traditional Chinese",
+    "yue": "Cantonese"
   },
   "modelDesc": {
     "tiny": "Fast text output, average transcription quality.",

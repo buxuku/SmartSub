@@ -329,6 +329,8 @@ export const supportedLanguage = [
     aliyun: 'zh-tw',
     google: 'zh-TW',
   },
+  // 粤语：主要用于 Whisper 语音识别源语言；Google 翻译无粤语，标记为不支持
+  { name: '粤语', value: 'yue', google: null },
 ];
 
 // 翻译平台类型
