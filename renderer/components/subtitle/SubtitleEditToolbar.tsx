@@ -707,25 +707,28 @@ Only respond with the translated/improved text, nothing else.`;
           <Scissors className="h-4 w-4 mr-1" />
           {t('split') || '拆分'}
         </Button>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg flex flex-col">
           <DialogHeader>
             <DialogTitle>{t('splitSubtitle') || '拆分字幕'}</DialogTitle>
             <DialogDescription>
               {t('splitSubtitleDesc') || '选择文字拆分位置和时间分配'}
             </DialogDescription>
           </DialogHeader>
-          {currentSubtitleIndex >= 0 &&
-            currentSubtitleIndex < subtitles.length && (
-              <SplitPreview
-                subtitle={subtitles[currentSubtitleIndex]}
-                splitPosition={splitPosition}
-                setSplitPosition={setSplitPosition}
-                splitTimePercent={splitTimePercent}
-                setSplitTimePercent={setSplitTimePercent}
-                shouldShowTranslation={shouldShowTranslation}
-                t={t}
-              />
-            )}
+          {/* 长字幕时预览区可滚动，确保底部的确认按钮始终可见 */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            {currentSubtitleIndex >= 0 &&
+              currentSubtitleIndex < subtitles.length && (
+                <SplitPreview
+                  subtitle={subtitles[currentSubtitleIndex]}
+                  splitPosition={splitPosition}
+                  setSplitPosition={setSplitPosition}
+                  splitTimePercent={splitTimePercent}
+                  setSplitTimePercent={setSplitTimePercent}
+                  shouldShowTranslation={shouldShowTranslation}
+                  t={t}
+                />
+              )}
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowSplit(false)}>
               {t('cancel') || '取消'}
