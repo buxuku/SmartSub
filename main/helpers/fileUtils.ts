@@ -12,6 +12,21 @@ export function getMd5(str: string) {
 }
 
 /**
+ * 将 ffmpeg 的时间标记（HH:MM:SS.xx / MM:SS / 纯秒数）转换为秒。
+ * 用于在 fluent-ffmpeg 的 progress.percent 不可用时，根据 timemark 与总时长自算进度。
+ */
+export function timemarkToSeconds(timemark: string | number): number {
+  if (typeof timemark === 'number')
+    return Number.isFinite(timemark) ? timemark : 0;
+  if (!timemark) return 0;
+  const parts = timemark.split(':').map((p) => parseFloat(p));
+  if (parts.some((n) => Number.isNaN(n))) return 0;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return parts[0] || 0;
+}
+
+/**
  * 获取临时目录路径
  */
 export function getTempDir() {
