@@ -266,7 +266,8 @@ export function getSrtFileName(
  */
 export const supportedLanguage = [
   // 最常用语言
-  { name: '中文', value: 'zh' },
+  // 讯飞机器翻译简体中文代码为 cn（非 zh）；小牛/腾讯均使用 zh
+  { name: '中文', value: 'zh', xunfei: 'cn' },
   { name: '英语', value: 'en' },
   { name: '日语', value: 'ja', baidu: 'jp' },
   { name: '韩语', value: 'ko', baidu: 'kor' },
@@ -328,13 +329,24 @@ export const supportedLanguage = [
     baidu: 'cht',
     aliyun: 'zh-tw',
     google: 'zh-TW',
+    niutrans: 'cht',
+    tencent: 'zh-TW',
+    xunfei: 'cht',
   },
   // 粤语：主要用于 Whisper 语音识别源语言；Google 翻译无粤语，标记为不支持
   { name: '粤语', value: 'yue', google: null },
 ];
 
 // 翻译平台类型
-type TranslateProvider = 'baidu' | 'volc' | 'aliyun' | 'google' | 'doubao';
+type TranslateProvider =
+  | 'baidu'
+  | 'volc'
+  | 'aliyun'
+  | 'google'
+  | 'doubao'
+  | 'niutrans'
+  | 'tencent'
+  | 'xunfei';
 
 /**
  * 语言代码转换函数

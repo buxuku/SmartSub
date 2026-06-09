@@ -8,3 +8,6 @@ export { default as azureOpenaiTranslator } from './azureOpenai';
 export { default as aliyunTranslator } from './aliyun';
 export { default as googleTranslator } from './google';
 export { default as doubaoTranslator } from './doubao';
+export { default as niutransTranslator } from './niutrans';
+export { default as tencentTranslator } from './tencent';
+export { default as xunfeiTranslator } from './xunfei';

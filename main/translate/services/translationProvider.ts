@@ -18,6 +18,9 @@ import {
   aliyunTranslator,
   googleTranslator,
   doubaoTranslator,
+  niutransTranslator,
+  tencentTranslator,
+  xunfeiTranslator,
 } from '../../service';
 import { DEFAULT_BATCH_SIZE } from '../constants';
 
@@ -37,6 +40,9 @@ export const TRANSLATOR_MAP = {
   siliconflow: openaiTranslator,
   google: googleTranslator,
   doubao: doubaoTranslator,
+  niutrans: niutransTranslator,
+  tencent: tencentTranslator,
+  xunfei: xunfeiTranslator,
 } as const;
 
 export async function translateWithProvider(

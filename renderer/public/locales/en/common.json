@@ -20,7 +20,10 @@
     "Gemini": "Gemini",
     "通义千问": "Tongyi Qianwen",
     "豆包翻译": "Doubao Translation",
-    "SiliconFlow": "SiliconFlow"
+    "SiliconFlow": "SiliconFlow",
+    "niutrans": "NiuTrans",
+    "tencent": "Tencent",
+    "xunfei": "iFlytek"
   },
   "language": {
     "zh": "Chinese",
