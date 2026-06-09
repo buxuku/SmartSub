@@ -111,19 +111,29 @@ export async function handleAIBatchTranslation(
 
         // 检查解析结果是否有效
         if (parsedContent && typeof parsedContent === 'object') {
-          logMessage(`JSON parsing successful`, 'info');
-
+          const parsedKeys = Object.keys(parsedContent);
           const parsedValues = Object.values(parsedContent);
+
+          // 校验返回条数是否与请求一致：
+          // 若数量不一致（例如请求 50 条只回 40 条），按数组索引兜底会让译文与
+          // 时间轴错位，因此视为本批次失败并触发重试，避免产生错位结果（issue #308）。
+          if (parsedKeys.length !== batch.length) {
+            throw new Error(
+              `翻译返回条数与请求不一致：请求 ${batch.length} 条，返回 ${parsedKeys.length} 条`,
+            );
+          }
+
+          logMessage(`JSON parsing successful`, 'info');
 
           batchResults = batch.map((subtitle, index) => ({
             id: subtitle.id,
             startEndTime: subtitle.startEndTime,
             sourceContent: subtitle.content.join('\n'),
-            // 优先使用ID匹配，如果没有则使用数组索引
+            // 优先使用ID匹配；数量已校验一致，按索引兜底是安全的
             targetContent:
               parsedContent[subtitle.id] !== undefined
                 ? parsedContent[subtitle.id]
-                : parsedValues[index] || '',
+                : (parsedValues[index] ?? ''),
           }));
 
           // 如果提供了结果处理函数，则实时处理每个翻译结果
