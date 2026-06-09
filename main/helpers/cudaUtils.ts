@@ -107,44 +107,85 @@ export function getGpuCudaSupport(): GpuCudaSupport {
     return { supported: false, driverVersion: null, maxCudaVersion: null };
   }
 
+  // 优先使用机器可读查询获取显卡名与驱动版本：
+  // 跨驱动版本、跨语言环境最稳定，且不会像解析表格那样误匹配到进程行
+  let gpuName: string | undefined;
+  let driverVersion: string | null = null;
+  try {
+    const queryOutput = execSync(
+      'nvidia-smi --query-gpu=name,driver_version --format=csv,noheader,nounits',
+      { encoding: 'utf8', timeout: 10000 },
+    ).trim();
+    const firstLine = queryOutput.split('\n').find((line) => line.trim());
+    if (firstLine) {
+      const [queriedName, queriedDriver] = firstLine
+        .split(',')
+        .map((field) => field.trim());
+      gpuName = queriedName || undefined;
+      driverVersion = queriedDriver || null;
+    }
+  } catch {
+    // 查询接口不可用时，下面回退到解析 nvidia-smi 文本输出
+  }
+
+  // 解析显卡支持的最高 CUDA 版本（--query-gpu 无此字段，只能从 nvidia-smi 表头读取）
+  let maxCudaVersion: string | null = null;
   try {
     const nsmiResult = execSync('nvidia-smi', {
       encoding: 'utf8',
       timeout: 10000,
     });
 
-    // 提取 CUDA 版本
-    const cudaVersionMatch = nsmiResult.match(/CUDA Version:\s*(\d+\.\d+)/);
-    const maxCudaVersion = cudaVersionMatch ? cudaVersionMatch[1] : null;
-
-    // 提取驱动版本
-    const driverVersionMatch = nsmiResult.match(
-      /Driver Version:\s*(\d+\.\d+\.\d+)/,
+    // 600 系列及以上驱动已将 "CUDA Version" 更名为 "CUDA UMD Version"，需同时兼容
+    const cudaVersionMatch = nsmiResult.match(
+      /CUDA(?:\s+UMD)?\s+Version\s*:\s*(\d+(?:\.\d+)?)/i,
     );
-    const driverVersion = driverVersionMatch ? driverVersionMatch[1] : null;
+    maxCudaVersion = cudaVersionMatch ? cudaVersionMatch[1] : null;
 
-    // 提取 GPU 名称
-    const gpuNameMatch = nsmiResult.match(/\|\s+(\d+)\s+([^|]+?)\s+(?:On|Off)/);
-    const gpuName = gpuNameMatch ? gpuNameMatch[2].trim() : undefined;
+    // 查询接口失败时从表格兜底补全驱动版本：
+    // 兼容新版 "KMD Version" 与旧版 "Driver Version"，允许 2~3 段版本号（如 610.47）
+    if (!driverVersion) {
+      const driverVersionMatch = nsmiResult.match(
+        /(?:KMD|Driver)\s+Version\s*:\s*(\d+(?:\.\d+)+)/i,
+      );
+      driverVersion = driverVersionMatch ? driverVersionMatch[1] : null;
+    }
 
-    logMessage(
-      `GPU CUDA support detected: maxCuda=${maxCudaVersion}, driver=${driverVersion}, gpu=${gpuName}`,
-      'info',
-    );
-
-    return {
-      supported: !!maxCudaVersion,
-      driverVersion,
-      maxCudaVersion,
-      gpuName,
-    };
+    // 查询接口失败时从表格兜底补全显卡名称：限定 NVIDIA 开头，避免误匹配进程行
+    if (!gpuName) {
+      const gpuNameMatch = nsmiResult.match(
+        /\|\s*\d+\s+(NVIDIA[^|]+?)\s+(?:On|Off|N\/A)/i,
+      );
+      gpuName = gpuNameMatch ? gpuNameMatch[1].trim() : undefined;
+    }
   } catch {
+    // bare nvidia-smi 不可用时，maxCudaVersion 保持 null
+  }
+
+  // 只要检测到 NVIDIA 显卡（拿到名称或驱动版本）即视为支持 CUDA，
+  // 即使因输出格式变化导致 CUDA 版本解析失败，也不再误判为"不支持"
+  const hasNvidiaGpu = !!gpuName || !!driverVersion;
+  const supported = !!maxCudaVersion || hasNvidiaGpu;
+
+  if (!supported) {
     logMessage(
-      'GPU CUDA support not detected (nvidia-smi not found or failed)',
+      'GPU CUDA support not detected (no NVIDIA GPU found via nvidia-smi)',
       'info',
     );
     return { supported: false, driverVersion: null, maxCudaVersion: null };
   }
+
+  logMessage(
+    `GPU CUDA support detected: maxCuda=${maxCudaVersion}, driver=${driverVersion}, gpu=${gpuName}`,
+    'info',
+  );
+
+  return {
+    supported,
+    driverVersion,
+    maxCudaVersion,
+    gpuName,
+  };
 }
 
 /**
@@ -211,8 +252,8 @@ function getAddonRecommendation(
   toolkit: CudaToolkitInfo,
   gpuSupport: GpuCudaSupport,
 ): AddonRecommendation {
-  // 如果 GPU 不支持 CUDA，无法使用加速
-  if (!gpuSupport.supported || !gpuSupport.maxCudaVersion) {
+  // 未检测到 NVIDIA 显卡时无法使用加速
+  if (!gpuSupport.supported) {
     return {
       canUseCuda: false,
       recommendedVersion: null,
@@ -222,10 +263,14 @@ function getAddonRecommendation(
     };
   }
 
+  // 兜底：检测到 N 卡但未能解析出最高 CUDA 版本时（如新版驱动输出格式变化），
+  // 按可用加速包的最高版本推荐，避免误判为不可用；用户可在异常时手动改选更低版本
+  const effectiveCudaVersion =
+    gpuSupport.maxCudaVersion ||
+    AVAILABLE_CUDA_VERSIONS[AVAILABLE_CUDA_VERSIONS.length - 1];
+
   // 获取推荐版本
-  const recommendedVersion = getRecommendedAddonVersion(
-    gpuSupport.maxCudaVersion,
-  );
+  const recommendedVersion = getRecommendedAddonVersion(effectiveCudaVersion);
 
   if (!recommendedVersion) {
     return {
@@ -244,7 +289,9 @@ function getAddonRecommendation(
   const downloadType = needsDlls ? 'tar.gz' : 'node.gz';
 
   let reason: string;
-  if (toolkit.installed) {
+  if (!gpuSupport.maxCudaVersion) {
+    reason = `未能识别显卡支持的最高 CUDA 版本，已按最高加速包版本推荐；若运行异常请手动选择更低版本`;
+  } else if (toolkit.installed) {
     reason = `已检测到 CUDA Toolkit ${toolkit.version}，推荐下载轻量版加速包`;
   } else {
     reason = `未检测到 CUDA Toolkit，推荐下载包含运行时库的完整加速包`;
