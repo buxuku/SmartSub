@@ -9,6 +9,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { logMessage } from './storeManager';
+import { timemarkToSeconds } from './fileUtils';
 import type {
   SubtitleStyle,
   MergeConfig,
@@ -232,11 +233,14 @@ export async function mergeSubtitleToVideo(
   // 获取视频分辨率，用于显式设置 original_size
   // 防止滤镜重新初始化时因自动检测失败而报错
   let originalSize = '';
+  // 视频总时长（秒），用于在 progress.percent 不可用时自算合并进度（issue #310）
+  let totalDurationSec = 0;
   try {
     const videoInfo = await getVideoInfo(videoPath);
     if (videoInfo.width > 0 && videoInfo.height > 0) {
       originalSize = `:original_size=${videoInfo.width}x${videoInfo.height}`;
     }
+    totalDurationSec = videoInfo.duration || 0;
   } catch (err) {
     logMessage(
       `获取视频分辨率失败，跳过 original_size 设置: ${err}`,
@@ -286,7 +290,19 @@ export async function mergeSubtitleToVideo(
         logMessage(`FFmpeg 命令: ${cmd}`, 'info');
       })
       .on('progress', (progress) => {
-        const percent = progress.percent || 0;
+        let percent = progress.percent;
+        if (
+          (percent === undefined ||
+            percent === null ||
+            Number.isNaN(percent) ||
+            percent <= 0) &&
+          totalDurationSec > 0 &&
+          progress.timemark
+        ) {
+          percent =
+            (timemarkToSeconds(progress.timemark) / totalDurationSec) * 100;
+        }
+        percent = Math.max(percent || 0, 0);
         logMessage(`合并进度: ${percent.toFixed(1)}%`, 'info');
         onProgress?.({
           percent: Math.min(percent, 99),

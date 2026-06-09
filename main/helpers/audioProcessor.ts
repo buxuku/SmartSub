@@ -3,7 +3,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import path from 'path';
 import fs from 'fs';
 import { logMessage } from './storeManager';
-import { getMd5, ensureTempDir } from './fileUtils';
+import { getMd5, ensureTempDir, timemarkToSeconds } from './fileUtils';
 
 // 设置ffmpeg路径
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
@@ -19,12 +19,21 @@ export const extractAudio = (
   file = null,
 ) => {
   const onProgress = (percent = 0) => {
-    logMessage(`extract audio progress ${percent}%`, 'info');
+    const safePercent = Math.min(Math.max(Math.round(percent), 0), 100);
+    logMessage(`extract audio progress ${safePercent}%`, 'info');
     if (event && file) {
-      event.sender.send('taskProgressChange', file, 'extractAudio', percent);
+      event.sender.send(
+        'taskProgressChange',
+        file,
+        'extractAudio',
+        safePercent,
+      );
     }
   };
   return new Promise((resolve, reject) => {
+    // fluent-ffmpeg 的 progress.percent 在部分平台/新版 ffmpeg 上恒为 undefined，
+    // 这里从 codecData 拿到媒体总时长，再用 progress.timemark 自算百分比（issue #291）。
+    let totalDurationSec = 0;
     try {
       ffmpeg(`${videoPath}`)
         .audioFrequency(16000)
@@ -35,9 +44,23 @@ export const extractAudio = (
           onProgress(0);
           logMessage(`extract audio start ${str}`, 'info');
         })
+        .on('codecData', function (data) {
+          totalDurationSec = timemarkToSeconds(data?.duration);
+        })
         .on('progress', function (progress) {
-          const percent = progress.percent || 0;
-          onProgress(percent);
+          let percent = progress.percent;
+          if (
+            (percent === undefined ||
+              percent === null ||
+              Number.isNaN(percent) ||
+              percent <= 0) &&
+            totalDurationSec > 0 &&
+            progress.timemark
+          ) {
+            percent =
+              (timemarkToSeconds(progress.timemark) / totalDurationSec) * 100;
+          }
+          onProgress(percent || 0);
         })
         .on('end', function (str) {
           logMessage(`extract audio done!`, 'info');
