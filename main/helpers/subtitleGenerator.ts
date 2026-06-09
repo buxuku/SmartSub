@@ -19,11 +19,10 @@ function getWhisperLanguage(language?: string): string {
   }
 
   const normalized = language.toLowerCase();
-  if (normalized === 'zh-hant') {
-    return 'yue';
-  }
-
-  if (normalized === 'zh-tw' || normalized === 'zh-cn') {
+  // 所有中文变体（简体/繁体/台湾/香港等）统一映射为 zh，
+  // Whisper 对 zh 的训练数据最充分，识别国语/普通话最准确；
+  // 粤语请通过下拉框单独选择 yue 传入。
+  if (normalized.startsWith('zh')) {
     return 'zh';
   }
 
