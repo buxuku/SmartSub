@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { TRANSLATION_JSON_SCHEMA } from '../translate/constants/schema';
+import { OLLAMA_REQUEST_TIMEOUT } from '../translate/constants';
 
 interface OllamaConfig {
   apiUrl: string;
@@ -25,15 +26,19 @@ export default async function translateWithOllama(
       enhancedSystemPrompt = `${systemPrompt}\n\n你必须以JSON格式返回数据，不要包含任何其他文本或说明。输出应该是一个有效的JSON对象，其中键是字幕ID，值是翻译后的内容。\n\n下面是返回的JSON Schema:\n${JSON.stringify(TRANSLATION_JSON_SCHEMA, null, 2)}`;
     }
 
-    const response = await axios.post(`${url}`, {
-      model: modelName,
-      messages: [
-        { role: 'system', content: enhancedSystemPrompt },
-        { role: 'user', content: text },
-      ],
-      stream: false,
-      format: 'json',
-    });
+    const response = await axios.post(
+      `${url}`,
+      {
+        model: modelName,
+        messages: [
+          { role: 'system', content: enhancedSystemPrompt },
+          { role: 'user', content: text },
+        ],
+        stream: false,
+        format: 'json',
+      },
+      { timeout: OLLAMA_REQUEST_TIMEOUT },
+    );
 
     if (response.data && response.data.message) {
       return response.data.message?.content?.trim();

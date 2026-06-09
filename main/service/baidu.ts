@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import axios from 'axios';
 import { convertLanguageCode } from '../helpers/utils';
+import { TRANSLATION_REQUEST_TIMEOUT } from '../translate/constants';
 
 export default async function baidu(
   query,
@@ -41,6 +42,7 @@ export default async function baidu(
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
+      timeout: TRANSLATION_REQUEST_TIMEOUT,
     },
   );
   if (!res?.data?.trans_result) {

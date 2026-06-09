@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { convertLanguageCode } from '../helpers/utils';
+import { TRANSLATION_REQUEST_TIMEOUT } from '../translate/constants';
 
 export default async function google(
   query,
@@ -43,6 +44,7 @@ export default async function google(
         headers: {
           'Content-Type': 'application/json',
         },
+        timeout: TRANSLATION_REQUEST_TIMEOUT,
       },
     );
 
