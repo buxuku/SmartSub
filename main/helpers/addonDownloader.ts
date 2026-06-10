@@ -10,10 +10,11 @@ import type {
   DownloadProgress,
   DownloadState,
   DownloadSource,
-  CudaVersion,
+  AddonVariant,
   DownloadStatus,
 } from '../../types/addon';
 import { getEffectivePlatform } from './cudaUtils';
+import { getAddonVersionDir } from './addonManager';
 import { createHash } from 'crypto';
 
 /**
@@ -40,7 +41,13 @@ export function readDownloadState(): DownloadState | null {
     const statePath = getDownloadStatePath();
     if (fs.existsSync(statePath)) {
       const content = fs.readFileSync(statePath, 'utf8');
-      return JSON.parse(content);
+      const parsed = JSON.parse(content);
+      // 兼容旧版字段名 cudaVersion（v2.16 之前的断点续传状态文件）
+      if (parsed && parsed.cudaVersion && !parsed.variant) {
+        parsed.variant = parsed.cudaVersion;
+        delete parsed.cudaVersion;
+      }
+      return parsed;
     }
   } catch (error) {
     logMessage(`Error reading download state: ${error}`, 'error');
@@ -70,27 +77,27 @@ function saveDownloadState(state: DownloadState | null): void {
  * 获取加速包文件名
  */
 export function getAddonFileName(
-  cudaVersion: CudaVersion,
+  variant: AddonVariant,
   downloadType: 'node.gz' | 'tar.gz',
 ): string {
   const platform = getEffectivePlatform();
-  const versionNum = cudaVersion.replace(/\./g, '').slice(0, 4);
+  if (platform !== 'win32' && platform !== 'linux') {
+    throw new Error(`Unsupported platform: ${platform}`);
+  }
+  const osName = platform === 'win32' ? 'windows' : 'linux';
 
-  if (platform === 'win32') {
+  if (variant === 'vulkan') {
+    // Vulkan 无运行时依赖，仅提供 node.gz 单文件包
     if (downloadType === 'tar.gz') {
-      return `windows-cuda-${versionNum}-optimized.tar.gz`;
-    } else {
-      return `addon-windows-cuda-${versionNum}-optimized.node.gz`;
+      throw new Error('Vulkan addon only provides node.gz package');
     }
-  } else if (platform === 'linux') {
-    if (downloadType === 'tar.gz') {
-      return `linux-cuda-${versionNum}-optimized.tar.gz`;
-    } else {
-      return `addon-linux-cuda-${versionNum}-optimized.node.gz`;
-    }
+    return `addon-${osName}-vulkan.node.gz`;
   }
 
-  throw new Error(`Unsupported platform: ${platform}`);
+  const versionNum = variant.replace(/\./g, '').slice(0, 4);
+  return downloadType === 'tar.gz'
+    ? `${osName}-cuda-${versionNum}-optimized.tar.gz`
+    : `addon-${osName}-cuda-${versionNum}-optimized.node.gz`;
 }
 
 /**
@@ -98,11 +105,11 @@ export function getAddonFileName(
  */
 export function getDownloadUrl(
   source: DownloadSource,
-  cudaVersion: CudaVersion,
+  variant: AddonVariant,
   downloadType: 'node.gz' | 'tar.gz',
 ): string {
   const baseUrl = DOWNLOAD_SOURCES[source];
-  const fileName = getAddonFileName(cudaVersion, downloadType);
+  const fileName = getAddonFileName(variant, downloadType);
   return `${baseUrl}${fileName}`;
 }
 
@@ -203,15 +210,12 @@ export class AddonDownloader {
    */
   async download(
     source: DownloadSource,
-    cudaVersion: CudaVersion,
+    variant: AddonVariant,
     downloadType: 'node.gz' | 'tar.gz',
   ): Promise<string> {
-    const url = getDownloadUrl(source, cudaVersion, downloadType);
+    const url = getDownloadUrl(source, variant, downloadType);
     const addonsDir = path.join(app.getPath('userData'), 'addons');
-    const versionDir = path.join(
-      addonsDir,
-      `cuda-${cudaVersion.replace(/\./g, '')}`,
-    );
+    const versionDir = getAddonVersionDir(variant);
 
     // 确保目录存在
     fs.mkdirSync(versionDir, { recursive: true });
@@ -282,10 +286,7 @@ export class AddonDownloader {
         logMessage(`Resuming download from byte ${startByte}`, 'info');
       } else {
         // 新下载，清理旧的 temp 文件
-        tempPath = path.join(
-          addonsDir,
-          `temp-${cudaVersion.replace(/\./g, '')}`,
-        );
+        tempPath = path.join(addonsDir, `temp-${variant.replace(/\./g, '')}`);
         if (fs.existsSync(tempPath)) {
           fs.unlinkSync(tempPath);
           logMessage(`Cleaned up old temp file: ${tempPath}`, 'info');
@@ -297,7 +298,7 @@ export class AddonDownloader {
         url,
         tempPath,
         startByte,
-        cudaVersion,
+        variant,
         downloadType,
       );
 
@@ -340,7 +341,7 @@ export class AddonDownloader {
     url: string,
     destPath: string,
     startByte: number,
-    cudaVersion: CudaVersion,
+    variant: AddonVariant,
     downloadType: 'node.gz' | 'tar.gz',
   ): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -398,7 +399,7 @@ export class AddonDownloader {
               redirectUrl,
               destPath,
               startByte,
-              cudaVersion,
+              variant,
               downloadType,
             )
               .then(resolve)
@@ -441,7 +442,7 @@ export class AddonDownloader {
           tempPath: destPath,
           downloaded: startByte,
           total: totalSize,
-          cudaVersion,
+          variant,
           downloadType,
           startedAt: new Date().toISOString(),
           lastUpdatedAt: new Date().toISOString(),

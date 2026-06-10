@@ -15,6 +15,88 @@ export const AVAILABLE_CUDA_VERSIONS = [
 export type CudaVersion = (typeof AVAILABLE_CUDA_VERSIONS)[number];
 
 /**
+ * 全部加速包变体：CUDA 各版本 + Vulkan
+ */
+export const ALL_ADDON_VARIANTS = [
+  ...AVAILABLE_CUDA_VERSIONS,
+  'vulkan',
+] as const;
+
+export type AddonVariant = (typeof ALL_ADDON_VARIANTS)[number];
+
+/**
+ * GPU 加速模式（取代 useCuda 布尔开关）
+ */
+export type GpuMode = 'auto' | 'gpu-only' | 'cpu-only';
+
+/**
+ * GPU 厂商
+ */
+export type GpuVendor = 'nvidia' | 'amd' | 'intel' | 'apple' | 'unknown';
+
+export interface GpuInfo {
+  name: string;
+  vendor: GpuVendor;
+}
+
+/**
+ * 实际加载的 whisper 后端
+ */
+export type WhisperBackend =
+  | 'cuda'
+  | 'vulkan'
+  | 'cpu'
+  | 'metal'
+  | 'coreml'
+  | 'custom';
+
+export type AddonSource = 'custom' | 'userData' | 'builtin';
+
+/**
+ * 单次候选加载失败记录
+ */
+export interface AddonLoadAttempt {
+  backend: WhisperBackend;
+  path: string;
+  error: string;
+  timestamp: string;
+}
+
+/**
+ * 一次成功加载的结果（不含函数本体，可持久化/IPC 传输）
+ */
+export interface AddonLoadResultInfo {
+  backend: WhisperBackend;
+  variant: AddonVariant | null;
+  source: AddonSource;
+  path: string;
+  /** 是否非首选候选（发生过降级） */
+  fallback: boolean;
+  failedAttempts: AddonLoadAttempt[];
+  loadedAt: string;
+}
+
+/**
+ * 加载历史条目（环形缓冲 10 条，诊断面板数据源）
+ */
+export interface AddonLoadHistoryEntry {
+  backend: WhisperBackend;
+  path: string;
+  success: boolean;
+  error?: string;
+  timestamp: string;
+}
+
+/**
+ * 降级事件（主进程 → 渲染层推送）
+ */
+export interface AddonFallbackEvent {
+  expected: WhisperBackend;
+  actual: WhisperBackend;
+  reason: string;
+}
+
+/**
  * CUDA Toolkit 检测结果
  */
 export interface CudaToolkitInfo {
@@ -67,6 +149,22 @@ export interface CudaEnvironment {
 }
 
 /**
+ * GPU 环境完整检测结果（跨厂商）
+ */
+export interface GpuEnvironment {
+  /** 有效平台（含 dev 模拟） */
+  platform: string;
+  /** systeminformation 枚举的显卡列表 */
+  gpus: GpuInfo[];
+  /** Vulkan 运行库是否存在（仅 win/linux 有意义） */
+  vulkanRuntime: boolean;
+  /** 内置 vulkan addon 是否随包分发 */
+  builtinVulkanAvailable: boolean;
+  /** NVIDIA 完整检测结果（未检测到 N 卡时为 null） */
+  nvidia: CudaEnvironment | null;
+}
+
+/**
  * 已安装的加速包信息
  */
 export interface InstalledAddon {
@@ -87,7 +185,7 @@ export interface InstalledAddon {
  */
 export interface AddonConfig {
   /** 当前选中的版本 */
-  selectedVersion: CudaVersion | null;
+  selectedVersion: AddonVariant | null;
   /** 已安装的加速包 */
   installed: Record<string, InstalledAddon>;
   /** 自定义 addon.node 文件路径 */
@@ -114,7 +212,9 @@ export interface RemoteAddonVersion {
 /**
  * 远程版本文件结构
  */
-export type RemoteAddonVersions = Record<CudaVersion, RemoteAddonVersion>;
+export type RemoteAddonVersions = Partial<
+  Record<AddonVariant, RemoteAddonVersion>
+>;
 
 /**
  * 下载状态
@@ -159,8 +259,8 @@ export type DownloadSource = 'github' | 'ghproxy';
 export interface DownloadConfig {
   /** 下载源 */
   source: DownloadSource;
-  /** CUDA 版本 */
-  cudaVersion: CudaVersion;
+  /** 加速包变体 */
+  variant: AddonVariant;
   /** 下载类型 */
   type: 'node.gz' | 'tar.gz';
 }
@@ -169,8 +269,8 @@ export interface DownloadConfig {
  * 更新检测结果
  */
 export interface AddonUpdateInfo {
-  /** CUDA 版本 */
-  cudaVersion: CudaVersion;
+  /** 加速包变体 */
+  variant: AddonVariant;
   /** 是否有更新 */
   hasUpdate: boolean;
   /** 当前本地版本 */
@@ -195,8 +295,8 @@ export interface DownloadState {
   downloaded: number;
   /** 总字节数 */
   total: number;
-  /** CUDA 版本 */
-  cudaVersion: CudaVersion;
+  /** 加速包变体 */
+  variant: AddonVariant;
   /** 下载类型 */
   downloadType: 'node.gz' | 'tar.gz';
   /** 开始时间 */

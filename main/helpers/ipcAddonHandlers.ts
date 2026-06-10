@@ -23,7 +23,7 @@ import {
   getRemoteVersionInfo,
 } from './addonVersions';
 import type {
-  CudaVersion,
+  AddonVariant,
   DownloadSource,
   DownloadConfig,
 } from '../../types/addon';
@@ -86,7 +86,7 @@ export function registerAddonIpcHandlers(): void {
   // 选择加速包版本
   ipcMain.handle(
     'select-addon-version',
-    async (event, version: CudaVersion) => {
+    async (event, version: AddonVariant) => {
       try {
         selectAddonVersion(version);
         return { success: true };
@@ -106,19 +106,19 @@ export function registerAddonIpcHandlers(): void {
 
         // 异步启动下载，不等待完成
         downloader
-          .download(config.source, config.cudaVersion, config.type)
+          .download(config.source, config.variant, config.type)
           .then(async () => {
             // 下载完成后注册加速包并自动选中
-            const remoteInfo = await getRemoteVersionInfo(config.cudaVersion);
+            const remoteInfo = await getRemoteVersionInfo(config.variant);
             registerInstalledAddon(
-              config.cudaVersion,
+              config.variant,
               remoteInfo?.version ||
                 new Date().toISOString().split('T')[0].replace(/-/g, '.'),
             );
             // 自动选中刚下载的版本
-            selectAddonVersion(config.cudaVersion);
+            selectAddonVersion(config.variant);
             logMessage(
-              `Addon ${config.cudaVersion} downloaded and selected`,
+              `Addon ${config.variant} downloaded and selected`,
               'info',
             );
           })
@@ -148,7 +148,7 @@ export function registerAddonIpcHandlers(): void {
   });
 
   // 删除加速包
-  ipcMain.handle('remove-addon', async (event, version: CudaVersion) => {
+  ipcMain.handle('remove-addon', async (event, version: AddonVariant) => {
     try {
       await removeAddon(version);
       return { success: true };
@@ -206,16 +206,16 @@ export function registerAddonIpcHandlers(): void {
       event,
       {
         source,
-        cudaVersion,
+        variant,
         type,
       }: {
         source: DownloadSource;
-        cudaVersion: CudaVersion;
+        variant: AddonVariant;
         type: 'node.gz' | 'tar.gz';
       },
     ) => {
       try {
-        return getDownloadUrl(source, cudaVersion, type);
+        return getDownloadUrl(source, variant, type);
       } catch (error) {
         return null;
       }

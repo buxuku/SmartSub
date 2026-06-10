@@ -267,7 +267,7 @@ const GpuAccelerationCard: React.FC = () => {
     try {
       await window?.ipc?.invoke('start-addon-download', {
         source: downloadSource,
-        cudaVersion: version,
+        variant: version,
         type: downloadType,
       });
       toast.info(t('gpuAcceleration.downloadStarted'));
@@ -590,9 +590,7 @@ const GpuAccelerationCard: React.FC = () => {
       useCuda && version === selectedVersion && !customAddonPath;
     const isRecommended =
       version === cudaEnv?.recommendation.recommendedVersion;
-    const hasUpdate = updates.find(
-      (u) => u.cudaVersion === version && u.hasUpdate,
-    );
+    const hasUpdate = updates.find((u) => u.variant === version && u.hasUpdate);
     const isDownloading = isVersionDownloading(version);
     const canSelect = installed && !isDownloading;
 

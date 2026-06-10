@@ -3,10 +3,11 @@ import * as http from 'http';
 import { logMessage } from './storeManager';
 import type {
   RemoteAddonVersions,
-  CudaVersion,
+  AddonVariant,
   AddonUpdateInfo,
 } from '../../types/addon';
 import { getAddonConfig, getInstalledAddons } from './addonManager';
+import { getBuildInfo } from './buildInfo';
 
 /**
  * 远程版本文件 URL
@@ -136,10 +137,10 @@ function normalizeVersion(version: string): string {
  * 检查指定版本是否有更新
  */
 export async function checkVersionUpdate(
-  version: CudaVersion,
+  variant: AddonVariant,
 ): Promise<AddonUpdateInfo | null> {
   const config = getAddonConfig();
-  const installedInfo = config.installed[version];
+  const installedInfo = config.installed[variant];
 
   if (!installedInfo) {
     return null;
@@ -147,9 +148,9 @@ export async function checkVersionUpdate(
 
   // 开发模式下强制显示更新
   if (shouldForceUpdate()) {
-    logMessage(`[DEV] Forcing update for version ${version}`, 'info');
+    logMessage(`[DEV] Forcing update for version ${variant}`, 'info');
     return {
-      cudaVersion: version,
+      variant,
       hasUpdate: true,
       localVersion: installedInfo.remoteVersion,
       remoteVersion: 'dev-force-update',
@@ -158,18 +159,18 @@ export async function checkVersionUpdate(
   }
 
   const remoteVersions = await fetchRemoteVersions();
-  if (!remoteVersions || !remoteVersions[version]) {
+  if (!remoteVersions || !remoteVersions[variant]) {
     return null;
   }
 
-  const remoteInfo = remoteVersions[version];
+  const remoteInfo = remoteVersions[variant];
   // 标准化版本号格式后再比较，避免 "2026.02.06" vs "2026-02-06" 因分隔符不同导致误判
   const normalizedRemote = normalizeVersion(remoteInfo.version);
   const normalizedLocal = normalizeVersion(installedInfo.remoteVersion);
   const hasUpdate = normalizedRemote > normalizedLocal;
 
   return {
-    cudaVersion: version,
+    variant,
     hasUpdate,
     localVersion: installedInfo.remoteVersion,
     remoteVersion: remoteInfo.version,
@@ -206,7 +207,7 @@ export async function getAvailableUpdates(): Promise<AddonUpdateInfo[]> {
  * 获取特定版本的远程信息
  */
 export async function getRemoteVersionInfo(
-  version: CudaVersion,
+  version: AddonVariant,
 ): Promise<{ version: string; updateNotes: string } | null> {
   const remoteVersions = await fetchRemoteVersions();
   if (!remoteVersions || !remoteVersions[version]) {
@@ -224,7 +225,7 @@ export async function getRemoteVersionInfo(
  * 获取指定版本的校验和信息
  */
 export async function getVersionChecksum(
-  version: CudaVersion,
+  version: AddonVariant,
   type: 'windows-tar' | 'windows-node' | 'linux-tar' | 'linux-node',
 ): Promise<string | null> {
   const remoteVersions = await fetchRemoteVersions();
@@ -242,4 +243,16 @@ export async function getVersionChecksum(
 export function clearVersionCache(): void {
   cachedVersions = null;
   lastFetchTime = 0;
+}
+
+/**
+ * 内置 Vulkan addon 的版本号（取 CI 注入的构建日期，如 "2026.06.10"）
+ * 开发环境无 buildInfo 时返回 null（跳过更新提示）
+ */
+export function getBuiltinVulkanVersion(): string | null {
+  const buildInfo = getBuildInfo();
+  if (!buildInfo?.buildDate) {
+    return null;
+  }
+  return buildInfo.buildDate.split('T')[0].replace(/-/g, '.');
 }
