@@ -3,6 +3,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import { processFile } from './fileProcessor';
 import { checkOpenAiWhisper, getPath } from './whisper';
 import { logMessage, store } from './storeManager';
+import { resolveTranscriptionEngine } from './transcriptionEngine';
 import path from 'path';
 import { isAppleSilicon } from './utils';
 import { IFiles } from '../../types';
@@ -80,7 +81,10 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
         isProcessing = true;
         isPaused = false;
         shouldCancel = false;
-        hasOpenAiWhisper = await checkOpenAiWhisper();
+        // 仅本地命令行引擎需要探测 whisper CLI,其余引擎跳过避免无谓等待
+        const engine = resolveTranscriptionEngine(store.get('settings'));
+        hasOpenAiWhisper =
+          engine === 'localCli' ? await checkOpenAiWhisper() : false;
         maxConcurrentTasks = formData.maxConcurrentTasks || 3;
         processNextTasks(event);
       }

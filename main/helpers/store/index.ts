@@ -15,6 +15,10 @@ export const store = new Store<StoreType>({
     settings: {
       language: 'zh',
       useLocalWhisper: false,
+      // 不设 transcriptionEngine 默认值:undefined 时由 useLocalWhisper 推导,
+      // 避免覆盖老用户已有的本地命令行配置
+      fasterWhisperDevice: 'auto',
+      fasterWhisperComputeType: 'auto',
       whisperCommand: defaultWhisperCommand,
       builtinWhisperCommand: defaultWhisperCommand,
       useCuda: true,

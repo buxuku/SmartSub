@@ -8,6 +8,7 @@ import { logMessage, store } from './storeManager';
 import { formatSrtContent } from './fileUtils';
 import { IFiles } from '../../types';
 import { getExtraResourcesPath } from './utils';
+import { getPythonEngineManager } from './pythonEngine';
 
 function getNumericSetting(value: unknown, defaultValue: number): number {
   return typeof value === 'number' && isFinite(value) ? value : defaultValue;
@@ -83,6 +84,109 @@ export async function generateSubtitleWithLocalWhisper(event, file, formData) {
       resolve(srtFile);
     });
   });
+}
+
+/** 秒(float)转 SRT 时间戳 HH:MM:SS.mmm(formatSrtContent 会把 . 换成 ,) */
+function secondsToSrtTime(seconds: number): string {
+  // 先整体取整到毫秒,避免 59.9995s 这类值出现 ms=1000 的进位问题
+  const totalMs = Math.round(Math.max(0, seconds || 0) * 1000);
+  const h = Math.floor(totalMs / 3_600_000);
+  const m = Math.floor((totalMs % 3_600_000) / 60_000);
+  const s = Math.floor((totalMs % 60_000) / 1000);
+  const ms = totalMs % 1000;
+  const pad = (value: number, len = 2) => String(value).padStart(len, '0');
+  return `${pad(h)}:${pad(m)}:${pad(s)}.${pad(ms, 3)}`;
+}
+
+/**
+ * ggml 模型名映射为 faster-whisper 模型 id:
+ * 量化后缀(-q5_0/-q5_1/-q8_0)是 whisper.cpp 特有概念,faster-whisper
+ * 由 compute_type 控制精度,直接剥掉后缀取基础模型。
+ */
+function toFasterWhisperModel(model?: string): string {
+  const base = (model || 'base').toLowerCase().replace(/-q\d+_\d+$/, '');
+  return base;
+}
+
+/**
+ * 使用 Python sidecar 中的 faster-whisper 生成字幕。
+ * 模型按需自动下载(HF_HOME 已收敛到 userData/py-engine-cache)。
+ */
+export async function generateSubtitleWithFasterWhisper(
+  event,
+  file: IFiles,
+  formData,
+) {
+  event.sender.send('taskFileChange', { ...file, extractSubtitle: 'loading' });
+
+  const { tempAudioFile, srtFile } = file;
+  const { model, sourceLanguage, prompt } = formData;
+  const settings = store.get('settings');
+
+  const manager = getPythonEngineManager();
+  let engineInfo;
+  try {
+    engineInfo = await manager.ensureStarted();
+  } catch (error) {
+    throw new Error(
+      `faster-whisper engine unavailable: ${error?.message || error}`,
+    );
+  }
+  if (!engineInfo?.engines?.faster_whisper) {
+    throw new Error(
+      'faster-whisper is not available in the python engine runtime',
+    );
+  }
+
+  const params = {
+    engine: 'faster_whisper',
+    audio_file: tempAudioFile,
+    model: toFasterWhisperModel(model),
+    language: getWhisperLanguage(sourceLanguage),
+    device: settings.fasterWhisperDevice || 'auto',
+    compute_type: settings.fasterWhisperComputeType || 'auto',
+    initial_prompt: prompt || '',
+    vad: settings.useVAD !== false,
+    vad_threshold: getNumericSetting(settings.vadThreshold, 0.5),
+    vad_min_speech_duration_ms: getNumericSetting(
+      settings.vadMinSpeechDuration,
+      250,
+    ),
+    vad_min_silence_duration_ms: getNumericSetting(
+      settings.vadMinSilenceDuration,
+      100,
+    ),
+    vad_speech_pad_ms: getNumericSetting(settings.vadSpeechPad, 30),
+  };
+  logMessage(`fasterWhisperParams: ${JSON.stringify(params, null, 2)}`, 'info');
+  event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
+
+  const { result } = manager.transcribe(params, {
+    onProgress: (percent) => {
+      event.sender.send('taskProgressChange', file, 'extractSubtitle', percent);
+    },
+  });
+  const transcription = await result;
+
+  const formattedSrt = formatSrtContent(
+    (transcription?.segments || []).map(
+      (segment) =>
+        [
+          secondsToSrtTime(segment.start),
+          secondsToSrtTime(segment.end),
+          segment.text || '',
+        ] as [string, string, string],
+    ),
+  );
+  await fs.promises.writeFile(srtFile, formattedSrt);
+
+  event.sender.send('taskProgressChange', file, 'extractSubtitle', 100);
+  event.sender.send('taskFileChange', { ...file, extractSubtitle: 'done' });
+  logMessage(
+    `generate subtitle done (faster-whisper, language=${transcription?.language})`,
+    'info',
+  );
+  return srtFile;
 }
 
 /**

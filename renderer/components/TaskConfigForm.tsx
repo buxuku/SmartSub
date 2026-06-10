@@ -57,7 +57,12 @@ const TaskConfigForm = ({ form, formData, systemInfo }) => {
   const loadSettings = async () => {
     const settings = await window?.ipc?.invoke('getSettings');
     if (settings) {
-      setUseLocalWhisper(settings.useLocalWhisper || false);
+      const engine =
+        settings.transcriptionEngine ||
+        (settings.useLocalWhisper ? 'localCli' : 'builtin');
+      // 非内置引擎(本地 CLI / faster-whisper)不依赖已下载的 ggml 模型文件,
+      // 模型下拉框显示完整目录(faster-whisper 模型按需自动下载)
+      setUseLocalWhisper(engine !== 'builtin');
     }
   };
 

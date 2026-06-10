@@ -91,7 +91,19 @@ const Settings = () => {
   const router = useRouter();
   const { t, i18n } = useTranslation('settings');
   const [currentLanguage, setCurrentLanguage] = useState(router.locale);
-  const [useLocalWhisper, setUseLocalWhisper] = useState(false);
+  const [transcriptionEngine, setTranscriptionEngine] = useState<
+    'builtin' | 'fasterWhisper' | 'localCli'
+  >('builtin');
+  const [fasterWhisperDevice, setFasterWhisperDevice] = useState('auto');
+  const [fasterWhisperComputeType, setFasterWhisperComputeType] =
+    useState('auto');
+  const [engineStatus, setEngineStatus] = useState<
+    | null
+    | { state: 'checking' }
+    | { state: 'ok'; version: string; python: string }
+    | { state: 'fwMissing' }
+    | { state: 'error'; message: string }
+  >(null);
   const [whisperCommand, setWhisperCommand] = useState('');
   const [modelsPath, setModelsPath] = useState('');
   const [tempDir, setTempDir] = useState('');
@@ -117,7 +129,14 @@ const Settings = () => {
       if (settings) {
         form.reset(settings);
         setCurrentLanguage(settings.language || router.locale);
-        setUseLocalWhisper(settings.useLocalWhisper || false);
+        setTranscriptionEngine(
+          settings.transcriptionEngine ||
+            (settings.useLocalWhisper ? 'localCli' : 'builtin'),
+        );
+        setFasterWhisperDevice(settings.fasterWhisperDevice || 'auto');
+        setFasterWhisperComputeType(
+          settings.fasterWhisperComputeType || 'auto',
+        );
         setWhisperCommand(settings.whisperCommand || '');
         setModelsPath(settings.modelsPath || '');
         setUseCustomTempDir(settings.useCustomTempDir || false);
@@ -160,12 +179,66 @@ const Settings = () => {
     }
   };
 
-  const handleLocalWhisperChange = async (checked: boolean) => {
-    await window?.ipc?.invoke('setSettings', {
-      useLocalWhisper: checked,
-      whisperCommand: whisperCommand,
-    });
-    setUseLocalWhisper(checked);
+  const handleEngineChange = async (
+    value: 'builtin' | 'fasterWhisper' | 'localCli',
+  ) => {
+    setTranscriptionEngine(value);
+    setEngineStatus(null);
+    try {
+      await window?.ipc?.invoke('setSettings', {
+        transcriptionEngine: value,
+        // 与旧版字段保持同步,保证降级/回滚后行为一致
+        useLocalWhisper: value === 'localCli',
+      });
+      toast.success(t('engineSaved'));
+    } catch (error) {
+      toast.error(t('saveFailed'));
+    }
+  };
+
+  const handleFasterWhisperOptionChange = async (
+    key: 'fasterWhisperDevice' | 'fasterWhisperComputeType',
+    value: string,
+  ) => {
+    if (key === 'fasterWhisperDevice') {
+      setFasterWhisperDevice(value);
+    } else {
+      setFasterWhisperComputeType(value);
+    }
+    try {
+      await window?.ipc?.invoke('setSettings', { [key]: value });
+      toast.success(t('settingsSaved'));
+    } catch (error) {
+      toast.error(t('saveFailed'));
+    }
+  };
+
+  const handleCheckEngine = async () => {
+    setEngineStatus({ state: 'checking' });
+    try {
+      const result = await window?.ipc?.invoke('pythonEngine:ping');
+      if (result?.success) {
+        if (result.info?.engines?.faster_whisper) {
+          setEngineStatus({
+            state: 'ok',
+            version: result.info.version,
+            python: result.info.python,
+          });
+        } else {
+          setEngineStatus({ state: 'fwMissing' });
+        }
+      } else {
+        setEngineStatus({
+          state: 'error',
+          message: result?.error?.message || 'unknown error',
+        });
+      }
+    } catch (error: any) {
+      setEngineStatus({
+        state: 'error',
+        message: error?.message || String(error),
+      });
+    }
   };
 
   const handleSelectModelsPath = async () => {
@@ -245,7 +318,6 @@ const Settings = () => {
 
   const handleWhisperCommandSave = () => {
     saveSettings({
-      useLocalWhisper,
       whisperCommand,
     });
   };
@@ -399,25 +471,36 @@ const Settings = () => {
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span>{t('useLocalWhisper')}</span>
+              <span>{t('transcriptionEngine')}</span>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger>
                     <HelpCircle className="h-4 w-4 text-muted-foreground" />
                   </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{t('useLocalWhisperTip')}</p>
+                  <TooltipContent className="max-w-md">
+                    <p>{t('transcriptionEngineTip')}</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
-            <Switch
-              checked={useLocalWhisper}
-              onCheckedChange={handleLocalWhisperChange}
-            />
+            <Select
+              value={transcriptionEngine}
+              onValueChange={handleEngineChange}
+            >
+              <SelectTrigger className="w-[240px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="builtin">{t('engineBuiltin')}</SelectItem>
+                <SelectItem value="fasterWhisper">
+                  {t('engineFasterWhisper')}
+                </SelectItem>
+                <SelectItem value="localCli">{t('engineLocalCli')}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
-          {useLocalWhisper && (
+          {transcriptionEngine === 'localCli' && (
             <CommandInput
               label={t('whisperCommand')}
               tooltip={t('whisperCommandTip')}
@@ -425,6 +508,118 @@ const Settings = () => {
               onChange={setWhisperCommand}
               onSave={handleWhisperCommandSave}
             />
+          )}
+
+          {transcriptionEngine === 'fasterWhisper' && (
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span>{t('fasterWhisperDevice')}</span>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-md">
+                        <p>{t('fasterWhisperDeviceTip')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Select
+                  value={fasterWhisperDevice}
+                  onValueChange={(value) =>
+                    handleFasterWhisperOptionChange(
+                      'fasterWhisperDevice',
+                      value,
+                    )
+                  }
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">auto</SelectItem>
+                    <SelectItem value="cpu">cpu</SelectItem>
+                    <SelectItem value="cuda">cuda</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span>{t('fasterWhisperComputeType')}</span>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-md">
+                        <p>{t('fasterWhisperComputeTypeTip')}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Select
+                  value={fasterWhisperComputeType}
+                  onValueChange={(value) =>
+                    handleFasterWhisperOptionChange(
+                      'fasterWhisperComputeType',
+                      value,
+                    )
+                  }
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">auto</SelectItem>
+                    <SelectItem value="int8">int8</SelectItem>
+                    <SelectItem value="int8_float16">int8_float16</SelectItem>
+                    <SelectItem value="float16">float16</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground flex-1 mr-4">
+                  {t('fasterWhisperModelTip')}
+                </p>
+                <Button
+                  onClick={handleCheckEngine}
+                  size="sm"
+                  variant="outline"
+                  className="flex-shrink-0"
+                  disabled={engineStatus?.state === 'checking'}
+                >
+                  <Activity className="h-4 w-4 mr-1" />
+                  {engineStatus?.state === 'checking'
+                    ? t('engineChecking')
+                    : t('checkEngineStatus')}
+                </Button>
+              </div>
+
+              {engineStatus && engineStatus.state !== 'checking' && (
+                <div className="text-sm">
+                  {engineStatus.state === 'ok' && (
+                    <span className="text-green-600">
+                      {t('engineAvailable')} · engine v{engineStatus.version} ·
+                      Python {engineStatus.python}
+                    </span>
+                  )}
+                  {engineStatus.state === 'fwMissing' && (
+                    <span className="text-yellow-600">
+                      {t('fasterWhisperMissing')}
+                    </span>
+                  )}
+                  {engineStatus.state === 'error' && (
+                    <span className="text-red-600">
+                      {t('engineUnavailable')}: {engineStatus.message}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           <div className="flex items-center justify-between">

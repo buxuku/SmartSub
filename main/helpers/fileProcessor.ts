@@ -7,7 +7,9 @@ import { extractAudioFromVideo } from './audioProcessor';
 import {
   generateSubtitleWithLocalWhisper,
   generateSubtitleWithBuiltinWhisper,
+  generateSubtitleWithFasterWhisper,
 } from './subtitleGenerator';
+import { resolveTranscriptionEngine } from './transcriptionEngine';
 import translate from '../translate';
 import { ensureTempDir, getMd5 } from './fileUtils';
 import { IFiles } from '../../types';
@@ -44,14 +46,16 @@ async function generateSubtitle(
   hasOpenAiWhisper,
 ) {
   const settings = store.get('settings');
-  const useLocalWhisper = settings?.useLocalWhisper;
+  const engine = resolveTranscriptionEngine(settings);
 
   try {
-    if (hasOpenAiWhisper && useLocalWhisper && settings?.whisperCommand) {
-      return await generateSubtitleWithLocalWhisper(event, file, formData);
-    } else {
-      return await generateSubtitleWithBuiltinWhisper(event, file, formData);
+    if (engine === 'fasterWhisper') {
+      return await generateSubtitleWithFasterWhisper(event, file, formData);
     }
+    if (engine === 'localCli' && hasOpenAiWhisper && settings?.whisperCommand) {
+      return await generateSubtitleWithLocalWhisper(event, file, formData);
+    }
+    return await generateSubtitleWithBuiltinWhisper(event, file, formData);
   } catch (error) {
     onError(event, file, 'extractSubtitle', error);
     throw error; // 继续抛出错误，以便上层函数知道发生了错误
