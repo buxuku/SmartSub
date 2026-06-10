@@ -1,13 +1,19 @@
 import * as https from 'https';
 import * as http from 'http';
+import * as fs from 'fs';
 import { logMessage } from './storeManager';
 import type {
   RemoteAddonVersions,
   AddonVariant,
   AddonUpdateInfo,
 } from '../../types/addon';
-import { getAddonConfig, getInstalledAddons } from './addonManager';
+import {
+  getAddonConfig,
+  getInstalledAddons,
+  isAddonInstalled,
+} from './addonManager';
 import { getBuildInfo } from './buildInfo';
+import { isPlatformCudaCapable, getBuiltinVulkanAddonPath } from './cudaUtils';
 
 /**
  * 远程版本文件 URL
@@ -189,6 +195,34 @@ export async function checkAllUpdates(): Promise<AddonUpdateInfo[]> {
     const updateInfo = await checkVersionUpdate(version);
     if (updateInfo) {
       updates.push(updateInfo);
+    }
+  }
+
+  // 内置 Vulkan（尚未下载到 userData 时）也参与更新检测：
+  // 远程版本比构建日期新 → 提示可下载更新版到 userData 覆盖内置
+  if (
+    isPlatformCudaCapable() &&
+    !isAddonInstalled('vulkan') &&
+    fs.existsSync(getBuiltinVulkanAddonPath())
+  ) {
+    const builtinVersion = getBuiltinVulkanVersion();
+    if (builtinVersion) {
+      const remoteVersions = await fetchRemoteVersions();
+      const remoteVulkan = remoteVersions?.vulkan;
+      if (remoteVulkan) {
+        const hasUpdate =
+          normalizeVersion(remoteVulkan.version) >
+          normalizeVersion(builtinVersion);
+        if (hasUpdate) {
+          updates.push({
+            variant: 'vulkan',
+            hasUpdate: true,
+            localVersion: builtinVersion,
+            remoteVersion: remoteVulkan.version,
+            updateNotes: remoteVulkan.updateNotes,
+          });
+        }
+      }
     }
   }
 

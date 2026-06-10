@@ -1,5 +1,9 @@
 import { execSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as si from 'systeminformation';
 import { logMessage } from './storeManager';
+import { getExtraResourcesPath } from './utils';
 import type {
   CudaEnvironment,
   CudaToolkitInfo,
@@ -7,6 +11,9 @@ import type {
   AddonRecommendation,
   CudaVersion,
   DevSimulationConfig,
+  GpuEnvironment,
+  GpuInfo,
+  GpuVendor,
 } from '../../types/addon';
 import { AVAILABLE_CUDA_VERSIONS } from '../../types/addon';
 
@@ -364,4 +371,153 @@ export function getEffectivePlatform(): NodeJS.Platform {
     return simConfig.platform;
   }
   return process.platform;
+}
+
+/**
+ * 归一化 GPU 厂商
+ */
+function normalizeGpuVendor(vendor: string, model: string): GpuVendor {
+  const s = `${vendor} ${model}`.toLowerCase();
+  if (
+    s.includes('nvidia') ||
+    s.includes('geforce') ||
+    s.includes('quadro') ||
+    s.includes('tesla')
+  ) {
+    return 'nvidia';
+  }
+  if (
+    s.includes('amd') ||
+    s.includes('radeon') ||
+    s.includes('advanced micro')
+  ) {
+    return 'amd';
+  }
+  if (s.includes('intel')) {
+    return 'intel';
+  }
+  if (s.includes('apple')) {
+    return 'apple';
+  }
+  return 'unknown';
+}
+
+/**
+ * 枚举显卡（systeminformation，跨平台），带 10s 超时与 dev 模拟
+ */
+async function detectGpus(): Promise<GpuInfo[]> {
+  if (
+    process.env.NODE_ENV === 'development' &&
+    process.env.DEV_SIMULATE_GPU_VENDOR
+  ) {
+    const vendor = process.env.DEV_SIMULATE_GPU_VENDOR as GpuVendor;
+    return [{ name: `Simulated ${vendor.toUpperCase()} GPU`, vendor }];
+  }
+
+  try {
+    const graphics = await Promise.race([
+      si.graphics(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('GPU detection timeout')), 10000),
+      ),
+    ]);
+    return (graphics.controllers || [])
+      .filter((c) => c.model || c.vendor)
+      .map((c) => ({
+        name: c.model || c.vendor || 'Unknown GPU',
+        vendor: normalizeGpuVendor(c.vendor || '', c.model || ''),
+      }));
+  } catch (error) {
+    logMessage(`GPU enumeration failed: ${error}`, 'warning');
+    return [];
+  }
+}
+
+/**
+ * 检测 Vulkan 运行库是否存在（纯文件检查，毫秒级，不调用 vulkaninfo）
+ */
+export function detectVulkanRuntime(): boolean {
+  if (
+    process.env.NODE_ENV === 'development' &&
+    process.env.DEV_SIMULATE_VULKAN
+  ) {
+    return process.env.DEV_SIMULATE_VULKAN === 'true';
+  }
+  // dev 平台模拟时本机文件检查无意义，默认按可用处理（可用 DEV_SIMULATE_VULKAN=false 覆盖）
+  if (getDevSimulationConfig()?.enabled) {
+    return true;
+  }
+
+  const platform = getEffectivePlatform();
+  if (platform === 'win32') {
+    const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+    return fs.existsSync(path.join(systemRoot, 'System32', 'vulkan-1.dll'));
+  }
+  if (platform === 'linux') {
+    const commonPaths = [
+      '/usr/lib/x86_64-linux-gnu/libvulkan.so.1',
+      '/usr/lib64/libvulkan.so.1',
+      '/usr/lib/libvulkan.so.1',
+    ];
+    if (commonPaths.some((p) => fs.existsSync(p))) {
+      return true;
+    }
+    try {
+      const out = execSync('ldconfig -p', { encoding: 'utf8', timeout: 5000 });
+      return out.includes('libvulkan.so.1');
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
+ * 内置 Vulkan addon 路径（CI 预置；macOS / 开发环境通常不存在）
+ */
+export function getBuiltinVulkanAddonPath(): string {
+  return path.join(getExtraResourcesPath(), 'addons', 'addon.vulkan.node');
+}
+
+let cachedGpuEnvironment: GpuEnvironment | null = null;
+
+/**
+ * 获取完整 GPU 环境（跨厂商）。结果会话级缓存，forceRefresh 重新检测。
+ */
+export async function getGpuEnvironment(
+  forceRefresh = false,
+): Promise<GpuEnvironment> {
+  if (cachedGpuEnvironment && !forceRefresh) {
+    return cachedGpuEnvironment;
+  }
+
+  const platform = getEffectivePlatform();
+  const gpus = await detectGpus();
+  const vulkanRuntime = isPlatformCudaCapable() ? detectVulkanRuntime() : false;
+  const builtinVulkanAvailable =
+    isPlatformCudaCapable() && fs.existsSync(getBuiltinVulkanAddonPath());
+
+  // NVIDIA 详细检测：检测到 N 卡、枚举失败（空列表，nvidia-smi 兜底）或 dev 模拟时执行
+  const hasNvidia = gpus.some((g) => g.vendor === 'nvidia');
+  const shouldProbeNvidia =
+    isPlatformCudaCapable() &&
+    (hasNvidia || gpus.length === 0 || !!getDevSimulationConfig()?.enabled);
+  const nvidia = shouldProbeNvidia ? getCudaEnvironment() : null;
+
+  cachedGpuEnvironment = {
+    platform,
+    gpus,
+    vulkanRuntime,
+    builtinVulkanAvailable,
+    nvidia,
+  };
+  logMessage(
+    `GPU Environment: ${JSON.stringify({ ...cachedGpuEnvironment, nvidia: nvidia ? 'detected' : null })}`,
+    'info',
+  );
+  return cachedGpuEnvironment;
+}
+
+export function clearGpuEnvironmentCache(): void {
+  cachedGpuEnvironment = null;
 }
