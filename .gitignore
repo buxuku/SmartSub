@@ -16,3 +16,4 @@ Project
 sample
 .specs/
 .agents/
+extraResources/addons/addon.vulkan.node

@@ -39,6 +39,7 @@ jobs:
             arch: x64
             os_build_arg: win
             addon_name: addon-windows-x64.node
+            vulkan_addon_name: addon-windows-vulkan.node.gz
             artifact_suffix: windows-x64
 
           # Linux x64 (通用版本，不包含 CUDA)
@@ -46,6 +47,7 @@ jobs:
             arch: x64
             os_build_arg: linux
             addon_name: addon-linux-x64.node
+            vulkan_addon_name: addon-linux-vulkan.node.gz
             artifact_suffix: linux-x64
 
     steps:
@@ -69,6 +71,12 @@ jobs:
              curl -L -o "temp-artifacts/addon-macos-arm64-coreml.node" \
               "https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-macos-arm64-coreml.node"
           fi
+          # Windows / Linux 额外下载 Vulkan 通用 GPU 包并解压
+          if [[ -n "${{ matrix.vulkan_addon_name }}" ]]; then
+            curl -L -o "temp-artifacts/${{ matrix.vulkan_addon_name }}" \
+              "https://github.com/buxuku/whisper.cpp/releases/download/latest/${{ matrix.vulkan_addon_name }}"
+            gunzip -c "temp-artifacts/${{ matrix.vulkan_addon_name }}" > "temp-artifacts/addon.vulkan.node"
+          fi
 
       - name: Prepare macOS addon
         if: matrix.os_build_arg == 'mac'
@@ -89,6 +97,7 @@ jobs:
           BUILD_ARCH: '${{ matrix.arch }}'
         run: |
           Copy-Item -Path "temp-artifacts/${{ matrix.addon_name }}" -Destination "extraResources/addons/addon.node"
+          Copy-Item -Path "temp-artifacts/addon.vulkan.node" -Destination "extraResources/addons/addon.vulkan.node"
           node scripts/inject-build-info.js
 
       - name: Prepare Linux addon
@@ -98,6 +107,7 @@ jobs:
           BUILD_ARCH: '${{ matrix.arch }}'
         run: |
           cp temp-artifacts/${{ matrix.addon_name }} extraResources/addons/addon.node
+          cp temp-artifacts/addon.vulkan.node extraResources/addons/addon.vulkan.node
           node scripts/inject-build-info.js
 
       - name: Install dependencies
