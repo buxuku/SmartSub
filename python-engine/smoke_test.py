@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""协议级 smoke test:以子进程方式拉起 main.py,验证完整协议链路。
+"""协议级 smoke test:以子进程方式拉起引擎,验证完整协议链路。
 
 覆盖:ping / echo / transcribe(fake, 进度+分段) / cancel / 错误链路 / shutdown 退出码。
-用法:python3 smoke_test.py
+用法:
+  python3 smoke_test.py                                   # 测源码 main.py
+  python3 smoke_test.py dist/smartsub-engine/smartsub-engine  # 测 PyInstaller 冻结产物
 """
 
 import json
@@ -15,11 +17,19 @@ import time
 ENGINE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+def resolve_engine_cmd():
+    """默认测源码;传入冻结产物路径(或设 SMARTSUB_ENGINE_BIN)则测二进制。"""
+    binary = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("SMARTSUB_ENGINE_BIN")
+    if binary:
+        return [os.path.abspath(binary)]
+    return [sys.executable, os.path.join(ENGINE_DIR, "main.py")]
+
+
 class EngineClient:
     def __init__(self):
         env = dict(os.environ, PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8")
         self.proc = subprocess.Popen(
-            [sys.executable, os.path.join(ENGINE_DIR, "main.py")],
+            resolve_engine_cmd(),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

@@ -25,6 +25,8 @@ export interface EngineCommand {
   command: string;
   args: string[];
   cwd?: string;
+  /** 附加环境变量(在隔离环境基础上合并,如 HF_HOME 指向 userData) */
+  env?: Record<string, string>;
 }
 
 export type EngineLogger = (
@@ -127,7 +129,7 @@ export class PythonEngineManager {
 
     const proc = spawn(cmd.command, cmd.args, {
       cwd: cmd.cwd,
-      env: buildSanitizedEnv(),
+      env: { ...buildSanitizedEnv(), ...(cmd.env || {}) },
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });

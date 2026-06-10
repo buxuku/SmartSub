@@ -28,6 +28,10 @@ mac:
         - '**/*'
     - from: ./extraResources/ggml-silero-v6.2.0.bin
       to: ./extraResources/ggml-silero-v6.2.0.bin
+    - from: ./extraResources/py-engine/
+      to: ./extraResources/py-engine/
+      filter:
+        - '**/*'
 win:
   target:
     - nsis
@@ -38,6 +42,10 @@ win:
         - '**/*'
     - from: ./extraResources/ggml-silero-v6.2.0.bin
       to: ./extraResources/ggml-silero-v6.2.0.bin
+    - from: ./extraResources/py-engine/
+      to: ./extraResources/py-engine/
+      filter:
+        - '**/*'
   requestedExecutionLevel: asInvoker
   artifactName: '${productName}_Windows_${version}_${arch}.${ext}'
   publish:
@@ -60,6 +68,10 @@ linux:
         - '**/*'
     - from: ./extraResources/ggml-silero-v6.2.0.bin
       to: ./extraResources/ggml-silero-v6.2.0.bin
+    - from: ./extraResources/py-engine/
+      to: ./extraResources/py-engine/
+      filter:
+        - '**/*'
 nsis:
   oneClick: false
   perMachine: false

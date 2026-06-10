@@ -19,3 +19,6 @@ sample
 __pycache__/
 *.pyc
 python-engine/.venv/
+python-engine/build/
+extraResources/py-engine/*
+!extraResources/py-engine/.gitkeep

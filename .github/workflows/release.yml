@@ -12,6 +12,8 @@ jobs:
     env:
       ELECTRON_BUILDER_HTTP_TIMEOUT: 6000000
       ELECTRON_MIRROR: 'https://npmmirror.com/mirrors/electron/'
+      # Python 引擎(faster-whisper sidecar)预构建版本,由 python-engine.yml 工作流发布
+      PY_ENGINE_TAG: py-engine-v0.1.0
     strategy:
       fail-fast: false
       matrix:
@@ -97,6 +99,23 @@ jobs:
         run: |
           cp temp-artifacts/${{ matrix.addon_name }} extraResources/addons/addon.node
           node scripts/inject-build-info.js
+
+      # 可选依赖:引擎 release 不存在时仅告警,主应用照常打包(应用内有兜底)
+      - name: Download Python engine (optional)
+        shell: bash
+        run: |
+          mkdir -p extraResources/py-engine temp-artifacts
+          asset="smartsub-engine-${{ matrix.artifact_suffix }}.tar.gz"
+          url="https://github.com/buxuku/SmartSub/releases/download/${PY_ENGINE_TAG}/${asset}"
+          echo "Downloading ${url}"
+          if curl -fL --retry 3 -o "temp-artifacts/${asset}" "$url"; then
+            mkdir -p temp-artifacts/py-engine-extract
+            tar -xzf "temp-artifacts/${asset}" -C temp-artifacts/py-engine-extract
+            cp -R temp-artifacts/py-engine-extract/smartsub-engine/. extraResources/py-engine/
+            echo "Python engine staged into extraResources/py-engine"
+          else
+            echo "::warning::Python engine asset ${asset} not found at ${PY_ENGINE_TAG}; packaging WITHOUT python engine."
+          fi
 
       - name: Install dependencies
         run: yarn install --frozen-lockfile
