@@ -16,3 +16,5 @@ Project
 sample
 .specs/
 .agents/
+__pycache__/
+*.pyc
