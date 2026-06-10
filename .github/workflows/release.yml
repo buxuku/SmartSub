@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+  # 手动触发：Actions 页面点 "Run workflow"，并在 "Use workflow from" 选择要发布的 tag（如 v2.16.0）
+  workflow_dispatch:
 
 jobs:
   build_artifacts:
