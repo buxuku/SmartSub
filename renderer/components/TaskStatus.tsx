@@ -35,6 +35,11 @@ const TaskStatus = ({ file, checkKey, skip = false }) => {
       <div className="flex items-center gap-1">
         <Loader className="animate-spin size-4" />
         <span className="text-xs">{displayProgress}%</span>
+        {checkKey === 'extractSubtitle' && file.whisperBackend && (
+          <span className="text-[10px] px-1 rounded bg-muted text-muted-foreground whitespace-nowrap">
+            {file.whisperBackend}
+          </span>
+        )}
       </div>
     );
   }

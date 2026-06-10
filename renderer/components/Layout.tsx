@@ -49,8 +49,9 @@ const Layout = ({ children }) => {
   const [newVersion, setNewVersion] = useState('');
   const [releaseNotes, setReleaseNotes] = useState('');
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
-  const [cudaCapable, setCudaCapable] = useState(false);
-  const [cudaEnabled, setCudaEnabled] = useState(false);
+  const [gpuCapable, setGpuCapable] = useState(false);
+  const [gpuEnabled, setGpuEnabled] = useState(false);
+  const [gpuBackendLabel, setGpuBackendLabel] = useState('');
 
   useEffect(() => {
     // 监听消息通知
@@ -73,32 +74,82 @@ const Layout = ({ children }) => {
       },
     );
 
-    // 检查 GPU 加速状态
-    const checkAddonStatus = async () => {
-      try {
-        const cudaEnv = await window?.ipc?.invoke('get-cuda-environment');
-        const canUseCuda = cudaEnv?.recommendation?.canUseCuda || false;
-        setCudaCapable(canUseCuda);
+    const backendLabels: Record<string, string> = {
+      cuda: 'CUDA',
+      vulkan: 'Vulkan',
+      cpu: 'CPU',
+      metal: 'Metal',
+      coreml: 'CoreML',
+      custom: 'Custom',
+    };
 
-        if (canUseCuda) {
-          const settings = await window?.ipc?.invoke('getSettings');
-          const addonSummary = await window?.ipc?.invoke('get-addon-summary');
-          // 加速已启用：useCuda 开启且（选择了版本或设置了自定义路径）
-          const isEnabled =
-            settings?.useCuda &&
-            (addonSummary?.selectedVersion || addonSummary?.customAddonPath);
-          setCudaEnabled(!!isEnabled);
-        }
+    // 检查 GPU 加速状态
+    const checkGpuStatus = async () => {
+      try {
+        const env = await window?.ipc?.invoke('get-gpu-environment');
+        const capable = !!env && env.platform !== 'darwin';
+        setGpuCapable(capable);
+        if (!capable) return;
+
+        const settings = await window?.ipc?.invoke('getSettings');
+        const active = await window?.ipc?.invoke('get-active-backend');
+        const isCpuResult = active?.backend === 'cpu';
+        setGpuEnabled(settings?.gpuMode !== 'cpu-only' && !isCpuResult);
+        setGpuBackendLabel(
+          active && !isCpuResult
+            ? active.backend === 'cuda' && active.variant
+              ? `CUDA ${active.variant}`
+              : backendLabels[active.backend] || active.backend
+            : '',
+        );
       } catch (error) {
-        console.error('Failed to check addon status:', error);
+        console.error('Failed to check GPU status:', error);
       }
     };
 
-    checkAddonStatus();
+    checkGpuStatus();
+
+    // 一次性迁移通知（gpuMode 自动启用告知）
+    const checkMigrationNotice = async () => {
+      try {
+        const settings = await window?.ipc?.invoke('getSettings');
+        if (settings?.gpuMigrationNotified === false) {
+          toast.info(t('gpuMigrationNotice'), { duration: 10000 });
+          await window?.ipc?.invoke('setSettings', {
+            gpuMigrationNotified: true,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to check migration notice:', error);
+      }
+    };
+    checkMigrationNotice();
+
+    // 降级事件 toast（主进程已做会话内同原因去重）
+    const cleanupFallback = window?.ipc?.on(
+      'addon-fallback',
+      (event: { expected: string; actual: string; reason: string }) => {
+        toast.warning(
+          t('gpuFallbackToast', {
+            backend: backendLabels[event.actual] || event.actual,
+          }),
+          { duration: 8000 },
+        );
+        checkGpuStatus();
+      },
+    );
+
+    // 后端变更推送（转写实际加载后刷新头部徽章）
+    const cleanupBackendChanged = window?.ipc?.on(
+      'active-backend-changed',
+      () => {
+        checkGpuStatus();
+      },
+    );
 
     // 监听 GPU 设置变更事件（由设置页面触发）
     const handleGpuSettingsChanged = () => {
-      checkAddonStatus();
+      checkGpuStatus();
     };
     window.addEventListener('gpu-settings-changed', handleGpuSettingsChanged);
 
@@ -106,6 +157,8 @@ const Layout = ({ children }) => {
     return () => {
       cleanupMessage?.();
       cleanupUpdateStatus?.();
+      cleanupFallback?.();
+      cleanupBackendChanged?.();
       window.removeEventListener(
         'gpu-settings-changed',
         handleGpuSettingsChanged,
@@ -287,7 +340,7 @@ const Layout = ({ children }) => {
             </span>
           </h4>
           {/* GPU 加速状态指示器 */}
-          {cudaCapable && (
+          {gpuCapable && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -295,7 +348,7 @@ const Layout = ({ children }) => {
                     variant="ghost"
                     size="sm"
                     className={`ml-auto h-7 text-xs gap-1.5 ${
-                      cudaEnabled
+                      gpuEnabled
                         ? 'text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
@@ -303,18 +356,18 @@ const Layout = ({ children }) => {
                       router.push(`/${locale}/settings#gpu-acceleration`)
                     }
                   >
-                    {cudaEnabled ? (
+                    {gpuEnabled ? (
                       <Zap className="w-3.5 h-3.5" />
                     ) : (
                       <ZapOff className="w-3.5 h-3.5" />
                     )}
-                    {cudaEnabled
-                      ? t('gpuAccelerationEnabled')
+                    {gpuEnabled
+                      ? `${t('gpuAccelerationEnabled')}${gpuBackendLabel ? ` · ${gpuBackendLabel}` : ''}`
                       : t('gpuAccelerationDisabled')}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {cudaEnabled
+                  {gpuEnabled
                     ? t('gpuAccelerationEnabledTip')
                     : t('gpuAccelerationDisabledTip')}
                 </TooltipContent>
