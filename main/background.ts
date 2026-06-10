@@ -22,6 +22,8 @@ import {
   registerAddonIpcHandlers,
   setMainWindowForAddon,
 } from './helpers/ipcAddonHandlers';
+import { registerPythonEngineIpcHandlers } from './helpers/ipcPythonEngineHandlers';
+import { shutdownPythonEngine } from './helpers/pythonEngine';
 
 //控制台出现中文乱码，需要去node_modules\electron\cli.js中修改启动代码页
 
@@ -52,6 +54,7 @@ if (isProd) {
   setupParameterHandlers();
   setupProofreadHandlers();
   registerAddonIpcHandlers();
+  registerPythonEngineIpcHandlers();
 
   // Initialize configuration manager
   try {
@@ -99,4 +102,9 @@ if (isProd) {
 
 app.on('window-all-closed', () => {
   app.quit();
+});
+
+app.on('will-quit', () => {
+  // 优雅停止 python sidecar(进程随 stdin 关闭也会自行退出,这里是双保险)
+  void shutdownPythonEngine();
 });
