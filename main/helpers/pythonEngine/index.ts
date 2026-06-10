@@ -7,6 +7,7 @@
  *  3. 开发环境:系统 python3 + 仓库内 python-engine/main.py
  */
 import path from 'path';
+import fs from 'fs';
 import { app } from 'electron';
 import { logMessage } from '../storeManager';
 import { PythonEngineManager, EngineCommand } from './manager';
@@ -36,10 +37,16 @@ function resolveEngineCommand(): EngineCommand {
     };
   }
 
-  // 开发环境:直接用系统 python 跑仓库里的脚本(fake 引擎仅需标准库)
+  // 开发环境:优先使用 python-engine/.venv(装有 faster-whisper),
+  // 否则回退系统 python(fake 引擎仅需标准库,仍可验证链路)
   const engineDir = path.join(app.getAppPath(), 'python-engine');
+  const venvPython =
+    process.platform === 'win32'
+      ? path.join(engineDir, '.venv', 'Scripts', 'python.exe')
+      : path.join(engineDir, '.venv', 'bin', 'python');
+  const fallbackPython = process.platform === 'win32' ? 'python' : 'python3';
   return {
-    command: process.platform === 'win32' ? 'python' : 'python3',
+    command: fs.existsSync(venvPython) ? venvPython : fallbackPython,
     args: [path.join(engineDir, 'main.py')],
     cwd: engineDir,
   };

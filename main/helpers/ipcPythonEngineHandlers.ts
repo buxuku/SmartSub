@@ -5,6 +5,8 @@
  *   await window.ipc.invoke('pythonEngine:ping')
  *   window.ipc.on('pythonEngine:progress', console.log)
  *   await window.ipc.invoke('pythonEngine:testTranscribe', { durationS: 3, segmentCount: 6 })
+ *   // 真实转写(需 python-engine/.venv 已安装 faster-whisper;支持音频或视频路径):
+ *   await window.ipc.invoke('pythonEngine:transcribeFile', { audioFile: '/path/to/media.mp4', model: 'tiny' })
  *   await window.ipc.invoke('pythonEngine:stop')
  */
 import { ipcMain } from 'electron';
@@ -54,6 +56,44 @@ export function registerPythonEngineIpcHandlers(): void {
       return { success: true, id, result: transcription };
     } catch (error) {
       logMessage(`pythonEngine:testTranscribe failed: ${error}`, 'error');
+      return { success: false, error: toErrorPayload(error) };
+    }
+  });
+
+  // 真实 faster-whisper 转写:audioFile 支持任意 ffmpeg 可解码的音/视频路径,
+  // model 可为 faster-whisper 模型 id(tiny/base/small/...)或 CT2 模型目录绝对路径
+  ipcMain.handle('pythonEngine:transcribeFile', async (event, options) => {
+    const audioFile = options?.audioFile;
+    if (!audioFile) {
+      return { success: false, error: { message: 'audioFile is required' } };
+    }
+    try {
+      const manager = getPythonEngineManager();
+      await manager.ensureStarted();
+
+      const { id, result } = manager.transcribe(
+        {
+          engine: 'faster_whisper',
+          audio_file: audioFile,
+          model: options?.model ?? 'tiny',
+          language: options?.language ?? 'auto',
+          device: options?.device ?? 'auto',
+          compute_type: options?.computeType ?? 'auto',
+          vad: options?.vad ?? true,
+          word_timestamps: options?.wordTimestamps ?? false,
+        },
+        {
+          onProgress: (percent) =>
+            event.sender.send('pythonEngine:progress', { id, percent }),
+          onSegment: (segment) =>
+            event.sender.send('pythonEngine:segment', { id, segment }),
+        },
+      );
+
+      const transcription = await result;
+      return { success: true, id, result: transcription };
+    } catch (error) {
+      logMessage(`pythonEngine:transcribeFile failed: ${error}`, 'error');
       return { success: false, error: toErrorPayload(error) };
     }
   });
