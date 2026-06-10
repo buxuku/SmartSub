@@ -10,6 +10,22 @@ import { exportConfig, importConfig } from './configExporter';
 
 console.log(app.getVersion(), 'version');
 export function setupStoreHandlers() {
+  // gpuMode 一次性迁移：
+  // 老用户（settings 中无 gpuMode）统一迁移为 'auto'，并标记待通知；
+  // 新装用户由 store defaults 提供 gpuMode='auto'，不会进入此分支。
+  const currentSettings = store.get('settings');
+  if (currentSettings && currentSettings.gpuMode === undefined) {
+    store.set('settings', {
+      ...currentSettings,
+      gpuMode: 'auto',
+      gpuMigrationNotified: false,
+    });
+    logMessage(
+      `Migrated GPU settings: useCuda=${currentSettings.useCuda} -> gpuMode=auto`,
+      'info',
+    );
+  }
+
   // 启动时初始化服务商配置
   getAndInitializeProviders().then(async () => {
     const osInfo = {
