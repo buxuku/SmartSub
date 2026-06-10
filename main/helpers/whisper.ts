@@ -1,23 +1,14 @@
 import { spawn } from 'child_process';
 import { app } from 'electron';
 import path from 'path';
-import { isAppleSilicon, isWin32, getExtraResourcesPath } from './utils';
+import { isAppleSilicon, isWin32 } from './utils';
 import { BrowserWindow, DownloadItem } from 'electron';
 import decompress from 'decompress';
 import fs from 'fs-extra';
 import { store, logMessage } from './storeManager';
-import {
-  checkCudaSupport,
-  getEffectivePlatform,
-  isPlatformCudaCapable,
-} from './cudaUtils';
-import {
-  getSelectedAddonVersion,
-  getAddonVersionDir,
-  hasDependentLibs,
-  isAddonInstalled,
-  getCustomAddonPath,
-} from './addonManager';
+import { getEffectivePlatform } from './cudaUtils';
+import { loadBestAddon } from './addonLoader';
+import type { GpuMode } from '../../types/addon';
 
 export const getPath = (key?: string) => {
   const userDataPath = app.getPath('userData');
@@ -250,143 +241,18 @@ export const hasEncoderModel = (model) => {
 };
 
 /**
- * 设置动态链接库搜索路径
- * 必须在 dlopen 之前调用
- */
-function setupLibraryPath(addonDir: string): void {
-  const platform = getEffectivePlatform();
-  const absoluteAddonDir = path.resolve(addonDir);
-
-  if (platform === 'win32') {
-    // Windows: 将 addon 目录添加到 PATH 前面（优先级最高）
-    const currentPath = process.env.PATH || '';
-    if (!currentPath.includes(absoluteAddonDir)) {
-      process.env.PATH = `${absoluteAddonDir};${currentPath}`;
-      logMessage(`Added ${absoluteAddonDir} to PATH for DLL loading`, 'info');
-    }
-  } else if (platform === 'linux') {
-    // Linux: 将 addon 目录添加到 LD_LIBRARY_PATH 前面
-    const currentLdPath = process.env.LD_LIBRARY_PATH || '';
-    if (!currentLdPath.includes(absoluteAddonDir)) {
-      process.env.LD_LIBRARY_PATH = `${absoluteAddonDir}:${currentLdPath}`;
-      logMessage(
-        `Added ${absoluteAddonDir} to LD_LIBRARY_PATH for SO loading`,
-        'info',
-      );
-    }
-  }
-}
-
-/**
- * 加载适合当前系统的Whisper Addon
+ * 加载适合当前系统的 Whisper Addon
  *
- * 加载优先级：
- * 1. 如果启用 CUDA 且已安装加速包，从用户数据目录加载
- * 2. 否则从 extraResources 加载默认版本
+ * 实际决策与降级链见 addonLoader.resolveCandidates；
+ * 此处仅负责组装 LoadContext（gpuMode + CoreML 可用性）。
  */
-export async function loadWhisperAddon(model: string, canUseCuda?: boolean) {
-  const platform = getEffectivePlatform();
-  const settings = store.get('settings') || { useCuda: false };
-  const useCuda = settings.useCuda || false;
-  const shouldUseCuda =
-    canUseCuda ?? (isPlatformCudaCapable() && useCuda && !!checkCudaSupport());
-
-  let addonPath: string;
-
-  // 检查是否是可能支持 CUDA 的平台
-  if (isPlatformCudaCapable() && shouldUseCuda) {
-    // 优先检查自定义 addon.node 路径
-    const customPath = getCustomAddonPath();
-
-    if (customPath && fs.existsSync(customPath)) {
-      // 使用自定义路径
-      const customDir = path.dirname(customPath);
-      if (hasDependentLibs(customDir)) {
-        setupLibraryPath(customDir);
-      }
-      addonPath = customPath;
-      logMessage(`Loading custom addon from: ${addonPath}`, 'info');
-    } else if (customPath) {
-      // 自定义路径已设置但文件不存在
-      logMessage(
-        `Custom addon path not found: ${customPath}, falling back to default`,
-        'warning',
-      );
-      addonPath = path.join(getExtraResourcesPath(), 'addons', 'addon.node');
-    } else {
-      // 获取用户选择的加速包版本
-      const selectedVersion = getSelectedAddonVersion();
-
-      if (selectedVersion && isAddonInstalled(selectedVersion)) {
-        // 从用户数据目录加载
-        const versionDir = getAddonVersionDir(selectedVersion);
-        const userAddonPath = path.join(versionDir, 'addon.node');
-
-        if (fs.existsSync(userAddonPath)) {
-          // 检查并设置依赖库路径（必须在 dlopen 之前）
-          if (hasDependentLibs(versionDir)) {
-            setupLibraryPath(versionDir);
-          }
-
-          addonPath = userAddonPath;
-          logMessage(`Loading CUDA addon from userData: ${addonPath}`, 'info');
-        } else {
-          // 用户数据目录的 addon 不存在，回退到默认版本
-          logMessage(
-            `Selected addon version ${selectedVersion} not found, falling back to default`,
-            'warning',
-          );
-          addonPath = path.join(
-            getExtraResourcesPath(),
-            'addons',
-            'addon.node',
-          );
-        }
-      } else {
-        // 没有安装加速包，使用默认的 no-cuda 版本
-        addonPath = path.join(getExtraResourcesPath(), 'addons', 'addon.node');
-        logMessage('No CUDA addon installed, using default addon', 'info');
-      }
-    }
-  } else if (isPlatformCudaCapable() && useCuda && !shouldUseCuda) {
-    addonPath = path.join(getExtraResourcesPath(), 'addons', 'addon.node');
-    logMessage(
-      'CUDA requested but unavailable, falling back to CPU addon',
-      'info',
-    );
-  } else if (
-    platform === 'darwin' &&
+export async function loadWhisperAddon(model: string) {
+  const settings = store.get('settings');
+  const gpuMode: GpuMode = settings?.gpuMode || 'auto';
+  const coremlEligible =
+    getEffectivePlatform() === 'darwin' &&
     isAppleSilicon() &&
-    hasEncoderModel(model)
-  ) {
-    // macOS Apple Silicon with CoreML
-    addonPath = path.join(
-      getExtraResourcesPath(),
-      'addons',
-      'addon.coreml.node',
-    );
-    logMessage('Loading CoreML addon for Apple Silicon', 'info');
-  } else {
-    // 默认：从 extraResources 加载
-    addonPath = path.join(getExtraResourcesPath(), 'addons', 'addon.node');
-    logMessage('Loading default addon from extraResources', 'info');
-  }
+    hasEncoderModel(model);
 
-  if (!addonPath) {
-    throw new Error('Unsupported platform or architecture');
-  }
-
-  if (!fs.existsSync(addonPath)) {
-    throw new Error(`Addon not found: ${addonPath}`);
-  }
-
-  logMessage(`Loading whisper addon from: ${addonPath}`, 'info');
-
-  const module = { exports: { whisper: null } };
-  process.dlopen(module, addonPath);
-
-  return module.exports.whisper as (
-    params: Record<string, unknown>,
-    callback: (error: Error | null, result?: unknown) => void,
-  ) => void;
+  return loadBestAddon({ gpuMode, coremlEligible });
 }

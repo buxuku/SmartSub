@@ -1,6 +1,17 @@
 import { ipcMain, BrowserWindow, dialog } from 'electron';
 import { logMessage } from './storeManager';
-import { getCudaEnvironment, isPlatformCudaCapable } from './cudaUtils';
+import {
+  getCudaEnvironment,
+  isPlatformCudaCapable,
+  getGpuEnvironment,
+  clearGpuEnvironmentCache,
+} from './cudaUtils';
+import {
+  getActiveBackend,
+  setFallbackNotifier,
+  setLoadResultNotifier,
+  clearAddonLoadCache,
+} from './addonLoader';
 import {
   getAddonConfig,
   getInstalledAddons,
@@ -36,6 +47,18 @@ let mainWindow: BrowserWindow | null = null;
 export function setMainWindowForAddon(window: BrowserWindow): void {
   mainWindow = window;
   getAddonDownloader(window);
+
+  // 加载降级 / 后端变更事件推送到渲染层
+  setFallbackNotifier((event) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('addon-fallback', event);
+    }
+  });
+  setLoadResultNotifier((info) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('active-backend-changed', info);
+    }
+  });
 }
 
 /**
@@ -49,6 +72,32 @@ export function registerAddonIpcHandlers(): void {
       return env;
     } catch (error) {
       logMessage(`Error getting CUDA environment: ${error}`, 'error');
+      return null;
+    }
+  });
+
+  // 获取跨厂商 GPU 环境信息
+  ipcMain.handle(
+    'get-gpu-environment',
+    async (_event, forceRefresh?: boolean) => {
+      try {
+        if (forceRefresh) {
+          clearGpuEnvironmentCache();
+        }
+        return await getGpuEnvironment(!!forceRefresh);
+      } catch (error) {
+        logMessage(`Error getting GPU environment: ${error}`, 'error');
+        return null;
+      }
+    },
+  );
+
+  // 获取当前生效的后端（最近一次加载结果）
+  ipcMain.handle('get-active-backend', async () => {
+    try {
+      return getActiveBackend();
+    } catch (error) {
+      logMessage(`Error getting active backend: ${error}`, 'error');
       return null;
     }
   });
@@ -89,6 +138,7 @@ export function registerAddonIpcHandlers(): void {
     async (event, version: AddonVariant) => {
       try {
         selectAddonVersion(version);
+        clearAddonLoadCache();
         return { success: true };
       } catch (error) {
         logMessage(`Error selecting addon version: ${error}`, 'error');
@@ -117,6 +167,7 @@ export function registerAddonIpcHandlers(): void {
             );
             // 自动选中刚下载的版本
             selectAddonVersion(config.variant);
+            clearAddonLoadCache();
             logMessage(
               `Addon ${config.variant} downloaded and selected`,
               'info',
@@ -151,6 +202,7 @@ export function registerAddonIpcHandlers(): void {
   ipcMain.handle('remove-addon', async (event, version: AddonVariant) => {
     try {
       await removeAddon(version);
+      clearAddonLoadCache();
       return { success: true };
     } catch (error) {
       logMessage(`Error removing addon: ${error}`, 'error');
@@ -253,6 +305,7 @@ export function registerAddonIpcHandlers(): void {
     async (event, filePath: string | null) => {
       try {
         setCustomAddonPath(filePath);
+        clearAddonLoadCache();
         return { success: true };
       } catch (error) {
         logMessage(`Error setting custom addon path: ${error}`, 'error');

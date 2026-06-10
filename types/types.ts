@@ -20,6 +20,8 @@ export interface IFiles {
   tempAudioFile?: string;
   translatedSrtFile?: string;
   tempTranslatedSrtFile?: string;
+  /** 本次转写实际使用的后端标签（如 "CUDA 12.4.0" / "Vulkan" / "CPU"） */
+  whisperBackend?: string;
 }
 
 export interface IFormData {

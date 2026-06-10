@@ -1,9 +1,7 @@
 import { exec } from 'child_process';
 import path from 'path';
 import fs from 'fs';
-import { promisify } from 'util';
 import { getPath, loadWhisperAddon } from './whisper';
-import { checkCudaSupport } from './cudaUtils';
 import { logMessage, store } from './storeManager';
 import { formatSrtContent } from './fileUtils';
 import { IFiles } from '../../types';
@@ -101,21 +99,27 @@ export async function generateSubtitleWithBuiltinWhisper(
     const { model, sourceLanguage, prompt, maxContext } = formData;
     const whisperModel = model?.toLowerCase();
     const settings = store.get('settings');
-    const useCuda = settings.useCuda || false;
-    const platform = process.platform;
-    const arch = process.arch;
 
-    // 修改 GPU 判断逻辑
-    let shouldUseGpu = false;
-    let canUseCuda = false;
-    if (platform === 'darwin' && arch === 'arm64') {
-      shouldUseGpu = true;
-    } else if ((platform === 'win32' || platform === 'linux') && useCuda) {
-      canUseCuda = !!(await checkCudaSupport());
-      shouldUseGpu = canUseCuda;
-    }
-    const whisper = await loadWhisperAddon(whisperModel, canUseCuda);
-    const whisperAsync = promisify(whisper);
+    // 加载链内部按 gpuMode + 环境自动决策并逐级降级（见 addonLoader）
+    const { whisperAsync, backend, variant } =
+      await loadWhisperAddon(whisperModel);
+    const backendLabels: Record<string, string> = {
+      vulkan: 'Vulkan',
+      cpu: 'CPU',
+      metal: 'Metal',
+      coreml: 'CoreML',
+      custom: 'Custom',
+    };
+    const whisperBackend =
+      backend === 'cuda' && variant !== null && variant !== 'vulkan'
+        ? `CUDA ${variant}`
+        : backendLabels[backend] || backend;
+    // 把实际后端推给任务卡片（useIpcCommunication 做通用 merge）
+    event.sender.send('taskFileChange', {
+      ...file,
+      extractSubtitle: 'loading',
+      whisperBackend,
+    });
     const modelPath = `${getPath('modelsPath')}/ggml-${whisperModel}.bin`;
 
     // VAD 模型路径 - 使用内置的 VAD 模型
@@ -144,7 +148,7 @@ export async function generateSubtitleWithBuiltinWhisper(
       language: getWhisperLanguage(sourceLanguage),
       model: modelPath,
       fname_inp: tempAudioFile,
-      use_gpu: !!shouldUseGpu,
+      use_gpu: backend !== 'cpu',
       flash_attn: false,
       no_prints: false,
       comma_in_time: false,
