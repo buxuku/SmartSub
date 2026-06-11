@@ -776,6 +776,18 @@ const GpuAccelerationCard: React.FC = () => {
                 </div>
               )}
 
+              {/* 完整版/轻量版区别说明（CUDA 可用时始终展示，下载前即可知晓） */}
+              {cudaApplicable && (
+                <div className="flex items-start gap-2 p-2.5 bg-muted/50 rounded-md">
+                  <Package className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                  <div className="text-[11px] text-muted-foreground space-y-1">
+                    <p>{t('gpuAcceleration.packageTypeHintFull')}</p>
+                    <p>{t('gpuAcceleration.packageTypeHintLite')}</p>
+                    <p>{t('gpuAcceleration.packageTypeHintAuto')}</p>
+                  </div>
+                </div>
+              )}
+
               {/* 下载源 */}
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm text-muted-foreground">
