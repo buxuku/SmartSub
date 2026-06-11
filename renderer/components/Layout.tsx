@@ -13,6 +13,7 @@ import {
   Github,
   MonitorPlay,
   Languages,
+  Package,
   Settings,
   Rocket,
   Edit3,
@@ -275,6 +276,25 @@ const Layout = ({ children }) => {
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={5}>
                 {t('subtitleMerge')}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link href={`/${locale}/resources`}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`rounded-lg ${
+                      asPath.includes('resources') ? 'bg-muted' : ''
+                    }`}
+                    aria-label="Resources"
+                  >
+                    <Package className="size-5" />
+                  </Button>
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={5}>
+                {t('resourceCenter')}
               </TooltipContent>
             </Tooltip>
             <Tooltip>

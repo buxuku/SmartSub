@@ -1,0 +1,32 @@
+{
+  "title": "Resources",
+  "description": "Manage the models, translation services and GPU acceleration used by your tasks",
+  "tab": {
+    "overview": "Overview",
+    "models": "Models",
+    "providers": "Translation",
+    "acceleration": "Acceleration"
+  },
+  "overview": {
+    "modelsTitle": "Speech Models",
+    "providersTitle": "Translation Services",
+    "accelerationTitle": "GPU Acceleration",
+    "installedCount": "{{count}} installed",
+    "downloadingCount": "{{count}} downloading…",
+    "noModels": "No model installed yet — transcription tasks cannot start",
+    "recommendedModel": "Recommended: {{model}} ({{memory}}GB RAM)",
+    "configuredCount": "{{count}} configured",
+    "noProviders": "No translation service configured yet — required for translation tasks",
+    "enableProviders": "Enable a service",
+    "gpuRunning": "{{backend}} active",
+    "gpuNotEnabled": "Not enabled (CPU mode)",
+    "gpuModeLabel": "Mode: {{mode}}",
+    "gpuMode": {
+      "auto": "Auto",
+      "cpu-only": "CPU only",
+      "custom": "Custom"
+    },
+    "appleAcceleration": "Apple Silicon acceleration (CoreML / Metal)",
+    "manage": "Manage"
+  }
+}
