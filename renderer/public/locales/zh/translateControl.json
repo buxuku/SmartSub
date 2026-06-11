@@ -1,6 +1,7 @@
 {
   "translateControl": "翻译服务配置",
   "translationServices": "翻译服务",
+  "configured": "已配置",
   "builtinProviders": "内置服务商",
   "customProviders": "自定义服务商",
   "addCustomProvider": "添加自定义 OpenAI 服务",

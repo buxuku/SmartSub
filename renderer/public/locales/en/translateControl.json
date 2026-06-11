@@ -1,6 +1,7 @@
 {
   "translateControl": "Translation Control",
   "translationServices": "Translation Services",
+  "configured": "Configured",
   "builtinProviders": "Built-in Providers",
   "customProviders": "Custom Providers",
   "addCustomProvider": "Add Custom OpenAI Service",

@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { useTranslation } from 'next-i18next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ModelsTab from '@/components/resources/ModelsTab';
+import ProvidersTab from '@/components/resources/ProvidersTab';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 
 export const RESOURCE_TABS = [
@@ -56,7 +57,7 @@ const Resources = () => {
           <ModelsTab />
         </TabsContent>
         <TabsContent value="providers" className="min-h-0 flex-1">
-          <p className="text-sm text-muted-foreground">{t('tab.providers')}</p>
+          <ProvidersTab />
         </TabsContent>
         <TabsContent
           value="acceleration"
