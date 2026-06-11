@@ -188,7 +188,9 @@ const Layout = ({ children }) => {
                     variant="ghost"
                     size="icon"
                     className={`rounded-lg ${
-                      asPath.includes('home') ? 'bg-muted' : ''
+                      asPath.includes('home') || asPath.includes('/tasks/')
+                        ? 'bg-muted'
+                        : ''
                     }`}
                     aria-label="Playground"
                   >

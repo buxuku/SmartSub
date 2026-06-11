@@ -23,5 +23,11 @@
   "recentTasks": "最近任务",
   "noRecentTasks": "还没有任务记录，从上面选一个任务开始吧",
   "dropHint": "松手导入文件",
-  "fileCount": "{{count}} 个文件"
+  "fileCount": "{{count}} 个文件",
+  "status": {
+    "waiting": "等待中",
+    "running": "进行中",
+    "done": "已完成",
+    "error": "出错"
+  }
 }

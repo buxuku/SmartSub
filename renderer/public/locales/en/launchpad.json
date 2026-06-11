@@ -23,5 +23,11 @@
   "recentTasks": "Recent tasks",
   "noRecentTasks": "No tasks yet — pick one above to get started",
   "dropHint": "Drop to import files",
-  "fileCount": "{{count}} files"
+  "fileCount": "{{count}} files",
+  "status": {
+    "waiting": "Waiting",
+    "running": "Running",
+    "done": "Done",
+    "error": "Error"
+  }
 }

@@ -1,55 +1,151 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { cn, isSubtitleFile } from 'lib/utils';
-
-import { ScrollArea } from '@/components/ui/scroll-area';
-
-import useSystemInfo from 'hooks/useStystemInfo';
-import useFormConfig from 'hooks/useFormConfig';
-import useIpcCommunication from 'hooks/useIpcCommunication';
-import TaskControls from '@/components/TaskControls';
-import TaskList from '@/components/TaskList';
-import TaskConfigForm from '@/components/TaskConfigForm';
-import TaskListControl from '@/components/TaskListControl';
-import { ProofreadEditor } from '@/components/proofread';
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/router';
+import {
+  AlertTriangle,
+  Clapperboard,
+  Edit3,
+  Film,
+  Languages,
+  Subtitles,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { cn } from 'lib/utils';
+import {
+  getTaskTypeBySlug,
+  getTaskTypeByValue,
+  type TaskTypeDef,
+} from 'lib/taskTypes';
+import { isProviderConfigured } from 'lib/providerUtils';
+import {
+  getFileStages,
+  getStageStatus,
+  isFileDone,
+  hasFileError,
+} from '@/components/tasks/stageUtils';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
-import { filterSupportedFiles } from 'lib/utils';
-import { IFiles } from '../../../types';
-import path from 'path';
+import { useTranslation } from 'next-i18next';
 
-export default function Component() {
-  const [files, setFiles] = useState([]);
-  const [proofreadFile, setProofreadFile] = useState<IFiles | null>(null);
-  const { systemInfo } = useSystemInfo();
-  const { form, formData } = useFormConfig();
-  useIpcCommunication(setFiles);
+interface CardDef {
+  key: string;
+  icon: React.ComponentType<{ className?: string }>;
+  chip: string;
+  /** /tasks/[slug] 卡片 */
+  slug?: string;
+  /** 直达页面卡片 */
+  href?: string;
+  needsModel?: boolean;
+}
+
+const CARDS: CardDef[] = [
+  {
+    key: 'generateTranslate',
+    slug: 'generate-translate',
+    icon: Subtitles,
+    chip: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
+    needsModel: true,
+  },
+  {
+    key: 'generate',
+    slug: 'generate',
+    icon: Clapperboard,
+    chip: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
+    needsModel: true,
+  },
+  {
+    key: 'translate',
+    slug: 'translate',
+    icon: Languages,
+    chip: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  },
+  {
+    key: 'proofread',
+    href: 'proofread',
+    icon: Edit3,
+    chip: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  },
+  {
+    key: 'merge',
+    href: 'subtitleMerge',
+    icon: Film,
+    chip: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+  },
+];
+
+type RecentStatus = 'waiting' | 'running' | 'done' | 'error';
+
+const STATUS_DOT: Record<RecentStatus, string> = {
+  waiting: 'bg-muted-foreground/40',
+  running: 'bg-blue-500',
+  done: 'bg-green-500',
+  error: 'bg-red-500',
+};
+
+function getRecentStatus(
+  file: any,
+  typeDef: TaskTypeDef,
+  userConfig: any,
+): RecentStatus {
+  const stages = getFileStages(file, typeDef, userConfig);
+  if (isFileDone(file, stages)) return 'done';
+  if (hasFileError(file, stages)) return 'error';
+  if (stages.some((s) => getStageStatus(file, s.key) === 'loading')) {
+    return 'running';
+  }
+  return 'waiting';
+}
+
+export default function LaunchpadPage() {
+  const router = useRouter();
+  const { locale } = router.query;
+  const { t } = useTranslation('launchpad');
+  const [hasModels, setHasModels] = useState(true);
+  const [hasProvider, setHasProvider] = useState(true);
+  const [recentFiles, setRecentFiles] = useState<any[]>([]);
+  const [userConfig, setUserConfig] = useState<any>({});
+  const [dragCard, setDragCard] = useState<string | null>(null);
 
   useEffect(() => {
-    const loadTasks = async () => {
-      const tasks = await window.ipc.invoke('getTasks');
-      setFiles(tasks);
+    const load = async () => {
+      try {
+        const [systemInfo, providers, tasks, config, settings] =
+          await Promise.all([
+            window?.ipc?.invoke('getSystemInfo', null),
+            window?.ipc?.invoke('getTranslationProviders'),
+            window?.ipc?.invoke('getTasks'),
+            window?.ipc?.invoke('getUserConfig'),
+            window?.ipc?.invoke('getSettings'),
+          ]);
+        const useLocalWhisper = settings?.useLocalWhisper || false;
+        setHasModels(
+          useLocalWhisper || (systemInfo?.modelsInstalled?.length ?? 0) > 0,
+        );
+        setHasProvider(
+          (providers || []).some((p: any) => isProviderConfigured(p)),
+        );
+        setRecentFiles((tasks || []).slice(-5).reverse());
+        setUserConfig(config || {});
+      } catch (error) {
+        console.error('Failed to load launchpad data:', error);
+      }
     };
-    loadTasks();
+    load();
   }, []);
 
-  useEffect(() => {
-    window.ipc.send('setTasks', files);
-  }, [files]);
+  const currentTypeDef =
+    getTaskTypeByValue(userConfig?.taskType) ||
+    getTaskTypeBySlug('generate-translate');
 
-  const [isDragging, setIsDragging] = useState(false);
+  const cardTarget = (card: CardDef) =>
+    card.slug ? `/${locale}/tasks/${card.slug}` : `/${locale}/${card.href}`;
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleCardDrop = async (e: React.DragEvent, card: CardDef) => {
     e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
+    setDragCard(null);
+    if (!card.slug) return;
+    const typeDef = getTaskTypeBySlug(card.slug);
+    if (!typeDef) return;
 
     const paths: string[] = [];
     const droppedFiles = e.dataTransfer.files;
@@ -60,125 +156,164 @@ export default function Component() {
         paths.push(filePath);
       }
     }
-
-    if (paths.length > 0) {
-      // 根据translateOnly任务类型决定是否只处理字幕文件
-      const isTranslateOnly = formData.taskType === 'translateOnly';
-      const taskType = isTranslateOnly ? 'translate' : 'media';
-
-      window?.ipc
-        ?.invoke('getDroppedFiles', {
-          files: paths,
-          taskType,
-        })
-        .then((files) => {
-          setFiles((prevFiles) => [...prevFiles, ...files]);
-        });
+    if (!paths.length) {
+      router.push(cardTarget(card));
+      return;
     }
+
+    const dropped = await window?.ipc?.invoke('getDroppedFiles', {
+      files: paths,
+      taskType: typeDef.accepts === 'subtitle' ? 'translate' : 'media',
+    });
+    const existing = (await window?.ipc?.invoke('getTasks')) || [];
+    window?.ipc?.send('setTasks', [...existing, ...(dropped || [])]);
+    router.push(cardTarget(card));
   };
 
-  // 将 IFiles 转换为 ProofreadEditor 需要的 PendingFile 格式
-  const pendingFileForProofread = useMemo(() => {
-    if (!proofreadFile) return null;
-
-    const { taskType } = formData;
-    const isTranslateOnly = taskType === 'translateOnly';
-    const isGenerateOnly = taskType === 'generateOnly';
-
-    // 确定视频路径
-    const videoPath = isSubtitleFile(proofreadFile.filePath)
-      ? undefined
-      : proofreadFile.filePath;
-
-    // 确定源字幕路径 - 优先使用目标目录的文件
-    const sourceSubtitlePath =
-      proofreadFile.srtFile ||
-      proofreadFile.tempSrtFile ||
-      (isSubtitleFile(proofreadFile.filePath)
-        ? proofreadFile.filePath
-        : path.join(proofreadFile.directory, `${proofreadFile.fileName}.srt`));
-
-    // 确定翻译字幕路径（仅在需要翻译时）- 优先使用临时目录的纯翻译文件
-    const targetSubtitlePath = isGenerateOnly
-      ? undefined
-      : proofreadFile.tempTranslatedSrtFile || proofreadFile.translatedSrtFile;
-
-    // 目标翻译文件路径（用户配置格式，可能是双语）
-    const finalTargetPath = isGenerateOnly
-      ? undefined
-      : proofreadFile.translatedSrtFile;
-
-    return {
-      id: proofreadFile.uuid,
-      videoPath,
-      fileName: proofreadFile.fileName,
-      selectedSource: sourceSubtitlePath,
-      selectedTarget: targetSubtitlePath,
-      sourceLanguage: formData.sourceLanguage,
-      targetLanguage: formData.targetLanguage,
-      status: 'proofreading' as const,
-      finalTargetPath,
-      translateContent: formData.translateContent,
-    };
-  }, [proofreadFile, formData]);
-
-  // 如果正在校对，显示校对编辑器
-  if (proofreadFile && pendingFileForProofread) {
-    return (
-      <div className="h-full p-4">
-        <ProofreadEditor
-          file={pendingFileForProofread}
-          onMarkComplete={() => setProofreadFile(null)}
-          onBack={() => setProofreadFile(null)}
-        />
-      </div>
-    );
-  }
-
   return (
-    <div className="grid h-full gap-4 p-4 md:grid-cols-2 lg:grid-cols-3 overflow-hidden">
-      <div className="relative hidden h-full flex-col items-start gap-4 md:flex overflow-auto">
-        <TaskConfigForm
-          form={form}
-          formData={formData}
-          systemInfo={systemInfo}
-        />
-      </div>
-      <div
-        className={cn(
-          'relative flex h-full border flex-col rounded-xl p-4 lg:col-span-2 overflow-hidden',
-          isDragging && 'border-2 border-dashed border-primary bg-muted/50',
+    <div className="h-full overflow-auto">
+      <div className="mx-auto max-w-4xl px-6 py-10 space-y-8">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {t('title')}
+          </h1>
+          <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
+        </div>
+
+        {!hasModels && (
+          <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex-wrap">
+            <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+            <p className="text-sm min-w-0 flex-1">{t('banner.noModel')}</p>
+            <Button asChild size="sm" className="h-8 flex-shrink-0">
+              <Link href={`/${locale}/resources?tab=models`}>
+                {t('banner.noModelCta')}
+              </Link>
+            </Button>
+          </div>
         )}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-      >
-        <TaskListControl
-          setFiles={setFiles}
-          formData={formData}
-          className="flex-shrink-0"
-        />
-        <ScrollArea className="flex-1 min-h-0 mt-4">
-          <TaskList
-            files={files}
-            formData={formData}
-            onProofread={(file) => setProofreadFile(file)}
-            onDelete={(uuid) =>
-              setFiles((prev) => prev.filter((f) => f.uuid !== uuid))
-            }
-          />
-        </ScrollArea>
-        <TaskControls
-          formData={formData}
-          files={files}
-          className="mt-auto flex-shrink-0 pt-4"
-        />
+        {hasModels && !hasProvider && (
+          <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex-wrap">
+            <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+            <p className="text-sm min-w-0 flex-1">{t('banner.noProvider')}</p>
+            <Button
+              asChild
+              size="sm"
+              variant="outline"
+              className="h-8 flex-shrink-0"
+            >
+              <Link href={`/${locale}/resources?tab=providers`}>
+                {t('banner.noProviderCta')}
+              </Link>
+            </Button>
+          </div>
+        )}
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {CARDS.map((card) => {
+            const Icon = card.icon;
+            const droppable = Boolean(card.slug);
+            return (
+              <Link
+                key={card.key}
+                href={cardTarget(card)}
+                className={cn(
+                  'group relative rounded-xl border bg-card p-4 transition-all hover:shadow-md hover:-translate-y-0.5',
+                  dragCard === card.key &&
+                    'border-2 border-dashed border-primary bg-muted/50',
+                )}
+                onDragOver={
+                  droppable
+                    ? (e) => {
+                        e.preventDefault();
+                        setDragCard(card.key);
+                      }
+                    : undefined
+                }
+                onDragLeave={
+                  droppable
+                    ? (e) => {
+                        e.preventDefault();
+                        setDragCard(null);
+                      }
+                    : undefined
+                }
+                onDrop={droppable ? (e) => handleCardDrop(e, card) : undefined}
+              >
+                {card.needsModel && !hasModels && (
+                  <Badge
+                    variant="outline"
+                    className="absolute right-3 top-3 text-[10px] px-1.5 py-0 border-amber-500/40 text-amber-600 dark:text-amber-400"
+                  >
+                    {t('needsModelBadge')}
+                  </Badge>
+                )}
+                <div
+                  className={cn(
+                    'mb-3 inline-flex h-10 w-10 items-center justify-center rounded-lg',
+                    card.chip,
+                  )}
+                >
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div className="text-sm font-semibold">
+                  {dragCard === card.key
+                    ? t('dropHint')
+                    : t(`card.${card.key}`)}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                  {t(`card.${card.key}Desc`)}
+                </p>
+              </Link>
+            );
+          })}
+        </div>
+
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-muted-foreground">
+            {t('recentTasks')}
+          </h2>
+          {recentFiles.length === 0 ? (
+            <p className="text-sm text-muted-foreground/70">
+              {t('noRecentTasks')}
+            </p>
+          ) : (
+            <div className="rounded-xl border divide-y">
+              {recentFiles.map((file) => {
+                const status = getRecentStatus(
+                  file,
+                  currentTypeDef,
+                  userConfig,
+                );
+                return (
+                  <Link
+                    key={file?.uuid}
+                    href={`/${locale}/tasks/${currentTypeDef.slug}`}
+                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors"
+                  >
+                    <span
+                      className={cn(
+                        'h-2 w-2 rounded-full flex-shrink-0',
+                        STATUS_DOT[status],
+                      )}
+                    />
+                    <span className="truncate text-sm min-w-0 flex-1">
+                      {file?.fileName}
+                      {file?.fileExtension}
+                    </span>
+                    <span className="text-xs text-muted-foreground flex-shrink-0">
+                      {t(`status.${status}`)}
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
-      {/* <Guide systemInfo={systemInfo} updateSystemInfo={updateSystemInfo} /> */}
     </div>
   );
 }
 
-export const getStaticProps = makeStaticProperties(['common', 'home']);
+export const getStaticProps = makeStaticProperties(['common', 'launchpad']);
 
 export { getStaticPaths };
