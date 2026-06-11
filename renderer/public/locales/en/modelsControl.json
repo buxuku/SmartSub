@@ -49,5 +49,33 @@
   "hideVariants": "Collapse",
   "downloadManually": "Manual download",
   "changePath": "Change",
-  "modelPathChanged": "Model path updated"
+  "modelPathChanged": "Model path updated",
+  "recommendedHero": "Recommended for this computer: {{model}}",
+  "recommendedBasis": "Based on {{memory}}GB RAM",
+  "recommendedBasisWithGpu": "Based on {{memory}}GB RAM · GPU acceleration available",
+  "oneClickDownload": "Download ({{size}})",
+  "alreadyInstalled": "Installed and ready",
+  "tier": {
+    "fast": "Fast",
+    "balanced": "Balanced",
+    "accurate": "High accuracy"
+  },
+  "tierDesc": {
+    "fast": "Speed first — great for a quick try",
+    "balanced": "Recommended for daily use, accuracy and speed in balance",
+    "accurate": "Accuracy first, requires a powerful computer"
+  },
+  "tierRAM": "RAM ≥ {{ram}}GB",
+  "showInstalledOnly": "Installed only",
+  "noInstalledModels": "No models installed yet — turn off the filter to browse all models",
+  "modelDesc": {
+    "tiny": "Fastest results, modest accuracy",
+    "base": "More accurate than tiny, still fast",
+    "small": "Entry-level balance of speed and accuracy",
+    "medium": "Best choice for most people",
+    "large-v3-turbo": "Near top accuracy at a decent speed",
+    "large-v3": "Top accuracy, slowest",
+    "large-v2": "Previous-generation flagship",
+    "large-v1": "First-generation large model"
+  }
 }
