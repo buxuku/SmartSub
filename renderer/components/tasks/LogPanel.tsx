@@ -1,0 +1,115 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, Terminal, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useTranslation } from 'next-i18next';
+
+type LogEntry = {
+  timestamp: number;
+  message: string;
+  type?: 'info' | 'error' | 'warning';
+};
+
+const LogPanel: React.FC<{ className?: string }> = ({ className }) => {
+  const { t } = useTranslation('tasks');
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [expanded, setExpanded] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    window?.ipc?.invoke('getLogs').then((initial: LogEntry[]) => {
+      setLogs(initial || []);
+    });
+    const unsubscribe = window?.ipc?.on('newLog', (log: LogEntry) => {
+      setLogs((prev) => [...prev, log]);
+    });
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (expanded && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [logs, expanded]);
+
+  const handleClear = async () => {
+    await window?.ipc?.invoke('clearLogs');
+    setLogs([]);
+  };
+
+  const lastLog = logs[logs.length - 1];
+
+  return (
+    <div className={className}>
+      <div className="rounded-lg border bg-muted/30">
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-left"
+          onClick={() => setExpanded(!expanded)}
+        >
+          <Terminal className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+          <span className="text-xs font-medium text-muted-foreground flex-shrink-0">
+            {t('logs.title')}
+          </span>
+          {!expanded && (
+            <span className="text-[11px] text-muted-foreground/70 truncate font-mono min-w-0 flex-1">
+              {lastLog ? lastLog.message : t('logs.empty')}
+            </span>
+          )}
+          <span className="ml-auto flex items-center gap-1 flex-shrink-0">
+            {expanded ? (
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            ) : (
+              <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
+          </span>
+        </button>
+        {expanded && (
+          <div className="border-t">
+            <div
+              ref={scrollRef}
+              className="max-h-44 overflow-y-auto px-3 py-2 space-y-0.5"
+            >
+              {logs.length === 0 && (
+                <p className="text-[11px] text-muted-foreground/70">
+                  {t('logs.empty')}
+                </p>
+              )}
+              {logs.map((log, index) => (
+                <div
+                  key={index}
+                  className={`text-[11px] font-mono whitespace-pre-wrap break-all ${
+                    log?.type === 'error'
+                      ? 'text-red-500'
+                      : log?.type === 'warning'
+                        ? 'text-yellow-500'
+                        : 'text-muted-foreground'
+                  }`}
+                >
+                  <span className="text-muted-foreground/60">
+                    {new Date(log?.timestamp).toLocaleTimeString()}
+                  </span>{' '}
+                  {log?.message}
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end border-t px-2 py-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-[11px] gap-1 text-muted-foreground"
+                onClick={handleClear}
+              >
+                <Trash2 className="h-3 w-3" />
+                {t('logs.clear')}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default LogPanel;
