@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { BrowserWindow, ipcMain, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { store } from './store';
 import { logMessage } from './logger';
@@ -34,17 +34,14 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
     autoUpdater.autoInstallOnAppQuit = false;
   }
 
-  // 设置更新通道：
-  // 稳定版固定 latest；beta 等预发布版本不强制 channel，
-  // 让 electron-updater 按版本号预发布语义自动解析（强制 latest 会令
-  // GitHubProvider 在 allowPrerelease 模式下匹配不到任何 release）
-  if (!app.getVersion().includes('-')) {
-    autoUpdater.channel = 'latest';
-  }
-  logMessage(
-    `Setting update channel to: ${autoUpdater.channel ?? 'auto (prerelease)'}`,
-    'info',
-  );
+  // 设置更新通道：所有构建（含 beta 等预发布版本）都只跟踪稳定通道。
+  // 预发布版本若不显式关闭 allowPrerelease，electron-updater 会从
+  // releases.atom（包含未发 release 的裸 tag）解析出 beta tag 自身，
+  // 再去请求其名下不存在的 latest-mac.yml 而报 404。
+  // 关闭后 beta 安装包静默无更新，待下一个稳定版发布时正常收到提示。
+  autoUpdater.channel = 'latest';
+  autoUpdater.allowPrerelease = false;
+  logMessage(`Setting update channel to: ${autoUpdater.channel}`, 'info');
 
   // 检查更新
   const checkForUpdates = async (silent = false) => {
