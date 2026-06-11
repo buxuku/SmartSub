@@ -2,6 +2,7 @@ import React from 'react';
 import { useRouter } from 'next/router';
 import { useTranslation } from 'next-i18next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import ModelsTab from '@/components/resources/ModelsTab';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 
 export const RESOURCE_TABS = [
@@ -52,7 +53,7 @@ const Resources = () => {
           <p className="text-sm text-muted-foreground">{t('title')}</p>
         </TabsContent>
         <TabsContent value="models" className="min-h-0 flex-1 overflow-auto">
-          <p className="text-sm text-muted-foreground">{t('tab.models')}</p>
+          <ModelsTab />
         </TabsContent>
         <TabsContent value="providers" className="min-h-0 flex-1">
           <p className="text-sm text-muted-foreground">{t('tab.providers')}</p>
