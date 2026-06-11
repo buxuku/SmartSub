@@ -37,6 +37,10 @@ enum DownSource {
 interface OnboardingDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** 打开时定位到的步骤（从「继续引导」入口恢复） */
+  initialStep?: number;
+  /** 用户从引导跳去配置页时触发：引导未完成，只是暂停 */
+  onPause?: (step: number) => void;
 }
 
 interface AccelInfo {
@@ -78,6 +82,8 @@ function FlowNode({
 const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
   open,
   onOpenChange,
+  initialStep = 0,
+  onPause,
 }) => {
   const { t } = useTranslation('common');
   const router = useRouter();
@@ -100,7 +106,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
 
   useEffect(() => {
     if (!open) return;
-    setStep(0);
+    setStep(initialStep);
     setDownloadDone(false);
     (async () => {
       try {
@@ -157,8 +163,9 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
     onOpenChange(next);
   };
 
+  /** 跳去配置页：不算完成，记为暂停，由外层提供「继续引导」入口 */
   const closeAndGo = (url: string) => {
-    markCompleted();
+    onPause?.(step);
     onOpenChange(false);
     router.push(url);
   };

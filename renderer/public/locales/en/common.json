@@ -150,12 +150,19 @@
   "gpuAccelerationDisabledTip": "Your device supports GPU acceleration. Click to enable in settings.",
   "gpuFallbackToast": "GPU acceleration unavailable, automatically switched to {{backend}}",
   "gpuMigrationNotice": "This version adds universal GPU acceleration (Vulkan), enabled by default. Adjust in Settings → GPU Acceleration.",
+  "brandName": "SmartSub",
+  "sidebar": {
+    "collapse": "Collapse menu",
+    "expand": "Expand menu"
+  },
   "help": {
     "menu": "Help",
     "reopenOnboarding": "Reopen the welcome guide",
     "github": "GitHub"
   },
   "onboarding": {
+    "resume": "Resume setup guide",
+    "resumeDismiss": "Don't show again",
     "skip": "Skip",
     "back": "Back",
     "next": "Next",

@@ -126,16 +126,16 @@ const OverviewTab = ({
   );
 
   return (
-    <div className="grid items-start gap-4 md:grid-cols-3">
+    <div className="grid items-stretch gap-4 md:grid-cols-3">
       {/* 语音模型 */}
-      <Card>
+      <Card className="flex flex-col">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Bot className="h-4 w-4" />
             {t('overview.modelsTitle')}
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="flex flex-1 flex-col gap-3">
           {installed.length > 0 ? (
             <>
               <p className="text-sm font-medium">
@@ -165,7 +165,7 @@ const OverviewTab = ({
               })}
             </p>
           ) : null}
-          <div className="flex items-center gap-2">
+          <div className="mt-auto flex items-center gap-2 pt-1">
             {installed.length === 0 && recommendedModel && (
               <DownModel
                 modelName={recommendedModel.name}
@@ -183,14 +183,14 @@ const OverviewTab = ({
       </Card>
 
       {/* 翻译服务 */}
-      <Card>
+      <Card className="flex flex-col">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Languages className="h-4 w-4" />
             {t('overview.providersTitle')}
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="flex flex-1 flex-col gap-3">
           {configuredProviders.length > 0 ? (
             <>
               <p className="text-sm font-medium">
@@ -214,7 +214,7 @@ const OverviewTab = ({
               {t('overview.noProviders')}
             </p>
           )}
-          <div className="flex items-center gap-2">
+          <div className="mt-auto flex items-center gap-2 pt-1">
             {configuredProviders.length === 0 && (
               <Button
                 size="sm"
@@ -230,14 +230,14 @@ const OverviewTab = ({
       </Card>
 
       {/* 显卡加速 */}
-      <Card>
+      <Card className="flex flex-col">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Zap className="h-4 w-4" />
             {t('overview.accelerationTitle')}
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="flex flex-1 flex-col gap-3">
           {gpu?.isDarwin ? (
             <p className="text-sm font-medium text-green-600 dark:text-green-500">
               {t('overview.appleAcceleration')}
@@ -258,7 +258,9 @@ const OverviewTab = ({
               })}
             </p>
           )}
-          {manageButton('acceleration')}
+          <div className="mt-auto flex items-center gap-2 pt-1">
+            {manageButton('acceleration')}
+          </div>
         </CardContent>
       </Card>
     </div>

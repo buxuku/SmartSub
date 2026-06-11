@@ -83,16 +83,16 @@ export function LogDialog({ open, onOpenChange }) {
           </DialogDescription>
         </DialogHeader>
         <ScrollArea ref={scrollRef} className="h-[60vh]">
-          <div className="space-y-2 p-4 w-[700px] overflow-x-scroll">
+          <div className="space-y-2 p-4">
             {logs.map((log, index) => (
               <div key={index}>
                 <div
-                  className={`text-sm whitespace-pre font-mono inline-block min-w-fit ${
+                  className={`text-sm whitespace-pre-wrap break-all font-mono ${
                     log?.type === 'error'
                       ? 'text-red-500'
                       : log?.type === 'warning'
                         ? 'text-yellow-500'
-                        : 'text-gray-700'
+                        : 'text-muted-foreground'
                   }`}
                 >
                   <span className="text-gray-500">

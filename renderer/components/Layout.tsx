@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
@@ -8,15 +8,18 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
+  Compass,
+  Edit3,
   FileVideo2,
-  Github,
+  Film,
   HelpCircle,
   MonitorPlay,
   Package,
-  Settings,
+  PanelLeftClose,
+  PanelLeftOpen,
   Rocket,
-  Edit3,
-  Film,
+  Settings,
+  X,
   Zap,
   ZapOff,
 } from 'lucide-react';
@@ -27,7 +30,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ThemeToggle } from './ThemeToggle';
-import { openUrl } from 'lib/utils';
+import { cn, openUrl } from 'lib/utils';
 import { useRouter } from 'next/router';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
@@ -35,6 +38,7 @@ import { useTranslation } from 'next-i18next';
 import { UpdateDialog } from './UpdateDialog';
 import { LogDialog } from './LogDialog';
 import OnboardingDialog from './onboarding/OnboardingDialog';
+import useLocalStorageState from 'hooks/useLocalStorageState';
 import packageInfo from '../../package.json';
 
 // 添加更新状态的类型定义
@@ -44,6 +48,89 @@ interface UpdateStatus {
   progress?: number;
   error?: string;
   releaseNotes?: string;
+}
+
+interface NavItemDef {
+  href: string;
+  labelKey: string;
+  icon: React.ComponentType<{ className?: string }>;
+  isActive: (asPath: string) => boolean;
+}
+
+const NAV_ITEMS: NavItemDef[] = [
+  {
+    href: 'home',
+    labelKey: 'tasks',
+    icon: MonitorPlay,
+    isActive: (p) => p.includes('home') || p.includes('/tasks/'),
+  },
+  {
+    href: 'proofread',
+    labelKey: 'subtitleProofread',
+    icon: Edit3,
+    isActive: (p) => p.includes('proofread'),
+  },
+  {
+    href: 'subtitleMerge',
+    labelKey: 'subtitleMerge',
+    icon: Film,
+    isActive: (p) => p.includes('subtitleMerge'),
+  },
+  {
+    href: 'resources',
+    labelKey: 'resourceCenter',
+    icon: Package,
+    isActive: (p) => p.includes('resources'),
+  },
+  {
+    href: 'settings',
+    labelKey: 'settings',
+    icon: Settings,
+    isActive: (p) => p.includes('settings'),
+  },
+];
+
+function NavItem({
+  item,
+  locale,
+  asPath,
+  expanded,
+  label,
+}: {
+  item: NavItemDef;
+  locale: string;
+  asPath: string;
+  expanded: boolean;
+  label: string;
+}) {
+  const Icon = item.icon;
+  const active = item.isActive(asPath);
+  const link = (
+    <Link
+      href={`/${locale}/${item.href}`}
+      aria-label={label}
+      className={cn(
+        'flex h-9 items-center gap-2.5 rounded-lg text-sm font-medium transition-colors',
+        expanded ? 'px-2.5' : 'w-9 justify-center mx-auto',
+        active
+          ? 'bg-muted text-foreground'
+          : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+      )}
+    >
+      <Icon className="h-5 w-5 flex-shrink-0" />
+      {expanded && <span className="truncate">{label}</span>}
+    </Link>
+  );
+
+  if (expanded) return link;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{link}</TooltipTrigger>
+      <TooltipContent side="right" sideOffset={5}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 const Layout = ({ children }) => {
@@ -62,6 +149,15 @@ const Layout = ({ children }) => {
   const [gpuBackendLabel, setGpuBackendLabel] = useState('');
   const [showLogs, setShowLogs] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingResumeStep, setOnboardingResumeStep] = useState<
+    number | null
+  >(null);
+  const onboardingPausedRef = useRef(false);
+  const [sidebarExpanded, setSidebarExpanded] = useLocalStorageState<boolean>(
+    'sidebarExpanded',
+    true,
+    (val) => typeof val === 'boolean',
+  );
 
   useEffect(() => {
     // 首次启动（无已装模型且无完成标记）自动打开新手引导
@@ -196,136 +292,118 @@ const Layout = ({ children }) => {
     setShowUpdateDialog(true);
   };
 
+  /** 引导跳去配置页：记录暂停步骤，展示「继续引导」入口 */
+  const handleOnboardingPause = (step: number) => {
+    onboardingPausedRef.current = true;
+    setOnboardingResumeStep(step);
+  };
+
+  const handleOnboardingOpenChange = (open: boolean) => {
+    setShowOnboarding(open);
+    if (open) return;
+    if (!onboardingPausedRef.current) {
+      // 正常关闭（完成/跳过/X）：清除暂停状态
+      setOnboardingResumeStep(null);
+    }
+    onboardingPausedRef.current = false;
+  };
+
+  const dismissOnboardingResume = async () => {
+    setOnboardingResumeStep(null);
+    try {
+      await window?.ipc?.invoke('setSettings', { onboardingCompleted: true });
+    } catch (error) {
+      console.error('Failed to mark onboarding completed:', error);
+    }
+  };
+
+  const sidebarWidth = sidebarExpanded ? 'w-[176px]' : 'w-[56px]';
+
   return (
-    <div className="grid h-screen w-full pl-[56px]">
-      <aside className="inset-y fixed  left-0 z-20 flex h-full flex-col border-r">
+    <div
+      className={cn(
+        'grid h-screen w-full transition-[padding-left] duration-200',
+        sidebarExpanded ? 'pl-[176px]' : 'pl-[56px]',
+      )}
+    >
+      <aside
+        className={cn(
+          'inset-y fixed left-0 z-20 flex h-full flex-col border-r transition-[width] duration-200',
+          sidebarWidth,
+        )}
+      >
         <div className="border-b p-2">
-          <Link href={`/${locale}/home`}>
-            <Button aria-label="Home" size="icon" variant="outline">
+          <Link
+            href={`/${locale}/home`}
+            aria-label="Home"
+            className={cn(
+              'flex h-10 items-center gap-2 rounded-lg',
+              sidebarExpanded ? 'px-2' : 'justify-center',
+            )}
+          >
+            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border bg-card">
               <FileVideo2 className="size-5" />
-            </Button>
+            </span>
+            {sidebarExpanded && (
+              <span className="truncate text-sm font-semibold">
+                {t('brandName')}
+              </span>
+            )}
           </Link>
         </div>
         <nav className="grid gap-1 p-2">
           <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Link href={`/${locale}/home`}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={`rounded-lg ${
-                      asPath.includes('home') || asPath.includes('/tasks/')
-                        ? 'bg-muted'
-                        : ''
-                    }`}
-                    aria-label="Playground"
-                  >
-                    <MonitorPlay className="size-5" />
-                  </Button>
-                </Link>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={5}>
-                {t('tasks')}
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Link href={`/${locale}/proofread`}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={`rounded-lg ${
-                      asPath.includes('proofread') ? 'bg-muted' : ''
-                    }`}
-                    aria-label="Proofread"
-                  >
-                    <Edit3 className="size-5" />
-                  </Button>
-                </Link>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={5}>
-                {t('subtitleProofread')}
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Link href={`/${locale}/subtitleMerge`}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={`rounded-lg ${
-                      asPath.includes('subtitleMerge') ? 'bg-muted' : ''
-                    }`}
-                    aria-label="Subtitle Merge"
-                  >
-                    <Film className="size-5" />
-                  </Button>
-                </Link>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={5}>
-                {t('subtitleMerge')}
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Link href={`/${locale}/resources`}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={`rounded-lg ${
-                      asPath.includes('resources') ? 'bg-muted' : ''
-                    }`}
-                    aria-label="Resources"
-                  >
-                    <Package className="size-5" />
-                  </Button>
-                </Link>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={5}>
-                {t('resourceCenter')}
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Link href={`/${locale}/settings`}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={`rounded-lg ${
-                      asPath.includes('settings') ? 'bg-muted' : ''
-                    }`}
-                    aria-label="Settings"
-                  >
-                    <Settings className="size-5" />
-                  </Button>
-                </Link>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={5}>
-                {t('settings')}
-              </TooltipContent>
-            </Tooltip>
+            {NAV_ITEMS.map((item) => (
+              <NavItem
+                key={item.href}
+                item={item}
+                locale={locale}
+                asPath={asPath}
+                expanded={sidebarExpanded}
+                label={t(item.labelKey)}
+              />
+            ))}
           </TooltipProvider>
         </nav>
-        <nav className="mt-auto grid gap-1 p-2">
+        <nav
+          className={cn(
+            'mt-auto p-2 flex gap-1',
+            sidebarExpanded
+              ? 'flex-row items-center justify-between'
+              : 'flex-col items-center',
+          )}
+        >
           <ThemeToggle />
           <TooltipProvider>
             <Tooltip>
-              <TooltipTrigger asChild className="w-10">
-                <Github
-                  onClick={() => openUrl('https://github.com/buxuku/SmartSub')}
-                  className="size-5 inline-block cursor-pointer"
-                />
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={
+                    sidebarExpanded
+                      ? t('sidebar.collapse')
+                      : t('sidebar.expand')
+                  }
+                  onClick={() => setSidebarExpanded(!sidebarExpanded)}
+                >
+                  {sidebarExpanded ? (
+                    <PanelLeftClose className="h-5 w-5" />
+                  ) : (
+                    <PanelLeftOpen className="h-5 w-5" />
+                  )}
+                </Button>
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={5}>
-                Github
+                {sidebarExpanded ? t('sidebar.collapse') : t('sidebar.expand')}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
         </nav>
       </aside>
-      <div className="flex flex-col h-screen">
-        <header className="flex-shrink-0 z-10 flex h-[57px] items-center gap-1 border-b bg-background px-4">
+      {/* min-w-0：阻止 grid 子项被内容最小宽度撑开，避免侧边栏展开后出现页面级横向滚动条 */}
+      <div className="flex min-w-0 flex-col h-screen">
+        <header className="flex-shrink-0 z-10 flex h-[57px] items-center gap-1 border-b bg-background px-4 overflow-hidden">
           <h4 className="text-base font-semibold">
             {t('headerTitle')}{' '}
             <span className="text-xs text-gray-500 ml-2">
@@ -396,7 +474,13 @@ const Layout = ({ children }) => {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setShowOnboarding(true)}>
+                <DropdownMenuItem
+                  onClick={() => {
+                    onboardingPausedRef.current = false;
+                    setOnboardingResumeStep(null);
+                    setShowOnboarding(true);
+                  }}
+                >
                   {t('help.reopenOnboarding')}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setShowLogs(true)}>
@@ -415,6 +499,30 @@ const Layout = ({ children }) => {
         <Toaster />
       </div>
 
+      {/* 引导暂停后的「继续」悬浮入口 */}
+      {onboardingResumeStep !== null && !showOnboarding && (
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-0.5 rounded-full border bg-background/95 px-1.5 py-1 shadow-lg backdrop-blur">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 rounded-full text-xs"
+            onClick={() => setShowOnboarding(true)}
+          >
+            <Compass className="h-3.5 w-3.5" />
+            {t('onboarding.resume')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 rounded-full text-muted-foreground"
+            aria-label={t('onboarding.resumeDismiss')}
+            onClick={dismissOnboardingResume}
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      )}
+
       {/* Update Dialog */}
       <UpdateDialog
         open={showUpdateDialog}
@@ -425,7 +533,9 @@ const Layout = ({ children }) => {
       <LogDialog open={showLogs} onOpenChange={setShowLogs} />
       <OnboardingDialog
         open={showOnboarding}
-        onOpenChange={setShowOnboarding}
+        onOpenChange={handleOnboardingOpenChange}
+        initialStep={onboardingResumeStep ?? 0}
+        onPause={handleOnboardingPause}
       />
     </div>
   );

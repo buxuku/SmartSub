@@ -96,7 +96,7 @@
   "downloading": "下载中",
   "downloadNow": "立即下载",
   "confirmDeleteModel": "确认删除该模型？",
-  "deleteModelDesc": "删除之后，如果你需要再次使用该模型，需要重新下载。",
+  "deleteModelDesc": "删除之后，如果您需要再次使用该模型，需要重新下载。",
   "cancel": "取消",
   "delete": "删除",
   "download": "下载",
@@ -150,12 +150,19 @@
   "gpuAccelerationDisabledTip": "您的设备支持 GPU 加速，点击前往设置启用",
   "gpuFallbackToast": "GPU 加速暂不可用，已自动切换到 {{backend}} 继续转写",
   "gpuMigrationNotice": "新版本已支持通用 GPU 加速（Vulkan）并默认启用，可在设置 → GPU 加速中调整",
+  "brandName": "妙幕",
+  "sidebar": {
+    "collapse": "收起菜单",
+    "expand": "展开菜单"
+  },
   "help": {
     "menu": "帮助",
     "reopenOnboarding": "重新打开新手引导",
     "github": "GitHub"
   },
   "onboarding": {
+    "resume": "继续新手引导",
+    "resumeDismiss": "不再提示",
     "skip": "跳过",
     "back": "上一步",
     "next": "下一步",
@@ -185,7 +192,7 @@
     "accelDescMac": "检测到 Apple 芯片，CoreML / Metal 加速已可用",
     "accelDescNvidia": "NVIDIA 显卡加速（CUDA）已开启",
     "accelDescVulkan": "通用显卡加速（Vulkan）已开启",
-    "accelDescAvailable": "你的设备支持显卡加速，开启后听写速度可提升数倍",
+    "accelDescAvailable": "您的设备支持显卡加速，开启后听写速度可提升数倍",
     "goEnable": "去开启",
     "enabled": "已开启"
   }

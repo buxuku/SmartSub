@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, Terminal, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
 
 type LogEntry = {
@@ -39,13 +40,17 @@ const LogPanel: React.FC<{ className?: string }> = ({ className }) => {
   };
 
   const lastLog = logs[logs.length - 1];
+  // 折叠态预览压成单行，避免换行/超长内容把页面撑出横向滚动条
+  const lastLogPreview = lastLog
+    ? lastLog.message.replace(/\s+/g, ' ').trim()
+    : '';
 
   return (
-    <div className={className}>
-      <div className="rounded-lg border bg-muted/30">
+    <div className={cn('min-w-0 max-w-full', className)}>
+      <div className="rounded-lg border bg-muted/30 overflow-hidden">
         <button
           type="button"
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-left"
+          className="flex w-full min-w-0 items-center gap-2 overflow-hidden px-3 py-1.5 text-left"
           onClick={() => setExpanded(!expanded)}
         >
           <Terminal className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
@@ -54,7 +59,7 @@ const LogPanel: React.FC<{ className?: string }> = ({ className }) => {
           </span>
           {!expanded && (
             <span className="text-[11px] text-muted-foreground/70 truncate font-mono min-w-0 flex-1">
-              {lastLog ? lastLog.message : t('logs.empty')}
+              {lastLog ? lastLogPreview : t('logs.empty')}
             </span>
           )}
           <span className="ml-auto flex items-center gap-1 flex-shrink-0">
@@ -69,7 +74,7 @@ const LogPanel: React.FC<{ className?: string }> = ({ className }) => {
           <div className="border-t">
             <div
               ref={scrollRef}
-              className="max-h-44 overflow-y-auto px-3 py-2 space-y-0.5"
+              className="max-h-44 overflow-y-auto overflow-x-hidden px-3 py-2 space-y-0.5"
             >
               {logs.length === 0 && (
                 <p className="text-[11px] text-muted-foreground/70">
