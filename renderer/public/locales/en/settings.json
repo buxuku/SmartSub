@@ -220,5 +220,6 @@
   "invalidConfigFile": "Invalid configuration file",
   "confirm": "Confirm",
   "cancel": "Cancel",
-  "delete": "Delete"
+  "delete": "Delete",
+  "advancedSettingsDesc": "Geek options: local whisper command and VAD fine-tuning — defaults are best practice"
 }

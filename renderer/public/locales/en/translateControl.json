@@ -55,5 +55,6 @@
   "doubaoModelNameTips": "Doubao translation model name, default is doubao-seed-translation-250915, usually no need to modify",
   "batchSizeDoubaoTips": "Doubao translation batch size, due to API limits, recommended to set to 1",
   "requestInterval": "Request Interval (seconds)",
-  "requestIntervalTip": "Wait time between consecutive requests (in seconds), useful for APIs with rate limits. Set to 0 for no delay. Example: for 10 requests/minute limit, set to 6."
+  "requestIntervalTip": "Wait time between consecutive requests (in seconds), useful for APIs with rate limits. Set to 0 for no delay. Example: for 10 requests/minute limit, set to 6.",
+  "batchSizeTip": "Number of subtitle lines per translation batch — 5 to 20 is recommended"
 }
