@@ -1,0 +1,27 @@
+{
+  "title": "What would you like to do?",
+  "subtitle": "Pick a task to start — you can also drop files straight onto a card",
+  "card": {
+    "generateTranslate": "Video → bilingual subtitles",
+    "generateTranslateDesc": "Transcribe speech and translate it into your target language in one go",
+    "generate": "Video → original subtitles",
+    "generateDesc": "Transcribe speech only, no translation",
+    "translate": "Translate existing subtitles",
+    "translateDesc": "Translate SRT and other subtitle files into another language",
+    "proofread": "Proofread subtitles",
+    "proofreadDesc": "Review line by line, with video preview and AI polish",
+    "merge": "Burn into video",
+    "mergeDesc": "Burn subtitles into the picture so they always show"
+  },
+  "needsModelBadge": "Needs a model",
+  "banner": {
+    "noModel": "No speech model yet — it turns speech into text. Download one to get started",
+    "noModelCta": "Download recommended model",
+    "noProvider": "Want translated subtitles? Set up a translation service first (free options available)",
+    "noProviderCta": "Set up"
+  },
+  "recentTasks": "Recent tasks",
+  "noRecentTasks": "No tasks yet — pick one above to get started",
+  "dropHint": "Drop to import files",
+  "fileCount": "{{count}} files"
+}

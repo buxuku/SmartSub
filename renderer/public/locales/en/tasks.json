@@ -1,0 +1,60 @@
+{
+  "pageTitle": {
+    "generate-translate": "Video → bilingual subtitles",
+    "generate": "Video → original subtitles",
+    "translate": "Translate existing subtitles"
+  },
+  "configRemembered": "Settings are remembered automatically",
+  "configBar": {
+    "model": "Speech model",
+    "sourceLanguage": "Video language",
+    "subtitleSourceLanguage": "Source language",
+    "targetLanguage": "Translate to",
+    "provider": "Translation service",
+    "style": "Subtitle style",
+    "format": "Subtitle format"
+  },
+  "goDownloadModel": "Download a model",
+  "goConfigureProvider": "Set up a translation service",
+  "advanced": "Advanced options",
+  "advancedDesc": "Details you rarely change — the defaults are best practice",
+  "section": {
+    "recognition": "Recognition",
+    "output": "Output & saving",
+    "execution": "Execution"
+  },
+  "stage": {
+    "extract": "Extract",
+    "transcribe": "Transcribe",
+    "translate": "Translate"
+  },
+  "row": {
+    "proofread": "Proofread",
+    "openFolder": "Show in folder",
+    "retry": "Retry",
+    "remove": "Remove"
+  },
+  "waiting": "Waiting",
+  "completion": {
+    "title": "{{done}} files completed",
+    "failed": "{{failed}} failed",
+    "goProofread": "Proofread",
+    "openFolder": "Open folder",
+    "retryFailed": "Retry failed",
+    "dismiss": "Dismiss"
+  },
+  "logs": {
+    "title": "Activity log",
+    "clear": "Clear",
+    "empty": "No logs yet"
+  },
+  "empty": {
+    "dragMedia": "Drag media files or folders here, or click to upload",
+    "dragSubtitle": "Drag subtitle files or folders here, or click to upload",
+    "mediaFormats": "Supported media formats: MP4, AVI, MKV, MOV, MP3, WAV",
+    "subtitleFormats": "Supported subtitle formats: SRT"
+  },
+  "import": "Import",
+  "clearList": "Clear list",
+  "taskCount": "{{count}} tasks"
+}

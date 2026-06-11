@@ -1,0 +1,60 @@
+{
+  "pageTitle": {
+    "generate-translate": "视频 → 双语字幕",
+    "generate": "视频 → 原文字幕",
+    "translate": "翻译已有字幕"
+  },
+  "configRemembered": "配置会自动记住",
+  "configBar": {
+    "model": "语音模型",
+    "sourceLanguage": "视频语言",
+    "subtitleSourceLanguage": "源语言",
+    "targetLanguage": "翻译成",
+    "provider": "翻译服务",
+    "style": "字幕样式",
+    "format": "字幕格式"
+  },
+  "goDownloadModel": "去下载模型",
+  "goConfigureProvider": "去配置翻译服务",
+  "advanced": "高级选项",
+  "advancedDesc": "不常改的细节设置，默认值即最佳实践",
+  "section": {
+    "recognition": "识别",
+    "output": "输出与保存",
+    "execution": "执行"
+  },
+  "stage": {
+    "extract": "提取",
+    "transcribe": "听写",
+    "translate": "翻译"
+  },
+  "row": {
+    "proofread": "校对",
+    "openFolder": "打开所在文件夹",
+    "retry": "重试",
+    "remove": "移除"
+  },
+  "waiting": "等待中",
+  "completion": {
+    "title": "{{done}} 个文件已完成",
+    "failed": "{{failed}} 个失败",
+    "goProofread": "去校对",
+    "openFolder": "打开文件夹",
+    "retryFailed": "重试失败项",
+    "dismiss": "关闭"
+  },
+  "logs": {
+    "title": "运行日志",
+    "clear": "清空",
+    "empty": "暂无日志"
+  },
+  "empty": {
+    "dragMedia": "拖拽媒体文件或文件夹到这里，或点击上传",
+    "dragSubtitle": "拖拽字幕文件或文件夹到这里，或点击上传",
+    "mediaFormats": "支持的媒体格式：MP4, AVI, MKV, MOV, MP3, WAV",
+    "subtitleFormats": "支持的字幕格式：SRT"
+  },
+  "import": "导入",
+  "clearList": "清空列表",
+  "taskCount": "{{count}} 个任务"
+}
