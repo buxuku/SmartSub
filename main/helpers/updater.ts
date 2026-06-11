@@ -34,9 +34,17 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
     autoUpdater.autoInstallOnAppQuit = false;
   }
 
-  // 设置更新通道
-  autoUpdater.channel = 'latest'; // 直接将 channel 设置为 'latest'
-  logMessage(`Setting update channel to: ${autoUpdater.channel}`, 'info');
+  // 设置更新通道：
+  // 稳定版固定 latest；beta 等预发布版本不强制 channel，
+  // 让 electron-updater 按版本号预发布语义自动解析（强制 latest 会令
+  // GitHubProvider 在 allowPrerelease 模式下匹配不到任何 release）
+  if (!app.getVersion().includes('-')) {
+    autoUpdater.channel = 'latest';
+  }
+  logMessage(
+    `Setting update channel to: ${autoUpdater.channel ?? 'auto (prerelease)'}`,
+    'info',
+  );
 
   // 检查更新
   const checkForUpdates = async (silent = false) => {
