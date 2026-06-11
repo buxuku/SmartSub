@@ -2,6 +2,7 @@ import React from 'react';
 import { useRouter } from 'next/router';
 import { useTranslation } from 'next-i18next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import OverviewTab from '@/components/resources/OverviewTab';
 import ModelsTab from '@/components/resources/ModelsTab';
 import ProvidersTab from '@/components/resources/ProvidersTab';
 import AccelerationTab from '@/components/resources/AccelerationTab';
@@ -52,7 +53,7 @@ const Resources = () => {
           ))}
         </TabsList>
         <TabsContent value="overview" className="min-h-0 flex-1 overflow-auto">
-          <p className="text-sm text-muted-foreground">{t('title')}</p>
+          <OverviewTab onNavigateTab={handleTabChange} />
         </TabsContent>
         <TabsContent value="models" className="min-h-0 flex-1 overflow-auto">
           <ModelsTab />
