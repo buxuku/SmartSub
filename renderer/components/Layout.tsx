@@ -8,11 +8,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
-  BotIcon,
   FileVideo2,
   Github,
   MonitorPlay,
-  Languages,
   Package,
   Settings,
   Rocket,
@@ -200,44 +198,6 @@ const Layout = ({ children }) => {
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={5}>
                 {t('tasks')}
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Link href={`/${locale}/modelsControl`}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={`rounded-lg ${
-                      asPath.includes('modelsControl') ? 'bg-muted' : ''
-                    }`}
-                    aria-label="Models"
-                  >
-                    <BotIcon className="size-5" />
-                  </Button>
-                </Link>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={5}>
-                {t('modelManagement')}
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Link href={`/${locale}/translateControl`}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={`rounded-lg ${
-                      asPath.includes('translateControl') ? 'bg-muted' : ''
-                    }`}
-                    aria-label="Translate"
-                  >
-                    <Languages className="size-5" />
-                  </Button>
-                </Link>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={5}>
-                {t('translationManagement')}
               </TooltipContent>
             </Tooltip>
             <Tooltip>
