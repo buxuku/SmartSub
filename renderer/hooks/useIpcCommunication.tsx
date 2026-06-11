@@ -3,9 +3,12 @@ import { IFiles } from '../../types';
 
 export default function useIpcCommunication(setFiles) {
   useEffect(() => {
-    window?.ipc?.on('file-selected', (res: IFiles[]) => {
-      setFiles((prevFiles) => [...prevFiles, ...res]);
-    });
+    const cleanupFileSelected = window?.ipc?.on(
+      'file-selected',
+      (res: IFiles[]) => {
+        setFiles((prevFiles) => [...prevFiles, ...res]);
+      },
+    );
 
     const handleTaskStatusChange = (
       res: IFiles,
@@ -109,10 +112,15 @@ export default function useIpcCommunication(setFiles) {
       });
     };
 
-    window?.ipc?.on('taskStatusChange', handleTaskStatusChange);
-    window?.ipc?.on('taskProgressChange', handleTaskProgressChange);
-    window?.ipc?.on('taskErrorChange', handleTaskErrorChange);
-    window?.ipc?.on('taskFileChange', handleFileChange);
-    return () => {};
+    const cleanups = [
+      cleanupFileSelected,
+      window?.ipc?.on('taskStatusChange', handleTaskStatusChange),
+      window?.ipc?.on('taskProgressChange', handleTaskProgressChange),
+      window?.ipc?.on('taskErrorChange', handleTaskErrorChange),
+      window?.ipc?.on('taskFileChange', handleFileChange),
+    ];
+    return () => {
+      cleanups.forEach((cleanup) => cleanup?.());
+    };
   }, []);
 }

@@ -17,12 +17,19 @@ import {
   Globe,
   Trash2,
   Cog,
+  ChevronDown,
   HelpCircle,
   Eraser,
   Activity,
   Download,
   Upload,
+  Wrench,
 } from 'lucide-react';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { Switch } from '@/components/ui/switch';
 import {
   Tooltip,
@@ -104,6 +111,7 @@ const Settings = () => {
   const [vadMaxSpeechDuration, setVADMaxSpeechDuration] = useState(0);
   const [vadSpeechPad, setVADSpeechPad] = useState(30);
   const [vadSamplesOverlap, setVADSamplesOverlap] = useState(0.1);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const form = useForm({
     defaultValues: {
       language: router.locale,
@@ -398,36 +406,6 @@ const Settings = () => {
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span>{t('useLocalWhisper')}</span>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{t('useLocalWhisperTip')}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-            <Switch
-              checked={useLocalWhisper}
-              onCheckedChange={handleLocalWhisperChange}
-            />
-          </div>
-
-          {useLocalWhisper && (
-            <CommandInput
-              label={t('whisperCommand')}
-              tooltip={t('whisperCommandTip')}
-              value={whisperCommand}
-              onChange={setWhisperCommand}
-              onSave={handleWhisperCommandSave}
-            />
-          )}
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
               <span>{t('checkUpdateOnStartup')}</span>
               <TooltipProvider>
                 <Tooltip>
@@ -558,206 +536,256 @@ const Settings = () => {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Activity className="mr-2" />
-            {t('vadSettings')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span>{t('enableVad')}</span>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{t('enableVadTip')}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-            <Switch checked={useVAD} onCheckedChange={handleVADChange} />
-          </div>
-
-          {useVAD && (
-            <>
-              <div className="space-y-2">
+        <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer select-none">
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center">
+                  <Wrench className="mr-2" />
+                  {t('advancedSettings')}
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 text-muted-foreground transition-transform ${
+                    advancedOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </CardTitle>
+              <p className="text-sm text-muted-foreground pt-1">
+                {t('advancedSettingsDesc')}
+              </p>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span>{t('vadThreshold')}</span>
+                  <span>{t('useLocalWhisper')}</span>
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger>
                         <HelpCircle className="h-4 w-4 text-muted-foreground" />
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>{t('vadThresholdTip')}</p>
+                        <p>{t('useLocalWhisperTip')}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
                 </div>
-                <Input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="1"
-                  value={vadThreshold}
-                  onChange={(e) =>
-                    handleVADSettingChange(
-                      'vadThreshold',
-                      Number(e.target.value),
-                    )
-                  }
-                  className="font-mono text-sm"
+                <Switch
+                  checked={useLocalWhisper}
+                  onCheckedChange={handleLocalWhisperChange}
                 />
               </div>
 
-              <div className="space-y-2">
+              {useLocalWhisper && (
+                <CommandInput
+                  label={t('whisperCommand')}
+                  tooltip={t('whisperCommandTip')}
+                  value={whisperCommand}
+                  onChange={setWhisperCommand}
+                  onSave={handleWhisperCommandSave}
+                />
+              )}
+
+              <div className="flex items-center gap-2 pt-2 border-t">
+                <Activity className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">{t('vadSettings')}</span>
+              </div>
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span>{t('vadMinSpeechDuration')}</span>
+                  <span>{t('enableVad')}</span>
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger>
                         <HelpCircle className="h-4 w-4 text-muted-foreground" />
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>{t('vadMinSpeechDurationTip')}</p>
+                        <p>{t('enableVadTip')}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
                 </div>
-                <Input
-                  type="number"
-                  min="0"
-                  value={vadMinSpeechDuration}
-                  onChange={(e) =>
-                    handleVADSettingChange(
-                      'vadMinSpeechDuration',
-                      Number(e.target.value),
-                    )
-                  }
-                  className="font-mono text-sm"
-                />
+                <Switch checked={useVAD} onCheckedChange={handleVADChange} />
               </div>
 
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span>{t('vadMinSilenceDuration')}</span>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger>
-                        <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('vadMinSilenceDurationTip')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-                <Input
-                  type="number"
-                  min="0"
-                  value={vadMinSilenceDuration}
-                  onChange={(e) =>
-                    handleVADSettingChange(
-                      'vadMinSilenceDuration',
-                      Number(e.target.value),
-                    )
-                  }
-                  className="font-mono text-sm"
-                />
-              </div>
+              {useVAD && (
+                <>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span>{t('vadThreshold')}</span>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{t('vadThresholdTip')}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="1"
+                      value={vadThreshold}
+                      onChange={(e) =>
+                        handleVADSettingChange(
+                          'vadThreshold',
+                          Number(e.target.value),
+                        )
+                      }
+                      className="font-mono text-sm"
+                    />
+                  </div>
 
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span>{t('vadMaxSpeechDuration')}</span>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger>
-                        <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('vadMaxSpeechDurationTip')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-                <Input
-                  type="number"
-                  min="0"
-                  value={vadMaxSpeechDuration}
-                  onChange={(e) =>
-                    handleVADSettingChange(
-                      'vadMaxSpeechDuration',
-                      Number(e.target.value),
-                    )
-                  }
-                  className="font-mono text-sm"
-                />
-              </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span>{t('vadMinSpeechDuration')}</span>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{t('vadMinSpeechDurationTip')}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={vadMinSpeechDuration}
+                      onChange={(e) =>
+                        handleVADSettingChange(
+                          'vadMinSpeechDuration',
+                          Number(e.target.value),
+                        )
+                      }
+                      className="font-mono text-sm"
+                    />
+                  </div>
 
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span>{t('vadSpeechPad')}</span>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger>
-                        <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('vadSpeechPadTip')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-                <Input
-                  type="number"
-                  min="0"
-                  value={vadSpeechPad}
-                  onChange={(e) =>
-                    handleVADSettingChange(
-                      'vadSpeechPad',
-                      Number(e.target.value),
-                    )
-                  }
-                  className="font-mono text-sm"
-                />
-              </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span>{t('vadMinSilenceDuration')}</span>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{t('vadMinSilenceDurationTip')}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={vadMinSilenceDuration}
+                      onChange={(e) =>
+                        handleVADSettingChange(
+                          'vadMinSilenceDuration',
+                          Number(e.target.value),
+                        )
+                      }
+                      className="font-mono text-sm"
+                    />
+                  </div>
 
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span>{t('vadSamplesOverlap')}</span>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger>
-                        <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{t('vadSamplesOverlapTip')}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-                <Input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="1"
-                  value={vadSamplesOverlap}
-                  onChange={(e) =>
-                    handleVADSettingChange(
-                      'vadSamplesOverlap',
-                      Number(e.target.value),
-                    )
-                  }
-                  className="font-mono text-sm"
-                />
-              </div>
-            </>
-          )}
-        </CardContent>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span>{t('vadMaxSpeechDuration')}</span>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{t('vadMaxSpeechDurationTip')}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={vadMaxSpeechDuration}
+                      onChange={(e) =>
+                        handleVADSettingChange(
+                          'vadMaxSpeechDuration',
+                          Number(e.target.value),
+                        )
+                      }
+                      className="font-mono text-sm"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span>{t('vadSpeechPad')}</span>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{t('vadSpeechPadTip')}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={vadSpeechPad}
+                      onChange={(e) =>
+                        handleVADSettingChange(
+                          'vadSpeechPad',
+                          Number(e.target.value),
+                        )
+                      }
+                      className="font-mono text-sm"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span>{t('vadSamplesOverlap')}</span>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{t('vadSamplesOverlapTip')}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="1"
+                      value={vadSamplesOverlap}
+                      onChange={(e) =>
+                        handleVADSettingChange(
+                          'vadSamplesOverlap',
+                          Number(e.target.value),
+                        )
+                      }
+                      className="font-mono text-sm"
+                    />
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
       </Card>
 
       <Card>
