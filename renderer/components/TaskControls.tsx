@@ -8,11 +8,23 @@ interface TaskControlsProps {
   files: any[];
   formData: any;
   className?: string;
+  /** 可选：状态变化时上抛（任务页用于联动重试按钮/完成横幅） */
+  onStatusChange?: (status: string) => void;
 }
 
-const TaskControls = ({ files, formData, className }: TaskControlsProps) => {
-  const [taskStatus, setTaskStatus] = useState('idle');
+const TaskControls = ({
+  files,
+  formData,
+  className,
+  onStatusChange,
+}: TaskControlsProps) => {
+  const [taskStatus, setTaskStatusState] = useState('idle');
   const { t } = useTranslation(['home', 'common']);
+
+  const setTaskStatus = (status: string) => {
+    setTaskStatusState(status);
+    onStatusChange?.(status);
+  };
 
   useEffect(() => {
     // 获取当前任务状态
