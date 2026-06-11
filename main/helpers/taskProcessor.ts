@@ -8,6 +8,38 @@ import { isAppleSilicon } from './utils';
 import { IFiles } from '../../types';
 import { ExtendedProvider, CustomParameterConfig } from '../../types/provider';
 import { configurationManager } from '../service/configurationManager';
+import { applyTaskEventToProjects } from './taskManager';
+
+const TASK_EVENT_CHANNELS = new Set([
+  'taskStatusChange',
+  'taskProgressChange',
+  'taskErrorChange',
+  'taskFileChange',
+]);
+
+/**
+ * 包装 IPC event：任务事件除发往渲染层外，同步镜像进任务工程存储。
+ * 这样用户中途离开任务页（无渲染层监听）时，工程状态也不会停留在 loading。
+ */
+function wrapTaskEvent(event: any) {
+  const sender = event.sender;
+  return {
+    ...event,
+    sender: {
+      send: (channel: string, ...args: any[]) => {
+        if (TASK_EVENT_CHANNELS.has(channel)) {
+          applyTaskEventToProjects(channel, ...args);
+        }
+        try {
+          sender.send(channel, ...args);
+        } catch (error) {
+          // 窗口销毁等场景下发送失败，但镜像已落库
+          console.error('send task event failed', error);
+        }
+      },
+    },
+  };
+}
 
 let processingQueue = [];
 let isProcessing = false;
@@ -188,7 +220,7 @@ async function processNextTasks(event) {
         const extendedProvider = await createExtendedProvider(baseProvider);
 
         await processFile(
-          event,
+          wrapTaskEvent(event),
           task.file as IFiles,
           task.formData,
           hasOpenAiWhisper,

@@ -24,6 +24,22 @@ export interface IFiles {
   whisperBackend?: string;
 }
 
+export type TaskProjectType =
+  | 'generateAndTranslate'
+  | 'generateOnly'
+  | 'translateOnly';
+
+/** 一次任务工程：任务维度记录，下挂文件列表 */
+export interface TaskProject {
+  id: string;
+  /** 默认「时间 + 第一个文件名」，用户可改 */
+  name: string;
+  taskType: TaskProjectType;
+  files: IFiles[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface IFormData {
   translateContent:
     | 'onlyTranslate'

@@ -4,7 +4,9 @@
     "generate": "Video → original subtitles",
     "translate": "Translate existing subtitles"
   },
-  "configRemembered": "Settings are remembered automatically",
+  "backToLaunchpad": "Back to task picker",
+  "newTaskHint": "New task · saved to recent tasks once files are added",
+  "renameTask": "Rename task",
   "configBar": {
     "model": "Speech model",
     "sourceLanguage": "Video language",

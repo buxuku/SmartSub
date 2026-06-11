@@ -1,9 +1,30 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useRouter } from 'next/router';
 import path from 'path';
-import { Import, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
+import {
+  ArrowLeft,
+  Check,
+  Import,
+  Pencil,
+  SlidersHorizontal,
+  Trash2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { cn, isSubtitleFile } from 'lib/utils';
 import { TASK_TYPES, getTaskTypeBySlug } from 'lib/taskTypes';
 import useSystemInfo from 'hooks/useStystemInfo';
@@ -23,11 +44,16 @@ import { useTranslation } from 'next-i18next';
 export default function TaskPage() {
   const router = useRouter();
   const slug = typeof router.query.type === 'string' ? router.query.type : '';
+  const locale =
+    typeof router.query.locale === 'string' ? router.query.locale : 'zh';
   const typeDef = getTaskTypeBySlug(slug);
 
   const { t } = useTranslation('tasks');
-  const { t: tHome } = useTranslation('home');
   const [files, setFiles] = useState([]);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
   const [providers, setProviders] = useState([]);
   const [useLocalWhisper, setUseLocalWhisper] = useState(false);
   const [taskStatus, setTaskStatus] = useState('idle');
@@ -37,12 +63,13 @@ export default function TaskPage() {
   const [isDragging, setIsDragging] = useState(false);
   const { systemInfo } = useSystemInfo();
   const { form, formData } = useFormConfig();
+  /** 来自加载（而非用户/任务事件）的 files 引用，避免回写存储 */
+  const loadedFilesRef = useRef<any[] | null>(null);
+  const projectIdRef = useRef<string | null>(null);
   useIpcCommunication(setFiles);
 
   useEffect(() => {
     const load = async () => {
-      const tasks = await window?.ipc?.invoke('getTasks');
-      setFiles(tasks || []);
       const storedProviders = await window?.ipc?.invoke(
         'getTranslationProviders',
       );
@@ -62,9 +89,62 @@ export default function TaskPage() {
     };
   }, []);
 
+  // 解析任务工程：带 ?project= 恢复既有工程，否则开新工程
   useEffect(() => {
-    window?.ipc?.send('setTasks', files);
-  }, [files]);
+    if (!router.isReady || !typeDef) return;
+    const q =
+      typeof router.query.project === 'string' ? router.query.project : '';
+    if (q && q === projectIdRef.current) return; // 首次保存后 URL 回填触发，无需重载
+
+    let cancelled = false;
+    (async () => {
+      let nextFiles: any[] = [];
+      let name: string | null = null;
+      const id = q || uuidv4();
+      if (q) {
+        const project = await window?.ipc?.invoke('getTaskProject', q);
+        if (project) {
+          nextFiles = project.files || [];
+          name = project.name || null;
+        }
+      }
+      if (cancelled) return;
+      loadedFilesRef.current = nextFiles;
+      projectIdRef.current = id;
+      setFiles(nextFiles);
+      setProjectName(name);
+      setEditingName(false);
+      setProjectId(id);
+      setBannerDismissed(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [router.isReady, router.query.project, slug, typeDef]);
+
+  // files 变更持久化到任务工程（清空即删除工程）
+  useEffect(() => {
+    if (!projectId || !typeDef) return;
+    if (loadedFilesRef.current === files) return;
+    (async () => {
+      const saved = await window?.ipc?.invoke('saveTaskProject', {
+        id: projectId,
+        taskType: typeDef.taskType,
+        files,
+      });
+      setProjectName(saved?.name || null);
+      if (saved && router.query.project !== projectId) {
+        router.replace(
+          {
+            pathname: router.pathname,
+            query: { ...router.query, project: projectId },
+          },
+          undefined,
+          { shallow: true },
+        );
+      }
+    })();
+  }, [files, projectId]);
 
   // 进入任务页 = 选择任务类型：同步到持久化配置
   useEffect(() => {
@@ -109,9 +189,24 @@ export default function TaskPage() {
   };
 
   const handleClearList = () => {
-    window?.ipc?.send('clearTasks', []);
     setFiles([]);
     setBannerDismissed(false);
+  };
+
+  const startRename = () => {
+    setNameDraft(projectName || '');
+    setEditingName(true);
+  };
+
+  const commitRename = async () => {
+    setEditingName(false);
+    const name = nameDraft.trim();
+    if (!projectId || !name || name === projectName) return;
+    const saved = await window?.ipc?.invoke('renameTaskProject', {
+      id: projectId,
+      name,
+    });
+    if (saved?.name) setProjectName(saved.name);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -207,13 +302,72 @@ export default function TaskPage() {
   return (
     <div className="flex h-full flex-col gap-3 p-4 overflow-hidden">
       <div className="flex items-center justify-between gap-3 flex-wrap flex-shrink-0">
-        <div className="flex items-baseline gap-3 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 flex-shrink-0"
+                  aria-label={t('backToLaunchpad')}
+                  onClick={() => router.push(`/${locale}/home`)}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {t('backToLaunchpad')}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <h1 className="text-lg font-semibold whitespace-nowrap">
             {t(`pageTitle.${typeDef.slug}`)}
           </h1>
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            {t('configRemembered')}
-          </span>
+          {editingName ? (
+            <div className="flex items-center gap-1 min-w-0">
+              <Input
+                autoFocus
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') setEditingName(false);
+                }}
+                onBlur={commitRename}
+                className="h-7 w-56 text-xs"
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 flex-shrink-0"
+                aria-label={t('renameTask')}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={commitRename}
+              >
+                <Check className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ) : projectName ? (
+            <div className="group/name flex items-center gap-1 min-w-0">
+              <span className="truncate text-xs text-muted-foreground min-w-0">
+                {projectName}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 flex-shrink-0 opacity-0 group-hover/name:opacity-100 transition-opacity"
+                aria-label={t('renameTask')}
+                onClick={startRename}
+              >
+                <Pencil className="h-3 w-3" />
+              </Button>
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {t('newTaskHint')}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <Button

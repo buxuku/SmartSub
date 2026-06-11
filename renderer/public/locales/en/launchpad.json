@@ -24,6 +24,13 @@
   "noRecentTasks": "No tasks yet — pick one above to get started",
   "dropHint": "Drop to import files",
   "fileCount": "{{count}} files",
+  "recent": {
+    "rename": "Rename",
+    "delete": "Delete",
+    "deleteTitle": "Delete this task record?",
+    "deleteDesc": "This removes the \"{{name}}\" task record. Files on disk are not affected.",
+    "cancel": "Cancel"
+  },
   "status": {
     "waiting": "Waiting",
     "running": "Running",

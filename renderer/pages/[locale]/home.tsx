@@ -1,16 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import {
-  AlertTriangle,
-  Clapperboard,
-  Edit3,
-  Film,
-  Languages,
-  Subtitles,
-} from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
+import { AlertTriangle, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { cn } from 'lib/utils';
 import {
   getTaskTypeBySlug,
@@ -24,13 +29,24 @@ import {
   isFileDone,
   hasFileError,
 } from '@/components/tasks/stageUtils';
+import {
+  CardDecor,
+  GenerateIcon,
+  GenerateTranslateIcon,
+  MergeIcon,
+  ProofreadIcon,
+  TranslateIcon,
+} from '@/components/launchpad/TaskIcons';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { useTranslation } from 'next-i18next';
 
 interface CardDef {
   key: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** 图标 chip 配色 */
   chip: string;
+  /** 角落线条装饰配色 */
+  decor: string;
   /** /tasks/[slug] 卡片 */
   slug?: string;
   /** 直达页面卡片 */
@@ -42,34 +58,39 @@ const CARDS: CardDef[] = [
   {
     key: 'generateTranslate',
     slug: 'generate-translate',
-    icon: Subtitles,
-    chip: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
+    icon: GenerateTranslateIcon,
+    chip: 'bg-gradient-to-br from-indigo-500/20 via-indigo-500/10 to-transparent ring-1 ring-inset ring-indigo-500/20 text-indigo-600 dark:text-indigo-400',
+    decor: 'text-indigo-500/[0.09] dark:text-indigo-400/[0.12]',
     needsModel: true,
   },
   {
     key: 'generate',
     slug: 'generate',
-    icon: Clapperboard,
-    chip: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
+    icon: GenerateIcon,
+    chip: 'bg-gradient-to-br from-sky-500/20 via-sky-500/10 to-transparent ring-1 ring-inset ring-sky-500/20 text-sky-600 dark:text-sky-400',
+    decor: 'text-sky-500/[0.09] dark:text-sky-400/[0.12]',
     needsModel: true,
   },
   {
     key: 'translate',
     slug: 'translate',
-    icon: Languages,
-    chip: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    icon: TranslateIcon,
+    chip: 'bg-gradient-to-br from-emerald-500/20 via-emerald-500/10 to-transparent ring-1 ring-inset ring-emerald-500/20 text-emerald-600 dark:text-emerald-400',
+    decor: 'text-emerald-500/[0.09] dark:text-emerald-400/[0.12]',
   },
   {
     key: 'proofread',
     href: 'proofread',
-    icon: Edit3,
-    chip: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    icon: ProofreadIcon,
+    chip: 'bg-gradient-to-br from-amber-500/20 via-amber-500/10 to-transparent ring-1 ring-inset ring-amber-500/25 text-amber-600 dark:text-amber-400',
+    decor: 'text-amber-500/[0.09] dark:text-amber-400/[0.12]',
   },
   {
     key: 'merge',
     href: 'subtitleMerge',
-    icon: Film,
-    chip: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+    icon: MergeIcon,
+    chip: 'bg-gradient-to-br from-rose-500/20 via-rose-500/10 to-transparent ring-1 ring-inset ring-rose-500/20 text-rose-600 dark:text-rose-400',
+    decor: 'text-rose-500/[0.09] dark:text-rose-400/[0.12]',
   },
 ];
 
@@ -82,38 +103,63 @@ const STATUS_DOT: Record<RecentStatus, string> = {
   error: 'bg-red-500',
 };
 
-function getRecentStatus(
-  file: any,
-  typeDef: TaskTypeDef,
-  userConfig: any,
-): RecentStatus {
-  const stages = getFileStages(file, typeDef, userConfig);
-  if (isFileDone(file, stages)) return 'done';
-  if (hasFileError(file, stages)) return 'error';
-  if (stages.some((s) => getStageStatus(file, s.key) === 'loading')) {
-    return 'running';
+function getProjectTypeDef(project: any): TaskTypeDef {
+  return (
+    getTaskTypeByValue(project?.taskType) ||
+    getTaskTypeBySlug('generate-translate')
+  );
+}
+
+/** 工程整体状态：有进行中 > 有错误 > 全部完成 > 等待 */
+function getProjectStatus(project: any, userConfig: any): RecentStatus {
+  const typeDef = getProjectTypeDef(project);
+  const files: any[] = project?.files || [];
+  if (!files.length) return 'waiting';
+  let anyLoading = false;
+  let anyError = false;
+  let allDone = true;
+  for (const file of files) {
+    const stages = getFileStages(file, typeDef, userConfig);
+    if (stages.some((s) => getStageStatus(file, s.key) === 'loading')) {
+      anyLoading = true;
+    }
+    if (hasFileError(file, stages)) anyError = true;
+    if (!isFileDone(file, stages)) allDone = false;
   }
+  if (anyLoading) return 'running';
+  if (anyError) return 'error';
+  if (allDone) return 'done';
   return 'waiting';
+}
+
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export default function LaunchpadPage() {
   const router = useRouter();
   const { locale } = router.query;
   const { t } = useTranslation('launchpad');
+  const { t: tTasks } = useTranslation('tasks');
   const [hasModels, setHasModels] = useState(true);
   const [hasProvider, setHasProvider] = useState(true);
-  const [recentFiles, setRecentFiles] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
   const [userConfig, setUserConfig] = useState<any>({});
   const [dragCard, setDragCard] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [systemInfo, providers, tasks, config, settings] =
+        const [systemInfo, providers, taskProjects, config, settings] =
           await Promise.all([
             window?.ipc?.invoke('getSystemInfo', null),
             window?.ipc?.invoke('getTranslationProviders'),
-            window?.ipc?.invoke('getTasks'),
+            window?.ipc?.invoke('getTaskProjects'),
             window?.ipc?.invoke('getUserConfig'),
             window?.ipc?.invoke('getSettings'),
           ]);
@@ -124,7 +170,7 @@ export default function LaunchpadPage() {
         setHasProvider(
           (providers || []).some((p: any) => isProviderConfigured(p)),
         );
-        setRecentFiles((tasks || []).slice(-5).reverse());
+        setProjects((taskProjects || []).slice(0, 8));
         setUserConfig(config || {});
       } catch (error) {
         console.error('Failed to load launchpad data:', error);
@@ -133,12 +179,11 @@ export default function LaunchpadPage() {
     load();
   }, []);
 
-  const currentTypeDef =
-    getTaskTypeByValue(userConfig?.taskType) ||
-    getTaskTypeBySlug('generate-translate');
-
   const cardTarget = (card: CardDef) =>
     card.slug ? `/${locale}/tasks/${card.slug}` : `/${locale}/${card.href}`;
+
+  const projectTarget = (project: any) =>
+    `/${locale}/tasks/${getProjectTypeDef(project).slug}?project=${project.id}`;
 
   const handleCardDrop = async (e: React.DragEvent, card: CardDef) => {
     e.preventDefault();
@@ -165,9 +210,45 @@ export default function LaunchpadPage() {
       files: paths,
       taskType: typeDef.accepts === 'subtitle' ? 'translate' : 'media',
     });
-    const existing = (await window?.ipc?.invoke('getTasks')) || [];
-    window?.ipc?.send('setTasks', [...existing, ...(dropped || [])]);
-    router.push(cardTarget(card));
+    if (!dropped?.length) {
+      router.push(cardTarget(card));
+      return;
+    }
+    // 拖放即开新任务工程
+    const id = uuidv4();
+    await window?.ipc?.invoke('saveTaskProject', {
+      id,
+      taskType: typeDef.taskType,
+      files: dropped,
+    });
+    router.push(`/${locale}/tasks/${card.slug}?project=${id}`);
+  };
+
+  const startRename = (project: any) => {
+    setEditingId(project.id);
+    setNameDraft(project.name || '');
+  };
+
+  const commitRename = async (project: any) => {
+    setEditingId(null);
+    const name = nameDraft.trim();
+    if (!name || name === project.name) return;
+    const saved = await window?.ipc?.invoke('renameTaskProject', {
+      id: project.id,
+      name,
+    });
+    if (saved) {
+      setProjects((prev) =>
+        prev.map((p) => (p.id === project.id ? { ...p, name: saved.name } : p)),
+      );
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    await window?.ipc?.invoke('deleteTaskProject', deleteTarget.id);
+    setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+    setDeleteTarget(null);
   };
 
   return (
@@ -217,7 +298,7 @@ export default function LaunchpadPage() {
                 key={card.key}
                 href={cardTarget(card)}
                 className={cn(
-                  'group relative rounded-xl border bg-card p-4 transition-all hover:shadow-md hover:-translate-y-0.5',
+                  'group relative overflow-hidden rounded-xl border bg-card p-4 transition-all hover:shadow-md hover:-translate-y-0.5',
                   dragCard === card.key &&
                     'border-2 border-dashed border-primary bg-muted/50',
                 )}
@@ -239,21 +320,27 @@ export default function LaunchpadPage() {
                 }
                 onDrop={droppable ? (e) => handleCardDrop(e, card) : undefined}
               >
+                <CardDecor
+                  className={cn(
+                    'pointer-events-none absolute right-0 top-0 h-24 w-24 transition-transform duration-300 group-hover:scale-110',
+                    card.decor,
+                  )}
+                />
                 {card.needsModel && !hasModels && (
                   <Badge
                     variant="outline"
-                    className="absolute right-3 top-3 text-[10px] px-1.5 py-0 border-amber-500/40 text-amber-600 dark:text-amber-400"
+                    className="absolute right-3 top-3 text-[10px] px-1.5 py-0 border-amber-500/40 text-amber-600 dark:text-amber-400 bg-card"
                   >
                     {t('needsModelBadge')}
                   </Badge>
                 )}
                 <div
                   className={cn(
-                    'mb-3 inline-flex h-10 w-10 items-center justify-center rounded-lg',
+                    'mb-3 inline-flex h-11 w-11 items-center justify-center rounded-xl',
                     card.chip,
                   )}
                 >
-                  <Icon className="h-5 w-5" />
+                  <Icon className="h-6 w-6" />
                 </div>
                 <div className="text-sm font-semibold">
                   {dragCard === card.key
@@ -272,23 +359,23 @@ export default function LaunchpadPage() {
           <h2 className="text-sm font-semibold text-muted-foreground">
             {t('recentTasks')}
           </h2>
-          {recentFiles.length === 0 ? (
+          {projects.length === 0 ? (
             <p className="text-sm text-muted-foreground/70">
               {t('noRecentTasks')}
             </p>
           ) : (
             <div className="rounded-xl border divide-y">
-              {recentFiles.map((file) => {
-                const status = getRecentStatus(
-                  file,
-                  currentTypeDef,
-                  userConfig,
-                );
+              {projects.map((project) => {
+                const status = getProjectStatus(project, userConfig);
+                const typeDef = getProjectTypeDef(project);
+                const editing = editingId === project.id;
                 return (
-                  <Link
-                    key={file?.uuid}
-                    href={`/${locale}/tasks/${currentTypeDef.slug}`}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors"
+                  <div
+                    key={project.id}
+                    className="group flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors cursor-pointer"
+                    onClick={() => {
+                      if (!editing) router.push(projectTarget(project));
+                    }}
                   >
                     <span
                       className={cn(
@@ -296,24 +383,96 @@ export default function LaunchpadPage() {
                         STATUS_DOT[status],
                       )}
                     />
-                    <span className="truncate text-sm min-w-0 flex-1">
-                      {file?.fileName}
-                      {file?.fileExtension}
+                    {editing ? (
+                      <Input
+                        autoFocus
+                        value={nameDraft}
+                        onChange={(e) => setNameDraft(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitRename(project);
+                          if (e.key === 'Escape') setEditingId(null);
+                        }}
+                        onBlur={() => commitRename(project)}
+                        className="h-7 text-xs min-w-0 flex-1"
+                      />
+                    ) : (
+                      <span className="truncate text-sm min-w-0 flex-1">
+                        {project.name}
+                      </span>
+                    )}
+                    <span className="hidden sm:inline text-[11px] text-muted-foreground rounded bg-muted px-1.5 py-0.5 flex-shrink-0">
+                      {tTasks(`pageTitle.${typeDef.slug}`)}
                     </span>
                     <span className="text-xs text-muted-foreground flex-shrink-0">
+                      {t('fileCount', { count: project.files?.length || 0 })}
+                    </span>
+                    <span className="hidden md:inline text-xs text-muted-foreground/70 tabular-nums flex-shrink-0">
+                      {formatTime(project.updatedAt)}
+                    </span>
+                    <span className="text-xs text-muted-foreground flex-shrink-0 w-12 text-right">
                       {t(`status.${status}`)}
                     </span>
-                  </Link>
+                    <span
+                      className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        aria-label={t('recent.rename')}
+                        onClick={() => startRename(project)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        aria-label={t('recent.delete')}
+                        onClick={() => setDeleteTarget(project)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </span>
+                  </div>
                 );
               })}
             </div>
           )}
         </div>
       </div>
+
+      <AlertDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('recent.deleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('recent.deleteDesc', { name: deleteTarget?.name || '' })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('recent.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>
+              {t('recent.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
 
-export const getStaticProps = makeStaticProperties(['common', 'launchpad']);
+export const getStaticProps = makeStaticProperties([
+  'common',
+  'launchpad',
+  'tasks',
+]);
 
 export { getStaticPaths };

@@ -4,7 +4,9 @@
     "generate": "视频 → 原文字幕",
     "translate": "翻译已有字幕"
   },
-  "configRemembered": "配置会自动记住",
+  "backToLaunchpad": "返回任务选择",
+  "newTaskHint": "新任务 · 导入文件后自动保存到最近任务",
+  "renameTask": "重命名任务",
   "configBar": {
     "model": "语音模型",
     "sourceLanguage": "视频语言",

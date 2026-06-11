@@ -1,5 +1,5 @@
 {
-  "title": "你想做什么？",
+  "title": "您想做什么？",
   "subtitle": "选择一个任务开始，文件也可以直接拖到卡片上",
   "card": {
     "generateTranslate": "视频 → 双语字幕",
@@ -24,6 +24,13 @@
   "noRecentTasks": "还没有任务记录，从上面选一个任务开始吧",
   "dropHint": "松手导入文件",
   "fileCount": "{{count}} 个文件",
+  "recent": {
+    "rename": "重命名",
+    "delete": "删除",
+    "deleteTitle": "删除这条任务记录？",
+    "deleteDesc": "将删除「{{name}}」的任务记录，磁盘上的文件不受影响。",
+    "cancel": "取消"
+  },
   "status": {
     "waiting": "等待中",
     "running": "进行中",

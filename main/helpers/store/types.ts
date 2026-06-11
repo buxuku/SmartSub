@@ -1,6 +1,6 @@
 import { Provider, CustomParameterConfig } from '../../../types/provider';
 import { ProofreadHistory, ProofreadTask } from '../../../types/proofread';
-import { IFiles } from '../../../types';
+import { IFiles, TaskProject } from '../../../types';
 import {
   GpuMode,
   AddonLoadResultInfo,
@@ -46,7 +46,9 @@ export type StoreType = {
   customParameters?: Record<string, CustomParameterConfig>;
   proofreadHistories?: ProofreadHistory[]; // 旧版，保留兼容
   proofreadTasks?: ProofreadTask[]; // 新版批量任务
-  /** 任务列表（跨重启保留） */
+  /** 旧版扁平任务列表（仅保留用于迁移到 taskProjects） */
   tasks?: IFiles[];
+  /** 任务工程列表（任务维度，跨重启保留） */
+  taskProjects?: TaskProject[];
   [key: string]: any;
 };
