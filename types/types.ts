@@ -5,21 +5,36 @@ export interface ISystemInfo {
   totalMemoryGB?: number;
 }
 
+export type TaskStepStatus = 'loading' | 'done' | 'error';
+
 export interface IFiles {
   uuid: string;
   filePath: string;
   fileName: string;
   fileExtension: string;
   directory: string;
-  extractAudio?: boolean;
-  extractSubtitle?: boolean;
-  translateSubtitle?: boolean;
+  extractAudio?: TaskStepStatus;
+  extractSubtitle?: TaskStepStatus;
+  translateSubtitle?: TaskStepStatus;
+  prepareSubtitle?: TaskStepStatus;
+  processFile?: TaskStepStatus;
+  extractAudioProgress?: number;
+  extractSubtitleProgress?: number;
+  translateSubtitleProgress?: number;
+  prepareSubtitleProgress?: number;
+  processFileProgress?: number;
+  extractAudioError?: string;
+  extractSubtitleError?: string;
+  translateSubtitleError?: string;
+  prepareSubtitleError?: string;
+  processFileError?: string;
   audioFile?: string;
   srtFile?: string;
   tempSrtFile?: string;
   tempAudioFile?: string;
   translatedSrtFile?: string;
   tempTranslatedSrtFile?: string;
+  [key: string]: unknown;
 }
 
 export interface IFormData {

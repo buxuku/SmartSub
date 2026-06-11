@@ -52,6 +52,8 @@
   "translateSubtitle": "Translate Subtitle",
   "noTask": "No tasks to be processed",
   "allFilesProcessed": "All files have been processed",
+  "retryFailedTasks": "Retry Failed ({{count}})",
+  "noFailedTasks": "No failed tasks to retry",
   "restartTask": "Restart Task",
   "resumeTask": "Resume Task",
   "cancelTask": "Cancel Task",

@@ -58,6 +58,8 @@
   "translateSubtitle": "翻译字幕",
   "noTask": "没有任务需要处理",
   "allFilesProcessed": "所有文件已处理完成",
+  "retryFailedTasks": "重试失败任务 ({{count}})",
+  "noFailedTasks": "没有失败任务需要重试",
   "restartTask": "重启任务",
   "resumeTask": "恢复任务",
   "cancelTask": "取消任务",

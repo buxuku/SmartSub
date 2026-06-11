@@ -1,18 +1,35 @@
-import { useEffect, useState } from 'react';
+import { Dispatch, SetStateAction, useEffect, useMemo, useState } from 'react';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
-import { isSubtitleFile, needsCoreML, cn } from 'lib/utils';
+import { cn } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
+import { RefreshCw } from 'lucide-react';
+import { IFiles } from '../../types';
+import {
+  getFailedTaskFiles,
+  getRunnableTaskFiles,
+  resetTaskRunState,
+} from '@/lib/taskWorkflow';
 
 interface TaskControlsProps {
-  files: any[];
+  files: IFiles[];
+  setFiles: Dispatch<SetStateAction<IFiles[]>>;
   formData: any;
   className?: string;
 }
 
-const TaskControls = ({ files, formData, className }: TaskControlsProps) => {
+const TaskControls = ({
+  files,
+  setFiles,
+  formData,
+  className,
+}: TaskControlsProps) => {
   const [taskStatus, setTaskStatus] = useState('idle');
   const { t } = useTranslation(['home', 'common']);
+  const failedFiles = useMemo(
+    () => getFailedTaskFiles(files, formData),
+    [files, formData],
+  );
 
   useEffect(() => {
     // 获取当前任务状态
@@ -32,27 +49,28 @@ const TaskControls = ({ files, formData, className }: TaskControlsProps) => {
     };
   }, []);
 
-  const handleTask = async () => {
+  const startTaskWithFiles = (filesToRun: IFiles[]) => {
+    const taskIds = new Set(filesToRun.map((file) => file.uuid));
+    const nextFiles = files.map((file) =>
+      taskIds.has(file.uuid) ? resetTaskRunState(file) : file,
+    );
+    const queuedFiles = nextFiles.filter((file) => taskIds.has(file.uuid));
+
+    setFiles(nextFiles);
+    setTaskStatus('running');
+    window?.ipc?.send('handleTask', { files: queuedFiles, formData });
+  };
+
+  const handleTask = () => {
     if (!files?.length) {
       toast(t('common:notification'), {
         description: t('home:noTask'),
       });
       return;
     }
-    const isAllFilesProcessed = files.every((item) => {
-      const basicProcessingDone = item.extractAudio && item.extractSubtitle;
 
-      if (formData.translateProvider === '-1') {
-        return basicProcessingDone;
-      }
-      if (isSubtitleFile(item?.filePath)) {
-        return item.translateSubtitle;
-      }
-
-      return basicProcessingDone && item.translateSubtitle;
-    });
-
-    if (isAllFilesProcessed) {
+    const runnableFiles = getRunnableTaskFiles(files, formData);
+    if (!runnableFiles.length) {
       toast(t('common:notification'), {
         description: t('home:allFilesProcessed'),
       });
@@ -67,8 +85,20 @@ const TaskControls = ({ files, formData, className }: TaskControlsProps) => {
     //     return;
     //   }
     // }
-    setTaskStatus('running');
-    window?.ipc?.send('handleTask', { files, formData });
+    startTaskWithFiles(runnableFiles);
+  };
+
+  const handleRetryFailed = () => {
+    if (!failedFiles.length) {
+      toast(t('common:notification'), {
+        description: t('home:noFailedTasks', {
+          defaultValue: '没有失败任务需要重试',
+        }),
+      });
+      return;
+    }
+
+    startTaskWithFiles(failedFiles);
   };
   const handlePause = () => {
     window?.ipc?.send('pauseTask', null);
@@ -87,9 +117,24 @@ const TaskControls = ({ files, formData, className }: TaskControlsProps) => {
   return (
     <div className={cn('flex gap-2 ml-auto', className)}>
       {(taskStatus === 'idle' || taskStatus === 'completed') && (
-        <Button onClick={handleTask} disabled={!files.length}>
-          {t('home:startTask')}
-        </Button>
+        <>
+          {failedFiles.length > 0 && (
+            <Button
+              variant="outline"
+              onClick={handleRetryFailed}
+              disabled={!files.length}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              {t('home:retryFailedTasks', {
+                count: failedFiles.length,
+                defaultValue: `重试失败任务 (${failedFiles.length})`,
+              })}
+            </Button>
+          )}
+          <Button onClick={handleTask} disabled={!files.length}>
+            {t('home:startTask')}
+          </Button>
+        </>
       )}
       {taskStatus === 'running' && (
         <>

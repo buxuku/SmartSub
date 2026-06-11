@@ -17,7 +17,7 @@ import { IFiles } from '../../../types';
 import path from 'path';
 
 export default function Component() {
-  const [files, setFiles] = useState([]);
+  const [files, setFiles] = useState<IFiles[]>([]);
   const [proofreadFile, setProofreadFile] = useState<IFiles | null>(null);
   const { systemInfo } = useSystemInfo();
   const { form, formData } = useFormConfig();
@@ -171,6 +171,7 @@ export default function Component() {
         <TaskControls
           formData={formData}
           files={files}
+          setFiles={setFiles}
           className="mt-auto flex-shrink-0 pt-4"
         />
       </div>
