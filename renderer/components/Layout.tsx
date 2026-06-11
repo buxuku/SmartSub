@@ -10,6 +10,7 @@ import {
 import {
   FileVideo2,
   Github,
+  HelpCircle,
   MonitorPlay,
   Package,
   Settings,
@@ -19,6 +20,12 @@ import {
   Zap,
   ZapOff,
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ThemeToggle } from './ThemeToggle';
 import { openUrl } from 'lib/utils';
 import { useRouter } from 'next/router';
@@ -26,6 +33,8 @@ import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
 import { useTranslation } from 'next-i18next';
 import { UpdateDialog } from './UpdateDialog';
+import { LogDialog } from './LogDialog';
+import OnboardingDialog from './onboarding/OnboardingDialog';
 import packageInfo from '../../package.json';
 
 // 添加更新状态的类型定义
@@ -51,6 +60,24 @@ const Layout = ({ children }) => {
   const [gpuCapable, setGpuCapable] = useState(false);
   const [gpuEnabled, setGpuEnabled] = useState(false);
   const [gpuBackendLabel, setGpuBackendLabel] = useState('');
+  const [showLogs, setShowLogs] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  useEffect(() => {
+    // 首次启动（无已装模型且无完成标记）自动打开新手引导
+    (async () => {
+      try {
+        const settings = await window?.ipc?.invoke('getSettings');
+        if (settings?.onboardingCompleted || settings?.useLocalWhisper) return;
+        const info = await window?.ipc?.invoke('getSystemInfo', null);
+        if ((info?.modelsInstalled?.length ?? 0) === 0) {
+          setShowOnboarding(true);
+        }
+      } catch (error) {
+        console.error('Failed to check onboarding state:', error);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     // 监听消息通知
@@ -321,41 +348,68 @@ const Layout = ({ children }) => {
               )}
             </span>
           </h4>
-          {/* GPU 加速状态指示器 */}
-          {gpuCapable && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={`ml-auto h-7 text-xs gap-1.5 ${
-                      gpuEnabled
-                        ? 'text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                    onClick={() =>
-                      router.push(`/${locale}/resources?tab=acceleration`)
-                    }
-                  >
-                    {gpuEnabled ? (
-                      <Zap className="w-3.5 h-3.5" />
-                    ) : (
-                      <ZapOff className="w-3.5 h-3.5" />
-                    )}
+          <div className="ml-auto flex items-center gap-1">
+            {/* GPU 加速状态指示器 */}
+            {gpuCapable && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={`h-7 text-xs gap-1.5 ${
+                        gpuEnabled
+                          ? 'text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                      onClick={() =>
+                        router.push(`/${locale}/resources?tab=acceleration`)
+                      }
+                    >
+                      {gpuEnabled ? (
+                        <Zap className="w-3.5 h-3.5" />
+                      ) : (
+                        <ZapOff className="w-3.5 h-3.5" />
+                      )}
+                      {gpuEnabled
+                        ? `${t('gpuAccelerationEnabled')}${gpuBackendLabel ? ` · ${gpuBackendLabel}` : ''}`
+                        : t('gpuAccelerationDisabled')}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
                     {gpuEnabled
-                      ? `${t('gpuAccelerationEnabled')}${gpuBackendLabel ? ` · ${gpuBackendLabel}` : ''}`
-                      : t('gpuAccelerationDisabled')}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {gpuEnabled
-                    ? t('gpuAccelerationEnabledTip')
-                    : t('gpuAccelerationDisabledTip')}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
+                      ? t('gpuAccelerationEnabledTip')
+                      : t('gpuAccelerationDisabledTip')}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  aria-label={t('help.menu')}
+                >
+                  <HelpCircle className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setShowOnboarding(true)}>
+                  {t('help.reopenOnboarding')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowLogs(true)}>
+                  {t('viewLogs')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => openUrl('https://github.com/buxuku/SmartSub')}
+                >
+                  {t('help.github')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </header>
         <main className="flex-1 min-h-0 overflow-auto">{children}</main>
         <Toaster />
@@ -367,6 +421,11 @@ const Layout = ({ children }) => {
         onOpenChange={setShowUpdateDialog}
         version={newVersion}
         releaseNotes={releaseNotes}
+      />
+      <LogDialog open={showLogs} onOpenChange={setShowLogs} />
+      <OnboardingDialog
+        open={showOnboarding}
+        onOpenChange={setShowOnboarding}
       />
     </div>
   );
