@@ -1,5 +1,7 @@
 {
   "settings": "设置",
+  "gpuMovedToResources": "GPU 加速设置已迁移至「资源中心 → 加速」",
+  "goToResources": "前往资源中心",
   "language": "语言",
   "selectLanguage": "选择语言",
   "chinese": "中文",

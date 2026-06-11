@@ -31,7 +31,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
-import { GpuAccelerationCard } from '@/components/settings';
 import {
   Dialog,
   DialogContent,
@@ -540,8 +539,23 @@ const Settings = () => {
         </CardContent>
       </Card>
 
-      {/* GPU 加速设置卡片 */}
-      <GpuAccelerationCard />
+      {/* GPU 加速已迁移至资源中心（过渡期引导，一个版本后可移除） */}
+      <Card>
+        <CardContent className="flex items-center justify-between py-4">
+          <span className="text-sm text-muted-foreground">
+            {t('gpuMovedToResources')}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              router.push(`/${i18n.language}/resources?tab=acceleration`)
+            }
+          >
+            {t('goToResources')}
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

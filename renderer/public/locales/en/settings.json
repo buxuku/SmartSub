@@ -1,5 +1,7 @@
 {
   "settings": "Settings",
+  "gpuMovedToResources": "GPU acceleration settings have moved to Resources → Acceleration",
+  "goToResources": "Open Resources",
   "language": "Language",
   "selectLanguage": "Select language",
   "chinese": "Chinese",

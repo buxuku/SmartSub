@@ -4,6 +4,7 @@ import { useTranslation } from 'next-i18next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ModelsTab from '@/components/resources/ModelsTab';
 import ProvidersTab from '@/components/resources/ProvidersTab';
+import AccelerationTab from '@/components/resources/AccelerationTab';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 
 export const RESOURCE_TABS = [
@@ -63,9 +64,7 @@ const Resources = () => {
           value="acceleration"
           className="min-h-0 flex-1 overflow-auto"
         >
-          <p className="text-sm text-muted-foreground">
-            {t('tab.acceleration')}
-          </p>
+          <AccelerationTab />
         </TabsContent>
       </Tabs>
     </div>

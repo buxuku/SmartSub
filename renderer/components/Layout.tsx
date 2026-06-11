@@ -373,7 +373,7 @@ const Layout = ({ children }) => {
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                     onClick={() =>
-                      router.push(`/${locale}/settings#gpu-acceleration`)
+                      router.push(`/${locale}/resources?tab=acceleration`)
                     }
                   >
                     {gpuEnabled ? (
