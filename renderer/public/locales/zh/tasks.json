@@ -35,10 +35,12 @@
     "remove": "移除"
   },
   "waiting": "等待中",
+  "interrupted": "上次运行被中断，点击重试继续",
   "completion": {
     "title": "{{done}} 个文件已完成",
     "failed": "{{failed}} 个失败",
     "goProofread": "去校对",
+    "goMerge": "合成到视频",
     "openFolder": "打开文件夹",
     "retryFailed": "重试失败项",
     "dismiss": "关闭"

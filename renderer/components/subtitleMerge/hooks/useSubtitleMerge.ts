@@ -183,6 +183,17 @@ export function useSubtitleMerge(
     }
   }, []);
 
+  // 预填路径（如从任务完成横幅跳转）需要主动加载文件信息
+  useEffect(() => {
+    if (initialVideoPath) {
+      loadVideoInfo(initialVideoPath);
+    }
+    if (initialSubtitlePath) {
+      loadSubtitleInfo(initialSubtitlePath);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 选择视频文件
   const selectVideo = useCallback(async () => {
     try {

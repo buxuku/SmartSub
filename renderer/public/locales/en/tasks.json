@@ -35,10 +35,12 @@
     "remove": "Remove"
   },
   "waiting": "Waiting",
+  "interrupted": "Interrupted by app restart — retry to continue",
   "completion": {
     "title": "{{done}} files completed",
     "failed": "{{failed}} failed",
     "goProofread": "Proofread",
+    "goMerge": "Burn into video",
     "openFolder": "Open folder",
     "retryFailed": "Retry failed",
     "dismiss": "Dismiss"

@@ -1,5 +1,13 @@
 import React from 'react';
-import { CheckCircle2, Edit2, FolderOpen, RotateCcw, X } from 'lucide-react';
+import { useRouter } from 'next/router';
+import {
+  CheckCircle2,
+  Edit2,
+  Film,
+  FolderOpen,
+  RotateCcw,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import { useTranslation } from 'next-i18next';
@@ -32,6 +40,8 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
   onRetryFailed,
 }) => {
   const { t } = useTranslation('tasks');
+  const router = useRouter();
+  const { locale } = router.query;
 
   if (dismissed || !files.length || taskStatus === 'running') return null;
 
@@ -63,6 +73,18 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
     }
   };
 
+  const mergeSubtitle =
+    firstDone?.translatedSrtFile || firstDone?.srtFile || '';
+  const canMerge = typeDef.accepts === 'media' && Boolean(mergeSubtitle);
+
+  const handleGoMerge = () => {
+    router.push(
+      `/${locale}/subtitleMerge?video=${encodeURIComponent(
+        firstDone.filePath,
+      )}&subtitle=${encodeURIComponent(mergeSubtitle)}`,
+    );
+  };
+
   return (
     <div className="rounded-lg border border-green-500/30 bg-green-500/5 px-4 py-3 flex items-center gap-3 flex-wrap">
       <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0" />
@@ -86,6 +108,17 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
           <Edit2 className="h-3 w-3" />
           {t('completion.goProofread')}
         </Button>
+        {canMerge && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs gap-1"
+            onClick={handleGoMerge}
+          >
+            <Film className="h-3 w-3" />
+            {t('completion.goMerge')}
+          </Button>
+        )}
         <Button
           variant="outline"
           size="sm"

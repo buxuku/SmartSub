@@ -141,7 +141,9 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
         const stages = getFileStages(file, typeDef, formData);
         const percent = getFilePercent(file, stages);
         const failed = hasFileError(file, stages);
-        const errorMsg = failed ? getFileError(file, stages) : '';
+        const rawError = failed ? getFileError(file, stages) : '';
+        const errorMsg =
+          rawError === 'TASK_INTERRUPTED' ? t('interrupted') : rawError;
         const started = stages.some(
           (s) => getStageStatus(file, s.key) !== 'pending',
         );
