@@ -107,10 +107,10 @@ export const defaultUserPrompt = '${content}';
  */
 export const HISTORICAL_DEFAULT_PROMPTS: string[] = [
   `# Role: 资深翻译专家
-你是一位经验丰富的字幕翻译专家,精通\${targetLanguage}的翻译,擅长将视频字幕译成流畅易懂的\${targetLanguage}。
+您是一位经验丰富的字幕翻译专家,精通\${targetLanguage}的翻译,擅长将视频字幕译成流畅易懂的\${targetLanguage}。
 
 # Attention:
-在整个翻译过程中，你需要注意以下几点：
+在整个翻译过程中，您需要注意以下几点：
 
 1. 保持每条字幕的独立性和完整性，不合并或拆分。
 2. 使用口语化的\${targetLanguage}，避免过于书面化的表达，以符合字幕的特点。
@@ -118,12 +118,12 @@ export const HISTORICAL_DEFAULT_PROMPTS: string[] = [
 4. 确保专业术语的准确性，并且在上下文中保持一致性。
 
 # 输出格式要求：
-1. 你必须严格按照输入的JSON格式进行输出，保留原始的键（ID），仅翻译值的内容。
+1. 您必须严格按照输入的JSON格式进行输出，保留原始的键（ID），仅翻译值的内容。
 2. 不要添加任何额外的文本、注释或解释，只返回纯JSON。
 3. 不要改变键值对的数量，确保输出的JSON对象与输入包含相同数量的键值对。
 4. 确保输出是有效的JSON格式，不能有语法错误。
 
-最后，你需要检查整个翻译是否流畅，是否有语法错误，以及是否忠实于原文意思。特别是要注意译文与原文之间的差异，比如英语中常用被动语态，而中文则更多使用主动语态，所以在翻译时可能会做一些调整，以适应\${targetLanguage}的表达习惯。
+最后，您需要检查整个翻译是否流畅，是否有语法错误，以及是否忠实于原文意思。特别是要注意译文与原文之间的差异，比如英语中常用被动语态，而中文则更多使用主动语态，所以在翻译时可能会做一些调整，以适应\${targetLanguage}的表达习惯。
 
 # Examples
 
@@ -136,10 +136,10 @@ Output:
 ];
 
 export const defaultSystemPrompt = `# Role: 资深翻译专家
-你是一位经验丰富的字幕翻译专家,精通\${sourceLanguage}的翻译,擅长将视频字幕译成流畅易懂的\${targetLanguage}。
+您是一位经验丰富的字幕翻译专家,精通\${sourceLanguage}的翻译,擅长将视频字幕译成流畅易懂的\${targetLanguage}。
 
 # Attention:
-在整个翻译过程中，你需要注意以下几点：
+在整个翻译过程中，您需要注意以下几点：
 
 1. 保持每条字幕的独立性和完整性，不合并或拆分。
 2. 使用口语化的\${targetLanguage}，避免过于书面化的表达，以符合字幕的特点。
@@ -147,12 +147,12 @@ export const defaultSystemPrompt = `# Role: 资深翻译专家
 4. 确保专业术语的准确性，并且在上下文中保持一致性。
 
 # 输出格式要求：
-1. 你必须严格按照输入的JSON格式进行输出，保留原始的键（ID），仅翻译值的内容。
+1. 您必须严格按照输入的JSON格式进行输出，保留原始的键（ID），仅翻译值的内容。
 2. 不要添加任何额外的文本、注释或解释，只返回纯JSON。
 3. 不要改变键值对的数量，确保输出的JSON对象与输入包含相同数量的键值对。
 4. 确保输出是有效的JSON格式，不能有语法错误。
 
-最后，你需要检查整个翻译是否流畅，是否有语法错误，以及是否忠实于原文意思。特别是要注意译文与原文之间的差异，比如英语中常用被动语态，而中文则更多使用主动语态，所以在翻译时可能会做一些调整，以适应\${targetLanguage}的表达习惯。
+最后，您需要检查整个翻译是否流畅，是否有语法错误，以及是否忠实于原文意思。特别是要注意译文与原文之间的差异，比如英语中常用被动语态，而中文则更多使用主动语态，所以在翻译时可能会做一些调整，以适应\${targetLanguage}的表达习惯。
 
 # Examples
 
@@ -245,6 +245,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: false,
     icon: '🔤',
+    iconImg: '/images/providers/baidu-color.svg',
     fields: [
       { key: 'apiKey', label: 'APP ID', type: 'password', required: true },
       {
@@ -262,6 +263,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: false,
     icon: '🇬',
+    iconImg: '/images/providers/googletranslate.svg',
     fields: [
       {
         key: 'apiKey',
@@ -279,6 +281,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: false,
     icon: '☁️',
+    iconImg: '/images/providers/alibabacloud.svg',
     fields: [
       {
         key: 'apiKey',
@@ -309,6 +312,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: false,
     icon: '🌋',
+    iconImg: '/images/providers/volcengine-color.svg',
     fields: [
       {
         key: 'apiKey',
@@ -331,6 +335,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: false,
     icon: '🫛',
+    iconImg: '/images/providers/doubao-color.svg',
     fields: [
       {
         key: 'apiKey',
@@ -356,6 +361,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: false,
     icon: '🐮',
+    iconImg: '/images/providers/niutrans.png',
     fields: [
       {
         key: 'apiKey',
@@ -373,6 +379,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: false,
     icon: '🐧',
+    iconImg: '/images/providers/tencentcloud-color.svg',
     fields: [
       { key: 'apiKey', label: 'SecretId', type: 'password', required: true },
       {
@@ -398,6 +405,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: false,
     icon: '🗣️',
+    iconImg: '/images/providers/spark-color.svg',
     fields: [
       { key: 'appId', label: 'APPID', type: 'password', required: true },
       { key: 'apiKey', label: 'APIKey', type: 'password', required: true },
@@ -416,6 +424,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: false,
     icon: '🌐',
+    iconImg: '/images/providers/deepl-color.svg',
     fields: [
       {
         key: 'apiUrl',
@@ -432,6 +441,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: false,
     icon: '☁️',
+    iconImg: '/images/providers/azure-color.svg',
     fields: [
       { key: 'apiKey', label: 'API Key', type: 'password', required: true },
       { key: 'apiSecret', label: 'Region', type: 'password', required: true },
@@ -444,6 +454,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: true,
     icon: '🤖',
+    iconImg: '/images/providers/ollama.svg',
     fields: [
       {
         key: 'apiUrl',
@@ -471,6 +482,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: true,
     icon: '🧠',
+    iconImg: '/images/providers/deepseek-color.svg',
     fields: [
       {
         key: 'apiUrl',
@@ -498,6 +510,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: true,
     icon: '☁️',
+    iconImg: '/images/providers/azureai-color.svg',
     fields: [
       {
         key: 'apiUrl',
@@ -546,6 +559,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: true,
     icon: '🌀',
+    iconImg: '/images/providers/gemini-color.svg',
     fields: [
       {
         key: 'apiUrl',
@@ -574,6 +588,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: true,
     icon: '🔮',
+    iconImg: '/images/providers/siliconcloud-color.svg',
     fields: [
       {
         key: 'apiUrl',
@@ -601,6 +616,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: true,
     icon: '🐋',
+    iconImg: '/images/providers/qwen-color.svg',
     fields: [
       {
         key: 'apiUrl',

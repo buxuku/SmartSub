@@ -3,7 +3,7 @@ import { useTranslation } from 'next-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Plug } from 'lucide-react';
 import { ProviderForm } from '@/components/ProviderForm';
 import {
   Provider,
@@ -24,6 +24,51 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
+
+/** 品牌 logo 统一放在白色圆角底上，保证深色模式与选中态下都清晰可见 */
+function ProviderIcon({
+  iconImg,
+  icon,
+  size = 'sm',
+}: {
+  iconImg?: string;
+  icon?: string;
+  size?: 'sm' | 'lg';
+}) {
+  const isCustom = !iconImg && icon === '🔌';
+  return (
+    <span
+      className={cn(
+        'flex flex-shrink-0 items-center justify-center bg-white ring-1 ring-black/[0.08] dark:ring-white/20',
+        size === 'sm' ? 'h-6 w-6 rounded-md' : 'h-9 w-9 rounded-lg',
+      )}
+    >
+      {iconImg ? (
+        <img
+          src={iconImg}
+          alt=""
+          className={cn(
+            'object-contain',
+            size === 'sm' ? 'h-4 w-4' : 'h-6 w-6',
+          )}
+        />
+      ) : isCustom ? (
+        <Plug
+          className={cn(
+            'text-zinc-500',
+            size === 'sm' ? 'h-3.5 w-3.5' : 'h-5 w-5',
+          )}
+        />
+      ) : (
+        <span
+          className={cn('leading-none', size === 'sm' ? 'text-sm' : 'text-xl')}
+        >
+          {icon}
+        </span>
+      )}
+    </span>
+  );
+}
 
 const ProvidersTab: React.FC = () => {
   const { t } = useTranslation('translateControl');
@@ -208,13 +253,7 @@ const ProvidersTab: React.FC = () => {
                   : 'hover:bg-muted',
               )}
             >
-              <span className="text-xl">
-                {type.iconImg ? (
-                  <img src={type.iconImg} className="w-5" />
-                ) : (
-                  type.icon
-                )}
-              </span>
+              <ProviderIcon iconImg={type.iconImg} icon={type.icon} />
               <span className="min-w-0 flex-1 truncate">
                 {commonT(`provider.${type.name}`, { defaultValue: type.name })}
               </span>
@@ -249,7 +288,7 @@ const ProvidersTab: React.FC = () => {
                     )}
                   >
                     <div className="flex items-center space-x-2 min-w-0 flex-1">
-                      <span className="text-xl flex-shrink-0">🔌</span>
+                      <ProviderIcon icon="🔌" />
                       <span className="truncate" title={provider.name}>
                         {provider.name}
                       </span>
@@ -283,17 +322,12 @@ const ProvidersTab: React.FC = () => {
         {selectedProvider && getCurrentProviderType() && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-bold flex items-center space-x-2">
-                <span className="text-2xl">
-                  {getCurrentProviderType()?.iconImg ? (
-                    <img
-                      src={getCurrentProviderType().iconImg}
-                      className="w-6"
-                    />
-                  ) : (
-                    getCurrentProviderType()?.icon
-                  )}
-                </span>
+              <h1 className="text-2xl font-bold flex items-center space-x-2.5">
+                <ProviderIcon
+                  iconImg={getCurrentProviderType()?.iconImg}
+                  icon={getCurrentProviderType()?.icon}
+                  size="lg"
+                />
                 <span>
                   {commonT(`provider.${getCurrentProviderType().name}`, {
                     defaultValue: getCurrentProviderType().name,
