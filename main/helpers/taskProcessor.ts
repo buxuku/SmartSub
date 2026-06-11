@@ -1,5 +1,5 @@
 import fse from 'fs-extra';
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, Notification } from 'electron';
 import { processFile } from './fileProcessor';
 import { checkOpenAiWhisper, getPath } from './whisper';
 import { logMessage, store } from './storeManager';
@@ -125,6 +125,30 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
   });
 }
 
+/** 任务全部完成且应用不在前台时发系统通知 */
+function notifyAllDone(event) {
+  try {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win?.isFocused()) return;
+    if (!Notification.isSupported()) return;
+    const lang = store.get('settings')?.language || 'zh';
+    const notification = new Notification({
+      title: lang === 'zh' ? '任务全部完成' : 'All tasks completed',
+      body:
+        lang === 'zh'
+          ? '字幕任务已处理完毕，点击查看结果'
+          : 'Your subtitle tasks are done — click to view results',
+    });
+    notification.on('click', () => {
+      win?.show();
+      win?.focus();
+    });
+    notification.show();
+  } catch (error) {
+    logMessage(`notifyAllDone error: ${error}`, 'warning');
+  }
+}
+
 async function processNextTasks(event) {
   if (shouldCancel) {
     isProcessing = false;
@@ -141,6 +165,7 @@ async function processNextTasks(event) {
   if (processingQueue.length === 0 && activeTasksCount === 0) {
     isProcessing = false;
     event.sender.send('taskComplete', 'completed');
+    notifyAllDone(event);
     return;
   }
 
