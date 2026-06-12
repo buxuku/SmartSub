@@ -2,9 +2,8 @@
   "translateControl": "Translation Control",
   "translationServices": "Translation Services",
   "configured": "Configured",
-  "builtinProviders": "Built-in Providers",
   "customProviders": "Custom Providers",
-  "addCustomProvider": "Add Custom OpenAI Service",
+  "addCustomProvider": "Custom AI Service (OpenAI-compatible)",
   "addCustomProviderDesc": "Create a custom translation provider with your preferred API endpoint and model.",
   "providerName": "Provider Name",
   "modelName": "Model Name",
@@ -62,5 +61,12 @@
   },
   "selectOption": "Select an option",
   "noMatchingModels": "No matching models",
-  "removeProviderAria": "Remove provider {{name}}"
+  "removeProviderAria": "Remove provider {{name}}",
+  "providerSearchPlaceholder": "Search services",
+  "recommendTitle": "Not sure which to pick?",
+  "recommendQuality": "Best quality",
+  "groupFree": "Free to start",
+  "groupAi": "AI translation",
+  "groupMt": "Machine translation",
+  "noProviderMatch": "No matching services"
 }

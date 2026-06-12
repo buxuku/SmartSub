@@ -24,6 +24,8 @@ export type ProviderType = {
   icon?: string;
   isAi?: boolean;
   iconImg?: string;
+  /** 左列分组：free=免费起步，ai=AI 翻译，mt=传统机翻 */
+  group?: 'free' | 'ai' | 'mt';
 };
 
 export type Provider = {
@@ -244,6 +246,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: 'baidu',
     isBuiltin: true,
     isAi: false,
+    group: 'mt',
     icon: '🔤',
     iconImg: '/images/providers/baidu-color.svg',
     fields: [
@@ -262,6 +265,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: 'Google Translate',
     isBuiltin: true,
     isAi: false,
+    group: 'free',
     icon: '🇬',
     iconImg: '/images/providers/googletranslate.svg',
     fields: [
@@ -280,6 +284,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: 'aliyun',
     isBuiltin: true,
     isAi: false,
+    group: 'mt',
     icon: '☁️',
     iconImg: '/images/providers/alibabacloud.svg',
     fields: [
@@ -311,6 +316,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: 'volc',
     isBuiltin: true,
     isAi: false,
+    group: 'mt',
     icon: '🌋',
     iconImg: '/images/providers/volcengine-color.svg',
     fields: [
@@ -334,6 +340,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: '豆包翻译',
     isBuiltin: true,
     isAi: false,
+    group: 'mt',
     icon: '🫛',
     iconImg: '/images/providers/doubao-color.svg',
     fields: [
@@ -360,6 +367,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: 'niutrans',
     isBuiltin: true,
     isAi: false,
+    group: 'mt',
     icon: '🐮',
     iconImg: '/images/providers/niutrans.png',
     fields: [
@@ -378,6 +386,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: 'tencent',
     isBuiltin: true,
     isAi: false,
+    group: 'mt',
     icon: '🐧',
     iconImg: '/images/providers/tencentcloud-color.svg',
     fields: [
@@ -404,6 +413,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: 'xunfei',
     isBuiltin: true,
     isAi: false,
+    group: 'mt',
     icon: '🗣️',
     iconImg: '/images/providers/spark-color.svg',
     fields: [
@@ -423,6 +433,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: 'DeepLX',
     isBuiltin: true,
     isAi: false,
+    group: 'free',
     icon: '🌐',
     iconImg: '/images/providers/deepl-color.svg',
     fields: [
@@ -440,6 +451,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: 'azure',
     isBuiltin: true,
     isAi: false,
+    group: 'mt',
     icon: '☁️',
     iconImg: '/images/providers/azure-color.svg',
     fields: [
@@ -453,6 +465,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: 'Ollama',
     isBuiltin: true,
     isAi: true,
+    group: 'free',
     icon: '🤖',
     iconImg: '/images/providers/ollama.svg',
     fields: [
@@ -481,6 +494,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: 'Deepseek',
     isBuiltin: true,
     isAi: true,
+    group: 'ai',
     icon: '🧠',
     iconImg: '/images/providers/deepseek-color.svg',
     fields: [
@@ -509,6 +523,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: 'Azure OpenAI',
     isBuiltin: true,
     isAi: true,
+    group: 'ai',
     icon: '☁️',
     iconImg: '/images/providers/azureai-color.svg',
     fields: [
@@ -529,6 +544,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: 'DeerAPI',
     isBuiltin: true,
     isAi: true,
+    group: 'ai',
     icon: '🐺',
     iconImg: '/images/deerapi.png',
     fields: [
@@ -558,6 +574,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: 'Gemini',
     isBuiltin: true,
     isAi: true,
+    group: 'ai',
     icon: '🌀',
     iconImg: '/images/providers/gemini-color.svg',
     fields: [
@@ -587,6 +604,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: 'SiliconFlow',
     isBuiltin: true,
     isAi: true,
+    group: 'ai',
     icon: '🔮',
     iconImg: '/images/providers/siliconcloud-color.svg',
     fields: [
@@ -615,6 +633,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     name: '通义千问',
     isBuiltin: true,
     isAi: true,
+    group: 'ai',
     icon: '🐋',
     iconImg: '/images/providers/qwen-color.svg',
     fields: [

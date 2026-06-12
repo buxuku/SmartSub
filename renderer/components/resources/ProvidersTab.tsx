@@ -3,7 +3,7 @@ import { useTranslation } from 'next-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Plug } from 'lucide-react';
+import { Plus, Trash2, Plug, Search } from 'lucide-react';
 import { ProviderForm } from '@/components/ProviderForm';
 import {
   Provider,
@@ -71,6 +71,23 @@ function ProviderIcon({
   );
 }
 
+type TestResult = {
+  providerId: string;
+  status: 'success' | 'error';
+  translation?: string;
+  error?: string;
+  elapsedMs?: number;
+  model?: string;
+  source: string;
+  target: string;
+};
+
+/** 推荐卡：免费起步 / 质量优先，名字直接可点选中 */
+const RECOMMEND_ROWS: { labelKey: string; ids: string[] }[] = [
+  { labelKey: 'groupFree', ids: ['deeplx', 'google'] },
+  { labelKey: 'recommendQuality', ids: ['deepseek', 'Gemini'] },
+];
+
 const ProvidersTab: React.FC = () => {
   const { t } = useTranslation('translateControl');
   const { t: commonT } = useTranslation('common');
@@ -80,9 +97,27 @@ const ProvidersTab: React.FC = () => {
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newProviderName, setNewProviderName] = useState('');
+  const [providerQuery, setProviderQuery] = useState('');
+  // 测试语向跟随任务配置（一次性读取），缺省回退 en→zh
+  const [testLangs, setTestLangs] = useState<{
+    source: string;
+    target: string;
+  }>({ source: 'en', target: 'zh' });
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   useEffect(() => {
     loadProviders();
+    window.ipc
+      .invoke('getUserConfig')
+      .then((cfg: any) => {
+        if (cfg) {
+          setTestLangs({
+            source: cfg.sourceLanguage || 'en',
+            target: cfg.targetLanguage || 'zh',
+          });
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const loadProviders = async () => {
@@ -237,45 +272,80 @@ const ProvidersTab: React.FC = () => {
     const currentProvider = getCurrentProvider();
     if (!currentProvider) return;
 
+    const { source, target } = testLangs;
     setIsTestLoading(true);
+    const startedAt = Date.now();
     try {
       const result = await window.ipc.invoke('testTranslation', {
         provider: currentProvider,
-        sourceLanguage: 'en', // 默认使用英语作为源语言
-        targetLanguage: 'zh', // 默认使用中文作为目标语言
+        sourceLanguage: source,
+        targetLanguage: target,
       });
 
-      // Handle enhanced result format
       const translation =
         typeof result === 'string' ? result : result.translation;
       const analysis = typeof result === 'object' ? result.analysis : null;
 
-      // Create enhanced success message
-      let description = `${t('translationResult')}: "${translation}"`;
-
-      if (analysis) {
-        const responseTime = analysis.response_time_ms
-          ? ` (${(analysis.response_time_ms / 1000).toFixed(2)}s)`
-          : '';
-        description += `\n${t('provider')}: ${analysis.provider_name}${responseTime}`;
-
-        if (analysis.model_name) {
-          description += `\n${t('model')}: ${analysis.model_name}`;
-        }
-      }
-
-      toast.success(t('testSuccess'), {
-        description,
-        duration: 5000, // Show longer to read analysis
+      setTestResult({
+        providerId: currentProvider.id,
+        status: 'success',
+        translation,
+        elapsedMs: analysis?.response_time_ms ?? Date.now() - startedAt,
+        model: analysis?.model_name || currentProvider.modelName,
+        source,
+        target,
       });
+      toast.success(t('testSuccess'));
     } catch (error) {
-      toast.error(t('testFailed'), {
-        description: error.message,
+      setTestResult({
+        providerId: currentProvider.id,
+        status: 'error',
+        error: error?.message || String(error),
+        source,
+        target,
       });
+      toast.error(t('testFailed'));
     } finally {
       setIsTestLoading(false);
     }
   };
+
+  const langName = (code: string) =>
+    commonT(`language.${code}`, { defaultValue: code });
+
+  const typeDisplayName = (type: { name: string }) =>
+    commonT(`provider.${type.name}`, { defaultValue: type.name });
+
+  const trimmedQuery = providerQuery.trim().toLowerCase();
+  const matchesQuery = (displayName: string, rawName?: string) =>
+    !trimmedQuery ||
+    displayName.toLowerCase().includes(trimmedQuery) ||
+    (rawName ?? '').toLowerCase().includes(trimmedQuery);
+
+  const groupSections = (
+    [
+      { key: 'free', titleKey: 'groupFree' },
+      { key: 'ai', titleKey: 'groupAi' },
+      { key: 'mt', titleKey: 'groupMt' },
+    ] as const
+  ).map((section) => ({
+    ...section,
+    items: PROVIDER_TYPES.filter(
+      (pt) =>
+        pt.isBuiltin &&
+        (pt.group ?? 'mt') === section.key &&
+        matchesQuery(typeDisplayName(pt), pt.name),
+    ),
+  }));
+
+  const visibleCustomProviders = providers.filter(
+    (p) => p.type === 'openai' && matchesQuery(p.name),
+  );
+
+  const nothingMatched =
+    trimmedQuery &&
+    groupSections.every((s) => s.items.length === 0) &&
+    visibleCustomProviders.length === 0;
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -295,93 +365,151 @@ const ProvidersTab: React.FC = () => {
           </Button>
         </div>
 
-        <div className="space-y-1 mt-4">
-          {/* 内置服务商 */}
-          <div className="text-sm font-medium text-muted-foreground mb-2">
-            {t('builtinProviders')}
+        {/* 搜索 */}
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={providerQuery}
+            onChange={(e) => setProviderQuery(e.target.value)}
+            placeholder={t('providerSearchPlaceholder')}
+            className="h-8 pl-8 text-sm"
+          />
+        </div>
+
+        {/* 推荐卡：搜索时隐藏 */}
+        {!trimmedQuery && (
+          <div className="rounded-lg border bg-muted/40 px-3 py-2 space-y-1.5">
+            <div className="text-xs font-medium text-muted-foreground">
+              {t('recommendTitle')}
+            </div>
+            {RECOMMEND_ROWS.map((row) => (
+              <div
+                key={row.labelKey}
+                className="flex flex-wrap items-center gap-x-1 text-xs"
+              >
+                <span className="text-muted-foreground">{t(row.labelKey)}</span>
+                {row.ids.map((id, i) => {
+                  const type = PROVIDER_TYPES.find((pt) => pt.id === id);
+                  if (!type) return null;
+                  return (
+                    <React.Fragment key={id}>
+                      {i > 0 && (
+                        <span className="text-muted-foreground">·</span>
+                      )}
+                      <button
+                        type="button"
+                        className="text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded"
+                        onClick={() => handleProviderSelect(id)}
+                      >
+                        {typeDisplayName(type)}
+                      </button>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            ))}
           </div>
-          {PROVIDER_TYPES.filter((t) => t.isBuiltin).map((type) => (
-            <button
-              key={type.id}
-              onClick={() => handleProviderSelect(type.id)}
-              className={cn(
-                'w-full text-left px-4 py-2 rounded-lg flex items-center space-x-2',
-                selectedProvider === type.id
-                  ? 'bg-primary text-primary-foreground'
-                  : 'hover:bg-muted',
-              )}
-            >
-              <ProviderIcon iconImg={type.iconImg} icon={type.icon} />
-              <span className="min-w-0 flex-1 truncate">
-                {commonT(`provider.${type.name}`, { defaultValue: type.name })}
-              </span>
-              {isConfiguredById(type.id) && (
-                <Badge
-                  variant="outline"
-                  className="ml-auto flex-shrink-0 border-success/50 px-1.5 py-0 text-[10px] text-success"
-                >
-                  {t('configured')}
-                </Badge>
-              )}
-            </button>
-          ))}
+        )}
+
+        <div className="space-y-1 mt-4">
+          {/* 三个分组段 */}
+          {groupSections.map(
+            (section) =>
+              section.items.length > 0 && (
+                <React.Fragment key={section.key}>
+                  <div className="text-sm font-medium text-muted-foreground mt-4 mb-2 first:mt-0">
+                    {t(section.titleKey)}
+                  </div>
+                  {section.items.map((type) => (
+                    <button
+                      key={type.id}
+                      onClick={() => handleProviderSelect(type.id)}
+                      className={cn(
+                        'w-full text-left px-4 py-2 rounded-lg flex items-center space-x-2',
+                        selectedProvider === type.id
+                          ? 'bg-primary text-primary-foreground'
+                          : 'hover:bg-muted',
+                      )}
+                    >
+                      <ProviderIcon iconImg={type.iconImg} icon={type.icon} />
+                      <span className="min-w-0 flex-1 truncate">
+                        {typeDisplayName(type)}
+                      </span>
+                      {isConfiguredById(type.id) && (
+                        <Badge
+                          variant="outline"
+                          className="ml-auto flex-shrink-0 border-success/50 px-1.5 py-0 text-[10px] text-success"
+                        >
+                          {t('configured')}
+                        </Badge>
+                      )}
+                    </button>
+                  ))}
+                </React.Fragment>
+              ),
+          )}
+
+          {/* 无匹配 */}
+          {nothingMatched && (
+            <p className="px-1 py-2 text-xs text-muted-foreground">
+              {t('noProviderMatch')}
+            </p>
+          )}
 
           {/* 自定义服务商 */}
-          {providers.filter((p) => p.type === 'openai').length > 0 && (
+          {visibleCustomProviders.length > 0 && (
             <>
               <div className="text-sm font-medium text-muted-foreground mt-4 mb-2">
                 {t('customProviders')}
               </div>
-              {providers
-                .filter((p) => p.type === 'openai')
-                .map((provider) => (
-                  <div
-                    key={provider.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setSelectedProvider(provider.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setSelectedProvider(provider.id);
-                      }
-                    }}
-                    className={cn(
-                      'w-full text-left px-4 py-2 rounded-lg flex items-center justify-between group cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-                      selectedProvider === provider.id
-                        ? 'bg-primary text-primary-foreground'
-                        : 'hover:bg-muted',
-                    )}
-                  >
-                    <div className="flex items-center space-x-2 min-w-0 flex-1">
-                      <ProviderIcon icon="🔌" />
-                      <span className="truncate" title={provider.name}>
-                        {provider.name}
-                      </span>
-                    </div>
-                    {isConfiguredById(provider.id) && (
-                      <Badge
-                        variant="outline"
-                        className="mr-1 flex-shrink-0 border-success/50 px-1.5 py-0 text-[10px] text-success"
-                      >
-                        {t('configured')}
-                      </Badge>
-                    )}
-                    <button
-                      type="button"
-                      aria-label={t('removeProviderAria', {
-                        name: provider.name,
-                      })}
-                      className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded flex-shrink-0 ml-2 cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveProvider(provider.id);
-                      }}
-                    >
-                      <Trash2 size={14} />
-                    </button>
+              {visibleCustomProviders.map((provider) => (
+                <div
+                  key={provider.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedProvider(provider.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedProvider(provider.id);
+                    }
+                  }}
+                  className={cn(
+                    'w-full text-left px-4 py-2 rounded-lg flex items-center justify-between group cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+                    selectedProvider === provider.id
+                      ? 'bg-primary text-primary-foreground'
+                      : 'hover:bg-muted',
+                  )}
+                >
+                  <div className="flex items-center space-x-2 min-w-0 flex-1">
+                    <ProviderIcon icon="🔌" />
+                    <span className="truncate" title={provider.name}>
+                      {provider.name}
+                    </span>
                   </div>
-                ))}
+                  {isConfiguredById(provider.id) && (
+                    <Badge
+                      variant="outline"
+                      className="mr-1 flex-shrink-0 border-success/50 px-1.5 py-0 text-[10px] text-success"
+                    >
+                      {t('configured')}
+                    </Badge>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={t('removeProviderAria', {
+                      name: provider.name,
+                    })}
+                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded flex-shrink-0 ml-2 cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveProvider(provider.id);
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
             </>
           )}
         </div>
@@ -425,6 +553,56 @@ const ProvidersTab: React.FC = () => {
                 />
               </CardContent>
             </Card>
+
+            {/* 测试结果常驻卡（会话内存，切换服务商时不串显） */}
+            {testResult && testResult.providerId === selectedProvider && (
+              <Card
+                className={cn(
+                  testResult.status === 'success'
+                    ? 'border-success/50'
+                    : 'border-destructive/50',
+                )}
+              >
+                <CardContent className="pt-4 pb-4 space-y-1.5 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={cn(
+                        'font-medium',
+                        testResult.status === 'success'
+                          ? 'text-success'
+                          : 'text-destructive',
+                      )}
+                    >
+                      {testResult.status === 'success'
+                        ? t('testSuccess')
+                        : t('testFailed')}
+                    </span>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                      {langName(testResult.source)} →{' '}
+                      {langName(testResult.target)}
+                      {testResult.elapsedMs != null &&
+                        ` · ${(testResult.elapsedMs / 1000).toFixed(2)}s`}
+                    </span>
+                  </div>
+                  {testResult.status === 'success' ? (
+                    <>
+                      <p className="break-all">
+                        {t('translationResult')}: "{testResult.translation}"
+                      </p>
+                      {testResult.model && (
+                        <p className="text-xs text-muted-foreground">
+                          {t('model')}: {testResult.model}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="break-all text-destructive">
+                      {testResult.error}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
       </div>

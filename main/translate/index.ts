@@ -149,10 +149,12 @@ export async function testTranslation(
   sourceLanguage: string,
   targetLanguage: string,
 ): Promise<{ translation: string; analysis?: any }> {
+  // 样本文本跟随源语言，避免「中文源」却拿英文样本测试
+  const sampleText = sourceLanguage?.startsWith('zh') ? '你好' : 'Hello';
   const testSubtitle = {
     id: '1',
     startEndTime: '00:00:01,000 --> 00:00:04,000',
-    content: ['Hello China'],
+    content: [sampleText],
   };
 
   try {
