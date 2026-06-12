@@ -10,6 +10,10 @@ import { defaultSystemPrompt, defaultUserPrompt } from '../../../types';
 import { toJson } from 'really-relaxed-json';
 import { jsonrepair } from 'jsonrepair';
 import { isConfigurationError } from '../utils/error';
+import {
+  throwIfTaskCancelled,
+  isTaskCancelledError,
+} from '../../helpers/taskContext';
 
 function getLanguageName(code: string): string {
   const lang = supportedLanguage.find((l) => l.value === code);
@@ -39,6 +43,7 @@ export async function handleAIBatchTranslation(
   const requestInterval = +(provider.requestInterval || 0) * 1000;
 
   for (let i = 0; i < subtitles.length; i += batchSize) {
+    throwIfTaskCancelled();
     const batch = subtitles.slice(i, i + batchSize);
     const currentBatchIndex = Math.floor(i / batchSize) + 1;
     let retryCount = 0;
@@ -56,6 +61,7 @@ export async function handleAIBatchTranslation(
     );
 
     while (!batchSuccess && retryCount <= maxRetries) {
+      throwIfTaskCancelled();
       try {
         let batchJsonContent: Record<string, string> = {};
         batch.forEach((item) => {
@@ -155,6 +161,7 @@ export async function handleAIBatchTranslation(
           );
         }
       } catch (error) {
+        if (isTaskCancelledError(error)) throw error;
         // 检查是否是配置错误，如果是则直接抛出，不进行重试
         if (isConfigurationError(error)) {
           throw new Error(

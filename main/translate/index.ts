@@ -16,6 +16,7 @@ import { getSrtFileName, renderTemplate } from '../helpers/utils';
 import { logMessage } from '../helpers/storeManager';
 import { IFiles, IFormData } from '../../types';
 import { ensureTempDir } from '../helpers/fileUtils';
+import { isTaskCancelledError } from '../helpers/taskContext';
 
 export default async function translate(
   event,
@@ -136,7 +137,9 @@ export default async function translate(
     logMessage('Translation completed', 'info');
     return true;
   } catch (error) {
-    event.sender.send('message', error.message || error);
+    if (!isTaskCancelledError(error)) {
+      event.sender.send('message', error.message || error);
+    }
     throw error;
   }
 }
