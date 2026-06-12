@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/tooltip';
 import { Subtitle } from '../../hooks/useSubtitles';
 import { useTranslation } from 'next-i18next';
+import TimeRangeEditor from './TimeRangeEditor';
 
 interface SubtitleListProps {
   mergedSubtitles: Subtitle[];
@@ -35,6 +36,12 @@ interface SubtitleListProps {
   onCursorPositionChange?: (position: number) => void;
   onAiOptimizeClick?: (index: number) => void;
   onSplitClick?: (index: number) => void;
+  /** 行内时间编辑提交；返回错误文案（不应用）或 null（已应用） */
+  onTimeChange?: (
+    index: number,
+    startSec: number,
+    endSec: number,
+  ) => string | null;
 }
 
 interface RowLabels {
@@ -45,6 +52,8 @@ interface RowLabels {
   translationFailedPlaceholder: string;
   aiOptimize: string;
   split: string;
+  timeInvalidFormat: string;
+  timeEditHint: string;
 }
 
 // 秒数 → 紧凑时间（m:ss 或 h:mm:ss），用于紧凑行
@@ -88,6 +97,11 @@ interface SubtitleRowProps {
   ) => void;
   onAiOptimize: (index: number) => void;
   onSplit: (index: number) => void;
+  onTimeCommit: (
+    index: number,
+    startSec: number,
+    endSec: number,
+  ) => string | null;
 }
 
 // 行组件：紧凑单行（默认） / 展开编辑（当前行）
@@ -107,6 +121,7 @@ const SubtitleRow = memo(function SubtitleRow({
   onTargetKeyDown,
   onAiOptimize,
   onSplit,
+  onTimeCommit,
 }: SubtitleRowProps) {
   // 失败行降噪：左缘红条 + ⚠，不再整行红底
   const failedEdge = isFailed
@@ -146,12 +161,22 @@ const SubtitleRow = memo(function SubtitleRow({
       className={`rounded-md bg-accent p-1.5 text-xs ${failedEdge}`}
     >
       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
-        <div className="flex items-center gap-1">
+        <div className="flex min-w-0 items-center gap-1">
           {isFailed && <AlertTriangle className="h-3 w-3 text-red-500" />}
-          <span>
-            #{subtitle.id} · {subtitle.startEndTime} {labels.currentPlaying}
-            {isFailed && ` ${labels.translationFailedLabel}`}
-          </span>
+          <TimeRangeEditor
+            rowId={subtitle.id}
+            startEndTime={subtitle.startEndTime}
+            onCommit={(startSec, endSec) =>
+              onTimeCommit(index, startSec, endSec)
+            }
+            labels={{
+              invalidFormat: labels.timeInvalidFormat,
+              editHint: labels.timeEditHint,
+            }}
+            suffix={`${labels.currentPlaying}${
+              isFailed ? ` ${labels.translationFailedLabel}` : ''
+            }`}
+          />
         </div>
         <TooltipProvider delayDuration={200}>
           <div className="flex items-center gap-0.5">
@@ -245,6 +270,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   onCursorPositionChange,
   onAiOptimizeClick,
   onSplitClick,
+  onTimeChange,
 }) => {
   const { t } = useTranslation('home');
 
@@ -266,6 +292,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     onCursorPositionChange,
     onAiOptimizeClick,
     onSplitClick,
+    onTimeChange,
     currentSubtitleIndex,
   });
   latestRef.current = {
@@ -274,6 +301,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     onCursorPositionChange,
     onAiOptimizeClick,
     onSplitClick,
+    onTimeChange,
     currentSubtitleIndex,
   };
 
@@ -352,6 +380,13 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     latestRef.current.onSplitClick?.(index);
   }, []);
 
+  const onTimeCommit = useCallback(
+    (index: number, startSec: number, endSec: number): string | null => {
+      return latestRef.current.onTimeChange?.(index, startSec, endSec) ?? null;
+    },
+    [],
+  );
+
   // 行内文案（memo 化保持引用稳定）
   const labels = useMemo<RowLabels>(
     () => ({
@@ -362,6 +397,8 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
       translationFailedPlaceholder: t('translationFailedPlaceholder'),
       aiOptimize: t('aiOptimize') || 'AI 优化',
       split: t('split') || '拆分',
+      timeInvalidFormat: t('timeEditInvalidFormat') || '时间格式无效',
+      timeEditHint: t('timeEditHint') || '点击编辑起止时间',
     }),
     [t],
   );
@@ -451,6 +488,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                   onTargetKeyDown={onTargetKeyDown}
                   onAiOptimize={onAiOptimize}
                   onSplit={onSplit}
+                  onTimeCommit={onTimeCommit}
                 />
               </div>
             );

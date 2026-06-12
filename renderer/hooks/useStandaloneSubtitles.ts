@@ -47,6 +47,17 @@ const renormalizeIds = (arr: Subtitle[]): Subtitle[] =>
     return sub.id === id ? sub : { ...sub, id };
   });
 
+// 秒数转 SRT 时间戳字符串（HH:MM:SS,mmm）
+const secondsToTime = (seconds: number): string => {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = (seconds % 60).toFixed(3);
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.padStart(6, '0').replace('.', ',')}`;
+};
+
+// 时间相等容差（SRT 精度为毫秒）
+const TIME_EPSILON = 0.0005;
+
 export const useStandaloneSubtitles = (
   config: StandaloneSubtitlesConfig,
   isOpen: boolean,
@@ -463,13 +474,56 @@ export const useStandaloneSubtitles = (
     setPreviousSubtitleIndex(currentSubtitleIndex);
   }, [currentSubtitleIndex, flushPendingEdit]);
 
-  // 秒数转时间戳字符串
-  const secondsToTime = (seconds: number): string => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = (seconds % 60).toFixed(3);
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.padStart(6, '0').replace('.', ',')}`;
-  };
+  // 行内编辑起止时间：邻行钳制校验，通过则单行命令入栈；返回错误文案或 null
+  const handleTimeChange = useCallback(
+    (index: number, startSec: number, endSec: number): string | null => {
+      const current = subtitlesRef.current;
+      const row = current[index];
+      if (!row) return null;
+
+      if (!(startSec < endSec)) {
+        return t('timeEditInvalidRange') || '开始时间必须早于结束时间';
+      }
+      const prevRow = current[index - 1];
+      if (
+        prevRow &&
+        startSec < (prevRow.endTimeInSeconds ?? 0) - TIME_EPSILON
+      ) {
+        return t('timeEditOverlapPrev') || '与上一条字幕时间重叠';
+      }
+      const nextRow = current[index + 1];
+      if (
+        nextRow &&
+        endSec > (nextRow.startTimeInSeconds ?? 0) + TIME_EPSILON
+      ) {
+        return t('timeEditOverlapNext') || '与下一条字幕时间重叠';
+      }
+
+      // 无实际变化
+      if (
+        Math.abs((row.startTimeInSeconds ?? 0) - startSec) < TIME_EPSILON &&
+        Math.abs((row.endTimeInSeconds ?? 0) - endSec) < TIME_EPSILON
+      ) {
+        return null;
+      }
+
+      flushPendingEdit();
+      const updated: Subtitle = {
+        ...row,
+        startEndTime: `${secondsToTime(startSec)} --> ${secondsToTime(endSec)}`,
+        startTimeInSeconds: startSec,
+        endTimeInSeconds: endSec,
+      };
+      history.push({ start: index, removed: [row], inserted: [updated] });
+
+      const next = current.slice();
+      next[index] = updated;
+      applySubtitles(next);
+      setIsDirty(true);
+      return null;
+    },
+    [applySubtitles, flushPendingEdit, history.push, t],
+  );
 
   // 合并字幕（区间命令：N 行 → 1 行；id 由 renormalize 统一归位）
   const handleMergeSubtitles = useCallback(
@@ -621,6 +675,7 @@ export const useStandaloneSubtitles = (
     canRedo,
     handleMergeSubtitles,
     handleSplitSubtitle,
+    handleTimeChange,
     // 光标位置
     handleCursorPositionChange,
     getCursorPosition,

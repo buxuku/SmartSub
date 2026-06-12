@@ -91,6 +91,7 @@ export default function ProofreadEditor({
     canRedo,
     handleMergeSubtitles,
     handleSplitSubtitle,
+    handleTimeChange,
     // 光标位置
     handleCursorPositionChange,
     getCursorPosition,
@@ -341,6 +342,7 @@ export default function ProofreadEditor({
           onCursorPositionChange={handleCursorPositionChange}
           onAiOptimizeClick={handleAiOptimizeClick}
           onSplitClick={handleSplitClick}
+          onTimeChange={handleTimeChange}
         />
       </div>
 
