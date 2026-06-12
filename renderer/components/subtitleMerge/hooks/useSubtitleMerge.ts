@@ -41,6 +41,8 @@ export interface UseSubtitleMergeReturn {
   setVideoPath: (path: string) => Promise<void>;
   setSubtitlePath: (path: string) => Promise<void>;
   clearFiles: () => void;
+  clearVideo: () => void;
+  clearSubtitle: () => void;
 
   // 样式操作方法
   setStyle: (style: SubtitleStyle) => void;
@@ -152,20 +154,24 @@ export function useSubtitleMerge(
       });
       if (result.success && result.data) {
         setVideoInfo(result.data);
-        // 自动生成输出路径
-        const outputResult = await window.ipc.invoke(
-          'subtitleMerge:generateOutputPath',
-          {
-            videoPath: path,
-            suffix: '_subtitled',
-          },
-        );
-        if (outputResult.success && outputResult.data) {
-          setOutputPathState(outputResult.data);
-        }
       }
     } catch (error) {
       console.error('加载视频信息失败:', error);
+    }
+    // 只要选了视频就生成默认输出路径（不依赖视频信息读取成功）
+    try {
+      const outputResult = await window.ipc.invoke(
+        'subtitleMerge:generateOutputPath',
+        {
+          videoPath: path,
+          suffix: '_subtitled',
+        },
+      );
+      if (outputResult.success && outputResult.data) {
+        setOutputPathState(outputResult.data);
+      }
+    } catch (error) {
+      console.error('生成默认输出路径失败:', error);
     }
   }, []);
 
@@ -251,6 +257,31 @@ export function useSubtitleMerge(
     setVideoInfo(null);
     setSubtitleInfo(null);
     setOutputPathState(null);
+    setProgress({
+      percent: 0,
+      timeMark: '',
+      targetSize: 0,
+      status: 'idle',
+    });
+  }, []);
+
+  // 单独清除视频：输出路径派生自视频一并清除；合成结果不再对应，进度复位
+  const clearVideo = useCallback(() => {
+    setVideoPathState(null);
+    setVideoInfo(null);
+    setOutputPathState(null);
+    setProgress({
+      percent: 0,
+      timeMark: '',
+      targetSize: 0,
+      status: 'idle',
+    });
+  }, []);
+
+  // 单独清除字幕
+  const clearSubtitle = useCallback(() => {
+    setSubtitlePathState(null);
+    setSubtitleInfo(null);
     setProgress({
       percent: 0,
       timeMark: '',
@@ -402,6 +433,8 @@ export function useSubtitleMerge(
     setVideoPath,
     setSubtitlePath,
     clearFiles,
+    clearVideo,
+    clearSubtitle,
 
     // 样式操作方法
     setStyle,

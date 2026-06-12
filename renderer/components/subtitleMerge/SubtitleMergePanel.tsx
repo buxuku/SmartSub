@@ -61,7 +61,8 @@ export default function SubtitleMergePanel({
     // 文件操作方法
     selectVideo,
     selectSubtitle,
-    clearFiles,
+    clearVideo,
+    clearSubtitle,
 
     // 样式操作方法
     updateStyle,
@@ -91,8 +92,8 @@ export default function SubtitleMergePanel({
           subtitleInfo={subtitleInfo}
           onSelectVideo={selectVideo}
           onSelectSubtitle={selectSubtitle}
-          onClearVideo={() => clearFiles()}
-          onClearSubtitle={() => clearFiles()}
+          onClearVideo={clearVideo}
+          onClearSubtitle={clearSubtitle}
           disabled={isProcessing}
         />
       </div>
@@ -165,6 +166,8 @@ export default function SubtitleMergePanel({
           <Card className="flex-shrink-0">
             <CardContent className="p-4">
               <MergeButton
+                videoPath={videoPath}
+                subtitlePath={subtitlePath}
                 outputPath={outputPath}
                 progress={progress}
                 status={status}

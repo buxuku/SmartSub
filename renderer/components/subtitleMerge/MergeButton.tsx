@@ -19,6 +19,8 @@ import {
 import type { MergeProgress, MergeStatus } from '../../../types/subtitleMerge';
 
 interface MergeButtonProps {
+  videoPath: string | null;
+  subtitlePath: string | null;
   outputPath: string | null;
   progress: MergeProgress;
   status: MergeStatus;
@@ -29,6 +31,8 @@ interface MergeButtonProps {
 }
 
 export default function MergeButton({
+  videoPath,
+  subtitlePath,
   outputPath,
   progress,
   status,
@@ -125,10 +129,16 @@ export default function MergeButton({
         )}
       </Button>
 
-      {/* 提示信息 */}
+      {/* 提示信息：按缺失项动态生成 */}
       {!canMerge && status !== 'processing' && (
         <p className="text-xs text-muted-foreground text-center">
-          {t('selectFilesToMerge') || '请先选择视频和字幕文件'}
+          {!videoPath && !subtitlePath
+            ? t('selectFilesToMerge') || '请先选择视频和字幕文件'
+            : !videoPath
+              ? t('selectVideoToMerge') || '请选择视频文件'
+              : !subtitlePath
+                ? t('selectSubtitleToMerge') || '请选择字幕文件'
+                : t('selectOutputPathToMerge') || '请选择输出路径'}
         </p>
       )}
     </div>
