@@ -9,6 +9,8 @@ import { IFiles } from '../../types';
 import { ExtendedProvider, CustomParameterConfig } from '../../types/provider';
 import { configurationManager } from '../service/configurationManager';
 import { applyTaskEventToProjects } from './taskManager';
+import { runWithTaskContext } from './taskContext';
+import { killFfmpegForFiles } from './audioProcessor';
 
 const TASK_EVENT_CHANNELS = new Set([
   'taskStatusChange',
@@ -41,13 +43,75 @@ function wrapTaskEvent(event: any) {
   };
 }
 
-let processingQueue = [];
+interface QueueItem {
+  file: IFiles;
+  formData: any;
+  projectId: string;
+}
+
+interface ProjectRuntime {
+  /** 正在执行的文件数 */
+  active: number;
+  /** 正在执行的文件 uuid（取消时定位 ffmpeg 进程） */
+  activeFiles: Set<string>;
+  paused: boolean;
+  cancelled: boolean;
+  /** 取消信号：翻译批次边界与阶段边界检查 */
+  controller: AbortController;
+}
+
+const DEFAULT_PROJECT_ID = 'default';
+
+let processingQueue: QueueItem[] = [];
+const projectRuntimes = new Map<string, ProjectRuntime>();
 let isProcessing = false;
-let isPaused = false;
-let shouldCancel = false;
 let maxConcurrentTasks = 3;
 let hasOpenAiWhisper = false;
 let activeTasksCount = 0;
+/** 最近一次 handleTask 的 event：resume 触发派发时复用 */
+let dispatchEvent: any = null;
+
+function ensureRuntime(projectId: string): ProjectRuntime {
+  let runtime = projectRuntimes.get(projectId);
+  if (!runtime) {
+    runtime = {
+      active: 0,
+      activeFiles: new Set(),
+      paused: false,
+      cancelled: false,
+      controller: new AbortController(),
+    };
+    projectRuntimes.set(projectId, runtime);
+  }
+  return runtime;
+}
+
+function queuedCount(projectId: string): number {
+  return processingQueue.filter((item) => item.projectId === projectId).length;
+}
+
+function sendTaskComplete(
+  event: any,
+  projectId: string,
+  status: 'completed' | 'cancelled',
+) {
+  try {
+    event?.sender?.send('taskComplete', { projectId, status });
+  } catch (error) {
+    console.error('send taskComplete failed', error);
+  }
+}
+
+/** 工程内已无排队与执行中文件时收尾：发完成事件并清理运行时 */
+function finalizeProjectIfDrained(event: any, projectId: string) {
+  const runtime = projectRuntimes.get(projectId);
+  if (!runtime) return;
+  if (runtime.active > 0 || queuedCount(projectId) > 0) return;
+  const status = runtime.cancelled ? 'cancelled' : 'completed';
+  projectRuntimes.delete(projectId);
+  sendTaskComplete(event, projectId, status);
+  if (status === 'completed') notifyProjectDone(event);
+}
 
 /**
  * Load custom parameters for a provider and create an ExtendedProvider
@@ -103,15 +167,32 @@ async function createExtendedProvider(
 export function setupTaskProcessor(mainWindow: BrowserWindow) {
   ipcMain.on(
     'handleTask',
-    async (event, { files, formData }: { files: IFiles[]; formData: any }) => {
-      console.log('handleTask start', files);
-      logMessage(`handleTask start`, 'info');
-      logMessage(`formData: \n ${JSON.stringify(formData, null, 2)}`, 'info');
-      processingQueue.push(...files.map((file) => ({ file, formData })));
+    async (
+      event,
+      {
+        files,
+        formData,
+        projectId,
+      }: { files: IFiles[]; formData: any; projectId?: string },
+    ) => {
+      const pid = projectId || DEFAULT_PROJECT_ID;
+      dispatchEvent = event;
+      await runWithTaskContext({ projectId: pid }, async () => {
+        logMessage(`handleTask start`, 'info');
+        logMessage(`formData: \n ${JSON.stringify(formData, null, 2)}`, 'info');
+      });
+      const runtime = ensureRuntime(pid);
+      // 重新开始：清除上一轮的暂停/取消残留
+      runtime.paused = false;
+      runtime.cancelled = false;
+      if (runtime.controller.signal.aborted) {
+        runtime.controller = new AbortController();
+      }
+      processingQueue.push(
+        ...files.map((file) => ({ file, formData, projectId: pid })),
+      );
       if (!isProcessing) {
         isProcessing = true;
-        isPaused = false;
-        shouldCancel = false;
         hasOpenAiWhisper = await checkOpenAiWhisper();
         maxConcurrentTasks = formData.maxConcurrentTasks || 3;
         processNextTasks(event);
@@ -119,25 +200,72 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
     },
   );
 
-  ipcMain.on('pauseTask', () => {
-    isPaused = true;
+  ipcMain.on('pauseTask', (event, projectId?: string) => {
+    if (projectId) {
+      ensureRuntime(projectId).paused = true;
+      return;
+    }
+    projectRuntimes.forEach((runtime) => {
+      runtime.paused = true;
+    });
   });
 
-  ipcMain.on('resumeTask', () => {
-    isPaused = false;
+  ipcMain.on('resumeTask', (event, projectId?: string) => {
+    if (projectId) {
+      ensureRuntime(projectId).paused = false;
+    } else {
+      projectRuntimes.forEach((runtime) => {
+        runtime.paused = false;
+      });
+    }
+    if (processingQueue.length > 0) {
+      isProcessing = true;
+      processNextTasks(dispatchEvent || event);
+    }
   });
 
-  ipcMain.on('cancelTask', () => {
-    shouldCancel = true;
-    isPaused = false;
-    processingQueue = [];
+  ipcMain.on('cancelTask', (event, projectId?: string) => {
+    const ids = projectId
+      ? [projectId]
+      : Array.from(
+          new Set([
+            ...Array.from(projectRuntimes.keys()),
+            ...processingQueue.map((item) => item.projectId),
+          ]),
+        );
+    for (const id of ids) {
+      processingQueue = processingQueue.filter((item) => item.projectId !== id);
+      const runtime = projectRuntimes.get(id);
+      if (runtime && runtime.active > 0) {
+        runtime.cancelled = true;
+        runtime.paused = false;
+        runtime.controller.abort();
+        // kill 该工程在跑的 ffmpeg 提取；转写无法中断，完成后在阶段边界停止
+        killFfmpegForFiles(Array.from(runtime.activeFiles));
+        logMessage(
+          `cancel project ${id}: ${runtime.active} running file(s) will stop at stage boundary`,
+          'warning',
+        );
+      } else {
+        projectRuntimes.delete(id);
+        sendTaskComplete(event, id, 'cancelled');
+      }
+    }
   });
 
-  // 添加获取当前任务状态的 IPC 处理程序
-  ipcMain.handle('getTaskStatus', () => {
-    if (shouldCancel) return 'cancelled';
-    if (isPaused) return 'paused';
-    if (isProcessing) return 'running';
+  // 获取指定工程的任务状态（无 projectId 时回退全局语义）
+  ipcMain.handle('getTaskStatus', (event, projectId?: string) => {
+    if (!projectId) {
+      return activeTasksCount > 0 || processingQueue.length > 0
+        ? 'running'
+        : 'idle';
+    }
+    const runtime = projectRuntimes.get(projectId);
+    const queued = queuedCount(projectId);
+    if (!runtime) return queued > 0 ? 'running' : 'idle';
+    if (runtime.cancelled) return runtime.active > 0 ? 'cancelling' : 'idle';
+    if (runtime.paused) return 'paused';
+    if (runtime.active > 0 || queued > 0) return 'running';
     return 'idle';
   });
 
@@ -157,8 +285,8 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
   });
 }
 
-/** 任务全部完成且应用不在前台时发系统通知 */
-function notifyAllDone(event) {
+/** 工程全部完成且应用不在前台时发系统通知 */
+function notifyProjectDone(event) {
   try {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win?.isFocused()) return;
@@ -177,67 +305,89 @@ function notifyAllDone(event) {
     });
     notification.show();
   } catch (error) {
-    logMessage(`notifyAllDone error: ${error}`, 'warning');
+    logMessage(`notifyProjectDone error: ${error}`, 'warning');
   }
 }
 
+/** 取出最多 limit 个可派发项（跳过暂停/已取消工程），其余留在队列 */
+function takeEligibleItems(limit: number): QueueItem[] {
+  const taken: QueueItem[] = [];
+  const rest: QueueItem[] = [];
+  for (const item of processingQueue) {
+    const runtime = projectRuntimes.get(item.projectId);
+    if (taken.length < limit && !runtime?.paused && !runtime?.cancelled) {
+      taken.push(item);
+    } else {
+      rest.push(item);
+    }
+  }
+  processingQueue = rest;
+  return taken;
+}
+
 async function processNextTasks(event) {
-  if (shouldCancel) {
-    isProcessing = false;
-    event.sender.send('taskComplete', 'cancelled');
-    return;
-  }
-
-  if (isPaused) {
-    setTimeout(() => processNextTasks(event), 1000);
-    return;
-  }
-
-  // 当队列为空且没有活动任务时，才完成处理
+  // 队列与执行均清空：全局收工
   if (processingQueue.length === 0 && activeTasksCount === 0) {
     isProcessing = false;
-    event.sender.send('taskComplete', 'completed');
-    notifyAllDone(event);
     return;
   }
 
   // 计算可以启动的新任务数量
   const availableSlots = maxConcurrentTasks - activeTasksCount;
 
-  // 如果有可用槽位且队列中有任务，则启动新任务
-  if (availableSlots > 0 && processingQueue.length > 0) {
-    const tasksToProcess = processingQueue.splice(0, availableSlots);
-    const translationProviders = store.get('translationProviders');
+  if (availableSlots > 0) {
+    const tasksToProcess = takeEligibleItems(availableSlots);
+    if (tasksToProcess.length > 0) {
+      const translationProviders = store.get('translationProviders');
 
-    tasksToProcess.forEach(async (task) => {
-      activeTasksCount++;
-      try {
-        const baseProvider = translationProviders.find(
-          (p) => p.id === task.formData.translateProvider,
-        );
+      tasksToProcess.forEach(async (task) => {
+        const runtime = ensureRuntime(task.projectId);
+        const fileUuid = task.file?.uuid;
+        activeTasksCount++;
+        runtime.active++;
+        if (fileUuid) runtime.activeFiles.add(fileUuid);
+        try {
+          const baseProvider = translationProviders.find(
+            (p) => p.id === task.formData.translateProvider,
+          );
 
-        // Create extended provider with custom parameters
-        const extendedProvider = await createExtendedProvider(baseProvider);
+          // Create extended provider with custom parameters
+          const extendedProvider = await createExtendedProvider(baseProvider);
 
-        await processFile(
-          wrapTaskEvent(event),
-          task.file as IFiles,
-          task.formData,
-          hasOpenAiWhisper,
-          extendedProvider,
-        );
-      } catch (error) {
-        event.sender.send('message', error);
-      } finally {
-        activeTasksCount--;
-        // 处理完一个任务后，检查是否可以启动新任务
-        processNextTasks(event);
-      }
-    });
+          await runWithTaskContext(
+            {
+              projectId: task.projectId,
+              fileUuid,
+              signal: runtime.controller.signal,
+            },
+            () =>
+              processFile(
+                wrapTaskEvent(event),
+                task.file as IFiles,
+                task.formData,
+                hasOpenAiWhisper,
+                extendedProvider,
+              ),
+          );
+        } catch (error) {
+          event.sender.send('message', error);
+        } finally {
+          activeTasksCount--;
+          runtime.active--;
+          if (fileUuid) runtime.activeFiles.delete(fileUuid);
+          finalizeProjectIfDrained(event, task.projectId);
+          // 处理完一个任务后，检查是否可以启动新任务
+          processNextTasks(event);
+        }
+      });
+    }
   }
 
-  // 如果还有正在执行的任务，等待一段时间后再检查
+  // 有任务在跑（100ms）或队列里还躺着暂停项（500ms）：保持轮询，
+  // 这样 handleTask/resumeTask 之后的新增项总能被派发
   if (activeTasksCount > 0) {
     setTimeout(() => processNextTasks(event), 100);
+  } else if (processingQueue.length > 0) {
+    setTimeout(() => processNextTasks(event), 500);
   }
 }
