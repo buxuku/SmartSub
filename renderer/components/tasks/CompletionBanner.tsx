@@ -108,14 +108,14 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
     `${file?.fileName ?? ''}${file?.fileExtension ?? ''}`;
 
   return (
-    <div className="rounded-lg border border-green-500/30 bg-green-500/5 px-4 py-3 flex items-center gap-3 flex-wrap">
-      <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+    <div className="rounded-lg border border-success/30 bg-success/5 px-4 py-3 flex items-center gap-3 flex-wrap">
+      <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0" />
       <div className="min-w-0 flex-1">
         <span className="text-sm font-medium">
           {t('completion.title', { done: doneFiles.length })}
         </span>
         {failedFiles.length > 0 && (
-          <span className="text-sm text-red-500 ml-2">
+          <span className="text-sm text-destructive ml-2">
             {t('completion.failed', { failed: failedFiles.length })}
           </span>
         )}

@@ -224,8 +224,8 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
       body: (
         <div className="space-y-3 py-2">
           {installedCount > 0 ? (
-            <div className="flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/5 px-3 py-3 text-sm">
-              <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+            <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/5 px-3 py-3 text-sm">
+              <CheckCircle2 className="h-4 w-4 text-success" />
               {t('onboarding.modelReady')}
             </div>
           ) : (
@@ -259,7 +259,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
                     <DownModelButton />
                   </DownModel>
                   {downloadDone && (
-                    <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                    <span className="flex items-center gap-1 text-xs text-success">
                       <CheckCircle2 className="h-3.5 w-3.5" />
                       {t('onboarding.downloadStarted')}
                     </span>
@@ -303,7 +303,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
                 {accel.ready && (
                   <Badge
                     variant="outline"
-                    className="text-[10px] px-1.5 py-0 border-green-500/40 text-green-600 dark:text-green-400"
+                    className="text-[10px] px-1.5 py-0 border-success/40 text-success"
                   >
                     {t('onboarding.enabled')}
                   </Badge>

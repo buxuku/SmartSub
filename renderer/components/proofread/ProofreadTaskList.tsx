@@ -123,7 +123,7 @@ export default function ProofreadTaskList({
                   <div className="flex items-center gap-2 mb-2">
                     <h3 className="font-medium truncate">{task.name}</h3>
                     {task.status === 'completed' ? (
-                      <Badge variant="outline" className="text-green-600">
+                      <Badge variant="outline" className="text-success">
                         <CheckCircle2 className="w-3 h-3 mr-1" />
                         {t('completed') || '已完成'}
                       </Badge>

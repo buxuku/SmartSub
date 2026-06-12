@@ -436,19 +436,17 @@ const GpuAccelerationCard: React.FC = () => {
   const status = deriveStatus();
 
   const statusToneClasses: Record<StatusTone, string> = {
-    green:
-      'border-green-300 bg-green-50 dark:border-green-800 dark:bg-green-950/30',
-    yellow:
-      'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30',
+    green: 'border-success/40 bg-success/10',
+    yellow: 'border-warning/40 bg-warning/10',
     gray: 'border-muted bg-muted/40',
     neutral: 'border-muted bg-muted/40',
   };
 
   const renderStatusIcon = () => {
     if (status.tone === 'green')
-      return <Zap className="w-5 h-5 text-green-600 dark:text-green-400" />;
+      return <Zap className="w-5 h-5 text-success" />;
     if (status.tone === 'yellow')
-      return <AlertTriangle className="w-5 h-5 text-amber-500" />;
+      return <AlertTriangle className="w-5 h-5 text-warning" />;
     if (gpuMode === 'cpu-only')
       return <ZapOff className="w-5 h-5 text-muted-foreground" />;
     return <Cpu className="w-5 h-5 text-muted-foreground" />;
@@ -603,7 +601,7 @@ const GpuAccelerationCard: React.FC = () => {
           </div>
           {status.tone === 'yellow' &&
             (activeBackend?.failedAttempts?.length ?? 0) > 0 && (
-              <div className="text-xs text-amber-700 dark:text-amber-400">
+              <div className="text-xs text-warning">
                 {activeBackend.failedAttempts[0].error}
               </div>
             )}
@@ -833,7 +831,7 @@ const GpuAccelerationCard: React.FC = () => {
                 {gpuEnv?.builtinVulkanAvailable && (
                   <div className="flex items-center justify-between p-2 rounded-md border text-xs">
                     <div className="flex items-center gap-2">
-                      <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+                      <CheckCircle className="w-3.5 h-3.5 text-success" />
                       <span>Vulkan</span>
                       <Badge variant="secondary" className="text-[10px]">
                         {t('gpuAcceleration.builtin')}
@@ -843,7 +841,7 @@ const GpuAccelerationCard: React.FC = () => {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 text-[11px] text-amber-600"
+                        className="h-6 text-[11px] text-warning"
                         disabled={!!downloadingVariant}
                         onClick={() => handleDownload('vulkan')}
                       >
@@ -869,7 +867,7 @@ const GpuAccelerationCard: React.FC = () => {
                       className="flex items-center justify-between p-2 rounded-md border text-xs"
                     >
                       <div className="flex items-center gap-2">
-                        <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+                        <CheckCircle className="w-3.5 h-3.5 text-success" />
                         <span>{label}</span>
                         <span className="text-muted-foreground">
                           v{addon.info.remoteVersion} ·{' '}
@@ -888,7 +886,7 @@ const GpuAccelerationCard: React.FC = () => {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-6 text-[11px] text-amber-600"
+                            className="h-6 text-[11px] text-warning"
                             disabled={!!downloadingVariant}
                             onClick={() => handleDownload(addon.version)}
                           >
@@ -966,7 +964,7 @@ const GpuAccelerationCard: React.FC = () => {
                 </div>
                 {customAddonPath ? (
                   <div className="flex items-center gap-2 p-2.5 rounded-lg border-2 border-primary bg-primary/5">
-                    <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />
+                    <CheckCircle className="w-4 h-4 text-success shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium truncate">
                         {t('gpuAcceleration.customAddonActive')}
@@ -1012,9 +1010,9 @@ const GpuAccelerationCard: React.FC = () => {
               </div>
 
               {/* 闪退提示 */}
-              <div className="flex items-start gap-2 p-2.5 bg-amber-50 dark:bg-amber-950/30 rounded-md border border-amber-200 dark:border-amber-800">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
-                <span className="text-[11px] text-amber-700 dark:text-amber-400">
+              <div className="flex items-start gap-2 p-2.5 bg-warning/10 rounded-md border border-warning/30">
+                <AlertTriangle className="w-3.5 h-3.5 text-warning mt-0.5 shrink-0" />
+                <span className="text-[11px] text-warning">
                   {t('gpuAcceleration.crashTip')}
                 </span>
               </div>

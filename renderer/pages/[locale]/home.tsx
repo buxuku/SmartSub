@@ -96,11 +96,12 @@ const CARDS: CardDef[] = [
 
 type RecentStatus = 'waiting' | 'running' | 'done' | 'error';
 
+// 四态状态点：等待灰 / 运行品牌色 / 成功绿 / 失败红
 const STATUS_DOT: Record<RecentStatus, string> = {
   waiting: 'bg-muted-foreground/40',
-  running: 'bg-blue-500',
-  done: 'bg-green-500',
-  error: 'bg-red-500',
+  running: 'bg-primary animate-pulse',
+  done: 'bg-success',
+  error: 'bg-destructive',
 };
 
 function getProjectTypeDef(project: any): TaskTypeDef {
@@ -264,8 +265,8 @@ export default function LaunchpadPage() {
         </div>
 
         {!hasModels && (
-          <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex-wrap">
-            <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+          <div className="flex items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 flex-wrap">
+            <AlertTriangle className="h-4 w-4 text-warning flex-shrink-0" />
             <p className="text-sm min-w-0 flex-1">{t('banner.noModel')}</p>
             <Button asChild size="sm" className="h-8 flex-shrink-0">
               <Link href={`/${locale}/resources?tab=models`}>
@@ -275,8 +276,8 @@ export default function LaunchpadPage() {
           </div>
         )}
         {hasModels && !hasProvider && (
-          <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex-wrap">
-            <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+          <div className="flex items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 flex-wrap">
+            <AlertTriangle className="h-4 w-4 text-warning flex-shrink-0" />
             <p className="text-sm min-w-0 flex-1">{t('banner.noProvider')}</p>
             <Button
               asChild
@@ -331,7 +332,7 @@ export default function LaunchpadPage() {
                 {card.needsModel && !hasModels && (
                   <Badge
                     variant="outline"
-                    className="absolute right-3 top-3 text-[10px] px-1.5 py-0 border-amber-500/40 text-amber-600 dark:text-amber-400 bg-card"
+                    className="absolute right-3 top-3 text-[10px] px-1.5 py-0 border-warning/40 text-warning bg-card"
                   >
                     {t('needsModelBadge')}
                   </Badge>

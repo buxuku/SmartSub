@@ -318,7 +318,7 @@ const ProvidersTab: React.FC = () => {
               {isConfiguredById(type.id) && (
                 <Badge
                   variant="outline"
-                  className="ml-auto flex-shrink-0 border-green-500/50 px-1.5 py-0 text-[10px] text-green-600 dark:text-green-500"
+                  className="ml-auto flex-shrink-0 border-success/50 px-1.5 py-0 text-[10px] text-success"
                 >
                   {t('configured')}
                 </Badge>
@@ -354,7 +354,7 @@ const ProvidersTab: React.FC = () => {
                     {isConfiguredById(provider.id) && (
                       <Badge
                         variant="outline"
-                        className="mr-1 flex-shrink-0 border-green-500/50 px-1.5 py-0 text-[10px] text-green-600 dark:text-green-500"
+                        className="mr-1 flex-shrink-0 border-success/50 px-1.5 py-0 text-[10px] text-success"
                       >
                         {t('configured')}
                       </Badge>
@@ -431,7 +431,7 @@ const ProvidersTab: React.FC = () => {
             <div className="space-y-2">
               <label className="text-sm font-medium">
                 {t('providerName')}
-                <span className="text-red-500">*</span>
+                <span className="text-destructive">*</span>
               </label>
               <Input
                 value={newProviderName}

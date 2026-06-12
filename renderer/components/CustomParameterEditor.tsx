@@ -477,18 +477,18 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
               )}
               {state.saveStatus === 'saved' && (
                 <>
-                  <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center">
+                  <div className="w-4 h-4 rounded-full bg-success flex items-center justify-center">
                     <div className="w-2 h-2 rounded-full bg-white"></div>
                   </div>
-                  <span className="text-green-600">{t('status.saved')}</span>
+                  <span className="text-success">{t('status.saved')}</span>
                 </>
               )}
               {state.saveStatus === 'error' && (
                 <>
-                  <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center">
+                  <div className="w-4 h-4 rounded-full bg-destructive flex items-center justify-center">
                     <div className="w-2 h-2 rounded-full bg-white"></div>
                   </div>
-                  <span className="text-red-600">{t('status.error')}</span>
+                  <span className="text-destructive">{t('status.error')}</span>
                 </>
               )}
             </div>
@@ -505,7 +505,7 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
             {state.hasUnsavedChanges &&
               state.saveStatus !== 'error' &&
               state.saveStatus !== 'saving' && (
-                <AlertTriangle className="w-3 h-3 ml-1 text-orange-500" />
+                <AlertTriangle className="w-3 h-3 ml-1 text-warning" />
               )}
           </Button>
         </div>
@@ -798,8 +798,8 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
                 <span
                   className={
                     state.validationErrors.length > 0
-                      ? 'text-red-600'
-                      : 'text-green-600'
+                      ? 'text-destructive'
+                      : 'text-success'
                   }
                 >
                   {state.validationErrors.length}
@@ -820,30 +820,30 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
                   </div>
                 )}
                 {state.saveStatus === 'idle' && state.hasUnsavedChanges && (
-                  <div className="flex items-center gap-1 text-yellow-600">
-                    <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+                  <div className="flex items-center gap-1 text-warning">
+                    <div className="w-2 h-2 rounded-full bg-warning"></div>
                     <span className="text-sm">
                       {t('status.unsavedChanges')}
                     </span>
                   </div>
                 )}
                 {state.saveStatus === 'saving' && (
-                  <div className="flex items-center gap-1 text-blue-600">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+                  <div className="flex items-center gap-1 text-primary">
+                    <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
                     <span className="text-sm">{t('status.saving')}</span>
                   </div>
                 )}
                 {state.saveStatus === 'saved' && (
-                  <div className="flex items-center gap-1 text-green-600">
-                    <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                  <div className="flex items-center gap-1 text-success">
+                    <div className="w-2 h-2 rounded-full bg-success"></div>
                     <span className="text-sm">
                       {t('status.savedAutomatically')}
                     </span>
                   </div>
                 )}
                 {state.saveStatus === 'error' && (
-                  <div className="flex items-center gap-1 text-red-600">
-                    <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                  <div className="flex items-center gap-1 text-destructive">
+                    <div className="w-2 h-2 rounded-full bg-destructive"></div>
                     <span className="text-sm">{t('status.saveFailed')}</span>
                   </div>
                 )}
@@ -869,7 +869,7 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-orange-500" />
+              <AlertTriangle className="w-5 h-5 text-warning" />
               {t('unsavedChangesDialog.title')}
             </AlertDialogTitle>
             <AlertDialogDescription>
@@ -880,7 +880,7 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
             <AlertDialogCancel>{t('actions.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmRefresh}
-              className="bg-orange-600 hover:bg-orange-700"
+              className="bg-warning text-warning-foreground hover:bg-warning/90"
             >
               {t('unsavedChangesDialog.refreshAnyway')}
             </AlertDialogAction>

@@ -344,7 +344,7 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
           <div key={field.key} className="space-y-2">
             <label className="text-sm font-medium">
               {t(field.label)}
-              {field.required && <span className="text-red-500">*</span>}
+              {field.required && <span className="text-destructive">*</span>}
             </label>
             {renderField(field)}
             {field.tips && (

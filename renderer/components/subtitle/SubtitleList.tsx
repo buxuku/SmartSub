@@ -159,7 +159,7 @@ const SubtitleRow = memo(function SubtitleRow({
         onClick={(e) => onRowClick(index, e.shiftKey)}
       >
         {isFailed && (
-          <AlertTriangle className="h-3 w-3 flex-shrink-0 text-red-500" />
+          <AlertTriangle className="h-3 w-3 flex-shrink-0 text-destructive" />
         )}
         <span className="flex-shrink-0 text-[10px] tabular-nums text-muted-foreground">
           #{subtitle.id} {compactTime(subtitle.startTimeInSeconds)}→
@@ -170,7 +170,7 @@ const SubtitleRow = memo(function SubtitleRow({
           {tgt && <span className="text-muted-foreground"> / {tgt}</span>}
         </span>
         {isFailed && (
-          <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-red-500" />
+          <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-destructive" />
         )}
       </div>
     );
@@ -183,7 +183,7 @@ const SubtitleRow = memo(function SubtitleRow({
     >
       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
         <div className="flex min-w-0 items-center gap-1">
-          {isFailed && <AlertTriangle className="h-3 w-3 text-red-500" />}
+          {isFailed && <AlertTriangle className="h-3 w-3 text-destructive" />}
           <TimeRangeEditor
             rowId={subtitle.id}
             startEndTime={subtitle.startEndTime}
@@ -258,9 +258,7 @@ const SubtitleRow = memo(function SubtitleRow({
           className={`resize-none p-1 text-xs ${
             subtitle.targetContent ? 'min-h-[24px]' : 'min-h-[20px]'
           } ${
-            isFailed
-              ? 'border-red-300 focus:border-red-500 dark:border-red-800 dark:focus:border-red-400'
-              : ''
+            isFailed ? 'border-destructive/40 focus:border-destructive' : ''
           }`}
           value={subtitle.targetContent || ''}
           onChange={(e) =>
@@ -545,7 +543,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
         <div className="flex items-center justify-between gap-2 p-2 border-b bg-muted/30 flex-shrink-0">
           <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
             <div className="flex flex-shrink-0 items-center gap-1.5">
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <AlertTriangle className="h-4 w-4 text-warning" />
               <span className="tabular-nums">
                 {t('translationFailed')}: {failedIndices.length} /{' '}
                 {mergedSubtitles.length}
@@ -663,7 +661,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
       <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
         {failedOnly && displayCount === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-sm text-muted-foreground">
-            <CheckCircle2 className="h-8 w-8 text-green-500" />
+            <CheckCircle2 className="h-8 w-8 text-success" />
             <span>{t('failedAllClear') || '失败字幕已全部处理'}</span>
             <Button
               variant="outline"

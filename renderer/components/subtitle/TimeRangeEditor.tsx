@@ -139,7 +139,7 @@ export default function TimeRangeEditor({
   }
 
   const inputClass = `h-5 w-[108px] rounded border bg-background px-1 text-[10px] tabular-nums outline-none focus:ring-1 focus:ring-ring ${
-    error ? 'border-red-500 focus:ring-red-500' : ''
+    error ? 'border-destructive focus:ring-destructive' : ''
   }`;
 
   return (
@@ -172,7 +172,7 @@ export default function TimeRangeEditor({
         onKeyDown={handleKeyDown}
         spellCheck={false}
       />
-      {error && <span className="text-red-500">{error}</span>}
+      {error && <span className="text-destructive">{error}</span>}
     </span>
   );
 }

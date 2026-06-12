@@ -41,7 +41,7 @@ export default function FileSelector({
       <div
         className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-lg border transition-all cursor-pointer hover:border-primary ${
           videoPath
-            ? 'border-green-500 bg-green-50/50 dark:bg-green-950/20'
+            ? 'border-success bg-success/10'
             : 'border-border bg-muted/30'
         } ${disabled ? 'opacity-60 pointer-events-none' : ''}`}
         onClick={!disabled ? onSelectVideo : undefined}
@@ -49,7 +49,7 @@ export default function FileSelector({
         <div
           className={`p-1.5 rounded ${
             videoPath
-              ? 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-400'
+              ? 'bg-success/15 text-success'
               : 'bg-muted text-muted-foreground'
           }`}
         >
@@ -92,7 +92,7 @@ export default function FileSelector({
       <div
         className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-lg border transition-all cursor-pointer hover:border-primary ${
           subtitlePath
-            ? 'border-green-500 bg-green-50/50 dark:bg-green-950/20'
+            ? 'border-success bg-success/10'
             : 'border-border bg-muted/30'
         } ${disabled ? 'opacity-60 pointer-events-none' : ''}`}
         onClick={!disabled ? onSelectSubtitle : undefined}
@@ -100,7 +100,7 @@ export default function FileSelector({
         <div
           className={`p-1.5 rounded ${
             subtitlePath
-              ? 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-400'
+              ? 'bg-success/15 text-success'
               : 'bg-muted text-muted-foreground'
           }`}
         >

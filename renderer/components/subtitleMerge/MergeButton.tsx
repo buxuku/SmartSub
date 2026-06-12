@@ -168,9 +168,9 @@ export default function MergeButton({
 
       {/* 完成状态 */}
       {status === 'completed' && (
-        <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-950/30 rounded-lg">
-          <CheckCircle className="w-5 h-5 text-green-600" />
-          <span className="text-sm text-green-700 dark:text-green-400 flex-1">
+        <div className="flex items-center gap-2 p-3 bg-success/10 rounded-lg">
+          <CheckCircle className="w-5 h-5 text-success" />
+          <span className="text-sm text-success flex-1">
             {t('mergeSuccess') || '合并成功'}
           </span>
           <Button variant="outline" size="sm" onClick={onOpenOutputFolder}>
@@ -182,13 +182,13 @@ export default function MergeButton({
 
       {/* 错误状态 */}
       {status === 'error' && progress.errorMessage && (
-        <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-950/30 rounded-lg">
-          <XCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+        <div className="flex items-start gap-2 p-3 bg-destructive/10 rounded-lg">
+          <XCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm text-red-700 dark:text-red-400">
+            <p className="text-sm text-destructive">
               {t('mergeError') || '合并失败'}
             </p>
-            <p className="text-xs text-red-600/70 dark:text-red-400/70 mt-1 break-all">
+            <p className="text-xs text-destructive/70 mt-1 break-all">
               {progress.errorMessage}
             </p>
           </div>

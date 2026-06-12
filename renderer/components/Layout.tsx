@@ -430,7 +430,7 @@ const Layout = ({ children }) => {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Rocket
-                        className="ml-2 inline-block cursor-pointer text-red-500"
+                        className="ml-2 inline-block cursor-pointer text-destructive"
                         size={18}
                         onClick={handleUpdateClick}
                       />
@@ -454,7 +454,7 @@ const Layout = ({ children }) => {
                       size="sm"
                       className={`h-7 text-xs gap-1.5 ${
                         gpuEnabled
-                          ? 'text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300'
+                          ? 'text-success hover:text-success/80'
                           : 'text-muted-foreground hover:text-foreground'
                       }`}
                       onClick={() =>

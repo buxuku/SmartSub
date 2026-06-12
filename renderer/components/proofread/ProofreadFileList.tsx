@@ -289,7 +289,7 @@ export default function ProofreadFileList({
     switch (status) {
       case 'completed':
         return (
-          <div className="flex items-center gap-1 text-green-600 whitespace-nowrap">
+          <div className="flex items-center gap-1 text-success whitespace-nowrap">
             <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
             <span className="text-xs">{t('completed') || '已完成'}</span>
           </div>
@@ -353,7 +353,7 @@ export default function ProofreadFileList({
             {completedCount}/{files.length} {t('completed') || '已完成'}
           </Badge>
           {savedTaskId && (
-            <Badge variant="outline" className="text-green-600">
+            <Badge variant="outline" className="text-success">
               {t('saved') || '已保存'}
             </Badge>
           )}

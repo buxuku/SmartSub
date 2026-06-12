@@ -148,7 +148,7 @@ function RecommendedHero({
         {isInstalled ? (
           <Badge
             variant="outline"
-            className="border-green-500/40 text-green-600 dark:text-green-400 gap-1"
+            className="border-success/40 text-success gap-1"
           >
             <CheckCircle2 className="h-3.5 w-3.5" />
             {t('alreadyInstalled')}
@@ -238,7 +238,7 @@ function ModelRow({
           </Badge>
         )}
         {isInstalled && !isDownloading && (
-          <CheckCircle2 className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+          <CheckCircle2 className="h-3.5 w-3.5 text-success flex-shrink-0" />
         )}
         {desc && (
           <span className="text-xs text-muted-foreground truncate">{desc}</span>

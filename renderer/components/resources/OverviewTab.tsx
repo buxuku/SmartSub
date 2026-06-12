@@ -147,7 +147,7 @@ const OverviewTab = ({
               </p>
             </>
           ) : (
-            <p className="flex items-start gap-1.5 text-sm text-amber-600 dark:text-amber-500">
+            <p className="flex items-start gap-1.5 text-sm text-warning">
               <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
               {t('overview.noModels')}
             </p>
@@ -209,7 +209,7 @@ const OverviewTab = ({
               </p>
             </>
           ) : (
-            <p className="flex items-start gap-1.5 text-sm text-amber-600 dark:text-amber-500">
+            <p className="flex items-start gap-1.5 text-sm text-warning">
               <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
               {t('overview.noProviders')}
             </p>
@@ -239,11 +239,11 @@ const OverviewTab = ({
         </CardHeader>
         <CardContent className="flex flex-1 flex-col gap-3">
           {gpu?.isDarwin ? (
-            <p className="text-sm font-medium text-green-600 dark:text-green-500">
+            <p className="text-sm font-medium text-success">
               {t('overview.appleAcceleration')}
             </p>
           ) : gpu?.enabled && gpu.label ? (
-            <p className="text-sm font-medium text-green-600 dark:text-green-500">
+            <p className="text-sm font-medium text-success">
               {t('overview.gpuRunning', { backend: gpu.label })}
             </p>
           ) : (

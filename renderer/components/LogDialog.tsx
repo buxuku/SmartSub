@@ -89,9 +89,9 @@ export function LogDialog({ open, onOpenChange }) {
                 <div
                   className={`text-sm whitespace-pre-wrap break-all font-mono ${
                     log?.type === 'error'
-                      ? 'text-red-500'
+                      ? 'text-destructive'
                       : log?.type === 'warning'
-                        ? 'text-yellow-500'
+                        ? 'text-warning'
                         : 'text-muted-foreground'
                   }`}
                 >

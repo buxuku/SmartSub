@@ -97,9 +97,9 @@ const LogPanel: React.FC<{
                   key={index}
                   className={`text-[11px] font-mono whitespace-pre-wrap break-all ${
                     log?.type === 'error'
-                      ? 'text-red-500'
+                      ? 'text-destructive'
                       : log?.type === 'warning'
-                        ? 'text-yellow-500'
+                        ? 'text-warning'
                         : 'text-muted-foreground'
                   }`}
                 >

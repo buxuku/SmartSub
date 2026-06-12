@@ -65,8 +65,8 @@ function StageChips({
                 'inline-flex items-center gap-1 text-xs whitespace-nowrap',
                 status === 'pending' && 'text-muted-foreground/60',
                 status === 'loading' && 'text-primary font-medium',
-                status === 'done' && 'text-green-600 dark:text-green-400',
-                status === 'error' && 'text-red-500 font-medium',
+                status === 'done' && 'text-success',
+                status === 'error' && 'text-destructive font-medium',
               )}
             >
               {status === 'loading' && (
@@ -159,7 +159,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
             key={file?.uuid}
             className={cn(
               'group rounded-lg border px-3 py-2.5 transition-colors hover:bg-muted/40',
-              failed && 'border-red-500/30',
+              failed && 'border-destructive/30',
             )}
           >
             <div className="flex items-center gap-3">
@@ -245,7 +245,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
             </div>
 
             {cancelling && (
-              <p className="mt-1.5 pl-5 text-xs text-amber-600 dark:text-amber-500">
+              <p className="mt-1.5 pl-5 text-xs text-warning">
                 {t('row.cancelling')}
               </p>
             )}
@@ -254,7 +254,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <p className="mt-1.5 pl-5 text-xs text-red-500 truncate cursor-default">
+                    <p className="mt-1.5 pl-5 text-xs text-destructive truncate cursor-default">
                       {errorMsg}
                     </p>
                   </TooltipTrigger>

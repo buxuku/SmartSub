@@ -576,25 +576,25 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                   {wasCancelled && (
                     <Badge
                       variant="outline"
-                      className="text-xs border-amber-400 text-amber-600 dark:text-amber-400"
+                      className="text-xs border-warning/60 text-warning"
                     >
                       {t('batchOptimizeCancelledBadge') || '已取消 · 部分结果'}
                     </Badge>
                   )}
                   <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    <CheckCircle2 className="h-4 w-4 text-success" />
                     <span className="text-sm">
                       {t('successCount') || '成功'}: {summary.success}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <XCircle className="h-4 w-4 text-red-500" />
+                    <XCircle className="h-4 w-4 text-destructive" />
                     <span className="text-sm">
                       {t('errorCount') || '失败'}: {summary.error}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <AlertCircle className="h-4 w-4 text-yellow-500" />
+                    <AlertCircle className="h-4 w-4 text-warning" />
                     <span className="text-sm">
                       {t('skippedCount') || '跳过'}: {summary.skipped}
                     </span>
@@ -626,9 +626,9 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                       key={result.id}
                       className={`p-3 ${
                         result.status === 'error'
-                          ? 'bg-red-50 dark:bg-red-950/20'
+                          ? 'bg-destructive/10'
                           : result.status === 'skipped'
-                            ? 'bg-yellow-50 dark:bg-yellow-950/20'
+                            ? 'bg-warning/10'
                             : ''
                       }`}
                     >
@@ -658,7 +658,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                               result.originalTarget ? (
                                 <Badge
                                   variant="default"
-                                  className="text-xs bg-green-500"
+                                  className="text-xs bg-success"
                                 >
                                   {t('changed') || '已优化'}
                                 </Badge>
@@ -705,8 +705,8 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                                     </span>
                                   )}
                                 </div>
-                                <div className="p-2 bg-green-50 dark:bg-green-950/30 rounded text-sm border border-green-200 dark:border-green-800">
-                                  <div className="text-xs text-green-600 dark:text-green-400 mb-1">
+                                <div className="p-2 bg-success/10 rounded text-sm border border-success/30">
+                                  <div className="text-xs text-success mb-1">
                                     {isTranscriptMode
                                       ? t('correctedText') || '修正后'
                                       : t('optimizedTranslation') || '优化后'}
@@ -718,7 +718,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
 
                           {/* 错误信息 */}
                           {result.error && (
-                            <div className="text-xs text-red-500">
+                            <div className="text-xs text-destructive">
                               {result.error}
                             </div>
                           )}
