@@ -73,6 +73,37 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     }
   };
 
+  // Tab/Shift+Tab：同一行内原文⇄译文切换焦点（阻断浏览器默认的顺序跳转）
+  const focusRowField = (index: number, field: 'src' | 'tgt') => {
+    const el = document.getElementById(
+      `subtitle-${field}-${index}`,
+    ) as HTMLTextAreaElement | null;
+    if (el) {
+      el.focus();
+      el.select?.();
+    }
+  };
+
+  const handleSourceKeyDown = (
+    e: React.KeyboardEvent<HTMLTextAreaElement>,
+    index: number,
+  ) => {
+    if (e.key === 'Tab' && !e.shiftKey && shouldShowTranslation) {
+      e.preventDefault();
+      focusRowField(index, 'tgt');
+    }
+  };
+
+  const handleTargetKeyDown = (
+    e: React.KeyboardEvent<HTMLTextAreaElement>,
+    index: number,
+  ) => {
+    if (e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault();
+      focusRowField(index, 'src');
+    }
+  };
+
   // 处理字幕点击
   const onSubtitleClick = (index: number) => {
     // 用户主动点击：标记跳过本次自动滚动（仅在索引真正变化时）
@@ -217,6 +248,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                 </div>
 
                 <Textarea
+                  id={`subtitle-src-${index}`}
                   className="min-h-[24px] mb-2 text-xs p-1 resize-none"
                   value={subtitle.sourceContent}
                   onChange={(e) =>
@@ -224,12 +256,14 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                   }
                   onClick={handleSelectionChange}
                   onKeyUp={handleSelectionChange}
+                  onKeyDown={(e) => handleSourceKeyDown(e, index)}
                   placeholder={t('originalSubtitle')}
                 />
 
                 {/* 只在需要显示翻译内容时显示翻译字幕框 */}
                 {shouldShowTranslation && (
                   <Textarea
+                    id={`subtitle-tgt-${index}`}
                     className={`text-xs p-1 resize-none ${
                       subtitle.targetContent ? 'min-h-[24px]' : 'min-h-[20px]'
                     } ${isFailed ? 'border-red-300 focus:border-red-500 dark:border-red-800 dark:focus:border-red-400' : ''}`}
@@ -241,6 +275,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                         e.target.value,
                       )
                     }
+                    onKeyDown={(e) => handleTargetKeyDown(e, index)}
                     placeholder={
                       isFailed
                         ? t('translationFailedPlaceholder')

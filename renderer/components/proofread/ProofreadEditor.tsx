@@ -16,6 +16,7 @@ import { ArrowLeft, Check, Save, Loader2 } from 'lucide-react';
 // 复用原有的子组件和 hooks
 import { useStandaloneSubtitles } from '../../hooks/useStandaloneSubtitles';
 import { useVideoPlayer } from '../../hooks/useVideoPlayer';
+import { useHotkeys, isMacPlatform } from '../../hooks/useHotkeys';
 import VideoPlayer from '../subtitle/VideoPlayer';
 import CurrentSubtitle from '../subtitle/CurrentSubtitle';
 import VideoInfo from '../subtitle/VideoInfo';
@@ -47,6 +48,7 @@ export default function ProofreadEditor({
   onBack,
 }: ProofreadEditorProps) {
   const { t } = useTranslation('home');
+  const { t: commonT } = useTranslation('common');
 
   // 构建配置
   const config = useMemo(
@@ -182,6 +184,52 @@ export default function ProofreadEditor({
     if (ok) onMarkComplete();
   }, [handleSave, onMarkComplete]);
 
+  // Cmd/Ctrl+F：递增 token 通知工具栏展开搜索替换
+  const [searchOpenToken, setSearchOpenToken] = useState(0);
+
+  // 编辑器快捷键（4.3 清单）
+  useHotkeys([
+    { combo: 'mod+s', allowInInput: true, handler: () => void handleSave() },
+    {
+      combo: 'mod+z',
+      allowInInput: true,
+      handler: () => {
+        if (canUndo) handleUndo();
+      },
+    },
+    {
+      combo: 'shift+mod+z',
+      allowInInput: true,
+      handler: () => {
+        if (canRedo) handleRedo();
+      },
+    },
+    {
+      combo: 'mod+f',
+      allowInInput: true,
+      handler: () => setSearchOpenToken((n) => n + 1),
+    },
+    {
+      combo: 'space',
+      handler: () => {
+        if (hasVideo) togglePlay();
+      },
+    },
+    { combo: 'arrowup', handler: () => goToPreviousSubtitle() },
+    { combo: 'arrowdown', handler: () => goToNextSubtitle() },
+    {
+      combo: 'escape',
+      allowInInput: true,
+      preventDefault: false,
+      handler: (e) => {
+        const el = e.target as HTMLElement | null;
+        if (el && typeof el.blur === 'function') el.blur();
+      },
+    },
+  ]);
+
+  const modLabel = isMacPlatform() ? '⌘' : 'Ctrl';
+
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -229,6 +277,7 @@ export default function ProofreadEditor({
         triggerAiOptimize={triggerAiOptimize}
         triggerSplit={triggerSplit}
         onTriggerHandled={handleTriggerHandled}
+        searchOpenToken={searchOpenToken}
       />
 
       {/* 主内容区 - 复用原有布局 */}
@@ -293,6 +342,32 @@ export default function ProofreadEditor({
           onAiOptimizeClick={handleAiOptimizeClick}
           onSplitClick={handleSplitClick}
         />
+      </div>
+
+      {/* 底部快捷键提示条 */}
+      <div className="flex-shrink-0 flex items-center justify-center gap-3 border-t bg-muted/30 px-4 py-1 text-[11px] text-muted-foreground select-none">
+        {hasVideo && (
+          <span>
+            <kbd className="rounded border bg-background px-1">Space</kbd>{' '}
+            {commonT('shortcuts.playPause')}
+          </span>
+        )}
+        <span>
+          <kbd className="rounded border bg-background px-1">↑↓</kbd>{' '}
+          {commonT('shortcuts.prevNextSubtitle')}
+        </span>
+        <span>
+          <kbd className="rounded border bg-background px-1">Tab</kbd>{' '}
+          {commonT('shortcuts.switchSourceTarget')}
+        </span>
+        <span>
+          <kbd className="rounded border bg-background px-1">{modLabel}S</kbd>{' '}
+          {commonT('shortcuts.save')}
+        </span>
+        <span>
+          <kbd className="rounded border bg-background px-1">?</kbd>{' '}
+          {commonT('shortcuts.hintMore')}
+        </span>
       </div>
 
       {/* 未保存修改确认对话框 */}

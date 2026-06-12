@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -62,6 +62,8 @@ interface SubtitleEditToolbarProps {
   triggerAiOptimize?: boolean;
   triggerSplit?: boolean;
   onTriggerHandled?: () => void; // 当触发器被处理后调用
+  /** 外部请求打开搜索替换（Cmd/Ctrl+F）：token 递增时展开面板并聚焦搜索框 */
+  searchOpenToken?: number;
 }
 
 export default function SubtitleEditToolbar({
@@ -79,17 +81,27 @@ export default function SubtitleEditToolbar({
   triggerAiOptimize,
   triggerSplit,
   onTriggerHandled,
+  searchOpenToken,
 }: SubtitleEditToolbarProps) {
   const { t } = useTranslation('home');
 
   // 搜索替换状态
   const [showSearchReplace, setShowSearchReplace] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchText, setSearchText] = useState('');
   const [replaceText, setReplaceText] = useState('');
   const [searchTarget, setSearchTarget] = useState<
     'source' | 'target' | 'both'
   >('both');
   const [matchCount, setMatchCount] = useState(0);
+
+  // Cmd/Ctrl+F 外部触发：展开搜索面板并聚焦搜索框（等 Popover 挂载后聚焦）
+  useEffect(() => {
+    if (!searchOpenToken) return;
+    setShowSearchReplace(true);
+    const timer = setTimeout(() => searchInputRef.current?.focus(), 50);
+    return () => clearTimeout(timer);
+  }, [searchOpenToken]);
 
   // 拆分对话框状态
   const [showSplit, setShowSplit] = useState(false);
@@ -513,6 +525,7 @@ Only respond with the translated/improved text, nothing else.`;
             <div className="space-y-2">
               <Label>{t('searchText') || '搜索内容'}</Label>
               <Input
+                ref={searchInputRef}
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
                 placeholder={t('enterSearchText') || '输入搜索内容'}
