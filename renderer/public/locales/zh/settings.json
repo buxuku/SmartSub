@@ -70,7 +70,7 @@
   "useCustomTempDirEnabled": "已启用自定义临时目录",
   "vadSettings": "VAD (语音活动检测) 设置",
   "enableVad": "启用 VAD",
-  "enableVadTip": "语音活动检测可以通过自动检测语音片段并过滤静音来提高转录准确性",
+  "enableVadTip": "语音活动检测可以通过自动检测语音片段并过滤静音来提高转写准确性",
   "vadThreshold": "VAD 阈值",
   "vadThresholdTip": "语音检测阈值 (0.0-1.0)。较高值需要更强的语音信号",
   "vadMinSpeechDuration": "最小语音持续时间 (毫秒)",

@@ -2,7 +2,7 @@
   "copySuccess": "Link copied to clipboard",
   "copyError": "Failed to copy link, please copy manually",
   "modelManagement": "Model Management",
-  "modelManagementDesc": "Choose a Whisper speech recognition model that fits your needs. Larger models offer better accuracy but require more time and memory.",
+  "modelManagementDesc": "Choose a Whisper transcription model that fits your needs. Larger models offer better accuracy but require more time and memory.",
   "modelPath": "Model Path",
   "switchDownloadSource": "Source",
   "domesticMirror": "Mirror (Faster in China)",

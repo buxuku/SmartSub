@@ -337,7 +337,7 @@
   "batchAiOptimize": "Batch AI Optimize",
   "batchAiOptimizeDesc": "Use AI to batch optimize all subtitle translations, then review and selectively apply",
   "batchAiProofread": "AI Proofread All",
-  "batchAiProofreadDesc": "Use AI to batch fix recognition errors in transcribed text, then review and selectively apply",
+  "batchAiProofreadDesc": "Use AI to batch fix transcription errors, then review and selectively apply",
   "correctedText": "Corrected",
   "batchOptimizeRunningDesc": "Processing batch optimization, please wait...",
   "batchOptimizeReviewDesc": "Review the optimization results and select items to apply",

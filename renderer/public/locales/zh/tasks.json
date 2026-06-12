@@ -13,7 +13,7 @@
     "subtitleSourceLanguage": "源语言",
     "targetLanguage": "翻译成",
     "provider": "翻译服务",
-    "style": "字幕样式",
+    "style": "输出内容",
     "format": "字幕格式"
   },
   "noTranslate": "不翻译",
@@ -24,13 +24,13 @@
   "advanced": "高级选项",
   "advancedDesc": "不常改的细节设置，默认值即最佳实践",
   "section": {
-    "recognition": "识别",
+    "recognition": "转写",
     "output": "输出与保存",
     "execution": "执行"
   },
   "stage": {
     "extract": "提取",
-    "transcribe": "听写",
+    "transcribe": "转写",
     "translate": "翻译"
   },
   "row": {

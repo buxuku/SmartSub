@@ -211,7 +211,7 @@ Please translate the original text to {{targetLanguage}}:
 
 Only respond with the translated/improved text, nothing else.`;
 
-  // 纯转写模式：优化对象是原文（修正听写错误），不做翻译
+  // 纯转写模式：优化对象是原文（修正转写错误），不做翻译
   const isTranscriptMode = !shouldShowTranslation;
 
   // 转写校对默认提示词（修正识别错误，不翻译不改写）

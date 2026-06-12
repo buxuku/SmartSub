@@ -69,7 +69,7 @@ export default function BatchAiOptimizeDialog({
 }: BatchAiOptimizeDialogProps) {
   const { t } = useTranslation('home');
 
-  // 纯转写模式：优化对象是原文（修正听写错误），不做翻译
+  // 纯转写模式：优化对象是原文（修正转写错误），不做翻译
   const isTranscriptMode = !shouldShowTranslation;
 
   // 状态

@@ -3,9 +3,9 @@
   "subtitle": "选择一个任务开始，文件也可以直接拖到卡片上",
   "card": {
     "generateTranslate": "视频 → 双语字幕",
-    "generateTranslateDesc": "识别人声并翻译成目标语言，一步到位",
+    "generateTranslateDesc": "转写人声并翻译成目标语言，一步到位",
     "generate": "视频 → 原文字幕",
-    "generateDesc": "只识别人声，不翻译",
+    "generateDesc": "只转写人声，不翻译",
     "translate": "翻译已有字幕",
     "translateDesc": "把 SRT 等字幕文件翻译成其它语言",
     "proofread": "校对字幕",
@@ -15,7 +15,7 @@
   },
   "needsModelBadge": "需要模型",
   "banner": {
-    "noModel": "还没有语音模型——它负责把人声听写成文字，下载一个就能开始",
+    "noModel": "还没有语音模型——它负责把人声转写成文字，下载一个就能开始",
     "noModelCta": "下载推荐模型",
     "noProvider": "想翻译字幕？先配置一个翻译服务（也有免费选项）",
     "noProviderCta": "去配置"

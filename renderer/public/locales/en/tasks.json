@@ -13,7 +13,7 @@
     "subtitleSourceLanguage": "Source language",
     "targetLanguage": "Translate to",
     "provider": "Translation service",
-    "style": "Subtitle style",
+    "style": "Output content",
     "format": "Subtitle format"
   },
   "noTranslate": "No translation",
@@ -24,7 +24,7 @@
   "advanced": "Advanced options",
   "advancedDesc": "Details you rarely change — the defaults are best practice",
   "section": {
-    "recognition": "Recognition",
+    "recognition": "Transcription",
     "output": "Output & saving",
     "execution": "Execution"
   },

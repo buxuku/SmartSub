@@ -229,7 +229,7 @@ const OverviewTab = ({
         </CardContent>
       </Card>
 
-      {/* 显卡加速 */}
+      {/* GPU 加速 */}
       <Card className="flex flex-col">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">

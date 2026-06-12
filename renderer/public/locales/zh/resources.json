@@ -1,6 +1,6 @@
 {
   "title": "资源中心",
-  "description": "转写与翻译所需的模型、翻译服务与显卡加速，都在这里管理",
+  "description": "转写与翻译所需的模型、翻译服务与 GPU 加速，都在这里管理",
   "tab": {
     "overview": "全景",
     "models": "模型",
@@ -10,7 +10,7 @@
   "overview": {
     "modelsTitle": "语音模型",
     "providersTitle": "翻译服务",
-    "accelerationTitle": "显卡加速",
+    "accelerationTitle": "GPU 加速",
     "installedCount": "已安装 {{count}} 个",
     "downloadingCount": "{{count}} 个下载中…",
     "noModels": "尚未安装模型，无法开始转写任务",

@@ -2,7 +2,7 @@
   "copySuccess": "链接已复制到剪贴板",
   "copyError": "无法复制链接，请手动复制",
   "modelManagement": "模型管理",
-  "modelManagementDesc": "选择适合您需求的 Whisper 语音识别模型。模型越大，识别精度越高，但所需时间和内存也越多。",
+  "modelManagementDesc": "选择适合您需求的 Whisper 语音转写模型。模型越大，转写精度越高，但所需时间和内存也越多。",
   "modelPath": "模型路径",
   "switchDownloadSource": "下载源",
   "domesticMirror": "国内加速源（更快）",
@@ -52,7 +52,7 @@
   "modelPathChanged": "模型路径已更新",
   "recommendedHero": "为这台电脑推荐：{{model}}",
   "recommendedBasis": "依据：本机内存 {{memory}}GB",
-  "recommendedBasisWithGpu": "依据：本机内存 {{memory}}GB · 显卡加速可用",
+  "recommendedBasisWithGpu": "依据：本机内存 {{memory}}GB · GPU 加速可用",
   "oneClickDownload": "一键下载（{{size}}）",
   "alreadyInstalled": "已安装，随时可用",
   "tier": {

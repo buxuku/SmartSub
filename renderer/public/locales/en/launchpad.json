@@ -10,7 +10,7 @@
     "translateDesc": "Translate SRT and other subtitle files into another language",
     "proofread": "Proofread subtitles",
     "proofreadDesc": "Review line by line, with video preview and AI polish",
-    "merge": "Burn into video",
+    "merge": "Burn to Video",
     "mergeDesc": "Burn subtitles into the picture so they always show"
   },
   "needsModelBadge": "Needs a model",
