@@ -35,10 +35,27 @@ import { ProofreadItem } from '../../types/proofread';
 import { TRANSLATOR_MAP } from '../translate/services/translationProvider';
 import { Provider } from '../translate/types';
 
+// 校对批量操作（批量 AI 优化 / 重翻失败）取消注册表
+const batchAbortControllers = new Map<string, AbortController>();
+
 /**
  * 设置字幕校对相关的 IPC 处理器
  */
 export function setupProofreadHandlers(): void {
+  // 取消进行中的校对批量操作
+  ipcMain.handle(
+    'cancelProofreadBatch',
+    async (_event, { batchId }: { batchId: string }) => {
+      const controller = batchAbortControllers.get(batchId);
+      if (controller) {
+        controller.abort();
+        logMessage(`Proofread batch cancelled: ${batchId}`, 'info');
+        return { success: true };
+      }
+      return { success: false };
+    },
+  );
+
   // ============ 字幕检测相关 ============
 
   // 检测视频对应的字幕文件（不再需要语言参数）
@@ -609,6 +626,7 @@ Only respond with the translation, nothing else.`;
         customPrompt,
         batchSize = 5,
         maxRetries = 2,
+        batchId,
       }: {
         subtitles: Array<{
           id: string;
@@ -620,8 +638,11 @@ Only respond with the translation, nothing else.`;
         customPrompt?: string;
         batchSize?: number;
         maxRetries?: number;
+        batchId?: string;
       },
     ) => {
+      const abortController = new AbortController();
+      if (batchId) batchAbortControllers.set(batchId, abortController);
       try {
         logMessage(
           `Starting batch optimization: ${subtitles.length} subtitles in batches of ${batchSize}`,
@@ -697,9 +718,15 @@ IMPORTANT: You MUST return a valid JSON object. Do NOT include any text before o
 
         const totalBatches = Math.ceil(subtitles.length / batchSize);
         let processedCount = 0;
+        let cancelled = false;
 
         // 分批处理
         for (let i = 0; i < subtitles.length; i += batchSize) {
+          // 每批边界检查取消信号
+          if (abortController.signal.aborted) {
+            cancelled = true;
+            break;
+          }
           const batch = subtitles.slice(i, i + batchSize);
           const currentBatchIndex = Math.floor(i / batchSize) + 1;
           let retryCount = 0;
@@ -723,6 +750,10 @@ IMPORTANT: You MUST return a valid JSON object. Do NOT include any text before o
           });
 
           while (!batchSuccess && retryCount <= maxRetries) {
+            if (abortController.signal.aborted) {
+              cancelled = true;
+              break;
+            }
             try {
               // 构建批量输入
               const batchInput: Record<
@@ -845,25 +876,29 @@ IMPORTANT: You MUST return a valid JSON object. Do NOT include any text before o
               }
             }
           }
+          if (cancelled) break;
         }
 
         // 发送完成进度
         event.sender.send('batchOptimizeProgress', {
-          progress: 100,
+          progress: cancelled
+            ? Math.round((processedCount / subtitles.length) * 100)
+            : 100,
           currentBatch: totalBatches,
           totalBatches,
-          processedCount: subtitles.length,
+          processedCount: cancelled ? processedCount : subtitles.length,
           totalCount: subtitles.length,
           completed: true,
         });
 
         logMessage(
-          `Batch optimization completed: ${results.filter((r) => r.status === 'success').length}/${subtitles.length} successful`,
+          `Batch optimization ${cancelled ? 'cancelled' : 'completed'}: ${results.filter((r) => r.status === 'success').length}/${subtitles.length} successful`,
           'info',
         );
 
         return {
           success: true,
+          cancelled,
           data: {
             results,
             summary: {
@@ -880,6 +915,8 @@ IMPORTANT: You MUST return a valid JSON object. Do NOT include any text before o
           success: false,
           error: error instanceof Error ? error.message : String(error),
         };
+      } finally {
+        if (batchId) batchAbortControllers.delete(batchId);
       }
     },
   );

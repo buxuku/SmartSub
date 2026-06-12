@@ -83,7 +83,10 @@ export default function BatchAiOptimizeDialog({
   const [totalBatches, setTotalBatches] = useState(0);
   const [processedCount, setProcessedCount] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [wasCancelled, setWasCancelled] = useState(false);
+  // 当前批量任务的取消句柄 id
+  const batchIdRef = useRef<string | null>(null);
 
   // 结果状态
   const [results, setResults] = useState<OptimizationResult[]>([]);
@@ -163,7 +166,8 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
       setResults([]);
       setSummary(null);
       setIsRunning(false);
-      setIsPaused(false);
+      setIsCancelling(false);
+      setWasCancelled(false);
     }
   }, [open, loadAiProviders, loadCachedPrompt]);
 
@@ -215,8 +219,14 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
 
     setStep('running');
     setIsRunning(true);
+    setIsCancelling(false);
+    setWasCancelled(false);
     setProgress(0);
     setProcessedCount(0);
+
+    // 生成取消句柄 id
+    const batchId = `batch-optimize-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    batchIdRef.current = batchId;
 
     try {
       // 保存自定义提示词
@@ -228,6 +238,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
         customPrompt: customPrompt.trim() || undefined,
         batchSize,
         maxRetries: 2,
+        batchId,
       });
 
       if (result.success && result.data) {
@@ -241,11 +252,25 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
 
         setResults(optimizationResults);
         setSummary(result.data.summary);
-        setStep('review');
-        toast.success(
-          t('batchOptimizeCompleted') ||
-            `优化完成：${result.data.summary.success}/${result.data.summary.total} 条成功`,
-        );
+        setWasCancelled(!!result.cancelled);
+
+        if (result.cancelled && optimizationResults.length === 0) {
+          // 取消且无任何完成结果：回到配置页
+          toast.info(t('batchOptimizeCancelled') || '已取消批量优化');
+          setStep('config');
+        } else {
+          setStep('review');
+          if (result.cancelled) {
+            toast.info(
+              t('batchOptimizeCancelledPartial') || '已取消，显示部分结果',
+            );
+          } else {
+            toast.success(
+              t('batchOptimizeCompleted') ||
+                `优化完成：${result.data.summary.success}/${result.data.summary.total} 条成功`,
+            );
+          }
+        }
       } else {
         toast.error(result.error || t('batchOptimizeFailed') || '批量优化失败');
         setStep('config');
@@ -256,6 +281,8 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
       setStep('config');
     } finally {
       setIsRunning(false);
+      setIsCancelling(false);
+      batchIdRef.current = null;
     }
   }, [
     subtitles,
@@ -266,6 +293,30 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
     savePromptToCache,
     t,
   ]);
+
+  // 取消批量优化（主进程在批次边界停止并返回部分结果）
+  const handleCancelOptimization = useCallback(async () => {
+    if (!batchIdRef.current || isCancelling) return;
+    setIsCancelling(true);
+    try {
+      await window.ipc.invoke('cancelProofreadBatch', {
+        batchId: batchIdRef.current,
+      });
+    } catch (error) {
+      console.error('Cancel batch optimization error:', error);
+    }
+  }, [isCancelling]);
+
+  // 运行中关闭弹窗：先发取消，避免主进程循环继续空跑
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen && isRunning) {
+        handleCancelOptimization();
+      }
+      onOpenChange(nextOpen);
+    },
+    [isRunning, handleCancelOptimization, onOpenChange],
+  );
 
   // 切换选中状态
   const toggleResultSelection = useCallback((id: string) => {
@@ -320,7 +371,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
   ).length;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -498,6 +549,14 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
               {/* 统计摘要 */}
               {summary && (
                 <div className="flex items-center gap-4 p-3 border rounded bg-muted/30 mb-4 flex-shrink-0">
+                  {wasCancelled && (
+                    <Badge
+                      variant="outline"
+                      className="text-xs border-amber-400 text-amber-600 dark:text-amber-400"
+                    >
+                      {t('batchOptimizeCancelledBadge') || '已取消 · 部分结果'}
+                    </Badge>
+                  )}
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 text-green-500" />
                     <span className="text-sm">
@@ -660,8 +719,15 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
           )}
 
           {step === 'running' && (
-            <Button variant="outline" disabled>
-              {t('processing') || '处理中...'}
+            <Button
+              variant="outline"
+              onClick={handleCancelOptimization}
+              disabled={isCancelling}
+            >
+              <XCircle className="h-4 w-4 mr-1" />
+              {isCancelling
+                ? t('cancelling') || '取消中...'
+                : t('cancel') || '取消'}
             </Button>
           )}
 
