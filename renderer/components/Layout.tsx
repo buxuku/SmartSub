@@ -15,14 +15,17 @@ import {
   Edit3,
   FileVideo2,
   Film,
+  Github,
   HelpCircle,
   Keyboard,
   Loader2,
+  MessageCircleQuestion,
   MonitorPlay,
   Package,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
+  ScrollText,
   Settings,
   X,
   Zap,
@@ -641,6 +644,7 @@ const Layout = ({ children }) => {
                     setShowOnboarding(true);
                   }}
                 >
+                  <Compass className="mr-2 h-4 w-4" />
                   {t('help.reopenOnboarding')}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setShowShortcuts(true)}>
@@ -648,10 +652,11 @@ const Layout = ({ children }) => {
                   {t('help.shortcuts')}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setShowFaq(true)}>
-                  <HelpCircle className="mr-2 h-4 w-4" />
+                  <MessageCircleQuestion className="mr-2 h-4 w-4" />
                   {t('help.faq')}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setShowLogs(true)}>
+                  <ScrollText className="mr-2 h-4 w-4" />
                   {t('viewLogs')}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={checkUpdatesManually}>
@@ -661,6 +666,7 @@ const Layout = ({ children }) => {
                 <DropdownMenuItem
                   onClick={() => openUrl('https://github.com/buxuku/SmartSub')}
                 >
+                  <Github className="mr-2 h-4 w-4" />
                   {t('help.github')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
