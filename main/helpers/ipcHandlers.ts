@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, dialog, shell } from 'electron';
+import { app, ipcMain, BrowserWindow, dialog, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createMessageSender } from './messageHandler';
@@ -166,9 +166,15 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     shell.openExternal(url);
   });
 
-  // 引导「试一试」示例音频的绝对路径(dev 与打包态由 getExtraResourcesPath 区分)
-  ipcMain.handle('getOnboardingSamplePath', () => {
-    return path.join(getExtraResourcesPath(), 'sample-onboarding.mp3');
+  // 引导「试一试」示例音频:复制到用户数据目录后返回——打包态 resources 目录只读,
+  // 转写输出会写在媒体文件同目录,必须给它一个可写的家
+  ipcMain.handle('getOnboardingSamplePath', async () => {
+    const bundled = path.join(getExtraResourcesPath(), 'sample-onboarding.mp3');
+    const sampleDir = path.join(app.getPath('userData'), 'sample');
+    await fs.promises.mkdir(sampleDir, { recursive: true });
+    const dest = path.join(sampleDir, 'sample-onboarding.mp3');
+    await fs.promises.copyFile(bundled, dest);
+    return dest;
   });
 
   ipcMain.handle('getDroppedFiles', async (event, { files, taskType }) => {
