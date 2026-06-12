@@ -1,6 +1,16 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { ArrowLeft, Check, Save, Loader2 } from 'lucide-react';
 
 // 复用原有的子组件和 hooks
@@ -66,6 +76,7 @@ export default function ProofreadEditor({
     isLoading,
     handleSubtitleChange,
     handleSave,
+    isDirty,
     getSubtitleStats,
     isTranslationFailed,
     getFailedTranslationIndices,
@@ -142,6 +153,35 @@ export default function ProofreadEditor({
     setTriggerSplit(false);
   }, []);
 
+  // 未保存修改守卫
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+
+  // 返回列表：有未保存修改时先拦截
+  const handleBackClick = useCallback(() => {
+    if (isDirty) {
+      setShowUnsavedDialog(true);
+      return;
+    }
+    onBack();
+  }, [isDirty, onBack]);
+
+  const handleSaveAndBack = useCallback(async () => {
+    const ok = await handleSave();
+    setShowUnsavedDialog(false);
+    if (ok) onBack();
+  }, [handleSave, onBack]);
+
+  const handleDiscardAndBack = useCallback(() => {
+    setShowUnsavedDialog(false);
+    onBack();
+  }, [onBack]);
+
+  // 标记完成隐含保存：保证完成态文件与界面一致；保存失败则留在编辑器
+  const handleMarkCompleteClick = useCallback(async () => {
+    const ok = await handleSave();
+    if (ok) onMarkComplete();
+  }, [handleSave, onMarkComplete]);
+
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -155,7 +195,7 @@ export default function ProofreadEditor({
       {/* 顶部工具栏 */}
       <div className="flex items-center justify-between px-4 py-3 border-b bg-background flex-shrink-0">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={onBack}>
+          <Button variant="ghost" size="sm" onClick={handleBackClick}>
             <ArrowLeft className="w-4 h-4 mr-1" />
             {t('backToList') || '返回列表'}
           </Button>
@@ -166,7 +206,7 @@ export default function ProofreadEditor({
             <Save className="w-4 h-4 mr-1" />
             {t('save') || '保存'}
           </Button>
-          <Button variant="default" size="sm" onClick={onMarkComplete}>
+          <Button variant="default" size="sm" onClick={handleMarkCompleteClick}>
             <Check className="w-4 h-4 mr-1" />
             {t('markCompleteAndBack') || '标记完成'}
           </Button>
@@ -254,6 +294,32 @@ export default function ProofreadEditor({
           onSplitClick={handleSplitClick}
         />
       </div>
+
+      {/* 未保存修改确认对话框 */}
+      <AlertDialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('unsavedChangesTitle') || '有未保存的修改'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('unsavedChangesDesc') ||
+                '当前字幕有未保存的修改，直接返回将丢失这些修改。'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              {t('keepEditing') || '继续编辑'}
+            </AlertDialogCancel>
+            <Button variant="outline" onClick={handleDiscardAndBack}>
+              {t('discardAndBack') || '不保存返回'}
+            </Button>
+            <AlertDialogAction onClick={handleSaveAndBack}>
+              {t('saveAndBack') || '保存并返回'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
