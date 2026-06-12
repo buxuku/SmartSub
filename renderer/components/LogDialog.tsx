@@ -95,7 +95,7 @@ export function LogDialog({ open, onOpenChange }) {
                         : 'text-muted-foreground'
                   }`}
                 >
-                  <span className="text-gray-500">
+                  <span className="text-muted-foreground">
                     {new Date(log?.timestamp).toLocaleString()}
                   </span>
                   {' - '}

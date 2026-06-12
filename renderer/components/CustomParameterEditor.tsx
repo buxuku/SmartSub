@@ -814,8 +814,8 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
                   {t('summary.saveStatus')}
                 </span>
                 {state.saveStatus === 'idle' && !state.hasUnsavedChanges && (
-                  <div className="flex items-center gap-1 text-gray-500">
-                    <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+                  <div className="flex items-center gap-1 text-muted-foreground">
+                    <div className="w-2 h-2 rounded-full bg-muted-foreground/60"></div>
                     <span className="text-sm">{t('status.upToDate')}</span>
                   </div>
                 )}

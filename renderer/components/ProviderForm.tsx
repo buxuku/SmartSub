@@ -349,7 +349,7 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
             {renderField(field)}
             {field.tips && (
               <p
-                className="text-xs text-gray-500"
+                className="text-xs text-muted-foreground"
                 dangerouslySetInnerHTML={{ __html: t(field.tips) }}
                 onClick={(e) => {
                   const target = e.target as HTMLElement;
@@ -398,7 +398,9 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
               </DialogContent>
             </Dialog>
           </div>
-          <p className="text-xs text-gray-500">{t('customParametersTip')}</p>
+          <p className="text-xs text-muted-foreground">
+            {t('customParametersTip')}
+          </p>
         </div>
       )}
     </div>

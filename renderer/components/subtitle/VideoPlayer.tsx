@@ -58,7 +58,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             }}
           />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-gray-500">
+          <div className="absolute inset-0 flex items-center justify-center text-zinc-400">
             {t('videoNotFound')}
           </div>
         )}

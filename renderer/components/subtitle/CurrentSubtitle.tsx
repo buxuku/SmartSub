@@ -32,14 +32,14 @@ const CurrentSubtitle: React.FC<CurrentSubtitleProps> = ({
     <div className="p-2 border rounded-md bg-muted/30 mb-2">
       <div className="flex justify-between items-center mb-1">
         <div className="text-sm">{t('currentSubtitle')}</div>
-        <div className="text-xs text-gray-500">
+        <div className="text-xs text-muted-foreground">
           {formatTime(currentTime)} / {formatTime(duration)}
         </div>
       </div>
 
       {currentSubtitle ? (
         <div>
-          <div className="text-xs text-gray-500 mb-1">
+          <div className="text-xs text-muted-foreground mb-1">
             {currentSubtitle.startEndTime}
           </div>
           {currentSubtitle.sourceContent && (
@@ -56,7 +56,7 @@ const CurrentSubtitle: React.FC<CurrentSubtitleProps> = ({
             )}
         </div>
       ) : (
-        <div className="text-sm text-gray-500 p-2">
+        <div className="text-sm text-muted-foreground p-2">
           {t('noCurrentSubtitle')}
         </div>
       )}

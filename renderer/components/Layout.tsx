@@ -358,7 +358,7 @@ const Layout = ({ children }) => {
               sidebarExpanded ? 'px-2' : 'justify-center',
             )}
           >
-            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border bg-card">
+            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <FileVideo2 className="size-5" />
             </span>
             {sidebarExpanded && (
@@ -423,7 +423,7 @@ const Layout = ({ children }) => {
         <header className="flex-shrink-0 z-10 flex h-[57px] items-center gap-1 border-b bg-background px-4 overflow-hidden">
           <h4 className="text-base font-semibold">
             {t('headerTitle')}{' '}
-            <span className="text-xs text-gray-500 ml-2">
+            <span className="text-xs text-muted-foreground ml-2">
               v{packageInfo.version}
               {updateAvailable && (
                 <TooltipProvider>
