@@ -273,5 +273,7 @@
   "optimizationsApplied": "Applied {{count}} optimizations",
   "fileRemoved": "File removed",
   "importReset": "Import reset",
-  "selectProviderFirst": "Please select a translation provider first"
+  "selectProviderFirst": "Please select a translation provider first",
+  "errorReadSubtitle": "Failed to read subtitle file: {{file}}",
+  "errorConvertToVTT": "Failed to convert subtitle to VTT: {{file}}"
 }

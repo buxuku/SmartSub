@@ -59,5 +59,7 @@
     "disabled": "不使用",
     "json_object": "JSON Object（标准 JSON 对象）",
     "json_schema": "JSON Schema（严格模式校验）"
-  }
+  },
+  "selectOption": "请选择",
+  "noMatchingModels": "没有匹配的模型"
 }

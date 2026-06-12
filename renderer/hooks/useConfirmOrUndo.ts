@@ -19,7 +19,7 @@ export function useConfirmOrUndo() {
     (message: string, undo: () => void) => {
       toast(message, {
         action: {
-          label: t('undo') || '撤销',
+          label: t('undo'),
           onClick: undo,
         },
         duration: 5000,

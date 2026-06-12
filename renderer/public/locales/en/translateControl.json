@@ -59,5 +59,7 @@
     "disabled": "Disabled",
     "json_object": "JSON Object",
     "json_schema": "JSON Schema"
-  }
+  },
+  "selectOption": "Select an option",
+  "noMatchingModels": "No matching models"
 }

@@ -225,7 +225,7 @@ export const useStandaloneSubtitles = (
       setIsDirty(false);
     } catch (error) {
       console.error('Error loading files:', error);
-      toast.error(t('loadFileFailed') || '加载文件失败');
+      toast.error(t('loadFileFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -354,16 +354,16 @@ export const useStandaloneSubtitles = (
       const failed = results.find((result) => result && result.error);
       if (failed) {
         console.error('Error saving subtitles:', failed.error);
-        toast.error(t('saveFailed') || '保存失败');
+        toast.error(t('saveFailed'));
         return false;
       }
 
       setIsDirty(false);
-      toast.success(t('subtitleSavedSuccess') || '字幕保存成功');
+      toast.success(t('subtitleSavedSuccess'));
       return true;
     } catch (error) {
       console.error('Error saving subtitles:', error);
-      toast.error(t('saveFailed') || '保存失败');
+      toast.error(t('saveFailed'));
       return false;
     }
   };
@@ -485,21 +485,21 @@ export const useStandaloneSubtitles = (
       if (!row) return null;
 
       if (!(startSec < endSec)) {
-        return t('timeEditInvalidRange') || '开始时间必须早于结束时间';
+        return t('timeEditInvalidRange');
       }
       const prevRow = current[index - 1];
       if (
         prevRow &&
         startSec < (prevRow.endTimeInSeconds ?? 0) - TIME_EPSILON
       ) {
-        return t('timeEditOverlapPrev') || '与上一条字幕时间重叠';
+        return t('timeEditOverlapPrev');
       }
       const nextRow = current[index + 1];
       if (
         nextRow &&
         endSec > (nextRow.startTimeInSeconds ?? 0) + TIME_EPSILON
       ) {
-        return t('timeEditOverlapNext') || '与下一条字幕时间重叠';
+        return t('timeEditOverlapNext');
       }
 
       // 无实际变化
@@ -570,7 +570,7 @@ export const useStandaloneSubtitles = (
       next.splice(startIndex, toMerge.length, merged);
       applySubtitles(renormalizeIds(next));
       setIsDirty(true);
-      toast.success(t('mergeSuccess') || '字幕已合并');
+      toast.success(t('mergeSuccess'));
     },
     [applySubtitles, flushPendingEdit, history.push, t],
   );
@@ -635,7 +635,7 @@ export const useStandaloneSubtitles = (
       next.splice(index, 1, sub1, sub2);
       applySubtitles(renormalizeIds(next));
       setIsDirty(true);
-      toast.success(t('splitSuccess') || '字幕已拆分');
+      toast.success(t('splitSuccess'));
     },
     [applySubtitles, flushPendingEdit, history.push, t],
   );

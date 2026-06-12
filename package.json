@@ -11,7 +11,8 @@
     "build": "nextron build --no-pack",
     "build:local": "nextron build",
     "postinstall": "electron-builder install-app-deps",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "check:i18n": "node scripts/check-i18n.mjs"
   },
   "dependencies": {
     "@alicloud/alimt20181012": "^1.3.0",

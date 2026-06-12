@@ -108,10 +108,7 @@ export function useRetranslateFailed({
       });
 
       if (!result?.success && result?.error === 'NO_DEFAULT_PROVIDER') {
-        toast.error(
-          t('retranslateNoProvider') ||
-            '未配置默认翻译服务，请先在任务页或资源中心选择',
-        );
+        toast.error(t('retranslateNoProvider'));
         return;
       }
 
@@ -122,7 +119,7 @@ export function useRetranslateFailed({
       }> = result?.data || [];
 
       if (!result?.success && results.length === 0) {
-        toast.error(result?.error || t('retranslateFailed') || '重翻失败');
+        toast.error(result?.error || t('retranslateFailed'));
         return;
       }
 
@@ -162,11 +159,11 @@ export function useRetranslateFailed({
             `重翻完成，已回填 ${applied} 条`,
         );
       } else {
-        toast.warning(t('retranslateNoResult') || '没有可回填的翻译结果');
+        toast.warning(t('retranslateNoResult'));
       }
     } catch (error) {
       console.error('Retranslate error:', error);
-      toast.error(t('retranslateFailed') || '重翻失败');
+      toast.error(t('retranslateFailed'));
     } finally {
       setRunning(false);
       setCancelling(false);
