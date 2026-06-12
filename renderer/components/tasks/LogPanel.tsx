@@ -10,23 +10,34 @@ type LogEntry = {
   type?: 'info' | 'error' | 'warning';
 };
 
-const LogPanel: React.FC<{ className?: string }> = ({ className }) => {
+const LogPanel: React.FC<{
+  className?: string;
+  /** 提供时只显示该工程的日志（系统/Updater 日志不再混入） */
+  projectId?: string | null;
+}> = ({ className, projectId }) => {
   const { t } = useTranslation('tasks');
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [expanded, setExpanded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    window?.ipc?.invoke('getLogs').then((initial: LogEntry[]) => {
-      setLogs(initial || []);
-    });
-    const unsubscribe = window?.ipc?.on('newLog', (log: LogEntry) => {
-      setLogs((prev) => [...prev, log]);
-    });
+    setLogs([]);
+    window?.ipc
+      ?.invoke('getLogs', projectId || undefined)
+      .then((initial: LogEntry[]) => {
+        setLogs(initial || []);
+      });
+    const unsubscribe = window?.ipc?.on(
+      'newLog',
+      (log: LogEntry & { projectId?: string }) => {
+        if (projectId && log?.projectId !== projectId) return;
+        setLogs((prev) => [...prev, log]);
+      },
+    );
     return () => {
       unsubscribe?.();
     };
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     if (expanded && scrollRef.current) {

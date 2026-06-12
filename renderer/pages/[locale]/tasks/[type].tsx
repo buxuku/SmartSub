@@ -76,18 +76,33 @@ export default function TaskPage() {
       setProviders(storedProviders || []);
       const settings = await window?.ipc?.invoke('getSettings');
       setUseLocalWhisper(settings?.useLocalWhisper || false);
-      const status = await window?.ipc?.invoke('getTaskStatus');
-      if (status) setTaskStatus(status);
     };
     load();
+  }, []);
 
-    const unsubComplete = window?.ipc?.on('taskComplete', (status: string) => {
-      setTaskStatus(status);
-    });
+  // 任务状态按工程获取与监听
+  useEffect(() => {
+    if (!projectId) return;
+    let disposed = false;
+    (async () => {
+      const status = await window?.ipc?.invoke('getTaskStatus', projectId);
+      if (!disposed && status) setTaskStatus(status);
+    })();
+    const unsubComplete = window?.ipc?.on(
+      'taskComplete',
+      (payload: { projectId?: string; status?: string } | string) => {
+        const status = typeof payload === 'string' ? payload : payload?.status;
+        const pid =
+          typeof payload === 'string' ? undefined : payload?.projectId;
+        if (pid && pid !== projectId) return;
+        if (status) setTaskStatus(status);
+      },
+    );
     return () => {
+      disposed = true;
       unsubComplete?.();
     };
-  }, []);
+  }, [projectId]);
 
   // 解析任务工程：带 ?project= 恢复既有工程，否则开新工程
   useEffect(() => {
@@ -169,18 +184,22 @@ export default function TaskPage() {
 
   const handleRetry = useCallback(
     (file: any) => {
-      window?.ipc?.send('handleTask', { files: [file], formData });
+      window?.ipc?.send('handleTask', { files: [file], formData, projectId });
       setTaskStatus('running');
     },
-    [formData],
+    [formData, projectId],
   );
 
   const handleRetryFailed = useCallback(
     (failedFiles: any[]) => {
-      window?.ipc?.send('handleTask', { files: failedFiles, formData });
+      window?.ipc?.send('handleTask', {
+        files: failedFiles,
+        formData,
+        projectId,
+      });
       setTaskStatus('running');
     },
-    [formData],
+    [formData, projectId],
   );
 
   const handleImport = () => {
@@ -452,12 +471,14 @@ export default function TaskPage() {
           <TaskControls
             formData={formData}
             files={files}
+            typeDef={typeDef}
+            projectId={projectId}
             onStatusChange={handleStatusChange}
           />
         </div>
       </div>
 
-      <LogPanel className="flex-shrink-0" />
+      <LogPanel className="flex-shrink-0" projectId={projectId} />
 
       <AdvancedSheet
         open={advancedOpen}

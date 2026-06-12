@@ -1,20 +1,28 @@
 import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
-import { isSubtitleFile, needsCoreML, cn } from 'lib/utils';
+import { cn } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
+import type { TaskTypeDef } from 'lib/taskTypes';
+import { getFileStages, isFileDone } from './tasks/stageUtils';
 
 interface TaskControlsProps {
   files: any[];
   formData: any;
+  typeDef: TaskTypeDef;
+  projectId: string | null;
   className?: string;
   /** 可选：状态变化时上抛（任务页用于联动重试按钮/完成横幅） */
   onStatusChange?: (status: string) => void;
 }
 
+type TaskCompletePayload = { projectId?: string; status?: string } | string;
+
 const TaskControls = ({
   files,
   formData,
+  typeDef,
+  projectId,
   className,
   onStatusChange,
 }: TaskControlsProps) => {
@@ -27,22 +35,32 @@ const TaskControls = ({
   };
 
   useEffect(() => {
-    // 获取当前任务状态
+    if (!projectId) return;
+    let disposed = false;
+    // 获取当前工程的任务状态
     const getCurrentTaskStatus = async () => {
-      const status = await window?.ipc?.invoke('getTaskStatus');
-      setTaskStatus(status);
+      const status = await window?.ipc?.invoke('getTaskStatus', projectId);
+      if (!disposed && status) setTaskStatus(status);
     };
     getCurrentTaskStatus();
 
-    // 监听任务状态变化
-    const cleanup = window?.ipc?.on('taskComplete', (status: string) => {
-      setTaskStatus(status);
-    });
+    // 监听本工程的任务完成事件
+    const cleanup = window?.ipc?.on(
+      'taskComplete',
+      (payload: TaskCompletePayload) => {
+        const status = typeof payload === 'string' ? payload : payload?.status;
+        const pid =
+          typeof payload === 'string' ? undefined : payload?.projectId;
+        if (pid && pid !== projectId) return;
+        if (status) setTaskStatus(status);
+      },
+    );
 
     return () => {
+      disposed = true;
       cleanup?.();
     };
-  }, []);
+  }, [projectId]);
 
   const handleTask = async () => {
     if (!files?.length) {
@@ -51,61 +69,67 @@ const TaskControls = ({
       });
       return;
     }
-    const isAllFilesProcessed = files.every((item) => {
-      const basicProcessingDone = item.extractAudio && item.extractSubtitle;
-
-      if (formData.translateProvider === '-1') {
-        return basicProcessingDone;
-      }
-      if (isSubtitleFile(item?.filePath)) {
-        return item.translateSubtitle;
-      }
-
-      return basicProcessingDone && item.translateSubtitle;
-    });
-
-    if (isAllFilesProcessed) {
+    // 只派发未完成的文件（error 不算完成，可重跑；已完成文件不重做）
+    const pendingFiles = files.filter(
+      (file) => !isFileDone(file, getFileStages(file, typeDef, formData)),
+    );
+    if (!pendingFiles.length) {
       toast(t('common:notification'), {
         description: t('home:allFilesProcessed'),
       });
       return;
     }
-    // if(formData.model && needsCoreML(formData.model)){
-    //   const checkMlmodel = await window.ipc.invoke('checkMlmodel', formData.model);
-    //   if(!checkMlmodel){
-    //     toast(t('common:notification'), {
-    //       description: t('home:missingEncoderMlmodelc'),
-    //     });
-    //     return;
-    //   }
-    // }
     setTaskStatus('running');
-    window?.ipc?.send('handleTask', { files, formData });
+    window?.ipc?.send('handleTask', {
+      files: pendingFiles,
+      formData,
+      projectId,
+    });
   };
   const handlePause = () => {
-    window?.ipc?.send('pauseTask', null);
+    window?.ipc?.send('pauseTask', projectId);
     setTaskStatus('paused');
   };
 
   const handleResume = () => {
-    window?.ipc?.send('resumeTask', null);
+    window?.ipc?.send('resumeTask', projectId);
     setTaskStatus('running');
   };
 
   const handleCancel = () => {
-    window?.ipc?.send('cancelTask', null);
-    setTaskStatus('cancelled');
+    window?.ipc?.send('cancelTask', projectId);
+    setTaskStatus('cancelling');
   };
+
+  const showStart =
+    taskStatus === 'idle' ||
+    taskStatus === 'completed' ||
+    taskStatus === 'cancelled';
+
   return (
-    <div className={cn('flex gap-2 ml-auto', className)}>
-      {(taskStatus === 'idle' || taskStatus === 'completed') && (
+    <div className={cn('flex items-center gap-2 ml-auto', className)}>
+      {taskStatus === 'paused' && (
+        <span className="text-xs text-muted-foreground">
+          {t('home:pausedHint')}
+        </span>
+      )}
+      {taskStatus === 'cancelling' && (
+        <span className="text-xs text-muted-foreground">
+          {t('home:cancellingHint')}
+        </span>
+      )}
+      {showStart && (
         <Button onClick={handleTask} disabled={!files.length}>
-          {t('home:startTask')}
+          {taskStatus === 'cancelled'
+            ? t('home:restartTask')
+            : t('home:startTask')}
         </Button>
       )}
       {taskStatus === 'running' && (
         <>
-          <Button onClick={handlePause}>{t('home:pauseTask')}</Button>
+          <Button onClick={handlePause} title={t('home:pauseTip')}>
+            {t('home:pauseTask')}
+          </Button>
           <Button onClick={handleCancel}>{t('home:cancelTask')}</Button>
         </>
       )}
@@ -115,10 +139,8 @@ const TaskControls = ({
           <Button onClick={handleCancel}>{t('home:cancelTask')}</Button>
         </>
       )}
-      {taskStatus === 'cancelled' && (
-        <Button onClick={handleTask} disabled={!files.length}>
-          {t('home:restartTask')}
-        </Button>
+      {taskStatus === 'cancelling' && (
+        <Button disabled>{t('home:cancelling')}</Button>
       )}
     </div>
   );

@@ -48,7 +48,7 @@
     "dismiss": "Dismiss"
   },
   "logs": {
-    "title": "Activity log",
+    "title": "Activity log (this task)",
     "clear": "Clear",
     "empty": "No logs yet"
   },
