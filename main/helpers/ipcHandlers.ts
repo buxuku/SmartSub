@@ -282,6 +282,17 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
               );
             })
             .join('');
+        // 覆盖前滚动备份一份 .bak（失败不阻断保存）
+        try {
+          if (fs.existsSync(filePath)) {
+            await fs.promises.copyFile(filePath, `${filePath}.bak`);
+          }
+        } catch (backupError) {
+          logMessage(
+            `备份字幕文件失败（继续保存）: ${backupError.message}`,
+            'warning',
+          );
+        }
         await fs.promises.writeFile(filePath, content, 'utf-8');
         logMessage(`保存字幕文件成功: ${filePath}`, 'info');
         return { success: true };
