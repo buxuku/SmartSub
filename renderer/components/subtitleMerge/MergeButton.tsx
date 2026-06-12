@@ -25,8 +25,10 @@ interface MergeButtonProps {
   progress: MergeProgress;
   status: MergeStatus;
   canMerge: boolean;
+  isCancelling?: boolean;
   onSelectOutputPath: () => void;
   onStartMerge: () => void;
+  onCancelMerge?: () => void;
   onOpenOutputFolder: () => void;
 }
 
@@ -37,8 +39,10 @@ export default function MergeButton({
   progress,
   status,
   canMerge,
+  isCancelling = false,
   onSelectOutputPath,
   onStartMerge,
+  onCancelMerge,
   onOpenOutputFolder,
 }: MergeButtonProps) {
   const { t } = useTranslation('subtitleMerge');
@@ -69,7 +73,25 @@ export default function MergeButton({
             <span className="text-muted-foreground">
               {t('processing') || '处理中...'}
             </span>
-            <span className="font-medium">{Math.round(progress.percent)}%</span>
+            <div className="flex items-center gap-2">
+              <span className="font-medium">
+                {Math.round(progress.percent)}%
+              </span>
+              {onCancelMerge && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={onCancelMerge}
+                  disabled={isCancelling}
+                >
+                  <XCircle className="w-3 h-3 mr-1" />
+                  {isCancelling
+                    ? t('cancelling') || '取消中...'
+                    : t('cancel') || '取消'}
+                </Button>
+              )}
+            </div>
           </div>
           <Progress value={progress.percent} className="h-2" />
           {progress.timeMark && (

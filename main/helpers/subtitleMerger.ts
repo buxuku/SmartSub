@@ -22,6 +22,27 @@ import type {
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
 ffmpeg.setFfmpegPath(ffmpegPath);
 
+/** 取消哨兵：渲染层据此把取消与真实错误区分开 */
+export const MERGE_CANCELLED = 'MERGE_CANCELLED';
+
+// 合成同时只有一个（UI 在处理中禁用入口），单例引用即可
+let currentMergeCommand: ReturnType<typeof ffmpeg> | null = null;
+let mergeCancelled = false;
+
+/** 取消当前合成：kill ffmpeg；error 回调里完成半成品清理 */
+export function cancelCurrentMerge(): boolean {
+  if (!currentMergeCommand) return false;
+  mergeCancelled = true;
+  try {
+    currentMergeCommand.kill('SIGKILL');
+    logMessage('字幕合成已被用户取消', 'warning');
+    return true;
+  } catch (error) {
+    logMessage(`取消合成失败: ${error}`, 'warning');
+    return false;
+  }
+}
+
 /**
  * 将前端 numpad 风格的 Alignment 转换为 ASS/SSA 格式
  *
@@ -279,7 +300,20 @@ export async function mergeSubtitleToVideo(
       status: 'processing',
     });
 
-    ffmpeg(videoPath)
+    // 取消后删除写了一半的输出文件，不留半成品
+    const cleanupPartialOutput = () => {
+      try {
+        if (fs.existsSync(outputPath)) {
+          fs.unlinkSync(outputPath);
+          logMessage(`已删除未完成的输出文件: ${outputPath}`, 'info');
+        }
+      } catch (cleanupErr) {
+        logMessage(`删除未完成输出文件失败: ${cleanupErr}`, 'warning');
+      }
+    };
+
+    mergeCancelled = false;
+    const command = ffmpeg(videoPath)
       .videoFilters(subtitlesFilter)
       .outputOptions([
         '-c:a',
@@ -312,6 +346,7 @@ export async function mergeSubtitleToVideo(
         });
       })
       .on('end', () => {
+        currentMergeCommand = null;
         // 清理临时文件
         if (tmpSubPath) {
           cleanupTempSubtitle(tmpSubPath);
@@ -326,9 +361,24 @@ export async function mergeSubtitleToVideo(
         resolve(outputPath);
       })
       .on('error', (err) => {
+        currentMergeCommand = null;
         // 清理临时文件
         if (tmpSubPath) {
           cleanupTempSubtitle(tmpSubPath);
+        }
+        // 用户取消：清理半成品、静默复位（不发 error 进度，不算失败）
+        if (mergeCancelled) {
+          mergeCancelled = false;
+          cleanupPartialOutput();
+          logMessage('字幕合并已取消', 'warning');
+          onProgress?.({
+            percent: 0,
+            timeMark: '',
+            targetSize: 0,
+            status: 'idle',
+          });
+          reject(new Error(MERGE_CANCELLED));
+          return;
         }
         logMessage(`字幕合并失败: ${err.message}`, 'error');
         onProgress?.({
@@ -339,8 +389,10 @@ export async function mergeSubtitleToVideo(
           errorMessage: err.message,
         });
         reject(err);
-      })
-      .save(outputPath);
+      });
+
+    currentMergeCommand = command;
+    command.save(outputPath);
   });
 }
 

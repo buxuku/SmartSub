@@ -142,4 +142,6 @@ export interface SubtitleMergeResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
+  /** 操作被用户取消（不算失败） */
+  cancelled?: boolean;
 }

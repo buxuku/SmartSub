@@ -56,6 +56,8 @@ export interface UseSubtitleMergeReturn {
 
   // 合并操作方法
   startMerge: () => Promise<void>;
+  cancelMerge: () => Promise<void>;
+  isCancelling: boolean;
   canMerge: boolean;
 
   // 其他方法
@@ -123,6 +125,7 @@ export function useSubtitleMerge(
     targetSize: 0,
     status: 'idle',
   });
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // 引用
   const isMountedRef = useRef(true);
@@ -359,7 +362,15 @@ export function useSubtitleMerge(
         config,
       );
 
-      if (result.success) {
+      if (result.success && result.cancelled) {
+        // 用户取消：静默复位，不算失败
+        setProgress({
+          percent: 0,
+          timeMark: '',
+          targetSize: 0,
+          status: 'idle',
+        });
+      } else if (result.success) {
         // 合并成功
         setProgress({
           percent: 100,
@@ -389,8 +400,23 @@ export function useSubtitleMerge(
         errorMessage,
       });
       onError?.(errorMessage);
+    } finally {
+      setIsCancelling(false);
     }
   }, [videoPath, subtitlePath, outputPath, style, onComplete, onError]);
+
+  // 取消合成
+  const cancelMerge = useCallback(async () => {
+    if (progress.status !== 'processing' || isCancelling) return;
+    setIsCancelling(true);
+    try {
+      await window.ipc.invoke('subtitleMerge:cancelMerge');
+      // 复位由 startMerge 的 cancelled 分支完成
+    } catch (error) {
+      console.error('取消合成失败:', error);
+      setIsCancelling(false);
+    }
+  }, [progress.status, isCancelling]);
 
   // 打开输出文件夹
   const openOutputFolder = useCallback(async () => {
@@ -448,6 +474,8 @@ export function useSubtitleMerge(
 
     // 合并操作方法
     startMerge,
+    cancelMerge,
+    isCancelling,
     canMerge,
 
     // 其他方法

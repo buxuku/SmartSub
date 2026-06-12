@@ -73,6 +73,8 @@ export default function SubtitleMergePanel({
 
     // 合并操作方法
     startMerge,
+    cancelMerge,
+    isCancelling,
     canMerge,
 
     // 其他方法
@@ -173,8 +175,10 @@ export default function SubtitleMergePanel({
                 progress={progress}
                 status={status}
                 canMerge={canMerge}
+                isCancelling={isCancelling}
                 onSelectOutputPath={selectOutputPath}
                 onStartMerge={startMerge}
+                onCancelMerge={cancelMerge}
                 onOpenOutputFolder={openOutputFolder}
               />
             </CardContent>
