@@ -40,8 +40,9 @@ function parseReleaseNotes(html: string): string {
 }
 
 // 平台判断：preload 注入的 process.platform，避免 userAgent 嗅探
+// typeof 守卫：SSR 阶段 window 标识符不存在，可选链救不了 ReferenceError
 function isMacPlatform(): boolean {
-  return window?.ipc?.platform === 'darwin';
+  return typeof window !== 'undefined' && window.ipc?.platform === 'darwin';
 }
 
 export function UpdateDialog({
