@@ -198,7 +198,14 @@
     "accelDescVulkan": "通用 GPU 加速（Vulkan）已开启",
     "accelDescAvailable": "您的设备支持 GPU（显卡）加速，开启后转写速度可提升数倍",
     "goEnable": "去开启",
-    "enabled": "已开启"
+    "enabled": "已开启",
+    "step4Title": "试一试",
+    "step4Desc": "用内置的 10 秒示例音频，完整体验一次「音频 → 字幕」。",
+    "sampleExplain": "点击下方按钮，会用一段内置英文示例音频创建任务并自动开始转写。十几秒后你就能看到第一份字幕；如果已配置翻译服务，还会自动翻译成双语。",
+    "sampleRun": "运行示例任务",
+    "sampleRunning": "正在准备…",
+    "sampleNeedsModel": "需要先在第 2 步下载语音模型",
+    "sampleProjectName": "示例 · 第一个字幕"
   },
   "undo": "撤销",
   "checkingForUpdates": "正在检查更新…",

@@ -18,6 +18,7 @@ import {
   cn,
   type ModelInfo,
 } from 'lib/utils';
+import { isProviderConfigured } from 'lib/providerUtils';
 import {
   ArrowRight,
   Bot,
@@ -25,6 +26,8 @@ import {
   Clapperboard,
   FileText,
   Languages,
+  Loader2,
+  PlayCircle,
   Zap,
 } from 'lucide-react';
 import { useTranslation } from 'next-i18next';
@@ -103,6 +106,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
     DownSource.HuggingFace,
     (val) => Object.values(DownSource).includes(val as DownSource),
   );
+  const [sampleLoading, setSampleLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -168,6 +172,58 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
     onPause?.(step);
     onOpenChange(false);
     router.push(url);
+  };
+
+  /**
+   * 一键示例任务：固定 id，存在即删除重建——示例音频仅 10s，
+   * 重建保证每次都是干净的演示，语义最简单。
+   */
+  const SAMPLE_PROJECT_ID = 'sample-onboarding';
+  const runSample = async () => {
+    setSampleLoading(true);
+    try {
+      const samplePath = await window?.ipc?.invoke(
+        'getOnboardingSamplePath',
+        null,
+      );
+      const providers = await window?.ipc?.invoke('getTranslationProviders');
+      const hasProvider = (providers || []).some((p: any) =>
+        isProviderConfigured(p),
+      );
+      // 已配翻译服务 → 完整链路；未配 → 纯转写，零配置可跑
+      const taskType = hasProvider ? 'generateAndTranslate' : 'generateOnly';
+      const slug = hasProvider ? 'generate-translate' : 'generate';
+
+      const existing = await window?.ipc?.invoke(
+        'getTaskProject',
+        SAMPLE_PROJECT_ID,
+      );
+      if (existing) {
+        await window?.ipc?.invoke('deleteTaskProject', SAMPLE_PROJECT_ID);
+      }
+      const dropped = await window?.ipc?.invoke('getDroppedFiles', {
+        files: [samplePath],
+        taskType: 'media',
+      });
+      if (!dropped?.length) {
+        throw new Error('sample audio missing');
+      }
+      await window?.ipc?.invoke('saveTaskProject', {
+        id: SAMPLE_PROJECT_ID,
+        taskType,
+        files: dropped,
+        name: t('onboarding.sampleProjectName'),
+      });
+      markCompleted();
+      onOpenChange(false);
+      router.push(
+        `/${locale}/tasks/${slug}?project=${SAMPLE_PROJECT_ID}&autostart=1`,
+      );
+    } catch (error) {
+      console.error('Failed to run sample task:', error);
+    } finally {
+      setSampleLoading(false);
+    }
   };
 
   const choices = [
@@ -324,6 +380,39 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
               >
                 {t('onboarding.goEnable')}
               </Button>
+            )}
+          </div>
+        </div>
+      ),
+    },
+    {
+      title: t('onboarding.step4Title'),
+      desc: t('onboarding.step4Desc'),
+      body: (
+        <div className="space-y-3 py-2">
+          <div className="rounded-lg border bg-muted/30 px-3 py-3 text-sm text-muted-foreground leading-relaxed">
+            {t('onboarding.sampleExplain')}
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={runSample}
+              disabled={
+                sampleLoading || (installedCount === 0 && !downloadDone)
+              }
+            >
+              {sampleLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <PlayCircle className="mr-2 h-4 w-4" />
+              )}
+              {sampleLoading
+                ? t('onboarding.sampleRunning')
+                : t('onboarding.sampleRun')}
+            </Button>
+            {installedCount === 0 && !downloadDone && (
+              <span className="text-xs text-muted-foreground">
+                {t('onboarding.sampleNeedsModel')}
+              </span>
             )}
           </div>
         </div>

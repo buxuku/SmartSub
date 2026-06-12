@@ -198,7 +198,14 @@
     "accelDescVulkan": "Universal GPU acceleration (Vulkan) is on",
     "accelDescAvailable": "Your device supports GPU acceleration — several times faster transcription once enabled",
     "goEnable": "Enable",
-    "enabled": "Enabled"
+    "enabled": "Enabled",
+    "step4Title": "Try it out",
+    "step4Desc": "Run the bundled 10-second sample audio through the full audio-to-subtitle flow.",
+    "sampleExplain": "Click the button below to create a task from a bundled English sample audio and start transcribing automatically. You'll see your first subtitle in seconds; if a translation provider is configured, it will be translated too.",
+    "sampleRun": "Run sample task",
+    "sampleRunning": "Preparing…",
+    "sampleNeedsModel": "Download a speech model in step 2 first",
+    "sampleProjectName": "Sample · First subtitle"
   },
   "undo": "Undo",
   "checkingForUpdates": "Checking for updates…",
