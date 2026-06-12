@@ -110,7 +110,11 @@ export function LogDialog({ open, onOpenChange }) {
             <Copy className="h-4 w-4 mr-2" />
             {t('copyLogs')}
           </Button>
-          <Button variant="destructive" onClick={handleClearLogs}>
+          <Button
+            variant="outline"
+            className="text-muted-foreground hover:text-destructive"
+            onClick={handleClearLogs}
+          >
             <Trash2 className="h-4 w-4 mr-2" />
             {t('clearLogs')}
           </Button>

@@ -37,7 +37,10 @@ const DeleteModel = ({ children, modelName, callBack }) => {
           <AlertDialogCancel onClick={() => setVisibility(false)}>
             {t('cancel')}
           </AlertDialogCancel>
-          <AlertDialogAction onClick={handleDelete}>
+          <AlertDialogAction
+            onClick={handleDelete}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
             {t('delete')}
           </AlertDialogAction>
         </AlertDialogFooter>

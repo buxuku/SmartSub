@@ -277,7 +277,11 @@ function ModelRow({
         </TooltipProvider>
         {isInstalled && !isDownloading ? (
           <DeleteModel modelName={model.name} callBack={onUpdate}>
-            <Button variant="destructive" size="sm" className="h-7 text-xs">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground hover:text-destructive"
+            >
               {t('delete')}
             </Button>
           </DeleteModel>
