@@ -87,8 +87,10 @@ export function setupStoreHandlers() {
     },
   );
 
-  ipcMain.handle('getLogs', async () => {
-    return store.get('logs');
+  ipcMain.handle('getLogs', async (event, projectId?: string) => {
+    const logs = store.get('logs') || [];
+    if (!projectId) return logs;
+    return logs.filter((log) => log.projectId === projectId);
   });
 
   ipcMain.handle('clearLogs', async () => {

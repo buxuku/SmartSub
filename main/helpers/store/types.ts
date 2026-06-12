@@ -11,6 +11,8 @@ export type LogEntry = {
   timestamp: number;
   message: string;
   type?: 'info' | 'error' | 'warning';
+  /** 任务工程日志归属；系统日志（updater 等）无此字段 */
+  projectId?: string;
 };
 
 export type StoreType = {
