@@ -24,6 +24,11 @@ import {
   Download,
   Upload,
   Wrench,
+  Info,
+  RefreshCw,
+  Github,
+  MessageSquareWarning,
+  ScrollText,
 } from 'lucide-react';
 import {
   Collapsible,
@@ -58,6 +63,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import PageHeader from '@/components/PageHeader';
+import { openUrl } from 'lib/utils';
+import packageInfo from '../../../package.json';
 
 // 新增一个 CommandInput 组件
 const CommandInput = ({
@@ -111,7 +118,6 @@ const Settings = () => {
   const [currentLanguage, setCurrentLanguage] = useState(router.locale);
   const [useLocalWhisper, setUseLocalWhisper] = useState(false);
   const [whisperCommand, setWhisperCommand] = useState('');
-  const [modelsPath, setModelsPath] = useState('');
   const [tempDir, setTempDir] = useState('');
   const [customTempDir, setCustomTempDir] = useState('');
   const [useCustomTempDir, setUseCustomTempDir] = useState(false);
@@ -138,7 +144,6 @@ const Settings = () => {
         setCurrentLanguage(settings.language || router.locale);
         setUseLocalWhisper(settings.useLocalWhisper || false);
         setWhisperCommand(settings.whisperCommand || '');
-        setModelsPath(settings.modelsPath || '');
         setUseCustomTempDir(settings.useCustomTempDir || false);
         setCustomTempDir(settings.customTempDir || '');
         setCheckUpdateOnStartup(settings.checkUpdateOnStartup !== false);
@@ -185,21 +190,6 @@ const Settings = () => {
       whisperCommand: whisperCommand,
     });
     setUseLocalWhisper(checked);
-  };
-
-  const handleSelectModelsPath = async () => {
-    const result = await window?.ipc?.invoke('selectDirectory');
-    if (result.canceled) return;
-
-    const selectedPath = result.directoryPath;
-    setModelsPath(selectedPath);
-
-    try {
-      await window?.ipc?.invoke('setSettings', { modelsPath: selectedPath });
-      toast.success(t('modelPathSaved'));
-    } catch (error) {
-      toast.error(t('saveFailed'));
-    }
   };
 
   // 选择自定义临时目录
@@ -446,7 +436,7 @@ const Settings = () => {
             />
           </div>
 
-          <div className="space-y-2">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span>{t('modelsPath')}</span>
               <TooltipProvider>
@@ -455,26 +445,20 @@ const Settings = () => {
                     <HelpCircle className="h-4 w-4 text-muted-foreground" />
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>{t('modelsPathTip')}</p>
+                    <p>{t('modelsPathMoved')}</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
-            <div className="flex gap-2">
-              <Input
-                value={modelsPath}
-                readOnly
-                className="font-mono text-sm flex-1"
-                placeholder={t('modelsPathPlaceholder')}
-              />
-              <Button
-                onClick={handleSelectModelsPath}
-                size="sm"
-                className="flex-shrink-0"
-              >
-                {t('selectPath')}
-              </Button>
-            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                router.push(`/${i18n.language}/resources?tab=models`)
+              }
+            >
+              {t('goToResources')}
+            </Button>
           </div>
 
           <div className="space-y-2">
@@ -536,24 +520,6 @@ const Settings = () => {
               )}
             </div>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* GPU 加速已迁移至资源中心（过渡期引导，一个版本后可移除） */}
-      <Card>
-        <CardContent className="flex items-center justify-between py-4">
-          <span className="text-sm text-muted-foreground">
-            {t('gpuMovedToResources')}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              router.push(`/${i18n.language}/resources?tab=acceleration`)
-            }
-          >
-            {t('goToResources')}
-          </Button>
         </CardContent>
       </Card>
 
@@ -929,6 +895,68 @@ const Settings = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Info className="mr-2" />
+            {t('about')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-medium">{t('common:headerTitle')}</div>
+              <div className="text-sm text-muted-foreground">
+                v{packageInfo.version}
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent('app-check-updates'))
+              }
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              {t('common:help.checkUpdates')}
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-2 pt-2 border-t">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => openUrl('https://github.com/buxuku/SmartSub')}
+            >
+              <Github className="mr-2 h-4 w-4" />
+              {t('common:help.github')}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() =>
+                openUrl('https://github.com/buxuku/SmartSub/issues')
+              }
+            >
+              <MessageSquareWarning className="mr-2 h-4 w-4" />
+              {t('common:help.reportIssue')}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent('app-open-logs'))
+              }
+            >
+              <ScrollText className="mr-2 h-4 w-4" />
+              {t('common:viewLogs')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="border-destructive">
         <CardHeader>

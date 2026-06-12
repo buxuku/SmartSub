@@ -1,6 +1,5 @@
 {
   "settings": "设置",
-  "gpuMovedToResources": "GPU 加速设置已迁移至「资源中心 → 加速」",
   "goToResources": "前往资源中心",
   "selectLanguage": "选择语言",
   "chinese": "中文",
@@ -24,10 +23,7 @@
   "batchSize": "批量翻译条数",
   "batchSizeTip": "受不同模型的 token 限制，您可以控制对全文进行拆分，控制每次最多翻译多少条字幕",
   "modelsPath": "模型存储路径",
-  "modelsPathTip": "Whisper 模型文件的存储目录",
-  "modelsPathPlaceholder": "选择模型存储路径",
   "selectPath": "浏览",
-  "modelPathSaved": "模型路径保存成功",
   "saveFailed": "设置保存失败",
   "tempDir": "临时文件目录",
   "tempDirTip": "处理过程中临时音频文件的存储目录",
@@ -176,5 +172,7 @@
   "cancel": "取消",
   "delete": "删除",
   "advancedSettingsDesc": "极客选项：本地 whisper 命令与 VAD 细节参数，默认值即最佳实践",
-  "settingsDesc": "语言、更新与高级选项"
+  "settingsDesc": "语言、更新与高级选项",
+  "about": "关于",
+  "modelsPathMoved": "模型存储路径已移至资源中心管理"
 }

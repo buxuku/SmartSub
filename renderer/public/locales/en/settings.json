@@ -1,6 +1,5 @@
 {
   "settings": "Settings",
-  "gpuMovedToResources": "GPU acceleration settings have moved to Resources → Acceleration",
   "goToResources": "Open Resources",
   "selectLanguage": "Select language",
   "chinese": "Chinese",
@@ -24,10 +23,7 @@
   "batchSize": "Batch Translation Size",
   "batchSizeTip": "Due to token limits of different models, you can control how many subtitles to translate at once by splitting the full text. This controls the maximum number of subtitles per translation batch.",
   "modelsPath": "Models Path",
-  "modelsPathTip": "The directory where Whisper models will be stored",
-  "modelsPathPlaceholder": "Select models storage path",
   "selectPath": "Browse",
-  "modelPathSaved": "Models path saved successfully",
   "saveFailed": "Failed to save settings",
   "tempDir": "Temporary Directory",
   "tempDirTip": "The directory where temporary audio files are stored during processing",
@@ -176,5 +172,7 @@
   "cancel": "Cancel",
   "delete": "Delete",
   "advancedSettingsDesc": "Geek options: local whisper command and VAD fine-tuning — defaults are best practice",
-  "settingsDesc": "Language, updates and advanced options"
+  "settingsDesc": "Language, updates and advanced options",
+  "about": "About",
+  "modelsPathMoved": "Model storage path is now managed in the Resource Hub"
 }
