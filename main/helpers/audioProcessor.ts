@@ -77,6 +77,10 @@ export const extractAudio = (
         })
         .on('codecData', function (data) {
           totalDurationSec = timemarkToSeconds(data?.duration);
+          // 顺手记录媒体时长，随后续 taskFileChange 持久化供行内元信息展示
+          if (file && totalDurationSec > 0) {
+            file.duration = totalDurationSec;
+          }
         })
         .on('progress', function (progress) {
           let percent = progress.percent;

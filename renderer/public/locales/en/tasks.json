@@ -64,5 +64,9 @@
   "import": "Import",
   "clearList": "Clear list",
   "taskCount": "{{count}} tasks",
-  "listCleared": "File list cleared"
+  "listCleared": "File list cleared",
+  "meta": {
+    "etaMin": "~{{min}} min left",
+    "etaLessMin": "Almost done"
+  }
 }

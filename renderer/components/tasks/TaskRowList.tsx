@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   CheckCircle2,
   ChevronRight,
@@ -40,6 +40,28 @@ interface TaskRowListProps {
   onProofread: (file: any) => void;
   onDelete: (uuid: string) => void;
   onRetry: (file: any) => void;
+}
+
+function formatBytes(bytes?: number): string {
+  if (!bytes || bytes <= 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+}
+
+function formatMediaDuration(sec?: number): string {
+  if (!sec || sec <= 0) return '';
+  const total = Math.round(sec);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
 function StageChips({
@@ -105,6 +127,39 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
     taskStatus === 'paused' ||
     taskStatus === 'cancelling';
 
+  // 单文件 ETA：记录当前 loading 阶段首次观察到的时间与进度，按速率粗估剩余
+  const etaRef = useRef<
+    Record<string, { stage: string; t0: number; p0: number }>
+  >({});
+
+  const getEtaMinutes = (file: any, stages: StageDef[]): number | null => {
+    const uuid = file?.uuid;
+    if (!uuid) return null;
+    const loadingStage = stages.find(
+      (s) => getStageStatus(file, s.key) === 'loading',
+    );
+    if (!loadingStage) {
+      delete etaRef.current[uuid];
+      return null;
+    }
+    const percent = Number(file?.[`${loadingStage.key}Progress`] || 0);
+    const rec = etaRef.current[uuid];
+    if (!rec || rec.stage !== loadingStage.key || percent < rec.p0) {
+      etaRef.current[uuid] = {
+        stage: loadingStage.key,
+        t0: Date.now(),
+        p0: percent,
+      };
+      return null;
+    }
+    const dp = percent - rec.p0;
+    // 至少观察到 5 个百分点的推进才给估算，避免初期乱跳
+    if (dp < 5 || percent >= 100) return null;
+    const elapsed = Date.now() - rec.t0;
+    if (elapsed <= 0) return null;
+    return ((elapsed / dp) * (100 - percent)) / 60000;
+  };
+
   const handleImport = () => {
     const fileType = typeDef.accepts === 'subtitle' ? 'srt' : 'media';
     window?.ipc?.send('openDialog', { dialogType: 'openDialog', fileType });
@@ -153,6 +208,13 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
         const cancelling =
           taskStatus === 'cancelling' &&
           stages.some((s) => getStageStatus(file, s.key) === 'loading');
+        const meta = [
+          formatBytes(file?.fileSize),
+          formatMediaDuration(file?.duration),
+        ]
+          .filter(Boolean)
+          .join(' · ');
+        const etaMinutes = getEtaMinutes(file, stages);
 
         return (
           <div
@@ -186,6 +248,11 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
+                {meta && (
+                  <span className="hidden md:inline text-[11px] text-muted-foreground whitespace-nowrap flex-shrink-0">
+                    {meta}
+                  </span>
+                )}
               </div>
 
               <StageChips file={file} stages={stages} t={t} />
@@ -196,6 +263,13 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                   {started ? `${percent}%` : '--'}
                 </span>
               </div>
+              {etaMinutes != null && (
+                <span className="text-[11px] text-muted-foreground whitespace-nowrap flex-shrink-0">
+                  {etaMinutes < 1
+                    ? t('meta.etaLessMin')
+                    : t('meta.etaMin', { min: Math.ceil(etaMinutes) })}
+                </span>
+              )}
 
               <div className="flex items-center gap-1 flex-shrink-0">
                 {failed && (

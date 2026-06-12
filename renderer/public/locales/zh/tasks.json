@@ -64,5 +64,9 @@
   "import": "导入",
   "clearList": "清空列表",
   "taskCount": "{{count}} 个任务",
-  "listCleared": "已清空文件列表"
+  "listCleared": "已清空文件列表",
+  "meta": {
+    "etaMin": "剩约 {{min}} 分",
+    "etaLessMin": "即将完成"
+  }
 }
