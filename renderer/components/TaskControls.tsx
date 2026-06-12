@@ -30,6 +30,8 @@ const TaskControls = ({
   autoStart,
 }: TaskControlsProps) => {
   const [taskStatus, setTaskStatusState] = useState('idle');
+  // 首次状态同步是否已完成:autostart 必须等它,否则迟到的 'idle' 会覆盖乐观 'running'
+  const [statusSynced, setStatusSynced] = useState(false);
   const { t } = useTranslation(['home', 'common']);
 
   const setTaskStatus = (status: string) => {
@@ -38,12 +40,14 @@ const TaskControls = ({
   };
 
   useEffect(() => {
+    setStatusSynced(false);
     if (!projectId) return;
     let disposed = false;
     // 获取当前工程的任务状态
     const getCurrentTaskStatus = async () => {
       const status = await window?.ipc?.invoke('getTaskStatus', projectId);
       if (!disposed && status) setTaskStatus(status);
+      if (!disposed) setStatusSynced(true);
     };
     getCurrentTaskStatus();
 
@@ -101,13 +105,14 @@ const TaskControls = ({
   // ?autostart=1 进入页面时自动开始一次(仅 idle 态,ref 防 StrictMode/重渲染重复触发)
   const autoStartedRef = useRef(false);
   useEffect(() => {
+    if (!statusSynced) return;
     if (!autoStart || autoStartedRef.current) return;
     if (!files?.length) return;
     if (taskStatus !== 'idle') return;
     autoStartedRef.current = true;
     handleTask();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoStart, files, taskStatus]);
+  }, [autoStart, files, taskStatus, statusSynced]);
 
   const handlePause = () => {
     window?.ipc?.send('pauseTask', projectId);

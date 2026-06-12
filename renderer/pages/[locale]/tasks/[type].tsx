@@ -166,6 +166,20 @@ export default function TaskPage() {
     };
   }, [router.isReady, router.query.project, slug, typeDef]);
 
+  // ?autostart=1 一次性消费进 state 并从 URL 剥离:避免刷新/回退重新触发自动开始
+  const [autoStartPending, setAutoStartPending] = useState(false);
+  useEffect(() => {
+    if (!router.isReady) return;
+    if (router.query.autostart === '1') {
+      setAutoStartPending(true);
+      const { autostart: _autostart, ...rest } = router.query;
+      router.replace({ pathname: router.pathname, query: rest }, undefined, {
+        shallow: true,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.isReady, router.query.autostart]);
+
   // files 变更持久化到任务工程（清空即删除工程）
   useEffect(() => {
     if (!projectId || !typeDef) return;
@@ -534,7 +548,7 @@ export default function TaskPage() {
             typeDef={typeDef}
             projectId={projectId}
             onStatusChange={handleStatusChange}
-            autoStart={router.query.autostart === '1'}
+            autoStart={autoStartPending}
           />
         </div>
       </div>
