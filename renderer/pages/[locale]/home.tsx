@@ -114,7 +114,7 @@ function getProjectTypeDef(project: any): TaskTypeDef {
 }
 
 /** 工程整体状态：有进行中 > 有错误 > 全部完成 > 等待 */
-function getProjectStatus(project: any, userConfig: any): RecentStatus {
+function getProjectStatus(project: any): RecentStatus {
   const typeDef = getProjectTypeDef(project);
   const files: any[] = project?.files || [];
   if (!files.length) return 'waiting';
@@ -122,7 +122,8 @@ function getProjectStatus(project: any, userConfig: any): RecentStatus {
   let anyError = false;
   let allDone = true;
   for (const file of files) {
-    const stages = getFileStages(file, typeDef, userConfig);
+    // 工程状态只由 taskType 单源推导，不随全局配置漂移 (P1#35)
+    const stages = getFileStages(file, typeDef, undefined);
     if (stages.some((s) => getStageStatus(file, s.key) === 'loading')) {
       anyLoading = true;
     }
@@ -149,7 +150,6 @@ export default function LaunchpadPage() {
   const [hasModels, setHasModels] = useState(true);
   const [hasProvider, setHasProvider] = useState(true);
   const [projects, setProjects] = useState<any[]>([]);
-  const [userConfig, setUserConfig] = useState<any>({});
   const [dragCard, setDragCard] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState('');
@@ -160,12 +160,11 @@ export default function LaunchpadPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [systemInfo, providers, taskProjects, config, settings] =
+        const [systemInfo, providers, taskProjects, settings] =
           await Promise.all([
             window?.ipc?.invoke('getSystemInfo', null),
             window?.ipc?.invoke('getTranslationProviders'),
             window?.ipc?.invoke('getTaskProjects'),
-            window?.ipc?.invoke('getUserConfig'),
             window?.ipc?.invoke('getSettings'),
           ]);
         const useLocalWhisper = settings?.useLocalWhisper || false;
@@ -176,7 +175,6 @@ export default function LaunchpadPage() {
           (providers || []).some((p: any) => isProviderConfigured(p)),
         );
         setProjects(taskProjects || []);
-        setUserConfig(config || {});
       } catch (error) {
         console.error('Failed to load launchpad data:', error);
       }
@@ -416,7 +414,7 @@ export default function LaunchpadPage() {
           ) : (
             <div className="rounded-xl border divide-y">
               {visibleProjects.map((project) => {
-                const status = getProjectStatus(project, userConfig);
+                const status = getProjectStatus(project);
                 const typeDef = getProjectTypeDef(project);
                 const editing = editingId === project.id;
                 return (
