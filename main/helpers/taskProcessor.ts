@@ -58,6 +58,10 @@ interface ProjectRuntime {
   cancelled: boolean;
   /** 取消信号：翻译批次边界与阶段边界检查 */
   controller: AbortController;
+  /** 本轮入列的文件总数（Dock/任务栏进度分母） */
+  total: number;
+  /** 已结束（成功/失败/取消）的文件数（进度分子） */
+  completed: number;
 }
 
 const DEFAULT_PROJECT_ID = 'default';
@@ -70,6 +74,8 @@ let hasOpenAiWhisper = false;
 let activeTasksCount = 0;
 /** 最近一次 handleTask 的 event：resume 触发派发时复用 */
 let dispatchEvent: any = null;
+/** Dock/任务栏进度条目标窗口 */
+let progressWindow: BrowserWindow | null = null;
 
 function ensureRuntime(projectId: string): ProjectRuntime {
   let runtime = projectRuntimes.get(projectId);
@@ -80,10 +86,32 @@ function ensureRuntime(projectId: string): ProjectRuntime {
       paused: false,
       cancelled: false,
       controller: new AbortController(),
+      total: 0,
+      completed: 0,
     };
     projectRuntimes.set(projectId, runtime);
   }
   return runtime;
+}
+
+/** 按文件粒度聚合全部工程，更新 macOS Dock / Windows 任务栏进度条 */
+function updateTaskbarProgress() {
+  if (!progressWindow || progressWindow.isDestroyed()) return;
+  try {
+    let total = 0;
+    let completed = 0;
+    projectRuntimes.forEach((runtime) => {
+      total += runtime.total;
+      completed += runtime.completed;
+    });
+    if (total === 0) {
+      progressWindow.setProgressBar(-1);
+    } else {
+      progressWindow.setProgressBar(Math.min(completed / total, 1));
+    }
+  } catch (error) {
+    logMessage(`updateTaskbarProgress error: ${error}`, 'warning');
+  }
 }
 
 function queuedCount(projectId: string): number {
@@ -109,6 +137,7 @@ function finalizeProjectIfDrained(event: any, projectId: string) {
   if (runtime.active > 0 || queuedCount(projectId) > 0) return;
   const status = runtime.cancelled ? 'cancelled' : 'completed';
   projectRuntimes.delete(projectId);
+  updateTaskbarProgress();
   sendTaskComplete(event, projectId, status);
   if (status === 'completed') notifyProjectDone(event);
 }
@@ -165,6 +194,7 @@ async function createExtendedProvider(
 }
 
 export function setupTaskProcessor(mainWindow: BrowserWindow) {
+  progressWindow = mainWindow;
   ipcMain.on(
     'handleTask',
     async (
@@ -191,6 +221,8 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
       processingQueue.push(
         ...files.map((file) => ({ file, formData, projectId: pid })),
       );
+      runtime.total += files.length;
+      updateTaskbarProgress();
       if (!isProcessing) {
         isProcessing = true;
         hasOpenAiWhisper = await checkOpenAiWhisper();
@@ -234,8 +266,13 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
           ]),
         );
     for (const id of ids) {
+      const beforeCount = processingQueue.length;
       processingQueue = processingQueue.filter((item) => item.projectId !== id);
+      const removedCount = beforeCount - processingQueue.length;
       const runtime = projectRuntimes.get(id);
+      if (runtime) {
+        runtime.total = Math.max(runtime.total - removedCount, 0);
+      }
       if (runtime && runtime.active > 0) {
         runtime.cancelled = true;
         runtime.paused = false;
@@ -251,6 +288,7 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
         sendTaskComplete(event, id, 'cancelled');
       }
     }
+    updateTaskbarProgress();
   });
 
   // 获取指定工程的任务状态（无 projectId 时回退全局语义）
@@ -374,8 +412,10 @@ async function processNextTasks(event) {
         } finally {
           activeTasksCount--;
           runtime.active--;
+          runtime.completed++;
           if (fileUuid) runtime.activeFiles.delete(fileUuid);
           finalizeProjectIfDrained(event, task.projectId);
+          updateTaskbarProgress();
           // 处理完一个任务后，检查是否可以启动新任务
           processNextTasks(event);
         }
