@@ -3,7 +3,7 @@
  * 16:9 比例显示视频和字幕效果
  */
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import ReactPlayer from 'react-player';
 import { Button } from '@/components/ui/button';
@@ -17,13 +17,52 @@ interface VideoPreviewProps {
   videoPath: string | null;
   videoInfo: VideoInfo | null;
   style: SubtitleStyle;
+  subtitlePath?: string | null;
   sampleText?: string;
 }
+
+interface PreviewCue {
+  startSec: number;
+  endSec: number;
+  text: string;
+}
+
+// SRT 时间 "HH:MM:SS,mmm" → 秒
+const srtTimeToSeconds = (time: string): number => {
+  const match = time.trim().match(/^(\d+):(\d{2}):(\d{2})[,.](\d{1,3})$/);
+  if (!match) return NaN;
+  const [, h, m, s, ms] = match;
+  return (
+    Number(h) * 3600 +
+    Number(m) * 60 +
+    Number(s) +
+    Number(ms.padEnd(3, '0')) / 1000
+  );
+};
+
+// 二分查找当前时间所在条目：最后一个 startSec <= t 的候选，再验 endSec
+const findCueAtTime = (cues: PreviewCue[], time: number): PreviewCue | null => {
+  let lo = 0;
+  let hi = cues.length - 1;
+  let candidate = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (cues[mid].startSec <= time) {
+      candidate = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  if (candidate === -1) return null;
+  return cues[candidate].endSec > time ? cues[candidate] : null;
+};
 
 export default function VideoPreview({
   videoPath,
   videoInfo,
   style,
+  subtitlePath = null,
   sampleText = '这是字幕预览效果\nThis is subtitle preview',
 }: VideoPreviewProps) {
   const { t } = useTranslation('subtitleMerge');
@@ -32,6 +71,52 @@ export default function VideoPreview({
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [cues, setCues] = useState<PreviewCue[]>([]);
+
+  // 选中字幕文件后解析真实条目（清除则回退样例文字）
+  useEffect(() => {
+    if (!subtitlePath) {
+      setCues([]);
+      return;
+    }
+    let stale = false;
+    (async () => {
+      try {
+        const entries: Array<{ startEndTime: string; content: string[] }> =
+          await window.ipc.invoke('readSubtitleFile', {
+            filePath: subtitlePath,
+          });
+        if (stale) return;
+        const parsed = (entries || [])
+          .map((entry) => {
+            const [start, end] = (entry.startEndTime || '').split('-->');
+            return {
+              startSec: srtTimeToSeconds(start || ''),
+              endSec: srtTimeToSeconds(end || ''),
+              text: (entry.content || []).join('\n'),
+            };
+          })
+          .filter(
+            (cue) =>
+              Number.isFinite(cue.startSec) &&
+              Number.isFinite(cue.endSec) &&
+              cue.text.trim() !== '',
+          );
+        setCues(parsed);
+      } catch (error) {
+        console.error('解析预览字幕失败:', error);
+        if (!stale) setCues([]);
+      }
+    })();
+    return () => {
+      stale = true;
+    };
+  }, [subtitlePath]);
+
+  // 叠加层文字：有字幕文件时所见即所得（空档期不显示），否则用样例文字调样式
+  const currentCue = cues.length > 0 ? findCueAtTime(cues, currentTime) : null;
+  const overlayText =
+    subtitlePath && cues.length > 0 ? (currentCue?.text ?? null) : sampleText;
 
   // 处理进度更新
   const handleProgress = ({ playedSeconds }: { playedSeconds: number }) => {
@@ -74,8 +159,10 @@ export default function VideoPreview({
                 style={{ position: 'absolute', top: 0, left: 0 }}
               />
 
-              {/* CSS 模拟字幕叠加层 */}
-              <SubtitlePreviewOverlay style={style} text={sampleText} />
+              {/* CSS 模拟字幕叠加层（真实条目优先，未选字幕时显示样例） */}
+              {overlayText !== null && (
+                <SubtitlePreviewOverlay style={style} text={overlayText} />
+              )}
             </>
           ) : (
             <div className="text-muted-foreground text-center">

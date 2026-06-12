@@ -158,6 +158,7 @@ export default function SubtitleMergePanel({
                 videoPath={videoPath}
                 videoInfo={videoInfo}
                 style={style}
+                subtitlePath={subtitlePath}
               />
             </CardContent>
           </Card>
