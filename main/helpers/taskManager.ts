@@ -149,9 +149,14 @@ export function setupTaskManager() {
     'saveTaskProject',
     (
       event,
-      payload: { id: string; taskType?: TaskProjectType; files: IFiles[] },
+      payload: {
+        id: string;
+        taskType?: TaskProjectType;
+        files: IFiles[];
+        name?: string;
+      },
     ) => {
-      const { id, taskType, files } = payload || {};
+      const { id, taskType, files, name } = payload || {};
       if (!id) return null;
       const index = projects.findIndex((p) => p.id === id);
 
@@ -176,7 +181,7 @@ export function setupTaskManager() {
 
       const project: TaskProject = {
         id,
-        name: buildTaskName(files),
+        name: name?.trim() || buildTaskName(files),
         taskType: normalizeTaskType(taskType),
         files,
         createdAt: now,

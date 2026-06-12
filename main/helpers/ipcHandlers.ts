@@ -5,7 +5,7 @@ import { createMessageSender } from './messageHandler';
 import { logMessage } from './storeManager';
 import { wrapFileObject } from './fileUtils';
 import { CONTENT_TEMPLATES } from '../translate/constants';
-import { renderTemplate } from './utils';
+import { renderTemplate, getExtraResourcesPath } from './utils';
 import {
   detectSubtitleFormat,
   parseSubtitleEntries,
@@ -164,6 +164,11 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
 
   ipcMain.on('openUrl', (event, url) => {
     shell.openExternal(url);
+  });
+
+  // 引导「试一试」示例音频的绝对路径(dev 与打包态由 getExtraResourcesPath 区分)
+  ipcMain.handle('getOnboardingSamplePath', () => {
+    return path.join(getExtraResourcesPath(), 'sample-onboarding.mp3');
   });
 
   ipcMain.handle('getDroppedFiles', async (event, { files, taskType }) => {
