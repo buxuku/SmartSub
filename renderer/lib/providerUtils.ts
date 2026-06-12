@@ -3,8 +3,10 @@ import { PROVIDER_TYPES, type Provider } from '../../types/provider';
 /**
  * 服务商是否已完成必填配置。
  * 按类型模板的 required 字段逐一检查实例值；无必填字段的服务商（如本地服务）视为已配置。
+ * 实例不存在（如用户 store 中尚无该内置类型的数据）视为未配置。
  */
-export function isProviderConfigured(provider: Provider): boolean {
+export function isProviderConfigured(provider: Provider | undefined): boolean {
+  if (!provider) return false;
   const template = PROVIDER_TYPES.find((type) => type.id === provider.type);
   if (!template) return true;
   return template.fields
