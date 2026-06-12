@@ -17,6 +17,12 @@ import {
   isSupportedSubtitleFormat,
   SubtitleFormat,
 } from './subtitleFormats';
+import {
+  throwIfTaskCancelled,
+  isTaskCancelled,
+  isTaskCancelledError,
+  TaskCancelledError,
+} from './taskContext';
 
 /**
  * 处理任务错误
@@ -131,6 +137,15 @@ async function translateSubtitle(event, file: IFiles, formData, provider) {
       'info',
     );
   } catch (error) {
+    if (isTaskCancelledError(error) || isTaskCancelled()) {
+      // 用户取消：翻译阶段回退为待处理，不计错误，并中止后续流程
+      event.sender.send('taskFileChange', {
+        ...file,
+        translateSubtitle: '',
+        translateSubtitleProgress: 0,
+      });
+      throw new TaskCancelledError();
+    }
     // 确保错误状态下也发送当前进度（从文件状态获取）
     onError(event, file, 'translateSubtitle', error);
   }
@@ -201,6 +216,7 @@ export async function processFile(
           ...file,
           extractAudio: 'loading',
         });
+        throwIfTaskCancelled();
         const tempAudioFile = await extractAudioFromVideo(event, file);
         event.sender.send('taskFileChange', { ...file, extractAudio: 'done' });
 
@@ -215,8 +231,18 @@ export async function processFile(
 
         // 生成字幕
         logMessage(`generate subtitle ${file.srtFile}`, 'info');
+        throwIfTaskCancelled();
         await generateSubtitle(event, file, formData, hasOpenAiWhisper);
       } catch (error) {
+        if (isTaskCancelledError(error) || isTaskCancelled()) {
+          // 用户取消：把本轮 loading 阶段回退为待处理
+          event.sender.send('taskFileChange', {
+            ...file,
+            extractAudio: '',
+            extractSubtitle: '',
+          });
+          throw new TaskCancelledError();
+        }
         // 如果是提取音频或生成字幕过程中出错，已经在各自的函数中处理了错误状态
         // 这里只需要继续抛出错误，中断后续流程
         throw error;
@@ -245,7 +271,8 @@ export async function processFile(
       throw new Error(errorMsg);
     }
 
-    // 翻译字幕
+    // 翻译字幕（取消后不再进入：转写中取消的文件在此停下，已出的转写结果保留）
+    throwIfTaskCancelled();
     if (shouldTranslateSubtitle && translateProvider !== '-1') {
       logMessage(`translate subtitle ${file.srtFile}`, 'info');
       await translateSubtitle(event, file, formData, provider);
@@ -316,6 +343,10 @@ export async function processFile(
 
     logMessage(`process file done ${fileName}`, 'info');
   } catch (error) {
+    if (isTaskCancelledError(error) || isTaskCancelled()) {
+      logMessage(`processing cancelled: ${file.fileName}`, 'warning');
+      return;
+    }
     // 使用通用错误处理方法
     createMessageSender(event.sender).send('message', {
       type: 'error',
