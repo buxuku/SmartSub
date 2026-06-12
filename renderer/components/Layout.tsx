@@ -384,6 +384,7 @@ const Layout = ({ children }) => {
           });
         } else if (detail.status === 'completed' || detail.status === 'error') {
           setDownloadPill({ model, progress: 100, status: detail.status });
+          if (hideTimer) clearTimeout(hideTimer);
           hideTimer = setTimeout(() => setDownloadPill(null), 5000);
         } else {
           setDownloadPill(null); // idle = 取消，立即隐藏

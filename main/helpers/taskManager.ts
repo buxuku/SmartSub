@@ -170,6 +170,7 @@ export function setupTaskManager() {
 
       const now = Date.now();
       if (index >= 0) {
+        // 更新路径有意忽略 name——重命名走 renameTaskProject,避免文件列表更新意外改名
         projects[index] = {
           ...projects[index],
           files,
