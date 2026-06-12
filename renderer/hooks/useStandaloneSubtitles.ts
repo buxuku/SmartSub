@@ -8,6 +8,7 @@ import path from 'path';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
 import { Subtitle, SubtitleStats, PlayerSubtitleTrack } from './useSubtitles';
+import { useSubtitleHistory, computeRangeDiff } from './useSubtitleHistory';
 
 interface StandaloneSubtitlesConfig {
   videoPath?: string;
@@ -39,6 +40,13 @@ const parseTimeRange = (timeRange: string): { start: number; end: number } => {
   };
 };
 
+// id 归一化为「下标+1」：仅克隆 id 变化的行（合并/拆分/撤销重做后调用）
+const renormalizeIds = (arr: Subtitle[]): Subtitle[] =>
+  arr.map((sub, idx) => {
+    const id = String(idx + 1);
+    return sub.id === id ? sub : { ...sub, id };
+  });
+
 export const useStandaloneSubtitles = (
   config: StandaloneSubtitlesConfig,
   isOpen: boolean,
@@ -55,13 +63,19 @@ export const useStandaloneSubtitles = (
   >([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // 撤销/重做历史
-  const [history, setHistory] = useState<Subtitle[][]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const maxHistoryLength = 50;
+  // 撤销/重做历史（命令模式：区间 diff 命令栈）
+  const history = useSubtitleHistory();
 
-  // 记录编辑前的快照（用于失焦记录）
-  const [editSnapshot, setEditSnapshot] = useState<Subtitle[] | null>(null);
+  // 字幕数组的同步镜像：所有变更经 applySubtitles 落盘，
+  // 命令构造/合并窗口等同步逻辑读它，避免依赖异步 setState
+  const subtitlesRef = useRef<Subtitle[]>([]);
+
+  // 逐字编辑合并窗口：同行同字段的连续输入合并为一条撤销命令
+  const pendingEditRef = useRef<{
+    index: number;
+    field: 'sourceContent' | 'targetContent';
+    before: Subtitle;
+  } | null>(null);
 
   // 自上次保存以来是否有未保存修改
   const [isDirty, setIsDirty] = useState(false);
@@ -71,6 +85,12 @@ export const useStandaloneSubtitles = (
 
   // 是否有翻译字幕
   const shouldShowTranslation = !!config.targetSubtitlePath;
+
+  // 统一落盘：镜像 ref 与 state 同步更新
+  const applySubtitles = useCallback((next: Subtitle[]) => {
+    subtitlesRef.current = next;
+    setMergedSubtitles(next);
+  }, []);
 
   // 读取字幕文件
   const readSubtitleFile = async (filePath: string): Promise<Subtitle[]> => {
@@ -183,8 +203,11 @@ export const useStandaloneSubtitles = (
           };
         });
 
-        setMergedSubtitles(merged);
+        applySubtitles(merged);
       }
+      // 重新加载即新的编辑起点：清空历史与合并窗口
+      history.reset();
+      pendingEditRef.current = null;
       setIsDirty(false);
     } catch (error) {
       console.error('Error loading files:', error);
@@ -192,7 +215,7 @@ export const useStandaloneSubtitles = (
     } finally {
       setIsLoading(false);
     }
-  }, [config, shouldShowTranslation, t]);
+  }, [config, shouldShowTranslation, t, applySubtitles, history.reset]);
 
   // 加载文件
   useEffect(() => {
@@ -225,26 +248,53 @@ export const useStandaloneSubtitles = (
     }
   }, [videoPath, config.sourceSubtitlePath]);
 
-  // 更新字幕内容（带失焦记录支持）
-  const handleSubtitleChange = (
-    index: number,
-    field: 'sourceContent' | 'targetContent',
-    value: string,
-  ) => {
-    // 首次编辑时保存快照
-    if (!editSnapshot) {
-      setEditSnapshot(JSON.parse(JSON.stringify(mergedSubtitles)));
-    }
+  // 把合并窗口中的逐字编辑提交为一条撤销命令
+  const flushPendingEdit = useCallback(() => {
+    const pending = pendingEditRef.current;
+    if (!pending) return;
+    pendingEditRef.current = null;
+    const after = subtitlesRef.current[pending.index];
+    if (!after || after === pending.before) return;
+    if ((after[pending.field] ?? '') === (pending.before[pending.field] ?? ''))
+      return;
+    history.push({
+      start: pending.index,
+      removed: [pending.before],
+      inserted: [after],
+    });
+  }, [history.push]);
 
-    const newSubtitles = [...mergedSubtitles];
-    newSubtitles[index][field] = value;
-    newSubtitles[index].content =
-      field === 'sourceContent'
-        ? value.split('\n')
-        : newSubtitles[index].content;
-    setMergedSubtitles(newSubtitles);
-    setIsDirty(true);
-  };
+  // 更新字幕内容（行级克隆，连续输入合并为一条命令）
+  const handleSubtitleChange = useCallback(
+    (
+      index: number,
+      field: 'sourceContent' | 'targetContent',
+      value: string,
+    ) => {
+      const current = subtitlesRef.current;
+      const row = current[index];
+      if (!row) return;
+
+      const pending = pendingEditRef.current;
+      // 换行或换字段：先提交上一个合并窗口
+      if (pending && (pending.index !== index || pending.field !== field)) {
+        flushPendingEdit();
+      }
+      if (!pendingEditRef.current) {
+        pendingEditRef.current = { index, field, before: row };
+      }
+
+      const next = current.slice();
+      next[index] = {
+        ...row,
+        [field]: value,
+        content: field === 'sourceContent' ? value.split('\n') : row.content,
+      };
+      applySubtitles(next);
+      setIsDirty(true);
+    },
+    [applySubtitles, flushPendingEdit],
+  );
 
   // 保存字幕文件；返回是否全部写入成功
   const handleSave = async (): Promise<boolean> => {
@@ -366,83 +416,41 @@ export const useStandaloneSubtitles = (
     }
   };
 
-  // 保存到历史记录（用于撤销/重做）
-  // 历史数组存储状态快照，historyIndex 指向当前状态
-  const pushToHistory = useCallback(
-    (oldState: Subtitle[], newState: Subtitle[]) => {
-      setHistory((prev) => {
-        // 如果当前不在历史末尾，移除后面的记录
-        const newHistory = prev.slice(0, historyIndex + 1);
-        // 如果历史为空，先添加旧状态
-        if (newHistory.length === 0) {
-          newHistory.push(JSON.parse(JSON.stringify(oldState)));
-        }
-        // 添加新状态
-        newHistory.push(JSON.parse(JSON.stringify(newState)));
-        // 限制历史长度
-        while (newHistory.length > maxHistoryLength) {
-          newHistory.shift();
-        }
-        return newHistory;
-      });
-      setHistoryIndex((prev) => {
-        // 如果是第一次添加，从-1跳到1（包含初始状态0和新状态1）
-        if (prev === -1) return 1;
-        return Math.min(prev + 1, maxHistoryLength - 1);
-      });
-    },
-    [historyIndex],
-  );
-
-  // 把"未提交的逐字编辑"补入历史：保存/切行前调用，消除撤销盲区
-  const flushPendingEdit = useCallback(() => {
-    if (!editSnapshot) return;
-    const hasChanged =
-      JSON.stringify(editSnapshot) !== JSON.stringify(mergedSubtitles);
-    if (hasChanged) {
-      // 保存到历史（编辑前 -> 编辑后）
-      pushToHistory(editSnapshot, mergedSubtitles);
-    }
-    setEditSnapshot(null);
-  }, [editSnapshot, mergedSubtitles, pushToHistory]);
-
-  // 更新字幕（带历史记录）
+  // 更新字幕（批量操作入口：计算最小区间 diff 入栈）
   const updateSubtitles = useCallback(
     (newSubtitles: Subtitle[]) => {
-      pushToHistory(mergedSubtitles, newSubtitles);
-      setMergedSubtitles(newSubtitles);
+      flushPendingEdit();
+      const diff = computeRangeDiff(subtitlesRef.current, newSubtitles);
+      if (diff) history.push(diff);
+      applySubtitles(newSubtitles);
       setIsDirty(true);
     },
-    [mergedSubtitles, pushToHistory],
+    [applySubtitles, flushPendingEdit, history.push],
   );
 
-  // 撤销
+  // 撤销：先提交合并窗口（保证「最后一次输入」也可撤销），再应用区间命令
   const handleUndo = useCallback(() => {
-    if (historyIndex > 0 && history.length > 0) {
-      const newIndex = historyIndex - 1;
-      setHistoryIndex(newIndex);
-      setMergedSubtitles(JSON.parse(JSON.stringify(history[newIndex])));
-      // 清除编辑快照，避免干扰
-      setEditSnapshot(null);
+    flushPendingEdit();
+    const next = history.undo(subtitlesRef.current);
+    if (next) {
+      applySubtitles(renormalizeIds(next));
       setIsDirty(true);
     }
-  }, [historyIndex, history]);
+  }, [applySubtitles, flushPendingEdit, history.undo]);
 
-  // 重做
+  // 重做：合并窗口若有内容会作为新命令清空 redo 分支（与主流编辑器一致）
   const handleRedo = useCallback(() => {
-    if (historyIndex < history.length - 1) {
-      const newIndex = historyIndex + 1;
-      setHistoryIndex(newIndex);
-      setMergedSubtitles(JSON.parse(JSON.stringify(history[newIndex])));
-      // 清除编辑快照，避免干扰
-      setEditSnapshot(null);
+    flushPendingEdit();
+    const next = history.redo(subtitlesRef.current);
+    if (next) {
+      applySubtitles(renormalizeIds(next));
       setIsDirty(true);
     }
-  }, [historyIndex, history]);
+  }, [applySubtitles, flushPendingEdit, history.redo]);
 
-  // 是否可以撤销/重做
-  const canUndo = historyIndex > 0 && history.length > 1;
-  const canRedo = historyIndex < history.length - 1 && historyIndex >= 0;
+  // 是否可以撤销/重做（合并窗口中有未提交输入也算可撤销）
+  const canUndo = history.canUndo || pendingEditRef.current !== null;
+  const canRedo = history.canRedo;
 
   // 失焦记录：当切换字幕时，如果有编辑过，保存到历史
   useEffect(() => {
@@ -463,18 +471,17 @@ export const useStandaloneSubtitles = (
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.padStart(6, '0').replace('.', ',')}`;
   };
 
-  // 合并字幕
+  // 合并字幕（区间命令：N 行 → 1 行；id 由 renormalize 统一归位）
   const handleMergeSubtitles = useCallback(
     (startIndex: number, endIndex: number) => {
-      if (
-        startIndex < 0 ||
-        endIndex > mergedSubtitles.length ||
-        startIndex >= endIndex
-      )
+      const current = subtitlesRef.current;
+      if (startIndex < 0 || endIndex > current.length || startIndex >= endIndex)
         return;
 
-      const toMerge = mergedSubtitles.slice(startIndex, endIndex);
+      const toMerge = current.slice(startIndex, endIndex);
       if (toMerge.length < 2) return;
+
+      flushPendingEdit();
 
       // 合并内容
       const mergedContent = toMerge
@@ -500,33 +507,30 @@ export const useStandaloneSubtitles = (
         endTimeInSeconds: endTime,
       };
 
-      const newSubtitles = [
-        ...mergedSubtitles.slice(0, startIndex),
-        merged,
-        ...mergedSubtitles.slice(endIndex),
-      ];
+      history.push({ start: startIndex, removed: toMerge, inserted: [merged] });
 
-      // 重新编号
-      newSubtitles.forEach((sub, idx) => {
-        sub.id = String(idx + 1);
-      });
-
-      updateSubtitles(newSubtitles);
+      const next = current.slice();
+      next.splice(startIndex, toMerge.length, merged);
+      applySubtitles(renormalizeIds(next));
+      setIsDirty(true);
       toast.success(t('mergeSuccess') || '字幕已合并');
     },
-    [mergedSubtitles, updateSubtitles, t],
+    [applySubtitles, flushPendingEdit, history.push, t],
   );
 
-  // 拆分字幕（支持自定义时间拆分点）
+  // 拆分字幕（区间命令：1 行 → 2 行；支持自定义时间拆分点）
   const handleSplitSubtitle = useCallback(
     (index: number, splitPoint: number, splitTime?: number) => {
-      if (index < 0 || index >= mergedSubtitles.length) return;
+      const current = subtitlesRef.current;
+      if (index < 0 || index >= current.length) return;
 
-      const subtitle = mergedSubtitles[index];
+      const subtitle = current[index];
       const content = subtitle.sourceContent || '';
       const targetContent = subtitle.targetContent || '';
 
       if (content.length < 2) return;
+
+      flushPendingEdit();
 
       // 计算拆分后的内容
       const content1 = content.slice(0, splitPoint);
@@ -564,22 +568,19 @@ export const useStandaloneSubtitles = (
         startTimeInSeconds: midTime,
       };
 
-      const newSubtitles = [
-        ...mergedSubtitles.slice(0, index),
-        sub1,
-        sub2,
-        ...mergedSubtitles.slice(index + 1),
-      ];
-
-      // 重新编号
-      newSubtitles.forEach((sub, idx) => {
-        sub.id = String(idx + 1);
+      history.push({
+        start: index,
+        removed: [subtitle],
+        inserted: [sub1, sub2],
       });
 
-      updateSubtitles(newSubtitles);
+      const next = current.slice();
+      next.splice(index, 1, sub1, sub2);
+      applySubtitles(renormalizeIds(next));
+      setIsDirty(true);
       toast.success(t('splitSuccess') || '字幕已拆分');
     },
-    [mergedSubtitles, updateSubtitles, t],
+    [applySubtitles, flushPendingEdit, history.push, t],
   );
 
   // 更新光标位置
