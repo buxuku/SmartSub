@@ -1,6 +1,5 @@
 {
   "title": "自定义参数",
-  "titleWithProvider": "自定义参数配置 - {{providerName}}",
   "subtitle": "为此提供商配置自定义头部和请求体参数",
   "actions": {
     "export": "导出",
@@ -8,8 +7,7 @@
     "refresh": "刷新",
     "addParameter": "添加参数",
     "duplicate": "复制",
-    "cancel": "取消",
-    "save": "保存"
+    "cancel": "取消"
   },
   "tabs": {
     "headers": "请求头",
@@ -74,8 +72,7 @@
   },
   "validation": {
     "valid": "有效",
-    "invalidJson": "无效的 JSON：{message}",
-    "pleaseConfigure": "请提供有效的 JSON 语法"
+    "invalidJson": "无效的 JSON：{message}"
   },
   "placeholders": {
     "enterValue": "输入 {key}",

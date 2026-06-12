@@ -317,7 +317,7 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
               <SelectContent>
                 {options.map((option) => (
                   <SelectItem key={option} value={option}>
-                    {option}
+                    {t(`option.${option}`, { defaultValue: option })}
                   </SelectItem>
                 ))}
               </SelectContent>

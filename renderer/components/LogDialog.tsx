@@ -77,10 +77,7 @@ export function LogDialog({ open, onOpenChange }) {
       <DialogContent className="max-w-3xl max-h-[80vh]">
         <DialogHeader>
           <DialogTitle>{t('logs')}</DialogTitle>
-          <DialogDescription>
-            View application logs and system messages for debugging and
-            monitoring.
-          </DialogDescription>
+          <DialogDescription>{t('logsDesc')}</DialogDescription>
         </DialogHeader>
         <ScrollArea ref={scrollRef} className="h-[60vh]">
           <div className="space-y-2 p-4">
