@@ -389,8 +389,11 @@ async function processNextTasks(event) {
             (p) => p.id === task.formData.translateProvider,
           );
 
-          // Create extended provider with custom parameters
-          const extendedProvider = await createExtendedProvider(baseProvider);
+          // 找不到服务商（'-1' 残留或已删除）时不加载扩展参数；
+          // 是否报错由翻译阶段判定，听写等阶段照常执行
+          const extendedProvider = baseProvider
+            ? await createExtendedProvider(baseProvider)
+            : undefined;
 
           await runWithTaskContext(
             {

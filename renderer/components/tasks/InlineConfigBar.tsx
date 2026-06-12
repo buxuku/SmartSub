@@ -147,7 +147,6 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
                   <SelectValue placeholder={tHome('pleaseSelect')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="-1">{t('noTranslate')}</SelectItem>
                   {providers.map((provider) => {
                     const configured = isProviderConfigured(provider as any);
                     return (

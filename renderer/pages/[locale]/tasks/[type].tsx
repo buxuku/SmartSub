@@ -26,6 +26,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn, isSubtitleFile } from 'lib/utils';
+import { isProviderConfigured } from 'lib/providerUtils';
 import { TASK_TYPES, getTaskTypeBySlug } from 'lib/taskTypes';
 import useSystemInfo from 'hooks/useStystemInfo';
 import useFormConfig from 'hooks/useFormConfig';
@@ -200,6 +201,19 @@ export default function TaskPage() {
       form.setValue('taskType', typeDef.taskType);
     }
   }, [typeDef, formData, form]);
+
+  // 带翻译的任务类型不存在「不翻译」：清理历史残留 '-1' 或已被删除的服务商 id
+  useEffect(() => {
+    if (!typeDef?.hasTranslate || !providers.length) return;
+    if (!formData || Object.keys(formData).length === 0) return; // 配置未加载完
+    const current = formData?.translateProvider;
+    const valid = providers.some((p: any) => p.id === current);
+    if (current && current !== '-1' && valid) return;
+    const firstConfigured = providers.find((p: any) =>
+      isProviderConfigured(p),
+    ) as any;
+    form.setValue('translateProvider', firstConfigured?.id ?? '');
+  }, [typeDef, providers, formData?.translateProvider, form]);
 
   // 新一轮任务开始时恢复完成横幅
   useEffect(() => {

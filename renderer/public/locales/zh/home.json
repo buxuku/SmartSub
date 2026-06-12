@@ -55,7 +55,7 @@
   "restartTask": "重启任务",
   "resumeTask": "恢复任务",
   "cancelTask": "取消任务",
-  "cancelling": "取消中…",
+  "cancelling": "取消中...",
   "cancellingHint": "正在停止：转写中的文件完成当前转写后停止",
   "pausedHint": "已暂停：不再开始新文件，进行中的文件会继续完成",
   "pauseTip": "暂停后不再开始新文件，进行中的文件会继续完成",
@@ -121,7 +121,6 @@
   "translationFailed": "翻译失败",
   "currentPlaying": "(当前播放)",
   "translationFailedLabel": "(翻译失败)",
-  "cancelling": "取消中...",
   "batchOptimizeCancelled": "已取消批量优化",
   "batchOptimizeCancelledPartial": "已取消，显示部分结果",
   "batchOptimizeCancelledBadge": "已取消 · 部分结果",
@@ -371,5 +370,6 @@
   "noOptimizationsSelected": "请选择要采纳的优化结果",
   "optimizationsApplied": "已应用 {{count}} 条优化",
   "fileRemoved": "已移除文件",
-  "importReset": "已重新开始导入"
+  "importReset": "已重新开始导入",
+  "selectProviderFirst": "请先选择翻译服务商"
 }

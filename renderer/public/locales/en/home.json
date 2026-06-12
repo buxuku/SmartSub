@@ -55,7 +55,7 @@
   "restartTask": "Restart Task",
   "resumeTask": "Resume Task",
   "cancelTask": "Cancel Task",
-  "cancelling": "Cancelling…",
+  "cancelling": "Cancelling...",
   "cancellingHint": "Stopping — files mid-transcription finish the current pass, then stop",
   "pausedHint": "Paused: no new files will start; in-progress files keep running",
   "pauseTip": "Pause stops new files from starting; in-progress files keep running",
@@ -121,7 +121,6 @@
   "translationFailed": "Translation Failed",
   "currentPlaying": "(Current Playing)",
   "translationFailedLabel": "(Translation Failed)",
-  "cancelling": "Cancelling...",
   "batchOptimizeCancelled": "Batch optimization cancelled",
   "batchOptimizeCancelledPartial": "Cancelled, showing partial results",
   "batchOptimizeCancelledBadge": "Cancelled · partial results",
@@ -371,5 +370,6 @@
   "noOptimizationsSelected": "Please select optimizations to apply",
   "optimizationsApplied": "Applied {{count}} optimizations",
   "fileRemoved": "File removed",
-  "importReset": "Import reset"
+  "importReset": "Import reset",
+  "selectProviderFirst": "Please select a translation provider first"
 }

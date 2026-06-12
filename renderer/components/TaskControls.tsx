@@ -70,6 +70,14 @@ const TaskControls = ({
       });
       return;
     }
+    // 带翻译的任务必须有有效翻译服务商（'-1' 为历史「不翻译」残留值）
+    if (typeDef.hasTranslate) {
+      const provider = formData?.translateProvider;
+      if (!provider || provider === '-1') {
+        toast.error(t('home:selectProviderFirst'));
+        return;
+      }
+    }
     // 只派发未完成的文件（error 不算完成，可重跑；已完成文件不重做）
     const pendingFiles = files.filter(
       (file) => !isFileDone(file, getFileStages(file, typeDef, formData)),

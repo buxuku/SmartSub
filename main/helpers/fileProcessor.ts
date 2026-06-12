@@ -274,6 +274,12 @@ export async function processFile(
     // 翻译字幕（取消后不再进入：转写中取消的文件在此停下，已出的转写结果保留）
     throwIfTaskCancelled();
     if (shouldTranslateSubtitle && translateProvider !== '-1') {
+      if (!provider) {
+        // '-1' 历史残留或服务商已被删除：明确报错而非深层崩溃
+        const errorMsg = `translate provider not found: ${translateProvider}`;
+        onError(event, file, 'translateSubtitle', new Error(errorMsg));
+        throw new Error(errorMsg);
+      }
       logMessage(`translate subtitle ${file.srtFile}`, 'info');
       await translateSubtitle(event, file, formData, provider);
     }
