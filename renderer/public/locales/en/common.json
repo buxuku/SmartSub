@@ -141,9 +141,24 @@
     "menu": "Help",
     "reopenOnboarding": "Reopen the welcome guide",
     "shortcuts": "Keyboard shortcuts",
+    "faq": "FAQ",
     "github": "GitHub",
     "checkUpdates": "Check for Updates",
     "reportIssue": "Report an Issue"
+  },
+  "faq": {
+    "title": "Frequently Asked Questions",
+    "macDamagedQ": "macOS says the app is damaged and can't be opened?",
+    "macDamagedA": "This is macOS quarantine for unsigned apps, not actual damage. Run the following command in Terminal, then reopen the app:",
+    "macDamagedCmd": "sudo xattr -dr com.apple.quarantine /Applications/SmartSub.app",
+    "cudaCrashQ": "Transcription crashes after enabling GPU acceleration?",
+    "cudaCrashA": "Usually the acceleration package version doesn't match your GPU driver. Go to Resources → Acceleration and switch to another package version, or fall back to CPU mode — slower, but it always completes.",
+    "slowDownloadQ": "Model downloads are slow or keep failing?",
+    "slowDownloadA": "Go to Resources → Models and switch the download source, then retry. You can also download the model file manually and add it via Import Model.",
+    "translateFailedQ": "Many subtitle translations failed?",
+    "translateFailedA": "First verify the provider works via Test Translation in Resources → Translation (key, network, quota). Then back in the proofread editor, use the Failed only filter with Retranslate failed to fix them in one go.",
+    "subtitleGarbledQ": "Burned-in subtitles show garbled text or boxes?",
+    "subtitleGarbledA": "The selected font likely lacks CJK glyphs. Pick a font that supports your language (e.g. PingFang, Microsoft YaHei, Source Han Sans) in the Burn to Video style settings and merge again."
   },
   "shortcuts": {
     "title": "Keyboard shortcuts",

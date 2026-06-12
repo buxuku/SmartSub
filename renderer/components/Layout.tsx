@@ -40,6 +40,7 @@ import { UpdateDialog } from './UpdateDialog';
 import { LogDialog } from './LogDialog';
 import OnboardingDialog from './onboarding/OnboardingDialog';
 import ShortcutsHelpDialog from './ShortcutsHelpDialog';
+import FaqDialog from './FaqDialog';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import { useHotkeys } from 'hooks/useHotkeys';
 import packageInfo from '../../package.json';
@@ -153,6 +154,7 @@ const Layout = ({ children }) => {
   } | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showFaq, setShowFaq] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingResumeStep, setOnboardingResumeStep] = useState<
     number | null
@@ -567,6 +569,10 @@ const Layout = ({ children }) => {
                   <Keyboard className="mr-2 h-4 w-4" />
                   {t('help.shortcuts')}
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowFaq(true)}>
+                  <HelpCircle className="mr-2 h-4 w-4" />
+                  {t('help.faq')}
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setShowLogs(true)}>
                   {t('viewLogs')}
                 </DropdownMenuItem>
@@ -623,6 +629,7 @@ const Layout = ({ children }) => {
         open={showShortcuts}
         onOpenChange={setShowShortcuts}
       />
+      <FaqDialog open={showFaq} onOpenChange={setShowFaq} />
       <OnboardingDialog
         open={showOnboarding}
         onOpenChange={handleOnboardingOpenChange}

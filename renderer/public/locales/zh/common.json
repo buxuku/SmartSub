@@ -141,9 +141,24 @@
     "menu": "帮助",
     "reopenOnboarding": "重新打开新手引导",
     "shortcuts": "快捷键速查",
+    "faq": "常见问题",
     "github": "GitHub",
     "checkUpdates": "检查更新",
     "reportIssue": "反馈问题"
+  },
+  "faq": {
+    "title": "常见问题",
+    "macDamagedQ": "macOS 提示「应用程序已损坏，无法打开」？",
+    "macDamagedA": "这是 macOS 对未签名应用的隔离机制，并非应用真的损坏。在「终端」中执行以下命令后重新打开应用：",
+    "macDamagedCmd": "sudo xattr -dr com.apple.quarantine /Applications/SmartSub.app",
+    "cudaCrashQ": "启用 GPU 加速后转写闪退？",
+    "cudaCrashA": "通常是加速包版本与显卡驱动不匹配。前往「资源中心 → 加速」切换其他版本的加速包，或暂时改用 CPU 模式——CPU 模式速度较慢，但永远能完成转写。",
+    "slowDownloadQ": "模型下载很慢或一直失败？",
+    "slowDownloadA": "前往「资源中心 → 模型」，把下载源切换为「国内加速源」后重试；也可以手动下载模型文件后，用「导入模型」添加。",
+    "translateFailedQ": "字幕翻译大量失败？",
+    "translateFailedA": "先到「资源中心 → 翻译服务」用「测试翻译」确认服务可用（密钥、网络、额度）。修复后回到校对编辑器，用「只看失败」筛选配合「重翻失败」一键重译失败条目。",
+    "subtitleGarbledQ": "烧录到视频的字幕乱码或显示方块？",
+    "subtitleGarbledA": "多为所选字体不支持中文。在「合成到视频」的样式设置中选择支持中文的字体（如苹方、微软雅黑、思源黑体）后重新合成。"
   },
   "shortcuts": {
     "title": "快捷键",
