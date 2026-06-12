@@ -6,6 +6,7 @@ import {
   Edit2,
   Film,
   FolderOpen,
+  Home,
   RotateCcw,
   X,
 } from 'lucide-react';
@@ -31,6 +32,8 @@ interface CompletionBannerProps {
   formData: any;
   taskStatus: string;
   dismissed: boolean;
+  /** 引导示例工程完成时给「下一步去哪」的额外指引 */
+  projectId?: string | null;
   onDismiss: () => void;
   onProofread: (file: any) => void;
   onRetryFailed: (files: any[]) => void;
@@ -42,6 +45,7 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
   formData,
   taskStatus,
   dismissed,
+  projectId,
   onDismiss,
   onProofread,
   onRetryFailed,
@@ -80,6 +84,7 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
 
   const firstDone = doneFiles[0];
   const multiDone = doneFiles.length > 1;
+  const isSample = projectId === 'sample-onboarding';
 
   const handleOpenFolder = () => {
     const filePath = getRevealPath(firstDone);
@@ -112,8 +117,15 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
       <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0" />
       <div className="min-w-0 flex-1">
         <span className="text-sm font-medium">
-          {t('completion.title', { done: doneFiles.length })}
+          {isSample
+            ? t('completion.sampleTitle')
+            : t('completion.title', { done: doneFiles.length })}
         </span>
+        {isSample && (
+          <span className="text-sm text-muted-foreground ml-2">
+            {t('completion.sampleHint')}
+          </span>
+        )}
         {failedFiles.length > 0 && (
           <span className="text-sm text-destructive ml-2">
             {t('completion.failed', { failed: failedFiles.length })}
@@ -205,6 +217,16 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
           >
             <RotateCcw className="h-3 w-3" />
             {t('completion.retryFailed')}
+          </Button>
+        )}
+        {isSample && (
+          <Button
+            size="sm"
+            className="h-7 text-xs gap-1"
+            onClick={() => router.push(`/${locale}/home`)}
+          >
+            <Home className="h-3 w-3" />
+            {t('completion.backHome')}
           </Button>
         )}
         <button

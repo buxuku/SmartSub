@@ -43,6 +43,9 @@
   "interrupted": "Interrupted by app restart — retry to continue",
   "completion": {
     "title": "{{done}} files completed",
+    "sampleTitle": "Sample done — your first subtitle is ready!",
+    "sampleHint": "Open it in proofread, or head back to the launchpad to process your own files",
+    "backHome": "Back to launchpad",
     "failed": "{{failed}} failed",
     "goProofread": "Proofread",
     "goMerge": "Burn into video",

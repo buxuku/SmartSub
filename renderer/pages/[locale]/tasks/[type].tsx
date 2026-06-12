@@ -511,6 +511,7 @@ export default function TaskPage() {
         formData={formData}
         taskStatus={taskStatus}
         dismissed={bannerDismissed}
+        projectId={projectId}
         onDismiss={() => setBannerDismissed(true)}
         onProofread={(file) => setProofreadFile(file)}
         onRetryFailed={handleRetryFailed}

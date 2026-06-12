@@ -43,6 +43,9 @@
   "interrupted": "上次运行被中断，点击重试继续",
   "completion": {
     "title": "{{done}} 个文件已完成",
+    "sampleTitle": "示例完成，你的第一份字幕已就绪！",
+    "sampleHint": "可以去校对看看效果，或返回启动台开始处理自己的文件",
+    "backHome": "返回启动台",
     "failed": "{{failed}} 个失败",
     "goProofread": "去校对",
     "goMerge": "合成到视频",
