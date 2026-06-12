@@ -13,6 +13,7 @@ import {
   FileVideo2,
   Film,
   HelpCircle,
+  Keyboard,
   MonitorPlay,
   Package,
   PanelLeftClose,
@@ -38,7 +39,9 @@ import { useTranslation } from 'next-i18next';
 import { UpdateDialog } from './UpdateDialog';
 import { LogDialog } from './LogDialog';
 import OnboardingDialog from './onboarding/OnboardingDialog';
+import ShortcutsHelpDialog from './ShortcutsHelpDialog';
 import useLocalStorageState from 'hooks/useLocalStorageState';
+import { useHotkeys } from 'hooks/useHotkeys';
 import packageInfo from '../../package.json';
 
 // 添加更新状态的类型定义
@@ -148,6 +151,7 @@ const Layout = ({ children }) => {
   const [gpuEnabled, setGpuEnabled] = useState(false);
   const [gpuBackendLabel, setGpuBackendLabel] = useState('');
   const [showLogs, setShowLogs] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingResumeStep, setOnboardingResumeStep] = useState<
     number | null
@@ -291,6 +295,19 @@ const Layout = ({ children }) => {
   const handleUpdateClick = () => {
     setShowUpdateDialog(true);
   };
+
+  // 全局快捷键：Cmd/Ctrl+, 打开设置；? 打开快捷键速查（非输入态）
+  useHotkeys([
+    {
+      combo: 'mod+,',
+      allowInInput: true,
+      handler: () => router.push(`/${locale}/settings`),
+    },
+    {
+      combo: '?',
+      handler: () => setShowShortcuts(true),
+    },
+  ]);
 
   /** 引导跳去配置页：记录暂停步骤，展示「继续引导」入口 */
   const handleOnboardingPause = (step: number) => {
@@ -483,6 +500,10 @@ const Layout = ({ children }) => {
                 >
                   {t('help.reopenOnboarding')}
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowShortcuts(true)}>
+                  <Keyboard className="mr-2 h-4 w-4" />
+                  {t('help.shortcuts')}
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setShowLogs(true)}>
                   {t('viewLogs')}
                 </DropdownMenuItem>
@@ -531,6 +552,10 @@ const Layout = ({ children }) => {
         releaseNotes={releaseNotes}
       />
       <LogDialog open={showLogs} onOpenChange={setShowLogs} />
+      <ShortcutsHelpDialog
+        open={showShortcuts}
+        onOpenChange={setShowShortcuts}
+      />
       <OnboardingDialog
         open={showOnboarding}
         onOpenChange={handleOnboardingOpenChange}

@@ -158,7 +158,27 @@
   "help": {
     "menu": "Help",
     "reopenOnboarding": "Reopen the welcome guide",
+    "shortcuts": "Keyboard shortcuts",
     "github": "GitHub"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "groupGlobal": "Global",
+    "groupTasks": "Task page",
+    "groupEditor": "Proofread editor",
+    "openSettings": "Open settings",
+    "showShortcuts": "Show shortcuts",
+    "importFiles": "Import files",
+    "startTask": "Start task",
+    "save": "Save",
+    "undo": "Undo",
+    "redo": "Redo",
+    "playPause": "Play / Pause",
+    "prevNextSubtitle": "Previous / Next subtitle",
+    "switchSourceTarget": "Source ⇄ Translation",
+    "searchReplace": "Search & replace",
+    "exitInput": "Leave input field",
+    "hintMore": "All shortcuts"
   },
   "onboarding": {
     "resume": "Resume setup guide",

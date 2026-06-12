@@ -158,7 +158,27 @@
   "help": {
     "menu": "帮助",
     "reopenOnboarding": "重新打开新手引导",
+    "shortcuts": "快捷键速查",
     "github": "GitHub"
+  },
+  "shortcuts": {
+    "title": "快捷键",
+    "groupGlobal": "全局",
+    "groupTasks": "任务页",
+    "groupEditor": "校对编辑器",
+    "openSettings": "打开设置",
+    "showShortcuts": "快捷键速查",
+    "importFiles": "导入文件",
+    "startTask": "开始任务",
+    "save": "保存",
+    "undo": "撤销",
+    "redo": "重做",
+    "playPause": "播放 / 暂停",
+    "prevNextSubtitle": "上一条 / 下一条字幕",
+    "switchSourceTarget": "原文 ⇄ 译文",
+    "searchReplace": "搜索替换",
+    "exitInput": "退出输入框",
+    "hintMore": "全部快捷键"
   },
   "onboarding": {
     "resume": "继续新手引导",
