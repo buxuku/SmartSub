@@ -534,6 +534,7 @@ export default function TaskPage() {
             typeDef={typeDef}
             projectId={projectId}
             onStatusChange={handleStatusChange}
+            autoStart={router.query.autostart === '1'}
           />
         </div>
       </div>

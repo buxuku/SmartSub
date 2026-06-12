@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
 import { cn } from 'lib/utils';
@@ -15,6 +15,7 @@ interface TaskControlsProps {
   className?: string;
   /** 可选：状态变化时上抛（任务页用于联动重试按钮/完成横幅） */
   onStatusChange?: (status: string) => void;
+  autoStart?: boolean;
 }
 
 type TaskCompletePayload = { projectId?: string; status?: string } | string;
@@ -26,6 +27,7 @@ const TaskControls = ({
   projectId,
   className,
   onStatusChange,
+  autoStart,
 }: TaskControlsProps) => {
   const [taskStatus, setTaskStatusState] = useState('idle');
   const { t } = useTranslation(['home', 'common']);
@@ -95,6 +97,18 @@ const TaskControls = ({
       projectId,
     });
   };
+
+  // ?autostart=1 进入页面时自动开始一次(仅 idle 态,ref 防 StrictMode/重渲染重复触发)
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (!autoStart || autoStartedRef.current) return;
+    if (!files?.length) return;
+    if (taskStatus !== 'idle') return;
+    autoStartedRef.current = true;
+    handleTask();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, files, taskStatus]);
+
   const handlePause = () => {
     window?.ipc?.send('pauseTask', projectId);
     setTaskStatus('paused');
