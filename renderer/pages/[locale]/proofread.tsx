@@ -13,6 +13,7 @@ import {
   loadPendingFileFromItem,
   pendingFileToSaveFormat,
 } from '@/lib/proofreadUtils';
+import { useConfirmOrUndo } from '../../hooks/useConfirmOrUndo';
 
 // 工作流阶段
 type WorkflowStage = 'import' | 'list' | 'edit';
@@ -22,6 +23,7 @@ export type { PendingFile } from '@/lib/proofreadUtils';
 
 export default function ProofreadPage() {
   const { t } = useTranslation('home');
+  const confirmOrUndo = useConfirmOrUndo();
   const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
 
   // 工作流状态
@@ -107,10 +109,26 @@ export default function ProofreadPage() {
     [],
   );
 
-  // 删除文件
-  const handleRemoveFile = useCallback((index: number) => {
-    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+  // 删除文件（可撤销）
+  const handleRemoveFile = useCallback(
+    (index: number) => {
+      let removed: PendingFile | undefined;
+      setPendingFiles((prev) => {
+        removed = prev[index];
+        return prev.filter((_, i) => i !== index);
+      });
+      confirmOrUndo(t('fileRemoved') || '已移除文件', () => {
+        if (!removed) return;
+        const item = removed;
+        setPendingFiles((prev) => {
+          const next = [...prev];
+          next.splice(Math.min(index, next.length), 0, item);
+          return next;
+        });
+      });
+    },
+    [confirmOrUndo, t],
+  );
 
   // 追加文件
   const handleAddFiles = useCallback((newFiles: PendingFile[]) => {
@@ -144,15 +162,42 @@ export default function ProofreadPage() {
     return true;
   }, [pendingFiles, savedTaskId, taskName]);
 
-  // 重置，开始新的导入
+  // 重置，开始新的导入（可撤销）
   const handleReset = useCallback(() => {
+    const prev = {
+      pendingFiles,
+      currentEditIndex,
+      savedTaskId,
+      taskName,
+      importType,
+      stage,
+    };
     setPendingFiles([]);
     setCurrentEditIndex(-1);
     setSavedTaskId(null);
     setTaskName('');
     setImportType('video');
     setStage('import');
-  }, []);
+    if (prev.pendingFiles.length > 0) {
+      confirmOrUndo(t('importReset') || '已重新开始导入', () => {
+        setPendingFiles(prev.pendingFiles);
+        setCurrentEditIndex(prev.currentEditIndex);
+        setSavedTaskId(prev.savedTaskId);
+        setTaskName(prev.taskName);
+        setImportType(prev.importType);
+        setStage(prev.stage);
+      });
+    }
+  }, [
+    pendingFiles,
+    currentEditIndex,
+    savedTaskId,
+    taskName,
+    importType,
+    stage,
+    confirmOrUndo,
+    t,
+  ]);
 
   // 自动保存：当已保存的任务有变化时自动更新
   const isInitialMount = useRef(true);

@@ -195,5 +195,6 @@
     "accelDescAvailable": "Your device supports GPU acceleration — several times faster transcription once enabled",
     "goEnable": "Enable",
     "enabled": "Enabled"
-  }
+  },
+  "undo": "Undo"
 }

@@ -283,7 +283,6 @@
   "part1Duration": "第一部分",
   "part2Duration": "第二部分",
   "confirmSplit": "确认拆分",
-  "saveAndBack": "保存并返回",
   "aiOptimize": "AI 优化",
   "aiOptimizeTitle": "AI 优化翻译",
   "aiOptimizeDesc": "使用 AI 优化当前字幕的翻译质量",
@@ -337,5 +336,7 @@
   "batchOptimizeFailed": "批量优化失败",
   "noSubtitlesToOptimize": "没有可优化的字幕",
   "noOptimizationsSelected": "请选择要采纳的优化结果",
-  "optimizationsApplied": "已应用 {{count}} 条优化"
+  "optimizationsApplied": "已应用 {{count}} 条优化",
+  "fileRemoved": "已移除文件",
+  "importReset": "已重新开始导入"
 }

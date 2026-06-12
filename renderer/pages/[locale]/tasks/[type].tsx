@@ -30,6 +30,7 @@ import { TASK_TYPES, getTaskTypeBySlug } from 'lib/taskTypes';
 import useSystemInfo from 'hooks/useStystemInfo';
 import useFormConfig from 'hooks/useFormConfig';
 import useIpcCommunication from 'hooks/useIpcCommunication';
+import { useConfirmOrUndo } from 'hooks/useConfirmOrUndo';
 import TaskControls from '@/components/TaskControls';
 import InlineConfigBar from '@/components/tasks/InlineConfigBar';
 import AdvancedSheet from '@/components/tasks/AdvancedSheet';
@@ -49,6 +50,7 @@ export default function TaskPage() {
   const typeDef = getTaskTypeBySlug(slug);
 
   const { t } = useTranslation('tasks');
+  const confirmOrUndo = useConfirmOrUndo();
   const [files, setFiles] = useState([]);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string | null>(null);
@@ -208,8 +210,13 @@ export default function TaskPage() {
   };
 
   const handleClearList = () => {
+    if (!files.length) return;
+    const prevFiles = files;
     setFiles([]);
     setBannerDismissed(false);
+    confirmOrUndo(t('listCleared') || '已清空文件列表', () => {
+      setFiles(prevFiles);
+    });
   };
 
   const startRename = () => {

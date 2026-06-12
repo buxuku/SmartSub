@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
+import { useConfirmOrUndo } from 'hooks/useConfirmOrUndo';
 
 /** 品牌 logo 统一放在白色圆角底上，保证深色模式与选中态下都清晰可见 */
 function ProviderIcon({
@@ -73,6 +74,7 @@ function ProviderIcon({
 const ProvidersTab: React.FC = () => {
   const { t } = useTranslation('translateControl');
   const { t: commonT } = useTranslation('common');
+  const confirmOrUndo = useConfirmOrUndo();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [showPassword, setShowPassword] = useState<Record<string, boolean>>({});
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
@@ -209,9 +211,25 @@ const ProvidersTab: React.FC = () => {
   };
 
   const handleRemoveProvider = (providerId: string) => {
+    const prevProviders = providers;
+    const prevSelected = selectedProvider;
+    const removed = providers.find((p) => p.id === providerId);
     const updatedProviders = providers.filter((p) => p.id !== providerId);
     setProviders(updatedProviders);
     persistNow(updatedProviders);
+    // 删的是当前选中项：回落到第一个仍存在的服务商
+    if (selectedProvider === providerId) {
+      setSelectedProvider(updatedProviders[0]?.id ?? null);
+    }
+    confirmOrUndo(
+      t('providerRemoved', { name: removed?.name ?? providerId }) ||
+        `已删除服务商「${removed?.name ?? providerId}」`,
+      () => {
+        setProviders(prevProviders);
+        persistNow(prevProviders);
+        setSelectedProvider(prevSelected);
+      },
+    );
   };
 
   const [isTestLoading, setIsTestLoading] = useState(false);

@@ -195,5 +195,6 @@
     "accelDescAvailable": "您的设备支持显卡加速，开启后听写速度可提升数倍",
     "goEnable": "去开启",
     "enabled": "已开启"
-  }
+  },
+  "undo": "撤销"
 }

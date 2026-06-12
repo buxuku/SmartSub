@@ -61,5 +61,6 @@
   },
   "import": "Import",
   "clearList": "Clear list",
-  "taskCount": "{{count}} tasks"
+  "taskCount": "{{count}} tasks",
+  "listCleared": "File list cleared"
 }

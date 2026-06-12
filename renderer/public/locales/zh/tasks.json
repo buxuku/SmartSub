@@ -61,5 +61,6 @@
   },
   "import": "导入",
   "clearList": "清空列表",
-  "taskCount": "{{count}} 个任务"
+  "taskCount": "{{count}} 个任务",
+  "listCleared": "已清空文件列表"
 }

@@ -226,7 +226,7 @@
   "markCompleteAndBack": "Mark Complete",
   "unsavedChangesTitle": "Unsaved changes",
   "unsavedChangesDesc": "You have unsaved subtitle edits. Leaving now will discard them.",
-  "saveAndBack": "Save and leave",
+  "saveAndBack": "Save and Back",
   "discardAndBack": "Discard and leave",
   "keepEditing": "Keep editing",
   "noSavedTasks": "No saved tasks",
@@ -283,7 +283,6 @@
   "part1Duration": "Part 1",
   "part2Duration": "Part 2",
   "confirmSplit": "Confirm Split",
-  "saveAndBack": "Save and Back",
   "aiOptimize": "AI Optimize",
   "aiOptimizeTitle": "AI Optimize Translation",
   "aiOptimizeDesc": "Use AI to improve the translation quality of the current subtitle",
@@ -337,5 +336,7 @@
   "batchOptimizeFailed": "Batch optimization failed",
   "noSubtitlesToOptimize": "No subtitles to optimize",
   "noOptimizationsSelected": "Please select optimizations to apply",
-  "optimizationsApplied": "Applied {{count}} optimizations"
+  "optimizationsApplied": "Applied {{count}} optimizations",
+  "fileRemoved": "File removed",
+  "importReset": "Import reset"
 }

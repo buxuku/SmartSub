@@ -56,5 +56,6 @@
   "doubaoModelNameTips": "豆包翻译模型名称，默认为 doubao-seed-translation-250915，一般无需修改",
   "batchSizeDoubaoTips": "豆包翻译批量大小，由于 API 限制，建议设置为 1",
   "requestInterval": "请求间隔（秒）",
-  "requestIntervalTip": "每次请求之间的等待时间（秒），用于应对 API 速率限制。设为 0 表示不等待。例如：API 限制每分钟 10 次请求，可设为 6。"
+  "requestIntervalTip": "每次请求之间的等待时间（秒），用于应对 API 速率限制。设为 0 表示不等待。例如：API 限制每分钟 10 次请求，可设为 6。",
+  "providerRemoved": "已删除服务商「{{name}}」"
 }
