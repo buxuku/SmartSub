@@ -246,8 +246,10 @@ export default function TaskPage() {
     const paths: string[] = [];
     const droppedFiles = e.dataTransfer.files;
     for (let i = 0; i < droppedFiles.length; i++) {
-      // @ts-ignore - Electron File 对象包含 path 属性，支持文件和文件夹
-      const filePath = droppedFiles[i].path;
+      // Electron 32+ 移除 File.path，优先 webUtils；旧 preload 场景回退 .path
+      const filePath =
+        window?.ipc?.getPathForFile?.(droppedFiles[i]) ??
+        (droppedFiles[i] as any).path;
       if (filePath) {
         paths.push(filePath);
       }
