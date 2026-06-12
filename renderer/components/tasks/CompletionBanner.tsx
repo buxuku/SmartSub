@@ -2,6 +2,7 @@ import React from 'react';
 import { useRouter } from 'next/router';
 import {
   CheckCircle2,
+  ChevronDown,
   Edit2,
   Film,
   FolderOpen,
@@ -9,6 +10,12 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import { useTranslation } from 'next-i18next';
 import {
@@ -72,6 +79,7 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
   if (!doneFiles.length) return null;
 
   const firstDone = doneFiles[0];
+  const multiDone = doneFiles.length > 1;
 
   const handleOpenFolder = () => {
     const filePath = getRevealPath(firstDone);
@@ -80,17 +88,24 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
     }
   };
 
-  const mergeSubtitle =
-    firstDone?.translatedSrtFile || firstDone?.srtFile || '';
-  const canMerge = typeDef.accepts === 'media' && Boolean(mergeSubtitle);
+  const getMergeSubtitle = (file: any): string =>
+    file?.translatedSrtFile || file?.srtFile || '';
 
-  const handleGoMerge = () => {
+  const mergeableFiles =
+    typeDef.accepts === 'media'
+      ? doneFiles.filter((file) => Boolean(getMergeSubtitle(file)))
+      : [];
+
+  const handleGoMerge = (file: any) => {
     router.push(
       `/${locale}/subtitleMerge?video=${encodeURIComponent(
-        firstDone.filePath,
-      )}&subtitle=${encodeURIComponent(mergeSubtitle)}`,
+        file.filePath,
+      )}&subtitle=${encodeURIComponent(getMergeSubtitle(file))}`,
     );
   };
+
+  const fileLabel = (file: any) =>
+    `${file?.fileName ?? ''}${file?.fileExtension ?? ''}`;
 
   return (
     <div className="rounded-lg border border-green-500/30 bg-green-500/5 px-4 py-3 flex items-center gap-3 flex-wrap">
@@ -106,25 +121,71 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
         )}
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-xs gap-1"
-          onClick={() => onProofread(firstDone)}
-        >
-          <Edit2 className="h-3 w-3" />
-          {t('completion.goProofread')}
-        </Button>
-        {canMerge && (
+        {multiDone ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
+                <Edit2 className="h-3 w-3" />
+                {t('completion.goProofread')}
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-w-[320px]">
+              {doneFiles.map((file) => (
+                <DropdownMenuItem
+                  key={file.uuid}
+                  className="text-xs"
+                  onClick={() => onProofread(file)}
+                >
+                  <span className="truncate">{fileLabel(file)}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
           <Button
             variant="outline"
             size="sm"
             className="h-7 text-xs gap-1"
-            onClick={handleGoMerge}
+            onClick={() => onProofread(firstDone)}
           >
-            <Film className="h-3 w-3" />
-            {t('completion.goMerge')}
+            <Edit2 className="h-3 w-3" />
+            {t('completion.goProofread')}
           </Button>
+        )}
+        {mergeableFiles.length > 1 ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
+                <Film className="h-3 w-3" />
+                {t('completion.goMerge')}
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-w-[320px]">
+              {mergeableFiles.map((file) => (
+                <DropdownMenuItem
+                  key={file.uuid}
+                  className="text-xs"
+                  onClick={() => handleGoMerge(file)}
+                >
+                  <span className="truncate">{fileLabel(file)}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          mergeableFiles.length === 1 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1"
+              onClick={() => handleGoMerge(mergeableFiles[0])}
+            >
+              <Film className="h-3 w-3" />
+              {t('completion.goMerge')}
+            </Button>
+          )
         )}
         <Button
           variant="outline"

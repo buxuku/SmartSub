@@ -167,7 +167,8 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                 <button
                   type="button"
                   aria-label={t('row.remove')}
-                  className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                  className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive disabled:cursor-not-allowed disabled:opacity-0 disabled:group-hover:opacity-30 disabled:hover:text-muted-foreground"
+                  disabled={queueBusy}
                   onClick={() => onDelete(file?.uuid)}
                 >
                   <X className="h-3.5 w-3.5" />

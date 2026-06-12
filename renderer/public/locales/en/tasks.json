@@ -16,6 +16,9 @@
     "style": "Subtitle style",
     "format": "Subtitle format"
   },
+  "noTranslate": "No translation",
+  "notConfigured": " (not configured)",
+  "skippedDuplicates": "Skipped {{count}} duplicate file(s)",
   "goDownloadModel": "Download a model",
   "goConfigureProvider": "Set up a translation service",
   "advanced": "Advanced options",

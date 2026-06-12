@@ -42,6 +42,7 @@ import { ProofreadEditor } from '@/components/proofread';
 import { getI18nProperties } from '../../../lib/get-static';
 import { IFiles } from '../../../../types';
 import { useTranslation } from 'next-i18next';
+import { toast } from 'sonner';
 
 export default function TaskPage() {
   const router = useRouter();
@@ -69,7 +70,31 @@ export default function TaskPage() {
   /** 来自加载（而非用户/任务事件）的 files 引用，避免回写存储 */
   const loadedFilesRef = useRef<any[] | null>(null);
   const projectIdRef = useRef<string | null>(null);
-  useIpcCommunication(setFiles);
+
+  // 统一导入入口：按 filePath 去重（对既有列表与本批内部），跳过时提示
+  const appendFiles = useCallback(
+    (incoming: IFiles[]) => {
+      if (!incoming?.length) return;
+      const seen = new Set(files.map((f) => f.filePath));
+      const fresh: IFiles[] = [];
+      let skipped = 0;
+      for (const file of incoming) {
+        if (file?.filePath && seen.has(file.filePath)) {
+          skipped++;
+          continue;
+        }
+        if (file?.filePath) seen.add(file.filePath);
+        fresh.push(file);
+      }
+      if (fresh.length) setFiles((prev) => [...prev, ...fresh]);
+      if (skipped > 0) {
+        toast.info(t('skippedDuplicates', { count: skipped }));
+      }
+    },
+    [files, t],
+  );
+
+  useIpcCommunication(setFiles, appendFiles);
 
   useEffect(() => {
     const load = async () => {
@@ -215,8 +240,14 @@ export default function TaskPage() {
     { combo: 'mod+o', allowInInput: true, handler: () => handleImport() },
   ]);
 
+  // 任务运行/取消中禁止破坏性列表操作（删行/清空），避免主进程仍处理已移除文件
+  const queueBusy =
+    taskStatus === 'running' ||
+    taskStatus === 'paused' ||
+    taskStatus === 'cancelling';
+
   const handleClearList = () => {
-    if (!files.length) return;
+    if (!files.length || queueBusy) return;
     const prevFiles = files;
     setFiles([]);
     setBannerDismissed(false);
@@ -275,7 +306,7 @@ export default function TaskPage() {
           taskType: typeDef.accepts === 'subtitle' ? 'translate' : 'media',
         })
         .then((dropped) => {
-          setFiles((prevFiles) => [...prevFiles, ...dropped]);
+          appendFiles(dropped);
         });
     }
   };
@@ -418,7 +449,7 @@ export default function TaskPage() {
             size="sm"
             className="h-8 text-xs gap-1.5"
             onClick={handleClearList}
-            disabled={!files.length}
+            disabled={!files.length || queueBusy}
           >
             <Trash2 className="h-3.5 w-3.5" />
             {t('clearList')}

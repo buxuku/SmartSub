@@ -1,19 +1,18 @@
-import { Provider, PROVIDER_TYPES, CONFIG_TEMPLATES } from '../../types';
+import { PROVIDER_TYPES, type Provider } from '../../types/provider';
 
 /**
- * 「已配置」= 该服务商类型声明的全部 required 字段均非空。
- * 无 required 字段的类型按未配置处理，避免空对象被误判为已配置。
+ * 服务商是否已完成必填配置。
+ * 按类型模板的 required 字段逐一检查实例值；无必填字段的服务商（如本地服务）视为已配置。
  */
-export function isProviderConfigured(provider: Provider | undefined): boolean {
-  if (!provider) return false;
-  const typeDef =
-    provider.type === 'openai'
-      ? CONFIG_TEMPLATES.openai
-      : PROVIDER_TYPES.find((t) => t.id === provider.type);
-  const requiredFields = (typeDef?.fields || []).filter((f) => f.required);
-  if (requiredFields.length === 0) return false;
-  return requiredFields.every((f) => {
-    const value = provider[f.key];
-    return value !== undefined && value !== null && String(value).trim() !== '';
-  });
+export function isProviderConfigured(provider: Provider): boolean {
+  const template = PROVIDER_TYPES.find((type) => type.id === provider.type);
+  if (!template) return true;
+  return template.fields
+    .filter((field) => field.required)
+    .every((field) => {
+      const value = provider[field.key];
+      return (
+        value !== undefined && value !== null && String(value).trim() !== ''
+      );
+    });
 }

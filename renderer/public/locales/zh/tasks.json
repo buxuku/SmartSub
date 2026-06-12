@@ -16,6 +16,9 @@
     "style": "字幕样式",
     "format": "字幕格式"
   },
+  "noTranslate": "不翻译",
+  "notConfigured": "（未配置）",
+  "skippedDuplicates": "已跳过 {{count}} 个重复文件",
   "goDownloadModel": "去下载模型",
   "goConfigureProvider": "去配置翻译服务",
   "advanced": "高级选项",

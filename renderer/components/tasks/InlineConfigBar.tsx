@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import Models from '@/components/Models';
 import { supportedLanguage } from 'lib/utils';
+import { isProviderConfigured } from 'lib/providerUtils';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import { useTranslation } from 'next-i18next';
 
@@ -18,6 +19,7 @@ interface Provider {
   id: string;
   name: string;
   type: string;
+  [key: string]: any;
 }
 
 interface InlineConfigBarProps {
@@ -145,13 +147,22 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
                   <SelectValue placeholder={tHome('pleaseSelect')} />
                 </SelectTrigger>
                 <SelectContent>
-                  {providers.map((provider) => (
-                    <SelectItem key={provider.id} value={provider.id}>
-                      {tCommon(`provider.${provider.name}`, {
-                        defaultValue: provider.name,
-                      })}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="-1">{t('noTranslate')}</SelectItem>
+                  {providers.map((provider) => {
+                    const configured = isProviderConfigured(provider as any);
+                    return (
+                      <SelectItem
+                        key={provider.id}
+                        value={provider.id}
+                        disabled={!configured}
+                      >
+                        {tCommon(`provider.${provider.name}`, {
+                          defaultValue: provider.name,
+                        })}
+                        {!configured && t('notConfigured')}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             ) : (
