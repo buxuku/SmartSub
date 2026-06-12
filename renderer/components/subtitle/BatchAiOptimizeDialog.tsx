@@ -213,7 +213,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
   // 开始批量优化
   const handleStartOptimization = useCallback(async () => {
     if (aiProviders.length === 0) {
-      toast.error(t('noAiProviderConfigured') || '请先配置 AI 翻译服务');
+      toast.error(t('noAiProviderConfigured'));
       return;
     }
 
@@ -230,7 +230,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
       .filter((sub) => sub.sourceContent.trim()); // 过滤空字幕
 
     if (subtitlesToOptimize.length === 0) {
-      toast.error(t('noSubtitlesToOptimize') || '没有可优化的字幕');
+      toast.error(t('noSubtitlesToOptimize'));
       return;
     }
 
@@ -273,14 +273,12 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
 
         if (result.cancelled && optimizationResults.length === 0) {
           // 取消且无任何完成结果：回到配置页
-          toast.info(t('batchOptimizeCancelled') || '已取消批量优化');
+          toast.info(t('batchOptimizeCancelled'));
           setStep('config');
         } else {
           setStep('review');
           if (result.cancelled) {
-            toast.info(
-              t('batchOptimizeCancelledPartial') || '已取消，显示部分结果',
-            );
+            toast.info(t('batchOptimizeCancelledPartial'));
           } else {
             toast.success(
               t('batchOptimizeCompleted') ||
@@ -289,12 +287,12 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
           }
         }
       } else {
-        toast.error(result.error || t('batchOptimizeFailed') || '批量优化失败');
+        toast.error(result.error || t('batchOptimizeFailed'));
         setStep('config');
       }
     } catch (error) {
       console.error('Batch optimization error:', error);
-      toast.error(t('batchOptimizeFailed') || '批量优化失败');
+      toast.error(t('batchOptimizeFailed'));
       setStep('config');
     } finally {
       setIsRunning(false);
@@ -358,7 +356,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
   const handleApplyOptimizations = useCallback(() => {
     const selectedResults = results.filter((r) => r.selected);
     if (selectedResults.length === 0) {
-      toast.warning(t('noOptimizationsSelected') || '请选择要采纳的优化结果');
+      toast.warning(t('noOptimizationsSelected'));
       return;
     }
 
@@ -395,25 +393,17 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5" />
             {step === 'config' &&
-              (isTranscriptMode
-                ? t('batchAiProofread') || '全文 AI 校对'
-                : t('batchAiOptimize') || '全文 AI 优化')}
-            {step === 'running' && (t('optimizing') || '优化中...')}
-            {step === 'review' && (t('reviewResults') || '审核结果')}
+              (isTranscriptMode ? t('batchAiProofread') : t('batchAiOptimize'))}
+            {step === 'running' && t('optimizing')}
+            {step === 'review' && t('reviewResults')}
           </DialogTitle>
           <DialogDescription>
             {step === 'config' &&
               (isTranscriptMode
-                ? t('batchAiProofreadDesc') ||
-                  '使用 AI 批量修正转写文本中的识别错误，修正后可逐条审核并选择是否采纳'
-                : t('batchAiOptimizeDesc') ||
-                  '使用 AI 批量优化所有字幕翻译，优化后可逐条审核并选择是否采纳')}
-            {step === 'running' &&
-              (t('batchOptimizeRunningDesc') ||
-                '正在批量处理字幕优化，请稍候...')}
-            {step === 'review' &&
-              (t('batchOptimizeReviewDesc') ||
-                '请审核优化结果，选择要采纳的条目')}
+                ? t('batchAiProofreadDesc')
+                : t('batchAiOptimizeDesc'))}
+            {step === 'running' && t('batchOptimizeRunningDesc')}
+            {step === 'review' && t('batchOptimizeReviewDesc')}
           </DialogDescription>
         </DialogHeader>
 
@@ -423,11 +413,10 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
             <div className="space-y-4 py-4">
               {/* AI 服务商选择 */}
               <div className="space-y-2">
-                <Label>{t('selectAiProvider') || '选择 AI 服务'}</Label>
+                <Label>{t('selectAiProvider')}</Label>
                 {aiProviders.length === 0 ? (
                   <div className="p-3 border rounded bg-muted/30 text-sm text-muted-foreground italic">
-                    {t('noAiProviderConfigured') ||
-                      '未配置 AI 翻译服务，请先在设置中添加'}
+                    {t('noAiProviderConfigured')}
                   </div>
                 ) : (
                   <Select
@@ -435,9 +424,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                     onValueChange={setSelectedProviderId}
                   >
                     <SelectTrigger>
-                      <SelectValue
-                        placeholder={t('selectProvider') || '选择服务商'}
-                      />
+                      <SelectValue placeholder={t('selectProvider')} />
                     </SelectTrigger>
                     <SelectContent>
                       {aiProviders.map((provider) => (
@@ -452,7 +439,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
 
               {/* 批次大小 */}
               <div className="space-y-2">
-                <Label>{t('batchSize') || '每批处理数量'}</Label>
+                <Label>{t('batchSize')}</Label>
                 <div className="flex items-center gap-4">
                   <Input
                     type="number"
@@ -470,7 +457,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                     className="w-24"
                   />
                   <span className="text-sm text-muted-foreground">
-                    {t('batchSizeHint') || '建议 3-10 条，过大可能导致超时'}
+                    {t('batchSizeHint')}
                   </span>
                 </div>
               </div>
@@ -478,16 +465,14 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
               {/* 待优化字幕统计 */}
               <div className="p-3 border rounded bg-muted/30">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm">
-                    {t('subtitlesToOptimize') || '待优化字幕'}
-                  </span>
+                  <span className="text-sm">{t('subtitlesToOptimize')}</span>
                   <Badge variant="secondary">
                     {subtitles.filter((s) => s.sourceContent?.trim()).length}{' '}
-                    {t('items') || '条'}
+                    {t('items')}
                   </Badge>
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
-                  {t('estimatedBatches') || '预计批次'}:{' '}
+                  {t('estimatedBatches')}:{' '}
                   {Math.ceil(
                     subtitles.filter((s) => s.sourceContent?.trim()).length /
                       batchSize,
@@ -498,7 +483,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
               {/* 自定义提示词 */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>{t('customPrompt') || '自定义提示词'}</Label>
+                  <Label>{t('customPrompt')}</Label>
                   <div className="flex items-center gap-1">
                     <Button
                       variant="ghost"
@@ -508,7 +493,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                         localStorage.removeItem(BATCH_PROMPT_CACHE_KEY);
                       }}
                     >
-                      {t('resetToDefault') || '重置'}
+                      {t('resetToDefault')}
                     </Button>
                     <Button
                       variant="ghost"
@@ -531,8 +516,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                       className="min-h-[150px] text-sm font-mono"
                     />
                     <p className="text-xs text-muted-foreground">
-                      {t('batchPromptHint') ||
-                        '支持变量：{{sourceLanguage}}、{{targetLanguage}}'}
+                      {t('batchPromptHint')}
                     </p>
                   </div>
                 )}
@@ -545,23 +529,20 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
             <div className="space-y-6 py-8">
               <div className="text-center">
                 <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-primary" />
-                <p className="text-lg font-medium">
-                  {t('batchOptimizing') || '正在批量优化...'}
-                </p>
+                <p className="text-lg font-medium">{t('batchOptimizing')}</p>
               </div>
 
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span>
-                    {t('progress') || '进度'}: {processedCount}/
+                    {t('progress')}: {processedCount}/
                     {subtitles.filter((s) => s.sourceContent?.trim()).length}
                   </span>
                   <span>{Math.round(progress)}%</span>
                 </div>
                 <Progress value={progress} />
                 <p className="text-sm text-muted-foreground text-center">
-                  {t('processingBatch') || '正在处理批次'} {currentBatch}/
-                  {totalBatches}
+                  {t('processingBatch')} {currentBatch}/{totalBatches}
                 </p>
               </div>
             </div>
@@ -578,25 +559,25 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                       variant="outline"
                       className="text-xs border-warning/60 text-warning"
                     >
-                      {t('batchOptimizeCancelledBadge') || '已取消 · 部分结果'}
+                      {t('batchOptimizeCancelledBadge')}
                     </Badge>
                   )}
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 text-success" />
                     <span className="text-sm">
-                      {t('successCount') || '成功'}: {summary.success}
+                      {t('successCount')}: {summary.success}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <XCircle className="h-4 w-4 text-destructive" />
                     <span className="text-sm">
-                      {t('errorCount') || '失败'}: {summary.error}
+                      {t('errorCount')}: {summary.error}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <AlertCircle className="h-4 w-4 text-warning" />
                     <span className="text-sm">
-                      {t('skippedCount') || '跳过'}: {summary.skipped}
+                      {t('skippedCount')}: {summary.skipped}
                     </span>
                   </div>
                   <div className="flex-1" />
@@ -611,8 +592,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                       }
                     />
                     <label htmlFor="select-all" className="text-sm">
-                      {t('selectAll') || '全选'} ({selectedCount}/
-                      {selectableCount})
+                      {t('selectAll')} ({selectedCount}/{selectableCount})
                     </label>
                   </div>
                 </div>
@@ -660,20 +640,20 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                                   variant="default"
                                   className="text-xs bg-success"
                                 >
-                                  {t('changed') || '已优化'}
+                                  {t('changed')}
                                 </Badge>
                               ) : (
                                 <Badge variant="secondary" className="text-xs">
-                                  {t('unchanged') || '无变化'}
+                                  {t('unchanged')}
                                 </Badge>
                               )
                             ) : result.status === 'error' ? (
                               <Badge variant="destructive" className="text-xs">
-                                {t('error') || '错误'}
+                                {t('error')}
                               </Badge>
                             ) : (
                               <Badge variant="outline" className="text-xs">
-                                {t('skipped') || '跳过'}
+                                {t('skipped')}
                               </Badge>
                             )}
                           </div>
@@ -696,20 +676,20 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                                 <div className="p-2 bg-muted/50 rounded text-sm">
                                   <div className="text-xs text-muted-foreground mb-1">
                                     {isTranscriptMode
-                                      ? t('sourceText') || '原文'
-                                      : t('originalTranslation') || '原翻译'}
+                                      ? t('sourceText')
+                                      : t('originalTranslation')}
                                   </div>
                                   {result.originalTarget || (
                                     <span className="italic text-muted-foreground">
-                                      ({t('empty') || '空'})
+                                      ({t('empty')})
                                     </span>
                                   )}
                                 </div>
                                 <div className="p-2 bg-success/10 rounded text-sm border border-success/30">
                                   <div className="text-xs text-success mb-1">
                                     {isTranscriptMode
-                                      ? t('correctedText') || '修正后'
-                                      : t('optimizedTranslation') || '优化后'}
+                                      ? t('correctedText')
+                                      : t('optimizedTranslation')}
                                   </div>
                                   {result.optimizedTarget}
                                 </div>
@@ -736,7 +716,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
           {step === 'config' && (
             <>
               <Button variant="outline" onClick={() => onOpenChange(false)}>
-                {t('cancel') || '取消'}
+                {t('cancel')}
               </Button>
               <Button
                 onClick={handleStartOptimization}
@@ -746,7 +726,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                 }
               >
                 <Play className="h-4 w-4 mr-1" />
-                {t('startBatchOptimize') || '开始优化'}
+                {t('startBatchOptimize')}
               </Button>
             </>
           )}
@@ -758,9 +738,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
               disabled={isCancelling}
             >
               <XCircle className="h-4 w-4 mr-1" />
-              {isCancelling
-                ? t('cancelling') || '取消中...'
-                : t('cancel') || '取消'}
+              {isCancelling ? t('cancelling') : t('cancel')}
             </Button>
           )}
 
@@ -768,10 +746,10 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
             <>
               <Button variant="outline" onClick={handleBackToConfig}>
                 <RotateCcw className="h-4 w-4 mr-1" />
-                {t('reoptimize') || '重新优化'}
+                {t('reoptimize')}
               </Button>
               <Button variant="outline" onClick={() => onOpenChange(false)}>
-                {t('cancel') || '取消'}
+                {t('cancel')}
               </Button>
               <Button
                 onClick={handleApplyOptimizations}

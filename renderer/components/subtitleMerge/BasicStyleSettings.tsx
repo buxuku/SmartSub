@@ -35,14 +35,14 @@ export default function BasicStyleSettings({
     <div className="space-y-4">
       {/* 字体选择 */}
       <div className="space-y-2">
-        <Label className="text-sm">{t('fontFamily') || '字体'}</Label>
+        <Label className="text-sm">{t('fontFamily')}</Label>
         <Select
           value={style.fontName}
           onValueChange={(value) => onUpdateStyle({ fontName: value })}
           disabled={disabled}
         >
           <SelectTrigger>
-            <SelectValue placeholder={t('selectFont') || '选择字体'} />
+            <SelectValue placeholder={t('selectFont')} />
           </SelectTrigger>
           <SelectContent>
             {FONT_LIST.map((font) => (
@@ -57,7 +57,7 @@ export default function BasicStyleSettings({
       {/* 字号大小 */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-sm">{t('fontSize') || '字号'}</Label>
+          <Label className="text-sm">{t('fontSize')}</Label>
           <span className="text-sm text-muted-foreground">
             {style.fontSize}px
           </span>
@@ -74,7 +74,7 @@ export default function BasicStyleSettings({
 
       {/* 字体颜色 */}
       <div className="space-y-2">
-        <Label className="text-sm">{t('fontColor') || '字体颜色'}</Label>
+        <Label className="text-sm">{t('fontColor')}</Label>
         <div className="flex items-center gap-2">
           <Input
             type="color"
@@ -96,7 +96,7 @@ export default function BasicStyleSettings({
 
       {/* 边框颜色 */}
       <div className="space-y-2">
-        <Label className="text-sm">{t('outlineColor') || '边框颜色'}</Label>
+        <Label className="text-sm">{t('outlineColor')}</Label>
         <div className="flex items-center gap-2">
           <Input
             type="color"
@@ -118,7 +118,7 @@ export default function BasicStyleSettings({
 
       {/* 对齐位置 */}
       <div className="space-y-2">
-        <Label className="text-sm">{t('position') || '位置'}</Label>
+        <Label className="text-sm">{t('position')}</Label>
         <AlignmentSelector
           value={style.alignment}
           onChange={(value) => onUpdateStyle({ alignment: value })}

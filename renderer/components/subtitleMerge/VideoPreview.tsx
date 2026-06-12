@@ -166,9 +166,7 @@ export default function VideoPreview({
             </>
           ) : (
             <div className="text-muted-foreground text-center">
-              <p className="text-sm">
-                {t('selectVideoToPreview') || '请选择视频文件预览'}
-              </p>
+              <p className="text-sm">{t('selectVideoToPreview')}</p>
             </div>
           )}
         </div>

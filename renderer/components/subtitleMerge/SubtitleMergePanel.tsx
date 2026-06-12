@@ -110,9 +110,7 @@ export default function SubtitleMergePanel({
         {/* 左侧：样式设置 */}
         <Card className="flex flex-col min-h-0 overflow-hidden">
           <CardHeader className="flex-shrink-0 py-3 px-4">
-            <CardTitle className="text-sm">
-              {t('styleSettings') || '字幕样式设置'}
-            </CardTitle>
+            <CardTitle className="text-sm">{t('styleSettings')}</CardTitle>
           </CardHeader>
           <CardContent className="flex-1 min-h-0 pt-0 px-4 pb-4">
             <ScrollArea className="h-full">
@@ -120,8 +118,7 @@ export default function SubtitleMergePanel({
                 {/* 软字幕模式提示：样式仅对烧录生效 */}
                 {isSoftMux && (
                   <p className="rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
-                    {t('styleOnlyForHardcode') ||
-                      '软字幕的样式由播放器决定，以下样式设置仅对「烧录硬字幕」生效'}
+                    {t('styleOnlyForHardcode')}
                   </p>
                 )}
 
@@ -137,7 +134,7 @@ export default function SubtitleMergePanel({
                 {/* 基础设置 */}
                 <div>
                   <h3 className="text-xs font-medium mb-2 text-muted-foreground">
-                    {t('basicSettings') || '基础设置'}
+                    {t('basicSettings')}
                   </h3>
                   <BasicStyleSettings
                     style={style}
@@ -164,9 +161,7 @@ export default function SubtitleMergePanel({
           {/* 预览区域 */}
           <Card className="flex flex-col min-h-0 overflow-hidden">
             <CardHeader className="flex-shrink-0 py-3 px-4">
-              <CardTitle className="text-sm">
-                {t('preview') || '效果预览'}
-              </CardTitle>
+              <CardTitle className="text-sm">{t('preview')}</CardTitle>
             </CardHeader>
             <CardContent className="flex-1 min-h-0 pt-0 px-4 pb-4 overflow-auto">
               <VideoPreview

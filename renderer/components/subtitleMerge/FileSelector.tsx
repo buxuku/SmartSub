@@ -69,7 +69,7 @@ export default function FileSelector({
             </div>
           ) : (
             <span className="text-sm text-muted-foreground">
-              {t('clickToSelectVideo') || '点击选择视频文件'}
+              {t('clickToSelectVideo')}
             </span>
           )}
         </div>
@@ -114,13 +114,13 @@ export default function FileSelector({
               </span>
               {subtitleInfo && (
                 <span className="text-xs text-muted-foreground whitespace-nowrap">
-                  {subtitleInfo.count} {t('subtitleCount') || '条'}
+                  {subtitleInfo.count} {t('subtitleCount')}
                 </span>
               )}
             </div>
           ) : (
             <span className="text-sm text-muted-foreground">
-              {t('clickToSelectSubtitle') || '点击选择字幕文件'}
+              {t('clickToSelectSubtitle')}
             </span>
           )}
         </div>

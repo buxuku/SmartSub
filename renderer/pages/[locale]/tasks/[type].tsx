@@ -265,7 +265,7 @@ export default function TaskPage() {
     const prevFiles = files;
     setFiles([]);
     setBannerDismissed(false);
-    confirmOrUndo(t('listCleared') || '已清空文件列表', () => {
+    confirmOrUndo(t('listCleared'), () => {
       setFiles(prevFiles);
     });
   };

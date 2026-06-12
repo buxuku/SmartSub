@@ -422,10 +422,7 @@ const ProvidersTab: React.FC = () => {
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle>{t('addCustomProvider')}</DialogTitle>
-            <DialogDescription>
-              {t('addCustomProviderDesc') ||
-                '创建一个自定义翻译服务商，可配置接口地址与模型。'}
-            </DialogDescription>
+            <DialogDescription>{t('addCustomProviderDesc')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">

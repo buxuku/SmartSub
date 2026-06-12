@@ -83,14 +83,14 @@ export default function ProofreadImport({
       });
 
       if (!scanResult.success) {
-        toast.error(t('scanFailed') || '扫描目录失败');
+        toast.error(t('scanFailed'));
         return;
       }
 
       const { videos, subtitles } = scanResult.data;
 
       if (videos.length === 0 && subtitles.length === 0) {
-        toast.info(t('noFilesFound') || '未找到视频或字幕文件');
+        toast.info(t('noFilesFound'));
         return;
       }
 
@@ -192,11 +192,9 @@ export default function ProofreadImport({
     <div className="space-y-6">
       <div className="text-center mb-8">
         <h2 className="text-xl font-semibold mb-2">
-          {t('selectImportMethod') || '选择导入方式'}
+          {t('selectImportMethod')}
         </h2>
-        <p className="text-muted-foreground">
-          {t('importMethodDescription') || '导入视频或字幕文件开始批量校对'}
-        </p>
+        <p className="text-muted-foreground">{t('importMethodDescription')}</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto">
@@ -206,12 +204,10 @@ export default function ProofreadImport({
         >
           <CardHeader className="text-center pb-2">
             <Video className="w-12 h-12 mx-auto text-primary" />
-            <CardTitle className="text-lg">
-              {t('importVideos') || '导入视频'}
-            </CardTitle>
+            <CardTitle className="text-lg">{t('importVideos')}</CardTitle>
           </CardHeader>
           <CardContent className="text-center text-sm text-muted-foreground">
-            {t('importVideosDesc') || '导入视频文件，自动检测关联字幕'}
+            {t('importVideosDesc')}
           </CardContent>
         </Card>
 
@@ -221,12 +217,10 @@ export default function ProofreadImport({
         >
           <CardHeader className="text-center pb-2">
             <FileText className="w-12 h-12 mx-auto text-primary" />
-            <CardTitle className="text-lg">
-              {t('importSubtitles') || '导入字幕'}
-            </CardTitle>
+            <CardTitle className="text-lg">{t('importSubtitles')}</CardTitle>
           </CardHeader>
           <CardContent className="text-center text-sm text-muted-foreground">
-            {t('importSubtitlesDesc') || '直接导入字幕文件进行校对'}
+            {t('importSubtitlesDesc')}
           </CardContent>
         </Card>
 
@@ -236,12 +230,10 @@ export default function ProofreadImport({
         >
           <CardHeader className="text-center pb-2">
             <FolderOpen className="w-12 h-12 mx-auto text-primary" />
-            <CardTitle className="text-lg">
-              {t('importFolder') || '导入文件夹'}
-            </CardTitle>
+            <CardTitle className="text-lg">{t('importFolder')}</CardTitle>
           </CardHeader>
           <CardContent className="text-center text-sm text-muted-foreground">
-            {t('importFolderDesc') || '批量导入视频和字幕文件'}
+            {t('importFolderDesc')}
           </CardContent>
         </Card>
       </div>

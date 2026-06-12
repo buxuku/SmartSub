@@ -505,10 +505,10 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
       originalSubtitle: t('originalSubtitle'),
       translatedSubtitle: t('translatedSubtitle'),
       translationFailedPlaceholder: t('translationFailedPlaceholder'),
-      aiOptimize: t('aiOptimize') || 'AI 优化',
-      split: t('split') || '拆分',
-      timeInvalidFormat: t('timeEditInvalidFormat') || '时间格式无效',
-      timeEditHint: t('timeEditHint') || '点击编辑起止时间',
+      aiOptimize: t('aiOptimize'),
+      split: t('split'),
+      timeInvalidFormat: t('timeEditInvalidFormat'),
+      timeEditHint: t('timeEditHint'),
     }),
     [t],
   );
@@ -556,12 +556,12 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                   onCheckedChange={handleFailedOnlyChange}
                   className="scale-75"
                 />
-                {t('failedOnlyLabel') || '只看失败'}
+                {t('failedOnlyLabel')}
               </label>
             )}
             {failedOnly && failedBaseline > 0 && (
               <span className="flex-shrink-0 text-xs tabular-nums">
-                {(t('failedProcessedProgress') || '已处理 {{done}}/{{total}}')
+                {t('failedProcessedProgress')
                   .replace('{{done}}', String(processedCount))
                   .replace('{{total}}', String(failedBaseline))}
               </span>
@@ -583,9 +583,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                     onClick={retranslate.cancel}
                     disabled={retranslate.cancelling}
                   >
-                    {retranslate.cancelling
-                      ? t('cancelling') || '取消中...'
-                      : t('cancel') || '取消'}
+                    {retranslate.cancelling ? t('cancelling') : t('cancel')}
                   </Button>
                 </div>
               ) : (
@@ -596,9 +594,10 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                   onClick={retranslate.start}
                 >
                   <RotateCcw className="mr-1 h-3 w-3" />
-                  {(
-                    t('retranslateFailedBtn') || '重翻失败 ({{count}})'
-                  ).replace('{{count}}', String(failedIndices.length))}
+                  {t('retranslateFailedBtn').replace(
+                    '{{count}}',
+                    String(failedIndices.length),
+                  )}
                 </Button>
               ))}
             {hasFailedTranslations && (
@@ -651,7 +650,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
               className="h-7 px-2 text-xs"
               onClick={() => setSelRange(null)}
             >
-              {t('clearSelection') || '取消选择'}
+              {t('clearSelection')}
             </Button>
           </div>
         </div>
@@ -662,14 +661,14 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
         {failedOnly && displayCount === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-sm text-muted-foreground">
             <CheckCircle2 className="h-8 w-8 text-success" />
-            <span>{t('failedAllClear') || '失败字幕已全部处理'}</span>
+            <span>{t('failedAllClear')}</span>
             <Button
               variant="outline"
               size="sm"
               className="h-7 px-3 text-xs"
               onClick={() => handleFailedOnlyChange(false)}
             >
-              {t('showAllSubtitles') || '显示全部字幕'}
+              {t('showAllSubtitles')}
             </Button>
           </div>
         ) : (

@@ -117,7 +117,7 @@ export default function ProofreadPage() {
         removed = prev[index];
         return prev.filter((_, i) => i !== index);
       });
-      confirmOrUndo(t('fileRemoved') || '已移除文件', () => {
+      confirmOrUndo(t('fileRemoved'), () => {
         if (!removed) return;
         const item = removed;
         setPendingFiles((prev) => {
@@ -179,7 +179,7 @@ export default function ProofreadPage() {
     setImportType('video');
     setStage('import');
     if (prev.pendingFiles.length > 0) {
-      confirmOrUndo(t('importReset') || '已重新开始导入', () => {
+      confirmOrUndo(t('importReset'), () => {
         setPendingFiles(prev.pendingFiles);
         setCurrentEditIndex(prev.currentEditIndex);
         setSavedTaskId(prev.savedTaskId);
@@ -272,11 +272,11 @@ export default function ProofreadPage() {
           <TabsList className="grid w-full grid-cols-2 max-w-xs flex-shrink-0">
             <TabsTrigger value="new">
               <Plus className="w-4 h-4 mr-2" />
-              {t('newTask') || '新建任务'}
+              {t('newTask')}
             </TabsTrigger>
             <TabsTrigger value="history">
               <History className="w-4 h-4 mr-2" />
-              {t('historyTasks') || '历史任务'}
+              {t('historyTasks')}
             </TabsTrigger>
           </TabsList>
         )}

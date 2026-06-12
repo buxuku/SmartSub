@@ -194,10 +194,10 @@ export default function ProofreadFileList({
     try {
       const success = await onSaveTask();
       if (success) {
-        toast.success(t('taskSaved') || '任务已保存');
+        toast.success(t('taskSaved'));
       }
     } catch (error) {
-      toast.error(t('saveFailed') || '保存失败');
+      toast.error(t('saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -291,21 +291,21 @@ export default function ProofreadFileList({
         return (
           <div className="flex items-center gap-1 text-success whitespace-nowrap">
             <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-            <span className="text-xs">{t('completed') || '已完成'}</span>
+            <span className="text-xs">{t('completed')}</span>
           </div>
         );
       case 'proofreading':
         return (
           <div className="flex items-center gap-1 text-primary whitespace-nowrap">
             <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
-            <span className="text-xs">{t('proofreading') || '校对中'}</span>
+            <span className="text-xs">{t('proofreading')}</span>
           </div>
         );
       default:
         return (
           <div className="flex items-center gap-1 text-muted-foreground whitespace-nowrap">
             <Circle className="w-4 h-4 flex-shrink-0" />
-            <span className="text-xs">{t('pending') || '待校对'}</span>
+            <span className="text-xs">{t('pending')}</span>
           </div>
         );
     }
@@ -333,28 +333,28 @@ export default function ProofreadFileList({
                   className="font-medium max-w-[200px] truncate"
                   title={taskName}
                 >
-                  {taskName || t('untitledTask') || '未命名任务'}
+                  {taskName || t('untitledTask')}
                 </h3>
                 <Edit2 className="w-4 h-4 text-muted-foreground" />
               </div>
             </PopoverTrigger>
             <PopoverContent className="w-80">
               <div className="space-y-2">
-                <Label>{t('taskName') || '任务名称'}</Label>
+                <Label>{t('taskName')}</Label>
                 <Input
                   value={taskName}
                   onChange={(e) => onTaskNameChange(e.target.value)}
-                  placeholder={t('enterTaskName') || '输入任务名称'}
+                  placeholder={t('enterTaskName')}
                 />
               </div>
             </PopoverContent>
           </Popover>
           <Badge variant="secondary">
-            {completedCount}/{files.length} {t('completed') || '已完成'}
+            {completedCount}/{files.length} {t('completed')}
           </Badge>
           {savedTaskId && (
             <Badge variant="outline" className="text-success">
-              {t('saved') || '已保存'}
+              {t('saved')}
             </Badge>
           )}
         </div>
@@ -362,13 +362,11 @@ export default function ProofreadFileList({
           {/* 追加文件 */}
           <Button variant="outline" size="sm" onClick={handleAppendFiles}>
             <Plus className="w-4 h-4 mr-1" />
-            {importType === 'video'
-              ? t('appendVideos') || '追加视频'
-              : t('appendSubtitles') || '追加字幕'}
+            {importType === 'video' ? t('appendVideos') : t('appendSubtitles')}
           </Button>
           <Button variant="outline" size="sm" onClick={onReset}>
             <RotateCcw className="w-4 h-4 mr-1" />
-            {t('reset') || '重新导入'}
+            {t('reset')}
           </Button>
           <Button
             variant="default"
@@ -381,9 +379,7 @@ export default function ProofreadFileList({
             ) : (
               <Save className="w-4 h-4 mr-1" />
             )}
-            {savedTaskId
-              ? t('updateTask') || '更新任务'
-              : t('saveTask') || '保存任务'}
+            {savedTaskId ? t('updateTask') : t('saveTask')}
           </Button>
         </div>
       </div>
@@ -393,13 +389,11 @@ export default function ProofreadFileList({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-28">{t('status') || '状态'}</TableHead>
-              <TableHead>{t('fileName') || '文件名'}</TableHead>
-              <TableHead>{t('sourceSubtitle') || '源字幕'}</TableHead>
-              <TableHead>{t('targetSubtitle') || '翻译字幕'}</TableHead>
-              <TableHead className="w-32 text-right">
-                {t('actions') || '操作'}
-              </TableHead>
+              <TableHead className="w-28">{t('status')}</TableHead>
+              <TableHead>{t('fileName')}</TableHead>
+              <TableHead>{t('sourceSubtitle')}</TableHead>
+              <TableHead>{t('targetSubtitle')}</TableHead>
+              <TableHead className="w-32 text-right">{t('actions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -433,7 +427,7 @@ export default function ProofreadFileList({
                     </div>
                     {file.videoPath && (
                       <div className="text-xs text-muted-foreground">
-                        {t('video') || '视频'}
+                        {t('video')}
                       </div>
                     )}
                   </TableCell>
@@ -463,9 +457,7 @@ export default function ProofreadFileList({
                         >
                           <SelectTrigger className="w-[200px]">
                             <SelectValue
-                              placeholder={
-                                t('selectSourceSubtitle') || '选择源字幕'
-                              }
+                              placeholder={t('selectSourceSubtitle')}
                             />
                           </SelectTrigger>
                           <SelectContent>
@@ -503,7 +495,7 @@ export default function ProofreadFileList({
                         </span>
                       ) : (
                         <span className="text-muted-foreground text-sm">
-                          {t('noSubtitle') || '无字幕'}
+                          {t('noSubtitle')}
                         </span>
                       )}
                       {/* 字幕导入模式下隐藏上传按钮 */}
@@ -513,7 +505,7 @@ export default function ProofreadFileList({
                           size="icon"
                           className="h-8 w-8"
                           onClick={() => handleSelectSourceSubtitle(index)}
-                          title={t('uploadSubtitle') || '上传字幕'}
+                          title={t('uploadSubtitle')}
                         >
                           <Upload className="w-4 h-4" />
                         </Button>
@@ -530,14 +522,12 @@ export default function ProofreadFileList({
                       >
                         <SelectTrigger className="w-[200px]">
                           <SelectValue
-                            placeholder={
-                              t('selectTargetSubtitle') || '选择翻译字幕'
-                            }
+                            placeholder={t('selectTargetSubtitle')}
                           />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">
-                            {t('noTranslation') || '无翻译字幕'}
+                            {t('noTranslation')}
                           </SelectItem>
                           {targetOptions.map((s, idx) => (
                             <SelectItem
@@ -566,7 +556,7 @@ export default function ProofreadFileList({
                         size="icon"
                         className="h-8 w-8"
                         onClick={() => handleSelectTargetSubtitle(index)}
-                        title={t('uploadSubtitle') || '上传字幕'}
+                        title={t('uploadSubtitle')}
                       >
                         <Upload className="w-4 h-4" />
                       </Button>
@@ -582,8 +572,8 @@ export default function ProofreadFileList({
                       >
                         <Play className="w-4 h-4 mr-1" />
                         {file.status === 'completed'
-                          ? t('view') || '查看'
-                          : t('proofread') || '校对'}
+                          ? t('view')
+                          : t('proofread')}
                       </Button>
                       <Button
                         variant="ghost"
@@ -604,7 +594,7 @@ export default function ProofreadFileList({
 
       {files.length === 0 && (
         <div className="text-center py-12 text-muted-foreground">
-          {t('noFiles') || '暂无文件'}
+          {t('noFiles')}
         </div>
       )}
     </div>

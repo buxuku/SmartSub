@@ -257,18 +257,18 @@ export default function ProofreadEditor({
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={handleBackClick}>
             <ArrowLeft className="w-4 h-4 mr-1" />
-            {t('backToList') || '返回列表'}
+            {t('backToList')}
           </Button>
           <div className="text-sm text-muted-foreground">{file.fileName}</div>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={handleSave}>
             <Save className="w-4 h-4 mr-1" />
-            {t('save') || '保存'}
+            {t('save')}
           </Button>
           <Button variant="default" size="sm" onClick={handleMarkCompleteClick}>
             <Check className="w-4 h-4 mr-1" />
-            {t('markCompleteAndBack') || '标记完成'}
+            {t('markCompleteAndBack')}
           </Button>
         </div>
       </div>
@@ -390,23 +390,18 @@ export default function ProofreadEditor({
       <AlertDialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('unsavedChangesTitle') || '有未保存的修改'}
-            </AlertDialogTitle>
+            <AlertDialogTitle>{t('unsavedChangesTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('unsavedChangesDesc') ||
-                '当前字幕有未保存的修改，直接返回将丢失这些修改。'}
+              {t('unsavedChangesDesc')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>
-              {t('keepEditing') || '继续编辑'}
-            </AlertDialogCancel>
+            <AlertDialogCancel>{t('keepEditing')}</AlertDialogCancel>
             <Button variant="outline" onClick={handleDiscardAndBack}>
-              {t('discardAndBack') || '不保存返回'}
+              {t('discardAndBack')}
             </Button>
             <AlertDialogAction onClick={handleSaveAndBack}>
-              {t('saveAndBack') || '保存并返回'}
+              {t('saveAndBack')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

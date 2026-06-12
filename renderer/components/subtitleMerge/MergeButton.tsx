@@ -67,16 +67,14 @@ export default function MergeButton({
     {
       value: 'hardcode',
       icon: <Flame className="w-3.5 h-3.5" />,
-      title: t('outputModeHardcode') || '烧录硬字幕',
-      desc:
-        t('outputModeHardcodeDesc') || '字幕画入画面，兼容所有播放器（较慢）',
+      title: t('outputModeHardcode'),
+      desc: t('outputModeHardcodeDesc'),
     },
     {
       value: 'softmux',
       icon: <Layers className="w-3.5 h-3.5" />,
-      title: t('outputModeSoftmux') || '封装软字幕 (MKV)',
-      desc:
-        t('outputModeSoftmuxDesc') || '秒级完成、无损画质，播放器可开关字幕',
+      title: t('outputModeSoftmux'),
+      desc: t('outputModeSoftmuxDesc'),
     },
   ];
 
@@ -84,7 +82,7 @@ export default function MergeButton({
     <div className="space-y-4">
       {/* 输出方式 */}
       <div className="space-y-2">
-        <Label className="text-sm">{t('outputMode') || '输出方式'}</Label>
+        <Label className="text-sm">{t('outputMode')}</Label>
         <div className="grid grid-cols-2 gap-2">
           {modeOptions.map((option) => {
             const active = outputMode === option.value;
@@ -115,13 +113,13 @@ export default function MergeButton({
 
       {/* 输出路径 */}
       <div className="space-y-2">
-        <Label className="text-sm">{t('outputPath') || '输出路径'}</Label>
+        <Label className="text-sm">{t('outputPath')}</Label>
         <div className="flex items-center gap-2">
           <Input
             type="text"
             value={outputPath || ''}
             readOnly
-            placeholder={t('selectOutputPath') || '选择输出路径'}
+            placeholder={t('selectOutputPath')}
             className="flex-1 text-sm"
           />
           <Button variant="outline" size="icon" onClick={onSelectOutputPath}>
@@ -134,9 +132,7 @@ export default function MergeButton({
       {status === 'processing' && (
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">
-              {t('processing') || '处理中...'}
-            </span>
+            <span className="text-muted-foreground">{t('processing')}</span>
             <div className="flex items-center gap-2">
               <span className="font-medium">
                 {Math.round(progress.percent)}%
@@ -150,9 +146,7 @@ export default function MergeButton({
                   disabled={isCancelling}
                 >
                   <XCircle className="w-3 h-3 mr-1" />
-                  {isCancelling
-                    ? t('cancelling') || '取消中...'
-                    : t('cancel') || '取消'}
+                  {isCancelling ? t('cancelling') : t('cancel')}
                 </Button>
               )}
             </div>
@@ -160,7 +154,7 @@ export default function MergeButton({
           <Progress value={progress.percent} className="h-2" />
           {progress.timeMark && (
             <p className="text-xs text-muted-foreground">
-              {t('currentTime') || '当前时间'}: {progress.timeMark}
+              {t('currentTime')}: {progress.timeMark}
             </p>
           )}
         </div>
@@ -171,11 +165,11 @@ export default function MergeButton({
         <div className="flex items-center gap-2 p-3 bg-success/10 rounded-lg">
           <CheckCircle className="w-5 h-5 text-success" />
           <span className="text-sm text-success flex-1">
-            {t('mergeSuccess') || '合并成功'}
+            {t('mergeSuccess')}
           </span>
           <Button variant="outline" size="sm" onClick={onOpenOutputFolder}>
             <Folder className="w-4 h-4 mr-1" />
-            {t('openFolder') || '打开文件夹'}
+            {t('openFolder')}
           </Button>
         </div>
       )}
@@ -185,9 +179,7 @@ export default function MergeButton({
         <div className="flex items-start gap-2 p-3 bg-destructive/10 rounded-lg">
           <XCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm text-destructive">
-              {t('mergeError') || '合并失败'}
-            </p>
+            <p className="text-sm text-destructive">{t('mergeError')}</p>
             <p className="text-xs text-destructive/70 mt-1 break-all">
               {progress.errorMessage}
             </p>
@@ -205,12 +197,12 @@ export default function MergeButton({
         {status === 'processing' ? (
           <>
             <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-            {t('processing') || '处理中...'}
+            {t('processing')}
           </>
         ) : (
           <>
             <Play className="w-5 h-5 mr-2" />
-            {t('generateVideo') || '生成视频'}
+            {t('generateVideo')}
           </>
         )}
       </Button>
@@ -219,12 +211,12 @@ export default function MergeButton({
       {!canMerge && status !== 'processing' && (
         <p className="text-xs text-muted-foreground text-center">
           {!videoPath && !subtitlePath
-            ? t('selectFilesToMerge') || '请先选择视频和字幕文件'
+            ? t('selectFilesToMerge')
             : !videoPath
-              ? t('selectVideoToMerge') || '请选择视频文件'
+              ? t('selectVideoToMerge')
               : !subtitlePath
-                ? t('selectSubtitleToMerge') || '请选择字幕文件'
-                : t('selectOutputPathToMerge') || '请选择输出路径'}
+                ? t('selectSubtitleToMerge')
+                : t('selectOutputPathToMerge')}
         </p>
       )}
     </div>

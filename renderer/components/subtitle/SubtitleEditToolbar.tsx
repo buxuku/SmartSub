@@ -330,7 +330,7 @@ Only respond with the corrected text, nothing else.`;
     setTotalOccurrences(total);
     if (!matches.length) {
       setMatchPointer(-1);
-      toast.success(t('replaceAllDone') || '全部替换完成');
+      toast.success(t('replaceAllDone'));
       return;
     }
     const next = Math.min(matchPointer, matches.length - 1);
@@ -450,7 +450,7 @@ Only respond with the corrected text, nothing else.`;
     });
 
     onSubtitlesChange(newSubtitles);
-    toast.success(t('timeOffsetSuccess') || '时间轴调整完成');
+    toast.success(t('timeOffsetSuccess'));
     setShowTimeOffset(false);
   }, [timeOffset, offsetDirection, subtitles, onSubtitlesChange, t]);
 
@@ -461,7 +461,7 @@ Only respond with the corrected text, nothing else.`;
       mergeStart < 0 ||
       mergeEnd > subtitles.length
     ) {
-      toast.error(t('invalidMergeRange') || '无效的合并范围');
+      toast.error(t('invalidMergeRange'));
       return;
     }
     onMergeSubtitles(mergeStart, mergeEnd);
@@ -594,7 +594,7 @@ Only respond with the corrected text, nothing else.`;
     // 如果没有翻译内容，也可以使用 AI 生成翻译
 
     if (aiProviders.length === 0) {
-      toast.error(t('noAiProviderConfigured') || '请先配置 AI 翻译服务');
+      toast.error(t('noAiProviderConfigured'));
       return;
     }
 
@@ -616,11 +616,11 @@ Only respond with the corrected text, nothing else.`;
       if (result.success && result.data) {
         setOptimizedText(result.data);
       } else {
-        toast.error(result.error || t('aiOptimizeFailed') || 'AI 优化失败');
+        toast.error(result.error || t('aiOptimizeFailed'));
       }
     } catch (error) {
       console.error('AI optimize error:', error);
-      toast.error(t('aiOptimizeFailed') || 'AI 优化失败');
+      toast.error(t('aiOptimizeFailed'));
     } finally {
       setAiOptimizing(false);
     }
@@ -649,7 +649,7 @@ Only respond with the corrected text, nothing else.`;
     onSubtitlesChange(newSubtitles);
     setShowAiOptimize(false);
     setOptimizedText('');
-    toast.success(t('optimizationAccepted') || '已采纳优化结果');
+    toast.success(t('optimizationAccepted'));
   }, [
     optimizedText,
     currentSubtitleIndex,
@@ -687,7 +687,7 @@ Only respond with the corrected text, nothing else.`;
         className="h-8 w-8"
         onClick={onUndo}
         disabled={!canUndo}
-        title={t('undo') || '撤销'}
+        title={t('undo')}
       >
         <Undo2 className="h-4 w-4" />
       </Button>
@@ -697,7 +697,7 @@ Only respond with the corrected text, nothing else.`;
         className="h-8 w-8"
         onClick={onRedo}
         disabled={!canRedo}
-        title={t('redo') || '重做'}
+        title={t('redo')}
       >
         <Redo2 className="h-4 w-4" />
       </Button>
@@ -711,34 +711,34 @@ Only respond with the corrected text, nothing else.`;
             variant="ghost"
             size="sm"
             className="h-8"
-            title={t('searchReplace') || '搜索替换'}
+            title={t('searchReplace')}
           >
             <Search className="h-4 w-4 mr-1" />
-            {t('searchReplace') || '搜索替换'}
+            {t('searchReplace')}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-80">
           <div className="space-y-3">
             <div className="space-y-2">
-              <Label>{t('searchText') || '搜索内容'}</Label>
+              <Label>{t('searchText')}</Label>
               <Input
                 ref={searchInputRef}
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
-                placeholder={t('enterSearchText') || '输入搜索内容'}
+                placeholder={t('enterSearchText')}
                 onKeyUp={handleSearch}
               />
             </div>
             <div className="space-y-2">
-              <Label>{t('replaceWith') || '替换为'}</Label>
+              <Label>{t('replaceWith')}</Label>
               <Input
                 value={replaceText}
                 onChange={(e) => setReplaceText(e.target.value)}
-                placeholder={t('enterReplaceText') || '输入替换内容'}
+                placeholder={t('enterReplaceText')}
               />
             </div>
             <div className="space-y-2">
-              <Label>{t('searchIn') || '搜索范围'}</Label>
+              <Label>{t('searchIn')}</Label>
               <Select
                 value={searchTarget}
                 onValueChange={(v: any) => setSearchTarget(v)}
@@ -747,18 +747,12 @@ Only respond with the corrected text, nothing else.`;
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="source">
-                    {t('sourceOnly') || '仅原文'}
-                  </SelectItem>
+                  <SelectItem value="source">{t('sourceOnly')}</SelectItem>
                   {shouldShowTranslation && (
-                    <SelectItem value="target">
-                      {t('targetOnly') || '仅翻译'}
-                    </SelectItem>
+                    <SelectItem value="target">{t('targetOnly')}</SelectItem>
                   )}
                   {shouldShowTranslation && (
-                    <SelectItem value="both">
-                      {t('sourceAndTarget') || '原文和翻译'}
-                    </SelectItem>
+                    <SelectItem value="both">{t('sourceAndTarget')}</SelectItem>
                   )}
                 </SelectContent>
               </Select>
@@ -768,7 +762,7 @@ Only respond with the corrected text, nothing else.`;
                 checked={caseSensitive}
                 onCheckedChange={(v) => setCaseSensitive(v === true)}
               />
-              {t('caseSensitive') || '区分大小写'}
+              {t('caseSensitive')}
             </label>
             {matchCount > 0 && (
               <div className="flex items-center justify-between gap-2">
@@ -785,7 +779,7 @@ Only respond with the corrected text, nothing else.`;
                     variant="outline"
                     size="sm"
                     className="h-7 w-7 p-0"
-                    title={t('prevMatch') || '上一处'}
+                    title={t('prevMatch')}
                     onClick={() => handleNavigateMatch(-1)}
                   >
                     <ChevronUp className="h-3.5 w-3.5" />
@@ -794,7 +788,7 @@ Only respond with the corrected text, nothing else.`;
                     variant="outline"
                     size="sm"
                     className="h-7 w-7 p-0"
-                    title={t('nextMatch') || '下一处'}
+                    title={t('nextMatch')}
                     onClick={() => handleNavigateMatch(1)}
                   >
                     <ChevronDown className="h-3.5 w-3.5" />
@@ -806,7 +800,7 @@ Only respond with the corrected text, nothing else.`;
                     disabled={matchPointer < 0}
                     onClick={handleReplaceCurrent}
                   >
-                    {t('replaceCurrent') || '替换当前'}
+                    {t('replaceCurrent')}
                   </Button>
                 </div>
               </div>
@@ -814,7 +808,7 @@ Only respond with the corrected text, nothing else.`;
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={handleSearch}>
                 <Search className="h-4 w-4 mr-1" />
-                {t('search') || '搜索'}
+                {t('search')}
               </Button>
               <Button
                 size="sm"
@@ -822,7 +816,7 @@ Only respond with the corrected text, nothing else.`;
                 disabled={matchCount === 0}
               >
                 <Replace className="h-4 w-4 mr-1" />
-                {t('replaceAll') || '全部替换'}
+                {t('replaceAll')}
               </Button>
             </div>
           </div>
@@ -836,16 +830,16 @@ Only respond with the corrected text, nothing else.`;
             variant="ghost"
             size="sm"
             className="h-8"
-            title={t('timeOffset') || '时间轴微调'}
+            title={t('timeOffset')}
           >
             <Clock className="h-4 w-4 mr-1" />
-            {t('timeOffset') || '时间轴'}
+            {t('timeOffset')}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-72">
           <div className="space-y-3">
             <div className="space-y-2">
-              <Label>{t('offsetSeconds') || '偏移秒数'}</Label>
+              <Label>{t('offsetSeconds')}</Label>
               <div className="flex gap-2">
                 <Input
                   type="number"
@@ -862,18 +856,14 @@ Only respond with the corrected text, nothing else.`;
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="forward">
-                      {t('forward') || '延后'}
-                    </SelectItem>
-                    <SelectItem value="backward">
-                      {t('backward') || '提前'}
-                    </SelectItem>
+                    <SelectItem value="forward">{t('forward')}</SelectItem>
+                    <SelectItem value="backward">{t('backward')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <Button size="sm" onClick={handleTimeOffset} className="w-full">
-              {t('applyOffset') || '应用偏移'}
+              {t('applyOffset')}
             </Button>
           </div>
         </PopoverContent>
@@ -890,19 +880,19 @@ Only respond with the corrected text, nothing else.`;
             setMergeEnd(Math.min(currentSubtitleIndex + 2, subtitles.length));
             setShowMerge(true);
           }}
-          title={t('mergeSubtitles') || '合并字幕'}
+          title={t('mergeSubtitles')}
         >
           <Combine className="h-4 w-4 mr-1" />
-          {t('merge') || '合并'}
+          {t('merge')}
         </Button>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('mergeSubtitles') || '合并字幕'}</DialogTitle>
+            <DialogTitle>{t('mergeSubtitles')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{t('startIndex') || '起始序号'}</Label>
+                <Label>{t('startIndex')}</Label>
                 <Input
                   type="number"
                   min={0}
@@ -914,7 +904,7 @@ Only respond with the corrected text, nothing else.`;
                 />
               </div>
               <div className="space-y-2">
-                <Label>{t('endIndex') || '结束序号'}</Label>
+                <Label>{t('endIndex')}</Label>
                 <Input
                   type="number"
                   min={1}
@@ -929,19 +919,16 @@ Only respond with the corrected text, nothing else.`;
               </div>
             </div>
             <p className="text-sm text-muted-foreground">
-              {t('mergeHint') ||
-                '将合并第 {{start}} 到第 {{end}} 条字幕'
-                  .replace('{{start}}', String(mergeStart + 1))
-                  .replace('{{end}}', String(mergeEnd))}
+              {t('mergeHint')
+                .replace('{{start}}', String(mergeStart + 1))
+                .replace('{{end}}', String(mergeEnd))}
             </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowMerge(false)}>
-              {t('cancel') || '取消'}
+              {t('cancel')}
             </Button>
-            <Button onClick={handleMerge}>
-              {t('confirmMerge') || '确认合并'}
-            </Button>
+            <Button onClick={handleMerge}>{t('confirmMerge')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -954,17 +941,15 @@ Only respond with the corrected text, nothing else.`;
           className="h-8"
           onClick={handleOpenSplit}
           disabled={currentSubtitleIndex < 0}
-          title={t('splitSubtitle') || '拆分字幕'}
+          title={t('splitSubtitle')}
         >
           <Scissors className="h-4 w-4 mr-1" />
-          {t('split') || '拆分'}
+          {t('split')}
         </Button>
         <DialogContent className="max-w-lg flex flex-col">
           <DialogHeader>
-            <DialogTitle>{t('splitSubtitle') || '拆分字幕'}</DialogTitle>
-            <DialogDescription>
-              {t('splitSubtitleDesc') || '选择文字拆分位置和时间分配'}
-            </DialogDescription>
+            <DialogTitle>{t('splitSubtitle')}</DialogTitle>
+            <DialogDescription>{t('splitSubtitleDesc')}</DialogDescription>
           </DialogHeader>
           {/* 长字幕时预览区可滚动，确保底部的确认按钮始终可见 */}
           <div className="flex-1 min-h-0 overflow-y-auto">
@@ -983,7 +968,7 @@ Only respond with the corrected text, nothing else.`;
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowSplit(false)}>
-              {t('cancel') || '取消'}
+              {t('cancel')}
             </Button>
             <Button
               onClick={() => {
@@ -1003,7 +988,7 @@ Only respond with the corrected text, nothing else.`;
                 }
               }}
             >
-              {t('confirmSplit') || '确认拆分'}
+              {t('confirmSplit')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1017,22 +1002,18 @@ Only respond with the corrected text, nothing else.`;
           className="h-8"
           onClick={handleOpenAiOptimize}
           disabled={currentSubtitleIndex < 0}
-          title={t('aiOptimize') || 'AI 优化'}
+          title={t('aiOptimize')}
         >
           <Sparkles className="h-4 w-4 mr-1" />
-          {t('aiOptimize') || 'AI 优化'}
+          {t('aiOptimize')}
         </Button>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {isTranscriptMode
-                ? t('aiProofreadTitle') || 'AI 校对原文'
-                : t('aiOptimizeTitle') || 'AI 优化翻译'}
+              {isTranscriptMode ? t('aiProofreadTitle') : t('aiOptimizeTitle')}
             </DialogTitle>
             <DialogDescription>
-              {isTranscriptMode
-                ? t('aiProofreadDesc') || '使用 AI 修正当前字幕的转写错误'
-                : t('aiOptimizeDesc') || '使用 AI 优化当前字幕的翻译质量'}
+              {isTranscriptMode ? t('aiProofreadDesc') : t('aiOptimizeDesc')}
             </DialogDescription>
           </DialogHeader>
           {currentSubtitleIndex >= 0 &&
@@ -1040,11 +1021,10 @@ Only respond with the corrected text, nothing else.`;
               <div className="space-y-4 py-4">
                 {/* AI 服务商选择 */}
                 <div className="space-y-2">
-                  <Label>{t('selectAiProvider') || '选择 AI 服务'}</Label>
+                  <Label>{t('selectAiProvider')}</Label>
                   {aiProviders.length === 0 ? (
                     <div className="p-3 border rounded bg-muted/30 text-sm text-muted-foreground italic">
-                      {t('noAiProviderConfigured') ||
-                        '未配置 AI 翻译服务，请先在设置中添加'}
+                      {t('noAiProviderConfigured')}
                     </div>
                   ) : (
                     <Select
@@ -1052,9 +1032,7 @@ Only respond with the corrected text, nothing else.`;
                       onValueChange={setSelectedProviderId}
                     >
                       <SelectTrigger>
-                        <SelectValue
-                          placeholder={t('selectProvider') || '选择服务商'}
-                        />
+                        <SelectValue placeholder={t('selectProvider')} />
                       </SelectTrigger>
                       <SelectContent>
                         {aiProviders.map((provider) => (
@@ -1069,11 +1047,11 @@ Only respond with the corrected text, nothing else.`;
 
                 {/* 原文 */}
                 <div className="space-y-2">
-                  <Label>{t('sourceText') || '原文'}</Label>
+                  <Label>{t('sourceText')}</Label>
                   <div className="p-3 border rounded bg-muted/30 text-sm">
                     {subtitles[currentSubtitleIndex].sourceContent || (
                       <span className="text-muted-foreground italic">
-                        {t('empty') || '(空)'}
+                        {t('empty')}
                       </span>
                     )}
                   </div>
@@ -1082,11 +1060,11 @@ Only respond with the corrected text, nothing else.`;
                 {/* 当前翻译（纯转写模式无此区块） */}
                 {!isTranscriptMode && (
                   <div className="space-y-2">
-                    <Label>{t('currentTranslation') || '当前翻译'}</Label>
+                    <Label>{t('currentTranslation')}</Label>
                     <div className="p-3 border rounded bg-muted/30 text-sm">
                       {subtitles[currentSubtitleIndex].targetContent || (
                         <span className="text-muted-foreground italic">
-                          {t('empty') || '(空)'}
+                          {t('empty')}
                         </span>
                       )}
                     </div>
@@ -1096,15 +1074,15 @@ Only respond with the corrected text, nothing else.`;
                 {/* 自定义提示词 */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label>{t('customPrompt') || '优化提示词'}</Label>
+                    <Label>{t('customPrompt')}</Label>
                     <div className="flex items-center gap-1">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={handleResetPrompt}
-                        title={t('resetToDefault') || '重置为默认'}
+                        title={t('resetToDefault')}
                       >
-                        {t('resetToDefault') || '重置'}
+                        {t('resetToDefault')}
                       </Button>
                       <Button
                         variant="ghost"
@@ -1112,8 +1090,8 @@ Only respond with the corrected text, nothing else.`;
                         onClick={() => setShowCustomPrompt(!showCustomPrompt)}
                       >
                         {showCustomPrompt
-                          ? t('hideCustomPrompt') || '收起'
-                          : t('showCustomPrompt') || '展开'}
+                          ? t('hideCustomPrompt')
+                          : t('showCustomPrompt')}
                       </Button>
                     </div>
                   </div>
@@ -1122,15 +1100,11 @@ Only respond with the corrected text, nothing else.`;
                       <Textarea
                         value={customPrompt}
                         onChange={(e) => handlePromptChange(e.target.value)}
-                        placeholder={
-                          t('customPromptPlaceholder') ||
-                          '输入自定义提示词，可使用变量：{{sourceLanguage}}、{{targetLanguage}}、{{sourceText}}、{{targetText}}'
-                        }
+                        placeholder={t('customPromptPlaceholder')}
                         className="min-h-[200px] text-sm font-mono"
                       />
                       <p className="text-xs text-muted-foreground">
-                        {t('customPromptHint') ||
-                          '支持的变量：{{sourceLanguage}} - 源语言，{{targetLanguage}} - 目标语言，{{sourceText}} - 原文，{{targetText}} - 当前翻译'}
+                        {t('customPromptHint')}
                       </p>
                     </div>
                   )}
@@ -1138,11 +1112,11 @@ Only respond with the corrected text, nothing else.`;
 
                 {/* AI 优化结果 */}
                 <div className="space-y-2">
-                  <Label>{t('aiOptimizedResult') || 'AI 优化结果'}</Label>
+                  <Label>{t('aiOptimizedResult')}</Label>
                   {aiOptimizing ? (
                     <div className="p-3 border rounded bg-muted/30 flex items-center justify-center">
                       <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                      {t('optimizing') || '优化中...'}
+                      {t('optimizing')}
                     </div>
                   ) : optimizedText ? (
                     <Textarea
@@ -1152,7 +1126,7 @@ Only respond with the corrected text, nothing else.`;
                     />
                   ) : (
                     <div className="p-3 border rounded bg-muted/30 text-sm text-muted-foreground italic">
-                      {t('clickOptimizeToStart') || '点击"开始优化"获取结果'}
+                      {t('clickOptimizeToStart')}
                     </div>
                   )}
                 </div>
@@ -1160,7 +1134,7 @@ Only respond with the corrected text, nothing else.`;
             )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAiOptimize(false)}>
-              {t('cancel') || '取消'}
+              {t('cancel')}
             </Button>
             <Button
               variant="secondary"
@@ -1176,13 +1150,13 @@ Only respond with the corrected text, nothing else.`;
               ) : (
                 <Sparkles className="h-4 w-4 mr-1" />
               )}
-              {t('startOptimize') || '开始优化'}
+              {t('startOptimize')}
             </Button>
             <Button
               onClick={handleAcceptOptimization}
               disabled={!optimizedText || aiOptimizing}
             >
-              {t('acceptOptimization') || '采纳'}
+              {t('acceptOptimization')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1195,16 +1169,10 @@ Only respond with the corrected text, nothing else.`;
         className="h-8"
         onClick={() => setShowBatchOptimize(true)}
         disabled={subtitles.length === 0}
-        title={
-          isTranscriptMode
-            ? t('batchAiProofread') || '全文 AI 校对'
-            : t('batchAiOptimize') || '全文 AI 优化'
-        }
+        title={isTranscriptMode ? t('batchAiProofread') : t('batchAiOptimize')}
       >
         <Wand2 className="h-4 w-4 mr-1" />
-        {isTranscriptMode
-          ? t('batchAiProofread') || '全文校对'
-          : t('batchAiOptimize') || '全文优化'}
+        {isTranscriptMode ? t('batchAiProofread') : t('batchAiOptimize')}
       </Button>
 
       <BatchAiOptimizeDialog
@@ -1269,7 +1237,7 @@ function SplitPreview({
     <div className="space-y-4 py-4">
       {/* 文字拆分位置 */}
       <div className="space-y-2">
-        <Label>{t('textSplitPosition') || '文字拆分位置'}</Label>
+        <Label>{t('textSplitPosition')}</Label>
         <div className="flex items-center gap-2">
           <Slider
             value={[splitPosition]}
@@ -1287,26 +1255,22 @@ function SplitPreview({
 
       {/* 原文预览 */}
       <div className="space-y-2">
-        <Label>{t('sourcePreview') || '原文预览'}</Label>
+        <Label>{t('sourcePreview')}</Label>
         <div className="grid grid-cols-2 gap-2">
           <div className="p-2 border rounded text-sm bg-muted/30 min-h-[60px]">
             <div className="text-xs text-muted-foreground mb-1">
-              {t('part1') || '第一部分'}
+              {t('part1')}
             </div>
             {part1 || (
-              <span className="text-muted-foreground italic">
-                {t('empty') || '(空)'}
-              </span>
+              <span className="text-muted-foreground italic">{t('empty')}</span>
             )}
           </div>
           <div className="p-2 border rounded text-sm bg-muted/30 min-h-[60px]">
             <div className="text-xs text-muted-foreground mb-1">
-              {t('part2') || '第二部分'}
+              {t('part2')}
             </div>
             {part2 || (
-              <span className="text-muted-foreground italic">
-                {t('empty') || '(空)'}
-              </span>
+              <span className="text-muted-foreground italic">{t('empty')}</span>
             )}
           </div>
         </div>
@@ -1315,19 +1279,19 @@ function SplitPreview({
       {/* 翻译预览 */}
       {shouldShowTranslation && targetContent && (
         <div className="space-y-2">
-          <Label>{t('translationPreview') || '翻译预览'}</Label>
+          <Label>{t('translationPreview')}</Label>
           <div className="grid grid-cols-2 gap-2">
             <div className="p-2 border rounded text-sm bg-muted/30 min-h-[40px]">
               {targetPart1 || (
                 <span className="text-muted-foreground italic">
-                  {t('empty') || '(空)'}
+                  {t('empty')}
                 </span>
               )}
             </div>
             <div className="p-2 border rounded text-sm bg-muted/30 min-h-[40px]">
               {targetPart2 || (
                 <span className="text-muted-foreground italic">
-                  {t('empty') || '(空)'}
+                  {t('empty')}
                 </span>
               )}
             </div>
@@ -1337,7 +1301,7 @@ function SplitPreview({
 
       {/* 时间拆分 */}
       <div className="space-y-2">
-        <Label>{t('timeSplitPosition') || '时间拆分点'}</Label>
+        <Label>{t('timeSplitPosition')}</Label>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">
             {formatTime(startTime)}
@@ -1356,13 +1320,11 @@ function SplitPreview({
         </div>
         <div className="flex justify-between text-xs text-muted-foreground">
           <span>
-            {t('part1Duration') || '第一部分'}:{' '}
-            {formatTime(splitTime - startTime)}
+            {t('part1Duration')}: {formatTime(splitTime - startTime)}
           </span>
           <span className="font-medium">{formatTime(splitTime)}</span>
           <span>
-            {t('part2Duration') || '第二部分'}:{' '}
-            {formatTime(endTime - splitTime)}
+            {t('part2Duration')}: {formatTime(endTime - splitTime)}
           </span>
         </div>
       </div>
