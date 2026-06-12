@@ -6,6 +6,7 @@ import ProofreadFileList from '@/components/proofread/ProofreadFileList';
 import ProofreadEditor from '@/components/proofread/ProofreadEditor';
 import ProofreadTaskList from '@/components/proofread/ProofreadTaskList';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import PageHeader from '@/components/PageHeader';
 import { ProofreadTask } from '../../../types/proofread';
 import { Plus, History } from 'lucide-react';
 import {
@@ -261,13 +262,19 @@ export default function ProofreadPage() {
   };
 
   return (
-    <div className="h-full p-4 overflow-hidden flex flex-col">
+    <div className="h-full p-4 overflow-hidden flex flex-col gap-4">
+      {/* 编辑态隐藏页头与切换器：专注模式，经「返回列表」（带未保存守卫）退出 */}
+      {stage !== 'edit' && (
+        <PageHeader
+          title={t('proofreadPageTitle')}
+          description={t('proofreadPageDesc')}
+        />
+      )}
       <Tabs
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as 'new' | 'history')}
         className="flex-1 flex flex-col min-h-0"
       >
-        {/* 编辑态隐藏顶层切换器：专注模式，经「返回列表」（带未保存守卫）退出 */}
         {stage !== 'edit' && (
           <TabsList className="grid w-full grid-cols-2 max-w-xs flex-shrink-0">
             <TabsTrigger value="new">

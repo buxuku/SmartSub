@@ -117,7 +117,7 @@
   "updateInstallError": "安装更新失败",
   "downloadingUpdate": "正在下载更新",
   "downloadingUpdateDesc": "正在下载版本 {version}，下载完成后将提示安装。",
-  "subtitleProofread": "字幕校对",
+  "subtitleProofread": "校对字幕",
   "subtitleMerge": "合成到视频",
   "updateDialogTitle": "发现新版本",
   "currentVersion": "当前版本",

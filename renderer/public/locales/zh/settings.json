@@ -175,5 +175,6 @@
   "confirm": "确认",
   "cancel": "取消",
   "delete": "删除",
-  "advancedSettingsDesc": "极客选项：本地 whisper 命令与 VAD 细节参数，默认值即最佳实践"
+  "advancedSettingsDesc": "极客选项：本地 whisper 命令与 VAD 细节参数，默认值即最佳实践",
+  "settingsDesc": "语言、更新与高级选项"
 }

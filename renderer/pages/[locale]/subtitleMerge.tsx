@@ -7,6 +7,7 @@ import { useRouter } from 'next/router';
 import { useTranslation } from 'next-i18next';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { SubtitleMergePanel } from '@/components/subtitleMerge';
+import PageHeader from '@/components/PageHeader';
 import { toast } from 'sonner';
 
 export default function SubtitleMergePage() {
@@ -36,13 +37,16 @@ export default function SubtitleMergePage() {
       : undefined;
 
   return (
-    <div className="h-full p-4 overflow-hidden">
-      <SubtitleMergePanel
-        initialVideoPath={initialVideoPath}
-        initialSubtitlePath={initialSubtitlePath}
-        onComplete={handleComplete}
-        onError={handleError}
-      />
+    <div className="flex h-full flex-col gap-4 p-4 overflow-hidden">
+      <PageHeader title={t('pageTitle')} description={t('pageDesc')} />
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <SubtitleMergePanel
+          initialVideoPath={initialVideoPath}
+          initialSubtitlePath={initialSubtitlePath}
+          onComplete={handleComplete}
+          onError={handleError}
+        />
+      </div>
     </div>
   );
 }

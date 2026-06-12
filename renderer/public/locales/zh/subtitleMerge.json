@@ -68,5 +68,7 @@
   "alignMiddleRight": "右中",
   "alignBottomLeft": "左下",
   "alignBottomCenter": "中下",
-  "alignBottomRight": "右下"
+  "alignBottomRight": "右下",
+  "pageTitle": "合成到视频",
+  "pageDesc": "把字幕烧录进画面，或封装为软字幕轨道"
 }

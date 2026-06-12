@@ -57,6 +57,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import PageHeader from '@/components/PageHeader';
 
 // 新增一个 CommandInput 组件
 const CommandInput = ({
@@ -389,7 +390,7 @@ const Settings = () => {
 
   return (
     <div className="container mx-auto p-4 space-y-6">
-      <h1 className="text-2xl font-bold mb-6">{t('settings')}</h1>
+      <PageHeader title={t('settings')} description={t('settingsDesc')} />
 
       <Card>
         <CardHeader>

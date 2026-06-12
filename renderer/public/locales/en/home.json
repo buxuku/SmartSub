@@ -275,5 +275,7 @@
   "importReset": "Import reset",
   "selectProviderFirst": "Please select a translation provider first",
   "errorReadSubtitle": "Failed to read subtitle file: {{file}}",
-  "errorConvertToVTT": "Failed to convert subtitle to VTT: {{file}}"
+  "errorConvertToVTT": "Failed to convert subtitle to VTT: {{file}}",
+  "proofreadPageTitle": "Proofread Subtitles",
+  "proofreadPageDesc": "Import subtitles for line-by-line refinement with AI batch optimization"
 }

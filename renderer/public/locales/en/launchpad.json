@@ -36,5 +36,6 @@
     "running": "Running",
     "done": "Done",
     "error": "Error"
-  }
+  },
+  "noRecentTasksHint": "Finished tasks appear here. Drag files onto a card above to get started"
 }

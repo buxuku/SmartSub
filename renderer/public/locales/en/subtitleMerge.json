@@ -68,5 +68,7 @@
   "alignMiddleRight": "Middle Right",
   "alignBottomLeft": "Bottom Left",
   "alignBottomCenter": "Bottom Center",
-  "alignBottomRight": "Bottom Right"
+  "alignBottomRight": "Bottom Right",
+  "pageTitle": "Burn to Video",
+  "pageDesc": "Burn subtitles into the video, or mux them as a soft subtitle track"
 }

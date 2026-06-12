@@ -175,5 +175,6 @@
   "confirm": "Confirm",
   "cancel": "Cancel",
   "delete": "Delete",
-  "advancedSettingsDesc": "Geek options: local whisper command and VAD fine-tuning — defaults are best practice"
+  "advancedSettingsDesc": "Geek options: local whisper command and VAD fine-tuning — defaults are best practice",
+  "settingsDesc": "Language, updates and advanced options"
 }

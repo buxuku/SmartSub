@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { v4 as uuidv4 } from 'uuid';
-import { AlertTriangle, Pencil, Trash2 } from 'lucide-react';
+import { AlertTriangle, History, Pencil, Trash2 } from 'lucide-react';
+import PageHeader from '@/components/PageHeader';
+import EmptyState from '@/components/EmptyState';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -257,12 +259,7 @@ export default function LaunchpadPage() {
   return (
     <div className="h-full overflow-auto">
       <div className="mx-auto max-w-4xl px-6 py-10 space-y-8">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {t('title')}
-          </h1>
-          <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
-        </div>
+        <PageHeader title={t('title')} description={t('subtitle')} />
 
         {!hasModels && (
           <div className="flex items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 flex-wrap">
@@ -363,9 +360,11 @@ export default function LaunchpadPage() {
             {t('recentTasks')}
           </h2>
           {projects.length === 0 ? (
-            <p className="text-sm text-muted-foreground/70">
-              {t('noRecentTasks')}
-            </p>
+            <EmptyState
+              icon={History}
+              title={t('noRecentTasks')}
+              description={t('noRecentTasksHint')}
+            />
           ) : (
             <div className="rounded-xl border divide-y">
               {projects.map((project) => {

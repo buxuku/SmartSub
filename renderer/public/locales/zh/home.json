@@ -275,5 +275,7 @@
   "importReset": "已重新开始导入",
   "selectProviderFirst": "请先选择翻译服务商",
   "errorReadSubtitle": "读取字幕文件失败：{{file}}",
-  "errorConvertToVTT": "字幕转换 VTT 失败：{{file}}"
+  "errorConvertToVTT": "字幕转换 VTT 失败：{{file}}",
+  "proofreadPageTitle": "校对字幕",
+  "proofreadPageDesc": "导入字幕逐条精修，支持 AI 批量优化"
 }

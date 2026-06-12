@@ -2,6 +2,7 @@ import React from 'react';
 import { useRouter } from 'next/router';
 import { useTranslation } from 'next-i18next';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import PageHeader from '@/components/PageHeader';
 import OverviewTab from '@/components/resources/OverviewTab';
 import ModelsTab from '@/components/resources/ModelsTab';
 import ProvidersTab from '@/components/resources/ProvidersTab';
@@ -36,10 +37,7 @@ const Resources = () => {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-4">
-      <div>
-        <h1 className="text-2xl font-bold">{t('title')}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{t('description')}</p>
-      </div>
+      <PageHeader title={t('title')} description={t('description')} />
       <Tabs
         value={activeTab}
         onValueChange={handleTabChange}

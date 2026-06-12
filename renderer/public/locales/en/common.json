@@ -117,7 +117,7 @@
   "updateInstallError": "Failed to Install Update",
   "downloadingUpdate": "Downloading Update",
   "downloadingUpdateDesc": "Downloading version {version}. You will be prompted to install when complete.",
-  "subtitleProofread": "Subtitle Proofreading",
+  "subtitleProofread": "Proofread Subtitles",
   "subtitleMerge": "Burn to Video",
   "updateDialogTitle": "New Version Available",
   "currentVersion": "Current Version",
