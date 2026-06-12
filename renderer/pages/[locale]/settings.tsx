@@ -1,4 +1,4 @@
-import React, { useEffect, useState, SetStateAction } from 'react';
+import React, { useEffect, useRef, useState, SetStateAction } from 'react';
 import { useRouter } from 'next/router';
 import { useTranslation } from 'next-i18next';
 import {
@@ -281,7 +281,11 @@ const Settings = () => {
     }
   };
 
-  const handleVADSettingChange = async (setting: string, value: number) => {
+  // VAD 数字输入降噪：本地即时生效，500ms 静默期后批量持久化；成功静默，失败才打扰
+  const pendingVadRef = useRef<Record<string, number>>({});
+  const vadSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleVADSettingChange = (setting: string, value: number) => {
     const settingMap = {
       vadThreshold: setVADThreshold,
       vadMinSpeechDuration: setVADMinSpeechDuration,
@@ -293,12 +297,18 @@ const Settings = () => {
 
     settingMap[setting]?.(value);
 
-    try {
-      await window?.ipc?.invoke('setSettings', { [setting]: value });
-      toast.success(t('vadSettingsSaved'));
-    } catch (error) {
-      toast.error(t('saveFailed'));
-    }
+    pendingVadRef.current[setting] = value;
+    if (vadSaveTimerRef.current) clearTimeout(vadSaveTimerRef.current);
+    vadSaveTimerRef.current = setTimeout(async () => {
+      const pending = pendingVadRef.current;
+      pendingVadRef.current = {};
+      vadSaveTimerRef.current = null;
+      try {
+        await window?.ipc?.invoke('setSettings', pending);
+      } catch (error) {
+        toast.error(t('saveFailed'));
+      }
+    }, 500);
   };
 
   const [exportDialogOpen, setExportDialogOpen] = useState(false);

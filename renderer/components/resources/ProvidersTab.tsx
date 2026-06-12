@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -93,17 +93,57 @@ const ProvidersTab: React.FC = () => {
     }
   };
 
-  const handleInputChange = async (
-    key: string,
-    value: string | boolean | number,
-  ) => {
+  // 持久化降噪：本地 state 即时更新，IPC 写入 500ms debounce，卸载时 flush
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingProvidersRef = useRef<Provider[] | null>(null);
+
+  const schedulePersist = useCallback((updatedProviders: Provider[]) => {
+    pendingProvidersRef.current = updatedProviders;
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = setTimeout(() => {
+      persistTimerRef.current = null;
+      if (pendingProvidersRef.current) {
+        window?.ipc?.send(
+          'setTranslationProviders',
+          pendingProvidersRef.current,
+        );
+        pendingProvidersRef.current = null;
+      }
+    }, 500);
+  }, []);
+
+  // 立即持久化（新增/删除等结构变更），并废弃挂起的 debounce，防止旧数组回写覆盖
+  const persistNow = useCallback((updatedProviders: Provider[]) => {
+    if (persistTimerRef.current) {
+      clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+    }
+    pendingProvidersRef.current = null;
+    window?.ipc?.send('setTranslationProviders', updatedProviders);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      // 卸载前 flush，避免最后一次输入丢失
+      if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+      if (pendingProvidersRef.current) {
+        window?.ipc?.send(
+          'setTranslationProviders',
+          pendingProvidersRef.current,
+        );
+        pendingProvidersRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleInputChange = (key: string, value: string | boolean | number) => {
     const updatedProviders = providers.map((provider) =>
       provider.id === selectedProvider
         ? { ...provider, [key]: value }
         : provider,
     );
     setProviders(updatedProviders);
-    window?.ipc?.send('setTranslationProviders', updatedProviders);
+    schedulePersist(updatedProviders);
   };
 
   const togglePasswordVisibility = (key: string) => {
@@ -158,7 +198,7 @@ const ProvidersTab: React.FC = () => {
 
     const updatedProviders = [...providers, newProviderData];
     setProviders(updatedProviders);
-    window?.ipc?.send('setTranslationProviders', updatedProviders);
+    persistNow(updatedProviders);
     setIsAddDialogOpen(false);
     setNewProviderName('');
     setSelectedProvider(newProviderData.id);
@@ -171,7 +211,7 @@ const ProvidersTab: React.FC = () => {
   const handleRemoveProvider = (providerId: string) => {
     const updatedProviders = providers.filter((p) => p.id !== providerId);
     setProviders(updatedProviders);
-    window?.ipc?.send('setTranslationProviders', updatedProviders);
+    persistNow(updatedProviders);
   };
 
   const [isTestLoading, setIsTestLoading] = useState(false);
