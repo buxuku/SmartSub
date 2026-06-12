@@ -5,6 +5,7 @@
   "builtinProviders": "内置服务商",
   "customProviders": "自定义服务商",
   "addCustomProvider": "添加自定义 OpenAI 服务",
+  "addCustomProviderDesc": "创建一个自定义翻译服务商，可配置接口地址与模型。",
   "providerName": "服务商名称",
   "apiAddress": "API 地址",
   "modelName": "模型名称",

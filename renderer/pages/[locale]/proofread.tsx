@@ -267,16 +267,19 @@ export default function ProofreadPage() {
         onValueChange={(v) => setActiveTab(v as 'new' | 'history')}
         className="flex-1 flex flex-col min-h-0"
       >
-        <TabsList className="grid w-full grid-cols-2 max-w-xs flex-shrink-0">
-          <TabsTrigger value="new">
-            <Plus className="w-4 h-4 mr-2" />
-            {t('newTask') || '新建任务'}
-          </TabsTrigger>
-          <TabsTrigger value="history">
-            <History className="w-4 h-4 mr-2" />
-            {t('historyTasks') || '历史任务'}
-          </TabsTrigger>
-        </TabsList>
+        {/* 编辑态隐藏顶层切换器：专注模式，经「返回列表」（带未保存守卫）退出 */}
+        {stage !== 'edit' && (
+          <TabsList className="grid w-full grid-cols-2 max-w-xs flex-shrink-0">
+            <TabsTrigger value="new">
+              <Plus className="w-4 h-4 mr-2" />
+              {t('newTask') || '新建任务'}
+            </TabsTrigger>
+            <TabsTrigger value="history">
+              <History className="w-4 h-4 mr-2" />
+              {t('historyTasks') || '历史任务'}
+            </TabsTrigger>
+          </TabsList>
+        )}
 
         <TabsContent value="new" className="flex-1 overflow-auto mt-4">
           {renderStage()}

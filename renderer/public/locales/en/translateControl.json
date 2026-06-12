@@ -5,6 +5,7 @@
   "builtinProviders": "Built-in Providers",
   "customProviders": "Custom Providers",
   "addCustomProvider": "Add Custom OpenAI Service",
+  "addCustomProviderDesc": "Create a custom translation provider with your preferred API endpoint and model.",
   "providerName": "Provider Name",
   "modelName": "Model Name",
   "apiAddress": "API Address",
