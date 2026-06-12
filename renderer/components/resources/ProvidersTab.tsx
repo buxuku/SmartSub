@@ -335,11 +335,19 @@ const ProvidersTab: React.FC = () => {
               {providers
                 .filter((p) => p.type === 'openai')
                 .map((provider) => (
-                  <button
+                  <div
                     key={provider.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setSelectedProvider(provider.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedProvider(provider.id);
+                      }
+                    }}
                     className={cn(
-                      'w-full text-left px-4 py-2 rounded-lg flex items-center justify-between group',
+                      'w-full text-left px-4 py-2 rounded-lg flex items-center justify-between group cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                       selectedProvider === provider.id
                         ? 'bg-primary text-primary-foreground'
                         : 'hover:bg-muted',
@@ -359,16 +367,20 @@ const ProvidersTab: React.FC = () => {
                         {t('configured')}
                       </Badge>
                     )}
-                    <span
-                      className="opacity-0 group-hover:opacity-100 flex-shrink-0 ml-2 cursor-pointer"
+                    <button
+                      type="button"
+                      aria-label={t('removeProviderAria', {
+                        name: provider.name,
+                      })}
+                      className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded flex-shrink-0 ml-2 cursor-pointer"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleRemoveProvider(provider.id);
                       }}
                     >
                       <Trash2 size={14} />
-                    </span>
-                  </button>
+                    </button>
+                  </div>
                 ))}
             </>
           )}

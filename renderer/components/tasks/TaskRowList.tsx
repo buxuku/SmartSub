@@ -167,7 +167,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                 <button
                   type="button"
                   aria-label={t('row.remove')}
-                  className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive disabled:cursor-not-allowed disabled:opacity-0 disabled:group-hover:opacity-30 disabled:hover:text-muted-foreground"
+                  className="flex-shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded transition-opacity text-muted-foreground hover:text-destructive disabled:cursor-not-allowed disabled:opacity-0 disabled:group-hover:opacity-30 disabled:hover:text-muted-foreground"
                   disabled={queueBusy}
                   onClick={() => onDelete(file?.uuid)}
                 >
@@ -217,6 +217,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
+                        aria-label={t('row.proofread')}
                         disabled={!isProofreadReady(file, typeDef)}
                         onClick={() => onProofread(file)}
                       >
@@ -233,6 +234,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
+                        aria-label={t('row.openFolder')}
                         onClick={() => handleOpenFolder(file)}
                       >
                         <FolderOpen className="h-3.5 w-3.5" />

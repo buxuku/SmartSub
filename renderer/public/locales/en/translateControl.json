@@ -61,5 +61,6 @@
     "json_schema": "JSON Schema"
   },
   "selectOption": "Select an option",
-  "noMatchingModels": "No matching models"
+  "noMatchingModels": "No matching models",
+  "removeProviderAria": "Remove provider {{name}}"
 }

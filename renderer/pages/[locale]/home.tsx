@@ -464,7 +464,7 @@ export default function LaunchpadPage() {
                       {t(`status.${status}`)}
                     </span>
                     <span
-                      className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Button

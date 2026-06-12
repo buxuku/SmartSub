@@ -61,5 +61,6 @@
     "json_schema": "JSON Schema（严格模式校验）"
   },
   "selectOption": "请选择",
-  "noMatchingModels": "没有匹配的模型"
+  "noMatchingModels": "没有匹配的模型",
+  "removeProviderAria": "删除服务商「{{name}}」"
 }
