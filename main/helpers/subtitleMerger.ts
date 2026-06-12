@@ -249,7 +249,14 @@ export async function mergeSubtitleToVideo(
   config: MergeConfig,
   onProgress?: (progress: MergeProgress) => void,
 ): Promise<string> {
-  const { videoPath, subtitlePath, outputPath, style } = config;
+  const {
+    videoPath,
+    subtitlePath,
+    outputPath,
+    style,
+    outputMode = 'hardcode',
+  } = config;
+  const isSoftMux = outputMode === 'softmux';
 
   // 获取视频分辨率，用于显式设置 original_size
   // 防止滤镜重新初始化时因自动检测失败而报错
@@ -272,25 +279,24 @@ export async function mergeSubtitleToVideo(
   // 如果字幕路径包含特殊字符（如单引号），则复制到临时目录使用安全文件名
   // 这是最可靠的方式，因为 ffmpeg 的滤镜字符串解析对特殊字符的处理在
   // 不同版本、不同平台、不同库封装下行为可能不一致
+  // 软字幕封装走普通 input 参数（不经滤镜字符串解析），无需安全副本
   let actualSubPath = subtitlePath;
   let tmpSubPath: string | null = null;
-  if (pathNeedsSafeCopy(subtitlePath)) {
+  if (!isSoftMux && pathNeedsSafeCopy(subtitlePath)) {
     tmpSubPath = createSafeSubtitleCopy(subtitlePath);
     actualSubPath = tmpSubPath;
   }
 
   return new Promise((resolve, reject) => {
-    const forceStyle = buildForceStyle(style);
-    const escapedSubPath = escapeSubtitlePath(actualSubPath);
-    const subtitlesFilter = `subtitles='${escapedSubPath}'${originalSize}:force_style='${forceStyle}'`;
-
-    logMessage(`开始合并字幕: ${videoPath}`, 'info');
+    logMessage(
+      `开始合并字幕（${isSoftMux ? '软字幕封装' : '硬字幕烧录'}）: ${videoPath}`,
+      'info',
+    );
     logMessage(`字幕文件: ${subtitlePath}`, 'info');
     if (tmpSubPath) {
       logMessage(`使用临时字幕文件: ${tmpSubPath}`, 'info');
     }
     logMessage(`输出文件: ${outputPath}`, 'info');
-    logMessage(`subtitles filter: ${subtitlesFilter}`, 'info');
 
     // 发送初始进度
     onProgress?.({
@@ -313,13 +319,35 @@ export async function mergeSubtitleToVideo(
     };
 
     mergeCancelled = false;
-    const command = ffmpeg(videoPath)
-      .videoFilters(subtitlesFilter)
-      .outputOptions([
+    let command: ReturnType<typeof ffmpeg>;
+    if (isSoftMux) {
+      // 软字幕封装：全流复制 + 字幕流转 srt 进 mkv，秒级完成无画质损失
+      command = ffmpeg(videoPath).input(subtitlePath).outputOptions([
+        '-map',
+        '0',
+        '-map',
+        '1',
+        '-c',
+        'copy', // 视频/音频流直接复制
+        '-c:s',
+        'srt', // 字幕流统一转 srt（mkv 原生支持；ass/vtt 自动转换）
+        '-disposition:s:0',
+        'default', // 字幕轨默认开启
+        '-y',
+      ]);
+    } else {
+      const forceStyle = buildForceStyle(style);
+      const escapedSubPath = escapeSubtitlePath(actualSubPath);
+      const subtitlesFilter = `subtitles='${escapedSubPath}'${originalSize}:force_style='${forceStyle}'`;
+      logMessage(`subtitles filter: ${subtitlesFilter}`, 'info');
+      command = ffmpeg(videoPath).videoFilters(subtitlesFilter).outputOptions([
         '-c:a',
         'copy', // 保持音频编码不变
         '-y', // 覆盖输出文件
-      ])
+      ]);
+    }
+
+    command
       .on('start', (cmd) => {
         logMessage(`FFmpeg 命令: ${cmd}`, 'info');
       })

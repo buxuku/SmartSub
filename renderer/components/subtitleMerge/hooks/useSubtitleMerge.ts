@@ -11,6 +11,7 @@ import type {
   VideoInfo,
   SubtitleInfo,
   MergeConfig,
+  MergeOutputMode,
 } from '../../../../types/subtitleMerge';
 import { DEFAULT_STYLE, STYLE_PRESETS } from '../constants';
 
@@ -30,6 +31,7 @@ export interface UseSubtitleMergeReturn {
 
   // 输出状态
   outputPath: string | null;
+  outputMode: MergeOutputMode;
 
   // 进度状态
   progress: MergeProgress;
@@ -53,6 +55,7 @@ export interface UseSubtitleMergeReturn {
   // 输出操作方法
   selectOutputPath: () => Promise<void>;
   setOutputPath: (path: string) => void;
+  setOutputMode: (mode: MergeOutputMode) => void;
 
   // 合并操作方法
   startMerge: () => Promise<void>;
@@ -117,6 +120,25 @@ export function useSubtitleMerge(
 
   // 输出状态
   const [outputPath, setOutputPathState] = useState<string | null>(null);
+  const [outputMode, setOutputModeState] =
+    useState<MergeOutputMode>('hardcode');
+  // 供异步回调读取最新输出方式（生成默认路径时按模式定扩展名）
+  const outputModeRef = useRef<MergeOutputMode>('hardcode');
+  outputModeRef.current = outputMode;
+
+  // 软字幕封装固定输出 .mkv；切回烧录恢复视频原扩展名
+  const applyModeExtension = useCallback(
+    (path: string, mode: MergeOutputMode, currentVideoPath: string | null) => {
+      if (mode === 'softmux') {
+        return path.replace(/\.[^./\\]+$/, '.mkv');
+      }
+      const videoExtMatch = currentVideoPath?.match(/(\.[^./\\]+)$/);
+      return videoExtMatch
+        ? path.replace(/\.[^./\\]+$/, videoExtMatch[1])
+        : path;
+    },
+    [],
+  );
 
   // 进度状态
   const [progress, setProgress] = useState<MergeProgress>({
@@ -150,33 +172,38 @@ export function useSubtitleMerge(
   }, [onProgress]);
 
   // 加载视频信息
-  const loadVideoInfo = useCallback(async (path: string) => {
-    try {
-      const result = await window.ipc.invoke('subtitleMerge:getVideoInfo', {
-        videoPath: path,
-      });
-      if (result.success && result.data) {
-        setVideoInfo(result.data);
-      }
-    } catch (error) {
-      console.error('加载视频信息失败:', error);
-    }
-    // 只要选了视频就生成默认输出路径（不依赖视频信息读取成功）
-    try {
-      const outputResult = await window.ipc.invoke(
-        'subtitleMerge:generateOutputPath',
-        {
+  const loadVideoInfo = useCallback(
+    async (path: string) => {
+      try {
+        const result = await window.ipc.invoke('subtitleMerge:getVideoInfo', {
           videoPath: path,
-          suffix: '_subtitled',
-        },
-      );
-      if (outputResult.success && outputResult.data) {
-        setOutputPathState(outputResult.data);
+        });
+        if (result.success && result.data) {
+          setVideoInfo(result.data);
+        }
+      } catch (error) {
+        console.error('加载视频信息失败:', error);
       }
-    } catch (error) {
-      console.error('生成默认输出路径失败:', error);
-    }
-  }, []);
+      // 只要选了视频就生成默认输出路径（不依赖视频信息读取成功）
+      try {
+        const outputResult = await window.ipc.invoke(
+          'subtitleMerge:generateOutputPath',
+          {
+            videoPath: path,
+            suffix: '_subtitled',
+          },
+        );
+        if (outputResult.success && outputResult.data) {
+          setOutputPathState(
+            applyModeExtension(outputResult.data, outputModeRef.current, path),
+          );
+        }
+      } catch (error) {
+        console.error('生成默认输出路径失败:', error);
+      }
+    },
+    [applyModeExtension],
+  );
 
   // 加载字幕信息
   const loadSubtitleInfo = useCallback(async (path: string) => {
@@ -339,6 +366,17 @@ export function useSubtitleMerge(
     setOutputPathState(path);
   }, []);
 
+  // 切换输出方式（联动输出扩展名）
+  const setOutputMode = useCallback(
+    (mode: MergeOutputMode) => {
+      setOutputModeState(mode);
+      setOutputPathState((prev) =>
+        prev ? applyModeExtension(prev, mode, videoPath) : prev,
+      );
+    },
+    [applyModeExtension, videoPath],
+  );
+
   // 开始合并
   const startMerge = useCallback(async () => {
     if (!videoPath || !subtitlePath || !outputPath) return;
@@ -356,6 +394,7 @@ export function useSubtitleMerge(
         subtitlePath,
         outputPath,
         style,
+        outputMode,
       };
       const result = await window.ipc.invoke(
         'subtitleMerge:startMerge',
@@ -403,7 +442,15 @@ export function useSubtitleMerge(
     } finally {
       setIsCancelling(false);
     }
-  }, [videoPath, subtitlePath, outputPath, style, onComplete, onError]);
+  }, [
+    videoPath,
+    subtitlePath,
+    outputPath,
+    style,
+    outputMode,
+    onComplete,
+    onError,
+  ]);
 
   // 取消合成
   const cancelMerge = useCallback(async () => {
@@ -448,6 +495,7 @@ export function useSubtitleMerge(
 
     // 输出状态
     outputPath,
+    outputMode,
 
     // 进度状态
     progress,
@@ -471,6 +519,7 @@ export function useSubtitleMerge(
     // 输出操作方法
     selectOutputPath,
     setOutputPath,
+    setOutputMode,
 
     // 合并操作方法
     startMerge,

@@ -53,6 +53,7 @@ export default function SubtitleMergePanel({
 
     // 输出状态
     outputPath,
+    outputMode,
 
     // 进度状态
     progress,
@@ -70,6 +71,7 @@ export default function SubtitleMergePanel({
 
     // 输出操作方法
     selectOutputPath,
+    setOutputMode,
 
     // 合并操作方法
     startMerge,
@@ -82,6 +84,9 @@ export default function SubtitleMergePanel({
   } = useSubtitleMerge(hookOptions);
 
   const isProcessing = status === 'processing';
+  // 软字幕样式由播放器决定，样式设置仅对烧录生效
+  const isSoftMux = outputMode === 'softmux';
+  const styleDisabled = isProcessing || isSoftMux;
 
   return (
     <div className={`h-full flex flex-col ${className}`}>
@@ -112,11 +117,19 @@ export default function SubtitleMergePanel({
           <CardContent className="flex-1 min-h-0 pt-0 px-4 pb-4">
             <ScrollArea className="h-full">
               <div className="space-y-3 pr-3">
+                {/* 软字幕模式提示：样式仅对烧录生效 */}
+                {isSoftMux && (
+                  <p className="rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
+                    {t('styleOnlyForHardcode') ||
+                      '软字幕的样式由播放器决定，以下样式设置仅对「烧录硬字幕」生效'}
+                  </p>
+                )}
+
                 {/* 预设样式 */}
                 <StylePresets
                   activePresetId={activePresetId}
                   onSelectPreset={applyPreset}
-                  disabled={isProcessing}
+                  disabled={styleDisabled}
                 />
 
                 <Separator />
@@ -129,7 +142,7 @@ export default function SubtitleMergePanel({
                   <BasicStyleSettings
                     style={style}
                     onUpdateStyle={updateStyle}
-                    disabled={isProcessing}
+                    disabled={styleDisabled}
                   />
                 </div>
 
@@ -139,7 +152,7 @@ export default function SubtitleMergePanel({
                 <AdvancedStyleSettings
                   style={style}
                   onUpdateStyle={updateStyle}
-                  disabled={isProcessing}
+                  disabled={styleDisabled}
                 />
               </div>
             </ScrollArea>
@@ -172,11 +185,13 @@ export default function SubtitleMergePanel({
                 videoPath={videoPath}
                 subtitlePath={subtitlePath}
                 outputPath={outputPath}
+                outputMode={outputMode}
                 progress={progress}
                 status={status}
                 canMerge={canMerge}
                 isCancelling={isCancelling}
                 onSelectOutputPath={selectOutputPath}
+                onOutputModeChange={setOutputMode}
                 onStartMerge={startMerge}
                 onCancelMerge={cancelMerge}
                 onOpenOutputFolder={openOutputFolder}

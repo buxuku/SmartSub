@@ -69,6 +69,13 @@ export interface StylePreset {
 }
 
 /**
+ * 输出方式
+ * hardcode = 烧录硬字幕（重编码，所有播放器可见）
+ * softmux = 封装软字幕（mkv 容器，秒级无损，播放器可开关）
+ */
+export type MergeOutputMode = 'hardcode' | 'softmux';
+
+/**
  * 合并配置
  */
 export interface MergeConfig {
@@ -80,6 +87,8 @@ export interface MergeConfig {
   outputPath: string;
   /** 字幕样式 */
   style: SubtitleStyle;
+  /** 输出方式（缺省 hardcode，向后兼容） */
+  outputMode?: MergeOutputMode;
 }
 
 /**

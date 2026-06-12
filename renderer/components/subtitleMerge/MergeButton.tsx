@@ -15,18 +15,26 @@ import {
   CheckCircle,
   XCircle,
   Folder,
+  Flame,
+  Layers,
 } from 'lucide-react';
-import type { MergeProgress, MergeStatus } from '../../../types/subtitleMerge';
+import type {
+  MergeProgress,
+  MergeStatus,
+  MergeOutputMode,
+} from '../../../types/subtitleMerge';
 
 interface MergeButtonProps {
   videoPath: string | null;
   subtitlePath: string | null;
   outputPath: string | null;
+  outputMode: MergeOutputMode;
   progress: MergeProgress;
   status: MergeStatus;
   canMerge: boolean;
   isCancelling?: boolean;
   onSelectOutputPath: () => void;
+  onOutputModeChange: (mode: MergeOutputMode) => void;
   onStartMerge: () => void;
   onCancelMerge?: () => void;
   onOpenOutputFolder: () => void;
@@ -36,19 +44,75 @@ export default function MergeButton({
   videoPath,
   subtitlePath,
   outputPath,
+  outputMode,
   progress,
   status,
   canMerge,
   isCancelling = false,
   onSelectOutputPath,
+  onOutputModeChange,
   onStartMerge,
   onCancelMerge,
   onOpenOutputFolder,
 }: MergeButtonProps) {
   const { t } = useTranslation('subtitleMerge');
+  const isProcessing = status === 'processing';
+
+  const modeOptions: Array<{
+    value: MergeOutputMode;
+    icon: React.ReactNode;
+    title: string;
+    desc: string;
+  }> = [
+    {
+      value: 'hardcode',
+      icon: <Flame className="w-3.5 h-3.5" />,
+      title: t('outputModeHardcode') || '烧录硬字幕',
+      desc:
+        t('outputModeHardcodeDesc') || '字幕画入画面，兼容所有播放器（较慢）',
+    },
+    {
+      value: 'softmux',
+      icon: <Layers className="w-3.5 h-3.5" />,
+      title: t('outputModeSoftmux') || '封装软字幕 (MKV)',
+      desc:
+        t('outputModeSoftmuxDesc') || '秒级完成、无损画质，播放器可开关字幕',
+    },
+  ];
 
   return (
     <div className="space-y-4">
+      {/* 输出方式 */}
+      <div className="space-y-2">
+        <Label className="text-sm">{t('outputMode') || '输出方式'}</Label>
+        <div className="grid grid-cols-2 gap-2">
+          {modeOptions.map((option) => {
+            const active = outputMode === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                disabled={isProcessing}
+                onClick={() => onOutputModeChange(option.value)}
+                className={`rounded-md border p-2 text-left transition-colors disabled:opacity-50 ${
+                  active
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border hover:bg-accent/50'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 text-sm font-medium">
+                  {option.icon}
+                  {option.title}
+                </div>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  {option.desc}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* 输出路径 */}
       <div className="space-y-2">
         <Label className="text-sm">{t('outputPath') || '输出路径'}</Label>
