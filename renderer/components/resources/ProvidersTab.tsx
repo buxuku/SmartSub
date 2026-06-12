@@ -87,9 +87,9 @@ const ProvidersTab: React.FC = () => {
     const storedProviders = await window.ipc.invoke('getTranslationProviders');
     console.log('storedProviders', storedProviders);
     setProviders(storedProviders);
-    // 默认选中第一个服务商
+    // 默认选中第一个服务商（必须用 id：自定义服务商的 type 恒为 'openai'，匹配不到面板）
     if (storedProviders.length > 0 && !selectedProvider) {
-      setSelectedProvider(storedProviders[0].type);
+      setSelectedProvider(storedProviders[0].id);
     }
   };
 
