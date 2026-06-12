@@ -31,6 +31,7 @@ import useSystemInfo from 'hooks/useStystemInfo';
 import useFormConfig from 'hooks/useFormConfig';
 import useIpcCommunication from 'hooks/useIpcCommunication';
 import { useConfirmOrUndo } from 'hooks/useConfirmOrUndo';
+import { useHotkeys } from 'hooks/useHotkeys';
 import TaskControls from '@/components/TaskControls';
 import InlineConfigBar from '@/components/tasks/InlineConfigBar';
 import AdvancedSheet from '@/components/tasks/AdvancedSheet';
@@ -208,6 +209,11 @@ export default function TaskPage() {
     const fileType = typeDef?.accepts === 'subtitle' ? 'srt' : 'media';
     window?.ipc?.send('openDialog', { dialogType: 'openDialog', fileType });
   };
+
+  // Cmd/Ctrl+O 导入文件（任务页范围）
+  useHotkeys([
+    { combo: 'mod+o', allowInInput: true, handler: () => handleImport() },
+  ]);
 
   const handleClearList = () => {
     if (!files.length) return;

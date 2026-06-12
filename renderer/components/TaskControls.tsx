@@ -5,6 +5,7 @@ import { cn } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import { getFileStages, isFileDone } from './tasks/stageUtils';
+import { useHotkeys } from 'hooks/useHotkeys';
 
 interface TaskControlsProps {
   files: any[];
@@ -105,6 +106,17 @@ const TaskControls = ({
     taskStatus === 'idle' ||
     taskStatus === 'completed' ||
     taskStatus === 'cancelled';
+
+  // Cmd/Ctrl+Enter 等价点击「开始任务」（仅可开始状态下生效）
+  useHotkeys([
+    {
+      combo: 'mod+enter',
+      allowInInput: true,
+      handler: () => {
+        if (showStart && files.length) handleTask();
+      },
+    },
+  ]);
 
   return (
     <div className={cn('flex items-center gap-2 ml-auto', className)}>
