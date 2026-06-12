@@ -108,6 +108,8 @@
   "clickToSelectVideo": "点击选择视频文件",
   "selectSourceSubtitle": "选择原始字幕",
   "selectTargetSubtitle": "选择翻译字幕",
+  "matchConfidence": "{{percent}}% 匹配",
+  "matchConfidenceTip": "自动匹配置信度：与视频同名 95，带语言后缀 90，文件名相近度越低分值越低；手动选择为 100",
   "importFolder": "导入文件夹",
   "scanFailed": "扫描目录失败",
   "select": "选择",

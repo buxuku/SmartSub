@@ -28,7 +28,14 @@ import {
   Loader2,
   Edit2,
   Plus,
+  HelpCircle,
 } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import {
@@ -391,8 +398,40 @@ export default function ProofreadFileList({
             <TableRow>
               <TableHead className="w-28">{t('status')}</TableHead>
               <TableHead>{t('fileName')}</TableHead>
-              <TableHead>{t('sourceSubtitle')}</TableHead>
-              <TableHead>{t('targetSubtitle')}</TableHead>
+              <TableHead>
+                <div className="flex items-center gap-1">
+                  {t('sourceSubtitle')}
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="max-w-[280px]">
+                          {t('matchConfidenceTip')}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              </TableHead>
+              <TableHead>
+                <div className="flex items-center gap-1">
+                  {t('targetSubtitle')}
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="max-w-[280px]">
+                          {t('matchConfidenceTip')}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              </TableHead>
               <TableHead className="w-32 text-right">{t('actions')}</TableHead>
             </TableRow>
           </TableHeader>
@@ -479,7 +518,9 @@ export default function ProofreadFileList({
                                     </Badge>
                                   )}
                                   <span className="text-xs text-muted-foreground">
-                                    {s.confidence}%
+                                    {t('matchConfidence', {
+                                      percent: s.confidence,
+                                    })}
                                   </span>
                                 </div>
                               </SelectItem>
@@ -544,7 +585,9 @@ export default function ProofreadFileList({
                                   </Badge>
                                 )}
                                 <span className="text-xs text-muted-foreground">
-                                  {s.confidence}%
+                                  {t('matchConfidence', {
+                                    percent: s.confidence,
+                                  })}
                                 </span>
                               </div>
                             </SelectItem>

@@ -39,6 +39,9 @@ import {
   HelpCircle,
   FolderOpen,
   Download,
+  Rocket,
+  Scale,
+  Crosshair,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
@@ -52,9 +55,9 @@ export enum DownSource {
 type TFunc = (key: string, opts?: any) => string;
 
 const MODEL_TIERS = [
-  { id: 'fast', emoji: '🚀', categoryIds: ['tiny', 'base'] },
-  { id: 'balanced', emoji: '⚖️', categoryIds: ['small', 'medium'] },
-  { id: 'accurate', emoji: '🎯', categoryIds: ['largeTurbo', 'large'] },
+  { id: 'fast', icon: Rocket, categoryIds: ['tiny', 'base'] },
+  { id: 'balanced', icon: Scale, categoryIds: ['small', 'medium'] },
+  { id: 'accurate', icon: Crosshair, categoryIds: ['largeTurbo', 'large'] },
 ] as const;
 
 function RatingDots({ value, max = 5 }: { value: number; max?: number }) {
@@ -246,16 +249,34 @@ function ModelRow({
       </div>
       <div className="flex items-center gap-3 flex-shrink-0">
         {speed != null && (
-          <span className="hidden lg:inline-flex items-center gap-1 text-muted-foreground">
-            <Zap className="h-3 w-3" />
-            <RatingDots value={speed} />
-          </span>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="hidden lg:inline-flex items-center gap-1 text-muted-foreground">
+                  <Zap className="h-3 w-3" />
+                  <RatingDots value={speed} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t('speedRatingTip')}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
         {quality != null && (
-          <span className="hidden lg:inline-flex items-center gap-1 text-muted-foreground">
-            <Target className="h-3 w-3" />
-            <RatingDots value={quality} />
-          </span>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="hidden lg:inline-flex items-center gap-1 text-muted-foreground">
+                  <Target className="h-3 w-3" />
+                  <RatingDots value={quality} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t('qualityRatingTip')}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
         <span className="text-xs text-muted-foreground tabular-nums w-[60px] text-right">
           {model.size}
@@ -356,7 +377,7 @@ function TierSection({
   return (
     <section className="space-y-2">
       <div className="flex items-baseline gap-2 px-1 flex-wrap">
-        <span className="text-sm">{tier.emoji}</span>
+        <tier.icon className="h-4 w-4 text-muted-foreground self-center" />
         <h3 className="text-sm font-semibold">{t(`tier.${tier.id}`)}</h3>
         <span className="text-xs text-muted-foreground">
           {t(`tierDesc.${tier.id}`)} · {t('tierRAM', { ram: minRAM })}

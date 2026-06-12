@@ -108,6 +108,8 @@
   "clickToSelectVideo": "Click to select video file",
   "selectSourceSubtitle": "Select Source Subtitle",
   "selectTargetSubtitle": "Select Target Subtitle",
+  "matchConfidence": "{{percent}}% match",
+  "matchConfidenceTip": "Auto-match confidence: same name as video 95, language suffix 90, lower for weaker filename similarity; manual selection is 100",
   "importFolder": "Import Folder",
   "scanFailed": "Failed to scan directory",
   "select": "Select",
