@@ -129,9 +129,7 @@
   "releaseNotes": "Release Notes",
   "viewOnGitHub": "View on GitHub",
   "gpuAccelerationEnabled": "GPU Acceleration On",
-  "gpuAccelerationDisabled": "GPU Acceleration Off",
   "gpuAccelerationEnabledTip": "GPU acceleration is enabled. Click to view settings.",
-  "gpuAccelerationDisabledTip": "Your device supports GPU acceleration. Click to enable in settings.",
   "gpuFallbackToast": "GPU acceleration unavailable, automatically switched to {{backend}}",
   "gpuMigrationNotice": "This version adds universal GPU acceleration (Vulkan), enabled by default. Adjust in Settings → GPU Acceleration.",
   "brandName": "SmartSub",
@@ -143,7 +141,9 @@
     "menu": "Help",
     "reopenOnboarding": "Reopen the welcome guide",
     "shortcuts": "Keyboard shortcuts",
-    "github": "GitHub"
+    "github": "GitHub",
+    "checkUpdates": "Check for Updates",
+    "reportIssue": "Report an Issue"
   },
   "shortcuts": {
     "title": "Keyboard shortcuts",
@@ -200,5 +200,11 @@
     "goEnable": "Enable",
     "enabled": "Enabled"
   },
-  "undo": "Undo"
+  "undo": "Undo",
+  "checkingForUpdates": "Checking for updates…",
+  "alreadyLatestVersion": "You are on the latest version",
+  "newVersionBadge": "New v{{version}}",
+  "accelBadgeOn": "{{backend}} acceleration",
+  "cpuModeBadge": "CPU mode",
+  "cpuModeTip": "Transcription runs on CPU. Click to view acceleration options."
 }

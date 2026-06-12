@@ -25,6 +25,8 @@ const handler = {
       ipcRenderer.removeListener(channel, subscription);
     };
   },
+  /** 渲染层平台判断统一来源（替代 userAgent 嗅探） */
+  platform: process.platform,
 };
 
 contextBridge.exposeInMainWorld('ipc', handler);

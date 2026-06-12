@@ -39,12 +39,9 @@ function parseReleaseNotes(html: string): string {
   return html;
 }
 
-// 检测是否为 Mac 平台
+// 平台判断：preload 注入的 process.platform，避免 userAgent 嗅探
 function isMacPlatform(): boolean {
-  if (typeof navigator !== 'undefined') {
-    return navigator.userAgent.includes('Mac');
-  }
-  return false;
+  return window?.ipc?.platform === 'darwin';
 }
 
 export function UpdateDialog({

@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
   TooltipContent,
@@ -18,11 +19,10 @@ import {
   Package,
   PanelLeftClose,
   PanelLeftOpen,
-  Rocket,
+  RefreshCw,
   Settings,
   X,
   Zap,
-  ZapOff,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -147,9 +147,10 @@ const Layout = ({ children }) => {
   const [newVersion, setNewVersion] = useState('');
   const [releaseNotes, setReleaseNotes] = useState('');
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
-  const [gpuCapable, setGpuCapable] = useState(false);
-  const [gpuEnabled, setGpuEnabled] = useState(false);
-  const [gpuBackendLabel, setGpuBackendLabel] = useState('');
+  const [accelBadge, setAccelBadge] = useState<{
+    mode: 'accel' | 'cpu';
+    label: string;
+  } | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -162,6 +163,18 @@ const Layout = ({ children }) => {
     true,
     (val) => typeof val === 'boolean',
   );
+  // 手动检查更新会话：等待 update-status 终态时为 true，持有 loading toast id
+  const manualCheckRef = useRef<{ toastId: string | number } | null>(null);
+
+  const checkUpdatesManually = useCallback(() => {
+    if (manualCheckRef.current) return;
+    manualCheckRef.current = {
+      toastId: toast.loading(t('checkingForUpdates')),
+    };
+    window?.ipc?.invoke('check-for-updates').catch(() => {
+      // 失败终态由 update-status error 事件统一收尾
+    });
+  }, [t]);
 
   useEffect(() => {
     // 首次启动（无已装模型且无完成标记）自动打开新手引导
@@ -197,8 +210,31 @@ const Layout = ({ children }) => {
           setNewVersion(status.version || '');
           setReleaseNotes(status.releaseNotes || '');
         }
+        // 手动检查会话收尾：available 开弹窗、not-available 提示已最新、error 静默（全局错误 toast 已有）
+        if (
+          manualCheckRef.current &&
+          ['available', 'not-available', 'error'].includes(status.status)
+        ) {
+          toast.dismiss(manualCheckRef.current.toastId);
+          manualCheckRef.current = null;
+          if (status.status === 'available') {
+            setShowUpdateDialog(true);
+          } else if (status.status === 'not-available') {
+            toast.success(t('alreadyLatestVersion'));
+          }
+        }
       },
     );
+
+    // 应用菜单/设置页触发的手动检查更新
+    const cleanupMenuCheck = window?.ipc?.on('menu-check-updates', () => {
+      checkUpdatesManually();
+    });
+    const handleAppCheckUpdates = () => checkUpdatesManually();
+    window.addEventListener('app-check-updates', handleAppCheckUpdates);
+    // 设置页「关于」卡触发的查看日志
+    const handleAppOpenLogs = () => setShowLogs(true);
+    window.addEventListener('app-open-logs', handleAppOpenLogs);
 
     const backendLabels: Record<string, string> = {
       cuda: 'CUDA',
@@ -209,24 +245,42 @@ const Layout = ({ children }) => {
       custom: 'Custom',
     };
 
-    // 检查 GPU 加速状态
+    // 检查加速状态（全平台：mac 显示正向 Metal/CoreML 徽章，CPU 态用中性文案）
     const checkGpuStatus = async () => {
       try {
         const env = await window?.ipc?.invoke('get-gpu-environment');
-        const capable = !!env && env.platform !== 'darwin';
-        setGpuCapable(capable);
-        if (!capable) return;
+        if (!env) {
+          setAccelBadge(null);
+          return;
+        }
 
-        const settings = await window?.ipc?.invoke('getSettings');
         const active = await window?.ipc?.invoke('get-active-backend');
-        const isCpuResult = active?.backend === 'cpu';
-        setGpuEnabled(settings?.gpuMode !== 'cpu-only' && !isCpuResult);
-        setGpuBackendLabel(
-          active && !isCpuResult
+        const activeLabel =
+          active && active.backend !== 'cpu'
             ? active.backend === 'cuda' && active.variant
               ? `CUDA ${active.variant}`
               : backendLabels[active.backend] || active.backend
-            : '',
+            : '';
+
+        if (env.platform === 'darwin') {
+          // mac：以实际加载结果为准；尚未转写过则不显示，避免误导
+          if (!active) {
+            setAccelBadge(null);
+          } else if (active.backend === 'cpu') {
+            setAccelBadge({ mode: 'cpu', label: '' });
+          } else {
+            setAccelBadge({ mode: 'accel', label: activeLabel });
+          }
+          return;
+        }
+
+        const settings = await window?.ipc?.invoke('getSettings');
+        const isCpuResult = active?.backend === 'cpu';
+        const enabled = settings?.gpuMode !== 'cpu-only' && !isCpuResult;
+        setAccelBadge(
+          enabled
+            ? { mode: 'accel', label: activeLabel }
+            : { mode: 'cpu', label: '' },
         );
       } catch (error) {
         console.error('Failed to check GPU status:', error);
@@ -291,12 +345,15 @@ const Layout = ({ children }) => {
       cleanupFallback?.();
       cleanupBackendChanged?.();
       cleanupMenuLogs?.();
+      cleanupMenuCheck?.();
       window.removeEventListener(
         'gpu-settings-changed',
         handleGpuSettingsChanged,
       );
+      window.removeEventListener('app-check-updates', handleAppCheckUpdates);
+      window.removeEventListener('app-open-logs', handleAppOpenLogs);
     };
-  }, [t]);
+  }, [t, checkUpdatesManually]);
 
   const handleUpdateClick = () => {
     setShowUpdateDialog(true);
@@ -435,11 +492,13 @@ const Layout = ({ children }) => {
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Rocket
-                        className="ml-2 inline-block cursor-pointer text-destructive"
-                        size={18}
+                      <Badge
+                        className="ml-2 cursor-pointer border-primary/40 bg-primary/10 px-1.5 py-0 text-[11px] font-medium text-primary hover:bg-primary/20"
+                        variant="outline"
                         onClick={handleUpdateClick}
-                      />
+                      >
+                        {t('newVersionBadge', { version: newVersion })}
+                      </Badge>
                     </TooltipTrigger>
                     <TooltipContent>
                       {t('newVersionAvailable')}: {newVersion}
@@ -450,8 +509,8 @@ const Layout = ({ children }) => {
             </span>
           </h4>
           <div className="ml-auto flex items-center gap-1">
-            {/* GPU 加速状态指示器 */}
-            {gpuCapable && (
+            {/* 加速状态指示器（加速=正向绿徽章，CPU=中性灯） */}
+            {accelBadge && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -459,7 +518,7 @@ const Layout = ({ children }) => {
                       variant="ghost"
                       size="sm"
                       className={`h-7 text-xs gap-1.5 ${
-                        gpuEnabled
+                        accelBadge.mode === 'accel'
                           ? 'text-success hover:text-success/80'
                           : 'text-muted-foreground hover:text-foreground'
                       }`}
@@ -467,20 +526,18 @@ const Layout = ({ children }) => {
                         router.push(`/${locale}/resources?tab=acceleration`)
                       }
                     >
-                      {gpuEnabled ? (
-                        <Zap className="w-3.5 h-3.5" />
-                      ) : (
-                        <ZapOff className="w-3.5 h-3.5" />
-                      )}
-                      {gpuEnabled
-                        ? `${t('gpuAccelerationEnabled')}${gpuBackendLabel ? ` · ${gpuBackendLabel}` : ''}`
-                        : t('gpuAccelerationDisabled')}
+                      <Zap className="w-3.5 h-3.5" />
+                      {accelBadge.mode === 'accel'
+                        ? accelBadge.label
+                          ? t('accelBadgeOn', { backend: accelBadge.label })
+                          : t('gpuAccelerationEnabled')
+                        : t('cpuModeBadge')}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {gpuEnabled
+                    {accelBadge.mode === 'accel'
                       ? t('gpuAccelerationEnabledTip')
-                      : t('gpuAccelerationDisabledTip')}
+                      : t('cpuModeTip')}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -512,6 +569,10 @@ const Layout = ({ children }) => {
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setShowLogs(true)}>
                   {t('viewLogs')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={checkUpdatesManually}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  {t('help.checkUpdates')}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => openUrl('https://github.com/buxuku/SmartSub')}
