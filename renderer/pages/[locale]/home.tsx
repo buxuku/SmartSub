@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { v4 as uuidv4 } from 'uuid';
-import { AlertTriangle, History, Pencil, Trash2 } from 'lucide-react';
+import { AlertTriangle, History, Pencil, Search, Trash2 } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import EmptyState from '@/components/EmptyState';
 import { Button } from '@/components/ui/button';
@@ -154,6 +154,8 @@ export default function LaunchpadPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [recentExpanded, setRecentExpanded] = useState(false);
+  const [recentQuery, setRecentQuery] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -173,7 +175,7 @@ export default function LaunchpadPage() {
         setHasProvider(
           (providers || []).some((p: any) => isProviderConfigured(p)),
         );
-        setProjects((taskProjects || []).slice(0, 8));
+        setProjects(taskProjects || []);
         setUserConfig(config || {});
       } catch (error) {
         console.error('Failed to load launchpad data:', error);
@@ -255,6 +257,23 @@ export default function LaunchpadPage() {
     setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
     setDeleteTarget(null);
   };
+
+  const toggleRecentExpanded = () => {
+    setRecentExpanded((prev) => {
+      if (prev) setRecentQuery('');
+      return !prev;
+    });
+  };
+
+  // 收起态只取前 8 条；展开态显示全量并支持按名称过滤
+  const normalizedQuery = recentQuery.trim().toLowerCase();
+  const visibleProjects = recentExpanded
+    ? normalizedQuery
+      ? projects.filter((p) =>
+          (p.name || '').toLowerCase().includes(normalizedQuery),
+        )
+      : projects
+    : projects.slice(0, 8);
 
   return (
     <div className="h-full overflow-auto">
@@ -356,18 +375,47 @@ export default function LaunchpadPage() {
         </div>
 
         <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-muted-foreground">
-            {t('recentTasks')}
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-muted-foreground">
+              {t('recentTasks')}
+            </h2>
+            {projects.length > 8 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                onClick={toggleRecentExpanded}
+              >
+                {recentExpanded
+                  ? t('recent.collapse')
+                  : t('recent.viewAll', { count: projects.length })}
+              </Button>
+            )}
+          </div>
+          {recentExpanded && (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={recentQuery}
+                onChange={(e) => setRecentQuery(e.target.value)}
+                placeholder={t('recent.searchPlaceholder')}
+                className="h-8 pl-9 text-sm"
+              />
+            </div>
+          )}
           {projects.length === 0 ? (
             <EmptyState
               icon={History}
               title={t('noRecentTasks')}
               description={t('noRecentTasksHint')}
             />
+          ) : visibleProjects.length === 0 ? (
+            <p className="rounded-xl border px-4 py-6 text-center text-sm text-muted-foreground">
+              {t('recent.noMatch')}
+            </p>
           ) : (
             <div className="rounded-xl border divide-y">
-              {projects.map((project) => {
+              {visibleProjects.map((project) => {
                 const status = getProjectStatus(project, userConfig);
                 const typeDef = getProjectTypeDef(project);
                 const editing = editingId === project.id;

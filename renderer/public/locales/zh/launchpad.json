@@ -29,7 +29,11 @@
     "delete": "删除",
     "deleteTitle": "删除这条任务记录？",
     "deleteDesc": "将删除「{{name}}」的任务记录，磁盘上的文件不受影响。",
-    "cancel": "取消"
+    "cancel": "取消",
+    "viewAll": "查看全部（{{count}}）",
+    "collapse": "收起",
+    "searchPlaceholder": "搜索任务名称…",
+    "noMatch": "没有匹配的任务"
   },
   "status": {
     "waiting": "等待中",

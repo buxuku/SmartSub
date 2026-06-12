@@ -29,7 +29,11 @@
     "delete": "Delete",
     "deleteTitle": "Delete this task record?",
     "deleteDesc": "This removes the \"{{name}}\" task record. Files on disk are not affected.",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "viewAll": "View all ({{count}})",
+    "collapse": "Collapse",
+    "searchPlaceholder": "Search tasks…",
+    "noMatch": "No matching tasks"
   },
   "status": {
     "waiting": "Waiting",
