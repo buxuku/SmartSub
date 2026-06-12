@@ -152,9 +152,9 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                   currentSubtitleIndex === index
                     ? 'bg-accent'
                     : isFailed
-                      ? 'bg-red-50 hover:bg-red-100 border border-red-200'
+                      ? 'bg-red-50 hover:bg-red-100 border border-red-200 dark:bg-red-950/30 dark:hover:bg-red-900/40 dark:border-red-900'
                       : 'bg-card hover:bg-accent/50'
-                } text-xs ${isFailed ? 'ring-1 ring-red-300' : ''}`}
+                } text-xs ${isFailed ? 'ring-1 ring-red-300 dark:ring-red-900' : ''}`}
                 onClick={() => onSubtitleClick(index)}
               >
                 <div className="flex justify-between items-center text-[10px] text-gray-500 mb-0.5">
@@ -232,7 +232,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                   <Textarea
                     className={`text-xs p-1 resize-none ${
                       subtitle.targetContent ? 'min-h-[24px]' : 'min-h-[20px]'
-                    } ${isFailed ? 'border-red-300 focus:border-red-500' : ''}`}
+                    } ${isFailed ? 'border-red-300 focus:border-red-500 dark:border-red-800 dark:focus:border-red-400' : ''}`}
                     value={subtitle.targetContent || ''}
                     onChange={(e) =>
                       handleSubtitleChange(
