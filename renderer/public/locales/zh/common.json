@@ -160,6 +160,12 @@
     "subtitleGarbledQ": "烧录到视频的字幕乱码或显示方块？",
     "subtitleGarbledA": "多为所选字体不支持中文。在「合成到视频」的样式设置中选择支持中文的字体（如苹方、微软雅黑、思源黑体）后重新合成。"
   },
+  "downloadPill": {
+    "aria": "模型下载进度，点击查看",
+    "done": "{{model}} 下载完成",
+    "failed": "{{model}} 下载失败",
+    "extracting": "{{model}} 解压中"
+  },
   "shortcuts": {
     "title": "快捷键",
     "groupGlobal": "全局",

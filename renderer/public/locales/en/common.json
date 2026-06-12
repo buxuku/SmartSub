@@ -160,6 +160,12 @@
     "subtitleGarbledQ": "Burned-in subtitles show garbled text or boxes?",
     "subtitleGarbledA": "The selected font likely lacks CJK glyphs. Pick a font that supports your language (e.g. PingFang, Microsoft YaHei, Source Han Sans) in the Burn to Video style settings and merge again."
   },
+  "downloadPill": {
+    "aria": "Model download progress, click to view",
+    "done": "{{model}} downloaded",
+    "failed": "{{model}} download failed",
+    "extracting": "Extracting {{model}}"
+  },
   "shortcuts": {
     "title": "Keyboard shortcuts",
     "groupGlobal": "Global",
