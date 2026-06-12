@@ -13,7 +13,11 @@ import type {
   MergeConfig,
   MergeOutputMode,
 } from '../../../../types/subtitleMerge';
-import { DEFAULT_STYLE, STYLE_PRESETS } from '../constants';
+import {
+  getDefaultStyle,
+  getPlatformDefaultFont,
+  STYLE_PRESETS,
+} from '../constants';
 
 /**
  * Hook 返回的状态和方法
@@ -112,7 +116,7 @@ export function useSubtitleMerge(
 
   // 样式状态
   const [style, setStyleState] = useState<SubtitleStyle>(
-    initialStyle || DEFAULT_STYLE,
+    () => initialStyle || getDefaultStyle(),
   );
   const [activePresetId, setActivePresetId] = useState<string | null>(
     'classic',
@@ -230,6 +234,15 @@ export function useSubtitleMerge(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 换文件后旧的合成结果不再对应当前输入，复位完成/错误状态
+  const resetStaleProgress = useCallback(() => {
+    setProgress((prev) =>
+      prev.status === 'completed' || prev.status === 'error'
+        ? { percent: 0, timeMark: '', targetSize: 0, status: 'idle' }
+        : prev,
+    );
+  }, []);
+
   // 选择视频文件
   const selectVideo = useCallback(async () => {
     try {
@@ -239,12 +252,13 @@ export function useSubtitleMerge(
       });
       if (!result.canceled && result.filePath) {
         setVideoPathState(result.filePath);
+        resetStaleProgress();
         await loadVideoInfo(result.filePath);
       }
     } catch (error) {
       console.error('选择视频失败:', error);
     }
-  }, [loadVideoInfo]);
+  }, [loadVideoInfo, resetStaleProgress]);
 
   // 选择字幕文件
   const selectSubtitle = useCallback(async () => {
@@ -255,29 +269,32 @@ export function useSubtitleMerge(
       });
       if (!result.canceled && result.filePath) {
         setSubtitlePathState(result.filePath);
+        resetStaleProgress();
         await loadSubtitleInfo(result.filePath);
       }
     } catch (error) {
       console.error('选择字幕失败:', error);
     }
-  }, [loadSubtitleInfo]);
+  }, [loadSubtitleInfo, resetStaleProgress]);
 
   // 设置视频路径
   const setVideoPath = useCallback(
     async (path: string) => {
       setVideoPathState(path);
+      resetStaleProgress();
       await loadVideoInfo(path);
     },
-    [loadVideoInfo],
+    [loadVideoInfo, resetStaleProgress],
   );
 
   // 设置字幕路径
   const setSubtitlePath = useCallback(
     async (path: string) => {
       setSubtitlePathState(path);
+      resetStaleProgress();
       await loadSubtitleInfo(path);
     },
-    [loadSubtitleInfo],
+    [loadSubtitleInfo, resetStaleProgress],
   );
 
   // 清空文件
@@ -336,14 +353,19 @@ export function useSubtitleMerge(
   const applyPreset = useCallback((presetId: string) => {
     const preset = STYLE_PRESETS.find((p) => p.id === presetId);
     if (preset) {
-      setStyleState(preset.style);
+      // classic 预设字体跟随平台，避免 Arial 渲染不了 CJK
+      const nextStyle =
+        preset.id === 'classic'
+          ? { ...preset.style, fontName: getPlatformDefaultFont() }
+          : preset.style;
+      setStyleState(nextStyle);
       setActivePresetId(presetId);
     }
   }, []);
 
   // 重置样式
   const resetStyle = useCallback(() => {
-    setStyleState(DEFAULT_STYLE);
+    setStyleState(getDefaultStyle());
     setActivePresetId('classic');
   }, []);
 
@@ -366,15 +388,16 @@ export function useSubtitleMerge(
     setOutputPathState(path);
   }, []);
 
-  // 切换输出方式（联动输出扩展名）
+  // 切换输出方式（联动输出扩展名；旧合成结果不再对应，复位状态）
   const setOutputMode = useCallback(
     (mode: MergeOutputMode) => {
       setOutputModeState(mode);
       setOutputPathState((prev) =>
         prev ? applyModeExtension(prev, mode, videoPath) : prev,
       );
+      resetStaleProgress();
     },
-    [applyModeExtension, videoPath],
+    [applyModeExtension, videoPath, resetStaleProgress],
   );
 
   // 开始合并

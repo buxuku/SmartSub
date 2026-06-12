@@ -5,6 +5,18 @@
 import type { SubtitleStyle, StylePreset } from '../../../types/subtitleMerge';
 
 /**
+ * 按平台返回 CJK 友好的默认字体。
+ * Arial 不含 CJK 字形，中文字幕烧录时会退化到 libass 的随机回退字体。
+ */
+export const getPlatformDefaultFont = (): string => {
+  if (typeof navigator === 'undefined') return 'Arial';
+  const ua = `${navigator.platform || ''} ${navigator.userAgent || ''}`;
+  if (/mac/i.test(ua)) return 'PingFang SC';
+  if (/win/i.test(ua)) return 'Microsoft YaHei';
+  return 'Noto Sans CJK SC';
+};
+
+/**
  * 默认字幕样式
  */
 export const DEFAULT_STYLE: SubtitleStyle = {
@@ -24,6 +36,14 @@ export const DEFAULT_STYLE: SubtitleStyle = {
   marginR: 20,
   marginV: 20,
 };
+
+/**
+ * 默认字幕样式（字体按运行平台动态决定）
+ */
+export const getDefaultStyle = (): SubtitleStyle => ({
+  ...DEFAULT_STYLE,
+  fontName: getPlatformDefaultFont(),
+});
 
 /**
  * 预设样式列表
@@ -161,6 +181,7 @@ export const FONT_LIST = [
   { value: 'KaiTi', label: '楷体' },
   { value: 'PingFang SC', label: '苹方' },
   { value: 'Noto Sans SC', label: 'Noto Sans SC' },
+  { value: 'Noto Sans CJK SC', label: 'Noto Sans CJK SC' },
   { value: 'Source Han Sans SC', label: '思源黑体' },
 ];
 
