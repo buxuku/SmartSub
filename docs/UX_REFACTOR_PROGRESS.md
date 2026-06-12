@@ -1,7 +1,8 @@
 # UX 重构进度交接文档
 
 > 用途：换机/换会话续作的上下文锚点。配合 `docs/UX_ANALYSIS_REPORT.md`（问题清单与路线图原文）阅读。
-> 最后更新：2026-06-12，分支 `feat/resource-hub`。
+> 最后更新：2026-06-12（B13 收官），分支 `feat/resource-hub`。
+> 剩余任务总体规划（B13-B17 批次划分、卡点登记表、出界清单）：`docs/superpowers/specs/2026-06-12-remaining-roadmap-design.md`。
 
 ## 1. 工作流程约定（续作时沿用）
 
@@ -17,7 +18,7 @@
 | renderer TSC                 | `cd renderer && npx tsc --noEmit`   | 222 个错误，全部位于测试文件（`__tests__`/`.test.`/`.spec.`），即非测试错误 0；不得新增 |
 | main TSC                     | `npx tsc --noEmit -p tsconfig.json` | `main/` 开头错误 95 个（全量 614，含根 tsconfig 解析 renderer 别名的噪音）；不得新增    |
 
-## 3. 已完成批次（1-12）
+## 3. 已完成批次（1-13）
 
 对应报告第 8 章三阶段 + 第 11 章版本计划。所有 commit 均在 `feat/resource-hub` 分支。
 
@@ -48,6 +49,20 @@
 | 11   | PageHeader/EmptyState 两模板六页收敛+侧边栏命名统一（P1#21）；应用菜单本地化（P1#34）；更新提示去重+手动检查+版本徽章（6.8.1/6.8.2）；Mac 正向加速徽章+CPU 中性文案（4.6.7）；设置页关于卡+模型路径收敛到资源中心+删 GPU 过渡卡（6.6.5）；最近任务查看全部+搜索（4.1.6） | 5448459 0ee9a57 3595839 8ebfa8c b603e7f                          |
 | 12   | 可达性兜底：hover-only 控件 focus-visible+aria-label（4.3）；任务行文件大小/媒体时长/剩约 ETA（P1#36）；服务商三组分段+推荐卡+搜索+测试语向跟随配置+结果常驻卡（P1#30、6.5.10）；SSR window 守卫修复                                                                     | 18a5583 3a80c91 beb9f0a 9cbe1ed                                  |
 
+### B13 新手旅程闭环（批次 13）—— 6.7.1/6.7.2/6.7.3
+
+| 批次 | 内容                                                                                                                                                                                                                                                                                         | 关键 commit                                                                                          |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 13   | 引导第 4 步「试一试」：内置 10s TTS 英文示例音频（打包三平台）、固定 id 示例工程复用正常工程流、按任务实际 translateProvider 是否已配置自动选纯转写/双语链路、任务页 `?autostart=1` 进入自动开始（消费后清 query）；应用内 FAQ Dialog（5 条）；模型下载全局 pill（侧边栏，监听既有广播事件） | a2015e5 f0866fd 3d64bbf cd362b8 ab91f21 b19e7e2 61445b8（审查修复：a98af1e 021d314 6cae812 47bcd8a） |
+
+设计/计划文档：roadmap 设计 `docs/superpowers/specs/2026-06-12-remaining-roadmap-design.md`、B13 计划 `docs/superpowers/plans/2026-06-12-newbie-journey-b13.md`。
+
+B13 实现备忘（避免重复排查）：
+
+- 模型下载进度无需状态提升——主进程 `modelDownloadDetail` 本就 webContents 全局广播（status: idle/downloading/extracting/completed/error），Layout 直接监听即可。
+- 示例音频转写输出写在媒体文件同目录,而打包态 resources 只读——`getOnboardingSamplePath` 已改为复制到 `userData/sample/` 后返回，勿回退。
+- TaskControls 的 autostart 有 `statusSynced` 门控（防 stale getTaskStatus 覆盖 running 态），改动任务状态同步逻辑时注意保持。
+
 ### 期间确认事项（避免重复排查）
 
 - P1#19 模型推荐双信源：`getRecommendedCategory`（renderer/lib/utils）已是唯一信源，无需再改。
@@ -62,11 +77,9 @@
 
 ### P2 功能补全
 
-- 引导第 4 步「示例任务」：内置 10 秒示例音频一键跑通全流程（6.7.1，aha moment 前置）。
-- 帮助菜单「常见问题」：mac「已损坏」修复、CUDA 闪退换版本（6.7.2，README 有但应用内没有）。
-- 模型下载进度全局可见 pill（顶栏/侧边栏，6.7.3）。
+- ~~引导第 4 步「示例任务」（6.7.1）~~、~~帮助菜单「常见问题」（6.7.2）~~、~~模型下载进度全局 pill（6.7.3）~~——B13 已完成。
 - VAD 预设档位（保守/标准/激进，6.6.1）+「0」语义说明（6.6.2）。
-- 参数编辑器简化（6.5.12）。
+- 参数编辑器简化（6.5.12）——已降级 v2.20+ backlog（见 roadmap 设计 §4.3，重构原则：功能满足前提下操作最简）。
 - 模型下载失败 UI 提示（6.5.4）；导入字幕语向检测（6.3.18）。
 
 ### P2 打磨/解释（需先复核现状再做）
@@ -87,12 +100,13 @@
 - README/官网全套新截图 + IA 重构 before/after release note（5.7、6.8.4）。
 - v2.20+ backlog：托盘常驻/防睡眠、日语界面、官网文档体系。
 
-## 5. 下一批次候选（已向用户提出，待选择）
+## 5. 下一批次（顺序已经用户确认，见 roadmap 设计文档）
 
-- A. 新手旅程闭环：引导示例任务 + FAQ + 下载进度 pill（用户价值最高）。
-- B. 零碎收尾打包：P1#35 + ModelsTab 打磨 + VAD 预设。
-- C. 技术债：native abort（难度最高，动 whisper.cpp addon）+ webSecurity 迁移。
-- D. 对外形象：README 截图与 release note（需实机截图配合）。
+- ~~B13 新手旅程闭环~~——已完成（见 §3）。
+- **B14 零碎收尾打包（下一个）**：P1#35 + ModelsTab 解释四项 + VAD 预设 + 下载失败提示 + 语向检测 + 黄色警告语气 + 概览整卡可点 +「完成率」/「当前字幕」/格式提示三项（已复核未消化）；绿色文件卡已被 B9 消化跳过。
+- B15 技术债：webSecurity 迁移（最高风险，独立 task+回退开关）+ Windows 路径（用户有实机可冒烟）+ dev gpuName。
+- B16 对外形象：README/官网截图 + release note（需用户实机配合,界面定稿后拍）。
+- B17 whisper addon native abort 接入：**触发条件 = 用户的新 addon.node 构建交付（接口 `whisperAsync({...params, signal})` + AbortController 已在另一工程实现）；就绪即插队**。Python/faster-whisper 本轮明确不接入。
 
 ## 6. 关键文件索引
 
