@@ -188,9 +188,15 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
         null,
       );
       const providers = await window?.ipc?.invoke('getTranslationProviders');
-      const hasProvider = (providers || []).some((p: any) =>
-        isProviderConfigured(p),
+      const userConfig = await window?.ipc?.invoke('getUserConfig');
+      // 任务实际使用的是 userConfig.translateProvider,必须判它本身是否已配置,
+      // 而不是「任何服务商已配置」——否则示例会拿未配置的默认服务商去翻译而报错
+      const activeProvider = (providers || []).find(
+        (p: any) => p.id === userConfig?.translateProvider,
       );
+      const hasProvider = activeProvider
+        ? isProviderConfigured(activeProvider)
+        : false;
       // 已配翻译服务 → 完整链路；未配 → 纯转写，零配置可跑
       const taskType = hasProvider ? 'generateAndTranslate' : 'generateOnly';
       const slug = hasProvider ? 'generate-translate' : 'generate';
