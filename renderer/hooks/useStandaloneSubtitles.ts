@@ -103,6 +103,9 @@ export const useStandaloneSubtitles = (
     setMergedSubtitles(next);
   }, []);
 
+  // 读取最新字幕数组（异步流程结束后回填用，避免拿到过期快照）
+  const getSubtitles = useCallback(() => subtitlesRef.current, []);
+
   // 读取字幕文件
   const readSubtitleFile = async (filePath: string): Promise<Subtitle[]> => {
     try {
@@ -651,6 +654,7 @@ export const useStandaloneSubtitles = (
     mergedSubtitles,
     setMergedSubtitles,
     updateSubtitles,
+    getSubtitles,
     videoPath,
     currentSubtitleIndex,
     setCurrentSubtitleIndex,

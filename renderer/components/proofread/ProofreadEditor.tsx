@@ -15,6 +15,7 @@ import { ArrowLeft, Check, Save, Loader2 } from 'lucide-react';
 
 // 复用原有的子组件和 hooks
 import { useStandaloneSubtitles } from '../../hooks/useStandaloneSubtitles';
+import { useRetranslateFailed } from '../../hooks/useRetranslateFailed';
 import { useVideoPlayer } from '../../hooks/useVideoPlayer';
 import { useHotkeys, isMacPlatform } from '../../hooks/useHotkeys';
 import VideoPlayer from '../subtitle/VideoPlayer';
@@ -68,6 +69,7 @@ export default function ProofreadEditor({
   const {
     mergedSubtitles,
     updateSubtitles,
+    getSubtitles,
     videoPath,
     currentSubtitleIndex,
     setCurrentSubtitleIndex,
@@ -96,6 +98,15 @@ export default function ProofreadEditor({
     handleCursorPositionChange,
     getCursorPosition,
   } = useStandaloneSubtitles(config, true);
+
+  // 失败字幕批量重翻（复用任务翻译链路）
+  const retranslate = useRetranslateFailed({
+    getSubtitles,
+    getFailedTranslationIndices,
+    updateSubtitles,
+    sourceLanguage: file.sourceLanguage,
+    targetLanguage: file.targetLanguage,
+  });
 
   // 使用视频播放器 hook
   const {
@@ -343,6 +354,7 @@ export default function ProofreadEditor({
           onAiOptimizeClick={handleAiOptimizeClick}
           onSplitClick={handleSplitClick}
           onTimeChange={handleTimeChange}
+          retranslate={retranslate}
         />
       </div>
 

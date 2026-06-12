@@ -1,13 +1,24 @@
-import React, { useEffect, useRef, useCallback, useMemo, memo } from 'react';
+import React, {
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  useState,
+  memo,
+} from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import {
   ChevronUp,
   ChevronDown,
   AlertTriangle,
   Sparkles,
   Scissors,
+  RotateCcw,
+  Loader2,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -18,6 +29,7 @@ import {
 import { Subtitle } from '../../hooks/useSubtitles';
 import { useTranslation } from 'next-i18next';
 import TimeRangeEditor from './TimeRangeEditor';
+import type { RetranslateControl } from '../../hooks/useRetranslateFailed';
 
 interface SubtitleListProps {
   mergedSubtitles: Subtitle[];
@@ -42,6 +54,8 @@ interface SubtitleListProps {
     startSec: number,
     endSec: number,
   ) => string | null;
+  /** 失败字幕批量重翻控制（不传则不显示重翻按钮） */
+  retranslate?: RetranslateControl;
 }
 
 interface RowLabels {
@@ -271,12 +285,52 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   onAiOptimizeClick,
   onSplitClick,
   onTimeChange,
+  retranslate,
 }) => {
   const { t } = useTranslation('home');
 
   // 获取翻译失败的字幕索引
   const failedIndices = getFailedTranslationIndices();
   const hasFailedTranslations = failedIndices.length > 0;
+
+  // 只看失败：开启时记录基线 N0，随失败行减少展示"已处理 x/N0"
+  const [failedOnly, setFailedOnly] = useState(false);
+  const [failedBaseline, setFailedBaseline] = useState(0);
+
+  const handleFailedOnlyChange = useCallback(
+    (on: boolean) => {
+      setFailedOnly(on);
+      setFailedBaseline(on ? failedIndices.length : 0);
+    },
+    [failedIndices.length],
+  );
+
+  const processedCount = Math.max(0, failedBaseline - failedIndices.length);
+
+  // 钉住正在编辑的失败行：填上译文后行不再"失败"，但在用户切走前
+  // 必须留在过滤视图里，否则输入第一个字符时编辑框会被卸载
+  const pinnedIndexRef = useRef(-1);
+  const lastCurrentRef = useRef(-2);
+  if (lastCurrentRef.current !== currentSubtitleIndex) {
+    lastCurrentRef.current = currentSubtitleIndex;
+    pinnedIndexRef.current =
+      currentSubtitleIndex >= 0 && failedIndices.includes(currentSubtitleIndex)
+        ? currentSubtitleIndex
+        : -1;
+  }
+
+  // 过滤映射：null = 不过滤（虚拟索引即真实索引）
+  let displayIndices: number[] | null = null;
+  if (failedOnly) {
+    const pinned = pinnedIndexRef.current;
+    displayIndices =
+      pinned >= 0 && !failedIndices.includes(pinned)
+        ? [...failedIndices, pinned].sort((a, b) => a - b)
+        : failedIndices;
+  }
+  const displayCount = displayIndices
+    ? displayIndices.length
+    : mergedSubtitles.length;
 
   // 滚动容器引用
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -306,11 +360,13 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   };
 
   const virtualizer = useVirtualizer({
-    count: mergedSubtitles.length,
+    count: displayCount,
     getScrollElement: () => scrollContainerRef.current,
     // 紧凑行 ~30px；展开行由 measureElement 动态测量
     estimateSize: () => 34,
     overscan: 10,
+    // 以真实索引作为 key，过滤切换/失败行减少时测量缓存仍对得上行
+    getItemKey: (i) => (displayIndices ? displayIndices[i] : i),
   });
 
   // 行点击：选中 + 展开 + 视频跳转（沿用现有联动）
@@ -405,17 +461,24 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
 
   // 自动滚动到当前字幕（播放跟随 / 失败翻译跳转 / 上下条导航时生效）
   // 用户主动点击的字幕不滚动；等一帧让展开行完成测量后再定位
+  // 过滤模式下需把真实索引映射为列表位置；不在列表中则不滚动
   useEffect(() => {
     if (skipNextAutoScrollRef.current) {
       skipNextAutoScrollRef.current = false;
       return;
     }
     if (currentSubtitleIndex < 0) return;
+    const listIndex = displayIndices
+      ? displayIndices.indexOf(currentSubtitleIndex)
+      : currentSubtitleIndex;
+    if (listIndex < 0) return;
     const frame = requestAnimationFrame(() => {
-      virtualizer.scrollToIndex(currentSubtitleIndex, { align: 'auto' });
+      virtualizer.scrollToIndex(listIndex, { align: 'auto' });
     });
     return () => cancelAnimationFrame(frame);
-  }, [currentSubtitleIndex, virtualizer]);
+    // displayIndices 内容随失败行变化，仅在当前行/过滤开关变化时重定位
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSubtitleIndex, failedOnly, virtualizer]);
 
   const virtualItems = virtualizer.getVirtualItems();
 
@@ -423,77 +486,148 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     <div className="h-full flex flex-col border rounded-md overflow-hidden">
       {/* 翻译失败导航栏 */}
       {shouldShowTranslation && (
-        <div className="flex items-center justify-between p-2 border-b bg-muted/30 flex-shrink-0">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <AlertTriangle className="h-4 w-4 text-amber-500" />
-            <span>
-              {t('translationFailed')}: {failedIndices.length} /{' '}
-              {mergedSubtitles.length}
-            </span>
-          </div>
-          {hasFailedTranslations && (
-            <div className="flex gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={goToPreviousFailedTranslation}
-                className="h-7 px-2"
-              >
-                <ChevronUp className="h-3 w-3" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={goToNextFailedTranslation}
-                className="h-7 px-2"
-              >
-                <ChevronDown className="h-3 w-3" />
-              </Button>
+        <div className="flex items-center justify-between gap-2 p-2 border-b bg-muted/30 flex-shrink-0">
+          <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
+            <div className="flex flex-shrink-0 items-center gap-1.5">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <span className="tabular-nums">
+                {t('translationFailed')}: {failedIndices.length} /{' '}
+                {mergedSubtitles.length}
+              </span>
             </div>
-          )}
+            {(hasFailedTranslations || failedOnly) && (
+              <label className="flex flex-shrink-0 cursor-pointer select-none items-center gap-1.5 text-xs">
+                <Switch
+                  checked={failedOnly}
+                  onCheckedChange={handleFailedOnlyChange}
+                  className="scale-75"
+                />
+                {t('failedOnlyLabel') || '只看失败'}
+              </label>
+            )}
+            {failedOnly && failedBaseline > 0 && (
+              <span className="flex-shrink-0 text-xs tabular-nums">
+                {(t('failedProcessedProgress') || '已处理 {{done}}/{{total}}')
+                  .replace('{{done}}', String(processedCount))
+                  .replace('{{total}}', String(failedBaseline))}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-shrink-0 items-center gap-1.5">
+            {retranslate &&
+              hasFailedTranslations &&
+              (retranslate.running ? (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span className="tabular-nums">
+                    {retranslate.done}/{retranslate.total}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={retranslate.cancel}
+                    disabled={retranslate.cancelling}
+                  >
+                    {retranslate.cancelling
+                      ? t('cancelling') || '取消中...'
+                      : t('cancel') || '取消'}
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={retranslate.start}
+                >
+                  <RotateCcw className="mr-1 h-3 w-3" />
+                  {(
+                    t('retranslateFailedBtn') || '重翻失败 ({{count}})'
+                  ).replace('{{count}}', String(failedIndices.length))}
+                </Button>
+              ))}
+            {hasFailedTranslations && (
+              <div className="flex gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={goToPreviousFailedTranslation}
+                  className="h-7 px-2"
+                >
+                  <ChevronUp className="h-3 w-3" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={goToNextFailedTranslation}
+                  className="h-7 px-2"
+                >
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* 字幕列表（虚拟化） */}
+      {/* 字幕列表（虚拟化；只看失败时为过滤视图） */}
       <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
-        <div
-          className="relative w-full"
-          style={{ height: virtualizer.getTotalSize() }}
-        >
-          {virtualItems.map((virtualItem) => {
-            const index = virtualItem.index;
-            const subtitle = mergedSubtitles[index];
-            if (!subtitle) return null;
-            return (
-              <div
-                key={virtualItem.key}
-                data-index={index}
-                ref={virtualizer.measureElement}
-                className="absolute left-0 top-0 w-full px-1 pb-1"
-                style={{ transform: `translateY(${virtualItem.start}px)` }}
-              >
-                <SubtitleRow
-                  subtitle={subtitle}
-                  index={index}
-                  isCurrent={index === currentSubtitleIndex}
-                  isFailed={isTranslationFailed(subtitle)}
-                  shouldShowTranslation={shouldShowTranslation}
-                  showAiOptimize={!!onAiOptimizeClick}
-                  showSplit={!!onSplitClick}
-                  labels={labels}
-                  onRowClick={onRowClick}
-                  onFieldChange={onFieldChange}
-                  onSelectionEvent={onSelectionEvent}
-                  onSourceKeyDown={onSourceKeyDown}
-                  onTargetKeyDown={onTargetKeyDown}
-                  onAiOptimize={onAiOptimize}
-                  onSplit={onSplit}
-                  onTimeCommit={onTimeCommit}
-                />
-              </div>
-            );
-          })}
-        </div>
+        {failedOnly && displayCount === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-sm text-muted-foreground">
+            <CheckCircle2 className="h-8 w-8 text-green-500" />
+            <span>{t('failedAllClear') || '失败字幕已全部处理'}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-3 text-xs"
+              onClick={() => handleFailedOnlyChange(false)}
+            >
+              {t('showAllSubtitles') || '显示全部字幕'}
+            </Button>
+          </div>
+        ) : (
+          <div
+            className="relative w-full"
+            style={{ height: virtualizer.getTotalSize() }}
+          >
+            {virtualItems.map((virtualItem) => {
+              const index = displayIndices
+                ? displayIndices[virtualItem.index]
+                : virtualItem.index;
+              const subtitle = mergedSubtitles[index];
+              if (subtitle === undefined) return null;
+              return (
+                <div
+                  key={virtualItem.key}
+                  data-index={virtualItem.index}
+                  ref={virtualizer.measureElement}
+                  className="absolute left-0 top-0 w-full px-1 pb-1"
+                  style={{ transform: `translateY(${virtualItem.start}px)` }}
+                >
+                  <SubtitleRow
+                    subtitle={subtitle}
+                    index={index}
+                    isCurrent={index === currentSubtitleIndex}
+                    isFailed={isTranslationFailed(subtitle)}
+                    shouldShowTranslation={shouldShowTranslation}
+                    showAiOptimize={!!onAiOptimizeClick}
+                    showSplit={!!onSplitClick}
+                    labels={labels}
+                    onRowClick={onRowClick}
+                    onFieldChange={onFieldChange}
+                    onSelectionEvent={onSelectionEvent}
+                    onSourceKeyDown={onSourceKeyDown}
+                    onTargetKeyDown={onTargetKeyDown}
+                    onAiOptimize={onAiOptimize}
+                    onSplit={onSplit}
+                    onTimeCommit={onTimeCommit}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
