@@ -31,6 +31,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useTranslation } from 'next-i18next';
+import { toast } from 'sonner';
 
 enum DownSource {
   HuggingFace = 'huggingface',
@@ -194,13 +195,8 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
       const taskType = hasProvider ? 'generateAndTranslate' : 'generateOnly';
       const slug = hasProvider ? 'generate-translate' : 'generate';
 
-      const existing = await window?.ipc?.invoke(
-        'getTaskProject',
-        SAMPLE_PROJECT_ID,
-      );
-      if (existing) {
-        await window?.ipc?.invoke('deleteTaskProject', SAMPLE_PROJECT_ID);
-      }
+      // 删除旧示例工程后重建（deleteTaskProject 对不存在的 id 是安全 no-op）
+      await window?.ipc?.invoke('deleteTaskProject', SAMPLE_PROJECT_ID);
       const dropped = await window?.ipc?.invoke('getDroppedFiles', {
         files: [samplePath],
         taskType: 'media',
@@ -221,6 +217,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
       );
     } catch (error) {
       console.error('Failed to run sample task:', error);
+      toast.error(t('onboarding.sampleFailed'));
     } finally {
       setSampleLoading(false);
     }

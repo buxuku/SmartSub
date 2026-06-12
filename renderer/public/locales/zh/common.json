@@ -205,7 +205,8 @@
     "sampleRun": "运行示例任务",
     "sampleRunning": "正在准备…",
     "sampleNeedsModel": "需要先在第 2 步下载语音模型",
-    "sampleProjectName": "示例 · 第一个字幕"
+    "sampleProjectName": "示例 · 第一个字幕",
+    "sampleFailed": "示例任务创建失败，请重试或手动导入文件"
   },
   "undo": "撤销",
   "checkingForUpdates": "正在检查更新…",

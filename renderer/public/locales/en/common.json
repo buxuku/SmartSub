@@ -205,7 +205,8 @@
     "sampleRun": "Run sample task",
     "sampleRunning": "Preparing…",
     "sampleNeedsModel": "Download a speech model in step 2 first",
-    "sampleProjectName": "Sample · First subtitle"
+    "sampleProjectName": "Sample · First subtitle",
+    "sampleFailed": "Failed to set up the sample task. Try again or import a file manually."
   },
   "undo": "Undo",
   "checkingForUpdates": "Checking for updates…",
