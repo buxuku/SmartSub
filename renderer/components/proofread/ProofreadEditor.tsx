@@ -355,6 +355,7 @@ export default function ProofreadEditor({
           onSplitClick={handleSplitClick}
           onTimeChange={handleTimeChange}
           retranslate={retranslate}
+          onMergeRange={handleMergeSubtitles}
         />
       </div>
 

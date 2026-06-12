@@ -19,6 +19,7 @@ import {
   RotateCcw,
   Loader2,
   CheckCircle2,
+  Combine,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -56,6 +57,8 @@ interface SubtitleListProps {
   ) => string | null;
   /** 失败字幕批量重翻控制（不传则不显示重翻按钮） */
   retranslate?: RetranslateControl;
+  /** 合并选中区间 [start, endExclusive)；不传则禁用多选 */
+  onMergeRange?: (start: number, endExclusive: number) => void;
 }
 
 interface RowLabels {
@@ -90,11 +93,12 @@ interface SubtitleRowProps {
   index: number;
   isCurrent: boolean;
   isFailed: boolean;
+  isSelected: boolean;
   shouldShowTranslation: boolean;
   showAiOptimize: boolean;
   showSplit: boolean;
   labels: RowLabels;
-  onRowClick: (index: number) => void;
+  onRowClick: (index: number, shiftKey: boolean) => void;
   onFieldChange: (
     index: number,
     field: 'sourceContent' | 'targetContent',
@@ -124,6 +128,7 @@ const SubtitleRow = memo(function SubtitleRow({
   index,
   isCurrent,
   isFailed,
+  isSelected,
   shouldShowTranslation,
   showAiOptimize,
   showSplit,
@@ -148,8 +153,10 @@ const SubtitleRow = memo(function SubtitleRow({
     return (
       <div
         id={`subtitle-${index}`}
-        className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs cursor-pointer bg-card hover:bg-accent/50 transition-colors ${failedEdge}`}
-        onClick={() => onRowClick(index)}
+        className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs cursor-pointer transition-colors select-none ${
+          isSelected ? 'bg-accent' : 'bg-card hover:bg-accent/50'
+        } ${failedEdge}`}
+        onClick={(e) => onRowClick(index, e.shiftKey)}
       >
         {isFailed && (
           <AlertTriangle className="h-3 w-3 flex-shrink-0 text-red-500" />
@@ -286,6 +293,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   onSplitClick,
   onTimeChange,
   retranslate,
+  onMergeRange,
 }) => {
   const { t } = useTranslation('home');
 
@@ -369,13 +377,61 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     getItemKey: (i) => (displayIndices ? displayIndices[i] : i),
   });
 
-  // 行点击：选中 + 展开 + 视频跳转（沿用现有联动）
-  const onRowClick = useCallback((index: number) => {
-    if (index !== latestRef.current.currentSubtitleIndex) {
-      skipNextAutoScrollRef.current = true;
-    }
-    latestRef.current.handleSubtitleClick(index);
-  }, []);
+  // 多选区间（归一化 [lo, hi]，含两端）；anchor 为最后一次普通点击的行
+  const [selRange, setSelRange] = useState<[number, number] | null>(null);
+  const selAnchorRef = useRef(-1);
+  const selectionEnabled = !!onMergeRange;
+
+  // 行点击：普通点击 = 选中 + 展开 + 视频跳转（沿用现有联动）并清选区；
+  // Shift+点击 = 仅扩展选区（不展开不跳转）；失败过滤视图下退化为普通点击
+  const onRowClick = useCallback(
+    (index: number, shiftKey: boolean) => {
+      if (shiftKey && selectionEnabled && !failedOnly) {
+        const anchor =
+          selAnchorRef.current >= 0
+            ? selAnchorRef.current
+            : latestRef.current.currentSubtitleIndex >= 0
+              ? latestRef.current.currentSubtitleIndex
+              : index;
+        selAnchorRef.current = anchor;
+        setSelRange([Math.min(anchor, index), Math.max(anchor, index)]);
+        return;
+      }
+      selAnchorRef.current = index;
+      setSelRange(null);
+      if (index !== latestRef.current.currentSubtitleIndex) {
+        skipNextAutoScrollRef.current = true;
+      }
+      latestRef.current.handleSubtitleClick(index);
+    },
+    [selectionEnabled, failedOnly],
+  );
+
+  // Esc 清除选区
+  useEffect(() => {
+    if (!selRange) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelRange(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selRange]);
+
+  // 字幕数量变化（合并/拆分）后索引错位，选区失效
+  const subtitleCount = mergedSubtitles.length;
+  useEffect(() => {
+    setSelRange(null);
+    selAnchorRef.current = -1;
+  }, [subtitleCount]);
+
+  // 选区合并：hook 端 slice(start, endExclusive)
+  const selCount = selRange ? selRange[1] - selRange[0] + 1 : 0;
+  const handleMergeSelection = useCallback(() => {
+    if (!selRange || selRange[1] <= selRange[0]) return;
+    onMergeRange?.(selRange[0], selRange[1] + 1);
+    selAnchorRef.current = -1;
+    setSelRange(null);
+  }, [selRange, onMergeRange]);
 
   const onFieldChange = useCallback(
     (
@@ -571,6 +627,40 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
         </div>
       )}
 
+      {/* 多选操作条：Shift+点选连续区间后出现 */}
+      {selRange && selCount >= 2 && (
+        <div className="flex items-center justify-between gap-2 border-b bg-accent/40 p-2 flex-shrink-0">
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {(t('selectionInfo') || '已选 {{count}} 条（#{{from}} - #{{to}}）')
+              .replace('{{count}}', String(selCount))
+              .replace('{{from}}', String(selRange[0] + 1))
+              .replace('{{to}}', String(selRange[1] + 1))}
+          </span>
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="default"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={handleMergeSelection}
+            >
+              <Combine className="mr-1 h-3 w-3" />
+              {(t('mergeSelected') || '合并 {{count}} 条').replace(
+                '{{count}}',
+                String(selCount),
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setSelRange(null)}
+            >
+              {t('clearSelection') || '取消选择'}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* 字幕列表（虚拟化；只看失败时为过滤视图） */}
       <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
         {failedOnly && displayCount === 0 ? (
@@ -610,6 +700,9 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                     index={index}
                     isCurrent={index === currentSubtitleIndex}
                     isFailed={isTranslationFailed(subtitle)}
+                    isSelected={
+                      !!selRange && index >= selRange[0] && index <= selRange[1]
+                    }
                     shouldShowTranslation={shouldShowTranslation}
                     showAiOptimize={!!onAiOptimizeClick}
                     showSplit={!!onSplitClick}
