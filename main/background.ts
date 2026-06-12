@@ -14,6 +14,7 @@ import { setupSystemInfoManager } from './helpers/systemInfoManager';
 import { setupStoreHandlers, store } from './helpers/storeManager';
 import { setupTaskManager } from './helpers/taskManager';
 import { setupAutoUpdater } from './helpers/updater';
+import { setupAppMenu } from './helpers/menu';
 import { setupParameterHandlers } from './helpers/ipcParameterHandlers';
 import { setupProofreadHandlers } from './helpers/ipcProofreadHandlers';
 import { setupSubtitleMergeHandlers } from './helpers/ipcSubtitleMergeHandlers';
@@ -109,6 +110,7 @@ app.on('before-quit', () => {
     mainWindow.webContents.openDevTools();
   }
 
+  setupAppMenu(mainWindow);
   setupIpcHandlers(mainWindow);
   setupTaskProcessor(mainWindow);
   setupSystemInfoManager(mainWindow);

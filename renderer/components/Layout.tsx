@@ -279,12 +279,18 @@ const Layout = ({ children }) => {
     };
     window.addEventListener('gpu-settings-changed', handleGpuSettingsChanged);
 
+    // 应用菜单「查看日志」
+    const cleanupMenuLogs = window?.ipc?.on('menu-open-logs', () => {
+      setShowLogs(true);
+    });
+
     // 清理函数
     return () => {
       cleanupMessage?.();
       cleanupUpdateStatus?.();
       cleanupFallback?.();
       cleanupBackendChanged?.();
+      cleanupMenuLogs?.();
       window.removeEventListener(
         'gpu-settings-changed',
         handleGpuSettingsChanged,
