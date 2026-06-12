@@ -37,6 +37,7 @@
     "@radix-ui/react-switch": "^1.0.3",
     "@radix-ui/react-tabs": "^1.1.4",
     "@radix-ui/react-tooltip": "^1.0.7",
+    "@tanstack/react-virtual": "^3.14.2",
     "@volcengine/openapi": "^1.18.3",
     "axios": "^1.6.8",
     "class-variance-authority": "^0.7.0",

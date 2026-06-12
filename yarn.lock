@@ -1963,6 +1963,18 @@
   dependencies:
     defer-to-connect "^2.0.0"
 
+"@tanstack/react-virtual@^3.14.2":
+  version "3.14.2"
+  resolved "https://registry.npmmirror.com/@tanstack/react-virtual/-/react-virtual-3.14.2.tgz#ff1f97cd52f2bf4bda7f6d141bc9af80010daf45"
+  integrity sha512-IpWnmCLvuymRfeeLNVXIzNEYBFLpd3drVIS91sqV78VTZFyldlChkOocZRCPp1B+Wnk09bcLNme8WaMU/9/9bQ==
+  dependencies:
+    "@tanstack/virtual-core" "3.17.0"
+
+"@tanstack/virtual-core@3.17.0":
+  version "3.17.0"
+  resolved "https://registry.npmmirror.com/@tanstack/virtual-core/-/virtual-core-3.17.0.tgz#2949d4aaeaf73f89bab10bf86e22905f5a668acc"
+  integrity sha512-gOxY/hFkPh/XQYhnThBHzkbkX3Ed+z/iushyz+R+JAr213aXxUDgQoTgTdrDpBSRsjFM73P/KfUyWmaF9WHMkQ==
+
 "@tootallnate/once@2":
   version "2.0.0"
   resolved "https://registry.npmmirror.com/@tootallnate/once/-/once-2.0.0.tgz"
