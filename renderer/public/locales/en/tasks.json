@@ -31,6 +31,7 @@
     "translate": "Translate"
   },
   "row": {
+    "cancelling": "Cancelling… stops after the current transcription finishes",
     "proofread": "Proofread",
     "openFolder": "Show in folder",
     "retry": "Retry",

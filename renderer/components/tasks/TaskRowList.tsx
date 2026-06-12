@@ -100,7 +100,10 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
   onRetry,
 }) => {
   const { t } = useTranslation('tasks');
-  const queueBusy = taskStatus === 'running' || taskStatus === 'paused';
+  const queueBusy =
+    taskStatus === 'running' ||
+    taskStatus === 'paused' ||
+    taskStatus === 'cancelling';
 
   const handleImport = () => {
     const fileType = typeDef.accepts === 'subtitle' ? 'srt' : 'media';
@@ -147,6 +150,9 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
         const started = stages.some(
           (s) => getStageStatus(file, s.key) !== 'pending',
         );
+        const cancelling =
+          taskStatus === 'cancelling' &&
+          stages.some((s) => getStageStatus(file, s.key) === 'loading');
 
         return (
           <div
@@ -236,6 +242,12 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                 </TooltipProvider>
               </div>
             </div>
+
+            {cancelling && (
+              <p className="mt-1.5 pl-5 text-xs text-amber-600 dark:text-amber-500">
+                {t('row.cancelling')}
+              </p>
+            )}
 
             {failed && errorMsg && (
               <TooltipProvider>

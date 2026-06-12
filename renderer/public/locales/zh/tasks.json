@@ -31,6 +31,7 @@
     "translate": "翻译"
   },
   "row": {
+    "cancelling": "取消中…完成当前转写后停止",
     "proofread": "校对",
     "openFolder": "打开所在文件夹",
     "retry": "重试",

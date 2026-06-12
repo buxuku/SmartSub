@@ -43,7 +43,14 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
   const router = useRouter();
   const { locale } = router.query;
 
-  if (dismissed || !files.length || taskStatus === 'running') return null;
+  if (
+    dismissed ||
+    !files.length ||
+    taskStatus === 'running' ||
+    taskStatus === 'cancelling' ||
+    taskStatus === 'cancelled'
+  )
+    return null;
 
   const withStages = files.map((file) => ({
     file,
