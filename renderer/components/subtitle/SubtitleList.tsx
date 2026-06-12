@@ -201,7 +201,7 @@ const SubtitleRow = memo(function SubtitleRow({
         </div>
         <TooltipProvider delayDuration={200}>
           <div className="flex items-center gap-0.5">
-            {shouldShowTranslation && showAiOptimize && (
+            {showAiOptimize && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button

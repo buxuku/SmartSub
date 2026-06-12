@@ -69,6 +69,9 @@ export default function BatchAiOptimizeDialog({
 }: BatchAiOptimizeDialogProps) {
   const { t } = useTranslation('home');
 
+  // 纯转写模式：优化对象是原文（修正听写错误），不做翻译
+  const isTranscriptMode = !shouldShowTranslation;
+
   // 状态
   const [step, setStep] = useState<'config' | 'running' | 'review'>('config');
   const [aiProviders, setAiProviders] = useState<any[]>([]);
@@ -97,11 +100,23 @@ export default function BatchAiOptimizeDialog({
     skipped: number;
   } | null>(null);
 
-  // 提示词缓存 key
-  const BATCH_PROMPT_CACHE_KEY = 'ai_batch_optimize_prompt';
+  // 提示词缓存 key（按模式区分，避免翻译/校对提示词互相覆盖）
+  const BATCH_PROMPT_CACHE_KEY = isTranscriptMode
+    ? 'ai_batch_proofread_prompt'
+    : 'ai_batch_optimize_prompt';
 
-  // 默认批量优化提示词
-  const defaultBatchPrompt = `You are a professional subtitle translator and proofreader.
+  // 默认批量优化提示词（翻译优化 / 转写校对两套）
+  const defaultBatchPrompt = isTranscriptMode
+    ? `You are a professional subtitle proofreader.
+
+Each subtitle below is an automatic speech-to-text transcription ({{sourceLanguage}}) that may contain recognition errors. The "source" and "target" fields contain the same transcribed text; correct it:
+1. Fix misrecognized words based on context
+2. Fix punctuation and casing
+3. Keep the original meaning and wording as much as possible
+4. Do NOT translate, summarize, or rephrase
+
+IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and corrected texts as string values.`
+    : `You are a professional subtitle translator and proofreader.
 
 For each subtitle, optimize the translation ({{targetLanguage}}) based on the original text ({{sourceLanguage}}):
 1. More accurately convey the original meaning
@@ -139,7 +154,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
     } catch {
       setCustomPrompt(defaultBatchPrompt);
     }
-  }, [defaultBatchPrompt]);
+  }, [defaultBatchPrompt, BATCH_PROMPT_CACHE_KEY]);
 
   // 保存提示词到缓存
   const savePromptToCache = useCallback(
@@ -152,7 +167,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
         }
       } catch {}
     },
-    [defaultBatchPrompt],
+    [defaultBatchPrompt, BATCH_PROMPT_CACHE_KEY],
   );
 
   // 初始化
@@ -202,13 +217,15 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
       return;
     }
 
-    // 准备字幕数据
+    // 准备字幕数据（转写校对模式下 target 即原文，便于"无变化"对比与统一回传格式）
     const subtitlesToOptimize = subtitles
       .map((sub, index) => ({
         id: sub.id || String(index),
         index,
         sourceContent: sub.sourceContent || '',
-        targetContent: sub.targetContent || '',
+        targetContent: isTranscriptMode
+          ? sub.sourceContent || ''
+          : sub.targetContent || '',
       }))
       .filter((sub) => sub.sourceContent.trim()); // 过滤空字幕
 
@@ -291,6 +308,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
     batchSize,
     aiProviders,
     savePromptToCache,
+    isTranscriptMode,
     t,
   ]);
 
@@ -376,14 +394,20 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5" />
-            {step === 'config' && (t('batchAiOptimize') || '全文 AI 优化')}
+            {step === 'config' &&
+              (isTranscriptMode
+                ? t('batchAiProofread') || '全文 AI 校对'
+                : t('batchAiOptimize') || '全文 AI 优化')}
             {step === 'running' && (t('optimizing') || '优化中...')}
             {step === 'review' && (t('reviewResults') || '审核结果')}
           </DialogTitle>
           <DialogDescription>
             {step === 'config' &&
-              (t('batchAiOptimizeDesc') ||
-                '使用 AI 批量优化所有字幕翻译，优化后可逐条审核并选择是否采纳')}
+              (isTranscriptMode
+                ? t('batchAiProofreadDesc') ||
+                  '使用 AI 批量修正转写文本中的识别错误，修正后可逐条审核并选择是否采纳'
+                : t('batchAiOptimizeDesc') ||
+                  '使用 AI 批量优化所有字幕翻译，优化后可逐条审核并选择是否采纳')}
             {step === 'running' &&
               (t('batchOptimizeRunningDesc') ||
                 '正在批量处理字幕优化，请稍候...')}
@@ -654,10 +678,15 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                             )}
                           </div>
 
-                          {/* 原文 */}
-                          <div className="text-sm text-muted-foreground">
-                            {result.sourceContent}
-                          </div>
+                          {/* 原文（转写校对模式下有变化时对比区已展示原文，避免重复） */}
+                          {(!isTranscriptMode ||
+                            result.status !== 'success' ||
+                            result.optimizedTarget ===
+                              result.originalTarget) && (
+                            <div className="text-sm text-muted-foreground">
+                              {result.sourceContent}
+                            </div>
+                          )}
 
                           {/* 对比显示 */}
                           {result.status === 'success' &&
@@ -666,7 +695,9 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                               <div className="grid grid-cols-2 gap-2">
                                 <div className="p-2 bg-muted/50 rounded text-sm">
                                   <div className="text-xs text-muted-foreground mb-1">
-                                    {t('originalTranslation') || '原翻译'}
+                                    {isTranscriptMode
+                                      ? t('sourceText') || '原文'
+                                      : t('originalTranslation') || '原翻译'}
                                   </div>
                                   {result.originalTarget || (
                                     <span className="italic text-muted-foreground">
@@ -676,7 +707,9 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                                 </div>
                                 <div className="p-2 bg-green-50 dark:bg-green-950/30 rounded text-sm border border-green-200 dark:border-green-800">
                                   <div className="text-xs text-green-600 dark:text-green-400 mb-1">
-                                    {t('optimizedTranslation') || '优化后'}
+                                    {isTranscriptMode
+                                      ? t('correctedText') || '修正后'
+                                      : t('optimizedTranslation') || '优化后'}
                                   </div>
                                   {result.optimizedTarget}
                                 </div>

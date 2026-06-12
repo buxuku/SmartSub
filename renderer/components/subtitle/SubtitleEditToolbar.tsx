@@ -211,8 +211,31 @@ Please translate the original text to {{targetLanguage}}:
 
 Only respond with the translated/improved text, nothing else.`;
 
-  // 提示词缓存 key
-  const PROMPT_CACHE_KEY = 'ai_optimize_custom_prompt';
+  // 纯转写模式：优化对象是原文（修正听写错误），不做翻译
+  const isTranscriptMode = !shouldShowTranslation;
+
+  // 转写校对默认提示词（修正识别错误，不翻译不改写）
+  const defaultProofreadPrompt = `You are a professional subtitle proofreader.
+
+The following text is an automatic speech-to-text transcription ({{sourceLanguage}}) that may contain recognition errors:
+{{sourceText}}
+
+Please correct it:
+1. Fix misrecognized words based on context
+2. Fix punctuation and casing
+3. Keep the original meaning and wording as much as possible
+4. Do NOT translate, summarize, or rephrase
+
+Only respond with the corrected text, nothing else.`;
+
+  const activeDefaultPrompt = isTranscriptMode
+    ? defaultProofreadPrompt
+    : defaultOptimizePrompt;
+
+  // 提示词缓存 key（按模式区分，避免翻译/校对提示词互相覆盖）
+  const PROMPT_CACHE_KEY = isTranscriptMode
+    ? 'ai_proofread_custom_prompt'
+    : 'ai_optimize_custom_prompt';
 
   // 构建匹配列表：返回（条+字段）列表与总出现次数
   const buildMatches = useCallback(
@@ -471,22 +494,22 @@ Only respond with the translated/improved text, nothing else.`;
         setCustomPrompt(cached);
         setShowCustomPrompt(true); // 如果有缓存的提示词，自动展开
       } else {
-        setCustomPrompt(defaultOptimizePrompt);
+        setCustomPrompt(activeDefaultPrompt);
       }
       setIsCustomPromptLoaded(true);
     } catch (error) {
       console.error('Failed to load cached prompt:', error);
-      setCustomPrompt(defaultOptimizePrompt);
+      setCustomPrompt(activeDefaultPrompt);
       setIsCustomPromptLoaded(true);
     }
-  }, [isCustomPromptLoaded, defaultOptimizePrompt]);
+  }, [isCustomPromptLoaded, activeDefaultPrompt, PROMPT_CACHE_KEY]);
 
   // 保存自定义提示词到缓存
   const savePromptToCache = useCallback(
     (prompt: string) => {
       try {
         // 只有当提示词与默认不同时才缓存
-        if (prompt.trim() !== defaultOptimizePrompt.trim()) {
+        if (prompt.trim() !== activeDefaultPrompt.trim()) {
           localStorage.setItem(PROMPT_CACHE_KEY, prompt);
         } else {
           // 如果恢复为默认，清除缓存
@@ -496,7 +519,7 @@ Only respond with the translated/improved text, nothing else.`;
         console.error('Failed to save prompt to cache:', error);
       }
     },
-    [defaultOptimizePrompt],
+    [activeDefaultPrompt, PROMPT_CACHE_KEY],
   );
 
   // 处理提示词变化
@@ -510,9 +533,9 @@ Only respond with the translated/improved text, nothing else.`;
 
   // 重置为默认提示词
   const handleResetPrompt = useCallback(() => {
-    setCustomPrompt(defaultOptimizePrompt);
+    setCustomPrompt(activeDefaultPrompt);
     localStorage.removeItem(PROMPT_CACHE_KEY);
-  }, [defaultOptimizePrompt]);
+  }, [activeDefaultPrompt, PROMPT_CACHE_KEY]);
 
   // 打开 AI 优化对话框时加载服务商
   const handleOpenAiOptimize = useCallback(() => {
@@ -580,11 +603,14 @@ Only respond with the translated/improved text, nothing else.`;
 
     try {
       // 调用 AI 优化服务（始终传递提示词）
+      // 纯转写模式必须带校对提示词，否则主进程会退化为翻译提示词
       const result = await window.ipc.invoke('optimizeSubtitle', {
         sourceText,
-        targetText,
+        targetText: isTranscriptMode ? '' : targetText,
         providerId: selectedProviderId || undefined,
-        customPrompt: customPrompt.trim() || undefined,
+        customPrompt:
+          customPrompt.trim() ||
+          (isTranscriptMode ? defaultProofreadPrompt : undefined),
       });
 
       if (result.success && result.data) {
@@ -605,24 +631,35 @@ Only respond with the translated/improved text, nothing else.`;
     aiProviders,
     selectedProviderId,
     customPrompt,
+    isTranscriptMode,
+    defaultProofreadPrompt,
   ]);
 
-  // 采纳 AI 优化结果
+  // 采纳 AI 优化结果（纯转写模式写回原文）
   const handleAcceptOptimization = useCallback(() => {
     if (!optimizedText || currentSubtitleIndex < 0) return;
 
     const newSubtitles = [...subtitles];
     newSubtitles[currentSubtitleIndex] = {
       ...newSubtitles[currentSubtitleIndex],
-      targetContent: optimizedText,
+      ...(isTranscriptMode
+        ? { sourceContent: optimizedText }
+        : { targetContent: optimizedText }),
     };
     onSubtitlesChange(newSubtitles);
     setShowAiOptimize(false);
     setOptimizedText('');
     toast.success(t('optimizationAccepted') || '已采纳优化结果');
-  }, [optimizedText, currentSubtitleIndex, subtitles, onSubtitlesChange, t]);
+  }, [
+    optimizedText,
+    currentSubtitleIndex,
+    subtitles,
+    onSubtitlesChange,
+    isTranscriptMode,
+    t,
+  ]);
 
-  // 应用批量优化结果
+  // 应用批量优化结果（纯转写模式写回原文）
   const handleApplyBatchOptimizations = useCallback(
     (optimizations: Array<{ index: number; targetContent: string }>) => {
       const newSubtitles = [...subtitles];
@@ -630,13 +667,15 @@ Only respond with the translated/improved text, nothing else.`;
         if (index >= 0 && index < newSubtitles.length) {
           newSubtitles[index] = {
             ...newSubtitles[index],
-            targetContent,
+            ...(isTranscriptMode
+              ? { sourceContent: targetContent }
+              : { targetContent }),
           };
         }
       });
       onSubtitlesChange(newSubtitles);
     },
-    [subtitles, onSubtitlesChange],
+    [subtitles, onSubtitlesChange, isTranscriptMode],
   );
 
   return (
@@ -970,72 +1009,78 @@ Only respond with the translated/improved text, nothing else.`;
         </DialogContent>
       </Dialog>
 
-      {/* AI 单条优化按钮和对话框 */}
-      {shouldShowTranslation && (
-        <Dialog open={showAiOptimize} onOpenChange={setShowAiOptimize}>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8"
-            onClick={handleOpenAiOptimize}
-            disabled={currentSubtitleIndex < 0}
-            title={t('aiOptimize') || 'AI 优化'}
-          >
-            <Sparkles className="h-4 w-4 mr-1" />
-            {t('aiOptimize') || 'AI 优化'}
-          </Button>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>{t('aiOptimizeTitle') || 'AI 优化翻译'}</DialogTitle>
-              <DialogDescription>
-                {t('aiOptimizeDesc') || '使用 AI 优化当前字幕的翻译质量'}
-              </DialogDescription>
-            </DialogHeader>
-            {currentSubtitleIndex >= 0 &&
-              currentSubtitleIndex < subtitles.length && (
-                <div className="space-y-4 py-4">
-                  {/* AI 服务商选择 */}
-                  <div className="space-y-2">
-                    <Label>{t('selectAiProvider') || '选择 AI 服务'}</Label>
-                    {aiProviders.length === 0 ? (
-                      <div className="p-3 border rounded bg-muted/30 text-sm text-muted-foreground italic">
-                        {t('noAiProviderConfigured') ||
-                          '未配置 AI 翻译服务，请先在设置中添加'}
-                      </div>
-                    ) : (
-                      <Select
-                        value={selectedProviderId}
-                        onValueChange={setSelectedProviderId}
-                      >
-                        <SelectTrigger>
-                          <SelectValue
-                            placeholder={t('selectProvider') || '选择服务商'}
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {aiProviders.map((provider) => (
-                            <SelectItem key={provider.id} value={provider.id}>
-                              {provider.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+      {/* AI 单条优化按钮和对话框（纯转写模式下为原文校对） */}
+      <Dialog open={showAiOptimize} onOpenChange={setShowAiOptimize}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8"
+          onClick={handleOpenAiOptimize}
+          disabled={currentSubtitleIndex < 0}
+          title={t('aiOptimize') || 'AI 优化'}
+        >
+          <Sparkles className="h-4 w-4 mr-1" />
+          {t('aiOptimize') || 'AI 优化'}
+        </Button>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {isTranscriptMode
+                ? t('aiProofreadTitle') || 'AI 校对原文'
+                : t('aiOptimizeTitle') || 'AI 优化翻译'}
+            </DialogTitle>
+            <DialogDescription>
+              {isTranscriptMode
+                ? t('aiProofreadDesc') || '使用 AI 修正当前字幕的转写错误'
+                : t('aiOptimizeDesc') || '使用 AI 优化当前字幕的翻译质量'}
+            </DialogDescription>
+          </DialogHeader>
+          {currentSubtitleIndex >= 0 &&
+            currentSubtitleIndex < subtitles.length && (
+              <div className="space-y-4 py-4">
+                {/* AI 服务商选择 */}
+                <div className="space-y-2">
+                  <Label>{t('selectAiProvider') || '选择 AI 服务'}</Label>
+                  {aiProviders.length === 0 ? (
+                    <div className="p-3 border rounded bg-muted/30 text-sm text-muted-foreground italic">
+                      {t('noAiProviderConfigured') ||
+                        '未配置 AI 翻译服务，请先在设置中添加'}
+                    </div>
+                  ) : (
+                    <Select
+                      value={selectedProviderId}
+                      onValueChange={setSelectedProviderId}
+                    >
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={t('selectProvider') || '选择服务商'}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {aiProviders.map((provider) => (
+                          <SelectItem key={provider.id} value={provider.id}>
+                            {provider.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+
+                {/* 原文 */}
+                <div className="space-y-2">
+                  <Label>{t('sourceText') || '原文'}</Label>
+                  <div className="p-3 border rounded bg-muted/30 text-sm">
+                    {subtitles[currentSubtitleIndex].sourceContent || (
+                      <span className="text-muted-foreground italic">
+                        {t('empty') || '(空)'}
+                      </span>
                     )}
                   </div>
+                </div>
 
-                  {/* 原文 */}
-                  <div className="space-y-2">
-                    <Label>{t('sourceText') || '原文'}</Label>
-                    <div className="p-3 border rounded bg-muted/30 text-sm">
-                      {subtitles[currentSubtitleIndex].sourceContent || (
-                        <span className="text-muted-foreground italic">
-                          {t('empty') || '(空)'}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 当前翻译 */}
+                {/* 当前翻译（纯转写模式无此区块） */}
+                {!isTranscriptMode && (
                   <div className="space-y-2">
                     <Label>{t('currentTranslation') || '当前翻译'}</Label>
                     <div className="p-3 border rounded bg-muted/30 text-sm">
@@ -1046,130 +1091,129 @@ Only respond with the translated/improved text, nothing else.`;
                       )}
                     </div>
                   </div>
-
-                  {/* 自定义提示词 */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label>{t('customPrompt') || '优化提示词'}</Label>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={handleResetPrompt}
-                          title={t('resetToDefault') || '重置为默认'}
-                        >
-                          {t('resetToDefault') || '重置'}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setShowCustomPrompt(!showCustomPrompt)}
-                        >
-                          {showCustomPrompt
-                            ? t('hideCustomPrompt') || '收起'
-                            : t('showCustomPrompt') || '展开'}
-                        </Button>
-                      </div>
-                    </div>
-                    {showCustomPrompt && (
-                      <div className="space-y-2">
-                        <Textarea
-                          value={customPrompt}
-                          onChange={(e) => handlePromptChange(e.target.value)}
-                          placeholder={
-                            t('customPromptPlaceholder') ||
-                            '输入自定义提示词，可使用变量：{{sourceLanguage}}、{{targetLanguage}}、{{sourceText}}、{{targetText}}'
-                          }
-                          className="min-h-[200px] text-sm font-mono"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          {t('customPromptHint') ||
-                            '支持的变量：{{sourceLanguage}} - 源语言，{{targetLanguage}} - 目标语言，{{sourceText}} - 原文，{{targetText}} - 当前翻译'}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* AI 优化结果 */}
-                  <div className="space-y-2">
-                    <Label>{t('aiOptimizedResult') || 'AI 优化结果'}</Label>
-                    {aiOptimizing ? (
-                      <div className="p-3 border rounded bg-muted/30 flex items-center justify-center">
-                        <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                        {t('optimizing') || '优化中...'}
-                      </div>
-                    ) : optimizedText ? (
-                      <Textarea
-                        value={optimizedText}
-                        onChange={(e) => setOptimizedText(e.target.value)}
-                        className="min-h-[80px]"
-                      />
-                    ) : (
-                      <div className="p-3 border rounded bg-muted/30 text-sm text-muted-foreground italic">
-                        {t('clickOptimizeToStart') || '点击"开始优化"获取结果'}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setShowAiOptimize(false)}
-              >
-                {t('cancel') || '取消'}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={handleAiOptimize}
-                disabled={
-                  aiOptimizing ||
-                  currentSubtitleIndex < 0 ||
-                  aiProviders.length === 0
-                }
-              >
-                {aiOptimizing ? (
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4 mr-1" />
                 )}
-                {t('startOptimize') || '开始优化'}
-              </Button>
-              <Button
-                onClick={handleAcceptOptimization}
-                disabled={!optimizedText || aiOptimizing}
-              >
-                {t('acceptOptimization') || '采纳'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
 
-      {/* 批量 AI 优化按钮 */}
-      {shouldShowTranslation && (
-        <>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8"
-            onClick={() => setShowBatchOptimize(true)}
-            disabled={subtitles.length === 0}
-            title={t('batchAiOptimize') || '全文 AI 优化'}
-          >
-            <Wand2 className="h-4 w-4 mr-1" />
-            {t('batchAiOptimize') || '全文优化'}
-          </Button>
+                {/* 自定义提示词 */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>{t('customPrompt') || '优化提示词'}</Label>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleResetPrompt}
+                        title={t('resetToDefault') || '重置为默认'}
+                      >
+                        {t('resetToDefault') || '重置'}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowCustomPrompt(!showCustomPrompt)}
+                      >
+                        {showCustomPrompt
+                          ? t('hideCustomPrompt') || '收起'
+                          : t('showCustomPrompt') || '展开'}
+                      </Button>
+                    </div>
+                  </div>
+                  {showCustomPrompt && (
+                    <div className="space-y-2">
+                      <Textarea
+                        value={customPrompt}
+                        onChange={(e) => handlePromptChange(e.target.value)}
+                        placeholder={
+                          t('customPromptPlaceholder') ||
+                          '输入自定义提示词，可使用变量：{{sourceLanguage}}、{{targetLanguage}}、{{sourceText}}、{{targetText}}'
+                        }
+                        className="min-h-[200px] text-sm font-mono"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t('customPromptHint') ||
+                          '支持的变量：{{sourceLanguage}} - 源语言，{{targetLanguage}} - 目标语言，{{sourceText}} - 原文，{{targetText}} - 当前翻译'}
+                      </p>
+                    </div>
+                  )}
+                </div>
 
-          <BatchAiOptimizeDialog
-            open={showBatchOptimize}
-            onOpenChange={setShowBatchOptimize}
-            subtitles={subtitles}
-            onApplyOptimizations={handleApplyBatchOptimizations}
-            shouldShowTranslation={shouldShowTranslation}
-          />
-        </>
-      )}
+                {/* AI 优化结果 */}
+                <div className="space-y-2">
+                  <Label>{t('aiOptimizedResult') || 'AI 优化结果'}</Label>
+                  {aiOptimizing ? (
+                    <div className="p-3 border rounded bg-muted/30 flex items-center justify-center">
+                      <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                      {t('optimizing') || '优化中...'}
+                    </div>
+                  ) : optimizedText ? (
+                    <Textarea
+                      value={optimizedText}
+                      onChange={(e) => setOptimizedText(e.target.value)}
+                      className="min-h-[80px]"
+                    />
+                  ) : (
+                    <div className="p-3 border rounded bg-muted/30 text-sm text-muted-foreground italic">
+                      {t('clickOptimizeToStart') || '点击"开始优化"获取结果'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAiOptimize(false)}>
+              {t('cancel') || '取消'}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleAiOptimize}
+              disabled={
+                aiOptimizing ||
+                currentSubtitleIndex < 0 ||
+                aiProviders.length === 0
+              }
+            >
+              {aiOptimizing ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4 mr-1" />
+              )}
+              {t('startOptimize') || '开始优化'}
+            </Button>
+            <Button
+              onClick={handleAcceptOptimization}
+              disabled={!optimizedText || aiOptimizing}
+            >
+              {t('acceptOptimization') || '采纳'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 批量 AI 优化按钮（纯转写模式下为全文校对） */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-8"
+        onClick={() => setShowBatchOptimize(true)}
+        disabled={subtitles.length === 0}
+        title={
+          isTranscriptMode
+            ? t('batchAiProofread') || '全文 AI 校对'
+            : t('batchAiOptimize') || '全文 AI 优化'
+        }
+      >
+        <Wand2 className="h-4 w-4 mr-1" />
+        {isTranscriptMode
+          ? t('batchAiProofread') || '全文校对'
+          : t('batchAiOptimize') || '全文优化'}
+      </Button>
+
+      <BatchAiOptimizeDialog
+        open={showBatchOptimize}
+        onOpenChange={setShowBatchOptimize}
+        subtitles={subtitles}
+        onApplyOptimizations={handleApplyBatchOptimizations}
+        shouldShowTranslation={shouldShowTranslation}
+      />
     </div>
   );
 }
