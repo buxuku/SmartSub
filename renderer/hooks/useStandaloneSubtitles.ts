@@ -63,6 +63,9 @@ export const useStandaloneSubtitles = (
   // 记录编辑前的快照（用于失焦记录）
   const [editSnapshot, setEditSnapshot] = useState<Subtitle[] | null>(null);
 
+  // 自上次保存以来是否有未保存修改
+  const [isDirty, setIsDirty] = useState(false);
+
   // 光标位置（用于拆分功能）
   const cursorPositionRef = useRef(0);
 
@@ -182,6 +185,7 @@ export const useStandaloneSubtitles = (
 
         setMergedSubtitles(merged);
       }
+      setIsDirty(false);
     } catch (error) {
       console.error('Error loading files:', error);
       toast.error(t('loadFileFailed') || '加载文件失败');
@@ -239,43 +243,64 @@ export const useStandaloneSubtitles = (
         ? value.split('\n')
         : newSubtitles[index].content;
     setMergedSubtitles(newSubtitles);
+    setIsDirty(true);
   };
 
-  // 保存字幕文件
-  const handleSave = async () => {
+  // 保存字幕文件；返回是否全部写入成功
+  const handleSave = async (): Promise<boolean> => {
+    // 先把未提交的逐字编辑补入撤销历史，保证保存后仍可撤销
+    flushPendingEdit();
     try {
+      const results: { error?: string }[] = [];
+
       // 保存源字幕
       if (config.sourceSubtitlePath) {
-        await window.ipc.invoke('saveSubtitleFile', {
-          filePath: config.sourceSubtitlePath,
-          subtitles: mergedSubtitles,
-          contentType: 'source',
-        });
+        results.push(
+          await window.ipc.invoke('saveSubtitleFile', {
+            filePath: config.sourceSubtitlePath,
+            subtitles: mergedSubtitles,
+            contentType: 'source',
+          }),
+        );
       }
 
       // 保存翻译字幕（纯翻译内容到临时文件）
       if (config.targetSubtitlePath && shouldShowTranslation) {
-        await window.ipc.invoke('saveSubtitleFile', {
-          filePath: config.targetSubtitlePath,
-          subtitles: mergedSubtitles,
-          contentType: 'onlyTranslate',
-        });
+        results.push(
+          await window.ipc.invoke('saveSubtitleFile', {
+            filePath: config.targetSubtitlePath,
+            subtitles: mergedSubtitles,
+            contentType: 'onlyTranslate',
+          }),
+        );
       }
 
       // 保存到目标翻译文件（按用户配置格式，可能是双语）
       if (config.finalTargetSubtitlePath && shouldShowTranslation) {
         const contentType = config.translateContent || 'onlyTranslate';
-        await window.ipc.invoke('saveSubtitleFile', {
-          filePath: config.finalTargetSubtitlePath,
-          subtitles: mergedSubtitles,
-          contentType,
-        });
+        results.push(
+          await window.ipc.invoke('saveSubtitleFile', {
+            filePath: config.finalTargetSubtitlePath,
+            subtitles: mergedSubtitles,
+            contentType,
+          }),
+        );
       }
 
+      const failed = results.find((result) => result && result.error);
+      if (failed) {
+        console.error('Error saving subtitles:', failed.error);
+        toast.error(t('saveFailed') || '保存失败');
+        return false;
+      }
+
+      setIsDirty(false);
       toast.success(t('subtitleSavedSuccess') || '字幕保存成功');
+      return true;
     } catch (error) {
       console.error('Error saving subtitles:', error);
       toast.error(t('saveFailed') || '保存失败');
+      return false;
     }
   };
 
@@ -369,11 +394,24 @@ export const useStandaloneSubtitles = (
     [historyIndex],
   );
 
+  // 把"未提交的逐字编辑"补入历史：保存/切行前调用，消除撤销盲区
+  const flushPendingEdit = useCallback(() => {
+    if (!editSnapshot) return;
+    const hasChanged =
+      JSON.stringify(editSnapshot) !== JSON.stringify(mergedSubtitles);
+    if (hasChanged) {
+      // 保存到历史（编辑前 -> 编辑后）
+      pushToHistory(editSnapshot, mergedSubtitles);
+    }
+    setEditSnapshot(null);
+  }, [editSnapshot, mergedSubtitles, pushToHistory]);
+
   // 更新字幕（带历史记录）
   const updateSubtitles = useCallback(
     (newSubtitles: Subtitle[]) => {
       pushToHistory(mergedSubtitles, newSubtitles);
       setMergedSubtitles(newSubtitles);
+      setIsDirty(true);
     },
     [mergedSubtitles, pushToHistory],
   );
@@ -386,6 +424,7 @@ export const useStandaloneSubtitles = (
       setMergedSubtitles(JSON.parse(JSON.stringify(history[newIndex])));
       // 清除编辑快照，避免干扰
       setEditSnapshot(null);
+      setIsDirty(true);
     }
   }, [historyIndex, history]);
 
@@ -397,6 +436,7 @@ export const useStandaloneSubtitles = (
       setMergedSubtitles(JSON.parse(JSON.stringify(history[newIndex])));
       // 清除编辑快照，避免干扰
       setEditSnapshot(null);
+      setIsDirty(true);
     }
   }, [historyIndex, history]);
 
@@ -408,21 +448,12 @@ export const useStandaloneSubtitles = (
   useEffect(() => {
     if (
       previousSubtitleIndex !== -1 &&
-      previousSubtitleIndex !== currentSubtitleIndex &&
-      editSnapshot
+      previousSubtitleIndex !== currentSubtitleIndex
     ) {
-      // 检查是否有实际变化
-      const hasChanged =
-        JSON.stringify(editSnapshot) !== JSON.stringify(mergedSubtitles);
-      if (hasChanged) {
-        // 保存到历史（编辑前 -> 编辑后）
-        pushToHistory(editSnapshot, mergedSubtitles);
-      }
-      // 清除快照
-      setEditSnapshot(null);
+      flushPendingEdit();
     }
     setPreviousSubtitleIndex(currentSubtitleIndex);
-  }, [currentSubtitleIndex, editSnapshot, mergedSubtitles, pushToHistory]);
+  }, [currentSubtitleIndex, flushPendingEdit]);
 
   // 秒数转时间戳字符串
   const secondsToTime = (seconds: number): string => {
@@ -575,6 +606,8 @@ export const useStandaloneSubtitles = (
     isLoading,
     handleSubtitleChange,
     handleSave,
+    isDirty,
+    flushPendingEdit,
     getSubtitleStats,
     isTranslationFailed,
     getFailedTranslationIndices,
