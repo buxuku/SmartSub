@@ -10,6 +10,25 @@ export const formatTime = (seconds: number): string => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 };
 
+// 二分查找当前时间命中的字幕：字幕按 startTimeInSeconds 有序，
+// 找最后一个 start <= time 的行，再验证 end > time
+const findSubtitleIndexAtTime = (subs: Subtitle[], time: number): number => {
+  let lo = 0;
+  let hi = subs.length - 1;
+  let candidate = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if ((subs[mid].startTimeInSeconds ?? 0) <= time) {
+      candidate = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  if (candidate === -1) return -1;
+  return (subs[candidate].endTimeInSeconds ?? 0) > time ? candidate : -1;
+};
+
 export const useVideoPlayer = (
   mergedSubtitles: Subtitle[],
   currentSubtitleIndex: number,
@@ -21,14 +40,10 @@ export const useVideoPlayer = (
   const [playbackRate, setPlaybackRate] = useState(1);
   const playerRef = useRef<ReactPlayer>(null);
 
-  // 根据当前播放时间查找活跃字幕
+  // 根据当前播放时间查找活跃字幕（二分索引，避免每个进度 tick 线性扫全表）
   useEffect(() => {
     if (currentTime >= 0 && mergedSubtitles.length > 0) {
-      const index = mergedSubtitles.findIndex(
-        (sub) =>
-          sub.startTimeInSeconds <= currentTime &&
-          sub.endTimeInSeconds > currentTime,
-      );
+      const index = findSubtitleIndexAtTime(mergedSubtitles, currentTime);
       if (index !== -1 && index !== currentSubtitleIndex) {
         // 仅更新索引；滚动统一交给 SubtitleList 的自动滚动 effect 处理，
         // 避免两处 scrollIntoView 同时触发导致滚动位置冲突
