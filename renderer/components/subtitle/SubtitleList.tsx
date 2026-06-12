@@ -631,10 +631,11 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
       {selRange && selCount >= 2 && (
         <div className="flex items-center justify-between gap-2 border-b bg-accent/40 p-2 flex-shrink-0">
           <span className="text-xs text-muted-foreground tabular-nums">
-            {(t('selectionInfo') || '已选 {{count}} 条（#{{from}} - #{{to}}）')
-              .replace('{{count}}', String(selCount))
-              .replace('{{from}}', String(selRange[0] + 1))
-              .replace('{{to}}', String(selRange[1] + 1))}
+            {t('selectionInfo', {
+              count: selCount,
+              from: selRange[0] + 1,
+              to: selRange[1] + 1,
+            })}
           </span>
           <div className="flex items-center gap-1.5">
             <Button
@@ -644,10 +645,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
               onClick={handleMergeSelection}
             >
               <Combine className="mr-1 h-3 w-3" />
-              {(t('mergeSelected') || '合并 {{count}} 条').replace(
-                '{{count}}',
-                String(selCount),
-              )}
+              {t('mergeSelected', { count: selCount })}
             </Button>
             <Button
               variant="ghost"

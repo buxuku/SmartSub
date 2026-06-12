@@ -37,10 +37,59 @@ import {
   Sparkles,
   Loader2,
   Wand2,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Subtitle } from '../../hooks/useSubtitles';
 import BatchAiOptimizeDialog from './BatchAiOptimizeDialog';
+
+/** 出现次数统计（支持大小写不敏感） */
+const countOccurrences = (
+  text: string,
+  needle: string,
+  caseSensitive: boolean,
+): number => {
+  if (!needle || !text) return 0;
+  const haystack = caseSensitive ? text : text.toLowerCase();
+  const n = caseSensitive ? needle : needle.toLowerCase();
+  let count = 0;
+  let pos = haystack.indexOf(n);
+  while (pos !== -1) {
+    count++;
+    pos = haystack.indexOf(n, pos + n.length);
+  }
+  return count;
+};
+
+/** 全部替换（支持大小写不敏感，保留未匹配部分原样） */
+const replaceAllWithCase = (
+  text: string,
+  needle: string,
+  replacement: string,
+  caseSensitive: boolean,
+): string => {
+  if (!needle || !text) return text;
+  if (caseSensitive) return text.split(needle).join(replacement);
+  const haystack = text.toLowerCase();
+  const n = needle.toLowerCase();
+  let result = '';
+  let last = 0;
+  let pos = haystack.indexOf(n);
+  while (pos !== -1) {
+    result += text.slice(last, pos) + replacement;
+    last = pos + n.length;
+    pos = haystack.indexOf(n, last);
+  }
+  return result + text.slice(last);
+};
+
+/** 匹配位置：第 index 条的某个字段（替换粒度为条+字段） */
+interface SearchMatch {
+  index: number;
+  field: 'sourceContent' | 'targetContent';
+}
 
 interface SubtitleEditToolbarProps {
   subtitles: Subtitle[];
@@ -64,6 +113,8 @@ interface SubtitleEditToolbarProps {
   onTriggerHandled?: () => void; // 当触发器被处理后调用
   /** 外部请求打开搜索替换（Cmd/Ctrl+F）：token 递增时展开面板并聚焦搜索框 */
   searchOpenToken?: number;
+  /** 定位到某条字幕（展开行并滚动到可视区），用于搜索逐条跳转 */
+  onLocateSubtitle?: (index: number) => void;
 }
 
 export default function SubtitleEditToolbar({
@@ -82,6 +133,7 @@ export default function SubtitleEditToolbar({
   triggerSplit,
   onTriggerHandled,
   searchOpenToken,
+  onLocateSubtitle,
 }: SubtitleEditToolbarProps) {
   const { t } = useTranslation('home');
 
@@ -93,7 +145,12 @@ export default function SubtitleEditToolbar({
   const [searchTarget, setSearchTarget] = useState<
     'source' | 'target' | 'both'
   >('both');
-  const [matchCount, setMatchCount] = useState(0);
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  // 匹配列表（条+字段粒度）与当前导航位置（-1 表示尚未导航）
+  const [searchMatches, setSearchMatches] = useState<SearchMatch[]>([]);
+  const [totalOccurrences, setTotalOccurrences] = useState(0);
+  const [matchPointer, setMatchPointer] = useState(-1);
+  const matchCount = searchMatches.length;
 
   // Cmd/Ctrl+F 外部触发：展开搜索面板并聚焦搜索框（等 Popover 挂载后聚焦）
   useEffect(() => {
@@ -157,29 +214,120 @@ Only respond with the translated/improved text, nothing else.`;
   // 提示词缓存 key
   const PROMPT_CACHE_KEY = 'ai_optimize_custom_prompt';
 
-  // 搜索匹配数量
+  // 构建匹配列表：返回（条+字段）列表与总出现次数
+  const buildMatches = useCallback(
+    (subs: Subtitle[]): { matches: SearchMatch[]; total: number } => {
+      const matches: SearchMatch[] = [];
+      let total = 0;
+      if (!searchText) return { matches, total };
+      subs.forEach((sub, index) => {
+        if (searchTarget === 'source' || searchTarget === 'both') {
+          const c = countOccurrences(
+            sub.sourceContent || '',
+            searchText,
+            caseSensitive,
+          );
+          if (c > 0) {
+            matches.push({ index, field: 'sourceContent' });
+            total += c;
+          }
+        }
+        if (
+          (searchTarget === 'target' || searchTarget === 'both') &&
+          shouldShowTranslation
+        ) {
+          const c = countOccurrences(
+            sub.targetContent || '',
+            searchText,
+            caseSensitive,
+          );
+          if (c > 0) {
+            matches.push({ index, field: 'targetContent' });
+            total += c;
+          }
+        }
+      });
+      return { matches, total };
+    },
+    [searchText, searchTarget, caseSensitive, shouldShowTranslation],
+  );
+
+  // 搜索：重建匹配列表，导航位置复位
   const handleSearch = useCallback(() => {
-    if (!searchText) {
-      setMatchCount(0);
+    const { matches, total } = buildMatches(subtitles);
+    setSearchMatches(matches);
+    setTotalOccurrences(total);
+    setMatchPointer(-1);
+  }, [buildMatches, subtitles]);
+
+  // 逐处导航：循环跳转并定位该条字幕
+  const handleNavigateMatch = useCallback(
+    (dir: 1 | -1) => {
+      if (!searchMatches.length) return;
+      const len = searchMatches.length;
+      const next =
+        matchPointer < 0
+          ? dir === 1
+            ? 0
+            : len - 1
+          : (matchPointer + dir + len) % len;
+      setMatchPointer(next);
+      onLocateSubtitle?.(searchMatches[next].index);
+    },
+    [searchMatches, matchPointer, onLocateSubtitle],
+  );
+
+  // 替换当前定位的一条（该条该字段内全部出现）
+  const handleReplaceCurrent = useCallback(() => {
+    if (matchPointer < 0 || matchPointer >= searchMatches.length) return;
+    const m = searchMatches[matchPointer];
+    const target = subtitles[m.index]?.[m.field] || '';
+    // 文本已被手动改动导致不再匹配：重算列表，不做替换
+    if (countOccurrences(target, searchText, caseSensitive) === 0) {
+      handleSearch();
       return;
     }
+    const newSubtitles = subtitles.map((sub, i) =>
+      i === m.index
+        ? {
+            ...sub,
+            [m.field]: replaceAllWithCase(
+              target,
+              searchText,
+              replaceText,
+              caseSensitive,
+            ),
+          }
+        : sub,
+    );
+    onSubtitlesChange(newSubtitles);
+    // 基于替换后的内容重建列表，停留在原位置的下一处
+    const { matches, total } = buildMatches(newSubtitles);
+    setSearchMatches(matches);
+    setTotalOccurrences(total);
+    if (!matches.length) {
+      setMatchPointer(-1);
+      toast.success(t('replaceAllDone') || '全部替换完成');
+      return;
+    }
+    const next = Math.min(matchPointer, matches.length - 1);
+    setMatchPointer(next);
+    onLocateSubtitle?.(matches[next].index);
+  }, [
+    matchPointer,
+    searchMatches,
+    subtitles,
+    searchText,
+    replaceText,
+    caseSensitive,
+    buildMatches,
+    onSubtitlesChange,
+    onLocateSubtitle,
+    handleSearch,
+    t,
+  ]);
 
-    let count = 0;
-    subtitles.forEach((sub) => {
-      if (searchTarget === 'source' || searchTarget === 'both') {
-        if (sub.sourceContent?.includes(searchText)) count++;
-      }
-      if (
-        (searchTarget === 'target' || searchTarget === 'both') &&
-        shouldShowTranslation
-      ) {
-        if (sub.targetContent?.includes(searchText)) count++;
-      }
-    });
-    setMatchCount(count);
-  }, [searchText, searchTarget, subtitles, shouldShowTranslation]);
-
-  // 执行替换
+  // 全部替换
   const handleReplace = useCallback(() => {
     if (!searchText) return;
 
@@ -187,9 +335,12 @@ Only respond with the translated/improved text, nothing else.`;
       const newSub = { ...sub };
       if (searchTarget === 'source' || searchTarget === 'both') {
         if (newSub.sourceContent) {
-          newSub.sourceContent = newSub.sourceContent
-            .split(searchText)
-            .join(replaceText);
+          newSub.sourceContent = replaceAllWithCase(
+            newSub.sourceContent,
+            searchText,
+            replaceText,
+            caseSensitive,
+          );
         }
       }
       if (
@@ -197,9 +348,12 @@ Only respond with the translated/improved text, nothing else.`;
         shouldShowTranslation
       ) {
         if (newSub.targetContent) {
-          newSub.targetContent = newSub.targetContent
-            .split(searchText)
-            .join(replaceText);
+          newSub.targetContent = replaceAllWithCase(
+            newSub.targetContent,
+            searchText,
+            replaceText,
+            caseSensitive,
+          );
         }
       }
       return newSub;
@@ -207,18 +361,22 @@ Only respond with the translated/improved text, nothing else.`;
 
     onSubtitlesChange(newSubtitles);
     toast.success(
-      t('replaceSuccess', { count: matchCount }) || `已替换 ${matchCount} 处`,
+      t('replaceSuccess', { count: totalOccurrences }) ||
+        `已替换 ${totalOccurrences} 处`,
     );
     setShowSearchReplace(false);
     setSearchText('');
     setReplaceText('');
-    setMatchCount(0);
+    setSearchMatches([]);
+    setTotalOccurrences(0);
+    setMatchPointer(-1);
   }, [
     searchText,
     replaceText,
     searchTarget,
+    caseSensitive,
     subtitles,
-    matchCount,
+    totalOccurrences,
     onSubtitlesChange,
     shouldShowTranslation,
     t,
@@ -566,11 +724,53 @@ Only respond with the translated/improved text, nothing else.`;
                 </SelectContent>
               </Select>
             </div>
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <Checkbox
+                checked={caseSensitive}
+                onCheckedChange={(v) => setCaseSensitive(v === true)}
+              />
+              {t('caseSensitive') || '区分大小写'}
+            </label>
             {matchCount > 0 && (
-              <p className="text-sm text-muted-foreground">
-                {t('matchFound', { count: matchCount }) ||
-                  `找到 ${matchCount} 处匹配`}
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm text-muted-foreground tabular-nums">
+                  {matchPointer >= 0
+                    ? `${matchPointer + 1}/${matchCount}`
+                    : t('matchSummary', {
+                        entries: matchCount,
+                        total: totalOccurrences,
+                      })}
+                </p>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    title={t('prevMatch') || '上一处'}
+                    onClick={() => handleNavigateMatch(-1)}
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    title={t('nextMatch') || '下一处'}
+                    onClick={() => handleNavigateMatch(1)}
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={matchPointer < 0}
+                    onClick={handleReplaceCurrent}
+                  >
+                    {t('replaceCurrent') || '替换当前'}
+                  </Button>
+                </div>
+              </div>
             )}
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={handleSearch}>

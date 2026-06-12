@@ -290,6 +290,7 @@ export default function ProofreadEditor({
         triggerSplit={triggerSplit}
         onTriggerHandled={handleTriggerHandled}
         searchOpenToken={searchOpenToken}
+        onLocateSubtitle={handleSubtitleClick}
       />
 
       {/* 主内容区 - 复用原有布局 */}
