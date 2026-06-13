@@ -59,6 +59,11 @@
   "vadSamplesOverlap": "Samples Overlap",
   "vadSamplesOverlapTip": "Overlap ratio between consecutive audio analysis windows (0.0-1.0)",
   "vadSettingsSaved": "VAD settings saved successfully",
+  "vadPresets": "Environment presets",
+  "vadPresetQuiet": "Quiet",
+  "vadPresetStandard": "Standard (recommended)",
+  "vadPresetNoisy": "Noisy",
+  "vadPresetReset": "Reset to default",
   "gpuAcceleration": {
     "title": "GPU Acceleration",
     "gpu": "GPU",

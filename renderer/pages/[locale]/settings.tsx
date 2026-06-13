@@ -66,6 +66,57 @@ import PageHeader from '@/components/PageHeader';
 import { openUrl } from 'lib/utils';
 import packageInfo from '../../../package.json';
 
+// 三档 VAD 环境预设。数值依据：标准=whisper.cpp 官方默认；
+// 安静=silero 0.3-0.4 灵敏区+短语保留；嘈杂=whisper.rn noisyEnv 推荐
+interface VadPreset {
+  id: 'Quiet' | 'Standard' | 'Noisy';
+  values: {
+    vadThreshold: number;
+    vadMinSpeechDuration: number;
+    vadMinSilenceDuration: number;
+    vadMaxSpeechDuration: number;
+    vadSpeechPad: number;
+    vadSamplesOverlap: number;
+  };
+}
+
+const VAD_PRESETS: VadPreset[] = [
+  {
+    id: 'Quiet',
+    values: {
+      vadThreshold: 0.35,
+      vadMinSpeechDuration: 100,
+      vadMinSilenceDuration: 100,
+      vadMaxSpeechDuration: 0,
+      vadSpeechPad: 50,
+      vadSamplesOverlap: 0.1,
+    },
+  },
+  {
+    id: 'Standard',
+    values: {
+      vadThreshold: 0.5,
+      vadMinSpeechDuration: 250,
+      vadMinSilenceDuration: 100,
+      vadMaxSpeechDuration: 0,
+      vadSpeechPad: 30,
+      vadSamplesOverlap: 0.1,
+    },
+  },
+  {
+    id: 'Noisy',
+    values: {
+      vadThreshold: 0.65,
+      vadMinSpeechDuration: 400,
+      vadMinSilenceDuration: 150,
+      vadMaxSpeechDuration: 0,
+      vadSpeechPad: 50,
+      vadSamplesOverlap: 0.1,
+    },
+  },
+];
+const STANDARD_PRESET = VAD_PRESETS[1];
+
 // 新增一个 CommandInput 组件
 const CommandInput = ({
   label,
@@ -148,12 +199,12 @@ const Settings = () => {
         setCustomTempDir(settings.customTempDir || '');
         setCheckUpdateOnStartup(settings.checkUpdateOnStartup !== false);
         setUseVAD(settings.useVAD !== false);
-        setVADThreshold(settings.vadThreshold || 0.5);
-        setVADMinSpeechDuration(settings.vadMinSpeechDuration || 250);
-        setVADMinSilenceDuration(settings.vadMinSilenceDuration || 100);
-        setVADMaxSpeechDuration(settings.vadMaxSpeechDuration || 0);
-        setVADSpeechPad(settings.vadSpeechPad || 30);
-        setVADSamplesOverlap(settings.vadSamplesOverlap || 0.1);
+        setVADThreshold(settings.vadThreshold ?? 0.5);
+        setVADMinSpeechDuration(settings.vadMinSpeechDuration ?? 250);
+        setVADMinSilenceDuration(settings.vadMinSilenceDuration ?? 100);
+        setVADMaxSpeechDuration(settings.vadMaxSpeechDuration ?? 0);
+        setVADSpeechPad(settings.vadSpeechPad ?? 30);
+        setVADSamplesOverlap(settings.vadSamplesOverlap ?? 0.1);
       }
 
       // 获取临时目录路径
@@ -312,6 +363,21 @@ const Settings = () => {
       }
     }, 500);
   };
+
+  // 应用预设：逐键走 handleVADSettingChange，复用本地更新 + debounce 持久化
+  const applyVadPreset = (preset: VadPreset) => {
+    Object.entries(preset.values).forEach(([key, value]) => {
+      handleVADSettingChange(key, value);
+    });
+  };
+
+  const isPresetActive = (preset: VadPreset) =>
+    vadThreshold === preset.values.vadThreshold &&
+    vadMinSpeechDuration === preset.values.vadMinSpeechDuration &&
+    vadMinSilenceDuration === preset.values.vadMinSilenceDuration &&
+    vadMaxSpeechDuration === preset.values.vadMaxSpeechDuration &&
+    vadSpeechPad === preset.values.vadSpeechPad &&
+    vadSamplesOverlap === preset.values.vadSamplesOverlap;
 
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -598,6 +664,34 @@ const Settings = () => {
 
               {useVAD && (
                 <>
+                  {/* 三档环境预设：与手动微调共存，当前值与某档全等时高亮 */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {t('vadPresets')}
+                    </span>
+                    {VAD_PRESETS.map((preset) => (
+                      <Button
+                        key={preset.id}
+                        variant={
+                          isPresetActive(preset) ? 'secondary' : 'outline'
+                        }
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => applyVadPreset(preset)}
+                      >
+                        {t(`vadPreset${preset.id}`)}
+                      </Button>
+                    ))}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => applyVadPreset(STANDARD_PRESET)}
+                    >
+                      {t('vadPresetReset')}
+                    </Button>
+                  </div>
+
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <span>{t('vadThreshold')}</span>

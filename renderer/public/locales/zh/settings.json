@@ -59,6 +59,11 @@
   "vadSamplesOverlap": "样本重叠",
   "vadSamplesOverlapTip": "连续音频分析窗口之间的重叠比率 (0.0-1.0)",
   "vadSettingsSaved": "VAD 设置保存成功",
+  "vadPresets": "环境预设",
+  "vadPresetQuiet": "安静环境",
+  "vadPresetStandard": "标准（推荐）",
+  "vadPresetNoisy": "嘈杂环境",
+  "vadPresetReset": "恢复默认",
   "gpuAcceleration": {
     "title": "GPU 加速",
     "gpu": "显卡",
