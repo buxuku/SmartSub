@@ -1,7 +1,7 @@
 # UX 重构进度交接文档
 
 > 用途：换机/换会话续作的上下文锚点。配合 `docs/UX_ANALYSIS_REPORT.md`（问题清单与路线图原文）阅读。
-> 最后更新：2026-06-13（B18 收官），分支 `feat/resource-hub`。
+> 最后更新：2026-06-13（P19 WorkItem 统一），分支 `feat/resource-hub`。
 > 剩余任务总体规划（B13-B17 批次划分、卡点登记表、出界清单）：`docs/superpowers/specs/2026-06-12-remaining-roadmap-design.md`。
 
 ## 1. 工作流程约定（续作时沿用）
@@ -112,6 +112,24 @@ B18 实机验收：
 - 服务商测试请求体含数值型 temperature；
 - 导入/导出 JSON 与刷新仍可用。
 
+### P19 WorkItem 统一任务历史（2026-06-13）
+
+| 批次  | 内容                                                                          | commit  |
+| ----- | ----------------------------------------------------------------------------- | ------- |
+| P19-1 | `WorkItem` 类型 + store + legacy 迁移 + 单元测试                              | 694c6ed |
+| P19-2 | taskManager / proofreadStore 统一到 WorkItem；`getWorkItems` IPC；旧 IPC shim | 99f24ef |
+| P19-3 | 启动台合并展示；校对页移除历史 Tab；`?workItem=` 深链                         | 6529d38 |
+
+设计/计划：`docs/superpowers/specs/2026-06-13-proofread-history-vs-recent-tasks-analysis.md`、`docs/superpowers/plans/2026-06-13-workitem-unification-plan.md`。
+
+P19 实机验收：
+
+- 旧 taskProjects / proofreadTasks 迁移后启动台条目数量与名称一致；
+- 校对保存批次 → 启动台出现 → 点击续编 → 重启后进度仍在；
+- 流水线工程仍可从启动台进入任务页并继续。
+
+**P19-5 可选**：任务页内嵌校对写入同一 WorkItem。
+
 ### 期间确认事项（避免重复排查）
 
 - P1#19 模型推荐双信源：`getRecommendedCategory`（renderer/lib/utils）已是唯一信源，无需再改。
@@ -154,6 +172,7 @@ B18 实机验收：
 
 - ~~B13–B15、B17、B18~~——已完成（见 §3）。
 - **B16 对外形象（下一个）**：README/官网截图 + release note（需用户实机配合）。
+- **P19-5（可选）**：任务页内嵌校对 ↔ WorkItem 桥接。
 
 ## 6. 关键文件索引
 
@@ -161,7 +180,7 @@ B18 实机验收：
 - 各批次设计文档：`docs/superpowers/specs/2026-06-12-*-design.md`；实施计划：`docs/superpowers/plans/2026-06-12-*.md`。
 - i18n 门禁脚本：`scripts/check-i18n.mjs`（`node scripts/check-i18n.mjs`）。
 - 设计 token：`renderer/styles/globals.css`（品牌色/状态色 CSS 变量）+ `renderer/tailwind.config.js`（success/warning/info 等扩展）。
-- 任务执行链：`main/helpers/taskProcessor.ts`（按工程队列）、`main/helpers/taskContext.ts`（取消上下文）、`main/helpers/audioProcessor.ts`（ffmpeg 注册表）。
+- 任务执行链：`main/helpers/taskProcessor.ts`（按工程队列）、`main/helpers/workItemStore.ts`（统一历史）、`main/helpers/taskContext.ts`（取消上下文）、`main/helpers/audioProcessor.ts`（ffmpeg 注册表）。
 - 编辑器核心：`renderer/hooks/useSubtitleHistory.ts`（命令撤销）、`renderer/components/proofread/SubtitleList.tsx`（虚拟化）、`renderer/hooks/useHotkeys.ts`。
 - 共享 UI 模板：`renderer/components/PageHeader.tsx`、`renderer/components/EmptyState.tsx`。
 - 服务商：`types/provider.ts`（group 字段）、`renderer/components/resources/ProvidersTab.tsx`、`renderer/lib/providerUtils.ts`。
