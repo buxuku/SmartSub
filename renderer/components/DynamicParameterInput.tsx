@@ -1,3 +1,4 @@
+/** @deprecated Used only by legacy tests; CustomParameterEditor uses ParameterKvTable. */
 /**
  * DynamicParameterInput Component
  *

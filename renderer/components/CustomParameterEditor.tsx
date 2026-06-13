@@ -2,34 +2,30 @@
  * CustomParameterEditor Component
  *
  * Main interface for managing custom parameters in AI providers.
- * Provides parameter list with add/edit/delete functionality and
- * separation between header and body parameters.
+ * Headers and body parameters use inline K/V table editing.
  */
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  useRef,
+} from 'react';
 import { useTranslation } from 'next-i18next';
-import { DynamicParameterInput } from './DynamicParameterInput';
+import { ParameterKvTable } from './ParameterKvTable';
 import { useParameterConfig } from '../hooks/useParameterConfig';
+import { ParameterValue, CustomParameterConfig } from '../../types';
 import {
-  ParameterValue,
-  ParameterDefinition,
-  ValidationError,
-  CustomParameterConfig,
-} from '../../types';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+  inferTypeFromValue,
+  parseDraftValue,
+  formatValueForInput,
+  type ParameterType,
+} from '../lib/parameterValueUtils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,19 +35,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
-  Plus,
-  Search,
-  Settings,
-  Trash2,
-  Copy,
-  Download,
-  Upload,
-  RefreshCw,
-  AlertTriangle,
-} from 'lucide-react';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Search, RefreshCw, AlertTriangle } from 'lucide-react';
 
 export interface CustomParameterEditorProps {
   providerId: string;
@@ -63,20 +54,20 @@ export interface CustomParameterEditorProps {
 }
 
 type ParameterCategory = 'headers' | 'body';
-type ParameterType = 'string' | 'integer' | 'float' | 'boolean' | 'array';
 
-interface NewParameterForm {
-  key: string;
-  type: ParameterType;
-  category: ParameterCategory;
-  value: ParameterValue;
+function buildTypesFromParams(
+  params: Record<string, ParameterValue> | undefined,
+): Record<string, ParameterType> {
+  const types: Record<string, ParameterType> = {};
+  for (const [key, value] of Object.entries(params || {})) {
+    types[key] = inferTypeFromValue(value);
+  }
+  return types;
 }
 
 export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
   providerId,
-  initialConfig,
   onConfigChange,
-  onSave,
   disabled = false,
   className = '',
 }) => {
@@ -84,259 +75,297 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
   const {
     state,
     loadConfig,
-    saveConfig,
     addHeaderParameter,
     updateHeaderParameter,
     removeHeaderParameter,
     addBodyParameter,
     updateBodyParameter,
     removeBodyParameter,
-    validateConfiguration,
     exportConfiguration,
     importConfiguration,
-    getSupportedParameters,
     getParameterDefinition,
   } = useParameterConfig();
 
-  // Load configuration on mount
+  const [activeTab, setActiveTab] = useState<ParameterCategory>('headers');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showRefreshDialog, setShowRefreshDialog] = useState(false);
+  const [headerTypes, setHeaderTypes] = useState<Record<string, ParameterType>>(
+    {},
+  );
+  const [bodyTypes, setBodyTypes] = useState<Record<string, ParameterType>>({});
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const prevLoadingRef = useRef(false);
+
   useEffect(() => {
     if (providerId) {
       loadConfig(providerId);
     }
   }, [providerId, loadConfig]);
 
-  // Type-aware initial value generator
-  const getInitialValueForType = useCallback(
-    (type: ParameterType): ParameterValue => {
-      switch (type) {
-        case 'boolean':
-          return false;
-        case 'integer':
-          return 0;
-        case 'float':
-          return 0.0;
-        case 'array':
-          return [];
-        default:
-          return '';
+  useEffect(() => {
+    if (prevLoadingRef.current && !state.isLoading && state.config) {
+      setHeaderTypes(buildTypesFromParams(state.config.headerParameters));
+      setBodyTypes(buildTypesFromParams(state.config.bodyParameters));
+    }
+    prevLoadingRef.current = state.isLoading;
+  }, [state.isLoading, state.config]);
+
+  useEffect(() => {
+    if (!state.config || state.isLoading) return;
+
+    setHeaderTypes((prev) => {
+      const next = { ...prev };
+      for (const [key, value] of Object.entries(
+        state.config?.headerParameters || {},
+      )) {
+        if (!(key in next)) {
+          next[key] = inferTypeFromValue(value);
+        }
+      }
+      for (const key of Object.keys(next)) {
+        if (!(key in (state.config?.headerParameters || {}))) {
+          delete next[key];
+        }
+      }
+      return next;
+    });
+
+    setBodyTypes((prev) => {
+      const next = { ...prev };
+      for (const [key, value] of Object.entries(
+        state.config?.bodyParameters || {},
+      )) {
+        if (!(key in next)) {
+          next[key] = inferTypeFromValue(value);
+        }
+      }
+      for (const key of Object.keys(next)) {
+        if (!(key in (state.config?.bodyParameters || {}))) {
+          delete next[key];
+        }
+      }
+      return next;
+    });
+  }, [
+    state.config?.headerParameters,
+    state.config?.bodyParameters,
+    state.isLoading,
+  ]);
+
+  const notifyBodyConfigChange = useCallback(
+    (bodyParameters: Record<string, ParameterValue>) => {
+      if (onConfigChange && state.config) {
+        onConfigChange({ ...state.config, bodyParameters });
       }
     },
-    [],
+    [onConfigChange, state.config],
   );
 
-  // Local state
-  const [activeTab, setActiveTab] = useState<ParameterCategory>('headers');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [showRefreshDialog, setShowRefreshDialog] = useState(false);
-  const [newParameter, setNewParameter] = useState<NewParameterForm>({
-    key: '',
-    type: 'string',
-    category: 'headers',
-    value: '',
-  });
+  const notifyHeaderConfigChange = useCallback(
+    (headerParameters: Record<string, ParameterValue>) => {
+      if (onConfigChange && state.config) {
+        onConfigChange({ ...state.config, headerParameters });
+      }
+    },
+    [onConfigChange, state.config],
+  );
 
-  // Filter parameters by category and search
-  const filteredParameters = useMemo(() => {
-    const config = state.config;
-    if (!config) return [];
+  const filterEntries = useCallback(
+    (entries: Array<[string, ParameterValue]>) => {
+      if (!searchQuery.trim()) return entries;
+      const query = searchQuery.toLowerCase();
+      return entries.filter(
+        ([key, value]) =>
+          key.toLowerCase().includes(query) ||
+          JSON.stringify(value).toLowerCase().includes(query),
+      );
+    },
+    [searchQuery],
+  );
 
-    const categoryParams =
-      activeTab === 'headers'
-        ? Object.entries(config.headerParameters || {})
-        : Object.entries(config.bodyParameters || {});
+  const filteredHeaderEntries = useMemo(() => {
+    const entries = Object.entries(state.config?.headerParameters || {});
+    return filterEntries(entries);
+  }, [state.config?.headerParameters, filterEntries]);
 
-    if (!searchQuery.trim()) {
-      return categoryParams;
-    }
+  const filteredBodyEntries = useMemo(() => {
+    const entries = Object.entries(state.config?.bodyParameters || {});
+    return filterEntries(entries);
+  }, [state.config?.bodyParameters, filterEntries]);
 
-    return categoryParams.filter(
-      ([key, value]) =>
-        key.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        JSON.stringify(value).toLowerCase().includes(searchQuery.toLowerCase()),
-    );
-  }, [state.config, activeTab, searchQuery]);
+  const headerKeys = useMemo(
+    () => Object.keys(state.config?.headerParameters || {}),
+    [state.config?.headerParameters],
+  );
 
-  // Get parameter count by category
+  const bodyKeys = useMemo(
+    () => Object.keys(state.config?.bodyParameters || {}),
+    [state.config?.bodyParameters],
+  );
+
   const getParameterCount = useCallback(
     (category: ParameterCategory) => {
       const config = state.config;
       if (!config) return 0;
-
-      if (category === 'headers') {
-        return Object.keys(config.headerParameters || {}).length;
-      } else {
-        return Object.keys(config.bodyParameters || {}).length;
-      }
+      return category === 'headers'
+        ? Object.keys(config.headerParameters || {}).length
+        : Object.keys(config.bodyParameters || {}).length;
     },
     [state.config],
   );
 
-  // Handle parameter changes
-  const handleParameterChange = useCallback(
-    (key: string, value: ParameterValue) => {
-      if (activeTab === 'headers') {
-        updateHeaderParameter(key, value);
-      } else {
-        updateBodyParameter(key, value);
-      }
+  const activeTabParamCount = getParameterCount(activeTab);
+  const showSearch = activeTabParamCount > 5;
 
-      // Notify parent component
-      if (onConfigChange && state.config) {
-        const updatedConfig: CustomParameterConfig = {
-          ...state.config,
-          [activeTab === 'headers' ? 'headerParameters' : 'bodyParameters']: {
-            ...state.config[
-              activeTab === 'headers' ? 'headerParameters' : 'bodyParameters'
-            ],
-            [key]: value,
-          },
-        };
-
-        onConfigChange(updatedConfig);
-      }
-    },
-    [
-      activeTab,
-      updateHeaderParameter,
-      updateBodyParameter,
-      onConfigChange,
-      state.config,
-    ],
-  );
-
-  // Handle parameter removal
-  const handleParameterRemove = useCallback(
-    (key: string) => {
-      if (activeTab === 'headers') {
-        removeHeaderParameter(key);
-      } else {
-        removeBodyParameter(key);
-      }
-
-      // Notify parent component
-      if (onConfigChange && state.config) {
-        const currentParams =
-          activeTab === 'headers'
-            ? { ...state.config.headerParameters }
-            : { ...state.config.bodyParameters };
-        delete currentParams[key];
-
-        const updatedConfig: CustomParameterConfig = {
-          ...state.config,
-          [activeTab === 'headers' ? 'headerParameters' : 'bodyParameters']:
-            currentParams,
-        };
-
-        onConfigChange(updatedConfig);
-      }
-    },
-    [
-      activeTab,
-      removeHeaderParameter,
-      removeBodyParameter,
-      onConfigChange,
-      state.config,
-    ],
-  );
-
-  // Convert value based on parameter type
-  const convertValueForType = useCallback(
-    (value: ParameterValue, type: ParameterType): ParameterValue => {
-      switch (type) {
-        case 'boolean':
-          if (typeof value === 'string') {
-            return value.toLowerCase() === 'true' || value === '1';
-          }
-          return Boolean(value);
-        case 'integer':
-          return typeof value === 'number'
-            ? Math.floor(value)
-            : parseInt(String(value), 10) || 0;
-        case 'float':
-          return typeof value === 'number'
-            ? value
-            : parseFloat(String(value)) || 0.0;
-        case 'array':
-          return Array.isArray(value) ? value : [];
-        default:
-          return String(value);
-      }
-    },
-    [],
-  );
-
-  // Handle parameter type change
-  const handleTypeChange = useCallback(
-    (newType: ParameterType) => {
-      setNewParameter((prev) => ({
-        ...prev,
-        type: newType,
-        value: getInitialValueForType(newType),
-      }));
-    },
-    [getInitialValueForType],
-  );
-
-  // Handle adding new parameter
-  const handleAddParameter = useCallback(() => {
-    if (!newParameter.key.trim()) return;
-
-    // Convert value to correct type before adding
-    const convertedValue = convertValueForType(
-      newParameter.value,
-      newParameter.type,
-    );
-
-    // Add parameter based on category
-    if (newParameter.category === 'headers') {
-      addHeaderParameter(newParameter.key, convertedValue);
-    } else {
-      addBodyParameter(newParameter.key, convertedValue);
+  const errorsByKey = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const error of state.validationErrors) {
+      map[error.key] = error.message;
     }
+    return map;
+  }, [state.validationErrors]);
 
-    // Reset form with proper initial value for default type
-    const defaultType = 'string';
-    setNewParameter({
-      key: '',
-      type: defaultType,
-      category: 'headers',
-      value: getInitialValueForType(defaultType),
-    });
-    setShowAddDialog(false);
-  }, [
-    newParameter,
-    addHeaderParameter,
-    addBodyParameter,
-    convertValueForType,
-    getInitialValueForType,
-  ]);
-
-  // Handle parameter duplication
-  const handleDuplicateParameter = useCallback(
-    (key: string) => {
-      const config = state.config;
-      if (!config) return;
-
-      const originalValue =
-        activeTab === 'headers'
-          ? config.headerParameters?.[key]
-          : config.bodyParameters?.[key];
-
-      if (!originalValue) return;
-
-      const newKey = `${key}_copy`;
-
-      if (activeTab === 'headers') {
-        addHeaderParameter(newKey, originalValue);
-      } else {
-        addBodyParameter(newKey, originalValue);
+  const handleHeaderCommitNew = useCallback(
+    (key: string, value: ParameterValue, type: ParameterType) => {
+      addHeaderParameter(key, value);
+      setHeaderTypes((prev) => ({ ...prev, [key]: type }));
+      if (onConfigChange && state.config) {
+        notifyHeaderConfigChange({
+          ...state.config.headerParameters,
+          [key]: value,
+        });
       }
     },
-    [state.config, activeTab, addHeaderParameter, addBodyParameter],
+    [
+      addHeaderParameter,
+      onConfigChange,
+      state.config,
+      notifyHeaderConfigChange,
+    ],
   );
 
-  // Handle configuration export
+  const handleHeaderUpdate = useCallback(
+    (key: string, value: ParameterValue) => {
+      updateHeaderParameter(key, value);
+      if (onConfigChange && state.config) {
+        notifyHeaderConfigChange({
+          ...state.config.headerParameters,
+          [key]: value,
+        });
+      }
+    },
+    [
+      updateHeaderParameter,
+      onConfigChange,
+      state.config,
+      notifyHeaderConfigChange,
+    ],
+  );
+
+  const handleHeaderRemove = useCallback(
+    (key: string) => {
+      removeHeaderParameter(key);
+      setHeaderTypes((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      if (onConfigChange && state.config) {
+        const currentParams = { ...state.config.headerParameters };
+        delete currentParams[key];
+        notifyHeaderConfigChange(currentParams);
+      }
+    },
+    [
+      removeHeaderParameter,
+      onConfigChange,
+      state.config,
+      notifyHeaderConfigChange,
+    ],
+  );
+
+  const handleHeaderTypeChange = useCallback(
+    (key: string, type: ParameterType) => {
+      setHeaderTypes((prev) => ({ ...prev, [key]: type }));
+      const currentValue = state.config?.headerParameters?.[key];
+      if (currentValue === undefined) return;
+
+      const currentType = headerTypes[key] ?? inferTypeFromValue(currentValue);
+      const raw = formatValueForInput(currentValue, currentType);
+      let newValue: ParameterValue;
+      try {
+        newValue = parseDraftValue(raw, type);
+      } catch {
+        newValue = currentValue;
+      }
+      handleHeaderUpdate(key, newValue);
+    },
+    [state.config?.headerParameters, headerTypes, handleHeaderUpdate],
+  );
+
+  const handleBodyCommitNew = useCallback(
+    (key: string, value: ParameterValue, type: ParameterType) => {
+      addBodyParameter(key, value);
+      setBodyTypes((prev) => ({ ...prev, [key]: type }));
+      if (onConfigChange && state.config) {
+        notifyBodyConfigChange({
+          ...state.config.bodyParameters,
+          [key]: value,
+        });
+      }
+    },
+    [addBodyParameter, onConfigChange, state.config, notifyBodyConfigChange],
+  );
+
+  const handleBodyUpdate = useCallback(
+    (key: string, value: ParameterValue) => {
+      updateBodyParameter(key, value);
+      if (onConfigChange && state.config) {
+        notifyBodyConfigChange({
+          ...state.config.bodyParameters,
+          [key]: value,
+        });
+      }
+    },
+    [updateBodyParameter, onConfigChange, state.config, notifyBodyConfigChange],
+  );
+
+  const handleBodyRemove = useCallback(
+    (key: string) => {
+      removeBodyParameter(key);
+      setBodyTypes((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      if (onConfigChange && state.config) {
+        const currentParams = { ...state.config.bodyParameters };
+        delete currentParams[key];
+        notifyBodyConfigChange(currentParams);
+      }
+    },
+    [removeBodyParameter, onConfigChange, state.config, notifyBodyConfigChange],
+  );
+
+  const handleBodyTypeChange = useCallback(
+    (key: string, type: ParameterType) => {
+      setBodyTypes((prev) => ({ ...prev, [key]: type }));
+      const currentValue = state.config?.bodyParameters?.[key];
+      if (currentValue === undefined) return;
+
+      const currentType = bodyTypes[key] ?? inferTypeFromValue(currentValue);
+      const raw = formatValueForInput(currentValue, currentType);
+      let newValue: ParameterValue;
+      try {
+        newValue = parseDraftValue(raw, type);
+      } catch {
+        newValue = currentValue;
+      }
+      handleBodyUpdate(key, newValue);
+    },
+    [state.config?.bodyParameters, bodyTypes, handleBodyUpdate],
+  );
+
   const handleExportConfig = useCallback(async () => {
     try {
       const config = exportConfiguration();
@@ -356,7 +385,6 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
     }
   }, [providerId, exportConfiguration]);
 
-  // Handle configuration import
   const handleImportConfig = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
@@ -369,55 +397,30 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
           const success = importConfiguration(configStr);
           if (!success) {
             console.error('Failed to import configuration: Invalid format');
+            return;
           }
+          const importData = JSON.parse(configStr) as {
+            configuration?: {
+              headerParameters?: Record<string, ParameterValue>;
+              bodyParameters?: Record<string, ParameterValue>;
+            };
+          };
+          setHeaderTypes(
+            buildTypesFromParams(importData.configuration?.headerParameters),
+          );
+          setBodyTypes(
+            buildTypesFromParams(importData.configuration?.bodyParameters),
+          );
         } catch (error) {
           console.error('Failed to import configuration:', error);
         }
       };
       reader.readAsText(file);
+      event.target.value = '';
     },
     [importConfiguration],
   );
 
-  // Get validation errors for parameter
-  const getParameterErrors = useCallback(
-    (key: string): ValidationError[] => {
-      return state.validationErrors.filter((error) => error.key === key);
-    },
-    [state.validationErrors],
-  );
-
-  // Infer parameter type from value for display purposes
-  const inferTypeFromValue = useCallback(
-    (value: ParameterValue): ParameterType => {
-      if (typeof value === 'boolean') return 'boolean';
-      if (typeof value === 'number') {
-        return Number.isInteger(value) ? 'integer' : 'float';
-      }
-      if (Array.isArray(value)) return 'array';
-      return 'string';
-    },
-    [],
-  );
-
-  // Get parameter definition for display (inferred from value)
-  const getParameterDefinitionForDisplay = useCallback(
-    (key: string, value: ParameterValue): ParameterDefinition => {
-      // Infer type from the actual stored value for accurate display
-      const inferredType = inferTypeFromValue(value);
-      return {
-        key,
-        type: inferredType,
-        category: 'core',
-        required: false,
-        description: `Custom ${inferredType} parameter`,
-        providerSupport: [providerId],
-      };
-    },
-    [providerId, inferTypeFromValue],
-  );
-
-  // Handle smart refresh
   const handleRefresh = useCallback(() => {
     if (state.hasUnsavedChanges) {
       setShowRefreshDialog(true);
@@ -426,7 +429,6 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
     }
   }, [state.hasUnsavedChanges, loadConfig, providerId]);
 
-  // Confirm refresh with unsaved changes
   const confirmRefresh = useCallback(() => {
     setShowRefreshDialog(false);
     loadConfig(providerId);
@@ -434,206 +436,88 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
 
   return (
     <div className={`space-y-6 ${className}`}>
-      {/* Actions */}
-      <div className="flex items-center justify-end">
-        <div className="flex items-center gap-2">
-          {/* Actions */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportConfig}
-            disabled={disabled}
-          >
-            <Download className="w-4 h-4 mr-2" />
-            {t('actions.export')}
-          </Button>
+      <div className="flex items-center justify-between gap-2">
+        {state.saveStatus !== 'idle' ? (
+          <div className="flex items-center gap-2 text-sm">
+            {state.saveStatus === 'saving' && (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span className="text-muted-foreground">
+                  {t('status.saving')}
+                </span>
+              </>
+            )}
+            {state.saveStatus === 'saved' && (
+              <>
+                <div className="w-4 h-4 rounded-full bg-success flex items-center justify-center">
+                  <div className="w-2 h-2 rounded-full bg-white" />
+                </div>
+                <span className="text-success">{t('status.saved')}</span>
+              </>
+            )}
+            {state.saveStatus === 'error' && (
+              <>
+                <div className="w-4 h-4 rounded-full bg-destructive flex items-center justify-center">
+                  <div className="w-2 h-2 rounded-full bg-white" />
+                </div>
+                <span className="text-destructive">{t('status.error')}</span>
+              </>
+            )}
+          </div>
+        ) : (
+          <div />
+        )}
 
-          <label className="inline-flex">
-            <Button variant="outline" size="sm" disabled={disabled} asChild>
-              <span>
-                <Upload className="w-4 h-4 mr-2" />
-                {t('actions.import')}
-              </span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" disabled={disabled}>
+              {t('more.label')}
+              {state.hasUnsavedChanges &&
+                state.saveStatus !== 'error' &&
+                state.saveStatus !== 'saving' && (
+                  <AlertTriangle className="w-3 h-3 ml-1 text-warning" />
+                )}
             </Button>
-            <input
-              type="file"
-              accept=".json"
-              onChange={handleImportConfig}
-              className="hidden"
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
               disabled={disabled}
-            />
-          </label>
+              onSelect={() => importInputRef.current?.click()}
+            >
+              {t('more.import')}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={disabled} onSelect={handleExportConfig}>
+              {t('more.export')}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={disabled} onSelect={handleRefresh}>
+              {t('more.refresh')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-          {/* Save Status Indicator */}
-          {state.saveStatus !== 'idle' && (
-            <div className="flex items-center gap-2 text-sm">
-              {state.saveStatus === 'saving' && (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span className="text-muted-foreground">
-                    {t('status.saving')}
-                  </span>
-                </>
-              )}
-              {state.saveStatus === 'saved' && (
-                <>
-                  <div className="w-4 h-4 rounded-full bg-success flex items-center justify-center">
-                    <div className="w-2 h-2 rounded-full bg-white"></div>
-                  </div>
-                  <span className="text-success">{t('status.saved')}</span>
-                </>
-              )}
-              {state.saveStatus === 'error' && (
-                <>
-                  <div className="w-4 h-4 rounded-full bg-destructive flex items-center justify-center">
-                    <div className="w-2 h-2 rounded-full bg-white"></div>
-                  </div>
-                  <span className="text-destructive">{t('status.error')}</span>
-                </>
-              )}
-            </div>
-          )}
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={disabled}
-          >
-            <RefreshCw className="w-4 h-4 mr-2" />
-            {t('actions.refresh')}
-            {state.hasUnsavedChanges &&
-              state.saveStatus !== 'error' &&
-              state.saveStatus !== 'saving' && (
-                <AlertTriangle className="w-3 h-3 ml-1 text-warning" />
-              )}
-          </Button>
-        </div>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".json"
+          onChange={handleImportConfig}
+          className="hidden"
+          disabled={disabled}
+        />
       </div>
 
-      {/* Search and Add */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-sm">
+      {showSearch && (
+        <div className="relative max-w-sm">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder={t('search.placeholder')}
+            placeholder={t('more.search')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-8"
             disabled={disabled}
           />
         </div>
+      )}
 
-        <AlertDialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-          <AlertDialogTrigger asChild>
-            <Button disabled={disabled}>
-              <Plus className="w-4 h-4 mr-2" />
-              {t('actions.addParameter')}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t('addDialog.title')}</AlertDialogTitle>
-              <AlertDialogDescription>
-                {t('addDialog.description')}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="param-key">{t('addDialog.fields.key')}</Label>
-                <Input
-                  id="param-key"
-                  value={newParameter.key}
-                  onChange={(e) =>
-                    setNewParameter((prev) => ({
-                      ...prev,
-                      key: e.target.value,
-                    }))
-                  }
-                  placeholder={t('addDialog.placeholders.key')}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="param-category">
-                  {t('addDialog.fields.category')}
-                </Label>
-                <Select
-                  value={newParameter.category}
-                  onValueChange={(value: ParameterCategory) =>
-                    setNewParameter((prev) => ({ ...prev, category: value }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="headers">
-                      {t('categories.headers')}
-                    </SelectItem>
-                    <SelectItem value="body">{t('categories.body')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="param-type">{t('addDialog.fields.type')}</Label>
-                <Select
-                  value={newParameter.type}
-                  onValueChange={handleTypeChange}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="string">{t('types.string')}</SelectItem>
-                    <SelectItem value="integer">
-                      {t('types.integer')}
-                    </SelectItem>
-                    <SelectItem value="float">{t('types.float')}</SelectItem>
-                    <SelectItem value="boolean">
-                      {t('types.boolean')}
-                    </SelectItem>
-                    <SelectItem value="array">{t('types.array')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="param-value">
-                  {t('addDialog.fields.initialValue')}
-                </Label>
-                <DynamicParameterInput
-                  parameterKey="new-param-value"
-                  value={newParameter.value}
-                  definition={{
-                    key: 'new-param-value',
-                    type: newParameter.type,
-                    category: 'core',
-                    required: false,
-                    description: t('addDialog.tooltips.initialValue'),
-                    providerSupport: [providerId],
-                  }}
-                  onChange={(_, value) =>
-                    setNewParameter((prev) => ({ ...prev, value }))
-                  }
-                  placeholder={t('addDialog.placeholders.initialValue')}
-                />
-              </div>
-            </div>
-
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t('actions.cancel')}</AlertDialogCancel>
-              <AlertDialogAction onClick={handleAddParameter}>
-                {t('actions.addParameter')}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
-
-      {/* Parameter Tabs */}
       <Tabs
         value={activeTab}
         onValueChange={(value: string) =>
@@ -656,215 +540,36 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
         </TabsList>
 
         <TabsContent value="headers" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Settings className="w-5 h-5" />
-                {t('headers.title')}
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {t('headers.description')}
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {filteredParameters.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  {searchQuery
-                    ? t('emptyStates.noHeadersSearch')
-                    : t('emptyStates.noHeadersConfigured')}
-                </div>
-              ) : (
-                filteredParameters.map(([key, value]) => (
-                  <div key={key}>
-                    <DynamicParameterInput
-                      parameterKey={key}
-                      value={value}
-                      definition={getParameterDefinitionForDisplay(key, value)}
-                      errors={getParameterErrors(key)}
-                      onChange={handleParameterChange}
-                      onRemove={handleParameterRemove}
-                      showRemove={true}
-                      disabled={disabled}
-                    />
-
-                    {/* Parameter actions */}
-                    <div className="flex items-center justify-end gap-2 mt-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDuplicateParameter(key)}
-                        disabled={disabled}
-                        className="h-7 px-2"
-                      >
-                        <Copy className="w-3 h-3 mr-1" />
-                        {t('actions.duplicate')}
-                      </Button>
-                    </div>
-
-                    <Separator className="mt-4" />
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
+          <ParameterKvTable
+            entries={filteredHeaderEntries}
+            existingKeys={headerKeys}
+            disabled={disabled}
+            parameterTypes={headerTypes}
+            onCommitNew={handleHeaderCommitNew}
+            onUpdate={handleHeaderUpdate}
+            onRemove={handleHeaderRemove}
+            onTypeChange={handleHeaderTypeChange}
+            resolveDefinition={getParameterDefinition}
+            errorsByKey={errorsByKey}
+          />
         </TabsContent>
 
         <TabsContent value="body" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Settings className="w-5 h-5" />
-                {t('bodyParameters.title')}
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {t('bodyParameters.description')}
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {filteredParameters.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  {searchQuery
-                    ? t('emptyStates.noBodyParamsSearch')
-                    : t('emptyStates.noBodyParamsConfigured')}
-                </div>
-              ) : (
-                filteredParameters.map(([key, value]) => (
-                  <div key={key}>
-                    <DynamicParameterInput
-                      parameterKey={key}
-                      value={value}
-                      definition={getParameterDefinitionForDisplay(key, value)}
-                      errors={getParameterErrors(key)}
-                      onChange={handleParameterChange}
-                      onRemove={handleParameterRemove}
-                      showRemove={true}
-                      disabled={disabled}
-                    />
-
-                    {/* Parameter actions */}
-                    <div className="flex items-center justify-end gap-2 mt-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDuplicateParameter(key)}
-                        disabled={disabled}
-                        className="h-7 px-2"
-                      >
-                        <Copy className="w-3 h-3 mr-1" />
-                        {t('actions.duplicate')}
-                      </Button>
-                    </div>
-
-                    <Separator className="mt-4" />
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
+          <ParameterKvTable
+            entries={filteredBodyEntries}
+            existingKeys={bodyKeys}
+            disabled={disabled}
+            parameterTypes={bodyTypes}
+            onCommitNew={handleBodyCommitNew}
+            onUpdate={handleBodyUpdate}
+            onRemove={handleBodyRemove}
+            onTypeChange={handleBodyTypeChange}
+            resolveDefinition={getParameterDefinition}
+            errorsByKey={errorsByKey}
+          />
         </TabsContent>
       </Tabs>
 
-      {/* Summary */}
-      {(state.validationErrors.length > 0 ||
-        (state.config &&
-          (Object.keys(state.config.headerParameters || {}).length > 0 ||
-            Object.keys(state.config.bodyParameters || {}).length > 0))) && (
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('summary.title')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="font-medium">
-                  {t('summary.totalParameters')}
-                </span>{' '}
-                {getParameterCount('headers') + getParameterCount('body')}
-              </div>
-              <div>
-                <span className="font-medium">{t('summary.headers')}</span>{' '}
-                {getParameterCount('headers')}
-              </div>
-              <div>
-                <span className="font-medium">
-                  {t('summary.bodyParameters')}
-                </span>{' '}
-                {getParameterCount('body')}
-              </div>
-              <div>
-                <span className="font-medium">
-                  {t('summary.validationErrors')}
-                </span>{' '}
-                <span
-                  className={
-                    state.validationErrors.length > 0
-                      ? 'text-destructive'
-                      : 'text-success'
-                  }
-                >
-                  {state.validationErrors.length}
-                </span>
-              </div>
-            </div>
-
-            {/* Save Status Indicator */}
-            <div className="mt-4 pt-4 border-t">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-sm">
-                  {t('summary.saveStatus')}
-                </span>
-                {state.saveStatus === 'idle' && !state.hasUnsavedChanges && (
-                  <div className="flex items-center gap-1 text-muted-foreground">
-                    <div className="w-2 h-2 rounded-full bg-muted-foreground/60"></div>
-                    <span className="text-sm">{t('status.upToDate')}</span>
-                  </div>
-                )}
-                {state.saveStatus === 'idle' && state.hasUnsavedChanges && (
-                  <div className="flex items-center gap-1 text-warning">
-                    <div className="w-2 h-2 rounded-full bg-warning"></div>
-                    <span className="text-sm">
-                      {t('status.unsavedChanges')}
-                    </span>
-                  </div>
-                )}
-                {state.saveStatus === 'saving' && (
-                  <div className="flex items-center gap-1 text-primary">
-                    <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
-                    <span className="text-sm">{t('status.saving')}</span>
-                  </div>
-                )}
-                {state.saveStatus === 'saved' && (
-                  <div className="flex items-center gap-1 text-success">
-                    <div className="w-2 h-2 rounded-full bg-success"></div>
-                    <span className="text-sm">
-                      {t('status.savedAutomatically')}
-                    </span>
-                  </div>
-                )}
-                {state.saveStatus === 'error' && (
-                  <div className="flex items-center gap-1 text-destructive">
-                    <div className="w-2 h-2 rounded-full bg-destructive"></div>
-                    <span className="text-sm">{t('status.saveFailed')}</span>
-                  </div>
-                )}
-              </div>
-              {state.saveMessage && (
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {state.saveMessage}
-                </div>
-              )}
-              {state.lastSaved && (
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {t('summary.lastSaved')}{' '}
-                  {new Date(state.lastSaved).toLocaleTimeString()}
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Refresh Confirmation Dialog */}
       <AlertDialog open={showRefreshDialog} onOpenChange={setShowRefreshDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>

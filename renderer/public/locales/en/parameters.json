@@ -24,6 +24,13 @@
   "search": {
     "placeholder": "Search parameters..."
   },
+  "more": {
+    "label": "More",
+    "search": "Search parameters",
+    "import": "Import JSON",
+    "export": "Export JSON",
+    "refresh": "Refresh from disk"
+  },
   "addDialog": {
     "title": "Add New Parameter",
     "description": "Create a new custom parameter for this provider.",
@@ -47,6 +54,25 @@
     "float": "Float",
     "boolean": "Boolean",
     "array": "Array"
+  },
+  "table": {
+    "keyColumn": "Key",
+    "valueColumn": "Value",
+    "typeColumn": "Type",
+    "actionColumn": "Actions",
+    "keyPlaceholder": "e.g. temperature",
+    "valuePlaceholder": "e.g. 0.3",
+    "stringPlaceholder": "e.g. hello",
+    "numberPlaceholder": "e.g. 0.3",
+    "arrayPlaceholder": "[1, 2, 3]",
+    "arrayHint": "JSON array format, e.g. [1, 2, 3] or [\"a\", \"b\"]",
+    "booleanHint": "Toggle for true / false",
+    "duplicateKey": "This parameter key already exists",
+    "emptyKey": "Please enter a parameter key",
+    "addRowLabel": "New parameter",
+    "addButton": "Add",
+    "addHint": "Fill in the key, type, and value in the \"New parameter\" row below, then click Add or press Enter to add more rows.",
+    "delete": "Delete"
   },
   "categories": {
     "headers": "Headers",
@@ -72,7 +98,8 @@
   },
   "validation": {
     "valid": "Valid",
-    "invalidJson": "Invalid JSON: {message}"
+    "invalidJson": "Invalid JSON: {message}",
+    "notArray": "Value must be a JSON array, e.g. [1, 2, 3]"
   },
   "placeholders": {
     "enterValue": "Enter {key}",

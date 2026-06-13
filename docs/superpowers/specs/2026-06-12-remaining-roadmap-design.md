@@ -78,7 +78,7 @@ B17 特殊性:它补全的是 P0 级信任承诺(「取消就要停」),**触发
 
 ### 4.3 降级到 backlog 的项
 
-- **参数编辑器简化(6.5.12)**:2000+ 行重构(CustomParameterEditor 894 行 + DynamicParameterInput 481 行 + useParameterConfig 700+ 行),自定义参数为极低频操作且功能可用,收益/成本比在剩余任务中最低,降级到 v2.20+ backlog。**用户指导原则(重构时遵循):在功能满足的前提下,采用用户操作最简便的方式**——方向为 Postman 式 key-value 表格行内编辑,替代当前 7 步流程。
+- ~~**参数编辑器简化(6.5.12)**~~:~~2000+ 行重构(CustomParameterEditor 894 行 + DynamicParameterInput 481 行 + useParameterConfig 700+ 行),自定义参数为极低频操作且功能可用,收益/成本比在剩余任务中最低,降级到 v2.20+ backlog。~~ **B18 已完成**——Postman 式 key-value 表格行内编辑,替代原 7 步 Add Dialog 流程;见 `docs/superpowers/specs/2026-06-13-parameter-editor-simplify-design.md`。
 
 ### 4.4 B14 验收标准
 
@@ -173,6 +173,6 @@ const result = await promise;
 ## 9. 不做清单(明确出界)
 
 - Python/faster-whisper 接入的任何代码改动(用户明确本轮不考虑);
-- 参数编辑器重构(降级 v2.20+ backlog,带用户指导原则);
+- ~~参数编辑器重构~~(B18 已完成,见 §4.3);
 - 托盘常驻/防睡眠、日语界面、官网文档体系(v2.20+ backlog,原样保留);
 - 批次 1-12 已消化项的重复改动(§4.2 复核结论)。

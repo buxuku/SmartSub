@@ -1,7 +1,7 @@
 # UX 重构进度交接文档
 
 > 用途：换机/换会话续作的上下文锚点。配合 `docs/UX_ANALYSIS_REPORT.md`（问题清单与路线图原文）阅读。
-> 最后更新：2026-06-12（B13 收官），分支 `feat/resource-hub`。
+> 最后更新：2026-06-13（B18 收官），分支 `feat/resource-hub`。
 > 剩余任务总体规划（B13-B17 批次划分、卡点登记表、出界清单）：`docs/superpowers/specs/2026-06-12-remaining-roadmap-design.md`。
 
 ## 1. 工作流程约定（续作时沿用）
@@ -18,7 +18,7 @@
 | renderer TSC                 | `cd renderer && npx tsc --noEmit`   | 222 个错误，全部位于测试文件（`__tests__`/`.test.`/`.spec.`），即非测试错误 0；不得新增 |
 | main TSC                     | `npx tsc --noEmit -p tsconfig.json` | `main/` 开头错误 95 个（全量 614，含根 tsconfig 解析 renderer 别名的噪音）；不得新增    |
 
-## 3. 已完成批次（1-13）
+## 3. 已完成批次（1-18）
 
 对应报告第 8 章三阶段 + 第 11 章版本计划。所有 commit 均在 `feat/resource-hub` 分支。
 
@@ -63,6 +63,55 @@ B13 实现备忘（避免重复排查）：
 - 示例音频转写输出写在媒体文件同目录,而打包态 resources 只读——`getOnboardingSamplePath` 已改为复制到 `userData/sample/` 后返回，勿回退。
 - TaskControls 的 autostart 有 `statusSynced` 门控（防 stale getTaskStatus 覆盖 running 态），改动任务状态同步逻辑时注意保持。
 
+### B14 零碎收尾（批次 14）—— P1#35 + P2 打磨多项
+
+| 批次 | 内容                                                                                                                                                                                                                                                                                                              | 关键 commit                                                     |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| 14   | 启动台历史工程状态按 taskType 单源推导（P1#35）；校对页匹配度 i18n+Tooltip、ModelsTab 圆点/档位 lucide 图标；VAD 环境三档预设+`??` 回填；下载失败 toast+重试+common 命名空间；语向 classifySubtitleLang 去 en 硬编码；GPU 自动回退中性语气+概览整卡可点；删 CurrentSubtitle 卡+完成率语义+格式文案+全量媒体对话框 | 34f0dea c5bfd64 510fb30 89fe986 713bc9b 897921a 4ad84c6 fc7a264 |
+
+设计/决策：`docs/superpowers/specs/2026-06-12-b14-cleanup-design.md`（决策 #1-#11）。
+
+### B15 技术债（批次 15）—— webSecurity + Windows 路径 + dev gpuName
+
+| 批次 | 内容                                                                                                                                                                                                       | 说明              |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| 15   | `registerSchemesAsPrivileged(media)` + 默认 `webSecurity:true`（`SMARTSUB_LEGACY_WEB_SECURITY=true` 回退）；校对链 renderer 路径改 `path.basename/dirname`；`DEV_SIMULATE_CUDA` 时 detectGpus 返回模拟卡名 | 本批改动待 commit |
+
+设计/决策：`docs/superpowers/specs/2026-06-12-b15-tech-debt-design.md`（决策 #1-#3）。
+
+B15 实机冒烟（用户 Windows/mac 验证）：
+
+- 校对播放+字幕轨、合成预览、拖拽导入、模型管理在 `webSecurity:true` 下正常；
+- Windows 反斜杠路径校对导入文件名/目录扫描正确；
+- `DEV_SIMULATE_CUDA=true yarn dev` 显卡名与驱动均为模拟值。
+
+### B17 whisper native abort（批次 17）
+
+| 批次 | 内容                                                                                                                                                                            | 说明                    |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| 17   | mac ARM 内置 addon 更新至 [latest release](https://github.com/buxuku/whisper.cpp/releases/tag/latest)；`whisperParams.signal` 接任务 AbortController；abort 错误分流+删部分 srt | 暂停仍不 abort 当前文件 |
+
+设计/决策：`docs/superpowers/specs/2026-06-12-b17-whisper-abort-design.md`。
+
+B17 实机验收：
+
+- 转写中点取消 → 数秒内停止，文件不标失败，可立即重跑；
+- 连续 cancel+重跑压测（建议 10 次）确认 addon 无泄漏。
+
+### B18 参数编辑器简化（批次 18）—— 6.5.12
+
+| 批次 | 内容                                                                                                                                            | 说明                            |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| 18   | Postman 式 K/V 表格行内编辑；移除「添加参数」Dialog；「更多」菜单收纳导入/导出/刷新；默认请求体 Tab；`parameterValueUtils` + `ParameterKvTable` | `useParameterConfig` / IPC 未改 |
+
+设计/计划：`docs/superpowers/specs/2026-06-13-parameter-editor-simplify-design.md`、`docs/superpowers/plans/2026-06-13-parameter-editor-simplify-b18.md`。
+
+B18 实机验收：
+
+- 请求体 Tab 新增 `temperature=0.3` ≤3 步完成并持久化；
+- 服务商测试请求体含数值型 temperature；
+- 导入/导出 JSON 与刷新仍可用。
+
 ### 期间确认事项（避免重复排查）
 
 - P1#19 模型推荐双信源：`getRecommendedCategory`（renderer/lib/utils）已是唯一信源，无需再改。
@@ -71,42 +120,40 @@ B13 实现备忘（避免重复排查）：
 
 ## 4. 剩余未完成项
 
-### P1 残留（1 项）
+### P1 残留
 
-- **#35 工程状态误判历史工程**：`renderer/pages/[locale]/home.tsx` 的 `getProjectStatus` 仍用当前全局 `userConfig` 推导历史工程阶段（6.1.6）。应改用工程自身保存的配置（project 上已持久化 taskType 等字段）。
+- ~~**#35 历史工程状态误判**~~——B14 已修复（按 taskType 单源推导）。
 
 ### P2 功能补全
 
 - ~~引导第 4 步「示例任务」（6.7.1）~~、~~帮助菜单「常见问题」（6.7.2）~~、~~模型下载进度全局 pill（6.7.3）~~——B13 已完成。
-- VAD 预设档位（保守/标准/激进，6.6.1）+「0」语义说明（6.6.2）。
-- 参数编辑器简化（6.5.12）——已降级 v2.20+ backlog（见 roadmap 设计 §4.3，重构原则：功能满足前提下操作最简）。
-- 模型下载失败 UI 提示（6.5.4）；导入字幕语向检测（6.3.18）。
+- ~~VAD 预设档位（6.6.1）+「0」语义说明（6.6.2）~~——B14 已完成。
+- ~~参数编辑器简化（6.5.12）~~——B18 已完成。
+- ~~模型下载失败 UI 提示（6.5.4）~~——B14 已完成。
+- ~~导入字幕语向检测（6.3.18）~~——B14 已完成。
 
-### P2 打磨/解释（需先复核现状再做）
+### P2 打磨/解释
 
-- ModelsTab：95%/90% 匹配度解释、评分圆点图例、复制图标 tooltip、emoji 档位图标替换（6.5.1-3、5.5）。
-- 黄色警告语气校准（加速 Tab，6.5.14）；资源中心概览整卡可点（6.5.18-19）。
-- 「完成率」语义（6.3.15）、格式提示失真（4.4）——可能已被前批次消化，做之前先核对。
-- 「当前字幕」冗余卡（6.3.14）、绿色文件卡配色（5.3）——B5/B9 可能已覆盖，先核对。
+- ~~ModelsTab 匹配度/圆点/emoji 档位（6.5.1-3、5.5）~~——B14 已完成（匹配度在校对页）。
+- ~~黄色警告语气（6.5.14）~~、~~概览整卡可点（6.5.18-19）~~——B14 已完成。
+- ~~「完成率」语义（6.3.15）~~、~~格式提示（4.4）~~、~~「当前字幕」卡（6.3.14）~~——B14 已完成。
 
 ### 技术债
 
-- whisper addon native abort：B1 已做队列级取消 + ffmpeg kill + 翻译中断，转写推理中途中断需改 native addon（报告 11.5 风险表的挂账项）。
-- `webSecurity:false` 迁移自定义协议（4.6.5）。
-- Windows 路径兼容清理（6.3.17）；dev 模拟数据混入真实 gpuName（6.5.13）。
+- ~~whisper addon native abort~~——B17 已完成。
+- ~~`webSecurity:false` 迁移~~——B15 已完成。
+- ~~Windows 路径兼容~~——B15 renderer 校对链已改。
+- ~~dev 模拟 gpuName 混排~~——B15 已完成。
 
 ### 对外形象（需用户参与）
 
-- README/官网全套新截图 + IA 重构 before/after release note（5.7、6.8.4）。
+- README/官网全套新截图 + release note（5.7、6.8.4）——**B16，下一批次**。
 - v2.20+ backlog：托盘常驻/防睡眠、日语界面、官网文档体系。
 
-## 5. 下一批次（顺序已经用户确认，见 roadmap 设计文档）
+## 5. 下一批次
 
-- ~~B13 新手旅程闭环~~——已完成（见 §3）。
-- **B14 零碎收尾打包（下一个）**：P1#35 + ModelsTab 解释四项 + VAD 预设 + 下载失败提示 + 语向检测 + 黄色警告语气 + 概览整卡可点 +「完成率」/「当前字幕」/格式提示三项（已复核未消化）；绿色文件卡已被 B9 消化跳过。
-- B15 技术债：webSecurity 迁移（最高风险，独立 task+回退开关）+ Windows 路径（用户有实机可冒烟）+ dev gpuName。
-- B16 对外形象：README/官网截图 + release note（需用户实机配合,界面定稿后拍）。
-- B17 whisper addon native abort 接入：**触发条件 = 用户的新 addon.node 构建交付（接口 `whisperAsync({...params, signal})` + AbortController 已在另一工程实现）；就绪即插队**。Python/faster-whisper 本轮明确不接入。
+- ~~B13–B15、B17、B18~~——已完成（见 §3）。
+- **B16 对外形象（下一个）**：README/官网截图 + release note（需用户实机配合）。
 
 ## 6. 关键文件索引
 
