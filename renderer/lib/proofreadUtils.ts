@@ -31,6 +31,22 @@ export interface PendingFile {
 export type SubtitleType = 'source' | 'translated' | 'bilingual' | 'unknown';
 
 /**
+ * 按用户任务语向判定字幕是原文还是译文;语向不匹配时回退「en=原文」启发式。
+ * 与 main/helpers/subtitleDetector.ts 的同名逻辑保持一致(进程边界无法共享模块)。
+ */
+export function classifySubtitleLang(
+  lang: string | undefined | null,
+  sourceLanguage?: string,
+  targetLanguage?: string,
+): 'source' | 'translated' | 'unknown' {
+  if (!lang) return 'unknown';
+  if (sourceLanguage && sourceLanguage !== 'auto' && lang === sourceLanguage)
+    return 'source';
+  if (targetLanguage && lang === targetLanguage) return 'translated';
+  return lang === 'en' ? 'source' : 'translated';
+}
+
+/**
  * 从检测到的字幕列表中选择最佳的源字幕和翻译字幕
  */
 export function selectBestSubtitles(
@@ -163,9 +179,13 @@ export async function createPendingFileFromSubtitle(
 /**
  * 获取字幕文件同目录下的可用字幕列表
  * @param subtitlePath 字幕文件路径
+ * @param sourceLanguage 用户任务的源语言(用于语向判定,可选)
+ * @param targetLanguage 用户任务的目标语言(用于语向判定,可选)
  */
 export async function getAvailableSubtitles(
   subtitlePath: string,
+  sourceLanguage?: string,
+  targetLanguage?: string,
 ): Promise<DetectedSubtitle[]> {
   const dir = subtitlePath.substring(0, subtitlePath.lastIndexOf('/'));
 
@@ -203,11 +223,11 @@ export async function getAvailableSubtitles(
         filePath,
         type: (filePath === subtitlePath
           ? 'source'
-          : lang === 'en'
-            ? 'source'
-            : lang
-              ? 'translated'
-              : 'unknown') as SubtitleType,
+          : classifySubtitleLang(
+              lang,
+              sourceLanguage,
+              targetLanguage,
+            )) as SubtitleType,
         language: lang,
         confidence,
       };
@@ -283,8 +303,13 @@ export async function loadPendingFileFromItem(item: {
         detectedSubtitles = detectResult.data.detectedSubtitles || [];
       }
     } else if (item.sourceSubtitlePath) {
-      // 仅字幕：检测同目录下的其他字幕文件
-      detectedSubtitles = await getAvailableSubtitles(item.sourceSubtitlePath);
+      // 仅字幕：检测同目录下的其他字幕文件（按用户任务语向判定原文/译文）
+      const userConfig = await window.ipc.invoke('getUserConfig');
+      detectedSubtitles = await getAvailableSubtitles(
+        item.sourceSubtitlePath,
+        userConfig?.sourceLanguage,
+        userConfig?.targetLanguage,
+      );
     }
   }
 

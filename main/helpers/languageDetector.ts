@@ -213,8 +213,14 @@ export function getSupportedLanguages(): Array<{ code: string; name: string }> {
 
 /**
  * 从多个字幕文件中检测语言对
+ * @param userSourceLanguage 用户任务的源语言（可选，'auto' 视为未指定）
+ * @param userTargetLanguage 用户任务的目标语言（可选）
  */
-export function detectLanguagePair(subtitleFiles: string[]): {
+export function detectLanguagePair(
+  subtitleFiles: string[],
+  userSourceLanguage?: string,
+  userTargetLanguage?: string,
+): {
   source?: string;
   target?: string;
 } {
@@ -229,7 +235,23 @@ export function detectLanguagePair(subtitleFiles: string[]): {
 
   // 如果检测到两种不同的语言，尝试确定源语言和目标语言
   if (languages.length >= 2) {
-    // 优先将英语作为源语言，中文作为目标语言
+    // 优先匹配用户任务语向：源/目标语言都在检测结果中时直接采用
+    const hasUserSource =
+      userSourceLanguage &&
+      userSourceLanguage !== 'auto' &&
+      languages.some((l) => l.lang.code === userSourceLanguage);
+    const hasUserTarget =
+      userTargetLanguage &&
+      languages.some((l) => l.lang.code === userTargetLanguage);
+
+    if (hasUserSource && hasUserTarget) {
+      return {
+        source: userSourceLanguage,
+        target: userTargetLanguage,
+      };
+    }
+
+    // 回退启发式：英语作为源语言，中文作为目标语言
     const enIndex = languages.findIndex((l) => l.lang.code === 'en');
     const zhIndex = languages.findIndex((l) => l.lang.code === 'zh');
 

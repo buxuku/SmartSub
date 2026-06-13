@@ -174,7 +174,12 @@ export function setupProofreadHandlers(): void {
     'detectLanguagePair',
     async (_event, { files }: { files: string[] }) => {
       try {
-        const result = detectLanguagePair(files);
+        const userConfig = store.get('userConfig') || {};
+        const result = detectLanguagePair(
+          files,
+          userConfig.sourceLanguage,
+          userConfig.targetLanguage,
+        );
         return { success: true, data: result };
       } catch (error) {
         logMessage(`Error detecting language pair: ${error}`, 'error');

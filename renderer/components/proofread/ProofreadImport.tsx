@@ -10,6 +10,7 @@ import {
   createPendingFileFromVideo,
   createPendingFileFromSubtitle,
   selectBestSubtitles,
+  classifySubtitleLang,
 } from '@/lib/proofreadUtils';
 
 interface ProofreadImportProps {
@@ -109,17 +110,22 @@ export default function ProofreadImport({
       } else {
         // 没有视频，按字幕模式处理
         const allSubtitles: DetectedSubtitle[] = [];
+        // 取用户任务语向，用于判定每个字幕是原文还是译文
+        const userConfig = await window.ipc.invoke('getUserConfig');
 
         for (const filePath of subtitles) {
           const langResult = await window.ipc.invoke('detectLanguage', {
             filePath,
           });
           const lang = langResult.success ? langResult.data?.code : undefined;
-          const type =
-            lang === 'en' ? 'source' : lang ? 'translated' : 'unknown';
+          const type = classifySubtitleLang(
+            lang,
+            userConfig?.sourceLanguage,
+            userConfig?.targetLanguage,
+          );
           allSubtitles.push({
             filePath,
-            type: type as 'source' | 'translated' | 'unknown',
+            type,
             language: lang,
             confidence: lang ? 90 : 80,
           });
