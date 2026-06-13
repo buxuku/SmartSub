@@ -3,9 +3,39 @@
   "description": "Manage the models, translation services and GPU acceleration used by your tasks",
   "tab": {
     "overview": "Overview",
+    "engines": "Engines",
     "models": "Models",
     "providers": "Translation",
     "acceleration": "GPU Acceleration"
+  },
+  "engines": {
+    "title": "Transcription Engines",
+    "description": "Choose the engine for speech-to-text. whisper.cpp is built in by default; faster-whisper requires a separate download.",
+    "builtin": {
+      "name": "whisper.cpp (built-in)",
+      "desc": "Default engine with ggml quantized models and GPU acceleration",
+      "statusReady": "Ready"
+    },
+    "fasterWhisper": {
+      "name": "faster-whisper",
+      "desc": "CTranslate2-based engine with faster inference; models download from HuggingFace on demand",
+      "notInstalled": "Not installed",
+      "installed": "Installed v{{version}}",
+      "download": "Download engine (~{{size}})",
+      "downloading": "Downloading…",
+      "uninstall": "Uninstall",
+      "select": "Set as current engine",
+      "selected": "Current engine",
+      "device": "Compute device",
+      "computeType": "Precision",
+      "downloadConfirm": "This will download the faster-whisper engine runtime (~170MB). Continue?"
+    },
+    "localCli": {
+      "name": "Local CLI",
+      "desc": "Use a self-installed Whisper-compatible command-line tool",
+      "configure": "Configure command"
+    },
+    "switchBlocked": "A task is running. Wait for it to finish before switching engines."
   },
   "overview": {
     "modelsTitle": "Speech Models",

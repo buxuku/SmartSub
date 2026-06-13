@@ -7,10 +7,12 @@ import OverviewTab from '@/components/resources/OverviewTab';
 import ModelsTab from '@/components/resources/ModelsTab';
 import ProvidersTab from '@/components/resources/ProvidersTab';
 import AccelerationTab from '@/components/resources/AccelerationTab';
+import EnginesTab from '@/components/resources/EnginesTab';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 
 export const RESOURCE_TABS = [
   'overview',
+  'engines',
   'models',
   'providers',
   'acceleration',
@@ -52,6 +54,9 @@ const Resources = () => {
         </TabsList>
         <TabsContent value="overview" className="min-h-0 flex-1 overflow-auto">
           <OverviewTab onNavigateTab={handleTabChange} />
+        </TabsContent>
+        <TabsContent value="engines" className="min-h-0 flex-1 overflow-auto">
+          <EnginesTab />
         </TabsContent>
         <TabsContent value="models" className="min-h-0 flex-1 overflow-auto">
           <ModelsTab />

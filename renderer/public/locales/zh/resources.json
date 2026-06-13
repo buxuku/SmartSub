@@ -3,9 +3,39 @@
   "description": "转写与翻译所需的模型、翻译服务与 GPU 加速，都在这里管理",
   "tab": {
     "overview": "全景",
+    "engines": "引擎",
     "models": "模型",
     "providers": "翻译服务",
     "acceleration": "GPU 加速"
+  },
+  "engines": {
+    "title": "转写引擎",
+    "description": "选择用于语音转文字的引擎。默认 whisper.cpp 已内置；faster-whisper 需额外下载。",
+    "builtin": {
+      "name": "whisper.cpp（内置）",
+      "desc": "默认引擎，支持 ggml 量化模型与 GPU 加速",
+      "statusReady": "已就绪"
+    },
+    "fasterWhisper": {
+      "name": "faster-whisper",
+      "desc": "基于 CTranslate2，速度更快，模型按需从 HuggingFace 下载",
+      "notInstalled": "未安装",
+      "installed": "已安装 v{{version}}",
+      "download": "下载引擎（约 {{size}}）",
+      "downloading": "下载中…",
+      "uninstall": "卸载",
+      "select": "设为当前引擎",
+      "selected": "当前引擎",
+      "device": "计算设备",
+      "computeType": "精度",
+      "downloadConfirm": "将下载 faster-whisper 引擎运行时（约 170MB），是否继续？"
+    },
+    "localCli": {
+      "name": "本地命令行",
+      "desc": "使用自行安装的 Whisper 兼容 CLI",
+      "configure": "配置命令"
+    },
+    "switchBlocked": "有任务正在运行，请等待完成后再切换引擎"
   },
   "overview": {
     "modelsTitle": "语音模型",
