@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
 import {
@@ -193,6 +193,16 @@ export default function ProofreadEditor({
     onBack();
   }, [onBack]);
 
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
   // 标记完成隐含保存：保证完成态文件与界面一致；保存失败则留在编辑器
   const handleMarkCompleteClick = useCallback(async () => {
     const ok = await handleSave();
@@ -255,66 +265,68 @@ export default function ProofreadEditor({
 
   return (
     <div className="h-full flex flex-col">
-      {/* 顶部工具栏 */}
-      <div className="flex items-center justify-between px-4 py-3 border-b bg-background flex-shrink-0">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={handleBackClick}>
-            <ArrowLeft className="w-4 h-4 mr-1" />
-            {t('backToList')}
-          </Button>
-          <div className="text-sm text-muted-foreground">{file.fileName}</div>
-        </div>
-        <TooltipProvider>
-          <div className="flex items-center gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" onClick={handleSave}>
-                  <Save className="w-4 h-4 mr-1" />
-                  {t('saveSubtitles')}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-[280px]">
-                <p>{t('saveSubtitlesTip')}</p>
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={handleMarkCompleteClick}
-                >
-                  <Check className="w-4 h-4 mr-1" />
-                  {t('markCompleteAndBack')}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-[280px]">
-                <p>{t('completeAndReturnTip')}</p>
-              </TooltipContent>
-            </Tooltip>
+      <div className="sticky top-0 z-10 flex-shrink-0 bg-background border-b">
+        {/* 顶部工具栏 */}
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="sm" onClick={handleBackClick}>
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              {t('backToList')}
+            </Button>
+            <div className="text-sm text-muted-foreground">{file.fileName}</div>
           </div>
-        </TooltipProvider>
-      </div>
+          <TooltipProvider>
+            <div className="flex items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" onClick={handleSave}>
+                    <Save className="w-4 h-4 mr-1" />
+                    {t('saveSubtitles')}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[280px]">
+                  <p>{t('saveSubtitlesTip')}</p>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleMarkCompleteClick}
+                  >
+                    <Check className="w-4 h-4 mr-1" />
+                    {t('markCompleteAndBack')}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[280px]">
+                  <p>{t('completeAndReturnTip')}</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </TooltipProvider>
+        </div>
 
-      {/* 编辑工具栏 */}
-      <SubtitleEditToolbar
-        subtitles={mergedSubtitles}
-        onSubtitlesChange={updateSubtitles}
-        onUndo={handleUndo}
-        onRedo={handleRedo}
-        canUndo={canUndo}
-        canRedo={canRedo}
-        currentSubtitleIndex={currentSubtitleIndex}
-        onMergeSubtitles={handleMergeSubtitles}
-        onSplitSubtitle={handleSplitSubtitle}
-        shouldShowTranslation={shouldShowTranslation}
-        getCursorPosition={getCursorPosition}
-        triggerAiOptimize={triggerAiOptimize}
-        triggerSplit={triggerSplit}
-        onTriggerHandled={handleTriggerHandled}
-        searchOpenToken={searchOpenToken}
-        onLocateSubtitle={handleSubtitleClick}
-      />
+        {/* 编辑工具栏 */}
+        <SubtitleEditToolbar
+          subtitles={mergedSubtitles}
+          onSubtitlesChange={updateSubtitles}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          currentSubtitleIndex={currentSubtitleIndex}
+          onMergeSubtitles={handleMergeSubtitles}
+          onSplitSubtitle={handleSplitSubtitle}
+          shouldShowTranslation={shouldShowTranslation}
+          getCursorPosition={getCursorPosition}
+          triggerAiOptimize={triggerAiOptimize}
+          triggerSplit={triggerSplit}
+          onTriggerHandled={handleTriggerHandled}
+          searchOpenToken={searchOpenToken}
+          onLocateSubtitle={handleSubtitleClick}
+        />
+      </div>
 
       {/* 主内容区 - 复用原有布局 */}
       <div

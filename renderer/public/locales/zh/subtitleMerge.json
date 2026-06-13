@@ -46,6 +46,7 @@
   "selectVideoToMerge": "请选择视频文件",
   "selectSubtitleToMerge": "请选择字幕文件",
   "selectOutputPathToMerge": "请选择输出路径",
+  "outputPathRequiredHint": "已选择视频和字幕，请先选择输出路径后再开始合成",
   "presetClassic": "经典白字黑边",
   "presetMovie": "电影字幕",
   "presetYoutube": "YouTube风格",

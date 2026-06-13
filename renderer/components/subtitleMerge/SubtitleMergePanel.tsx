@@ -90,6 +90,11 @@ export default function SubtitleMergePanel({
 
   return (
     <div className={`h-full flex flex-col ${className}`}>
+      {videoPath && subtitlePath && !outputPath && status !== 'processing' && (
+        <div className="flex-shrink-0 mb-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-muted-foreground">
+          {t('outputPathRequiredHint')}
+        </div>
+      )}
       {/* 文件选择区域 - 紧凑型 */}
       <div className="flex-shrink-0 mb-3">
         <FileSelector

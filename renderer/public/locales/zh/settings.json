@@ -213,5 +213,7 @@
   "advancedSettingsDesc": "极客选项：本地 whisper 命令与 VAD 细节参数，默认值即最佳实践",
   "settingsDesc": "语言、更新与高级选项",
   "about": "关于",
-  "modelsPathMoved": "模型存储路径已移至资源中心管理"
+  "modelsPathMoved": "模型存储路径已移至资源中心管理",
+  "gpuAccelerationTitle": "GPU 加速",
+  "gpuAccelerationMoved": "GPU 加速设置已移至资源中心 → 加速 Tab"
 }

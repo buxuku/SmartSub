@@ -536,6 +536,33 @@ const Settings = () => {
             </Button>
           </div>
 
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span>{t('gpuAccelerationTitle')}</span>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{t('gpuAccelerationMoved')}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() =>
+                router.push(`/${i18n.language}/resources?tab=acceleration`)
+              }
+            >
+              <ArrowRight className="h-4 w-4" />
+              {t('goToResources')}
+            </Button>
+          </div>
+
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <span>{t('tempDir')}</span>

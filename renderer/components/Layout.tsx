@@ -188,6 +188,7 @@ const Layout = ({ children }) => {
     progress: number;
     status: string;
   } | null>(null);
+  const [taskRunning, setTaskRunning] = useState(false);
   // 手动检查更新会话：等待 update-status 终态时为 true，持有 loading toast id
   const manualCheckRef = useRef<{ toastId: string | number } | null>(null);
 
@@ -404,6 +405,29 @@ const Layout = ({ children }) => {
     };
   }, [t, checkUpdatesManually]);
 
+  // 全局任务运行指示：轮询 + taskComplete 即时刷新
+  useEffect(() => {
+    let disposed = false;
+    const refreshTaskRunning = async () => {
+      try {
+        const status = await window?.ipc?.invoke('getTaskStatus');
+        if (!disposed) setTaskRunning(status === 'running');
+      } catch {
+        if (!disposed) setTaskRunning(false);
+      }
+    };
+    refreshTaskRunning();
+    const interval = setInterval(refreshTaskRunning, 4000);
+    const cleanupComplete = window?.ipc?.on('taskComplete', () => {
+      refreshTaskRunning();
+    });
+    return () => {
+      disposed = true;
+      clearInterval(interval);
+      cleanupComplete?.();
+    };
+  }, []);
+
   // 模型下载全局可见：主进程 modelDownloadDetail 是全局广播，任何页面都能收到
   useEffect(() => {
     let hideTimer: NodeJS.Timeout | null = null;
@@ -531,47 +555,67 @@ const Layout = ({ children }) => {
             ))}
           </TooltipProvider>
         </nav>
-        {downloadPill && (
-          <div className="mt-auto px-2 pb-1">
-            <button
-              type="button"
-              onClick={() => router.push(`/${locale}/resources?tab=models`)}
-              aria-label={t('downloadPill.aria')}
-              className={cn(
-                'flex w-full items-center gap-1.5 rounded-full border px-2 py-1.5 text-[11px] transition-colors',
-                sidebarExpanded ? '' : 'justify-center',
-                downloadPill.status === 'error'
-                  ? 'border-destructive/40 text-destructive hover:bg-destructive/10'
-                  : 'text-muted-foreground hover:bg-muted',
-              )}
-            >
-              {downloadPill.status === 'error' ? (
-                <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
-              ) : downloadPill.status === 'completed' ? (
-                <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-success" />
-              ) : (
+        {(taskRunning || downloadPill) && (
+          <div className="mt-auto flex flex-col gap-1 px-2 pb-1">
+            {taskRunning && (
+              <button
+                type="button"
+                onClick={() => router.push(`/${locale}/recent-tasks`)}
+                aria-label={t('taskRunningPill.aria')}
+                className={cn(
+                  'flex w-full items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-2 py-1.5 text-[11px] text-primary transition-colors hover:bg-primary/10',
+                  sidebarExpanded ? '' : 'justify-center',
+                )}
+              >
                 <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin" />
-              )}
-              {sidebarExpanded && (
-                <span className="truncate">
-                  {downloadPill.status === 'completed'
-                    ? t('downloadPill.done', { model: downloadPill.model })
-                    : downloadPill.status === 'error'
-                      ? t('downloadPill.failed', { model: downloadPill.model })
-                      : downloadPill.status === 'extracting'
-                        ? t('downloadPill.extracting', {
+                {sidebarExpanded && (
+                  <span className="truncate">{t('taskRunningPill.label')}</span>
+                )}
+              </button>
+            )}
+            {downloadPill && (
+              <button
+                type="button"
+                onClick={() => router.push(`/${locale}/resources?tab=models`)}
+                aria-label={t('downloadPill.aria')}
+                className={cn(
+                  'flex w-full items-center gap-1.5 rounded-full border px-2 py-1.5 text-[11px] transition-colors',
+                  sidebarExpanded ? '' : 'justify-center',
+                  downloadPill.status === 'error'
+                    ? 'border-destructive/40 text-destructive hover:bg-destructive/10'
+                    : 'text-muted-foreground hover:bg-muted',
+                )}
+              >
+                {downloadPill.status === 'error' ? (
+                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                ) : downloadPill.status === 'completed' ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-success" />
+                ) : (
+                  <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin" />
+                )}
+                {sidebarExpanded && (
+                  <span className="truncate">
+                    {downloadPill.status === 'completed'
+                      ? t('downloadPill.done', { model: downloadPill.model })
+                      : downloadPill.status === 'error'
+                        ? t('downloadPill.failed', {
                             model: downloadPill.model,
                           })
-                        : `${downloadPill.model} ${Math.round(downloadPill.progress)}%`}
-                </span>
-              )}
-            </button>
+                        : downloadPill.status === 'extracting'
+                          ? t('downloadPill.extracting', {
+                              model: downloadPill.model,
+                            })
+                          : `${downloadPill.model} ${Math.round(downloadPill.progress)}%`}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         )}
         <nav
           className={cn(
             'p-2 flex gap-1',
-            !downloadPill && 'mt-auto',
+            !taskRunning && !downloadPill && 'mt-auto',
             sidebarExpanded
               ? 'flex-row items-center justify-between'
               : 'flex-col items-center',

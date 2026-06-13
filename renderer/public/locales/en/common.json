@@ -166,6 +166,10 @@
     "failed": "{{model}} download failed",
     "extracting": "Extracting {{model}}"
   },
+  "taskRunningPill": {
+    "aria": "A task is running, click to view recent tasks",
+    "label": "Task running"
+  },
   "downloadBusy": "Another download is already in progress",
   "downloadFailedToast": "Download failed: {{error}}",
   "retryDownload": "Retry download",

@@ -213,5 +213,7 @@
   "advancedSettingsDesc": "Geek options: local whisper command and VAD fine-tuning — defaults are best practice",
   "settingsDesc": "Language, updates and advanced options",
   "about": "About",
-  "modelsPathMoved": "Model storage path is now managed in the Resource Hub"
+  "modelsPathMoved": "Model storage path is now managed in the Resource Hub",
+  "gpuAccelerationTitle": "GPU Acceleration",
+  "gpuAccelerationMoved": "GPU acceleration settings are now in Resource Hub → Acceleration"
 }

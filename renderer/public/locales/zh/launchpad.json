@@ -53,7 +53,10 @@
     "clearAll": "清除全部",
     "clearAllTitle": "清除全部任务记录？",
     "clearAllDesc": "将删除 {{count}} 条任务记录，磁盘上的文件不受影响。",
-    "clearAllConfirm": "确认清除"
+    "clearAllConfirm": "确认清除",
+    "emptyTitle": "暂无任务记录",
+    "emptyHint": "返回启动台选择任务开始，处理完成后会出现在这里",
+    "emptyCta": "返回启动台"
   },
   "status": {
     "waiting": "等待中",

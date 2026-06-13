@@ -51,6 +51,7 @@
     "goMerge": "合成到视频",
     "openFolder": "打开文件夹",
     "retryFailed": "重试失败项",
+    "allFailedTitle": "全部 {{failed}} 个文件处理失败",
     "dismiss": "关闭"
   },
   "logs": {

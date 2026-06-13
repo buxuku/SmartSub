@@ -231,8 +231,16 @@ export default function RecentTasksPage() {
         ) : workItems.length === 0 ? (
           <EmptyState
             icon={History}
-            title={t('noRecentTasks')}
-            description={t('noRecentTasksHint')}
+            title={t('allTasks.emptyTitle')}
+            description={t('allTasks.emptyHint')}
+            action={
+              <Button asChild size="sm" variant="outline">
+                <Link href={`/${localeStr}/home`}>
+                  <ArrowLeft className="mr-1.5 h-4 w-4" />
+                  {t('allTasks.emptyCta')}
+                </Link>
+              </Button>
+            }
           />
         ) : filteredItems.length === 0 ? (
           <p className="rounded-xl border px-4 py-6 text-center text-sm text-muted-foreground">

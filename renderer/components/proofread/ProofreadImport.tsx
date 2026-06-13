@@ -45,6 +45,7 @@ export default function ProofreadImport({
       }
     } catch (error) {
       console.error('Failed to import videos:', error);
+      toast.error(t('importVideosFailed'));
     }
   }, [onImportComplete]);
 
@@ -70,6 +71,7 @@ export default function ProofreadImport({
       }
     } catch (error) {
       console.error('Failed to import subtitles:', error);
+      toast.error(t('importSubtitlesFailed'));
     }
   }, [onImportComplete]);
 
@@ -191,6 +193,7 @@ export default function ProofreadImport({
       }
     } catch (error) {
       console.error('Failed to import folder:', error);
+      toast.error(t('importFolderFailed'));
     }
   }, [onImportComplete, t]);
 

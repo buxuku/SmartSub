@@ -53,7 +53,10 @@
     "clearAll": "Clear all",
     "clearAllTitle": "Clear all task records?",
     "clearAllDesc": "This removes {{count}} task records. Files on disk are not affected.",
-    "clearAllConfirm": "Clear all"
+    "clearAllConfirm": "Clear all",
+    "emptyTitle": "No task records",
+    "emptyHint": "Go back to the launchpad to start a task. Completed tasks will appear here.",
+    "emptyCta": "Back to launchpad"
   },
   "status": {
     "waiting": "Waiting",

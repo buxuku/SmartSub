@@ -46,6 +46,7 @@
   "selectVideoToMerge": "Please select a video file",
   "selectSubtitleToMerge": "Please select a subtitle file",
   "selectOutputPathToMerge": "Please select an output path",
+  "outputPathRequiredHint": "Video and subtitle are selected — choose an output path before merging",
   "presetClassic": "Classic White on Black",
   "presetMovie": "Movie Style",
   "presetYoutube": "YouTube Style",

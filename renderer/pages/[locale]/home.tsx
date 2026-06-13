@@ -95,6 +95,24 @@ const CARDS: CardDef[] = [
   },
 ];
 
+const NEEDS_PROVIDER_KEYS = new Set(['translate', 'generateTranslate']);
+
+function getCardBlock(
+  card: CardDef,
+  hasModels: boolean,
+  hasProvider: boolean,
+): 'model' | 'provider' | null {
+  if (card.needsModel && !hasModels) return 'model';
+  if (NEEDS_PROVIDER_KEYS.has(card.key) && !hasProvider) return 'provider';
+  return null;
+}
+
+function resourcesHref(locale: string, block: 'model' | 'provider'): string {
+  return block === 'model'
+    ? `/${locale}/resources?tab=models`
+    : `/${locale}/resources?tab=providers`;
+}
+
 export default function LaunchpadPage() {
   const router = useRouter();
   const { locale } = router.query;
@@ -142,6 +160,11 @@ export default function LaunchpadPage() {
     e.preventDefault();
     setDragCard(null);
     if (!card.slug) return;
+    const block = getCardBlock(card, hasModels, hasProvider);
+    if (block) {
+      router.push(resourcesHref(String(locale || 'zh'), block));
+      return;
+    }
     const typeDef = getTaskTypeBySlug(card.slug);
     if (!typeDef) return;
 
@@ -252,14 +275,20 @@ export default function LaunchpadPage() {
           {CARDS.map((card) => {
             const Icon = card.icon;
             const droppable = Boolean(card.slug);
+            const block = getCardBlock(card, hasModels, hasProvider);
+            const href = block
+              ? resourcesHref(localeStr, block)
+              : cardTarget(card);
             return (
               <Link
                 key={card.key}
-                href={cardTarget(card)}
+                href={href}
                 className={cn(
                   'group relative overflow-hidden rounded-xl border bg-card p-4 transition-all hover:shadow-md hover:-translate-y-0.5',
                   dragCard === card.key &&
                     'border-2 border-dashed border-primary bg-muted/50',
+                  block &&
+                    'border-warning/40 hover:border-warning/60 bg-warning/[0.03]',
                 )}
                 onDragOver={
                   droppable
@@ -309,6 +338,16 @@ export default function LaunchpadPage() {
                 <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
                   {t(`card.${card.key}Desc`)}
                 </p>
+                {block === 'model' && (
+                  <p className="mt-2 text-xs font-medium text-primary">
+                    {t('banner.noModelCta')} →
+                  </p>
+                )}
+                {block === 'provider' && (
+                  <p className="mt-2 text-xs font-medium text-primary">
+                    {t('banner.noProviderCta')} →
+                  </p>
+                )}
               </Link>
             );
           })}

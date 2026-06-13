@@ -51,6 +51,7 @@
     "goMerge": "Burn into video",
     "openFolder": "Open folder",
     "retryFailed": "Retry failed",
+    "allFailedTitle": "All {{failed}} files failed",
     "dismiss": "Dismiss"
   },
   "logs": {

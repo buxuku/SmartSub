@@ -80,7 +80,7 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
     .filter(({ file, stages }) => !isFileDone(file, stages))
     .map(({ file }) => file);
 
-  if (!doneFiles.length) return null;
+  if (!doneFiles.length && !failedFiles.length) return null;
 
   const firstDone = doneFiles[0];
   const multiDone = doneFiles.length > 1;
@@ -111,6 +111,40 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
 
   const fileLabel = (file: any) =>
     `${file?.fileName ?? ''}${file?.fileExtension ?? ''}`;
+
+  if (!doneFiles.length && failedFiles.length > 0) {
+    return (
+      <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 flex items-center gap-3 flex-wrap">
+        <RotateCcw className="h-5 w-5 text-destructive flex-shrink-0" />
+        <div className="min-w-0 flex-1">
+          <span className="text-sm font-medium text-destructive">
+            {t('completion.allFailedTitle', { failed: failedFiles.length })}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs gap-1"
+            onClick={() => onRetryFailed(failedFiles)}
+          >
+            <RotateCcw className="h-3 w-3" />
+            {t('completion.retryFailed')}
+          </Button>
+          <button
+            type="button"
+            aria-label={t('completion.dismiss')}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+            onClick={onDismiss}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!doneFiles.length) return null;
 
   return (
     <div className="rounded-lg border border-success/30 bg-success/5 px-4 py-3 flex items-center gap-3 flex-wrap">
