@@ -2,54 +2,13 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import {
-  Zap,
-  ZapOff,
-  Cpu,
-  RefreshCw,
-  CheckCircle,
-  AlertTriangle,
-  ChevronDown,
-  Trash2,
-  FolderOpen,
-  FileCode,
-  ExternalLink,
-  Info,
-  X,
-  Package,
-  Copy,
-  Gauge,
-  ArrowLeftRight,
-} from 'lucide-react';
+import { Zap, RefreshCw, ChevronDown, Info } from 'lucide-react';
 import { toast } from 'sonner';
-import { openUrl } from '@/lib/utils';
 import type {
   GpuEnvironment,
   GpuMode,
@@ -59,50 +18,26 @@ import type {
   DownloadProgress,
   DownloadSource,
   CudaVersion,
+  RemoteAddonVersions,
 } from '../../../types/addon';
-import { AVAILABLE_CUDA_VERSIONS } from '../../../types/addon';
-
-interface InstalledAddonInfo {
-  version: AddonVariant;
-  info: {
-    installedAt: string;
-    remoteVersion: string;
-    hasDlls: boolean;
-    size: number;
-  };
-}
-
-const BACKEND_LABELS: Record<string, string> = {
-  cuda: 'CUDA',
-  vulkan: 'Vulkan',
-  cpu: 'CPU',
-  metal: 'Metal',
-  coreml: 'CoreML',
-  custom: 'Custom',
-};
-
-function backendDisplay(info: AddonLoadResultInfo | null): string {
-  if (!info) return '';
-  if (info.backend === 'cuda' && info.variant && info.variant !== 'vulkan') {
-    return `CUDA ${info.variant}`;
-  }
-  return BACKEND_LABELS[info.backend] || info.backend;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024)
-    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
-
-function formatEta(seconds: number): string {
-  if (seconds < 60) return `${Math.ceil(seconds)}s`;
-  if (seconds < 3600)
-    return `${Math.floor(seconds / 60)}m ${Math.ceil(seconds % 60)}s`;
-  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
-}
+import { parseRemoteCudaVersions } from './gpu/gpuDownloadUtils';
+import CudaDownloadSheet from './gpu/CudaDownloadSheet';
+import GpuStatusHero from './gpu/GpuStatusHero';
+import GpuModeSelector from './gpu/GpuModeSelector';
+import GpuBackendSwitcher from './gpu/GpuBackendSwitcher';
+import GpuDownloadProgress from './gpu/GpuDownloadProgress';
+import GpuInstalledList from './gpu/GpuInstalledList';
+import GpuCustomAddonSection from './gpu/GpuCustomAddonSection';
+import GpuDiagnosticsPanel from './gpu/GpuDiagnosticsPanel';
+import {
+  persistDownloadSource,
+  readPersistedDownloadSource,
+  fetchPackageSizeHints,
+  editionToDownloadType,
+  getDefaultPackageEdition,
+} from './gpu/gpuDownloadUtils';
+import { resolveActiveBackendForPlatform, formatSize } from './gpu/gpuUtils';
+import type { CudaDownloadSheetState, InstalledAddonInfo } from './gpu/types';
 
 const GpuAccelerationCard: React.FC = () => {
   const { t } = useTranslation('settings');
@@ -122,17 +57,33 @@ const GpuAccelerationCard: React.FC = () => {
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [downloadProgress, setDownloadProgress] =
     useState<DownloadProgress | null>(null);
-  const [downloadSource, setDownloadSource] =
-    useState<DownloadSource>('github');
+  const [downloadSource, setDownloadSource] = useState<DownloadSource>(() =>
+    readPersistedDownloadSource(),
+  );
   const [downloadingVariant, setDownloadingVariant] =
     useState<AddonVariant | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [sheetState, setSheetState] = useState<CudaDownloadSheetState>({
+    open: false,
+    presetVersion: null,
+  });
+  const [availableCudaVersions, setAvailableCudaVersions] = useState<
+    CudaVersion[]
+  >([]);
+  const [usedRemoteFallback, setUsedRemoteFallback] = useState(false);
+  const [upgradeSizeHint, setUpgradeSizeHint] = useState<string | null>(null);
   const lastToastStatus = useRef<string | null>(null);
   const downloadingVariantRef = useRef<AddonVariant | null>(null);
+  const downloadSourceRef = useRef<DownloadSource>(downloadSource);
+  const failedCudaVersionRef = useRef<CudaVersion | null>(null);
+
+  useEffect(() => {
+    downloadSourceRef.current = downloadSource;
+  }, [downloadSource]);
 
   const isDesktopGpuPlatform = gpuEnv ? gpuEnv.platform !== 'darwin' : false;
+  const cudaApplicable = !!gpuEnv?.nvidia?.recommendation.canUseCuda;
 
   const loadData = useCallback(async (forceRefresh = false) => {
     try {
@@ -157,6 +108,24 @@ const GpuAccelerationCard: React.FC = () => {
 
       const settings = await window?.ipc?.invoke('getSettings');
       setGpuMode(settings?.gpuMode || 'auto');
+
+      const remote = (await window?.ipc?.invoke(
+        'get-remote-addon-versions',
+      )) as RemoteAddonVersions | null;
+      setAvailableCudaVersions(parseRemoteCudaVersions(remote));
+      setUsedRemoteFallback(!remote);
+
+      const recommended = env?.nvidia?.recommendation.recommendedVersion;
+      if (recommended && env?.nvidia?.recommendation.canUseCuda) {
+        const edition = getDefaultPackageEdition(env);
+        const type = editionToDownloadType(edition);
+        const source = downloadSourceRef.current;
+        const hints = await fetchPackageSizeHints(recommended, source);
+        const bytes = edition === 'full' ? hints.full : hints.lite;
+        setUpgradeSizeHint(bytes ? formatSize(bytes) : null);
+      } else {
+        setUpgradeSizeHint(null);
+      }
     } catch (error) {
       console.error('Failed to load GPU acceleration data:', error);
     } finally {
@@ -172,7 +141,14 @@ const GpuAccelerationCard: React.FC = () => {
     window.dispatchEvent(new Event('gpu-settings-changed'));
   };
 
-  // 下载进度
+  const openDownloadSheet = (presetVersion?: CudaVersion | null) => {
+    if (downloadingVariant) return;
+    setSheetState({
+      open: true,
+      presetVersion: presetVersion ?? null,
+    });
+  };
+
   useEffect(() => {
     const handleProgress = async (progress: DownloadProgress) => {
       setDownloadProgress(progress);
@@ -186,13 +162,38 @@ const GpuAccelerationCard: React.FC = () => {
           setDownloadProgress(null);
           setDownloadingVariant(null);
           downloadingVariantRef.current = null;
-          // 主进程下载完成后已自动 registerInstalledAddon + selectAddonVersion
+          failedCudaVersionRef.current = null;
           await loadData();
           notifyGpuSettingsChanged();
         }, 1000);
       } else if (progress.status === 'error') {
         if (lastToastStatus.current !== 'error') {
-          toast.error(progress.error || t('gpuAcceleration.downloadFailed'));
+          const failedVariant = downloadingVariantRef.current;
+          const currentSource = downloadSourceRef.current;
+          const isCudaFailure =
+            failedVariant && failedVariant !== 'vulkan'
+              ? (failedVariant as CudaVersion)
+              : null;
+          if (isCudaFailure) {
+            failedCudaVersionRef.current = isCudaFailure;
+          }
+
+          toast.error(progress.error || t('gpuAcceleration.downloadFailed'), {
+            action:
+              currentSource === 'github' && isCudaFailure
+                ? {
+                    label: t('gpuAcceleration.switchMirrorAndRetry'),
+                    onClick: () => {
+                      setDownloadSource('ghproxy');
+                      persistDownloadSource('ghproxy');
+                      setSheetState({
+                        open: true,
+                        presetVersion: failedCudaVersionRef.current,
+                      });
+                    },
+                  }
+                : undefined,
+          });
           lastToastStatus.current = 'error';
         }
         setDownloadingVariant(null);
@@ -208,7 +209,6 @@ const GpuAccelerationCard: React.FC = () => {
     };
   }, [loadData, t]);
 
-  // 后端变更推送（转写触发加载后刷新状态卡）
   useEffect(() => {
     const cleanup = window?.ipc?.on(
       'active-backend-changed',
@@ -221,8 +221,6 @@ const GpuAccelerationCard: React.FC = () => {
     };
   }, []);
 
-  // ===== 操作 =====
-
   const handleModeChange = async (mode: GpuMode) => {
     try {
       await window?.ipc?.invoke('setSettings', { gpuMode: mode });
@@ -232,7 +230,7 @@ const GpuAccelerationCard: React.FC = () => {
       if (mode === 'gpu-only') {
         toast.warning(t('gpuAcceleration.gpuOnlyWarning'));
       }
-    } catch (error) {
+    } catch {
       toast.error(t('saveFailed'));
     }
   };
@@ -255,11 +253,18 @@ const GpuAccelerationCard: React.FC = () => {
         type: downloadType,
       });
       toast.info(t('gpuAcceleration.downloadStarted'));
-    } catch (error) {
+    } catch {
       toast.error(t('gpuAcceleration.downloadFailed'));
       setDownloadingVariant(null);
       downloadingVariantRef.current = null;
     }
+  };
+
+  const handleCudaDownload = (
+    variant: CudaVersion,
+    type: 'node.gz' | 'tar.gz',
+  ) => {
+    void handleDownload(variant, type);
   };
 
   const handleCancelDownload = async () => {
@@ -274,33 +279,17 @@ const GpuAccelerationCard: React.FC = () => {
     }
   };
 
-  const isVariantInstalled = (variant: AddonVariant): boolean =>
-    installedAddons.some((a) => a.version === variant);
-
-  // 后端下拉选择：builtin-vulkan = 清空选择走默认链；其它 = 选中（未安装则触发下载）
-  const handleBackendSelect = async (value: string) => {
+  const handleSelectBackend = async (variant: AddonVariant | null) => {
     try {
       if (customAddonPath) {
         await window?.ipc?.invoke('set-custom-addon-path', null);
         setCustomAddonPath(null);
       }
-      if (value === 'builtin-vulkan') {
-        await window?.ipc?.invoke('select-addon-version', null);
-        setSelectedVersion(null);
-        notifyGpuSettingsChanged();
-        toast.success(t('gpuAcceleration.versionSelected'));
-        return;
-      }
-      const variant = value as AddonVariant;
-      if (isVariantInstalled(variant)) {
-        await window?.ipc?.invoke('select-addon-version', variant);
-        setSelectedVersion(variant);
-        notifyGpuSettingsChanged();
-        toast.success(t('gpuAcceleration.versionSelected'));
-      } else {
-        await handleDownload(variant);
-      }
-    } catch (error) {
+      await window?.ipc?.invoke('select-addon-version', variant);
+      setSelectedVersion(variant);
+      notifyGpuSettingsChanged();
+      toast.success(t('gpuAcceleration.versionSelected'));
+    } catch {
       toast.error(t('saveFailed'));
     }
   };
@@ -311,7 +300,7 @@ const GpuAccelerationCard: React.FC = () => {
       toast.success(t('gpuAcceleration.addonRemoved'));
       loadData();
       notifyGpuSettingsChanged();
-    } catch (error) {
+    } catch {
       toast.error(t('gpuAcceleration.removeFailed'));
     }
   };
@@ -327,7 +316,7 @@ const GpuAccelerationCard: React.FC = () => {
       } else {
         toast.success(t('gpuAcceleration.noUpdates'));
       }
-    } catch (error) {
+    } catch {
       toast.error(t('gpuAcceleration.checkUpdatesFailed'));
     } finally {
       setCheckingUpdates(false);
@@ -352,7 +341,7 @@ const GpuAccelerationCard: React.FC = () => {
           setResult?.error || t('gpuAcceleration.customAddonSetFailed'),
         );
       }
-    } catch (error) {
+    } catch {
       toast.error(t('gpuAcceleration.customAddonSetFailed'));
     }
   };
@@ -386,80 +375,12 @@ const GpuAccelerationCard: React.FC = () => {
     }
   };
 
-  // ===== 派生状态 =====
-
-  const nvidiaRecommendation = gpuEnv?.nvidia?.recommendation;
-  const recommendedCudaVersion = nvidiaRecommendation?.recommendedVersion;
-  const cudaApplicable = !!nvidiaRecommendation?.canUseCuda;
-  const activeLabel = backendDisplay(activeBackend);
-  const isCudaActive = activeBackend?.backend === 'cuda';
-  const showUpgradeButton =
-    isDesktopGpuPlatform &&
-    gpuMode !== 'cpu-only' &&
-    cudaApplicable &&
-    !!recommendedCudaVersion &&
-    !isCudaActive &&
-    !(selectedVersion && selectedVersion !== 'vulkan') &&
-    !customAddonPath;
-
-  const gpuName =
-    gpuEnv?.gpus?.[0]?.name ||
-    gpuEnv?.nvidia?.gpuSupport?.gpuName ||
-    t('gpuAcceleration.notDetected');
-
-  type StatusTone = 'green' | 'yellow' | 'gray' | 'neutral';
-  const deriveStatus = (): { tone: StatusTone; title: string } => {
-    if (gpuMode === 'cpu-only') {
-      return { tone: 'gray', title: t('gpuAcceleration.statusCpuManual') };
-    }
-    if (!activeBackend) {
-      return { tone: 'neutral', title: t('gpuAcceleration.statusAutoReady') };
-    }
-    // auto 模式下回退属预期行为，用中性提示；用户显式选了 GPU 模式仍回退才警示
-    const fallbackTone: StatusTone = gpuMode === 'auto' ? 'neutral' : 'yellow';
-    if (activeBackend.backend === 'cpu') {
-      return {
-        tone: isDesktopGpuPlatform ? fallbackTone : 'gray',
-        title: isDesktopGpuPlatform
-          ? t('gpuAcceleration.statusFallback', { backend: 'CPU' })
-          : t('gpuAcceleration.statusCpu'),
-      };
-    }
-    if (activeBackend.fallback) {
-      return {
-        tone: fallbackTone,
-        title: t('gpuAcceleration.statusFallback', { backend: activeLabel }),
-      };
-    }
-    return {
-      tone: 'green',
-      title: t('gpuAcceleration.statusRunningGpu', { backend: activeLabel }),
-    };
-  };
-  const status = deriveStatus();
-
-  const statusToneClasses: Record<StatusTone, string> = {
-    green: 'border-success/40 bg-success/10',
-    yellow: 'border-warning/40 bg-warning/10',
-    gray: 'border-muted bg-muted/40',
-    neutral: 'border-muted bg-muted/40',
+  const handleDownloadSourceChange = (source: DownloadSource) => {
+    setDownloadSource(source);
+    persistDownloadSource(source);
   };
 
-  const renderStatusIcon = () => {
-    if (status.tone === 'green')
-      return <Zap className="w-5 h-5 text-success" />;
-    if (status.tone === 'yellow')
-      return <AlertTriangle className="w-5 h-5 text-warning" />;
-    if (status.tone === 'neutral')
-      return <Info className="w-5 h-5 text-muted-foreground" />;
-    if (gpuMode === 'cpu-only')
-      return <ZapOff className="w-5 h-5 text-muted-foreground" />;
-    return <Cpu className="w-5 h-5 text-muted-foreground" />;
-  };
-
-  // ===== 渲染 =====
-
-  if (isLoading) {
+  if (isLoading || !gpuEnv) {
     return (
       <Card id="gpu-acceleration">
         <CardHeader>
@@ -477,114 +398,6 @@ const GpuAccelerationCard: React.FC = () => {
     );
   }
 
-  const renderDownloadProgress = () => {
-    if (!downloadProgress || downloadProgress.status === 'idle') return null;
-    const isDownloading = downloadProgress.status === 'downloading';
-    const isExtracting = downloadProgress.status === 'extracting';
-    const isError = downloadProgress.status === 'error';
-    const variantLabel =
-      downloadingVariant === 'vulkan'
-        ? 'Vulkan'
-        : downloadingVariant
-          ? `CUDA ${downloadingVariant}`
-          : '';
-
-    return (
-      <div className="space-y-2 p-3 bg-muted rounded-lg">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">
-            {variantLabel && `${variantLabel}: `}
-            {isDownloading && t('gpuAcceleration.downloading')}
-            {isExtracting && t('gpuAcceleration.extracting')}
-            {isError && t('gpuAcceleration.downloadFailed')}
-          </span>
-          <div className="flex items-center gap-2">
-            {isError && downloadingVariant && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleDownload(downloadingVariant)}
-              >
-                <RefreshCw className="w-3 h-3 mr-1" />
-                {t('gpuAcceleration.retry')}
-              </Button>
-            )}
-            {isDownloading && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1.5"
-                onClick={handleCancelDownload}
-              >
-                <X className="h-4 w-4" />
-                {t('cancel')}
-              </Button>
-            )}
-            {isError && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1.5"
-                onClick={() => {
-                  setDownloadProgress(null);
-                  setDownloadingVariant(null);
-                }}
-              >
-                <X className="h-4 w-4" />
-                {t('gpuAcceleration.dismiss')}
-              </Button>
-            )}
-          </div>
-        </div>
-        <Progress value={downloadProgress.progress} />
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>
-            {formatSize(downloadProgress.downloaded)} /{' '}
-            {formatSize(downloadProgress.total)}
-          </span>
-          {isDownloading && downloadProgress.speed > 0 && (
-            <span>
-              {formatSize(downloadProgress.speed)}/s ·{' '}
-              {formatEta(downloadProgress.eta)}
-            </span>
-          )}
-          {isError && downloadProgress.error && (
-            <span className="text-destructive">{downloadProgress.error}</span>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const modeOptions: { value: GpuMode; label: string; desc: string }[] = [
-    {
-      value: 'auto',
-      label: t('gpuAcceleration.modeAuto'),
-      desc: t('gpuAcceleration.modeAutoDesc'),
-    },
-    {
-      value: 'gpu-only',
-      label: t('gpuAcceleration.modeGpuOnly'),
-      desc: t('gpuAcceleration.modeGpuOnlyDesc'),
-    },
-    {
-      value: 'cpu-only',
-      label: t('gpuAcceleration.modeCpuOnly'),
-      desc: t('gpuAcceleration.modeCpuOnlyDesc'),
-    },
-  ];
-
-  const backendSelectValue = customAddonPath
-    ? 'custom'
-    : (selectedVersion ?? 'builtin-vulkan');
-
-  const selectedCudaInstalled = installedAddons.find(
-    (a) => a.version === selectedVersion && a.version !== 'vulkan',
-  );
-  const vulkanUpdate = updates.find(
-    (u) => u.variant === 'vulkan' && u.hasUpdate,
-  );
-
   return (
     <Card id="gpu-acceleration">
       <CardHeader>
@@ -599,549 +412,128 @@ const GpuAccelerationCard: React.FC = () => {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
-        {/* 状态卡 */}
-        <div
-          className={`rounded-lg border-2 p-4 space-y-2 ${statusToneClasses[status.tone]}`}
-        >
-          <div className="flex items-center gap-2">
-            {renderStatusIcon()}
-            <span className="font-semibold text-sm">{status.title}</span>
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {gpuName}
-            {gpuEnv?.nvidia?.gpuSupport?.driverVersion &&
-              ` · ${t('gpuAcceleration.driver')} ${gpuEnv.nvidia.gpuSupport.driverVersion}`}
-          </div>
-          {status.tone === 'yellow' &&
-            (activeBackend?.failedAttempts?.length ?? 0) > 0 && (
-              <div className="text-xs text-warning">
-                {activeBackend.failedAttempts[0].error}
-              </div>
-            )}
-          {status.tone !== 'green' &&
-            isDesktopGpuPlatform &&
-            !gpuEnv?.vulkanRuntime && (
-              <div className="text-xs text-muted-foreground">
-                {t('gpuAcceleration.updateDriverHint')}
-                {gpuEnv?.platform === 'linux' &&
-                  ` ${t('gpuAcceleration.linuxVulkanHint')}`}
-              </div>
-            )}
-          {showUpgradeButton && (
-            <div className="pt-2 border-t border-current/10 space-y-2">
-              <div className="text-xs text-muted-foreground flex items-center gap-1">
-                <Gauge className="w-3.5 h-3.5" />
-                {t('gpuAcceleration.upgradeHint', { gpu: gpuName })}
-              </div>
-              <Button
-                size="sm"
-                className="gap-1.5"
-                onClick={() => handleDownload(recommendedCudaVersion)}
-                disabled={!!downloadingVariant}
-              >
-                <Zap className="h-4 w-4" />
-                {t('gpuAcceleration.upgradeToCuda', {
-                  version: recommendedCudaVersion,
-                })}
-              </Button>
-            </div>
-          )}
-        </div>
+        <GpuStatusHero
+          gpuEnv={gpuEnv}
+          activeBackend={resolveActiveBackendForPlatform(activeBackend, gpuEnv)}
+          gpuMode={gpuMode}
+          isDesktopGpuPlatform={isDesktopGpuPlatform}
+          selectedVersion={selectedVersion}
+          customAddonPath={customAddonPath}
+          downloadingVariant={downloadingVariant}
+          upgradeSizeHint={upgradeSizeHint}
+          onOpenDownloadSheet={() => openDownloadSheet()}
+          onManageInstalled={() => setMoreOpen(true)}
+        />
 
-        {/* 下载进度（全局可见） */}
-        {renderDownloadProgress()}
+        <GpuDownloadProgress
+          downloadProgress={downloadProgress}
+          downloadingVariant={downloadingVariant}
+          onRetry={(variant) => void handleDownload(variant)}
+          onCancel={() => void handleCancelDownload()}
+          onDismiss={() => {
+            setDownloadProgress(null);
+            setDownloadingVariant(null);
+          }}
+        />
 
-        {/* 加速模式（macOS 隐藏） */}
         {isDesktopGpuPlatform && (
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium">
-              {t('gpuAcceleration.modeTitle')}
-            </h4>
-            <div className="grid grid-cols-3 gap-2">
-              {modeOptions.map((opt) => (
+          <>
+            <GpuModeSelector
+              gpuMode={gpuMode}
+              onModeChange={handleModeChange}
+            />
+
+            <GpuBackendSwitcher
+              gpuEnv={gpuEnv}
+              installedAddons={installedAddons}
+              selectedVersion={selectedVersion}
+              customAddonPath={customAddonPath}
+              cudaApplicable={cudaApplicable}
+              downloadingVariant={downloadingVariant}
+              onSelectBackend={handleSelectBackend}
+              onOpenDownloadSheet={() => openDownloadSheet()}
+            />
+
+            <Collapsible open={moreOpen} onOpenChange={setMoreOpen}>
+              <CollapsibleTrigger asChild>
                 <button
-                  key={opt.value}
                   type="button"
-                  onClick={() => handleModeChange(opt.value)}
-                  className={`p-2.5 rounded-lg border-2 text-left transition-all ${
-                    gpuMode === opt.value
-                      ? 'border-primary bg-primary/5'
-                      : 'border-muted hover:border-primary/50'
-                  }`}
+                  className="flex items-center gap-1 text-sm font-medium w-full"
                 >
-                  <div className="text-sm font-medium">{opt.label}</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">
-                    {opt.desc}
-                  </div>
+                  <ChevronDown
+                    className={`w-4 h-4 transition-transform ${moreOpen ? '' : '-rotate-90'}`}
+                  />
+                  {t('gpuAcceleration.moreOptions')}
                 </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 高级选项（macOS 隐藏） */}
-        {isDesktopGpuPlatform && (
-          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-            <CollapsibleTrigger asChild>
-              <button
-                type="button"
-                className="flex items-center gap-1 text-sm font-medium w-full"
-              >
-                <ChevronDown
-                  className={`w-4 h-4 transition-transform ${advancedOpen ? '' : '-rotate-90'}`}
+              </CollapsibleTrigger>
+              <CollapsibleContent className="pt-3 space-y-4">
+                <GpuInstalledList
+                  gpuEnv={gpuEnv}
+                  installedAddons={installedAddons}
+                  updates={updates}
+                  checkingUpdates={checkingUpdates}
+                  downloadingVariant={downloadingVariant}
+                  onCheckUpdates={() => void handleCheckUpdates()}
+                  onRemoveAddon={handleRemoveAddon}
+                  onOpenDownloadSheet={(version) => openDownloadSheet(version)}
+                  onDownloadVulkan={() => void handleDownload('vulkan')}
                 />
-                {t('gpuAcceleration.advancedOptions')}
-              </button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="pt-3 space-y-4">
-              {/* 后端选择 */}
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm text-muted-foreground whitespace-nowrap">
-                  {t('gpuAcceleration.backendSelect')}
-                </span>
-                <Select
-                  value={backendSelectValue}
-                  onValueChange={handleBackendSelect}
-                  disabled={!!downloadingVariant}
-                >
-                  <SelectTrigger className="w-[280px] h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customAddonPath && (
-                      <SelectItem value="custom" disabled>
-                        {t('gpuAcceleration.customAddonActive')}
-                      </SelectItem>
-                    )}
-                    <SelectGroup>
-                      <SelectLabel className="text-[11px]">
-                        {t('gpuAcceleration.backendGroupUniversal')}
-                      </SelectLabel>
-                      <SelectItem value="builtin-vulkan">
-                        {t('gpuAcceleration.vulkanBuiltin')}
-                      </SelectItem>
-                      {isVariantInstalled('vulkan') && (
-                        <SelectItem value="vulkan">
-                          {t('gpuAcceleration.vulkanUserData')}
-                        </SelectItem>
-                      )}
-                    </SelectGroup>
-                    <SelectGroup>
-                      <SelectLabel className="text-[11px]">
-                        {t('gpuAcceleration.backendGroupCuda')}
-                        {!cudaApplicable &&
-                          ` — ${t('gpuAcceleration.cudaNotApplicable')}`}
-                      </SelectLabel>
-                      {AVAILABLE_CUDA_VERSIONS.map((version: CudaVersion) => (
-                        <SelectItem
-                          key={version}
-                          value={version}
-                          disabled={!cudaApplicable}
-                        >
-                          CUDA {version}
-                          {version === recommendedCudaVersion &&
-                            ` · ${t('gpuAcceleration.recommended')}`}
-                          {!isVariantInstalled(version) &&
-                            ` · ${t('gpuAcceleration.selectToDownload')}`}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </div>
 
-              {/* CUDA 包类型（仅选中已安装 CUDA 时） */}
-              {selectedCudaInstalled && (
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm text-muted-foreground">
-                    {t('gpuAcceleration.packageType')}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-[11px]">
-                      <Package className="w-3 h-3 mr-1" />
-                      {selectedCudaInstalled.info.hasDlls
-                        ? t('gpuAcceleration.fullEdition')
-                        : t('gpuAcceleration.liteEdition')}
-                    </Badge>
-                    {(selectedCudaInstalled.info.hasDlls
-                      ? gpuEnv?.nvidia?.cudaToolkit.installed
-                      : true) && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs gap-1.5"
-                        disabled={!!downloadingVariant}
-                        onClick={() =>
-                          handleDownload(
-                            selectedCudaInstalled.version,
-                            selectedCudaInstalled.info.hasDlls
-                              ? 'node.gz'
-                              : 'tar.gz',
-                          )
-                        }
-                      >
-                        <ArrowLeftRight className="h-4 w-4" />
-                        {selectedCudaInstalled.info.hasDlls
-                          ? t('gpuAcceleration.switchToLite')
-                          : t('gpuAcceleration.switchToFull')}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              )}
+                <GpuCustomAddonSection
+                  customAddonPath={customAddonPath}
+                  onSelectCustomAddon={() => void handleSelectCustomAddon()}
+                  onClearCustomAddon={() => void handleClearCustomAddon()}
+                />
 
-              {/* 完整版/轻量版区别说明（CUDA 可用时始终展示，下载前即可知晓） */}
-              {cudaApplicable && (
-                <div className="flex items-start gap-2 p-2.5 bg-muted/50 rounded-md">
-                  <Package className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                  <div className="text-[11px] text-muted-foreground space-y-1">
-                    <p>{t('gpuAcceleration.packageTypeHintFull')}</p>
-                    <p>{t('gpuAcceleration.packageTypeHintLite')}</p>
-                    <p>{t('gpuAcceleration.packageTypeHintAuto')}</p>
-                  </div>
-                </div>
-              )}
+                <GpuDiagnosticsPanel
+                  gpuEnv={gpuEnv}
+                  activeBackend={activeBackend}
+                  gpuMode={gpuMode}
+                  selectedVersion={selectedVersion}
+                  customAddonPath={customAddonPath}
+                  installedAddons={installedAddons}
+                  isDesktopGpuPlatform={isDesktopGpuPlatform}
+                  onCopyDiagnostics={() => void handleCopyDiagnostics()}
+                />
 
-              {/* 下载源 */}
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm text-muted-foreground">
-                  {t('gpuAcceleration.downloadSource')}
-                </span>
-                <Select
-                  value={downloadSource}
-                  onValueChange={(v) => setDownloadSource(v as DownloadSource)}
-                >
-                  <SelectTrigger className="w-[200px] h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="github">GitHub</SelectItem>
-                    <SelectItem value="ghproxy">
-                      {t('gpuAcceleration.ghProxy')}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* 已安装管理 */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    {t('gpuAcceleration.installedManagement')}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={handleCheckUpdates}
-                    disabled={checkingUpdates}
-                  >
-                    <RefreshCw
-                      className={`w-3 h-3 mr-1 ${checkingUpdates ? 'animate-spin' : ''}`}
-                    />
-                    {t('gpuAcceleration.checkNewVersion')}
-                  </Button>
-                </div>
-
-                {/* 内置 Vulkan 行 */}
-                {gpuEnv?.builtinVulkanAvailable && (
-                  <div className="flex items-center justify-between p-2 rounded-md border text-xs">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-3.5 h-3.5 text-success" />
-                      <span>Vulkan</span>
-                      <Badge variant="secondary" className="text-[10px]">
-                        {t('gpuAcceleration.builtin')}
-                      </Badge>
-                    </div>
-                    {vulkanUpdate && !isVariantInstalled('vulkan') && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 text-[11px] text-warning"
-                        disabled={!!downloadingVariant}
-                        onClick={() => handleDownload('vulkan')}
-                      >
-                        <RefreshCw className="w-3 h-3 mr-1" />
-                        {t('gpuAcceleration.update')}
-                      </Button>
-                    )}
-                  </div>
-                )}
-
-                {/* userData 安装项 */}
-                {installedAddons.map((addon) => {
-                  const hasUpdate = updates.find(
-                    (u) => u.variant === addon.version && u.hasUpdate,
-                  );
-                  const label =
-                    addon.version === 'vulkan'
-                      ? 'Vulkan'
-                      : `CUDA ${addon.version}`;
-                  return (
-                    <div
-                      key={addon.version}
-                      className="flex items-center justify-between p-2 rounded-md border text-xs"
-                    >
-                      <div className="flex items-center gap-2">
-                        <CheckCircle className="w-3.5 h-3.5 text-success" />
-                        <span>{label}</span>
-                        <span className="text-muted-foreground">
-                          v{addon.info.remoteVersion} ·{' '}
-                          {formatSize(addon.info.size)}
-                        </span>
-                        {addon.version !== 'vulkan' && (
-                          <Badge variant="outline" className="text-[10px]">
-                            {addon.info.hasDlls
-                              ? t('gpuAcceleration.fullEdition')
-                              : t('gpuAcceleration.liteEdition')}
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        {hasUpdate && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 text-[11px] text-warning"
-                            disabled={!!downloadingVariant}
-                            onClick={() => handleDownload(addon.version)}
-                          >
-                            <RefreshCw className="w-3 h-3 mr-1" />
-                            {t('gpuAcceleration.update')}
-                          </Button>
-                        )}
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 w-6 p-0 text-destructive"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                {t('gpuAcceleration.confirmDelete')}
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                {t('gpuAcceleration.confirmDeleteDesc', {
-                                  version: label,
-                                })}
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel className="gap-1.5">
-                                <X className="h-4 w-4" />
-                                {t('cancel')}
-                              </AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleRemoveAddon(addon.version)}
-                                className="gap-1.5"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                {t('delete')}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* 自定义加速包 */}
-              <div className="pt-3 border-t border-dashed space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <FileCode className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">
-                      {t('gpuAcceleration.customAddonPath')}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      openUrl(
-                        'https://github.com/buxuku/whisper.cpp/releases/tag/latest',
-                      )
-                    }
-                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline cursor-pointer"
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                    {t('gpuAcceleration.downloadPackageUrl')}
-                  </button>
-                </div>
-                <div className="flex items-start gap-2 p-2.5 bg-muted/50 rounded-md">
+                <div className="flex items-start gap-2 p-2.5 bg-muted/50 rounded-md border">
                   <Info className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                  <div className="text-[11px] text-muted-foreground space-y-1">
-                    <p>{t('gpuAcceleration.customAddonTip')}</p>
-                    <p>{t('gpuAcceleration.customAddonDllTip')}</p>
-                  </div>
+                  <span className="text-[11px] text-muted-foreground">
+                    {t('gpuAcceleration.crashTip')}
+                  </span>
                 </div>
-                {customAddonPath ? (
-                  <div className="flex items-center gap-2 p-2.5 rounded-lg border-2 border-primary bg-primary/5">
-                    <CheckCircle className="w-4 h-4 text-success shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium truncate">
-                        {t('gpuAcceleration.customAddonActive')}
-                      </div>
-                      <div
-                        className="text-[11px] text-muted-foreground truncate"
-                        title={customAddonPath}
-                      >
-                        {customAddonPath}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={handleSelectCustomAddon}
-                      >
-                        <FolderOpen className="w-3.5 h-3.5 mr-1" />
-                        {t('gpuAcceleration.selectAddonFile')}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0 text-destructive"
-                        onClick={handleClearCustomAddon}
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full h-9 text-xs"
-                    onClick={handleSelectCustomAddon}
-                  >
-                    <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
-                    {t('gpuAcceleration.selectAddonFile')}
-                  </Button>
-                )}
-              </div>
+              </CollapsibleContent>
+            </Collapsible>
 
-              {/* 闪退提示 */}
-              <div className="flex items-start gap-2 p-2.5 bg-muted/50 rounded-md border">
-                <Info className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                <span className="text-[11px] text-muted-foreground">
-                  {t('gpuAcceleration.crashTip')}
-                </span>
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
+            {cudaApplicable && (
+              <CudaDownloadSheet
+                open={sheetState.open}
+                onOpenChange={(open) => setSheetState((s) => ({ ...s, open }))}
+                gpuEnv={gpuEnv}
+                availableCudaVersions={availableCudaVersions}
+                usedRemoteFallback={usedRemoteFallback}
+                downloadSource={downloadSource}
+                onDownloadSourceChange={handleDownloadSourceChange}
+                presetVersion={sheetState.presetVersion}
+                downloadingVariant={downloadingVariant}
+                onConfirmDownload={handleCudaDownload}
+              />
+            )}
+          </>
         )}
 
-        {/* 检测详情（全平台可见） */}
-        <Collapsible open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen}>
-          <CollapsibleTrigger asChild>
-            <button
-              type="button"
-              className="flex items-center gap-1 text-sm font-medium w-full"
-            >
-              <ChevronDown
-                className={`w-4 h-4 transition-transform ${diagnosticsOpen ? '' : '-rotate-90'}`}
-              />
-              {t('gpuAcceleration.diagnostics')}
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="pt-3">
-            <div className="space-y-2 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">
-                  {t('gpuAcceleration.gpu')}
-                </span>
-                <span className="font-medium text-right">
-                  {gpuEnv?.gpus?.length
-                    ? gpuEnv.gpus.map((g) => g.name).join(' / ')
-                    : t('gpuAcceleration.notDetected')}
-                </span>
-              </div>
-              {isDesktopGpuPlatform && (
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">
-                    {t('gpuAcceleration.vulkanRuntimeLabel')}
-                  </span>
-                  <span>
-                    {gpuEnv?.vulkanRuntime
-                      ? `✓ ${t('gpuAcceleration.detected')}`
-                      : `✗ ${t('gpuAcceleration.notDetected')}`}
-                  </span>
-                </div>
-              )}
-              {gpuEnv?.nvidia && (
-                <>
-                  {gpuEnv.nvidia.gpuSupport.maxCudaVersion && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">
-                        {t('gpuAcceleration.maxCuda')}
-                      </span>
-                      <span>{gpuEnv.nvidia.gpuSupport.maxCudaVersion}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">
-                      {t('gpuAcceleration.cudaToolkit')}
-                    </span>
-                    <span>
-                      {gpuEnv.nvidia.cudaToolkit.installed
-                        ? gpuEnv.nvidia.cudaToolkit.version ||
-                          t('gpuAcceleration.installed')
-                        : t('gpuAcceleration.notInstalled')}
-                    </span>
-                  </div>
-                </>
-              )}
-              <div className="flex items-center justify-between border-t pt-2">
-                <span className="text-muted-foreground">
-                  {t('gpuAcceleration.lastLoad')}
-                </span>
-                <span className="text-right">
-                  {activeBackend
-                    ? `${activeLabel} · ${
-                        activeBackend.fallback
-                          ? t('gpuAcceleration.loadFallbackBadge')
-                          : t('gpuAcceleration.loadSuccess')
-                      } · ${new Date(activeBackend.loadedAt).toLocaleString()}`
-                    : t('gpuAcceleration.noLoadYet')}
-                </span>
-              </div>
-              {(activeBackend?.failedAttempts?.length ?? 0) > 0 && (
-                <div className="space-y-1">
-                  <span className="text-muted-foreground">
-                    {t('gpuAcceleration.failureDetails')}
-                  </span>
-                  {activeBackend.failedAttempts.map((a, idx) => (
-                    <div
-                      key={idx}
-                      className="text-[11px] text-muted-foreground pl-2 break-all"
-                    >
-                      {BACKEND_LABELS[a.backend] || a.backend}: {a.error}
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="pt-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={handleCopyDiagnostics}
-                >
-                  <Copy className="w-3 h-3 mr-1" />
-                  {t('gpuAcceleration.copyDiagnostics')}
-                </Button>
-              </div>
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
+        {!isDesktopGpuPlatform && (
+          <GpuDiagnosticsPanel
+            gpuEnv={gpuEnv}
+            activeBackend={activeBackend}
+            gpuMode={gpuMode}
+            selectedVersion={selectedVersion}
+            customAddonPath={customAddonPath}
+            installedAddons={installedAddons}
+            isDesktopGpuPlatform={isDesktopGpuPlatform}
+            onCopyDiagnostics={() => void handleCopyDiagnostics()}
+          />
+        )}
       </CardContent>
     </Card>
   );

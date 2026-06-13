@@ -237,6 +237,14 @@
   "alreadyLatestVersion": "You are on the latest version",
   "newVersionBadge": "New v{{version}}",
   "accelBadgeOn": "{{backend}} acceleration",
+  "accelBadgePending": "{{mode}} · awaiting first run",
+  "accelBadgePendingTip": "Acceleration pack loads on first transcription",
+  "accelBadgeGpuOnlyConflict": "GPU-only · on CPU",
+  "accelBadgeGpuOnlyConflictTip": "GPU-only mode set, but last run used CPU",
+  "accelBadgeMode": "Mode: {{mode}}",
+  "gpuModeAuto": "Auto",
+  "gpuModeGpuOnly": "GPU only",
+  "gpuModeCpuOnly": "CPU only",
   "cpuModeBadge": "CPU mode",
   "cpuModeTip": "Transcription runs on CPU. Click to view acceleration options."
 }

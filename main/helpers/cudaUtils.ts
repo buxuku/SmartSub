@@ -21,9 +21,9 @@ import { AVAILABLE_CUDA_VERSIONS } from '../../types/addon';
  * 开发模式模拟配置
  * 通过环境变量控制，仅在开发模式下生效
  */
-function getDevSimulationConfig(): DevSimulationConfig | null {
+export function getDevSimulationConfig(): DevSimulationConfig | null {
   // 仅在开发模式下启用模拟
-  if (process.env.NODE_ENV !== 'development') {
+  if (process.env.NODE_ENV === 'production') {
     return null;
   }
 
@@ -267,6 +267,7 @@ function getAddonRecommendation(
       needsDlls: false,
       downloadType: null,
       reason: 'GPU 不支持 CUDA 或未检测到 NVIDIA 显卡',
+      reasonKey: 'cudaNotSupported',
     };
   }
 
@@ -286,6 +287,7 @@ function getAddonRecommendation(
       needsDlls: false,
       downloadType: null,
       reason: `显卡支持的 CUDA 版本 (${gpuSupport.maxCudaVersion}) 低于最低要求 (11.8.0)`,
+      reasonKey: 'cudaVersionTooOld',
     };
   }
 
@@ -296,12 +298,16 @@ function getAddonRecommendation(
   const downloadType = needsDlls ? 'tar.gz' : 'node.gz';
 
   let reason: string;
+  let reasonKey: AddonRecommendation['reasonKey'];
   if (!gpuSupport.maxCudaVersion) {
     reason = `未能识别显卡支持的最高 CUDA 版本，已按最高加速包版本推荐；若运行异常请手动选择更低版本`;
+    reasonKey = 'maxCudaUnknown';
   } else if (toolkit.installed) {
     reason = `已检测到 CUDA Toolkit ${toolkit.version}，推荐下载轻量版加速包`;
+    reasonKey = 'toolkitInstalled';
   } else {
     reason = `未检测到 CUDA Toolkit，推荐下载包含运行时库的完整加速包`;
+    reasonKey = 'toolkitMissing';
   }
 
   return {
@@ -310,6 +316,7 @@ function getAddonRecommendation(
     needsDlls,
     downloadType,
     reason,
+    reasonKey,
   };
 }
 

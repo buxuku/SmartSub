@@ -2,7 +2,14 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Eye, EyeOff, Search, Check, Settings2 } from 'lucide-react';
+import {
+  Eye,
+  EyeOff,
+  Search,
+  Check,
+  Settings2,
+  ChevronDown,
+} from 'lucide-react';
 import { ProviderField } from '../../types';
 import { useTranslation } from 'next-i18next';
 import { Switch } from '@/components/ui/switch';
@@ -33,7 +40,14 @@ import {
   DialogDescription,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { CustomParameterEditor } from './CustomParameterEditor';
+import { PROVIDER_ADVANCED_FIELD_KEYS } from 'lib/providerPanelUtils';
+import { cn } from 'lib/utils';
 import axios from 'axios';
 
 interface ProviderFormProps {
@@ -43,6 +57,7 @@ interface ProviderFormProps {
   showPassword: Record<string, boolean>;
   onTogglePassword: (key: string) => void;
   providerId?: string;
+  autoFocusField?: string | null;
 }
 
 export const ProviderForm: React.FC<ProviderFormProps> = ({
@@ -52,13 +67,18 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
   showPassword,
   onTogglePassword,
   providerId = '',
+  autoFocusField = null,
 }) => {
   const { t } = useTranslation('translateControl');
+  const fieldPlaceholder = (key?: string) =>
+    key ? t(key, { defaultValue: key }) : undefined;
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [openaiCompatModels, setOpenaiCompatModels] = useState<
     Record<string, string[]>
   >({});
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const apiKeyRef = useRef<HTMLInputElement>(null);
+  const didAutoFocus = useRef(false);
 
   const OPENAI_COMPAT_PROVIDERS: Record<
     string,
@@ -83,6 +103,28 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
       fallbackModels: ['qwen-turbo', 'qwen-plus', 'qwen-max'],
     },
   };
+
+  const basicFields = fields.filter(
+    (f) => !PROVIDER_ADVANCED_FIELD_KEYS.has(f.key),
+  );
+  const advancedFields = fields.filter((f) =>
+    PROVIDER_ADVANCED_FIELD_KEYS.has(f.key),
+  );
+
+  useEffect(() => {
+    didAutoFocus.current = false;
+  }, [providerId, autoFocusField]);
+
+  useEffect(() => {
+    if (!autoFocusField || didAutoFocus.current) return;
+    const el = document.getElementById(
+      `provider-field-${providerId}-${autoFocusField}`,
+    ) as HTMLInputElement | null;
+    if (el) {
+      el.focus();
+      didAutoFocus.current = true;
+    }
+  }, [autoFocusField, providerId, fields]);
 
   const fetchOllamaModels = async (apiUrl: string) => {
     try {
@@ -152,10 +194,9 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
     }
   }, [fields, values.type, values.apiUrl]);
 
-  // 可搜索的下拉选择框组件
   const SearchableSelect = ({
     value,
-    onChange,
+    onChange: onSelectChange,
     options,
     placeholder,
   }: {
@@ -167,7 +208,6 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
     const [open, setOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
-    // 根据搜索词过滤选项
     const filteredOptions =
       searchQuery === ''
         ? options
@@ -203,7 +243,7 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
                   key={option}
                   value={option}
                   onSelect={(currentValue) => {
-                    onChange(currentValue);
+                    onSelectChange(currentValue);
                     setOpen(false);
                     setSearchQuery('');
                   }}
@@ -222,6 +262,8 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
     );
   };
 
+  const fieldDomId = (key: string) => `provider-field-${providerId}-${key}`;
+
   const renderField = (field: ProviderField) => {
     const value = values[field.key] ?? field.defaultValue ?? '';
     switch (field.type) {
@@ -237,19 +279,21 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
       case 'number':
         return (
           <Input
+            id={fieldDomId(field.key)}
             type="number"
             value={value}
             onChange={(e) => onChange(field.key, e.target.value)}
-            placeholder={field.placeholder}
+            placeholder={fieldPlaceholder(field.placeholder)}
           />
         );
 
       case 'textarea':
         return (
           <Textarea
+            id={fieldDomId(field.key)}
             value={value}
             onChange={(e) => onChange(field.key, e.target.value)}
-            placeholder={field.placeholder}
+            placeholder={fieldPlaceholder(field.placeholder)}
             rows={3}
           />
         );
@@ -258,10 +302,11 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
         return (
           <div className="flex items-center">
             <Input
+              id={fieldDomId(field.key)}
               type={showPassword[field.key] ? 'text' : 'password'}
               value={value}
               onChange={(e) => onChange(field.key, e.target.value)}
-              placeholder={field.placeholder}
+              placeholder={fieldPlaceholder(field.placeholder)}
               className="mr-2"
               ref={field.key === 'apiKey' ? apiKeyRef : null}
               onBlur={field.key === 'apiKey' ? handleApiKeyBlur : undefined}
@@ -281,7 +326,6 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
         );
 
       case 'select':
-        // 根据不同的提供商选择对应的模型列表
         let options: string[] = [];
 
         if (field.key === 'modelName') {
@@ -293,82 +337,99 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
             options = field.options || [];
           }
 
-          // 对于模型名称字段，使用可搜索的下拉选择框
           return (
             <SearchableSelect
               value={value}
-              onChange={(value) => onChange(field.key, value)}
+              onChange={(v) => onChange(field.key, v)}
               options={options}
-              placeholder={field.placeholder}
+              placeholder={fieldPlaceholder(field.placeholder)}
             />
           );
-        } else {
-          options = field.options || [];
-
-          // 对于其他select字段，使用普通下拉选择框
-          return (
-            <Select
-              value={value}
-              onValueChange={(value) => onChange(field.key, value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={field.placeholder} />
-              </SelectTrigger>
-              <SelectContent>
-                {options.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {t(`option.${option}`, { defaultValue: option })}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          );
         }
+        options = field.options || [];
+        return (
+          <Select value={value} onValueChange={(v) => onChange(field.key, v)}>
+            <SelectTrigger>
+              <SelectValue placeholder={fieldPlaceholder(field.placeholder)} />
+            </SelectTrigger>
+            <SelectContent>
+              {options.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {t(`option.${option}`, { defaultValue: option })}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
 
       default:
         return (
           <Input
+            id={fieldDomId(field.key)}
             type={field.type}
             value={value || ''}
             onChange={(e) => onChange(field.key, e.target.value)}
-            placeholder={field.placeholder}
+            placeholder={fieldPlaceholder(field.placeholder)}
           />
         );
     }
   };
 
+  const renderFieldBlock = (field: ProviderField) => (
+    <div key={field.key} className="space-y-2">
+      <label className="text-sm font-medium">
+        {t(field.label)}
+        {field.required && <span className="text-destructive">*</span>}
+      </label>
+      {renderField(field)}
+      {field.tips && (
+        <p
+          className="text-xs text-muted-foreground"
+          dangerouslySetInnerHTML={{ __html: t(field.tips) }}
+          onClick={(e) => {
+            const target = e.target as HTMLElement;
+            if (target.tagName === 'A') {
+              e.preventDefault();
+              const url = target.getAttribute('href');
+              if (url) {
+                window.ipc.send('openUrl', url);
+              }
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+
   return (
     <div className="grid gap-4">
-      {fields.map((field) => {
-        return (
-          <div key={field.key} className="space-y-2">
-            <label className="text-sm font-medium">
-              {t(field.label)}
-              {field.required && <span className="text-destructive">*</span>}
-            </label>
-            {renderField(field)}
-            {field.tips && (
-              <p
-                className="text-xs text-muted-foreground"
-                dangerouslySetInnerHTML={{ __html: t(field.tips) }}
-                onClick={(e) => {
-                  const target = e.target as HTMLElement;
-                  if (target.tagName === 'A') {
-                    e.preventDefault();
-                    const url = target.getAttribute('href');
-                    if (url) {
-                      window.ipc.send('openUrl', url);
-                    }
-                  }
-                }}
-              ></p>
-            )}
-          </div>
-        );
-      })}
+      {basicFields.map(renderFieldBlock)}
 
-      {/* Custom Parameter Editor Section */}
-      {providerId && (
+      {advancedFields.length > 0 && (
+        <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="w-full justify-between px-2 h-9 font-normal text-muted-foreground hover:text-foreground"
+            >
+              {t('advancedOptions')}
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 transition-transform',
+                  advancedOpen && 'rotate-180',
+                )}
+              />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="grid gap-4 pt-2">
+            {advancedFields.map(renderFieldBlock)}
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+
+      {providerId && values.isAi && (
         <div className="space-y-2 pt-4 border-t">
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium">

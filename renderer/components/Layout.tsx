@@ -50,6 +50,9 @@ import FaqDialog from './FaqDialog';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import { useHotkeys } from 'hooks/useHotkeys';
 import packageInfo from '../../package.json';
+import { deriveGpuDisplayState } from '@/components/settings/gpu/gpuDisplayState';
+import { backendDisplay } from '@/components/settings/gpu/gpuUtils';
+import type { GpuMode } from '../../types/addon';
 
 // 添加更新状态的类型定义
 interface UpdateStatus {
@@ -149,14 +152,23 @@ const Layout = ({ children }) => {
     i18n: { language: locale },
   } = useTranslation('common');
   const router = useRouter();
+  const gpuModeLabel = (mode: GpuMode) =>
+    t(
+      mode === 'auto'
+        ? 'gpuModeAuto'
+        : mode === 'gpu-only'
+          ? 'gpuModeGpuOnly'
+          : 'gpuModeCpuOnly',
+    );
   const { asPath } = router;
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newVersion, setNewVersion] = useState('');
   const [releaseNotes, setReleaseNotes] = useState('');
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
   const [accelBadge, setAccelBadge] = useState<{
-    mode: 'accel' | 'cpu';
+    mode: 'accel' | 'cpu' | 'pending' | 'warning';
     label: string;
+    gpuMode: GpuMode;
   } | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -267,34 +279,58 @@ const Layout = ({ children }) => {
           return;
         }
 
+        const settings = await window?.ipc?.invoke('getSettings');
         const active = await window?.ipc?.invoke('get-active-backend');
-        const activeLabel =
-          active && active.backend !== 'cpu'
-            ? active.backend === 'cuda' && active.variant
-              ? `CUDA ${active.variant}`
-              : backendLabels[active.backend] || active.backend
-            : '';
+        const selected = await window?.ipc?.invoke(
+          'get-selected-addon-version',
+        );
+        const customPath = await window?.ipc?.invoke('get-custom-addon-path');
+        const gpuMode: GpuMode = settings?.gpuMode || 'auto';
+        const state = deriveGpuDisplayState(
+          env,
+          gpuMode,
+          active,
+          selected,
+          customPath,
+        );
 
-        if (env.platform === 'darwin') {
-          // mac：以实际加载结果为准；尚未转写过则不显示，避免误导
+        if (state.isDarwin) {
           if (!active) {
             setAccelBadge(null);
           } else if (active.backend === 'cpu') {
-            setAccelBadge({ mode: 'cpu', label: '' });
+            setAccelBadge({ mode: 'cpu', label: '', gpuMode });
           } else {
-            setAccelBadge({ mode: 'accel', label: activeLabel });
+            setAccelBadge({
+              mode: 'accel',
+              label: backendDisplay(active),
+              gpuMode,
+            });
           }
           return;
         }
 
-        const settings = await window?.ipc?.invoke('getSettings');
-        const isCpuResult = active?.backend === 'cpu';
-        const enabled = settings?.gpuMode !== 'cpu-only' && !isCpuResult;
-        setAccelBadge(
-          enabled
-            ? { mode: 'accel', label: activeLabel }
-            : { mode: 'cpu', label: '' },
-        );
+        switch (state.overviewKind) {
+          case 'running':
+            setAccelBadge({
+              mode: 'accel',
+              label: state.accelerationLabel,
+              gpuMode,
+            });
+            break;
+          case 'gpuOnlyOnCpu':
+            setAccelBadge({ mode: 'warning', label: '', gpuMode });
+            break;
+          case 'gpuOnlyPending':
+          case 'autoPending':
+            setAccelBadge({ mode: 'pending', label: '', gpuMode });
+            break;
+          case 'cpuManual':
+          case 'cpuFallback':
+            setAccelBadge({ mode: 'cpu', label: '', gpuMode });
+            break;
+          default:
+            setAccelBadge(null);
+        }
       } catch (error) {
         console.error('Failed to check GPU status:', error);
       }
@@ -608,7 +644,9 @@ const Layout = ({ children }) => {
                       className={`h-7 text-xs gap-1.5 ${
                         accelBadge.mode === 'accel'
                           ? 'text-success hover:text-success/80'
-                          : 'text-muted-foreground hover:text-foreground'
+                          : accelBadge.mode === 'warning'
+                            ? 'text-warning hover:text-warning/80'
+                            : 'text-muted-foreground hover:text-foreground'
                       }`}
                       onClick={() =>
                         router.push(`/${locale}/resources?tab=acceleration`)
@@ -619,13 +657,30 @@ const Layout = ({ children }) => {
                         ? accelBadge.label
                           ? t('accelBadgeOn', { backend: accelBadge.label })
                           : t('gpuAccelerationEnabled')
-                        : t('cpuModeBadge')}
+                        : accelBadge.mode === 'pending'
+                          ? t('accelBadgePending', {
+                              mode: gpuModeLabel(accelBadge.gpuMode),
+                            })
+                          : accelBadge.mode === 'warning'
+                            ? t('accelBadgeGpuOnlyConflict')
+                            : t('cpuModeBadge')}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {accelBadge.mode === 'accel'
-                      ? t('gpuAccelerationEnabledTip')
-                      : t('cpuModeTip')}
+                    <p>
+                      {accelBadge.mode === 'accel'
+                        ? t('gpuAccelerationEnabledTip')
+                        : accelBadge.mode === 'pending'
+                          ? t('accelBadgePendingTip')
+                          : accelBadge.mode === 'warning'
+                            ? t('accelBadgeGpuOnlyConflictTip')
+                            : t('cpuModeTip')}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {t('accelBadgeMode', {
+                        mode: gpuModeLabel(accelBadge.gpuMode),
+                      })}
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

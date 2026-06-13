@@ -5,7 +5,7 @@
     "overview": "全景",
     "models": "模型",
     "providers": "翻译服务",
-    "acceleration": "加速"
+    "acceleration": "GPU 加速"
   },
   "overview": {
     "modelsTitle": "语音模型",
@@ -20,11 +20,17 @@
     "enableProviders": "去启用翻译服务",
     "gpuRunning": "{{backend}} 运行中",
     "gpuNotEnabled": "未启用（CPU 模式）",
+    "gpuCpuManual": "CPU 模式（手动设置）",
+    "gpuGpuOnlyPending": "已设为仅 GPU · 待首次转写",
+    "gpuAutoPending": "自动模式 · 待首次转写",
+    "gpuCpuFallback": "当前运行在 CPU（自动降级）",
+    "gpuOnlyOnCpu": "已设为仅 GPU，但当前运行在 CPU",
+    "cudaUpgradeHint": "可升级到 CUDA {{version}} 以获得更高性能",
     "gpuModeLabel": "模式：{{mode}}",
     "gpuMode": {
       "auto": "自动",
-      "cpu-only": "仅 CPU",
-      "custom": "自定义"
+      "gpu-only": "仅 GPU",
+      "cpu-only": "仅 CPU"
     },
     "appleAcceleration": "Apple 芯片加速（CoreML / Metal）",
     "manage": "管理"

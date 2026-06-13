@@ -26,7 +26,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn, isSubtitleFile } from 'lib/utils';
-import { isProviderConfigured } from 'lib/providerUtils';
+import { resolveDefaultTranslateProviderId } from 'lib/providerPanelUtils';
 import { TASK_TYPES, getTaskTypeBySlug } from 'lib/taskTypes';
 import useSystemInfo from 'hooks/useStystemInfo';
 import useFormConfig from 'hooks/useFormConfig';
@@ -223,10 +223,11 @@ export default function TaskPage() {
     const current = formData?.translateProvider;
     const valid = providers.some((p: any) => p.id === current);
     if (current && current !== '-1' && valid) return;
-    const firstConfigured = providers.find((p: any) =>
-      isProviderConfigured(p),
-    ) as any;
-    form.setValue('translateProvider', firstConfigured?.id ?? '');
+    const defaultId = resolveDefaultTranslateProviderId(
+      providers as any[],
+      current,
+    );
+    form.setValue('translateProvider', defaultId);
   }, [typeDef, providers, formData?.translateProvider, form]);
 
   // 新一轮任务开始时恢复完成横幅

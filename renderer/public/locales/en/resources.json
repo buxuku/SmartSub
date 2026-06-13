@@ -5,7 +5,7 @@
     "overview": "Overview",
     "models": "Models",
     "providers": "Translation",
-    "acceleration": "Acceleration"
+    "acceleration": "GPU Acceleration"
   },
   "overview": {
     "modelsTitle": "Speech Models",
@@ -20,11 +20,17 @@
     "enableProviders": "Enable a service",
     "gpuRunning": "{{backend}} active",
     "gpuNotEnabled": "Not enabled (CPU mode)",
+    "gpuCpuManual": "CPU mode (manual setting)",
+    "gpuGpuOnlyPending": "GPU-only · awaiting first transcription",
+    "gpuAutoPending": "Auto mode · awaiting first transcription",
+    "gpuCpuFallback": "Running on CPU (auto fallback)",
+    "gpuOnlyOnCpu": "GPU-only mode set, but running on CPU",
+    "cudaUpgradeHint": "Upgrade to CUDA {{version}} for better performance",
     "gpuModeLabel": "Mode: {{mode}}",
     "gpuMode": {
       "auto": "Auto",
-      "cpu-only": "CPU only",
-      "custom": "Custom"
+      "gpu-only": "GPU only",
+      "cpu-only": "CPU only"
     },
     "appleAcceleration": "Apple Silicon acceleration (CoreML / Metal)",
     "manage": "Manage"

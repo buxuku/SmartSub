@@ -132,8 +132,15 @@ export interface AddonRecommendation {
   needsDlls: boolean;
   /** 推荐的下载包类型 */
   downloadType: 'node.gz' | 'tar.gz' | null;
-  /** 推荐原因说明 */
+  /** 推荐原因说明（日志/诊断，UI 请用 reasonKey） */
   reason?: string;
+  /** 推荐原因 i18n 键 */
+  reasonKey?:
+    | 'cudaNotSupported'
+    | 'cudaVersionTooOld'
+    | 'maxCudaUnknown'
+    | 'toolkitInstalled'
+    | 'toolkitMissing';
 }
 
 /**
@@ -206,6 +213,13 @@ export interface RemoteAddonVersion {
     'windows-node'?: string;
     'linux-tar'?: string;
     'linux-node'?: string;
+  };
+  /** 各平台包体积（字节），来自 addon-versions.json */
+  sizes?: {
+    'windows-tar'?: number;
+    'windows-node'?: number;
+    'linux-tar'?: number;
+    'linux-node'?: number;
   };
 }
 

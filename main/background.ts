@@ -1,6 +1,8 @@
-// 在最开始加载环境变量（仅开发模式）
+// 在最开始加载环境变量（仅开发模式；路径相对 app/ 编译产物）
 if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').config({ path: '.env.development.local' });
+  require('dotenv').config({
+    path: require('path').join(__dirname, '../../.env.development.local'),
+  });
 }
 
 import path from 'path';
@@ -32,6 +34,7 @@ import {
   resolveAppIcon,
   setAppDisplayNameEarly,
 } from './helpers/appBranding';
+import { getDevSimulationConfig } from './helpers/cudaUtils';
 
 //控制台出现中文乱码，需要去node_modules\electron\cli.js中修改启动代码页
 
@@ -72,6 +75,13 @@ app.on('before-quit', () => {
 (async () => {
   await app.whenReady();
   applyMacAppBranding();
+
+  const sim = getDevSimulationConfig();
+  if (sim?.enabled) {
+    console.log(
+      `[SmartSub] CUDA dev simulation ON → platform=${sim.platform}, gpu=${sim.gpuName}`,
+    );
+  }
 
   // 注册自定义协议处理本地媒体文件
   protocol.registerFileProtocol('media', (request, callback) => {

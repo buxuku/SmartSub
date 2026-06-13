@@ -13,7 +13,13 @@ import {
   isAddonInstalled,
 } from './addonManager';
 import { getBuildInfo } from './buildInfo';
-import { isPlatformCudaCapable, getBuiltinVulkanAddonPath } from './cudaUtils';
+import {
+  isPlatformCudaCapable,
+  getBuiltinVulkanAddonPath,
+  getEffectivePlatform,
+} from './cudaUtils';
+import { getDownloadUrl } from './addonDownloader';
+import type { DownloadSource } from '../../types/addon';
 
 /**
  * 远程版本文件 URL
@@ -289,4 +295,101 @@ export function getBuiltinVulkanVersion(): string | null {
     return null;
   }
   return buildInfo.buildDate.split('T')[0].replace(/-/g, '.');
+}
+
+type PackageSizeKey =
+  | 'windows-tar'
+  | 'windows-node'
+  | 'linux-tar'
+  | 'linux-node';
+
+const packageSizeCache = new Map<string, { size: number; fetchedAt: number }>();
+const PACKAGE_SIZE_CACHE_TTL = 30 * 60 * 1000;
+
+function getPackageSizeKey(
+  downloadType: 'node.gz' | 'tar.gz',
+): PackageSizeKey | null {
+  const platform = getEffectivePlatform();
+  if (platform !== 'win32' && platform !== 'linux') {
+    return null;
+  }
+  const osPrefix = platform === 'win32' ? 'windows' : 'linux';
+  return downloadType === 'tar.gz'
+    ? (`${osPrefix}-tar` as PackageSizeKey)
+    : (`${osPrefix}-node` as PackageSizeKey);
+}
+
+function headContentLength(url: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    const parsedUrl = new URL(url);
+    const protocol = parsedUrl.protocol === 'https:' ? https : http;
+
+    const request = protocol.request(
+      url,
+      {
+        method: 'HEAD',
+        headers: {
+          'User-Agent': 'SmartSub-Electron',
+        },
+        timeout: 10000,
+      },
+      (response) => {
+        if (
+          response.statusCode &&
+          response.statusCode >= 300 &&
+          response.statusCode < 400 &&
+          response.headers.location
+        ) {
+          headContentLength(response.headers.location).then(resolve);
+          return;
+        }
+        const len = response.headers['content-length'];
+        resolve(len ? parseInt(len, 10) : null);
+        response.resume();
+      },
+    );
+
+    request.on('error', () => resolve(null));
+    request.on('timeout', () => {
+      request.destroy();
+      resolve(null);
+    });
+    request.end();
+  });
+}
+
+/**
+ * 获取加速包下载体积：优先读 addon-versions.json 的 sizes，否则 HEAD 探测
+ */
+export async function getPackageDownloadSize(
+  variant: AddonVariant,
+  downloadType: 'node.gz' | 'tar.gz',
+  source: DownloadSource = 'github',
+): Promise<number | null> {
+  const sizeKey = getPackageSizeKey(downloadType);
+  if (!sizeKey) return null;
+
+  const cacheKey = `${variant}:${downloadType}:${source}`;
+  const cached = packageSizeCache.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < PACKAGE_SIZE_CACHE_TTL) {
+    return cached.size;
+  }
+
+  const remoteVersions = await fetchRemoteVersions(source === 'ghproxy');
+  const remoteSize = remoteVersions?.[variant]?.sizes?.[sizeKey];
+  if (typeof remoteSize === 'number' && remoteSize > 0) {
+    packageSizeCache.set(cacheKey, { size: remoteSize, fetchedAt: Date.now() });
+    return remoteSize;
+  }
+
+  try {
+    const url = getDownloadUrl(source, variant, downloadType);
+    const size = await headContentLength(url);
+    if (size && size > 0) {
+      packageSizeCache.set(cacheKey, { size, fetchedAt: Date.now() });
+    }
+    return size;
+  } catch {
+    return null;
+  }
 }

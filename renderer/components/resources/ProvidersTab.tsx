@@ -3,7 +3,20 @@ import { useTranslation } from 'next-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Plug, Search, FlaskConical, X } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import {
+  Plus,
+  Trash2,
+  Plug,
+  Search,
+  FlaskConical,
+  X,
+  Loader2,
+  ChevronDown,
+  ChevronLeft,
+  Pencil,
+  Check,
+} from 'lucide-react';
 import { ProviderForm } from '@/components/ProviderForm';
 import {
   Provider,
@@ -15,6 +28,15 @@ import {
 import { cn } from 'lib/utils';
 import { isProviderConfigured } from 'lib/providerUtils';
 import {
+  formatProviderError,
+  LAST_PROVIDER_STORAGE_KEY,
+  providersOrderChanged,
+  resolveSelectedProviderId,
+  resolveSelectedProviderIdAsync,
+  sortProvidersCustomFirst,
+  syncTranslateProviderToUserConfig,
+} from 'lib/providerPanelUtils';
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -25,6 +47,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { useConfirmOrUndo } from 'hooks/useConfirmOrUndo';
+import useLocalStorageState from 'hooks/useLocalStorageState';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 
 /** 品牌 logo 统一放在白色圆角底上，保证深色模式与选中态下都清晰可见 */
 function ProviderIcon({
@@ -71,6 +99,8 @@ function ProviderIcon({
   );
 }
 
+const TEST_LANGS = { source: 'en', target: 'zh' } as const;
+
 type TestResult = {
   providerId: string;
   status: 'success' | 'error';
@@ -97,57 +127,99 @@ const ProvidersTab: React.FC = () => {
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newProviderName, setNewProviderName] = useState('');
+  const [newProviderApiUrl, setNewProviderApiUrl] = useState('');
   const [providerQuery, setProviderQuery] = useState('');
-  // 测试语向跟随任务配置（一次性读取），缺省回退 en→zh
-  const [testLangs, setTestLangs] = useState<{
-    source: string;
-    target: string;
-  }>({ source: 'en', target: 'zh' });
+  const [showConfiguredOnly, setShowConfiguredOnly] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useLocalStorageState<
+    Record<string, boolean>
+  >('providersGroupCollapsed', {}, (v) => v !== null && typeof v === 'object');
+  const [saveFlash, setSaveFlash] = useState(false);
+  const [autoFocusField, setAutoFocusField] = useState<string | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [mobileShowPanel, setMobileShowPanel] = useState(false);
+  const saveFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const panelScrollRef = useRef<HTMLDivElement>(null);
+  const [lastSelectedId, setLastSelectedId] = useLocalStorageState<string>(
+    LAST_PROVIDER_STORAGE_KEY,
+    '',
+    (v) => typeof v === 'string',
+  );
+
+  const resolveSelectedProvider = useCallback(
+    (list: Provider[], preferredId?: string | null) =>
+      resolveSelectedProviderId(
+        list,
+        preferredId ?? (lastSelectedId || undefined),
+      ),
+    [lastSelectedId],
+  );
+
+  const flashSaved = useCallback(() => {
+    setSaveFlash(true);
+    if (saveFlashTimer.current) clearTimeout(saveFlashTimer.current);
+    saveFlashTimer.current = setTimeout(() => setSaveFlash(false), 2000);
+  }, []);
 
   useEffect(() => {
     loadProviders();
-    window.ipc
-      .invoke('getUserConfig')
-      .then((cfg: any) => {
-        if (cfg) {
-          setTestLangs({
-            source: cfg.sourceLanguage || 'en',
-            target: cfg.targetLanguage || 'zh',
-          });
-        }
-      })
-      .catch(() => {});
   }, []);
 
-  const loadProviders = async () => {
-    const storedProviders = await window.ipc.invoke('getTranslationProviders');
-    console.log('storedProviders', storedProviders);
-    setProviders(storedProviders);
-    // 默认选中第一个服务商（必须用 id：自定义服务商的 type 恒为 'openai'，匹配不到面板）
-    if (storedProviders.length > 0 && !selectedProvider) {
-      setSelectedProvider(storedProviders[0].id);
+  useEffect(
+    () => () => {
+      if (saveFlashTimer.current) clearTimeout(saveFlashTimer.current);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!lastSelectedId || providers.length === 0) return;
+    if (
+      providers.some((p) => p.id === lastSelectedId) &&
+      selectedProvider !== lastSelectedId
+    ) {
+      setSelectedProvider(lastSelectedId);
     }
+  }, [lastSelectedId, providers, selectedProvider]);
+
+  const loadProviders = async () => {
+    const raw = await window.ipc.invoke('getTranslationProviders');
+    const storedProviders = sortProvidersCustomFirst(raw || []);
+    if (providersOrderChanged(raw || [], storedProviders)) {
+      window?.ipc?.send('setTranslationProviders', storedProviders);
+    }
+    setProviders(storedProviders);
+    const resolved = await resolveSelectedProviderIdAsync(
+      storedProviders,
+      lastSelectedId || undefined,
+    );
+    setSelectedProvider(resolved);
+    if (resolved) setLastSelectedId(resolved);
   };
 
   // 持久化降噪：本地 state 即时更新，IPC 写入 500ms debounce，卸载时 flush
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingProvidersRef = useRef<Provider[] | null>(null);
 
-  const schedulePersist = useCallback((updatedProviders: Provider[]) => {
-    pendingProvidersRef.current = updatedProviders;
-    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
-    persistTimerRef.current = setTimeout(() => {
-      persistTimerRef.current = null;
-      if (pendingProvidersRef.current) {
-        window?.ipc?.send(
-          'setTranslationProviders',
-          pendingProvidersRef.current,
-        );
-        pendingProvidersRef.current = null;
-      }
-    }, 500);
-  }, []);
+  const schedulePersist = useCallback(
+    (updatedProviders: Provider[]) => {
+      pendingProvidersRef.current = updatedProviders;
+      if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = setTimeout(() => {
+        persistTimerRef.current = null;
+        if (pendingProvidersRef.current) {
+          window?.ipc?.send(
+            'setTranslationProviders',
+            pendingProvidersRef.current,
+          );
+          pendingProvidersRef.current = null;
+          flashSaved();
+        }
+      }, 500);
+    },
+    [flashSaved],
+  );
 
   // 立即持久化（新增/删除等结构变更），并废弃挂起的 debounce，防止旧数组回写覆盖
   const persistNow = useCallback((updatedProviders: Provider[]) => {
@@ -173,6 +245,15 @@ const ProvidersTab: React.FC = () => {
     };
   }, []);
 
+  const selectProvider = (providerId: string) => {
+    setSelectedProvider(providerId);
+    setLastSelectedId(providerId);
+    setTestResult(null);
+    setIsRenaming(false);
+    setMobileShowPanel(true);
+    void syncTranslateProviderToUserConfig(providerId);
+  };
+
   const handleInputChange = (key: string, value: string | boolean | number) => {
     const updatedProviders = providers.map((provider) =>
       provider.id === selectedProvider
@@ -181,6 +262,20 @@ const ProvidersTab: React.FC = () => {
     );
     setProviders(updatedProviders);
     schedulePersist(updatedProviders);
+  };
+
+  const handleRenameSave = () => {
+    const name = renameDraft.trim();
+    if (!name || !selectedProvider) return;
+    handleInputChange('name', name);
+    setIsRenaming(false);
+  };
+
+  const toggleGroupCollapsed = (key: string) => {
+    setCollapsedGroups((prev) => ({
+      ...prev,
+      [key]: !prev?.[key],
+    }));
   };
 
   const togglePasswordVisibility = (key: string) => {
@@ -220,9 +315,9 @@ const ProvidersTab: React.FC = () => {
 
     const newProviderData: Provider = {
       id: `openai_${Date.now()}`,
-      name: newProviderName,
+      name: newProviderName.trim(),
       type: 'openai',
-      apiUrl: '',
+      apiUrl: newProviderApiUrl.trim(),
       apiKey: '',
       modelName: '',
       isAi: true,
@@ -230,19 +325,20 @@ const ProvidersTab: React.FC = () => {
       useBatchTranslation: false,
       batchSize: 10,
       systemPrompt: defaultSystemPrompt,
-      structuredOutput: 'json_schema', // 为新的自定义OpenAI provider设置默认值
+      structuredOutput: 'json_schema',
     };
 
-    const updatedProviders = [...providers, newProviderData];
+    const updatedProviders = sortProvidersCustomFirst([
+      newProviderData,
+      ...providers,
+    ]);
     setProviders(updatedProviders);
     persistNow(updatedProviders);
     setIsAddDialogOpen(false);
     setNewProviderName('');
-    setSelectedProvider(newProviderData.id);
-  };
-
-  const handleProviderSelect = (providerId: string) => {
-    setSelectedProvider(providerId);
+    setNewProviderApiUrl('');
+    selectProvider(newProviderData.id);
+    setAutoFocusField(newProviderApiUrl.trim() ? 'apiKey' : 'apiUrl');
   };
 
   const handleRemoveProvider = (providerId: string) => {
@@ -254,7 +350,9 @@ const ProvidersTab: React.FC = () => {
     persistNow(updatedProviders);
     // 删的是当前选中项：回落到第一个仍存在的服务商
     if (selectedProvider === providerId) {
-      setSelectedProvider(updatedProviders[0]?.id ?? null);
+      const next = resolveSelectedProvider(updatedProviders);
+      setSelectedProvider(next);
+      if (next) setLastSelectedId(next);
     }
     confirmOrUndo(
       t('providerRemoved', { name: removed?.name ?? providerId }) ||
@@ -263,6 +361,7 @@ const ProvidersTab: React.FC = () => {
         setProviders(prevProviders);
         persistNow(prevProviders);
         setSelectedProvider(prevSelected);
+        if (prevSelected) setLastSelectedId(prevSelected);
       },
     );
   };
@@ -272,8 +371,20 @@ const ProvidersTab: React.FC = () => {
     const currentProvider = getCurrentProvider();
     if (!currentProvider) return;
 
-    const { source, target } = testLangs;
+    const { source, target } = TEST_LANGS;
+    if (!isProviderConfigured(currentProvider)) {
+      setTestResult({
+        providerId: currentProvider.id,
+        status: 'error',
+        error: t('testNeedsConfig'),
+        source,
+        target,
+      });
+      return;
+    }
+
     setIsTestLoading(true);
+    panelScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     const startedAt = Date.now();
     try {
       const result = await window.ipc.invoke('testTranslation', {
@@ -300,15 +411,18 @@ const ProvidersTab: React.FC = () => {
       setTestResult({
         providerId: currentProvider.id,
         status: 'error',
-        error: error?.message || String(error),
+        error: formatProviderError(error, t),
         source,
         target,
       });
-      toast.error(t('testFailed'));
     } finally {
       setIsTestLoading(false);
     }
   };
+
+  const currentProviderConfigured = selectedProvider
+    ? isConfiguredById(selectedProvider)
+    : false;
 
   const langName = (code: string) =>
     commonT(`language.${code}`, { defaultValue: code });
@@ -334,12 +448,16 @@ const ProvidersTab: React.FC = () => {
       (pt) =>
         pt.isBuiltin &&
         (pt.group ?? 'mt') === section.key &&
-        matchesQuery(typeDisplayName(pt), pt.name),
+        matchesQuery(typeDisplayName(pt), pt.name) &&
+        (!showConfiguredOnly || isConfiguredById(pt.id)),
     ),
   }));
 
   const visibleCustomProviders = providers.filter(
-    (p) => p.type === 'openai' && matchesQuery(p.name),
+    (p) =>
+      p.type === 'openai' &&
+      matchesQuery(p.name) &&
+      (!showConfiguredOnly || isConfiguredById(p.id)),
   );
 
   const nothingMatched =
@@ -347,22 +465,66 @@ const ProvidersTab: React.FC = () => {
     groupSections.every((s) => s.items.length === 0) &&
     visibleCustomProviders.length === 0;
 
-  return (
-    <div className="flex h-full overflow-hidden">
-      {/* 左侧服务商列表 */}
-      <div className="w-64 border-r p-4 space-y-2 overflow-auto">
-        <div className="flex flex-col space-y-4">
-          <h2 className="text-lg font-bold">{t('translationServices')}</h2>
+  const isCustomSelected = getCurrentProvider()?.type === 'openai';
 
-          {/* 添加新服务商按钮 */}
-          <Button
-            variant="outline"
-            className="w-full flex items-center justify-center"
-            onClick={() => setIsAddDialogOpen(true)}
+  const panelTitle = () => {
+    const provider = getCurrentProvider();
+    const type = getCurrentProviderType();
+    if (isCustomSelected && provider) return provider.name;
+    if (!type) return '';
+    return commonT(`provider.${type.name}`, { defaultValue: type.name });
+  };
+
+  return (
+    <div className="flex h-full overflow-hidden flex-col lg:flex-row">
+      {/* 左侧服务商列表 */}
+      <div
+        className={cn(
+          'w-full lg:w-64 border-b lg:border-b-0 lg:border-r p-4 space-y-2 overflow-auto shrink-0',
+          'max-h-[42vh] lg:max-h-none',
+          mobileShowPanel && selectedProvider && 'hidden lg:block',
+        )}
+      >
+        <div className="flex flex-col space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-lg font-bold">{t('translationServices')}</h2>
+            {saveFlash && (
+              <span className="flex items-center gap-1 text-xs text-success animate-in fade-in">
+                <Check className="h-3 w-3" />
+                {t('savedFlash')}
+              </span>
+            )}
+          </div>
+
+          {/* 添加自定义 AI 服务 */}
+          <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3 space-y-2">
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {t('addCustomProviderHint')}
+            </p>
+            <Button
+              variant="default"
+              size="sm"
+              className="w-full flex items-center justify-center gap-1.5"
+              onClick={() => setIsAddDialogOpen(true)}
+            >
+              <Plus size={16} />
+              {t('addCustomProvider')}
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 py-1">
+          <label
+            htmlFor="show-configured-only"
+            className="text-xs text-muted-foreground cursor-pointer select-none"
           >
-            <Plus size={16} className="mr-2" />
-            {t('addCustomProvider')}
-          </Button>
+            {t('showConfiguredOnly')}
+          </label>
+          <Switch
+            id="show-configured-only"
+            checked={showConfiguredOnly}
+            onCheckedChange={setShowConfiguredOnly}
+          />
         </div>
 
         {/* 搜索 */}
@@ -399,7 +561,7 @@ const ProvidersTab: React.FC = () => {
                       <button
                         type="button"
                         className="text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded"
-                        onClick={() => handleProviderSelect(id)}
+                        onClick={() => selectProvider(id)}
                       >
                         {typeDisplayName(type)}
                       </button>
@@ -412,54 +574,10 @@ const ProvidersTab: React.FC = () => {
         )}
 
         <div className="space-y-1 mt-4">
-          {/* 三个分组段 */}
-          {groupSections.map(
-            (section) =>
-              section.items.length > 0 && (
-                <React.Fragment key={section.key}>
-                  <div className="text-sm font-medium text-muted-foreground mt-4 mb-2 first:mt-0">
-                    {t(section.titleKey)}
-                  </div>
-                  {section.items.map((type) => (
-                    <button
-                      key={type.id}
-                      onClick={() => handleProviderSelect(type.id)}
-                      className={cn(
-                        'w-full text-left px-4 py-2 rounded-lg flex items-center space-x-2',
-                        selectedProvider === type.id
-                          ? 'bg-primary text-primary-foreground'
-                          : 'hover:bg-muted',
-                      )}
-                    >
-                      <ProviderIcon iconImg={type.iconImg} icon={type.icon} />
-                      <span className="min-w-0 flex-1 truncate">
-                        {typeDisplayName(type)}
-                      </span>
-                      {isConfiguredById(type.id) && (
-                        <Badge
-                          variant="outline"
-                          className="ml-auto flex-shrink-0 border-success/50 px-1.5 py-0 text-[10px] text-success"
-                        >
-                          {t('configured')}
-                        </Badge>
-                      )}
-                    </button>
-                  ))}
-                </React.Fragment>
-              ),
-          )}
-
-          {/* 无匹配 */}
-          {nothingMatched && (
-            <p className="px-1 py-2 text-xs text-muted-foreground">
-              {t('noProviderMatch')}
-            </p>
-          )}
-
-          {/* 自定义服务商 */}
+          {/* 自定义服务商（置顶：用户自添的一般为常用） */}
           {visibleCustomProviders.length > 0 && (
             <>
-              <div className="text-sm font-medium text-muted-foreground mt-4 mb-2">
+              <div className="text-sm font-medium text-muted-foreground mb-2">
                 {t('customProviders')}
               </div>
               {visibleCustomProviders.map((provider) => (
@@ -467,11 +585,11 @@ const ProvidersTab: React.FC = () => {
                   key={provider.id}
                   role="button"
                   tabIndex={0}
-                  onClick={() => setSelectedProvider(provider.id)}
+                  onClick={() => selectProvider(provider.id)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      setSelectedProvider(provider.id);
+                      selectProvider(provider.id);
                     }
                   }}
                   className={cn(
@@ -512,99 +630,232 @@ const ProvidersTab: React.FC = () => {
               ))}
             </>
           )}
+
+          {/* 三个分组段（可折叠） */}
+          {groupSections.map(
+            (section) =>
+              section.items.length > 0 && (
+                <Collapsible
+                  key={section.key}
+                  open={!collapsedGroups[section.key]}
+                  onOpenChange={() => toggleGroupCollapsed(section.key)}
+                >
+                  <CollapsibleTrigger className="flex w-full items-center justify-between text-sm font-medium text-muted-foreground mt-4 mb-2 first:mt-0 hover:text-foreground">
+                    <span>{t(section.titleKey)}</span>
+                    <ChevronDown
+                      className={cn(
+                        'h-4 w-4 transition-transform',
+                        collapsedGroups[section.key] && '-rotate-90',
+                      )}
+                    />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-1">
+                    {section.items.map((type) => (
+                      <button
+                        key={type.id}
+                        onClick={() => selectProvider(type.id)}
+                        className={cn(
+                          'w-full text-left px-4 py-2 rounded-lg flex items-center space-x-2',
+                          selectedProvider === type.id
+                            ? 'bg-primary text-primary-foreground'
+                            : 'hover:bg-muted',
+                        )}
+                      >
+                        <ProviderIcon iconImg={type.iconImg} icon={type.icon} />
+                        <span className="min-w-0 flex-1 truncate">
+                          {typeDisplayName(type)}
+                        </span>
+                        {isConfiguredById(type.id) && (
+                          <Badge
+                            variant="outline"
+                            className="ml-auto flex-shrink-0 border-success/50 px-1.5 py-0 text-[10px] text-success"
+                          >
+                            {t('configured')}
+                          </Badge>
+                        )}
+                      </button>
+                    ))}
+                  </CollapsibleContent>
+                </Collapsible>
+              ),
+          )}
+
+          {/* 无匹配 */}
+          {nothingMatched && (
+            <p className="px-1 py-2 text-xs text-muted-foreground">
+              {t('noProviderMatch')}
+            </p>
+          )}
         </div>
       </div>
 
       {/* 右侧配置面板 */}
-      <div className="flex-1 p-6 overflow-auto">
+      <div
+        ref={panelScrollRef}
+        className={cn(
+          'flex-1 overflow-auto min-h-0',
+          !mobileShowPanel && !selectedProvider && 'hidden lg:block',
+        )}
+      >
         {selectedProvider && getCurrentProviderType() && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-bold flex items-center space-x-2.5">
-                <ProviderIcon
-                  iconImg={getCurrentProviderType()?.iconImg}
-                  icon={getCurrentProviderType()?.icon}
-                  size="lg"
-                />
-                <span>
-                  {commonT(`provider.${getCurrentProviderType().name}`, {
-                    defaultValue: getCurrentProviderType().name,
-                  })}
-                </span>
-              </h1>
-              <Button
-                variant="outline"
-                className="gap-1.5"
-                onClick={handleTestTranslation}
-                disabled={isTestLoading}
-              >
-                <FlaskConical className="h-4 w-4" />
-                {isTestLoading ? t('testing') : t('testTranslation')}
-              </Button>
+          <>
+            <div className="sticky top-0 z-10 border-b bg-background px-4 lg:px-6 py-4 shadow-sm space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="lg:hidden shrink-0"
+                    onClick={() => setMobileShowPanel(false)}
+                    aria-label={t('backToList')}
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <h1 className="text-xl lg:text-2xl font-bold flex items-center space-x-2.5 min-w-0">
+                    <ProviderIcon
+                      iconImg={getCurrentProviderType()?.iconImg}
+                      icon={getCurrentProviderType()?.icon}
+                      size="lg"
+                    />
+                    {isRenaming && isCustomSelected ? (
+                      <Input
+                        value={renameDraft}
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleRenameSave();
+                          if (e.key === 'Escape') setIsRenaming(false);
+                        }}
+                        className="h-9 max-w-[200px]"
+                        autoFocus
+                      />
+                    ) : (
+                      <span className="truncate">{panelTitle()}</span>
+                    )}
+                    {isCustomSelected && !isRenaming && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => {
+                          setRenameDraft(getCurrentProvider()?.name ?? '');
+                          setIsRenaming(true);
+                        }}
+                        aria-label={t('renameProvider')}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {isRenaming && isCustomSelected && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={handleRenameSave}
+                        aria-label={t('saveRename')}
+                      >
+                        <Check className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </h1>
+                </div>
+                <Button
+                  variant="outline"
+                  className="gap-1.5 shrink-0"
+                  onClick={handleTestTranslation}
+                  disabled={isTestLoading || !currentProviderConfigured}
+                >
+                  <FlaskConical className="h-4 w-4" />
+                  {isTestLoading ? t('testing') : t('testTranslation')}
+                </Button>
+              </div>
+
+              {!currentProviderConfigured && (
+                <p className="text-xs text-muted-foreground">
+                  {t('testNeedsConfig')}
+                </p>
+              )}
+
+              {isTestLoading && (
+                <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                  {t('testing')}
+                </div>
+              )}
+
+              {!isTestLoading &&
+                testResult &&
+                testResult.providerId === selectedProvider && (
+                  <div
+                    className={cn(
+                      'rounded-md border px-3 py-2.5 space-y-1.5 text-sm',
+                      testResult.status === 'success'
+                        ? 'border-success/50 bg-success/5'
+                        : 'border-destructive/50 bg-destructive/5',
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className={cn(
+                          'font-medium',
+                          testResult.status === 'success'
+                            ? 'text-success'
+                            : 'text-destructive',
+                        )}
+                      >
+                        {testResult.status === 'success'
+                          ? t('testSuccess')
+                          : t('testFailed')}
+                      </span>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {langName(testResult.source)} →{' '}
+                        {langName(testResult.target)}
+                        {testResult.elapsedMs != null &&
+                          ` · ${(testResult.elapsedMs / 1000).toFixed(2)}s`}
+                      </span>
+                    </div>
+                    {testResult.status === 'success' ? (
+                      <>
+                        <p className="break-all">
+                          {t('translationResult')}: "{testResult.translation}"
+                        </p>
+                        {testResult.model && (
+                          <p className="text-xs text-muted-foreground">
+                            {t('model')}: {testResult.model}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="break-all text-destructive">
+                        {testResult.error}
+                      </p>
+                    )}
+                  </div>
+                )}
             </div>
 
-            <Card>
-              <CardContent className="pt-6">
-                <ProviderForm
-                  fields={getCurrentProviderType()?.fields || []}
-                  values={getCurrentProvider() || {}}
-                  onChange={handleInputChange}
-                  showPassword={showPassword}
-                  onTogglePassword={togglePasswordVisibility}
-                  providerId={selectedProvider || ''}
-                />
-              </CardContent>
-            </Card>
-
-            {/* 测试结果常驻卡（会话内存，切换服务商时不串显） */}
-            {testResult && testResult.providerId === selectedProvider && (
-              <Card
-                className={cn(
-                  testResult.status === 'success'
-                    ? 'border-success/50'
-                    : 'border-destructive/50',
-                )}
-              >
-                <CardContent className="pt-4 pb-4 space-y-1.5 text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <span
-                      className={cn(
-                        'font-medium',
-                        testResult.status === 'success'
-                          ? 'text-success'
-                          : 'text-destructive',
-                      )}
-                    >
-                      {testResult.status === 'success'
-                        ? t('testSuccess')
-                        : t('testFailed')}
-                    </span>
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">
-                      {langName(testResult.source)} →{' '}
-                      {langName(testResult.target)}
-                      {testResult.elapsedMs != null &&
-                        ` · ${(testResult.elapsedMs / 1000).toFixed(2)}s`}
-                    </span>
-                  </div>
-                  {testResult.status === 'success' ? (
-                    <>
-                      <p className="break-all">
-                        {t('translationResult')}: "{testResult.translation}"
-                      </p>
-                      {testResult.model && (
-                        <p className="text-xs text-muted-foreground">
-                          {t('model')}: {testResult.model}
-                        </p>
-                      )}
-                    </>
-                  ) : (
-                    <p className="break-all text-destructive">
-                      {testResult.error}
-                    </p>
-                  )}
+            <div className="p-4 lg:p-6 pt-4">
+              <Card>
+                <CardContent className="pt-6">
+                  <ProviderForm
+                    fields={getCurrentProviderType()?.fields || []}
+                    values={getCurrentProvider() || {}}
+                    onChange={handleInputChange}
+                    showPassword={showPassword}
+                    onTogglePassword={togglePasswordVisibility}
+                    providerId={selectedProvider || ''}
+                    autoFocusField={autoFocusField}
+                  />
                 </CardContent>
               </Card>
-            )}
+            </div>
+          </>
+        )}
+        {!selectedProvider && (
+          <div className="hidden lg:flex h-full items-center justify-center text-sm text-muted-foreground p-6">
+            {t('selectProviderHint')}
           </div>
         )}
       </div>
@@ -628,6 +879,14 @@ const ProvidersTab: React.FC = () => {
                 placeholder={t('enterProviderName')}
               />
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('ApiUrl')}</label>
+              <Input
+                value={newProviderApiUrl}
+                onChange={(e) => setNewProviderApiUrl(e.target.value)}
+                placeholder={t('phOpenaiApiUrl')}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -636,6 +895,7 @@ const ProvidersTab: React.FC = () => {
               onClick={() => {
                 setIsAddDialogOpen(false);
                 setNewProviderName('');
+                setNewProviderApiUrl('');
               }}
             >
               <X className="h-4 w-4" />

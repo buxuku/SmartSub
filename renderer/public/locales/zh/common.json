@@ -237,6 +237,14 @@
   "alreadyLatestVersion": "已是最新版本",
   "newVersionBadge": "新版本 v{{version}}",
   "accelBadgeOn": "{{backend}} 加速",
+  "accelBadgePending": "{{mode}} · 待首次转写",
+  "accelBadgePendingTip": "加速包将在首次转写时加载",
+  "accelBadgeGpuOnlyConflict": "仅 GPU · 当前 CPU",
+  "accelBadgeGpuOnlyConflictTip": "已设为仅 GPU，但上次转写运行在 CPU",
+  "accelBadgeMode": "模式：{{mode}}",
+  "gpuModeAuto": "自动",
+  "gpuModeGpuOnly": "仅 GPU",
+  "gpuModeCpuOnly": "仅 CPU",
   "cpuModeBadge": "CPU 模式",
   "cpuModeTip": "当前使用 CPU 转写，点击查看加速选项"
 }

@@ -17,6 +17,7 @@ import { logMessage } from '../helpers/storeManager';
 import { IFiles, IFormData } from '../../types';
 import { ensureTempDir } from '../helpers/fileUtils';
 import { isTaskCancelledError } from '../helpers/taskContext';
+import { assertValidTestTranslation } from './utils/error';
 
 export default async function translate(
   event,
@@ -178,6 +179,8 @@ export async function testTranslation(
     } else {
       translation = (results as TranslationResult[])[0].targetContent;
     }
+
+    assertValidTestTranslation(translation);
 
     // For now, return basic result until we implement full analysis
     // TODO: Add thinking mode analysis when we have access to raw API response

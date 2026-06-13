@@ -32,6 +32,7 @@ import {
   fetchRemoteVersions,
   checkAllUpdates,
   getRemoteVersionInfo,
+  getPackageDownloadSize,
 } from './addonVersions';
 import type {
   AddonVariant,
@@ -230,6 +231,29 @@ export function registerAddonIpcHandlers(): void {
       return null;
     }
   });
+
+  ipcMain.handle(
+    'get-addon-package-size',
+    async (
+      _event,
+      {
+        variant,
+        type,
+        source,
+      }: {
+        variant: AddonVariant;
+        type: 'node.gz' | 'tar.gz';
+        source?: DownloadSource;
+      },
+    ) => {
+      try {
+        return await getPackageDownloadSize(variant, type, source ?? 'github');
+      } catch (error) {
+        logMessage(`Error getting addon package size: ${error}`, 'error');
+        return null;
+      }
+    },
+  );
 
   // 获取加速包摘要信息
   ipcMain.handle('get-addon-summary', async () => {

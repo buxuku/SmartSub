@@ -8,6 +8,9 @@
   "scripts": {
     "prepare": "husky",
     "dev": "nextron",
+    "dev:cuda-sim": "DEV_SIMULATE_CUDA=true DEV_SIMULATE_PLATFORM=win32 nextron",
+    "dev:cuda-sim:toolkit": "DEV_SIMULATE_CUDA=true DEV_SIMULATE_PLATFORM=win32 DEV_SIMULATE_HAS_TOOLKIT=true nextron",
+    "dev:cuda-sim:cuda13": "DEV_SIMULATE_CUDA=true DEV_SIMULATE_PLATFORM=win32 DEV_SIMULATE_GPU_CUDA_VERSION=13.0 nextron",
     "build": "nextron build --no-pack",
     "build:local": "nextron build",
     "postinstall": "electron-builder install-app-deps",

@@ -18,10 +18,18 @@ import {
   getRecommendedCategory,
   getModelDownloadUrl,
   type ModelInfo,
+  cn,
 } from 'lib/utils';
+import {
+  DownSource,
+  matchesModelQuery,
+  MODELS_INSTALLED_ONLY_KEY,
+  MODELS_TIER_VARIANTS_EXPANDED_KEY,
+} from 'lib/modelPanelUtils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import { ISystemInfo } from '../../../types/types';
 import DeleteModel from '@/components/DeleteModel';
 import DownModel from '@/components/DownModel';
@@ -43,17 +51,15 @@ import {
   Scale,
   Crosshair,
   Trash2,
+  Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 
-export enum DownSource {
-  HuggingFace = 'huggingface',
-  HfMirror = 'hf-mirror',
-}
+export { DownSource } from 'lib/modelPanelUtils';
 
-type TFunc = (key: string, opts?: any) => string;
+type TFunc = (key: string, opts?: Record<string, unknown>) => string;
 
 const MODEL_TIERS = [
   { id: 'fast', icon: Rocket, categoryIds: ['tiny', 'base'] },
@@ -67,9 +73,10 @@ function RatingDots({ value, max = 5 }: { value: number; max?: number }) {
       {Array.from({ length: max }, (_, i) => (
         <span
           key={i}
-          className={`h-2 w-2 rounded-full ${
-            i < value ? 'bg-primary' : 'bg-muted'
-          }`}
+          className={cn(
+            'h-2 w-2 rounded-full',
+            i < value ? 'bg-primary' : 'bg-muted',
+          )}
         />
       ))}
     </span>
@@ -114,6 +121,7 @@ function RecommendedHero({
   model,
   isInstalled,
   basis,
+  basisLoading,
   downSource,
   onUpdate,
   globalDownloading,
@@ -122,6 +130,7 @@ function RecommendedHero({
   model: ModelInfo;
   isInstalled: boolean;
   basis: string | null;
+  basisLoading: boolean;
   downSource: DownSource;
   onUpdate: () => void;
   globalDownloading: boolean;
@@ -141,10 +150,16 @@ function RecommendedHero({
           {desc && (
             <div className="text-xs text-muted-foreground mt-0.5">{desc}</div>
           )}
-          {basis && (
-            <div className="text-[11px] text-muted-foreground/70 mt-0.5">
-              {basis}
+          {basisLoading ? (
+            <div className="text-[11px] text-muted-foreground/70 mt-0.5 animate-pulse">
+              {t('detectingHardware')}
             </div>
+          ) : (
+            basis && (
+              <div className="text-[11px] text-muted-foreground/70 mt-0.5">
+                {basis}
+              </div>
+            )
           )}
         </div>
       </div>
@@ -172,6 +187,74 @@ function RecommendedHero({
         )}
       </div>
     </div>
+  );
+}
+
+function ModelRowActions({
+  model,
+  isInstalled,
+  isDownloading,
+  downSource,
+  onUpdate,
+  t,
+  globalDownloading,
+  copyToClipboard,
+}: {
+  model: ModelInfo;
+  isInstalled: boolean;
+  isDownloading: boolean;
+  downSource: DownSource;
+  onUpdate: () => void;
+  t: TFunc;
+  globalDownloading: boolean;
+  copyToClipboard: (text: string) => void;
+}) {
+  const downloadUrl = getModelDownloadUrl(model.name, downSource);
+
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => copyToClipboard(downloadUrl)}
+            aria-label={t('copyLink')}
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>{t('copyLink')}</p>
+        </TooltipContent>
+      </Tooltip>
+      {isInstalled && !isDownloading ? (
+        <DeleteModel modelName={model.name} callBack={onUpdate}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground hover:text-destructive gap-1.5"
+          >
+            <Trash2 className="h-4 w-4" />
+            <span className="sr-only sm:not-sr-only sm:inline">
+              {t('delete')}
+            </span>
+          </Button>
+        </DeleteModel>
+      ) : (
+        <DownModel
+          modelName={model.name}
+          callBack={onUpdate}
+          downSource={downSource}
+          needsCoreML={model.needsCoreML}
+          globalDownloading={globalDownloading}
+        >
+          <DownModelButton />
+        </DownModel>
+      )}
+    </>
   );
 }
 
@@ -209,11 +292,12 @@ function ModelRow({
 
   return (
     <div
-      className={`flex items-center gap-3 py-2 px-3 rounded-lg transition-colors ${
+      className={cn(
+        'flex flex-col gap-2 py-2 px-3 rounded-lg transition-colors sm:flex-row sm:items-center sm:gap-3',
         isRecommended
           ? 'border border-primary/30 bg-primary/5'
-          : 'hover:bg-muted/50'
-      }`}
+          : 'hover:bg-muted/50',
+      )}
     >
       <div className="flex items-center gap-2 min-w-0 flex-1">
         <span className="font-mono text-sm font-medium flex-shrink-0">
@@ -245,12 +329,14 @@ function ModelRow({
           <CheckCircle2 className="h-3.5 w-3.5 text-success flex-shrink-0" />
         )}
         {desc && (
-          <span className="text-xs text-muted-foreground truncate">{desc}</span>
+          <span className="text-xs text-muted-foreground truncate hidden md:inline">
+            {desc}
+          </span>
         )}
       </div>
-      <div className="flex items-center gap-3 flex-shrink-0">
-        {speed != null && (
-          <TooltipProvider>
+      <div className="flex items-center justify-between gap-2 sm:justify-end sm:gap-3 flex-shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3">
+          {speed != null && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="hidden lg:inline-flex items-center gap-1 text-muted-foreground">
@@ -262,10 +348,8 @@ function ModelRow({
                 <p>{t('speedRatingTip')}</p>
               </TooltipContent>
             </Tooltip>
-          </TooltipProvider>
-        )}
-        {quality != null && (
-          <TooltipProvider>
+          )}
+          {quality != null && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="hidden lg:inline-flex items-center gap-1 text-muted-foreground">
@@ -277,48 +361,23 @@ function ModelRow({
                 <p>{t('qualityRatingTip')}</p>
               </TooltipContent>
             </Tooltip>
-          </TooltipProvider>
-        )}
-        <span className="text-xs text-muted-foreground tabular-nums w-[60px] text-right">
-          {model.size}
-        </span>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Copy
-                className="h-3.5 w-3.5 cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() =>
-                  copyToClipboard(getModelDownloadUrl(model.name, downSource))
-                }
-              />
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{t('copyLink')}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        {isInstalled && !isDownloading ? (
-          <DeleteModel modelName={model.name} callBack={onUpdate}>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-muted-foreground hover:text-destructive gap-1.5"
-            >
-              <Trash2 className="h-4 w-4" />
-              {t('delete')}
-            </Button>
-          </DeleteModel>
-        ) : (
-          <DownModel
-            modelName={model.name}
-            callBack={onUpdate}
+          )}
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {model.size}
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <ModelRowActions
+            model={model}
+            isInstalled={isInstalled}
+            isDownloading={isDownloading}
             downSource={downSource}
-            needsCoreML={model.needsCoreML}
+            onUpdate={onUpdate}
+            t={t}
             globalDownloading={globalDownloading}
-          >
-            <DownModelButton />
-          </DownModel>
-        )}
+            copyToClipboard={copyToClipboard}
+          />
+        </div>
       </div>
     </div>
   );
@@ -328,6 +387,9 @@ function TierSection({
   tier,
   recommendedModelName,
   installedOnly,
+  modelQuery,
+  variantsExpanded,
+  onVariantsExpandedChange,
   systemInfo,
   downSource,
   onUpdate,
@@ -337,14 +399,15 @@ function TierSection({
   tier: (typeof MODEL_TIERS)[number];
   recommendedModelName?: string;
   installedOnly: boolean;
+  modelQuery: string;
+  variantsExpanded: boolean;
+  onVariantsExpandedChange: (expanded: boolean) => void;
   systemInfo: ISystemInfo;
   downSource: DownSource;
   onUpdate: () => void;
   t: TFunc;
   globalDownloading: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
-
   const categories = tier.categoryIds
     .map((id) => modelCategories.find((c) => c.id === id))
     .filter(Boolean);
@@ -363,18 +426,19 @@ function TierSection({
     cat.models.filter((m) => m.isQuantized || m.isEnglishOnly),
   );
 
-  const visiblePrimary = installedOnly
-    ? primaryRows.filter((r) => isInstalled(r.model.name))
-    : primaryRows;
-  const visibleVariants = installedOnly
-    ? variantRows.filter((m) => isInstalled(m.name))
-    : variantRows;
+  const visiblePrimary = primaryRows
+    .filter((r) => !installedOnly || isInstalled(r.model.name))
+    .filter((r) => matchesModelQuery(r.model.name, modelQuery));
+  const visibleVariants = variantRows
+    .filter((m) => !installedOnly || isInstalled(m.name))
+    .filter((m) => matchesModelQuery(m.name, modelQuery));
 
   if (visiblePrimary.length === 0 && visibleVariants.length === 0) {
     return null;
   }
 
   const minRAM = Math.min(...categories.map((c) => c.minRAM));
+  const showVariants = variantsExpanded || installedOnly || !!modelQuery.trim();
 
   return (
     <section className="space-y-2">
@@ -406,36 +470,35 @@ function TierSection({
 
           {visibleVariants.length > 0 && (
             <div className="pt-1">
-              {!installedOnly && (
+              {!installedOnly && !modelQuery.trim() && (
                 <button
-                  onClick={() => setExpanded(!expanded)}
+                  type="button"
+                  onClick={() => onVariantsExpandedChange(!variantsExpanded)}
                   className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors py-1 px-3"
                 >
-                  {expanded ? (
+                  {variantsExpanded ? (
                     <ChevronUp className="h-3.5 w-3.5" />
                   ) : (
                     <ChevronDown className="h-3.5 w-3.5" />
                   )}
-                  {expanded
+                  {variantsExpanded
                     ? t('hideVariants')
                     : `${t('showAllVariants')} (${visibleVariants.length})`}
                 </button>
               )}
 
-              {(expanded || installedOnly) && (
+              {showVariants && (
                 <div className="space-y-0.5 mt-1">
-                  {!installedOnly && (
+                  {!installedOnly && !modelQuery.trim() && (
                     <div className="flex items-center gap-1 px-3 pb-1">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <HelpCircle className="h-3 w-3 text-muted-foreground" />
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p className="max-w-[250px]">{t('quantizedTip')}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-3 w-3 text-muted-foreground" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-[250px]">{t('quantizedTip')}</p>
+                        </TooltipContent>
+                      </Tooltip>
                       <span className="text-[10px] text-muted-foreground">
                         {t('quantizedTip')}
                       </span>
@@ -470,14 +533,39 @@ const ModelsTab = () => {
     downloadingModels: [],
     modelsPath: '',
   });
+  const [systemInfoLoaded, setSystemInfoLoaded] = useState(false);
   const [globalDownloading, setGlobalDownloading] = useState(false);
-  const [installedOnly, setInstalledOnly] = useState(false);
+  const [modelQuery, setModelQuery] = useState('');
   const [accelAvailable, setAccelAvailable] = useState(false);
+  const [installedOnly, setInstalledOnly] = useLocalStorageState<boolean>(
+    MODELS_INSTALLED_ONLY_KEY,
+    false,
+    (v) => typeof v === 'boolean',
+  );
+  const [variantsExpandedMap, setVariantsExpandedMap] = useLocalStorageState<
+    Record<string, boolean>
+  >(
+    MODELS_TIER_VARIANTS_EXPANDED_KEY,
+    {},
+    (v) => v !== null && typeof v === 'object',
+  );
   const [downSource, setDownSource] = useLocalStorageState<DownSource>(
     'downSource',
     DownSource.HuggingFace,
     (val) => Object.values(DownSource).includes(val as DownSource),
   );
+
+  const updateSystemInfo = useCallback(async () => {
+    try {
+      const systemInfoRes = await window?.ipc?.invoke('getSystemInfo', null);
+      if (systemInfoRes) setSystemInfo(systemInfoRes);
+    } catch (error) {
+      console.error('Failed to load system info:', error);
+      toast.error(t('loadSystemInfoFailed'));
+    } finally {
+      setSystemInfoLoaded(true);
+    }
+  }, [t]);
 
   useEffect(() => {
     updateSystemInfo();
@@ -498,19 +586,17 @@ const ModelsTab = () => {
     const unsubProgress = window?.ipc?.on(
       'downloadProgress',
       (_model: string, progressValue: number) => {
-        setGlobalDownloading(0.0 <= progressValue && progressValue < 1.0);
+        setGlobalDownloading(progressValue >= 0 && progressValue < 1);
+        if (progressValue >= 1) {
+          void updateSystemInfo();
+        }
       },
     );
 
     return () => {
       unsubProgress?.();
     };
-  }, []);
-
-  const updateSystemInfo = useCallback(async () => {
-    const systemInfoRes = await window?.ipc?.invoke('getSystemInfo', null);
-    setSystemInfo(systemInfoRes);
-  }, []);
+  }, [updateSystemInfo]);
 
   const handleDownSource = (value: string) => {
     setDownSource(value as DownSource);
@@ -519,12 +605,24 @@ const ModelsTab = () => {
   const handleImportModel = async () => {
     try {
       const result = await window?.ipc?.invoke('importModel');
-      if (result) {
+      if (result?.success) {
         toast.success(t('importModelSuccess'), { duration: 2000 });
         updateSystemInfo();
+        return;
       }
+      if (result?.canceled) return;
+      toast.error(
+        t('importModelFailed', {
+          error: result?.error || t('unknownError'),
+        }),
+      );
     } catch (error) {
       console.error('Failed to import model:', error);
+      toast.error(
+        t('importModelFailed', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     }
   };
 
@@ -540,7 +638,36 @@ const ModelsTab = () => {
       updateSystemInfo();
     } catch (error) {
       console.error('Failed to change models path:', error);
+      toast.error(
+        t('changePathFailed', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     }
+  };
+
+  const handleOpenModelsFolder = async () => {
+    try {
+      const result = await window?.ipc?.invoke('openModelsFolder');
+      if (!result?.success) {
+        toast.error(
+          t('openFolderFailed', {
+            error: result?.error || t('unknownError'),
+          }),
+        );
+      }
+    } catch (error) {
+      console.error('Failed to open models folder:', error);
+      toast.error(
+        t('openFolderFailed', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  };
+
+  const setTierVariantsExpanded = (tierId: string, expanded: boolean) => {
+    setVariantsExpandedMap((prev) => ({ ...prev, [tierId]: expanded }));
   };
 
   const recommendedId = getRecommendedCategory(systemInfo.totalMemoryGB ?? 8);
@@ -553,101 +680,156 @@ const ModelsTab = () => {
   const recommendedInstalled = recommendedModel
     ? systemInfo?.modelsInstalled?.includes(recommendedModel.name.toLowerCase())
     : false;
-  const basis = systemInfo.totalMemoryGB
-    ? t(accelAvailable ? 'recommendedBasisWithGpu' : 'recommendedBasis', {
-        memory: systemInfo.totalMemoryGB,
-      })
-    : null;
+  const basis =
+    systemInfoLoaded && systemInfo.totalMemoryGB
+      ? t(accelAvailable ? 'recommendedBasisWithGpu' : 'recommendedBasis', {
+          memory: systemInfo.totalMemoryGB,
+        })
+      : null;
 
   const hasAnyInstalled = (systemInfo?.modelsInstalled?.length ?? 0) > 0;
+  const trimmedQuery = modelQuery.trim();
+  const isModelVisible = (name: string) => {
+    if (
+      installedOnly &&
+      !systemInfo.modelsInstalled?.includes(name.toLowerCase())
+    ) {
+      return false;
+    }
+    return matchesModelQuery(name, modelQuery);
+  };
+  const hasVisibleModels = modelCategories.some((cat) =>
+    cat.models.some((m) => isModelVisible(m.name)),
+  );
+  const showRecommendedHero = !!recommendedModel;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h2 className="text-lg font-semibold">{t('modelManagement')}</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            {t('modelManagementDesc')}
-          </p>
-        </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer">
-            <Switch
-              checked={installedOnly}
-              onCheckedChange={setInstalledOnly}
-            />
-            {t('showInstalledOnly')}
-          </label>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">
-              {t('switchDownloadSource')}:
-            </span>
-            <Select onValueChange={handleDownSource} value={downSource}>
-              <SelectTrigger className="w-[200px] h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="huggingface">
-                  {t('officialSource')}
-                </SelectItem>
-                <SelectItem value="hf-mirror">{t('domesticMirror')}</SelectItem>
-              </SelectContent>
-            </Select>
+    <TooltipProvider delayDuration={300}>
+      <div className="space-y-4">
+        {showRecommendedHero && (
+          <RecommendedHero
+            model={recommendedModel}
+            isInstalled={recommendedInstalled}
+            basis={basis}
+            basisLoading={!systemInfoLoaded}
+            downSource={downSource}
+            onUpdate={updateSystemInfo}
+            globalDownloading={globalDownloading}
+            t={t}
+          />
+        )}
+
+        <div className="sticky top-0 z-10 space-y-3 border-b bg-background/95 pb-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">{t('modelManagement')}</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                {t('modelManagementDesc')}
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+              <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer">
+                <Switch
+                  checked={installedOnly}
+                  onCheckedChange={setInstalledOnly}
+                />
+                {t('showInstalledOnly')}
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground shrink-0">
+                  {t('switchDownloadSource')}:
+                </span>
+                <Select onValueChange={handleDownSource} value={downSource}>
+                  <SelectTrigger className="w-full sm:w-[200px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="huggingface">
+                      {t('officialSource')}
+                    </SelectItem>
+                    <SelectItem value="hf-mirror">
+                      {t('domesticMirror')}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                onClick={handleImportModel}
+                size="sm"
+                variant="outline"
+                className="w-full sm:w-auto"
+              >
+                <Upload className="mr-1.5 h-3.5 w-3.5" />
+                {t('importModel')}
+              </Button>
+            </div>
           </div>
-          <Button onClick={handleImportModel} size="sm" variant="outline">
-            <Upload className="mr-1.5 h-3.5 w-3.5" />
-            {t('importModel')}
-          </Button>
-        </div>
-      </div>
 
-      {recommendedModel && (
-        <RecommendedHero
-          model={recommendedModel}
-          isInstalled={recommendedInstalled}
-          basis={basis}
-          downSource={downSource}
-          onUpdate={updateSystemInfo}
-          globalDownloading={globalDownloading}
-          t={t}
-        />
-      )}
-
-      <div className="text-xs text-muted-foreground flex items-center gap-1">
-        <HardDrive className="h-3 w-3" />
-        {t('modelPath')}:{' '}
-        <span className="font-mono">{systemInfo?.modelsPath}</span>
-        <button
-          onClick={handleChangeModelsPath}
-          className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors ml-1"
-        >
-          <FolderOpen className="h-3 w-3" />
-          <span>{t('changePath')}</span>
-        </button>
-      </div>
-
-      {installedOnly && !hasAnyInstalled ? (
-        <p className="text-sm text-muted-foreground py-8 text-center">
-          {t('noInstalledModels')}
-        </p>
-      ) : (
-        <div className="space-y-5">
-          {MODEL_TIERS.map((tier) => (
-            <TierSection
-              key={tier.id}
-              tier={tier}
-              recommendedModelName={recommendedModel?.name}
-              installedOnly={installedOnly}
-              systemInfo={systemInfo}
-              downSource={downSource}
-              onUpdate={updateSystemInfo}
-              t={t}
-              globalDownloading={globalDownloading}
+          <div className="relative px-0.5">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <Input
+              value={modelQuery}
+              onChange={(e) => setModelQuery(e.target.value)}
+              placeholder={t('modelSearchPlaceholder')}
+              className="h-8 pl-8 text-sm focus-visible:ring-offset-0 focus-visible:ring-inset"
             />
-          ))}
+          </div>
         </div>
-      )}
-    </div>
+
+        <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
+          <HardDrive className="h-3 w-3 shrink-0" />
+          <span className="shrink-0">{t('modelPath')}:</span>
+          <span className="font-mono break-all">{systemInfo?.modelsPath}</span>
+          <button
+            type="button"
+            onClick={handleOpenModelsFolder}
+            className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
+          >
+            <FolderOpen className="h-3 w-3" />
+            <span>{t('openModelsFolder')}</span>
+          </button>
+          <span className="text-muted-foreground/50">·</span>
+          <button
+            type="button"
+            onClick={handleChangeModelsPath}
+            className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
+          >
+            <span>{t('changePath')}</span>
+          </button>
+        </div>
+
+        {installedOnly && !hasAnyInstalled ? (
+          <p className="text-sm text-muted-foreground py-8 text-center">
+            {t('noInstalledModels')}
+          </p>
+        ) : trimmedQuery && !hasVisibleModels ? (
+          <p className="text-sm text-muted-foreground py-8 text-center">
+            {t('noModelMatch')}
+          </p>
+        ) : (
+          <div className="space-y-5">
+            {MODEL_TIERS.map((tier) => (
+              <TierSection
+                key={tier.id}
+                tier={tier}
+                recommendedModelName={recommendedModel?.name}
+                installedOnly={installedOnly}
+                modelQuery={modelQuery}
+                variantsExpanded={variantsExpandedMap[tier.id] ?? false}
+                onVariantsExpandedChange={(expanded) =>
+                  setTierVariantsExpanded(tier.id, expanded)
+                }
+                systemInfo={systemInfo}
+                downSource={downSource}
+                onUpdate={updateSystemInfo}
+                t={t}
+                globalDownloading={globalDownloading}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </TooltipProvider>
   );
 };
 

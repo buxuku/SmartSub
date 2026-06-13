@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, dialog } from 'electron';
+import { ipcMain, BrowserWindow, dialog, shell } from 'electron';
 import os from 'os';
 import { getModelsInstalled, getPath, deleteModel } from './whisper';
 import { getModelDownloader } from './modelDownloader';
@@ -72,14 +72,29 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
 
       try {
         await fse.copy(sourcePath, destPath);
-        return true;
+        return { success: true };
       } catch (error) {
         console.error('导入模型失败:', error);
-        return false;
+        return { success: false, error: String(error) };
       }
     }
 
-    return false;
+    return { success: false, canceled: true };
+  });
+
+  ipcMain.handle('openModelsFolder', async () => {
+    const modelsPath = getPath('modelsPath');
+    try {
+      await fse.ensureDir(modelsPath);
+      const err = await shell.openPath(modelsPath);
+      if (err) {
+        return { success: false, error: err };
+      }
+      return { success: true };
+    } catch (error) {
+      logMessage(`Failed to open models folder: ${error}`, 'error');
+      return { success: false, error: String(error) };
+    }
   });
 
   // 获取临时目录路径

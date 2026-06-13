@@ -9,24 +9,29 @@ import {
   ArrowRight,
   AlertTriangle,
   Plus,
+  Gauge,
 } from 'lucide-react';
 import DownModel from '@/components/DownModel';
 import DownModelButton from '@/components/DownModelButton';
-import { modelCategories, getRecommendedCategory } from 'lib/utils';
+import { modelCategories, getRecommendedCategory, cn } from 'lib/utils';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import { isProviderConfigured } from 'lib/providerUtils';
+import { CardDecor } from '@/components/launchpad/TaskIcons';
 import { ISystemInfo } from '../../../types/types';
 import { Provider } from '../../../types';
-import { DownSource } from './ModelsTab';
+import {
+  deriveGpuDisplayState,
+  type GpuDisplayState,
+} from '@/components/settings/gpu/gpuDisplayState';
+import { DownSource } from 'lib/modelPanelUtils';
 
-const GPU_MODE_KEYS = ['auto', 'cpu-only', 'custom'] as const;
+const GPU_MODE_KEYS = ['auto', 'gpu-only', 'cpu-only'] as const;
 
-type GpuStatus = {
-  isDarwin: boolean;
-  enabled: boolean;
-  label: string;
-  mode: string;
-};
+const OVERVIEW_CARD_DECOR = {
+  models: 'text-sky-500/[0.09] dark:text-sky-400/[0.12]',
+  providers: 'text-emerald-500/[0.09] dark:text-emerald-400/[0.12]',
+  acceleration: 'text-indigo-500/[0.09] dark:text-indigo-400/[0.12]',
+} as const;
 
 const OverviewTab = ({
   onNavigateTab,
@@ -41,7 +46,7 @@ const OverviewTab = ({
     modelsPath: '',
   });
   const [providers, setProviders] = useState<Provider[]>([]);
-  const [gpu, setGpu] = useState<GpuStatus | null>(null);
+  const [gpuState, setGpuState] = useState<GpuDisplayState | null>(null);
   const [downSource] = useLocalStorageState<DownSource>(
     'downSource',
     DownSource.HuggingFace,
@@ -60,27 +65,19 @@ const OverviewTab = ({
       const env = await window?.ipc?.invoke('get-gpu-environment');
       const settings = await window?.ipc?.invoke('getSettings');
       const active = await window?.ipc?.invoke('get-active-backend');
-      const backendLabels: Record<string, string> = {
-        cuda: 'CUDA',
-        vulkan: 'Vulkan',
-        cpu: 'CPU',
-        metal: 'Metal',
-        coreml: 'CoreML',
-        custom: 'Custom',
-      };
-      const isDarwin = env?.platform === 'darwin';
-      const isCpuResult = active?.backend === 'cpu';
-      setGpu({
-        isDarwin,
-        enabled: isDarwin || (settings?.gpuMode !== 'cpu-only' && !isCpuResult),
-        label:
-          active && !isCpuResult
-            ? active.backend === 'cuda' && active.variant
-              ? `CUDA ${active.variant}`
-              : backendLabels[active.backend] || active.backend
-            : '',
-        mode: settings?.gpuMode || 'auto',
-      });
+      const selected = await window?.ipc?.invoke('get-selected-addon-version');
+      const customPath = await window?.ipc?.invoke('get-custom-addon-path');
+      if (env) {
+        setGpuState(
+          deriveGpuDisplayState(
+            env,
+            settings?.gpuMode || 'auto',
+            active,
+            selected,
+            customPath,
+          ),
+        );
+      }
     } catch (error) {
       console.error('Failed to refresh overview:', error);
     }
@@ -116,10 +113,62 @@ const OverviewTab = ({
   );
   const configuredProviders = providers.filter(isProviderConfigured);
   const gpuModeKey = (GPU_MODE_KEYS as readonly string[]).includes(
-    gpu?.mode ?? '',
+    gpuState?.gpuMode ?? '',
   )
-    ? (gpu?.mode as string)
+    ? (gpuState?.gpuMode as string)
     : 'auto';
+
+  const renderGpuStatus = () => {
+    if (!gpuState) return null;
+    switch (gpuState.overviewKind) {
+      case 'darwin':
+        return (
+          <p className="text-sm font-medium text-success">
+            {t('overview.appleAcceleration')}
+          </p>
+        );
+      case 'cpuManual':
+        return (
+          <p className="text-sm text-muted-foreground">
+            {t('overview.gpuCpuManual')}
+          </p>
+        );
+      case 'gpuOnlyOnCpu':
+        return (
+          <p className="text-sm font-medium text-warning">
+            {t('overview.gpuOnlyOnCpu')}
+          </p>
+        );
+      case 'gpuOnlyPending':
+        return (
+          <p className="text-sm font-medium text-muted-foreground">
+            {t('overview.gpuGpuOnlyPending')}
+          </p>
+        );
+      case 'autoPending':
+        return (
+          <p className="text-sm text-muted-foreground">
+            {t('overview.gpuAutoPending')}
+          </p>
+        );
+      case 'cpuFallback':
+        return (
+          <p className="text-sm font-medium text-warning">
+            {t('overview.gpuCpuFallback')}
+          </p>
+        );
+      case 'running':
+        return (
+          <p className="text-sm font-medium text-success">
+            {t('overview.gpuRunning', {
+              backend: gpuState.accelerationLabel,
+            })}
+          </p>
+        );
+      default:
+        return null;
+    }
+  };
 
   const manageButton = (tab: string) => (
     <Button
@@ -135,11 +184,12 @@ const OverviewTab = ({
     </Button>
   );
 
-  // 整卡可点：点击 / Enter / Space 跳转到对应 tab
-  const cardNavProps = (tab: string) => ({
+  const cardNavProps = (tab: keyof typeof OVERVIEW_CARD_DECOR) => ({
     role: 'button' as const,
     tabIndex: 0,
-    className: 'flex flex-col cursor-pointer transition-shadow hover:shadow-md',
+    className: cn(
+      'group relative overflow-hidden flex flex-col cursor-pointer rounded-xl transition-all hover:shadow-md hover:-translate-y-0.5',
+    ),
     onClick: () => onNavigateTab(tab),
     onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -149,10 +199,20 @@ const OverviewTab = ({
     },
   });
 
+  const cardDecor = (tab: keyof typeof OVERVIEW_CARD_DECOR) => (
+    <CardDecor
+      className={cn(
+        'pointer-events-none absolute right-0 top-0 h-24 w-24 transition-transform duration-300 group-hover:scale-110',
+        OVERVIEW_CARD_DECOR[tab],
+      )}
+    />
+  );
+
   return (
     <div className="grid items-stretch gap-4 md:grid-cols-3">
       {/* 语音模型 */}
       <Card {...cardNavProps('models')}>
+        {cardDecor('models')}
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Bot className="h-4 w-4" />
@@ -210,6 +270,7 @@ const OverviewTab = ({
 
       {/* 翻译服务 */}
       <Card {...cardNavProps('providers')}>
+        {cardDecor('providers')}
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Languages className="h-4 w-4" />
@@ -258,6 +319,7 @@ const OverviewTab = ({
 
       {/* GPU 加速 */}
       <Card {...cardNavProps('acceleration')}>
+        {cardDecor('acceleration')}
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Zap className="h-4 w-4" />
@@ -265,23 +327,24 @@ const OverviewTab = ({
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-1 flex-col gap-3">
-          {gpu?.isDarwin ? (
-            <p className="text-sm font-medium text-success">
-              {t('overview.appleAcceleration')}
-            </p>
-          ) : gpu?.enabled && gpu.label ? (
-            <p className="text-sm font-medium text-success">
-              {t('overview.gpuRunning', { backend: gpu.label })}
-            </p>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {t('overview.gpuNotEnabled')}
+          {renderGpuStatus()}
+          {gpuState && !gpuState.isDarwin && gpuState.gpuName && (
+            <p className="text-xs text-muted-foreground truncate">
+              {gpuState.gpuName}
             </p>
           )}
-          {gpu && !gpu.isDarwin && (
+          {gpuState && !gpuState.isDarwin && (
             <p className="text-xs text-muted-foreground">
               {t('overview.gpuModeLabel', {
                 mode: t(`overview.gpuMode.${gpuModeKey}`),
+              })}
+            </p>
+          )}
+          {gpuState?.canUpgradeCuda && gpuState.recommendedCudaVersion && (
+            <p className="flex items-start gap-1 text-xs text-muted-foreground">
+              <Gauge className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {t('overview.cudaUpgradeHint', {
+                version: gpuState.recommendedCudaVersion,
               })}
             </p>
           )}
