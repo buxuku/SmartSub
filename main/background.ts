@@ -30,6 +30,11 @@ import {
   setMainWindowForAddon,
 } from './helpers/ipcAddonHandlers';
 import {
+  registerEngineIpcHandlers,
+  setMainWindowForEngine,
+} from './helpers/ipcEngineHandlers';
+import { shutdownPythonRuntime } from './helpers/pythonRuntime';
+import {
   applyMacAppBranding,
   resolveAppIcon,
   setAppDisplayNameEarly,
@@ -68,8 +73,16 @@ if (isProd) {
 
 /** Cmd+Q / 菜单退出时置位：区分「关窗」与「真退出」 */
 let isQuitting = false;
-app.on('before-quit', () => {
+let runtimeShutdownDone = false;
+app.on('before-quit', (event) => {
   isQuitting = true;
+  if (!runtimeShutdownDone) {
+    event.preventDefault();
+    runtimeShutdownDone = true;
+    void shutdownPythonRuntime().finally(() => {
+      app.exit(0);
+    });
+  }
 });
 
 (async () => {
@@ -162,6 +175,8 @@ app.on('before-quit', () => {
   setupAutoUpdater(mainWindow);
   setupSubtitleMergeHandlers(mainWindow);
   setMainWindowForAddon(mainWindow);
+  registerEngineIpcHandlers();
+  setMainWindowForEngine(mainWindow);
 })();
 
 app.on('window-all-closed', () => {

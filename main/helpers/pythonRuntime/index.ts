@@ -59,5 +59,8 @@ export function getPythonRuntimeManager(): PythonRuntimeManager {
 }
 
 export async function shutdownPythonRuntime(): Promise<void> {
-  if (manager) await manager.stop();
+  if (manager) {
+    await manager.stop();
+    manager = null;
+  }
 }
