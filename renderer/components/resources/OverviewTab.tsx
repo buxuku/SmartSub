@@ -119,16 +119,33 @@ const OverviewTab = ({
       variant="ghost"
       size="sm"
       className="text-xs"
-      onClick={() => onNavigateTab(tab)}
+      onClick={(e) => {
+        e.stopPropagation();
+        onNavigateTab(tab);
+      }}
     >
       {t('overview.manage')} <ArrowRight className="ml-1 h-3 w-3" />
     </Button>
   );
 
+  // 整卡可点：点击 / Enter / Space 跳转到对应 tab
+  const cardNavProps = (tab: string) => ({
+    role: 'button' as const,
+    tabIndex: 0,
+    className: 'flex flex-col cursor-pointer transition-shadow hover:shadow-md',
+    onClick: () => onNavigateTab(tab),
+    onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onNavigateTab(tab);
+      }
+    },
+  });
+
   return (
     <div className="grid items-stretch gap-4 md:grid-cols-3">
       {/* 语音模型 */}
-      <Card className="flex flex-col">
+      <Card {...cardNavProps('models')}>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Bot className="h-4 w-4" />
@@ -167,15 +184,17 @@ const OverviewTab = ({
           ) : null}
           <div className="mt-auto flex items-center gap-2 pt-1">
             {installed.length === 0 && recommendedModel && (
-              <DownModel
-                modelName={recommendedModel.name}
-                callBack={refresh}
-                downSource={downSource}
-                needsCoreML={recommendedModel.needsCoreML}
-                globalDownloading={downloading.length > 0}
-              >
-                <DownModelButton />
-              </DownModel>
+              <div onClick={(e) => e.stopPropagation()}>
+                <DownModel
+                  modelName={recommendedModel.name}
+                  callBack={refresh}
+                  downSource={downSource}
+                  needsCoreML={recommendedModel.needsCoreML}
+                  globalDownloading={downloading.length > 0}
+                >
+                  <DownModelButton />
+                </DownModel>
+              </div>
             )}
             {manageButton('models')}
           </div>
@@ -183,7 +202,7 @@ const OverviewTab = ({
       </Card>
 
       {/* 翻译服务 */}
-      <Card className="flex flex-col">
+      <Card {...cardNavProps('providers')}>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Languages className="h-4 w-4" />
@@ -230,7 +249,7 @@ const OverviewTab = ({
       </Card>
 
       {/* GPU 加速 */}
-      <Card className="flex flex-col">
+      <Card {...cardNavProps('acceleration')}>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Zap className="h-4 w-4" />

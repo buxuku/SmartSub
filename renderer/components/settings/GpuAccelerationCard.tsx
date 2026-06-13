@@ -414,9 +414,11 @@ const GpuAccelerationCard: React.FC = () => {
     if (!activeBackend) {
       return { tone: 'neutral', title: t('gpuAcceleration.statusAutoReady') };
     }
+    // auto 模式下回退属预期行为，用中性提示；用户显式选了 GPU 模式仍回退才警示
+    const fallbackTone: StatusTone = gpuMode === 'auto' ? 'neutral' : 'yellow';
     if (activeBackend.backend === 'cpu') {
       return {
-        tone: isDesktopGpuPlatform ? 'yellow' : 'gray',
+        tone: isDesktopGpuPlatform ? fallbackTone : 'gray',
         title: isDesktopGpuPlatform
           ? t('gpuAcceleration.statusFallback', { backend: 'CPU' })
           : t('gpuAcceleration.statusCpu'),
@@ -424,7 +426,7 @@ const GpuAccelerationCard: React.FC = () => {
     }
     if (activeBackend.fallback) {
       return {
-        tone: 'yellow',
+        tone: fallbackTone,
         title: t('gpuAcceleration.statusFallback', { backend: activeLabel }),
       };
     }
@@ -447,6 +449,8 @@ const GpuAccelerationCard: React.FC = () => {
       return <Zap className="w-5 h-5 text-success" />;
     if (status.tone === 'yellow')
       return <AlertTriangle className="w-5 h-5 text-warning" />;
+    if (status.tone === 'neutral')
+      return <Info className="w-5 h-5 text-muted-foreground" />;
     if (gpuMode === 'cpu-only')
       return <ZapOff className="w-5 h-5 text-muted-foreground" />;
     return <Cpu className="w-5 h-5 text-muted-foreground" />;
@@ -1010,9 +1014,9 @@ const GpuAccelerationCard: React.FC = () => {
               </div>
 
               {/* 闪退提示 */}
-              <div className="flex items-start gap-2 p-2.5 bg-warning/10 rounded-md border border-warning/30">
-                <AlertTriangle className="w-3.5 h-3.5 text-warning mt-0.5 shrink-0" />
-                <span className="text-[11px] text-warning">
+              <div className="flex items-start gap-2 p-2.5 bg-muted/50 rounded-md border">
+                <Info className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                <span className="text-[11px] text-muted-foreground">
                   {t('gpuAcceleration.crashTip')}
                 </span>
               </div>
