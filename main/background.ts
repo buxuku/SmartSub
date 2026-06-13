@@ -13,6 +13,10 @@ import { setupTaskProcessor } from './helpers/taskProcessor';
 import { setupSystemInfoManager } from './helpers/systemInfoManager';
 import { setupStoreHandlers, store } from './helpers/storeManager';
 import { setupTaskManager } from './helpers/taskManager';
+import {
+  initializeWorkItemStore,
+  setupWorkItemStoreLifecycle,
+} from './helpers/workItemStore';
 import { setupAutoUpdater } from './helpers/updater';
 import { setupAppMenu } from './helpers/menu';
 import { setupParameterHandlers } from './helpers/ipcParameterHandlers';
@@ -131,6 +135,8 @@ app.on('before-quit', () => {
   setupIpcHandlers(mainWindow);
   setupTaskProcessor(mainWindow);
   setupSystemInfoManager(mainWindow);
+  initializeWorkItemStore();
+  setupWorkItemStoreLifecycle();
   setupTaskManager();
   setupAutoUpdater(mainWindow);
   setupSubtitleMergeHandlers(mainWindow);
