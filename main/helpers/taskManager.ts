@@ -1,16 +1,19 @@
-import { app, ipcMain } from 'electron';
-import { store } from './store';
+import { ipcMain } from 'electron';
 import { IFiles, TaskProject, TaskProjectType } from '../../types';
-
-let projects: TaskProject[] = [];
-let writeTimer: NodeJS.Timeout | null = null;
-
-const STAGE_KEYS = [
-  'extractAudio',
-  'extractSubtitle',
-  'translateSubtitle',
-  'prepareSubtitle',
-] as const;
+import { isPipelineWorkItem } from '../../types/workItem';
+import {
+  deleteWorkItem,
+  getWorkItemById,
+  getWorkItems,
+  renameWorkItem,
+  saveWorkItem,
+} from './workItemStore';
+import {
+  derivePipelineWorkItemStatus,
+  taskProjectToWorkItem,
+  workItemToTaskProject,
+  buildTaskName,
+} from './workItemMigration';
 
 const TASK_TYPES: TaskProjectType[] = [
   'generateAndTranslate',
@@ -18,42 +21,8 @@ const TASK_TYPES: TaskProjectType[] = [
   'translateOnly',
 ];
 
-/** 上次运行中断的任务：loading 阶段改写为 error + 哨兵，renderer 翻译并提供重试 */
-function markInterrupted(file: IFiles): IFiles {
-  const next: Record<string, any> = { ...file };
-  for (const key of STAGE_KEYS) {
-    if (next[key] === 'loading') {
-      next[key] = 'error';
-      next[`${key}Error`] = 'TASK_INTERRUPTED';
-    }
-  }
-  return next as IFiles;
-}
-
-/** 进度事件很频繁，落盘做防抖 */
-function scheduleWrite() {
-  if (writeTimer) return;
-  writeTimer = setTimeout(() => {
-    writeTimer = null;
-    store.set('taskProjects', projects);
-  }, 800);
-}
-
-function flushWrite() {
-  if (writeTimer) {
-    clearTimeout(writeTimer);
-    writeTimer = null;
-  }
-  store.set('taskProjects', projects);
-}
-
-/** 默认任务名：时间 + 第一个文件名 */
-export function buildTaskName(files: IFiles[], at = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const time = `${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
-  const first = files[0]?.fileName;
-  return first ? `${time} · ${first}` : time;
-}
+// Re-export for callers that imported buildTaskName from taskManager
+export { buildTaskName } from './workItemMigration';
 
 function normalizeTaskType(value: unknown): TaskProjectType {
   return TASK_TYPES.includes(value as TaskProjectType)
@@ -61,32 +30,23 @@ function normalizeTaskType(value: unknown): TaskProjectType {
     : 'generateAndTranslate';
 }
 
-/** 旧版扁平 tasks 列表迁移为单个任务工程 */
-function migrateLegacyTasks() {
-  const legacy = store.get('tasks');
-  if (!Array.isArray(legacy)) return;
-  if (legacy.length > 0 && projects.length === 0) {
-    const now = Date.now();
-    projects.push({
-      id: `legacy-${now}`,
-      name: buildTaskName(legacy),
-      taskType: normalizeTaskType(store.get('userConfig')?.taskType),
-      files: legacy,
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
-  store.delete('tasks');
+function listTaskProjects(): TaskProject[] {
+  return getWorkItems()
+    .filter(isPipelineWorkItem)
+    .map(workItemToTaskProject)
+    .filter((project): project is TaskProject => project !== null);
 }
 
-function findProjectByFileUuid(uuid: string): TaskProject | undefined {
-  return projects.find((p) => p.files.some((f) => f.uuid === uuid));
+function findWorkItemByFileUuid(uuid: string) {
+  return getWorkItems().find(
+    (item) =>
+      isPipelineWorkItem(item) &&
+      item.pipelineFiles?.some((file) => file.uuid === uuid),
+  );
 }
 
 /**
- * 主进程侧镜像任务执行事件到任务工程存储。
- * 渲染层离开任务页后事件不再有人消费，没有这层镜像，
- * 工程内文件会永远停留在 loading 状态。
+ * 主进程侧镜像任务执行事件到 WorkItem 存储。
  */
 export function applyTaskEventToProjects(
   channel: string,
@@ -95,10 +55,11 @@ export function applyTaskEventToProjects(
   const file = args[0] as IFiles | undefined;
   const uuid = file?.uuid;
   if (!uuid) return;
-  const project = findProjectByFileUuid(uuid);
-  if (!project) return;
 
-  project.files = project.files.map((item) => {
+  const workItem = findWorkItemByFileUuid(uuid);
+  if (!workItem || !isPipelineWorkItem(workItem)) return;
+
+  const pipelineFiles = (workItem.pipelineFiles || []).map((item) => {
     if (item.uuid !== uuid) return item;
     const next: Record<string, any> = { ...item };
     switch (channel) {
@@ -119,36 +80,28 @@ export function applyTaskEventToProjects(
     }
     return next as IFiles;
   });
-  project.updatedAt = Date.now();
-  scheduleWrite();
+
+  saveWorkItem({
+    ...workItem,
+    pipelineFiles,
+    status: derivePipelineWorkItemStatus(pipelineFiles),
+    updatedAt: Date.now(),
+  });
 }
 
+/** @deprecated 请使用 getWorkItems；保留兼容 shim */
 export function setupTaskManager() {
-  const stored = store.get('taskProjects');
-  projects = Array.isArray(stored) ? stored : [];
-  migrateLegacyTasks();
-  projects = projects.map((project) => ({
-    ...project,
-    files: (project.files || []).map(markInterrupted),
-  }));
-  flushWrite();
+  ipcMain.handle('getTaskProjects', () => listTaskProjects());
 
-  ipcMain.handle('getTaskProjects', () => {
-    return [...projects].sort((a, b) => b.updatedAt - a.updatedAt);
+  ipcMain.handle('getTaskProject', (_event, id: string) => {
+    const item = getWorkItemById(id);
+    return item ? workItemToTaskProject(item) : null;
   });
 
-  ipcMain.handle('getTaskProject', (event, id: string) => {
-    return projects.find((p) => p.id === id) || null;
-  });
-
-  /**
-   * upsert 工程：files 为空时删除该工程（不保留空工程）。
-   * 返回保存后的工程（或 null）。
-   */
   ipcMain.handle(
     'saveTaskProject',
     (
-      event,
+      _event,
       payload: {
         id: string;
         taskType?: TaskProjectType;
@@ -158,62 +111,50 @@ export function setupTaskManager() {
     ) => {
       const { id, taskType, files, name } = payload || {};
       if (!id) return null;
-      const index = projects.findIndex((p) => p.id === id);
 
       if (!Array.isArray(files) || files.length === 0) {
-        if (index >= 0) {
-          projects.splice(index, 1);
-          flushWrite();
-        }
+        deleteWorkItem(id);
         return null;
       }
 
       const now = Date.now();
-      if (index >= 0) {
-        // 更新路径有意忽略 name——重命名走 renameTaskProject,避免文件列表更新意外改名
-        projects[index] = {
-          ...projects[index],
-          files,
+      const existing = getWorkItemById(id);
+      const status = derivePipelineWorkItemStatus(files);
+
+      if (existing && isPipelineWorkItem(existing)) {
+        const saved = saveWorkItem({
+          ...existing,
+          pipelineFiles: files,
+          status,
           updatedAt: now,
-        };
-        scheduleWrite();
-        return projects[index];
+        });
+        return workItemToTaskProject(saved);
       }
 
-      const project: TaskProject = {
-        id,
-        name: name?.trim() || buildTaskName(files),
-        taskType: normalizeTaskType(taskType),
-        files,
-        createdAt: now,
-        updatedAt: now,
-      };
-      projects.push(project);
-      flushWrite();
-      return project;
+      const saved = saveWorkItem(
+        taskProjectToWorkItem({
+          id,
+          name: name?.trim() || buildTaskName(files),
+          taskType: normalizeTaskType(taskType),
+          files,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      );
+      return workItemToTaskProject(saved);
     },
   );
 
   ipcMain.handle(
     'renameTaskProject',
-    (event, payload: { id: string; name: string }) => {
-      const project = projects.find((p) => p.id === payload?.id);
-      const name = payload?.name?.trim();
-      if (!project || !name) return project || null;
-      project.name = name;
-      flushWrite();
-      return project;
+    (_event, payload: { id: string; name: string }) => {
+      const renamed = renameWorkItem(payload?.id, payload?.name || '');
+      return renamed ? workItemToTaskProject(renamed) : null;
     },
   );
 
-  ipcMain.handle('deleteTaskProject', (event, id: string) => {
-    const index = projects.findIndex((p) => p.id === id);
-    if (index >= 0) {
-      projects.splice(index, 1);
-      flushWrite();
-    }
+  ipcMain.handle('deleteTaskProject', (_event, id: string) => {
+    deleteWorkItem(id);
     return true;
   });
-
-  app.on('before-quit', flushWrite);
 }

@@ -17,6 +17,7 @@ import {
   initializeWorkItemStore,
   setupWorkItemStoreLifecycle,
 } from './helpers/workItemStore';
+import { setupWorkItemHandlers } from './helpers/workItemHandlers';
 import { setupAutoUpdater } from './helpers/updater';
 import { setupAppMenu } from './helpers/menu';
 import { setupParameterHandlers } from './helpers/ipcParameterHandlers';
@@ -137,6 +138,7 @@ app.on('before-quit', () => {
   setupSystemInfoManager(mainWindow);
   initializeWorkItemStore();
   setupWorkItemStoreLifecycle();
+  setupWorkItemHandlers();
   setupTaskManager();
   setupAutoUpdater(mainWindow);
   setupSubtitleMergeHandlers(mainWindow);

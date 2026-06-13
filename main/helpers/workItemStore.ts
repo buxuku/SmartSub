@@ -1,14 +1,48 @@
 import { app } from 'electron';
 import { store } from './store';
-import type { TaskProject } from '../../types';
+import type { IFiles, TaskProject } from '../../types';
 import type { ProofreadTask } from '../../types/proofread';
 import type { WorkItem } from '../../types/workItem';
 import { WORK_ITEM_MIGRATION_VERSION } from '../../types/workItem';
-import { migrateLegacyStoresToWorkItems } from './workItemMigration';
+import {
+  derivePipelineWorkItemStatus,
+  migrateLegacyStoresToWorkItems,
+  buildTaskName,
+} from './workItemMigration';
 
 const WORK_ITEMS_KEY = 'workItems';
 const MIGRATION_VERSION_KEY = 'workItemsMigrationVersion';
 const MAX_WORK_ITEMS = 100;
+
+const STAGE_KEYS = [
+  'extractAudio',
+  'extractSubtitle',
+  'translateSubtitle',
+  'prepareSubtitle',
+] as const;
+
+function markInterruptedFile(file: IFiles): IFiles {
+  const next: Record<string, any> = { ...file };
+  for (const key of STAGE_KEYS) {
+    if (next[key] === 'loading') {
+      next[key] = 'error';
+      next[`${key}Error`] = 'TASK_INTERRUPTED';
+    }
+  }
+  return next as IFiles;
+}
+
+function applyInterruptedMarkToWorkItems() {
+  workItems = workItems.map((item) => {
+    if (item.type === 'proofread') return item;
+    const pipelineFiles = (item.pipelineFiles || []).map(markInterruptedFile);
+    return {
+      ...item,
+      pipelineFiles,
+      status: derivePipelineWorkItemStatus(pipelineFiles),
+    };
+  });
+}
 
 let workItems: WorkItem[] = [];
 let writeTimer: NodeJS.Timeout | null = null;
@@ -47,14 +81,37 @@ function runMigrationIfNeeded() {
 
   const taskProjects = (store.get('taskProjects') as TaskProject[]) || [];
   const proofreadTasks = (store.get('proofreadTasks') as ProofreadTask[]) || [];
+  const legacyTasks = store.get('tasks');
 
-  if (!taskProjects.length && !proofreadTasks.length) {
+  let mergedTaskProjects = [...taskProjects];
+  if (
+    Array.isArray(legacyTasks) &&
+    legacyTasks.length > 0 &&
+    mergedTaskProjects.length === 0
+  ) {
+    const now = Date.now();
+    mergedTaskProjects = [
+      {
+        id: `legacy-${now}`,
+        name: buildTaskName(legacyTasks as IFiles[]),
+        taskType:
+          (store.get('userConfig')?.taskType as TaskProject['taskType']) ||
+          'generateAndTranslate',
+        files: legacyTasks as IFiles[],
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
+    store.delete('tasks');
+  }
+
+  if (!mergedTaskProjects.length && !proofreadTasks.length) {
     store.set(MIGRATION_VERSION_KEY, WORK_ITEM_MIGRATION_VERSION);
     return;
   }
 
   const result = migrateLegacyStoresToWorkItems({
-    taskProjects,
+    taskProjects: mergedTaskProjects,
     proofreadTasks,
   });
 
@@ -71,6 +128,8 @@ export function initializeWorkItemStore(): void {
   const stored = store.get(WORK_ITEMS_KEY);
   workItems = Array.isArray(stored) ? stored : [];
   runMigrationIfNeeded();
+  applyInterruptedMarkToWorkItems();
+  flushWrite();
 }
 
 export function getWorkItems(): WorkItem[] {
