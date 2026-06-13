@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Download, Languages } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Models from '@/components/Models';
 import { supportedLanguage } from 'lib/utils';
@@ -96,8 +97,14 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
               useLocalWhisper={useLocalWhisper}
             />
           ) : (
-            <Button asChild variant="outline" size="sm" className="h-8 text-xs">
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5"
+            >
               <Link href={`/${locale}/resources?tab=models`}>
+                <Download className="h-4 w-4" />
                 {t('goDownloadModel')}
               </Link>
             </Button>
@@ -169,9 +176,10 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
                 asChild
                 variant="outline"
                 size="sm"
-                className="h-8 text-xs"
+                className="h-8 text-xs gap-1.5"
               >
                 <Link href={`/${locale}/resources?tab=providers`}>
+                  <Languages className="h-4 w-4" />
                   {t('goConfigureProvider')}
                 </Link>
               </Button>

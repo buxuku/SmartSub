@@ -34,6 +34,7 @@ import {
   Play,
   Pause,
   RotateCcw,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Subtitle } from '../../hooks/useSubtitles';
@@ -488,11 +489,13 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="gap-1.5"
                       onClick={() => {
                         setCustomPrompt(defaultBatchPrompt);
                         localStorage.removeItem(BATCH_PROMPT_CACHE_KEY);
                       }}
                     >
+                      <RotateCcw className="h-4 w-4" />
                       {t('resetToDefault')}
                     </Button>
                     <Button
@@ -715,7 +718,12 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
         <DialogFooter className="flex-shrink-0">
           {step === 'config' && (
             <>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
+              <Button
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => onOpenChange(false)}
+              >
+                <X className="h-4 w-4" />
                 {t('cancel')}
               </Button>
               <Button
@@ -734,10 +742,11 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
           {step === 'running' && (
             <Button
               variant="outline"
+              className="gap-1.5"
               onClick={handleCancelOptimization}
               disabled={isCancelling}
             >
-              <XCircle className="h-4 w-4 mr-1" />
+              <X className="h-4 w-4" />
               {isCancelling ? t('cancelling') : t('cancel')}
             </Button>
           )}
@@ -748,7 +757,12 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
                 <RotateCcw className="h-4 w-4 mr-1" />
                 {t('reoptimize')}
               </Button>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
+              <Button
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => onOpenChange(false)}
+              >
+                <X className="h-4 w-4" />
                 {t('cancel')}
               </Button>
               <Button

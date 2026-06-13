@@ -10,6 +10,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { Trash2, X } from 'lucide-react';
 import { useTranslation } from 'next-i18next';
 
 const DeleteModel = ({ children, modelName, callBack }) => {
@@ -34,13 +35,18 @@ const DeleteModel = ({ children, modelName, callBack }) => {
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={() => setVisibility(false)}>
+          <AlertDialogCancel
+            className="gap-1.5"
+            onClick={() => setVisibility(false)}
+          >
+            <X className="h-4 w-4" />
             {t('cancel')}
           </AlertDialogCancel>
           <AlertDialogAction
             onClick={handleDelete}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className="gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
+            <Trash2 className="h-4 w-4" />
             {t('delete')}
           </AlertDialogAction>
         </AlertDialogFooter>

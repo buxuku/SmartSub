@@ -29,6 +29,12 @@ import {
   Github,
   MessageSquareWarning,
   ScrollText,
+  Save,
+  ArrowRight,
+  FolderOpen,
+  SlidersHorizontal,
+  RotateCcw,
+  X,
 } from 'lucide-react';
 import {
   Collapsible,
@@ -155,7 +161,8 @@ const CommandInput = ({
           className="font-mono text-sm"
           placeholder={t('whisperCommandPlaceholder')}
         />
-        <Button onClick={onSave} size="sm" className="flex-shrink-0">
+        <Button onClick={onSave} size="sm" className="flex-shrink-0 gap-1.5">
+          <Save className="h-4 w-4" />
           {t('save')}
         </Button>
       </div>
@@ -519,10 +526,12 @@ const Settings = () => {
             <Button
               variant="outline"
               size="sm"
+              className="gap-1.5"
               onClick={() =>
                 router.push(`/${i18n.language}/resources?tab=models`)
               }
             >
+              <ArrowRight className="h-4 w-4" />
               {t('goToResources')}
             </Button>
           </div>
@@ -561,8 +570,9 @@ const Settings = () => {
                   <Button
                     onClick={handleSelectCustomTempDir}
                     size="sm"
-                    className="flex-shrink-0"
+                    className="flex-shrink-0 gap-1.5"
                   >
+                    <FolderOpen className="h-4 w-4" />
                     {t('selectPath')}
                   </Button>
                 </div>
@@ -676,18 +686,20 @@ const Settings = () => {
                           isPresetActive(preset) ? 'secondary' : 'outline'
                         }
                         size="sm"
-                        className="h-7 text-xs"
+                        className="h-7 text-xs gap-1.5"
                         onClick={() => applyVadPreset(preset)}
                       >
+                        <SlidersHorizontal className="h-4 w-4" />
                         {t(`vadPreset${preset.id}`)}
                       </Button>
                     ))}
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 text-xs"
+                      className="h-7 text-xs gap-1.5"
                       onClick={() => applyVadPreset(STANDARD_PRESET)}
                     >
+                      <RotateCcw className="h-4 w-4" />
                       {t('vadPresetReset')}
                     </Button>
                   </div>
@@ -938,12 +950,25 @@ const Settings = () => {
           <DialogFooter>
             <Button
               variant="outline"
+              className="gap-1.5"
               onClick={() => setExportDialogOpen(false)}
             >
+              <X className="h-4 w-4" />
               {t('cancel')}
             </Button>
-            <Button onClick={handleExport} disabled={isExporting}>
-              {isExporting ? t('exporting') : t('confirm')}
+            <Button
+              onClick={handleExport}
+              disabled={isExporting}
+              className="gap-1.5"
+            >
+              {isExporting ? (
+                t('exporting')
+              ) : (
+                <>
+                  <Upload className="h-4 w-4" />
+                  {t('confirm')}
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -979,12 +1004,25 @@ const Settings = () => {
           <DialogFooter>
             <Button
               variant="outline"
+              className="gap-1.5"
               onClick={() => setImportDialogOpen(false)}
             >
+              <X className="h-4 w-4" />
               {t('cancel')}
             </Button>
-            <Button onClick={handleImport} disabled={isImporting}>
-              {isImporting ? t('importing') : t('confirm')}
+            <Button
+              onClick={handleImport}
+              disabled={isImporting}
+              className="gap-1.5"
+            >
+              {isImporting ? (
+                t('importing')
+              ) : (
+                <>
+                  <Download className="h-4 w-4" />
+                  {t('confirm')}
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1085,11 +1123,15 @@ const Settings = () => {
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+                  <AlertDialogCancel className="gap-1.5">
+                    <X className="h-4 w-4" />
+                    {t('cancel')}
+                  </AlertDialogCancel>
                   <AlertDialogAction
                     onClick={handleClearConfig}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    className="gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   >
+                    <Trash2 className="h-4 w-4" />
                     {t('restore')}
                   </AlertDialogAction>
                 </AlertDialogFooter>

@@ -42,6 +42,7 @@ import {
   Rocket,
   Scale,
   Crosshair,
+  Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
@@ -301,8 +302,9 @@ function ModelRow({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 text-xs text-muted-foreground hover:text-destructive"
+              className="h-7 text-xs text-muted-foreground hover:text-destructive gap-1.5"
             >
+              <Trash2 className="h-4 w-4" />
               {t('delete')}
             </Button>
           </DeleteModel>

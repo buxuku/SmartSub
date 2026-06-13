@@ -2,7 +2,14 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Bot, Languages, Zap, ArrowRight, AlertTriangle } from 'lucide-react';
+import {
+  Bot,
+  Languages,
+  Zap,
+  ArrowRight,
+  AlertTriangle,
+  Plus,
+} from 'lucide-react';
 import DownModel from '@/components/DownModel';
 import DownModelButton from '@/components/DownModelButton';
 import { modelCategories, getRecommendedCategory } from 'lib/utils';
@@ -237,9 +244,10 @@ const OverviewTab = ({
             {configuredProviders.length === 0 && (
               <Button
                 size="sm"
-                className="text-xs"
+                className="text-xs gap-1.5"
                 onClick={() => onNavigateTab('providers')}
               >
+                <Plus className="h-4 w-4" />
                 {t('overview.enableProviders')}
               </Button>
             )}

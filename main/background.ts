@@ -5,7 +5,6 @@ if (process.env.NODE_ENV !== 'production') {
 
 import path from 'path';
 import { app, protocol } from 'electron';
-import fs from 'fs';
 import serve from 'electron-serve';
 import { createWindow } from './helpers/create-window';
 import { setupIpcHandlers } from './helpers/ipcHandlers';
@@ -28,6 +27,11 @@ import {
   registerAddonIpcHandlers,
   setMainWindowForAddon,
 } from './helpers/ipcAddonHandlers';
+import {
+  applyMacAppBranding,
+  resolveAppIcon,
+  setAppDisplayNameEarly,
+} from './helpers/appBranding';
 
 //控制台出现中文乱码，需要去node_modules\electron\cli.js中修改启动代码页
 
@@ -50,6 +54,9 @@ protocol.registerSchemesAsPrivileged([
 const useLegacyWebSecurity =
   process.env.SMARTSUB_LEGACY_WEB_SECURITY === 'true';
 
+// macOS 开发态：须在 ready 前设置，否则菜单栏仍显示 Electron
+setAppDisplayNameEarly();
+
 if (isProd) {
   serve({ directory: 'app' });
 } else {
@@ -64,6 +71,7 @@ app.on('before-quit', () => {
 
 (async () => {
   await app.whenReady();
+  applyMacAppBranding();
 
   // 注册自定义协议处理本地媒体文件
   protocol.registerFileProtocol('media', (request, callback) => {
@@ -98,6 +106,7 @@ app.on('before-quit', () => {
     height: 900,
     minWidth: 1024,
     minHeight: 700,
+    icon: resolveAppIcon(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       // 本地媒体经 media:// 协议加载；紧急回退 SMARTSUB_LEGACY_WEB_SECURITY=true

@@ -46,6 +46,7 @@ import {
   Package,
   Copy,
   Gauge,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { openUrl } from '@/lib/utils';
@@ -509,7 +510,13 @@ const GpuAccelerationCard: React.FC = () => {
               </Button>
             )}
             {isDownloading && (
-              <Button variant="ghost" size="sm" onClick={handleCancelDownload}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                onClick={handleCancelDownload}
+              >
+                <X className="h-4 w-4" />
                 {t('cancel')}
               </Button>
             )}
@@ -517,11 +524,13 @@ const GpuAccelerationCard: React.FC = () => {
               <Button
                 variant="ghost"
                 size="sm"
+                className="gap-1.5"
                 onClick={() => {
                   setDownloadProgress(null);
                   setDownloadingVariant(null);
                 }}
               >
+                <X className="h-4 w-4" />
                 {t('gpuAcceleration.dismiss')}
               </Button>
             )}
@@ -626,9 +635,11 @@ const GpuAccelerationCard: React.FC = () => {
               </div>
               <Button
                 size="sm"
+                className="gap-1.5"
                 onClick={() => handleDownload(recommendedCudaVersion)}
                 disabled={!!downloadingVariant}
               >
+                <Zap className="h-4 w-4" />
                 {t('gpuAcceleration.upgradeToCuda', {
                   version: recommendedCudaVersion,
                 })}
@@ -758,7 +769,7 @@ const GpuAccelerationCard: React.FC = () => {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 text-xs"
+                        className="h-7 text-xs gap-1.5"
                         disabled={!!downloadingVariant}
                         onClick={() =>
                           handleDownload(
@@ -769,6 +780,7 @@ const GpuAccelerationCard: React.FC = () => {
                           )
                         }
                       >
+                        <ArrowLeftRight className="h-4 w-4" />
                         {selectedCudaInstalled.info.hasDlls
                           ? t('gpuAcceleration.switchToLite')
                           : t('gpuAcceleration.switchToFull')}
@@ -920,12 +932,15 @@ const GpuAccelerationCard: React.FC = () => {
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>
+                              <AlertDialogCancel className="gap-1.5">
+                                <X className="h-4 w-4" />
                                 {t('cancel')}
                               </AlertDialogCancel>
                               <AlertDialogAction
                                 onClick={() => handleRemoveAddon(addon.version)}
+                                className="gap-1.5"
                               >
+                                <Trash2 className="h-4 w-4" />
                                 {t('delete')}
                               </AlertDialogAction>
                             </AlertDialogFooter>

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -13,7 +14,6 @@ import {
   CheckCircle2,
   Compass,
   Edit3,
-  FileVideo2,
   Film,
   Github,
   HelpCircle,
@@ -466,9 +466,14 @@ const Layout = ({ children }) => {
               sidebarExpanded ? 'px-2' : 'justify-center',
             )}
           >
-            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <FileVideo2 className="size-5" />
-            </span>
+            <Image
+              src="/images/brand/logo-mark.png"
+              alt=""
+              width={36}
+              height={36}
+              className="h-9 w-9 flex-shrink-0 rounded-lg object-contain"
+              priority
+            />
             {sidebarExpanded && (
               <span className="truncate text-sm font-semibold">
                 {t('brandName')}

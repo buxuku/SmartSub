@@ -20,6 +20,8 @@ import {
   Loader2,
   CheckCircle2,
   Combine,
+  CircleStop,
+  X,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -579,10 +581,11 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 px-2 text-xs"
+                    className="h-7 gap-1.5 px-2 text-xs"
                     onClick={retranslate.cancel}
                     disabled={retranslate.cancelling}
                   >
+                    <CircleStop className="h-4 w-4" />
                     {retranslate.cancelling ? t('cancelling') : t('cancel')}
                   </Button>
                 </div>
@@ -647,9 +650,10 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-xs"
+              className="h-7 gap-1.5 px-2 text-xs"
               onClick={() => setSelRange(null)}
             >
+              <X className="h-4 w-4" />
               {t('clearSelection')}
             </Button>
           </div>

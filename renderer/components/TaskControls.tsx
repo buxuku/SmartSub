@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { CircleStop, Loader2, Pause, Play } from 'lucide-react';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
 import { cn } from 'lib/utils';
@@ -158,7 +159,12 @@ const TaskControls = ({
         </span>
       )}
       {showStart && (
-        <Button onClick={handleTask} disabled={!files.length}>
+        <Button
+          className="gap-1.5"
+          onClick={handleTask}
+          disabled={!files.length}
+        >
+          <Play className="h-4 w-4" />
           {taskStatus === 'cancelled'
             ? t('home:restartTask')
             : t('home:startTask')}
@@ -166,20 +172,37 @@ const TaskControls = ({
       )}
       {taskStatus === 'running' && (
         <>
-          <Button onClick={handlePause} title={t('home:pauseTip')}>
+          <Button
+            className="gap-1.5"
+            onClick={handlePause}
+            title={t('home:pauseTip')}
+          >
+            <Pause className="h-4 w-4" />
             {t('home:pauseTask')}
           </Button>
-          <Button onClick={handleCancel}>{t('home:cancelTask')}</Button>
+          <Button className="gap-1.5" onClick={handleCancel}>
+            <CircleStop className="h-4 w-4" />
+            {t('home:cancelTask')}
+          </Button>
         </>
       )}
       {taskStatus === 'paused' && (
         <>
-          <Button onClick={handleResume}>{t('home:resumeTask')}</Button>
-          <Button onClick={handleCancel}>{t('home:cancelTask')}</Button>
+          <Button className="gap-1.5" onClick={handleResume}>
+            <Play className="h-4 w-4" />
+            {t('home:resumeTask')}
+          </Button>
+          <Button className="gap-1.5" onClick={handleCancel}>
+            <CircleStop className="h-4 w-4" />
+            {t('home:cancelTask')}
+          </Button>
         </>
       )}
       {taskStatus === 'cancelling' && (
-        <Button disabled>{t('home:cancelling')}</Button>
+        <Button className="gap-1.5" disabled>
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {t('home:cancelling')}
+        </Button>
       )}
     </div>
   );

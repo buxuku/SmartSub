@@ -11,7 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { ArrowLeft, Check, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Check, Loader2, Save, Undo2 } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -410,10 +410,16 @@ export default function ProofreadEditor({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('keepEditing')}</AlertDialogCancel>
-            <Button variant="outline" onClick={handleDiscardAndBack}>
+            <Button
+              variant="outline"
+              className="gap-1.5"
+              onClick={handleDiscardAndBack}
+            >
+              <Undo2 className="h-4 w-4" />
               {t('discardAndBack')}
             </Button>
-            <AlertDialogAction onClick={handleSaveAndBack}>
+            <AlertDialogAction className="gap-1.5" onClick={handleSaveAndBack}>
+              <Save className="h-4 w-4" />
               {t('saveAndBack')}
             </AlertDialogAction>
           </AlertDialogFooter>

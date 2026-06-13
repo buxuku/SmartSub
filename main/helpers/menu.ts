@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Menu, shell } from 'electron';
 import { store } from './store';
+import { APP_DISPLAY_NAME } from './appBranding';
 
 type MenuLanguage = 'zh' | 'en';
 
@@ -92,7 +93,7 @@ function sendToRenderer(channel: string) {
 
 export function buildAppMenu(language: MenuLanguage = resolveLanguage()) {
   const l = LABELS[language];
-  const appName = app.name;
+  const appName = APP_DISPLAY_NAME;
   const fmt = (s: string) => s.replace('%s', appName);
   const isMac = process.platform === 'darwin';
 

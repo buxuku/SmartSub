@@ -20,14 +20,17 @@ import {
 } from 'lib/utils';
 import { isProviderConfigured } from 'lib/providerUtils';
 import {
+  ArrowLeft,
   ArrowRight,
   Bot,
+  Check,
   CheckCircle2,
   Clapperboard,
   FileText,
   Languages,
   Loader2,
   PlayCircle,
+  SkipForward,
   Zap,
 } from 'lucide-react';
 import { useTranslation } from 'next-i18next';
@@ -348,9 +351,10 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
             <Button
               variant="outline"
               size="sm"
-              className="h-8 text-xs flex-shrink-0"
+              className="h-8 gap-1.5 text-xs flex-shrink-0"
               onClick={() => closeAndGo(`/${locale}/resources?tab=providers`)}
             >
+              <Languages className="h-4 w-4" />
               {t('onboarding.goConfigure')}
             </Button>
           </div>
@@ -376,11 +380,12 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 text-xs flex-shrink-0"
+                className="h-8 gap-1.5 text-xs flex-shrink-0"
                 onClick={() =>
                   closeAndGo(`/${locale}/resources?tab=acceleration`)
                 }
               >
+                <Zap className="h-4 w-4" />
                 {t('onboarding.goEnable')}
               </Button>
             )}
@@ -465,26 +470,39 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
             <Button
               variant="ghost"
               size="sm"
-              className="text-muted-foreground"
+              className="gap-1.5 text-muted-foreground"
               onClick={() => handleOpenChange(false)}
             >
+              <SkipForward className="h-4 w-4" />
               {t('onboarding.skip')}
             </Button>
             {step > 0 && (
               <Button
                 variant="outline"
                 size="sm"
+                className="gap-1.5"
                 onClick={() => setStep(step - 1)}
               >
+                <ArrowLeft className="h-4 w-4" />
                 {t('onboarding.back')}
               </Button>
             )}
             {isLast ? (
-              <Button size="sm" onClick={() => handleOpenChange(false)}>
+              <Button
+                size="sm"
+                className="gap-1.5"
+                onClick={() => handleOpenChange(false)}
+              >
+                <Check className="h-4 w-4" />
                 {t('onboarding.finish')}
               </Button>
             ) : (
-              <Button size="sm" onClick={() => setStep(step + 1)}>
+              <Button
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setStep(step + 1)}
+              >
+                <ArrowRight className="h-4 w-4" />
                 {t('onboarding.next')}
               </Button>
             )}

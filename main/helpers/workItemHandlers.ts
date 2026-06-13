@@ -5,6 +5,7 @@ import {
   getWorkItems,
   renameWorkItem,
   saveWorkItem,
+  clearAllWorkItems,
 } from './workItemStore';
 import type { WorkItem } from '../../types/workItem';
 
@@ -24,4 +25,9 @@ export function setupWorkItemHandlers(): void {
     (_event, payload: { id: string; name: string }) =>
       renameWorkItem(payload?.id, payload?.name || ''),
   );
+
+  ipcMain.handle('clearAllWorkItems', () => {
+    clearAllWorkItems();
+    return true;
+  });
 }

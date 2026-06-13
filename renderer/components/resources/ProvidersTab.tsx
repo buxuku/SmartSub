@@ -3,7 +3,7 @@ import { useTranslation } from 'next-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Plug, Search } from 'lucide-react';
+import { Plus, Trash2, Plug, Search, FlaskConical, X } from 'lucide-react';
 import { ProviderForm } from '@/components/ProviderForm';
 import {
   Provider,
@@ -534,9 +534,11 @@ const ProvidersTab: React.FC = () => {
               </h1>
               <Button
                 variant="outline"
+                className="gap-1.5"
                 onClick={handleTestTranslation}
                 disabled={isTestLoading}
               >
+                <FlaskConical className="h-4 w-4" />
                 {isTestLoading ? t('testing') : t('testTranslation')}
               </Button>
             </div>
@@ -630,17 +632,21 @@ const ProvidersTab: React.FC = () => {
           <DialogFooter>
             <Button
               variant="outline"
+              className="gap-1.5"
               onClick={() => {
                 setIsAddDialogOpen(false);
                 setNewProviderName('');
               }}
             >
+              <X className="h-4 w-4" />
               {t('cancel')}
             </Button>
             <Button
               onClick={handleAddProvider}
               disabled={!newProviderName.trim()}
+              className="gap-1.5"
             >
+              <Plus className="h-4 w-4" />
               {t('add')}
             </Button>
           </DialogFooter>

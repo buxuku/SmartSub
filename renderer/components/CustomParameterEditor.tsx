@@ -42,7 +42,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Search, RefreshCw, AlertTriangle } from 'lucide-react';
+import {
+  Search,
+  RefreshCw,
+  AlertTriangle,
+  MoreHorizontal,
+  X,
+} from 'lucide-react';
 
 export interface CustomParameterEditorProps {
   providerId: string;
@@ -470,7 +476,13 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" disabled={disabled}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={disabled}
+              className="gap-1.5"
+            >
+              <MoreHorizontal className="h-4 w-4" />
               {t('more.label')}
               {state.hasUnsavedChanges &&
                 state.saveStatus !== 'error' &&
@@ -582,11 +594,15 @@ export const CustomParameterEditor: React.FC<CustomParameterEditorProps> = ({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('actions.cancel')}</AlertDialogCancel>
+            <AlertDialogCancel className="gap-1.5">
+              <X className="h-4 w-4" />
+              {t('actions.cancel')}
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmRefresh}
-              className="bg-warning text-warning-foreground hover:bg-warning/90"
+              className="gap-1.5 bg-warning text-warning-foreground hover:bg-warning/90"
             >
+              <RefreshCw className="h-4 w-4" />
               {t('unsavedChangesDialog.refreshAnyway')}
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -15,12 +15,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
+  CheckCircle2,
+  Clock,
+  FileText,
+  Loader2,
   Play,
   Trash2,
-  Clock,
-  CheckCircle2,
-  Loader2,
-  FileText,
+  X,
 } from 'lucide-react';
 import { ProofreadTask } from '../../../types/proofread';
 
@@ -183,11 +184,15 @@ export default function ProofreadTaskList({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogCancel className="gap-1.5">
+              <X className="h-4 w-4" />
+              {t('cancel')}
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteConfirm && handleDeleteTask(deleteConfirm)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
+              <Trash2 className="h-4 w-4" />
               {t('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>

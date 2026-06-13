@@ -12,7 +12,6 @@ import {
 
 const WORK_ITEMS_KEY = 'workItems';
 const MIGRATION_VERSION_KEY = 'workItemsMigrationVersion';
-const MAX_WORK_ITEMS = 100;
 
 const STAGE_KEYS = [
   'extractAudio',
@@ -115,7 +114,7 @@ function runMigrationIfNeeded() {
     proofreadTasks,
   });
 
-  workItems = result.items.slice(0, MAX_WORK_ITEMS);
+  workItems = result.items;
   store.set(MIGRATION_VERSION_KEY, WORK_ITEM_MIGRATION_VERSION);
   flushWrite();
 
@@ -153,9 +152,6 @@ export function saveWorkItem(item: WorkItem): WorkItem {
     workItems[index] = next;
   } else {
     workItems.unshift(next);
-    if (workItems.length > MAX_WORK_ITEMS) {
-      workItems.splice(MAX_WORK_ITEMS);
-    }
   }
 
   scheduleWrite();
@@ -179,6 +175,12 @@ export function renameWorkItem(id: string, name: string): WorkItem | null {
   item.updatedAt = Date.now();
   flushWrite();
   return item;
+}
+
+export function clearAllWorkItems(): void {
+  if (workItems.length === 0) return;
+  workItems = [];
+  flushWrite();
 }
 
 export function setupWorkItemStoreLifecycle(): void {

@@ -39,6 +39,9 @@ import {
   Wand2,
   ChevronUp,
   ChevronDown,
+  RotateCcw,
+  X,
+  Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -796,10 +799,11 @@ Only respond with the corrected text, nothing else.`;
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-7 px-2 text-xs"
+                    className="h-7 gap-1.5 px-2 text-xs"
                     disabled={matchPointer < 0}
                     onClick={handleReplaceCurrent}
                   >
+                    <Replace className="h-4 w-4" />
                     {t('replaceCurrent')}
                   </Button>
                 </div>
@@ -862,7 +866,12 @@ Only respond with the corrected text, nothing else.`;
                 </Select>
               </div>
             </div>
-            <Button size="sm" onClick={handleTimeOffset} className="w-full">
+            <Button
+              size="sm"
+              onClick={handleTimeOffset}
+              className="w-full gap-1.5"
+            >
+              <Clock className="h-4 w-4" />
               {t('applyOffset')}
             </Button>
           </div>
@@ -925,10 +934,18 @@ Only respond with the corrected text, nothing else.`;
             </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowMerge(false)}>
+            <Button
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => setShowMerge(false)}
+            >
+              <X className="h-4 w-4" />
               {t('cancel')}
             </Button>
-            <Button onClick={handleMerge}>{t('confirmMerge')}</Button>
+            <Button className="gap-1.5" onClick={handleMerge}>
+              <Combine className="h-4 w-4" />
+              {t('confirmMerge')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -967,10 +984,16 @@ Only respond with the corrected text, nothing else.`;
               )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowSplit(false)}>
+            <Button
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => setShowSplit(false)}
+            >
+              <X className="h-4 w-4" />
               {t('cancel')}
             </Button>
             <Button
+              className="gap-1.5"
               onClick={() => {
                 if (currentSubtitleIndex >= 0) {
                   const subtitle = subtitles[currentSubtitleIndex];
@@ -988,6 +1011,7 @@ Only respond with the corrected text, nothing else.`;
                 }
               }}
             >
+              <Scissors className="h-4 w-4" />
               {t('confirmSplit')}
             </Button>
           </DialogFooter>
@@ -1079,16 +1103,24 @@ Only respond with the corrected text, nothing else.`;
                       <Button
                         variant="ghost"
                         size="sm"
+                        className="gap-1.5"
                         onClick={handleResetPrompt}
                         title={t('resetToDefault')}
                       >
+                        <RotateCcw className="h-4 w-4" />
                         {t('resetToDefault')}
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
+                        className="gap-1.5"
                         onClick={() => setShowCustomPrompt(!showCustomPrompt)}
                       >
+                        {showCustomPrompt ? (
+                          <ChevronUp className="h-4 w-4" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4" />
+                        )}
                         {showCustomPrompt
                           ? t('hideCustomPrompt')
                           : t('showCustomPrompt')}
@@ -1133,7 +1165,12 @@ Only respond with the corrected text, nothing else.`;
               </div>
             )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAiOptimize(false)}>
+            <Button
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => setShowAiOptimize(false)}
+            >
+              <X className="h-4 w-4" />
               {t('cancel')}
             </Button>
             <Button
@@ -1153,9 +1190,11 @@ Only respond with the corrected text, nothing else.`;
               {t('startOptimize')}
             </Button>
             <Button
+              className="gap-1.5"
               onClick={handleAcceptOptimization}
               disabled={!optimizedText || aiOptimizing}
             >
+              <Check className="h-4 w-4" />
               {t('acceptOptimization')}
             </Button>
           </DialogFooter>

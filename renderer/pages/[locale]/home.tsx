@@ -2,12 +2,18 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { v4 as uuidv4 } from 'uuid';
-import { AlertTriangle, History, Pencil, Search, Trash2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  ChevronRight,
+  Download,
+  History,
+  Languages,
+  Trash2,
+} from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
 import EmptyState from '@/components/EmptyState';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,18 +25,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { cn } from 'lib/utils';
-import {
-  getTaskTypeBySlug,
-  getTaskTypeByValue,
-  type TaskTypeDef,
-} from 'lib/taskTypes';
+import { getTaskTypeBySlug } from 'lib/taskTypes';
 import { isProviderConfigured } from 'lib/providerUtils';
-import {
-  getFileStages,
-  getStageStatus,
-  isFileDone,
-  hasFileError,
-} from '@/components/tasks/stageUtils';
 import {
   CardDecor,
   GenerateIcon,
@@ -39,6 +35,8 @@ import {
   ProofreadIcon,
   TranslateIcon,
 } from '@/components/launchpad/TaskIcons';
+import WorkItemList from '@/components/launchpad/WorkItemList';
+import { getWorkItemTarget } from 'lib/workItemUtils';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { useTranslation } from 'next-i18next';
 import type { WorkItem } from '../../../types/workItem';
@@ -97,97 +95,6 @@ const CARDS: CardDef[] = [
   },
 ];
 
-type RecentStatus = 'waiting' | 'running' | 'done' | 'error';
-
-// 四态状态点：等待灰 / 运行品牌色 / 成功绿 / 失败红
-const STATUS_DOT: Record<RecentStatus, string> = {
-  waiting: 'bg-muted-foreground/40',
-  running: 'bg-primary animate-pulse',
-  done: 'bg-success',
-  error: 'bg-destructive',
-};
-
-function getProjectTypeDef(project: { taskType?: string }): TaskTypeDef {
-  return (
-    getTaskTypeByValue(project?.taskType) ||
-    getTaskTypeBySlug('generate-translate')
-  );
-}
-
-function getWorkItemTarget(item: WorkItem, locale: string) {
-  if (item.type === 'proofread') {
-    return `/${locale}/proofread?workItem=${item.id}`;
-  }
-  const typeDef =
-    getTaskTypeByValue(item.type) || getTaskTypeBySlug('generate-translate');
-  return `/${locale}/tasks/${typeDef.slug}?project=${item.id}`;
-}
-
-function getWorkItemFileCount(item: WorkItem): number {
-  if (item.type === 'proofread') {
-    return item.proofreadEntries?.length || 0;
-  }
-  return item.pipelineFiles?.length || 0;
-}
-
-function getWorkItemTypeLabel(
-  item: WorkItem,
-  tLaunchpad: (key: string) => string,
-  tTasks: (key: string) => string,
-): string {
-  if (item.type === 'proofread') {
-    return tLaunchpad('card.proofread');
-  }
-  const typeDef =
-    getTaskTypeByValue(item.type) || getTaskTypeBySlug('generate-translate');
-  return tTasks(`pageTitle.${typeDef.slug}`);
-}
-
-function getWorkItemStatus(item: WorkItem): RecentStatus {
-  if (item.type === 'proofread') {
-    if (item.status === 'done') return 'done';
-    if (item.status === 'running') return 'running';
-    if (item.status === 'error' || item.status === 'interrupted') {
-      return 'error';
-    }
-    return 'waiting';
-  }
-
-  return getProjectStatus({
-    taskType: item.type,
-    files: item.pipelineFiles || [],
-  });
-}
-
-/** 工程整体状态：有进行中 > 有错误 > 全部完成 > 等待 */
-function getProjectStatus(project: any): RecentStatus {
-  const typeDef = getProjectTypeDef(project);
-  const files: any[] = project?.files || [];
-  if (!files.length) return 'waiting';
-  let anyLoading = false;
-  let anyError = false;
-  let allDone = true;
-  for (const file of files) {
-    // 工程状态只由 taskType 单源推导，不随全局配置漂移 (P1#35)
-    const stages = getFileStages(file, typeDef, undefined);
-    if (stages.some((s) => getStageStatus(file, s.key) === 'loading')) {
-      anyLoading = true;
-    }
-    if (hasFileError(file, stages)) anyError = true;
-    if (!isFileDone(file, stages)) allDone = false;
-  }
-  if (anyLoading) return 'running';
-  if (anyError) return 'error';
-  if (allDone) return 'done';
-  return 'waiting';
-}
-
-function formatTime(ts: number): string {
-  const d = new Date(ts);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 export default function LaunchpadPage() {
   const router = useRouter();
   const { locale } = router.query;
@@ -200,8 +107,6 @@ export default function LaunchpadPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<WorkItem | null>(null);
-  const [recentExpanded, setRecentExpanded] = useState(false);
-  const [recentQuery, setRecentQuery] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -305,22 +210,8 @@ export default function LaunchpadPage() {
     setDeleteTarget(null);
   };
 
-  const toggleRecentExpanded = () => {
-    setRecentExpanded((prev) => {
-      if (prev) setRecentQuery('');
-      return !prev;
-    });
-  };
-
-  // 收起态只取前 8 条；展开态显示全量并支持按名称过滤
-  const normalizedQuery = recentQuery.trim().toLowerCase();
-  const visibleWorkItems = recentExpanded
-    ? normalizedQuery
-      ? workItems.filter((item) =>
-          (item.name || '').toLowerCase().includes(normalizedQuery),
-        )
-      : workItems
-    : workItems.slice(0, 8);
+  const localeStr = String(locale || 'zh');
+  const previewWorkItems = workItems.slice(0, 5);
 
   return (
     <div className="h-full overflow-auto">
@@ -331,8 +222,9 @@ export default function LaunchpadPage() {
           <div className="flex items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 flex-wrap">
             <AlertTriangle className="h-4 w-4 text-warning flex-shrink-0" />
             <p className="text-sm min-w-0 flex-1">{t('banner.noModel')}</p>
-            <Button asChild size="sm" className="h-8 flex-shrink-0">
+            <Button asChild size="sm" className="h-8 flex-shrink-0 gap-1.5">
               <Link href={`/${locale}/resources?tab=models`}>
+                <Download className="h-4 w-4" />
                 {t('banner.noModelCta')}
               </Link>
             </Button>
@@ -346,9 +238,10 @@ export default function LaunchpadPage() {
               asChild
               size="sm"
               variant="outline"
-              className="h-8 flex-shrink-0"
+              className="h-8 flex-shrink-0 gap-1.5"
             >
               <Link href={`/${locale}/resources?tab=providers`}>
+                <Languages className="h-4 w-4" />
                 {t('banner.noProviderCta')}
               </Link>
             </Button>
@@ -426,116 +319,41 @@ export default function LaunchpadPage() {
             <h2 className="text-sm font-semibold text-muted-foreground">
               {t('recentTasks')}
             </h2>
-            {workItems.length > 8 && (
+            {workItems.length > 0 && (
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-7 text-xs text-muted-foreground hover:text-foreground"
-                onClick={toggleRecentExpanded}
+                asChild
               >
-                {recentExpanded
-                  ? t('recent.collapse')
-                  : t('recent.viewAll', { count: workItems.length })}
+                <Link href={`/${localeStr}/recent-tasks`}>
+                  {t('recent.viewAllPage', { count: workItems.length })}
+                  <ChevronRight className="ml-0.5 h-3.5 w-3.5" />
+                </Link>
               </Button>
             )}
           </div>
-          {recentExpanded && (
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={recentQuery}
-                onChange={(e) => setRecentQuery(e.target.value)}
-                placeholder={t('recent.searchPlaceholder')}
-                className="h-8 pl-9 text-sm"
-              />
-            </div>
-          )}
           {workItems.length === 0 ? (
             <EmptyState
               icon={History}
               title={t('noRecentTasks')}
               description={t('noRecentTasksHint')}
             />
-          ) : visibleWorkItems.length === 0 ? (
-            <p className="rounded-xl border px-4 py-6 text-center text-sm text-muted-foreground">
-              {t('recent.noMatch')}
-            </p>
           ) : (
-            <div className="rounded-xl border divide-y">
-              {visibleWorkItems.map((item) => {
-                const status = getWorkItemStatus(item);
-                const editing = editingId === item.id;
-                return (
-                  <div
-                    key={item.id}
-                    className="group flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors cursor-pointer"
-                    onClick={() => {
-                      if (!editing) router.push(projectTarget(item));
-                    }}
-                  >
-                    <span
-                      className={cn(
-                        'h-2 w-2 rounded-full flex-shrink-0',
-                        STATUS_DOT[status],
-                      )}
-                    />
-                    {editing ? (
-                      <Input
-                        autoFocus
-                        value={nameDraft}
-                        onChange={(e) => setNameDraft(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') commitRename(item);
-                          if (e.key === 'Escape') setEditingId(null);
-                        }}
-                        onBlur={() => commitRename(item)}
-                        className="h-7 text-xs min-w-0 flex-1"
-                      />
-                    ) : (
-                      <span className="truncate text-sm min-w-0 flex-1">
-                        {item.name}
-                      </span>
-                    )}
-                    <span className="hidden sm:inline text-[11px] text-muted-foreground rounded bg-muted px-1.5 py-0.5 flex-shrink-0">
-                      {getWorkItemTypeLabel(item, t, tTasks)}
-                    </span>
-                    <span className="text-xs text-muted-foreground flex-shrink-0">
-                      {t('fileCount', { count: getWorkItemFileCount(item) })}
-                    </span>
-                    <span className="hidden md:inline text-xs text-muted-foreground/70 tabular-nums flex-shrink-0">
-                      {formatTime(item.updatedAt)}
-                    </span>
-                    <span className="text-xs text-muted-foreground flex-shrink-0 w-12 text-right">
-                      {t(`status.${status}`)}
-                    </span>
-                    <span
-                      className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        aria-label={t('recent.rename')}
-                        onClick={() => startRename(item)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                        aria-label={t('recent.delete')}
-                        onClick={() => setDeleteTarget(item)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+            <WorkItemList
+              items={previewWorkItems}
+              locale={localeStr}
+              editingId={editingId}
+              nameDraft={nameDraft}
+              onNameDraftChange={setNameDraft}
+              onStartRename={startRename}
+              onCommitRename={commitRename}
+              onCancelRename={() => setEditingId(null)}
+              onDelete={setDeleteTarget}
+              onOpen={(item) => router.push(projectTarget(item))}
+              tLaunchpad={t}
+              tTasks={tTasks}
+            />
           )}
         </div>
       </div>
@@ -555,7 +373,8 @@ export default function LaunchpadPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('recent.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>
+            <AlertDialogAction className="gap-1.5" onClick={confirmDelete}>
+              <Trash2 className="h-4 w-4" />
               {t('recent.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
