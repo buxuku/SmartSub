@@ -61,8 +61,8 @@
   "empty": {
     "dragMedia": "拖拽媒体文件或文件夹到这里，或点击上传",
     "dragSubtitle": "拖拽字幕文件或文件夹到这里，或点击上传",
-    "mediaFormats": "支持的媒体格式：MP4, AVI, MKV, MOV, MP3, WAV",
-    "subtitleFormats": "支持的字幕格式：SRT"
+    "mediaFormats": "支持 MP4 / MKV / MOV / MP3 / WAV 等 29 种常见视频与音频格式",
+    "subtitleFormats": "支持 SRT / VTT / ASS / SSA / LRC 字幕"
   },
   "import": "导入",
   "clearList": "清空列表",

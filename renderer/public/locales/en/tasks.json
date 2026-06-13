@@ -61,8 +61,8 @@
   "empty": {
     "dragMedia": "Drag media files or folders here, or click to upload",
     "dragSubtitle": "Drag subtitle files or folders here, or click to upload",
-    "mediaFormats": "Supported media formats: MP4, AVI, MKV, MOV, MP3, WAV",
-    "subtitleFormats": "Supported subtitle formats: SRT"
+    "mediaFormats": "Supports MP4 / MKV / MOV / MP3 / WAV and 24+ more video & audio formats",
+    "subtitleFormats": "Supports SRT / VTT / ASS / SSA / LRC subtitles"
   },
   "import": "Import",
   "clearList": "Clear list",

@@ -366,20 +366,8 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
       if (type === 'video') {
         filters = [
           {
-            name: 'Video Files',
-            extensions: MEDIA_EXTENSIONS.filter((ext) =>
-              [
-                '.mp4',
-                '.avi',
-                '.mov',
-                '.mkv',
-                '.flv',
-                '.wmv',
-                '.webm',
-                '.3gp',
-                '.ts',
-              ].includes(ext),
-            ).map((ext) => ext.substring(1)),
+            name: 'Media Files',
+            extensions: MEDIA_EXTENSIONS.map((ext) => ext.substring(1)),
           },
         ];
       } else if (type === 'subtitle') {
@@ -422,20 +410,8 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
       if (type === 'video') {
         filters = [
           {
-            name: 'Video Files',
-            extensions: MEDIA_EXTENSIONS.filter((ext) =>
-              [
-                '.mp4',
-                '.avi',
-                '.mov',
-                '.mkv',
-                '.flv',
-                '.wmv',
-                '.webm',
-                '.3gp',
-                '.ts',
-              ].includes(ext),
-            ).map((ext) => ext.substring(1)),
+            name: 'Media Files',
+            extensions: MEDIA_EXTENSIONS.map((ext) => ext.substring(1)),
           },
         ];
       } else if (type === 'subtitle') {

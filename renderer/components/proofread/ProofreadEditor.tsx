@@ -19,7 +19,6 @@ import { useRetranslateFailed } from '../../hooks/useRetranslateFailed';
 import { useVideoPlayer } from '../../hooks/useVideoPlayer';
 import { useHotkeys, isMacPlatform } from '../../hooks/useHotkeys';
 import VideoPlayer from '../subtitle/VideoPlayer';
-import CurrentSubtitle from '../subtitle/CurrentSubtitle';
 import VideoInfo from '../subtitle/VideoInfo';
 import SubtitleList from '../subtitle/SubtitleList';
 import SubtitleEditToolbar from '../subtitle/SubtitleEditToolbar';
@@ -74,7 +73,6 @@ export default function ProofreadEditor({
     currentSubtitleIndex,
     setCurrentSubtitleIndex,
     videoInfo,
-    hasTranslationFile,
     shouldShowTranslation,
     subtitleTracksForPlayer,
     isLoading,
@@ -110,7 +108,6 @@ export default function ProofreadEditor({
 
   // 使用视频播放器 hook
   const {
-    currentTime,
     duration,
     setDuration,
     isPlaying,
@@ -317,16 +314,6 @@ export default function ProofreadEditor({
               changePlaybackRate={changePlaybackRate}
               setPlaybackRate={setPlaybackRate}
               subtitleTracks={subtitleTracksForPlayer}
-            />
-
-            {/* 当前字幕预览组件 */}
-            <CurrentSubtitle
-              currentSubtitleIndex={currentSubtitleIndex}
-              currentTime={currentTime}
-              duration={duration}
-              mergedSubtitles={mergedSubtitles}
-              shouldShowTranslation={shouldShowTranslation}
-              hasTranslationFile={hasTranslationFile}
             />
 
             {/* 视频信息和字幕统计组件 */}

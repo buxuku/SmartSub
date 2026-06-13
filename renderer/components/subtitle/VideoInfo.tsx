@@ -43,14 +43,10 @@ const VideoInfo: React.FC<VideoInfoProps> = ({
           {t('total')}: {subtitleStats.total}
         </div>
         {shouldShowTranslation && (
-          <>
-            <div>
-              {t('translated')}: {subtitleStats.withTranslation}
-            </div>
-            <div>
-              {t('completionRate')}: {subtitleStats.percent}%
-            </div>
-          </>
+          <div>
+            {t('completionRate')}: {subtitleStats.withTranslation}/
+            {subtitleStats.total} ({subtitleStats.percent}%)
+          </div>
         )}
       </div>
     </div>
