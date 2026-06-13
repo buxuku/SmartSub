@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useCallback, FC, ReactNode } from 'react';
+import { toast } from 'sonner';
+import { useTranslation } from 'next-i18next';
 
 interface DownloadDetail {
   status: string;
@@ -27,6 +29,7 @@ const DownModel: FC<IProps> = ({
   needsCoreML = true,
   globalDownloading = false,
 }) => {
+  const { t } = useTranslation('modelsControl');
   const [loading, setLoading] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
   const [detail, setDetail] = React.useState<DownloadDetail | null>(null);
@@ -70,12 +73,21 @@ const DownModel: FC<IProps> = ({
       if (result?.success) {
         setProgress(1);
         callBackRef.current();
+      } else if (result?.error === 'anotherDownloadInProgress') {
+        toast.error(t('downloadBusy'));
+      } else if (
+        result?.error &&
+        !String(result.error).toLowerCase().includes('cancelled')
+      ) {
+        // 用户主动取消时 download promise 以 "Download cancelled" reject，
+        // 主进程同样返回 success:false，但不应视为失败提示
+        toast.error(t('downloadFailedToast', { error: result.error }));
       }
     } catch (error) {
       console.error('Download model failed:', error);
       setLoading(false);
     }
-  }, [modelName, downSource, needsCoreML, globalDownloading]);
+  }, [modelName, downSource, needsCoreML, globalDownloading, t]);
 
   const isDisabled = globalDownloading && !loading;
 

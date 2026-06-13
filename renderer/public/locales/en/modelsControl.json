@@ -29,6 +29,9 @@
   "recommendedBasisWithGpu": "Based on {{memory}}GB RAM · GPU acceleration available",
   "oneClickDownload": "Download ({{size}})",
   "alreadyInstalled": "Installed and ready",
+  "downloadBusy": "Another download is already in progress",
+  "downloadFailedToast": "Download failed: {{error}}",
+  "retryDownload": "Retry download",
   "tier": {
     "fast": "Fast",
     "balanced": "Balanced",

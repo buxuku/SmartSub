@@ -1,6 +1,6 @@
 import React, { FC } from 'react';
 import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'next-i18next';
 
 interface DownloadDetail {
@@ -42,7 +42,22 @@ const DownModelButton: FC<IProps> = ({
   handleDownModel,
   disabled,
 }) => {
-  const { t } = useTranslation('common');
+  const { t } = useTranslation(['common', 'modelsControl']);
+
+  if (!loading && detail?.status === 'error') {
+    return (
+      <Button
+        onClick={handleDownModel}
+        variant="outline"
+        size="sm"
+        className="h-7 text-xs"
+        disabled={disabled}
+      >
+        <RefreshCw className="mr-1 h-3 w-3" />
+        {t('modelsControl:retryDownload')}
+      </Button>
+    );
+  }
 
   if (!loading) {
     return (
