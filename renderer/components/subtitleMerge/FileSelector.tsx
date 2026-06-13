@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import path from 'path';
 import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
 import { Video, FileText, X } from 'lucide-react';
@@ -59,7 +60,7 @@ export default function FileSelector({
           {videoPath ? (
             <div className="flex items-center gap-2">
               <span className="text-sm truncate flex-1" title={videoPath}>
-                {videoInfo?.fileName || videoPath.split('/').pop()}
+                {videoInfo?.fileName || path.basename(videoPath)}
               </span>
               {videoInfo && (
                 <span className="text-xs text-muted-foreground whitespace-nowrap">
@@ -110,7 +111,7 @@ export default function FileSelector({
           {subtitlePath ? (
             <div className="flex items-center gap-2">
               <span className="text-sm truncate flex-1" title={subtitlePath}>
-                {subtitleInfo?.fileName || subtitlePath.split('/').pop()}
+                {subtitleInfo?.fileName || path.basename(subtitlePath)}
               </span>
               {subtitleInfo && (
                 <span className="text-xs text-muted-foreground whitespace-nowrap">

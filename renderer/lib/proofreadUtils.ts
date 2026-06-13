@@ -4,6 +4,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
 
 // 检测到的字幕信息
 export interface DetectedSubtitle {
@@ -96,7 +97,7 @@ export async function createPendingFileFromVideo(
   return {
     id: uuidv4(),
     videoPath,
-    fileName: videoPath.split('/').pop() || '',
+    fileName: path.basename(videoPath),
     detectedSubtitles,
     selectedSource: bestSource?.filePath,
     selectedTarget: bestTarget?.filePath,
@@ -115,7 +116,7 @@ export async function createPendingFileFromSubtitle(
   sourceFilePath: string,
   detectRelated: boolean = true,
 ): Promise<PendingFile> {
-  const sourceFileName = sourceFilePath.split('/').pop() || '';
+  const sourceFileName = path.basename(sourceFilePath);
   const sourceBaseName = sourceFileName.replace(/\.[^.]+$/, '');
 
   // 检测源字幕语言
@@ -187,7 +188,7 @@ export async function getAvailableSubtitles(
   sourceLanguage?: string,
   targetLanguage?: string,
 ): Promise<DetectedSubtitle[]> {
-  const dir = subtitlePath.substring(0, subtitlePath.lastIndexOf('/'));
+  const dir = path.dirname(subtitlePath);
 
   const scanResult = await window.ipc.invoke('scanDirectorySubtitles', {
     directoryPath: dir,
@@ -206,15 +207,11 @@ export async function getAvailableSubtitles(
       const lang = langResult.success ? langResult.data?.code : undefined;
 
       // 计算置信度：与源字幕同名的文件置信度更高
-      const sourceName = subtitlePath
-        .split('/')
-        .pop()
-        ?.replace(/\.[^.]+$/, '')
+      const sourceName = path
+        .basename(subtitlePath, path.extname(subtitlePath))
         .replace(/\.\w{2,3}$/, '');
-      const fileName = filePath
-        .split('/')
-        .pop()
-        ?.replace(/\.[^.]+$/, '')
+      const fileName = path
+        .basename(filePath, path.extname(filePath))
         .replace(/\.\w{2,3}$/, '');
       const isRelated = sourceName === fileName;
       const confidence = isRelated ? 90 : 70;
@@ -331,8 +328,8 @@ export async function loadPendingFileFromItem(item: {
     id: item.id,
     videoPath: item.videoPath,
     fileName: item.videoPath
-      ? item.videoPath.split('/').pop() || ''
-      : item.sourceSubtitlePath.split('/').pop() || '',
+      ? path.basename(item.videoPath)
+      : path.basename(item.sourceSubtitlePath),
     detectedSubtitles,
     selectedSource: item.sourceSubtitlePath,
     selectedTarget: item.targetSubtitlePath,

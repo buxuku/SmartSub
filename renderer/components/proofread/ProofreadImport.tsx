@@ -12,6 +12,7 @@ import {
   selectBestSubtitles,
   classifySubtitleLang,
 } from '@/lib/proofreadUtils';
+import path from 'path';
 
 interface ProofreadImportProps {
   onImportComplete: (files: PendingFile[], type: 'video' | 'subtitle') => void;
@@ -143,8 +144,7 @@ export default function ProofreadImport({
             if (match.source) {
               const baseName = match.baseName.toLowerCase();
               const relatedSubtitles = allSubtitles.filter((s) => {
-                const fileName =
-                  s.filePath.split('/').pop()?.toLowerCase() || '';
+                const fileName = path.basename(s.filePath).toLowerCase();
                 return (
                   fileName.includes(baseName) ||
                   baseName.includes(fileName.replace(/\.[^.]+$/, ''))

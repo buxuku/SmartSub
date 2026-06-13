@@ -406,6 +406,11 @@ function normalizeGpuVendor(vendor: string, model: string): GpuVendor {
  * 枚举显卡（systeminformation，跨平台），带 10s 超时与 dev 模拟
  */
 async function detectGpus(): Promise<GpuInfo[]> {
+  const simConfig = getDevSimulationConfig();
+  if (simConfig?.enabled) {
+    return [{ name: simConfig.gpuName, vendor: 'nvidia' }];
+  }
+
   if (
     process.env.NODE_ENV === 'development' &&
     process.env.DEV_SIMULATE_GPU_VENDOR

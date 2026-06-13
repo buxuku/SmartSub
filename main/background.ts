@@ -28,6 +28,23 @@ import {
 
 const isProd = process.env.NODE_ENV === 'production';
 
+// media:// 需在 webSecurity:true 下注册为 privileged scheme（必须在 app ready 之前）
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'media',
+    privileges: {
+      bypassCSP: true,
+      stream: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+]);
+
+/** 回退开关：SMARTSUB_LEGACY_WEB_SECURITY=true 恢复旧行为 */
+const useLegacyWebSecurity =
+  process.env.SMARTSUB_LEGACY_WEB_SECURITY === 'true';
+
 if (isProd) {
   serve({ directory: 'app' });
 } else {
@@ -78,8 +95,8 @@ app.on('before-quit', () => {
     minHeight: 700,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      // 允许加载本地资源
-      webSecurity: false,
+      // 本地媒体经 media:// 协议加载；紧急回退 SMARTSUB_LEGACY_WEB_SECURITY=true
+      webSecurity: !useLegacyWebSecurity,
     },
   });
 

@@ -278,10 +278,9 @@ export default function ProofreadFileList({
         const newFile: PendingFile = {
           id: uuidv4(),
           fileName:
-            sourceSubtitle?.filePath
-              .split('/')
-              .pop()
-              ?.replace(/\.[^.]+$/, '') || 'Subtitles',
+            path
+              .basename(sourceSubtitle?.filePath || 'Subtitles')
+              .replace(/\.[^.]+$/, '') || 'Subtitles',
           detectedSubtitles: allSubtitles,
           selectedSource: sourceSubtitle?.filePath,
           selectedTarget: targetSubtitle?.filePath,
