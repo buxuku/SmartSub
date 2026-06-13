@@ -1,13 +1,10 @@
 import path from 'path';
 import fs from 'fs';
-import { logMessage, store } from './storeManager';
+import { logMessage } from './storeManager';
 import { createMessageSender } from './messageHandler';
 import { getSrtFileName } from './utils';
 import { extractAudioFromVideo } from './audioProcessor';
-import {
-  generateSubtitleWithLocalWhisper,
-  generateSubtitleWithBuiltinWhisper,
-} from './subtitleGenerator';
+import { routeTranscription } from './transcriptionRouter';
 import translate from '../translate';
 import { ensureTempDir, getMd5 } from './fileUtils';
 import { IFiles } from '../../types';
@@ -50,15 +47,13 @@ async function generateSubtitle(
   formData,
   hasOpenAiWhisper,
 ) {
-  const settings = store.get('settings');
-  const useLocalWhisper = settings?.useLocalWhisper;
-
   try {
-    if (hasOpenAiWhisper && useLocalWhisper && settings?.whisperCommand) {
-      return await generateSubtitleWithLocalWhisper(event, file, formData);
-    } else {
-      return await generateSubtitleWithBuiltinWhisper(event, file, formData);
-    }
+    return await routeTranscription({
+      event,
+      file,
+      formData,
+      hasOpenAiWhisper,
+    });
   } catch (error) {
     if (isTaskCancelledError(error) || isWhisperAbortError(error)) {
       throw error instanceof TaskCancelledError

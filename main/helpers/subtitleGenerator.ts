@@ -6,6 +6,7 @@ import { logMessage, store } from './storeManager';
 import { formatSrtContent } from './fileUtils';
 import { IFiles } from '../../types';
 import { getExtraResourcesPath } from './utils';
+import { getPythonRuntimeManager } from './pythonRuntime';
 import {
   getTaskContext,
   isWhisperAbortError,
@@ -13,6 +14,15 @@ import {
   TaskCancelledError,
   throwIfTaskCancelled,
 } from './taskContext';
+
+let activeFasterWhisperTranscribeId: string | null = null;
+
+export function cancelFasterWhisperTranscription(): void {
+  if (activeFasterWhisperTranscribeId) {
+    getPythonRuntimeManager().cancel(activeFasterWhisperTranscribeId);
+    activeFasterWhisperTranscribeId = null;
+  }
+}
 
 function getNumericSetting(value: unknown, defaultValue: number): number {
   return typeof value === 'number' && isFinite(value) ? value : defaultValue;
@@ -34,10 +44,115 @@ function getWhisperLanguage(language?: string): string {
   return normalized;
 }
 
+function secondsToSrtTime(seconds: number): string {
+  const totalMs = Math.round(Math.max(0, seconds || 0) * 1000);
+  const h = Math.floor(totalMs / 3_600_000);
+  const m = Math.floor((totalMs % 3_600_000) / 60_000);
+  const s = Math.floor((totalMs % 60_000) / 1000);
+  const ms = totalMs % 1000;
+  const pad = (value: number, len = 2) => String(value).padStart(len, '0');
+  return `${pad(h)}:${pad(m)}:${pad(s)}.${pad(ms, 3)}`;
+}
+
+function toFasterWhisperModel(model?: string): string {
+  return (model || 'base').toLowerCase().replace(/-q\d+_\d+$/, '');
+}
+
+/**
+ * 使用 Python sidecar 中的 faster-whisper 生成字幕。
+ */
+export async function generateSubtitleWithFasterWhisper(
+  event,
+  file: IFiles,
+  formData,
+): Promise<string> {
+  event.sender.send('taskFileChange', { ...file, extractSubtitle: 'loading' });
+
+  const { tempAudioFile, srtFile } = file;
+  const { model, sourceLanguage, prompt } = formData;
+  const settings = store.get('settings');
+
+  const manager = getPythonRuntimeManager();
+  let engineInfo;
+  try {
+    engineInfo = await manager.ensureStarted();
+  } catch (error) {
+    throw new Error(
+      `faster-whisper engine unavailable: ${error?.message || error}`,
+    );
+  }
+  if (!engineInfo?.engines?.faster_whisper) {
+    throw new Error(
+      'faster-whisper is not available in the python engine runtime',
+    );
+  }
+
+  const params = {
+    engine: 'faster_whisper',
+    audio_file: tempAudioFile,
+    model: toFasterWhisperModel(model),
+    language: getWhisperLanguage(sourceLanguage),
+    device: settings.fasterWhisperDevice || 'auto',
+    compute_type: settings.fasterWhisperComputeType || 'auto',
+    initial_prompt: prompt || '',
+    vad: settings.useVAD !== false,
+    vad_threshold: getNumericSetting(settings.vadThreshold, 0.5),
+    vad_min_speech_duration_ms: getNumericSetting(
+      settings.vadMinSpeechDuration,
+      250,
+    ),
+    vad_min_silence_duration_ms: getNumericSetting(
+      settings.vadMinSilenceDuration,
+      100,
+    ),
+    vad_speech_pad_ms: getNumericSetting(settings.vadSpeechPad, 30),
+  };
+  logMessage(`fasterWhisperParams: ${JSON.stringify(params, null, 2)}`, 'info');
+  event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
+
+  const { id, result } = manager.transcribe(params, {
+    onProgress: (percent) => {
+      event.sender.send('taskProgressChange', file, 'extractSubtitle', percent);
+    },
+  });
+  activeFasterWhisperTranscribeId = id;
+
+  let transcription;
+  try {
+    transcription = await result;
+  } finally {
+    activeFasterWhisperTranscribeId = null;
+  }
+
+  const formattedSrt = formatSrtContent(
+    (transcription?.segments || []).map(
+      (segment) =>
+        [
+          secondsToSrtTime(segment.start),
+          secondsToSrtTime(segment.end),
+          segment.text || '',
+        ] as [string, string, string],
+    ),
+  );
+  await fs.promises.writeFile(srtFile, formattedSrt);
+
+  event.sender.send('taskProgressChange', file, 'extractSubtitle', 100);
+  event.sender.send('taskFileChange', { ...file, extractSubtitle: 'done' });
+  logMessage(
+    `generate subtitle done (faster-whisper, language=${transcription?.language})`,
+    'info',
+  );
+  return srtFile;
+}
+
 /**
  * 使用本地Whisper命令行工具生成字幕
  */
-export async function generateSubtitleWithLocalWhisper(event, file, formData) {
+export async function generateSubtitleWithLocalWhisper(
+  event,
+  file,
+  formData,
+): Promise<string> {
   const { model, sourceLanguage } = formData;
   const whisperModel = model?.toLowerCase();
   const settings = store.get('settings');
@@ -97,7 +212,7 @@ export async function generateSubtitleWithBuiltinWhisper(
   event,
   file: IFiles,
   formData,
-) {
+): Promise<string> {
   event.sender.send('taskFileChange', { ...file, extractSubtitle: 'loading' });
 
   try {
