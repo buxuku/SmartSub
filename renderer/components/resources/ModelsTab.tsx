@@ -30,10 +30,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ISystemInfo } from '../../../types/types';
 import DeleteModel from '@/components/DeleteModel';
-import DownModel from '@/components/DownModel';
+import DownModel, { type ModelDownloadFormat } from '@/components/DownModel';
 import DownModelButton from '@/components/DownModelButton';
 import {
   Upload,
@@ -53,27 +52,43 @@ import {
   Crosshair,
   Trash2,
   Search,
+  Box,
+  Terminal,
+  ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import fasterWhisperModels from 'lib/fasterWhisperModels.json';
+import type { TranscriptionEngine } from '../../../types/engine';
 
 export { DownSource } from 'lib/modelPanelUtils';
 
-type ModelEngineFilter = 'builtin' | 'fasterWhisper';
+type ModelsTabProps = {
+  onNavigateTab?: (tab: string) => void;
+};
 
 type FasterWhisperModelEntry = {
   id: string;
+  hfRepo: string;
   size: string;
   tier: 'fast' | 'balanced' | 'accurate';
+  speed: number;
+  quality: number;
+  englishOnly?: boolean;
+  distil?: boolean;
 };
 
-const FASTER_WHISPER_TIERS = [
-  { id: 'fast' as const, icon: Rocket },
-  { id: 'balanced' as const, icon: Scale },
-  { id: 'accurate' as const, icon: Crosshair },
-];
+function getCt2ProgressKey(modelId: string): string {
+  return `ct2:${modelId}`;
+}
+
+function isCt2Downloading(
+  modelId: string,
+  downloadingModels?: string[],
+): boolean {
+  return downloadingModels?.includes(getCt2ProgressKey(modelId)) ?? false;
+}
 
 function isFasterWhisperModelInstalled(
   modelId: string,
@@ -91,6 +106,21 @@ const MODEL_TIERS = [
   { id: 'balanced', icon: Scale, categoryIds: ['small', 'medium'] },
   { id: 'accurate', icon: Crosshair, categoryIds: ['largeTurbo', 'large'] },
 ] as const;
+
+const CT2_TIERS = [
+  { id: 'fast' as const, icon: Rocket },
+  { id: 'balanced' as const, icon: Scale },
+  { id: 'accurate' as const, icon: Crosshair },
+];
+
+const ENGINE_OPTIONS: Array<{
+  id: TranscriptionEngine;
+  icon: typeof Box;
+}> = [
+  { id: 'builtin', icon: Box },
+  { id: 'fasterWhisper', icon: Zap },
+  { id: 'localCli', icon: Terminal },
+];
 
 function RatingDots({ value, max = 5 }: { value: number; max?: number }) {
   return (
@@ -143,7 +173,8 @@ function HeroDownloadButton({
 }
 
 function RecommendedHero({
-  model,
+  modelName,
+  modelSize,
   isInstalled,
   basis,
   basisLoading,
@@ -151,8 +182,11 @@ function RecommendedHero({
   onUpdate,
   globalDownloading,
   t,
+  format = 'ggml',
+  needsCoreML = true,
 }: {
-  model: ModelInfo;
+  modelName: string;
+  modelSize: string;
   isInstalled: boolean;
   basis: string | null;
   basisLoading: boolean;
@@ -160,8 +194,10 @@ function RecommendedHero({
   onUpdate: () => void;
   globalDownloading: boolean;
   t: TFunc;
+  format?: ModelDownloadFormat;
+  needsCoreML?: boolean;
 }) {
-  const desc = t(`modelDesc.${model.name}`, { defaultValue: '' });
+  const desc = t(`modelDesc.${modelName}`, { defaultValue: '' });
   return (
     <div className="rounded-xl border border-primary/30 bg-gradient-to-r from-primary/5 to-transparent p-4 flex items-center justify-between gap-4 flex-wrap">
       <div className="flex items-start gap-3 min-w-0">
@@ -170,7 +206,7 @@ function RecommendedHero({
         </div>
         <div className="min-w-0">
           <div className="text-sm font-semibold">
-            {t('recommendedHero', { model: model.name })}
+            {t('recommendedHero', { model: modelName })}
           </div>
           {desc && (
             <div className="text-xs text-muted-foreground mt-0.5">{desc}</div>
@@ -199,14 +235,15 @@ function RecommendedHero({
           </Badge>
         ) : (
           <DownModel
-            modelName={model.name}
+            modelName={modelName}
             callBack={onUpdate}
             downSource={downSource}
-            needsCoreML={model.needsCoreML}
+            needsCoreML={needsCoreML}
             globalDownloading={globalDownloading}
+            format={format}
           >
             <HeroDownloadButton
-              label={t('oneClickDownload', { size: model.size })}
+              label={t('oneClickDownload', { size: modelSize })}
             />
           </DownModel>
         )}
@@ -408,27 +445,200 @@ function ModelRow({
   );
 }
 
-function FasterWhisperModelRow({
+function EngineContextBar({
+  engine,
+  onEngineChange,
+  onNavigateTab,
+  t,
+}: {
+  engine: TranscriptionEngine;
+  onEngineChange: (engine: TranscriptionEngine) => void;
+  onNavigateTab?: (tab: string) => void;
+  t: TFunc;
+}) {
+  const current = ENGINE_OPTIONS.find((item) => item.id === engine);
+  const Icon = current?.icon ?? Box;
+
+  return (
+    <div className="rounded-xl border bg-muted/20 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-3 min-w-0">
+        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+          <Icon className="h-5 w-5 text-primary" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-xs text-muted-foreground">{t('currentEngine')}</p>
+          <p className="text-sm font-semibold">
+            {t(
+              `engineFilter.${engine === 'builtin' ? 'builtin' : engine === 'fasterWhisper' ? 'fasterWhisper' : 'localCli'}`,
+            )}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {t(`engineModelHint.${engine}`)}
+          </p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 shrink-0">
+        <Select
+          value={engine}
+          onValueChange={(value) =>
+            onEngineChange(value as TranscriptionEngine)
+          }
+        >
+          <SelectTrigger className="w-[200px] h-8">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ENGINE_OPTIONS.map((item) => (
+              <SelectItem key={item.id} value={item.id}>
+                {t(
+                  `engineFilter.${item.id === 'builtin' ? 'builtin' : item.id === 'fasterWhisper' ? 'fasterWhisper' : 'localCli'}`,
+                )}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {onNavigateTab && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5"
+            onClick={() => onNavigateTab('engines')}
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            {t('openEnginesTab')}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Ct2ModelRowActions({
   model,
   isInstalled,
   isDownloading,
-  onDownload,
+  downSource,
+  onUpdate,
   t,
+  globalDownloading,
+  copyToClipboard,
 }: {
   model: FasterWhisperModelEntry;
   isInstalled: boolean;
   isDownloading: boolean;
-  onDownload: (modelId: string) => void;
+  downSource: DownSource;
+  onUpdate: () => void;
   t: TFunc;
+  globalDownloading: boolean;
+  copyToClipboard: (text: string) => void;
 }) {
-  const desc = t(`modelDesc.${model.id}`, { defaultValue: '' });
+  const host =
+    downSource === DownSource.HuggingFace ? 'huggingface.co' : 'hf-mirror.com';
+  const downloadUrl = `https://${host}/${model.hfRepo}`;
 
   return (
-    <div className="flex flex-col gap-2 py-2 px-3 rounded-lg transition-colors sm:flex-row sm:items-center sm:gap-3 hover:bg-muted/50">
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => copyToClipboard(downloadUrl)}
+            aria-label={t('copyLink')}
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>{t('copyLink')}</p>
+        </TooltipContent>
+      </Tooltip>
+      {isInstalled && !isDownloading ? (
+        <DeleteModel modelName={model.id} format="ct2" callBack={onUpdate}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground hover:text-destructive gap-1.5"
+          >
+            <Trash2 className="h-4 w-4" />
+            <span className="sr-only sm:not-sr-only sm:inline">
+              {t('delete')}
+            </span>
+          </Button>
+        </DeleteModel>
+      ) : (
+        <DownModel
+          modelName={model.id}
+          format="ct2"
+          callBack={onUpdate}
+          downSource={downSource}
+          globalDownloading={globalDownloading}
+        >
+          <DownModelButton />
+        </DownModel>
+      )}
+    </>
+  );
+}
+
+function Ct2ModelRow({
+  model,
+  isInstalled,
+  isDownloading,
+  downSource,
+  onUpdate,
+  t,
+  globalDownloading,
+  isRecommended,
+}: {
+  model: FasterWhisperModelEntry;
+  isInstalled: boolean;
+  isDownloading: boolean;
+  downSource: DownSource;
+  onUpdate: () => void;
+  t: TFunc;
+  globalDownloading: boolean;
+  isRecommended?: boolean;
+}) {
+  const desc = t(`modelDesc.${model.id}`, { defaultValue: '' });
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard
+      .writeText(text)
+      .then(() => toast.success(t('copySuccess'), { duration: 2000 }))
+      .catch(() => toast.error(t('copyError'), { duration: 2000 }));
+  };
+
+  return (
+    <div
+      className={cn(
+        'flex flex-col gap-2 py-2 px-3 rounded-lg transition-colors sm:flex-row sm:items-center sm:gap-3',
+        isRecommended
+          ? 'border border-primary/30 bg-primary/5'
+          : 'hover:bg-muted/50',
+      )}
+    >
       <div className="flex items-center gap-2 min-w-0 flex-1">
         <span className="font-mono text-sm font-medium flex-shrink-0">
           {model.id}
         </span>
+        {isRecommended && (
+          <Badge className="text-[10px] px-1.5 py-0 flex-shrink-0">
+            <Star className="h-3 w-3 mr-0.5" />
+            {t('recommended')}
+          </Badge>
+        )}
+        {model.distil && (
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+            {t('distilLabel')}
+          </Badge>
+        )}
+        {model.englishOnly && (
+          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+            {t('englishOnly')}
+          </Badge>
+        )}
         {isInstalled && !isDownloading && (
           <CheckCircle2 className="h-3.5 w-3.5 text-success flex-shrink-0" />
         )}
@@ -439,29 +649,30 @@ function FasterWhisperModelRow({
         )}
       </div>
       <div className="flex items-center justify-between gap-2 sm:justify-end sm:gap-3 flex-shrink-0">
-        <span className="text-xs text-muted-foreground tabular-nums">
-          {model.size}
-        </span>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <span className="hidden lg:inline-flex items-center gap-1 text-muted-foreground">
+            <Zap className="h-3 w-3" />
+            <RatingDots value={model.speed} />
+          </span>
+          <span className="hidden lg:inline-flex items-center gap-1 text-muted-foreground">
+            <Target className="h-3 w-3" />
+            <RatingDots value={model.quality} />
+          </span>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {model.size}
+          </span>
+        </div>
         <div className="flex items-center gap-1">
-          {isInstalled && !isDownloading ? (
-            <Badge
-              variant="outline"
-              className="border-success/40 text-success gap-1"
-            >
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              {t('alreadyInstalled')}
-            </Badge>
-          ) : (
-            <Button
-              size="sm"
-              className="h-7"
-              disabled={isDownloading}
-              onClick={() => onDownload(model.id)}
-            >
-              <Download className="mr-1.5 h-3.5 w-3.5" />
-              {t('oneClickDownload', { size: model.size })}
-            </Button>
-          )}
+          <Ct2ModelRowActions
+            model={model}
+            isInstalled={isInstalled}
+            isDownloading={isDownloading}
+            downSource={downSource}
+            onUpdate={onUpdate}
+            t={t}
+            globalDownloading={globalDownloading}
+            copyToClipboard={copyToClipboard}
+          />
         </div>
       </div>
     </div>
@@ -473,19 +684,25 @@ function FasterWhisperTierSection({
   models,
   installedOnly,
   modelQuery,
-  downloadingModel,
-  onDownload,
+  recommendedModelId,
   installed,
+  downSource,
+  onUpdate,
   t,
+  globalDownloading,
+  systemInfo,
 }: {
-  tier: (typeof FASTER_WHISPER_TIERS)[number];
+  tier: (typeof CT2_TIERS)[number];
   models: FasterWhisperModelEntry[];
   installedOnly: boolean;
   modelQuery: string;
-  downloadingModel: string | null;
-  onDownload: (modelId: string) => void;
+  recommendedModelId?: string;
   installed?: string[];
+  downSource: DownSource;
+  onUpdate: () => void;
   t: TFunc;
+  globalDownloading: boolean;
+  systemInfo: ISystemInfo;
 }) {
   const visible = models
     .filter(
@@ -507,13 +724,19 @@ function FasterWhisperTierSection({
       <Card>
         <CardContent className="p-2 space-y-0.5">
           {visible.map((model) => (
-            <FasterWhisperModelRow
+            <Ct2ModelRow
               key={model.id}
               model={model}
               isInstalled={isFasterWhisperModelInstalled(model.id, installed)}
-              isDownloading={downloadingModel === model.id}
-              onDownload={onDownload}
+              isDownloading={isCt2Downloading(
+                model.id,
+                systemInfo.downloadingModels,
+              )}
+              downSource={downSource}
+              onUpdate={onUpdate}
               t={t}
+              globalDownloading={globalDownloading}
+              isRecommended={model.id === recommendedModelId}
             />
           ))}
         </CardContent>
@@ -554,6 +777,7 @@ function TierSection({
   const isInstalled = (name: string) =>
     systemInfo?.modelsInstalled?.includes(name.toLowerCase());
   const isDownloading = (name: string) =>
+    systemInfo?.downloadingModels?.includes(name.toLowerCase()) ||
     systemInfo?.downloadingModels?.includes(name);
 
   const primaryRows = categories.flatMap((cat) =>
@@ -665,10 +889,8 @@ function TierSection({
   );
 }
 
-const ModelsTab = () => {
+const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
   const { t } = useTranslation('modelsControl');
-  const [engineFilter, setEngineFilter] =
-    useState<ModelEngineFilter>('builtin');
   const [systemInfo, setSystemInfo] = useState<ISystemInfo>({
     modelsInstalled: [],
     downloadingModels: [],
@@ -676,9 +898,6 @@ const ModelsTab = () => {
   });
   const [systemInfoLoaded, setSystemInfoLoaded] = useState(false);
   const [globalDownloading, setGlobalDownloading] = useState(false);
-  const [downloadingFwModel, setDownloadingFwModel] = useState<string | null>(
-    null,
-  );
   const [modelQuery, setModelQuery] = useState('');
   const [accelAvailable, setAccelAvailable] = useState(false);
   const [installedOnly, setInstalledOnly] = useLocalStorageState<boolean>(
@@ -776,7 +995,9 @@ const ModelsTab = () => {
 
     try {
       await window?.ipc?.invoke('setSettings', {
-        modelsPath: result.directoryPath,
+        ...(isFasterWhisper
+          ? { fasterWhisperModelsPath: result.directoryPath }
+          : { modelsPath: result.directoryPath }),
       });
       toast.success(t('modelPathChanged'), { duration: 2000 });
       updateSystemInfo();
@@ -792,7 +1013,9 @@ const ModelsTab = () => {
 
   const handleOpenModelsFolder = async () => {
     try {
-      const result = await window?.ipc?.invoke('openModelsFolder');
+      const result = await window?.ipc?.invoke('openModelsFolder', {
+        pathType: isFasterWhisper ? 'ct2' : 'ggml',
+      });
       if (!result?.success) {
         toast.error(
           t('openFolderFailed', {
@@ -810,41 +1033,33 @@ const ModelsTab = () => {
     }
   };
 
-  const handleDownloadFasterWhisperModel = async (modelId: string) => {
-    if (downloadingFwModel) return;
-    setDownloadingFwModel(modelId);
-    try {
-      const result = await window?.ipc?.invoke(
-        'download-faster-whisper-model',
-        {
-          model: modelId,
-          source: downSource,
-        },
-      );
-      if (result?.success) {
-        toast.success(t('importModelSuccess'), { duration: 2000 });
-        await updateSystemInfo();
-      } else {
-        toast.error(
-          t('importModelFailed', {
-            error: result?.error || t('unknownError'),
-          }),
-        );
-      }
-    } catch (error) {
-      console.error('Failed to download faster-whisper model:', error);
-      toast.error(
-        t('importModelFailed', {
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    } finally {
-      setDownloadingFwModel(null);
-    }
-  };
-
   const setTierVariantsExpanded = (tierId: string, expanded: boolean) => {
     setVariantsExpandedMap((prev) => ({ ...prev, [tierId]: expanded }));
+  };
+
+  const transcriptionEngine = systemInfo.transcriptionEngine ?? 'builtin';
+
+  const handleEngineChange = async (engine: TranscriptionEngine) => {
+    try {
+      const result = await window?.ipc?.invoke(
+        'set-transcription-engine',
+        engine,
+      );
+      if (result?.error === 'engine_not_installed') {
+        toast.error(t('engineNotInstalled'));
+        onNavigateTab?.('engines');
+        return;
+      }
+      if (!result?.success) {
+        toast.error(t('engineSwitchFailed'));
+        return;
+      }
+      await updateSystemInfo();
+      toast.success(t('engineSwitched'));
+    } catch (error) {
+      console.error('Failed to switch engine:', error);
+      toast.error(t('engineSwitchFailed'));
+    }
   };
 
   const recommendedId = getRecommendedCategory(systemInfo.totalMemoryGB ?? 8);
@@ -864,207 +1079,167 @@ const ModelsTab = () => {
         })
       : null;
 
-  const hasAnyInstalled = (systemInfo?.modelsInstalled?.length ?? 0) > 0;
-  const trimmedQuery = modelQuery.trim();
-  const isModelVisible = (name: string) => {
-    if (
-      installedOnly &&
-      !systemInfo.modelsInstalled?.includes(name.toLowerCase())
-    ) {
-      return false;
-    }
-    return matchesModelQuery(name, modelQuery);
-  };
-  const hasVisibleModels = modelCategories.some((cat) =>
-    cat.models.some((m) => isModelVisible(m.name)),
-  );
-  const showRecommendedHero = !!recommendedModel;
-
   const fwCatalog = fasterWhisperModels as FasterWhisperModelEntry[];
   const fwInstalled = systemInfo.fasterWhisperModelsInstalled ?? [];
-  const hasAnyFwInstalled = fwInstalled.length > 0;
-  const isFwModelVisible = (id: string) => {
-    if (installedOnly && !isFasterWhisperModelInstalled(id, fwInstalled)) {
+
+  const recommendedCt2Id =
+    recommendedId === 'largeTurbo'
+      ? 'distil-large-v3'
+      : recommendedId === 'large'
+        ? 'large-v3'
+        : recommendedId;
+
+  const recommendedCt2Model = fwCatalog.find((m) => m.id === recommendedCt2Id);
+  const recommendedCt2Installed = isFasterWhisperModelInstalled(
+    recommendedCt2Id,
+    fwInstalled,
+  );
+
+  const isBuiltin = transcriptionEngine === 'builtin';
+  const isFasterWhisper = transcriptionEngine === 'fasterWhisper';
+  const isLocalCli = transcriptionEngine === 'localCli';
+
+  const hasAnyInstalled = isBuiltin
+    ? (systemInfo?.modelsInstalled?.length ?? 0) > 0
+    : isFasterWhisper
+      ? fwInstalled.length > 0
+      : false;
+
+  const hasVisibleGgmlModels = modelCategories.some((cat) =>
+    cat.models.some((m) => {
+      if (
+        installedOnly &&
+        !systemInfo.modelsInstalled?.includes(m.name.toLowerCase())
+      ) {
+        return false;
+      }
+      return matchesModelQuery(m.name, modelQuery);
+    }),
+  );
+
+  const hasVisibleCt2Models = fwCatalog.some((m) => {
+    if (installedOnly && !isFasterWhisperModelInstalled(m.id, fwInstalled)) {
       return false;
     }
-    return matchesModelQuery(id, modelQuery);
-  };
-  const hasVisibleFwModels = fwCatalog.some((m) => isFwModelVisible(m.id));
+    return matchesModelQuery(m.id, modelQuery);
+  });
+
+  const hasVisibleModels = isBuiltin
+    ? hasVisibleGgmlModels
+    : isFasterWhisper
+      ? hasVisibleCt2Models
+      : false;
+
+  const showRecommendedHero =
+    (isBuiltin && !!recommendedModel) ||
+    (isFasterWhisper && !!recommendedCt2Model);
+  const trimmedQuery = modelQuery.trim();
 
   return (
     <TooltipProvider delayDuration={300}>
       <div className="space-y-4">
-        <div className="space-y-2">
-          <span className="text-sm text-muted-foreground">
-            {t('engineFilter.label')}
-          </span>
-          <Tabs
-            value={engineFilter}
-            onValueChange={(value) =>
-              setEngineFilter(value as ModelEngineFilter)
+        <EngineContextBar
+          engine={transcriptionEngine}
+          onEngineChange={handleEngineChange}
+          onNavigateTab={onNavigateTab}
+          t={t}
+        />
+
+        {showRecommendedHero && (
+          <RecommendedHero
+            modelName={
+              isFasterWhisper ? recommendedCt2Model!.id : recommendedModel!.name
             }
-          >
-            <TabsList>
-              <TabsTrigger value="builtin">
-                {t('engineFilter.builtin')}
-              </TabsTrigger>
-              <TabsTrigger value="fasterWhisper">
-                {t('engineFilter.fasterWhisper')}
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+            modelSize={
+              isFasterWhisper
+                ? recommendedCt2Model!.size
+                : recommendedModel!.size
+            }
+            isInstalled={
+              isFasterWhisper ? recommendedCt2Installed : recommendedInstalled
+            }
+            basis={basis}
+            basisLoading={!systemInfoLoaded}
+            downSource={downSource}
+            onUpdate={updateSystemInfo}
+            globalDownloading={globalDownloading}
+            t={t}
+            format={isFasterWhisper ? 'ct2' : 'ggml'}
+            needsCoreML={!isFasterWhisper && recommendedModel?.needsCoreML}
+          />
+        )}
+
+        <div className="sticky top-0 z-10 space-y-3 border-b bg-background/95 pb-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">{t('modelManagement')}</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                {t('modelManagementDesc')}
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+              <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer">
+                <Switch
+                  checked={installedOnly}
+                  onCheckedChange={setInstalledOnly}
+                />
+                {t('showInstalledOnly')}
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground shrink-0">
+                  {t('switchDownloadSource')}:
+                </span>
+                <Select onValueChange={handleDownSource} value={downSource}>
+                  <SelectTrigger className="w-full sm:w-[200px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="huggingface">
+                      {t('officialSource')}
+                    </SelectItem>
+                    <SelectItem value="hf-mirror">
+                      {t('domesticMirror')}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {isBuiltin && (
+                <Button
+                  onClick={handleImportModel}
+                  size="sm"
+                  variant="outline"
+                  className="w-full sm:w-auto"
+                >
+                  <Upload className="mr-1.5 h-3.5 w-3.5" />
+                  {t('importModel')}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="relative px-0.5">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <Input
+              value={modelQuery}
+              onChange={(e) => setModelQuery(e.target.value)}
+              placeholder={t('modelSearchPlaceholder')}
+              className="h-8 pl-8 text-sm focus-visible:ring-offset-0 focus-visible:ring-inset"
+            />
+          </div>
         </div>
 
-        {engineFilter === 'fasterWhisper' ? (
-          <>
-            <p className="text-sm text-muted-foreground">
-              {t('fasterWhisperModelTip')}
-            </p>
-
-            <div className="sticky top-0 z-10 space-y-3 border-b bg-background/95 pb-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold">
-                    {t('modelManagement')}
-                  </h2>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {t('modelManagementDesc')}
-                  </p>
-                </div>
-                <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer">
-                  <Switch
-                    checked={installedOnly}
-                    onCheckedChange={setInstalledOnly}
-                  />
-                  {t('showInstalledOnly')}
-                </label>
-              </div>
-
-              <div className="relative px-0.5">
-                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                <Input
-                  value={modelQuery}
-                  onChange={(e) => setModelQuery(e.target.value)}
-                  placeholder={t('modelSearchPlaceholder')}
-                  className="h-8 pl-8 text-sm focus-visible:ring-offset-0 focus-visible:ring-inset"
-                />
-              </div>
-            </div>
-
-            <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
-              <HardDrive className="h-3 w-3 shrink-0" />
-              <span className="shrink-0">{t('fasterWhisperModelsPath')}:</span>
-              <span className="font-mono break-all">
-                {systemInfo.fasterWhisperModelsPath}
-              </span>
-            </div>
-
-            {installedOnly && !hasAnyFwInstalled ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">
-                {t('noInstalledModels')}
-              </p>
-            ) : trimmedQuery && !hasVisibleFwModels ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">
-                {t('noModelMatch')}
-              </p>
-            ) : (
-              <div className="space-y-5">
-                {FASTER_WHISPER_TIERS.map((tier) => (
-                  <FasterWhisperTierSection
-                    key={tier.id}
-                    tier={tier}
-                    models={fwCatalog.filter((m) => m.tier === tier.id)}
-                    installedOnly={installedOnly}
-                    modelQuery={modelQuery}
-                    downloadingModel={downloadingFwModel}
-                    onDownload={handleDownloadFasterWhisperModel}
-                    installed={fwInstalled}
-                    t={t}
-                  />
-                ))}
-              </div>
-            )}
-          </>
-        ) : (
-          <>
-            {showRecommendedHero && (
-              <RecommendedHero
-                model={recommendedModel}
-                isInstalled={recommendedInstalled}
-                basis={basis}
-                basisLoading={!systemInfoLoaded}
-                downSource={downSource}
-                onUpdate={updateSystemInfo}
-                globalDownloading={globalDownloading}
-                t={t}
-              />
-            )}
-
-            <div className="sticky top-0 z-10 space-y-3 border-b bg-background/95 pb-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold">
-                    {t('modelManagement')}
-                  </h2>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {t('modelManagementDesc')}
-                  </p>
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-                  <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer">
-                    <Switch
-                      checked={installedOnly}
-                      onCheckedChange={setInstalledOnly}
-                    />
-                    {t('showInstalledOnly')}
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground shrink-0">
-                      {t('switchDownloadSource')}:
-                    </span>
-                    <Select onValueChange={handleDownSource} value={downSource}>
-                      <SelectTrigger className="w-full sm:w-[200px] h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="huggingface">
-                          {t('officialSource')}
-                        </SelectItem>
-                        <SelectItem value="hf-mirror">
-                          {t('domesticMirror')}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button
-                    onClick={handleImportModel}
-                    size="sm"
-                    variant="outline"
-                    className="w-full sm:w-auto"
-                  >
-                    <Upload className="mr-1.5 h-3.5 w-3.5" />
-                    {t('importModel')}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="relative px-0.5">
-                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                <Input
-                  value={modelQuery}
-                  onChange={(e) => setModelQuery(e.target.value)}
-                  placeholder={t('modelSearchPlaceholder')}
-                  className="h-8 pl-8 text-sm focus-visible:ring-offset-0 focus-visible:ring-inset"
-                />
-              </div>
-            </div>
-
-            <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
-              <HardDrive className="h-3 w-3 shrink-0" />
-              <span className="shrink-0">{t('modelPath')}:</span>
-              <span className="font-mono break-all">
-                {systemInfo?.modelsPath}
-              </span>
+        <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
+          <HardDrive className="h-3 w-3 shrink-0" />
+          <span className="shrink-0">
+            {isFasterWhisper ? t('fasterWhisperModelsPath') : t('modelPath')}:
+          </span>
+          <span className="font-mono break-all">
+            {isFasterWhisper
+              ? systemInfo.fasterWhisperModelsPath
+              : systemInfo?.modelsPath}
+          </span>
+          {(isBuiltin || isFasterWhisper) && (
+            <>
               <button
                 type="button"
                 onClick={handleOpenModelsFolder}
@@ -1081,39 +1256,62 @@ const ModelsTab = () => {
               >
                 <span>{t('changePath')}</span>
               </button>
-            </div>
+            </>
+          )}
+        </div>
 
-            {installedOnly && !hasAnyInstalled ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">
-                {t('noInstalledModels')}
-              </p>
-            ) : trimmedQuery && !hasVisibleModels ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">
-                {t('noModelMatch')}
-              </p>
-            ) : (
-              <div className="space-y-5">
-                {MODEL_TIERS.map((tier) => (
-                  <TierSection
-                    key={tier.id}
-                    tier={tier}
-                    recommendedModelName={recommendedModel?.name}
-                    installedOnly={installedOnly}
-                    modelQuery={modelQuery}
-                    variantsExpanded={variantsExpandedMap[tier.id] ?? false}
-                    onVariantsExpandedChange={(expanded) =>
-                      setTierVariantsExpanded(tier.id, expanded)
-                    }
-                    systemInfo={systemInfo}
-                    downSource={downSource}
-                    onUpdate={updateSystemInfo}
-                    t={t}
-                    globalDownloading={globalDownloading}
-                  />
-                ))}
-              </div>
-            )}
-          </>
+        {isLocalCli ? (
+          <p className="text-sm text-muted-foreground py-8 text-center">
+            {t('localCliModelHint')}
+          </p>
+        ) : installedOnly && !hasAnyInstalled ? (
+          <p className="text-sm text-muted-foreground py-8 text-center">
+            {t('noInstalledModels')}
+          </p>
+        ) : trimmedQuery && !hasVisibleModels ? (
+          <p className="text-sm text-muted-foreground py-8 text-center">
+            {t('noModelMatch')}
+          </p>
+        ) : isBuiltin ? (
+          <div className="space-y-5">
+            {MODEL_TIERS.map((tier) => (
+              <TierSection
+                key={tier.id}
+                tier={tier}
+                recommendedModelName={recommendedModel?.name}
+                installedOnly={installedOnly}
+                modelQuery={modelQuery}
+                variantsExpanded={variantsExpandedMap[tier.id] ?? false}
+                onVariantsExpandedChange={(expanded) =>
+                  setTierVariantsExpanded(tier.id, expanded)
+                }
+                systemInfo={systemInfo}
+                downSource={downSource}
+                onUpdate={updateSystemInfo}
+                t={t}
+                globalDownloading={globalDownloading}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {CT2_TIERS.map((tier) => (
+              <FasterWhisperTierSection
+                key={tier.id}
+                tier={tier}
+                models={fwCatalog.filter((m) => m.tier === tier.id)}
+                installedOnly={installedOnly}
+                modelQuery={modelQuery}
+                recommendedModelId={recommendedCt2Id}
+                installed={fwInstalled}
+                downSource={downSource}
+                onUpdate={updateSystemInfo}
+                t={t}
+                globalDownloading={globalDownloading}
+                systemInfo={systemInfo}
+              />
+            ))}
+          </div>
         )}
       </div>
     </TooltipProvider>

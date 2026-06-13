@@ -3,7 +3,7 @@
 > 状态：已评审  
 > 日期：2026-06-13  
 > 范围：转写引擎抽象层 · Python 运行时基座 · faster-whisper 按需分发 · 资源中心 Engines Tab · 按引擎区分模型管理  
-> 开发基线：从 `feat/resource-hub` 拉新分支；参考 `feat/python-engine-poc` 思路，**全新实现**（不直接 merge POC 代码）  
+> 开发基线：从 `feat/resource-hub` 拉新分支；Python 引擎源码在独立仓库 `buxuku/smartsub-py-engine`，从 `latest` Release 按需下载  
 > 关联：`main/helpers/addonDownloader.ts`、`whisper.cpp/.github/workflows/builder.yml`、`renderer/components/resources/`
 
 ---
@@ -210,7 +210,7 @@ interface TranscriptionEngineAdapter {
 
 ### 4.1 Release 资产
 
-GitHub Release tag：`py-engine-v{version}`
+GitHub Release tag：`latest`（独立仓库 `buxuku/smartsub-py-engine`，滚动最新构建）
 
 ```
 smartsub-engine-macos-arm64.tar.gz

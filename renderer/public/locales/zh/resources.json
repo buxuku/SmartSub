@@ -20,6 +20,7 @@
       "name": "faster-whisper",
       "desc": "基于 CTranslate2，速度更快，模型按需从 HuggingFace 下载",
       "notInstalled": "未安装",
+      "installError": "安装异常",
       "installed": "已安装 v{{version}}",
       "download": "下载引擎（约 {{size}}）",
       "downloading": "下载中…",

@@ -59,7 +59,7 @@ const Resources = () => {
           <EnginesTab />
         </TabsContent>
         <TabsContent value="models" className="min-h-0 flex-1 overflow-auto">
-          <ModelsTab />
+          <ModelsTab onNavigateTab={handleTabChange} />
         </TabsContent>
         <TabsContent value="providers" className="min-h-0 flex-1">
           <ProvidersTab />

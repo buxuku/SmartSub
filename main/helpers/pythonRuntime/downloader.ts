@@ -17,6 +17,8 @@ import {
   getPyEngineBinaryName,
   getPyEngineArtifactSuffix,
   getPyEngineDownloadUrl,
+  getPyEngineChecksumsUrl,
+  normalizePyEngineLayout,
   writePyEngineManifest,
 } from './paths';
 
@@ -50,14 +52,6 @@ function getTempTarPath(): string {
 
 function getArtifactFileName(): string {
   return `smartsub-engine-${getPyEngineArtifactSuffix()}.tar.gz`;
-}
-
-function getChecksumsUrl(source: PyEngineDownloadSource, tag: string): string {
-  const base = `https://github.com/buxuku/SmartSub/releases/download/${tag}/checksums.sha256`;
-  if (source === 'ghproxy') {
-    return `https://ghfast.top/${base}`;
-  }
-  return base;
 }
 
 function parseExpectedChecksum(
@@ -218,8 +212,8 @@ export class PyEngineDownloader {
     this.updateProgress({ status: 'idle' });
   }
 
-  async download(source: PyEngineDownloadSource, tag?: string): Promise<void> {
-    const resolvedTag = tag ?? PY_ENGINE_TAG;
+  async download(source: PyEngineDownloadSource): Promise<void> {
+    const resolvedTag = PY_ENGINE_TAG;
     const url = getPyEngineDownloadUrl(source, resolvedTag);
     const tempPath = getTempTarPath();
     const downloadsDir = getPyEngineDownloadsDir();
@@ -330,7 +324,7 @@ export class PyEngineDownloader {
     tag: string,
   ): Promise<void> {
     const artifactName = getArtifactFileName();
-    const checksumsUrl = getChecksumsUrl(source, tag);
+    const checksumsUrl = getPyEngineChecksumsUrl(source, tag);
     const checksumsContent = await fetchHttpText(checksumsUrl);
     const expectedChecksum = parseExpectedChecksum(
       checksumsContent,
@@ -361,7 +355,13 @@ export class PyEngineDownloader {
       cwd: stagingDir,
     });
 
-    this.ensureBinaryInStaging(stagingDir);
+    normalizePyEngineLayout(stagingDir);
+    const stagingBinary = path.join(stagingDir, getPyEngineBinaryName());
+    if (!fs.existsSync(stagingBinary) || !fs.statSync(stagingBinary).isFile()) {
+      throw new Error(
+        `Engine binary ${getPyEngineBinaryName()} not found after extraction`,
+      );
+    }
 
     const currentDir = getPyEngineCurrentDir();
     if (fs.existsSync(currentDir)) {
@@ -369,44 +369,14 @@ export class PyEngineDownloader {
     }
     fs.renameSync(stagingDir, currentDir);
 
+    normalizePyEngineLayout(currentDir);
+
     writePyEngineManifest({
       version: tag,
       platform: getPyEngineArtifactSuffix(),
       sha256: expectedChecksum,
       installedAt: new Date().toISOString(),
     });
-  }
-
-  private ensureBinaryInStaging(stagingDir: string): void {
-    const binaryName = getPyEngineBinaryName();
-    const directPath = path.join(stagingDir, binaryName);
-    if (fs.existsSync(directPath)) {
-      return;
-    }
-
-    const entries = fs.readdirSync(stagingDir);
-    for (const entry of entries) {
-      const entryPath = path.join(stagingDir, entry);
-      if (!fs.statSync(entryPath).isDirectory()) continue;
-
-      const subBinary = path.join(entryPath, binaryName);
-      if (fs.existsSync(subBinary)) {
-        for (const file of fs.readdirSync(entryPath)) {
-          const src = path.join(entryPath, file);
-          const dest = path.join(stagingDir, file);
-          if (fs.existsSync(dest)) {
-            fs.rmSync(dest, { recursive: true, force: true });
-          }
-          fs.renameSync(src, dest);
-        }
-        fs.rmdirSync(entryPath);
-        return;
-      }
-    }
-
-    throw new Error(
-      `Engine binary ${binaryName} not found in extracted archive`,
-    );
   }
 
   private downloadFile(

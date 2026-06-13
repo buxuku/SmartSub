@@ -3,6 +3,10 @@ import path from 'path';
 import fs from 'fs';
 import { getPath, loadWhisperAddon } from './whisper';
 import { logMessage, store } from './storeManager';
+import {
+  getFasterWhisperModelsPath,
+  resolveCt2ModelSnapshotDir,
+} from './modelCatalog';
 import { formatSrtContent } from './fileUtils';
 import { IFiles } from '../../types';
 import { getExtraResourcesPath } from './utils';
@@ -87,10 +91,20 @@ export async function generateSubtitleWithFasterWhisper(
     );
   }
 
+  const modelId = toFasterWhisperModel(model);
+  const modelSnapshotDir = resolveCt2ModelSnapshotDir(modelId);
+  if (!modelSnapshotDir) {
+    throw new Error(
+      `faster-whisper model "${modelId}" not found in ${getFasterWhisperModelsPath()}. Download it from Resource Hub > Models.`,
+    );
+  }
+
   const params = {
     engine: 'faster_whisper',
     audio_file: tempAudioFile,
-    model: toFasterWhisperModel(model),
+    model: modelSnapshotDir,
+    local_files_only: true,
+    download_root: getFasterWhisperModelsPath(),
     language: getWhisperLanguage(sourceLanguage),
     device: settings.fasterWhisperDevice || 'auto',
     compute_type: settings.fasterWhisperComputeType || 'auto',

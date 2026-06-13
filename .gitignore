@@ -18,8 +18,3 @@ sample
 .agents/
 extraResources/addons/addon.vulkan.node
 .superpowers/
-python-engine/.venv/
-python-engine/dist/
-python-engine/build/
-python-engine/__pycache__/
-python-engine/**/*.pyc

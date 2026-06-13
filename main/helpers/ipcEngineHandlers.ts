@@ -14,7 +14,6 @@ import {
   getPyEngineRoot,
   isPyEngineInstalled,
 } from './pythonRuntime/paths';
-import { getFasterWhisperModelsPath } from './modelCatalog';
 import type { TranscriptionEngine } from '../../types/engine';
 import type { PyEngineDownloadSource } from '../../types/engine';
 
@@ -78,13 +77,10 @@ export function registerEngineIpcHandlers(): void {
 
   ipcMain.handle(
     'start-py-engine-download',
-    async (
-      _event,
-      { source, tag }: { source: PyEngineDownloadSource; tag?: string },
-    ) => {
+    async (_event, { source }: { source: PyEngineDownloadSource }) => {
       try {
         const downloader = getPyEngineDownloader(mainWindow || undefined);
-        downloader.download(source, tag).catch((error) => {
+        downloader.download(source).catch((error) => {
           logMessage(`Py-engine download failed: ${error}`, 'error');
         });
         return { success: true, started: true };
@@ -162,32 +158,6 @@ export function registerEngineIpcHandlers(): void {
         return { success: true };
       } catch (error) {
         logMessage(`Error setting faster-whisper settings: ${error}`, 'error');
-        return { success: false, error: String(error) };
-      }
-    },
-  );
-
-  ipcMain.handle(
-    'download-faster-whisper-model',
-    async (_event, { model }: { model: string; source?: string }) => {
-      try {
-        const manager = getPythonRuntimeManager();
-        await manager.ensureStarted();
-        const settings = store.get('settings');
-        await manager.request(
-          'preload',
-          {
-            engine: 'faster_whisper',
-            model,
-            download_root: getFasterWhisperModelsPath(),
-            device: settings.fasterWhisperDevice || 'auto',
-            compute_type: settings.fasterWhisperComputeType || 'auto',
-          },
-          { timeoutMs: 600_000 },
-        );
-        return { success: true };
-      } catch (error) {
-        logMessage(`Error downloading faster-whisper model: ${error}`, 'error');
         return { success: false, error: String(error) };
       }
     },

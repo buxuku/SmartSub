@@ -190,6 +190,7 @@ const EnginesTab = () => {
     downloadProgress?.status === 'extracting' ||
     fasterStatus?.state === 'downloading';
   const fasterInstalled = fasterStatus?.state === 'ready';
+  const fasterBroken = fasterStatus?.state === 'error';
 
   const renderSelectButton = (engine: TranscriptionEngine) => {
     const isSelected = currentEngine === engine;
@@ -223,6 +224,13 @@ const EnginesTab = () => {
           {t('engines.fasterWhisper.installed', {
             version: fasterStatus?.version || '?',
           })}
+        </Badge>
+      );
+    }
+    if (fasterBroken) {
+      return (
+        <Badge variant="destructive">
+          {t('engines.fasterWhisper.installError')}
         </Badge>
       );
     }
@@ -306,6 +314,10 @@ const EnginesTab = () => {
                   </p>
                 )}
               </div>
+            )}
+
+            {fasterBroken && fasterStatus?.message && (
+              <p className="text-sm text-destructive">{fasterStatus.message}</p>
             )}
 
             <div className="flex flex-wrap items-center gap-2">

@@ -14,7 +14,7 @@ title: 模型配置
 - **whisper.cpp（默认）**：使用 ggml 格式模型，保存在 `modelsPath`（与旧版一致，无需迁移）。
 - **faster-whisper**：使用 CTranslate2 格式模型，保存在单独的 `fasterWhisperModelsPath`，并会使用 Hugging Face 缓存目录。
 
-在 **资源中心 → Engines** 选项卡中可查看引擎状态、按需下载 faster-whisper 运行时，并切换当前转写引擎。模型管理页的引擎筛选器会按所选引擎展示对应格式的模型列表。
+在 **资源中心 → Engines** 选项卡中可查看引擎状态、按需从 [smartsub-py-engine](https://github.com/buxuku/smartsub-py-engine/releases/tag/latest) 下载 faster-whisper 运行时，并切换当前转写引擎。模型管理页的引擎筛选器会按所选引擎展示对应格式的模型列表。
 
 ## 模型管理界面
 

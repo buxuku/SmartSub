@@ -4,12 +4,29 @@
   "engineFilter": {
     "label": "Engine",
     "builtin": "whisper.cpp",
-    "fasterWhisper": "faster-whisper"
+    "fasterWhisper": "faster-whisper",
+    "localCli": "Local CLI"
   },
+  "currentEngine": "Current transcription engine",
+  "openEnginesTab": "Engine settings",
+  "engineModelHint": {
+    "builtin": "ggml models for whisper.cpp, including Turbo and quantized variants",
+    "fasterWhisper": "CT2 models for faster-whisper, including Distil variants",
+    "localCli": "Local CLI uses your own Whisper install — no models to download here"
+  },
+  "engineNotInstalled": "Engine runtime is not installed. Open the Engines tab to download it.",
+  "engineSwitchFailed": "Failed to switch engine",
+  "engineSwitched": "Transcription engine updated",
+  "localCliModelHint": "You are using the local CLI engine. Switch to whisper.cpp to download ggml models here.",
+  "distilLabel": "Distil",
   "fasterWhisperModelTip": "faster-whisper uses HuggingFace CT2 models, stored separately from ggml models",
   "fasterWhisperModelsPath": "faster-whisper model path",
   "modelManagement": "Model Management",
-  "modelManagementDesc": "Choose a Whisper transcription model that fits your needs. Larger models offer better accuracy but require more time and memory.",
+  "format": {
+    "ggml": "whisper.cpp (ggml)",
+    "ct2": "faster-whisper (CT2)"
+  },
+  "modelManagementDesc": "The list follows your current engine and shows only compatible models.",
   "modelPath": "Model Path",
   "switchDownloadSource": "Source",
   "domesticMirror": "Mirror (Faster in China)",
@@ -66,6 +83,8 @@
     "large-v3-turbo": "Near top accuracy at a decent speed",
     "large-v3": "Top accuracy, slowest",
     "large-v2": "Previous-generation flagship",
-    "large-v1": "First-generation large model"
+    "distil-large-v3": "Distilled large-v3 — smaller and faster",
+    "distil-medium.en": "Distilled medium, English only",
+    "distil-small.en": "Distilled small, English only"
   }
 }

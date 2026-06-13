@@ -3,7 +3,11 @@ import fs from 'fs';
 import { app } from 'electron';
 import type { PyEngineManifest } from '../../../types/engine';
 
-export const PY_ENGINE_TAG = 'py-engine-v0.1.0';
+/** 独立发布仓库：https://github.com/buxuku/smartsub-py-engine */
+export const PY_ENGINE_REPO = 'buxuku/smartsub-py-engine';
+
+/** 滚动 latest Release，SmartSub 始终从此 tag 拉取最新构建 */
+export const PY_ENGINE_TAG = 'latest';
 
 export function getPyEngineRoot(): string {
   return path.join(app.getPath('userData'), 'py-engine');
@@ -23,12 +27,114 @@ export function getPyEngineBinaryPath(): string {
   return path.join(getPyEngineCurrentDir(), getPyEngineBinaryName());
 }
 
+/** 解压后确保主二进制可执行（Unix）；Windows 跳过 */
+export function ensurePyEngineExecutable(binaryPath: string): void {
+  if (process.platform === 'win32') return;
+  if (!fs.existsSync(binaryPath) || !fs.statSync(binaryPath).isFile()) return;
+  try {
+    fs.chmodSync(binaryPath, 0o755);
+  } catch {
+    // 权限不足时由 spawn 报错
+  }
+}
+
+/**
+ * PyInstaller onedir 的 tar 常含 smartsub-engine/ 子目录。
+ * 若入口路径是目录而非文件，将子目录内容上移并修复历史错误安装。
+ */
+export function normalizePyEngineLayout(
+  rootDir: string = getPyEngineCurrentDir(),
+): void {
+  const binaryName = getPyEngineBinaryName();
+  const targetBinary = path.join(rootDir, binaryName);
+
+  if (!fs.existsSync(rootDir)) return;
+
+  const isBinaryFile = (p: string) =>
+    fs.existsSync(p) && fs.statSync(p).isFile();
+
+  if (isBinaryFile(targetBinary)) {
+    ensurePyEngineExecutable(targetBinary);
+    return;
+  }
+
+  // 错误布局: root/smartsub-engine/ 是目录，真实二进制在其子路径
+  let containerDir: string | null = null;
+  if (fs.existsSync(targetBinary) && fs.statSync(targetBinary).isDirectory()) {
+    containerDir = targetBinary;
+  } else {
+    for (const entry of fs.readdirSync(rootDir)) {
+      const entryPath = path.join(rootDir, entry);
+      if (!fs.statSync(entryPath).isDirectory()) continue;
+      if (isBinaryFile(path.join(entryPath, binaryName))) {
+        containerDir = entryPath;
+        break;
+      }
+    }
+  }
+
+  if (!containerDir) return;
+
+  const innerBinary = path.join(containerDir, binaryName);
+  const tempBinary = path.join(rootDir, `.${binaryName}.tmp`);
+
+  // 先移出内层二进制，避免 dest 与 containerDir 同名时 rmSync 删掉整个容器
+  if (isBinaryFile(innerBinary)) {
+    if (fs.existsSync(tempBinary)) {
+      fs.rmSync(tempBinary, { force: true });
+    }
+    fs.renameSync(innerBinary, tempBinary);
+  }
+
+  for (const file of fs.readdirSync(containerDir)) {
+    const src = path.join(containerDir, file);
+    const dest = path.join(rootDir, file);
+    if (dest === containerDir) continue;
+    if (fs.existsSync(dest)) {
+      fs.rmSync(dest, { recursive: true, force: true });
+    }
+    fs.renameSync(src, dest);
+  }
+
+  try {
+    const remaining = fs.readdirSync(containerDir);
+    if (remaining.length === 0) {
+      fs.rmdirSync(containerDir);
+    } else {
+      fs.rmSync(containerDir, { recursive: true, force: true });
+    }
+  } catch {
+    // 容器可能已被移空
+  }
+
+  if (fs.existsSync(tempBinary)) {
+    if (fs.existsSync(targetBinary)) {
+      fs.rmSync(targetBinary, { recursive: true, force: true });
+    }
+    fs.renameSync(tempBinary, targetBinary);
+  }
+
+  if (isBinaryFile(targetBinary)) {
+    ensurePyEngineExecutable(targetBinary);
+  }
+}
+
 export function getPyEngineCacheDir(): string {
   return path.join(app.getPath('userData'), 'py-engine-cache');
 }
 
 export function isPyEngineInstalled(): boolean {
-  return fs.existsSync(getPyEngineBinaryPath());
+  normalizePyEngineLayout();
+  const binaryPath = getPyEngineBinaryPath();
+  try {
+    if (!fs.statSync(binaryPath).isFile()) return false;
+    if (process.platform !== 'win32') {
+      fs.accessSync(binaryPath, fs.constants.X_OK);
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function readPyEngineManifest(): PyEngineManifest | null {
@@ -61,12 +167,27 @@ export function getPyEngineArtifactSuffix(): string {
   throw new Error(`Unsupported platform: ${process.platform}`);
 }
 
+function getPyEngineReleaseBaseUrl(tag: string = PY_ENGINE_TAG): string {
+  return `https://github.com/${PY_ENGINE_REPO}/releases/download/${tag}`;
+}
+
 export function getPyEngineDownloadUrl(
   source: 'github' | 'ghproxy',
   tag: string = PY_ENGINE_TAG,
 ): string {
   const asset = `smartsub-engine-${getPyEngineArtifactSuffix()}.tar.gz`;
-  const base = `https://github.com/buxuku/SmartSub/releases/download/${tag}/${asset}`;
+  const base = `${getPyEngineReleaseBaseUrl(tag)}/${asset}`;
+  if (source === 'ghproxy') {
+    return `https://ghfast.top/${base}`;
+  }
+  return base;
+}
+
+export function getPyEngineChecksumsUrl(
+  source: 'github' | 'ghproxy',
+  tag: string = PY_ENGINE_TAG,
+): string {
+  const base = `${getPyEngineReleaseBaseUrl(tag)}/checksums.sha256`;
   if (source === 'ghproxy') {
     return `https://ghfast.top/${base}`;
   }

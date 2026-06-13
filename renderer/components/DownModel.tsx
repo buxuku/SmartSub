@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useCallback, FC, ReactNode } from 'react';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
 
+export type ModelDownloadFormat = 'ggml' | 'ct2';
+
 interface DownloadDetail {
   status: string;
   progress: number;
@@ -19,6 +21,14 @@ interface IProps {
   children: ReactNode;
   needsCoreML?: boolean;
   globalDownloading?: boolean;
+  format?: ModelDownloadFormat;
+}
+
+function getProgressKey(
+  modelName: string,
+  format: ModelDownloadFormat,
+): string {
+  return format === 'ct2' ? `ct2:${modelName}` : modelName;
 }
 
 const DownModel: FC<IProps> = ({
@@ -28,6 +38,7 @@ const DownModel: FC<IProps> = ({
   children,
   needsCoreML = true,
   globalDownloading = false,
+  format = 'ggml',
 }) => {
   const { t } = useTranslation('common');
   const [loading, setLoading] = React.useState(false);
@@ -35,16 +46,17 @@ const DownModel: FC<IProps> = ({
   const [detail, setDetail] = React.useState<DownloadDetail | null>(null);
   const callBackRef = useRef(callBack);
   callBackRef.current = callBack;
+  const progressKey = getProgressKey(modelName, format);
 
   useEffect(() => {
     const handleProgress = (model: string, progressValue: number) => {
-      if (model?.toLowerCase() === modelName?.toLowerCase()) {
+      if (model?.toLowerCase() === progressKey?.toLowerCase()) {
         setProgress(progressValue);
       }
     };
 
     const handleDetail = (model: string, detailData: DownloadDetail) => {
-      if (model?.toLowerCase() === modelName?.toLowerCase()) {
+      if (model?.toLowerCase() === progressKey?.toLowerCase()) {
         setDetail(detailData);
       }
     };
@@ -56,7 +68,7 @@ const DownModel: FC<IProps> = ({
       unsubProgress?.();
       unsubDetail?.();
     };
-  }, [modelName]);
+  }, [progressKey]);
 
   const handleDownModel = useCallback(async () => {
     if (globalDownloading) return;
@@ -64,11 +76,17 @@ const DownModel: FC<IProps> = ({
       setLoading(true);
       setProgress(0);
       setDetail(null);
-      const result = await window?.ipc?.invoke('downloadModel', {
-        model: modelName,
-        source: downSource,
-        needsCoreML,
-      });
+      const result =
+        format === 'ct2'
+          ? await window?.ipc?.invoke('downloadCt2Model', {
+              model: modelName,
+              source: downSource,
+            })
+          : await window?.ipc?.invoke('downloadModel', {
+              model: modelName,
+              source: downSource,
+              needsCoreML,
+            });
       setLoading(false);
       if (result?.success) {
         setProgress(1);
@@ -87,7 +105,7 @@ const DownModel: FC<IProps> = ({
       console.error('Download model failed:', error);
       setLoading(false);
     }
-  }, [modelName, downSource, needsCoreML, globalDownloading, t]);
+  }, [modelName, downSource, needsCoreML, globalDownloading, format, t]);
 
   const isDisabled = globalDownloading && !loading;
 

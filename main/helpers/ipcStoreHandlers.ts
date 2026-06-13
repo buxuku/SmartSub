@@ -8,6 +8,7 @@ import { LogEntry } from './store/types';
 import { getBuildInfo } from './buildInfo';
 import { exportConfig, importConfig } from './configExporter';
 import { rebuildAppMenu } from './menu';
+import { shutdownPythonRuntime } from './pythonRuntime';
 
 console.log(app.getVersion(), 'version');
 export function setupStoreHandlers() {
@@ -68,6 +69,16 @@ export function setupStoreHandlers() {
   ipcMain.handle('setSettings', async (event, settings) => {
     const preSettings = store.get('settings');
     store.set('settings', { ...preSettings, ...settings });
+    if (
+      settings?.fasterWhisperModelsPath &&
+      settings.fasterWhisperModelsPath !== preSettings?.fasterWhisperModelsPath
+    ) {
+      await shutdownPythonRuntime();
+      logMessage(
+        `faster-whisper models path changed, python engine restarted`,
+        'info',
+      );
+    }
     // 语言切换后重建应用菜单
     if (settings?.language && settings.language !== preSettings?.language) {
       rebuildAppMenu(settings.language);

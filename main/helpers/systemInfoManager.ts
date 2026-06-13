@@ -12,6 +12,12 @@ import {
 } from './pythonRuntime/paths';
 import { store } from './storeManager';
 import { getModelDownloader } from './modelDownloader';
+import {
+  getCt2ProgressKey,
+  getFasterWhisperModelDownloader,
+  deleteCt2Model,
+} from './fasterWhisperModelDownloader';
+import { shutdownPythonRuntime } from './pythonRuntime';
 import fse from 'fs-extra';
 import path from 'path';
 import { getTempDir } from './fileUtils';
@@ -23,6 +29,7 @@ let downloadingModels = new Set<string>();
 
 export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   const modelDownloader = getModelDownloader(mainWindow);
+  const ct2ModelDownloader = getFasterWhisperModelDownloader(mainWindow);
 
   ipcMain.handle('getSystemInfo', async () => {
     return {
@@ -43,6 +50,12 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
 
   ipcMain.handle('deleteModel', async (event, modelName) => {
     await deleteModel(modelName?.toLowerCase());
+    return true;
+  });
+
+  ipcMain.handle('deleteCt2Model', async (_event, modelId) => {
+    deleteCt2Model(modelId);
+    await shutdownPythonRuntime();
     return true;
   });
 
@@ -70,8 +83,27 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     },
   );
 
+  ipcMain.handle('downloadCt2Model', async (_event, { model, source }) => {
+    if (downloadingModels.size > 0) {
+      return { success: false, error: 'anotherDownloadInProgress' };
+    }
+
+    const progressKey = getCt2ProgressKey(model);
+    downloadingModels.add(progressKey);
+    try {
+      await ct2ModelDownloader.download(model, source || 'hf-mirror');
+      downloadingModels.delete(progressKey);
+      return { success: true };
+    } catch (error) {
+      logMessage(`CT2 model download error: ${error}`, 'error');
+      downloadingModels.delete(progressKey);
+      return { success: false, error: String(error) };
+    }
+  });
+
   ipcMain.handle('cancelModelDownload', async () => {
     modelDownloader.cancel();
+    ct2ModelDownloader.cancel();
     downloadingModels.clear();
     return true;
   });
@@ -99,20 +131,26 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     return { success: false, canceled: true };
   });
 
-  ipcMain.handle('openModelsFolder', async () => {
-    const modelsPath = getPath('modelsPath');
-    try {
-      await fse.ensureDir(modelsPath);
-      const err = await shell.openPath(modelsPath);
-      if (err) {
-        return { success: false, error: err };
+  ipcMain.handle(
+    'openModelsFolder',
+    async (_event, options?: { pathType?: 'ggml' | 'ct2' }) => {
+      const modelsPath =
+        options?.pathType === 'ct2'
+          ? getFasterWhisperModelsPath()
+          : (getPath('modelsPath') as string);
+      try {
+        await fse.ensureDir(modelsPath);
+        const err = await shell.openPath(modelsPath);
+        if (err) {
+          return { success: false, error: err };
+        }
+        return { success: true };
+      } catch (error) {
+        logMessage(`Failed to open models folder: ${error}`, 'error');
+        return { success: false, error: String(error) };
       }
-      return { success: true };
-    } catch (error) {
-      logMessage(`Failed to open models folder: ${error}`, 'error');
-      return { success: false, error: String(error) };
-    }
-  });
+    },
+  );
 
   // 获取临时目录路径
   ipcMain.handle('getTempDir', async () => {

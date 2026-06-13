@@ -1,17 +1,19 @@
 import path from 'path';
-import fs from 'fs';
-import { app } from 'electron';
 import { logMessage } from '../storeManager';
+import { getFasterWhisperModelsPath } from '../modelCatalog';
 import { PythonRuntimeManager, type EngineCommand } from './manager';
 import {
   getPyEngineBinaryPath,
-  getPyEngineCacheDir,
   getPyEngineCurrentDir,
   isPyEngineInstalled,
+  normalizePyEngineLayout,
 } from './paths';
 
 export * from './protocol';
 export { PythonRuntimeManager, PythonEngineError } from './manager';
+
+const NOT_INSTALLED_MSG =
+  'Python engine is not installed. Download it from Resource Hub > Engines, or set PYTHON_ENGINE_CMD for local development.';
 
 function resolveEngineCommand(): EngineCommand {
   const override = process.env.PYTHON_ENGINE_CMD;
@@ -20,30 +22,22 @@ function resolveEngineCommand(): EngineCommand {
     return { command: parts[0], args: parts.slice(1) };
   }
 
-  if (app.isPackaged) {
-    if (!isPyEngineInstalled()) {
-      throw new Error('Python engine is not installed');
-    }
-    const command = getPyEngineBinaryPath();
-    return {
-      command,
-      args: [],
-      cwd: getPyEngineCurrentDir(),
-      env: { HF_HOME: getPyEngineCacheDir() },
-    };
+  if (!isPyEngineInstalled()) {
+    throw new Error(NOT_INSTALLED_MSG);
   }
 
-  const engineDir = path.join(app.getAppPath(), 'python-engine');
-  const venvPython =
-    process.platform === 'win32'
-      ? path.join(engineDir, '.venv', 'Scripts', 'python.exe')
-      : path.join(engineDir, '.venv', 'bin', 'python');
-  const fallback = process.platform === 'win32' ? 'python' : 'python3';
+  normalizePyEngineLayout();
+
+  const command = getPyEngineBinaryPath();
+  const modelsPath = getFasterWhisperModelsPath();
   return {
-    command: fs.existsSync(venvPython) ? venvPython : fallback,
-    args: [path.join(engineDir, 'main.py')],
-    cwd: engineDir,
-    env: { HF_HOME: getPyEngineCacheDir() },
+    command,
+    args: [],
+    cwd: getPyEngineCurrentDir(),
+    env: {
+      HF_HOME: modelsPath,
+      HF_HUB_CACHE: path.join(modelsPath, 'hub'),
+    },
   };
 }
 

@@ -20,6 +20,7 @@
       "name": "faster-whisper",
       "desc": "CTranslate2-based engine with faster inference; models download from HuggingFace on demand",
       "notInstalled": "Not installed",
+      "installError": "Install error",
       "installed": "Installed v{{version}}",
       "download": "Download engine (~{{size}})",
       "downloading": "Downloading…",
