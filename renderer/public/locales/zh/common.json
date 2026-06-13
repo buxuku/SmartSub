@@ -166,6 +166,9 @@
     "failed": "{{model}} 下载失败",
     "extracting": "{{model}} 解压中"
   },
+  "downloadBusy": "已有下载任务进行中，请稍后再试",
+  "downloadFailedToast": "下载失败：{{error}}",
+  "retryDownload": "重试下载",
   "shortcuts": {
     "title": "快捷键",
     "groupGlobal": "全局",

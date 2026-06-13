@@ -166,6 +166,9 @@
     "failed": "{{model}} download failed",
     "extracting": "Extracting {{model}}"
   },
+  "downloadBusy": "Another download is already in progress",
+  "downloadFailedToast": "Download failed: {{error}}",
+  "retryDownload": "Retry download",
   "shortcuts": {
     "title": "Keyboard shortcuts",
     "groupGlobal": "Global",

@@ -42,7 +42,7 @@ const DownModelButton: FC<IProps> = ({
   handleDownModel,
   disabled,
 }) => {
-  const { t } = useTranslation(['common', 'modelsControl']);
+  const { t } = useTranslation('common');
 
   if (!loading && detail?.status === 'error') {
     return (
@@ -54,7 +54,7 @@ const DownModelButton: FC<IProps> = ({
         disabled={disabled}
       >
         <RefreshCw className="mr-1 h-3 w-3" />
-        {t('modelsControl:retryDownload')}
+        {t('retryDownload')}
       </Button>
     );
   }

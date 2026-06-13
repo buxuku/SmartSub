@@ -29,9 +29,6 @@
   "recommendedBasisWithGpu": "依据：本机内存 {{memory}}GB · GPU 加速可用",
   "oneClickDownload": "一键下载（{{size}}）",
   "alreadyInstalled": "已安装，随时可用",
-  "downloadBusy": "已有下载任务进行中，请稍后再试",
-  "downloadFailedToast": "下载失败：{{error}}",
-  "retryDownload": "重试下载",
   "tier": {
     "fast": "快速档",
     "balanced": "均衡档",
