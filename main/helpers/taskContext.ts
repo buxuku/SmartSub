@@ -44,3 +44,30 @@ export function isTaskCancelled(): boolean {
 export function throwIfTaskCancelled(): void {
   if (isTaskCancelled()) throw new TaskCancelledError();
 }
+
+/** whisper addon 因 AbortSignal 中断时抛出的错误（与 TaskCancelledError 统一处理） */
+export function isWhisperAbortError(error: unknown): boolean {
+  if (isTaskCancelledError(error)) return true;
+  if (error instanceof Error) {
+    if (error.name === 'AbortError') return true;
+    const msg = error.message.toLowerCase();
+    if (
+      msg.includes('aborted') ||
+      msg.includes('abort') ||
+      msg.includes('cancelled') ||
+      msg.includes('canceled')
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** addon 正常 resolve 但 cancelled:true（非 throw） */
+export function isWhisperCancelledResult(result: unknown): boolean {
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    (result as { cancelled?: boolean }).cancelled === true
+  );
+}

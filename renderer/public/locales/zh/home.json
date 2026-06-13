@@ -37,7 +37,7 @@
   "resumeTask": "恢复任务",
   "cancelTask": "取消任务",
   "cancelling": "取消中...",
-  "cancellingHint": "正在停止：转写中的文件完成当前转写后停止",
+  "cancellingHint": "正在停止转写…",
   "pausedHint": "已暂停：不再开始新文件，进行中的文件会继续完成",
   "pauseTip": "暂停后不再开始新文件，进行中的文件会继续完成",
   "clearList": "清空列表",

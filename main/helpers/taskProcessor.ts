@@ -277,10 +277,10 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
         runtime.cancelled = true;
         runtime.paused = false;
         runtime.controller.abort();
-        // kill 该工程在跑的 ffmpeg 提取；转写无法中断，完成后在阶段边界停止
+        // kill ffmpeg 提取；whisper 转写经 AbortSignal 同步中断
         killFfmpegForFiles(Array.from(runtime.activeFiles));
         logMessage(
-          `cancel project ${id}: ${runtime.active} running file(s) will stop at stage boundary`,
+          `cancel project ${id}: aborting ${runtime.active} running file(s)`,
           'warning',
         );
       } else {

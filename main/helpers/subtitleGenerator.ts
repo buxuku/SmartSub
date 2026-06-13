@@ -6,6 +6,13 @@ import { logMessage, store } from './storeManager';
 import { formatSrtContent } from './fileUtils';
 import { IFiles } from '../../types';
 import { getExtraResourcesPath } from './utils';
+import {
+  getTaskContext,
+  isWhisperAbortError,
+  isWhisperCancelledResult,
+  TaskCancelledError,
+  throwIfTaskCancelled,
+} from './taskContext';
 
 function getNumericSetting(value: unknown, defaultValue: number): number {
   return typeof value === 'number' && isFinite(value) ? value : defaultValue;
@@ -169,6 +176,7 @@ export async function generateSubtitleWithBuiltinWhisper(
       vad_speech_pad_ms: vadSettings.vadSpeechPad,
       vad_samples_overlap: vadSettings.vadSamplesOverlap,
       progress_callback: (progress) => {
+        if (getTaskContext()?.signal?.aborted) return;
         console.log(`处理进度: ${progress}%`);
         // 更新UI显示进度
         event.sender.send(
@@ -178,15 +186,29 @@ export async function generateSubtitleWithBuiltinWhisper(
           progress,
         );
       },
+      signal: getTaskContext()?.signal,
     };
 
     logMessage(
-      `whisperParams: ${JSON.stringify(whisperParams, null, 2)}`,
+      `whisperParams: ${JSON.stringify({ ...whisperParams, signal: whisperParams.signal ? '[AbortSignal]' : undefined }, null, 2)}`,
       'info',
     );
     event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
+    throwIfTaskCancelled();
     const result = await whisperAsync(whisperParams);
     console.log(result, 'result');
+
+    if (isWhisperCancelledResult(result) || getTaskContext()?.signal?.aborted) {
+      if (file.srtFile && fs.existsSync(file.srtFile)) {
+        try {
+          fs.unlinkSync(file.srtFile);
+        } catch {
+          /* ignore partial srt cleanup failure */
+        }
+      }
+      logMessage(`generate subtitle cancelled for ${file.fileName}`, 'warning');
+      throw new TaskCancelledError();
+    }
 
     // 格式化字幕内容
     const formattedSrt = formatSrtContent(result?.transcription || []);
@@ -199,6 +221,19 @@ export async function generateSubtitleWithBuiltinWhisper(
 
     return srtFile;
   } catch (error) {
+    const aborted =
+      isWhisperAbortError(error) || Boolean(getTaskContext()?.signal?.aborted);
+    if (aborted) {
+      if (file.srtFile && fs.existsSync(file.srtFile)) {
+        try {
+          fs.unlinkSync(file.srtFile);
+        } catch {
+          /* ignore partial srt cleanup failure */
+        }
+      }
+      logMessage(`generate subtitle cancelled for ${file.fileName}`, 'warning');
+      throw new TaskCancelledError();
+    }
     logMessage(`generate subtitle error: ${error}`, 'error');
     throw error;
   }

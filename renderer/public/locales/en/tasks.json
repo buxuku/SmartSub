@@ -33,7 +33,7 @@
     "translate": "Translate"
   },
   "row": {
-    "cancelling": "Cancelling… stops after the current transcription finishes",
+    "cancelling": "Cancelling… interrupting transcription",
     "proofread": "Proofread",
     "openFolder": "Show in folder",
     "retry": "Retry",

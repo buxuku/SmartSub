@@ -37,7 +37,7 @@
   "resumeTask": "Resume Task",
   "cancelTask": "Cancel Task",
   "cancelling": "Cancelling...",
-  "cancellingHint": "Stopping — files mid-transcription finish the current pass, then stop",
+  "cancellingHint": "Stopping transcription…",
   "pausedHint": "Paused: no new files will start; in-progress files keep running",
   "pauseTip": "Pause stops new files from starting; in-progress files keep running",
   "clearList": "Clear List",

@@ -21,6 +21,7 @@ import {
   throwIfTaskCancelled,
   isTaskCancelled,
   isTaskCancelledError,
+  isWhisperAbortError,
   TaskCancelledError,
 } from './taskContext';
 
@@ -59,6 +60,11 @@ async function generateSubtitle(
       return await generateSubtitleWithBuiltinWhisper(event, file, formData);
     }
   } catch (error) {
+    if (isTaskCancelledError(error) || isWhisperAbortError(error)) {
+      throw error instanceof TaskCancelledError
+        ? error
+        : new TaskCancelledError();
+    }
     onError(event, file, 'extractSubtitle', error);
     throw error; // 继续抛出错误，以便上层函数知道发生了错误
   }
@@ -271,7 +277,7 @@ export async function processFile(
       throw new Error(errorMsg);
     }
 
-    // 翻译字幕（取消后不再进入：转写中取消的文件在此停下，已出的转写结果保留）
+    // 翻译字幕（取消后不再进入）
     throwIfTaskCancelled();
     if (shouldTranslateSubtitle && translateProvider !== '-1') {
       if (!provider) {
@@ -351,6 +357,12 @@ export async function processFile(
   } catch (error) {
     if (isTaskCancelledError(error) || isTaskCancelled()) {
       logMessage(`processing cancelled: ${file.fileName}`, 'warning');
+      event.sender.send('taskFileChange', {
+        ...file,
+        extractAudio: '',
+        extractSubtitle: '',
+        translateSubtitle: '',
+      });
       return;
     }
     // 使用通用错误处理方法
