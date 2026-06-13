@@ -230,6 +230,17 @@ export default function TaskPage() {
     form.setValue('translateProvider', defaultId);
   }, [typeDef, providers, formData?.translateProvider, form]);
 
+  // 「仅生成字幕」任务的源字幕就是最终交付物，不能用 noSave（任务结束会被清理删除）。
+  // 修正默认/历史残留的 noSave 或空值，避免视频目录最终没有字幕文件，且下拉框不再显示为空。
+  useEffect(() => {
+    if (typeDef?.taskType !== 'generateOnly') return;
+    if (!formData || Object.keys(formData).length === 0) return;
+    const opt = formData.sourceSrtSaveOption;
+    if (!opt || opt === 'noSave') {
+      form.setValue('sourceSrtSaveOption', 'fileName');
+    }
+  }, [typeDef, formData?.sourceSrtSaveOption, form]);
+
   // 新一轮任务开始时恢复完成横幅
   useEffect(() => {
     if (taskStatus === 'running') setBannerDismissed(false);

@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import Models from '@/components/Models';
 import { supportedLanguage } from 'lib/utils';
 import { isProviderConfigured } from 'lib/providerUtils';
+import { hasModelsForEngine } from 'lib/engineModels';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import { useTranslation } from 'next-i18next';
 
@@ -69,14 +70,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
     form.setValue(name, value);
   };
 
-  const transcriptionEngine =
-    systemInfo?.transcriptionEngine ??
-    (useLocalWhisper ? 'localCli' : 'builtin');
-  const hasModels =
-    transcriptionEngine === 'localCli' ||
-    (transcriptionEngine === 'fasterWhisper'
-      ? (systemInfo?.fasterWhisperModelsInstalled?.length ?? 0) > 0
-      : (systemInfo?.modelsInstalled?.length ?? 0) > 0);
+  const hasModels = hasModelsForEngine(systemInfo, useLocalWhisper);
 
   const languageItems = (includeAuto: boolean) => (
     <SelectContent>

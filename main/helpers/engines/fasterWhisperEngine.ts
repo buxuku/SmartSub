@@ -1,5 +1,4 @@
 import type { EngineStatus } from '../../../types/engine';
-import { getPythonRuntimeManager } from '../pythonRuntime';
 import {
   isPyEngineInstalled,
   readPyEngineManifest,
@@ -16,28 +15,17 @@ export const fasterWhisperEngineAdapter: TranscriptionEngineAdapter = {
   requiresRuntime: true,
 
   async isAvailable(): Promise<EngineStatus> {
+    // 安装状态仅以「运行时已落盘 + manifest 存在」为准；运行时探活（冷启动 ping）
+    // 推迟到真正转写时进行，避免 PyInstaller 首次冷启动耗时超过探活超时，
+    // 被误报为「安装异常 / ping timeout」（实际安装是成功的）。
     if (!isPyEngineInstalled()) {
       return {
         state: 'not_installed',
         message: 'Python engine runtime is not installed',
       };
     }
-    try {
-      const manager = getPythonRuntimeManager();
-      const info = await manager.ensureStarted();
-      if (!info.engines?.faster_whisper) {
-        return {
-          state: 'error',
-          message:
-            'faster-whisper is not available in the python engine runtime',
-        };
-      }
-      const manifest = readPyEngineManifest();
-      return { state: 'ready', version: manifest?.version };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return { state: 'error', message };
-    }
+    const manifest = readPyEngineManifest();
+    return { state: 'ready', version: manifest?.version };
   },
 
   async transcribe(ctx: TranscribeContext): Promise<string> {

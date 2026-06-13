@@ -89,6 +89,38 @@
   }
 }
 
+/* 滚动条：Windows 默认常驻滚动条不美观。改为细滚动条、默认透明、悬停才显现，
+   仍可正常滚动；macOS 原生 overlay 行为不受影响。 */
+* {
+  scrollbar-width: thin; /* Firefox / 标准 */
+  scrollbar-color: transparent transparent;
+}
+*:hover {
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*:hover::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--border));
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground));
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* Compact mode for smaller screens (height <= 800px).
    只收紧自有 spacing 变量与 .compact-form，不覆盖 Tailwind 原子类语义。 */
 @media (max-height: 800px) {

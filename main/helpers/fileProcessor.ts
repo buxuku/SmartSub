@@ -326,11 +326,14 @@ export async function processFile(
       event.sender.send('taskFileChange', file);
     }
 
-    // 清理临时文件
+    // 清理临时文件：仅在「生成并翻译」且确实产生了译文交付物时才删除源字幕。
+    // 「仅生成字幕」任务的源字幕是最终交付物，绝不能因 noSave 而被删除。
     if (
       !isSubtitleFile &&
       sourceSrtSaveOption === 'noSave' &&
-      shouldGenerateSubtitle
+      shouldGenerateSubtitle &&
+      shouldTranslateSubtitle &&
+      translateProvider !== '-1'
     ) {
       const { srtFile } = file;
       logMessage(`delete temp subtitle ${srtFile}`, 'warning');

@@ -53,11 +53,13 @@ import {
   Trash2,
   Search,
   Box,
+  Bot,
   Terminal,
-  ExternalLink,
+  Settings2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
+import SectionHeader from '@/components/SectionHeader';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import fasterWhisperModels from 'lib/fasterWhisperModels.json';
 import type { TranscriptionEngine } from '../../../types/engine';
@@ -447,64 +449,47 @@ function ModelRow({
 
 function EngineContextBar({
   engine,
-  onEngineChange,
   onNavigateTab,
   t,
 }: {
   engine: TranscriptionEngine;
-  onEngineChange: (engine: TranscriptionEngine) => void;
   onNavigateTab?: (tab: string) => void;
   t: TFunc;
 }) {
   const current = ENGINE_OPTIONS.find((item) => item.id === engine);
   const Icon = current?.icon ?? Box;
+  const engineKey =
+    engine === 'builtin'
+      ? 'builtin'
+      : engine === 'fasterWhisper'
+        ? 'fasterWhisper'
+        : 'localCli';
 
   return (
-    <div className="rounded-xl border bg-muted/20 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-start gap-3 min-w-0">
-        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-          <Icon className="h-5 w-5 text-primary" />
+    <div className="flex flex-col gap-2 rounded-xl border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Icon className="h-5 w-5" />
         </div>
         <div className="min-w-0">
           <p className="text-xs text-muted-foreground">{t('currentEngine')}</p>
-          <p className="text-sm font-semibold">
-            {t(
-              `engineFilter.${engine === 'builtin' ? 'builtin' : engine === 'fasterWhisper' ? 'fasterWhisper' : 'localCli'}`,
-            )}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {t(`engineModelHint.${engine}`)}
+          <p className="truncate text-sm font-semibold">
+            {t(`engineFilter.${engineKey}`)}
           </p>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2 shrink-0">
-        <Select
-          value={engine}
-          onValueChange={(value) =>
-            onEngineChange(value as TranscriptionEngine)
-          }
-        >
-          <SelectTrigger className="w-[200px] h-8">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {ENGINE_OPTIONS.map((item) => (
-              <SelectItem key={item.id} value={item.id}>
-                {t(
-                  `engineFilter.${item.id === 'builtin' ? 'builtin' : item.id === 'fasterWhisper' ? 'fasterWhisper' : 'localCli'}`,
-                )}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex shrink-0 items-center gap-3">
+        <p className="hidden max-w-[260px] text-xs text-muted-foreground lg:block">
+          {t(`engineModelHint.${engine}`)}
+        </p>
         {onNavigateTab && (
           <Button
             variant="outline"
             size="sm"
-            className="h-8 gap-1.5"
+            className="h-8 shrink-0 gap-1.5"
             onClick={() => onNavigateTab('engines')}
           >
-            <ExternalLink className="h-3.5 w-3.5" />
+            <Settings2 className="h-3.5 w-3.5" />
             {t('openEnginesTab')}
           </Button>
         )}
@@ -650,14 +635,28 @@ function Ct2ModelRow({
       </div>
       <div className="flex items-center justify-between gap-2 sm:justify-end sm:gap-3 flex-shrink-0">
         <div className="flex items-center gap-2 sm:gap-3">
-          <span className="hidden lg:inline-flex items-center gap-1 text-muted-foreground">
-            <Zap className="h-3 w-3" />
-            <RatingDots value={model.speed} />
-          </span>
-          <span className="hidden lg:inline-flex items-center gap-1 text-muted-foreground">
-            <Target className="h-3 w-3" />
-            <RatingDots value={model.quality} />
-          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="hidden lg:inline-flex items-center gap-1 text-muted-foreground">
+                <Zap className="h-3 w-3" />
+                <RatingDots value={model.speed} />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{t('speedRatingTip')}</p>
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="hidden lg:inline-flex items-center gap-1 text-muted-foreground">
+                <Target className="h-3 w-3" />
+                <RatingDots value={model.quality} />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{t('qualityRatingTip')}</p>
+            </TooltipContent>
+          </Tooltip>
           <span className="text-xs text-muted-foreground tabular-nums">
             {model.size}
           </span>
@@ -1039,29 +1038,6 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
 
   const transcriptionEngine = systemInfo.transcriptionEngine ?? 'builtin';
 
-  const handleEngineChange = async (engine: TranscriptionEngine) => {
-    try {
-      const result = await window?.ipc?.invoke(
-        'set-transcription-engine',
-        engine,
-      );
-      if (result?.error === 'engine_not_installed') {
-        toast.error(t('engineNotInstalled'));
-        onNavigateTab?.('engines');
-        return;
-      }
-      if (!result?.success) {
-        toast.error(t('engineSwitchFailed'));
-        return;
-      }
-      await updateSystemInfo();
-      toast.success(t('engineSwitched'));
-    } catch (error) {
-      console.error('Failed to switch engine:', error);
-      toast.error(t('engineSwitchFailed'));
-    }
-  };
-
   const recommendedId = getRecommendedCategory(systemInfo.totalMemoryGB ?? 8);
   const recommendedCategory = modelCategories.find(
     (c) => c.id === recommendedId,
@@ -1140,7 +1116,6 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
       <div className="space-y-4">
         <EngineContextBar
           engine={transcriptionEngine}
-          onEngineChange={handleEngineChange}
           onNavigateTab={onNavigateTab}
           t={t}
         />
@@ -1170,52 +1145,51 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
         )}
 
         <div className="sticky top-0 z-10 space-y-3 border-b bg-background/95 pb-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold">{t('modelManagement')}</h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                {t('modelManagementDesc')}
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-              <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer">
-                <Switch
-                  checked={installedOnly}
-                  onCheckedChange={setInstalledOnly}
-                />
-                {t('showInstalledOnly')}
-              </label>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground shrink-0">
-                  {t('switchDownloadSource')}:
-                </span>
-                <Select onValueChange={handleDownSource} value={downSource}>
-                  <SelectTrigger className="w-full sm:w-[200px] h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="huggingface">
-                      {t('officialSource')}
-                    </SelectItem>
-                    <SelectItem value="hf-mirror">
-                      {t('domesticMirror')}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {isBuiltin && (
-                <Button
-                  onClick={handleImportModel}
-                  size="sm"
-                  variant="outline"
-                  className="w-full sm:w-auto"
-                >
-                  <Upload className="mr-1.5 h-3.5 w-3.5" />
-                  {t('importModel')}
-                </Button>
-              )}
-            </div>
-          </div>
+          <SectionHeader
+            icon={Bot}
+            title={t('modelManagement')}
+            description={t('modelManagementDesc')}
+            actions={
+              <>
+                <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer">
+                  <Switch
+                    checked={installedOnly}
+                    onCheckedChange={setInstalledOnly}
+                  />
+                  {t('showInstalledOnly')}
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground shrink-0">
+                    {t('switchDownloadSource')}:
+                  </span>
+                  <Select onValueChange={handleDownSource} value={downSource}>
+                    <SelectTrigger className="w-full sm:w-[200px] h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="huggingface">
+                        {t('officialSource')}
+                      </SelectItem>
+                      <SelectItem value="hf-mirror">
+                        {t('domesticMirror')}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {isBuiltin && (
+                  <Button
+                    onClick={handleImportModel}
+                    size="sm"
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                  >
+                    <Upload className="mr-1.5 h-3.5 w-3.5" />
+                    {t('importModel')}
+                  </Button>
+                )}
+              </>
+            }
+          />
 
           <div className="relative px-0.5">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />

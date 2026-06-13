@@ -157,42 +157,53 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                       <FormField
                         control={form.control}
                         name="sourceSrtSaveOption"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className="flex items-center">
-                              {tHome('sourceSubtitleSaveSettings')}
-                              <SavePathNotice />
-                            </FormLabel>
-                            <Select
-                              onValueChange={field.onChange}
-                              value={field.value || 'fileName'}
-                            >
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue
-                                    placeholder={tHome('pleaseSelect')}
-                                  />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {typeDef.taskType !== 'generateOnly' && (
-                                  <SelectItem value="noSave">
-                                    {tHome('noSave')}
+                        render={({ field }) => {
+                          // generateOnly 任务的源字幕即交付物，noSave 选项被隐藏；
+                          // 若残留 noSave/空值会让下拉框显示为空且任务结束后删除字幕，这里回退为 fileName
+                          const isGenerateOnly =
+                            typeDef.taskType === 'generateOnly';
+                          const sourceSaveValue =
+                            isGenerateOnly &&
+                            (!field.value || field.value === 'noSave')
+                              ? 'fileName'
+                              : field.value || 'fileName';
+                          return (
+                            <FormItem>
+                              <FormLabel className="flex items-center">
+                                {tHome('sourceSubtitleSaveSettings')}
+                                <SavePathNotice />
+                              </FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                value={sourceSaveValue}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue
+                                      placeholder={tHome('pleaseSelect')}
+                                    />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {typeDef.taskType !== 'generateOnly' && (
+                                    <SelectItem value="noSave">
+                                      {tHome('noSave')}
+                                    </SelectItem>
+                                  )}
+                                  <SelectItem value="fileName">
+                                    {tHome('fileName')}
                                   </SelectItem>
-                                )}
-                                <SelectItem value="fileName">
-                                  {tHome('fileName')}
-                                </SelectItem>
-                                <SelectItem value="fileNameWithLang">
-                                  {tHome('fileNameWithLang')}
-                                </SelectItem>
-                                <SelectItem value="custom">
-                                  {tHome('customSettings')}
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </FormItem>
-                        )}
+                                  <SelectItem value="fileNameWithLang">
+                                    {tHome('fileNameWithLang')}
+                                  </SelectItem>
+                                  <SelectItem value="custom">
+                                    {tHome('customSettings')}
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </FormItem>
+                          );
+                        }}
                       />
                       {formData.sourceSrtSaveOption === 'custom' && (
                         <FormField

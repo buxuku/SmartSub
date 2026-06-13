@@ -19,6 +19,8 @@ import {
   type ModelInfo,
 } from 'lib/utils';
 import { isProviderConfigured } from 'lib/providerUtils';
+import { resolveEngine, getInstalledModelsForEngine } from 'lib/engineModels';
+import type { TranscriptionEngine } from '../../../types/engine';
 import {
   ArrowLeft,
   ArrowRight,
@@ -26,6 +28,7 @@ import {
   Check,
   CheckCircle2,
   Clapperboard,
+  Download,
   FileText,
   Languages,
   Loader2,
@@ -98,6 +101,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
 
   const [step, setStep] = useState(0);
   const [totalMemoryGB, setTotalMemoryGB] = useState<number | undefined>();
+  const [engine, setEngine] = useState<TranscriptionEngine>('builtin');
   const [installedCount, setInstalledCount] = useState(0);
   const [downloadDone, setDownloadDone] = useState(false);
   const [accel, setAccel] = useState<AccelInfo>({
@@ -120,7 +124,15 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
       try {
         const info = await window?.ipc?.invoke('getSystemInfo', null);
         setTotalMemoryGB(info?.totalMemoryGB);
-        setInstalledCount(info?.modelsInstalled?.length ?? 0);
+        // 按当前转写引擎统计已安装模型：faster-whisper 用自己的模型目录，
+        // 本地命令行引擎自备模型，避免“已下载模型却提示无模型”
+        const currentEngine = resolveEngine(info);
+        setEngine(currentEngine);
+        const modelCount =
+          currentEngine === 'localCli'
+            ? 1
+            : getInstalledModelsForEngine(info).length;
+        setInstalledCount(modelCount);
 
         const env = await window?.ipc?.invoke('get-gpu-environment');
         const active = await window?.ipc?.invoke('get-active-backend');
@@ -289,6 +301,28 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
             <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/5 px-3 py-3 text-sm">
               <CheckCircle2 className="h-4 w-4 text-success" />
               {t('onboarding.modelReady')}
+            </div>
+          ) : engine === 'fasterWhisper' ? (
+            // faster-whisper 模型走专属下载流程（资源中心-模型页），不复用 ggml 一键下载
+            <div className="flex items-center gap-3 rounded-lg border px-3 py-3">
+              <Bot className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium">
+                  {t('onboarding.fasterWhisperModelTitle')}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {t('onboarding.fasterWhisperModelDesc')}
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs flex-shrink-0"
+                onClick={() => closeAndGo(`/${locale}/resources?tab=models`)}
+              >
+                <Download className="h-4 w-4" />
+                {t('onboarding.goDownloadModel')}
+              </Button>
             </div>
           ) : (
             <>

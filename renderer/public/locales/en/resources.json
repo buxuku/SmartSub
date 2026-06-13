@@ -11,6 +11,18 @@
   "engines": {
     "title": "Transcription Engines",
     "description": "Choose the engine for speech-to-text. whisper.cpp is built in by default; faster-whisper requires a separate download.",
+    "active": "In use",
+    "setActive": "Set as current",
+    "statusAvailable": "Available",
+    "tags": {
+      "recommended": "Recommended",
+      "noDownload": "No download · built-in",
+      "gpu": "GPU acceleration",
+      "faster": "Faster",
+      "needsDownload": "Download ~{{size}}",
+      "advanced": "Advanced",
+      "byoModel": "Bring your own model"
+    },
     "builtin": {
       "name": "whisper.cpp (built-in)",
       "desc": "Default engine with ggml quantized models and GPU acceleration",
@@ -21,20 +33,43 @@
       "desc": "CTranslate2-based engine with faster inference; models download from HuggingFace on demand",
       "notInstalled": "Not installed",
       "installError": "Install error",
-      "installed": "Installed v{{version}}",
+      "installed": "Installed",
+      "verifying": "Verifying & starting engine…",
       "download": "Download engine (~{{size}})",
       "downloading": "Downloading…",
       "uninstall": "Uninstall",
+      "repair": "Reinstall",
       "select": "Set as current engine",
       "selected": "Current engine",
+      "advanced": "Advanced settings",
       "device": "Compute device",
       "computeType": "Precision",
+      "deviceHint": "Hardware used for inference",
+      "computeTypeHint": "Numeric precision — trades speed / VRAM / accuracy",
+      "deviceTooltip": "Auto: pick the best for your hardware (recommended).\nCPU: most compatible, slower.\nCUDA: requires an NVIDIA GPU, fastest.",
+      "computeTypeTooltip": "Auto: pick the best for your device (recommended).\nint8: lowest memory, fastest, slightly less accurate.\nfloat16: needs a GPU, balanced speed/accuracy.\nint8_float16: mixed precision, saves VRAM.\nfloat32: highest accuracy, slowest.",
+      "deviceOptions": {
+        "auto": "Auto (recommended)",
+        "cpu": "CPU",
+        "cuda": "CUDA (NVIDIA GPU)"
+      },
+      "computeTypeOptions": {
+        "auto": "Auto (recommended)"
+      },
       "downloadConfirm": "This will download the faster-whisper engine runtime (~170MB). Continue?"
     },
     "localCli": {
       "name": "Local CLI",
       "desc": "Use a self-installed Whisper-compatible command-line tool",
-      "configure": "Configure command"
+      "configure": "Configure command",
+      "notConfigured": "Not configured",
+      "save": "Save",
+      "commandLabel": "Whisper command",
+      "commandPlaceholder": "Enter custom whisper command...",
+      "commandHint": "A Whisper-compatible command runnable in your shell; you provide the model and arguments",
+      "commandTooltip": "Available variables: ${audioFile}, ${whisperModel}, ${srtFile}, ${sourceLanguage}, ${outputDir}. These will be replaced with actual values when executing.",
+      "commandSaved": "Command saved",
+      "commandSaveFailed": "Save failed"
     },
     "switchBlocked": "A task is running. Wait for it to finish before switching engines."
   },
@@ -69,6 +104,12 @@
     "engineFasterWhisper": "faster-whisper",
     "engineLocalCli": "local CLI",
     "engineNotInstalled": "Engine not installed",
-    "manage": "Manage"
+    "manage": "Manage",
+    "readyTitle": "Ready to go",
+    "readyDesc": "You meet the requirements to start transcription. Head to the launchpad to create a task.",
+    "setupTitle": "One step away",
+    "setupDesc": "Finish the setup item below to start transcribing.",
+    "nextInstallEngine": "Install engine runtime",
+    "nextDownloadModels": "Download a speech model"
   }
 }

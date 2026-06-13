@@ -216,6 +216,9 @@
     "quickChoiceDesc": "Smallest and fastest, modest quality — you can switch anytime",
     "modelReady": "You already have a model — this step is done",
     "downloadStarted": "Downloading in the background — you can continue",
+    "fasterWhisperModelTitle": "Download a faster-whisper model",
+    "fasterWhisperModelDesc": "Your current engine is faster-whisper — download its model in the Resource Hub",
+    "goDownloadModel": "Go to download",
     "step3Title": "Optional boosts (highly recommended)",
     "providerTitle": "Translation service",
     "providerDesc": "Only needed for translated subtitles. Free options to start: DeepLX, local Ollama, or Volcengine",
@@ -250,5 +253,13 @@
   "gpuModeGpuOnly": "GPU only",
   "gpuModeCpuOnly": "CPU only",
   "cpuModeBadge": "CPU mode",
-  "cpuModeTip": "Transcription runs on CPU. Click to view acceleration options."
+  "cpuModeTip": "Transcription runs on CPU. Click to view acceleration options.",
+  "engineBadge": {
+    "builtin": "Whisper.cpp",
+    "fasterWhisper": "Faster-Whisper",
+    "localCli": "Local command",
+    "tip": "Current transcription engine",
+    "manage": "Click to manage / switch engines",
+    "aria": "Current transcription engine, click to manage engines"
+  }
 }

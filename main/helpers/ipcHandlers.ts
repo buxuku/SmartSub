@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createMessageSender } from './messageHandler';
 import { logMessage } from './storeManager';
-import { wrapFileObject } from './fileUtils';
+import { wrapFileObject, ensureTempDir, getMd5 } from './fileUtils';
 import { CONTENT_TEMPLATES } from '../translate/constants';
 import { renderTemplate, getExtraResourcesPath } from './utils';
 import {
@@ -293,10 +293,14 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
               );
             })
             .join('');
-        // 覆盖前滚动备份一份 .bak（失败不阻断保存）
+        // 覆盖前滚动备份一份到临时目录（避免污染用户视频目录；失败不阻断保存）
         try {
           if (fs.existsSync(filePath)) {
-            await fs.promises.copyFile(filePath, `${filePath}.bak`);
+            const backupPath = path.join(
+              ensureTempDir(),
+              `subtitle-backup-${getMd5(filePath)}${path.extname(filePath)}.bak`,
+            );
+            await fs.promises.copyFile(filePath, backupPath);
           }
         } catch (backupError) {
           logMessage(

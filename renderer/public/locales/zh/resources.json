@@ -11,6 +11,18 @@
   "engines": {
     "title": "转写引擎",
     "description": "选择用于语音转文字的引擎。默认 whisper.cpp 已内置；faster-whisper 需额外下载。",
+    "active": "使用中",
+    "setActive": "设为当前引擎",
+    "statusAvailable": "可用",
+    "tags": {
+      "recommended": "推荐",
+      "noDownload": "免下载 · 已内置",
+      "gpu": "支持 GPU 加速",
+      "faster": "速度更快",
+      "needsDownload": "需下载 ~{{size}}",
+      "advanced": "进阶",
+      "byoModel": "自备模型"
+    },
     "builtin": {
       "name": "whisper.cpp（内置）",
       "desc": "默认引擎，支持 ggml 量化模型与 GPU 加速",
@@ -21,20 +33,43 @@
       "desc": "基于 CTranslate2，速度更快，模型按需从 HuggingFace 下载",
       "notInstalled": "未安装",
       "installError": "安装异常",
-      "installed": "已安装 v{{version}}",
+      "installed": "已安装",
+      "verifying": "正在校验并启动引擎…",
       "download": "下载引擎（约 {{size}}）",
       "downloading": "下载中…",
       "uninstall": "卸载",
+      "repair": "重新安装",
       "select": "设为当前引擎",
       "selected": "当前引擎",
+      "advanced": "高级设置",
       "device": "计算设备",
       "computeType": "精度",
+      "deviceHint": "选择推理使用的硬件",
+      "computeTypeHint": "数值精度，权衡速度 / 显存 / 准确度",
+      "deviceTooltip": "自动：按硬件自动选择（推荐）。\nCPU：兼容性最好，速度较慢。\nCUDA：需 NVIDIA 显卡，速度最快。",
+      "computeTypeTooltip": "自动：按设备自动选择（推荐）。\nint8：最省内存、最快，精度略降。\nfloat16：需 GPU，速度与精度均衡。\nint8_float16：混合精度，省显存。\nfloat32：精度最高，速度最慢。",
+      "deviceOptions": {
+        "auto": "自动（推荐）",
+        "cpu": "CPU",
+        "cuda": "CUDA（NVIDIA 显卡）"
+      },
+      "computeTypeOptions": {
+        "auto": "自动（推荐）"
+      },
       "downloadConfirm": "将下载 faster-whisper 引擎运行时（约 170MB），是否继续？"
     },
     "localCli": {
       "name": "本地命令行",
       "desc": "使用自行安装的 Whisper 兼容 CLI",
-      "configure": "配置命令"
+      "configure": "配置命令",
+      "notConfigured": "未配置",
+      "save": "保存",
+      "commandLabel": "Whisper 命令",
+      "commandPlaceholder": "输入自定义 whisper 命令...",
+      "commandHint": "需可在命令行直接执行的 Whisper 兼容命令；模型与参数由你自备",
+      "commandTooltip": "可用变量：${audioFile}, ${whisperModel}, ${srtFile}, ${sourceLanguage}, ${outputDir}。这些变量在执行时会被替换为实际值。",
+      "commandSaved": "命令已保存",
+      "commandSaveFailed": "保存失败"
     },
     "switchBlocked": "有任务正在运行，请等待完成后再切换引擎"
   },
@@ -69,6 +104,12 @@
     "engineFasterWhisper": "faster-whisper",
     "engineLocalCli": "local CLI",
     "engineNotInstalled": "引擎未安装",
-    "manage": "管理"
+    "manage": "管理",
+    "readyTitle": "准备就绪",
+    "readyDesc": "已满足开始转写的条件，可前往工作台创建任务。",
+    "setupTitle": "还差一步即可开始",
+    "setupDesc": "完成下方准备项后即可开始转写。",
+    "nextInstallEngine": "安装引擎运行时",
+    "nextDownloadModels": "下载语音模型"
   }
 }

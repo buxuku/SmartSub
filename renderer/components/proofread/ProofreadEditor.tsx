@@ -267,20 +267,37 @@ export default function ProofreadEditor({
     <div className="h-full flex flex-col">
       <div className="sticky top-0 z-10 flex-shrink-0 bg-background border-b">
         {/* 顶部工具栏 */}
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="sm" onClick={handleBackClick}>
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              {t('backToList')}
-            </Button>
-            <div className="text-sm text-muted-foreground">{file.fileName}</div>
-          </div>
-          <TooltipProvider>
+        <TooltipProvider>
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 flex-shrink-0"
+                    aria-label={t('backToList')}
+                    onClick={handleBackClick}
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{t('backToList')}</TooltipContent>
+              </Tooltip>
+              <div className="truncate text-sm text-muted-foreground">
+                {file.fileName}
+              </div>
+            </div>
             <div className="flex items-center gap-2">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="outline" size="sm" onClick={handleSave}>
-                    <Save className="w-4 h-4 mr-1" />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={handleSave}
+                  >
+                    <Save className="h-4 w-4" />
                     {t('saveSubtitles')}
                   </Button>
                 </TooltipTrigger>
@@ -293,9 +310,10 @@ export default function ProofreadEditor({
                   <Button
                     variant="default"
                     size="sm"
+                    className="gap-1.5"
                     onClick={handleMarkCompleteClick}
                   >
-                    <Check className="w-4 h-4 mr-1" />
+                    <Check className="h-4 w-4" />
                     {t('markCompleteAndBack')}
                   </Button>
                 </TooltipTrigger>
@@ -304,8 +322,8 @@ export default function ProofreadEditor({
                 </TooltipContent>
               </Tooltip>
             </div>
-          </TooltipProvider>
-        </div>
+          </div>
+        </TooltipProvider>
 
         {/* 编辑工具栏 */}
         <SubtitleEditToolbar

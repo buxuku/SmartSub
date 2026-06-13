@@ -163,9 +163,13 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       const tempDir = getTempDir();
       const files = await fse.readdir(tempDir);
 
-      // 只删除 .wav 文件，保留目录结构
+      // 删除临时音频/字幕缓存与字幕保存备份，保留目录结构
       for (const file of files) {
-        if (file.endsWith('.wav') || file.endsWith('.srt')) {
+        if (
+          file.endsWith('.wav') ||
+          file.endsWith('.srt') ||
+          file.endsWith('.bak')
+        ) {
           const filePath = path.join(tempDir, file);
           await fse.unlink(filePath);
           logMessage(`Deleted cache file: ${filePath}`, 'info');

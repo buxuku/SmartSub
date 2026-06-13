@@ -1,10 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import {
   Select,
@@ -13,6 +12,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,8 +33,24 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Box, Zap, Terminal, Check, ExternalLink } from 'lucide-react';
+import {
+  Box,
+  Zap,
+  Terminal,
+  Check,
+  Cpu,
+  Download,
+  Trash2,
+  Power,
+  RefreshCw,
+  SlidersHorizontal,
+  ChevronDown,
+  Info,
+  Settings2,
+} from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from 'lib/utils';
+import SectionHeader from '@/components/SectionHeader';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import { DownSource } from 'lib/modelPanelUtils';
 import { formatSize } from '@/components/settings/gpu/gpuUtils';
@@ -37,7 +63,6 @@ import type {
 
 const PY_ENGINE_SIZE = '170MB';
 
-const DEVICE_OPTIONS = ['auto', 'cpu', 'cuda'] as const;
 const COMPUTE_TYPE_OPTIONS = [
   'auto',
   'float16',
@@ -61,8 +86,6 @@ function isQueueBusy(status: string | undefined): boolean {
 const EnginesTab = () => {
   const { t } = useTranslation('resources');
   const { t: commonT } = useTranslation('common');
-  const router = useRouter();
-  const locale = router.locale || 'zh';
 
   const [currentEngine, setCurrentEngine] =
     useState<TranscriptionEngine>('builtin');
@@ -70,10 +93,14 @@ const EnginesTab = () => {
   const [device, setDevice] = useState<'auto' | 'cpu' | 'cuda'>('auto');
   const [computeType, setComputeType] = useState('auto');
   const [whisperCommand, setWhisperCommand] = useState('');
+  const [showCommandConfig, setShowCommandConfig] = useState(false);
+  const commandConfigInitRef = useRef(false);
+  const [platform, setPlatform] = useState('');
   const [downloadProgress, setDownloadProgress] =
     useState<PyEngineDownloadProgress | null>(null);
   const [showDownloadConfirm, setShowDownloadConfirm] = useState(false);
   const [taskBusy, setTaskBusy] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
   const [downSource] = useLocalStorageState<DownSource>(
     'downSource',
@@ -83,13 +110,14 @@ const EnginesTab = () => {
 
   const refresh = useCallback(async () => {
     try {
-      const [engine, statuses, settings, progress, taskStatus] =
+      const [engine, statuses, settings, progress, taskStatus, env] =
         await Promise.all([
           window?.ipc?.invoke('get-transcription-engine'),
           window?.ipc?.invoke('get-engine-status'),
           window?.ipc?.invoke('getSettings'),
           window?.ipc?.invoke('get-py-engine-download-progress'),
           window?.ipc?.invoke('getTaskStatus'),
+          window?.ipc?.invoke('get-gpu-environment'),
         ]);
 
       if (engine) setCurrentEngine(engine);
@@ -100,6 +128,7 @@ const EnginesTab = () => {
         setWhisperCommand(settings.whisperCommand || '');
       }
       if (progress) setDownloadProgress(progress);
+      if (env?.platform) setPlatform(env.platform);
       setTaskBusy(isQueueBusy(taskStatus));
     } catch (error) {
       console.error('Failed to refresh engine status:', error);
@@ -112,7 +141,11 @@ const EnginesTab = () => {
       'py-engine-download-progress',
       (_progress: PyEngineDownloadProgress) => {
         setDownloadProgress(_progress);
-        if (_progress.status === 'completed' || _progress.status === 'error') {
+        if (_progress.status === 'completed') {
+          // 下载完成后引擎还需校验/冷启动，期间给出明确状态，避免用户以为卡住没反应
+          setVerifying(true);
+          refresh().finally(() => setVerifying(false));
+        } else if (_progress.status === 'error') {
           refresh();
         }
       },
@@ -125,6 +158,14 @@ const EnginesTab = () => {
       unsubTask?.();
     };
   }, [refresh]);
+
+  // localCli 已有命令时首次自动展开配置区；之后尊重用户手动开合
+  useEffect(() => {
+    if (!commandConfigInitRef.current && whisperCommand) {
+      commandConfigInitRef.current = true;
+      setShowCommandConfig(true);
+    }
+  }, [whisperCommand]);
 
   const handleSelectEngine = async (engine: TranscriptionEngine) => {
     if (engine === currentEngine) return;
@@ -139,6 +180,8 @@ const EnginesTab = () => {
     );
     if (result?.success) {
       setCurrentEngine(engine);
+      // 通知全局头部引擎指示器即时刷新（set-transcription-engine 不广播）
+      window.dispatchEvent(new CustomEvent('transcription-engine-changed'));
       return;
     }
 
@@ -148,6 +191,15 @@ const EnginesTab = () => {
     }
 
     toast.error(result?.error || 'Failed to switch engine');
+  };
+
+  const handleSaveWhisperCommand = async () => {
+    try {
+      await window?.ipc?.invoke('setSettings', { whisperCommand });
+      toast.success(t('engines.localCli.commandSaved'));
+    } catch {
+      toast.error(t('engines.localCli.commandSaveFailed'));
+    }
   };
 
   const handleStartDownload = async () => {
@@ -191,250 +243,471 @@ const EnginesTab = () => {
     fasterStatus?.state === 'downloading';
   const fasterInstalled = fasterStatus?.state === 'ready';
   const fasterBroken = fasterStatus?.state === 'error';
+  const localCliReady =
+    localCliStatus?.state === 'ready' || whisperCommand.trim().length > 0;
 
-  const renderSelectButton = (engine: TranscriptionEngine) => {
-    const isSelected = currentEngine === engine;
+  // CTranslate2(faster-whisper) 在 macOS 上不支持 CUDA/Metal，仅 CPU；其它平台保留 cuda
+  const deviceOptions =
+    platform === 'darwin' ? ['auto', 'cpu'] : ['auto', 'cpu', 'cuda'];
+  const deviceValue = deviceOptions.includes(device) ? device : 'auto';
+
+  const deviceLabel = (opt: string) =>
+    t(`engines.fasterWhisper.deviceOptions.${opt}`);
+  const computeLabel = (opt: string) =>
+    opt === 'auto' ? t('engines.fasterWhisper.computeTypeOptions.auto') : opt;
+
+  const readyBadge = (
+    <Badge variant="outline" className="border-success/40 text-success">
+      {t('engines.statusAvailable')}
+    </Badge>
+  );
+
+  const renderEngineBadge = (engine: TranscriptionEngine) => {
+    if (currentEngine === engine) {
+      return (
+        <Badge className="shrink-0 gap-1">
+          <Check className="h-3 w-3" />
+          {t('engines.active')}
+        </Badge>
+      );
+    }
+    if (engine === 'fasterWhisper') {
+      if (isDownloading) {
+        return (
+          <Badge variant="secondary" className="shrink-0">
+            {t('engines.fasterWhisper.downloading')}
+          </Badge>
+        );
+      }
+      if (verifying) {
+        return (
+          <Badge variant="secondary" className="shrink-0">
+            {t('engines.fasterWhisper.verifying')}
+          </Badge>
+        );
+      }
+      if (fasterInstalled) return readyBadge;
+      if (fasterBroken) {
+        return (
+          <Badge variant="destructive" className="shrink-0">
+            {t('engines.fasterWhisper.installError')}
+          </Badge>
+        );
+      }
+      return (
+        <Badge variant="outline" className="shrink-0 text-muted-foreground">
+          {t('engines.fasterWhisper.notInstalled')}
+        </Badge>
+      );
+    }
+    if (engine === 'localCli') {
+      return localCliReady ? (
+        readyBadge
+      ) : (
+        <Badge variant="outline" className="shrink-0 text-muted-foreground">
+          {t('engines.localCli.notConfigured')}
+        </Badge>
+      );
+    }
+    return readyBadge;
+  };
+
+  // 当前引擎以「使用中」徽章 + 卡片高亮表达，非当前才出现「设为当前引擎」主操作
+  const renderSetActiveButton = (engine: TranscriptionEngine) => {
+    if (currentEngine === engine) return null;
     return (
       <Button
         size="sm"
-        variant={isSelected ? 'secondary' : 'default'}
-        disabled={isSelected || taskBusy}
-        onClick={() => handleSelectEngine(engine)}
         className="gap-1.5"
+        disabled={taskBusy}
+        onClick={() => handleSelectEngine(engine)}
       >
-        {isSelected && <Check className="h-3.5 w-3.5" />}
-        {isSelected
-          ? t('engines.fasterWhisper.selected')
-          : t('engines.fasterWhisper.select')}
+        <Power className="h-3.5 w-3.5" />
+        {t('engines.setActive')}
       </Button>
     );
   };
 
-  const renderFasterWhisperBadge = () => {
-    if (isDownloading) {
-      return (
-        <Badge variant="secondary">
-          {t('engines.fasterWhisper.downloading')}
-        </Badge>
-      );
-    }
-    if (fasterInstalled) {
-      return (
-        <Badge variant="default">
-          {t('engines.fasterWhisper.installed', {
-            version: fasterStatus?.version || '?',
-          })}
-        </Badge>
-      );
-    }
-    if (fasterBroken) {
-      return (
-        <Badge variant="destructive">
-          {t('engines.fasterWhisper.installError')}
-        </Badge>
-      );
-    }
+  const renderEngineCard = (config: {
+    engine: TranscriptionEngine;
+    icon: React.ComponentType<{ className?: string }>;
+    name: string;
+    recommended?: boolean;
+    chips: string[];
+    desc: string;
+    body?: React.ReactNode;
+  }) => {
+    const { engine, icon: Icon, name, recommended, chips, desc, body } = config;
+    const isActive = currentEngine === engine;
     return (
-      <Badge variant="outline">{t('engines.fasterWhisper.notInstalled')}</Badge>
-    );
-  };
-
-  const renderLocalCliBadge = () => {
-    if (localCliStatus?.state === 'ready' || whisperCommand.trim()) {
-      return (
-        <Badge variant="default">{t('engines.builtin.statusReady')}</Badge>
-      );
-    }
-    return (
-      <Badge variant="outline">{t('engines.fasterWhisper.notInstalled')}</Badge>
-    );
-  };
-
-  return (
-    <div className="space-y-4 pb-4">
-      <div>
-        <h2 className="text-lg font-semibold">{t('engines.title')}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t('engines.description')}
-        </p>
-      </div>
-
-      <div className="grid gap-4">
-        {/* whisper.cpp (builtin) */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-start justify-between gap-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Box className="h-4 w-4" />
-                {t('engines.builtin.name')}
-              </CardTitle>
-              <Badge variant="default">
-                {t('engines.builtin.statusReady')}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              {t('engines.builtin.desc')}
-            </p>
-            <div className="flex items-center gap-2">
-              {renderSelectButton('builtin')}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* faster-whisper */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-start justify-between gap-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Zap className="h-4 w-4" />
-                {t('engines.fasterWhisper.name')}
-              </CardTitle>
-              {renderFasterWhisperBadge()}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              {t('engines.fasterWhisper.desc')}
-            </p>
-
-            {isDownloading && downloadProgress && (
-              <div className="space-y-2 rounded-lg bg-muted p-3">
-                <p className="text-sm font-medium">
-                  {downloadProgress.status === 'extracting'
-                    ? t('engines.fasterWhisper.downloading')
-                    : t('engines.fasterWhisper.downloading')}
-                </p>
-                <Progress value={downloadProgress.progress} />
-                {downloadProgress.total > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {formatSize(downloadProgress.downloaded)} /{' '}
-                    {formatSize(downloadProgress.total)}
-                  </p>
+      <Card
+        className={cn(
+          'relative overflow-hidden transition-all',
+          isActive && 'border-primary/60 bg-primary/[0.03] shadow-sm',
+        )}
+      >
+        {isActive && (
+          <span
+            aria-hidden
+            className="absolute inset-y-0 left-0 w-1 bg-primary"
+          />
+        )}
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <div
+                className={cn(
+                  'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                  isActive
+                    ? 'bg-primary/10 text-primary'
+                    : 'bg-muted text-muted-foreground',
+                )}
+              >
+                <Icon className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+                  {name}
+                  {recommended && (
+                    <Badge
+                      variant="outline"
+                      className="border-primary/40 px-1.5 py-0 text-[10px] font-medium text-primary"
+                    >
+                      {t('engines.tags.recommended')}
+                    </Badge>
+                  )}
+                </CardTitle>
+                {chips.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {chips.map((c) => (
+                      <span
+                        key={c}
+                        className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                      >
+                        {c}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
-            )}
-
-            {fasterBroken && fasterStatus?.message && (
-              <p className="text-sm text-destructive">{fasterStatus.message}</p>
-            )}
-
-            <div className="flex flex-wrap items-center gap-2">
-              {!fasterInstalled && !isDownloading && (
-                <Button size="sm" onClick={() => setShowDownloadConfirm(true)}>
-                  {t('engines.fasterWhisper.download', {
-                    size: PY_ENGINE_SIZE,
-                  })}
-                </Button>
-              )}
-              {fasterInstalled && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleUninstall}
-                  disabled={taskBusy}
-                >
-                  {t('engines.fasterWhisper.uninstall')}
-                </Button>
-              )}
-              {renderSelectButton('fasterWhisper')}
             </div>
+            {renderEngineBadge(engine)}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">{desc}</p>
+          {body}
+        </CardContent>
+      </Card>
+    );
+  };
 
-            {fasterInstalled && (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">
-                    {t('engines.fasterWhisper.device')}
-                  </label>
-                  <Select value={device} onValueChange={handleDeviceChange}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {DEVICE_OPTIONS.map((opt) => (
-                        <SelectItem key={opt} value={opt}>
-                          {opt}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">
-                    {t('engines.fasterWhisper.computeType')}
-                  </label>
-                  <Select
-                    value={computeType}
-                    onValueChange={handleComputeTypeChange}
+  const advancedSettings = (
+    <Collapsible className="rounded-lg border bg-muted/30">
+      <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 px-3 py-2 text-left">
+        <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+          {t('engines.fasterWhisper.advanced')}
+        </span>
+        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="hidden sm:inline">
+            {t('engines.fasterWhisper.device')}: {deviceLabel(deviceValue)} ·{' '}
+            {t('engines.fasterWhisper.computeType')}:{' '}
+            {computeLabel(computeType)}
+          </span>
+          <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
+        </span>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="grid gap-4 border-t p-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <label htmlFor="fw-device" className="text-sm font-medium">
+                {t('engines.fasterWhisper.device')}
+              </label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={t('engines.fasterWhisper.device')}
+                    className="text-muted-foreground hover:text-foreground"
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {COMPUTE_TYPE_OPTIONS.map((opt) => (
-                        <SelectItem key={opt} value={opt}>
-                          {opt}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* local CLI */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-start justify-between gap-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Terminal className="h-4 w-4" />
-                {t('engines.localCli.name')}
-              </CardTitle>
-              {renderLocalCliBadge()}
+                    <Info className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px] whitespace-pre-line text-xs leading-relaxed">
+                  {t('engines.fasterWhisper.deviceTooltip')}
+                </TooltipContent>
+              </Tooltip>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              {t('engines.localCli.desc')}
+            <Select value={deviceValue} onValueChange={handleDeviceChange}>
+              <SelectTrigger id="fw-device">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {deviceOptions.map((opt) => (
+                  <SelectItem key={opt} value={opt}>
+                    {deviceLabel(opt)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {t('engines.fasterWhisper.deviceHint')}
             </p>
-            <div className="flex flex-wrap items-center gap-2">
-              {renderSelectButton('localCli')}
-              <Button size="sm" variant="outline" asChild>
-                <Link href={`/${locale}/settings`}>
-                  {t('engines.localCli.configure')}
-                  <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
-                </Link>
-              </Button>
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <label htmlFor="fw-compute" className="text-sm font-medium">
+                {t('engines.fasterWhisper.computeType')}
+              </label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={t('engines.fasterWhisper.computeType')}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px] whitespace-pre-line text-xs leading-relaxed">
+                  {t('engines.fasterWhisper.computeTypeTooltip')}
+                </TooltipContent>
+              </Tooltip>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+            <Select value={computeType} onValueChange={handleComputeTypeChange}>
+              <SelectTrigger id="fw-compute">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {COMPUTE_TYPE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt} value={opt}>
+                    {computeLabel(opt)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {t('engines.fasterWhisper.computeTypeHint')}
+            </p>
+          </div>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
 
-      <AlertDialog
-        open={showDownloadConfirm}
-        onOpenChange={setShowDownloadConfirm}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('engines.fasterWhisper.download', { size: PY_ENGINE_SIZE })}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('engines.fasterWhisper.downloadConfirm')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleStartDownload}>
-              {t('engines.fasterWhisper.download', { size: PY_ENGINE_SIZE })}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+  return (
+    <TooltipProvider delayDuration={150}>
+      <div className="space-y-4 pb-4">
+        <SectionHeader
+          icon={Cpu}
+          title={t('engines.title')}
+          description={t('engines.description')}
+        />
+
+        <div className="grid gap-4">
+          {renderEngineCard({
+            engine: 'builtin',
+            icon: Box,
+            name: t('engines.builtin.name'),
+            recommended: true,
+            chips: [t('engines.tags.noDownload'), t('engines.tags.gpu')],
+            desc: t('engines.builtin.desc'),
+            body:
+              currentEngine === 'builtin' ? null : (
+                <div className="flex flex-wrap items-center gap-2">
+                  {renderSetActiveButton('builtin')}
+                </div>
+              ),
+          })}
+
+          {renderEngineCard({
+            engine: 'fasterWhisper',
+            icon: Zap,
+            name: t('engines.fasterWhisper.name'),
+            chips: [
+              t('engines.tags.faster'),
+              ...(fasterInstalled
+                ? []
+                : [t('engines.tags.needsDownload', { size: PY_ENGINE_SIZE })]),
+            ],
+            desc: t('engines.fasterWhisper.desc'),
+            body: (
+              <>
+                {isDownloading && downloadProgress && (
+                  <div className="space-y-2 rounded-lg bg-muted p-3">
+                    <p className="text-sm font-medium">
+                      {t('engines.fasterWhisper.downloading')}
+                    </p>
+                    <Progress value={downloadProgress.progress} />
+                    {downloadProgress.total > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {formatSize(downloadProgress.downloaded)} /{' '}
+                        {formatSize(downloadProgress.total)}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {verifying && !isDownloading && (
+                  <div className="rounded-lg bg-muted p-3">
+                    <p className="text-sm font-medium">
+                      {t('engines.fasterWhisper.verifying')}
+                    </p>
+                  </div>
+                )}
+
+                {fasterBroken && fasterStatus?.message && (
+                  <p className="text-sm text-destructive">
+                    {fasterStatus.message}
+                  </p>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {!fasterInstalled && !isDownloading && !fasterBroken && (
+                    <Button
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => setShowDownloadConfirm(true)}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      {t('engines.fasterWhisper.download', {
+                        size: PY_ENGINE_SIZE,
+                      })}
+                    </Button>
+                  )}
+                  {fasterBroken && (
+                    <Button
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => setShowDownloadConfirm(true)}
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      {t('engines.fasterWhisper.repair')}
+                    </Button>
+                  )}
+                  {fasterInstalled && renderSetActiveButton('fasterWhisper')}
+                  {(fasterInstalled || fasterBroken) && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="gap-1.5 text-muted-foreground"
+                      onClick={handleUninstall}
+                      disabled={taskBusy}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      {t('engines.fasterWhisper.uninstall')}
+                    </Button>
+                  )}
+                </div>
+
+                {fasterInstalled && advancedSettings}
+              </>
+            ),
+          })}
+
+          {renderEngineCard({
+            engine: 'localCli',
+            icon: Terminal,
+            name: t('engines.localCli.name'),
+            chips: [t('engines.tags.advanced'), t('engines.tags.byoModel')],
+            desc: t('engines.localCli.desc'),
+            body: (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  {renderSetActiveButton('localCli')}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5"
+                    aria-expanded={showCommandConfig}
+                    onClick={() => setShowCommandConfig((v) => !v)}
+                  >
+                    <Settings2 className="h-3.5 w-3.5" />
+                    {t('engines.localCli.configure')}
+                    <ChevronDown
+                      className={cn(
+                        'h-3.5 w-3.5 transition-transform',
+                        showCommandConfig && 'rotate-180',
+                      )}
+                    />
+                  </Button>
+                </div>
+                {showCommandConfig && (
+                  <div className="space-y-1.5 rounded-lg border bg-muted/30 p-3">
+                    <div className="flex items-center gap-1.5">
+                      <label
+                        htmlFor="localcli-command"
+                        className="text-sm font-medium"
+                      >
+                        {t('engines.localCli.commandLabel')}
+                      </label>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label={t('engines.localCli.commandLabel')}
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            <Info className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-[260px] whitespace-pre-line text-xs leading-relaxed">
+                          {t('engines.localCli.commandTooltip')}
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        id="localcli-command"
+                        value={whisperCommand}
+                        onChange={(e) => setWhisperCommand(e.target.value)}
+                        placeholder={t('engines.localCli.commandPlaceholder')}
+                        className="font-mono text-sm"
+                      />
+                      <Button
+                        size="sm"
+                        className="shrink-0 gap-1.5"
+                        onClick={handleSaveWhisperCommand}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        {t('engines.localCli.save')}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t('engines.localCli.commandHint')}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ),
+          })}
+        </div>
+
+        <AlertDialog
+          open={showDownloadConfirm}
+          onOpenChange={setShowDownloadConfirm}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {t('engines.fasterWhisper.download', { size: PY_ENGINE_SIZE })}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('engines.fasterWhisper.downloadConfirm')}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
+              <AlertDialogAction onClick={handleStartDownload}>
+                {t('engines.fasterWhisper.download', { size: PY_ENGINE_SIZE })}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </TooltipProvider>
   );
 };
 

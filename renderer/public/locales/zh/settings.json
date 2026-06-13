@@ -1,5 +1,6 @@
 {
   "settings": "设置",
+  "refresh": "刷新",
   "goToResources": "前往资源中心",
   "selectLanguage": "选择语言",
   "chinese": "中文",
@@ -44,6 +45,7 @@
   "tempDirSaved": "临时目录保存成功",
   "useCustomTempDirEnabled": "已启用自定义临时目录",
   "vadSettings": "VAD (语音活动检测) 设置",
+  "vadSettingsDesc": "全局语音活动检测，对所有转写引擎生效；默认值即最佳实践",
   "enableVad": "启用 VAD",
   "enableVadTip": "语音活动检测可以通过自动检测语音片段并过滤静音来提高转写准确性",
   "vadThreshold": "VAD 阈值",
@@ -66,6 +68,7 @@
   "vadPresetReset": "恢复默认",
   "gpuAcceleration": {
     "title": "GPU 加速",
+    "tabDesc": "管理 GPU 加速包与运行模式，提升转写速度",
     "gpu": "显卡",
     "driver": "驱动版本",
     "maxCuda": "支持的最高 CUDA",

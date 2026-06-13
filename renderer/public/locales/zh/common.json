@@ -216,6 +216,9 @@
     "quickChoiceDesc": "最小最快，效果一般，之后随时可换",
     "modelReady": "已有可用模型，这一步完成了",
     "downloadStarted": "正在后台下载，可以继续下一步",
+    "fasterWhisperModelTitle": "下载 faster-whisper 模型",
+    "fasterWhisperModelDesc": "当前转写引擎为 faster-whisper，请前往资源中心下载对应模型",
+    "goDownloadModel": "前往下载",
     "step3Title": "可选增强（强烈建议）",
     "providerTitle": "翻译服务",
     "providerDesc": "要翻译字幕才需要。免费起步推荐 DeepLX、Ollama 本地模型或火山引擎",
@@ -250,5 +253,13 @@
   "gpuModeGpuOnly": "仅 GPU",
   "gpuModeCpuOnly": "仅 CPU",
   "cpuModeBadge": "CPU 模式",
-  "cpuModeTip": "当前使用 CPU 转写，点击查看加速选项"
+  "cpuModeTip": "当前使用 CPU 转写，点击查看加速选项",
+  "engineBadge": {
+    "builtin": "Whisper.cpp",
+    "fasterWhisper": "Faster-Whisper",
+    "localCli": "本地命令",
+    "tip": "当前转写引擎",
+    "manage": "点击进入引擎管理切换",
+    "aria": "当前转写引擎，点击进入引擎管理"
+  }
 }

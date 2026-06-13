@@ -10,13 +10,19 @@ import {
   AlertTriangle,
   Plus,
   Gauge,
-  Box,
+  Cpu,
+  CheckCircle2,
 } from 'lucide-react';
 import DownModel from '@/components/DownModel';
 import DownModelButton from '@/components/DownModelButton';
 import { modelCategories, getRecommendedCategory, cn } from 'lib/utils';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import { isProviderConfigured } from 'lib/providerUtils';
+import IconChip from '@/components/IconChip';
+import {
+  getInstalledModelsForEngine,
+  hasModelsForEngine,
+} from 'lib/engineModels';
 import { CardDecor } from '@/components/launchpad/TaskIcons';
 import { ISystemInfo } from '../../../types/types';
 import { Provider } from '../../../types';
@@ -110,7 +116,7 @@ const OverviewTab = ({
     };
   }, [refresh]);
 
-  const installed = systemInfo.modelsInstalled || [];
+  const installed = getInstalledModelsForEngine(systemInfo);
   const downloading = systemInfo.downloadingModels || [];
   const recommendedId = getRecommendedCategory(systemInfo.totalMemoryGB ?? 8);
   const recommendedCategory = modelCategories.find(
@@ -126,11 +132,58 @@ const OverviewTab = ({
     ? (gpuState?.gpuMode as string)
     : 'auto';
   const transcriptionEngine = systemInfo.transcriptionEngine ?? 'builtin';
+  // ggml 推荐模型/一键下载仅适用于 whisper.cpp(builtin)；其它引擎在「模型」页有各自下载入口
+  const isBuiltin = transcriptionEngine === 'builtin';
   const engineLabelKey =
     ENGINE_LABEL_KEYS[transcriptionEngine] ?? ENGINE_LABEL_KEYS.builtin;
   const showEngineWarning =
     transcriptionEngine === 'fasterWhisper' &&
     systemInfo.pythonEngineStatus?.state !== 'ready';
+
+  // 「能否开始转写」只取决于引擎就绪 + 当前引擎已有模型；翻译服务为可选项，不计入就绪判断
+  const modelsReady = hasModelsForEngine(systemInfo);
+  const engineReady = !showEngineWarning;
+  const allReady = modelsReady && engineReady;
+
+  const renderReadinessBanner = () => {
+    if (allReady) {
+      return (
+        <div className="flex items-start gap-3 rounded-xl border border-success/30 bg-success/5 p-4">
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-success" />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">{t('overview.readyTitle')}</p>
+            <p className="text-sm text-muted-foreground">
+              {t('overview.readyDesc')}
+            </p>
+          </div>
+        </div>
+      );
+    }
+    const next = !engineReady
+      ? { label: t('overview.nextInstallEngine'), tab: 'engines' }
+      : { label: t('overview.nextDownloadModels'), tab: 'models' };
+    return (
+      <div className="flex flex-col gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3 min-w-0">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">{t('overview.setupTitle')}</p>
+            <p className="text-sm text-muted-foreground">
+              {t('overview.setupDesc')}
+            </p>
+          </div>
+        </div>
+        <Button
+          size="sm"
+          className="shrink-0 gap-1.5"
+          onClick={() => onNavigateTab(next.tab)}
+        >
+          {next.label}
+          <ArrowRight className="h-4 w-4" />
+        </Button>
+      </div>
+    );
+  };
 
   const renderGpuStatus = () => {
     if (!gpuState) return null;
@@ -223,173 +276,176 @@ const OverviewTab = ({
   );
 
   return (
-    <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-4">
-      {/* 语音模型 */}
-      <Card {...cardNavProps('models')}>
-        {cardDecor('models')}
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Bot className="h-4 w-4" />
-            {t('overview.modelsTitle')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-1 flex-col gap-3">
-          {installed.length > 0 ? (
-            <>
-              <p className="text-sm font-medium">
-                {t('overview.installedCount', { count: installed.length })}
+    <div className="space-y-4">
+      {renderReadinessBanner()}
+      <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {/* 语音模型 */}
+        <Card {...cardNavProps('models')}>
+          {cardDecor('models')}
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <IconChip icon={Bot} />
+              {t('overview.modelsTitle')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-1 flex-col gap-3">
+            {installed.length > 0 ? (
+              <>
+                <p className="text-sm font-medium">
+                  {t('overview.installedCount', { count: installed.length })}
+                </p>
+                <p className="break-all text-xs text-muted-foreground">
+                  {installed.slice(0, 3).join(' · ')}
+                  {installed.length > 3 ? ' …' : ''}
+                </p>
+              </>
+            ) : (
+              <p className="flex items-start gap-1.5 text-sm text-warning">
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                {t('overview.noModels')}
               </p>
-              <p className="break-all text-xs text-muted-foreground">
-                {installed.slice(0, 3).join(' · ')}
-                {installed.length > 3 ? ' …' : ''}
-              </p>
-            </>
-          ) : (
-            <p className="flex items-start gap-1.5 text-sm text-warning">
-              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-              {t('overview.noModels')}
-            </p>
-          )}
-          {downloading.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              {t('overview.downloadingCount', { count: downloading.length })}
-            </p>
-          )}
-          {systemInfo.totalMemoryGB && recommendedModel ? (
-            <p className="text-xs text-muted-foreground">
-              {t('overview.recommendedModel', {
-                model: recommendedModel.name,
-                memory: systemInfo.totalMemoryGB,
-              })}
-            </p>
-          ) : null}
-          <div className="mt-auto flex items-center gap-2 pt-1">
-            {installed.length === 0 && recommendedModel && (
-              <div onClick={(e) => e.stopPropagation()}>
-                <DownModel
-                  modelName={recommendedModel.name}
-                  callBack={refresh}
-                  downSource={downSource}
-                  needsCoreML={recommendedModel.needsCoreML}
-                  globalDownloading={downloading.length > 0}
-                >
-                  <DownModelButton />
-                </DownModel>
-              </div>
             )}
-            {manageButton('models')}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 翻译服务 */}
-      <Card {...cardNavProps('providers')}>
-        {cardDecor('providers')}
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Languages className="h-4 w-4" />
-            {t('overview.providersTitle')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-1 flex-col gap-3">
-          {configuredProviders.length > 0 ? (
-            <>
-              <p className="text-sm font-medium">
-                {t('overview.configuredCount', {
-                  count: configuredProviders.length,
+            {downloading.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {t('overview.downloadingCount', { count: downloading.length })}
+              </p>
+            )}
+            {isBuiltin && systemInfo.totalMemoryGB && recommendedModel ? (
+              <p className="text-xs text-muted-foreground">
+                {t('overview.recommendedModel', {
+                  model: recommendedModel.name,
+                  memory: systemInfo.totalMemoryGB,
                 })}
               </p>
-              <p className="break-all text-xs text-muted-foreground">
-                {configuredProviders
-                  .slice(0, 3)
-                  .map((p) =>
-                    commonT(`provider.${p.name}`, { defaultValue: p.name }),
-                  )
-                  .join(' · ')}
-                {configuredProviders.length > 3 ? ' …' : ''}
+            ) : null}
+            <div className="mt-auto flex items-center gap-2 pt-1">
+              {isBuiltin && installed.length === 0 && recommendedModel && (
+                <div onClick={(e) => e.stopPropagation()}>
+                  <DownModel
+                    modelName={recommendedModel.name}
+                    callBack={refresh}
+                    downSource={downSource}
+                    needsCoreML={recommendedModel.needsCoreML}
+                    globalDownloading={downloading.length > 0}
+                  >
+                    <DownModelButton />
+                  </DownModel>
+                </div>
+              )}
+              {manageButton('models')}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 翻译服务 */}
+        <Card {...cardNavProps('providers')}>
+          {cardDecor('providers')}
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <IconChip icon={Languages} />
+              {t('overview.providersTitle')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-1 flex-col gap-3">
+            {configuredProviders.length > 0 ? (
+              <>
+                <p className="text-sm font-medium">
+                  {t('overview.configuredCount', {
+                    count: configuredProviders.length,
+                  })}
+                </p>
+                <p className="break-all text-xs text-muted-foreground">
+                  {configuredProviders
+                    .slice(0, 3)
+                    .map((p) =>
+                      commonT(`provider.${p.name}`, { defaultValue: p.name }),
+                    )
+                    .join(' · ')}
+                  {configuredProviders.length > 3 ? ' …' : ''}
+                </p>
+              </>
+            ) : (
+              <p className="flex items-start gap-1.5 text-sm text-warning">
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                {t('overview.noProviders')}
               </p>
-            </>
-          ) : (
-            <p className="flex items-start gap-1.5 text-sm text-warning">
-              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-              {t('overview.noProviders')}
-            </p>
-          )}
-          <div className="mt-auto flex items-center gap-2 pt-1">
-            {configuredProviders.length === 0 && (
-              <Button
-                size="sm"
-                className="text-xs gap-1.5"
-                onClick={() => onNavigateTab('providers')}
-              >
-                <Plus className="h-4 w-4" />
-                {t('overview.enableProviders')}
-              </Button>
             )}
-            {manageButton('providers')}
-          </div>
-        </CardContent>
-      </Card>
+            <div className="mt-auto flex items-center gap-2 pt-1">
+              {configuredProviders.length === 0 && (
+                <Button
+                  size="sm"
+                  className="text-xs gap-1.5"
+                  onClick={() => onNavigateTab('providers')}
+                >
+                  <Plus className="h-4 w-4" />
+                  {t('overview.enableProviders')}
+                </Button>
+              )}
+              {manageButton('providers')}
+            </div>
+          </CardContent>
+        </Card>
 
-      {/* GPU 加速 */}
-      <Card {...cardNavProps('acceleration')}>
-        {cardDecor('acceleration')}
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Zap className="h-4 w-4" />
-            {t('overview.accelerationTitle')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-1 flex-col gap-3">
-          {renderGpuStatus()}
-          {gpuState && !gpuState.isDarwin && gpuState.gpuName && (
-            <p className="text-xs text-muted-foreground truncate">
-              {gpuState.gpuName}
-            </p>
-          )}
-          {gpuState && !gpuState.isDarwin && (
-            <p className="text-xs text-muted-foreground">
-              {t('overview.gpuModeLabel', {
-                mode: t(`overview.gpuMode.${gpuModeKey}`),
-              })}
-            </p>
-          )}
-          {gpuState?.canUpgradeCuda && gpuState.recommendedCudaVersion && (
-            <p className="flex items-start gap-1 text-xs text-muted-foreground">
-              <Gauge className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              {t('overview.cudaUpgradeHint', {
-                version: gpuState.recommendedCudaVersion,
-              })}
-            </p>
-          )}
-          <div className="mt-auto flex items-center gap-2 pt-1">
-            {manageButton('acceleration')}
-          </div>
-        </CardContent>
-      </Card>
+        {/* GPU 加速 */}
+        <Card {...cardNavProps('acceleration')}>
+          {cardDecor('acceleration')}
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <IconChip icon={Zap} />
+              {t('overview.accelerationTitle')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-1 flex-col gap-3">
+            {renderGpuStatus()}
+            {gpuState && !gpuState.isDarwin && gpuState.gpuName && (
+              <p className="text-xs text-muted-foreground truncate">
+                {gpuState.gpuName}
+              </p>
+            )}
+            {gpuState && !gpuState.isDarwin && (
+              <p className="text-xs text-muted-foreground">
+                {t('overview.gpuModeLabel', {
+                  mode: t(`overview.gpuMode.${gpuModeKey}`),
+                })}
+              </p>
+            )}
+            {gpuState?.canUpgradeCuda && gpuState.recommendedCudaVersion && (
+              <p className="flex items-start gap-1 text-xs text-muted-foreground">
+                <Gauge className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                {t('overview.cudaUpgradeHint', {
+                  version: gpuState.recommendedCudaVersion,
+                })}
+              </p>
+            )}
+            <div className="mt-auto flex items-center gap-2 pt-1">
+              {manageButton('acceleration')}
+            </div>
+          </CardContent>
+        </Card>
 
-      {/* 转写引擎 */}
-      <Card {...cardNavProps('engines')}>
-        {cardDecor('engines')}
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Box className="h-4 w-4" />
-            {t('overview.engineTitle')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-1 flex-col gap-3">
-          <p className="text-sm font-medium">{t(engineLabelKey)}</p>
-          {showEngineWarning && (
-            <p className="flex items-start gap-1.5 text-sm text-warning">
-              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-              {t('overview.engineNotInstalled')}
-            </p>
-          )}
-          <div className="mt-auto flex items-center gap-2 pt-1">
-            {manageButton('engines')}
-          </div>
-        </CardContent>
-      </Card>
+        {/* 转写引擎 */}
+        <Card {...cardNavProps('engines')}>
+          {cardDecor('engines')}
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <IconChip icon={Cpu} />
+              {t('overview.engineTitle')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-1 flex-col gap-3">
+            <p className="text-sm font-medium">{t(engineLabelKey)}</p>
+            {showEngineWarning && (
+              <p className="flex items-start gap-1.5 text-sm text-warning">
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                {t('overview.engineNotInstalled')}
+              </p>
+            )}
+            <div className="mt-auto flex items-center gap-2 pt-1">
+              {manageButton('engines')}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };

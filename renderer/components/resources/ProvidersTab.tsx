@@ -595,7 +595,7 @@ const ProvidersTab: React.FC = () => {
                   className={cn(
                     'w-full text-left px-4 py-2 rounded-lg flex items-center justify-between group cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                     selectedProvider === provider.id
-                      ? 'bg-primary text-primary-foreground'
+                      ? 'bg-primary/10 text-primary ring-1 ring-inset ring-primary/20'
                       : 'hover:bg-muted',
                   )}
                 >
@@ -608,7 +608,7 @@ const ProvidersTab: React.FC = () => {
                   {isConfiguredById(provider.id) && (
                     <Badge
                       variant="outline"
-                      className="mr-1 flex-shrink-0 border-success/50 px-1.5 py-0 text-[10px] text-success"
+                      className="mr-1 flex-shrink-0 border-success/40 px-1.5 py-0 text-[10px] text-success"
                     >
                       {t('configured')}
                     </Badge>
@@ -657,7 +657,7 @@ const ProvidersTab: React.FC = () => {
                         className={cn(
                           'w-full text-left px-4 py-2 rounded-lg flex items-center space-x-2',
                           selectedProvider === type.id
-                            ? 'bg-primary text-primary-foreground'
+                            ? 'bg-primary/10 text-primary ring-1 ring-inset ring-primary/20'
                             : 'hover:bg-muted',
                         )}
                       >
@@ -668,7 +668,7 @@ const ProvidersTab: React.FC = () => {
                         {isConfiguredById(type.id) && (
                           <Badge
                             variant="outline"
-                            className="ml-auto flex-shrink-0 border-success/50 px-1.5 py-0 text-[10px] text-success"
+                            className="ml-auto flex-shrink-0 border-success/40 px-1.5 py-0 text-[10px] text-success"
                           >
                             {t('configured')}
                           </Badge>
@@ -792,8 +792,8 @@ const ProvidersTab: React.FC = () => {
                     className={cn(
                       'rounded-md border px-3 py-2.5 space-y-1.5 text-sm',
                       testResult.status === 'success'
-                        ? 'border-success/50 bg-success/5'
-                        : 'border-destructive/50 bg-destructive/5',
+                        ? 'border-success/30 bg-success/5'
+                        : 'border-destructive/30 bg-destructive/5',
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -869,19 +869,29 @@ const ProvidersTab: React.FC = () => {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">
+              <label
+                htmlFor="new-provider-name"
+                className="text-sm font-medium"
+              >
                 {t('providerName')}
                 <span className="text-destructive">*</span>
               </label>
               <Input
+                id="new-provider-name"
                 value={newProviderName}
                 onChange={(e) => setNewProviderName(e.target.value)}
                 placeholder={t('enterProviderName')}
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">{t('ApiUrl')}</label>
+              <label
+                htmlFor="new-provider-api-url"
+                className="text-sm font-medium"
+              >
+                {t('ApiUrl')}
+              </label>
               <Input
+                id="new-provider-api-url"
                 value={newProviderApiUrl}
                 onChange={(e) => setNewProviderApiUrl(e.target.value)}
                 placeholder={t('phOpenaiApiUrl')}

@@ -27,6 +27,7 @@ import {
 import { cn } from 'lib/utils';
 import { getTaskTypeBySlug } from 'lib/taskTypes';
 import { isProviderConfigured } from 'lib/providerUtils';
+import { hasModelsForEngine } from 'lib/engineModels';
 import {
   CardDecor,
   GenerateIcon,
@@ -135,10 +136,8 @@ export default function LaunchpadPage() {
           window?.ipc?.invoke('getWorkItems'),
           window?.ipc?.invoke('getSettings'),
         ]);
-        const useLocalWhisper = settings?.useLocalWhisper || false;
-        setHasModels(
-          useLocalWhisper || (systemInfo?.modelsInstalled?.length ?? 0) > 0,
-        );
+        // 按「当前转写引擎」判断是否已就绪，而不是只看 whisper.cpp(ggml) 模型
+        setHasModels(hasModelsForEngine(systemInfo, settings?.useLocalWhisper));
         setHasProvider(
           (providers || []).some((p: any) => isProviderConfigured(p)),
         );

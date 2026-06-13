@@ -1,5 +1,6 @@
 {
   "settings": "Settings",
+  "refresh": "Refresh",
   "goToResources": "Open Resources",
   "selectLanguage": "Select language",
   "chinese": "Chinese",
@@ -44,6 +45,7 @@
   "tempDirSaved": "Temporary directory saved successfully",
   "useCustomTempDirEnabled": "Custom temporary directory enabled",
   "vadSettings": "VAD (Voice Activity Detection) Settings",
+  "vadSettingsDesc": "Global voice activity detection, applies to all transcription engines — defaults are best practice",
   "enableVad": "Enable VAD",
   "enableVadTip": "Voice Activity Detection can improve transcription accuracy by automatically detecting speech segments and filtering out silence",
   "vadThreshold": "VAD Threshold",
@@ -66,6 +68,7 @@
   "vadPresetReset": "Reset to default",
   "gpuAcceleration": {
     "title": "GPU Acceleration",
+    "tabDesc": "Manage GPU acceleration packages and run mode to speed up transcription",
     "gpu": "GPU",
     "driver": "Driver Version",
     "maxCuda": "Max CUDA Supported",
