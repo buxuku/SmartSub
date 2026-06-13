@@ -12,6 +12,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { ArrowLeft, Check, Save, Loader2 } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 // 复用原有的子组件和 hooks
 import { useStandaloneSubtitles } from '../../hooks/useStandaloneSubtitles';
@@ -258,16 +264,36 @@ export default function ProofreadEditor({
           </Button>
           <div className="text-sm text-muted-foreground">{file.fileName}</div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleSave}>
-            <Save className="w-4 h-4 mr-1" />
-            {t('save')}
-          </Button>
-          <Button variant="default" size="sm" onClick={handleMarkCompleteClick}>
-            <Check className="w-4 h-4 mr-1" />
-            {t('markCompleteAndBack')}
-          </Button>
-        </div>
+        <TooltipProvider>
+          <div className="flex items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="sm" onClick={handleSave}>
+                  <Save className="w-4 h-4 mr-1" />
+                  {t('saveSubtitles')}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[280px]">
+                <p>{t('saveSubtitlesTip')}</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleMarkCompleteClick}
+                >
+                  <Check className="w-4 h-4 mr-1" />
+                  {t('markCompleteAndBack')}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[280px]">
+                <p>{t('completeAndReturnTip')}</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </TooltipProvider>
       </div>
 
       {/* 编辑工具栏 */}

@@ -54,6 +54,72 @@ import {
   classifySubtitleLang,
 } from '@/lib/proofreadUtils';
 
+const SUBTITLE_SELECT_TRIGGER_CLASS =
+  'h-auto min-h-10 w-full min-w-0 max-w-full [&>span]:line-clamp-none [&>span]:flex [&>span]:min-w-0 [&>span]:flex-1 [&>span]:w-full';
+
+interface SubtitleSelectLabelProps {
+  filePath: string;
+  language?: string;
+  confidence?: number;
+}
+
+function SubtitleSelectLabel({
+  filePath,
+  language,
+  confidence,
+}: SubtitleSelectLabelProps) {
+  const { t } = useTranslation('home');
+  const name = path.basename(filePath);
+
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <span className="truncate" title={name}>
+        {name}
+      </span>
+      {language ? (
+        <Badge variant="outline" className="shrink-0 text-xs">
+          {language}
+        </Badge>
+      ) : null}
+      {confidence != null ? (
+        <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+          {t('matchConfidence', { percent: confidence })}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+interface SubtitleSelectTriggerProps {
+  placeholder: string;
+  selected?: DetectedSubtitle;
+  emptyLabel?: string;
+}
+
+function SubtitleSelectTrigger({
+  placeholder,
+  selected,
+  emptyLabel,
+}: SubtitleSelectTriggerProps) {
+  return (
+    <SelectValue asChild placeholder={placeholder}>
+      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden pr-1 text-left">
+        {selected ? (
+          <SubtitleSelectLabel
+            filePath={selected.filePath}
+            language={selected.language}
+            confidence={selected.confidence}
+          />
+        ) : (
+          <span className="truncate text-muted-foreground">
+            {emptyLabel ?? placeholder}
+          </span>
+        )}
+      </div>
+    </SelectValue>
+  );
+}
+
 interface ProofreadFileListProps {
   files: PendingFile[];
   savedTaskId: string | null;
@@ -323,11 +389,8 @@ export default function ProofreadFileList({
     }
   };
 
-  // 格式化文件名显示
-  const formatFileName = (filePath: string) => {
-    const name = path.basename(filePath);
-    return name.length > 30 ? name.slice(0, 27) + '...' : name;
-  };
+  // 格式化文件名显示（仅用于无 Select 的静态展示）
+  const formatFileName = (filePath: string) => path.basename(filePath);
 
   // 统计完成数
   const completedCount = files.filter((f) => f.status === 'completed').length;
@@ -380,30 +443,39 @@ export default function ProofreadFileList({
             <RotateCcw className="w-4 h-4 mr-1" />
             {t('reset')}
           </Button>
-          <Button
-            variant="default"
-            size="sm"
-            onClick={handleSave}
-            disabled={saving || files.length === 0}
-          >
-            {saving ? (
-              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-            ) : (
-              <Save className="w-4 h-4 mr-1" />
-            )}
-            {savedTaskId ? t('updateTask') : t('saveTask')}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={saving || files.length === 0}
+                >
+                  {saving ? (
+                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4 mr-1" />
+                  )}
+                  {savedTaskId ? t('updateTask') : t('saveTask')}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[280px]">
+                <p>{savedTaskId ? t('updateTaskTip') : t('saveTaskTip')}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
 
       {/* 文件列表表格 */}
-      <div className="border rounded-lg">
-        <Table>
+      <div className="border rounded-lg overflow-hidden">
+        <Table className="table-fixed w-full">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-28">{t('status')}</TableHead>
-              <TableHead>{t('fileName')}</TableHead>
-              <TableHead>
+              <TableHead className="w-24">{t('status')}</TableHead>
+              <TableHead className="w-[18%]">{t('fileName')}</TableHead>
+              <TableHead className="w-[26%]">
                 <div className="flex items-center gap-1">
                   {t('sourceSubtitle')}
                   <TooltipProvider>
@@ -420,7 +492,7 @@ export default function ProofreadFileList({
                   </TooltipProvider>
                 </div>
               </TableHead>
-              <TableHead>
+              <TableHead className="w-[26%]">
                 <div className="flex items-center gap-1">
                   {t('targetSubtitle')}
                   <TooltipProvider>
@@ -437,7 +509,7 @@ export default function ProofreadFileList({
                   </TooltipProvider>
                 </div>
               </TableHead>
-              <TableHead className="w-32 text-right">{t('actions')}</TableHead>
+              <TableHead className="w-36 text-right">{t('actions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -463,10 +535,7 @@ export default function ProofreadFileList({
                 <TableRow key={file.id}>
                   <TableCell>{getStatusDisplay(file.status)}</TableCell>
                   <TableCell>
-                    <div
-                      className="font-medium truncate max-w-[200px]"
-                      title={file.fileName}
-                    >
+                    <div className="font-medium truncate" title={file.fileName}>
                       {file.fileName}
                     </div>
                     {file.videoPath && (
@@ -475,72 +544,70 @@ export default function ProofreadFileList({
                       </div>
                     )}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
+                  <TableCell className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
                       {/* 字幕导入模式：源字幕固定不可切换 */}
                       {file.isSubtitleOnlyMode ? (
-                        <div className="flex items-center gap-2">
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
                           <span
-                            className="text-sm truncate max-w-[200px]"
+                            className="truncate text-sm"
                             title={file.selectedSource}
                           >
                             {formatFileName(file.selectedSource || '')}
                           </span>
                           {file.sourceLanguage && (
-                            <Badge variant="outline" className="text-xs">
+                            <Badge
+                              variant="outline"
+                              className="shrink-0 text-xs"
+                            >
                               {file.sourceLanguage}
                             </Badge>
                           )}
                         </div>
                       ) : effectiveSourceOptions.length > 0 ? (
-                        <Select
-                          value={file.selectedSource || ''}
-                          onValueChange={(v) =>
-                            handleSelectFromDropdown(index, 'source', v)
-                          }
-                        >
-                          <SelectTrigger className="w-[200px]">
-                            <SelectValue
-                              placeholder={t('selectSourceSubtitle')}
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {effectiveSourceOptions.map((s, idx) => (
-                              <SelectItem
-                                key={`source-${idx}-${s.filePath}`}
-                                value={s.filePath}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <span className="truncate max-w-[140px]">
-                                    {formatFileName(s.filePath)}
-                                  </span>
-                                  {s.language && (
-                                    <Badge
-                                      variant="outline"
-                                      className="text-xs"
-                                    >
-                                      {s.language}
-                                    </Badge>
-                                  )}
-                                  <span className="text-xs text-muted-foreground">
-                                    {t('matchConfidence', {
-                                      percent: s.confidence,
-                                    })}
-                                  </span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <div className="min-w-0 flex-1">
+                          <Select
+                            value={file.selectedSource || ''}
+                            onValueChange={(v) =>
+                              handleSelectFromDropdown(index, 'source', v)
+                            }
+                          >
+                            <SelectTrigger
+                              className={SUBTITLE_SELECT_TRIGGER_CLASS}
+                            >
+                              <SubtitleSelectTrigger
+                                placeholder={t('selectSourceSubtitle')}
+                                selected={effectiveSourceOptions.find(
+                                  (s) => s.filePath === file.selectedSource,
+                                )}
+                              />
+                            </SelectTrigger>
+                            <SelectContent className="min-w-[var(--radix-select-trigger-width)]">
+                              {effectiveSourceOptions.map((s, idx) => (
+                                <SelectItem
+                                  key={`source-${idx}-${s.filePath}`}
+                                  value={s.filePath}
+                                  textValue={path.basename(s.filePath)}
+                                >
+                                  <SubtitleSelectLabel
+                                    filePath={s.filePath}
+                                    language={s.language}
+                                    confidence={s.confidence}
+                                  />
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                       ) : file.selectedSource ? (
                         <span
-                          className="text-sm truncate max-w-[200px]"
+                          className="truncate text-sm"
                           title={file.selectedSource}
                         >
                           {formatFileName(file.selectedSource)}
                         </span>
                       ) : (
-                        <span className="text-muted-foreground text-sm">
+                        <span className="text-sm text-muted-foreground">
                           {t('noSubtitle')}
                         </span>
                       )}
@@ -558,47 +625,53 @@ export default function ProofreadFileList({
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Select
-                        value={file.selectedTarget || 'none'}
-                        onValueChange={(v) =>
-                          handleSelectFromDropdown(index, 'target', v)
-                        }
-                      >
-                        <SelectTrigger className="w-[200px]">
-                          <SelectValue
-                            placeholder={t('selectTargetSubtitle')}
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">
-                            {t('noTranslation')}
-                          </SelectItem>
-                          {targetOptions.map((s, idx) => (
+                  <TableCell className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="min-w-0 flex-1">
+                        <Select
+                          value={file.selectedTarget || 'none'}
+                          onValueChange={(v) =>
+                            handleSelectFromDropdown(index, 'target', v)
+                          }
+                        >
+                          <SelectTrigger
+                            className={SUBTITLE_SELECT_TRIGGER_CLASS}
+                          >
+                            <SubtitleSelectTrigger
+                              placeholder={t('selectTargetSubtitle')}
+                              emptyLabel={t('noTranslation')}
+                              selected={
+                                file.selectedTarget
+                                  ? targetOptions.find(
+                                      (s) => s.filePath === file.selectedTarget,
+                                    )
+                                  : undefined
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent className="min-w-[var(--radix-select-trigger-width)]">
                             <SelectItem
-                              key={`target-${idx}-${s.filePath}`}
-                              value={s.filePath}
+                              value="none"
+                              textValue={t('noTranslation')}
                             >
-                              <div className="flex items-center gap-2">
-                                <span className="truncate max-w-[140px]">
-                                  {formatFileName(s.filePath)}
-                                </span>
-                                {s.language && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {s.language}
-                                  </Badge>
-                                )}
-                                <span className="text-xs text-muted-foreground">
-                                  {t('matchConfidence', {
-                                    percent: s.confidence,
-                                  })}
-                                </span>
-                              </div>
+                              {t('noTranslation')}
                             </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                            {targetOptions.map((s, idx) => (
+                              <SelectItem
+                                key={`target-${idx}-${s.filePath}`}
+                                value={s.filePath}
+                                textValue={path.basename(s.filePath)}
+                              >
+                                <SubtitleSelectLabel
+                                  filePath={s.filePath}
+                                  language={s.language}
+                                  confidence={s.confidence}
+                                />
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <Button
                         variant="ghost"
                         size="icon"
