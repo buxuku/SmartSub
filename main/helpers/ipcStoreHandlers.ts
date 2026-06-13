@@ -98,8 +98,16 @@ export function setupStoreHandlers() {
     return logs.filter((log) => log.projectId === projectId);
   });
 
-  ipcMain.handle('clearLogs', async () => {
-    store.set('logs', []);
+  ipcMain.handle('clearLogs', async (_event, projectId?: string) => {
+    const logs = store.get('logs') || [];
+    if (!projectId) {
+      store.set('logs', []);
+      return true;
+    }
+    store.set(
+      'logs',
+      logs.filter((log) => log.projectId !== projectId),
+    );
     return true;
   });
 

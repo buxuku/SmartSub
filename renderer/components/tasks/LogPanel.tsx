@@ -21,16 +21,18 @@ const LogPanel: React.FC<{
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!projectId) {
+      setLogs([]);
+      return;
+    }
     setLogs([]);
-    window?.ipc
-      ?.invoke('getLogs', projectId || undefined)
-      .then((initial: LogEntry[]) => {
-        setLogs(initial || []);
-      });
+    window?.ipc?.invoke('getLogs', projectId).then((initial: LogEntry[]) => {
+      setLogs(initial || []);
+    });
     const unsubscribe = window?.ipc?.on(
       'newLog',
       (log: LogEntry & { projectId?: string }) => {
-        if (projectId && log?.projectId !== projectId) return;
+        if (log?.projectId !== projectId) return;
         setLogs((prev) => [...prev, log]);
       },
     );
@@ -46,7 +48,8 @@ const LogPanel: React.FC<{
   }, [logs, expanded]);
 
   const handleClear = async () => {
-    await window?.ipc?.invoke('clearLogs');
+    if (!projectId) return;
+    await window?.ipc?.invoke('clearLogs', projectId);
     setLogs([]);
   };
 
@@ -116,6 +119,7 @@ const LogPanel: React.FC<{
                 size="sm"
                 className="h-6 text-[11px] gap-1 text-muted-foreground"
                 onClick={handleClear}
+                disabled={!projectId}
               >
                 <Trash2 className="h-3 w-3" />
                 {t('logs.clear')}
