@@ -63,6 +63,11 @@
       "cpu-only": "CPU only"
     },
     "appleAcceleration": "Apple Silicon acceleration (CoreML / Metal)",
+    "engineTitle": "Transcription Engine",
+    "engineBuiltin": "whisper.cpp",
+    "engineFasterWhisper": "faster-whisper",
+    "engineLocalCli": "local CLI",
+    "engineNotInstalled": "Engine not installed",
     "manage": "Manage"
   }
 }

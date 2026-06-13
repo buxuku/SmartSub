@@ -69,8 +69,14 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
     form.setValue(name, value);
   };
 
+  const transcriptionEngine =
+    systemInfo?.transcriptionEngine ??
+    (useLocalWhisper ? 'localCli' : 'builtin');
   const hasModels =
-    useLocalWhisper || (systemInfo?.modelsInstalled?.length ?? 0) > 0;
+    transcriptionEngine === 'localCli' ||
+    (transcriptionEngine === 'fasterWhisper'
+      ? (systemInfo?.fasterWhisperModelsInstalled?.length ?? 0) > 0
+      : (systemInfo?.modelsInstalled?.length ?? 0) > 0);
 
   const languageItems = (includeAuto: boolean) => (
     <SelectContent>
@@ -94,6 +100,10 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
               value={formData.model}
               onValueChange={(v) => setValue('model', v)}
               modelsInstalled={systemInfo?.modelsInstalled || []}
+              fasterWhisperModelsInstalled={
+                systemInfo?.fasterWhisperModelsInstalled
+              }
+              transcriptionEngine={systemInfo?.transcriptionEngine}
               useLocalWhisper={useLocalWhisper}
             />
           ) : (

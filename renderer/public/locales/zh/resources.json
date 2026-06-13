@@ -63,6 +63,11 @@
       "cpu-only": "仅 CPU"
     },
     "appleAcceleration": "Apple 芯片加速（CoreML / Metal）",
+    "engineTitle": "转写引擎",
+    "engineBuiltin": "whisper.cpp",
+    "engineFasterWhisper": "faster-whisper",
+    "engineLocalCli": "local CLI",
+    "engineNotInstalled": "引擎未安装",
     "manage": "管理"
   }
 }

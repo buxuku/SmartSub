@@ -12,6 +12,8 @@ import { models } from 'lib/utils';
 
 interface IProps {
   modelsInstalled?: string[];
+  fasterWhisperModelsInstalled?: string[];
+  transcriptionEngine?: 'builtin' | 'fasterWhisper' | 'localCli';
   useLocalWhisper?: boolean;
 }
 
@@ -21,15 +23,18 @@ const Models = React.forwardRef<
 >((props, ref) => {
   const { t } = useTranslation('common');
 
-  // 根据是否使用内置 whisper 决定显示的模型列表
+  const engine =
+    props.transcriptionEngine ??
+    (props.useLocalWhisper ? 'localCli' : 'builtin');
+
   const getAvailableModels = () => {
-    if (props.useLocalWhisper) {
-      // 使用内置 whisper 时，显示所有可用模型
-      return models.map((model) => model.name);
-    } else {
-      // 不使用内置 whisper 时，只显示已下载的模型
-      return props?.modelsInstalled || [];
+    if (engine === 'fasterWhisper') {
+      return props.fasterWhisperModelsInstalled || [];
     }
+    if (engine === 'localCli') {
+      return models.map((model) => model.name);
+    }
+    return props.modelsInstalled || [];
   };
 
   const availableModels = getAvailableModels();
@@ -48,7 +53,7 @@ const Models = React.forwardRef<
           ))
         ) : (
           <SelectItem value="no-models" disabled>
-            {props.useLocalWhisper
+            {engine === 'localCli'
               ? t('noModelsAvailable')
               : t('noModelsInstalled')}
           </SelectItem>

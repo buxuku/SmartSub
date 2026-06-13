@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   Plus,
   Gauge,
+  Box,
 } from 'lucide-react';
 import DownModel from '@/components/DownModel';
 import DownModelButton from '@/components/DownModelButton';
@@ -31,6 +32,13 @@ const OVERVIEW_CARD_DECOR = {
   models: 'text-sky-500/[0.09] dark:text-sky-400/[0.12]',
   providers: 'text-emerald-500/[0.09] dark:text-emerald-400/[0.12]',
   acceleration: 'text-indigo-500/[0.09] dark:text-indigo-400/[0.12]',
+  engines: 'text-amber-500/[0.09] dark:text-amber-400/[0.12]',
+} as const;
+
+const ENGINE_LABEL_KEYS = {
+  builtin: 'overview.engineBuiltin',
+  fasterWhisper: 'overview.engineFasterWhisper',
+  localCli: 'overview.engineLocalCli',
 } as const;
 
 const OverviewTab = ({
@@ -117,6 +125,12 @@ const OverviewTab = ({
   )
     ? (gpuState?.gpuMode as string)
     : 'auto';
+  const transcriptionEngine = systemInfo.transcriptionEngine ?? 'builtin';
+  const engineLabelKey =
+    ENGINE_LABEL_KEYS[transcriptionEngine] ?? ENGINE_LABEL_KEYS.builtin;
+  const showEngineWarning =
+    transcriptionEngine === 'fasterWhisper' &&
+    systemInfo.pythonEngineStatus?.state !== 'ready';
 
   const renderGpuStatus = () => {
     if (!gpuState) return null;
@@ -209,7 +223,7 @@ const OverviewTab = ({
   );
 
   return (
-    <div className="grid items-stretch gap-4 md:grid-cols-3">
+    <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-4">
       {/* 语音模型 */}
       <Card {...cardNavProps('models')}>
         {cardDecor('models')}
@@ -350,6 +364,29 @@ const OverviewTab = ({
           )}
           <div className="mt-auto flex items-center gap-2 pt-1">
             {manageButton('acceleration')}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 转写引擎 */}
+      <Card {...cardNavProps('engines')}>
+        {cardDecor('engines')}
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Box className="h-4 w-4" />
+            {t('overview.engineTitle')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-1 flex-col gap-3">
+          <p className="text-sm font-medium">{t(engineLabelKey)}</p>
+          {showEngineWarning && (
+            <p className="flex items-start gap-1.5 text-sm text-warning">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              {t('overview.engineNotInstalled')}
+            </p>
+          )}
+          <div className="mt-auto flex items-center gap-2 pt-1">
+            {manageButton('engines')}
           </div>
         </CardContent>
       </Card>
