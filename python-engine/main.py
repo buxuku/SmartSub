@@ -73,6 +73,23 @@ def handle_ping(req_id, params):
     )
 
 
+def handle_preload(req_id, params):
+    """在 worker 线程中预加载模型（仅 _get_model，不转写）。"""
+
+    def worker():
+        engine_name = params.get("engine", "faster_whisper")
+        try:
+            engine = get_engine(engine_name)
+            result = engine.preload(params)
+            emit_result(req_id, result)
+        except Exception as exc:  # noqa: BLE001
+            code = getattr(exc, "engine_error_code", "internal_error")
+            log.error("preload failed: %s\n%s", exc, traceback.format_exc())
+            emit_error(req_id, code, str(exc))
+
+    threading.Thread(target=worker, name="preload-%s" % req_id, daemon=True).start()
+
+
 def handle_transcribe(req_id, params):
     """在 worker 线程中执行转写,逐段上报 progress/segment 事件。"""
     cancel_event = threading.Event()
@@ -114,6 +131,7 @@ def handle_cancel(params):
 
 HANDLERS = {
     "ping": handle_ping,
+    "preload": handle_preload,
     "transcribe": handle_transcribe,
 }
 

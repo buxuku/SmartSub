@@ -1,6 +1,13 @@
 {
   "copySuccess": "Link copied to clipboard",
   "copyError": "Failed to copy link, please copy manually",
+  "engineFilter": {
+    "label": "Engine",
+    "builtin": "whisper.cpp",
+    "fasterWhisper": "faster-whisper"
+  },
+  "fasterWhisperModelTip": "faster-whisper uses HuggingFace CT2 models, stored separately from ggml models",
+  "fasterWhisperModelsPath": "faster-whisper model path",
   "modelManagement": "Model Management",
   "modelManagementDesc": "Choose a Whisper transcription model that fits your needs. Larger models offer better accuracy but require more time and memory.",
   "modelPath": "Model Path",

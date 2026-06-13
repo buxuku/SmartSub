@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ISystemInfo } from '../../../types/types';
 import DeleteModel from '@/components/DeleteModel';
 import DownModel from '@/components/DownModel';
@@ -56,8 +57,32 @@ import {
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
 import useLocalStorageState from 'hooks/useLocalStorageState';
+import fasterWhisperModels from 'lib/fasterWhisperModels.json';
 
 export { DownSource } from 'lib/modelPanelUtils';
+
+type ModelEngineFilter = 'builtin' | 'fasterWhisper';
+
+type FasterWhisperModelEntry = {
+  id: string;
+  size: string;
+  tier: 'fast' | 'balanced' | 'accurate';
+};
+
+const FASTER_WHISPER_TIERS = [
+  { id: 'fast' as const, icon: Rocket },
+  { id: 'balanced' as const, icon: Scale },
+  { id: 'accurate' as const, icon: Crosshair },
+];
+
+function isFasterWhisperModelInstalled(
+  modelId: string,
+  installed?: string[],
+): boolean {
+  if (!installed?.length) return false;
+  const dotted = modelId.replace(/-/g, '.');
+  return installed.includes(modelId) || installed.includes(dotted);
+}
 
 type TFunc = (key: string, opts?: Record<string, unknown>) => string;
 
@@ -383,6 +408,120 @@ function ModelRow({
   );
 }
 
+function FasterWhisperModelRow({
+  model,
+  isInstalled,
+  isDownloading,
+  onDownload,
+  t,
+}: {
+  model: FasterWhisperModelEntry;
+  isInstalled: boolean;
+  isDownloading: boolean;
+  onDownload: (modelId: string) => void;
+  t: TFunc;
+}) {
+  const desc = t(`modelDesc.${model.id}`, { defaultValue: '' });
+
+  return (
+    <div className="flex flex-col gap-2 py-2 px-3 rounded-lg transition-colors sm:flex-row sm:items-center sm:gap-3 hover:bg-muted/50">
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        <span className="font-mono text-sm font-medium flex-shrink-0">
+          {model.id}
+        </span>
+        {isInstalled && !isDownloading && (
+          <CheckCircle2 className="h-3.5 w-3.5 text-success flex-shrink-0" />
+        )}
+        {desc && (
+          <span className="text-xs text-muted-foreground truncate hidden md:inline">
+            {desc}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center justify-between gap-2 sm:justify-end sm:gap-3 flex-shrink-0">
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {model.size}
+        </span>
+        <div className="flex items-center gap-1">
+          {isInstalled && !isDownloading ? (
+            <Badge
+              variant="outline"
+              className="border-success/40 text-success gap-1"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {t('alreadyInstalled')}
+            </Badge>
+          ) : (
+            <Button
+              size="sm"
+              className="h-7"
+              disabled={isDownloading}
+              onClick={() => onDownload(model.id)}
+            >
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              {t('oneClickDownload', { size: model.size })}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FasterWhisperTierSection({
+  tier,
+  models,
+  installedOnly,
+  modelQuery,
+  downloadingModel,
+  onDownload,
+  installed,
+  t,
+}: {
+  tier: (typeof FASTER_WHISPER_TIERS)[number];
+  models: FasterWhisperModelEntry[];
+  installedOnly: boolean;
+  modelQuery: string;
+  downloadingModel: string | null;
+  onDownload: (modelId: string) => void;
+  installed?: string[];
+  t: TFunc;
+}) {
+  const visible = models
+    .filter(
+      (m) => !installedOnly || isFasterWhisperModelInstalled(m.id, installed),
+    )
+    .filter((m) => matchesModelQuery(m.id, modelQuery));
+
+  if (visible.length === 0) return null;
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-baseline gap-2 px-1 flex-wrap">
+        <tier.icon className="h-4 w-4 text-muted-foreground self-center" />
+        <h3 className="text-sm font-semibold">{t(`tier.${tier.id}`)}</h3>
+        <span className="text-xs text-muted-foreground">
+          {t(`tierDesc.${tier.id}`)}
+        </span>
+      </div>
+      <Card>
+        <CardContent className="p-2 space-y-0.5">
+          {visible.map((model) => (
+            <FasterWhisperModelRow
+              key={model.id}
+              model={model}
+              isInstalled={isFasterWhisperModelInstalled(model.id, installed)}
+              isDownloading={downloadingModel === model.id}
+              onDownload={onDownload}
+              t={t}
+            />
+          ))}
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
 function TierSection({
   tier,
   recommendedModelName,
@@ -528,6 +667,8 @@ function TierSection({
 
 const ModelsTab = () => {
   const { t } = useTranslation('modelsControl');
+  const [engineFilter, setEngineFilter] =
+    useState<ModelEngineFilter>('builtin');
   const [systemInfo, setSystemInfo] = useState<ISystemInfo>({
     modelsInstalled: [],
     downloadingModels: [],
@@ -535,6 +676,9 @@ const ModelsTab = () => {
   });
   const [systemInfoLoaded, setSystemInfoLoaded] = useState(false);
   const [globalDownloading, setGlobalDownloading] = useState(false);
+  const [downloadingFwModel, setDownloadingFwModel] = useState<string | null>(
+    null,
+  );
   const [modelQuery, setModelQuery] = useState('');
   const [accelAvailable, setAccelAvailable] = useState(false);
   const [installedOnly, setInstalledOnly] = useLocalStorageState<boolean>(
@@ -666,6 +810,39 @@ const ModelsTab = () => {
     }
   };
 
+  const handleDownloadFasterWhisperModel = async (modelId: string) => {
+    if (downloadingFwModel) return;
+    setDownloadingFwModel(modelId);
+    try {
+      const result = await window?.ipc?.invoke(
+        'download-faster-whisper-model',
+        {
+          model: modelId,
+          source: downSource,
+        },
+      );
+      if (result?.success) {
+        toast.success(t('importModelSuccess'), { duration: 2000 });
+        await updateSystemInfo();
+      } else {
+        toast.error(
+          t('importModelFailed', {
+            error: result?.error || t('unknownError'),
+          }),
+        );
+      }
+    } catch (error) {
+      console.error('Failed to download faster-whisper model:', error);
+      toast.error(
+        t('importModelFailed', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    } finally {
+      setDownloadingFwModel(null);
+    }
+  };
+
   const setTierVariantsExpanded = (tierId: string, expanded: boolean) => {
     setVariantsExpandedMap((prev) => ({ ...prev, [tierId]: expanded }));
   };
@@ -703,130 +880,240 @@ const ModelsTab = () => {
   );
   const showRecommendedHero = !!recommendedModel;
 
+  const fwCatalog = fasterWhisperModels as FasterWhisperModelEntry[];
+  const fwInstalled = systemInfo.fasterWhisperModelsInstalled ?? [];
+  const hasAnyFwInstalled = fwInstalled.length > 0;
+  const isFwModelVisible = (id: string) => {
+    if (installedOnly && !isFasterWhisperModelInstalled(id, fwInstalled)) {
+      return false;
+    }
+    return matchesModelQuery(id, modelQuery);
+  };
+  const hasVisibleFwModels = fwCatalog.some((m) => isFwModelVisible(m.id));
+
   return (
     <TooltipProvider delayDuration={300}>
       <div className="space-y-4">
-        {showRecommendedHero && (
-          <RecommendedHero
-            model={recommendedModel}
-            isInstalled={recommendedInstalled}
-            basis={basis}
-            basisLoading={!systemInfoLoaded}
-            downSource={downSource}
-            onUpdate={updateSystemInfo}
-            globalDownloading={globalDownloading}
-            t={t}
-          />
-        )}
+        <div className="space-y-2">
+          <span className="text-sm text-muted-foreground">
+            {t('engineFilter.label')}
+          </span>
+          <Tabs
+            value={engineFilter}
+            onValueChange={(value) =>
+              setEngineFilter(value as ModelEngineFilter)
+            }
+          >
+            <TabsList>
+              <TabsTrigger value="builtin">
+                {t('engineFilter.builtin')}
+              </TabsTrigger>
+              <TabsTrigger value="fasterWhisper">
+                {t('engineFilter.fasterWhisper')}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
 
-        <div className="sticky top-0 z-10 space-y-3 border-b bg-background/95 pb-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold">{t('modelManagement')}</h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                {t('modelManagementDesc')}
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-              <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer">
-                <Switch
-                  checked={installedOnly}
-                  onCheckedChange={setInstalledOnly}
-                />
-                {t('showInstalledOnly')}
-              </label>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground shrink-0">
-                  {t('switchDownloadSource')}:
-                </span>
-                <Select onValueChange={handleDownSource} value={downSource}>
-                  <SelectTrigger className="w-full sm:w-[200px] h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="huggingface">
-                      {t('officialSource')}
-                    </SelectItem>
-                    <SelectItem value="hf-mirror">
-                      {t('domesticMirror')}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+        {engineFilter === 'fasterWhisper' ? (
+          <>
+            <p className="text-sm text-muted-foreground">
+              {t('fasterWhisperModelTip')}
+            </p>
+
+            <div className="sticky top-0 z-10 space-y-3 border-b bg-background/95 pb-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">
+                    {t('modelManagement')}
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {t('modelManagementDesc')}
+                  </p>
+                </div>
+                <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer">
+                  <Switch
+                    checked={installedOnly}
+                    onCheckedChange={setInstalledOnly}
+                  />
+                  {t('showInstalledOnly')}
+                </label>
               </div>
-              <Button
-                onClick={handleImportModel}
-                size="sm"
-                variant="outline"
-                className="w-full sm:w-auto"
-              >
-                <Upload className="mr-1.5 h-3.5 w-3.5" />
-                {t('importModel')}
-              </Button>
+
+              <div className="relative px-0.5">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={modelQuery}
+                  onChange={(e) => setModelQuery(e.target.value)}
+                  placeholder={t('modelSearchPlaceholder')}
+                  className="h-8 pl-8 text-sm focus-visible:ring-offset-0 focus-visible:ring-inset"
+                />
+              </div>
             </div>
-          </div>
 
-          <div className="relative px-0.5">
-            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-            <Input
-              value={modelQuery}
-              onChange={(e) => setModelQuery(e.target.value)}
-              placeholder={t('modelSearchPlaceholder')}
-              className="h-8 pl-8 text-sm focus-visible:ring-offset-0 focus-visible:ring-inset"
-            />
-          </div>
-        </div>
+            <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
+              <HardDrive className="h-3 w-3 shrink-0" />
+              <span className="shrink-0">{t('fasterWhisperModelsPath')}:</span>
+              <span className="font-mono break-all">
+                {systemInfo.fasterWhisperModelsPath}
+              </span>
+            </div>
 
-        <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
-          <HardDrive className="h-3 w-3 shrink-0" />
-          <span className="shrink-0">{t('modelPath')}:</span>
-          <span className="font-mono break-all">{systemInfo?.modelsPath}</span>
-          <button
-            type="button"
-            onClick={handleOpenModelsFolder}
-            className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
-          >
-            <FolderOpen className="h-3 w-3" />
-            <span>{t('openModelsFolder')}</span>
-          </button>
-          <span className="text-muted-foreground/50">·</span>
-          <button
-            type="button"
-            onClick={handleChangeModelsPath}
-            className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
-          >
-            <span>{t('changePath')}</span>
-          </button>
-        </div>
-
-        {installedOnly && !hasAnyInstalled ? (
-          <p className="text-sm text-muted-foreground py-8 text-center">
-            {t('noInstalledModels')}
-          </p>
-        ) : trimmedQuery && !hasVisibleModels ? (
-          <p className="text-sm text-muted-foreground py-8 text-center">
-            {t('noModelMatch')}
-          </p>
+            {installedOnly && !hasAnyFwInstalled ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">
+                {t('noInstalledModels')}
+              </p>
+            ) : trimmedQuery && !hasVisibleFwModels ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">
+                {t('noModelMatch')}
+              </p>
+            ) : (
+              <div className="space-y-5">
+                {FASTER_WHISPER_TIERS.map((tier) => (
+                  <FasterWhisperTierSection
+                    key={tier.id}
+                    tier={tier}
+                    models={fwCatalog.filter((m) => m.tier === tier.id)}
+                    installedOnly={installedOnly}
+                    modelQuery={modelQuery}
+                    downloadingModel={downloadingFwModel}
+                    onDownload={handleDownloadFasterWhisperModel}
+                    installed={fwInstalled}
+                    t={t}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         ) : (
-          <div className="space-y-5">
-            {MODEL_TIERS.map((tier) => (
-              <TierSection
-                key={tier.id}
-                tier={tier}
-                recommendedModelName={recommendedModel?.name}
-                installedOnly={installedOnly}
-                modelQuery={modelQuery}
-                variantsExpanded={variantsExpandedMap[tier.id] ?? false}
-                onVariantsExpandedChange={(expanded) =>
-                  setTierVariantsExpanded(tier.id, expanded)
-                }
-                systemInfo={systemInfo}
+          <>
+            {showRecommendedHero && (
+              <RecommendedHero
+                model={recommendedModel}
+                isInstalled={recommendedInstalled}
+                basis={basis}
+                basisLoading={!systemInfoLoaded}
                 downSource={downSource}
                 onUpdate={updateSystemInfo}
-                t={t}
                 globalDownloading={globalDownloading}
+                t={t}
               />
-            ))}
-          </div>
+            )}
+
+            <div className="sticky top-0 z-10 space-y-3 border-b bg-background/95 pb-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">
+                    {t('modelManagement')}
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {t('modelManagementDesc')}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                  <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer">
+                    <Switch
+                      checked={installedOnly}
+                      onCheckedChange={setInstalledOnly}
+                    />
+                    {t('showInstalledOnly')}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground shrink-0">
+                      {t('switchDownloadSource')}:
+                    </span>
+                    <Select onValueChange={handleDownSource} value={downSource}>
+                      <SelectTrigger className="w-full sm:w-[200px] h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="huggingface">
+                          {t('officialSource')}
+                        </SelectItem>
+                        <SelectItem value="hf-mirror">
+                          {t('domesticMirror')}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    onClick={handleImportModel}
+                    size="sm"
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                  >
+                    <Upload className="mr-1.5 h-3.5 w-3.5" />
+                    {t('importModel')}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="relative px-0.5">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={modelQuery}
+                  onChange={(e) => setModelQuery(e.target.value)}
+                  placeholder={t('modelSearchPlaceholder')}
+                  className="h-8 pl-8 text-sm focus-visible:ring-offset-0 focus-visible:ring-inset"
+                />
+              </div>
+            </div>
+
+            <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
+              <HardDrive className="h-3 w-3 shrink-0" />
+              <span className="shrink-0">{t('modelPath')}:</span>
+              <span className="font-mono break-all">
+                {systemInfo?.modelsPath}
+              </span>
+              <button
+                type="button"
+                onClick={handleOpenModelsFolder}
+                className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
+              >
+                <FolderOpen className="h-3 w-3" />
+                <span>{t('openModelsFolder')}</span>
+              </button>
+              <span className="text-muted-foreground/50">·</span>
+              <button
+                type="button"
+                onClick={handleChangeModelsPath}
+                className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
+              >
+                <span>{t('changePath')}</span>
+              </button>
+            </div>
+
+            {installedOnly && !hasAnyInstalled ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">
+                {t('noInstalledModels')}
+              </p>
+            ) : trimmedQuery && !hasVisibleModels ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">
+                {t('noModelMatch')}
+              </p>
+            ) : (
+              <div className="space-y-5">
+                {MODEL_TIERS.map((tier) => (
+                  <TierSection
+                    key={tier.id}
+                    tier={tier}
+                    recommendedModelName={recommendedModel?.name}
+                    installedOnly={installedOnly}
+                    modelQuery={modelQuery}
+                    variantsExpanded={variantsExpandedMap[tier.id] ?? false}
+                    onVariantsExpandedChange={(expanded) =>
+                      setTierVariantsExpanded(tier.id, expanded)
+                    }
+                    systemInfo={systemInfo}
+                    downSource={downSource}
+                    onUpdate={updateSystemInfo}
+                    t={t}
+                    globalDownloading={globalDownloading}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </TooltipProvider>

@@ -35,6 +35,18 @@ def _get_model(model, device, compute_type, download_root=None):
         return _model_cache[key]
 
 
+def preload(params):
+    """仅下载/加载模型，不执行转写。"""
+    model = params.get("model", "base")
+    _get_model(
+        model,
+        params.get("device", "auto"),
+        params.get("compute_type", "auto"),
+        params.get("download_root"),
+    )
+    return {"engine": "faster_whisper", "model": model, "preloaded": True}
+
+
 def transcribe(params, emit_event, is_cancelled):
     audio_file = params.get("audio_file")
     if not audio_file:

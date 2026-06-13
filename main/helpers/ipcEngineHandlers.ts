@@ -14,6 +14,7 @@ import {
   getPyEngineRoot,
   isPyEngineInstalled,
 } from './pythonRuntime/paths';
+import { getFasterWhisperModelsPath } from './modelCatalog';
 import type { TranscriptionEngine } from '../../types/engine';
 import type { PyEngineDownloadSource } from '../../types/engine';
 
@@ -161,6 +162,32 @@ export function registerEngineIpcHandlers(): void {
         return { success: true };
       } catch (error) {
         logMessage(`Error setting faster-whisper settings: ${error}`, 'error');
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'download-faster-whisper-model',
+    async (_event, { model }: { model: string; source?: string }) => {
+      try {
+        const manager = getPythonRuntimeManager();
+        await manager.ensureStarted();
+        const settings = store.get('settings');
+        await manager.request(
+          'preload',
+          {
+            engine: 'faster_whisper',
+            model,
+            download_root: getFasterWhisperModelsPath(),
+            device: settings.fasterWhisperDevice || 'auto',
+            compute_type: settings.fasterWhisperComputeType || 'auto',
+          },
+          { timeoutMs: 600_000 },
+        );
+        return { success: true };
+      } catch (error) {
+        logMessage(`Error downloading faster-whisper model: ${error}`, 'error');
         return { success: false, error: String(error) };
       }
     },

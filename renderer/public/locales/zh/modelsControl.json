@@ -1,6 +1,13 @@
 {
   "copySuccess": "链接已复制到剪贴板",
   "copyError": "无法复制链接，请手动复制",
+  "engineFilter": {
+    "label": "引擎",
+    "builtin": "whisper.cpp",
+    "fasterWhisper": "faster-whisper"
+  },
+  "fasterWhisperModelTip": "faster-whisper 使用 HuggingFace CT2 模型，与 ggml 模型分开存放",
+  "fasterWhisperModelsPath": "faster-whisper 模型路径",
   "modelManagement": "模型管理",
   "modelManagementDesc": "选择适合您需求的 Whisper 语音转写模型。模型越大，转写精度越高，但所需时间和内存也越多。",
   "modelPath": "模型路径",
