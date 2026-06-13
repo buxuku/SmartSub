@@ -1,8 +1,14 @@
+import type { EngineStatus, TranscriptionEngine } from './engine';
+
 export interface ISystemInfo {
   modelsInstalled: string[];
   modelsPath: string;
   downloadingModels: string[];
   totalMemoryGB?: number;
+  fasterWhisperModelsInstalled?: string[];
+  fasterWhisperModelsPath?: string;
+  transcriptionEngine?: TranscriptionEngine;
+  pythonEngineStatus?: EngineStatus;
 }
 
 export interface IFiles {

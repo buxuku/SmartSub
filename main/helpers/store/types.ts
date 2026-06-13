@@ -2,6 +2,7 @@ import { Provider, CustomParameterConfig } from '../../../types/provider';
 import { ProofreadHistory, ProofreadTask } from '../../../types/proofread';
 import { IFiles, TaskProject } from '../../../types';
 import { WorkItem } from '../../../types/workItem';
+import type { TranscriptionEngine } from '../../../types/engine';
 import {
   GpuMode,
   AddonLoadResultInfo,
@@ -41,6 +42,10 @@ export type StoreType = {
     vadMaxSpeechDuration: number;
     vadSpeechPad: number;
     vadSamplesOverlap: number;
+    transcriptionEngine?: TranscriptionEngine;
+    fasterWhisperDevice?: 'auto' | 'cpu' | 'cuda';
+    fasterWhisperComputeType?: string;
+    fasterWhisperModelsPath?: string;
   };
   providerVersion?: number;
   logs: LogEntry[];
