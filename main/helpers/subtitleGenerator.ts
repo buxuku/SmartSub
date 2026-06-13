@@ -131,11 +131,35 @@ export async function generateSubtitleWithFasterWhisper(
   });
   activeFasterWhisperTranscribeId = id;
 
+  // 取消接线：与内置 whisper 走 AbortSignal 一致。信号一触发就通知 sidecar 取消，
+  // sidecar 在 segment 边界检查取消标记，收到后以 {code:'cancelled'} 回应（见 py-engine）。
+  const signal = getTaskContext()?.signal;
+  const onAbort = () => {
+    if (activeFasterWhisperTranscribeId === id) manager.cancel(id);
+  };
+  if (signal?.aborted) {
+    manager.cancel(id);
+  } else {
+    signal?.addEventListener('abort', onAbort, { once: true });
+  }
+
   let transcription;
   try {
     transcription = await result;
+  } catch (error) {
+    // 用户取消：sidecar 回 {code:'cancelled'}。转成取消语义，避免被标记为转写错误。
+    if (signal?.aborted || (error as any)?.code === 'cancelled') {
+      throw new TaskCancelledError();
+    }
+    throw error;
   } finally {
+    signal?.removeEventListener('abort', onAbort);
     activeFasterWhisperTranscribeId = null;
+  }
+
+  // 边界：转写正常返回但此刻已被取消，同样按取消处理，避免写出半截字幕。
+  if (signal?.aborted) {
+    throw new TaskCancelledError();
   }
 
   const formattedSrt = formatSrtContent(

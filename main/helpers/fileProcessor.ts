@@ -173,6 +173,25 @@ export async function processFile(
     taskType,
   } = formData || {};
 
+  // 进入处理前清理上一轮残留的阶段状态/进度/错误。后续 taskFileChange 习惯铺开整个 file
+  // （`{ ...file, extractSubtitle: 'loading' }`），若 file 仍带着旧值——尤其取消时回灌的空串
+  // ——渲染层 `{ ...prev, ...res }` 合并会把刚置好的新状态覆盖回去，造成「取消→重启」时
+  // 提取格子被打回灰色、进度永远卡 50%。清成「无此键」后，铺开就不会再携带陈旧阶段状态。
+  for (const k of [
+    'extractAudio',
+    'extractSubtitle',
+    'prepareSubtitle',
+    'translateSubtitle',
+    'extractAudioProgress',
+    'extractSubtitleProgress',
+    'translateSubtitleProgress',
+    'extractAudioError',
+    'extractSubtitleError',
+    'translateSubtitleError',
+  ]) {
+    delete (file as any)[k];
+  }
+
   try {
     const { filePath, fileName, fileExtension, directory } = file;
     console.log('filePath', file);
