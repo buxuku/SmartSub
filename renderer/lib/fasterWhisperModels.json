@@ -1,0 +1,8 @@
+[
+  { "id": "tiny", "size": "~75MB", "tier": "fast" },
+  { "id": "base", "size": "~145MB", "tier": "fast" },
+  { "id": "small", "size": "~466MB", "tier": "balanced" },
+  { "id": "medium", "size": "~1.5GB", "tier": "balanced" },
+  { "id": "large-v3", "size": "~3GB", "tier": "accurate" },
+  { "id": "large-v3-turbo", "size": "~1.6GB", "tier": "accurate" }
+]

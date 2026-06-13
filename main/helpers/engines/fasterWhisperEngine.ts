@@ -10,11 +10,6 @@ import {
 } from '../subtitleGenerator';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
-/** Strip ggml quantization suffix (-q5_0 etc.) for faster-whisper model id. */
-export function toFasterWhisperModelId(ggmlName?: string): string {
-  return (ggmlName || 'base').toLowerCase().replace(/-q\d+_\d+$/, '');
-}
-
 export const fasterWhisperEngineAdapter: TranscriptionEngineAdapter = {
   id: 'fasterWhisper',
   displayName: 'faster-whisper',

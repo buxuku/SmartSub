@@ -1,6 +1,16 @@
 import { ipcMain, BrowserWindow, dialog, shell } from 'electron';
 import os from 'os';
 import { getModelsInstalled, getPath, deleteModel } from './whisper';
+import {
+  getFasterWhisperModelsInstalled,
+  getFasterWhisperModelsPath,
+} from './modelCatalog';
+import { resolveTranscriptionEngine } from './transcriptionEngine';
+import {
+  isPyEngineInstalled,
+  readPyEngineManifest,
+} from './pythonRuntime/paths';
+import { store } from './storeManager';
 import { getModelDownloader } from './modelDownloader';
 import fse from 'fs-extra';
 import path from 'path';
@@ -21,6 +31,13 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       downloadingModels: Array.from(downloadingModels),
       buildInfo: getBuildInfo(),
       totalMemoryGB: Math.round(os.totalmem() / (1024 * 1024 * 1024)),
+      fasterWhisperModelsInstalled: getFasterWhisperModelsInstalled(),
+      fasterWhisperModelsPath: getFasterWhisperModelsPath(),
+      transcriptionEngine: resolveTranscriptionEngine(store.get('settings')),
+      pythonEngineStatus: {
+        state: isPyEngineInstalled() ? 'ready' : 'not_installed',
+        version: readPyEngineManifest()?.version,
+      },
     };
   });
 
