@@ -41,6 +41,7 @@ import {
 } from '@/components/launchpad/TaskIcons';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { useTranslation } from 'next-i18next';
+import type { WorkItem } from '../../../types/workItem';
 
 interface CardDef {
   key: string;
@@ -106,11 +107,56 @@ const STATUS_DOT: Record<RecentStatus, string> = {
   error: 'bg-destructive',
 };
 
-function getProjectTypeDef(project: any): TaskTypeDef {
+function getProjectTypeDef(project: { taskType?: string }): TaskTypeDef {
   return (
     getTaskTypeByValue(project?.taskType) ||
     getTaskTypeBySlug('generate-translate')
   );
+}
+
+function getWorkItemTarget(item: WorkItem, locale: string) {
+  if (item.type === 'proofread') {
+    return `/${locale}/proofread?workItem=${item.id}`;
+  }
+  const typeDef =
+    getTaskTypeByValue(item.type) || getTaskTypeBySlug('generate-translate');
+  return `/${locale}/tasks/${typeDef.slug}?project=${item.id}`;
+}
+
+function getWorkItemFileCount(item: WorkItem): number {
+  if (item.type === 'proofread') {
+    return item.proofreadEntries?.length || 0;
+  }
+  return item.pipelineFiles?.length || 0;
+}
+
+function getWorkItemTypeLabel(
+  item: WorkItem,
+  tLaunchpad: (key: string) => string,
+  tTasks: (key: string) => string,
+): string {
+  if (item.type === 'proofread') {
+    return tLaunchpad('card.proofread');
+  }
+  const typeDef =
+    getTaskTypeByValue(item.type) || getTaskTypeBySlug('generate-translate');
+  return tTasks(`pageTitle.${typeDef.slug}`);
+}
+
+function getWorkItemStatus(item: WorkItem): RecentStatus {
+  if (item.type === 'proofread') {
+    if (item.status === 'done') return 'done';
+    if (item.status === 'running') return 'running';
+    if (item.status === 'error' || item.status === 'interrupted') {
+      return 'error';
+    }
+    return 'waiting';
+  }
+
+  return getProjectStatus({
+    taskType: item.type,
+    files: item.pipelineFiles || [],
+  });
 }
 
 /** 工程整体状态：有进行中 > 有错误 > 全部完成 > 等待 */
@@ -149,24 +195,23 @@ export default function LaunchpadPage() {
   const { t: tTasks } = useTranslation('tasks');
   const [hasModels, setHasModels] = useState(true);
   const [hasProvider, setHasProvider] = useState(true);
-  const [projects, setProjects] = useState<any[]>([]);
+  const [workItems, setWorkItems] = useState<WorkItem[]>([]);
   const [dragCard, setDragCard] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<WorkItem | null>(null);
   const [recentExpanded, setRecentExpanded] = useState(false);
   const [recentQuery, setRecentQuery] = useState('');
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [systemInfo, providers, taskProjects, settings] =
-          await Promise.all([
-            window?.ipc?.invoke('getSystemInfo', null),
-            window?.ipc?.invoke('getTranslationProviders'),
-            window?.ipc?.invoke('getTaskProjects'),
-            window?.ipc?.invoke('getSettings'),
-          ]);
+        const [systemInfo, providers, items, settings] = await Promise.all([
+          window?.ipc?.invoke('getSystemInfo', null),
+          window?.ipc?.invoke('getTranslationProviders'),
+          window?.ipc?.invoke('getWorkItems'),
+          window?.ipc?.invoke('getSettings'),
+        ]);
         const useLocalWhisper = settings?.useLocalWhisper || false;
         setHasModels(
           useLocalWhisper || (systemInfo?.modelsInstalled?.length ?? 0) > 0,
@@ -174,7 +219,7 @@ export default function LaunchpadPage() {
         setHasProvider(
           (providers || []).some((p: any) => isProviderConfigured(p)),
         );
-        setProjects(taskProjects || []);
+        setWorkItems(items || []);
       } catch (error) {
         console.error('Failed to load launchpad data:', error);
       }
@@ -185,8 +230,8 @@ export default function LaunchpadPage() {
   const cardTarget = (card: CardDef) =>
     card.slug ? `/${locale}/tasks/${card.slug}` : `/${locale}/${card.href}`;
 
-  const projectTarget = (project: any) =>
-    `/${locale}/tasks/${getProjectTypeDef(project).slug}?project=${project.id}`;
+  const projectTarget = (item: WorkItem) =>
+    getWorkItemTarget(item, String(locale));
 
   const handleCardDrop = async (e: React.DragEvent, card: CardDef) => {
     e.preventDefault();
@@ -229,30 +274,34 @@ export default function LaunchpadPage() {
     router.push(`/${locale}/tasks/${card.slug}?project=${id}`);
   };
 
-  const startRename = (project: any) => {
-    setEditingId(project.id);
-    setNameDraft(project.name || '');
+  const startRename = (item: WorkItem) => {
+    setEditingId(item.id);
+    setNameDraft(item.name || '');
   };
 
-  const commitRename = async (project: any) => {
+  const commitRename = async (item: WorkItem) => {
     setEditingId(null);
     const name = nameDraft.trim();
-    if (!name || name === project.name) return;
-    const saved = await window?.ipc?.invoke('renameTaskProject', {
-      id: project.id,
+    if (!name || name === item.name) return;
+    const saved = await window?.ipc?.invoke('renameWorkItem', {
+      id: item.id,
       name,
     });
     if (saved) {
-      setProjects((prev) =>
-        prev.map((p) => (p.id === project.id ? { ...p, name: saved.name } : p)),
+      setWorkItems((prev) =>
+        prev.map((entry) =>
+          entry.id === item.id ? { ...entry, name: saved.name } : entry,
+        ),
       );
     }
   };
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    await window?.ipc?.invoke('deleteTaskProject', deleteTarget.id);
-    setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+    await window?.ipc?.invoke('deleteWorkItem', deleteTarget.id);
+    setWorkItems((prev) =>
+      prev.filter((entry) => entry.id !== deleteTarget.id),
+    );
     setDeleteTarget(null);
   };
 
@@ -265,13 +314,13 @@ export default function LaunchpadPage() {
 
   // 收起态只取前 8 条；展开态显示全量并支持按名称过滤
   const normalizedQuery = recentQuery.trim().toLowerCase();
-  const visibleProjects = recentExpanded
+  const visibleWorkItems = recentExpanded
     ? normalizedQuery
-      ? projects.filter((p) =>
-          (p.name || '').toLowerCase().includes(normalizedQuery),
+      ? workItems.filter((item) =>
+          (item.name || '').toLowerCase().includes(normalizedQuery),
         )
-      : projects
-    : projects.slice(0, 8);
+      : workItems
+    : workItems.slice(0, 8);
 
   return (
     <div className="h-full overflow-auto">
@@ -377,7 +426,7 @@ export default function LaunchpadPage() {
             <h2 className="text-sm font-semibold text-muted-foreground">
               {t('recentTasks')}
             </h2>
-            {projects.length > 8 && (
+            {workItems.length > 8 && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -386,7 +435,7 @@ export default function LaunchpadPage() {
               >
                 {recentExpanded
                   ? t('recent.collapse')
-                  : t('recent.viewAll', { count: projects.length })}
+                  : t('recent.viewAll', { count: workItems.length })}
               </Button>
             )}
           </div>
@@ -401,28 +450,27 @@ export default function LaunchpadPage() {
               />
             </div>
           )}
-          {projects.length === 0 ? (
+          {workItems.length === 0 ? (
             <EmptyState
               icon={History}
               title={t('noRecentTasks')}
               description={t('noRecentTasksHint')}
             />
-          ) : visibleProjects.length === 0 ? (
+          ) : visibleWorkItems.length === 0 ? (
             <p className="rounded-xl border px-4 py-6 text-center text-sm text-muted-foreground">
               {t('recent.noMatch')}
             </p>
           ) : (
             <div className="rounded-xl border divide-y">
-              {visibleProjects.map((project) => {
-                const status = getProjectStatus(project);
-                const typeDef = getProjectTypeDef(project);
-                const editing = editingId === project.id;
+              {visibleWorkItems.map((item) => {
+                const status = getWorkItemStatus(item);
+                const editing = editingId === item.id;
                 return (
                   <div
-                    key={project.id}
+                    key={item.id}
                     className="group flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors cursor-pointer"
                     onClick={() => {
-                      if (!editing) router.push(projectTarget(project));
+                      if (!editing) router.push(projectTarget(item));
                     }}
                   >
                     <span
@@ -438,25 +486,25 @@ export default function LaunchpadPage() {
                         onChange={(e) => setNameDraft(e.target.value)}
                         onClick={(e) => e.stopPropagation()}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') commitRename(project);
+                          if (e.key === 'Enter') commitRename(item);
                           if (e.key === 'Escape') setEditingId(null);
                         }}
-                        onBlur={() => commitRename(project)}
+                        onBlur={() => commitRename(item)}
                         className="h-7 text-xs min-w-0 flex-1"
                       />
                     ) : (
                       <span className="truncate text-sm min-w-0 flex-1">
-                        {project.name}
+                        {item.name}
                       </span>
                     )}
                     <span className="hidden sm:inline text-[11px] text-muted-foreground rounded bg-muted px-1.5 py-0.5 flex-shrink-0">
-                      {tTasks(`pageTitle.${typeDef.slug}`)}
+                      {getWorkItemTypeLabel(item, t, tTasks)}
                     </span>
                     <span className="text-xs text-muted-foreground flex-shrink-0">
-                      {t('fileCount', { count: project.files?.length || 0 })}
+                      {t('fileCount', { count: getWorkItemFileCount(item) })}
                     </span>
                     <span className="hidden md:inline text-xs text-muted-foreground/70 tabular-nums flex-shrink-0">
-                      {formatTime(project.updatedAt)}
+                      {formatTime(item.updatedAt)}
                     </span>
                     <span className="text-xs text-muted-foreground flex-shrink-0 w-12 text-right">
                       {t(`status.${status}`)}
@@ -470,7 +518,7 @@ export default function LaunchpadPage() {
                         size="icon"
                         className="h-7 w-7"
                         aria-label={t('recent.rename')}
-                        onClick={() => startRename(project)}
+                        onClick={() => startRename(item)}
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
@@ -479,7 +527,7 @@ export default function LaunchpadPage() {
                         size="icon"
                         className="h-7 w-7 text-muted-foreground hover:text-destructive"
                         aria-label={t('recent.delete')}
-                        onClick={() => setDeleteTarget(project)}
+                        onClick={() => setDeleteTarget(item)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
