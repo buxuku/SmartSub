@@ -74,12 +74,12 @@ export function LogDialog({ open, onOpenChange }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[80vh]">
+      <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>{t('logs')}</DialogTitle>
           <DialogDescription>{t('logsDesc')}</DialogDescription>
         </DialogHeader>
-        <ScrollArea ref={scrollRef} className="h-[60vh]">
+        <ScrollArea ref={scrollRef} className="flex-1 min-h-0">
           <div className="space-y-2 p-4">
             {logs.map((log, index) => (
               <div key={index}>
@@ -102,7 +102,7 @@ export function LogDialog({ open, onOpenChange }) {
             ))}
           </div>
         </ScrollArea>
-        <div className="flex justify-end space-x-2 mt-4">
+        <div className="flex justify-end space-x-2 mt-4 shrink-0">
           <Button variant="outline" onClick={handleCopyLogs}>
             <Copy className="h-4 w-4 mr-2" />
             {t('copyLogs')}
