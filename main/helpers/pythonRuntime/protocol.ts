@@ -24,6 +24,8 @@ export type EngineMessage = EngineResponse | EngineNotification;
 
 export interface PingResult {
   version: string;
+  engineVersion?: string;
+  protocolVersion?: number;
   python: string;
   frozen: boolean;
   engines: Record<string, boolean>;

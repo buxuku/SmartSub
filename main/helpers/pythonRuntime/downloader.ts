@@ -9,6 +9,9 @@ import { calculateFileChecksum } from '../addonDownloader';
 import type {
   PyEngineDownloadProgress,
   PyEngineDownloadSource,
+  PyEngineManifest,
+  PyEngineUpdateInfo,
+  RemoteEngineManifest,
 } from '../../../types/engine';
 import {
   PY_ENGINE_TAG,
@@ -18,9 +21,16 @@ import {
   getPyEngineArtifactSuffix,
   getPyEngineDownloadUrl,
   getPyEngineChecksumsUrl,
+  getPyEngineManifestUrl,
   normalizePyEngineLayout,
   writePyEngineManifest,
+  readPyEngineManifest,
+  deletePyEngineManifest,
+  isPyEngineInstalled,
 } from './paths';
+import { getPythonRuntimeManager, shutdownPythonRuntime } from './index';
+import { PythonEngineError } from './manager';
+import { isRemoteProtocolInstallable } from './protocolSupport';
 
 interface PyEngineDownloadState {
   url: string;
@@ -44,6 +54,11 @@ function getPyEngineDownloadsDir(): string {
 
 function getPyEngineStagingDir(): string {
   return path.join(getPyEngineRoot(), 'staging');
+}
+
+/** 升级时旧版本备份目录，自检通过后删除，失败时回滚。 */
+function getPyEnginePreviousDir(): string {
+  return path.join(getPyEngineRoot(), 'previous');
 }
 
 function getTempTarPath(): string {
@@ -218,6 +233,19 @@ export class PyEngineDownloader {
     const tempPath = getTempTarPath();
     const downloadsDir = getPyEngineDownloadsDir();
 
+    // 安装/升级前协议区间校验：拉远端 manifest，超出 app 支持区间则拒装并提示升级 SmartSub。
+    // 老 release 无 manifest.json → 放行（向后兼容）。同时复用 manifest 为本地版本戳。
+    const remoteManifest = await this.fetchRemoteManifest(source, resolvedTag);
+    if (!isRemoteProtocolInstallable(remoteManifest)) {
+      const err = new PythonEngineError(
+        'protocol_unsupported',
+        `engine protocolVersion=${remoteManifest?.protocolVersion} requires a newer SmartSub`,
+      );
+      this.updateProgress({ status: 'error', error: 'protocol_unsupported' });
+      logMessage(`Py-engine install blocked: ${err.message}`, 'error');
+      throw err;
+    }
+
     fs.mkdirSync(downloadsDir, { recursive: true });
 
     this.abortController = new AbortController();
@@ -263,6 +291,7 @@ export class PyEngineDownloader {
             downloadedPath,
             source,
             resolvedTag,
+            remoteManifest,
           );
           if (fs.existsSync(downloadedPath)) {
             fs.unlinkSync(downloadedPath);
@@ -294,7 +323,12 @@ export class PyEngineDownloader {
       );
 
       this.updateProgress({ status: 'extracting' });
-      await this.verifyExtractAndInstall(downloadedPath, source, resolvedTag);
+      await this.verifyExtractAndInstall(
+        downloadedPath,
+        source,
+        resolvedTag,
+        remoteManifest,
+      );
 
       if (fs.existsSync(downloadedPath)) {
         fs.unlinkSync(downloadedPath);
@@ -318,10 +352,86 @@ export class PyEngineDownloader {
     }
   }
 
+  /** 拉取远端 manifest.json；老 release 不存在时返回 null（向后兼容，不报错）。 */
+  private async fetchRemoteManifest(
+    source: PyEngineDownloadSource,
+    tag: string = PY_ENGINE_TAG,
+  ): Promise<RemoteEngineManifest | null> {
+    try {
+      const text = await fetchHttpText(getPyEngineManifestUrl(source, tag));
+      return JSON.parse(text) as RemoteEngineManifest;
+    } catch (error) {
+      logMessage(
+        `py-engine manifest.json unavailable (old release?): ${error}`,
+        'info',
+      );
+      return null;
+    }
+  }
+
+  /**
+   * 更新检测：以 checksums.sha256 中本平台产物的哈希为主信号（完全适配 rolling latest），
+   * 与本地 manifest.sha256 比对。同时返回远端 manifest 供版本展示与协议判定。
+   */
+  async checkUpdate(
+    source: PyEngineDownloadSource,
+  ): Promise<PyEngineUpdateInfo> {
+    const localManifest = readPyEngineManifest();
+    const installed = isPyEngineInstalled();
+
+    let remoteHash: string | null = null;
+    try {
+      const checksumsContent = await fetchHttpText(
+        getPyEngineChecksumsUrl(source),
+      );
+      remoteHash = parseExpectedChecksum(
+        checksumsContent,
+        getArtifactFileName(),
+      );
+    } catch (error) {
+      logMessage(`checkUpdate: fetch checksums failed: ${error}`, 'warning');
+    }
+
+    const remoteManifest = await this.fetchRemoteManifest(source);
+    const protocolSupported = isRemoteProtocolInstallable(remoteManifest);
+
+    const hasUpdate = !!(
+      remoteHash &&
+      localManifest?.sha256 &&
+      remoteHash.toLowerCase() !== localManifest.sha256.toLowerCase()
+    );
+
+    return {
+      installed,
+      hasUpdate,
+      localManifest,
+      remoteManifest,
+      remoteHash,
+      protocolSupported,
+    };
+  }
+
+  private buildLocalManifest(
+    sha256: string,
+    remoteManifest: RemoteEngineManifest | null,
+  ): PyEngineManifest {
+    return {
+      version: remoteManifest?.engineVersion ?? PY_ENGINE_TAG,
+      platform: getPyEngineArtifactSuffix(),
+      sha256,
+      installedAt: new Date().toISOString(),
+      engineVersion: remoteManifest?.engineVersion,
+      protocolVersion: remoteManifest?.protocolVersion,
+      builtAt: remoteManifest?.builtAt,
+      gitSha: remoteManifest?.gitSha,
+    };
+  }
+
   private async verifyExtractAndInstall(
     tarPath: string,
     source: PyEngineDownloadSource,
     tag: string,
+    remoteManifest: RemoteEngineManifest | null,
   ): Promise<void> {
     const artifactName = getArtifactFileName();
     const checksumsUrl = getPyEngineChecksumsUrl(source, tag);
@@ -363,20 +473,106 @@ export class PyEngineDownloader {
       );
     }
 
+    await this.installFromStaging(stagingDir, expectedChecksum, remoteManifest);
+  }
+
+  /**
+   * 安全替换：先停机解锁（依赖 Phase 0 无孤儿进程）→ 备份 current→previous → swap →
+   * 写 manifest → ping 自检；自检失败回滚旧版，成功删除备份。
+   */
+  private async installFromStaging(
+    stagingDir: string,
+    sha256: string,
+    remoteManifest: RemoteEngineManifest | null,
+  ): Promise<void> {
     const currentDir = getPyEngineCurrentDir();
+    const previousDir = getPyEnginePreviousDir();
+    const hadPrevious = fs.existsSync(currentDir);
+    const prevManifest = readPyEngineManifest();
+
+    // 1. 停机解 Windows 文件锁
+    await shutdownPythonRuntime();
+
+    // 2. 备份 current → previous（previous 残留先清）
+    if (fs.existsSync(previousDir)) {
+      fs.rmSync(previousDir, { recursive: true, force: true });
+    }
+    if (hadPrevious) {
+      fs.renameSync(currentDir, previousDir);
+    }
+
+    // 3. swap staging → current（失败立即还原备份）
+    try {
+      fs.renameSync(stagingDir, currentDir);
+    } catch (swapError) {
+      if (
+        hadPrevious &&
+        !fs.existsSync(currentDir) &&
+        fs.existsSync(previousDir)
+      ) {
+        fs.renameSync(previousDir, currentDir);
+      }
+      throw swapError;
+    }
+    normalizePyEngineLayout(currentDir);
+
+    // 4. 写新 manifest（含 engineVersion/protocolVersion/builtAt/gitSha）
+    writePyEngineManifest(this.buildLocalManifest(sha256, remoteManifest));
+
+    // 5. 自检：启动 + ping（ensureStarted 内含协议区间校验）
+    try {
+      this.updateProgress({ status: 'verifying' });
+      await getPythonRuntimeManager().ensureStarted();
+    } catch (selfCheckError) {
+      logMessage(
+        `Py-engine self-check failed, rolling back: ${selfCheckError}`,
+        'error',
+      );
+      await this.rollback(hadPrevious, prevManifest);
+      throw selfCheckError;
+    }
+
+    // 6. 成功：删除备份
+    if (fs.existsSync(previousDir)) {
+      fs.rmSync(previousDir, { recursive: true, force: true });
+    }
+    logMessage('Py-engine installed and self-check passed', 'info');
+  }
+
+  private async rollback(
+    hadPrevious: boolean,
+    prevManifest: PyEngineManifest | null,
+  ): Promise<void> {
+    const currentDir = getPyEngineCurrentDir();
+    const previousDir = getPyEnginePreviousDir();
+
+    // 先停机，释放刚失败的 current/ 句柄
+    await shutdownPythonRuntime();
+
     if (fs.existsSync(currentDir)) {
       fs.rmSync(currentDir, { recursive: true, force: true });
     }
-    fs.renameSync(stagingDir, currentDir);
 
-    normalizePyEngineLayout(currentDir);
-
-    writePyEngineManifest({
-      version: tag,
-      platform: getPyEngineArtifactSuffix(),
-      sha256: expectedChecksum,
-      installedAt: new Date().toISOString(),
-    });
+    if (hadPrevious && fs.existsSync(previousDir)) {
+      fs.renameSync(previousDir, currentDir);
+      if (prevManifest) {
+        writePyEngineManifest(prevManifest);
+      } else {
+        deletePyEngineManifest();
+      }
+      try {
+        await getPythonRuntimeManager().ensureStarted();
+        logMessage('Py-engine rolled back to previous version', 'info');
+      } catch (restartError) {
+        logMessage(
+          `Py-engine rollback restart failed: ${restartError}`,
+          'error',
+        );
+      }
+    } else {
+      // 无旧版可退（首次安装失败）：清理残留 manifest，回到未安装态
+      deletePyEngineManifest();
+    }
   }
 
   private downloadFile(

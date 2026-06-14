@@ -158,6 +158,13 @@ export function writePyEngineManifest(manifest: PyEngineManifest): void {
   );
 }
 
+export function deletePyEngineManifest(): void {
+  const manifestPath = path.join(getPyEngineRoot(), 'manifest.json');
+  if (fs.existsSync(manifestPath)) {
+    fs.rmSync(manifestPath, { force: true });
+  }
+}
+
 export function getPyEngineArtifactSuffix(): string {
   if (process.platform === 'darwin') {
     return process.arch === 'arm64' ? 'macos-arm64' : 'macos-x64';
@@ -188,6 +195,17 @@ export function getPyEngineChecksumsUrl(
   tag: string = PY_ENGINE_TAG,
 ): string {
   const base = `${getPyEngineReleaseBaseUrl(tag)}/checksums.sha256`;
+  if (source === 'ghproxy') {
+    return `https://ghfast.top/${base}`;
+  }
+  return base;
+}
+
+export function getPyEngineManifestUrl(
+  source: 'github' | 'ghproxy',
+  tag: string = PY_ENGINE_TAG,
+): string {
+  const base = `${getPyEngineReleaseBaseUrl(tag)}/manifest.json`;
   if (source === 'ghproxy') {
     return `https://ghfast.top/${base}`;
   }

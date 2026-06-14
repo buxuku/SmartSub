@@ -8,6 +8,7 @@ import {
   TranscribeResult,
   TranscribeSegment,
 } from './protocol';
+import { isProtocolSupported } from './protocolSupport';
 
 export interface EngineCommand {
   command: string;
@@ -151,6 +152,27 @@ export class PythonRuntimeManager {
           },
         );
 
+        // 协议区间校验：超出 app 支持区间则停机并报错（提示升级 SmartSub，而非崩溃）。
+        // 旧引擎不返回 protocolVersion 时放行（向后兼容）。
+        if (
+          typeof info.protocolVersion === 'number' &&
+          !isProtocolSupported(info.protocolVersion)
+        ) {
+          if (this.proc === proc) {
+            try {
+              proc.kill();
+            } catch {
+              // already exited
+            }
+            this.proc = null;
+            this.lastPingInfo = null;
+          }
+          throw new PythonEngineError(
+            'protocol_unsupported',
+            `engine protocolVersion=${info.protocolVersion} not supported by this SmartSub`,
+          );
+        }
+
         this.lastPingInfo = info;
         this.logger(
           `Python engine ready: version=${info.version} python=${info.python} engines=${JSON.stringify(info.engines)}`,
@@ -176,6 +198,13 @@ export class PythonRuntimeManager {
     try {
       return await attempt();
     } catch (firstError) {
+      // 协议不兼容重试无意义，直接抛出。
+      if (
+        firstError instanceof PythonEngineError &&
+        firstError.code === 'protocol_unsupported'
+      ) {
+        throw firstError;
+      }
       this.logger(
         `Python engine start failed, retrying once: ${firstError}`,
         'warning',
