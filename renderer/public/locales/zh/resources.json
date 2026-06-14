@@ -1,7 +1,7 @@
 {
   "title": "资源中心",
   "description": "转写与翻译所需的模型、翻译服务与 GPU 加速，都在这里管理",
-  "ghProxy": "Gh代理",
+  "ghProxy": "github 国内加速",
   "gitcode": "GitCode",
   "tab": {
     "overview": "全景",

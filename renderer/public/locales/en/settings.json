@@ -79,7 +79,7 @@
     "recommended": "Recommended",
     "update": "Update",
     "downloadSource": "Download Source",
-    "ghProxy": "GitHub Proxy (Faster in China)",
+    "ghProxy": "GitHub Mirror (China)",
     "downloading": "Downloading...",
     "extracting": "Extracting...",
     "downloadComplete": "Acceleration pack downloaded successfully",
