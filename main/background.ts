@@ -35,10 +35,7 @@ import {
 } from './helpers/ipcEngineHandlers';
 import { shutdownPythonRuntime } from './helpers/pythonRuntime';
 import { maybeAutoCheckPyEngineUpdate } from './helpers/pythonRuntime/autoUpdateCheck';
-import {
-  bootstrapProxy,
-  applyProxyFromSettings,
-} from './helpers/network/proxyManager';
+import { applyProxyFromSettings } from './helpers/network/proxyManager';
 import { setupNetworkHandlers } from './helpers/ipcNetworkHandlers';
 import {
   applyMacAppBranding,
@@ -116,7 +113,6 @@ app.on('before-quit', (event) => {
 
   setupStoreHandlers();
   // 代理须在任何联网（providers 初始化 / 下载 / 更新检测）前生效
-  bootstrapProxy();
   applyProxyFromSettings();
   setupParameterHandlers();
   setupProofreadHandlers();
