@@ -26,6 +26,7 @@ import {
   getSourceFallbackOrder,
   DEFAULT_SOURCE_ORDER,
 } from '../main/helpers/downloadSourceOrder';
+import { resolveProxyEnv } from '../main/helpers/network/proxyEnv';
 
 let passed = 0;
 let failed = 0;
@@ -160,6 +161,40 @@ eq(
   getSourceFallbackOrder('github').length,
   DEFAULT_SOURCE_ORDER.length,
   'order: no duplicates, full coverage',
+);
+
+// --- resolveProxyEnv ---
+eq(
+  resolveProxyEnv({ proxyMode: 'none' }),
+  { httpProxy: '', noProxy: '' },
+  'proxy: none -> empty',
+);
+eq(
+  resolveProxyEnv({}),
+  { httpProxy: '', noProxy: '' },
+  'proxy: undefined mode -> empty',
+);
+eq(
+  resolveProxyEnv({
+    proxyMode: 'custom',
+    proxyUrl: '  http://127.0.0.1:7890  ',
+  }),
+  { httpProxy: 'http://127.0.0.1:7890', noProxy: 'localhost,127.0.0.1' },
+  'proxy: custom trims url + default no_proxy',
+);
+eq(
+  resolveProxyEnv({ proxyMode: 'custom', proxyUrl: '' }),
+  { httpProxy: '', noProxy: '' },
+  'proxy: custom without url -> empty (no proxy)',
+);
+eq(
+  resolveProxyEnv({
+    proxyMode: 'custom',
+    proxyUrl: 'http://h:1',
+    proxyNoProxy: 'localhost,example.com',
+  }),
+  { httpProxy: 'http://h:1', noProxy: 'localhost,example.com' },
+  'proxy: custom passes through no_proxy',
 );
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
