@@ -31,6 +31,7 @@ import {
 import { getPythonRuntimeManager, shutdownPythonRuntime } from './index';
 import { PythonEngineError } from './manager';
 import { isRemoteProtocolInstallable } from './protocolSupport';
+import { getSourceFallbackOrder } from '../downloadSourceOrder';
 
 interface PyEngineDownloadState {
   url: string;
@@ -227,7 +228,48 @@ export class PyEngineDownloader {
     this.updateProgress({ status: 'idle' });
   }
 
+  /**
+   * 安装/升级：按所选源 + 回退顺序依次尝试。
+   * 用户取消与协议不支持（protocol_unsupported）属终止类错误，不再换源。
+   */
   async download(source: PyEngineDownloadSource): Promise<void> {
+    const order = getSourceFallbackOrder(source);
+    let lastError: unknown;
+    for (let i = 0; i < order.length; i++) {
+      const s = order[i];
+      try {
+        if (i > 0) {
+          logMessage(
+            `Py-engine download falling back to source: ${s}`,
+            'warning',
+          );
+        }
+        await this.downloadFromSource(s);
+        return;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (
+          msg === 'Download cancelled' ||
+          (error instanceof PythonEngineError &&
+            error.code === 'protocol_unsupported')
+        ) {
+          throw error;
+        }
+        lastError = error;
+        logMessage(
+          `Py-engine download from ${s} failed: ${msg}; ${
+            i < order.length - 1 ? 'trying next source' : 'no more sources'
+          }`,
+          'warning',
+        );
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  }
+
+  private async downloadFromSource(
+    source: PyEngineDownloadSource,
+  ): Promise<void> {
     const resolvedTag = PY_ENGINE_TAG;
     const url = getPyEngineDownloadUrl(source, resolvedTag);
     const tempPath = getTempTarPath();
@@ -357,16 +399,18 @@ export class PyEngineDownloader {
     source: PyEngineDownloadSource,
     tag: string = PY_ENGINE_TAG,
   ): Promise<RemoteEngineManifest | null> {
-    try {
-      const text = await fetchHttpText(getPyEngineManifestUrl(source, tag));
-      return JSON.parse(text) as RemoteEngineManifest;
-    } catch (error) {
-      logMessage(
-        `py-engine manifest.json unavailable (old release?): ${error}`,
-        'info',
-      );
-      return null;
+    for (const s of getSourceFallbackOrder(source)) {
+      try {
+        const text = await fetchHttpText(getPyEngineManifestUrl(s, tag));
+        return JSON.parse(text) as RemoteEngineManifest;
+      } catch (error) {
+        logMessage(
+          `py-engine manifest.json from ${s} unavailable: ${error}`,
+          'info',
+        );
+      }
     }
+    return null;
   }
 
   /**
@@ -380,16 +424,22 @@ export class PyEngineDownloader {
     const installed = isPyEngineInstalled();
 
     let remoteHash: string | null = null;
-    try {
-      const checksumsContent = await fetchHttpText(
-        getPyEngineChecksumsUrl(source),
-      );
-      remoteHash = parseExpectedChecksum(
-        checksumsContent,
-        getArtifactFileName(),
-      );
-    } catch (error) {
-      logMessage(`checkUpdate: fetch checksums failed: ${error}`, 'warning');
+    for (const s of getSourceFallbackOrder(source)) {
+      try {
+        const checksumsContent = await fetchHttpText(
+          getPyEngineChecksumsUrl(s),
+        );
+        remoteHash = parseExpectedChecksum(
+          checksumsContent,
+          getArtifactFileName(),
+        );
+        if (remoteHash) break;
+      } catch (error) {
+        logMessage(
+          `checkUpdate: fetch checksums from ${s} failed: ${error}`,
+          'warning',
+        );
+      }
     }
 
     const remoteManifest = await this.fetchRemoteManifest(source);

@@ -174,40 +174,38 @@ export function getPyEngineArtifactSuffix(): string {
   throw new Error(`Unsupported platform: ${process.platform}`);
 }
 
-function getPyEngineReleaseBaseUrl(tag: string = PY_ENGINE_TAG): string {
-  return `https://github.com/${PY_ENGINE_REPO}/releases/download/${tag}`;
+const PY_ENGINE_GITCODE_BASE =
+  'https://gitcode.com/buxuku1/smartsub-py-engine/releases/download';
+
+function getPyEngineReleaseBaseUrl(
+  source: 'github' | 'ghproxy' | 'gitcode',
+  tag: string = PY_ENGINE_TAG,
+): string {
+  if (source === 'gitcode') {
+    return `${PY_ENGINE_GITCODE_BASE}/${tag}`;
+  }
+  const github = `https://github.com/${PY_ENGINE_REPO}/releases/download/${tag}`;
+  return source === 'ghproxy' ? `https://ghfast.top/${github}` : github;
 }
 
 export function getPyEngineDownloadUrl(
-  source: 'github' | 'ghproxy',
+  source: 'github' | 'ghproxy' | 'gitcode',
   tag: string = PY_ENGINE_TAG,
 ): string {
   const asset = `smartsub-engine-${getPyEngineArtifactSuffix()}.tar.gz`;
-  const base = `${getPyEngineReleaseBaseUrl(tag)}/${asset}`;
-  if (source === 'ghproxy') {
-    return `https://ghfast.top/${base}`;
-  }
-  return base;
+  return `${getPyEngineReleaseBaseUrl(source, tag)}/${asset}`;
 }
 
 export function getPyEngineChecksumsUrl(
-  source: 'github' | 'ghproxy',
+  source: 'github' | 'ghproxy' | 'gitcode',
   tag: string = PY_ENGINE_TAG,
 ): string {
-  const base = `${getPyEngineReleaseBaseUrl(tag)}/checksums.sha256`;
-  if (source === 'ghproxy') {
-    return `https://ghfast.top/${base}`;
-  }
-  return base;
+  return `${getPyEngineReleaseBaseUrl(source, tag)}/checksums.sha256`;
 }
 
 export function getPyEngineManifestUrl(
-  source: 'github' | 'ghproxy',
+  source: 'github' | 'ghproxy' | 'gitcode',
   tag: string = PY_ENGINE_TAG,
 ): string {
-  const base = `${getPyEngineReleaseBaseUrl(tag)}/manifest.json`;
-  if (source === 'ghproxy') {
-    return `https://ghfast.top/${base}`;
-  }
-  return base;
+  return `${getPyEngineReleaseBaseUrl(source, tag)}/manifest.json`;
 }
