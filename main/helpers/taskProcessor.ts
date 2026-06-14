@@ -399,8 +399,19 @@ async function processNextTasks(event) {
     return;
   }
 
+  // faster-whisper 共享单 GPU/sidecar，钳制有效并发为 1，避免显存争用导致 OOM / sidecar 崩溃；
+  // 其它引擎（builtin/localCli）不受影响。运行中引擎不可切换，故 effectiveMax 在本轮稳定。
+  let effectiveMax = maxConcurrentTasks;
+  try {
+    if (getActiveEngineAdapter().id === 'fasterWhisper') {
+      effectiveMax = 1;
+    }
+  } catch {
+    // 解析引擎失败时回退到用户配置的并发
+  }
+
   // 计算可以启动的新任务数量
-  const availableSlots = maxConcurrentTasks - activeTasksCount;
+  const availableSlots = effectiveMax - activeTasksCount;
 
   if (availableSlots > 0) {
     const tasksToProcess = takeEligibleItems(availableSlots);
