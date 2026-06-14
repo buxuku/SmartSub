@@ -27,12 +27,12 @@
     },
     "builtin": {
       "name": "whisper.cpp（内置）",
-      "desc": "默认引擎，支持 ggml 量化模型与 GPU 加速；苹果芯片（M1/M2/M3）有专属优化、速度更快，电脑配置老旧或内存偏小时也能轻量流畅运行、不卡顿。",
+      "desc": "默认引擎，支持 ggml 量化模型与 GPU 加速；苹果芯片（M 系列）有专属优化、速度更快，电脑配置老旧或内存偏小时也能轻量流畅运行、不卡顿。",
       "statusReady": "已就绪"
     },
     "fasterWhisper": {
       "name": "faster-whisper",
-      "desc": "基于 CTranslate2，速度更快，模型按需从 HuggingFace 下载；带英伟达（NVIDIA）独立显卡的电脑速度最快，普通 Windows 电脑也更快，适合处理 1 小时以上长录音、批量转写多个文件。",
+      "desc": "基于 CTranslate2，速度更快，模型按需从 HuggingFace 下载；带英伟达（NVIDIA）独立显卡的电脑速度最快，普通 Windows 电脑也更快。",
       "notInstalled": "未安装",
       "installError": "安装异常",
       "installed": "已安装",

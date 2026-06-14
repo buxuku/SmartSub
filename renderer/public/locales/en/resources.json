@@ -27,12 +27,12 @@
     },
     "builtin": {
       "name": "whisper.cpp (built-in)",
-      "desc": "Default engine with ggml quantized models and GPU acceleration; specially optimized for Apple silicon (M1/M2/M3) for extra speed, and stays light and smooth on older or low-memory computers.",
+      "desc": "Default engine with ggml quantized models and GPU acceleration; specially optimized for Apple silicon (M series) for extra speed, and stays light and smooth on older or low-memory computers.",
       "statusReady": "Ready"
     },
     "fasterWhisper": {
       "name": "faster-whisper",
-      "desc": "CTranslate2-based engine with faster inference; models download from HuggingFace on demand. Fastest on computers with a dedicated NVIDIA GPU, and faster on regular Windows PCs too — ideal for recordings over an hour and batch-transcribing many files.",
+      "desc": "CTranslate2-based engine with faster inference; models download from HuggingFace on demand. Fastest on computers with a dedicated NVIDIA GPU, and faster on regular Windows PCs too.",
       "notInstalled": "Not installed",
       "installError": "Install error",
       "installed": "Installed",
