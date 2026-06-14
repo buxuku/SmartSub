@@ -13,12 +13,6 @@
   "engines": {
     "title": "转写引擎",
     "description": "选择用于语音转文字的引擎。默认 whisper.cpp 已内置；faster-whisper 需额外下载。",
-    "chooseGuide": {
-      "fasterTitle": "优先选 faster-whisper：",
-      "fasterBody": "带 NVIDIA 独立显卡的电脑速度最快；普通 Windows 电脑也更快，适合处理 1 小时以上长录音、批量转写多个文件。",
-      "cppTitle": "💡 选 whisper.cpp 的情况：",
-      "cppBody": "苹果 M1/M2/M3 等自研芯片的 Mac 有专属优化，速度更快；电脑配置老旧、内存偏小时运行更轻量、不卡顿。"
-    },
     "active": "使用中",
     "setActive": "设为当前引擎",
     "statusAvailable": "可用",
@@ -33,12 +27,12 @@
     },
     "builtin": {
       "name": "whisper.cpp（内置）",
-      "desc": "默认引擎，支持 ggml 量化模型与 GPU 加速",
+      "desc": "默认引擎，支持 ggml 量化模型与 GPU 加速；苹果芯片（M1/M2/M3）有专属优化、速度更快，电脑配置老旧或内存偏小时也能轻量流畅运行、不卡顿。",
       "statusReady": "已就绪"
     },
     "fasterWhisper": {
       "name": "faster-whisper",
-      "desc": "基于 CTranslate2，速度更快，模型按需从 HuggingFace 下载",
+      "desc": "基于 CTranslate2，速度更快，模型按需从 HuggingFace 下载；带英伟达（NVIDIA）独立显卡的电脑速度最快，普通 Windows 电脑也更快，适合处理 1 小时以上长录音、批量转写多个文件。",
       "notInstalled": "未安装",
       "installError": "安装异常",
       "installed": "已安装",

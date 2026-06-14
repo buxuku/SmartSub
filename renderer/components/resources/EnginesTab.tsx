@@ -593,21 +593,6 @@ const EnginesTab = () => {
           description={t('engines.description')}
         />
 
-        <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
-          <p>
-            <span className="font-medium text-foreground">
-              {t('engines.chooseGuide.fasterTitle')}
-            </span>
-            {t('engines.chooseGuide.fasterBody')}
-          </p>
-          <p>
-            <span className="font-medium text-foreground">
-              {t('engines.chooseGuide.cppTitle')}
-            </span>
-            {t('engines.chooseGuide.cppBody')}
-          </p>
-        </div>
-
         <div className="grid gap-4">
           {renderEngineCard({
             engine: 'builtin',
