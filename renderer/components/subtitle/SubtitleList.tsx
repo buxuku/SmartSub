@@ -13,6 +13,8 @@ import { Switch } from '@/components/ui/switch';
 import {
   ChevronUp,
   ChevronDown,
+  ChevronsUpDown,
+  ChevronsDownUp,
   AlertTriangle,
   Sparkles,
   Scissors,
@@ -97,6 +99,8 @@ interface SubtitleRowProps {
   isFailed: boolean;
   isSelected: boolean;
   shouldShowTranslation: boolean;
+  forceExpanded: boolean;
+  fontScale: 's' | 'm' | 'l';
   showAiOptimize: boolean;
   showSplit: boolean;
   labels: RowLabels;
@@ -132,6 +136,8 @@ const SubtitleRow = memo(function SubtitleRow({
   isFailed,
   isSelected,
   shouldShowTranslation,
+  forceExpanded,
+  fontScale,
   showAiOptimize,
   showSplit,
   labels,
@@ -149,7 +155,15 @@ const SubtitleRow = memo(function SubtitleRow({
     ? 'border-l-2 border-l-red-500'
     : 'border-l-2 border-l-transparent';
 
-  if (!isCurrent) {
+  const expanded = isCurrent || forceExpanded;
+  const bodyFont =
+    fontScale === 's'
+      ? 'text-[11px]'
+      : fontScale === 'l'
+        ? 'text-sm'
+        : 'text-xs';
+
+  if (!expanded) {
     const src = toPreview(subtitle.sourceContent);
     const tgt = shouldShowTranslation ? toPreview(subtitle.targetContent) : '';
     return (
@@ -167,7 +181,9 @@ const SubtitleRow = memo(function SubtitleRow({
           #{subtitle.id} {compactTime(subtitle.startTimeInSeconds)}→
           {compactTime(subtitle.endTimeInSeconds)}
         </span>
-        <span className="min-w-0 flex-1 truncate text-foreground/90">
+        <span
+          className={`min-w-0 flex-1 truncate text-foreground/90 ${bodyFont}`}
+        >
           {src}
           {tgt && <span className="text-muted-foreground"> / {tgt}</span>}
         </span>
@@ -181,7 +197,7 @@ const SubtitleRow = memo(function SubtitleRow({
   return (
     <div
       id={`subtitle-${index}`}
-      className={`rounded-md bg-accent p-1.5 text-xs ${failedEdge}`}
+      className={`rounded-md ${isCurrent ? 'bg-accent' : 'bg-card'} p-1.5 text-xs ${failedEdge}`}
     >
       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
         <div className="flex min-w-0 items-center gap-1">
@@ -245,7 +261,7 @@ const SubtitleRow = memo(function SubtitleRow({
 
       <Textarea
         id={`subtitle-src-${index}`}
-        className="mb-2 min-h-[24px] resize-none p-1 text-xs"
+        className={`mb-2 min-h-[24px] resize-none p-1 ${bodyFont}`}
         value={subtitle.sourceContent}
         onChange={(e) => onFieldChange(index, 'sourceContent', e.target.value)}
         onClick={onSelectionEvent}
@@ -257,7 +273,7 @@ const SubtitleRow = memo(function SubtitleRow({
       {shouldShowTranslation && (
         <Textarea
           id={`subtitle-tgt-${index}`}
-          className={`resize-none p-1 text-xs ${
+          className={`resize-none p-1 ${bodyFont} ${
             subtitle.targetContent ? 'min-h-[24px]' : 'min-h-[20px]'
           } ${
             isFailed ? 'border-destructive/40 focus:border-destructive' : ''
@@ -304,6 +320,41 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   // 只看失败：开启时记录基线 N0，随失败行减少展示"已处理 x/N0"
   const [failedOnly, setFailedOnly] = useState(false);
   const [failedBaseline, setFailedBaseline] = useState(0);
+
+  const [expandAll, setExpandAll] = useState(false);
+  const [fontScale, setFontScale] = useState<'s' | 'm' | 'l'>('m');
+
+  // 读取持久化的视图偏好（仅客户端，避免 SSR 不一致）
+  useEffect(() => {
+    try {
+      setExpandAll(localStorage.getItem('proofread:expandAll') === '1');
+      const fs = localStorage.getItem('proofread:fontScale');
+      if (fs === 's' || fs === 'm' || fs === 'l') setFontScale(fs);
+    } catch {
+      // localStorage 不可用时用默认值
+    }
+  }, []);
+
+  const toggleExpandAll = useCallback(() => {
+    setExpandAll((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('proofread:expandAll', next ? '1' : '0');
+      } catch {
+        // 忽略持久化失败
+      }
+      return next;
+    });
+  }, []);
+
+  const handleFontScale = useCallback((scale: 's' | 'm' | 'l') => {
+    setFontScale(scale);
+    try {
+      localStorage.setItem('proofread:fontScale', scale);
+    } catch {
+      // 忽略持久化失败
+    }
+  }, []);
 
   const handleFailedOnlyChange = useCallback(
     (on: boolean) => {
@@ -376,6 +427,11 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     // 以真实索引作为 key，过滤切换/失败行减少时测量缓存仍对得上行
     getItemKey: (i) => (displayIndices ? displayIndices[i] : i),
   });
+
+  // 展开/收起全部会改变每行高度，强制虚拟列表重算
+  useEffect(() => {
+    virtualizer.measure();
+  }, [expandAll, fontScale, virtualizer]);
 
   // 多选区间（归一化 [lo, hi]，含两端）；anchor 为最后一次普通点击的行
   const [selRange, setSelRange] = useState<[number, number] | null>(null);
@@ -540,92 +596,147 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
 
   return (
     <div className="h-full flex flex-col border rounded-md overflow-hidden">
-      {/* 翻译失败导航栏 */}
-      {shouldShowTranslation && (
-        <div className="flex items-center justify-between gap-2 p-2 border-b bg-muted/30 flex-shrink-0">
-          <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
-            <div className="flex flex-shrink-0 items-center gap-1.5">
-              <AlertTriangle className="h-4 w-4 text-warning" />
-              <span className="tabular-nums">
-                {t('translationFailed')}: {failedIndices.length} /{' '}
-                {mergedSubtitles.length}
-              </span>
-            </div>
-            {(hasFailedTranslations || failedOnly) && (
-              <label className="flex flex-shrink-0 cursor-pointer select-none items-center gap-1.5 text-xs">
-                <Switch
-                  checked={failedOnly}
-                  onCheckedChange={handleFailedOnlyChange}
-                  className="scale-75"
-                />
-                {t('failedOnlyLabel')}
-              </label>
-            )}
-            {failedOnly && failedBaseline > 0 && (
-              <span className="flex-shrink-0 text-xs tabular-nums">
-                {t('failedProcessedProgress')
-                  .replace('{{done}}', String(processedCount))
-                  .replace('{{total}}', String(failedBaseline))}
-              </span>
-            )}
-          </div>
-          <div className="flex flex-shrink-0 items-center gap-1.5">
-            {retranslate &&
-              hasFailedTranslations &&
-              (retranslate.running ? (
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  <span className="tabular-nums">
-                    {retranslate.done}/{retranslate.total}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 gap-1.5 px-2 text-xs"
-                    onClick={retranslate.cancel}
-                    disabled={retranslate.cancelling}
+      {/* 状态/视图控制栏（常驻：纯转写下也显示展开全部 + 字号） */}
+      <div className="flex items-center justify-between gap-2 p-2 border-b bg-muted/30 flex-shrink-0">
+        <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
+          {shouldShowTranslation && (
+            <>
+              <div className="flex flex-shrink-0 items-center gap-1.5">
+                {failedIndices.length === 0 ? (
+                  <CheckCircle2 className="h-4 w-4 text-success" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4 text-warning" />
+                )}
+                <span className="tabular-nums">
+                  {t('transStatTotal', { count: mergedSubtitles.length })}
+                  {' · '}
+                  {t('transStatSuccess', {
+                    count: mergedSubtitles.length - failedIndices.length,
+                  })}
+                  {' · '}
+                  <span
+                    className={
+                      failedIndices.length > 0
+                        ? 'text-destructive font-semibold'
+                        : ''
+                    }
                   >
-                    <CircleStop className="h-4 w-4" />
-                    {retranslate.cancelling ? t('cancelling') : t('cancel')}
-                  </Button>
-                </div>
-              ) : (
+                    {t('transStatFailed', { count: failedIndices.length })}
+                  </span>
+                </span>
+              </div>
+              {(hasFailedTranslations || failedOnly) && (
+                <label className="flex flex-shrink-0 cursor-pointer select-none items-center gap-1.5 text-xs">
+                  <Switch
+                    checked={failedOnly}
+                    onCheckedChange={handleFailedOnlyChange}
+                    className="scale-75"
+                  />
+                  {t('failedOnlyLabel')}
+                </label>
+              )}
+              {failedOnly && failedBaseline > 0 && (
+                <span className="flex-shrink-0 text-xs tabular-nums">
+                  {t('failedProcessedProgress')
+                    .replace('{{done}}', String(processedCount))
+                    .replace('{{total}}', String(failedBaseline))}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-1.5">
+          {shouldShowTranslation &&
+            retranslate &&
+            hasFailedTranslations &&
+            (retranslate.running ? (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                <span className="tabular-nums">
+                  {retranslate.done}/{retranslate.total}
+                </span>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  className="h-7 px-2 text-xs"
-                  onClick={retranslate.start}
+                  className="h-7 gap-1.5 px-2 text-xs"
+                  onClick={retranslate.cancel}
+                  disabled={retranslate.cancelling}
                 >
-                  <RotateCcw className="mr-1 h-3 w-3" />
-                  {t('retranslateFailedBtn').replace(
-                    '{{count}}',
-                    String(failedIndices.length),
-                  )}
-                </Button>
-              ))}
-            {hasFailedTranslations && (
-              <div className="flex gap-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={goToPreviousFailedTranslation}
-                  className="h-7 px-2"
-                >
-                  <ChevronUp className="h-3 w-3" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={goToNextFailedTranslation}
-                  className="h-7 px-2"
-                >
-                  <ChevronDown className="h-3 w-3" />
+                  <CircleStop className="h-4 w-4" />
+                  {retranslate.cancelling ? t('cancelling') : t('cancel')}
                 </Button>
               </div>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={retranslate.start}
+              >
+                <RotateCcw className="mr-1 h-3 w-3" />
+                {t('retranslateFailedBtn').replace(
+                  '{{count}}',
+                  String(failedIndices.length),
+                )}
+              </Button>
+            ))}
+          {shouldShowTranslation && hasFailedTranslations && (
+            <div className="flex gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={goToPreviousFailedTranslation}
+                className="h-7 px-2"
+              >
+                <ChevronUp className="h-3 w-3" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={goToNextFailedTranslation}
+                className="h-7 px-2"
+              >
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+          {/* 展开/收起全部 */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-xs"
+            onClick={toggleExpandAll}
+          >
+            {expandAll ? (
+              <ChevronsDownUp className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronsUpDown className="h-3.5 w-3.5" />
             )}
+            {expandAll ? t('collapseAll') : t('expandAll')}
+          </Button>
+          {/* 字号 小/中/大 */}
+          <div className="flex items-center overflow-hidden rounded-md border">
+            {(['s', 'm', 'l'] as const).map((scale) => (
+              <button
+                key={scale}
+                type="button"
+                onClick={() => handleFontScale(scale)}
+                className={`px-2 py-1 text-xs transition-colors ${
+                  fontScale === scale
+                    ? 'bg-primary/5 text-primary font-medium'
+                    : 'text-muted-foreground hover:bg-accent/50'
+                }`}
+              >
+                {scale === 's'
+                  ? t('fontSizeSmall')
+                  : scale === 'm'
+                    ? t('fontSizeMedium')
+                    : t('fontSizeLarge')}
+              </button>
+            ))}
           </div>
         </div>
-      )}
+      </div>
 
       {/* 多选操作条：Shift+点选连续区间后出现 */}
       {selRange && selCount >= 2 && (
@@ -703,6 +814,8 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                       !!selRange && index >= selRange[0] && index <= selRange[1]
                     }
                     shouldShowTranslation={shouldShowTranslation}
+                    forceExpanded={expandAll}
+                    fontScale={fontScale}
                     showAiOptimize={!!onAiOptimizeClick}
                     showSplit={!!onSplitClick}
                     labels={labels}
