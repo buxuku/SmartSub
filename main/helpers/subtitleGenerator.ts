@@ -11,6 +11,7 @@ import { formatSrtContent } from './fileUtils';
 import { IFiles } from '../../types';
 import { getExtraResourcesPath } from './utils';
 import { getPythonRuntimeManager } from './pythonRuntime';
+import { toFasterWhisperModel } from './engines/modelMap';
 import {
   getTaskContext,
   isWhisperAbortError,
@@ -74,10 +75,6 @@ function secondsToSrtTime(seconds: number): string {
   const ms = totalMs % 1000;
   const pad = (value: number, len = 2) => String(value).padStart(len, '0');
   return `${pad(h)}:${pad(m)}:${pad(s)}.${pad(ms, 3)}`;
-}
-
-function toFasterWhisperModel(model?: string): string {
-  return (model || 'base').toLowerCase().replace(/-q\d+_\d+$/, '');
 }
 
 /**
