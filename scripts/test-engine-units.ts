@@ -27,6 +27,7 @@ import {
   DEFAULT_SOURCE_ORDER,
 } from '../main/helpers/downloadSourceOrder';
 import { resolveProxyEnv } from '../main/helpers/network/proxyEnv';
+import { resolveReleaseBaseUrl } from '../main/helpers/download/sources';
 
 let passed = 0;
 let failed = 0;
@@ -195,6 +196,44 @@ eq(
   }),
   { httpProxy: 'http://h:1', noProxy: 'localhost,example.com' },
   'proxy: custom passes through no_proxy',
+);
+
+// --- resolveReleaseBaseUrl (addon slugs: gitcode repo differs!) ---
+const ADDON = { github: 'buxuku/whisper.cpp', gitcode: 'buxuku1/whisper.node' };
+eq(
+  resolveReleaseBaseUrl('github', ADDON, 'latest'),
+  'https://github.com/buxuku/whisper.cpp/releases/download/latest',
+  'url: addon github',
+);
+eq(
+  resolveReleaseBaseUrl('ghproxy', ADDON, 'latest'),
+  'https://ghfast.top/https://github.com/buxuku/whisper.cpp/releases/download/latest',
+  'url: addon ghproxy',
+);
+eq(
+  resolveReleaseBaseUrl('gitcode', ADDON, 'latest'),
+  'https://gitcode.com/buxuku1/whisper.node/releases/download/latest',
+  'url: addon gitcode (different repo slug)',
+);
+// --- resolveReleaseBaseUrl (py slugs) ---
+const PY = {
+  github: 'buxuku/smartsub-py-engine',
+  gitcode: 'buxuku1/smartsub-py-engine',
+};
+eq(
+  resolveReleaseBaseUrl('github', PY, 'latest'),
+  'https://github.com/buxuku/smartsub-py-engine/releases/download/latest',
+  'url: py github',
+);
+eq(
+  resolveReleaseBaseUrl('ghproxy', PY, 'latest'),
+  'https://ghfast.top/https://github.com/buxuku/smartsub-py-engine/releases/download/latest',
+  'url: py ghproxy',
+);
+eq(
+  resolveReleaseBaseUrl('gitcode', PY, 'latest'),
+  'https://gitcode.com/buxuku1/smartsub-py-engine/releases/download/latest',
+  'url: py gitcode',
 );
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
