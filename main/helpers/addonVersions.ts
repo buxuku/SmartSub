@@ -292,6 +292,8 @@ type PackageSizeKey =
 
 const packageSizeCache = new Map<string, { size: number; fetchedAt: number }>();
 const PACKAGE_SIZE_CACHE_TTL = 30 * 60 * 1000;
+// 真实加速包均为数十~数百 MB；小于 1MB 的 HEAD 结果视为无效占位（如 GitCode 的 128B）。
+const MIN_PLAUSIBLE_PACKAGE_BYTES = 1024 * 1024;
 
 function getPackageSizeKey(
   downloadType: 'node.gz' | 'tar.gz',
@@ -370,12 +372,16 @@ export async function getPackageDownloadSize(
   }
 
   try {
-    const url = getDownloadUrl(source, variant, downloadType);
+    // 加速包在各镜像为同一文件、体积一致，故体积探测固定走 GitHub 直链：
+    // GitCode CDN 不支持 HEAD（会返回 128B 占位），直接 HEAD 它会得到错误体积。
+    // 同时拒绝明显异常的过小值，避免界面显示 128B，转而回退到静态体积提示。
+    const url = getDownloadUrl('github', variant, downloadType);
     const size = await headContentLength(url);
-    if (size && size > 0) {
+    if (size && size >= MIN_PLAUSIBLE_PACKAGE_BYTES) {
       packageSizeCache.set(cacheKey, { size, fetchedAt: Date.now() });
+      return size;
     }
-    return size;
+    return null;
   } catch {
     return null;
   }
