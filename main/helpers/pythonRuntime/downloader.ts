@@ -32,6 +32,7 @@ import { getPythonRuntimeManager, shutdownPythonRuntime } from './index';
 import { PythonEngineError } from './manager';
 import { isRemoteProtocolInstallable } from './protocolSupport';
 import { getSourceFallbackOrder } from '../downloadSourceOrder';
+import { MirrorDownloader } from '../download/mirrorDownloader';
 
 interface PyEngineDownloadState {
   url: string;
@@ -158,21 +159,19 @@ function fetchHttpText(url: string): Promise<string> {
 }
 
 export class PyEngineDownloader {
-  private abortController: AbortController | null = null;
-  private currentProgress: PyEngineDownloadProgress = {
-    status: 'idle',
-    progress: 0,
-    downloaded: 0,
-    total: 0,
-    speed: 0,
-    eta: 0,
-  };
   private mainWindow: BrowserWindow | null = null;
-  private lastSpeedCalcTime = 0;
-  private lastSpeedCalcBytes = 0;
+  private core: MirrorDownloader;
 
   constructor(mainWindow?: BrowserWindow) {
     this.mainWindow = mainWindow || null;
+    this.core = new MirrorDownloader((p) => {
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send(
+          'py-engine-download-progress',
+          p as PyEngineDownloadProgress,
+        );
+      }
+    });
   }
 
   setMainWindow(window: BrowserWindow): void {
@@ -180,52 +179,11 @@ export class PyEngineDownloader {
   }
 
   getProgress(): PyEngineDownloadProgress {
-    return { ...this.currentProgress };
-  }
-
-  private sendProgress(): void {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send(
-        'py-engine-download-progress',
-        this.currentProgress,
-      );
-    }
-  }
-
-  private updateProgress(update: Partial<PyEngineDownloadProgress>): void {
-    this.currentProgress = { ...this.currentProgress, ...update };
-
-    const now = Date.now();
-    if (now - this.lastSpeedCalcTime >= 1000) {
-      const bytesPerSecond =
-        ((this.currentProgress.downloaded - this.lastSpeedCalcBytes) * 1000) /
-        (now - this.lastSpeedCalcTime);
-      this.currentProgress.speed = Math.max(0, bytesPerSecond);
-
-      if (bytesPerSecond > 0 && this.currentProgress.total > 0) {
-        const remainingBytes =
-          this.currentProgress.total - this.currentProgress.downloaded;
-        this.currentProgress.eta = Math.ceil(remainingBytes / bytesPerSecond);
-      }
-
-      this.lastSpeedCalcTime = now;
-      this.lastSpeedCalcBytes = this.currentProgress.downloaded;
-    }
-
-    if (this.currentProgress.total > 0) {
-      this.currentProgress.progress =
-        (this.currentProgress.downloaded / this.currentProgress.total) * 100;
-    }
-
-    this.sendProgress();
+    return this.core.getProgress() as PyEngineDownloadProgress;
   }
 
   cancel(): void {
-    if (this.abortController) {
-      this.abortController.abort();
-      this.abortController = null;
-    }
-    this.updateProgress({ status: 'idle' });
+    this.core.cancel();
   }
 
   /**
@@ -233,38 +191,17 @@ export class PyEngineDownloader {
    * 用户取消与协议不支持（protocol_unsupported）属终止类错误，不再换源。
    */
   async download(source: PyEngineDownloadSource): Promise<void> {
-    const order = getSourceFallbackOrder(source);
-    let lastError: unknown;
-    for (let i = 0; i < order.length; i++) {
-      const s = order[i];
-      try {
-        if (i > 0) {
-          logMessage(
-            `Py-engine download falling back to source: ${s}`,
-            'warning',
-          );
-        }
-        await this.downloadFromSource(s);
-        return;
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        if (
-          msg === 'Download cancelled' ||
-          (error instanceof PythonEngineError &&
-            error.code === 'protocol_unsupported')
-        ) {
-          throw error;
-        }
-        lastError = error;
-        logMessage(
-          `Py-engine download from ${s} failed: ${msg}; ${
-            i < order.length - 1 ? 'trying next source' : 'no more sources'
-          }`,
-          'warning',
-        );
-      }
-    }
-    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+    return this.core.runWithFallback(
+      source,
+      (s) => this.downloadFromSource(s),
+      (error) =>
+        (error instanceof Error ? error.message : String(error)) ===
+          'Download cancelled' ||
+        (error instanceof PythonEngineError &&
+          error.code === 'protocol_unsupported'),
+      'Py-engine download',
+      logMessage,
+    );
   }
 
   private async downloadFromSource(
@@ -283,18 +220,18 @@ export class PyEngineDownloader {
         'protocol_unsupported',
         `engine protocolVersion=${remoteManifest?.protocolVersion} requires a newer SmartSub`,
       );
-      this.updateProgress({ status: 'error', error: 'protocol_unsupported' });
+      this.core.updateProgress({
+        status: 'error',
+        error: 'protocol_unsupported',
+      });
       logMessage(`Py-engine install blocked: ${err.message}`, 'error');
       throw err;
     }
 
     fs.mkdirSync(downloadsDir, { recursive: true });
 
-    this.abortController = new AbortController();
-    this.lastSpeedCalcTime = Date.now();
-    this.lastSpeedCalcBytes = 0;
-
-    this.updateProgress({
+    this.core.resetForDownload();
+    this.core.updateProgress({
       status: 'downloading',
       progress: 0,
       downloaded: 0,
@@ -323,7 +260,7 @@ export class PyEngineDownloader {
             'Py-engine download already complete, verifying checksum',
             'info',
           );
-          this.updateProgress({
+          this.core.updateProgress({
             downloaded: stat.size,
             total: existingState.total,
             progress: 100,
@@ -335,15 +272,13 @@ export class PyEngineDownloader {
             resolvedTag,
             remoteManifest,
           );
-          if (fs.existsSync(downloadedPath)) {
-            fs.unlinkSync(downloadedPath);
-          }
+          if (fs.existsSync(downloadedPath)) fs.unlinkSync(downloadedPath);
           saveDownloadState(null);
-          this.updateProgress({ status: 'completed', progress: 100 });
+          this.core.updateProgress({ status: 'completed', progress: 100 });
           return;
         }
 
-        this.updateProgress({
+        this.core.updateProgress({
           downloaded: startByte,
           total: existingState.total,
         });
@@ -356,15 +291,23 @@ export class PyEngineDownloader {
         logMessage(`Cleaned up old py-engine temp file: ${tempPath}`, 'info');
       }
 
-      downloadedPath = await this.downloadFile(
-        url,
-        tempPath,
-        startByte,
-        resolvedTag,
-        source,
-      );
+      const startedAt = new Date().toISOString();
+      downloadedPath = await this.core.downloadFile(url, tempPath, startByte, {
+        onBytes: (downloaded, total) =>
+          saveDownloadState({
+            url,
+            destPath: tempPath,
+            tempPath,
+            downloaded,
+            total,
+            tag: resolvedTag,
+            source,
+            startedAt,
+            lastUpdatedAt: new Date().toISOString(),
+          }),
+      });
 
-      this.updateProgress({ status: 'extracting' });
+      this.core.updateProgress({ status: 'extracting' });
       await this.verifyExtractAndInstall(
         downloadedPath,
         source,
@@ -372,23 +315,22 @@ export class PyEngineDownloader {
         remoteManifest,
       );
 
-      if (fs.existsSync(downloadedPath)) {
-        fs.unlinkSync(downloadedPath);
-      }
+      if (fs.existsSync(downloadedPath)) fs.unlinkSync(downloadedPath);
       saveDownloadState(null);
 
-      this.updateProgress({ status: 'completed', progress: 100 });
+      this.core.updateProgress({ status: 'completed', progress: 100 });
       logMessage('Py-engine downloaded and installed', 'info');
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-
       if (errorMessage === 'Download cancelled') {
-        this.updateProgress({ status: 'idle', error: 'Download cancelled' });
+        this.core.updateProgress({
+          status: 'idle',
+          error: 'Download cancelled',
+        });
         throw error;
       }
-
-      this.updateProgress({ status: 'error', error: errorMessage });
+      this.core.updateProgress({ status: 'error', error: errorMessage });
       logMessage(`Py-engine download error: ${errorMessage}`, 'error');
       throw error;
     }
@@ -571,7 +513,7 @@ export class PyEngineDownloader {
 
     // 5. 自检：启动 + ping（ensureStarted 内含协议区间校验）
     try {
-      this.updateProgress({ status: 'verifying' });
+      this.core.updateProgress({ status: 'verifying' });
       await getPythonRuntimeManager().ensureStarted();
     } catch (selfCheckError) {
       logMessage(
@@ -623,168 +565,6 @@ export class PyEngineDownloader {
       // 无旧版可退（首次安装失败）：清理残留 manifest，回到未安装态
       deletePyEngineManifest();
     }
-  }
-
-  private downloadFile(
-    url: string,
-    destPath: string,
-    startByte: number,
-    tag: string,
-    source: PyEngineDownloadSource,
-  ): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const parsedUrl = new URL(url);
-      const protocol = parsedUrl.protocol === 'https:' ? https : http;
-
-      const headers: Record<string, string> = {
-        'User-Agent': 'SmartSub-Electron',
-      };
-
-      if (startByte > 0) {
-        headers['Range'] = `bytes=${startByte}-`;
-      }
-
-      const INACTIVITY_TIMEOUT = 60000;
-      let inactivityTimer: NodeJS.Timeout | null = null;
-      let isCompleted = false;
-
-      const resetInactivityTimer = () => {
-        if (inactivityTimer) {
-          clearTimeout(inactivityTimer);
-        }
-        if (!isCompleted) {
-          inactivityTimer = setTimeout(() => {
-            if (!isCompleted) {
-              request.destroy();
-              reject(
-                new Error('Download timeout: no data received for 60 seconds'),
-              );
-            }
-          }, INACTIVITY_TIMEOUT);
-        }
-      };
-
-      const clearInactivityTimer = () => {
-        if (inactivityTimer) {
-          clearTimeout(inactivityTimer);
-          inactivityTimer = null;
-        }
-      };
-
-      const request = protocol.get(url, { headers }, (response) => {
-        if (
-          response.statusCode &&
-          response.statusCode >= 300 &&
-          response.statusCode < 400
-        ) {
-          clearInactivityTimer();
-          const redirectUrl = response.headers.location;
-          if (redirectUrl) {
-            this.downloadFile(redirectUrl, destPath, startByte, tag, source)
-              .then(resolve)
-              .catch(reject);
-            return;
-          }
-        }
-
-        if (response.statusCode && response.statusCode >= 400) {
-          clearInactivityTimer();
-          reject(new Error(`HTTP Error: ${response.statusCode}`));
-          return;
-        }
-
-        let totalSize = 0;
-        if (response.statusCode === 206) {
-          const contentRange = response.headers['content-range'];
-          if (contentRange) {
-            const match = contentRange.match(/\/(\d+)$/);
-            if (match) {
-              totalSize = parseInt(match[1], 10);
-            }
-          }
-        } else {
-          const contentLength = response.headers['content-length'];
-          if (contentLength) {
-            totalSize = parseInt(contentLength, 10) + startByte;
-          }
-        }
-
-        this.updateProgress({ total: totalSize, downloaded: startByte });
-
-        const state: PyEngineDownloadState = {
-          url,
-          destPath,
-          tempPath: destPath,
-          downloaded: startByte,
-          total: totalSize,
-          tag,
-          source,
-          startedAt: new Date().toISOString(),
-          lastUpdatedAt: new Date().toISOString(),
-        };
-        saveDownloadState(state);
-
-        const writeStream = fs.createWriteStream(destPath, {
-          flags: startByte > 0 ? 'a' : 'w',
-        });
-
-        let downloadedBytes = startByte;
-
-        resetInactivityTimer();
-
-        response.on('data', (chunk: Buffer) => {
-          downloadedBytes += chunk.length;
-          this.updateProgress({ downloaded: downloadedBytes });
-          resetInactivityTimer();
-
-          state.downloaded = downloadedBytes;
-          state.lastUpdatedAt = new Date().toISOString();
-          saveDownloadState(state);
-        });
-
-        response.on('end', () => {
-          clearInactivityTimer();
-          logMessage(
-            'Py-engine response stream ended, waiting for file write to complete',
-            'info',
-          );
-        });
-
-        response.pipe(writeStream);
-
-        writeStream.on('finish', () => {
-          isCompleted = true;
-          clearInactivityTimer();
-          resolve(destPath);
-        });
-
-        writeStream.on('error', (err) => {
-          isCompleted = true;
-          clearInactivityTimer();
-          reject(err);
-        });
-
-        if (this.abortController) {
-          this.abortController.signal.addEventListener('abort', () => {
-            isCompleted = true;
-            clearInactivityTimer();
-            request.destroy();
-            writeStream.close();
-            reject(new Error('Download cancelled'));
-          });
-        }
-      });
-
-      request.on('error', (err) => {
-        isCompleted = true;
-        clearInactivityTimer();
-        reject(err);
-      });
-
-      request.setTimeout(30000, () => {});
-
-      resetInactivityTimer();
-    });
   }
 }
 
