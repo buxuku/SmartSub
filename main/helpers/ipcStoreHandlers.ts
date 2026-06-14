@@ -9,6 +9,7 @@ import { getBuildInfo } from './buildInfo';
 import { exportConfig, importConfig } from './configExporter';
 import { rebuildAppMenu } from './menu';
 import { shutdownPythonRuntime } from './pythonRuntime';
+import { applyProxyFromSettings } from './network/proxyManager';
 
 console.log(app.getVersion(), 'version');
 export function setupStoreHandlers() {
@@ -69,6 +70,13 @@ export function setupStoreHandlers() {
   ipcMain.handle('setSettings', async (event, settings) => {
     const preSettings = store.get('settings');
     store.set('settings', { ...preSettings, ...settings });
+    if (
+      settings?.proxyMode !== undefined ||
+      settings?.proxyUrl !== undefined ||
+      settings?.proxyNoProxy !== undefined
+    ) {
+      applyProxyFromSettings();
+    }
     if (
       settings?.fasterWhisperModelsPath &&
       settings.fasterWhisperModelsPath !== preSettings?.fasterWhisperModelsPath
