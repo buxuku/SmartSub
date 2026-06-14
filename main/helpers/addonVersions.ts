@@ -21,6 +21,7 @@ import {
 import { getDownloadUrl, getAddonVersionsUrl } from './addonDownloader';
 import type { DownloadSource } from '../../types/addon';
 import { getSourceFallbackOrder } from './downloadSourceOrder';
+import { compareDateVersion } from './download/versionCompare';
 
 /**
  * 缓存的远程版本信息
@@ -124,15 +125,6 @@ function shouldForceUpdate(): boolean {
 }
 
 /**
- * 标准化版本号格式
- * 统一将分隔符转换为点号，以便正确比较
- * 例如 "2026-02-06" -> "2026.02.06"
- */
-function normalizeVersion(version: string): string {
-  return version.replace(/-/g, '.');
-}
-
-/**
  * 检查指定版本是否有更新
  */
 export async function checkVersionUpdate(
@@ -163,10 +155,9 @@ export async function checkVersionUpdate(
   }
 
   const remoteInfo = remoteVersions[variant];
-  // 标准化版本号格式后再比较，避免 "2026.02.06" vs "2026-02-06" 因分隔符不同导致误判
-  const normalizedRemote = normalizeVersion(remoteInfo.version);
-  const normalizedLocal = normalizeVersion(installedInfo.remoteVersion);
-  const hasUpdate = normalizedRemote > normalizedLocal;
+  // 统一日期版本比较，避免 "2026.02.06" vs "2026-02-06" 因分隔符不同导致误判
+  const hasUpdate =
+    compareDateVersion(remoteInfo.version, installedInfo.remoteVersion) > 0;
 
   return {
     variant,
@@ -204,8 +195,7 @@ export async function checkAllUpdates(): Promise<AddonUpdateInfo[]> {
       const remoteVulkan = remoteVersions?.vulkan;
       if (remoteVulkan) {
         const hasUpdate =
-          normalizeVersion(remoteVulkan.version) >
-          normalizeVersion(builtinVersion);
+          compareDateVersion(remoteVulkan.version, builtinVersion) > 0;
         if (hasUpdate) {
           updates.push({
             variant: 'vulkan',

@@ -28,6 +28,7 @@ import {
 } from '../main/helpers/downloadSourceOrder';
 import { resolveProxyEnv } from '../main/helpers/network/proxyEnv';
 import { resolveReleaseBaseUrl } from '../main/helpers/download/sources';
+import { compareDateVersion } from '../main/helpers/download/versionCompare';
 
 let passed = 0;
 let failed = 0;
@@ -235,6 +236,13 @@ eq(
   'https://gitcode.com/buxuku1/smartsub-py-engine/releases/download/latest',
   'url: py gitcode',
 );
+
+// --- compareDateVersion (normalizes '-' and '.') ---
+eq(compareDateVersion('2026.06.10', '2026-06-10'), 0, 'ver: dot vs dash equal');
+eq(compareDateVersion('2026.06.11', '2026.06.10'), 1, 'ver: newer day');
+eq(compareDateVersion('2026.06.10', '2026.06.11'), -1, 'ver: older day');
+eq(compareDateVersion('2027.01.01', '2026.12.31'), 1, 'ver: cross year');
+eq(compareDateVersion('2026.06.10', '2026.06.10'), 0, 'ver: equal');
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) {
