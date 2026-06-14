@@ -43,7 +43,10 @@ interface RequestOptions {
   onEvent?: (method: string, params: Record<string, unknown>) => void;
 }
 
-export const STARTUP_TIMEOUT_MS = 15_000;
+// 冷启动 ping 超时：Windows PyInstaller onedir 首次加载 + 杀软扫描可能较久。
+// 重依赖已推迟到首个 transcribe（见 py-engine list_engines/find_spec），ping 本身很快，
+// 这里给足冗余并配合一次重试，彻底消除"偶发冷启动超时"。
+export const START_PING_TIMEOUT_MS = 60_000;
 const SHUTDOWN_GRACE_MS = 3_000;
 
 export function buildSanitizedEnv(
@@ -100,47 +103,85 @@ export class PythonRuntimeManager {
   }
 
   private async start(): Promise<PingResult> {
-    const cmd = this.resolveCommand();
-    this.logger(
-      `Starting python engine: ${cmd.command} ${cmd.args.join(' ')}`,
-      'info',
-    );
+    // 防重入：若残留旧进程（如上次 ping 超时未清理），先杀掉，避免孤儿 + 引用覆盖。
+    if (this.proc) {
+      try {
+        this.proc.kill();
+      } catch {
+        // already exited
+      }
+      this.proc = null;
+    }
 
-    const proc = spawn(cmd.command, cmd.args, {
-      cwd: cmd.cwd,
-      env: { ...buildSanitizedEnv(), ...(cmd.env || {}) },
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
-    this.proc = proc;
+    const attempt = async (): Promise<PingResult> => {
+      const cmd = this.resolveCommand();
+      this.logger(
+        `Starting python engine: ${cmd.command} ${cmd.args.join(' ')}`,
+        'info',
+      );
 
-    proc.on('error', (error) => {
-      this.handleExit(`spawn error: ${error.message}`);
-    });
-    proc.on('exit', (code, signal) => {
-      this.handleExit(`exited with code=${code} signal=${signal}`);
-    });
+      const proc = spawn(cmd.command, cmd.args, {
+        cwd: cmd.cwd,
+        env: { ...buildSanitizedEnv(), ...(cmd.env || {}) },
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+      this.proc = proc;
 
-    createInterface({ input: proc.stdout }).on('line', (line) => {
-      this.handleLine(line);
-    });
-    createInterface({ input: proc.stderr }).on('line', (line) => {
-      this.logger(line, 'info');
-    });
+      proc.on('error', (error) => {
+        this.handleExit(`spawn error: ${error.message}`);
+      });
+      proc.on('exit', (code, signal) => {
+        this.handleExit(`exited with code=${code} signal=${signal}`);
+      });
 
-    const info = await this.request<PingResult>(
-      'ping',
-      {},
-      {
-        timeoutMs: STARTUP_TIMEOUT_MS,
-      },
-    );
-    this.lastPingInfo = info;
-    this.logger(
-      `Python engine ready: version=${info.version} python=${info.python} engines=${JSON.stringify(info.engines)}`,
-      'info',
-    );
-    return info;
+      createInterface({ input: proc.stdout }).on('line', (line) => {
+        this.handleLine(line);
+      });
+      createInterface({ input: proc.stderr }).on('line', (line) => {
+        this.logger(line, 'info');
+      });
+
+      try {
+        const info = await this.request<PingResult>(
+          'ping',
+          {},
+          {
+            timeoutMs: START_PING_TIMEOUT_MS,
+          },
+        );
+
+        this.lastPingInfo = info;
+        this.logger(
+          `Python engine ready: version=${info.version} python=${info.python} engines=${JSON.stringify(info.engines)}`,
+          'info',
+        );
+        return info;
+      } catch (error) {
+        // 关键：ping 失败（超时/退出）时务必杀掉仍在启动的进程，
+        // 避免孤儿 + 二次 spawn + Windows 文件锁。
+        if (this.proc === proc) {
+          try {
+            proc.kill();
+          } catch {
+            // already exited
+          }
+          this.proc = null;
+          this.lastPingInfo = null;
+        }
+        throw error;
+      }
+    };
+
+    try {
+      return await attempt();
+    } catch (firstError) {
+      this.logger(
+        `Python engine start failed, retrying once: ${firstError}`,
+        'warning',
+      );
+      return attempt();
+    }
   }
 
   request<T>(
