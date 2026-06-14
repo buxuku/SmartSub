@@ -24,6 +24,7 @@ import {
   Info,
   RefreshCw,
   Github,
+  Globe,
   MessageSquareWarning,
   ScrollText,
   FolderOpen,
@@ -131,6 +132,10 @@ const Settings = () => {
   const [vadSpeechPad, setVADSpeechPad] = useState(30);
   const [vadSamplesOverlap, setVADSamplesOverlap] = useState(0.1);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [proxyMode, setProxyMode] = useState<'none' | 'custom'>('none');
+  const [proxyUrl, setProxyUrl] = useState('');
+  const [proxyNoProxy, setProxyNoProxy] = useState('');
+  const [proxyTesting, setProxyTesting] = useState(false);
   const form = useForm({
     defaultValues: {
       language: router.locale,
@@ -153,6 +158,9 @@ const Settings = () => {
         setVADMaxSpeechDuration(settings.vadMaxSpeechDuration ?? 0);
         setVADSpeechPad(settings.vadSpeechPad ?? 30);
         setVADSamplesOverlap(settings.vadSamplesOverlap ?? 0.1);
+        setProxyMode(settings.proxyMode === 'custom' ? 'custom' : 'none');
+        setProxyUrl(settings.proxyUrl || '');
+        setProxyNoProxy(settings.proxyNoProxy || '');
       }
 
       // 获取临时目录路径
@@ -301,6 +309,54 @@ const Settings = () => {
     vadMaxSpeechDuration === preset.values.vadMaxSpeechDuration &&
     vadSpeechPad === preset.values.vadSpeechPad &&
     vadSamplesOverlap === preset.values.vadSamplesOverlap;
+
+  const saveProxy = async (
+    patch: Partial<{
+      proxyMode: 'none' | 'custom';
+      proxyUrl: string;
+      proxyNoProxy: string;
+    }>,
+  ) => {
+    try {
+      await window?.ipc?.invoke('setSettings', patch);
+      toast.success(t('proxySaved'));
+    } catch {
+      toast.error(t('saveFailed'));
+    }
+  };
+
+  const handleProxyModeChange = (mode: 'none' | 'custom') => {
+    setProxyMode(mode);
+    void saveProxy({ proxyMode: mode });
+  };
+
+  const handleProxyUrlBlur = () => {
+    void saveProxy({ proxyUrl, proxyNoProxy });
+  };
+
+  const handleProxyTest = async () => {
+    setProxyTesting(true);
+    try {
+      // 先持久化当前输入，确保测试用的是最新代理
+      await window?.ipc?.invoke('setSettings', {
+        proxyMode,
+        proxyUrl,
+        proxyNoProxy,
+      });
+      const result = await window?.ipc?.invoke('proxy:test');
+      if (result?.ok) {
+        toast.success(t('proxyTestOk', { ms: result.ms }));
+      } else {
+        toast.error(t('proxyTestFail', { error: result?.error || 'unknown' }));
+      }
+    } catch (e) {
+      toast.error(
+        t('proxyTestFail', { error: e instanceof Error ? e.message : 'error' }),
+      );
+    } finally {
+      setProxyTesting(false);
+    }
+  };
 
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -458,6 +514,74 @@ const Settings = () => {
                 )}
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <IconChip icon={Globe} />
+              {t('proxyTitle')}
+            </CardTitle>
+            <p className="text-sm text-muted-foreground pt-1">
+              {t('proxyDesc')}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span>{t('proxyMode')}</span>
+              <Select
+                value={proxyMode}
+                onValueChange={(v) =>
+                  handleProxyModeChange(v as 'none' | 'custom')
+                }
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{t('proxyModeNone')}</SelectItem>
+                  <SelectItem value="custom">{t('proxyModeCustom')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {proxyMode === 'custom' && (
+              <>
+                <div className="space-y-2">
+                  <span>{t('proxyUrl')}</span>
+                  <Input
+                    value={proxyUrl}
+                    onChange={(e) => setProxyUrl(e.target.value)}
+                    onBlur={handleProxyUrlBlur}
+                    placeholder={t('proxyUrlPlaceholder')}
+                    className="font-mono text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <span>{t('proxyNoProxy')}</span>
+                  <Input
+                    value={proxyNoProxy}
+                    onChange={(e) => setProxyNoProxy(e.target.value)}
+                    onBlur={handleProxyUrlBlur}
+                    placeholder={t('proxyNoProxyPlaceholder')}
+                    className="font-mono text-sm"
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={handleProxyTest}
+                    disabled={proxyTesting}
+                  >
+                    <Activity className="h-4 w-4" />
+                    {proxyTesting ? t('proxyTesting') : t('proxyTest')}
+                  </Button>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
