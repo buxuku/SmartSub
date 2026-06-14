@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -92,7 +92,6 @@ const EnginesTab = () => {
   const [computeType, setComputeType] = useState('auto');
   const [whisperCommand, setWhisperCommand] = useState('');
   const [showCommandConfig, setShowCommandConfig] = useState(false);
-  const commandConfigInitRef = useRef(false);
   const [platform, setPlatform] = useState('');
   const [downloadProgress, setDownloadProgress] =
     useState<PyEngineDownloadProgress | null>(null);
@@ -167,14 +166,6 @@ const EnginesTab = () => {
       unsubUpdate?.();
     };
   }, [refresh, t]);
-
-  // localCli 已有命令时首次自动展开配置区；之后尊重用户手动开合
-  useEffect(() => {
-    if (!commandConfigInitRef.current && whisperCommand) {
-      commandConfigInitRef.current = true;
-      setShowCommandConfig(true);
-    }
-  }, [whisperCommand]);
 
   const handleSelectEngine = async (engine: TranscriptionEngine) => {
     if (engine === currentEngine) return;
