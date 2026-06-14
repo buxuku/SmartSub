@@ -29,6 +29,7 @@ import {
 import { resolveProxyEnv } from '../main/helpers/network/proxyEnv';
 import { resolveReleaseBaseUrl } from '../main/helpers/download/sources';
 import { compareDateVersion } from '../main/helpers/download/versionCompare';
+import { MirrorDownloader } from '../main/helpers/download/mirrorDownloader';
 
 let passed = 0;
 let failed = 0;
@@ -243,6 +244,17 @@ eq(compareDateVersion('2026.06.11', '2026.06.10'), 1, 'ver: newer day');
 eq(compareDateVersion('2026.06.10', '2026.06.11'), -1, 'ver: older day');
 eq(compareDateVersion('2027.01.01', '2026.12.31'), 1, 'ver: cross year');
 eq(compareDateVersion('2026.06.10', '2026.06.10'), 0, 'ver: equal');
+
+// --- MirrorDownloader.updateProgress percent math ---
+{
+  const md = new MirrorDownloader(() => {});
+  md.resetForDownload();
+  md.updateProgress({ total: 200, downloaded: 50 });
+  eq(md.getProgress().progress, 25, 'mirror: 50/200 -> 25%');
+  md.updateProgress({ downloaded: 200 });
+  eq(md.getProgress().progress, 100, 'mirror: 200/200 -> 100%');
+  eq(md.getProgress().status, 'idle', 'mirror: status unchanged by bytes');
+}
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) {
