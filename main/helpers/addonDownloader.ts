@@ -17,20 +17,24 @@ import { getEffectivePlatform } from './cudaUtils';
 import { getAddonVersionDir } from './addonManager';
 import { createHash } from 'crypto';
 import { getSourceFallbackOrder } from './downloadSourceOrder';
+import { resolveReleaseBaseUrl } from './download/sources';
 
 /**
- * 下载源配置
+ * 加速包发布仓库（注意：GitCode 镜像用的是 whisper.node 仓库，与 GitHub 不同）。
  */
-const DOWNLOAD_SOURCES: Record<DownloadSource, string> = {
-  github: 'https://github.com/buxuku/whisper.cpp/releases/download/latest/',
-  ghproxy:
-    'https://ghfast.top/https://github.com/buxuku/whisper.cpp/releases/download/latest/',
-  gitcode: 'https://gitcode.com/buxuku1/whisper.node/releases/download/latest/',
+const ADDON_REPO_SLUGS = {
+  github: 'buxuku/whisper.cpp',
+  gitcode: 'buxuku1/whisper.node',
 };
+
+/** addon release 基础 URL（保留末尾斜杠，兼容旧的拼接方式）。 */
+function addonBaseUrl(source: DownloadSource): string {
+  return `${resolveReleaseBaseUrl(source, ADDON_REPO_SLUGS, 'latest')}/`;
+}
 
 /** addon-versions.json 的下载地址（按源） */
 export function getAddonVersionsUrl(source: DownloadSource): string {
-  return `${DOWNLOAD_SOURCES[source]}addon-versions.json`;
+  return `${addonBaseUrl(source)}addon-versions.json`;
 }
 
 /**
@@ -115,7 +119,7 @@ export function getDownloadUrl(
   variant: AddonVariant,
   downloadType: 'node.gz' | 'tar.gz',
 ): string {
-  const baseUrl = DOWNLOAD_SOURCES[source];
+  const baseUrl = addonBaseUrl(source);
   const fileName = getAddonFileName(variant, downloadType);
   return `${baseUrl}${fileName}`;
 }

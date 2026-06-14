@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
 import type { PyEngineManifest } from '../../../types/engine';
+import { resolveReleaseBaseUrl } from '../download/sources';
 
 /** 独立发布仓库：https://github.com/buxuku/smartsub-py-engine */
 export const PY_ENGINE_REPO = 'buxuku/smartsub-py-engine';
@@ -174,18 +175,17 @@ export function getPyEngineArtifactSuffix(): string {
   throw new Error(`Unsupported platform: ${process.platform}`);
 }
 
-const PY_ENGINE_GITCODE_BASE =
-  'https://gitcode.com/buxuku1/smartsub-py-engine/releases/download';
+/** GitCode 镜像 owner 与 GitHub 不同（buxuku1），repo 名相同。 */
+const PY_ENGINE_REPO_SLUGS = {
+  github: PY_ENGINE_REPO,
+  gitcode: 'buxuku1/smartsub-py-engine',
+};
 
 function getPyEngineReleaseBaseUrl(
   source: 'github' | 'ghproxy' | 'gitcode',
   tag: string = PY_ENGINE_TAG,
 ): string {
-  if (source === 'gitcode') {
-    return `${PY_ENGINE_GITCODE_BASE}/${tag}`;
-  }
-  const github = `https://github.com/${PY_ENGINE_REPO}/releases/download/${tag}`;
-  return source === 'ghproxy' ? `https://ghfast.top/${github}` : github;
+  return resolveReleaseBaseUrl(source, PY_ENGINE_REPO_SLUGS, tag);
 }
 
 export function getPyEngineDownloadUrl(
