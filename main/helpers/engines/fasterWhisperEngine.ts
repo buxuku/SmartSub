@@ -1,4 +1,4 @@
-import type { EngineStatus } from '../../../types/engine';
+import type { EngineStatus, PyEngineManifest } from '../../../types/engine';
 import {
   isPyEngineInstalled,
   readPyEngineManifest,
@@ -8,6 +8,21 @@ import {
   cancelFasterWhisperTranscription,
 } from '../subtitleGenerator';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
+
+/**
+ * 安装版本展示：优先真实 engineVersion；老安装（version='latest'）回退 sha256 短哈希，
+ * 避免显示无意义的 "vlatest"。
+ */
+function formatInstalledVersion(
+  manifest: PyEngineManifest | null,
+): string | undefined {
+  if (!manifest) return undefined;
+  if (manifest.engineVersion) return manifest.engineVersion;
+  if (manifest.version && manifest.version !== 'latest')
+    return manifest.version;
+  if (manifest.sha256) return manifest.sha256.slice(0, 7);
+  return undefined;
+}
 
 export const fasterWhisperEngineAdapter: TranscriptionEngineAdapter = {
   id: 'fasterWhisper',
@@ -25,7 +40,7 @@ export const fasterWhisperEngineAdapter: TranscriptionEngineAdapter = {
       };
     }
     const manifest = readPyEngineManifest();
-    return { state: 'ready', version: manifest?.version };
+    return { state: 'ready', version: formatInstalledVersion(manifest) };
   },
 
   async transcribe(ctx: TranscribeContext): Promise<string> {

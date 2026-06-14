@@ -5,6 +5,7 @@ import { logMessage, store } from './storeManager';
 import { resolveTranscriptionEngine } from './transcriptionEngine';
 import { listEngineAdapters } from './engines/registry';
 import { getPyEngineDownloader } from './pythonRuntime/downloader';
+import { isTranscriptionBusy } from './taskProcessor';
 import {
   getPythonRuntimeManager,
   shutdownPythonRuntime,
@@ -87,6 +88,10 @@ export function registerEngineIpcHandlers(): void {
     'start-py-engine-download',
     async (_event, { source }: { source: PyEngineDownloadSource }) => {
       try {
+        // 运行中禁止安装/升级：避免替换 current/ 时的 Windows 文件锁与转写中断。
+        if (isTranscriptionBusy()) {
+          return { success: false, error: 'engine_busy' };
+        }
         const downloader = getPyEngineDownloader(mainWindow || undefined);
         downloader.download(source).catch((error) => {
           logMessage(`Py-engine download failed: ${error}`, 'error');
@@ -94,6 +99,19 @@ export function registerEngineIpcHandlers(): void {
         return { success: true, started: true };
       } catch (error) {
         logMessage(`Error starting py-engine download: ${error}`, 'error');
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'check-py-engine-update',
+    async (_event, { source }: { source: PyEngineDownloadSource }) => {
+      try {
+        const info = await getPyEngineDownloader().checkUpdate(source);
+        return { success: true, info };
+      } catch (error) {
+        logMessage(`Error checking py-engine update: ${error}`, 'error');
         return { success: false, error: String(error) };
       }
     },
@@ -123,6 +141,9 @@ export function registerEngineIpcHandlers(): void {
 
   ipcMain.handle('uninstall-py-engine', async () => {
     try {
+      if (isTranscriptionBusy()) {
+        return { success: false, error: 'engine_busy' };
+      }
       await shutdownPythonRuntime();
 
       const currentDir = getPyEngineCurrentDir();

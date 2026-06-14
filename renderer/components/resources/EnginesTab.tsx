@@ -43,6 +43,7 @@ import {
   Trash2,
   Power,
   RefreshCw,
+  ArrowUpCircle,
   SlidersHorizontal,
   ChevronDown,
   Info,
@@ -58,6 +59,7 @@ import type {
   EngineStatus,
   PyEngineDownloadProgress,
   PyEngineDownloadSource,
+  PyEngineUpdateInfo,
   TranscriptionEngine,
 } from '../../../types/engine';
 
@@ -99,8 +101,11 @@ const EnginesTab = () => {
   const [downloadProgress, setDownloadProgress] =
     useState<PyEngineDownloadProgress | null>(null);
   const [showDownloadConfirm, setShowDownloadConfirm] = useState(false);
+  const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false);
   const [taskBusy, setTaskBusy] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<PyEngineUpdateInfo | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   const [downSource] = useLocalStorageState<DownSource>(
     'downSource',
@@ -144,8 +149,13 @@ const EnginesTab = () => {
         if (_progress.status === 'completed') {
           // 下载完成后引擎还需校验/冷启动，期间给出明确状态，避免用户以为卡住没反应
           setVerifying(true);
+          // 升级/安装成功，清除"有更新"标记
+          setUpdateInfo(null);
           refresh().finally(() => setVerifying(false));
         } else if (_progress.status === 'error') {
+          if (_progress.error === 'protocol_unsupported') {
+            toast.error(t('engines.fasterWhisper.protocolUnsupported'));
+          }
           refresh();
         }
       },
@@ -153,11 +163,16 @@ const EnginesTab = () => {
     const unsubTask = window?.ipc?.on('taskStatusChange', (status: string) => {
       setTaskBusy(isQueueBusy(status));
     });
+    const unsubUpdate = window?.ipc?.on(
+      'py-engine-update-available',
+      (info: PyEngineUpdateInfo) => setUpdateInfo(info),
+    );
     return () => {
       unsubProgress?.();
       unsubTask?.();
+      unsubUpdate?.();
     };
-  }, [refresh]);
+  }, [refresh, t]);
 
   // localCli 已有命令时首次自动展开配置区；之后尊重用户手动开合
   useEffect(() => {
@@ -209,7 +224,53 @@ const EnginesTab = () => {
       source,
     });
     if (!result?.success) {
-      toast.error(result?.error || 'Failed to start download');
+      if (result?.error === 'engine_busy') {
+        toast.error(t('engines.fasterWhisper.engineBusy'));
+      } else {
+        toast.error(result?.error || 'Failed to start download');
+      }
+    }
+  };
+
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true);
+    try {
+      const source = resolvePyEngineDownloadSource(downSource);
+      const result = await window?.ipc?.invoke('check-py-engine-update', {
+        source,
+      });
+      if (!result?.success) {
+        toast.error(t('engines.fasterWhisper.checkFailed'));
+        return;
+      }
+      const info = result.info as PyEngineUpdateInfo;
+      setUpdateInfo(info);
+      if (!info.protocolSupported) {
+        toast.error(t('engines.fasterWhisper.protocolUnsupported'));
+      } else if (info.hasUpdate) {
+        toast.success(t('engines.fasterWhisper.updateAvailable'));
+      } else {
+        toast.success(t('engines.fasterWhisper.upToDate'));
+      }
+    } catch {
+      toast.error(t('engines.fasterWhisper.checkFailed'));
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const handleUpgrade = async () => {
+    setShowUpgradeConfirm(false);
+    const source = resolvePyEngineDownloadSource(downSource);
+    const result = await window?.ipc?.invoke('start-py-engine-download', {
+      source,
+    });
+    if (!result?.success) {
+      if (result?.error === 'engine_busy') {
+        toast.error(t('engines.fasterWhisper.engineBusy'));
+      } else {
+        toast.error(result?.error || 'Failed to start upgrade');
+      }
     }
   };
 
@@ -243,6 +304,7 @@ const EnginesTab = () => {
     fasterStatus?.state === 'downloading';
   const fasterInstalled = fasterStatus?.state === 'ready';
   const fasterBroken = fasterStatus?.state === 'error';
+  const hasUpdate = !!(updateInfo?.hasUpdate && updateInfo.protocolSupported);
   const localCliReady =
     localCliStatus?.state === 'ready' || whisperCommand.trim().length > 0;
 
@@ -602,6 +664,67 @@ const EnginesTab = () => {
                   )}
                 </div>
 
+                {fasterInstalled && !isDownloading && !verifying && (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    {fasterStatus?.version && (
+                      <span className="text-xs text-muted-foreground">
+                        {t('engines.fasterWhisper.installedVersion', {
+                          version: fasterStatus.version,
+                        })}
+                      </span>
+                    )}
+                    {hasUpdate ? (
+                      <>
+                        <Badge
+                          variant="outline"
+                          className="border-primary/40 text-primary"
+                        >
+                          {t('engines.fasterWhisper.updateAvailable')}
+                        </Badge>
+                        <Button
+                          size="sm"
+                          className="gap-1.5"
+                          disabled={taskBusy}
+                          onClick={() => setShowUpgradeConfirm(true)}
+                        >
+                          <ArrowUpCircle className="h-3.5 w-3.5" />
+                          {t('engines.fasterWhisper.upgrade')}
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        disabled={checkingUpdate || taskBusy}
+                        onClick={handleCheckUpdate}
+                      >
+                        <RefreshCw
+                          className={cn(
+                            'h-3.5 w-3.5',
+                            checkingUpdate && 'animate-spin',
+                          )}
+                        />
+                        {checkingUpdate
+                          ? t('engines.fasterWhisper.checking')
+                          : t('engines.fasterWhisper.checkUpdate')}
+                      </Button>
+                    )}
+                    {updateInfo && !updateInfo.protocolSupported && (
+                      <span className="text-xs text-destructive">
+                        {t('engines.fasterWhisper.protocolUnsupported')}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {fasterInstalled && (
+                  <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                    <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    {t('engines.fasterWhisper.serialNote')}
+                  </p>
+                )}
+
                 {fasterInstalled && advancedSettings}
               </>
             ),
@@ -702,6 +825,28 @@ const EnginesTab = () => {
               <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
               <AlertDialogAction onClick={handleStartDownload}>
                 {t('engines.fasterWhisper.download', { size: PY_ENGINE_SIZE })}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog
+          open={showUpgradeConfirm}
+          onOpenChange={setShowUpgradeConfirm}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {t('engines.fasterWhisper.upgrade')}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('engines.fasterWhisper.upgradeConfirm')}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
+              <AlertDialogAction onClick={handleUpgrade}>
+                {t('engines.fasterWhisper.upgrade')}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

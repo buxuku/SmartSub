@@ -34,6 +34,7 @@ import {
   setMainWindowForEngine,
 } from './helpers/ipcEngineHandlers';
 import { shutdownPythonRuntime } from './helpers/pythonRuntime';
+import { maybeAutoCheckPyEngineUpdate } from './helpers/pythonRuntime/autoUpdateCheck';
 import {
   applyMacAppBranding,
   resolveAppIcon,
@@ -177,6 +178,8 @@ app.on('before-quit', (event) => {
   setMainWindowForAddon(mainWindow);
   registerEngineIpcHandlers();
   setMainWindowForEngine(mainWindow);
+  // 启动后每日一次的节流静默检查 py-engine 更新（非阻塞，失败静默）。
+  void maybeAutoCheckPyEngineUpdate(mainWindow);
 })();
 
 app.on('window-all-closed', () => {

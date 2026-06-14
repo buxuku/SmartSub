@@ -79,6 +79,13 @@ let dispatchEvent: any = null;
 /** Dock/任务栏进度条目标窗口 */
 let progressWindow: BrowserWindow | null = null;
 
+/**
+ * 是否有转写任务在执行或排队。供升级/下载 IPC 在运行中拒绝操作（避免 Windows 文件锁）。
+ */
+export function isTranscriptionBusy(): boolean {
+  return activeTasksCount > 0 || processingQueue.length > 0;
+}
+
 function ensureRuntime(projectId: string): ProjectRuntime {
   let runtime = projectRuntimes.get(projectId);
   if (!runtime) {

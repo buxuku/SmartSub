@@ -56,7 +56,18 @@
       "computeTypeOptions": {
         "auto": "Auto (recommended)"
       },
-      "downloadConfirm": "This will download the faster-whisper engine runtime (~170MB). Continue?"
+      "downloadConfirm": "This will download the faster-whisper engine runtime (~170MB). Continue?",
+      "installedVersion": "Installed v{{version}}",
+      "checkUpdate": "Check for updates",
+      "checking": "Checking…",
+      "upToDate": "Up to date",
+      "updateAvailable": "Update available",
+      "upgrade": "Upgrade",
+      "upgradeConfirm": "This will download and upgrade the faster-whisper engine runtime. The engine is stopped before upgrading and automatically rolled back to the current version if it fails. Continue?",
+      "serialNote": "To avoid VRAM contention, faster-whisper transcribes serially (concurrency = 1).",
+      "protocolUnsupported": "This engine version requires a newer SmartSub. Please update SmartSub before installing or upgrading the engine.",
+      "engineBusy": "A task is running. Wait for it to finish before installing, upgrading, or uninstalling the engine.",
+      "checkFailed": "Failed to check for updates. Please try again later."
     },
     "localCli": {
       "name": "Local CLI",
