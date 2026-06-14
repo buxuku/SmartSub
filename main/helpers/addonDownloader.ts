@@ -16,6 +16,7 @@ import type {
 import { getEffectivePlatform } from './cudaUtils';
 import { getAddonVersionDir } from './addonManager';
 import { createHash } from 'crypto';
+import { getSourceFallbackOrder } from './downloadSourceOrder';
 
 /**
  * 下载源配置
@@ -24,7 +25,13 @@ const DOWNLOAD_SOURCES: Record<DownloadSource, string> = {
   github: 'https://github.com/buxuku/whisper.cpp/releases/download/latest/',
   ghproxy:
     'https://ghfast.top/https://github.com/buxuku/whisper.cpp/releases/download/latest/',
+  gitcode: 'https://gitcode.com/buxuku1/whisper.node/releases/download/latest/',
 };
+
+/** addon-versions.json 的下载地址（按源） */
+export function getAddonVersionsUrl(source: DownloadSource): string {
+  return `${DOWNLOAD_SOURCES[source]}addon-versions.json`;
+}
 
 /**
  * 获取下载状态文件路径
@@ -206,9 +213,44 @@ export class AddonDownloader {
   }
 
   /**
-   * 执行下载
+   * 执行下载：按所选源 + 回退顺序依次尝试，任一源成功即返回。
+   * 用户取消（Download cancelled）不回退，直接抛出。
    */
   async download(
+    source: DownloadSource,
+    variant: AddonVariant,
+    downloadType: 'node.gz' | 'tar.gz',
+  ): Promise<string> {
+    const order = getSourceFallbackOrder(source);
+    let lastError: unknown;
+    for (let i = 0; i < order.length; i++) {
+      const s = order[i];
+      try {
+        if (i > 0) {
+          logMessage(`Addon download falling back to source: ${s}`, 'warning');
+        }
+        return await this.downloadFromSource(s, variant, downloadType);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg === 'Download cancelled') {
+          throw error;
+        }
+        lastError = error;
+        logMessage(
+          `Addon download from ${s} failed: ${msg}; ${
+            i < order.length - 1 ? 'trying next source' : 'no more sources'
+          }`,
+          'warning',
+        );
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  }
+
+  /**
+   * 从单一源执行下载
+   */
+  private async downloadFromSource(
     source: DownloadSource,
     variant: AddonVariant,
     downloadType: 'node.gz' | 'tar.gz',
