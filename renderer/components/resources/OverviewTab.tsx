@@ -279,6 +279,29 @@ const OverviewTab = ({
     <div className="space-y-4">
       {renderReadinessBanner()}
       <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {/* 转写引擎 */}
+        <Card {...cardNavProps('engines')}>
+          {cardDecor('engines')}
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <IconChip icon={Cpu} />
+              {t('overview.engineTitle')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-1 flex-col gap-3">
+            <p className="text-sm font-medium">{t(engineLabelKey)}</p>
+            {showEngineWarning && (
+              <p className="flex items-start gap-1.5 text-sm text-warning">
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                {t('overview.engineNotInstalled')}
+              </p>
+            )}
+            <div className="mt-auto flex items-center gap-2 pt-1">
+              {manageButton('engines')}
+            </div>
+          </CardContent>
+        </Card>
+
         {/* 语音模型 */}
         <Card {...cardNavProps('models')}>
           {cardDecor('models')}
@@ -419,29 +442,6 @@ const OverviewTab = ({
             )}
             <div className="mt-auto flex items-center gap-2 pt-1">
               {manageButton('acceleration')}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 转写引擎 */}
-        <Card {...cardNavProps('engines')}>
-          {cardDecor('engines')}
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <IconChip icon={Cpu} />
-              {t('overview.engineTitle')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-1 flex-col gap-3">
-            <p className="text-sm font-medium">{t(engineLabelKey)}</p>
-            {showEngineWarning && (
-              <p className="flex items-start gap-1.5 text-sm text-warning">
-                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                {t('overview.engineNotInstalled')}
-              </p>
-            )}
-            <div className="mt-auto flex items-center gap-2 pt-1">
-              {manageButton('engines')}
             </div>
           </CardContent>
         </Card>
