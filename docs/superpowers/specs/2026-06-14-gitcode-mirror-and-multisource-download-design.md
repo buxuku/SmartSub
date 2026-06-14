@@ -172,9 +172,9 @@ py-engine 的 GitHub 仓库需配置 `GITCODE_TOKEN`（与 whisper.cpp 同一个
 
 `getSourceFallbackOrder(selected)`：
 
-- 规范顺序 `DEFAULT_ORDER = ['github', 'ghproxy', 'gitcode']`。
+- 规范顺序 `DEFAULT_ORDER = ['gitcode', 'ghproxy', 'github']`（国内优先：先域内 gitcode，再代理 ghproxy，最后直连 github）。
 - 返回 `[selected, ...DEFAULT_ORDER.filter(s => s !== selected)]`。
-- 例：选 gitcode → `[gitcode, github, ghproxy]`；选 ghproxy → `[ghproxy, github, gitcode]`。
+- 例：选 github → `[github, gitcode, ghproxy]`；选 ghproxy → `[ghproxy, gitcode, github]`；选 gitcode → `[gitcode, ghproxy, github]`。
 
 回退触发与终止：
 
