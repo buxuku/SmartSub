@@ -1,4 +1,5 @@
 import { getActiveEngineAdapter } from './engines/registry';
+import { getTaskContext } from './taskContext';
 import type { TranscribeContext } from './engines/types';
 
 export async function routeTranscription(
@@ -11,5 +12,9 @@ export async function routeTranscription(
       `${adapter.displayName} is not available: ${status.message || status.state}`,
     );
   }
-  return adapter.transcribe(ctx);
+  // 取消信号统一在此从任务上下文注入，引擎以 ctx.signal 为准。
+  return adapter.transcribe({
+    ...ctx,
+    signal: ctx.signal ?? getTaskContext()?.signal,
+  });
 }

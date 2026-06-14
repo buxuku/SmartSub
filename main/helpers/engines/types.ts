@@ -7,6 +7,8 @@ export interface TranscribeContext {
   file: IFiles;
   formData: Record<string, unknown>;
   hasOpenAiWhisper: boolean;
+  /** 取消信号。由 router 从任务上下文注入，各引擎据此中断转写。 */
+  signal?: AbortSignal;
 }
 
 export interface TranscriptionEngineAdapter {
