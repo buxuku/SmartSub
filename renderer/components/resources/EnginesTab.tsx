@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   Box,
+  X,
   Zap,
   Terminal,
   Check,
@@ -839,8 +840,15 @@ const EnginesTab = () => {
             </AlertDialogHeader>
             {renderBinarySourceSelector()}
             <AlertDialogFooter>
-              <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
-              <AlertDialogAction onClick={handleStartDownload}>
+              <AlertDialogCancel className="gap-1.5">
+                <X className="h-4 w-4" />
+                {commonT('cancel')}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                className="gap-1.5"
+                onClick={handleStartDownload}
+              >
+                <Download className="h-4 w-4" />
                 {t('engines.fasterWhisper.download', { size: PY_ENGINE_SIZE })}
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -862,8 +870,12 @@ const EnginesTab = () => {
             </AlertDialogHeader>
             {renderBinarySourceSelector()}
             <AlertDialogFooter>
-              <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
-              <AlertDialogAction onClick={handleUpgrade}>
+              <AlertDialogCancel className="gap-1.5">
+                <X className="h-4 w-4" />
+                {commonT('cancel')}
+              </AlertDialogCancel>
+              <AlertDialogAction className="gap-1.5" onClick={handleUpgrade}>
+                <ArrowUpCircle className="h-4 w-4" />
                 {t('engines.fasterWhisper.upgrade')}
               </AlertDialogAction>
             </AlertDialogFooter>
