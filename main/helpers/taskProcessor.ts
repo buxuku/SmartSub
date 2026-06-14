@@ -297,7 +297,7 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
         // 通知当前引擎中断进行中的转写（如 faster-whisper sidecar 的逐段取消）。
         // 内置 whisper 已通过 AbortSignal 中断，这里对其为空操作。
         try {
-          getActiveEngineAdapter().cancelActive?.();
+          getActiveEngineAdapter().cancelActive();
         } catch (err) {
           logMessage(`cancelActive failed: ${err}`, 'warning');
         }

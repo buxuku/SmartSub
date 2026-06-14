@@ -15,5 +15,6 @@ export interface TranscriptionEngineAdapter {
   requiresRuntime: boolean;
   isAvailable(): Promise<EngineStatus>;
   transcribe(ctx: TranscribeContext): Promise<string>;
-  cancelActive?(): void;
+  /** 中断进行中的转写。builtin=signal 原生中断(no-op)、faster=sidecar 取消、localCli=kill child。 */
+  cancelActive(): void;
 }

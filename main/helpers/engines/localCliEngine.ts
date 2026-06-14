@@ -1,6 +1,9 @@
 import type { EngineStatus } from '../../../types/engine';
 import { store } from '../storeManager';
-import { generateSubtitleWithLocalWhisper } from '../subtitleGenerator';
+import {
+  generateSubtitleWithLocalWhisper,
+  cancelLocalCliTranscription,
+} from '../subtitleGenerator';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
 export const localCliEngineAdapter: TranscriptionEngineAdapter = {
@@ -21,5 +24,9 @@ export const localCliEngineAdapter: TranscriptionEngineAdapter = {
 
   async transcribe(ctx: TranscribeContext): Promise<string> {
     return generateSubtitleWithLocalWhisper(ctx.event, ctx.file, ctx.formData);
+  },
+
+  cancelActive(): void {
+    cancelLocalCliTranscription();
   },
 };

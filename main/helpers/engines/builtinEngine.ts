@@ -18,4 +18,8 @@ export const builtinEngineAdapter: TranscriptionEngineAdapter = {
       ctx.formData,
     );
   },
+
+  cancelActive(): void {
+    // builtin 经 whisperParams.signal 原生中断，无需额外动作。
+  },
 };
