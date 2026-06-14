@@ -18,16 +18,9 @@ import {
   getBuiltinVulkanAddonPath,
   getEffectivePlatform,
 } from './cudaUtils';
-import { getDownloadUrl } from './addonDownloader';
+import { getDownloadUrl, getAddonVersionsUrl } from './addonDownloader';
 import type { DownloadSource } from '../../types/addon';
-
-/**
- * 远程版本文件 URL
- */
-const VERSIONS_URL =
-  'https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-versions.json';
-const VERSIONS_URL_PROXY =
-  'https://ghfast.top/https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-versions.json';
+import { getSourceFallbackOrder } from './downloadSourceOrder';
 
 /**
  * 缓存的远程版本信息
@@ -37,35 +30,29 @@ let lastFetchTime: number = 0;
 const CACHE_TTL = 5 * 60 * 1000; // 5 分钟缓存
 
 /**
- * 获取远程版本信息
+ * 获取远程版本信息：按所选源回退顺序依次尝试拉取 addon-versions.json。
  */
 export async function fetchRemoteVersions(
-  useProxy: boolean = false,
+  source: DownloadSource = 'github',
 ): Promise<RemoteAddonVersions | null> {
   // 检查缓存
   if (cachedVersions && Date.now() - lastFetchTime < CACHE_TTL) {
     return cachedVersions;
   }
 
-  const url = useProxy ? VERSIONS_URL_PROXY : VERSIONS_URL;
-
-  try {
-    const content = await fetchJson(url);
-    cachedVersions = content as RemoteAddonVersions;
-    lastFetchTime = Date.now();
-    logMessage('Fetched remote addon versions', 'info');
-    return cachedVersions;
-  } catch (error) {
-    logMessage(`Error fetching remote versions: ${error}`, 'error');
-
-    // 如果直连失败，尝试代理
-    if (!useProxy) {
-      logMessage('Trying proxy for remote versions...', 'info');
-      return fetchRemoteVersions(true);
+  const order = getSourceFallbackOrder(source);
+  for (const s of order) {
+    try {
+      const content = await fetchJson(getAddonVersionsUrl(s));
+      cachedVersions = content as RemoteAddonVersions;
+      lastFetchTime = Date.now();
+      logMessage(`Fetched remote addon versions from ${s}`, 'info');
+      return cachedVersions;
+    } catch (error) {
+      logMessage(`Fetch versions from ${s} failed: ${error}`, 'warning');
     }
-
-    return null;
   }
+  return null;
 }
 
 /**
@@ -375,7 +362,7 @@ export async function getPackageDownloadSize(
     return cached.size;
   }
 
-  const remoteVersions = await fetchRemoteVersions(source === 'ghproxy');
+  const remoteVersions = await fetchRemoteVersions(source);
   const remoteSize = remoteVersions?.[variant]?.sizes?.[sizeKey];
   if (typeof remoteSize === 'number' && remoteSize > 0) {
     packageSizeCache.set(cacheKey, { size: remoteSize, fetchedAt: Date.now() });
