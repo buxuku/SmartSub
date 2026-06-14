@@ -13,6 +13,12 @@
   "engines": {
     "title": "转写引擎",
     "description": "选择用于语音转文字的引擎。默认 whisper.cpp 已内置；faster-whisper 需额外下载。",
+    "chooseGuide": {
+      "fasterTitle": "优先选 faster-whisper：",
+      "fasterBody": "带 NVIDIA 独立显卡的电脑速度最快；普通 Windows 电脑也更快，适合处理 1 小时以上长录音、批量转写多个文件。",
+      "cppTitle": "💡 选 whisper.cpp 的情况：",
+      "cppBody": "苹果 M1/M2/M3 等自研芯片的 Mac 有专属优化，速度更快；电脑配置老旧、内存偏小时运行更轻量、不卡顿。"
+    },
     "active": "使用中",
     "setActive": "设为当前引擎",
     "statusAvailable": "可用",

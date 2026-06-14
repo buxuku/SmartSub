@@ -384,6 +384,37 @@ const EnginesTab = () => {
     );
   };
 
+  const renderBinarySourceSelector = () => (
+    <div className="space-y-1.5">
+      <p className="text-xs font-medium text-muted-foreground">
+        {t('engines.fasterWhisper.downloadSource')}
+      </p>
+      <div className="flex gap-2">
+        {(['github', 'ghproxy', 'gitcode'] as DownloadSource[]).map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => {
+              setBinarySource(s);
+              persistDownloadSource(s);
+            }}
+            className={`flex-1 px-3 py-2 rounded-md border text-xs transition-all ${
+              binarySource === s
+                ? 'border-primary bg-primary/5 font-medium'
+                : 'border-muted hover:border-primary/50'
+            }`}
+          >
+            {s === 'github'
+              ? 'GitHub'
+              : s === 'gitcode'
+                ? 'GitCode'
+                : t('ghProxy')}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   const renderEngineCard = (config: {
     engine: TranscriptionEngine;
     icon: React.ComponentType<{ className?: string }>;
@@ -562,6 +593,21 @@ const EnginesTab = () => {
           description={t('engines.description')}
         />
 
+        <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
+          <p>
+            <span className="font-medium text-foreground">
+              {t('engines.chooseGuide.fasterTitle')}
+            </span>
+            {t('engines.chooseGuide.fasterBody')}
+          </p>
+          <p>
+            <span className="font-medium text-foreground">
+              {t('engines.chooseGuide.cppTitle')}
+            </span>
+            {t('engines.chooseGuide.cppBody')}
+          </p>
+        </div>
+
         <div className="grid gap-4">
           {renderEngineCard({
             engine: 'builtin',
@@ -618,39 +664,6 @@ const EnginesTab = () => {
                   <p className="text-sm text-destructive">
                     {fasterStatus.message}
                   </p>
-                )}
-
-                {!isDownloading && !verifying && (
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      {t('engines.fasterWhisper.downloadSource')}
-                    </p>
-                    <div className="flex gap-2">
-                      {(
-                        ['github', 'ghproxy', 'gitcode'] as DownloadSource[]
-                      ).map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => {
-                            setBinarySource(s);
-                            persistDownloadSource(s);
-                          }}
-                          className={`flex-1 px-3 py-2 rounded-md border text-xs transition-all ${
-                            binarySource === s
-                              ? 'border-primary bg-primary/5 font-medium'
-                              : 'border-muted hover:border-primary/50'
-                          }`}
-                        >
-                          {s === 'github'
-                            ? 'GitHub'
-                            : s === 'gitcode'
-                              ? 'GitCode'
-                              : t('ghProxy')}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
                 )}
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -848,6 +861,7 @@ const EnginesTab = () => {
                 {t('engines.fasterWhisper.downloadConfirm')}
               </AlertDialogDescription>
             </AlertDialogHeader>
+            {renderBinarySourceSelector()}
             <AlertDialogFooter>
               <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
               <AlertDialogAction onClick={handleStartDownload}>
@@ -870,6 +884,7 @@ const EnginesTab = () => {
                 {t('engines.fasterWhisper.upgradeConfirm')}
               </AlertDialogDescription>
             </AlertDialogHeader>
+            {renderBinarySourceSelector()}
             <AlertDialogFooter>
               <AlertDialogCancel>{commonT('cancel')}</AlertDialogCancel>
               <AlertDialogAction onClick={handleUpgrade}>

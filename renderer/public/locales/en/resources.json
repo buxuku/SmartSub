@@ -13,6 +13,12 @@
   "engines": {
     "title": "Transcription Engines",
     "description": "Choose the engine for speech-to-text. whisper.cpp is built in by default; faster-whisper requires a separate download.",
+    "chooseGuide": {
+      "fasterTitle": "Prefer faster-whisper: ",
+      "fasterBody": "Fastest on PCs with a dedicated NVIDIA GPU, and faster on regular Windows PCs too — ideal for recordings over an hour and batch-transcribing many files.",
+      "cppTitle": "💡 Choose whisper.cpp when: ",
+      "cppBody": "Apple silicon Macs (M1/M2/M3) get dedicated optimizations and run faster; on older or low-memory machines it stays lightweight and smooth."
+    },
     "active": "In use",
     "setActive": "Set as current",
     "statusAvailable": "Available",
