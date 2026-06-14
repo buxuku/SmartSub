@@ -22,6 +22,10 @@ import {
   isRemoteProtocolInstallable,
   SUPPORTED_PROTOCOL_MAX,
 } from '../main/helpers/pythonRuntime/protocolSupport';
+import {
+  getSourceFallbackOrder,
+  DEFAULT_SOURCE_ORDER,
+} from '../main/helpers/downloadSourceOrder';
 
 let passed = 0;
 let failed = 0;
@@ -135,6 +139,27 @@ eq(
   }),
   false,
   'proto: remote v99 blocked',
+);
+
+eq(
+  getSourceFallbackOrder('gitcode').join(','),
+  'gitcode,ghproxy,github',
+  'order: gitcode selected keeps canonical order',
+);
+eq(
+  getSourceFallbackOrder('github').join(','),
+  'github,gitcode,ghproxy',
+  'order: github first then canonical remainder',
+);
+eq(
+  getSourceFallbackOrder('ghproxy').join(','),
+  'ghproxy,gitcode,github',
+  'order: ghproxy first then canonical remainder',
+);
+eq(
+  getSourceFallbackOrder('github').length,
+  DEFAULT_SOURCE_ORDER.length,
+  'order: no duplicates, full coverage',
 );
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);

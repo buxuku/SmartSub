@@ -265,7 +265,7 @@ export interface DownloadProgress {
 /**
  * 下载源类型
  */
-export type DownloadSource = 'github' | 'ghproxy';
+export type DownloadSource = 'github' | 'ghproxy' | 'gitcode';
 
 /**
  * 下载配置

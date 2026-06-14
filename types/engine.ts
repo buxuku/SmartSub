@@ -42,7 +42,7 @@ export interface PyEngineUpdateInfo {
   protocolSupported: boolean;
 }
 
-export type PyEngineDownloadSource = 'github' | 'ghproxy';
+export type PyEngineDownloadSource = 'github' | 'ghproxy' | 'gitcode';
 
 export interface PyEngineDownloadProgress {
   status:
