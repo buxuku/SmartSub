@@ -287,23 +287,27 @@ const CudaDownloadSheet: React.FC<CudaDownloadSheetProps> = ({
               {t('gpuAcceleration.downloadSource')}
             </h4>
             <div className="flex gap-2">
-              {(['github', 'ghproxy'] as DownloadSource[]).map((source) => (
-                <button
-                  key={source}
-                  type="button"
-                  disabled={isBusy}
-                  onClick={() => handleSourceChange(source)}
-                  className={`flex-1 px-3 py-2 rounded-md border text-xs transition-all ${
-                    downloadSource === source
-                      ? 'border-primary bg-primary/5 font-medium'
-                      : 'border-muted hover:border-primary/50'
-                  }`}
-                >
-                  {source === 'github'
-                    ? 'GitHub'
-                    : t('gpuAcceleration.ghProxy')}
-                </button>
-              ))}
+              {(['github', 'ghproxy', 'gitcode'] as DownloadSource[]).map(
+                (source) => (
+                  <button
+                    key={source}
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => handleSourceChange(source)}
+                    className={`flex-1 px-3 py-2 rounded-md border text-xs transition-all ${
+                      downloadSource === source
+                        ? 'border-primary bg-primary/5 font-medium'
+                        : 'border-muted hover:border-primary/50'
+                    }`}
+                  >
+                    {source === 'github'
+                      ? 'GitHub'
+                      : source === 'gitcode'
+                        ? 'GitCode'
+                        : t('gpuAcceleration.ghProxy')}
+                  </button>
+                ),
+              )}
             </div>
           </div>
         </div>

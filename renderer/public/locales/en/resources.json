@@ -1,6 +1,8 @@
 {
   "title": "Resources",
   "description": "Manage the models, translation services and GPU acceleration used by your tasks",
+  "ghProxy": "GH Proxy",
+  "gitcode": "GitCode",
   "tab": {
     "overview": "Overview",
     "engines": "Engines",
@@ -37,6 +39,7 @@
       "verifying": "Verifying & starting engine…",
       "download": "Download engine (~{{size}})",
       "downloading": "Downloading…",
+      "downloadSource": "Download source",
       "uninstall": "Uninstall",
       "repair": "Reinstall",
       "select": "Set as current engine",

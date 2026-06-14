@@ -86,7 +86,10 @@ export function getRecommendedCudaVersion(
 export function readPersistedDownloadSource(): DownloadSource {
   if (typeof window === 'undefined') return 'github';
   const v = localStorage.getItem(ADDON_DOWNLOAD_SOURCE_KEY);
-  return v === 'ghproxy' ? 'ghproxy' : 'github';
+  if (v === 'ghproxy' || v === 'gitcode' || v === 'github') {
+    return v;
+  }
+  return 'github';
 }
 
 export function persistDownloadSource(source: DownloadSource): void {

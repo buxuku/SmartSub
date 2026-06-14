@@ -169,7 +169,6 @@ const GpuAccelerationCard: React.FC = () => {
       } else if (progress.status === 'error') {
         if (lastToastStatus.current !== 'error') {
           const failedVariant = downloadingVariantRef.current;
-          const currentSource = downloadSourceRef.current;
           const isCudaFailure =
             failedVariant && failedVariant !== 'vulkan'
               ? (failedVariant as CudaVersion)
@@ -178,22 +177,9 @@ const GpuAccelerationCard: React.FC = () => {
             failedCudaVersionRef.current = isCudaFailure;
           }
 
-          toast.error(progress.error || t('gpuAcceleration.downloadFailed'), {
-            action:
-              currentSource === 'github' && isCudaFailure
-                ? {
-                    label: t('gpuAcceleration.switchMirrorAndRetry'),
-                    onClick: () => {
-                      setDownloadSource('ghproxy');
-                      persistDownloadSource('ghproxy');
-                      setSheetState({
-                        open: true,
-                        presetVersion: failedCudaVersionRef.current,
-                      });
-                    },
-                  }
-                : undefined,
-          });
+          // 主进程下载已内建多源回退（github/ghproxy/gitcode 按序自动尝试），
+          // 错误到此说明所有源均失败，无需再提供手动切源重试。
+          toast.error(progress.error || t('gpuAcceleration.downloadFailed'));
           lastToastStatus.current = 'error';
         }
         setDownloadingVariant(null);

@@ -52,13 +52,15 @@ import {
 import { toast } from 'sonner';
 import { cn } from 'lib/utils';
 import SectionHeader from '@/components/SectionHeader';
-import useLocalStorageState from 'hooks/useLocalStorageState';
-import { DownSource } from 'lib/modelPanelUtils';
+import {
+  readPersistedDownloadSource,
+  persistDownloadSource,
+} from '@/components/settings/gpu/gpuDownloadUtils';
+import type { DownloadSource } from '../../../types/addon';
 import { formatSize } from '@/components/settings/gpu/gpuUtils';
 import type {
   EngineStatus,
   PyEngineDownloadProgress,
-  PyEngineDownloadSource,
   PyEngineUpdateInfo,
   TranscriptionEngine,
 } from '../../../types/engine';
@@ -74,12 +76,6 @@ const COMPUTE_TYPE_OPTIONS = [
 ] as const;
 
 type EngineStatuses = Partial<Record<TranscriptionEngine, EngineStatus>>;
-
-function resolvePyEngineDownloadSource(
-  downSource: DownSource,
-): PyEngineDownloadSource {
-  return downSource === DownSource.HfMirror ? 'ghproxy' : 'github';
-}
 
 function isQueueBusy(status: string | undefined): boolean {
   return status === 'running' || status === 'paused' || status === 'cancelling';
@@ -107,10 +103,8 @@ const EnginesTab = () => {
   const [updateInfo, setUpdateInfo] = useState<PyEngineUpdateInfo | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
 
-  const [downSource] = useLocalStorageState<DownSource>(
-    'downSource',
-    DownSource.HuggingFace,
-    (val) => Object.values(DownSource).includes(val as DownSource),
+  const [binarySource, setBinarySource] = useState<DownloadSource>(() =>
+    typeof window === 'undefined' ? 'github' : readPersistedDownloadSource(),
   );
 
   const refresh = useCallback(async () => {
@@ -219,7 +213,7 @@ const EnginesTab = () => {
 
   const handleStartDownload = async () => {
     setShowDownloadConfirm(false);
-    const source = resolvePyEngineDownloadSource(downSource);
+    const source = binarySource;
     const result = await window?.ipc?.invoke('start-py-engine-download', {
       source,
     });
@@ -235,7 +229,7 @@ const EnginesTab = () => {
   const handleCheckUpdate = async () => {
     setCheckingUpdate(true);
     try {
-      const source = resolvePyEngineDownloadSource(downSource);
+      const source = binarySource;
       const result = await window?.ipc?.invoke('check-py-engine-update', {
         source,
       });
@@ -261,7 +255,7 @@ const EnginesTab = () => {
 
   const handleUpgrade = async () => {
     setShowUpgradeConfirm(false);
-    const source = resolvePyEngineDownloadSource(downSource);
+    const source = binarySource;
     const result = await window?.ipc?.invoke('start-py-engine-download', {
       source,
     });
@@ -624,6 +618,39 @@ const EnginesTab = () => {
                   <p className="text-sm text-destructive">
                     {fasterStatus.message}
                   </p>
+                )}
+
+                {!isDownloading && !verifying && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {t('engines.fasterWhisper.downloadSource')}
+                    </p>
+                    <div className="flex gap-2">
+                      {(
+                        ['github', 'ghproxy', 'gitcode'] as DownloadSource[]
+                      ).map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => {
+                            setBinarySource(s);
+                            persistDownloadSource(s);
+                          }}
+                          className={`flex-1 px-3 py-2 rounded-md border text-xs transition-all ${
+                            binarySource === s
+                              ? 'border-primary bg-primary/5 font-medium'
+                              : 'border-muted hover:border-primary/50'
+                          }`}
+                        >
+                          {s === 'github'
+                            ? 'GitHub'
+                            : s === 'gitcode'
+                              ? 'GitCode'
+                              : t('ghProxy')}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
 
                 <div className="flex flex-wrap items-center gap-2">

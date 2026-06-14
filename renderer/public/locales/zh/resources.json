@@ -1,6 +1,8 @@
 {
   "title": "资源中心",
   "description": "转写与翻译所需的模型、翻译服务与 GPU 加速，都在这里管理",
+  "ghProxy": "Gh代理",
+  "gitcode": "GitCode",
   "tab": {
     "overview": "全景",
     "engines": "引擎",
@@ -37,6 +39,7 @@
       "verifying": "正在校验并启动引擎…",
       "download": "下载引擎（约 {{size}}）",
       "downloading": "下载中…",
+      "downloadSource": "下载源",
       "uninstall": "卸载",
       "repair": "重新安装",
       "select": "设为当前引擎",
