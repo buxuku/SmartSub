@@ -31,9 +31,13 @@ export function LogDialog({ open, onOpenChange }) {
     const handleNewLog = (log: LogEntry) => {
       setLogs((prev) => [...prev, log]);
       // 使用 requestAnimationFrame 确保在下一帧更新滚动位置
+      // 真正可滚动的是 Radix 的 viewport，而非 ScrollArea 根节点
       requestAnimationFrame(() => {
-        if (scrollRef.current) {
-          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        const viewport = scrollRef.current?.querySelector(
+          '[data-radix-scroll-area-viewport]',
+        ) as HTMLElement | null;
+        if (viewport) {
+          viewport.scrollTop = viewport.scrollHeight;
         }
       });
     };
@@ -74,12 +78,12 @@ export function LogDialog({ open, onOpenChange }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+      <DialogContent className="max-w-3xl max-h-[80vh] grid-rows-[auto_1fr_auto]">
         <DialogHeader>
           <DialogTitle>{t('logs')}</DialogTitle>
           <DialogDescription>{t('logsDesc')}</DialogDescription>
         </DialogHeader>
-        <ScrollArea ref={scrollRef} className="flex-1 min-h-0">
+        <ScrollArea ref={scrollRef} className="min-h-0">
           <div className="space-y-2 p-4">
             {logs.map((log, index) => (
               <div key={index}>
