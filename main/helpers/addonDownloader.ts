@@ -1,8 +1,6 @@
 import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as https from 'https';
-import * as http from 'http';
 import * as zlib from 'zlib';
 import * as tar from 'tar';
 import { logMessage } from './storeManager';
@@ -11,13 +9,12 @@ import type {
   DownloadState,
   DownloadSource,
   AddonVariant,
-  DownloadStatus,
 } from '../../types/addon';
 import { getEffectivePlatform } from './cudaUtils';
 import { getAddonVersionDir } from './addonManager';
 import { createHash } from 'crypto';
-import { getSourceFallbackOrder } from './downloadSourceOrder';
 import { resolveReleaseBaseUrl } from './download/sources';
+import { MirrorDownloader } from './download/mirrorDownloader';
 
 /**
  * 加速包发布仓库（注意：GitCode 镜像用的是 whisper.node 仓库，与 GitHub 不同）。
@@ -128,92 +125,31 @@ export function getDownloadUrl(
  * 加速包下载器类
  */
 export class AddonDownloader {
-  private abortController: AbortController | null = null;
-  private currentProgress: DownloadProgress = {
-    status: 'idle',
-    progress: 0,
-    downloaded: 0,
-    total: 0,
-    speed: 0,
-    eta: 0,
-  };
   private mainWindow: BrowserWindow | null = null;
-  private lastSpeedCalcTime: number = 0;
-  private lastSpeedCalcBytes: number = 0;
+  private core: MirrorDownloader;
 
   constructor(mainWindow?: BrowserWindow) {
     this.mainWindow = mainWindow || null;
+    this.core = new MirrorDownloader((p) => {
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send(
+          'addon-download-progress',
+          p as DownloadProgress,
+        );
+      }
+    });
   }
 
-  /**
-   * 设置主窗口用于发送进度事件
-   */
   setMainWindow(window: BrowserWindow): void {
     this.mainWindow = window;
   }
 
-  /**
-   * 获取当前下载进度
-   */
   getProgress(): DownloadProgress {
-    return { ...this.currentProgress };
+    return this.core.getProgress() as DownloadProgress;
   }
 
-  /**
-   * 发送进度更新到渲染进程
-   */
-  private sendProgress(): void {
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send(
-        'addon-download-progress',
-        this.currentProgress,
-      );
-    }
-  }
-
-  /**
-   * 更新进度状态
-   */
-  private updateProgress(update: Partial<DownloadProgress>): void {
-    this.currentProgress = { ...this.currentProgress, ...update };
-
-    // 计算下载速度
-    const now = Date.now();
-    if (now - this.lastSpeedCalcTime >= 1000) {
-      const bytesPerSecond =
-        ((this.currentProgress.downloaded - this.lastSpeedCalcBytes) * 1000) /
-        (now - this.lastSpeedCalcTime);
-      this.currentProgress.speed = Math.max(0, bytesPerSecond);
-
-      // 计算预计剩余时间
-      if (bytesPerSecond > 0 && this.currentProgress.total > 0) {
-        const remainingBytes =
-          this.currentProgress.total - this.currentProgress.downloaded;
-        this.currentProgress.eta = Math.ceil(remainingBytes / bytesPerSecond);
-      }
-
-      this.lastSpeedCalcTime = now;
-      this.lastSpeedCalcBytes = this.currentProgress.downloaded;
-    }
-
-    // 计算进度百分比
-    if (this.currentProgress.total > 0) {
-      this.currentProgress.progress =
-        (this.currentProgress.downloaded / this.currentProgress.total) * 100;
-    }
-
-    this.sendProgress();
-  }
-
-  /**
-   * 取消下载
-   */
   cancel(): void {
-    if (this.abortController) {
-      this.abortController.abort();
-      this.abortController = null;
-    }
-    this.updateProgress({ status: 'idle' });
+    this.core.cancel();
   }
 
   /**
@@ -225,34 +161,19 @@ export class AddonDownloader {
     variant: AddonVariant,
     downloadType: 'node.gz' | 'tar.gz',
   ): Promise<string> {
-    const order = getSourceFallbackOrder(source);
-    let lastError: unknown;
-    for (let i = 0; i < order.length; i++) {
-      const s = order[i];
-      try {
-        if (i > 0) {
-          logMessage(`Addon download falling back to source: ${s}`, 'warning');
-        }
-        return await this.downloadFromSource(s, variant, downloadType);
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        if (msg === 'Download cancelled') {
-          throw error;
-        }
-        lastError = error;
-        logMessage(
-          `Addon download from ${s} failed: ${msg}; ${
-            i < order.length - 1 ? 'trying next source' : 'no more sources'
-          }`,
-          'warning',
-        );
-      }
-    }
-    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+    return this.core.runWithFallback(
+      source,
+      (s) => this.downloadFromSource(s, variant, downloadType),
+      (error) =>
+        (error instanceof Error ? error.message : String(error)) ===
+        'Download cancelled',
+      'Addon download',
+      logMessage,
+    );
   }
 
   /**
-   * 从单一源执行下载
+   * 从单一源执行下载（断点续传 + 进度走共享核心；解压沿用 addon 专属逻辑）
    */
   private async downloadFromSource(
     source: DownloadSource,
@@ -263,15 +184,10 @@ export class AddonDownloader {
     const addonsDir = path.join(app.getPath('userData'), 'addons');
     const versionDir = getAddonVersionDir(variant);
 
-    // 确保目录存在
     fs.mkdirSync(versionDir, { recursive: true });
 
-    // 初始化下载状态
-    this.abortController = new AbortController();
-    this.lastSpeedCalcTime = Date.now();
-    this.lastSpeedCalcBytes = 0;
-
-    this.updateProgress({
+    this.core.resetForDownload();
+    this.core.updateProgress({
       status: 'downloading',
       progress: 0,
       downloaded: 0,
@@ -282,7 +198,6 @@ export class AddonDownloader {
     });
 
     try {
-      // 检查是否有未完成的下载
       const existingState = readDownloadState();
       let startByte = 0;
       let tempPath: string;
@@ -292,46 +207,35 @@ export class AddonDownloader {
         existingState.url === url &&
         fs.existsSync(existingState.tempPath)
       ) {
-        // 继续之前的下载，使用相同的 temp 文件
         tempPath = existingState.tempPath;
         const stat = fs.statSync(tempPath);
         startByte = stat.size;
 
-        // 如果已经下载完成（文件大小等于预期大小），直接跳到解压步骤
         if (existingState.total > 0 && stat.size >= existingState.total) {
           logMessage(
-            `Download already complete, skipping to extraction`,
+            'Download already complete, skipping to extraction',
             'info',
           );
-          this.updateProgress({
+          this.core.updateProgress({
             downloaded: stat.size,
             total: existingState.total,
             progress: 100,
             status: 'extracting',
           });
-
-          // 直接解压
           await this.extractFile(tempPath, versionDir, downloadType);
-
-          // 清理
-          if (fs.existsSync(tempPath)) {
-            fs.unlinkSync(tempPath);
-          }
+          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
           saveDownloadState(null);
-
-          this.updateProgress({ status: 'completed', progress: 100 });
+          this.core.updateProgress({ status: 'completed', progress: 100 });
           logMessage(`Addon extracted to ${versionDir}`, 'info');
-
           return versionDir;
         }
 
-        this.updateProgress({
+        this.core.updateProgress({
           downloaded: startByte,
           total: existingState.total,
         });
         logMessage(`Resuming download from byte ${startByte}`, 'info');
       } else {
-        // 新下载，清理旧的 temp 文件
         tempPath = path.join(addonsDir, `temp-${variant.replace(/\./g, '')}`);
         if (fs.existsSync(tempPath)) {
           fs.unlinkSync(tempPath);
@@ -339,235 +243,49 @@ export class AddonDownloader {
         }
       }
 
-      // 下载文件
-      const downloadedPath = await this.downloadFile(
+      const startedAt = new Date().toISOString();
+      const downloadedPath = await this.core.downloadFile(
         url,
         tempPath,
         startByte,
-        variant,
-        downloadType,
+        {
+          onBytes: (downloaded, total) =>
+            saveDownloadState({
+              url,
+              destPath: tempPath,
+              tempPath,
+              downloaded,
+              total,
+              variant,
+              downloadType,
+              startedAt,
+              lastUpdatedAt: new Date().toISOString(),
+            }),
+        },
       );
 
-      // 更新状态为解压中
-      this.updateProgress({ status: 'extracting' });
-
-      // 解压文件
+      this.core.updateProgress({ status: 'extracting' });
       await this.extractFile(downloadedPath, versionDir, downloadType);
-
-      // 清理临时文件
-      if (fs.existsSync(downloadedPath)) {
-        fs.unlinkSync(downloadedPath);
-      }
+      if (fs.existsSync(downloadedPath)) fs.unlinkSync(downloadedPath);
       saveDownloadState(null);
 
-      // 完成
-      this.updateProgress({ status: 'completed', progress: 100 });
+      this.core.updateProgress({ status: 'completed', progress: 100 });
       logMessage(`Addon downloaded and extracted to ${versionDir}`, 'info');
-
       return versionDir;
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-
       if (errorMessage === 'Download cancelled') {
-        this.updateProgress({ status: 'idle', error: 'Download cancelled' });
+        this.core.updateProgress({
+          status: 'idle',
+          error: 'Download cancelled',
+        });
         throw error;
       }
-
-      this.updateProgress({ status: 'error', error: errorMessage });
+      this.core.updateProgress({ status: 'error', error: errorMessage });
       logMessage(`Download error: ${errorMessage}`, 'error');
       throw error;
     }
-  }
-
-  /**
-   * 下载文件（支持断点续传）
-   */
-  private downloadFile(
-    url: string,
-    destPath: string,
-    startByte: number,
-    variant: AddonVariant,
-    downloadType: 'node.gz' | 'tar.gz',
-  ): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const parsedUrl = new URL(url);
-      const protocol = parsedUrl.protocol === 'https:' ? https : http;
-
-      const headers: Record<string, string> = {
-        'User-Agent': 'SmartSub-Electron',
-      };
-
-      // 如果是续传，添加 Range 头
-      if (startByte > 0) {
-        headers['Range'] = `bytes=${startByte}-`;
-      }
-
-      // 无数据活动超时时间（60秒无数据则超时）
-      const INACTIVITY_TIMEOUT = 60000;
-      let inactivityTimer: NodeJS.Timeout | null = null;
-      let isCompleted = false;
-
-      const resetInactivityTimer = () => {
-        if (inactivityTimer) {
-          clearTimeout(inactivityTimer);
-        }
-        if (!isCompleted) {
-          inactivityTimer = setTimeout(() => {
-            if (!isCompleted) {
-              request.destroy();
-              reject(
-                new Error('Download timeout: no data received for 60 seconds'),
-              );
-            }
-          }, INACTIVITY_TIMEOUT);
-        }
-      };
-
-      const clearInactivityTimer = () => {
-        if (inactivityTimer) {
-          clearTimeout(inactivityTimer);
-          inactivityTimer = null;
-        }
-      };
-
-      const request = protocol.get(url, { headers }, (response) => {
-        // 处理重定向
-        if (
-          response.statusCode &&
-          response.statusCode >= 300 &&
-          response.statusCode < 400
-        ) {
-          clearInactivityTimer();
-          const redirectUrl = response.headers.location;
-          if (redirectUrl) {
-            this.downloadFile(
-              redirectUrl,
-              destPath,
-              startByte,
-              variant,
-              downloadType,
-            )
-              .then(resolve)
-              .catch(reject);
-            return;
-          }
-        }
-
-        // 检查响应状态
-        if (response.statusCode && response.statusCode >= 400) {
-          clearInactivityTimer();
-          reject(new Error(`HTTP Error: ${response.statusCode}`));
-          return;
-        }
-
-        // 获取文件总大小
-        let totalSize = 0;
-        if (response.statusCode === 206) {
-          // 部分内容响应
-          const contentRange = response.headers['content-range'];
-          if (contentRange) {
-            const match = contentRange.match(/\/(\d+)$/);
-            if (match) {
-              totalSize = parseInt(match[1], 10);
-            }
-          }
-        } else {
-          const contentLength = response.headers['content-length'];
-          if (contentLength) {
-            totalSize = parseInt(contentLength, 10) + startByte;
-          }
-        }
-
-        this.updateProgress({ total: totalSize, downloaded: startByte });
-
-        // 保存下载状态
-        const state: DownloadState = {
-          url,
-          destPath,
-          tempPath: destPath,
-          downloaded: startByte,
-          total: totalSize,
-          variant,
-          downloadType,
-          startedAt: new Date().toISOString(),
-          lastUpdatedAt: new Date().toISOString(),
-        };
-        saveDownloadState(state);
-
-        // 创建写入流
-        const writeStream = fs.createWriteStream(destPath, {
-          flags: startByte > 0 ? 'a' : 'w',
-        });
-
-        let downloadedBytes = startByte;
-
-        // 启动无活动超时计时器
-        resetInactivityTimer();
-
-        response.on('data', (chunk: Buffer) => {
-          downloadedBytes += chunk.length;
-          this.updateProgress({ downloaded: downloadedBytes });
-
-          // 收到数据，重置超时计时器
-          resetInactivityTimer();
-
-          // 更新持久化状态
-          state.downloaded = downloadedBytes;
-          state.lastUpdatedAt = new Date().toISOString();
-          saveDownloadState(state);
-        });
-
-        // 响应流结束（所有数据已接收），清除超时计时器
-        response.on('end', () => {
-          clearInactivityTimer();
-          logMessage(
-            'Response stream ended, waiting for file write to complete',
-            'info',
-          );
-        });
-
-        response.pipe(writeStream);
-
-        writeStream.on('finish', () => {
-          isCompleted = true;
-          clearInactivityTimer();
-          resolve(destPath);
-        });
-
-        writeStream.on('error', (err) => {
-          isCompleted = true;
-          clearInactivityTimer();
-          reject(err);
-        });
-
-        // 处理取消
-        if (this.abortController) {
-          this.abortController.signal.addEventListener('abort', () => {
-            isCompleted = true;
-            clearInactivityTimer();
-            request.destroy();
-            writeStream.close();
-            reject(new Error('Download cancelled'));
-          });
-        }
-      });
-
-      request.on('error', (err) => {
-        isCompleted = true;
-        clearInactivityTimer();
-        reject(err);
-      });
-
-      // 连接超时（仅用于建立连接，30秒）
-      request.setTimeout(30000, () => {
-        // 只有在还没有收到响应时才触发超时
-        // 一旦开始接收数据，由 inactivityTimer 接管
-      });
-
-      // 启动初始超时计时器
-      resetInactivityTimer();
-    });
   }
 
   /**
