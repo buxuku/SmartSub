@@ -1,4 +1,4 @@
-import { exec } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { getPath, loadWhisperAddon } from './whisper';
@@ -26,6 +26,24 @@ export function cancelFasterWhisperTranscription(): void {
     getPythonRuntimeManager().cancel(activeFasterWhisperTranscribeId);
     activeFasterWhisperTranscribeId = null;
   }
+}
+
+let activeLocalCliChild: ChildProcess | null = null;
+
+export function cancelLocalCliTranscription(): void {
+  const child = activeLocalCliChild;
+  if (!child || child.pid == null) return;
+  try {
+    if (process.platform === 'win32') {
+      // 杀整棵进程树（whisper CLI 常 fork 子进程）
+      spawn('taskkill', ['/pid', String(child.pid), '/T', '/F']);
+    } else {
+      child.kill('SIGTERM');
+    }
+  } catch {
+    // 进程可能已退出
+  }
+  activeLocalCliChild = null;
 }
 
 function getNumericSetting(value: unknown, defaultValue: number): number {
@@ -216,18 +234,64 @@ export async function generateSubtitleWithLocalWhisper(
   logMessage(`run shell ${runShell}`, 'info');
   event.sender.send('taskFileChange', { ...file, extractSubtitle: 'loading' });
 
-  return new Promise((resolve, reject) => {
-    exec(runShell, (error, stdout, stderr) => {
-      if (error) {
-        logMessage(`generate subtitle error: ${error}`, 'error');
-        reject(error);
+  return new Promise<string>((resolve, reject) => {
+    const signal = getTaskContext()?.signal;
+    if (signal?.aborted) {
+      reject(new TaskCancelledError());
+      return;
+    }
+
+    const child = spawn(runShell, { shell: true, windowsHide: true });
+    activeLocalCliChild = child;
+    let stderrBuf = '';
+    let cancelled = false;
+
+    const onAbort = () => {
+      cancelled = true;
+      cancelLocalCliTranscription();
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    child.stdout?.on('data', (d) =>
+      logMessage(`localCli stdout: ${d}`, 'info'),
+    );
+    child.stderr?.on('data', (d) => {
+      stderrBuf += String(d);
+    });
+
+    child.on('error', (error) => {
+      signal?.removeEventListener('abort', onAbort);
+      if (activeLocalCliChild === child) activeLocalCliChild = null;
+      if (cancelled || signal?.aborted) {
+        reject(new TaskCancelledError());
         return;
       }
-      if (stderr) {
-        logMessage(`generate subtitle stderr: ${stderr}`, 'warning');
+      logMessage(`generate subtitle error: ${error}`, 'error');
+      reject(error);
+    });
+
+    child.on('close', (code, sig) => {
+      signal?.removeEventListener('abort', onAbort);
+      if (activeLocalCliChild === child) activeLocalCliChild = null;
+
+      if (cancelled || signal?.aborted) {
+        reject(new TaskCancelledError());
+        return;
       }
-      if (stdout) {
-        logMessage(`generate subtitle stdout: ${stdout}`, 'info');
+      if (code !== 0) {
+        logMessage(
+          `localCli exited code=${code} signal=${sig}: ${stderrBuf}`,
+          'error',
+        );
+        reject(
+          new Error(
+            `whisper command failed (code=${code}): ${stderrBuf.slice(0, 500)}`,
+          ),
+        );
+        return;
+      }
+      if (stderrBuf.trim()) {
+        logMessage(`generate subtitle stderr: ${stderrBuf}`, 'warning');
       }
       logMessage(`generate subtitle done!`, 'info');
 
