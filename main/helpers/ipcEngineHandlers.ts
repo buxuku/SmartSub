@@ -47,6 +47,14 @@ export function registerEngineIpcHandlers(): void {
           transcriptionEngine: engine,
           useLocalWhisper: engine === 'localCli',
         });
+        // 切到 faster-whisper 后预热 sidecar，把冷启动成本移出首个文件关键路径。
+        if (engine === 'fasterWhisper') {
+          void getPythonRuntimeManager()
+            .ensureStarted()
+            .catch((e) =>
+              logMessage(`engine warmup failed (non-fatal): ${e}`, 'warning'),
+            );
+        }
         return { success: true };
       } catch (error) {
         logMessage(`Error setting transcription engine: ${error}`, 'error');

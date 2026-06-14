@@ -12,6 +12,7 @@ import { applyTaskEventToProjects } from './taskManager';
 import { runWithTaskContext } from './taskContext';
 import { killFfmpegForFiles } from './audioProcessor';
 import { getActiveEngineAdapter } from './engines/registry';
+import { getPythonRuntimeManager } from './pythonRuntime';
 
 const TASK_EVENT_CHANNELS = new Set([
   'taskStatusChange',
@@ -228,6 +229,19 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
         isProcessing = true;
         hasOpenAiWhisper = await checkOpenAiWhisper();
         maxConcurrentTasks = formData.maxConcurrentTasks || 3;
+        // 预热 sidecar：把冷启动成本移出首个文件关键路径（faster-whisper 等需运行时引擎）。
+        try {
+          const activeAdapter = getActiveEngineAdapter();
+          if (activeAdapter.requiresRuntime) {
+            void getPythonRuntimeManager()
+              .ensureStarted()
+              .catch((e) =>
+                logMessage(`engine warmup failed (non-fatal): ${e}`, 'warning'),
+              );
+          }
+        } catch (e) {
+          logMessage(`engine warmup skipped: ${e}`, 'warning');
+        }
         processNextTasks(event);
       }
     },
