@@ -46,6 +46,12 @@ export type StoreType = {
     fasterWhisperDevice?: 'auto' | 'cpu' | 'cuda';
     fasterWhisperComputeType?: string;
     fasterWhisperModelsPath?: string;
+    /** 全局网络代理模式（none=直连；custom=手动 URL） */
+    proxyMode?: 'none' | 'custom';
+    /** custom 模式的代理 URL，如 http://user:pass@host:port */
+    proxyUrl?: string;
+    /** 可选 NO_PROXY 列表（逗号分隔），默认 localhost,127.0.0.1 */
+    proxyNoProxy?: string;
   };
   providerVersion?: number;
   logs: LogEntry[];

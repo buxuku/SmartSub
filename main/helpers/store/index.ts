@@ -34,6 +34,7 @@ export const store = new Store<StoreType>({
       transcriptionEngine: 'builtin' as const,
       fasterWhisperDevice: 'auto' as const,
       fasterWhisperComputeType: 'auto',
+      proxyMode: 'none' as const,
     },
     logs: [],
   },
