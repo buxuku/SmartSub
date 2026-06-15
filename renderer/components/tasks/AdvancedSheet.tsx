@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Sheet,
   SheetContent,
@@ -57,6 +57,25 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
 
   const isMediaTask = typeDef.accepts === 'media';
   const showFormatHere = typeDef.hasTranslate; // generateOnly 已在配置条展示
+
+  // VAD 是全局设置（settings.useVAD），与设置页同源；这里只是任务高级选项里的便捷入口。
+  // 不进 react-hook-form，避免与逐任务的 userConfig 混淆。
+  const [vadEnabled, setVadEnabled] = useState(true);
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    (async () => {
+      const s = await window?.ipc?.invoke('getSettings');
+      if (active) setVadEnabled(s?.useVAD !== false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [open]);
+  const handleVadChange = async (checked: boolean) => {
+    setVadEnabled(checked);
+    await window?.ipc?.invoke('setSettings', { useVAD: checked });
+  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -148,6 +167,25 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                           </FormItem>
                         )}
                       />
+                      <div className="space-y-2 rounded-lg border p-2">
+                        <div className="flex flex-row items-center justify-between gap-2">
+                          <div className="space-y-0.5">
+                            <p className="text-sm font-medium">
+                              {t('vad.label')}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {vadEnabled ? t('vad.on') : t('vad.off')}
+                            </p>
+                          </div>
+                          <Switch
+                            checked={vadEnabled}
+                            onCheckedChange={handleVadChange}
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {t('vad.hint')}
+                        </p>
+                      </div>
                     </>
                   )}
 

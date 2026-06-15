@@ -27,6 +27,12 @@
     "output": "Output & saving",
     "execution": "Execution"
   },
+  "vad": {
+    "label": "Voice activity detection (VAD)",
+    "on": "Faster and steadier; fewer repeated/hallucinated lines over silence or background noise. Timestamps may be slightly off.",
+    "off": "Timestamps hug the speech more closely, but silence/music may produce repeated or hallucinated lines.",
+    "hint": "Turn off when you need strict subtitle timing. This is a global setting and affects all tasks."
+  },
   "stage": {
     "extract": "Extract",
     "transcribe": "Transcribe",
