@@ -172,6 +172,7 @@
   },
   "downloadBusy": "Another download is already in progress",
   "downloadFailedToast": "Download failed: {{error}}",
+  "downloadProxyHint": "The download source may be blocked by a proxy/VPN. Try switching the download source, set your VPN to rule/direct mode for the download domains, or temporarily disable the global proxy while downloading.",
   "retryDownload": "Retry download",
   "shortcuts": {
     "title": "Keyboard shortcuts",

@@ -172,6 +172,7 @@
   },
   "downloadBusy": "已有下载任务进行中，请稍后再试",
   "downloadFailedToast": "下载失败：{{error}}",
+  "downloadProxyHint": "疑似代理 / VPN 拦截了下载源。可尝试：切换下载源、在 VPN 中对下载域名启用规则 / 直连模式，或下载时临时关闭全局代理。",
   "retryDownload": "重试下载",
   "shortcuts": {
     "title": "快捷键",
