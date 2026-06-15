@@ -10,6 +10,7 @@ import {
 } from './audioProcessor';
 import { canHaveEmbeddedSubtitle, srtHasCues } from './embeddedSubtitleParser';
 import { routeTranscription } from './transcriptionRouter';
+import { getDesiredChineseScript, convertChineseText } from './chineseConvert';
 import translate from '../translate';
 import { ensureTempDir, getMd5 } from './fileUtils';
 import { IFiles } from '../../types';
@@ -362,6 +363,36 @@ export async function processFile(
       const errorMsg = '只翻译模式下不能处理视频文件，请提供字幕文件';
       onError(event, file, 'processFile', new Error(errorMsg));
       throw new Error(errorMsg);
+    }
+
+    // 中文简繁归一：仅对「转写/内封提取生成」的源字幕生效（不动用户导入的字幕文件）。
+    // 源语言选中文时，按其简/繁取向把产物统一字形；检测到相反字形才实际改写。
+    if (!isSubtitleFile && shouldGenerateSubtitle && file.srtFile) {
+      const desiredScript = getDesiredChineseScript(sourceLanguage);
+      if (desiredScript) {
+        try {
+          throwIfTaskCancelled();
+          const original = await fs.promises.readFile(file.srtFile, 'utf-8');
+          const { text, converted } = convertChineseText(
+            original,
+            desiredScript,
+          );
+          if (converted) {
+            await fs.promises.writeFile(file.srtFile, text, 'utf-8');
+            logMessage(
+              `normalized source subtitle to ${desiredScript} Chinese: ${fileName}`,
+              'info',
+            );
+          }
+        } catch (error) {
+          if (isTaskCancelledError(error) || isTaskCancelled()) throw error;
+          // 转换失败不应阻断主流程：记录告警并沿用原始字幕
+          logMessage(
+            `chinese script normalization failed: ${error}`,
+            'warning',
+          );
+        }
+      }
     }
 
     // 翻译字幕（取消后不再进入）
