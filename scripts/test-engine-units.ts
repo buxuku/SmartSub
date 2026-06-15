@@ -35,6 +35,7 @@ import {
   parseSubtitleStreams,
   srtHasCues,
 } from '../main/helpers/embeddedSubtitleParser';
+import { decideCloseIntent } from '../main/helpers/windowCloseDecision';
 
 let passed = 0;
 let failed = 0;
@@ -365,6 +366,74 @@ eq(
 );
 eq(srtHasCues(''), false, 'embed: empty srt no cue');
 eq(srtHasCues('   \n  \n'), false, 'embed: whitespace srt no cue');
+
+// --- decideCloseIntent (关闭窗口行为矩阵) ---
+eq(
+  decideCloseIntent({ platform: 'darwin', closeAction: 'smart', busy: true }),
+  'background',
+  'close: mac smart busy -> background',
+);
+eq(
+  decideCloseIntent({ platform: 'darwin', closeAction: 'smart', busy: false }),
+  'quit',
+  'close: mac smart idle -> quit',
+);
+eq(
+  decideCloseIntent({
+    platform: 'darwin',
+    closeAction: 'background',
+    busy: false,
+  }),
+  'background',
+  'close: mac background idle -> background',
+);
+eq(
+  decideCloseIntent({
+    platform: 'darwin',
+    closeAction: 'background',
+    busy: true,
+  }),
+  'background',
+  'close: mac background busy -> background',
+);
+eq(
+  decideCloseIntent({ platform: 'darwin', closeAction: 'quit', busy: false }),
+  'quit',
+  'close: mac quit idle -> quit',
+);
+eq(
+  decideCloseIntent({ platform: 'darwin', closeAction: 'quit', busy: true }),
+  'confirm-quit',
+  'close: mac quit busy -> confirm-quit',
+);
+eq(
+  decideCloseIntent({ platform: 'win32', closeAction: 'smart', busy: true }),
+  'confirm-quit',
+  'close: win busy -> confirm-quit',
+);
+eq(
+  decideCloseIntent({ platform: 'win32', closeAction: 'smart', busy: false }),
+  'quit',
+  'close: win idle -> quit',
+);
+eq(
+  decideCloseIntent({
+    platform: 'linux',
+    closeAction: 'background',
+    busy: true,
+  }),
+  'confirm-quit',
+  'close: linux ignores background, busy -> confirm-quit',
+);
+eq(
+  decideCloseIntent({
+    platform: 'linux',
+    closeAction: 'background',
+    busy: false,
+  }),
+  'quit',
+  'close: linux ignores background, idle -> quit',
+);
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) {
