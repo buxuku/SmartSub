@@ -136,6 +136,14 @@ const Settings = () => {
   const [proxyUrl, setProxyUrl] = useState('');
   const [proxyNoProxy, setProxyNoProxy] = useState('');
   const [proxyTesting, setProxyTesting] = useState(false);
+  const [closeAction, setCloseAction] = useState<
+    'smart' | 'background' | 'quit'
+  >('smart');
+  // 关闭行为设置仅 macOS 有意义；用 useEffect 设置避免 SSR/CSR 水合不一致
+  const [isMac, setIsMac] = useState(false);
+  useEffect(() => {
+    setIsMac(window?.ipc?.platform === 'darwin');
+  }, []);
   const form = useForm({
     defaultValues: {
       language: router.locale,
@@ -161,6 +169,7 @@ const Settings = () => {
         setProxyMode(settings.proxyMode === 'custom' ? 'custom' : 'none');
         setProxyUrl(settings.proxyUrl || '');
         setProxyNoProxy(settings.proxyNoProxy || '');
+        setCloseAction(settings.closeAction || 'smart');
       }
 
       // 获取临时目录路径
@@ -252,6 +261,18 @@ const Settings = () => {
       }
     } catch (error) {
       toast.error(t('cacheClearedFailed'));
+    }
+  };
+
+  const handleCloseActionChange = async (
+    value: 'smart' | 'background' | 'quit',
+  ) => {
+    setCloseAction(value);
+    try {
+      await window?.ipc?.invoke('setSettings', { closeAction: value });
+      toast.success(t('closeActionSaved'));
+    } catch (error) {
+      toast.error(t('saveFailed'));
     }
   };
 
@@ -462,6 +483,36 @@ const Settings = () => {
                 onCheckedChange={handleCheckUpdateOnStartupChange}
               />
             </div>
+
+            {isMac && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span>{t('closeAction')}</span>
+                  <HelpHint text={t('closeActionTip')} />
+                </div>
+                <Select
+                  value={closeAction}
+                  onValueChange={(v) =>
+                    handleCloseActionChange(
+                      v as 'smart' | 'background' | 'quit',
+                    )
+                  }
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="smart">
+                      {t('closeActionSmart')}
+                    </SelectItem>
+                    <SelectItem value="background">
+                      {t('closeActionBackground')}
+                    </SelectItem>
+                    <SelectItem value="quit">{t('closeActionQuit')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="space-y-2">
               <div className="flex items-center gap-2">
