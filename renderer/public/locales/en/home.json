@@ -14,7 +14,7 @@
   "pleaseInputMaxConcurrentTasks": "Enter Maximum Concurrent Tasks",
   "subtitleOutputFormat": "Subtitle Output Format",
   "subtitleOutputFormatTip": "Format used when saving generated/translated subtitle files (applies to both source and translated subtitles). The proofreading module auto-detects format by file extension on import. TXT is plain text (no timing); LRC keeps start times only.",
-  "format_srt": "SRT (SubRip)",
+  "format_srt": "SRT (.srt)",
   "format_vtt": "WebVTT (.vtt)",
   "format_ass": "ASS/SSA (.ass)",
   "format_lrc": "LRC Lyrics (.lrc)",
