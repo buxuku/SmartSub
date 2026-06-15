@@ -61,6 +61,7 @@ function normalizeOpenAIBaseURL(apiUrl?: string): string {
     parsedUrl.pathname = normalizedPath || '/';
   }
   parsedUrl.hash = '';
+  parsedUrl.search = '';
 
   return parsedUrl.toString().replace(/\/$/, '');
 }
@@ -85,6 +86,10 @@ function isStructuredOutputUnsupportedError(error: unknown): boolean {
     'unknown',
     'not allowed',
     'extra_forbidden',
+    '不支持',
+    '无效',
+    '未知',
+    '不允许',
   ].some((keyword) => message.includes(keyword));
 }
 
