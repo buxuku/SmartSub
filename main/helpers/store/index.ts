@@ -31,6 +31,7 @@ export const store = new Store<StoreType>({
       vadMaxSpeechDuration: 0,
       vadSpeechPad: 30,
       vadSamplesOverlap: 0.1,
+      reduceRepetition: false,
       transcriptionEngine: 'builtin' as const,
       fasterWhisperDevice: 'auto' as const,
       fasterWhisperComputeType: 'auto',

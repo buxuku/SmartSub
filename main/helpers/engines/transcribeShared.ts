@@ -46,6 +46,32 @@ export interface VadSettings {
   vadSamplesOverlap: number;
 }
 
+/** 抗幻觉/抗重复总开关（全局设置 settings.reduceRepetition）。 */
+export function isReduceRepetitionEnabled(
+  settings: Record<string, unknown> | undefined,
+): boolean {
+  return settings?.reduceRepetition === true;
+}
+
+/**
+ * faster-whisper 的抗幻觉/抗重复参数包：仅在开关开启时返回覆盖值，
+ * 关闭时返回空对象（sidecar 缺键回落 faster-whisper 默认，行为不变）。
+ * - condition_on_previous_text=false：断开上文喂入，最有效地打断重复/幻觉级联
+ * - no_repeat_ngram_size=3 / repetition_penalty=1.1：禁止重复 n-gram、惩罚重复 token
+ * - hallucination_silence_threshold=2.0：跳过长静音（依赖 word_timestamps，已开）
+ */
+export function getFasterWhisperAntiRepetitionParams(
+  settings: Record<string, unknown> | undefined,
+): Record<string, number | boolean> {
+  if (!isReduceRepetitionEnabled(settings)) return {};
+  return {
+    condition_on_previous_text: false,
+    no_repeat_ngram_size: 3,
+    repetition_penalty: 1.1,
+    hallucination_silence_threshold: 2.0,
+  };
+}
+
 /** 从 store 的 settings 归一化出 VAD 参数（各引擎再映射到自己的字段名）。 */
 export function getVadSettings(settings: Record<string, unknown>): VadSettings {
   return {

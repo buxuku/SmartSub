@@ -61,12 +61,16 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
   // VAD 是全局设置（settings.useVAD），与设置页同源；这里只是任务高级选项里的便捷入口。
   // 不进 react-hook-form，避免与逐任务的 userConfig 混淆。
   const [vadEnabled, setVadEnabled] = useState(true);
+  const [reduceRepetition, setReduceRepetition] = useState(false);
   useEffect(() => {
     if (!open) return;
     let active = true;
     (async () => {
       const s = await window?.ipc?.invoke('getSettings');
-      if (active) setVadEnabled(s?.useVAD !== false);
+      if (active) {
+        setVadEnabled(s?.useVAD !== false);
+        setReduceRepetition(s?.reduceRepetition === true);
+      }
     })();
     return () => {
       active = false;
@@ -75,6 +79,10 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
   const handleVadChange = async (checked: boolean) => {
     setVadEnabled(checked);
     await window?.ipc?.invoke('setSettings', { useVAD: checked });
+  };
+  const handleReduceRepetitionChange = async (checked: boolean) => {
+    setReduceRepetition(checked);
+    await window?.ipc?.invoke('setSettings', { reduceRepetition: checked });
   };
 
   return (
@@ -184,6 +192,27 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                         </div>
                         <p className="text-xs text-muted-foreground">
                           {t('vad.hint')}
+                        </p>
+                      </div>
+                      <div className="space-y-2 rounded-lg border p-2">
+                        <div className="flex flex-row items-center justify-between gap-2">
+                          <div className="space-y-0.5">
+                            <p className="text-sm font-medium">
+                              {t('reduceRepetition.label')}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {reduceRepetition
+                                ? t('reduceRepetition.on')
+                                : t('reduceRepetition.off')}
+                            </p>
+                          </div>
+                          <Switch
+                            checked={reduceRepetition}
+                            onCheckedChange={handleReduceRepetitionChange}
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {t('reduceRepetition.hint')}
                         </p>
                       </div>
                     </>

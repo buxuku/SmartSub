@@ -12,7 +12,11 @@ import {
   TaskCancelledError,
   throwIfTaskCancelled,
 } from '../taskContext';
-import { getWhisperLanguage, getVadSettings } from './transcribeShared';
+import {
+  getWhisperLanguage,
+  getVadSettings,
+  isReduceRepetitionEnabled,
+} from './transcribeShared';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
 /**
@@ -77,7 +81,11 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       max_len: 0,
       print_progress: true,
       prompt,
-      max_context: +(maxContext ?? -1),
+      // 抗幻觉/抗重复开启时强制 max_context=0（不携带上文，≈faster-whisper 的
+      // condition_on_previous_text=false），这是 whisper.cpp 打断重复/幻觉级联的关键杠杆。
+      max_context: isReduceRepetitionEnabled(settings)
+        ? 0
+        : +(maxContext ?? -1),
       // VAD 参数
       vad: vad.useVAD,
       vad_model: vadModelPath,

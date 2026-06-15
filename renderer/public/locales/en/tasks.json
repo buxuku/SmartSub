@@ -33,6 +33,12 @@
     "off": "Timestamps hug the speech more closely, but silence/music may produce repeated or hallucinated lines.",
     "hint": "Turn off when you need strict subtitle timing. This is a global setting and affects all tasks."
   },
+  "reduceRepetition": {
+    "label": "Reduce repetition / hallucinated lines",
+    "on": "On: drops previous-text conditioning and suppresses repeats, greatly reducing looped lines over silence/repetition; coherence on clean speech may drop slightly.",
+    "off": "Off: engine defaults (keeps cross-segment coherence); long videos or silence may produce repeated or hallucinated lines.",
+    "hint": "Turn on when subtitles loop or repeat heavily. Global setting; applies to both faster-whisper and whisper.cpp."
+  },
   "stage": {
     "extract": "Extract",
     "transcribe": "Transcribe",

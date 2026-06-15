@@ -17,6 +17,7 @@ import {
   getNumericSetting,
   getWhisperLanguage,
   secondsToSrtTime,
+  getFasterWhisperAntiRepetitionParams,
 } from './transcribeShared';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
@@ -108,7 +109,14 @@ async function transcribeFasterWhisper(
       settings.vadMinSilenceDuration,
       100,
     ),
+    // SmartSub 约定 0 = 不限制；sidecar 会映射为 faster-whisper 的 inf。
+    vad_max_speech_duration_s: getNumericSetting(
+      settings.vadMaxSpeechDuration,
+      0,
+    ),
     vad_speech_pad_ms: getNumericSetting(settings.vadSpeechPad, 30),
+    // 抗幻觉/抗重复参数（仅开关开启时注入；关闭则不下发，sidecar 回落默认）。
+    ...getFasterWhisperAntiRepetitionParams(settings),
   };
   logMessage(`fasterWhisperParams: ${JSON.stringify(params, null, 2)}`, 'info');
   event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);

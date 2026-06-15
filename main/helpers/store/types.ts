@@ -42,6 +42,8 @@ export type StoreType = {
     vadMaxSpeechDuration: number;
     vadSpeechPad: number;
     vadSamplesOverlap: number;
+    /** 抗幻觉/抗重复：开启后断开上文条件并抑制重复（builtin: max_context=0；faster-whisper: condition_on_previous_text=false + no_repeat_ngram/repetition_penalty 等）。默认关闭，按需开启。 */
+    reduceRepetition?: boolean;
     transcriptionEngine?: TranscriptionEngine;
     fasterWhisperDevice?: 'auto' | 'cpu' | 'cuda';
     fasterWhisperComputeType?: string;
