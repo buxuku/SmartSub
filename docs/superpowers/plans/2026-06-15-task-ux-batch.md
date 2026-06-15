@@ -16,17 +16,29 @@ Design: `docs/superpowers/specs/2026-06-15-task-ux-batch-design.md`. Read it bef
 
 ## Testing Reality (read first)
 
-This repo has **no React component test runner** (no jest/RTL). So component/UI changes are verified by:
+This repo has **no React component test runner** (no jest/RTL), and — important — it is **not tsc-clean at baseline**. A full `npx tsc -p tsconfig.json` reports ~663 pre-existing errors: ~24 from the separate `docs/` Docusaurus project, ~535 from renderer files (the **root** config has no `paths` aliases, so every `@/...` / `lib/...` import fails there), and ~104 pre-existing in `main/` (parameterProcessor, proxyManager, service/\*, tests). So "tsc exit 0" is **not** an achievable gate here.
 
-1. **Typecheck gate:** `npx tsc -p tsconfig.json` → must exit 0, no new errors.
-2. **i18n parity gate:** `node scripts/check-i18n.mjs` → zh/en keys must stay in parity.
-3. **Manual matrix:** the concrete steps listed per task.
+Use these **scoped** gates instead. Run from repo root.
 
-Main-process engine logic also runs:
+1. **Renderer typecheck** (for any `renderer/**` change): the renderer is correctly typechecked by its own config (which adds the path aliases):
+   ```bash
+   npx tsc -p renderer/tsconfig.json --noEmit --incremental false 2>&1 | grep "error TS" > /tmp/rtsc.txt; wc -l < /tmp/rtsc.txt
+   ```
+   Baseline = **184** pre-existing errors, all in `__tests__/**` and parameter-config files. **Gate:** the count must stay ≤ 184 **and** none of the files you touched may appear:
+   ```bash
+   grep -E "EnginesTab|Models|TaskControls|AdvancedSheet|TaskRowList|TaskGridList|stageUtils|engineModels|tasks/\[type\]" /tmp/rtsc.txt   # must print nothing
+   ```
+2. **Main typecheck** (for any `main/**` or `types/**` change): root config is the right one for main, but its output is noisy (docs + renderer). Verify your touched main files do **not** appear:
+   ```bash
+   npx tsc -p tsconfig.json --incremental false 2>&1 | grep -E "^(main|types)/.*error TS" > /tmp/mtsc.txt
+   grep -E "fasterWhisperEngine|fileProcessor|store/types|store/index|types/types" /tmp/mtsc.txt   # must print nothing
+   ```
+   (Pre-existing `main/` errors are confined to parameterProcessor, proxyManager, service/\*, configurationManager, migrationManager, parameterValidator, and `__tests__`; none of our targets are in that set.)
+3. **Engine unit gate** (for `main/helpers/engines/**`, `fileProcessor`, store): `npm run test:engines` → last line `engine unit tests: N passed, 0 failed`. Baseline N = 70.
+4. **i18n parity gate** (for any locale change): `node scripts/check-i18n.mjs` → no missing/extra keys.
+5. **Manual matrix:** the concrete steps listed per task.
 
-4. **Engine unit gate:** `npm run test:engines` → last line must read `0 failed`.
-
-Run gates from the repo root. Each task ends with its gate commands + a commit.
+Each task ends with its applicable gates + a commit.
 
 ## Task Order & Dependencies
 
