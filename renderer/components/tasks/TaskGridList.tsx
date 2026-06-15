@@ -90,15 +90,27 @@ function Cover({ file }: { file: any }) {
     >
       {showVideo && inView ? (
         <video
-          src={`media://${encodeURIComponent(filePath)}#t=1`}
+          src={`media://${encodeURIComponent(filePath)}`}
           muted
           playsInline
           preload="metadata"
           className="h-full w-full object-cover"
           onError={() => setDecodeFailed(true)}
           onLoadedMetadata={(e) => {
+            const v = e.currentTarget;
             // 部分容器（mkv/ts/hevc 等）Chromium 解不出画面：videoWidth=0 → 退回图标
-            if ((e.currentTarget.videoWidth || 0) === 0) setDecodeFailed(true);
+            if ((v.videoWidth || 0) === 0) {
+              setDecodeFailed(true);
+              return;
+            }
+            // preload=metadata 下仅靠 #t= 片段不一定绘制首帧（画面空白），
+            // 主动 seek 触发解码并绘制：取 1s 处，短片回退到中点。
+            try {
+              v.currentTime =
+                v.duration && v.duration < 1.5 ? v.duration / 2 : 1;
+            } catch {
+              // seek 失败：保持元素，真正解码失败由 onError 兜底退回图标
+            }
           }}
         />
       ) : (
