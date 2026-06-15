@@ -273,6 +273,9 @@ const EnginesTab = () => {
   const handleUninstall = async () => {
     const result = await window?.ipc?.invoke('uninstall-py-engine');
     if (result?.success) {
+      // 清掉上次安装残留的 completed 进度，否则 showVerifying 会把卸载后误判为「检测中」
+      setVerifying(false);
+      setDownloadProgress(null);
       await refresh();
     } else {
       toast.error(result?.error || 'Failed to uninstall');
@@ -300,6 +303,16 @@ const EnginesTab = () => {
     fasterStatus?.state === 'downloading';
   const fasterInstalled = fasterStatus?.state === 'ready';
   const fasterBroken = fasterStatus?.state === 'error';
+  // 下载完成 → 引擎确认可用之间的「检测中」窗口。除显式 verifying 外，
+  // 只要最后一次进度是 completed 且尚未 ready/broken，也按检测中处理：
+  // 覆盖 ping 冷启动期、状态刷新延迟、以及切走标签页错过 completed 事件等情况，
+  // 防止这段空档露出可点击的下载按钮（被误触发二次下载）。
+  const showVerifying =
+    verifying ||
+    (downloadProgress?.status === 'completed' &&
+      !fasterInstalled &&
+      !fasterBroken &&
+      !isDownloading);
   const hasUpdate = !!(updateInfo?.hasUpdate && updateInfo.protocolSupported);
   const localCliReady =
     localCliStatus?.state === 'ready' || whisperCommand.trim().length > 0;
@@ -337,7 +350,7 @@ const EnginesTab = () => {
           </Badge>
         );
       }
-      if (verifying) {
+      if (showVerifying) {
         return (
           <Badge variant="secondary" className="shrink-0">
             {t('engines.fasterWhisper.verifying')}
@@ -639,7 +652,7 @@ const EnginesTab = () => {
                   </div>
                 )}
 
-                {verifying && !isDownloading && (
+                {showVerifying && !isDownloading && (
                   <div className="rounded-lg bg-muted p-3">
                     <p className="text-sm font-medium">
                       {t('engines.fasterWhisper.verifying')}
@@ -657,7 +670,7 @@ const EnginesTab = () => {
                   {!fasterInstalled &&
                     !isDownloading &&
                     !fasterBroken &&
-                    !verifying && (
+                    !showVerifying && (
                       <Button
                         size="sm"
                         className="gap-1.5"
@@ -694,7 +707,7 @@ const EnginesTab = () => {
                   )}
                 </div>
 
-                {fasterInstalled && !isDownloading && !verifying && (
+                {fasterInstalled && !isDownloading && !showVerifying && (
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                     {fasterStatus?.version && (
                       <span className="text-xs text-muted-foreground">
