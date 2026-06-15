@@ -23,7 +23,10 @@
       "faster": "Faster",
       "needsDownload": "Download ~{{size}}",
       "advanced": "Advanced",
-      "byoModel": "Bring your own model"
+      "byoModel": "Bring your own model",
+      "macRecommended": "Recommended for Mac",
+      "accurateTimestamps": "Accurate timestamps",
+      "antiHallucination": "Anti-hallucination"
     },
     "builtin": {
       "name": "whisper.cpp (built-in)",

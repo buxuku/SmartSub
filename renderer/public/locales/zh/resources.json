@@ -23,7 +23,10 @@
       "faster": "速度更快",
       "needsDownload": "需下载 ~{{size}}",
       "advanced": "进阶",
-      "byoModel": "自备模型"
+      "byoModel": "自备模型",
+      "macRecommended": "Mac 用户推荐",
+      "accurateTimestamps": "时间戳精确",
+      "antiHallucination": "抗幻觉"
     },
     "builtin": {
       "name": "whisper.cpp（内置）",

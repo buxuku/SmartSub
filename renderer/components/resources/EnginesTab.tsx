@@ -647,7 +647,11 @@ const EnginesTab = () => {
             icon: Box,
             name: t('engines.builtin.name'),
             recommended: true,
-            chips: [t('engines.tags.noDownload'), t('engines.tags.gpu')],
+            chips: [
+              t('engines.tags.macRecommended'),
+              t('engines.tags.noDownload'),
+              t('engines.tags.gpu'),
+            ],
             desc: t('engines.builtin.desc'),
             body:
               currentEngine === 'builtin' ? null : (
@@ -663,6 +667,8 @@ const EnginesTab = () => {
             name: t('engines.fasterWhisper.name'),
             chips: [
               t('engines.tags.faster'),
+              t('engines.tags.accurateTimestamps'),
+              t('engines.tags.antiHallucination'),
               ...(fasterInstalled
                 ? []
                 : [t('engines.tags.needsDownload', { size: PY_ENGINE_SIZE })]),
