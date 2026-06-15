@@ -370,6 +370,29 @@ export const isSubtitleFile = (filePath) => {
   );
 };
 
+// 纯音频扩展名：校对界面据此渲染紧凑音频播放器，避免空的视频黑框占位
+const AUDIO_FILE_EXTENSIONS = [
+  'mp3',
+  'wav',
+  'ogg',
+  'aac',
+  'wma',
+  'flac',
+  'm4a',
+  'aiff',
+  'ape',
+  'opus',
+  'ac3',
+  'amr',
+  'au',
+];
+
+export const isAudioPath = (filePath?: string): boolean => {
+  if (!filePath) return false;
+  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+  return AUDIO_FILE_EXTENSIONS.includes(ext);
+};
+
 export const getModelDownloadUrl = (
   modelName: string,
   source: 'hf-mirror' | 'huggingface',

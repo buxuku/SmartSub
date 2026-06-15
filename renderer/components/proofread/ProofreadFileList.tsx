@@ -24,7 +24,7 @@ import {
   CheckCircle2,
   Circle,
   Upload,
-  RotateCcw,
+  ArrowLeft,
   Loader2,
   Edit2,
   Plus,
@@ -400,6 +400,23 @@ export default function ProofreadFileList({
       {/* 顶部工具栏 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
+          {/* 返回导入（二级页统一用返回箭头表达，避免「重新导入」按钮被误解为在当前页导入） */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 flex-shrink-0"
+                  aria-label={t('backToImport')}
+                  onClick={onReset}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{t('backToImport')}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           {/* 任务名称 */}
           <Popover open={showNameInput} onOpenChange={setShowNameInput}>
             <PopoverTrigger asChild>
@@ -424,6 +441,29 @@ export default function ProofreadFileList({
               </div>
             </PopoverContent>
           </Popover>
+          {/* 保存到历史：紧邻任务名编辑，符合「命名→保存」操作路径；次要按钮样式 */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={saving || files.length === 0}
+                >
+                  {saving ? (
+                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4 mr-1" />
+                  )}
+                  {t('saveTask')}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[280px]">
+                <p>{savedTaskId ? t('updateTaskTip') : t('saveTaskTip')}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <Badge variant="secondary">
             {completedCount}/{files.length} {t('completed')}
           </Badge>
@@ -439,32 +479,6 @@ export default function ProofreadFileList({
             <Plus className="w-4 h-4 mr-1" />
             {importType === 'video' ? t('appendVideos') : t('appendSubtitles')}
           </Button>
-          <Button variant="outline" size="sm" onClick={onReset}>
-            <RotateCcw className="w-4 h-4 mr-1" />
-            {t('reset')}
-          </Button>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={handleSave}
-                  disabled={saving || files.length === 0}
-                >
-                  {saving ? (
-                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                  ) : (
-                    <Save className="w-4 h-4 mr-1" />
-                  )}
-                  {savedTaskId ? t('updateTask') : t('saveTask')}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-[280px]">
-                <p>{savedTaskId ? t('updateTaskTip') : t('saveTaskTip')}</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
         </div>
       </div>
 

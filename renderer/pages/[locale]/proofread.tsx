@@ -283,7 +283,8 @@ export default function ProofreadPage() {
 
   return (
     <div className="h-full p-4 overflow-hidden flex flex-col gap-4">
-      {stage !== 'edit' && (
+      {/* 仅导入阶段显示枢纽页大标题；列表/编辑阶段为工作页，用自带的返回箭头头部 */}
+      {stage === 'import' && (
         <PageHeader
           title={t('proofreadPageTitle')}
           description={t('proofreadPageDesc')}

@@ -39,6 +39,10 @@ import {
   Wand2,
   ChevronUp,
   ChevronDown,
+  ChevronsUpDown,
+  ChevronsDownUp,
+  PanelLeftClose,
+  PanelLeftOpen,
   RotateCcw,
   X,
   Check,
@@ -118,6 +122,14 @@ interface SubtitleEditToolbarProps {
   searchOpenToken?: number;
   /** 定位到某条字幕（展开行并滚动到可视区），用于搜索逐条跳转 */
   onLocateSubtitle?: (index: number) => void;
+  /** 视图控制（从字幕列表上提，统一放右侧） */
+  hasVideo?: boolean;
+  videoCollapsed?: boolean;
+  onToggleVideoCollapsed?: () => void;
+  expandAll?: boolean;
+  onToggleExpandAll?: () => void;
+  fontScale?: 's' | 'm' | 'l';
+  onFontScale?: (scale: 's' | 'm' | 'l') => void;
 }
 
 export default function SubtitleEditToolbar({
@@ -137,6 +149,13 @@ export default function SubtitleEditToolbar({
   onTriggerHandled,
   searchOpenToken,
   onLocateSubtitle,
+  hasVideo,
+  videoCollapsed,
+  onToggleVideoCollapsed,
+  expandAll,
+  onToggleExpandAll,
+  fontScale,
+  onFontScale,
 }: SubtitleEditToolbarProps) {
   const { t } = useTranslation('home');
 
@@ -682,7 +701,7 @@ Only respond with the corrected text, nothing else.`;
   );
 
   return (
-    <div className="flex items-center gap-1 p-2 border-b bg-muted/30">
+    <div className="flex flex-wrap items-center gap-x-1 gap-y-1 p-2 border-b bg-muted/30">
       {/* 撤销/重做 */}
       <Button
         variant="ghost"
@@ -1221,6 +1240,64 @@ Only respond with the corrected text, nothing else.`;
         onApplyOptimizations={handleApplyBatchOptimizations}
         shouldShowTranslation={shouldShowTranslation}
       />
+
+      {/* 视图控制（右对齐）：折叠左侧面板 / 展开全部 / 字号 */}
+      <div className="ml-auto flex flex-shrink-0 items-center gap-1">
+        {hasVideo && onToggleVideoCollapsed && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8"
+            onClick={onToggleVideoCollapsed}
+            title={videoCollapsed ? t('showPanel') : t('hidePanel')}
+          >
+            {videoCollapsed ? (
+              <PanelLeftOpen className="h-4 w-4 mr-1" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4 mr-1" />
+            )}
+            {videoCollapsed ? t('showPanel') : t('hidePanel')}
+          </Button>
+        )}
+        {onToggleExpandAll && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8"
+            onClick={onToggleExpandAll}
+            title={expandAll ? t('collapseAll') : t('expandAll')}
+          >
+            {expandAll ? (
+              <ChevronsDownUp className="h-4 w-4 mr-1" />
+            ) : (
+              <ChevronsUpDown className="h-4 w-4 mr-1" />
+            )}
+            {expandAll ? t('collapseAll') : t('expandAll')}
+          </Button>
+        )}
+        {onFontScale && (
+          <div className="flex items-center overflow-hidden rounded-md border">
+            {(['s', 'm', 'l'] as const).map((scale) => (
+              <button
+                key={scale}
+                type="button"
+                onClick={() => onFontScale(scale)}
+                className={`px-2 py-1 text-xs transition-colors ${
+                  fontScale === scale
+                    ? 'bg-primary/5 text-primary font-medium'
+                    : 'text-muted-foreground hover:bg-accent/50'
+                }`}
+              >
+                {scale === 's'
+                  ? t('fontSizeSmall')
+                  : scale === 'm'
+                    ? t('fontSizeMedium')
+                    : t('fontSizeLarge')}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

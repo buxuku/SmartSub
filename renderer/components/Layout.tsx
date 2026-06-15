@@ -52,6 +52,7 @@ import ShortcutsHelpDialog from './ShortcutsHelpDialog';
 import FaqDialog from './FaqDialog';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import { useHotkeys } from 'hooks/useHotkeys';
+import { useRadixPointerEventsGuard } from 'hooks/useRadixPointerEventsGuard';
 import packageInfo from '../../package.json';
 import { deriveGpuDisplayState } from '@/components/settings/gpu/gpuDisplayState';
 import { backendDisplay } from '@/components/settings/gpu/gpuUtils';
@@ -160,6 +161,8 @@ const Layout = ({ children }) => {
     i18n: { language: locale },
   } = useTranslation('common');
   const router = useRouter();
+  // 兜底清理 Radix 残留的 body pointer-events 锁（从帮助菜单打开弹窗关闭后整页失效）
+  useRadixPointerEventsGuard();
   const gpuModeLabel = (mode: GpuMode) =>
     t(
       mode === 'auto'

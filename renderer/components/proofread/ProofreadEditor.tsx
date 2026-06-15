@@ -136,6 +136,62 @@ export default function ProofreadEditor({
   // 是否有视频
   const hasVideo = !!videoPath;
 
+  // 视图偏好（从 SubtitleList 上提，由编辑工具栏统一控制）：
+  // 折叠左侧面板 / 展开全部 / 字号
+  const [videoCollapsed, setVideoCollapsed] = useState(false);
+  const [expandAll, setExpandAll] = useState(false);
+  const [fontScale, setFontScale] = useState<'s' | 'm' | 'l'>('m');
+
+  // 读取持久化偏好（仅客户端，避免 SSR 不一致）
+  useEffect(() => {
+    try {
+      setVideoCollapsed(
+        localStorage.getItem('proofread:videoCollapsed') === '1',
+      );
+      setExpandAll(localStorage.getItem('proofread:expandAll') === '1');
+      const fs = localStorage.getItem('proofread:fontScale');
+      if (fs === 's' || fs === 'm' || fs === 'l') setFontScale(fs);
+    } catch {
+      // localStorage 不可用时用默认值
+    }
+  }, []);
+
+  const toggleVideoCollapsed = useCallback(() => {
+    setVideoCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('proofread:videoCollapsed', next ? '1' : '0');
+      } catch {
+        // 忽略持久化失败
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleExpandAll = useCallback(() => {
+    setExpandAll((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('proofread:expandAll', next ? '1' : '0');
+      } catch {
+        // 忽略持久化失败
+      }
+      return next;
+    });
+  }, []);
+
+  const handleFontScale = useCallback((scale: 's' | 'm' | 'l') => {
+    setFontScale(scale);
+    try {
+      localStorage.setItem('proofread:fontScale', scale);
+    } catch {
+      // 忽略持久化失败
+    }
+  }, []);
+
+  // 左侧面板是否展示（无视频或手动折叠时隐藏，字幕列表占满宽度）
+  const showLeftPanel = hasVideo && !videoCollapsed;
+
   // 外部触发器状态
   const [triggerAiOptimize, setTriggerAiOptimize] = useState(false);
   const [triggerSplit, setTriggerSplit] = useState(false);
@@ -343,17 +399,24 @@ export default function ProofreadEditor({
           onTriggerHandled={handleTriggerHandled}
           searchOpenToken={searchOpenToken}
           onLocateSubtitle={handleSubtitleClick}
+          hasVideo={hasVideo}
+          videoCollapsed={videoCollapsed}
+          onToggleVideoCollapsed={toggleVideoCollapsed}
+          expandAll={expandAll}
+          onToggleExpandAll={toggleExpandAll}
+          fontScale={fontScale}
+          onFontScale={handleFontScale}
         />
       </div>
 
       {/* 主内容区 - 复用原有布局 */}
       <div
         className={`grid gap-2 flex-1 overflow-auto min-h-0 p-4 ${
-          hasVideo ? 'grid-cols-2' : 'grid-cols-1'
+          showLeftPanel ? 'grid-cols-2' : 'grid-cols-1'
         }`}
       >
         {/* 左侧：视频播放器和控制区域 */}
-        {hasVideo && (
+        {showLeftPanel && (
           <div className="flex flex-col overflow-auto min-h-0">
             {/* 视频播放器组件 */}
             <VideoPlayer
@@ -400,6 +463,8 @@ export default function ProofreadEditor({
           onTimeChange={handleTimeChange}
           retranslate={retranslate}
           onMergeRange={handleMergeSubtitles}
+          expandAll={expandAll}
+          fontScale={fontScale}
         />
       </div>
 

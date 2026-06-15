@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactPlayer from 'react-player';
 import { useTranslation } from 'next-i18next';
+import { isAudioPath } from 'lib/utils';
 
 interface VideoPlayerProps {
   videoPath: string;
@@ -34,6 +35,31 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   setDuration,
 }) => {
   const { t } = useTranslation('home');
+
+  // 纯音频：渲染紧凑播放条（无黑色视频框/空白占位），使左侧首元素与右侧列表顶部对齐
+  if (isAudioPath(videoPath)) {
+    return (
+      <div className="flex flex-col flex-shrink-0">
+        <div className="mb-2 rounded-md border bg-muted/30 p-1.5">
+          <ReactPlayer
+            ref={playerRef}
+            url={`media://${encodeURIComponent(videoPath)}`}
+            width="100%"
+            height="54px"
+            playing={isPlaying}
+            controls={true}
+            playbackRate={playbackRate}
+            onProgress={handleProgress}
+            onDuration={setDuration}
+            progressInterval={100}
+            key={subtitleTracks?.[0]?.label}
+            config={{ file: { forceAudio: true, tracks: subtitleTracks } }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col flex-shrink-0">
       <div className="relative bg-black mb-2 max-h-[38.5vh] flex items-center justify-center">

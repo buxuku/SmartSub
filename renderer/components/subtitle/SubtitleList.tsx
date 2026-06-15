@@ -13,8 +13,6 @@ import { Switch } from '@/components/ui/switch';
 import {
   ChevronUp,
   ChevronDown,
-  ChevronsUpDown,
-  ChevronsDownUp,
   AlertTriangle,
   Sparkles,
   Scissors,
@@ -63,6 +61,9 @@ interface SubtitleListProps {
   retranslate?: RetranslateControl;
   /** 合并选中区间 [start, endExclusive)；不传则禁用多选 */
   onMergeRange?: (start: number, endExclusive: number) => void;
+  /** 视图偏好由父级（编辑工具栏）统一控制 */
+  expandAll: boolean;
+  fontScale: 's' | 'm' | 'l';
 }
 
 interface RowLabels {
@@ -198,6 +199,15 @@ const SubtitleRow = memo(function SubtitleRow({
     <div
       id={`subtitle-${index}`}
       className={`rounded-md ${isCurrent ? 'bg-accent' : 'bg-card'} p-1.5 text-xs ${failedEdge}`}
+      onClick={(e) => {
+        // 展开行：点击行内任意位置（含字幕文本框）都选中并跳转视频。
+        // 仅「按钮 / 时间输入框」自行处理、不跳转，避免打断这些操作。
+        const target = e.target as HTMLElement;
+        if (target.closest('button, input')) return;
+        // 点击文本框时也跳转，但不触发行范围选择，保留文本框内的原生光标/选择
+        const inTextarea = !!target.closest('textarea');
+        onRowClick(index, inTextarea ? false : e.shiftKey);
+      }}
     >
       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
         <div className="flex min-w-0 items-center gap-1">
@@ -212,9 +222,13 @@ const SubtitleRow = memo(function SubtitleRow({
               invalidFormat: labels.timeInvalidFormat,
               editHint: labels.timeEditHint,
             }}
-            suffix={`${labels.currentPlaying}${
-              isFailed ? ` ${labels.translationFailedLabel}` : ''
-            }`}
+            suffix={
+              isCurrent
+                ? `${labels.currentPlaying}${
+                    isFailed ? ` ${labels.translationFailedLabel}` : ''
+                  }`
+                : ''
+            }
           />
         </div>
         <TooltipProvider delayDuration={200}>
@@ -310,6 +324,8 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   onTimeChange,
   retranslate,
   onMergeRange,
+  expandAll,
+  fontScale,
 }) => {
   const { t } = useTranslation('home');
 
@@ -320,41 +336,6 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   // 只看失败：开启时记录基线 N0，随失败行减少展示"已处理 x/N0"
   const [failedOnly, setFailedOnly] = useState(false);
   const [failedBaseline, setFailedBaseline] = useState(0);
-
-  const [expandAll, setExpandAll] = useState(false);
-  const [fontScale, setFontScale] = useState<'s' | 'm' | 'l'>('m');
-
-  // 读取持久化的视图偏好（仅客户端，避免 SSR 不一致）
-  useEffect(() => {
-    try {
-      setExpandAll(localStorage.getItem('proofread:expandAll') === '1');
-      const fs = localStorage.getItem('proofread:fontScale');
-      if (fs === 's' || fs === 'm' || fs === 'l') setFontScale(fs);
-    } catch {
-      // localStorage 不可用时用默认值
-    }
-  }, []);
-
-  const toggleExpandAll = useCallback(() => {
-    setExpandAll((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('proofread:expandAll', next ? '1' : '0');
-      } catch {
-        // 忽略持久化失败
-      }
-      return next;
-    });
-  }, []);
-
-  const handleFontScale = useCallback((scale: 's' | 'm' | 'l') => {
-    setFontScale(scale);
-    try {
-      localStorage.setItem('proofread:fontScale', scale);
-    } catch {
-      // 忽略持久化失败
-    }
-  }, []);
 
   const handleFailedOnlyChange = useCallback(
     (on: boolean) => {
@@ -428,9 +409,17 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     getItemKey: (i) => (displayIndices ? displayIndices[i] : i),
   });
 
-  // 展开/收起全部会改变每行高度，强制虚拟列表重算
+  // 展开/收起全部或字号变化会改变行高，强制虚拟列表重算。
+  // 注意：measure() 清空缓存后依赖 ResizeObserver 回填，但「高度未变化」的当前展开行
+  // 不会触发 ResizeObserver，会停留在估算高度（34px）导致下一行压上来重叠。
+  // 因此清空后再对所有已渲染行强制重新测量，确保当前行也拿到真实高度。
   useEffect(() => {
     virtualizer.measure();
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    container
+      .querySelectorAll<HTMLElement>('[data-index]')
+      .forEach((node) => virtualizer.measureElement(node));
   }, [expandAll, fontScale, virtualizer]);
 
   // 多选区间（归一化 [lo, hi]，含两端）；anchor 为最后一次普通点击的行
@@ -596,10 +585,11 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
 
   return (
     <div className="h-full flex flex-col border rounded-md overflow-hidden">
-      {/* 状态/视图控制栏（常驻：纯转写下也显示展开全部 + 字号） */}
-      <div className="flex items-center justify-between gap-2 p-2 border-b bg-muted/30 flex-shrink-0">
-        <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
-          {shouldShowTranslation && (
+      {/* 状态/失败操作栏（视图控制已上移至编辑工具栏；窄宽下换行避免重叠）
+          纯转写模式无翻译状态与失败操作，整条隐藏避免空栏 */}
+      {shouldShowTranslation && (
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 p-2 border-b bg-muted/30 flex-shrink-0">
+          <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
             <>
               <div className="flex flex-shrink-0 items-center gap-1.5">
                 {failedIndices.length === 0 ? (
@@ -643,100 +633,65 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                 </span>
               )}
             </>
-          )}
-        </div>
-        <div className="flex flex-shrink-0 items-center gap-1.5">
-          {shouldShowTranslation &&
-            retranslate &&
-            hasFailedTranslations &&
-            (retranslate.running ? (
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                <span className="tabular-nums">
-                  {retranslate.done}/{retranslate.total}
-                </span>
+          </div>
+          <div className="flex flex-shrink-0 items-center gap-1.5">
+            {shouldShowTranslation &&
+              retranslate &&
+              hasFailedTranslations &&
+              (retranslate.running ? (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span className="tabular-nums">
+                    {retranslate.done}/{retranslate.total}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2 text-xs"
+                    onClick={retranslate.cancel}
+                    disabled={retranslate.cancelling}
+                  >
+                    <CircleStop className="h-4 w-4" />
+                    {retranslate.cancelling ? t('cancelling') : t('cancel')}
+                  </Button>
+                </div>
+              ) : (
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  className="h-7 gap-1.5 px-2 text-xs"
-                  onClick={retranslate.cancel}
-                  disabled={retranslate.cancelling}
+                  className="h-7 px-2 text-xs"
+                  onClick={retranslate.start}
                 >
-                  <CircleStop className="h-4 w-4" />
-                  {retranslate.cancelling ? t('cancelling') : t('cancel')}
+                  <RotateCcw className="mr-1 h-3 w-3" />
+                  {t('retranslateFailedBtn').replace(
+                    '{{count}}',
+                    String(failedIndices.length),
+                  )}
+                </Button>
+              ))}
+            {shouldShowTranslation && hasFailedTranslations && (
+              <div className="flex gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={goToPreviousFailedTranslation}
+                  className="h-7 px-2"
+                >
+                  <ChevronUp className="h-3 w-3" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={goToNextFailedTranslation}
+                  className="h-7 px-2"
+                >
+                  <ChevronDown className="h-3 w-3" />
                 </Button>
               </div>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                onClick={retranslate.start}
-              >
-                <RotateCcw className="mr-1 h-3 w-3" />
-                {t('retranslateFailedBtn').replace(
-                  '{{count}}',
-                  String(failedIndices.length),
-                )}
-              </Button>
-            ))}
-          {shouldShowTranslation && hasFailedTranslations && (
-            <div className="flex gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={goToPreviousFailedTranslation}
-                className="h-7 px-2"
-              >
-                <ChevronUp className="h-3 w-3" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={goToNextFailedTranslation}
-                className="h-7 px-2"
-              >
-                <ChevronDown className="h-3 w-3" />
-              </Button>
-            </div>
-          )}
-          {/* 展开/收起全部 */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1.5 px-2 text-xs"
-            onClick={toggleExpandAll}
-          >
-            {expandAll ? (
-              <ChevronsDownUp className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronsUpDown className="h-3.5 w-3.5" />
             )}
-            {expandAll ? t('collapseAll') : t('expandAll')}
-          </Button>
-          {/* 字号 小/中/大 */}
-          <div className="flex items-center overflow-hidden rounded-md border">
-            {(['s', 'm', 'l'] as const).map((scale) => (
-              <button
-                key={scale}
-                type="button"
-                onClick={() => handleFontScale(scale)}
-                className={`px-2 py-1 text-xs transition-colors ${
-                  fontScale === scale
-                    ? 'bg-primary/5 text-primary font-medium'
-                    : 'text-muted-foreground hover:bg-accent/50'
-                }`}
-              >
-                {scale === 's'
-                  ? t('fontSizeSmall')
-                  : scale === 'm'
-                    ? t('fontSizeMedium')
-                    : t('fontSizeLarge')}
-              </button>
-            ))}
           </div>
         </div>
-      </div>
+      )}
 
       {/* 多选操作条：Shift+点选连续区间后出现 */}
       {selRange && selCount >= 2 && (
