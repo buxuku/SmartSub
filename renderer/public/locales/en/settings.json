@@ -14,6 +14,7 @@
   "proxyModeCustom": "Custom",
   "proxyUrl": "Proxy URL",
   "proxyUrlPlaceholder": "http://127.0.0.1:7890",
+  "proxyQuickFill": "Quick fill:",
   "proxyNoProxy": "No-proxy hosts (optional)",
   "proxyNoProxyPlaceholder": "localhost,127.0.0.1",
   "proxyTest": "Test connection",

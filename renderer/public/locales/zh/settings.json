@@ -14,6 +14,7 @@
   "proxyModeCustom": "自定义",
   "proxyUrl": "代理地址",
   "proxyUrlPlaceholder": "http://127.0.0.1:7890",
+  "proxyQuickFill": "快速填入：",
   "proxyNoProxy": "不代理的地址（可选）",
   "proxyNoProxyPlaceholder": "localhost,127.0.0.1",
   "proxyTest": "测试连通性",

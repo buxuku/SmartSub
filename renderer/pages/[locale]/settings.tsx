@@ -116,6 +116,15 @@ const VAD_PRESETS: VadPreset[] = [
 ];
 const STANDARD_PRESET = VAD_PRESETS[1];
 
+// 常见代理软件的默认 HTTP 代理端口，供「自定义代理」一键填入。
+// 仅列 HTTP(S) 代理（底层用 http(s)-proxy-agent，不支持 socks），免去用户记端口。
+const PROXY_PRESETS: { label: string; url: string }[] = [
+  { label: 'Clash', url: 'http://127.0.0.1:7890' },
+  { label: 'V2Ray', url: 'http://127.0.0.1:10809' },
+  { label: 'SS/SSR', url: 'http://127.0.0.1:1087' },
+  { label: 'Surge', url: 'http://127.0.0.1:6152' },
+];
+
 const Settings = () => {
   const router = useRouter();
   const { t, i18n } = useTranslation('settings');
@@ -353,6 +362,11 @@ const Settings = () => {
 
   const handleProxyUrlBlur = () => {
     void saveProxy({ proxyUrl, proxyNoProxy });
+  };
+
+  const handleProxyPresetSelect = (url: string) => {
+    setProxyUrl(url);
+    void saveProxy({ proxyUrl: url, proxyNoProxy });
   };
 
   const handleProxyTest = async () => {
@@ -608,6 +622,24 @@ const Settings = () => {
                     placeholder={t('proxyUrlPlaceholder')}
                     className="font-mono text-sm"
                   />
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground">
+                      {t('proxyQuickFill')}
+                    </span>
+                    {PROXY_PRESETS.map((preset) => (
+                      <Button
+                        key={preset.label}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-xs font-normal"
+                        onClick={() => handleProxyPresetSelect(preset.url)}
+                        title={preset.url}
+                      >
+                        {preset.label}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <span>{t('proxyNoProxy')}</span>
