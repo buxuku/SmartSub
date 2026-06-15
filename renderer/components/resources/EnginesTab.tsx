@@ -273,9 +273,7 @@ const EnginesTab = () => {
   const handleUninstall = async () => {
     const result = await window?.ipc?.invoke('uninstall-py-engine');
     if (result?.success) {
-      // 清掉上次安装残留的 completed 进度，否则 showVerifying 会把卸载后误判为「检测中」
       setVerifying(false);
-      setDownloadProgress(null);
       await refresh();
     } else {
       toast.error(result?.error || 'Failed to uninstall');
@@ -303,19 +301,21 @@ const EnginesTab = () => {
     fasterStatus?.state === 'downloading';
   const fasterInstalled = fasterStatus?.state === 'ready';
   const fasterBroken = fasterStatus?.state === 'error';
-  // 下载完成 → 引擎确认可用之间的「检测中」窗口。除显式 verifying 外，
-  // 只要最后一次进度是 completed 且尚未 ready/broken，也按检测中处理：
-  // 覆盖 ping 冷启动期、状态刷新延迟、以及切走标签页错过 completed 事件等情况，
-  // 防止这段空档露出可点击的下载按钮（被误触发二次下载）。
-  const showVerifying =
-    verifying ||
-    (downloadProgress?.status === 'completed' &&
-      !fasterInstalled &&
-      !fasterBroken &&
-      !isDownloading);
+  // 「检测中」覆盖两段：下载后的安装校验阶段（downloader 的 'verifying' 状态）
+  // 与 completed 后的 ping 冷启动（verifying 标志）。
+  // 不能用 'completed' 状态判断：核心会一直保留 'completed'（不重置），
+  // 否则卸载后会被永久误判为「检测中」，且刷新页面也不恢复。'verifying' 是瞬时态
+  // （后必跟 completed/error），用它判断既能补上安装校验空档，又不会卡死。
+  const showVerifying = verifying || downloadProgress?.status === 'verifying';
   const hasUpdate = !!(updateInfo?.hasUpdate && updateInfo.protocolSupported);
   const localCliReady =
     localCliStatus?.state === 'ready' || whisperCommand.trim().length > 0;
+
+  // 安全网：引擎一旦确认 ready/broken，立即清掉「检测中」标志，
+  // 避免 ping 异常/超时让标志卡住（即便 finally 未及时清理）。
+  useEffect(() => {
+    if (verifying && (fasterInstalled || fasterBroken)) setVerifying(false);
+  }, [verifying, fasterInstalled, fasterBroken]);
 
   // CTranslate2(faster-whisper) 在 macOS 上不支持 CUDA/Metal，仅 CPU；其它平台保留 cuda
   const deviceOptions =
