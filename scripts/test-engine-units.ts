@@ -30,6 +30,11 @@ import { resolveProxyEnv } from '../main/helpers/network/proxyEnv';
 import { resolveReleaseBaseUrl } from '../main/helpers/download/sources';
 import { compareDateVersion } from '../main/helpers/download/versionCompare';
 import { MirrorDownloader } from '../main/helpers/download/mirrorDownloader';
+import {
+  canHaveEmbeddedSubtitle,
+  parseSubtitleStreams,
+  srtHasCues,
+} from '../main/helpers/embeddedSubtitleParser';
 
 let passed = 0;
 let failed = 0;
@@ -255,6 +260,111 @@ eq(compareDateVersion('2026.06.10', '2026.06.10'), 0, 'ver: equal');
   eq(md.getProgress().progress, 100, 'mirror: 200/200 -> 100%');
   eq(md.getProgress().status, 'idle', 'mirror: status unchanged by bytes');
 }
+
+// --- embedded subtitle: parseSubtitleStreams ---
+const MKV_MIXED = [
+  "Input #0, matroska,webm, from 'movie.mkv':",
+  '  Duration: 01:23:45.00, start: 0.000000, bitrate: 4500 kb/s',
+  '    Stream #0:0(eng): Video: h264 (High), yuv420p, 1920x1080, 23.98 fps',
+  '    Stream #0:1(eng): Audio: aac, 48000 Hz, stereo, fltp',
+  '    Stream #0:2(eng): Subtitle: hdmv_pgs_subtitle (default)',
+  '    Stream #0:3(chi): Subtitle: subrip',
+  '    Stream #0:4(jpn): Subtitle: ass (forced)',
+].join('\n');
+eq(
+  parseSubtitleStreams(MKV_MIXED),
+  [
+    {
+      subIndex: 0,
+      codec: 'hdmv_pgs_subtitle',
+      language: 'eng',
+      isText: false,
+      isDefault: true,
+      isForced: false,
+    },
+    {
+      subIndex: 1,
+      codec: 'subrip',
+      language: 'chi',
+      isText: true,
+      isDefault: false,
+      isForced: false,
+    },
+    {
+      subIndex: 2,
+      codec: 'ass',
+      language: 'jpn',
+      isText: true,
+      isDefault: false,
+      isForced: true,
+    },
+  ],
+  'embed: mkv mixed image+text tracks',
+);
+
+const MP4_MOVTEXT = [
+  "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'clip.mp4':",
+  '    Stream #0:0(und): Video: h264, yuv420p, 1280x720',
+  '    Stream #0:1(und): Audio: aac, 44100 Hz, stereo',
+  '    Stream #0:2(und): Subtitle: mov_text (default)',
+].join('\n');
+eq(
+  parseSubtitleStreams(MP4_MOVTEXT),
+  [
+    {
+      subIndex: 0,
+      codec: 'mov_text',
+      isText: true,
+      isDefault: true,
+      isForced: false,
+    },
+  ],
+  'embed: mp4 mov_text, und language omitted',
+);
+
+eq(
+  parseSubtitleStreams(
+    '    Stream #0:2[0x21](eng): Subtitle: subrip (default)',
+  ),
+  [
+    {
+      subIndex: 0,
+      codec: 'subrip',
+      language: 'eng',
+      isText: true,
+      isDefault: true,
+      isForced: false,
+    },
+  ],
+  'embed: stream with hex id',
+);
+
+const AUDIO_ONLY = [
+  "Input #0, mp3, from 'a.mp3':",
+  '    Stream #0:0: Audio: mp3, 16000 Hz, mono, fltp, 64 kb/s',
+].join('\n');
+eq(
+  parseSubtitleStreams(AUDIO_ONLY),
+  [],
+  'embed: audio only -> no subtitle streams',
+);
+
+// --- embedded subtitle: canHaveEmbeddedSubtitle ---
+eq(canHaveEmbeddedSubtitle('.mkv'), true, 'embed: .mkv allowed');
+eq(canHaveEmbeddedSubtitle('mkv'), true, 'embed: mkv allowed (no dot)');
+eq(canHaveEmbeddedSubtitle('.MP4'), true, 'embed: .MP4 case-insensitive');
+eq(canHaveEmbeddedSubtitle('.mp3'), false, 'embed: .mp3 audio skipped');
+eq(canHaveEmbeddedSubtitle('.avi'), false, 'embed: .avi skipped');
+eq(canHaveEmbeddedSubtitle(''), false, 'embed: empty ext skipped');
+
+// --- embedded subtitle: srtHasCues ---
+eq(
+  srtHasCues('1\n00:00:01,000 --> 00:00:03,000\nHello\n'),
+  true,
+  'embed: srt with cue',
+);
+eq(srtHasCues(''), false, 'embed: empty srt no cue');
+eq(srtHasCues('   \n  \n'), false, 'embed: whitespace srt no cue');
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) {
