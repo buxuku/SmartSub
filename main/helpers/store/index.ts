@@ -36,6 +36,8 @@ export const store = new Store<StoreType>({
       fasterWhisperComputeType: 'auto',
       proxyMode: 'none' as const,
       taskViewMode: 'list' as const,
+      closeAction: 'smart' as const,
+      closeHintShown: false,
     },
     logs: [],
   },

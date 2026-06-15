@@ -54,6 +54,10 @@ export type StoreType = {
     proxyNoProxy?: string;
     /** 任务列表视图：list=列表，grid=网格（全局统一，跨重启保留） */
     taskViewMode?: 'list' | 'grid';
+    /** 关闭窗口行为：smart=有任务转后台/空闲退出，background=始终后台，quit=始终退出（仅 macOS 生效，Win/Linux 固定兜底） */
+    closeAction?: 'smart' | 'background' | 'quit';
+    /** 首次「转入后台」提示是否已展示（勾「不再提示」后置 true） */
+    closeHintShown?: boolean;
   };
   providerVersion?: number;
   logs: LogEntry[];
