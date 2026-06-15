@@ -150,6 +150,10 @@ function NavItem({
   );
 }
 
+// Radix: 在 DropdownMenuItem 中同步打开 Dialog 会与菜单关闭争用 body 的
+// pointer-events，延迟到当前事件循环末尾（菜单已开始关闭）再打开，规避残留导致整页失效
+const openAfterMenuClose = (open: () => void) => setTimeout(open, 0);
+
 const Layout = ({ children }) => {
   const {
     t,
@@ -801,21 +805,29 @@ const Layout = ({ children }) => {
                   onClick={() => {
                     onboardingPausedRef.current = false;
                     setOnboardingResumeStep(null);
-                    setShowOnboarding(true);
+                    openAfterMenuClose(() => setShowOnboarding(true));
                   }}
                 >
                   <Compass className="mr-2 h-4 w-4" />
                   {t('help.reopenOnboarding')}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setShowShortcuts(true)}>
+                <DropdownMenuItem
+                  onClick={() =>
+                    openAfterMenuClose(() => setShowShortcuts(true))
+                  }
+                >
                   <Keyboard className="mr-2 h-4 w-4" />
                   {t('help.shortcuts')}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setShowFaq(true)}>
+                <DropdownMenuItem
+                  onClick={() => openAfterMenuClose(() => setShowFaq(true))}
+                >
                   <MessageCircleQuestion className="mr-2 h-4 w-4" />
                   {t('help.faq')}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setShowLogs(true)}>
+                <DropdownMenuItem
+                  onClick={() => openAfterMenuClose(() => setShowLogs(true))}
+                >
                   <ScrollText className="mr-2 h-4 w-4" />
                   {t('viewLogs')}
                 </DropdownMenuItem>
