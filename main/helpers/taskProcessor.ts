@@ -80,10 +80,17 @@ let dispatchEvent: any = null;
 let progressWindow: BrowserWindow | null = null;
 
 /**
+ * 正在执行 + 排队中的转写任务总数。供关闭窗口提示展示「仍在处理 N 个任务」。
+ */
+export function getTranscriptionBusyCount(): number {
+  return activeTasksCount + processingQueue.length;
+}
+
+/**
  * 是否有转写任务在执行或排队。供升级/下载 IPC 在运行中拒绝操作（避免 Windows 文件锁）。
  */
 export function isTranscriptionBusy(): boolean {
-  return activeTasksCount > 0 || processingQueue.length > 0;
+  return getTranscriptionBusyCount() > 0;
 }
 
 function ensureRuntime(projectId: string): ProjectRuntime {
