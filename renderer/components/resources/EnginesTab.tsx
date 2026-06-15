@@ -141,11 +141,21 @@ const EnginesTab = () => {
       (_progress: PyEngineDownloadProgress) => {
         setDownloadProgress(_progress);
         if (_progress.status === 'completed') {
-          // 下载完成后引擎还需校验/冷启动，期间给出明确状态，避免用户以为卡住没反应
+          // 下载完成后引擎还需冷启动校验（PyInstaller 首帧加载），期间保持「检测中」，
+          // 避免用户以为卡住没反应、且能挡住下载/修复按钮被重复点击。
           setVerifying(true);
           // 升级/安装成功，清除"有更新"标记
           setUpdateInfo(null);
-          refresh().finally(() => setVerifying(false));
+          (async () => {
+            try {
+              await window?.ipc?.invoke('python-engine:ping');
+            } catch {
+              // 校验失败：忽略错误，交给 refresh() 反映真实状态（broken → 显示修复入口）
+            } finally {
+              await refresh();
+              setVerifying(false);
+            }
+          })();
         } else if (_progress.status === 'error') {
           if (_progress.error === 'protocol_unsupported') {
             toast.error(t('engines.fasterWhisper.protocolUnsupported'));
@@ -644,18 +654,21 @@ const EnginesTab = () => {
                 )}
 
                 <div className="flex flex-wrap items-center gap-2">
-                  {!fasterInstalled && !isDownloading && !fasterBroken && (
-                    <Button
-                      size="sm"
-                      className="gap-1.5"
-                      onClick={() => setShowDownloadConfirm(true)}
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      {t('engines.fasterWhisper.download', {
-                        size: PY_ENGINE_SIZE,
-                      })}
-                    </Button>
-                  )}
+                  {!fasterInstalled &&
+                    !isDownloading &&
+                    !fasterBroken &&
+                    !verifying && (
+                      <Button
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => setShowDownloadConfirm(true)}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        {t('engines.fasterWhisper.download', {
+                          size: PY_ENGINE_SIZE,
+                        })}
+                      </Button>
+                    )}
                   {fasterBroken && (
                     <Button
                       size="sm"
