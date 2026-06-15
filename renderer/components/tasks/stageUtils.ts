@@ -90,3 +90,27 @@ export function isProofreadReady(file: any, typeDef: TaskTypeDef): boolean {
 export function getRevealPath(file: any): string {
   return file?.translatedSrtFile || file?.srtFile || file?.filePath || '';
 }
+
+/** 字节数转人类可读（如 1.5 MB）；无效值返回空串 */
+export function formatBytes(bytes?: number): string {
+  if (!bytes || bytes <= 0) return '';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+}
+
+/** 秒转 h:mm:ss / m:ss；无效值返回空串 */
+export function formatMediaDuration(sec?: number): string {
+  if (!sec || sec <= 0) return '';
+  const total = Math.round(sec);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}

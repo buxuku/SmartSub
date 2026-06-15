@@ -12,6 +12,8 @@ import {
   ArrowLeft,
   Check,
   Import,
+  LayoutGrid,
+  List,
   Pencil,
   SlidersHorizontal,
   Trash2,
@@ -38,6 +40,7 @@ import TaskControls from '@/components/TaskControls';
 import InlineConfigBar from '@/components/tasks/InlineConfigBar';
 import AdvancedSheet from '@/components/tasks/AdvancedSheet';
 import TaskRowList from '@/components/tasks/TaskRowList';
+import TaskGridList from '@/components/tasks/TaskGridList';
 import CompletionBanner from '@/components/tasks/CompletionBanner';
 import LogPanel from '@/components/tasks/LogPanel';
 import { ProofreadEditor } from '@/components/proofread';
@@ -67,6 +70,7 @@ export default function TaskPage() {
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [proofreadFile, setProofreadFile] = useState<IFiles | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const { systemInfo } = useSystemInfo();
   const { form, formData } = useFormConfig();
   /** 来自加载（而非用户/任务事件）的 files 引用，避免回写存储 */
@@ -106,6 +110,12 @@ export default function TaskPage() {
       setProviders(storedProviders || []);
       const settings = await window?.ipc?.invoke('getSettings');
       setUseLocalWhisper(settings?.useLocalWhisper || false);
+      if (
+        settings?.taskViewMode === 'grid' ||
+        settings?.taskViewMode === 'list'
+      ) {
+        setViewMode(settings.taskViewMode);
+      }
     };
     load();
   }, []);
@@ -264,6 +274,11 @@ export default function TaskPage() {
 
   const handleStatusChange = useCallback((status: string) => {
     setTaskStatus(status);
+  }, []);
+
+  const handleViewModeChange = useCallback((mode: 'list' | 'grid') => {
+    setViewMode(mode);
+    window?.ipc?.invoke('setSettings', { taskViewMode: mode });
   }, []);
 
   const handleRetry = useCallback(
@@ -500,6 +515,26 @@ export default function TaskPage() {
             <Import className="h-3.5 w-3.5" />
             {t('import')}
           </Button>
+          <div className="flex items-center rounded-md border p-0.5">
+            <Button
+              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+              size="icon"
+              className="h-7 w-7"
+              aria-label={t('view.list')}
+              onClick={() => handleViewModeChange('list')}
+            >
+              <List className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
+              size="icon"
+              className="h-7 w-7"
+              aria-label={t('view.grid')}
+              onClick={() => handleViewModeChange('grid')}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+            </Button>
+          </div>
           <Button
             variant="outline"
             size="sm"
@@ -555,17 +590,31 @@ export default function TaskPage() {
         onDragLeave={handleDragLeave}
       >
         <ScrollArea className="flex-1 min-h-0">
-          <TaskRowList
-            files={files}
-            typeDef={typeDef}
-            formData={formData}
-            taskStatus={taskStatus}
-            onProofread={(file) => setProofreadFile(file)}
-            onDelete={(uuid) =>
-              setFiles((prev) => prev.filter((f) => f.uuid !== uuid))
-            }
-            onRetry={handleRetry}
-          />
+          {viewMode === 'grid' ? (
+            <TaskGridList
+              files={files}
+              typeDef={typeDef}
+              formData={formData}
+              taskStatus={taskStatus}
+              onProofread={(file) => setProofreadFile(file)}
+              onDelete={(uuid) =>
+                setFiles((prev) => prev.filter((f) => f.uuid !== uuid))
+              }
+              onRetry={handleRetry}
+            />
+          ) : (
+            <TaskRowList
+              files={files}
+              typeDef={typeDef}
+              formData={formData}
+              taskStatus={taskStatus}
+              onProofread={(file) => setProofreadFile(file)}
+              onDelete={(uuid) =>
+                setFiles((prev) => prev.filter((f) => f.uuid !== uuid))
+              }
+              onRetry={handleRetry}
+            />
+          )}
         </ScrollArea>
         <div className="mt-3 flex items-center justify-between flex-shrink-0">
           <span className="text-xs text-muted-foreground">

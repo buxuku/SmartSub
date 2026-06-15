@@ -52,6 +52,8 @@ export type StoreType = {
     proxyUrl?: string;
     /** 可选 NO_PROXY 列表（逗号分隔），默认 localhost,127.0.0.1 */
     proxyNoProxy?: string;
+    /** 任务列表视图：list=列表，grid=网格（全局统一，跨重启保留） */
+    taskViewMode?: 'list' | 'grid';
   };
   providerVersion?: number;
   logs: LogEntry[];

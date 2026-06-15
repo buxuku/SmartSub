@@ -75,6 +75,10 @@
   "import": "Import",
   "clearList": "Clear list",
   "taskCount": "{{count}} tasks",
+  "view": {
+    "list": "List view",
+    "grid": "Grid view"
+  },
   "listCleared": "File list cleared",
   "meta": {
     "etaMin": "~{{min}} min left",
