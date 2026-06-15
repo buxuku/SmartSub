@@ -8,7 +8,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useTranslation } from 'next-i18next';
-import { models } from 'lib/utils';
+import { getSelectableModelsForEngine, resolveEngine } from 'lib/engineModels';
 
 interface IProps {
   modelsInstalled?: string[];
@@ -23,21 +23,16 @@ const Models = React.forwardRef<
 >((props, ref) => {
   const { t } = useTranslation('common');
 
-  const engine =
-    props.transcriptionEngine ??
-    (props.useLocalWhisper ? 'localCli' : 'builtin');
-
-  const getAvailableModels = () => {
-    if (engine === 'fasterWhisper') {
-      return props.fasterWhisperModelsInstalled || [];
-    }
-    if (engine === 'localCli') {
-      return models.map((model) => model.name);
-    }
-    return props.modelsInstalled || [];
+  const engineInfo = {
+    transcriptionEngine: props.transcriptionEngine,
+    modelsInstalled: props.modelsInstalled,
+    fasterWhisperModelsInstalled: props.fasterWhisperModelsInstalled,
   };
-
-  const availableModels = getAvailableModels();
+  const engine = resolveEngine(engineInfo, props.useLocalWhisper);
+  const availableModels = getSelectableModelsForEngine(
+    engineInfo,
+    props.useLocalWhisper,
+  );
 
   return (
     <Select {...props}>

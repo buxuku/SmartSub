@@ -291,6 +291,7 @@
   "importSubtitlesFailed": "Failed to import subtitles. Please try again.",
   "importFolderFailed": "Failed to import folder. Please try again.",
   "selectProviderFirst": "Please select a translation provider first",
+  "selectModelFirst": "Please select a speech model first",
   "errorReadSubtitle": "Failed to read subtitle file: {{file}}",
   "errorConvertToVTT": "Failed to convert subtitle to VTT: {{file}}",
   "proofreadPageTitle": "Proofread Subtitles",

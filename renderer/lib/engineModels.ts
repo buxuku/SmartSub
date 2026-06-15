@@ -1,4 +1,5 @@
 import type { TranscriptionEngine } from '../../types/engine';
+import { models } from './utils';
 
 /**
  * 引擎感知的模型就绪判断。
@@ -39,6 +40,26 @@ export function getInstalledModelsForEngine(
   }
   if (engine === 'localCli') {
     return [];
+  }
+  return info?.modelsInstalled ?? [];
+}
+
+/**
+ * 当前引擎在「语音模型」下拉里可选的模型列表（与 Models.tsx 下拉同源）。
+ * 与 getInstalledModelsForEngine 的区别：localCli 返回内置 models 名单（用户自备模型/命令，
+ * 下拉里仍可选），而 getInstalledModelsForEngine 对 localCli 返回 [] 用于「就绪判断」。
+ * 用于默认模型自动选择，确保自动选中的值一定是下拉里存在的选项。
+ */
+export function getSelectableModelsForEngine(
+  info: EngineModelInfo | undefined,
+  useLocalWhisper = false,
+): string[] {
+  const engine = resolveEngine(info, useLocalWhisper);
+  if (engine === 'fasterWhisper') {
+    return info?.fasterWhisperModelsInstalled ?? [];
+  }
+  if (engine === 'localCli') {
+    return models.map((m) => m.name);
   }
   return info?.modelsInstalled ?? [];
 }

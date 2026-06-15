@@ -85,6 +85,11 @@ const TaskControls = ({
         return;
       }
     }
+    // 需要模型的任务必须已选模型：自动选择兜底后仍为空，说明确实没有可用模型，拦截并指引下载
+    if (typeDef.needsModel && !formData?.model) {
+      toast.error(t('home:selectModelFirst'));
+      return;
+    }
     // 只派发未完成的文件（error 不算完成，可重跑；已完成文件不重做）
     const pendingFiles = files.filter(
       (file) => !isFileDone(file, getFileStages(file, typeDef, formData)),

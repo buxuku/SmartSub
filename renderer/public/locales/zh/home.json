@@ -291,6 +291,7 @@
   "importSubtitlesFailed": "导入字幕失败，请重试",
   "importFolderFailed": "导入文件夹失败，请重试",
   "selectProviderFirst": "请先选择翻译服务商",
+  "selectModelFirst": "请先选择语音模型",
   "errorReadSubtitle": "读取字幕文件失败：{{file}}",
   "errorConvertToVTT": "字幕转换 VTT 失败：{{file}}",
   "proofreadPageTitle": "校对字幕",

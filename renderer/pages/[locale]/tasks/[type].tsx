@@ -28,6 +28,7 @@ import {
 import { cn, isSubtitleFile } from 'lib/utils';
 import { resolveDefaultTranslateProviderId } from 'lib/providerPanelUtils';
 import { TASK_TYPES, getTaskTypeBySlug } from 'lib/taskTypes';
+import { getSelectableModelsForEngine } from 'lib/engineModels';
 import useSystemInfo from 'hooks/useStystemInfo';
 import useFormConfig from 'hooks/useFormConfig';
 import useIpcCommunication from 'hooks/useIpcCommunication';
@@ -229,6 +230,21 @@ export default function TaskPage() {
     );
     form.setValue('translateProvider', defaultId);
   }, [typeDef, providers, formData?.translateProvider, form]);
+
+  // 已装模型但未选（或选中的模型不属于当前引擎）→ 自动选第一个，避免空模型直接开始任务报错。
+  // 切换引擎（systemInfo.transcriptionEngine / useLocalWhisper 变化）时复跑，修正残留旧选择。
+  useEffect(() => {
+    if (!typeDef?.needsModel) return;
+    if (!formData || Object.keys(formData).length === 0) return; // 配置未加载完
+    const selectable = getSelectableModelsForEngine(
+      systemInfo,
+      useLocalWhisper,
+    ).map((m) => m.toLowerCase());
+    if (!selectable.length) return; // 无可选模型：保持空，InlineConfigBar 展示「去下载模型」
+    const current = (formData.model || '').toLowerCase();
+    if (current && selectable.includes(current)) return;
+    form.setValue('model', selectable[0]);
+  }, [typeDef, systemInfo, useLocalWhisper, formData?.model, form]);
 
   // 「仅生成字幕」任务的源字幕就是最终交付物，不能用 noSave（任务结束会被清理删除）。
   // 修正默认/历史残留的 noSave 或空值，避免视频目录最终没有字幕文件，且下拉框不再显示为空。
