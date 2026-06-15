@@ -3,7 +3,12 @@ import fs from 'fs';
 import { logMessage } from './storeManager';
 import { createMessageSender } from './messageHandler';
 import { getSrtFileName } from './utils';
-import { extractAudioFromVideo } from './audioProcessor';
+import {
+  extractAudioFromVideo,
+  probeEmbeddedSubtitles,
+  extractEmbeddedSubtitle,
+} from './audioProcessor';
+import { canHaveEmbeddedSubtitle, srtHasCues } from './embeddedSubtitleParser';
 import { routeTranscription } from './transcriptionRouter';
 import translate from '../translate';
 import { ensureTempDir, getMd5 } from './fileUtils';
@@ -229,43 +234,109 @@ export async function processFile(
 
       file.srtFile = path.join(directory, `${sourceSrtFileName}.srt`);
 
-      try {
-        // 提取音频
-        logMessage(`extract audio for ${fileName}`, 'info');
-        event.sender.send('taskFileChange', {
-          ...file,
-          extractAudio: 'loading',
-        });
-        throwIfTaskCancelled();
-        const tempAudioFile = await extractAudioFromVideo(event, file);
-        event.sender.send('taskFileChange', { ...file, extractAudio: 'done' });
-
-        // 如果开启了保存音频选项，则复制一份到视频同目录
-        if (saveAudio) {
-          const audioFileName = `${fileName}.wav`;
-          const targetAudioPath = path.join(directory, audioFileName);
-          file.audioFile = targetAudioPath;
-          logMessage(`Saving audio file to: ${targetAudioPath}`, 'info');
-          fs.copyFileSync(tempAudioFile, targetAudioPath);
+      // 优先尝试直接抽取内封文本软字幕：命中则复用「提取/听写」两节点、跳过抽音频 + ASR
+      let usedEmbedded = false;
+      if (canHaveEmbeddedSubtitle(fileExtension)) {
+        try {
+          throwIfTaskCancelled();
+          const textTracks = (await probeEmbeddedSubtitles(filePath)).filter(
+            (t) => t.isText,
+          );
+          if (textTracks.length > 0) {
+            const picked = textTracks[0];
+            logMessage(
+              `found ${textTracks.length} embedded text subtitle(s) in ${fileName}, extracting track s:${picked.subIndex} (${picked.codec})`,
+              'info',
+            );
+            // 提取节点：抽第一条文本轨
+            event.sender.send('taskFileChange', {
+              ...file,
+              extractAudio: 'loading',
+            });
+            await extractEmbeddedSubtitle(
+              filePath,
+              picked.subIndex,
+              file.srtFile,
+              event,
+              file,
+            );
+            const srtContent = fs.readFileSync(file.srtFile, 'utf-8');
+            if (!srtHasCues(srtContent)) {
+              throw new Error('extracted embedded subtitle has no cues');
+            }
+            event.sender.send('taskFileChange', {
+              ...file,
+              extractAudio: 'done',
+            });
+            // 听写节点：字幕文件已就绪
+            event.sender.send('taskFileChange', {
+              ...file,
+              extractSubtitle: 'loading',
+            });
+            event.sender.send('taskFileChange', {
+              ...file,
+              extractSubtitle: 'done',
+            });
+            usedEmbedded = true;
+          }
+        } catch (error) {
+          if (isTaskCancelledError(error) || isTaskCancelled()) {
+            event.sender.send('taskFileChange', {
+              ...file,
+              extractAudio: '',
+              extractSubtitle: '',
+            });
+            throw new TaskCancelledError();
+          }
+          logMessage(
+            `embedded subtitle extraction failed for ${fileName}, fallback to ASR: ${error}`,
+            'warning',
+          );
         }
+      }
 
-        // 生成字幕
-        logMessage(`generate subtitle ${file.srtFile}`, 'info');
-        throwIfTaskCancelled();
-        await generateSubtitle(event, file, formData, hasOpenAiWhisper);
-      } catch (error) {
-        if (isTaskCancelledError(error) || isTaskCancelled()) {
-          // 用户取消：把本轮 loading 阶段回退为待处理
+      if (!usedEmbedded) {
+        try {
+          // 提取音频
+          logMessage(`extract audio for ${fileName}`, 'info');
           event.sender.send('taskFileChange', {
             ...file,
-            extractAudio: '',
-            extractSubtitle: '',
+            extractAudio: 'loading',
           });
-          throw new TaskCancelledError();
+          throwIfTaskCancelled();
+          const tempAudioFile = await extractAudioFromVideo(event, file);
+          event.sender.send('taskFileChange', {
+            ...file,
+            extractAudio: 'done',
+          });
+
+          // 如果开启了保存音频选项，则复制一份到视频同目录
+          if (saveAudio) {
+            const audioFileName = `${fileName}.wav`;
+            const targetAudioPath = path.join(directory, audioFileName);
+            file.audioFile = targetAudioPath;
+            logMessage(`Saving audio file to: ${targetAudioPath}`, 'info');
+            fs.copyFileSync(tempAudioFile, targetAudioPath);
+          }
+
+          // 生成字幕
+          logMessage(`generate subtitle ${file.srtFile}`, 'info');
+          throwIfTaskCancelled();
+          await generateSubtitle(event, file, formData, hasOpenAiWhisper);
+        } catch (error) {
+          if (isTaskCancelledError(error) || isTaskCancelled()) {
+            // 用户取消：把本轮 loading 阶段回退为待处理
+            event.sender.send('taskFileChange', {
+              ...file,
+              extractAudio: '',
+              extractSubtitle: '',
+            });
+            throw new TaskCancelledError();
+          }
+          // 如果是提取音频或生成字幕过程中出错，已经在各自的函数中处理了错误状态
+          // 这里只需要继续抛出错误，中断后续流程
+          throw error;
         }
-        // 如果是提取音频或生成字幕过程中出错，已经在各自的函数中处理了错误状态
-        // 这里只需要继续抛出错误，中断后续流程
-        throw error;
       }
     } else if (isSubtitleFile) {
       // 处理字幕文件
