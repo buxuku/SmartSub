@@ -37,7 +37,8 @@
     "proofread": "Proofread",
     "openFolder": "Show in folder",
     "retry": "Retry",
-    "remove": "Remove"
+    "remove": "Remove",
+    "embeddedSubtitle": "Extracted from embedded subtitles"
   },
   "waiting": "Waiting",
   "interrupted": "Interrupted by app restart — retry to continue",

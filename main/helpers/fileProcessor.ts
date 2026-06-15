@@ -276,6 +276,7 @@ export async function processFile(
             event.sender.send('taskFileChange', {
               ...file,
               extractSubtitle: 'done',
+              embeddedSubtitle: true,
             });
             usedEmbedded = true;
           }
@@ -302,6 +303,7 @@ export async function processFile(
           event.sender.send('taskFileChange', {
             ...file,
             extractAudio: 'loading',
+            embeddedSubtitle: false,
           });
           throwIfTaskCancelled();
           const tempAudioFile = await extractAudioFromVideo(event, file);

@@ -37,7 +37,8 @@
     "proofread": "校对",
     "openFolder": "打开所在文件夹",
     "retry": "重试",
-    "remove": "移除"
+    "remove": "移除",
+    "embeddedSubtitle": "内封软字幕直提（已跳过听写/ASR）"
   },
   "waiting": "等待中",
   "interrupted": "上次运行被中断，点击重试继续",

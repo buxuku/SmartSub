@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import {
+  Captions,
   CheckCircle2,
   ChevronRight,
   CircleAlert,
@@ -248,6 +249,20 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
+                {file?.embeddedSubtitle && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="flex-shrink-0 text-primary">
+                          <Captions className="h-3.5 w-3.5" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-xs">
+                        {t('row.embeddedSubtitle')}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
                 {meta && (
                   <span className="hidden md:inline text-[11px] text-muted-foreground whitespace-nowrap flex-shrink-0">
                     {meta}
