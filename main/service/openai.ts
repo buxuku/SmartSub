@@ -19,6 +19,75 @@ type OpenAIProvider = {
   id?: string;
 };
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
+function normalizeOpenAIBaseURL(apiUrl?: string): string {
+  const trimmedUrl = apiUrl?.trim();
+  if (!trimmedUrl) {
+    throw new Error('OpenAI-compatible API base URL is required');
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(trimmedUrl);
+  } catch {
+    throw new Error(
+      'OpenAI-compatible API base URL must start with http:// or https://',
+    );
+  }
+
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    throw new Error(
+      'OpenAI-compatible API base URL must start with http:// or https://',
+    );
+  }
+
+  const normalizedPath = parsedUrl.pathname.replace(/\/+$/, '');
+  if (/\/models(\/[^/]+)?$/i.test(normalizedPath)) {
+    throw new Error(
+      'OpenAI-compatible API base URL looks like a model page or model endpoint. Use the provider API base URL, usually ending in /v1, and put the model id in Model Name.',
+    );
+  }
+
+  if (/\/chat\/completions$/i.test(normalizedPath)) {
+    parsedUrl.pathname =
+      normalizedPath.replace(/\/chat\/completions$/i, '') || '/';
+  } else {
+    parsedUrl.pathname = normalizedPath || '/';
+  }
+  parsedUrl.hash = '';
+
+  return parsedUrl.toString().replace(/\/$/, '');
+}
+
+function isStructuredOutputUnsupportedError(error: unknown): boolean {
+  const message = getErrorMessage(error).toLowerCase();
+  const mentionsStructuredOutput =
+    message.includes('response_format') ||
+    message.includes('json_schema') ||
+    message.includes('json_object') ||
+    message.includes('structured output');
+
+  if (!mentionsStructuredOutput) {
+    return false;
+  }
+
+  return [
+    'unsupported',
+    'not support',
+    'invalid',
+    'unrecognized',
+    'unknown',
+    'not allowed',
+    'extra_forbidden',
+  ].some((keyword) => message.includes(keyword));
+}
+
 /**
  * Convert OpenAIProvider to ExtendedProvider for parameter processing
  */
@@ -192,11 +261,22 @@ async function callWithJsonSchema(
       parseError,
     );
     // 回退到json_object模式
-    const fallbackCompletion = (await openai.chat.completions.create({
-      ...baseParams,
-      response_format: { type: 'json_object' },
-    })) as OpenAI.Chat.Completions.ChatCompletion;
-    return fallbackCompletion?.choices?.[0]?.message?.content?.trim();
+    try {
+      const fallbackCompletion = (await openai.chat.completions.create({
+        ...baseParams,
+        response_format: { type: 'json_object' },
+      })) as OpenAI.Chat.Completions.ChatCompletion;
+      return fallbackCompletion?.choices?.[0]?.message?.content?.trim();
+    } catch (fallbackError) {
+      if (isStructuredOutputUnsupportedError(fallbackError)) {
+        console.warn(
+          'json_object response format failed, retrying without structured output:',
+          fallbackError,
+        );
+        return await callWithStandardAPI(openai, baseParams, 'disabled');
+      }
+      throw fallbackError;
+    }
   }
 }
 
@@ -224,9 +304,27 @@ async function callWithStandardAPI(
   }
   // json_schema模式由callWithJsonSchema函数处理
 
-  const completion = (await openai.chat.completions.create(
-    requestParams,
-  )) as OpenAI.Chat.Completions.ChatCompletion;
+  let completion: OpenAI.Chat.Completions.ChatCompletion;
+  try {
+    completion = (await openai.chat.completions.create(
+      requestParams,
+    )) as OpenAI.Chat.Completions.ChatCompletion;
+  } catch (error) {
+    if (
+      structuredOutputMode === 'json_object' &&
+      isStructuredOutputUnsupportedError(error)
+    ) {
+      console.warn(
+        'json_object response format failed, retrying without structured output:',
+        error,
+      );
+      completion = (await openai.chat.completions.create(
+        baseParams,
+      )) as OpenAI.Chat.Completions.ChatCompletion;
+    } else {
+      throw error;
+    }
+  }
   console.log('Standard completion:', completion?.choices);
   return completion?.choices?.[0]?.message?.content?.trim();
 }
@@ -241,11 +339,12 @@ export async function translateWithOpenAI(
   if (!provider.apiKey) {
     throw new Error('OpenAI API key is required');
   }
+  const normalizedApiUrl = normalizeOpenAIBaseURL(provider.apiUrl);
   console.log('translateWithOpenAI', text, provider);
   try {
     console.log('Provider config:', {
       id: provider.id,
-      apiUrl: provider.apiUrl,
+      apiUrl: normalizedApiUrl,
       modelName: provider.modelName,
     });
 
@@ -253,7 +352,7 @@ export async function translateWithOpenAI(
     const customHeaders = getCustomHeaders(provider);
 
     const openai = new OpenAI({
-      baseURL: provider.apiUrl,
+      baseURL: normalizedApiUrl,
       apiKey: provider.apiKey,
       defaultHeaders: {
         ...customHeaders, // Apply custom headers from parameter processor

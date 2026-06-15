@@ -104,7 +104,7 @@ const TranslateControl: React.FC = () => {
       useBatchTranslation: false,
       batchSize: 10,
       systemPrompt: defaultSystemPrompt,
-      structuredOutput: 'json_schema', // 为新的自定义OpenAI provider设置默认值
+      structuredOutput: 'json_object',
     };
 
     const updatedProviders = [...providers, newProviderData];
@@ -311,8 +311,7 @@ const TranslateControl: React.FC = () => {
           <DialogHeader>
             <DialogTitle>{t('addCustomProvider')}</DialogTitle>
             <DialogDescription>
-              Create a new custom translation provider with your preferred
-              settings.
+              {t('customProviderDialogDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">

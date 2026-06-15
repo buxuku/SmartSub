@@ -630,10 +630,24 @@ export const CONFIG_TEMPLATES: Record<string, ProviderType> = {
     name: 'OpenAI API',
     isAi: true,
     fields: [
-      { key: 'apiUrl', label: 'Base url', type: 'url', required: true },
+      {
+        key: 'apiUrl',
+        label: 'Base url',
+        type: 'url',
+        required: true,
+        placeholder: 'https://api.example.com/v1',
+        tips: 'customOpenAIBaseUrlTips',
+      },
       { key: 'apiKey', label: 'API Key', type: 'password', required: true },
-      { key: 'modelName', label: 'modelName', type: 'text', required: true },
-      ...aiCommonFields({ structuredOutput: 'json_schema' }),
+      {
+        key: 'modelName',
+        label: 'modelName',
+        type: 'text',
+        required: true,
+        placeholder: 'hunyuan-3.0-preview',
+        tips: 'customOpenAIModelNameTips',
+      },
+      ...aiCommonFields({ structuredOutput: 'json_object' }),
     ],
   },
 };
