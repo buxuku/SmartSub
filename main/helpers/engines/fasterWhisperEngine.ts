@@ -95,6 +95,9 @@ async function transcribeFasterWhisper(
     device: settings.fasterWhisperDevice || 'auto',
     compute_type: settings.fasterWhisperComputeType || 'auto',
     initial_prompt: prompt || '',
+    // faster-whisper #1119：开启词级时间戳，让 segment.end 对齐到真实末词，
+    // 避免开 VAD 时段尾时间被拉到下一段开头。旧 sidecar 忽略该参数也无害。
+    word_timestamps: true,
     vad: settings.useVAD !== false,
     vad_threshold: getNumericSetting(settings.vadThreshold, 0.5),
     vad_min_speech_duration_ms: getNumericSetting(
