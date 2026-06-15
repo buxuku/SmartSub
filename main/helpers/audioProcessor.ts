@@ -5,6 +5,11 @@ import fs from 'fs';
 import { logMessage } from './storeManager';
 import { getMd5, ensureTempDir, timemarkToSeconds } from './fileUtils';
 import { getTaskContext, TaskCancelledError } from './taskContext';
+import { spawn } from 'child_process';
+import {
+  parseSubtitleStreams,
+  EmbeddedSubtitleStream,
+} from './embeddedSubtitleParser';
 
 // 设置ffmpeg路径
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
@@ -155,3 +160,129 @@ export async function extractAudioFromVideo(event, file) {
   event.sender.send('taskFileChange', { ...file, extractAudio: 'done' });
   return tempAudioFile;
 }
+
+/**
+ * 探测视频内封字幕流：spawn 内置 ffmpeg `-i` 解析 stderr，永不 reject。
+ * ffmpeg 因无输出文件以非零码退出属正常，照常解析 stderr。带超时保护。
+ */
+export function probeEmbeddedSubtitles(
+  videoPath: string,
+  timeoutMs = 15000,
+): Promise<EmbeddedSubtitleStream[]> {
+  return new Promise((resolve) => {
+    let stderr = '';
+    let settled = false;
+    let timer: NodeJS.Timeout;
+    const done = (result: EmbeddedSubtitleStream[]) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    let child;
+    try {
+      child = spawn(ffmpegPath, ['-hide_banner', '-i', videoPath]);
+    } catch (err) {
+      logMessage(`probe embedded subtitle spawn failed: ${err}`, 'warning');
+      resolve([]);
+      return;
+    }
+    timer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {}
+      logMessage(`probe embedded subtitle timeout: ${videoPath}`, 'warning');
+      done([]);
+    }, timeoutMs);
+    child.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
+    child.on('error', (err) => {
+      logMessage(`probe embedded subtitle error: ${err}`, 'warning');
+      done([]);
+    });
+    child.on('close', () => {
+      try {
+        done(parseSubtitleStreams(stderr));
+      } catch (err) {
+        logMessage(`parse subtitle streams failed: ${err}`, 'warning');
+        done([]);
+      }
+    });
+  });
+}
+
+/**
+ * 抽取指定内封字幕轨为 SRT（-map 0:s:N -c:s srt）。复用 runningCommands 支持取消；
+ * 进度归属「提取」节点（extractAudio）。失败/取消时清理半成品。
+ */
+export const extractEmbeddedSubtitle = (
+  videoPath: string,
+  subIndex: number,
+  outPath: string,
+  event = null,
+  file = null,
+): Promise<void> => {
+  const onProgress = (percent = 0) => {
+    const safePercent = Math.min(Math.max(Math.round(percent), 0), 100);
+    if (event && file) {
+      event.sender.send(
+        'taskProgressChange',
+        file,
+        'extractAudio',
+        safePercent,
+      );
+    }
+  };
+  const taskContext = getTaskContext();
+  const fileUuid = file?.uuid || taskContext?.fileUuid;
+  const signal = taskContext?.signal;
+  const unregister = () => {
+    if (fileUuid) runningCommands.delete(fileUuid);
+  };
+  const cleanupPartial = () => {
+    try {
+      if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
+    } catch (err) {
+      logMessage(`cleanup partial subtitle failed: ${err}`, 'warning');
+    }
+  };
+
+  return new Promise((resolve, reject) => {
+    try {
+      const command = ffmpeg(`${videoPath}`)
+        .outputOptions(['-map', `0:s:${subIndex}`, '-c:s', 'srt', '-y'])
+        .on('start', function (str) {
+          onProgress(0);
+          logMessage(`extract embedded subtitle start ${str}`, 'info');
+        })
+        .on('progress', function (progress) {
+          onProgress(progress?.percent || 0);
+        })
+        .on('end', function () {
+          unregister();
+          onProgress(100);
+          logMessage(`extract embedded subtitle done!`, 'info');
+          resolve();
+        })
+        .on('error', function (err) {
+          unregister();
+          cleanupPartial();
+          if (signal?.aborted) {
+            logMessage(`extract embedded subtitle cancelled`, 'warning');
+            reject(new TaskCancelledError());
+            return;
+          }
+          logMessage(`extract embedded subtitle error: ${err}`, 'error');
+          reject(err);
+        });
+      if (fileUuid) runningCommands.set(fileUuid, command);
+      command.save(`${outPath}`);
+    } catch (err) {
+      unregister();
+      cleanupPartial();
+      logMessage(`ffmpeg extract embedded subtitle error: ${err}`, 'error');
+      reject(err);
+    }
+  });
+};
