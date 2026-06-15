@@ -7,6 +7,10 @@ import decompress from 'decompress';
 import { logMessage } from './storeManager';
 import { getPath } from './whisper';
 import { isAppleSilicon } from './utils';
+import {
+  downloadFileParallel,
+  RangeNotSupportedError,
+} from './download/parallelDownloader';
 
 export interface ModelDownloadProgress {
   status: 'idle' | 'downloading' | 'extracting' | 'completed' | 'error';
@@ -218,9 +222,7 @@ export class ModelDownloader {
             saveDownloadState(null);
           }
         } else {
-          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-          await this.downloadFile(url, tempPath, 0, model);
-          fs.renameSync(tempPath, modelPath);
+          await this.downloadToFinal(url, modelPath, tempPath, model);
           saveDownloadState(null);
         }
       }
@@ -234,8 +236,12 @@ export class ModelDownloader {
         const coreMLTempPath = `${coreMLZipPath}.download`;
 
         this.updateProgress({ status: 'downloading' });
-        await this.downloadFile(coreMLUrl, coreMLTempPath, 0, model);
-        fs.renameSync(coreMLTempPath, coreMLZipPath);
+        await this.downloadToFinal(
+          coreMLUrl,
+          coreMLZipPath,
+          coreMLTempPath,
+          model,
+        );
 
         this.updateProgress({ status: 'extracting' });
         await decompress(coreMLZipPath, modelsPath);
@@ -292,6 +298,45 @@ export class ModelDownloader {
         this.currentProgress,
       );
     }
+  }
+
+  /**
+   * 全新下载到 finalPath：优先多连接并行（写 .par 校验后改名），不支持/失败则
+   * 回退单连接下载到 tempPath 再改名。取消错误向上抛出。
+   */
+  private async downloadToFinal(
+    url: string,
+    finalPath: string,
+    tempPath: string,
+    model: string,
+  ): Promise<void> {
+    const signal = this.abortController?.signal;
+    if (!signal?.aborted) {
+      try {
+        await downloadFileParallel({
+          url,
+          destPath: finalPath,
+          signal,
+          headers: { 'User-Agent': 'SmartSub-Electron' },
+          onProgress: (downloaded, total) => {
+            this.updateProgress({ downloaded, total, status: 'downloading' });
+          },
+          log: (message, level) => logMessage(message, level),
+        });
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message === 'Download cancelled') throw error;
+        logMessage(
+          `Model ${model} parallel download fallback (${message})`,
+          error instanceof RangeNotSupportedError ? 'info' : 'warning',
+        );
+      }
+    }
+
+    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    await this.downloadFile(url, tempPath, 0, model);
+    fs.renameSync(tempPath, finalPath);
   }
 
   private downloadFile(

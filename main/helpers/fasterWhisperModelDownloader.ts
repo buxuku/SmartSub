@@ -12,6 +12,10 @@ import {
   toCt2CacheDirName,
 } from './modelCatalog';
 import { getCt2HfRepo } from './fasterWhisperModelCatalog';
+import {
+  downloadFileParallel,
+  RangeNotSupportedError,
+} from './download/parallelDownloader';
 
 interface HfTreeEntry {
   path: string;
@@ -312,16 +316,50 @@ export class FasterWhisperModelDownloader {
           lastUpdatedAt: new Date().toISOString(),
         });
 
-        await this.downloadFile(
-          url,
-          tempPath,
-          startByte,
-          progressKey,
-          downloadedBytes,
-          totalBytes,
-          file.size,
-        );
-        fs.renameSync(tempPath, file.destPath);
+        let usedParallel = false;
+        // 仅对「全新文件」走并行（startByte>0 为续传，交给单连接保留续传语义）。
+        // 并行直接写入 file.destPath（内部用 .par 临时文件 + 校验后改名），故并行成功
+        // 时无需再 rename tempPath。
+        if (startByte === 0) {
+          try {
+            await downloadFileParallel({
+              url,
+              destPath: file.destPath,
+              signal: this.abortController?.signal,
+              headers: { 'User-Agent': 'SmartSub-Electron' },
+              onProgress: (downloadedThisFile) => {
+                this.updateProgress({
+                  downloaded: downloadedBytes + downloadedThisFile,
+                  total: totalBytes,
+                  status: 'downloading',
+                });
+              },
+              log: (message, level) => logMessage(message, level),
+            });
+            usedParallel = true;
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            if (message === 'Download cancelled') throw error;
+            logMessage(
+              `CT2 ${file.path} parallel download fallback (${message})`,
+              error instanceof RangeNotSupportedError ? 'info' : 'warning',
+            );
+          }
+        }
+
+        if (!usedParallel) {
+          await this.downloadFile(
+            url,
+            tempPath,
+            startByte,
+            progressKey,
+            downloadedBytes,
+            totalBytes,
+            file.size,
+          );
+          fs.renameSync(tempPath, file.destPath);
+        }
         downloadedBytes += file.size - startByte;
         this.updateProgress({ downloaded: downloadedBytes });
       }
