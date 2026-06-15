@@ -21,6 +21,7 @@ import {
 import { setupWorkItemHandlers } from './helpers/workItemHandlers';
 import { setupAutoUpdater } from './helpers/updater';
 import { setupAppMenu } from './helpers/menu';
+import { setupWindowCloseBehavior, markQuitting } from './helpers/windowClose';
 import { setupParameterHandlers } from './helpers/ipcParameterHandlers';
 import { setupProofreadHandlers } from './helpers/ipcProofreadHandlers';
 import { setupSubtitleMergeHandlers } from './helpers/ipcSubtitleMergeHandlers';
@@ -74,11 +75,10 @@ if (isProd) {
   app.setPath('userData', `${app.getPath('userData')}-dev`);
 }
 
-/** Cmd+Q / 菜单退出时置位：区分「关窗」与「真退出」 */
-let isQuitting = false;
 let runtimeShutdownDone = false;
 app.on('before-quit', (event) => {
-  isQuitting = true;
+  // 真退出标记集中在 windowClose 模块，close 监听据此放行
+  markQuitting();
   if (!runtimeShutdownDone) {
     event.preventDefault();
     runtimeShutdownDone = true;
@@ -146,20 +146,8 @@ app.on('before-quit', (event) => {
     e.preventDefault();
   });
 
-  // macOS：关窗仅隐藏，后台任务（转写/翻译）继续；Cmd+Q 真退出
-  mainWindow.on('close', (e) => {
-    if (process.platform === 'darwin' && !isQuitting) {
-      e.preventDefault();
-      mainWindow.hide();
-    }
-  });
-
-  // macOS：点击 Dock 图标恢复窗口
-  app.on('activate', () => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.show();
-    }
-  });
+  // 关窗行为（macOS 智能模式 / Win·Linux 防误杀）+ Dock 激活恢复
+  setupWindowCloseBehavior(mainWindow);
 
   if (isProd) {
     await mainWindow.loadURL(`app://./${userLanguage}/home/`);
