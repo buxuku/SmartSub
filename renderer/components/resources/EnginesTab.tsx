@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -100,6 +100,10 @@ const EnginesTab = () => {
   const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false);
   const [taskBusy, setTaskBusy] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  // 「下载并启用」意图：在各下载入口显式置位，区分安装(true)与升级/修复(false)。
+  const pendingActivateRef = useRef(false);
+  // 任务忙碌的最新值：下载进度监听器闭包里的 taskBusy 是旧值，改读这个 ref。
+  const taskBusyRef = useRef(false);
   const [updateInfo, setUpdateInfo] = useState<PyEngineUpdateInfo | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
 
@@ -128,7 +132,9 @@ const EnginesTab = () => {
       }
       if (progress) setDownloadProgress(progress);
       if (env?.platform) setPlatform(env.platform);
-      setTaskBusy(isQueueBusy(taskStatus));
+      const busy = isQueueBusy(taskStatus);
+      setTaskBusy(busy);
+      taskBusyRef.current = busy;
     } catch (error) {
       console.error('Failed to refresh engine status:', error);
     }
@@ -147,14 +153,35 @@ const EnginesTab = () => {
           // 升级/安装成功，清除"有更新"标记
           setUpdateInfo(null);
           (async () => {
+            let pingOk = false;
             try {
-              await window?.ipc?.invoke('python-engine:ping');
+              const r = await window?.ipc?.invoke('python-engine:ping');
+              pingOk = !!r?.success;
             } catch {
               // 校验失败：忽略错误，交给 refresh() 反映真实状态（broken → 显示修复入口）
             } finally {
               await refresh();
               setVerifying(false);
             }
+            // 下载并启用：仅首次安装意图(pendingActivate) + 检测通过(pingOk) 时生效。
+            // 任务运行中不切换，仅提示；否则自动设为当前引擎（含 sidecar 预热）。
+            if (pendingActivateRef.current && pingOk) {
+              if (taskBusyRef.current) {
+                toast(t('engines.fasterWhisper.downloadedBusyHint'));
+              } else {
+                const res = await window?.ipc?.invoke(
+                  'set-transcription-engine',
+                  'fasterWhisper',
+                );
+                if (res?.success) {
+                  setCurrentEngine('fasterWhisper');
+                  window.dispatchEvent(
+                    new CustomEvent('transcription-engine-changed'),
+                  );
+                }
+              }
+            }
+            pendingActivateRef.current = false;
           })();
         } else if (_progress.status === 'error') {
           if (_progress.error === 'protocol_unsupported') {
@@ -165,7 +192,9 @@ const EnginesTab = () => {
       },
     );
     const unsubTask = window?.ipc?.on('taskStatusChange', (status: string) => {
-      setTaskBusy(isQueueBusy(status));
+      const busy = isQueueBusy(status);
+      setTaskBusy(busy);
+      taskBusyRef.current = busy;
     });
     const unsubUpdate = window?.ipc?.on(
       'py-engine-update-available',
@@ -197,6 +226,8 @@ const EnginesTab = () => {
     }
 
     if (result?.error === 'engine_not_installed') {
+      // 用户本就在点「设为当前」→ 下载完成后应自动启用
+      pendingActivateRef.current = true;
       setShowDownloadConfirm(true);
       return;
     }
@@ -256,6 +287,8 @@ const EnginesTab = () => {
   };
 
   const handleUpgrade = async () => {
+    // 升级不切换当前引擎；显式清除可能残留的安装意图（如先开了安装确认又取消）
+    pendingActivateRef.current = false;
     setShowUpgradeConfirm(false);
     const source = binarySource;
     const result = await window?.ipc?.invoke('start-py-engine-download', {
@@ -674,7 +707,10 @@ const EnginesTab = () => {
                       <Button
                         size="sm"
                         className="gap-1.5"
-                        onClick={() => setShowDownloadConfirm(true)}
+                        onClick={() => {
+                          pendingActivateRef.current = true;
+                          setShowDownloadConfirm(true);
+                        }}
                       >
                         <Download className="h-3.5 w-3.5" />
                         {t('engines.fasterWhisper.download', {
@@ -686,7 +722,10 @@ const EnginesTab = () => {
                     <Button
                       size="sm"
                       className="gap-1.5"
-                      onClick={() => setShowDownloadConfirm(true)}
+                      onClick={() => {
+                        pendingActivateRef.current = false;
+                        setShowDownloadConfirm(true);
+                      }}
                     >
                       <RefreshCw className="h-3.5 w-3.5" />
                       {t('engines.fasterWhisper.repair')}
