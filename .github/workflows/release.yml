@@ -142,6 +142,8 @@ jobs:
           yarn run electron-builder --${{ matrix.os_build_arg }} --${{ matrix.arch }} ${{ matrix.build_args || '' }} --publish never
 
       - name: Bundle size gate (<=200MB)
+        # Linux 安装包（AppImage/deb）天然偏大，豁免体积门禁；仅对 mac/win 强制。
+        if: matrix.os_build_arg != 'linux'
         shell: bash
         run: yarn size:check
 
