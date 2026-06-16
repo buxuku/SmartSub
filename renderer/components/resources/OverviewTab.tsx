@@ -44,6 +44,7 @@ const OVERVIEW_CARD_DECOR = {
 const ENGINE_LABEL_KEYS = {
   builtin: 'overview.engineBuiltin',
   fasterWhisper: 'overview.engineFasterWhisper',
+  funasr: 'overview.engineFunasr',
   localCli: 'overview.engineLocalCli',
 } as const;
 
@@ -137,8 +138,9 @@ const OverviewTab = ({
   const engineLabelKey =
     ENGINE_LABEL_KEYS[transcriptionEngine] ?? ENGINE_LABEL_KEYS.builtin;
   const showEngineWarning =
-    transcriptionEngine === 'fasterWhisper' &&
-    systemInfo.pythonEngineStatus?.state !== 'ready';
+    (transcriptionEngine === 'fasterWhisper' &&
+      systemInfo.pythonEngineStatus?.state !== 'ready') ||
+    (transcriptionEngine === 'funasr' && !systemInfo.funasrEngineInstalled);
 
   // 「能否开始转写」只取决于引擎就绪 + 当前引擎已有模型；翻译服务为可选项，不计入就绪判断
   const modelsReady = hasModelsForEngine(systemInfo);
