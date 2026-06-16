@@ -116,6 +116,15 @@ jobs:
       - name: Compile application code
         run: yarn build # Assumes 'yarn build' compiles TS to JS, e.g., into the 'app' directory
 
+      - name: Prepare Python base (PBS)
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os_build_arg }}" == "mac" ]]; then PLAT=darwin; fi
+          if [[ "${{ matrix.os_build_arg }}" == "win" ]]; then PLAT=win32; fi
+          if [[ "${{ matrix.os_build_arg }}" == "linux" ]]; then PLAT=linux; fi
+          yarn base:fetch --platform "$PLAT" --arch "${{ matrix.arch }}"
+          ls extraResources/py-base
+
       - name: Build Electron app
         shell: bash
         run: |
@@ -128,6 +137,10 @@ jobs:
           fi
           export BUILD_ARCH=${{ matrix.arch }}
           yarn run electron-builder --${{ matrix.os_build_arg }} --${{ matrix.arch }} ${{ matrix.build_args || '' }} --publish never
+
+      - name: Bundle size gate (<=200MB)
+        shell: bash
+        run: yarn size:check
 
       - name: Stage Artifacts
         shell: bash
