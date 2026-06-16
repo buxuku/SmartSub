@@ -7,9 +7,11 @@ import {
 } from './modelCatalog';
 import { resolveTranscriptionEngine } from './transcriptionEngine';
 import {
-  isPyEngineInstalled,
-  readPyEngineManifest,
+  isPyBaseReady,
+  isEnginePackageInstalled,
+  readEngineManifest,
 } from './pythonRuntime/paths';
+import type { EngineStatus } from '../../types/engine';
 import { store } from './storeManager';
 import { getModelDownloader } from './modelDownloader';
 import {
@@ -32,6 +34,17 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   const ct2ModelDownloader = getFasterWhisperModelDownloader(mainWindow);
 
   ipcMain.handle('getSystemInfo', async () => {
+    // 三层就绪判定：缺基座 → error（需重装/升级 App）；有基座缺引擎包 → not_installed
+    // （资源中心可下载）；两者皆备 → ready。让 UI 能区分两种失败原因。
+    const pyBaseReady = isPyBaseReady();
+    const pythonEngineStatus: EngineStatus = !pyBaseReady
+      ? { state: 'error', message: 'Python base runtime missing' }
+      : isEnginePackageInstalled('faster-whisper')
+        ? {
+            state: 'ready',
+            version: readEngineManifest('faster-whisper')?.version,
+          }
+        : { state: 'not_installed' };
     return {
       modelsInstalled: getModelsInstalled(),
       modelsPath: getPath('modelsPath'),
@@ -41,10 +54,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       fasterWhisperModelsInstalled: getFasterWhisperModelsInstalled(),
       fasterWhisperModelsPath: getFasterWhisperModelsPath(),
       transcriptionEngine: resolveTranscriptionEngine(store.get('settings')),
-      pythonEngineStatus: {
-        state: isPyEngineInstalled() ? 'ready' : 'not_installed',
-        version: readPyEngineManifest()?.version,
-      },
+      pythonEngineStatus,
     };
   });
 

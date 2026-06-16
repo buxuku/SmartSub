@@ -1,8 +1,9 @@
 import fs from 'fs';
 import type { EngineStatus, PyEngineManifest } from '../../../types/engine';
 import {
-  isPyEngineInstalled,
-  readPyEngineManifest,
+  isPyBaseReady,
+  isEnginePackageInstalled,
+  readEngineManifest,
 } from '../pythonRuntime/paths';
 import {
   getFasterWhisperModelsPath,
@@ -184,16 +185,23 @@ export const fasterWhisperEngineAdapter: TranscriptionEngineAdapter = {
   requiresRuntime: true,
 
   async isAvailable(): Promise<EngineStatus> {
-    // 安装状态仅以「运行时已落盘 + manifest 存在」为准；运行时探活（冷启动 ping）
-    // 推迟到真正转写时进行，避免 PyInstaller 首次冷启动耗时超过探活超时，
-    // 被误报为「安装异常 / ping timeout」（实际安装是成功的）。
-    if (!isPyEngineInstalled()) {
+    // 安装状态仅以「基座就绪 + 引擎包已落盘（main.py + site-packages）+ manifest 存在」为准；
+    // 运行时探活（冷启动 ping）推迟到真正转写时进行，避免基座解释器首次冷启动耗时
+    // 超过探活超时，被误报为「安装异常 / ping timeout」（实际安装是成功的）。
+    // 区分「缺基座」(error，需重装/升级 App) 与「缺引擎包」(not_installed，资源中心可下载)。
+    if (!isPyBaseReady()) {
       return {
-        state: 'not_installed',
-        message: 'Python engine runtime is not installed',
+        state: 'error',
+        message: 'Python base runtime missing; reinstall or update SmartSub',
       };
     }
-    const manifest = readPyEngineManifest();
+    if (!isEnginePackageInstalled('faster-whisper')) {
+      return {
+        state: 'not_installed',
+        message: 'faster-whisper engine package not installed',
+      };
+    }
+    const manifest = readEngineManifest('faster-whisper');
     return { state: 'ready', version: formatInstalledVersion(manifest) };
   },
 
