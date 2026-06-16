@@ -183,6 +183,7 @@ export const fasterWhisperEngineAdapter: TranscriptionEngineAdapter = {
   id: 'fasterWhisper',
   displayName: 'faster-whisper',
   requiresRuntime: true,
+  pyEngineId: 'faster-whisper',
 
   async isAvailable(): Promise<EngineStatus> {
     // 安装状态仅以「基座就绪 + 引擎包已落盘（main.py + site-packages）+ manifest 存在」为准；

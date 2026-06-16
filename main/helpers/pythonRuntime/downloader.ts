@@ -47,12 +47,12 @@ interface PyEngineDownloadState {
   lastUpdatedAt: string;
 }
 
-function getDownloadStatePath(): string {
-  return path.join(app.getPath('userData'), 'py-engine-download-state.json');
+function getDownloadStatePath(engineId: PyEngineId): string {
+  return path.join(
+    app.getPath('userData'),
+    `py-engine-download-state-${engineId}.json`,
+  );
 }
-
-// P0 仅 faster-whisper；P1/P2 把下载流参数化为按 engineId。
-const ENGINE_ID: PyEngineId = 'faster-whisper';
 
 /** 下载/解压/备份的临时根（与各引擎包同盘，保证 rename 原子替换） */
 function getPyEngineScratchRoot(): string {
@@ -63,21 +63,21 @@ function getPyEngineDownloadsDir(): string {
   return path.join(getPyEngineScratchRoot(), 'downloads');
 }
 
-function getPyEngineStagingDir(): string {
-  return path.join(getPyEngineScratchRoot(), 'staging', ENGINE_ID);
+function getPyEngineStagingDir(engineId: PyEngineId): string {
+  return path.join(getPyEngineScratchRoot(), 'staging', engineId);
 }
 
 /** 升级时旧版本备份目录，自检通过后删除，失败时回滚。 */
-function getPyEnginePreviousDir(): string {
-  return path.join(getPyEngineScratchRoot(), 'previous', ENGINE_ID);
+function getPyEnginePreviousDir(engineId: PyEngineId): string {
+  return path.join(getPyEngineScratchRoot(), 'previous', engineId);
 }
 
-function getTempTarPath(): string {
-  return path.join(getPyEngineDownloadsDir(), `${ENGINE_ID}.tar.gz`);
+function getTempTarPath(engineId: PyEngineId): string {
+  return path.join(getPyEngineDownloadsDir(), `${engineId}.tar.gz`);
 }
 
-function getArtifactFileName(): string {
-  return getEngineArtifactName(ENGINE_ID);
+function getArtifactFileName(engineId: PyEngineId): string {
+  return getEngineArtifactName(engineId);
 }
 
 function parseExpectedChecksum(
@@ -95,9 +95,11 @@ function parseExpectedChecksum(
   return null;
 }
 
-export function readDownloadState(): PyEngineDownloadState | null {
+export function readDownloadState(
+  engineId: PyEngineId,
+): PyEngineDownloadState | null {
   try {
-    const statePath = getDownloadStatePath();
+    const statePath = getDownloadStatePath(engineId);
     if (fs.existsSync(statePath)) {
       return JSON.parse(
         fs.readFileSync(statePath, 'utf8'),
@@ -109,9 +111,12 @@ export function readDownloadState(): PyEngineDownloadState | null {
   return null;
 }
 
-export function saveDownloadState(state: PyEngineDownloadState | null): void {
+export function saveDownloadState(
+  state: PyEngineDownloadState | null,
+  engineId: PyEngineId,
+): void {
   try {
-    const statePath = getDownloadStatePath();
+    const statePath = getDownloadStatePath(engineId);
     if (state === null) {
       if (fs.existsSync(statePath)) {
         fs.unlinkSync(statePath);
@@ -168,17 +173,19 @@ function fetchHttpText(url: string): Promise<string> {
 }
 
 export class PyEngineDownloader {
+  private engineId: PyEngineId;
   private mainWindow: BrowserWindow | null = null;
   private core: MirrorDownloader;
 
-  constructor(mainWindow?: BrowserWindow) {
+  constructor(engineId: PyEngineId, mainWindow?: BrowserWindow) {
+    this.engineId = engineId;
     this.mainWindow = mainWindow || null;
     this.core = new MirrorDownloader((p) => {
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        this.mainWindow.webContents.send(
-          'py-engine-download-progress',
-          p as PyEngineDownloadProgress,
-        );
+        this.mainWindow.webContents.send('py-engine-download-progress', {
+          ...(p as PyEngineDownloadProgress),
+          engineId: this.engineId,
+        });
       }
     });
   }
@@ -225,8 +232,8 @@ export class PyEngineDownloader {
     source: PyEngineDownloadSource,
   ): Promise<void> {
     const resolvedTag = PY_ENGINE_TAG;
-    const url = getEngineDownloadUrl(source, ENGINE_ID, resolvedTag);
-    const tempPath = getTempTarPath();
+    const url = getEngineDownloadUrl(source, this.engineId, resolvedTag);
+    const tempPath = getTempTarPath(this.engineId);
     const downloadsDir = getPyEngineDownloadsDir();
 
     // 安装/升级前协议区间校验：拉远端 manifest，超出 app 支持区间则拒装并提示升级 SmartSub。
@@ -259,7 +266,7 @@ export class PyEngineDownloader {
     });
 
     try {
-      const existingState = readDownloadState();
+      const existingState = readDownloadState(this.engineId);
       let startByte = 0;
       let downloadedPath = tempPath;
 
@@ -290,7 +297,7 @@ export class PyEngineDownloader {
             remoteManifest,
           );
           if (fs.existsSync(downloadedPath)) fs.unlinkSync(downloadedPath);
-          saveDownloadState(null);
+          saveDownloadState(null, this.engineId);
           this.core.updateProgress({ status: 'completed', progress: 100 });
           return;
         }
@@ -311,17 +318,20 @@ export class PyEngineDownloader {
       const startedAt = new Date().toISOString();
       downloadedPath = await this.core.downloadFile(url, tempPath, startByte, {
         onBytes: (downloaded, total) =>
-          saveDownloadState({
-            url,
-            destPath: tempPath,
-            tempPath,
-            downloaded,
-            total,
-            tag: resolvedTag,
-            source,
-            startedAt,
-            lastUpdatedAt: new Date().toISOString(),
-          }),
+          saveDownloadState(
+            {
+              url,
+              destPath: tempPath,
+              tempPath,
+              downloaded,
+              total,
+              tag: resolvedTag,
+              source,
+              startedAt,
+              lastUpdatedAt: new Date().toISOString(),
+            },
+            this.engineId,
+          ),
       });
 
       this.core.updateProgress({ status: 'extracting' });
@@ -333,10 +343,13 @@ export class PyEngineDownloader {
       );
 
       if (fs.existsSync(downloadedPath)) fs.unlinkSync(downloadedPath);
-      saveDownloadState(null);
+      saveDownloadState(null, this.engineId);
 
       this.core.updateProgress({ status: 'completed', progress: 100 });
-      logMessage('Py-engine downloaded and installed', 'info');
+      logMessage(
+        `Py-engine[${this.engineId}] downloaded and installed`,
+        'info',
+      );
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -379,8 +392,8 @@ export class PyEngineDownloader {
   async checkUpdate(
     source: PyEngineDownloadSource,
   ): Promise<PyEngineUpdateInfo> {
-    const localManifest = readEngineManifest(ENGINE_ID);
-    const installed = isEnginePackageInstalled(ENGINE_ID);
+    const localManifest = readEngineManifest(this.engineId);
+    const installed = isEnginePackageInstalled(this.engineId);
 
     let remoteHash: string | null = null;
     for (const s of getSourceFallbackOrder(source)) {
@@ -390,7 +403,7 @@ export class PyEngineDownloader {
         );
         remoteHash = parseExpectedChecksum(
           checksumsContent,
-          getArtifactFileName(),
+          getArtifactFileName(this.engineId),
         );
         if (remoteHash) break;
       } catch (error) {
@@ -433,7 +446,7 @@ export class PyEngineDownloader {
       protocolVersion: remoteManifest?.protocolVersion,
       builtAt: remoteManifest?.builtAt,
       gitSha: remoteManifest?.gitSha,
-      engineId: ENGINE_ID,
+      engineId: this.engineId,
       pythonAbi: remoteManifest?.pythonAbi ?? 'cp312',
     };
   }
@@ -444,7 +457,7 @@ export class PyEngineDownloader {
     tag: string,
     remoteManifest: RemoteEngineManifest | null,
   ): Promise<void> {
-    const artifactName = getArtifactFileName();
+    const artifactName = getArtifactFileName(this.engineId);
     const checksumsUrl = getPyEngineChecksumsUrl(source, tag);
     const checksumsContent = await fetchHttpText(checksumsUrl);
     const expectedChecksum = parseExpectedChecksum(
@@ -465,7 +478,7 @@ export class PyEngineDownloader {
       );
     }
 
-    const stagingDir = getPyEngineStagingDir();
+    const stagingDir = getPyEngineStagingDir(this.engineId);
     if (fs.existsSync(stagingDir)) {
       fs.rmSync(stagingDir, { recursive: true, force: true });
     }
@@ -497,8 +510,8 @@ export class PyEngineDownloader {
     sha256: string,
     remoteManifest: RemoteEngineManifest | null,
   ): Promise<void> {
-    const currentDir = getEngineDir(ENGINE_ID);
-    const previousDir = getPyEnginePreviousDir();
+    const currentDir = getEngineDir(this.engineId);
+    const previousDir = getPyEnginePreviousDir(this.engineId);
     const hadPrevious = fs.existsSync(currentDir);
 
     // 1. 停机解 Windows 文件锁
@@ -534,13 +547,13 @@ export class PyEngineDownloader {
     // 4. 写新 manifest（写在引擎包目录内，随目录一起 swap/rollback）
     writeEngineManifest(
       this.buildLocalManifest(sha256, remoteManifest),
-      ENGINE_ID,
+      this.engineId,
     );
 
     // 5. 自检：启动 + ping（ensureStarted 内含协议区间校验）
     try {
       this.core.updateProgress({ status: 'verifying' });
-      await getPythonRuntimeManager().ensureStarted();
+      await getPythonRuntimeManager().ensureStarted(this.engineId);
     } catch (selfCheckError) {
       logMessage(
         `Py-engine self-check failed, rolling back: ${selfCheckError}`,
@@ -558,8 +571,8 @@ export class PyEngineDownloader {
   }
 
   private async rollback(hadPrevious: boolean): Promise<void> {
-    const currentDir = getEngineDir(ENGINE_ID);
-    const previousDir = getPyEnginePreviousDir();
+    const currentDir = getEngineDir(this.engineId);
+    const previousDir = getPyEnginePreviousDir(this.engineId);
 
     // 先停机，释放刚失败的 current/ 句柄
     await shutdownPythonRuntime();
@@ -572,7 +585,7 @@ export class PyEngineDownloader {
       // 旧包目录内含其 manifest，整目录还原即恢复版本戳
       fs.renameSync(previousDir, currentDir);
       try {
-        await getPythonRuntimeManager().ensureStarted();
+        await getPythonRuntimeManager().ensureStarted(this.engineId);
         logMessage('Py-engine rolled back to previous version', 'info');
       } catch (restartError) {
         logMessage(
@@ -585,15 +598,18 @@ export class PyEngineDownloader {
   }
 }
 
-let downloaderInstance: PyEngineDownloader | null = null;
+const downloaderInstances = new Map<PyEngineId, PyEngineDownloader>();
 
 export function getPyEngineDownloader(
+  engineId: PyEngineId,
   mainWindow?: BrowserWindow,
 ): PyEngineDownloader {
-  if (!downloaderInstance) {
-    downloaderInstance = new PyEngineDownloader(mainWindow);
+  let instance = downloaderInstances.get(engineId);
+  if (!instance) {
+    instance = new PyEngineDownloader(engineId, mainWindow);
+    downloaderInstances.set(engineId, instance);
   } else if (mainWindow) {
-    downloaderInstance.setMainWindow(mainWindow);
+    instance.setMainWindow(mainWindow);
   }
-  return downloaderInstance;
+  return instance;
 }

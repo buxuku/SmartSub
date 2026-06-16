@@ -246,9 +246,9 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
         // 预热 sidecar：把冷启动成本移出首个文件关键路径（faster-whisper 等需运行时引擎）。
         try {
           const activeAdapter = getActiveEngineAdapter();
-          if (activeAdapter.requiresRuntime) {
+          if (activeAdapter.requiresRuntime && activeAdapter.pyEngineId) {
             void getPythonRuntimeManager()
-              .ensureStarted()
+              .ensureStarted(activeAdapter.pyEngineId)
               .catch((e) =>
                 logMessage(`engine warmup failed (non-fatal): ${e}`, 'warning'),
               );
