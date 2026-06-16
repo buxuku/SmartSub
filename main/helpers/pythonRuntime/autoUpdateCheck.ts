@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { logMessage } from '../storeManager';
 import { getPyEngineDownloader } from './downloader';
-import { isPyEngineInstalled } from './paths';
+import { isEnginePackageInstalled } from './paths';
 import type { PyEngineDownloadSource } from '../../../types/engine';
 
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -40,7 +40,7 @@ export async function maybeAutoCheckPyEngineUpdate(
   mainWindow: BrowserWindow,
   source: PyEngineDownloadSource = 'github',
 ): Promise<void> {
-  if (!isPyEngineInstalled()) return;
+  if (!isEnginePackageInstalled('faster-whisper')) return;
 
   const now = Date.now();
   if (now - readLastCheckAt() < CHECK_INTERVAL_MS) return;

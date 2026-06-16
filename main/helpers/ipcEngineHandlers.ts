@@ -1,6 +1,5 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import fs from 'fs';
-import path from 'path';
 import { logMessage, store } from './storeManager';
 import { resolveTranscriptionEngine } from './transcriptionEngine';
 import { listEngineAdapters } from './engines/registry';
@@ -10,11 +9,7 @@ import {
   getPythonRuntimeManager,
   shutdownPythonRuntime,
 } from './pythonRuntime';
-import {
-  getPyEngineCurrentDir,
-  getPyEngineRoot,
-  isPyEngineInstalled,
-} from './pythonRuntime/paths';
+import { getEngineDir, isEnginePackageInstalled } from './pythonRuntime/paths';
 import type { TranscriptionEngine } from '../../types/engine';
 import type { PyEngineDownloadSource } from '../../types/engine';
 
@@ -39,7 +34,10 @@ export function registerEngineIpcHandlers(): void {
     'set-transcription-engine',
     async (_event, engine: TranscriptionEngine) => {
       try {
-        if (engine === 'fasterWhisper' && !isPyEngineInstalled()) {
+        if (
+          engine === 'fasterWhisper' &&
+          !isEnginePackageInstalled('faster-whisper')
+        ) {
           return { success: false, error: 'engine_not_installed' };
         }
         const settings = store.get('settings');
@@ -146,14 +144,10 @@ export function registerEngineIpcHandlers(): void {
       }
       await shutdownPythonRuntime();
 
-      const currentDir = getPyEngineCurrentDir();
-      if (fs.existsSync(currentDir)) {
-        fs.rmSync(currentDir, { recursive: true, force: true });
-      }
-
-      const manifestPath = path.join(getPyEngineRoot(), 'manifest.json');
-      if (fs.existsSync(manifestPath)) {
-        fs.unlinkSync(manifestPath);
+      // 整个引擎包目录（含内部 manifest.json）一并删除即回到未安装态
+      const engineDir = getEngineDir('faster-whisper');
+      if (fs.existsSync(engineDir)) {
+        fs.rmSync(engineDir, { recursive: true, force: true });
       }
 
       return { success: true };

@@ -48,7 +48,7 @@ interface RequestOptions {
   onEvent?: (method: string, params: Record<string, unknown>) => void;
 }
 
-// 冷启动 ping 超时：Windows PyInstaller onedir 首次加载 + 杀软扫描可能较久。
+// 冷启动 ping 超时：Windows 下基座解释器首次加载 + 杀软扫描可能较久。
 // 重依赖已推迟到首个 transcribe（见 py-engine list_engines/find_spec），ping 本身很快，
 // 这里给足冗余并配合一次重试，彻底消除"偶发冷启动超时"。
 export const START_PING_TIMEOUT_MS = 60_000;

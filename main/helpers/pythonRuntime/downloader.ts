@@ -13,21 +13,22 @@ import type {
   PyEngineUpdateInfo,
   RemoteEngineManifest,
 } from '../../../types/engine';
+import type { PyEngineId } from '../../../types/engine';
 import {
   PY_ENGINE_TAG,
-  getPyEngineRoot,
-  getPyEngineCurrentDir,
-  getPyEngineBinaryName,
+  getPyEnginesRoot,
+  getEngineDir,
+  getEngineArtifactName,
+  getEngineDownloadUrl,
   getPyEngineArtifactSuffix,
-  getPyEngineDownloadUrl,
   getPyEngineChecksumsUrl,
   getPyEngineManifestUrl,
-  normalizePyEngineLayout,
-  writePyEngineManifest,
-  readPyEngineManifest,
-  deletePyEngineManifest,
-  isPyEngineInstalled,
+  isEnginePackageInstalled,
+  isPyBaseReady,
+  writeEngineManifest,
+  readEngineManifest,
 } from './paths';
+import { adhocResignDir } from './macSign';
 import { getPythonRuntimeManager, shutdownPythonRuntime } from './index';
 import { PythonEngineError } from './manager';
 import { isRemoteProtocolInstallable } from './protocolSupport';
@@ -50,25 +51,33 @@ function getDownloadStatePath(): string {
   return path.join(app.getPath('userData'), 'py-engine-download-state.json');
 }
 
+// P0 仅 faster-whisper；P1/P2 把下载流参数化为按 engineId。
+const ENGINE_ID: PyEngineId = 'faster-whisper';
+
+/** 下载/解压/备份的临时根（与各引擎包同盘，保证 rename 原子替换） */
+function getPyEngineScratchRoot(): string {
+  return path.join(getPyEnginesRoot(), '.cache');
+}
+
 function getPyEngineDownloadsDir(): string {
-  return path.join(getPyEngineRoot(), 'downloads');
+  return path.join(getPyEngineScratchRoot(), 'downloads');
 }
 
 function getPyEngineStagingDir(): string {
-  return path.join(getPyEngineRoot(), 'staging');
+  return path.join(getPyEngineScratchRoot(), 'staging', ENGINE_ID);
 }
 
 /** 升级时旧版本备份目录，自检通过后删除，失败时回滚。 */
 function getPyEnginePreviousDir(): string {
-  return path.join(getPyEngineRoot(), 'previous');
+  return path.join(getPyEngineScratchRoot(), 'previous', ENGINE_ID);
 }
 
 function getTempTarPath(): string {
-  return path.join(getPyEngineDownloadsDir(), 'temp.tar.gz');
+  return path.join(getPyEngineDownloadsDir(), `${ENGINE_ID}.tar.gz`);
 }
 
 function getArtifactFileName(): string {
-  return `smartsub-engine-${getPyEngineArtifactSuffix()}.tar.gz`;
+  return getEngineArtifactName(ENGINE_ID);
 }
 
 function parseExpectedChecksum(
@@ -191,6 +200,14 @@ export class PyEngineDownloader {
    * 用户取消与协议不支持（protocol_unsupported）属终止类错误，不再换源。
    */
   async download(source: PyEngineDownloadSource): Promise<void> {
+    // 引擎包依赖内置基座解释器；缺基座时直接给清晰错误，不做无谓下载。
+    if (!isPyBaseReady()) {
+      const msg =
+        'Python base runtime missing; reinstall SmartSub or update the base.';
+      this.core.updateProgress({ status: 'error', error: msg });
+      logMessage(`Py-engine install blocked: ${msg}`, 'error');
+      throw new Error(msg);
+    }
     return this.core.runWithFallback(
       source,
       (s) => this.downloadFromSource(s),
@@ -208,7 +225,7 @@ export class PyEngineDownloader {
     source: PyEngineDownloadSource,
   ): Promise<void> {
     const resolvedTag = PY_ENGINE_TAG;
-    const url = getPyEngineDownloadUrl(source, resolvedTag);
+    const url = getEngineDownloadUrl(source, ENGINE_ID, resolvedTag);
     const tempPath = getTempTarPath();
     const downloadsDir = getPyEngineDownloadsDir();
 
@@ -362,8 +379,8 @@ export class PyEngineDownloader {
   async checkUpdate(
     source: PyEngineDownloadSource,
   ): Promise<PyEngineUpdateInfo> {
-    const localManifest = readPyEngineManifest();
-    const installed = isPyEngineInstalled();
+    const localManifest = readEngineManifest(ENGINE_ID);
+    const installed = isEnginePackageInstalled(ENGINE_ID);
 
     let remoteHash: string | null = null;
     for (const s of getSourceFallbackOrder(source)) {
@@ -416,6 +433,8 @@ export class PyEngineDownloader {
       protocolVersion: remoteManifest?.protocolVersion,
       builtAt: remoteManifest?.builtAt,
       gitSha: remoteManifest?.gitSha,
+      engineId: ENGINE_ID,
+      pythonAbi: remoteManifest?.pythonAbi ?? 'cp312',
     };
   }
 
@@ -457,11 +476,12 @@ export class PyEngineDownloader {
       cwd: stagingDir,
     });
 
-    normalizePyEngineLayout(stagingDir);
-    const stagingBinary = path.join(stagingDir, getPyEngineBinaryName());
-    if (!fs.existsSync(stagingBinary) || !fs.statSync(stagingBinary).isFile()) {
+    // 可重定位引擎包：归档顶层即 main.py + site-packages/（无单二进制）
+    const stagingMain = path.join(stagingDir, 'main.py');
+    const stagingSite = path.join(stagingDir, 'site-packages');
+    if (!fs.existsSync(stagingMain) || !fs.existsSync(stagingSite)) {
       throw new Error(
-        `Engine binary ${getPyEngineBinaryName()} not found after extraction`,
+        'Invalid engine package: missing main.py or site-packages after extraction',
       );
     }
 
@@ -477,23 +497,24 @@ export class PyEngineDownloader {
     sha256: string,
     remoteManifest: RemoteEngineManifest | null,
   ): Promise<void> {
-    const currentDir = getPyEngineCurrentDir();
+    const currentDir = getEngineDir(ENGINE_ID);
     const previousDir = getPyEnginePreviousDir();
     const hadPrevious = fs.existsSync(currentDir);
-    const prevManifest = readPyEngineManifest();
 
     // 1. 停机解 Windows 文件锁
     await shutdownPythonRuntime();
 
-    // 2. 备份 current → previous（previous 残留先清）
+    // 2. 备份 current → previous（previous 残留先清；manifest 在包目录内随之备份）
     if (fs.existsSync(previousDir)) {
       fs.rmSync(previousDir, { recursive: true, force: true });
     }
+    fs.mkdirSync(path.dirname(previousDir), { recursive: true });
     if (hadPrevious) {
       fs.renameSync(currentDir, previousDir);
     }
 
     // 3. swap staging → current（失败立即还原备份）
+    fs.mkdirSync(path.dirname(currentDir), { recursive: true });
     try {
       fs.renameSync(stagingDir, currentDir);
     } catch (swapError) {
@@ -506,10 +527,15 @@ export class PyEngineDownloader {
       }
       throw swapError;
     }
-    normalizePyEngineLayout(currentDir);
 
-    // 4. 写新 manifest（含 engineVersion/protocolVersion/builtAt/gitSha）
-    writePyEngineManifest(this.buildLocalManifest(sha256, remoteManifest));
+    // 3b. macOS 无证书兜底：对换入的原生库 ad-hoc 重签
+    adhocResignDir(currentDir);
+
+    // 4. 写新 manifest（写在引擎包目录内，随目录一起 swap/rollback）
+    writeEngineManifest(
+      this.buildLocalManifest(sha256, remoteManifest),
+      ENGINE_ID,
+    );
 
     // 5. 自检：启动 + ping（ensureStarted 内含协议区间校验）
     try {
@@ -520,7 +546,7 @@ export class PyEngineDownloader {
         `Py-engine self-check failed, rolling back: ${selfCheckError}`,
         'error',
       );
-      await this.rollback(hadPrevious, prevManifest);
+      await this.rollback(hadPrevious);
       throw selfCheckError;
     }
 
@@ -531,11 +557,8 @@ export class PyEngineDownloader {
     logMessage('Py-engine installed and self-check passed', 'info');
   }
 
-  private async rollback(
-    hadPrevious: boolean,
-    prevManifest: PyEngineManifest | null,
-  ): Promise<void> {
-    const currentDir = getPyEngineCurrentDir();
+  private async rollback(hadPrevious: boolean): Promise<void> {
+    const currentDir = getEngineDir(ENGINE_ID);
     const previousDir = getPyEnginePreviousDir();
 
     // 先停机，释放刚失败的 current/ 句柄
@@ -546,12 +569,8 @@ export class PyEngineDownloader {
     }
 
     if (hadPrevious && fs.existsSync(previousDir)) {
+      // 旧包目录内含其 manifest，整目录还原即恢复版本戳
       fs.renameSync(previousDir, currentDir);
-      if (prevManifest) {
-        writePyEngineManifest(prevManifest);
-      } else {
-        deletePyEngineManifest();
-      }
       try {
         await getPythonRuntimeManager().ensureStarted();
         logMessage('Py-engine rolled back to previous version', 'info');
@@ -561,10 +580,8 @@ export class PyEngineDownloader {
           'error',
         );
       }
-    } else {
-      // 无旧版可退（首次安装失败）：清理残留 manifest，回到未安装态
-      deletePyEngineManifest();
     }
+    // 无旧版可退（首次安装失败）：current 已删除即回到未安装态（manifest 随目录消失）
   }
 }
 
