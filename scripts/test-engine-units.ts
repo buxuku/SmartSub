@@ -36,6 +36,10 @@ import {
   srtHasCues,
 } from '../main/helpers/embeddedSubtitleParser';
 import { decideCloseIntent } from '../main/helpers/windowCloseDecision';
+import {
+  getFunasrAsrModelIds,
+  resolveFunasrAsrSelection,
+} from '../main/helpers/funasrModelCatalog';
 
 let passed = 0;
 let failed = 0;
@@ -433,6 +437,43 @@ eq(
   }),
   'quit',
   'close: linux ignores background, idle -> quit',
+);
+
+// --- funasr catalog: ASR model ids (VAD excluded) ---
+eq(
+  getFunasrAsrModelIds().sort().join(','),
+  'paraformer-zh,sensevoice-small',
+  'funasr: asr ids exclude vad',
+);
+
+// --- funasr catalog: resolveFunasrAsrSelection ---
+eq(
+  resolveFunasrAsrSelection('paraformer-zh', [
+    'sensevoice-small',
+    'paraformer-zh',
+  ]),
+  { id: 'paraformer-zh', modelType: 'paraformer' },
+  'funasr: requested paraformer resolves',
+);
+eq(
+  resolveFunasrAsrSelection('sensevoice-small', ['sensevoice-small']),
+  { id: 'sensevoice-small', modelType: 'sense_voice' },
+  'funasr: requested sensevoice resolves',
+);
+eq(
+  resolveFunasrAsrSelection('paraformer-zh', ['sensevoice-small']),
+  { id: 'sensevoice-small', modelType: 'sense_voice' },
+  'funasr: not-installed request falls back to first installed asr',
+);
+eq(
+  resolveFunasrAsrSelection(undefined, ['paraformer-zh']),
+  { id: 'paraformer-zh', modelType: 'paraformer' },
+  'funasr: no request uses first installed asr',
+);
+eq(
+  resolveFunasrAsrSelection('sensevoice-small', []),
+  null,
+  'funasr: no installed asr -> null',
 );
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);

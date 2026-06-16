@@ -10,7 +10,10 @@ export function getFunasrModelsRoot(): string {
 }
 
 /** funasr 子模型标识（与本地子目录一一对应）。 */
-export type FunasrModelId = 'sensevoice-small' | 'silero-vad';
+export type FunasrModelId = 'sensevoice-small' | 'paraformer-zh' | 'silero-vad';
+
+/** ASR 模型底层类型，决定 sidecar 走 from_sense_voice / from_paraformer。 */
+export type FunasrModelType = 'sense_voice' | 'paraformer';
 
 /**
  * 两种下载模式：
@@ -20,6 +23,10 @@ export type FunasrModelId = 'sensevoice-small' | 'silero-vad';
 export interface FunasrModelSpec {
   id: FunasrModelId;
   dirName: string;
+  /** 'asr' 进入模型下拉并参与转写；'vad' 为共用基础组件，不进下拉。 */
+  kind: 'asr' | 'vad';
+  /** ASR 模型的底层加载类型（kind==='asr' 时必填）。 */
+  modelType?: FunasrModelType;
   /** 判定「已安装」必须存在的关键文件 */
   requiredFiles: string[];
   /** HF（镜像）仓库 id（repo 模式） */
@@ -34,13 +41,25 @@ export const FUNASR_MODELS: Record<FunasrModelId, FunasrModelSpec> = {
   'sensevoice-small': {
     id: 'sensevoice-small',
     dirName: 'sensevoice-small',
+    kind: 'asr',
+    modelType: 'sense_voice',
     repo: 'csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17',
+    keepFiles: ['model.int8.onnx', 'tokens.txt'],
+    requiredFiles: ['model.int8.onnx', 'tokens.txt'],
+  },
+  'paraformer-zh': {
+    id: 'paraformer-zh',
+    dirName: 'paraformer-zh',
+    kind: 'asr',
+    modelType: 'paraformer',
+    repo: 'csukuangfj/sherpa-onnx-paraformer-zh-2024-03-09',
     keepFiles: ['model.int8.onnx', 'tokens.txt'],
     requiredFiles: ['model.int8.onnx', 'tokens.txt'],
   },
   'silero-vad': {
     id: 'silero-vad',
     dirName: 'silero-vad',
+    kind: 'vad',
     requiredFiles: ['silero_vad.onnx'],
     files: [
       {
@@ -69,11 +88,45 @@ export function isFunasrModelInstalled(id: FunasrModelId): boolean {
   );
 }
 
-/** funasr 转写就绪 = ASR + VAD 两个模型都已安装。 */
+/** 全部 ASR 模型 id（静态，纯函数，不触磁盘）。 */
+export function getFunasrAsrModelIds(): FunasrModelId[] {
+  return (Object.keys(FUNASR_MODELS) as FunasrModelId[]).filter(
+    (id) => FUNASR_MODELS[id].kind === 'asr',
+  );
+}
+
+/** 已安装的 ASR 模型 id（触磁盘）。 */
+export function getInstalledFunasrAsrModels(): FunasrModelId[] {
+  return getFunasrAsrModelIds().filter((id) => isFunasrModelInstalled(id));
+}
+
+/**
+ * 选定要使用的 ASR 模型（纯函数）：
+ * - requested 命中已装 ASR → 用它；
+ * - 否则回退首个已装 ASR；
+ * - 无已装 ASR → null。
+ */
+export function resolveFunasrAsrSelection(
+  requested: string | undefined,
+  installedAsr: FunasrModelId[],
+): { id: FunasrModelId; modelType: FunasrModelType } | null {
+  if (installedAsr.length === 0) return null;
+  const asrIds = getFunasrAsrModelIds();
+  const normalized = (requested || '').toLowerCase();
+  const chosen =
+    asrIds.find((id) => id === normalized && installedAsr.includes(id)) ??
+    installedAsr[0];
+  return {
+    id: chosen,
+    modelType: FUNASR_MODELS[chosen].modelType ?? 'sense_voice',
+  };
+}
+
+/** funasr 转写就绪 = VAD + 至少一个 ASR 模型已安装。 */
 export function isFunasrReady(): boolean {
   return (
-    isFunasrModelInstalled('sensevoice-small') &&
-    isFunasrModelInstalled('silero-vad')
+    isFunasrModelInstalled('silero-vad') &&
+    getInstalledFunasrAsrModels().length > 0
   );
 }
 
