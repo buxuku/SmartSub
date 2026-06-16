@@ -116,6 +116,9 @@ jobs:
       - name: Compile application code
         run: yarn build # Assumes 'yarn build' compiles TS to JS, e.g., into the 'app' directory
 
+      - name: Install uv (required by base:fetch)
+        uses: astral-sh/setup-uv@v6
+
       - name: Prepare Python base (PBS)
         shell: bash
         run: |
