@@ -13,24 +13,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Layers, RefreshCw, ArrowUpCircle, X, Download } from 'lucide-react';
+import { RefreshCw, ArrowUpCircle, X, Download } from 'lucide-react';
 import { toast } from 'sonner';
-import EngineCardShell from '@/components/resources/EngineCardShell';
 import { persistDownloadSource } from '@/components/settings/gpu/gpuDownloadUtils';
 import { formatSize } from '@/components/settings/gpu/gpuUtils';
-import type { DownloadSource } from '../../../types/addon';
+import type { DownloadSource } from '../../../../../types/addon';
 import type {
   PyBaseDownloadProgress,
   PyBaseStatus,
   PyBaseUpdateInfo,
-} from '../../../types/engine';
+} from '../../../../../types/engine';
 
-interface BaseRuntimeCardProps {
+interface BaseRuntimePanelProps {
   taskBusy: boolean;
   defaultSource: DownloadSource;
 }
 
-const BaseRuntimeCard: React.FC<BaseRuntimeCardProps> = ({
+const BaseRuntimePanel: React.FC<BaseRuntimePanelProps> = ({
   taskBusy,
   defaultSource,
 }) => {
@@ -136,18 +135,10 @@ const BaseRuntimeCard: React.FC<BaseRuntimeCardProps> = ({
 
   const badge = (() => {
     if (isDownloading) {
-      return (
-        <Badge variant="secondary" className="shrink-0">
-          {t('engines.base.downloading')}
-        </Badge>
-      );
+      return <Badge variant="secondary">{t('engines.base.downloading')}</Badge>;
     }
     if (showVerifying) {
-      return (
-        <Badge variant="secondary" className="shrink-0">
-          {t('engines.base.verifying')}
-        </Badge>
-      );
+      return <Badge variant="secondary">{t('engines.base.verifying')}</Badge>;
     }
     if (ready) {
       return (
@@ -159,7 +150,7 @@ const BaseRuntimeCard: React.FC<BaseRuntimeCardProps> = ({
       );
     }
     return (
-      <Badge variant="outline" className="shrink-0 text-muted-foreground">
+      <Badge variant="outline" className="text-muted-foreground">
         {t('engines.base.notReady')}
       </Badge>
     );
@@ -195,14 +186,14 @@ const BaseRuntimeCard: React.FC<BaseRuntimeCardProps> = ({
 
   return (
     <>
-      <EngineCardShell
-        isActive={false}
-        icon={Layers}
-        name={t('engines.base.name')}
-        chips={[]}
-        desc={t('engines.base.desc')}
-        badge={badge}
-      >
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            {t('engines.base.desc')}
+          </p>
+          {badge}
+        </div>
+
         {isDownloading && progress && (
           <div className="space-y-2 rounded-lg bg-muted p-3">
             <p className="text-sm font-medium">
@@ -270,7 +261,7 @@ const BaseRuntimeCard: React.FC<BaseRuntimeCardProps> = ({
             )}
           </div>
         )}
-      </EngineCardShell>
+      </div>
 
       <AlertDialog
         open={showUpgradeConfirm}
@@ -300,4 +291,4 @@ const BaseRuntimeCard: React.FC<BaseRuntimeCardProps> = ({
   );
 };
 
-export default BaseRuntimeCard;
+export default BaseRuntimePanel;

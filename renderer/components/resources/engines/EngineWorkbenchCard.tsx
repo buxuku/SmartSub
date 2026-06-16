@@ -1,9 +1,11 @@
 import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Power, Settings2, Check } from 'lucide-react';
 import { cn } from 'lib/utils';
 
-export interface EngineCardShellProps {
+export interface EngineWorkbenchCardProps {
   isActive: boolean;
   icon: React.ComponentType<{ className?: string }>;
   name: string;
@@ -11,15 +13,20 @@ export interface EngineCardShellProps {
   recommendedLabel?: string;
   chips: string[];
   desc: string;
+  scenario?: string;
   badge: React.ReactNode;
-  children?: React.ReactNode;
+  activeLabel: string;
+  setActiveLabel: string;
+  manageLabel: string;
+  canSetActive: boolean;
+  setActiveDisabled?: boolean;
+  showManage?: boolean;
+  onSetActive: () => void;
+  onManage: () => void;
 }
 
-/**
- * 转写引擎卡片外壳（视觉/布局），各引擎共用：
- * 当前引擎高亮 + 左侧色条；标题/推荐徽标/特性 chips/状态徽章 + 描述与自定义 body。
- */
-const EngineCardShell: React.FC<EngineCardShellProps> = ({
+/** 紧凑「工作台」引擎卡片：一屏看全引擎，操作收敛为 设为当前 / 管理。 */
+const EngineWorkbenchCard: React.FC<EngineWorkbenchCardProps> = ({
   isActive,
   icon: Icon,
   name,
@@ -27,13 +34,21 @@ const EngineCardShell: React.FC<EngineCardShellProps> = ({
   recommendedLabel,
   chips,
   desc,
+  scenario,
   badge,
-  children,
+  activeLabel,
+  setActiveLabel,
+  manageLabel,
+  canSetActive,
+  setActiveDisabled,
+  showManage = true,
+  onSetActive,
+  onManage,
 }) => {
   return (
     <Card
       className={cn(
-        'relative overflow-hidden transition-all',
+        'relative flex flex-col overflow-hidden transition-all',
         isActive && 'border-primary/60 bg-primary/[0.03] shadow-sm',
       )}
     >
@@ -43,7 +58,7 @@ const EngineCardShell: React.FC<EngineCardShellProps> = ({
           className="absolute inset-y-0 left-0 w-1 bg-primary"
         />
       )}
-      <CardHeader className="pb-3">
+      <CardContent className="flex flex-1 flex-col gap-3 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
             <div
@@ -57,7 +72,7 @@ const EngineCardShell: React.FC<EngineCardShellProps> = ({
               <Icon className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+              <p className="flex flex-wrap items-center gap-2 text-base font-semibold leading-tight">
                 {name}
                 {recommended && recommendedLabel && (
                   <Badge
@@ -67,7 +82,7 @@ const EngineCardShell: React.FC<EngineCardShellProps> = ({
                     {recommendedLabel}
                   </Badge>
                 )}
-              </CardTitle>
+              </p>
               {chips.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {chips.map((c) => (
@@ -84,13 +99,48 @@ const EngineCardShell: React.FC<EngineCardShellProps> = ({
           </div>
           {badge}
         </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
+
         <p className="text-sm text-muted-foreground">{desc}</p>
-        {children}
+        {scenario && (
+          <p className="text-xs font-medium text-muted-foreground/90">
+            {scenario}
+          </p>
+        )}
+
+        <div className="mt-auto flex items-center gap-2 pt-1">
+          {isActive ? (
+            <Badge className="gap-1">
+              <Check className="h-3 w-3" />
+              {activeLabel}
+            </Badge>
+          ) : (
+            canSetActive && (
+              <Button
+                size="sm"
+                className="gap-1.5"
+                disabled={setActiveDisabled}
+                onClick={onSetActive}
+              >
+                <Power className="h-3.5 w-3.5" />
+                {setActiveLabel}
+              </Button>
+            )
+          )}
+          {showManage && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={onManage}
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+              {manageLabel}
+            </Button>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
 };
 
-export default EngineCardShell;
+export default EngineWorkbenchCard;

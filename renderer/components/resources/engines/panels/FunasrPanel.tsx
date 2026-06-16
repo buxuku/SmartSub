@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,57 +22,40 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Languages,
-  Check,
-  Download,
-  Trash2,
-  Power,
-  RefreshCw,
-  ArrowUpCircle,
-  X,
-  CheckCircle2,
-} from 'lucide-react';
+import { Download, Trash2, RefreshCw, ArrowUpCircle, X } from 'lucide-react';
 import { toast } from 'sonner';
-import EngineCardShell from '@/components/resources/EngineCardShell';
 import { persistDownloadSource } from '@/components/settings/gpu/gpuDownloadUtils';
 import { formatSize } from '@/components/settings/gpu/gpuUtils';
-import type { DownloadSource } from '../../../types/addon';
+import type { DownloadSource } from '../../../../../types/addon';
 import type {
   EngineStatus,
   PyEngineDownloadProgress,
   PyEngineUpdateInfo,
-} from '../../../types/engine';
+} from '../../../../../types/engine';
 
 const FUNASR_ENGINE_SIZE = '28MB';
 
-type FunasrModelId = 'sensevoice-small' | 'silero-vad';
-
-interface FunasrModelStatus {
+// 仅取包/基座状态用于切换下载↔卸载 UI；模型清单已移至「模型」页统一管理。
+interface FunasrPackageStatus {
   baseReady: boolean;
   engineInstalled: boolean;
   ready: boolean;
-  models: { id: FunasrModelId; installed: boolean }[];
 }
 
-interface FunasrEngineCardProps {
-  isActive: boolean;
+interface FunasrPanelProps {
   status?: EngineStatus;
   taskBusy: boolean;
   defaultSource: DownloadSource;
-  onActivated: () => void;
   onRefreshStatuses: () => void | Promise<void>;
+  onGoModels: () => void;
 }
 
-const MODEL_ORDER: FunasrModelId[] = ['sensevoice-small', 'silero-vad'];
-
-const FunasrEngineCard: React.FC<FunasrEngineCardProps> = ({
-  isActive,
+const FunasrPanel: React.FC<FunasrPanelProps> = ({
   status,
   taskBusy,
   defaultSource,
-  onActivated,
   onRefreshStatuses,
+  onGoModels,
 }) => {
   const { t } = useTranslation('resources');
   const { t: commonT } = useTranslation('common');
@@ -85,33 +68,21 @@ const FunasrEngineCard: React.FC<FunasrEngineCardProps> = ({
   const [showDownloadConfirm, setShowDownloadConfirm] = useState(false);
   const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false);
   const [pkgSource, setPkgSource] = useState<DownloadSource>(defaultSource);
-
-  const [modelStatus, setModelStatus] = useState<FunasrModelStatus | null>(
-    null,
-  );
-  const [modelProgress, setModelProgress] = useState<Record<string, number>>(
-    {},
-  );
-  const [downloadingModel, setDownloadingModel] =
-    useState<FunasrModelId | null>(null);
-
+  const [pkgStatus, setPkgStatus] = useState<FunasrPackageStatus | null>(null);
   const [useItn, setUseItn] = useState(true);
   const [numThreads, setNumThreads] = useState(4);
 
-  const taskBusyRef = useRef(taskBusy);
-  taskBusyRef.current = taskBusy;
-
-  const loadModelStatus = useCallback(async () => {
+  const loadPackageStatus = useCallback(async () => {
     try {
       const r = await window?.ipc?.invoke('getFunasrModelStatus');
-      if (r?.success) setModelStatus(r as FunasrModelStatus);
+      if (r?.success) setPkgStatus(r as FunasrPackageStatus);
     } catch {
       // 忽略：保持上次状态
     }
   }, []);
 
   useEffect(() => {
-    loadModelStatus();
+    loadPackageStatus();
     (async () => {
       try {
         const settings = await window?.ipc?.invoke('getSettings');
@@ -147,7 +118,7 @@ const FunasrEngineCard: React.FC<FunasrEngineCardProps> = ({
             } catch {
               // 校验失败交给 refresh 反映真实状态
             } finally {
-              await loadModelStatus();
+              await loadPackageStatus();
               await onRefreshStatuses();
               setVerifying(false);
             }
@@ -161,14 +132,6 @@ const FunasrEngineCard: React.FC<FunasrEngineCardProps> = ({
       },
     );
 
-    const unsubModel = window?.ipc?.on(
-      'downloadProgress',
-      (key: string, value: number) => {
-        if (typeof key !== 'string' || !key.startsWith('funasr:')) return;
-        setModelProgress((prev) => ({ ...prev, [key]: value }));
-      },
-    );
-
     const unsubUpdate = window?.ipc?.on(
       'py-engine-update-available',
       (info: PyEngineUpdateInfo & { engineId?: string }) => {
@@ -179,31 +142,24 @@ const FunasrEngineCard: React.FC<FunasrEngineCardProps> = ({
 
     return () => {
       unsubPkg?.();
-      unsubModel?.();
       unsubUpdate?.();
     };
-  }, [loadModelStatus, onRefreshStatuses, t]);
+  }, [loadPackageStatus, onRefreshStatuses, t]);
 
-  const baseReady = modelStatus?.baseReady ?? status?.state !== 'error';
-  const pkgInstalled = modelStatus?.engineInstalled ?? false;
-  const modelsReady = modelStatus?.ready ?? false;
-  const fullyReady = baseReady && pkgInstalled && modelsReady;
-
+  const baseReady = pkgStatus?.baseReady ?? status?.state !== 'error';
+  const pkgInstalled = pkgStatus?.engineInstalled ?? false;
   const isDownloadingPkg =
     pkgProgress?.status === 'downloading' ||
     pkgProgress?.status === 'extracting';
   const showVerifying = verifying || pkgProgress?.status === 'verifying';
   const hasUpdate = !!(updateInfo?.hasUpdate && updateInfo.protocolSupported);
 
-  const isModelInstalled = (id: FunasrModelId) =>
-    modelStatus?.models.find((m) => m.id === id)?.installed ?? false;
-
-  // 引擎一旦确认就绪/异常，立即清掉「检测中」，避免 ping 异常让标志卡死
+  // 引擎包一旦确认安装/异常，立即清掉「检测中」，避免 ping 异常让标志卡死
   useEffect(() => {
-    if (verifying && (fullyReady || status?.state === 'error')) {
+    if (verifying && (pkgInstalled || status?.state === 'error')) {
       setVerifying(false);
     }
-  }, [verifying, fullyReady, status?.state]);
+  }, [verifying, pkgInstalled, status?.state]);
 
   const handleStartDownload = async () => {
     setShowDownloadConfirm(false);
@@ -270,7 +226,7 @@ const FunasrEngineCard: React.FC<FunasrEngineCardProps> = ({
     });
     if (r?.success) {
       setVerifying(false);
-      await loadModelStatus();
+      await loadPackageStatus();
       await onRefreshStatuses();
     } else {
       toast.error(
@@ -278,63 +234,6 @@ const FunasrEngineCard: React.FC<FunasrEngineCardProps> = ({
           ? t('engines.funasr.engineBusy')
           : r?.error || 'Failed to uninstall',
       );
-    }
-  };
-
-  const handleSetActive = async () => {
-    if (taskBusy) {
-      toast.error(t('engines.switchBlocked'));
-      return;
-    }
-    const r = await window?.ipc?.invoke('set-transcription-engine', 'funasr');
-    if (r?.success) {
-      onActivated();
-      return;
-    }
-    if (r?.error === 'engine_not_installed') {
-      setShowDownloadConfirm(true);
-      return;
-    }
-    toast.error(r?.error || 'Failed to switch engine');
-  };
-
-  const handleDownloadModel = async (id: FunasrModelId) => {
-    setDownloadingModel(id);
-    try {
-      const r = await window?.ipc?.invoke('downloadFunasrModel', {
-        model: id,
-        source: 'hf-mirror',
-      });
-      if (r?.success) {
-        await loadModelStatus();
-        await onRefreshStatuses();
-      } else {
-        toast.error(
-          r?.error === 'anotherDownloadInProgress'
-            ? t('engines.funasr.anotherDownload')
-            : r?.error || 'Failed to download model',
-        );
-      }
-    } catch (e) {
-      toast.error(String(e));
-    } finally {
-      setDownloadingModel(null);
-      setModelProgress((prev) => ({ ...prev, [`funasr:${id}`]: 0 }));
-    }
-  };
-
-  const handleCancelModel = async () => {
-    await window?.ipc?.invoke('cancelModelDownload');
-    setDownloadingModel(null);
-  };
-
-  const handleDeleteModel = async (id: FunasrModelId) => {
-    const r = await window?.ipc?.invoke('deleteFunasrModel', id);
-    if (r?.success) {
-      await loadModelStatus();
-      await onRefreshStatuses();
-    } else {
-      toast.error(r?.error || 'Failed to delete model');
     }
   };
 
@@ -348,58 +247,6 @@ const FunasrEngineCard: React.FC<FunasrEngineCardProps> = ({
     setNumThreads(n);
     await window?.ipc?.invoke('set-funasr-settings', { numThreads: n });
   };
-
-  const chips = [
-    t('engines.tags.multilang'),
-    t('engines.tags.cpuFriendly'),
-    ...(pkgInstalled
-      ? []
-      : [t('engines.tags.needsDownload', { size: FUNASR_ENGINE_SIZE })]),
-  ];
-
-  const badge = (() => {
-    if (isActive) {
-      return (
-        <Badge className="shrink-0 gap-1">
-          <Check className="h-3 w-3" />
-          {t('engines.active')}
-        </Badge>
-      );
-    }
-    if (isDownloadingPkg) {
-      return (
-        <Badge variant="secondary" className="shrink-0">
-          {t('engines.funasr.downloading')}
-        </Badge>
-      );
-    }
-    if (showVerifying) {
-      return (
-        <Badge variant="secondary" className="shrink-0">
-          {t('engines.funasr.verifying')}
-        </Badge>
-      );
-    }
-    if (fullyReady) {
-      return (
-        <Badge variant="outline" className="border-success/40 text-success">
-          {t('engines.statusAvailable')}
-        </Badge>
-      );
-    }
-    if (pkgInstalled && !modelsReady) {
-      return (
-        <Badge variant="outline" className="border-primary/40 text-primary">
-          {t('engines.funasr.needsModels')}
-        </Badge>
-      );
-    }
-    return (
-      <Badge variant="outline" className="shrink-0 text-muted-foreground">
-        {t('engines.funasr.notInstalled')}
-      </Badge>
-    );
-  })();
 
   const sourceSelector = (
     <div className="space-y-1.5">
@@ -429,81 +276,13 @@ const FunasrEngineCard: React.FC<FunasrEngineCardProps> = ({
     </div>
   );
 
-  const renderModelRow = (id: FunasrModelId) => {
-    const installed = isModelInstalled(id);
-    const isBusy = downloadingModel === id;
-    const pct = Math.round((modelProgress[`funasr:${id}`] ?? 0) * 100);
-    return (
-      <div
-        key={id}
-        className="flex items-center justify-between gap-3 rounded-md border border-muted p-2.5"
-      >
-        <div className="min-w-0">
-          <p className="flex items-center gap-1.5 text-sm font-medium">
-            {installed && (
-              <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
-            )}
-            {t(`engines.funasr.models.${id}.name`)}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {t(`engines.funasr.models.${id}.desc`)}
-          </p>
-          {isBusy && (
-            <div className="mt-1.5 w-40">
-              <Progress value={pct} />
-            </div>
-          )}
-        </div>
-        <div className="shrink-0">
-          {isBusy ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="gap-1.5 text-muted-foreground"
-              onClick={handleCancelModel}
-            >
-              <X className="h-3.5 w-3.5" />
-              {commonT('cancel')}
-            </Button>
-          ) : installed ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="gap-1.5 text-muted-foreground"
-              onClick={() => handleDeleteModel(id)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              {t('engines.funasr.modelDelete')}
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5"
-              disabled={!!downloadingModel}
-              onClick={() => handleDownloadModel(id)}
-            >
-              <Download className="h-3.5 w-3.5" />
-              {t('engines.funasr.modelDownload')}
-            </Button>
-          )}
-        </div>
-      </div>
-    );
-  };
-
   return (
     <>
-      <EngineCardShell
-        isActive={isActive}
-        icon={Languages}
-        name={t('engines.funasr.name')}
-        recommended
-        recommendedLabel={t('engines.tags.chineseRecommended')}
-        chips={chips}
-        desc={t('engines.funasr.desc')}
-        badge={badge}
-      >
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          {t('engines.funasr.desc')}
+        </p>
+
         {isDownloadingPkg && pkgProgress && (
           <div className="space-y-2 rounded-lg bg-muted p-3">
             <p className="text-sm font-medium">
@@ -545,17 +324,6 @@ const FunasrEngineCard: React.FC<FunasrEngineCardProps> = ({
                 {t('engines.funasr.download', { size: FUNASR_ENGINE_SIZE })}
               </Button>
             )}
-          {fullyReady && !isActive && (
-            <Button
-              size="sm"
-              className="gap-1.5"
-              disabled={taskBusy}
-              onClick={handleSetActive}
-            >
-              <Power className="h-3.5 w-3.5" />
-              {t('engines.setActive')}
-            </Button>
-          )}
           {pkgInstalled && (
             <Button
               size="sm"
@@ -617,18 +385,22 @@ const FunasrEngineCard: React.FC<FunasrEngineCardProps> = ({
         )}
 
         {pkgInstalled && (
-          <div className="space-y-2 rounded-lg border border-muted p-3">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">
-                {t('engines.funasr.modelsTitle')}
-              </p>
-              {!modelsReady && (
-                <span className="text-xs text-primary">
-                  {t('engines.funasr.needModelsHint')}
-                </span>
-              )}
-            </div>
-            <div className="space-y-2">{MODEL_ORDER.map(renderModelRow)}</div>
+          <div className="space-y-1.5 rounded-lg border border-muted p-3">
+            <p className="text-sm font-medium">
+              {t('engines.funasr.modelsTitle')}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t('engines.funasr.needModelsHint')}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-1 gap-1.5"
+              onClick={onGoModels}
+            >
+              <Download className="h-3.5 w-3.5" />
+              {t('engines.funasr.modelsTitle')}
+            </Button>
           </div>
         )}
 
@@ -679,7 +451,7 @@ const FunasrEngineCard: React.FC<FunasrEngineCardProps> = ({
             </div>
           </div>
         )}
-      </EngineCardShell>
+      </div>
 
       <AlertDialog
         open={showDownloadConfirm}
@@ -741,4 +513,4 @@ const FunasrEngineCard: React.FC<FunasrEngineCardProps> = ({
   );
 };
 
-export default FunasrEngineCard;
+export default FunasrPanel;

@@ -1,27 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'next-i18next';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Progress } from '@/components/ui/progress';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,30 +17,26 @@ import {
   X,
   Zap,
   Terminal,
-  Check,
   Cpu,
   Download,
-  Trash2,
-  Power,
-  RefreshCw,
   ArrowUpCircle,
-  SlidersHorizontal,
-  ChevronDown,
-  Info,
-  Settings2,
+  Languages,
+  Layers,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from 'lib/utils';
 import SectionHeader from '@/components/SectionHeader';
-import EngineCardShell from '@/components/resources/EngineCardShell';
-import FunasrEngineCard from '@/components/resources/FunasrEngineCard';
-import BaseRuntimeCard from '@/components/resources/BaseRuntimeCard';
+import EngineWorkbenchCard from '@/components/resources/engines/EngineWorkbenchCard';
+import EngineManageDrawer from '@/components/resources/engines/EngineManageDrawer';
+import FasterWhisperPanel from '@/components/resources/engines/panels/FasterWhisperPanel';
+import FunasrPanel from '@/components/resources/engines/panels/FunasrPanel';
+import LocalCliPanel from '@/components/resources/engines/panels/LocalCliPanel';
+import BuiltinPanel from '@/components/resources/engines/panels/BuiltinPanel';
+import BaseRuntimePanel from '@/components/resources/engines/panels/BaseRuntimePanel';
 import {
   readPersistedDownloadSource,
   persistDownloadSource,
 } from '@/components/settings/gpu/gpuDownloadUtils';
 import type { DownloadSource } from '../../../types/addon';
-import { formatSize } from '@/components/settings/gpu/gpuUtils';
 import type {
   EngineStatus,
   PyEngineDownloadProgress,
@@ -69,22 +45,20 @@ import type {
 } from '../../../types/engine';
 
 const PY_ENGINE_SIZE = '170MB';
-
-const COMPUTE_TYPE_OPTIONS = [
-  'auto',
-  'float16',
-  'int8',
-  'int8_float16',
-  'float32',
-] as const;
+const FUNASR_ENGINE_SIZE = '28MB';
 
 type EngineStatuses = Partial<Record<TranscriptionEngine, EngineStatus>>;
+type ManageTarget = TranscriptionEngine | 'base';
 
 function isQueueBusy(status: string | undefined): boolean {
   return status === 'running' || status === 'paused' || status === 'cancelling';
 }
 
-const EnginesTab = () => {
+interface EnginesTabProps {
+  onNavigateTab?: (tab: string) => void;
+}
+
+const EnginesTab: React.FC<EnginesTabProps> = ({ onNavigateTab }) => {
   const { t } = useTranslation('resources');
   const { t: commonT } = useTranslation('common');
 
@@ -94,7 +68,6 @@ const EnginesTab = () => {
   const [device, setDevice] = useState<'auto' | 'cpu' | 'cuda'>('auto');
   const [computeType, setComputeType] = useState('auto');
   const [whisperCommand, setWhisperCommand] = useState('');
-  const [showCommandConfig, setShowCommandConfig] = useState(false);
   const [platform, setPlatform] = useState('');
   const [downloadProgress, setDownloadProgress] =
     useState<PyEngineDownloadProgress | null>(null);
@@ -108,6 +81,11 @@ const EnginesTab = () => {
   const taskBusyRef = useRef(false);
   const [updateInfo, setUpdateInfo] = useState<PyEngineUpdateInfo | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [manageTarget, setManageTarget] = useState<ManageTarget | null>(null);
+  // funasr 卡片仅需轻量状态（包是否安装/模型是否就绪）驱动徽章与「设为当前」可用性，
+  // 其余包生命周期逻辑在自包含的 FunasrPanel 内。
+  const [funasrPkgInstalled, setFunasrPkgInstalled] = useState(false);
+  const [funasrModelsReady, setFunasrModelsReady] = useState(false);
 
   const [binarySource, setBinarySource] = useState<DownloadSource>(() =>
     typeof window === 'undefined' ? 'github' : readPersistedDownloadSource(),
@@ -137,6 +115,12 @@ const EnginesTab = () => {
       const busy = isQueueBusy(taskStatus);
       setTaskBusy(busy);
       taskBusyRef.current = busy;
+
+      const fr = await window?.ipc?.invoke('getFunasrModelStatus');
+      if (fr?.success) {
+        setFunasrPkgInstalled(!!fr.engineInstalled);
+        setFunasrModelsReady(!!fr.ready);
+      }
     } catch (error) {
       console.error('Failed to refresh engine status:', error);
     }
@@ -147,7 +131,7 @@ const EnginesTab = () => {
     const unsubProgress = window?.ipc?.on(
       'py-engine-download-progress',
       (_progress: PyEngineDownloadProgress) => {
-        // 本卡片只反映 faster-whisper 引擎包进度；funasr 由 FunasrEngineCard 自行处理。
+        // 此监听只反映 faster-whisper 引擎包进度；funasr 由下方独立监听 + FunasrPanel 处理。
         if (_progress.engineId && _progress.engineId !== 'faster-whisper') {
           return;
         }
@@ -199,6 +183,17 @@ const EnginesTab = () => {
         }
       },
     );
+    // funasr 引擎包下载若在抽屉内发起、却在完成前关闭抽屉，FunasrPanel 已卸载收不到完成事件；
+    // 这里在父级补一个监听，完成/失败后刷新卡片徽章与「设为当前」可用性。
+    const unsubFunasrProgress = window?.ipc?.on(
+      'py-engine-download-progress',
+      (p: PyEngineDownloadProgress) => {
+        if (p.engineId !== 'funasr') return;
+        if (p.status === 'completed' || p.status === 'error') {
+          refresh();
+        }
+      },
+    );
     const unsubTask = window?.ipc?.on('taskStatusChange', (status: string) => {
       const busy = isQueueBusy(status);
       setTaskBusy(busy);
@@ -213,6 +208,7 @@ const EnginesTab = () => {
     );
     return () => {
       unsubProgress?.();
+      unsubFunasrProgress?.();
       unsubTask?.();
       unsubUpdate?.();
     };
@@ -347,9 +343,6 @@ const EnginesTab = () => {
   const fasterBroken = fasterStatus?.state === 'error';
   // 「检测中」覆盖两段：下载后的安装校验阶段（downloader 的 'verifying' 状态）
   // 与 completed 后的 ping 冷启动（verifying 标志）。
-  // 不能用 'completed' 状态判断：核心会一直保留 'completed'（不重置），
-  // 否则卸载后会被永久误判为「检测中」，且刷新页面也不恢复。'verifying' 是瞬时态
-  // （后必跟 completed/error），用它判断既能补上安装校验空档，又不会卡死。
   const showVerifying = verifying || downloadProgress?.status === 'verifying';
   const hasUpdate = !!(updateInfo?.hasUpdate && updateInfo.protocolSupported);
   const localCliReady =
@@ -364,12 +357,6 @@ const EnginesTab = () => {
   // CTranslate2(faster-whisper) 在 macOS 上不支持 CUDA/Metal，仅 CPU；其它平台保留 cuda
   const deviceOptions =
     platform === 'darwin' ? ['auto', 'cpu'] : ['auto', 'cpu', 'cuda'];
-  const deviceValue = deviceOptions.includes(device) ? device : 'auto';
-
-  const deviceLabel = (opt: string) =>
-    t(`engines.fasterWhisper.deviceOptions.${opt}`);
-  const computeLabel = (opt: string) =>
-    opt === 'auto' ? t('engines.fasterWhisper.computeTypeOptions.auto') : opt;
 
   const readyBadge = (
     <Badge variant="outline" className="border-success/40 text-success">
@@ -377,15 +364,8 @@ const EnginesTab = () => {
     </Badge>
   );
 
+  // 头部徽章只表达「就绪/安装」状态；「使用中」由卡片高亮 + 底部徽章表达，避免重复。
   const renderEngineBadge = (engine: TranscriptionEngine) => {
-    if (currentEngine === engine) {
-      return (
-        <Badge className="shrink-0 gap-1">
-          <Check className="h-3 w-3" />
-          {t('engines.active')}
-        </Badge>
-      );
-    }
     if (engine === 'fasterWhisper') {
       if (isDownloading) {
         return (
@@ -415,6 +395,21 @@ const EnginesTab = () => {
         </Badge>
       );
     }
+    if (engine === 'funasr') {
+      if (funasrPkgInstalled && funasrModelsReady) return readyBadge;
+      if (funasrPkgInstalled && !funasrModelsReady) {
+        return (
+          <Badge variant="outline" className="border-primary/40 text-primary">
+            {t('engines.funasr.needsModels')}
+          </Badge>
+        );
+      }
+      return (
+        <Badge variant="outline" className="shrink-0 text-muted-foreground">
+          {t('engines.funasr.notInstalled')}
+        </Badge>
+      );
+    }
     if (engine === 'localCli') {
       return localCliReady ? (
         readyBadge
@@ -425,22 +420,6 @@ const EnginesTab = () => {
       );
     }
     return readyBadge;
-  };
-
-  // 当前引擎以「使用中」徽章 + 卡片高亮表达，非当前才出现「设为当前引擎」主操作
-  const renderSetActiveButton = (engine: TranscriptionEngine) => {
-    if (currentEngine === engine) return null;
-    return (
-      <Button
-        size="sm"
-        className="gap-1.5"
-        disabled={taskBusy}
-        onClick={() => handleSelectEngine(engine)}
-      >
-        <Power className="h-3.5 w-3.5" />
-        {t('engines.setActive')}
-      </Button>
-    );
   };
 
   const renderBinarySourceSelector = () => (
@@ -474,126 +453,43 @@ const EnginesTab = () => {
     </div>
   );
 
-  const renderEngineCard = (config: {
-    engine: TranscriptionEngine;
-    icon: React.ComponentType<{ className?: string }>;
-    name: string;
-    recommended?: boolean;
-    chips: string[];
-    desc: string;
-    body?: React.ReactNode;
-  }) => {
-    const { engine, icon: Icon, name, recommended, chips, desc, body } = config;
-    return (
-      <EngineCardShell
-        isActive={currentEngine === engine}
-        icon={Icon}
-        name={name}
-        recommended={recommended}
-        recommendedLabel={t('engines.tags.recommended')}
-        chips={chips}
-        desc={desc}
-        badge={renderEngineBadge(engine)}
-      >
-        {body}
-      </EngineCardShell>
-    );
+  const drawerTitle = (target: ManageTarget | null): string => {
+    if (target === 'base') return t('engines.base.name');
+    if (target === 'fasterWhisper') return t('engines.fasterWhisper.name');
+    if (target === 'funasr') return t('engines.funasr.name');
+    if (target === 'localCli') return t('engines.localCli.name');
+    if (target === 'builtin') return t('engines.builtin.name');
+    return '';
   };
 
-  const advancedSettings = (
-    <Collapsible className="rounded-lg border bg-muted/30">
-      <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 px-3 py-2 text-left">
-        <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-          <SlidersHorizontal className="h-3.5 w-3.5" />
-          {t('engines.fasterWhisper.advanced')}
-        </span>
-        <span className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="hidden sm:inline">
-            {t('engines.fasterWhisper.device')}: {deviceLabel(deviceValue)} ·{' '}
-            {t('engines.fasterWhisper.computeType')}:{' '}
-            {computeLabel(computeType)}
-          </span>
-          <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
-        </span>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="grid gap-4 border-t p-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-1.5">
-              <label htmlFor="fw-device" className="text-sm font-medium">
-                {t('engines.fasterWhisper.device')}
-              </label>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label={t('engines.fasterWhisper.device')}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <Info className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] whitespace-pre-line text-xs leading-relaxed">
-                  {t('engines.fasterWhisper.deviceTooltip')}
-                </TooltipContent>
-              </Tooltip>
-            </div>
-            <Select value={deviceValue} onValueChange={handleDeviceChange}>
-              <SelectTrigger id="fw-device">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {deviceOptions.map((opt) => (
-                  <SelectItem key={opt} value={opt}>
-                    {deviceLabel(opt)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              {t('engines.fasterWhisper.deviceHint')}
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-1.5">
-              <label htmlFor="fw-compute" className="text-sm font-medium">
-                {t('engines.fasterWhisper.computeType')}
-              </label>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label={t('engines.fasterWhisper.computeType')}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <Info className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] whitespace-pre-line text-xs leading-relaxed">
-                  {t('engines.fasterWhisper.computeTypeTooltip')}
-                </TooltipContent>
-              </Tooltip>
-            </div>
-            <Select value={computeType} onValueChange={handleComputeTypeChange}>
-              <SelectTrigger id="fw-compute">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {COMPUTE_TYPE_OPTIONS.map((opt) => (
-                  <SelectItem key={opt} value={opt}>
-                    {computeLabel(opt)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              {t('engines.fasterWhisper.computeTypeHint')}
-            </p>
-          </div>
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
+  const fasterWhisperPanelProps = {
+    status: fasterStatus,
+    isDownloading,
+    downloadProgress,
+    showVerifying,
+    fasterInstalled,
+    fasterBroken,
+    hasUpdate,
+    checkingUpdate,
+    taskBusy,
+    device,
+    computeType,
+    deviceOptions,
+    updateInfo,
+    onDownload: () => {
+      pendingActivateRef.current = true;
+      setShowDownloadConfirm(true);
+    },
+    onRepair: () => {
+      pendingActivateRef.current = false;
+      setShowDownloadConfirm(true);
+    },
+    onUninstall: handleUninstall,
+    onCheckUpdate: handleCheckUpdate,
+    onUpgrade: () => setShowUpgradeConfirm(true),
+    onDeviceChange: handleDeviceChange,
+    onComputeTypeChange: handleComputeTypeChange,
+  };
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -604,276 +500,146 @@ const EnginesTab = () => {
           description={t('engines.description')}
         />
 
-        <div className="grid gap-4">
-          {renderEngineCard({
-            engine: 'builtin',
-            icon: Box,
-            name: t('engines.builtin.name'),
-            recommended: true,
-            chips: [
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <EngineWorkbenchCard
+            isActive={currentEngine === 'builtin'}
+            icon={Box}
+            name={t('engines.builtin.name')}
+            recommended
+            recommendedLabel={t('engines.tags.recommended')}
+            chips={[
               t('engines.tags.macRecommended'),
               t('engines.tags.noDownload'),
               t('engines.tags.gpu'),
-            ],
-            desc: t('engines.builtin.desc'),
-            body:
-              currentEngine === 'builtin' ? null : (
-                <div className="flex flex-wrap items-center gap-2">
-                  {renderSetActiveButton('builtin')}
-                </div>
-              ),
-          })}
-
-          {renderEngineCard({
-            engine: 'fasterWhisper',
-            icon: Zap,
-            name: t('engines.fasterWhisper.name'),
-            chips: [
+            ]}
+            desc={t('engines.builtin.desc')}
+            scenario={t('engines.builtin.scenario')}
+            badge={renderEngineBadge('builtin')}
+            activeLabel={t('engines.active')}
+            setActiveLabel={t('engines.setActive')}
+            manageLabel={t('overview.manage')}
+            canSetActive
+            setActiveDisabled={taskBusy}
+            onSetActive={() => handleSelectEngine('builtin')}
+            onManage={() => setManageTarget('builtin')}
+          />
+          <EngineWorkbenchCard
+            isActive={currentEngine === 'fasterWhisper'}
+            icon={Zap}
+            name={t('engines.fasterWhisper.name')}
+            chips={[
               t('engines.tags.faster'),
               t('engines.tags.accurateTimestamps'),
-              t('engines.tags.antiHallucination'),
               ...(fasterInstalled
                 ? []
                 : [t('engines.tags.needsDownload', { size: PY_ENGINE_SIZE })]),
-            ],
-            desc: t('engines.fasterWhisper.desc'),
-            body: (
-              <>
-                {isDownloading && downloadProgress && (
-                  <div className="space-y-2 rounded-lg bg-muted p-3">
-                    <p className="text-sm font-medium">
-                      {t('engines.fasterWhisper.downloading')}
-                    </p>
-                    <Progress value={downloadProgress.progress} />
-                    {downloadProgress.total > 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        {formatSize(downloadProgress.downloaded)} /{' '}
-                        {formatSize(downloadProgress.total)}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {showVerifying && !isDownloading && (
-                  <div className="rounded-lg bg-muted p-3">
-                    <p className="text-sm font-medium">
-                      {t('engines.fasterWhisper.verifying')}
-                    </p>
-                  </div>
-                )}
-
-                {fasterBroken && fasterStatus?.message && (
-                  <p className="text-sm text-destructive">
-                    {fasterStatus.message}
-                  </p>
-                )}
-
-                <div className="flex flex-wrap items-center gap-2">
-                  {!fasterInstalled &&
-                    !isDownloading &&
-                    !fasterBroken &&
-                    !showVerifying && (
-                      <Button
-                        size="sm"
-                        className="gap-1.5"
-                        onClick={() => {
-                          pendingActivateRef.current = true;
-                          setShowDownloadConfirm(true);
-                        }}
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        {t('engines.fasterWhisper.download', {
-                          size: PY_ENGINE_SIZE,
-                        })}
-                      </Button>
-                    )}
-                  {fasterBroken && (
-                    <Button
-                      size="sm"
-                      className="gap-1.5"
-                      onClick={() => {
-                        pendingActivateRef.current = false;
-                        setShowDownloadConfirm(true);
-                      }}
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      {t('engines.fasterWhisper.repair')}
-                    </Button>
-                  )}
-                  {fasterInstalled && renderSetActiveButton('fasterWhisper')}
-                  {(fasterInstalled || fasterBroken) && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="gap-1.5 text-muted-foreground"
-                      onClick={handleUninstall}
-                      disabled={taskBusy}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      {t('engines.fasterWhisper.uninstall')}
-                    </Button>
-                  )}
-                </div>
-
-                {fasterInstalled && !isDownloading && !showVerifying && (
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                    {fasterStatus?.version && (
-                      <span className="text-xs text-muted-foreground">
-                        {t('engines.fasterWhisper.installedVersion', {
-                          version: fasterStatus.version,
-                        })}
-                      </span>
-                    )}
-                    {hasUpdate ? (
-                      <>
-                        <Badge
-                          variant="outline"
-                          className="border-primary/40 text-primary"
-                        >
-                          {t('engines.fasterWhisper.updateAvailable')}
-                        </Badge>
-                        <Button
-                          size="sm"
-                          className="gap-1.5"
-                          disabled={taskBusy}
-                          onClick={() => setShowUpgradeConfirm(true)}
-                        >
-                          <ArrowUpCircle className="h-3.5 w-3.5" />
-                          {t('engines.fasterWhisper.upgrade')}
-                        </Button>
-                      </>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5"
-                        disabled={checkingUpdate || taskBusy}
-                        onClick={handleCheckUpdate}
-                      >
-                        <RefreshCw
-                          className={cn(
-                            'h-3.5 w-3.5',
-                            checkingUpdate && 'animate-spin',
-                          )}
-                        />
-                        {checkingUpdate
-                          ? t('engines.fasterWhisper.checking')
-                          : t('engines.fasterWhisper.checkUpdate')}
-                      </Button>
-                    )}
-                    {updateInfo && !updateInfo.protocolSupported && (
-                      <span className="text-xs text-destructive">
-                        {t('engines.fasterWhisper.protocolUnsupported')}
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {fasterInstalled && (
-                  <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                    <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    {t('engines.fasterWhisper.serialNote')}
-                  </p>
-                )}
-
-                {fasterInstalled && advancedSettings}
-              </>
-            ),
-          })}
-
-          <FunasrEngineCard
-            isActive={currentEngine === 'funasr'}
-            status={engineStatuses.funasr}
-            taskBusy={taskBusy}
-            defaultSource={binarySource}
-            onActivated={() => {
-              setCurrentEngine('funasr');
-              window.dispatchEvent(
-                new CustomEvent('transcription-engine-changed'),
-              );
-            }}
-            onRefreshStatuses={refresh}
+            ]}
+            desc={t('engines.fasterWhisper.desc')}
+            scenario={t('engines.fasterWhisper.scenario')}
+            badge={renderEngineBadge('fasterWhisper')}
+            activeLabel={t('engines.active')}
+            setActiveLabel={t('engines.setActive')}
+            manageLabel={t('overview.manage')}
+            canSetActive
+            setActiveDisabled={taskBusy}
+            onSetActive={() => handleSelectEngine('fasterWhisper')}
+            onManage={() => setManageTarget('fasterWhisper')}
           />
-
-          {renderEngineCard({
-            engine: 'localCli',
-            icon: Terminal,
-            name: t('engines.localCli.name'),
-            chips: [t('engines.tags.advanced'), t('engines.tags.byoModel')],
-            desc: t('engines.localCli.desc'),
-            body: (
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  {renderSetActiveButton('localCli')}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5"
-                    aria-expanded={showCommandConfig}
-                    onClick={() => setShowCommandConfig((v) => !v)}
-                  >
-                    <Settings2 className="h-3.5 w-3.5" />
-                    {t('engines.localCli.configure')}
-                    <ChevronDown
-                      className={cn(
-                        'h-3.5 w-3.5 transition-transform',
-                        showCommandConfig && 'rotate-180',
-                      )}
-                    />
-                  </Button>
-                </div>
-                {showCommandConfig && (
-                  <div className="space-y-1.5 rounded-lg border bg-muted/30 p-3">
-                    <div className="flex items-center gap-1.5">
-                      <label
-                        htmlFor="localcli-command"
-                        className="text-sm font-medium"
-                      >
-                        {t('engines.localCli.commandLabel')}
-                      </label>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            aria-label={t('engines.localCli.commandLabel')}
-                            className="text-muted-foreground hover:text-foreground"
-                          >
-                            <Info className="h-3.5 w-3.5" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-[260px] whitespace-pre-line text-xs leading-relaxed">
-                          {t('engines.localCli.commandTooltip')}
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                    <div className="flex gap-2">
-                      <Input
-                        id="localcli-command"
-                        value={whisperCommand}
-                        onChange={(e) => setWhisperCommand(e.target.value)}
-                        placeholder={t('engines.localCli.commandPlaceholder')}
-                        className="font-mono text-sm"
-                      />
-                      <Button
-                        size="sm"
-                        className="shrink-0 gap-1.5"
-                        onClick={handleSaveWhisperCommand}
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                        {t('engines.localCli.save')}
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {t('engines.localCli.commandHint')}
-                    </p>
-                  </div>
-                )}
-              </div>
-            ),
-          })}
-
-          <BaseRuntimeCard taskBusy={taskBusy} defaultSource={binarySource} />
+          <EngineWorkbenchCard
+            isActive={currentEngine === 'funasr'}
+            icon={Languages}
+            name={t('engines.funasr.name')}
+            recommended
+            recommendedLabel={t('engines.tags.chineseRecommended')}
+            chips={[
+              t('engines.tags.multilang'),
+              t('engines.tags.cpuFriendly'),
+              ...(funasrPkgInstalled
+                ? []
+                : [
+                    t('engines.tags.needsDownload', {
+                      size: FUNASR_ENGINE_SIZE,
+                    }),
+                  ]),
+            ]}
+            desc={t('engines.funasr.desc')}
+            scenario={t('engines.funasr.scenario')}
+            badge={renderEngineBadge('funasr')}
+            activeLabel={t('engines.active')}
+            setActiveLabel={t('engines.setActive')}
+            manageLabel={t('overview.manage')}
+            canSetActive={funasrPkgInstalled}
+            setActiveDisabled={taskBusy}
+            onSetActive={() => handleSelectEngine('funasr')}
+            onManage={() => setManageTarget('funasr')}
+          />
+          <EngineWorkbenchCard
+            isActive={currentEngine === 'localCli'}
+            icon={Terminal}
+            name={t('engines.localCli.name')}
+            chips={[t('engines.tags.advanced'), t('engines.tags.byoModel')]}
+            desc={t('engines.localCli.desc')}
+            scenario={t('engines.localCli.scenario')}
+            badge={renderEngineBadge('localCli')}
+            activeLabel={t('engines.active')}
+            setActiveLabel={t('engines.setActive')}
+            manageLabel={t('overview.manage')}
+            canSetActive
+            setActiveDisabled={taskBusy}
+            onSetActive={() => handleSelectEngine('localCli')}
+            onManage={() => setManageTarget('localCli')}
+          />
+          {/* 基座运行时卡片：复用工作台卡片，不提供「设为当前」，状态在管理抽屉内展示 */}
+          <EngineWorkbenchCard
+            isActive={false}
+            icon={Layers}
+            name={t('engines.base.name')}
+            chips={[]}
+            desc={t('engines.base.desc')}
+            badge={<span />}
+            activeLabel={t('engines.active')}
+            setActiveLabel={t('engines.setActive')}
+            manageLabel={t('overview.manage')}
+            canSetActive={false}
+            onSetActive={() => {}}
+            onManage={() => setManageTarget('base')}
+          />
         </div>
+
+        <EngineManageDrawer
+          target={manageTarget}
+          onOpenChange={(open) => !open && setManageTarget(null)}
+          title={drawerTitle(manageTarget)}
+        >
+          {manageTarget === 'fasterWhisper' && (
+            <FasterWhisperPanel {...fasterWhisperPanelProps} />
+          )}
+          {manageTarget === 'funasr' && (
+            <FunasrPanel
+              status={engineStatuses.funasr}
+              taskBusy={taskBusy}
+              defaultSource={binarySource}
+              onRefreshStatuses={refresh}
+              onGoModels={() => onNavigateTab?.('models')}
+            />
+          )}
+          {manageTarget === 'localCli' && (
+            <LocalCliPanel
+              whisperCommand={whisperCommand}
+              onCommandChange={setWhisperCommand}
+              onSave={handleSaveWhisperCommand}
+            />
+          )}
+          {manageTarget === 'builtin' && (
+            <BuiltinPanel onGoModels={() => onNavigateTab?.('models')} />
+          )}
+          {manageTarget === 'base' && (
+            <BaseRuntimePanel
+              taskBusy={taskBusy}
+              defaultSource={binarySource}
+            />
+          )}
+        </EngineManageDrawer>
 
         <AlertDialog
           open={showDownloadConfirm}
