@@ -5,6 +5,7 @@
     "label": "Engine",
     "builtin": "whisper.cpp",
     "fasterWhisper": "faster-whisper",
+    "funasr": "FunASR",
     "localCli": "Local CLI"
   },
   "currentEngine": "Current transcription engine",
@@ -12,6 +13,7 @@
   "engineModelHint": {
     "builtin": "ggml models for whisper.cpp, including Turbo and quantized variants",
     "fasterWhisper": "CT2 models for faster-whisper, including Distil variants",
+    "funasr": "FunASR models: SenseVoice multilingual, Paraformer for Chinese, and the shared VAD component",
     "localCli": "Local CLI uses your own Whisper install — no models to download here"
   },
   "engineNotInstalled": "Engine runtime is not installed. Open the Engines tab to download it.",

@@ -5,6 +5,7 @@
     "label": "引擎",
     "builtin": "whisper.cpp",
     "fasterWhisper": "faster-whisper",
+    "funasr": "FunASR",
     "localCli": "本地命令行"
   },
   "currentEngine": "当前转写引擎",
@@ -12,6 +13,7 @@
   "engineModelHint": {
     "builtin": "以下为 whisper.cpp 的 ggml 模型，含 Turbo 与量化变体",
     "fasterWhisper": "以下为 faster-whisper 的 CT2 模型，含 Distil 蒸馏系列",
+    "funasr": "以下为 FunASR 模型：SenseVoice 多语种、Paraformer 中文专精，及共用的 VAD 组件",
     "localCli": "本地 CLI 使用您自行安装的 Whisper，无需在此下载模型"
   },
   "engineNotInstalled": "引擎运行时未安装，请先在引擎页下载",

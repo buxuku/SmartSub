@@ -52,11 +52,13 @@
     "builtin": {
       "name": "whisper.cpp（内置）",
       "desc": "默认引擎，支持 ggml 量化模型与 GPU 加速；苹果芯片（M 系列）有专属优化、速度更快，电脑配置老旧或内存偏小时也能轻量流畅运行、不卡顿。",
+      "scenario": "适合：Mac / 老旧设备 / 离线通用转写",
       "statusReady": "已就绪"
     },
     "fasterWhisper": {
       "name": "faster-whisper",
       "desc": "基于 CTranslate2，速度更快，模型按需从 HuggingFace 下载；带英伟达（NVIDIA）独立显卡的电脑速度最快，普通 Windows 电脑也更快。",
+      "scenario": "适合：NVIDIA 显卡 / 追求速度与精度",
       "notInstalled": "未安装",
       "installError": "安装异常",
       "installed": "已安装",
@@ -98,8 +100,9 @@
       "checkFailed": "检查更新失败，请稍后重试。"
     },
     "funasr": {
-      "name": "FunASR · SenseVoice",
-      "desc": "阿里达摩院 SenseVoice 多语种模型，基于 sherpa-onnx 运行，中文 / 粤语 / 日韩识别准确度高，自带标点与逆文本规整；CPU 即可流畅运行，无需显卡。",
+      "name": "FunASR",
+      "desc": "阿里达摩院中文/多语种 ASR 引擎，基于 sherpa-onnx 运行：SenseVoice 多语种、Paraformer 中文专精，自带标点与逆文本规整；CPU 即可流畅运行，无需显卡。",
+      "scenario": "适合：中文 / 粤语 / 日韩，CPU 离线高准确率",
       "notInstalled": "未安装",
       "installError": "安装异常",
       "installed": "已安装",
@@ -135,6 +138,10 @@
           "name": "SenseVoice-Small（约 230MB）",
           "desc": "多语种识别模型（中 / 粤 / 英 / 日 / 韩），含标点与情感识别"
         },
+        "paraformer-zh": {
+          "name": "Paraformer 中文（约 230MB）",
+          "desc": "中文专精识别模型（中英双语），中文准确率高、速度快"
+        },
         "silero-vad": {
           "name": "Silero VAD（约 2MB）",
           "desc": "语音活动检测，用于长音频自动切分"
@@ -144,6 +151,7 @@
     "localCli": {
       "name": "本地命令行",
       "desc": "使用自行安装的 Whisper 兼容 CLI",
+      "scenario": "适合：进阶用户，自备 Whisper 命令与模型",
       "configure": "配置命令",
       "notConfigured": "未配置",
       "save": "保存",
@@ -185,6 +193,7 @@
     "engineTitle": "转写引擎",
     "engineBuiltin": "whisper.cpp",
     "engineFasterWhisper": "faster-whisper",
+    "engineFunasr": "FunASR",
     "engineLocalCli": "local CLI",
     "engineNotInstalled": "引擎未安装",
     "manage": "管理",

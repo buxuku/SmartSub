@@ -52,11 +52,13 @@
     "builtin": {
       "name": "whisper.cpp (built-in)",
       "desc": "Default engine with ggml quantized models and GPU acceleration; specially optimized for Apple silicon (M series) for extra speed, and stays light and smooth on older or low-memory computers.",
+      "scenario": "Best for: Mac / older devices / general offline transcription",
       "statusReady": "Ready"
     },
     "fasterWhisper": {
       "name": "faster-whisper",
       "desc": "CTranslate2-based engine with faster inference; models download from HuggingFace on demand. Fastest on computers with a dedicated NVIDIA GPU, and faster on regular Windows PCs too.",
+      "scenario": "Best for: NVIDIA GPUs / speed and accuracy",
       "notInstalled": "Not installed",
       "installError": "Install error",
       "installed": "Installed",
@@ -98,8 +100,9 @@
       "checkFailed": "Failed to check for updates. Please try again later."
     },
     "funasr": {
-      "name": "FunASR · SenseVoice",
-      "desc": "Alibaba DAMO SenseVoice multilingual model running on sherpa-onnx. High accuracy for Chinese / Cantonese / Japanese / Korean, with built-in punctuation and inverse text normalization. Runs smoothly on CPU — no GPU required.",
+      "name": "FunASR",
+      "desc": "Alibaba DAMO Chinese/multilingual ASR engine on sherpa-onnx: SenseVoice multilingual and Paraformer for Chinese, with built-in punctuation and inverse text normalization. Runs smoothly on CPU — no GPU required.",
+      "scenario": "Best for: Chinese / Cantonese / JA-KO, high accuracy on CPU",
       "notInstalled": "Not installed",
       "installError": "Install error",
       "installed": "Installed",
@@ -135,6 +138,10 @@
           "name": "SenseVoice-Small (~230MB)",
           "desc": "Multilingual model (ZH / Yue / EN / JA / KO) with punctuation and emotion"
         },
+        "paraformer-zh": {
+          "name": "Paraformer Chinese (~230MB)",
+          "desc": "Chinese-specialized model (ZH+EN) with high Chinese accuracy and speed"
+        },
         "silero-vad": {
           "name": "Silero VAD (~2MB)",
           "desc": "Voice activity detection for auto-segmenting long audio"
@@ -144,6 +151,7 @@
     "localCli": {
       "name": "Local CLI",
       "desc": "Use a self-installed Whisper-compatible command-line tool",
+      "scenario": "Best for: advanced users with their own Whisper CLI and models",
       "configure": "Configure command",
       "notConfigured": "Not configured",
       "save": "Save",
@@ -185,6 +193,7 @@
     "engineTitle": "Transcription Engine",
     "engineBuiltin": "whisper.cpp",
     "engineFasterWhisper": "faster-whisper",
+    "engineFunasr": "FunASR",
     "engineLocalCli": "local CLI",
     "engineNotInstalled": "Engine not installed",
     "manage": "Manage",

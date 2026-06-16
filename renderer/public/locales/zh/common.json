@@ -258,6 +258,7 @@
   "engineBadge": {
     "builtin": "Whisper.cpp",
     "fasterWhisper": "Faster-Whisper",
+    "funasr": "FunASR",
     "localCli": "本地命令",
     "tip": "当前转写引擎",
     "manage": "点击进入引擎管理切换",
