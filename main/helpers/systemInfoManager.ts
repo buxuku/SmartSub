@@ -148,6 +148,8 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
 
   ipcMain.handle('getFunasrModelStatus', async () => ({
     success: true,
+    baseReady: isPyBaseReady(),
+    engineInstalled: isEnginePackageInstalled('funasr'),
     ready: isFunasrReady(),
     models: (Object.keys(FUNASR_MODELS) as FunasrModelId[]).map((id) => ({
       id,

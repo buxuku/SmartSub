@@ -26,7 +26,10 @@
       "byoModel": "自备模型",
       "macRecommended": "Mac 用户推荐",
       "accurateTimestamps": "时间戳精确",
-      "antiHallucination": "抗幻觉"
+      "antiHallucination": "抗幻觉",
+      "chineseRecommended": "中文推荐",
+      "multilang": "多语种",
+      "cpuFriendly": "CPU 友好"
     },
     "builtin": {
       "name": "whisper.cpp（内置）",
@@ -75,6 +78,50 @@
       "protocolUnsupported": "该引擎版本需要更新版本的 SmartSub，请先升级 SmartSub 后再安装或升级引擎。",
       "engineBusy": "有任务正在运行，请等待任务完成后再安装、升级或卸载引擎。",
       "checkFailed": "检查更新失败，请稍后重试。"
+    },
+    "funasr": {
+      "name": "FunASR · SenseVoice",
+      "desc": "阿里达摩院 SenseVoice 多语种模型，基于 sherpa-onnx 运行，中文 / 粤语 / 日韩识别准确度高，自带标点与逆文本规整；CPU 即可流畅运行，无需显卡。",
+      "notInstalled": "未安装",
+      "installError": "安装异常",
+      "installed": "已安装",
+      "downloading": "下载中…",
+      "verifying": "正在校验并启动引擎…",
+      "needsModels": "需下载模型",
+      "download": "下载引擎包（约 {{size}}）",
+      "downloadSource": "下载源",
+      "uninstall": "卸载",
+      "downloadConfirm": "将下载 FunASR 引擎包（约 {{size}}），是否继续？",
+      "upgradeConfirm": "将下载并升级 FunASR 引擎包。升级前会先停止引擎，失败时自动回滚到当前版本。是否继续？",
+      "installedVersion": "已安装 v{{version}}",
+      "checkUpdate": "检查更新",
+      "checking": "检查中…",
+      "upToDate": "已是最新版本",
+      "updateAvailable": "有新版本可用",
+      "upgrade": "升级",
+      "engineBusy": "有任务正在运行，请等待任务完成后再安装、升级或卸载引擎。",
+      "checkFailed": "检查更新失败，请稍后重试。",
+      "protocolUnsupported": "该引擎版本需要更新版本的 SmartSub，请先升级 SmartSub 后再安装或升级引擎。",
+      "anotherDownload": "已有下载任务进行中，请等待完成后再试。",
+      "advanced": "高级设置",
+      "itn": "逆文本规整（ITN）",
+      "itnHint": "将口语化的数字、日期等转换为标准书写形式，并自动补全标点",
+      "numThreads": "推理线程数",
+      "numThreadsHint": "CPU 推理使用的线程数，越大越快但占用更多 CPU",
+      "modelsTitle": "模型",
+      "needModelsHint": "下载后才能使用",
+      "modelDownload": "下载",
+      "modelDelete": "删除",
+      "models": {
+        "sensevoice-small": {
+          "name": "SenseVoice-Small（约 230MB）",
+          "desc": "多语种识别模型（中 / 粤 / 英 / 日 / 韩），含标点与情感识别"
+        },
+        "silero-vad": {
+          "name": "Silero VAD（约 2MB）",
+          "desc": "语音活动检测，用于长音频自动切分"
+        }
+      }
     },
     "localCli": {
       "name": "本地命令行",

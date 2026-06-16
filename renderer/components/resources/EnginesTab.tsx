@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'next-i18next';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -53,6 +52,8 @@ import {
 import { toast } from 'sonner';
 import { cn } from 'lib/utils';
 import SectionHeader from '@/components/SectionHeader';
+import EngineCardShell from '@/components/resources/EngineCardShell';
+import FunasrEngineCard from '@/components/resources/FunasrEngineCard';
 import {
   readPersistedDownloadSource,
   persistDownloadSource,
@@ -145,6 +146,10 @@ const EnginesTab = () => {
     const unsubProgress = window?.ipc?.on(
       'py-engine-download-progress',
       (_progress: PyEngineDownloadProgress) => {
+        // 本卡片只反映 faster-whisper 引擎包进度；funasr 由 FunasrEngineCard 自行处理。
+        if (_progress.engineId && _progress.engineId !== 'faster-whisper') {
+          return;
+        }
         setDownloadProgress(_progress);
         if (_progress.status === 'completed') {
           // 下载完成后引擎还需冷启动校验（PyInstaller 首帧加载），期间保持「检测中」，
@@ -155,7 +160,9 @@ const EnginesTab = () => {
           (async () => {
             let pingOk = false;
             try {
-              const r = await window?.ipc?.invoke('python-engine:ping');
+              const r = await window?.ipc?.invoke('python-engine:ping', {
+                engineId: 'faster-whisper',
+              });
               pingOk = !!r?.success;
             } catch {
               // 校验失败：忽略错误，交给 refresh() 反映真实状态（broken → 显示修复入口）
@@ -198,7 +205,10 @@ const EnginesTab = () => {
     });
     const unsubUpdate = window?.ipc?.on(
       'py-engine-update-available',
-      (info: PyEngineUpdateInfo) => setUpdateInfo(info),
+      (info: PyEngineUpdateInfo & { engineId?: string }) => {
+        if (info.engineId && info.engineId !== 'faster-whisper') return;
+        setUpdateInfo(info);
+      },
     );
     return () => {
       unsubProgress?.();
@@ -473,67 +483,19 @@ const EnginesTab = () => {
     body?: React.ReactNode;
   }) => {
     const { engine, icon: Icon, name, recommended, chips, desc, body } = config;
-    const isActive = currentEngine === engine;
     return (
-      <Card
-        className={cn(
-          'relative overflow-hidden transition-all',
-          isActive && 'border-primary/60 bg-primary/[0.03] shadow-sm',
-        )}
+      <EngineCardShell
+        isActive={currentEngine === engine}
+        icon={Icon}
+        name={name}
+        recommended={recommended}
+        recommendedLabel={t('engines.tags.recommended')}
+        chips={chips}
+        desc={desc}
+        badge={renderEngineBadge(engine)}
       >
-        {isActive && (
-          <span
-            aria-hidden
-            className="absolute inset-y-0 left-0 w-1 bg-primary"
-          />
-        )}
-        <CardHeader className="pb-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 items-start gap-3">
-              <div
-                className={cn(
-                  'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
-                  isActive
-                    ? 'bg-primary/10 text-primary'
-                    : 'bg-muted text-muted-foreground',
-                )}
-              >
-                <Icon className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-                  {name}
-                  {recommended && (
-                    <Badge
-                      variant="outline"
-                      className="border-primary/40 px-1.5 py-0 text-[10px] font-medium text-primary"
-                    >
-                      {t('engines.tags.recommended')}
-                    </Badge>
-                  )}
-                </CardTitle>
-                {chips.length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {chips.map((c) => (
-                      <span
-                        key={c}
-                        className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
-                      >
-                        {c}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            {renderEngineBadge(engine)}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">{desc}</p>
-          {body}
-        </CardContent>
-      </Card>
+        {body}
+      </EngineCardShell>
     );
   };
 
@@ -817,6 +779,20 @@ const EnginesTab = () => {
               </>
             ),
           })}
+
+          <FunasrEngineCard
+            isActive={currentEngine === 'funasr'}
+            status={engineStatuses.funasr}
+            taskBusy={taskBusy}
+            defaultSource={binarySource}
+            onActivated={() => {
+              setCurrentEngine('funasr');
+              window.dispatchEvent(
+                new CustomEvent('transcription-engine-changed'),
+              );
+            }}
+            onRefreshStatuses={refresh}
+          />
 
           {renderEngineCard({
             engine: 'localCli',
