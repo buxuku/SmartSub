@@ -34,7 +34,7 @@ export const FUNASR_MODELS: Record<FunasrModelId, FunasrModelSpec> = {
   'sensevoice-small': {
     id: 'sensevoice-small',
     dirName: 'sensevoice-small',
-    repo: 'csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17',
+    repo: 'csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17',
     keepFiles: ['model.int8.onnx', 'tokens.txt'],
     requiredFiles: ['model.int8.onnx', 'tokens.txt'],
   },
