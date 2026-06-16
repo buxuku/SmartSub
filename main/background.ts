@@ -36,6 +36,7 @@ import {
 } from './helpers/ipcEngineHandlers';
 import { shutdownPythonRuntime } from './helpers/pythonRuntime';
 import { maybeAutoCheckPyEngineUpdate } from './helpers/pythonRuntime/autoUpdateCheck';
+import { cleanupLegacyPyEngine } from './helpers/pythonRuntime/legacyCleanup';
 import { applyProxyFromSettings } from './helpers/network/proxyManager';
 import { setupNetworkHandlers } from './helpers/ipcNetworkHandlers';
 import {
@@ -171,6 +172,8 @@ app.on('before-quit', (event) => {
   setMainWindowForAddon(mainWindow);
   registerEngineIpcHandlers();
   setMainWindowForEngine(mainWindow);
+  // 清理三层架构改造前遗留的旧 py-engine 目录/状态文件（幂等，失败静默）。
+  cleanupLegacyPyEngine();
   // 启动后每日一次的节流静默检查 py-engine 更新（非阻塞，失败静默）。
   void maybeAutoCheckPyEngineUpdate(mainWindow);
 })();
