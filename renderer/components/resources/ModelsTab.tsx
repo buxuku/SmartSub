@@ -56,6 +56,7 @@ import {
   Bot,
   Terminal,
   Settings2,
+  Languages,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
@@ -63,6 +64,7 @@ import SectionHeader from '@/components/SectionHeader';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import fasterWhisperModels from 'lib/fasterWhisperModels.json';
 import type { TranscriptionEngine } from '../../../types/engine';
+import FunasrModelSection from '@/components/resources/FunasrModelSection';
 
 export { DownSource } from 'lib/modelPanelUtils';
 
@@ -121,6 +123,7 @@ const ENGINE_OPTIONS: Array<{
 }> = [
   { id: 'builtin', icon: Box },
   { id: 'fasterWhisper', icon: Zap },
+  { id: 'funasr', icon: Languages },
   { id: 'localCli', icon: Terminal },
 ];
 
@@ -463,7 +466,9 @@ function EngineContextBar({
       ? 'builtin'
       : engine === 'fasterWhisper'
         ? 'fasterWhisper'
-        : 'localCli';
+        : engine === 'funasr'
+          ? 'funasr'
+          : 'localCli';
 
   return (
     <div className="flex flex-col gap-2 rounded-xl border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1013,7 +1018,7 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
   const handleOpenModelsFolder = async () => {
     try {
       const result = await window?.ipc?.invoke('openModelsFolder', {
-        pathType: isFasterWhisper ? 'ct2' : 'ggml',
+        pathType: isFasterWhisper ? 'ct2' : isFunasr ? 'funasr' : 'ggml',
       });
       if (!result?.success) {
         toast.error(
@@ -1073,6 +1078,7 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
 
   const isBuiltin = transcriptionEngine === 'builtin';
   const isFasterWhisper = transcriptionEngine === 'fasterWhisper';
+  const isFunasr = transcriptionEngine === 'funasr';
   const isLocalCli = transcriptionEngine === 'localCli';
 
   const hasAnyInstalled = isBuiltin
@@ -1210,9 +1216,11 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
           <span className="font-mono break-all">
             {isFasterWhisper
               ? systemInfo.fasterWhisperModelsPath
-              : systemInfo?.modelsPath}
+              : isFunasr
+                ? ''
+                : systemInfo?.modelsPath}
           </span>
-          {(isBuiltin || isFasterWhisper) && (
+          {(isBuiltin || isFasterWhisper || isFunasr) && (
             <>
               <button
                 type="button"
@@ -1222,14 +1230,18 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
                 <FolderOpen className="h-3 w-3" />
                 <span>{t('openModelsFolder')}</span>
               </button>
-              <span className="text-muted-foreground/50">·</span>
-              <button
-                type="button"
-                onClick={handleChangeModelsPath}
-                className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
-              >
-                <span>{t('changePath')}</span>
-              </button>
+              {!isFunasr && (
+                <>
+                  <span className="text-muted-foreground/50">·</span>
+                  <button
+                    type="button"
+                    onClick={handleChangeModelsPath}
+                    className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
+                  >
+                    <span>{t('changePath')}</span>
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>
@@ -1238,6 +1250,8 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
           <p className="text-sm text-muted-foreground py-8 text-center">
             {t('localCliModelHint')}
           </p>
+        ) : isFunasr ? (
+          <FunasrModelSection onUpdate={updateSystemInfo} />
         ) : installedOnly && !hasAnyInstalled ? (
           <p className="text-sm text-muted-foreground py-8 text-center">
             {t('noInstalledModels')}
