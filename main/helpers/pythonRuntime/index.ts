@@ -3,17 +3,20 @@ import { logMessage } from '../storeManager';
 import { getFasterWhisperModelsPath } from '../modelCatalog';
 import { PythonRuntimeManager, type EngineCommand } from './manager';
 import {
-  getPyEngineBinaryPath,
-  getPyEngineCurrentDir,
-  isPyEngineInstalled,
-  normalizePyEngineLayout,
+  resolvePyBaseDir,
+  getPyBasePythonPath,
+  isPyBaseReady,
+  getEngineDir,
+  getEngineMainPy,
+  getEngineSitePackages,
+  isEnginePackageInstalled,
 } from './paths';
 
 export * from './protocol';
 export { PythonRuntimeManager, PythonEngineError } from './manager';
 
-const NOT_INSTALLED_MSG =
-  'Python engine is not installed. Download it from Resource Hub > Engines, or set PYTHON_ENGINE_CMD for local development.';
+const NOT_READY_MSG =
+  'Python engine not ready. Ensure the base runtime is bundled and the engine package is downloaded (Resource Hub > Engines), or set PYTHON_ENGINE_CMD for local development.';
 
 function resolveEngineCommand(): EngineCommand {
   const override = process.env.PYTHON_ENGINE_CMD;
@@ -22,18 +25,19 @@ function resolveEngineCommand(): EngineCommand {
     return { command: parts[0], args: parts.slice(1) };
   }
 
-  if (!isPyEngineInstalled()) {
-    throw new Error(NOT_INSTALLED_MSG);
+  if (!isPyBaseReady() || !isEnginePackageInstalled('faster-whisper')) {
+    throw new Error(NOT_READY_MSG);
   }
 
-  normalizePyEngineLayout();
-
-  const command = getPyEngineBinaryPath();
+  // 三层组合：基座 python 跑引擎包 main.py，PYTHONPATH 挂当前引擎 site-packages
+  const baseDir = resolvePyBaseDir();
   const modelsPath = getFasterWhisperModelsPath();
   return {
-    command,
-    args: [],
-    cwd: getPyEngineCurrentDir(),
+    command: getPyBasePythonPath(baseDir),
+    args: [getEngineMainPy('faster-whisper')],
+    cwd: getEngineDir('faster-whisper'),
+    pythonHome: baseDir,
+    pythonPath: getEngineSitePackages('faster-whisper'),
     env: {
       HF_HOME: modelsPath,
       HF_HUB_CACHE: path.join(modelsPath, 'hub'),

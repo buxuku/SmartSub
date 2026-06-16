@@ -15,6 +15,10 @@ export interface EngineCommand {
   args: string[];
   cwd?: string;
   env?: Record<string, string>;
+  /** 基座 prefix（设为 PYTHONHOME，定位 stdlib） */
+  pythonHome?: string;
+  /** 引擎包 site-packages（设为 PYTHONPATH，挂载该引擎依赖） */
+  pythonPath?: string;
 }
 
 export type EngineLogger = (
@@ -52,6 +56,7 @@ const SHUTDOWN_GRACE_MS = 3_000;
 
 export function buildSanitizedEnv(
   base: NodeJS.ProcessEnv = process.env,
+  overrides?: { pythonHome?: string; pythonPath?: string },
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...base,
@@ -60,11 +65,15 @@ export function buildSanitizedEnv(
     PYTHONDONTWRITEBYTECODE: '1',
     PYTHONUNBUFFERED: '1',
   };
+  // 先清宿主机污染源（全局 conda/venv/PYTHONPATH 会污染基座解释器）
   delete env.PYTHONPATH;
   delete env.PYTHONHOME;
   delete env.PYTHONSTARTUP;
   delete env.VIRTUAL_ENV;
   delete env.CONDA_PREFIX;
+  // 再按三层模型注入受控值：基座 prefix + 当前引擎包 site-packages
+  if (overrides?.pythonHome) env.PYTHONHOME = overrides.pythonHome;
+  if (overrides?.pythonPath) env.PYTHONPATH = overrides.pythonPath;
   return env;
 }
 
@@ -123,7 +132,13 @@ export class PythonRuntimeManager {
 
       const proc = spawn(cmd.command, cmd.args, {
         cwd: cmd.cwd,
-        env: { ...buildSanitizedEnv(), ...(cmd.env || {}) },
+        env: {
+          ...buildSanitizedEnv(process.env, {
+            pythonHome: cmd.pythonHome,
+            pythonPath: cmd.pythonPath,
+          }),
+          ...(cmd.env || {}),
+        },
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       });
