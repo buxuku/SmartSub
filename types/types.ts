@@ -15,6 +15,8 @@ export interface ISystemInfo {
   funasrVadInstalled?: boolean;
   /** 已安装的 funasr ASR 模型 id（如 ['sensevoice-small','paraformer-zh']） */
   funasrAsrModelsInstalled?: string[];
+  /** funasr 模型根目录（固定路径，仅展示用，不可更改） */
+  funasrModelsPath?: string;
 }
 
 export interface IFiles {

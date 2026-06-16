@@ -1217,7 +1217,7 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
             {isFasterWhisper
               ? systemInfo.fasterWhisperModelsPath
               : isFunasr
-                ? ''
+                ? systemInfo?.funasrModelsPath
                 : systemInfo?.modelsPath}
           </span>
           {(isBuiltin || isFasterWhisper || isFunasr) && (

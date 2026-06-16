@@ -72,6 +72,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       funasrEngineInstalled: isEnginePackageInstalled('funasr'),
       funasrVadInstalled: isFunasrModelInstalled('silero-vad'),
       funasrAsrModelsInstalled: getInstalledFunasrAsrModels(),
+      funasrModelsPath: getFunasrModelsRoot(),
     };
   });
 
