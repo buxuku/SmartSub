@@ -4,14 +4,24 @@ import { logMessage, store } from './storeManager';
 import { resolveTranscriptionEngine } from './transcriptionEngine';
 import { listEngineAdapters, getActiveEngineAdapter } from './engines/registry';
 import { getPyEngineDownloader } from './pythonRuntime/downloader';
+import { getPyBaseDownloader } from './pythonRuntime/baseDownloader';
 import { isTranscriptionBusy } from './taskProcessor';
 import {
   getPythonRuntimeManager,
   shutdownPythonRuntime,
 } from './pythonRuntime';
-import { getEngineDir, isEnginePackageInstalled } from './pythonRuntime/paths';
+import {
+  getEngineDir,
+  getPyBaseSource,
+  isEnginePackageInstalled,
+  isPyBaseReady,
+} from './pythonRuntime/paths';
 import type { TranscriptionEngine } from '../../types/engine';
-import type { PyEngineDownloadSource, PyEngineId } from '../../types/engine';
+import type {
+  PyEngineDownloadSource,
+  PyEngineId,
+  PyBaseStatus,
+} from '../../types/engine';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -25,6 +35,8 @@ export function setMainWindowForEngine(window: BrowserWindow): void {
   // 预绑定两个引擎下载器的 mainWindow，保证后台（自动更新）触发的下载进度也能上报。
   getPyEngineDownloader('faster-whisper', window);
   getPyEngineDownloader('funasr', window);
+  // Layer 1 基座下载器同样预绑定，使后台升级进度可上报。
+  getPyBaseDownloader(window);
 }
 
 export function registerEngineIpcHandlers(): void {
@@ -282,6 +294,67 @@ export function registerEngineIpcHandlers(): void {
       }
     },
   );
+
+  // ── Layer 1：Python 基座（内置为主 + 可在线升级覆盖）────────────────────────
+  ipcMain.handle('get-py-base-status', async (): Promise<PyBaseStatus> => {
+    return {
+      state: isPyBaseReady() ? 'ready' : 'not_installed',
+      source: getPyBaseSource(),
+    };
+  });
+
+  ipcMain.handle(
+    'start-py-base-download',
+    async (_event, { source }: { source: PyEngineDownloadSource }) => {
+      try {
+        // 运行中禁止替换基座：避免停机/换目录打断转写与 Windows 文件锁。
+        if (isTranscriptionBusy()) {
+          return { success: false, error: 'engine_busy' };
+        }
+        getPyBaseDownloader(mainWindow || undefined)
+          .download(source)
+          .catch((e) => logMessage(`Py-base download failed: ${e}`, 'error'));
+        return { success: true, started: true };
+      } catch (error) {
+        logMessage(`Error starting py-base download: ${error}`, 'error');
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'check-py-base-update',
+    async (_event, { source }: { source: PyEngineDownloadSource }) => {
+      try {
+        const info = await getPyBaseDownloader(
+          mainWindow || undefined,
+        ).checkUpdate(source);
+        return { success: true, info };
+      } catch (error) {
+        logMessage(`Error checking py-base update: ${error}`, 'error');
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle('cancel-py-base-download', async () => {
+    try {
+      getPyBaseDownloader(mainWindow || undefined).cancel();
+      return { success: true };
+    } catch (error) {
+      logMessage(`Error cancelling py-base download: ${error}`, 'error');
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('get-py-base-download-progress', async () => {
+    try {
+      return getPyBaseDownloader(mainWindow || undefined).getProgress();
+    } catch (error) {
+      logMessage(`Error getting py-base download progress: ${error}`, 'error');
+      return null;
+    }
+  });
 
   logMessage('Engine IPC handlers registered', 'info');
 }
