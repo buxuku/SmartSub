@@ -406,11 +406,13 @@ async function processNextTasks(event) {
     return;
   }
 
-  // faster-whisper 共享单 GPU/sidecar，钳制有效并发为 1，避免显存争用导致 OOM / sidecar 崩溃；
+  // faster-whisper / FunASR 都共享单 sidecar（且各自只记一个 activeTranscribeId），
+  // 钳制有效并发为 1，避免显存争用导致 OOM / sidecar 崩溃、以及并发任务相互覆盖取消句柄；
   // 其它引擎（builtin/localCli）不受影响。运行中引擎不可切换，故 effectiveMax 在本轮稳定。
   let effectiveMax = maxConcurrentTasks;
   try {
-    if (getActiveEngineAdapter().id === 'fasterWhisper') {
+    const activeEngineId = getActiveEngineAdapter().id;
+    if (activeEngineId === 'fasterWhisper' || activeEngineId === 'funasr') {
       effectiveMax = 1;
     }
   } catch {

@@ -219,6 +219,8 @@
     "downloadStarted": "正在后台下载，可以继续下一步",
     "fasterWhisperModelTitle": "下载 faster-whisper 模型",
     "fasterWhisperModelDesc": "当前转写引擎为 faster-whisper，请前往资源中心下载对应模型",
+    "funasrModelTitle": "下载 FunASR 模型",
+    "funasrModelDesc": "当前转写引擎为 FunASR，请前往资源中心下载语音模型（SenseVoice / Paraformer 及 VAD）",
     "goDownloadModel": "前往下载",
     "step3Title": "可选增强（强烈建议）",
     "providerTitle": "翻译服务",

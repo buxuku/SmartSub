@@ -302,16 +302,24 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
               <CheckCircle2 className="h-4 w-4 text-success" />
               {t('onboarding.modelReady')}
             </div>
-          ) : engine === 'fasterWhisper' ? (
-            // faster-whisper 模型走专属下载流程（资源中心-模型页），不复用 ggml 一键下载
+          ) : engine === 'fasterWhisper' || engine === 'funasr' ? (
+            // faster-whisper / FunASR 模型走专属下载流程（资源中心-模型页），不复用 ggml 一键下载
             <div className="flex items-center gap-3 rounded-lg border px-3 py-3">
               <Bot className="h-4 w-4 text-muted-foreground flex-shrink-0" />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium">
-                  {t('onboarding.fasterWhisperModelTitle')}
+                  {t(
+                    engine === 'funasr'
+                      ? 'onboarding.funasrModelTitle'
+                      : 'onboarding.fasterWhisperModelTitle',
+                  )}
                 </div>
                 <div className="text-xs text-muted-foreground mt-0.5">
-                  {t('onboarding.fasterWhisperModelDesc')}
+                  {t(
+                    engine === 'funasr'
+                      ? 'onboarding.funasrModelDesc'
+                      : 'onboarding.fasterWhisperModelDesc',
+                  )}
                 </div>
               </div>
               <Button

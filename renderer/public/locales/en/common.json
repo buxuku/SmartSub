@@ -219,6 +219,8 @@
     "downloadStarted": "Downloading in the background — you can continue",
     "fasterWhisperModelTitle": "Download a faster-whisper model",
     "fasterWhisperModelDesc": "Your current engine is faster-whisper — download its model in the Resource Hub",
+    "funasrModelTitle": "Download a FunASR model",
+    "funasrModelDesc": "Your current engine is FunASR — download its speech models (SenseVoice / Paraformer and VAD) in the Resource Hub",
     "goDownloadModel": "Go to download",
     "step3Title": "Optional boosts (highly recommended)",
     "providerTitle": "Translation service",
