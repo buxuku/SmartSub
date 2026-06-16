@@ -54,6 +54,7 @@ import { cn } from 'lib/utils';
 import SectionHeader from '@/components/SectionHeader';
 import EngineCardShell from '@/components/resources/EngineCardShell';
 import FunasrEngineCard from '@/components/resources/FunasrEngineCard';
+import BaseRuntimeCard from '@/components/resources/BaseRuntimeCard';
 import {
   readPersistedDownloadSource,
   persistDownloadSource,
@@ -870,6 +871,8 @@ const EnginesTab = () => {
               </div>
             ),
           })}
+
+          <BaseRuntimeCard taskBusy={taskBusy} defaultSource={binarySource} />
         </div>
 
         <AlertDialog

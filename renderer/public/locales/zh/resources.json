@@ -31,6 +31,24 @@
       "multilang": "多语种",
       "cpuFriendly": "CPU 友好"
     },
+    "base": {
+      "name": "Python 运行时基座",
+      "desc": "faster-whisper 与 FunASR 共享的 Python 运行环境，已随应用内置，可在线升级。",
+      "builtin": "已内置",
+      "downloaded": "已升级（下载版）",
+      "notReady": "未就绪",
+      "checkUpdate": "检查更新",
+      "checking": "检查中…",
+      "upgrade": "升级基座",
+      "upgradeConfirm": "将下载并替换 Python 运行时基座。升级期间请勿开始转写任务，完成后会自动启用新基座。",
+      "downloading": "基座下载中…",
+      "verifying": "正在校验基座…",
+      "upToDate": "基座已是最新",
+      "updateAvailable": "有可用的基座更新",
+      "checkFailed": "检查更新失败",
+      "engineBusy": "有任务进行中，暂时无法升级基座",
+      "downloadSource": "下载源"
+    },
     "builtin": {
       "name": "whisper.cpp（内置）",
       "desc": "默认引擎，支持 ggml 量化模型与 GPU 加速；苹果芯片（M 系列）有专属优化、速度更快，电脑配置老旧或内存偏小时也能轻量流畅运行、不卡顿。",

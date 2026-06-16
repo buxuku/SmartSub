@@ -31,6 +31,24 @@
       "multilang": "Multilingual",
       "cpuFriendly": "Runs on CPU"
     },
+    "base": {
+      "name": "Python Runtime Base",
+      "desc": "The shared Python runtime used by faster-whisper and FunASR. Bundled with the app and upgradable online.",
+      "builtin": "Built-in",
+      "downloaded": "Upgraded (downloaded)",
+      "notReady": "Not ready",
+      "checkUpdate": "Check for updates",
+      "checking": "Checking…",
+      "upgrade": "Upgrade base",
+      "upgradeConfirm": "This will download and replace the Python runtime base. Do not start transcription tasks during the upgrade; the new base is used automatically once done.",
+      "downloading": "Downloading base…",
+      "verifying": "Verifying base…",
+      "upToDate": "Base is up to date",
+      "updateAvailable": "Base update available",
+      "checkFailed": "Failed to check for updates",
+      "engineBusy": "A task is running; cannot upgrade the base now",
+      "downloadSource": "Download source"
+    },
     "builtin": {
       "name": "whisper.cpp (built-in)",
       "desc": "Default engine with ggml quantized models and GPU acceleration; specially optimized for Apple silicon (M series) for extra speed, and stays light and smooth on older or low-memory computers.",
