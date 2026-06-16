@@ -22,6 +22,8 @@ export interface PyEngineManifest {
   protocolVersion?: number;
   builtAt?: string;
   gitSha?: string;
+  engineId?: string; // 'faster-whisper' 等（三层架构按引擎区分包）
+  pythonAbi?: string; // 'cp312'，需与内置基座 ABI 一致
 }
 
 export interface RemoteEngineManifest {
@@ -31,7 +33,22 @@ export interface RemoteEngineManifest {
   gitSha?: string;
   engines: string[];
   artifacts: Record<string, { sizeBytes: number; sha256: string }>;
+  pythonVersion?: string;
+  pythonAbi?: string;
+  engineId?: string;
 }
+
+/** 内置/可升级 Python 基座的本地 manifest。 */
+export interface PyBaseManifest {
+  pythonVersion: string; // '3.12.10'
+  platform: string;
+  sha256?: string;
+  installedAt: string;
+  source: 'builtin' | 'downloaded';
+}
+
+/** P0 仅 faster-whisper；P1/P2 扩展 funasr/qwen。 */
+export type PyEngineId = 'faster-whisper';
 
 export interface PyEngineUpdateInfo {
   installed: boolean;
