@@ -30,6 +30,10 @@ mac:
       to: ./extraResources/ggml-silero-v6.2.0.bin
     - from: ./extraResources/sample-onboarding.mp3
       to: ./extraResources/sample-onboarding.mp3
+    - from: ./extraResources/py-base/
+      to: ./extraResources/py-base/
+      filter:
+        - '**/*'
 win:
   target:
     - nsis
@@ -42,6 +46,10 @@ win:
       to: ./extraResources/ggml-silero-v6.2.0.bin
     - from: ./extraResources/sample-onboarding.mp3
       to: ./extraResources/sample-onboarding.mp3
+    - from: ./extraResources/py-base/
+      to: ./extraResources/py-base/
+      filter:
+        - '**/*'
   requestedExecutionLevel: asInvoker
   artifactName: '${productName}_Windows_${version}_${arch}.${ext}'
   publish:
@@ -66,6 +74,10 @@ linux:
       to: ./extraResources/ggml-silero-v6.2.0.bin
     - from: ./extraResources/sample-onboarding.mp3
       to: ./extraResources/sample-onboarding.mp3
+    - from: ./extraResources/py-base/
+      to: ./extraResources/py-base/
+      filter:
+        - '**/*'
 nsis:
   oneClick: false
   perMachine: false
