@@ -6,7 +6,12 @@ import {
   isEnginePackageInstalled,
   readEngineManifest,
 } from '../pythonRuntime/paths';
-import { getFunasrModelDir, isFunasrReady } from '../funasrModelCatalog';
+import {
+  getFunasrModelDir,
+  isFunasrReady,
+  getInstalledFunasrAsrModels,
+  resolveFunasrAsrSelection,
+} from '../funasrModelCatalog';
 import { formatSrtContent } from '../fileUtils';
 import { logMessage, store } from '../storeManager';
 import { getPythonRuntimeManager } from '../pythonRuntime';
@@ -65,13 +70,25 @@ async function transcribeFunasr(ctx: TranscribeContext): Promise<string> {
     );
   }
 
-  const asrDir = getFunasrModelDir('sensevoice-small');
+  const installedAsr = getInstalledFunasrAsrModels();
+  const selection = resolveFunasrAsrSelection(
+    (formData as { model?: string })?.model,
+    installedAsr,
+  );
+  if (!selection) {
+    throw new Error(
+      'funasr ASR model not installed. Download SenseVoice or Paraformer from Resource Hub > Models.',
+    );
+  }
+
+  const asrDir = getFunasrModelDir(selection.id);
   const params = {
     engine: 'funasr',
     audio_file: tempAudioFile,
     asr_model: path.join(asrDir, 'model.int8.onnx'),
     tokens: path.join(asrDir, 'tokens.txt'),
     vad_model: path.join(getFunasrModelDir('silero-vad'), 'silero_vad.onnx'),
+    model_type: selection.modelType,
     ...buildFunasrParams(settings, sourceLanguage),
   };
   logMessage(`funasrParams: ${JSON.stringify(params, null, 2)}`, 'info');
@@ -128,7 +145,7 @@ async function transcribeFunasr(ctx: TranscribeContext): Promise<string> {
 
 export const funasrEngineAdapter: TranscriptionEngineAdapter = {
   id: 'funasr',
-  displayName: 'FunASR (SenseVoice)',
+  displayName: 'FunASR (SenseVoice / Paraformer)',
   requiresRuntime: true,
   pyEngineId: 'funasr',
 
