@@ -4,22 +4,24 @@
 
 **Goal:** Add FunASR / SenseVoice-Small (ONNX) as a second downloadable Python ASR engine on top of the P0 three-layer runtime, giving SmartSub a fast, China-friendly, high-accuracy Chinese/Cantonese/Japanese/Korean engine — with multi-engine sidecar switching, per-engine model download, dynamic params, GPU-aware UI, full i18n, plus the two requested cleanups (engine-repo CI old-asset removal and legacy `userData/py-engine` directory removal).
 
-**Architecture:** Reuse the existing sidecar contract (`main.py` JSON-lines dispatcher + `engines/<name>.py` modules). Add `engines/funasr_sensevoice_engine.py` that loads a **pre-exported** FSMN-VAD ONNX + SenseVoice-Small ONNX from local model dirs (no torch/funasr at runtime), runs VAD segmentation → per-segment CTC ASR → SRT segments. Parameterize the build script + CI to emit a second relocatable package `smartsub-funasr-<suffix>.tar.gz`. On the app side, generalize the single-engine Python runtime/downloader to be `engineId`-keyed: the `PythonRuntimeManager` restarts the sidecar with the target engine's `site-packages` on the `PYTHONPATH` whenever the active engine changes; a per-engine `PyEngineDownloader` installs each engine package; a new HF-tree model downloader fetches the SenseVoice + FSMN-VAD ONNX bundles into `userData/models/funasr/`. A new `funasrEngineAdapter` maps unified settings → sidecar params and formats SRT.
+> **Engine library pivot (verified during impl):** the original plan used `funasr-onnx`, but `funasr-onnx==0.4.1` eagerly `import torch` + `jieba` at module import (435MB+ package, not torch-free). We pivoted to **`sherpa-onnx`** (k2-fsa) which runs the _same_ SenseVoice-Small model via ONNX, is genuinely torch-free, ships built-in silero VAD, and produces a **98MB** engine package (`sherpa-onnx` + `numpy` only). The user-facing engine id / sidecar key stays **`funasr`**; only the underlying Python lib + model file layout changed. (Bonus: `sherpa-onnx` also exposes `from_qwen3_asr`, a natural path for P2 Qwen with zero new deps.)
 
-**Tech Stack:** Electron + TypeScript (main/renderer), Python 3.12 sidecar, `funasr-onnx` (onnxruntime + kaldi-native-fbank + sentencepiece, **no torch**), `uv` relocatable packaging, `python-build-standalone` base, GitHub Actions matrix CI, HuggingFace-mirror model hosting (`hf-mirror.com`).
+**Architecture:** Reuse the existing sidecar contract (`main.py` JSON-lines dispatcher + `engines/<name>.py` modules). Add `engines/funasr_sensevoice_engine.py` that loads a SenseVoice-Small INT8 ONNX (`model.int8.onnx` + `tokens.txt`) + a silero VAD ONNX (`silero_vad.onnx`) from local model files via `sherpa-onnx` (no torch at runtime), runs silero-VAD segmentation → per-segment SenseVoice decode → SRT segments. Parameterize the build script + CI to emit a second relocatable package `smartsub-funasr-<suffix>.tar.gz`. On the app side, generalize the single-engine Python runtime/downloader to be `engineId`-keyed: the `PythonRuntimeManager` restarts the sidecar with the target engine's `site-packages` on the `PYTHONPATH` whenever the active engine changes; a per-engine `PyEngineDownloader` installs each engine package; a model downloader fetches the SenseVoice INT8 bundle (HF tree) + silero VAD (single file) into `userData/models/funasr/`. A new `funasrEngineAdapter` maps unified settings → sidecar params and formats SRT.
+
+**Tech Stack:** Electron + TypeScript (main/renderer), Python 3.12 sidecar, `sherpa-onnx==1.13.3` + `numpy==2.4.6` (onnxruntime bundled inside sherpa-onnx, **no torch**), `uv` relocatable packaging, `python-build-standalone` base, GitHub Actions matrix CI, model hosting via k2-fsa GitHub releases + HuggingFace mirror (`hf-mirror.com`).
 
 ---
 
 ## Key Decisions (locked by `docs/superpowers/specs/2026-06-16-three-layer-multi-engine-design.md`)
 
-1. **Engine package = `funasr-onnx` only** (runtime path needs no `torch`/`funasr`). Loads pre-exported ONNX from a local dir. Verified via web research.
-2. **Models = pre-exported ONNX**, downloaded at runtime (Layer 3):
-   - ASR: HF repo `DennisHuang648/SenseVoiceSmall-onnx` (mirror of ModelScope `iic/SenseVoiceSmall-onnx`): `model_quant.onnx` (~230MB INT8), `am.mvn`, `config.yaml`, `tokens.json`, `configuration.json`.
-   - VAD: HF repo `funasr/fsmn-vad-onnx`: `model.onnx`, `config.yaml`, `am.mvn`.
-   - Download via `hf-mirror.com` (primary, China-fast) → `huggingface.co` (fallback), reusing the proven HF tree+resolve downloader (`download/parallelDownloader.ts`).
+1. **Engine package = `sherpa-onnx` + `numpy` only** (runtime path needs no `torch`). Verified by local build: **98MB**, site-packages contains just `sherpa_onnx` + `numpy` (onnxruntime is statically inside sherpa-onnx's native libs), imports cleanly, only 24 Mach-O libs ad-hoc re-signed. (The earlier `funasr-onnx` choice was abandoned: it `import torch`+`jieba` at module load, 435MB+.)
+2. **Models** downloaded at runtime (Layer 3), two sub-models under `userData/models/funasr/`:
+   - **ASR `sensevoice-small`**: SenseVoice INT8 bundle — keep `model.int8.onnx` (~230MB) + `tokens.txt`. Source repo `csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17` (HF tree download via `hf-mirror.com` → `huggingface.co`, reusing `download/parallelDownloader.ts`).
+   - **VAD `silero-vad`**: single file `silero_vad.onnx` (~2MB). Source = k2-fsa release `https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx` with a ghproxy/HF-mirror fallback list (single-file download mode).
+   - The model catalog therefore supports two fetch modes: `repo` (HF tree) and `files` (explicit candidate-URL list).
 3. **Per-engine isolated `site-packages`** (PYTHONPATH). Switching the active engine restarts the sidecar (one cold start). Accepted in spec §4.3.
-4. **CPU-first** for SenseVoice (non-autoregressive CTC, fast on CPU). `device='auto'` plumbed through; CUDA/`onnxruntime-gpu` is a later optimization (out of P1 scope) — the param exists but P1 ships CPU.
-5. **Audio input**: reuse existing `tempAudioFile` (ffmpeg already produces **16kHz mono PCM s16le WAV** — exactly what FSMN-VAD/SenseVoice want). The Python engine reads it with stdlib `wave` → float32, no extra audio deps.
+4. **CPU-first** for SenseVoice (non-autoregressive, fast on CPU). `sherpa-onnx` exposes `provider='cpu'|'cuda'|'coreml'`; we plumb a `provider` param (default `cpu`). CUDA needs the GPU build of sherpa-onnx (out of P1 scope) — the param exists but P1 ships CPU.
+5. **Audio input**: reuse existing `tempAudioFile` (ffmpeg already produces **16kHz mono PCM s16le WAV** — exactly what silero-VAD/SenseVoice want). The Python engine reads it with stdlib `wave` → `numpy` float32 (numpy is already a dep), no extra audio deps; non-16k is linearly resampled defensively.
 6. **Cleanups requested by user** ("A 带上"): (a) engine-repo `release.yml` carries only new per-engine asset naming for both engines; (b) app removes the legacy `userData/py-engine` directory (pre-three-layer single-binary layout) on startup.
 
 ## Baseline / Conventions
@@ -71,7 +73,7 @@
 
 > All Part A commands run with `working_directory` = `/Users/xiaodong/code/github.com/buxuku/smartsub-py-engine`.
 
-## Task 1: Parameterize the build by engineId + add funasr requirements
+## Task 1 ✅ DONE: Parameterize the build by engineId + add funasr requirements
 
 **Files:**
 
@@ -80,7 +82,7 @@
 - Modify: `build_engine_package.py`
 - Keep: `requirements.txt` (leave as-is; build no longer reads it directly but README references stay valid)
 
-- [ ] **Step 1: Create per-engine requirements files**
+- [x] **Step 1: Create per-engine requirements files**
 
 `requirements-faster-whisper.txt`:
 
@@ -91,10 +93,11 @@ faster-whisper>=1.1.0
 `requirements-funasr.txt`:
 
 ```
-funasr-onnx==0.4.1
+sherpa-onnx==1.13.3
+numpy==2.4.6
 ```
 
-> Note: `funasr-onnx` pulls `onnxruntime`, `kaldi-native-fbank`, `sentencepiece`, `numpy`, `PyYAML`, `scipy`. It does NOT require `torch` for loading pre-exported ONNX. If `uv pip install` resolves `torch`/`funasr` transitively (it should not), Step 4's size assertion will catch it.
+> Note: `sherpa-onnx` bundles onnxruntime inside its own native libs; `numpy` is required by the pybind11 `accept_waveform` API. Genuinely torch-free. Verified build = **98MB**, site-packages top-level = `{sherpa_onnx, numpy}` only.
 
 - [ ] **Step 2: Rewrite `build_engine_package.py` to take an engine id**
 
@@ -123,7 +126,8 @@ ROOT = Path(__file__).resolve().parent
 # 每个引擎产物必须存在的顶层 site-packages 包（构建期断言，防止 requirements 写错）
 ENGINE_ASSERT_PKG = {
     "faster-whisper": "faster_whisper",
-    "funasr": "funasr_onnx",
+    # funasr 引擎底层用 sherpa-onnx 跑 SenseVoice（torch-free），引擎标识仍为 funasr
+    "funasr": "sherpa_onnx",
 }
 
 
@@ -194,263 +198,61 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 3: Build the faster-whisper package locally (regression — old behavior still works)**
+- [x] **Step 3: Build the faster-whisper package locally (regression — old behavior still works)**
 
 Run: `uv run --python 3.12.10 -- python build_engine_package.py dist/faster-whisper faster-whisper`
 Expected: ends with `package [faster-whisper] assembled at dist/faster-whisper`; `dist/faster-whisper/site-packages/faster_whisper` exists.
 
-- [ ] **Step 4: Build the funasr package locally + verify it is light (no torch)**
+- [x] **Step 4: Build the funasr package locally + verify it is light (no torch)** — VERIFIED 98MB
 
 Run: `uv run --python 3.12.10 -- python build_engine_package.py dist/funasr funasr`
 Expected: ends with `package [funasr] assembled at dist/funasr`.
 
-Then verify torch is NOT present and check size:
+Verified: `ls dist/funasr/site-packages` (sans dist-info) = `bin`, `numpy`, `sherpa_onnx` — no torch/jieba/scipy. `du -sh dist/funasr` = **98M**. Import OK: `numpy 2.4.6 sherpa 1.13.3`.
 
-Run: `ls dist/funasr/site-packages | rg -i "torch|^funasr$" || echo "OK: no torch/funasr"`
-Expected: prints `OK: no torch/funasr` (only `funasr_onnx`, `onnxruntime`, `kaldi_native_fbank`, `sentencepiece`, `numpy`, `scipy`, `yaml`, etc.)
-
-Run: `du -sh dist/funasr`
-Expected: roughly 80–250MB (onnxruntime + scipy dominate). If it shows GBs (torch leaked in), STOP and pin deps in `requirements-funasr.txt` (add `--no-deps`-style explicit pins) before continuing.
-
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit** (committed earlier under sherpa-onnx pivot)
 
 ```bash
 git add requirements-faster-whisper.txt requirements-funasr.txt build_engine_package.py
-git commit -m "build: parameterize engine package build by engineId; add funasr requirements"
+git commit -m "build: parameterize engine package build by engineId; funasr=sherpa-onnx"
 ```
 
 ---
 
-## Task 2: Implement the FunASR / SenseVoice sidecar engine
+## Task 2 ✅ DONE: Implement the FunASR / SenseVoice sidecar engine (sherpa-onnx)
 
 **Files:**
 
 - Create: `engines/funasr_sensevoice_engine.py`
 - Modify: `engines/__init__.py`
 
-**Sidecar contract (already established):** a module exposing `preload(params)` and `transcribe(params, emit_event, is_cancelled)`. `params['engine']` selects it. The app passes local model dirs via params.
+**Sidecar contract (already established):** a module exposing `preload(params)` and `transcribe(params, emit_event, is_cancelled)`. `params['engine']` selects it. The app passes local model **file paths** via params (sherpa-onnx takes files, not dirs).
 
-**Params the app will send for funasr** (defined here, consumed in Task 9):
+**Params the app sends for funasr** (defined here, consumed in Task 9):
 
 - `audio_file`: str (16k mono wav path)
-- `asr_model_dir`: str (dir with `model_quant.onnx` + `config.yaml` + `am.mvn` + `tokens.json`)
-- `vad_model_dir`: str (dir with `model.onnx` + `config.yaml` + `am.mvn`)
-- `language`: one of `auto|zh|en|yue|ja|ko` (default `auto`)
+- `asr_model`: str (path to `model.int8.onnx`)
+- `tokens`: str (path to `tokens.txt`)
+- `vad_model`: str (path to `silero_vad.onnx`)
+- `language`: one of `""(auto)|zh|en|yue|ja|ko` (default auto)
 - `use_itn`: bool (default `true`)
-- `device`: `auto|cpu|cuda` (default `auto`; P1 maps non-cuda → CPU `device_id=-1`)
-- `quantize`: bool (default `true`, loads `model_quant.onnx`)
-- `vad_max_segment_ms`: int (default `30000`, SenseVoice single-segment limit)
+- `num_threads`: int (default `2`)
+- `provider`: `cpu|cuda|coreml` (default `cpu`)
+- VAD tuning (optional, reuse SmartSub keys): `vad_threshold`, `vad_min_silence_duration_ms`, `vad_min_speech_duration_ms`, `vad_max_speech_duration_s`
 
-- [ ] **Step 1: Write `engines/funasr_sensevoice_engine.py`**
+**Implementation notes (what was actually built):**
 
-```python
-"""FunASR / SenseVoice-Small (ONNX) 引擎。
+- `OfflineRecognizer.from_sense_voice(model, tokens, num_threads, sample_rate=16000, use_itn, language, provider)` builds the recognizer (cached by a key of those args).
+- `VadModelConfig().silero_vad.{model,threshold,min_silence_duration,min_speech_duration,max_speech_duration,window_size}` + `VoiceActivityDetector(config, buffer_size_in_seconds=100)` drives segmentation.
+- Audio read with stdlib `wave` → `numpy` int16→float32; mono downmix + linear resample guards for non-16k.
+- Feed `window_size` chunks to `vad.accept_waveform` (last partial chunk zero-padded), drain `vad.front`/`vad.pop()`; each `SpeechSegment` has `.samples` (float32) + `.start` (sample index). Decode via `recognizer.create_stream()` → `accept_waveform(16000, seg.samples)` → `decode_stream` → `stream.result.text`.
+- Emits `progress` by processed-sample ratio (capped 99%) and `segment {start,end,text}` per VAD segment; honors `is_cancelled()` (returns `None`).
 
-依赖 funasr-onnx（onnxruntime + kaldi-native-fbank + sentencepiece），不依赖 torch。
-长音频先用 FSMN-VAD 切分（SenseVoice 单段上限 ~30s），逐段 CTC 识别后合并为 segments。
-模型为「预导出 ONNX」，由 App 下载到本地目录后通过 *_model_dir 参数传入；
-funasr-onnx 检测到本地已有 model(_quant).onnx 即直接加载，绝不触发 torch 导出。
-"""
+The full implemented file lives at `engines/funasr_sensevoice_engine.py` (see repo). `engines/__init__.py` `get_engine('funasr')` returns it; `list_engines()['funasr'] = find_spec('sherpa_onnx') is not None`.
 
-import logging
-import threading
-import wave
+- [x] **Step 1–2: engine module + registry** — implemented (sherpa-onnx).
 
-import numpy as np
-
-from engines import EngineError
-
-log = logging.getLogger(__name__)
-
-_asr_cache = {}
-_vad_cache = {}
-_load_lock = threading.Lock()
-
-# SmartSub 语言 → SenseVoice 语言标签
-_LANG_MAP = {
-    "auto": "auto",
-    "zh": "zh",
-    "yue": "yue",
-    "en": "en",
-    "ja": "ja",
-    "ko": "ko",
-}
-
-
-def _device_id(device):
-    """device='cuda' → 0（需 onnxruntime-gpu，P1 默认 CPU）；其余 → -1（CPU）。"""
-    return 0 if str(device).lower() == "cuda" else -1
-
-
-def _read_wav_16k_mono(audio_file):
-    """读取 16k 单声道 PCM wav 为 float32 [-1,1]。SmartSub 的 tempAudioFile 即此格式。"""
-    with wave.open(audio_file, "rb") as wf:
-        n_channels = wf.getnchannels()
-        sampwidth = wf.getsampwidth()
-        framerate = wf.getframerate()
-        frames = wf.readframes(wf.getnframes())
-    if sampwidth != 2:
-        raise EngineError("invalid_audio", f"expected 16-bit PCM, got {sampwidth*8}-bit")
-    audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
-    if n_channels > 1:
-        audio = audio.reshape(-1, n_channels).mean(axis=1)
-    if framerate != 16000:
-        # tempAudioFile 始终 16k；万一不是，做线性重采样兜底（不引第三方依赖）。
-        ratio = 16000.0 / float(framerate)
-        idx = np.round(np.arange(0, len(audio) * ratio) / ratio).astype(np.int64)
-        idx = idx[idx < len(audio)]
-        audio = audio[idx]
-    return audio
-
-
-def _load_funasr_onnx():
-    try:
-        from funasr_onnx import Fsmn_vad, SenseVoiceSmall  # noqa: PLC0415
-        from funasr_onnx.utils.postprocess_utils import (  # noqa: PLC0415
-            rich_transcription_postprocess,
-        )
-
-        return Fsmn_vad, SenseVoiceSmall, rich_transcription_postprocess
-    except ImportError as exc:
-        raise EngineError(
-            "engine_not_installed", "funasr-onnx is not installed: %s" % exc
-        )
-
-
-def _get_vad(vad_model_dir, device):
-    key = (vad_model_dir, _device_id(device))
-    with _load_lock:
-        if key not in _vad_cache:
-            Fsmn_vad, _, _ = _load_funasr_onnx()
-            log.info("loading FSMN-VAD onnx from %s", vad_model_dir)
-            _vad_cache[key] = Fsmn_vad(vad_model_dir, device_id=_device_id(device))
-        return _vad_cache[key]
-
-
-def _get_asr(asr_model_dir, device, quantize):
-    key = (asr_model_dir, _device_id(device), bool(quantize))
-    with _load_lock:
-        if key not in _asr_cache:
-            _, SenseVoiceSmall, _ = _load_funasr_onnx()
-            log.info(
-                "loading SenseVoice onnx from %s (quantize=%s)", asr_model_dir, quantize
-            )
-            _asr_cache[key] = SenseVoiceSmall(
-                asr_model_dir, device_id=_device_id(device), quantize=bool(quantize)
-            )
-        return _asr_cache[key]
-
-
-def preload(params):
-    """仅加载 VAD + ASR 模型，不转写。"""
-    asr_dir = params.get("asr_model_dir")
-    vad_dir = params.get("vad_model_dir")
-    if not asr_dir or not vad_dir:
-        raise EngineError("invalid_params", "asr_model_dir and vad_model_dir are required")
-    device = params.get("device", "auto")
-    _get_vad(vad_dir, device)
-    _get_asr(asr_dir, device, params.get("quantize", True))
-    return {"engine": "funasr", "preloaded": True}
-
-
-def _vad_segments(vad_model, audio):
-    """运行 FSMN-VAD，返回 [[start_ms, end_ms], ...]（offline 模式）。"""
-    result = vad_model(audio)
-    # funasr-onnx 离线 VAD 返回 List[batch] -> List[[start_ms,end_ms]]；单输入取 [0]。
-    segs = result[0] if result and isinstance(result[0], list) else result
-    out = []
-    for seg in segs or []:
-        if isinstance(seg, (list, tuple)) and len(seg) >= 2:
-            out.append([int(seg[0]), int(seg[1])])
-    return out
-
-
-def transcribe(params, emit_event, is_cancelled):
-    audio_file = params.get("audio_file")
-    if not audio_file:
-        raise EngineError("invalid_params", "audio_file is required")
-    asr_dir = params.get("asr_model_dir")
-    vad_dir = params.get("vad_model_dir")
-    if not asr_dir or not vad_dir:
-        raise EngineError("invalid_params", "asr_model_dir and vad_model_dir are required")
-
-    device = params.get("device", "auto")
-    quantize = params.get("quantize", True)
-    use_itn = bool(params.get("use_itn", True))
-    language = _LANG_MAP.get(str(params.get("language", "auto")), "auto")
-
-    _, _, postprocess = _load_funasr_onnx()
-    vad_model = _get_vad(vad_dir, device)
-    asr_model = _get_asr(asr_dir, device, quantize)
-
-    emit_event("progress", {"percent": 0})
-    audio = _read_wav_16k_mono(audio_file)
-    total_samples = len(audio) or 1
-
-    segments = vad_segments = _vad_segments(vad_model, audio)
-    # VAD 无切分（极短音频或全语音）→ 整段作为一个 segment。
-    if not vad_segments:
-        vad_segments = [[0, int(len(audio) / 16000 * 1000)]]
-
-    out_segments = []
-    for i, (start_ms, end_ms) in enumerate(vad_segments):
-        if is_cancelled():
-            return None
-        start_sample = max(0, int(start_ms / 1000 * 16000))
-        end_sample = min(len(audio), int(end_ms / 1000 * 16000))
-        if end_sample <= start_sample:
-            continue
-        clip = audio[start_sample:end_sample]
-        try:
-            raw = asr_model([clip], language=language, use_itn=use_itn)
-        except Exception as exc:  # noqa: BLE001 - 单段失败不应让整文件失败
-            log.warning("segment %d asr failed: %s", i, exc)
-            continue
-        text = postprocess(raw[0]) if raw else ""
-        text = (text or "").strip()
-        if not text:
-            continue
-        segment = {"start": start_ms / 1000.0, "end": end_ms / 1000.0, "text": text}
-        out_segments.append(segment)
-        emit_event("segment", segment)
-        emit_event(
-            "progress",
-            {"percent": round(min(end_sample / total_samples * 100, 99.0), 2)},
-        )
-
-    return {
-        "engine": "funasr",
-        "language": language,
-        "segments": out_segments,
-    }
-```
-
-- [ ] **Step 2: Register funasr in `engines/__init__.py`**
-
-Replace `get_engine` and `list_engines`:
-
-```python
-def get_engine(name):
-    if name == "faster_whisper":
-        from engines import faster_whisper_engine
-
-        return faster_whisper_engine
-    if name == "funasr":
-        from engines import funasr_sensevoice_engine
-
-        return funasr_sensevoice_engine
-    raise EngineError("engine_not_found", "unknown engine: %s" % name)
-
-
-def list_engines():
-    """只探测依赖是否可导入，不真正导入（避免重依赖拖慢 ping）。"""
-    return {
-        "faster_whisper": importlib.util.find_spec("faster_whisper") is not None,
-        "funasr": importlib.util.find_spec("funasr_onnx") is not None,
-    }
-```
-
-- [ ] **Step 3: Smoke-import the engine module in the funasr package (no model needed)**
+- [x] **Step 3: Smoke-import in the funasr package** — VERIFIED
 
 Run:
 
@@ -459,13 +261,13 @@ PY="$(uv python find 3.12.10)"
 PYTHONHOME="" PYTHONPATH="dist/funasr/site-packages" "$PY" -c "import sys; sys.path.insert(0,'dist/funasr'); from engines import funasr_sensevoice_engine, list_engines; print(list_engines())"
 ```
 
-Expected: prints `{'faster_whisper': False, 'funasr': True}` (faster_whisper False because this package only has funasr deps) and no import error.
+Expected: `{'faster_whisper': False, 'funasr': True}`.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Commit** (engine code + registry)
 
 ```bash
-git add engines/funasr_sensevoice_engine.py engines/__init__.py
-git commit -m "feat(funasr): add SenseVoice-Small ONNX engine (VAD seg + CTC ASR)"
+git add engines/funasr_sensevoice_engine.py engines/__init__.py requirements-funasr.txt build_engine_package.py
+git commit -m "feat(funasr): SenseVoice via sherpa-onnx (silero VAD seg + offline decode)"
 ```
 
 ---
@@ -484,15 +286,16 @@ Run: `rg -n "package" smoke_test.py`
 
 - [ ] **Step 2: Add a funasr transcription smoke (env-gated) to `smoke_test.py`**
 
-Append a helper and call it from the package-mode branch only when `SMARTSUB_FUNASR_ASR_DIR` and `SMARTSUB_FUNASR_VAD_DIR` env vars are set and `SMARTSUB_FUNASR_WAV` points to a 16k wav:
+Append a helper and call it from the package-mode branch only when `SMARTSUB_FUNASR_ASR_MODEL`, `SMARTSUB_FUNASR_TOKENS`, `SMARTSUB_FUNASR_VAD_MODEL` env vars are set and `SMARTSUB_FUNASR_WAV` points to a 16k wav:
 
 ```python
 def _funasr_smoke(py, package_dir):
     import os
-    asr_dir = os.environ.get("SMARTSUB_FUNASR_ASR_DIR")
-    vad_dir = os.environ.get("SMARTSUB_FUNASR_VAD_DIR")
+    asr = os.environ.get("SMARTSUB_FUNASR_ASR_MODEL")
+    tokens = os.environ.get("SMARTSUB_FUNASR_TOKENS")
+    vad = os.environ.get("SMARTSUB_FUNASR_VAD_MODEL")
     wav = os.environ.get("SMARTSUB_FUNASR_WAV")
-    if not (asr_dir and vad_dir and wav):
+    if not (asr and tokens and vad and wav):
         print("[smoke] funasr transcription skipped (set SMARTSUB_FUNASR_* to enable)")
         return
     req = {
@@ -501,9 +304,10 @@ def _funasr_smoke(py, package_dir):
         "params": {
             "engine": "funasr",
             "audio_file": wav,
-            "asr_model_dir": asr_dir,
-            "vad_model_dir": vad_dir,
-            "language": "auto",
+            "asr_model": asr,
+            "tokens": tokens,
+            "vad_model": vad,
+            "language": "",
         },
     }
     import json, subprocess
@@ -519,30 +323,25 @@ def _funasr_smoke(py, package_dir):
     print("[smoke] funasr transcription OK")
 ```
 
-Wire `_funasr_smoke(python_exe, package_dir)` into the package-mode path after the ping assertion (guard so it only runs for the funasr package — detect by `os.path.isdir(os.path.join(package_dir, 'site-packages', 'funasr_onnx'))`).
+Wire `_funasr_smoke(python_exe, package_dir)` into the package-mode path after the ping assertion (guard so it only runs for the funasr package — detect by `os.path.isdir(os.path.join(package_dir, 'site-packages', 'sherpa_onnx'))`).
 
 - [ ] **Step 3: Download real models locally for the smoke (one-time, into a scratch dir)**
 
 ```bash
-mkdir -p /tmp/funasr-models/sensevoice /tmp/funasr-models/fsmn-vad
-# ASR (model_quant.onnx + am.mvn + config.yaml + tokens.json + configuration.json)
-for f in model_quant.onnx am.mvn config.yaml tokens.json configuration.json; do
-  curl -fL "https://hf-mirror.com/DennisHuang648/SenseVoiceSmall-onnx/resolve/main/$f" -o "/tmp/funasr-models/sensevoice/$f"
-done
-# VAD (model.onnx + config.yaml + am.mvn)
-for f in model.onnx config.yaml am.mvn; do
-  curl -fL "https://hf-mirror.com/funasr/fsmn-vad-onnx/resolve/main/$f" -o "/tmp/funasr-models/fsmn-vad/$f"
-done
-ls -lh /tmp/funasr-models/sensevoice /tmp/funasr-models/fsmn-vad
+mkdir -p /tmp/sherpa-models && cd /tmp/sherpa-models
+curl -fL -o silero_vad.onnx \
+  https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
+curl -fL -o sv.tar.bz2 \
+  https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2
+tar xjf sv.tar.bz2
+ls -lh sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17   # model.int8.onnx ~230MB, tokens.txt
 ```
 
-Expected: `model_quant.onnx` ~230MB, `model.onnx` (vad) ~1–2MB; all files non-empty.
+Expected: `model.int8.onnx` ~230MB, `tokens.txt` present, `silero_vad.onnx` ~2MB; all files non-empty.
 
-> If `funasr-onnx`'s `SenseVoiceSmall` errors that `chn_jpn_yue_eng_ko_spectok.bpe.model` is missing, also fetch it from the base repo: `curl -fL "https://hf-mirror.com/FunAudioLLM/SenseVoiceSmall/resolve/main/chn_jpn_yue_eng_ko_spectok.bpe.model" -o /tmp/funasr-models/sensevoice/chn_jpn_yue_eng_ko_spectok.bpe.model` and add this filename to the app's download list in Task 8.
+- [ ] **Step 4: Create a 16k mono test wav (or reuse the bundle's `test_wavs/zh.wav`) and run the smoke**
 
-- [ ] **Step 4: Create a 16k mono test wav (5–10s of speech) and run the smoke**
-
-If you have a sample video/audio, extract 16k mono:
+The bundle already ships `test_wavs/{zh,en,ja,ko,yue}.wav` (16k mono). Or extract from any media:
 
 ```bash
 ffmpeg -y -i <any-audio-with-speech> -ar 16000 -ac 1 -c:a pcm_s16le /tmp/funasr-test.wav
@@ -552,15 +351,17 @@ Run the smoke:
 
 ```bash
 PY="$(uv python find 3.12.10)"
-SMARTSUB_FUNASR_ASR_DIR=/tmp/funasr-models/sensevoice \
-SMARTSUB_FUNASR_VAD_DIR=/tmp/funasr-models/fsmn-vad \
-SMARTSUB_FUNASR_WAV=/tmp/funasr-test.wav \
+SV=/tmp/sherpa-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17
+SMARTSUB_FUNASR_ASR_MODEL=$SV/model.int8.onnx \
+SMARTSUB_FUNASR_TOKENS=$SV/tokens.txt \
+SMARTSUB_FUNASR_VAD_MODEL=/tmp/sherpa-models/silero_vad.onnx \
+SMARTSUB_FUNASR_WAV=$SV/test_wavs/zh.wav \
 "$PY" smoke_test.py --package dist/funasr "$PY"
 ```
 
-Expected: `[smoke] funasr transcription OK` and recognizable transcript text in stderr logs.
+Expected: `[smoke] funasr transcription OK` and recognizable transcript text.
 
-> This step is the **critical validation** that funasr-onnx loads pre-exported ONNX without torch and the VAD→ASR pipeline works. If it fails on a missing model file, fix the download list (Step 3 note) and rerun before moving on.
+> This step is the **critical validation** that sherpa-onnx loads SenseVoice without torch and the silero-VAD→decode pipeline works end-to-end.
 
 - [ ] **Step 5: Commit**
 
@@ -1102,11 +903,11 @@ git commit -m "feat(downloader): key engine-package install/update by engineId"
 
 ```
 userData/models/funasr/
-  sensevoice-small/   # model_quant.onnx, am.mvn, config.yaml, tokens.json, configuration.json
-  fsmn-vad/           # model.onnx, config.yaml, am.mvn
+  sensevoice-small/   # model.int8.onnx (~230MB), tokens.txt   ← HF tree (repo mode)
+  silero-vad/         # silero_vad.onnx (~2MB)                 ← single file (files mode)
 ```
 
-- [ ] **Step 1: Create `funasrModelCatalog.ts`**
+- [ ] **Step 1: Create `funasrModelCatalog.ts`** — two fetch modes (`repo` HF-tree vs `files` candidate-URL)
 
 ```typescript
 import path from 'path';
@@ -1121,30 +922,45 @@ export function getFunasrModelsRoot(): string {
 }
 
 /** funasr 子模型标识（与本地子目录一一对应）。 */
-export type FunasrModelId = 'sensevoice-small' | 'fsmn-vad';
+export type FunasrModelId = 'sensevoice-small' | 'silero-vad';
 
+/** repo 模式：下载整个 HF 仓库子集；files 模式：按显式候选 URL 下单个文件。 */
 export interface FunasrModelSpec {
   id: FunasrModelId;
-  /** HF（镜像）仓库 id */
-  repo: string;
-  /** 本地子目录名 */
   dirName: string;
   /** 判定「已安装」必须存在的关键文件 */
   requiredFiles: string[];
+  /** HF（镜像）仓库 id（repo 模式） */
+  repo?: string;
+  /** 仅保留这些文件，省带宽（repo 模式；缺省下载全部非点文件） */
+  keepFiles?: string[];
+  /** 单文件候选 URL（files 模式，按序回退） */
+  files?: { name: string; urls: string[] }[];
 }
 
 export const FUNASR_MODELS: Record<FunasrModelId, FunasrModelSpec> = {
   'sensevoice-small': {
     id: 'sensevoice-small',
-    repo: 'DennisHuang648/SenseVoiceSmall-onnx',
     dirName: 'sensevoice-small',
-    requiredFiles: ['model_quant.onnx', 'am.mvn', 'config.yaml', 'tokens.json'],
+    repo: 'csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17',
+    keepFiles: ['model.int8.onnx', 'tokens.txt'],
+    requiredFiles: ['model.int8.onnx', 'tokens.txt'],
   },
-  'fsmn-vad': {
-    id: 'fsmn-vad',
-    repo: 'funasr/fsmn-vad-onnx',
-    dirName: 'fsmn-vad',
-    requiredFiles: ['model.onnx', 'config.yaml', 'am.mvn'],
+  'silero-vad': {
+    id: 'silero-vad',
+    dirName: 'silero-vad',
+    requiredFiles: ['silero_vad.onnx'],
+    files: [
+      {
+        name: 'silero_vad.onnx',
+        urls: [
+          'https://hf-mirror.com/csukuangfj/vad/resolve/main/silero_vad.onnx',
+          'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx',
+          'https://ghfast.top/https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx',
+          'https://huggingface.co/csukuangfj/vad/resolve/main/silero_vad.onnx',
+        ],
+      },
+    ],
   },
 };
 
@@ -1165,7 +981,7 @@ export function isFunasrModelInstalled(id: FunasrModelId): boolean {
 export function isFunasrReady(): boolean {
   return (
     isFunasrModelInstalled('sensevoice-small') &&
-    isFunasrModelInstalled('fsmn-vad')
+    isFunasrModelInstalled('silero-vad')
   );
 }
 
@@ -1175,9 +991,11 @@ export function deleteFunasrModel(id: FunasrModelId): void {
 }
 ```
 
-- [ ] **Step 2: Create `funasrModelDownloader.ts` (HF-tree multi-file, mirror fallback)**
+> The silero `urls` candidates must be validated during impl (Task 3's background download already confirms the k2-fsa release URL works). Verify at least one `hf-mirror.com` candidate resolves; if `csukuangfj/vad` 404s, drop it and rely on the GitHub-release + ghproxy entries (the GitHub release is canonical).
 
-This mirrors `fasterWhisperModelDownloader.ts`'s proven HF tree+resolve + `downloadFileParallel` approach, but downloads a whole repo's files into a flat model dir.
+- [ ] **Step 2: Create `funasrModelDownloader.ts`** — supports both `repo` (HF tree) and `files` (candidate URL) modes
+
+This mirrors `fasterWhisperModelDownloader.ts`'s proven HF tree+resolve + `downloadFileParallel` approach for the repo mode, and adds a small candidate-URL loop for the files mode (silero). For repo mode, only `keepFiles` are downloaded (filter the tree).
 
 ```typescript
 import { BrowserWindow } from 'electron';
@@ -1326,6 +1144,11 @@ export class FunasrModelDownloader {
     this.currentKey = key;
     this.abortController = new AbortController();
 
+    // files 模式（silero-vad）：按候选 URL 顺序下单个小文件。
+    if (spec.files && spec.files.length > 0) {
+      return this.downloadFilesMode(id, spec, destDir, key);
+    }
+
     let lastError: unknown = null;
     for (const host of getHosts(source)) {
       try {
@@ -1341,7 +1164,8 @@ export class FunasrModelDownloader {
             e.type === 'file' &&
             e.path &&
             !e.path.startsWith('.') &&
-            (e.size ?? 0) > 0,
+            (e.size ?? 0) > 0 &&
+            (!spec.keepFiles || spec.keepFiles.includes(e.path)),
         );
         if (files.length === 0) throw new Error('empty tree');
 
@@ -1431,6 +1255,91 @@ export class FunasrModelDownloader {
     this.sendFinal(key, 0);
     this.currentKey = null;
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  }
+
+  /** files 模式：逐文件按候选 URL 顺序回退下载（用于 silero_vad.onnx 这类单文件）。 */
+  private async downloadFilesMode(
+    id: FunasrModelId,
+    spec: (typeof FUNASR_MODELS)[FunasrModelId],
+    destDir: string,
+    key: string,
+  ): Promise<boolean> {
+    this.update({
+      status: 'downloading',
+      downloaded: 0,
+      total: 0,
+      progress: 0,
+      error: undefined,
+    });
+    for (const f of spec.files || []) {
+      const dest = path.join(destDir, f.name);
+      if (fs.existsSync(dest) && fs.statSync(dest).size > 0) continue;
+      let ok = false;
+      let lastError: unknown = null;
+      for (const url of f.urls) {
+        try {
+          await downloadFileParallel({
+            url,
+            destPath: dest,
+            signal: this.abortController?.signal,
+            headers: { 'User-Agent': 'SmartSub-Electron' },
+            onProgress: (thisFile, totalFile) =>
+              this.update({ downloaded: thisFile, total: totalFile || 0 }),
+            log: (m, l) => logMessage(m, l),
+          });
+          ok = true;
+          break;
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          if (msg === 'Download cancelled') {
+            this.progress = { ...this.progress, status: 'idle' };
+            this.sendFinal(key, 1);
+            this.currentKey = null;
+            throw error;
+          }
+          if (error instanceof RangeNotSupportedError) {
+            try {
+              await this.downloadSingle(
+                url,
+                dest,
+                this.abortController?.signal,
+              );
+              ok = true;
+              break;
+            } catch (e2) {
+              lastError = e2;
+            }
+          } else {
+            lastError = error;
+          }
+          logMessage(
+            `funasr ${id} file ${f.name} from ${url} failed: ${msg}`,
+            'warning',
+          );
+        }
+      }
+      if (!ok) {
+        this.progress = {
+          ...this.progress,
+          status: 'error',
+          error:
+            lastError instanceof Error ? lastError.message : String(lastError),
+        };
+        this.sendFinal(key, 0);
+        this.currentKey = null;
+        throw lastError instanceof Error
+          ? lastError
+          : new Error(String(lastError));
+      }
+    }
+    if (!isFunasrModelInstalled(id)) {
+      throw new Error(`download finished but required files missing for ${id}`);
+    }
+    this.progress = { ...this.progress, status: 'completed', progress: 100 };
+    this.sendFinal(key, 1);
+    this.currentKey = null;
+    logMessage(`funasr model ${id} downloaded (files mode)`, 'info');
+    return true;
   }
 
   private sendFinal(key: string, value: number): void {
@@ -1588,7 +1497,7 @@ Run: `npx tsc --noEmit 2>&1 | rg -c "main/|types/"` → ≤ baseline for touched
 
 ```bash
 git add main/helpers/funasrModelCatalog.ts main/helpers/funasrModelDownloader.ts main/helpers/ipcModelHandlers.ts main/preload.ts
-git commit -m "feat(funasr): SenseVoice + FSMN-VAD ONNX model download (hf-mirror) + IPC"
+git commit -m "feat(funasr): SenseVoice + silero-VAD ONNX model download (hf-mirror + release) + IPC"
 ```
 
 ---
@@ -1621,25 +1530,28 @@ export function getFunasrLanguage(language?: string): string {
 
 export interface FunasrEngineSettings {
   funasrUseItn?: boolean;
-  funasrDevice?: 'auto' | 'cpu' | 'cuda';
+  /** sherpa-onnx provider；P1 仅 cpu 落地，cuda/coreml 预留 */
+  funasrProvider?: 'cpu' | 'cuda' | 'coreml';
+  funasrNumThreads?: number;
 }
 
-/** 组装 funasr sidecar 的可选参数（不含 audio_file / 模型目录，由 adapter 注入）。 */
+/** 组装 funasr sidecar 的可选参数（不含 audio_file / 模型文件，由 adapter 注入）。 */
 export function buildFunasrParams(
   settings: Record<string, unknown>,
   sourceLanguage?: string,
 ): {
   language: string;
   use_itn: boolean;
-  device: string;
-  quantize: boolean;
+  provider: string;
+  num_threads: number;
 } {
   const s = settings as FunasrEngineSettings;
   return {
-    language: getFunasrLanguage(sourceLanguage),
+    language: getFunasrLanguage(sourceLanguage), // 'auto' → 引擎侧归一为 '' 自动
     use_itn: s.funasrUseItn !== false, // 默认开 ITN
-    device: s.funasrDevice || 'auto',
-    quantize: true,
+    provider: s.funasrProvider || 'cpu',
+    num_threads:
+      Number(s.funasrNumThreads) > 0 ? Number(s.funasrNumThreads) : 2,
   };
 }
 ```
@@ -1648,6 +1560,7 @@ export function buildFunasrParams(
 
 ```typescript
 import fs from 'fs';
+import path from 'path';
 import type { EngineStatus, PyEngineManifest } from '../../../types/engine';
 import {
   isPyBaseReady,
@@ -1703,15 +1616,17 @@ async function transcribeFunasr(ctx: TranscribeContext): Promise<string> {
   }
   if (!isFunasrReady()) {
     throw new Error(
-      'funasr models not installed. Download SenseVoice + FSMN-VAD from Resource Hub > Models.',
+      'funasr models not installed. Download SenseVoice + silero-VAD from Resource Hub > Models.',
     );
   }
 
+  const asrDir = getFunasrModelDir('sensevoice-small');
   const params = {
     engine: 'funasr',
     audio_file: tempAudioFile,
-    asr_model_dir: getFunasrModelDir('sensevoice-small'),
-    vad_model_dir: getFunasrModelDir('fsmn-vad'),
+    asr_model: path.join(asrDir, 'model.int8.onnx'),
+    tokens: path.join(asrDir, 'tokens.txt'),
+    vad_model: path.join(getFunasrModelDir('silero-vad'), 'silero_vad.onnx'),
     ...buildFunasrParams(settings, sourceLanguage),
   };
   logMessage(`funasrParams: ${JSON.stringify(params, null, 2)}`, 'info');
@@ -1898,13 +1813,16 @@ ipcMain.handle(
   'set-funasr-settings',
   async (
     _event,
-    { device, useItn }: { device?: 'auto' | 'cpu' | 'cuda'; useItn?: boolean },
+    {
+      provider,
+      useItn,
+    }: { provider?: 'cpu' | 'cuda' | 'coreml'; useItn?: boolean },
   ) => {
     try {
       const settings = store.get('settings');
       store.set('settings', {
         ...settings,
-        ...(device !== undefined ? { funasrDevice: device } : {}),
+        ...(provider !== undefined ? { funasrProvider: provider } : {}),
         ...(useItn !== undefined ? { funasrUseItn: useItn } : {}),
       });
       return { success: true };
@@ -1971,7 +1889,7 @@ Reuse whatever card/list the faster-whisper engine uses. The card must:
 - Uninstall → `invoke('uninstall-py-engine', { engineId: 'funasr' })`.
 - Progress events: filter `py-engine-download-progress` by `payload.engineId === 'funasr'`.
 - Enable → `invoke('set-transcription-engine', 'funasr')` (handle `engine_not_installed`).
-- Device select (auto/cpu) → `invoke('set-funasr-settings', { device })`.
+- Provider select (cpu; cuda/coreml reserved) → `invoke('set-funasr-settings', { provider })`.
 - ITN toggle → `invoke('set-funasr-settings', { useItn })`.
 
 If the existing tab renders engines by iterating a config array, add a `funasr` entry to that array with `engineId: 'funasr'`, `displayName: 'FunASR (SenseVoice)'`, and any per-engine flags; only add a bespoke card if the tab hardcodes faster-whisper.
@@ -1979,7 +1897,7 @@ If the existing tab renders engines by iterating a config array, add a `funasr` 
 - [ ] **Step 3: Add FunASR models to the Models tab**
 
 Run: `rg -n "ct2:|getCt2ProgressKey|faster-whisper.*model|downloadProgress" renderer/components -l`
-In the models tab, add a FunASR models group listing `sensevoice-small` and `fsmn-vad`:
+In the models tab, add a FunASR models group listing `sensevoice-small` and `silero-vad`:
 
 - Status from `invoke('funasr-model:status')`.
 - Download → `invoke('funasr-model:download', { id })`.
@@ -1998,9 +1916,9 @@ zh:
   "engine.funasr.name": "FunASR（SenseVoice）",
   "engine.funasr.desc": "达摩院 SenseVoice-Small，中文/粤语/日语/韩语高准确度，CPU 即可流畅，推荐中文场景。",
   "engine.funasr.itn": "数字/标点归一化（ITN）",
-  "engine.funasr.modelsRequired": "需下载 SenseVoice 与 FSMN-VAD 两个模型",
+  "engine.funasr.modelsRequired": "需下载 SenseVoice 与 silero-VAD 两个模型",
   "model.funasr.sensevoice-small": "SenseVoice-Small（ONNX，约 230MB）",
-  "model.funasr.fsmn-vad": "FSMN-VAD（语音分段，约 2MB）"
+  "model.funasr.silero-vad": "silero-VAD（语音分段，约 2MB）"
 }
 ```
 
@@ -2011,9 +1929,9 @@ en:
   "engine.funasr.name": "FunASR (SenseVoice)",
   "engine.funasr.desc": "DAMO SenseVoice-Small: high-accuracy Chinese/Cantonese/Japanese/Korean, fast on CPU. Recommended for Chinese.",
   "engine.funasr.itn": "Inverse Text Normalization (ITN)",
-  "engine.funasr.modelsRequired": "Requires SenseVoice + FSMN-VAD models",
+  "engine.funasr.modelsRequired": "Requires SenseVoice + silero-VAD models",
   "model.funasr.sensevoice-small": "SenseVoice-Small (ONNX, ~230MB)",
-  "model.funasr.fsmn-vad": "FSMN-VAD (segmentation, ~2MB)"
+  "model.funasr.silero-vad": "silero-VAD (segmentation, ~2MB)"
 }
 ```
 
@@ -2131,9 +2049,10 @@ JSON
 
 ```bash
 APPDIR="$HOME/Library/Application Support/SmartSub-dev"
-mkdir -p "$APPDIR/models/funasr/sensevoice-small" "$APPDIR/models/funasr/fsmn-vad"
-cp /tmp/funasr-models/sensevoice/* "$APPDIR/models/funasr/sensevoice-small/"
-cp /tmp/funasr-models/fsmn-vad/* "$APPDIR/models/funasr/fsmn-vad/"
+SV=/tmp/sherpa-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17
+mkdir -p "$APPDIR/models/funasr/sensevoice-small" "$APPDIR/models/funasr/silero-vad"
+cp "$SV/model.int8.onnx" "$SV/tokens.txt" "$APPDIR/models/funasr/sensevoice-small/"
+cp /tmp/sherpa-models/silero_vad.onnx "$APPDIR/models/funasr/silero-vad/"
 ```
 
 - [ ] **Step 3: Build the app + run type checks/gates**
@@ -2177,7 +2096,7 @@ git commit -m "test(funasr): e2e verification fixups"
 ## Self-Review Checklist (run after implementing)
 
 1. **Spec coverage (P1 deliverables, spec §12 P1 + §6.2 + §7 + §8 + §13):**
-   - funasr engine package (onnxruntime + funasr-onnx) → Task 1, 2, 4.
+   - funasr engine package (sherpa-onnx + numpy, torch-free) → Task 1, 2, 4.
    - `funasr_sensevoice_engine.py` (VAD seg → ASR → SRT) → Task 2.
    - app `funasr` adapter + params mapping → Task 9.
    - model download (China-friendly mirror) → Task 8.
@@ -2190,14 +2109,16 @@ git commit -m "test(funasr): e2e verification fixups"
    - `ensureStarted(engineId)` signature used identically in manager (Task 6), faster-whisper adapter (Task 6 Step 3), funasr adapter (Task 9), IPC (Task 9 Step 4).
    - `getPyEngineDownloader(engineId, mainWindow?)` signature used identically in downloader (Task 7), IPC (Task 9).
    - `PyEngineId = 'faster-whisper' | 'funasr'` (Task 5) used by paths/downloader/runtime.
-   - `FunasrModelId = 'sensevoice-small' | 'fsmn-vad'` consistent across catalog (Task 8), downloader (Task 8), IPC (Task 8), adapter (Task 9 via `getFunasrModelDir`).
+   - `FunasrModelId = 'sensevoice-small' | 'silero-vad'` consistent across catalog (Task 8), downloader (Task 8), IPC (Task 8), adapter (Task 9 via `getFunasrModelDir`).
    - sidecar engine key is `'funasr'` everywhere: Python `get_engine('funasr')`/`list_engines()['funasr']` (Task 2), `params.engine='funasr'` (Task 9), `engineInfo.engines.funasr` (Task 9), manifest `enginePackages.funasr.sidecar='funasr'` (Task 4).
+   - sherpa-onnx engine consumes **file paths**: `asr_model`(model.int8.onnx), `tokens`(tokens.txt), `vad_model`(silero_vad.onnx) — adapter (Task 9) joins them from `getFunasrModelDir(...)`; matches the Python engine's params (Task 2).
 4. **Ordering dependency:** Task 6 Step 2 imports `getFunasrModelsRoot` from Task 8 Step 1 — create `funasrModelCatalog.ts` before type-checking Task 6 (noted inline).
 
 ## Risks & Mitigations (P1-specific)
 
-- **funasr-onnx needs a model file we didn't list (e.g. `chn_jpn_yue_eng_ko_spectok.bpe.model`).** Mitigation: Task 3 Step 4 smoke validates real load; if it errors on a missing file, add it to `FUNASR_MODELS['sensevoice-small'].requiredFiles` + it's already in the repo tree so the downloader fetches it automatically (downloader pulls ALL repo files; `requiredFiles` is only the install-complete gate).
-- **funasr-onnx transitively pulls torch.** Mitigation: Task 1 Step 4 asserts no torch + size sanity; pin deps if needed.
-- **VAD output shape differs across funasr-onnx versions.** Mitigation: `_vad_segments` defensively handles `List[batch]` vs flat; pinned `funasr-onnx==0.4.1`.
+- **~~funasr-onnx pulls torch~~ (RESOLVED):** pivoted to `sherpa-onnx` (98MB, torch-free, verified). Engine id stays `funasr`.
+- **silero candidate URL availability.** Mitigation: `silero-vad` `files.urls` lists 4 candidates (hf-mirror, GitHub release, ghproxy, huggingface). The GitHub-release URL is canonical and confirmed working in Task 3; impl validates an hf-mirror candidate and prunes any 404.
+- **SenseVoice INT8 repo file naming on HF mirror.** Mitigation: `keepFiles=['model.int8.onnx','tokens.txt']` + `requiredFiles` gate; Task 3 real-model smoke validates the exact filenames before app wiring. If the mirror repo path differs, adjust `FUNASR_MODELS['sensevoice-small'].repo`.
+- **sherpa VAD chunking.** Mitigation: feed exactly `window_size` chunks (last zero-padded) then `flush()`; `SpeechSegment.samples`/`.start` API is stable in `sherpa-onnx==1.13.3` (pinned).
 - **Engine switch race (two transcriptions on different engines).** Out of scope: SmartSub serializes transcription (task queue, `isTranscriptionBusy`); switching mid-run is blocked by `engine_busy` on install and by single active task.
-- **hf-mirror availability.** Mitigation: `getHosts` falls back to `huggingface.co`.
+- **hf-mirror availability.** Mitigation: repo-mode `getHosts` falls back to `huggingface.co`.
