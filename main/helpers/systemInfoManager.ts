@@ -19,6 +19,17 @@ import {
   getFasterWhisperModelDownloader,
   deleteCt2Model,
 } from './fasterWhisperModelDownloader';
+import {
+  getFunasrModelDownloader,
+  getFunasrProgressKey,
+} from './funasrModelDownloader';
+import {
+  FUNASR_MODELS,
+  FunasrModelId,
+  isFunasrModelInstalled,
+  isFunasrReady,
+  deleteFunasrModel,
+} from './funasrModelCatalog';
 import { shutdownPythonRuntime } from './pythonRuntime';
 import fse from 'fs-extra';
 import path from 'path';
@@ -32,6 +43,7 @@ let downloadingModels = new Set<string>();
 export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   const modelDownloader = getModelDownloader(mainWindow);
   const ct2ModelDownloader = getFasterWhisperModelDownloader(mainWindow);
+  const funasrModelDownloader = getFunasrModelDownloader(mainWindow);
 
   ipcMain.handle('getSystemInfo', async () => {
     // 三层就绪判定：缺基座 → error（需重装/升级 App）；有基座缺引擎包 → not_installed
@@ -111,9 +123,55 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     }
   });
 
+  ipcMain.handle(
+    'downloadFunasrModel',
+    async (
+      _event,
+      { model, source }: { model: FunasrModelId; source?: string },
+    ) => {
+      if (downloadingModels.size > 0) {
+        return { success: false, error: 'anotherDownloadInProgress' };
+      }
+      const progressKey = getFunasrProgressKey(model);
+      downloadingModels.add(progressKey);
+      try {
+        await funasrModelDownloader.download(model, source || 'hf-mirror');
+        downloadingModels.delete(progressKey);
+        return { success: true };
+      } catch (error) {
+        logMessage(`funasr model download error: ${error}`, 'error');
+        downloadingModels.delete(progressKey);
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle('getFunasrModelStatus', async () => ({
+    success: true,
+    ready: isFunasrReady(),
+    models: (Object.keys(FUNASR_MODELS) as FunasrModelId[]).map((id) => ({
+      id,
+      installed: isFunasrModelInstalled(id),
+    })),
+  }));
+
+  ipcMain.handle(
+    'deleteFunasrModel',
+    async (_event, modelId: FunasrModelId) => {
+      try {
+        deleteFunasrModel(modelId);
+        await shutdownPythonRuntime();
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
   ipcMain.handle('cancelModelDownload', async () => {
     modelDownloader.cancel();
     ct2ModelDownloader.cancel();
+    funasrModelDownloader.cancel();
     downloadingModels.clear();
     return true;
   });
