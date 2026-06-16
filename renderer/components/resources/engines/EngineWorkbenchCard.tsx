@@ -97,7 +97,7 @@ const EngineWorkbenchCard: React.FC<EngineWorkbenchCardProps> = ({
               )}
             </div>
           </div>
-          {badge}
+          <div className="shrink-0">{badge}</div>
         </div>
 
         <p className="text-sm text-muted-foreground">{desc}</p>

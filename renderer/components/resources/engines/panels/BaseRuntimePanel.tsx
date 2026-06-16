@@ -188,10 +188,10 @@ const BaseRuntimePanel: React.FC<BaseRuntimePanelProps> = ({
     <>
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
+          <p className="min-w-0 text-sm text-muted-foreground">
             {t('engines.base.desc')}
           </p>
-          {badge}
+          <div className="shrink-0">{badge}</div>
         </div>
 
         {isDownloading && progress && (
