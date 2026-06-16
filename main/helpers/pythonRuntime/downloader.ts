@@ -360,6 +360,23 @@ export class PyEngineDownloader {
         });
         throw error;
       }
+      // Windows 文件被锁（EPERM/EBUSY/EACCES）时，清掉残留临时包与续传状态，
+      // 避免下次一直尝试续传/打开同一个被锁文件而无法重新下载。
+      const code =
+        error && typeof error === 'object' && 'code' in error
+          ? String((error as { code?: unknown }).code)
+          : '';
+      if (code === 'EPERM' || code === 'EBUSY' || code === 'EACCES') {
+        try {
+          if (fs.existsSync(tempPath)) fs.rmSync(tempPath, { force: true });
+        } catch (cleanupError) {
+          logMessage(
+            `Failed to remove locked py-engine temp file: ${cleanupError}`,
+            'warning',
+          );
+        }
+        saveDownloadState(null, this.engineId);
+      }
       this.core.updateProgress({ status: 'error', error: errorMessage });
       logMessage(`Py-engine download error: ${errorMessage}`, 'error');
       throw error;

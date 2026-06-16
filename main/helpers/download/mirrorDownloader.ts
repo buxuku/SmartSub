@@ -149,13 +149,25 @@ export class MirrorDownloader {
       const INACTIVITY_TIMEOUT = 60000;
       let inactivityTimer: NodeJS.Timeout | null = null;
       let isCompleted = false;
+      // 持有写流引用，确保任何失败路径都能释放文件句柄；
+      // 否则 Windows 上残留句柄会锁住 .tar.gz，下次下载 open 时报 EPERM。
+      let writeStream: fs.WriteStream | null = null;
+
+      const destroyWriteStream = () => {
+        if (writeStream && !writeStream.destroyed) {
+          writeStream.destroy();
+        }
+        writeStream = null;
+      };
 
       const resetInactivityTimer = () => {
         if (inactivityTimer) clearTimeout(inactivityTimer);
         if (!isCompleted) {
           inactivityTimer = setTimeout(() => {
             if (!isCompleted) {
+              isCompleted = true;
               request.destroy();
+              destroyWriteStream();
               reject(
                 new Error('Download timeout: no data received for 60 seconds'),
               );
@@ -209,7 +221,7 @@ export class MirrorDownloader {
         this.updateProgress({ total: totalSize, downloaded: startByte });
         hooks?.onBytes?.(startByte, totalSize);
 
-        const writeStream = fs.createWriteStream(destPath, {
+        writeStream = fs.createWriteStream(destPath, {
           flags: startByte > 0 ? 'a' : 'w',
         });
 
@@ -232,12 +244,15 @@ export class MirrorDownloader {
         writeStream.on('finish', () => {
           isCompleted = true;
           clearInactivityTimer();
+          writeStream = null;
           resolve(destPath);
         });
 
         writeStream.on('error', (err) => {
           isCompleted = true;
           clearInactivityTimer();
+          request.destroy();
+          destroyWriteStream();
           reject(err);
         });
 
@@ -246,7 +261,7 @@ export class MirrorDownloader {
             isCompleted = true;
             clearInactivityTimer();
             request.destroy();
-            writeStream.close();
+            destroyWriteStream();
             reject(new Error('Download cancelled'));
           });
         }
@@ -255,6 +270,7 @@ export class MirrorDownloader {
       request.on('error', (err) => {
         isCompleted = true;
         clearInactivityTimer();
+        destroyWriteStream();
         reject(err);
       });
 
