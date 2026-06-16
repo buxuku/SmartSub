@@ -67,7 +67,7 @@ async function transcribeFasterWhisper(
   const manager = getPythonRuntimeManager();
   let engineInfo;
   try {
-    engineInfo = await manager.ensureStarted();
+    engineInfo = await manager.ensureStarted('faster-whisper');
   } catch (error) {
     throw new Error(
       `faster-whisper engine unavailable: ${error?.message || error}`,

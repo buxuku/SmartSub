@@ -9,6 +9,7 @@ import {
   TranscribeSegment,
 } from './protocol';
 import { isProtocolSupported } from './protocolSupport';
+import type { PyEngineId } from '../../../types/engine';
 
 export interface EngineCommand {
   command: string;
@@ -78,7 +79,7 @@ export function buildSanitizedEnv(
 }
 
 export class PythonRuntimeManager {
-  private resolveCommand: () => EngineCommand;
+  private resolveCommand: (engineId: PyEngineId) => EngineCommand;
   private logger: EngineLogger;
   private proc: ChildProcessWithoutNullStreams | null = null;
   private pending = new Map<string, PendingRequest>();
@@ -86,8 +87,13 @@ export class PythonRuntimeManager {
   private startingPromise: Promise<PingResult> | null = null;
   private lastPingInfo: PingResult | null = null;
   private stopping = false;
+  // 当前 sidecar 服务的引擎；切换引擎需重启（换 PYTHONPATH / 模型环境）。
+  private currentEngineId: PyEngineId | null = null;
 
-  constructor(resolveCommand: () => EngineCommand, logger?: EngineLogger) {
+  constructor(
+    resolveCommand: (engineId: PyEngineId) => EngineCommand,
+    logger?: EngineLogger,
+  ) {
     this.resolveCommand = resolveCommand;
     this.logger = logger || (() => {});
   }
@@ -100,19 +106,36 @@ export class PythonRuntimeManager {
     return this.lastPingInfo;
   }
 
-  async ensureStarted(): Promise<PingResult> {
-    if (this.proc && this.lastPingInfo) {
+  get activeEngineId(): PyEngineId | null {
+    return this.currentEngineId;
+  }
+
+  async ensureStarted(
+    engineId: PyEngineId = 'faster-whisper',
+  ): Promise<PingResult> {
+    // 已在跑且就是目标引擎 → 直接复用缓存 ping。
+    if (this.proc && this.lastPingInfo && this.currentEngineId === engineId) {
       return this.lastPingInfo;
     }
+    // 在跑但引擎不同 → 切换：停旧 sidecar，换 PYTHONPATH 重启（一次冷启动）。
+    if (this.proc && this.currentEngineId !== engineId) {
+      this.logger(
+        `Switching python engine ${this.currentEngineId} -> ${engineId}; restarting sidecar`,
+        'info',
+      );
+      await this.stop();
+    }
     if (!this.startingPromise) {
-      this.startingPromise = this.start().finally(() => {
+      const target = engineId;
+      this.startingPromise = this.start(target).finally(() => {
         this.startingPromise = null;
       });
     }
     return this.startingPromise;
   }
 
-  private async start(): Promise<PingResult> {
+  private async start(engineId: PyEngineId): Promise<PingResult> {
+    this.currentEngineId = engineId;
     // 防重入：若残留旧进程（如上次 ping 超时未清理），先杀掉，避免孤儿 + 引用覆盖。
     if (this.proc) {
       try {
@@ -124,7 +147,7 @@ export class PythonRuntimeManager {
     }
 
     const attempt = async (): Promise<PingResult> => {
-      const cmd = this.resolveCommand();
+      const cmd = this.resolveCommand(engineId);
       this.logger(
         `Starting python engine: ${cmd.command} ${cmd.args.join(' ')}`,
         'info',
@@ -392,6 +415,7 @@ export class PythonRuntimeManager {
     if (!this.proc) return;
     this.proc = null;
     this.lastPingInfo = null;
+    this.currentEngineId = null;
 
     const level = this.stopping ? 'info' : 'error';
     this.logger(`Python engine ${reason}`, level);
