@@ -9,11 +9,14 @@ import {
 } from '@/components/ui/select';
 import { useTranslation } from 'next-i18next';
 import { getSelectableModelsForEngine, resolveEngine } from 'lib/engineModels';
+import type { TranscriptionEngine } from '../../types/engine';
 
 interface IProps {
   modelsInstalled?: string[];
   fasterWhisperModelsInstalled?: string[];
-  transcriptionEngine?: 'builtin' | 'fasterWhisper' | 'localCli';
+  funasrVadInstalled?: boolean;
+  funasrAsrModelsInstalled?: string[];
+  transcriptionEngine?: TranscriptionEngine;
   useLocalWhisper?: boolean;
 }
 
@@ -27,6 +30,8 @@ const Models = React.forwardRef<
     transcriptionEngine: props.transcriptionEngine,
     modelsInstalled: props.modelsInstalled,
     fasterWhisperModelsInstalled: props.fasterWhisperModelsInstalled,
+    funasrVadInstalled: props.funasrVadInstalled,
+    funasrAsrModelsInstalled: props.funasrAsrModelsInstalled,
   };
   const engine = resolveEngine(engineInfo, props.useLocalWhisper);
   const availableModels = getSelectableModelsForEngine(

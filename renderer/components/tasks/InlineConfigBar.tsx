@@ -97,6 +97,8 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
               fasterWhisperModelsInstalled={
                 systemInfo?.fasterWhisperModelsInstalled
               }
+              funasrVadInstalled={systemInfo?.funasrVadInstalled}
+              funasrAsrModelsInstalled={systemInfo?.funasrAsrModelsInstalled}
               transcriptionEngine={systemInfo?.transcriptionEngine}
               useLocalWhisper={useLocalWhisper}
             />

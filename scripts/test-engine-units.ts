@@ -1,3 +1,4 @@
+/// <reference path="./test-globals.d.ts" />
 /**
  * 引擎纯逻辑单元测试（无 Electron / 无模型依赖）。
  *
@@ -40,6 +41,11 @@ import {
   getFunasrAsrModelIds,
   resolveFunasrAsrSelection,
 } from '../main/helpers/funasrModelCatalog';
+import {
+  getSelectableModelsForEngine,
+  getInstalledModelsForEngine,
+  hasModelsForEngine,
+} from '../renderer/lib/engineModels';
 
 let passed = 0;
 let failed = 0;
@@ -474,6 +480,51 @@ eq(
   resolveFunasrAsrSelection('sensevoice-small', []),
   null,
   'funasr: no installed asr -> null',
+);
+
+// --- engineModels: funasr awareness ---
+const funasrReady = {
+  transcriptionEngine: 'funasr' as const,
+  funasrVadInstalled: true,
+  funasrAsrModelsInstalled: ['sensevoice-small', 'paraformer-zh'],
+};
+eq(
+  getSelectableModelsForEngine(funasrReady),
+  ['sensevoice-small', 'paraformer-zh'],
+  'engineModels: funasr selectable = installed asr',
+);
+eq(
+  getInstalledModelsForEngine(funasrReady),
+  ['sensevoice-small', 'paraformer-zh'],
+  'engineModels: funasr installed = installed asr',
+);
+eq(
+  hasModelsForEngine(funasrReady),
+  true,
+  'engineModels: funasr ready w/ vad+asr',
+);
+eq(
+  hasModelsForEngine({
+    transcriptionEngine: 'funasr',
+    funasrVadInstalled: false,
+    funasrAsrModelsInstalled: ['sensevoice-small'],
+  }),
+  false,
+  'engineModels: funasr not ready without vad',
+);
+eq(
+  hasModelsForEngine({
+    transcriptionEngine: 'funasr',
+    funasrVadInstalled: true,
+    funasrAsrModelsInstalled: [],
+  }),
+  false,
+  'engineModels: funasr not ready without asr',
+);
+eq(
+  getSelectableModelsForEngine({ transcriptionEngine: 'funasr' }),
+  [],
+  'engineModels: funasr selectable empty when undefined',
 );
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);

@@ -14,6 +14,8 @@ export interface EngineModelInfo {
   transcriptionEngine?: TranscriptionEngine;
   modelsInstalled?: string[];
   fasterWhisperModelsInstalled?: string[];
+  funasrVadInstalled?: boolean;
+  funasrAsrModelsInstalled?: string[];
 }
 
 /** 解析当前转写引擎，兼容旧的 useLocalWhisper 开关 */
@@ -41,6 +43,9 @@ export function getInstalledModelsForEngine(
   if (engine === 'localCli') {
     return [];
   }
+  if (engine === 'funasr') {
+    return info?.funasrAsrModelsInstalled ?? [];
+  }
   return info?.modelsInstalled ?? [];
 }
 
@@ -61,6 +66,9 @@ export function getSelectableModelsForEngine(
   if (engine === 'localCli') {
     return models.map((m) => m.name);
   }
+  if (engine === 'funasr') {
+    return info?.funasrAsrModelsInstalled ?? [];
+  }
   return info?.modelsInstalled ?? [];
 }
 
@@ -71,5 +79,11 @@ export function hasModelsForEngine(
 ): boolean {
   const engine = resolveEngine(info, useLocalWhisper);
   if (engine === 'localCli') return true;
+  if (engine === 'funasr') {
+    return (
+      !!info?.funasrVadInstalled &&
+      (info?.funasrAsrModelsInstalled?.length ?? 0) > 0
+    );
+  }
   return getInstalledModelsForEngine(info, useLocalWhisper).length > 0;
 }
