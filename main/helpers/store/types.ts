@@ -48,6 +48,12 @@ export type StoreType = {
     fasterWhisperDevice?: 'auto' | 'cpu' | 'cuda';
     fasterWhisperComputeType?: string;
     fasterWhisperModelsPath?: string;
+    /** FunASR(SenseVoice via sherpa-onnx) 推理 provider；P1 仅 cpu 落地，cuda/coreml 预留 */
+    funasrProvider?: 'cpu' | 'cuda' | 'coreml';
+    /** FunASR 逆文本归一化（数字/标点），默认开启 */
+    funasrUseItn?: boolean;
+    /** FunASR 解码线程数，默认 2 */
+    funasrNumThreads?: number;
     /** 全局网络代理模式（none=直连；custom=手动 URL） */
     proxyMode?: 'none' | 'custom';
     /** custom 模式的代理 URL，如 http://user:pass@host:port */

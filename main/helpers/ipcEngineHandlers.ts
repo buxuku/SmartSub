@@ -2,7 +2,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import fs from 'fs';
 import { logMessage, store } from './storeManager';
 import { resolveTranscriptionEngine } from './transcriptionEngine';
-import { listEngineAdapters } from './engines/registry';
+import { listEngineAdapters, getActiveEngineAdapter } from './engines/registry';
 import { getPyEngineDownloader } from './pythonRuntime/downloader';
 import { isTranscriptionBusy } from './taskProcessor';
 import {
@@ -22,6 +22,9 @@ function coerceEngineId(value: unknown): PyEngineId {
 
 export function setMainWindowForEngine(window: BrowserWindow): void {
   mainWindow = window;
+  // 预绑定两个引擎下载器的 mainWindow，保证后台（自动更新）触发的下载进度也能上报。
+  getPyEngineDownloader('faster-whisper', window);
+  getPyEngineDownloader('funasr', window);
 }
 
 export function registerEngineIpcHandlers(): void {
@@ -44,16 +47,25 @@ export function registerEngineIpcHandlers(): void {
         ) {
           return { success: false, error: 'engine_not_installed' };
         }
+        if (engine === 'funasr' && !isEnginePackageInstalled('funasr')) {
+          return { success: false, error: 'engine_not_installed' };
+        }
         const settings = store.get('settings');
         store.set('settings', {
           ...settings,
           transcriptionEngine: engine,
           useLocalWhisper: engine === 'localCli',
         });
-        // 切到 faster-whisper 后预热 sidecar，把冷启动成本移出首个文件关键路径。
-        if (engine === 'fasterWhisper') {
+        // 切到 Python 引擎后预热 sidecar，把冷启动成本移出首个文件关键路径。
+        const warmupEngineId: PyEngineId | null =
+          engine === 'fasterWhisper'
+            ? 'faster-whisper'
+            : engine === 'funasr'
+              ? 'funasr'
+              : null;
+        if (warmupEngineId) {
           void getPythonRuntimeManager()
-            .ensureStarted('faster-whisper')
+            .ensureStarted(warmupEngineId)
             .catch((e) =>
               logMessage(`engine warmup failed (non-fatal): ${e}`, 'warning'),
             );
@@ -224,11 +236,45 @@ export function registerEngineIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    'set-funasr-settings',
+    async (
+      _event,
+      {
+        provider,
+        useItn,
+        numThreads,
+      }: {
+        provider?: 'cpu' | 'cuda' | 'coreml';
+        useItn?: boolean;
+        numThreads?: number;
+      },
+    ) => {
+      try {
+        const settings = store.get('settings');
+        store.set('settings', {
+          ...settings,
+          ...(provider !== undefined ? { funasrProvider: provider } : {}),
+          ...(useItn !== undefined ? { funasrUseItn: useItn } : {}),
+          ...(numThreads !== undefined ? { funasrNumThreads: numThreads } : {}),
+        });
+        return { success: true };
+      } catch (error) {
+        logMessage(`Error setting funasr settings: ${error}`, 'error');
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle(
     'python-engine:ping',
     async (_event, payload?: { engineId?: PyEngineId }) => {
       try {
         const manager = getPythonRuntimeManager();
-        await manager.ensureStarted(coerceEngineId(payload?.engineId));
+        // 未显式指定引擎时，ping 当前激活引擎对应的 Python 引擎（非 Python 引擎回退 faster-whisper）。
+        const engineId = payload?.engineId
+          ? coerceEngineId(payload.engineId)
+          : coerceEngineId(getActiveEngineAdapter().pyEngineId);
+        await manager.ensureStarted(engineId);
         return { success: true };
       } catch (error) {
         logMessage(`Python engine ping failed: ${error}`, 'error');
