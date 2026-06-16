@@ -905,3 +905,12 @@ Responsibilities (full component, mirror `FunasrEngineCard` imports/state):
 - `MirrorDownloader.downloadFile` 4th arg shape: confirm against `download/mirrorDownloader.ts` before Task 6 (engine downloader passes `{ onBytes }`).
 - Base swap while sidecar running → `shutdownPythonRuntime()` before rename (Windows lock); Task 6 does this.
 - Engine CI `build_base` runner cost (4 extra runners per release) — acceptable; base rarely changes, but it rebuilds each release (rolling latest). Optional later: only build base on demand.
+
+---
+
+## Implementation Notes / Deviations (2026-06-16)
+
+- **Task 2 `build_base_package.py` uses `uv`, not a hardcoded PBS release.** The plan's draft pinned `PBS_RELEASE=20250610`, but that asset 404s for CPython `3.12.10`. The app's bundled base comes from `uv python install 3.12.10`, and the engine repo already standardizes on `astral-sh/setup-uv@v6` + `uv python install`. So the script mirrors `scripts/fetch-python-base.mjs` (uv-managed CPython, host==target, full trim incl. `turtledemo`/`pydoc_data`/`include`/`config-*`, ad-hoc sign). This guarantees the downloaded base is a true drop-in for the bundled base (same 3.12.10/cp312/layout) and avoids a stale release tag. Local mac smoke: probe `import ssl,ctypes,sqlite3,lzma` OK, mach-o files ad-hoc-signed + verified.
+- **Task 3 CI `build_base` job** uses `astral-sh/setup-uv@v6` + `uv run --python 3.12.10 -- python build_base_package.py dist/py-base` (mirrors `build_engine`). `manifest.basePackage` omits `pbsRelease` (uv abstracts it); `RemoteBasePackage.pbsRelease` stays optional.
+- **Task 9 placement:** `BaseRuntimeCard` is rendered at the **end** of the engines grid (after localCli), not first. It's shared Layer-1 infrastructure (not a transcription engine to "select"), so leading the engine list with it is more confusing than helpful. Trivially movable if first is preferred.
+- **Verification:** `tsc` main+types held at the 104 baseline across Tasks 4–8; renderer `tsc` shows 0 errors in the new/changed files (`BaseRuntimeCard`, `EnginesTab`); `check:i18n` passes (zh/en parity).
