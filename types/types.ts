@@ -9,6 +9,12 @@ export interface ISystemInfo {
   fasterWhisperModelsPath?: string;
   transcriptionEngine?: TranscriptionEngine;
   pythonEngineStatus?: EngineStatus;
+  /** funasr 引擎包是否已安装 */
+  funasrEngineInstalled?: boolean;
+  /** funasr 共用 VAD 是否已安装 */
+  funasrVadInstalled?: boolean;
+  /** 已安装的 funasr ASR 模型 id（如 ['sensevoice-small','paraformer-zh']） */
+  funasrAsrModelsInstalled?: string[];
 }
 
 export interface IFiles {

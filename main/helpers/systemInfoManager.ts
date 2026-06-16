@@ -29,6 +29,8 @@ import {
   isFunasrModelInstalled,
   isFunasrReady,
   deleteFunasrModel,
+  getInstalledFunasrAsrModels,
+  getFunasrModelsRoot,
 } from './funasrModelCatalog';
 import { shutdownPythonRuntime } from './pythonRuntime';
 import fse from 'fs-extra';
@@ -67,6 +69,9 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       fasterWhisperModelsPath: getFasterWhisperModelsPath(),
       transcriptionEngine: resolveTranscriptionEngine(store.get('settings')),
       pythonEngineStatus,
+      funasrEngineInstalled: isEnginePackageInstalled('funasr'),
+      funasrVadInstalled: isFunasrModelInstalled('silero-vad'),
+      funasrAsrModelsInstalled: getInstalledFunasrAsrModels(),
     };
   });
 
@@ -203,11 +208,13 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
 
   ipcMain.handle(
     'openModelsFolder',
-    async (_event, options?: { pathType?: 'ggml' | 'ct2' }) => {
+    async (_event, options?: { pathType?: 'ggml' | 'ct2' | 'funasr' }) => {
       const modelsPath =
         options?.pathType === 'ct2'
           ? getFasterWhisperModelsPath()
-          : (getPath('modelsPath') as string);
+          : options?.pathType === 'funasr'
+            ? getFunasrModelsRoot()
+            : (getPath('modelsPath') as string);
       try {
         await fse.ensureDir(modelsPath);
         const err = await shell.openPath(modelsPath);
