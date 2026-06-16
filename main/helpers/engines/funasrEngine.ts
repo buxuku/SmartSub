@@ -22,10 +22,70 @@ import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
 let activeFunasrTranscribeId: string | null = null;
 
+type FunasrAsrSelection = NonNullable<
+  ReturnType<typeof resolveFunasrAsrSelection>
+>;
+
 function cancelFunasrTranscription(): void {
   if (activeFunasrTranscribeId) {
     getPythonRuntimeManager().cancel(activeFunasrTranscribeId);
     activeFunasrTranscribeId = null;
+  }
+}
+
+/**
+ * 组装 sidecar 模型参数（不含 audio_file）。transcribe 与 prewarm(preload) 共用，
+ * 确保两者的识别器缓存 key 完全一致（含 language/model_type/线程数等），preload 命中即复用。
+ */
+function buildFunasrModelParams(
+  selection: FunasrAsrSelection,
+  settings: Record<string, unknown>,
+  sourceLanguage?: string,
+): Record<string, unknown> {
+  const asrDir = getFunasrModelDir(selection.id);
+  return {
+    asr_model: path.join(asrDir, 'model.int8.onnx'),
+    tokens: path.join(asrDir, 'tokens.txt'),
+    vad_model: path.join(getFunasrModelDir('silero-vad'), 'silero_vad.onnx'),
+    model_type: selection.modelType,
+    ...buildFunasrParams(settings, sourceLanguage),
+  };
+}
+
+/**
+ * 批次预热：在音频抽取的同时，让 sidecar 预加载所选 ASR/VAD 模型。
+ * Windows 首次加载原生库 + ONNX（叠加杀软扫描）很慢，若放到首个 transcribe 会出现
+ * 「卡在 0% 无进度」的观感。提前 preload 把这部分成本与 ffmpeg 抽取并行掉，且写满
+ * 识别器缓存，使首个 transcribe 直接命中。失败一律非致命。
+ */
+function prewarmFunasr(formData: Record<string, unknown>): void {
+  try {
+    if (!isFunasrReady()) return;
+    const installedAsr = getInstalledFunasrAsrModels();
+    const selection = resolveFunasrAsrSelection(
+      (formData as { model?: string })?.model,
+      installedAsr,
+    );
+    if (!selection) return;
+    const settings = store.get('settings');
+    const { sourceLanguage } = formData as { sourceLanguage?: string };
+    const params = {
+      engine: 'funasr',
+      ...buildFunasrModelParams(selection, settings, sourceLanguage),
+    };
+    const manager = getPythonRuntimeManager();
+    if (manager.activeEngineId !== 'funasr' || !manager.isRunning) return;
+    // 预加载在 sidecar worker 线程进行，给足冗余超时；method_not_found（旧引擎）等
+    // 错误都吞掉——首个 transcribe 仍会按需加载，预热只是优化。
+    manager
+      .request('preload', params, { timeoutMs: 10 * 60_000 })
+      .then(() => logMessage('funasr model prewarm done', 'info'))
+      .catch((error) =>
+        logMessage(`funasr model prewarm skipped: ${error}`, 'warning'),
+      );
+    logMessage('funasr model prewarm started', 'info');
+  } catch (error) {
+    logMessage(`funasr prewarm error (non-fatal): ${error}`, 'warning');
   }
 }
 
@@ -81,15 +141,10 @@ async function transcribeFunasr(ctx: TranscribeContext): Promise<string> {
     );
   }
 
-  const asrDir = getFunasrModelDir(selection.id);
   const params = {
     engine: 'funasr',
     audio_file: tempAudioFile,
-    asr_model: path.join(asrDir, 'model.int8.onnx'),
-    tokens: path.join(asrDir, 'tokens.txt'),
-    vad_model: path.join(getFunasrModelDir('silero-vad'), 'silero_vad.onnx'),
-    model_type: selection.modelType,
-    ...buildFunasrParams(settings, sourceLanguage),
+    ...buildFunasrModelParams(selection, settings, sourceLanguage),
   };
   logMessage(`funasrParams: ${JSON.stringify(params, null, 2)}`, 'info');
   event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
@@ -179,5 +234,9 @@ export const funasrEngineAdapter: TranscriptionEngineAdapter = {
 
   cancelActive(): void {
     cancelFunasrTranscription();
+  },
+
+  prewarm(formData: Record<string, unknown>): void {
+    prewarmFunasr(formData);
   },
 };

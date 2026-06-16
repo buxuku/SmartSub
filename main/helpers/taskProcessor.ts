@@ -244,11 +244,14 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
         hasOpenAiWhisper = await checkOpenAiWhisper();
         maxConcurrentTasks = formData.maxConcurrentTasks || 3;
         // 预热 sidecar：把冷启动成本移出首个文件关键路径（faster-whisper 等需运行时引擎）。
+        // ensureStarted 成功后再 prewarm（按引擎预加载模型），与首个文件的音频抽取并行，
+        // 避免 FunASR 等首个 transcribe 因首次加载原生库/ONNX 过慢而长时间卡在 0%。
         try {
           const activeAdapter = getActiveEngineAdapter();
           if (activeAdapter.requiresRuntime && activeAdapter.pyEngineId) {
             void getPythonRuntimeManager()
               .ensureStarted(activeAdapter.pyEngineId)
+              .then(() => activeAdapter.prewarm?.(formData))
               .catch((e) =>
                 logMessage(`engine warmup failed (non-fatal): ${e}`, 'warning'),
               );

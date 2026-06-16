@@ -25,4 +25,9 @@ export interface TranscriptionEngineAdapter {
   transcribe(ctx: TranscribeContext): Promise<string>;
   /** 中断进行中的转写。builtin=signal 原生中断(no-op)、faster=sidecar 取消、localCli=kill child。 */
   cancelActive(): void;
+  /**
+   * 批次开始时的可选预热（在 ensureStarted 成功后调用）：把模型加载等冷启动成本
+   * 移出首个文件关键路径，与音频抽取并行。必须非致命（失败仅记日志，不阻塞任务）。
+   */
+  prewarm?(formData: Record<string, unknown>): void;
 }
