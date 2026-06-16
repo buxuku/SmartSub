@@ -1,7 +1,11 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
-import type { PyEngineManifest, PyEngineId } from '../../../types/engine';
+import type {
+  PyEngineManifest,
+  PyEngineId,
+  PyBaseManifest,
+} from '../../../types/engine';
 import { resolveReleaseBaseUrl } from '../download/sources';
 import { getExtraResourcesPath } from '../utils';
 
@@ -26,7 +30,7 @@ const PY_ENGINE_REPO_SLUGS = {
   gitcode: 'buxuku1/smartsub-py-engine',
 };
 
-function getPyEngineReleaseBaseUrl(
+export function getPyEngineReleaseBaseUrl(
   source: 'github' | 'ghproxy' | 'gitcode',
   tag: string = PY_ENGINE_TAG,
 ): string {
@@ -159,4 +163,51 @@ export function getEngineDownloadUrl(
   tag: string = PY_ENGINE_TAG,
 ): string {
   return `${getPyEngineReleaseBaseUrl(source, tag)}/${getEngineArtifactName(engineId)}`;
+}
+
+// ============================================================================
+// 三层架构：可下载 Python 基座（Layer 1 远程包）路径 / URL / manifest IO
+// ============================================================================
+
+/** 基座产物名：smartsub-base-<suffix>.tar.gz */
+export function getBaseArtifactName(): string {
+  return `smartsub-base-${getPyEngineArtifactSuffix()}.tar.gz`;
+}
+
+export function getBaseDownloadUrl(
+  source: 'github' | 'ghproxy' | 'gitcode',
+  tag: string = PY_ENGINE_TAG,
+): string {
+  return `${getPyEngineReleaseBaseUrl(source, tag)}/${getBaseArtifactName()}`;
+}
+
+/** 下载基座的本地 manifest（写在 userData/py-base/current 内，随目录 swap/rollback） */
+export function getUserPyBaseManifestPath(): string {
+  return path.join(getUserPyBaseDir(), 'manifest.json');
+}
+
+export function readUserPyBaseManifest(): PyBaseManifest | null {
+  const p = getUserPyBaseManifestPath();
+  if (!fs.existsSync(p)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(p, 'utf8')) as PyBaseManifest;
+  } catch {
+    return null;
+  }
+}
+
+export function writeUserPyBaseManifest(m: PyBaseManifest): void {
+  fs.mkdirSync(getUserPyBaseDir(), { recursive: true });
+  fs.writeFileSync(getUserPyBaseManifestPath(), JSON.stringify(m, null, 2));
+}
+
+/** 当前生效基座来源（用于 UI / 状态展示）。 */
+export function getPyBaseSource(): 'builtin' | 'downloaded' | 'none' {
+  if (fs.existsSync(getPyBasePythonPath(getUserPyBaseDir()))) {
+    return 'downloaded';
+  }
+  if (fs.existsSync(getPyBasePythonPath(getBuiltinPyBaseDir()))) {
+    return 'builtin';
+  }
+  return 'none';
 }
