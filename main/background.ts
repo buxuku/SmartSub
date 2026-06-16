@@ -35,7 +35,10 @@ import {
   setMainWindowForEngine,
 } from './helpers/ipcEngineHandlers';
 import { shutdownPythonRuntime } from './helpers/pythonRuntime';
-import { maybeAutoCheckPyEngineUpdate } from './helpers/pythonRuntime/autoUpdateCheck';
+import {
+  maybeAutoCheckPyEngineUpdate,
+  maybeAutoCheckPyBaseUpdate,
+} from './helpers/pythonRuntime/autoUpdateCheck';
 import { cleanupLegacyPyEngine } from './helpers/pythonRuntime/legacyCleanup';
 import { applyProxyFromSettings } from './helpers/network/proxyManager';
 import { setupNetworkHandlers } from './helpers/ipcNetworkHandlers';
@@ -176,6 +179,8 @@ app.on('before-quit', (event) => {
   cleanupLegacyPyEngine();
   // 启动后每日一次的节流静默检查 py-engine 更新（非阻塞，失败静默）。
   void maybeAutoCheckPyEngineUpdate(mainWindow);
+  // Layer 1 基座更新检查（仅对已下载基座生效，非阻塞，失败静默）。
+  void maybeAutoCheckPyBaseUpdate(mainWindow);
 })();
 
 app.on('window-all-closed', () => {
