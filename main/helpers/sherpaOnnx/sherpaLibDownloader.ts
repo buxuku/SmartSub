@@ -124,33 +124,57 @@ function resignMac(dir: string): void {
 }
 
 /**
- * 主进程直接 dlopen staging 的原生 sherpa-onnx.node 自检（依赖解析 + 签名 OK + readWave 存在）。
- * 不用 require 封装 addon.js：主进程是 webpack bundle，运行时 require 外部文件会被改写而 MODULE_NOT_FOUND；
- * 原生加载与 worker 保持一致走 process.dlopen。Windows/Linux 临时把 dir 加入库搜索路径以解析同目录依赖
+ * 在「独立短命子进程」里 dlopen staging 的原生 sherpa-onnx.node 自检
+ * （依赖解析 + 签名 OK + readWave 存在）。
+ *
+ * 为什么必须用子进程而非主进程 process.dlopen：
+ * - Windows 上被 dlopen 的 DLL（含其依赖 onnxruntime.dll）会被进程独占锁定，
+ *   且 Node 原生模块无法卸载（锁到进程退出）。若在主进程自检，随后的
+ *   promoteStagingToCurrent() 去 rename/unlink staging 会 EPERM（文件被锁）。
+ * - 子进程加载后立即退出 → 锁随之释放 → promote 的 rename/unlink 才能成功。
+ * 不用 require 封装 addon.js：主进程是 webpack bundle，运行时 require 外部文件会被
+ * 改写而 MODULE_NOT_FOUND；原生加载统一走 process.dlopen，与 worker 一致。
+ * Windows/Linux 把 dir 加入子进程的库搜索路径以解析同目录依赖
  * （macOS 已由 resignMac 改写为 @loader_path，无需 env）。
  */
 function assertLoadable(dir: string): void {
   const nativePath = path.join(dir, 'sherpa-onnx.node');
-  const prevPath = process.env.PATH;
-  const prevLd = process.env.LD_LIBRARY_PATH;
+  // 在子进程里：dlopen 原生模块 → 校验 readWave → 退出码表达结果（0 OK / 2 缺导出 / 3 加载失败）。
+  const probe = [
+    'const m={exports:{}};',
+    'try{process.dlopen(m,process.env.SHERPA_PROBE_PATH);}',
+    'catch(e){process.stderr.write(String(e&&e.stack||e));process.exit(3);}',
+    "if(typeof m.exports.readWave!=='function'){process.exit(2);}",
+    'process.exit(0);',
+  ].join('');
+
+  const childEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: '1',
+    SHERPA_PROBE_PATH: nativePath,
+  };
   if (process.platform === 'win32') {
-    process.env.PATH = `${dir}${path.delimiter}${prevPath ?? ''}`;
+    childEnv.PATH = `${dir}${path.delimiter}${process.env.PATH ?? ''}`;
   } else if (process.platform === 'linux') {
-    process.env.LD_LIBRARY_PATH = `${dir}${path.delimiter}${prevLd ?? ''}`;
+    childEnv.LD_LIBRARY_PATH = `${dir}${path.delimiter}${process.env.LD_LIBRARY_PATH ?? ''}`;
   }
+
   try {
-    const mod: { exports: Record<string, unknown> } = { exports: {} };
-    process.dlopen(mod, nativePath);
-    if (typeof mod.exports.readWave !== 'function') {
+    execFileSync(process.execPath, ['-e', probe], {
+      env: childEnv,
+      stdio: ['ignore', 'ignore', 'pipe'],
+      timeout: 60_000,
+      windowsHide: true,
+    });
+  } catch (e) {
+    const err = e as { status?: number; stderr?: Buffer };
+    const detail = err.stderr?.toString().trim();
+    if (err.status === 2) {
       throw new Error('sherpa native loaded but readWave missing');
     }
-  } finally {
-    if (prevPath === undefined) delete process.env.PATH;
-    else process.env.PATH = prevPath;
-    if (process.platform === 'linux') {
-      if (prevLd === undefined) delete process.env.LD_LIBRARY_PATH;
-      else process.env.LD_LIBRARY_PATH = prevLd;
-    }
+    throw new Error(
+      `sherpa native self-check failed${detail ? `: ${detail}` : ''}`,
+    );
   }
 }
 
