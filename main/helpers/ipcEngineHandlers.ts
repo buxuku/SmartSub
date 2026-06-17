@@ -126,8 +126,7 @@ export function registerEngineIpcHandlers(): void {
           './sherpaOnnx/sherpaLibDownloader'
         );
         await downloadSherpaLib(source || 'gitcode', (percent) =>
-          mainWindow?.webContents.send('downloadProgress', {
-            id: 'sherpa',
+          mainWindow?.webContents.send('sherpa-lib-download-progress', {
             progress: percent,
           }),
         );

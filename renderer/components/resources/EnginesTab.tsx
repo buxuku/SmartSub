@@ -45,7 +45,7 @@ import type {
 } from '../../../types/engine';
 
 const PY_ENGINE_SIZE = '170MB';
-const FUNASR_ENGINE_SIZE = '28MB';
+const FUNASR_ENGINE_SIZE = '20MB';
 
 type EngineStatuses = Partial<Record<TranscriptionEngine, EngineStatus>>;
 type ManageTarget = TranscriptionEngine | 'base';
@@ -183,17 +183,6 @@ const EnginesTab: React.FC<EnginesTabProps> = ({ onNavigateTab }) => {
         }
       },
     );
-    // funasr 引擎包下载若在抽屉内发起、却在完成前关闭抽屉，FunasrPanel 已卸载收不到完成事件；
-    // 这里在父级补一个监听，完成/失败后刷新卡片徽章与「设为当前」可用性。
-    const unsubFunasrProgress = window?.ipc?.on(
-      'py-engine-download-progress',
-      (p: PyEngineDownloadProgress) => {
-        if (p.engineId !== 'funasr') return;
-        if (p.status === 'completed' || p.status === 'error') {
-          refresh();
-        }
-      },
-    );
     const unsubTask = window?.ipc?.on('taskStatusChange', (status: string) => {
       const busy = isQueueBusy(status);
       setTaskBusy(busy);
@@ -208,7 +197,6 @@ const EnginesTab: React.FC<EnginesTabProps> = ({ onNavigateTab }) => {
     );
     return () => {
       unsubProgress?.();
-      unsubFunasrProgress?.();
       unsubTask?.();
       unsubUpdate?.();
     };

@@ -113,6 +113,8 @@
       "downloadSource": "下载源",
       "uninstall": "卸载",
       "downloadConfirm": "将下载 FunASR 引擎包（约 {{size}}），是否继续？",
+      "downloadRuntime": "下载 FunASR 运行库（约 {{size}}）",
+      "downloadRuntimeConfirm": "将下载 FunASR 运行库（约 {{size}}），本地离线运行，无需 Python 环境。是否继续？",
       "upgradeConfirm": "将下载并升级 FunASR 引擎包。升级前会先停止引擎，失败时自动回滚到当前版本。是否继续？",
       "installedVersion": "已安装 v{{version}}",
       "checkUpdate": "检查更新",

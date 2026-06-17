@@ -113,6 +113,8 @@
       "downloadSource": "Download source",
       "uninstall": "Uninstall",
       "downloadConfirm": "This will download the FunASR engine package (~{{size}}). Continue?",
+      "downloadRuntime": "Download FunASR runtime (~{{size}})",
+      "downloadRuntimeConfirm": "This will download the FunASR runtime library (~{{size}}) for fully offline, local transcription — no Python required. Continue?",
       "upgradeConfirm": "This will download and upgrade the FunASR engine package. The engine is stopped before upgrading and automatically rolled back if it fails. Continue?",
       "installedVersion": "Installed v{{version}}",
       "checkUpdate": "Check for updates",
