@@ -10,7 +10,7 @@ import type { PyEngineDownloadSource, PyEngineId } from '../../../types/engine';
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 /** 走 Python 三层架构、支持在线下载/更新的引擎集合。 */
-const UPDATABLE_ENGINES: PyEngineId[] = ['faster-whisper', 'funasr'];
+const UPDATABLE_ENGINES: PyEngineId[] = ['faster-whisper'];
 
 function getStatePath(): string {
   return path.join(app.getPath('userData'), 'py-engine-update-check.json');

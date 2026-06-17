@@ -76,8 +76,8 @@ export interface PyBaseManifest {
   source: 'builtin' | 'downloaded';
 }
 
-/** 可独立下载的 Python 引擎包标识（与引擎仓产物 engineId 一一对应）。P2 再加 qwen。 */
-export type PyEngineId = 'faster-whisper' | 'funasr';
+/** 可独立下载的 Python 引擎包标识（与引擎仓产物 engineId 一一对应）。funasr 已迁移到 sherpa-onnx 原生运行库，不再是 Python 引擎。 */
+export type PyEngineId = 'faster-whisper';
 
 export interface PyEngineUpdateInfo {
   installed: boolean;

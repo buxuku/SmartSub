@@ -1,7 +1,6 @@
 import path from 'path';
 import { logMessage } from '../storeManager';
 import { getFasterWhisperModelsPath } from '../modelCatalog';
-import { getFunasrModelsRoot } from '../funasrModelCatalog';
 import { PythonRuntimeManager, type EngineCommand } from './manager';
 import {
   resolvePyBaseDir,
@@ -20,21 +19,12 @@ export { PythonRuntimeManager, PythonEngineError } from './manager';
 const NOT_READY_MSG =
   'Python engine not ready. Ensure the base runtime is bundled and the engine package is downloaded (Resource Hub > Engines), or set PYTHON_ENGINE_CMD for local development.';
 
-/** 按引擎给出模型缓存环境：faster-whisper 用 HF cache；funasr 用本地 onnx 目录隔离缓存。 */
-function resolveEngineEnv(engineId: PyEngineId): Record<string, string> {
-  if (engineId === 'faster-whisper') {
-    const modelsPath = getFasterWhisperModelsPath();
-    return {
-      HF_HOME: modelsPath,
-      HF_HUB_CACHE: path.join(modelsPath, 'hub'),
-    };
-  }
-  // funasr：模型由 App 下载到本地 onnx 文件并经 params 传入，不依赖 HF 下载，
-  // 仍设隔离缓存目录，避免落到全局 ~/.cache。
-  const funasrRoot = getFunasrModelsRoot();
+/** 模型缓存环境：faster-whisper 用 HF cache（funasr 已迁移 sherpa 原生库，不再走 Python）。 */
+function resolveEngineEnv(_engineId: PyEngineId): Record<string, string> {
+  const modelsPath = getFasterWhisperModelsPath();
   return {
-    HF_HOME: funasrRoot,
-    MODELSCOPE_CACHE: path.join(funasrRoot, '.modelscope'),
+    HF_HOME: modelsPath,
+    HF_HUB_CACHE: path.join(modelsPath, 'hub'),
   };
 }
 

@@ -17,7 +17,6 @@ import {
   isPyBaseReady,
 } from './pythonRuntime/paths';
 import { isSherpaLibInstalled } from './sherpaOnnx/sherpaLibPaths';
-import { isFunasrReady } from './funasrModelCatalog';
 import type { TranscriptionEngine } from '../../types/engine';
 import type {
   PyEngineDownloadSource,
@@ -27,16 +26,15 @@ import type {
 
 let mainWindow: BrowserWindow | null = null;
 
-/** 仅这两个引擎走 Python 三层架构下载；payload 缺省时回退 faster-whisper（向后兼容旧渲染层）。 */
-function coerceEngineId(value: unknown): PyEngineId {
-  return value === 'funasr' ? 'funasr' : 'faster-whisper';
+/** 仅 faster-whisper 走 Python 三层架构下载（funasr 已迁移 sherpa 原生库）。 */
+function coerceEngineId(_value: unknown): PyEngineId {
+  return 'faster-whisper';
 }
 
 export function setMainWindowForEngine(window: BrowserWindow): void {
   mainWindow = window;
-  // 预绑定两个引擎下载器的 mainWindow，保证后台（自动更新）触发的下载进度也能上报。
+  // 预绑定引擎下载器的 mainWindow，保证后台（自动更新）触发的下载进度也能上报。
   getPyEngineDownloader('faster-whisper', window);
-  getPyEngineDownloader('funasr', window);
   // Layer 1 基座下载器同样预绑定，使后台升级进度可上报。
   getPyBaseDownloader(window);
 }
@@ -61,10 +59,7 @@ export function registerEngineIpcHandlers(): void {
         ) {
           return { success: false, error: 'engine_not_installed' };
         }
-        if (
-          engine === 'funasr' &&
-          (!isSherpaLibInstalled() || !isFunasrReady())
-        ) {
+        if (engine === 'funasr' && !isSherpaLibInstalled()) {
           return { success: false, error: 'engine_not_installed' };
         }
         const settings = store.get('settings');
@@ -109,6 +104,51 @@ export function registerEngineIpcHandlers(): void {
     } catch (error) {
       logMessage(`Error getting engine status: ${error}`, 'error');
       return {};
+    }
+  });
+
+  // --- sherpa-onnx 原生运行库（funasr 引擎用）：按需下载到 userData ---
+  ipcMain.handle('sherpa-lib-status', async () => {
+    const { getSherpaLibStatus } = await import(
+      './sherpaOnnx/sherpaLibManager'
+    );
+    return getSherpaLibStatus();
+  });
+
+  ipcMain.handle(
+    'download-sherpa-lib',
+    async (_e, { source }: { source?: string }) => {
+      try {
+        if (isTranscriptionBusy()) {
+          return { success: false, error: 'engine_busy' };
+        }
+        const { downloadSherpaLib } = await import(
+          './sherpaOnnx/sherpaLibDownloader'
+        );
+        await downloadSherpaLib(source || 'gitcode', (percent) =>
+          mainWindow?.webContents.send('downloadProgress', {
+            id: 'sherpa',
+            progress: percent,
+          }),
+        );
+        return { success: true };
+      } catch (error) {
+        logMessage(`sherpa lib download failed: ${error}`, 'error');
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle('remove-sherpa-lib', async () => {
+    try {
+      if (isTranscriptionBusy()) {
+        return { success: false, error: 'engine_busy' };
+      }
+      const { removeSherpaLib } = await import('./sherpaOnnx/sherpaLibManager');
+      removeSherpaLib();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
     }
   });
 
