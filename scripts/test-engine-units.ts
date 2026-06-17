@@ -42,6 +42,12 @@ import {
   resolveFunasrAsrSelection,
 } from '../main/helpers/funasrModelCatalog';
 import {
+  buildVadConfig,
+  buildRecognizerConfig,
+  segmentTiming,
+  progressPercent,
+} from '../main/helpers/sherpaOnnx/sherpaConfig';
+import {
   getSelectableModelsForEngine,
   getInstalledModelsForEngine,
   hasModelsForEngine,
@@ -526,6 +532,63 @@ eq(
   [],
   'engineModels: funasr selectable empty when undefined',
 );
+
+// --- sherpaConfig: VAD/recognizer 映射 + 段时间/进度 ---
+const SHERPA_P = {
+  language: 'auto',
+  use_itn: true,
+  provider: 'cpu',
+  num_threads: 2,
+  vad_threshold: 0.5,
+  vad_min_silence_duration_ms: 100,
+  vad_min_speech_duration_ms: 250,
+  vad_max_speech_duration_s: 0,
+};
+eq(
+  buildVadConfig('/m/silero_vad.onnx', SHERPA_P).sileroVad,
+  {
+    model: '/m/silero_vad.onnx',
+    threshold: 0.5,
+    minSpeechDuration: 0.25,
+    minSilenceDuration: 0.1,
+    windowSize: 512,
+    maxSpeechDuration: 100000,
+  },
+  'sherpa: vad config maps ms->s and 0->unlimited',
+);
+eq(
+  buildRecognizerConfig(
+    'sense_voice',
+    '/m/model.int8.onnx',
+    '/m/tokens.txt',
+    SHERPA_P,
+  ).modelConfig.senseVoice,
+  { model: '/m/model.int8.onnx', language: '', useInverseTextNormalization: 1 },
+  'sherpa: sensevoice config (auto->"", itn on)',
+);
+eq(
+  buildRecognizerConfig(
+    'paraformer',
+    '/m/model.int8.onnx',
+    '/m/tokens.txt',
+    SHERPA_P,
+  ).modelConfig.paraformer,
+  { model: '/m/model.int8.onnx' },
+  'sherpa: paraformer config',
+);
+eq(
+  buildRecognizerConfig('paraformer', '/m/a.onnx', '/m/t.txt', SHERPA_P)
+    .modelConfig.senseVoice,
+  undefined,
+  'sherpa: paraformer has no senseVoice block',
+);
+eq(
+  segmentTiming(16000, 8000),
+  { start: 1, end: 1.5 },
+  'sherpa: segment timing sec',
+);
+eq(progressPercent(50, 200), 25, 'sherpa: progress 25%');
+eq(progressPercent(5, 0), 100, 'sherpa: progress total 0 -> 100');
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) {

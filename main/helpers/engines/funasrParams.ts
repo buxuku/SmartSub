@@ -1,6 +1,6 @@
 import { getNumericSetting } from './transcribeShared';
 
-/** funasr/SenseVoice 专属参数映射：SmartSub 统一 settings → sidecar funasr 参数。 */
+/** funasr/SenseVoice 专属参数映射：SmartSub 统一 settings → sherpa-onnx addon 参数。 */
 
 /** SmartSub 语言 → SenseVoice 语言标签（auto|zh|yue|en|ja|ko）。 */
 export function getFunasrLanguage(language?: string): string {
@@ -26,7 +26,7 @@ export interface FunasrEngineSettings {
   vadMaxSpeechDuration?: number;
 }
 
-export interface FunasrSidecarParams {
+export interface FunasrAddonParams {
   language: string;
   use_itn: boolean;
   provider: string;
@@ -37,11 +37,11 @@ export interface FunasrSidecarParams {
   vad_max_speech_duration_s: number;
 }
 
-/** 组装 funasr sidecar 的可选参数（不含 audio_file / 模型文件，由 adapter 注入）。 */
+/** 组装 funasr 的可选参数（不含 audio_file / 模型文件，由 adapter 注入）。 */
 export function buildFunasrParams(
   settings: Record<string, unknown>,
   sourceLanguage?: string,
-): FunasrSidecarParams {
+): FunasrAddonParams {
   const s = settings as FunasrEngineSettings;
   return {
     language: getFunasrLanguage(sourceLanguage), // 'auto' → 引擎侧归一为 '' 自动
@@ -49,14 +49,14 @@ export function buildFunasrParams(
     provider: s.funasrProvider || 'cpu',
     num_threads:
       Number(s.funasrNumThreads) > 0 ? Number(s.funasrNumThreads) : 2,
-    // VAD 调参复用 SmartSub 统一开关（与 faster-whisper 一致；sidecar 缺省也安全）。
+    // VAD 调参复用 SmartSub 统一开关（与 faster-whisper 一致；缺省也安全）。
     vad_threshold: getNumericSetting(s.vadThreshold, 0.5),
     vad_min_silence_duration_ms: getNumericSetting(
       s.vadMinSilenceDuration,
       100,
     ),
     vad_min_speech_duration_ms: getNumericSetting(s.vadMinSpeechDuration, 250),
-    // SmartSub 约定 0 = 不限制；sidecar 侧据此映射。
+    // SmartSub 约定 0 = 不限制；addon 侧据此映射。
     vad_max_speech_duration_s: getNumericSetting(s.vadMaxSpeechDuration, 0),
   };
 }
