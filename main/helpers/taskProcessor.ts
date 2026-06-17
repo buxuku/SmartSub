@@ -249,12 +249,16 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
         try {
           const activeAdapter = getActiveEngineAdapter();
           if (activeAdapter.requiresRuntime && activeAdapter.pyEngineId) {
+            // Python 运行时引擎（faster-whisper）：先拉起 sidecar 再预热。
             void getPythonRuntimeManager()
               .ensureStarted(activeAdapter.pyEngineId)
               .then(() => activeAdapter.prewarm?.(formData))
               .catch((e) =>
                 logMessage(`engine warmup failed (non-fatal): ${e}`, 'warning'),
               );
+          } else if (activeAdapter.prewarm) {
+            // 无 Python 的引擎（funasr/sherpa）：worker 线程直接预加载模型。
+            activeAdapter.prewarm(formData);
           }
         } catch (e) {
           logMessage(`engine warmup skipped: ${e}`, 'warning');
