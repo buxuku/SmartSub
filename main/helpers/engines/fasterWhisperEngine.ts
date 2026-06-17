@@ -65,6 +65,10 @@ async function transcribeFasterWhisper(
   const settings = store.get('settings');
 
   const manager = getPythonRuntimeManager();
+  logMessage(
+    '[DIAG] faster-whisper transcribe begin; ensureStarted...',
+    'info',
+  );
   let engineInfo;
   try {
     engineInfo = await manager.ensureStarted('faster-whisper');
@@ -73,6 +77,10 @@ async function transcribeFasterWhisper(
       `faster-whisper engine unavailable: ${error?.message || error}`,
     );
   }
+  logMessage(
+    `[DIAG] ping ok; engineInfo=${JSON.stringify(engineInfo)}`,
+    'info',
+  );
   if (!engineInfo?.engines?.faster_whisper) {
     throw new Error(
       'faster-whisper is not available in the python engine runtime',
@@ -86,6 +94,18 @@ async function transcribeFasterWhisper(
       `faster-whisper model "${modelId}" not found in ${getFasterWhisperModelsPath()}. Download it from Resource Hub > Models.`,
     );
   }
+  logMessage(`[DIAG] model snapshot dir=${modelSnapshotDir}`, 'info');
+
+  // [DIAG beta] 强制 device=cpu，验证 Windows 首次转写卡死是否源自 device=auto 的
+  // CUDA 探测/初始化。确认根因后回退为 settings.fasterWhisperDevice || 'auto'。
+  const diagForceCpuDevice = true;
+  const resolvedDevice = diagForceCpuDevice
+    ? 'cpu'
+    : settings.fasterWhisperDevice || 'auto';
+  logMessage(
+    `[DIAG] device resolve: setting=${settings.fasterWhisperDevice || 'auto'} -> using=${resolvedDevice} (forceCpu=${diagForceCpuDevice})`,
+    'info',
+  );
 
   const params = {
     engine: 'faster_whisper',
@@ -94,7 +114,7 @@ async function transcribeFasterWhisper(
     local_files_only: true,
     download_root: getFasterWhisperModelsPath(),
     language: getWhisperLanguage(sourceLanguage),
-    device: settings.fasterWhisperDevice || 'auto',
+    device: resolvedDevice,
     compute_type: settings.fasterWhisperComputeType || 'auto',
     initial_prompt: prompt || '',
     // faster-whisper #1119：开启词级时间戳，让 segment.end 对齐到真实末词，
@@ -122,6 +142,7 @@ async function transcribeFasterWhisper(
   logMessage(`fasterWhisperParams: ${JSON.stringify(params, null, 2)}`, 'info');
   event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
 
+  logMessage('[DIAG] sending transcribe request to sidecar...', 'info');
   const { id, result } = manager.transcribe(params, {
     onProgress: (percent) => {
       event.sender.send('taskProgressChange', file, 'extractSubtitle', percent);

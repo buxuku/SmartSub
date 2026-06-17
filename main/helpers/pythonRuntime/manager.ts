@@ -152,6 +152,10 @@ export class PythonRuntimeManager {
         `Starting python engine: ${cmd.command} ${cmd.args.join(' ')}`,
         'info',
       );
+      this.logger(
+        `[DIAG] spawn detail: cwd=${cmd.cwd ?? ''} PYTHONHOME=${cmd.pythonHome ?? ''} PYTHONPATH=${cmd.pythonPath ?? ''}`,
+        'info',
+      );
 
       const proc = spawn(cmd.command, cmd.args, {
         cwd: cmd.cwd,
