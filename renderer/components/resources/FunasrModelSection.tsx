@@ -4,15 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import {
-  CheckCircle2,
-  Download,
-  Trash2,
-  X,
-  AlertTriangle,
-  Mic,
-  Waves,
-} from 'lucide-react';
+import { CheckCircle2, Download, Trash2, X, Mic, Waves } from 'lucide-react';
 import { toast } from 'sonner';
 
 type FunasrModelId = 'sensevoice-small' | 'paraformer-zh' | 'silero-vad';
@@ -31,7 +23,6 @@ const FunasrModelSection: React.FC<{ onUpdate?: () => void }> = ({
   onUpdate,
 }) => {
   const { t } = useTranslation('resources');
-  const { t: mc } = useTranslation('modelsControl');
   const { t: commonT } = useTranslation('common');
 
   const [status, setStatus] = useState<FunasrModelStatus | null>(null);
@@ -108,8 +99,6 @@ const FunasrModelSection: React.FC<{ onUpdate?: () => void }> = ({
     }
   };
 
-  const engineInstalled = status?.engineInstalled ?? false;
-
   const renderRow = (id: FunasrModelId, Icon: typeof Mic) => {
     const installed = isInstalled(id);
     const isBusy = downloading === id;
@@ -175,15 +164,6 @@ const FunasrModelSection: React.FC<{ onUpdate?: () => void }> = ({
       </div>
     );
   };
-
-  if (!engineInstalled) {
-    return (
-      <div className="flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-        <span>{mc('engineNotInstalled')}</span>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-5">

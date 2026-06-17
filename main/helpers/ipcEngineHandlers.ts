@@ -1,8 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import fs from 'fs';
 import { logMessage, store } from './storeManager';
-import { resolveTranscriptionEngine } from './transcriptionEngine';
-import { listEngineAdapters, getActiveEngineAdapter } from './engines/registry';
+import { listEngineAdapters } from './engines/registry';
 import { getPyEngineDownloader } from './pythonRuntime/downloader';
 import { getPyBaseDownloader } from './pythonRuntime/baseDownloader';
 import { isTranscriptionBusy } from './taskProcessor';
@@ -13,10 +12,8 @@ import {
 import {
   getEngineDir,
   getPyBaseSource,
-  isEnginePackageInstalled,
   isPyBaseReady,
 } from './pythonRuntime/paths';
-import { isSherpaLibInstalled } from './sherpaOnnx/sherpaLibPaths';
 import type { TranscriptionEngine } from '../../types/engine';
 import type {
   PyEngineDownloadSource,
@@ -40,53 +37,6 @@ export function setMainWindowForEngine(window: BrowserWindow): void {
 }
 
 export function registerEngineIpcHandlers(): void {
-  ipcMain.handle('get-transcription-engine', async () => {
-    try {
-      return resolveTranscriptionEngine(store.get('settings'));
-    } catch (error) {
-      logMessage(`Error getting transcription engine: ${error}`, 'error');
-      return 'builtin' as const;
-    }
-  });
-
-  ipcMain.handle(
-    'set-transcription-engine',
-    async (_event, engine: TranscriptionEngine) => {
-      try {
-        if (
-          engine === 'fasterWhisper' &&
-          !isEnginePackageInstalled('faster-whisper')
-        ) {
-          return { success: false, error: 'engine_not_installed' };
-        }
-        if (engine === 'funasr' && !isSherpaLibInstalled()) {
-          return { success: false, error: 'engine_not_installed' };
-        }
-        const settings = store.get('settings');
-        store.set('settings', {
-          ...settings,
-          transcriptionEngine: engine,
-          useLocalWhisper: engine === 'localCli',
-        });
-        // 切到 Python 引擎后预热 sidecar，把冷启动成本移出首个文件关键路径。
-        // funasr 已改用 sherpa worker（无 Python），其预热在任务开始时由 taskProcessor 处理。
-        const warmupEngineId: PyEngineId | null =
-          engine === 'fasterWhisper' ? 'faster-whisper' : null;
-        if (warmupEngineId) {
-          void getPythonRuntimeManager()
-            .ensureStarted(warmupEngineId)
-            .catch((e) =>
-              logMessage(`engine warmup failed (non-fatal): ${e}`, 'warning'),
-            );
-        }
-        return { success: true };
-      } catch (error) {
-        logMessage(`Error setting transcription engine: ${error}`, 'error');
-        return { success: false, error: String(error) };
-      }
-    },
-  );
-
   ipcMain.handle('get-engine-status', async () => {
     try {
       const adapters = listEngineAdapters();
@@ -113,6 +63,25 @@ export function registerEngineIpcHandlers(): void {
       './sherpaOnnx/sherpaLibManager'
     );
     return getSherpaLibStatus();
+  });
+
+  // funasr 运行库版本随 App 固定发布：已装版本 ≠ App 预期版本即视为可升级（重下覆盖）。
+  ipcMain.handle('check-sherpa-lib-update', async () => {
+    try {
+      const { getSherpaLibStatus } = await import(
+        './sherpaOnnx/sherpaLibManager'
+      );
+      const { SHERPA_VERSION } = await import(
+        './sherpaOnnx/sherpaLibDownloader'
+      );
+      const status = getSherpaLibStatus();
+      const installed = status.installed ? status.version : undefined;
+      const hasUpdate = !!installed && installed !== SHERPA_VERSION;
+      return { success: true, installed, latest: SHERPA_VERSION, hasUpdate };
+    } catch (error) {
+      logMessage(`Error checking sherpa lib update: ${error}`, 'error');
+      return { success: false, error: String(error) };
+    }
   });
 
   ipcMain.handle(
@@ -323,10 +292,8 @@ export function registerEngineIpcHandlers(): void {
     async (_event, payload?: { engineId?: PyEngineId }) => {
       try {
         const manager = getPythonRuntimeManager();
-        // 未显式指定引擎时，ping 当前激活引擎对应的 Python 引擎（非 Python 引擎回退 faster-whisper）。
-        const engineId = payload?.engineId
-          ? coerceEngineId(payload.engineId)
-          : coerceEngineId(getActiveEngineAdapter().pyEngineId);
+        // 唯一的 Python 引擎是 faster-whisper（coerceEngineId 恒返回它），按显式 engineId 预热。
+        const engineId = coerceEngineId(payload?.engineId);
         await manager.ensureStarted(engineId);
         return { success: true };
       } catch (error) {

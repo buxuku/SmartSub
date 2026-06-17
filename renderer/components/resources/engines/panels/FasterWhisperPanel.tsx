@@ -100,6 +100,20 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
   const computeLabel = (opt: string) =>
     opt === 'auto' ? t('engines.fasterWhisper.computeTypeOptions.auto') : opt;
 
+  // 卸载按钮（带二次确认由父级处理）：随状态内联到「修复行」或「版本/检查更新行」，不单独占一行。
+  const uninstallButton = (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="gap-1.5 text-muted-foreground"
+      onClick={onUninstall}
+      disabled={taskBusy}
+    >
+      <Trash2 className="h-3.5 w-3.5" />
+      {t('engines.fasterWhisper.uninstall')}
+    </Button>
+  );
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
@@ -149,18 +163,7 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
             {t('engines.fasterWhisper.repair')}
           </Button>
         )}
-        {(fasterInstalled || fasterBroken) && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="gap-1.5 text-muted-foreground"
-            onClick={onUninstall}
-            disabled={taskBusy}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {t('engines.fasterWhisper.uninstall')}
-          </Button>
-        )}
+        {fasterBroken && uninstallButton}
       </div>
 
       {fasterInstalled && !isDownloading && !showVerifying && (
@@ -211,6 +214,7 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
               {t('engines.fasterWhisper.protocolUnsupported')}
             </span>
           )}
+          <span className="ml-auto">{uninstallButton}</span>
         </div>
       )}
 

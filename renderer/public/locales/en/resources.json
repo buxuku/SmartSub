@@ -5,32 +5,12 @@
   "gitcode": "GitCode",
   "tab": {
     "overview": "Overview",
-    "engines": "Engines",
-    "models": "Models",
+    "engines": "Engines & Models",
     "providers": "Translation",
     "acceleration": "GPU Acceleration"
   },
   "engines": {
-    "title": "Transcription Engines",
-    "description": "Choose the engine for speech-to-text. whisper.cpp is built in by default; faster-whisper requires a separate download.",
-    "active": "In use",
-    "setActive": "Set as current",
     "statusAvailable": "Available",
-    "tags": {
-      "recommended": "Recommended",
-      "noDownload": "No download · built-in",
-      "gpu": "GPU acceleration",
-      "faster": "Faster",
-      "needsDownload": "Download ~{{size}}",
-      "advanced": "Advanced",
-      "byoModel": "Bring your own model",
-      "macRecommended": "Recommended for Mac",
-      "accurateTimestamps": "Accurate timestamps",
-      "antiHallucination": "Anti-hallucination",
-      "chineseRecommended": "Best for Chinese",
-      "multilang": "Multilingual",
-      "cpuFriendly": "Runs on CPU"
-    },
     "base": {
       "name": "Python Runtime Base",
       "desc": "The shared Python runtime used by faster-whisper and FunASR. Bundled with the app and upgradable online.",
@@ -97,7 +77,8 @@
       "serialNote": "To avoid VRAM contention, faster-whisper transcribes serially (concurrency = 1).",
       "protocolUnsupported": "This engine version requires a newer SmartSub. Please update SmartSub before installing or upgrading the engine.",
       "engineBusy": "A task is running. Wait for it to finish before installing, upgrading, or uninstalling the engine.",
-      "checkFailed": "Failed to check for updates. Please try again later."
+      "checkFailed": "Failed to check for updates. Please try again later.",
+      "uninstallConfirm": "Uninstalling removes the engine runtime (~170MB); you'll need to download it again to use faster-whisper. Continue?"
     },
     "funasr": {
       "name": "FunASR",
@@ -115,7 +96,8 @@
       "downloadConfirm": "This will download the FunASR engine package (~{{size}}). Continue?",
       "downloadRuntime": "Download FunASR runtime (~{{size}})",
       "downloadRuntimeConfirm": "This will download the FunASR runtime library (~{{size}}) for fully offline, local transcription — no Python required. Continue?",
-      "upgradeConfirm": "This will download and upgrade the FunASR engine package. The engine is stopped before upgrading and automatically rolled back if it fails. Continue?",
+      "upgradeConfirm": "This will download and upgrade the FunASR runtime library. The engine is stopped before upgrading and automatically rolled back if it fails. Continue?",
+      "uninstallConfirm": "Uninstalling removes the runtime; you'll need to download it again to use FunASR. Continue?",
       "installedVersion": "Installed v{{version}}",
       "checkUpdate": "Check for updates",
       "checking": "Checking…",
@@ -154,6 +136,8 @@
       "name": "Local CLI",
       "desc": "Use a self-installed Whisper-compatible command-line tool",
       "scenario": "Best for: advanced users with their own Whisper CLI and models",
+      "enable": "Enable local CLI",
+      "enableHint": "Once enabled, the local CLI appears in a task's Engine ▸ Model selector",
       "configure": "Configure command",
       "notConfigured": "Not configured",
       "save": "Save",
@@ -163,8 +147,7 @@
       "commandTooltip": "Available variables: ${audioFile}, ${whisperModel}, ${srtFile}, ${sourceLanguage}, ${outputDir}. These will be replaced with actual values when executing.",
       "commandSaved": "Command saved",
       "commandSaveFailed": "Save failed"
-    },
-    "switchBlocked": "A task is running. Wait for it to finish before switching engines."
+    }
   },
   "overview": {
     "modelsTitle": "Speech Models",
@@ -192,18 +175,12 @@
       "cpu-only": "CPU only"
     },
     "appleAcceleration": "Apple Silicon acceleration (CoreML / Metal)",
-    "engineTitle": "Transcription Engine",
-    "engineBuiltin": "whisper.cpp",
-    "engineFasterWhisper": "faster-whisper",
-    "engineFunasr": "FunASR",
-    "engineLocalCli": "local CLI",
-    "engineNotInstalled": "Engine not installed",
+    "engineModelTitle": "Engines & Models",
     "manage": "Manage",
     "readyTitle": "Ready to go",
     "readyDesc": "You meet the requirements to start transcription. Head to the launchpad to create a task.",
     "setupTitle": "One step away",
     "setupDesc": "Finish the setup item below to start transcribing.",
-    "nextInstallEngine": "Install engine runtime",
     "nextDownloadModels": "Download a speech model"
   }
 }

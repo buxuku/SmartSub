@@ -100,6 +100,19 @@ const TaskControls = ({
       });
       return;
     }
+    // 记录"上次使用"的 (引擎,模型) 作为下次新任务默认（全局单条，二者作为整体）
+    if (
+      typeDef.needsModel &&
+      formData?.transcriptionEngine &&
+      formData?.model
+    ) {
+      window?.ipc?.invoke('setSettings', {
+        lastUsedTranscription: {
+          engine: formData.transcriptionEngine,
+          model: formData.model,
+        },
+      });
+    }
     setTaskStatus('running');
     window?.ipc?.send('handleTask', {
       files: pendingFiles,

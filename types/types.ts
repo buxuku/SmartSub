@@ -1,4 +1,4 @@
-import type { EngineStatus, TranscriptionEngine } from './engine';
+import type { EngineStatus } from './engine';
 
 export interface ISystemInfo {
   modelsInstalled: string[];
@@ -7,7 +7,6 @@ export interface ISystemInfo {
   totalMemoryGB?: number;
   fasterWhisperModelsInstalled?: string[];
   fasterWhisperModelsPath?: string;
-  transcriptionEngine?: TranscriptionEngine;
   pythonEngineStatus?: EngineStatus;
   /** funasr 引擎包是否已安装 */
   funasrEngineInstalled?: boolean;

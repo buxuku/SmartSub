@@ -5,14 +5,12 @@ import {
   getFasterWhisperModelsInstalled,
   getFasterWhisperModelsPath,
 } from './modelCatalog';
-import { resolveTranscriptionEngine } from './transcriptionEngine';
 import {
   isPyBaseReady,
   isEnginePackageInstalled,
   readEngineManifest,
 } from './pythonRuntime/paths';
 import type { EngineStatus } from '../../types/engine';
-import { store } from './storeManager';
 import { getModelDownloader } from './modelDownloader';
 import {
   getCt2ProgressKey,
@@ -68,7 +66,6 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       totalMemoryGB: Math.round(os.totalmem() / (1024 * 1024 * 1024)),
       fasterWhisperModelsInstalled: getFasterWhisperModelsInstalled(),
       fasterWhisperModelsPath: getFasterWhisperModelsPath(),
-      transcriptionEngine: resolveTranscriptionEngine(store.get('settings')),
       pythonEngineStatus,
       funasrEngineInstalled: isSherpaLibInstalled(),
       funasrVadInstalled: isFunasrModelInstalled('silero-vad'),

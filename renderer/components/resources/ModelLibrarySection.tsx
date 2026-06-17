@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Select,
@@ -52,25 +52,13 @@ import {
   Crosshair,
   Trash2,
   Search,
-  Box,
-  Bot,
-  Terminal,
-  Settings2,
-  Languages,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
-import SectionHeader from '@/components/SectionHeader';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import fasterWhisperModels from 'lib/fasterWhisperModels.json';
 import type { TranscriptionEngine } from '../../../types/engine';
 import FunasrModelSection from '@/components/resources/FunasrModelSection';
-
-export { DownSource } from 'lib/modelPanelUtils';
-
-type ModelsTabProps = {
-  onNavigateTab?: (tab: string) => void;
-};
 
 type FasterWhisperModelEntry = {
   id: string;
@@ -115,16 +103,6 @@ const CT2_TIERS = [
   { id: 'fast' as const, icon: Rocket },
   { id: 'balanced' as const, icon: Scale },
   { id: 'accurate' as const, icon: Crosshair },
-];
-
-const ENGINE_OPTIONS: Array<{
-  id: TranscriptionEngine;
-  icon: typeof Box;
-}> = [
-  { id: 'builtin', icon: Box },
-  { id: 'fasterWhisper', icon: Zap },
-  { id: 'funasr', icon: Languages },
-  { id: 'localCli', icon: Terminal },
 ];
 
 function RatingDots({ value, max = 5 }: { value: number; max?: number }) {
@@ -445,59 +423,6 @@ function ModelRow({
             copyToClipboard={copyToClipboard}
           />
         </div>
-      </div>
-    </div>
-  );
-}
-
-function EngineContextBar({
-  engine,
-  onNavigateTab,
-  t,
-}: {
-  engine: TranscriptionEngine;
-  onNavigateTab?: (tab: string) => void;
-  t: TFunc;
-}) {
-  const current = ENGINE_OPTIONS.find((item) => item.id === engine);
-  const Icon = current?.icon ?? Box;
-  const engineKey =
-    engine === 'builtin'
-      ? 'builtin'
-      : engine === 'fasterWhisper'
-        ? 'fasterWhisper'
-        : engine === 'funasr'
-          ? 'funasr'
-          : 'localCli';
-
-  return (
-    <div className="flex flex-col gap-2 rounded-xl border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Icon className="h-5 w-5" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">{t('currentEngine')}</p>
-          <p className="truncate text-sm font-semibold">
-            {t(`engineFilter.${engineKey}`)}
-          </p>
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-3">
-        <p className="hidden max-w-[260px] text-xs text-muted-foreground lg:block">
-          {t(`engineModelHint.${engine}`)}
-        </p>
-        {onNavigateTab && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 shrink-0 gap-1.5"
-            onClick={() => onNavigateTab('engines')}
-          >
-            <Settings2 className="h-3.5 w-3.5" />
-            {t('openEnginesTab')}
-          </Button>
-        )}
       </div>
     </div>
   );
@@ -893,15 +818,27 @@ function TierSection({
   );
 }
 
-const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
+export interface ModelLibrarySectionProps {
+  /** 渲染哪个引擎的模型清单（由主从双栏左栏选中驱动，不依赖全局引擎）。 */
+  engine: TranscriptionEngine;
+  systemInfo: ISystemInfo;
+  systemInfoLoaded: boolean;
+  globalDownloading: boolean;
+  onUpdate: () => void;
+}
+
+/**
+ * 引擎模型清单（按传入 `engine` 渲染：ggml 档位 / ct2 档位 / FunASR / localCli 提示）。
+ * 从原 `ModelsTab` 抽出，去掉"当前引擎上下文条"，模型下载与引擎安装彻底解耦。
+ */
+const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
+  engine,
+  systemInfo,
+  systemInfoLoaded,
+  globalDownloading,
+  onUpdate,
+}) => {
   const { t } = useTranslation('modelsControl');
-  const [systemInfo, setSystemInfo] = useState<ISystemInfo>({
-    modelsInstalled: [],
-    downloadingModels: [],
-    modelsPath: '',
-  });
-  const [systemInfoLoaded, setSystemInfoLoaded] = useState(false);
-  const [globalDownloading, setGlobalDownloading] = useState(false);
   const [modelQuery, setModelQuery] = useState('');
   const [accelAvailable, setAccelAvailable] = useState(false);
   const [installedOnly, setInstalledOnly] = useLocalStorageState<boolean>(
@@ -922,21 +859,7 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
     (val) => Object.values(DownSource).includes(val as DownSource),
   );
 
-  const updateSystemInfo = useCallback(async () => {
-    try {
-      const systemInfoRes = await window?.ipc?.invoke('getSystemInfo', null);
-      if (systemInfoRes) setSystemInfo(systemInfoRes);
-    } catch (error) {
-      console.error('Failed to load system info:', error);
-      toast.error(t('loadSystemInfoFailed'));
-    } finally {
-      setSystemInfoLoaded(true);
-    }
-  }, [t]);
-
   useEffect(() => {
-    updateSystemInfo();
-
     (async () => {
       try {
         const env = await window?.ipc?.invoke('get-gpu-environment');
@@ -949,32 +872,23 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
         console.error('Failed to detect acceleration:', error);
       }
     })();
-
-    const unsubProgress = window?.ipc?.on(
-      'downloadProgress',
-      (_model: string, progressValue: number) => {
-        setGlobalDownloading(progressValue >= 0 && progressValue < 1);
-        if (progressValue >= 1) {
-          void updateSystemInfo();
-        }
-      },
-    );
-
-    return () => {
-      unsubProgress?.();
-    };
-  }, [updateSystemInfo]);
+  }, []);
 
   const handleDownSource = (value: string) => {
     setDownSource(value as DownSource);
   };
+
+  const isBuiltin = engine === 'builtin';
+  const isFasterWhisper = engine === 'fasterWhisper';
+  const isFunasr = engine === 'funasr';
+  const isLocalCli = engine === 'localCli';
 
   const handleImportModel = async () => {
     try {
       const result = await window?.ipc?.invoke('importModel');
       if (result?.success) {
         toast.success(t('importModelSuccess'), { duration: 2000 });
-        updateSystemInfo();
+        onUpdate();
         return;
       }
       if (result?.canceled) return;
@@ -1004,7 +918,7 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
           : { modelsPath: result.directoryPath }),
       });
       toast.success(t('modelPathChanged'), { duration: 2000 });
-      updateSystemInfo();
+      onUpdate();
     } catch (error) {
       console.error('Failed to change models path:', error);
       toast.error(
@@ -1041,8 +955,6 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
     setVariantsExpandedMap((prev) => ({ ...prev, [tierId]: expanded }));
   };
 
-  const transcriptionEngine = systemInfo.transcriptionEngine ?? 'builtin';
-
   const recommendedId = getRecommendedCategory(systemInfo.totalMemoryGB ?? 8);
   const recommendedCategory = modelCategories.find(
     (c) => c.id === recommendedId,
@@ -1075,11 +987,6 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
     recommendedCt2Id,
     fwInstalled,
   );
-
-  const isBuiltin = transcriptionEngine === 'builtin';
-  const isFasterWhisper = transcriptionEngine === 'fasterWhisper';
-  const isFunasr = transcriptionEngine === 'funasr';
-  const isLocalCli = transcriptionEngine === 'localCli';
 
   const hasAnyInstalled = isBuiltin
     ? (systemInfo?.modelsInstalled?.length ?? 0) > 0
@@ -1120,12 +1027,6 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
   return (
     <TooltipProvider delayDuration={300}>
       <div className="space-y-4">
-        <EngineContextBar
-          engine={transcriptionEngine}
-          onNavigateTab={onNavigateTab}
-          t={t}
-        />
-
         {showRecommendedHero && (
           <RecommendedHero
             modelName={
@@ -1142,7 +1043,7 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
             basis={basis}
             basisLoading={!systemInfoLoaded}
             downSource={downSource}
-            onUpdate={updateSystemInfo}
+            onUpdate={onUpdate}
             globalDownloading={globalDownloading}
             t={t}
             format={isFasterWhisper ? 'ct2' : 'ggml'}
@@ -1150,53 +1051,48 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
           />
         )}
 
-        <div className="sticky top-0 z-10 space-y-3 border-b bg-background/95 pb-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <SectionHeader
-            icon={Bot}
-            title={t('modelManagement')}
-            description={t('modelManagementDesc')}
-            actions={
-              <>
-                <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer">
-                  <Switch
-                    checked={installedOnly}
-                    onCheckedChange={setInstalledOnly}
-                  />
-                  {t('showInstalledOnly')}
-                </label>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground shrink-0">
-                    {t('switchDownloadSource')}:
-                  </span>
-                  <Select onValueChange={handleDownSource} value={downSource}>
-                    <SelectTrigger className="w-full sm:w-[200px] h-8">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="huggingface">
-                        {t('officialSource')}
-                      </SelectItem>
-                      <SelectItem value="hf-mirror">
-                        {t('domesticMirror')}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {isBuiltin && (
-                  <Button
-                    onClick={handleImportModel}
-                    size="sm"
-                    variant="outline"
-                    className="w-full sm:w-auto"
-                  >
-                    <Upload className="mr-1.5 h-3.5 w-3.5" />
-                    {t('importModel')}
-                  </Button>
-                )}
-              </>
-            }
-          />
+        {!isLocalCli && !isFunasr && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer">
+              <Switch
+                checked={installedOnly}
+                onCheckedChange={setInstalledOnly}
+              />
+              {t('showInstalledOnly')}
+            </label>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground shrink-0">
+                {t('switchDownloadSource')}:
+              </span>
+              <Select onValueChange={handleDownSource} value={downSource}>
+                <SelectTrigger className="w-full sm:w-[200px] h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="huggingface">
+                    {t('officialSource')}
+                  </SelectItem>
+                  <SelectItem value="hf-mirror">
+                    {t('domesticMirror')}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {isBuiltin && (
+              <Button
+                onClick={handleImportModel}
+                size="sm"
+                variant="outline"
+                className="w-full sm:w-auto"
+              >
+                <Upload className="mr-1.5 h-3.5 w-3.5" />
+                {t('importModel')}
+              </Button>
+            )}
+          </div>
+        )}
 
+        {!isLocalCli && !isFunasr && (
           <div className="relative px-0.5">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
             <Input
@@ -1206,52 +1102,50 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
               className="h-8 pl-8 text-sm focus-visible:ring-offset-0 focus-visible:ring-inset"
             />
           </div>
-        </div>
+        )}
 
-        <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
-          <HardDrive className="h-3 w-3 shrink-0" />
-          <span className="shrink-0">
-            {isFasterWhisper ? t('fasterWhisperModelsPath') : t('modelPath')}:
-          </span>
-          <span className="font-mono break-all">
-            {isFasterWhisper
-              ? systemInfo.fasterWhisperModelsPath
-              : isFunasr
-                ? systemInfo?.funasrModelsPath
-                : systemInfo?.modelsPath}
-          </span>
-          {(isBuiltin || isFasterWhisper || isFunasr) && (
-            <>
-              <button
-                type="button"
-                onClick={handleOpenModelsFolder}
-                className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
-              >
-                <FolderOpen className="h-3 w-3" />
-                <span>{t('openModelsFolder')}</span>
-              </button>
-              {!isFunasr && (
-                <>
-                  <span className="text-muted-foreground/50">·</span>
-                  <button
-                    type="button"
-                    onClick={handleChangeModelsPath}
-                    className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
-                  >
-                    <span>{t('changePath')}</span>
-                  </button>
-                </>
-              )}
-            </>
-          )}
-        </div>
+        {(isBuiltin || isFasterWhisper || isFunasr) && (
+          <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
+            <HardDrive className="h-3 w-3 shrink-0" />
+            <span className="shrink-0">
+              {isFasterWhisper ? t('fasterWhisperModelsPath') : t('modelPath')}:
+            </span>
+            <span className="font-mono break-all">
+              {isFasterWhisper
+                ? systemInfo.fasterWhisperModelsPath
+                : isFunasr
+                  ? systemInfo?.funasrModelsPath
+                  : systemInfo?.modelsPath}
+            </span>
+            <button
+              type="button"
+              onClick={handleOpenModelsFolder}
+              className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
+            >
+              <FolderOpen className="h-3 w-3" />
+              <span>{t('openModelsFolder')}</span>
+            </button>
+            {!isFunasr && (
+              <>
+                <span className="text-muted-foreground/50">·</span>
+                <button
+                  type="button"
+                  onClick={handleChangeModelsPath}
+                  className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
+                >
+                  <span>{t('changePath')}</span>
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         {isLocalCli ? (
           <p className="text-sm text-muted-foreground py-8 text-center">
             {t('localCliModelHint')}
           </p>
         ) : isFunasr ? (
-          <FunasrModelSection onUpdate={updateSystemInfo} />
+          <FunasrModelSection onUpdate={onUpdate} />
         ) : installedOnly && !hasAnyInstalled ? (
           <p className="text-sm text-muted-foreground py-8 text-center">
             {t('noInstalledModels')}
@@ -1275,7 +1169,7 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
                 }
                 systemInfo={systemInfo}
                 downSource={downSource}
-                onUpdate={updateSystemInfo}
+                onUpdate={onUpdate}
                 t={t}
                 globalDownloading={globalDownloading}
               />
@@ -1293,7 +1187,7 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
                 recommendedModelId={recommendedCt2Id}
                 installed={fwInstalled}
                 downSource={downSource}
-                onUpdate={updateSystemInfo}
+                onUpdate={onUpdate}
                 t={t}
                 globalDownloading={globalDownloading}
                 systemInfo={systemInfo}
@@ -1306,4 +1200,4 @@ const ModelsTab = ({ onNavigateTab }: ModelsTabProps) => {
   );
 };
 
-export default ModelsTab;
+export default ModelLibrarySection;

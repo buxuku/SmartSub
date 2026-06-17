@@ -1,4 +1,4 @@
-import type { TranscriptionEngine } from '../../types/engine';
+import type { EngineStatus, TranscriptionEngine } from '../../types/engine';
 import { models } from './utils';
 
 /**
@@ -16,6 +16,10 @@ export interface EngineModelInfo {
   fasterWhisperModelsInstalled?: string[];
   funasrVadInstalled?: boolean;
   funasrAsrModelsInstalled?: string[];
+  /** faster-whisper 运行时状态（state==='ready' 即引擎包已安装可运行） */
+  pythonEngineStatus?: EngineStatus;
+  /** funasr 运行库（sherpa-onnx）是否已安装 */
+  funasrEngineInstalled?: boolean;
 }
 
 /** 解析当前转写引擎，兼容旧的 useLocalWhisper 开关 */
@@ -86,4 +90,141 @@ export function hasModelsForEngine(
     );
   }
   return getInstalledModelsForEngine(info, useLocalWhisper).length > 0;
+}
+
+// ── 跨引擎（逐任务选择）辅助 ─────────────────────────────────────────────
+// 背景：逐任务引擎下，任务页不再"按全局引擎过滤模型"，而是把各引擎已装模型聚合成
+// 「引擎 ▸ 模型」分组供选择。下面的辅助统一聚合/就绪口径，避免各处自行拼装出错。
+
+/** 「引擎 ▸ 模型」分组：每组 = 一个引擎 + 该引擎可选模型名列表。 */
+export interface EngineModelGroup {
+  engine: TranscriptionEngine;
+  models: string[];
+}
+
+/** (引擎,模型) 选项值的分隔符；引擎 id 与模型名均不含 "::"，故可安全编码/解码。 */
+const ENGINE_MODEL_SEP = '::';
+
+/** 把 (引擎,模型) 编码为分组下拉的选项 value。 */
+export function encodeEngineModel(
+  engine: TranscriptionEngine,
+  model: string,
+): string {
+  return `${engine}${ENGINE_MODEL_SEP}${model}`;
+}
+
+/** 解析分组下拉选项 value 为 (引擎,模型)；非法返回 null。 */
+export function decodeEngineModel(
+  value: string | undefined,
+): { engine: TranscriptionEngine; model: string } | null {
+  if (!value) return null;
+  const idx = value.indexOf(ENGINE_MODEL_SEP);
+  if (idx <= 0) return null;
+  const engine = value.slice(0, idx) as TranscriptionEngine;
+  const model = value.slice(idx + ENGINE_MODEL_SEP.length);
+  if (!model) return null;
+  return { engine, model };
+}
+
+/** faster-whisper 运行时是否已安装可运行（引擎包 ready）。 */
+function isFasterWhisperRunnable(info: EngineModelInfo | undefined): boolean {
+  return info?.pythonEngineStatus?.state === 'ready';
+}
+
+/**
+ * 聚合各引擎"可运行的可选模型"为分组结构（任务页「引擎 ▸ 模型」分组下拉数据源）。
+ * 仅纳入「引擎运行时已安装」的引擎——只下了模型但没装对应引擎不可转写，故从任务选择中过滤掉。
+ * - builtin: ggml 已装模型（内置运行时，始终可运行）
+ * - fasterWhisper: ct2 已装模型，且引擎包已安装（`pythonEngineStatus.state==='ready'`）
+ * - funasr: 需 VAD 就绪 + 至少一个 ASR 模型，且运行库已安装（`funasrEngineInstalled`）
+ * - localCli: 用户自备模型/命令，无"已装模型"概念；仅当 `includeLocalCli` 时以
+ *   内置规范模型名清单出现（保 `${whisperModel}` 占位符替换可用，D9）。
+ * 空分组省略；localCli 默认不出现（由调用方按是否启用 localCli 决定）。
+ */
+export function getEngineModelGroups(
+  info: EngineModelInfo | undefined,
+  opts?: { includeLocalCli?: boolean },
+): EngineModelGroup[] {
+  const groups: EngineModelGroup[] = [];
+
+  const ggml = info?.modelsInstalled ?? [];
+  if (ggml.length) groups.push({ engine: 'builtin', models: ggml });
+
+  const ct2 = info?.fasterWhisperModelsInstalled ?? [];
+  if (ct2.length && isFasterWhisperRunnable(info)) {
+    groups.push({ engine: 'fasterWhisper', models: ct2 });
+  }
+
+  const funasrAsr = info?.funasrAsrModelsInstalled ?? [];
+  if (
+    info?.funasrVadInstalled &&
+    funasrAsr.length &&
+    info?.funasrEngineInstalled
+  ) {
+    groups.push({ engine: 'funasr', models: funasrAsr });
+  }
+
+  if (opts?.includeLocalCli) {
+    groups.push({ engine: 'localCli', models: models.map((m) => m.name) });
+  }
+
+  return groups;
+}
+
+/**
+ * 跨引擎就绪判断："任意引擎装有任意可运行模型即视为就绪"。
+ * 用于新手引导 / 全景概览 / 任务页"去下载模型"引导。
+ * 与 getEngineModelGroups 同口径：fw/funasr 还需各自运行时已安装才算就绪；
+ * localCli 不计入（自备模型，无可下载模型；其可用性由是否配置命令决定，另行处理）。
+ */
+export function hasAnyModelAnyEngine(
+  info: EngineModelInfo | undefined,
+): boolean {
+  if ((info?.modelsInstalled?.length ?? 0) > 0) return true;
+  if (
+    (info?.fasterWhisperModelsInstalled?.length ?? 0) > 0 &&
+    isFasterWhisperRunnable(info)
+  ) {
+    return true;
+  }
+  if (
+    info?.funasrVadInstalled &&
+    (info?.funasrAsrModelsInstalled?.length ?? 0) > 0 &&
+    info?.funasrEngineInstalled
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 从分组选项中挑选默认 (引擎,模型)：
+ * 1) 命中"上次使用"（引擎仍有分组、模型仍可用）则沿用；模型失配时退回该引擎首个模型；
+ * 2) 否则优先 builtin 分组（初次默认），无则取首个分组；
+ * 3) 无任何分组返回 null（调用方据此展示"去下载模型"）。
+ */
+export function pickDefaultEngineModel(
+  groups: EngineModelGroup[],
+  last?: { engine?: TranscriptionEngine; model?: string },
+): { engine: TranscriptionEngine; model: string } | null {
+  if (!groups.length) return null;
+
+  if (last?.engine) {
+    const g = groups.find((x) => x.engine === last.engine);
+    if (g && g.models.length) {
+      const matched =
+        (last.model &&
+          g.models.find(
+            (m) => m.toLowerCase() === last.model!.toLowerCase(),
+          )) ||
+        g.models[0];
+      return { engine: g.engine, model: matched };
+    }
+  }
+
+  const preferred = groups.find((x) => x.engine === 'builtin') ?? groups[0];
+  if (preferred?.models.length) {
+    return { engine: preferred.engine, model: preferred.models[0] };
+  }
+  return null;
 }

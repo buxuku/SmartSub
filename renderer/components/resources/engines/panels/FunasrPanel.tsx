@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -21,8 +22,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Download, Trash2, X } from 'lucide-react';
+import { ArrowUpCircle, Download, RefreshCw, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from 'lib/utils';
 import { persistDownloadSource } from '@/components/settings/gpu/gpuDownloadUtils';
 import type { DownloadSource } from '../../../../../types/addon';
 import type { EngineStatus } from '../../../../../types/engine';
@@ -36,7 +38,6 @@ interface FunasrPanelProps {
   taskBusy: boolean;
   defaultSource: DownloadSource;
   onRefreshStatuses: () => void | Promise<void>;
-  onGoModels: () => void;
 }
 
 const FunasrPanel: React.FC<FunasrPanelProps> = ({
@@ -44,7 +45,6 @@ const FunasrPanel: React.FC<FunasrPanelProps> = ({
   taskBusy,
   defaultSource,
   onRefreshStatuses,
-  onGoModels,
 }) => {
   const { t } = useTranslation('resources');
   const { t: commonT } = useTranslation('common');
@@ -54,6 +54,9 @@ const FunasrPanel: React.FC<FunasrPanelProps> = ({
   const [progress, setProgress] = useState(0);
   const [source, setSource] = useState<DownloadSource>(defaultSource);
   const [showDownloadConfirm, setShowDownloadConfirm] = useState(false);
+  const [showUninstallConfirm, setShowUninstallConfirm] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [hasUpdate, setHasUpdate] = useState(false);
   const [useItn, setUseItn] = useState(true);
   const [numThreads, setNumThreads] = useState(4);
 
@@ -111,6 +114,7 @@ const FunasrPanel: React.FC<FunasrPanelProps> = ({
         );
         return;
       }
+      setHasUpdate(false);
       await loadLibStatus();
       await onRefreshStatuses();
     } catch (e) {
@@ -120,9 +124,32 @@ const FunasrPanel: React.FC<FunasrPanelProps> = ({
     }
   };
 
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true);
+    try {
+      const r = await window?.ipc?.invoke('check-sherpa-lib-update');
+      if (!r?.success) {
+        toast.error(t('engines.funasr.checkFailed'));
+        return;
+      }
+      setHasUpdate(!!r.hasUpdate);
+      toast.success(
+        r.hasUpdate
+          ? t('engines.funasr.updateAvailable')
+          : t('engines.funasr.upToDate'),
+      );
+    } catch {
+      toast.error(t('engines.funasr.checkFailed'));
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
   const handleUninstall = async () => {
+    setShowUninstallConfirm(false);
     const r = await window?.ipc?.invoke('remove-sherpa-lib');
     if (r?.success) {
+      setHasUpdate(false);
       await loadLibStatus();
       await onRefreshStatuses();
     } else {
@@ -173,6 +200,20 @@ const FunasrPanel: React.FC<FunasrPanelProps> = ({
     </div>
   );
 
+  // 卸载按钮（二次确认）：随状态内联到「版本/检查更新行」，不单独占一行。
+  const uninstallButton = (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="gap-1.5 text-muted-foreground"
+      onClick={() => setShowUninstallConfirm(true)}
+      disabled={taskBusy}
+    >
+      <Trash2 className="h-3.5 w-3.5" />
+      {t('engines.funasr.uninstall')}
+    </Button>
+  );
+
   return (
     <>
       <div className="space-y-4">
@@ -194,8 +235,8 @@ const FunasrPanel: React.FC<FunasrPanelProps> = ({
           <p className="text-sm text-destructive">{status.message}</p>
         )}
 
-        <div className="flex flex-wrap items-center gap-2">
-          {!installed && !downloading && (
+        {!installed && !downloading && (
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
               className="gap-1.5"
@@ -206,47 +247,56 @@ const FunasrPanel: React.FC<FunasrPanelProps> = ({
                 size: FUNASR_RUNTIME_SIZE,
               })}
             </Button>
-          )}
-          {installed && (
-            <>
-              {libStatus?.version && (
-                <span className="text-xs text-muted-foreground">
-                  {t('engines.funasr.installedVersion', {
-                    version: libStatus.version,
-                  })}
-                </span>
-              )}
+          </div>
+        )}
+
+        {installed && !downloading && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            {libStatus?.version && (
+              <span className="text-xs text-muted-foreground">
+                {t('engines.funasr.installedVersion', {
+                  version: libStatus.version,
+                })}
+              </span>
+            )}
+            {hasUpdate ? (
+              <>
+                <Badge
+                  variant="outline"
+                  className="border-primary/40 text-primary"
+                >
+                  {t('engines.funasr.updateAvailable')}
+                </Badge>
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={taskBusy}
+                  onClick={() => setShowDownloadConfirm(true)}
+                >
+                  <ArrowUpCircle className="h-3.5 w-3.5" />
+                  {t('engines.funasr.upgrade')}
+                </Button>
+              </>
+            ) : (
               <Button
                 size="sm"
-                variant="ghost"
-                className="gap-1.5 text-muted-foreground"
-                onClick={handleUninstall}
-                disabled={taskBusy}
+                variant="outline"
+                className="gap-1.5"
+                disabled={checkingUpdate || taskBusy}
+                onClick={handleCheckUpdate}
               >
-                <Trash2 className="h-3.5 w-3.5" />
-                {t('engines.funasr.uninstall')}
+                <RefreshCw
+                  className={cn(
+                    'h-3.5 w-3.5',
+                    checkingUpdate && 'animate-spin',
+                  )}
+                />
+                {checkingUpdate
+                  ? t('engines.funasr.checking')
+                  : t('engines.funasr.checkUpdate')}
               </Button>
-            </>
-          )}
-        </div>
-
-        {installed && (
-          <div className="space-y-1.5 rounded-lg border border-muted p-3">
-            <p className="text-sm font-medium">
-              {t('engines.funasr.modelsTitle')}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {t('engines.funasr.needModelsHint')}
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-1 gap-1.5"
-              onClick={onGoModels}
-            >
-              <Download className="h-3.5 w-3.5" />
-              {t('engines.funasr.modelsTitle')}
-            </Button>
+            )}
+            <span className="ml-auto">{uninstallButton}</span>
           </div>
         )}
 
@@ -306,14 +356,18 @@ const FunasrPanel: React.FC<FunasrPanelProps> = ({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t('engines.funasr.downloadRuntime', {
-                size: FUNASR_RUNTIME_SIZE,
-              })}
+              {installed
+                ? t('engines.funasr.upgrade')
+                : t('engines.funasr.downloadRuntime', {
+                    size: FUNASR_RUNTIME_SIZE,
+                  })}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {t('engines.funasr.downloadRuntimeConfirm', {
-                size: FUNASR_RUNTIME_SIZE,
-              })}
+              {installed
+                ? t('engines.funasr.upgradeConfirm')
+                : t('engines.funasr.downloadRuntimeConfirm', {
+                    size: FUNASR_RUNTIME_SIZE,
+                  })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {sourceSelector}
@@ -326,10 +380,43 @@ const FunasrPanel: React.FC<FunasrPanelProps> = ({
               className="gap-1.5"
               onClick={handleStartDownload}
             >
-              <Download className="h-4 w-4" />
-              {t('engines.funasr.downloadRuntime', {
-                size: FUNASR_RUNTIME_SIZE,
-              })}
+              {installed ? (
+                <ArrowUpCircle className="h-4 w-4" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              {installed
+                ? t('engines.funasr.upgrade')
+                : t('engines.funasr.downloadRuntime', {
+                    size: FUNASR_RUNTIME_SIZE,
+                  })}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={showUninstallConfirm}
+        onOpenChange={setShowUninstallConfirm}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('engines.funasr.uninstall')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('engines.funasr.uninstallConfirm')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="gap-1.5">
+              <X className="h-4 w-4" />
+              {commonT('cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleUninstall}
+            >
+              <Trash2 className="h-4 w-4" />
+              {t('engines.funasr.uninstall')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

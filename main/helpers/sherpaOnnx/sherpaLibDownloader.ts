@@ -24,7 +24,7 @@ import {
   rollbackToPrevious,
 } from './sherpaLibManager';
 
-const SHERPA_VERSION = '1.13.2';
+export const SHERPA_VERSION = '1.13.2';
 const SHERPA_TAG = 'sherpa-libs-latest';
 /** 与 py-engine 同仓托管（GitHub / GitCode slug 不同）。 */
 const SHERPA_REPO = {

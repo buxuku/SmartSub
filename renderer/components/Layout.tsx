@@ -12,9 +12,7 @@ import {
 import {
   AlertCircle,
   CheckCircle2,
-  ChevronsUpDown,
   Compass,
-  Cpu,
   Edit3,
   Film,
   Github,
@@ -40,7 +38,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ThemeToggle } from './ThemeToggle';
 import { cn, openUrl } from 'lib/utils';
-import { hasModelsForEngine } from 'lib/engineModels';
+import { hasAnyModelAnyEngine } from 'lib/engineModels';
 import { useRouter } from 'next/router';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
@@ -57,7 +55,6 @@ import packageInfo from '../../package.json';
 import { deriveGpuDisplayState } from '@/components/settings/gpu/gpuDisplayState';
 import { backendDisplay } from '@/components/settings/gpu/gpuUtils';
 import type { GpuMode } from '../../types/addon';
-import type { TranscriptionEngine } from '../../types/engine';
 
 // 添加更新状态的类型定义
 interface UpdateStatus {
@@ -200,7 +197,6 @@ const Layout = ({ children }) => {
     status: string;
   } | null>(null);
   const [taskRunning, setTaskRunning] = useState(false);
-  const [engine, setEngine] = useState<TranscriptionEngine | null>(null);
   // 手动检查更新会话：等待 update-status 终态时为 true，持有 loading toast id
   const manualCheckRef = useRef<{ toastId: string | number } | null>(null);
 
@@ -221,8 +217,8 @@ const Layout = ({ children }) => {
         const settings = await window?.ipc?.invoke('getSettings');
         if (settings?.onboardingCompleted || settings?.useLocalWhisper) return;
         const info = await window?.ipc?.invoke('getSystemInfo', null);
-        // 按当前引擎判断是否已就绪，避免 faster-whisper 用户已装模型仍被重复唤起引导
-        if (!hasModelsForEngine(info)) {
+        // 跨引擎就绪判断：任一引擎装有任一模型即视为已就绪，避免已装其它引擎模型仍被重复唤起引导
+        if (!hasAnyModelAnyEngine(info)) {
           setShowOnboarding(true);
         }
       } catch (error) {
@@ -441,26 +437,6 @@ const Layout = ({ children }) => {
     };
   }, []);
 
-  // 全局当前转写引擎指示：初次加载 + 路由变化（从引擎管理返回）+ 切换事件刷新
-  useEffect(() => {
-    let disposed = false;
-    const refreshEngine = async () => {
-      try {
-        const e = await window?.ipc?.invoke('get-transcription-engine');
-        if (!disposed) setEngine((e as TranscriptionEngine) || 'builtin');
-      } catch {
-        if (!disposed) setEngine('builtin');
-      }
-    };
-    refreshEngine();
-    const handler = () => refreshEngine();
-    window.addEventListener('transcription-engine-changed', handler);
-    return () => {
-      disposed = true;
-      window.removeEventListener('transcription-engine-changed', handler);
-    };
-  }, [asPath]);
-
   // 模型下载全局可见：主进程 modelDownloadDetail 是全局广播，任何页面都能收到
   useEffect(() => {
     let hideTimer: NodeJS.Timeout | null = null;
@@ -609,7 +585,7 @@ const Layout = ({ children }) => {
             {downloadPill && (
               <button
                 type="button"
-                onClick={() => router.push(`/${locale}/resources?tab=models`)}
+                onClick={() => router.push(`/${locale}/resources?tab=engines`)}
                 aria-label={t('downloadPill.aria')}
                 className={cn(
                   'flex w-full items-center gap-1.5 rounded-full border px-2 py-1.5 text-[11px] transition-colors',
@@ -710,36 +686,6 @@ const Layout = ({ children }) => {
             </span>
           </h4>
           <div className="ml-auto flex items-center gap-1">
-            {/* 当前转写引擎指示器：全局可感知 + 一键进入引擎管理切换 */}
-            {engine && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() =>
-                        router.push(`/${locale}/resources?tab=engines`)
-                      }
-                      aria-label={t('engineBadge.aria')}
-                    >
-                      <Cpu className="h-3.5 w-3.5" />
-                      <span className="max-w-[120px] truncate">
-                        {t(`engineBadge.${engine}`)}
-                      </span>
-                      <ChevronsUpDown className="h-3 w-3 opacity-60" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{t('engineBadge.tip')}</p>
-                    <p className="text-muted-foreground">
-                      {t('engineBadge.manage')}
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
             {/* 加速状态指示器（加速=正向绿徽章，CPU=中性灯） */}
             {accelBadge && (
               <TooltipProvider>

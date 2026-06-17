@@ -2,8 +2,6 @@ import { builtinEngineAdapter } from './builtinEngine';
 import { fasterWhisperEngineAdapter } from './fasterWhisperEngine';
 import { funasrEngineAdapter } from './funasrEngine';
 import { localCliEngineAdapter } from './localCliEngine';
-import { resolveTranscriptionEngine } from '../transcriptionEngine';
-import { store } from '../storeManager';
 import type { TranscriptionEngine } from '../../../types/engine';
 import type { TranscriptionEngineAdapter } from './types';
 
@@ -20,9 +18,24 @@ export function getEngineAdapter(
   return adapters.find((a) => a.id === id);
 }
 
-export function getActiveEngineAdapter(): TranscriptionEngineAdapter {
-  const id = resolveTranscriptionEngine(store.get('settings'));
-  return getEngineAdapter(id) ?? builtinEngineAdapter;
+/**
+ * 逐任务引擎解析：任务 formData 携带的 `transcriptionEngine` 优先（且必须是已知引擎），
+ * 缺省回退 builtin。引擎已逐任务化，不再读全局设置。
+ */
+export function resolveEngineIdForTask(formData?: {
+  transcriptionEngine?: TranscriptionEngine;
+}): TranscriptionEngine {
+  const fromTask = formData?.transcriptionEngine;
+  if (fromTask && getEngineAdapter(fromTask)) return fromTask;
+  return 'builtin';
+}
+
+export function getEngineAdapterForTask(formData?: {
+  transcriptionEngine?: TranscriptionEngine;
+}): TranscriptionEngineAdapter {
+  return (
+    getEngineAdapter(resolveEngineIdForTask(formData)) ?? builtinEngineAdapter
+  );
 }
 
 export function listEngineAdapters(): TranscriptionEngineAdapter[] {

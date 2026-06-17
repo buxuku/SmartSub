@@ -27,7 +27,7 @@ import {
 import { cn } from 'lib/utils';
 import { getTaskTypeBySlug } from 'lib/taskTypes';
 import { isProviderConfigured } from 'lib/providerUtils';
-import { hasModelsForEngine } from 'lib/engineModels';
+import { hasAnyModelAnyEngine } from 'lib/engineModels';
 import {
   CardDecor,
   GenerateIcon,
@@ -110,7 +110,7 @@ function getCardBlock(
 
 function resourcesHref(locale: string, block: 'model' | 'provider'): string {
   return block === 'model'
-    ? `/${locale}/resources?tab=models`
+    ? `/${locale}/resources?tab=engines`
     : `/${locale}/resources?tab=providers`;
 }
 
@@ -130,14 +130,13 @@ export default function LaunchpadPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [systemInfo, providers, items, settings] = await Promise.all([
+        const [systemInfo, providers, items] = await Promise.all([
           window?.ipc?.invoke('getSystemInfo', null),
           window?.ipc?.invoke('getTranslationProviders'),
           window?.ipc?.invoke('getWorkItems'),
-          window?.ipc?.invoke('getSettings'),
         ]);
-        // 按「当前转写引擎」判断是否已就绪，而不是只看 whisper.cpp(ggml) 模型
-        setHasModels(hasModelsForEngine(systemInfo, settings?.useLocalWhisper));
+        // 跨引擎就绪判断：任一引擎装有任一模型即视为已就绪（逐任务引擎下不再假设全局引擎）
+        setHasModels(hasAnyModelAnyEngine(systemInfo));
         setHasProvider(
           (providers || []).some((p: any) => isProviderConfigured(p)),
         );
@@ -245,7 +244,7 @@ export default function LaunchpadPage() {
             <AlertTriangle className="h-4 w-4 text-warning flex-shrink-0" />
             <p className="text-sm min-w-0 flex-1">{t('banner.noModel')}</p>
             <Button asChild size="sm" className="h-8 flex-shrink-0 gap-1.5">
-              <Link href={`/${locale}/resources?tab=models`}>
+              <Link href={`/${locale}/resources?tab=engines`}>
                 <Download className="h-4 w-4" />
                 {t('banner.noModelCta')}
               </Link>

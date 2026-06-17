@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import Models from '@/components/Models';
 import { supportedLanguage } from 'lib/utils';
 import { isProviderConfigured } from 'lib/providerUtils';
-import { hasModelsForEngine } from 'lib/engineModels';
+import { hasAnyModelAnyEngine } from 'lib/engineModels';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import { useTranslation } from 'next-i18next';
 
@@ -51,6 +51,9 @@ function ConfigItem({
 }
 
 const triggerClass = 'h-8 w-auto min-w-[120px] max-w-[200px] text-xs gap-1';
+// 模型选择器需容纳「引擎 · 模型」两段文本，略宽于其它选择器
+const modelTriggerClass =
+  'h-8 w-auto min-w-[160px] max-w-[260px] text-xs gap-1';
 
 const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
   form,
@@ -70,7 +73,11 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
     form.setValue(name, value);
   };
 
-  const hasModels = hasModelsForEngine(systemInfo, useLocalWhisper);
+  // localCli 走"自备模型/命令"路径，无可下载模型，按是否启用 localCli 决定是否进分组下拉。
+  // 过渡期沿用 useLocalWhisper 作为 localCli 启用信号（全局字段移除时改用 localCli 已配置判断）。
+  const includeLocalCli = useLocalWhisper;
+  // 就绪 = 跨引擎任一已装模型，或启用了 localCli（自备模型）；否则引导去下载。
+  const hasModels = hasAnyModelAnyEngine(systemInfo) || includeLocalCli;
 
   const languageItems = (includeAuto: boolean) => (
     <SelectContent>
@@ -91,16 +98,22 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
         <ConfigItem label={t('configBar.model')}>
           {hasModels ? (
             <Models
-              value={formData.model}
-              onValueChange={(v) => setValue('model', v)}
+              className={modelTriggerClass}
+              engine={formData.transcriptionEngine}
+              model={formData.model}
+              onChange={(engine, model) => {
+                setValue('transcriptionEngine', engine);
+                setValue('model', model);
+              }}
               modelsInstalled={systemInfo?.modelsInstalled || []}
               fasterWhisperModelsInstalled={
                 systemInfo?.fasterWhisperModelsInstalled
               }
               funasrVadInstalled={systemInfo?.funasrVadInstalled}
               funasrAsrModelsInstalled={systemInfo?.funasrAsrModelsInstalled}
-              transcriptionEngine={systemInfo?.transcriptionEngine}
-              useLocalWhisper={useLocalWhisper}
+              pythonEngineStatus={systemInfo?.pythonEngineStatus}
+              funasrEngineInstalled={systemInfo?.funasrEngineInstalled}
+              includeLocalCli={includeLocalCli}
             />
           ) : (
             <Button
@@ -109,7 +122,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
               size="sm"
               className="h-8 text-xs gap-1.5"
             >
-              <Link href={`/${locale}/resources?tab=models`}>
+              <Link href={`/${locale}/resources?tab=engines`}>
                 <Download className="h-4 w-4" />
                 {t('goDownloadModel')}
               </Link>

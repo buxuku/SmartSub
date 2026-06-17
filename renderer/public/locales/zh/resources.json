@@ -5,32 +5,12 @@
   "gitcode": "GitCode",
   "tab": {
     "overview": "全景",
-    "engines": "引擎",
-    "models": "模型",
+    "engines": "引擎与模型",
     "providers": "翻译服务",
     "acceleration": "GPU 加速"
   },
   "engines": {
-    "title": "转写引擎",
-    "description": "选择用于语音转文字的引擎。默认 whisper.cpp 已内置；faster-whisper 需额外下载。",
-    "active": "使用中",
-    "setActive": "设为当前引擎",
     "statusAvailable": "可用",
-    "tags": {
-      "recommended": "推荐",
-      "noDownload": "免下载 · 已内置",
-      "gpu": "支持 GPU 加速",
-      "faster": "速度更快",
-      "needsDownload": "需下载 ~{{size}}",
-      "advanced": "进阶",
-      "byoModel": "自备模型",
-      "macRecommended": "Mac 用户推荐",
-      "accurateTimestamps": "时间戳精确",
-      "antiHallucination": "抗幻觉",
-      "chineseRecommended": "中文推荐",
-      "multilang": "多语种",
-      "cpuFriendly": "CPU 友好"
-    },
     "base": {
       "name": "Python 运行时基座",
       "desc": "faster-whisper 与 FunASR 共享的 Python 运行环境，已随应用内置，可在线升级。",
@@ -97,7 +77,8 @@
       "serialNote": "为避免显存争用，faster-whisper 转写串行执行（并发为 1）。",
       "protocolUnsupported": "该引擎版本需要更新版本的 SmartSub，请先升级 SmartSub 后再安装或升级引擎。",
       "engineBusy": "有任务正在运行，请等待任务完成后再安装、升级或卸载引擎。",
-      "checkFailed": "检查更新失败，请稍后重试。"
+      "checkFailed": "检查更新失败，请稍后重试。",
+      "uninstallConfirm": "卸载后需重新下载约 170MB 引擎运行时才能再次使用 faster-whisper，确定卸载？"
     },
     "funasr": {
       "name": "FunASR",
@@ -115,7 +96,8 @@
       "downloadConfirm": "将下载 FunASR 引擎包（约 {{size}}），是否继续？",
       "downloadRuntime": "下载 FunASR 运行库（约 {{size}}）",
       "downloadRuntimeConfirm": "将下载 FunASR 运行库（约 {{size}}），本地离线运行，无需 Python 环境。是否继续？",
-      "upgradeConfirm": "将下载并升级 FunASR 引擎包。升级前会先停止引擎，失败时自动回滚到当前版本。是否继续？",
+      "upgradeConfirm": "将下载并升级 FunASR 运行库。升级前会先停止引擎，失败时自动回滚到当前版本。是否继续？",
+      "uninstallConfirm": "卸载后需重新下载运行库才能再次使用 FunASR，确定卸载？",
       "installedVersion": "已安装 v{{version}}",
       "checkUpdate": "检查更新",
       "checking": "检查中…",
@@ -154,6 +136,8 @@
       "name": "本地命令行",
       "desc": "使用自行安装的 Whisper 兼容 CLI",
       "scenario": "适合：进阶用户，自备 Whisper 命令与模型",
+      "enable": "启用本地命令行",
+      "enableHint": "启用后才会在任务的「引擎 ▸ 模型」选择器中列出本地命令行",
       "configure": "配置命令",
       "notConfigured": "未配置",
       "save": "保存",
@@ -163,8 +147,7 @@
       "commandTooltip": "可用变量：${audioFile}, ${whisperModel}, ${srtFile}, ${sourceLanguage}, ${outputDir}。这些变量在执行时会被替换为实际值。",
       "commandSaved": "命令已保存",
       "commandSaveFailed": "保存失败"
-    },
-    "switchBlocked": "有任务正在运行，请等待完成后再切换引擎"
+    }
   },
   "overview": {
     "modelsTitle": "语音模型",
@@ -192,18 +175,12 @@
       "cpu-only": "仅 CPU"
     },
     "appleAcceleration": "Apple 芯片加速（CoreML / Metal）",
-    "engineTitle": "转写引擎",
-    "engineBuiltin": "whisper.cpp",
-    "engineFasterWhisper": "faster-whisper",
-    "engineFunasr": "FunASR",
-    "engineLocalCli": "local CLI",
-    "engineNotInstalled": "引擎未安装",
+    "engineModelTitle": "引擎与模型",
     "manage": "管理",
     "readyTitle": "准备就绪",
     "readyDesc": "已满足开始转写的条件，可前往工作台创建任务。",
     "setupTitle": "还差一步即可开始",
     "setupDesc": "完成下方准备项后即可开始转写。",
-    "nextInstallEngine": "安装引擎运行时",
     "nextDownloadModels": "下载语音模型"
   }
 }

@@ -11,8 +11,13 @@ import { configurationManager } from '../service/configurationManager';
 import { applyTaskEventToProjects } from './taskManager';
 import { runWithTaskContext } from './taskContext';
 import { killFfmpegForFiles } from './audioProcessor';
-import { getActiveEngineAdapter } from './engines/registry';
+import {
+  listEngineAdapters,
+  getEngineAdapterForTask,
+  resolveEngineIdForTask,
+} from './engines/registry';
 import { getPythonRuntimeManager } from './pythonRuntime';
+import type { TranscriptionEngine } from '../../types/engine';
 
 const TASK_EVENT_CHANNELS = new Set([
   'taskStatusChange',
@@ -74,6 +79,13 @@ let isProcessing = false;
 let maxConcurrentTasks = 3;
 let hasOpenAiWhisper = false;
 let activeTasksCount = 0;
+/** 执行中"受限引擎"(faster-whisper/funasr)任务数：混合引擎队列并发钳制用。 */
+let activeRestrictiveCount = 0;
+
+/** faster-whisper / funasr 共享单 sidecar/worker，需钳制有效并发为 1。 */
+function isRestrictiveEngine(engine: TranscriptionEngine): boolean {
+  return engine === 'fasterWhisper' || engine === 'funasr';
+}
 /** 最近一次 handleTask 的 event：resume 触发派发时复用 */
 let dispatchEvent: any = null;
 /** Dock/任务栏进度条目标窗口 */
@@ -247,18 +259,19 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
         // ensureStarted 成功后再 prewarm（按引擎预加载模型），与首个文件的音频抽取并行，
         // 避免 FunASR 等首个 transcribe 因首次加载原生库/ONNX 过慢而长时间卡在 0%。
         try {
-          const activeAdapter = getActiveEngineAdapter();
-          if (activeAdapter.requiresRuntime && activeAdapter.pyEngineId) {
+          // 按本批任务携带的引擎预热（缺省回退全局/默认）。
+          const batchAdapter = getEngineAdapterForTask(formData);
+          if (batchAdapter.requiresRuntime && batchAdapter.pyEngineId) {
             // Python 运行时引擎（faster-whisper）：先拉起 sidecar 再预热。
             void getPythonRuntimeManager()
-              .ensureStarted(activeAdapter.pyEngineId)
-              .then(() => activeAdapter.prewarm?.(formData))
+              .ensureStarted(batchAdapter.pyEngineId)
+              .then(() => batchAdapter.prewarm?.(formData))
               .catch((e) =>
                 logMessage(`engine warmup failed (non-fatal): ${e}`, 'warning'),
               );
-          } else if (activeAdapter.prewarm) {
+          } else if (batchAdapter.prewarm) {
             // 无 Python 的引擎（funasr/sherpa）：worker 线程直接预加载模型。
-            activeAdapter.prewarm(formData);
+            batchAdapter.prewarm(formData);
           }
         } catch (e) {
           logMessage(`engine warmup skipped: ${e}`, 'warning');
@@ -315,12 +328,15 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
         runtime.controller.abort();
         // kill ffmpeg 提取；whisper 转写经 AbortSignal 同步中断
         killFfmpegForFiles(Array.from(runtime.activeFiles));
-        // 通知当前引擎中断进行中的转写（如 faster-whisper sidecar 的逐段取消）。
-        // 内置 whisper 已通过 AbortSignal 中断，这里对其为空操作。
-        try {
-          getActiveEngineAdapter().cancelActive();
-        } catch (err) {
-          logMessage(`cancelActive failed: ${err}`, 'warning');
+        // 通知所有引擎中断进行中的转写（如 faster-whisper sidecar 的逐段取消）。
+        // 逐任务引擎下无全局"当前引擎"，对全部适配器调用 cancelActive；
+        // 未在运行的引擎为空操作（内置 whisper 已由 AbortSignal 中断）。
+        for (const adapter of listEngineAdapters()) {
+          try {
+            adapter.cancelActive();
+          } catch (err) {
+            logMessage(`cancelActive(${adapter.id}) failed: ${err}`, 'warning');
+          }
         }
         logMessage(
           `cancel project ${id}: aborting ${runtime.active} running file(s)`,
@@ -413,15 +429,23 @@ async function processNextTasks(event) {
     return;
   }
 
-  // faster-whisper 走单 Python sidecar、FunASR(sherpa) 走单 worker 线程，二者各自只记一个
-  // activeTranscribeId；钳制有效并发为 1，避免显存争用导致 OOM/崩溃、以及并发任务相互覆盖取消句柄；
-  // 其它引擎（builtin/localCli）不受影响。运行中引擎不可切换，故 effectiveMax 在本轮稳定。
+  // 混合引擎并发钳制：只要"执行中"或"待派发(可派发)"任务里含 faster-whisper/funasr，
+  // 有效并发钳为 1（共享单 sidecar/worker，避免显存争用与取消句柄相互覆盖）；
+  // 纯 builtin/localCli 队列遵循用户配置的并发。
   let effectiveMax = maxConcurrentTasks;
   try {
-    const activeEngineId = getActiveEngineAdapter().id;
-    if (activeEngineId === 'fasterWhisper' || activeEngineId === 'funasr') {
-      effectiveMax = 1;
+    let hasRestrictive = activeRestrictiveCount > 0;
+    if (!hasRestrictive) {
+      for (const item of processingQueue) {
+        const runtime = projectRuntimes.get(item.projectId);
+        if (runtime?.paused || runtime?.cancelled) continue;
+        if (isRestrictiveEngine(resolveEngineIdForTask(item.formData))) {
+          hasRestrictive = true;
+          break;
+        }
+      }
     }
+    if (hasRestrictive) effectiveMax = 1;
   } catch {
     // 解析引擎失败时回退到用户配置的并发
   }
@@ -437,8 +461,10 @@ async function processNextTasks(event) {
       tasksToProcess.forEach(async (task) => {
         const runtime = ensureRuntime(task.projectId);
         const fileUuid = task.file?.uuid;
+        const taskEngine = resolveEngineIdForTask(task.formData);
         activeTasksCount++;
         runtime.active++;
+        if (isRestrictiveEngine(taskEngine)) activeRestrictiveCount++;
         if (fileUuid) runtime.activeFiles.add(fileUuid);
         try {
           const baseProvider = translationProviders.find(
@@ -471,6 +497,7 @@ async function processNextTasks(event) {
         } finally {
           activeTasksCount--;
           runtime.active--;
+          if (isRestrictiveEngine(taskEngine)) activeRestrictiveCount--;
           runtime.completed++;
           if (fileUuid) runtime.activeFiles.delete(fileUuid);
           finalizeProjectIfDrained(event, task.projectId);

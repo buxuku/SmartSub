@@ -326,7 +326,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
                 variant="outline"
                 size="sm"
                 className="h-8 gap-1.5 text-xs flex-shrink-0"
-                onClick={() => closeAndGo(`/${locale}/resources?tab=models`)}
+                onClick={() => closeAndGo(`/${locale}/resources?tab=engines`)}
               >
                 <Download className="h-4 w-4" />
                 {t('onboarding.goDownloadModel')}

@@ -3,7 +3,6 @@ import { useTranslation } from 'next-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
-  Bot,
   Languages,
   Zap,
   ArrowRight,
@@ -19,10 +18,7 @@ import { modelCategories, getRecommendedCategory, cn } from 'lib/utils';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import { isProviderConfigured } from 'lib/providerUtils';
 import IconChip from '@/components/IconChip';
-import {
-  getInstalledModelsForEngine,
-  hasModelsForEngine,
-} from 'lib/engineModels';
+import { hasAnyModelAnyEngine } from 'lib/engineModels';
 import { CardDecor } from '@/components/launchpad/TaskIcons';
 import { ISystemInfo } from '../../../types/types';
 import { Provider } from '../../../types';
@@ -39,13 +35,6 @@ const OVERVIEW_CARD_DECOR = {
   providers: 'text-emerald-500/[0.09] dark:text-emerald-400/[0.12]',
   acceleration: 'text-indigo-500/[0.09] dark:text-indigo-400/[0.12]',
   engines: 'text-amber-500/[0.09] dark:text-amber-400/[0.12]',
-} as const;
-
-const ENGINE_LABEL_KEYS = {
-  builtin: 'overview.engineBuiltin',
-  fasterWhisper: 'overview.engineFasterWhisper',
-  funasr: 'overview.engineFunasr',
-  localCli: 'overview.engineLocalCli',
 } as const;
 
 const OverviewTab = ({
@@ -117,7 +106,12 @@ const OverviewTab = ({
     };
   }, [refresh]);
 
-  const installed = getInstalledModelsForEngine(systemInfo);
+  // 跨引擎已装模型聚合（ggml + ct2 + funasr ASR），用于概览计数与首启引导
+  const installed = [
+    ...(systemInfo.modelsInstalled ?? []),
+    ...(systemInfo.fasterWhisperModelsInstalled ?? []),
+    ...(systemInfo.funasrAsrModelsInstalled ?? []),
+  ];
   const downloading = systemInfo.downloadingModels || [];
   const recommendedId = getRecommendedCategory(systemInfo.totalMemoryGB ?? 8);
   const recommendedCategory = modelCategories.find(
@@ -132,20 +126,9 @@ const OverviewTab = ({
   )
     ? (gpuState?.gpuMode as string)
     : 'auto';
-  const transcriptionEngine = systemInfo.transcriptionEngine ?? 'builtin';
-  // ggml 推荐模型/一键下载仅适用于 whisper.cpp(builtin)；其它引擎在「模型」页有各自下载入口
-  const isBuiltin = transcriptionEngine === 'builtin';
-  const engineLabelKey =
-    ENGINE_LABEL_KEYS[transcriptionEngine] ?? ENGINE_LABEL_KEYS.builtin;
-  const showEngineWarning =
-    (transcriptionEngine === 'fasterWhisper' &&
-      systemInfo.pythonEngineStatus?.state !== 'ready') ||
-    (transcriptionEngine === 'funasr' && !systemInfo.funasrEngineInstalled);
-
-  // 「能否开始转写」只取决于引擎就绪 + 当前引擎已有模型；翻译服务为可选项，不计入就绪判断
-  const modelsReady = hasModelsForEngine(systemInfo);
-  const engineReady = !showEngineWarning;
-  const allReady = modelsReady && engineReady;
+  // 跨引擎就绪：任一引擎装有任一模型即可开始转写；引擎运行时在「引擎与模型」页各自管理，
+  // 翻译服务为可选项，二者均不计入此处就绪判断。
+  const allReady = hasAnyModelAnyEngine(systemInfo);
 
   const renderReadinessBanner = () => {
     if (allReady) {
@@ -161,9 +144,7 @@ const OverviewTab = ({
         </div>
       );
     }
-    const next = !engineReady
-      ? { label: t('overview.nextInstallEngine'), tab: 'engines' }
-      : { label: t('overview.nextDownloadModels'), tab: 'models' };
+    const next = { label: t('overview.nextDownloadModels'), tab: 'engines' };
     return (
       <div className="flex flex-col gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3 min-w-0">
@@ -280,37 +261,14 @@ const OverviewTab = ({
   return (
     <div className="space-y-4">
       {renderReadinessBanner()}
-      <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {/* 转写引擎 */}
+      <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {/* 引擎与模型（统一管理） */}
         <Card {...cardNavProps('engines')}>
           {cardDecor('engines')}
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <IconChip icon={Cpu} />
-              {t('overview.engineTitle')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-1 flex-col gap-3">
-            <p className="text-sm font-medium">{t(engineLabelKey)}</p>
-            {showEngineWarning && (
-              <p className="flex items-start gap-1.5 text-sm text-warning">
-                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                {t('overview.engineNotInstalled')}
-              </p>
-            )}
-            <div className="mt-auto flex items-center gap-2 pt-1">
-              {manageButton('engines')}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 语音模型 */}
-        <Card {...cardNavProps('models')}>
-          {cardDecor('models')}
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <IconChip icon={Bot} />
-              {t('overview.modelsTitle')}
+              {t('overview.engineModelTitle')}
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-3">
@@ -335,7 +293,9 @@ const OverviewTab = ({
                 {t('overview.downloadingCount', { count: downloading.length })}
               </p>
             )}
-            {isBuiltin && systemInfo.totalMemoryGB && recommendedModel ? (
+            {installed.length === 0 &&
+            systemInfo.totalMemoryGB &&
+            recommendedModel ? (
               <p className="text-xs text-muted-foreground">
                 {t('overview.recommendedModel', {
                   model: recommendedModel.name,
@@ -344,7 +304,7 @@ const OverviewTab = ({
               </p>
             ) : null}
             <div className="mt-auto flex items-center gap-2 pt-1">
-              {isBuiltin && installed.length === 0 && recommendedModel && (
+              {installed.length === 0 && recommendedModel && (
                 <div onClick={(e) => e.stopPropagation()}>
                   <DownModel
                     modelName={recommendedModel.name}
@@ -357,7 +317,7 @@ const OverviewTab = ({
                   </DownModel>
                 </div>
               )}
-              {manageButton('models')}
+              {manageButton('engines')}
             </div>
           </CardContent>
         </Card>

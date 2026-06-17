@@ -261,9 +261,6 @@
     "builtin": "Whisper.cpp",
     "fasterWhisper": "Faster-Whisper",
     "funasr": "FunASR",
-    "localCli": "Local command",
-    "tip": "Current transcription engine",
-    "manage": "Click to manage / switch engines",
-    "aria": "Current transcription engine, click to manage engines"
+    "localCli": "Local command"
   }
 }

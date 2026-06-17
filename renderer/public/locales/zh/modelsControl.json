@@ -16,7 +16,6 @@
     "funasr": "以下为 FunASR 模型：SenseVoice 多语种、Paraformer 中文专精，及共用的 VAD 组件",
     "localCli": "本地 CLI 使用您自行安装的 Whisper，无需在此下载模型"
   },
-  "engineNotInstalled": "引擎运行时未安装，请先在引擎页下载",
   "engineSwitchFailed": "切换引擎失败",
   "engineSwitched": "已切换转写引擎",
   "localCliModelHint": "当前使用本地命令行引擎，模型由您本机安装的 Whisper 提供。如需下载 ggml 模型，请切换到 whisper.cpp。",

@@ -16,7 +16,6 @@
     "funasr": "FunASR models: SenseVoice multilingual, Paraformer for Chinese, and the shared VAD component",
     "localCli": "Local CLI uses your own Whisper install — no models to download here"
   },
-  "engineNotInstalled": "Engine runtime is not installed. Open the Engines tab to download it.",
   "engineSwitchFailed": "Failed to switch engine",
   "engineSwitched": "Transcription engine updated",
   "localCliModelHint": "You are using the local CLI engine. Switch to whisper.cpp to download ggml models here.",
