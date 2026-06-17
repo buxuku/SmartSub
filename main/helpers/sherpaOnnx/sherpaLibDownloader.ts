@@ -13,7 +13,7 @@ import {
 } from '../downloadSourceOrder';
 import { calculateFileChecksum } from '../addonDownloader';
 import { adhocResignDir } from '../pythonRuntime/macSign';
-import { isDarwin, getExtraResourcesPath } from '../utils';
+import { isDarwin } from '../utils';
 import {
   getSherpaPlatformKey,
   getSherpaStagingDir,
@@ -123,26 +123,34 @@ function resignMac(dir: string): void {
   adhocResignDir(dir);
 }
 
-/** 在主进程用临时 env 加载 staging 的 .node 自检（require 自定义 addon + readWave 存在）。 */
+/**
+ * 主进程直接 dlopen staging 的原生 sherpa-onnx.node 自检（依赖解析 + 签名 OK + readWave 存在）。
+ * 不用 require 封装 addon.js：主进程是 webpack bundle，运行时 require 外部文件会被改写而 MODULE_NOT_FOUND；
+ * 原生加载与 worker 保持一致走 process.dlopen。Windows/Linux 临时把 dir 加入库搜索路径以解析同目录依赖
+ * （macOS 已由 resignMac 改写为 @loader_path，无需 env）。
+ */
 function assertLoadable(dir: string): void {
-  const prev = process.env.SHERPA_ONNX_LIB_DIR;
-  process.env.SHERPA_ONNX_LIB_DIR = dir;
+  const nativePath = path.join(dir, 'sherpa-onnx.node');
+  const prevPath = process.env.PATH;
+  const prevLd = process.env.LD_LIBRARY_PATH;
+  if (process.platform === 'win32') {
+    process.env.PATH = `${dir}${path.delimiter}${prevPath ?? ''}`;
+  } else if (process.platform === 'linux') {
+    process.env.LD_LIBRARY_PATH = `${dir}${path.delimiter}${prevLd ?? ''}`;
+  }
   try {
-    const addonPath = path.join(
-      getExtraResourcesPath(),
-      'sherpa',
-      'vendor',
-      'addon.js',
-    );
-    delete require.cache[require.resolve(addonPath)];
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const addon = require(addonPath);
-    if (typeof addon.readWave !== 'function') {
-      throw new Error('sherpa addon loaded but readWave missing');
+    const mod: { exports: Record<string, unknown> } = { exports: {} };
+    process.dlopen(mod, nativePath);
+    if (typeof mod.exports.readWave !== 'function') {
+      throw new Error('sherpa native loaded but readWave missing');
     }
   } finally {
-    if (prev === undefined) delete process.env.SHERPA_ONNX_LIB_DIR;
-    else process.env.SHERPA_ONNX_LIB_DIR = prev;
+    if (prevPath === undefined) delete process.env.PATH;
+    else process.env.PATH = prevPath;
+    if (process.platform === 'linux') {
+      if (prevLd === undefined) delete process.env.LD_LIBRARY_PATH;
+      else process.env.LD_LIBRARY_PATH = prevLd;
+    }
   }
 }
 
