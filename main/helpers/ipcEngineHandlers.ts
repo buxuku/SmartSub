@@ -16,6 +16,8 @@ import {
   isEnginePackageInstalled,
   isPyBaseReady,
 } from './pythonRuntime/paths';
+import { isSherpaLibInstalled } from './sherpaOnnx/sherpaLibPaths';
+import { isFunasrReady } from './funasrModelCatalog';
 import type { TranscriptionEngine } from '../../types/engine';
 import type {
   PyEngineDownloadSource,
@@ -59,7 +61,10 @@ export function registerEngineIpcHandlers(): void {
         ) {
           return { success: false, error: 'engine_not_installed' };
         }
-        if (engine === 'funasr' && !isEnginePackageInstalled('funasr')) {
+        if (
+          engine === 'funasr' &&
+          (!isSherpaLibInstalled() || !isFunasrReady())
+        ) {
           return { success: false, error: 'engine_not_installed' };
         }
         const settings = store.get('settings');
@@ -69,12 +74,9 @@ export function registerEngineIpcHandlers(): void {
           useLocalWhisper: engine === 'localCli',
         });
         // 切到 Python 引擎后预热 sidecar，把冷启动成本移出首个文件关键路径。
+        // funasr 已改用 sherpa worker（无 Python），其预热在任务开始时由 taskProcessor 处理。
         const warmupEngineId: PyEngineId | null =
-          engine === 'fasterWhisper'
-            ? 'faster-whisper'
-            : engine === 'funasr'
-              ? 'funasr'
-              : null;
+          engine === 'fasterWhisper' ? 'faster-whisper' : null;
         if (warmupEngineId) {
           void getPythonRuntimeManager()
             .ensureStarted(warmupEngineId)

@@ -33,6 +33,7 @@ import {
   getFunasrModelsRoot,
 } from './funasrModelCatalog';
 import { shutdownPythonRuntime } from './pythonRuntime';
+import { isSherpaLibInstalled } from './sherpaOnnx/sherpaLibPaths';
 import fse from 'fs-extra';
 import path from 'path';
 import { getTempDir } from './fileUtils';
@@ -69,7 +70,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       fasterWhisperModelsPath: getFasterWhisperModelsPath(),
       transcriptionEngine: resolveTranscriptionEngine(store.get('settings')),
       pythonEngineStatus,
-      funasrEngineInstalled: isEnginePackageInstalled('funasr'),
+      funasrEngineInstalled: isSherpaLibInstalled(),
       funasrVadInstalled: isFunasrModelInstalled('silero-vad'),
       funasrAsrModelsInstalled: getInstalledFunasrAsrModels(),
       funasrModelsPath: getFunasrModelsRoot(),
@@ -155,7 +156,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   ipcMain.handle('getFunasrModelStatus', async () => ({
     success: true,
     baseReady: isPyBaseReady(),
-    engineInstalled: isEnginePackageInstalled('funasr'),
+    engineInstalled: isSherpaLibInstalled(),
     ready: isFunasrReady(),
     models: (Object.keys(FUNASR_MODELS) as FunasrModelId[]).map((id) => ({
       id,
