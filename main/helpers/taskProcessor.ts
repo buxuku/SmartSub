@@ -413,8 +413,8 @@ async function processNextTasks(event) {
     return;
   }
 
-  // faster-whisper / FunASR 都共享单 sidecar（且各自只记一个 activeTranscribeId），
-  // 钳制有效并发为 1，避免显存争用导致 OOM / sidecar 崩溃、以及并发任务相互覆盖取消句柄；
+  // faster-whisper 走单 Python sidecar、FunASR(sherpa) 走单 worker 线程，二者各自只记一个
+  // activeTranscribeId；钳制有效并发为 1，避免显存争用导致 OOM/崩溃、以及并发任务相互覆盖取消句柄；
   // 其它引擎（builtin/localCli）不受影响。运行中引擎不可切换，故 effectiveMax 在本轮稳定。
   let effectiveMax = maxConcurrentTasks;
   try {
