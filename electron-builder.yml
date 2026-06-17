@@ -34,6 +34,10 @@ mac:
       to: ./extraResources/py-base/
       filter:
         - '**/*'
+    - from: ./extraResources/sherpa/
+      to: ./extraResources/sherpa/
+      filter:
+        - '**/*'
 win:
   target:
     - nsis
@@ -48,6 +52,10 @@ win:
       to: ./extraResources/sample-onboarding.mp3
     - from: ./extraResources/py-base/
       to: ./extraResources/py-base/
+      filter:
+        - '**/*'
+    - from: ./extraResources/sherpa/
+      to: ./extraResources/sherpa/
       filter:
         - '**/*'
   requestedExecutionLevel: asInvoker
@@ -76,6 +84,10 @@ linux:
       to: ./extraResources/sample-onboarding.mp3
     - from: ./extraResources/py-base/
       to: ./extraResources/py-base/
+      filter:
+        - '**/*'
+    - from: ./extraResources/sherpa/
+      to: ./extraResources/sherpa/
       filter:
         - '**/*'
 nsis:
