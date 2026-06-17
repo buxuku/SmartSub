@@ -65,6 +65,10 @@ export function buildSanitizedEnv(
     PYTHONIOENCODING: 'utf-8',
     PYTHONDONTWRITEBYTECODE: '1',
     PYTHONUNBUFFERED: '1',
+    // 散装 site-packages 下 numpy/ctranslate2/onnxruntime 可能各带一份 Intel
+    // OpenMP(libiomp5md)。容忍重复加载，规避 Windows 上 "OMP: Error #15 ...
+    // already initialized" 直接 abort/卡死。
+    KMP_DUPLICATE_LIB_OK: 'TRUE',
   };
   // 先清宿主机污染源（全局 conda/venv/PYTHONPATH 会污染基座解释器）
   delete env.PYTHONPATH;
@@ -153,7 +157,7 @@ export class PythonRuntimeManager {
         'info',
       );
       this.logger(
-        `[DIAG] spawn detail: cwd=${cmd.cwd ?? ''} PYTHONHOME=${cmd.pythonHome ?? ''} PYTHONPATH=${cmd.pythonPath ?? ''}`,
+        `python env: cwd=${cmd.cwd ?? ''} PYTHONHOME=${cmd.pythonHome ?? ''} PYTHONPATH=${cmd.pythonPath ?? ''}`,
         'info',
       );
 
