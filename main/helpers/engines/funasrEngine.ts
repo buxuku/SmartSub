@@ -1,108 +1,74 @@
 import fs from 'fs';
 import path from 'path';
-import type { EngineStatus, PyEngineManifest } from '../../../types/engine';
-import {
-  isPyBaseReady,
-  isEnginePackageInstalled,
-  readEngineManifest,
-} from '../pythonRuntime/paths';
+import type { EngineStatus } from '../../../types/engine';
 import {
   getFunasrModelDir,
   isFunasrReady,
   getInstalledFunasrAsrModels,
   resolveFunasrAsrSelection,
 } from '../funasrModelCatalog';
+import { isSherpaLibInstalled } from '../sherpaOnnx/sherpaLibPaths';
+import { getSherpaLibStatus } from '../sherpaOnnx/sherpaLibManager';
+import {
+  getSherpaFunasrRuntime,
+  type SherpaModelRequest,
+} from '../sherpaOnnx/sherpaFunasrRuntime';
 import { formatSrtContent } from '../fileUtils';
 import { logMessage, store } from '../storeManager';
-import { getPythonRuntimeManager } from '../pythonRuntime';
 import { getTaskContext, TaskCancelledError } from '../taskContext';
 import { secondsToSrtTime } from './transcribeShared';
 import { buildFunasrParams } from './funasrParams';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
-let activeFunasrTranscribeId: string | null = null;
+let activeTranscribeId: string | null = null;
 
 type FunasrAsrSelection = NonNullable<
   ReturnType<typeof resolveFunasrAsrSelection>
 >;
 
-function cancelFunasrTranscription(): void {
-  if (activeFunasrTranscribeId) {
-    getPythonRuntimeManager().cancel(activeFunasrTranscribeId);
-    activeFunasrTranscribeId = null;
-  }
-}
-
-/**
- * 组装 sidecar 模型参数（不含 audio_file）。transcribe 与 prewarm(preload) 共用，
- * 确保两者的识别器缓存 key 完全一致（含 language/model_type/线程数等），preload 命中即复用。
- */
-function buildFunasrModelParams(
+/** 组装 worker 模型请求（不含 audio_file）。transcribe 与 prewarm 共用，缓存 key 一致。 */
+function buildModelRequest(
   selection: FunasrAsrSelection,
   settings: Record<string, unknown>,
   sourceLanguage?: string,
-): Record<string, unknown> {
+): SherpaModelRequest {
   const asrDir = getFunasrModelDir(selection.id);
   return {
-    asr_model: path.join(asrDir, 'model.int8.onnx'),
+    asrModel: path.join(asrDir, 'model.int8.onnx'),
     tokens: path.join(asrDir, 'tokens.txt'),
-    vad_model: path.join(getFunasrModelDir('silero-vad'), 'silero_vad.onnx'),
-    model_type: selection.modelType,
-    ...buildFunasrParams(settings, sourceLanguage),
+    vadModel: path.join(getFunasrModelDir('silero-vad'), 'silero_vad.onnx'),
+    modelType: selection.modelType,
+    params: buildFunasrParams(settings, sourceLanguage),
   };
 }
 
 /**
- * 批次预热：在音频抽取的同时，让 sidecar 预加载所选 ASR/VAD 模型。
- * Windows 首次加载原生库 + ONNX（叠加杀软扫描）很慢，若放到首个 transcribe 会出现
- * 「卡在 0% 无进度」的观感。提前 preload 把这部分成本与 ffmpeg 抽取并行掉，且写满
- * 识别器缓存，使首个 transcribe 直接命中。失败一律非致命。
+ * 批次预热：在音频抽取的同时，让 worker 预加载所选 ASR/VAD 模型并写满识别器缓存，
+ * 使首个 transcribe 直接命中。模型加载在 worker 线程进行，不阻塞主/UI 线程。失败非致命。
  */
 function prewarmFunasr(formData: Record<string, unknown>): void {
   try {
-    if (!isFunasrReady()) return;
+    if (!isSherpaLibInstalled() || !isFunasrReady()) return;
     const installedAsr = getInstalledFunasrAsrModels();
     const selection = resolveFunasrAsrSelection(
       (formData as { model?: string })?.model,
       installedAsr,
     );
     if (!selection) return;
-    const settings = store.get('settings');
+    const settings = store.get('settings') as Record<string, unknown>;
     const { sourceLanguage } = formData as { sourceLanguage?: string };
-    const params = {
-      engine: 'funasr',
-      ...buildFunasrModelParams(selection, settings, sourceLanguage),
-    };
-    const manager = getPythonRuntimeManager();
-    if (manager.activeEngineId !== 'funasr' || !manager.isRunning) return;
-    // 预加载在 sidecar worker 线程进行，给足冗余超时；method_not_found（旧引擎）等
-    // 错误都吞掉——首个 transcribe 仍会按需加载，预热只是优化。
-    manager
-      .request('preload', params, { timeoutMs: 10 * 60_000 })
-      .then(() => logMessage('funasr model prewarm done', 'info'))
-      .catch((error) =>
-        logMessage(`funasr model prewarm skipped: ${error}`, 'warning'),
-      );
-    logMessage('funasr model prewarm started', 'info');
+    getSherpaFunasrRuntime().prewarm(
+      buildModelRequest(selection, settings, sourceLanguage),
+    );
+    logMessage('funasr (sherpa) prewarm started', 'info');
   } catch (error) {
     logMessage(`funasr prewarm error (non-fatal): ${error}`, 'warning');
   }
 }
 
-function formatInstalledVersion(
-  manifest: PyEngineManifest | null,
-): string | undefined {
-  if (!manifest) return undefined;
-  if (manifest.engineVersion) return manifest.engineVersion;
-  if (manifest.version && manifest.version !== 'latest')
-    return manifest.version;
-  if (manifest.sha256) return manifest.sha256.slice(0, 7);
-  return undefined;
-}
-
 /**
- * 使用 Python sidecar 中的 sherpa-onnx SenseVoice 生成字幕。
- * 取消与 faster-whisper 一致走 AbortSignal：信号触发即通知 sidecar 逐段取消。
+ * 用 sherpa-onnx Node 原生 addon（worker 线程）生成字幕。
+ * 取消与 faster-whisper 一致走 AbortSignal：信号触发即通知 worker 逐段取消。
  */
 async function transcribeFunasr(ctx: TranscribeContext): Promise<string> {
   const { event, file, formData } = ctx;
@@ -110,23 +76,16 @@ async function transcribeFunasr(ctx: TranscribeContext): Promise<string> {
 
   const { tempAudioFile, srtFile } = file;
   const { sourceLanguage } = formData as { sourceLanguage?: string };
-  const settings = store.get('settings');
+  const settings = store.get('settings') as Record<string, unknown>;
 
-  const manager = getPythonRuntimeManager();
-  let engineInfo;
-  try {
-    engineInfo = await manager.ensureStarted('funasr');
-  } catch (error) {
+  if (!isSherpaLibInstalled()) {
     throw new Error(
-      `funasr engine unavailable: ${(error as Error)?.message || error}`,
+      'sherpa runtime not installed. Download it from Resource Hub > Engines.',
     );
-  }
-  if (!engineInfo?.engines?.funasr) {
-    throw new Error('funasr is not available in the python engine runtime');
   }
   if (!isFunasrReady()) {
     throw new Error(
-      'funasr models not installed. Download SenseVoice + silero-VAD from Resource Hub > Models.',
+      'funasr models not installed. Download SenseVoice/Paraformer + silero-VAD from Resource Hub > Models.',
     );
   }
 
@@ -141,25 +100,21 @@ async function transcribeFunasr(ctx: TranscribeContext): Promise<string> {
     );
   }
 
-  const params = {
-    engine: 'funasr',
-    audio_file: tempAudioFile,
-    ...buildFunasrModelParams(selection, settings, sourceLanguage),
-  };
-  logMessage(`funasrParams: ${JSON.stringify(params, null, 2)}`, 'info');
+  const model = buildModelRequest(selection, settings, sourceLanguage);
+  logMessage(`funasr(sherpa) model: ${JSON.stringify(model)}`, 'info');
   event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
 
-  const { id, result } = manager.transcribe(params, {
-    onProgress: (percent) =>
-      event.sender.send('taskProgressChange', file, 'extractSubtitle', percent),
-  });
-  activeFunasrTranscribeId = id;
+  const runtime = getSherpaFunasrRuntime();
+  const { id, result } = runtime.transcribe(model, tempAudioFile, (percent) =>
+    event.sender.send('taskProgressChange', file, 'extractSubtitle', percent),
+  );
+  activeTranscribeId = id;
 
   const signal = ctx.signal ?? getTaskContext()?.signal;
   const onAbort = () => {
-    if (activeFunasrTranscribeId === id) manager.cancel(id);
+    if (activeTranscribeId === id) runtime.cancel(id);
   };
-  if (signal?.aborted) manager.cancel(id);
+  if (signal?.aborted) runtime.cancel(id);
   else signal?.addEventListener('abort', onAbort, { once: true });
 
   let transcription;
@@ -172,7 +127,7 @@ async function transcribeFunasr(ctx: TranscribeContext): Promise<string> {
     throw error;
   } finally {
     signal?.removeEventListener('abort', onAbort);
-    activeFunasrTranscribeId = null;
+    activeTranscribeId = null;
   }
 
   if (signal?.aborted) throw new TaskCancelledError();
@@ -191,10 +146,7 @@ async function transcribeFunasr(ctx: TranscribeContext): Promise<string> {
 
   event.sender.send('taskProgressChange', file, 'extractSubtitle', 100);
   event.sender.send('taskFileChange', { ...file, extractSubtitle: 'done' });
-  logMessage(
-    `generate subtitle done (funasr, language=${transcription?.language})`,
-    'info',
-  );
+  logMessage('generate subtitle done (funasr/sherpa)', 'info');
   return srtFile;
 }
 
@@ -202,30 +154,21 @@ export const funasrEngineAdapter: TranscriptionEngineAdapter = {
   id: 'funasr',
   displayName: 'FunASR (SenseVoice / Paraformer)',
   requiresRuntime: true,
-  pyEngineId: 'funasr',
 
   async isAvailable(): Promise<EngineStatus> {
-    if (!isPyBaseReady()) {
-      return {
-        state: 'error',
-        message: 'Python base runtime missing; reinstall or update SmartSub',
-      };
-    }
-    if (!isEnginePackageInstalled('funasr')) {
+    if (!isSherpaLibInstalled()) {
       return {
         state: 'not_installed',
-        message: 'funasr engine package not installed',
+        message: 'sherpa runtime not downloaded',
       };
     }
-    // 引擎包在但模型缺：仍报 not_installed（资源中心可下模型），消息区分。
     if (!isFunasrReady()) {
       return {
         state: 'not_installed',
         message: 'funasr models not downloaded',
       };
     }
-    const manifest = readEngineManifest('funasr');
-    return { state: 'ready', version: formatInstalledVersion(manifest) };
+    return { state: 'ready', version: getSherpaLibStatus().version };
   },
 
   async transcribe(ctx: TranscribeContext): Promise<string> {
@@ -233,7 +176,10 @@ export const funasrEngineAdapter: TranscriptionEngineAdapter = {
   },
 
   cancelActive(): void {
-    cancelFunasrTranscription();
+    if (activeTranscribeId) {
+      getSherpaFunasrRuntime().cancel(activeTranscribeId);
+      activeTranscribeId = null;
+    }
   },
 
   prewarm(formData: Record<string, unknown>): void {
