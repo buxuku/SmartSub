@@ -22,6 +22,29 @@
   "proxyTestOk": "Connected ({{ms}} ms)",
   "proxyTestFail": "Failed: {{error}}",
   "proxySaved": "Proxy settings saved",
+  "downloadEndpointsTitle": "Download Sources (Advanced)",
+  "downloadEndpointsDesc": "Customize the mirror / proxy URLs used to download models and components. Changes take effect immediately, no app update required. Leave blank to use defaults.",
+  "downloadEndpointsSaved": "Download sources saved",
+  "downloadEndpointsResetBtn": "Restore defaults",
+  "downloadEndpointsResetDone": "Download sources reset to defaults",
+  "downloadEndpointFields": {
+    "githubProxyPrefix": {
+      "label": "GitHub proxy prefix",
+      "hint": "Prepended to full GitHub links to speed up GitHub Release downloads (no trailing slash needed), e.g. https://gh-proxy.com"
+    },
+    "huggingFaceMirror": {
+      "label": "HuggingFace mirror",
+      "hint": "HuggingFace mirror host for downloading Whisper / FasterWhisper / FunASR models, e.g. hf-mirror.com"
+    },
+    "modelScopeBase": {
+      "label": "ModelScope site",
+      "hint": "ModelScope site URL for downloading Qwen models, e.g. https://modelscope.cn"
+    },
+    "gitcodeBase": {
+      "label": "GitCode mirror",
+      "hint": "GitCode site URL for downloading engine / accelerator binaries, e.g. https://gitcode.com"
+    }
+  },
   "changeLanguage": "Change Language",
   "useLocalWhisper": "Use Local Whisper Installation",
   "useLocalWhisperTip": "Please make sure you have Whisper installed locally and can run the 'whisper' command in terminal",

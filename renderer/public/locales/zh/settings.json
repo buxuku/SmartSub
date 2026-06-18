@@ -22,6 +22,29 @@
   "proxyTestOk": "连接成功（{{ms}} ms）",
   "proxyTestFail": "连接失败：{{error}}",
   "proxySaved": "代理设置已保存",
+  "downloadEndpointsTitle": "下载源（高级）",
+  "downloadEndpointsDesc": "自定义模型与组件的下载镜像 / 代理地址，修改后立即生效，无需更新版本。留空将使用默认值。",
+  "downloadEndpointsSaved": "下载源已保存",
+  "downloadEndpointsResetBtn": "恢复默认",
+  "downloadEndpointsResetDone": "已恢复默认下载源",
+  "downloadEndpointFields": {
+    "githubProxyPrefix": {
+      "label": "GitHub 代理前缀",
+      "hint": "用于加速 GitHub Release 下载，会拼接在完整 GitHub 链接之前（无需末尾斜杠），例如 https://gh-proxy.com"
+    },
+    "huggingFaceMirror": {
+      "label": "HuggingFace 镜像",
+      "hint": "下载 Whisper / FasterWhisper / FunASR 模型所用的 HuggingFace 镜像域名，例如 hf-mirror.com"
+    },
+    "modelScopeBase": {
+      "label": "ModelScope 站点",
+      "hint": "下载 Qwen 模型所用的 ModelScope 站点地址，例如 https://modelscope.cn"
+    },
+    "gitcodeBase": {
+      "label": "GitCode 镜像",
+      "hint": "下载引擎 / 加速库等二进制所用的 GitCode 站点地址，例如 https://gitcode.com"
+    }
+  },
   "changeLanguage": "切换语言",
   "useLocalWhisper": "使用本地 Whisper 命令",
   "useLocalWhisperTip": "请确保您本地自己安装了 Whisper，并可以在终端运行 whisper 命令",

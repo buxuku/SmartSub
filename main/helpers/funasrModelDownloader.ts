@@ -9,12 +9,14 @@ import {
   FUNASR_MODELS,
   FunasrModelId,
   getFunasrModelDir,
+  getFunasrFileUrls,
   isFunasrModelInstalled,
 } from './funasrModelCatalog';
 import {
   downloadFileParallel,
   RangeNotSupportedError,
 } from './download/parallelDownloader';
+import { getHfHosts } from './config/downloadConfig';
 
 interface HfTreeEntry {
   path: string;
@@ -29,10 +31,9 @@ export function getFunasrProgressKey(id: FunasrModelId): string {
   return `funasr:${id}`;
 }
 
-/** 镜像优先：hf-mirror.com（国内快）→ huggingface.co。 */
+/** 镜像优先：hf-mirror.com（国内快）→ huggingface.co。host 取自可配置端点。 */
 function getHosts(source?: string): string[] {
-  if (source === 'huggingface') return ['huggingface.co', 'hf-mirror.com'];
-  return ['hf-mirror.com', 'huggingface.co'];
+  return getHfHosts(source);
 }
 
 function resolveRedirectUrl(currentUrl: string, location: string): string {
@@ -274,9 +275,12 @@ export class FunasrModelDownloader {
     for (const f of spec.files || []) {
       const dest = path.join(destDir, f.name);
       if (fs.existsSync(dest) && fs.statSync(dest).size > 0) continue;
+      // 候选 URL 运行时按可配置端点生成；为空时回退 spec 内静态兜底。
+      const runtimeUrls = getFunasrFileUrls(id, f.name);
+      const urls = runtimeUrls.length > 0 ? runtimeUrls : (f.urls ?? []);
       let ok = false;
       let lastError: unknown = null;
-      for (const url of f.urls) {
+      for (const url of urls) {
         try {
           await downloadFileParallel({
             url,

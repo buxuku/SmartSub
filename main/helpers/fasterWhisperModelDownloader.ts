@@ -16,6 +16,7 @@ import {
   downloadFileParallel,
   RangeNotSupportedError,
 } from './download/parallelDownloader';
+import { getHfHost as resolveHfHost } from './config/downloadConfig';
 
 interface HfTreeEntry {
   path: string;
@@ -85,7 +86,7 @@ function resolveRedirectUrl(currentUrl: string, location: string): string {
 }
 
 function getHfHost(source: string): string {
-  return source === 'huggingface' ? 'huggingface.co' : 'hf-mirror.com';
+  return resolveHfHost(source);
 }
 
 function fetchJson<T>(url: string): Promise<T> {

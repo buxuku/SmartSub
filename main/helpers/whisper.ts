@@ -8,6 +8,7 @@ import fs from 'fs-extra';
 import { store, logMessage } from './storeManager';
 import { getEffectivePlatform } from './cudaUtils';
 import { loadBestAddon } from './addonLoader';
+import { getHfHost } from './config/downloadConfig';
 import type { GpuMode } from '../../types/addon';
 
 export const getPath = (key?: string) => {
@@ -88,9 +89,7 @@ export const downloadModelSync = async (
     }
   }
 
-  const baseUrl = `https://${
-    source === 'huggingface' ? 'huggingface.co' : 'hf-mirror.com'
-  }/ggerganov/whisper.cpp/resolve/main`;
+  const baseUrl = `https://${getHfHost(source)}/ggerganov/whisper.cpp/resolve/main`;
   const url = `${baseUrl}/ggml-${model}.bin`;
 
   // 只有在需要CoreML支持且是Apple Silicon时才下载CoreML模型

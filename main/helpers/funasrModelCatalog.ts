@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
+import { getDownloadEndpoints } from './config/downloadConfig';
 
 /** funasr 模型根目录：userData/models/funasr */
 export function getFunasrModelsRoot(): string {
@@ -33,8 +34,12 @@ export interface FunasrModelSpec {
   repo?: string;
   /** 仅保留这些文件，省带宽（repo 模式；缺省下载全部非点文件） */
   keepFiles?: string[];
-  /** 单文件候选 URL（files 模式，按序回退） */
-  files?: { name: string; urls: string[] }[];
+  /**
+   * files 模式的待下载文件列表（按 name 逐个下载）。
+   * 候选 URL 由 getFunasrFileUrls() 在运行时按可配置端点生成；
+   * urls 仅作为可选的静态兜底（一般留空）。
+   */
+  files?: { name: string; urls?: string[] }[];
 }
 
 export const FUNASR_MODELS: Record<FunasrModelId, FunasrModelSpec> = {
@@ -61,19 +66,31 @@ export const FUNASR_MODELS: Record<FunasrModelId, FunasrModelSpec> = {
     dirName: 'silero-vad',
     kind: 'vad',
     requiredFiles: ['silero_vad.onnx'],
-    files: [
-      {
-        name: 'silero_vad.onnx',
-        urls: [
-          'https://hf-mirror.com/csukuangfj/vad/resolve/main/silero_vad.onnx',
-          'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx',
-          'https://ghfast.top/https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx',
-          'https://huggingface.co/csukuangfj/vad/resolve/main/silero_vad.onnx',
-        ],
-      },
-    ],
+    // 候选 URL 在运行时由 getFunasrFileUrls() 按可配置端点生成（镜像/代理可在设置页覆盖）。
+    files: [{ name: 'silero_vad.onnx' }],
   },
 };
+
+/**
+ * files 模式下单个文件的运行时候选下载 URL（按序回退）。
+ * 镜像 / 代理 / GitHub base 均取自可配置的下载端点，用户在设置页改完即时生效。
+ */
+export function getFunasrFileUrls(
+  id: FunasrModelId,
+  fileName: string,
+): string[] {
+  if (id === 'silero-vad' && fileName === 'silero_vad.onnx') {
+    const ep = getDownloadEndpoints();
+    const ghRelease = `${ep.githubBase}/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx`;
+    return [
+      `https://${ep.huggingFaceMirror}/csukuangfj/vad/resolve/main/silero_vad.onnx`,
+      ghRelease,
+      `${ep.githubProxyPrefix}/${ghRelease}`,
+      `https://${ep.huggingFaceOfficial}/csukuangfj/vad/resolve/main/silero_vad.onnx`,
+    ];
+  }
+  return [];
+}
 
 export function getFunasrModelDir(id: FunasrModelId): string {
   const dir = path.join(getFunasrModelsRoot(), FUNASR_MODELS[id].dirName);

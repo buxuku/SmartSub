@@ -8,6 +8,7 @@ import {
   AddonLoadResultInfo,
   AddonLoadHistoryEntry,
 } from '../../../types/addon';
+import type { DownloadEndpointConfig } from '../../../types/downloadConfig';
 
 export type LogEntry = {
   timestamp: number;
@@ -75,6 +76,8 @@ export type StoreType = {
     proxyUrl?: string;
     /** 可选 NO_PROXY 列表（逗号分隔），默认 localhost,127.0.0.1 */
     proxyNoProxy?: string;
+    /** 下载源端点（镜像/代理）用户覆盖；缺省字段走 DEFAULT_DOWNLOAD_ENDPOINTS。 */
+    downloadEndpoints?: Partial<DownloadEndpointConfig>;
     /** 任务列表视图：list=列表，grid=网格（全局统一，跨重启保留） */
     taskViewMode?: 'list' | 'grid';
     /** 关闭窗口行为：smart=有任务转后台/空闲退出，background=始终后台，quit=始终退出（仅 macOS 生效，Win/Linux 固定兜底） */

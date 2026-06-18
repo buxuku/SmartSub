@@ -31,6 +31,7 @@ import {
   FolderOpen,
   SlidersHorizontal,
   RotateCcw,
+  Server,
   X,
 } from 'lucide-react';
 import {
@@ -68,6 +69,12 @@ import { readPersistedDownloadSource } from '@/components/settings/gpu/gpuDownlo
 import { openUrl } from 'lib/utils';
 import packageInfo from '../../../package.json';
 import type { DownloadSource } from '../../../types/addon';
+import {
+  DEFAULT_DOWNLOAD_ENDPOINTS,
+  EDITABLE_DOWNLOAD_ENDPOINT_KEYS,
+  normalizeDownloadEndpoints,
+  type DownloadEndpointConfig,
+} from '../../../types/downloadConfig';
 
 // 三档 VAD 环境预设。数值依据：标准=whisper.cpp 官方默认；
 // 安静=silero 0.3-0.4 灵敏区+短语保留；嘈杂=whisper.rn noisyEnv 推荐
@@ -155,6 +162,9 @@ const Settings = () => {
   const [proxyUrl, setProxyUrl] = useState('');
   const [proxyNoProxy, setProxyNoProxy] = useState('');
   const [proxyTesting, setProxyTesting] = useState(false);
+  const [downloadEndpointsOpen, setDownloadEndpointsOpen] = useState(false);
+  const [downloadEndpoints, setDownloadEndpoints] =
+    useState<DownloadEndpointConfig>(DEFAULT_DOWNLOAD_ENDPOINTS);
   const [closeAction, setCloseAction] = useState<
     'smart' | 'background' | 'quit'
   >('smart');
@@ -188,6 +198,9 @@ const Settings = () => {
         setProxyMode(settings.proxyMode === 'custom' ? 'custom' : 'none');
         setProxyUrl(settings.proxyUrl || '');
         setProxyNoProxy(settings.proxyNoProxy || '');
+        setDownloadEndpoints(
+          normalizeDownloadEndpoints(settings.downloadEndpoints),
+        );
         setCloseAction(settings.closeAction || 'smart');
       }
 
@@ -418,6 +431,45 @@ const Settings = () => {
       );
     } finally {
       setProxyTesting(false);
+    }
+  };
+
+  // 下载源端点：onChange 仅更新本地原始值，onBlur 规范化后持久化（仅存可编辑字段）。
+  const handleEndpointChange = (
+    key: keyof DownloadEndpointConfig,
+    value: string,
+  ) => {
+    setDownloadEndpoints((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const persistDownloadEndpoints = async (next: DownloadEndpointConfig) => {
+    const normalized = normalizeDownloadEndpoints(next);
+    setDownloadEndpoints(normalized);
+    const overrides: Partial<DownloadEndpointConfig> = {};
+    EDITABLE_DOWNLOAD_ENDPOINT_KEYS.forEach((key) => {
+      overrides[key] = normalized[key];
+    });
+    try {
+      await window?.ipc?.invoke('setSettings', {
+        downloadEndpoints: overrides,
+      });
+      toast.success(t('downloadEndpointsSaved'));
+    } catch {
+      toast.error(t('saveFailed'));
+    }
+  };
+
+  const handleEndpointBlur = () => {
+    void persistDownloadEndpoints(downloadEndpoints);
+  };
+
+  const handleEndpointsReset = async () => {
+    setDownloadEndpoints(DEFAULT_DOWNLOAD_ENDPOINTS);
+    try {
+      await window?.ipc?.invoke('setSettings', { downloadEndpoints: {} });
+      toast.success(t('downloadEndpointsResetDone'));
+    } catch {
+      toast.error(t('saveFailed'));
     }
   };
 
@@ -694,6 +746,66 @@ const Settings = () => {
               </>
             )}
           </CardContent>
+        </Card>
+
+        <Card>
+          <Collapsible
+            open={downloadEndpointsOpen}
+            onOpenChange={setDownloadEndpointsOpen}
+          >
+            <CollapsibleTrigger asChild>
+              <CardHeader className="cursor-pointer select-none">
+                <CardTitle className="flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <IconChip icon={Server} />
+                    {t('downloadEndpointsTitle')}
+                  </span>
+                  <ChevronDown
+                    className={`h-4 w-4 text-muted-foreground transition-transform ${
+                      downloadEndpointsOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </CardTitle>
+                <p className="text-sm text-muted-foreground pt-1">
+                  {t('downloadEndpointsDesc')}
+                </p>
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="space-y-4">
+                {EDITABLE_DOWNLOAD_ENDPOINT_KEYS.map((key) => (
+                  <div className="space-y-2" key={key}>
+                    <div className="flex items-center gap-2">
+                      <span>{t(`downloadEndpointFields.${key}.label`)}</span>
+                      <HelpHint
+                        text={t(`downloadEndpointFields.${key}.hint`)}
+                      />
+                    </div>
+                    <Input
+                      value={downloadEndpoints[key]}
+                      onChange={(e) =>
+                        handleEndpointChange(key, e.target.value)
+                      }
+                      onBlur={handleEndpointBlur}
+                      placeholder={DEFAULT_DOWNLOAD_ENDPOINTS[key]}
+                      className="font-mono text-sm"
+                    />
+                  </div>
+                ))}
+                <div className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={handleEndpointsReset}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    {t('downloadEndpointsResetBtn')}
+                  </Button>
+                </div>
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
         </Card>
 
         <Card>

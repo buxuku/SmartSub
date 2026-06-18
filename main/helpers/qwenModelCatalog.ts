@@ -5,6 +5,11 @@ import {
   getFunasrModelDir,
   isFunasrModelInstalled,
 } from './funasrModelCatalog';
+import {
+  getGithubBase,
+  getGithubProxyPrefix,
+  getModelScopeBase,
+} from './config/downloadConfig';
 
 /** qwen 模型根目录：userData/models/qwen */
 export function getQwenModelsRoot(): string {
@@ -127,8 +132,8 @@ export function getQwenArchiveUrl(
   spec: QwenModelSpec,
   source: 'ghproxy' | 'github',
 ): string {
-  const github = `https://github.com/${spec.releasePath}/${spec.archiveName}`;
-  return source === 'ghproxy' ? `https://gh-proxy.com/${github}` : github;
+  const github = `${getGithubBase()}/${spec.releasePath}/${spec.archiveName}`;
+  return source === 'ghproxy' ? `${getGithubProxyPrefix()}/${github}` : github;
 }
 
 /** ModelScope 单文件 resolve 直链（302 跳国内 CDN，支持 Range）。 */
@@ -136,12 +141,12 @@ export function getQwenModelScopeFileUrl(
   spec: QwenModelSpec,
   remote: string,
 ): string {
-  return `https://modelscope.cn/models/${spec.modelScopeRepo}/resolve/master/${remote}`;
+  return `${getModelScopeBase()}/models/${spec.modelScopeRepo}/resolve/master/${remote}`;
 }
 
 /** ModelScope 文件树 API（取各文件 size 以计算总进度）。 */
 export function getQwenModelScopeTreeUrl(spec: QwenModelSpec): string {
-  return `https://modelscope.cn/api/v1/models/${spec.modelScopeRepo}/repo/files?Revision=master&Recursive=true`;
+  return `${getModelScopeBase()}/api/v1/models/${spec.modelScopeRepo}/repo/files?Revision=master&Recursive=true`;
 }
 
 export function getQwenModelDir(id: QwenModelId): string {

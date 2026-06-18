@@ -11,6 +11,7 @@ import {
   downloadFileParallel,
   RangeNotSupportedError,
 } from './download/parallelDownloader';
+import { getHfHost } from './config/downloadConfig';
 
 export interface ModelDownloadProgress {
   status: 'idle' | 'downloading' | 'extracting' | 'completed' | 'error';
@@ -169,9 +170,7 @@ export class ModelDownloader {
       return true;
     }
 
-    const baseUrl = `https://${
-      source === 'huggingface' ? 'huggingface.co' : 'hf-mirror.com'
-    }/ggerganov/whisper.cpp/resolve/main`;
+    const baseUrl = `https://${getHfHost(source)}/ggerganov/whisper.cpp/resolve/main`;
 
     this.currentModel = model;
     this.abortController = new AbortController();
