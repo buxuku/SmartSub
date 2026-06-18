@@ -360,18 +360,30 @@ export class PyEngineDownloader {
         });
         throw error;
       }
-      // Windows 文件被锁（EPERM/EBUSY/EACCES）时，清掉残留临时包与续传状态，
-      // 避免下次一直尝试续传/打开同一个被锁文件而无法重新下载。
+      // 两类情况必须清掉残留临时包与续传状态，避免下次一直续传同一个坏/锁文件：
+      // 1) Windows 文件被锁（EPERM/EBUSY/EACCES）——否则一直打开同一被锁文件无法重下；
+      // 2) 内容损坏（校验/解包失败）——续传判定只看 URL，而引擎 tag 固定为 latest，
+      //    上游 latest 重发或代理忽略 Range 都会让已下载的临时包损坏；若不清理，
+      //    下次重试会再次命中续传、把字节拼到坏文件后，导致 sha 反复不匹配的死循环。
       const code =
         error && typeof error === 'object' && 'code' in error
           ? String((error as { code?: unknown }).code)
           : '';
-      if (code === 'EPERM' || code === 'EBUSY' || code === 'EACCES') {
+      const isCorruptArtifact =
+        errorMessage.includes('Checksum mismatch') ||
+        errorMessage.includes('Invalid engine package') ||
+        errorMessage.includes('not found in release checksums');
+      if (
+        code === 'EPERM' ||
+        code === 'EBUSY' ||
+        code === 'EACCES' ||
+        isCorruptArtifact
+      ) {
         try {
           if (fs.existsSync(tempPath)) fs.rmSync(tempPath, { force: true });
         } catch (cleanupError) {
           logMessage(
-            `Failed to remove locked py-engine temp file: ${cleanupError}`,
+            `Failed to remove py-engine temp file: ${cleanupError}`,
             'warning',
           );
         }

@@ -205,6 +205,13 @@ export class MirrorDownloader {
           return;
         }
 
+        // 仅当服务器以 206 响应时才是真正的断点续传。
+        // 若请求了 Range 却收到 200（部分代理 / 镜像忽略 Range，返回全量），
+        // 必须按全量覆盖处理：否则会把完整文件追加到已有部分字节之后，
+        // 造成文件损坏、体积偏大，最终 sha 校验失败。
+        const isResume = startByte > 0 && response.statusCode === 206;
+        const effectiveStart = isResume ? startByte : 0;
+
         let totalSize = 0;
         if (response.statusCode === 206) {
           const contentRange = response.headers['content-range'];
@@ -214,18 +221,17 @@ export class MirrorDownloader {
           }
         } else {
           const contentLength = response.headers['content-length'];
-          if (contentLength)
-            totalSize = parseInt(contentLength, 10) + startByte;
+          if (contentLength) totalSize = parseInt(contentLength, 10);
         }
 
-        this.updateProgress({ total: totalSize, downloaded: startByte });
-        hooks?.onBytes?.(startByte, totalSize);
+        this.updateProgress({ total: totalSize, downloaded: effectiveStart });
+        hooks?.onBytes?.(effectiveStart, totalSize);
 
         writeStream = fs.createWriteStream(destPath, {
-          flags: startByte > 0 ? 'a' : 'w',
+          flags: isResume ? 'a' : 'w',
         });
 
-        let downloadedBytes = startByte;
+        let downloadedBytes = effectiveStart;
         resetInactivityTimer();
 
         response.on('data', (chunk: Buffer) => {
