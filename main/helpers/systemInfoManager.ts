@@ -30,8 +30,23 @@ import {
   getInstalledFunasrAsrModels,
   getFunasrModelsRoot,
 } from './funasrModelCatalog';
+import {
+  getQwenModelDownloader,
+  getQwenProgressKey,
+} from './qwenModelDownloader';
+import {
+  QWEN_MODELS,
+  QwenModelId,
+  isQwenModelInstalled,
+  isQwenVadInstalled,
+  isQwenReady,
+  deleteQwenModel,
+  getInstalledQwenModels,
+  getQwenModelsRoot,
+} from './qwenModelCatalog';
 import { shutdownPythonRuntime } from './pythonRuntime';
 import { isSherpaLibInstalled } from './sherpaOnnx/sherpaLibPaths';
+import { getSherpaAsrRuntime } from './sherpaOnnx/sherpaFunasrRuntime';
 import fse from 'fs-extra';
 import path from 'path';
 import { getTempDir } from './fileUtils';
@@ -45,6 +60,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   const modelDownloader = getModelDownloader(mainWindow);
   const ct2ModelDownloader = getFasterWhisperModelDownloader(mainWindow);
   const funasrModelDownloader = getFunasrModelDownloader(mainWindow);
+  const qwenModelDownloader = getQwenModelDownloader(mainWindow);
 
   ipcMain.handle('getSystemInfo', async () => {
     // 三层就绪判定：缺基座 → error（需重装/升级 App）；有基座缺引擎包 → not_installed
@@ -71,6 +87,10 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       funasrVadInstalled: isFunasrModelInstalled('silero-vad'),
       funasrAsrModelsInstalled: getInstalledFunasrAsrModels(),
       funasrModelsPath: getFunasrModelsRoot(),
+      qwenEngineInstalled: isSherpaLibInstalled(),
+      qwenVadInstalled: isQwenVadInstalled(),
+      qwenModelsInstalled: getInstalledQwenModels(),
+      qwenModelsPath: getQwenModelsRoot(),
     };
   });
 
@@ -174,10 +194,54 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     },
   );
 
+  ipcMain.handle(
+    'downloadQwenModel',
+    async (_event, { model }: { model: QwenModelId }) => {
+      if (downloadingModels.size > 0) {
+        return { success: false, error: 'anotherDownloadInProgress' };
+      }
+      const progressKey = getQwenProgressKey(model);
+      downloadingModels.add(progressKey);
+      try {
+        await qwenModelDownloader.download(model);
+        downloadingModels.delete(progressKey);
+        return { success: true };
+      } catch (error) {
+        logMessage(`qwen model download error: ${error}`, 'error');
+        downloadingModels.delete(progressKey);
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle('getQwenModelStatus', async () => ({
+    success: true,
+    engineInstalled: isSherpaLibInstalled(),
+    vadInstalled: isQwenVadInstalled(),
+    ready: isQwenReady(),
+    models: (Object.keys(QWEN_MODELS) as QwenModelId[]).map((id) => ({
+      id,
+      installed: isQwenModelInstalled(id),
+    })),
+  }));
+
+  ipcMain.handle('deleteQwenModel', async (_event, modelId: QwenModelId) => {
+    try {
+      // Qwen 与 funasr 共享同一 sherpa worker：删除前先释放 worker，避免 Windows 上
+      // 大模型文件被加载占用导致 rm 失败（worker 会在下次转写/预热时自动重建）。
+      getSherpaAsrRuntime().dispose();
+      deleteQwenModel(modelId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
   ipcMain.handle('cancelModelDownload', async () => {
     modelDownloader.cancel();
     ct2ModelDownloader.cancel();
     funasrModelDownloader.cancel();
+    qwenModelDownloader.cancel();
     downloadingModels.clear();
     return true;
   });
@@ -207,13 +271,18 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
 
   ipcMain.handle(
     'openModelsFolder',
-    async (_event, options?: { pathType?: 'ggml' | 'ct2' | 'funasr' }) => {
+    async (
+      _event,
+      options?: { pathType?: 'ggml' | 'ct2' | 'funasr' | 'qwen' },
+    ) => {
       const modelsPath =
         options?.pathType === 'ct2'
           ? getFasterWhisperModelsPath()
           : options?.pathType === 'funasr'
             ? getFunasrModelsRoot()
-            : (getPath('modelsPath') as string);
+            : options?.pathType === 'qwen'
+              ? getQwenModelsRoot()
+              : (getPath('modelsPath') as string);
       try {
         await fse.ensureDir(modelsPath);
         const err = await shell.openPath(modelsPath);

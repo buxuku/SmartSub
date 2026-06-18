@@ -16,6 +16,21 @@ let cacheKey = '';
 const cancelled = new Set();
 
 function buildKey(req) {
+  if (req.modelType === 'qwen3_asr') {
+    const q = req.qwen || {};
+    return [
+      'qwen3_asr',
+      q.encoder,
+      q.decoder,
+      req.params.num_threads,
+      req.params.provider,
+      req.params.max_total_len,
+      req.params.max_new_tokens,
+      req.params.temperature,
+      req.params.top_p,
+      req.params.seed,
+    ].join('|');
+  }
   return [
     req.modelType,
     req.asrModel,
@@ -70,12 +85,44 @@ function buildRecognizerConfig(modelType, asrModel, tokens, p) {
   };
 }
 
+// Qwen3-ASR：四件套映射到 qwen3Asr 块。原生绑定先 memset(0) 再覆盖存在的键，
+// 故每个数值字段都必须显式给值，否则 maxTotalLen/maxNewTokens 等会变 0 导致解码失败。
+function buildQwenRecognizerConfig(q, p) {
+  return {
+    featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
+    modelConfig: {
+      qwen3Asr: {
+        convFrontend: q.convFrontend,
+        encoder: q.encoder,
+        decoder: q.decoder,
+        tokenizer: q.tokenizer,
+        maxTotalLen: p.max_total_len,
+        maxNewTokens: p.max_new_tokens,
+        temperature: p.temperature,
+        topP: p.top_p,
+        seed: p.seed,
+      },
+      tokens: '',
+      numThreads: p.num_threads,
+      provider: p.provider,
+      debug: 0,
+    },
+  };
+}
+
 function ensureLoaded(req) {
   const key = buildKey(req);
   if (recognizer && key === cacheKey) return;
-  recognizer = new sherpa.OfflineRecognizer(
-    buildRecognizerConfig(req.modelType, req.asrModel, req.tokens, req.params),
-  );
+  const config =
+    req.modelType === 'qwen3_asr'
+      ? buildQwenRecognizerConfig(req.qwen, req.params)
+      : buildRecognizerConfig(
+          req.modelType,
+          req.asrModel,
+          req.tokens,
+          req.params,
+        );
+  recognizer = new sherpa.OfflineRecognizer(config);
   vad = new sherpa.Vad(buildVadConfig(req.vadModel, req.params), 60);
   cacheKey = key;
 }

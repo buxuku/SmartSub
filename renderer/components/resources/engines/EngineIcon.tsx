@@ -46,6 +46,24 @@ const EngineIcon: React.FC<EngineIconProps> = ({ engine, className }) => {
       </svg>
     );
   }
+  if (engine === 'qwen') {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        fill="none"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="9" fill="#7C3AED" fillOpacity={0.14} />
+        <g stroke="#7C3AED" strokeWidth={1.8} strokeLinecap="round" fill="none">
+          <path d="M8 12v0.5" />
+          <path d="M10.5 9.5v5" />
+          <path d="M13.5 8v8" />
+          <path d="M16 10.5v3" />
+        </g>
+      </svg>
+    );
+  }
   if (engine === 'localCli') {
     return (
       <svg

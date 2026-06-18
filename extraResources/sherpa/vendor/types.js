@@ -245,6 +245,22 @@
  */
 
 /**
+ * Offline Qwen3-ASR model config (autoregressive decoder).
+ * NOTE: the C++ binding `memset(0)`s this struct, so all numeric fields must be
+ * passed explicitly from JS — omitted numbers fall back to 0, not C++ defaults.
+ * @typedef {Object} OfflineQwen3ASRModelConfig
+ * @property {string} [convFrontend]
+ * @property {string} [encoder]
+ * @property {string} [decoder]
+ * @property {string} [tokenizer]
+ * @property {number} [maxTotalLen]
+ * @property {number} [maxNewTokens]
+ * @property {number} [temperature]
+ * @property {number} [topP]
+ * @property {number} [seed]
+ */
+
+/**
  * Offline model config.
  * @typedef {Object} OfflineModelConfig
  * @property {OfflineTransducerModelConfig} [transducer]
@@ -262,6 +278,7 @@
  * @property {OfflineTdnnModelConfig} [tdnn]
  * @property {OfflineSenseVoiceModelConfig} [senseVoice]
  * @property {OfflineCohereTranscribeModelConfig} [cohereTranscribe]
+ * @property {OfflineQwen3ASRModelConfig} [qwen3Asr]
  * @property {string} [tokens]
  * @property {number} [numThreads]
  * @property {boolean|number} [debug]

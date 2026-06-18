@@ -59,6 +59,7 @@ import useLocalStorageState from 'hooks/useLocalStorageState';
 import fasterWhisperModels from 'lib/fasterWhisperModels.json';
 import type { TranscriptionEngine } from '../../../types/engine';
 import FunasrModelSection from '@/components/resources/FunasrModelSection';
+import QwenModelSection from '@/components/resources/QwenModelSection';
 
 type FasterWhisperModelEntry = {
   id: string;
@@ -881,6 +882,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
   const isBuiltin = engine === 'builtin';
   const isFasterWhisper = engine === 'fasterWhisper';
   const isFunasr = engine === 'funasr';
+  const isQwen = engine === 'qwen';
   const isLocalCli = engine === 'localCli';
 
   const handleImportModel = async () => {
@@ -932,7 +934,13 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
   const handleOpenModelsFolder = async () => {
     try {
       const result = await window?.ipc?.invoke('openModelsFolder', {
-        pathType: isFasterWhisper ? 'ct2' : isFunasr ? 'funasr' : 'ggml',
+        pathType: isFasterWhisper
+          ? 'ct2'
+          : isFunasr
+            ? 'funasr'
+            : isQwen
+              ? 'qwen'
+              : 'ggml',
       });
       if (!result?.success) {
         toast.error(
@@ -1051,7 +1059,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
           />
         )}
 
-        {!isLocalCli && !isFunasr && (
+        {!isLocalCli && !isFunasr && !isQwen && (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer">
               <Switch
@@ -1092,7 +1100,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
           </div>
         )}
 
-        {!isLocalCli && !isFunasr && (
+        {!isLocalCli && !isFunasr && !isQwen && (
           <div className="relative px-0.5">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
             <Input
@@ -1104,7 +1112,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
           </div>
         )}
 
-        {(isBuiltin || isFasterWhisper || isFunasr) && (
+        {(isBuiltin || isFasterWhisper || isFunasr || isQwen) && (
           <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
             <HardDrive className="h-3 w-3 shrink-0" />
             <span className="shrink-0">
@@ -1115,7 +1123,9 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
                 ? systemInfo.fasterWhisperModelsPath
                 : isFunasr
                   ? systemInfo?.funasrModelsPath
-                  : systemInfo?.modelsPath}
+                  : isQwen
+                    ? systemInfo?.qwenModelsPath
+                    : systemInfo?.modelsPath}
             </span>
             <button
               type="button"
@@ -1125,7 +1135,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
               <FolderOpen className="h-3 w-3" />
               <span>{t('openModelsFolder')}</span>
             </button>
-            {!isFunasr && (
+            {!isFunasr && !isQwen && (
               <>
                 <span className="text-muted-foreground/50">·</span>
                 <button
@@ -1146,6 +1156,8 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
           </p>
         ) : isFunasr ? (
           <FunasrModelSection onUpdate={onUpdate} />
+        ) : isQwen ? (
+          <QwenModelSection onUpdate={onUpdate} />
         ) : installedOnly && !hasAnyInstalled ? (
           <p className="text-sm text-muted-foreground py-8 text-center">
             {t('noInstalledModels')}

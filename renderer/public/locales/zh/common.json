@@ -261,6 +261,7 @@
     "builtin": "Whisper.cpp",
     "fasterWhisper": "Faster-Whisper",
     "funasr": "FunASR",
+    "qwen": "Qwen3-ASR",
     "localCli": "本地命令"
   }
 }

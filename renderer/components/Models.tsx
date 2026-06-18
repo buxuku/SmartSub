@@ -26,6 +26,12 @@ interface IProps {
   pythonEngineStatus?: EngineStatus;
   /** funasr 运行库是否已安装（用于过滤未装引擎的模型） */
   funasrEngineInstalled?: boolean;
+  /** qwen 共享 silero VAD 是否就绪 */
+  qwenVadInstalled?: boolean;
+  /** qwen 已安装模型 id 列表 */
+  qwenModelsInstalled?: string[];
+  /** qwen 运行库（与 funasr 同库）是否已安装 */
+  qwenEngineInstalled?: boolean;
   /** 是否把 localCli 作为独立分组列出（内置规范模型名，保 `${whisperModel}` 替换）。 */
   includeLocalCli?: boolean;
   /** 当前选中的引擎与模型（二者共同决定选中项；任一缺失或不在分组内则视为未选）。 */
@@ -53,6 +59,9 @@ const Models = React.forwardRef<
     funasrAsrModelsInstalled,
     pythonEngineStatus,
     funasrEngineInstalled,
+    qwenVadInstalled,
+    qwenModelsInstalled,
+    qwenEngineInstalled,
     includeLocalCli,
     engine,
     model,
@@ -69,6 +78,9 @@ const Models = React.forwardRef<
       funasrAsrModelsInstalled,
       pythonEngineStatus,
       funasrEngineInstalled,
+      qwenVadInstalled,
+      qwenModelsInstalled,
+      qwenEngineInstalled,
     },
     { includeLocalCli },
   );

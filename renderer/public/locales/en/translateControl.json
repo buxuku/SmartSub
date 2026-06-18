@@ -75,6 +75,8 @@
   "requestIntervalTip": "Wait time between consecutive requests (in seconds), useful for APIs with rate limits. Set to 0 for no delay. Example: for 10 requests/minute limit, set to 6.",
   "batchSizeTip": "Number of subtitle lines per translation batch — 5 to 20 is recommended",
   "providerRemoved": "Provider \"{{name}}\" removed",
+  "confirmRemoveProvider": "Remove this provider?",
+  "removeProviderConfirmDesc": "After removal, the configuration (including the API key) for provider \"{{name}}\" will be deleted and you'll need to add it again.",
   "option": {
     "disabled": "Disabled",
     "json_object": "JSON Object",

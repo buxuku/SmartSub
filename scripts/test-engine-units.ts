@@ -44,9 +44,11 @@ import {
 import {
   buildVadConfig,
   buildRecognizerConfig,
+  buildQwenRecognizerConfig,
   segmentTiming,
   progressPercent,
 } from '../main/helpers/sherpaOnnx/sherpaConfig';
+import { buildQwenParams } from '../main/helpers/engines/qwenParams';
 import {
   getSelectableModelsForEngine,
   getInstalledModelsForEngine,
@@ -533,6 +535,47 @@ eq(
   'engineModels: funasr selectable empty when undefined',
 );
 
+// --- engineModels: qwen awareness ---
+const qwenReady = {
+  transcriptionEngine: 'qwen' as const,
+  qwenEngineInstalled: true,
+  qwenVadInstalled: true,
+  qwenModelsInstalled: ['qwen3-asr-0.6b'],
+};
+eq(
+  getSelectableModelsForEngine(qwenReady),
+  ['qwen3-asr-0.6b'],
+  'engineModels: qwen selectable = installed qwen models',
+);
+eq(
+  getInstalledModelsForEngine(qwenReady),
+  ['qwen3-asr-0.6b'],
+  'engineModels: qwen installed = installed qwen models',
+);
+eq(
+  hasModelsForEngine(qwenReady),
+  true,
+  'engineModels: qwen ready w/ vad+model',
+);
+eq(
+  hasModelsForEngine({
+    transcriptionEngine: 'qwen',
+    qwenVadInstalled: false,
+    qwenModelsInstalled: ['qwen3-asr-0.6b'],
+  }),
+  false,
+  'engineModels: qwen not ready without vad',
+);
+eq(
+  hasModelsForEngine({
+    transcriptionEngine: 'qwen',
+    qwenVadInstalled: true,
+    qwenModelsInstalled: [],
+  }),
+  false,
+  'engineModels: qwen not ready without model',
+);
+
 // --- sherpaConfig: VAD/recognizer 映射 + 段时间/进度 ---
 const SHERPA_P = {
   language: 'auto',
@@ -589,6 +632,93 @@ eq(
 );
 eq(progressPercent(50, 200), 25, 'sherpa: progress 25%');
 eq(progressPercent(5, 0), 100, 'sherpa: progress total 0 -> 100');
+
+// --- sherpa: qwen3_asr recognizer config 映射 ---
+const QWEN_RP = {
+  num_threads: 2,
+  provider: 'cpu',
+  max_total_len: 512,
+  max_new_tokens: 128,
+  temperature: 1e-6,
+  top_p: 0.8,
+  seed: 42,
+  vad_threshold: 0.5,
+  vad_min_silence_duration_ms: 100,
+  vad_min_speech_duration_ms: 250,
+  vad_max_speech_duration_s: 0,
+};
+eq(
+  buildQwenRecognizerConfig(
+    {
+      convFrontend: '/m/conv.onnx',
+      encoder: '/m/enc.onnx',
+      decoder: '/m/dec.onnx',
+      tokenizer: '/m/tokenizer',
+    },
+    QWEN_RP,
+  ).modelConfig.qwen3Asr,
+  {
+    convFrontend: '/m/conv.onnx',
+    encoder: '/m/enc.onnx',
+    decoder: '/m/dec.onnx',
+    tokenizer: '/m/tokenizer',
+    maxTotalLen: 512,
+    maxNewTokens: 128,
+    temperature: 1e-6,
+    topP: 0.8,
+    seed: 42,
+  },
+  'sherpa: qwen3_asr maps four files + all decode params (memset-safe)',
+);
+eq(
+  buildQwenRecognizerConfig(
+    { convFrontend: '', encoder: '', decoder: '', tokenizer: '' },
+    QWEN_RP,
+  ).modelConfig.tokens,
+  '',
+  'sherpa: qwen3_asr uses empty tokens (tokenizer dir instead)',
+);
+// VAD 配置在 funasr / qwen 间共享（结构兼容）
+eq(
+  buildVadConfig('/m/silero_vad.onnx', QWEN_RP).sileroVad.windowSize,
+  512,
+  'sherpa: qwen reuses shared VAD config builder',
+);
+
+// --- qwenParams: 默认值对齐 sherpa 上游 ---
+eq(
+  buildQwenParams({}),
+  {
+    provider: 'cpu',
+    num_threads: 2,
+    max_total_len: 512,
+    max_new_tokens: 128,
+    temperature: 1e-6,
+    top_p: 0.8,
+    seed: 42,
+    vad_threshold: 0.5,
+    vad_min_silence_duration_ms: 100,
+    vad_min_speech_duration_ms: 250,
+    vad_max_speech_duration_s: 0,
+  },
+  'qwen: default params match sherpa upstream defaults',
+);
+eq(
+  buildQwenParams({ qwenProvider: 'cuda', qwenNumThreads: 4 }).provider,
+  'cuda',
+  'qwen: cuda provider passthrough',
+);
+eq(
+  buildQwenParams({ qwenProvider: 'metal' as never }).provider,
+  'cpu',
+  'qwen: unknown provider falls back to cpu',
+);
+eq(
+  buildQwenParams({ qwenMaxNewTokens: 256, qwenTemperature: 0.2 })
+    .max_new_tokens,
+  256,
+  'qwen: custom max_new_tokens passthrough',
+);
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) {

@@ -288,6 +288,33 @@ export function registerEngineIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    'set-qwen-settings',
+    async (
+      _event,
+      {
+        provider,
+        numThreads,
+      }: {
+        provider?: 'cpu' | 'cuda';
+        numThreads?: number;
+      },
+    ) => {
+      try {
+        const settings = store.get('settings');
+        store.set('settings', {
+          ...settings,
+          ...(provider !== undefined ? { qwenProvider: provider } : {}),
+          ...(numThreads !== undefined ? { qwenNumThreads: numThreads } : {}),
+        });
+        return { success: true };
+      } catch (error) {
+        logMessage(`Error setting qwen settings: ${error}`, 'error');
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle(
     'python-engine:ping',
     async (_event, payload?: { engineId?: PyEngineId }) => {
       try {

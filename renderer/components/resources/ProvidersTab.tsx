@@ -44,6 +44,16 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { useConfirmOrUndo } from 'hooks/useConfirmOrUndo';
@@ -122,6 +132,10 @@ const ProvidersTab: React.FC = () => {
   const { t } = useTranslation('translateControl');
   const { t: commonT } = useTranslation('common');
   const confirmOrUndo = useConfirmOrUndo();
+  const [removeTarget, setRemoveTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [showPassword, setShowPassword] = useState<Record<string, boolean>>({});
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
@@ -621,7 +635,7 @@ const ProvidersTab: React.FC = () => {
                     className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded flex-shrink-0 ml-2 cursor-pointer"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleRemoveProvider(provider.id);
+                      setRemoveTarget({ id: provider.id, name: provider.name });
                     }}
                   >
                     <Trash2 size={14} />
@@ -922,6 +936,40 @@ const ProvidersTab: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={removeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoveTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('confirmRemoveProvider')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('removeProviderConfirmDesc', {
+                name: removeTarget?.name ?? '',
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="gap-1.5">
+              <X className="h-4 w-4" />
+              {commonT('cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (removeTarget) handleRemoveProvider(removeTarget.id);
+                setRemoveTarget(null);
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+              {commonT('delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

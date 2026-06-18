@@ -75,6 +75,8 @@
   "requestInterval": "请求间隔（秒）",
   "requestIntervalTip": "每次请求之间的等待时间（秒），用于应对 API 速率限制。设为 0 表示不等待。例如：API 限制每分钟 10 次请求，可设为 6。",
   "providerRemoved": "已删除服务商「{{name}}」",
+  "confirmRemoveProvider": "确认删除该服务商？",
+  "removeProviderConfirmDesc": "删除后服务商「{{name}}」的配置（含 API Key）将被移除，需要重新添加。",
   "option": {
     "disabled": "不使用",
     "json_object": "JSON Object（标准 JSON 对象）",

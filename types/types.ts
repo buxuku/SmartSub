@@ -16,6 +16,14 @@ export interface ISystemInfo {
   funasrAsrModelsInstalled?: string[];
   /** funasr 模型根目录（固定路径，仅展示用，不可更改） */
   funasrModelsPath?: string;
+  /** qwen 引擎包（sherpa-onnx，与 funasr 同库）是否已安装 */
+  qwenEngineInstalled?: boolean;
+  /** qwen 共用 silero VAD 是否已安装 */
+  qwenVadInstalled?: boolean;
+  /** 已安装的 qwen 模型 id（如 ['qwen3-asr-0.6b']） */
+  qwenModelsInstalled?: string[];
+  /** qwen 模型根目录（固定路径，仅展示用，不可更改） */
+  qwenModelsPath?: string;
 }
 
 export interface IFiles {

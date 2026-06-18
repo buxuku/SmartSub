@@ -2,6 +2,7 @@ export type TranscriptionEngine =
   | 'builtin'
   | 'fasterWhisper'
   | 'funasr'
+  | 'qwen'
   | 'localCli';
 
 export type EngineStatusState =

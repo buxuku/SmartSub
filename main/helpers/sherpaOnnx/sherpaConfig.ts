@@ -37,6 +37,18 @@ export interface OfflineRecognizerConfig {
       useInverseTextNormalization: number;
     };
     paraformer?: { model: string };
+    /** Qwen3-ASR 四件套 + 自回归解码参数（sherpa-onnx >= 1.12.34）。 */
+    qwen3Asr?: {
+      convFrontend: string;
+      encoder: string;
+      decoder: string;
+      tokenizer: string;
+      maxTotalLen: number;
+      maxNewTokens: number;
+      temperature: number;
+      topP: number;
+      seed: number;
+    };
     tokens: string;
     numThreads: number;
     provider: string;
@@ -44,9 +56,17 @@ export interface OfflineRecognizerConfig {
   };
 }
 
+/** buildVadConfig 仅需的 VAD 字段（funasr / qwen 参数均结构兼容）。 */
+export interface SherpaVadParams {
+  vad_threshold: number;
+  vad_min_silence_duration_ms: number;
+  vad_min_speech_duration_ms: number;
+  vad_max_speech_duration_s: number;
+}
+
 export function buildVadConfig(
   vadModel: string,
-  p: FunasrAddonParams,
+  p: SherpaVadParams,
 ): VadConfig {
   return {
     sileroVad: {
@@ -91,6 +111,55 @@ export function buildRecognizerConfig(
   return {
     featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
     modelConfig,
+  };
+}
+
+/** Qwen3-ASR 解码相关参数（VAD 字段见 SherpaVadParams）。 */
+export interface QwenRecognizerParams {
+  num_threads: number;
+  provider: string;
+  max_total_len: number;
+  max_new_tokens: number;
+  temperature: number;
+  top_p: number;
+  seed: number;
+}
+
+/**
+ * Qwen3-ASR OfflineRecognizer 配置：四件套（convFrontend/encoder/decoder + tokenizer 目录）
+ * 映射到 sherpa 的 `qwen3Asr` 块。Qwen 无 tokens.txt（用 tokenizer 目录），故 tokens 置空。
+ *
+ * ⚠️ 原生绑定对该 config 先 `memset(0)` 再按存在的键覆盖，故每个数值字段都必须显式给值，
+ *    否则 maxTotalLen / maxNewTokens 等会变成 0（而非 C++ 结构体默认值）导致解码失败。
+ */
+export function buildQwenRecognizerConfig(
+  files: {
+    convFrontend: string;
+    encoder: string;
+    decoder: string;
+    tokenizer: string;
+  },
+  p: QwenRecognizerParams,
+): OfflineRecognizerConfig {
+  return {
+    featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
+    modelConfig: {
+      qwen3Asr: {
+        convFrontend: files.convFrontend,
+        encoder: files.encoder,
+        decoder: files.decoder,
+        tokenizer: files.tokenizer,
+        maxTotalLen: p.max_total_len,
+        maxNewTokens: p.max_new_tokens,
+        temperature: p.temperature,
+        topP: p.top_p,
+        seed: p.seed,
+      },
+      tokens: '',
+      numThreads: p.num_threads,
+      provider: p.provider,
+      debug: 0,
+    },
   };
 }
 

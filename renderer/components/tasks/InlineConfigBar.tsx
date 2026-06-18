@@ -113,6 +113,9 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
               funasrAsrModelsInstalled={systemInfo?.funasrAsrModelsInstalled}
               pythonEngineStatus={systemInfo?.pythonEngineStatus}
               funasrEngineInstalled={systemInfo?.funasrEngineInstalled}
+              qwenVadInstalled={systemInfo?.qwenVadInstalled}
+              qwenModelsInstalled={systemInfo?.qwenModelsInstalled}
+              qwenEngineInstalled={systemInfo?.qwenEngineInstalled}
               includeLocalCli={includeLocalCli}
             />
           ) : (

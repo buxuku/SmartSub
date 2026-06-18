@@ -4,6 +4,16 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { CheckCircle2, Download, Trash2, X, Mic, Waves } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -28,6 +38,9 @@ const FunasrModelSection: React.FC<{ onUpdate?: () => void }> = ({
   const [status, setStatus] = useState<FunasrModelStatus | null>(null);
   const [progress, setProgress] = useState<Record<string, number>>({});
   const [downloading, setDownloading] = useState<FunasrModelId | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<FunasrModelId | null>(
+    null,
+  );
 
   const load = useCallback(async () => {
     try {
@@ -99,6 +112,13 @@ const FunasrModelSection: React.FC<{ onUpdate?: () => void }> = ({
     }
   };
 
+  const confirmDelete = async () => {
+    if (!confirmDeleteId) return;
+    const id = confirmDeleteId;
+    setConfirmDeleteId(null);
+    await handleDelete(id);
+  };
+
   const renderRow = (id: FunasrModelId, Icon: typeof Mic) => {
     const installed = isInstalled(id);
     const isBusy = downloading === id;
@@ -143,7 +163,7 @@ const FunasrModelSection: React.FC<{ onUpdate?: () => void }> = ({
               size="sm"
               variant="ghost"
               className="gap-1.5 text-muted-foreground hover:text-destructive"
-              onClick={() => handleDelete(id)}
+              onClick={() => setConfirmDeleteId(id)}
             >
               <Trash2 className="h-3.5 w-3.5" />
               {t('engines.funasr.modelDelete')}
@@ -194,6 +214,35 @@ const FunasrModelSection: React.FC<{ onUpdate?: () => void }> = ({
           </CardContent>
         </Card>
       </section>
+
+      <AlertDialog
+        open={confirmDeleteId !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDeleteId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{commonT('confirmDeleteModel')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {commonT('deleteModelDesc')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="gap-1.5">
+              <X className="h-4 w-4" />
+              {commonT('cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDelete}
+            >
+              <Trash2 className="h-4 w-4" />
+              {commonT('delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

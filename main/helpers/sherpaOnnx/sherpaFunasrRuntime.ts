@@ -4,13 +4,23 @@ import { logMessage } from '../storeManager';
 import { getExtraResourcesPath } from '../utils';
 import { getSherpaLibDir, isSherpaLibInstalled } from './sherpaLibPaths';
 import type { FunasrAddonParams } from '../engines/funasrParams';
+import type { QwenAddonParams } from '../engines/qwenParams';
 
 export interface SherpaModelRequest {
-  asrModel: string;
-  tokens: string;
   vadModel: string;
-  modelType: 'sense_voice' | 'paraformer';
-  params: FunasrAddonParams;
+  modelType: 'sense_voice' | 'paraformer' | 'qwen3_asr';
+  /** sense_voice / paraformer：单模型文件 + tokens.txt。 */
+  asrModel?: string;
+  tokens?: string;
+  /** qwen3_asr：四件套（tokenizer 为目录）。 */
+  qwen?: {
+    convFrontend: string;
+    encoder: string;
+    decoder: string;
+    tokenizer: string;
+  };
+  /** funasr 用 FunasrAddonParams；qwen 用 QwenAddonParams（共享 VAD/线程字段）。 */
+  params: FunasrAddonParams | QwenAddonParams;
 }
 
 export interface Segment {
@@ -133,3 +143,9 @@ export function getSherpaFunasrRuntime(): SherpaFunasrRuntime {
   if (!runtime) runtime = new SherpaFunasrRuntime();
   return runtime;
 }
+
+/**
+ * 引擎无关的 sherpa ASR 运行时入口（D4）：funasr 与 qwen 复用同一常驻 worker 与缓存。
+ * worker 依 `SherpaModelRequest.modelType` 选择 sense_voice / paraformer / qwen3_asr 分支。
+ */
+export const getSherpaAsrRuntime = getSherpaFunasrRuntime;

@@ -20,6 +20,12 @@ export interface EngineModelInfo {
   pythonEngineStatus?: EngineStatus;
   /** funasr 运行库（sherpa-onnx）是否已安装 */
   funasrEngineInstalled?: boolean;
+  /** qwen 共享 silero VAD 是否就绪 */
+  qwenVadInstalled?: boolean;
+  /** qwen 已安装的模型 id 列表 */
+  qwenModelsInstalled?: string[];
+  /** qwen 运行库（sherpa-onnx，与 funasr 同库）是否已安装 */
+  qwenEngineInstalled?: boolean;
 }
 
 /** 解析当前转写引擎，兼容旧的 useLocalWhisper 开关 */
@@ -50,6 +56,9 @@ export function getInstalledModelsForEngine(
   if (engine === 'funasr') {
     return info?.funasrAsrModelsInstalled ?? [];
   }
+  if (engine === 'qwen') {
+    return info?.qwenModelsInstalled ?? [];
+  }
   return info?.modelsInstalled ?? [];
 }
 
@@ -73,6 +82,9 @@ export function getSelectableModelsForEngine(
   if (engine === 'funasr') {
     return info?.funasrAsrModelsInstalled ?? [];
   }
+  if (engine === 'qwen') {
+    return info?.qwenModelsInstalled ?? [];
+  }
   return info?.modelsInstalled ?? [];
 }
 
@@ -87,6 +99,11 @@ export function hasModelsForEngine(
     return (
       !!info?.funasrVadInstalled &&
       (info?.funasrAsrModelsInstalled?.length ?? 0) > 0
+    );
+  }
+  if (engine === 'qwen') {
+    return (
+      !!info?.qwenVadInstalled && (info?.qwenModelsInstalled?.length ?? 0) > 0
     );
   }
   return getInstalledModelsForEngine(info, useLocalWhisper).length > 0;
@@ -164,6 +181,15 @@ export function getEngineModelGroups(
     groups.push({ engine: 'funasr', models: funasrAsr });
   }
 
+  const qwenModels = info?.qwenModelsInstalled ?? [];
+  if (
+    info?.qwenVadInstalled &&
+    qwenModels.length &&
+    info?.qwenEngineInstalled
+  ) {
+    groups.push({ engine: 'qwen', models: qwenModels });
+  }
+
   if (opts?.includeLocalCli) {
     groups.push({ engine: 'localCli', models: models.map((m) => m.name) });
   }
@@ -191,6 +217,13 @@ export function hasAnyModelAnyEngine(
     info?.funasrVadInstalled &&
     (info?.funasrAsrModelsInstalled?.length ?? 0) > 0 &&
     info?.funasrEngineInstalled
+  ) {
+    return true;
+  }
+  if (
+    info?.qwenVadInstalled &&
+    (info?.qwenModelsInstalled?.length ?? 0) > 0 &&
+    info?.qwenEngineInstalled
   ) {
     return true;
   }

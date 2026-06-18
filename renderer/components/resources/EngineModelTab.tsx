@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 import { cn } from 'lib/utils';
 import FasterWhisperPanel from '@/components/resources/engines/panels/FasterWhisperPanel';
 import FunasrPanel from '@/components/resources/engines/panels/FunasrPanel';
+import QwenPanel from '@/components/resources/engines/panels/QwenPanel';
 import LocalCliPanel from '@/components/resources/engines/panels/LocalCliPanel';
 import BuiltinPanel from '@/components/resources/engines/panels/BuiltinPanel';
 import EngineIcon from '@/components/resources/engines/EngineIcon';
@@ -43,6 +44,7 @@ const ENGINES: TranscriptionEngine[] = [
   'builtin',
   'fasterWhisper',
   'funasr',
+  'qwen',
   'localCli',
 ];
 
@@ -95,6 +97,8 @@ const EngineModelTab: React.FC = () => {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [funasrPkgInstalled, setFunasrPkgInstalled] = useState(false);
   const [funasrModelsReady, setFunasrModelsReady] = useState(false);
+  const [qwenPkgInstalled, setQwenPkgInstalled] = useState(false);
+  const [qwenModelsReady, setQwenModelsReady] = useState(false);
   const [binarySource, setBinarySource] = useState<DownloadSource>(() =>
     typeof window === 'undefined' ? 'github' : readPersistedDownloadSource(),
   );
@@ -147,6 +151,12 @@ const EngineModelTab: React.FC = () => {
       if (fr?.success) {
         setFunasrPkgInstalled(!!fr.engineInstalled);
         setFunasrModelsReady(!!fr.ready);
+      }
+
+      const qr = await window?.ipc?.invoke('getQwenModelStatus');
+      if (qr?.success) {
+        setQwenPkgInstalled(!!qr.engineInstalled);
+        setQwenModelsReady(!!qr.ready);
       }
     } catch (error) {
       console.error('Failed to refresh engine status:', error);
@@ -395,6 +405,21 @@ const EngineModelTab: React.FC = () => {
         </Badge>
       );
     }
+    if (engine === 'qwen') {
+      if (qwenPkgInstalled && qwenModelsReady) return readyBadge;
+      if (qwenPkgInstalled && !qwenModelsReady) {
+        return (
+          <Badge variant="outline" className="border-primary/40 text-primary">
+            {t('engines.qwen.needsModels')}
+          </Badge>
+        );
+      }
+      return (
+        <Badge variant="outline" className="shrink-0 text-muted-foreground">
+          {t('engines.qwen.notInstalled')}
+        </Badge>
+      );
+    }
     if (engine === 'localCli') {
       return localCliReady ? (
         readyBadge
@@ -417,6 +442,9 @@ const EngineModelTab: React.FC = () => {
     }
     if (engine === 'funasr') {
       return funasrPkgInstalled && funasrModelsReady ? 'ready' : 'pending';
+    }
+    if (engine === 'qwen') {
+      return qwenPkgInstalled && qwenModelsReady ? 'ready' : 'pending';
     }
     if (engine === 'localCli') return localCliReady ? 'ready' : 'pending';
     return 'ready';
@@ -487,6 +515,16 @@ const EngineModelTab: React.FC = () => {
       return (
         <FunasrPanel
           status={engineStatuses.funasr}
+          taskBusy={taskBusy}
+          defaultSource={binarySource}
+          onRefreshStatuses={refresh}
+        />
+      );
+    }
+    if (selectedEngine === 'qwen') {
+      return (
+        <QwenPanel
+          status={engineStatuses.qwen}
           taskBusy={taskBusy}
           defaultSource={binarySource}
           onRefreshStatuses={refresh}

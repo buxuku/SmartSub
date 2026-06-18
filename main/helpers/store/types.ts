@@ -55,6 +55,20 @@ export type StoreType = {
     funasrUseItn?: boolean;
     /** FunASR 解码线程数，默认 2 */
     funasrNumThreads?: number;
+    /** Qwen3-ASR(sherpa-onnx) 推理 provider；P2 仅 cpu 落地，cuda 预留 */
+    qwenProvider?: 'cpu' | 'cuda';
+    /** Qwen3-ASR 解码线程数，默认 2 */
+    qwenNumThreads?: number;
+    /** Qwen3-ASR 最大总序列长度，默认 512（对齐 sherpa 上游） */
+    qwenMaxTotalLen?: number;
+    /** Qwen3-ASR 单段最大新生成 token 数，默认 128 */
+    qwenMaxNewTokens?: number;
+    /** Qwen3-ASR 采样温度，默认 1e-6（近贪心，确定性） */
+    qwenTemperature?: number;
+    /** Qwen3-ASR top-p 采样阈值，默认 0.8 */
+    qwenTopP?: number;
+    /** Qwen3-ASR 随机种子，默认 42 */
+    qwenSeed?: number;
     /** 全局网络代理模式（none=直连；custom=手动 URL） */
     proxyMode?: 'none' | 'custom';
     /** custom 模式的代理 URL，如 http://user:pass@host:port */
