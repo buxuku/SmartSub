@@ -22,6 +22,9 @@ import LocalCliPanel from '@/components/resources/engines/panels/LocalCliPanel';
 import BuiltinPanel from '@/components/resources/engines/panels/BuiltinPanel';
 import EngineIcon from '@/components/resources/engines/EngineIcon';
 import ModelLibrarySection from '@/components/resources/ModelLibrarySection';
+import DownloadSourceSelector from '@/components/resources/engines/DownloadSourceSelector';
+import { useSherpaRuntime } from '@/components/resources/engines/useSherpaRuntime';
+import useLocalStorageState from 'hooks/useLocalStorageState';
 import {
   readPersistedDownloadSource,
   persistDownloadSource,
@@ -52,9 +55,11 @@ function isQueueBusy(status: string | undefined): boolean {
   return status === 'running' || status === 'paused' || status === 'cancelling';
 }
 
-function StatusDot({ tone }: { tone: StatusTone }) {
+function StatusDot({ tone, label }: { tone: StatusTone; label?: string }) {
   return (
     <span
+      role="img"
+      aria-label={label}
       className={cn(
         'h-2 w-2 shrink-0 rounded-full',
         tone === 'ready' && 'bg-success',
@@ -75,8 +80,16 @@ const EngineModelTab: React.FC = () => {
   const { t } = useTranslation('resources');
   const { t: commonT } = useTranslation('common');
 
+  // 记住上次选中的引擎，避免每次进入页面都跳回 builtin。
   const [selectedEngine, setSelectedEngine] =
-    useState<TranscriptionEngine>('builtin');
+    useLocalStorageState<TranscriptionEngine>(
+      'engineModelSelectedEngine',
+      'builtin',
+      (v) => (ENGINES as string[]).includes(v as string),
+    );
+
+  // FunASR 与 Qwen 共用的 sherpa-onnx 运行库状态（上提到此常驻组件，切换引擎不丢进度）。
+  const sherpa = useSherpaRuntime();
 
   // 引擎运行时状态
   const [engineStatuses, setEngineStatuses] = useState<EngineStatuses>({});
@@ -432,8 +445,13 @@ const EngineModelTab: React.FC = () => {
         </Badge>
       );
     }
-    // builtin：内置运行时无需安装，始终就绪；模型可用性在下方模型清单单独体现。
-    return readyBadge;
+    // builtin：内置运行时无需安装；未装任何 ggml 模型时提示去下载模型。
+    if ((systemInfo.modelsInstalled?.length ?? 0) > 0) return readyBadge;
+    return (
+      <Badge variant="outline" className="border-primary/40 text-primary">
+        {t('engines.builtin.needsModels')}
+      </Badge>
+    );
   };
 
   const engineTone = (engine: TranscriptionEngine): StatusTone => {
@@ -450,41 +468,37 @@ const EngineModelTab: React.FC = () => {
       return qwenPkgInstalled && qwenModelsReady ? 'ready' : 'pending';
     }
     if (engine === 'localCli') return localCliReady ? 'ready' : 'pending';
-    return 'ready';
+    // builtin：内置运行时始终可用，但未装任何模型则无法转写，按待办呈现。
+    return (systemInfo.modelsInstalled?.length ?? 0) > 0 ? 'ready' : 'pending';
   };
 
   const engineName = (engine: TranscriptionEngine) =>
     t(`engines.${engine}.name`);
 
+  const statusLabel = (tone: StatusTone) => t(`engines.status.${tone}`);
+
+  const handleBinarySourceChange = (s: DownloadSource) => {
+    setBinarySource(s);
+    persistDownloadSource(s);
+  };
+
   const renderBinarySourceSelector = () => (
-    <div className="space-y-1.5">
-      <p className="text-xs font-medium text-muted-foreground">
-        {t('engines.fasterWhisper.downloadSource')}
-      </p>
-      <div className="flex gap-2">
-        {(['github', 'ghproxy', 'gitcode'] as DownloadSource[]).map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => {
-              setBinarySource(s);
-              persistDownloadSource(s);
-            }}
-            className={`flex-1 px-3 py-2 rounded-md border text-xs transition-all ${
-              binarySource === s
-                ? 'border-primary bg-primary/5 font-medium'
-                : 'border-muted hover:border-primary/50'
-            }`}
-          >
-            {s === 'github'
+    <DownloadSourceSelector
+      label={t('engines.fasterWhisper.downloadSource')}
+      value={binarySource}
+      options={(['github', 'ghproxy', 'gitcode'] as DownloadSource[]).map(
+        (s) => ({
+          value: s,
+          label:
+            s === 'github'
               ? 'GitHub'
               : s === 'gitcode'
                 ? 'GitCode'
-                : t('ghProxy')}
-          </button>
-        ))}
-      </div>
-    </div>
+                : t('ghProxy'),
+        }),
+      )}
+      onChange={(s) => handleBinarySourceChange(s as DownloadSource)}
+    />
   );
 
   const fasterWhisperPanelProps = {
@@ -519,7 +533,9 @@ const EngineModelTab: React.FC = () => {
         <FunasrPanel
           status={engineStatuses.funasr}
           taskBusy={taskBusy}
-          defaultSource={binarySource}
+          runtime={sherpa}
+          binarySource={binarySource}
+          onBinarySourceChange={handleBinarySourceChange}
           onRefreshStatuses={refresh}
         />
       );
@@ -529,7 +545,9 @@ const EngineModelTab: React.FC = () => {
         <QwenPanel
           status={engineStatuses.qwen}
           taskBusy={taskBusy}
-          defaultSource={binarySource}
+          runtime={sherpa}
+          binarySource={binarySource}
+          onBinarySourceChange={handleBinarySourceChange}
           onRefreshStatuses={refresh}
         />
       );
@@ -555,10 +573,12 @@ const EngineModelTab: React.FC = () => {
         <nav className="flex shrink-0 gap-1 overflow-x-auto md:w-52 md:flex-col md:overflow-visible md:border-r md:pr-2">
           {ENGINES.map((id) => {
             const active = selectedEngine === id;
+            const tone = engineTone(id);
             return (
               <button
                 key={id}
                 type="button"
+                aria-current={active ? 'true' : undefined}
                 onClick={() => setSelectedEngine(id)}
                 className={cn(
                   'flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
@@ -571,7 +591,7 @@ const EngineModelTab: React.FC = () => {
                 <EngineIcon engine={id} className="h-4 w-4 shrink-0" />
                 <span className="truncate">{engineName(id)}</span>
                 <span className="ml-auto">
-                  <StatusDot tone={engineTone(id)} />
+                  <StatusDot tone={tone} label={statusLabel(tone)} />
                 </span>
               </button>
             );

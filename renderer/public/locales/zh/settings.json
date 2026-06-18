@@ -34,7 +34,7 @@
     },
     "huggingFaceMirror": {
       "label": "HuggingFace 镜像",
-      "hint": "下载 Whisper / FasterWhisper / FunASR 模型所用的 HuggingFace 镜像域名，例如 hf-mirror.com"
+      "hint": "下载 Whisper / FasterWhisper / FunASR 模型所用的 HuggingFace 镜像地址（含协议、无需末尾斜杠），例如 https://hf-mirror.com"
     },
     "modelScopeBase": {
       "label": "ModelScope 站点",

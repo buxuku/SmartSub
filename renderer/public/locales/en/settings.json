@@ -34,7 +34,7 @@
     },
     "huggingFaceMirror": {
       "label": "HuggingFace mirror",
-      "hint": "HuggingFace mirror host for downloading Whisper / FasterWhisper / FunASR models, e.g. hf-mirror.com"
+      "hint": "HuggingFace mirror URL for downloading Whisper / FasterWhisper / FunASR models (include protocol, no trailing slash), e.g. https://hf-mirror.com"
     },
     "modelScopeBase": {
       "label": "ModelScope site",

@@ -14,9 +14,9 @@ export interface DownloadEndpointConfig {
   githubProxyPrefix: string;
   /** GitCode 站点 base（含协议、无末尾斜杠），如 https://gitcode.com */
   gitcodeBase: string;
-  /** HuggingFace 国内镜像 host（仅域名），如 hf-mirror.com */
+  /** HuggingFace 国内镜像 base（含协议、无末尾斜杠），如 https://hf-mirror.com */
   huggingFaceMirror: string;
-  /** HuggingFace 官方 host（仅域名），如 huggingface.co */
+  /** HuggingFace 官方 base（含协议、无末尾斜杠），如 https://huggingface.co */
   huggingFaceOfficial: string;
   /** ModelScope 站点 base（含协议、无末尾斜杠），如 https://modelscope.cn */
   modelScopeBase: string;
@@ -26,8 +26,8 @@ export const DEFAULT_DOWNLOAD_ENDPOINTS: DownloadEndpointConfig = {
   githubBase: 'https://github.com',
   githubProxyPrefix: 'https://gh-proxy.com',
   gitcodeBase: 'https://gitcode.com',
-  huggingFaceMirror: 'hf-mirror.com',
-  huggingFaceOfficial: 'huggingface.co',
+  huggingFaceMirror: 'https://hf-mirror.com',
+  huggingFaceOfficial: 'https://huggingface.co',
   modelScopeBase: 'https://modelscope.cn',
 };
 
@@ -40,17 +40,6 @@ export const EDITABLE_DOWNLOAD_ENDPOINT_KEYS: (keyof DownloadEndpointConfig)[] =
 
 function stripTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
-}
-
-/** host：仅保留主机名（去协议 / 路径 / 末尾斜杠）；空或非法回退默认。 */
-function normalizeHost(value: unknown, fallback: string): string {
-  if (typeof value !== 'string') return fallback;
-  let v = value.trim();
-  if (!v) return fallback;
-  v = v.replace(/^https?:\/\//i, '');
-  v = v.replace(/\/.*$/, '');
-  v = stripTrailingSlash(v);
-  return v || fallback;
 }
 
 /** base：含协议、无末尾斜杠；缺协议自动补 https://；空回退默认。 */
@@ -84,11 +73,11 @@ export function normalizeDownloadEndpoints(
       r.gitcodeBase,
       DEFAULT_DOWNLOAD_ENDPOINTS.gitcodeBase,
     ),
-    huggingFaceMirror: normalizeHost(
+    huggingFaceMirror: normalizeBase(
       r.huggingFaceMirror,
       DEFAULT_DOWNLOAD_ENDPOINTS.huggingFaceMirror,
     ),
-    huggingFaceOfficial: normalizeHost(
+    huggingFaceOfficial: normalizeBase(
       r.huggingFaceOfficial,
       DEFAULT_DOWNLOAD_ENDPOINTS.huggingFaceOfficial,
     ),

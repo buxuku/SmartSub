@@ -31,7 +31,7 @@ export function getFunasrProgressKey(id: FunasrModelId): string {
   return `funasr:${id}`;
 }
 
-/** 镜像优先：hf-mirror.com（国内快）→ huggingface.co。host 取自可配置端点。 */
+/** 镜像优先：hf-mirror.com（国内快）→ huggingface.co。base（含协议）取自可配置端点。 */
 function getHosts(source?: string): string[] {
   return getHfHosts(source);
 }
@@ -151,14 +151,14 @@ export class FunasrModelDownloader {
     }
 
     let lastError: unknown = null;
-    for (const host of getHosts(source)) {
+    for (const base of getHosts(source)) {
       try {
         const info = await fetchJson<{ sha?: string }>(
-          `https://${host}/api/models/${spec.repo}`,
+          `${base}/api/models/${spec.repo}`,
         );
         const revision = info.sha || 'main';
         const tree = await fetchJson<HfTreeEntry[]>(
-          `https://${host}/api/models/${spec.repo}/tree/${revision}?recursive=true`,
+          `${base}/api/models/${spec.repo}/tree/${revision}?recursive=true`,
         );
         const files = tree.filter(
           (e) =>
@@ -191,7 +191,7 @@ export class FunasrModelDownloader {
             this.update({ downloaded });
             continue;
           }
-          const url = `https://${host}/${spec.repo}/resolve/${revision}/${f.path}`;
+          const url = `${base}/${spec.repo}/resolve/${revision}/${f.path}`;
           try {
             await downloadFileParallel({
               url,
@@ -234,7 +234,7 @@ export class FunasrModelDownloader {
         };
         this.sendFinal(key, 1);
         this.currentKey = null;
-        logMessage(`funasr model ${id} downloaded from ${host}`, 'info');
+        logMessage(`funasr model ${id} downloaded from ${base}`, 'info');
         return true;
       } catch (error) {
         lastError = error;
@@ -245,7 +245,7 @@ export class FunasrModelDownloader {
           this.currentKey = null;
           throw error;
         }
-        logMessage(`funasr model ${id} from ${host} failed: ${msg}`, 'warning');
+        logMessage(`funasr model ${id} from ${base} failed: ${msg}`, 'warning');
       }
     }
     this.progress = {

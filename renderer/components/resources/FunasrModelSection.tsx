@@ -3,7 +3,6 @@ import { useTranslation } from 'next-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,8 +13,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { CheckCircle2, Download, Trash2, X, Mic, Waves } from 'lucide-react';
+import { Download, Trash2, X, Mic, Waves } from 'lucide-react';
 import { toast } from 'sonner';
+import SherpaModelRow from '@/components/resources/SherpaModelRow';
 
 type FunasrModelId = 'sensevoice-small' | 'paraformer-zh' | 'silero-vad';
 
@@ -29,9 +29,10 @@ interface FunasrModelStatus {
 const ASR_MODELS: FunasrModelId[] = ['sensevoice-small', 'paraformer-zh'];
 const VAD_MODEL: FunasrModelId = 'silero-vad';
 
-const FunasrModelSection: React.FC<{ onUpdate?: () => void }> = ({
-  onUpdate,
-}) => {
+const FunasrModelSection: React.FC<{
+  onUpdate?: () => void;
+  downSource?: string;
+}> = ({ onUpdate, downSource = 'hf-mirror' }) => {
   const { t } = useTranslation('resources');
   const { t: commonT } = useTranslation('common');
 
@@ -77,7 +78,7 @@ const FunasrModelSection: React.FC<{ onUpdate?: () => void }> = ({
     try {
       const r = await window?.ipc?.invoke('downloadFunasrModel', {
         model: id,
-        source: 'hf-mirror',
+        source: downSource,
       });
       if (r?.success) {
         await load();
@@ -123,65 +124,49 @@ const FunasrModelSection: React.FC<{ onUpdate?: () => void }> = ({
     const installed = isInstalled(id);
     const isBusy = downloading === id;
     const pct = Math.round((progress[`funasr:${id}`] ?? 0) * 100);
-    return (
-      <div
-        key={id}
-        className="flex items-center justify-between gap-3 rounded-lg border border-muted p-3"
+    const trailing = isBusy ? (
+      <Button
+        size="sm"
+        variant="ghost"
+        className="gap-1.5 text-muted-foreground"
+        onClick={handleCancel}
       >
-        <div className="flex min-w-0 items-start gap-2.5">
-          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-          <div className="min-w-0">
-            <p className="flex items-center gap-1.5 text-sm font-medium">
-              {t(`engines.funasr.models.${id}.name`)}
-              {installed && (
-                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
-              )}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {t(`engines.funasr.models.${id}.desc`)}
-            </p>
-            {isBusy && (
-              <div className="mt-1.5 w-40">
-                <Progress value={pct} />
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="shrink-0">
-          {isBusy ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="gap-1.5 text-muted-foreground"
-              onClick={handleCancel}
-            >
-              <X className="h-3.5 w-3.5" />
-              {commonT('cancel')}
-            </Button>
-          ) : installed ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="gap-1.5 text-muted-foreground hover:text-destructive"
-              onClick={() => setConfirmDeleteId(id)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              {t('engines.funasr.modelDelete')}
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5"
-              disabled={!!downloading}
-              onClick={() => handleDownload(id)}
-            >
-              <Download className="h-3.5 w-3.5" />
-              {t('engines.funasr.modelDownload')}
-            </Button>
-          )}
-        </div>
-      </div>
+        <X className="h-3.5 w-3.5" />
+        {commonT('cancel')}
+      </Button>
+    ) : installed ? (
+      <Button
+        size="sm"
+        variant="ghost"
+        className="gap-1.5 text-muted-foreground hover:text-destructive"
+        onClick={() => setConfirmDeleteId(id)}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+        {t('engines.funasr.modelDelete')}
+      </Button>
+    ) : (
+      <Button
+        size="sm"
+        variant="outline"
+        className="gap-1.5"
+        disabled={!!downloading}
+        onClick={() => handleDownload(id)}
+      >
+        <Download className="h-3.5 w-3.5" />
+        {t('engines.funasr.modelDownload')}
+      </Button>
+    );
+    return (
+      <SherpaModelRow
+        key={id}
+        icon={Icon}
+        name={t(`engines.funasr.models.${id}.name`)}
+        desc={t(`engines.funasr.models.${id}.desc`)}
+        installed={installed}
+        busy={isBusy}
+        progressPercent={pct}
+        trailing={trailing}
+      />
     );
   };
 

@@ -34,6 +34,7 @@ import { ISystemInfo } from '../../../types/types';
 import DeleteModel from '@/components/DeleteModel';
 import DownModel, { type ModelDownloadFormat } from '@/components/DownModel';
 import DownModelButton from '@/components/DownModelButton';
+import useDownloadEndpoints from 'hooks/useDownloadEndpoints';
 import {
   Upload,
   Copy,
@@ -52,6 +53,7 @@ import {
   Crosshair,
   Trash2,
   Search,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
@@ -127,6 +129,7 @@ function HeroDownloadButton({
   progress,
   detail,
   handleDownModel,
+  handleCancel,
   disabled,
   label,
 }: {
@@ -134,6 +137,7 @@ function HeroDownloadButton({
   progress?: number;
   detail?: any;
   handleDownModel?: () => void;
+  handleCancel?: () => void;
   disabled?: boolean;
   label: string;
 }) {
@@ -144,6 +148,7 @@ function HeroDownloadButton({
         progress={progress}
         detail={detail}
         handleDownModel={handleDownModel}
+        handleCancel={handleCancel}
         disabled={disabled}
       />
     );
@@ -255,7 +260,8 @@ function ModelRowActions({
   globalDownloading: boolean;
   copyToClipboard: (text: string) => void;
 }) {
-  const downloadUrl = getModelDownloadUrl(model.name, downSource);
+  const endpoints = useDownloadEndpoints();
+  const downloadUrl = getModelDownloadUrl(model.name, downSource, endpoints);
 
   return (
     <>
@@ -448,9 +454,13 @@ function Ct2ModelRowActions({
   globalDownloading: boolean;
   copyToClipboard: (text: string) => void;
 }) {
-  const host =
-    downSource === DownSource.HuggingFace ? 'huggingface.co' : 'hf-mirror.com';
-  const downloadUrl = `https://${host}/${model.hfRepo}`;
+  const endpoints = useDownloadEndpoints();
+  // base 已含协议（如 https://hf-mirror.com），与设置页配置保持一致。
+  const base =
+    downSource === DownSource.HuggingFace
+      ? endpoints.huggingFaceOfficial
+      : endpoints.huggingFaceMirror;
+  const downloadUrl = `${base}/${model.hfRepo}`;
 
   return (
     <>
@@ -638,7 +648,12 @@ function FasterWhisperTierSection({
     .filter(
       (m) => !installedOnly || isFasterWhisperModelInstalled(m.id, installed),
     )
-    .filter((m) => matchesModelQuery(m.id, modelQuery));
+    .filter((m) =>
+      matchesModelQuery(
+        [m.id, t(`modelDesc.${m.id}`, { defaultValue: '' })],
+        modelQuery,
+      ),
+    );
 
   if (visible.length === 0) return null;
 
@@ -721,10 +736,20 @@ function TierSection({
 
   const visiblePrimary = primaryRows
     .filter((r) => !installedOnly || isInstalled(r.model.name))
-    .filter((r) => matchesModelQuery(r.model.name, modelQuery));
+    .filter((r) =>
+      matchesModelQuery(
+        [r.model.name, t(`modelDesc.${r.model.name}`, { defaultValue: '' })],
+        modelQuery,
+      ),
+    );
   const visibleVariants = variantRows
     .filter((m) => !installedOnly || isInstalled(m.name))
-    .filter((m) => matchesModelQuery(m.name, modelQuery));
+    .filter((m) =>
+      matchesModelQuery(
+        [m.name, t(`modelDesc.${m.name}`, { defaultValue: '' })],
+        modelQuery,
+      ),
+    );
 
   if (visiblePrimary.length === 0 && visibleVariants.length === 0) {
     return null;
@@ -1010,7 +1035,10 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
       ) {
         return false;
       }
-      return matchesModelQuery(m.name, modelQuery);
+      return matchesModelQuery(
+        [m.name, t(`modelDesc.${m.name}`, { defaultValue: '' })],
+        modelQuery,
+      );
     }),
   );
 
@@ -1018,7 +1046,10 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
     if (installedOnly && !isFasterWhisperModelInstalled(m.id, fwInstalled)) {
       return false;
     }
-    return matchesModelQuery(m.id, modelQuery);
+    return matchesModelQuery(
+      [m.id, t(`modelDesc.${m.id}`, { defaultValue: '' })],
+      modelQuery,
+    );
   });
 
   const hasVisibleModels = isBuiltin
@@ -1031,6 +1062,24 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
     (isBuiltin && !!recommendedModel) ||
     (isFasterWhisper && !!recommendedCt2Model);
   const trimmedQuery = modelQuery.trim();
+
+  // HuggingFace 系下载源选择（官方/国内镜像），ggml/ct2/FunASR 模型共用同一持久化偏好。
+  const downSourceControl = (
+    <div className="flex items-center gap-2 shrink-0">
+      <span className="text-sm text-muted-foreground shrink-0">
+        {t('switchDownloadSource')}:
+      </span>
+      <Select onValueChange={handleDownSource} value={downSource}>
+        <SelectTrigger className="w-[160px] sm:w-[200px] h-8">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="huggingface">{t('officialSource')}</SelectItem>
+          <SelectItem value="hf-mirror">{t('domesticMirror')}</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  );
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -1060,38 +1109,40 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
         )}
 
         {!isLocalCli && !isFunasr && !isQwen && (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[180px]">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <Input
+                value={modelQuery}
+                onChange={(e) => setModelQuery(e.target.value)}
+                placeholder={t('modelSearchPlaceholder')}
+                className="h-8 pl-8 pr-8 text-sm focus-visible:ring-offset-0 focus-visible:ring-inset"
+              />
+              {modelQuery && (
+                <button
+                  type="button"
+                  aria-label={t('clearSearch')}
+                  onClick={() => setModelQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer shrink-0">
               <Switch
                 checked={installedOnly}
                 onCheckedChange={setInstalledOnly}
               />
               {t('showInstalledOnly')}
             </label>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground shrink-0">
-                {t('switchDownloadSource')}:
-              </span>
-              <Select onValueChange={handleDownSource} value={downSource}>
-                <SelectTrigger className="w-full sm:w-[200px] h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="huggingface">
-                    {t('officialSource')}
-                  </SelectItem>
-                  <SelectItem value="hf-mirror">
-                    {t('domesticMirror')}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {downSourceControl}
             {isBuiltin && (
               <Button
                 onClick={handleImportModel}
                 size="sm"
                 variant="outline"
-                className="w-full sm:w-auto"
+                className="shrink-0"
               >
                 <Upload className="mr-1.5 h-3.5 w-3.5" />
                 {t('importModel')}
@@ -1100,15 +1151,9 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
           </div>
         )}
 
-        {!isLocalCli && !isFunasr && !isQwen && (
-          <div className="relative px-0.5">
-            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-            <Input
-              value={modelQuery}
-              onChange={(e) => setModelQuery(e.target.value)}
-              placeholder={t('modelSearchPlaceholder')}
-              className="h-8 pl-8 text-sm focus-visible:ring-offset-0 focus-visible:ring-inset"
-            />
+        {isFunasr && (
+          <div className="flex flex-wrap items-center gap-3">
+            {downSourceControl}
           </div>
         )}
 
@@ -1155,7 +1200,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
             {t('localCliModelHint')}
           </p>
         ) : isFunasr ? (
-          <FunasrModelSection onUpdate={onUpdate} />
+          <FunasrModelSection onUpdate={onUpdate} downSource={downSource} />
         ) : isQwen ? (
           <QwenModelSection onUpdate={onUpdate} />
         ) : installedOnly && !hasAnyInstalled ? (

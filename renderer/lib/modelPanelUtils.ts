@@ -6,8 +6,12 @@ export enum DownSource {
 export const MODELS_INSTALLED_ONLY_KEY = 'modelsInstalledOnly';
 export const MODELS_TIER_VARIANTS_EXPANDED_KEY = 'modelsTierVariantsExpanded';
 
-export function matchesModelQuery(name: string, query: string): boolean {
+export function matchesModelQuery(
+  haystack: string | string[],
+  query: string,
+): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  return name.toLowerCase().includes(q);
+  const arr = Array.isArray(haystack) ? haystack : [haystack];
+  return arr.some((h) => h?.toLowerCase().includes(q));
 }

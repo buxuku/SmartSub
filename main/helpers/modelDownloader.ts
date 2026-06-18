@@ -170,7 +170,7 @@ export class ModelDownloader {
       return true;
     }
 
-    const baseUrl = `https://${getHfHost(source)}/ggerganov/whisper.cpp/resolve/main`;
+    const baseUrl = `${getHfHost(source)}/ggerganov/whisper.cpp/resolve/main`;
 
     this.currentModel = model;
     this.abortController = new AbortController();

@@ -75,6 +75,7 @@ import {
   normalizeDownloadEndpoints,
   type DownloadEndpointConfig,
 } from '../../../types/downloadConfig';
+import { invalidateDownloadEndpointsCache } from 'hooks/useDownloadEndpoints';
 
 // 三档 VAD 环境预设。数值依据：标准=whisper.cpp 官方默认；
 // 安静=silero 0.3-0.4 灵敏区+短语保留；嘈杂=whisper.rn noisyEnv 推荐
@@ -453,6 +454,7 @@ const Settings = () => {
       await window?.ipc?.invoke('setSettings', {
         downloadEndpoints: overrides,
       });
+      invalidateDownloadEndpointsCache();
       toast.success(t('downloadEndpointsSaved'));
     } catch {
       toast.error(t('saveFailed'));
@@ -467,6 +469,7 @@ const Settings = () => {
     setDownloadEndpoints(DEFAULT_DOWNLOAD_ENDPOINTS);
     try {
       await window?.ipc?.invoke('setSettings', { downloadEndpoints: {} });
+      invalidateDownloadEndpointsCache();
       toast.success(t('downloadEndpointsResetDone'));
     } catch {
       toast.error(t('saveFailed'));

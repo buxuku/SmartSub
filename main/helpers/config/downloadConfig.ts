@@ -45,8 +45,8 @@ export function getModelScopeBase(): string {
 }
 
 /**
- * 解析 HuggingFace host：source==='huggingface' 用官方，否则用国内镜像。
- * 保持既有各 downloader 的语义（默认走镜像）。
+ * 解析 HuggingFace base（含协议、无末尾斜杠）：source==='huggingface' 用官方，
+ * 否则用国内镜像。保持既有各 downloader 的语义（默认走镜像）。
  */
 export function getHfHost(source?: string): string {
   const ep = getDownloadEndpoints();
@@ -56,8 +56,8 @@ export function getHfHost(source?: string): string {
 }
 
 /**
- * HuggingFace host 回退序列：source==='huggingface' 官方优先，否则镜像优先。
- * 供需要按序回退多个 host 的 downloader（如 funasr）使用。
+ * HuggingFace base 回退序列（含协议）：source==='huggingface' 官方优先，否则镜像优先。
+ * 供需要按序回退多个 base 的 downloader（如 funasr）使用。
  */
 export function getHfHosts(source?: string): string[] {
   const ep = getDownloadEndpoints();

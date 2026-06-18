@@ -1,6 +1,6 @@
 import React, { FC } from 'react';
 import { Button } from '@/components/ui/button';
-import { Loader2, RefreshCw, Download } from 'lucide-react';
+import { Loader2, RefreshCw, Download, X } from 'lucide-react';
 import { useTranslation } from 'next-i18next';
 
 interface DownloadDetail {
@@ -17,6 +17,7 @@ interface IProps {
   progress?: number;
   detail?: DownloadDetail | null;
   handleDownModel?: () => void;
+  handleCancel?: () => void;
   disabled?: boolean;
 }
 
@@ -40,6 +41,7 @@ const DownModelButton: FC<IProps> = ({
   progress,
   detail,
   handleDownModel,
+  handleCancel,
   disabled,
 }) => {
   const { t } = useTranslation('common');
@@ -101,6 +103,18 @@ const DownModelButton: FC<IProps> = ({
           )}
         </div>
       </div>
+      {handleCancel && (
+        <Button
+          type="button"
+          onClick={handleCancel}
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+          aria-label={t('cancel')}
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      )}
     </div>
   );
 };

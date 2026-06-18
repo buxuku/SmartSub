@@ -3,7 +3,6 @@ import { useTranslation } from 'next-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,6 +15,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { CheckCircle2, Download, Trash2, X, Mic, Waves } from 'lucide-react';
 import { toast } from 'sonner';
+import DownloadSourceSelector from '@/components/resources/engines/DownloadSourceSelector';
+import SherpaModelRow from '@/components/resources/SherpaModelRow';
 
 type QwenModelId = 'qwen3-asr-0.6b';
 const QWEN_MODEL_SIZE = '0.95GB';
@@ -190,37 +191,23 @@ const QwenModelSection: React.FC<{ onUpdate?: () => void }> = ({
         </div>
         <Card>
           <CardContent className="space-y-2 p-2">
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-muted p-3">
-              <div className="flex min-w-0 items-start gap-2.5">
-                <Mic className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                <div className="min-w-0">
-                  <p className="flex items-center gap-1.5 text-sm font-medium">
-                    {t('engines.qwen.models.qwen3-asr-0.6b.name')}
-                    {qwenInstalled && (
-                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
-                    )}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {t('engines.qwen.models.qwen3-asr-0.6b.desc')}
-                  </p>
-                  {downloading === 'qwen3-asr-0.6b' && (
-                    <div className="mt-1.5 w-44">
-                      <Progress
-                        value={Math.round(
-                          (progress['qwen:qwen3-asr-0.6b'] ?? 0) * 100,
-                        )}
-                      />
-                      {phase['qwen:qwen3-asr-0.6b'] === 'extracting' && (
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          {t('engines.qwen.extracting')}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="shrink-0">
-                {downloading === 'qwen3-asr-0.6b' ? (
+            <SherpaModelRow
+              icon={Mic}
+              name={t('engines.qwen.models.qwen3-asr-0.6b.name')}
+              desc={t('engines.qwen.models.qwen3-asr-0.6b.desc')}
+              installed={qwenInstalled}
+              busy={downloading === 'qwen3-asr-0.6b'}
+              progressPercent={Math.round(
+                (progress['qwen:qwen3-asr-0.6b'] ?? 0) * 100,
+              )}
+              phaseText={
+                phase['qwen:qwen3-asr-0.6b'] === 'extracting'
+                  ? t('engines.qwen.extracting')
+                  : undefined
+              }
+              progressWidthClass="w-44"
+              trailing={
+                downloading === 'qwen3-asr-0.6b' ? (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -251,9 +238,9 @@ const QwenModelSection: React.FC<{ onUpdate?: () => void }> = ({
                     <Download className="h-3.5 w-3.5" />
                     {t('engines.qwen.modelDownload')}
                   </Button>
-                )}
-              </div>
-            </div>
+                )
+              }
+            />
           </CardContent>
         </Card>
       </section>
@@ -268,32 +255,17 @@ const QwenModelSection: React.FC<{ onUpdate?: () => void }> = ({
         </div>
         <Card>
           <CardContent className="p-2">
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-muted p-3">
-              <div className="flex min-w-0 items-start gap-2.5">
-                <Waves className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                <div className="min-w-0">
-                  <p className="flex items-center gap-1.5 text-sm font-medium">
-                    {t('engines.funasr.models.silero-vad.name')}
-                    {vadInstalled && (
-                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
-                    )}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {t('engines.funasr.models.silero-vad.desc')}
-                  </p>
-                  {downloading === 'silero-vad' && (
-                    <div className="mt-1.5 w-40">
-                      <Progress
-                        value={Math.round(
-                          (progress['funasr:silero-vad'] ?? 0) * 100,
-                        )}
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="shrink-0">
-                {downloading === 'silero-vad' ? (
+            <SherpaModelRow
+              icon={Waves}
+              name={t('engines.funasr.models.silero-vad.name')}
+              desc={t('engines.funasr.models.silero-vad.desc')}
+              installed={vadInstalled}
+              busy={downloading === 'silero-vad'}
+              progressPercent={Math.round(
+                (progress['funasr:silero-vad'] ?? 0) * 100,
+              )}
+              trailing={
+                downloading === 'silero-vad' ? (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -322,9 +294,9 @@ const QwenModelSection: React.FC<{ onUpdate?: () => void }> = ({
                     <Download className="h-3.5 w-3.5" />
                     {t('engines.qwen.modelDownload')}
                   </Button>
-                )}
-              </div>
-            </div>
+                )
+              }
+            />
           </CardContent>
         </Card>
       </section>
@@ -341,30 +313,16 @@ const QwenModelSection: React.FC<{ onUpdate?: () => void }> = ({
               })}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="space-y-1.5">
-            <p className="text-xs font-medium text-muted-foreground">
-              {t('engines.qwen.downloadSource')}
-            </p>
-            <div className="flex gap-2">
-              {QWEN_MODEL_SOURCES.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => handleSelectSource(s)}
-                  className={`flex-1 rounded-md border px-3 py-2 text-xs transition-all ${
-                    source === s
-                      ? 'border-primary bg-primary/5 font-medium'
-                      : 'border-muted hover:border-primary/50'
-                  }`}
-                >
-                  {t(`engines.qwen.modelSources.${s}`)}
-                </button>
-              ))}
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              {t(`engines.qwen.modelSourceHint.${source}`)}
-            </p>
-          </div>
+          <DownloadSourceSelector
+            label={t('engines.qwen.downloadSource')}
+            value={source}
+            options={QWEN_MODEL_SOURCES.map((s) => ({
+              value: s,
+              label: t(`engines.qwen.modelSources.${s}`),
+            }))}
+            onChange={(s) => handleSelectSource(s as QwenModelSource)}
+            hint={t(`engines.qwen.modelSourceHint.${source}`)}
+          />
           <AlertDialogFooter>
             <AlertDialogCancel className="gap-1.5">
               <X className="h-4 w-4" />

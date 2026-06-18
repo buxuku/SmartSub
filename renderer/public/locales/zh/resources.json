@@ -11,6 +11,12 @@
   },
   "engines": {
     "statusAvailable": "可用",
+    "status": {
+      "ready": "已就绪",
+      "pending": "待配置",
+      "downloading": "下载中",
+      "error": "异常"
+    },
     "base": {
       "name": "Python 运行时基座",
       "desc": "faster-whisper 与 FunASR 共享的 Python 运行环境，已随应用内置，可在线升级。",
@@ -33,7 +39,8 @@
       "name": "whisper.cpp（内置）",
       "desc": "默认引擎，支持 ggml 量化模型与 GPU 加速；苹果芯片（M 系列）有专属优化、速度更快，电脑配置老旧或内存偏小时也能轻量流畅运行、不卡顿。",
       "scenario": "适合：Mac / 老旧设备 / 离线通用转写",
-      "statusReady": "已就绪"
+      "statusReady": "已就绪",
+      "needsModels": "需下载模型"
     },
     "fasterWhisper": {
       "name": "faster-whisper",

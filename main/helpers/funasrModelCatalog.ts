@@ -83,10 +83,10 @@ export function getFunasrFileUrls(
     const ep = getDownloadEndpoints();
     const ghRelease = `${ep.githubBase}/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx`;
     return [
-      `https://${ep.huggingFaceMirror}/csukuangfj/vad/resolve/main/silero_vad.onnx`,
+      `${ep.huggingFaceMirror}/csukuangfj/vad/resolve/main/silero_vad.onnx`,
       ghRelease,
       `${ep.githubProxyPrefix}/${ghRelease}`,
-      `https://${ep.huggingFaceOfficial}/csukuangfj/vad/resolve/main/silero_vad.onnx`,
+      `${ep.huggingFaceOfficial}/csukuangfj/vad/resolve/main/silero_vad.onnx`,
     ];
   }
   return [];

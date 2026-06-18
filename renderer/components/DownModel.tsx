@@ -133,6 +133,14 @@ const DownModel: FC<IProps> = ({
     }
   }, [modelName, downSource, needsCoreML, globalDownloading, format, t]);
 
+  const handleCancel = useCallback(async () => {
+    try {
+      await window?.ipc?.invoke('cancelModelDownload');
+    } catch (error) {
+      console.error('Cancel model download failed:', error);
+    }
+  }, []);
+
   const isDisabled = globalDownloading && !loading;
 
   return (
@@ -142,6 +150,7 @@ const DownModel: FC<IProps> = ({
         progress?: number;
         detail?: DownloadDetail | null;
         handleDownModel?: () => void;
+        handleCancel?: () => void;
         disabled?: boolean;
       }>(children)
         ? React.cloneElement(children, {
@@ -149,6 +158,7 @@ const DownModel: FC<IProps> = ({
             progress,
             detail,
             handleDownModel,
+            handleCancel,
             disabled: isDisabled,
           })
         : children}

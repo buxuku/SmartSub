@@ -11,6 +11,12 @@
   },
   "engines": {
     "statusAvailable": "Available",
+    "status": {
+      "ready": "Ready",
+      "pending": "Needs setup",
+      "downloading": "Downloading",
+      "error": "Error"
+    },
     "base": {
       "name": "Python Runtime Base",
       "desc": "The shared Python runtime used by faster-whisper and FunASR. Bundled with the app and upgradable online.",
@@ -33,7 +39,8 @@
       "name": "whisper.cpp (built-in)",
       "desc": "Default engine with ggml quantized models and GPU acceleration; specially optimized for Apple silicon (M series) for extra speed, and stays light and smooth on older or low-memory computers.",
       "scenario": "Best for: Mac / older devices / general offline transcription",
-      "statusReady": "Ready"
+      "statusReady": "Ready",
+      "needsModels": "Download a model"
     },
     "fasterWhisper": {
       "name": "faster-whisper",

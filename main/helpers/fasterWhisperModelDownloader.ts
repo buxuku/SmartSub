@@ -221,12 +221,12 @@ export class FasterWhisperModelDownloader {
       return true;
     }
 
-    const host = getHfHost(source);
+    const base = getHfHost(source);
     const repoId = toHfRepoId(modelId);
     const progressKey = getCt2ProgressKey(modelId);
 
     const modelInfo = await fetchJson<{ sha?: string }>(
-      `https://${host}/api/models/${repoId}`,
+      `${base}/api/models/${repoId}`,
     );
     const revision = modelInfo.sha;
     if (!revision) {
@@ -234,7 +234,7 @@ export class FasterWhisperModelDownloader {
     }
 
     const tree = await fetchJson<HfTreeEntry[]>(
-      `https://${host}/api/models/${repoId}/tree/${revision}?recursive=true`,
+      `${base}/api/models/${repoId}/tree/${revision}?recursive=true`,
     );
     const files = tree.filter(
       (entry) =>
@@ -293,7 +293,7 @@ export class FasterWhisperModelDownloader {
         const file = plannedFiles[i];
         fs.mkdirSync(path.dirname(file.destPath), { recursive: true });
 
-        const url = `https://${host}/${repoId}/resolve/${revision}/${file.path}`;
+        const url = `${base}/${repoId}/resolve/${revision}/${file.path}`;
         const tempPath = `${file.destPath}.download`;
         let startByte = 0;
         if (fs.existsSync(file.destPath)) {

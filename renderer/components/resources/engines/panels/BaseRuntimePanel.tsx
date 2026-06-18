@@ -17,6 +17,7 @@ import { RefreshCw, ArrowUpCircle, X, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { persistDownloadSource } from '@/components/settings/gpu/gpuDownloadUtils';
 import { formatSize } from '@/components/settings/gpu/gpuUtils';
+import DownloadSourceSelector from '@/components/resources/engines/DownloadSourceSelector';
 import type { DownloadSource } from '../../../../../types/addon';
 import type {
   PyBaseDownloadProgress,
@@ -157,31 +158,22 @@ const BaseRuntimePanel: React.FC<BaseRuntimePanelProps> = ({
   })();
 
   const sourceSelector = (
-    <div className="space-y-1.5">
-      <p className="text-xs font-medium text-muted-foreground">
-        {t('engines.base.downloadSource')}
-      </p>
-      <div className="flex gap-2">
-        {(['github', 'ghproxy', 'gitcode'] as DownloadSource[]).map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => setSource(s)}
-            className={`flex-1 px-3 py-2 rounded-md border text-xs transition-all ${
-              source === s
-                ? 'border-primary bg-primary/5 font-medium'
-                : 'border-muted hover:border-primary/50'
-            }`}
-          >
-            {s === 'github'
+    <DownloadSourceSelector
+      label={t('engines.base.downloadSource')}
+      value={source}
+      options={(['github', 'ghproxy', 'gitcode'] as DownloadSource[]).map(
+        (s) => ({
+          value: s,
+          label:
+            s === 'github'
               ? 'GitHub'
               : s === 'gitcode'
                 ? 'GitCode'
-                : t('ghProxy')}
-          </button>
-        ))}
-      </div>
-    </div>
+                : t('ghProxy'),
+        }),
+      )}
+      onChange={(s) => setSource(s as DownloadSource)}
+    />
   );
 
   return (
