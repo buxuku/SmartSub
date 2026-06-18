@@ -20,6 +20,23 @@ import { toast } from 'sonner';
 type QwenModelId = 'qwen3-asr-0.6b';
 const QWEN_MODEL_SIZE = '0.95GB';
 
+/** qwen 模型下载源（与主进程 QwenModelSource 一致）：国内优先 ModelScope。 */
+type QwenModelSource = 'modelscope' | 'ghproxy' | 'github';
+const QWEN_MODEL_SOURCES: QwenModelSource[] = [
+  'modelscope',
+  'ghproxy',
+  'github',
+];
+const QWEN_SOURCE_STORAGE_KEY = 'qwenModelDownloadSource';
+
+function readQwenModelSource(): QwenModelSource {
+  if (typeof window === 'undefined') return 'modelscope';
+  const v = window.localStorage.getItem(QWEN_SOURCE_STORAGE_KEY);
+  return v === 'ghproxy' || v === 'github' || v === 'modelscope'
+    ? v
+    : 'modelscope';
+}
+
 interface QwenModelStatus {
   engineInstalled: boolean;
   vadInstalled: boolean;
@@ -39,6 +56,18 @@ const QwenModelSection: React.FC<{ onUpdate?: () => void }> = ({
   const [downloading, setDownloading] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [source, setSource] = useState<QwenModelSource>('modelscope');
+
+  useEffect(() => {
+    setSource(readQwenModelSource());
+  }, []);
+
+  const handleSelectSource = useCallback((s: QwenModelSource) => {
+    setSource(s);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(QWEN_SOURCE_STORAGE_KEY, s);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -89,6 +118,7 @@ const QwenModelSection: React.FC<{ onUpdate?: () => void }> = ({
     try {
       const r = await window?.ipc?.invoke('downloadQwenModel', {
         model: 'qwen3-asr-0.6b',
+        source,
       });
       if (r?.success) {
         await load();
@@ -311,6 +341,30 @@ const QwenModelSection: React.FC<{ onUpdate?: () => void }> = ({
               })}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">
+              {t('engines.qwen.downloadSource')}
+            </p>
+            <div className="flex gap-2">
+              {QWEN_MODEL_SOURCES.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => handleSelectSource(s)}
+                  className={`flex-1 rounded-md border px-3 py-2 text-xs transition-all ${
+                    source === s
+                      ? 'border-primary bg-primary/5 font-medium'
+                      : 'border-muted hover:border-primary/50'
+                  }`}
+                >
+                  {t(`engines.qwen.modelSources.${s}`)}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {t(`engines.qwen.modelSourceHint.${source}`)}
+            </p>
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel className="gap-1.5">
               <X className="h-4 w-4" />

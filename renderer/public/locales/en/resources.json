@@ -165,7 +165,17 @@
       "needModelsHint": "Download to enable",
       "modelDownload": "Download",
       "modelDelete": "Delete",
-      "modelDownloadConfirm": "Qwen3-ASR (0.6B) is about {{size}} and may take a while to download and extract. It runs on CPU but is not real-time. Continue?",
+      "modelDownloadConfirm": "Qwen3-ASR (0.6B) is about {{size}}. It runs on CPU but is not real-time. Continue?",
+      "modelSources": {
+        "modelscope": "ModelScope (CN)",
+        "ghproxy": "gh-proxy",
+        "github": "GitHub"
+      },
+      "modelSourceHint": {
+        "modelscope": "Mainland China CDN, fastest; per-file download, no extraction (recommended)",
+        "ghproxy": "GitHub via gh-proxy.com; downloads archive then extracts",
+        "github": "Direct GitHub; faster on overseas networks; downloads archive then extracts"
+      },
       "models": {
         "qwen3-asr-0.6b": {
           "name": "Qwen3-ASR 0.6B (int8, ~0.95GB)",

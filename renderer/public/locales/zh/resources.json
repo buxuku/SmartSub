@@ -165,7 +165,17 @@
       "needModelsHint": "下载后才能使用",
       "modelDownload": "下载",
       "modelDelete": "删除",
-      "modelDownloadConfirm": "Qwen3-ASR（0.6B）约 {{size}}，下载与解包耗时较长。可在 CPU 上运行，但非实时。是否继续？",
+      "modelDownloadConfirm": "Qwen3-ASR（0.6B）约 {{size}}。可在 CPU 上运行，但非实时。是否继续？",
+      "modelSources": {
+        "modelscope": "ModelScope（国内）",
+        "ghproxy": "gh-proxy 加速",
+        "github": "GitHub"
+      },
+      "modelSourceHint": {
+        "modelscope": "国内 CDN，速度最快，逐文件下载免解包（推荐）",
+        "ghproxy": "经 gh-proxy.com 代理 GitHub，下载整包后需解包",
+        "github": "GitHub 直连，海外网络较快，下载整包后需解包"
+      },
       "models": {
         "qwen3-asr-0.6b": {
           "name": "Qwen3-ASR 0.6B（int8，约 0.95GB）",

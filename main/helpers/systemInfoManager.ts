@@ -37,6 +37,7 @@ import {
 import {
   QWEN_MODELS,
   QwenModelId,
+  QwenModelSource,
   isQwenModelInstalled,
   isQwenVadInstalled,
   isQwenReady,
@@ -196,14 +197,17 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
 
   ipcMain.handle(
     'downloadQwenModel',
-    async (_event, { model }: { model: QwenModelId }) => {
+    async (
+      _event,
+      { model, source }: { model: QwenModelId; source?: QwenModelSource },
+    ) => {
       if (downloadingModels.size > 0) {
         return { success: false, error: 'anotherDownloadInProgress' };
       }
       const progressKey = getQwenProgressKey(model);
       downloadingModels.add(progressKey);
       try {
-        await qwenModelDownloader.download(model);
+        await qwenModelDownloader.download(model, source);
         downloadingModels.delete(progressKey);
         return { success: true };
       } catch (error) {
