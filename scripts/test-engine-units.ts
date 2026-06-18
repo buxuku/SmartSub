@@ -45,10 +45,17 @@ import {
   buildVadConfig,
   buildRecognizerConfig,
   buildQwenRecognizerConfig,
+  buildFireRedRecognizerConfig,
   segmentTiming,
   progressPercent,
 } from '../main/helpers/sherpaOnnx/sherpaConfig';
 import { buildQwenParams } from '../main/helpers/engines/qwenParams';
+import {
+  buildFireRedParams,
+  clampFireRedMaxSpeech,
+  FIRERED_HARD_MAX_SPEECH_S,
+  FIRERED_DEFAULT_MAX_SPEECH_S,
+} from '../main/helpers/engines/fireRedParams';
 import {
   getSelectableModelsForEngine,
   getInstalledModelsForEngine,
@@ -233,7 +240,7 @@ eq(
 );
 eq(
   resolveReleaseBaseUrl('ghproxy', ADDON, 'latest'),
-  'https://ghfast.top/https://github.com/buxuku/whisper.cpp/releases/download/latest',
+  'https://gh-proxy.com/https://github.com/buxuku/whisper.cpp/releases/download/latest',
   'url: addon ghproxy',
 );
 eq(
@@ -253,7 +260,7 @@ eq(
 );
 eq(
   resolveReleaseBaseUrl('ghproxy', PY, 'latest'),
-  'https://ghfast.top/https://github.com/buxuku/smartsub-py-engine/releases/download/latest',
+  'https://gh-proxy.com/https://github.com/buxuku/smartsub-py-engine/releases/download/latest',
   'url: py ghproxy',
 );
 eq(
@@ -718,6 +725,124 @@ eq(
     .max_new_tokens,
   256,
   'qwen: custom max_new_tokens passthrough',
+);
+
+// --- engineModels: fireRedAsr awareness ---
+const fireRedReady = {
+  transcriptionEngine: 'fireRedAsr' as const,
+  fireRedEngineInstalled: true,
+  fireRedVadInstalled: true,
+  fireRedModelsInstalled: ['fire-red-asr-large-zh-en'],
+};
+eq(
+  getSelectableModelsForEngine(fireRedReady),
+  ['fire-red-asr-large-zh-en'],
+  'engineModels: fireRed selectable = installed fireRed models',
+);
+eq(
+  getInstalledModelsForEngine(fireRedReady),
+  ['fire-red-asr-large-zh-en'],
+  'engineModels: fireRed installed = installed fireRed models',
+);
+eq(
+  hasModelsForEngine(fireRedReady),
+  true,
+  'engineModels: fireRed ready w/ vad+model',
+);
+eq(
+  hasModelsForEngine({
+    transcriptionEngine: 'fireRedAsr',
+    fireRedVadInstalled: false,
+    fireRedModelsInstalled: ['fire-red-asr-large-zh-en'],
+  }),
+  false,
+  'engineModels: fireRed not ready without vad',
+);
+eq(
+  hasModelsForEngine({
+    transcriptionEngine: 'fireRedAsr',
+    fireRedVadInstalled: true,
+    fireRedModelsInstalled: [],
+  }),
+  false,
+  'engineModels: fireRed not ready without model',
+);
+
+// --- sherpa: fire_red_asr recognizer config 映射 ---
+const FIRERED_RP = { num_threads: 2, provider: 'cpu' };
+eq(
+  buildFireRedRecognizerConfig(
+    { encoder: '/m/enc.int8.onnx', decoder: '/m/dec.int8.onnx' },
+    '/m/tokens.txt',
+    FIRERED_RP,
+  ).modelConfig.fireRedAsr,
+  { encoder: '/m/enc.int8.onnx', decoder: '/m/dec.int8.onnx' },
+  'sherpa: fire_red_asr maps encoder+decoder',
+);
+eq(
+  buildFireRedRecognizerConfig(
+    { encoder: '/m/enc.int8.onnx', decoder: '/m/dec.int8.onnx' },
+    '/m/tokens.txt',
+    FIRERED_RP,
+  ).modelConfig.tokens,
+  '/m/tokens.txt',
+  'sherpa: fire_red_asr uses top-level tokens (unlike qwen tokenizer dir)',
+);
+eq(
+  buildFireRedRecognizerConfig(
+    { encoder: '/m/e.onnx', decoder: '/m/d.onnx' },
+    '/m/t.txt',
+    FIRERED_RP,
+  ).modelConfig.qwen3Asr,
+  undefined,
+  'sherpa: fire_red_asr has no qwen3Asr block',
+);
+
+// --- fireRedParams: 默认值 + 段长安全闸（design D8） ---
+eq(
+  buildFireRedParams({}),
+  {
+    provider: 'cpu',
+    num_threads: 2,
+    vad_threshold: 0.5,
+    vad_min_silence_duration_ms: 100,
+    vad_min_speech_duration_ms: 250,
+    vad_max_speech_duration_s: FIRERED_DEFAULT_MAX_SPEECH_S,
+  },
+  'fireRed: default params (max speech clamped to 30s, not 0/unlimited)',
+);
+eq(
+  buildFireRedParams({ fireRedProvider: 'cuda', fireRedNumThreads: 4 })
+    .provider,
+  'cuda',
+  'fireRed: cuda provider passthrough',
+);
+eq(
+  buildFireRedParams({ fireRedProvider: 'metal' as never }).provider,
+  'cpu',
+  'fireRed: unknown provider falls back to cpu',
+);
+// 段长安全闸：0/未设/超限 → 60s 硬上限或 30s 默认；合法值原样。
+eq(
+  clampFireRedMaxSpeech(0),
+  FIRERED_HARD_MAX_SPEECH_S,
+  'fireRed: 0 (unlimited) clamps to 60s hard cap',
+);
+eq(
+  clampFireRedMaxSpeech(120),
+  FIRERED_HARD_MAX_SPEECH_S,
+  'fireRed: >60 clamps to 60s hard cap',
+);
+eq(clampFireRedMaxSpeech(45), 45, 'fireRed: in-range value passes through');
+eq(
+  clampFireRedMaxSpeech(undefined),
+  FIRERED_DEFAULT_MAX_SPEECH_S,
+  'fireRed: undefined -> 30s default',
+);
+eq(
+  buildFireRedParams({ vadMaxSpeechDuration: 0 }).vad_max_speech_duration_s,
+  FIRERED_HARD_MAX_SPEECH_S,
+  'fireRed: buildFireRedParams overrides 0=unlimited convention (clamps to 60)',
 );
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);

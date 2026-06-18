@@ -2,6 +2,7 @@ import { builtinEngineAdapter } from './builtinEngine';
 import { fasterWhisperEngineAdapter } from './fasterWhisperEngine';
 import { funasrEngineAdapter } from './funasrEngine';
 import { qwenEngineAdapter } from './qwenEngine';
+import { fireRedEngineAdapter } from './fireRedEngine';
 import { localCliEngineAdapter } from './localCliEngine';
 import type { TranscriptionEngine } from '../../../types/engine';
 import type { TranscriptionEngineAdapter } from './types';
@@ -11,6 +12,7 @@ const adapters: TranscriptionEngineAdapter[] = [
   fasterWhisperEngineAdapter,
   funasrEngineAdapter,
   qwenEngineAdapter,
+  fireRedEngineAdapter,
   localCliEngineAdapter,
 ];
 

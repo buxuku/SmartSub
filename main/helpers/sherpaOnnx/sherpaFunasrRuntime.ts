@@ -5,11 +5,12 @@ import { getExtraResourcesPath } from '../utils';
 import { getSherpaLibDir, isSherpaLibInstalled } from './sherpaLibPaths';
 import type { FunasrAddonParams } from '../engines/funasrParams';
 import type { QwenAddonParams } from '../engines/qwenParams';
+import type { FireRedAddonParams } from '../engines/fireRedParams';
 
 export interface SherpaModelRequest {
   vadModel: string;
-  modelType: 'sense_voice' | 'paraformer' | 'qwen3_asr';
-  /** sense_voice / paraformer：单模型文件 + tokens.txt。 */
+  modelType: 'sense_voice' | 'paraformer' | 'qwen3_asr' | 'fire_red_asr';
+  /** sense_voice / paraformer：单模型文件 + tokens.txt；fire_red_asr 复用 tokens 承载 tokens.txt。 */
   asrModel?: string;
   tokens?: string;
   /** qwen3_asr：四件套（tokenizer 为目录）。 */
@@ -19,8 +20,13 @@ export interface SherpaModelRequest {
     decoder: string;
     tokenizer: string;
   };
-  /** funasr 用 FunasrAddonParams；qwen 用 QwenAddonParams（共享 VAD/线程字段）。 */
-  params: FunasrAddonParams | QwenAddonParams;
+  /** fire_red_asr：encoder + decoder 两件套（tokens 走 tokens 字段）。 */
+  fireRed?: {
+    encoder: string;
+    decoder: string;
+  };
+  /** funasr 用 FunasrAddonParams；qwen 用 QwenAddonParams；fireRed 用 FireRedAddonParams（共享 VAD/线程字段）。 */
+  params: FunasrAddonParams | QwenAddonParams | FireRedAddonParams;
 }
 
 export interface Segment {

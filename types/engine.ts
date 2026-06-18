@@ -3,6 +3,7 @@ export type TranscriptionEngine =
   | 'fasterWhisper'
   | 'funasr'
   | 'qwen'
+  | 'fireRedAsr'
   | 'localCli';
 
 export type EngineStatusState =

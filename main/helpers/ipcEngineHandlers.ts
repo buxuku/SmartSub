@@ -315,6 +315,35 @@ export function registerEngineIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    'set-firered-settings',
+    async (
+      _event,
+      {
+        provider,
+        numThreads,
+      }: {
+        provider?: 'cpu' | 'cuda';
+        numThreads?: number;
+      },
+    ) => {
+      try {
+        const settings = store.get('settings');
+        store.set('settings', {
+          ...settings,
+          ...(provider !== undefined ? { fireRedProvider: provider } : {}),
+          ...(numThreads !== undefined
+            ? { fireRedNumThreads: numThreads }
+            : {}),
+        });
+        return { success: true };
+      } catch (error) {
+        logMessage(`Error setting firered settings: ${error}`, 'error');
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle(
     'python-engine:ping',
     async (_event, payload?: { engineId?: PyEngineId }) => {
       try {

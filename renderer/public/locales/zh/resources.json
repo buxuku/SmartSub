@@ -190,6 +190,57 @@
         }
       }
     },
+    "fireRedAsr": {
+      "name": "FireRedASR",
+      "desc": "小红书 FireRedASR-AED（Large）本地引擎，基于 sherpa-onnx 运行（与 FunASR 共用运行库）：开源，中英混说与多种中文方言识别强，无需显卡或 Python。段级时间戳来自 VAD 切分。",
+      "scenario": "适合：中英混说 / 中文方言本地转写，Apache-2.0 开源",
+      "notInstalled": "未安装",
+      "needsModels": "需下载模型",
+      "needsRuntime": "需下载运行库",
+      "desc.runtimeShared": "FireRedASR 与 FunASR 共用 sherpa-onnx 运行库，在此安装或卸载会同时影响两个引擎。",
+      "downloadRuntime": "下载运行库（约 {{size}}）",
+      "downloadSource": "下载源",
+      "downloadRuntimeConfirm": "将下载与 FunASR 共用的 sherpa-onnx 运行库（约 {{size}}），本地离线运行。是否继续？",
+      "upgrade": "升级",
+      "upgradeConfirm": "将下载并升级共用的 sherpa-onnx 运行库。升级前会先停止引擎，失败时自动回滚。是否继续？",
+      "uninstall": "卸载",
+      "uninstallConfirm": "卸载会移除共用的 sherpa-onnx 运行库，FunASR 也需重新下载。是否继续？",
+      "installedVersion": "已安装 v{{version}}",
+      "checkUpdate": "检查更新",
+      "checking": "检查中…",
+      "upToDate": "已是最新版本",
+      "updateAvailable": "有新版本可用",
+      "downloading": "下载中…",
+      "extracting": "解包中…（可能需要一会儿）",
+      "engineBusy": "有任务正在运行，请等待任务完成后再安装、升级或卸载引擎。",
+      "checkFailed": "检查更新失败，请稍后重试。",
+      "anotherDownload": "已有下载任务进行中，请等待完成后再试。",
+      "advanced": "高级设置",
+      "providerNote": "当前范围：仅 CPU。GPU 支持计划在后续版本提供。",
+      "numThreads": "推理线程数",
+      "numThreadsHint": "CPU 推理使用的线程数，越大越快但占用更多 CPU",
+      "modelsTitle": "模型",
+      "needModelsHint": "下载后才能使用",
+      "modelDownload": "下载",
+      "modelDelete": "删除",
+      "modelDownloadConfirm": "FireRedASR-AED（Large）约 {{size}}。可在 CPU 上运行，但非实时。是否继续？",
+      "modelSources": {
+        "modelscope": "ModelScope（国内）",
+        "ghproxy": "gh-proxy 加速",
+        "github": "GitHub"
+      },
+      "modelSourceHint": {
+        "modelscope": "国内 CDN，速度最快，逐文件下载免解包（推荐）",
+        "ghproxy": "经 gh-proxy.com 代理 GitHub，下载整包后需解包",
+        "github": "GitHub 直连，海外网络较快，下载整包后需解包"
+      },
+      "models": {
+        "fire-red-asr-large-zh-en": {
+          "name": "FireRedASR-AED-L（int8，约 1.7GB）",
+          "desc": "中英混说与多种中文方言识别强；int8 量化，CPU 友好。段级时间戳来自 VAD。"
+        }
+      }
+    },
     "localCli": {
       "name": "本地命令行",
       "desc": "使用自行安装的 Whisper 兼容 CLI",

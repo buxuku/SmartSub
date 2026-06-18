@@ -62,6 +62,7 @@ import fasterWhisperModels from 'lib/fasterWhisperModels.json';
 import type { TranscriptionEngine } from '../../../types/engine';
 import FunasrModelSection from '@/components/resources/FunasrModelSection';
 import QwenModelSection from '@/components/resources/QwenModelSection';
+import FireRedModelSection from '@/components/resources/FireRedModelSection';
 
 type FasterWhisperModelEntry = {
   id: string;
@@ -908,6 +909,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
   const isFasterWhisper = engine === 'fasterWhisper';
   const isFunasr = engine === 'funasr';
   const isQwen = engine === 'qwen';
+  const isFireRed = engine === 'fireRedAsr';
   const isLocalCli = engine === 'localCli';
 
   const handleImportModel = async () => {
@@ -965,7 +967,9 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
             ? 'funasr'
             : isQwen
               ? 'qwen'
-              : 'ggml',
+              : isFireRed
+                ? 'firered'
+                : 'ggml',
       });
       if (!result?.success) {
         toast.error(
@@ -1108,7 +1112,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
           />
         )}
 
-        {!isLocalCli && !isFunasr && !isQwen && (
+        {!isLocalCli && !isFunasr && !isQwen && !isFireRed && (
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative flex-1 min-w-[180px]">
               <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
@@ -1157,7 +1161,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
           </div>
         )}
 
-        {(isBuiltin || isFasterWhisper || isFunasr || isQwen) && (
+        {(isBuiltin || isFasterWhisper || isFunasr || isQwen || isFireRed) && (
           <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
             <HardDrive className="h-3 w-3 shrink-0" />
             <span className="shrink-0">
@@ -1170,7 +1174,9 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
                   ? systemInfo?.funasrModelsPath
                   : isQwen
                     ? systemInfo?.qwenModelsPath
-                    : systemInfo?.modelsPath}
+                    : isFireRed
+                      ? systemInfo?.fireRedModelsPath
+                      : systemInfo?.modelsPath}
             </span>
             <button
               type="button"
@@ -1180,7 +1186,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
               <FolderOpen className="h-3 w-3" />
               <span>{t('openModelsFolder')}</span>
             </button>
-            {!isFunasr && !isQwen && (
+            {!isFunasr && !isQwen && !isFireRed && (
               <>
                 <span className="text-muted-foreground/50">·</span>
                 <button
@@ -1203,6 +1209,8 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
           <FunasrModelSection onUpdate={onUpdate} downSource={downSource} />
         ) : isQwen ? (
           <QwenModelSection onUpdate={onUpdate} />
+        ) : isFireRed ? (
+          <FireRedModelSection onUpdate={onUpdate} />
         ) : installedOnly && !hasAnyInstalled ? (
           <p className="text-sm text-muted-foreground py-8 text-center">
             {t('noInstalledModels')}

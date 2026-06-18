@@ -262,6 +262,7 @@
     "fasterWhisper": "Faster-Whisper",
     "funasr": "FunASR",
     "qwen": "Qwen3-ASR",
+    "fireRedAsr": "FireRedASR",
     "localCli": "本地命令"
   }
 }

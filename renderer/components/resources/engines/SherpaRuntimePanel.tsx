@@ -26,7 +26,7 @@ const RUNTIME_SIZE = '20MB';
 const BINARY_SOURCES: DownloadSource[] = ['github', 'ghproxy', 'gitcode'];
 
 interface SherpaRuntimePanelProps {
-  engineKey: 'funasr' | 'qwen';
+  engineKey: 'funasr' | 'qwen' | 'fireRedAsr';
   runtime: SherpaRuntime;
   status?: EngineStatus;
   taskBusy: boolean;

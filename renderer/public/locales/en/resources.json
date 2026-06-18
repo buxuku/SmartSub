@@ -190,6 +190,57 @@
         }
       }
     },
+    "fireRedAsr": {
+      "name": "FireRedASR",
+      "desc": "Xiaohongshu FireRedASR-AED (Large) running locally on the sherpa-onnx runtime (shared with FunASR). Open-source, strong on Chinese-English code-switching and Chinese dialects — no GPU or Python required. Segment-level timestamps come from VAD.",
+      "scenario": "Best for: Chinese-English code-switching / Chinese dialects on CPU, Apache-2.0",
+      "notInstalled": "Not installed",
+      "needsModels": "Models needed",
+      "needsRuntime": "Runtime needed",
+      "desc.runtimeShared": "FireRedASR shares the sherpa-onnx runtime with FunASR. Installing or uninstalling it here affects both engines.",
+      "downloadRuntime": "Download runtime (~{{size}})",
+      "downloadSource": "Download source",
+      "downloadRuntimeConfirm": "This will download the sherpa-onnx runtime library (~{{size}}) shared with FunASR, for fully offline local transcription. Continue?",
+      "upgrade": "Upgrade",
+      "upgradeConfirm": "This will download and upgrade the shared sherpa-onnx runtime. The engine is stopped before upgrading and automatically rolled back if it fails. Continue?",
+      "uninstall": "Uninstall",
+      "uninstallConfirm": "Uninstalling removes the shared sherpa-onnx runtime; FunASR will also need it re-downloaded. Continue?",
+      "installedVersion": "Installed v{{version}}",
+      "checkUpdate": "Check for updates",
+      "checking": "Checking…",
+      "upToDate": "Up to date",
+      "updateAvailable": "Update available",
+      "downloading": "Downloading…",
+      "extracting": "Extracting… (this can take a while)",
+      "engineBusy": "A task is running. Wait for it to finish before installing, upgrading, or uninstalling the engine.",
+      "checkFailed": "Failed to check for updates. Please try again later.",
+      "anotherDownload": "Another download is in progress. Please wait for it to finish.",
+      "advanced": "Advanced settings",
+      "providerNote": "Current scope: CPU only. GPU support is planned for a future release.",
+      "numThreads": "Inference threads",
+      "numThreadsHint": "Threads used for CPU inference — higher is faster but uses more CPU",
+      "modelsTitle": "Models",
+      "needModelsHint": "Download to enable",
+      "modelDownload": "Download",
+      "modelDelete": "Delete",
+      "modelDownloadConfirm": "FireRedASR-AED (Large) is about {{size}}. It runs on CPU but is not real-time. Continue?",
+      "modelSources": {
+        "modelscope": "ModelScope (CN)",
+        "ghproxy": "gh-proxy",
+        "github": "GitHub"
+      },
+      "modelSourceHint": {
+        "modelscope": "Mainland China CDN, fastest; per-file download, no extraction (recommended)",
+        "ghproxy": "GitHub via gh-proxy.com; downloads archive then extracts",
+        "github": "Direct GitHub; faster on overseas networks; downloads archive then extracts"
+      },
+      "models": {
+        "fire-red-asr-large-zh-en": {
+          "name": "FireRedASR-AED-L (int8, ~1.7GB)",
+          "desc": "Strong Chinese-English code-switching and Chinese dialects; int8 quantized, CPU-friendly. Segment-level timestamps via VAD."
+        }
+      }
+    },
     "localCli": {
       "name": "Local CLI",
       "desc": "Use a self-installed Whisper-compatible command-line tool",

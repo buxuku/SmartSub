@@ -116,6 +116,9 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
               qwenVadInstalled={systemInfo?.qwenVadInstalled}
               qwenModelsInstalled={systemInfo?.qwenModelsInstalled}
               qwenEngineInstalled={systemInfo?.qwenEngineInstalled}
+              fireRedVadInstalled={systemInfo?.fireRedVadInstalled}
+              fireRedModelsInstalled={systemInfo?.fireRedModelsInstalled}
+              fireRedEngineInstalled={systemInfo?.fireRedEngineInstalled}
               includeLocalCli={includeLocalCli}
             />
           ) : (

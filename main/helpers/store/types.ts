@@ -70,6 +70,10 @@ export type StoreType = {
     qwenTopP?: number;
     /** Qwen3-ASR 随机种子，默认 42 */
     qwenSeed?: number;
+    /** FireRedASR-AED(sherpa-onnx) 推理 provider；本期仅 cpu 落地，cuda 预留 */
+    fireRedProvider?: 'cpu' | 'cuda';
+    /** FireRedASR-AED 解码线程数，默认 2 */
+    fireRedNumThreads?: number;
     /** 全局网络代理模式（none=直连；custom=手动 URL） */
     proxyMode?: 'none' | 'custom';
     /** custom 模式的代理 URL，如 http://user:pass@host:port */

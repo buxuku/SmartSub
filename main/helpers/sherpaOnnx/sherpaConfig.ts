@@ -49,6 +49,11 @@ export interface OfflineRecognizerConfig {
       topP: number;
       seed: number;
     };
+    /** FireRedASR-AED：encoder + decoder 两件套（tokens 走顶层 tokens.txt）。 */
+    fireRedAsr?: {
+      encoder: string;
+      decoder: string;
+    };
     tokens: string;
     numThreads: number;
     provider: string;
@@ -156,6 +161,41 @@ export function buildQwenRecognizerConfig(
         seed: p.seed,
       },
       tokens: '',
+      numThreads: p.num_threads,
+      provider: p.provider,
+      debug: 0,
+    },
+  };
+}
+
+/** FireRedASR-AED 解码相关参数（VAD 字段见 SherpaVadParams）。 */
+export interface FireRedRecognizerParams {
+  num_threads: number;
+  provider: string;
+}
+
+/**
+ * FireRedASR-AED OfflineRecognizer 配置：encoder + decoder 两件套映射到 sherpa 的
+ * `fireRedAsr` 块，tokens.txt 走**顶层 `tokens`**（与 sense_voice/paraformer 同位，
+ * 区别于 qwen 的 tokenizer 目录 + 空 tokens）。AED beam search 无暴露的数值解码超参，
+ * 故不存在 qwen 那样的 memset(0) 数值清零陷阱。
+ */
+export function buildFireRedRecognizerConfig(
+  files: {
+    encoder: string;
+    decoder: string;
+  },
+  tokens: string,
+  p: FireRedRecognizerParams,
+): OfflineRecognizerConfig {
+  return {
+    featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
+    modelConfig: {
+      fireRedAsr: {
+        encoder: files.encoder,
+        decoder: files.decoder,
+      },
+      tokens,
       numThreads: p.num_threads,
       provider: p.provider,
       debug: 0,

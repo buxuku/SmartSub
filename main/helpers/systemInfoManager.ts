@@ -45,6 +45,21 @@ import {
   getInstalledQwenModels,
   getQwenModelsRoot,
 } from './qwenModelCatalog';
+import {
+  getFireRedModelDownloader,
+  getFireRedProgressKey,
+} from './fireRedModelDownloader';
+import {
+  FIRERED_MODELS,
+  FireRedModelId,
+  FireRedModelSource,
+  isFireRedModelInstalled,
+  isFireRedVadInstalled,
+  isFireRedReady,
+  deleteFireRedModel,
+  getInstalledFireRedModels,
+  getFireRedModelsRoot,
+} from './fireRedModelCatalog';
 import { shutdownPythonRuntime } from './pythonRuntime';
 import { isSherpaLibInstalled } from './sherpaOnnx/sherpaLibPaths';
 import { getSherpaAsrRuntime } from './sherpaOnnx/sherpaFunasrRuntime';
@@ -62,6 +77,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   const ct2ModelDownloader = getFasterWhisperModelDownloader(mainWindow);
   const funasrModelDownloader = getFunasrModelDownloader(mainWindow);
   const qwenModelDownloader = getQwenModelDownloader(mainWindow);
+  const fireRedModelDownloader = getFireRedModelDownloader(mainWindow);
 
   ipcMain.handle('getSystemInfo', async () => {
     // 三层就绪判定：缺基座 → error（需重装/升级 App）；有基座缺引擎包 → not_installed
@@ -92,6 +108,10 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       qwenVadInstalled: isQwenVadInstalled(),
       qwenModelsInstalled: getInstalledQwenModels(),
       qwenModelsPath: getQwenModelsRoot(),
+      fireRedEngineInstalled: isSherpaLibInstalled(),
+      fireRedVadInstalled: isFireRedVadInstalled(),
+      fireRedModelsInstalled: getInstalledFireRedModels(),
+      fireRedModelsPath: getFireRedModelsRoot(),
     };
   });
 
@@ -241,11 +261,61 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     }
   });
 
+  ipcMain.handle(
+    'downloadFireRedModel',
+    async (
+      _event,
+      { model, source }: { model: FireRedModelId; source?: FireRedModelSource },
+    ) => {
+      if (downloadingModels.size > 0) {
+        return { success: false, error: 'anotherDownloadInProgress' };
+      }
+      const progressKey = getFireRedProgressKey(model);
+      downloadingModels.add(progressKey);
+      try {
+        await fireRedModelDownloader.download(model, source);
+        downloadingModels.delete(progressKey);
+        return { success: true };
+      } catch (error) {
+        logMessage(`firered model download error: ${error}`, 'error');
+        downloadingModels.delete(progressKey);
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle('getFireRedModelStatus', async () => ({
+    success: true,
+    engineInstalled: isSherpaLibInstalled(),
+    vadInstalled: isFireRedVadInstalled(),
+    ready: isFireRedReady(),
+    models: (Object.keys(FIRERED_MODELS) as FireRedModelId[]).map((id) => ({
+      id,
+      installed: isFireRedModelInstalled(id),
+    })),
+  }));
+
+  ipcMain.handle(
+    'deleteFireRedModel',
+    async (_event, modelId: FireRedModelId) => {
+      try {
+        // fireRed 与 funasr/qwen 共享同一 sherpa worker：删除前先释放 worker，避免 Windows 上
+        // 大模型文件被加载占用导致 rm 失败（worker 会在下次转写/预热时自动重建）。
+        getSherpaAsrRuntime().dispose();
+        deleteFireRedModel(modelId);
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
   ipcMain.handle('cancelModelDownload', async () => {
     modelDownloader.cancel();
     ct2ModelDownloader.cancel();
     funasrModelDownloader.cancel();
     qwenModelDownloader.cancel();
+    fireRedModelDownloader.cancel();
     downloadingModels.clear();
     return true;
   });
@@ -277,7 +347,9 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     'openModelsFolder',
     async (
       _event,
-      options?: { pathType?: 'ggml' | 'ct2' | 'funasr' | 'qwen' },
+      options?: {
+        pathType?: 'ggml' | 'ct2' | 'funasr' | 'qwen' | 'firered';
+      },
     ) => {
       const modelsPath =
         options?.pathType === 'ct2'
@@ -286,7 +358,9 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
             ? getFunasrModelsRoot()
             : options?.pathType === 'qwen'
               ? getQwenModelsRoot()
-              : (getPath('modelsPath') as string);
+              : options?.pathType === 'firered'
+                ? getFireRedModelsRoot()
+                : (getPath('modelsPath') as string);
       try {
         await fse.ensureDir(modelsPath);
         const err = await shell.openPath(modelsPath);

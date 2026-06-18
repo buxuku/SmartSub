@@ -32,6 +32,12 @@ interface IProps {
   qwenModelsInstalled?: string[];
   /** qwen 运行库（与 funasr 同库）是否已安装 */
   qwenEngineInstalled?: boolean;
+  /** fireRed 共享 silero VAD 是否就绪 */
+  fireRedVadInstalled?: boolean;
+  /** fireRed 已安装模型 id 列表 */
+  fireRedModelsInstalled?: string[];
+  /** fireRed 运行库（与 funasr 同库）是否已安装 */
+  fireRedEngineInstalled?: boolean;
   /** 是否把 localCli 作为独立分组列出（内置规范模型名，保 `${whisperModel}` 替换）。 */
   includeLocalCli?: boolean;
   /** 当前选中的引擎与模型（二者共同决定选中项；任一缺失或不在分组内则视为未选）。 */
@@ -62,6 +68,9 @@ const Models = React.forwardRef<
     qwenVadInstalled,
     qwenModelsInstalled,
     qwenEngineInstalled,
+    fireRedVadInstalled,
+    fireRedModelsInstalled,
+    fireRedEngineInstalled,
     includeLocalCli,
     engine,
     model,
@@ -81,6 +90,9 @@ const Models = React.forwardRef<
       qwenVadInstalled,
       qwenModelsInstalled,
       qwenEngineInstalled,
+      fireRedVadInstalled,
+      fireRedModelsInstalled,
+      fireRedEngineInstalled,
     },
     { includeLocalCli },
   );

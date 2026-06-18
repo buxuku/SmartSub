@@ -31,6 +31,17 @@ function buildKey(req) {
       req.params.seed,
     ].join('|');
   }
+  if (req.modelType === 'fire_red_asr') {
+    const f = req.fireRed || {};
+    return [
+      'fire_red_asr',
+      f.encoder,
+      f.decoder,
+      req.tokens,
+      req.params.num_threads,
+      req.params.provider,
+    ].join('|');
+  }
   return [
     req.modelType,
     req.asrModel,
@@ -110,18 +121,40 @@ function buildQwenRecognizerConfig(q, p) {
   };
 }
 
+// FireRedASR-AED：encoder + decoder 两件套映射到 fireRedAsr 块，tokens.txt 走顶层 tokens
+// （与 sense_voice/paraformer 同位，区别于 qwen 的 tokenizer 目录 + 空 tokens）。
+function buildFireRedRecognizerConfig(f, tokens, p) {
+  return {
+    featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
+    modelConfig: {
+      fireRedAsr: {
+        encoder: f.encoder,
+        decoder: f.decoder,
+      },
+      tokens,
+      numThreads: p.num_threads,
+      provider: p.provider,
+      debug: 0,
+    },
+  };
+}
+
 function ensureLoaded(req) {
   const key = buildKey(req);
   if (recognizer && key === cacheKey) return;
-  const config =
-    req.modelType === 'qwen3_asr'
-      ? buildQwenRecognizerConfig(req.qwen, req.params)
-      : buildRecognizerConfig(
-          req.modelType,
-          req.asrModel,
-          req.tokens,
-          req.params,
-        );
+  let config;
+  if (req.modelType === 'qwen3_asr') {
+    config = buildQwenRecognizerConfig(req.qwen, req.params);
+  } else if (req.modelType === 'fire_red_asr') {
+    config = buildFireRedRecognizerConfig(req.fireRed, req.tokens, req.params);
+  } else {
+    config = buildRecognizerConfig(
+      req.modelType,
+      req.asrModel,
+      req.tokens,
+      req.params,
+    );
+  }
   recognizer = new sherpa.OfflineRecognizer(config);
   vad = new sherpa.Vad(buildVadConfig(req.vadModel, req.params), 60);
   cacheKey = key;

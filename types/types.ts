@@ -24,6 +24,14 @@ export interface ISystemInfo {
   qwenModelsInstalled?: string[];
   /** qwen 模型根目录（固定路径，仅展示用，不可更改） */
   qwenModelsPath?: string;
+  /** fireRed 引擎包（sherpa-onnx，与 funasr 同库）是否已安装 */
+  fireRedEngineInstalled?: boolean;
+  /** fireRed 共用 silero VAD 是否已安装 */
+  fireRedVadInstalled?: boolean;
+  /** 已安装的 fireRed 模型 id（如 ['fire-red-asr-large-zh-en']） */
+  fireRedModelsInstalled?: string[];
+  /** fireRed 模型根目录（固定路径，仅展示用，不可更改） */
+  fireRedModelsPath?: string;
 }
 
 export interface IFiles {

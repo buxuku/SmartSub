@@ -82,9 +82,14 @@ let activeTasksCount = 0;
 /** 执行中"受限引擎"(faster-whisper/funasr)任务数：混合引擎队列并发钳制用。 */
 let activeRestrictiveCount = 0;
 
-/** faster-whisper / funasr / qwen 共享单 sidecar/worker，需钳制有效并发为 1。 */
+/** faster-whisper / funasr / qwen / fireRedAsr 共享单 sidecar/worker，需钳制有效并发为 1。 */
 function isRestrictiveEngine(engine: TranscriptionEngine): boolean {
-  return engine === 'fasterWhisper' || engine === 'funasr' || engine === 'qwen';
+  return (
+    engine === 'fasterWhisper' ||
+    engine === 'funasr' ||
+    engine === 'qwen' ||
+    engine === 'fireRedAsr'
+  );
 }
 /** 最近一次 handleTask 的 event：resume 触发派发时复用 */
 let dispatchEvent: any = null;

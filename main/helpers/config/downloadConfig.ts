@@ -1,4 +1,3 @@
-import { store } from '../store';
 import {
   DownloadEndpointConfig,
   normalizeDownloadEndpoints,
@@ -18,6 +17,10 @@ export {
 export function getDownloadEndpoints(): DownloadEndpointConfig {
   let raw: Partial<DownloadEndpointConfig> | undefined;
   try {
+    // 延迟 require：store 在模块加载期会调用 electron app.getPath()，
+    // 顶层 import 会让任何引入本模块的纯函数（如各 model catalog）在非
+    // Electron 环境（单测/脚本）下崩溃。改为调用时按需取，运行期行为不变。
+    const { store } = require('../store') as typeof import('../store');
     const settings = store.get('settings') as
       | { downloadEndpoints?: Partial<DownloadEndpointConfig> }
       | undefined;

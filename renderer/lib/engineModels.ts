@@ -26,6 +26,12 @@ export interface EngineModelInfo {
   qwenModelsInstalled?: string[];
   /** qwen 运行库（sherpa-onnx，与 funasr 同库）是否已安装 */
   qwenEngineInstalled?: boolean;
+  /** fireRed 共享 silero VAD 是否就绪 */
+  fireRedVadInstalled?: boolean;
+  /** fireRed 已安装的模型 id 列表 */
+  fireRedModelsInstalled?: string[];
+  /** fireRed 运行库（sherpa-onnx，与 funasr 同库）是否已安装 */
+  fireRedEngineInstalled?: boolean;
 }
 
 /** 解析当前转写引擎，兼容旧的 useLocalWhisper 开关 */
@@ -59,6 +65,9 @@ export function getInstalledModelsForEngine(
   if (engine === 'qwen') {
     return info?.qwenModelsInstalled ?? [];
   }
+  if (engine === 'fireRedAsr') {
+    return info?.fireRedModelsInstalled ?? [];
+  }
   return info?.modelsInstalled ?? [];
 }
 
@@ -85,6 +94,9 @@ export function getSelectableModelsForEngine(
   if (engine === 'qwen') {
     return info?.qwenModelsInstalled ?? [];
   }
+  if (engine === 'fireRedAsr') {
+    return info?.fireRedModelsInstalled ?? [];
+  }
   return info?.modelsInstalled ?? [];
 }
 
@@ -104,6 +116,12 @@ export function hasModelsForEngine(
   if (engine === 'qwen') {
     return (
       !!info?.qwenVadInstalled && (info?.qwenModelsInstalled?.length ?? 0) > 0
+    );
+  }
+  if (engine === 'fireRedAsr') {
+    return (
+      !!info?.fireRedVadInstalled &&
+      (info?.fireRedModelsInstalled?.length ?? 0) > 0
     );
   }
   return getInstalledModelsForEngine(info, useLocalWhisper).length > 0;
@@ -190,6 +208,15 @@ export function getEngineModelGroups(
     groups.push({ engine: 'qwen', models: qwenModels });
   }
 
+  const fireRedModels = info?.fireRedModelsInstalled ?? [];
+  if (
+    info?.fireRedVadInstalled &&
+    fireRedModels.length &&
+    info?.fireRedEngineInstalled
+  ) {
+    groups.push({ engine: 'fireRedAsr', models: fireRedModels });
+  }
+
   if (opts?.includeLocalCli) {
     groups.push({ engine: 'localCli', models: models.map((m) => m.name) });
   }
@@ -224,6 +251,13 @@ export function hasAnyModelAnyEngine(
     info?.qwenVadInstalled &&
     (info?.qwenModelsInstalled?.length ?? 0) > 0 &&
     info?.qwenEngineInstalled
+  ) {
+    return true;
+  }
+  if (
+    info?.fireRedVadInstalled &&
+    (info?.fireRedModelsInstalled?.length ?? 0) > 0 &&
+    info?.fireRedEngineInstalled
   ) {
     return true;
   }

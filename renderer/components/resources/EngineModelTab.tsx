@@ -18,6 +18,7 @@ import { cn } from 'lib/utils';
 import FasterWhisperPanel from '@/components/resources/engines/panels/FasterWhisperPanel';
 import FunasrPanel from '@/components/resources/engines/panels/FunasrPanel';
 import QwenPanel from '@/components/resources/engines/panels/QwenPanel';
+import FireRedPanel from '@/components/resources/engines/panels/FireRedPanel';
 import LocalCliPanel from '@/components/resources/engines/panels/LocalCliPanel';
 import BuiltinPanel from '@/components/resources/engines/panels/BuiltinPanel';
 import EngineIcon from '@/components/resources/engines/EngineIcon';
@@ -48,6 +49,7 @@ const ENGINES: TranscriptionEngine[] = [
   'fasterWhisper',
   'funasr',
   'qwen',
+  'fireRedAsr',
   'localCli',
 ];
 
@@ -112,6 +114,8 @@ const EngineModelTab: React.FC = () => {
   const [funasrModelsReady, setFunasrModelsReady] = useState(false);
   const [qwenPkgInstalled, setQwenPkgInstalled] = useState(false);
   const [qwenModelsReady, setQwenModelsReady] = useState(false);
+  const [fireRedPkgInstalled, setFireRedPkgInstalled] = useState(false);
+  const [fireRedModelsReady, setFireRedModelsReady] = useState(false);
   const [binarySource, setBinarySource] = useState<DownloadSource>(() =>
     typeof window === 'undefined' ? 'github' : readPersistedDownloadSource(),
   );
@@ -173,6 +177,12 @@ const EngineModelTab: React.FC = () => {
       if (qr?.success) {
         setQwenPkgInstalled(!!qr.engineInstalled);
         setQwenModelsReady(!!qr.ready);
+      }
+
+      const frr = await window?.ipc?.invoke('getFireRedModelStatus');
+      if (frr?.success) {
+        setFireRedPkgInstalled(!!frr.engineInstalled);
+        setFireRedModelsReady(!!frr.ready);
       }
     } catch (error) {
       console.error('Failed to refresh engine status:', error);
@@ -436,6 +446,21 @@ const EngineModelTab: React.FC = () => {
         </Badge>
       );
     }
+    if (engine === 'fireRedAsr') {
+      if (fireRedPkgInstalled && fireRedModelsReady) return readyBadge;
+      if (fireRedPkgInstalled && !fireRedModelsReady) {
+        return (
+          <Badge variant="outline" className="border-primary/40 text-primary">
+            {t('engines.fireRedAsr.needsModels')}
+          </Badge>
+        );
+      }
+      return (
+        <Badge variant="outline" className="shrink-0 text-muted-foreground">
+          {t('engines.fireRedAsr.notInstalled')}
+        </Badge>
+      );
+    }
     if (engine === 'localCli') {
       return localCliReady ? (
         readyBadge
@@ -466,6 +491,9 @@ const EngineModelTab: React.FC = () => {
     }
     if (engine === 'qwen') {
       return qwenPkgInstalled && qwenModelsReady ? 'ready' : 'pending';
+    }
+    if (engine === 'fireRedAsr') {
+      return fireRedPkgInstalled && fireRedModelsReady ? 'ready' : 'pending';
     }
     if (engine === 'localCli') return localCliReady ? 'ready' : 'pending';
     // builtin：内置运行时始终可用，但未装任何模型则无法转写，按待办呈现。
@@ -544,6 +572,18 @@ const EngineModelTab: React.FC = () => {
       return (
         <QwenPanel
           status={engineStatuses.qwen}
+          taskBusy={taskBusy}
+          runtime={sherpa}
+          binarySource={binarySource}
+          onBinarySourceChange={handleBinarySourceChange}
+          onRefreshStatuses={refresh}
+        />
+      );
+    }
+    if (selectedEngine === 'fireRedAsr') {
+      return (
+        <FireRedPanel
+          status={engineStatuses.fireRedAsr}
           taskBusy={taskBusy}
           runtime={sherpa}
           binarySource={binarySource}

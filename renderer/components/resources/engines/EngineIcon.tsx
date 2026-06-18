@@ -64,6 +64,21 @@ const EngineIcon: React.FC<EngineIconProps> = ({ engine, className }) => {
       </svg>
     );
   }
+  if (engine === 'fireRedAsr') {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        fill="none"
+        aria-hidden="true"
+      >
+        <path
+          d="M12 2.5c1.8 2.4 1.2 4.3-.2 5.8-1.5 1.6-3.6 3.2-3.6 6.1A4.3 4.3 0 0 0 12 18.7a4.3 4.3 0 0 0 3.8-4.3c0-1.3-.5-2.4-1.1-3.4.9.4 1.7 1.1 2.2 2.2.7 1.4.8 3.2-.2 5 1.7-1 2.8-2.9 2.8-5.4 0-3.7-2.9-6.4-3.8-9.6-1.1 1-1.6 2.2-1.5 3.6-1.4-1.4-2-3.4-.2-5.9Z"
+          fill="#FF2442"
+        />
+      </svg>
+    );
+  }
   if (engine === 'localCli') {
     return (
       <svg
