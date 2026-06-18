@@ -13,9 +13,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Download, Trash2, X, Mic, Waves } from 'lucide-react';
+import {
+  Download,
+  Trash2,
+  X,
+  Mic,
+  Waves,
+  Upload,
+  CheckCircle2,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import SherpaModelRow from '@/components/resources/SherpaModelRow';
+import { importModelFromFolder } from 'lib/importModel';
 
 type FunasrModelId = 'sensevoice-small' | 'paraformer-zh' | 'silero-vad';
 
@@ -103,6 +112,19 @@ const FunasrModelSection: React.FC<{
     setDownloading(null);
   };
 
+  const handleImport = async (id: FunasrModelId) => {
+    const o = await importModelFromFolder('funasr', id);
+    if (o.kind === 'success') {
+      toast.success(t('importModelSuccess'), { duration: 2000 });
+      await load();
+      onUpdate?.();
+    } else if (o.kind === 'invalid-layout') {
+      toast.error(t('importInvalidLayout', { files: o.missing.join(', ') }));
+    } else if (o.kind === 'error') {
+      toast.error(t('importModelFailed', { error: o.message }));
+    }
+  };
+
   const handleDelete = async (id: FunasrModelId) => {
     const r = await window?.ipc?.invoke('deleteFunasrModel', id);
     if (r?.success) {
@@ -145,16 +167,30 @@ const FunasrModelSection: React.FC<{
         {t('engines.funasr.modelDelete')}
       </Button>
     ) : (
-      <Button
-        size="sm"
-        variant="outline"
-        className="gap-1.5"
-        disabled={!!downloading}
-        onClick={() => handleDownload(id)}
-      >
-        <Download className="h-3.5 w-3.5" />
-        {t('engines.funasr.modelDownload')}
-      </Button>
+      <div className="flex items-center gap-1.5">
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5"
+          disabled={!!downloading}
+          onClick={() => handleDownload(id)}
+        >
+          <Download className="h-3.5 w-3.5" />
+          {t('engines.funasr.modelDownload')}
+        </Button>
+        {id !== VAD_MODEL && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="gap-1.5 text-muted-foreground"
+            disabled={!!downloading}
+            onClick={() => handleImport(id)}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            {t('importFromFolder')}
+          </Button>
+        )}
+      </div>
     );
     return (
       <SherpaModelRow
@@ -189,13 +225,24 @@ const FunasrModelSection: React.FC<{
         <div className="flex items-baseline gap-2 px-1">
           <Waves className="h-4 w-4 self-center text-muted-foreground" />
           <h3 className="text-sm font-semibold">VAD</h3>
-          <Badge variant="outline" className="text-[10px]">
-            {t('engines.funasr.needModelsHint')}
-          </Badge>
         </div>
         <Card>
           <CardContent className="p-2">
-            {renderRow(VAD_MODEL, Waves)}
+            <SherpaModelRow
+              icon={Waves}
+              name={t(`engines.funasr.models.${VAD_MODEL}.name`)}
+              desc={t(`engines.funasr.models.${VAD_MODEL}.desc`)}
+              installed
+              trailing={
+                <Badge
+                  variant="outline"
+                  className="gap-1 border-success/40 text-success"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {commonT('builtIn')}
+                </Badge>
+              }
+            />
           </CardContent>
         </Card>
       </section>

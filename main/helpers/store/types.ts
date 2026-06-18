@@ -50,6 +50,12 @@ export type StoreType = {
     fasterWhisperDevice?: 'auto' | 'cpu' | 'cuda';
     fasterWhisperComputeType?: string;
     fasterWhisperModelsPath?: string;
+    /** funasr 模型根目录覆盖；缺省回退 userData/models/funasr */
+    funasrModelsPath?: string;
+    /** qwen 模型根目录覆盖；缺省回退 userData/models/qwen */
+    qwenModelsPath?: string;
+    /** fireRed 模型根目录覆盖；缺省回退 userData/models/firered */
+    fireRedModelsPath?: string;
     /** FunASR(SenseVoice via sherpa-onnx) 推理 provider；P1 仅 cpu 落地，cuda/coreml 预留 */
     funasrProvider?: 'cpu' | 'cuda' | 'coreml';
     /** FunASR 逆文本归一化（数字/标点），默认开启 */

@@ -3,6 +3,7 @@ import path from 'path';
 import type { EngineStatus } from '../../../types/engine';
 import {
   getFunasrModelDir,
+  getFunasrVadModelPath,
   isFunasrReady,
   getInstalledFunasrAsrModels,
   resolveFunasrAsrSelection,
@@ -36,7 +37,7 @@ function buildModelRequest(
   return {
     asrModel: path.join(asrDir, 'model.int8.onnx'),
     tokens: path.join(asrDir, 'tokens.txt'),
-    vadModel: path.join(getFunasrModelDir('silero-vad'), 'silero_vad.onnx'),
+    vadModel: getFunasrVadModelPath(),
     modelType: selection.modelType,
     params: buildFunasrParams(settings, sourceLanguage),
   };

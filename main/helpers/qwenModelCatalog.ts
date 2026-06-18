@@ -1,19 +1,21 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
-import {
-  getFunasrModelDir,
-  isFunasrModelInstalled,
-} from './funasrModelCatalog';
+import { resolveOverridePath, resolveBundledVadPath } from './modelImport';
 import {
   getGithubBase,
   getGithubProxyPrefix,
   getModelScopeBase,
 } from './config/downloadConfig';
 
-/** qwen 模型根目录：userData/models/qwen */
+/** qwen 模型根目录：settings.qwenModelsPath 覆盖，否则 userData/models/qwen */
 export function getQwenModelsRoot(): string {
-  const root = path.join(app.getPath('userData'), 'models', 'qwen');
+  const { store } = require('./store') as typeof import('./store');
+  const fallback = path.join(app.getPath('userData'), 'models', 'qwen');
+  const root = resolveOverridePath(
+    store.get('settings')?.qwenModelsPath,
+    fallback,
+  );
   if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true });
   return root;
 }
@@ -178,14 +180,16 @@ export function getQwenModelFiles(id: QwenModelId): {
   };
 }
 
-/** 共享 silero VAD（复用 funasr 已下载的 VAD，避免重复下载）。 */
+/** 共享 silero VAD：随应用内置（extraResources/sherpa/vad/silero_vad.onnx），与 funasr/fireRed 共用同一份。 */
 export function getQwenVadModelPath(): string {
-  return path.join(getFunasrModelDir('silero-vad'), 'silero_vad.onnx');
+  const { getExtraResourcesPath } =
+    require('./utils') as typeof import('./utils');
+  return resolveBundledVadPath(getExtraResourcesPath());
 }
 
-/** silero VAD 是否就绪（qwen 与 funasr 共用同一 VAD 文件）。 */
+/** 共享 VAD 是否就绪：检查随包内置文件是否存在（正常安装下恒为真）。 */
 export function isQwenVadInstalled(): boolean {
-  return isFunasrModelInstalled('silero-vad');
+  return fs.existsSync(getQwenVadModelPath());
 }
 
 /** 全部 qwen 模型 id（静态，纯函数，不触磁盘）。 */

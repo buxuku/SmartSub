@@ -2,10 +2,16 @@ import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
 import { getDownloadEndpoints } from './config/downloadConfig';
+import { resolveOverridePath, resolveBundledVadPath } from './modelImport';
 
 /** funasr 模型根目录：userData/models/funasr */
 export function getFunasrModelsRoot(): string {
-  const root = path.join(app.getPath('userData'), 'models', 'funasr');
+  const { store } = require('./store') as typeof import('./store');
+  const fallback = path.join(app.getPath('userData'), 'models', 'funasr');
+  const root = resolveOverridePath(
+    store.get('settings')?.funasrModelsPath,
+    fallback,
+  );
   if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true });
   return root;
 }
@@ -61,6 +67,9 @@ export const FUNASR_MODELS: Record<FunasrModelId, FunasrModelSpec> = {
     keepFiles: ['model.int8.onnx', 'tokens.txt'],
     requiredFiles: ['model.int8.onnx', 'tokens.txt'],
   },
+  // 【已退役/随包内置】VAD 现随应用发布（extraResources/sherpa/vad/silero_vad.onnx），
+  // 运行时一律走 getFunasrVadModelPath()/isFunasrVadInstalled()，不再下载。
+  // 此条目仅作为兼容旧版「曾下载到 funasr 根」的遗留元数据保留，UI 不再暴露下载入口。
   'silero-vad': {
     id: 'silero-vad',
     dirName: 'silero-vad',
@@ -105,6 +114,21 @@ export function isFunasrModelInstalled(id: FunasrModelId): boolean {
   );
 }
 
+/**
+ * 共享 silero VAD 的绝对路径：随应用内置（extraResources/sherpa/vad/silero_vad.onnx），
+ * 不再依赖下载。funasr / qwen / fireRedAsr 共用这一份，与各引擎可自定义的模型根目录解耦。
+ */
+export function getFunasrVadModelPath(): string {
+  const { getExtraResourcesPath } =
+    require('./utils') as typeof import('./utils');
+  return resolveBundledVadPath(getExtraResourcesPath());
+}
+
+/** 共享 VAD 是否就绪：检查随包内置文件是否存在（正常安装下恒为真）。 */
+export function isFunasrVadInstalled(): boolean {
+  return fs.existsSync(getFunasrVadModelPath());
+}
+
 /** 全部 ASR 模型 id（静态，纯函数，不触磁盘）。 */
 export function getFunasrAsrModelIds(): FunasrModelId[] {
   return (Object.keys(FUNASR_MODELS) as FunasrModelId[]).filter(
@@ -139,12 +163,9 @@ export function resolveFunasrAsrSelection(
   };
 }
 
-/** funasr 转写就绪 = VAD + 至少一个 ASR 模型已安装。 */
+/** funasr 转写就绪 = 内置 VAD + 至少一个 ASR 模型已安装。 */
 export function isFunasrReady(): boolean {
-  return (
-    isFunasrModelInstalled('silero-vad') &&
-    getInstalledFunasrAsrModels().length > 0
-  );
+  return isFunasrVadInstalled() && getInstalledFunasrAsrModels().length > 0;
 }
 
 export function deleteFunasrModel(id: FunasrModelId): void {

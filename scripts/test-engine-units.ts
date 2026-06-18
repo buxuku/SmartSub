@@ -37,10 +37,22 @@ import {
   srtHasCues,
 } from '../main/helpers/embeddedSubtitleParser';
 import { decideCloseIntent } from '../main/helpers/windowCloseDecision';
+import fs from 'fs';
+import os from 'os';
+import nodePath from 'path';
 import {
   getFunasrAsrModelIds,
   resolveFunasrAsrSelection,
+  FUNASR_MODELS,
 } from '../main/helpers/funasrModelCatalog';
+import { QWEN_MODELS } from '../main/helpers/qwenModelCatalog';
+import { FIRERED_MODELS } from '../main/helpers/fireRedModelCatalog';
+import {
+  validateModelLayout,
+  resolveOverridePath,
+  resolveBundledVadPath,
+  SHERPA_VAD_SUBPATH,
+} from '../main/helpers/modelImport';
 import {
   buildVadConfig,
   buildRecognizerConfig,
@@ -843,6 +855,87 @@ eq(
   buildFireRedParams({ vadMaxSpeechDuration: 0 }).vad_max_speech_duration_s,
   FIRERED_HARD_MAX_SPEECH_S,
   'fireRed: buildFireRedParams overrides 0=unlimited convention (clamps to 60)',
+);
+
+// --- modelImport: validateModelLayout（含嵌套相对路径） ---
+{
+  const tmp = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'modelimport-'));
+  fs.writeFileSync(nodePath.join(tmp, 'encoder.int8.onnx'), 'x');
+  fs.writeFileSync(nodePath.join(tmp, 'decoder.int8.onnx'), 'x');
+  fs.writeFileSync(nodePath.join(tmp, 'tokens.txt'), 'x');
+  eq(
+    validateModelLayout(tmp, [
+      'encoder.int8.onnx',
+      'decoder.int8.onnx',
+      'tokens.txt',
+    ]).ok,
+    true,
+    'import: complete fireRed layout -> ok',
+  );
+  eq(
+    validateModelLayout(tmp, ['tokenizer/vocab.json']).missing,
+    ['tokenizer/vocab.json'],
+    'import: missing nested file -> reported in missing',
+  );
+  fs.mkdirSync(nodePath.join(tmp, 'tokenizer'), { recursive: true });
+  fs.writeFileSync(nodePath.join(tmp, 'tokenizer', 'vocab.json'), 'x');
+  eq(
+    validateModelLayout(tmp, ['tokenizer/vocab.json']).ok,
+    true,
+    'import: present nested file -> ok',
+  );
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+// --- modelImport: resolveOverridePath（覆盖优先/空值回退） ---
+eq(
+  resolveOverridePath('/custom/models', '/default/models'),
+  '/custom/models',
+  'path: override wins',
+);
+eq(
+  resolveOverridePath(undefined, '/default/models'),
+  '/default/models',
+  'path: undefined -> fallback',
+);
+eq(
+  resolveOverridePath('', '/default/models'),
+  '/default/models',
+  'path: empty -> fallback',
+);
+eq(
+  resolveOverridePath('   ', '/default/models'),
+  '/default/models',
+  'path: whitespace -> fallback',
+);
+
+// --- modelImport: 内置共享 VAD 路径（随包内置，与引擎模型根解耦） ---
+eq(
+  SHERPA_VAD_SUBPATH,
+  nodePath.join('sherpa', 'vad', 'silero_vad.onnx'),
+  'vad: bundled subpath is sherpa/vad/silero_vad.onnx',
+);
+eq(
+  resolveBundledVadPath('/opt/app/extraResources'),
+  nodePath.join('/opt/app/extraResources', 'sherpa', 'vad', 'silero_vad.onnx'),
+  'vad: resolveBundledVadPath joins extraResources root (engine-root independent)',
+);
+
+// --- catalog requiredFiles（导入消歧/嵌套校验集来源） ---
+eq(
+  FUNASR_MODELS['sensevoice-small'].requiredFiles,
+  FUNASR_MODELS['paraformer-zh'].requiredFiles,
+  'import: funasr two ASR models share requiredFiles (must disambiguate by id)',
+);
+eq(
+  QWEN_MODELS['qwen3-asr-0.6b'].requiredFiles.includes('tokenizer/vocab.json'),
+  true,
+  'import: qwen requiredFiles include nested tokenizer file',
+);
+eq(
+  FIRERED_MODELS['fire-red-asr-large-zh-en'].requiredFiles,
+  ['encoder.int8.onnx', 'decoder.int8.onnx', 'tokens.txt'],
+  'import: fireRed requiredFiles',
 );
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);

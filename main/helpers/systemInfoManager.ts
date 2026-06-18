@@ -4,7 +4,13 @@ import { getModelsInstalled, getPath, deleteModel } from './whisper';
 import {
   getFasterWhisperModelsInstalled,
   getFasterWhisperModelsPath,
+  toCt2CacheDirName,
 } from './modelCatalog';
+import {
+  validateModelLayout,
+  CT2_REQUIRED_FILES,
+  CT2_IMPORT_SNAPSHOT_REV,
+} from './modelImport';
 import {
   isPyBaseReady,
   isEnginePackageInstalled,
@@ -25,6 +31,7 @@ import {
   FUNASR_MODELS,
   FunasrModelId,
   isFunasrModelInstalled,
+  isFunasrVadInstalled,
   isFunasrReady,
   deleteFunasrModel,
   getInstalledFunasrAsrModels,
@@ -37,6 +44,7 @@ import {
 import {
   QWEN_MODELS,
   QwenModelId,
+  QWEN_DEFAULT_MODEL_ID,
   QwenModelSource,
   isQwenModelInstalled,
   isQwenVadInstalled,
@@ -52,6 +60,7 @@ import {
 import {
   FIRERED_MODELS,
   FireRedModelId,
+  FIRERED_DEFAULT_MODEL_ID,
   FireRedModelSource,
   isFireRedModelInstalled,
   isFireRedVadInstalled,
@@ -71,6 +80,65 @@ import { testTranslation } from '../translate';
 import { getBuildInfo } from './buildInfo';
 
 let downloadingModels = new Set<string>();
+
+/** 可文件夹导入的引擎类型（builtin 走单文件导入，不在此列）。 */
+type FolderImportEngine = 'funasr' | 'qwen' | 'fireRedAsr' | 'fasterWhisper';
+
+interface ImportPlan {
+  /** 目标模型必需文件（相对源/目的目录），用于导入前后布局校验。 */
+  requiredFiles: string[];
+  /** 拷贝目的地（绝对路径）。 */
+  destDir: string;
+}
+
+/**
+ * 解析「从文件夹导入」的校验集与目的地（按指定引擎+模型槽消歧）。
+ * - sherpa 三引擎：落 `<engine root>/<dirName>`，校验集取 catalog requiredFiles；
+ * - fasterWhisper：落合成快照目录，使 resolveCt2ModelSnapshotDir 命中，校验集为 CT2 关键文件。
+ * 返回 null 表示模型 id 非法/缺失。
+ */
+function resolveImportPlan(
+  engine: FolderImportEngine,
+  modelId: string | undefined,
+): ImportPlan | null {
+  if (engine === 'funasr') {
+    const id = modelId as FunasrModelId | undefined;
+    if (!id || !FUNASR_MODELS[id]) return null;
+    return {
+      requiredFiles: FUNASR_MODELS[id].requiredFiles,
+      destDir: path.join(getFunasrModelsRoot(), FUNASR_MODELS[id].dirName),
+    };
+  }
+  if (engine === 'qwen') {
+    const id = (modelId as QwenModelId) || QWEN_DEFAULT_MODEL_ID;
+    if (!QWEN_MODELS[id]) return null;
+    return {
+      requiredFiles: QWEN_MODELS[id].requiredFiles,
+      destDir: path.join(getQwenModelsRoot(), QWEN_MODELS[id].dirName),
+    };
+  }
+  if (engine === 'fireRedAsr') {
+    const id = (modelId as FireRedModelId) || FIRERED_DEFAULT_MODEL_ID;
+    if (!FIRERED_MODELS[id]) return null;
+    return {
+      requiredFiles: FIRERED_MODELS[id].requiredFiles,
+      destDir: path.join(getFireRedModelsRoot(), FIRERED_MODELS[id].dirName),
+    };
+  }
+  if (engine === 'fasterWhisper') {
+    if (!modelId) return null;
+    return {
+      requiredFiles: CT2_REQUIRED_FILES,
+      destDir: path.join(
+        getFasterWhisperModelsPath(),
+        toCt2CacheDirName(modelId),
+        'snapshots',
+        CT2_IMPORT_SNAPSHOT_REV,
+      ),
+    };
+  }
+  return null;
+}
 
 export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   const modelDownloader = getModelDownloader(mainWindow);
@@ -101,7 +169,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       fasterWhisperModelsPath: getFasterWhisperModelsPath(),
       pythonEngineStatus,
       funasrEngineInstalled: isSherpaLibInstalled(),
-      funasrVadInstalled: isFunasrModelInstalled('silero-vad'),
+      funasrVadInstalled: isFunasrVadInstalled(),
       funasrAsrModelsInstalled: getInstalledFunasrAsrModels(),
       funasrModelsPath: getFunasrModelsRoot(),
       qwenEngineInstalled: isSherpaLibInstalled(),
@@ -320,28 +388,90 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     return true;
   });
 
-  ipcMain.handle('importModel', async (event) => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      properties: ['openFile'],
-      filters: [{ name: 'Model Files', extensions: ['bin', 'mlmodelc'] }],
-    });
+  ipcMain.handle(
+    'importModel',
+    async (
+      _event,
+      options?: {
+        engine?: 'builtin' | FolderImportEngine;
+        modelId?: string;
+      },
+    ) => {
+      const engine = options?.engine;
 
-    if (!result.canceled && result.filePaths.length > 0) {
-      const sourcePath = result.filePaths[0];
-      const fileName = path.basename(sourcePath);
-      const destPath = path.join(getPath('modelsPath'), fileName);
+      // builtin（默认/无参）：维持单文件导入（.bin / .mlmodelc → builtin 模型目录）
+      if (!engine || engine === 'builtin') {
+        const result = await dialog.showOpenDialog(mainWindow, {
+          properties: ['openFile'],
+          filters: [{ name: 'Model Files', extensions: ['bin', 'mlmodelc'] }],
+        });
+
+        if (!result.canceled && result.filePaths.length > 0) {
+          const sourcePath = result.filePaths[0];
+          const fileName = path.basename(sourcePath);
+          const destPath = path.join(getPath('modelsPath'), fileName);
+
+          try {
+            await fse.copy(sourcePath, destPath);
+            return { success: true };
+          } catch (error) {
+            console.error('导入模型失败:', error);
+            return { success: false, error: String(error) };
+          }
+        }
+
+        return { success: false, canceled: true };
+      }
+
+      // 其它引擎：从本地文件夹按指定模型槽导入
+      const plan = resolveImportPlan(engine, options?.modelId);
+      if (!plan) {
+        return { success: false, reason: 'invalid-model' };
+      }
+
+      const picked = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openDirectory'],
+      });
+      if (picked.canceled || picked.filePaths.length === 0) {
+        return { success: false, canceled: true };
+      }
+      const srcDir = picked.filePaths[0];
+
+      // 导入前校验布局：缺关键文件直接拒绝，不写盘
+      const pre = validateModelLayout(srcDir, plan.requiredFiles);
+      if (!pre.ok) {
+        return {
+          success: false,
+          reason: 'invalid-layout',
+          missing: pre.missing,
+        };
+      }
 
       try {
-        await fse.copy(sourcePath, destPath);
-        return { success: true };
+        // sherpa 三引擎共享同一 worker：覆盖模型目录前先释放，避免 Windows 文件锁
+        // （worker 会在下次转写/预热时自动重建）。fasterWhisper 不走此 worker。
+        if (engine !== 'fasterWhisper') {
+          getSherpaAsrRuntime().dispose();
+        }
+        await fse.ensureDir(plan.destDir);
+        await fse.copy(srcDir, plan.destDir, { overwrite: true });
       } catch (error) {
-        console.error('导入模型失败:', error);
+        logMessage(`import model error: ${error}`, 'error');
         return { success: false, error: String(error) };
       }
-    }
 
-    return { success: false, canceled: true };
-  });
+      // 导入后复校验：拷贝后目的地必须齐备
+      const post = validateModelLayout(plan.destDir, plan.requiredFiles);
+      if (!post.ok) {
+        return {
+          success: false,
+          reason: 'invalid-layout',
+          missing: post.missing,
+        };
+      }
+      return { success: true };
+    },
+  );
 
   ipcMain.handle(
     'openModelsFolder',

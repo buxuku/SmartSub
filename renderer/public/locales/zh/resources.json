@@ -3,6 +3,10 @@
   "description": "转写与翻译所需的模型、翻译服务与 GPU 加速，都在这里管理",
   "ghProxy": "github 国内加速",
   "gitcode": "GitCode",
+  "importFromFolder": "从文件夹导入",
+  "importModelSuccess": "模型导入成功",
+  "importModelFailed": "导入失败：{{error}}",
+  "importInvalidLayout": "所选文件夹不是有效模型，缺少文件：{{files}}",
   "tab": {
     "overview": "全景",
     "engines": "引擎与模型",

@@ -3,6 +3,10 @@
   "description": "Manage the models, translation services and GPU acceleration used by your tasks",
   "ghProxy": "GitHub Mirror (China)",
   "gitcode": "GitCode",
+  "importFromFolder": "Import from folder",
+  "importModelSuccess": "Model imported",
+  "importModelFailed": "Import failed: {{error}}",
+  "importInvalidLayout": "The selected folder is not a valid model. Missing files: {{files}}",
   "tab": {
     "overview": "Overview",
     "engines": "Engines & Models",

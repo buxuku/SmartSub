@@ -13,10 +13,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { CheckCircle2, Download, Trash2, X, Mic, Waves } from 'lucide-react';
+import {
+  CheckCircle2,
+  Download,
+  Trash2,
+  X,
+  Mic,
+  Waves,
+  Upload,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import DownloadSourceSelector from '@/components/resources/engines/DownloadSourceSelector';
 import SherpaModelRow from '@/components/resources/SherpaModelRow';
+import { importModelFromFolder } from 'lib/importModel';
 
 type FireRedModelId = 'fire-red-asr-large-zh-en';
 const FIRERED_MODEL_SIZE = '1.7GB';
@@ -143,34 +152,25 @@ const FireRedModelSection: React.FC<{ onUpdate?: () => void }> = ({
     }
   };
 
-  const handleDownloadVad = async () => {
-    setDownloading('silero-vad');
-    try {
-      const r = await window?.ipc?.invoke('downloadFunasrModel', {
-        model: 'silero-vad',
-        source: 'hf-mirror',
-      });
-      if (r?.success) {
-        await load();
-        onUpdate?.();
-      } else {
-        toast.error(
-          r?.error === 'anotherDownloadInProgress'
-            ? t('engines.fireRedAsr.anotherDownload')
-            : r?.error || 'Failed to download model',
-        );
-      }
-    } catch (e) {
-      toast.error(String(e));
-    } finally {
-      setDownloading(null);
-      setProgress((prev) => ({ ...prev, 'funasr:silero-vad': 0 }));
-    }
-  };
-
   const handleCancel = async () => {
     await window?.ipc?.invoke('cancelModelDownload');
     setDownloading(null);
+  };
+
+  const handleImportFireRed = async () => {
+    const o = await importModelFromFolder(
+      'fireRedAsr',
+      'fire-red-asr-large-zh-en',
+    );
+    if (o.kind === 'success') {
+      toast.success(t('importModelSuccess'), { duration: 2000 });
+      await load();
+      onUpdate?.();
+    } else if (o.kind === 'invalid-layout') {
+      toast.error(t('importInvalidLayout', { files: o.missing.join(', ') }));
+    } else if (o.kind === 'error') {
+      toast.error(t('importModelFailed', { error: o.message }));
+    }
   };
 
   const handleDeleteFireRed = async () => {
@@ -239,16 +239,28 @@ const FireRedModelSection: React.FC<{ onUpdate?: () => void }> = ({
                     {t('engines.fireRedAsr.modelDelete')}
                   </Button>
                 ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5"
-                    disabled={!!downloading}
-                    onClick={() => setShowConfirm(true)}
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    {t('engines.fireRedAsr.modelDownload')}
-                  </Button>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5"
+                      disabled={!!downloading}
+                      onClick={() => setShowConfirm(true)}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      {t('engines.fireRedAsr.modelDownload')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="gap-1.5 text-muted-foreground"
+                      disabled={!!downloading}
+                      onClick={handleImportFireRed}
+                    >
+                      <Upload className="h-3.5 w-3.5" />
+                      {t('importFromFolder')}
+                    </Button>
+                  </div>
                 )
               }
             />
@@ -260,9 +272,6 @@ const FireRedModelSection: React.FC<{ onUpdate?: () => void }> = ({
         <div className="flex items-baseline gap-2 px-1">
           <Waves className="h-4 w-4 self-center text-muted-foreground" />
           <h3 className="text-sm font-semibold">VAD</h3>
-          <Badge variant="outline" className="text-[10px]">
-            {t('engines.fireRedAsr.needModelsHint')}
-          </Badge>
         </div>
         <Card>
           <CardContent className="p-2">
@@ -271,41 +280,14 @@ const FireRedModelSection: React.FC<{ onUpdate?: () => void }> = ({
               name={t('engines.funasr.models.silero-vad.name')}
               desc={t('engines.funasr.models.silero-vad.desc')}
               installed={vadInstalled}
-              busy={downloading === 'silero-vad'}
-              progressPercent={Math.round(
-                (progress['funasr:silero-vad'] ?? 0) * 100,
-              )}
               trailing={
-                downloading === 'silero-vad' ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="gap-1.5 text-muted-foreground"
-                    onClick={handleCancel}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                    {commonT('cancel')}
-                  </Button>
-                ) : vadInstalled ? (
-                  <Badge
-                    variant="outline"
-                    className="gap-1 border-success/40 text-success"
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    {t('engines.funasr.installed')}
-                  </Badge>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5"
-                    disabled={!!downloading}
-                    onClick={handleDownloadVad}
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    {t('engines.fireRedAsr.modelDownload')}
-                  </Button>
-                )
+                <Badge
+                  variant="outline"
+                  className="gap-1 border-success/40 text-success"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {commonT('builtIn')}
+                </Badge>
               }
             />
           </CardContent>

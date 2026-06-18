@@ -56,6 +56,7 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { importModelFromFolder } from 'lib/importModel';
 import { useTranslation } from 'next-i18next';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import fasterWhisperModels from 'lib/fasterWhisperModels.json';
@@ -463,6 +464,18 @@ function Ct2ModelRowActions({
       : endpoints.huggingFaceMirror;
   const downloadUrl = `${base}/${model.hfRepo}`;
 
+  const handleImportCt2 = async () => {
+    const o = await importModelFromFolder('fasterWhisper', model.id);
+    if (o.kind === 'success') {
+      toast.success(t('importModelSuccess'), { duration: 2000 });
+      onUpdate();
+    } else if (o.kind === 'invalid-layout') {
+      toast.error(t('importInvalidLayout', { files: o.missing.join(', ') }));
+    } else if (o.kind === 'error') {
+      toast.error(t('importModelFailed', { error: o.message }));
+    }
+  };
+
   return (
     <>
       <Tooltip>
@@ -496,15 +509,29 @@ function Ct2ModelRowActions({
           </Button>
         </DeleteModel>
       ) : (
-        <DownModel
-          modelName={model.id}
-          format="ct2"
-          callBack={onUpdate}
-          downSource={downSource}
-          globalDownloading={globalDownloading}
-        >
-          <DownModelButton />
-        </DownModel>
+        <>
+          <DownModel
+            modelName={model.id}
+            format="ct2"
+            callBack={onUpdate}
+            downSource={downSource}
+            globalDownloading={globalDownloading}
+          >
+            <DownModelButton />
+          </DownModel>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground gap-1.5"
+            onClick={handleImportCt2}
+          >
+            <Upload className="h-4 w-4" />
+            <span className="sr-only sm:not-sr-only sm:inline">
+              {t('importFromFolder')}
+            </span>
+          </Button>
+        </>
       )}
     </>
   );
@@ -941,12 +968,22 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
     if (result.canceled) return;
 
     try {
+      const pathKey = isFasterWhisper
+        ? 'fasterWhisperModelsPath'
+        : isFunasr
+          ? 'funasrModelsPath'
+          : isQwen
+            ? 'qwenModelsPath'
+            : isFireRed
+              ? 'fireRedModelsPath'
+              : 'modelsPath';
       await window?.ipc?.invoke('setSettings', {
-        ...(isFasterWhisper
-          ? { fasterWhisperModelsPath: result.directoryPath }
-          : { modelsPath: result.directoryPath }),
+        [pathKey]: result.directoryPath,
       });
-      toast.success(t('modelPathChanged'), { duration: 2000 });
+      toast.success(t('modelPathChanged'), {
+        duration: 4000,
+        description: t('modelPathChangedHint'),
+      });
       onUpdate();
     } catch (error) {
       console.error('Failed to change models path:', error);
@@ -1186,18 +1223,14 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
               <FolderOpen className="h-3 w-3" />
               <span>{t('openModelsFolder')}</span>
             </button>
-            {!isFunasr && !isQwen && !isFireRed && (
-              <>
-                <span className="text-muted-foreground/50">·</span>
-                <button
-                  type="button"
-                  onClick={handleChangeModelsPath}
-                  className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
-                >
-                  <span>{t('changePath')}</span>
-                </button>
-              </>
-            )}
+            <span className="text-muted-foreground/50">·</span>
+            <button
+              type="button"
+              onClick={handleChangeModelsPath}
+              className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
+            >
+              <span>{t('changePath')}</span>
+            </button>
           </div>
         )}
 
