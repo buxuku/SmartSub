@@ -124,16 +124,20 @@ const EngineModelTab: React.FC = () => {
   }, []);
 
   const refresh = useCallback(async () => {
+    // GPU 环境探测（首次含 nvidia-smi）较慢，独立异步加载、不进首屏 Promise.all，
+    // 避免拖慢引擎/模型状态渲染；platform 就绪后再补设（仅用于平台相关展示）。
+    void Promise.resolve(window?.ipc?.invoke('get-gpu-environment'))
+      .then((env) => {
+        if (env?.platform) setPlatform(env.platform);
+      })
+      .catch(() => {});
     try {
-      const [statuses, settings, progress, taskStatus, env] = await Promise.all(
-        [
-          window?.ipc?.invoke('get-engine-status'),
-          window?.ipc?.invoke('getSettings'),
-          window?.ipc?.invoke('get-py-engine-download-progress'),
-          window?.ipc?.invoke('getTaskStatus'),
-          window?.ipc?.invoke('get-gpu-environment'),
-        ],
-      );
+      const [statuses, settings, progress, taskStatus] = await Promise.all([
+        window?.ipc?.invoke('get-engine-status'),
+        window?.ipc?.invoke('getSettings'),
+        window?.ipc?.invoke('get-py-engine-download-progress'),
+        window?.ipc?.invoke('getTaskStatus'),
+      ]);
       if (statuses) setEngineStatuses(statuses);
       if (settings) {
         setDevice(settings.fasterWhisperDevice || 'auto');
@@ -142,7 +146,6 @@ const EngineModelTab: React.FC = () => {
         setLocalCliEnabled(!!settings.useLocalWhisper);
       }
       if (progress) setDownloadProgress(progress);
-      if (env?.platform) setPlatform(env.platform);
       const busy = isQueueBusy(taskStatus);
       setTaskBusy(busy);
       taskBusyRef.current = busy;
