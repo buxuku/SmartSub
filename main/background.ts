@@ -47,7 +47,7 @@ import {
   resolveAppIcon,
   setAppDisplayNameEarly,
 } from './helpers/appBranding';
-import { getDevSimulationConfig } from './helpers/cudaUtils';
+import { getDevSimulationConfig, getGpuEnvironment } from './helpers/cudaUtils';
 
 //控制台出现中文乱码，需要去node_modules\electron\cli.js中修改启动代码页
 
@@ -181,6 +181,9 @@ app.on('before-quit', (event) => {
   void maybeAutoCheckPyEngineUpdate(mainWindow);
   // Layer 1 基座更新检查（仅对已下载基座生效，非阻塞，失败静默）。
   void maybeAutoCheckPyBaseUpdate(mainWindow);
+  // 后台预热 GPU/CUDA 环境检测缓存：首次探测（nvcc / nvidia-smi）较慢，提前异步完成并写入
+  // 会话缓存，用户进入「引擎与模型」页时直接命中，避免首屏等待。非阻塞，失败静默。
+  void getGpuEnvironment().catch(() => {});
 })();
 
 app.on('window-all-closed', () => {

@@ -1,9 +1,17 @@
-import { execSync } from 'child_process';
+import { execSync, exec } from 'child_process';
+import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as si from 'systeminformation';
 import { logMessage } from './storeManager';
 import { getExtraResourcesPath } from './utils';
+
+/**
+ * 异步执行外部命令（不阻塞主进程 event loop）。
+ * GPU/CUDA 探测（nvcc / nvidia-smi）首次冷启动可能耗时数秒，必须异步执行，
+ * 否则同步 execSync 会卡死主进程，连带阻塞所有并发 IPC（引擎/模型状态等），UI 卡顿。
+ */
+const execAsync = promisify(exec);
 import type {
   CudaEnvironment,
   CudaToolkitInfo,
@@ -48,7 +56,7 @@ export function getDevSimulationConfig(): DevSimulationConfig | null {
  * 检测 CUDA Toolkit 安装情况
  * 通过检测 nvcc 命令来判断
  */
-export function getCudaToolkitInfo(): CudaToolkitInfo {
+export async function getCudaToolkitInfo(): Promise<CudaToolkitInfo> {
   // 检查开发模式模拟
   const simConfig = getDevSimulationConfig();
   if (simConfig?.enabled) {
@@ -65,7 +73,7 @@ export function getCudaToolkitInfo(): CudaToolkitInfo {
   }
 
   try {
-    const nvccOutput = execSync('nvcc --version', {
+    const { stdout: nvccOutput } = await execAsync('nvcc --version', {
       encoding: 'utf8',
       timeout: 5000,
     });
@@ -96,7 +104,7 @@ export function getCudaToolkitInfo(): CudaToolkitInfo {
  * 检测 GPU CUDA 支持情况
  * 通过 nvidia-smi 命令来判断
  */
-export function getGpuCudaSupport(): GpuCudaSupport {
+export async function getGpuCudaSupport(): Promise<GpuCudaSupport> {
   // 检查开发模式模拟
   const simConfig = getDevSimulationConfig();
   if (simConfig?.enabled) {
@@ -119,10 +127,12 @@ export function getGpuCudaSupport(): GpuCudaSupport {
   let gpuName: string | undefined;
   let driverVersion: string | null = null;
   try {
-    const queryOutput = execSync(
-      'nvidia-smi --query-gpu=name,driver_version --format=csv,noheader,nounits',
-      { encoding: 'utf8', timeout: 10000 },
-    ).trim();
+    const queryOutput = (
+      await execAsync(
+        'nvidia-smi --query-gpu=name,driver_version --format=csv,noheader,nounits',
+        { encoding: 'utf8', timeout: 10000 },
+      )
+    ).stdout.trim();
     const firstLine = queryOutput.split('\n').find((line) => line.trim());
     if (firstLine) {
       const [queriedName, queriedDriver] = firstLine
@@ -138,7 +148,7 @@ export function getGpuCudaSupport(): GpuCudaSupport {
   // 解析显卡支持的最高 CUDA 版本（--query-gpu 无此字段，只能从 nvidia-smi 表头读取）
   let maxCudaVersion: string | null = null;
   try {
-    const nsmiResult = execSync('nvidia-smi', {
+    const { stdout: nsmiResult } = await execAsync('nvidia-smi', {
       encoding: 'utf8',
       timeout: 10000,
     });
@@ -324,9 +334,9 @@ function getAddonRecommendation(
  * 获取完整的 CUDA 环境信息
  * 这是主要的对外接口
  */
-export function getCudaEnvironment(): CudaEnvironment {
-  const cudaToolkit = getCudaToolkitInfo();
-  const gpuSupport = getGpuCudaSupport();
+export async function getCudaEnvironment(): Promise<CudaEnvironment> {
+  const cudaToolkit = await getCudaToolkitInfo();
+  const gpuSupport = await getGpuCudaSupport();
   const recommendation = getAddonRecommendation(cudaToolkit, gpuSupport);
 
   logMessage(
@@ -345,8 +355,8 @@ export function getCudaEnvironment(): CudaEnvironment {
  * 检查系统是否支持 CUDA 并返回支持的版本
  * @deprecated 请使用 getCudaEnvironment() 获取更详细的信息
  */
-export function checkCudaSupport(): string | false {
-  const env = getCudaEnvironment();
+export async function checkCudaSupport(): Promise<string | false> {
+  const env = await getCudaEnvironment();
 
   if (!env.recommendation.canUseCuda) {
     return false;
@@ -514,7 +524,7 @@ export async function getGpuEnvironment(
   const shouldProbeNvidia =
     isPlatformCudaCapable() &&
     (hasNvidia || gpus.length === 0 || !!getDevSimulationConfig()?.enabled);
-  const nvidia = shouldProbeNvidia ? getCudaEnvironment() : null;
+  const nvidia = shouldProbeNvidia ? await getCudaEnvironment() : null;
 
   cachedGpuEnvironment = {
     platform,

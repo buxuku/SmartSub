@@ -69,7 +69,7 @@ export function registerAddonIpcHandlers(): void {
   // 获取 CUDA 环境信息
   ipcMain.handle('get-cuda-environment', async () => {
     try {
-      const env = getCudaEnvironment();
+      const env = await getCudaEnvironment();
       return env;
     } catch (error) {
       logMessage(`Error getting CUDA environment: ${error}`, 'error');
