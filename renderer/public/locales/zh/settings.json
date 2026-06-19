@@ -189,6 +189,7 @@
     "manageInstalled": "管理已安装包",
     "switchMirrorAndRetry": "切换镜像并重试",
     "moreOptions": "更多选项",
+    "manageAdvanced": "GPU 加速 · 管理 / 高级",
     "currentBackend": "加速方式",
     "compatibleOldDriver": "兼容旧驱动",
     "cudaVersionGuide": "CUDA 版本是加速包内置的运行时版本，不能高于显卡驱动支持的上限（检测详情中可查看）。已根据您的驱动自动推荐最佳版本；若无兼容性问题，保持默认即可。",

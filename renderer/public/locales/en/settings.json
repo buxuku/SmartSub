@@ -189,6 +189,7 @@
     "manageInstalled": "Manage installed packs",
     "switchMirrorAndRetry": "Switch mirror and retry",
     "moreOptions": "More Options",
+    "manageAdvanced": "GPU acceleration · Manage / Advanced",
     "currentBackend": "Acceleration method",
     "compatibleOldDriver": "Compatible with older drivers",
     "cudaVersionGuide": "The CUDA version is the runtime bundled in the pack — it must not exceed what your GPU driver supports (see Diagnostics). We pre-select the best match for your driver; keep the default unless you hit compatibility issues.",

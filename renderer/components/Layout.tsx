@@ -701,9 +701,19 @@ const Layout = ({ children }) => {
                             ? 'text-warning hover:text-warning/80'
                             : 'text-muted-foreground hover:text-foreground'
                       }`}
-                      onClick={() =>
-                        router.push(`/${locale}/resources?tab=acceleration`)
-                      }
+                      onClick={() => {
+                        // GPU 加速已折叠进 builtin 引擎面板：先选中 builtin（写 EngineModelTab
+                        // 的选中态 localStorage），再跳引擎 Tab，落地直达 builtin 的加速区。
+                        try {
+                          localStorage.setItem(
+                            'engineModelSelectedView',
+                            JSON.stringify('builtin'),
+                          );
+                        } catch {
+                          // 忽略：localStorage 不可用时仍跳转，EngineModelTab 回落默认 builtin
+                        }
+                        router.push(`/${locale}/resources?tab=engines`);
+                      }}
                     >
                       <Zap className="w-3.5 h-3.5" />
                       {accelBadge.mode === 'accel'

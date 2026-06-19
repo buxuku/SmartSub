@@ -39,8 +39,20 @@ import {
 import { resolveActiveBackendForPlatform, formatSize } from './gpu/gpuUtils';
 import type { CudaDownloadSheetState, InstalledAddonInfo } from './gpu/types';
 
-const GpuAccelerationCard: React.FC = () => {
+interface GpuAccelerationCardProps {
+  /**
+   * 'standalone'（默认）：原资源中心「加速」Tab 的完整布局（mode/backend 常驻 + 更多选项折叠）。
+   * 'embedded'：折叠进 builtin 引擎面板——lead 仅紧凑 hero + 进度，其余（mode/backend/已装/
+   * 自定义/诊断）统一收进单个「管理 / 高级」折叠区（默认收起），避免挤占 builtin 面板首屏。
+   */
+  variant?: 'standalone' | 'embedded';
+}
+
+const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
+  variant = 'standalone',
+}) => {
   const { t } = useTranslation('settings');
+  const embedded = variant === 'embedded';
 
   const [gpuEnv, setGpuEnv] = useState<GpuEnvironment | null>(null);
   const [activeBackend, setActiveBackend] =
@@ -378,6 +390,13 @@ const GpuAccelerationCard: React.FC = () => {
   );
 
   if (isLoading || !gpuEnv) {
+    if (embedded) {
+      return (
+        <div className="flex items-center justify-center py-6">
+          <RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" />
+        </div>
+      );
+    }
     return (
       <div id="gpu-acceleration" className="space-y-5 pb-4">
         <SectionHeader
@@ -392,6 +411,157 @@ const GpuAccelerationCard: React.FC = () => {
     );
   }
 
+  // 各子区块抽为元素变量：standalone 与 embedded 仅「排布」不同（embedded 全部收进单个折叠区），
+  // 共享同一组 props，避免两套布局重复书写导致漂移。
+  const heroEl = (
+    <GpuStatusHero
+      gpuEnv={gpuEnv}
+      activeBackend={resolveActiveBackendForPlatform(activeBackend, gpuEnv)}
+      gpuMode={gpuMode}
+      isDesktopGpuPlatform={isDesktopGpuPlatform}
+      selectedVersion={selectedVersion}
+      customAddonPath={customAddonPath}
+      downloadingVariant={downloadingVariant}
+      upgradeSizeHint={upgradeSizeHint}
+      onOpenDownloadSheet={() => openDownloadSheet()}
+      onManageInstalled={() => setMoreOpen(true)}
+    />
+  );
+
+  const progressEl = (
+    <GpuDownloadProgress
+      downloadProgress={downloadProgress}
+      downloadingVariant={downloadingVariant}
+      onRetry={(variant) => void handleDownload(variant)}
+      onCancel={() => void handleCancelDownload()}
+      onDismiss={() => {
+        setDownloadProgress(null);
+        setDownloadingVariant(null);
+      }}
+    />
+  );
+
+  const modeEl = (
+    <GpuModeSelector gpuMode={gpuMode} onModeChange={handleModeChange} />
+  );
+
+  const backendEl = (
+    <GpuBackendSwitcher
+      gpuEnv={gpuEnv}
+      installedAddons={installedAddons}
+      selectedVersion={selectedVersion}
+      customAddonPath={customAddonPath}
+      cudaApplicable={cudaApplicable}
+      downloadingVariant={downloadingVariant}
+      onSelectBackend={handleSelectBackend}
+      onOpenDownloadSheet={() => openDownloadSheet()}
+    />
+  );
+
+  const installedEl = (
+    <GpuInstalledList
+      gpuEnv={gpuEnv}
+      installedAddons={installedAddons}
+      updates={updates}
+      checkingUpdates={checkingUpdates}
+      downloadingVariant={downloadingVariant}
+      onCheckUpdates={() => void handleCheckUpdates()}
+      onRemoveAddon={handleRemoveAddon}
+      onOpenDownloadSheet={(version) => openDownloadSheet(version)}
+      onDownloadVulkan={() => void handleDownload('vulkan')}
+    />
+  );
+
+  const customEl = (
+    <GpuCustomAddonSection
+      customAddonPath={customAddonPath}
+      onSelectCustomAddon={() => void handleSelectCustomAddon()}
+      onClearCustomAddon={() => void handleClearCustomAddon()}
+    />
+  );
+
+  const diagnosticsEl = (
+    <GpuDiagnosticsPanel
+      gpuEnv={gpuEnv}
+      activeBackend={activeBackend}
+      gpuMode={gpuMode}
+      selectedVersion={selectedVersion}
+      customAddonPath={customAddonPath}
+      installedAddons={installedAddons}
+      isDesktopGpuPlatform={isDesktopGpuPlatform}
+      onCopyDiagnostics={() => void handleCopyDiagnostics()}
+    />
+  );
+
+  const crashTipEl = (
+    <div className="flex items-start gap-2 p-2.5 bg-muted/50 rounded-md border">
+      <Info className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
+      <span className="text-[11px] text-muted-foreground">
+        {t('gpuAcceleration.crashTip')}
+      </span>
+    </div>
+  );
+
+  const sheetEl = cudaApplicable ? (
+    <CudaDownloadSheet
+      open={sheetState.open}
+      onOpenChange={(open) => setSheetState((s) => ({ ...s, open }))}
+      gpuEnv={gpuEnv}
+      availableCudaVersions={availableCudaVersions}
+      usedRemoteFallback={usedRemoteFallback}
+      downloadSource={downloadSource}
+      onDownloadSourceChange={handleDownloadSourceChange}
+      presetVersion={sheetState.presetVersion}
+      downloadingVariant={downloadingVariant}
+      onConfirmDownload={handleCudaDownload}
+    />
+  ) : null;
+
+  // embedded：lead = hero + 进度；其余统一收进单个「管理 / 高级」折叠区（默认收起）。
+  // CudaDownloadSheet 仍由页面内（hero / 已装列表）触发，不在任何 Dialog 内——杜绝弹窗内再开抽屉。
+  if (embedded) {
+    return (
+      <div id="gpu-acceleration" className="space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-medium">{t('gpuAcceleration.title')}</p>
+          {refreshAction}
+        </div>
+
+        {heroEl}
+        {progressEl}
+
+        {isDesktopGpuPlatform ? (
+          <>
+            <Collapsible open={moreOpen} onOpenChange={setMoreOpen}>
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-1 text-sm font-medium w-full"
+                >
+                  <ChevronDown
+                    className={`w-4 h-4 transition-transform ${moreOpen ? '' : '-rotate-90'}`}
+                  />
+                  {t('gpuAcceleration.manageAdvanced')}
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="pt-3 space-y-4">
+                {modeEl}
+                {backendEl}
+                {installedEl}
+                {customEl}
+                {diagnosticsEl}
+                {crashTipEl}
+              </CollapsibleContent>
+            </Collapsible>
+            {sheetEl}
+          </>
+        ) : (
+          diagnosticsEl
+        )}
+      </div>
+    );
+  }
+
   return (
     <div id="gpu-acceleration" className="space-y-5 pb-4">
       <SectionHeader
@@ -401,44 +571,13 @@ const GpuAccelerationCard: React.FC = () => {
         actions={refreshAction}
       />
 
-      <GpuStatusHero
-        gpuEnv={gpuEnv}
-        activeBackend={resolveActiveBackendForPlatform(activeBackend, gpuEnv)}
-        gpuMode={gpuMode}
-        isDesktopGpuPlatform={isDesktopGpuPlatform}
-        selectedVersion={selectedVersion}
-        customAddonPath={customAddonPath}
-        downloadingVariant={downloadingVariant}
-        upgradeSizeHint={upgradeSizeHint}
-        onOpenDownloadSheet={() => openDownloadSheet()}
-        onManageInstalled={() => setMoreOpen(true)}
-      />
-
-      <GpuDownloadProgress
-        downloadProgress={downloadProgress}
-        downloadingVariant={downloadingVariant}
-        onRetry={(variant) => void handleDownload(variant)}
-        onCancel={() => void handleCancelDownload()}
-        onDismiss={() => {
-          setDownloadProgress(null);
-          setDownloadingVariant(null);
-        }}
-      />
+      {heroEl}
+      {progressEl}
 
       {isDesktopGpuPlatform && (
         <>
-          <GpuModeSelector gpuMode={gpuMode} onModeChange={handleModeChange} />
-
-          <GpuBackendSwitcher
-            gpuEnv={gpuEnv}
-            installedAddons={installedAddons}
-            selectedVersion={selectedVersion}
-            customAddonPath={customAddonPath}
-            cudaApplicable={cudaApplicable}
-            downloadingVariant={downloadingVariant}
-            onSelectBackend={handleSelectBackend}
-            onOpenDownloadSheet={() => openDownloadSheet()}
-          />
+          {modeEl}
+          {backendEl}
 
           <Collapsible open={moreOpen} onOpenChange={setMoreOpen}>
             <CollapsibleTrigger asChild>
@@ -453,73 +592,18 @@ const GpuAccelerationCard: React.FC = () => {
               </button>
             </CollapsibleTrigger>
             <CollapsibleContent className="pt-3 space-y-4">
-              <GpuInstalledList
-                gpuEnv={gpuEnv}
-                installedAddons={installedAddons}
-                updates={updates}
-                checkingUpdates={checkingUpdates}
-                downloadingVariant={downloadingVariant}
-                onCheckUpdates={() => void handleCheckUpdates()}
-                onRemoveAddon={handleRemoveAddon}
-                onOpenDownloadSheet={(version) => openDownloadSheet(version)}
-                onDownloadVulkan={() => void handleDownload('vulkan')}
-              />
-
-              <GpuCustomAddonSection
-                customAddonPath={customAddonPath}
-                onSelectCustomAddon={() => void handleSelectCustomAddon()}
-                onClearCustomAddon={() => void handleClearCustomAddon()}
-              />
-
-              <GpuDiagnosticsPanel
-                gpuEnv={gpuEnv}
-                activeBackend={activeBackend}
-                gpuMode={gpuMode}
-                selectedVersion={selectedVersion}
-                customAddonPath={customAddonPath}
-                installedAddons={installedAddons}
-                isDesktopGpuPlatform={isDesktopGpuPlatform}
-                onCopyDiagnostics={() => void handleCopyDiagnostics()}
-              />
-
-              <div className="flex items-start gap-2 p-2.5 bg-muted/50 rounded-md border">
-                <Info className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                <span className="text-[11px] text-muted-foreground">
-                  {t('gpuAcceleration.crashTip')}
-                </span>
-              </div>
+              {installedEl}
+              {customEl}
+              {diagnosticsEl}
+              {crashTipEl}
             </CollapsibleContent>
           </Collapsible>
 
-          {cudaApplicable && (
-            <CudaDownloadSheet
-              open={sheetState.open}
-              onOpenChange={(open) => setSheetState((s) => ({ ...s, open }))}
-              gpuEnv={gpuEnv}
-              availableCudaVersions={availableCudaVersions}
-              usedRemoteFallback={usedRemoteFallback}
-              downloadSource={downloadSource}
-              onDownloadSourceChange={handleDownloadSourceChange}
-              presetVersion={sheetState.presetVersion}
-              downloadingVariant={downloadingVariant}
-              onConfirmDownload={handleCudaDownload}
-            />
-          )}
+          {sheetEl}
         </>
       )}
 
-      {!isDesktopGpuPlatform && (
-        <GpuDiagnosticsPanel
-          gpuEnv={gpuEnv}
-          activeBackend={activeBackend}
-          gpuMode={gpuMode}
-          selectedVersion={selectedVersion}
-          customAddonPath={customAddonPath}
-          installedAddons={installedAddons}
-          isDesktopGpuPlatform={isDesktopGpuPlatform}
-          onCopyDiagnostics={() => void handleCopyDiagnostics()}
-        />
-      )}
+      {!isDesktopGpuPlatform && diagnosticsEl}
     </div>
   );
 };
