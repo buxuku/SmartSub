@@ -73,6 +73,14 @@
       "checkFailed": "Failed to check for updates. Please try again later.",
       "uninstallConfirm": "Uninstalling removes the engine runtime (~170MB); you'll need to download it again to use faster-whisper. Continue?"
     },
+    "sherpa": {
+      "name": "Local multi-model engine",
+      "subtitle": "FunASR · Qwen · FireRed",
+      "desc": "FunASR, Qwen3-ASR and FireRedASR share one bundled sherpa-onnx runtime; they differ only in models and a few parameters. Pick and download a model from any family below to start — fully offline on CPU, no GPU or Python required.",
+      "builtinRuntime": "The runtime is bundled with the app (shared by FunASR · Qwen · FireRed) — no separate download needed.",
+      "installedVersion": "Bundled v{{version}}",
+      "needsModels": "Download a model from any family to get started"
+    },
     "funasr": {
       "name": "FunASR",
       "builtinRuntime": "The runtime is bundled with the app — no download needed.",

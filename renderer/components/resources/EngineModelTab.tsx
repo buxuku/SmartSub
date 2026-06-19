@@ -16,9 +16,9 @@ import { Download, ArrowUpCircle, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from 'lib/utils';
 import FasterWhisperPanel from '@/components/resources/engines/panels/FasterWhisperPanel';
-import FunasrPanel from '@/components/resources/engines/panels/FunasrPanel';
-import QwenPanel from '@/components/resources/engines/panels/QwenPanel';
-import FireRedPanel from '@/components/resources/engines/panels/FireRedPanel';
+import SherpaEngineGroupPanel, {
+  type SherpaFamilyKey,
+} from '@/components/resources/engines/SherpaEngineGroupPanel';
 import LocalCliPanel from '@/components/resources/engines/panels/LocalCliPanel';
 import BuiltinPanel from '@/components/resources/engines/panels/BuiltinPanel';
 import EngineIcon from '@/components/resources/engines/EngineIcon';
@@ -44,12 +44,19 @@ const PY_ENGINE_SIZE = '170MB';
 type EngineStatuses = Partial<Record<TranscriptionEngine, EngineStatus>>;
 type StatusTone = 'ready' | 'pending' | 'downloading' | 'error';
 
-const ENGINES: TranscriptionEngine[] = [
+/**
+ * 左栏「视图」单位：多数与真实引擎 id 一一对应；'sherpa' 是把同源（共用 sherpa-onnx
+ * 运行库）的 FunASR · Qwen · FireRed 合并为一项展示（仅 UI 合并，后端引擎 id 不变）。
+ */
+type EngineView = TranscriptionEngine | 'sherpa';
+
+/** sherpa 展示组覆盖的真实引擎 id（顺序即组内分区顺序）。 */
+const SHERPA_FAMILIES: SherpaFamilyKey[] = ['funasr', 'qwen', 'fireRedAsr'];
+
+const ENGINE_VIEWS: EngineView[] = [
   'builtin',
   'fasterWhisper',
-  'funasr',
-  'qwen',
-  'fireRedAsr',
+  'sherpa',
   'localCli',
 ];
 
@@ -82,13 +89,14 @@ const EngineModelTab: React.FC = () => {
   const { t } = useTranslation('resources');
   const { t: commonT } = useTranslation('common');
 
-  // 记住上次选中的引擎，避免每次进入页面都跳回 builtin。
-  const [selectedEngine, setSelectedEngine] =
-    useLocalStorageState<TranscriptionEngine>(
-      'engineModelSelectedEngine',
-      'builtin',
-      (v) => (ENGINES as string[]).includes(v as string),
-    );
+  // 记住上次选中的视图，避免每次进入页面都跳回 builtin。
+  // 用新 key（engineModelSelectedView）：旧 key 可能存了 funasr/qwen/fireRedAsr，
+  // 现已并入 'sherpa' 组，换 key 自然回落默认，避免读到失效选项。
+  const [selectedView, setSelectedView] = useLocalStorageState<EngineView>(
+    'engineModelSelectedView',
+    'builtin',
+    (v) => (ENGINE_VIEWS as string[]).includes(v as string),
+  );
 
   // FunASR 与 Qwen 共用的 sherpa-onnx 运行库状态（上提到此常驻组件，切换引擎不丢进度）。
   const sherpa = useSherpaRuntime();
@@ -196,7 +204,7 @@ const EngineModelTab: React.FC = () => {
     const unsubProgress = window?.ipc?.on(
       'py-engine-download-progress',
       (_progress: PyEngineDownloadProgress) => {
-        // 仅反映 faster-whisper 引擎包进度；funasr 运行库进度由 FunasrPanel 自行处理。
+        // 仅反映 faster-whisper 引擎包进度；sherpa 运行库已内置无下载进度。
         if (_progress.engineId && _progress.engineId !== 'faster-whisper') {
           return;
         }
@@ -380,13 +388,51 @@ const EngineModelTab: React.FC = () => {
   const deviceOptions =
     platform === 'darwin' ? ['auto', 'cpu'] : ['auto', 'cpu', 'cuda'];
 
+  // sherpa 展示组三族就绪态（共用运行库，差异在模型）；供合并面板、左栏状态点、徽标聚合。
+  const sherpaFamilies = SHERPA_FAMILIES.map((engine) => {
+    if (engine === 'funasr') {
+      return {
+        engine,
+        pkgInstalled: funasrPkgInstalled,
+        modelsReady: funasrModelsReady,
+        status: engineStatuses.funasr,
+      };
+    }
+    if (engine === 'qwen') {
+      return {
+        engine,
+        pkgInstalled: qwenPkgInstalled,
+        modelsReady: qwenModelsReady,
+        status: engineStatuses.qwen,
+      };
+    }
+    return {
+      engine,
+      pkgInstalled: fireRedPkgInstalled,
+      modelsReady: fireRedModelsReady,
+      status: engineStatuses.fireRedAsr,
+    };
+  });
+  const sherpaAnyReady = sherpaFamilies.some((f) => f.modelsReady);
+
   const readyBadge = (
     <Badge variant="outline" className="border-success/40 text-success">
       {t('engines.statusAvailable')}
     </Badge>
   );
 
-  const renderEngineBadge = (engine: TranscriptionEngine) => {
+  const renderEngineBadge = (view: EngineView) => {
+    if (view === 'sherpa') {
+      // 组徽标：任一族就绪即视为可用；否则提示去下载模型（运行库已内置，无"未安装"态）。
+      return sherpaAnyReady ? (
+        readyBadge
+      ) : (
+        <Badge variant="outline" className="border-primary/40 text-primary">
+          {t('engines.sherpa.needsModels')}
+        </Badge>
+      );
+    }
+    const engine = view;
     if (engine === 'fasterWhisper') {
       if (isDownloading) {
         return (
@@ -416,51 +462,6 @@ const EngineModelTab: React.FC = () => {
         </Badge>
       );
     }
-    if (engine === 'funasr') {
-      if (funasrPkgInstalled && funasrModelsReady) return readyBadge;
-      if (funasrPkgInstalled && !funasrModelsReady) {
-        return (
-          <Badge variant="outline" className="border-primary/40 text-primary">
-            {t('engines.funasr.needsModels')}
-          </Badge>
-        );
-      }
-      return (
-        <Badge variant="outline" className="shrink-0 text-muted-foreground">
-          {t('engines.funasr.notInstalled')}
-        </Badge>
-      );
-    }
-    if (engine === 'qwen') {
-      if (qwenPkgInstalled && qwenModelsReady) return readyBadge;
-      if (qwenPkgInstalled && !qwenModelsReady) {
-        return (
-          <Badge variant="outline" className="border-primary/40 text-primary">
-            {t('engines.qwen.needsModels')}
-          </Badge>
-        );
-      }
-      return (
-        <Badge variant="outline" className="shrink-0 text-muted-foreground">
-          {t('engines.qwen.notInstalled')}
-        </Badge>
-      );
-    }
-    if (engine === 'fireRedAsr') {
-      if (fireRedPkgInstalled && fireRedModelsReady) return readyBadge;
-      if (fireRedPkgInstalled && !fireRedModelsReady) {
-        return (
-          <Badge variant="outline" className="border-primary/40 text-primary">
-            {t('engines.fireRedAsr.needsModels')}
-          </Badge>
-        );
-      }
-      return (
-        <Badge variant="outline" className="shrink-0 text-muted-foreground">
-          {t('engines.fireRedAsr.notInstalled')}
-        </Badge>
-      );
-    }
     if (engine === 'localCli') {
       return localCliReady ? (
         readyBadge
@@ -479,29 +480,20 @@ const EngineModelTab: React.FC = () => {
     );
   };
 
-  const engineTone = (engine: TranscriptionEngine): StatusTone => {
-    if (engine === 'fasterWhisper') {
+  const engineTone = (view: EngineView): StatusTone => {
+    if (view === 'sherpa') return sherpaAnyReady ? 'ready' : 'pending';
+    if (view === 'fasterWhisper') {
       if (isDownloading || showVerifying) return 'downloading';
       if (fasterInstalled) return 'ready';
       if (fasterBroken) return 'error';
       return 'pending';
     }
-    if (engine === 'funasr') {
-      return funasrPkgInstalled && funasrModelsReady ? 'ready' : 'pending';
-    }
-    if (engine === 'qwen') {
-      return qwenPkgInstalled && qwenModelsReady ? 'ready' : 'pending';
-    }
-    if (engine === 'fireRedAsr') {
-      return fireRedPkgInstalled && fireRedModelsReady ? 'ready' : 'pending';
-    }
-    if (engine === 'localCli') return localCliReady ? 'ready' : 'pending';
+    if (view === 'localCli') return localCliReady ? 'ready' : 'pending';
     // builtin：内置运行时始终可用，但未装任何模型则无法转写，按待办呈现。
     return (systemInfo.modelsInstalled?.length ?? 0) > 0 ? 'ready' : 'pending';
   };
 
-  const engineName = (engine: TranscriptionEngine) =>
-    t(`engines.${engine}.name`);
+  const engineName = (view: EngineView) => t(`engines.${view}.name`);
 
   const statusLabel = (tone: StatusTone) => t(`engines.status.${tone}`);
 
@@ -553,21 +545,22 @@ const EngineModelTab: React.FC = () => {
   };
 
   const renderRuntimePanel = () => {
-    if (selectedEngine === 'fasterWhisper') {
+    if (selectedView === 'fasterWhisper') {
       return <FasterWhisperPanel {...fasterWhisperPanelProps} />;
     }
-    if (selectedEngine === 'funasr') {
-      return <FunasrPanel status={engineStatuses.funasr} runtime={sherpa} />;
-    }
-    if (selectedEngine === 'qwen') {
-      return <QwenPanel status={engineStatuses.qwen} runtime={sherpa} />;
-    }
-    if (selectedEngine === 'fireRedAsr') {
+    if (selectedView === 'sherpa') {
       return (
-        <FireRedPanel status={engineStatuses.fireRedAsr} runtime={sherpa} />
+        <SherpaEngineGroupPanel
+          runtime={sherpa}
+          families={sherpaFamilies}
+          systemInfo={systemInfo}
+          systemInfoLoaded={systemInfoLoaded}
+          globalDownloading={globalDownloading}
+          onUpdate={handleResourcesUpdate}
+        />
       );
     }
-    if (selectedEngine === 'localCli') {
+    if (selectedView === 'localCli') {
       return (
         <LocalCliPanel
           whisperCommand={whisperCommand}
@@ -586,15 +579,15 @@ const EngineModelTab: React.FC = () => {
       <div className="flex flex-col gap-4 pb-4 md:flex-row">
         {/* 左栏：引擎列表（状态点，无启用开关） */}
         <nav className="flex shrink-0 gap-1 overflow-x-auto md:w-52 md:flex-col md:overflow-visible md:border-r md:pr-2">
-          {ENGINES.map((id) => {
-            const active = selectedEngine === id;
+          {ENGINE_VIEWS.map((id) => {
+            const active = selectedView === id;
             const tone = engineTone(id);
             return (
               <button
                 key={id}
                 type="button"
                 aria-current={active ? 'true' : undefined}
-                onClick={() => setSelectedEngine(id)}
+                onClick={() => setSelectedView(id)}
                 className={cn(
                   'flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
                   'shrink-0 md:w-full',
@@ -616,23 +609,33 @@ const EngineModelTab: React.FC = () => {
         {/* 右栏：选中引擎运行时 + 模型清单 */}
         <div className="min-w-0 flex-1 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-base font-semibold">
-              {engineName(selectedEngine)}
-            </h2>
-            {renderEngineBadge(selectedEngine)}
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold">
+                {engineName(selectedView)}
+              </h2>
+              {selectedView === 'sherpa' && (
+                <p className="text-xs text-muted-foreground">
+                  {t('engines.sherpa.subtitle')}
+                </p>
+              )}
+            </div>
+            {renderEngineBadge(selectedView)}
           </div>
 
           {renderRuntimePanel()}
 
-          <div className="border-t pt-4">
-            <ModelLibrarySection
-              engine={selectedEngine}
-              systemInfo={systemInfo}
-              systemInfoLoaded={systemInfoLoaded}
-              globalDownloading={globalDownloading}
-              onUpdate={handleResourcesUpdate}
-            />
-          </div>
+          {/* sherpa 组的模型清单由组面板按族内联渲染，这里不再外挂统一清单 */}
+          {selectedView !== 'sherpa' && (
+            <div className="border-t pt-4">
+              <ModelLibrarySection
+                engine={selectedView}
+                systemInfo={systemInfo}
+                systemInfoLoaded={systemInfoLoaded}
+                globalDownloading={globalDownloading}
+                onUpdate={handleResourcesUpdate}
+              />
+            </div>
+          )}
         </div>
       </div>
 

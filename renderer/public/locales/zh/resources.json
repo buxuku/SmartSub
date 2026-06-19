@@ -73,6 +73,14 @@
       "checkFailed": "检查更新失败，请稍后重试。",
       "uninstallConfirm": "卸载后需重新下载约 170MB 引擎运行时才能再次使用 faster-whisper，确定卸载？"
     },
+    "sherpa": {
+      "name": "本地多模型引擎",
+      "subtitle": "FunASR · Qwen · FireRed",
+      "desc": "FunASR、Qwen3-ASR、FireRedASR 共用同一套 sherpa-onnx 本地运行库（已随应用内置），区别只在模型与少量参数。在下方按需选择并下载对应模型即可使用，全程 CPU 离线、无需显卡或 Python。",
+      "builtinRuntime": "运行库已随应用内置（FunASR · Qwen · FireRed 共用），无需单独下载。",
+      "installedVersion": "内置 v{{version}}",
+      "needsModels": "下载任一族模型即可开始使用"
+    },
     "funasr": {
       "name": "FunASR",
       "builtinRuntime": "运行库已随应用内置，无需单独下载。",

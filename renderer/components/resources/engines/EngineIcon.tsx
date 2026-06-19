@@ -2,7 +2,8 @@ import React from 'react';
 import type { TranscriptionEngine } from '../../../../types/engine';
 
 interface EngineIconProps {
-  engine: TranscriptionEngine;
+  /** 真实引擎 id，或合并展示组 'sherpa'（FunASR · Qwen · FireRed）。 */
+  engine: TranscriptionEngine | 'sherpa';
   className?: string;
 }
 
@@ -12,9 +13,29 @@ interface EngineIconProps {
  * - builtin（whisper.cpp，内置本地）：芯片内的声波
  * - fasterWhisper（主打速度）：闪电
  * - funasr（阿里达摩院）：橙色声波（语音识别）
+ * - sherpa（FunASR · Qwen · FireRed 合并组）：堆叠的声波层，示意「多模型共用一套运行库」
  * - localCli（本地命令行）：终端提示符
  */
 const EngineIcon: React.FC<EngineIconProps> = ({ engine, className }) => {
+  if (engine === 'sherpa') {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        fill="none"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="9" fill="#0EA5E9" fillOpacity={0.14} />
+        <g stroke="#0EA5E9" strokeWidth={1.7} strokeLinecap="round" fill="none">
+          <path d="M6.5 12v0.5" />
+          <path d="M9 9.5v5" />
+          <path d="M12 7.5v9" />
+          <path d="M15 9.5v5" />
+          <path d="M17.5 11v2" />
+        </g>
+      </svg>
+    );
+  }
   if (engine === 'fasterWhisper') {
     return (
       <svg
