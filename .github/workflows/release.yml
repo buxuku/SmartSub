@@ -116,17 +116,11 @@ jobs:
       - name: Compile application code
         run: yarn build # Assumes 'yarn build' compiles TS to JS, e.g., into the 'app' directory
 
-      - name: Install uv (required by base:fetch)
-        uses: astral-sh/setup-uv@v6
-
-      - name: Prepare Python base (PBS)
+      - name: Prepare sherpa native libs (bundled)
         shell: bash
         run: |
-          if [[ "${{ matrix.os_build_arg }}" == "mac" ]]; then PLAT=darwin; fi
-          if [[ "${{ matrix.os_build_arg }}" == "win" ]]; then PLAT=win32; fi
-          if [[ "${{ matrix.os_build_arg }}" == "linux" ]]; then PLAT=linux; fi
-          yarn base:fetch --platform "$PLAT" --arch "${{ matrix.arch }}"
-          ls extraResources/py-base
+          yarn sherpa:fetch
+          ls extraResources/sherpa/native
 
       - name: Build Electron app
         shell: bash

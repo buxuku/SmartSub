@@ -30,10 +30,6 @@ mac:
       to: ./extraResources/ggml-silero-v6.2.0.bin
     - from: ./extraResources/sample-onboarding.mp3
       to: ./extraResources/sample-onboarding.mp3
-    - from: ./extraResources/py-base/
-      to: ./extraResources/py-base/
-      filter:
-        - '**/*'
     - from: ./extraResources/sherpa/
       to: ./extraResources/sherpa/
       filter:
@@ -50,10 +46,6 @@ win:
       to: ./extraResources/ggml-silero-v6.2.0.bin
     - from: ./extraResources/sample-onboarding.mp3
       to: ./extraResources/sample-onboarding.mp3
-    - from: ./extraResources/py-base/
-      to: ./extraResources/py-base/
-      filter:
-        - '**/*'
     - from: ./extraResources/sherpa/
       to: ./extraResources/sherpa/
       filter:
@@ -82,10 +74,6 @@ linux:
       to: ./extraResources/ggml-silero-v6.2.0.bin
     - from: ./extraResources/sample-onboarding.mp3
       to: ./extraResources/sample-onboarding.mp3
-    - from: ./extraResources/py-base/
-      to: ./extraResources/py-base/
-      filter:
-        - '**/*'
     - from: ./extraResources/sherpa/
       to: ./extraResources/sherpa/
       filter:

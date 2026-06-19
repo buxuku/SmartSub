@@ -16,7 +16,7 @@
     "postinstall": "electron-builder install-app-deps",
     "format": "prettier --write .",
     "check:i18n": "node scripts/check-i18n.mjs",
-    "base:fetch": "node scripts/fetch-python-base.mjs",
+    "sherpa:fetch": "node scripts/fetch-sherpa-native.mjs",
     "size:check": "node scripts/check-bundle-size.mjs",
     "test:engines": "tsc scripts/test-engine-units.ts --outDir node_modules/.cache/engine-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/engine-tests/scripts/test-engine-units.js"
   },
