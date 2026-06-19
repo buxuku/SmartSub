@@ -109,9 +109,7 @@ function getCardBlock(
 }
 
 function resourcesHref(locale: string, block: 'model' | 'provider'): string {
-  return block === 'model'
-    ? `/${locale}/resources?tab=engines`
-    : `/${locale}/resources?tab=providers`;
+  return block === 'model' ? `/${locale}/engines` : `/${locale}/translation`;
 }
 
 export default function LaunchpadPage() {
@@ -244,7 +242,7 @@ export default function LaunchpadPage() {
             <AlertTriangle className="h-4 w-4 text-warning flex-shrink-0" />
             <p className="text-sm min-w-0 flex-1">{t('banner.noModel')}</p>
             <Button asChild size="sm" className="h-8 flex-shrink-0 gap-1.5">
-              <Link href={`/${locale}/resources?tab=engines`}>
+              <Link href={`/${locale}/engines`}>
                 <Download className="h-4 w-4" />
                 {t('banner.noModelCta')}
               </Link>
@@ -261,7 +259,7 @@ export default function LaunchpadPage() {
               variant="outline"
               className="h-8 flex-shrink-0 gap-1.5"
             >
-              <Link href={`/${locale}/resources?tab=providers`}>
+              <Link href={`/${locale}/translation`}>
                 <Languages className="h-4 w-4" />
                 {t('banner.noProviderCta')}
               </Link>

@@ -4,6 +4,10 @@
   "modelManagement": "模型管理",
   "settings": "设置",
   "resourceCenter": "资源中心",
+  "enginesAndModels": "引擎与模型",
+  "enginesAndModelsDesc": "管理转写引擎运行时、语音模型与 GPU 加速",
+  "translationServices": "翻译服务",
+  "translationServicesDesc": "配置翻译服务商、API 密钥与连通性测试",
   "headerTitle": "妙幕 - SmartSub",
   "newVersionAvailable": "有新版本可用",
   "provider": {
@@ -96,6 +100,7 @@
   "cancel": "取消",
   "delete": "删除",
   "download": "下载",
+  "startDownload": "开始下载",
   "builtIn": "已内置",
   "pathConfigTitle": "文件名配置说明",
   "pathConfigDesc": "如果不确定如何配置,请保持默认设置。",

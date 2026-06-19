@@ -7,12 +7,6 @@
   "importModelSuccess": "模型导入成功",
   "importModelFailed": "导入失败：{{error}}",
   "importInvalidLayout": "所选文件夹不是有效模型，缺少文件：{{files}}",
-  "tab": {
-    "overview": "全景",
-    "engines": "引擎与模型",
-    "providers": "翻译服务",
-    "acceleration": "GPU 加速"
-  },
   "engines": {
     "statusAvailable": "可用",
     "status": {
@@ -79,7 +73,13 @@
       "desc": "FunASR、Qwen3-ASR、FireRedASR 共用同一套 sherpa-onnx 本地运行库（已随应用内置），区别只在模型与少量参数。在下方按需选择并下载对应模型即可使用，全程 CPU 离线、无需显卡或 Python。",
       "builtinRuntime": "运行库已随应用内置（FunASR · Qwen · FireRed 共用），无需单独下载。",
       "installedVersion": "内置 v{{version}}",
-      "needsModels": "下载任一族模型即可开始使用"
+      "needsModels": "下载任一族模型即可开始使用",
+      "advanced": "高级设置",
+      "numThreads": "推理线程数",
+      "numThreadsHint": "CPU 推理使用的线程数，越大越快但占用更多 CPU（三族共用同一运行库，统一生效）",
+      "itn": "逆文本规整（ITN）",
+      "itnHint": "将口语化的数字、日期等转换为标准书写形式，并自动补全标点",
+      "itnFunasrOnly": "仅 FunASR（SenseVoice）支持；Qwen、FireRed 已在内部处理规整。"
     },
     "funasr": {
       "name": "FunASR",
@@ -171,7 +171,7 @@
       "modelDownloadConfirm": "Qwen3-ASR（0.6B）约 {{size}}。可在 CPU 上运行，但非实时。是否继续？",
       "modelSources": {
         "modelscope": "ModelScope（国内）",
-        "ghproxy": "gh-proxy 加速",
+        "ghproxy": "github 国内加速",
         "github": "GitHub"
       },
       "modelSourceHint": {
@@ -223,7 +223,7 @@
       "modelDownloadConfirm": "FireRedASR-AED（Large）约 {{size}}。可在 CPU 上运行，但非实时。是否继续？",
       "modelSources": {
         "modelscope": "ModelScope（国内）",
-        "ghproxy": "gh-proxy 加速",
+        "ghproxy": "github 国内加速",
         "github": "GitHub"
       },
       "modelSourceHint": {
@@ -254,39 +254,5 @@
       "commandSaved": "命令已保存",
       "commandSaveFailed": "保存失败"
     }
-  },
-  "overview": {
-    "modelsTitle": "语音模型",
-    "providersTitle": "翻译服务",
-    "accelerationTitle": "GPU 加速",
-    "installedCount": "已安装 {{count}} 个",
-    "downloadingCount": "{{count}} 个下载中…",
-    "noModels": "尚未安装模型，无法开始转写任务",
-    "recommendedModel": "推荐：{{model}}（{{memory}}GB 内存）",
-    "configuredCount": "已配置 {{count}} 项",
-    "noProviders": "尚未配置翻译服务，翻译任务需要先配置",
-    "enableProviders": "去启用翻译服务",
-    "gpuRunning": "{{backend}} 运行中",
-    "gpuNotEnabled": "未启用（CPU 模式）",
-    "gpuCpuManual": "CPU 模式（手动设置）",
-    "gpuGpuOnlyPending": "已设为仅 GPU · 待首次转写",
-    "gpuAutoPending": "自动模式 · 待首次转写",
-    "gpuCpuFallback": "当前运行在 CPU（自动降级）",
-    "gpuOnlyOnCpu": "已设为仅 GPU，但当前运行在 CPU",
-    "cudaUpgradeHint": "可升级到 CUDA {{version}} 以获得更高性能",
-    "gpuModeLabel": "模式：{{mode}}",
-    "gpuMode": {
-      "auto": "自动",
-      "gpu-only": "仅 GPU",
-      "cpu-only": "仅 CPU"
-    },
-    "appleAcceleration": "Apple 芯片加速（CoreML / Metal）",
-    "engineModelTitle": "引擎与模型",
-    "manage": "管理",
-    "readyTitle": "准备就绪",
-    "readyDesc": "已满足开始转写的条件，可前往工作台创建任务。",
-    "setupTitle": "还差一步即可开始",
-    "setupDesc": "完成下方准备项后即可开始转写。",
-    "nextDownloadModels": "下载语音模型"
   }
 }

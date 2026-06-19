@@ -41,7 +41,7 @@ function DownloadSourceSelector<T extends string = string>({
               aria-checked={selected}
               onClick={() => onChange(opt.value)}
               className={cn(
-                'flex-1 rounded-md border px-3 py-2 text-xs transition-all',
+                'flex-1 rounded-md border px-2 py-2 text-center text-xs leading-tight transition-all',
                 selected
                   ? 'border-primary bg-primary/5 font-medium'
                   : 'border-muted hover:border-primary/50',

@@ -326,7 +326,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
                 variant="outline"
                 size="sm"
                 className="h-8 gap-1.5 text-xs flex-shrink-0"
-                onClick={() => closeAndGo(`/${locale}/resources?tab=engines`)}
+                onClick={() => closeAndGo(`/${locale}/engines`)}
               >
                 <Download className="h-4 w-4" />
                 {t('onboarding.goDownloadModel')}
@@ -394,7 +394,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
               variant="outline"
               size="sm"
               className="h-8 gap-1.5 text-xs flex-shrink-0"
-              onClick={() => closeAndGo(`/${locale}/resources?tab=providers`)}
+              onClick={() => closeAndGo(`/${locale}/translation`)}
             >
               <Languages className="h-4 w-4" />
               {t('onboarding.goConfigure')}
@@ -433,7 +433,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
                   } catch {
                     // 忽略：localStorage 不可用时仍跳转，EngineModelTab 回落默认 builtin
                   }
-                  closeAndGo(`/${locale}/resources?tab=engines`);
+                  closeAndGo(`/${locale}/engines`);
                 }}
               >
                 <Zap className="h-4 w-4" />

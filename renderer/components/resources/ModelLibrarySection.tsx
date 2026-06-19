@@ -1,18 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  DownloadSourceProvider,
+  type DownloadSourceConfig,
+} from '@/components/resources/engines/DownloadSourcePopover';
 import {
   modelCategories,
   getRecommendedCategory,
@@ -37,7 +34,6 @@ import DownModelButton from '@/components/DownModelButton';
 import useDownloadEndpoints from 'hooks/useDownloadEndpoints';
 import {
   Upload,
-  Copy,
   ChevronDown,
   ChevronUp,
   Star,
@@ -251,7 +247,6 @@ function ModelRowActions({
   onUpdate,
   t,
   globalDownloading,
-  copyToClipboard,
 }: {
   model: ModelInfo;
   isInstalled: boolean;
@@ -260,30 +255,11 @@ function ModelRowActions({
   onUpdate: () => void;
   t: TFunc;
   globalDownloading: boolean;
-  copyToClipboard: (text: string) => void;
 }) {
   const endpoints = useDownloadEndpoints();
-  const downloadUrl = getModelDownloadUrl(model.name, downSource, endpoints);
 
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => copyToClipboard(downloadUrl)}
-            aria-label={t('copyLink')}
-          >
-            <Copy className="h-3.5 w-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>{t('copyLink')}</p>
-        </TooltipContent>
-      </Tooltip>
       {isInstalled && !isDownloading ? (
         <DeleteModel modelName={model.name} callBack={onUpdate}>
           <Button
@@ -304,6 +280,9 @@ function ModelRowActions({
           downSource={downSource}
           needsCoreML={model.needsCoreML}
           globalDownloading={globalDownloading}
+          getCopyUrl={(s) =>
+            getModelDownloadUrl(model.name, s as DownSource, endpoints)
+          }
         >
           <DownModelButton />
         </DownModel>
@@ -337,13 +316,6 @@ function ModelRow({
   t: TFunc;
   globalDownloading: boolean;
 }) {
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard
-      .writeText(text)
-      .then(() => toast.success(t('copySuccess'), { duration: 2000 }))
-      .catch(() => toast.error(t('copyError'), { duration: 2000 }));
-  };
-
   return (
     <div
       className={cn(
@@ -429,7 +401,6 @@ function ModelRow({
             onUpdate={onUpdate}
             t={t}
             globalDownloading={globalDownloading}
-            copyToClipboard={copyToClipboard}
           />
         </div>
       </div>
@@ -445,7 +416,6 @@ function Ct2ModelRowActions({
   onUpdate,
   t,
   globalDownloading,
-  copyToClipboard,
 }: {
   model: FasterWhisperModelEntry;
   isInstalled: boolean;
@@ -454,15 +424,16 @@ function Ct2ModelRowActions({
   onUpdate: () => void;
   t: TFunc;
   globalDownloading: boolean;
-  copyToClipboard: (text: string) => void;
 }) {
   const endpoints = useDownloadEndpoints();
   // base 已含协议（如 https://hf-mirror.com），与设置页配置保持一致。
-  const base =
-    downSource === DownSource.HuggingFace
-      ? endpoints.huggingFaceOfficial
-      : endpoints.huggingFaceMirror;
-  const downloadUrl = `${base}/${model.hfRepo}`;
+  const ct2CopyUrl = (s: string) => {
+    const base =
+      s === DownSource.HuggingFace
+        ? endpoints.huggingFaceOfficial
+        : endpoints.huggingFaceMirror;
+    return `${base}/${model.hfRepo}`;
+  };
 
   const handleImportCt2 = async () => {
     const o = await importModelFromFolder('fasterWhisper', model.id);
@@ -478,23 +449,6 @@ function Ct2ModelRowActions({
 
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => copyToClipboard(downloadUrl)}
-            aria-label={t('copyLink')}
-          >
-            <Copy className="h-3.5 w-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>{t('copyLink')}</p>
-        </TooltipContent>
-      </Tooltip>
       {isInstalled && !isDownloading ? (
         <DeleteModel modelName={model.id} format="ct2" callBack={onUpdate}>
           <Button
@@ -516,6 +470,7 @@ function Ct2ModelRowActions({
             callBack={onUpdate}
             downSource={downSource}
             globalDownloading={globalDownloading}
+            getCopyUrl={ct2CopyUrl}
           >
             <DownModelButton />
           </DownModel>
@@ -557,12 +512,6 @@ function Ct2ModelRow({
   isRecommended?: boolean;
 }) {
   const desc = t(`modelDesc.${model.id}`, { defaultValue: '' });
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard
-      .writeText(text)
-      .then(() => toast.success(t('copySuccess'), { duration: 2000 }))
-      .catch(() => toast.error(t('copyError'), { duration: 2000 }));
-  };
 
   return (
     <div
@@ -639,7 +588,6 @@ function Ct2ModelRow({
             onUpdate={onUpdate}
             t={t}
             globalDownloading={globalDownloading}
-            copyToClipboard={copyToClipboard}
           />
         </div>
       </div>
@@ -893,6 +841,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
   onUpdate,
 }) => {
   const { t } = useTranslation('modelsControl');
+  const { t: commonT } = useTranslation('common');
   const [modelQuery, setModelQuery] = useState('');
   const [accelAvailable, setAccelAvailable] = useState(false);
   const [installedOnly, setInstalledOnly] = useLocalStorageState<boolean>(
@@ -1104,197 +1053,200 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
     (isFasterWhisper && !!recommendedCt2Model);
   const trimmedQuery = modelQuery.trim();
 
-  // HuggingFace 系下载源选择（官方/国内镜像），ggml/ct2/FunASR 模型共用同一持久化偏好。
-  const downSourceControl = (
-    <div className="flex items-center gap-2 shrink-0">
-      <span className="text-sm text-muted-foreground shrink-0">
-        {t('switchDownloadSource')}:
-      </span>
-      <Select onValueChange={handleDownSource} value={downSource}>
-        <SelectTrigger className="w-[160px] sm:w-[200px] h-8">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="huggingface">{t('officialSource')}</SelectItem>
-          <SelectItem value="hf-mirror">{t('domesticMirror')}</SelectItem>
-        </SelectContent>
-      </Select>
-    </div>
-  );
+  // HuggingFace 系下载源（官方/国内镜像）：ggml/ct2/FunASR 共用同一持久化偏好。
+  // 统一为「点击下载时再选源」——通过 Context 下发给真正发起下载的叶子组件，
+  // 由其就地弹出气泡选源，零常驻占位。qwen/firered 自管各自源（弹窗内选）。
+  const downloadSourceConfig: DownloadSourceConfig | null =
+    isBuiltin || isFasterWhisper || isFunasr
+      ? {
+          value: downSource,
+          options: [
+            { value: DownSource.HuggingFace, label: t('officialSource') },
+            { value: DownSource.HfMirror, label: t('domesticMirror') },
+          ],
+          onChange: handleDownSource,
+          label: t('switchDownloadSource'),
+          confirmLabel: commonT('startDownload'),
+        }
+      : null;
 
   return (
-    <TooltipProvider delayDuration={300}>
-      <div className="space-y-4">
-        {showRecommendedHero && (
-          <RecommendedHero
-            modelName={
-              isFasterWhisper ? recommendedCt2Model!.id : recommendedModel!.name
-            }
-            modelSize={
-              isFasterWhisper
-                ? recommendedCt2Model!.size
-                : recommendedModel!.size
-            }
-            isInstalled={
-              isFasterWhisper ? recommendedCt2Installed : recommendedInstalled
-            }
-            basis={basis}
-            basisLoading={!systemInfoLoaded}
-            downSource={downSource}
-            onUpdate={onUpdate}
-            globalDownloading={globalDownloading}
-            t={t}
-            format={isFasterWhisper ? 'ct2' : 'ggml'}
-            needsCoreML={!isFasterWhisper && recommendedModel?.needsCoreML}
-          />
-        )}
+    <DownloadSourceProvider value={downloadSourceConfig}>
+      <TooltipProvider delayDuration={300}>
+        <div className="space-y-4">
+          {showRecommendedHero && (
+            <RecommendedHero
+              modelName={
+                isFasterWhisper
+                  ? recommendedCt2Model!.id
+                  : recommendedModel!.name
+              }
+              modelSize={
+                isFasterWhisper
+                  ? recommendedCt2Model!.size
+                  : recommendedModel!.size
+              }
+              isInstalled={
+                isFasterWhisper ? recommendedCt2Installed : recommendedInstalled
+              }
+              basis={basis}
+              basisLoading={!systemInfoLoaded}
+              downSource={downSource}
+              onUpdate={onUpdate}
+              globalDownloading={globalDownloading}
+              t={t}
+              format={isFasterWhisper ? 'ct2' : 'ggml'}
+              needsCoreML={!isFasterWhisper && recommendedModel?.needsCoreML}
+            />
+          )}
 
-        {!isLocalCli && !isFunasr && !isQwen && !isFireRed && (
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[180px]">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-              <Input
-                value={modelQuery}
-                onChange={(e) => setModelQuery(e.target.value)}
-                placeholder={t('modelSearchPlaceholder')}
-                className="h-8 pl-8 pr-8 text-sm focus-visible:ring-offset-0 focus-visible:ring-inset"
-              />
-              {modelQuery && (
-                <button
-                  type="button"
-                  aria-label={t('clearSearch')}
-                  onClick={() => setModelQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+          {!isLocalCli && !isFunasr && !isQwen && !isFireRed && (
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={modelQuery}
+                  onChange={(e) => setModelQuery(e.target.value)}
+                  placeholder={t('modelSearchPlaceholder')}
+                  className="h-8 pl-8 pr-8 text-sm focus-visible:ring-offset-0 focus-visible:ring-inset"
+                />
+                {modelQuery && (
+                  <button
+                    type="button"
+                    aria-label={t('clearSearch')}
+                    onClick={() => setModelQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer shrink-0">
+                <Switch
+                  checked={installedOnly}
+                  onCheckedChange={setInstalledOnly}
+                />
+                {t('showInstalledOnly')}
+              </label>
+              {isBuiltin && (
+                <Button
+                  onClick={handleImportModel}
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
                 >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+                  <Upload className="mr-1.5 h-3.5 w-3.5" />
+                  {t('importModel')}
+                </Button>
               )}
             </div>
-            <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer shrink-0">
-              <Switch
-                checked={installedOnly}
-                onCheckedChange={setInstalledOnly}
-              />
-              {t('showInstalledOnly')}
-            </label>
-            {downSourceControl}
-            {isBuiltin && (
-              <Button
-                onClick={handleImportModel}
-                size="sm"
-                variant="outline"
-                className="shrink-0"
+          )}
+
+          {(isBuiltin ||
+            isFasterWhisper ||
+            isFunasr ||
+            isQwen ||
+            isFireRed) && (
+            <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
+              <HardDrive className="h-3 w-3 shrink-0" />
+              <span className="shrink-0">
+                {isFasterWhisper
+                  ? t('fasterWhisperModelsPath')
+                  : t('modelPath')}
+                :
+              </span>
+              <span className="font-mono break-all">
+                {isFasterWhisper
+                  ? systemInfo.fasterWhisperModelsPath
+                  : isFunasr
+                    ? systemInfo?.funasrModelsPath
+                    : isQwen
+                      ? systemInfo?.qwenModelsPath
+                      : isFireRed
+                        ? systemInfo?.fireRedModelsPath
+                        : systemInfo?.modelsPath}
+              </span>
+              <button
+                type="button"
+                onClick={handleOpenModelsFolder}
+                className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
               >
-                <Upload className="mr-1.5 h-3.5 w-3.5" />
-                {t('importModel')}
-              </Button>
-            )}
-          </div>
-        )}
+                <FolderOpen className="h-3 w-3" />
+                <span>{t('openModelsFolder')}</span>
+              </button>
+              <span className="text-muted-foreground/50">·</span>
+              <button
+                type="button"
+                onClick={handleChangeModelsPath}
+                className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
+              >
+                <span>{t('changePath')}</span>
+              </button>
+            </div>
+          )}
 
-        {isFunasr && (
-          <div className="flex flex-wrap items-center gap-3">
-            {downSourceControl}
-          </div>
-        )}
-
-        {(isBuiltin || isFasterWhisper || isFunasr || isQwen || isFireRed) && (
-          <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
-            <HardDrive className="h-3 w-3 shrink-0" />
-            <span className="shrink-0">
-              {isFasterWhisper ? t('fasterWhisperModelsPath') : t('modelPath')}:
-            </span>
-            <span className="font-mono break-all">
-              {isFasterWhisper
-                ? systemInfo.fasterWhisperModelsPath
-                : isFunasr
-                  ? systemInfo?.funasrModelsPath
-                  : isQwen
-                    ? systemInfo?.qwenModelsPath
-                    : isFireRed
-                      ? systemInfo?.fireRedModelsPath
-                      : systemInfo?.modelsPath}
-            </span>
-            <button
-              type="button"
-              onClick={handleOpenModelsFolder}
-              className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
-            >
-              <FolderOpen className="h-3 w-3" />
-              <span>{t('openModelsFolder')}</span>
-            </button>
-            <span className="text-muted-foreground/50">·</span>
-            <button
-              type="button"
-              onClick={handleChangeModelsPath}
-              className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
-            >
-              <span>{t('changePath')}</span>
-            </button>
-          </div>
-        )}
-
-        {isLocalCli ? (
-          <p className="text-sm text-muted-foreground py-8 text-center">
-            {t('localCliModelHint')}
-          </p>
-        ) : isFunasr ? (
-          <FunasrModelSection onUpdate={onUpdate} downSource={downSource} />
-        ) : isQwen ? (
-          <QwenModelSection onUpdate={onUpdate} />
-        ) : isFireRed ? (
-          <FireRedModelSection onUpdate={onUpdate} />
-        ) : installedOnly && !hasAnyInstalled ? (
-          <p className="text-sm text-muted-foreground py-8 text-center">
-            {t('noInstalledModels')}
-          </p>
-        ) : trimmedQuery && !hasVisibleModels ? (
-          <p className="text-sm text-muted-foreground py-8 text-center">
-            {t('noModelMatch')}
-          </p>
-        ) : isBuiltin ? (
-          <div className="space-y-5">
-            {MODEL_TIERS.map((tier) => (
-              <TierSection
-                key={tier.id}
-                tier={tier}
-                recommendedModelName={recommendedModel?.name}
-                installedOnly={installedOnly}
-                modelQuery={modelQuery}
-                variantsExpanded={variantsExpandedMap[tier.id] ?? false}
-                onVariantsExpandedChange={(expanded) =>
-                  setTierVariantsExpanded(tier.id, expanded)
-                }
-                systemInfo={systemInfo}
-                downSource={downSource}
-                onUpdate={onUpdate}
-                t={t}
-                globalDownloading={globalDownloading}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-5">
-            {CT2_TIERS.map((tier) => (
-              <FasterWhisperTierSection
-                key={tier.id}
-                tier={tier}
-                models={fwCatalog.filter((m) => m.tier === tier.id)}
-                installedOnly={installedOnly}
-                modelQuery={modelQuery}
-                recommendedModelId={recommendedCt2Id}
-                installed={fwInstalled}
-                downSource={downSource}
-                onUpdate={onUpdate}
-                t={t}
-                globalDownloading={globalDownloading}
-                systemInfo={systemInfo}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </TooltipProvider>
+          {isLocalCli ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">
+              {t('localCliModelHint')}
+            </p>
+          ) : isFunasr ? (
+            <FunasrModelSection onUpdate={onUpdate} downSource={downSource} />
+          ) : isQwen ? (
+            <QwenModelSection onUpdate={onUpdate} />
+          ) : isFireRed ? (
+            <FireRedModelSection onUpdate={onUpdate} />
+          ) : installedOnly && !hasAnyInstalled ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">
+              {t('noInstalledModels')}
+            </p>
+          ) : trimmedQuery && !hasVisibleModels ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">
+              {t('noModelMatch')}
+            </p>
+          ) : isBuiltin ? (
+            <div className="space-y-5">
+              {MODEL_TIERS.map((tier) => (
+                <TierSection
+                  key={tier.id}
+                  tier={tier}
+                  recommendedModelName={recommendedModel?.name}
+                  installedOnly={installedOnly}
+                  modelQuery={modelQuery}
+                  variantsExpanded={variantsExpandedMap[tier.id] ?? false}
+                  onVariantsExpandedChange={(expanded) =>
+                    setTierVariantsExpanded(tier.id, expanded)
+                  }
+                  systemInfo={systemInfo}
+                  downSource={downSource}
+                  onUpdate={onUpdate}
+                  t={t}
+                  globalDownloading={globalDownloading}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {CT2_TIERS.map((tier) => (
+                <FasterWhisperTierSection
+                  key={tier.id}
+                  tier={tier}
+                  models={fwCatalog.filter((m) => m.tier === tier.id)}
+                  installedOnly={installedOnly}
+                  modelQuery={modelQuery}
+                  recommendedModelId={recommendedCt2Id}
+                  installed={fwInstalled}
+                  downSource={downSource}
+                  onUpdate={onUpdate}
+                  t={t}
+                  globalDownloading={globalDownloading}
+                  systemInfo={systemInfo}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </TooltipProvider>
+    </DownloadSourceProvider>
   );
 };
 

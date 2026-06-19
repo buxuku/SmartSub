@@ -128,7 +128,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
               size="sm"
               className="h-8 text-xs gap-1.5"
             >
-              <Link href={`/${locale}/resources?tab=engines`}>
+              <Link href={`/${locale}/engines`}>
                 <Download className="h-4 w-4" />
                 {t('goDownloadModel')}
               </Link>
@@ -203,7 +203,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
                 size="sm"
                 className="h-8 text-xs gap-1.5"
               >
-                <Link href={`/${locale}/resources?tab=providers`}>
+                <Link href={`/${locale}/translation`}>
                   <Languages className="h-4 w-4" />
                   {t('goConfigureProvider')}
                 </Link>

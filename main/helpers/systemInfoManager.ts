@@ -11,7 +11,12 @@ import {
   CT2_REQUIRED_FILES,
   CT2_IMPORT_SNAPSHOT_REV,
 } from './modelImport';
-import { isRuntimeInstalled, readEngineManifest } from './pythonRuntime/paths';
+import {
+  isRuntimeInstalled,
+  readEngineManifest,
+  getEngineDownloadUrl,
+} from './pythonRuntime/paths';
+import { getHfHost, getModelScopeBase } from './config/downloadConfig';
 import type { EngineStatus } from '../../types/engine';
 import { getModelDownloader } from './modelDownloader';
 import {
@@ -48,6 +53,7 @@ import {
   deleteQwenModel,
   getInstalledQwenModels,
   getQwenModelsRoot,
+  getQwenArchiveUrl,
 } from './qwenModelCatalog';
 import {
   getFireRedModelDownloader,
@@ -64,6 +70,7 @@ import {
   deleteFireRedModel,
   getInstalledFireRedModels,
   getFireRedModelsRoot,
+  getFireRedArchiveUrl,
 } from './fireRedModelCatalog';
 import { shutdownPythonRuntime } from './pythonRuntime';
 import { isSherpaLibInstalled } from './sherpaOnnx/sherpaLibPaths';
@@ -367,6 +374,77 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
         getSherpaAsrRuntime().dispose();
         deleteFireRedModel(modelId);
         return { success: true };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  // 「复制下载链接」专用：按引擎域 + 模型 + 当前选中源解析一个可复制的下载/仓库链接。
+  // 复用各 catalog 既有的 URL 构造，避免 renderer 重复实现导致与真实下载链接漂移。
+  // - funasr（HF 仓库逐文件）/ qwen·firered（modelscope 逐文件）无单一直链 → 复制仓库页地址；
+  // - qwen·firered 的 ghproxy/github 源为整包 → 复制 tar.bz2 直链；
+  // - pyEngine 为本平台运行时整包 → 复制 release 资产直链。
+  ipcMain.handle(
+    'resolveModelDownloadUrl',
+    async (
+      _event,
+      {
+        scope,
+        modelId,
+        source,
+      }: {
+        scope: 'funasr' | 'qwen' | 'firered' | 'pyEngine';
+        modelId?: string;
+        source: string;
+      },
+    ): Promise<{ success: boolean; url?: string; error?: string }> => {
+      try {
+        if (scope === 'funasr') {
+          const spec = FUNASR_MODELS[modelId as FunasrModelId];
+          if (!spec?.repo) return { success: false, error: 'noRepo' };
+          return { success: true, url: `${getHfHost(source)}/${spec.repo}` };
+        }
+        if (scope === 'qwen') {
+          const spec = QWEN_MODELS[modelId as QwenModelId];
+          if (!spec) return { success: false, error: 'unknownModel' };
+          if (source === 'modelscope') {
+            return {
+              success: true,
+              url: `${getModelScopeBase()}/models/${spec.modelScopeRepo}`,
+            };
+          }
+          return {
+            success: true,
+            url: getQwenArchiveUrl(
+              spec,
+              source === 'github' ? 'github' : 'ghproxy',
+            ),
+          };
+        }
+        if (scope === 'firered') {
+          const spec = FIRERED_MODELS[modelId as FireRedModelId];
+          if (!spec) return { success: false, error: 'unknownModel' };
+          if (source === 'modelscope') {
+            return {
+              success: true,
+              url: `${getModelScopeBase()}/models/${spec.modelScopeRepo}`,
+            };
+          }
+          return {
+            success: true,
+            url: getFireRedArchiveUrl(
+              spec,
+              source === 'github' ? 'github' : 'ghproxy',
+            ),
+          };
+        }
+        if (scope === 'pyEngine') {
+          const s =
+            source === 'github' || source === 'gitcode' ? source : 'ghproxy';
+          return { success: true, url: getEngineDownloadUrl(s) };
+        }
+        return { success: false, error: 'unknownScope' };
       } catch (error) {
         return { success: false, error: String(error) };
       }

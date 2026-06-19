@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,22 +12,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  CheckCircle2,
-  Download,
-  Trash2,
-  X,
-  Mic,
-  Waves,
-  Upload,
-} from 'lucide-react';
+import { Download, Trash2, X, Mic, Upload } from 'lucide-react';
 import { toast } from 'sonner';
-import DownloadSourceSelector from '@/components/resources/engines/DownloadSourceSelector';
+import DownloadSourcePopover, {
+  type DownloadSourceConfig,
+} from '@/components/resources/engines/DownloadSourcePopover';
 import SherpaModelRow from '@/components/resources/SherpaModelRow';
 import { importModelFromFolder } from 'lib/importModel';
+import { resolveModelDownloadUrl } from 'lib/resolveModelDownloadUrl';
 
 type QwenModelId = 'qwen3-asr-0.6b';
-const QWEN_MODEL_SIZE = '0.95GB';
 
 /** qwen 模型下载源（与主进程 QwenModelSource 一致）：国内优先 ModelScope。 */
 type QwenModelSource = 'modelscope' | 'ghproxy' | 'github';
@@ -91,8 +84,7 @@ const QwenModelSection: React.FC<{ onUpdate?: () => void }> = ({
   useEffect(() => {
     load();
     const isQwenKey = (key: unknown): key is string =>
-      typeof key === 'string' &&
-      (key.startsWith('qwen:') || key === 'funasr:silero-vad');
+      typeof key === 'string' && key.startsWith('qwen:');
 
     const unsub = window?.ipc?.on(
       'downloadProgress',
@@ -120,7 +112,20 @@ const QwenModelSection: React.FC<{ onUpdate?: () => void }> = ({
 
   const qwenInstalled =
     status?.models.find((m) => m.id === 'qwen3-asr-0.6b')?.installed ?? false;
-  const vadInstalled = status?.vadInstalled ?? false;
+
+  // 下载源在「点击下载时」于气泡内选择（与各引擎统一）。
+  const sourceConfig: DownloadSourceConfig = {
+    value: source,
+    options: QWEN_MODEL_SOURCES.map((s) => ({
+      value: s,
+      label: t(`engines.qwen.modelSources.${s}`),
+    })),
+    onChange: (s) => handleSelectSource(s as QwenModelSource),
+    label: t('engines.qwen.downloadSource'),
+    confirmLabel: commonT('startDownload'),
+    hint: t(`engines.qwen.modelSourceHint.${source}`),
+    getCopyUrl: (s) => resolveModelDownloadUrl('qwen', s, 'qwen3-asr-0.6b'),
+  };
 
   const doDownloadQwen = async () => {
     setShowConfirm(false);
@@ -226,16 +231,23 @@ const QwenModelSection: React.FC<{ onUpdate?: () => void }> = ({
                   </Button>
                 ) : (
                   <div className="flex items-center gap-1.5">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5"
-                      disabled={!!downloading}
-                      onClick={() => setShowConfirm(true)}
+                    <DownloadSourcePopover
+                      open={showConfirm}
+                      onOpenChange={setShowConfirm}
+                      config={sourceConfig}
+                      onConfirm={doDownloadQwen}
                     >
-                      <Download className="h-3.5 w-3.5" />
-                      {t('engines.qwen.modelDownload')}
-                    </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        disabled={!!downloading}
+                        onClick={() => setShowConfirm(true)}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        {t('engines.qwen.modelDownload')}
+                      </Button>
+                    </DownloadSourcePopover>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -253,67 +265,6 @@ const QwenModelSection: React.FC<{ onUpdate?: () => void }> = ({
           </CardContent>
         </Card>
       </section>
-
-      <section className="space-y-2">
-        <div className="flex items-baseline gap-2 px-1">
-          <Waves className="h-4 w-4 self-center text-muted-foreground" />
-          <h3 className="text-sm font-semibold">VAD</h3>
-        </div>
-        <Card>
-          <CardContent className="p-2">
-            <SherpaModelRow
-              icon={Waves}
-              name={t('engines.funasr.models.silero-vad.name')}
-              desc={t('engines.funasr.models.silero-vad.desc')}
-              installed={vadInstalled}
-              trailing={
-                <Badge
-                  variant="outline"
-                  className="gap-1 border-success/40 text-success"
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  {commonT('builtIn')}
-                </Badge>
-              }
-            />
-          </CardContent>
-        </Card>
-      </section>
-
-      <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('engines.qwen.modelDownload')}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('engines.qwen.modelDownloadConfirm', {
-                size: QWEN_MODEL_SIZE,
-              })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <DownloadSourceSelector
-            label={t('engines.qwen.downloadSource')}
-            value={source}
-            options={QWEN_MODEL_SOURCES.map((s) => ({
-              value: s,
-              label: t(`engines.qwen.modelSources.${s}`),
-            }))}
-            onChange={(s) => handleSelectSource(s as QwenModelSource)}
-            hint={t(`engines.qwen.modelSourceHint.${source}`)}
-          />
-          <AlertDialogFooter>
-            <AlertDialogCancel className="gap-1.5">
-              <X className="h-4 w-4" />
-              {commonT('cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction className="gap-1.5" onClick={doDownloadQwen}>
-              <Download className="h-4 w-4" />
-              {t('engines.qwen.modelDownload')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent>

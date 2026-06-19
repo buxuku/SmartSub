@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,22 +12,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  CheckCircle2,
-  Download,
-  Trash2,
-  X,
-  Mic,
-  Waves,
-  Upload,
-} from 'lucide-react';
+import { Download, Trash2, X, Mic, Upload } from 'lucide-react';
 import { toast } from 'sonner';
-import DownloadSourceSelector from '@/components/resources/engines/DownloadSourceSelector';
+import DownloadSourcePopover, {
+  type DownloadSourceConfig,
+} from '@/components/resources/engines/DownloadSourcePopover';
 import SherpaModelRow from '@/components/resources/SherpaModelRow';
 import { importModelFromFolder } from 'lib/importModel';
+import { resolveModelDownloadUrl } from 'lib/resolveModelDownloadUrl';
 
 type FireRedModelId = 'fire-red-asr-large-zh-en';
-const FIRERED_MODEL_SIZE = '1.7GB';
 
 /** fireRed 模型下载源（与主进程 FireRedModelSource 一致）：国内优先 ModelScope。 */
 type FireRedModelSource = 'modelscope' | 'ghproxy' | 'github';
@@ -91,8 +84,7 @@ const FireRedModelSection: React.FC<{ onUpdate?: () => void }> = ({
   useEffect(() => {
     load();
     const isFireRedKey = (key: unknown): key is string =>
-      typeof key === 'string' &&
-      (key.startsWith('firered:') || key === 'funasr:silero-vad');
+      typeof key === 'string' && key.startsWith('firered:');
 
     const unsub = window?.ipc?.on(
       'downloadProgress',
@@ -121,7 +113,21 @@ const FireRedModelSection: React.FC<{ onUpdate?: () => void }> = ({
   const fireRedInstalled =
     status?.models.find((m) => m.id === 'fire-red-asr-large-zh-en')
       ?.installed ?? false;
-  const vadInstalled = status?.vadInstalled ?? false;
+
+  // 下载源在「点击下载时」于气泡内选择（与各引擎统一）。
+  const sourceConfig: DownloadSourceConfig = {
+    value: source,
+    options: FIRERED_MODEL_SOURCES.map((s) => ({
+      value: s,
+      label: t(`engines.fireRedAsr.modelSources.${s}`),
+    })),
+    onChange: (s) => handleSelectSource(s as FireRedModelSource),
+    label: t('engines.fireRedAsr.downloadSource'),
+    confirmLabel: commonT('startDownload'),
+    hint: t(`engines.fireRedAsr.modelSourceHint.${source}`),
+    getCopyUrl: (s) =>
+      resolveModelDownloadUrl('firered', s, 'fire-red-asr-large-zh-en'),
+  };
 
   const doDownloadFireRed = async () => {
     setShowConfirm(false);
@@ -240,16 +246,23 @@ const FireRedModelSection: React.FC<{ onUpdate?: () => void }> = ({
                   </Button>
                 ) : (
                   <div className="flex items-center gap-1.5">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5"
-                      disabled={!!downloading}
-                      onClick={() => setShowConfirm(true)}
+                    <DownloadSourcePopover
+                      open={showConfirm}
+                      onOpenChange={setShowConfirm}
+                      config={sourceConfig}
+                      onConfirm={doDownloadFireRed}
                     >
-                      <Download className="h-3.5 w-3.5" />
-                      {t('engines.fireRedAsr.modelDownload')}
-                    </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        disabled={!!downloading}
+                        onClick={() => setShowConfirm(true)}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        {t('engines.fireRedAsr.modelDownload')}
+                      </Button>
+                    </DownloadSourcePopover>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -267,67 +280,6 @@ const FireRedModelSection: React.FC<{ onUpdate?: () => void }> = ({
           </CardContent>
         </Card>
       </section>
-
-      <section className="space-y-2">
-        <div className="flex items-baseline gap-2 px-1">
-          <Waves className="h-4 w-4 self-center text-muted-foreground" />
-          <h3 className="text-sm font-semibold">VAD</h3>
-        </div>
-        <Card>
-          <CardContent className="p-2">
-            <SherpaModelRow
-              icon={Waves}
-              name={t('engines.funasr.models.silero-vad.name')}
-              desc={t('engines.funasr.models.silero-vad.desc')}
-              installed={vadInstalled}
-              trailing={
-                <Badge
-                  variant="outline"
-                  className="gap-1 border-success/40 text-success"
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  {commonT('builtIn')}
-                </Badge>
-              }
-            />
-          </CardContent>
-        </Card>
-      </section>
-
-      <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('engines.fireRedAsr.modelDownload')}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('engines.fireRedAsr.modelDownloadConfirm', {
-                size: FIRERED_MODEL_SIZE,
-              })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <DownloadSourceSelector
-            label={t('engines.fireRedAsr.downloadSource')}
-            value={source}
-            options={FIRERED_MODEL_SOURCES.map((s) => ({
-              value: s,
-              label: t(`engines.fireRedAsr.modelSources.${s}`),
-            }))}
-            onChange={(s) => handleSelectSource(s as FireRedModelSource)}
-            hint={t(`engines.fireRedAsr.modelSourceHint.${source}`)}
-          />
-          <AlertDialogFooter>
-            <AlertDialogCancel className="gap-1.5">
-              <X className="h-4 w-4" />
-              {commonT('cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction className="gap-1.5" onClick={doDownloadFireRed}>
-              <Download className="h-4 w-4" />
-              {t('engines.fireRedAsr.modelDownload')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent>

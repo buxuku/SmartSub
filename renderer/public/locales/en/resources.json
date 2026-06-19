@@ -7,12 +7,6 @@
   "importModelSuccess": "Model imported",
   "importModelFailed": "Import failed: {{error}}",
   "importInvalidLayout": "The selected folder is not a valid model. Missing files: {{files}}",
-  "tab": {
-    "overview": "Overview",
-    "engines": "Engines & Models",
-    "providers": "Translation",
-    "acceleration": "GPU Acceleration"
-  },
   "engines": {
     "statusAvailable": "Available",
     "status": {
@@ -79,7 +73,13 @@
       "desc": "FunASR, Qwen3-ASR and FireRedASR share one bundled sherpa-onnx runtime; they differ only in models and a few parameters. Pick and download a model from any family below to start — fully offline on CPU, no GPU or Python required.",
       "builtinRuntime": "The runtime is bundled with the app (shared by FunASR · Qwen · FireRed) — no separate download needed.",
       "installedVersion": "Bundled v{{version}}",
-      "needsModels": "Download a model from any family to get started"
+      "needsModels": "Download a model from any family to get started",
+      "advanced": "Advanced settings",
+      "numThreads": "Inference threads",
+      "numThreadsHint": "Threads used for CPU inference — higher is faster but uses more CPU (shared by all three families)",
+      "itn": "Inverse text normalization (ITN)",
+      "itnHint": "Converts spoken numbers, dates, etc. into standard written form and restores punctuation",
+      "itnFunasrOnly": "Only supported by FunASR (SenseVoice); Qwen and FireRed handle normalization internally."
     },
     "funasr": {
       "name": "FunASR",
@@ -171,7 +171,7 @@
       "modelDownloadConfirm": "Qwen3-ASR (0.6B) is about {{size}}. It runs on CPU but is not real-time. Continue?",
       "modelSources": {
         "modelscope": "ModelScope (CN)",
-        "ghproxy": "gh-proxy",
+        "ghproxy": "GitHub Mirror (China)",
         "github": "GitHub"
       },
       "modelSourceHint": {
@@ -223,7 +223,7 @@
       "modelDownloadConfirm": "FireRedASR-AED (Large) is about {{size}}. It runs on CPU but is not real-time. Continue?",
       "modelSources": {
         "modelscope": "ModelScope (CN)",
-        "ghproxy": "gh-proxy",
+        "ghproxy": "GitHub Mirror (China)",
         "github": "GitHub"
       },
       "modelSourceHint": {
@@ -254,39 +254,5 @@
       "commandSaved": "Command saved",
       "commandSaveFailed": "Save failed"
     }
-  },
-  "overview": {
-    "modelsTitle": "Speech Models",
-    "providersTitle": "Translation Services",
-    "accelerationTitle": "GPU Acceleration",
-    "installedCount": "{{count}} installed",
-    "downloadingCount": "{{count}} downloading…",
-    "noModels": "No model installed yet — transcription tasks cannot start",
-    "recommendedModel": "Recommended: {{model}} ({{memory}}GB RAM)",
-    "configuredCount": "{{count}} configured",
-    "noProviders": "No translation service configured yet — required for translation tasks",
-    "enableProviders": "Enable a service",
-    "gpuRunning": "{{backend}} active",
-    "gpuNotEnabled": "Not enabled (CPU mode)",
-    "gpuCpuManual": "CPU mode (manual setting)",
-    "gpuGpuOnlyPending": "GPU-only · awaiting first transcription",
-    "gpuAutoPending": "Auto mode · awaiting first transcription",
-    "gpuCpuFallback": "Running on CPU (auto fallback)",
-    "gpuOnlyOnCpu": "GPU-only mode set, but running on CPU",
-    "cudaUpgradeHint": "Upgrade to CUDA {{version}} for better performance",
-    "gpuModeLabel": "Mode: {{mode}}",
-    "gpuMode": {
-      "auto": "Auto",
-      "gpu-only": "GPU only",
-      "cpu-only": "CPU only"
-    },
-    "appleAcceleration": "Apple Silicon acceleration (CoreML / Metal)",
-    "engineModelTitle": "Engines & Models",
-    "manage": "Manage",
-    "readyTitle": "Ready to go",
-    "readyDesc": "You meet the requirements to start transcription. Head to the launchpad to create a task.",
-    "setupTitle": "One step away",
-    "setupDesc": "Finish the setup item below to start transcribing.",
-    "nextDownloadModels": "Download a speech model"
   }
 }

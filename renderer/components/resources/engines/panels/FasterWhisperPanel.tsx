@@ -31,6 +31,9 @@ import {
 } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { formatSize } from '@/components/settings/gpu/gpuUtils';
+import DownloadSourcePopover, {
+  type DownloadSourceConfig,
+} from '@/components/resources/engines/DownloadSourcePopover';
 import type {
   EngineStatus,
   PyEngineDownloadProgress,
@@ -63,6 +66,8 @@ interface FasterWhisperPanelProps {
   computeType: string;
   deviceOptions: string[];
   updateInfo: PyEngineUpdateInfo | null;
+  /** 引擎二进制下载源配置：点击下载/升级时于气泡内选择。 */
+  binarySourceConfig: DownloadSourceConfig;
   onDownload: () => void;
   onRepair: () => void;
   onUninstall: () => void;
@@ -86,6 +91,7 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
   computeType,
   deviceOptions,
   updateInfo,
+  binarySourceConfig,
   onDownload,
   onRepair,
   onUninstall,
@@ -95,6 +101,9 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
   onComputeTypeChange,
 }) => {
   const { t } = useTranslation('resources');
+  // 下载/修复 与 升级 各自的「下载源」气泡开关（点击对应按钮时弹出选源）。
+  const [installPickerOpen, setInstallPickerOpen] = React.useState(false);
+  const [upgradePickerOpen, setUpgradePickerOpen] = React.useState(false);
 
   const deviceValue = deviceOptions.includes(device) ? device : 'auto';
   const deviceLabel = (opt: string) =>
@@ -154,16 +163,38 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
           !isDownloading &&
           !fasterBroken &&
           !showVerifying && (
-            <Button size="sm" className="gap-1.5" onClick={onDownload}>
-              <Download className="h-3.5 w-3.5" />
-              {t('engines.fasterWhisper.download', { size: PY_ENGINE_SIZE })}
-            </Button>
+            <DownloadSourcePopover
+              open={installPickerOpen}
+              onOpenChange={setInstallPickerOpen}
+              config={binarySourceConfig}
+              onConfirm={onDownload}
+            >
+              <Button
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setInstallPickerOpen(true)}
+              >
+                <Download className="h-3.5 w-3.5" />
+                {t('engines.fasterWhisper.download', { size: PY_ENGINE_SIZE })}
+              </Button>
+            </DownloadSourcePopover>
           )}
         {fasterBroken && (
-          <Button size="sm" className="gap-1.5" onClick={onRepair}>
-            <RefreshCw className="h-3.5 w-3.5" />
-            {t('engines.fasterWhisper.repair')}
-          </Button>
+          <DownloadSourcePopover
+            open={installPickerOpen}
+            onOpenChange={setInstallPickerOpen}
+            config={binarySourceConfig}
+            onConfirm={onRepair}
+          >
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setInstallPickerOpen(true)}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              {t('engines.fasterWhisper.repair')}
+            </Button>
+          </DownloadSourcePopover>
         )}
         {fasterBroken && uninstallButton}
       </div>
@@ -185,15 +216,22 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
               >
                 {t('engines.fasterWhisper.updateAvailable')}
               </Badge>
-              <Button
-                size="sm"
-                className="gap-1.5"
-                disabled={taskBusy}
-                onClick={onUpgrade}
+              <DownloadSourcePopover
+                open={upgradePickerOpen}
+                onOpenChange={setUpgradePickerOpen}
+                config={binarySourceConfig}
+                onConfirm={onUpgrade}
               >
-                <ArrowUpCircle className="h-3.5 w-3.5" />
-                {t('engines.fasterWhisper.upgrade')}
-              </Button>
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={taskBusy}
+                  onClick={() => setUpgradePickerOpen(true)}
+                >
+                  <ArrowUpCircle className="h-3.5 w-3.5" />
+                  {t('engines.fasterWhisper.upgrade')}
+                </Button>
+              </DownloadSourcePopover>
             </>
           ) : (
             <Button

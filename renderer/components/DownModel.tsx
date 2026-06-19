@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useCallback, FC, ReactNode } from 'react';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
+import DownloadSourcePopover, {
+  useDownloadSource,
+} from '@/components/resources/engines/DownloadSourcePopover';
 
 export type ModelDownloadFormat = 'ggml' | 'ct2';
 
@@ -22,6 +25,8 @@ interface IProps {
   needsCoreML?: boolean;
   globalDownloading?: boolean;
   format?: ModelDownloadFormat;
+  /** 气泡内「复制链接」：按当前所选源返回本模型可复制的下载链接（不提供则不显示复制）。 */
+  getCopyUrl?: (source: string) => string | null | undefined;
 }
 
 function getProgressKey(
@@ -60,6 +65,7 @@ const DownModel: FC<IProps> = ({
   needsCoreML = true,
   globalDownloading = false,
   format = 'ggml',
+  getCopyUrl,
 }) => {
   const { t } = useTranslation('common');
   const [loading, setLoading] = React.useState(false);
@@ -143,26 +149,46 @@ const DownModel: FC<IProps> = ({
 
   const isDisabled = globalDownloading && !loading;
 
+  // 下载源在「点击下载时」才选择：上层通过 DownloadSourceProvider 注入源配置时，
+  // 点击下载先弹气泡选源，确认后再真正下载；无配置时（设置页 / 引导页）保持直接下载。
+  const sourceConfig = useDownloadSource();
+  const [pickerOpen, setPickerOpen] = React.useState(false);
+  const triggerDownload = sourceConfig
+    ? () => setPickerOpen(true)
+    : handleDownModel;
+
+  const child = React.isValidElement<{
+    loading?: boolean;
+    progress?: number;
+    detail?: DownloadDetail | null;
+    handleDownModel?: () => void;
+    handleCancel?: () => void;
+    disabled?: boolean;
+  }>(children)
+    ? React.cloneElement(children, {
+        loading,
+        progress,
+        detail,
+        handleDownModel: triggerDownload,
+        handleCancel,
+        disabled: isDisabled,
+      })
+    : children;
+
+  const anchor = <span className="inline-block">{child}</span>;
+
+  if (!sourceConfig) return anchor;
+
   return (
-    <span className="inline-block">
-      {React.isValidElement<{
-        loading?: boolean;
-        progress?: number;
-        detail?: DownloadDetail | null;
-        handleDownModel?: () => void;
-        handleCancel?: () => void;
-        disabled?: boolean;
-      }>(children)
-        ? React.cloneElement(children, {
-            loading,
-            progress,
-            detail,
-            handleDownModel,
-            handleCancel,
-            disabled: isDisabled,
-          })
-        : children}
-    </span>
+    <DownloadSourcePopover
+      open={pickerOpen}
+      onOpenChange={setPickerOpen}
+      config={sourceConfig}
+      onConfirm={handleDownModel}
+      getCopyUrl={getCopyUrl}
+    >
+      {anchor}
+    </DownloadSourcePopover>
   );
 };
 

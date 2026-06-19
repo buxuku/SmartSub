@@ -30,3 +30,12 @@
 - [ ] 5.2 冒烟：合并条目下三族各自下载/导入/删除/换路径与转写均与合并前一致（需运行 App）
 - [ ] 5.3 冒烟：ITN 仅在 FunASR 分区出现；切换不丢运行库状态（共享 `useSherpaRuntime` 不重复请求）（需运行 App）
 - [ ] 5.4 冒烟：任务页能选到三族模型并正确转写；旧任务回填正确（需运行 App）
+
+## 6. 评审追加调整（首轮试用反馈）
+
+- [x] 6.1 高级设置集中：废弃「每族内联 `SherpaFamilyAdvanced`」（2.2 的旧形态），改为组面板底部**单一**「高级设置」折叠区——线程数统一一项（更改时同步写入 `set-funasr/qwen/firered-settings`），ITN 单独成行并备注「仅 FunASR（SenseVoice）支持」（`engines.sherpa.{advanced,numThreads,numThreadsHint,itn,itnHint,itnFunasrOnly}`）
+- [x] 6.2 不再展示 VAD 面板：silero-vad 随包内置（`extraResources/sherpa/vad`），从 `FunasrModelSection`/`QwenModelSection`/`FireRedModelSection` 删除 VAD 区块及其 `vadInstalled`/孤立 import；ASR 导入按钮转为无条件
+- [x] 6.3 运行库内置不再做安装检测：移除三族 `pkgInstalled` 链路（`EngineModelTab` 三个 `*PkgInstalled` state + `engineInstalled` 读取 + `SherpaFamily.pkgInstalled`），族徽标只剩「可用 / 需下载模型」，不再出现「未安装」
+- [x] 6.4 `npx tsc --noEmit -p renderer/tsconfig.json` 改动文件零错误；`node scripts/check-i18n.mjs` 通过
+- [x] 6.5 左栏引擎列表固定、仅右栏滚动：`engines.tsx` 外层去掉 `overflow-auto`，`EngineModelTab` 根容器 `h-full min-h-0 md:flex-row`，左 nav `md:overflow-y-auto` 整列常驻、右栏 `overflow-y-auto` 独立滚动
+- [ ] 6.6 冒烟：高级设置改线程数后三引擎一致生效；ITN 仅作用 FunASR；三族在内置运行库下仅按模型下载态显示徽标；左栏固定/右栏独立滚动正常（需运行 App）

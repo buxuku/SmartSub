@@ -4,6 +4,10 @@
   "modelManagement": "Model Management",
   "settings": "Settings",
   "resourceCenter": "Resources",
+  "enginesAndModels": "Engines & Models",
+  "enginesAndModelsDesc": "Manage transcription engine runtimes, speech models and GPU acceleration",
+  "translationServices": "Translation Services",
+  "translationServicesDesc": "Configure translation providers, API keys and connectivity tests",
   "headerTitle": "妙幕 - SmartSub",
   "newVersionAvailable": "New version available",
   "provider": {
@@ -96,6 +100,7 @@
   "cancel": "Cancel",
   "delete": "Delete",
   "download": "Download",
+  "startDownload": "Start download",
   "builtIn": "Built-in",
   "pathConfigTitle": "Filename Config Description",
   "pathConfigDesc": "If you're unsure about the configuration, keep the default settings.",

@@ -13,15 +13,16 @@ import {
   AlertCircle,
   CheckCircle2,
   Compass,
+  Cpu,
   Edit3,
   Film,
   Github,
   HelpCircle,
   Keyboard,
+  Languages,
   Loader2,
   MessageCircleQuestion,
   MonitorPlay,
-  Package,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
@@ -92,10 +93,21 @@ const NAV_ITEMS: NavItemDef[] = [
     isActive: (p) => p.includes('subtitleMerge'),
   },
   {
-    href: 'resources',
-    labelKey: 'resourceCenter',
-    icon: Package,
-    isActive: (p) => p.includes('resources'),
+    href: 'engines',
+    labelKey: 'enginesAndModels',
+    icon: Cpu,
+    // 资源中心已拆分：/engines 与旧 /resources、/modelsControl 重定向均落于此。
+    isActive: (p) =>
+      p.includes('/engines') ||
+      p.includes('/resources') ||
+      p.includes('/modelsControl'),
+  },
+  {
+    href: 'translation',
+    labelKey: 'translationServices',
+    icon: Languages,
+    isActive: (p) =>
+      p.includes('/translation') || p.includes('/translateControl'),
   },
   {
     href: 'settings',
@@ -585,7 +597,7 @@ const Layout = ({ children }) => {
             {downloadPill && (
               <button
                 type="button"
-                onClick={() => router.push(`/${locale}/resources?tab=engines`)}
+                onClick={() => router.push(`/${locale}/engines`)}
                 aria-label={t('downloadPill.aria')}
                 className={cn(
                   'flex w-full items-center gap-1.5 rounded-full border px-2 py-1.5 text-[11px] transition-colors',
@@ -703,7 +715,7 @@ const Layout = ({ children }) => {
                       }`}
                       onClick={() => {
                         // GPU 加速已折叠进 builtin 引擎面板：先选中 builtin（写 EngineModelTab
-                        // 的选中态 localStorage），再跳引擎 Tab，落地直达 builtin 的加速区。
+                        // 的选中态 localStorage），再跳「引擎与模型」页，落地直达 builtin 的加速区。
                         try {
                           localStorage.setItem(
                             'engineModelSelectedView',
@@ -712,7 +724,7 @@ const Layout = ({ children }) => {
                         } catch {
                           // 忽略：localStorage 不可用时仍跳转，EngineModelTab 回落默认 builtin
                         }
-                        router.push(`/${locale}/resources?tab=engines`);
+                        router.push(`/${locale}/engines`);
                       }}
                     >
                       <Zap className="w-3.5 h-3.5" />

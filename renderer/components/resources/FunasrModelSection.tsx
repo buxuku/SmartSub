@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,18 +12,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Download,
-  Trash2,
-  X,
-  Mic,
-  Waves,
-  Upload,
-  CheckCircle2,
-} from 'lucide-react';
+import { Download, Trash2, X, Mic, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import SherpaModelRow from '@/components/resources/SherpaModelRow';
+import DownloadSourcePopover, {
+  useDownloadSource,
+} from '@/components/resources/engines/DownloadSourcePopover';
 import { importModelFromFolder } from 'lib/importModel';
+import { resolveModelDownloadUrl } from 'lib/resolveModelDownloadUrl';
 
 type FunasrModelId = 'sensevoice-small' | 'paraformer-zh' | 'silero-vad';
 
@@ -36,7 +31,6 @@ interface FunasrModelStatus {
 }
 
 const ASR_MODELS: FunasrModelId[] = ['sensevoice-small', 'paraformer-zh'];
-const VAD_MODEL: FunasrModelId = 'silero-vad';
 
 const FunasrModelSection: React.FC<{
   onUpdate?: () => void;
@@ -51,6 +45,9 @@ const FunasrModelSection: React.FC<{
   const [confirmDeleteId, setConfirmDeleteId] = useState<FunasrModelId | null>(
     null,
   );
+  // 下载源在「点击下载时」于气泡内选择（源配置来自上层 ModelLibrarySection 的 Context）。
+  const sourceConfig = useDownloadSource();
+  const [pickerId, setPickerId] = useState<FunasrModelId | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -168,28 +165,45 @@ const FunasrModelSection: React.FC<{
       </Button>
     ) : (
       <div className="flex items-center gap-1.5">
+        {(() => {
+          const downloadBtn = (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              disabled={!!downloading}
+              onClick={() =>
+                sourceConfig ? setPickerId(id) : handleDownload(id)
+              }
+            >
+              <Download className="h-3.5 w-3.5" />
+              {t('engines.funasr.modelDownload')}
+            </Button>
+          );
+          return sourceConfig ? (
+            <DownloadSourcePopover
+              open={pickerId === id}
+              onOpenChange={(o) => setPickerId(o ? id : null)}
+              config={sourceConfig}
+              onConfirm={() => handleDownload(id)}
+              getCopyUrl={(s) => resolveModelDownloadUrl('funasr', s, id)}
+            >
+              {downloadBtn}
+            </DownloadSourcePopover>
+          ) : (
+            downloadBtn
+          );
+        })()}
         <Button
           size="sm"
-          variant="outline"
-          className="gap-1.5"
+          variant="ghost"
+          className="gap-1.5 text-muted-foreground"
           disabled={!!downloading}
-          onClick={() => handleDownload(id)}
+          onClick={() => handleImport(id)}
         >
-          <Download className="h-3.5 w-3.5" />
-          {t('engines.funasr.modelDownload')}
+          <Upload className="h-3.5 w-3.5" />
+          {t('importFromFolder')}
         </Button>
-        {id !== VAD_MODEL && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="gap-1.5 text-muted-foreground"
-            disabled={!!downloading}
-            onClick={() => handleImport(id)}
-          >
-            <Upload className="h-3.5 w-3.5" />
-            {t('importFromFolder')}
-          </Button>
-        )}
       </div>
     );
     return (
@@ -218,31 +232,6 @@ const FunasrModelSection: React.FC<{
         <Card>
           <CardContent className="space-y-2 p-2">
             {ASR_MODELS.map((id) => renderRow(id, Mic))}
-          </CardContent>
-        </Card>
-      </section>
-      <section className="space-y-2">
-        <div className="flex items-baseline gap-2 px-1">
-          <Waves className="h-4 w-4 self-center text-muted-foreground" />
-          <h3 className="text-sm font-semibold">VAD</h3>
-        </div>
-        <Card>
-          <CardContent className="p-2">
-            <SherpaModelRow
-              icon={Waves}
-              name={t(`engines.funasr.models.${VAD_MODEL}.name`)}
-              desc={t(`engines.funasr.models.${VAD_MODEL}.desc`)}
-              installed
-              trailing={
-                <Badge
-                  variant="outline"
-                  className="gap-1 border-success/40 text-success"
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  {commonT('builtIn')}
-                </Badge>
-              }
-            />
           </CardContent>
         </Card>
       </section>

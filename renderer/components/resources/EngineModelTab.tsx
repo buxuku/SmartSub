@@ -12,7 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Download, ArrowUpCircle, Trash2, X } from 'lucide-react';
+import { Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from 'lib/utils';
 import FasterWhisperPanel from '@/components/resources/engines/panels/FasterWhisperPanel';
@@ -23,7 +23,8 @@ import LocalCliPanel from '@/components/resources/engines/panels/LocalCliPanel';
 import BuiltinPanel from '@/components/resources/engines/panels/BuiltinPanel';
 import EngineIcon from '@/components/resources/engines/EngineIcon';
 import ModelLibrarySection from '@/components/resources/ModelLibrarySection';
-import DownloadSourceSelector from '@/components/resources/engines/DownloadSourceSelector';
+import { type DownloadSourceConfig } from '@/components/resources/engines/DownloadSourcePopover';
+import { resolveModelDownloadUrl } from 'lib/resolveModelDownloadUrl';
 import { useSherpaRuntime } from '@/components/resources/engines/useSherpaRuntime';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import {
@@ -38,8 +39,6 @@ import type {
   TranscriptionEngine,
 } from '../../../types/engine';
 import { ISystemInfo } from '../../../types/types';
-
-const PY_ENGINE_SIZE = '170MB';
 
 type EngineStatuses = Partial<Record<TranscriptionEngine, EngineStatus>>;
 type StatusTone = 'ready' | 'pending' | 'downloading' | 'error';
@@ -110,19 +109,15 @@ const EngineModelTab: React.FC = () => {
   const [platform, setPlatform] = useState('');
   const [downloadProgress, setDownloadProgress] =
     useState<PyEngineDownloadProgress | null>(null);
-  const [showDownloadConfirm, setShowDownloadConfirm] = useState(false);
-  const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false);
   const [showUninstallConfirm, setShowUninstallConfirm] = useState(false);
   const [taskBusy, setTaskBusy] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const taskBusyRef = useRef(false);
   const [updateInfo, setUpdateInfo] = useState<PyEngineUpdateInfo | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
-  const [funasrPkgInstalled, setFunasrPkgInstalled] = useState(false);
+  // 运行库（sherpa-onnx）随包内置，不再做安装检测；三族状态只看「是否已下载模型」。
   const [funasrModelsReady, setFunasrModelsReady] = useState(false);
-  const [qwenPkgInstalled, setQwenPkgInstalled] = useState(false);
   const [qwenModelsReady, setQwenModelsReady] = useState(false);
-  const [fireRedPkgInstalled, setFireRedPkgInstalled] = useState(false);
   const [fireRedModelsReady, setFireRedModelsReady] = useState(false);
   const [binarySource, setBinarySource] = useState<DownloadSource>(() =>
     typeof window === 'undefined' ? 'github' : readPersistedDownloadSource(),
@@ -177,19 +172,16 @@ const EngineModelTab: React.FC = () => {
 
       const fr = await window?.ipc?.invoke('getFunasrModelStatus');
       if (fr?.success) {
-        setFunasrPkgInstalled(!!fr.engineInstalled);
         setFunasrModelsReady(!!fr.ready);
       }
 
       const qr = await window?.ipc?.invoke('getQwenModelStatus');
       if (qr?.success) {
-        setQwenPkgInstalled(!!qr.engineInstalled);
         setQwenModelsReady(!!qr.ready);
       }
 
       const frr = await window?.ipc?.invoke('getFireRedModelStatus');
       if (frr?.success) {
-        setFireRedPkgInstalled(!!frr.engineInstalled);
         setFireRedModelsReady(!!frr.ready);
       }
     } catch (error) {
@@ -288,7 +280,6 @@ const EngineModelTab: React.FC = () => {
   };
 
   const handleStartDownload = async () => {
-    setShowDownloadConfirm(false);
     const result = await window?.ipc?.invoke('start-py-engine-download', {
       source: binarySource,
     });
@@ -328,7 +319,6 @@ const EngineModelTab: React.FC = () => {
   };
 
   const handleUpgrade = async () => {
-    setShowUpgradeConfirm(false);
     const result = await window?.ipc?.invoke('start-py-engine-download', {
       source: binarySource,
     });
@@ -388,12 +378,11 @@ const EngineModelTab: React.FC = () => {
   const deviceOptions =
     platform === 'darwin' ? ['auto', 'cpu'] : ['auto', 'cpu', 'cuda'];
 
-  // sherpa 展示组三族就绪态（共用运行库，差异在模型）；供合并面板、左栏状态点、徽标聚合。
+  // sherpa 展示组三族就绪态（共用内置运行库，差异在模型）；供合并面板、左栏状态点、徽标聚合。
   const sherpaFamilies = SHERPA_FAMILIES.map((engine) => {
     if (engine === 'funasr') {
       return {
         engine,
-        pkgInstalled: funasrPkgInstalled,
         modelsReady: funasrModelsReady,
         status: engineStatuses.funasr,
       };
@@ -401,14 +390,12 @@ const EngineModelTab: React.FC = () => {
     if (engine === 'qwen') {
       return {
         engine,
-        pkgInstalled: qwenPkgInstalled,
         modelsReady: qwenModelsReady,
         status: engineStatuses.qwen,
       };
     }
     return {
       engine,
-      pkgInstalled: fireRedPkgInstalled,
       modelsReady: fireRedModelsReady,
       status: engineStatuses.fireRedAsr,
     };
@@ -502,24 +489,26 @@ const EngineModelTab: React.FC = () => {
     persistDownloadSource(s);
   };
 
-  const renderBinarySourceSelector = () => (
-    <DownloadSourceSelector
-      label={t('engines.fasterWhisper.downloadSource')}
-      value={binarySource}
-      options={(['github', 'ghproxy', 'gitcode'] as DownloadSource[]).map(
-        (s) => ({
-          value: s,
-          label:
-            s === 'github'
-              ? 'GitHub'
-              : s === 'gitcode'
-                ? 'GitCode'
-                : t('ghProxy'),
-        }),
-      )}
-      onChange={(s) => handleBinarySourceChange(s as DownloadSource)}
-    />
-  );
+  // 引擎二进制下载源（GitHub / 国内加速 / GitCode）：在「点击下载/升级时」于气泡内选择，
+  // 与各模型下载源统一为同款气泡交互。
+  const binarySourceConfig: DownloadSourceConfig = {
+    value: binarySource,
+    options: (['github', 'ghproxy', 'gitcode'] as DownloadSource[]).map(
+      (s) => ({
+        value: s,
+        label:
+          s === 'github'
+            ? 'GitHub'
+            : s === 'gitcode'
+              ? 'GitCode'
+              : t('ghProxy'),
+      }),
+    ),
+    onChange: (s) => handleBinarySourceChange(s as DownloadSource),
+    label: t('engines.fasterWhisper.downloadSource'),
+    confirmLabel: commonT('startDownload'),
+    getCopyUrl: (s) => resolveModelDownloadUrl('pyEngine', s),
+  };
 
   const fasterWhisperPanelProps = {
     status: fasterStatus,
@@ -535,11 +524,12 @@ const EngineModelTab: React.FC = () => {
     computeType,
     deviceOptions,
     updateInfo,
-    onDownload: () => setShowDownloadConfirm(true),
-    onRepair: () => setShowDownloadConfirm(true),
+    binarySourceConfig,
+    onDownload: handleStartDownload,
+    onRepair: handleStartDownload,
     onUninstall: () => setShowUninstallConfirm(true),
     onCheckUpdate: handleCheckUpdate,
-    onUpgrade: () => setShowUpgradeConfirm(true),
+    onUpgrade: handleUpgrade,
     onDeviceChange: handleDeviceChange,
     onComputeTypeChange: handleComputeTypeChange,
   };
@@ -576,9 +566,10 @@ const EngineModelTab: React.FC = () => {
 
   return (
     <TooltipProvider delayDuration={150}>
-      <div className="flex flex-col gap-4 pb-4 md:flex-row">
-        {/* 左栏：引擎列表（状态点，无启用开关） */}
-        <nav className="flex shrink-0 gap-1 overflow-x-auto md:w-52 md:flex-col md:overflow-visible md:border-r md:pr-2">
+      {/* 左栏固定、仅右栏滚动：根容器撑满父高，左 nav 整列常驻，右栏独立纵向滚动。 */}
+      <div className="flex h-full min-h-0 flex-col gap-4 md:flex-row">
+        {/* 左栏：引擎列表（状态点，无启用开关）——md 下整列固定，不随右栏滚动 */}
+        <nav className="flex shrink-0 gap-1 overflow-x-auto md:w-52 md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:pr-2">
           {ENGINE_VIEWS.map((id) => {
             const active = selectedView === id;
             const tone = engineTone(id);
@@ -606,8 +597,8 @@ const EngineModelTab: React.FC = () => {
           })}
         </nav>
 
-        {/* 右栏：选中引擎运行时 + 模型清单 */}
-        <div className="min-w-0 flex-1 space-y-4">
+        {/* 右栏：选中引擎运行时 + 模型清单（独立纵向滚动） */}
+        <div className="min-w-0 flex-1 space-y-4 overflow-y-auto pb-4 md:pl-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0">
               <h2 className="text-base font-semibold">
@@ -638,63 +629,6 @@ const EngineModelTab: React.FC = () => {
           )}
         </div>
       </div>
-
-      <AlertDialog
-        open={showDownloadConfirm}
-        onOpenChange={setShowDownloadConfirm}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('engines.fasterWhisper.download', { size: PY_ENGINE_SIZE })}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('engines.fasterWhisper.downloadConfirm')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {renderBinarySourceSelector()}
-          <AlertDialogFooter>
-            <AlertDialogCancel className="gap-1.5">
-              <X className="h-4 w-4" />
-              {commonT('cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className="gap-1.5"
-              onClick={handleStartDownload}
-            >
-              <Download className="h-4 w-4" />
-              {t('engines.fasterWhisper.download', { size: PY_ENGINE_SIZE })}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={showUpgradeConfirm}
-        onOpenChange={setShowUpgradeConfirm}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('engines.fasterWhisper.upgrade')}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('engines.fasterWhisper.upgradeConfirm')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {renderBinarySourceSelector()}
-          <AlertDialogFooter>
-            <AlertDialogCancel className="gap-1.5">
-              <X className="h-4 w-4" />
-              {commonT('cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction className="gap-1.5" onClick={handleUpgrade}>
-              <ArrowUpCircle className="h-4 w-4" />
-              {t('engines.fasterWhisper.upgrade')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <AlertDialog
         open={showUninstallConfirm}
