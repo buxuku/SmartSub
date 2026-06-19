@@ -1,14 +1,17 @@
 import path from 'path';
 import fs from 'fs';
-import { app } from 'electron';
-import type { RemoteSherpaLibManifest } from '../../../types/sherpa';
+import { getExtraResourcesPath } from '../utils';
 
 /**
- * sherpa-onnx 原生库的 userData 布局与平台解析。
+ * sherpa-onnx 原生库的「内置」布局与平台解析。
  *
- * 库不随 asar 打包，按需下载到 userData/sherpa-onnx/current（避免 asar 内 .node 无法 dlopen）。
- * 升级走 staging→current 原子替换，旧版备份到 previous 以便回滚。
+ * 原生库随安装包内置在 `extraResources/sherpa/native/<platformKey>/`（构建期由
+ * `scripts/fetch-sherpa-native.mjs` 落地，electron-builder 的 `sherpa/` 块一并打包并签名），
+ * 运行时直接从该目录 dlopen——不再下载到 userData，也无 staging/current/previous 概念。
  */
+
+/** 内置 sherpa-onnx 原生库版本（随 App 固定发布；与 fetch-sherpa-native.mjs 一致）。 */
+export const SHERPA_VERSION = '1.13.2';
 
 /** 当前平台 key，与引擎仓产物命名一致（sherpa-onnx-<platformKey>）。 */
 export function getSherpaPlatformKey(): string {
@@ -21,43 +24,21 @@ export function getSherpaPlatformKey(): string {
   return `linux-${arch}`;
 }
 
-export function getSherpaRootDir(): string {
-  const root = path.join(app.getPath('userData'), 'sherpa-onnx');
-  if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true });
-  return root;
-}
-
+/** 内置原生库目录：`extraResources/sherpa/native/<platformKey>/`。 */
 export function getSherpaLibDir(): string {
-  return path.join(getSherpaRootDir(), 'current');
-}
-
-export function getSherpaStagingDir(): string {
-  return path.join(getSherpaRootDir(), 'staging');
-}
-
-export function getSherpaPreviousDir(): string {
-  return path.join(getSherpaRootDir(), 'previous');
+  return path.join(
+    getExtraResourcesPath(),
+    'sherpa',
+    'native',
+    getSherpaPlatformKey(),
+  );
 }
 
 export function getSherpaNativePath(): string {
   return path.join(getSherpaLibDir(), 'sherpa-onnx.node');
 }
 
-export function getSherpaManifestPath(): string {
-  return path.join(getSherpaLibDir(), 'manifest.json');
-}
-
-/** 已安装 = current 下存在 sherpa-onnx.node。 */
+/** 已安装 = 内置目录下存在 sherpa-onnx.node（打包产物恒真；dev 下需先 `yarn sherpa:fetch`）。 */
 export function isSherpaLibInstalled(): boolean {
   return fs.existsSync(getSherpaNativePath());
-}
-
-export function readSherpaManifest(): RemoteSherpaLibManifest | null {
-  try {
-    const p = getSherpaManifestPath();
-    if (!fs.existsSync(p)) return null;
-    return JSON.parse(fs.readFileSync(p, 'utf8')) as RemoteSherpaLibManifest;
-  } catch {
-    return null;
-  }
 }

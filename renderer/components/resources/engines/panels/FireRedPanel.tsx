@@ -11,26 +11,14 @@ import {
 import { Info } from 'lucide-react';
 import SherpaRuntimePanel from '@/components/resources/engines/SherpaRuntimePanel';
 import type { SherpaRuntime } from '@/components/resources/engines/useSherpaRuntime';
-import type { DownloadSource } from '../../../../../types/addon';
 import type { EngineStatus } from '../../../../../types/engine';
 
 interface FireRedPanelProps {
   status?: EngineStatus;
-  taskBusy: boolean;
   runtime: SherpaRuntime;
-  binarySource: DownloadSource;
-  onBinarySourceChange: (source: DownloadSource) => void;
-  onRefreshStatuses: () => void | Promise<void>;
 }
 
-const FireRedPanel: React.FC<FireRedPanelProps> = ({
-  status,
-  taskBusy,
-  runtime,
-  binarySource,
-  onBinarySourceChange,
-  onRefreshStatuses,
-}) => {
+const FireRedPanel: React.FC<FireRedPanelProps> = ({ status, runtime }) => {
   const { t } = useTranslation('resources');
 
   const [numThreads, setNumThreads] = useState(2);
@@ -59,10 +47,6 @@ const FireRedPanel: React.FC<FireRedPanelProps> = ({
       engineKey="fireRedAsr"
       runtime={runtime}
       status={status}
-      taskBusy={taskBusy}
-      binarySource={binarySource}
-      onBinarySourceChange={onBinarySourceChange}
-      onRefreshStatuses={onRefreshStatuses}
       infoBanner={
         <div className="flex items-start gap-2 rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />

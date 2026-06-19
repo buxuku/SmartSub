@@ -11,26 +11,14 @@ import {
 } from '@/components/ui/select';
 import SherpaRuntimePanel from '@/components/resources/engines/SherpaRuntimePanel';
 import type { SherpaRuntime } from '@/components/resources/engines/useSherpaRuntime';
-import type { DownloadSource } from '../../../../../types/addon';
 import type { EngineStatus } from '../../../../../types/engine';
 
 interface FunasrPanelProps {
   status?: EngineStatus;
-  taskBusy: boolean;
   runtime: SherpaRuntime;
-  binarySource: DownloadSource;
-  onBinarySourceChange: (source: DownloadSource) => void;
-  onRefreshStatuses: () => void | Promise<void>;
 }
 
-const FunasrPanel: React.FC<FunasrPanelProps> = ({
-  status,
-  taskBusy,
-  runtime,
-  binarySource,
-  onBinarySourceChange,
-  onRefreshStatuses,
-}) => {
+const FunasrPanel: React.FC<FunasrPanelProps> = ({ status, runtime }) => {
   const { t } = useTranslation('resources');
 
   const [useItn, setUseItn] = useState(true);
@@ -64,15 +52,7 @@ const FunasrPanel: React.FC<FunasrPanelProps> = ({
   };
 
   return (
-    <SherpaRuntimePanel
-      engineKey="funasr"
-      runtime={runtime}
-      status={status}
-      taskBusy={taskBusy}
-      binarySource={binarySource}
-      onBinarySourceChange={onBinarySourceChange}
-      onRefreshStatuses={onRefreshStatuses}
-    >
+    <SherpaRuntimePanel engineKey="funasr" runtime={runtime} status={status}>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <Label htmlFor="funasr-itn" className="text-sm">

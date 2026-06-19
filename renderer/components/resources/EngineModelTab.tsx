@@ -557,39 +557,14 @@ const EngineModelTab: React.FC = () => {
       return <FasterWhisperPanel {...fasterWhisperPanelProps} />;
     }
     if (selectedEngine === 'funasr') {
-      return (
-        <FunasrPanel
-          status={engineStatuses.funasr}
-          taskBusy={taskBusy}
-          runtime={sherpa}
-          binarySource={binarySource}
-          onBinarySourceChange={handleBinarySourceChange}
-          onRefreshStatuses={refresh}
-        />
-      );
+      return <FunasrPanel status={engineStatuses.funasr} runtime={sherpa} />;
     }
     if (selectedEngine === 'qwen') {
-      return (
-        <QwenPanel
-          status={engineStatuses.qwen}
-          taskBusy={taskBusy}
-          runtime={sherpa}
-          binarySource={binarySource}
-          onBinarySourceChange={handleBinarySourceChange}
-          onRefreshStatuses={refresh}
-        />
-      );
+      return <QwenPanel status={engineStatuses.qwen} runtime={sherpa} />;
     }
     if (selectedEngine === 'fireRedAsr') {
       return (
-        <FireRedPanel
-          status={engineStatuses.fireRedAsr}
-          taskBusy={taskBusy}
-          runtime={sherpa}
-          binarySource={binarySource}
-          onBinarySourceChange={handleBinarySourceChange}
-          onRefreshStatuses={refresh}
-        />
+        <FireRedPanel status={engineStatuses.fireRedAsr} runtime={sherpa} />
       );
     }
     if (selectedEngine === 'localCli') {

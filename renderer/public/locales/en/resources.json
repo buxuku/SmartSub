@@ -93,6 +93,7 @@
     },
     "funasr": {
       "name": "FunASR",
+      "builtinRuntime": "The runtime is bundled with the app — no download needed.",
       "desc": "Alibaba DAMO Chinese/multilingual ASR engine on sherpa-onnx: SenseVoice multilingual and Paraformer for Chinese, with built-in punctuation and inverse text normalization. Runs smoothly on CPU — no GPU required.",
       "scenario": "Best for: Chinese / Cantonese / JA-KO, high accuracy on CPU",
       "notInstalled": "Not installed",
@@ -145,6 +146,7 @@
     },
     "qwen": {
       "name": "Qwen3-ASR",
+      "builtinRuntime": "The runtime is bundled with the app (shared with FunASR) — no download needed.",
       "desc": "Alibaba Qwen3-ASR (0.6B) running locally on the sherpa-onnx runtime (shared with FunASR). Open-source, multilingual, CPU-friendly — no GPU or Python required. Segment-level timestamps come from VAD.",
       "scenario": "Best for: multilingual local transcription on CPU, Apache-2.0",
       "notInstalled": "Not installed",
@@ -196,6 +198,7 @@
     },
     "fireRedAsr": {
       "name": "FireRedASR",
+      "builtinRuntime": "The runtime is bundled with the app (shared with FunASR) — no download needed.",
       "desc": "Xiaohongshu FireRedASR-AED (Large) running locally on the sherpa-onnx runtime (shared with FunASR). Open-source, strong on Chinese-English code-switching and Chinese dialects — no GPU or Python required. Segment-level timestamps come from VAD.",
       "scenario": "Best for: Chinese-English code-switching / Chinese dialects on CPU, Apache-2.0",
       "notInstalled": "Not installed",

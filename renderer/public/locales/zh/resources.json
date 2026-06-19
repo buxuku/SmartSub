@@ -93,6 +93,7 @@
     },
     "funasr": {
       "name": "FunASR",
+      "builtinRuntime": "运行库已随应用内置，无需单独下载。",
       "desc": "阿里达摩院中文/多语种 ASR 引擎，基于 sherpa-onnx 运行：SenseVoice 多语种、Paraformer 中文专精，自带标点与逆文本规整；CPU 即可流畅运行，无需显卡。",
       "scenario": "适合：中文 / 粤语 / 日韩，CPU 离线高准确率",
       "notInstalled": "未安装",
@@ -145,6 +146,7 @@
     },
     "qwen": {
       "name": "Qwen3-ASR",
+      "builtinRuntime": "运行库已随应用内置（与 FunASR 共用），无需单独下载。",
       "desc": "阿里 Qwen3-ASR（0.6B）本地引擎，基于 sherpa-onnx 运行（与 FunASR 共用运行库）：开源、多语种、CPU 友好，无需显卡或 Python。段级时间戳来自 VAD 切分。",
       "scenario": "适合：CPU 本地多语种转写，Apache-2.0 开源",
       "notInstalled": "未安装",
@@ -196,6 +198,7 @@
     },
     "fireRedAsr": {
       "name": "FireRedASR",
+      "builtinRuntime": "运行库已随应用内置（与 FunASR 共用），无需单独下载。",
       "desc": "小红书 FireRedASR-AED（Large）本地引擎，基于 sherpa-onnx 运行（与 FunASR 共用运行库）：开源，中英混说与多种中文方言识别强，无需显卡或 Python。段级时间戳来自 VAD 切分。",
       "scenario": "适合：中英混说 / 中文方言本地转写，Apache-2.0 开源",
       "notInstalled": "未安装",

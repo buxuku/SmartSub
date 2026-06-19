@@ -1,57 +1,20 @@
-import fs from 'fs';
-import { logMessage } from '../storeManager';
 import {
-  getSherpaLibDir,
-  getSherpaStagingDir,
-  getSherpaPreviousDir,
   isSherpaLibInstalled,
-  readSherpaManifest,
+  getSherpaPlatformKey,
+  SHERPA_VERSION,
 } from './sherpaLibPaths';
 import type { SherpaLibStatus } from '../../../types/sherpa';
 
+/**
+ * sherpa 原生库随安装包内置，状态即「内置文件是否存在」+ 内置版本常量。
+ * 运行时下载方案（staging→current 原子替换 / rollback / remove）已退役，故不再提供
+ * promote/rollback/remove——内置库随 App 升级整体替换。
+ */
 export function getSherpaLibStatus(): SherpaLibStatus {
-  const m = readSherpaManifest();
+  const installed = isSherpaLibInstalled();
   return {
-    installed: isSherpaLibInstalled(),
-    version: m?.sherpaVersion,
-    platform: m?.platform,
-    installedAt: m?.builtAt,
+    installed,
+    version: installed ? SHERPA_VERSION : undefined,
+    platform: installed ? getSherpaPlatformKey() : undefined,
   };
-}
-
-/** staging → current 原子替换；旧 current 备份到 previous（便于回滚）。 */
-export function promoteStagingToCurrent(): void {
-  const current = getSherpaLibDir();
-  const staging = getSherpaStagingDir();
-  const previous = getSherpaPreviousDir();
-  if (!fs.existsSync(staging)) throw new Error('sherpa staging dir missing');
-  if (fs.existsSync(previous)) {
-    fs.rmSync(previous, { recursive: true, force: true });
-  }
-  if (fs.existsSync(current)) fs.renameSync(current, previous);
-  fs.renameSync(staging, current);
-  logMessage('sherpa lib promoted staging->current', 'info');
-}
-
-export function rollbackToPrevious(): boolean {
-  const current = getSherpaLibDir();
-  const previous = getSherpaPreviousDir();
-  if (!fs.existsSync(previous)) return false;
-  if (fs.existsSync(current)) {
-    fs.rmSync(current, { recursive: true, force: true });
-  }
-  fs.renameSync(previous, current);
-  logMessage('sherpa lib rolled back to previous', 'warning');
-  return true;
-}
-
-export function removeSherpaLib(): void {
-  for (const d of [
-    getSherpaLibDir(),
-    getSherpaStagingDir(),
-    getSherpaPreviousDir(),
-  ]) {
-    if (fs.existsSync(d)) fs.rmSync(d, { recursive: true, force: true });
-  }
-  logMessage('sherpa lib removed', 'info');
 }

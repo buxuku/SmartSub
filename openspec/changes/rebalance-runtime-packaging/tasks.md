@@ -17,11 +17,11 @@
 
 ## 3. 主进程：sherpa 运行库解析为内置
 
-- [ ] 3.1 `sherpaOnnx/sherpaLibPaths.ts`：`getSherpaLibDir()` → `getExtraResourcesPath()/sherpa/native/<getSherpaPlatformKey()>`；`isSherpaLibInstalled()` → 内置文件存在性
-- [ ] 3.2 退役 `sherpaLibDownloader.ts`（下载/校验/多源回退/运行时 `resignMac`/`assertLoadable`）
-- [ ] 3.3 `sherpaLibManager.ts`：移除 staging/promote/rollback/remove；`getSherpaLibStatus()` 改读内置 manifest（或返回内置版本常量）
-- [ ] 3.4 移除 sherpa 运行库下载/升级/卸载/进度的 IPC handlers 与事件
-- [ ] 3.5 worker 加载路径确认仍指向内置 `sherpa-onnx.node`（`extraResources/sherpa/worker` + `vendor` 不变）
+- [x] 3.1 `sherpaOnnx/sherpaLibPaths.ts`：`getSherpaLibDir()` → `getExtraResourcesPath()/sherpa/native/<getSherpaPlatformKey()>`；`isSherpaLibInstalled()` → 内置文件存在性〔重写：删 root/staging/previous/manifest；`SHERPA_VERSION` 移此处作单一来源〕
+- [x] 3.2 退役 `sherpaLibDownloader.ts`（下载/校验/多源回退/运行时 `resignMac`/`assertLoadable`）〔已删除文件；改写逻辑迁到构建期 `fetch-sherpa-native.mjs`〕
+- [x] 3.3 `sherpaLibManager.ts`：移除 staging/promote/rollback/remove；`getSherpaLibStatus()` 改读内置 manifest（或返回内置版本常量）〔精简为只读内置状态：`installed` + 内置 `SHERPA_VERSION` + platformKey〕
+- [x] 3.4 移除 sherpa 运行库下载/升级/卸载/进度的 IPC handlers 与事件〔删 `download-sherpa-lib`/`check-sherpa-lib-update`/`remove-sherpa-lib` 与 `sherpa-lib-download-progress`；保留 `sherpa-lib-status`〕
+- [x] 3.5 worker 加载路径确认仍指向内置 `sherpa-onnx.node`（`extraResources/sherpa/worker` + `vendor` 不变）〔`sherpaFunasrRuntime` 注入 `SHERPA_ONNX_LIB_DIR=getSherpaLibDir()`（现为内置目录）；`vendor/addon.js` 注释更新〕
 
 ## 4. 主进程：faster-whisper 单运行时包
 
@@ -34,9 +34,9 @@
 
 ## 5. 渲染层
 
-- [ ] 5.1 `SherpaRuntimePanel.tsx`：移除下载/升级/卸载/进度 UI 与确认弹窗；sherpa 标注「已内置」，引擎就绪仅看 ASR 模型
-- [ ] 5.2 `useSherpaRuntime.ts`：精简为状态展示（installed 恒真 + 版本），去掉 download/checkUpdate/uninstall
-- [ ] 5.3 `EngineModelTab.tsx`：去掉 sherpa 运行库下载态相关分支与 `binarySource` 对 sherpa 的传递（faster-whisper 仍保留下载源选择）
+- [x] 5.1 `SherpaRuntimePanel.tsx`：移除下载/升级/卸载/进度 UI 与确认弹窗；sherpa 标注「已内置」，引擎就绪仅看 ASR 模型〔重写为内置状态展示：`builtinRuntime` 文案 + 版本 + 高级设置 children〕
+- [x] 5.2 `useSherpaRuntime.ts`：精简为状态展示（installed 恒真 + 版本），去掉 download/checkUpdate/uninstall〔接口收敛为 `{ libStatus, installed, reload }`〕
+- [x] 5.3 `EngineModelTab.tsx`：去掉 sherpa 运行库下载态相关分支与 `binarySource` 对 sherpa 的传递（faster-whisper 仍保留下载源选择）〔三面板渲染去掉 `taskBusy/binarySource/onBinarySourceChange/onRefreshStatuses`；FunasrPanel/QwenPanel/FireRedPanel props 同步收敛〕
 - [ ] 5.4 `FasterWhisperPanel.tsx`/`EngineModelTab`：下载文案与 `PY_ENGINE_SIZE` 改为单包体积（约 210MB）
 
 ## 6. 迁移与清理

@@ -57,67 +57,13 @@ export function registerEngineIpcHandlers(): void {
     }
   });
 
-  // --- sherpa-onnx 原生运行库（funasr 引擎用）：按需下载到 userData ---
+  // --- sherpa-onnx 原生运行库（funasr / qwen / fireRed 引擎共用）：随安装包内置 ---
+  // 库随 App 固定发布、整体随版本升级，故无下载/升级/卸载通道，仅暴露内置状态。
   ipcMain.handle('sherpa-lib-status', async () => {
     const { getSherpaLibStatus } = await import(
       './sherpaOnnx/sherpaLibManager'
     );
     return getSherpaLibStatus();
-  });
-
-  // funasr 运行库版本随 App 固定发布：已装版本 ≠ App 预期版本即视为可升级（重下覆盖）。
-  ipcMain.handle('check-sherpa-lib-update', async () => {
-    try {
-      const { getSherpaLibStatus } = await import(
-        './sherpaOnnx/sherpaLibManager'
-      );
-      const { SHERPA_VERSION } = await import(
-        './sherpaOnnx/sherpaLibDownloader'
-      );
-      const status = getSherpaLibStatus();
-      const installed = status.installed ? status.version : undefined;
-      const hasUpdate = !!installed && installed !== SHERPA_VERSION;
-      return { success: true, installed, latest: SHERPA_VERSION, hasUpdate };
-    } catch (error) {
-      logMessage(`Error checking sherpa lib update: ${error}`, 'error');
-      return { success: false, error: String(error) };
-    }
-  });
-
-  ipcMain.handle(
-    'download-sherpa-lib',
-    async (_e, { source }: { source?: string }) => {
-      try {
-        if (isTranscriptionBusy()) {
-          return { success: false, error: 'engine_busy' };
-        }
-        const { downloadSherpaLib } = await import(
-          './sherpaOnnx/sherpaLibDownloader'
-        );
-        await downloadSherpaLib(source || 'gitcode', (percent) =>
-          mainWindow?.webContents.send('sherpa-lib-download-progress', {
-            progress: percent,
-          }),
-        );
-        return { success: true };
-      } catch (error) {
-        logMessage(`sherpa lib download failed: ${error}`, 'error');
-        return { success: false, error: String(error) };
-      }
-    },
-  );
-
-  ipcMain.handle('remove-sherpa-lib', async () => {
-    try {
-      if (isTranscriptionBusy()) {
-        return { success: false, error: 'engine_busy' };
-      }
-      const { removeSherpaLib } = await import('./sherpaOnnx/sherpaLibManager');
-      removeSherpaLib();
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: String(error) };
-    }
   });
 
   ipcMain.handle(

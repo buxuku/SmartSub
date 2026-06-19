@@ -11,26 +11,14 @@ import {
 import { Info } from 'lucide-react';
 import SherpaRuntimePanel from '@/components/resources/engines/SherpaRuntimePanel';
 import type { SherpaRuntime } from '@/components/resources/engines/useSherpaRuntime';
-import type { DownloadSource } from '../../../../../types/addon';
 import type { EngineStatus } from '../../../../../types/engine';
 
 interface QwenPanelProps {
   status?: EngineStatus;
-  taskBusy: boolean;
   runtime: SherpaRuntime;
-  binarySource: DownloadSource;
-  onBinarySourceChange: (source: DownloadSource) => void;
-  onRefreshStatuses: () => void | Promise<void>;
 }
 
-const QwenPanel: React.FC<QwenPanelProps> = ({
-  status,
-  taskBusy,
-  runtime,
-  binarySource,
-  onBinarySourceChange,
-  onRefreshStatuses,
-}) => {
+const QwenPanel: React.FC<QwenPanelProps> = ({ status, runtime }) => {
   const { t } = useTranslation('resources');
 
   const [numThreads, setNumThreads] = useState(2);
@@ -59,10 +47,6 @@ const QwenPanel: React.FC<QwenPanelProps> = ({
       engineKey="qwen"
       runtime={runtime}
       status={status}
-      taskBusy={taskBusy}
-      binarySource={binarySource}
-      onBinarySourceChange={onBinarySourceChange}
-      onRefreshStatuses={onRefreshStatuses}
       infoBanner={
         <div className="flex items-start gap-2 rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
