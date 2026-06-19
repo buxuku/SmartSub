@@ -3,13 +3,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { logMessage } from '../storeManager';
 import { getPyEngineDownloader } from './downloader';
-import { getPyBaseDownloader } from './baseDownloader';
-import { isEnginePackageInstalled, readUserPyBaseManifest } from './paths';
+import { isRuntimeInstalled } from './paths';
 import type { PyEngineDownloadSource, PyEngineId } from '../../../types/engine';
 
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
-/** 走 Python 三层架构、支持在线下载/更新的引擎集合。 */
+/** 支持在线下载/更新的 Python 引擎运行时集合（目前仅 faster-whisper）。 */
 const UPDATABLE_ENGINES: PyEngineId[] = ['faster-whisper'];
 
 function getStatePath(): string {
@@ -45,7 +44,7 @@ export async function maybeAutoCheckPyEngineUpdate(
   source: PyEngineDownloadSource = 'github',
 ): Promise<void> {
   const installedEngines = UPDATABLE_ENGINES.filter((engineId) =>
-    isEnginePackageInstalled(engineId),
+    isRuntimeInstalled(engineId),
   );
   if (installedEngines.length === 0) return;
 
@@ -83,25 +82,4 @@ export async function maybeAutoCheckPyEngineUpdate(
 
   // 仅当至少一个引擎成功检查后才落地节流时间戳
   if (anyChecked) writeLastCheckAt(now);
-}
-
-/**
- * Layer 1 基座的每日静默更新检查。仅当本地已存在「下载基座」（userData 覆盖基座）时
- * 才参与——内置基座不弹更新提示，避免噪声。发现更新通过 `py-base-update-available`
- * 通知渲染层（不自动下载）。弱网/失败静默，仅日志。
- */
-export async function maybeAutoCheckPyBaseUpdate(
-  mainWindow: BrowserWindow,
-  source: PyEngineDownloadSource = 'github',
-): Promise<void> {
-  if (!readUserPyBaseManifest()) return;
-  try {
-    const info = await getPyBaseDownloader(mainWindow).checkUpdate(source);
-    if (info.hasUpdate && mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('py-base-update-available', info);
-      logMessage('py-base update available (daily auto-check)', 'info');
-    }
-  } catch (error) {
-    logMessage(`py-base daily update-check failed: ${error}`, 'warning');
-  }
 }

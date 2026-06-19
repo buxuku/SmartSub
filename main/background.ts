@@ -35,10 +35,7 @@ import {
   setMainWindowForEngine,
 } from './helpers/ipcEngineHandlers';
 import { shutdownPythonRuntime } from './helpers/pythonRuntime';
-import {
-  maybeAutoCheckPyEngineUpdate,
-  maybeAutoCheckPyBaseUpdate,
-} from './helpers/pythonRuntime/autoUpdateCheck';
+import { maybeAutoCheckPyEngineUpdate } from './helpers/pythonRuntime/autoUpdateCheck';
 import { cleanupLegacyPyEngine } from './helpers/pythonRuntime/legacyCleanup';
 import { applyProxyFromSettings } from './helpers/network/proxyManager';
 import { setupNetworkHandlers } from './helpers/ipcNetworkHandlers';
@@ -177,10 +174,8 @@ app.on('before-quit', (event) => {
   setMainWindowForEngine(mainWindow);
   // 清理三层架构改造前遗留的旧 py-engine 目录/状态文件（幂等，失败静默）。
   cleanupLegacyPyEngine();
-  // 启动后每日一次的节流静默检查 py-engine 更新（非阻塞，失败静默）。
+  // 启动后每日一次的节流静默检查 faster-whisper 运行时更新（非阻塞，失败静默）。
   void maybeAutoCheckPyEngineUpdate(mainWindow);
-  // Layer 1 基座更新检查（仅对已下载基座生效，非阻塞，失败静默）。
-  void maybeAutoCheckPyBaseUpdate(mainWindow);
   // 后台预热 GPU/CUDA 环境检测缓存：首次探测（nvcc / nvidia-smi）较慢，提前异步完成并写入
   // 会话缓存，用户进入「引擎与模型」页时直接命中，避免首屏等待。非阻塞，失败静默。
   void getGpuEnvironment().catch(() => {});

@@ -23,8 +23,8 @@ import {
   getPyEngineArtifactSuffix,
   getPyEngineChecksumsUrl,
   getPyEngineManifestUrl,
-  isEnginePackageInstalled,
-  isPyBaseReady,
+  isRuntimeInstalled,
+  getRuntimePythonPath,
   writeEngineManifest,
   readEngineManifest,
 } from './paths';
@@ -207,14 +207,7 @@ export class PyEngineDownloader {
    * 用户取消与协议不支持（protocol_unsupported）属终止类错误，不再换源。
    */
   async download(source: PyEngineDownloadSource): Promise<void> {
-    // 引擎包依赖内置基座解释器；缺基座时直接给清晰错误，不做无谓下载。
-    if (!isPyBaseReady()) {
-      const msg =
-        'Python base runtime missing; reinstall SmartSub or update the base.';
-      this.core.updateProgress({ status: 'error', error: msg });
-      logMessage(`Py-engine install blocked: ${msg}`, 'error');
-      throw new Error(msg);
-    }
+    // 自包含运行时内嵌解释器，无外部基座依赖，可直接下载。
     return this.core.runWithFallback(
       source,
       (s) => this.downloadFromSource(s),
@@ -422,7 +415,7 @@ export class PyEngineDownloader {
     source: PyEngineDownloadSource,
   ): Promise<PyEngineUpdateInfo> {
     const localManifest = readEngineManifest(this.engineId);
-    const installed = isEnginePackageInstalled(this.engineId);
+    const installed = isRuntimeInstalled(this.engineId);
 
     let remoteHash: string | null = null;
     for (const s of getSourceFallbackOrder(source)) {
@@ -518,12 +511,17 @@ export class PyEngineDownloader {
       cwd: stagingDir,
     });
 
-    // 可重定位引擎包：归档顶层即 main.py + site-packages/（无单二进制）
+    // 自包含运行时：归档顶层即 内嵌解释器 + main.py + site-packages/（无外部基座）。
     const stagingMain = path.join(stagingDir, 'main.py');
     const stagingSite = path.join(stagingDir, 'site-packages');
-    if (!fs.existsSync(stagingMain) || !fs.existsSync(stagingSite)) {
+    const stagingPython = getRuntimePythonPath(stagingDir);
+    if (
+      !fs.existsSync(stagingMain) ||
+      !fs.existsSync(stagingSite) ||
+      !fs.existsSync(stagingPython)
+    ) {
       throw new Error(
-        'Invalid engine package: missing main.py or site-packages after extraction',
+        'Invalid runtime package: missing embedded interpreter, main.py, or site-packages after extraction',
       );
     }
 

@@ -28,8 +28,8 @@ export interface PyEngineManifest {
   protocolVersion?: number;
   builtAt?: string;
   gitSha?: string;
-  engineId?: string; // 'faster-whisper' 等（三层架构按引擎区分包）
-  pythonAbi?: string; // 'cp312'，需与内置基座 ABI 一致
+  engineId?: string; // 'faster-whisper'（运行时按引擎区分目录）
+  pythonAbi?: string; // 'cp312'，与内嵌 PBS 解释器 ABI 一致
 }
 
 export interface RemoteEngineArtifact {
@@ -37,18 +37,14 @@ export interface RemoteEngineArtifact {
   sha256: string;
 }
 
-export interface RemoteEnginePackage {
-  engineId: string;
-  /** sidecar 引擎 key（list_engines 名，如 faster_whisper / funasr） */
-  sidecar: string;
-  artifacts: Record<string, RemoteEngineArtifact>;
-}
-
-/** 三层 Layer1：可下载的 Python 基座包（按平台 artifacts）。 */
-export interface RemoteBasePackage {
-  pythonVersion: string;
-  pythonAbi: string;
-  pbsRelease?: string;
+/**
+ * 单自包含运行时信息（内嵌 PBS 解释器 + site-packages + main.py），按 (os,arch) 分平台。
+ * 取代旧的「可下载基座包 + 可重定位引擎包」两段式产物。
+ */
+export interface RemoteRuntimeInfo {
+  /** 命名模板（如 smartsub-faster-whisper-runtime-<suffix>.tar.gz），仅供展示/排错。 */
+  artifactPattern?: string;
+  /** 按平台 suffix（macos-arm64 / windows-x64 …）映射到产物大小与哈希。 */
   artifacts: Record<string, RemoteEngineArtifact>;
 }
 
@@ -58,27 +54,14 @@ export interface RemoteEngineManifest {
   builtAt: string;
   gitSha?: string;
   engines: string[];
-  /** 顶层 artifacts 兼容旧字段（=faster-whisper 包），多引擎读 enginePackages。 */
-  artifacts: Record<string, RemoteEngineArtifact>;
-  /** 三层多引擎：按 engineId 分桶的包信息（P1 起）。 */
-  enginePackages?: Record<string, RemoteEnginePackage>;
   pythonVersion?: string;
   pythonAbi?: string;
   engineId?: string;
-  /** 三层 Layer1：可下载基座包（按平台 artifacts）。 */
-  basePackage?: RemoteBasePackage;
+  /** 单自包含运行时产物（按平台）。老 release 可能缺失，消费方需容忍 undefined。 */
+  runtime?: RemoteRuntimeInfo;
 }
 
-/** 内置/可升级 Python 基座的本地 manifest。 */
-export interface PyBaseManifest {
-  pythonVersion: string; // '3.12.10'
-  platform: string;
-  sha256?: string;
-  installedAt: string;
-  source: 'builtin' | 'downloaded';
-}
-
-/** 可独立下载的 Python 引擎包标识（与引擎仓产物 engineId 一一对应）。funasr 已迁移到 sherpa-onnx 原生运行库，不再是 Python 引擎。 */
+/** 可独立下载的 Python 引擎运行时标识。faster-whisper 是唯一 Python 引擎（funasr/qwen/firered 已改用内置 sherpa-onnx 原生库）。 */
 export type PyEngineId = 'faster-whisper';
 
 export interface PyEngineUpdateInfo {
@@ -106,36 +89,6 @@ export interface PyEngineDownloadProgress {
   speed: number;
   eta: number;
   error?: string;
-  /** 多引擎下载时标识是哪个引擎包（渲染层据此路由进度）。 */
+  /** 多引擎下载时标识是哪个引擎运行时（渲染层据此路由进度）。 */
   engineId?: PyEngineId;
-}
-
-/** Layer1 基座下载进度（与引擎进度同构，无 engineId）。 */
-export interface PyBaseDownloadProgress {
-  status:
-    | 'idle'
-    | 'downloading'
-    | 'extracting'
-    | 'verifying'
-    | 'completed'
-    | 'error';
-  progress: number;
-  downloaded: number;
-  total: number;
-  speed: number;
-  eta: number;
-  error?: string;
-}
-
-export interface PyBaseUpdateInfo {
-  hasUpdate: boolean;
-  localManifest: PyBaseManifest | null;
-  remoteBase: RemoteBasePackage | null;
-  remoteHash: string | null;
-}
-
-export interface PyBaseStatus {
-  state: EngineStatusState;
-  source: 'builtin' | 'downloaded' | 'none';
-  pythonVersion?: string;
 }

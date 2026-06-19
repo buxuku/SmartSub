@@ -1,13 +1,8 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
-import type {
-  PyEngineManifest,
-  PyEngineId,
-  PyBaseManifest,
-} from '../../../types/engine';
+import type { PyEngineManifest, PyEngineId } from '../../../types/engine';
 import { resolveReleaseBaseUrl } from '../download/sources';
-import { getExtraResourcesPath } from '../utils';
 
 /** 独立发布仓库：https://github.com/buxuku/smartsub-py-engine */
 export const PY_ENGINE_REPO = 'buxuku/smartsub-py-engine';
@@ -52,69 +47,56 @@ export function getPyEngineManifestUrl(
 }
 
 // ============================================================================
-// 三层架构：Python 基座（Layer 1）+ 可重定位引擎包（Layer 2）路径解析
+// faster-whisper 单自包含运行时：内嵌 PBS 解释器 + site-packages + main.py
+// （旧的「内置基座(Layer1) + 可重定位引擎包(Layer2)」两层已塌缩为一个可下载运行时；
+//   不再有可单独下载/内置的 Python 基座。）
 // ============================================================================
 
 const DEFAULT_ENGINE_ID: PyEngineId = 'faster-whisper';
 
-/** 基座 python 解释器路径（按平台）：win=<base>\python.exe，unix=<base>/bin/python3 */
-export function getPyBasePythonPath(baseDir: string): string {
+/**
+ * 运行时内嵌 python 解释器路径（PBS 布局，按平台）：
+ * win=<runtime>\python.exe，unix=<runtime>/bin/python3。
+ */
+export function getRuntimePythonPath(runtimeDir: string): string {
   return process.platform === 'win32'
-    ? path.join(baseDir, 'python.exe')
-    : path.join(baseDir, 'bin', 'python3');
+    ? path.join(runtimeDir, 'python.exe')
+    : path.join(runtimeDir, 'bin', 'python3');
 }
 
-/** 内置基座目录（随安装包按平台打进 extraResources） */
-export function getBuiltinPyBaseDir(): string {
-  return path.join(getExtraResourcesPath(), 'py-base');
-}
-
-/** 可升级覆盖基座目录（userData，存在则优先于内置） */
-export function getUserPyBaseDir(): string {
-  return path.join(app.getPath('userData'), 'py-base', 'current');
-}
-
-/** 解析当前生效基座目录：userData 覆盖优先，回退内置 */
-export function resolvePyBaseDir(): string {
-  const userDir = getUserPyBaseDir();
-  if (fs.existsSync(getPyBasePythonPath(userDir))) return userDir;
-  return getBuiltinPyBaseDir();
-}
-
-/** 基座是否就绪（解释器存在） */
-export function isPyBaseReady(): boolean {
-  return fs.existsSync(getPyBasePythonPath(resolvePyBaseDir()));
-}
-
-/** 所有引擎包的根目录：userData/py-engines */
+/** 所有引擎运行时的根目录：userData/py-engines */
 export function getPyEnginesRoot(): string {
   return path.join(app.getPath('userData'), 'py-engines');
 }
 
-/** 单个引擎包目录：userData/py-engines/<engineId> */
+/** 单个引擎运行时目录：userData/py-engines/<engineId> */
 export function getEngineDir(engineId: PyEngineId = DEFAULT_ENGINE_ID): string {
   return path.join(getPyEnginesRoot(), engineId);
 }
 
-/** 引擎包的 site-packages（spawn 基座 python 时挂到 PYTHONPATH） */
+/** 运行时 site-packages（spawn 内嵌 python 时挂到 PYTHONPATH） */
 export function getEngineSitePackages(
   engineId: PyEngineId = DEFAULT_ENGINE_ID,
 ): string {
   return path.join(getEngineDir(engineId), 'site-packages');
 }
 
-/** 引擎包入口 main.py */
+/** 运行时入口 main.py */
 export function getEngineMainPy(
   engineId: PyEngineId = DEFAULT_ENGINE_ID,
 ): string {
   return path.join(getEngineDir(engineId), 'main.py');
 }
 
-/** 引擎包就绪 = main.py + site-packages 同时存在（取代旧的单二进制判定） */
-export function isEnginePackageInstalled(
+/**
+ * 运行时就绪 = 内嵌解释器 + main.py + site-packages 三者俱在。
+ * 自包含运行时不依赖任何外部基座，故内嵌解释器存在与否是关键判据。
+ */
+export function isRuntimeInstalled(
   engineId: PyEngineId = DEFAULT_ENGINE_ID,
 ): boolean {
   return (
+    fs.existsSync(getRuntimePythonPath(getEngineDir(engineId))) &&
     fs.existsSync(getEngineMainPy(engineId)) &&
     fs.existsSync(getEngineSitePackages(engineId))
   );
@@ -150,11 +132,11 @@ export function writeEngineManifest(
   );
 }
 
-/** 引擎包产物名：smartsub-<engineId>-<suffix>.tar.gz */
+/** 运行时产物名：smartsub-faster-whisper-runtime-<suffix>.tar.gz（与引擎仓 release.yml 一致）。 */
 export function getEngineArtifactName(
   engineId: PyEngineId = DEFAULT_ENGINE_ID,
 ): string {
-  return `smartsub-${engineId}-${getPyEngineArtifactSuffix()}.tar.gz`;
+  return `smartsub-${engineId}-runtime-${getPyEngineArtifactSuffix()}.tar.gz`;
 }
 
 export function getEngineDownloadUrl(
@@ -163,51 +145,4 @@ export function getEngineDownloadUrl(
   tag: string = PY_ENGINE_TAG,
 ): string {
   return `${getPyEngineReleaseBaseUrl(source, tag)}/${getEngineArtifactName(engineId)}`;
-}
-
-// ============================================================================
-// 三层架构：可下载 Python 基座（Layer 1 远程包）路径 / URL / manifest IO
-// ============================================================================
-
-/** 基座产物名：smartsub-base-<suffix>.tar.gz */
-export function getBaseArtifactName(): string {
-  return `smartsub-base-${getPyEngineArtifactSuffix()}.tar.gz`;
-}
-
-export function getBaseDownloadUrl(
-  source: 'github' | 'ghproxy' | 'gitcode',
-  tag: string = PY_ENGINE_TAG,
-): string {
-  return `${getPyEngineReleaseBaseUrl(source, tag)}/${getBaseArtifactName()}`;
-}
-
-/** 下载基座的本地 manifest（写在 userData/py-base/current 内，随目录 swap/rollback） */
-export function getUserPyBaseManifestPath(): string {
-  return path.join(getUserPyBaseDir(), 'manifest.json');
-}
-
-export function readUserPyBaseManifest(): PyBaseManifest | null {
-  const p = getUserPyBaseManifestPath();
-  if (!fs.existsSync(p)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(p, 'utf8')) as PyBaseManifest;
-  } catch {
-    return null;
-  }
-}
-
-export function writeUserPyBaseManifest(m: PyBaseManifest): void {
-  fs.mkdirSync(getUserPyBaseDir(), { recursive: true });
-  fs.writeFileSync(getUserPyBaseManifestPath(), JSON.stringify(m, null, 2));
-}
-
-/** 当前生效基座来源（用于 UI / 状态展示）。 */
-export function getPyBaseSource(): 'builtin' | 'downloaded' | 'none' {
-  if (fs.existsSync(getPyBasePythonPath(getUserPyBaseDir()))) {
-    return 'downloaded';
-  }
-  if (fs.existsSync(getPyBasePythonPath(getBuiltinPyBaseDir()))) {
-    return 'builtin';
-  }
-  return 'none';
 }

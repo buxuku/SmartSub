@@ -25,34 +25,34 @@
 
 ## 4. 主进程：faster-whisper 单运行时包
 
-- [ ] 4.1 `pythonRuntime/paths.ts`：定义单运行时目录与 `getFasterWhisperRuntimeArtifactName()`/`getRuntimeDownloadUrl()`；退役 `getBuiltinPyBaseDir`/`resolvePyBaseDir`/`getBaseArtifactName`/`getBaseDownloadUrl`/`enginePackages` 相关
-- [ ] 4.2 `pythonRuntime/downloader.ts`：下载单包并解包到 `userData/py-engines/faster-whisper`（含内嵌解释器）；写精简 manifest
-- [ ] 4.3 `pythonRuntime/manager.ts`：从运行时内嵌解释器 spawn（`PYTHONHOME`/`PYTHONPATH` 指向运行时内部），删除对内置/外部基座的引用
-- [ ] 4.4 `types/engine.ts`：精简 `PyEngineManifest`；移除 `RemoteBasePackage`/`RemoteEnginePackage`/`enginePackages`/`PyBase*` 等多引擎/分层类型（保留单运行时所需）
-- [ ] 4.5 `fasterWhisperEngine.ts#isAvailable`：仅判运行时已安装；删除 `isPyBaseReady()` 的 error 分支与 `isEnginePackageInstalled` 旧判定
-- [ ] 4.6 `pythonRuntime/autoUpdateCheck.ts`：基座升级检查改为单运行时升级检查（或移除基座维度）
+- [x] 4.1 `pythonRuntime/paths.ts`：塌缩为单运行时目录解析；`getEngineArtifactName()`→`smartsub-faster-whisper-runtime-<suffix>.tar.gz`、新增 `getRuntimePythonPath(runtimeDir)`；退役 `getBuiltinPyBaseDir`/`getUserPyBaseDir`/`resolvePyBaseDir`/`isPyBaseReady`/`getPyBaseSource`/`getBaseArtifactName`/`getBaseDownloadUrl`/`read|writeUserPyBaseManifest`；`isEnginePackageInstalled`→`isRuntimeInstalled`（含内嵌解释器判据）
+- [x] 4.2 `pythonRuntime/downloader.ts`：移除 `isPyBaseReady` 安装前置；解包校验补「内嵌解释器存在」；解包到 `userData/py-engines/faster-whisper`（含内嵌解释器）写精简 manifest（既有 swap/rollback/自检链路复用，单包顶层即解释器+site-packages+main.py）
+- [x] 4.3 `pythonRuntime/index.ts`：`resolveEngineCommand` 从运行时内嵌解释器 spawn（`command=getRuntimePythonPath(runtimeDir)`、`PYTHONHOME`/`PYTHONPATH` 指向运行时内部）；删除内置/外部基座引用〔`manager.ts` 已是引擎无关，无需改动〕
+- [x] 4.4 `types/engine.ts`：精简 `PyEngineManifest`；移除 `RemoteBasePackage`/`RemoteEnginePackage`/`enginePackages`/顶层 `artifacts`/`PyBase*`；新增 `RemoteRuntimeInfo` 并将 `RemoteEngineManifest.runtime` 设为单运行时产物桶
+- [x] 4.5 `fasterWhisperEngine.ts#isAvailable`：仅判 `isRuntimeInstalled('faster-whisper')`；删除 `isPyBaseReady()` 的 error 分支〔`systemInfoManager.getSystemInfo` 同步去基座分支；`getFunasrModelStatus.baseReady`→`isSherpaLibInstalled()`〕
+- [x] 4.6 `pythonRuntime/autoUpdateCheck.ts` + `background.ts`：移除 `maybeAutoCheckPyBaseUpdate`（及其调用/导入）；引擎每日检查改用 `isRuntimeInstalled`〔ipcEngineHandlers 删 5 个 `*-py-base-*` handler + `getPyBaseDownloader` 预绑定；删 `baseDownloader.ts`；renderer 删 `BaseRuntimePanel` + 设置页基座卡片/状态/effect〕
 
 ## 5. 渲染层
 
 - [x] 5.1 `SherpaRuntimePanel.tsx`：移除下载/升级/卸载/进度 UI 与确认弹窗；sherpa 标注「已内置」，引擎就绪仅看 ASR 模型〔重写为内置状态展示：`builtinRuntime` 文案 + 版本 + 高级设置 children〕
 - [x] 5.2 `useSherpaRuntime.ts`：精简为状态展示（installed 恒真 + 版本），去掉 download/checkUpdate/uninstall〔接口收敛为 `{ libStatus, installed, reload }`〕
 - [x] 5.3 `EngineModelTab.tsx`：去掉 sherpa 运行库下载态相关分支与 `binarySource` 对 sherpa 的传递（faster-whisper 仍保留下载源选择）〔三面板渲染去掉 `taskBusy/binarySource/onBinarySourceChange/onRefreshStatuses`；FunasrPanel/QwenPanel/FireRedPanel props 同步收敛〕
-- [ ] 5.4 `FasterWhisperPanel.tsx`/`EngineModelTab`：下载文案与 `PY_ENGINE_SIZE` 改为单包体积（约 210MB）
+- [x] 5.4 `FasterWhisperPanel.tsx`：`PY_ENGINE_SIZE` 改为单自包含运行时体积（约 210MB，含内嵌解释器）
 
 ## 6. 迁移与清理
 
-- [ ] 6.1 启动时幂等清理遗留：`userData/sherpa-onnx/{current,staging,previous}`、`userData/py-base/current`、旧式分体 `userData/py-engines/*`（失败仅记日志）
-- [ ] 6.2 兼容：旧 manifest 字段缺失时按未安装处理，引导重新下载单运行时
+- [x] 6.1 启动时幂等清理遗留（`legacyCleanup.ts`）：`userData/py-base`（整树）、`userData/sherpa-onnx`（整树）、仅当缺内嵌解释器时清 `userData/py-engines/faster-whisper`（旧分体包，避免误删新单运行时）；失败仅记日志
+- [x] 6.2 兼容：`isRuntimeInstalled` 要求内嵌解释器存在 → 旧分体包/缺 manifest 即判「未安装」，引导重下单运行时
 
 ## 7. i18n
 
-- [ ] 7.1 `resources.json`（zh/en）：sherpa 运行库「下载/升级/卸载」相关键改为「已内置/就绪」；保留向后兼容键
-- [ ] 7.2 faster-whisper 下载体积/确认文案更新；`node scripts/check-i18n.mjs` 通过
+- [x] 7.1 `resources.json`（zh/en）：删除已退役的 `engines.base.*`（基座面板/设置卡片移除）；sherpa `builtinRuntime`「已内置」键已于上一 slice 落地；zh/en parity OK
+- [x] 7.2 faster-whisper `desc` 补「首次启用下载自包含运行时（含 Python）」+ 体积约 210MB；`node scripts/check-i18n.mjs` 通过
 
 ## 8. 校验
 
 - [ ] 8.1 `scripts/check-bundle-size.mjs` 基线更新（−py-base / +sherpa native），跑通
-- [ ] 8.2 `npx tsc --noEmit`（renderer 用 `renderer/tsconfig.json`）+ `yarn test:engines` 全绿
+- [x] 8.2 `npx tsc --noEmit`（main + `renderer/tsconfig.json`）所触文件 0 新增错误（余者为既有 docs/service/test 噪声）+ `yarn test:engines` 139 全绿
 - [ ] 8.3 冒烟：全新环境（无任何运行时下载）选 funasr/qwen/fireRedAsr，仅装 ASR 模型即可转写出 SRT
 - [ ] 8.4 冒烟：faster-whisper 下载单运行时包后可转写；删除运行时后回到「未安装」并可重新下载
 - [ ] 8.5 冒烟（macOS）：签名/公证后内置 `sherpa-onnx.node` 可 dlopen（无 Gatekeeper 拦截）；Windows/Linux 同目录依赖可解析

@@ -25,7 +25,6 @@ import {
   RefreshCw,
   Github,
   Globe,
-  Layers,
   MessageSquareWarning,
   ScrollText,
   FolderOpen,
@@ -64,11 +63,8 @@ import {
 import PageHeader from '@/components/PageHeader';
 import HelpHint from '@/components/HelpHint';
 import IconChip from '@/components/IconChip';
-import BaseRuntimePanel from '@/components/resources/engines/panels/BaseRuntimePanel';
-import { readPersistedDownloadSource } from '@/components/settings/gpu/gpuDownloadUtils';
 import { openUrl } from 'lib/utils';
 import packageInfo from '../../../package.json';
-import type { DownloadSource } from '../../../types/addon';
 import {
   DEFAULT_DOWNLOAD_ENDPOINTS,
   EDITABLE_DOWNLOAD_ENDPOINT_KEYS,
@@ -140,13 +136,7 @@ const PROXY_PRESETS: { label: string; url: string }[] = [
 const Settings = () => {
   const router = useRouter();
   const { t, i18n } = useTranslation('settings');
-  const { t: rt } = useTranslation('resources');
   const [currentLanguage, setCurrentLanguage] = useState(router.locale);
-  // Python 基座运行时（仅"检查更新/升级"）迁入设置页：升级期间若有任务在跑则禁用
-  const [baseTaskBusy, setBaseTaskBusy] = useState(false);
-  const [baseSource] = useState<DownloadSource>(() =>
-    typeof window === 'undefined' ? 'github' : readPersistedDownloadSource(),
-  );
   const [tempDir, setTempDir] = useState('');
   const [customTempDir, setCustomTempDir] = useState('');
   const [useCustomTempDir, setUseCustomTempDir] = useState(false);
@@ -215,24 +205,6 @@ const Settings = () => {
   useEffect(() => {
     setCurrentLanguage(i18n.language);
   }, [i18n.language]);
-
-  // 基座升级期间若有任务运行需禁用，跟踪任务忙碌态（轮询初值 + 事件刷新）
-  useEffect(() => {
-    const isBusy = (s: string | undefined) =>
-      s === 'running' || s === 'paused' || s === 'cancelling';
-    (async () => {
-      try {
-        const s = await window?.ipc?.invoke('getTaskStatus');
-        setBaseTaskBusy(isBusy(s));
-      } catch {
-        // 忽略：保持默认非忙碌
-      }
-    })();
-    const unsub = window?.ipc?.on('taskStatusChange', (s: string) =>
-      setBaseTaskBusy(isBusy(s)),
-    );
-    return () => unsub?.();
-  }, []);
 
   const handleLanguageChange = async (value) => {
     await window?.ipc?.invoke('setSettings', { language: value });
@@ -995,21 +967,6 @@ const Settings = () => {
               </CardContent>
             </CollapsibleContent>
           </Collapsible>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <IconChip icon={Layers} />
-              {rt('engines.base.name')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BaseRuntimePanel
-              taskBusy={baseTaskBusy}
-              defaultSource={baseSource}
-            />
-          </CardContent>
         </Card>
 
         <Card>

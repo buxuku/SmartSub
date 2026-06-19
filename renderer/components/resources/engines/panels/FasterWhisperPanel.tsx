@@ -37,7 +37,9 @@ import type {
   PyEngineUpdateInfo,
 } from '../../../../../types/engine';
 
-const PY_ENGINE_SIZE = '170MB';
+// 自包含运行时（内嵌 Python 解释器 + site-packages + main.py）的近似下载体积；
+// 仅用于下载按钮提示，真实字节数以下载进度 total 为准。
+const PY_ENGINE_SIZE = '210MB';
 
 const COMPUTE_TYPE_OPTIONS = [
   'auto',

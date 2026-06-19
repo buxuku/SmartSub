@@ -11,11 +11,7 @@ import {
   CT2_REQUIRED_FILES,
   CT2_IMPORT_SNAPSHOT_REV,
 } from './modelImport';
-import {
-  isPyBaseReady,
-  isEnginePackageInstalled,
-  readEngineManifest,
-} from './pythonRuntime/paths';
+import { isRuntimeInstalled, readEngineManifest } from './pythonRuntime/paths';
 import type { EngineStatus } from '../../types/engine';
 import { getModelDownloader } from './modelDownloader';
 import {
@@ -148,17 +144,16 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   const fireRedModelDownloader = getFireRedModelDownloader(mainWindow);
 
   ipcMain.handle('getSystemInfo', async () => {
-    // 三层就绪判定：缺基座 → error（需重装/升级 App）；有基座缺引擎包 → not_installed
-    // （资源中心可下载）；两者皆备 → ready。让 UI 能区分两种失败原因。
-    const pyBaseReady = isPyBaseReady();
-    const pythonEngineStatus: EngineStatus = !pyBaseReady
-      ? { state: 'error', message: 'Python base runtime missing' }
-      : isEnginePackageInstalled('faster-whisper')
-        ? {
-            state: 'ready',
-            version: readEngineManifest('faster-whisper')?.version,
-          }
-        : { state: 'not_installed' };
+    // faster-whisper 自包含运行时：已落盘 → ready（附 manifest 版本）；
+    // 否则 not_installed（资源中心可下载）。运行时探活推迟到真正转写时进行。
+    const pythonEngineStatus: EngineStatus = isRuntimeInstalled(
+      'faster-whisper',
+    )
+      ? {
+          state: 'ready',
+          version: readEngineManifest('faster-whisper')?.version,
+        }
+      : { state: 'not_installed' };
     return {
       modelsInstalled: getModelsInstalled(),
       modelsPath: getPath('modelsPath'),
@@ -261,7 +256,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
 
   ipcMain.handle('getFunasrModelStatus', async () => ({
     success: true,
-    baseReady: isPyBaseReady(),
+    baseReady: isSherpaLibInstalled(),
     engineInstalled: isSherpaLibInstalled(),
     ready: isFunasrReady(),
     models: (Object.keys(FUNASR_MODELS) as FunasrModelId[]).map((id) => ({
