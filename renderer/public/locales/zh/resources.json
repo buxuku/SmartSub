@@ -19,6 +19,7 @@
       "name": "whisper.cpp（内置）",
       "desc": "默认引擎，支持 ggml 量化模型与 GPU 加速；苹果芯片（M 系列）有专属优化、速度更快，电脑配置老旧或内存偏小时也能轻量流畅运行、不卡顿。",
       "scenario": "适合：Mac / 老旧设备 / 离线通用转写",
+      "tags": ["Apple 芯片", "GPU 加速", "轻量"],
       "statusReady": "已就绪",
       "needsModels": "需下载模型"
     },
@@ -26,6 +27,7 @@
       "name": "faster-whisper",
       "desc": "基于 CTranslate2，速度更快，模型按需从 HuggingFace 下载；带英伟达（NVIDIA）独立显卡的电脑速度最快，普通 Windows 电脑也更快。首次启用需下载自包含运行时（已内置 Python，无需另装）。",
       "scenario": "适合：NVIDIA 显卡 / 追求速度与精度",
+      "tags": ["NVIDIA", "高速", "高精度"],
       "notInstalled": "未安装",
       "installError": "安装异常",
       "installed": "已安装",
@@ -70,6 +72,7 @@
     "sherpa": {
       "name": "本地多模型引擎",
       "subtitle": "FunASR · Qwen · FireRed",
+      "tags": ["FunASR", "Qwen3-ASR", "FireRedASR"],
       "desc": "FunASR、Qwen3-ASR、FireRedASR 共用同一套 sherpa-onnx 本地运行库（已随应用内置），区别只在模型与少量参数。在下方按需选择并下载对应模型即可使用，全程 CPU 离线、无需显卡或 Python。",
       "builtinRuntime": "运行库已随应用内置（FunASR · Qwen · FireRed 共用），无需单独下载。",
       "installedVersion": "内置 v{{version}}",
@@ -242,6 +245,7 @@
       "name": "本地命令行",
       "desc": "使用自行安装的 Whisper 兼容 CLI",
       "scenario": "适合：进阶用户，自备 Whisper 命令与模型",
+      "tags": ["自定义命令", "高级"],
       "enable": "启用本地命令行",
       "enableHint": "启用后才会在任务的「引擎 ▸ 模型」选择器中列出本地命令行",
       "configure": "配置命令",

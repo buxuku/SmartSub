@@ -171,7 +171,10 @@ function isFasterWhisperRunnable(info: EngineModelInfo | undefined): boolean {
  * 仅纳入「引擎运行时已安装」的引擎——只下了模型但没装对应引擎不可转写，故从任务选择中过滤掉。
  * - builtin: ggml 已装模型（内置运行时，始终可运行）
  * - fasterWhisper: ct2 已装模型，且引擎包已安装（`pythonEngineStatus.state==='ready'`）
- * - funasr: 需 VAD 就绪 + 至少一个 ASR 模型，且运行库已安装（`funasrEngineInstalled`）
+ * - funasr / qwen / fireRedAsr: 需 VAD 就绪 + 至少一个模型即可。
+ *   三族共用的 sherpa-onnx 运行库现随安装包内置（见 sherpaLibPaths / fetch-sherpa-native），
+ *   不再单独安装，故口径与引擎页（`is*Ready()` = 内置 VAD + 模型）一致，
+ *   不再附加 `*EngineInstalled` 条件——否则会出现「引擎页显示已就绪、任务页下拉却不列出」的不一致。
  * - localCli: 用户自备模型/命令，无"已装模型"概念；仅当 `includeLocalCli` 时以
  *   内置规范模型名清单出现（保 `${whisperModel}` 占位符替换可用，D9）。
  * 空分组省略；localCli 默认不出现（由调用方按是否启用 localCli 决定）。
@@ -191,29 +194,17 @@ export function getEngineModelGroups(
   }
 
   const funasrAsr = info?.funasrAsrModelsInstalled ?? [];
-  if (
-    info?.funasrVadInstalled &&
-    funasrAsr.length &&
-    info?.funasrEngineInstalled
-  ) {
+  if (info?.funasrVadInstalled && funasrAsr.length) {
     groups.push({ engine: 'funasr', models: funasrAsr });
   }
 
   const qwenModels = info?.qwenModelsInstalled ?? [];
-  if (
-    info?.qwenVadInstalled &&
-    qwenModels.length &&
-    info?.qwenEngineInstalled
-  ) {
+  if (info?.qwenVadInstalled && qwenModels.length) {
     groups.push({ engine: 'qwen', models: qwenModels });
   }
 
   const fireRedModels = info?.fireRedModelsInstalled ?? [];
-  if (
-    info?.fireRedVadInstalled &&
-    fireRedModels.length &&
-    info?.fireRedEngineInstalled
-  ) {
+  if (info?.fireRedVadInstalled && fireRedModels.length) {
     groups.push({ engine: 'fireRedAsr', models: fireRedModels });
   }
 
@@ -227,7 +218,8 @@ export function getEngineModelGroups(
 /**
  * 跨引擎就绪判断："任意引擎装有任意可运行模型即视为就绪"。
  * 用于新手引导 / 全景概览 / 任务页"去下载模型"引导。
- * 与 getEngineModelGroups 同口径：fw/funasr 还需各自运行时已安装才算就绪；
+ * 与 getEngineModelGroups 同口径：fw 还需引擎包已安装；funasr/qwen/fireRedAsr 的
+ * sherpa-onnx 运行库随包内置（见 getEngineModelGroups 注释），只看内置 VAD + 模型；
  * localCli 不计入（自备模型，无可下载模型；其可用性由是否配置命令决定，另行处理）。
  */
 export function hasAnyModelAnyEngine(
@@ -242,22 +234,16 @@ export function hasAnyModelAnyEngine(
   }
   if (
     info?.funasrVadInstalled &&
-    (info?.funasrAsrModelsInstalled?.length ?? 0) > 0 &&
-    info?.funasrEngineInstalled
+    (info?.funasrAsrModelsInstalled?.length ?? 0) > 0
   ) {
     return true;
   }
-  if (
-    info?.qwenVadInstalled &&
-    (info?.qwenModelsInstalled?.length ?? 0) > 0 &&
-    info?.qwenEngineInstalled
-  ) {
+  if (info?.qwenVadInstalled && (info?.qwenModelsInstalled?.length ?? 0) > 0) {
     return true;
   }
   if (
     info?.fireRedVadInstalled &&
-    (info?.fireRedModelsInstalled?.length ?? 0) > 0 &&
-    info?.fireRedEngineInstalled
+    (info?.fireRedModelsInstalled?.length ?? 0) > 0
   ) {
     return true;
   }

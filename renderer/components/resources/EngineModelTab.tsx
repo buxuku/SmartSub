@@ -482,6 +482,13 @@ const EngineModelTab: React.FC = () => {
 
   const engineName = (view: EngineView) => t(`engines.${view}.name`);
 
+  // 引擎特色标签：sherpa 组展示 FunASR / Qwen3-ASR / FireRedASR 三平台，让用户一眼看出
+  // 该引擎同时支持这三个平台；其余引擎展示能力关键词（如 NVIDIA / 高速 / Apple 芯片）。
+  const engineTags = (view: EngineView): string[] => {
+    const raw = t(`engines.${view}.tags`, { returnObjects: true });
+    return Array.isArray(raw) ? (raw as string[]) : [];
+  };
+
   const statusLabel = (tone: StatusTone) => t(`engines.status.${tone}`);
 
   const handleBinarySourceChange = (s: DownloadSource) => {
@@ -569,10 +576,11 @@ const EngineModelTab: React.FC = () => {
       {/* 左栏固定、仅右栏滚动：根容器撑满父高，左 nav 整列常驻，右栏独立纵向滚动。 */}
       <div className="flex h-full min-h-0 flex-col gap-4 md:flex-row">
         {/* 左栏：引擎列表（状态点，无启用开关）——md 下整列固定，不随右栏滚动 */}
-        <nav className="flex shrink-0 gap-1 overflow-x-auto md:w-52 md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:pr-2">
+        <nav className="flex shrink-0 gap-1 overflow-x-auto md:w-56 md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:pr-2">
           {ENGINE_VIEWS.map((id) => {
             const active = selectedView === id;
             const tone = engineTone(id);
+            const tags = engineTags(id);
             return (
               <button
                 key={id}
@@ -580,17 +588,38 @@ const EngineModelTab: React.FC = () => {
                 aria-current={active ? 'true' : undefined}
                 onClick={() => setSelectedView(id)}
                 className={cn(
-                  'flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                  'flex items-start gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
                   'shrink-0 md:w-full',
                   active
                     ? 'bg-primary/10 font-medium text-primary'
                     : 'text-foreground hover:bg-muted/60',
                 )}
               >
-                <EngineIcon engine={id} className="h-4 w-4 shrink-0" />
-                <span className="truncate">{engineName(id)}</span>
-                <span className="ml-auto">
-                  <StatusDot tone={tone} label={statusLabel(tone)} />
+                <EngineIcon engine={id} className="mt-0.5 h-4 w-4 shrink-0" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="flex items-center gap-2">
+                    <span className="min-w-0 truncate">{engineName(id)}</span>
+                    <span className="ml-auto flex shrink-0">
+                      <StatusDot tone={tone} label={statusLabel(tone)} />
+                    </span>
+                  </span>
+                  {tags.length > 0 && (
+                    <span className="mt-1 flex flex-wrap gap-1">
+                      {tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className={cn(
+                            'rounded px-1.5 py-0.5 text-[10px] font-normal leading-none',
+                            active
+                              ? 'bg-primary/15 text-primary'
+                              : 'bg-muted text-muted-foreground',
+                          )}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </span>
+                  )}
                 </span>
               </button>
             );

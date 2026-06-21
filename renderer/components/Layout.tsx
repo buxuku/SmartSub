@@ -523,13 +523,18 @@ const Layout = ({ children }) => {
     }
   };
 
-  const sidebarWidth = sidebarExpanded ? 'w-[176px]' : 'w-[56px]';
+  // 中文标签较短（176px 足够），英文标签如「Translation Services / Proofread Subtitles」
+  // 更宽，176px 会被右边框裁断；按 UI 语言放宽展开宽度，保证标签完整可见。
+  const isZhLocale = (locale || '').toLowerCase().startsWith('zh');
+  const expandedSidebarWidth = isZhLocale ? 'w-[176px]' : 'w-[216px]';
+  const expandedContentPad = isZhLocale ? 'pl-[176px]' : 'pl-[216px]';
+  const sidebarWidth = sidebarExpanded ? expandedSidebarWidth : 'w-[56px]';
 
   return (
     <div
       className={cn(
         'grid h-screen w-full transition-[padding-left] duration-200',
-        sidebarExpanded ? 'pl-[176px]' : 'pl-[56px]',
+        sidebarExpanded ? expandedContentPad : 'pl-[56px]',
       )}
     >
       <aside

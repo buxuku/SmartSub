@@ -19,6 +19,7 @@
       "name": "whisper.cpp (built-in)",
       "desc": "Default engine with ggml quantized models and GPU acceleration; specially optimized for Apple silicon (M series) for extra speed, and stays light and smooth on older or low-memory computers.",
       "scenario": "Best for: Mac / older devices / general offline transcription",
+      "tags": ["Apple Silicon", "GPU accel", "Lightweight"],
       "statusReady": "Ready",
       "needsModels": "Download a model"
     },
@@ -26,6 +27,7 @@
       "name": "faster-whisper",
       "desc": "CTranslate2-based engine with faster inference; models download from HuggingFace on demand. Fastest on computers with a dedicated NVIDIA GPU, and faster on regular Windows PCs too. First use downloads a self-contained runtime (Python included, nothing else to install).",
       "scenario": "Best for: NVIDIA GPUs / speed and accuracy",
+      "tags": ["NVIDIA", "Fast", "Accurate"],
       "notInstalled": "Not installed",
       "installError": "Install error",
       "installed": "Installed",
@@ -70,6 +72,7 @@
     "sherpa": {
       "name": "Local multi-model engine",
       "subtitle": "FunASR · Qwen · FireRed",
+      "tags": ["FunASR", "Qwen3-ASR", "FireRedASR"],
       "desc": "FunASR, Qwen3-ASR and FireRedASR share one bundled sherpa-onnx runtime; they differ only in models and a few parameters. Pick and download a model from any family below to start — fully offline on CPU, no GPU or Python required.",
       "builtinRuntime": "The runtime is bundled with the app (shared by FunASR · Qwen · FireRed) — no separate download needed.",
       "installedVersion": "Bundled v{{version}}",
@@ -242,6 +245,7 @@
       "name": "Local CLI",
       "desc": "Use a self-installed Whisper-compatible command-line tool",
       "scenario": "Best for: advanced users with their own Whisper CLI and models",
+      "tags": ["Custom CLI", "Advanced"],
       "enable": "Enable local CLI",
       "enableHint": "Once enabled, the local CLI appears in a task's Engine ▸ Model selector",
       "configure": "Configure command",

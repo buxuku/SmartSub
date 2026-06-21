@@ -89,15 +89,39 @@ function FlowNode({
   );
 }
 
+/** 引导内的语言切换项（语言名用本地写法，方便不识别当前界面语言的新用户辨认）。 */
+const ONBOARDING_LANGS = [
+  { value: 'zh', label: '中文' },
+  { value: 'en', label: 'English' },
+];
+
 const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
   open,
   onOpenChange,
   initialStep = 0,
   onPause,
 }) => {
-  const { t } = useTranslation('common');
+  const { t, i18n } = useTranslation('common');
   const router = useRouter();
   const { locale } = router.query;
+  const currentLang = (i18n.language || '').toLowerCase().startsWith('zh')
+    ? 'zh'
+    : 'en';
+
+  /**
+   * 引导内切换界面语言：持久化到设置，并只替换当前路由的 locale 段（保留页面与查询），
+   * 避免跳回首页；界面语言随路由 locale 由 next-i18next 切换。引导面板状态在 Layout 持有，
+   * 路由变化不会卸载，弹窗保持打开。
+   */
+  const switchLanguage = async (value: string) => {
+    if (value === currentLang) return;
+    try {
+      await window?.ipc?.invoke('setSettings', { language: value });
+    } catch (error) {
+      console.error('Failed to persist language:', error);
+    }
+    router.push(router.asPath.replace(/^\/[^/]+/, `/${value}`));
+  };
 
   const [step, setStep] = useState(0);
   const [totalMemoryGB, setTotalMemoryGB] = useState<number | undefined>();
@@ -488,6 +512,25 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
         className="max-w-2xl"
         onInteractOutside={(e) => e.preventDefault()}
       >
+        {/* 语言切换：置于右上角（关闭按钮左侧），让英文用户首启即可切换、避免无从下手 */}
+        <div className="absolute right-12 top-3.5 z-10 flex items-center gap-0.5 rounded-md border bg-background p-0.5">
+          {ONBOARDING_LANGS.map((lang) => (
+            <button
+              key={lang.value}
+              type="button"
+              onClick={() => switchLanguage(lang.value)}
+              className={cn(
+                'rounded px-2 py-0.5 text-xs transition-colors',
+                currentLang === lang.value
+                  ? 'bg-muted font-medium text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {lang.label}
+            </button>
+          ))}
+        </div>
+
         <DialogHeader>
           <DialogTitle>{current.title}</DialogTitle>
           <DialogDescription>
