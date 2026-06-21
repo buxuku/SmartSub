@@ -162,8 +162,21 @@ async function transcribeFasterWhisper(
   logMessage(`fasterWhisperParams: ${JSON.stringify(params, null, 2)}`, 'info');
   event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
 
+  // 诊断：记录「下发 transcribe → sidecar 首个 progress」的墙钟间隔。首任务卡 0% 时，
+  // 这段间隔即为 sidecar 侧导入重依赖 + 加载模型（或等待 preload 占用的模型锁）的耗时；
+  // 配合 sidecar 端 [py-engine] 日志即可定位卡在哪一步。
+  const dispatchAt = Date.now();
+  logMessage('faster-whisper: dispatching transcribe to sidecar', 'info');
+  let firstProgressLogged = false;
   const { id, result } = manager.transcribe(params, {
     onProgress: (percent) => {
+      if (!firstProgressLogged) {
+        firstProgressLogged = true;
+        logMessage(
+          `faster-whisper: first progress from sidecar after ${Date.now() - dispatchAt}ms`,
+          'info',
+        );
+      }
       event.sender.send('taskProgressChange', file, 'extractSubtitle', percent);
     },
   });
