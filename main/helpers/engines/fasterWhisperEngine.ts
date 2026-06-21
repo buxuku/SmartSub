@@ -43,6 +43,51 @@ function formatInstalledVersion(
 }
 
 /**
+ * 批次预热：在音频抽取的同时，让 sidecar 预加载所选 CT2 模型并写满 _model_cache，
+ * 使首个 transcribe 直接命中。sidecar 为「先加载模型、再发 progress(0%)」，且重依赖
+ * （ctranslate2/av/tokenizers）已惰性推迟到首个 transcribe/preload；若不预热，首个文件
+ * 会把导入 + 模型加载的冷启动成本全压在关键路径上，表现为长时间「卡在 0% 无进度」
+ * （取消重试因缓存命中而恢复）。预热与 ffmpeg 抽取并行，失败一律非致命。
+ *
+ * 参数（model/device/compute_type/download_root）必须与 transcribe 完全一致，
+ * 否则 _get_model 的缓存 key 不匹配、预热白做。
+ */
+function prewarmFasterWhisper(formData: Record<string, unknown>): void {
+  try {
+    if (!isRuntimeInstalled('faster-whisper')) return;
+    const { model } = formData as { model?: string };
+    const modelId = toFasterWhisperModel(model);
+    const modelSnapshotDir = resolveCt2ModelSnapshotDir(modelId);
+    if (!modelSnapshotDir) return;
+    const settings = store.get('settings');
+    const params = {
+      engine: 'faster_whisper',
+      model: modelSnapshotDir,
+      local_files_only: true,
+      download_root: getFasterWhisperModelsPath(),
+      device: settings.fasterWhisperDevice || 'auto',
+      compute_type: settings.fasterWhisperComputeType || 'auto',
+    };
+    const manager = getPythonRuntimeManager();
+    // taskProcessor 在 ensureStarted('faster-whisper') 成功后才调用本函数，
+    // 此处再确认一次 sidecar 在跑且正服务 faster-whisper，避免引擎已被切走时空发。
+    if (manager.activeEngineId !== 'faster-whisper' || !manager.isRunning)
+      return;
+    // 预加载在 sidecar worker 线程进行，给足冗余超时；任何错误（含旧引擎
+    // method_not_found）都吞掉——首个 transcribe 仍会按需加载，预热只是优化。
+    manager
+      .request('preload', params, { timeoutMs: 10 * 60_000 })
+      .then(() => logMessage('faster-whisper model prewarm done', 'info'))
+      .catch((error) =>
+        logMessage(`faster-whisper model prewarm skipped: ${error}`, 'warning'),
+      );
+    logMessage('faster-whisper model prewarm started', 'info');
+  } catch (error) {
+    logMessage(`faster-whisper prewarm error (non-fatal): ${error}`, 'warning');
+  }
+}
+
+/**
  * 使用 Python sidecar 中的 faster-whisper 生成字幕。
  * 取消与内置 whisper 一致走 AbortSignal：信号触发即通知 sidecar 逐段取消。
  */
@@ -200,5 +245,9 @@ export const fasterWhisperEngineAdapter: TranscriptionEngineAdapter = {
 
   cancelActive(): void {
     cancelFasterWhisperTranscription();
+  },
+
+  prewarm(formData: Record<string, unknown>): void {
+    prewarmFasterWhisper(formData);
   },
 };
