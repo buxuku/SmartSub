@@ -788,8 +788,15 @@ export const CONFIG_TEMPLATES: Record<string, ProviderType> = {
         tips: 'openaiApiKeyTips',
         placeholder: 'phOpenaiApiKey',
       },
-      { key: 'modelName', label: 'modelName', type: 'text', required: true },
-      ...aiCommonFields({ structuredOutput: 'json_schema' }),
+      {
+        key: 'modelName',
+        label: 'modelName',
+        type: 'text',
+        required: true,
+        placeholder: 'hunyuan-3.0-preview',
+        tips: 'openaiModelNameTips',
+      },
+      ...aiCommonFields({ structuredOutput: 'json_object' }),
     ],
   },
 };

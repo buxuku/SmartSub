@@ -339,7 +339,7 @@ const ProvidersTab: React.FC = () => {
       useBatchTranslation: false,
       batchSize: 10,
       systemPrompt: defaultSystemPrompt,
-      structuredOutput: 'json_schema',
+      structuredOutput: 'json_object',
     };
 
     const updatedProviders = sortProvidersCustomFirst([
