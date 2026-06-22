@@ -9,40 +9,62 @@ import type {
 } from '../../../../types/subtitleMerge';
 
 /**
+ * libass 烧录字幕的「等效脚本高度」：FontSize 以它为基准，再等比缩放到视频实际高度。
+ * 预览里把「预览盒高 / 该值」作为缩放系数，CSS 模拟字号即≈烧录后字号，
+ * 与预览框大小、视频分辨率均无关地保持所见即所得。
+ *
+ * 该值由「字形墨迹高度」实测标定（比按 em 反推更可靠，整块字符 █ 会超出 em 导致偏差）：
+ *   - libass：Hiragino「中/字」FontSize=72、帧高 720 → 墨迹高 ≈141px，占帧高 ≈19.6%；
+ *   - 浏览器 canvas measureText：CJK 字形墨迹高 ≈ 0.91·font-size（中文字体几乎填满 em）。
+ *   令两者占比相等 → 等效高度 = 72 × 0.91 / 0.196 ≈ 333（与字体、分辨率基本无关）。
+ * 实测 K=333 时预览(PingFang)与烧录(Hiragino)字号在 24/72 档均吻合（偏差 <1%）。
+ */
+export const LIBASS_SRT_PLAYRES_Y = 333;
+
+/**
  * 将字幕样式转换为 CSS 样式对象
  * 用于前端实时预览
+ * @param scale 预览盒相对 libass 脚本高度的缩放系数（盒高/288），默认 1
  */
-export function subtitleStyleToCSS(style: SubtitleStyle): React.CSSProperties {
+export function subtitleStyleToCSS(
+  style: SubtitleStyle,
+  scale: number = 1,
+): React.CSSProperties {
+  const s = scale > 0 ? scale : 1;
   const css: React.CSSProperties = {
     fontFamily: style.fontName,
-    fontSize: `${style.fontSize}px`,
+    fontSize: `${style.fontSize * s}px`,
     color: style.primaryColor,
     fontWeight: style.bold ? 'bold' : 'normal',
     fontStyle: style.italic ? 'italic' : 'normal',
     textDecoration: style.underline ? 'underline' : 'none',
     textAlign: getTextAlign(style.alignment),
-    padding: '4px 8px',
-    lineHeight: 1.4,
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-word',
+    padding: `${4 * s}px ${8 * s}px`,
+    // libass 行距≈1.2em，预览与之对齐，避免多行字幕预览比烧录结果偏高
+    lineHeight: 1.2,
+    // 与 libass 行为一致：保留字幕里的显式换行，但「不」自动折行。
+    // libass 只在空格处断行，纯中文（无空格）长行不会折行而是溢出帧并居中裁剪；
+    // 预览框本身 overflow-hidden，故 'pre' 即可复刻同样的「居中溢出裁剪」效果，
+    // 避免预览折行、烧录不折行造成的所见非所得。
+    whiteSpace: 'pre',
   };
 
   // 根据边框样式处理
   if (style.borderStyle === 3) {
     // 背景框模式
     css.backgroundColor = hexToRgba(style.backColor, 0.7);
-    css.borderRadius = '4px';
+    css.borderRadius = `${4 * s}px`;
   } else {
     // 边框 + 阴影模式
     const shadows: string[] = [];
 
-    // 文字描边效果
+    // 文字描边效果（描边偏移按比例缩放，保持与字号一致的视觉粗细）
     if (style.outline > 0) {
       const outlineSize = Math.min(style.outline, 4);
       for (let x = -outlineSize; x <= outlineSize; x++) {
         for (let y = -outlineSize; y <= outlineSize; y++) {
           if (x !== 0 || y !== 0) {
-            shadows.push(`${x}px ${y}px 0 ${style.outlineColor}`);
+            shadows.push(`${x * s}px ${y * s}px 0 ${style.outlineColor}`);
           }
         }
       }
@@ -51,7 +73,7 @@ export function subtitleStyleToCSS(style: SubtitleStyle): React.CSSProperties {
     // 阴影效果
     if (style.shadow > 0) {
       shadows.push(
-        `${style.shadow}px ${style.shadow}px ${style.shadow}px ${style.backColor}`,
+        `${style.shadow * s}px ${style.shadow * s}px ${style.shadow * s}px ${style.backColor}`,
       );
     }
 
@@ -65,18 +87,21 @@ export function subtitleStyleToCSS(style: SubtitleStyle): React.CSSProperties {
 
 /**
  * 获取字幕容器的定位样式
+ * @param scale 预览盒相对 libass 脚本高度的缩放系数（盒高/288），默认 1
  */
 export function getSubtitleContainerStyle(
   style: SubtitleStyle,
   containerWidth: number,
   containerHeight: number,
+  scale: number = 1,
 ): React.CSSProperties {
+  const s = scale > 0 ? scale : 1;
   const css: React.CSSProperties = {
     position: 'absolute',
     display: 'flex',
     justifyContent: getJustifyContent(style.alignment),
     alignItems: getAlignItems(style.alignment),
-    padding: `${style.marginV}px ${style.marginR}px ${style.marginV}px ${style.marginL}px`,
+    padding: `${style.marginV * s}px ${style.marginR * s}px ${style.marginV * s}px ${style.marginL * s}px`,
     boxSizing: 'border-box',
     width: '100%',
     pointerEvents: 'none',

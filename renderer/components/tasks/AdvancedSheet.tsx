@@ -62,6 +62,8 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
   // 不进 react-hook-form，避免与逐任务的 userConfig 混淆。
   const [vadEnabled, setVadEnabled] = useState(true);
   const [reduceRepetition, setReduceRepetition] = useState(false);
+  // 中文标点去除的「全局默认值」，用于在三态下拉里显示「跟随全局（当前：开/关）」
+  const [globalRemovePunctuation, setGlobalRemovePunctuation] = useState(false);
   useEffect(() => {
     if (!open) return;
     let active = true;
@@ -70,6 +72,7 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
       if (active) {
         setVadEnabled(s?.useVAD !== false);
         setReduceRepetition(s?.reduceRepetition === true);
+        setGlobalRemovePunctuation(s?.removeChinesePunctuation === true);
       }
     })();
     return () => {
@@ -360,6 +363,48 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                         />
                       )}
                     </>
+                  )}
+
+                  {typeDef.hasTranslate && (
+                    <FormField
+                      control={form.control}
+                      name="chinesePunctuationMode"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('chinesePunctuation.label')}</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value || 'inherit'}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue
+                                  placeholder={tHome('pleaseSelect')}
+                                />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="inherit">
+                                {t('chinesePunctuation.inherit', {
+                                  state: globalRemovePunctuation
+                                    ? t('chinesePunctuation.stateOn')
+                                    : t('chinesePunctuation.stateOff'),
+                                })}
+                              </SelectItem>
+                              <SelectItem value="on">
+                                {t('chinesePunctuation.on')}
+                              </SelectItem>
+                              <SelectItem value="off">
+                                {t('chinesePunctuation.off')}
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormDescription className="text-xs">
+                            {t('chinesePunctuation.hint')}
+                          </FormDescription>
+                        </FormItem>
+                      )}
+                    />
                   )}
 
                   {showFormatHere && (

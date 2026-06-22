@@ -13,11 +13,28 @@ import {
   TRANSLATOR_MAP,
 } from './services/translationProvider';
 import { getSrtFileName, renderTemplate } from '../helpers/utils';
-import { logMessage } from '../helpers/storeManager';
+import { logMessage, store } from '../helpers/storeManager';
 import { IFiles, IFormData } from '../../types';
 import { ensureTempDir } from '../helpers/fileUtils';
 import { isTaskCancelledError } from '../helpers/taskContext';
 import { assertValidTestTranslation } from './utils/error';
+import {
+  getDesiredChineseScript,
+  convertChineseText,
+  removeChineseSubtitlePunctuation,
+} from '../helpers/chineseConvert';
+
+/**
+ * 解析「中文标点去除」生效值：任务高级参数三态优先，inherit/缺省回退全局设置（issue #330）。
+ */
+function resolveRemoveChinesePunctuation(
+  formData: IFormData | undefined,
+): boolean {
+  const mode = formData?.chinesePunctuationMode;
+  if (mode === 'on') return true;
+  if (mode === 'off') return false;
+  return store.get('settings')?.removeChinesePunctuation === true;
+}
 
 export default async function translate(
   event,
@@ -45,6 +62,24 @@ export default async function translate(
         ? parseInt(translateRetryTimes)
         : 0;
   const renderContentTemplate = CONTENT_TEMPLATES[translateContent];
+
+  // 译文后处理（仅作用于目标译文，不动源文本）：
+  // 1) 目标为中文时按简/繁做确定性归一，兜底 Ai 概率性输出繁体（issue #332）。
+  // 2) 按「中文标点去除」生效值，把中文标点替换为空格（issue #330）。
+  const desiredTargetScript = getDesiredChineseScript(targetLanguage);
+  const isChineseTarget = desiredTargetScript !== null;
+  const removePunctuation = resolveRemoveChinesePunctuation(formData);
+  const postProcessTarget = (content: string): string => {
+    if (!content) return content;
+    let out = content;
+    if (desiredTargetScript) {
+      out = convertChineseText(out, desiredTargetScript).text;
+    }
+    if (removePunctuation && isChineseTarget) {
+      out = removeChineseSubtitlePunctuation(out);
+    }
+    return out;
+  };
 
   try {
     const translator = TRANSLATOR_MAP[provider.type];
@@ -100,18 +135,21 @@ export default async function translate(
       let tempTranslatedContent = '';
 
       results.forEach(async (result) => {
+        // 目标译文后处理（简繁归一 + 可选中文标点去除）；源文本保持原样
+        const targetContent = postProcessTarget(result.targetContent);
+
         // 根据用户设置的模板生成目标文件内容
         const content = `${result.id}\n${result.startEndTime}\n${renderTemplate(
           renderContentTemplate,
           {
             sourceContent: result.sourceContent,
-            targetContent: result.targetContent,
+            targetContent,
           },
         )}`;
         concatContent += content;
 
         // 对临时文件，只添加纯翻译内容
-        const pureTranslatedContent = `${result.id}\n${result.startEndTime}\n${result.targetContent}\n\n`;
+        const pureTranslatedContent = `${result.id}\n${result.startEndTime}\n${targetContent}\n\n`;
         tempTranslatedContent += pureTranslatedContent;
       });
 

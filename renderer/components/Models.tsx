@@ -6,6 +6,7 @@ import {
   SelectGroup,
   SelectItem,
   SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -15,6 +16,7 @@ import {
   encodeEngineModel,
   getEngineModelGroups,
 } from 'lib/engineModels';
+import EngineIcon from '@/components/resources/engines/EngineIcon';
 import type { EngineStatus, TranscriptionEngine } from '../../types/engine';
 
 interface IProps {
@@ -128,26 +130,35 @@ const Models = React.forwardRef<
     >
       <SelectTrigger className={className} id="model" ref={ref}>
         {selected ? (
-          <span className="flex min-w-0 items-center gap-1 truncate">
-            <span className="text-muted-foreground">
+          // 用 div 承载（而非 span）：SelectTrigger 的 `[&>span]:line-clamp-1`
+          // 会把直接子 span 设为竖排 -webkit-box，导致图标/徽标/模型名换行竖排。
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap">
+            <EngineIcon engine={selected.engine} className="h-4 w-4 shrink-0" />
+            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground">
               {engineLabel(selected.engine)}
             </span>
-            <span className="opacity-50">·</span>
-            <span className="truncate">{selected.model}</span>
-          </span>
+            <span className="truncate font-medium text-foreground">
+              {selected.model}
+            </span>
+          </div>
         ) : (
           <SelectValue placeholder={t('pleaseSelect')} />
         )}
       </SelectTrigger>
       <SelectContent>
         {groups.length > 0 ? (
-          groups.map((group) => (
+          groups.map((group, index) => (
             <SelectGroup key={group.engine}>
-              <SelectLabel>{engineLabel(group.engine)}</SelectLabel>
+              {index > 0 && <SelectSeparator />}
+              <SelectLabel className="flex items-center gap-1.5 pl-2 text-foreground">
+                <EngineIcon engine={group.engine} className="h-4 w-4" />
+                <span>{engineLabel(group.engine)}</span>
+              </SelectLabel>
               {group.models.map((m) => (
                 <SelectItem
                   value={encodeEngineModel(group.engine, m)}
                   key={`${group.engine}:${m}`}
+                  className="text-muted-foreground data-[state=checked]:text-foreground"
                 >
                   {m}
                 </SelectItem>

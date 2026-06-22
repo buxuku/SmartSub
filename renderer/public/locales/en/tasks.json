@@ -39,6 +39,15 @@
     "off": "Off: engine defaults (keeps cross-segment coherence); long videos or silence may produce repeated or hallucinated lines.",
     "hint": "Turn on when subtitles loop or repeat heavily. Global setting; applies to both faster-whisper and whisper.cpp."
   },
+  "chinesePunctuation": {
+    "label": "Strip Chinese punctuation",
+    "inherit": "Follow global setting (currently: {{state}})",
+    "stateOn": "On",
+    "stateOff": "Off",
+    "on": "On",
+    "off": "Off",
+    "hint": "When translating into Chinese, replace Chinese punctuation (，。、？！ etc.) in the translation with spaces and trim trailing spaces for cleaner subtitles. Only affects the translation, not the source."
+  },
   "stage": {
     "extract": "Extract",
     "transcribe": "Transcribe",

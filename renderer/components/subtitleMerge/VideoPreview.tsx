@@ -11,6 +11,7 @@ import { Slider } from '@/components/ui/slider';
 import { Play, Pause } from 'lucide-react';
 import type { SubtitleStyle, VideoInfo } from '../../../types/subtitleMerge';
 import SubtitlePreviewOverlay from './SubtitlePreviewOverlay';
+import { LIBASS_SRT_PLAYRES_Y } from './utils/styleUtils';
 import { formatTime } from '../../hooks/useVideoPlayer';
 
 interface VideoPreviewProps {
@@ -63,15 +64,49 @@ export default function VideoPreview({
   videoInfo,
   style,
   subtitlePath = null,
-  sampleText = '这是字幕预览效果\nThis is subtitle preview',
+  sampleText = '字幕预览效果',
 }: VideoPreviewProps) {
   const { t } = useTranslation('subtitleMerge');
   const playerRef = useRef<ReactPlayer>(null);
+  const previewAreaRef = useRef<HTMLDivElement>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [cues, setCues] = useState<PreviewCue[]>([]);
+  // 预览框尺寸：按可视区宽高拟合最大 16:9 矩形，保证完整可见且不撑出滚动条
+  const [box, setBox] = useState<{ width: number; height: number }>({
+    width: 0,
+    height: 0,
+  });
+
+  // 预览盒宽高比：优先用真实视频比例（非 16:9 视频也能所见即所得），否则回退 16:9
+  const aspect =
+    videoInfo && videoInfo.width > 0 && videoInfo.height > 0
+      ? videoInfo.width / videoInfo.height
+      : 16 / 9;
+
+  // 监听预览区尺寸变化，重算最大可容纳的盒子（取按宽/按高撑满中较小者）
+  useEffect(() => {
+    const el = previewAreaRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const compute = () => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w <= 0 || h <= 0) return;
+      let width = w;
+      let height = w / aspect;
+      if (height > h) {
+        height = h;
+        width = h * aspect;
+      }
+      setBox({ width, height });
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [aspect]);
 
   // 选中字幕文件后解析真实条目（清除则回退样例文字）
   useEffect(() => {
@@ -136,45 +171,61 @@ export default function VideoPreview({
   };
 
   return (
-    <div className="space-y-2">
-      {/* 预览区域 - 16:9 */}
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      {/* 预览区域 - 自适应高度，保持 16:9 完整可见（不再因高度不足而出现滚动条） */}
       <div
-        className="relative w-full bg-black rounded-lg overflow-hidden"
-        style={{ paddingBottom: '56.25%' }} // 16:9 比例
+        ref={previewAreaRef}
+        className="flex min-h-0 flex-1 items-center justify-center overflow-hidden"
       >
-        <div className="absolute inset-0 flex items-center justify-center">
-          {videoPath ? (
-            <>
-              {/* 视频播放器 */}
-              <ReactPlayer
-                ref={playerRef}
-                url={`media://${encodeURIComponent(videoPath)}`}
-                width="100%"
-                height="100%"
-                playing={isPlaying}
-                controls={false}
-                onProgress={handleProgress}
-                onDuration={handleDuration}
-                progressInterval={100}
-                style={{ position: 'absolute', top: 0, left: 0 }}
-              />
+        <div
+          className="relative bg-black rounded-lg overflow-hidden"
+          style={
+            box.width > 0
+              ? { width: box.width, height: box.height }
+              : { width: '100%', aspectRatio: String(aspect) }
+          }
+        >
+          <div className="absolute inset-0 flex items-center justify-center">
+            {videoPath ? (
+              <>
+                {/* 视频播放器 */}
+                <ReactPlayer
+                  ref={playerRef}
+                  url={`media://${encodeURIComponent(videoPath)}`}
+                  width="100%"
+                  height="100%"
+                  playing={isPlaying}
+                  controls={false}
+                  onProgress={handleProgress}
+                  onDuration={handleDuration}
+                  progressInterval={100}
+                  style={{ position: 'absolute', top: 0, left: 0 }}
+                />
 
-              {/* CSS 模拟字幕叠加层（真实条目优先，未选字幕时显示样例） */}
-              {overlayText !== null && (
-                <SubtitlePreviewOverlay style={style} text={overlayText} />
-              )}
-            </>
-          ) : (
-            <div className="text-muted-foreground text-center">
-              <p className="text-sm">{t('selectVideoToPreview')}</p>
-            </div>
-          )}
+                {/* CSS 模拟字幕叠加层（真实条目优先，未选字幕时显示样例）。
+                  scale=盒高/333：让预览字号随预览框大小等比缩放，≈烧录后字号 */}
+                {overlayText !== null && (
+                  <SubtitlePreviewOverlay
+                    style={style}
+                    text={overlayText}
+                    scale={
+                      box.height > 0 ? box.height / LIBASS_SRT_PLAYRES_Y : 1
+                    }
+                  />
+                )}
+              </>
+            ) : (
+              <div className="text-muted-foreground text-center">
+                <p className="text-sm">{t('selectVideoToPreview')}</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* 播放控制 */}
       {videoPath && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-shrink-0 items-center gap-2">
           <Button
             variant="outline"
             size="icon"

@@ -12,6 +12,7 @@ import type {
   SubtitleInfo,
   MergeConfig,
   MergeOutputMode,
+  VideoQuality,
 } from '../../../../types/subtitleMerge';
 import {
   getDefaultStyle,
@@ -36,6 +37,7 @@ export interface UseSubtitleMergeReturn {
   // 输出状态
   outputPath: string | null;
   outputMode: MergeOutputMode;
+  videoQuality: VideoQuality;
 
   // 进度状态
   progress: MergeProgress;
@@ -60,6 +62,7 @@ export interface UseSubtitleMergeReturn {
   selectOutputPath: () => Promise<void>;
   setOutputPath: (path: string) => void;
   setOutputMode: (mode: MergeOutputMode) => void;
+  setVideoQuality: (quality: VideoQuality) => void;
 
   // 合并操作方法
   startMerge: () => Promise<void>;
@@ -126,6 +129,9 @@ export function useSubtitleMerge(
   const [outputPath, setOutputPathState] = useState<string | null>(null);
   const [outputMode, setOutputModeState] =
     useState<MergeOutputMode>('hardcode');
+  // 烧录画质，默认原画质（CRF18），尽量贴近源文件画质（issue #331）
+  const [videoQuality, setVideoQualityState] =
+    useState<VideoQuality>('original');
   // 供异步回调读取最新输出方式（生成默认路径时按模式定扩展名）
   const outputModeRef = useRef<MergeOutputMode>('hardcode');
   outputModeRef.current = outputMode;
@@ -388,6 +394,11 @@ export function useSubtitleMerge(
     setOutputPathState(path);
   }, []);
 
+  // 设置烧录画质（仅 hardcode 生效）
+  const setVideoQuality = useCallback((quality: VideoQuality) => {
+    setVideoQualityState(quality);
+  }, []);
+
   // 切换输出方式（联动输出扩展名；旧合成结果不再对应，复位状态）
   const setOutputMode = useCallback(
     (mode: MergeOutputMode) => {
@@ -418,6 +429,7 @@ export function useSubtitleMerge(
         outputPath,
         style,
         outputMode,
+        videoQuality,
       };
       const result = await window.ipc.invoke(
         'subtitleMerge:startMerge',
@@ -471,6 +483,7 @@ export function useSubtitleMerge(
     outputPath,
     style,
     outputMode,
+    videoQuality,
     onComplete,
     onError,
   ]);
@@ -519,6 +532,7 @@ export function useSubtitleMerge(
     // 输出状态
     outputPath,
     outputMode,
+    videoQuality,
 
     // 进度状态
     progress,
@@ -543,6 +557,7 @@ export function useSubtitleMerge(
     selectOutputPath,
     setOutputPath,
     setOutputMode,
+    setVideoQuality,
 
     // 合并操作方法
     startMerge,

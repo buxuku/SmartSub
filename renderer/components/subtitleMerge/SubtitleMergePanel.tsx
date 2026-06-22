@@ -54,6 +54,7 @@ export default function SubtitleMergePanel({
     // 输出状态
     outputPath,
     outputMode,
+    videoQuality,
 
     // 进度状态
     progress,
@@ -72,6 +73,7 @@ export default function SubtitleMergePanel({
     // 输出操作方法
     selectOutputPath,
     setOutputMode,
+    setVideoQuality,
 
     // 合并操作方法
     startMerge,
@@ -161,12 +163,12 @@ export default function SubtitleMergePanel({
 
         {/* 右侧：预览和导出 */}
         <div className="flex flex-col gap-3 min-h-0 overflow-hidden">
-          {/* 预览区域 */}
-          <Card className="flex flex-col min-h-0 overflow-hidden">
+          {/* 预览区域：flex-1 占据导出区之外的剩余高度，预览按该高度自适应不溢出 */}
+          <Card className="flex flex-1 flex-col min-h-0 overflow-hidden">
             <CardHeader className="flex-shrink-0 py-3 px-4">
               <CardTitle className="text-sm">{t('preview')}</CardTitle>
             </CardHeader>
-            <CardContent className="flex-1 min-h-0 pt-0 px-4 pb-4 overflow-auto">
+            <CardContent className="flex-1 min-h-0 pt-0 px-4 pb-4 overflow-hidden">
               <VideoPreview
                 videoPath={videoPath}
                 videoInfo={videoInfo}
@@ -184,12 +186,14 @@ export default function SubtitleMergePanel({
                 subtitlePath={subtitlePath}
                 outputPath={outputPath}
                 outputMode={outputMode}
+                videoQuality={videoQuality}
                 progress={progress}
                 status={status}
                 canMerge={canMerge}
                 isCancelling={isCancelling}
                 onSelectOutputPath={selectOutputPath}
                 onOutputModeChange={setOutputMode}
+                onVideoQualityChange={setVideoQuality}
                 onStartMerge={startMerge}
                 onCancelMerge={cancelMerge}
                 onOpenOutputFolder={openOutputFolder}

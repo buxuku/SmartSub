@@ -17,6 +17,7 @@ import type {
   VideoInfo,
   SubtitleAlignment,
 } from '../../types/subtitleMerge';
+import { VIDEO_QUALITY_CRF } from '../../types/subtitleMerge';
 
 // 设置 ffmpeg 路径
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
@@ -213,6 +214,130 @@ function pathNeedsSafeCopy(filePath: string): boolean {
   return /['\[\];,]/.test(filePath);
 }
 
+// 纯拉丁字体（不含 CJK 字形）。中文字幕若用这些字体烧录，libass 找不到字形会渲染成
+// 豆腐块/乱码（issue: mac 中文烧录乱码）。命中且字幕含 CJK 时回退到平台 CJK 字体。
+const LATIN_ONLY_FONTS = new Set([
+  'arial',
+  'helvetica',
+  'helvetica neue',
+  'georgia',
+  'times new roman',
+  'verdana',
+  'roboto',
+  'impact',
+  'tahoma',
+  'courier new',
+]);
+
+/** 文本是否包含 CJK（中日韩）字符 */
+function containsCJK(text: string): boolean {
+  return /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/.test(
+    text,
+  );
+}
+
+/** 选中字体是否为纯拉丁字体（无 CJK 字形） */
+function isLatinOnlyFont(fontName: string): boolean {
+  return LATIN_ONLY_FONTS.has((fontName || '').trim().toLowerCase());
+}
+
+/**
+ * macOS 上「确有字体文件」的常见 CJK 字体（按优先级）。
+ * 关键点：PingFang 在部分 macOS 上没有可被 fontconfig 索引的字体文件
+ * （仅 CoreText 可见），libass 解析「PingFang SC」会回退到 Helvetica → 中文渲染成乱码。
+ * 因此烧录前必须挑一个「文件确实存在」的 CJK 字体，按 family 名交给 libass。
+ * family 名取自 libass/fontconfig 对相应文件的实际解析结果（已实测）。
+ */
+const MAC_CJK_FONTS: Array<{ name: string; files: string[] }> = [
+  { name: 'PingFang SC', files: ['/System/Library/Fonts/PingFang.ttc'] },
+  {
+    name: 'Hiragino Sans GB',
+    files: ['/System/Library/Fonts/Hiragino Sans GB.ttc'],
+  },
+  {
+    name: 'Heiti SC',
+    files: [
+      '/System/Library/Fonts/STHeiti Medium.ttc',
+      '/System/Library/Fonts/STHeiti Light.ttc',
+    ],
+  },
+  {
+    name: 'Songti SC',
+    files: ['/System/Library/Fonts/Supplemental/Songti.ttc'],
+  },
+  {
+    name: 'Arial Unicode MS',
+    files: ['/System/Library/Fonts/Supplemental/Arial Unicode.ttf'],
+  },
+];
+
+let cachedMacCJKFont: string | null = null;
+
+/** macOS：返回第一个字体文件确实存在的 CJK 字体名（结果缓存） */
+function resolveMacCJKFont(): string {
+  if (cachedMacCJKFont) return cachedMacCJKFont;
+  const found = MAC_CJK_FONTS.find((f) =>
+    f.files.some((p) => {
+      try {
+        return fs.existsSync(p);
+      } catch {
+        return false;
+      }
+    }),
+  );
+  cachedMacCJKFont = found?.name ?? 'Arial Unicode MS';
+  return cachedMacCJKFont;
+}
+
+/** 该字体在 macOS 上是否为「文件存在」的已知 CJK 字体（可被 libass 正常解析） */
+function isMacResolvableCJKFont(fontName: string): boolean {
+  const norm = (fontName || '').trim().toLowerCase();
+  const matched = MAC_CJK_FONTS.find((f) => f.name.toLowerCase() === norm);
+  return Boolean(
+    matched &&
+      matched.files.some((p) => {
+        try {
+          return fs.existsSync(p);
+        } catch {
+          return false;
+        }
+      }),
+  );
+}
+
+/** 按运行平台返回一个稳定可用的 CJK 字体名 */
+function getPlatformCJKFont(): string {
+  switch (process.platform) {
+    case 'darwin':
+      return resolveMacCJKFont();
+    case 'win32':
+      return 'Microsoft YaHei';
+    default:
+      return 'Noto Sans CJK SC';
+  }
+}
+
+// 备注：曾尝试给 libass 传 fontsdir 兜底，但实测打包版 ffmpeg 的默认 fontconfig
+// 已能按 family 名解析系统 CJK 字体（含 Supplemental 目录），fontsdir 反而会触发
+// 扫描整目录的无害告警（如 Apple Color Emoji 元数据读取失败），故移除。
+
+/**
+ * 为「含 CJK 的字幕」决定最终烧录字体：
+ * - 不含 CJK：原样使用用户所选字体；
+ * - macOS：所选字体若不是「文件存在的已知 CJK 字体」（含用户默认 PingFang 在本机缺失的情况），
+ *   一律换成 resolveMacCJKFont() 解析出的可用 CJK 字体；
+ * - 其它平台：仅当所选为纯拉丁字体时回退到平台 CJK 字体。
+ */
+function resolveBurnFontName(chosenFont: string, hasCJK: boolean): string {
+  if (!hasCJK) return chosenFont;
+  if (process.platform === 'darwin') {
+    return isMacResolvableCJKFont(chosenFont)
+      ? chosenFont
+      : resolveMacCJKFont();
+  }
+  return isLatinOnlyFont(chosenFont) ? getPlatformCJKFont() : chosenFont;
+}
+
 /**
  * 获取视频信息
  */
@@ -255,6 +380,7 @@ export async function mergeSubtitleToVideo(
     outputPath,
     style,
     outputMode = 'hardcode',
+    videoQuality = 'original',
   } = config;
   const isSoftMux = outputMode === 'softmux';
 
@@ -336,20 +462,62 @@ export async function mergeSubtitleToVideo(
         '-y',
       ]);
     } else {
-      const forceStyle = buildForceStyle(style);
+      // 中文乱码兜底：字幕含 CJK 时，确保最终字体「文件确实存在且含 CJK 字形」。
+      // 典型坑：用户默认字体 PingFang 在部分 mac 上无字体文件，libass 会回退到 Helvetica
+      // 渲染成乱码（已实测）。这里换成本机存在的 CJK 字体（如 Hiragino Sans GB）。
+      let effectiveStyle = style;
+      try {
+        const subtitleSample = fs.readFileSync(subtitlePath, 'utf-8');
+        const hasCJK = containsCJK(subtitleSample);
+        const burnFont = resolveBurnFontName(style.fontName, hasCJK);
+        if (burnFont !== style.fontName) {
+          effectiveStyle = { ...style, fontName: burnFont };
+          logMessage(
+            `字幕含中文，但所选字体「${style.fontName}」在本机不可用/无 CJK 字形，已改用「${burnFont}」`,
+            'warning',
+          );
+        }
+      } catch (readErr) {
+        logMessage(`读取字幕用于字体检测失败（忽略）: ${readErr}`, 'warning');
+      }
+
+      const forceStyle = buildForceStyle(effectiveStyle);
       const escapedSubPath = escapeSubtitlePath(actualSubPath);
       const subtitlesFilter = `subtitles='${escapedSubPath}'${originalSize}:force_style='${forceStyle}'`;
       logMessage(`subtitles filter: ${subtitlesFilter}`, 'info');
-      command = ffmpeg(videoPath).videoFilters(subtitlesFilter).outputOptions([
-        '-c:a',
-        'copy', // 保持音频编码不变
-        '-y', // 覆盖输出文件
-      ]);
+      // 烧录必然重编码视频：显式指定 CRF 控制画质，避免沿用 libx264 默认(CRF23)
+      // 造成肉眼可见的压缩与体积骤减（issue #331）。音频仍直接复制不动。
+      const crf = VIDEO_QUALITY_CRF[videoQuality] ?? VIDEO_QUALITY_CRF.original;
+      logMessage(
+        `hardcode video quality: ${videoQuality} (crf=${crf})`,
+        'info',
+      );
+      command = ffmpeg(videoPath)
+        .videoFilters(subtitlesFilter)
+        .outputOptions([
+          '-crf',
+          String(crf), // 画质档位 → libx264 CRF
+          '-c:a',
+          'copy', // 保持音频编码不变
+          '-y', // 覆盖输出文件
+        ]);
     }
 
     command
       .on('start', (cmd) => {
         logMessage(`FFmpeg 命令: ${cmd}`, 'info');
+      })
+      // 从 ffmpeg 解析到的输入时长兜底总时长：不依赖 ffprobe（本应用未配置 ffprobe，
+      // getVideoInfo 在缺失 ffprobe 的环境会失败，导致 totalDurationSec=0、进度恒为 0%）。
+      .on('codecData', (data: { duration?: string }) => {
+        const parsed = timemarkToSeconds(data?.duration || '');
+        if (parsed > 0) {
+          totalDurationSec = parsed;
+          logMessage(
+            `codecData 输入时长: ${data.duration} (${parsed}s)`,
+            'info',
+          );
+        }
       })
       .on('progress', (progress) => {
         let percent = progress.percent;

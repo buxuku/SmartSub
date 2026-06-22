@@ -13,14 +13,17 @@ import {
 interface SubtitlePreviewOverlayProps {
   style: SubtitleStyle;
   text: string;
+  /** 预览盒缩放系数（盒高/333），用于让 CSS 模拟字号≈烧录后字号 */
+  scale?: number;
 }
 
 export default function SubtitlePreviewOverlay({
   style,
   text,
+  scale = 1,
 }: SubtitlePreviewOverlayProps) {
-  const containerStyle = getSubtitleContainerStyle(style, 0, 0);
-  const textStyle = subtitleStyleToCSS(style);
+  const containerStyle = getSubtitleContainerStyle(style, 0, 0, scale);
+  const textStyle = subtitleStyleToCSS(style, scale);
 
   return (
     <div className="absolute inset-0 pointer-events-none">

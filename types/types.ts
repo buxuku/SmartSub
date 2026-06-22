@@ -82,4 +82,6 @@ export interface IFormData {
   targetLanguage: string;
   translateRetryTimes: string;
   subtitleOutputFormat?: 'srt' | 'vtt' | 'ass' | 'lrc' | 'txt';
+  /** 中文标点去除（任务级三态）：inherit=跟随全局设置，on=强制开启，off=强制关闭。缺省 inherit。 */
+  chinesePunctuationMode?: 'inherit' | 'on' | 'off';
 }

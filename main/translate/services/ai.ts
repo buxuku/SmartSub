@@ -16,6 +16,23 @@ import {
 } from '../../helpers/taskContext';
 
 function getLanguageName(code: string): string {
+  // 中文目标须向 AI 明确简/繁，避免「中文」歧义导致译文简繁混杂（issue #332）。
+  // UI 仍显示「中文」，但提示词里替换为「简体中文」/「繁体中文」以稳定输出字形。
+  const normalized = (code || '').toLowerCase();
+  if (
+    normalized === 'zh' ||
+    normalized === 'zh-cn' ||
+    normalized === 'zh-hans'
+  ) {
+    return '简体中文';
+  }
+  if (
+    normalized === 'zh-hant' ||
+    normalized === 'zh-tw' ||
+    normalized === 'zh-hk'
+  ) {
+    return '繁体中文';
+  }
   const lang = supportedLanguage.find((l) => l.value === code);
   return lang?.name || code;
 }
