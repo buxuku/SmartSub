@@ -1,6 +1,7 @@
 {
   "translateControl": "Translation Control",
   "translationServices": "Translation Services",
+  "providerListTitle": "Providers",
   "configured": "Configured",
   "customProviders": "Custom Providers",
   "addCustomProvider": "Add custom service",

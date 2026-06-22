@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
   TooltipContent,
@@ -26,6 +25,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
+  Search,
   ScrollText,
   Settings,
   X,
@@ -38,6 +38,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ThemeToggle } from './ThemeToggle';
+import ActivityCenter from './ActivityCenter';
+import CommandPalette from './CommandPalette';
 import { cn, openUrl } from 'lib/utils';
 import { hasAnyModelAnyEngine } from 'lib/engineModels';
 import { useRouter } from 'next/router';
@@ -50,7 +52,7 @@ import OnboardingDialog from './onboarding/OnboardingDialog';
 import ShortcutsHelpDialog from './ShortcutsHelpDialog';
 import FaqDialog from './FaqDialog';
 import useLocalStorageState from 'hooks/useLocalStorageState';
-import { useHotkeys } from 'hooks/useHotkeys';
+import { useHotkeys, isMacPlatform } from 'hooks/useHotkeys';
 import { useRadixPointerEventsGuard } from 'hooks/useRadixPointerEventsGuard';
 import packageInfo from '../../package.json';
 import { deriveGpuDisplayState } from '@/components/settings/gpu/gpuDisplayState';
@@ -181,6 +183,10 @@ const Layout = ({ children }) => {
           : 'gpuModeCpuOnly',
     );
   const { asPath } = router;
+  // 顶栏「页面上下文」：由当前路由匹配到的导航项派生的章节名（chrome 面包屑，
+  // 与枢纽页 PageHeader 的内容大标题区分——前者是常驻外壳定位、后者是页面内容）
+  const activeNav = NAV_ITEMS.find((item) => item.isActive(asPath));
+  const currentSectionLabel = activeNav ? t(activeNav.labelKey) : '';
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newVersion, setNewVersion] = useState('');
   const [releaseNotes, setReleaseNotes] = useState('');
@@ -194,6 +200,9 @@ const Layout = ({ children }) => {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showFaq, setShowFaq] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  // SSR 默认 ⌘，挂载后按平台校正为 Ctrl（非 mac），避免水合不一致
+  const [modKey, setModKey] = useState('⌘');
   const [onboardingResumeStep, setOnboardingResumeStep] = useState<
     number | null
   >(null);
@@ -221,6 +230,10 @@ const Layout = ({ children }) => {
       // 失败终态由 update-status error 事件统一收尾
     });
   }, [t]);
+
+  useEffect(() => {
+    setModKey(isMacPlatform() ? '⌘' : 'Ctrl');
+  }, []);
 
   useEffect(() => {
     // 首次启动（无已装模型且无完成标记）自动打开新手引导
@@ -496,6 +509,11 @@ const Layout = ({ children }) => {
       combo: '?',
       handler: () => setShowShortcuts(true),
     },
+    {
+      combo: 'mod+k',
+      allowInInput: true,
+      handler: () => setShowCommandPalette(true),
+    },
   ]);
 
   /** 引导跳去配置页：记录暂停步骤，展示「继续引导」入口 */
@@ -539,11 +557,11 @@ const Layout = ({ children }) => {
     >
       <aside
         className={cn(
-          'inset-y fixed left-0 z-20 flex h-full flex-col border-r transition-[width] duration-200',
+          'inset-y fixed left-0 z-20 flex h-full flex-col bg-chrome transition-[width] duration-200',
           sidebarWidth,
         )}
       >
-        <div className="border-b p-2">
+        <div className="p-2">
           <Link
             href={`/${locale}/home`}
             aria-label="Home"
@@ -561,8 +579,15 @@ const Layout = ({ children }) => {
               priority
             />
             {sidebarExpanded && (
-              <span className="truncate text-sm font-semibold">
-                {t('brandName')}
+              <span className="flex min-w-0 items-baseline gap-1.5">
+                <span className="truncate text-sm font-semibold">
+                  {t('brandName')}
+                </span>
+                {t('brandName') !== 'SmartSub' && (
+                  <span className="truncate text-xs font-medium tracking-wide text-muted-foreground">
+                    SmartSub
+                  </span>
+                )}
               </span>
             )}
           </Link>
@@ -677,32 +702,25 @@ const Layout = ({ children }) => {
       </aside>
       {/* min-w-0：阻止 grid 子项被内容最小宽度撑开，避免侧边栏展开后出现页面级横向滚动条 */}
       <div className="flex min-w-0 flex-col h-screen">
-        <header className="flex-shrink-0 z-10 flex h-[57px] items-center gap-1 border-b bg-background px-4 overflow-hidden">
-          <h4 className="text-base font-semibold">
-            {t('headerTitle')}{' '}
-            <span className="text-xs text-muted-foreground ml-2">
-              <span className="font-mono">v{packageInfo.version}</span>
-              {updateAvailable && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Badge
-                        className="ml-2 cursor-pointer border-primary/40 bg-primary/10 px-1.5 py-0 text-[11px] font-medium text-primary hover:bg-primary/20"
-                        variant="outline"
-                        onClick={handleUpdateClick}
-                      >
-                        {t('newVersionBadge', { version: newVersion })}
-                      </Badge>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {t('newVersionAvailable')}: {newVersion}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
+        <header className="flex-shrink-0 z-10 flex h-[57px] items-center gap-1 bg-chrome px-4 overflow-hidden">
+          {currentSectionLabel && (
+            <span className="flex-shrink-0 truncate text-sm font-medium text-muted-foreground">
+              {currentSectionLabel}
             </span>
-          </h4>
-          <div className="ml-auto flex items-center gap-1">
+          )}
+          <button
+            type="button"
+            onClick={() => setShowCommandPalette(true)}
+            aria-label={t('cmd.open')}
+            className="mx-auto flex h-7 w-full max-w-sm items-center gap-2 rounded-md border bg-muted/40 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Search className="h-3.5 w-3.5 flex-shrink-0" />
+            <span className="truncate">{t('cmd.placeholder')}</span>
+            <kbd className="ml-auto flex-shrink-0 rounded border bg-background px-1.5 font-mono text-[10px] leading-relaxed text-muted-foreground">
+              {modKey}K
+            </kbd>
+          </button>
+          <div className="flex flex-shrink-0 items-center gap-1">
             {/* 加速状态指示器（加速=正向绿徽章，CPU=中性灯） */}
             {accelBadge && (
               <TooltipProvider>
@@ -765,6 +783,15 @@ const Layout = ({ children }) => {
                 </Tooltip>
               </TooltipProvider>
             )}
+            <ActivityCenter
+              locale={locale}
+              taskRunning={taskRunning}
+              download={downloadPill}
+              updateAvailable={updateAvailable}
+              version={packageInfo.version}
+              newVersion={newVersion}
+              onShowUpdate={handleUpdateClick}
+            />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -821,7 +848,11 @@ const Layout = ({ children }) => {
             </DropdownMenu>
           </div>
         </header>
-        <main className="flex-1 min-h-0 overflow-auto">{children}</main>
+        {/* 内容区上/左发丝线：仅勾勒 chrome↔画布的内 L 边（main 起于顶栏下方，
+            故顶栏与侧栏仍为无缝同色 chrome，不复现网格与转角十字）。/60 较旧硬线更柔。 */}
+        <main className="flex-1 min-h-0 overflow-auto border-l border-t border-border/60">
+          {children}
+        </main>
         <Toaster />
       </div>
 
@@ -867,6 +898,21 @@ const Layout = ({ children }) => {
         onOpenChange={handleOnboardingOpenChange}
         initialStep={onboardingResumeStep ?? 0}
         onPause={handleOnboardingPause}
+      />
+      <CommandPalette
+        open={showCommandPalette}
+        onOpenChange={setShowCommandPalette}
+        locale={locale}
+        onCheckUpdates={checkUpdatesManually}
+        onOpenLogs={() => setShowLogs(true)}
+        onOpenShortcuts={() => setShowShortcuts(true)}
+        onOpenFaq={() => setShowFaq(true)}
+        onOpenOnboarding={() => {
+          onboardingPausedRef.current = false;
+          setOnboardingResumeStep(null);
+          setShowOnboarding(true);
+        }}
+        onToggleSidebar={() => setSidebarExpanded(!sidebarExpanded)}
       />
     </div>
   );

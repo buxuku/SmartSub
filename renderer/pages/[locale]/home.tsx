@@ -37,6 +37,7 @@ import {
   TranslateIcon,
 } from '@/components/launchpad/TaskIcons';
 import WorkItemList from '@/components/launchpad/WorkItemList';
+import WorkItemRowsSkeleton from '@/components/launchpad/WorkItemRowsSkeleton';
 import { getWorkItemTarget } from 'lib/workItemUtils';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { useTranslation } from 'next-i18next';
@@ -120,6 +121,7 @@ export default function LaunchpadPage() {
   const [hasModels, setHasModels] = useState(true);
   const [hasProvider, setHasProvider] = useState(true);
   const [workItems, setWorkItems] = useState<WorkItem[]>([]);
+  const [recentLoading, setRecentLoading] = useState(true);
   const [dragCard, setDragCard] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState('');
@@ -141,6 +143,8 @@ export default function LaunchpadPage() {
         setWorkItems(items || []);
       } catch (error) {
         console.error('Failed to load launchpad data:', error);
+      } finally {
+        setRecentLoading(false);
       }
     };
     load();
@@ -368,7 +372,9 @@ export default function LaunchpadPage() {
               </Button>
             )}
           </div>
-          {workItems.length === 0 ? (
+          {recentLoading ? (
+            <WorkItemRowsSkeleton rows={3} />
+          ) : workItems.length === 0 ? (
             <EmptyState
               icon={History}
               title={t('noRecentTasks')}

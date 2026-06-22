@@ -176,6 +176,27 @@
     "aria": "有任务正在运行，点击查看最近任务",
     "label": "任务运行中"
   },
+  "activity": {
+    "aria": "活动与状态",
+    "runningTitle": "正在进行",
+    "downloadsTitle": "下载",
+    "recentTitle": "最近",
+    "view": "查看",
+    "viewAll": "查看全部",
+    "empty": "暂无进行中的活动"
+  },
+  "cmd": {
+    "open": "命令面板",
+    "placeholder": "搜索或跳转…",
+    "empty": "无匹配结果",
+    "groupNav": "跳转",
+    "groupRecent": "最近工程",
+    "groupActions": "动作",
+    "recentTasks": "最近任务",
+    "newGenerateTranslate": "新建：转写 + 翻译",
+    "newGenerate": "新建：转写字幕",
+    "newTranslate": "新建：翻译字幕"
+  },
   "downloadBusy": "已有下载任务进行中，请稍后再试",
   "downloadFailedToast": "下载失败：{{error}}",
   "downloadProxyHint": "疑似代理 / VPN 拦截了下载源。可尝试：切换下载源、在 VPN 中对下载域名启用规则 / 直连模式，或下载时临时关闭全局代理。",
@@ -185,6 +206,7 @@
     "groupGlobal": "全局",
     "groupTasks": "任务页",
     "groupEditor": "校对编辑器",
+    "commandPalette": "命令面板",
     "openSettings": "打开设置",
     "showShortcuts": "快捷键速查",
     "importFiles": "导入文件",

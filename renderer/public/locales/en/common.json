@@ -176,6 +176,27 @@
     "aria": "A task is running, click to view recent tasks",
     "label": "Task running"
   },
+  "activity": {
+    "aria": "Activity & status",
+    "runningTitle": "In progress",
+    "downloadsTitle": "Downloads",
+    "recentTitle": "Recent",
+    "view": "View",
+    "viewAll": "View all",
+    "empty": "No active work"
+  },
+  "cmd": {
+    "open": "Command palette",
+    "placeholder": "Search or jump to…",
+    "empty": "No results",
+    "groupNav": "Go to",
+    "groupRecent": "Recent projects",
+    "groupActions": "Actions",
+    "recentTasks": "Recent tasks",
+    "newGenerateTranslate": "New: transcribe + translate",
+    "newGenerate": "New: transcribe",
+    "newTranslate": "New: translate"
+  },
   "downloadBusy": "Another download is already in progress",
   "downloadFailedToast": "Download failed: {{error}}",
   "downloadProxyHint": "The download source may be blocked by a proxy/VPN. Try switching the download source, set your VPN to rule/direct mode for the download domains, or temporarily disable the global proxy while downloading.",
@@ -185,6 +206,7 @@
     "groupGlobal": "Global",
     "groupTasks": "Task page",
     "groupEditor": "Proofread editor",
+    "commandPalette": "Command palette",
     "openSettings": "Open settings",
     "showShortcuts": "Show shortcuts",
     "importFiles": "Import files",

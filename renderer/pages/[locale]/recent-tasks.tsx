@@ -14,6 +14,7 @@ import {
 import PageHeader from '@/components/PageHeader';
 import EmptyState from '@/components/EmptyState';
 import WorkItemList from '@/components/launchpad/WorkItemList';
+import WorkItemRowsSkeleton from '@/components/launchpad/WorkItemRowsSkeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -225,9 +226,7 @@ export default function RecentTasksPage() {
         )}
 
         {loading ? (
-          <p className="text-sm text-muted-foreground">
-            {t('allTasks.loading')}
-          </p>
+          <WorkItemRowsSkeleton rows={8} />
         ) : workItems.length === 0 ? (
           <EmptyState
             icon={History}
