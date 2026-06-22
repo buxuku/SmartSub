@@ -186,7 +186,7 @@ function RecommendedHero({
 }) {
   const desc = t(`modelDesc.${modelName}`, { defaultValue: '' });
   return (
-    <div className="rounded-xl border border-primary/30 bg-gradient-to-r from-primary/5 to-transparent p-4 flex items-center justify-between gap-4 flex-wrap">
+    <div className="rounded-lg border border-primary/30 bg-gradient-to-r from-primary/5 to-transparent p-4 flex items-center justify-between gap-4 flex-wrap">
       <div className="flex items-start gap-3 min-w-0">
         <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
           <Star className="h-5 w-5 text-primary" />
@@ -388,7 +388,7 @@ function ModelRow({
               </TooltipContent>
             </Tooltip>
           )}
-          <span className="text-xs text-muted-foreground tabular-nums">
+          <span className="font-mono text-xs text-muted-foreground tabular-nums">
             {model.size}
           </span>
         </div>
@@ -575,7 +575,7 @@ function Ct2ModelRow({
               <p>{t('qualityRatingTip')}</p>
             </TooltipContent>
           </Tooltip>
-          <span className="text-xs text-muted-foreground tabular-nums">
+          <span className="font-mono text-xs text-muted-foreground tabular-nums">
             {model.size}
           </span>
         </div>

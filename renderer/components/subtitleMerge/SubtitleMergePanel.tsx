@@ -138,9 +138,7 @@ export default function SubtitleMergePanel({
 
                 {/* 基础设置 */}
                 <div>
-                  <h3 className="text-xs font-medium mb-2 text-muted-foreground">
-                    {t('basicSettings')}
-                  </h3>
+                  <h3 className="label-caps mb-2">{t('basicSettings')}</h3>
                   <BasicStyleSettings
                     style={style}
                     onUpdateStyle={updateStyle}

@@ -1126,7 +1126,7 @@ const Settings = () => {
             <div className="flex items-center justify-between">
               <div>
                 <div className="font-medium">{t('common:headerTitle')}</div>
-                <div className="text-sm text-muted-foreground">
+                <div className="font-mono text-sm text-muted-foreground">
                   v{packageInfo.version}
                 </div>
               </div>

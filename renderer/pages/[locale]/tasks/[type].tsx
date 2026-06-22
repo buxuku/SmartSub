@@ -615,7 +615,7 @@ export default function TaskPage() {
 
       <div
         className={cn(
-          'relative flex min-h-0 flex-1 flex-col rounded-xl border p-3 overflow-hidden',
+          'relative flex min-h-0 flex-1 flex-col rounded-lg border p-3 overflow-hidden',
           isDragging && 'border-2 border-dashed border-primary bg-muted/50',
         )}
         onDrop={handleDrop}

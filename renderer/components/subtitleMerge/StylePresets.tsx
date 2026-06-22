@@ -23,7 +23,7 @@ export default function StylePresets({
 
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium">{t('presets')}</label>
+      <label className="label-caps">{t('presets')}</label>
       <div className="flex flex-wrap gap-2">
         {STYLE_PRESETS.map((preset) => (
           <Button

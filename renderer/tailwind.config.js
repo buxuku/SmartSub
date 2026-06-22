@@ -15,6 +15,33 @@ module.exports = {
       },
     },
     extend: {
+      fontFamily: {
+        // 零打包：仅系统字体栈，贴近 Inter 的中性观感，CJK 回退完善
+        sans: [
+          'system-ui',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"Segoe UI"',
+          'Roboto',
+          '"Helvetica Neue"',
+          'Arial',
+          '"PingFang SC"',
+          '"Hiragino Sans GB"',
+          '"Microsoft YaHei"',
+          'sans-serif',
+        ],
+        // 技术字段（时间码/路径/尺寸/Key/版本号）等宽栈：装有 JetBrains Mono 则命中
+        mono: [
+          'ui-monospace',
+          '"SF Mono"',
+          '"JetBrains Mono"',
+          '"Cascadia Code"',
+          'Menlo',
+          'Consolas',
+          '"Liberation Mono"',
+          'monospace',
+        ],
+      },
       colors: {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',

@@ -243,7 +243,7 @@ export default function RecentTasksPage() {
             }
           />
         ) : filteredItems.length === 0 ? (
-          <p className="rounded-xl border px-4 py-6 text-center text-sm text-muted-foreground">
+          <p className="rounded-lg border px-4 py-6 text-center text-sm text-muted-foreground">
             {t('allTasks.noMatch')}
           </p>
         ) : (

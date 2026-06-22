@@ -137,10 +137,10 @@ function NavItem({
       href={`/${locale}/${item.href}`}
       aria-label={label}
       className={cn(
-        'flex h-9 items-center gap-2.5 rounded-lg text-sm font-medium transition-colors',
+        'relative flex h-9 items-center gap-2.5 rounded-lg text-sm font-medium transition-colors',
         expanded ? 'px-2.5' : 'w-9 justify-center mx-auto',
         active
-          ? 'bg-muted text-foreground'
+          ? 'bg-primary/10 text-primary before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-r-full before:bg-primary'
           : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
       )}
     >
@@ -681,7 +681,7 @@ const Layout = ({ children }) => {
           <h4 className="text-base font-semibold">
             {t('headerTitle')}{' '}
             <span className="text-xs text-muted-foreground ml-2">
-              v{packageInfo.version}
+              <span className="font-mono">v{packageInfo.version}</span>
               {updateAvailable && (
                 <TooltipProvider>
                   <Tooltip>

@@ -555,9 +555,7 @@ const ProvidersTab: React.FC = () => {
         {/* 推荐卡：搜索时隐藏 */}
         {!trimmedQuery && (
           <div className="rounded-lg border bg-muted/40 px-3 py-2 space-y-1.5">
-            <div className="text-xs font-medium text-muted-foreground">
-              {t('recommendTitle')}
-            </div>
+            <div className="label-caps">{t('recommendTitle')}</div>
             {RECOMMEND_ROWS.map((row) => (
               <div
                 key={row.labelKey}
@@ -654,8 +652,8 @@ const ProvidersTab: React.FC = () => {
                   open={!collapsedGroups[section.key]}
                   onOpenChange={() => toggleGroupCollapsed(section.key)}
                 >
-                  <CollapsibleTrigger className="flex w-full items-center justify-between text-sm font-medium text-muted-foreground mt-4 mb-2 first:mt-0 hover:text-foreground">
-                    <span>{t(section.titleKey)}</span>
+                  <CollapsibleTrigger className="flex w-full items-center justify-between mt-4 mb-2 first:mt-0 text-muted-foreground hover:text-foreground">
+                    <span className="label-caps">{t(section.titleKey)}</span>
                     <ChevronDown
                       className={cn(
                         'h-4 w-4 transition-transform',

@@ -234,7 +234,7 @@ export default function LaunchpadPage() {
 
   return (
     <div className="h-full overflow-auto">
-      <div className="mx-auto max-w-4xl px-6 py-10 space-y-8">
+      <div className="mx-auto max-w-4xl px-6 py-10 space-y-6">
         <PageHeader title={t('title')} description={t('subtitle')} />
 
         {!hasModels && (
@@ -280,7 +280,7 @@ export default function LaunchpadPage() {
                 key={card.key}
                 href={href}
                 className={cn(
-                  'group relative overflow-hidden rounded-xl border bg-card p-4 transition-all hover:shadow-md hover:-translate-y-0.5',
+                  'group relative overflow-hidden rounded-lg border bg-card p-4 transition-all hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md',
                   dragCard === card.key &&
                     'border-2 border-dashed border-primary bg-muted/50',
                   block &&
@@ -320,7 +320,7 @@ export default function LaunchpadPage() {
                 )}
                 <div
                   className={cn(
-                    'mb-3 inline-flex h-11 w-11 items-center justify-center rounded-xl',
+                    'mb-3 inline-flex h-11 w-11 items-center justify-center rounded-lg',
                     card.chip,
                   )}
                 >

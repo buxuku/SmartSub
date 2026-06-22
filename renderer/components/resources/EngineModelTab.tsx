@@ -591,7 +591,7 @@ const EngineModelTab: React.FC = () => {
                   'flex items-start gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
                   'shrink-0 md:w-full',
                   active
-                    ? 'bg-primary/10 font-medium text-primary'
+                    ? 'bg-primary/10 font-medium text-primary ring-1 ring-inset ring-primary/20'
                     : 'text-foreground hover:bg-muted/60',
                 )}
               >
@@ -628,9 +628,9 @@ const EngineModelTab: React.FC = () => {
 
         {/* 右栏：选中引擎运行时 + 模型清单（独立纵向滚动） */}
         <div className="min-w-0 flex-1 space-y-4 overflow-y-auto pb-4 md:pl-1">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
             <div className="min-w-0">
-              <h2 className="text-base font-semibold">
+              <h2 className="text-lg font-semibold">
                 {engineName(selectedView)}
               </h2>
               {selectedView === 'sherpa' && (

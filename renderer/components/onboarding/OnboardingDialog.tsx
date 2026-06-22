@@ -73,7 +73,7 @@ function FlowNode({
     <div className="flex flex-col items-center text-center gap-1.5 w-[120px]">
       <div
         className={cn(
-          'flex h-11 w-11 items-center justify-center rounded-xl',
+          'flex h-11 w-11 items-center justify-center rounded-lg',
           highlight ? 'bg-primary/10 text-primary' : 'bg-muted text-foreground',
         )}
       >

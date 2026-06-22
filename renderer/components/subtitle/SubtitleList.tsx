@@ -178,7 +178,7 @@ const SubtitleRow = memo(function SubtitleRow({
         {isFailed && (
           <AlertTriangle className="h-3 w-3 flex-shrink-0 text-destructive" />
         )}
-        <span className="flex-shrink-0 text-[10px] tabular-nums text-muted-foreground">
+        <span className="flex-shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
           #{subtitle.id} {compactTime(subtitle.startTimeInSeconds)}→
           {compactTime(subtitle.endTimeInSeconds)}
         </span>

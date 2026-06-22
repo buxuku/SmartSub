@@ -307,7 +307,7 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
               value={value}
               onChange={(e) => onChange(field.key, e.target.value)}
               placeholder={fieldPlaceholder(field.placeholder)}
-              className="mr-2"
+              className="mr-2 font-mono"
               ref={field.key === 'apiKey' ? apiKeyRef : null}
               onBlur={field.key === 'apiKey' ? handleApiKeyBlur : undefined}
             />
@@ -370,6 +370,11 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
             value={value || ''}
             onChange={(e) => onChange(field.key, e.target.value)}
             placeholder={fieldPlaceholder(field.placeholder)}
+            className={
+              /url|endpoint|host|base|key|token|secret/i.test(field.key)
+                ? 'font-mono'
+                : undefined
+            }
           />
         );
     }

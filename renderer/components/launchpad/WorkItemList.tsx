@@ -44,7 +44,7 @@ export default function WorkItemList({
   showUpdatedAt = true,
 }: WorkItemListProps) {
   return (
-    <div className="rounded-xl border divide-y">
+    <div className="rounded-lg border divide-y">
       {items.map((item) => {
         const status = getWorkItemStatus(item);
         const editing = editingId === item.id;

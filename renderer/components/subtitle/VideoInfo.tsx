@@ -33,19 +33,24 @@ const VideoInfo: React.FC<VideoInfoProps> = ({
           </span>
         </div>
         <div>
-          {t('duration')}: {formatTime(duration)}
+          {t('duration')}:{' '}
+          <span className="font-mono tabular-nums">{formatTime(duration)}</span>
         </div>
       </div>
       <Separator className="my-2" />
       <div className="text-sm mb-1">{t('subtitleStats')}</div>
       <div className="grid grid-cols-3 gap-1 text-xs">
         <div>
-          {t('total')}: {subtitleStats.total}
+          {t('total')}:{' '}
+          <span className="font-mono tabular-nums">{subtitleStats.total}</span>
         </div>
         {shouldShowTranslation && (
           <div>
-            {t('completionRate')}: {subtitleStats.withTranslation}/
-            {subtitleStats.total} ({subtitleStats.percent}%)
+            {t('completionRate')}:{' '}
+            <span className="font-mono tabular-nums">
+              {subtitleStats.withTranslation}/{subtitleStats.total} (
+              {subtitleStats.percent}%)
+            </span>
           </div>
         )}
       </div>
