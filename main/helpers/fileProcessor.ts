@@ -251,7 +251,7 @@ export async function processFile(
         sourceLanguage,
         targetLanguage,
         model,
-        translateProvider: provider.name,
+        translateProvider: provider?.name || '',
       };
 
       const sourceSrtFileName = getSrtFileName(
