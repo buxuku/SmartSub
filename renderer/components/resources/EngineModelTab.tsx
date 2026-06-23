@@ -107,6 +107,13 @@ const EngineModelTab: React.FC = () => {
   const [whisperCommand, setWhisperCommand] = useState('');
   const [localCliEnabled, setLocalCliEnabled] = useState(false);
   const [platform, setPlatform] = useState('');
+  // 运行时变体：cpu=默认包（所有平台），cuda=Full GPU 包（仅 Win/Linux，捆绑 cuBLAS/cuDNN）。
+  // 下载前的选择记忆在本地；已安装变体以引擎状态(manifest)为准。
+  const [selectedVariant, setSelectedVariant] = useLocalStorageState<
+    'cpu' | 'cuda'
+  >('fasterWhisperVariant', 'cpu', (v) => v === 'cpu' || v === 'cuda');
+  // 是否检测到可用的 NVIDIA(CUDA) 显卡（用于 GPU 选项的「推荐」标记/提示）。
+  const [nvidiaSupported, setNvidiaSupported] = useState(false);
   const [downloadProgress, setDownloadProgress] =
     useState<PyEngineDownloadProgress | null>(null);
   const [showUninstallConfirm, setShowUninstallConfirm] = useState(false);
@@ -149,6 +156,7 @@ const EngineModelTab: React.FC = () => {
     void Promise.resolve(window?.ipc?.invoke('get-gpu-environment'))
       .then((env) => {
         if (env?.platform) setPlatform(env.platform);
+        setNvidiaSupported(!!env?.nvidia?.gpuSupport?.supported);
       })
       .catch(() => {});
     try {
@@ -279,9 +287,23 @@ const EngineModelTab: React.FC = () => {
     }
   };
 
-  const handleStartDownload = async () => {
+  // 当前已安装变体（manifest 来源）；未安装/老安装按 cpu 兜底。
+  const installedVariantOf = (): 'cpu' | 'cuda' =>
+    engineStatuses.fasterWhisper?.variant === 'cuda' ? 'cuda' : 'cpu';
+  const isGpuVariantPlatform = () =>
+    platform === 'win32' || platform === 'linux';
+
+  /**
+   * 统一的运行时下载入口。coupleDevice=true（仅在「选择/切换变体」时）联动计算设备：
+   * GPU 包→auto；CPU 包→cpu（CPU 包无 CUDA 运行库，置 cpu 可规避 cublas 加载报错）。
+   */
+  const startEngineDownload = async (
+    variant: 'cpu' | 'cuda',
+    coupleDevice = false,
+  ) => {
     const result = await window?.ipc?.invoke('start-py-engine-download', {
       source: binarySource,
+      variant,
     });
     if (!result?.success) {
       toast.error(
@@ -289,7 +311,30 @@ const EngineModelTab: React.FC = () => {
           ? t('engines.fasterWhisper.engineBusy')
           : result?.error || 'Failed to start download',
       );
+      return;
     }
+    if (coupleDevice) {
+      const nextDevice: 'auto' | 'cpu' = variant === 'cuda' ? 'auto' : 'cpu';
+      setDevice(nextDevice);
+      try {
+        await window?.ipc?.invoke('set-faster-whisper-settings', {
+          device: nextDevice,
+        });
+      } catch {
+        // 设备偏好写入失败不影响下载本身
+      }
+    }
+  };
+
+  const handleStartDownload = () =>
+    startEngineDownload(isGpuVariantPlatform() ? selectedVariant : 'cpu', true);
+
+  // 修复/升级沿用已安装变体；切换变体则显式下载目标变体并联动设备。
+  const handleRepair = () => startEngineDownload(installedVariantOf());
+
+  const handleSwitchVariant = (target: 'cpu' | 'cuda') => {
+    setSelectedVariant(target);
+    return startEngineDownload(target, true);
   };
 
   const handleCheckUpdate = async () => {
@@ -297,6 +342,7 @@ const EngineModelTab: React.FC = () => {
     try {
       const result = await window?.ipc?.invoke('check-py-engine-update', {
         source: binarySource,
+        variant: installedVariantOf(),
       });
       if (!result?.success) {
         toast.error(t('engines.fasterWhisper.checkFailed'));
@@ -318,18 +364,7 @@ const EngineModelTab: React.FC = () => {
     }
   };
 
-  const handleUpgrade = async () => {
-    const result = await window?.ipc?.invoke('start-py-engine-download', {
-      source: binarySource,
-    });
-    if (!result?.success) {
-      toast.error(
-        result?.error === 'engine_busy'
-          ? t('engines.fasterWhisper.engineBusy')
-          : result?.error || 'Failed to start upgrade',
-      );
-    }
-  };
+  const handleUpgrade = () => startEngineDownload(installedVariantOf());
 
   const handleUninstall = async () => {
     setShowUninstallConfirm(false);
@@ -358,6 +393,12 @@ const EngineModelTab: React.FC = () => {
 
   const fasterStatus = engineStatuses.fasterWhisper;
   const localCliStatus = engineStatuses.localCli;
+  const installedVariant: 'cpu' | 'cuda' | undefined = fasterStatus?.variant;
+  // GPU 包仅 Win/Linux 提供；其余平台强制 cpu。
+  const gpuVariantAvailable = platform === 'win32' || platform === 'linux';
+  const effectiveSelectedVariant: 'cpu' | 'cuda' = gpuVariantAvailable
+    ? selectedVariant
+    : 'cpu';
   const isDownloading =
     downloadProgress?.status === 'downloading' ||
     downloadProgress?.status === 'extracting' ||
@@ -375,8 +416,14 @@ const EngineModelTab: React.FC = () => {
     if (verifying && (fasterInstalled || fasterBroken)) setVerifying(false);
   }, [verifying, fasterInstalled, fasterBroken]);
 
+  // 设备选项随已安装变体收敛：CPU 包不暴露 cuda（用不了，避免误选后 cublas 报错）；
+  // GPU 包(cuda) 才提供 auto/cpu/cuda；macOS 恒无 cuda。
   const deviceOptions =
-    platform === 'darwin' ? ['auto', 'cpu'] : ['auto', 'cpu', 'cuda'];
+    platform === 'darwin'
+      ? ['auto', 'cpu']
+      : installedVariant === 'cuda'
+        ? ['auto', 'cpu', 'cuda']
+        : ['auto', 'cpu'];
 
   // sherpa 展示组三族就绪态（共用内置运行库，差异在模型）；供合并面板、左栏状态点、徽标聚合。
   const sherpaFamilies = SHERPA_FAMILIES.map((engine) => {
@@ -514,7 +561,14 @@ const EngineModelTab: React.FC = () => {
     onChange: (s) => handleBinarySourceChange(s as DownloadSource),
     label: t('engines.fasterWhisper.downloadSource'),
     confirmLabel: commonT('startDownload'),
-    getCopyUrl: (s) => resolveModelDownloadUrl('pyEngine', s),
+    // 复制链接反映目标变体：已安装时取已装变体（升级气泡），未安装时取当前选择（安装气泡）。
+    getCopyUrl: (s) =>
+      resolveModelDownloadUrl(
+        'pyEngine',
+        s,
+        undefined,
+        fasterInstalled ? installedVariant || 'cpu' : effectiveSelectedVariant,
+      ),
   };
 
   const fasterWhisperPanelProps = {
@@ -532,8 +586,14 @@ const EngineModelTab: React.FC = () => {
     deviceOptions,
     updateInfo,
     binarySourceConfig,
+    selectedVariant: effectiveSelectedVariant,
+    onSelectedVariantChange: (v: 'cpu' | 'cuda') => setSelectedVariant(v),
+    installedVariant,
+    gpuVariantAvailable,
+    nvidiaSupported,
     onDownload: handleStartDownload,
-    onRepair: handleStartDownload,
+    onRepair: handleRepair,
+    onSwitchVariant: handleSwitchVariant,
     onUninstall: () => setShowUninstallConfirm(true),
     onCheckUpdate: handleCheckUpdate,
     onUpgrade: handleUpgrade,

@@ -25,9 +25,12 @@ import {
   Trash2,
   RefreshCw,
   ArrowUpCircle,
+  ArrowLeftRight,
   SlidersHorizontal,
   ChevronDown,
   Info,
+  Cpu,
+  Zap,
 } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { formatSize } from '@/components/settings/gpu/gpuUtils';
@@ -41,8 +44,12 @@ import type {
 } from '../../../../../types/engine';
 
 // 自包含运行时（内嵌 Python 解释器 + site-packages + main.py）的近似下载体积；
-// 仅用于下载按钮提示，真实字节数以下载进度 total 为准。
-const PY_ENGINE_SIZE = '210MB';
+// 仅用于下载按钮/选择项提示，真实字节数以下载进度 total 为准。
+// CPU = 默认包；GPU = Full GPU(CUDA12) 包，额外捆绑 cuBLAS/cuDNN，体积大很多。
+const PY_ENGINE_SIZE_CPU = '210MB';
+const PY_ENGINE_SIZE_GPU = '1.4GB';
+const variantSize = (v: 'cpu' | 'cuda') =>
+  v === 'cuda' ? PY_ENGINE_SIZE_GPU : PY_ENGINE_SIZE_CPU;
 
 const COMPUTE_TYPE_OPTIONS = [
   'auto',
@@ -68,6 +75,17 @@ interface FasterWhisperPanelProps {
   updateInfo: PyEngineUpdateInfo | null;
   /** 引擎二进制下载源配置：点击下载/升级时于气泡内选择。 */
   binarySourceConfig: DownloadSourceConfig;
+  /** 安装前选择的运行时变体（cpu 默认包 / cuda Full GPU 包）。 */
+  selectedVariant: 'cpu' | 'cuda';
+  onSelectedVariantChange: (v: 'cpu' | 'cuda') => void;
+  /** 已安装变体（manifest 来源），未安装为 undefined。 */
+  installedVariant?: 'cpu' | 'cuda';
+  /** 当前平台是否提供 GPU 包（仅 Win/Linux）。 */
+  gpuVariantAvailable: boolean;
+  /** 是否检测到可用的 NVIDIA(CUDA) 显卡。 */
+  nvidiaSupported: boolean;
+  /** 已安装情况下切换到另一变体（触发下载目标变体）。 */
+  onSwitchVariant: (target: 'cpu' | 'cuda') => void;
   onDownload: () => void;
   onRepair: () => void;
   onUninstall: () => void;
@@ -92,6 +110,12 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
   deviceOptions,
   updateInfo,
   binarySourceConfig,
+  selectedVariant,
+  onSelectedVariantChange,
+  installedVariant,
+  gpuVariantAvailable,
+  nvidiaSupported,
+  onSwitchVariant,
   onDownload,
   onRepair,
   onUninstall,
@@ -158,6 +182,68 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
         <p className="text-sm text-destructive">{status.message}</p>
       )}
 
+      {/* 安装前：CPU / GPU 变体选择（GPU 包仅 Win/Linux 提供）。 */}
+      {!fasterInstalled &&
+        !isDownloading &&
+        !fasterBroken &&
+        !showVerifying &&
+        gpuVariantAvailable && (
+          <div className="space-y-2">
+            <span className="text-sm font-medium">
+              {t('engines.fasterWhisper.variant.label')}
+            </span>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {(['cpu', 'cuda'] as const).map((v) => {
+                const active = selectedVariant === v;
+                const isGpu = v === 'cuda';
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => onSelectedVariantChange(v)}
+                    className={cn(
+                      'flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors',
+                      active
+                        ? 'border-primary bg-primary/5 ring-1 ring-inset ring-primary/30'
+                        : 'border-border hover:bg-muted/50',
+                    )}
+                  >
+                    <span className="flex w-full items-center gap-1.5">
+                      {isGpu ? (
+                        <Zap className="h-3.5 w-3.5 shrink-0" />
+                      ) : (
+                        <Cpu className="h-3.5 w-3.5 shrink-0" />
+                      )}
+                      <span className="text-sm font-medium">
+                        {t(`engines.fasterWhisper.variant.${v}`)}
+                      </span>
+                      {isGpu && nvidiaSupported && (
+                        <Badge
+                          variant="outline"
+                          className="border-success/40 px-1 py-0 text-[10px] leading-tight text-success"
+                        >
+                          {t('engines.fasterWhisper.variant.recommended')}
+                        </Badge>
+                      )}
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        ~{variantSize(v)}
+                      </span>
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {t(`engines.fasterWhisper.variant.${v}Desc`)}
+                    </span>
+                    {isGpu && !nvidiaSupported && (
+                      <span className="text-xs text-amber-600 dark:text-amber-500">
+                        {t('engines.fasterWhisper.variant.noNvidia')}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
       <div className="flex flex-wrap items-center gap-2">
         {!fasterInstalled &&
           !isDownloading &&
@@ -175,7 +261,9 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
                 onClick={() => setInstallPickerOpen(true)}
               >
                 <Download className="h-3.5 w-3.5" />
-                {t('engines.fasterWhisper.download', { size: PY_ENGINE_SIZE })}
+                {t('engines.fasterWhisper.download', {
+                  size: variantSize(selectedVariant),
+                })}
               </Button>
             </DownloadSourcePopover>
           )}
@@ -255,6 +343,49 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
             </span>
           )}
           <span className="ml-auto">{uninstallButton}</span>
+        </div>
+      )}
+
+      {/* 已安装：展示当前运行时变体并提供切换（GPU 仅 Win/Linux 可切）。 */}
+      {fasterInstalled && !isDownloading && !showVerifying && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            {installedVariant === 'cuda' ? (
+              <Zap className="h-3.5 w-3.5" />
+            ) : (
+              <Cpu className="h-3.5 w-3.5" />
+            )}
+            {t('engines.fasterWhisper.variant.installedLabel')}
+          </span>
+          <Badge
+            variant="outline"
+            className={cn(
+              installedVariant === 'cuda'
+                ? 'border-primary/40 text-primary'
+                : 'text-muted-foreground',
+            )}
+          >
+            {t(`engines.fasterWhisper.variant.${installedVariant ?? 'cpu'}`)}
+          </Badge>
+          {(() => {
+            const target = installedVariant === 'cuda' ? 'cpu' : 'cuda';
+            // 切到 GPU 仅在提供 GPU 包的平台展示；切到 CPU 始终可用。
+            if (target === 'cuda' && !gpuVariantAvailable) return null;
+            return (
+              <Button
+                size="sm"
+                variant="outline"
+                className="ml-auto gap-1.5"
+                disabled={taskBusy}
+                onClick={() => onSwitchVariant(target)}
+              >
+                <ArrowLeftRight className="h-3.5 w-3.5" />
+                {t('engines.fasterWhisper.variant.switchTo', {
+                  target: t(`engines.fasterWhisper.variant.${target}`),
+                })}
+              </Button>
+            );
+          })()}
         </div>
       )}
 

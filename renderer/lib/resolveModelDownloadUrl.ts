@@ -11,12 +11,15 @@ export async function resolveModelDownloadUrl(
   scope: ModelUrlScope,
   source: string,
   modelId?: string,
+  /** pyEngine 域专用：cpu=默认包，cuda=Full GPU 包（影响复制的资产直链）。 */
+  variant?: 'cpu' | 'cuda',
 ): Promise<string | null> {
   try {
     const r = await window?.ipc?.invoke('resolveModelDownloadUrl', {
       scope,
       modelId,
       source,
+      variant,
     });
     return r?.success && r.url ? (r.url as string) : null;
   } catch {

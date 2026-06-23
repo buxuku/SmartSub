@@ -55,6 +55,17 @@
       "computeTypeOptions": {
         "auto": "自动（推荐）"
       },
+      "variant": {
+        "label": "运行时类型",
+        "cpu": "CPU 版",
+        "cuda": "GPU 版（NVIDIA CUDA）",
+        "cpuDesc": "通用，所有电脑可用，体积小",
+        "cudaDesc": "NVIDIA 显卡加速，内置 CUDA 运行库（cuBLAS/cuDNN），体积较大",
+        "recommended": "推荐",
+        "noNvidia": "未检测到 NVIDIA 显卡，选择后可能无法启用 GPU 加速",
+        "installedLabel": "当前运行时",
+        "switchTo": "切换到 {{target}}"
+      },
       "downloadConfirm": "将下载 faster-whisper 引擎运行时（约 170MB），是否继续？",
       "installedVersion": "已安装 v{{version}}",
       "checkUpdate": "检查更新",
