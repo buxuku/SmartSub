@@ -10,7 +10,12 @@ import {
 } from './pythonRuntime';
 import { getEngineDir } from './pythonRuntime/paths';
 import type { TranscriptionEngine } from '../../types/engine';
-import type { PyEngineDownloadSource, PyEngineId } from '../../types/engine';
+import type {
+  PyEngineDownloadSource,
+  PyEngineId,
+  PyEngineVariant,
+} from '../../types/engine';
+import { normalizePyEngineVariant } from './pythonRuntime/paths';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -62,7 +67,12 @@ export function registerEngineIpcHandlers(): void {
       {
         source,
         engineId,
-      }: { source: PyEngineDownloadSource; engineId?: PyEngineId },
+        variant,
+      }: {
+        source: PyEngineDownloadSource;
+        engineId?: PyEngineId;
+        variant?: PyEngineVariant;
+      },
     ) => {
       try {
         // 运行中禁止安装/升级：避免替换 current/ 时的 Windows 文件锁与转写中断。
@@ -73,9 +83,12 @@ export function registerEngineIpcHandlers(): void {
           coerceEngineId(engineId),
           mainWindow || undefined,
         );
-        downloader.download(source).catch((error) => {
-          logMessage(`Py-engine download failed: ${error}`, 'error');
-        });
+        // 不支持 cuda 的平台（macOS）会被 normalize 收敛为 cpu，避免下载不存在的产物。
+        downloader
+          .download(source, normalizePyEngineVariant(variant))
+          .catch((error) => {
+            logMessage(`Py-engine download failed: ${error}`, 'error');
+          });
         return { success: true, started: true };
       } catch (error) {
         logMessage(`Error starting py-engine download: ${error}`, 'error');
@@ -91,13 +104,21 @@ export function registerEngineIpcHandlers(): void {
       {
         source,
         engineId,
-      }: { source: PyEngineDownloadSource; engineId?: PyEngineId },
+        variant,
+      }: {
+        source: PyEngineDownloadSource;
+        engineId?: PyEngineId;
+        variant?: PyEngineVariant;
+      },
     ) => {
       try {
         const info = await getPyEngineDownloader(
           coerceEngineId(engineId),
           mainWindow || undefined,
-        ).checkUpdate(source);
+        ).checkUpdate(
+          source,
+          variant ? normalizePyEngineVariant(variant) : undefined,
+        );
         return { success: true, info };
       } catch (error) {
         logMessage(`Error checking py-engine update: ${error}`, 'error');

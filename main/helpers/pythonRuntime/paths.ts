@@ -1,7 +1,11 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
-import type { PyEngineManifest, PyEngineId } from '../../../types/engine';
+import type {
+  PyEngineManifest,
+  PyEngineId,
+  PyEngineVariant,
+} from '../../../types/engine';
 import { resolveReleaseBaseUrl } from '../download/sources';
 
 /** 独立发布仓库：https://github.com/buxuku/smartsub-py-engine */
@@ -17,6 +21,23 @@ export function getPyEngineArtifactSuffix(): string {
   if (process.platform === 'win32') return 'windows-x64';
   if (process.platform === 'linux') return 'linux-x64';
   throw new Error(`Unsupported platform: ${process.platform}`);
+}
+
+/**
+ * Full GPU(CUDA12) 变体仅在 windows-x64 / linux-x64 发布（引擎仓 release.yml 的 gpu:true 平台）。
+ * macOS 无 NVIDIA CUDA，恒为 cpu 包。
+ */
+export function isPyEngineVariantSupported(variant: PyEngineVariant): boolean {
+  if (variant === 'cpu') return true;
+  return process.platform === 'win32' || process.platform === 'linux';
+}
+
+/** 规整变体：在不支持 cuda 的平台上把 'cuda' 收敛为 'cpu'，其余原样返回。 */
+export function normalizePyEngineVariant(
+  variant: PyEngineVariant | undefined | null,
+): PyEngineVariant {
+  const v: PyEngineVariant = variant === 'cuda' ? 'cuda' : 'cpu';
+  return isPyEngineVariantSupported(v) ? v : 'cpu';
 }
 
 /** GitCode 镜像 owner 与 GitHub 不同（buxuku1），repo 名相同。 */
@@ -132,17 +153,31 @@ export function writeEngineManifest(
   );
 }
 
-/** 运行时产物名：smartsub-faster-whisper-runtime-<suffix>.tar.gz（与引擎仓 release.yml 一致）。 */
+/** 已安装变体：读本地 manifest.variant，缺失（老安装/未装）按 'cpu' 兜底。 */
+export function getInstalledVariant(
+  engineId: PyEngineId = DEFAULT_ENGINE_ID,
+): PyEngineVariant {
+  return normalizePyEngineVariant(readEngineManifest(engineId)?.variant);
+}
+
+/**
+ * 运行时产物名：smartsub-faster-whisper-runtime-<suffix>[-cuda].tar.gz（与引擎仓 release.yml 一致）。
+ * cpu 变体不带后缀（即原产物名，保证向后兼容）；cuda 变体追加 -cuda。
+ */
 export function getEngineArtifactName(
   engineId: PyEngineId = DEFAULT_ENGINE_ID,
+  variant: PyEngineVariant = 'cpu',
 ): string {
-  return `smartsub-${engineId}-runtime-${getPyEngineArtifactSuffix()}.tar.gz`;
+  const variantSuffix =
+    normalizePyEngineVariant(variant) === 'cuda' ? '-cuda' : '';
+  return `smartsub-${engineId}-runtime-${getPyEngineArtifactSuffix()}${variantSuffix}.tar.gz`;
 }
 
 export function getEngineDownloadUrl(
   source: 'github' | 'ghproxy' | 'gitcode',
   engineId: PyEngineId = DEFAULT_ENGINE_ID,
+  variant: PyEngineVariant = 'cpu',
   tag: string = PY_ENGINE_TAG,
 ): string {
-  return `${getPyEngineReleaseBaseUrl(source, tag)}/${getEngineArtifactName(engineId)}`;
+  return `${getPyEngineReleaseBaseUrl(source, tag)}/${getEngineArtifactName(engineId, variant)}`;
 }

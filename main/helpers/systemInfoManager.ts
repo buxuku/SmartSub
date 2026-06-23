@@ -15,9 +15,10 @@ import {
   isRuntimeInstalled,
   readEngineManifest,
   getEngineDownloadUrl,
+  normalizePyEngineVariant,
 } from './pythonRuntime/paths';
 import { getHfHost, getModelScopeBase } from './config/downloadConfig';
-import type { EngineStatus } from '../../types/engine';
+import type { EngineStatus, PyEngineVariant } from '../../types/engine';
 import { getModelDownloader } from './modelDownloader';
 import {
   getCt2ProgressKey,
@@ -393,10 +394,12 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
         scope,
         modelId,
         source,
+        variant,
       }: {
         scope: 'funasr' | 'qwen' | 'firered' | 'pyEngine';
         modelId?: string;
         source: string;
+        variant?: PyEngineVariant;
       },
     ): Promise<{ success: boolean; url?: string; error?: string }> => {
       try {
@@ -442,7 +445,14 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
         if (scope === 'pyEngine') {
           const s =
             source === 'github' || source === 'gitcode' ? source : 'ghproxy';
-          return { success: true, url: getEngineDownloadUrl(s) };
+          return {
+            success: true,
+            url: getEngineDownloadUrl(
+              s,
+              'faster-whisper',
+              normalizePyEngineVariant(variant),
+            ),
+          };
         }
         return { success: false, error: 'unknownScope' };
       } catch (error) {
