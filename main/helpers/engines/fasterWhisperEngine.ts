@@ -8,7 +8,11 @@ import {
 import { formatSrtContent } from '../fileUtils';
 import { logMessage, store } from '../storeManager';
 import { getPythonRuntimeManager } from '../pythonRuntime';
-import { getTaskContext, TaskCancelledError } from '../taskContext';
+import {
+  getTaskContext,
+  isTaskCancelledError,
+  TaskCancelledError,
+} from '../taskContext';
 import { toFasterWhisperModel } from './modelMap';
 import {
   getNumericSetting,
@@ -17,6 +21,31 @@ import {
   getFasterWhisperAntiRepetitionParams,
 } from './transcribeShared';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
+
+/**
+ * 判定是否为 CUDA 运行库（cuBLAS/cuDNN/cudart）缺失或无法加载类错误。
+ * 典型：CTranslate2 抛 "Library cublas64_12.dll is not found or cannot be loaded"。
+ */
+function isCudaRuntimeError(error: unknown): boolean {
+  const msg = (
+    error instanceof Error ? error.message : String(error ?? '')
+  ).toLowerCase();
+  if (!msg) return false;
+  return (
+    msg.includes('cublas') ||
+    msg.includes('cudnn') ||
+    msg.includes('cudart') ||
+    msg.includes('cuda')
+  );
+}
+
+/**
+ * CUDA 运行库不可用时面向用户的可操作提示：引导改用 CPU 设备或更换引擎。
+ */
+function formatCudaRuntimeHint(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error ?? '');
+  return `faster-whisper GPU(CUDA) 加速所需的运行库（cuBLAS/cuDNN）缺失或无法加载，无法使用 CUDA。请在「资源中心 → 引擎 → faster-whisper」将「计算设备」改为 CPU，或改用其他转写引擎。原始错误：${raw}`;
+}
 
 let activeFasterWhisperTranscribeId: string | null = null;
 
@@ -127,14 +156,18 @@ async function transcribeFasterWhisper(
       `faster-whisper model "${modelId}" not found in ${getFasterWhisperModelsPath()}. Download it from Resource Hub > Models.`,
     );
   }
-  const params = {
+  const configuredDevice = (settings.fasterWhisperDevice || 'auto') as
+    | 'auto'
+    | 'cpu'
+    | 'cuda';
+  // device 逐次尝试注入，便于 CUDA 运行库缺失时回退 CPU 重试；其余参数对各设备一致。
+  const baseParams = {
     engine: 'faster_whisper',
     audio_file: tempAudioFile,
     model: modelSnapshotDir,
     local_files_only: true,
     download_root: getFasterWhisperModelsPath(),
     language: getWhisperLanguage(sourceLanguage),
-    device: settings.fasterWhisperDevice || 'auto',
     compute_type: settings.fasterWhisperComputeType || 'auto',
     initial_prompt: prompt || '',
     // faster-whisper #1119：开启词级时间戳，让 segment.end 对齐到真实末词，
@@ -159,51 +192,99 @@ async function transcribeFasterWhisper(
     // 抗幻觉/抗重复参数（仅开关开启时注入；关闭则不下发，sidecar 回落默认）。
     ...getFasterWhisperAntiRepetitionParams(settings),
   };
-  logMessage(`fasterWhisperParams: ${JSON.stringify(params, null, 2)}`, 'info');
-  event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
-
-  // 诊断：记录「下发 transcribe → sidecar 首个 progress」的墙钟间隔。首任务卡 0% 时，
-  // 这段间隔即为 sidecar 侧导入重依赖 + 加载模型（或等待 preload 占用的模型锁）的耗时；
-  // 配合 sidecar 端 [py-engine] 日志即可定位卡在哪一步。
-  const dispatchAt = Date.now();
-  logMessage('faster-whisper: dispatching transcribe to sidecar', 'info');
-  let firstProgressLogged = false;
-  const { id, result } = manager.transcribe(params, {
-    onProgress: (percent) => {
-      if (!firstProgressLogged) {
-        firstProgressLogged = true;
-        logMessage(
-          `faster-whisper: first progress from sidecar after ${Date.now() - dispatchAt}ms`,
-          'info',
-        );
-      }
-      event.sender.send('taskProgressChange', file, 'extractSubtitle', percent);
-    },
-  });
-  activeFasterWhisperTranscribeId = id;
 
   const signal = ctx.signal ?? getTaskContext()?.signal;
-  const onAbort = () => {
-    if (activeFasterWhisperTranscribeId === id) manager.cancel(id);
+
+  // 单次转写尝试：按指定 device 下发，内含进度回传与取消处理。
+  const runAttempt = async (device: 'auto' | 'cpu' | 'cuda') => {
+    const params = { ...baseParams, device };
+    logMessage(
+      `fasterWhisperParams: ${JSON.stringify(params, null, 2)}`,
+      'info',
+    );
+    event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
+
+    // 诊断：记录「下发 transcribe → sidecar 首个 progress」的墙钟间隔。首任务卡 0% 时，
+    // 这段间隔即为 sidecar 侧导入重依赖 + 加载模型（或等待 preload 占用的模型锁）的耗时；
+    // 配合 sidecar 端 [py-engine] 日志即可定位卡在哪一步。
+    const dispatchAt = Date.now();
+    logMessage(
+      `faster-whisper: dispatching transcribe to sidecar (device=${device})`,
+      'info',
+    );
+    let firstProgressLogged = false;
+    const { id, result } = manager.transcribe(params, {
+      onProgress: (percent) => {
+        if (!firstProgressLogged) {
+          firstProgressLogged = true;
+          logMessage(
+            `faster-whisper: first progress from sidecar after ${Date.now() - dispatchAt}ms`,
+            'info',
+          );
+        }
+        event.sender.send(
+          'taskProgressChange',
+          file,
+          'extractSubtitle',
+          percent,
+        );
+      },
+    });
+    activeFasterWhisperTranscribeId = id;
+
+    const onAbort = () => {
+      if (activeFasterWhisperTranscribeId === id) manager.cancel(id);
+    };
+    if (signal?.aborted) {
+      manager.cancel(id);
+    } else {
+      signal?.addEventListener('abort', onAbort, { once: true });
+    }
+
+    try {
+      return await result;
+    } catch (error) {
+      // 用户取消：sidecar 回 {code:'cancelled'}。转成取消语义，避免被标记为转写错误。
+      if (
+        signal?.aborted ||
+        (error as { code?: string })?.code === 'cancelled'
+      ) {
+        throw new TaskCancelledError();
+      }
+      throw error;
+    } finally {
+      signal?.removeEventListener('abort', onAbort);
+      activeFasterWhisperTranscribeId = null;
+    }
   };
-  if (signal?.aborted) {
-    manager.cancel(id);
-  } else {
-    signal?.addEventListener('abort', onAbort, { once: true });
-  }
 
   let transcription;
   try {
-    transcription = await result;
+    transcription = await runAttempt(configuredDevice);
   } catch (error) {
-    // 用户取消：sidecar 回 {code:'cancelled'}。转成取消语义，避免被标记为转写错误。
-    if (signal?.aborted || (error as { code?: string })?.code === 'cancelled') {
-      throw new TaskCancelledError();
+    if (isTaskCancelledError(error)) throw error;
+    // CUDA 运行库（cuBLAS/cuDNN）缺失或加载失败：
+    // device=auto 时自动回退 CPU 重试一次；显式选 cuda 则给出可操作的中文提示。
+    if (isCudaRuntimeError(error)) {
+      if (configuredDevice === 'auto') {
+        logMessage(
+          `faster-whisper: CUDA 运行库加载失败，自动回退 CPU 重试（原始错误：${
+            error instanceof Error ? error.message : String(error)
+          }）`,
+          'warning',
+        );
+        try {
+          transcription = await runAttempt('cpu');
+        } catch (cpuError) {
+          if (isTaskCancelledError(cpuError)) throw cpuError;
+          throw new Error(formatCudaRuntimeHint(cpuError));
+        }
+      } else {
+        throw new Error(formatCudaRuntimeHint(error));
+      }
+    } else {
+      throw error;
     }
-    throw error;
-  } finally {
-    signal?.removeEventListener('abort', onAbort);
-    activeFasterWhisperTranscribeId = null;
   }
 
   // 边界：转写正常返回但此刻已被取消，同样按取消处理，避免写出半截字幕。
