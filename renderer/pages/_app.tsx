@@ -10,7 +10,7 @@ import { UpdateNotification } from '@/components/UpdateNotification';
 
 function MyApp({ Component, pageProps }: AppProps) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
       <Layout {...pageProps}>
         <Component {...pageProps} />
         <UpdateNotification />

@@ -32,13 +32,38 @@ import {
 } from './languageDetector';
 import { logMessage, store } from './storeManager';
 import { ProofreadItem } from '../../types/proofread';
-import { TRANSLATOR_MAP } from '../translate/services/translationProvider';
-import { Provider } from '../translate/types';
+import {
+  TRANSLATOR_MAP,
+  translateWithProvider,
+} from '../translate/services/translationProvider';
+import {
+  Provider,
+  TranslationResult,
+  TranslatorFunction,
+} from '../translate/types';
+import { runWithTaskContext, isTaskCancelledError } from './taskContext';
+
+// 校对批量操作（批量 AI 优化 / 重翻失败）取消注册表
+const batchAbortControllers = new Map<string, AbortController>();
 
 /**
  * 设置字幕校对相关的 IPC 处理器
  */
 export function setupProofreadHandlers(): void {
+  // 取消进行中的校对批量操作
+  ipcMain.handle(
+    'cancelProofreadBatch',
+    async (_event, { batchId }: { batchId: string }) => {
+      const controller = batchAbortControllers.get(batchId);
+      if (controller) {
+        controller.abort();
+        logMessage(`Proofread batch cancelled: ${batchId}`, 'info');
+        return { success: true };
+      }
+      return { success: false };
+    },
+  );
+
   // ============ 字幕检测相关 ============
 
   // 检测视频对应的字幕文件（不再需要语言参数）
@@ -149,7 +174,12 @@ export function setupProofreadHandlers(): void {
     'detectLanguagePair',
     async (_event, { files }: { files: string[] }) => {
       try {
-        const result = detectLanguagePair(files);
+        const userConfig = store.get('userConfig') || {};
+        const result = detectLanguagePair(
+          files,
+          userConfig.sourceLanguage,
+          userConfig.targetLanguage,
+        );
         return { success: true, data: result };
       } catch (error) {
         logMessage(`Error detecting language pair: ${error}`, 'error');
@@ -609,6 +639,7 @@ Only respond with the translation, nothing else.`;
         customPrompt,
         batchSize = 5,
         maxRetries = 2,
+        batchId,
       }: {
         subtitles: Array<{
           id: string;
@@ -620,8 +651,11 @@ Only respond with the translation, nothing else.`;
         customPrompt?: string;
         batchSize?: number;
         maxRetries?: number;
+        batchId?: string;
       },
     ) => {
+      const abortController = new AbortController();
+      if (batchId) batchAbortControllers.set(batchId, abortController);
       try {
         logMessage(
           `Starting batch optimization: ${subtitles.length} subtitles in batches of ${batchSize}`,
@@ -697,9 +731,15 @@ IMPORTANT: You MUST return a valid JSON object. Do NOT include any text before o
 
         const totalBatches = Math.ceil(subtitles.length / batchSize);
         let processedCount = 0;
+        let cancelled = false;
 
         // 分批处理
         for (let i = 0; i < subtitles.length; i += batchSize) {
+          // 每批边界检查取消信号
+          if (abortController.signal.aborted) {
+            cancelled = true;
+            break;
+          }
           const batch = subtitles.slice(i, i + batchSize);
           const currentBatchIndex = Math.floor(i / batchSize) + 1;
           let retryCount = 0;
@@ -723,6 +763,10 @@ IMPORTANT: You MUST return a valid JSON object. Do NOT include any text before o
           });
 
           while (!batchSuccess && retryCount <= maxRetries) {
+            if (abortController.signal.aborted) {
+              cancelled = true;
+              break;
+            }
             try {
               // 构建批量输入
               const batchInput: Record<
@@ -845,25 +889,29 @@ IMPORTANT: You MUST return a valid JSON object. Do NOT include any text before o
               }
             }
           }
+          if (cancelled) break;
         }
 
         // 发送完成进度
         event.sender.send('batchOptimizeProgress', {
-          progress: 100,
+          progress: cancelled
+            ? Math.round((processedCount / subtitles.length) * 100)
+            : 100,
           currentBatch: totalBatches,
           totalBatches,
-          processedCount: subtitles.length,
+          processedCount: cancelled ? processedCount : subtitles.length,
           totalCount: subtitles.length,
           completed: true,
         });
 
         logMessage(
-          `Batch optimization completed: ${results.filter((r) => r.status === 'success').length}/${subtitles.length} successful`,
+          `Batch optimization ${cancelled ? 'cancelled' : 'completed'}: ${results.filter((r) => r.status === 'success').length}/${subtitles.length} successful`,
           'info',
         );
 
         return {
           success: true,
+          cancelled,
           data: {
             results,
             summary: {
@@ -880,6 +928,116 @@ IMPORTANT: You MUST return a valid JSON object. Do NOT include any text before o
           success: false,
           error: error instanceof Error ? error.message : String(error),
         };
+      } finally {
+        if (batchId) batchAbortControllers.delete(batchId);
+      }
+    },
+  );
+
+  // 重翻字幕（失败集中处理）：复用正式任务翻译链路，支持取消与部分结果
+  ipcMain.handle(
+    'retranslateSubtitles',
+    async (
+      event,
+      {
+        subtitles,
+        providerId,
+        sourceLanguage,
+        targetLanguage,
+        batchId,
+      }: {
+        subtitles: Array<{
+          id: string;
+          startEndTime: string;
+          content: string[];
+        }>;
+        providerId?: string;
+        sourceLanguage?: string;
+        targetLanguage?: string;
+        batchId?: string;
+      },
+    ) => {
+      const abortController = new AbortController();
+      if (batchId) batchAbortControllers.set(batchId, abortController);
+      const collected: TranslationResult[] = [];
+      try {
+        const userConfig: any = store.get('userConfig') || {};
+        const translateProviderId = providerId || userConfig.translateProvider;
+        if (!translateProviderId || translateProviderId === '-1') {
+          return { success: false, error: 'NO_DEFAULT_PROVIDER' };
+        }
+
+        const providers = store.get('translationProviders') || [];
+        const provider = providers.find(
+          (p: Provider) => p.id === translateProviderId,
+        );
+        if (!provider) {
+          return { success: false, error: 'NO_DEFAULT_PROVIDER' };
+        }
+
+        const translator = TRANSLATOR_MAP[
+          provider.type as keyof typeof TRANSLATOR_MAP
+        ] as unknown as TranslatorFunction;
+        if (!translator) {
+          return {
+            success: false,
+            error: `不支持的翻译服务类型: ${provider.type}`,
+          };
+        }
+
+        const from = sourceLanguage || userConfig.sourceLanguage || 'en';
+        const to = targetLanguage || userConfig.targetLanguage || 'zh';
+
+        logMessage(
+          `Retranslating ${subtitles.length} subtitles with ${provider.name} (${from} -> ${to})`,
+          'info',
+        );
+
+        // 跑在任务上下文中：翻译链路批次边界的取消检查可感知 signal
+        await runWithTaskContext(
+          { signal: abortController.signal },
+          async () => {
+            await translateWithProvider(
+              provider,
+              subtitles,
+              from,
+              to,
+              translator,
+              undefined,
+              async (batchResults) => {
+                collected.push(...batchResults);
+                event.sender.send('retranslateProgress', {
+                  batchId,
+                  done: collected.length,
+                  total: subtitles.length,
+                });
+              },
+              1,
+            );
+          },
+        );
+
+        logMessage(
+          `Retranslate completed: ${collected.length}/${subtitles.length}`,
+          'info',
+        );
+        return { success: true, cancelled: false, data: collected };
+      } catch (error) {
+        if (isTaskCancelledError(error)) {
+          logMessage(
+            `Retranslate cancelled with ${collected.length}/${subtitles.length} done`,
+            'info',
+          );
+          return { success: true, cancelled: true, data: collected };
+        }
+        logMessage(`Error in retranslate: ${error}`, 'error');
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+          data: collected,
+        };
+      } finally {
+        if (batchId) batchAbortControllers.delete(batchId);
       }
     },
   );

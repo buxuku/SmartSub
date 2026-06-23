@@ -11,6 +11,7 @@ import {
   SubtitleMatchResult,
 } from '../../types/proofread';
 import { detectLanguageFromFilename } from './languageDetector';
+import { store } from './storeManager';
 
 // 支持的字幕格式
 const SUBTITLE_EXTENSIONS = ['.srt', '.vtt', '.ass', '.ssa', '.lrc'];
@@ -34,6 +35,36 @@ const TRANSLATED_KEYWORDS = ['translated', '翻译', 'target', 'trans'];
 
 // 常见的原始字幕关键词
 const SOURCE_KEYWORDS = ['source', '原文', 'original', 'orig'];
+
+/**
+ * 按用户任务语向判定字幕是原文还是译文;语向不匹配时回退「en=原文」启发式。
+ * 与 renderer/lib/proofreadUtils.ts 的同名逻辑保持一致(进程边界无法共享模块)。
+ */
+function classifySubtitleLang(
+  lang: string | undefined | null,
+  sourceLanguage?: string,
+  targetLanguage?: string,
+): 'source' | 'translated' | 'unknown' {
+  if (!lang) return 'unknown';
+  if (sourceLanguage && sourceLanguage !== 'auto' && lang === sourceLanguage)
+    return 'source';
+  if (targetLanguage && lang === targetLanguage) return 'translated';
+  return lang === 'en' ? 'source' : 'translated';
+}
+
+/**
+ * 读取用户配置的任务语向(源语言/目标语言)，供语向判定使用
+ */
+function getUserTaskLanguages(): {
+  sourceLanguage?: string;
+  targetLanguage?: string;
+} {
+  const userConfig = store.get('userConfig') || {};
+  return {
+    sourceLanguage: userConfig.sourceLanguage,
+    targetLanguage: userConfig.targetLanguage,
+  };
+}
 
 /**
  * 判断文件是否为视频文件
@@ -74,13 +105,18 @@ export async function detectSubtitlesForVideo(
 
   const detectedSubtitles: DetectedSubtitle[] = [];
 
+  // 调用方传空字符串表示未指定语向，此时回退用户配置的任务语向
+  const userLangs = getUserTaskLanguages();
+  const effectiveSourceLanguage = sourceLanguage || userLangs.sourceLanguage;
+  const effectiveTargetLanguage = targetLanguage || userLangs.targetLanguage;
+
   for (const file of files) {
     const filePath = path.join(directory, file);
     const detection = analyzeSubtitleFile(
       filePath,
       videoName,
-      sourceLanguage,
-      targetLanguage,
+      effectiveSourceLanguage,
+      effectiveTargetLanguage,
     );
     if (detection) {
       detectedSubtitles.push(detection);
@@ -103,8 +139,8 @@ export async function detectSubtitlesForVideo(
 function analyzeSubtitleFile(
   filePath: string,
   videoName: string,
-  sourceLanguage: string,
-  targetLanguage: string,
+  sourceLanguage?: string,
+  targetLanguage?: string,
 ): DetectedSubtitle | null {
   const fileName = path.basename(filePath, path.extname(filePath));
   const fileNameLower = fileName.toLowerCase();
@@ -130,9 +166,12 @@ function analyzeSubtitleFile(
     const baseName = fileNameLower.replace(/\.[a-z]{2}(?:-[a-z]{2,4})?$/i, '');
 
     if (baseName === videoNameLower || fileNameLower.includes(videoNameLower)) {
-      // 根据检测到的语言判断类型
-      // 英语通常作为源语言，其他语言作为翻译
-      const type = detectedLangCode === 'en' ? 'source' : 'translated';
+      // 按用户任务语向判定原文/译文；语向不匹配时回退「en=原文」启发式
+      const type = classifySubtitleLang(
+        detectedLangCode,
+        sourceLanguage,
+        targetLanguage,
+      );
       return {
         type,
         filePath,
@@ -209,9 +248,14 @@ function extractBaseName(fileName: string): string {
  */
 export async function matchSubtitlesByRules(
   files: string[],
-  _sourceLanguage?: string,
-  _targetLanguage?: string,
+  sourceLanguage?: string,
+  targetLanguage?: string,
 ): Promise<SubtitleMatchResult[]> {
+  // 调用方传空字符串表示未指定语向，此时回退用户配置的任务语向
+  const userLangs = getUserTaskLanguages();
+  const effectiveSourceLanguage = sourceLanguage || userLangs.sourceLanguage;
+  const effectiveTargetLanguage = targetLanguage || userLangs.targetLanguage;
+
   // 按目录和基础文件名分组
   const fileGroups = new Map<string, string[]>();
 
@@ -236,28 +280,41 @@ export async function matchSubtitlesByRules(
       baseName: path.basename(key),
     };
 
-    // 检测每个文件的语言
+    // 检测每个文件的语言，并按用户任务语向判定原文/译文角色
     const filesWithLang: Array<{
       file: string;
       lang: string | undefined;
       isEnglish: boolean;
+      role: 'source' | 'translated' | 'unknown';
     }> = groupFiles.map((file) => {
       const detection = detectLanguageFromFilename(file);
       return {
         file,
         lang: detection?.code,
         isEnglish: detection?.code === 'en',
+        role: classifySubtitleLang(
+          detection?.code,
+          effectiveSourceLanguage,
+          effectiveTargetLanguage,
+        ),
       };
     });
 
-    // 查找英语字幕作为源语言（通常是原文）
-    const englishFile = filesWithLang.find((f) => f.isEnglish);
-    // 查找非英语字幕作为翻译
-    const translatedFile = filesWithLang.find((f) => f.lang && !f.isEnglish);
+    // 检出语言的文件按角色配对（角色互斥：每个文件只会是 source 或 translated）
+    const detectedFiles = filesWithLang.filter((f) => f.lang);
+    let sourceFile = detectedFiles.find((f) => f.role === 'source');
+    let translatedFile = detectedFiles.find((f) => f.role === 'translated');
 
-    if (englishFile) {
-      match.source = englishFile.file;
-      match.sourceLanguage = 'en';
+    // 判定冲突（多个检出语言的文件全判为同一角色、配不成一对）时，
+    // 回退原有「英语=原文、非英语=译文」配对行为
+    if (detectedFiles.length >= 2 && (!sourceFile || !translatedFile)) {
+      sourceFile = detectedFiles.find((f) => f.isEnglish);
+      translatedFile = detectedFiles.find((f) => !f.isEnglish);
+    }
+
+    if (sourceFile) {
+      match.source = sourceFile.file;
+      match.sourceLanguage = sourceFile.lang;
     }
     if (translatedFile) {
       match.target = translatedFile.file;

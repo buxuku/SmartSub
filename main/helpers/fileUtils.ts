@@ -122,12 +122,19 @@ export async function readFileContent(filePath: string): Promise<string[]> {
  * 封装文件对象
  */
 export function wrapFileObject(filePath: string) {
+  let fileSize = 0;
+  try {
+    fileSize = fs.statSync(filePath).size;
+  } catch {
+    // 文件不可读时大小留 0，渲染层不展示
+  }
   return {
     filePath,
     fileName: path.basename(filePath, path.extname(filePath)),
     fileNameWithoutExtension: path.basename(filePath),
     fileExtension: path.extname(filePath),
     directory: path.dirname(filePath),
+    fileSize,
     uuid: Math.random().toString(36).substring(2),
   };
 }

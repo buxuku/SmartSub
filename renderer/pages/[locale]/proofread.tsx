@@ -1,18 +1,18 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useRouter } from 'next/router';
 import { useTranslation } from 'next-i18next';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import ProofreadImport from '@/components/proofread/ProofreadImport';
 import ProofreadFileList from '@/components/proofread/ProofreadFileList';
 import ProofreadEditor from '@/components/proofread/ProofreadEditor';
-import ProofreadTaskList from '@/components/proofread/ProofreadTaskList';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import PageHeader from '@/components/PageHeader';
 import { ProofreadTask } from '../../../types/proofread';
-import { Plus, History } from 'lucide-react';
 import {
   PendingFile,
   loadPendingFileFromItem,
   pendingFileToSaveFormat,
 } from '@/lib/proofreadUtils';
+import { useConfirmOrUndo } from '../../hooks/useConfirmOrUndo';
 
 // 工作流阶段
 type WorkflowStage = 'import' | 'list' | 'edit';
@@ -21,8 +21,10 @@ type WorkflowStage = 'import' | 'list' | 'edit';
 export type { PendingFile } from '@/lib/proofreadUtils';
 
 export default function ProofreadPage() {
+  const router = useRouter();
+  const { workItem: workItemQuery } = router.query;
   const { t } = useTranslation('home');
-  const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
+  const confirmOrUndo = useConfirmOrUndo();
 
   // 工作流状态
   const [stage, setStage] = useState<WorkflowStage>('import');
@@ -47,8 +49,29 @@ export default function ProofreadPage() {
     setSavedTaskId(task.id);
     setTaskName(task.name);
     setStage('list');
-    setActiveTab('new');
   }, []);
+
+  // 从启动台 deep link 加载已保存的校对批次
+  useEffect(() => {
+    if (typeof workItemQuery !== 'string' || !workItemQuery) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await window.ipc.invoke('getProofreadTaskById', {
+          id: workItemQuery,
+        });
+        if (cancelled || !result?.success || !result.data) return;
+        await handleLoadTask(result.data as ProofreadTask);
+      } catch (error) {
+        console.error('Failed to load proofread work item:', error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workItemQuery, handleLoadTask]);
 
   // 导入完成后进入列表
   const handleImportComplete = useCallback(
@@ -107,10 +130,26 @@ export default function ProofreadPage() {
     [],
   );
 
-  // 删除文件
-  const handleRemoveFile = useCallback((index: number) => {
-    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+  // 删除文件（可撤销）
+  const handleRemoveFile = useCallback(
+    (index: number) => {
+      let removed: PendingFile | undefined;
+      setPendingFiles((prev) => {
+        removed = prev[index];
+        return prev.filter((_, i) => i !== index);
+      });
+      confirmOrUndo(t('fileRemoved'), () => {
+        if (!removed) return;
+        const item = removed;
+        setPendingFiles((prev) => {
+          const next = [...prev];
+          next.splice(Math.min(index, next.length), 0, item);
+          return next;
+        });
+      });
+    },
+    [confirmOrUndo, t],
+  );
 
   // 追加文件
   const handleAddFiles = useCallback((newFiles: PendingFile[]) => {
@@ -144,15 +183,42 @@ export default function ProofreadPage() {
     return true;
   }, [pendingFiles, savedTaskId, taskName]);
 
-  // 重置，开始新的导入
+  // 重置，开始新的导入（可撤销）
   const handleReset = useCallback(() => {
+    const prev = {
+      pendingFiles,
+      currentEditIndex,
+      savedTaskId,
+      taskName,
+      importType,
+      stage,
+    };
     setPendingFiles([]);
     setCurrentEditIndex(-1);
     setSavedTaskId(null);
     setTaskName('');
     setImportType('video');
     setStage('import');
-  }, []);
+    if (prev.pendingFiles.length > 0) {
+      confirmOrUndo(t('importReset'), () => {
+        setPendingFiles(prev.pendingFiles);
+        setCurrentEditIndex(prev.currentEditIndex);
+        setSavedTaskId(prev.savedTaskId);
+        setTaskName(prev.taskName);
+        setImportType(prev.importType);
+        setStage(prev.stage);
+      });
+    }
+  }, [
+    pendingFiles,
+    currentEditIndex,
+    savedTaskId,
+    taskName,
+    importType,
+    stage,
+    confirmOrUndo,
+    t,
+  ]);
 
   // 自动保存：当已保存的任务有变化时自动更新
   const isInitialMount = useRef(true);
@@ -216,31 +282,15 @@ export default function ProofreadPage() {
   };
 
   return (
-    <div className="h-full p-4 overflow-hidden flex flex-col">
-      <Tabs
-        value={activeTab}
-        onValueChange={(v) => setActiveTab(v as 'new' | 'history')}
-        className="flex-1 flex flex-col min-h-0"
-      >
-        <TabsList className="grid w-full grid-cols-2 max-w-xs flex-shrink-0">
-          <TabsTrigger value="new">
-            <Plus className="w-4 h-4 mr-2" />
-            {t('newTask') || '新建任务'}
-          </TabsTrigger>
-          <TabsTrigger value="history">
-            <History className="w-4 h-4 mr-2" />
-            {t('historyTasks') || '历史任务'}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="new" className="flex-1 overflow-auto mt-4">
-          {renderStage()}
-        </TabsContent>
-
-        <TabsContent value="history" className="flex-1 overflow-auto mt-4">
-          <ProofreadTaskList onLoadTask={handleLoadTask} />
-        </TabsContent>
-      </Tabs>
+    <div className="h-full p-4 overflow-hidden flex flex-col gap-4">
+      {/* 仅导入阶段显示枢纽页大标题；列表/编辑阶段为工作页，用自带的返回箭头头部 */}
+      {stage === 'import' && (
+        <PageHeader
+          title={t('proofreadPageTitle')}
+          description={t('proofreadPageDesc')}
+        />
+      )}
+      <div className="flex-1 overflow-auto min-h-0">{renderStage()}</div>
     </div>
   );
 }

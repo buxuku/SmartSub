@@ -1,0 +1,12 @@
+{
+  "platform": "darwin-arm64",
+  "sherpaVersion": "1.13.2",
+  "files": [
+    "libonnxruntime.1.24.4.dylib",
+    "libonnxruntime.dylib",
+    "libsherpa-onnx-c-api.dylib",
+    "libsherpa-onnx-cxx-api.dylib",
+    "sherpa-onnx.node"
+  ],
+  "builtAt": "2026-06-17T03:18:42.591Z"
+}

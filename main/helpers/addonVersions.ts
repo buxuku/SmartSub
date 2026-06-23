@@ -1,20 +1,27 @@
 import * as https from 'https';
 import * as http from 'http';
+import * as fs from 'fs';
 import { logMessage } from './storeManager';
 import type {
   RemoteAddonVersions,
-  CudaVersion,
+  AddonVariant,
   AddonUpdateInfo,
 } from '../../types/addon';
-import { getAddonConfig, getInstalledAddons } from './addonManager';
-
-/**
- * 远程版本文件 URL
- */
-const VERSIONS_URL =
-  'https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-versions.json';
-const VERSIONS_URL_PROXY =
-  'https://ghfast.top/https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-versions.json';
+import {
+  getAddonConfig,
+  getInstalledAddons,
+  isAddonInstalled,
+} from './addonManager';
+import { getBuildInfo } from './buildInfo';
+import {
+  isPlatformCudaCapable,
+  getBuiltinVulkanAddonPath,
+  getEffectivePlatform,
+} from './cudaUtils';
+import { getDownloadUrl, getAddonVersionsUrl } from './addonDownloader';
+import type { DownloadSource } from '../../types/addon';
+import { getSourceFallbackOrder } from './downloadSourceOrder';
+import { compareDateVersion } from './download/versionCompare';
 
 /**
  * 缓存的远程版本信息
@@ -24,35 +31,29 @@ let lastFetchTime: number = 0;
 const CACHE_TTL = 5 * 60 * 1000; // 5 分钟缓存
 
 /**
- * 获取远程版本信息
+ * 获取远程版本信息：按所选源回退顺序依次尝试拉取 addon-versions.json。
  */
 export async function fetchRemoteVersions(
-  useProxy: boolean = false,
+  source: DownloadSource = 'github',
 ): Promise<RemoteAddonVersions | null> {
   // 检查缓存
   if (cachedVersions && Date.now() - lastFetchTime < CACHE_TTL) {
     return cachedVersions;
   }
 
-  const url = useProxy ? VERSIONS_URL_PROXY : VERSIONS_URL;
-
-  try {
-    const content = await fetchJson(url);
-    cachedVersions = content as RemoteAddonVersions;
-    lastFetchTime = Date.now();
-    logMessage('Fetched remote addon versions', 'info');
-    return cachedVersions;
-  } catch (error) {
-    logMessage(`Error fetching remote versions: ${error}`, 'error');
-
-    // 如果直连失败，尝试代理
-    if (!useProxy) {
-      logMessage('Trying proxy for remote versions...', 'info');
-      return fetchRemoteVersions(true);
+  const order = getSourceFallbackOrder(source);
+  for (const s of order) {
+    try {
+      const content = await fetchJson(getAddonVersionsUrl(s));
+      cachedVersions = content as RemoteAddonVersions;
+      lastFetchTime = Date.now();
+      logMessage(`Fetched remote addon versions from ${s}`, 'info');
+      return cachedVersions;
+    } catch (error) {
+      logMessage(`Fetch versions from ${s} failed: ${error}`, 'warning');
     }
-
-    return null;
   }
+  return null;
 }
 
 /**
@@ -124,22 +125,13 @@ function shouldForceUpdate(): boolean {
 }
 
 /**
- * 标准化版本号格式
- * 统一将分隔符转换为点号，以便正确比较
- * 例如 "2026-02-06" -> "2026.02.06"
- */
-function normalizeVersion(version: string): string {
-  return version.replace(/-/g, '.');
-}
-
-/**
  * 检查指定版本是否有更新
  */
 export async function checkVersionUpdate(
-  version: CudaVersion,
+  variant: AddonVariant,
 ): Promise<AddonUpdateInfo | null> {
   const config = getAddonConfig();
-  const installedInfo = config.installed[version];
+  const installedInfo = config.installed[variant];
 
   if (!installedInfo) {
     return null;
@@ -147,9 +139,9 @@ export async function checkVersionUpdate(
 
   // 开发模式下强制显示更新
   if (shouldForceUpdate()) {
-    logMessage(`[DEV] Forcing update for version ${version}`, 'info');
+    logMessage(`[DEV] Forcing update for version ${variant}`, 'info');
     return {
-      cudaVersion: version,
+      variant,
       hasUpdate: true,
       localVersion: installedInfo.remoteVersion,
       remoteVersion: 'dev-force-update',
@@ -158,18 +150,17 @@ export async function checkVersionUpdate(
   }
 
   const remoteVersions = await fetchRemoteVersions();
-  if (!remoteVersions || !remoteVersions[version]) {
+  if (!remoteVersions || !remoteVersions[variant]) {
     return null;
   }
 
-  const remoteInfo = remoteVersions[version];
-  // 标准化版本号格式后再比较，避免 "2026.02.06" vs "2026-02-06" 因分隔符不同导致误判
-  const normalizedRemote = normalizeVersion(remoteInfo.version);
-  const normalizedLocal = normalizeVersion(installedInfo.remoteVersion);
-  const hasUpdate = normalizedRemote > normalizedLocal;
+  const remoteInfo = remoteVersions[variant];
+  // 统一日期版本比较，避免 "2026.02.06" vs "2026-02-06" 因分隔符不同导致误判
+  const hasUpdate =
+    compareDateVersion(remoteInfo.version, installedInfo.remoteVersion) > 0;
 
   return {
-    cudaVersion: version,
+    variant,
     hasUpdate,
     localVersion: installedInfo.remoteVersion,
     remoteVersion: remoteInfo.version,
@@ -191,6 +182,33 @@ export async function checkAllUpdates(): Promise<AddonUpdateInfo[]> {
     }
   }
 
+  // 内置 Vulkan（尚未下载到 userData 时）也参与更新检测：
+  // 远程版本比构建日期新 → 提示可下载更新版到 userData 覆盖内置
+  if (
+    isPlatformCudaCapable() &&
+    !isAddonInstalled('vulkan') &&
+    fs.existsSync(getBuiltinVulkanAddonPath())
+  ) {
+    const builtinVersion = getBuiltinVulkanVersion();
+    if (builtinVersion) {
+      const remoteVersions = await fetchRemoteVersions();
+      const remoteVulkan = remoteVersions?.vulkan;
+      if (remoteVulkan) {
+        const hasUpdate =
+          compareDateVersion(remoteVulkan.version, builtinVersion) > 0;
+        if (hasUpdate) {
+          updates.push({
+            variant: 'vulkan',
+            hasUpdate: true,
+            localVersion: builtinVersion,
+            remoteVersion: remoteVulkan.version,
+            updateNotes: remoteVulkan.updateNotes,
+          });
+        }
+      }
+    }
+  }
+
   return updates;
 }
 
@@ -206,7 +224,7 @@ export async function getAvailableUpdates(): Promise<AddonUpdateInfo[]> {
  * 获取特定版本的远程信息
  */
 export async function getRemoteVersionInfo(
-  version: CudaVersion,
+  version: AddonVariant,
 ): Promise<{ version: string; updateNotes: string } | null> {
   const remoteVersions = await fetchRemoteVersions();
   if (!remoteVersions || !remoteVersions[version]) {
@@ -224,7 +242,7 @@ export async function getRemoteVersionInfo(
  * 获取指定版本的校验和信息
  */
 export async function getVersionChecksum(
-  version: CudaVersion,
+  version: AddonVariant,
   type: 'windows-tar' | 'windows-node' | 'linux-tar' | 'linux-node',
 ): Promise<string | null> {
   const remoteVersions = await fetchRemoteVersions();
@@ -242,4 +260,119 @@ export async function getVersionChecksum(
 export function clearVersionCache(): void {
   cachedVersions = null;
   lastFetchTime = 0;
+}
+
+/**
+ * 内置 Vulkan addon 的版本号（取 CI 注入的构建日期，如 "2026.06.10"）
+ * 开发环境无 buildInfo 时返回 null（跳过更新提示）
+ */
+export function getBuiltinVulkanVersion(): string | null {
+  const buildInfo = getBuildInfo();
+  if (!buildInfo?.buildDate) {
+    return null;
+  }
+  return buildInfo.buildDate.split('T')[0].replace(/-/g, '.');
+}
+
+type PackageSizeKey =
+  | 'windows-tar'
+  | 'windows-node'
+  | 'linux-tar'
+  | 'linux-node';
+
+const packageSizeCache = new Map<string, { size: number; fetchedAt: number }>();
+const PACKAGE_SIZE_CACHE_TTL = 30 * 60 * 1000;
+// 真实加速包均为数十~数百 MB；小于 1MB 的 HEAD 结果视为无效占位（如 GitCode 的 128B）。
+const MIN_PLAUSIBLE_PACKAGE_BYTES = 1024 * 1024;
+
+function getPackageSizeKey(
+  downloadType: 'node.gz' | 'tar.gz',
+): PackageSizeKey | null {
+  const platform = getEffectivePlatform();
+  if (platform !== 'win32' && platform !== 'linux') {
+    return null;
+  }
+  const osPrefix = platform === 'win32' ? 'windows' : 'linux';
+  return downloadType === 'tar.gz'
+    ? (`${osPrefix}-tar` as PackageSizeKey)
+    : (`${osPrefix}-node` as PackageSizeKey);
+}
+
+function headContentLength(url: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    const parsedUrl = new URL(url);
+    const protocol = parsedUrl.protocol === 'https:' ? https : http;
+
+    const request = protocol.request(
+      url,
+      {
+        method: 'HEAD',
+        headers: {
+          'User-Agent': 'SmartSub-Electron',
+        },
+        timeout: 10000,
+      },
+      (response) => {
+        if (
+          response.statusCode &&
+          response.statusCode >= 300 &&
+          response.statusCode < 400 &&
+          response.headers.location
+        ) {
+          headContentLength(response.headers.location).then(resolve);
+          return;
+        }
+        const len = response.headers['content-length'];
+        resolve(len ? parseInt(len, 10) : null);
+        response.resume();
+      },
+    );
+
+    request.on('error', () => resolve(null));
+    request.on('timeout', () => {
+      request.destroy();
+      resolve(null);
+    });
+    request.end();
+  });
+}
+
+/**
+ * 获取加速包下载体积：优先读 addon-versions.json 的 sizes，否则 HEAD 探测
+ */
+export async function getPackageDownloadSize(
+  variant: AddonVariant,
+  downloadType: 'node.gz' | 'tar.gz',
+  source: DownloadSource = 'github',
+): Promise<number | null> {
+  const sizeKey = getPackageSizeKey(downloadType);
+  if (!sizeKey) return null;
+
+  const cacheKey = `${variant}:${downloadType}:${source}`;
+  const cached = packageSizeCache.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < PACKAGE_SIZE_CACHE_TTL) {
+    return cached.size;
+  }
+
+  const remoteVersions = await fetchRemoteVersions(source);
+  const remoteSize = remoteVersions?.[variant]?.sizes?.[sizeKey];
+  if (typeof remoteSize === 'number' && remoteSize > 0) {
+    packageSizeCache.set(cacheKey, { size: remoteSize, fetchedAt: Date.now() });
+    return remoteSize;
+  }
+
+  try {
+    // 加速包在各镜像为同一文件、体积一致，故体积探测固定走 GitHub 直链：
+    // GitCode CDN 不支持 HEAD（会返回 128B 占位），直接 HEAD 它会得到错误体积。
+    // 同时拒绝明显异常的过小值，避免界面显示 128B，转而回退到静态体积提示。
+    const url = getDownloadUrl('github', variant, downloadType);
+    const size = await headContentLength(url);
+    if (size && size >= MIN_PLAUSIBLE_PACKAGE_BYTES) {
+      packageSizeCache.set(cacheKey, { size, fetchedAt: Date.now() });
+      return size;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }

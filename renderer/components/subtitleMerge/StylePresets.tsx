@@ -4,6 +4,7 @@
 
 import React from 'react';
 import { useTranslation } from 'next-i18next';
+import { Palette } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { STYLE_PRESETS } from './constants';
 
@@ -22,9 +23,7 @@ export default function StylePresets({
 
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium">
-        {t('presets') || '预设样式'}
-      </label>
+      <label className="label-caps">{t('presets')}</label>
       <div className="flex flex-wrap gap-2">
         {STYLE_PRESETS.map((preset) => (
           <Button
@@ -33,8 +32,9 @@ export default function StylePresets({
             size="sm"
             onClick={() => onSelectPreset(preset.id)}
             disabled={disabled}
-            className="text-xs"
+            className="gap-1.5 text-xs"
           >
+            <Palette className="h-4 w-4" />
             {t(preset.nameKey) || preset.name}
           </Button>
         ))}

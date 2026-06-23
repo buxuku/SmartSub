@@ -69,6 +69,29 @@ export interface StylePreset {
 }
 
 /**
+ * 输出方式
+ * hardcode = 烧录硬字幕（重编码，所有播放器可见）
+ * softmux = 封装软字幕（mkv 容器，秒级无损，播放器可开关）
+ */
+export type MergeOutputMode = 'hardcode' | 'softmux';
+
+/**
+ * 硬字幕烧录的导出画质（仅 hardcode 生效；softmux 直接流复制无损，不受此影响）。
+ * 烧录必然重编码，画质由 libx264 CRF 决定：值越小越接近原画质、体积越大。
+ * - original = 原画质（CRF 18，视觉无损，体积接近源文件）
+ * - high     = 高画质（CRF 20）
+ * - standard = 标准（CRF 23，等同旧版默认行为，体积更小）
+ */
+export type VideoQuality = 'original' | 'high' | 'standard';
+
+/** 各画质档位对应的 libx264 CRF 值。 */
+export const VIDEO_QUALITY_CRF: Record<VideoQuality, number> = {
+  original: 18,
+  high: 20,
+  standard: 23,
+};
+
+/**
  * 合并配置
  */
 export interface MergeConfig {
@@ -80,6 +103,10 @@ export interface MergeConfig {
   outputPath: string;
   /** 字幕样式 */
   style: SubtitleStyle;
+  /** 输出方式（缺省 hardcode，向后兼容） */
+  outputMode?: MergeOutputMode;
+  /** 硬字幕烧录画质（缺省 original；仅 hardcode 生效） */
+  videoQuality?: VideoQuality;
 }
 
 /**
@@ -142,4 +169,6 @@ export interface SubtitleMergeResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
+  /** 操作被用户取消（不算失败） */
+  cancelled?: boolean;
 }

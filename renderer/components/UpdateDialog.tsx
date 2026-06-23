@@ -39,12 +39,10 @@ function parseReleaseNotes(html: string): string {
   return html;
 }
 
-// 检测是否为 Mac 平台
+// 平台判断：preload 注入的 process.platform，避免 userAgent 嗅探
+// typeof 守卫：SSR 阶段 window 标识符不存在，可选链救不了 ReferenceError
 function isMacPlatform(): boolean {
-  if (typeof navigator !== 'undefined') {
-    return navigator.userAgent.includes('Mac');
-  }
-  return false;
+  return typeof window !== 'undefined' && window.ipc?.platform === 'darwin';
 }
 
 export function UpdateDialog({
@@ -155,7 +153,7 @@ export function UpdateDialog({
                   className="shrink-0"
                 >
                   {copied ? (
-                    <Check className="h-4 w-4 text-green-500" />
+                    <Check className="h-4 w-4 text-success" />
                   ) : (
                     <Copy className="h-4 w-4" />
                   )}

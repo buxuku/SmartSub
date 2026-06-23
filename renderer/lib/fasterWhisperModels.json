@@ -1,0 +1,71 @@
+[
+  {
+    "id": "tiny",
+    "hfRepo": "Systran/faster-whisper-tiny",
+    "size": "~75MB",
+    "tier": "fast",
+    "speed": 5,
+    "quality": 2
+  },
+  {
+    "id": "base",
+    "hfRepo": "Systran/faster-whisper-base",
+    "size": "~145MB",
+    "tier": "fast",
+    "speed": 4,
+    "quality": 3
+  },
+  {
+    "id": "small",
+    "hfRepo": "Systran/faster-whisper-small",
+    "size": "~466MB",
+    "tier": "balanced",
+    "speed": 3,
+    "quality": 4
+  },
+  {
+    "id": "medium",
+    "hfRepo": "Systran/faster-whisper-medium",
+    "size": "~1.5GB",
+    "tier": "balanced",
+    "speed": 2,
+    "quality": 4
+  },
+  {
+    "id": "large-v3",
+    "hfRepo": "Systran/faster-whisper-large-v3",
+    "size": "~3GB",
+    "tier": "accurate",
+    "speed": 1,
+    "quality": 5
+  },
+  {
+    "id": "distil-small.en",
+    "hfRepo": "Systran/faster-distil-whisper-small.en",
+    "size": "~166MB",
+    "tier": "fast",
+    "speed": 5,
+    "quality": 3,
+    "englishOnly": true,
+    "distil": true
+  },
+  {
+    "id": "distil-medium.en",
+    "hfRepo": "Systran/faster-distil-whisper-medium.en",
+    "size": "~394MB",
+    "tier": "balanced",
+    "speed": 4,
+    "quality": 3,
+    "englishOnly": true,
+    "distil": true
+  },
+  {
+    "id": "distil-large-v3",
+    "hfRepo": "Systran/faster-distil-whisper-large-v3",
+    "size": "~756MB",
+    "tier": "accurate",
+    "speed": 4,
+    "quality": 4,
+    "distil": true
+  }
+]

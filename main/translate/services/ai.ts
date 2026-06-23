@@ -10,8 +10,29 @@ import { defaultSystemPrompt, defaultUserPrompt } from '../../../types';
 import { toJson } from 'really-relaxed-json';
 import { jsonrepair } from 'jsonrepair';
 import { isConfigurationError } from '../utils/error';
+import {
+  throwIfTaskCancelled,
+  isTaskCancelledError,
+} from '../../helpers/taskContext';
 
 function getLanguageName(code: string): string {
+  // 中文目标须向 AI 明确简/繁，避免「中文」歧义导致译文简繁混杂（issue #332）。
+  // UI 仍显示「中文」，但提示词里替换为「简体中文」/「繁体中文」以稳定输出字形。
+  const normalized = (code || '').toLowerCase();
+  if (
+    normalized === 'zh' ||
+    normalized === 'zh-cn' ||
+    normalized === 'zh-hans'
+  ) {
+    return '简体中文';
+  }
+  if (
+    normalized === 'zh-hant' ||
+    normalized === 'zh-tw' ||
+    normalized === 'zh-hk'
+  ) {
+    return '繁体中文';
+  }
   const lang = supportedLanguage.find((l) => l.value === code);
   return lang?.name || code;
 }
@@ -39,6 +60,7 @@ export async function handleAIBatchTranslation(
   const requestInterval = +(provider.requestInterval || 0) * 1000;
 
   for (let i = 0; i < subtitles.length; i += batchSize) {
+    throwIfTaskCancelled();
     const batch = subtitles.slice(i, i + batchSize);
     const currentBatchIndex = Math.floor(i / batchSize) + 1;
     let retryCount = 0;
@@ -56,6 +78,7 @@ export async function handleAIBatchTranslation(
     );
 
     while (!batchSuccess && retryCount <= maxRetries) {
+      throwIfTaskCancelled();
       try {
         let batchJsonContent: Record<string, string> = {};
         batch.forEach((item) => {
@@ -155,6 +178,7 @@ export async function handleAIBatchTranslation(
           );
         }
       } catch (error) {
+        if (isTaskCancelledError(error)) throw error;
         // 检查是否是配置错误，如果是则直接抛出，不进行重试
         if (isConfigurationError(error)) {
           throw new Error(

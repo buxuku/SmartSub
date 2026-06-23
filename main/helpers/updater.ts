@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { store } from './store';
 import { logMessage } from './logger';
@@ -34,12 +34,17 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
     autoUpdater.autoInstallOnAppQuit = false;
   }
 
-  // 设置更新通道
-  autoUpdater.channel = 'latest'; // 直接将 channel 设置为 'latest'
+  // 设置更新通道：所有构建（含 beta 等预发布版本）都只跟踪稳定通道。
+  // 预发布版本若不显式关闭 allowPrerelease，electron-updater 会从
+  // releases.atom（包含未发 release 的裸 tag）解析出 beta tag 自身，
+  // 再去请求其名下不存在的 latest-mac.yml 而报 404。
+  // 关闭后 beta 安装包静默无更新，待下一个稳定版发布时正常收到提示。
+  autoUpdater.channel = 'latest';
+  autoUpdater.allowPrerelease = false;
   logMessage(`Setting update channel to: ${autoUpdater.channel}`, 'info');
 
-  // 检查更新
-  const checkForUpdates = async (silent = false) => {
+  // 检查更新（失败反馈统一由 renderer 依据 update-status error 事件呈现）
+  const checkForUpdates = async () => {
     try {
       logMessage(
         `Checking for updates... Platform: ${buildInfo.platform}, Arch: ${buildInfo.arch} on channel '${autoUpdater.channel}'`,
@@ -49,9 +54,6 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
       return result;
     } catch (error) {
       logMessage(`Error checking for updates: ${error.message}`, 'error');
-      if (!silent) {
-        dialog.showErrorBox('更新检查失败', `检查更新时出错: ${error.message}`);
-      }
       return null;
     }
   };
@@ -81,28 +83,12 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
     });
   });
 
+  // 安装提示仅由 renderer 的 toast（带「立即安装」动作）承担，不再叠加原生 dialog
   autoUpdater.on('update-downloaded', (info) => {
     mainWindow.webContents.send('update-status', {
       status: 'downloaded',
       version: info.version,
     });
-
-    // 提示用户安装更新
-    dialog
-      .showMessageBox(mainWindow, {
-        type: 'info',
-        title: '更新已下载',
-        message: '更新已下载完成',
-        detail: '已下载新版本，是否立即安装并重启应用？',
-        buttons: ['立即安装', '稍后安装'],
-        cancelId: 1,
-      })
-      .then(({ response }) => {
-        if (response === 0) {
-          // 用户选择立即安装
-          autoUpdater.quitAndInstall(false, true);
-        }
-      });
   });
 
   autoUpdater.on('error', (error) => {
@@ -137,8 +123,8 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
   });
 
   // 设置IPC处理程序
-  ipcMain.handle('check-for-updates', async (event, silent = false) => {
-    return checkForUpdates(silent);
+  ipcMain.handle('check-for-updates', async () => {
+    return checkForUpdates();
   });
 
   ipcMain.handle('download-update', async () => {
@@ -171,7 +157,7 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
   if (checkUpdateOnStartup) {
     // 延迟几秒检查更新，让应用先启动完成
     setTimeout(() => {
-      checkForUpdates(true); // 静默检查
+      checkForUpdates();
     }, 5000);
   }
 

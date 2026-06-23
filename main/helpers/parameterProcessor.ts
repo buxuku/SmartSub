@@ -607,7 +607,12 @@ export class ParameterProcessor {
    * Get parameter definition from registry
    */
   static getParameterDefinition(key: string): ParameterDefinition | null {
-    return PARAMETER_REGISTRY[key] || null;
+    if (PARAMETER_REGISTRY[key]) {
+      return PARAMETER_REGISTRY[key];
+    }
+
+    const normalizedKey = key.trim().toLowerCase();
+    return PARAMETER_REGISTRY[normalizedKey] || null;
   }
 
   /**

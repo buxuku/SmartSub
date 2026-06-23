@@ -1,136 +1,181 @@
 /**
- * 合并按钮和进度显示组件
+ * 输出控件与合成按钮组件（进度/成功/错误状态由预览区浮层呈现）
  */
 
 import React from 'react';
 import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Loader2,
-  Play,
-  FolderOpen,
-  CheckCircle,
-  XCircle,
-  Folder,
-} from 'lucide-react';
-import type { MergeProgress, MergeStatus } from '../../../types/subtitleMerge';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { HelpHint } from '@/components/HelpHint';
+import { Loader2, Play, FolderOpen, Flame, Layers } from 'lucide-react';
+import type {
+  MergeStatus,
+  MergeOutputMode,
+  VideoQuality,
+} from '../../../types/subtitleMerge';
 
 interface MergeButtonProps {
   outputPath: string | null;
-  progress: MergeProgress;
+  outputMode: MergeOutputMode;
+  videoQuality: VideoQuality;
   status: MergeStatus;
   canMerge: boolean;
   onSelectOutputPath: () => void;
+  onOutputModeChange: (mode: MergeOutputMode) => void;
+  onVideoQualityChange: (quality: VideoQuality) => void;
   onStartMerge: () => void;
-  onOpenOutputFolder: () => void;
 }
 
 export default function MergeButton({
   outputPath,
-  progress,
+  outputMode,
+  videoQuality,
   status,
   canMerge,
   onSelectOutputPath,
+  onOutputModeChange,
+  onVideoQualityChange,
   onStartMerge,
-  onOpenOutputFolder,
 }: MergeButtonProps) {
   const { t } = useTranslation('subtitleMerge');
+  const isProcessing = status === 'processing';
+  // 画质仅对硬字幕烧录生效；软封装为流复制无损，无需该选项
+  const isHardcode = outputMode === 'hardcode';
+  const qualityOptions: Array<{ value: VideoQuality; label: string }> = [
+    { value: 'original', label: t('videoQualityOriginal') },
+    { value: 'high', label: t('videoQualityHigh') },
+    { value: 'standard', label: t('videoQualityStandard') },
+  ];
+
+  const modeOptions: Array<{
+    value: MergeOutputMode;
+    icon: React.ReactNode;
+    title: string;
+    desc: string;
+  }> = [
+    {
+      value: 'hardcode',
+      icon: <Flame className="w-3.5 h-3.5" />,
+      title: t('outputModeHardcode'),
+      desc: t('outputModeHardcodeDesc'),
+    },
+    {
+      value: 'softmux',
+      icon: <Layers className="w-3.5 h-3.5" />,
+      title: t('outputModeSoftmux'),
+      desc: t('outputModeSoftmuxDesc'),
+    },
+  ];
 
   return (
-    <div className="space-y-4">
-      {/* 输出路径 */}
-      <div className="space-y-2">
-        <Label className="text-sm">{t('outputPath') || '输出路径'}</Label>
+    <TooltipProvider>
+      <div className="space-y-3">
+        {/* 输出方式 */}
+        <div className="space-y-2">
+          <Label className="text-sm">{t('outputMode')}</Label>
+          <div className="grid grid-cols-2 gap-2">
+            {modeOptions.map((option) => {
+              const active = outputMode === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  disabled={isProcessing}
+                  onClick={() => onOutputModeChange(option.value)}
+                  className={`rounded-md border p-2 text-left transition-colors disabled:opacity-50 ${
+                    active
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border hover:bg-accent/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 text-sm font-medium">
+                    {option.icon}
+                    {option.title}
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    {option.desc}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 导出画质（仅烧录硬字幕生效；提示移入 HelpHint 以压缩高度） */}
+        {isHardcode && (
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <Label className="text-sm">{t('videoQuality')}</Label>
+              <HelpHint text={t('videoQualityHint')} />
+            </div>
+            <Select
+              value={videoQuality}
+              onValueChange={(v) => onVideoQualityChange(v as VideoQuality)}
+              disabled={isProcessing}
+            >
+              <SelectTrigger className="h-8 w-[150px] text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {qualityOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* 输出路径：标签 + 输入框 + 选择按钮 同行 */}
         <div className="flex items-center gap-2">
+          <Label className="shrink-0 text-sm">{t('outputPath')}</Label>
           <Input
             type="text"
             value={outputPath || ''}
             readOnly
-            placeholder={t('selectOutputPath') || '选择输出路径'}
-            className="flex-1 text-sm"
+            placeholder={t('selectOutputPath')}
+            className="min-w-0 flex-1 text-sm"
           />
-          <Button variant="outline" size="icon" onClick={onSelectOutputPath}>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={onSelectOutputPath}
+            className="shrink-0"
+          >
             <FolderOpen className="w-4 h-4" />
           </Button>
         </div>
-      </div>
 
-      {/* 进度条 */}
-      {status === 'processing' && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">
-              {t('processing') || '处理中...'}
-            </span>
-            <span className="font-medium">{Math.round(progress.percent)}%</span>
-          </div>
-          <Progress value={progress.percent} className="h-2" />
-          {progress.timeMark && (
-            <p className="text-xs text-muted-foreground">
-              {t('currentTime') || '当前时间'}: {progress.timeMark}
-            </p>
+        {/* 合并按钮 */}
+        <Button
+          className="w-full"
+          size="lg"
+          onClick={onStartMerge}
+          disabled={!canMerge || isProcessing}
+        >
+          {isProcessing ? (
+            <>
+              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+              {t('processing')}
+            </>
+          ) : (
+            <>
+              <Play className="w-5 h-5 mr-2" />
+              {t('generateVideo')}
+            </>
           )}
-        </div>
-      )}
-
-      {/* 完成状态 */}
-      {status === 'completed' && (
-        <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-950/30 rounded-lg">
-          <CheckCircle className="w-5 h-5 text-green-600" />
-          <span className="text-sm text-green-700 dark:text-green-400 flex-1">
-            {t('mergeSuccess') || '合并成功'}
-          </span>
-          <Button variant="outline" size="sm" onClick={onOpenOutputFolder}>
-            <Folder className="w-4 h-4 mr-1" />
-            {t('openFolder') || '打开文件夹'}
-          </Button>
-        </div>
-      )}
-
-      {/* 错误状态 */}
-      {status === 'error' && progress.errorMessage && (
-        <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-950/30 rounded-lg">
-          <XCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-red-700 dark:text-red-400">
-              {t('mergeError') || '合并失败'}
-            </p>
-            <p className="text-xs text-red-600/70 dark:text-red-400/70 mt-1 break-all">
-              {progress.errorMessage}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* 合并按钮 */}
-      <Button
-        className="w-full"
-        size="lg"
-        onClick={onStartMerge}
-        disabled={!canMerge || status === 'processing'}
-      >
-        {status === 'processing' ? (
-          <>
-            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-            {t('processing') || '处理中...'}
-          </>
-        ) : (
-          <>
-            <Play className="w-5 h-5 mr-2" />
-            {t('generateVideo') || '生成视频'}
-          </>
-        )}
-      </Button>
-
-      {/* 提示信息 */}
-      {!canMerge && status !== 'processing' && (
-        <p className="text-xs text-muted-foreground text-center">
-          {t('selectFilesToMerge') || '请先选择视频和字幕文件'}
-        </p>
-      )}
-    </div>
+        </Button>
+      </div>
+    </TooltipProvider>
   );
 }

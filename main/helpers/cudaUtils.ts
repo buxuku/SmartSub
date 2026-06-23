@@ -1,5 +1,17 @@
-import { execSync } from 'child_process';
+import { execSync, exec } from 'child_process';
+import { promisify } from 'util';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as si from 'systeminformation';
 import { logMessage } from './storeManager';
+import { getExtraResourcesPath } from './utils';
+
+/**
+ * 异步执行外部命令（不阻塞主进程 event loop）。
+ * GPU/CUDA 探测（nvcc / nvidia-smi）首次冷启动可能耗时数秒，必须异步执行，
+ * 否则同步 execSync 会卡死主进程，连带阻塞所有并发 IPC（引擎/模型状态等），UI 卡顿。
+ */
+const execAsync = promisify(exec);
 import type {
   CudaEnvironment,
   CudaToolkitInfo,
@@ -7,6 +19,9 @@ import type {
   AddonRecommendation,
   CudaVersion,
   DevSimulationConfig,
+  GpuEnvironment,
+  GpuInfo,
+  GpuVendor,
 } from '../../types/addon';
 import { AVAILABLE_CUDA_VERSIONS } from '../../types/addon';
 
@@ -14,9 +29,9 @@ import { AVAILABLE_CUDA_VERSIONS } from '../../types/addon';
  * 开发模式模拟配置
  * 通过环境变量控制，仅在开发模式下生效
  */
-function getDevSimulationConfig(): DevSimulationConfig | null {
+export function getDevSimulationConfig(): DevSimulationConfig | null {
   // 仅在开发模式下启用模拟
-  if (process.env.NODE_ENV !== 'development') {
+  if (process.env.NODE_ENV === 'production') {
     return null;
   }
 
@@ -41,7 +56,7 @@ function getDevSimulationConfig(): DevSimulationConfig | null {
  * 检测 CUDA Toolkit 安装情况
  * 通过检测 nvcc 命令来判断
  */
-export function getCudaToolkitInfo(): CudaToolkitInfo {
+export async function getCudaToolkitInfo(): Promise<CudaToolkitInfo> {
   // 检查开发模式模拟
   const simConfig = getDevSimulationConfig();
   if (simConfig?.enabled) {
@@ -58,7 +73,7 @@ export function getCudaToolkitInfo(): CudaToolkitInfo {
   }
 
   try {
-    const nvccOutput = execSync('nvcc --version', {
+    const { stdout: nvccOutput } = await execAsync('nvcc --version', {
       encoding: 'utf8',
       timeout: 5000,
     });
@@ -89,7 +104,7 @@ export function getCudaToolkitInfo(): CudaToolkitInfo {
  * 检测 GPU CUDA 支持情况
  * 通过 nvidia-smi 命令来判断
  */
-export function getGpuCudaSupport(): GpuCudaSupport {
+export async function getGpuCudaSupport(): Promise<GpuCudaSupport> {
   // 检查开发模式模拟
   const simConfig = getDevSimulationConfig();
   if (simConfig?.enabled) {
@@ -112,10 +127,12 @@ export function getGpuCudaSupport(): GpuCudaSupport {
   let gpuName: string | undefined;
   let driverVersion: string | null = null;
   try {
-    const queryOutput = execSync(
-      'nvidia-smi --query-gpu=name,driver_version --format=csv,noheader,nounits',
-      { encoding: 'utf8', timeout: 10000 },
-    ).trim();
+    const queryOutput = (
+      await execAsync(
+        'nvidia-smi --query-gpu=name,driver_version --format=csv,noheader,nounits',
+        { encoding: 'utf8', timeout: 10000 },
+      )
+    ).stdout.trim();
     const firstLine = queryOutput.split('\n').find((line) => line.trim());
     if (firstLine) {
       const [queriedName, queriedDriver] = firstLine
@@ -131,7 +148,7 @@ export function getGpuCudaSupport(): GpuCudaSupport {
   // 解析显卡支持的最高 CUDA 版本（--query-gpu 无此字段，只能从 nvidia-smi 表头读取）
   let maxCudaVersion: string | null = null;
   try {
-    const nsmiResult = execSync('nvidia-smi', {
+    const { stdout: nsmiResult } = await execAsync('nvidia-smi', {
       encoding: 'utf8',
       timeout: 10000,
     });
@@ -260,6 +277,7 @@ function getAddonRecommendation(
       needsDlls: false,
       downloadType: null,
       reason: 'GPU 不支持 CUDA 或未检测到 NVIDIA 显卡',
+      reasonKey: 'cudaNotSupported',
     };
   }
 
@@ -279,6 +297,7 @@ function getAddonRecommendation(
       needsDlls: false,
       downloadType: null,
       reason: `显卡支持的 CUDA 版本 (${gpuSupport.maxCudaVersion}) 低于最低要求 (11.8.0)`,
+      reasonKey: 'cudaVersionTooOld',
     };
   }
 
@@ -289,12 +308,16 @@ function getAddonRecommendation(
   const downloadType = needsDlls ? 'tar.gz' : 'node.gz';
 
   let reason: string;
+  let reasonKey: AddonRecommendation['reasonKey'];
   if (!gpuSupport.maxCudaVersion) {
     reason = `未能识别显卡支持的最高 CUDA 版本，已按最高加速包版本推荐；若运行异常请手动选择更低版本`;
+    reasonKey = 'maxCudaUnknown';
   } else if (toolkit.installed) {
     reason = `已检测到 CUDA Toolkit ${toolkit.version}，推荐下载轻量版加速包`;
+    reasonKey = 'toolkitInstalled';
   } else {
     reason = `未检测到 CUDA Toolkit，推荐下载包含运行时库的完整加速包`;
+    reasonKey = 'toolkitMissing';
   }
 
   return {
@@ -303,6 +326,7 @@ function getAddonRecommendation(
     needsDlls,
     downloadType,
     reason,
+    reasonKey,
   };
 }
 
@@ -310,9 +334,9 @@ function getAddonRecommendation(
  * 获取完整的 CUDA 环境信息
  * 这是主要的对外接口
  */
-export function getCudaEnvironment(): CudaEnvironment {
-  const cudaToolkit = getCudaToolkitInfo();
-  const gpuSupport = getGpuCudaSupport();
+export async function getCudaEnvironment(): Promise<CudaEnvironment> {
+  const cudaToolkit = await getCudaToolkitInfo();
+  const gpuSupport = await getGpuCudaSupport();
   const recommendation = getAddonRecommendation(cudaToolkit, gpuSupport);
 
   logMessage(
@@ -331,8 +355,8 @@ export function getCudaEnvironment(): CudaEnvironment {
  * 检查系统是否支持 CUDA 并返回支持的版本
  * @deprecated 请使用 getCudaEnvironment() 获取更详细的信息
  */
-export function checkCudaSupport(): string | false {
-  const env = getCudaEnvironment();
+export async function checkCudaSupport(): Promise<string | false> {
+  const env = await getCudaEnvironment();
 
   if (!env.recommendation.canUseCuda) {
     return false;
@@ -364,4 +388,158 @@ export function getEffectivePlatform(): NodeJS.Platform {
     return simConfig.platform;
   }
   return process.platform;
+}
+
+/**
+ * 归一化 GPU 厂商
+ */
+function normalizeGpuVendor(vendor: string, model: string): GpuVendor {
+  const s = `${vendor} ${model}`.toLowerCase();
+  if (
+    s.includes('nvidia') ||
+    s.includes('geforce') ||
+    s.includes('quadro') ||
+    s.includes('tesla')
+  ) {
+    return 'nvidia';
+  }
+  if (
+    s.includes('amd') ||
+    s.includes('radeon') ||
+    s.includes('advanced micro')
+  ) {
+    return 'amd';
+  }
+  if (s.includes('intel')) {
+    return 'intel';
+  }
+  if (s.includes('apple')) {
+    return 'apple';
+  }
+  return 'unknown';
+}
+
+/**
+ * 枚举显卡（systeminformation，跨平台），带 10s 超时与 dev 模拟
+ */
+async function detectGpus(): Promise<GpuInfo[]> {
+  const simConfig = getDevSimulationConfig();
+  if (simConfig?.enabled) {
+    return [{ name: simConfig.gpuName, vendor: 'nvidia' }];
+  }
+
+  if (
+    process.env.NODE_ENV === 'development' &&
+    process.env.DEV_SIMULATE_GPU_VENDOR
+  ) {
+    const vendor = process.env.DEV_SIMULATE_GPU_VENDOR as GpuVendor;
+    return [{ name: `Simulated ${vendor.toUpperCase()} GPU`, vendor }];
+  }
+
+  try {
+    const graphics = await Promise.race([
+      si.graphics(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('GPU detection timeout')), 10000),
+      ),
+    ]);
+    return (graphics.controllers || [])
+      .filter((c) => c.model || c.vendor)
+      .map((c) => ({
+        name: c.model || c.vendor || 'Unknown GPU',
+        vendor: normalizeGpuVendor(c.vendor || '', c.model || ''),
+      }));
+  } catch (error) {
+    logMessage(`GPU enumeration failed: ${error}`, 'warning');
+    return [];
+  }
+}
+
+/**
+ * 检测 Vulkan 运行库是否存在（纯文件检查，毫秒级，不调用 vulkaninfo）
+ */
+export function detectVulkanRuntime(): boolean {
+  if (
+    process.env.NODE_ENV === 'development' &&
+    process.env.DEV_SIMULATE_VULKAN
+  ) {
+    return process.env.DEV_SIMULATE_VULKAN === 'true';
+  }
+  // dev 平台模拟时本机文件检查无意义，默认按可用处理（可用 DEV_SIMULATE_VULKAN=false 覆盖）
+  if (getDevSimulationConfig()?.enabled) {
+    return true;
+  }
+
+  const platform = getEffectivePlatform();
+  if (platform === 'win32') {
+    const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+    return fs.existsSync(path.join(systemRoot, 'System32', 'vulkan-1.dll'));
+  }
+  if (platform === 'linux') {
+    const commonPaths = [
+      '/usr/lib/x86_64-linux-gnu/libvulkan.so.1',
+      '/usr/lib64/libvulkan.so.1',
+      '/usr/lib/libvulkan.so.1',
+    ];
+    if (commonPaths.some((p) => fs.existsSync(p))) {
+      return true;
+    }
+    try {
+      const out = execSync('ldconfig -p', { encoding: 'utf8', timeout: 5000 });
+      return out.includes('libvulkan.so.1');
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
+ * 内置 Vulkan addon 路径（CI 预置；macOS / 开发环境通常不存在）
+ */
+export function getBuiltinVulkanAddonPath(): string {
+  return path.join(getExtraResourcesPath(), 'addons', 'addon.vulkan.node');
+}
+
+let cachedGpuEnvironment: GpuEnvironment | null = null;
+
+/**
+ * 获取完整 GPU 环境（跨厂商）。结果会话级缓存，forceRefresh 重新检测。
+ */
+export async function getGpuEnvironment(
+  forceRefresh = false,
+): Promise<GpuEnvironment> {
+  if (cachedGpuEnvironment && !forceRefresh) {
+    return cachedGpuEnvironment;
+  }
+
+  const platform = getEffectivePlatform();
+  const gpus = await detectGpus();
+  const vulkanRuntime = isPlatformCudaCapable() ? detectVulkanRuntime() : false;
+  const builtinVulkanAvailable =
+    isPlatformCudaCapable() && fs.existsSync(getBuiltinVulkanAddonPath());
+
+  // NVIDIA 详细检测：检测到 N 卡、枚举失败（空列表，nvidia-smi 兜底）或 dev 模拟时执行
+  const hasNvidia = gpus.some((g) => g.vendor === 'nvidia');
+  const shouldProbeNvidia =
+    isPlatformCudaCapable() &&
+    (hasNvidia || gpus.length === 0 || !!getDevSimulationConfig()?.enabled);
+  const nvidia = shouldProbeNvidia ? await getCudaEnvironment() : null;
+
+  cachedGpuEnvironment = {
+    platform,
+    gpus,
+    vulkanRuntime,
+    builtinVulkanAvailable,
+    nvidia,
+  };
+  logMessage(
+    `GPU Environment: ${JSON.stringify({ ...cachedGpuEnvironment, nvidia: nvidia ? 'detected' : null })}`,
+    'info',
+  );
+  return cachedGpuEnvironment;
+}
+
+export function clearGpuEnvironmentCache(): void {
+  cachedGpuEnvironment = null;
 }

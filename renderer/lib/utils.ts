@@ -1,5 +1,9 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import {
+  DEFAULT_DOWNLOAD_ENDPOINTS,
+  type DownloadEndpointConfig,
+} from '../../types/downloadConfig';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -370,12 +374,43 @@ export const isSubtitleFile = (filePath) => {
   );
 };
 
+// 纯音频扩展名：校对界面据此渲染紧凑音频播放器，避免空的视频黑框占位
+const AUDIO_FILE_EXTENSIONS = [
+  'mp3',
+  'wav',
+  'ogg',
+  'aac',
+  'wma',
+  'flac',
+  'm4a',
+  'aiff',
+  'ape',
+  'opus',
+  'ac3',
+  'amr',
+  'au',
+];
+
+export const isAudioPath = (filePath?: string): boolean => {
+  if (!filePath) return false;
+  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+  return AUDIO_FILE_EXTENSIONS.includes(ext);
+};
+
 export const getModelDownloadUrl = (
   modelName: string,
   source: 'hf-mirror' | 'huggingface',
+  endpoints: Pick<
+    DownloadEndpointConfig,
+    'huggingFaceMirror' | 'huggingFaceOfficial'
+  > = DEFAULT_DOWNLOAD_ENDPOINTS,
 ) => {
-  const domain = source === 'hf-mirror' ? 'hf-mirror.com' : 'huggingface.co';
-  return `https://${domain}/ggerganov/whisper.cpp/resolve/main/ggml-${modelName.toLowerCase()}.bin?download=true`;
+  // base 已含协议（如 https://hf-mirror.com），与用户在设置页配置的镜像保持一致。
+  const base =
+    source === 'hf-mirror'
+      ? endpoints.huggingFaceMirror
+      : endpoints.huggingFaceOfficial;
+  return `${base}/ggerganov/whisper.cpp/resolve/main/ggml-${modelName.toLowerCase()}.bin?download=true`;
 };
 
 // 添加支持的文件扩展名常量

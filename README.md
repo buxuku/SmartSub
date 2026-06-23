@@ -10,13 +10,13 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square&logo=electron&logoColor=white)](https://github.com/buxuku/SmartSub/releases)
 [![i18n](https://img.shields.io/badge/i18n-中文%20%7C%20English%20%7C%20日本語-orange?style=flat-square&logo=googletranslate&logoColor=white)](https://github.com/buxuku/SmartSub)
 
-<!-- 第二行：功能特性 - 模型/翻译服务/硬件加速 -->
+<!-- 第二行：功能特性 - 引擎/翻译服务/硬件加速 -->
 
-[![Whisper](https://img.shields.io/badge/Whisper-Speech%20Recognition-4B8BBE?style=flat-square&logo=openai&logoColor=white)](https://github.com/openai/whisper)
-[![Translation](https://img.shields.io/badge/Translation-7%2B%20Services-9cf?style=flat-square&logo=translate&logoColor=white)](https://github.com/buxuku/SmartSub#翻译服务)
+[![ASR Engines](https://img.shields.io/badge/ASR-6%20Engines-4B8BBE?style=flat-square&logo=openai&logoColor=white)](https://github.com/buxuku/SmartSub#-转写引擎)
+[![Translation](https://img.shields.io/badge/Translation-17%20Services-9cf?style=flat-square&logo=translate&logoColor=white)](https://github.com/buxuku/SmartSub#翻译服务)
 [![CUDA](https://img.shields.io/badge/CUDA-11.8%20%7C%2012.x%20%7C%2013.x-76B900?style=flat-square&logo=nvidia&logoColor=white)](https://developer.nvidia.com/cuda-downloads)
+[![Vulkan](https://img.shields.io/badge/Vulkan-AMD%20%7C%20Intel-AC162C?style=flat-square&logo=vulkan&logoColor=white)](https://www.vulkan.org/)
 [![CoreML](https://img.shields.io/badge/Core%20ML-Apple%20Silicon-000000?style=flat-square&logo=apple&logoColor=white)](https://developer.apple.com/documentation/coreml)
-[![Offline](https://img.shields.io/badge/Offline-Local%20Processing-success?style=flat-square&logo=shieldsdotio&logoColor=white)](https://github.com/buxuku/SmartSub)
 
 <!-- 第三行：技术栈 -->
 
@@ -42,91 +42,132 @@
 
 **让每一帧画面都能美妙地表达**
 
-智能音视频字幕生成与多语言翻译批量化解决方案
+妙幕（SmartSub）是一款本地优先的桌面应用，帮你**一站式**完成「音视频转字幕 → 翻译 → 校对 → 合成」。所有转写都在本地完成，无需上传文件，隐私无忧；支持批量处理与 GPU 加速，可在 Windows / macOS / Linux 上运行。
 
-![preview](./resources/preview.png)
+![preview](./resources/preview/home.png)
 
-![proofread](./resources/proofread.png)
+## ✨ 3.0 重磅更新
 
-## 💥特性
+3.0 是一次几乎重写的大版本，核心变化如下：
 
-它保留了之前 [VideoSubtitleGenerator](https://github.com/buxuku/VideoSubtitleGenerator) 这个命令行工具的全部特性，并新增了以下功能:
+- **🧠 多转写引擎**：从单一 whisper.cpp 扩展到 **6 种可逐任务切换的引擎**——内置 `whisper.cpp`、`faster-whisper`、`FunASR`、`Qwen3-ASR`、`FireRedASR`、以及本地 `Whisper CLI`。中文场景可直接选用 FunASR / FireRedASR 等专长模型。
+- **⚡ GPU 加速全面重构**：新增 **Vulkan** 后端，**AMD / Intel 显卡**也能在 Windows/Linux 上加速（此前仅支持 NVIDIA CUDA）；新增「自动 / 仅 GPU / 仅 CPU」加速模式，自动识别显卡、按需下载加速包、失败自动回退到 CPU。
+- **🎬 视频合成（字幕烧录）**：把字幕**硬烧**进画面，或**软封装**为可切换字幕轨；所见即所得预览，支持字体、字号、颜色、描边、阴影、九宫格位置与多种预设样式。
+- **📝 字幕校对 + AI 润色**：内置校对台，逐句对照视频检查修改，支持撤销/重做与 AI 一键润色。
+- **🌐 17 个翻译服务**：覆盖主流机器翻译与大模型 API，并支持 OpenAI 风格自定义接入与逐服务的自定义参数。
+- **🖥️ 全新任务式界面**：以「您想做什么？」为起点的启动台，任务、字幕校对、视频合成、引擎与模型、翻译服务分区清晰；内置新手引导、命令面板（⌘K / Ctrl+K）、快捷键与下载/任务活动中心。
 
-- 支持多种视频/音频格式生成字幕
-- 支持对生成的字幕，或者导入的字幕进行翻译
-- 本地化处理，无须上传视频，保护隐私的同时也拥有更快的处理速度
-- 支持多种翻译服务:
-  - 火山引擎翻译
-  - 百度翻译
-  - 微软翻译器
-  - DeepLX 翻译 （批量翻译容易存在被限流的情况）
-  - 本地模型 Ollama 翻译
-  - AI聚合平台 [DeerAPI](https://api.deerapi.com/register?aff=QvHM)
-  - 支持 OpenAI 风格 API 翻译，如 [deepseek](https://www.deepseek.com/), [azure](https://azure.microsoft.com) 等
-- **🎯 自定义参数配置**: 无需代码修改，直接在界面配置 AI 模型参数 [v2.5.3-release-brief.md](./Changelog/v2.5.3-release-brief.md)
-  - 支持自定义请求头和请求体参数
-  - 支持多种参数类型（文本、数字、开关、JSON对象等）
-  - 实时参数验证和错误提示
-  - 参数配置导出导入功能
-- 自定义字幕文件名，方便兼容不同的播放器挂载字幕识别
-- 自定义翻译后的字幕文件内容，支持纯翻译结果或原字幕+翻译结果
-- 支持硬件加速
-  - NVIDIA CUDA（Windows/Linux）
-  - Apple Core ML（macOS M系列芯片）
-- 支持运行本地安装的 `whisper` 命令
-- 支持自定义并发任务数量
+## 💥 功能特性
 
-## 关于 CUDA 的支持
+### 🧠 字幕生成（转写）
 
-软件已内置 GPU 加速包管理功能，无须手动安装 CUDA Toolkit。
+- 支持多种视频/音频格式批量生成字幕
+- **6 种转写引擎**，可针对每个任务单独选择（详见 [转写引擎](#-转写引擎)）
+- 完全本地处理，无需联网上传，保护隐私的同时拥有更快的速度
+- 支持简繁转换、自定义字幕文件名（方便不同播放器挂载识别）
+- 可选**中文字幕去标点**，让烧录效果更干净
+- 支持自定义并发任务数量，批量处理更高效
 
-- 安装软件后，在「设置 → GPU 加速」中，软件会自动检测你的显卡并推荐合适的加速包版本
-- 点击下载对应的加速包即可启用 GPU 加速，支持 CUDA 11.8.0 / 12.2.0 / 12.4.0 / 13.0.2
-- 如果启用加速后出现闪退，请尝试切换其他版本的加速包或关闭 GPU 加速
+### 🌐 字幕翻译
 
-## 关于 Core ML 的支持
+- 对生成的字幕或导入的字幕进行翻译
+- **17 个翻译服务**：百度、谷歌、阿里云、火山引擎、豆包、小牛、腾讯、讯飞、DeepLX、Azure、Ollama（本地模型）、DeepSeek、Azure OpenAI、[DeerAPI](https://api.deerapi.com/register?aff=QvHM)、Gemini、SiliconFlow、通义千问
+- 兼容任意 **OpenAI 风格 API**，可接入 deepseek / azure 等自有服务
+- 输出内容可选纯译文，或「原文 + 译文」双语字幕
+- **🎯 自定义参数配置**：无需改代码，直接在界面为每个 AI 服务配置请求头/请求体参数，并支持导出导入
 
-从 1.20.0 版本开始，在苹果芯片上，支持使用 Core ML 加速语音识别。如果是苹果芯片，请下载 mac arm64 版本的 release 包。将会自动启动 Core ML 加速。
+### 📝 字幕校对
+
+- 内置校对台，逐句检查与修改
+- 视频对照预览，定位更准
+- 支持撤销/重做与 **AI 一键润色**
+
+### 🎬 视频合成
+
+- **硬字幕烧录**：把字幕永久烧进画面，任何播放器都能显示
+- **软字幕封装**：以流复制方式无损嵌入可切换字幕轨
+- 丰富的样式控制：字体、字号、颜色、描边、阴影、九宫格位置，以及多种预设样式
+- 所见即所得实时预览
+
+### ⚡ 隐私与加速
+
+- 本地化处理，文件不出本机
+- GPU 加速：NVIDIA CUDA、AMD/Intel Vulkan、Apple Core ML / Metal（详见 [GPU 加速](#-gpu-加速)）
+- 内置加速包管理，无需手动安装 CUDA Toolkit
+
+## 📸 界面一览
+
+| 视频合成（字幕烧录）                    | 字幕校对                                       |
+| --------------------------------------- | ---------------------------------------------- |
+| ![merge](./resources/preview/merge.png) | ![proofread](./resources/preview/profread.png) |
+
+## 🧩 转写引擎
+
+3.0 把「转写引擎」做成了可逐任务切换的能力，可在「引擎与模型」页面统一管理运行时与模型：
+
+| 引擎                    | 说明                                                           | 运行方式                           |
+| ----------------------- | -------------------------------------------------------------- | ---------------------------------- |
+| **whisper.cpp（内置）** | 默认引擎，支持 ggml 量化模型与 GPU 加速                        | 随应用内置，开箱即用               |
+| **faster-whisper**      | 基于 CTranslate2，速度更快，模型按需从 HuggingFace 下载        | 自包含 Python 运行时（应用内下载） |
+| **FunASR**              | SenseVoice（中/英/日/韩/粤多语）与 Paraformer-zh，中文表现优秀 | 内置 sherpa-onnx 原生库            |
+| **Qwen3-ASR**           | 通义千问语音识别（qwen3-asr-0.6b）                             | 内置 sherpa-onnx 原生库            |
+| **FireRedASR**          | FireRedASR-AED large（中英），中文表现优秀                     | 内置 sherpa-onnx 原生库            |
+| **本地 Whisper CLI**    | 调用你自行安装的 whisper 兼容命令                              | 使用系统已装命令                   |
+
+> 提示：FunASR / Qwen3-ASR / FireRedASR 均通过内置的 sherpa-onnx 原生库运行，无需额外环境；faster-whisper 会在应用内下载一个自包含运行时。
+
+### whisper 模型怎么选？
+
+whisper.cpp / faster-whisper 使用的是 whisper 系列模型，模型越大越准、越慢、越吃显存：
+
+- 低端设备或核显：推荐 `tiny` / `base`，速度快、占用小
+- 普通电脑：从 `small` / `base` 起步，平衡精度与资源
+- 高性能显卡/工作站：推荐 `large` 系列，精度最高
+- 纯英文音视频：选带 `en` 的模型，专为英语优化
+- 在意体积：可用 `q5` / `q8` 量化版本，牺牲少量精度换取更小体积
+
+## ⚡ GPU 加速
+
+软件内置 GPU 加速包管理，**无须手动安装 CUDA Toolkit**。安装后进入「设置 → GPU 加速」，软件会自动检测显卡并推荐合适的加速方案。
+
+| 平台                          | 加速后端            | 说明                                                              |
+| ----------------------------- | ------------------- | ----------------------------------------------------------------- |
+| Windows / Linux + NVIDIA      | **CUDA**            | 支持 CUDA 11.8.0 / 12.2.0 / 12.4.0 / 13.0.2，应用内下载对应加速包 |
+| Windows / Linux + AMD / Intel | **Vulkan**          | 3.0 新增，应用已内置 Vulkan 加速包                                |
+| macOS（Apple 芯片）           | **Core ML / Metal** | 下载 mac arm64 版本后自动启用                                     |
+| 任意平台                      | **CPU**             | 无可用 GPU 时自动回退                                             |
+
+- 加速模式支持「**自动 / 仅 GPU / 仅 CPU**」，加载失败会自动降级到 CPU，并在诊断面板给出原因
+- 如启用加速后出现闪退，可尝试切换其它版本的加速包，或切换为「仅 CPU」模式
 
 ## 翻译服务
 
-本项目支持多种翻译服务，包括百度翻译、火山引擎翻译、DeepLX、Ollama 本地模型、 DeepSeek 以及 OpenAI 风格的 API。使用这些服务需要相应的 API 密钥或配置。
+本项目支持百度、火山引擎、阿里云、腾讯、讯飞、小牛、谷歌、DeepLX，以及 Ollama、DeepSeek、Gemini、通义千问、SiliconFlow、Azure OpenAI、DeerAPI 等大模型/聚合平台，共 17 个翻译服务。使用这些服务需要相应的 API 密钥或配置。
 
 对于百度翻译、火山引擎等服务的 API 申请方法，可以参考 https://bobtranslate.com/service/ ，感谢 [Bob](https://bobtranslate.com/) 这款优秀的软件提供的信息。
 
-对于 AI 翻译，翻译结果受模型和提示词的影响比较大，你可以尝试不同的模型和提示词，找到适合自己的组合。推荐可以尝试 AI 聚合平台 [DeerAPI](https://api.deerapi.com/register?aff=QvHM), 支持多个平台近 500 种模型，选择合适自己的模型进行翻译。
+对于 AI 翻译，翻译结果受模型和提示词的影响比较大，你可以尝试不同的模型和提示词，找到适合自己的组合。
 
-### 自定义参数配置 (v2.5.3)
+### 自定义参数配置
 
-SmartSub 现在支持为每个 AI 翻译服务配置自定义参数，让您能够精确控制模型行为：
+SmartSub 支持为每个 AI 翻译服务配置自定义参数，让你精确控制模型行为：
 
-- **灵活参数配置**: 直接在界面添加和管理自定义参数，无需修改代码
-- **参数类型支持**: String、Float、Boolean、Array、Object、Integer 参数类型
-- **实时验证**: 参数修改时实时验证，防止无效配置
-- **配置管理**: 支持导出导入配置，方便团队共享和备份
-- **自动保存**：沿用系统设计，自动保存任何修改
+- **灵活配置**：直接在界面添加和管理自定义参数，无需修改代码
+- **类型支持**：String、Float、Boolean、Array、Object、Integer
+- **实时验证**：参数修改时实时校验，防止无效配置
+- **导入导出**：方便团队共享和备份
+- **自动保存**：沿用系统设计，任何修改自动保存
 
-## 模型的选择
+## 🔦 使用（普通用户）
 
-从视频或者音频里面，生成字幕文件，需要使用到 whisper 的模型。 whisper 的模型有多种，不同的模型，生成字幕的准确性不同，处理速度也不同。
+请根据自己的电脑系统和芯片，选择下载对应安装包。GPU 加速包无须在下载时选择，安装软件后可在应用内下载。
 
-- 模型越大，准确性越高，对显卡要求也高，处理速度越慢
-- 低端设备或者显卡，推荐 `tiny` 或者 `base` 系列的模型，准确性虽然不如 `large` 系列，但是处理速度快，占用显存小
-- 普通电脑设备，建议从 `small` 或者 `base` 开始，平衡精度与资源消耗
-- 对于高性能显卡/工作站，推荐使用 `large` 系列的模型，准确性高
-- 如果原始音视频是英文，推荐使用带 `en` 的模型，专为英语优化，减少多语言干扰
-- 如果在乎模型大小，可以考虑使用 `q5` 或者 `q8` 系列的模型，相对于非量化版本，牺牲少量精度换取更小体积
-
-## 🔦使用 (普通用户)
-
-请根据自己的电脑系统和芯片，选择下载对应安装包。GPU 加速包无须在下载安装包时选择，安装软件后可在应用内下载。
-
-| 系统    | 芯片  | 下载安装包  | 说明                                  |
-| ------- | ----- | ----------- | ------------------------------------- |
-| Windows | x64   | windows-x64 | NVIDIA 用户安装后可在应用内下载加速包 |
-| Mac     | Apple | mac-arm64   | 自动启用 Core ML 加速                 |
-| Mac     | Intel | mac-x64     | 不支持 GPU 加速                       |
-| Linux   | x64   | linux-x64   | NVIDIA 用户安装后可在应用内下载加速包 |
+| 系统    | 芯片  | 下载安装包  | 说明                                            |
+| ------- | ----- | ----------- | ----------------------------------------------- |
+| Windows | x64   | windows-x64 | NVIDIA 用 CUDA，AMD/Intel 用 Vulkan，应用内下载 |
+| Mac     | Apple | mac-arm64   | 自动启用 Core ML / Metal 加速                   |
+| Mac     | Intel | mac-x64     | 仅 CPU，不支持 GPU 加速                         |
+| Linux   | x64   | linux-x64   | NVIDIA 用 CUDA，AMD/Intel 用 Vulkan，应用内下载 |
 
 ### macOS 用户通过 Homebrew 安装（推荐）
 
@@ -155,13 +196,13 @@ brew uninstall --cask smartsub
 1. 前往 [release](https://github.com/buxuku/SmartSub/releases) 页面根据自己的操作系统下载安装包
 2. 或者使用网盘 [夸克](https://pan.quark.cn/s/0b16479b40ca) 选择对应的版本进行下载
 3. 安装并运行程序
-4. 下载模型
-5. 在程序中配置所需的翻译服务
-6. 选择要处理的音视频文件或字幕文件
-7. 设置相关参数（如源语言、目标语言、模型等）
+4. 跟随新手引导，下载一个语音模型
+5. 在「翻译服务」中配置所需的翻译服务（可选）
+6. 在启动台选择任务，拖入音视频或字幕文件
+7. 设置相关参数（源语言、目标语言、引擎、模型等）
 8. 开始处理任务
 
-## 🔦使用 (开发用户)
+## 🔦 使用（开发用户）
 
 1️⃣ 克隆本项目在本地
 
@@ -174,6 +215,7 @@ git clone https://github.com/buxuku/SmartSub.git
 ```shell
 cd SmartSub
 yarn install
+yarn sherpa:fetch # 下载 sherpa-onnx 原生库
 ```
 
 如果是 windows / linux 平台，或者 Mac intel 平台，请前往 https://github.com/buxuku/whisper.cpp/releases/tag/latest 下载对应的 node 文件，并重命名为 `addon.node` , 覆盖放在 `extraResources/addons/` 目录下。
@@ -186,7 +228,7 @@ yarn dev
 
 ## 手动下载和导入模型
 
-因为模型文件比较大，如果通过该软件下载模型会存在难以下载的情况，可以手动下载模型并导入到应用中。以下是两个可用于下载模型的链接：
+因为模型文件比较大，如果通过该软件下载模型会存在难以下载的情况，可以手动下载模型并导入到应用中。以下是两个可用于下载 whisper 模型的链接：
 
 1. 国内镜像源（下载速度较快）：
    https://hf-mirror.com/ggerganov/whisper.cpp/tree/main
@@ -194,19 +236,21 @@ yarn dev
 2. Hugging Face 官方源：
    https://huggingface.co/ggerganov/whisper.cpp/tree/main
 
-如果是苹果芯片，需要同时下载模型对应的 encoder.mlmodelc 文件。并解压出来放在模型相同目录下。（如果是 q5 或者 q8 系列的模型，无须下载该文件）
+如果是苹果芯片，需要同时下载模型对应的 encoder.mlmodelc 文件，并解压出来放在模型相同目录下。（如果是 q5 或者 q8 系列的模型，无须下载该文件）
 
-下载完成后，您可以通过应用的"模型管理"页面中的"导入模型"功能将下载的模型文件导入到应用中。或者直接复制到模型目录里面即可。
+下载完成后，您可以通过应用「引擎与模型」页面中的「导入模型」功能将下载的模型文件导入到应用中。或者直接复制到模型目录里面即可。
 
 导入步骤：
 
-1. 在"模型管理"页面中，点击"导入模型"按钮。
+1. 在「引擎与模型」页面中，点击「导入模型」按钮。
 2. 在弹出的文件选择器中，选择您下载的模型文件。
 3. 确认导入后，模型将被添加到您的已安装模型列表中。
 
+> FunASR / Qwen3-ASR / FireRedASR 等引擎的模型，可在「引擎与模型」页面内按需下载（支持 ModelScope / GitHub 等多源）。
+
 ## 常见问题
 
-##### 1.提示应用程序已损坏，无法打开。
+##### 1. 提示应用程序已损坏，无法打开。
 
 在终端中执行以下命令：
 

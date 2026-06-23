@@ -1,0 +1,68 @@
+{
+  "title": "What would you like to do?",
+  "subtitle": "Pick a task to start — you can also drop files straight onto a card",
+  "card": {
+    "generateTranslate": "Video → bilingual subtitles",
+    "generateTranslateDesc": "Transcribe speech and translate it into your target language in one go",
+    "generate": "Video → original subtitles",
+    "generateDesc": "Transcribe speech only, no translation",
+    "translate": "Translate existing subtitles",
+    "translateDesc": "Translate SRT and other subtitle files into another language",
+    "proofread": "Proofread subtitles",
+    "proofreadDesc": "Review line by line, with video preview and AI polish",
+    "merge": "Burn to Video",
+    "mergeDesc": "Burn subtitles into the picture so they always show"
+  },
+  "needsModelBadge": "Needs a model",
+  "banner": {
+    "noModel": "No speech model yet — it turns speech into text. Download one to get started",
+    "noModelCta": "Download recommended model",
+    "noProvider": "Want translated subtitles? Set up a translation service first (free options available)",
+    "noProviderCta": "Set up"
+  },
+  "recentTasks": "Recent tasks",
+  "noRecentTasks": "No tasks yet — pick one above to get started",
+  "dropHint": "Drop to import files",
+  "fileCount": "{{count}} files",
+  "recent": {
+    "rename": "Rename",
+    "delete": "Delete",
+    "deleteTitle": "Delete this task record?",
+    "deleteDesc": "This removes the \"{{name}}\" task record. Files on disk are not affected.",
+    "cancel": "Cancel",
+    "viewAll": "View all ({{count}})",
+    "viewAllPage": "View all ({{count}})",
+    "collapse": "Collapse",
+    "searchPlaceholder": "Search tasks…",
+    "noMatch": "No matching tasks"
+  },
+  "allTasks": {
+    "title": "All tasks",
+    "description": "Browse, filter, and manage all recent task records",
+    "back": "Back to launchpad",
+    "searchPlaceholder": "Search by task name…",
+    "typeFilter": "Task type",
+    "typeAll": "All types",
+    "pageRange": "{{from}}–{{to}} of {{total}}",
+    "pageInfo": "Page {{page}} of {{totalPages}}",
+    "prevPage": "Previous",
+    "nextPage": "Next",
+    "resultCount": "Showing {{shown}} of {{total}}",
+    "noMatch": "No tasks match your filters",
+    "loading": "Loading…",
+    "clearAll": "Clear all",
+    "clearAllTitle": "Clear all task records?",
+    "clearAllDesc": "This removes {{count}} task records. Files on disk are not affected.",
+    "clearAllConfirm": "Clear all",
+    "emptyTitle": "No task records",
+    "emptyHint": "Go back to the launchpad to start a task. Completed tasks will appear here.",
+    "emptyCta": "Back to launchpad"
+  },
+  "status": {
+    "waiting": "Waiting",
+    "running": "Running",
+    "done": "Done",
+    "error": "Error"
+  },
+  "noRecentTasksHint": "Finished tasks appear here. Drag files onto a card above to get started"
+}

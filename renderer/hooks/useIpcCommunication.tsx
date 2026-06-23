@@ -1,11 +1,25 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { IFiles } from '../../types';
 
-export default function useIpcCommunication(setFiles) {
+export default function useIpcCommunication(
+  setFiles,
+  appendFiles?: (incoming: IFiles[]) => void,
+) {
+  // 始终调用最新的 appendFiles（含去重逻辑），避免事件订阅闭包过期
+  const appendFilesRef = useRef(appendFiles);
+  appendFilesRef.current = appendFiles;
+
   useEffect(() => {
-    window?.ipc?.on('file-selected', (res: IFiles[]) => {
-      setFiles((prevFiles) => [...prevFiles, ...res]);
-    });
+    const cleanupFileSelected = window?.ipc?.on(
+      'file-selected',
+      (res: IFiles[]) => {
+        if (appendFilesRef.current) {
+          appendFilesRef.current(res);
+        } else {
+          setFiles((prevFiles) => [...prevFiles, ...res]);
+        }
+      },
+    );
 
     const handleTaskStatusChange = (
       res: IFiles,
@@ -109,10 +123,15 @@ export default function useIpcCommunication(setFiles) {
       });
     };
 
-    window?.ipc?.on('taskStatusChange', handleTaskStatusChange);
-    window?.ipc?.on('taskProgressChange', handleTaskProgressChange);
-    window?.ipc?.on('taskErrorChange', handleTaskErrorChange);
-    window?.ipc?.on('taskFileChange', handleFileChange);
-    return () => {};
+    const cleanups = [
+      cleanupFileSelected,
+      window?.ipc?.on('taskStatusChange', handleTaskStatusChange),
+      window?.ipc?.on('taskProgressChange', handleTaskProgressChange),
+      window?.ipc?.on('taskErrorChange', handleTaskErrorChange),
+      window?.ipc?.on('taskFileChange', handleFileChange),
+    ];
+    return () => {
+      cleanups.forEach((cleanup) => cleanup?.());
+    };
   }, []);
 }

@@ -214,11 +214,20 @@ export function useParameterConfig(): UseParameterConfigReturn {
     [],
   );
 
-  // Cleanup auto-save on unmount
+  // Cleanup auto-save on unmount — flush pending save instead of dropping edits
   useEffect(() => {
     return () => {
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
+      if (!autoSaveTimeoutRef.current) {
+        return;
+      }
+
+      clearTimeout(autoSaveTimeoutRef.current);
+      autoSaveTimeoutRef.current = null;
+
+      const providerId = currentProviderRef.current;
+      const config = configRef.current;
+      if (providerId && config && isAutoSaveEnabledRef.current && window?.ipc) {
+        void window.ipc.invoke('config-manager:save', providerId, config);
       }
     };
   }, []);
