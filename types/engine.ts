@@ -17,7 +17,16 @@ export interface EngineStatus {
   state: EngineStatusState;
   version?: string;
   message?: string;
+  /** 已安装的运行时变体：cpu=默认包，cuda=Full GPU 包（仅 win/linux）。 */
+  variant?: PyEngineVariant;
 }
+
+/**
+ * 运行时变体：
+ * - cpu：默认包（原产物名，不带后缀），所有平台可用；
+ * - cuda：Full GPU(CUDA12) 包（产物名带 -cuda 后缀，捆绑 cuBLAS/cuDNN），仅 windows-x64 / linux-x64。
+ */
+export type PyEngineVariant = 'cpu' | 'cuda';
 
 export interface PyEngineManifest {
   version: string; // 兼容历史（可能为 'latest'）
@@ -30,6 +39,8 @@ export interface PyEngineManifest {
   gitSha?: string;
   engineId?: string; // 'faster-whisper'（运行时按引擎区分目录）
   pythonAbi?: string; // 'cp312'，与内嵌 PBS 解释器 ABI 一致
+  /** 已安装变体；老安装缺失时按 'cpu' 兜底（原产物即 CPU 包）。 */
+  variant?: PyEngineVariant;
 }
 
 export interface RemoteEngineArtifact {
@@ -71,6 +82,8 @@ export interface PyEngineUpdateInfo {
   remoteManifest: RemoteEngineManifest | null;
   remoteHash: string | null;
   protocolSupported: boolean;
+  /** 本次更新检查所针对的变体（默认取已安装变体，未安装时为 'cpu'）。 */
+  variant?: PyEngineVariant;
 }
 
 export type PyEngineDownloadSource = 'github' | 'ghproxy' | 'gitcode';

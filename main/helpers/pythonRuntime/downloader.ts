@@ -13,7 +13,7 @@ import type {
   PyEngineUpdateInfo,
   RemoteEngineManifest,
 } from '../../../types/engine';
-import type { PyEngineId } from '../../../types/engine';
+import type { PyEngineId, PyEngineVariant } from '../../../types/engine';
 import {
   PY_ENGINE_TAG,
   getPyEnginesRoot,
@@ -27,6 +27,7 @@ import {
   getRuntimePythonPath,
   writeEngineManifest,
   readEngineManifest,
+  normalizePyEngineVariant,
 } from './paths';
 import { adhocResignDir } from './macSign';
 import { getPythonRuntimeManager, shutdownPythonRuntime } from './index';
@@ -76,8 +77,11 @@ function getTempTarPath(engineId: PyEngineId): string {
   return path.join(getPyEngineDownloadsDir(), `${engineId}.tar.gz`);
 }
 
-function getArtifactFileName(engineId: PyEngineId): string {
-  return getEngineArtifactName(engineId);
+function getArtifactFileName(
+  engineId: PyEngineId,
+  variant: PyEngineVariant,
+): string {
+  return getEngineArtifactName(engineId, variant);
 }
 
 function parseExpectedChecksum(
@@ -204,13 +208,18 @@ export class PyEngineDownloader {
 
   /**
    * 安装/升级：按所选源 + 回退顺序依次尝试。
+   * variant 决定下载 CPU 包还是 Full GPU(CUDA) 包；不支持 cuda 的平台会收敛为 cpu。
    * 用户取消与协议不支持（protocol_unsupported）属终止类错误，不再换源。
    */
-  async download(source: PyEngineDownloadSource): Promise<void> {
+  async download(
+    source: PyEngineDownloadSource,
+    variant: PyEngineVariant = 'cpu',
+  ): Promise<void> {
+    const resolvedVariant = normalizePyEngineVariant(variant);
     // 自包含运行时内嵌解释器，无外部基座依赖，可直接下载。
     return this.core.runWithFallback(
       source,
-      (s) => this.downloadFromSource(s),
+      (s) => this.downloadFromSource(s, resolvedVariant),
       (error) =>
         (error instanceof Error ? error.message : String(error)) ===
           'Download cancelled' ||
@@ -223,9 +232,15 @@ export class PyEngineDownloader {
 
   private async downloadFromSource(
     source: PyEngineDownloadSource,
+    variant: PyEngineVariant,
   ): Promise<void> {
     const resolvedTag = PY_ENGINE_TAG;
-    const url = getEngineDownloadUrl(source, this.engineId, resolvedTag);
+    const url = getEngineDownloadUrl(
+      source,
+      this.engineId,
+      variant,
+      resolvedTag,
+    );
     const tempPath = getTempTarPath(this.engineId);
     const downloadsDir = getPyEngineDownloadsDir();
 
@@ -288,6 +303,7 @@ export class PyEngineDownloader {
             source,
             resolvedTag,
             remoteManifest,
+            variant,
           );
           if (fs.existsSync(downloadedPath)) fs.unlinkSync(downloadedPath);
           saveDownloadState(null, this.engineId);
@@ -333,6 +349,7 @@ export class PyEngineDownloader {
         source,
         resolvedTag,
         remoteManifest,
+        variant,
       );
 
       if (fs.existsSync(downloadedPath)) fs.unlinkSync(downloadedPath);
@@ -413,9 +430,14 @@ export class PyEngineDownloader {
    */
   async checkUpdate(
     source: PyEngineDownloadSource,
+    variant?: PyEngineVariant,
   ): Promise<PyEngineUpdateInfo> {
     const localManifest = readEngineManifest(this.engineId);
     const installed = isRuntimeInstalled(this.engineId);
+    // 未显式指定时按已安装变体检查（老安装无 variant 字段 → 'cpu' 兜底）。
+    const resolvedVariant = normalizePyEngineVariant(
+      variant ?? localManifest?.variant,
+    );
 
     let remoteHash: string | null = null;
     for (const s of getSourceFallbackOrder(source)) {
@@ -425,7 +447,7 @@ export class PyEngineDownloader {
         );
         remoteHash = parseExpectedChecksum(
           checksumsContent,
-          getArtifactFileName(this.engineId),
+          getArtifactFileName(this.engineId, resolvedVariant),
         );
         if (remoteHash) break;
       } catch (error) {
@@ -439,11 +461,17 @@ export class PyEngineDownloader {
     const remoteManifest = await this.fetchRemoteManifest(source);
     const protocolSupported = isRemoteProtocolInstallable(remoteManifest);
 
-    const hasUpdate = !!(
-      remoteHash &&
-      localManifest?.sha256 &&
-      remoteHash.toLowerCase() !== localManifest.sha256.toLowerCase()
-    );
+    // 变体切换（已装 cpu、目标 cuda 或反之）也视为「有更新」，以驱动 UI 的下载入口；
+    // 同变体则按哈希比对判断是否为内容更新。
+    const installedVariant = normalizePyEngineVariant(localManifest?.variant);
+    const variantSwitch = installed && installedVariant !== resolvedVariant;
+    const hasUpdate =
+      variantSwitch ||
+      !!(
+        remoteHash &&
+        localManifest?.sha256 &&
+        remoteHash.toLowerCase() !== localManifest.sha256.toLowerCase()
+      );
 
     return {
       installed,
@@ -452,12 +480,14 @@ export class PyEngineDownloader {
       remoteManifest,
       remoteHash,
       protocolSupported,
+      variant: resolvedVariant,
     };
   }
 
   private buildLocalManifest(
     sha256: string,
     remoteManifest: RemoteEngineManifest | null,
+    variant: PyEngineVariant,
   ): PyEngineManifest {
     return {
       version: remoteManifest?.engineVersion ?? PY_ENGINE_TAG,
@@ -470,6 +500,7 @@ export class PyEngineDownloader {
       gitSha: remoteManifest?.gitSha,
       engineId: this.engineId,
       pythonAbi: remoteManifest?.pythonAbi ?? 'cp312',
+      variant,
     };
   }
 
@@ -478,8 +509,9 @@ export class PyEngineDownloader {
     source: PyEngineDownloadSource,
     tag: string,
     remoteManifest: RemoteEngineManifest | null,
+    variant: PyEngineVariant,
   ): Promise<void> {
-    const artifactName = getArtifactFileName(this.engineId);
+    const artifactName = getArtifactFileName(this.engineId, variant);
     const checksumsUrl = getPyEngineChecksumsUrl(source, tag);
     const checksumsContent = await fetchHttpText(checksumsUrl);
     const expectedChecksum = parseExpectedChecksum(
@@ -525,7 +557,12 @@ export class PyEngineDownloader {
       );
     }
 
-    await this.installFromStaging(stagingDir, expectedChecksum, remoteManifest);
+    await this.installFromStaging(
+      stagingDir,
+      expectedChecksum,
+      remoteManifest,
+      variant,
+    );
   }
 
   /**
@@ -536,6 +573,7 @@ export class PyEngineDownloader {
     stagingDir: string,
     sha256: string,
     remoteManifest: RemoteEngineManifest | null,
+    variant: PyEngineVariant,
   ): Promise<void> {
     const currentDir = getEngineDir(this.engineId);
     const previousDir = getPyEnginePreviousDir(this.engineId);
@@ -573,7 +611,7 @@ export class PyEngineDownloader {
 
     // 4. 写新 manifest（写在引擎包目录内，随目录一起 swap/rollback）
     writeEngineManifest(
-      this.buildLocalManifest(sha256, remoteManifest),
+      this.buildLocalManifest(sha256, remoteManifest, variant),
       this.engineId,
     );
 

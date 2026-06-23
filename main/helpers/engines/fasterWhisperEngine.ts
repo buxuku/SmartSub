@@ -1,6 +1,10 @@
 import fs from 'fs';
 import type { EngineStatus, PyEngineManifest } from '../../../types/engine';
-import { isRuntimeInstalled, readEngineManifest } from '../pythonRuntime/paths';
+import {
+  isRuntimeInstalled,
+  readEngineManifest,
+  normalizePyEngineVariant,
+} from '../pythonRuntime/paths';
 import {
   getFasterWhisperModelsPath,
   resolveCt2ModelSnapshotDir,
@@ -330,7 +334,11 @@ export const fasterWhisperEngineAdapter: TranscriptionEngineAdapter = {
       };
     }
     const manifest = readEngineManifest('faster-whisper');
-    return { state: 'ready', version: formatInstalledVersion(manifest) };
+    return {
+      state: 'ready',
+      version: formatInstalledVersion(manifest),
+      variant: normalizePyEngineVariant(manifest?.variant),
+    };
   },
 
   async transcribe(ctx: TranscribeContext): Promise<string> {
