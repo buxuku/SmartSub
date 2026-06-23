@@ -13,7 +13,7 @@ import {
   TRANSLATOR_MAP,
 } from './services/translationProvider';
 import { getSrtFileName, renderTemplate } from '../helpers/utils';
-import { logMessage, store } from '../helpers/storeManager';
+import { logMessage } from '../helpers/storeManager';
 import { IFiles, IFormData } from '../../types';
 import { ensureTempDir } from '../helpers/fileUtils';
 import { isTaskCancelledError } from '../helpers/taskContext';
@@ -25,15 +25,12 @@ import {
 } from '../helpers/chineseConvert';
 
 /**
- * 解析「中文标点去除」生效值：任务高级参数三态优先，inherit/缺省回退全局设置（issue #330）。
+ * 解析「中文标点去除」生效值：任务级单开关（issue #330）。
  */
 function resolveRemoveChinesePunctuation(
   formData: IFormData | undefined,
 ): boolean {
-  const mode = formData?.chinesePunctuationMode;
-  if (mode === 'on') return true;
-  if (mode === 'off') return false;
-  return store.get('settings')?.removeChinesePunctuation === true;
+  return formData?.removeChinesePunctuation === true;
 }
 
 export default async function translate(
@@ -63,7 +60,7 @@ export default async function translate(
         : 0;
   const renderContentTemplate = CONTENT_TEMPLATES[translateContent];
 
-  // 译文后处理（仅作用于目标译文，不动源文本）：
+  // 译文后处理：
   // 1) 目标为中文时按简/繁做确定性归一，兜底 Ai 概率性输出繁体（issue #332）。
   // 2) 按「中文标点去除」生效值，把中文标点替换为空格（issue #330）。
   const desiredTargetScript = getDesiredChineseScript(targetLanguage);
@@ -79,6 +76,21 @@ export default async function translate(
       out = removeChineseSubtitlePunctuation(out);
     }
     return out;
+  };
+
+  // 双语字幕内嵌「源文行」的标点后处理（issue #330）：
+  // 仅当源为中文、开关开启、且源字幕由 ASR 生成（generateAndTranslate）时才去标点；
+  // translateOnly 的源为用户导入字幕，保持原样。源字幕简繁归一已在 fileProcessor 完成，
+  // 翻译输入仍保留标点（不影响断句质量），此处只清理写入双语文件的源文展示。
+  const isChineseSource = getDesiredChineseScript(sourceLanguage) !== null;
+  const isGeneratedSource = formData?.taskType === 'generateAndTranslate';
+  const removeSourcePunctuation =
+    removePunctuation && isChineseSource && isGeneratedSource;
+  const postProcessBilingualSource = (content: string): string => {
+    if (!content) return content;
+    return removeSourcePunctuation
+      ? removeChineseSubtitlePunctuation(content)
+      : content;
   };
 
   try {
@@ -135,14 +147,16 @@ export default async function translate(
       let tempTranslatedContent = '';
 
       results.forEach(async (result) => {
-        // 目标译文后处理（简繁归一 + 可选中文标点去除）；源文本保持原样
+        // 目标译文后处理（简繁归一 + 可选中文标点去除）
         const targetContent = postProcessTarget(result.targetContent);
+        // 双语内嵌源文行后处理（仅生成并翻译 + 中文源 + 开关开启时去标点）
+        const sourceContent = postProcessBilingualSource(result.sourceContent);
 
         // 根据用户设置的模板生成目标文件内容
         const content = `${result.id}\n${result.startEndTime}\n${renderTemplate(
           renderContentTemplate,
           {
-            sourceContent: result.sourceContent,
+            sourceContent,
             targetContent,
           },
         )}`;

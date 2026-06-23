@@ -1,11 +1,11 @@
 /**
  * 字幕合并主面板组件
- * 整合所有子组件，提供完整的字幕合并功能界面
+ * 左栏：文件 + 样式 + 输出控件（滚动）；右栏：预览独占并最大化，处理状态以浮层呈现
  */
 
 import React from 'react';
 import { useTranslation } from 'next-i18next';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import FileSelector from './FileSelector';
@@ -97,7 +97,7 @@ export default function SubtitleMergePanel({
           {t('outputPathRequiredHint')}
         </div>
       )}
-      {/* 文件选择区域 - 紧凑型 */}
+      {/* 文件选择区域 - 紧凑型，置顶全宽 */}
       <div className="flex-shrink-0 mb-3">
         <FileSelector
           videoPath={videoPath}
@@ -112,16 +112,13 @@ export default function SubtitleMergePanel({
         />
       </div>
 
-      {/* 主内容区域 - 左右分栏 */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {/* 左侧：样式设置 */}
+      {/* 主内容区域 - 左：设置+输出（窄栏滚动）；右：预览独占（最大化） */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(340px,400px)_1fr] gap-3">
+        {/* 左侧：样式设置 + 输出控件 */}
         <Card className="flex flex-col min-h-0 overflow-hidden">
-          <CardHeader className="flex-shrink-0 py-3 px-4">
-            <CardTitle className="text-sm">{t('styleSettings')}</CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 min-h-0 pt-0 px-4 pb-4">
+          <CardContent className="flex-1 min-h-0 p-0">
             <ScrollArea className="h-full">
-              <div className="space-y-3 pr-3">
+              <div className="space-y-3 p-4">
                 {/* 软字幕模式提示：样式仅对烧录生效 */}
                 {isSoftMux && (
                   <p className="rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
@@ -161,42 +158,37 @@ export default function SubtitleMergePanel({
           </CardContent>
         </Card>
 
-        {/* 右侧：预览和导出 */}
-        <div className="flex flex-col gap-3 min-h-0 overflow-hidden">
-          {/* 预览区域：flex-1 占据导出区之外的剩余高度，预览按该高度自适应不溢出 */}
-          <Card className="flex flex-1 flex-col min-h-0 overflow-hidden">
-            <CardHeader className="flex-shrink-0 py-3 px-4">
-              <CardTitle className="text-sm">{t('preview')}</CardTitle>
-            </CardHeader>
-            <CardContent className="flex-1 min-h-0 pt-0 px-4 pb-4 overflow-hidden">
+        {/* 右侧：上=预览（最大化），下=输出控件，填满预览之外的竖向空间 */}
+        <div className="flex flex-col min-h-0 gap-3">
+          <Card className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <CardContent className="flex-1 min-h-0 p-3 overflow-hidden">
               <VideoPreview
                 videoPath={videoPath}
                 videoInfo={videoInfo}
                 style={style}
                 subtitlePath={subtitlePath}
+                progress={progress}
+                status={status}
+                isCancelling={isCancelling}
+                onCancelMerge={cancelMerge}
+                onOpenOutputFolder={openOutputFolder}
               />
             </CardContent>
           </Card>
 
-          {/* 导出区域 */}
+          {/* 输出方式 + 画质 + 路径 + 生成 */}
           <Card className="flex-shrink-0">
             <CardContent className="p-4">
               <MergeButton
-                videoPath={videoPath}
-                subtitlePath={subtitlePath}
                 outputPath={outputPath}
                 outputMode={outputMode}
                 videoQuality={videoQuality}
-                progress={progress}
                 status={status}
                 canMerge={canMerge}
-                isCancelling={isCancelling}
                 onSelectOutputPath={selectOutputPath}
                 onOutputModeChange={setOutputMode}
                 onVideoQualityChange={setVideoQuality}
                 onStartMerge={startMerge}
-                onCancelMerge={cancelMerge}
-                onOpenOutputFolder={openOutputFolder}
               />
             </CardContent>
           </Card>

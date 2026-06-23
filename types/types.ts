@@ -72,6 +72,8 @@ export interface TaskProject {
 }
 
 export interface IFormData {
+  /** 任务类型（运行时由任务携带）：用于区分源字幕是 ASR 生成还是用户导入。 */
+  taskType?: TaskProjectType;
   translateContent:
     | 'onlyTranslate'
     | 'sourceAndTranslate'
@@ -82,6 +84,6 @@ export interface IFormData {
   targetLanguage: string;
   translateRetryTimes: string;
   subtitleOutputFormat?: 'srt' | 'vtt' | 'ass' | 'lrc' | 'txt';
-  /** 中文标点去除（任务级三态）：inherit=跟随全局设置，on=强制开启，off=强制关闭。缺省 inherit。 */
-  chinesePunctuationMode?: 'inherit' | 'on' | 'off';
+  /** 中文标点去除（任务级开关）：开启后把中文标点替换为空格。作用于源字幕(中文源)与译文(中文目标)。缺省关闭。 */
+  removeChinesePunctuation?: boolean;
 }

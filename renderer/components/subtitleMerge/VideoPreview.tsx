@@ -1,18 +1,22 @@
 /**
  * 视频预览组件
- * 16:9 比例显示视频和字幕效果
+ * 按真实视频比例显示视频和字幕效果；使用原生播放控制条，处理状态以浮层呈现
  */
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import ReactPlayer from 'react-player';
 import { Button } from '@/components/ui/button';
-import { Slider } from '@/components/ui/slider';
-import { Play, Pause } from 'lucide-react';
-import type { SubtitleStyle, VideoInfo } from '../../../types/subtitleMerge';
+import { Progress } from '@/components/ui/progress';
+import { Loader2, CheckCircle, XCircle, Folder } from 'lucide-react';
+import type {
+  SubtitleStyle,
+  VideoInfo,
+  MergeProgress,
+  MergeStatus,
+} from '../../../types/subtitleMerge';
 import SubtitlePreviewOverlay from './SubtitlePreviewOverlay';
 import { LIBASS_SRT_PLAYRES_Y } from './utils/styleUtils';
-import { formatTime } from '../../hooks/useVideoPlayer';
 
 interface VideoPreviewProps {
   videoPath: string | null;
@@ -20,6 +24,16 @@ interface VideoPreviewProps {
   style: SubtitleStyle;
   subtitlePath?: string | null;
   sampleText?: string;
+  /** 合成进度（用于处理中/错误浮层） */
+  progress?: MergeProgress;
+  /** 合成状态（驱动浮层显隐） */
+  status?: MergeStatus;
+  /** 取消中标记 */
+  isCancelling?: boolean;
+  /** 取消合成 */
+  onCancelMerge?: () => void;
+  /** 打开输出文件夹 */
+  onOpenOutputFolder?: () => void;
 }
 
 interface PreviewCue {
@@ -65,6 +79,11 @@ export default function VideoPreview({
   style,
   subtitlePath = null,
   sampleText = '字幕预览效果',
+  progress,
+  status = 'idle',
+  isCancelling = false,
+  onCancelMerge,
+  onOpenOutputFolder,
 }: VideoPreviewProps) {
   const { t } = useTranslation('subtitleMerge');
   const playerRef = useRef<ReactPlayer>(null);
@@ -72,9 +91,8 @@ export default function VideoPreview({
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
   const [cues, setCues] = useState<PreviewCue[]>([]);
-  // 预览框尺寸：按可视区宽高拟合最大 16:9 矩形，保证完整可见且不撑出滚动条
+  // 预览框尺寸：按可视区宽高拟合最大矩形，保证完整可见且不撑出滚动条
   const [box, setBox] = useState<{ width: number; height: number }>({
     width: 0,
     height: 0,
@@ -153,26 +171,16 @@ export default function VideoPreview({
   const overlayText =
     subtitlePath && cues.length > 0 ? (currentCue?.text ?? null) : sampleText;
 
-  // 处理进度更新
+  // 处理进度更新（原生控制条拖动同样会触发，保证字幕叠加层同步）
   const handleProgress = ({ playedSeconds }: { playedSeconds: number }) => {
     setCurrentTime(playedSeconds);
   };
 
-  // 处理时长获取
-  const handleDuration = (dur: number) => {
-    setDuration(dur);
-  };
-
-  // 跳转到指定时间
-  const handleSeek = (value: number[]) => {
-    const time = value[0];
-    setCurrentTime(time);
-    playerRef.current?.seekTo(time, 'seconds');
-  };
+  const isProcessing = status === 'processing';
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2">
-      {/* 预览区域 - 自适应高度，保持 16:9 完整可见（不再因高度不足而出现滚动条） */}
+    <div className="flex h-full min-h-0 flex-col">
+      {/* 预览区域 - 自适应高度，保持真实比例完整可见 */}
       <div
         ref={previewAreaRef}
         className="flex min-h-0 flex-1 items-center justify-center overflow-hidden"
@@ -188,16 +196,17 @@ export default function VideoPreview({
           <div className="absolute inset-0 flex items-center justify-center">
             {videoPath ? (
               <>
-                {/* 视频播放器 */}
+                {/* 视频播放器：原生控制条 */}
                 <ReactPlayer
                   ref={playerRef}
                   url={`media://${encodeURIComponent(videoPath)}`}
                   width="100%"
                   height="100%"
                   playing={isPlaying}
-                  controls={false}
+                  controls={true}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
                   onProgress={handleProgress}
-                  onDuration={handleDuration}
                   progressInterval={100}
                   style={{ position: 'absolute', top: 0, left: 0 }}
                 />
@@ -220,40 +229,75 @@ export default function VideoPreview({
               </div>
             )}
           </div>
+
+          {/* 处理中浮层：不撑高布局，居中半透明面板 + 进度 + 取消 */}
+          {isProcessing && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/55 backdrop-blur-sm">
+              <Loader2 className="h-8 w-8 animate-spin text-white" />
+              <div className="w-2/3 max-w-xs space-y-1.5">
+                <div className="flex items-center justify-between text-xs text-white/90">
+                  <span>{t('processing')}</span>
+                  <span className="font-medium">
+                    {Math.round(progress?.percent ?? 0)}%
+                  </span>
+                </div>
+                <Progress value={progress?.percent ?? 0} className="h-1.5" />
+                {progress?.timeMark && (
+                  <p className="text-[11px] text-white/70">
+                    {t('currentTime')}: {progress.timeMark}
+                  </p>
+                )}
+              </div>
+              {onCancelMerge && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-7 px-3 text-xs"
+                  onClick={onCancelMerge}
+                  disabled={isCancelling}
+                >
+                  <XCircle className="mr-1 h-3 w-3" />
+                  {isCancelling ? t('cancelling') : t('cancel')}
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* 成功浮层：右上角卡片，不全遮挡画面 */}
+          {status === 'completed' && (
+            <div className="absolute right-2 top-2 z-20 flex items-center gap-2 rounded-lg border border-success/40 bg-background/95 px-3 py-2 shadow-lg">
+              <CheckCircle className="h-4 w-4 text-success" />
+              <span className="text-xs text-success">{t('mergeSuccess')}</span>
+              {onOpenOutputFolder && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={onOpenOutputFolder}
+                >
+                  <Folder className="mr-1 h-3 w-3" />
+                  {t('openFolder')}
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* 错误浮层：底部条 */}
+          {status === 'error' && progress?.errorMessage && (
+            <div className="absolute inset-x-2 bottom-2 z-20 flex items-start gap-2 rounded-lg border border-destructive/40 bg-background/95 px-3 py-2 shadow-lg">
+              <XCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-destructive" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-destructive">
+                  {t('mergeError')}
+                </p>
+                <p className="mt-0.5 break-all text-[11px] text-destructive/70">
+                  {progress.errorMessage}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
-
-      {/* 播放控制 */}
-      {videoPath && (
-        <div className="flex flex-shrink-0 items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => setIsPlaying(!isPlaying)}
-          >
-            {isPlaying ? (
-              <Pause className="w-4 h-4" />
-            ) : (
-              <Play className="w-4 h-4" />
-            )}
-          </Button>
-          <span className="text-xs text-muted-foreground w-10">
-            {formatTime(currentTime)}
-          </span>
-          <Slider
-            value={[currentTime]}
-            min={0}
-            max={duration || 100}
-            step={0.1}
-            onValueChange={handleSeek}
-            className="flex-1"
-          />
-          <span className="text-xs text-muted-foreground w-10 text-right">
-            {formatTime(duration)}
-          </span>
-        </div>
-      )}
     </div>
   );
 }

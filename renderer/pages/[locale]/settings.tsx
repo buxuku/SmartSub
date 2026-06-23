@@ -141,8 +141,6 @@ const Settings = () => {
   const [customTempDir, setCustomTempDir] = useState('');
   const [useCustomTempDir, setUseCustomTempDir] = useState(false);
   const [checkUpdateOnStartup, setCheckUpdateOnStartup] = useState(true);
-  const [removeChinesePunctuation, setRemoveChinesePunctuation] =
-    useState(false);
   const [useVAD, setUseVAD] = useState(true);
   const [vadThreshold, setVADThreshold] = useState(0.5);
   const [vadMinSpeechDuration, setVADMinSpeechDuration] = useState(250);
@@ -181,7 +179,6 @@ const Settings = () => {
         setUseCustomTempDir(settings.useCustomTempDir || false);
         setCustomTempDir(settings.customTempDir || '');
         setCheckUpdateOnStartup(settings.checkUpdateOnStartup !== false);
-        setRemoveChinesePunctuation(settings.removeChinesePunctuation === true);
         setUseVAD(settings.useVAD !== false);
         setVADThreshold(settings.vadThreshold ?? 0.5);
         setVADMinSpeechDuration(settings.vadMinSpeechDuration ?? 250);
@@ -297,18 +294,6 @@ const Settings = () => {
     try {
       await window?.ipc?.invoke('setSettings', { closeAction: value });
       toast.success(t('closeActionSaved'));
-    } catch (error) {
-      toast.error(t('saveFailed'));
-    }
-  };
-
-  const handleRemoveChinesePunctuationChange = async (checked: boolean) => {
-    setRemoveChinesePunctuation(checked);
-    try {
-      await window?.ipc?.invoke('setSettings', {
-        removeChinesePunctuation: checked,
-      });
-      toast.success(t('subtitleProcessingSaved'));
     } catch (error) {
       toast.error(t('saveFailed'));
     }
@@ -648,30 +633,6 @@ const Settings = () => {
                   </div>
                 )}
               </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <IconChip icon={Eraser} />
-              {t('subtitleProcessing')}
-            </CardTitle>
-            <p className="text-sm text-muted-foreground pt-1">
-              {t('subtitleProcessingDesc')}
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span>{t('removeChinesePunctuation')}</span>
-                <HelpHint text={t('removeChinesePunctuationTip')} />
-              </div>
-              <Switch
-                checked={removeChinesePunctuation}
-                onCheckedChange={handleRemoveChinesePunctuationChange}
-              />
             </div>
           </CardContent>
         </Card>

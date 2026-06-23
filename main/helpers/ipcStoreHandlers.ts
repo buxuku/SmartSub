@@ -12,6 +12,7 @@ import { shutdownPythonRuntime } from './pythonRuntime';
 import { applyProxyFromSettings } from './network/proxyManager';
 
 console.log(app.getVersion(), 'version');
+
 export function setupStoreHandlers() {
   // gpuMode 一次性迁移：
   // 老用户（settings 中无 gpuMode）统一迁移为 'auto'，并标记待通知；

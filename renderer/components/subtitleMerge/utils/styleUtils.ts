@@ -42,11 +42,15 @@ export function subtitleStyleToCSS(
     padding: `${4 * s}px ${8 * s}px`,
     // libass 行距≈1.2em，预览与之对齐，避免多行字幕预览比烧录结果偏高
     lineHeight: 1.2,
-    // 与 libass 行为一致：保留字幕里的显式换行，但「不」自动折行。
-    // libass 只在空格处断行，纯中文（无空格）长行不会折行而是溢出帧并居中裁剪；
-    // 预览框本身 overflow-hidden，故 'pre' 即可复刻同样的「居中溢出裁剪」效果，
-    // 避免预览折行、烧录不折行造成的所见非所得。
-    whiteSpace: 'pre',
+    // 折行行为对齐 libass（force_style 未设 WrapStyle，默认仅在空格处断行）：
+    //   - pre-wrap：保留显式换行与空格，并在空格处提供软换行点（英文/含空格文本会折行）；
+    //   - word-break: keep-all：禁止在 CJK 字符间断行，纯中文（无空格）长行不折行而是
+    //     溢出帧、由预览框 overflow-hidden 居中裁剪；
+    //   - overflow-wrap: normal：不强制打断长串。
+    // 效果：仅中文不换行、含空格按空格换行，与烧录结果一致（所见即所得）。
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'keep-all',
+    overflowWrap: 'normal',
   };
 
   // 根据边框样式处理

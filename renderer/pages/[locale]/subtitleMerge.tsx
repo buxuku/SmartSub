@@ -8,23 +8,12 @@ import { useTranslation } from 'next-i18next';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { SubtitleMergePanel } from '@/components/subtitleMerge';
 import PageHeader from '@/components/PageHeader';
-import { toast } from 'sonner';
 
 export default function SubtitleMergePage() {
   const { t } = useTranslation('subtitleMerge');
   const router = useRouter();
 
-  const handleComplete = (outputPath: string) => {
-    toast.success(t('mergeSuccess'), {
-      description: outputPath,
-    });
-  };
-
-  const handleError = (error: string) => {
-    toast.error(t('mergeError'), {
-      description: error,
-    });
-  };
+  // 合成成功/失败均由面板内预览浮层呈现，不再额外弹 toast
 
   // 等 query 就绪再挂载面板，保证衔接入口的预填参数能进入初始状态
   if (!router.isReady) return null;
@@ -43,8 +32,6 @@ export default function SubtitleMergePage() {
         <SubtitleMergePanel
           initialVideoPath={initialVideoPath}
           initialSubtitlePath={initialSubtitlePath}
-          onComplete={handleComplete}
-          onError={handleError}
         />
       </div>
     </div>

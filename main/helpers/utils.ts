@@ -239,6 +239,7 @@ export const defaultUserConfig = {
   sourceSrtSaveOption: 'noSave',
   targetSrtSaveOption: 'fileNameWithLang',
   subtitleOutputFormat: 'srt',
+  removeChinesePunctuation: false,
 };
 
 export function getSrtFileName(

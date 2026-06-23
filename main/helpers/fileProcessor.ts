@@ -10,7 +10,11 @@ import {
 } from './audioProcessor';
 import { canHaveEmbeddedSubtitle, srtHasCues } from './embeddedSubtitleParser';
 import { routeTranscription } from './transcriptionRouter';
-import { getDesiredChineseScript, convertChineseText } from './chineseConvert';
+import {
+  getDesiredChineseScript,
+  convertChineseText,
+  removeChineseSubtitlePunctuation,
+} from './chineseConvert';
 import translate from '../translate';
 import { ensureTempDir, getMd5 } from './fileUtils';
 import { IFiles } from '../../types';
@@ -102,6 +106,31 @@ async function convertDeliverable(
     }
   }
   return newPath;
+}
+
+/**
+ * 源字幕中文标点去除（issue #330）：把中文标点替换为空格并清理空白，原位写回。
+ * 仅清理文本；SRT 序号/时间码为 ASCII，不受 CJK 标点正则影响。失败仅告警，不阻断主流程。
+ */
+async function stripSourceSubtitlePunctuation(
+  srtFile: string,
+  fileName: string,
+): Promise<void> {
+  try {
+    throwIfTaskCancelled();
+    const original = await fs.promises.readFile(srtFile, 'utf-8');
+    const cleaned = removeChineseSubtitlePunctuation(original);
+    if (cleaned !== original) {
+      await fs.promises.writeFile(srtFile, cleaned, 'utf-8');
+      logMessage(
+        `removed Chinese punctuation from source subtitle: ${fileName}`,
+        'info',
+      );
+    }
+  } catch (error) {
+    if (isTaskCancelledError(error) || isTaskCancelled()) throw error;
+    logMessage(`source punctuation removal failed: ${error}`, 'warning');
+  }
 }
 
 /**
@@ -395,6 +424,18 @@ export async function processFile(
       }
     }
 
+    // 源字幕中文标点去除 · generateOnly：转写后即剥离（无翻译下游，零风险）
+    if (
+      !isSubtitleFile &&
+      shouldGenerateSubtitle &&
+      taskType === 'generateOnly' &&
+      file.srtFile &&
+      formData?.removeChinesePunctuation === true &&
+      getDesiredChineseScript(sourceLanguage)
+    ) {
+      await stripSourceSubtitlePunctuation(file.srtFile, fileName);
+    }
+
     // 翻译字幕（取消后不再进入）
     throwIfTaskCancelled();
     if (shouldTranslateSubtitle && translateProvider !== '-1') {
@@ -406,6 +447,21 @@ export async function processFile(
       }
       logMessage(`translate subtitle ${file.srtFile}`, 'info');
       await translateSubtitle(event, file, formData, provider);
+    }
+
+    // 源字幕中文标点去除 · generateAndTranslate：翻译完成后再剥离源交付物，
+    // 保留翻译输入的标点以护断句；noSave 时源字幕随后会被清理，无需处理。
+    if (
+      !isSubtitleFile &&
+      shouldGenerateSubtitle &&
+      taskType === 'generateAndTranslate' &&
+      sourceSrtSaveOption !== 'noSave' &&
+      file.srtFile &&
+      fs.existsSync(file.srtFile) &&
+      formData?.removeChinesePunctuation === true &&
+      getDesiredChineseScript(sourceLanguage)
+    ) {
+      await stripSourceSubtitlePunctuation(file.srtFile, fileName);
     }
 
     // 将交付字幕转换为用户选择的输出格式（内部流程始终为 SRT，此处仅转换最终交付物）
