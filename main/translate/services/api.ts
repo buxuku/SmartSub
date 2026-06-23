@@ -2,6 +2,10 @@ import { TranslationConfig, TranslationResult, Subtitle } from '../types';
 import { DEFAULT_BATCH_SIZE } from '../constants';
 import { logMessage } from '../../helpers/storeManager';
 import { isConfigurationError } from '../utils/error';
+import {
+  throwIfTaskCancelled,
+  isTaskCancelledError,
+} from '../../helpers/taskContext';
 
 export async function handleAPIBatchTranslation(
   subtitles: Subtitle[],
@@ -18,6 +22,7 @@ export async function handleAPIBatchTranslation(
   const requestInterval = +(provider.requestInterval || 0) * 1000;
 
   for (let i = 0; i < subtitles.length; i += batchSize) {
+    throwIfTaskCancelled();
     const batch = subtitles.slice(i, i + batchSize);
     const batchContents = batch.map((s) => s.content.join('\n'));
     const currentBatchIndex = Math.floor(i / batchSize) + 1;
@@ -30,6 +35,7 @@ export async function handleAPIBatchTranslation(
     }
 
     while (!batchSuccess && retryCount <= maxRetries) {
+      throwIfTaskCancelled();
       try {
         logMessage(
           `API翻译批次 ${currentBatchIndex}/${totalBatches} (尝试 ${retryCount + 1}/${maxRetries + 1})`,
@@ -66,6 +72,7 @@ export async function handleAPIBatchTranslation(
         results.push(...batchResults);
         batchSuccess = true;
       } catch (error) {
+        if (isTaskCancelledError(error)) throw error;
         // 检查是否是配置错误，如果是则直接抛出，不进行重试
         if (isConfigurationError(error)) {
           throw new Error(

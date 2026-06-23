@@ -1,0 +1,68 @@
+{
+  "title": "您想做什么？",
+  "subtitle": "选择一个任务开始，文件也可以直接拖到卡片上",
+  "card": {
+    "generateTranslate": "视频 → 双语字幕",
+    "generateTranslateDesc": "转写人声并翻译成目标语言，一步到位",
+    "generate": "视频 → 原文字幕",
+    "generateDesc": "只转写人声，不翻译",
+    "translate": "翻译已有字幕",
+    "translateDesc": "把 SRT 等字幕文件翻译成其它语言",
+    "proofread": "校对字幕",
+    "proofreadDesc": "逐句检查修改，支持视频对照与 AI 润色",
+    "merge": "合成到视频",
+    "mergeDesc": "把字幕烧录进画面，永久显示"
+  },
+  "needsModelBadge": "需要模型",
+  "banner": {
+    "noModel": "还没有语音模型——它负责把人声转写成文字，下载一个就能开始",
+    "noModelCta": "下载推荐模型",
+    "noProvider": "想翻译字幕？先配置一个翻译服务（也有免费选项）",
+    "noProviderCta": "去配置"
+  },
+  "recentTasks": "最近任务",
+  "noRecentTasks": "还没有任务记录，从上面选一个任务开始吧",
+  "dropHint": "松手导入文件",
+  "fileCount": "{{count}} 个文件",
+  "recent": {
+    "rename": "重命名",
+    "delete": "删除",
+    "deleteTitle": "删除这条任务记录？",
+    "deleteDesc": "将删除「{{name}}」的任务记录，磁盘上的文件不受影响。",
+    "cancel": "取消",
+    "viewAll": "查看全部（{{count}}）",
+    "viewAllPage": "查看全部（{{count}}）",
+    "collapse": "收起",
+    "searchPlaceholder": "搜索任务名称…",
+    "noMatch": "没有匹配的任务"
+  },
+  "allTasks": {
+    "title": "全部任务",
+    "description": "查看、筛选和管理所有最近任务记录",
+    "back": "返回启动台",
+    "searchPlaceholder": "按任务名称搜索…",
+    "typeFilter": "任务类型",
+    "typeAll": "全部类型",
+    "pageRange": "第 {{from}}–{{to}} 条，共 {{total}} 条",
+    "pageInfo": "第 {{page}} / {{totalPages}} 页",
+    "prevPage": "上一页",
+    "nextPage": "下一页",
+    "resultCount": "显示 {{shown}} / 共 {{total}} 条",
+    "noMatch": "没有符合筛选条件的任务",
+    "loading": "加载中…",
+    "clearAll": "清除全部",
+    "clearAllTitle": "清除全部任务记录？",
+    "clearAllDesc": "将删除 {{count}} 条任务记录，磁盘上的文件不受影响。",
+    "clearAllConfirm": "确认清除",
+    "emptyTitle": "暂无任务记录",
+    "emptyHint": "返回启动台选择任务开始，处理完成后会出现在这里",
+    "emptyCta": "返回启动台"
+  },
+  "status": {
+    "waiting": "等待中",
+    "running": "进行中",
+    "done": "已完成",
+    "error": "出错"
+  },
+  "noRecentTasksHint": "完成的任务会出现在这里，把文件拖到上方卡片即可开始"
+}

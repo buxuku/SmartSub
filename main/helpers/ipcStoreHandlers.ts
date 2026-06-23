@@ -7,9 +7,29 @@ import { logMessage } from './logger';
 import { LogEntry } from './store/types';
 import { getBuildInfo } from './buildInfo';
 import { exportConfig, importConfig } from './configExporter';
+import { rebuildAppMenu } from './menu';
+import { shutdownPythonRuntime } from './pythonRuntime';
+import { applyProxyFromSettings } from './network/proxyManager';
 
 console.log(app.getVersion(), 'version');
+
 export function setupStoreHandlers() {
+  // gpuMode 一次性迁移：
+  // 老用户（settings 中无 gpuMode）统一迁移为 'auto'，并标记待通知；
+  // 新装用户由 store defaults 提供 gpuMode='auto'，不会进入此分支。
+  const currentSettings = store.get('settings');
+  if (currentSettings && currentSettings.gpuMode === undefined) {
+    store.set('settings', {
+      ...currentSettings,
+      gpuMode: 'auto',
+      gpuMigrationNotified: false,
+    });
+    logMessage(
+      `Migrated GPU settings: useCuda=${currentSettings.useCuda} -> gpuMode=auto`,
+      'info',
+    );
+  }
+
   // 启动时初始化服务商配置
   getAndInitializeProviders().then(async () => {
     const osInfo = {
@@ -51,6 +71,27 @@ export function setupStoreHandlers() {
   ipcMain.handle('setSettings', async (event, settings) => {
     const preSettings = store.get('settings');
     store.set('settings', { ...preSettings, ...settings });
+    if (
+      settings?.proxyMode !== undefined ||
+      settings?.proxyUrl !== undefined ||
+      settings?.proxyNoProxy !== undefined
+    ) {
+      applyProxyFromSettings();
+    }
+    if (
+      settings?.fasterWhisperModelsPath &&
+      settings.fasterWhisperModelsPath !== preSettings?.fasterWhisperModelsPath
+    ) {
+      await shutdownPythonRuntime();
+      logMessage(
+        `faster-whisper models path changed, python engine restarted`,
+        'info',
+      );
+    }
+    // 语言切换后重建应用菜单
+    if (settings?.language && settings.language !== preSettings?.language) {
+      rebuildAppMenu(settings.language);
+    }
   });
 
   ipcMain.handle('getSettings', async () => {
@@ -71,12 +112,22 @@ export function setupStoreHandlers() {
     },
   );
 
-  ipcMain.handle('getLogs', async () => {
-    return store.get('logs');
+  ipcMain.handle('getLogs', async (event, projectId?: string) => {
+    const logs = store.get('logs') || [];
+    if (!projectId) return logs;
+    return logs.filter((log) => log.projectId === projectId);
   });
 
-  ipcMain.handle('clearLogs', async () => {
-    store.set('logs', []);
+  ipcMain.handle('clearLogs', async (_event, projectId?: string) => {
+    const logs = store.get('logs') || [];
+    if (!projectId) {
+      store.set('logs', []);
+      return true;
+    }
+    store.set(
+      'logs',
+      logs.filter((log) => log.projectId !== projectId),
+    );
     return true;
   });
 

@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import path from 'path';
 import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
 import { Video, FileText, X } from 'lucide-react';
@@ -41,7 +42,7 @@ export default function FileSelector({
       <div
         className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-lg border transition-all cursor-pointer hover:border-primary ${
           videoPath
-            ? 'border-green-500 bg-green-50/50 dark:bg-green-950/20'
+            ? 'border-success bg-success/10'
             : 'border-border bg-muted/30'
         } ${disabled ? 'opacity-60 pointer-events-none' : ''}`}
         onClick={!disabled ? onSelectVideo : undefined}
@@ -49,7 +50,7 @@ export default function FileSelector({
         <div
           className={`p-1.5 rounded ${
             videoPath
-              ? 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-400'
+              ? 'bg-success/15 text-success'
               : 'bg-muted text-muted-foreground'
           }`}
         >
@@ -59,7 +60,7 @@ export default function FileSelector({
           {videoPath ? (
             <div className="flex items-center gap-2">
               <span className="text-sm truncate flex-1" title={videoPath}>
-                {videoInfo?.fileName || videoPath.split('/').pop()}
+                {videoInfo?.fileName || path.basename(videoPath)}
               </span>
               {videoInfo && (
                 <span className="text-xs text-muted-foreground whitespace-nowrap">
@@ -69,7 +70,7 @@ export default function FileSelector({
             </div>
           ) : (
             <span className="text-sm text-muted-foreground">
-              {t('clickToSelectVideo') || '点击选择视频文件'}
+              {t('clickToSelectVideo')}
             </span>
           )}
         </div>
@@ -92,7 +93,7 @@ export default function FileSelector({
       <div
         className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-lg border transition-all cursor-pointer hover:border-primary ${
           subtitlePath
-            ? 'border-green-500 bg-green-50/50 dark:bg-green-950/20'
+            ? 'border-success bg-success/10'
             : 'border-border bg-muted/30'
         } ${disabled ? 'opacity-60 pointer-events-none' : ''}`}
         onClick={!disabled ? onSelectSubtitle : undefined}
@@ -100,7 +101,7 @@ export default function FileSelector({
         <div
           className={`p-1.5 rounded ${
             subtitlePath
-              ? 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-400'
+              ? 'bg-success/15 text-success'
               : 'bg-muted text-muted-foreground'
           }`}
         >
@@ -110,17 +111,17 @@ export default function FileSelector({
           {subtitlePath ? (
             <div className="flex items-center gap-2">
               <span className="text-sm truncate flex-1" title={subtitlePath}>
-                {subtitleInfo?.fileName || subtitlePath.split('/').pop()}
+                {subtitleInfo?.fileName || path.basename(subtitlePath)}
               </span>
               {subtitleInfo && (
                 <span className="text-xs text-muted-foreground whitespace-nowrap">
-                  {subtitleInfo.count} {t('subtitleCount') || '条'}
+                  {subtitleInfo.count} {t('subtitleCount')}
                 </span>
               )}
             </div>
           ) : (
             <span className="text-sm text-muted-foreground">
-              {t('clickToSelectSubtitle') || '点击选择字幕文件'}
+              {t('clickToSelectSubtitle')}
             </span>
           )}
         </div>

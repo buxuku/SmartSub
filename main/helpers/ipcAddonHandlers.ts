@@ -1,6 +1,17 @@
 import { ipcMain, BrowserWindow, dialog } from 'electron';
 import { logMessage } from './storeManager';
-import { getCudaEnvironment, isPlatformCudaCapable } from './cudaUtils';
+import {
+  getCudaEnvironment,
+  isPlatformCudaCapable,
+  getGpuEnvironment,
+  clearGpuEnvironmentCache,
+} from './cudaUtils';
+import {
+  getActiveBackend,
+  setFallbackNotifier,
+  setLoadResultNotifier,
+  clearAddonLoadCache,
+} from './addonLoader';
 import {
   getAddonConfig,
   getInstalledAddons,
@@ -21,9 +32,10 @@ import {
   fetchRemoteVersions,
   checkAllUpdates,
   getRemoteVersionInfo,
+  getPackageDownloadSize,
 } from './addonVersions';
 import type {
-  CudaVersion,
+  AddonVariant,
   DownloadSource,
   DownloadConfig,
 } from '../../types/addon';
@@ -36,6 +48,18 @@ let mainWindow: BrowserWindow | null = null;
 export function setMainWindowForAddon(window: BrowserWindow): void {
   mainWindow = window;
   getAddonDownloader(window);
+
+  // 加载降级 / 后端变更事件推送到渲染层
+  setFallbackNotifier((event) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('addon-fallback', event);
+    }
+  });
+  setLoadResultNotifier((info) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('active-backend-changed', info);
+    }
+  });
 }
 
 /**
@@ -45,10 +69,36 @@ export function registerAddonIpcHandlers(): void {
   // 获取 CUDA 环境信息
   ipcMain.handle('get-cuda-environment', async () => {
     try {
-      const env = getCudaEnvironment();
+      const env = await getCudaEnvironment();
       return env;
     } catch (error) {
       logMessage(`Error getting CUDA environment: ${error}`, 'error');
+      return null;
+    }
+  });
+
+  // 获取跨厂商 GPU 环境信息
+  ipcMain.handle(
+    'get-gpu-environment',
+    async (_event, forceRefresh?: boolean) => {
+      try {
+        if (forceRefresh) {
+          clearGpuEnvironmentCache();
+        }
+        return await getGpuEnvironment(!!forceRefresh);
+      } catch (error) {
+        logMessage(`Error getting GPU environment: ${error}`, 'error');
+        return null;
+      }
+    },
+  );
+
+  // 获取当前生效的后端（最近一次加载结果）
+  ipcMain.handle('get-active-backend', async () => {
+    try {
+      return getActiveBackend();
+    } catch (error) {
+      logMessage(`Error getting active backend: ${error}`, 'error');
       return null;
     }
   });
@@ -86,9 +136,10 @@ export function registerAddonIpcHandlers(): void {
   // 选择加速包版本
   ipcMain.handle(
     'select-addon-version',
-    async (event, version: CudaVersion) => {
+    async (event, version: AddonVariant) => {
       try {
         selectAddonVersion(version);
+        clearAddonLoadCache();
         return { success: true };
       } catch (error) {
         logMessage(`Error selecting addon version: ${error}`, 'error');
@@ -106,19 +157,20 @@ export function registerAddonIpcHandlers(): void {
 
         // 异步启动下载，不等待完成
         downloader
-          .download(config.source, config.cudaVersion, config.type)
+          .download(config.source, config.variant, config.type)
           .then(async () => {
             // 下载完成后注册加速包并自动选中
-            const remoteInfo = await getRemoteVersionInfo(config.cudaVersion);
+            const remoteInfo = await getRemoteVersionInfo(config.variant);
             registerInstalledAddon(
-              config.cudaVersion,
+              config.variant,
               remoteInfo?.version ||
                 new Date().toISOString().split('T')[0].replace(/-/g, '.'),
             );
             // 自动选中刚下载的版本
-            selectAddonVersion(config.cudaVersion);
+            selectAddonVersion(config.variant);
+            clearAddonLoadCache();
             logMessage(
-              `Addon ${config.cudaVersion} downloaded and selected`,
+              `Addon ${config.variant} downloaded and selected`,
               'info',
             );
           })
@@ -148,9 +200,10 @@ export function registerAddonIpcHandlers(): void {
   });
 
   // 删除加速包
-  ipcMain.handle('remove-addon', async (event, version: CudaVersion) => {
+  ipcMain.handle('remove-addon', async (event, version: AddonVariant) => {
     try {
       await removeAddon(version);
+      clearAddonLoadCache();
       return { success: true };
     } catch (error) {
       logMessage(`Error removing addon: ${error}`, 'error');
@@ -179,6 +232,29 @@ export function registerAddonIpcHandlers(): void {
     }
   });
 
+  ipcMain.handle(
+    'get-addon-package-size',
+    async (
+      _event,
+      {
+        variant,
+        type,
+        source,
+      }: {
+        variant: AddonVariant;
+        type: 'node.gz' | 'tar.gz';
+        source?: DownloadSource;
+      },
+    ) => {
+      try {
+        return await getPackageDownloadSize(variant, type, source ?? 'github');
+      } catch (error) {
+        logMessage(`Error getting addon package size: ${error}`, 'error');
+        return null;
+      }
+    },
+  );
+
   // 获取加速包摘要信息
   ipcMain.handle('get-addon-summary', async () => {
     try {
@@ -206,16 +282,16 @@ export function registerAddonIpcHandlers(): void {
       event,
       {
         source,
-        cudaVersion,
+        variant,
         type,
       }: {
         source: DownloadSource;
-        cudaVersion: CudaVersion;
+        variant: AddonVariant;
         type: 'node.gz' | 'tar.gz';
       },
     ) => {
       try {
-        return getDownloadUrl(source, cudaVersion, type);
+        return getDownloadUrl(source, variant, type);
       } catch (error) {
         return null;
       }
@@ -253,6 +329,7 @@ export function registerAddonIpcHandlers(): void {
     async (event, filePath: string | null) => {
       try {
         setCustomAddonPath(filePath);
+        clearAddonLoadCache();
         return { success: true };
       } catch (error) {
         logMessage(`Error setting custom addon path: ${error}`, 'error');

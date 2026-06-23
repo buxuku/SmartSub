@@ -1,5 +1,5 @@
 import fse from 'fs-extra';
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, Notification } from 'electron';
 import { processFile } from './fileProcessor';
 import { checkOpenAiWhisper, getPath } from './whisper';
 import { logMessage, store } from './storeManager';
@@ -8,14 +8,172 @@ import { isAppleSilicon } from './utils';
 import { IFiles } from '../../types';
 import { ExtendedProvider, CustomParameterConfig } from '../../types/provider';
 import { configurationManager } from '../service/configurationManager';
+import { applyTaskEventToProjects } from './taskManager';
+import { runWithTaskContext } from './taskContext';
+import { killFfmpegForFiles } from './audioProcessor';
+import {
+  listEngineAdapters,
+  getEngineAdapterForTask,
+  resolveEngineIdForTask,
+} from './engines/registry';
+import { getPythonRuntimeManager } from './pythonRuntime';
+import type { TranscriptionEngine } from '../../types/engine';
 
-let processingQueue = [];
+const TASK_EVENT_CHANNELS = new Set([
+  'taskStatusChange',
+  'taskProgressChange',
+  'taskErrorChange',
+  'taskFileChange',
+]);
+
+/**
+ * 包装 IPC event：任务事件除发往渲染层外，同步镜像进任务工程存储。
+ * 这样用户中途离开任务页（无渲染层监听）时，工程状态也不会停留在 loading。
+ */
+function wrapTaskEvent(event: any) {
+  const sender = event.sender;
+  return {
+    ...event,
+    sender: {
+      send: (channel: string, ...args: any[]) => {
+        if (TASK_EVENT_CHANNELS.has(channel)) {
+          applyTaskEventToProjects(channel, ...args);
+        }
+        try {
+          sender.send(channel, ...args);
+        } catch (error) {
+          // 窗口销毁等场景下发送失败，但镜像已落库
+          console.error('send task event failed', error);
+        }
+      },
+    },
+  };
+}
+
+interface QueueItem {
+  file: IFiles;
+  formData: any;
+  projectId: string;
+}
+
+interface ProjectRuntime {
+  /** 正在执行的文件数 */
+  active: number;
+  /** 正在执行的文件 uuid（取消时定位 ffmpeg 进程） */
+  activeFiles: Set<string>;
+  paused: boolean;
+  cancelled: boolean;
+  /** 取消信号：翻译批次边界与阶段边界检查 */
+  controller: AbortController;
+  /** 本轮入列的文件总数（Dock/任务栏进度分母） */
+  total: number;
+  /** 已结束（成功/失败/取消）的文件数（进度分子） */
+  completed: number;
+}
+
+const DEFAULT_PROJECT_ID = 'default';
+
+let processingQueue: QueueItem[] = [];
+const projectRuntimes = new Map<string, ProjectRuntime>();
 let isProcessing = false;
-let isPaused = false;
-let shouldCancel = false;
 let maxConcurrentTasks = 3;
 let hasOpenAiWhisper = false;
 let activeTasksCount = 0;
+/** 执行中"受限引擎"(faster-whisper/funasr)任务数：混合引擎队列并发钳制用。 */
+let activeRestrictiveCount = 0;
+
+/** faster-whisper / funasr / qwen / fireRedAsr 共享单 sidecar/worker，需钳制有效并发为 1。 */
+function isRestrictiveEngine(engine: TranscriptionEngine): boolean {
+  return (
+    engine === 'fasterWhisper' ||
+    engine === 'funasr' ||
+    engine === 'qwen' ||
+    engine === 'fireRedAsr'
+  );
+}
+/** 最近一次 handleTask 的 event：resume 触发派发时复用 */
+let dispatchEvent: any = null;
+/** Dock/任务栏进度条目标窗口 */
+let progressWindow: BrowserWindow | null = null;
+
+/**
+ * 正在执行 + 排队中的转写任务总数。供关闭窗口提示展示「仍在处理 N 个任务」。
+ */
+export function getTranscriptionBusyCount(): number {
+  return activeTasksCount + processingQueue.length;
+}
+
+/**
+ * 是否有转写任务在执行或排队。供升级/下载 IPC 在运行中拒绝操作（避免 Windows 文件锁）。
+ */
+export function isTranscriptionBusy(): boolean {
+  return getTranscriptionBusyCount() > 0;
+}
+
+function ensureRuntime(projectId: string): ProjectRuntime {
+  let runtime = projectRuntimes.get(projectId);
+  if (!runtime) {
+    runtime = {
+      active: 0,
+      activeFiles: new Set(),
+      paused: false,
+      cancelled: false,
+      controller: new AbortController(),
+      total: 0,
+      completed: 0,
+    };
+    projectRuntimes.set(projectId, runtime);
+  }
+  return runtime;
+}
+
+/** 按文件粒度聚合全部工程，更新 macOS Dock / Windows 任务栏进度条 */
+function updateTaskbarProgress() {
+  if (!progressWindow || progressWindow.isDestroyed()) return;
+  try {
+    let total = 0;
+    let completed = 0;
+    projectRuntimes.forEach((runtime) => {
+      total += runtime.total;
+      completed += runtime.completed;
+    });
+    if (total === 0) {
+      progressWindow.setProgressBar(-1);
+    } else {
+      progressWindow.setProgressBar(Math.min(completed / total, 1));
+    }
+  } catch (error) {
+    logMessage(`updateTaskbarProgress error: ${error}`, 'warning');
+  }
+}
+
+function queuedCount(projectId: string): number {
+  return processingQueue.filter((item) => item.projectId === projectId).length;
+}
+
+function sendTaskComplete(
+  event: any,
+  projectId: string,
+  status: 'completed' | 'cancelled',
+) {
+  try {
+    event?.sender?.send('taskComplete', { projectId, status });
+  } catch (error) {
+    console.error('send taskComplete failed', error);
+  }
+}
+
+/** 工程内已无排队与执行中文件时收尾：发完成事件并清理运行时 */
+function finalizeProjectIfDrained(event: any, projectId: string) {
+  const runtime = projectRuntimes.get(projectId);
+  if (!runtime) return;
+  if (runtime.active > 0 || queuedCount(projectId) > 0) return;
+  const status = runtime.cancelled ? 'cancelled' : 'completed';
+  projectRuntimes.delete(projectId);
+  updateTaskbarProgress();
+  sendTaskComplete(event, projectId, status);
+  if (status === 'completed') notifyProjectDone(event);
+}
 
 /**
  * Load custom parameters for a provider and create an ExtendedProvider
@@ -69,43 +227,147 @@ async function createExtendedProvider(
 }
 
 export function setupTaskProcessor(mainWindow: BrowserWindow) {
+  progressWindow = mainWindow;
   ipcMain.on(
     'handleTask',
-    async (event, { files, formData }: { files: IFiles[]; formData: any }) => {
-      console.log('handleTask start', files);
-      logMessage(`handleTask start`, 'info');
-      logMessage(`formData: \n ${JSON.stringify(formData, null, 2)}`, 'info');
-      processingQueue.push(...files.map((file) => ({ file, formData })));
+    async (
+      event,
+      {
+        files,
+        formData,
+        projectId,
+      }: { files: IFiles[]; formData: any; projectId?: string },
+    ) => {
+      const pid = projectId || DEFAULT_PROJECT_ID;
+      dispatchEvent = event;
+      await runWithTaskContext({ projectId: pid }, async () => {
+        logMessage(`handleTask start`, 'info');
+        logMessage(`formData: \n ${JSON.stringify(formData, null, 2)}`, 'info');
+      });
+      const runtime = ensureRuntime(pid);
+      // 重新开始：清除上一轮的暂停/取消残留
+      runtime.paused = false;
+      runtime.cancelled = false;
+      if (runtime.controller.signal.aborted) {
+        runtime.controller = new AbortController();
+      }
+      processingQueue.push(
+        ...files.map((file) => ({ file, formData, projectId: pid })),
+      );
+      runtime.total += files.length;
+      updateTaskbarProgress();
       if (!isProcessing) {
         isProcessing = true;
-        isPaused = false;
-        shouldCancel = false;
         hasOpenAiWhisper = await checkOpenAiWhisper();
         maxConcurrentTasks = formData.maxConcurrentTasks || 3;
+        // 预热 sidecar：把冷启动成本移出首个文件关键路径（faster-whisper 等需运行时引擎）。
+        // ensureStarted 成功后再 prewarm（按引擎预加载模型），与首个文件的音频抽取并行，
+        // 避免 FunASR 等首个 transcribe 因首次加载原生库/ONNX 过慢而长时间卡在 0%。
+        try {
+          // 按本批任务携带的引擎预热（缺省回退全局/默认）。
+          const batchAdapter = getEngineAdapterForTask(formData);
+          if (batchAdapter.requiresRuntime && batchAdapter.pyEngineId) {
+            // Python 运行时引擎（faster-whisper）：先拉起 sidecar 再预热。
+            void getPythonRuntimeManager()
+              .ensureStarted(batchAdapter.pyEngineId)
+              .then(() => batchAdapter.prewarm?.(formData))
+              .catch((e) =>
+                logMessage(`engine warmup failed (non-fatal): ${e}`, 'warning'),
+              );
+          } else if (batchAdapter.prewarm) {
+            // 无 Python 的引擎（funasr/sherpa）：worker 线程直接预加载模型。
+            batchAdapter.prewarm(formData);
+          }
+        } catch (e) {
+          logMessage(`engine warmup skipped: ${e}`, 'warning');
+        }
         processNextTasks(event);
       }
     },
   );
 
-  ipcMain.on('pauseTask', () => {
-    isPaused = true;
+  ipcMain.on('pauseTask', (event, projectId?: string) => {
+    if (projectId) {
+      ensureRuntime(projectId).paused = true;
+      return;
+    }
+    projectRuntimes.forEach((runtime) => {
+      runtime.paused = true;
+    });
   });
 
-  ipcMain.on('resumeTask', () => {
-    isPaused = false;
+  ipcMain.on('resumeTask', (event, projectId?: string) => {
+    if (projectId) {
+      ensureRuntime(projectId).paused = false;
+    } else {
+      projectRuntimes.forEach((runtime) => {
+        runtime.paused = false;
+      });
+    }
+    if (processingQueue.length > 0) {
+      isProcessing = true;
+      processNextTasks(dispatchEvent || event);
+    }
   });
 
-  ipcMain.on('cancelTask', () => {
-    shouldCancel = true;
-    isPaused = false;
-    processingQueue = [];
+  ipcMain.on('cancelTask', (event, projectId?: string) => {
+    const ids = projectId
+      ? [projectId]
+      : Array.from(
+          new Set([
+            ...Array.from(projectRuntimes.keys()),
+            ...processingQueue.map((item) => item.projectId),
+          ]),
+        );
+    for (const id of ids) {
+      const beforeCount = processingQueue.length;
+      processingQueue = processingQueue.filter((item) => item.projectId !== id);
+      const removedCount = beforeCount - processingQueue.length;
+      const runtime = projectRuntimes.get(id);
+      if (runtime) {
+        runtime.total = Math.max(runtime.total - removedCount, 0);
+      }
+      if (runtime && runtime.active > 0) {
+        runtime.cancelled = true;
+        runtime.paused = false;
+        runtime.controller.abort();
+        // kill ffmpeg 提取；whisper 转写经 AbortSignal 同步中断
+        killFfmpegForFiles(Array.from(runtime.activeFiles));
+        // 通知所有引擎中断进行中的转写（如 faster-whisper sidecar 的逐段取消）。
+        // 逐任务引擎下无全局"当前引擎"，对全部适配器调用 cancelActive；
+        // 未在运行的引擎为空操作（内置 whisper 已由 AbortSignal 中断）。
+        for (const adapter of listEngineAdapters()) {
+          try {
+            adapter.cancelActive();
+          } catch (err) {
+            logMessage(`cancelActive(${adapter.id}) failed: ${err}`, 'warning');
+          }
+        }
+        logMessage(
+          `cancel project ${id}: aborting ${runtime.active} running file(s)`,
+          'warning',
+        );
+      } else {
+        projectRuntimes.delete(id);
+        sendTaskComplete(event, id, 'cancelled');
+      }
+    }
+    updateTaskbarProgress();
   });
 
-  // 添加获取当前任务状态的 IPC 处理程序
-  ipcMain.handle('getTaskStatus', () => {
-    if (shouldCancel) return 'cancelled';
-    if (isPaused) return 'paused';
-    if (isProcessing) return 'running';
+  // 获取指定工程的任务状态（无 projectId 时回退全局语义）
+  ipcMain.handle('getTaskStatus', (event, projectId?: string) => {
+    if (!projectId) {
+      return activeTasksCount > 0 || processingQueue.length > 0
+        ? 'running'
+        : 'idle';
+    }
+    const runtime = projectRuntimes.get(projectId);
+    const queued = queuedCount(projectId);
+    if (!runtime) return queued > 0 ? 'running' : 'idle';
+    if (runtime.cancelled) return runtime.active > 0 ? 'cancelling' : 'idle';
+    if (runtime.paused) return 'paused';
+    if (runtime.active > 0 || queued > 0) return 'running';
     return 'idle';
   });
 
@@ -125,62 +387,138 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
   });
 }
 
+/** 工程全部完成且应用不在前台时发系统通知 */
+function notifyProjectDone(event) {
+  try {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win?.isFocused()) return;
+    if (!Notification.isSupported()) return;
+    const lang = store.get('settings')?.language || 'zh';
+    const notification = new Notification({
+      title: lang === 'zh' ? '任务全部完成' : 'All tasks completed',
+      body:
+        lang === 'zh'
+          ? '字幕任务已处理完毕，点击查看结果'
+          : 'Your subtitle tasks are done — click to view results',
+    });
+    notification.on('click', () => {
+      win?.show();
+      win?.focus();
+    });
+    notification.show();
+  } catch (error) {
+    logMessage(`notifyProjectDone error: ${error}`, 'warning');
+  }
+}
+
+/** 取出最多 limit 个可派发项（跳过暂停/已取消工程），其余留在队列 */
+function takeEligibleItems(limit: number): QueueItem[] {
+  const taken: QueueItem[] = [];
+  const rest: QueueItem[] = [];
+  for (const item of processingQueue) {
+    const runtime = projectRuntimes.get(item.projectId);
+    if (taken.length < limit && !runtime?.paused && !runtime?.cancelled) {
+      taken.push(item);
+    } else {
+      rest.push(item);
+    }
+  }
+  processingQueue = rest;
+  return taken;
+}
+
 async function processNextTasks(event) {
-  if (shouldCancel) {
-    isProcessing = false;
-    event.sender.send('taskComplete', 'cancelled');
-    return;
-  }
-
-  if (isPaused) {
-    setTimeout(() => processNextTasks(event), 1000);
-    return;
-  }
-
-  // 当队列为空且没有活动任务时，才完成处理
+  // 队列与执行均清空：全局收工
   if (processingQueue.length === 0 && activeTasksCount === 0) {
     isProcessing = false;
-    event.sender.send('taskComplete', 'completed');
     return;
+  }
+
+  // 混合引擎并发钳制：只要"执行中"或"待派发(可派发)"任务里含 faster-whisper/funasr，
+  // 有效并发钳为 1（共享单 sidecar/worker，避免显存争用与取消句柄相互覆盖）；
+  // 纯 builtin/localCli 队列遵循用户配置的并发。
+  let effectiveMax = maxConcurrentTasks;
+  try {
+    let hasRestrictive = activeRestrictiveCount > 0;
+    if (!hasRestrictive) {
+      for (const item of processingQueue) {
+        const runtime = projectRuntimes.get(item.projectId);
+        if (runtime?.paused || runtime?.cancelled) continue;
+        if (isRestrictiveEngine(resolveEngineIdForTask(item.formData))) {
+          hasRestrictive = true;
+          break;
+        }
+      }
+    }
+    if (hasRestrictive) effectiveMax = 1;
+  } catch {
+    // 解析引擎失败时回退到用户配置的并发
   }
 
   // 计算可以启动的新任务数量
-  const availableSlots = maxConcurrentTasks - activeTasksCount;
+  const availableSlots = effectiveMax - activeTasksCount;
 
-  // 如果有可用槽位且队列中有任务，则启动新任务
-  if (availableSlots > 0 && processingQueue.length > 0) {
-    const tasksToProcess = processingQueue.splice(0, availableSlots);
-    const translationProviders = store.get('translationProviders');
+  if (availableSlots > 0) {
+    const tasksToProcess = takeEligibleItems(availableSlots);
+    if (tasksToProcess.length > 0) {
+      const translationProviders = store.get('translationProviders');
 
-    tasksToProcess.forEach(async (task) => {
-      activeTasksCount++;
-      try {
-        const baseProvider = translationProviders.find(
-          (p) => p.id === task.formData.translateProvider,
-        );
+      tasksToProcess.forEach(async (task) => {
+        const runtime = ensureRuntime(task.projectId);
+        const fileUuid = task.file?.uuid;
+        const taskEngine = resolveEngineIdForTask(task.formData);
+        activeTasksCount++;
+        runtime.active++;
+        if (isRestrictiveEngine(taskEngine)) activeRestrictiveCount++;
+        if (fileUuid) runtime.activeFiles.add(fileUuid);
+        try {
+          const baseProvider = translationProviders.find(
+            (p) => p.id === task.formData.translateProvider,
+          );
 
-        // Create extended provider with custom parameters
-        const extendedProvider = await createExtendedProvider(baseProvider);
+          // 找不到服务商（'-1' 残留或已删除）时不加载扩展参数；
+          // 是否报错由翻译阶段判定，转写等阶段照常执行
+          const extendedProvider = baseProvider
+            ? await createExtendedProvider(baseProvider)
+            : undefined;
 
-        await processFile(
-          event,
-          task.file as IFiles,
-          task.formData,
-          hasOpenAiWhisper,
-          extendedProvider,
-        );
-      } catch (error) {
-        event.sender.send('message', error);
-      } finally {
-        activeTasksCount--;
-        // 处理完一个任务后，检查是否可以启动新任务
-        processNextTasks(event);
-      }
-    });
+          await runWithTaskContext(
+            {
+              projectId: task.projectId,
+              fileUuid,
+              signal: runtime.controller.signal,
+            },
+            () =>
+              processFile(
+                wrapTaskEvent(event),
+                task.file as IFiles,
+                task.formData,
+                hasOpenAiWhisper,
+                extendedProvider,
+              ),
+          );
+        } catch (error) {
+          event.sender.send('message', error);
+        } finally {
+          activeTasksCount--;
+          runtime.active--;
+          if (isRestrictiveEngine(taskEngine)) activeRestrictiveCount--;
+          runtime.completed++;
+          if (fileUuid) runtime.activeFiles.delete(fileUuid);
+          finalizeProjectIfDrained(event, task.projectId);
+          updateTaskbarProgress();
+          // 处理完一个任务后，检查是否可以启动新任务
+          processNextTasks(event);
+        }
+      });
+    }
   }
 
-  // 如果还有正在执行的任务，等待一段时间后再检查
+  // 有任务在跑（100ms）或队列里还躺着暂停项（500ms）：保持轮询，
+  // 这样 handleTask/resumeTask 之后的新增项总能被派发
   if (activeTasksCount > 0) {
     setTimeout(() => processNextTasks(event), 100);
+  } else if (processingQueue.length > 0) {
+    setTimeout(() => processNextTasks(event), 500);
   }
 }

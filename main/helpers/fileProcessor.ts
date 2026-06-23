@@ -1,13 +1,20 @@
 import path from 'path';
 import fs from 'fs';
-import { logMessage, store } from './storeManager';
+import { logMessage } from './storeManager';
 import { createMessageSender } from './messageHandler';
 import { getSrtFileName } from './utils';
-import { extractAudioFromVideo } from './audioProcessor';
 import {
-  generateSubtitleWithLocalWhisper,
-  generateSubtitleWithBuiltinWhisper,
-} from './subtitleGenerator';
+  extractAudioFromVideo,
+  probeEmbeddedSubtitles,
+  extractEmbeddedSubtitle,
+} from './audioProcessor';
+import { canHaveEmbeddedSubtitle, srtHasCues } from './embeddedSubtitleParser';
+import { routeTranscription } from './transcriptionRouter';
+import {
+  getDesiredChineseScript,
+  convertChineseText,
+  removeChineseSubtitlePunctuation,
+} from './chineseConvert';
 import translate from '../translate';
 import { ensureTempDir, getMd5 } from './fileUtils';
 import { IFiles } from '../../types';
@@ -17,6 +24,13 @@ import {
   isSupportedSubtitleFormat,
   SubtitleFormat,
 } from './subtitleFormats';
+import {
+  throwIfTaskCancelled,
+  isTaskCancelled,
+  isTaskCancelledError,
+  isWhisperAbortError,
+  TaskCancelledError,
+} from './taskContext';
 
 /**
  * 处理任务错误
@@ -43,16 +57,19 @@ async function generateSubtitle(
   formData,
   hasOpenAiWhisper,
 ) {
-  const settings = store.get('settings');
-  const useLocalWhisper = settings?.useLocalWhisper;
-
   try {
-    if (hasOpenAiWhisper && useLocalWhisper && settings?.whisperCommand) {
-      return await generateSubtitleWithLocalWhisper(event, file, formData);
-    } else {
-      return await generateSubtitleWithBuiltinWhisper(event, file, formData);
-    }
+    return await routeTranscription({
+      event,
+      file,
+      formData,
+      hasOpenAiWhisper,
+    });
   } catch (error) {
+    if (isTaskCancelledError(error) || isWhisperAbortError(error)) {
+      throw error instanceof TaskCancelledError
+        ? error
+        : new TaskCancelledError();
+    }
     onError(event, file, 'extractSubtitle', error);
     throw error; // 继续抛出错误，以便上层函数知道发生了错误
   }
@@ -89,6 +106,31 @@ async function convertDeliverable(
     }
   }
   return newPath;
+}
+
+/**
+ * 源字幕中文标点去除（issue #330）：把中文标点替换为空格并清理空白，原位写回。
+ * 仅清理文本；SRT 序号/时间码为 ASCII，不受 CJK 标点正则影响。失败仅告警，不阻断主流程。
+ */
+async function stripSourceSubtitlePunctuation(
+  srtFile: string,
+  fileName: string,
+): Promise<void> {
+  try {
+    throwIfTaskCancelled();
+    const original = await fs.promises.readFile(srtFile, 'utf-8');
+    const cleaned = removeChineseSubtitlePunctuation(original);
+    if (cleaned !== original) {
+      await fs.promises.writeFile(srtFile, cleaned, 'utf-8');
+      logMessage(
+        `removed Chinese punctuation from source subtitle: ${fileName}`,
+        'info',
+      );
+    }
+  } catch (error) {
+    if (isTaskCancelledError(error) || isTaskCancelled()) throw error;
+    logMessage(`source punctuation removal failed: ${error}`, 'warning');
+  }
 }
 
 /**
@@ -131,6 +173,15 @@ async function translateSubtitle(event, file: IFiles, formData, provider) {
       'info',
     );
   } catch (error) {
+    if (isTaskCancelledError(error) || isTaskCancelled()) {
+      // 用户取消：翻译阶段回退为待处理，不计错误，并中止后续流程
+      event.sender.send('taskFileChange', {
+        ...file,
+        translateSubtitle: '',
+        translateSubtitleProgress: 0,
+      });
+      throw new TaskCancelledError();
+    }
     // 确保错误状态下也发送当前进度（从文件状态获取）
     onError(event, file, 'translateSubtitle', error);
   }
@@ -156,6 +207,25 @@ export async function processFile(
     saveAudio,
     taskType,
   } = formData || {};
+
+  // 进入处理前清理上一轮残留的阶段状态/进度/错误。后续 taskFileChange 习惯铺开整个 file
+  // （`{ ...file, extractSubtitle: 'loading' }`），若 file 仍带着旧值——尤其取消时回灌的空串
+  // ——渲染层 `{ ...prev, ...res }` 合并会把刚置好的新状态覆盖回去，造成「取消→重启」时
+  // 提取格子被打回灰色、进度永远卡 50%。清成「无此键」后，铺开就不会再携带陈旧阶段状态。
+  for (const k of [
+    'extractAudio',
+    'extractSubtitle',
+    'prepareSubtitle',
+    'translateSubtitle',
+    'extractAudioProgress',
+    'extractSubtitleProgress',
+    'translateSubtitleProgress',
+    'extractAudioError',
+    'extractSubtitleError',
+    'translateSubtitleError',
+  ]) {
+    delete (file as any)[k];
+  }
 
   try {
     const { filePath, fileName, fileExtension, directory } = file;
@@ -194,32 +264,111 @@ export async function processFile(
 
       file.srtFile = path.join(directory, `${sourceSrtFileName}.srt`);
 
-      try {
-        // 提取音频
-        logMessage(`extract audio for ${fileName}`, 'info');
-        event.sender.send('taskFileChange', {
-          ...file,
-          extractAudio: 'loading',
-        });
-        const tempAudioFile = await extractAudioFromVideo(event, file);
-        event.sender.send('taskFileChange', { ...file, extractAudio: 'done' });
-
-        // 如果开启了保存音频选项，则复制一份到视频同目录
-        if (saveAudio) {
-          const audioFileName = `${fileName}.wav`;
-          const targetAudioPath = path.join(directory, audioFileName);
-          file.audioFile = targetAudioPath;
-          logMessage(`Saving audio file to: ${targetAudioPath}`, 'info');
-          fs.copyFileSync(tempAudioFile, targetAudioPath);
+      // 优先尝试直接抽取内封文本软字幕：命中则复用「提取/听写」两节点、跳过抽音频 + ASR
+      let usedEmbedded = false;
+      if (canHaveEmbeddedSubtitle(fileExtension)) {
+        try {
+          throwIfTaskCancelled();
+          const textTracks = (await probeEmbeddedSubtitles(filePath)).filter(
+            (t) => t.isText,
+          );
+          if (textTracks.length > 0) {
+            const picked = textTracks[0];
+            logMessage(
+              `found ${textTracks.length} embedded text subtitle(s) in ${fileName}, extracting track s:${picked.subIndex} (${picked.codec})`,
+              'info',
+            );
+            // 提取节点：抽第一条文本轨
+            event.sender.send('taskFileChange', {
+              ...file,
+              extractAudio: 'loading',
+            });
+            await extractEmbeddedSubtitle(
+              filePath,
+              picked.subIndex,
+              file.srtFile,
+              event,
+              file,
+            );
+            const srtContent = fs.readFileSync(file.srtFile, 'utf-8');
+            if (!srtHasCues(srtContent)) {
+              throw new Error('extracted embedded subtitle has no cues');
+            }
+            event.sender.send('taskFileChange', {
+              ...file,
+              extractAudio: 'done',
+            });
+            // 听写节点：字幕文件已就绪
+            event.sender.send('taskFileChange', {
+              ...file,
+              extractSubtitle: 'loading',
+            });
+            event.sender.send('taskFileChange', {
+              ...file,
+              extractSubtitle: 'done',
+              embeddedSubtitle: true,
+            });
+            usedEmbedded = true;
+          }
+        } catch (error) {
+          if (isTaskCancelledError(error) || isTaskCancelled()) {
+            event.sender.send('taskFileChange', {
+              ...file,
+              extractAudio: '',
+              extractSubtitle: '',
+            });
+            throw new TaskCancelledError();
+          }
+          logMessage(
+            `embedded subtitle extraction failed for ${fileName}, fallback to ASR: ${error}`,
+            'warning',
+          );
         }
+      }
 
-        // 生成字幕
-        logMessage(`generate subtitle ${file.srtFile}`, 'info');
-        await generateSubtitle(event, file, formData, hasOpenAiWhisper);
-      } catch (error) {
-        // 如果是提取音频或生成字幕过程中出错，已经在各自的函数中处理了错误状态
-        // 这里只需要继续抛出错误，中断后续流程
-        throw error;
+      if (!usedEmbedded) {
+        try {
+          // 提取音频
+          logMessage(`extract audio for ${fileName}`, 'info');
+          event.sender.send('taskFileChange', {
+            ...file,
+            extractAudio: 'loading',
+            embeddedSubtitle: false,
+          });
+          throwIfTaskCancelled();
+          const tempAudioFile = await extractAudioFromVideo(event, file);
+          event.sender.send('taskFileChange', {
+            ...file,
+            extractAudio: 'done',
+          });
+
+          // 如果开启了保存音频选项，则复制一份到视频同目录
+          if (saveAudio) {
+            const audioFileName = `${fileName}.wav`;
+            const targetAudioPath = path.join(directory, audioFileName);
+            file.audioFile = targetAudioPath;
+            logMessage(`Saving audio file to: ${targetAudioPath}`, 'info');
+            fs.copyFileSync(tempAudioFile, targetAudioPath);
+          }
+
+          // 生成字幕
+          logMessage(`generate subtitle ${file.srtFile}`, 'info');
+          throwIfTaskCancelled();
+          await generateSubtitle(event, file, formData, hasOpenAiWhisper);
+        } catch (error) {
+          if (isTaskCancelledError(error) || isTaskCancelled()) {
+            // 用户取消：把本轮 loading 阶段回退为待处理
+            event.sender.send('taskFileChange', {
+              ...file,
+              extractAudio: '',
+              extractSubtitle: '',
+            });
+            throw new TaskCancelledError();
+          }
+          // 如果是提取音频或生成字幕过程中出错，已经在各自的函数中处理了错误状态
+          // 这里只需要继续抛出错误，中断后续流程
+          throw error;
+        }
       }
     } else if (isSubtitleFile) {
       // 处理字幕文件
@@ -245,10 +394,74 @@ export async function processFile(
       throw new Error(errorMsg);
     }
 
-    // 翻译字幕
+    // 中文简繁归一：仅对「转写/内封提取生成」的源字幕生效（不动用户导入的字幕文件）。
+    // 源语言选中文时，按其简/繁取向把产物统一字形；检测到相反字形才实际改写。
+    if (!isSubtitleFile && shouldGenerateSubtitle && file.srtFile) {
+      const desiredScript = getDesiredChineseScript(sourceLanguage);
+      if (desiredScript) {
+        try {
+          throwIfTaskCancelled();
+          const original = await fs.promises.readFile(file.srtFile, 'utf-8');
+          const { text, converted } = convertChineseText(
+            original,
+            desiredScript,
+          );
+          if (converted) {
+            await fs.promises.writeFile(file.srtFile, text, 'utf-8');
+            logMessage(
+              `normalized source subtitle to ${desiredScript} Chinese: ${fileName}`,
+              'info',
+            );
+          }
+        } catch (error) {
+          if (isTaskCancelledError(error) || isTaskCancelled()) throw error;
+          // 转换失败不应阻断主流程：记录告警并沿用原始字幕
+          logMessage(
+            `chinese script normalization failed: ${error}`,
+            'warning',
+          );
+        }
+      }
+    }
+
+    // 源字幕中文标点去除 · generateOnly：转写后即剥离（无翻译下游，零风险）
+    if (
+      !isSubtitleFile &&
+      shouldGenerateSubtitle &&
+      taskType === 'generateOnly' &&
+      file.srtFile &&
+      formData?.removeChinesePunctuation === true &&
+      getDesiredChineseScript(sourceLanguage)
+    ) {
+      await stripSourceSubtitlePunctuation(file.srtFile, fileName);
+    }
+
+    // 翻译字幕（取消后不再进入）
+    throwIfTaskCancelled();
     if (shouldTranslateSubtitle && translateProvider !== '-1') {
+      if (!provider) {
+        // '-1' 历史残留或服务商已被删除：明确报错而非深层崩溃
+        const errorMsg = `translate provider not found: ${translateProvider}`;
+        onError(event, file, 'translateSubtitle', new Error(errorMsg));
+        throw new Error(errorMsg);
+      }
       logMessage(`translate subtitle ${file.srtFile}`, 'info');
       await translateSubtitle(event, file, formData, provider);
+    }
+
+    // 源字幕中文标点去除 · generateAndTranslate：翻译完成后再剥离源交付物，
+    // 保留翻译输入的标点以护断句；noSave 时源字幕随后会被清理，无需处理。
+    if (
+      !isSubtitleFile &&
+      shouldGenerateSubtitle &&
+      taskType === 'generateAndTranslate' &&
+      sourceSrtSaveOption !== 'noSave' &&
+      file.srtFile &&
+      fs.existsSync(file.srtFile) &&
+      formData?.removeChinesePunctuation === true &&
+      getDesiredChineseScript(sourceLanguage)
+    ) {
+      await stripSourceSubtitlePunctuation(file.srtFile, fileName);
     }
 
     // 将交付字幕转换为用户选择的输出格式（内部流程始终为 SRT，此处仅转换最终交付物）
@@ -292,11 +505,14 @@ export async function processFile(
       event.sender.send('taskFileChange', file);
     }
 
-    // 清理临时文件
+    // 清理临时文件：仅在「生成并翻译」且确实产生了译文交付物时才删除源字幕。
+    // 「仅生成字幕」任务的源字幕是最终交付物，绝不能因 noSave 而被删除。
     if (
       !isSubtitleFile &&
       sourceSrtSaveOption === 'noSave' &&
-      shouldGenerateSubtitle
+      shouldGenerateSubtitle &&
+      shouldTranslateSubtitle &&
+      translateProvider !== '-1'
     ) {
       const { srtFile } = file;
       logMessage(`delete temp subtitle ${srtFile}`, 'warning');
@@ -316,6 +532,16 @@ export async function processFile(
 
     logMessage(`process file done ${fileName}`, 'info');
   } catch (error) {
+    if (isTaskCancelledError(error) || isTaskCancelled()) {
+      logMessage(`processing cancelled: ${file.fileName}`, 'warning');
+      event.sender.send('taskFileChange', {
+        ...file,
+        extractAudio: '',
+        extractSubtitle: '',
+        translateSubtitle: '',
+      });
+      return;
+    }
     // 使用通用错误处理方法
     createMessageSender(event.sender).send('message', {
       type: 'error',

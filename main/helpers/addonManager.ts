@@ -5,9 +5,9 @@ import { logMessage } from './storeManager';
 import type {
   AddonConfig,
   InstalledAddon,
-  CudaVersion,
+  AddonVariant,
 } from '../../types/addon';
-import { AVAILABLE_CUDA_VERSIONS } from '../../types/addon';
+import { ALL_ADDON_VARIANTS } from '../../types/addon';
 import { getEffectivePlatform } from './cudaUtils';
 
 /**
@@ -58,17 +58,23 @@ export function saveAddonConfig(config: AddonConfig): void {
 }
 
 /**
- * 获取特定版本的 addon 目录路径
+ * 变体目录名：cuda-1240 / vulkan
  */
-export function getAddonVersionDir(version: CudaVersion): string {
-  const versionNum = version.replace(/\./g, '');
-  return path.join(getAddonsDir(), `cuda-${versionNum}`);
+export function getVariantDirName(variant: AddonVariant): string {
+  return variant === 'vulkan' ? 'vulkan' : `cuda-${variant.replace(/\./g, '')}`;
+}
+
+/**
+ * 获取特定变体的 addon 目录路径
+ */
+export function getAddonVersionDir(variant: AddonVariant): string {
+  return path.join(getAddonsDir(), getVariantDirName(variant));
 }
 
 /**
  * 检查特定版本的 addon 是否已安装
  */
-export function isAddonInstalled(version: CudaVersion): boolean {
+export function isAddonInstalled(version: AddonVariant): boolean {
   const versionDir = getAddonVersionDir(version);
   const addonPath = path.join(versionDir, 'addon.node');
   return fs.existsSync(addonPath);
@@ -99,14 +105,14 @@ export function hasDependentLibs(versionDir: string): boolean {
  * 获取已安装的加速包列表
  */
 export function getInstalledAddons(): Array<{
-  version: CudaVersion;
+  version: AddonVariant;
   info: InstalledAddon;
 }> {
   const config = getAddonConfig();
-  const result: Array<{ version: CudaVersion; info: InstalledAddon }> = [];
+  const result: Array<{ version: AddonVariant; info: InstalledAddon }> = [];
 
-  // 遍历所有可用版本
-  for (const version of AVAILABLE_CUDA_VERSIONS) {
+  // 遍历所有可用变体
+  for (const version of ALL_ADDON_VARIANTS) {
     if (isAddonInstalled(version)) {
       const info = config.installed[version] || {
         installedAt: new Date().toISOString(),
@@ -124,7 +130,7 @@ export function getInstalledAddons(): Array<{
 /**
  * 获取 addon 大小
  */
-function getAddonSize(version: CudaVersion): number {
+function getAddonSize(version: AddonVariant): number {
   const versionDir = getAddonVersionDir(version);
   let totalSize = 0;
 
@@ -148,7 +154,7 @@ function getAddonSize(version: CudaVersion): number {
  * 注册已安装的加速包
  */
 export function registerInstalledAddon(
-  version: CudaVersion,
+  version: AddonVariant,
   remoteVersion: string,
   checksum?: string,
 ): void {
@@ -174,7 +180,7 @@ export function registerInstalledAddon(
 /**
  * 选择加速包版本（与自定义路径互斥）
  */
-export function selectAddonVersion(version: CudaVersion | null): void {
+export function selectAddonVersion(version: AddonVariant | null): void {
   const config = getAddonConfig();
 
   // 如果指定了版本，检查是否已安装
@@ -236,7 +242,7 @@ export function getCustomAddonPath(): string | null {
 /**
  * 获取当前选中的加速包版本
  */
-export function getSelectedAddonVersion(): CudaVersion | null {
+export function getSelectedAddonVersion(): AddonVariant | null {
   const config = getAddonConfig();
 
   // 验证选中的版本是否仍然存在
@@ -252,7 +258,7 @@ export function getSelectedAddonVersion(): CudaVersion | null {
 /**
  * 获取 addon.node 文件路径
  */
-export function getAddonPath(version: CudaVersion): string | null {
+export function getAddonPath(version: AddonVariant): string | null {
   const versionDir = getAddonVersionDir(version);
   const addonPath = path.join(versionDir, 'addon.node');
 
@@ -266,7 +272,7 @@ export function getAddonPath(version: CudaVersion): string | null {
 /**
  * 删除加速包
  */
-export async function removeAddon(version: CudaVersion): Promise<void> {
+export async function removeAddon(version: AddonVariant): Promise<void> {
   const config = getAddonConfig();
   const versionDir = getAddonVersionDir(version);
 
@@ -290,7 +296,7 @@ export async function removeAddon(version: CudaVersion): Promise<void> {
  * 备份加速包（更新前）
  */
 export async function backupAddon(
-  version: CudaVersion,
+  version: AddonVariant,
 ): Promise<string | null> {
   const versionDir = getAddonVersionDir(version);
 
@@ -301,7 +307,7 @@ export async function backupAddon(
   const backupDir = path.join(getAddonsDir(), 'backup');
   const backupPath = path.join(
     backupDir,
-    `cuda-${version.replace(/\./g, '')}_backup`,
+    `${getVariantDirName(version)}_backup`,
   );
 
   // 确保备份目录存在
@@ -323,12 +329,12 @@ export async function backupAddon(
  * 恢复加速包备份
  */
 export async function restoreAddonBackup(
-  version: CudaVersion,
+  version: AddonVariant,
 ): Promise<boolean> {
   const backupDir = path.join(getAddonsDir(), 'backup');
   const backupPath = path.join(
     backupDir,
-    `cuda-${version.replace(/\./g, '')}_backup`,
+    `${getVariantDirName(version)}_backup`,
   );
   const versionDir = getAddonVersionDir(version);
 
@@ -352,11 +358,11 @@ export async function restoreAddonBackup(
 /**
  * 清理备份
  */
-export async function cleanupBackup(version: CudaVersion): Promise<void> {
+export async function cleanupBackup(version: AddonVariant): Promise<void> {
   const backupDir = path.join(getAddonsDir(), 'backup');
   const backupPath = path.join(
     backupDir,
-    `cuda-${version.replace(/\./g, '')}_backup`,
+    `${getVariantDirName(version)}_backup`,
   );
 
   if (fs.existsSync(backupPath)) {
@@ -398,9 +404,9 @@ export function hasAnyAddonInstalled(): boolean {
  */
 export function getAddonSummary(): {
   hasInstalled: boolean;
-  selectedVersion: CudaVersion | null;
+  selectedVersion: AddonVariant | null;
   installedCount: number;
-  installedVersions: CudaVersion[];
+  installedVersions: AddonVariant[];
   customAddonPath: string | null;
 } {
   const installed = getInstalledAddons();

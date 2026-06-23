@@ -1,9 +1,3 @@
-/**
- * CustomParameterEditor Test Suite
- *
- * Comprehensive tests for the CustomParameterEditor component.
- */
-
 import React from 'react';
 import {
   render,
@@ -12,688 +6,512 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import '@testing-library/jest-dom';
 import { CustomParameterEditor } from '../CustomParameterEditor';
 import { useParameterConfig } from '../../hooks/useParameterConfig';
-import {
-  ParameterValue,
-  ParameterDefinition,
-  ValidationError,
+import type {
   CustomParameterConfig,
+  ParameterValue,
 } from '../../../types/provider';
 
-// Mock the parameter hook
 jest.mock('../../hooks/useParameterConfig');
 const mockUseParameterConfig = useParameterConfig as jest.MockedFunction<
   typeof useParameterConfig
 >;
 
-// Mock Lucide React icons
-jest.mock('lucide-react', () => ({
-  Plus: () => <div data-testid="plus-icon">Plus</div>,
-  Search: () => <div data-testid="search-icon">Search</div>,
-  Settings: () => <div data-testid="settings-icon">Settings</div>,
-  Trash2: () => <div data-testid="trash-icon">Trash2</div>,
-  Copy: () => <div data-testid="copy-icon">Copy</div>,
-  Download: () => <div data-testid="download-icon">Download</div>,
-  Upload: () => <div data-testid="upload-icon">Upload</div>,
-  RefreshCw: () => <div data-testid="refresh-icon">RefreshCw</div>,
+jest.mock('next-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => {
+      const strings: Record<string, string> = {
+        'tabs.headers': '请求头',
+        'tabs.bodyParameters': '请求体参数',
+        'more.label': '更多',
+        'more.import': '导入 JSON',
+        'more.export': '导出 JSON',
+        'more.refresh': '从磁盘刷新',
+        'more.search': '搜索参数',
+        'addDialog.title': '添加新参数',
+        'table.keyColumn': '参数名',
+        'table.valueColumn': '值',
+        'table.keyPlaceholder': '例如 temperature',
+        'table.valuePlaceholder': '例如 0.3',
+        'table.addButton': '添加',
+        'table.addHint':
+          '在下方「新参数」行填写参数名、类型和值，点击「添加」或按 Enter 可连续添加多条。',
+        'table.delete': '删除',
+        'table.duplicateKey': '该参数名已存在',
+        'table.emptyKey': '请填写参数名',
+        'types.string': '字符串',
+        'types.integer': '整数',
+        'types.float': '浮点数',
+        'types.boolean': '布尔值',
+        'types.array': '数组',
+        'actions.cancel': '取消',
+        'unsavedChangesDialog.title': '未保存的更改',
+        'unsavedChangesDialog.description': '刷新将丢弃未保存的更改。',
+        'unsavedChangesDialog.refreshAnyway': '仍然刷新',
+      };
+      return strings[key] ?? key;
+    },
+  }),
 }));
 
-// Mock UI components
-jest.mock('@/components/ui/card', () => ({
-  Card: ({ children, ...props }: any) => (
-    <div data-testid="card" {...props}>
-      {children}
-    </div>
-  ),
-  CardContent: ({ children, ...props }: any) => (
-    <div data-testid="card-content" {...props}>
-      {children}
-    </div>
-  ),
-  CardHeader: ({ children, ...props }: any) => (
-    <div data-testid="card-header" {...props}>
-      {children}
-    </div>
-  ),
-  CardTitle: ({ children, ...props }: any) => (
-    <div data-testid="card-title" {...props}>
-      {children}
-    </div>
-  ),
+jest.mock('lucide-react', () => ({
+  Search: () => <span data-testid="search-icon" />,
+  RefreshCw: () => <span data-testid="refresh-icon" />,
+  AlertTriangle: () => <span data-testid="alert-icon" />,
+  MoreHorizontal: () => <span data-testid="more-horizontal-icon" />,
+  Trash2: () => <span data-testid="trash-icon" />,
 }));
+
+jest.mock('lib/utils', () => ({
+  cn: (...classes: string[]) => classes.filter(Boolean).join(' '),
+}));
+
+jest.mock('@/components/ui/select', () => {
+  const React = require('react');
+  return {
+    Select: ({
+      children,
+      value,
+      onValueChange,
+      disabled,
+    }: {
+      children: React.ReactNode;
+      value?: string;
+      onValueChange?: (value: string) => void;
+      disabled?: boolean;
+    }) => (
+      <div data-testid="type-select" data-value={value}>
+        {React.Children.map(children, (child: React.ReactNode) =>
+          React.isValidElement(child)
+            ? React.cloneElement(child as React.ReactElement, {
+                value,
+                onValueChange,
+                disabled,
+              })
+            : child,
+        )}
+      </div>
+    ),
+    SelectTrigger: ({ children }: { children: React.ReactNode }) => (
+      <button type="button">{children}</button>
+    ),
+    SelectValue: () => null,
+    SelectContent: ({ children }: { children: React.ReactNode }) => (
+      <div>{children}</div>
+    ),
+    SelectItem: ({
+      children,
+      value: itemValue,
+      onValueChange,
+      disabled,
+    }: {
+      children: React.ReactNode;
+      value: string;
+      onValueChange?: (value: string) => void;
+      disabled?: boolean;
+    }) => (
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onValueChange?.(itemValue)}
+      >
+        {children}
+      </button>
+    ),
+  };
+});
+
+jest.mock('@/components/ui/dropdown-menu', () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dropdown-menu">{children}</div>
+  ),
+  DropdownMenuTrigger: ({
+    children,
+    asChild,
+  }: {
+    children: React.ReactNode;
+    asChild?: boolean;
+  }) => (asChild ? <>{children}</> : <button type="button">{children}</button>),
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dropdown-content">{children}</div>
+  ),
+  DropdownMenuItem: ({
+    children,
+    onSelect,
+    disabled,
+    className,
+  }: {
+    children: React.ReactNode;
+    onSelect?: () => void;
+    disabled?: boolean;
+    className?: string;
+  }) => (
+    <button
+      type="button"
+      disabled={disabled}
+      className={className}
+      onClick={() => onSelect?.()}
+    >
+      {children}
+    </button>
+  ),
+  DropdownMenuSeparator: () => <hr />,
+}));
+
+jest.mock('@/components/ui/tabs', () => {
+  const React = require('react');
+  const Context = React.createContext('body');
+  return {
+    Tabs: ({
+      children,
+      value,
+    }: {
+      children: React.ReactNode;
+      value: string;
+    }) => <Context.Provider value={value}>{children}</Context.Provider>,
+    TabsList: ({ children }: { children: React.ReactNode }) => (
+      <div role="tablist">{children}</div>
+    ),
+    TabsTrigger: ({
+      children,
+      value,
+    }: {
+      children: React.ReactNode;
+      value: string;
+    }) => {
+      const active = React.useContext(Context);
+      return (
+        <button role="tab" aria-selected={active === value} data-value={value}>
+          {children}
+        </button>
+      );
+    },
+    TabsContent: ({
+      children,
+      value,
+    }: {
+      children: React.ReactNode;
+      value: string;
+    }) => {
+      const active = React.useContext(Context);
+      return active === value ? (
+        <div data-testid={`tab-content-${value}`}>{children}</div>
+      ) : null;
+    },
+  };
+});
 
 jest.mock('@/components/ui/button', () => ({
   Button: ({
     children,
     onClick,
     disabled,
-    variant,
-    size,
-    asChild,
     ...props
-  }: any) => {
-    if (asChild) {
-      return (
-        <span
-          onClick={onClick}
-          data-disabled={disabled}
-          data-variant={variant}
-          data-size={size}
-          {...props}
-        >
-          {children}
-        </span>
-      );
-    }
-    return (
-      <button
-        onClick={onClick}
-        disabled={disabled}
-        data-variant={variant}
-        data-size={size}
-        {...props}
-      >
-        {children}
-      </button>
-    );
-  },
+  }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+    <button type="button" onClick={onClick} disabled={disabled} {...props}>
+      {children}
+    </button>
+  ),
 }));
 
 jest.mock('@/components/ui/input', () => ({
-  Input: (props: any) => <input data-testid="input" {...props} />,
-}));
-
-jest.mock('@/components/ui/label', () => ({
-  Label: ({ children, ...props }: any) => <label {...props}>{children}</label>,
-}));
-
-jest.mock('@/components/ui/tabs', () => ({
-  Tabs: ({ children, value, onValueChange, ...props }: any) => (
-    <div data-testid="tabs" data-value={value} {...props}>
-      {React.Children.map(children, (child) =>
-        React.cloneElement(child, {
-          activeTab: value,
-          onTabChange: onValueChange,
-        }),
-      )}
-    </div>
-  ),
-  TabsContent: ({ children, value, activeTab, ...props }: any) =>
-    activeTab === value ? (
-      <div data-testid={`tab-content-${value}`} {...props}>
-        {children}
-      </div>
-    ) : null,
-  TabsList: ({ children, ...props }: any) => (
-    <div data-testid="tabs-list" {...props}>
-      {children}
-    </div>
-  ),
-  TabsTrigger: ({ children, value, onTabChange, ...props }: any) => (
-    <button
-      data-testid={`tab-trigger-${value}`}
-      onClick={() => onTabChange?.(value)}
-      {...props}
-    >
-      {children}
-    </button>
+  Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => (
+    <input {...props} />
   ),
 }));
 
-jest.mock('@/components/ui/select', () => ({
-  Select: ({ children, onValueChange, value, ...props }: any) => (
-    <div data-testid="select" data-value={value} {...props}>
-      {React.Children.map(children, (child) =>
-        React.cloneElement(child, { onValueChange, value }),
-      )}
-    </div>
+jest.mock('@/components/ui/textarea', () => ({
+  Textarea: (props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => (
+    <textarea {...props} />
   ),
-  SelectContent: ({ children, ...props }: any) => (
-    <div data-testid="select-content" {...props}>
-      {children}
-    </div>
-  ),
-  SelectItem: ({ children, value, onValueChange, ...props }: any) => (
-    <button
-      data-testid={`select-item-${value}`}
-      onClick={() => onValueChange?.(value)}
-      {...props}
-    >
-      {children}
-    </button>
-  ),
-  SelectTrigger: ({ children, ...props }: any) => (
-    <div data-testid="select-trigger" {...props}>
-      {children}
-    </div>
-  ),
-  SelectValue: ({ placeholder, ...props }: any) => (
-    <span data-testid="select-value" {...props}>
-      {placeholder}
-    </span>
+}));
+
+jest.mock('@/components/ui/switch', () => ({
+  Switch: ({
+    checked,
+    onCheckedChange,
+    disabled,
+  }: {
+    checked?: boolean;
+    onCheckedChange?: (checked: boolean) => void;
+    disabled?: boolean;
+  }) => (
+    <input
+      type="checkbox"
+      role="switch"
+      checked={checked}
+      disabled={disabled}
+      onChange={(event) => onCheckedChange?.(event.target.checked)}
+    />
   ),
 }));
 
 jest.mock('@/components/ui/badge', () => ({
-  Badge: ({ children, variant, ...props }: any) => (
-    <span data-testid="badge" data-variant={variant} {...props}>
-      {children}
-    </span>
+  Badge: ({ children }: { children: React.ReactNode }) => (
+    <span data-testid="badge">{children}</span>
   ),
 }));
 
-jest.mock('@/components/ui/separator', () => ({
-  Separator: (props: any) => <hr data-testid="separator" {...props} />,
+jest.mock('@/components/ui/table', () => ({
+  Table: ({ children }: { children: React.ReactNode }) => (
+    <table>{children}</table>
+  ),
+  TableHeader: ({ children }: { children: React.ReactNode }) => (
+    <thead>{children}</thead>
+  ),
+  TableBody: ({ children }: { children: React.ReactNode }) => (
+    <tbody>{children}</tbody>
+  ),
+  TableRow: ({ children }: { children: React.ReactNode }) => (
+    <tr>{children}</tr>
+  ),
+  TableHead: ({ children }: { children: React.ReactNode }) => (
+    <th>{children}</th>
+  ),
+  TableCell: ({ children }: { children: React.ReactNode }) => (
+    <td>{children}</td>
+  ),
 }));
 
 jest.mock('@/components/ui/alert-dialog', () => ({
-  AlertDialog: ({ children, open, onOpenChange, ...props }: any) =>
-    open ? (
-      <div data-testid="alert-dialog" {...props}>
-        {React.Children.map(children, (child) =>
-          React.cloneElement(child, { onOpenChange }),
-        )}
-      </div>
-    ) : null,
-  AlertDialogAction: ({ children, onClick, ...props }: any) => (
-    <button data-testid="alert-dialog-action" onClick={onClick} {...props}>
+  AlertDialog: ({
+    children,
+    open,
+  }: {
+    children: React.ReactNode;
+    open?: boolean;
+  }) => (open ? <div data-testid="alert-dialog">{children}</div> : null),
+  AlertDialogContent: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  AlertDialogHeader: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  AlertDialogFooter: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  AlertDialogTitle: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  AlertDialogDescription: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  AlertDialogCancel: ({ children }: { children: React.ReactNode }) => (
+    <button type="button">{children}</button>
+  ),
+  AlertDialogAction: ({
+    children,
+    onClick,
+  }: {
+    children: React.ReactNode;
+    onClick?: () => void;
+  }) => (
+    <button type="button" onClick={onClick}>
       {children}
     </button>
-  ),
-  AlertDialogCancel: ({ children, onClick, ...props }: any) => (
-    <button data-testid="alert-dialog-cancel" onClick={onClick} {...props}>
-      {children}
-    </button>
-  ),
-  AlertDialogContent: ({ children, ...props }: any) => (
-    <div data-testid="alert-dialog-content" {...props}>
-      {children}
-    </div>
-  ),
-  AlertDialogDescription: ({ children, ...props }: any) => (
-    <div data-testid="alert-dialog-description" {...props}>
-      {children}
-    </div>
-  ),
-  AlertDialogFooter: ({ children, ...props }: any) => (
-    <div data-testid="alert-dialog-footer" {...props}>
-      {children}
-    </div>
-  ),
-  AlertDialogHeader: ({ children, ...props }: any) => (
-    <div data-testid="alert-dialog-header" {...props}>
-      {children}
-    </div>
-  ),
-  AlertDialogTitle: ({ children, ...props }: any) => (
-    <div data-testid="alert-dialog-title" {...props}>
-      {children}
-    </div>
-  ),
-  AlertDialogTrigger: ({ children, ...props }: any) => (
-    <div data-testid="alert-dialog-trigger" {...props}>
-      {children}
-    </div>
-  ),
-}));
-
-// Mock DynamicParameterInput
-jest.mock('../DynamicParameterInput', () => ({
-  DynamicParameterInput: ({
-    parameterKey,
-    value,
-    onChange,
-    onRemove,
-    showRemove,
-    disabled,
-  }: any) => (
-    <div data-testid={`dynamic-parameter-input-${parameterKey}`}>
-      <input
-        data-testid={`parameter-input-${parameterKey}`}
-        value={typeof value === 'string' ? value : JSON.stringify(value)}
-        onChange={(e) => {
-          let newValue: ParameterValue = e.target.value;
-          try {
-            newValue = JSON.parse(e.target.value);
-          } catch {
-            // Keep as string if not valid JSON
-          }
-          onChange(parameterKey, newValue);
-        }}
-        disabled={disabled}
-      />
-      {showRemove && (
-        <button
-          data-testid={`remove-parameter-${parameterKey}`}
-          onClick={() => onRemove(parameterKey)}
-          disabled={disabled}
-        >
-          Remove
-        </button>
-      )}
-    </div>
   ),
 }));
 
 describe('CustomParameterEditor', () => {
-  const mockParameterConfig = {
-    parameters: {
-      Authorization: 'Bearer token123',
-      'Content-Type': 'application/json',
-      temperature: 0.7,
-      max_tokens: 1000,
-      enable_thinking: false,
-    },
-    definitions: {
-      Authorization: {
-        key: 'Authorization',
-        type: 'string' as const,
-        category: 'header' as const,
-        required: true,
-        description: 'API authorization header',
-        providerSupport: ['openai'],
-      },
-      'Content-Type': {
-        key: 'Content-Type',
-        type: 'string' as const,
-        category: 'header' as const,
-        required: true,
-        description: 'Content type header',
-        providerSupport: ['openai'],
-      },
-      temperature: {
-        key: 'temperature',
-        type: 'number' as const,
-        category: 'core' as const,
-        required: false,
-        description: 'Sampling temperature',
-        providerSupport: ['openai'],
-      },
-      max_tokens: {
-        key: 'max_tokens',
-        type: 'number' as const,
-        category: 'core' as const,
-        required: false,
-        description: 'Maximum tokens to generate',
-        providerSupport: ['openai'],
-      },
-      enable_thinking: {
-        key: 'enable_thinking',
-        type: 'boolean' as const,
-        category: 'core' as const,
-        required: false,
-        description: 'Enable thinking mode',
-        providerSupport: ['openai'],
-      },
-    },
-    errors: [] as ValidationError[],
-    loadParameters: jest.fn(),
-    saveParameters: jest.fn(),
-    addParameter: jest.fn(),
-    updateParameter: jest.fn(),
-    removeParameter: jest.fn(),
-    validateAll: jest.fn(),
-    exportConfig: jest.fn(),
-    importConfig: jest.fn(),
-    applyTemplate: jest.fn(),
-    getTemplates: jest.fn(() => [
-      { name: 'OpenAI Default', description: 'Default OpenAI parameters' },
-      { name: 'Claude Optimized', description: 'Optimized for Claude models' },
-    ]),
+  const mockConfig: CustomParameterConfig = {
+    headerParameters: { Authorization: 'Bearer x' },
+    bodyParameters: { temperature: 0.7 },
   };
+
+  const addBodyParameter = jest.fn();
+  const removeBodyParameter = jest.fn();
+
+  const buildHookReturn = (
+    overrides: Partial<ReturnType<typeof useParameterConfig>> = {},
+  ) => ({
+    state: {
+      config: mockConfig,
+      isLoading: false,
+      hasUnsavedChanges: false,
+      validationErrors: [],
+      lastSaved: Date.now(),
+      saveStatus: 'idle' as const,
+    },
+    loadConfig: jest.fn(),
+    saveConfig: jest.fn(),
+    addBodyParameter,
+    updateBodyParameter: jest.fn(),
+    removeBodyParameter,
+    addHeaderParameter: jest.fn(),
+    updateHeaderParameter: jest.fn(),
+    removeHeaderParameter: jest.fn(),
+    validateConfiguration: jest.fn(),
+    exportConfiguration: jest.fn(() => '{}'),
+    importConfiguration: jest.fn(),
+    getSupportedParameters: jest.fn(),
+    getParameterDefinition: jest.fn(async (key: string) =>
+      key.toLowerCase() === 'temperature' || key.toLowerCase() === 'max_tokens'
+        ? {
+            key: key.toLowerCase(),
+            type: 'number' as const,
+            category: 'behavior' as const,
+            required: false,
+            providerSupport: ['*'],
+          }
+        : null,
+    ),
+    resetConfig: jest.fn(),
+    enableAutoSave: jest.fn(),
+    disableAutoSave: jest.fn(),
+    getMigrationStatus: jest.fn(),
+    getAppliedMigrations: jest.fn(),
+    getAvailableMigrations: jest.fn(),
+    ...overrides,
+  });
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseParameterConfig.mockReturnValue(mockParameterConfig);
+    mockUseParameterConfig.mockReturnValue(buildHookReturn());
   });
 
-  describe('Component Rendering', () => {
-    it('renders without crashing', () => {
-      render(<CustomParameterEditor providerId="openai" />);
-      expect(screen.getByText('Custom Parameters')).toBeInTheDocument();
-    });
+  it('renders tabs with badge counts', () => {
+    render(<CustomParameterEditor providerId="openai" />);
 
-    it('displays provider configuration interface', () => {
-      render(<CustomParameterEditor providerId="openai" />);
+    expect(screen.getByRole('tab', { name: /请求头/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /请求体参数/ })).toBeInTheDocument();
 
-      expect(screen.getByText('Custom Parameters')).toBeInTheDocument();
-      expect(
-        screen.getByText(
-          'Configure custom headers and body parameters for this provider',
-        ),
-      ).toBeInTheDocument();
-    });
-
-    it('shows parameter tabs with counts', () => {
-      render(<CustomParameterEditor providerId="openai" />);
-
-      expect(screen.getByTestId('tab-trigger-headers')).toBeInTheDocument();
-      expect(screen.getByTestId('tab-trigger-body')).toBeInTheDocument();
-
-      // Should show badge with counts
-      const badges = screen.getAllByTestId('badge');
-      expect(badges.length).toBeGreaterThanOrEqual(2);
-    });
-
-    it('displays action buttons', () => {
-      render(<CustomParameterEditor providerId="openai" />);
-
-      expect(screen.getByText('Export')).toBeInTheDocument();
-      expect(screen.getByText('Import')).toBeInTheDocument();
-      expect(screen.getByText('Refresh')).toBeInTheDocument();
-      expect(screen.getByText('Add Parameter')).toBeInTheDocument();
-    });
+    const badges = screen.getAllByTestId('badge');
+    expect(badges).toHaveLength(2);
+    expect(badges[0]).toHaveTextContent('1');
+    expect(badges[1]).toHaveTextContent('1');
   });
 
-  describe('Parameter Management', () => {
-    it('displays header parameters in headers tab', () => {
-      render(<CustomParameterEditor providerId="openai" />);
+  it('commits draft row via addBodyParameter on blur', async () => {
+    render(<CustomParameterEditor providerId="openai" />);
 
-      // Should be on headers tab by default
-      expect(
-        screen.getByTestId('dynamic-parameter-input-Authorization'),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByTestId('dynamic-parameter-input-Content-Type'),
-      ).toBeInTheDocument();
-    });
+    const keyInput = screen.getByPlaceholderText('例如 temperature');
+    const valueInput = screen.getByPlaceholderText('例如 0.3');
 
-    it('displays body parameters in body tab', () => {
-      render(<CustomParameterEditor providerId="openai" />);
+    fireEvent.change(keyInput, { target: { value: 'max_tokens' } });
+    fireEvent.change(valueInput, { target: { value: '1000' } });
+    fireEvent.blur(valueInput);
 
-      // Switch to body tab
-      fireEvent.click(screen.getByTestId('tab-trigger-body'));
-
-      expect(
-        screen.getByTestId('dynamic-parameter-input-temperature'),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByTestId('dynamic-parameter-input-max_tokens'),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByTestId('dynamic-parameter-input-enable_thinking'),
-      ).toBeInTheDocument();
-    });
-
-    it('handles parameter value changes', () => {
-      render(<CustomParameterEditor providerId="openai" />);
-
-      const temperatureInput = screen.getByTestId(
-        'parameter-input-temperature',
-      );
-      fireEvent.change(temperatureInput, { target: { value: '0.9' } });
-
-      expect(mockParameterConfig.updateParameter).toHaveBeenCalledWith(
-        'temperature',
-        0.9,
-      );
-    });
-
-    it('handles parameter removal', () => {
-      render(<CustomParameterEditor providerId="openai" />);
-
-      // Switch to body tab to see removable parameters
-      fireEvent.click(screen.getByTestId('tab-trigger-body'));
-
-      const removeButton = screen.getByTestId('remove-parameter-temperature');
-      fireEvent.click(removeButton);
-
-      expect(mockParameterConfig.removeParameter).toHaveBeenCalledWith(
-        'temperature',
+    await waitFor(() => {
+      expect(addBodyParameter).toHaveBeenCalledWith(
+        'max_tokens',
+        1000,
+        'float',
       );
     });
   });
 
-  describe('Add Parameter Dialog', () => {
-    it('opens add parameter dialog', () => {
-      render(<CustomParameterEditor providerId="openai" />);
+  it('allows adding a second body parameter', async () => {
+    let bodyParameters: Record<string, ParameterValue> = {};
+    const localAddBodyParameter = jest.fn(
+      (key: string, value: ParameterValue, _type: string) => {
+        bodyParameters = { ...bodyParameters, [key]: value };
+      },
+    );
 
-      fireEvent.click(screen.getByText('Add Parameter'));
-
-      expect(screen.getByTestId('alert-dialog')).toBeInTheDocument();
-      expect(screen.getByText('Add New Parameter')).toBeInTheDocument();
-    });
-
-    it('allows parameter configuration in dialog', async () => {
-      render(<CustomParameterEditor providerId="openai" />);
-
-      fireEvent.click(screen.getByText('Add Parameter'));
-
-      // Fill in parameter details
-      const keyInput = screen.getByDisplayValue('');
-      fireEvent.change(keyInput, { target: { value: 'custom_param' } });
-
-      // Select category and type through select components
-      const categorySelect = screen.getByTestId('select-item-body');
-      fireEvent.click(categorySelect);
-
-      const typeSelect = screen.getByTestId('select-item-number');
-      fireEvent.click(typeSelect);
-
-      // Add parameter
-      fireEvent.click(screen.getByTestId('alert-dialog-action'));
-
-      await waitFor(() => {
-        expect(mockParameterConfig.addParameter).toHaveBeenCalledWith(
-          'custom_param',
-          '',
-          expect.objectContaining({
-            key: 'custom_param',
-            type: 'number',
-            category: 'core',
-            required: false,
-          }),
-        );
-      });
-    });
-
-    it('cancels parameter addition', () => {
-      render(<CustomParameterEditor providerId="openai" />);
-
-      fireEvent.click(screen.getByText('Add Parameter'));
-      fireEvent.click(screen.getByTestId('alert-dialog-cancel'));
-
-      expect(screen.queryByTestId('alert-dialog')).not.toBeInTheDocument();
-    });
-  });
-
-  describe('Search Functionality', () => {
-    it('filters parameters by search query', () => {
-      render(<CustomParameterEditor providerId="openai" />);
-
-      const searchInput = screen.getByPlaceholderText('Search parameters...');
-      fireEvent.change(searchInput, { target: { value: 'auth' } });
-
-      // Should filter to only show Authorization parameter
-      expect(
-        screen.getByTestId('dynamic-parameter-input-Authorization'),
-      ).toBeInTheDocument();
-      expect(
-        screen.queryByTestId('dynamic-parameter-input-Content-Type'),
-      ).not.toBeInTheDocument();
-    });
-
-    it('shows no results message when search has no matches', () => {
-      render(<CustomParameterEditor providerId="openai" />);
-
-      const searchInput = screen.getByPlaceholderText('Search parameters...');
-      fireEvent.change(searchInput, { target: { value: 'nonexistent' } });
-
-      expect(
-        screen.getByText('No headers match your search.'),
-      ).toBeInTheDocument();
-    });
-  });
-
-  describe('Template Management', () => {
-    it('shows available templates', () => {
-      render(<CustomParameterEditor providerId="openai" />);
-
-      expect(
-        screen.getByTestId('select-item-OpenAI Default'),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByTestId('select-item-Claude Optimized'),
-      ).toBeInTheDocument();
-    });
-
-    it('applies selected template', () => {
-      render(<CustomParameterEditor providerId="openai" />);
-
-      fireEvent.click(screen.getByTestId('select-item-OpenAI Default'));
-
-      expect(mockParameterConfig.applyTemplate).toHaveBeenCalledWith(
-        'OpenAI Default',
-      );
-    });
-  });
-
-  describe('Import/Export', () => {
-    it('handles configuration export', async () => {
-      // Mock URL.createObjectURL and related DOM APIs
-      global.URL.createObjectURL = jest.fn(() => 'mock-url');
-      global.URL.revokeObjectURL = jest.fn();
-
-      const mockLink = {
-        href: '',
-        download: '',
-        click: jest.fn(),
-      };
-      jest.spyOn(document, 'createElement').mockReturnValue(mockLink as any);
-      jest.spyOn(document.body, 'appendChild').mockImplementation();
-      jest.spyOn(document.body, 'removeChild').mockImplementation();
-
-      mockParameterConfig.exportConfig.mockResolvedValue({
-        headerConfigs: { Authorization: 'Bearer token123' },
-        bodyConfigs: { temperature: 0.7 },
-      });
-
-      render(<CustomParameterEditor providerId="openai" />);
-
-      fireEvent.click(screen.getByText('Export'));
-
-      await waitFor(() => {
-        expect(mockParameterConfig.exportConfig).toHaveBeenCalled();
-        expect(mockLink.click).toHaveBeenCalled();
-      });
-    });
-
-    it('handles configuration import', async () => {
-      const file = new File(['{"headerConfigs": {}}'], 'config.json', {
-        type: 'application/json',
-      });
-
-      render(<CustomParameterEditor providerId="openai" />);
-
-      const fileInput = screen.getByDisplayValue('');
-      fireEvent.change(fileInput, { target: { files: [file] } });
-
-      // Wait for file reader to process
-      await waitFor(() => {
-        expect(mockParameterConfig.importConfig).toHaveBeenCalled();
-      });
-    });
-  });
-
-  describe('Configuration Changes', () => {
-    it('calls onConfigChange when parameters are modified', () => {
-      const mockOnConfigChange = jest.fn();
-      render(
-        <CustomParameterEditor
-          providerId="openai"
-          onConfigChange={mockOnConfigChange}
-        />,
-      );
-
-      const temperatureInput = screen.getByTestId(
-        'parameter-input-temperature',
-      );
-      fireEvent.change(temperatureInput, { target: { value: '0.9' } });
-
-      expect(mockOnConfigChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          headerConfigs: expect.any(Object),
-          bodyConfigs: expect.any(Object),
-        }),
-      );
-    });
-
-    it('calls onSave when save button is clicked', () => {
-      const mockOnSave = jest.fn();
-      render(<CustomParameterEditor providerId="openai" onSave={mockOnSave} />);
-
-      fireEvent.click(screen.getByText('Save Changes'));
-
-      expect(mockOnSave).toHaveBeenCalled();
-    });
-  });
-
-  describe('Disabled State', () => {
-    it('disables all interactions when disabled prop is true', () => {
-      render(<CustomParameterEditor providerId="openai" disabled={true} />);
-
-      expect(screen.getByText('Add Parameter')).toBeDisabled();
-      expect(screen.getByText('Export')).toBeDisabled();
-      expect(screen.getByText('Refresh')).toBeDisabled();
-      expect(
-        screen.getByPlaceholderText('Search parameters...'),
-      ).toBeDisabled();
-    });
-  });
-
-  describe('Parameter Duplication', () => {
-    it('duplicates existing parameters', () => {
-      render(<CustomParameterEditor providerId="openai" />);
-
-      // Switch to body tab to see duplicate buttons
-      fireEvent.click(screen.getByTestId('tab-trigger-body'));
-
-      const duplicateButton = screen.getByText('Duplicate');
-      fireEvent.click(duplicateButton);
-
-      expect(mockParameterConfig.addParameter).toHaveBeenCalledWith(
-        expect.stringContaining('_copy'),
-        expect.any(String),
-        expect.objectContaining({
-          description: expect.stringContaining('Copy of'),
-        }),
-      );
-    });
-  });
-
-  describe('Configuration Summary', () => {
-    it('displays configuration summary', () => {
-      render(<CustomParameterEditor providerId="openai" />);
-
-      expect(screen.getByText('Configuration Summary')).toBeInTheDocument();
-      expect(screen.getByText(/Total Parameters:/)).toBeInTheDocument();
-      expect(screen.getByText(/Headers:/)).toBeInTheDocument();
-      expect(screen.getByText(/Body Parameters:/)).toBeInTheDocument();
-      expect(screen.getByText(/Validation Errors:/)).toBeInTheDocument();
-    });
-  });
-
-  describe('Error Handling', () => {
-    it('displays validation errors', () => {
-      const configWithErrors = {
-        ...mockParameterConfig,
-        errors: [
-          {
-            key: 'temperature',
-            type: 'range' as const,
-            message: 'Temperature must be between 0 and 2',
-            suggestion: 'Use a value between 0 and 2',
+    mockUseParameterConfig.mockImplementation(() =>
+      buildHookReturn({
+        state: {
+          config: {
+            headerParameters: {},
+            bodyParameters,
+            configVersion: '1.0.0',
+            lastModified: Date.now(),
           },
-        ],
-      };
+          isLoading: false,
+          hasUnsavedChanges: false,
+          validationErrors: [],
+          lastSaved: Date.now(),
+          saveStatus: 'idle' as const,
+        },
+        addBodyParameter: localAddBodyParameter,
+        getParameterDefinition: jest.fn(async (key: string) => {
+          const normalized = key.toLowerCase();
+          if (normalized === 'temperature' || normalized === 'max_tokens') {
+            return {
+              key: normalized,
+              type: 'number' as const,
+              category: 'behavior' as const,
+              required: false,
+              providerSupport: ['*'],
+            };
+          }
+          return null;
+        }),
+      }),
+    );
 
-      mockUseParameterConfig.mockReturnValue(configWithErrors);
+    const { rerender } = render(<CustomParameterEditor providerId="openai" />);
 
-      render(<CustomParameterEditor providerId="openai" />);
+    const fillDraftRow = (key: string, value: string) => {
+      const keyInput = screen.getByPlaceholderText('例如 temperature');
+      const valueInput = screen.getByPlaceholderText('例如 0.3');
+      fireEvent.change(keyInput, { target: { value: key } });
+      fireEvent.change(valueInput, { target: { value } });
+      fireEvent.blur(valueInput);
+    };
 
-      expect(screen.getByText('1')).toBeInTheDocument(); // Error count in summary
+    fillDraftRow('temperature', '0.3');
+
+    await waitFor(() => {
+      expect(localAddBodyParameter).toHaveBeenCalledWith(
+        'temperature',
+        0.3,
+        'float',
+      );
     });
+
+    rerender(<CustomParameterEditor providerId="openai" />);
+    fillDraftRow('max_tokens', '1000');
+
+    await waitFor(() => {
+      expect(localAddBodyParameter).toHaveBeenCalledTimes(2);
+      expect(localAddBodyParameter).toHaveBeenLastCalledWith(
+        'max_tokens',
+        1000,
+        'float',
+      );
+      expect(Object.keys(bodyParameters)).toEqual(
+        expect.arrayContaining(['temperature', 'max_tokens']),
+      );
+    });
+  });
+
+  it('calls removeBodyParameter when row remove is selected', () => {
+    render(<CustomParameterEditor providerId="openai" />);
+
+    const bodyTab = screen.getByTestId('tab-content-body');
+    const removeButton = within(bodyTab)
+      .getAllByRole('button')
+      .find((button) => button.querySelector('[data-testid="trash-icon"]'));
+
+    expect(removeButton).toBeDefined();
+    fireEvent.click(removeButton!);
+
+    expect(removeBodyParameter).toHaveBeenCalledWith('temperature');
+  });
+
+  it('shows import and export actions in the more menu', () => {
+    render(<CustomParameterEditor providerId="openai" />);
+
+    expect(screen.getByRole('button', { name: '更多' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '导入 JSON' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '导出 JSON' }),
+    ).toBeInTheDocument();
+  });
+
+  it('shows add hint and explicit add button', () => {
+    render(<CustomParameterEditor providerId="openai" />);
+
+    expect(screen.getByRole('button', { name: '添加' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        '在下方「新参数」行填写参数名、类型和值，点击「添加」或按 Enter 可连续添加多条。',
+      ),
+    ).toBeInTheDocument();
   });
 });

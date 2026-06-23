@@ -541,7 +541,7 @@ export const useSubtitles = (
       });
 
       updateSubtitles(newSubtitles);
-      toast.success(t('mergeSuccess') || '字幕已合并');
+      toast.success(t('mergeSuccess'));
     },
     [mergedSubtitles, updateSubtitles, t],
   );
@@ -603,7 +603,7 @@ export const useSubtitles = (
       });
 
       updateSubtitles(newSubtitles);
-      toast.success(t('splitSuccess') || '字幕已拆分');
+      toast.success(t('splitSuccess'));
     },
     [mergedSubtitles, updateSubtitles, t],
   );

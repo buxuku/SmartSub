@@ -33,92 +33,97 @@ export default function BasicStyleSettings({
 
   return (
     <div className="space-y-4">
-      {/* 字体选择 */}
-      <div className="space-y-2">
-        <Label className="text-sm">{t('fontFamily') || '字体'}</Label>
-        <Select
-          value={style.fontName}
-          onValueChange={(value) => onUpdateStyle({ fontName: value })}
-          disabled={disabled}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder={t('selectFont') || '选择字体'} />
-          </SelectTrigger>
-          <SelectContent>
-            {FONT_LIST.map((font) => (
-              <SelectItem key={font.value} value={font.value}>
-                <span style={{ fontFamily: font.value }}>{font.label}</span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* 字号大小 */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label className="text-sm">{t('fontSize') || '字号'}</Label>
-          <span className="text-sm text-muted-foreground">
-            {style.fontSize}px
-          </span>
+      {/* 字体 + 字号 同行 */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label className="text-sm">{t('fontFamily')}</Label>
+          <Select
+            value={style.fontName}
+            onValueChange={(value) => onUpdateStyle({ fontName: value })}
+            disabled={disabled}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={t('selectFont')} />
+            </SelectTrigger>
+            <SelectContent>
+              {FONT_LIST.map((font) => (
+                <SelectItem key={font.value} value={font.value}>
+                  <span style={{ fontFamily: font.value }}>{font.label}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <Slider
-          value={[style.fontSize]}
-          min={FONT_SIZE_RANGE.min}
-          max={FONT_SIZE_RANGE.max}
-          step={1}
-          onValueChange={([value]) => onUpdateStyle({ fontSize: value })}
-          disabled={disabled}
-        />
-      </div>
 
-      {/* 字体颜色 */}
-      <div className="space-y-2">
-        <Label className="text-sm">{t('fontColor') || '字体颜色'}</Label>
-        <div className="flex items-center gap-2">
-          <Input
-            type="color"
-            value={style.primaryColor}
-            onChange={(e) => onUpdateStyle({ primaryColor: e.target.value })}
-            disabled={disabled}
-            className="w-12 h-9 p-1 cursor-pointer"
-          />
-          <Input
-            type="text"
-            value={style.primaryColor}
-            onChange={(e) => onUpdateStyle({ primaryColor: e.target.value })}
-            disabled={disabled}
-            className="flex-1 font-mono text-sm"
-            placeholder="#FFFFFF"
-          />
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm">{t('fontSize')}</Label>
+            <span className="text-sm text-muted-foreground">
+              {style.fontSize}px
+            </span>
+          </div>
+          <div className="flex h-9 items-center">
+            <Slider
+              value={[style.fontSize]}
+              min={FONT_SIZE_RANGE.min}
+              max={FONT_SIZE_RANGE.max}
+              step={1}
+              onValueChange={([value]) => onUpdateStyle({ fontSize: value })}
+              disabled={disabled}
+              className="w-full"
+            />
+          </div>
         </div>
       </div>
 
-      {/* 边框颜色 */}
-      <div className="space-y-2">
-        <Label className="text-sm">{t('outlineColor') || '边框颜色'}</Label>
-        <div className="flex items-center gap-2">
-          <Input
-            type="color"
-            value={style.outlineColor}
-            onChange={(e) => onUpdateStyle({ outlineColor: e.target.value })}
-            disabled={disabled}
-            className="w-12 h-9 p-1 cursor-pointer"
-          />
-          <Input
-            type="text"
-            value={style.outlineColor}
-            onChange={(e) => onUpdateStyle({ outlineColor: e.target.value })}
-            disabled={disabled}
-            className="flex-1 font-mono text-sm"
-            placeholder="#000000"
-          />
+      {/* 字体颜色 + 边框颜色 同行 */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label className="text-sm">{t('fontColor')}</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              type="color"
+              value={style.primaryColor}
+              onChange={(e) => onUpdateStyle({ primaryColor: e.target.value })}
+              disabled={disabled}
+              className="w-10 h-9 p-1 cursor-pointer shrink-0"
+            />
+            <Input
+              type="text"
+              value={style.primaryColor}
+              onChange={(e) => onUpdateStyle({ primaryColor: e.target.value })}
+              disabled={disabled}
+              className="min-w-0 flex-1 font-mono text-sm"
+              placeholder="#FFFFFF"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-sm">{t('outlineColor')}</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              type="color"
+              value={style.outlineColor}
+              onChange={(e) => onUpdateStyle({ outlineColor: e.target.value })}
+              disabled={disabled}
+              className="w-10 h-9 p-1 cursor-pointer shrink-0"
+            />
+            <Input
+              type="text"
+              value={style.outlineColor}
+              onChange={(e) => onUpdateStyle({ outlineColor: e.target.value })}
+              disabled={disabled}
+              className="min-w-0 flex-1 font-mono text-sm"
+              placeholder="#000000"
+            />
+          </div>
         </div>
       </div>
 
-      {/* 对齐位置 */}
-      <div className="space-y-2">
-        <Label className="text-sm">{t('position') || '位置'}</Label>
+      {/* 对齐位置：标题用块级标签 + mb 与九宫格拉开（space-y 对 inline 标签/inline-grid 组合无效） */}
+      <div className="pt-2">
+        <Label className="mb-3 block text-sm">{t('position')}</Label>
         <AlignmentSelector
           value={style.alignment}
           onChange={(value) => onUpdateStyle({ alignment: value })}

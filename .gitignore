@@ -16,3 +16,6 @@ Project
 sample
 .specs/
 .agents/
+extraResources/addons/addon.vulkan.node
+extraResources/py-base/
+.superpowers/

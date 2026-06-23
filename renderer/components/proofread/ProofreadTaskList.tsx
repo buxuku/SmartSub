@@ -15,12 +15,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
+  CheckCircle2,
+  Clock,
+  FileText,
+  Loader2,
   Play,
   Trash2,
-  Clock,
-  CheckCircle2,
-  Loader2,
-  FileText,
+  X,
 } from 'lucide-react';
 import { ProofreadTask } from '../../../types/proofread';
 
@@ -103,10 +104,8 @@ export default function ProofreadTaskList({
     return (
       <div className="text-center py-12 text-muted-foreground">
         <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-        <p>{t('noSavedTasks') || '暂无保存的任务'}</p>
-        <p className="text-sm mt-2">
-          {t('saveTaskToSeeHere') || '保存任务后会显示在这里'}
-        </p>
+        <p>{t('noSavedTasks')}</p>
+        <p className="text-sm mt-2">{t('saveTaskToSeeHere')}</p>
       </div>
     );
   }
@@ -123,14 +122,14 @@ export default function ProofreadTaskList({
                   <div className="flex items-center gap-2 mb-2">
                     <h3 className="font-medium truncate">{task.name}</h3>
                     {task.status === 'completed' ? (
-                      <Badge variant="outline" className="text-green-600">
+                      <Badge variant="outline" className="text-success">
                         <CheckCircle2 className="w-3 h-3 mr-1" />
-                        {t('completed') || '已完成'}
+                        {t('completed')}
                       </Badge>
                     ) : (
                       <Badge variant="outline">
                         <Clock className="w-3 h-3 mr-1" />
-                        {t('inProgress') || '进行中'}
+                        {t('inProgress')}
                       </Badge>
                     )}
                   </div>
@@ -156,9 +155,7 @@ export default function ProofreadTaskList({
                     onClick={() => onLoadTask(task)}
                   >
                     <Play className="w-4 h-4 mr-1" />
-                    {task.status === 'completed'
-                      ? t('view') || '查看'
-                      : t('continue') || '继续'}
+                    {task.status === 'completed' ? t('view') : t('continue')}
                   </Button>
                   <Button
                     variant="ghost"
@@ -181,21 +178,22 @@ export default function ProofreadTaskList({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('confirmDelete') || '确认删除'}
-            </AlertDialogTitle>
+            <AlertDialogTitle>{t('confirmDelete')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('deleteTaskConfirmDesc') ||
-                '确定要删除这个任务吗？此操作不可恢复。'}
+              {t('deleteTaskConfirmDesc')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('cancel') || '取消'}</AlertDialogCancel>
+            <AlertDialogCancel className="gap-1.5">
+              <X className="h-4 w-4" />
+              {t('cancel')}
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteConfirm && handleDeleteTask(deleteConfirm)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {t('delete') || '删除'}
+              <Trash2 className="h-4 w-4" />
+              {t('delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

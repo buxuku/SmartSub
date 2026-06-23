@@ -1,0 +1,97 @@
+{
+  "pageTitle": {
+    "generate-translate": "Video → bilingual subtitles",
+    "generate": "Video → original subtitles",
+    "translate": "Translate existing subtitles"
+  },
+  "backToLaunchpad": "Back to task picker",
+  "newTaskHint": "New task · saved to recent tasks once files are added",
+  "renameTask": "Rename task",
+  "configBar": {
+    "model": "Speech model",
+    "sourceLanguage": "Video language",
+    "subtitleSourceLanguage": "Source language",
+    "targetLanguage": "Translate to",
+    "provider": "Translation service",
+    "style": "Output content",
+    "format": "Subtitle format"
+  },
+  "notConfigured": " (not configured)",
+  "skippedDuplicates": "Skipped {{count}} duplicate file(s)",
+  "goDownloadModel": "Download a model",
+  "goConfigureProvider": "Set up a translation service",
+  "advanced": "Advanced options",
+  "advancedDesc": "Details you rarely change — the defaults are best practice",
+  "section": {
+    "recognition": "Transcription",
+    "output": "Output & saving",
+    "execution": "Execution"
+  },
+  "vad": {
+    "label": "Voice activity detection (VAD)",
+    "on": "Faster and steadier; fewer repeated/hallucinated lines over silence or background noise. Timestamps may be slightly off.",
+    "off": "Timestamps hug the speech more closely, but silence/music may produce repeated or hallucinated lines.",
+    "hint": "Turn off when you need strict subtitle timing. This is a global setting and affects all tasks."
+  },
+  "reduceRepetition": {
+    "label": "Reduce repetition / hallucinated lines",
+    "on": "On: drops previous-text conditioning and suppresses repeats, greatly reducing looped lines over silence/repetition; coherence on clean speech may drop slightly.",
+    "off": "Off: engine defaults (keeps cross-segment coherence); long videos or silence may produce repeated or hallucinated lines.",
+    "hint": "Turn on when subtitles loop or repeat heavily. Global setting; applies to both faster-whisper and whisper.cpp."
+  },
+  "chinesePunctuation": {
+    "label": "Strip Chinese punctuation",
+    "hint": "Replace Chinese punctuation (，。、？！ etc.) in Chinese subtitles with spaces and trim trailing spaces for cleaner subtitles. Applies to the source when the source language is Chinese, and to the translation when the target is Chinese."
+  },
+  "stage": {
+    "extract": "Extract",
+    "transcribe": "Transcribe",
+    "translate": "Translate"
+  },
+  "row": {
+    "cancelling": "Cancelling… interrupting transcription",
+    "proofread": "Proofread",
+    "openFolder": "Show in folder",
+    "retry": "Retry",
+    "remove": "Remove",
+    "embeddedSubtitle": "Extracted from embedded subtitles"
+  },
+  "waiting": "Waiting",
+  "interrupted": "Interrupted by app restart — retry to continue",
+  "completion": {
+    "title": "{{done}} files completed",
+    "sampleTitle": "Sample done — your first subtitle is ready!",
+    "sampleHint": "Open it in proofread, or head back to the launchpad to process your own files",
+    "backHome": "Back to launchpad",
+    "failed": "{{failed}} failed",
+    "goProofread": "Proofread",
+    "goMerge": "Burn into video",
+    "openFolder": "Open folder",
+    "retryFailed": "Retry failed",
+    "allFailedTitle": "All {{failed}} files failed",
+    "dismiss": "Dismiss"
+  },
+  "logs": {
+    "title": "Activity log (this task)",
+    "clear": "Clear",
+    "empty": "No logs yet"
+  },
+  "empty": {
+    "dragMedia": "Drag media files or folders here, or click to upload",
+    "dragSubtitle": "Drag subtitle files or folders here, or click to upload",
+    "mediaFormats": "Supports MP4 / MKV / MOV / MP3 / WAV and 24+ more video & audio formats",
+    "subtitleFormats": "Supports SRT / VTT / ASS / SSA / LRC subtitles"
+  },
+  "import": "Import",
+  "clearList": "Clear list",
+  "taskCount": "{{count}} tasks",
+  "view": {
+    "list": "List view",
+    "grid": "Grid view"
+  },
+  "listCleared": "File list cleared",
+  "meta": {
+    "etaMin": "~{{min}} min left",
+    "etaLessMin": "Almost done"
+  }
+}

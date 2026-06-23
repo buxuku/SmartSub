@@ -36,6 +36,20 @@ git clone https://github.com/buxuku/SmartSub.git
 cd SmartSub
 ```
 
+### faster-whisper 引擎（独立仓库）
+
+Python sidecar 源码与构建已迁至 **[buxuku/smartsub-py-engine](https://github.com/buxuku/smartsub-py-engine)**，产物发布在 [`latest`](https://github.com/buxuku/smartsub-py-engine/releases/tag/latest) Release。SmartSub 主仓库不再包含 `python-engine/` 目录。
+
+本地调试 faster-whisper 转写时，可任选其一：
+
+1. 在 SmartSub 内 **资源中心 → 引擎** 下载安装（写入 `userData/py-engine/current/`）
+2. 克隆 `smartsub-py-engine` 本地构建后，启动 SmartSub 前设置：
+
+```bash
+export PYTHON_ENGINE_CMD="/path/to/smartsub-py-engine/dist/smartsub-engine/smartsub-engine"
+yarn dev
+```
+
 ### 安装依赖
 
 ```bash

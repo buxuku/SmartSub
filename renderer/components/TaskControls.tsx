@@ -1,36 +1,74 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { CircleStop, Loader2, Pause, Play } from 'lucide-react';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
-import { isSubtitleFile, needsCoreML, cn } from 'lib/utils';
+import { cn } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
+import type { TaskTypeDef } from 'lib/taskTypes';
+import { getFileStages, isFileDone } from './tasks/stageUtils';
+import { useHotkeys } from 'hooks/useHotkeys';
 
 interface TaskControlsProps {
   files: any[];
   formData: any;
+  typeDef: TaskTypeDef;
+  projectId: string | null;
   className?: string;
+  /** 可选：状态变化时上抛（任务页用于联动重试按钮/完成横幅） */
+  onStatusChange?: (status: string) => void;
+  autoStart?: boolean;
 }
 
-const TaskControls = ({ files, formData, className }: TaskControlsProps) => {
-  const [taskStatus, setTaskStatus] = useState('idle');
+type TaskCompletePayload = { projectId?: string; status?: string } | string;
+
+const TaskControls = ({
+  files,
+  formData,
+  typeDef,
+  projectId,
+  className,
+  onStatusChange,
+  autoStart,
+}: TaskControlsProps) => {
+  const [taskStatus, setTaskStatusState] = useState('idle');
+  // 首次状态同步是否已完成:autostart 必须等它,否则迟到的 'idle' 会覆盖乐观 'running'
+  const [statusSynced, setStatusSynced] = useState(false);
   const { t } = useTranslation(['home', 'common']);
 
+  const setTaskStatus = (status: string) => {
+    setTaskStatusState(status);
+    onStatusChange?.(status);
+  };
+
   useEffect(() => {
-    // 获取当前任务状态
+    setStatusSynced(false);
+    if (!projectId) return;
+    let disposed = false;
+    // 获取当前工程的任务状态
     const getCurrentTaskStatus = async () => {
-      const status = await window?.ipc?.invoke('getTaskStatus');
-      setTaskStatus(status);
+      const status = await window?.ipc?.invoke('getTaskStatus', projectId);
+      if (!disposed && status) setTaskStatus(status);
+      if (!disposed) setStatusSynced(true);
     };
     getCurrentTaskStatus();
 
-    // 监听任务状态变化
-    const cleanup = window?.ipc?.on('taskComplete', (status: string) => {
-      setTaskStatus(status);
-    });
+    // 监听本工程的任务完成事件
+    const cleanup = window?.ipc?.on(
+      'taskComplete',
+      (payload: TaskCompletePayload) => {
+        const status = typeof payload === 'string' ? payload : payload?.status;
+        const pid =
+          typeof payload === 'string' ? undefined : payload?.projectId;
+        if (pid && pid !== projectId) return;
+        if (status) setTaskStatus(status);
+      },
+    );
 
     return () => {
+      disposed = true;
       cleanup?.();
     };
-  }, []);
+  }, [projectId]);
 
   const handleTask = async () => {
     if (!files?.length) {
@@ -39,73 +77,149 @@ const TaskControls = ({ files, formData, className }: TaskControlsProps) => {
       });
       return;
     }
-    const isAllFilesProcessed = files.every((item) => {
-      const basicProcessingDone = item.extractAudio && item.extractSubtitle;
-
-      if (formData.translateProvider === '-1') {
-        return basicProcessingDone;
+    // 带翻译的任务必须有有效翻译服务商（'-1' 为历史「不翻译」残留值）
+    if (typeDef.hasTranslate) {
+      const provider = formData?.translateProvider;
+      if (!provider || provider === '-1') {
+        toast.error(t('home:selectProviderFirst'));
+        return;
       }
-      if (isSubtitleFile(item?.filePath)) {
-        return item.translateSubtitle;
-      }
-
-      return basicProcessingDone && item.translateSubtitle;
-    });
-
-    if (isAllFilesProcessed) {
+    }
+    // 需要模型的任务必须已选模型：自动选择兜底后仍为空，说明确实没有可用模型，拦截并指引下载
+    if (typeDef.needsModel && !formData?.model) {
+      toast.error(t('home:selectModelFirst'));
+      return;
+    }
+    // 只派发未完成的文件（error 不算完成，可重跑；已完成文件不重做）
+    const pendingFiles = files.filter(
+      (file) => !isFileDone(file, getFileStages(file, typeDef, formData)),
+    );
+    if (!pendingFiles.length) {
       toast(t('common:notification'), {
         description: t('home:allFilesProcessed'),
       });
       return;
     }
-    // if(formData.model && needsCoreML(formData.model)){
-    //   const checkMlmodel = await window.ipc.invoke('checkMlmodel', formData.model);
-    //   if(!checkMlmodel){
-    //     toast(t('common:notification'), {
-    //       description: t('home:missingEncoderMlmodelc'),
-    //     });
-    //     return;
-    //   }
-    // }
+    // 记录"上次使用"的 (引擎,模型) 作为下次新任务默认（全局单条，二者作为整体）
+    if (
+      typeDef.needsModel &&
+      formData?.transcriptionEngine &&
+      formData?.model
+    ) {
+      window?.ipc?.invoke('setSettings', {
+        lastUsedTranscription: {
+          engine: formData.transcriptionEngine,
+          model: formData.model,
+        },
+      });
+    }
     setTaskStatus('running');
-    window?.ipc?.send('handleTask', { files, formData });
+    window?.ipc?.send('handleTask', {
+      files: pendingFiles,
+      formData,
+      projectId,
+    });
   };
+
+  // ?autostart=1 进入页面时自动开始一次(仅 idle 态,ref 防 StrictMode/重渲染重复触发)
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (!statusSynced) return;
+    if (!autoStart || autoStartedRef.current) return;
+    if (!files?.length) return;
+    if (taskStatus !== 'idle') return;
+    autoStartedRef.current = true;
+    handleTask();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, files, taskStatus, statusSynced]);
+
   const handlePause = () => {
-    window?.ipc?.send('pauseTask', null);
+    window?.ipc?.send('pauseTask', projectId);
     setTaskStatus('paused');
   };
 
   const handleResume = () => {
-    window?.ipc?.send('resumeTask', null);
+    window?.ipc?.send('resumeTask', projectId);
     setTaskStatus('running');
   };
 
   const handleCancel = () => {
-    window?.ipc?.send('cancelTask', null);
-    setTaskStatus('cancelled');
+    window?.ipc?.send('cancelTask', projectId);
+    setTaskStatus('cancelling');
   };
+
+  const showStart =
+    taskStatus === 'idle' ||
+    taskStatus === 'completed' ||
+    taskStatus === 'cancelled';
+
+  // Cmd/Ctrl+Enter 等价点击「开始任务」（仅可开始状态下生效）
+  useHotkeys([
+    {
+      combo: 'mod+enter',
+      allowInInput: true,
+      handler: () => {
+        if (showStart && files.length) handleTask();
+      },
+    },
+  ]);
+
   return (
-    <div className={cn('flex gap-2 ml-auto', className)}>
-      {(taskStatus === 'idle' || taskStatus === 'completed') && (
-        <Button onClick={handleTask} disabled={!files.length}>
-          {t('home:startTask')}
+    <div className={cn('flex items-center gap-2 ml-auto', className)}>
+      {taskStatus === 'paused' && (
+        <span className="text-xs text-muted-foreground">
+          {t('home:pausedHint')}
+        </span>
+      )}
+      {taskStatus === 'cancelling' && (
+        <span className="text-xs text-muted-foreground">
+          {t('home:cancellingHint')}
+        </span>
+      )}
+      {showStart && (
+        <Button
+          className="gap-1.5"
+          onClick={handleTask}
+          disabled={!files.length}
+        >
+          <Play className="h-4 w-4" />
+          {taskStatus === 'cancelled'
+            ? t('home:restartTask')
+            : t('home:startTask')}
         </Button>
       )}
       {taskStatus === 'running' && (
         <>
-          <Button onClick={handlePause}>{t('home:pauseTask')}</Button>
-          <Button onClick={handleCancel}>{t('home:cancelTask')}</Button>
+          <Button
+            className="gap-1.5"
+            onClick={handlePause}
+            title={t('home:pauseTip')}
+          >
+            <Pause className="h-4 w-4" />
+            {t('home:pauseTask')}
+          </Button>
+          <Button className="gap-1.5" onClick={handleCancel}>
+            <CircleStop className="h-4 w-4" />
+            {t('home:cancelTask')}
+          </Button>
         </>
       )}
       {taskStatus === 'paused' && (
         <>
-          <Button onClick={handleResume}>{t('home:resumeTask')}</Button>
-          <Button onClick={handleCancel}>{t('home:cancelTask')}</Button>
+          <Button className="gap-1.5" onClick={handleResume}>
+            <Play className="h-4 w-4" />
+            {t('home:resumeTask')}
+          </Button>
+          <Button className="gap-1.5" onClick={handleCancel}>
+            <CircleStop className="h-4 w-4" />
+            {t('home:cancelTask')}
+          </Button>
         </>
       )}
-      {taskStatus === 'cancelled' && (
-        <Button onClick={handleTask} disabled={!files.length}>
-          {t('home:restartTask')}
+      {taskStatus === 'cancelling' && (
+        <Button className="gap-1.5" disabled>
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {t('home:cancelling')}
         </Button>
       )}
     </div>

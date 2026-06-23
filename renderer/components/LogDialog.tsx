@@ -31,9 +31,13 @@ export function LogDialog({ open, onOpenChange }) {
     const handleNewLog = (log: LogEntry) => {
       setLogs((prev) => [...prev, log]);
       // 使用 requestAnimationFrame 确保在下一帧更新滚动位置
+      // 真正可滚动的是 Radix 的 viewport，而非 ScrollArea 根节点
       requestAnimationFrame(() => {
-        if (scrollRef.current) {
-          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        const viewport = scrollRef.current?.querySelector(
+          '[data-radix-scroll-area-viewport]',
+        ) as HTMLElement | null;
+        if (viewport) {
+          viewport.scrollTop = viewport.scrollHeight;
         }
       });
     };
@@ -74,28 +78,25 @@ export function LogDialog({ open, onOpenChange }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[80vh]">
+      <DialogContent className="max-w-3xl max-h-[80vh] grid-rows-[auto_1fr_auto]">
         <DialogHeader>
           <DialogTitle>{t('logs')}</DialogTitle>
-          <DialogDescription>
-            View application logs and system messages for debugging and
-            monitoring.
-          </DialogDescription>
+          <DialogDescription>{t('logsDesc')}</DialogDescription>
         </DialogHeader>
-        <ScrollArea ref={scrollRef} className="h-[60vh]">
-          <div className="space-y-2 p-4 w-[700px] overflow-x-scroll">
+        <ScrollArea ref={scrollRef} className="min-h-0">
+          <div className="space-y-2 p-4">
             {logs.map((log, index) => (
               <div key={index}>
                 <div
-                  className={`text-sm whitespace-pre font-mono inline-block min-w-fit ${
+                  className={`text-sm whitespace-pre-wrap break-all font-mono ${
                     log?.type === 'error'
-                      ? 'text-red-500'
+                      ? 'text-destructive'
                       : log?.type === 'warning'
-                        ? 'text-yellow-500'
-                        : 'text-gray-700'
+                        ? 'text-warning'
+                        : 'text-muted-foreground'
                   }`}
                 >
-                  <span className="text-gray-500">
+                  <span className="text-muted-foreground">
                     {new Date(log?.timestamp).toLocaleString()}
                   </span>
                   {' - '}
@@ -105,12 +106,16 @@ export function LogDialog({ open, onOpenChange }) {
             ))}
           </div>
         </ScrollArea>
-        <div className="flex justify-end space-x-2 mt-4">
+        <div className="flex justify-end space-x-2 mt-4 shrink-0">
           <Button variant="outline" onClick={handleCopyLogs}>
             <Copy className="h-4 w-4 mr-2" />
             {t('copyLogs')}
           </Button>
-          <Button variant="destructive" onClick={handleClearLogs}>
+          <Button
+            variant="outline"
+            className="text-muted-foreground hover:text-destructive"
+            onClick={handleClearLogs}
+          >
             <Trash2 className="h-4 w-4 mr-2" />
             {t('clearLogs')}
           </Button>

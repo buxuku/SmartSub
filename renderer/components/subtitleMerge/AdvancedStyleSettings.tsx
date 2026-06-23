@@ -47,8 +47,8 @@ export default function AdvancedStyleSettings({
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <CollapsibleTrigger className="flex items-center justify-between w-full py-2 text-sm font-medium hover:bg-muted/50 rounded px-2 -mx-2">
-        <span>{t('advancedSettings') || '高级设置'}</span>
+      <CollapsibleTrigger className="flex items-center justify-between w-full py-2 hover:bg-muted/50 rounded px-2 -mx-2">
+        <span className="label-caps">{t('advancedSettings')}</span>
         <ChevronDown
           className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
         />
@@ -64,7 +64,7 @@ export default function AdvancedStyleSettings({
               disabled={disabled}
             />
             <Label htmlFor="bold" className="text-sm cursor-pointer">
-              {t('bold') || '加粗'}
+              {t('bold')}
             </Label>
           </div>
           <div className="flex items-center gap-2">
@@ -75,7 +75,7 @@ export default function AdvancedStyleSettings({
               disabled={disabled}
             />
             <Label htmlFor="italic" className="text-sm cursor-pointer">
-              {t('italic') || '斜体'}
+              {t('italic')}
             </Label>
           </div>
           <div className="flex items-center gap-2">
@@ -88,14 +88,14 @@ export default function AdvancedStyleSettings({
               disabled={disabled}
             />
             <Label htmlFor="underline" className="text-sm cursor-pointer">
-              {t('underline') || '下划线'}
+              {t('underline')}
             </Label>
           </div>
         </div>
 
         {/* 边框样式 */}
         <div className="space-y-2">
-          <Label className="text-sm">{t('borderStyle') || '边框样式'}</Label>
+          <Label className="text-sm">{t('borderStyle')}</Label>
           <Select
             value={String(style.borderStyle)}
             onValueChange={(value) =>
@@ -119,7 +119,7 @@ export default function AdvancedStyleSettings({
         {/* 边框宽度 */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label className="text-sm">{t('outline') || '边框宽度'}</Label>
+            <Label className="text-sm">{t('outline')}</Label>
             <span className="text-sm text-muted-foreground">
               {style.outline}
             </span>
@@ -137,7 +137,7 @@ export default function AdvancedStyleSettings({
         {/* 阴影距离 */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label className="text-sm">{t('shadow') || '阴影'}</Label>
+            <Label className="text-sm">{t('shadow')}</Label>
             <span className="text-sm text-muted-foreground">
               {style.shadow}
             </span>
@@ -154,9 +154,7 @@ export default function AdvancedStyleSettings({
 
         {/* 背景颜色 */}
         <div className="space-y-2">
-          <Label className="text-sm">
-            {t('backgroundColor') || '背景颜色'}
-          </Label>
+          <Label className="text-sm">{t('backgroundColor')}</Label>
           <div className="flex items-center gap-2">
             <Input
               type="color"
@@ -179,7 +177,7 @@ export default function AdvancedStyleSettings({
         {/* 边距设置 */}
         <div className="grid grid-cols-3 gap-3">
           <div className="space-y-2">
-            <Label className="text-sm">{t('marginLeft') || '左边距'}</Label>
+            <Label className="text-sm">{t('marginLeft')}</Label>
             <Input
               type="number"
               value={style.marginL}
@@ -193,7 +191,7 @@ export default function AdvancedStyleSettings({
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-sm">{t('marginRight') || '右边距'}</Label>
+            <Label className="text-sm">{t('marginRight')}</Label>
             <Input
               type="number"
               value={style.marginR}
@@ -207,9 +205,7 @@ export default function AdvancedStyleSettings({
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-sm">
-              {t('marginVertical') || '上下边距'}
-            </Label>
+            <Label className="text-sm">{t('marginVertical')}</Label>
             <Input
               type="number"
               value={style.marginV}

@@ -1,3 +1,4 @@
+/** @deprecated Used only by legacy tests; CustomParameterEditor uses ParameterKvTable. */
 /**
  * DynamicParameterInput Component
  *
@@ -250,7 +251,7 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
 
     if (shouldShowValid) {
       return (
-        <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
+        <div className="flex items-center gap-1 text-xs text-success mt-1">
           <CheckCircle2 className="h-3 w-3" />
           <span>{t('validation.valid')}</span>
         </div>
@@ -260,7 +261,7 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
     return allErrors.map((error, index) => (
       <div
         key={index}
-        className="flex items-start gap-1 text-xs text-red-600 mt-1"
+        className="flex items-start gap-1 text-xs text-destructive mt-1"
       >
         <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
         <div>
@@ -291,7 +292,7 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
   const renderInput = () => {
     const baseClassName = cn(
       'w-full',
-      hasErrors && 'border-red-500 focus-visible:ring-red-500',
+      hasErrors && 'border-destructive focus-visible:ring-destructive',
     );
 
     switch (parameterType) {
@@ -444,7 +445,7 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
           <div className="space-y-1">
             <CardTitle className="text-sm font-medium">
               {parameterKey}
-              {isRequired && <span className="text-red-500 ml-1">*</span>}
+              {isRequired && <span className="text-destructive ml-1">*</span>}
             </CardTitle>
             <CardDescription className="text-xs">
               Type: {parameterType}
@@ -462,7 +463,7 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
               size="sm"
               onClick={() => onRemove(parameterKey)}
               disabled={disabled}
-              className="h-6 w-6 p-0 text-muted-foreground hover:text-red-500"
+              className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
             >
               <Trash2 className="h-3 w-3" />
             </Button>

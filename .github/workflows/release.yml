@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+  # 手动触发：Actions 页面点 "Run workflow"，并在 "Use workflow from" 选择要发布的 tag（如 v2.16.0）
+  workflow_dispatch:
 
 jobs:
   build_artifacts:
@@ -37,6 +39,7 @@ jobs:
             arch: x64
             os_build_arg: win
             addon_name: addon-windows-x64.node
+            vulkan_addon_name: addon-windows-vulkan.node.gz
             artifact_suffix: windows-x64
 
           # Linux x64 (通用版本，不包含 CUDA)
@@ -44,6 +47,7 @@ jobs:
             arch: x64
             os_build_arg: linux
             addon_name: addon-linux-x64.node
+            vulkan_addon_name: addon-linux-vulkan.node.gz
             artifact_suffix: linux-x64
 
     steps:
@@ -67,6 +71,12 @@ jobs:
              curl -L -o "temp-artifacts/addon-macos-arm64-coreml.node" \
               "https://github.com/buxuku/whisper.cpp/releases/download/latest/addon-macos-arm64-coreml.node"
           fi
+          # Windows / Linux 额外下载 Vulkan 通用 GPU 包并解压
+          if [[ -n "${{ matrix.vulkan_addon_name }}" ]]; then
+            curl -L -o "temp-artifacts/${{ matrix.vulkan_addon_name }}" \
+              "https://github.com/buxuku/whisper.cpp/releases/download/latest/${{ matrix.vulkan_addon_name }}"
+            gunzip -c "temp-artifacts/${{ matrix.vulkan_addon_name }}" > "temp-artifacts/addon.vulkan.node"
+          fi
 
       - name: Prepare macOS addon
         if: matrix.os_build_arg == 'mac'
@@ -87,6 +97,7 @@ jobs:
           BUILD_ARCH: '${{ matrix.arch }}'
         run: |
           Copy-Item -Path "temp-artifacts/${{ matrix.addon_name }}" -Destination "extraResources/addons/addon.node"
+          Copy-Item -Path "temp-artifacts/addon.vulkan.node" -Destination "extraResources/addons/addon.vulkan.node"
           node scripts/inject-build-info.js
 
       - name: Prepare Linux addon
@@ -96,6 +107,7 @@ jobs:
           BUILD_ARCH: '${{ matrix.arch }}'
         run: |
           cp temp-artifacts/${{ matrix.addon_name }} extraResources/addons/addon.node
+          cp temp-artifacts/addon.vulkan.node extraResources/addons/addon.vulkan.node
           node scripts/inject-build-info.js
 
       - name: Install dependencies
@@ -103,6 +115,12 @@ jobs:
 
       - name: Compile application code
         run: yarn build # Assumes 'yarn build' compiles TS to JS, e.g., into the 'app' directory
+
+      - name: Prepare sherpa native libs (bundled)
+        shell: bash
+        run: |
+          yarn sherpa:fetch
+          ls extraResources/sherpa/native
 
       - name: Build Electron app
         shell: bash
@@ -116,6 +134,12 @@ jobs:
           fi
           export BUILD_ARCH=${{ matrix.arch }}
           yarn run electron-builder --${{ matrix.os_build_arg }} --${{ matrix.arch }} ${{ matrix.build_args || '' }} --publish never
+
+      - name: Bundle size gate (<=200MB)
+        # Linux 安装包（AppImage/deb）天然偏大，豁免体积门禁；仅对 mac/win 强制。
+        if: matrix.os_build_arg != 'linux'
+        shell: bash
+        run: yarn size:check
 
       - name: Stage Artifacts
         shell: bash

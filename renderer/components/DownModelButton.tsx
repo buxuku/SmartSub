@@ -1,6 +1,6 @@
 import React, { FC } from 'react';
 import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react';
+import { Loader2, RefreshCw, Download, X } from 'lucide-react';
 import { useTranslation } from 'next-i18next';
 
 interface DownloadDetail {
@@ -17,6 +17,7 @@ interface IProps {
   progress?: number;
   detail?: DownloadDetail | null;
   handleDownModel?: () => void;
+  handleCancel?: () => void;
   disabled?: boolean;
 }
 
@@ -40,9 +41,25 @@ const DownModelButton: FC<IProps> = ({
   progress,
   detail,
   handleDownModel,
+  handleCancel,
   disabled,
 }) => {
   const { t } = useTranslation('common');
+
+  if (!loading && detail?.status === 'error') {
+    return (
+      <Button
+        onClick={handleDownModel}
+        variant="outline"
+        size="sm"
+        className="h-7 text-xs gap-1.5"
+        disabled={disabled}
+      >
+        <RefreshCw className="h-4 w-4" />
+        {t('retryDownload')}
+      </Button>
+    );
+  }
 
   if (!loading) {
     return (
@@ -50,9 +67,10 @@ const DownModelButton: FC<IProps> = ({
         onClick={handleDownModel}
         variant="outline"
         size="sm"
-        className="h-7 text-xs"
+        className="h-7 text-xs gap-1.5"
         disabled={disabled}
       >
+        <Download className="h-4 w-4" />
         {t('download')}
       </Button>
     );
@@ -85,6 +103,18 @@ const DownModelButton: FC<IProps> = ({
           )}
         </div>
       </div>
+      {handleCancel && (
+        <Button
+          type="button"
+          onClick={handleCancel}
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+          aria-label={t('cancel')}
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      )}
     </div>
   );
 };

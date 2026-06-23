@@ -11,8 +11,14 @@ import type {
   VideoInfo,
   SubtitleInfo,
   MergeConfig,
+  MergeOutputMode,
+  VideoQuality,
 } from '../../../../types/subtitleMerge';
-import { DEFAULT_STYLE, STYLE_PRESETS } from '../constants';
+import {
+  getDefaultStyle,
+  getPlatformDefaultFont,
+  STYLE_PRESETS,
+} from '../constants';
 
 /**
  * Hook 返回的状态和方法
@@ -30,6 +36,8 @@ export interface UseSubtitleMergeReturn {
 
   // 输出状态
   outputPath: string | null;
+  outputMode: MergeOutputMode;
+  videoQuality: VideoQuality;
 
   // 进度状态
   progress: MergeProgress;
@@ -41,6 +49,8 @@ export interface UseSubtitleMergeReturn {
   setVideoPath: (path: string) => Promise<void>;
   setSubtitlePath: (path: string) => Promise<void>;
   clearFiles: () => void;
+  clearVideo: () => void;
+  clearSubtitle: () => void;
 
   // 样式操作方法
   setStyle: (style: SubtitleStyle) => void;
@@ -51,9 +61,13 @@ export interface UseSubtitleMergeReturn {
   // 输出操作方法
   selectOutputPath: () => Promise<void>;
   setOutputPath: (path: string) => void;
+  setOutputMode: (mode: MergeOutputMode) => void;
+  setVideoQuality: (quality: VideoQuality) => void;
 
   // 合并操作方法
   startMerge: () => Promise<void>;
+  cancelMerge: () => Promise<void>;
+  isCancelling: boolean;
   canMerge: boolean;
 
   // 其他方法
@@ -105,7 +119,7 @@ export function useSubtitleMerge(
 
   // 样式状态
   const [style, setStyleState] = useState<SubtitleStyle>(
-    initialStyle || DEFAULT_STYLE,
+    () => initialStyle || getDefaultStyle(),
   );
   const [activePresetId, setActivePresetId] = useState<string | null>(
     'classic',
@@ -113,6 +127,28 @@ export function useSubtitleMerge(
 
   // 输出状态
   const [outputPath, setOutputPathState] = useState<string | null>(null);
+  const [outputMode, setOutputModeState] =
+    useState<MergeOutputMode>('hardcode');
+  // 烧录画质，默认原画质（CRF18），尽量贴近源文件画质（issue #331）
+  const [videoQuality, setVideoQualityState] =
+    useState<VideoQuality>('original');
+  // 供异步回调读取最新输出方式（生成默认路径时按模式定扩展名）
+  const outputModeRef = useRef<MergeOutputMode>('hardcode');
+  outputModeRef.current = outputMode;
+
+  // 软字幕封装固定输出 .mkv；切回烧录恢复视频原扩展名
+  const applyModeExtension = useCallback(
+    (path: string, mode: MergeOutputMode, currentVideoPath: string | null) => {
+      if (mode === 'softmux') {
+        return path.replace(/\.[^./\\]+$/, '.mkv');
+      }
+      const videoExtMatch = currentVideoPath?.match(/(\.[^./\\]+)$/);
+      return videoExtMatch
+        ? path.replace(/\.[^./\\]+$/, videoExtMatch[1])
+        : path;
+    },
+    [],
+  );
 
   // 进度状态
   const [progress, setProgress] = useState<MergeProgress>({
@@ -121,6 +157,7 @@ export function useSubtitleMerge(
     targetSize: 0,
     status: 'idle',
   });
+  const [isCancelling, setIsCancelling] = useState(false);
 
   // 引用
   const isMountedRef = useRef(true);
@@ -145,14 +182,20 @@ export function useSubtitleMerge(
   }, [onProgress]);
 
   // 加载视频信息
-  const loadVideoInfo = useCallback(async (path: string) => {
-    try {
-      const result = await window.ipc.invoke('subtitleMerge:getVideoInfo', {
-        videoPath: path,
-      });
-      if (result.success && result.data) {
-        setVideoInfo(result.data);
-        // 自动生成输出路径
+  const loadVideoInfo = useCallback(
+    async (path: string) => {
+      try {
+        const result = await window.ipc.invoke('subtitleMerge:getVideoInfo', {
+          videoPath: path,
+        });
+        if (result.success && result.data) {
+          setVideoInfo(result.data);
+        }
+      } catch (error) {
+        console.error('加载视频信息失败:', error);
+      }
+      // 只要选了视频就生成默认输出路径（不依赖视频信息读取成功）
+      try {
         const outputResult = await window.ipc.invoke(
           'subtitleMerge:generateOutputPath',
           {
@@ -161,13 +204,16 @@ export function useSubtitleMerge(
           },
         );
         if (outputResult.success && outputResult.data) {
-          setOutputPathState(outputResult.data);
+          setOutputPathState(
+            applyModeExtension(outputResult.data, outputModeRef.current, path),
+          );
         }
+      } catch (error) {
+        console.error('生成默认输出路径失败:', error);
       }
-    } catch (error) {
-      console.error('加载视频信息失败:', error);
-    }
-  }, []);
+    },
+    [applyModeExtension],
+  );
 
   // 加载字幕信息
   const loadSubtitleInfo = useCallback(async (path: string) => {
@@ -183,6 +229,26 @@ export function useSubtitleMerge(
     }
   }, []);
 
+  // 预填路径（如从任务完成横幅跳转）需要主动加载文件信息
+  useEffect(() => {
+    if (initialVideoPath) {
+      loadVideoInfo(initialVideoPath);
+    }
+    if (initialSubtitlePath) {
+      loadSubtitleInfo(initialSubtitlePath);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 换文件后旧的合成结果不再对应当前输入，复位完成/错误状态
+  const resetStaleProgress = useCallback(() => {
+    setProgress((prev) =>
+      prev.status === 'completed' || prev.status === 'error'
+        ? { percent: 0, timeMark: '', targetSize: 0, status: 'idle' }
+        : prev,
+    );
+  }, []);
+
   // 选择视频文件
   const selectVideo = useCallback(async () => {
     try {
@@ -192,12 +258,13 @@ export function useSubtitleMerge(
       });
       if (!result.canceled && result.filePath) {
         setVideoPathState(result.filePath);
+        resetStaleProgress();
         await loadVideoInfo(result.filePath);
       }
     } catch (error) {
       console.error('选择视频失败:', error);
     }
-  }, [loadVideoInfo]);
+  }, [loadVideoInfo, resetStaleProgress]);
 
   // 选择字幕文件
   const selectSubtitle = useCallback(async () => {
@@ -208,29 +275,32 @@ export function useSubtitleMerge(
       });
       if (!result.canceled && result.filePath) {
         setSubtitlePathState(result.filePath);
+        resetStaleProgress();
         await loadSubtitleInfo(result.filePath);
       }
     } catch (error) {
       console.error('选择字幕失败:', error);
     }
-  }, [loadSubtitleInfo]);
+  }, [loadSubtitleInfo, resetStaleProgress]);
 
   // 设置视频路径
   const setVideoPath = useCallback(
     async (path: string) => {
       setVideoPathState(path);
+      resetStaleProgress();
       await loadVideoInfo(path);
     },
-    [loadVideoInfo],
+    [loadVideoInfo, resetStaleProgress],
   );
 
   // 设置字幕路径
   const setSubtitlePath = useCallback(
     async (path: string) => {
       setSubtitlePathState(path);
+      resetStaleProgress();
       await loadSubtitleInfo(path);
     },
-    [loadSubtitleInfo],
+    [loadSubtitleInfo, resetStaleProgress],
   );
 
   // 清空文件
@@ -240,6 +310,31 @@ export function useSubtitleMerge(
     setVideoInfo(null);
     setSubtitleInfo(null);
     setOutputPathState(null);
+    setProgress({
+      percent: 0,
+      timeMark: '',
+      targetSize: 0,
+      status: 'idle',
+    });
+  }, []);
+
+  // 单独清除视频：输出路径派生自视频一并清除；合成结果不再对应，进度复位
+  const clearVideo = useCallback(() => {
+    setVideoPathState(null);
+    setVideoInfo(null);
+    setOutputPathState(null);
+    setProgress({
+      percent: 0,
+      timeMark: '',
+      targetSize: 0,
+      status: 'idle',
+    });
+  }, []);
+
+  // 单独清除字幕
+  const clearSubtitle = useCallback(() => {
+    setSubtitlePathState(null);
+    setSubtitleInfo(null);
     setProgress({
       percent: 0,
       timeMark: '',
@@ -264,14 +359,19 @@ export function useSubtitleMerge(
   const applyPreset = useCallback((presetId: string) => {
     const preset = STYLE_PRESETS.find((p) => p.id === presetId);
     if (preset) {
-      setStyleState(preset.style);
+      // classic 预设字体跟随平台，避免 Arial 渲染不了 CJK
+      const nextStyle =
+        preset.id === 'classic'
+          ? { ...preset.style, fontName: getPlatformDefaultFont() }
+          : preset.style;
+      setStyleState(nextStyle);
       setActivePresetId(presetId);
     }
   }, []);
 
   // 重置样式
   const resetStyle = useCallback(() => {
-    setStyleState(DEFAULT_STYLE);
+    setStyleState(getDefaultStyle());
     setActivePresetId('classic');
   }, []);
 
@@ -294,6 +394,23 @@ export function useSubtitleMerge(
     setOutputPathState(path);
   }, []);
 
+  // 设置烧录画质（仅 hardcode 生效）
+  const setVideoQuality = useCallback((quality: VideoQuality) => {
+    setVideoQualityState(quality);
+  }, []);
+
+  // 切换输出方式（联动输出扩展名；旧合成结果不再对应，复位状态）
+  const setOutputMode = useCallback(
+    (mode: MergeOutputMode) => {
+      setOutputModeState(mode);
+      setOutputPathState((prev) =>
+        prev ? applyModeExtension(prev, mode, videoPath) : prev,
+      );
+      resetStaleProgress();
+    },
+    [applyModeExtension, videoPath, resetStaleProgress],
+  );
+
   // 开始合并
   const startMerge = useCallback(async () => {
     if (!videoPath || !subtitlePath || !outputPath) return;
@@ -311,13 +428,23 @@ export function useSubtitleMerge(
         subtitlePath,
         outputPath,
         style,
+        outputMode,
+        videoQuality,
       };
       const result = await window.ipc.invoke(
         'subtitleMerge:startMerge',
         config,
       );
 
-      if (result.success) {
+      if (result.success && result.cancelled) {
+        // 用户取消：静默复位，不算失败
+        setProgress({
+          percent: 0,
+          timeMark: '',
+          targetSize: 0,
+          status: 'idle',
+        });
+      } else if (result.success) {
         // 合并成功
         setProgress({
           percent: 100,
@@ -347,8 +474,32 @@ export function useSubtitleMerge(
         errorMessage,
       });
       onError?.(errorMessage);
+    } finally {
+      setIsCancelling(false);
     }
-  }, [videoPath, subtitlePath, outputPath, style, onComplete, onError]);
+  }, [
+    videoPath,
+    subtitlePath,
+    outputPath,
+    style,
+    outputMode,
+    videoQuality,
+    onComplete,
+    onError,
+  ]);
+
+  // 取消合成
+  const cancelMerge = useCallback(async () => {
+    if (progress.status !== 'processing' || isCancelling) return;
+    setIsCancelling(true);
+    try {
+      await window.ipc.invoke('subtitleMerge:cancelMerge');
+      // 复位由 startMerge 的 cancelled 分支完成
+    } catch (error) {
+      console.error('取消合成失败:', error);
+      setIsCancelling(false);
+    }
+  }, [progress.status, isCancelling]);
 
   // 打开输出文件夹
   const openOutputFolder = useCallback(async () => {
@@ -380,6 +531,8 @@ export function useSubtitleMerge(
 
     // 输出状态
     outputPath,
+    outputMode,
+    videoQuality,
 
     // 进度状态
     progress,
@@ -391,6 +544,8 @@ export function useSubtitleMerge(
     setVideoPath,
     setSubtitlePath,
     clearFiles,
+    clearVideo,
+    clearSubtitle,
 
     // 样式操作方法
     setStyle,
@@ -401,9 +556,13 @@ export function useSubtitleMerge(
     // 输出操作方法
     selectOutputPath,
     setOutputPath,
+    setOutputMode,
+    setVideoQuality,
 
     // 合并操作方法
     startMerge,
+    cancelMerge,
+    isCancelling,
     canMerge,
 
     // 其他方法

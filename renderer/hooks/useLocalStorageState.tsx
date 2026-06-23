@@ -9,6 +9,7 @@ export default function useLocalStorageState<
 ) {
   const [value, setValue] = useState<T>(defaultValue);
   const inited = useRef(false);
+  const skipInitialWrite = useRef(true);
 
   useEffect(() => {
     const init = () => {
@@ -37,9 +38,13 @@ export default function useLocalStorageState<
   }, [key]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && inited.current) {
-      localStorage.setItem(key, JSON.stringify(value));
+    if (typeof window === 'undefined' || !inited.current) return;
+    // 跳过首次 render 的写入，避免用 defaultValue 覆盖已从 localStorage 读出的值
+    if (skipInitialWrite.current) {
+      skipInitialWrite.current = false;
+      return;
     }
+    localStorage.setItem(key, JSON.stringify(value));
   }, [key, value]);
 
   return [value, setValue] as const;

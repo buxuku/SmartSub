@@ -10,13 +10,13 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square&logo=electron&logoColor=white)](https://github.com/buxuku/SmartSub/releases)
 [![i18n](https://img.shields.io/badge/i18n-中文%20%7C%20English%20%7C%20日本語-orange?style=flat-square&logo=googletranslate&logoColor=white)](https://github.com/buxuku/SmartSub)
 
-<!-- Row 2: Features - Models/Translation/Hardware Acceleration -->
+<!-- Row 2: Features - Engines/Translation/Hardware Acceleration -->
 
-[![Whisper](https://img.shields.io/badge/Whisper-Speech%20Recognition-4B8BBE?style=flat-square&logo=openai&logoColor=white)](https://github.com/openai/whisper)
-[![Translation](https://img.shields.io/badge/Translation-7%2B%20Services-9cf?style=flat-square&logo=translate&logoColor=white)](https://github.com/buxuku/SmartSub#translation-services)
+[![ASR Engines](https://img.shields.io/badge/ASR-6%20Engines-4B8BBE?style=flat-square&logo=openai&logoColor=white)](https://github.com/buxuku/SmartSub#-asr-engines)
+[![Translation](https://img.shields.io/badge/Translation-17%20Services-9cf?style=flat-square&logo=translate&logoColor=white)](https://github.com/buxuku/SmartSub#translation-services)
 [![CUDA](https://img.shields.io/badge/CUDA-11.8%20%7C%2012.x%20%7C%2013.x-76B900?style=flat-square&logo=nvidia&logoColor=white)](https://developer.nvidia.com/cuda-downloads)
+[![Vulkan](https://img.shields.io/badge/Vulkan-AMD%20%7C%20Intel-AC162C?style=flat-square&logo=vulkan&logoColor=white)](https://www.vulkan.org/)
 [![CoreML](https://img.shields.io/badge/Core%20ML-Apple%20Silicon-000000?style=flat-square&logo=apple&logoColor=white)](https://developer.apple.com/documentation/coreml)
-[![Offline](https://img.shields.io/badge/Offline-Local%20Processing-success?style=flat-square&logo=shieldsdotio&logoColor=white)](https://github.com/buxuku/SmartSub)
 
 <!-- Row 3: Tech Stack -->
 
@@ -42,90 +42,132 @@
 
 **Make every frame speak beautifully**
 
-Smart subtitle generation and multilingual translation solution for video/audio files.
+SmartSub is a local-first desktop app that takes you all the way from **media → subtitles → translation → proofreading → burn-in**. All transcription runs locally — your files never leave your machine. It supports batch processing and GPU acceleration on Windows, macOS, and Linux.
 
-![preview](./resources/preview-en.png)
-![proofread](./resources/proofread-en.png)
+![preview](./resources/preview/home.png)
+
+## ✨ What's New in 3.0
+
+3.0 is a near-complete rewrite. The headline changes:
+
+- **🧠 Multiple ASR engines**: from a single whisper.cpp to **6 engines you can switch per task** — built-in `whisper.cpp`, `faster-whisper`, `FunASR`, `Qwen3-ASR`, `FireRedASR`, and your local `Whisper CLI`. For Chinese, reach straight for FunASR / FireRedASR.
+- **⚡ GPU acceleration overhaul**: a new **Vulkan** backend brings **AMD / Intel GPU** acceleration to Windows/Linux (previously NVIDIA CUDA only); new **Auto / GPU-only / CPU-only** modes auto-detect your GPU, download the right acceleration pack on demand, and fall back to CPU on failure.
+- **🎬 Video synthesis (burn-in)**: **hardcode** subtitles into the picture, or **soft-mux** them as a switchable track; WYSIWYG preview with control over font, size, color, outline, shadow, 9-grid position, and style presets.
+- **📝 Subtitle proofreading + AI polish**: a built-in editor to review line by line against the video, with undo/redo and one-click AI polish.
+- **🌐 17 translation services**: mainstream machine-translation and LLM APIs, plus any OpenAI-style endpoint and per-service custom parameters.
+- **🖥️ Redesigned, task-oriented UI**: a launchpad that starts from "What would you like to do?", with clear sections for Tasks, Proofread, Burn to Video, Engines & Models, and Translation Services — plus an onboarding guide, command palette (⌘K / Ctrl+K), keyboard shortcuts, and a download/task activity center.
 
 ## 💥 Features
 
-This application retains all the features of the original [VideoSubtitleGenerator](https://github.com/buxuku/VideoSubtitleGenerator) command-line tool, with the following enhancements:
+### 🧠 Subtitle Generation (Transcription)
 
-- Batch processing of video/audio/subtitle files
-- Ability to translate generated or imported subtitles
-- Localized processing, no need to upload videos, protecting privacy while also having faster processing speeds
-- Multiple translation services supported:
-  - Volcano Engine Translation
-  - Baidu Translation
-  - Microsoft Translator
-  - DeepLX Translation (Note: Batch translation may be rate-limited)
-  - Local Ollama model translation
-  - AI aggregation platform [DeerAPI](https://api.deerapi.com/register?aff=QvHM)
-  - Support for OpenAI-style API translations (e.g., [deepseek](https://www.deepseek.com/), [azure](https://azure.microsoft.com/))
-- **🎯 Custom Parameter Configuration**: Configure AI model parameters directly in the UI without code modification
-  - [v2.5.3-release-brief.md](./Changelog/v2.5.3-release-brief.md)
-  - Support custom HTTP headers and request body parameters
-  - Support multiple parameter types (String、Float、Boolean、Array、Object、Integer)
-  - Real-time parameter validation with error feedback
-  - Configuration export/import functionality
-- Customizable subtitle file naming for compatibility with various media players
-- Flexible translated subtitle content: choose between pure translation or original + translated subtitles
-- Hardware acceleration is supported
-  - NVIDIA CUDA (Windows/Linux)
-  - Apple Core ML (macOS M series chip)
-- Support for running locally installed `whisper` command
-- Customizable number of concurrent tasks
+- Batch subtitle generation for many video/audio formats
+- **6 transcription engines**, selectable per task (see [ASR Engines](#-asr-engines))
+- Fully local processing — no uploads, better privacy and speed
+- Simplified/Traditional Chinese conversion and custom subtitle file naming (for player compatibility)
+- Optional **Chinese punctuation removal** for cleaner burned-in subtitles
+- Configurable number of concurrent tasks for efficient batch runs
 
-## About CUDA Support
+### 🌐 Subtitle Translation
 
-The application includes a built-in GPU acceleration pack manager — no need to manually install the CUDA Toolkit.
+- Translate generated subtitles or imported subtitle files
+- **17 translation services**: Baidu, Google, Aliyun, Volcano Engine, Doubao, NiuTrans, Tencent, Xunfei, DeepLX, Azure, Ollama (local), DeepSeek, Azure OpenAI, [DeerAPI](https://api.deerapi.com/register?aff=QvHM), Gemini, SiliconFlow, Qwen
+- Compatible with any **OpenAI-style API** (deepseek / azure, etc.)
+- Output as translation only, or bilingual "original + translation"
+- **🎯 Custom Parameter Configuration**: configure request headers/body for each AI service right in the UI — no code changes — with export/import
 
-- After installation, go to "Settings → GPU Acceleration" where the app will automatically detect your GPU and recommend a suitable acceleration pack
-- Download the recommended pack to enable GPU acceleration. Supported versions: CUDA 11.8.0 / 12.2.0 / 12.4.0 / 13.0.2
-- If the app crashes after enabling acceleration, try switching to a different version or disabling GPU acceleration
+### 📝 Subtitle Proofreading
 
-## Core ML support
+- Built-in editor to review and edit line by line
+- Side-by-side video preview for accurate positioning
+- Undo/redo and **one-click AI polish**
 
-Starting from version 1.20.0, Core ML is supported on Apple Silicon, providing faster speech recognition. If you are using an Apple Silicon chip, please download the mac arm64 version of the release package. It will automatically enable Core ML acceleration.
+### 🎬 Video Synthesis
+
+- **Hardcode**: burn subtitles permanently into the picture — visible in any player
+- **Soft-mux**: losslessly embed a switchable subtitle track via stream copy
+- Rich styling: font, size, color, outline, shadow, 9-grid position, and presets
+- Real-time WYSIWYG preview
+
+### ⚡ Privacy & Acceleration
+
+- Local processing — files never leave your machine
+- GPU acceleration: NVIDIA CUDA, AMD/Intel Vulkan, Apple Core ML / Metal (see [GPU Acceleration](#-gpu-acceleration))
+- Built-in acceleration-pack manager — no manual CUDA Toolkit install
+
+## 📸 Screenshots
+
+| Video Synthesis (Burn-in)               | Subtitle Proofreading                          |
+| --------------------------------------- | ---------------------------------------------- |
+| ![merge](./resources/preview/merge.png) | ![proofread](./resources/preview/profread.png) |
+
+## 🧩 ASR Engines
+
+3.0 turns the transcription engine into a per-task choice. Manage runtimes and models from the "Engines & Models" page:
+
+| Engine                     | Notes                                                                      | How it runs                                     |
+| -------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------- |
+| **whisper.cpp (built-in)** | Default engine; supports ggml quantized models and GPU acceleration        | Bundled, works out of the box                   |
+| **faster-whisper**         | Based on CTranslate2, faster; models downloaded on demand from HuggingFace | Self-contained Python runtime (in-app download) |
+| **FunASR**                 | SenseVoice (zh/en/ja/ko/yue) and Paraformer-zh; great for Chinese          | Bundled sherpa-onnx native lib                  |
+| **Qwen3-ASR**              | Qwen speech recognition (qwen3-asr-0.6b)                                   | Bundled sherpa-onnx native lib                  |
+| **FireRedASR**             | FireRedASR-AED large (zh-en); great for Chinese                            | Bundled sherpa-onnx native lib                  |
+| **Local Whisper CLI**      | Calls a whisper-compatible command you installed yourself                  | Uses your system command                        |
+
+> Note: FunASR / Qwen3-ASR / FireRedASR all run on the bundled sherpa-onnx native library with no extra setup; faster-whisper downloads a self-contained runtime inside the app.
+
+### How to choose a whisper model
+
+whisper.cpp / faster-whisper use the whisper family of models. Bigger models are more accurate but slower and need more VRAM:
+
+- Low-end devices or integrated GPUs: use `tiny` / `base` — fast and lightweight
+- Typical computers: start with `small` / `base` to balance accuracy and resources
+- High-performance GPUs/workstations: use the `large` series for top accuracy
+- English-only media: pick a model with `en` for English-optimized results
+- Care about size: use `q5` / `q8` quantized variants for a smaller footprint at a slight accuracy cost
+
+## ⚡ GPU Acceleration
+
+SmartSub ships with a built-in acceleration-pack manager — **no need to install the CUDA Toolkit manually**. After installing, open "Settings → GPU Acceleration"; the app detects your GPU and recommends a suitable option.
+
+| Platform                      | Backend             | Notes                                                                              |
+| ----------------------------- | ------------------- | ---------------------------------------------------------------------------------- |
+| Windows / Linux + NVIDIA      | **CUDA**            | Supports CUDA 11.8.0 / 12.2.0 / 12.4.0 / 13.0.2; download the matching pack in-app |
+| Windows / Linux + AMD / Intel | **Vulkan**          | New in 3.0 — built-in Vulkan acceleration pack                                     |
+| macOS (Apple Silicon)         | **Core ML / Metal** | Enabled automatically with the mac arm64 build                                     |
+| Any platform                  | **CPU**             | Automatic fallback when no GPU is available                                        |
+
+- Acceleration modes: **Auto / GPU-only / CPU-only**; on load failure it automatically falls back to CPU and explains why in the diagnostics panel
+- If the app crashes after enabling acceleration, try a different pack version or switch to CPU-only mode
 
 ## Translation Services
 
-This project supports various translation services, including Baidu Translation, Volcano Engine Translation, DeepLX, local Ollama models, DeepSeek and OpenAI-style APIs. Using these services requires the appropriate API keys or configurations.
+This project supports 17 translation services, including Baidu, Volcano Engine, Aliyun, Tencent, Xunfei, NiuTrans, Google, DeepLX, plus LLM/aggregation platforms such as Ollama, DeepSeek, Gemini, Qwen, SiliconFlow, Azure OpenAI, and [DeerAPI](https://api.deerapi.com/register?aff=QvHM). Using these services requires the appropriate API keys or configuration.
 
 For information on obtaining API keys for services like Baidu Translation and Volcano Engine, please refer to https://bobtranslate.com/service/. We appreciate the information provided by [Bob](https://bobtranslate.com/), an excellent software tool.
 
-For AI translation, the translation results are heavily influenced by models and prompt words, so you can try different models and prompt words to find the right combination for you. Recommended to try AI aggregation platform [DeerAPI](https://api.deerapi.com/register?aff=QvHM), nearly 500 kinds of model to support multiple platforms, choose appropriate model for translation.
+For AI translation, results are heavily influenced by the model and prompt, so try different combinations to find what works for you. We recommend the AI aggregation platform [DeerAPI](https://api.deerapi.com/register?aff=QvHM), which supports nearly 500 models across multiple platforms.
 
-### Custom Parameter Configuration (v2.5.3)
+### Custom Parameter Configuration
 
-SmartSub now supports configuring custom parameters for each AI translation service, allowing you to precisely control model behavior:
+SmartSub lets you configure custom parameters for each AI translation service to precisely control model behavior:
 
-- **Flexible Parameter Setup**: Add and manage custom parameters directly in the interface without code modification
-- **Parameter Type Support**: Supported "String、Float、Boolean、Array、Object、Integer" parameter types
-- **Real-time Validation**: Real-time validation when modifying parameters to prevent invalid configurations
-- **Configuration Management**: Support for exporting and importing configurations for team sharing and backup
-
-## Model Selection
-
-To generate subtitles from video or audio, you need to use the whisper model. Whisper models have different accuracies and processing speeds.
-
-- Larger models have higher accuracy but require more powerful GPUs and slower processing speeds
-- Lower-end devices or GPUs recommend using `tiny` or `base` models, which may have lower accuracy but faster processing speeds and smaller memory usage
-- For mid-range devices, start with `small` or `base` models to balance accuracy and resource consumption
-- For high-performance GPUs/workstations, use `large` models for higher accuracy
-- If the original audio/video is in English, use models with `en` for optimized English processing
-- If you care about model size, consider using `q5` or `q8` models, which offer smaller sizes at the cost of slightly reduced accuracy
+- **Flexible setup**: add and manage parameters directly in the UI, no code changes
+- **Type support**: String, Float, Boolean, Array, Object, Integer
+- **Real-time validation**: validates as you edit to prevent invalid configurations
+- **Import/Export**: easy team sharing and backup
+- **Auto-save**: every change is saved automatically, in line with the rest of the app
 
 ## 🔦 Usage (For End Users)
 
-Download the appropriate package based on your system and chip. GPU acceleration packs can be downloaded within the app after installation.
+Download the package for your system and chip. GPU acceleration packs are not chosen at download time — get them in-app after installing.
 
-| System  | Chip  | Download Package | Notes                                                   |
-| ------- | ----- | ---------------- | ------------------------------------------------------- |
-| Windows | x64   | windows-x64      | NVIDIA users can download acceleration packs in the app |
-| Mac     | Apple | mac-arm64        | Core ML acceleration enabled automatically              |
-| Mac     | Intel | mac-x64          | No GPU acceleration support                             |
-| Linux   | x64   | linux-x64        | NVIDIA users can download acceleration packs in the app |
+| System  | Chip  | Download Package | Notes                                                |
+| ------- | ----- | ---------------- | ---------------------------------------------------- |
+| Windows | x64   | windows-x64      | NVIDIA → CUDA, AMD/Intel → Vulkan, downloaded in-app |
+| Mac     | Apple | mac-arm64        | Core ML / Metal acceleration enabled automatically   |
+| Mac     | Intel | mac-x64          | CPU only, no GPU acceleration                        |
+| Linux   | x64   | linux-x64        | NVIDIA → CUDA, AMD/Intel → Vulkan, downloaded in-app |
 
 ### Install via Homebrew (macOS) (Recommended)
 
@@ -154,10 +196,10 @@ brew uninstall --cask smartsub
 1. Go to the [releases](https://github.com/buxuku/SmartSub/releases) page and download the appropriate package for your operating system
 2. Or use the cloud disk [Quark](https://pan.quark.cn/s/0b16479b40ca) to download the corresponding version
 3. Install and run the program
-4. Download the model
-5. Configure the desired translation services within the application
-6. Select the video or subtitle files you want to process
-7. Set relevant parameters (e.g., source language, target language, model)
+4. Follow the onboarding guide and download a speech model
+5. Configure your translation services under "Translation Services" (optional)
+6. From the launchpad, pick a task and drop in your media or subtitle files
+7. Set the parameters (source language, target language, engine, model, etc.)
 8. Start the processing task
 
 ## 🔦 Usage (For Developers)
@@ -173,6 +215,7 @@ git clone https://github.com/buxuku/SmartSub.git
 ```shell
 cd SmartSub
 yarn install
+yarn sherpa:fetch # download sherpa-onnx native library
 ```
 
 If you are on Windows / Linux, or Mac intel platform, please download the node file from https://github.com/buxuku/whisper.cpp/releases/tag/latest and rename it to 'addon.node' and overlay it in the 'extraResources/addons/' directory.
@@ -185,7 +228,7 @@ yarn dev
 
 ## Manually Downloading and Importing Models
 
-Due to the large size of model files, downloading them through the software may be challenging. You can manually download models and import them into the application. Here are two links for downloading models:
+Due to the large size of model files, downloading them through the software may be challenging. You can manually download models and import them into the application. Here are two links for downloading whisper models:
 
 1. Domestic mirror (faster download speeds):
    https://hf-mirror.com/ggerganov/whisper.cpp/tree/main
@@ -193,15 +236,17 @@ Due to the large size of model files, downloading them through the software may 
 2. Hugging Face official source:
    https://huggingface.co/ggerganov/whisper.cpp/tree/main
 
-If you are using an Apple Silicon chip, you need to download the corresponding encoder.mlmodelc file. After downloading, you can import the model files into the application using the "Import Model" feature on the "Model Management" page.(If it is a q5 or q8 series model, there is no need to download this file)
+If you are using an Apple Silicon chip, you also need to download the corresponding encoder.mlmodelc file and unzip it into the same directory as the model. (Not required for q5 or q8 series models.)
 
-After downloading, you can import the model files into the application using the "Import Model" feature on the "Model Management" page. Or you can directly copy the model files to the model directory.
+After downloading, you can import the model files via the "Import Model" feature on the "Engines & Models" page, or copy them directly into the model directory.
 
 Import steps:
 
-1. On the "Model Management" page, click the "Import Model" button.
+1. On the "Engines & Models" page, click the "Import Model" button.
 2. In the file selector that appears, choose your downloaded model file.
 3. After confirming the import, the model will be added to your list of installed models.
+
+> Models for engines like FunASR / Qwen3-ASR / FireRedASR can be downloaded on demand from within the "Engines & Models" page (multiple sources such as ModelScope / GitHub are supported).
 
 ## Common Issues
 

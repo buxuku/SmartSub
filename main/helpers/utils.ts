@@ -230,6 +230,8 @@ export const defaultUserConfig = {
   targetLanguage: 'zh',
   customTargetSrtFileName: '${fileName}.${targetLanguage}',
   customSourceSrtFileName: '${fileName}.${sourceLanguage}',
+  // 逐任务引擎：任务携带引擎，后端按此解析执行（缺省 builtin，任务页默认逻辑会按"上次使用"细化）
+  transcriptionEngine: 'builtin',
   model: 'tiny',
   translateProvider: 'baidu',
   translateContent: 'onlyTranslate',
@@ -237,6 +239,7 @@ export const defaultUserConfig = {
   sourceSrtSaveOption: 'noSave',
   targetSrtSaveOption: 'fileNameWithLang',
   subtitleOutputFormat: 'srt',
+  removeChinesePunctuation: false,
 };
 
 export function getSrtFileName(

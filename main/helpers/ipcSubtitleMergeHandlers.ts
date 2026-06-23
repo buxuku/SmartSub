@@ -12,6 +12,8 @@ import {
   generateOutputPath,
   getSubtitleFormat,
   countSubtitles,
+  cancelCurrentMerge,
+  MERGE_CANCELLED,
 } from './subtitleMerger';
 import type {
   MergeConfig,
@@ -115,9 +117,22 @@ export function setupSubtitleMergeHandlers(mainWindow: BrowserWindow) {
         return { success: true, data: result };
       } catch (error) {
         currentProgressCallback = null;
+        // 用户主动取消不算失败
+        if (error instanceof Error && error.message === MERGE_CANCELLED) {
+          return { success: true, cancelled: true };
+        }
         logMessage(`合并失败: ${error}`, 'error');
         return { success: false, error: `合并失败: ${error}` };
       }
+    },
+  );
+
+  // 取消当前合成（kill ffmpeg + 清理半成品输出）
+  ipcMain.handle(
+    'subtitleMerge:cancelMerge',
+    async (): Promise<SubtitleMergeResponse<boolean>> => {
+      const killed = cancelCurrentMerge();
+      return { success: true, data: killed };
     },
   );
 

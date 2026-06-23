@@ -1,6 +1,5 @@
 {
   "title": "自定义参数",
-  "titleWithProvider": "自定义参数配置 - {{providerName}}",
   "subtitle": "为此提供商配置自定义头部和请求体参数",
   "actions": {
     "export": "导出",
@@ -8,8 +7,7 @@
     "refresh": "刷新",
     "addParameter": "添加参数",
     "duplicate": "复制",
-    "cancel": "取消",
-    "save": "保存"
+    "cancel": "取消"
   },
   "tabs": {
     "headers": "请求头",
@@ -25,6 +23,13 @@
   },
   "search": {
     "placeholder": "搜索参数..."
+  },
+  "more": {
+    "label": "更多",
+    "search": "搜索参数",
+    "import": "导入 JSON",
+    "export": "导出 JSON",
+    "refresh": "从磁盘刷新"
   },
   "addDialog": {
     "title": "添加新参数",
@@ -49,6 +54,25 @@
     "float": "浮点数",
     "boolean": "布尔值",
     "array": "数组"
+  },
+  "table": {
+    "keyColumn": "参数名",
+    "valueColumn": "值",
+    "typeColumn": "类型",
+    "actionColumn": "操作",
+    "keyPlaceholder": "例如 temperature",
+    "valuePlaceholder": "例如 0.3",
+    "stringPlaceholder": "例如 hello",
+    "numberPlaceholder": "例如 0.3",
+    "arrayPlaceholder": "[1, 2, 3]",
+    "arrayHint": "JSON 数组格式，例如 [1, 2, 3] 或 [\"a\", \"b\"]",
+    "booleanHint": "开关表示 true / false",
+    "duplicateKey": "该参数名已存在",
+    "emptyKey": "请填写参数名",
+    "addRowLabel": "新参数",
+    "addButton": "添加",
+    "addHint": "在下方「新参数」行填写参数名、类型和值，点击「添加」或按 Enter 可连续添加多条。",
+    "delete": "删除"
   },
   "categories": {
     "headers": "请求头",
@@ -75,7 +99,7 @@
   "validation": {
     "valid": "有效",
     "invalidJson": "无效的 JSON：{message}",
-    "pleaseConfigure": "请提供有效的 JSON 语法"
+    "notArray": "值必须是 JSON 数组，例如 [1, 2, 3]"
   },
   "placeholders": {
     "enterValue": "输入 {key}",

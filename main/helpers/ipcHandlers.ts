@@ -1,11 +1,11 @@
-import { ipcMain, BrowserWindow, dialog, shell } from 'electron';
+import { app, ipcMain, BrowserWindow, dialog, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createMessageSender } from './messageHandler';
 import { logMessage } from './storeManager';
-import { wrapFileObject } from './fileUtils';
+import { wrapFileObject, ensureTempDir, getMd5 } from './fileUtils';
 import { CONTENT_TEMPLATES } from '../translate/constants';
-import { renderTemplate } from './utils';
+import { renderTemplate, getExtraResourcesPath } from './utils';
 import {
   detectSubtitleFormat,
   parseSubtitleEntries,
@@ -166,6 +166,17 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     shell.openExternal(url);
   });
 
+  // 引导「试一试」示例音频:复制到用户数据目录后返回——打包态 resources 目录只读,
+  // 转写输出会写在媒体文件同目录,必须给它一个可写的家
+  ipcMain.handle('getOnboardingSamplePath', async () => {
+    const bundled = path.join(getExtraResourcesPath(), 'sample-onboarding.mp3');
+    const sampleDir = path.join(app.getPath('userData'), 'sample');
+    await fs.promises.mkdir(sampleDir, { recursive: true });
+    const dest = path.join(sampleDir, 'sample-onboarding.mp3');
+    await fs.promises.copyFile(bundled, dest);
+    return dest;
+  });
+
   ipcMain.handle('getDroppedFiles', async (event, { files, taskType }) => {
     // 处理文件和文件夹
     const allValidPaths: string[] = [];
@@ -282,6 +293,21 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
               );
             })
             .join('');
+        // 覆盖前滚动备份一份到临时目录（避免污染用户视频目录；失败不阻断保存）
+        try {
+          if (fs.existsSync(filePath)) {
+            const backupPath = path.join(
+              ensureTempDir(),
+              `subtitle-backup-${getMd5(filePath)}${path.extname(filePath)}.bak`,
+            );
+            await fs.promises.copyFile(filePath, backupPath);
+          }
+        } catch (backupError) {
+          logMessage(
+            `备份字幕文件失败（继续保存）: ${backupError.message}`,
+            'warning',
+          );
+        }
         await fs.promises.writeFile(filePath, content, 'utf-8');
         logMessage(`保存字幕文件成功: ${filePath}`, 'info');
         return { success: true };
@@ -344,20 +370,8 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
       if (type === 'video') {
         filters = [
           {
-            name: 'Video Files',
-            extensions: MEDIA_EXTENSIONS.filter((ext) =>
-              [
-                '.mp4',
-                '.avi',
-                '.mov',
-                '.mkv',
-                '.flv',
-                '.wmv',
-                '.webm',
-                '.3gp',
-                '.ts',
-              ].includes(ext),
-            ).map((ext) => ext.substring(1)),
+            name: 'Media Files',
+            extensions: MEDIA_EXTENSIONS.map((ext) => ext.substring(1)),
           },
         ];
       } else if (type === 'subtitle') {
@@ -400,20 +414,8 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
       if (type === 'video') {
         filters = [
           {
-            name: 'Video Files',
-            extensions: MEDIA_EXTENSIONS.filter((ext) =>
-              [
-                '.mp4',
-                '.avi',
-                '.mov',
-                '.mkv',
-                '.flv',
-                '.wmv',
-                '.webm',
-                '.3gp',
-                '.ts',
-              ].includes(ext),
-            ).map((ext) => ext.substring(1)),
+            name: 'Media Files',
+            extensions: MEDIA_EXTENSIONS.map((ext) => ext.substring(1)),
           },
         ];
       } else if (type === 'subtitle') {

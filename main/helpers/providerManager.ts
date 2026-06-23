@@ -111,7 +111,7 @@ function migrateProviders(oldProviders: any[]): Provider[] {
       systemPrompt: shouldUpdateSystemPrompt(p.systemPrompt)
         ? defaultSystemPrompt
         : p.systemPrompt,
-      structuredOutput: p.structuredOutput || 'json_schema',
+      structuredOutput: p.structuredOutput || 'json_object',
     }));
 
   // 添加缺失的内置服务商
