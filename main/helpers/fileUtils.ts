@@ -68,12 +68,95 @@ export function ensureTempDir() {
 /**
  * 格式化SRT内容
  */
-export function formatSrtContent(subtitles: [string, string, string][]) {
+type FormatSrtOptions = {
+  maxDisplayDurationSeconds?: number;
+};
+
+function getConfiguredMaxSubtitleDuration() {
+  const settings = store.get('settings');
+  const value = Number(settings?.subtitleMaxDisplayDuration ?? 0);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function normalizeMaxDisplayDuration(value: number | undefined) {
+  const normalizedValue = Number(value ?? 0);
+  return Number.isFinite(normalizedValue) && normalizedValue > 0
+    ? normalizedValue
+    : 0;
+}
+
+function parseSubtitleTimeToSeconds(time?: string): number | null {
+  if (!time) return null;
+  const normalized = time.trim().replace(',', '.');
+  const parts = normalized.split(':').map((part) => Number(part));
+  if (!parts.length || parts.some((part) => Number.isNaN(part))) return null;
+
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return parts[0];
+}
+
+function formatSecondsAsSrtTime(seconds: number) {
+  const totalMilliseconds = Math.max(0, Math.round(seconds * 1000));
+  const milliseconds = totalMilliseconds % 1000;
+  const totalSeconds = Math.floor(totalMilliseconds / 1000);
+  const displaySeconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(
+    2,
+    '0',
+  )}:${String(displaySeconds).padStart(2, '0')},${String(milliseconds).padStart(
+    3,
+    '0',
+  )}`;
+}
+
+function normalizeSrtTime(time: string) {
+  return time.replace('.', ',');
+}
+
+export function formatSrtContent(
+  subtitles: [string, string, string][],
+  options: FormatSrtOptions = {},
+) {
+  const maxDisplayDurationSeconds = normalizeMaxDisplayDuration(
+    options.maxDisplayDurationSeconds ?? getConfiguredMaxSubtitleDuration(),
+  );
+
   return subtitles
     .map((subtitle, index) => {
       const [startTime, endTime, text] = subtitle;
+      const startSeconds = parseSubtitleTimeToSeconds(startTime);
+      const endSeconds = parseSubtitleTimeToSeconds(endTime);
+      const nextStartSeconds = parseSubtitleTimeToSeconds(
+        subtitles[index + 1]?.[0],
+      );
+      let normalizedEndTime = normalizeSrtTime(endTime);
+
+      if (
+        maxDisplayDurationSeconds > 0 &&
+        startSeconds !== null &&
+        endSeconds !== null &&
+        endSeconds > startSeconds
+      ) {
+        const cappedEndSeconds = Math.min(
+          endSeconds,
+          startSeconds + maxDisplayDurationSeconds,
+          nextStartSeconds !== null && nextStartSeconds > startSeconds
+            ? nextStartSeconds
+            : Number.POSITIVE_INFINITY,
+        );
+
+        if (cappedEndSeconds > startSeconds && cappedEndSeconds < endSeconds) {
+          normalizedEndTime = formatSecondsAsSrtTime(cappedEndSeconds);
+        }
+      }
+
       // SRT格式：序号 + 时间码 + 文本 + 空行
-      return `${index + 1}\n${startTime.replace('.', ',')} --> ${endTime.replace('.', ',')}\n${text.trim()}\n`;
+      return `${index + 1}\n${normalizeSrtTime(startTime)} --> ${normalizedEndTime}\n${text.trim()}\n`;
     })
     .join('\n');
 }

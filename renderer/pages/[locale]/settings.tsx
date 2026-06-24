@@ -149,6 +149,8 @@ const Settings = () => {
   const [vadMaxSpeechDuration, setVADMaxSpeechDuration] = useState(0);
   const [vadSpeechPad, setVADSpeechPad] = useState(200);
   const [vadSamplesOverlap, setVADSamplesOverlap] = useState(0.1);
+  const [subtitleMaxDisplayDuration, setSubtitleMaxDisplayDuration] =
+    useState(0);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [proxyMode, setProxyMode] = useState<'none' | 'custom'>('none');
   const [proxyUrl, setProxyUrl] = useState('');
@@ -188,6 +190,7 @@ const Settings = () => {
         setVADMaxSpeechDuration(settings.vadMaxSpeechDuration ?? 0);
         setVADSpeechPad(settings.vadSpeechPad ?? 200);
         setVADSamplesOverlap(settings.vadSamplesOverlap ?? 0.1);
+        setSubtitleMaxDisplayDuration(settings.subtitleMaxDisplayDuration ?? 0);
         setProxyMode(settings.proxyMode === 'custom' ? 'custom' : 'none');
         setProxyUrl(settings.proxyUrl || '');
         setProxyNoProxy(settings.proxyNoProxy || '');
@@ -325,6 +328,28 @@ const Settings = () => {
     } catch (error) {
       toast.error(t('saveFailed'));
     }
+  };
+
+  const subtitleDurationSaveTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+
+  const handleSubtitleMaxDisplayDurationChange = (value: number) => {
+    const normalizedValue = Number.isFinite(value) && value > 0 ? value : 0;
+    setSubtitleMaxDisplayDuration(normalizedValue);
+    if (subtitleDurationSaveTimerRef.current) {
+      clearTimeout(subtitleDurationSaveTimerRef.current);
+    }
+    subtitleDurationSaveTimerRef.current = setTimeout(async () => {
+      subtitleDurationSaveTimerRef.current = null;
+      try {
+        await window?.ipc?.invoke('setSettings', {
+          subtitleMaxDisplayDuration: normalizedValue,
+        });
+      } catch (error) {
+        toast.error(t('saveFailed'));
+      }
+    }, 500);
   };
 
   // VAD 数字输入降噪：本地即时生效，500ms 静默期后批量持久化；成功静默，失败才打扰
@@ -662,6 +687,36 @@ const Settings = () => {
                   </div>
                 )}
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <IconChip icon={ScrollText} />
+              {t('subtitleTimingSettings')}
+            </CardTitle>
+            <p className="text-sm text-muted-foreground pt-1">
+              {t('subtitleTimingSettingsDesc')}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span>{t('subtitleMaxDisplayDuration')}</span>
+                <HelpHint text={t('subtitleMaxDisplayDurationTip')} />
+              </div>
+              <Input
+                type="number"
+                step="0.1"
+                min="0"
+                value={subtitleMaxDisplayDuration}
+                onChange={(e) =>
+                  handleSubtitleMaxDisplayDurationChange(Number(e.target.value))
+                }
+                className="font-mono text-sm"
+              />
             </div>
           </CardContent>
         </Card>
