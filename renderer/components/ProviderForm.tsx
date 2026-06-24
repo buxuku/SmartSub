@@ -281,6 +281,7 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
           <Input
             id={fieldDomId(field.key)}
             type="number"
+            step={field.step}
             value={value}
             onChange={(e) => onChange(field.key, e.target.value)}
             placeholder={fieldPlaceholder(field.placeholder)}
