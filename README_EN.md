@@ -2,6 +2,9 @@
 
 <div align="center">
 
+<a href="https://trendshift.io/repositories/14079?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-14079" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/14079" alt="buxuku%2FSmartSub | Trendshift" width="250" height="55"/></a>
+<a href="https://trendshift.io/repositories/14079?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-14079" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/14079/daily?language=TypeScript" alt="buxuku%2FSmartSub | Trendshift" width="250" height="55"/></a>
+
 <!-- Row 1: Core Status - CI/Version/License/Platform -->
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/buxuku/SmartSub/release.yml?style=flat-square&logo=githubactions&logoColor=white&label=Build)](https://github.com/buxuku/SmartSub/actions/workflows/release.yml)
@@ -44,7 +47,7 @@
 
 SmartSub is a local-first desktop app that takes you all the way from **media → subtitles → translation → proofreading → burn-in**. All transcription runs locally — your files never leave your machine. It supports batch processing and GPU acceleration on Windows, macOS, and Linux.
 
-![preview](./resources/preview/home.png)
+![preview](./resources/preview/home-en.png)
 
 ## ✨ What's New in 3.0
 
@@ -97,9 +100,9 @@ SmartSub is a local-first desktop app that takes you all the way from **media �
 
 ## 📸 Screenshots
 
-| Video Synthesis (Burn-in)               | Subtitle Proofreading                          |
-| --------------------------------------- | ---------------------------------------------- |
-| ![merge](./resources/preview/merge.png) | ![proofread](./resources/preview/profread.png) |
+| Video Synthesis (Burn-in)                  | Subtitle Proofreading                             |
+| ------------------------------------------ | ------------------------------------------------- |
+| ![merge](./resources/preview/merge-en.png) | ![proofread](./resources/preview/profread-en.png) |
 
 ## 🧩 ASR Engines
 
