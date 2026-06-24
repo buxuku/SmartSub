@@ -231,9 +231,14 @@ export async function processFile(
     const { filePath, fileName, fileExtension, directory } = file;
     console.log('filePath', file);
 
-    const isSubtitleFile = ['.srt', '.vtt', '.ass', '.ssa', '.lrc'].includes(
-      fileExtension,
-    );
+    const isSubtitleFile = [
+      '.srt',
+      '.vtt',
+      '.ass',
+      '.ssa',
+      '.lrc',
+      '.txt',
+    ].includes(fileExtension);
     logMessage(`begin process ${fileName} with task type: ${taskType}`, 'info');
 
     // 确定是否需要生成字幕
