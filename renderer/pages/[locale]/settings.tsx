@@ -141,6 +141,7 @@ const Settings = () => {
   const [customTempDir, setCustomTempDir] = useState('');
   const [useCustomTempDir, setUseCustomTempDir] = useState(false);
   const [checkUpdateOnStartup, setCheckUpdateOnStartup] = useState(true);
+  const [preventSleepDuringTask, setPreventSleepDuringTask] = useState(true);
   const [useVAD, setUseVAD] = useState(true);
   const [vadThreshold, setVADThreshold] = useState(0.5);
   const [vadMinSpeechDuration, setVADMinSpeechDuration] = useState(250);
@@ -179,6 +180,7 @@ const Settings = () => {
         setUseCustomTempDir(settings.useCustomTempDir || false);
         setCustomTempDir(settings.customTempDir || '');
         setCheckUpdateOnStartup(settings.checkUpdateOnStartup !== false);
+        setPreventSleepDuringTask(settings.preventSleepDuringTask !== false);
         setUseVAD(settings.useVAD !== false);
         setVADThreshold(settings.vadThreshold ?? 0.5);
         setVADMinSpeechDuration(settings.vadMinSpeechDuration ?? 250);
@@ -267,6 +269,22 @@ const Settings = () => {
         checked
           ? t('checkUpdateOnStartupEnabled')
           : t('checkUpdateOnStartupDisabled'),
+      );
+    } catch (error) {
+      toast.error(t('saveFailed'));
+    }
+  };
+
+  const handlePreventSleepDuringTaskChange = async (checked: boolean) => {
+    setPreventSleepDuringTask(checked);
+    try {
+      await window?.ipc?.invoke('setSettings', {
+        preventSleepDuringTask: checked,
+      });
+      toast.success(
+        checked
+          ? t('preventSleepDuringTaskEnabled')
+          : t('preventSleepDuringTaskDisabled'),
       );
     } catch (error) {
       toast.error(t('saveFailed'));
@@ -550,6 +568,17 @@ const Settings = () => {
               <Switch
                 checked={checkUpdateOnStartup}
                 onCheckedChange={handleCheckUpdateOnStartupChange}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span>{t('preventSleepDuringTask')}</span>
+                <HelpHint text={t('preventSleepDuringTaskTip')} />
+              </div>
+              <Switch
+                checked={preventSleepDuringTask}
+                onCheckedChange={handlePreventSleepDuringTaskChange}
               />
             </div>
 

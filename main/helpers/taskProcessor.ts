@@ -18,6 +18,10 @@ import {
 } from './engines/registry';
 import { getPythonRuntimeManager } from './pythonRuntime';
 import type { TranscriptionEngine } from '../../types/engine';
+import {
+  acquireTaskPowerSaveBlocker,
+  releaseTaskPowerSaveBlocker,
+} from './powerSaveManager';
 
 const TASK_EVENT_CHANNELS = new Set([
   'taskStatusChange',
@@ -72,6 +76,7 @@ interface ProjectRuntime {
 }
 
 const DEFAULT_PROJECT_ID = 'default';
+const TRANSCRIPTION_POWER_SAVE_REASON = 'transcription';
 
 let processingQueue: QueueItem[] = [];
 const projectRuntimes = new Map<string, ProjectRuntime>();
@@ -95,6 +100,21 @@ function isRestrictiveEngine(engine: TranscriptionEngine): boolean {
 let dispatchEvent: any = null;
 /** Dock/任务栏进度条目标窗口 */
 let progressWindow: BrowserWindow | null = null;
+
+function hasRunnableQueuedTasks(): boolean {
+  return processingQueue.some((item) => {
+    const runtime = projectRuntimes.get(item.projectId);
+    return !runtime?.paused && !runtime?.cancelled;
+  });
+}
+
+function syncTranscriptionPowerSaveBlocker() {
+  if (activeTasksCount > 0 || hasRunnableQueuedTasks()) {
+    acquireTaskPowerSaveBlocker(TRANSCRIPTION_POWER_SAVE_REASON);
+  } else {
+    releaseTaskPowerSaveBlocker(TRANSCRIPTION_POWER_SAVE_REASON);
+  }
+}
 
 /**
  * 正在执行 + 排队中的转写任务总数。供关闭窗口提示展示「仍在处理 N 个任务」。
@@ -256,6 +276,7 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
       );
       runtime.total += files.length;
       updateTaskbarProgress();
+      syncTranscriptionPowerSaveBlocker();
       if (!isProcessing) {
         isProcessing = true;
         hasOpenAiWhisper = await checkOpenAiWhisper();
@@ -289,11 +310,13 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
   ipcMain.on('pauseTask', (event, projectId?: string) => {
     if (projectId) {
       ensureRuntime(projectId).paused = true;
+      syncTranscriptionPowerSaveBlocker();
       return;
     }
     projectRuntimes.forEach((runtime) => {
       runtime.paused = true;
     });
+    syncTranscriptionPowerSaveBlocker();
   });
 
   ipcMain.on('resumeTask', (event, projectId?: string) => {
@@ -304,6 +327,7 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
         runtime.paused = false;
       });
     }
+    syncTranscriptionPowerSaveBlocker();
     if (processingQueue.length > 0) {
       isProcessing = true;
       processNextTasks(dispatchEvent || event);
@@ -353,6 +377,7 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
       }
     }
     updateTaskbarProgress();
+    syncTranscriptionPowerSaveBlocker();
   });
 
   // 获取指定工程的任务状态（无 projectId 时回退全局语义）
@@ -428,6 +453,7 @@ function takeEligibleItems(limit: number): QueueItem[] {
 }
 
 async function processNextTasks(event) {
+  syncTranscriptionPowerSaveBlocker();
   // 队列与执行均清空：全局收工
   if (processingQueue.length === 0 && activeTasksCount === 0) {
     isProcessing = false;
@@ -506,6 +532,7 @@ async function processNextTasks(event) {
           runtime.completed++;
           if (fileUuid) runtime.activeFiles.delete(fileUuid);
           finalizeProjectIfDrained(event, task.projectId);
+          syncTranscriptionPowerSaveBlocker();
           updateTaskbarProgress();
           // 处理完一个任务后，检查是否可以启动新任务
           processNextTasks(event);
