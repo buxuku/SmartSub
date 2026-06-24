@@ -64,11 +64,56 @@ const FORMAT_TO_EXT: Record<SubtitleFormat, string> = {
   txt: '.txt',
 };
 
-/** 根据文件路径/扩展名推断字幕格式，未知时回退为 srt。 */
-export function detectSubtitleFormat(filePath: string): SubtitleFormat {
+/** 根据文件路径/扩展名推断字幕格式，未知时返回 null。 */
+export function detectSubtitleFormatByExtension(
+  filePath: string,
+): SubtitleFormat | null {
   const match = /\.[^.\\/]+$/.exec(filePath || '');
   const ext = match ? match[0].toLowerCase() : '';
-  return EXT_TO_FORMAT[ext] || 'srt';
+  return EXT_TO_FORMAT[ext] || null;
+}
+
+/** 根据文件路径/扩展名推断字幕格式，未知时回退为 srt。 */
+export function detectSubtitleFormat(filePath: string): SubtitleFormat {
+  return detectSubtitleFormatByExtension(filePath) || 'srt';
+}
+
+/** 从内容识别常见字幕格式，用于兼容扩展名被改成 .txt 的时间轴字幕。 */
+export function detectSubtitleContentFormat(
+  content: string,
+): SubtitleFormat | null {
+  const text = normalizeLineEndings(content || '').trimStart();
+  if (!text.trim()) return null;
+
+  if (/^WEBVTT(?:\s|$)/i.test(text)) return 'vtt';
+  if (/^\[Script Info\]/im.test(text) || /^\[Events\]/im.test(text)) {
+    return 'ass';
+  }
+  if (/^\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/m.test(text)) {
+    return 'lrc';
+  }
+
+  const timingLine = text
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => /-->/.test(line));
+
+  if (!timingLine) return null;
+  if (/,/.test(timingLine)) return 'srt';
+  return 'vtt';
+}
+
+/**
+ * 优先按扩展名识别；当扩展名未知或为 .txt 时，再按内容识别实际时间轴格式。
+ * 这样普通 .txt 仍保持 txt 语义，但 WebVTT/SRT 内容误命名为 .txt 时可以导入。
+ */
+export function detectSubtitleFormatFromContent(
+  filePath: string,
+  content: string,
+): SubtitleFormat {
+  const extensionFormat = detectSubtitleFormatByExtension(filePath);
+  if (extensionFormat && extensionFormat !== 'txt') return extensionFormat;
+  return detectSubtitleContentFormat(content) || extensionFormat || 'srt';
 }
 
 /** 获取某格式对应的文件扩展名（含点）。 */

@@ -370,7 +370,9 @@ export const isSubtitleFile = (filePath) => {
     filePath?.endsWith('.srt') ||
     filePath?.endsWith('.ass') ||
     filePath?.endsWith('.ssa') ||
-    filePath?.endsWith('.vtt')
+    filePath?.endsWith('.vtt') ||
+    filePath?.endsWith('.lrc') ||
+    filePath?.endsWith('.txt')
   );
 };
 
@@ -452,6 +454,8 @@ export const SUPPORTED_FILE_EXTENSIONS = [
   'vtt',
   'ass',
   'ssa',
+  'lrc',
+  'txt',
 ] as const;
 
 // 添加文件过滤方法

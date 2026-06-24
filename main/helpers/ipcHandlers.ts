@@ -8,6 +8,7 @@ import { CONTENT_TEMPLATES } from '../translate/constants';
 import { renderTemplate, getExtraResourcesPath } from './utils';
 import {
   detectSubtitleFormat,
+  detectSubtitleFormatFromContent,
   parseSubtitleEntries,
   parseStartEndTime,
   getSubtitleFileHeader,
@@ -60,6 +61,8 @@ export const SUBTITLE_EXTENSIONS = [
   '.lrc',
 ];
 
+const IMPORTABLE_SUBTITLE_EXTENSIONS = [...SUBTITLE_EXTENSIONS, '.txt'];
+
 // 判断文件是否为媒体文件
 export function isMediaFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
@@ -72,6 +75,19 @@ export function isSubtitleFile(filePath: string): boolean {
   return SUBTITLE_EXTENSIONS.includes(ext);
 }
 
+async function isImportableSubtitleFile(filePath: string): Promise<boolean> {
+  const ext = path.extname(filePath).toLowerCase();
+  if (!IMPORTABLE_SUBTITLE_EXTENSIONS.includes(ext)) return false;
+  if (path.extname(filePath).toLowerCase() !== '.txt') return true;
+
+  try {
+    const content = await fs.promises.readFile(filePath, 'utf-8');
+    return detectSubtitleFormatFromContent(filePath, content) !== 'txt';
+  } catch {
+    return false;
+  }
+}
+
 // 递归获取文件夹中的符合任务类型的文件
 async function getMediaFilesFromDirectory(
   directoryPath: string,
@@ -79,7 +95,9 @@ async function getMediaFilesFromDirectory(
 ): Promise<string[]> {
   // 根据任务类型选择扩展名
   const supportedExtensions =
-    taskType === 'translate' ? SUBTITLE_EXTENSIONS : MEDIA_EXTENSIONS;
+    taskType === 'translate'
+      ? IMPORTABLE_SUBTITLE_EXTENSIONS
+      : MEDIA_EXTENSIONS;
 
   const files: string[] = [];
 
@@ -99,9 +117,13 @@ async function getMediaFilesFromDirectory(
         );
         files.push(...subDirFiles);
       } else if (entry.isFile()) {
-        // 检查文件扩展名是否受支持
-        const ext = path.extname(entry.name).toLowerCase();
-        if (supportedExtensions.includes(ext)) {
+        if (
+          taskType === 'translate'
+            ? await isImportableSubtitleFile(fullPath)
+            : supportedExtensions.includes(
+                path.extname(entry.name).toLowerCase(),
+              )
+        ) {
           files.push(fullPath);
         }
       }
@@ -126,7 +148,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
 
     const extensions =
       fileType === 'srt'
-        ? SUBTITLE_EXTENSIONS.map((ext) => ext.substring(1))
+        ? IMPORTABLE_SUBTITLE_EXTENSIONS.map((ext) => ext.substring(1))
         : MEDIA_EXTENSIONS.map((ext) => ext.substring(1));
 
     // macOS 支持同时选择文件和文件夹；Windows/Linux 两者互斥，仅支持选择文件
@@ -152,7 +174,12 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         if (stats.isDirectory()) {
           const dirFiles = await getMediaFilesFromDirectory(filePath, taskType);
           allValidPaths.push(...dirFiles);
-        } else if (stats.isFile()) {
+        } else if (
+          stats.isFile() &&
+          (taskType === 'translate'
+            ? await isImportableSubtitleFile(filePath)
+            : isMediaFile(filePath))
+        ) {
           allValidPaths.push(filePath);
         }
       } catch (error) {
@@ -196,7 +223,8 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
           // 如果是文件，根据任务类型过滤
           // 根据任务类型决定添加哪种文件
           if (
-            (taskType === 'translate' && isSubtitleFile(filePath)) ||
+            (taskType === 'translate' &&
+              (await isImportableSubtitleFile(filePath))) ||
             (taskType !== 'translate' && isMediaFile(filePath))
           ) {
             allValidPaths.push(filePath);
@@ -219,7 +247,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         return [];
       }
       const content = await fs.promises.readFile(filePath, 'utf-8');
-      const format = detectSubtitleFormat(filePath);
+      const format = detectSubtitleFormatFromContent(filePath, content);
       return parseSubtitleEntries(content, format);
     } catch (error) {
       logMessage(`读取字幕文件错误: ${error.message}`, 'error');
@@ -234,7 +262,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         return { error: `File not found: ${filePath}` };
       }
       const content = await fs.promises.readFile(filePath, 'utf-8');
-      const format = detectSubtitleFormat(filePath);
+      const format = detectSubtitleFormatFromContent(filePath, content);
       const vtt = convertSubtitleContent(content, format, 'vtt');
       return { content: vtt };
     } catch (error) {
@@ -388,9 +416,16 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         title,
         filters: filters.length > 0 ? filters : undefined,
       });
+      const selectedPath = result.filePaths[0] || null;
+      const filePath =
+        type === 'subtitle' && selectedPath
+          ? (await isImportableSubtitleFile(selectedPath))
+            ? selectedPath
+            : null
+          : selectedPath;
 
       return {
-        filePath: result.filePaths[0] || null,
+        filePath,
         canceled: result.canceled,
       };
     },
@@ -437,9 +472,19 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         title,
         filters: filters.length > 0 ? filters : undefined,
       });
+      const filePaths =
+        type === 'subtitle'
+          ? (
+              await Promise.all(
+                result.filePaths.map(async (filePath) =>
+                  (await isImportableSubtitleFile(filePath)) ? filePath : null,
+                ),
+              )
+            ).filter((filePath): filePath is string => Boolean(filePath))
+          : result.filePaths;
 
       return {
-        filePaths: result.filePaths,
+        filePaths,
         canceled: result.canceled,
       };
     },

@@ -5,7 +5,7 @@ import { Provider, TranslationResult } from './types';
 import { CONTENT_TEMPLATES } from './constants';
 import { createOrClearFile, appendToFile } from './utils/file';
 import {
-  detectSubtitleFormat,
+  detectSubtitleFormatFromContent,
   parseSubtitleEntries,
 } from '../helpers/subtitleFormats';
 import {
@@ -104,12 +104,17 @@ export default async function translate(
       'info',
     );
 
-    // 源字幕按扩展名自动识别格式（srt/vtt/ass/lrc），统一解析为内部 Subtitle 结构
+    // 源字幕按扩展名+内容自动识别格式（srt/vtt/ass/lrc），统一解析为内部 Subtitle 结构
     const rawSourceContent = await fs.promises.readFile(srtFile, 'utf-8');
     const subtitles = parseSubtitleEntries(
       rawSourceContent,
-      detectSubtitleFormat(srtFile),
+      detectSubtitleFormatFromContent(srtFile, rawSourceContent),
     );
+    if (subtitles.length === 0) {
+      throw new Error(
+        `无法读取字幕内容，请确认文件包含有效的字幕时间轴: ${srtFile}`,
+      );
+    }
 
     const templateData = {
       fileName,
