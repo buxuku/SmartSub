@@ -16,7 +16,10 @@ import {
 import { formatSrtContent } from '../fileUtils';
 import { logMessage, store } from '../storeManager';
 import { getTaskContext, TaskCancelledError } from '../taskContext';
-import { secondsToSrtTime } from './transcribeShared';
+import {
+  subtitleCueFromSegment,
+  trimSubtitleTrailingSilence,
+} from '../subtitleTiming';
 import { buildFireRedParams } from './fireRedParams';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
@@ -123,16 +126,11 @@ async function transcribeFireRed(ctx: TranscribeContext): Promise<string> {
 
   if (signal?.aborted) throw new TaskCancelledError();
 
-  const formattedSrt = formatSrtContent(
-    (transcription?.segments || []).map(
-      (segment) =>
-        [
-          secondsToSrtTime(segment.start),
-          secondsToSrtTime(segment.end),
-          segment.text || '',
-        ] as [string, string, string],
-    ),
+  const subtitles = trimSubtitleTrailingSilence(
+    (transcription?.segments || []).map(subtitleCueFromSegment),
+    tempAudioFile,
   );
+  const formattedSrt = formatSrtContent(subtitles);
   await fs.promises.writeFile(srtFile, formattedSrt);
 
   event.sender.send('taskProgressChange', file, 'extractSubtitle', 100);
