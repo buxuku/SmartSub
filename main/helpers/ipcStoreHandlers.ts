@@ -10,6 +10,7 @@ import { exportConfig, importConfig } from './configExporter';
 import { rebuildAppMenu } from './menu';
 import { shutdownPythonRuntime } from './pythonRuntime';
 import { applyProxyFromSettings } from './network/proxyManager';
+import { syncTaskPowerSaveBlocker } from './powerSaveManager';
 
 console.log(app.getVersion(), 'version');
 
@@ -77,6 +78,9 @@ export function setupStoreHandlers() {
       settings?.proxyNoProxy !== undefined
     ) {
       applyProxyFromSettings();
+    }
+    if (settings?.preventSleepDuringTask !== undefined) {
+      syncTaskPowerSaveBlocker();
     }
     if (
       settings?.fasterWhisperModelsPath &&

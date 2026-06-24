@@ -15,6 +15,10 @@ import {
   cancelCurrentMerge,
   MERGE_CANCELLED,
 } from './subtitleMerger';
+import {
+  acquireTaskPowerSaveBlocker,
+  releaseTaskPowerSaveBlocker,
+} from './powerSaveManager';
 import type {
   MergeConfig,
   MergeProgress,
@@ -25,6 +29,7 @@ import type {
 
 // 存储当前进度回调
 let currentProgressCallback: ((progress: MergeProgress) => void) | null = null;
+const SUBTITLE_MERGE_POWER_SAVE_REASON = 'subtitleMerge';
 
 /**
  * 设置字幕合并相关的 IPC 处理函数
@@ -85,6 +90,7 @@ export function setupSubtitleMergeHandlers(mainWindow: BrowserWindow) {
       event,
       config: MergeConfig,
     ): Promise<SubtitleMergeResponse<string>> => {
+      let powerSaveAcquired = false;
       try {
         if (!fs.existsSync(config.videoPath)) {
           return { success: false, error: '视频文件不存在' };
@@ -108,15 +114,22 @@ export function setupSubtitleMergeHandlers(mainWindow: BrowserWindow) {
           mainWindow.webContents.send('subtitleMerge:progress', progress);
         };
 
-        const result = await mergeSubtitleToVideo(
-          { ...config, outputPath },
-          currentProgressCallback,
-        );
+        try {
+          acquireTaskPowerSaveBlocker(SUBTITLE_MERGE_POWER_SAVE_REASON);
+          powerSaveAcquired = true;
 
-        currentProgressCallback = null;
-        return { success: true, data: result };
+          const result = await mergeSubtitleToVideo(
+            { ...config, outputPath },
+            currentProgressCallback,
+          );
+          return { success: true, data: result };
+        } finally {
+          currentProgressCallback = null;
+          if (powerSaveAcquired) {
+            releaseTaskPowerSaveBlocker(SUBTITLE_MERGE_POWER_SAVE_REASON);
+          }
+        }
       } catch (error) {
-        currentProgressCallback = null;
         // 用户主动取消不算失败
         if (error instanceof Error && error.message === MERGE_CANCELLED) {
           return { success: true, cancelled: true };

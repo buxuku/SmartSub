@@ -37,6 +37,7 @@ export type StoreType = {
     customTempDir?: string;
     useVAD: boolean;
     checkUpdateOnStartup: boolean;
+    preventSleepDuringTask: boolean;
     vadThreshold: number;
     vadMinSpeechDuration: number;
     vadMinSilenceDuration: number;

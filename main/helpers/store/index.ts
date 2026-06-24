@@ -25,6 +25,7 @@ export const store = new Store<StoreType>({
       customTempDir: '',
       useVAD: true,
       checkUpdateOnStartup: true,
+      preventSleepDuringTask: true,
       vadThreshold: 0.5,
       vadMinSpeechDuration: 250,
       vadMinSilenceDuration: 100,
