@@ -1,13 +1,14 @@
 import {
   Provider,
   PROVIDER_TYPES,
+  TENCENT_DEFAULT_REQUEST_INTERVAL_SECONDS,
   defaultSystemPrompt,
   HISTORICAL_DEFAULT_PROMPTS,
 } from '../../types/provider';
 import { store } from './store';
 import { logMessage } from './logger';
 
-const CURRENT_PROVIDER_VERSION = 16;
+const CURRENT_PROVIDER_VERSION = 17;
 
 export async function getAndInitializeProviders(): Promise<Provider[]> {
   try {
@@ -70,13 +71,25 @@ function shouldUpdateSystemPrompt(currentPrompt: string | undefined): boolean {
   );
 }
 
+function withTencentRateLimitDefaults(provider: any): any {
+  if (provider.id !== 'tencent') return provider;
+
+  const currentInterval = Number(provider.requestInterval || 0);
+  if (currentInterval > 0) return provider;
+
+  return {
+    ...provider,
+    requestInterval: TENCENT_DEFAULT_REQUEST_INTERVAL_SECONDS,
+  };
+}
+
 function migrateProviders(oldProviders: any[]): Provider[] {
   // 分离内置和自定义服务商
   const builtinProviders = oldProviders
     .filter((p) => PROVIDER_TYPES.some((type) => type.id === p.id))
     .map((p) => {
       const template = PROVIDER_TYPES.find((type) => type.id === p.id)!;
-      return {
+      return withTencentRateLimitDefaults({
         ...p,
         type: p.id,
         isAi: template.isAi || false,
@@ -95,7 +108,7 @@ function migrateProviders(oldProviders: any[]): Provider[] {
               ?.defaultValue ||
             'json_object',
         }),
-      };
+      });
     });
 
   const customProviders = oldProviders

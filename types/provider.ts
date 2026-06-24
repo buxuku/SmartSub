@@ -12,6 +12,7 @@ export type ProviderField = {
   placeholder?: string;
   required?: boolean;
   defaultValue?: string | number | boolean;
+  step?: string | number;
   tips?: string;
   options?: string[];
 };
@@ -102,6 +103,7 @@ export interface ParameterTemplate {
 }
 
 export const defaultUserPrompt = '${content}';
+export const TENCENT_DEFAULT_REQUEST_INTERVAL_SECONDS = 0.25;
 
 /**
  * 历史版本的默认系统提示词，用于迁移时判断用户是否修改过
@@ -174,8 +176,14 @@ const FIELD_REQUEST_INTERVAL: ProviderField = {
   label: 'requestInterval',
   type: 'number',
   defaultValue: 0,
+  step: 0.1,
   tips: 'requestIntervalTip',
   placeholder: 'phRequestInterval',
+};
+
+const tencentRequestIntervalField: ProviderField = {
+  ...FIELD_REQUEST_INTERVAL,
+  defaultValue: TENCENT_DEFAULT_REQUEST_INTERVAL_SECONDS,
 };
 
 const FIELD_SYSTEM_PROMPT: ProviderField = {
@@ -233,9 +241,10 @@ const aiCommonFields = (overrides?: {
 const apiBatchFields = (
   defaultBatchSize: number,
   batchSizeTips: string,
+  requestIntervalField: ProviderField = FIELD_REQUEST_INTERVAL,
 ): ProviderField[] => [
   batchSizeField(defaultBatchSize, batchSizeTips),
-  FIELD_REQUEST_INTERVAL,
+  requestIntervalField,
 ];
 
 // ============================================================
@@ -435,7 +444,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
         tips: 'regionTencentTips',
         placeholder: 'phTencentRegion',
       },
-      ...apiBatchFields(1, 'batchSizeTencentTips'),
+      ...apiBatchFields(1, 'batchSizeTencentTips', tencentRequestIntervalField),
     ],
   },
   {
