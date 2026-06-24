@@ -13,6 +13,10 @@ import { formatSrtContent } from '../fileUtils';
 import { logMessage, store } from '../storeManager';
 import { getPythonRuntimeManager } from '../pythonRuntime';
 import {
+  subtitleCueFromSegment,
+  trimSubtitleTrailingSilence,
+} from '../subtitleTiming';
+import {
   getTaskContext,
   isTaskCancelledError,
   TaskCancelledError,
@@ -21,7 +25,6 @@ import { toFasterWhisperModel } from './modelMap';
 import {
   getNumericSetting,
   getWhisperLanguage,
-  secondsToSrtTime,
   getFasterWhisperAntiRepetitionParams,
 } from './transcribeShared';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
@@ -296,16 +299,11 @@ async function transcribeFasterWhisper(
     throw new TaskCancelledError();
   }
 
-  const formattedSrt = formatSrtContent(
-    (transcription?.segments || []).map(
-      (segment) =>
-        [
-          secondsToSrtTime(segment.start),
-          secondsToSrtTime(segment.end),
-          segment.text || '',
-        ] as [string, string, string],
-    ),
+  const subtitles = trimSubtitleTrailingSilence(
+    (transcription?.segments || []).map(subtitleCueFromSegment),
+    tempAudioFile,
   );
+  const formattedSrt = formatSrtContent(subtitles);
   await fs.promises.writeFile(srtFile, formattedSrt);
 
   event.sender.send('taskProgressChange', file, 'extractSubtitle', 100);

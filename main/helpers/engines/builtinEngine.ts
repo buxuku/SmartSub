@@ -4,6 +4,7 @@ import type { EngineStatus } from '../../../types/engine';
 import { getPath, loadWhisperAddon } from '../whisper';
 import { logMessage, store } from '../storeManager';
 import { formatSrtContent } from '../fileUtils';
+import { trimSubtitleTrailingSilence } from '../subtitleTiming';
 import { getExtraResourcesPath } from '../utils';
 import {
   getTaskContext,
@@ -127,7 +128,11 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       throw new TaskCancelledError();
     }
 
-    const formattedSrt = formatSrtContent(result?.transcription || []);
+    const subtitles = trimSubtitleTrailingSilence(
+      result?.transcription || [],
+      tempAudioFile,
+    );
+    const formattedSrt = formatSrtContent(subtitles);
     await fs.promises.writeFile(srtFile, formattedSrt);
 
     event.sender.send('taskFileChange', { ...file, extractSubtitle: 'done' });
