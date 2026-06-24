@@ -62,6 +62,7 @@ export const SUBTITLE_EXTENSIONS = [
 ];
 
 const IMPORTABLE_SUBTITLE_EXTENSIONS = [...SUBTITLE_EXTENSIONS, '.txt'];
+const SUBTITLE_CONTENT_PROBE_BYTES = 50 * 1024;
 
 // 判断文件是否为媒体文件
 export function isMediaFile(filePath: string): boolean {
@@ -75,13 +76,24 @@ export function isSubtitleFile(filePath: string): boolean {
   return SUBTITLE_EXTENSIONS.includes(ext);
 }
 
+async function readSubtitleProbeContent(filePath: string): Promise<string> {
+  const fileHandle = await fs.promises.open(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(SUBTITLE_CONTENT_PROBE_BYTES);
+    const { bytesRead } = await fileHandle.read(buffer, 0, buffer.length, 0);
+    return buffer.subarray(0, bytesRead).toString('utf-8');
+  } finally {
+    await fileHandle.close();
+  }
+}
+
 async function isImportableSubtitleFile(filePath: string): Promise<boolean> {
   const ext = path.extname(filePath).toLowerCase();
   if (!IMPORTABLE_SUBTITLE_EXTENSIONS.includes(ext)) return false;
-  if (path.extname(filePath).toLowerCase() !== '.txt') return true;
+  if (ext !== '.txt') return true;
 
   try {
-    const content = await fs.promises.readFile(filePath, 'utf-8');
+    const content = await readSubtitleProbeContent(filePath);
     return detectSubtitleFormatFromContent(filePath, content) !== 'txt';
   } catch {
     return false;

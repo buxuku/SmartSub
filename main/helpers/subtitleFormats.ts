@@ -64,6 +64,11 @@ const FORMAT_TO_EXT: Record<SubtitleFormat, string> = {
   txt: '.txt',
 };
 
+const TIMESTAMP_PATTERN = String.raw`(?:\d{1,3}:)?\d{1,2}:\d{2}(?:[,.]\d{1,6})?`;
+const TIMING_LINE_PATTERN = new RegExp(
+  `${TIMESTAMP_PATTERN}\\s*-->\\s*${TIMESTAMP_PATTERN}`,
+);
+
 /** 根据文件路径/扩展名推断字幕格式，未知时返回 null。 */
 export function detectSubtitleFormatByExtension(
   filePath: string,
@@ -96,7 +101,7 @@ export function detectSubtitleContentFormat(
   const timingLine = text
     .split('\n')
     .map((line) => line.trim())
-    .find((line) => /-->/.test(line));
+    .find((line) => TIMING_LINE_PATTERN.test(line));
 
   if (!timingLine) return null;
   if (/,/.test(timingLine)) return 'srt';
