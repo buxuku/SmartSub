@@ -8,7 +8,8 @@ export type ProviderField = {
     | 'url'
     | 'number'
     | 'switch'
-    | 'select';
+    | 'select'
+    | 'chain';
   placeholder?: string;
   required?: boolean;
   defaultValue?: string | number | boolean;
@@ -288,6 +289,86 @@ export const PROVIDER_TYPES: ProviderType[] = [
         placeholder: 'phBaiduSecretKey',
       },
       ...apiBatchFields(18, 'batchSizeBaiduTips'),
+    ],
+  },
+  {
+    id: 'autoFree',
+    name: 'autoFree',
+    isBuiltin: true,
+    isAi: false,
+    group: 'free',
+    icon: '🆓',
+    iconImg: '/images/providers/free-auto.svg',
+    fields: [
+      {
+        key: 'fallbackChain',
+        label: 'fallbackChain',
+        type: 'chain',
+        required: false,
+        defaultValue: 'bingFree,googleFree,deeplx',
+        tips: 'fallbackChainTips',
+      },
+      {
+        key: 'windowMaxRequests',
+        label: 'windowMaxRequests',
+        type: 'number',
+        required: false,
+        defaultValue: 0,
+        tips: 'windowMaxRequestsTips',
+        placeholder: 'phWindowMaxRequests',
+      },
+      ...apiBatchFields(10, 'batchSizeAutoFreeTips', {
+        ...FIELD_REQUEST_INTERVAL,
+        defaultValue: 0.3,
+      }),
+    ],
+  },
+  {
+    id: 'bingFree',
+    name: 'bingFree',
+    isBuiltin: true,
+    isAi: false,
+    group: 'free',
+    icon: '🅱️',
+    iconImg: '/images/providers/bing-color.svg',
+    fields: [
+      {
+        key: 'windowMaxRequests',
+        label: 'windowMaxRequests',
+        type: 'number',
+        required: false,
+        defaultValue: 0,
+        tips: 'windowMaxRequestsTips',
+        placeholder: 'phWindowMaxRequests',
+      },
+      ...apiBatchFields(10, 'batchSizeBingFreeTips', {
+        ...FIELD_REQUEST_INTERVAL,
+        defaultValue: 0.2,
+      }),
+    ],
+  },
+  {
+    id: 'googleFree',
+    name: 'googleFree',
+    isBuiltin: true,
+    isAi: false,
+    group: 'free',
+    icon: '🔎',
+    iconImg: '/images/providers/googletranslate.svg',
+    fields: [
+      {
+        key: 'windowMaxRequests',
+        label: 'windowMaxRequests',
+        type: 'number',
+        required: false,
+        defaultValue: 0,
+        tips: 'windowMaxRequestsTips',
+        placeholder: 'phWindowMaxRequests',
+      },
+      ...apiBatchFields(5, 'batchSizeGoogleFreeTips', {
+        ...FIELD_REQUEST_INTERVAL,
+        defaultValue: 0.5,
+      }),
     ],
   },
   {

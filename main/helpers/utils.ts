@@ -270,8 +270,8 @@ export function getSrtFileName(
  */
 export const supportedLanguage = [
   // 最常用语言
-  // 讯飞机器翻译简体中文代码为 cn（非 zh）；小牛/腾讯均使用 zh
-  { name: '中文', value: 'zh', xunfei: 'cn' },
+  // 讯飞机器翻译简体中文代码为 cn（非 zh）；小牛/腾讯均使用 zh；Bing 简体中文为 zh-Hans
+  { name: '中文', value: 'zh', xunfei: 'cn', bing: 'zh-Hans' },
   { name: '英语', value: 'en' },
   { name: '日语', value: 'ja', baidu: 'jp' },
   { name: '韩语', value: 'ko', baidu: 'kor' },
@@ -292,7 +292,7 @@ export const supportedLanguage = [
   { name: '芬兰语', value: 'fi', baidu: 'fin' },
   { name: '希腊语', value: 'el', doubao: null },
   { name: '匈牙利语', value: 'hu' },
-  { name: '挪威语', value: 'no', baidu: null, doubao: 'nb' },
+  { name: '挪威语', value: 'no', baidu: null, doubao: 'nb', bing: 'nb' },
   { name: '罗马尼亚语', value: 'ro', baidu: 'rom' },
   { name: '斯洛伐克语', value: 'sk', baidu: null, doubao: null },
   { name: '克罗地亚语', value: 'hr', baidu: null },
@@ -323,7 +323,7 @@ export const supportedLanguage = [
   { name: '阿非利堪斯语', value: 'af', baidu: null, doubao: null },
   { name: '加泰罗尼亚语', value: 'ca', baidu: null, doubao: null },
   { name: '加利西亚语', value: 'gl', baidu: null, doubao: null },
-  { name: '塔加洛语', value: 'tl', baidu: null, doubao: null },
+  { name: '塔加洛语', value: 'tl', baidu: null, doubao: null, bing: 'fil' },
   { name: '斯瓦希里语', value: 'sw', baidu: null, doubao: null },
   { name: '威尔士语', value: 'cy', baidu: null, doubao: null },
   { name: '蒙古语', value: 'mn', baidu: null, volc: null, doubao: null },
@@ -347,6 +347,7 @@ type TranslateProvider =
   | 'volc'
   | 'aliyun'
   | 'google'
+  | 'bing'
   | 'doubao'
   | 'niutrans'
   | 'tencent'

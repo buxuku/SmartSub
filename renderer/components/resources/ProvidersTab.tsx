@@ -124,7 +124,7 @@ type TestResult = {
 
 /** 推荐卡：免费起步 / 质量优先，名字直接可点选中 */
 const RECOMMEND_ROWS: { labelKey: string; ids: string[] }[] = [
-  { labelKey: 'groupFree', ids: ['deeplx', 'google'] },
+  { labelKey: 'groupFree', ids: ['autoFree'] },
   { labelKey: 'recommendQuality', ids: ['deepseek', 'Gemini'] },
 ];
 
@@ -677,7 +677,10 @@ const ProvidersTab: React.FC = () => {
                         )}
                       >
                         <ProviderIcon iconImg={type.iconImg} icon={type.icon} />
-                        <span className="min-w-0 flex-1 truncate">
+                        <span
+                          className="min-w-0 flex-1 truncate"
+                          title={typeDisplayName(type)}
+                        >
                           {typeDisplayName(type)}
                         </span>
                         {isConfiguredById(type.id) && (

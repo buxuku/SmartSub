@@ -8,7 +8,9 @@ import {
 import { store } from './store';
 import { logMessage } from './logger';
 
-const CURRENT_PROVIDER_VERSION = 18;
+const CURRENT_PROVIDER_VERSION = 19;
+
+const FREE_PROVIDER_IDS = ['autoFree', 'bingFree', 'googleFree'];
 
 export async function getAndInitializeProviders(): Promise<Provider[]> {
   try {
@@ -83,6 +85,25 @@ function withTencentRateLimitDefaults(provider: any): any {
   };
 }
 
+// 为免费翻译源补齐合理的默认请求间隔（用户未自定义时），降低被按 IP 限流的概率。
+function withFreeRateLimitDefaults(provider: any): any {
+  if (!FREE_PROVIDER_IDS.includes(provider.id)) return provider;
+
+  const currentInterval = Number(provider.requestInterval || 0);
+  if (currentInterval > 0) return provider;
+
+  const template = PROVIDER_TYPES.find((type) => type.id === provider.id);
+  const defaultInterval = template?.fields.find(
+    (field) => field.key === 'requestInterval',
+  )?.defaultValue;
+  if (defaultInterval === undefined) return provider;
+
+  return {
+    ...provider,
+    requestInterval: defaultInterval,
+  };
+}
+
 function migrateProviders(oldProviders: any[]): Provider[] {
   // 分离内置和自定义服务商
   const builtinProviders = oldProviders
@@ -109,7 +130,7 @@ function migrateProviders(oldProviders: any[]): Provider[] {
               ?.defaultValue ||
             'json_object',
         }),
-      });
+      );
     });
 
   const customProviders = oldProviders
