@@ -44,6 +44,12 @@ export type StoreType = {
     vadMaxSpeechDuration: number;
     vadSpeechPad: number;
     vadSamplesOverlap: number;
+    /** [仅内置 whisper.cpp] 时间轴对齐策略：hybrid(默认)|run|word|legacy。faster-whisper 自带词级对齐，不受此项影响。 */
+    alignMode?: 'hybrid' | 'run' | 'word' | 'legacy';
+    /** [仅内置 whisper.cpp] 相邻 VAD 语音段间隔 ≤ 此值(ms)合并为一段解码（保留上下文）；更大的间隔成为真实空档。默认 2000。 */
+    vadMergeGap?: number;
+    /** [仅内置 whisper.cpp] word/hybrid 模式：相邻两词静音超过此值(ms)即另起一段字幕。默认 500。 */
+    wordGap?: number;
     /** 抗幻觉/抗重复：开启后断开上文条件并抑制重复（builtin: max_context=0；faster-whisper: condition_on_previous_text=false + no_repeat_ngram/repetition_penalty 等）。默认关闭，按需开启。 */
     reduceRepetition?: boolean;
     /** 任务默认引擎+模型的"上次使用"记忆（全局单条，二者作为整体，避免引擎/模型失配）。 */

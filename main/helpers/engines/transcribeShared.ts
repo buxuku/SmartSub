@@ -36,6 +36,9 @@ export function secondsToSrtTime(seconds: number): string {
   return `${pad(h)}:${pad(m)}:${pad(s)}.${pad(ms, 3)}`;
 }
 
+export type AlignMode = 'hybrid' | 'run' | 'word' | 'legacy';
+const ALIGN_MODES: readonly AlignMode[] = ['hybrid', 'run', 'word', 'legacy'];
+
 export interface VadSettings {
   useVAD: boolean;
   vadThreshold: number;
@@ -44,6 +47,19 @@ export interface VadSettings {
   vadMaxSpeechDuration: number;
   vadSpeechPad: number;
   vadSamplesOverlap: number;
+  /** [仅内置 whisper.cpp] 时间轴对齐策略（faster-whisper 自带词级对齐，忽略此项）。 */
+  alignMode: AlignMode;
+  /** [仅内置 whisper.cpp] 相邻 VAD 段合并阈值(ms)，更大间隔成为真实空档。 */
+  vadMergeGap: number;
+  /** [仅内置 whisper.cpp] word/hybrid 模式词级切分阈值(ms)。 */
+  wordGap: number;
+}
+
+/** 归一化对齐模式：非法/缺省回落 hybrid。 */
+export function getAlignMode(value: unknown): AlignMode {
+  return ALIGN_MODES.includes(value as AlignMode)
+    ? (value as AlignMode)
+    : 'hybrid';
 }
 
 /** 抗幻觉/抗重复总开关（全局设置 settings.reduceRepetition）。 */
@@ -88,5 +104,8 @@ export function getVadSettings(settings: Record<string, unknown>): VadSettings {
     vadMaxSpeechDuration: getNumericSetting(settings?.vadMaxSpeechDuration, 0),
     vadSpeechPad: getNumericSetting(settings?.vadSpeechPad, 200),
     vadSamplesOverlap: getNumericSetting(settings?.vadSamplesOverlap, 0.1),
+    alignMode: getAlignMode(settings?.alignMode),
+    vadMergeGap: getNumericSetting(settings?.vadMergeGap, 2000),
+    wordGap: getNumericSetting(settings?.wordGap, 500),
   };
 }

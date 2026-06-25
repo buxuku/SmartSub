@@ -149,6 +149,12 @@ const Settings = () => {
   const [vadMaxSpeechDuration, setVADMaxSpeechDuration] = useState(0);
   const [vadSpeechPad, setVADSpeechPad] = useState(200);
   const [vadSamplesOverlap, setVADSamplesOverlap] = useState(0.1);
+  // 时间轴对齐（仅内置 whisper.cpp 引擎）：hybrid|run|word|legacy
+  const [alignMode, setAlignMode] = useState<
+    'hybrid' | 'run' | 'word' | 'legacy'
+  >('hybrid');
+  const [vadMergeGap, setVadMergeGap] = useState(2000);
+  const [wordGap, setWordGap] = useState(500);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [proxyMode, setProxyMode] = useState<'none' | 'custom'>('none');
   const [proxyUrl, setProxyUrl] = useState('');
@@ -188,6 +194,13 @@ const Settings = () => {
         setVADMaxSpeechDuration(settings.vadMaxSpeechDuration ?? 0);
         setVADSpeechPad(settings.vadSpeechPad ?? 200);
         setVADSamplesOverlap(settings.vadSamplesOverlap ?? 0.1);
+        setAlignMode(
+          (['hybrid', 'run', 'word', 'legacy'].includes(settings.alignMode)
+            ? settings.alignMode
+            : 'hybrid') as 'hybrid' | 'run' | 'word' | 'legacy',
+        );
+        setVadMergeGap(settings.vadMergeGap ?? 2000);
+        setWordGap(settings.wordGap ?? 500);
         setProxyMode(settings.proxyMode === 'custom' ? 'custom' : 'none');
         setProxyUrl(settings.proxyUrl || '');
         setProxyNoProxy(settings.proxyNoProxy || '');
@@ -327,6 +340,20 @@ const Settings = () => {
     }
   };
 
+  // 时间轴对齐模式（字符串，立即持久化；仅内置 whisper.cpp 引擎生效）
+  const handleAlignModeChange = async (value: string) => {
+    const mode = (
+      ['hybrid', 'run', 'word', 'legacy'].includes(value) ? value : 'hybrid'
+    ) as 'hybrid' | 'run' | 'word' | 'legacy';
+    setAlignMode(mode);
+    try {
+      await window?.ipc?.invoke('setSettings', { alignMode: mode });
+      toast.success(t('vadSettingsSaved'));
+    } catch (error) {
+      toast.error(t('saveFailed'));
+    }
+  };
+
   // VAD 数字输入降噪：本地即时生效，500ms 静默期后批量持久化；成功静默，失败才打扰
   const pendingVadRef = useRef<Record<string, number>>({});
   const vadSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -339,6 +366,8 @@ const Settings = () => {
       vadMaxSpeechDuration: setVADMaxSpeechDuration,
       vadSpeechPad: setVADSpeechPad,
       vadSamplesOverlap: setVADSamplesOverlap,
+      vadMergeGap: setVadMergeGap,
+      wordGap: setWordGap,
     };
 
     settingMap[setting]?.(value);
@@ -873,6 +902,80 @@ const Settings = () => {
                         {t('vadPresetReset')}
                       </Button>
                     </div>
+
+                    {/* 时间轴对齐（faster-whisper 式留白）：仅内置 whisper.cpp 引擎生效 */}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span>{t('alignMode')}</span>
+                        <HelpHint text={t('alignModeTip')} />
+                      </div>
+                      <Select
+                        value={alignMode}
+                        onValueChange={handleAlignModeChange}
+                      >
+                        <SelectTrigger className="text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="hybrid">
+                            {t('alignModeHybrid')}
+                          </SelectItem>
+                          <SelectItem value="run">
+                            {t('alignModeRun')}
+                          </SelectItem>
+                          <SelectItem value="word">
+                            {t('alignModeWord')}
+                          </SelectItem>
+                          <SelectItem value="legacy">
+                            {t('alignModeLegacy')}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {(alignMode === 'run' || alignMode === 'hybrid') && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span>{t('vadMergeGap')}</span>
+                          <HelpHint text={t('vadMergeGapTip')} />
+                        </div>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="100"
+                          value={vadMergeGap}
+                          onChange={(e) =>
+                            handleVADSettingChange(
+                              'vadMergeGap',
+                              Number(e.target.value),
+                            )
+                          }
+                          className="font-mono text-sm"
+                        />
+                      </div>
+                    )}
+
+                    {(alignMode === 'word' || alignMode === 'hybrid') && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span>{t('wordGap')}</span>
+                          <HelpHint text={t('wordGapTip')} />
+                        </div>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="50"
+                          value={wordGap}
+                          onChange={(e) =>
+                            handleVADSettingChange(
+                              'wordGap',
+                              Number(e.target.value),
+                            )
+                          }
+                          className="font-mono text-sm"
+                        />
+                      </div>
+                    )}
 
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">

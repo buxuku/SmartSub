@@ -95,6 +95,11 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       vad_max_speech_duration_s: vad.vadMaxSpeechDuration,
       vad_speech_pad_ms: vad.vadSpeechPad,
       vad_samples_overlap: vad.vadSamplesOverlap,
+      // 时间轴对齐（faster-whisper 式留白）：按 VAD 分段+词级夹紧，输出带真实静音空档。
+      // 仅内置 whisper.cpp 引擎支持；默认 hybrid。见 addon.cpp align_mode。
+      align_mode: vad.alignMode,
+      vad_merge_gap_ms: vad.vadMergeGap,
+      word_gap_ms: vad.wordGap,
       progress_callback: (progress: number) => {
         if (signal?.aborted) return;
         event.sender.send(

@@ -121,8 +121,21 @@ eq(
     vadMaxSpeechDuration: 0,
     vadSpeechPad: 200,
     vadSamplesOverlap: 0.1,
+    alignMode: 'hybrid',
+    vadMergeGap: 2000,
+    wordGap: 500,
   },
   'vad: defaults',
+);
+eq(
+  getVadSettings({ alignMode: 'word' }).alignMode,
+  'word',
+  'vad: alignMode passthrough',
+);
+eq(
+  getVadSettings({ alignMode: 'bogus' }).alignMode,
+  'hybrid',
+  'vad: alignMode invalid -> hybrid',
 );
 eq(getVadSettings({ useVAD: false }).useVAD, false, 'vad: useVAD false');
 eq(
