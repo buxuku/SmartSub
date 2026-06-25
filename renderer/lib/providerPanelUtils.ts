@@ -10,6 +10,7 @@ export const PROVIDER_ADVANCED_FIELD_KEYS = new Set([
   'structuredOutput',
   'batchSize',
   'requestInterval',
+  'windowMaxRequests',
 ]);
 
 export function sortProvidersCustomFirst(list: Provider[]): Provider[] {

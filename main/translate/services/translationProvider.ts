@@ -6,6 +6,7 @@ import {
 } from '../types';
 import { handleAIBatchTranslation } from './ai';
 import { handleAPIBatchTranslation } from './api';
+import { createFallbackTranslator } from './fallback';
 import { logMessage } from '../../helpers/storeManager';
 import {
   volcTranslator,
@@ -17,12 +18,17 @@ import {
   azureOpenaiTranslator,
   aliyunTranslator,
   googleTranslator,
+  bingFreeTranslator,
+  googleFreeTranslator,
   doubaoTranslator,
   niutransTranslator,
   tencentTranslator,
   xunfeiTranslator,
 } from '../../service';
 import { DEFAULT_BATCH_SIZE } from '../constants';
+
+/** autoFree 默认回退链：Bing 免费 → Google 免费 → DeepLX */
+export const DEFAULT_FREE_FALLBACK_CHAIN = ['bingFree', 'googleFree', 'deeplx'];
 
 export const TRANSLATOR_MAP = {
   volc: volcTranslator,
@@ -39,6 +45,9 @@ export const TRANSLATOR_MAP = {
   qwen: openaiTranslator,
   siliconflow: openaiTranslator,
   google: googleTranslator,
+  bingFree: bingFreeTranslator,
+  googleFree: googleFreeTranslator,
+  autoFree: createFallbackTranslator(DEFAULT_FREE_FALLBACK_CHAIN),
   doubao: doubaoTranslator,
   niutrans: niutransTranslator,
   tencent: tencentTranslator,

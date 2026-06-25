@@ -11,6 +11,9 @@
   "headerTitle": "妙幕 - SmartSub",
   "newVersionAvailable": "New version available",
   "provider": {
+    "autoFree": "Free (Auto)",
+    "bingFree": "Bing (Free)",
+    "googleFree": "Google (Free)",
     "baidu": "Baidu",
     "volc": "Volcano",
     "azure": "Azure Translator",
