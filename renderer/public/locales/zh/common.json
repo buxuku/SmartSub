@@ -11,6 +11,9 @@
   "headerTitle": "妙幕 - SmartSub",
   "newVersionAvailable": "有新版本可用",
   "provider": {
+    "autoFree": "自动免费翻译",
+    "bingFree": "必应免费翻译",
+    "googleFree": "谷歌免费翻译",
     "baidu": "百度翻译",
     "aliyun": "阿里云翻译",
     "Google Translate": "谷歌翻译",
