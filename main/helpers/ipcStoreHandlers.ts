@@ -2,6 +2,7 @@ import { app, ipcMain } from 'electron';
 import os from 'os';
 import { store } from './store';
 import { defaultUserConfig } from './utils';
+import { inferDisplayOutcome } from './engines/outcomePresets';
 import { getAndInitializeProviders } from './providerManager';
 import { logMessage } from './logger';
 import { LogEntry } from './store/types';
@@ -65,7 +66,19 @@ export function setupStoreHandlers() {
 
   ipcMain.handle('getUserConfig', async () => {
     const storedConfig = store.get('userConfig');
-    return { ...defaultUserConfig, ...storedConfig };
+    const merged: Record<string, unknown> = {
+      ...defaultUserConfig,
+      ...storedConfig,
+    };
+    // 字幕效果默认档：缺省时按既有旋钮惰性推断（全新/默认→均衡；老用户自定义→对应档或
+    // custom，逐字保留行为）。在此补齐而非写 store 默认值，避免回灌覆盖老用户底层旋钮。
+    if (merged.subtitleOutcome === undefined) {
+      merged.subtitleOutcome = inferDisplayOutcome(
+        merged,
+        store.get('settings') as Record<string, unknown>,
+      );
+    }
+    return merged;
   });
 
   // 设置相关处理

@@ -22,6 +22,7 @@ import {
   trimSubtitleTrailingSilence,
 } from '../subtitleTiming';
 import { buildFunasrParams } from './funasrParams';
+import { resolveEffectiveSettings } from './outcomePresets';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
 let activeTranscribeId: string | null = null;
@@ -59,8 +60,12 @@ function prewarmFunasr(formData: Record<string, unknown>): void {
       installedAsr,
     );
     if (!selection) return;
-    const settings = store.get('settings') as Record<string, unknown>;
     const { sourceLanguage } = formData as { sourceLanguage?: string };
+    // 与 transcribe 同源派生 VAD 灵敏度，确保预热与正式转写的 VAD 配置一致。
+    const settings = resolveEffectiveSettings(
+      formData,
+      store.get('settings') as Record<string, unknown>,
+    );
     getSherpaFunasrRuntime().prewarm(
       buildModelRequest(selection, settings, sourceLanguage),
     );
@@ -80,7 +85,11 @@ async function transcribeFunasr(ctx: TranscribeContext): Promise<string> {
 
   const { tempAudioFile, srtFile } = file;
   const { sourceLanguage } = formData as { sourceLanguage?: string };
-  const settings = store.get('settings') as Record<string, unknown>;
+  // 逐任务运行时派生（字幕效果档位 → VAD 灵敏度），不回写全局。
+  const settings = resolveEffectiveSettings(
+    formData,
+    store.get('settings') as Record<string, unknown>,
+  );
 
   if (!isSherpaLibInstalled()) {
     throw new Error(

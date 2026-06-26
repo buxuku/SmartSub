@@ -142,7 +142,6 @@ const Settings = () => {
   const [useCustomTempDir, setUseCustomTempDir] = useState(false);
   const [checkUpdateOnStartup, setCheckUpdateOnStartup] = useState(true);
   const [preventSleepDuringTask, setPreventSleepDuringTask] = useState(true);
-  const [useVAD, setUseVAD] = useState(true);
   const [vadThreshold, setVADThreshold] = useState(0.5);
   const [vadMinSpeechDuration, setVADMinSpeechDuration] = useState(250);
   const [vadMinSilenceDuration, setVADMinSilenceDuration] = useState(100);
@@ -181,7 +180,6 @@ const Settings = () => {
         setCustomTempDir(settings.customTempDir || '');
         setCheckUpdateOnStartup(settings.checkUpdateOnStartup !== false);
         setPreventSleepDuringTask(settings.preventSleepDuringTask !== false);
-        setUseVAD(settings.useVAD !== false);
         setVADThreshold(settings.vadThreshold ?? 0.5);
         setVADMinSpeechDuration(settings.vadMinSpeechDuration ?? 250);
         setVADMinSilenceDuration(settings.vadMinSilenceDuration ?? 100);
@@ -312,16 +310,6 @@ const Settings = () => {
     try {
       await window?.ipc?.invoke('setSettings', { closeAction: value });
       toast.success(t('closeActionSaved'));
-    } catch (error) {
-      toast.error(t('saveFailed'));
-    }
-  };
-
-  const handleVADChange = async (checked: boolean) => {
-    setUseVAD(checked);
-    try {
-      await window?.ipc?.invoke('setSettings', { useVAD: checked });
-      toast.success(t('vadSettingsSaved'));
     } catch (error) {
       toast.error(t('saveFailed'));
     }
@@ -834,169 +822,155 @@ const Settings = () => {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span>{t('enableVad')}</span>
-                    <HelpHint text={t('enableVadTip')} />
-                  </div>
-                  <Switch checked={useVAD} onCheckedChange={handleVADChange} />
-                </div>
-
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  {t('vadBuiltinHint')}
+                  {t('vadSensitivityNote')}
                 </p>
 
-                {useVAD && (
-                  <>
-                    {/* 三档环境预设：与手动微调共存，当前值与某档全等时高亮 */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-muted-foreground">
-                        {t('vadPresets')}
-                      </span>
-                      {VAD_PRESETS.map((preset) => (
-                        <Button
-                          key={preset.id}
-                          variant={
-                            isPresetActive(preset) ? 'secondary' : 'outline'
-                          }
-                          size="sm"
-                          className="h-7 text-xs gap-1.5"
-                          onClick={() => applyVadPreset(preset)}
-                        >
-                          <SlidersHorizontal className="h-4 w-4" />
-                          {t(`vadPreset${preset.id}`)}
-                        </Button>
-                      ))}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs gap-1.5"
-                        onClick={() => applyVadPreset(STANDARD_PRESET)}
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                        {t('vadPresetReset')}
-                      </Button>
-                    </div>
+                {/* 三档环境预设：VAD 开/关由「字幕效果」档位决定，这里只调灵敏度；与手动微调共存，当前值与某档全等时高亮 */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {t('vadPresets')}
+                  </span>
+                  {VAD_PRESETS.map((preset) => (
+                    <Button
+                      key={preset.id}
+                      variant={isPresetActive(preset) ? 'secondary' : 'outline'}
+                      size="sm"
+                      className="h-7 text-xs gap-1.5"
+                      onClick={() => applyVadPreset(preset)}
+                    >
+                      <SlidersHorizontal className="h-4 w-4" />
+                      {t(`vadPreset${preset.id}`)}
+                    </Button>
+                  ))}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs gap-1.5"
+                    onClick={() => applyVadPreset(STANDARD_PRESET)}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    {t('vadPresetReset')}
+                  </Button>
+                </div>
 
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span>{t('vadThreshold')}</span>
-                        <HelpHint text={t('vadThresholdTip')} />
-                      </div>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max="1"
-                        value={vadThreshold}
-                        onChange={(e) =>
-                          handleVADSettingChange(
-                            'vadThreshold',
-                            Number(e.target.value),
-                          )
-                        }
-                        className="font-mono text-sm"
-                      />
-                    </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span>{t('vadThreshold')}</span>
+                    <HelpHint text={t('vadThresholdTip')} />
+                  </div>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="1"
+                    value={vadThreshold}
+                    onChange={(e) =>
+                      handleVADSettingChange(
+                        'vadThreshold',
+                        Number(e.target.value),
+                      )
+                    }
+                    className="font-mono text-sm"
+                  />
+                </div>
 
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span>{t('vadMinSpeechDuration')}</span>
-                        <HelpHint text={t('vadMinSpeechDurationTip')} />
-                      </div>
-                      <Input
-                        type="number"
-                        min="0"
-                        value={vadMinSpeechDuration}
-                        onChange={(e) =>
-                          handleVADSettingChange(
-                            'vadMinSpeechDuration',
-                            Number(e.target.value),
-                          )
-                        }
-                        className="font-mono text-sm"
-                      />
-                    </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span>{t('vadMinSpeechDuration')}</span>
+                    <HelpHint text={t('vadMinSpeechDurationTip')} />
+                  </div>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={vadMinSpeechDuration}
+                    onChange={(e) =>
+                      handleVADSettingChange(
+                        'vadMinSpeechDuration',
+                        Number(e.target.value),
+                      )
+                    }
+                    className="font-mono text-sm"
+                  />
+                </div>
 
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span>{t('vadMinSilenceDuration')}</span>
-                        <HelpHint text={t('vadMinSilenceDurationTip')} />
-                      </div>
-                      <Input
-                        type="number"
-                        min="0"
-                        value={vadMinSilenceDuration}
-                        onChange={(e) =>
-                          handleVADSettingChange(
-                            'vadMinSilenceDuration',
-                            Number(e.target.value),
-                          )
-                        }
-                        className="font-mono text-sm"
-                      />
-                    </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span>{t('vadMinSilenceDuration')}</span>
+                    <HelpHint text={t('vadMinSilenceDurationTip')} />
+                  </div>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={vadMinSilenceDuration}
+                    onChange={(e) =>
+                      handleVADSettingChange(
+                        'vadMinSilenceDuration',
+                        Number(e.target.value),
+                      )
+                    }
+                    className="font-mono text-sm"
+                  />
+                </div>
 
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span>{t('vadMaxSpeechDuration')}</span>
-                        <HelpHint text={t('vadMaxSpeechDurationTip')} />
-                      </div>
-                      <Input
-                        type="number"
-                        min="0"
-                        value={vadMaxSpeechDuration}
-                        onChange={(e) =>
-                          handleVADSettingChange(
-                            'vadMaxSpeechDuration',
-                            Number(e.target.value),
-                          )
-                        }
-                        className="font-mono text-sm"
-                      />
-                    </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span>{t('vadMaxSpeechDuration')}</span>
+                    <HelpHint text={t('vadMaxSpeechDurationTip')} />
+                  </div>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={vadMaxSpeechDuration}
+                    onChange={(e) =>
+                      handleVADSettingChange(
+                        'vadMaxSpeechDuration',
+                        Number(e.target.value),
+                      )
+                    }
+                    className="font-mono text-sm"
+                  />
+                </div>
 
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span>{t('vadSpeechPad')}</span>
-                        <HelpHint text={t('vadSpeechPadTip')} />
-                      </div>
-                      <Input
-                        type="number"
-                        min="0"
-                        value={vadSpeechPad}
-                        onChange={(e) =>
-                          handleVADSettingChange(
-                            'vadSpeechPad',
-                            Number(e.target.value),
-                          )
-                        }
-                        className="font-mono text-sm"
-                      />
-                    </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span>{t('vadSpeechPad')}</span>
+                    <HelpHint text={t('vadSpeechPadTip')} />
+                  </div>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={vadSpeechPad}
+                    onChange={(e) =>
+                      handleVADSettingChange(
+                        'vadSpeechPad',
+                        Number(e.target.value),
+                      )
+                    }
+                    className="font-mono text-sm"
+                  />
+                </div>
 
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span>{t('vadSamplesOverlap')}</span>
-                        <HelpHint text={t('vadSamplesOverlapTip')} />
-                      </div>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        max="1"
-                        value={vadSamplesOverlap}
-                        onChange={(e) =>
-                          handleVADSettingChange(
-                            'vadSamplesOverlap',
-                            Number(e.target.value),
-                          )
-                        }
-                        className="font-mono text-sm"
-                      />
-                    </div>
-                  </>
-                )}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span>{t('vadSamplesOverlap')}</span>
+                    <HelpHint text={t('vadSamplesOverlapTip')} />
+                  </div>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="1"
+                    value={vadSamplesOverlap}
+                    onChange={(e) =>
+                      handleVADSettingChange(
+                        'vadSamplesOverlap',
+                        Number(e.target.value),
+                      )
+                    }
+                    className="font-mono text-sm"
+                  />
+                </div>
               </CardContent>
             </CollapsibleContent>
           </Collapsible>

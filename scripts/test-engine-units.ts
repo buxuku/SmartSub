@@ -83,6 +83,14 @@ import {
   enforceMinDisplayDuration,
   type TokenTriple,
 } from '../main/helpers/subtitleSegmentation';
+import {
+  resolveEffectiveSettings,
+  inferSubtitleOutcome,
+  inferDisplayOutcome,
+  getSubtitleOutcome,
+  isSherpaEngineId,
+  outcomeSupportsContextKnobs,
+} from '../main/helpers/engines/outcomePresets';
 
 let passed = 0;
 let failed = 0;
@@ -1653,6 +1661,299 @@ eq(
       ['00:00:20,000', '00:00:23,000', '後'],
     ],
     'minDisplay: configurable minDurationSeconds floor',
+  );
+}
+
+// --- outcomePresets: 字幕效果档位 → 引擎差异化底层参数 ---
+{
+  const pick = (
+    s: Record<string, unknown>,
+    keys: string[],
+  ): Record<string, unknown> =>
+    keys.reduce((o, k) => ((o[k] = s[k]), o), {} as Record<string, unknown>);
+
+  // builtin（whisper.cpp）：映射 useVAD / maxContext / reduceRepetition
+  eq(
+    pick(
+      resolveEffectiveSettings(
+        { transcriptionEngine: 'builtin', subtitleOutcome: 'accurate' },
+        {},
+      ),
+      ['useVAD', 'maxContext', 'reduceRepetition'],
+    ),
+    { useVAD: false, maxContext: -1, reduceRepetition: false },
+    'outcome/builtin: accurate → VAD off, ctx -1, repetition off',
+  );
+  eq(
+    pick(
+      resolveEffectiveSettings(
+        { transcriptionEngine: 'builtin', subtitleOutcome: 'balanced' },
+        {},
+      ),
+      ['useVAD', 'maxContext', 'reduceRepetition'],
+    ),
+    { useVAD: true, maxContext: -1, reduceRepetition: false },
+    'outcome/builtin: balanced → VAD on, ctx -1, repetition off',
+  );
+  eq(
+    pick(
+      resolveEffectiveSettings(
+        { transcriptionEngine: 'builtin', subtitleOutcome: 'clean' },
+        {},
+      ),
+      ['useVAD', 'maxContext', 'reduceRepetition'],
+    ),
+    { useVAD: true, maxContext: 0, reduceRepetition: true },
+    'outcome/builtin: clean → VAD on, ctx 0, repetition on',
+  );
+
+  // faster-whisper：accurate 仍开 VAD（与 builtin 不同），clean 开抗重复
+  eq(
+    resolveEffectiveSettings(
+      { transcriptionEngine: 'fasterWhisper', subtitleOutcome: 'accurate' },
+      {},
+    ).useVAD,
+    true,
+    'outcome/fw: accurate keeps VAD on (≠ builtin)',
+  );
+  eq(
+    resolveEffectiveSettings(
+      { transcriptionEngine: 'fasterWhisper', subtitleOutcome: 'clean' },
+      {},
+    ).reduceRepetition,
+    true,
+    'outcome/fw: clean → reduceRepetition on',
+  );
+
+  // sherpa（funasr/qwen/fireRedAsr）：只映射 VAD 灵敏度，绝不关 VAD / 设 ctx / 抗重复
+  const sherpaAccurate = resolveEffectiveSettings(
+    { transcriptionEngine: 'funasr', subtitleOutcome: 'accurate' },
+    {},
+  );
+  eq(
+    pick(sherpaAccurate, [
+      'vadThreshold',
+      'vadMinSpeechDuration',
+      'vadMinSilenceDuration',
+      'vadMaxSpeechDuration',
+    ]),
+    {
+      vadThreshold: 0.35,
+      vadMinSpeechDuration: 100,
+      vadMinSilenceDuration: 100,
+      vadMaxSpeechDuration: 0,
+    },
+    'outcome/sherpa: accurate → VAD sensitive (Quiet)',
+  );
+  eq(
+    sherpaAccurate.maxContext,
+    undefined,
+    'outcome/sherpa: accurate does NOT set maxContext',
+  );
+  eq(
+    sherpaAccurate.reduceRepetition,
+    undefined,
+    'outcome/sherpa: accurate does NOT set reduceRepetition',
+  );
+  eq(
+    resolveEffectiveSettings(
+      { transcriptionEngine: 'qwen', subtitleOutcome: 'clean' },
+      {},
+    ).vadThreshold,
+    0.65,
+    'outcome/sherpa(qwen): clean → VAD conservative (Noisy) threshold',
+  );
+  eq(
+    resolveEffectiveSettings(
+      { transcriptionEngine: 'fireRedAsr', subtitleOutcome: 'balanced' },
+      {},
+    ).vadThreshold,
+    0.5,
+    'outcome/sherpa(fireRed): balanced → VAD standard threshold',
+  );
+
+  // custom 档：回读用户底层值（builtin 从 formData.maxContext 取）
+  eq(
+    resolveEffectiveSettings(
+      {
+        transcriptionEngine: 'builtin',
+        subtitleOutcome: 'custom',
+        maxContext: 7,
+      },
+      { useVAD: false, reduceRepetition: true },
+    ),
+    {
+      useVAD: false,
+      reduceRepetition: true,
+      maxContext: 7,
+    },
+    'outcome/custom: passthrough user knobs + formData.maxContext',
+  );
+
+  // custom 档（B）：useVAD / reduceRepetition 改为任务级（formData）优先，覆盖全局，
+  // 任务间互不污染；缺省时回落全局（老任务迁移行为不变）。
+  eq(
+    resolveEffectiveSettings(
+      {
+        transcriptionEngine: 'builtin',
+        subtitleOutcome: 'custom',
+        useVAD: false,
+      },
+      { useVAD: true },
+    ).useVAD,
+    false,
+    'outcome/custom: task-level useVAD=false overrides global true',
+  );
+  eq(
+    resolveEffectiveSettings(
+      {
+        transcriptionEngine: 'builtin',
+        subtitleOutcome: 'custom',
+        useVAD: true,
+      },
+      { useVAD: false },
+    ).useVAD,
+    true,
+    'outcome/custom: task-level useVAD=true overrides global false',
+  );
+  eq(
+    resolveEffectiveSettings(
+      {
+        transcriptionEngine: 'builtin',
+        subtitleOutcome: 'custom',
+        reduceRepetition: true,
+      },
+      { reduceRepetition: false },
+    ).reduceRepetition,
+    true,
+    'outcome/custom: task-level reduceRepetition=true overrides global false',
+  );
+  eq(
+    resolveEffectiveSettings(
+      { transcriptionEngine: 'builtin', subtitleOutcome: 'custom' },
+      { useVAD: false, reduceRepetition: true },
+    ).useVAD,
+    false,
+    'outcome/custom: missing task-level useVAD → falls back to global',
+  );
+
+  // 不回写/不污染：resolver 不可变更入参对象
+  {
+    const settings = { useVAD: true, vadThreshold: 0.5 };
+    const frozen = JSON.stringify(settings);
+    resolveEffectiveSettings(
+      { transcriptionEngine: 'funasr', subtitleOutcome: 'clean' },
+      settings,
+    );
+    eq(
+      JSON.stringify(settings),
+      frozen,
+      'outcome: resolver does not mutate input settings (no global pollution)',
+    );
+  }
+
+  // inferSubtitleOutcome（迁移惰性反推，design D7）
+  eq(inferSubtitleOutcome({}), 'balanced', 'infer: defaults → balanced');
+  eq(
+    inferSubtitleOutcome({
+      useVAD: true,
+      maxContext: -1,
+      reduceRepetition: false,
+    }),
+    'balanced',
+    'infer: explicit balanced shape',
+  );
+  eq(
+    inferSubtitleOutcome({
+      useVAD: true,
+      maxContext: 0,
+      reduceRepetition: true,
+    }),
+    'clean',
+    'infer: clean shape',
+  );
+  eq(
+    inferSubtitleOutcome({ useVAD: false }),
+    'custom',
+    'infer: VAD off → custom (no behavior change)',
+  );
+  eq(
+    inferSubtitleOutcome({ maxContext: 5 }),
+    'custom',
+    'infer: nonstandard maxContext → custom',
+  );
+
+  // getSubtitleOutcome（运行时生效档）取值优先级：formData > 全局 > custom（绝不反推）
+  eq(
+    getSubtitleOutcome(
+      { subtitleOutcome: 'clean' },
+      { subtitleOutcome: 'accurate' },
+    ),
+    'clean',
+    'getOutcome: task formData wins',
+  );
+  eq(
+    getSubtitleOutcome({}, { subtitleOutcome: 'accurate' }),
+    'accurate',
+    'getOutcome: falls back to global default',
+  );
+  eq(
+    getSubtitleOutcome(
+      {},
+      { useVAD: true, maxContext: 0, reduceRepetition: true },
+    ),
+    'custom',
+    'getOutcome: no explicit → custom (migration-safe, never infers)',
+  );
+  eq(
+    getSubtitleOutcome({}, {}),
+    'custom',
+    'getOutcome: fresh/absent → custom (= balanced-equivalent via defaults)',
+  );
+
+  // inferDisplayOutcome（UI 显示默认）：显式优先；否则叠加任务级 maxContext 反推
+  eq(
+    inferDisplayOutcome({}, {}),
+    'balanced',
+    'displayOutcome: fresh defaults → balanced',
+  );
+  eq(
+    inferDisplayOutcome({ subtitleOutcome: 'accurate' }, {}),
+    'accurate',
+    'displayOutcome: explicit wins',
+  );
+  eq(
+    inferDisplayOutcome(
+      { maxContext: 0 },
+      { useVAD: true, reduceRepetition: true },
+    ),
+    'clean',
+    'displayOutcome: task maxContext=0 + global reduceRepetition → clean',
+  );
+  eq(
+    inferDisplayOutcome(
+      { maxContext: 0 },
+      { useVAD: true, reduceRepetition: false },
+    ),
+    'custom',
+    'displayOutcome: task maxContext=0 alone (no reduceRepetition) → custom (no false balanced)',
+  );
+
+  // 引擎归类断言
+  eq(isSherpaEngineId('funasr'), true, 'isSherpa: funasr');
+  eq(isSherpaEngineId('qwen'), true, 'isSherpa: qwen');
+  eq(isSherpaEngineId('fireRedAsr'), true, 'isSherpa: fireRedAsr');
+  eq(isSherpaEngineId('builtin'), false, 'isSherpa: builtin no');
+  eq(isSherpaEngineId('fasterWhisper'), false, 'isSherpa: fasterWhisper no');
+  eq(
+    outcomeSupportsContextKnobs('builtin'),
+    true,
+    'ctxKnobs: builtin supports ctx/repetition',
+  );
+  eq(
+    outcomeSupportsContextKnobs('funasr'),
+    false,
+    'ctxKnobs: sherpa hides ctx/repetition',
   );
 }
 

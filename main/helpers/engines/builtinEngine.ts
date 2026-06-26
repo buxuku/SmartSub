@@ -27,7 +27,9 @@ import {
   getWhisperLanguage,
   getVadSettings,
   isReduceRepetitionEnabled,
+  getNumericSetting,
 } from './transcribeShared';
+import { resolveEffectiveSettings } from './outcomePresets';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
 /**
@@ -39,14 +41,17 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
 
   try {
     const { tempAudioFile, srtFile } = file;
-    const { model, sourceLanguage, prompt, maxContext } = formData as {
+    const { model, sourceLanguage, prompt } = formData as {
       model?: string;
       sourceLanguage?: string;
       prompt?: string;
-      maxContext?: number;
     };
     const whisperModel = model?.toLowerCase();
-    const settings = store.get('settings');
+    // 逐任务运行时派生（字幕效果档位 → 底层参数，按引擎差异化），不回写全局。
+    const settings = resolveEffectiveSettings(
+      formData,
+      store.get('settings') as Record<string, unknown>,
+    );
 
     // 加载链内部按 gpuMode + 环境自动决策并逐级降级（见 addonLoader）
     const { whisperAsync, backend, variant } =
@@ -94,11 +99,12 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       max_len: 1,
       print_progress: true,
       prompt,
-      // 抗幻觉/抗重复开启时强制 max_context=0（不携带上文，≈faster-whisper 的
-      // condition_on_previous_text=false），这是 whisper.cpp 打断重复/幻觉级联的关键杠杆。
+      // max_context 由「字幕效果档位」派生（clean 档=0；accurate/balanced=-1；custom 档
+      // 回落用户的 maxContext + reduceRepetition 既有语义）。这是 whisper.cpp 打断重复/
+      // 幻觉级联的关键杠杆，不再被独立开关静默覆盖（见 outcomePresets / design D4）。
       max_context: isReduceRepetitionEnabled(settings)
         ? 0
-        : +(maxContext ?? -1),
+        : getNumericSetting(settings.maxContext, -1),
       // VAD 参数
       vad: vad.useVAD,
       vad_model: vadModelPath,

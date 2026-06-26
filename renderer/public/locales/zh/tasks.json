@@ -22,6 +22,38 @@
   "goConfigureProvider": "去配置翻译服务",
   "advanced": "高级选项",
   "advancedDesc": "不常改的细节设置，默认值即最佳实践",
+  "outcome": {
+    "label": "字幕效果",
+    "recommended": "推荐",
+    "accurate": {
+      "title": "文字最准",
+      "desc": "尽量完整保留每一句话、少漏字；静音或背景音处可能偶有多余字幕。",
+      "scene": "适合讲座、访谈、口播等以内容为主的视频"
+    },
+    "balanced": {
+      "title": "均衡",
+      "desc": "兼顾文字完整与字幕干净，多数视频的稳妥之选。",
+      "scene": "适合大多数视频，拿不准就选它"
+    },
+    "clean": {
+      "title": "最干净最稳",
+      "desc": "优先抑制重复与幻觉字幕、时间轴更稳；可能舍弃少量含糊语句。",
+      "scene": "适合长视频，或含音乐 / 掌声 / 长静音的素材"
+    },
+    "custom": {
+      "title": "自定义",
+      "desc": "手动调整上下文长度、VAD、抗重复等底层参数。",
+      "sectionTitle": "自定义参数",
+      "sherpaNote": "当前引擎（FunASR / Qwen / FireRed）的 VAD 为结构性常开，且无「上下文长度 / 抗重复」概念。如需细调 VAD 灵敏度，请到「设置」页调整。"
+    },
+    "compare": {
+      "toggle": "看看不同效果的字幕差异",
+      "caption": "同一句话在不同档位下的大致呈现：",
+      "accurate": "嗯…那个，我们今天，呃，讲一下这个新功能",
+      "balanced": "那个，我们今天讲一下这个新功能",
+      "clean": "我们今天讲一下这个新功能"
+    }
+  },
   "section": {
     "recognition": "转写",
     "output": "输出与保存",
