@@ -5,6 +5,8 @@ import { getPath, loadWhisperAddon } from '../whisper';
 import { logMessage, store } from '../storeManager';
 import { formatSrtContent } from '../fileUtils';
 import { trimSubtitleTrailingSilence } from '../subtitleTiming';
+import { getSpeechSegments } from '../speechBoundary';
+import { retimeTokensToSpeech, groupTokenCues } from '../subtitleSegmentation';
 import { getExtraResourcesPath } from '../utils';
 import {
   getTaskContext,
@@ -79,7 +81,9 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       translate: false,
       no_timestamps: false,
       audio_ctx: 0,
-      max_len: 0,
+      // 0-fork：max_len=1 让 addon「每 token 一段」并自动开 token 时间戳
+      // （wparams.token_timestamps = max_len>0），TS 侧再贴齐/聚合还原时间轴。
+      max_len: 1,
       print_progress: true,
       prompt,
       // 抗幻觉/抗重复开启时强制 max_context=0（不携带上文，≈faster-whisper 的
@@ -128,10 +132,16 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       throw new TaskCancelledError();
     }
 
-    const subtitles = trimSubtitleTrailingSilence(
-      result?.transcription || [],
-      tempAudioFile,
-    );
+    // 0-fork 细粒度时间轴管道（见 openspec/changes/builtin-subtitle-timeline-0fork）：
+    // max_len=1 拿到「每 token 一段」→ 用语音边界把 token 贴回真实有声区间（还原段间停顿）
+    // → 按停顿/句末标点/长度聚合成多条 → trimSubtitleTrailingSilence 作尾部裁尾兜底。
+    // 边界源（Silero VAD / 能量）不可用时 getSpeechSegments 返回 []，retime 原样返回 →
+    // 优雅降级为「多段但连续」的时间轴，不报错。
+    const tokens = result?.transcription || [];
+    const speechSegments = await getSpeechSegments(tempAudioFile);
+    const retimed = retimeTokensToSpeech(tokens, speechSegments);
+    const grouped = groupTokenCues(retimed);
+    const subtitles = trimSubtitleTrailingSilence(grouped, tempAudioFile);
     const formattedSrt = formatSrtContent(subtitles);
     await fs.promises.writeFile(srtFile, formattedSrt);
 

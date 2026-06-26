@@ -35,6 +35,14 @@ export interface Segment {
   text: string;
 }
 
+/** 仅 VAD 边界检测参数（与 transcribe 用的 FunasrAddonParams 的 VAD 字段同名子集）。 */
+export interface VadParams {
+  vad_threshold: number;
+  vad_min_speech_duration_ms: number;
+  vad_min_silence_duration_ms: number;
+  vad_max_speech_duration_s: number;
+}
+
 function workerPath(): string {
   return path.join(
     getExtraResourcesPath(),
@@ -130,6 +138,29 @@ class SherpaFunasrRuntime {
       this.pending.set(id, { resolve, reject, onProgress });
     });
     w.postMessage({ type: 'transcribe', id, audioFile, ...model });
+    return { id, result };
+  }
+
+  /**
+   * 仅跑 Silero VAD 取语音段 [{start,end}]（秒），不加载 ASR 识别器。
+   * 供内置 whisper.cpp 0-fork 时间轴贴齐（speechBoundary）使用；复用常驻 worker。
+   */
+  detectSpeech(
+    audioFile: string,
+    vadModel: string,
+    params: VadParams,
+  ): {
+    id: string;
+    result: Promise<{ segments: Array<{ start: number; end: number }> }>;
+  } {
+    const w = this.ensureWorker();
+    const id = `v${++this.seq}`;
+    const result = new Promise<{
+      segments: Array<{ start: number; end: number }>;
+    }>((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+    });
+    w.postMessage({ type: 'detectSpeech', id, audioFile, vadModel, params });
     return { id, result };
   }
 
