@@ -76,6 +76,7 @@ import {
 import {
   retimeTokensToSpeech,
   groupTokenCues,
+  clampCuesToSegments,
   type TokenTriple,
 } from '../main/helpers/subtitleSegmentation';
 
@@ -968,7 +969,7 @@ const T = (a: string, b: string, c: string): TokenTriple => [a, b, c];
     ],
     'retime: filled token snapped back to its speech segment (gap restored)',
   );
-  // 完全落在静音（与所有段无交集）的 token → 原样保留，避免错位
+  // 落在静音的「非空内容 token」→ 前向贴齐到其后最近语音段（D8-A），还原停顿
   eq(
     retimeTokensToSpeech(
       [T('00:00:05,000', '00:00:06,000', 'x')],
@@ -977,8 +978,44 @@ const T = (a: string, b: string, c: string): TokenTriple => [a, b, c];
         { start: 12, end: 14 },
       ],
     ),
-    [['00:00:05,000', '00:00:06,000', 'x']],
-    'retime: token fully inside silence kept as-is',
+    [['00:00:12,000', '00:00:13,000', 'x']],
+    'retime: content token in silence snapped forward to next segment',
+  );
+  // 落在静音的「空 / 空白 token」→ 原样保留（护栏，避免噪声错位）
+  eq(
+    retimeTokensToSpeech(
+      [T('00:00:05,000', '00:00:06,000', ' ')],
+      [
+        { start: 0, end: 2 },
+        { start: 12, end: 14 },
+      ],
+    ),
+    [['00:00:05,000', '00:00:06,000', ' ']],
+    'retime: empty/space token in silence kept as-is (guard)',
+  );
+  // 落在静音的「纯标点 token」→ 原样保留（随相邻 cue 收尾，不前向贴齐成孤立标点条）
+  eq(
+    retimeTokensToSpeech(
+      [T('00:00:05,000', '00:00:05,100', '。')],
+      [
+        { start: 0, end: 2 },
+        { start: 12, end: 14 },
+      ],
+    ),
+    [['00:00:05,000', '00:00:05,100', '。']],
+    'retime: punct-only token in silence kept as-is',
+  );
+  // 静音 token 之后无语音段 → 回收到其前最近语音段末点
+  eq(
+    retimeTokensToSpeech(
+      [T('00:00:20,000', '00:00:21,000', 'z')],
+      [
+        { start: 0, end: 2 },
+        { start: 12, end: 14 },
+      ],
+    ),
+    [['00:00:13,000', '00:00:14,000', 'z']],
+    'retime: content token after all speech recovered to prev segment end',
   );
 }
 
@@ -1041,6 +1078,61 @@ eq(
 );
 // 空输入 → 空输出
 eq(groupTokenCues([]), [], 'group: empty input -> empty output');
+
+// --- subtitleSegmentation: retime+group 端到端（D8-A：被填进静音的内容 token 串还原停顿） ---
+{
+  const filled = [
+    T('00:00:00,000', '00:00:01,000', '前'),
+    T('00:00:01,000', '00:00:02,000', '段'),
+    // 下面两 token 被 whisper「前向填充」塞进 [2,12] 静音里（起点被前移）
+    T('00:00:02,100', '00:00:02,400', '后'),
+    T('00:00:02,400', '00:00:02,700', '段'),
+  ];
+  const segs = [
+    { start: 0, end: 2 },
+    { start: 12, end: 14 },
+  ];
+  eq(
+    groupTokenCues(retimeTokensToSpeech(filled, segs)),
+    [
+      ['00:00:00,000', '00:00:02,000', '前段'],
+      ['00:00:12,000', '00:00:12,300', '后段'],
+    ],
+    'retime+group: filled content tokens snap forward, gap restored, split into two cues',
+  );
+}
+
+// --- subtitleSegmentation: clampCuesToSegments（cue 起止收进真实语音段，D8-B） ---
+{
+  const segs = [
+    { start: 0, end: 2 },
+    { start: 12, end: 14 },
+  ];
+  // 起点渗进静音的跨停顿 cue → 收进重叠段 [12,14]，停顿复现
+  eq(
+    clampCuesToSegments([T('00:00:05,000', '00:00:13,000', '后段')], segs),
+    [['00:00:12,000', '00:00:13,000', '后段']],
+    'clamp: cue bleeding into silence clamped to overlapping segment',
+  );
+  // 与任何语音段都无重叠的 cue → 原样返回（不臆断）
+  eq(
+    clampCuesToSegments([T('00:00:05,000', '00:00:06,000', '幻')], segs),
+    [['00:00:05,000', '00:00:06,000', '幻']],
+    'clamp: cue with no overlapping segment kept as-is',
+  );
+  // 空 segments → 原样返回（优雅降级）
+  eq(
+    clampCuesToSegments([T('00:00:05,000', '00:00:13,000', 'x')], []),
+    [['00:00:05,000', '00:00:13,000', 'x']],
+    'clamp: empty segments returns cues unchanged',
+  );
+  // 自身起止已落在重叠段内的多段 cue → 保持原界（不打洞中间静音）
+  eq(
+    clampCuesToSegments([T('00:00:01,000', '00:00:13,500', '整')], segs),
+    [['00:00:01,000', '00:00:13,500', '整']],
+    'clamp: cue overlapping multiple segments keeps its own inner bounds',
+  );
+}
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) {
