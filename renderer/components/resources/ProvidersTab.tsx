@@ -338,6 +338,7 @@ const ProvidersTab: React.FC = () => {
       prompt: defaultUserPrompt,
       useBatchTranslation: false,
       batchSize: 10,
+      batchConcurrency: 1,
       systemPrompt: defaultSystemPrompt,
       structuredOutput: 'json_object',
     };
