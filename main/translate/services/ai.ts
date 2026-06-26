@@ -1,19 +1,14 @@
 import { TranslationConfig, TranslationResult, Subtitle } from '../types';
-import {
-  THINK_TAG_REGEX,
-  DEFAULT_BATCH_SIZE,
-  JSON_CONTENT_REGEX,
-} from '../constants';
+import { DEFAULT_BATCH_SIZE } from '../constants';
 import { renderTemplate, supportedLanguage } from '../../helpers/utils';
 import { logMessage } from '../../helpers/storeManager';
 import { defaultSystemPrompt, defaultUserPrompt } from '../../../types';
-import { toJson } from 'really-relaxed-json';
-import { jsonrepair } from 'jsonrepair';
 import { isConfigurationError } from '../utils/error';
 import {
   throwIfTaskCancelled,
   isTaskCancelledError,
 } from '../../helpers/taskContext';
+import { parseAITranslationResponse } from '../utils/aiResponseParser';
 
 function getLanguageName(code: string): string {
   // 中文目标须向 AI 明确简/繁，避免「中文」歧义导致译文简繁混杂（issue #332）。
@@ -85,7 +80,7 @@ export async function handleAIBatchTranslation(
           batchJsonContent[item.id] = item.content.join('\n');
         });
         const fullContent = `${JSON.stringify(batchJsonContent, null, 2)}`;
-        const translationContent = renderTemplate(
+        let translationContent = renderTemplate(
           provider.prompt || defaultUserPrompt,
           {
             sourceLanguage: sourceLanguageName,
@@ -93,6 +88,11 @@ export async function handleAIBatchTranslation(
             content: fullContent,
           },
         );
+
+        if (retryCount > 0) {
+          translationContent +=
+            '\n\n上一次响应无法解析。请只返回一个 JSON 对象，键必须是输入字幕 ID，值必须是翻译结果；不要返回 markdown、解释、注释或思考过程。';
+        }
 
         const systemPrompt = renderTemplate(
           provider.systemPrompt || defaultSystemPrompt,
@@ -123,17 +123,10 @@ export async function handleAIBatchTranslation(
           targetLanguage,
         );
         logMessage(`AI response: \n ${responseOrigin}`, 'info');
-        const response = responseOrigin.replace(THINK_TAG_REGEX, '').trim();
-
-        // 解析响应, 从结果中提取 json 里面的内容
-        const match = response.match(JSON_CONTENT_REGEX);
-        const responseJsonString = match ? match[1] : response;
-
-        // 尝试解析JSON
-        const parsedContent = parseJsonWithFallbacks(responseJsonString);
+        const parsedContent = parseAITranslationResponse(responseOrigin);
 
         // 检查解析结果是否有效
-        if (parsedContent && typeof parsedContent === 'object') {
+        if (parsedContent) {
           const parsedKeys = Object.keys(parsedContent);
           const parsedValues = Object.values(parsedContent);
 
@@ -143,6 +136,16 @@ export async function handleAIBatchTranslation(
           if (parsedKeys.length !== batch.length) {
             throw new Error(
               `翻译返回条数与请求不一致：请求 ${batch.length} 条，返回 ${parsedKeys.length} 条`,
+            );
+          }
+
+          const missingIds = batch
+            .filter((subtitle) => parsedContent[subtitle.id] === undefined)
+            .map((subtitle) => subtitle.id);
+          if (missingIds.length > 0) {
+            logMessage(
+              `翻译返回 ID 与请求不完全一致，将按返回顺序兜底匹配，缺失 ID: ${missingIds.join(', ')}`,
+              'warning',
             );
           }
 
@@ -247,25 +250,4 @@ export async function handleAIBatchTranslation(
   );
 
   return results;
-}
-
-// 辅助函数：尝试多种方式解析JSON内容
-function parseJsonWithFallbacks(jsonContent: string): any {
-  try {
-    // 第一次尝试：使用标准JSON解析
-    return JSON.parse(jsonContent);
-  } catch (jsonError) {
-    try {
-      // 第二次尝试：使用toJson进行更宽松的解析
-      return toJson(jsonContent);
-    } catch (json5Error) {
-      try {
-        // 第三次尝试：使用jsonrepair进行修复和解析
-        const repairedJson = jsonrepair(jsonContent);
-        return JSON.parse(repairedJson);
-      } catch (jsonRepairError) {
-        throw new Error(`无法解析AI返回的JSON内容: ${jsonRepairError.message}`);
-      }
-    }
-  }
 }

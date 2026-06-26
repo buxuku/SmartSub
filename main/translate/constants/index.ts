@@ -15,8 +15,8 @@ export const TRANSLATION_REQUEST_TIMEOUT = 60_000;
 // 本地大模型（Ollama）响应可能较慢，使用更宽松的超时时间。
 export const OLLAMA_REQUEST_TIMEOUT = 300_000;
 
-export const THINK_TAG_REGEX = /<think>[\s\S]*?<\/think>\n/g;
-export const RESULT_TAG_REGEX = /<result[^>]*>([\s\S]*?)<\/result>/;
+export const THINK_TAG_REGEX = /<think>[\s\S]*?<\/think>/gi;
+export const RESULT_TAG_REGEX = /<result[^>]*>([\s\S]*?)<\/result>/i;
 
-// 获取 ```json\n{content}\n``` 中的 content
-export const JSON_CONTENT_REGEX = /```json\n([\s\S]*?)\n```/;
+// 获取 ```json\n{content}\n``` 或 ```\n{content}\n``` 中的 content
+export const JSON_CONTENT_REGEX = /```(?:json)?\s*([\s\S]*?)```/i;
