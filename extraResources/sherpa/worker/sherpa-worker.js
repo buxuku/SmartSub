@@ -13,6 +13,10 @@ const VAD_WINDOW_SIZE = 512;
 let recognizer = null;
 let vad = null;
 let cacheKey = '';
+// 仅 VAD（不加载 ASR 识别器）——供内置 whisper.cpp 0-fork 时间轴贴齐取语音边界。
+// 与 transcribe 的 vad 分开缓存：只要边界时不必被迫加载 ASR 模型。
+let vadOnly = null;
+let vadOnlyKey = '';
 const cancelled = new Set();
 
 function buildKey(req) {
@@ -213,6 +217,55 @@ async function transcribe(req) {
   parentPort.postMessage({ type: 'done', id: req.id, segments });
 }
 
+// 仅 VAD：缓存一个独立的 silero VAD 实例（避免每个文件重载 onnx），按 vadModel+参数 复用。
+function ensureVadOnly(req) {
+  const p = req.params;
+  const key = [
+    req.vadModel,
+    p.vad_threshold,
+    p.vad_min_speech_duration_ms,
+    p.vad_min_silence_duration_ms,
+    p.vad_max_speech_duration_s,
+  ].join('|');
+  if (vadOnly && key === vadOnlyKey) return vadOnly;
+  vadOnly = new sherpa.Vad(buildVadConfig(req.vadModel, req.params), 60);
+  vadOnlyKey = key;
+  return vadOnly;
+}
+
+// 只跑 VAD 拿语音段 [{start,end}]（秒），不做 ASR。供 builtin 时间轴贴齐使用。
+async function detectSpeech(req) {
+  const v = ensureVadOnly(req);
+  v.reset();
+  // Electron worker 下 enableExternalBuffer=false（同 transcribe，否则 readWave/vad.front 抛错）。
+  const wave = sherpa.readWave(req.audioFile, false);
+  const samples = wave.samples;
+  const total = samples.length;
+  const segments = [];
+
+  const drain = () => {
+    while (!v.isEmpty()) {
+      if (cancelled.has(req.id)) return;
+      const seg = v.front(false);
+      v.pop();
+      const start = seg.start / SAMPLE_RATE;
+      const end = (seg.start + seg.samples.length) / SAMPLE_RATE;
+      segments.push({ start, end });
+    }
+  };
+
+  for (let i = 0; i < total; i += VAD_WINDOW_SIZE) {
+    if (cancelled.has(req.id)) return postCancelled(req.id);
+    v.acceptWaveform(samples.subarray(i, i + VAD_WINDOW_SIZE));
+    drain();
+  }
+  v.flush();
+  drain();
+  if (cancelled.has(req.id)) return postCancelled(req.id);
+  cancelled.delete(req.id);
+  parentPort.postMessage({ type: 'done', id: req.id, segments });
+}
+
 parentPort.on('message', (req) => {
   if (req.type === 'load') {
     try {
@@ -229,6 +282,12 @@ parentPort.on('message', (req) => {
   }
   if (req.type === 'transcribe') {
     transcribe(req).catch((e) =>
+      parentPort.postMessage({ type: 'error', id: req.id, message: String(e) }),
+    );
+    return;
+  }
+  if (req.type === 'detectSpeech') {
+    detectSpeech(req).catch((e) =>
       parentPort.postMessage({ type: 'error', id: req.id, message: String(e) }),
     );
     return;
