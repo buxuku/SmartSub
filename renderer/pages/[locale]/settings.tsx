@@ -842,6 +842,10 @@ const Settings = () => {
                   <Switch checked={useVAD} onCheckedChange={handleVADChange} />
                 </div>
 
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {t('vadBuiltinHint')}
+                </p>
+
                 {useVAD && (
                   <>
                     {/* 三档环境预设：与手动微调共存，当前值与某档全等时高亮 */}

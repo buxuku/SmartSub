@@ -29,8 +29,8 @@
   },
   "vad": {
     "label": "Voice activity detection (VAD)",
-    "on": "Faster and steadier; fewer repeated/hallucinated lines over silence or background noise. Timestamps may be slightly off.",
-    "off": "Timestamps hug the speech more closely, but silence/music may produce repeated or hallucinated lines.",
+    "on": "Faster and steadier; fewer repeated/hallucinated lines over silence or background noise. Built-in whisper engine: coarser segmentation. Timestamps may be slightly off.",
+    "off": "Built-in whisper engine: finer segmentation and more accurate text (recommended for short/medium files). Timestamps hug the speech; for other engines, silence/music may produce repeated or hallucinated lines.",
     "hint": "Turn off when you need strict subtitle timing. This is a global setting and affects all tasks."
   },
   "reduceRepetition": {
