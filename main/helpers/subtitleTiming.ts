@@ -18,7 +18,7 @@ type WavInfo = {
   channels: number;
 };
 
-type AudioEnergy = {
+export type AudioEnergy = {
   frameDurationSeconds: number;
   frameDb: number[];
   thresholdDb: number;
@@ -138,7 +138,7 @@ function findLastSpeechFrame(
   return null;
 }
 
-function analyzePcm16WavEnergy(audioFile: string): AudioEnergy | null {
+export function analyzePcm16WavEnergy(audioFile: string): AudioEnergy | null {
   const buffer = fs.readFileSync(audioFile);
   const wavInfo = parsePcm16Wav(buffer);
   if (!wavInfo) return null;

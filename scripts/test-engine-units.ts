@@ -73,6 +73,11 @@ import {
   getInstalledModelsForEngine,
   hasModelsForEngine,
 } from '../renderer/lib/engineModels';
+import {
+  retimeTokensToSpeech,
+  groupTokenCues,
+  type TokenTriple,
+} from '../main/helpers/subtitleSegmentation';
 
 let passed = 0;
 let failed = 0;
@@ -937,6 +942,105 @@ eq(
   ['encoder.int8.onnx', 'decoder.int8.onnx', 'tokens.txt'],
   'import: fireRed requiredFiles',
 );
+
+// --- subtitleSegmentation: retimeTokensToSpeech（用语音段把 token 贴回有声区间） ---
+const T = (a: string, b: string, c: string): TokenTriple => [a, b, c];
+{
+  const tokens = [
+    T('00:00:00.000', '00:00:02.000', '你好'),
+    T('00:00:02.000', '00:00:13.000', '世界'),
+  ];
+  // 空边界（边界源不可用）→ 原样返回，优雅降级
+  eq(
+    retimeTokensToSpeech(tokens, []),
+    tokens,
+    'retime: empty segments returns tokens unchanged',
+  );
+  // 有边界 → 被「填满」的第二个 token 收敛回真实有声 [12,13]，段间停顿重现
+  eq(
+    retimeTokensToSpeech(tokens, [
+      { start: 0, end: 2 },
+      { start: 12, end: 14 },
+    ]),
+    [
+      ['00:00:00,000', '00:00:02,000', '你好'],
+      ['00:00:12,000', '00:00:13,000', '世界'],
+    ],
+    'retime: filled token snapped back to its speech segment (gap restored)',
+  );
+  // 完全落在静音（与所有段无交集）的 token → 原样保留，避免错位
+  eq(
+    retimeTokensToSpeech(
+      [T('00:00:05,000', '00:00:06,000', 'x')],
+      [
+        { start: 0, end: 2 },
+        { start: 12, end: 14 },
+      ],
+    ),
+    [['00:00:05,000', '00:00:06,000', 'x']],
+    'retime: token fully inside silence kept as-is',
+  );
+}
+
+// --- subtitleSegmentation: groupTokenCues（停顿/句末标点/长度聚合） ---
+// 停顿 > 0.5s → 切分成两条
+eq(
+  groupTokenCues([
+    T('00:00:00,000', '00:00:00,300', '你'),
+    T('00:00:00,300', '00:00:00,600', '好'),
+    T('00:00:02,000', '00:00:02,300', '世'),
+    T('00:00:02,300', '00:00:02,600', '界'),
+  ]),
+  [
+    ['00:00:00,000', '00:00:00,600', '你好'],
+    ['00:00:02,000', '00:00:02,600', '世界'],
+  ],
+  'group: gap > 0.5s splits into two cues',
+);
+// 句末标点 → 收尾当前 cue（标点保留在末尾）
+eq(
+  groupTokenCues([
+    T('00:00:00,000', '00:00:00,300', '你'),
+    T('00:00:00,300', '00:00:00,600', '好'),
+    T('00:00:00,600', '00:00:00,900', '。'),
+    T('00:00:00,900', '00:00:01,200', '下'),
+    T('00:00:01,200', '00:00:01,500', '句'),
+  ]),
+  [
+    ['00:00:00,000', '00:00:00,900', '你好。'],
+    ['00:00:00,900', '00:00:01,500', '下句'],
+  ],
+  'group: sentence-end punctuation flushes the cue',
+);
+// 纯标点 token 不因宽度上限被单切（附在相邻 cue 末尾）
+eq(
+  groupTokenCues(
+    [
+      T('00:00:00,000', '00:00:00,300', '好'),
+      T('00:00:00,300', '00:00:00,600', '。'),
+    ],
+    { maxWidth: 2 },
+  ),
+  [['00:00:00,000', '00:00:00,600', '好。']],
+  'group: punct-only token is not split out by maxWidth',
+);
+// 对照：非标点字符在 maxWidth=2 下确实会被切（证明宽度闸生效、标点是豁免项）
+eq(
+  groupTokenCues(
+    [
+      T('00:00:00,000', '00:00:00,300', '好'),
+      T('00:00:00,300', '00:00:00,600', '人'),
+    ],
+    { maxWidth: 2 },
+  ),
+  [
+    ['00:00:00,000', '00:00:00,300', '好'],
+    ['00:00:00,300', '00:00:00,600', '人'],
+  ],
+  'group: non-punct char splits at maxWidth (contrast)',
+);
+// 空输入 → 空输出
+eq(groupTokenCues([]), [], 'group: empty input -> empty output');
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) {
