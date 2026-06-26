@@ -6,7 +6,11 @@ import { logMessage, store } from '../storeManager';
 import { formatSrtContent } from '../fileUtils';
 import { trimSubtitleTrailingSilence } from '../subtitleTiming';
 import { getSpeechSegments } from '../speechBoundary';
-import { retimeTokensToSpeech, groupTokenCues } from '../subtitleSegmentation';
+import {
+  retimeTokensToSpeech,
+  groupTokenCues,
+  clampCuesToSegments,
+} from '../subtitleSegmentation';
 import { getExtraResourcesPath } from '../utils';
 import {
   getTaskContext,
@@ -134,14 +138,16 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
 
     // 0-fork 细粒度时间轴管道（见 openspec/changes/builtin-subtitle-timeline-0fork）：
     // max_len=1 拿到「每 token 一段」→ 用语音边界把 token 贴回真实有声区间（还原段间停顿）
-    // → 按停顿/句末标点/长度聚合成多条 → trimSubtitleTrailingSilence 作尾部裁尾兜底。
-    // 边界源（Silero VAD / 能量）不可用时 getSpeechSegments 返回 []，retime 原样返回 →
-    // 优雅降级为「多段但连续」的时间轴，不报错。
+    // → 按停顿/句末标点/长度聚合成多条 → clampCuesToSegments 把 cue 起止收进真实语音段
+    // （兜住内容 token 被 whisper 前向填充进静音导致的跨停顿，D8）→ trimSubtitleTrailingSilence
+    // 作尾部裁尾兜底。边界源（Silero VAD / 能量）不可用时 getSpeechSegments 返回 []，retime /
+    // clamp 均原样返回 → 优雅降级为「多段但连续」的时间轴，不报错。
     const tokens = result?.transcription || [];
     const speechSegments = await getSpeechSegments(tempAudioFile);
     const retimed = retimeTokensToSpeech(tokens, speechSegments);
     const grouped = groupTokenCues(retimed);
-    const subtitles = trimSubtitleTrailingSilence(grouped, tempAudioFile);
+    const clamped = clampCuesToSegments(grouped, speechSegments);
+    const subtitles = trimSubtitleTrailingSilence(clamped, tempAudioFile);
     const formattedSrt = formatSrtContent(subtitles);
     await fs.promises.writeFile(srtFile, formattedSrt);
 

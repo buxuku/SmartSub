@@ -92,7 +92,8 @@ function visualWidth(text: string): number {
  * 与其重叠最大的语音段内：静音后的 token 起点前移到真正的发声点、静音前的 token 末点回收到
  * 发声结束点——于是 token 间隔（gap）重新出现，groupTokenCues 即可按真实停顿切分。
  *
- * `segments` 为空（边界源不可用）时原样返回；token 落在静音（无重叠）时原样保留，避免错位。
+ * `segments` 为空（边界源不可用）时原样返回；落在静音（无重叠）的**空/空白/纯标点 token** 原样保留
+ * （纯标点随相邻 cue 收尾），**非空内容 token** 前向贴齐到其后最近语音段（whisper 前向填充的反向修正，见 design D8-A）。
  */
 export function retimeTokensToSpeech(
   tokens: TokenTriple[],
@@ -112,8 +113,17 @@ export function retimeTokensToSpeech(
     const end = parseTime(token?.[1]);
     if (start === null || end === null || end <= start) return token;
     const win = bestOverlapWindow(sorted, start, end);
-    if (!win) return token; // 与所有语音段无交集（多为空 token）→ 不动
-    return [formatTime(win[0]), formatTime(win[1]), token?.[2] ?? ''];
+    if (win) return [formatTime(win[0]), formatTime(win[1]), token?.[2] ?? ''];
+    // 与所有语音段无交集：空 / 空白 / 纯标点 token 原样保留——纯标点应随相邻 cue 收尾，
+    // 若被前向贴齐会变成孤立的标点字幕条（如单独一条「。」），故与空 token 一并豁免。
+    const text = (token?.[2] ?? '').trim();
+    if (!text || PUNCT_ONLY.test(text)) return token;
+    // 非空内容 token 落在静音里：whisper 开 VAD 时把段间静音并进「静音后首个 token」的起点
+    // （起点被前移到上一 token 末尾），故内容 token 真实归属是其后语音段 → 前向贴齐还原停顿。
+    const snap = snapContentTokenToSegment(sorted, start, end);
+    return snap
+      ? [formatTime(snap[0]), formatTime(snap[1]), token?.[2] ?? '']
+      : token;
   });
 }
 
@@ -137,6 +147,36 @@ function bestOverlapWindow(
     }
   }
   return best;
+}
+
+/**
+ * 内容 token 落在静音（与所有语音段无交集）时的前向贴齐（design D8-A）：
+ * 优先贴到「其后最近的语音段」起点（whisper 前向填充的反向修正），原时长截到段内；
+ * 其后无语音段（位于全部语音之后）时回收到「其前最近语音段」末点。
+ * `segments` 已按 start 升序。
+ */
+function snapContentTokenToSegment(
+  segments: SpeechSegment[],
+  s: number,
+  e: number,
+): [number, number] | null {
+  const dur = Math.max(0, e - s);
+  const next = segments.find((seg) => seg.start >= e);
+  if (next) {
+    const lo = next.start;
+    const hi = Math.min(next.end, lo + dur);
+    return [lo, hi > lo ? hi : next.end];
+  }
+  let prev: SpeechSegment | null = null;
+  for (const seg of segments) {
+    if (seg.end <= s) prev = seg;
+  }
+  if (prev) {
+    const hi = prev.end;
+    const lo = Math.max(prev.start, hi - dur);
+    return [lo < hi ? lo : prev.start, hi];
+  }
+  return null;
 }
 
 /**
@@ -214,4 +254,43 @@ export function groupTokenCues(
 
   flush();
   return cues;
+}
+
+/**
+ * 把每条 cue 的起止收敛到它「真正重叠的语音段」范围内（design D8-B）：
+ * 起点上推到首个重叠段的 start、末点下收到末个重叠段的 end；
+ * 完全不与任何语音段重叠的 cue 原样返回（不臆断）。
+ *
+ * 作用：兜住「cue 起止渗进静音」（内容 token 被 whisper 前向填充进前段静音、或末 token
+ * 过冲到 VAD chunk 边界）导致的跨停顿，使停顿（gap）在 cue 之间复现——与填充方向无关，
+ * 作为 retime 前向贴齐（D8-A）的后处理兜底。`segments` 为空时原样返回（优雅降级）。
+ */
+export function clampCuesToSegments(
+  cues: TokenTriple[],
+  segments: SpeechSegment[],
+): TokenTriple[] {
+  if (cues.length === 0 || !segments || segments.length === 0) return cues;
+  const sorted = [...segments]
+    .filter(
+      (s) =>
+        Number.isFinite(s.start) && Number.isFinite(s.end) && s.end > s.start,
+    )
+    .sort((a, b) => a.start - b.start);
+  if (sorted.length === 0) return cues;
+
+  return cues.map((cue) => {
+    const s = parseTime(cue?.[0]);
+    const e = parseTime(cue?.[1]);
+    if (s === null || e === null || e <= s) return cue;
+    let lo: number | null = null;
+    let hi: number | null = null;
+    for (const seg of sorted) {
+      if (seg.start >= e) break; // 已排序，后续段都在 cue 之后
+      if (seg.end <= s) continue; // 在 cue 之前
+      if (lo === null) lo = Math.max(s, seg.start);
+      hi = Math.min(e, seg.end);
+    }
+    if (lo === null || hi === null || hi <= lo) return cue;
+    return [formatTime(lo), formatTime(hi), cue?.[2] ?? ''];
+  });
 }
