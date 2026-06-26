@@ -46,6 +46,12 @@ export type StoreType = {
     vadSamplesOverlap: number;
     /** 抗幻觉/抗重复：开启后断开上文条件并抑制重复（builtin: max_context=0；faster-whisper: condition_on_previous_text=false + no_repeat_ngram/repetition_penalty 等）。默认关闭，按需开启。 */
     reduceRepetition?: boolean;
+    /*
+     * 字幕效果档位（SubtitleOutcome）是**任务级**配置，存在 userConfig.subtitleOutcome（formData），
+     * 与 maxContext/useVAD/reduceRepetition 同源、按「上次使用」记忆，不在全局 settings 里。
+     * 把这些底层旋钮收敛为意图单选，按引擎差异化派生底层参数；取值与映射见
+     * main/helpers/engines/outcomePresets.ts。
+     */
     /** 任务默认引擎+模型的"上次使用"记忆（全局单条，二者作为整体，避免引擎/模型失配）。 */
     lastUsedTranscription?: { engine: TranscriptionEngine; model?: string };
     fasterWhisperDevice?: 'auto' | 'cpu' | 'cuda';

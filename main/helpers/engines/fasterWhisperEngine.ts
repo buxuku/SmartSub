@@ -27,6 +27,7 @@ import {
   getWhisperLanguage,
   getFasterWhisperAntiRepetitionParams,
 } from './transcribeShared';
+import { resolveEffectiveSettings } from './outcomePresets';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
 /**
@@ -139,7 +140,11 @@ async function transcribeFasterWhisper(
     sourceLanguage?: string;
     prompt?: string;
   };
-  const settings = store.get('settings');
+  // 逐任务运行时派生（字幕效果档位 → useVAD / 抗重复参数包），不回写全局。
+  const settings = resolveEffectiveSettings(
+    formData,
+    store.get('settings') as Record<string, unknown>,
+  );
 
   const manager = getPythonRuntimeManager();
   let engineInfo;

@@ -25,8 +25,22 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { Badge } from '@/components/ui/badge';
+import { Check, ChevronDown, SlidersHorizontal } from 'lucide-react';
+import { cn } from 'lib/utils';
 import SavePathNotice from '@/components/SavePathNotice';
 import type { TaskTypeDef } from 'lib/taskTypes';
+import {
+  SUBTITLE_OUTCOME_TIERS,
+  inferDisplayOutcome,
+  isSherpaEngine,
+  type SubtitleOutcome,
+} from 'lib/subtitleOutcome';
 import { useTranslation } from 'next-i18next';
 
 interface AdvancedSheetProps {
@@ -58,32 +72,37 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
   const isMediaTask = typeDef.accepts === 'media';
   const showFormatHere = typeDef.hasTranslate; // generateOnly 已在配置条展示
 
-  // VAD 是全局设置（settings.useVAD），与设置页同源；这里只是任务高级选项里的便捷入口。
-  // 不进 react-hook-form，避免与逐任务的 userConfig 混淆。
-  const [vadEnabled, setVadEnabled] = useState(true);
-  const [reduceRepetition, setReduceRepetition] = useState(false);
+  const engine = formData?.transcriptionEngine as string | undefined;
+  const sherpa = isSherpaEngine(engine);
+
+  // 自定义档的 VAD 开关 / 抗重复改为**任务级**（写入 react-hook-form → userConfig），
+  // 不再回写全局，避免在某个任务里调一下就污染其它任务与两个 whisper 引擎。
+  // 仍读一次全局 settings：① 作为老任务（formData 无该字段）的迁移回退显示值；
+  // ② 供 inferDisplayOutcome 在任务无显式档位时推断显示默认。
+  const [settings, setSettings] = useState<Record<string, unknown>>({});
   useEffect(() => {
     if (!open) return;
     let active = true;
     (async () => {
       const s = await window?.ipc?.invoke('getSettings');
-      if (active) {
-        setVadEnabled(s?.useVAD !== false);
-        setReduceRepetition(s?.reduceRepetition === true);
-      }
+      if (active) setSettings(s ?? {});
     })();
     return () => {
       active = false;
     };
   }, [open]);
-  const handleVadChange = async (checked: boolean) => {
-    setVadEnabled(checked);
-    await window?.ipc?.invoke('setSettings', { useVAD: checked });
-  };
-  const handleReduceRepetitionChange = async (checked: boolean) => {
-    setReduceRepetition(checked);
-    await window?.ipc?.invoke('setSettings', { reduceRepetition: checked });
-  };
+  // 迁移回退：任务级缺省时，开关初始显示沿用全局旧值（默认 VAD 开、抗重复关）。
+  const vadFallback = settings?.useVAD !== false;
+  const reduceFallback = settings?.reduceRepetition === true;
+
+  // 当前档位：任务级显式值优先，否则按既有旋钮推断一个友好的显示默认（不写回）。
+  const currentOutcome: SubtitleOutcome = inferDisplayOutcome(
+    {
+      subtitleOutcome: formData?.subtitleOutcome,
+      maxContext: formData?.maxContext,
+    },
+    settings,
+  );
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -101,6 +120,224 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                   {isMediaTask && (
                     <>
                       <SectionTitle>{t('section.recognition')}</SectionTitle>
+
+                      {/* 字幕效果档位：把 上下文/VAD/抗重复 收敛成一个意图单选（任务级） */}
+                      <FormField
+                        control={form.control}
+                        name="subtitleOutcome"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('outcome.label')}</FormLabel>
+                            <div className="grid gap-2">
+                              {(
+                                [...SUBTITLE_OUTCOME_TIERS, 'custom'] as const
+                              ).map((tier) => {
+                                const selected = currentOutcome === tier;
+                                return (
+                                  <button
+                                    type="button"
+                                    key={tier}
+                                    onClick={() => field.onChange(tier)}
+                                    className={cn(
+                                      'flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors',
+                                      selected
+                                        ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                                        : 'hover:bg-accent',
+                                    )}
+                                  >
+                                    <div
+                                      className={cn(
+                                        'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border',
+                                        selected
+                                          ? 'border-primary bg-primary text-primary-foreground'
+                                          : 'border-muted-foreground/40',
+                                      )}
+                                    >
+                                      {selected && (
+                                        <Check className="h-3 w-3" />
+                                      )}
+                                    </div>
+                                    <div className="space-y-0.5">
+                                      <div className="flex items-center gap-2">
+                                        {tier === 'custom' && (
+                                          <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+                                        )}
+                                        <span className="text-sm font-medium">
+                                          {t(`outcome.${tier}.title`)}
+                                        </span>
+                                        {tier === 'balanced' && (
+                                          <Badge
+                                            variant="secondary"
+                                            className="px-1.5 py-0 text-[10px]"
+                                          >
+                                            {t('outcome.recommended')}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <p className="text-xs text-muted-foreground">
+                                        {t(`outcome.${tier}.desc`)}
+                                      </p>
+                                      {tier !== 'custom' && (
+                                        <p className="text-[11px] text-muted-foreground/80">
+                                          {t(`outcome.${tier}.scene`)}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* 自定义档：紧贴档位选择器，选中即在下方展开底层旋钮
+                          （sherpa 系隐藏不适用的上下文/抗重复，VAD 结构性常开） */}
+                      {currentOutcome === 'custom' && (
+                        <div className="space-y-3 rounded-lg border border-dashed p-3">
+                          <p className="text-xs font-medium text-muted-foreground">
+                            {t('outcome.custom.sectionTitle')}
+                          </p>
+                          {sherpa ? (
+                            <p className="text-xs text-muted-foreground">
+                              {t('outcome.custom.sherpaNote')}
+                            </p>
+                          ) : (
+                            <>
+                              <FormField
+                                control={form.control}
+                                name="maxContext"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>{tHome('maxContext')}</FormLabel>
+                                    <Select
+                                      onValueChange={(value) =>
+                                        field.onChange(Number(value))
+                                      }
+                                      value={String(field.value ?? -1)}
+                                    >
+                                      <FormControl>
+                                        <SelectTrigger>
+                                          <SelectValue
+                                            placeholder={tHome('pleaseSelect')}
+                                          />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        <SelectItem value="-1">
+                                          {tHome('noLimit')}
+                                        </SelectItem>
+                                        <SelectItem value="0">
+                                          {tHome('noContext')}
+                                        </SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                    <FormDescription className="text-xs">
+                                      {tHome('maxContextTip')}
+                                    </FormDescription>
+                                  </FormItem>
+                                )}
+                              />
+                              <FormField
+                                control={form.control}
+                                name="useVAD"
+                                render={({ field }) => {
+                                  const checked =
+                                    typeof field.value === 'boolean'
+                                      ? field.value
+                                      : vadFallback;
+                                  return (
+                                    <FormItem className="space-y-2 rounded-lg border p-2">
+                                      <div className="flex flex-row items-center justify-between gap-2">
+                                        <div className="space-y-0.5">
+                                          <FormLabel className="text-sm font-medium">
+                                            {t('vad.label')}
+                                          </FormLabel>
+                                          <p className="text-xs text-muted-foreground">
+                                            {checked
+                                              ? t('vad.on')
+                                              : t('vad.off')}
+                                          </p>
+                                        </div>
+                                        <FormControl>
+                                          <Switch
+                                            checked={checked}
+                                            onCheckedChange={field.onChange}
+                                          />
+                                        </FormControl>
+                                      </div>
+                                      <p className="text-xs text-muted-foreground">
+                                        {t('vad.hint')}
+                                      </p>
+                                    </FormItem>
+                                  );
+                                }}
+                              />
+                              <FormField
+                                control={form.control}
+                                name="reduceRepetition"
+                                render={({ field }) => {
+                                  const checked =
+                                    typeof field.value === 'boolean'
+                                      ? field.value
+                                      : reduceFallback;
+                                  return (
+                                    <FormItem className="space-y-2 rounded-lg border p-2">
+                                      <div className="flex flex-row items-center justify-between gap-2">
+                                        <div className="space-y-0.5">
+                                          <FormLabel className="text-sm font-medium">
+                                            {t('reduceRepetition.label')}
+                                          </FormLabel>
+                                          <p className="text-xs text-muted-foreground">
+                                            {checked
+                                              ? t('reduceRepetition.on')
+                                              : t('reduceRepetition.off')}
+                                          </p>
+                                        </div>
+                                        <FormControl>
+                                          <Switch
+                                            checked={checked}
+                                            onCheckedChange={field.onChange}
+                                          />
+                                        </FormControl>
+                                      </div>
+                                      <p className="text-xs text-muted-foreground">
+                                        {t('reduceRepetition.hint')}
+                                      </p>
+                                    </FormItem>
+                                  );
+                                }}
+                              />
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 样例对比（静态示意，帮助理解「文字最准 ↔ 最干净最稳」的取舍） */}
+                      <Collapsible>
+                        <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md px-1 py-1 text-xs text-muted-foreground hover:text-foreground">
+                          <span>{t('outcome.compare.toggle')}</span>
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="pt-2">
+                          <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+                            <p className="text-[11px] text-muted-foreground">
+                              {t('outcome.compare.caption')}
+                            </p>
+                            {SUBTITLE_OUTCOME_TIERS.map((tier) => (
+                              <div key={tier} className="flex gap-2 text-xs">
+                                <span className="w-16 shrink-0 font-medium text-muted-foreground">
+                                  {t(`outcome.${tier}.title`)}
+                                </span>
+                                <span className="flex-1 text-foreground/90">
+                                  “{t(`outcome.compare.${tier}`)}”
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+
                       <FormField
                         control={form.control}
                         name="prompt"
@@ -117,40 +354,6 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                             </FormControl>
                             <FormDescription className="text-xs">
                               {tHome('promptTips').replace(/<br\s*\/?>/g, '')}
-                            </FormDescription>
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="maxContext"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{tHome('maxContext')}</FormLabel>
-                            <Select
-                              onValueChange={(value) =>
-                                field.onChange(Number(value))
-                              }
-                              value={String(field.value ?? -1)}
-                            >
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue
-                                    placeholder={tHome('pleaseSelect')}
-                                  />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                <SelectItem value="-1">
-                                  {tHome('noLimit')}
-                                </SelectItem>
-                                <SelectItem value="0">
-                                  {tHome('noContext')}
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <FormDescription className="text-xs">
-                              {tHome('maxContextTip')}
                             </FormDescription>
                           </FormItem>
                         )}
@@ -175,46 +378,6 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                           </FormItem>
                         )}
                       />
-                      <div className="space-y-2 rounded-lg border p-2">
-                        <div className="flex flex-row items-center justify-between gap-2">
-                          <div className="space-y-0.5">
-                            <p className="text-sm font-medium">
-                              {t('vad.label')}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {vadEnabled ? t('vad.on') : t('vad.off')}
-                            </p>
-                          </div>
-                          <Switch
-                            checked={vadEnabled}
-                            onCheckedChange={handleVadChange}
-                          />
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {t('vad.hint')}
-                        </p>
-                      </div>
-                      <div className="space-y-2 rounded-lg border p-2">
-                        <div className="flex flex-row items-center justify-between gap-2">
-                          <div className="space-y-0.5">
-                            <p className="text-sm font-medium">
-                              {t('reduceRepetition.label')}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {reduceRepetition
-                                ? t('reduceRepetition.on')
-                                : t('reduceRepetition.off')}
-                            </p>
-                          </div>
-                          <Switch
-                            checked={reduceRepetition}
-                            onCheckedChange={handleReduceRepetitionChange}
-                          />
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {t('reduceRepetition.hint')}
-                        </p>
-                      </div>
                     </>
                   )}
 

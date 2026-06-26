@@ -15,6 +15,8 @@ const DEFAULT_TARGET = 'ZH';
 
 function toDeepLCode(lang: string | undefined, fallback: string): string {
   if (!lang) return fallback;
+  // 繁体中文保留地区码（DeepL 使用 ZH-HANT）；其余取主语言码并大写。
+  if (lang === 'zh-Hant') return 'ZH-HANT';
   const code = String(lang).split('-')[0].toUpperCase();
   return code || fallback;
 }
