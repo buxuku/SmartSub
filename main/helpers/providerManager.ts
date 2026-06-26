@@ -8,7 +8,7 @@ import {
 import { store } from './store';
 import { logMessage } from './logger';
 
-const CURRENT_PROVIDER_VERSION = 17;
+const CURRENT_PROVIDER_VERSION = 18;
 
 export async function getAndInitializeProviders(): Promise<Provider[]> {
   try {
@@ -93,6 +93,7 @@ function migrateProviders(oldProviders: any[]): Provider[] {
         ...p,
         type: p.id,
         isAi: template.isAi || false,
+        batchConcurrency: p.batchConcurrency || 1,
         ...(p.id === 'baidu' && { batchSize: 18 }),
         ...(p.id === 'volc' && { batchSize: 16 }),
         ...(p.id === 'azure' && { batchSize: 50 }),
@@ -121,6 +122,7 @@ function migrateProviders(oldProviders: any[]): Provider[] {
       isAi: true,
       useBatchTranslation: false,
       batchTranslationSize: 10,
+      batchConcurrency: p.batchConcurrency || 1,
       systemPrompt: shouldUpdateSystemPrompt(p.systemPrompt)
         ? defaultSystemPrompt
         : p.systemPrompt,

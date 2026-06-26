@@ -6,6 +6,13 @@ import {
   throwIfTaskCancelled,
   isTaskCancelledError,
 } from '../../helpers/taskContext';
+import {
+  createTranslationBatches,
+  normalizeBatchSize,
+  resolveBatchConcurrency,
+  runTranslationBatchesInOrder,
+  type TranslationBatch,
+} from '../utils/batchConcurrency';
 
 export async function handleAPIBatchTranslation(
   subtitles: Subtitle[],
@@ -16,23 +23,34 @@ export async function handleAPIBatchTranslation(
   maxRetries: number = 0,
 ): Promise<TranslationResult[]> {
   const { provider, sourceLanguage, targetLanguage, translator } = config;
-  const results: TranslationResult[] = [];
-  const totalBatches = Math.ceil(subtitles.length / batchSize);
+  const normalizedBatchSize = normalizeBatchSize(
+    batchSize,
+    DEFAULT_BATCH_SIZE.API,
+  );
+  const batches = createTranslationBatches(subtitles, normalizedBatchSize);
+  const totalBatches = batches.length;
+  const batchConcurrency = resolveBatchConcurrency(
+    provider.batchConcurrency,
+    totalBatches,
+  );
 
   const requestInterval = +(provider.requestInterval || 0) * 1000;
 
-  for (let i = 0; i < subtitles.length; i += batchSize) {
+  logMessage(
+    `开始API批量翻译：总共 ${subtitles.length} 条字幕，分为 ${totalBatches} 个批次，每批次 ${normalizedBatchSize} 条，并发 ${batchConcurrency}`,
+    'info',
+  );
+
+  const processBatch = async (
+    translationBatch: TranslationBatch,
+  ): Promise<TranslationResult[]> => {
     throwIfTaskCancelled();
-    const batch = subtitles.slice(i, i + batchSize);
+    const batch = translationBatch.subtitles;
     const batchContents = batch.map((s) => s.content.join('\n'));
-    const currentBatchIndex = Math.floor(i / batchSize) + 1;
+    const currentBatchIndex = translationBatch.displayIndex;
     let retryCount = 0;
     let batchSuccess = false;
-
-    if (requestInterval > 0 && i > 0) {
-      logMessage(`等待 ${provider.requestInterval}s (请求间隔)`, 'info');
-      await new Promise((resolve) => setTimeout(resolve, requestInterval));
-    }
+    let batchResults: TranslationResult[] = [];
 
     while (!batchSuccess && retryCount <= maxRetries) {
       throwIfTaskCancelled();
@@ -57,19 +75,13 @@ export async function handleAPIBatchTranslation(
           );
         }
 
-        const batchResults = batch.map((subtitle, index) => ({
+        batchResults = batch.map((subtitle, index) => ({
           id: subtitle.id,
           startEndTime: subtitle.startEndTime,
           sourceContent: subtitle.content.join('\n'),
           targetContent: translatedLines[index],
         }));
 
-        // 如果提供了结果处理函数，则实时处理每个翻译结果
-        if (onTranslationResult) {
-          await onTranslationResult(batchResults);
-        }
-
-        results.push(...batchResults);
         batchSuccess = true;
       } catch (error) {
         if (isTaskCancelledError(error)) throw error;
@@ -96,30 +108,30 @@ export async function handleAPIBatchTranslation(
             'error',
           );
           // 如果全部重试都失败，则添加失败记录，并继续下一批
-          const failedResults = batch.map((subtitle) => ({
+          batchResults = batch.map((subtitle) => ({
             id: subtitle.id,
             startEndTime: subtitle.startEndTime,
             sourceContent: subtitle.content.join('\n'),
             targetContent: `[翻译失败: ${error.message}]`,
           }));
 
-          // 对失败的结果也进行处理和保存
-          if (onTranslationResult) {
-            await onTranslationResult(failedResults);
-          }
-
-          results.push(...failedResults);
           batchSuccess = true; // 标记为完成，继续下一批次
         }
       }
     }
 
-    // 更新翻译进度
-    const progress = Math.min(((i + batchSize) / subtitles.length) * 100, 100);
-    if (onProgress) {
-      onProgress(progress);
-    }
-  }
+    return batchResults;
+  };
+
+  const results = await runTranslationBatchesInOrder({
+    batches,
+    concurrency: batchConcurrency,
+    requestIntervalMs: requestInterval,
+    totalSubtitles: subtitles.length,
+    processBatch,
+    onProgress,
+    onTranslationResult,
+  });
 
   return results;
 }

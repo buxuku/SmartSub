@@ -214,6 +214,15 @@ const batchSizeField = (
   placeholder: 'phBatchSize',
 });
 
+const FIELD_BATCH_CONCURRENCY: ProviderField = {
+  key: 'batchConcurrency',
+  label: 'batchConcurrency',
+  type: 'number',
+  defaultValue: 1,
+  tips: 'batchConcurrencyTip',
+  placeholder: 'phBatchConcurrency',
+};
+
 const structuredOutputField = (
   defaultValue: string = 'json_object',
 ): ProviderField => ({
@@ -235,6 +244,7 @@ const aiCommonFields = (overrides?: {
   FIELD_USER_PROMPT,
   structuredOutputField(overrides?.structuredOutput),
   batchSizeField(overrides?.batchSize, overrides?.batchSizeTips),
+  FIELD_BATCH_CONCURRENCY,
   FIELD_REQUEST_INTERVAL,
 ];
 
@@ -244,6 +254,7 @@ const apiBatchFields = (
   requestIntervalField: ProviderField = FIELD_REQUEST_INTERVAL,
 ): ProviderField[] => [
   batchSizeField(defaultBatchSize, batchSizeTips),
+  FIELD_BATCH_CONCURRENCY,
   requestIntervalField,
 ];
 
