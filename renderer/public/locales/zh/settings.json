@@ -96,6 +96,7 @@
   "vadSettingsDesc": "全局语音活动检测，对所有转写引擎生效；默认值即最佳实践",
   "enableVad": "启用 VAD",
   "enableVadTip": "语音活动检测可以通过自动检测语音片段并过滤静音来提高转写准确性",
+  "vadBuiltinHint": "内置 whisper 引擎：关闭 VAD 分段更细、文本更准（短 / 中文件推荐）；开启更适合长音频与严格「无声不显字幕」。其他引擎（如 faster-whisper）建议保持开启。",
   "vadThreshold": "VAD 阈值",
   "vadThresholdTip": "语音检测阈值 (0.0-1.0)。较高值需要更强的语音信号",
   "vadMinSpeechDuration": "最小语音持续时间 (毫秒)",

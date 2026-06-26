@@ -77,6 +77,10 @@ import {
   retimeTokensToSpeech,
   groupTokenCues,
   clampCuesToSegments,
+  clampCuesToDominantSegments,
+  mergeShortCues,
+  dropCuesInDeepSilence,
+  enforceMinDisplayDuration,
   type TokenTriple,
 } from '../main/helpers/subtitleSegmentation';
 
@@ -969,17 +973,97 @@ const T = (a: string, b: string, c: string): TokenTriple => [a, b, c];
     ],
     'retime: filled token snapped back to its speech segment (gap restored)',
   );
-  // 落在静音的「非空内容 token」→ 前向贴齐到其后最近语音段（D8-A），还原停顿
+  // 浮动内容 run 离「后段」更近 → 整 run 前向平移到后段起点（whisper 前向填充的反向修正）
   eq(
     retimeTokensToSpeech(
-      [T('00:00:05,000', '00:00:06,000', 'x')],
+      [T('00:00:09,500', '00:00:09,800', 'x')],
       [
         { start: 0, end: 2 },
-        { start: 12, end: 14 },
+        { start: 10, end: 12 },
       ],
     ),
-    [['00:00:12,000', '00:00:13,000', 'x']],
-    'retime: content token in silence snapped forward to next segment',
+    [['00:00:10,000', '00:00:10,300', 'x']],
+    'retime: floating run nearer to next segment snaps forward to its start',
+  );
+  // 浮动内容 run 离「前段」更近 → 整 run 后向平移紧接前段末点（不再被错误前向抛远）
+  eq(
+    retimeTokensToSpeech(
+      [T('00:00:05,200', '00:00:05,500', 'x')],
+      [
+        { start: 0, end: 5 },
+        { start: 10, end: 12 },
+      ],
+    ),
+    [['00:00:05,000', '00:00:05,300', 'x']],
+    'retime: floating run nearer to prev segment snaps back to abut its end',
+  );
+  // 句尾尾字越过 VAD 末点（…應用十分廣|泛）→ 「泛」回贴到上一句末点附近，绝不被抛到下一句
+  // 廣[49.85,50.09] 与前段[44.96,49.916]有交集 → anchored 截到 [49.85,49.916]
+  // 泛[50.09,50.40] 落静音、离前段更近 → 后向平移 delta=-0.174 → [49.916,50.226]
+  // 。[50.40,50.40] 零时长纯标点、不在段内 → 原样保留
+  eq(
+    retimeTokensToSpeech(
+      [
+        T('00:00:49,850', '00:00:50,090', '廣'),
+        T('00:00:50,090', '00:00:50,400', '泛'),
+        T('00:00:50,400', '00:00:50,400', '。'),
+      ],
+      [
+        { start: 44.96, end: 49.916 },
+        { start: 53.862, end: 56.76 },
+      ],
+    ),
+    [
+      ['00:00:49,850', '00:00:49,916', '廣'],
+      ['00:00:49,916', '00:00:50,226', '泛'],
+      ['00:00:50,400', '00:00:50,400', '。'],
+    ],
+    'retime: trailing tail token stays beside prev sentence (not flung to next)',
+  );
+  // 多 token run 前向平移保留内部相对偏移与顺序
+  eq(
+    retimeTokensToSpeech(
+      [
+        T('00:00:08,000', '00:00:08,300', '甲'),
+        T('00:00:08,300', '00:00:08,700', '乙'),
+      ],
+      [
+        { start: 0, end: 2 },
+        { start: 10, end: 14 },
+      ],
+    ),
+    [
+      ['00:00:10,000', '00:00:10,300', '甲'],
+      ['00:00:10,300', '00:00:10,700', '乙'],
+    ],
+    'retime: multi-token floating run preserves internal offsets when snapped',
+  );
+  // 零时长内容 run 落在静音、离后段更近 → 平移到后段起点（随后段首 token 合并，消除零时长孤条）
+  eq(
+    retimeTokensToSpeech(
+      [
+        T('00:00:09,000', '00:00:09,000', '人'),
+        T('00:00:09,000', '00:00:09,000', '工'),
+      ],
+      [
+        { start: 0, end: 2 },
+        { start: 10, end: 12 },
+      ],
+    ),
+    [
+      ['00:00:10,000', '00:00:10,000', '人'],
+      ['00:00:10,000', '00:00:10,000', '工'],
+    ],
+    'retime: zero-duration content run in silence snapped to next segment start',
+  );
+  // 零时长内容 token 落在「段内」→ 按点判定为 anchored，原样保留（绝不被误判浮动抛走）
+  eq(
+    retimeTokensToSpeech(
+      [T('00:00:03,000', '00:00:03,000', '技')],
+      [{ start: 0, end: 5 }],
+    ),
+    [['00:00:03,000', '00:00:03,000', '技']],
+    'retime: zero-duration content token inside a segment kept anchored in place',
   );
   // 落在静音的「空 / 空白 token」→ 原样保留（护栏，避免噪声错位）
   eq(
@@ -1004,18 +1088,6 @@ const T = (a: string, b: string, c: string): TokenTriple => [a, b, c];
     ),
     [['00:00:05,000', '00:00:05,100', '。']],
     'retime: punct-only token in silence kept as-is',
-  );
-  // 静音 token 之后无语音段 → 回收到其前最近语音段末点
-  eq(
-    retimeTokensToSpeech(
-      [T('00:00:20,000', '00:00:21,000', 'z')],
-      [
-        { start: 0, end: 2 },
-        { start: 12, end: 14 },
-      ],
-    ),
-    [['00:00:13,000', '00:00:14,000', 'z']],
-    'retime: content token after all speech recovered to prev segment end',
   );
 }
 
@@ -1079,14 +1151,103 @@ eq(
 // 空输入 → 空输出
 eq(groupTokenCues([]), [], 'group: empty input -> empty output');
 
-// --- subtitleSegmentation: retime+group 端到端（D8-A：被填进静音的内容 token 串还原停顿） ---
+// --- subtitleSegmentation: §6.2 标点优先软切 + 前导标点归属 ---
+// 软切：cue 达软宽度后，在停顿性标点（，）处断句（softMaxWidth 默认 10）。
+// 「今天是晴天」=10 + 「，」 → 收尾；「心情好」另起一条。
+eq(
+  groupTokenCues([
+    T('0', '0.3', '今'),
+    T('0.3', '0.6', '天'),
+    T('0.6', '0.9', '是'),
+    T('0.9', '1.2', '晴'),
+    T('1.2', '1.5', '天'),
+    T('1.5', '1.8', '，'),
+    T('1.8', '2.1', '心'),
+    T('2.1', '2.4', '情'),
+    T('2.4', '2.7', '好'),
+  ]),
+  [
+    ['00:00:00,000', '00:00:01,800', '今天是晴天，'],
+    ['00:00:01,800', '00:00:02,700', '心情好'],
+  ],
+  'group(§6.2): soft-split at comma once cue reaches soft width',
+);
+// 不过碎：未达软宽度的短逗号短语保持一条（「好，的」宽度 5 < 10，不软切）。
+eq(
+  groupTokenCues([
+    T('0', '0.3', '好'),
+    T('0.3', '0.6', '，'),
+    T('0.6', '0.9', '的'),
+  ]),
+  [['00:00:00,000', '00:00:00,900', '好，的']],
+  'group(§6.2): short comma phrase below soft width stays one cue',
+);
+// 顿号保护：「、」不参与软切，电话号/枚举不被切碎（宽度已 > softMaxWidth 仍不切）。
+eq(
+  groupTokenCues([
+    T('0', '0.3', '壹'),
+    T('0.3', '0.6', '贰'),
+    T('0.6', '0.9', '叁'),
+    T('0.9', '1.2', '肆'),
+    T('1.2', '1.5', '伍'),
+    T('1.5', '1.8', '、'),
+    T('1.8', '2.1', '陆'),
+    T('2.1', '2.4', '柒'),
+  ]),
+  [['00:00:00,000', '00:00:02,400', '壹贰叁肆伍、陆柒']],
+  'group(§6.2): ideographic comma does NOT trigger soft-split (keeps numbers/lists intact)',
+);
+// 软切（时长闸）：宽度不够但时长达 softMaxDuration（2.5s）后遇逗号也切。
+eq(
+  groupTokenCues([
+    T('0', '1.4', '啊'),
+    T('1.4', '2.8', '，'),
+    T('2.8', '3.2', '好'),
+  ]),
+  [
+    ['00:00:00,000', '00:00:02,800', '啊，'],
+    ['00:00:02,800', '00:00:03,200', '好'],
+  ],
+  'group(§6.2): soft-split by duration gate when width is small',
+);
+// 前导标点归属：gap 后以标点开头的 token → 贴回上一条末尾，不另起以「，」开头的条。
+eq(
+  groupTokenCues([
+    T('0', '0.3', '甲'),
+    T('0.3', '0.6', '乙'),
+    T('2.0', '2.3', '，'),
+    T('2.3', '2.6', '丙'),
+    T('2.6', '2.9', '丁'),
+  ]),
+  [
+    ['00:00:00,000', '00:00:00,600', '甲乙，'],
+    ['00:00:02,300', '00:00:02,900', '丙丁'],
+  ],
+  'group(§6.2): leading punctuation after a gap attaches to previous cue',
+);
+// 软切不影响句末标点：句末标点仍立即切（与软宽度无关）。
+eq(
+  groupTokenCues([
+    T('0', '0.3', '好'),
+    T('0.3', '0.6', '。'),
+    T('0.6', '0.9', '走'),
+  ]),
+  [
+    ['00:00:00,000', '00:00:00,600', '好。'],
+    ['00:00:00,600', '00:00:00,900', '走'],
+  ],
+  'group(§6.2): sentence-end still flushes immediately regardless of soft width',
+);
+
+// --- subtitleSegmentation: retime+group 端到端（D8：被填进静音的内容 token 还原停顿） ---
 {
+  // 真实「前向填充」：静音后首个 token「后」起点被前移到上一 token 末点(2.0)、时长把 [2,12]
+  // 静音吃进去并伸进后段 [12,14] → 与后段有交集被 anchored 收敛到 [12,12.3]，停顿复现。
   const filled = [
     T('00:00:00,000', '00:00:01,000', '前'),
     T('00:00:01,000', '00:00:02,000', '段'),
-    // 下面两 token 被 whisper「前向填充」塞进 [2,12] 静音里（起点被前移）
-    T('00:00:02,100', '00:00:02,400', '后'),
-    T('00:00:02,400', '00:00:02,700', '段'),
+    T('00:00:02,000', '00:00:12,300', '后'),
+    T('00:00:12,300', '00:00:12,600', '段'),
   ];
   const segs = [
     { start: 0, end: 2 },
@@ -1096,9 +1257,72 @@ eq(groupTokenCues([]), [], 'group: empty input -> empty output');
     groupTokenCues(retimeTokensToSpeech(filled, segs)),
     [
       ['00:00:00,000', '00:00:02,000', '前段'],
-      ['00:00:12,000', '00:00:12,300', '后段'],
+      ['00:00:12,000', '00:00:12,600', '后段'],
     ],
-    'retime+group: filled content tokens snap forward, gap restored, split into two cues',
+    'retime+group: forward-filled token anchored into next segment, gap restored',
+  );
+}
+
+// --- subtitleSegmentation: retime+group 端到端（D11：句尾尾字回贴上一句，不另起迟到条） ---
+{
+  // 「應用」在前段，尾字「廣泛。」被 whisper 放到 VAD 末点之外的静音里，且离前段更近 →
+  // 整 run 回贴前段末点、与「應用」聚成同一条，而非在 53s 处另起一条迟到的「廣泛」。
+  const tokens = [
+    T('00:00:44,960', '00:00:48,000', '應'),
+    T('00:00:48,000', '00:00:49,916', '用'),
+    T('00:00:49,916', '00:00:50,200', '廣'),
+    T('00:00:50,200', '00:00:50,500', '泛'),
+    T('00:00:50,500', '00:00:50,500', '。'),
+  ];
+  const segs = [
+    { start: 44.96, end: 49.916 },
+    { start: 53.862, end: 56.76 },
+  ];
+  const cues = groupTokenCues(retimeTokensToSpeech(tokens, segs));
+  eq(
+    cues.length,
+    1,
+    'retime+group: trailing tail merges into one cue (no late cue)',
+  );
+  eq(
+    cues[0][2],
+    '應用廣泛。',
+    'retime+group: trailing tail text joins previous sentence',
+  );
+  eq(
+    cues[0][0],
+    '00:00:44,960',
+    'retime+group: merged cue keeps previous sentence start',
+  );
+}
+
+// --- subtitleSegmentation: retime+group 端到端（D11：零时长整句被前向填充 → 消除零时长孤条） ---
+{
+  // 复现「人工智能技术」整句被 whisper 塞成同一时刻零时长、落在静音里（旧版输出
+  // 00:00:41,400 --> 00:00:41,400 人工智能技术 的零时长字幕条）。run 离后段更近 → 前向贴到
+  // 后段起点，与「正在」聚成同一条非零时长字幕，零时长孤条消失。
+  const zeroRun = [
+    T('00:00:36,000', '00:00:36,956', '号'),
+    T('00:00:41,400', '00:00:41,400', '人'),
+    T('00:00:41,400', '00:00:41,400', '工'),
+    T('00:00:41,400', '00:00:41,400', '智'),
+    T('00:00:41,400', '00:00:41,400', '能'),
+    T('00:00:41,400', '00:00:41,400', '技'),
+    T('00:00:41,400', '00:00:41,400', '术'),
+    T('00:00:41,926', '00:00:43,400', '正'),
+    T('00:00:43,400', '00:00:44,960', '在'),
+  ];
+  const segs = [
+    { start: 30, end: 36.956 },
+    { start: 41.926, end: 44.96 },
+  ];
+  eq(
+    groupTokenCues(retimeTokensToSpeech(zeroRun, segs)),
+    [
+      ['00:00:36,000', '00:00:36,956', '号'],
+      ['00:00:41,926', '00:00:44,960', '人工智能技术正在'],
+    ],
+    'retime+group: zero-duration filled sentence merged forward (no zero-length cue)',
   );
 }
 
@@ -1131,6 +1355,304 @@ eq(groupTokenCues([]), [], 'group: empty input -> empty output');
     clampCuesToSegments([T('00:00:01,000', '00:00:13,500', '整')], segs),
     [['00:00:01,000', '00:00:13,500', '整']],
     'clamp: cue overlapping multiple segments keeps its own inner bounds',
+  );
+}
+
+// --- subtitleSegmentation: clampCuesToDominantSegments（VAD-off 安全停顿还原，D13） ---
+{
+  const segs = [
+    { start: 10, end: 13 },
+    { start: 20, end: 22 },
+  ];
+  // 带前导静音、实质覆盖某段（≥50%）→ 剪掉前导静音、收进段内，复现 gap
+  eq(
+    clampCuesToDominantSegments(
+      [T('00:00:05,000', '00:00:13,000', '后段')],
+      segs,
+    ),
+    [['00:00:10,000', '00:00:13,000', '后段']],
+    'clampDom: leading-silence cue covering a segment is clamped into it',
+  );
+  // 只擦到前句段尾的弱重叠（覆盖率 < 50%）→ 原样保留（不被误夹成碎片，修 clampCuesToSegments 把「请记录」夹成 0.3s）
+  eq(
+    clampCuesToDominantSegments(
+      [T('00:00:08,000', '00:00:10,500', '弱')],
+      segs,
+    ),
+    [['00:00:08,000', '00:00:10,500', '弱']],
+    'clampDom: weak tail overlap (<50% coverage) kept as-is, not squeezed',
+  );
+  // 与任何语音段无重叠 → 原样（交给 dropCuesInDeepSilence 判幻觉）
+  eq(
+    clampCuesToDominantSegments(
+      [T('00:00:15,000', '00:00:16,000', '幻')],
+      segs,
+    ),
+    [['00:00:15,000', '00:00:16,000', '幻']],
+    'clampDom: cue with no overlapping segment kept as-is',
+  );
+  // 实质覆盖两段 → 收到 [首段 start, 末段 end]，剪掉两端静音、保留两段（含中间停顿）
+  eq(
+    clampCuesToDominantSegments(
+      [T('00:00:05,000', '00:00:25,000', '两段')],
+      segs,
+    ),
+    [['00:00:10,000', '00:00:22,000', '两段']],
+    'clampDom: cue covering two full segments clamps to [first.start,last.end]',
+  );
+  // 空 segments（边界源不可用）→ 原样返回（优雅降级）
+  eq(
+    clampCuesToDominantSegments([T('00:00:05,000', '00:00:13,000', 'x')], []),
+    [['00:00:05,000', '00:00:13,000', 'x']],
+    'clampDom: empty segments returns cues unchanged (graceful degradation)',
+  );
+  // 收敛后时长 < 0.3s → 放弃收敛、保留可读原 cue
+  eq(
+    clampCuesToDominantSegments(
+      [T('00:00:09,000', '00:00:10,200', '短')],
+      [{ start: 10, end: 10.2 }],
+    ),
+    [['00:00:09,000', '00:00:10,200', '短']],
+    'clampDom: clamped result shorter than min duration keeps original',
+  );
+  // cue 完整落在长段内（覆盖率 < 50%）→ 原样（本就在有声区、无静音可剪）
+  eq(
+    clampCuesToDominantSegments(
+      [T('00:00:12,000', '00:00:13,000', '内')],
+      [{ start: 10, end: 20 }],
+    ),
+    [['00:00:12,000', '00:00:13,000', '内']],
+    'clampDom: cue fully inside a long segment kept (no silence to trim)',
+  );
+  // 覆盖率阈值可配置：调低到 0.1 → 弱重叠也会被收敛
+  eq(
+    clampCuesToDominantSegments(
+      [T('00:00:08,000', '00:00:10,500', '弱')],
+      segs,
+      {
+        minSegmentCoverage: 0.1,
+      },
+    ),
+    [['00:00:10,000', '00:00:10,500', '弱']],
+    'clampDom: lower coverage threshold also clamps weak overlap',
+  );
+}
+
+// --- subtitleSegmentation: mergeShortCues（弱模型/VAD 误切的单字碎片并回相邻条，§6.2 D10） ---
+{
+  // 复现用户反馈：「廣」「泛」被亚秒级假停顿切成单字两条 → 并回一条「廣泛。」
+  eq(
+    mergeShortCues([
+      T('00:00:49,000', '00:00:49,300', '廣'),
+      T('00:00:49,900', '00:00:50,200', '泛。'),
+    ]),
+    [['00:00:49,000', '00:00:50,200', '廣泛。']],
+    'merge: single-char fragments across sub-second false gap join into previous',
+  );
+  // 真实停顿（数秒）隔开的短 cue → 不并（不跨越真实停顿桥接）
+  eq(
+    mergeShortCues([
+      T('00:00:10,000', '00:00:10,300', '好'),
+      T('00:00:15,000', '00:00:15,300', '走'),
+    ]),
+    [
+      ['00:00:10,000', '00:00:10,300', '好'],
+      ['00:00:15,000', '00:00:15,300', '走'],
+    ],
+    'merge: short cues separated by a real (multi-second) pause are kept',
+  );
+  // 足够宽的正常 cue → 原样（仅碎片才并）
+  eq(
+    mergeShortCues([
+      T('00:00:00,000', '00:00:01,000', '大家好'),
+      T('00:00:01,000', '00:00:02,000', '歡迎使用'),
+    ]),
+    [
+      ['00:00:00,000', '00:00:01,000', '大家好'],
+      ['00:00:01,000', '00:00:02,000', '歡迎使用'],
+    ],
+    'merge: cues at/above minWidth are left untouched',
+  );
+  // 连续多个单字碎片 → 级联并入同一条
+  eq(
+    mergeShortCues([
+      T('0', '0.3', '一'),
+      T('0.5', '0.8', '二'),
+      T('1.0', '1.3', '三'),
+    ]),
+    [['00:00:00,000', '00:00:01,300', '一二三']],
+    'merge: consecutive single-char fragments cascade into one cue',
+  );
+  // 首条即碎片且无上一条 → 原样保留（无处可并）
+  eq(
+    mergeShortCues([T('0', '0.3', '甲')]),
+    [['00:00:00,000', '00:00:00,300', '甲']],
+    'merge: leading lone fragment with no previous cue kept as-is',
+  );
+  // 并入后会超 maxWidth → 不并，保留碎片（避免超长 cue）
+  eq(
+    mergeShortCues([T('0', '1.0', '滿'), T('1.1', '1.4', '字')], {
+      minContentChars: 1,
+      maxWidth: 2,
+    }),
+    [
+      ['00:00:00,000', '00:00:01,000', '滿'],
+      ['00:00:01,100', '00:00:01,400', '字'],
+    ],
+    'merge: skip when joined width would exceed maxWidth',
+  );
+}
+
+// --- subtitleSegmentation: dropCuesInDeepSilence（VAD-off 路径护栏，D12） ---
+{
+  const segs = [
+    { start: 0, end: 5 },
+    { start: 20, end: 25 },
+  ];
+  // 深静音悬空 cue（离最近段 5s）丢；贴边界真实尾字/起字（0.5s / 0.2s）与重叠 cue 保留
+  eq(
+    dropCuesInDeepSilence(
+      [
+        T('00:00:02,000', '00:00:03,000', '好'), // 与 [0,5] 重叠 → 留
+        T('00:00:05,500', '00:00:06,000', '泛'), // 距前段 0.5s → 留（VAD 漏检尾字）
+        T('00:00:10,000', '00:00:11,000', '幻'), // 离最近段 5s → 丢（深静音幻觉）
+        T('00:00:19,000', '00:00:19,800', '請'), // 距后段 0.2s → 留（VAD 漏检起字）
+      ],
+      segs,
+    ),
+    [
+      ['00:00:02,000', '00:00:03,000', '好'],
+      ['00:00:05,500', '00:00:06,000', '泛'],
+      ['00:00:19,000', '00:00:19,800', '請'],
+    ],
+    'drop: deep-silence cue removed, boundary-adjacent real speech kept',
+  );
+  // 空 segments（边界源不可用）→ 原样返回（优雅降级，绝不无依据删字幕）
+  eq(
+    dropCuesInDeepSilence([T('00:00:10,000', '00:00:11,000', '幻')], []),
+    [['00:00:10,000', '00:00:11,000', '幻']],
+    'drop: empty segments returns cues unchanged (graceful degradation)',
+  );
+  // 更严阈值（0.3s）→ 连贴边界 0.5s 的 cue 也丢
+  eq(
+    dropCuesInDeepSilence([T('00:00:05,500', '00:00:06,000', '泛')], segs, {
+      minSilenceDistanceSeconds: 0.3,
+    }),
+    [],
+    'drop: stricter distance threshold also drops near-boundary cue',
+  );
+  // 不修改保留 cue 的时间 / 文本（只整条保留或丢弃）
+  eq(
+    dropCuesInDeepSilence([T('00:00:01,234', '00:00:04,567', '原样')], segs),
+    [['00:00:01,234', '00:00:04,567', '原样']],
+    'drop: kept cue is returned verbatim (no retiming)',
+  );
+}
+
+// --- subtitleSegmentation: enforceMinDisplayDuration（最短可读显示时长护栏，D15） ---
+{
+  // 过短 cue（0.5s < 0.8 硬下限）→ 末点延进其后空隙到 0.8s；够长的下一条不动
+  eq(
+    enforceMinDisplayDuration([
+      T('00:00:10,000', '00:00:10,500', '短'),
+      T('00:00:13,000', '00:00:16,000', '這是一條足夠長的字幕'),
+    ]),
+    [
+      ['00:00:10,000', '00:00:10,800', '短'],
+      ['00:00:13,000', '00:00:16,000', '這是一條足夠長的字幕'],
+    ],
+    'minDisplay: too-short cue end extended into following gap (hard floor)',
+  );
+  // 文本长但时长短（JA 实测 19~22 字 0.5s）→ 按实义字符数缩放 desired=20×0.06=1.2s
+  const longCjk = 'あ'.repeat(20);
+  eq(
+    enforceMinDisplayDuration([
+      T('00:00:10,000', '00:00:10,400', longCjk),
+      T('00:00:14,000', '00:00:17,000', '後文'),
+    ]),
+    [
+      ['00:00:10,000', '00:00:11,200', longCjk],
+      ['00:00:14,000', '00:00:17,000', '後文'],
+    ],
+    'minDisplay: long-text short-duration cue scaled by content char count',
+  );
+  // 延长封顶在「下一条起点 − guardGap(0.1)」（EN 实测下一条很近 → 只能部分改善）
+  eq(
+    enforceMinDisplayDuration([
+      T('00:00:40,000', '00:00:40,280', '字幕'),
+      T('00:00:40,600', '00:00:42,000', '後面一條較長字幕'),
+    ]),
+    [
+      ['00:00:40,000', '00:00:40,500', '字幕'],
+      ['00:00:40,600', '00:00:42,000', '後面一條較長字幕'],
+    ],
+    'minDisplay: extension capped at next-start minus guard gap',
+  );
+  // 下一条过近（无空隙可延）→ 原样，绝不与下一条重叠
+  eq(
+    enforceMinDisplayDuration([
+      T('00:00:40,000', '00:00:40,500', '字幕'),
+      T('00:00:40,550', '00:00:42,000', '緊鄰下一條'),
+    ]),
+    [
+      ['00:00:40,000', '00:00:40,500', '字幕'],
+      ['00:00:40,550', '00:00:42,000', '緊鄰下一條'],
+    ],
+    'minDisplay: next cue too close leaves cue unchanged (no overlap)',
+  );
+  // 末条（其后无可解析起点）→ 不延长（纯函数无音频总长，交给 trim 兜底）
+  eq(
+    enforceMinDisplayDuration([T('00:00:10,000', '00:00:10,300', '短')]),
+    [['00:00:10,000', '00:00:10,300', '短']],
+    'minDisplay: last cue not extended (pure fn has no audio length)',
+  );
+  // 空输入 → 空
+  eq(
+    enforceMinDisplayDuration([]),
+    [],
+    'minDisplay: empty input returns empty',
+  );
+  // 已足够长的 cue → 仅规范化时间，不延长
+  eq(
+    enforceMinDisplayDuration([T('5', '8.5', '足夠長')]),
+    [['00:00:05,000', '00:00:08,500', '足夠長']],
+    'minDisplay: already-long cue normalized but not extended',
+  );
+  // 时间不可解析 → 原样返回（不臆断）
+  eq(
+    enforceMinDisplayDuration([T('bad', 'x', 'y')]),
+    [['bad', 'x', 'y']],
+    'minDisplay: unparseable cue returned as-is',
+  );
+  // perCharSeconds=0 关闭按长度缩放 → 仅用硬下限 0.8s（20 字也只到 0.8s）
+  eq(
+    enforceMinDisplayDuration(
+      [
+        T('00:00:10,000', '00:00:10,400', longCjk),
+        T('00:00:14,000', '00:00:17,000', '後文'),
+      ],
+      { perCharSeconds: 0 },
+    ),
+    [
+      ['00:00:10,000', '00:00:10,800', longCjk],
+      ['00:00:14,000', '00:00:17,000', '後文'],
+    ],
+    'minDisplay: perCharSeconds=0 uses only the hard floor',
+  );
+  // 可配置硬下限（minDurationSeconds=1.5）
+  eq(
+    enforceMinDisplayDuration(
+      [
+        T('00:00:10,000', '00:00:10,500', '短'),
+        T('00:00:20,000', '00:00:23,000', '後'),
+      ],
+      { minDurationSeconds: 1.5 },
+    ),
+    [
+      ['00:00:10,000', '00:00:11,500', '短'],
+      ['00:00:20,000', '00:00:23,000', '後'],
+    ],
+    'minDisplay: configurable minDurationSeconds floor',
   );
 }
 
