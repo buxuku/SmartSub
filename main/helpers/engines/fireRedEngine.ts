@@ -21,6 +21,7 @@ import {
   trimSubtitleTrailingSilence,
 } from '../subtitleTiming';
 import { buildFireRedParams } from './fireRedParams';
+import { resolveEffectiveSettings } from './outcomePresets';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
 let activeTranscribeId: string | null = null;
@@ -54,7 +55,11 @@ function prewarmFireRed(formData: Record<string, unknown>): void {
       getInstalledFireRedModels(),
     );
     if (!selection) return;
-    const settings = store.get('settings') as Record<string, unknown>;
+    // 与 transcribe 同源派生 VAD 灵敏度，确保预热与正式转写的 VAD 配置一致。
+    const settings = resolveEffectiveSettings(
+      formData,
+      store.get('settings') as Record<string, unknown>,
+    );
     getSherpaAsrRuntime().prewarm(buildModelRequest(selection, settings));
     logMessage('firered (sherpa) prewarm started', 'info');
   } catch (error) {
@@ -71,7 +76,11 @@ async function transcribeFireRed(ctx: TranscribeContext): Promise<string> {
   event.sender.send('taskFileChange', { ...file, extractSubtitle: 'loading' });
 
   const { tempAudioFile, srtFile } = file;
-  const settings = store.get('settings') as Record<string, unknown>;
+  // 逐任务运行时派生（字幕效果档位 → VAD 灵敏度），不回写全局。
+  const settings = resolveEffectiveSettings(
+    formData,
+    store.get('settings') as Record<string, unknown>,
+  );
 
   if (!isSherpaLibInstalled()) {
     throw new Error(

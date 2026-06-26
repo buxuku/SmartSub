@@ -13,6 +13,7 @@ const VAD_WINDOW_SIZE = 512;
 let recognizer = null;
 let vad = null;
 let cacheKey = '';
+let vadKey = '';
 // 仅 VAD（不加载 ASR 识别器）——供内置 whisper.cpp 0-fork 时间轴贴齐取语音边界。
 // 与 transcribe 的 vad 分开缓存：只要边界时不必被迫加载 ASR 模型。
 let vadOnly = null;
@@ -58,6 +59,19 @@ function buildKey(req) {
 
 // 与 main/helpers/sherpaOnnx/sherpaConfig.ts 等价（worker 不经 webpack，故内联）。
 // 二者必须保持一致：sherpaConfig.ts 的纯逻辑已被 test:engines 覆盖。
+// VAD 缓存键：仅 VAD 模型 + 灵敏度参数。与 ASR 识别器键（buildKey）分开，
+// 使「字幕效果档位」切换 VAD 灵敏度时只重建廉价的 VAD，不重载昂贵的 ASR 模型。
+function buildVadKey(req) {
+  const p = req.params;
+  return [
+    req.vadModel,
+    p.vad_threshold,
+    p.vad_min_speech_duration_ms,
+    p.vad_min_silence_duration_ms,
+    p.vad_max_speech_duration_s,
+  ].join('|');
+}
+
 function buildVadConfig(vadModel, p) {
   const UNLIMITED = 100000;
   return {
@@ -145,23 +159,34 @@ function buildFireRedRecognizerConfig(f, tokens, p) {
 
 function ensureLoaded(req) {
   const key = buildKey(req);
-  if (recognizer && key === cacheKey) return;
-  let config;
-  if (req.modelType === 'qwen3_asr') {
-    config = buildQwenRecognizerConfig(req.qwen, req.params);
-  } else if (req.modelType === 'fire_red_asr') {
-    config = buildFireRedRecognizerConfig(req.fireRed, req.tokens, req.params);
-  } else {
-    config = buildRecognizerConfig(
-      req.modelType,
-      req.asrModel,
-      req.tokens,
-      req.params,
-    );
+  if (!recognizer || key !== cacheKey) {
+    let config;
+    if (req.modelType === 'qwen3_asr') {
+      config = buildQwenRecognizerConfig(req.qwen, req.params);
+    } else if (req.modelType === 'fire_red_asr') {
+      config = buildFireRedRecognizerConfig(
+        req.fireRed,
+        req.tokens,
+        req.params,
+      );
+    } else {
+      config = buildRecognizerConfig(
+        req.modelType,
+        req.asrModel,
+        req.tokens,
+        req.params,
+      );
+    }
+    recognizer = new sherpa.OfflineRecognizer(config);
+    cacheKey = key;
   }
-  recognizer = new sherpa.OfflineRecognizer(config);
-  vad = new sherpa.Vad(buildVadConfig(req.vadModel, req.params), 60);
-  cacheKey = key;
+  // VAD 与识别器分开缓存：仅当 VAD 灵敏度参数变化时重建 VAD（如切换字幕效果档位），
+  // 避免「同模型不同 VAD」复用 worker 时静默沿用旧 VAD 参数。
+  const vKey = buildVadKey(req);
+  if (!vad || vKey !== vadKey) {
+    vad = new sherpa.Vad(buildVadConfig(req.vadModel, req.params), 60);
+    vadKey = vKey;
+  }
 }
 
 function postCancelled(id) {
@@ -219,14 +244,7 @@ async function transcribe(req) {
 
 // 仅 VAD：缓存一个独立的 silero VAD 实例（避免每个文件重载 onnx），按 vadModel+参数 复用。
 function ensureVadOnly(req) {
-  const p = req.params;
-  const key = [
-    req.vadModel,
-    p.vad_threshold,
-    p.vad_min_speech_duration_ms,
-    p.vad_min_silence_duration_ms,
-    p.vad_max_speech_duration_s,
-  ].join('|');
+  const key = buildVadKey(req);
   if (vadOnly && key === vadOnlyKey) return vadOnly;
   vadOnly = new sherpa.Vad(buildVadConfig(req.vadModel, req.params), 60);
   vadOnlyKey = key;

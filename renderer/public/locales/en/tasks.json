@@ -22,6 +22,38 @@
   "goConfigureProvider": "Set up a translation service",
   "advanced": "Advanced options",
   "advancedDesc": "Details you rarely change — the defaults are best practice",
+  "outcome": {
+    "label": "Subtitle effect",
+    "recommended": "Recommended",
+    "accurate": {
+      "title": "Most accurate text",
+      "desc": "Keeps as much of every sentence as possible with fewer dropped words; may add a few stray lines over silence or background noise.",
+      "scene": "Best for lectures, interviews, talking-head videos"
+    },
+    "balanced": {
+      "title": "Balanced",
+      "desc": "Balances complete text with clean subtitles — a safe choice for most videos.",
+      "scene": "Best for most videos; pick this if unsure"
+    },
+    "clean": {
+      "title": "Cleanest & most stable",
+      "desc": "Prioritizes suppressing repeats and hallucinated lines with a steadier timeline; may drop some unclear speech.",
+      "scene": "Best for long videos or material with music / applause / long silence"
+    },
+    "custom": {
+      "title": "Custom",
+      "desc": "Manually tune context length, VAD, repetition reduction and other low-level parameters.",
+      "sectionTitle": "Custom parameters",
+      "sherpaNote": "For the current engine (FunASR / Qwen / FireRed), VAD is always on and there is no context-length / repetition concept. To fine-tune VAD sensitivity, use the Settings page."
+    },
+    "compare": {
+      "toggle": "See how the effects differ",
+      "caption": "Roughly how the same sentence appears at each level:",
+      "accurate": "Um… so, today we'll, uh, go over this new feature",
+      "balanced": "So, today we'll go over this new feature",
+      "clean": "Today we'll go over this new feature"
+    }
+  },
   "section": {
     "recognition": "Transcription",
     "output": "Output & saving",
