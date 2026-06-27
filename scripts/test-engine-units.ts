@@ -74,13 +74,14 @@ import {
   hasModelsForEngine,
 } from '../renderer/lib/engineModels';
 import {
-  retimeTokensToSpeech,
+  tokensToTriples,
   groupTokenCues,
-  clampCuesToSegments,
-  clampCuesToDominantSegments,
   mergeShortCues,
-  dropCuesInDeepSilence,
   enforceMinDisplayDuration,
+  clampTriplesToSpeechSegments,
+  clampCuesToDominantSegments,
+  dropCuesInDeepSilence,
+  vadSegmentsToSpeech,
   type TokenTriple,
 } from '../main/helpers/subtitleSegmentation';
 import {
@@ -956,146 +957,148 @@ eq(
   'import: fireRed requiredFiles',
 );
 
-// --- subtitleSegmentation: retimeTokensToSpeech（用语音段把 token 贴回有声区间） ---
+// --- subtitleSegmentation: tokensToTriples（原生逐 token 毫秒 → 字幕三元组） ---
 const T = (a: string, b: string, c: string): TokenTriple => [a, b, c];
 {
-  const tokens = [
-    T('00:00:00.000', '00:00:02.000', '你好'),
-    T('00:00:02.000', '00:00:13.000', '世界'),
-  ];
-  // 空边界（边界源不可用）→ 原样返回，优雅降级
+  // 毫秒 t0/t1 → HH:MM:SS,mmm；段间停顿（gap）由原生 segment-aware 映射保留，原样转成 TokenTriple
   eq(
-    retimeTokensToSpeech(tokens, []),
-    tokens,
-    'retime: empty segments returns tokens unchanged',
-  );
-  // 有边界 → 被「填满」的第二个 token 收敛回真实有声 [12,13]，段间停顿重现
-  eq(
-    retimeTokensToSpeech(tokens, [
-      { start: 0, end: 2 },
-      { start: 12, end: 14 },
+    tokensToTriples([
+      { text: '你好', t0: 0, t1: 2000 },
+      { text: '世界', t0: 12000, t1: 13000 },
     ]),
     [
       ['00:00:00,000', '00:00:02,000', '你好'],
       ['00:00:12,000', '00:00:13,000', '世界'],
     ],
-    'retime: filled token snapped back to its speech segment (gap restored)',
+    'tokensToTriples: ms token times -> SRT triples (native gap preserved)',
   );
-  // 浮动内容 run 离「后段」更近 → 整 run 前向平移到后段起点（whisper 前向填充的反向修正）
+  // 时间非法（NaN/缺失）→ 该端输出空串（groupTokenCues 会并入文本、不作为切分依据、不丢字）
   eq(
-    retimeTokensToSpeech(
-      [T('00:00:09,500', '00:00:09,800', 'x')],
+    tokensToTriples([{ text: 'x', t0: NaN as unknown as number, t1: 500 }]),
+    [['', '00:00:00,500', 'x']],
+    'tokensToTriples: non-finite start emits empty string (no split, no drop)',
+  );
+  // 空 / 非数组输入 → 空数组（优雅降级）
+  eq(tokensToTriples([]), [], 'tokensToTriples: empty input -> empty output');
+}
+
+// --- subtitleSegmentation: vadSegmentsToSpeech + clampTriplesToSpeechSegments ---
+{
+  // 毫秒 VAD 段 → 秒、排序、丢弃非法段
+  eq(
+    vadSegmentsToSpeech([
+      { t0: 25110, t1: 27140 },
+      { t0: 19500, t1: 21510 },
+      { t0: 5000, t1: 5000 }, // 非法（end<=start）丢弃
+    ]),
+    [
+      { start: 19.5, end: 21.51 },
+      { start: 25.11, end: 27.14 },
+    ],
+    'vadSegmentsToSpeech: ms->s, sorted, drops invalid',
+  );
+
+  const segs = [
+    { start: 19.5, end: 21.51 },
+    { start: 25.11, end: 27.14 },
+  ];
+  // token 落在语音段内 → 原样保留；落在段间静音 → 就近吸附到边界（不再压在静音上）
+  eq(
+    clampTriplesToSpeechSegments(
       [
-        { start: 0, end: 2 },
-        { start: 10, end: 12 },
+        T('00:00:20,000', '00:00:21,000', '攝氏'), // 段内
+        T('00:00:22,000', '00:00:23,000', '度'), // 静音(21.51-25.11)，中点22.5→近段尾21.51
+        T('00:00:26,000', '00:00:26,500', '請'), // 段内
+      ],
+      segs,
+    ),
+    [
+      ['00:00:20,000', '00:00:21,000', '攝氏'],
+      ['00:00:21,510', '00:00:21,510', '度'],
+      ['00:00:26,000', '00:00:26,500', '請'],
+    ],
+    'clampTriplesToSpeechSegments: silence token snaps to nearest boundary',
+  );
+  // 夹紧后 group：静音前后被自然间隔切成两条，字幕不糊穿静音
+  eq(
+    groupTokenCues(
+      clampTriplesToSpeechSegments(
+        [
+          T('00:00:20,800', '00:00:21,000', '溫'),
+          T('00:00:23,000', '00:00:24,000', '請'), // 静音中点≈23.5→近段首25.11? 中点距离: 到21.51=1.99,到25.11=1.61→近段首
+          T('00:00:26,000', '00:00:26,500', '記'),
+        ],
+        segs,
+      ),
+    ).length >= 2,
+    true,
+    'clamp+group: silence yields a cue split (no spill across silence)',
+  );
+  // 无段信息（VAD 关 / 旧加速包）→ 恒等变换
+  eq(
+    clampTriplesToSpeechSegments([T('00:00:01,000', '00:00:02,000', 'x')], []),
+    [['00:00:01,000', '00:00:02,000', 'x']],
+    'clampTriplesToSpeechSegments: no segments -> identity',
+  );
+}
+
+// --- subtitleSegmentation: clampCuesToDominantSegments + dropCuesInDeepSilence（VAD 关路径）---
+{
+  const energy = [
+    { start: 14.0, end: 17.0 }, // 句子真正所在段
+    { start: 25.0, end: 30.0 },
+  ];
+  // cue 跨静音糊穿（11→15.5，含 10.9-13.9 静音）：主导段 14-17 覆盖率高 → 整条后移到 14，不碎词
+  eq(
+    clampCuesToDominantSegments(
+      [T('00:00:11,000', '00:00:15,500', '今天是2026年6月25日')],
+      energy,
+    ),
+    [['00:00:14,000', '00:00:15,500', '今天是2026年6月25日']],
+    'clampCuesToDominantSegments: cue moves to dominant segment (no word split)',
+  );
+  // 弱重叠（只擦到段尾 0.2s）→ 不夹（避免夹成碎片），原样保留
+  eq(
+    clampCuesToDominantSegments(
+      [T('00:00:21,000', '00:00:23,000', '请记录以下信息')],
+      [
+        { start: 19.5, end: 21.2 },
+        { start: 25.0, end: 30.0 },
       ],
     ),
-    [['00:00:10,000', '00:00:10,300', 'x']],
-    'retime: floating run nearer to next segment snaps forward to its start',
+    [['00:00:21,000', '00:00:23,000', '请记录以下信息']],
+    'clampCuesToDominantSegments: weak overlap left untouched',
   );
-  // 浮动内容 run 离「前段」更近 → 整 run 后向平移紧接前段末点（不再被错误前向抛远）
+  // segments 为空 → 恒等
   eq(
-    retimeTokensToSpeech(
-      [T('00:00:05,200', '00:00:05,500', 'x')],
-      [
-        { start: 0, end: 5 },
-        { start: 10, end: 12 },
-      ],
-    ),
-    [['00:00:05,000', '00:00:05,300', 'x']],
-    'retime: floating run nearer to prev segment snaps back to abut its end',
+    clampCuesToDominantSegments([T('00:00:01,000', '00:00:02,000', 'x')], []),
+    [['00:00:01,000', '00:00:02,000', 'x']],
+    'clampCuesToDominantSegments: no segments -> identity',
   );
-  // 句尾尾字越过 VAD 末点（…應用十分廣|泛）→ 「泛」回贴到上一句末点附近，绝不被抛到下一句
-  // 廣[49.85,50.09] 与前段[44.96,49.916]有交集 → anchored 截到 [49.85,49.916]
-  // 泛[50.09,50.40] 落静音、离前段更近 → 后向平移 delta=-0.174 → [49.916,50.226]
-  // 。[50.40,50.40] 零时长纯标点、不在段内 → 原样保留
+  // 深静音悬空 cue（离最近段 >1.5s 且零重叠）→ 丢弃；贴边界真实尾字（<1.5s）→ 保留
   eq(
-    retimeTokensToSpeech(
+    dropCuesInDeepSilence(
       [
-        T('00:00:49,850', '00:00:50,090', '廣'),
-        T('00:00:50,090', '00:00:50,400', '泛'),
-        T('00:00:50,400', '00:00:50,400', '。'),
+        T('00:00:14,000', '00:00:15,000', '真实'),
+        T('00:00:22,000', '00:00:23,000', '幻觉'), // 距段(17/25)>1.5s 且零重叠 → 丢
+        T('00:00:17,300', '00:00:17,600', '尾字'), // 距段尾17.0=0.3s → 保留
       ],
       [
-        { start: 44.96, end: 49.916 },
-        { start: 53.862, end: 56.76 },
+        { start: 13.0, end: 17.0 },
+        { start: 25.0, end: 30.0 },
       ],
     ),
     [
-      ['00:00:49,850', '00:00:49,916', '廣'],
-      ['00:00:49,916', '00:00:50,226', '泛'],
-      ['00:00:50,400', '00:00:50,400', '。'],
+      ['00:00:14,000', '00:00:15,000', '真实'],
+      ['00:00:17,300', '00:00:17,600', '尾字'],
     ],
-    'retime: trailing tail token stays beside prev sentence (not flung to next)',
+    'dropCuesInDeepSilence: drops deep-silence hallucination, keeps boundary word',
   );
-  // 多 token run 前向平移保留内部相对偏移与顺序
+  // segments 为空 → 原样（优雅降级，绝不无依据删字幕）
   eq(
-    retimeTokensToSpeech(
-      [
-        T('00:00:08,000', '00:00:08,300', '甲'),
-        T('00:00:08,300', '00:00:08,700', '乙'),
-      ],
-      [
-        { start: 0, end: 2 },
-        { start: 10, end: 14 },
-      ],
-    ),
-    [
-      ['00:00:10,000', '00:00:10,300', '甲'],
-      ['00:00:10,300', '00:00:10,700', '乙'],
-    ],
-    'retime: multi-token floating run preserves internal offsets when snapped',
-  );
-  // 零时长内容 run 落在静音、离后段更近 → 平移到后段起点（随后段首 token 合并，消除零时长孤条）
-  eq(
-    retimeTokensToSpeech(
-      [
-        T('00:00:09,000', '00:00:09,000', '人'),
-        T('00:00:09,000', '00:00:09,000', '工'),
-      ],
-      [
-        { start: 0, end: 2 },
-        { start: 10, end: 12 },
-      ],
-    ),
-    [
-      ['00:00:10,000', '00:00:10,000', '人'],
-      ['00:00:10,000', '00:00:10,000', '工'],
-    ],
-    'retime: zero-duration content run in silence snapped to next segment start',
-  );
-  // 零时长内容 token 落在「段内」→ 按点判定为 anchored，原样保留（绝不被误判浮动抛走）
-  eq(
-    retimeTokensToSpeech(
-      [T('00:00:03,000', '00:00:03,000', '技')],
-      [{ start: 0, end: 5 }],
-    ),
-    [['00:00:03,000', '00:00:03,000', '技']],
-    'retime: zero-duration content token inside a segment kept anchored in place',
-  );
-  // 落在静音的「空 / 空白 token」→ 原样保留（护栏，避免噪声错位）
-  eq(
-    retimeTokensToSpeech(
-      [T('00:00:05,000', '00:00:06,000', ' ')],
-      [
-        { start: 0, end: 2 },
-        { start: 12, end: 14 },
-      ],
-    ),
-    [['00:00:05,000', '00:00:06,000', ' ']],
-    'retime: empty/space token in silence kept as-is (guard)',
-  );
-  // 落在静音的「纯标点 token」→ 原样保留（随相邻 cue 收尾，不前向贴齐成孤立标点条）
-  eq(
-    retimeTokensToSpeech(
-      [T('00:00:05,000', '00:00:05,100', '。')],
-      [
-        { start: 0, end: 2 },
-        { start: 12, end: 14 },
-      ],
-    ),
-    [['00:00:05,000', '00:00:05,100', '。']],
-    'retime: punct-only token in silence kept as-is',
+    dropCuesInDeepSilence([T('00:00:40,000', '00:00:41,000', 'x')], []),
+    [['00:00:40,000', '00:00:41,000', 'x']],
+    'dropCuesInDeepSilence: no segments -> identity',
   );
 }
 
@@ -1247,202 +1250,23 @@ eq(
   'group(§6.2): sentence-end still flushes immediately regardless of soft width',
 );
 
-// --- subtitleSegmentation: retime+group 端到端（D8：被填进静音的内容 token 还原停顿） ---
+// --- subtitleSegmentation: tokensToTriples + group 端到端（原生 segment-aware token 已带停顿） ---
 {
-  // 真实「前向填充」：静音后首个 token「后」起点被前移到上一 token 末点(2.0)、时长把 [2,12]
-  // 静音吃进去并伸进后段 [12,14] → 与后段有交集被 anchored 收敛到 [12,12.3]，停顿复现。
-  const filled = [
-    T('00:00:00,000', '00:00:01,000', '前'),
-    T('00:00:01,000', '00:00:02,000', '段'),
-    T('00:00:02,000', '00:00:12,300', '后'),
-    T('00:00:12,300', '00:00:12,600', '段'),
-  ];
-  const segs = [
-    { start: 0, end: 2 },
-    { start: 12, end: 14 },
+  // 原生层已把段间静音映射成 token gap（前段止于 2.0s、后段起于 12.0s）→ group 在此 gap 切两条，
+  // 停顿天然复现（取代旧 retime+group：不再需要外部语音段把 token 贴回有声区间）。
+  const native = [
+    { text: '前', t0: 0, t1: 1000 },
+    { text: '段', t0: 1000, t1: 2000 },
+    { text: '后', t0: 12000, t1: 12300 },
+    { text: '段', t0: 12300, t1: 12600 },
   ];
   eq(
-    groupTokenCues(retimeTokensToSpeech(filled, segs)),
+    groupTokenCues(tokensToTriples(native)),
     [
       ['00:00:00,000', '00:00:02,000', '前段'],
       ['00:00:12,000', '00:00:12,600', '后段'],
     ],
-    'retime+group: forward-filled token anchored into next segment, gap restored',
-  );
-}
-
-// --- subtitleSegmentation: retime+group 端到端（D11：句尾尾字回贴上一句，不另起迟到条） ---
-{
-  // 「應用」在前段，尾字「廣泛。」被 whisper 放到 VAD 末点之外的静音里，且离前段更近 →
-  // 整 run 回贴前段末点、与「應用」聚成同一条，而非在 53s 处另起一条迟到的「廣泛」。
-  const tokens = [
-    T('00:00:44,960', '00:00:48,000', '應'),
-    T('00:00:48,000', '00:00:49,916', '用'),
-    T('00:00:49,916', '00:00:50,200', '廣'),
-    T('00:00:50,200', '00:00:50,500', '泛'),
-    T('00:00:50,500', '00:00:50,500', '。'),
-  ];
-  const segs = [
-    { start: 44.96, end: 49.916 },
-    { start: 53.862, end: 56.76 },
-  ];
-  const cues = groupTokenCues(retimeTokensToSpeech(tokens, segs));
-  eq(
-    cues.length,
-    1,
-    'retime+group: trailing tail merges into one cue (no late cue)',
-  );
-  eq(
-    cues[0][2],
-    '應用廣泛。',
-    'retime+group: trailing tail text joins previous sentence',
-  );
-  eq(
-    cues[0][0],
-    '00:00:44,960',
-    'retime+group: merged cue keeps previous sentence start',
-  );
-}
-
-// --- subtitleSegmentation: retime+group 端到端（D11：零时长整句被前向填充 → 消除零时长孤条） ---
-{
-  // 复现「人工智能技术」整句被 whisper 塞成同一时刻零时长、落在静音里（旧版输出
-  // 00:00:41,400 --> 00:00:41,400 人工智能技术 的零时长字幕条）。run 离后段更近 → 前向贴到
-  // 后段起点，与「正在」聚成同一条非零时长字幕，零时长孤条消失。
-  const zeroRun = [
-    T('00:00:36,000', '00:00:36,956', '号'),
-    T('00:00:41,400', '00:00:41,400', '人'),
-    T('00:00:41,400', '00:00:41,400', '工'),
-    T('00:00:41,400', '00:00:41,400', '智'),
-    T('00:00:41,400', '00:00:41,400', '能'),
-    T('00:00:41,400', '00:00:41,400', '技'),
-    T('00:00:41,400', '00:00:41,400', '术'),
-    T('00:00:41,926', '00:00:43,400', '正'),
-    T('00:00:43,400', '00:00:44,960', '在'),
-  ];
-  const segs = [
-    { start: 30, end: 36.956 },
-    { start: 41.926, end: 44.96 },
-  ];
-  eq(
-    groupTokenCues(retimeTokensToSpeech(zeroRun, segs)),
-    [
-      ['00:00:36,000', '00:00:36,956', '号'],
-      ['00:00:41,926', '00:00:44,960', '人工智能技术正在'],
-    ],
-    'retime+group: zero-duration filled sentence merged forward (no zero-length cue)',
-  );
-}
-
-// --- subtitleSegmentation: clampCuesToSegments（cue 起止收进真实语音段，D8-B） ---
-{
-  const segs = [
-    { start: 0, end: 2 },
-    { start: 12, end: 14 },
-  ];
-  // 起点渗进静音的跨停顿 cue → 收进重叠段 [12,14]，停顿复现
-  eq(
-    clampCuesToSegments([T('00:00:05,000', '00:00:13,000', '后段')], segs),
-    [['00:00:12,000', '00:00:13,000', '后段']],
-    'clamp: cue bleeding into silence clamped to overlapping segment',
-  );
-  // 与任何语音段都无重叠的 cue → 原样返回（不臆断）
-  eq(
-    clampCuesToSegments([T('00:00:05,000', '00:00:06,000', '幻')], segs),
-    [['00:00:05,000', '00:00:06,000', '幻']],
-    'clamp: cue with no overlapping segment kept as-is',
-  );
-  // 空 segments → 原样返回（优雅降级）
-  eq(
-    clampCuesToSegments([T('00:00:05,000', '00:00:13,000', 'x')], []),
-    [['00:00:05,000', '00:00:13,000', 'x']],
-    'clamp: empty segments returns cues unchanged',
-  );
-  // 自身起止已落在重叠段内的多段 cue → 保持原界（不打洞中间静音）
-  eq(
-    clampCuesToSegments([T('00:00:01,000', '00:00:13,500', '整')], segs),
-    [['00:00:01,000', '00:00:13,500', '整']],
-    'clamp: cue overlapping multiple segments keeps its own inner bounds',
-  );
-}
-
-// --- subtitleSegmentation: clampCuesToDominantSegments（VAD-off 安全停顿还原，D13） ---
-{
-  const segs = [
-    { start: 10, end: 13 },
-    { start: 20, end: 22 },
-  ];
-  // 带前导静音、实质覆盖某段（≥50%）→ 剪掉前导静音、收进段内，复现 gap
-  eq(
-    clampCuesToDominantSegments(
-      [T('00:00:05,000', '00:00:13,000', '后段')],
-      segs,
-    ),
-    [['00:00:10,000', '00:00:13,000', '后段']],
-    'clampDom: leading-silence cue covering a segment is clamped into it',
-  );
-  // 只擦到前句段尾的弱重叠（覆盖率 < 50%）→ 原样保留（不被误夹成碎片，修 clampCuesToSegments 把「请记录」夹成 0.3s）
-  eq(
-    clampCuesToDominantSegments(
-      [T('00:00:08,000', '00:00:10,500', '弱')],
-      segs,
-    ),
-    [['00:00:08,000', '00:00:10,500', '弱']],
-    'clampDom: weak tail overlap (<50% coverage) kept as-is, not squeezed',
-  );
-  // 与任何语音段无重叠 → 原样（交给 dropCuesInDeepSilence 判幻觉）
-  eq(
-    clampCuesToDominantSegments(
-      [T('00:00:15,000', '00:00:16,000', '幻')],
-      segs,
-    ),
-    [['00:00:15,000', '00:00:16,000', '幻']],
-    'clampDom: cue with no overlapping segment kept as-is',
-  );
-  // 实质覆盖两段 → 收到 [首段 start, 末段 end]，剪掉两端静音、保留两段（含中间停顿）
-  eq(
-    clampCuesToDominantSegments(
-      [T('00:00:05,000', '00:00:25,000', '两段')],
-      segs,
-    ),
-    [['00:00:10,000', '00:00:22,000', '两段']],
-    'clampDom: cue covering two full segments clamps to [first.start,last.end]',
-  );
-  // 空 segments（边界源不可用）→ 原样返回（优雅降级）
-  eq(
-    clampCuesToDominantSegments([T('00:00:05,000', '00:00:13,000', 'x')], []),
-    [['00:00:05,000', '00:00:13,000', 'x']],
-    'clampDom: empty segments returns cues unchanged (graceful degradation)',
-  );
-  // 收敛后时长 < 0.3s → 放弃收敛、保留可读原 cue
-  eq(
-    clampCuesToDominantSegments(
-      [T('00:00:09,000', '00:00:10,200', '短')],
-      [{ start: 10, end: 10.2 }],
-    ),
-    [['00:00:09,000', '00:00:10,200', '短']],
-    'clampDom: clamped result shorter than min duration keeps original',
-  );
-  // cue 完整落在长段内（覆盖率 < 50%）→ 原样（本就在有声区、无静音可剪）
-  eq(
-    clampCuesToDominantSegments(
-      [T('00:00:12,000', '00:00:13,000', '内')],
-      [{ start: 10, end: 20 }],
-    ),
-    [['00:00:12,000', '00:00:13,000', '内']],
-    'clampDom: cue fully inside a long segment kept (no silence to trim)',
-  );
-  // 覆盖率阈值可配置：调低到 0.1 → 弱重叠也会被收敛
-  eq(
-    clampCuesToDominantSegments(
-      [T('00:00:08,000', '00:00:10,500', '弱')],
-      segs,
-      {
-        minSegmentCoverage: 0.1,
-      },
-    ),
-    [['00:00:10,000', '00:00:10,500', '弱']],
-    'clampDom: lower coverage threshold also clamps weak overlap',
+    'tokensToTriples+group: native segment-aware gap splits into two cues',
   );
 }
 
@@ -1508,52 +1332,6 @@ eq(
       ['00:00:01,100', '00:00:01,400', '字'],
     ],
     'merge: skip when joined width would exceed maxWidth',
-  );
-}
-
-// --- subtitleSegmentation: dropCuesInDeepSilence（VAD-off 路径护栏，D12） ---
-{
-  const segs = [
-    { start: 0, end: 5 },
-    { start: 20, end: 25 },
-  ];
-  // 深静音悬空 cue（离最近段 5s）丢；贴边界真实尾字/起字（0.5s / 0.2s）与重叠 cue 保留
-  eq(
-    dropCuesInDeepSilence(
-      [
-        T('00:00:02,000', '00:00:03,000', '好'), // 与 [0,5] 重叠 → 留
-        T('00:00:05,500', '00:00:06,000', '泛'), // 距前段 0.5s → 留（VAD 漏检尾字）
-        T('00:00:10,000', '00:00:11,000', '幻'), // 离最近段 5s → 丢（深静音幻觉）
-        T('00:00:19,000', '00:00:19,800', '請'), // 距后段 0.2s → 留（VAD 漏检起字）
-      ],
-      segs,
-    ),
-    [
-      ['00:00:02,000', '00:00:03,000', '好'],
-      ['00:00:05,500', '00:00:06,000', '泛'],
-      ['00:00:19,000', '00:00:19,800', '請'],
-    ],
-    'drop: deep-silence cue removed, boundary-adjacent real speech kept',
-  );
-  // 空 segments（边界源不可用）→ 原样返回（优雅降级，绝不无依据删字幕）
-  eq(
-    dropCuesInDeepSilence([T('00:00:10,000', '00:00:11,000', '幻')], []),
-    [['00:00:10,000', '00:00:11,000', '幻']],
-    'drop: empty segments returns cues unchanged (graceful degradation)',
-  );
-  // 更严阈值（0.3s）→ 连贴边界 0.5s 的 cue 也丢
-  eq(
-    dropCuesInDeepSilence([T('00:00:05,500', '00:00:06,000', '泛')], segs, {
-      minSilenceDistanceSeconds: 0.3,
-    }),
-    [],
-    'drop: stricter distance threshold also drops near-boundary cue',
-  );
-  // 不修改保留 cue 的时间 / 文本（只整条保留或丢弃）
-  eq(
-    dropCuesInDeepSilence([T('00:00:01,234', '00:00:04,567', '原样')], segs),
-    [['00:00:01,234', '00:00:04,567', '原样']],
-    'drop: kept cue is returned verbatim (no retiming)',
   );
 }
 
