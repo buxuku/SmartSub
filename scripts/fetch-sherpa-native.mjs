@@ -15,15 +15,20 @@
  *
  * macOS：构建期把 @rpath 依赖改写为 @loader_path（同目录解析）并 ad-hoc 重签，随后由
  * electron-builder 的 Developer ID 签名 / 公证覆盖（取代旧的运行时 ad-hoc 重签）。
+ *
+ * 下载 / 重签逻辑与 fetch-whisper-addon.mjs 共用 scripts/lib/native-download.mjs。
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import https from 'node:https';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import * as tar from 'tar';
+import {
+  download,
+  fetchText,
+  sha256,
+  resignMacNodes,
+} from './lib/native-download.mjs';
 
 // 与 main/helpers/sherpaOnnx/sherpaLibDownloader.ts 的 SHERPA_VERSION 保持一致。
 const SHERPA_VERSION = '1.13.2';
@@ -48,108 +53,6 @@ function assetName(platformKey) {
 
 function releaseUrl(asset) {
   return `https://github.com/${SHERPA_REPO}/releases/download/${SHERPA_TAG}/${asset}`;
-}
-
-function download(url, dest) {
-  return new Promise((resolve, reject) => {
-    const req = https.get(
-      url,
-      { headers: { 'User-Agent': 'SmartSub-Build' } },
-      (res) => {
-        if (
-          res.statusCode &&
-          res.statusCode >= 300 &&
-          res.statusCode < 400 &&
-          res.headers.location
-        ) {
-          download(res.headers.location, dest).then(resolve).catch(reject);
-          res.resume();
-          return;
-        }
-        if (res.statusCode && res.statusCode >= 400) {
-          reject(new Error(`HTTP ${res.statusCode} for ${url}`));
-          res.resume();
-          return;
-        }
-        const out = fs.createWriteStream(dest);
-        res.pipe(out);
-        out.on('finish', () => out.close(() => resolve()));
-        out.on('error', reject);
-      },
-    );
-    req.on('error', reject);
-    req.setTimeout(60000, () => {
-      req.destroy(new Error('Request timeout'));
-    });
-  });
-}
-
-function fetchText(url) {
-  return new Promise((resolve, reject) => {
-    https
-      .get(url, { headers: { 'User-Agent': 'SmartSub-Build' } }, (res) => {
-        if (
-          res.statusCode &&
-          res.statusCode >= 300 &&
-          res.statusCode < 400 &&
-          res.headers.location
-        ) {
-          fetchText(res.headers.location).then(resolve).catch(reject);
-          res.resume();
-          return;
-        }
-        if (res.statusCode && res.statusCode >= 400) {
-          reject(new Error(`HTTP ${res.statusCode}`));
-          res.resume();
-          return;
-        }
-        const chunks = [];
-        res.on('data', (c) => chunks.push(c));
-        res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-        res.on('error', reject);
-      })
-      .on('error', reject);
-  });
-}
-
-function sha256(file) {
-  const h = createHash('sha256');
-  h.update(fs.readFileSync(file));
-  return h.digest('hex').toLowerCase();
-}
-
-/** macOS：@rpath -> @loader_path 改写 + ad-hoc 重签（electron-builder 随后会正式签名）。 */
-function resignMac(dir) {
-  if (process.platform !== 'darwin') return;
-  const files = fs
-    .readdirSync(dir)
-    .filter((f) => f.endsWith('.node') || f.endsWith('.dylib'));
-  for (const f of files) {
-    const full = path.join(dir, f);
-    try {
-      const otool = execFileSync('otool', ['-L', full]).toString();
-      for (const line of otool.split('\n')) {
-        const m = line.trim().match(/^@rpath\/(\S+)\s/);
-        if (m) {
-          execFileSync('install_name_tool', [
-            '-change',
-            `@rpath/${m[1]}`,
-            `@loader_path/${m[1]}`,
-            full,
-          ]);
-        }
-      }
-    } catch (e) {
-      console.warn(`otool/install_name_tool skipped for ${f}: ${e}`);
-    }
-  }
-  for (const f of files) {
-    try {
-      execFileSync('codesign', ['--force', '--sign', '-', path.join(dir, f)]);
-    } catch (e) {
-      console.warn(`ad-hoc codesign skipped for ${f}: ${e}`);
-    }
-  }
 }
 
 async function main() {
@@ -181,7 +84,7 @@ async function main() {
   await tar.extract({ file: tmp, cwd: outDir });
   fs.rmSync(tmp, { force: true });
 
-  resignMac(outDir);
+  resignMacNodes(outDir);
 
   const nativePath = path.join(outDir, 'sherpa-onnx.node');
   if (!fs.existsSync(nativePath)) {

@@ -1,0 +1,1 @@
+# 保留目录占位：addon.node / addon.coreml.node / addon.vulkan.node 由 scripts/fetch-whisper-addon.mjs 按需落地（见 .gitignore）。
