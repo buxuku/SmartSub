@@ -192,6 +192,53 @@ export function analyzePcm16WavEnergy(audioFile: string): AudioEnergy | null {
   };
 }
 
+/** 能量法语音段：桥接 < 0.2s 的短静音（避免词内碎裂），丢弃 < 0.12s 的语音碎片。 */
+const ENERGY_BRIDGE_SILENCE_SECONDS = 0.2;
+const ENERGY_MIN_SPEECH_SECONDS = 0.12;
+
+/**
+ * 能量法语音段兜底（秒，`[{start,end}]`）：当 whisper 内部 VAD 关闭（如「文字最准」档）导致
+ * `result.vadSegments` 为空时，用 RMS dB 阈值估算有声区间，供 `clampTriplesToSpeechSegments`
+ * 把 token 夹回真实语音段、还原段间停顿。纯能量、零额外依赖/推理（复用 `analyzePcm16WavEnergy`）；
+ * 解析失败 / 文件缺失 → 返回 `[]`（调用方 clamp 退化为恒等，不影响现有行为）。
+ *
+ * 注意：这**不是**「双 VAD」回潮——仅在 whisper VAD 关时跑一次轻量能量扫描，不依赖 sherpa /
+ * 不做二次神经网络推理；VAD 开时调用方优先用 `result.vadSegments`，本函数不参与。
+ */
+export function energySpeechSegments(
+  audioFile?: string,
+): Array<{ start: number; end: number }> {
+  if (!audioFile || !fs.existsSync(audioFile)) return [];
+  const energy = analyzePcm16WavEnergy(audioFile);
+  if (!energy) return [];
+  const { frameDb, frameDurationSeconds: fd, thresholdDb } = energy;
+
+  const raw: Array<{ start: number; end: number }> = [];
+  let runStart = -1;
+  for (let i = 0; i < frameDb.length; i += 1) {
+    const isSpeech = frameDb[i] >= thresholdDb;
+    if (isSpeech && runStart < 0) runStart = i;
+    else if (!isSpeech && runStart >= 0) {
+      raw.push({ start: runStart * fd, end: i * fd });
+      runStart = -1;
+    }
+  }
+  if (runStart >= 0) {
+    raw.push({ start: runStart * fd, end: frameDb.length * fd });
+  }
+
+  const bridged: Array<{ start: number; end: number }> = [];
+  for (const seg of raw) {
+    const last = bridged[bridged.length - 1];
+    if (last && seg.start - last.end < ENERGY_BRIDGE_SILENCE_SECONDS) {
+      last.end = seg.end;
+    } else {
+      bridged.push({ ...seg });
+    }
+  }
+  return bridged.filter((s) => s.end - s.start >= ENERGY_MIN_SPEECH_SECONDS);
+}
+
 function parsePcm16Wav(buffer: Buffer): WavInfo | null {
   if (
     buffer.length < 44 ||

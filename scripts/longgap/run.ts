@@ -23,13 +23,14 @@ import path from 'path';
 import { promisify } from 'util';
 import { Worker } from 'worker_threads';
 import {
-  retimeTokensToSpeech,
+  tokensToTriples,
   groupTokenCues,
-  clampCuesToSegments,
-  clampCuesToDominantSegments,
   mergeShortCues,
-  dropCuesInDeepSilence,
   enforceMinDisplayDuration,
+  clampTriplesToSpeechSegments,
+  clampCuesToDominantSegments,
+  dropCuesInDeepSilence,
+  vadSegmentsToSpeech,
   type TokenTriple,
 } from '../../main/helpers/subtitleSegmentation';
 import {
@@ -95,6 +96,8 @@ function whisperParams(
     translate: false,
     no_timestamps: false,
     audio_ctx: 0,
+    // 原生 segment-aware 逐 token 输出（与 builtinEngine 同）：token_timestamps + max_len=0。
+    token_timestamps: true,
     max_len: maxLen,
     print_progress: false,
     max_context: -1,
@@ -405,70 +408,51 @@ async function runVariant(
     }
     console.log(`\n#### model: ${model} ####`);
     for (const useVad of [true, false]) {
-      let tokens: TokenTriple[] = [];
+      let triples: TokenTriple[] = [];
+      let internalSpeech: Seg[] = [];
       try {
-        const r = await whisper(whisperParams(model, 1, useVad, fix.lang, wav));
-        tokens = (r?.transcription || []) as TokenTriple[];
+        const r = await whisper(whisperParams(model, 0, useVad, fix.lang, wav));
+        internalSpeech = vadSegmentsToSpeech(
+          (r?.vadSegments || []) as Array<{ t0: number; t1: number }>,
+        );
+        triples = tokensToTriples(
+          (r?.tokens || []) as Array<{ text: string; t0: number; t1: number }>,
+        );
+        if (triples.length === 0 && Array.isArray(r?.transcription)) {
+          console.log(
+            '    (旧版 addon 无 token 输出，回退段级 transcription 仅供对照)',
+          );
+          triples = r.transcription as TokenTriple[];
+        }
       } catch (e) {
         console.log(`  VAD ${useVad ? 'ON' : 'OFF'} run failed: ${e}`);
         continue;
       }
       console.log(
-        `  --- VAD ${useVad ? 'ON ' : 'OFF'}  tokens=${tokens.length}`,
+        `  --- VAD ${useVad ? 'ON ' : 'OFF'}  tokens=${triples.length}`,
       );
-      const groupOnly = groupTokenCues(tokens);
-      const retimeGroup = groupTokenCues(
-        retimeTokensToSpeech(tokens, segments),
-      );
-      report('group-only (no retime)', groupOnly, segments);
-      report('retime+group', retimeGroup, segments);
-
-      let full: TokenTriple[];
-      if (useVad) {
-        // VAD-on：retime→group→clamp→merge→minDisp（生产 VAD-on 管道）
-        const refined = mergeShortCues(
-          clampCuesToSegments(retimeGroup, segments),
+      // 与 builtinEngine 同分支：VAD 开 → token 级夹回内部 VAD 段；VAD 关 → token 时间全程线性，
+      // 改用能量段做 cue 级「主导段」收敛 + 深静音丢弃（不碎词）。
+      const groupOnly = groupTokenCues(triples);
+      report('group-only', groupOnly, segments);
+      let refined: TokenTriple[];
+      if (internalSpeech.length > 0) {
+        refined = mergeShortCues(
+          groupTokenCues(clampTriplesToSpeechSegments(triples, internalSpeech)),
         );
-        full = enforceMinDisplayDuration(refined);
-        console.log(
-          `    [diag] short<0.8s: ${shortCueCount(refined)} → ${shortCueCount(full)} after minDisp (D15)`,
-        );
-        report('full = VAD-on branch', full, segments);
       } else {
-        // VAD-off token 连续性诊断（与语言相关：zh/ja 常 0、en 可能 >0）
-        let prevE = 0;
-        let bigGaps = 0;
-        tokens.forEach((t) => {
-          const ts = parseTime(t[0]) ?? 0;
-          const te = parseTime(t[1]) ?? 0;
-          if (ts - prevE > 0.4) bigGaps += 1;
-          prevE = te;
-        });
-        console.log(
-          `    [diag] raw VAD-off token gaps>0.4s = ${bigGaps}（0=token 连续、停顿需外部段还原）`,
-        );
-        // 候选对比：drop-only / clamp+drop(旧) / clampDom+drop(D13) / +minDisp(D15)
-        const dropOnly = dropCuesInDeepSilence(
-          mergeShortCues(groupOnly),
-          segments,
-        );
-        const clampDrop = dropCuesInDeepSilence(
-          mergeShortCues(clampCuesToSegments(groupOnly, segments)),
-          segments,
-        );
-        const clampDomDrop = dropCuesInDeepSilence(
-          mergeShortCues(clampCuesToDominantSegments(groupOnly, segments)),
-          segments,
-        );
-        report('VAD-off drop-only', dropOnly, segments);
-        report('VAD-off clamp+drop(old)', clampDrop, segments);
-        report('VAD-off clampDom+drop(D13)', clampDomDrop, segments);
-        full = enforceMinDisplayDuration(clampDomDrop);
-        console.log(
-          `    [diag] short<0.8s: ${shortCueCount(clampDomDrop)} → ${shortCueCount(full)} after minDisp (D15)`,
-        );
-        report('full = clampDom+drop+minDisp', full, segments);
+        refined = energy.length
+          ? dropCuesInDeepSilence(
+              mergeShortCues(clampCuesToDominantSegments(groupOnly, energy)),
+              energy,
+            )
+          : mergeShortCues(groupOnly);
       }
+      const full = enforceMinDisplayDuration(refined);
+      console.log(
+        `    [diag] short<0.8s: ${shortCueCount(refined)} → ${shortCueCount(full)} after minDisp (D15)`,
+      );
+      report('full = branch+mergeShort+minDisp', full, segments);
 
       summary.push({
         lang: fix.lang,

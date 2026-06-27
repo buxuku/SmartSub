@@ -27,17 +27,17 @@
     "recommended": "Recommended",
     "accurate": {
       "title": "Most accurate text",
-      "desc": "Keeps as much of every sentence as possible with fewer dropped words; may add a few stray lines over silence or background noise.",
-      "scene": "Best for lectures, interviews, talking-head videos"
+      "desc": "Finest segmentation and the most complete punctuation; keeps each sentence as faithfully as possible. May occasionally add a stray line over silence/background noise.",
+      "scene": "Best for lectures, interviews, talking-head videos where complete text matters most"
     },
     "balanced": {
       "title": "Balanced",
-      "desc": "Balances complete text with clean subtitles — a safe choice for most videos.",
+      "desc": "Complete yet clean text with a stable timeline; stray lines over silence are basically gone — a safe choice for most videos.",
       "scene": "Best for most videos; pick this if unsure"
     },
     "clean": {
       "title": "Cleanest & most stable",
-      "desc": "Prioritizes suppressing repeats and hallucinated lines with a steadier timeline; may drop some unclear speech.",
+      "desc": "Suppresses repeats and hallucinated lines most aggressively with the most restrained text; may drop some unclear speech.",
       "scene": "Best for long videos or material with music / applause / long silence"
     },
     "custom": {
@@ -48,10 +48,10 @@
     },
     "compare": {
       "toggle": "See how the effects differ",
-      "caption": "Roughly how the same sentence appears at each level:",
-      "accurate": "Um… so, today we'll, uh, go over this new feature",
-      "balanced": "So, today we'll go over this new feature",
-      "clean": "Today we'll go over this new feature"
+      "caption": "Roughly how the same speech (with a short silence at the end) appears at each level:",
+      "accurate": "Today, let's go over this new feature. Thanks for watching.",
+      "balanced": "Today let's go over this new feature.",
+      "clean": "Today let's go over this new feature"
     }
   },
   "section": {
@@ -61,9 +61,9 @@
   },
   "vad": {
     "label": "Voice activity detection (VAD)",
-    "on": "Faster and steadier; fewer repeated/hallucinated lines over silence or background noise. Built-in whisper engine: coarser segmentation. Timestamps may be slightly off.",
-    "off": "Built-in whisper engine: finer segmentation and more accurate text (recommended for short/medium files). Timestamps hug the speech; for other engines, silence/music may produce repeated or hallucinated lines.",
-    "hint": "Turn off when you need strict subtitle timing. This is a global setting and affects all tasks."
+    "on": "Faster and steadier: the built-in whisper engine only transcribes inside detected speech, skipping silence/background noise and greatly reducing repeated or hallucinated lines there; lines are aligned token-by-token to the speech segments, so the timeline hugs the speech and stays stable.",
+    "off": "Most complete text: the built-in whisper engine segments more finely with fuller punctuation (recommended for short/medium files and Chinese); stray lines over silence are curbed by an energy fallback; other engines such as faster-whisper may still produce repeated or hallucinated lines over silence/music.",
+    "hint": "Turn off for the most complete text and finest segmentation; keep on for the steadiest timeline and fewest stray lines over silence. This is a global setting and affects all tasks."
   },
   "reduceRepetition": {
     "label": "Reduce repetition / hallucinated lines",

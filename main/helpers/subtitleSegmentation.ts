@@ -1,26 +1,34 @@
 /**
- * 方案 builtin-subtitle-timeline-0fork（不改上游 whisper.cpp）：内置引擎用 `max_len=1`
- * 让 addon 输出「每 token 一段」（带 token 级时间戳），再在 TS 侧：
- *   1) retimeTokensToSpeech：用语音边界把每个 token 贴回真实有声区间（还原段间停顿）；
- *   2) groupTokenCues：按停顿 / 句末标点 / 长度上限聚合成多条字幕。
+ * 内置 whisper.cpp 引擎的「token → 字幕」聚合（原生 segment-aware 时间轴版）。
  *
- * 输入即 addon 的 `result.transcription`：[startStr, endStr, tokenText][]，
- * 时间形如 `HH:MM:SS.mmm`（comma_in_time:false）。
+ * 上游 fork（buxuku/whisper.cpp）已在原生层提供：
+ *   - `token_timestamps:true, max_len:0` → 逐 token 输出 `{ text, t0, t1, p }`（t0/t1 为毫秒）；
+ *   - token 时间已做 **segment-aware 映射**：落在语音段内的 token 线性映射回原始时间轴，落在
+ *     段间「人工静音」的 token 就近吸附到真实语音边界——于是**段间停顿天然以 token gap 体现**，
+ *     不再需要 TS 侧用外部 VAD 把 token 贴回有声区间（旧 `retimeTokensToSpeech` 已删除）。
  *
- * 本模块为纯函数（不依赖 electron / fs / 原生库），便于 test:engines 单测：
- * 故内联时间解析/格式化（不从 fileUtils 引入），并自带结构等价的 `SpeechSegment` 类型
- * （与 speechBoundary.SpeechSegment 结构一致，结构化兼容；不 import 以免把 electron 图拉进编译）。
+ * 因此本模块只剩「成句」职责（与边界/停顿还原无关）：
+ *   tokensToTriples（毫秒 → [startStr,endStr,text]）
+ *     → groupTokenCues（按 token gap / 句末标点 / 软切标点 / 长度上限成句）
+ *     → mergeShortCues（单字碎片并回相邻 cue）
+ *     → enforceMinDisplayDuration（最短可读显示时长护栏）。
+ *
+ * 纯函数（不依赖 electron / fs / 原生库），便于 test:engines 单测；故内联时间解析/格式化。
  */
+
+/** 字幕/ token 三元组：[startStr, endStr, text]，时间形如 `HH:MM:SS.mmm` 或 SRT 逗号形式。 */
 export type TokenTriple = [string, string, string];
 
-/** 语音段 [start,end]（秒）。结构等价于 speechBoundary.SpeechSegment，刻意不互相 import。 */
-export interface SpeechSegment {
-  start: number;
-  end: number;
+/** 原生 addon 的逐 token 输出（t0/t1 为毫秒，原始时间轴、已 segment-aware 映射）。 */
+export interface NativeToken {
+  text: string;
+  t0: number;
+  t1: number;
+  p?: number;
 }
 
 export interface GroupTokenCuesOptions {
-  /** 相邻 token 间隔超过该值（秒）即在此切分——对应自然停顿 / VAD 静音。 */
+  /** 相邻 token 间隔超过该值（秒）即在此切分——对应自然停顿 / VAD 段间静音。 */
   maxGapSeconds?: number;
   /** 单条字幕最大时长（秒），超过则强制切分（防止长独白挤成一条）。 */
   maxDurationSeconds?: number;
@@ -98,158 +106,216 @@ function visualWidth(text: string): number {
 }
 
 /**
- * 把 token 的 [start,end] 收敛到其内部「真实有声」子窗口（由语音边界 segments 判定）。
- *
- * 为什么需要：内置 whisper.cpp 开 VAD 时，token 级时间戳是「填满」的——段间静音被并进
- * 静音后第一个 token 的时长里（该 token 起点被前移到上一 token 末尾），于是 TS 侧看不到
- * token 间隔，groupTokenCues 切出来的时间轴是连续的、无停顿。这里用语音段把每个 token 贴回
- * 真实有声区间，于是 token 间隔（gap）重新出现，groupTokenCues 即可按真实停顿切分。
- *
- * 三类 token：
- *  1) 与某语音段有交集 → 收敛到交集首/末边界（anchored）；
- *  2) 落在静音的**空/空白/纯标点 token** → 原样保留（纯标点随相邻 cue 收尾，避免孤立标点条）；
- *  3) 落在静音的**内容 token** → 与相邻同类 token 组成「浮动 run」，**整段**贴到「就近段」
- *     （design D8/D11）：run 整体离后段更近（`gapNext ≤ gapPrev`）则前向贴到后段起点
- *     （whisper 前向填充的反向修正，如「請記錄…」「人工智能…」整句被填进静音）；离前段更近
- *     则后向贴到前段末点（句尾拖出 VAD 边界的尾字，如「…應用十分廣泛」的「廣泛」）。
- *     按 run 决策（而非逐 token）才能区分「前向填充整句」与「句尾拖尾单字」——二者单看一个
- *     token 完全同形（都紧贴前段末点），唯有看 run 整体离哪段近才不会把句尾尾字误抛到下一句。
- *     run 内零时长 token（whisper chunk 边界产物）一并纳入，按相对偏移平移并夹到段内。
- *
- * `segments` 为空（边界源不可用）时原样返回（优雅降级）。
+ * 「实义字符」数：仅计字母 / 数字 / 表意文字（CJK / 假名 / 谚文），排除标点 / 空白 / 符号。
+ * 按 codepoint 区间判定（不用 \p{…}/u 标志，兼容较低 TS target）。
  */
-export function retimeTokensToSpeech(
-  tokens: TokenTriple[],
-  segments: SpeechSegment[],
-): TokenTriple[] {
-  if (tokens.length === 0 || !segments || segments.length === 0) return tokens;
-  const sorted = [...segments]
+function contentCharCount(text: string): number {
+  let n = 0;
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0;
+    const isAsciiAlnum =
+      (code >= 0x30 && code <= 0x39) ||
+      (code >= 0x41 && code <= 0x5a) ||
+      (code >= 0x61 && code <= 0x7a);
+    const isCjk =
+      (code >= 0x3400 && code <= 0x9fff) || // CJK 统一表意（含扩展 A）
+      (code >= 0xf900 && code <= 0xfaff) || // CJK 兼容表意
+      (code >= 0x3040 && code <= 0x30ff) || // 平假名 + 片假名
+      (code >= 0xac00 && code <= 0xd7a3) || // 谚文音节
+      (code >= 0xff10 && code <= 0xff19) || // 全角数字
+      (code >= 0xff21 && code <= 0xff3a) || // 全角大写
+      (code >= 0xff41 && code <= 0xff5a); // 全角小写
+    if (isAsciiAlnum || isCjk) n += 1;
+  }
+  return n;
+}
+
+/**
+ * 原生逐 token 输出（毫秒）→ TokenTriple（字符串时间轴），喂给 groupTokenCues。
+ * 时间非法（缺失 / NaN）的一端输出空串：groupTokenCues 会把该 token 文本并入当前 cue
+ * 而不作为切分依据（不丢字、不误切）。
+ */
+export function tokensToTriples(tokens: NativeToken[]): TokenTriple[] {
+  if (!Array.isArray(tokens)) return [];
+  return tokens.map((tok): TokenTriple => {
+    const t0 = Number(tok?.t0);
+    const t1 = Number(tok?.t1);
+    const startStr = Number.isFinite(t0) ? formatTime(t0 / 1000) : '';
+    const endStr = Number.isFinite(t1) ? formatTime(t1 / 1000) : '';
+    return [startStr, endStr, tok?.text ?? ''];
+  });
+}
+
+/** whisper 内部 VAD 暴露的语音段（秒，原始时间轴）。 */
+export interface SpeechSegment {
+  start: number;
+  end: number;
+}
+
+/** 原生 addon 暴露的 VAD 段（毫秒）→ SpeechSegment（秒），并按起点排序、丢弃非法段。 */
+export function vadSegmentsToSpeech(
+  vad: Array<{ t0: number; t1: number }> | undefined,
+): SpeechSegment[] {
+  if (!Array.isArray(vad)) return [];
+  return vad
+    .map((v) => ({ start: Number(v?.t0) / 1000, end: Number(v?.t1) / 1000 }))
     .filter(
       (s) =>
         Number.isFinite(s.start) && Number.isFinite(s.end) && s.end > s.start,
     )
     .sort((a, b) => a.start - b.start);
-  if (sorted.length === 0) return tokens;
-
-  const info = tokens.map((t) => ({
-    s: parseTime(t?.[0]),
-    e: parseTime(t?.[1]),
-    text: t?.[2] ?? '',
-  }));
-  const out: TokenTriple[] = tokens.map((t) => t);
-
-  const pointInSeg = (t: number): boolean =>
-    sorted.some((seg) => seg.start <= t && t <= seg.end);
-
-  // anchored：有时长 token 与某语音段有交集，或零时长 token 的时间点落在某段内。
-  // 零时长内容 token（whisper chunk 边界产物）必须按「点是否在段内」判定——否则会被误判为
-  // 浮动而被抛到别处（如句中零时长 token 被抛到下一句）。
-  const isAnchored = (k: number): boolean => {
-    const { s, e } = info[k];
-    if (s === null || e === null) return false;
-    if (e > s) return bestOverlapWindow(sorted, s, e) !== null;
-    return pointInSeg(s);
-  };
-
-  // 浮动内容 token：时间有效、未 anchored、且非空 / 非纯标点（含零时长内容）。
-  const isFloatingContent = (k: number): boolean => {
-    const { s, e, text } = info[k];
-    if (s === null || e === null) return false;
-    if (isAnchored(k)) return false;
-    const trimmed = text.trim();
-    return !!trimmed && !PUNCT_ONLY.test(trimmed);
-  };
-
-  let i = 0;
-  while (i < tokens.length) {
-    const { s, e, text } = info[i];
-    if (s === null || e === null) {
-      out[i] = tokens[i];
-      i += 1;
-      continue;
-    }
-    if (isAnchored(i)) {
-      // 有时长 → 收敛到与语音段的交集；零时长（点在段内）→ 原样保留其时间点。
-      const win = e > s ? bestOverlapWindow(sorted, s, e) : null;
-      out[i] = win ? [formatTime(win[0]), formatTime(win[1]), text] : tokens[i];
-      i += 1;
-      continue;
-    }
-    if (!isFloatingContent(i)) {
-      out[i] = tokens[i]; // 静音里的空 / 标点 token：原样保留
-      i += 1;
-      continue;
-    }
-
-    // 浮动内容 run [i, j)：连续浮动内容 token。
-    let j = i;
-    while (j < tokens.length && isFloatingContent(j)) j += 1;
-    const runStart = info[i].s as number;
-    const lastS = info[j - 1].s as number;
-    const lastE = info[j - 1].e as number;
-    const runEnd = lastE > lastS ? lastE : lastS;
-
-    let prevSeg: SpeechSegment | null = null;
-    for (const seg of sorted) if (seg.end <= runStart) prevSeg = seg;
-    const nextSeg = sorted.find((seg) => seg.start >= runEnd) ?? null;
-    const gapPrev = prevSeg ? runStart - prevSeg.end : Infinity;
-    const gapNext = nextSeg ? nextSeg.start - runEnd : Infinity;
-
-    if (gapNext <= gapPrev && nextSeg) {
-      // 前向（离后段更近）：whisper 把整段静音填进了「静音后首个 token」→ 整 run 平移到
-      // 后段起点，保留 run 内相对偏移，夹到段内。零时长 token 落在后段起点，随后段首 token 合并。
-      const delta = nextSeg.start - runStart;
-      for (let k = i; k < j; k += 1) {
-        let lo = (info[k].s as number) + delta;
-        let hi = (info[k].e as number) + delta;
-        lo = Math.min(Math.max(lo, nextSeg.start), nextSeg.end);
-        hi = Math.min(Math.max(hi, lo), nextSeg.end);
-        out[k] = [formatTime(lo), formatTime(hi), info[k].text];
-      }
-    } else if (prevSeg) {
-      // 后向（离前段更近）：句尾尾字被 whisper 放到了 VAD 末点之外 → 整 run 平移到前段末点
-      // 紧接上一句，保留 run 内相对偏移与时长。delta ≤ 0；由 prevSeg.end ≤ runStart 且
-      // runEnd ≤ nextSeg.start 可证平移后仍落在 (prevSeg.end, nextSeg.start] 内，
-      // 不会与前后 anchored token 反序或越界，故无需再夹取。
-      const delta = prevSeg.end - runStart;
-      for (let k = i; k < j; k += 1) {
-        const lo = (info[k].s as number) + delta;
-        const hi = Math.max((info[k].e as number) + delta, lo);
-        out[k] = [formatTime(lo), formatTime(hi), info[k].text];
-      }
-    } else {
-      for (let k = i; k < j; k += 1) out[k] = tokens[k]; // 无前后段：原样
-    }
-    i = j;
-  }
-  return out;
 }
 
-/** 返回 [s,e] 与「重叠最大的单个语音段」的交集 [start,end]；无重叠返回 null。 */
-function bestOverlapWindow(
-  segments: SpeechSegment[],
-  s: number,
-  e: number,
-): [number, number] | null {
-  let bestOverlap = 0;
-  let best: [number, number] | null = null;
-  for (const seg of segments) {
-    if (seg.start >= e) break; // 已排序，后续段都在 token 之后
-    if (seg.end <= s) continue;
-    const lo = Math.max(s, seg.start);
-    const hi = Math.min(e, seg.end);
-    const overlap = hi - lo;
-    if (overlap > bestOverlap) {
-      bestOverlap = overlap;
-      best = [lo, hi];
+/** token 中点所属语音段索引：优先包含该中点的段，否则取距离最近的段。 */
+function segIndexForMid(mid: number, segs: SpeechSegment[]): number {
+  for (let i = 0; i < segs.length; i++) {
+    if (mid >= segs[i].start && mid <= segs[i].end) return i;
+  }
+  let best = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < segs.length; i++) {
+    const d = mid < segs[i].start ? segs[i].start - mid : mid - segs[i].end;
+    if (d < bestDist) {
+      bestDist = d;
+      best = i;
     }
   }
   return best;
 }
 
 /**
+ * 用 whisper **内部 VAD 段**（addon 已免费暴露，非外部二次 VAD）把逐 token 时间「吸附」回真实语音：
+ * 每个 token 按中点归属到最近的语音段，并把它的 [start,end] 夹在该段 [start,end] 内。
+ *
+ * 解决的问题：whisper 的 token 级时间戳是「按 voice_length 把整段时长摊给 token」的启发式，
+ * 当某个转写 segment 跨越了一段人工静音（VAD 删除的静音）时，medium 这类模型会把 token 时间
+ * **连续地摊过静音**（实测 medium 在 21.5→25.1s 静音处最大 token 间隔仅 600ms，字幕直接糊穿静音；
+ * 而 tiny 恰好摊出 3.67s 间隔才躲过）。夹紧后：静音前 token≤段尾、静音后 token≥段首，groupTokenCues
+ * 依据由此产生的真实间隔自然断句，字幕不再压在静音上——且与模型无关（medium/tiny 一致）。
+ */
+export function clampTriplesToSpeechSegments(
+  triples: TokenTriple[],
+  segments: SpeechSegment[],
+): TokenTriple[] {
+  if (!Array.isArray(triples) || !segments?.length) return triples;
+  const segs = [...segments].sort((a, b) => a.start - b.start);
+  return triples.map((triple): TokenTriple => {
+    const st = parseTime(triple?.[0]);
+    const en = parseTime(triple?.[1]);
+    const text = triple?.[2] ?? '';
+    if (st === null || en === null)
+      return [triple?.[0] ?? '', triple?.[1] ?? '', text];
+    const mid = (st + en) / 2;
+    const seg = segs[segIndexForMid(mid, segs)];
+    const cs = Math.min(Math.max(st, seg.start), seg.end);
+    const ce = Math.max(cs, Math.min(Math.max(en, seg.start), seg.end));
+    return [formatTime(cs), formatTime(ce), text];
+  });
+}
+
+export interface ClampDominantOptions {
+  /** 仅把 cue 收敛到「被它覆盖 ≥ 该比例」的语音段（默认 0.5），避免弱重叠把 cue 夹成碎片。 */
+  minSegmentCoverage?: number;
+  /** 收敛后时长下限（秒）；低于则放弃收敛、保留原 cue（默认 0.3）。 */
+  minDurationSeconds?: number;
+}
+
+const CLAMP_DOMINANT_DEFAULTS: Required<ClampDominantOptions> = {
+  minSegmentCoverage: 0.5,
+  minDurationSeconds: 0.3,
+};
+
+/**
+ * cue 级「主导段」收敛——**VAD 关（文字最准档）专用**。
+ *
+ * 关 VAD 时 token 时间是**全程线性**（无段间停顿可断），逐 token clamp 会把跨静音的词切碎、
+ * 产出 0 时长碎片。改在**成句后**按「cue 实质覆盖（overlap/segLen ≥ minSegmentCoverage）」
+ * 的语音段收敛 cue 起止：整条 cue 后移到静音之后 / 终点前移到静音之前——**不碎词**、只制造或
+ * 扩大相邻停顿 gap，绝不把文本搬到别处、不与前后 cue 反序。无实质覆盖段 / 收敛后过短 → 原样。
+ * `segments` 为空 → 原样（优雅降级）。
+ */
+export function clampCuesToDominantSegments(
+  cues: TokenTriple[],
+  segments: SpeechSegment[],
+  options: ClampDominantOptions = {},
+): TokenTriple[] {
+  const opts = { ...CLAMP_DOMINANT_DEFAULTS, ...options };
+  if (cues.length === 0 || !segments || segments.length === 0) return cues;
+  const sorted = [...segments]
+    .filter(
+      (s) =>
+        Number.isFinite(s.start) && Number.isFinite(s.end) && s.end > s.start,
+    )
+    .sort((a, b) => a.start - b.start);
+  if (sorted.length === 0) return cues;
+
+  return cues.map((cue) => {
+    const s = parseTime(cue?.[0]);
+    const e = parseTime(cue?.[1]);
+    if (s === null || e === null || e <= s) return cue;
+    let lo: number | null = null;
+    let hi: number | null = null;
+    for (const seg of sorted) {
+      if (seg.start >= e) break;
+      if (seg.end <= s) continue;
+      const overlap = Math.min(e, seg.end) - Math.max(s, seg.start);
+      const segLen = seg.end - seg.start;
+      if (segLen <= 0 || overlap / segLen < opts.minSegmentCoverage) continue;
+      if (lo === null) lo = Math.max(s, seg.start);
+      hi = Math.min(e, seg.end);
+    }
+    if (lo === null || hi === null || hi <= lo) return cue;
+    if (hi - lo < opts.minDurationSeconds) return cue;
+    return [formatTime(lo), formatTime(hi), cue?.[2] ?? ''];
+  });
+}
+
+export interface DropDeepSilenceOptions {
+  /** cue 与所有语音段零重叠且离最近段 > 该值（秒）→ 判深静音幻觉并丢弃（默认 1.5s）。 */
+  minSilenceDistanceSeconds?: number;
+}
+
+const DROP_DEFAULTS: Required<DropDeepSilenceOptions> = {
+  minSilenceDistanceSeconds: 1.5,
+};
+
+/**
+ * 丢弃「落在深静音里的悬空 cue」——**VAD 关专用护栏**。关 VAD 时 token 最贴真实语流但 whisper
+ * 可能在长静音里产幻觉文本；仅当 cue 与所有语音段零重叠**且**离最近段 > 阈值才丢（贴边界的
+ * 真实尾字/起字距段≈0 会保留）。不改任何时间/文本，只整条保留或丢弃。`segments` 空 → 原样。
+ */
+export function dropCuesInDeepSilence(
+  cues: TokenTriple[],
+  segments: SpeechSegment[],
+  options: DropDeepSilenceOptions = {},
+): TokenTriple[] {
+  if (cues.length === 0 || !segments || segments.length === 0) return cues;
+  const opts = { ...DROP_DEFAULTS, ...options };
+  const sorted = [...segments]
+    .filter(
+      (s) =>
+        Number.isFinite(s.start) && Number.isFinite(s.end) && s.end > s.start,
+    )
+    .sort((a, b) => a.start - b.start);
+  if (sorted.length === 0) return cues;
+
+  return cues.filter((cue) => {
+    const s = parseTime(cue?.[0]);
+    const e = parseTime(cue?.[1]);
+    if (s === null || e === null || e <= s) return true;
+    let dist = Infinity;
+    for (const seg of sorted) {
+      if (Math.min(e, seg.end) - Math.max(s, seg.start) > 0) return true;
+      if (seg.end <= s) dist = Math.min(dist, s - seg.end);
+      else if (seg.start >= e) dist = Math.min(dist, seg.start - e);
+    }
+    return dist <= opts.minSilenceDistanceSeconds;
+  });
+}
+
+/**
  * 把「每 token 一段」的转写聚合成多条字幕。切分点（取并集）：
- * 1) token 间隔 > maxGapSeconds（自然停顿，主信号）；
+ * 1) token 间隔 > maxGapSeconds（自然停顿，主信号——原生 segment-aware 映射已让段间停顿以此体现）；
  * 2) 当前 cue 命中句末标点（句子边界）；
  * 3) cue 达软长度（softMaxWidth / softMaxDuration）后命中停顿性标点（，,；;）→ 标点优先软切（§6.2）；
  * 4) 累计时长 / 宽度超硬上限（maxDuration / maxWidth）兜底，避免连续无停顿语流挤成一条。
@@ -342,105 +408,6 @@ export function groupTokenCues(
   return cues;
 }
 
-/**
- * 把每条 cue 的起止收敛到它「真正重叠的语音段」范围内（design D8-B）：
- * 起点上推到首个重叠段的 start、末点下收到末个重叠段的 end；
- * 完全不与任何语音段重叠的 cue 原样返回（不臆断）。
- *
- * 作用：兜住「cue 起止渗进静音」（内容 token 被 whisper 前向填充进前段静音、或末 token
- * 过冲到 VAD chunk 边界）导致的跨停顿，使停顿（gap）在 cue 之间复现——与填充方向无关，
- * 作为 retime 前向贴齐（D8-A）的后处理兜底。`segments` 为空时原样返回（优雅降级）。
- */
-export function clampCuesToSegments(
-  cues: TokenTriple[],
-  segments: SpeechSegment[],
-): TokenTriple[] {
-  if (cues.length === 0 || !segments || segments.length === 0) return cues;
-  const sorted = [...segments]
-    .filter(
-      (s) =>
-        Number.isFinite(s.start) && Number.isFinite(s.end) && s.end > s.start,
-    )
-    .sort((a, b) => a.start - b.start);
-  if (sorted.length === 0) return cues;
-
-  return cues.map((cue) => {
-    const s = parseTime(cue?.[0]);
-    const e = parseTime(cue?.[1]);
-    if (s === null || e === null || e <= s) return cue;
-    let lo: number | null = null;
-    let hi: number | null = null;
-    for (const seg of sorted) {
-      if (seg.start >= e) break; // 已排序，后续段都在 cue 之后
-      if (seg.end <= s) continue; // 在 cue 之前
-      if (lo === null) lo = Math.max(s, seg.start);
-      hi = Math.min(e, seg.end);
-    }
-    if (lo === null || hi === null || hi <= lo) return cue;
-    return [formatTime(lo), formatTime(hi), cue?.[2] ?? ''];
-  });
-}
-
-export interface ClampDominantOptions {
-  /** 仅把 cue 收敛到「被它覆盖 ≥ 该比例」的语音段（默认 0.5）。避免只擦到前句段尾的弱重叠把 cue 误夹成碎片。 */
-  minSegmentCoverage?: number;
-  /** 收敛后时长下限（秒）；低于则放弃收敛、保留原 cue（默认 0.3）。 */
-  minDurationSeconds?: number;
-}
-
-const CLAMP_DOMINANT_DEFAULTS: Required<ClampDominantOptions> = {
-  minSegmentCoverage: 0.5,
-  minDurationSeconds: 0.3,
-};
-
-/**
- * 安全版「停顿还原」（design D13，用于 VAD-off）：只把 cue 的起止收敛到它「实质覆盖」
- * （overlap / segLen ≥ `minSegmentCoverage`）的语音段；只擦到段尾 / 段头的弱重叠段一律忽略。
- *
- * 与 `clampCuesToSegments`（D8-B）的区别：后者锚到「首个 / 末个**任意**重叠段」，对 VAD-off 下
- * 与外部段漂移的 cue 会被前句段尾的弱重叠误夹成 0.x 秒碎片（实测 `请记录以下信息` 被夹成 0.3s）。
- * 本函数按「段覆盖率」筛掉弱重叠：cue 真正「装下」某语音段时才用它当边界。
- *
- * 安全性：收敛只会让 cue 变窄（起点后移 / 终点前移），故只会**制造 / 扩大**相邻 cue 间的停顿 gap，
- * 绝不把文本搬到别处、绝不与前后 cue 反序 / 重叠（区别于 retime 的整体平移）。无实质覆盖段、
- * 或收敛后过短 → 原样返回（交给 `dropCuesInDeepSilence` 判幻觉）。`segments` 为空 → 原样（优雅降级）。
- */
-export function clampCuesToDominantSegments(
-  cues: TokenTriple[],
-  segments: SpeechSegment[],
-  options: ClampDominantOptions = {},
-): TokenTriple[] {
-  const opts = { ...CLAMP_DOMINANT_DEFAULTS, ...options };
-  if (cues.length === 0 || !segments || segments.length === 0) return cues;
-  const sorted = [...segments]
-    .filter(
-      (s) =>
-        Number.isFinite(s.start) && Number.isFinite(s.end) && s.end > s.start,
-    )
-    .sort((a, b) => a.start - b.start);
-  if (sorted.length === 0) return cues;
-
-  return cues.map((cue) => {
-    const s = parseTime(cue?.[0]);
-    const e = parseTime(cue?.[1]);
-    if (s === null || e === null || e <= s) return cue;
-    let lo: number | null = null;
-    let hi: number | null = null;
-    for (const seg of sorted) {
-      if (seg.start >= e) break; // 已排序，后续段都在 cue 之后
-      if (seg.end <= s) continue; // 在 cue 之前
-      const overlap = Math.min(e, seg.end) - Math.max(s, seg.start);
-      const segLen = seg.end - seg.start;
-      if (segLen <= 0 || overlap / segLen < opts.minSegmentCoverage) continue; // 弱重叠（只擦到段头/尾）→ 跳过
-      if (lo === null) lo = Math.max(s, seg.start);
-      hi = Math.min(e, seg.end);
-    }
-    if (lo === null || hi === null || hi <= lo) return cue; // 无实质覆盖段 → 原样
-    if (hi - lo < opts.minDurationSeconds) return cue; // 收敛后过短 → 放弃，保留可读原 cue
-    return [formatTime(lo), formatTime(hi), cue?.[2] ?? ''];
-  });
-}
-
 export interface MergeShortCuesOptions {
   /** 「实义字符数」≤ 该值的 cue 视为过短碎片，尝试并入上一条（默认 1 = 仅单字 / 单字+标点）。 */
   minContentChars?: number;
@@ -457,35 +424,10 @@ const MERGE_DEFAULTS: Required<MergeShortCuesOptions> = {
 };
 
 /**
- * 「实义字符」数：仅计字母 / 数字 / 表意文字（CJK / 假名 / 谚文），排除标点 / 空白 / 符号。
- * 按 codepoint 区间判定（不用 \p{…}/u 标志，兼容较低 TS target）。
- */
-function contentCharCount(text: string): number {
-  let n = 0;
-  for (const ch of text) {
-    const code = ch.codePointAt(0) ?? 0;
-    const isAsciiAlnum =
-      (code >= 0x30 && code <= 0x39) ||
-      (code >= 0x41 && code <= 0x5a) ||
-      (code >= 0x61 && code <= 0x7a);
-    const isCjk =
-      (code >= 0x3400 && code <= 0x9fff) || // CJK 统一表意（含扩展 A）
-      (code >= 0xf900 && code <= 0xfaff) || // CJK 兼容表意
-      (code >= 0x3040 && code <= 0x30ff) || // 平假名 + 片假名
-      (code >= 0xac00 && code <= 0xd7a3) || // 谚文音节
-      (code >= 0xff10 && code <= 0xff19) || // 全角数字
-      (code >= 0xff21 && code <= 0xff3a) || // 全角大写
-      (code >= 0xff41 && code <= 0xff5a); // 全角小写
-    if (isAsciiAlnum || isCjk) n += 1;
-  }
-  return n;
-}
-
-/**
  * 合并「过短碎片 cue」（§6.2 健壮性）：把实义字符数 ≤ `minContentChars` 的 cue 并入上一条。
  *
- * 动机：弱模型（如 base）+ VAD 在词中误插的亚秒级假停顿，会让 retime/group 把单个字
- * 切成独立字幕条（如「廣」「泛」各一条）。本后处理把这类碎片并回相邻 cue：
+ * 动机：弱模型（如 base）在词中误切的亚秒级碎片，会让 group 把单个字切成独立字幕条
+ * （如「廣」「泛」各一条）。本后处理把这类碎片并回相邻 cue：
  *  - 用「实义字符数」而非显示宽度判定（CJK 句号宽度也是 2，按宽度会漏判「泛。」这类字+标点）；
  *  - 仅当与上一条间隔 ≤ `maxJoinGapSeconds` 才并（桥接词内假停顿，**不跨真实停顿**：
  *    真实停顿多为数秒，远大于阈值）；
@@ -528,59 +470,6 @@ export function mergeShortCues(
   return out;
 }
 
-export interface DropDeepSilenceOptions {
-  /**
-   * cue 与最近语音段的距离超过该值（秒）且与所有段零重叠 → 判为「深静音」并丢弃（默认 1.5s）。
-   * 阈值刻意保守：紧贴语音段边界（VAD 漏检的真实尾字 / 起字，如句尾「廣泛」）距离≈0 会被保留，
-   * 只有远离任何语音的悬空 cue（典型为 VAD-off 时 whisper 在长静音里的幻觉）才被丢。
-   */
-  minSilenceDistanceSeconds?: number;
-}
-
-const DROP_DEFAULTS: Required<DropDeepSilenceOptions> = {
-  minSilenceDistanceSeconds: 1.5,
-};
-
-/**
- * 丢弃「落在深静音里的悬空 cue」（VAD-off 路径专用护栏）。
- *
- * 关闭 whisper 内部 VAD 时 token 时间最贴近真实语流（粒度更细），但 whisper 可能在长静音里
- * 产出幻觉文本。本后处理只在「cue 与所有语音段零重叠 **且** 离最近语音段 >
- * `minSilenceDistanceSeconds`」时丢弃——既清掉深静音幻觉，又**不误删**贴着 VAD 边界的真实语音
- * （VAD 常把句尾尾字 / 句首起字切在段外，它们距段 < 阈值，应保留）。
- *
- * `segments` 为空（边界源不可用）时原样返回（优雅降级，绝不在无依据时删字幕）。与 retime / clamp
- * 不同，本函数**不修改**任何 cue 的时间或文本，只做整条保留 / 丢弃。
- */
-export function dropCuesInDeepSilence(
-  cues: TokenTriple[],
-  segments: SpeechSegment[],
-  options: DropDeepSilenceOptions = {},
-): TokenTriple[] {
-  if (cues.length === 0 || !segments || segments.length === 0) return cues;
-  const opts = { ...DROP_DEFAULTS, ...options };
-  const sorted = [...segments]
-    .filter(
-      (s) =>
-        Number.isFinite(s.start) && Number.isFinite(s.end) && s.end > s.start,
-    )
-    .sort((a, b) => a.start - b.start);
-  if (sorted.length === 0) return cues;
-
-  return cues.filter((cue) => {
-    const s = parseTime(cue?.[0]);
-    const e = parseTime(cue?.[1]);
-    if (s === null || e === null || e <= s) return true; // 不可解析 → 保留
-    let dist = Infinity;
-    for (const seg of sorted) {
-      if (Math.min(e, seg.end) - Math.max(s, seg.start) > 0) return true; // 有重叠 → 保留
-      if (seg.end <= s) dist = Math.min(dist, s - seg.end);
-      else if (seg.start >= e) dist = Math.min(dist, seg.start - e);
-    }
-    return dist <= opts.minSilenceDistanceSeconds; // 近边界保留；深静音丢弃
-  });
-}
-
 export interface MinDisplayDurationOptions {
   /** 每条字幕的最短显示时长（秒）硬下限（默认 0.8）。 */
   minDurationSeconds?: number;
@@ -600,12 +489,10 @@ const MIN_DISPLAY_DEFAULTS: Required<MinDisplayDurationOptions> = {
 };
 
 /**
- * 保证每条字幕的「最短可读显示时长」（design D15，VAD-on / VAD-off 共用的收尾护栏）。
+ * 保证每条字幕的「最短可读显示时长」（design D15，收尾护栏）。
  *
  * 动机：`maxWidth` 硬切分点可能正好落在 whisper 把句首词压缩到语音段边界前的位置，切出「文本
- * 正常、时长却 < 0.5s」的 cue（实测 EN `Artificial intelligence technology is` 0.28s、JA 19 字 0.53s）。
- * 这类 cue `mergeShortCues` 不收（非单字碎片）、`clampCuesToDominantSegments` 不收（无段实质覆盖）、
- * `dropCuesInDeepSilence` 不删（贴边界真实词），于是漏到成片，太快看不清。
+ * 正常、时长却 < 0.5s」的 cue。这类 cue `mergeShortCues` 不收（非单字碎片），于是漏到成片、太快看不清。
  *
  * 本函数只把过短 cue 的**末点**往后延伸到「期望可读时长」，并封顶在「下一条起点 − guardGap」，
  * 即只吃掉本条后面的空隙、绝不与下一条重叠、绝不缩短任何 cue、绝不改起点 / 文本。期望时长 =

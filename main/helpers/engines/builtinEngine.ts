@@ -4,16 +4,19 @@ import type { EngineStatus } from '../../../types/engine';
 import { getPath, loadWhisperAddon } from '../whisper';
 import { logMessage, store } from '../storeManager';
 import { formatSrtContent } from '../fileUtils';
-import { trimSubtitleTrailingSilence } from '../subtitleTiming';
-import { getSpeechSegments } from '../speechBoundary';
 import {
-  retimeTokensToSpeech,
+  trimSubtitleTrailingSilence,
+  energySpeechSegments,
+} from '../subtitleTiming';
+import {
+  tokensToTriples,
   groupTokenCues,
-  clampCuesToSegments,
-  clampCuesToDominantSegments,
   mergeShortCues,
-  dropCuesInDeepSilence,
   enforceMinDisplayDuration,
+  clampTriplesToSpeechSegments,
+  clampCuesToDominantSegments,
+  dropCuesInDeepSilence,
+  vadSegmentsToSpeech,
 } from '../subtitleSegmentation';
 import { getExtraResourcesPath } from '../utils';
 import {
@@ -94,9 +97,11 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       translate: false,
       no_timestamps: false,
       audio_ctx: 0,
-      // 0-fork：max_len=1 让 addon「每 token 一段」并自动开 token 时间戳
-      // （wparams.token_timestamps = max_len>0），TS 侧再贴齐/聚合还原时间轴。
-      max_len: 1,
+      // 原生 segment-aware token 时间轴：token_timestamps=true + max_len=0 让 addon 逐 token
+      // 输出 { text, t0, t1, p }（毫秒，已映射回原始时间轴，段间停顿天然以 token gap 体现）。
+      // 旧版加速包无 token 输出 → result.tokens 为空，消费段自动回退段级 transcription。
+      token_timestamps: true,
+      max_len: 0,
       print_progress: true,
       prompt,
       // max_context 由「字幕效果档位」派生（clean 档=0；accurate/balanced=-1；custom 档
@@ -146,40 +151,63 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       throw new TaskCancelledError();
     }
 
-    // 0-fork 细粒度时间轴管道（见 openspec/changes/builtin-subtitle-timeline-0fork）：
-    // max_len=1 拿到「每 token 一段」，再按 whisper 内部 VAD 是否开启分两条管道（D12）。
+    // 细粒度时间轴：优先消费原生逐 token 输出（result.tokens，t0/t1 毫秒、已 segment-aware
+    // 映射回原始时间轴）。停顿还原据 whisper 内部 VAD 是否开启分两支（消除外部 Silero 双 VAD）：
+    //   · VAD 开（均衡/最干净）：token 落在内部 VAD 段 → 逐 token 夹回语音段（clampTriplesToSpeechSegments）
+    //     → groupTokenCues → mergeShortCues。停顿与模型无关地稳定还原。
+    //   · VAD 关（文字最准）：token 时间全程线性、无段间停顿，逐 token clamp 会切碎词 → 改用能量法
+    //     估语音段，成句后做 cue 级主导段收敛 + 深静音丢弃（clampCuesToDominantSegments / dropCuesInDeepSilence）。
+    //   两支末尾共用 enforceMinDisplayDuration（最短可读护栏）→ trimSubtitleTrailingSilence（裁尾兜底）。
     //
-    // 内部 VAD 开（vad.useVAD）：whisper 把段间静音「填进」token 时间轴（停顿被抹平），需用外部
-    // 语音边界把 token 贴回真实有声区间还原停顿——
-    //   retimeTokensToSpeech（run-aware 就近段贴齐，D8/D11）→ groupTokenCues（停顿/句末标点/
-    //   长度+软切聚合）→ clampCuesToSegments（cue 起止收进真实语音段，D8-B）→ mergeShortCues（单字
-    //   碎片并回相邻 cue，D10）→ trimSubtitleTrailingSilence（尾部裁尾兜底）。
-    //
-    // 内部 VAD 关：token 文本 / 切分点更细更准（A/B 实测 medium 19 vs 开 VAD 的 12），但 token 时间轴
-    // 仍连续（diag 实测相邻 token gap>0.4s = 0），停顿不在 token 里、需靠外部段还原。此时**不能**用 retime
-    // （整体平移会把本就对的 token 抛进别的段，A/B 实测 19→26 +幻觉），改用 clampCuesToDominantSegments
-    // 安全收敛：只把 cue 收进「它实质覆盖（≥50% 段长）」的语音段、剪掉前导 / 尾随静音以复现句间 gap，
-    // 弱重叠（只擦到前句段尾）一律不动——避免 clampCuesToSegments 把漂移 cue 误夹成碎片（A/B 实测
-    // 请记录→0.3s）。管道：groupTokenCues → clampCuesToDominantSegments（D13）→ mergeShortCues →
-    // dropCuesInDeepSilence（丢远离语音段的深静音幻觉、保留贴边界真实尾字，D12）→ trimSubtitleTrailingSilence。
-    //
-    // 边界源（Silero VAD / 能量）不可用时 getSpeechSegments 返回 []，retime / clamp / drop 均原样
-    // 返回 → 优雅降级，不报错。
-    const tokens = result?.transcription || [];
-    const speechSegments = await getSpeechSegments(tempAudioFile);
-    const grouped = vad.useVAD
-      ? groupTokenCues(retimeTokensToSpeech(tokens, speechSegments))
-      : groupTokenCues(tokens);
-    const refined = vad.useVAD
-      ? mergeShortCues(clampCuesToSegments(grouped, speechSegments))
-      : dropCuesInDeepSilence(
-          mergeShortCues(clampCuesToDominantSegments(grouped, speechSegments)),
-          speechSegments,
+    // 能力探测兼容：旧版加速包不输出 result.tokens（数组为空）→ 回退段级 result.transcription
+    // （whisper 内部 VAD 映射后的整句时间轴），仅做裁尾，保证不崩、可用（≈细粒度管道之前的表现）。
+    const nativeTokens = (result?.tokens ?? []) as Array<{
+      text: string;
+      t0: number;
+      t1: number;
+      p?: number;
+    }>;
+    // whisper 内部 VAD 语音段（addon 免费暴露；VAD 关 / 旧加速包时为空）。
+    const vadSegments = (result?.vadSegments ?? []) as Array<{
+      t0: number;
+      t1: number;
+    }>;
+    let subtitles;
+    if (nativeTokens.length > 0) {
+      const triples = tokensToTriples(nativeTokens);
+      const internalSpeech = vadSegmentsToSpeech(vadSegments);
+      let refined;
+      if (internalSpeech.length > 0) {
+        // VAD 开：token 已落在 whisper 内部 VAD 段（段感知映射）→ 逐 token 夹回语音段即稳，
+        // 段间停顿与模型无关地还原（消除 medium 把 token 摊过人工静音导致的糊穿静音）。
+        refined = mergeShortCues(
+          groupTokenCues(clampTriplesToSpeechSegments(triples, internalSpeech)),
         );
-    // 最短可读显示时长护栏（D15）：把 maxWidth 硬切 + whisper 边界压缩切出的「文本正常但 <0.5s」
-    // 的 cue 末点延进其后空隙（封顶在下一条起点前、绝不重叠），避免一闪而过看不清。两条管道共用。
-    const spaced = enforceMinDisplayDuration(refined);
-    const subtitles = trimSubtitleTrailingSilence(spaced, tempAudioFile);
+      } else {
+        // VAD 关（文字最准档）：token 时间是全程线性、无段间停顿，逐 token clamp 会切碎词、
+        // 产 0 时长碎片。改用能量法估语音段，成句后做 cue 级「主导段」收敛 + 深静音幻觉丢弃——
+        // 与模型无关地还原停顿且不碎词。能量不可用 → 仅成句（优雅降级，等于原行为）。
+        const energy = energySpeechSegments(tempAudioFile);
+        const grouped = groupTokenCues(triples);
+        refined = energy.length
+          ? dropCuesInDeepSilence(
+              mergeShortCues(clampCuesToDominantSegments(grouped, energy)),
+              energy,
+            )
+          : mergeShortCues(grouped);
+      }
+      const spaced = enforceMinDisplayDuration(refined);
+      subtitles = trimSubtitleTrailingSilence(spaced, tempAudioFile);
+    } else {
+      logMessage(
+        '内置加速包未返回 token 级时间戳（旧版加速包）：回退段级时间轴，建议更新加速包以启用细粒度字幕',
+        'warning',
+      );
+      subtitles = trimSubtitleTrailingSilence(
+        result?.transcription || [],
+        tempAudioFile,
+      );
+    }
     const formattedSrt = formatSrtContent(subtitles);
     await fs.promises.writeFile(srtFile, formattedSrt);
 

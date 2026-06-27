@@ -34,12 +34,13 @@ import path from 'path';
 import { promisify } from 'util';
 import { Worker } from 'worker_threads';
 import {
-  retimeTokensToSpeech,
+  tokensToTriples,
   groupTokenCues,
-  clampCuesToSegments,
+  clampTriplesToSpeechSegments,
   clampCuesToDominantSegments,
-  mergeShortCues,
   dropCuesInDeepSilence,
+  vadSegmentsToSpeech,
+  mergeShortCues,
   enforceMinDisplayDuration,
   type TokenTriple,
 } from '../../main/helpers/subtitleSegmentation';
@@ -128,6 +129,8 @@ function whisperParams(
     translate: false,
     no_timestamps: false,
     audio_ctx: 0,
+    // 原生 segment-aware 逐 token 输出（与 builtinEngine 同）：token_timestamps + max_len=0。
+    token_timestamps: true,
     max_len: maxLen,
     print_progress: false,
     max_context: maxContext,
@@ -341,25 +344,6 @@ function dupCueCount(cues: TokenTriple[]): number {
   return n;
 }
 
-// 复刻 builtinEngine 的「生产管道 full」：VAD on/off 分支与 run.ts 完全一致。
-function buildFull(
-  vad: boolean,
-  tokens: TokenTriple[],
-  groupOnly: TokenTriple[],
-  segments: Seg[],
-): TokenTriple[] {
-  if (vad) {
-    const retimeGroup = groupTokenCues(retimeTokensToSpeech(tokens, segments));
-    const refined = mergeShortCues(clampCuesToSegments(retimeGroup, segments));
-    return enforceMinDisplayDuration(refined);
-  }
-  const clampDomDrop = dropCuesInDeepSilence(
-    mergeShortCues(clampCuesToDominantSegments(groupOnly, segments)),
-    segments,
-  );
-  return enforceMinDisplayDuration(clampDomDrop);
-}
-
 interface Row {
   lang: string;
   variant: Variant;
@@ -401,18 +385,43 @@ async function runGroup(
     // 复刻 builtinEngine：reduceRepetition 开 → max_context=0，否则取派生 maxContext。
     const maxContext = reduceRep ? 0 : num(eff.maxContext, -1);
 
-    let tokens: TokenTriple[] = [];
+    let triples: TokenTriple[] = [];
+    let internalSpeech: Seg[] = [];
     try {
       const r = await whisper(
-        whisperParams(model, 1, vad, maxContext, fix.lang, wav),
+        whisperParams(model, 0, vad, maxContext, fix.lang, wav),
       );
-      tokens = (r?.transcription || []) as TokenTriple[];
+      internalSpeech = vadSegmentsToSpeech(
+        (r?.vadSegments || []) as Array<{ t0: number; t1: number }>,
+      );
+      triples = tokensToTriples(
+        (r?.tokens || []) as Array<{ text: string; t0: number; t1: number }>,
+      );
+      if (triples.length === 0 && Array.isArray(r?.transcription)) {
+        triples = r.transcription as TokenTriple[];
+      }
     } catch (e) {
       console.log(`  ${TIER_LABEL[outcome]}  run failed: ${e}`);
       continue;
     }
-    const groupOnly = groupTokenCues(tokens);
-    const full = buildFull(vad, tokens, groupOnly, segments);
+    const groupOnly = groupTokenCues(triples);
+    // 与 builtinEngine 同分支：VAD 开 → token 级夹回内部 VAD 段；VAD 关（文字最准）→ token 时间
+    // 全程线性，改用能量段做 cue 级「主导段」收敛 + 深静音丢弃（不碎词）。
+    let refined: TokenTriple[];
+    if (internalSpeech.length > 0) {
+      refined = mergeShortCues(
+        groupTokenCues(clampTriplesToSpeechSegments(triples, internalSpeech)),
+      );
+    } else {
+      const energy = energySegments(wav);
+      refined = energy.length
+        ? dropCuesInDeepSilence(
+            mergeShortCues(clampCuesToDominantSegments(groupOnly, energy)),
+            energy,
+          )
+        : mergeShortCues(groupOnly);
+    }
+    const full = enforceMinDisplayDuration(refined);
     const row: Row = {
       lang: fix.lang,
       variant,
