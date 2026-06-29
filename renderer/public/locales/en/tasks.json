@@ -43,6 +43,11 @@
     "label": "Strip Chinese punctuation",
     "hint": "Replace Chinese punctuation (，。、？！ etc.) in Chinese subtitles with spaces and trim trailing spaces for cleaner subtitles. Applies to the source when the source language is Chinese, and to the translation when the target is Chinese."
   },
+  "dictionary": {
+    "label": "Translation dictionary",
+    "hint": "One pair per line, formatted as \"regex -> expected translation\". The left side is applied globally to translated text as a JavaScript regular expression; /pattern/flags is supported.",
+    "placeholder": "Alice\\s+Smith -> Alice Smith\n/Alice/i -> Alice"
+  },
   "stage": {
     "extract": "Extract",
     "transcribe": "Transcribe",

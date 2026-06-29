@@ -23,6 +23,7 @@ import {
   convertChineseText,
   removeChineseSubtitlePunctuation,
 } from '../helpers/chineseConvert';
+import { parseTranslationDictionary } from './utils/dictionary';
 
 /**
  * 解析「中文标点去除」生效值：任务级单开关（issue #330）。
@@ -59,6 +60,9 @@ export default async function translate(
         ? parseInt(translateRetryTimes)
         : 0;
   const renderContentTemplate = CONTENT_TEMPLATES[translateContent];
+  const dictionaryEntries = parseTranslationDictionary(
+    formData?.translationDictionary,
+  );
 
   // 译文后处理：
   // 1) 目标为中文时按简/繁做确定性归一，兜底 Ai 概率性输出繁体（issue #332）。
@@ -190,6 +194,7 @@ export default async function translate(
       onProgress,
       handleTranslationResult,
       retryCount,
+      dictionaryEntries,
     );
 
     logMessage('Translation completed', 'info');

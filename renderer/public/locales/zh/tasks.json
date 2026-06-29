@@ -43,6 +43,11 @@
     "label": "中文字幕去标点",
     "hint": "把中文字幕里的中文标点（，。、？！等）替换为空格并去掉行尾空格，让字幕更清爽。源语言为中文时作用于源字幕，目标为中文时作用于译文。"
   },
+  "dictionary": {
+    "label": "翻译词典",
+    "hint": "每行一条，格式为“正则 -> 期望译文”。左侧按 JavaScript 正则全局匹配译文，也可写成 /pattern/flags。",
+    "placeholder": "Alice\\s+Smith -> 艾丽丝·史密斯\n/Alice/i -> 艾丽丝"
+  },
   "stage": {
     "extract": "提取",
     "transcribe": "转写",
