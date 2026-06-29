@@ -86,6 +86,58 @@ export function isProofreadReady(file: any, typeDef: TaskTypeDef): boolean {
   return file?.translateSubtitle === 'done';
 }
 
+export type ProofreadUnavailableReason = 'txt';
+
+export function isPlainTextSubtitlePath(filePath?: string): boolean {
+  return /\.txt$/i.test(filePath || '');
+}
+
+export function getTaskProofreadSourcePath(
+  file: any,
+  typeDef: TaskTypeDef,
+): string {
+  const sourcePath =
+    file?.srtFile ||
+    file?.tempSrtFile ||
+    (isSubtitleFile(file?.filePath || '') ? file.filePath : '');
+
+  if (typeDef.taskType === 'generateOnly') {
+    return sourcePath;
+  }
+
+  return sourcePath;
+}
+
+export function getTaskProofreadTargetPath(
+  file: any,
+  typeDef: TaskTypeDef,
+): string {
+  if (typeDef.taskType === 'generateOnly') return '';
+  return file?.tempTranslatedSrtFile || file?.translatedSrtFile || '';
+}
+
+export function getProofreadUnavailableReason(
+  file: any,
+  typeDef: TaskTypeDef,
+): ProofreadUnavailableReason | null {
+  const sourcePath = getTaskProofreadSourcePath(file, typeDef);
+  const targetPath = getTaskProofreadTargetPath(file, typeDef);
+  if (
+    isPlainTextSubtitlePath(sourcePath) ||
+    isPlainTextSubtitlePath(targetPath)
+  ) {
+    return 'txt';
+  }
+  return null;
+}
+
+export function canProofreadFile(file: any, typeDef: TaskTypeDef): boolean {
+  return (
+    isProofreadReady(file, typeDef) &&
+    getProofreadUnavailableReason(file, typeDef) === null
+  );
+}
+
 /** 打开所在文件夹时优先揭示的产物路径 */
 export function getRevealPath(file: any): string {
   return file?.translatedSrtFile || file?.srtFile || file?.filePath || '';

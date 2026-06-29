@@ -86,7 +86,9 @@
     "openFolder": "打开所在文件夹",
     "retry": "重试",
     "remove": "移除",
-    "embeddedSubtitle": "内封软字幕直提（已跳过听写/ASR）"
+    "embeddedSubtitle": "内封软字幕直提（已跳过听写/ASR）",
+    "proofreadTxtUnsupported": "TXT 文件不包含时间轴，暂不支持校对。请生成 SRT/VTT/ASS 后校对，或校对完成后另存为 TXT。",
+    "proofreadTxtUnsupportedShort": "TXT 不支持校对"
   },
   "waiting": "等待中",
   "interrupted": "上次运行被中断，点击重试继续",

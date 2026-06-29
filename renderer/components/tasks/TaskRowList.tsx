@@ -29,6 +29,7 @@ import {
   getFileError,
   hasFileError,
   isProofreadReady,
+  getProofreadUnavailableReason,
   getRevealPath,
   formatBytes,
   formatMediaDuration,
@@ -196,6 +197,17 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
           .filter(Boolean)
           .join(' · ');
         const etaMinutes = getEtaMinutes(file, stages);
+        const proofreadUnavailableReason = getProofreadUnavailableReason(
+          file,
+          typeDef,
+        );
+        const proofreadDisabled =
+          !isProofreadReady(file, typeDef) ||
+          proofreadUnavailableReason !== null;
+        const proofreadTooltip =
+          proofreadUnavailableReason === 'txt'
+            ? t('row.proofreadTxtUnsupported')
+            : t('row.proofread');
 
         return (
           <div
@@ -282,18 +294,22 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        aria-label={t('row.proofread')}
-                        disabled={!isProofreadReady(file, typeDef)}
-                        onClick={() => onProofread(file)}
-                      >
-                        <Edit2 className="h-3.5 w-3.5" />
-                      </Button>
+                      <span className="inline-flex">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          aria-label={t('row.proofread')}
+                          disabled={proofreadDisabled}
+                          onClick={() => onProofread(file)}
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </span>
                     </TooltipTrigger>
-                    <TooltipContent>{t('row.proofread')}</TooltipContent>
+                    <TooltipContent className="max-w-[280px]">
+                      {proofreadTooltip}
+                    </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
                 <TooltipProvider>

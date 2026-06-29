@@ -57,6 +57,7 @@
   "noContext": "Minimize subtitle repetition(0)",
   "importSubtitles": "Import Subtitles",
   "proofread": "Proofread",
+  "proofreadTxtUnsupported": "TXT files do not include timing, so they cannot be proofread here. Select SRT/VTT/ASS subtitles with timing instead.",
   "subtitleProofread": "Subtitle Proofreading",
   "sourceSubtitle": "Source Subtitle",
   "targetSubtitle": "Translated Subtitle",

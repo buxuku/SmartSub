@@ -17,6 +17,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import { useTranslation } from 'next-i18next';
 import {
@@ -24,6 +30,8 @@ import {
   isFileTerminal,
   isFileDone,
   getRevealPath,
+  canProofreadFile,
+  getProofreadUnavailableReason,
 } from './stageUtils';
 
 interface CompletionBannerProps {
@@ -85,6 +93,17 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
   const firstDone = doneFiles[0];
   const multiDone = doneFiles.length > 1;
   const isSample = projectId === 'sample-onboarding';
+  const hasProofreadableFile = doneFiles.some((file) =>
+    canProofreadFile(file, typeDef),
+  );
+  const firstProofreadUnavailableReason = getProofreadUnavailableReason(
+    firstDone,
+    typeDef,
+  );
+  const proofreadDisabledTooltip =
+    firstProofreadUnavailableReason === 'txt' || !hasProofreadableFile
+      ? t('row.proofreadTxtUnsupported')
+      : t('completion.goProofread');
 
   const handleOpenFolder = () => {
     const filePath = getRevealPath(firstDone);
@@ -167,7 +186,7 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
         )}
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
-        {multiDone ? (
+        {multiDone && hasProofreadableFile ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
@@ -177,27 +196,75 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="max-w-[320px]">
-              {doneFiles.map((file) => (
-                <DropdownMenuItem
-                  key={file.uuid}
-                  className="text-xs"
-                  onClick={() => onProofread(file)}
-                >
-                  <span className="truncate">{fileLabel(file)}</span>
-                </DropdownMenuItem>
-              ))}
+              {doneFiles.map((file) => {
+                const unavailableReason = getProofreadUnavailableReason(
+                  file,
+                  typeDef,
+                );
+                return (
+                  <DropdownMenuItem
+                    key={file.uuid}
+                    className="text-xs"
+                    disabled={unavailableReason !== null}
+                    onClick={() => onProofread(file)}
+                  >
+                    <span className="truncate">{fileLabel(file)}</span>
+                    {unavailableReason === 'txt' && (
+                      <span className="ml-2 shrink-0 text-[11px] text-muted-foreground">
+                        {t('row.proofreadTxtUnsupportedShort')}
+                      </span>
+                    )}
+                  </DropdownMenuItem>
+                );
+              })}
             </DropdownMenuContent>
           </DropdownMenu>
+        ) : multiDone ? (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1"
+                    disabled
+                  >
+                    <Edit2 className="h-3 w-3" />
+                    {t('completion.goProofread')}
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[280px]">
+                {proofreadDisabledTooltip}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs gap-1"
-            onClick={() => onProofread(firstDone)}
-          >
-            <Edit2 className="h-3 w-3" />
-            {t('completion.goProofread')}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1"
+                    disabled={!canProofreadFile(firstDone, typeDef)}
+                    onClick={() => onProofread(firstDone)}
+                  >
+                    <Edit2 className="h-3 w-3" />
+                    {t('completion.goProofread')}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[280px]">
+                {canProofreadFile(firstDone, typeDef)
+                  ? t('completion.goProofread')
+                  : proofreadDisabledTooltip}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
         {mergeableFiles.length > 1 ? (
           <DropdownMenu>

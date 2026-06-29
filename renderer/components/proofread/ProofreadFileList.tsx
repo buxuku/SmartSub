@@ -57,6 +57,10 @@ import {
 const SUBTITLE_SELECT_TRIGGER_CLASS =
   'h-auto min-h-10 w-full min-w-0 max-w-full [&>span]:line-clamp-none [&>span]:flex [&>span]:min-w-0 [&>span]:flex-1 [&>span]:w-full';
 
+function isPlainTextSubtitlePath(filePath?: string): boolean {
+  return /\.txt$/i.test(filePath || '');
+}
+
 interface SubtitleSelectLabelProps {
   filePath: string;
   language?: string;
@@ -544,6 +548,11 @@ export default function ProofreadFileList({
               const targetOptions = file.detectedSubtitles.filter(
                 (s) => s.filePath !== file.selectedSource,
               );
+              const hasPlainTextSubtitle =
+                isPlainTextSubtitlePath(file.selectedSource) ||
+                isPlainTextSubtitlePath(file.selectedTarget);
+              const canStartProofread =
+                Boolean(file.selectedSource) && !hasPlainTextSubtitle;
 
               return (
                 <TableRow key={file.id}>
@@ -699,17 +708,30 @@ export default function ProofreadFileList({
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="default"
-                        size="sm"
-                        onClick={() => onStartProofread(index)}
-                        disabled={!file.selectedSource}
-                      >
-                        <Play className="w-4 h-4 mr-1" />
-                        {file.status === 'completed'
-                          ? t('view')
-                          : t('proofread')}
-                      </Button>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex">
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => onStartProofread(index)}
+                                disabled={!canStartProofread}
+                              >
+                                <Play className="w-4 h-4 mr-1" />
+                                {file.status === 'completed'
+                                  ? t('view')
+                                  : t('proofread')}
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-[280px]">
+                            {hasPlainTextSubtitle
+                              ? t('proofreadTxtUnsupported')
+                              : t('proofread')}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                       <Button
                         variant="ghost"
                         size="icon"

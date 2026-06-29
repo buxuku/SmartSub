@@ -57,6 +57,7 @@
   "generateOnly": "仅生成字幕",
   "translateOnly": "仅翻译字幕",
   "proofread": "校对",
+  "proofreadTxtUnsupported": "TXT 文件不包含时间轴，暂不支持校对。请选择 SRT/VTT/ASS 等包含时间轴的字幕文件。",
   "subtitleProofread": "字幕校对",
   "sourceSubtitle": "原文字幕",
   "targetSubtitle": "翻译字幕",
