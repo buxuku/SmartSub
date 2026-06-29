@@ -45,6 +45,7 @@ import TaskGridList from '@/components/tasks/TaskGridList';
 import CompletionBanner from '@/components/tasks/CompletionBanner';
 import LogPanel from '@/components/tasks/LogPanel';
 import { ProofreadEditor } from '@/components/proofread';
+import { getProofreadUnavailableReason } from '@/components/tasks/stageUtils';
 import { getI18nProperties } from '../../../lib/get-static';
 import { IFiles } from '../../../../types';
 import { useTranslation } from 'next-i18next';
@@ -360,6 +361,19 @@ export default function TaskPage() {
     });
   };
 
+  const handleProofread = useCallback(
+    (file: IFiles) => {
+      if (!typeDef) return;
+      const unavailableReason = getProofreadUnavailableReason(file, typeDef);
+      if (unavailableReason === 'txt') {
+        toast.info(t('row.proofreadTxtUnsupported'));
+        return;
+      }
+      setProofreadFile(file);
+    },
+    [t, typeDef],
+  );
+
   const startRename = () => {
     setNameDraft(projectName || '');
     setEditingName(true);
@@ -609,7 +623,7 @@ export default function TaskPage() {
         dismissed={bannerDismissed}
         projectId={projectId}
         onDismiss={() => setBannerDismissed(true)}
-        onProofread={(file) => setProofreadFile(file)}
+        onProofread={handleProofread}
         onRetryFailed={handleRetryFailed}
       />
 
@@ -629,7 +643,7 @@ export default function TaskPage() {
               typeDef={typeDef}
               formData={formData}
               taskStatus={taskStatus}
-              onProofread={(file) => setProofreadFile(file)}
+              onProofread={handleProofread}
               onDelete={(uuid) =>
                 setFiles((prev) => prev.filter((f) => f.uuid !== uuid))
               }
@@ -641,7 +655,7 @@ export default function TaskPage() {
               typeDef={typeDef}
               formData={formData}
               taskStatus={taskStatus}
-              onProofread={(file) => setProofreadFile(file)}
+              onProofread={handleProofread}
               onDelete={(uuid) =>
                 setFiles((prev) => prev.filter((f) => f.uuid !== uuid))
               }

@@ -54,7 +54,9 @@
     "openFolder": "Show in folder",
     "retry": "Retry",
     "remove": "Remove",
-    "embeddedSubtitle": "Extracted from embedded subtitles"
+    "embeddedSubtitle": "Extracted from embedded subtitles",
+    "proofreadTxtUnsupported": "TXT files do not include timing, so they cannot be proofread here. Generate SRT/VTT/ASS for proofreading, then export plain text after proofreading.",
+    "proofreadTxtUnsupportedShort": "TXT not supported"
   },
   "waiting": "Waiting",
   "interrupted": "Interrupted by app restart — retry to continue",
