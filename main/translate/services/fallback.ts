@@ -5,6 +5,11 @@ import {
   googleFreeTranslator,
   deeplxTranslator,
 } from '../../service';
+import {
+  isTaskCancelledError,
+  throwIfSignalCancelled,
+} from '../../helpers/taskContext';
+import type { TranslationRequestOptions } from '../types';
 
 /**
  * 多源失败自动回退编排。
@@ -51,12 +56,15 @@ export function createFallbackTranslator(
     proof: any,
     sourceLanguage: string,
     targetLanguage: string,
+    options?: TranslationRequestOptions,
   ): Promise<any> {
+    throwIfSignalCancelled(options?.signal);
     const list = Array.isArray(query) ? query : [query];
     const chain = parseChain(proof?.fallbackChain, defaultChain);
     const errors: string[] = [];
 
     for (const sourceId of chain) {
+      throwIfSignalCancelled(options?.signal);
       if (sourceId === 'autoFree') continue; // 防止递归
       const translator = SOURCE_MAP[sourceId];
       if (!translator) {
@@ -78,7 +86,9 @@ export function createFallbackTranslator(
           { ...proof, id: sourceId },
           sourceLanguage,
           targetLanguage,
+          options,
         );
+        throwIfSignalCancelled(options?.signal);
         const arr = Array.isArray(res) ? res : [res];
         // 校验：长度对齐且非全空
         const aligned = arr.length === list.length;
@@ -91,6 +101,8 @@ export function createFallbackTranslator(
         }
         errors.push(`${sourceId}: invalid result (aligned=${aligned})`);
       } catch (error: any) {
+        if (isTaskCancelledError(error)) throw error;
+        throwIfSignalCancelled(options?.signal);
         const msg = error?.message || 'error';
         errors.push(`${sourceId}: ${msg}`);
         logMessage(`autoFree source ${sourceId} failed: ${msg}`, 'warning');

@@ -3,6 +3,8 @@ import alimt20181012 from '@alicloud/alimt20181012';
 import * as $OpenApi from '@alicloud/openapi-client';
 import * as $Util from '@alicloud/tea-util';
 import { TRANSLATION_REQUEST_TIMEOUT } from '../translate/constants';
+import { throwIfSignalCancelled } from '../helpers/taskContext';
+import type { TranslationRequestOptions } from '../translate/types';
 
 // 客户端实例
 let client: any = null;
@@ -20,7 +22,9 @@ export default async function translate(
   proof: { apiKey: string; apiSecret: string; endpoint?: string },
   sourceLanguage: string,
   targetLanguage: string,
+  options?: TranslationRequestOptions,
 ) {
+  throwIfSignalCancelled(options?.signal);
   const {
     apiKey: accessKeyId,
     apiSecret: accessKeySecret,
@@ -60,6 +64,7 @@ export default async function translate(
         query,
         formatSourceLanguage,
         formatTargetLanguage,
+        options,
       );
     } else {
       // 单文本翻译，包装成批量处理
@@ -68,10 +73,12 @@ export default async function translate(
         [query],
         formatSourceLanguage,
         formatTargetLanguage,
+        options,
       );
       return results[0];
     }
   } catch (error) {
+    throwIfSignalCancelled(options?.signal);
     console.error('阿里云翻译错误:', error);
     throw new Error(error?.message || '翻译失败');
   }
@@ -103,7 +110,9 @@ async function batchTranslate(
   texts: string[],
   sourceLanguage: string,
   targetLanguage: string,
+  options?: TranslationRequestOptions,
 ): Promise<string[]> {
+  throwIfSignalCancelled(options?.signal);
   // 准备批量翻译的输入格式
   // 格式: { "1": "text1", "2": "text2", ... }
   const sourceTextObj: Record<string, string> = {};
@@ -131,11 +140,13 @@ async function batchTranslate(
   });
 
   try {
+    throwIfSignalCancelled(options?.signal);
     // 发起批量翻译请求
     const response = await client.getBatchTranslateWithOptions(
       request,
       runtime,
     );
+    throwIfSignalCancelled(options?.signal);
 
     // 处理返回结果
     if (response?.body?.code === 200 && response?.body?.translatedList) {
@@ -153,6 +164,7 @@ async function batchTranslate(
 
     throw new Error(response?.body?.message || '批量翻译请求返回错误');
   } catch (error) {
+    throwIfSignalCancelled(options?.signal);
     console.error('阿里云批量翻译错误:', error);
     throw error;
   }

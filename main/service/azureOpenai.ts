@@ -1,5 +1,10 @@
 import { AzureOpenAI } from 'openai';
 import { TRANSLATION_JSON_SCHEMA } from '../translate/constants/schema';
+import {
+  TaskCancelledError,
+  throwIfSignalCancelled,
+} from '../helpers/taskContext';
+import type { TranslationRequestOptions } from '../translate/types';
 
 type AzureOpenAIProvider = {
   apiUrl: string;
@@ -11,10 +16,14 @@ type AzureOpenAIProvider = {
 };
 
 export async function translateWithAzureOpenAI(
-  text: string[],
+  text: string | string[],
   provider: AzureOpenAIProvider,
+  _sourceLanguage?: string,
+  _targetLanguage?: string,
+  options?: TranslationRequestOptions,
 ) {
   try {
+    throwIfSignalCancelled(options?.signal);
     // 处理Azure OpenAI的endpoint URL
     const url = new URL(provider.apiUrl);
     const pathParts = url.pathname.split('/');
@@ -55,12 +64,16 @@ export async function translateWithAzureOpenAI(
       }
     }
 
-    const completion = await openai.chat.completions.create(requestParams);
+    const completion = await openai.chat.completions.create(requestParams, {
+      signal: options?.signal,
+    });
+    throwIfSignalCancelled(options?.signal);
 
     const result = completion?.choices?.[0]?.message?.content?.trim();
 
     return result;
   } catch (error) {
+    if (options?.signal?.aborted) throw new TaskCancelledError();
     console.error('Azure OpenAI translation error:', error);
     throw new Error(`Azure OpenAI translation failed: ${error.message}`);
   }

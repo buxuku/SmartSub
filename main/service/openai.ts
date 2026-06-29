@@ -6,6 +6,11 @@ import {
 } from '../translate/constants/schema';
 import { ParameterProcessor } from '../helpers/parameterProcessor';
 import { ExtendedProvider } from '../../types/provider';
+import {
+  TaskCancelledError,
+  throwIfSignalCancelled,
+} from '../helpers/taskContext';
+import type { TranslationRequestOptions } from '../translate/types';
 
 type OpenAIProvider = {
   apiUrl: string;
@@ -236,7 +241,7 @@ function getCustomHeaders(provider: OpenAIProvider): Record<string, string> {
 /**
  * 创建基础请求参数 (Enhanced with Parameter Processor)
  */
-function createBaseParams(text: string[], provider: OpenAIProvider) {
+function createBaseParams(text: string | string[], provider: OpenAIProvider) {
   const sysPrompt =
     provider.systemPrompt || 'You are a professional subtitle translation tool';
   const userPrompt = Array.isArray(text) ? text.join('\n') : text;
@@ -261,42 +266,59 @@ function createBaseParams(text: string[], provider: OpenAIProvider) {
 async function callWithJsonSchema(
   openai: OpenAI,
   baseParams: any,
+  options?: TranslationRequestOptions,
 ): Promise<string | undefined> {
   console.log('Using JSON Schema API with zod schema');
   try {
-    const completion = await openai.beta.chat.completions.parse({
-      ...baseParams,
-      response_format: zodResponseFormat(
-        TranslationResultSchema,
-        'translation',
-      ),
-    });
+    throwIfSignalCancelled(options?.signal);
+    const completion = await openai.beta.chat.completions.parse(
+      {
+        ...baseParams,
+        response_format: zodResponseFormat(
+          TranslationResultSchema,
+          'translation',
+        ),
+      },
+      { signal: options?.signal },
+    );
 
     console.log('JSON Schema completion:', completion?.choices);
+    throwIfSignalCancelled(options?.signal);
     const parsed = completion?.choices?.[0]?.message?.parsed;
     if (parsed && typeof parsed === 'object') {
       return JSON.stringify(parsed);
     }
     return parsed ? String(parsed) : undefined;
   } catch (parseError) {
+    throwIfSignalCancelled(options?.signal);
     console.warn(
       'JSON Schema parse failed, falling back to json_object API:',
       parseError,
     );
     // 回退到json_object模式
     try {
-      const fallbackCompletion = (await openai.chat.completions.create({
-        ...baseParams,
-        response_format: { type: 'json_object' },
-      })) as OpenAI.Chat.Completions.ChatCompletion;
+      const fallbackCompletion = (await openai.chat.completions.create(
+        {
+          ...baseParams,
+          response_format: { type: 'json_object' },
+        },
+        { signal: options?.signal },
+      )) as OpenAI.Chat.Completions.ChatCompletion;
+      throwIfSignalCancelled(options?.signal);
       return fallbackCompletion?.choices?.[0]?.message?.content?.trim();
     } catch (fallbackError) {
+      throwIfSignalCancelled(options?.signal);
       if (isStructuredOutputUnsupportedError(fallbackError)) {
         console.warn(
           'json_object response format failed, retrying without structured output:',
           fallbackError,
         );
-        return await callWithStandardAPI(openai, baseParams, 'disabled');
+        return await callWithStandardAPI(
+          openai,
+          baseParams,
+          'disabled',
+          options,
+        );
       }
       throw fallbackError;
     }
@@ -310,6 +332,7 @@ async function callWithStandardAPI(
   openai: OpenAI,
   baseParams: any,
   structuredOutputMode: 'disabled' | 'json_object' | 'json_schema',
+  options?: TranslationRequestOptions,
 ): Promise<string | undefined> {
   console.log(
     `Using standard OpenAI-compatible API with mode: ${structuredOutputMode}`,
@@ -329,10 +352,12 @@ async function callWithStandardAPI(
 
   let completion: OpenAI.Chat.Completions.ChatCompletion;
   try {
-    completion = (await openai.chat.completions.create(
-      requestParams,
-    )) as OpenAI.Chat.Completions.ChatCompletion;
+    throwIfSignalCancelled(options?.signal);
+    completion = (await openai.chat.completions.create(requestParams, {
+      signal: options?.signal,
+    })) as OpenAI.Chat.Completions.ChatCompletion;
   } catch (error) {
+    throwIfSignalCancelled(options?.signal);
     if (
       structuredOutputMode === 'json_object' &&
       isStructuredOutputUnsupportedError(error)
@@ -341,14 +366,15 @@ async function callWithStandardAPI(
         'json_object response format failed, retrying without structured output:',
         error,
       );
-      completion = (await openai.chat.completions.create(
-        baseParams,
-      )) as OpenAI.Chat.Completions.ChatCompletion;
+      completion = (await openai.chat.completions.create(baseParams, {
+        signal: options?.signal,
+      })) as OpenAI.Chat.Completions.ChatCompletion;
     } else {
       throw error;
     }
   }
   console.log('Standard completion:', completion?.choices);
+  throwIfSignalCancelled(options?.signal);
   return completion?.choices?.[0]?.message?.content?.trim();
 }
 
@@ -356,8 +382,11 @@ async function callWithStandardAPI(
  * 主要的翻译函数 (Enhanced with Parameter Processor)
  */
 export async function translateWithOpenAI(
-  text: string[],
+  text: string | string[],
   provider: OpenAIProvider,
+  _sourceLanguage?: string,
+  _targetLanguage?: string,
+  options?: TranslationRequestOptions,
 ): Promise<string | undefined> {
   if (!provider.apiKey) {
     throw new Error('OpenAI API key is required');
@@ -365,6 +394,7 @@ export async function translateWithOpenAI(
   const normalizedApiUrl = normalizeOpenAIBaseURL(provider.apiUrl);
   console.log('translateWithOpenAI', text, provider);
   try {
+    throwIfSignalCancelled(options?.signal);
     console.log('Provider config:', {
       id: provider.id,
       apiUrl: normalizedApiUrl,
@@ -420,15 +450,17 @@ export async function translateWithOpenAI(
     const structuredOutputMode = getStructuredOutputMode(provider);
 
     if (structuredOutputMode === 'json_schema') {
-      return await callWithJsonSchema(openai, baseParams);
+      return await callWithJsonSchema(openai, baseParams, options);
     } else {
       return await callWithStandardAPI(
         openai,
         baseParams,
         structuredOutputMode,
+        options,
       );
     }
   } catch (error) {
+    if (options?.signal?.aborted) throw new TaskCancelledError();
     console.error('OpenAI translation error:', error);
     throw new Error(
       `OpenAI translation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,

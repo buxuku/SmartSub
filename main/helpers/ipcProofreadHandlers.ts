@@ -41,7 +41,12 @@ import {
   TranslationResult,
   TranslatorFunction,
 } from '../translate/types';
-import { runWithTaskContext, isTaskCancelledError } from './taskContext';
+import {
+  runWithTaskContext,
+  isTaskCancelledError,
+  throwIfSignalCancelled,
+  waitForTaskDelay,
+} from './taskContext';
 
 // 校对批量操作（批量 AI 优化 / 重翻失败）取消注册表
 const batchAbortControllers = new Map<string, AbortController>();
@@ -606,7 +611,8 @@ Only respond with the translation, nothing else.`;
 
         if (result) {
           // 清理结果，移除可能的引号或多余空白
-          const cleanedResult = result
+          const resultText = Array.isArray(result) ? result.join('\n') : result;
+          const cleanedResult = resultText
             .trim()
             .replace(/^["']|["']$/g, '')
             .trim();
@@ -807,15 +813,20 @@ IMPORTANT: You MUST return a valid JSON object. Do NOT include any text before o
                 optimizedProvider,
                 sourceLanguage,
                 targetLanguage,
+                { signal: abortController.signal },
               );
+              throwIfSignalCancelled(abortController.signal);
+              const responseText = Array.isArray(response)
+                ? response.join('\n')
+                : response;
 
               logMessage(
-                `Batch ${currentBatchIndex} response: ${response}`,
+                `Batch ${currentBatchIndex} response: ${responseText}`,
                 'info',
               );
 
               // 解析响应
-              const parsedResponse = parseOptimizationResponse(response);
+              const parsedResponse = parseOptimizationResponse(responseText);
 
               if (parsedResponse && typeof parsedResponse === 'object') {
                 // 处理结果
@@ -858,15 +869,32 @@ IMPORTANT: You MUST return a valid JSON object. Do NOT include any text before o
                 throw new Error('无法解析 AI 响应');
               }
             } catch (error) {
+              if (isTaskCancelledError(error)) {
+                cancelled = true;
+                break;
+              }
+              if (abortController.signal.aborted) {
+                cancelled = true;
+                break;
+              }
               retryCount++;
               if (retryCount <= maxRetries) {
                 logMessage(
                   `Batch ${currentBatchIndex} failed, retry ${retryCount}/${maxRetries}: ${error}`,
                   'warning',
                 );
-                await new Promise((resolve) =>
-                  setTimeout(resolve, 1000 * retryCount),
-                );
+                try {
+                  await waitForTaskDelay(
+                    1000 * retryCount,
+                    abortController.signal,
+                  );
+                } catch (delayError) {
+                  if (isTaskCancelledError(delayError)) {
+                    cancelled = true;
+                    break;
+                  }
+                  throw delayError;
+                }
               } else {
                 logMessage(
                   `Batch ${currentBatchIndex} failed after ${maxRetries} retries: ${error}`,

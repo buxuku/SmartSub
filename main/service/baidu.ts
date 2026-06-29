@@ -2,13 +2,17 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { convertLanguageCode } from '../helpers/utils';
 import { TRANSLATION_REQUEST_TIMEOUT } from '../translate/constants';
+import { throwIfSignalCancelled } from '../helpers/taskContext';
+import type { TranslationRequestOptions } from '../translate/types';
 
 export default async function baidu(
   query,
   proof,
   sourceLanguage,
   targetLanguage,
+  options?: TranslationRequestOptions,
 ) {
+  throwIfSignalCancelled(options?.signal);
   const { apiKey: appid, apiSecret: key } = proof || {};
   if (!appid || !key) {
     console.log('请先配置 API KEY 和 API SECRET');
@@ -43,8 +47,10 @@ export default async function baidu(
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       timeout: TRANSLATION_REQUEST_TIMEOUT,
+      signal: options?.signal,
     },
   );
+  throwIfSignalCancelled(options?.signal);
   if (!res?.data?.trans_result) {
     throw new Error(res?.data?.error_msg || '未知错误');
   }

@@ -1,5 +1,7 @@
 import axios from 'axios';
 import { TRANSLATION_REQUEST_TIMEOUT } from '../translate/constants';
+import { throwIfSignalCancelled } from '../helpers/taskContext';
+import type { TranslationRequestOptions } from '../translate/types';
 
 interface AzureTranslateResponse {
   translations: {
@@ -20,8 +22,10 @@ const azureTranslator = async (
   },
   sourceLanguage?: string,
   targetLanguage?: string,
+  options?: TranslationRequestOptions,
 ): Promise<string | string[]> => {
   try {
+    throwIfSignalCancelled(options?.signal);
     const endpoint = 'https://api.cognitive.microsofttranslator.com';
     const route = '/translate';
 
@@ -51,8 +55,10 @@ const azureTranslator = async (
       data: requestBody,
       responseType: 'json',
       timeout: TRANSLATION_REQUEST_TIMEOUT,
+      signal: options?.signal,
     });
     console.log(response, 'response');
+    throwIfSignalCancelled(options?.signal);
 
     // 处理响应
     const results = response.data as AzureTranslateResponse[];
@@ -61,6 +67,7 @@ const azureTranslator = async (
     // 根据输入类型返回对应格式
     return Array.isArray(texts) ? translations : translations[0];
   } catch (error) {
+    throwIfSignalCancelled(options?.signal);
     console.log(error, 'error');
     if (axios.isAxiosError(error)) {
       const message = error.response?.data?.error?.message || error.message;

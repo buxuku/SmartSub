@@ -1,6 +1,8 @@
 import axios from 'axios';
 import { convertLanguageCode } from '../helpers/utils';
 import { TRANSLATION_REQUEST_TIMEOUT } from '../translate/constants';
+import { throwIfSignalCancelled } from '../helpers/taskContext';
+import type { TranslationRequestOptions } from '../translate/types';
 
 const DOUBAO_API_URL = 'https://ark.cn-beijing.volces.com/api/v3/responses';
 const DEFAULT_MODEL = 'doubao-seed-translation-250915';
@@ -10,7 +12,9 @@ export default async function translate(
   proof: { apiKey?: string; modelName?: string },
   sourceLanguage: string,
   targetLanguage: string,
+  options?: TranslationRequestOptions,
 ) {
+  throwIfSignalCancelled(options?.signal);
   const { apiKey, modelName } = proof || {};
   if (!apiKey) {
     console.log('请先配置 API KEY');
@@ -30,6 +34,7 @@ export default async function translate(
 
   // 豆包翻译API每次只能翻译一条文本，需要循环调用
   for (const text of queryArray) {
+    throwIfSignalCancelled(options?.signal);
     const requestBody = {
       model: modelName || DEFAULT_MODEL,
       input: [
@@ -56,7 +61,9 @@ export default async function translate(
           Authorization: `Bearer ${apiKey}`,
         },
         timeout: TRANSLATION_REQUEST_TIMEOUT,
+        signal: options?.signal,
       });
+      throwIfSignalCancelled(options?.signal);
 
       // 解析响应
       const output = res?.data?.output;
@@ -68,6 +75,7 @@ export default async function translate(
       const translatedText = extractTranslation(output);
       results.push(translatedText);
     } catch (error) {
+      throwIfSignalCancelled(options?.signal);
       if (axios.isAxiosError(error)) {
         const errorMessage =
           error.response?.data?.error?.message ||

@@ -7,6 +7,8 @@ import { isConfigurationError } from '../utils/error';
 import {
   throwIfTaskCancelled,
   isTaskCancelledError,
+  throwIfSignalCancelled,
+  waitForTaskDelay,
 } from '../../helpers/taskContext';
 import { parseAITranslationResponse } from '../utils/aiResponseParser';
 import {
@@ -132,9 +134,14 @@ export async function handleAIBatchTranslation(
           translationConfig,
           sourceLanguage,
           targetLanguage,
+          { signal: config.signal },
         );
-        logMessage(`AI response: \n ${responseOrigin}`, 'info');
-        const parsedContent = parseAITranslationResponse(responseOrigin);
+        throwIfSignalCancelled(config.signal);
+        const responseText = Array.isArray(responseOrigin)
+          ? responseOrigin.join('\n')
+          : responseOrigin;
+        logMessage(`AI response: \n ${responseText}`, 'info');
+        const parsedContent = parseAITranslationResponse(responseText);
 
         // 检查解析结果是否有效
         if (parsedContent) {
@@ -186,6 +193,7 @@ export async function handleAIBatchTranslation(
         }
       } catch (error) {
         if (isTaskCancelledError(error)) throw error;
+        throwIfSignalCancelled(config.signal);
         // 检查是否是配置错误，如果是则直接抛出，不进行重试
         if (isConfigurationError(error)) {
           throw new Error(
@@ -200,9 +208,7 @@ export async function handleAIBatchTranslation(
             'warning',
           );
           // 添加短暂延迟，避免频繁重试
-          await new Promise((resolve) =>
-            setTimeout(resolve, 1000 * retryCount),
-          );
+          await waitForTaskDelay(1000 * retryCount, config.signal);
         } else {
           logMessage(
             `批次 ${currentBatchIndex}/${totalBatches} 翻译失败，已达到最大重试次数 ${maxRetries}，跳过该批次: ${error.message}`,
