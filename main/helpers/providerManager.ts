@@ -110,25 +110,27 @@ function migrateProviders(oldProviders: any[]): Provider[] {
     .filter((p) => PROVIDER_TYPES.some((type) => type.id === p.id))
     .map((p) => {
       const template = PROVIDER_TYPES.find((type) => type.id === p.id)!;
-      return withTencentRateLimitDefaults({
-        ...p,
-        type: p.id,
-        isAi: template.isAi || false,
-        batchConcurrency: p.batchConcurrency || 1,
-        ...(p.id === 'baidu' && { batchSize: 18 }),
-        ...(p.id === 'volc' && { batchSize: 16 }),
-        ...(p.id === 'azure' && { batchSize: 50 }),
-        ...(template.isAi && {
-          useBatchTranslation: false,
-          batchTranslationSize: 10,
-          systemPrompt: shouldUpdateSystemPrompt(p.systemPrompt)
-            ? defaultSystemPrompt
-            : p.systemPrompt,
-          structuredOutput:
-            p.structuredOutput ||
-            template.fields.find((f) => f.key === 'structuredOutput')
-              ?.defaultValue ||
-            'json_object',
+      return withTencentRateLimitDefaults(
+        withFreeRateLimitDefaults({
+          ...p,
+          type: p.id,
+          isAi: template.isAi || false,
+          batchConcurrency: p.batchConcurrency || 1,
+          ...(p.id === 'baidu' && { batchSize: 18 }),
+          ...(p.id === 'volc' && { batchSize: 16 }),
+          ...(p.id === 'azure' && { batchSize: 50 }),
+          ...(template.isAi && {
+            useBatchTranslation: false,
+            batchTranslationSize: 10,
+            systemPrompt: shouldUpdateSystemPrompt(p.systemPrompt)
+              ? defaultSystemPrompt
+              : p.systemPrompt,
+            structuredOutput:
+              p.structuredOutput ||
+              template.fields.find((f) => f.key === 'structuredOutput')
+                ?.defaultValue ||
+              'json_object',
+          }),
         }),
       );
     });

@@ -8,37 +8,95 @@ interface OllamaConfig {
   prompt: string;
   systemPrompt: string;
   useJsonMode?: boolean;
+  structuredOutput?: 'disabled' | 'json_object' | 'json_schema';
+}
+
+type OllamaStructuredOutputMode = NonNullable<OllamaConfig['structuredOutput']>;
+
+function getStructuredOutputMode(
+  config: OllamaConfig,
+): OllamaStructuredOutputMode {
+  if (config.structuredOutput) return config.structuredOutput;
+  return config.useJsonMode === false ? 'disabled' : 'json_object';
+}
+
+function getOllamaFormat(mode: OllamaStructuredOutputMode) {
+  if (mode === 'json_schema') return TRANSLATION_JSON_SCHEMA;
+  if (mode === 'json_object') return 'json';
+  return undefined;
+}
+
+function getErrorMessage(error: any): string {
+  return String(
+    error?.response?.data?.error ||
+      error?.response?.data?.message ||
+      error?.message ||
+      error,
+  );
+}
+
+function isSchemaFormatUnsupportedError(error: any): boolean {
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    message.includes('format') &&
+    (message.includes('schema') ||
+      message.includes('unmarshal') ||
+      message.includes('unsupported') ||
+      message.includes('not support') ||
+      message.includes('invalid'))
+  );
 }
 
 export default async function translateWithOllama(
   text: string,
   config: OllamaConfig,
 ) {
-  const { apiUrl, modelName, systemPrompt, useJsonMode } = config;
+  const { apiUrl, modelName, systemPrompt } = config;
   const url = apiUrl.replace('generate', 'chat'); // 兼容旧版本的ollama
+  const structuredOutputMode = getStructuredOutputMode(config);
 
   try {
     // 为JSON模式增强system prompt
     let enhancedSystemPrompt = systemPrompt;
 
     // 如果开启了JSON模式，添加JSON格式说明
-    if (useJsonMode !== false) {
+    if (structuredOutputMode !== 'disabled') {
       enhancedSystemPrompt = `${systemPrompt}\n\n你必须以JSON格式返回数据，不要包含任何其他文本或说明。输出应该是一个有效的JSON对象，其中键是字幕ID，值是翻译后的内容。\n\n下面是返回的JSON Schema:\n${JSON.stringify(TRANSLATION_JSON_SCHEMA, null, 2)}`;
     }
 
-    const response = await axios.post(
-      `${url}`,
-      {
-        model: modelName,
-        messages: [
-          { role: 'system', content: enhancedSystemPrompt },
-          { role: 'user', content: text },
-        ],
-        stream: false,
-        format: 'json',
-      },
-      { timeout: OLLAMA_REQUEST_TIMEOUT },
-    );
+    const requestBody: Record<string, any> = {
+      model: modelName,
+      messages: [
+        { role: 'system', content: enhancedSystemPrompt },
+        { role: 'user', content: text },
+      ],
+      stream: false,
+    };
+
+    const format = getOllamaFormat(structuredOutputMode);
+    if (format) {
+      requestBody.format = format;
+    }
+
+    const postOllama = (body: Record<string, any>) =>
+      axios.post(`${url}`, body, { timeout: OLLAMA_REQUEST_TIMEOUT });
+
+    let response;
+    try {
+      response = await postOllama(requestBody);
+    } catch (error) {
+      if (
+        structuredOutputMode === 'json_schema' &&
+        isSchemaFormatUnsupportedError(error)
+      ) {
+        response = await postOllama({
+          ...requestBody,
+          format: 'json',
+        });
+      } else {
+        throw error;
+      }
+    }
 
     if (response.data && response.data.message) {
       return response.data.message?.content?.trim();
