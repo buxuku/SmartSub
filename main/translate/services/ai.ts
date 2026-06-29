@@ -9,6 +9,7 @@ import {
   isTaskCancelledError,
 } from '../../helpers/taskContext';
 import { parseAITranslationResponse } from '../utils/aiResponseParser';
+import { formatTranslationDictionaryPrompt } from '../utils/dictionary';
 import {
   createTranslationBatches,
   normalizeBatchSize,
@@ -98,6 +99,9 @@ export async function handleAIBatchTranslation(
             targetLanguage: targetLanguageName,
             content: fullContent,
           },
+        );
+        translationContent += formatTranslationDictionaryPrompt(
+          config.dictionaryEntries,
         );
 
         if (retryCount > 0) {

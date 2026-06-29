@@ -16,6 +16,7 @@ export interface TranslationConfig {
   targetLanguage: string;
   provider: Provider;
   translator: TranslatorFunction;
+  dictionaryEntries?: TranslationDictionaryEntry[];
 }
 
 export type TranslatorFunction = (
@@ -36,4 +37,9 @@ export interface Provider {
   batchSize?: number;
   batchConcurrency?: number;
   [key: string]: any;
+}
+
+export interface TranslationDictionaryEntry {
+  source: string;
+  target: string;
 }

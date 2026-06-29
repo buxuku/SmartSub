@@ -31,6 +31,7 @@ import {
   detectLanguagePair,
 } from './languageDetector';
 import { logMessage, store } from './storeManager';
+import { parseTranslationDictionary } from '../translate/utils/dictionary';
 import { ProofreadItem } from '../../types/proofread';
 import {
   TRANSLATOR_MAP,
@@ -987,6 +988,9 @@ IMPORTANT: You MUST return a valid JSON object. Do NOT include any text before o
 
         const from = sourceLanguage || userConfig.sourceLanguage || 'en';
         const to = targetLanguage || userConfig.targetLanguage || 'zh';
+        const dictionaryEntries = parseTranslationDictionary(
+          userConfig.translationDictionary,
+        );
 
         logMessage(
           `Retranslating ${subtitles.length} subtitles with ${provider.name} (${from} -> ${to})`,
@@ -1013,6 +1017,7 @@ IMPORTANT: You MUST return a valid JSON object. Do NOT include any text before o
                 });
               },
               1,
+              dictionaryEntries,
             );
           },
         );

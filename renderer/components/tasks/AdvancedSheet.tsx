@@ -359,6 +359,26 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                           )}
                         />
                       )}
+                      <FormField
+                        control={form.control}
+                        name="translationDictionary"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('dictionary.label')}</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                placeholder={t('dictionary.placeholder')}
+                                {...field}
+                                value={field.value || ''}
+                                className="min-h-[104px] font-mono text-xs"
+                              />
+                            </FormControl>
+                            <FormDescription className="text-xs">
+                              {t('dictionary.hint')}
+                            </FormDescription>
+                          </FormItem>
+                        )}
+                      />
                     </>
                   )}
 

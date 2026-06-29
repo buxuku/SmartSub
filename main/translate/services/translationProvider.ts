@@ -26,6 +26,10 @@ import {
   xunfeiTranslator,
 } from '../../service';
 import { DEFAULT_BATCH_SIZE } from '../constants';
+import {
+  applyTranslationDictionaryToResults,
+  type TranslationDictionaryEntry,
+} from '../utils/dictionary';
 
 /** autoFree 默认回退链：Bing 免费 → Google 免费 → DeepLX */
 export const DEFAULT_FREE_FALLBACK_CHAIN = ['bingFree', 'googleFree', 'deeplx'];
@@ -63,12 +67,21 @@ export async function translateWithProvider(
   onProgress?: (progress: number) => void,
   onTranslationResult?: (results: TranslationResult[]) => Promise<void>,
   maxRetries: number = 0,
+  dictionaryEntries: TranslationDictionaryEntry[] = [],
 ): Promise<TranslationResult[] | string[]> {
+  const handleDictionaryResults = (results: TranslationResult[]) =>
+    applyTranslationDictionaryToResults(results, dictionaryEntries);
+  const handleBatchResults = onTranslationResult
+    ? async (results: TranslationResult[]) => {
+        await onTranslationResult(handleDictionaryResults(results));
+      }
+    : undefined;
   const config = {
     provider,
     sourceLanguage,
     targetLanguage,
     translator,
+    dictionaryEntries,
   };
 
   logMessage(
@@ -77,22 +90,24 @@ export async function translateWithProvider(
   );
   onProgress && onProgress(0);
   if (provider.isAi) {
-    return handleAIBatchTranslation(
+    const results = await handleAIBatchTranslation(
       subtitles,
       config,
       +(provider.batchSize || DEFAULT_BATCH_SIZE.AI),
       onProgress,
-      onTranslationResult,
+      handleBatchResults,
       maxRetries,
     );
+    return handleDictionaryResults(results);
   }
 
-  return handleAPIBatchTranslation(
+  const results = await handleAPIBatchTranslation(
     subtitles,
     config,
     +(provider.batchSize || DEFAULT_BATCH_SIZE.API),
     onProgress,
-    onTranslationResult,
+    handleBatchResults,
     maxRetries,
   );
+  return handleDictionaryResults(results);
 }

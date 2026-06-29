@@ -43,6 +43,11 @@
     "label": "Strip Chinese punctuation",
     "hint": "Replace Chinese punctuation (，。、？！ etc.) in Chinese subtitles with spaces and trim trailing spaces for cleaner subtitles. Applies to the source when the source language is Chinese, and to the translation when the target is Chinese."
   },
+  "dictionary": {
+    "label": "Translation dictionary",
+    "hint": "One pair per line, formatted as \"source -> expected translation\". AI translation will prefer these terms, and remaining source terms are replaced after translation.",
+    "placeholder": "Alice -> Alice\nOpenAI -> OpenAI"
+  },
   "stage": {
     "extract": "Extract",
     "transcribe": "Transcribe",
