@@ -9,6 +9,13 @@ import {
   isTaskCancelledError,
 } from '../../helpers/taskContext';
 import { parseAITranslationResponse } from '../utils/aiResponseParser';
+import {
+  createTranslationBatches,
+  normalizeBatchSize,
+  resolveBatchConcurrency,
+  runTranslationBatchesInOrder,
+  type TranslationBatch,
+} from '../utils/batchConcurrency';
 
 function getLanguageName(code: string): string {
   // 中文目标须向 AI 明确简/繁，避免「中文」歧义导致译文简繁混杂（issue #332）。
@@ -43,29 +50,33 @@ export async function handleAIBatchTranslation(
   const { provider, sourceLanguage, targetLanguage, translator } = config;
   const sourceLanguageName = getLanguageName(sourceLanguage);
   const targetLanguageName = getLanguageName(targetLanguage);
-  const results: TranslationResult[] = [];
-  const totalBatches = Math.ceil(subtitles.length / batchSize);
-  let processedSubtitles = 0;
+  const normalizedBatchSize = normalizeBatchSize(
+    batchSize,
+    DEFAULT_BATCH_SIZE.AI,
+  );
+  const batches = createTranslationBatches(subtitles, normalizedBatchSize);
+  const totalBatches = batches.length;
+  const batchConcurrency = resolveBatchConcurrency(
+    provider.batchConcurrency,
+    totalBatches,
+  );
 
   logMessage(
-    `开始AI批量翻译：总共 ${subtitles.length} 条字幕，分为 ${totalBatches} 个批次，每批次 ${batchSize} 条`,
+    `开始AI批量翻译：总共 ${subtitles.length} 条字幕，分为 ${totalBatches} 个批次，每批次 ${normalizedBatchSize} 条，并发 ${batchConcurrency}`,
     'info',
   );
 
   const requestInterval = +(provider.requestInterval || 0) * 1000;
 
-  for (let i = 0; i < subtitles.length; i += batchSize) {
+  const processBatch = async (
+    translationBatch: TranslationBatch,
+  ): Promise<TranslationResult[]> => {
     throwIfTaskCancelled();
-    const batch = subtitles.slice(i, i + batchSize);
-    const currentBatchIndex = Math.floor(i / batchSize) + 1;
+    const batch = translationBatch.subtitles;
+    const currentBatchIndex = translationBatch.displayIndex;
     let retryCount = 0;
     let batchSuccess = false;
     let batchResults: TranslationResult[] = [];
-
-    if (requestInterval > 0 && i > 0) {
-      logMessage(`等待 ${provider.requestInterval}s (请求间隔)`, 'info');
-      await new Promise((resolve) => setTimeout(resolve, requestInterval));
-    }
 
     logMessage(
       `处理批次 ${currentBatchIndex}/${totalBatches}，包含 ${batch.length} 条字幕`,
@@ -162,17 +173,10 @@ export async function handleAIBatchTranslation(
                 : (parsedValues[index] ?? ''),
           }));
 
-          // 如果提供了结果处理函数，则实时处理每个翻译结果
-          if (onTranslationResult) {
-            await onTranslationResult(batchResults);
-          }
-
-          results.push(...batchResults);
-          processedSubtitles += batch.length;
           batchSuccess = true;
 
           logMessage(
-            `批次 ${currentBatchIndex}/${totalBatches} 翻译成功，已处理 ${processedSubtitles}/${subtitles.length} 条字幕`,
+            `批次 ${currentBatchIndex}/${totalBatches} 翻译成功`,
             'info',
           );
         } else {
@@ -212,13 +216,6 @@ export async function handleAIBatchTranslation(
             targetContent: `[翻译失败: ${error.message}]`,
           }));
 
-          // 对失败的结果也进行处理和保存
-          if (onTranslationResult) {
-            await onTranslationResult(batchResults);
-          }
-
-          results.push(...batchResults);
-          processedSubtitles += batch.length;
           batchSuccess = true; // 标记为完成，继续下一批次
 
           logMessage(
@@ -229,23 +226,21 @@ export async function handleAIBatchTranslation(
       }
     }
 
-    // 更新翻译进度 - 使用实际处理的字幕数量计算
-    const progress = Math.min(
-      (processedSubtitles / subtitles.length) * 100,
-      100,
-    );
-    if (onProgress) {
-      onProgress(progress);
-    }
+    return batchResults;
+  };
 
-    logMessage(
-      `进度更新: ${progress.toFixed(2)}% (${processedSubtitles}/${subtitles.length})`,
-      'info',
-    );
-  }
+  const results = await runTranslationBatchesInOrder({
+    batches,
+    concurrency: batchConcurrency,
+    requestIntervalMs: requestInterval,
+    totalSubtitles: subtitles.length,
+    processBatch,
+    onProgress,
+    onTranslationResult,
+  });
 
   logMessage(
-    `AI批量翻译完成：共处理 ${processedSubtitles} 条字幕，成功 ${results.filter((r) => !r.targetContent.startsWith('[翻译失败:')).length} 条`,
+    `AI批量翻译完成：共处理 ${results.length} 条字幕，成功 ${results.filter((r) => !r.targetContent.startsWith('[翻译失败:')).length} 条`,
     'info',
   );
 

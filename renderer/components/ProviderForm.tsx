@@ -9,6 +9,9 @@ import {
   Check,
   Settings2,
   ChevronDown,
+  ChevronUp,
+  Plus,
+  X,
 } from 'lucide-react';
 import { ProviderField } from '../../types';
 import { useTranslation } from 'next-i18next';
@@ -262,6 +265,108 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
     );
   };
 
+  const FREE_CHAIN_SOURCES = ['bingFree', 'googleFree', 'deeplx'];
+
+  const renderChainEditor = (
+    value: string,
+    onChainChange: (value: string) => void,
+  ) => {
+    const current = value
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => FREE_CHAIN_SOURCES.includes(s));
+    const available = FREE_CHAIN_SOURCES.filter((s) => !current.includes(s));
+    const commit = (arr: string[]) => onChainChange(arr.join(','));
+    const sourceName = (id: string) =>
+      t(`chainSource.${id}`, { defaultValue: id });
+
+    const move = (idx: number, dir: -1 | 1) => {
+      const next = [...current];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      commit(next);
+    };
+    const remove = (idx: number) => commit(current.filter((_, i) => i !== idx));
+    const add = (id: string) => commit([...current, id]);
+
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-col gap-1.5">
+          {current.map((id, idx) => (
+            <div
+              key={id}
+              className="flex items-center gap-2 rounded-md border bg-muted/40 px-2 py-1.5"
+            >
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[11px] font-medium text-primary">
+                {idx + 1}
+              </span>
+              <span className="flex-1 truncate text-sm">{sourceName(id)}</span>
+              <div className="flex items-center gap-0.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  disabled={idx === 0}
+                  onClick={() => move(idx, -1)}
+                  aria-label={t('chainMoveUp', { defaultValue: 'Move up' })}
+                >
+                  <ChevronUp className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  disabled={idx === current.length - 1}
+                  onClick={() => move(idx, 1)}
+                  aria-label={t('chainMoveDown', { defaultValue: 'Move down' })}
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                  onClick={() => remove(idx)}
+                  aria-label={t('chainRemove', { defaultValue: 'Remove' })}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          ))}
+          {current.length === 0 && (
+            <p className="text-xs text-destructive">
+              {t('fallbackChainEmpty', {
+                defaultValue: 'Add at least one source',
+              })}
+            </p>
+          )}
+        </div>
+        {available.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {available.map((id) => (
+              <Button
+                key={id}
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1 text-xs"
+                onClick={() => add(id)}
+              >
+                <Plus className="h-3 w-3" />
+                {sourceName(id)}
+              </Button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const fieldDomId = (key: string) => `provider-field-${providerId}-${key}`;
 
   const renderField = (field: ProviderField) => {
@@ -361,6 +466,11 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
               ))}
             </SelectContent>
           </Select>
+        );
+
+      case 'chain':
+        return renderChainEditor(String(value || ''), (v) =>
+          onChange(field.key, v),
         );
 
       default:
