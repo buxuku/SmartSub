@@ -16,14 +16,20 @@ export interface TranslationConfig {
   targetLanguage: string;
   provider: Provider;
   translator: TranslatorFunction;
+  signal?: AbortSignal;
 }
 
 export type TranslatorFunction = (
-  text: string[],
+  text: string | string[],
   config: any,
   from: string,
   to: string,
-) => Promise<string>;
+  options?: TranslationRequestOptions,
+) => Promise<string | string[]>;
+
+export interface TranslationRequestOptions {
+  signal?: AbortSignal;
+}
 
 export interface Provider {
   type: string;

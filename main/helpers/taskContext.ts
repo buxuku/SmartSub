@@ -45,6 +45,43 @@ export function throwIfTaskCancelled(): void {
   if (isTaskCancelled()) throw new TaskCancelledError();
 }
 
+export function getTaskSignal(): AbortSignal | undefined {
+  return storage.getStore()?.signal;
+}
+
+export function throwIfSignalCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted || isTaskCancelled()) throw new TaskCancelledError();
+}
+
+export function waitForTaskDelay(
+  ms: number,
+  signal: AbortSignal | undefined = getTaskSignal(),
+): Promise<void> {
+  throwIfSignalCancelled(signal);
+  if (ms <= 0) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+
+    const onAbort = () => {
+      cleanup();
+      reject(new TaskCancelledError());
+    };
+
+    timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 /** whisper addon 因 AbortSignal 中断时抛出的错误（与 TaskCancelledError 统一处理） */
 export function isWhisperAbortError(error: unknown): boolean {
   if (isTaskCancelledError(error)) return true;

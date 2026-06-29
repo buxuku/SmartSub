@@ -2,6 +2,8 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { convertLanguageCode } from '../helpers/utils';
 import { TRANSLATION_REQUEST_TIMEOUT } from '../translate/constants';
+import { throwIfSignalCancelled } from '../helpers/taskContext';
+import type { TranslationRequestOptions } from '../translate/types';
 
 const HOST = 'ntrans.xfyun.cn';
 const REQUEST_LINE = 'POST /v2/ots HTTP/1.1';
@@ -18,7 +20,9 @@ export default async function xunfei(
   proof: { appId?: string; apiKey?: string; apiSecret?: string },
   sourceLanguage: string,
   targetLanguage: string,
+  options?: TranslationRequestOptions,
 ): Promise<string | string[]> {
+  throwIfSignalCancelled(options?.signal);
   const { appId, apiKey, apiSecret } = proof || {};
   if (!appId || !apiKey || !apiSecret) {
     console.log('请先配置讯飞 APPID、APIKey 和 APISecret');
@@ -33,6 +37,7 @@ export default async function xunfei(
   }
 
   const translateOne = async (text: string): Promise<string> => {
+    throwIfSignalCancelled(options?.signal);
     const body = JSON.stringify({
       common: { app_id: appId },
       business: { from, to },
@@ -59,7 +64,9 @@ export default async function xunfei(
         Authorization: authorization,
       },
       timeout: TRANSLATION_REQUEST_TIMEOUT,
+      signal: options?.signal,
     });
+    throwIfSignalCancelled(options?.signal);
 
     const data = res?.data;
     if (!data || data.code !== 0) {

@@ -1,5 +1,7 @@
 import { Service } from '@volcengine/openapi';
 import { convertLanguageCode } from '../helpers/utils';
+import { throwIfSignalCancelled } from '../helpers/taskContext';
+import type { TranslationRequestOptions } from '../translate/types';
 
 let service;
 let fetchApi;
@@ -9,7 +11,9 @@ export default async function translate(
   proof,
   sourceLanguage,
   targetLanguage,
+  options?: TranslationRequestOptions,
 ) {
+  throwIfSignalCancelled(options?.signal);
   const { apiKey: accessKeyId, apiSecret: secretKey } = proof || {};
   if (!accessKeyId || !secretKey) {
     console.log('请先配置 API KEY 和 API SECRET');
@@ -36,12 +40,15 @@ export default async function translate(
     });
   }
   const postBody = {
-    SourceLanguage: formatSourceLanguage == 'auto' ? undefined : formatSourceLanguage,
+    SourceLanguage:
+      formatSourceLanguage == 'auto' ? undefined : formatSourceLanguage,
     TargetLanguage: formatTargetLanguage,
     TextList: Array.isArray(query) ? query : [query],
   };
   try {
+    throwIfSignalCancelled(options?.signal);
     const res = await fetchApi(postBody, {});
+    throwIfSignalCancelled(options?.signal);
     if (!res?.TranslationList?.[0]?.Translation) {
       throw new Error(res?.ResponseMetadata?.Error?.Code || '未知错误');
     }
@@ -52,6 +59,7 @@ export default async function translate(
     }
     return res.TranslationList[0].Translation;
   } catch (error) {
+    throwIfSignalCancelled(options?.signal);
     throw new Error(error?.message || '未知错误');
   }
 }

@@ -1,6 +1,8 @@
 import axios from 'axios';
 import { convertLanguageCode } from '../helpers/utils';
 import { TRANSLATION_REQUEST_TIMEOUT } from '../translate/constants';
+import { throwIfSignalCancelled } from '../helpers/taskContext';
+import type { TranslationRequestOptions } from '../translate/types';
 
 const NIUTRANS_API = 'https://api.niutrans.com/NiuTransServer/translation';
 
@@ -16,7 +18,9 @@ export default async function niutrans(
   proof: { apiKey?: string },
   sourceLanguage: string,
   targetLanguage: string,
+  options?: TranslationRequestOptions,
 ): Promise<string | string[]> {
+  throwIfSignalCancelled(options?.signal);
   const { apiKey } = proof || {};
   if (!apiKey) {
     console.log('请先配置小牛翻译 API Key');
@@ -31,6 +35,7 @@ export default async function niutrans(
   }
 
   const translateOne = async (text: string): Promise<string> => {
+    throwIfSignalCancelled(options?.signal);
     const body = new URLSearchParams({
       from,
       to,
@@ -40,7 +45,9 @@ export default async function niutrans(
     const res = await axios.post(NIUTRANS_API, body.toString(), {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       timeout: TRANSLATION_REQUEST_TIMEOUT,
+      signal: options?.signal,
     });
+    throwIfSignalCancelled(options?.signal);
     const data = res?.data || {};
     if (data.error_code) {
       throw new Error(

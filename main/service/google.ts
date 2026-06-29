@@ -1,13 +1,17 @@
 import axios from 'axios';
 import { convertLanguageCode } from '../helpers/utils';
 import { TRANSLATION_REQUEST_TIMEOUT } from '../translate/constants';
+import { throwIfSignalCancelled } from '../helpers/taskContext';
+import type { TranslationRequestOptions } from '../translate/types';
 
 export default async function google(
   query,
   proof,
   sourceLanguage,
   targetLanguage,
+  options?: TranslationRequestOptions,
 ) {
+  throwIfSignalCancelled(options?.signal);
   const { apiKey } = proof || {};
   if (!apiKey) {
     console.log('请先配置 Google Translate API Key');
@@ -45,8 +49,10 @@ export default async function google(
           'Content-Type': 'application/json',
         },
         timeout: TRANSLATION_REQUEST_TIMEOUT,
+        signal: options?.signal,
       },
     );
+    throwIfSignalCancelled(options?.signal);
 
     if (!response?.data?.data?.translations) {
       throw new Error(response?.data?.error?.message || '翻译失败');
@@ -62,6 +68,7 @@ export default async function google(
     }
     return translations.join('\n');
   } catch (error) {
+    throwIfSignalCancelled(options?.signal);
     console.log(error, 'google error');
     if (error.response) {
       // API 返回错误

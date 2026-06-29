@@ -8,6 +8,11 @@
  * 通过 per-key 的异步互斥串行化，避免并发任务击穿限速。
  */
 
+import {
+  throwIfSignalCancelled,
+  waitForTaskDelay,
+} from '../../helpers/taskContext';
+
 export interface RateLimitConfig {
   /** 相邻请求最小间隔（毫秒），<=0 表示不限制 */
   minIntervalMs?: number;
@@ -22,10 +27,6 @@ const windowHits: Record<string, number[]> = {};
 /** per-key 互斥链，保证同一 key 的 acquire 串行执行 */
 const locks: Record<string, Promise<void>> = {};
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
-}
-
 /**
  * 申请一次放行额度，必要时 await 到允许发起请求的时刻。
  * 调用方应在真正发起网络请求前 await 本函数。
@@ -33,7 +34,9 @@ function sleep(ms: number): Promise<void> {
 export async function acquire(
   key: string,
   cfg: RateLimitConfig = {},
+  signal?: AbortSignal,
 ): Promise<void> {
+  throwIfSignalCancelled(signal);
   const prev = locks[key] ?? Promise.resolve();
   let release!: () => void;
   locks[key] = new Promise<void>((resolve) => {
@@ -42,6 +45,7 @@ export async function acquire(
 
   // 等待前一个同 key 的请求完成排队
   await prev;
+  throwIfSignalCancelled(signal);
 
   try {
     const { minIntervalMs = 0, windowMs = 0, maxInWindow = 0 } = cfg;
@@ -49,7 +53,7 @@ export async function acquire(
     // 1) 最小间隔
     if (minIntervalMs > 0) {
       const wait = (lastCallAt[key] ?? 0) + minIntervalMs - Date.now();
-      if (wait > 0) await sleep(wait);
+      if (wait > 0) await waitForTaskDelay(wait, signal);
     }
 
     // 2) 滑动窗口
@@ -58,7 +62,7 @@ export async function acquire(
       hits = hits.filter((t) => t > Date.now() - windowMs);
       while (hits.length >= maxInWindow) {
         const waitFor = hits[0] + windowMs - Date.now();
-        if (waitFor > 0) await sleep(waitFor);
+        if (waitFor > 0) await waitForTaskDelay(waitFor, signal);
         hits = hits.filter((t) => t > Date.now() - windowMs);
       }
       hits.push(Date.now());
@@ -76,8 +80,9 @@ export async function withRateLimit<T>(
   key: string,
   cfg: RateLimitConfig,
   fn: () => Promise<T>,
+  signal?: AbortSignal,
 ): Promise<T> {
-  await acquire(key, cfg);
+  await acquire(key, cfg, signal);
   return fn();
 }
 

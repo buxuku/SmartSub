@@ -1,5 +1,8 @@
 import type { Subtitle, TranslationResult } from '../types';
-import { throwIfTaskCancelled } from '../../helpers/taskContext';
+import {
+  throwIfTaskCancelled,
+  waitForTaskDelay,
+} from '../../helpers/taskContext';
 import { logMessage } from '../../helpers/storeManager';
 
 export type TranslationBatch = {
@@ -90,7 +93,7 @@ export async function runTranslationBatchesInOrder({
         `批次 ${displayIndex} 等待 ${(waitMs / 1000).toFixed(2)}s (请求间隔)`,
         'info',
       );
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      await waitForTaskDelay(waitMs);
     }
   };
 

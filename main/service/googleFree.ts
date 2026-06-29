@@ -5,6 +5,8 @@ import {
   acquire,
   resolveRateLimitConfig,
 } from '../translate/utils/rateLimiter';
+import { throwIfSignalCancelled } from '../helpers/taskContext';
+import type { TranslationRequestOptions } from '../translate/types';
 
 /**
  * Google 免费翻译，无需 API Key。
@@ -23,10 +25,11 @@ async function translateOne(
   tl: string,
   rateKey: string,
   rateCfg: ReturnType<typeof resolveRateLimitConfig>,
+  options?: TranslationRequestOptions,
 ): Promise<string> {
   if (!text || !text.trim()) return text ?? '';
 
-  await acquire(rateKey, rateCfg);
+  await acquire(rateKey, rateCfg, options?.signal);
   const res = await axios.get(ENDPOINT, {
     params: {
       client: 'gtx',
@@ -37,7 +40,9 @@ async function translateOne(
     },
     headers: { 'User-Agent': USER_AGENT },
     timeout: TRANSLATION_REQUEST_TIMEOUT,
+    signal: options?.signal,
   });
+  throwIfSignalCancelled(options?.signal);
 
   const data = res.data;
   if (!Array.isArray(data) || !Array.isArray(data[0])) {
@@ -56,7 +61,9 @@ export default async function googleFree(
   proof: Record<string, any>,
   sourceLanguage: string,
   targetLanguage: string,
+  options?: TranslationRequestOptions,
 ): Promise<string | string[]> {
+  throwIfSignalCancelled(options?.signal);
   const list = Array.isArray(query) ? query : [query];
   const sl = convertLanguageCode(sourceLanguage, 'google') || 'auto';
   const tl = convertLanguageCode(targetLanguage, 'google');
@@ -71,8 +78,9 @@ export default async function googleFree(
   const results: string[] = [];
   for (const text of list) {
     try {
-      results.push(await translateOne(text, sl, tl, rateKey, rateCfg));
+      results.push(await translateOne(text, sl, tl, rateKey, rateCfg, options));
     } catch (error: any) {
+      throwIfSignalCancelled(options?.signal);
       throw new Error(
         `Google free translate failed (network): ${error?.message || 'request error'}`,
       );

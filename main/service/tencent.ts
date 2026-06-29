@@ -2,6 +2,8 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { convertLanguageCode } from '../helpers/utils';
 import { TRANSLATION_REQUEST_TIMEOUT } from '../translate/constants';
+import { throwIfSignalCancelled } from '../helpers/taskContext';
+import type { TranslationRequestOptions } from '../translate/types';
 
 const HOST = 'tmt.tencentcloudapi.com';
 const ENDPOINT = `https://${HOST}`;
@@ -87,7 +89,9 @@ export default async function tencent(
   proof: { apiKey?: string; apiSecret?: string; region?: string },
   sourceLanguage: string,
   targetLanguage: string,
+  options?: TranslationRequestOptions,
 ): Promise<string | string[]> {
+  throwIfSignalCancelled(options?.signal);
   const {
     apiKey: secretId,
     apiSecret: secretKey,
@@ -106,6 +110,7 @@ export default async function tencent(
   }
 
   const translateOne = async (text: string): Promise<string> => {
+    throwIfSignalCancelled(options?.signal);
     const payload = JSON.stringify({
       SourceText: text,
       Source: source,
@@ -116,7 +121,9 @@ export default async function tencent(
     const res = await axios.post(ENDPOINT, payload, {
       headers,
       timeout: TRANSLATION_REQUEST_TIMEOUT,
+      signal: options?.signal,
     });
+    throwIfSignalCancelled(options?.signal);
     const response = res?.data?.Response;
     if (!response || response.Error) {
       throw new Error(

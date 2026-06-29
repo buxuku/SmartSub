@@ -5,6 +5,8 @@ import { isConfigurationError } from '../utils/error';
 import {
   throwIfTaskCancelled,
   isTaskCancelledError,
+  throwIfSignalCancelled,
+  waitForTaskDelay,
 } from '../../helpers/taskContext';
 import {
   createTranslationBatches,
@@ -63,7 +65,9 @@ export async function handleAPIBatchTranslation(
           provider,
           sourceLanguage,
           targetLanguage,
+          { signal: config.signal },
         );
+        throwIfSignalCancelled(config.signal);
 
         const translatedLines = Array.isArray(translatedContent)
           ? translatedContent
@@ -85,6 +89,7 @@ export async function handleAPIBatchTranslation(
         batchSuccess = true;
       } catch (error) {
         if (isTaskCancelledError(error)) throw error;
+        throwIfSignalCancelled(config.signal);
         // 检查是否是配置错误，如果是则直接抛出，不进行重试
         if (isConfigurationError(error)) {
           throw new Error(
@@ -99,9 +104,7 @@ export async function handleAPIBatchTranslation(
             'warning',
           );
           // 添加短暂延迟，避免频繁重试
-          await new Promise((resolve) =>
-            setTimeout(resolve, 1000 * retryCount),
-          );
+          await waitForTaskDelay(1000 * retryCount, config.signal);
         } else {
           logMessage(
             `批次 ${currentBatchIndex}/${totalBatches} 翻译失败，已达到最大重试次数 ${maxRetries}，跳过该批次: ${error.message}`,

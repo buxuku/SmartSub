@@ -1,6 +1,11 @@
 import axios from 'axios';
 import { TRANSLATION_JSON_SCHEMA } from '../translate/constants/schema';
 import { OLLAMA_REQUEST_TIMEOUT } from '../translate/constants';
+import {
+  TaskCancelledError,
+  throwIfSignalCancelled,
+} from '../helpers/taskContext';
+import type { TranslationRequestOptions } from '../translate/types';
 
 interface OllamaConfig {
   apiUrl: string;
@@ -48,14 +53,19 @@ function isSchemaFormatUnsupportedError(error: any): boolean {
 }
 
 export default async function translateWithOllama(
-  text: string,
+  text: string | string[],
   config: OllamaConfig,
+  _sourceLanguage?: string,
+  _targetLanguage?: string,
+  options?: TranslationRequestOptions,
 ) {
   const { apiUrl, modelName, systemPrompt } = config;
   const url = apiUrl.replace('generate', 'chat'); // 兼容旧版本的ollama
   const structuredOutputMode = getStructuredOutputMode(config);
+  const userPrompt = Array.isArray(text) ? text.join('\n') : text;
 
   try {
+    throwIfSignalCancelled(options?.signal);
     // 为JSON模式增强system prompt
     let enhancedSystemPrompt = systemPrompt;
 
@@ -68,7 +78,7 @@ export default async function translateWithOllama(
       model: modelName,
       messages: [
         { role: 'system', content: enhancedSystemPrompt },
-        { role: 'user', content: text },
+        { role: 'user', content: userPrompt },
       ],
       stream: false,
     };
@@ -79,12 +89,16 @@ export default async function translateWithOllama(
     }
 
     const postOllama = (body: Record<string, any>) =>
-      axios.post(`${url}`, body, { timeout: OLLAMA_REQUEST_TIMEOUT });
+      axios.post(`${url}`, body, {
+        timeout: OLLAMA_REQUEST_TIMEOUT,
+        signal: options?.signal,
+      });
 
     let response;
     try {
       response = await postOllama(requestBody);
     } catch (error) {
+      throwIfSignalCancelled(options?.signal);
       if (
         structuredOutputMode === 'json_schema' &&
         isSchemaFormatUnsupportedError(error)
@@ -99,6 +113,7 @@ export default async function translateWithOllama(
     }
 
     if (response.data && response.data.message) {
+      throwIfSignalCancelled(options?.signal);
       return response.data.message?.content?.trim();
     } else {
       throw new Error(
@@ -106,6 +121,7 @@ export default async function translateWithOllama(
       );
     }
   } catch (error) {
+    if (options?.signal?.aborted) throw new TaskCancelledError();
     throw error;
   }
 }

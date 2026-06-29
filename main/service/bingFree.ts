@@ -5,6 +5,8 @@ import {
   acquire,
   resolveRateLimitConfig,
 } from '../translate/utils/rateLimiter';
+import { throwIfSignalCancelled } from '../helpers/taskContext';
+import type { TranslationRequestOptions } from '../translate/types';
 
 /**
  * Bing（Edge 浏览器内置）免费翻译，无需 API Key。
@@ -27,14 +29,20 @@ const USER_AGENT =
 let cachedToken = '';
 let tokenFetchedAt = 0;
 
-async function getToken(force = false): Promise<string> {
+async function getToken(
+  force = false,
+  options?: TranslationRequestOptions,
+): Promise<string> {
   if (!force && cachedToken && Date.now() - tokenFetchedAt < TOKEN_TTL_MS) {
     return cachedToken;
   }
+  throwIfSignalCancelled(options?.signal);
   const res = await axios.get(AUTH_ENDPOINT, {
     timeout: TRANSLATION_REQUEST_TIMEOUT,
     headers: { 'User-Agent': USER_AGENT },
+    signal: options?.signal,
   });
+  throwIfSignalCancelled(options?.signal);
   if (!res.data || typeof res.data !== 'string') {
     throw new Error('Bing free translate failed (network): empty auth token');
   }
@@ -47,6 +55,7 @@ async function requestTranslate(
   texts: string[],
   to: string,
   token: string,
+  options?: TranslationRequestOptions,
 ): Promise<any[]> {
   const res = await axios.post(
     TRANSLATE_ENDPOINT,
@@ -59,8 +68,10 @@ async function requestTranslate(
         'Content-Type': 'application/json',
       },
       timeout: TRANSLATION_REQUEST_TIMEOUT,
+      signal: options?.signal,
     },
   );
+  throwIfSignalCancelled(options?.signal);
   return res.data;
 }
 
@@ -69,7 +80,9 @@ export default async function bingFree(
   proof: Record<string, any>,
   sourceLanguage: string,
   targetLanguage: string,
+  options?: TranslationRequestOptions,
 ): Promise<string | string[]> {
+  throwIfSignalCancelled(options?.signal);
   const list = Array.isArray(query) ? query : [query];
   const to = convertLanguageCode(targetLanguage, 'bing');
   if (!to) {
@@ -83,21 +96,23 @@ export default async function bingFree(
   const texts = list.map((t) => (t ?? '').slice(0, MAX_TEXT_LENGTH));
 
   const runOnce = async (forceToken: boolean): Promise<any[]> => {
-    const token = await getToken(forceToken);
-    await acquire(rateKey, rateCfg);
-    return requestTranslate(texts, to, token);
+    const token = await getToken(forceToken, options);
+    await acquire(rateKey, rateCfg, options?.signal);
+    return requestTranslate(texts, to, token, options);
   };
 
   let data: any[];
   try {
     data = await runOnce(false);
   } catch (error: any) {
+    throwIfSignalCancelled(options?.signal);
     const status = error?.response?.status;
     if (status === 401 || status === 403) {
       // token 失效，强制续期后重试一次
       try {
         data = await runOnce(true);
       } catch (retryError: any) {
+        throwIfSignalCancelled(options?.signal);
         throw new Error(
           `Bing free translate failed (network): ${retryError?.message || 'retry error'}`,
         );
