@@ -1,7 +1,6 @@
 import {
   applyTranslationDictionaryToResults,
   applyTranslationDictionaryToText,
-  formatTranslationDictionaryPrompt,
   parseTranslationDictionary,
 } from '../main/translate/utils/dictionary';
 
@@ -37,15 +36,15 @@ bad line
 
 async function testDictionaryPostProcess(): Promise<void> {
   const entries = parseTranslationDictionary(
-    'Alice -> 艾丽丝\nAlice Smith -> 艾丽丝·史密斯',
+    'Alice -> 艾丽丝\nAlice\\s+Smith -> 艾丽丝·史密斯\n/alice/i -> 爱丽丝',
   );
   const result = applyTranslationDictionaryToText(
-    'Alice Smith met Alice.',
+    'Alice Smith met alice.',
     entries,
   );
   ok(
-    result === '艾丽丝·史密斯 met 艾丽丝.',
-    'applies longest dictionary entries before shorter entries',
+    result === '艾丽丝·史密斯 met 爱丽丝.',
+    'applies dictionary entries as global regular expressions',
   );
 
   const batchResults = applyTranslationDictionaryToResults(
@@ -53,33 +52,42 @@ async function testDictionaryPostProcess(): Promise<void> {
       {
         id: '1',
         startEndTime: '00:00:01,000 --> 00:00:02,000',
-        sourceContent: 'Alice Smith met Alice.',
-        targetContent: 'Alice Smith met Alice.',
+        sourceContent: 'Alice Smith met alice.',
+        targetContent: 'Alice Smith met alice.',
       },
     ],
     entries,
   );
   ok(
-    batchResults[0].targetContent === '艾丽丝·史密斯 met 艾丽丝.',
+    batchResults[0].targetContent === '艾丽丝·史密斯 met 爱丽丝.',
     'applies dictionary to translation result batches',
+  );
+
+  const literalReplacement = applyTranslationDictionaryToText(
+    'price',
+    parseTranslationDictionary('price -> $&'),
+  );
+  ok(
+    literalReplacement === '$&',
+    'uses dictionary targets as literal replacement text',
   );
 }
 
-async function testDictionaryPrompt(): Promise<void> {
-  const dictionaryEntries = parseTranslationDictionary('Alice -> 艾丽丝');
-  const prompt = formatTranslationDictionaryPrompt(dictionaryEntries);
-
-  ok(prompt.includes('Alice => 艾丽丝'), 'formats dictionary prompt entries');
+async function testInvalidRegexIsIgnored(): Promise<void> {
+  const entries = parseTranslationDictionary(
+    '[ -> bad\n/Alice/z -> bad\nAlice -> 艾丽丝',
+  );
+  const result = applyTranslationDictionaryToText('Alice stays.', entries);
   ok(
-    prompt.includes('Keep the required JSON output shape'),
-    'keeps AI prompt constrained to the required output shape',
+    result === '艾丽丝 stays.',
+    'ignores invalid regular expressions and applies remaining entries',
   );
 }
 
 async function main(): Promise<void> {
   await testDictionaryParsing();
   await testDictionaryPostProcess();
-  await testDictionaryPrompt();
+  await testInvalidRegexIsIgnored();
 
   console.log(
     `\ntranslation dictionary tests: ${passed} passed, ${failed} failed`,

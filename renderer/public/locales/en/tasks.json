@@ -45,8 +45,8 @@
   },
   "dictionary": {
     "label": "Translation dictionary",
-    "hint": "One pair per line, formatted as \"source -> expected translation\". AI translation will prefer these terms, and remaining source terms are replaced after translation.",
-    "placeholder": "Alice -> Alice\nOpenAI -> OpenAI"
+    "hint": "One pair per line, formatted as \"regex -> expected translation\". The left side is applied globally to translated text as a JavaScript regular expression; /pattern/flags is supported.",
+    "placeholder": "Alice\\s+Smith -> Alice Smith\n/Alice/i -> Alice"
   },
   "stage": {
     "extract": "Extract",

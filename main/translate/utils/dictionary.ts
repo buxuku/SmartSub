@@ -25,6 +25,45 @@ function sortBySourceLength(
   return [...entries].sort((a, b) => b.source.length - a.source.length);
 }
 
+function parseRegexLiteral(
+  source: string,
+): { pattern: string; flags: string } | null {
+  if (!source.startsWith('/')) return null;
+
+  let escaped = false;
+  for (let index = 1; index < source.length; index++) {
+    const char = source[index];
+    if (char === '/' && !escaped) {
+      return {
+        pattern: source.slice(1, index),
+        flags: source.slice(index + 1),
+      };
+    }
+    escaped = char === '\\' && !escaped;
+    if (char !== '\\') escaped = false;
+  }
+
+  return null;
+}
+
+function normalizeRegexFlags(flags: string): string {
+  return flags.includes('g') ? flags : `${flags}g`;
+}
+
+function compileDictionaryRegex(
+  entry: TranslationDictionaryEntry,
+): RegExp | null {
+  const literal = parseRegexLiteral(entry.source);
+  const pattern = literal?.pattern ?? entry.source;
+  const flags = normalizeRegexFlags(literal?.flags ?? '');
+
+  try {
+    return new RegExp(pattern, flags);
+  } catch {
+    return null;
+  }
+}
+
 export function parseTranslationDictionary(
   dictionary?: string | TranslationDictionaryEntry[] | null,
 ): TranslationDictionaryEntry[] {
@@ -53,26 +92,6 @@ export function parseTranslationDictionary(
   return sortBySourceLength([...bySource.values()]);
 }
 
-export function formatTranslationDictionaryPrompt(
-  entries?: TranslationDictionaryEntry[],
-): string {
-  const normalizedEntries = parseTranslationDictionary(entries);
-  if (normalizedEntries.length === 0) return '';
-
-  const lines = normalizedEntries
-    .map((entry) => `- ${entry.source} => ${entry.target}`)
-    .join('\n');
-
-  return [
-    '',
-    '',
-    'Terminology glossary:',
-    lines,
-    'When the source text contains a glossary source term, always use the corresponding target term in the translation.',
-    'Keep the required JSON output shape exactly the same and do not add glossary notes or explanations.',
-  ].join('\n');
-}
-
 export function applyTranslationDictionaryToText(
   text: string,
   entries?: TranslationDictionaryEntry[],
@@ -83,7 +102,9 @@ export function applyTranslationDictionaryToText(
     if (!entry.source || !entry.target || entry.source === entry.target) {
       return output;
     }
-    return output.split(entry.source).join(entry.target);
+    const regex = compileDictionaryRegex(entry);
+    if (!regex) return output;
+    return output.replace(regex, () => entry.target);
   }, text);
 }
 
