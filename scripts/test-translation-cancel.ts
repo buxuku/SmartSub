@@ -7,6 +7,7 @@ import {
   runWithTaskContext,
   waitForTaskDelay,
 } from '../main/helpers/taskContext';
+import { acquire } from '../main/translate/utils/rateLimiter';
 
 let passed = 0;
 let failed = 0;
@@ -97,9 +98,38 @@ async function testOllamaAbortSignal(): Promise<void> {
   }
 }
 
+async function testRateLimiterQueuedAbortReleasesLock(): Promise<void> {
+  const key = `translation-cancel-test-${Date.now()}`;
+  await acquire(key);
+
+  const holdingAcquire = acquire(key, { minIntervalMs: 80 });
+  const controller = new AbortController();
+  const queuedAcquire = acquire(key, {}, controller.signal);
+  setTimeout(() => controller.abort(), 10);
+
+  await holdingAcquire;
+  await expectTaskCancelled(
+    () => queuedAcquire,
+    'rateLimiter acquire rejects a queued aborted request',
+  );
+
+  const nextAcquire = await Promise.race([
+    acquire(key),
+    new Promise<'timeout'>((resolve) =>
+      setTimeout(() => resolve('timeout'), 200),
+    ),
+  ]);
+
+  ok(
+    nextAcquire !== 'timeout',
+    'rateLimiter releases lock after queued abort',
+  );
+}
+
 async function main(): Promise<void> {
   await testAbortableDelay();
   await testOllamaAbortSignal();
+  await testRateLimiterQueuedAbortReleasesLock();
 
   console.log(`\ntranslation cancel tests: ${passed} passed, ${failed} failed`);
   if (failed > 0) {

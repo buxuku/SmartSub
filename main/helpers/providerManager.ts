@@ -132,7 +132,7 @@ function migrateProviders(oldProviders: any[]): Provider[] {
               'json_object',
           }),
         }),
-      });
+      );
     });
 
   const customProviders = oldProviders

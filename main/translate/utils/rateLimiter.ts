@@ -45,9 +45,9 @@ export async function acquire(
 
   // 等待前一个同 key 的请求完成排队
   await prev;
-  throwIfSignalCancelled(signal);
 
   try {
+    throwIfSignalCancelled(signal);
     const { minIntervalMs = 0, windowMs = 0, maxInWindow = 0 } = cfg;
 
     // 1) 最小间隔
