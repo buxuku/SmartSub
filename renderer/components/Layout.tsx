@@ -42,6 +42,7 @@ import ActivityCenter from './ActivityCenter';
 import CommandPalette from './CommandPalette';
 import { cn, openUrl } from 'lib/utils';
 import { hasAnyModelAnyEngine } from 'lib/engineModels';
+import { TASK_TYPES } from 'lib/taskTypes';
 import { useRouter } from 'next/router';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
@@ -119,6 +120,20 @@ const NAV_ITEMS: NavItemDef[] = [
   },
 ];
 
+// 全部页面用到的 i18n 语言包：首屏空闲后一次性预加载，避免逐页按需 fetch 造成的切换延迟
+const PREFETCH_NAMESPACES = [
+  'common',
+  'home',
+  'tasks',
+  'launchpad',
+  'settings',
+  'translateControl',
+  'resources',
+  'subtitleMerge',
+  'parameters',
+  'modelsControl',
+];
+
 function NavItem({
   item,
   locale,
@@ -167,10 +182,8 @@ function NavItem({
 const openAfterMenuClose = (open: () => void) => setTimeout(open, 0);
 
 const Layout = ({ children }) => {
-  const {
-    t,
-    i18n: { language: locale },
-  } = useTranslation('common');
+  const { t, i18n } = useTranslation('common');
+  const locale = i18n.language;
   const router = useRouter();
   // 兜底清理 Radix 残留的 body pointer-events 锁（从帮助菜单打开弹窗关闭后整页失效）
   useRadixPointerEventsGuard();
@@ -493,6 +506,44 @@ const Layout = ({ children }) => {
       if (hideTimer) clearTimeout(hideTimer);
     };
   }, []);
+
+  // 首屏空闲后预取各主路由的页面 bundle：静态导出下每页是独立 chunk，首次进入需现加载，
+  // 造成跳转卡顿。本地应用预取无流量成本，提前备好后点击即达。失败静默。
+  useEffect(() => {
+    if (!locale) return;
+    const routes = [
+      ...NAV_ITEMS.map((item) => item.href),
+      'recent-tasks',
+      ...TASK_TYPES.map((tt) => `tasks/${tt.slug}`),
+    ];
+    const run = () => {
+      routes.forEach((r) => {
+        void router.prefetch(`/${locale}/${r}`).catch(() => {});
+      });
+      // 预加载全部语言包，避免首次进入某页时再 fetch 该页 namespace 的延迟
+      void i18n.loadNamespaces(PREFETCH_NAMESPACES).catch(() => {});
+    };
+    const w = window as unknown as {
+      requestIdleCallback?: (
+        cb: () => void,
+        opts?: { timeout: number },
+      ) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    const id =
+      typeof w.requestIdleCallback === 'function'
+        ? w.requestIdleCallback(run, { timeout: 2000 })
+        : (setTimeout(run, 1200) as unknown as number);
+    return () => {
+      if (typeof w.cancelIdleCallback === 'function') {
+        w.cancelIdleCallback(id);
+      } else {
+        clearTimeout(id);
+      }
+    };
+    // router 故意不入依赖：避免每次路由切换重置预取计时器；prefetch 幂等且失败静默
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locale]);
 
   const handleUpdateClick = () => {
     setShowUpdateDialog(true);
