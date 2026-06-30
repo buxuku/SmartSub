@@ -24,6 +24,7 @@ import {
   isSupportedSubtitleFormat,
   SubtitleFormat,
 } from './subtitleFormats';
+import { writeProofreadDataFromFiles } from './proofreadData';
 import {
   throwIfTaskCancelled,
   isTaskCancelled,
@@ -467,6 +468,29 @@ export async function processFile(
       getDesiredChineseScript(sourceLanguage)
     ) {
       await stripSourceSubtitlePunctuation(file.srtFile, fileName);
+    }
+
+    if (file.srtFile && fs.existsSync(file.srtFile)) {
+      const proofreadDataFile = await writeProofreadDataFromFiles({
+        file,
+        sourceFile: file.srtFile,
+        targetFile:
+          shouldTranslateSubtitle && translateProvider !== '-1'
+            ? file.tempTranslatedSrtFile || file.translatedSrtFile
+            : undefined,
+        finalTargetFile:
+          shouldTranslateSubtitle && translateProvider !== '-1'
+            ? file.translatedSrtFile
+            : undefined,
+        sourceLanguage,
+        targetLanguage,
+        translateContent: formData?.translateContent,
+        outputFormat: formData?.subtitleOutputFormat,
+      });
+      if (proofreadDataFile) {
+        file.proofreadDataFile = proofreadDataFile;
+        event.sender.send('taskFileChange', file);
+      }
     }
 
     // 将交付字幕转换为用户选择的输出格式（内部流程始终为 SRT，此处仅转换最终交付物）

@@ -120,6 +120,8 @@ export function getProofreadUnavailableReason(
   file: any,
   typeDef: TaskTypeDef,
 ): ProofreadUnavailableReason | null {
+  if (file?.proofreadDataFile) return null;
+
   const sourcePath = getTaskProofreadSourcePath(file, typeDef);
   const targetPath = getTaskProofreadTargetPath(file, typeDef);
   if (

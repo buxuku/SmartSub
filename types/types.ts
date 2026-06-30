@@ -49,6 +49,8 @@ export interface IFiles {
   tempAudioFile?: string;
   translatedSrtFile?: string;
   tempTranslatedSrtFile?: string;
+  /** 校对用无损中间态 sidecar，保存源文/译文/时间轴，避免直接读写有损交付物。 */
+  proofreadDataFile?: string;
   /** 本次转写实际使用的后端标签（如 "CUDA 12.4.0" / "Vulkan" / "CPU"） */
   whisperBackend?: string;
   /** 该文件走了内封软字幕直提（跳过抽音频 + ASR）：用于任务列表标识 */

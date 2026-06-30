@@ -15,6 +15,11 @@ import {
   serializeCue,
   convertSubtitleContent,
 } from './subtitleFormats';
+import {
+  proofreadDataToSubtitleRows,
+  readProofreadDataFile,
+  updateProofreadDataFromSubtitles,
+} from './proofreadData';
 
 // 定义支持的文件扩展名常量
 export const MEDIA_EXTENSIONS = [
@@ -147,6 +152,71 @@ async function getMediaFilesFromDirectory(
   return files;
 }
 
+function buildSubtitleFileContent(
+  filePath: string,
+  subtitles: any[],
+  contentType = 'source',
+): string {
+  const format = detectSubtitleFormat(filePath);
+  const buildText = (subtitle): string => {
+    if (contentType === 'source') {
+      return subtitle.sourceContent ?? '';
+    }
+    const template =
+      CONTENT_TEMPLATES[contentType] || CONTENT_TEMPLATES.onlyTranslate;
+    return renderTemplate(template, {
+      sourceContent: subtitle.sourceContent ?? '',
+      targetContent: subtitle.targetContent ?? '',
+    }).replace(/\n+$/, '');
+  };
+
+  return (
+    getSubtitleFileHeader(format) +
+    subtitles
+      .map((subtitle) => {
+        const { startMs, endMs } = parseStartEndTime(subtitle.startEndTime);
+        return serializeCue(
+          {
+            id: subtitle.id,
+            startMs,
+            endMs,
+            text: buildText(subtitle),
+          },
+          format,
+        );
+      })
+      .join('')
+  );
+}
+
+async function backupSubtitleFile(filePath: string): Promise<void> {
+  try {
+    if (fs.existsSync(filePath)) {
+      const backupPath = path.join(
+        ensureTempDir(),
+        `subtitle-backup-${getMd5(filePath)}${path.extname(filePath)}.bak`,
+      );
+      await fs.promises.copyFile(filePath, backupPath);
+    }
+  } catch (backupError) {
+    logMessage(
+      `备份字幕文件失败（继续保存）: ${backupError.message}`,
+      'warning',
+    );
+  }
+}
+
+async function writeSubtitleFile(
+  filePath: string,
+  subtitles: any[],
+  contentType = 'source',
+): Promise<void> {
+  const content = buildSubtitleFileContent(filePath, subtitles, contentType);
+  await backupSubtitleFile(filePath);
+  await fs.promises.writeFile(filePath, content, 'utf-8');
+  logMessage(`保存字幕文件成功: ${filePath}`, 'info');
+}
+
 export function setupIpcHandlers(mainWindow: BrowserWindow) {
   ipcMain.on('message', async (event, arg) => {
     event.reply('message', `${arg} World!`);
@@ -267,6 +337,20 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     }
   });
 
+  ipcMain.handle('readProofreadDataFile', async (event, { filePath }) => {
+    try {
+      if (!filePath || !fs.existsSync(filePath)) {
+        logMessage(`读取校对中间态失败: 文件不存在 ${filePath}`, 'error');
+        return [];
+      }
+      const proofreadData = await readProofreadDataFile(filePath);
+      return proofreadDataToSubtitleRows(proofreadData);
+    } catch (error) {
+      logMessage(`读取校对中间态错误: ${error.message}`, 'error');
+      return [];
+    }
+  });
+
   // 读取任意字幕文件并转换为 WebVTT 文本（供播放器内嵌字幕轨道使用）
   ipcMain.handle('getSubtitleAsVtt', async (event, { filePath }) => {
     try {
@@ -303,58 +387,59 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     'saveSubtitleFile',
     async (event, { filePath, subtitles, contentType = 'source' }) => {
       try {
-        const format = detectSubtitleFormat(filePath);
-        // 计算每条字幕实际要写入的可见文本（去掉模板带来的尾部空行，分隔交给序列化器处理）
-        const buildText = (subtitle): string => {
-          if (contentType === 'source') {
-            return subtitle.sourceContent ?? '';
-          }
-          return renderTemplate(CONTENT_TEMPLATES[contentType], {
-            sourceContent: subtitle.sourceContent ?? '',
-            targetContent: subtitle.targetContent ?? '',
-          }).replace(/\n+$/, '');
-        };
-
-        const content =
-          getSubtitleFileHeader(format) +
-          subtitles
-            .map((subtitle) => {
-              const { startMs, endMs } = parseStartEndTime(
-                subtitle.startEndTime,
-              );
-              return serializeCue(
-                {
-                  id: subtitle.id,
-                  startMs,
-                  endMs,
-                  text: buildText(subtitle),
-                },
-                format,
-              );
-            })
-            .join('');
-        // 覆盖前滚动备份一份到临时目录（避免污染用户视频目录；失败不阻断保存）
-        try {
-          if (fs.existsSync(filePath)) {
-            const backupPath = path.join(
-              ensureTempDir(),
-              `subtitle-backup-${getMd5(filePath)}${path.extname(filePath)}.bak`,
-            );
-            await fs.promises.copyFile(filePath, backupPath);
-          }
-        } catch (backupError) {
-          logMessage(
-            `备份字幕文件失败（继续保存）: ${backupError.message}`,
-            'warning',
-          );
-        }
-        await fs.promises.writeFile(filePath, content, 'utf-8');
-        logMessage(`保存字幕文件成功: ${filePath}`, 'info');
+        await writeSubtitleFile(filePath, subtitles, contentType);
         return { success: true };
       } catch (error) {
         logMessage(`保存字幕文件错误: ${error.message}`, 'error');
         return {
           error: `保存字幕文件错误: ${error.message}`,
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'saveProofreadDataAndRender',
+    async (
+      event,
+      {
+        proofreadDataFile,
+        subtitles,
+        outputs = [],
+      }: {
+        proofreadDataFile: string;
+        subtitles: any[];
+        outputs: { filePath?: string; contentType?: string }[];
+      },
+    ) => {
+      try {
+        if (!proofreadDataFile || !fs.existsSync(proofreadDataFile)) {
+          throw new Error(
+            `Proofread data file not found: ${proofreadDataFile}`,
+          );
+        }
+
+        await updateProofreadDataFromSubtitles(proofreadDataFile, subtitles);
+
+        const rendered = new Set<string>();
+        for (const output of outputs) {
+          const filePath = output?.filePath;
+          if (!filePath) continue;
+          const key = path.resolve(filePath).toLowerCase();
+          if (rendered.has(key)) continue;
+          rendered.add(key);
+          await writeSubtitleFile(
+            filePath,
+            subtitles,
+            output.contentType || 'source',
+          );
+        }
+
+        return { success: true };
+      } catch (error) {
+        logMessage(`保存校对中间态错误: ${error.message}`, 'error');
+        return {
+          error: `保存校对中间态错误: ${error.message}`,
         };
       }
     },

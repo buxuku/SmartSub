@@ -40,6 +40,7 @@ interface PendingFile {
   status: 'pending' | 'proofreading' | 'completed';
   finalTargetPath?: string; // 目标翻译文件路径（用户配置格式）
   translateContent?: string; // 翻译内容格式设置
+  proofreadDataFile?: string;
 }
 
 interface ProofreadEditorProps {
@@ -66,6 +67,7 @@ export default function ProofreadEditor({
       targetLanguage: file.targetLanguage,
       finalTargetSubtitlePath: file.finalTargetPath,
       translateContent: file.translateContent,
+      proofreadDataFile: file.proofreadDataFile,
     }),
     [file],
   );

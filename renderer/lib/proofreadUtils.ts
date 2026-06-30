@@ -22,6 +22,9 @@ export interface PendingFile {
   detectedSubtitles: DetectedSubtitle[];
   selectedSource?: string;
   selectedTarget?: string;
+  proofreadDataFile?: string;
+  finalTargetPath?: string;
+  translateContent?: string;
   sourceLanguage?: string;
   targetLanguage?: string;
   status: 'pending' | 'proofreading' | 'completed';
@@ -273,6 +276,7 @@ export async function loadPendingFileFromItem(item: {
   videoPath?: string;
   sourceSubtitlePath: string;
   targetSubtitlePath?: string;
+  proofreadDataFile?: string;
   sourceLanguage?: string;
   targetLanguage?: string;
   status: 'pending' | 'in_progress' | 'completed';
@@ -333,6 +337,7 @@ export async function loadPendingFileFromItem(item: {
     detectedSubtitles,
     selectedSource: item.sourceSubtitlePath,
     selectedTarget: item.targetSubtitlePath,
+    proofreadDataFile: item.proofreadDataFile,
     sourceLanguage: item.sourceLanguage,
     targetLanguage: item.targetLanguage,
     status: item.status === 'completed' ? 'completed' : 'pending',
@@ -348,6 +353,7 @@ export function pendingFileToSaveFormat(file: PendingFile): {
   videoPath?: string;
   sourceSubtitlePath: string;
   targetSubtitlePath?: string;
+  proofreadDataFile?: string;
   sourceLanguage?: string;
   targetLanguage?: string;
   detectedSubtitles: DetectedSubtitle[];
@@ -366,6 +372,7 @@ export function pendingFileToSaveFormat(file: PendingFile): {
     videoPath: file.videoPath,
     sourceSubtitlePath: file.selectedSource || '',
     targetSubtitlePath: file.selectedTarget,
+    proofreadDataFile: file.proofreadDataFile,
     sourceLanguage: file.sourceLanguage,
     targetLanguage: file.targetLanguage,
     detectedSubtitles: file.detectedSubtitles.map((s) => ({
