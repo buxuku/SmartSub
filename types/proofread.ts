@@ -50,6 +50,7 @@ export interface ProofreadItem {
   videoPath?: string;
   sourceSubtitlePath: string;
   targetSubtitlePath?: string;
+  proofreadDataFile?: string;
   sourceLanguage?: string; // 自动检测的语言
   targetLanguage?: string;
   lastPosition: number; // 上次校对到的字幕索引
@@ -79,6 +80,7 @@ export interface ProofreadHistory {
   videoPath?: string;
   sourceSubtitlePath: string;
   targetSubtitlePath?: string;
+  proofreadDataFile?: string;
   sourceLanguage: string;
   targetLanguage: string;
   lastPosition: number;
@@ -93,6 +95,7 @@ export interface StandaloneSubtitleConfig {
   videoPath?: string;
   sourceSubtitlePath: string;
   targetSubtitlePath?: string;
+  proofreadDataFile?: string;
   sourceLanguage?: string;
   targetLanguage?: string;
 }

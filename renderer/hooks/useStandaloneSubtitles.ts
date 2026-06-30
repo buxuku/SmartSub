@@ -18,6 +18,7 @@ interface StandaloneSubtitlesConfig {
   targetLanguage?: string;
   finalTargetSubtitlePath?: string; // 目标翻译文件（用户配置格式，可能是双语）
   translateContent?: string; // 翻译内容格式设置
+  proofreadDataFile?: string;
 }
 
 // 将时间字符串转换为秒
@@ -119,6 +120,23 @@ export const useStandaloneSubtitles = (
     }
   };
 
+  const readProofreadDataFile = async (
+    filePath: string,
+  ): Promise<Subtitle[]> => {
+    try {
+      const result: Subtitle[] = await window.ipc.invoke(
+        'readProofreadDataFile',
+        {
+          filePath,
+        },
+      );
+      return result;
+    } catch (error) {
+      console.error('Error reading proofread data file:', error);
+      return [];
+    }
+  };
+
   // 创建播放器字幕轨道
   const createPlayerTrack = async (
     srtPath: string | undefined,
@@ -163,7 +181,13 @@ export const useStandaloneSubtitles = (
       const playerTracks: PlayerSubtitleTrack[] = [];
 
       // 读取源字幕
-      const sourceSubtitles = await readSubtitleFile(config.sourceSubtitlePath);
+      const proofreadDataSubtitles = config.proofreadDataFile
+        ? await readProofreadDataFile(config.proofreadDataFile)
+        : [];
+      const sourceSubtitles =
+        proofreadDataSubtitles.length > 0
+          ? proofreadDataSubtitles
+          : await readSubtitleFile(config.sourceSubtitlePath);
       if (config.sourceLanguage) {
         const track = await createPlayerTrack(
           config.sourceSubtitlePath,
@@ -175,7 +199,21 @@ export const useStandaloneSubtitles = (
 
       // 读取翻译字幕
       let translatedSubtitles: Subtitle[] = [];
-      if (config.targetSubtitlePath) {
+      if (proofreadDataSubtitles.length > 0) {
+        setHasTranslationFile(
+          proofreadDataSubtitles.some(
+            (sub) => sub.targetContent && sub.targetContent.trim() !== '',
+          ),
+        );
+        if (config.targetSubtitlePath && config.targetLanguage) {
+          const track = await createPlayerTrack(
+            config.targetSubtitlePath,
+            config.targetLanguage,
+            true,
+          );
+          if (track) playerTracks.push(track);
+        }
+      } else if (config.targetSubtitlePath) {
         translatedSubtitles = await readSubtitleFile(config.targetSubtitlePath);
         setHasTranslationFile(translatedSubtitles.length > 0);
 
@@ -199,6 +237,10 @@ export const useStandaloneSubtitles = (
         });
 
         const merged = sourceSubtitles.map((sub, index) => {
+          if (proofreadDataSubtitles.length > 0) {
+            return { ...sub, isEditing: false };
+          }
+
           const translated =
             translatedMap.get(sub.startEndTime) ||
             (index < translatedSubtitles.length
@@ -315,6 +357,52 @@ export const useStandaloneSubtitles = (
     // 先把未提交的逐字编辑补入撤销历史，保证保存后仍可撤销
     flushPendingEdit();
     try {
+      if (config.proofreadDataFile) {
+        const outputs: { filePath?: string; contentType?: string }[] = [];
+        const finalTargetPath = config.finalTargetSubtitlePath;
+
+        if (config.sourceSubtitlePath) {
+          outputs.push({
+            filePath: config.sourceSubtitlePath,
+            contentType: 'source',
+          });
+        }
+
+        if (shouldShowTranslation) {
+          if (
+            config.targetSubtitlePath &&
+            config.targetSubtitlePath !== finalTargetPath
+          ) {
+            outputs.push({
+              filePath: config.targetSubtitlePath,
+              contentType: 'onlyTranslate',
+            });
+          }
+          outputs.push({
+            filePath: finalTargetPath || config.targetSubtitlePath,
+            contentType: finalTargetPath
+              ? config.translateContent || 'onlyTranslate'
+              : 'onlyTranslate',
+          });
+        }
+
+        const result = await window.ipc.invoke('saveProofreadDataAndRender', {
+          proofreadDataFile: config.proofreadDataFile,
+          subtitles: mergedSubtitles,
+          outputs: outputs.filter((output) => output.filePath),
+        });
+
+        if (result?.error) {
+          console.error('Error saving proofread data:', result.error);
+          toast.error(t('saveFailed'));
+          return false;
+        }
+
+        setIsDirty(false);
+        toast.success(t('subtitleSavedSuccess'));
+        return true;
+      }
+
       const results: { error?: string }[] = [];
 
       // 保存源字幕

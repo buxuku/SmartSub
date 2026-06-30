@@ -549,8 +549,9 @@ export default function ProofreadFileList({
                 (s) => s.filePath !== file.selectedSource,
               );
               const hasPlainTextSubtitle =
-                isPlainTextSubtitlePath(file.selectedSource) ||
-                isPlainTextSubtitlePath(file.selectedTarget);
+                !file.proofreadDataFile &&
+                (isPlainTextSubtitlePath(file.selectedSource) ||
+                  isPlainTextSubtitlePath(file.selectedTarget));
               const canStartProofread =
                 Boolean(file.selectedSource) && !hasPlainTextSubtitle;
 

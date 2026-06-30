@@ -465,6 +465,7 @@ export default function TaskPage() {
       status: 'proofreading' as const,
       finalTargetPath,
       translateContent: formData.translateContent,
+      proofreadDataFile: proofreadFile.proofreadDataFile,
     };
   }, [proofreadFile, typeDef, formData]);
 
