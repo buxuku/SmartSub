@@ -17,6 +17,10 @@
     "format": "Subtitle format"
   },
   "notConfigured": " (not configured)",
+  "providerGroup": {
+    "configured": "Configured",
+    "notConfigured": "Others (not configured)"
+  },
   "skippedDuplicates": "Skipped {{count}} duplicate file(s)",
   "goDownloadModel": "Download a model",
   "goConfigureProvider": "Set up a translation service",

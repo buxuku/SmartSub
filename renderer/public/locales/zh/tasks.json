@@ -17,6 +17,10 @@
     "format": "字幕格式"
   },
   "notConfigured": "（未配置）",
+  "providerGroup": {
+    "configured": "已配置",
+    "notConfigured": "其它（未配置）"
+  },
   "skippedDuplicates": "已跳过 {{count}} 个重复文件",
   "goDownloadModel": "去下载模型",
   "goConfigureProvider": "去配置翻译服务",

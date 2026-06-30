@@ -245,6 +245,11 @@
   "selectAiProvider": "选择 AI 服务",
   "selectProvider": "选择服务商",
   "noAiProviderConfigured": "未配置 AI 翻译服务，请先在设置中添加",
+  "notConfigured": "（未配置）",
+  "providerGroup": {
+    "configured": "已配置",
+    "notConfigured": "其它（未配置）"
+  },
   "customPrompt": "优化提示词",
   "showCustomPrompt": "展开",
   "hideCustomPrompt": "收起",

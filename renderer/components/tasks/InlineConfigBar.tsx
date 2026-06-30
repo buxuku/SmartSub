@@ -4,11 +4,13 @@ import { useRouter } from 'next/router';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Download, Languages } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Download, Languages } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Models from '@/components/Models';
 import { supportedLanguage } from 'lib/utils';
@@ -90,6 +92,30 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
         </SelectItem>
       ))}
     </SelectContent>
+  );
+
+  // 已配置的服务商前置并独立分组，未配置的灰色置后：兼顾「可用项触手可及」与「发现性」
+  const { configuredProviders, unconfiguredProviders } = React.useMemo(() => {
+    const configured: Provider[] = [];
+    const unconfigured: Provider[] = [];
+    providers.forEach((provider) => {
+      if (isProviderConfigured(provider as any)) {
+        configured.push(provider);
+      } else {
+        unconfigured.push(provider);
+      }
+    });
+    return {
+      configuredProviders: configured,
+      unconfiguredProviders: unconfigured,
+    };
+  }, [providers]);
+
+  const renderProviderItem = (provider: Provider, configured: boolean) => (
+    <SelectItem key={provider.id} value={provider.id} disabled={!configured}>
+      {tCommon(`provider.${provider.name}`, { defaultValue: provider.name })}
+      {!configured && t('notConfigured')}
+    </SelectItem>
   );
 
   return (
@@ -179,21 +205,28 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
                   <SelectValue placeholder={tHome('pleaseSelect')} />
                 </SelectTrigger>
                 <SelectContent>
-                  {providers.map((provider) => {
-                    const configured = isProviderConfigured(provider as any);
-                    return (
-                      <SelectItem
-                        key={provider.id}
-                        value={provider.id}
-                        disabled={!configured}
-                      >
-                        {tCommon(`provider.${provider.name}`, {
-                          defaultValue: provider.name,
-                        })}
-                        {!configured && t('notConfigured')}
-                      </SelectItem>
-                    );
-                  })}
+                  {configuredProviders.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="flex items-center gap-1.5 pl-2 text-foreground">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                        {t('providerGroup.configured')}
+                      </SelectLabel>
+                      {configuredProviders.map((provider) =>
+                        renderProviderItem(provider, true),
+                      )}
+                    </SelectGroup>
+                  )}
+                  {unconfiguredProviders.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="flex items-center gap-1.5 pl-2 text-muted-foreground">
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        {t('providerGroup.notConfigured')}
+                      </SelectLabel>
+                      {unconfiguredProviders.map((provider) =>
+                        renderProviderItem(provider, false),
+                      )}
+                    </SelectGroup>
+                  )}
                 </SelectContent>
               </Select>
             ) : (
