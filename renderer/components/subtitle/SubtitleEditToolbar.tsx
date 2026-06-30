@@ -21,10 +21,13 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { isProviderConfigured } from 'lib/providerUtils';
 import {
   Search,
   Replace,
@@ -46,6 +49,8 @@ import {
   RotateCcw,
   X,
   Check,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -496,9 +501,12 @@ Only respond with the corrected text, nothing else.`;
       const result = await window.ipc.invoke('getAiTranslationProviders');
       if (result.success && result.data) {
         setAiProviders(result.data);
-        // 默认选择第一个服务商
+        // 默认优先选中已配置的服务商，避免默认落到不可用项
         if (result.data.length > 0 && !selectedProviderId) {
-          setSelectedProviderId(result.data[0].id);
+          const firstConfigured = result.data.find((p: any) =>
+            isProviderConfigured(p),
+          );
+          if (firstConfigured) setSelectedProviderId(firstConfigured.id);
         }
       }
     } catch (error) {
@@ -615,7 +623,7 @@ Only respond with the corrected text, nothing else.`;
 
     // 如果没有翻译内容，也可以使用 AI 生成翻译
 
-    if (aiProviders.length === 0) {
+    if (!aiProviders.some((p) => isProviderConfigured(p))) {
       toast.error(t('noAiProviderConfigured'));
       return;
     }
@@ -1065,7 +1073,7 @@ Only respond with the corrected text, nothing else.`;
                 {/* AI 服务商选择 */}
                 <div className="space-y-2">
                   <Label>{t('selectAiProvider')}</Label>
-                  {aiProviders.length === 0 ? (
+                  {!aiProviders.some((p) => isProviderConfigured(p)) ? (
                     <div className="p-3 border rounded bg-muted/30 text-sm text-muted-foreground italic">
                       {t('noAiProviderConfigured')}
                     </div>
@@ -1078,11 +1086,44 @@ Only respond with the corrected text, nothing else.`;
                         <SelectValue placeholder={t('selectProvider')} />
                       </SelectTrigger>
                       <SelectContent>
-                        {aiProviders.map((provider) => (
-                          <SelectItem key={provider.id} value={provider.id}>
-                            {provider.name}
-                          </SelectItem>
-                        ))}
+                        {aiProviders.some((p) => isProviderConfigured(p)) && (
+                          <SelectGroup>
+                            <SelectLabel className="flex items-center gap-1.5 pl-2 text-foreground">
+                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                              {t('providerGroup.configured')}
+                            </SelectLabel>
+                            {aiProviders
+                              .filter((p) => isProviderConfigured(p))
+                              .map((provider) => (
+                                <SelectItem
+                                  key={provider.id}
+                                  value={provider.id}
+                                >
+                                  {provider.name}
+                                </SelectItem>
+                              ))}
+                          </SelectGroup>
+                        )}
+                        {aiProviders.some((p) => !isProviderConfigured(p)) && (
+                          <SelectGroup>
+                            <SelectLabel className="flex items-center gap-1.5 pl-2 text-muted-foreground">
+                              <AlertCircle className="h-3.5 w-3.5" />
+                              {t('providerGroup.notConfigured')}
+                            </SelectLabel>
+                            {aiProviders
+                              .filter((p) => !isProviderConfigured(p))
+                              .map((provider) => (
+                                <SelectItem
+                                  key={provider.id}
+                                  value={provider.id}
+                                  disabled
+                                >
+                                  {provider.name}
+                                  {t('notConfigured')}
+                                </SelectItem>
+                              ))}
+                          </SelectGroup>
+                        )}
                       </SelectContent>
                     </Select>
                   )}
@@ -1198,7 +1239,7 @@ Only respond with the corrected text, nothing else.`;
               disabled={
                 aiOptimizing ||
                 currentSubtitleIndex < 0 ||
-                aiProviders.length === 0
+                !aiProviders.some((p) => isProviderConfigured(p))
               }
             >
               {aiOptimizing ? (

@@ -245,6 +245,11 @@
   "selectAiProvider": "Select AI Service",
   "selectProvider": "Select Provider",
   "noAiProviderConfigured": "No AI translation service configured, please add one in settings",
+  "notConfigured": " (not configured)",
+  "providerGroup": {
+    "configured": "Configured",
+    "notConfigured": "Others (not configured)"
+  },
   "customPrompt": "Optimization Prompt",
   "showCustomPrompt": "Expand",
   "hideCustomPrompt": "Collapse",
