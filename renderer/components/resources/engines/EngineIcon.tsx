@@ -100,6 +100,29 @@ const EngineIcon: React.FC<EngineIconProps> = ({ engine, className }) => {
       </svg>
     );
   }
+  if (engine === 'cloud') {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        fill="none"
+        aria-hidden="true"
+      >
+        <path
+          d="M7 18h9.5a3.5 3.5 0 0 0 .4-6.98A5 5 0 0 0 7.2 9.6 3.7 3.7 0 0 0 7 18Z"
+          fill="#0EA5E9"
+          fillOpacity={0.16}
+          stroke="#0EA5E9"
+          strokeWidth={1.4}
+        />
+        <g stroke="#0EA5E9" strokeWidth={1.6} strokeLinecap="round" fill="none">
+          <path d="M10 12.5v2" />
+          <path d="M12 11v5" />
+          <path d="M14 12.5v2" />
+        </g>
+      </svg>
+    );
+  }
   if (engine === 'localCli') {
     return (
       <svg

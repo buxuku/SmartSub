@@ -15,9 +15,11 @@ import {
   decodeEngineModel,
   encodeEngineModel,
   getEngineModelGroups,
+  isEngineModelSelected,
 } from 'lib/engineModels';
 import EngineIcon from '@/components/resources/engines/EngineIcon';
 import type { EngineStatus, TranscriptionEngine } from '../../types/engine';
+import type { AsrProvider } from '../../types/asrProvider';
 
 interface IProps {
   modelsInstalled?: string[];
@@ -42,11 +44,19 @@ interface IProps {
   fireRedEngineInstalled?: boolean;
   /** 是否把 localCli 作为独立分组列出（内置规范模型名，保 `${whisperModel}` 替换）。 */
   includeLocalCli?: boolean;
+  /** 云端听写服务商实例（每个已配置实例为一分组，实例名为组名）。 */
+  asrProviders?: AsrProvider[];
   /** 当前选中的引擎与模型（二者共同决定选中项；任一缺失或不在分组内则视为未选）。 */
   engine?: TranscriptionEngine;
   model?: string;
-  /** 选中某分组下某模型：同时回传 (引擎, 模型)。 */
-  onChange?: (engine: TranscriptionEngine, model: string) => void;
+  /** 云引擎选中的实例 id（engine==='cloud' 时用于多实例消歧）。 */
+  asrProviderId?: string;
+  /** 选中某分组下某模型：同时回传 (引擎, 模型[, 云实例 id])。 */
+  onChange?: (
+    engine: TranscriptionEngine,
+    model: string,
+    asrProviderId?: string,
+  ) => void;
   className?: string;
   disabled?: boolean;
 }
@@ -74,8 +84,10 @@ const Models = React.forwardRef<
     fireRedModelsInstalled,
     fireRedEngineInstalled,
     includeLocalCli,
+    asrProviders,
     engine,
     model,
+    asrProviderId,
     onChange,
     className,
     disabled,
@@ -96,30 +108,35 @@ const Models = React.forwardRef<
       fireRedModelsInstalled,
       fireRedEngineInstalled,
     },
-    { includeLocalCli },
+    { includeLocalCli, asrProviders },
   );
 
   const engineLabel = (e: TranscriptionEngine) =>
     t(`engineBadge.${e}`, { defaultValue: e });
+  // 云实例分组用实例名作组名/徽标；其它引擎用引擎名。
+  const groupLabel = (g: (typeof groups)[number]) =>
+    g.engine === 'cloud' && g.label ? g.label : engineLabel(g.engine);
 
-  // 仅当 (引擎,模型) 确实存在于分组中才视为有效选中，避免残留旧选择悬空显示
+  // 仅当 (引擎,模型[,云实例]) 确实存在于分组中才视为有效选中，避免残留旧选择悬空显示
+  const selectedGroup = groups.find((g) =>
+    isEngineModelSelected(g, { engine, model, asrProviderId }),
+  );
   const selected =
-    engine &&
-    model &&
-    groups.some(
-      (g) =>
-        g.engine === engine &&
-        g.models.some((m) => m.toLowerCase() === model.toLowerCase()),
-    )
-      ? { engine, model }
+    selectedGroup && model
+      ? { engine: selectedGroup.engine, model, group: selectedGroup }
       : null;
   const currentValue = selected
-    ? encodeEngineModel(selected.engine, selected.model)
+    ? encodeEngineModel(
+        selected.engine,
+        selected.model,
+        selected.group.asrProviderId,
+      )
     : undefined;
 
   const handleValueChange = (value: string) => {
     const decoded = decodeEngineModel(value);
-    if (decoded) onChange?.(decoded.engine, decoded.model);
+    if (decoded)
+      onChange?.(decoded.engine, decoded.model, decoded.asrProviderId);
   };
 
   return (
@@ -135,7 +152,7 @@ const Models = React.forwardRef<
           <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap">
             <EngineIcon engine={selected.engine} className="h-4 w-4 shrink-0" />
             <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground">
-              {engineLabel(selected.engine)}
+              {groupLabel(selected.group)}
             </span>
             <span className="truncate font-medium text-foreground">
               {selected.model}
@@ -147,24 +164,34 @@ const Models = React.forwardRef<
       </SelectTrigger>
       <SelectContent>
         {groups.length > 0 ? (
-          groups.map((group, index) => (
-            <SelectGroup key={group.engine}>
-              {index > 0 && <SelectSeparator />}
-              <SelectLabel className="flex items-center gap-1.5 pl-2 text-foreground">
-                <EngineIcon engine={group.engine} className="h-4 w-4" />
-                <span>{engineLabel(group.engine)}</span>
-              </SelectLabel>
-              {group.models.map((m) => (
-                <SelectItem
-                  value={encodeEngineModel(group.engine, m)}
-                  key={`${group.engine}:${m}`}
-                  className="text-muted-foreground data-[state=checked]:text-foreground"
-                >
-                  {m}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          ))
+          groups.map((group, index) => {
+            const groupKey =
+              group.engine === 'cloud'
+                ? `cloud:${group.asrProviderId}`
+                : group.engine;
+            return (
+              <SelectGroup key={groupKey}>
+                {index > 0 && <SelectSeparator />}
+                <SelectLabel className="flex items-center gap-1.5 pl-2 text-foreground">
+                  <EngineIcon engine={group.engine} className="h-4 w-4" />
+                  <span>{groupLabel(group)}</span>
+                </SelectLabel>
+                {group.models.map((m) => (
+                  <SelectItem
+                    value={encodeEngineModel(
+                      group.engine,
+                      m,
+                      group.asrProviderId,
+                    )}
+                    key={`${groupKey}:${m}`}
+                    className="text-muted-foreground data-[state=checked]:text-foreground"
+                  >
+                    {m}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            );
+          })
         ) : (
           <SelectItem value="no-models" disabled>
             {t('noModelsInstalled')}

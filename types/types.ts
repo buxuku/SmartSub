@@ -1,4 +1,4 @@
-import type { EngineStatus } from './engine';
+import type { EngineStatus, TranscriptionEngine } from './engine';
 
 export interface ISystemInfo {
   modelsInstalled: string[];
@@ -76,6 +76,12 @@ export interface TaskProject {
 export interface IFormData {
   /** 任务类型（运行时由任务携带）：用于区分源字幕是 ASR 生成还是用户导入。 */
   taskType?: TaskProjectType;
+  /** 转写引擎（逐任务选择，缺省 builtin）。 */
+  transcriptionEngine?: TranscriptionEngine;
+  /** 转写模型名（引擎相关；云引擎为服务商实例内的模型 id）。 */
+  model?: string;
+  /** 云端听写：选中的云 ASR 服务商实例 id（transcriptionEngine==='cloud' 时必填）。 */
+  asrProviderId?: string;
   translateContent:
     | 'onlyTranslate'
     | 'sourceAndTranslate'

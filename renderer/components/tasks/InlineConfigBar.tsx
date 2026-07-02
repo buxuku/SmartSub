@@ -31,6 +31,8 @@ interface InlineConfigBarProps {
   formData: any;
   systemInfo: any;
   providers: Provider[];
+  /** 云端听写服务商实例（承载于「引擎 ▸ 模型」下拉）。 */
+  asrProviders?: Provider[];
   typeDef: TaskTypeDef;
   useLocalWhisper: boolean;
 }
@@ -62,6 +64,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
   formData,
   systemInfo,
   providers,
+  asrProviders,
   typeDef,
   useLocalWhisper,
 }) => {
@@ -78,8 +81,9 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
   // localCli 走"自备模型/命令"路径，无可下载模型，按是否启用 localCli 决定是否进分组下拉。
   // 过渡期沿用 useLocalWhisper 作为 localCli 启用信号（全局字段移除时改用 localCli 已配置判断）。
   const includeLocalCli = useLocalWhisper;
-  // 就绪 = 跨引擎任一已装模型，或启用了 localCli（自备模型）；否则引导去下载。
-  const hasModels = hasAnyModelAnyEngine(systemInfo) || includeLocalCli;
+  // 就绪 = 跨引擎任一已装模型 / 任一已配置云实例 / 启用了 localCli（自备模型）；否则引导去下载。
+  const hasModels =
+    hasAnyModelAnyEngine(systemInfo, asrProviders as any) || includeLocalCli;
 
   const languageItems = (includeAuto: boolean) => (
     <SelectContent>
@@ -127,9 +131,12 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
               className={modelTriggerClass}
               engine={formData.transcriptionEngine}
               model={formData.model}
-              onChange={(engine, model) => {
+              asrProviderId={formData.asrProviderId}
+              asrProviders={asrProviders as any}
+              onChange={(engine, model, asrProviderId) => {
                 setValue('transcriptionEngine', engine);
                 setValue('model', model);
+                setValue('asrProviderId', asrProviderId ?? '');
               }}
               modelsInstalled={systemInfo?.modelsInstalled || []}
               fasterWhisperModelsInstalled={

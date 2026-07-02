@@ -4,7 +4,9 @@ export type TranscriptionEngine =
   | 'funasr'
   | 'qwen'
   | 'fireRedAsr'
-  | 'localCli';
+  | 'localCli'
+  /** 云端听写（在线 ASR）：单一适配器，按 asrProviderId 实例分发到具体 service。 */
+  | 'cloud';
 
 export type EngineStatusState =
   | 'ready'

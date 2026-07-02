@@ -294,6 +294,7 @@
     "funasr": "FunASR",
     "qwen": "Qwen3-ASR",
     "fireRedAsr": "FireRedASR",
-    "localCli": "Local command"
+    "localCli": "Local command",
+    "cloud": "Cloud ASR"
   }
 }

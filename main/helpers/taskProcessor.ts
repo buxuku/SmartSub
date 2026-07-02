@@ -87,7 +87,10 @@ let activeTasksCount = 0;
 /** 执行中"受限引擎"(faster-whisper/funasr)任务数：混合引擎队列并发钳制用。 */
 let activeRestrictiveCount = 0;
 
-/** faster-whisper / funasr / qwen / fireRedAsr 共享单 sidecar/worker，需钳制有效并发为 1。 */
+/**
+ * faster-whisper / funasr / qwen / fireRedAsr 共享单 sidecar/worker，需钳制有效并发为 1。
+ * 云引擎（'cloud'）为纯网络 I/O，可高并发，刻意不在此列（遵循用户配置的 maxConcurrentTasks）。
+ */
 function isRestrictiveEngine(engine: TranscriptionEngine): boolean {
   return (
     engine === 'fasterWhisper' ||

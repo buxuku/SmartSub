@@ -1,4 +1,9 @@
 import type { EngineStatus, TranscriptionEngine } from '../../types/engine';
+import type { AsrProvider } from '../../types/asrProvider';
+import {
+  isAsrProviderConfigured,
+  parseAsrModels,
+} from '../../types/asrProvider';
 import { models } from './utils';
 
 /**
@@ -131,34 +136,84 @@ export function hasModelsForEngine(
 // 背景：逐任务引擎下，任务页不再"按全局引擎过滤模型"，而是把各引擎已装模型聚合成
 // 「引擎 ▸ 模型」分组供选择。下面的辅助统一聚合/就绪口径，避免各处自行拼装出错。
 
-/** 「引擎 ▸ 模型」分组：每组 = 一个引擎 + 该引擎可选模型名列表。 */
+/**
+ * 「引擎 ▸ 模型」分组：每组 = 一个引擎 + 该引擎可选模型名列表。
+ * 云引擎（engine==='cloud'）每个「服务商实例」自成一组：`asrProviderId` 标识实例、
+ * `label` 覆盖分组显示名为实例名（而非引擎名），使多实例可区分。
+ */
 export interface EngineModelGroup {
   engine: TranscriptionEngine;
   models: string[];
+  /** 云实例分组：对应的 ASR 服务商实例 id（engine==='cloud' 时存在）。 */
+  asrProviderId?: string;
+  /** 分组显示名覆盖（云实例用实例名）。 */
+  label?: string;
+}
+
+/** 逐任务的 (引擎,模型[,云实例]) 选择。 */
+export interface EngineModelSelection {
+  engine?: TranscriptionEngine;
+  model?: string;
+  asrProviderId?: string;
 }
 
 /** (引擎,模型) 选项值的分隔符；引擎 id 与模型名均不含 "::"，故可安全编码/解码。 */
 const ENGINE_MODEL_SEP = '::';
 
-/** 把 (引擎,模型) 编码为分组下拉的选项 value。 */
+/**
+ * 把 (引擎,模型) 编码为分组下拉的选项 value。
+ * 云引擎需额外携带实例 id：`cloud::<asrProviderId>::<model>`，以在多实例间消歧。
+ */
 export function encodeEngineModel(
   engine: TranscriptionEngine,
   model: string,
+  asrProviderId?: string,
 ): string {
+  if (engine === 'cloud' && asrProviderId) {
+    return `cloud${ENGINE_MODEL_SEP}${asrProviderId}${ENGINE_MODEL_SEP}${model}`;
+  }
   return `${engine}${ENGINE_MODEL_SEP}${model}`;
 }
 
-/** 解析分组下拉选项 value 为 (引擎,模型)；非法返回 null。 */
+/** 解析分组下拉选项 value 为 (引擎,模型[,云实例])；非法返回 null。 */
 export function decodeEngineModel(
   value: string | undefined,
-): { engine: TranscriptionEngine; model: string } | null {
+): {
+  engine: TranscriptionEngine;
+  model: string;
+  asrProviderId?: string;
+} | null {
   if (!value) return null;
+  const parts = value.split(ENGINE_MODEL_SEP);
+  const engine = parts[0] as TranscriptionEngine;
+  if (!engine) return null;
+  if (engine === 'cloud' && parts.length >= 3) {
+    const asrProviderId = parts[1];
+    const model = parts.slice(2).join(ENGINE_MODEL_SEP);
+    if (!asrProviderId || !model) return null;
+    return { engine, model, asrProviderId };
+  }
   const idx = value.indexOf(ENGINE_MODEL_SEP);
   if (idx <= 0) return null;
-  const engine = value.slice(0, idx) as TranscriptionEngine;
   const model = value.slice(idx + ENGINE_MODEL_SEP.length);
   if (!model) return null;
   return { engine, model };
+}
+
+/**
+ * 分组是否命中当前选择：引擎需一致，云引擎还需实例 id 一致，且模型在该组内（忽略大小写）。
+ * 供下拉选中态与任务页「当前选择是否仍有效」统一判定，避免各处口径漂移。
+ */
+export function isEngineModelSelected(
+  group: EngineModelGroup,
+  sel: EngineModelSelection,
+): boolean {
+  if (!sel.engine || group.engine !== sel.engine) return false;
+  if (group.engine === 'cloud' && group.asrProviderId !== sel.asrProviderId) {
+    return false;
+  }
+  const model = (sel.model || '').toLowerCase();
+  return !!model && group.models.some((m) => m.toLowerCase() === model);
 }
 
 /** faster-whisper 运行时是否已安装可运行（引擎包 ready）。 */
@@ -181,7 +236,7 @@ function isFasterWhisperRunnable(info: EngineModelInfo | undefined): boolean {
  */
 export function getEngineModelGroups(
   info: EngineModelInfo | undefined,
-  opts?: { includeLocalCli?: boolean },
+  opts?: { includeLocalCli?: boolean; asrProviders?: AsrProvider[] },
 ): EngineModelGroup[] {
   const groups: EngineModelGroup[] = [];
 
@@ -212,6 +267,20 @@ export function getEngineModelGroups(
     groups.push({ engine: 'localCli', models: models.map((m) => m.name) });
   }
 
+  // 云端听写：每个「已配置」实例自成一组（实例名为组名，其模型清单为可选项）。
+  // 未配置（缺凭据/模型）的实例不列出——避免选中后开跑必然报错。
+  for (const provider of opts?.asrProviders ?? []) {
+    if (!isAsrProviderConfigured(provider)) continue;
+    const cloudModels = parseAsrModels(provider);
+    if (!cloudModels.length) continue;
+    groups.push({
+      engine: 'cloud',
+      models: cloudModels,
+      asrProviderId: provider.id,
+      label: provider.name,
+    });
+  }
+
   return groups;
 }
 
@@ -224,8 +293,11 @@ export function getEngineModelGroups(
  */
 export function hasAnyModelAnyEngine(
   info: EngineModelInfo | undefined,
+  asrProviders?: AsrProvider[],
 ): boolean {
   if ((info?.modelsInstalled?.length ?? 0) > 0) return true;
+  // 任一已配置云实例即视为"可转写"（云引擎无需下载模型）。
+  if ((asrProviders ?? []).some((p) => isAsrProviderConfigured(p))) return true;
   if (
     (info?.fasterWhisperModelsInstalled?.length ?? 0) > 0 &&
     isFasterWhisperRunnable(info)
@@ -258,12 +330,23 @@ export function hasAnyModelAnyEngine(
  */
 export function pickDefaultEngineModel(
   groups: EngineModelGroup[],
-  last?: { engine?: TranscriptionEngine; model?: string },
-): { engine: TranscriptionEngine; model: string } | null {
+  last?: EngineModelSelection,
+): {
+  engine: TranscriptionEngine;
+  model: string;
+  asrProviderId?: string;
+} | null {
   if (!groups.length) return null;
 
   if (last?.engine) {
-    const g = groups.find((x) => x.engine === last.engine);
+    // 云引擎按实例 id 精确回落；其它引擎按引擎 id。
+    const g =
+      last.engine === 'cloud'
+        ? groups.find(
+            (x) =>
+              x.engine === 'cloud' && x.asrProviderId === last.asrProviderId,
+          )
+        : groups.find((x) => x.engine === last.engine);
     if (g && g.models.length) {
       const matched =
         (last.model &&
@@ -271,13 +354,21 @@ export function pickDefaultEngineModel(
             (m) => m.toLowerCase() === last.model!.toLowerCase(),
           )) ||
         g.models[0];
-      return { engine: g.engine, model: matched };
+      return {
+        engine: g.engine,
+        model: matched,
+        asrProviderId: g.asrProviderId,
+      };
     }
   }
 
   const preferred = groups.find((x) => x.engine === 'builtin') ?? groups[0];
   if (preferred?.models.length) {
-    return { engine: preferred.engine, model: preferred.models[0] };
+    return {
+      engine: preferred.engine,
+      model: preferred.models[0],
+      asrProviderId: preferred.asrProviderId,
+    };
   }
   return null;
 }

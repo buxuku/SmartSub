@@ -15,7 +15,7 @@
 
 <!-- 第二行：功能特性 - 引擎/翻译服务/硬件加速 -->
 
-[![ASR Engines](https://img.shields.io/badge/ASR-6%20Engines-4B8BBE?style=flat-square&logo=openai&logoColor=white)](https://github.com/buxuku/SmartSub#-转写引擎)
+[![ASR Engines](https://img.shields.io/badge/ASR-7%20Engines-4B8BBE?style=flat-square&logo=openai&logoColor=white)](https://github.com/buxuku/SmartSub#-转写引擎)
 [![Translation](https://img.shields.io/badge/Translation-17%20Services-9cf?style=flat-square&logo=translate&logoColor=white)](https://github.com/buxuku/SmartSub#翻译服务)
 [![CUDA](https://img.shields.io/badge/CUDA-11.8%20%7C%2012.x%20%7C%2013.x-76B900?style=flat-square&logo=nvidia&logoColor=white)](https://developer.nvidia.com/cuda-downloads)
 [![Vulkan](https://img.shields.io/badge/Vulkan-AMD%20%7C%20Intel-AC162C?style=flat-square&logo=vulkan&logoColor=white)](https://www.vulkan.org/)
@@ -53,7 +53,7 @@
 
 3.0 是一次几乎重写的大版本，核心变化如下：
 
-- **🧠 多转写引擎**：从单一 whisper.cpp 扩展到 **6 种可逐任务切换的引擎**——内置 `whisper.cpp`、`faster-whisper`、`FunASR`、`Qwen3-ASR`、`FireRedASR`、以及本地 `Whisper CLI`。中文场景可直接选用 FunASR / FireRedASR 等专长模型。
+- **🧠 多转写引擎**：从单一 whisper.cpp 扩展到 **7 种可逐任务切换的引擎**——内置 `whisper.cpp`、`faster-whisper`、`FunASR`、`Qwen3-ASR`、`FireRedASR`、本地 `Whisper CLI`，以及新增的 **云端听写**（OpenAI 兼容 / ElevenLabs / Deepgram / 火山引擎豆包 / 腾讯云 / 阿里云 等在线 ASR）。中文场景可直接选用 FunASR / FireRedASR 等专长模型；无 GPU 或想省事时可选云端听写。
 - **⚡ GPU 加速全面重构**：新增 **Vulkan** 后端，**AMD / Intel 显卡**也能在 Windows/Linux 上加速（此前仅支持 NVIDIA CUDA）；新增「自动 / 仅 GPU / 仅 CPU」加速模式，自动识别显卡、按需下载加速包、失败自动回退到 CPU。
 - **🎬 视频合成（字幕烧录）**：把字幕**硬烧**进画面，或**软封装**为可切换字幕轨；所见即所得预览，支持字体、字号、颜色、描边、阴影、九宫格位置与多种预设样式。
 - **📝 字幕校对 + AI 润色**：内置校对台，逐句对照视频检查修改，支持撤销/重做与 AI 一键润色。
@@ -65,8 +65,8 @@
 ### 🧠 字幕生成（转写）
 
 - 支持多种视频/音频格式批量生成字幕
-- **6 种转写引擎**，可针对每个任务单独选择（详见 [转写引擎](#-转写引擎)）
-- 完全本地处理，无需联网上传，保护隐私的同时拥有更快的速度
+- **7 种转写引擎**，可针对每个任务单独选择（详见 [转写引擎](#-转写引擎)）
+- 支持完全本地处理（无需联网上传，保护隐私、速度更快），也可选云端听写把转写交给在线 ASR 服务
 - 支持简繁转换、自定义字幕文件名（方便不同播放器挂载识别）
 - 可选**中文字幕去标点**，让烧录效果更干净
 - 支持自定义并发任务数量，批量处理更高效
@@ -108,16 +108,19 @@
 
 3.0 把「转写引擎」做成了可逐任务切换的能力，可在「引擎与模型」页面统一管理运行时与模型：
 
-| 引擎                    | 说明                                                           | 运行方式                           |
-| ----------------------- | -------------------------------------------------------------- | ---------------------------------- |
-| **whisper.cpp（内置）** | 默认引擎，支持 ggml 量化模型与 GPU 加速                        | 随应用内置，开箱即用               |
-| **faster-whisper**      | 基于 CTranslate2，速度更快，模型按需从 HuggingFace 下载        | 自包含 Python 运行时（应用内下载） |
-| **FunASR**              | SenseVoice（中/英/日/韩/粤多语）与 Paraformer-zh，中文表现优秀 | 内置 sherpa-onnx 原生库            |
-| **Qwen3-ASR**           | 通义千问语音识别（qwen3-asr-0.6b）                             | 内置 sherpa-onnx 原生库            |
-| **FireRedASR**          | FireRedASR-AED large（中英），中文表现优秀                     | 内置 sherpa-onnx 原生库            |
-| **本地 Whisper CLI**    | 调用你自行安装的 whisper 兼容命令                              | 使用系统已装命令                   |
+| 引擎                     | 说明                                                                                                                                                                                                                                                                                                                                                                                | 运行方式                           |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| **whisper.cpp（内置）**  | 默认引擎，支持 ggml 量化模型与 GPU 加速                                                                                                                                                                                                                                                                                                                                             | 随应用内置，开箱即用               |
+| **faster-whisper**       | 基于 CTranslate2，速度更快，模型按需从 HuggingFace 下载                                                                                                                                                                                                                                                                                                                             | 自包含 Python 运行时（应用内下载） |
+| **FunASR**               | SenseVoice（中/英/日/韩/粤多语）与 Paraformer-zh，中文表现优秀                                                                                                                                                                                                                                                                                                                      | 内置 sherpa-onnx 原生库            |
+| **Qwen3-ASR**            | 通义千问语音识别（qwen3-asr-0.6b）                                                                                                                                                                                                                                                                                                                                                  | 内置 sherpa-onnx 原生库            |
+| **FireRedASR**           | FireRedASR-AED large（中英），中文表现优秀                                                                                                                                                                                                                                                                                                                                          | 内置 sherpa-onnx 原生库            |
+| **本地 Whisper CLI**     | 调用你自行安装的 whisper 兼容命令                                                                                                                                                                                                                                                                                                                                                   | 使用系统已装命令                   |
+| **云端听写（在线 ASR）** | OpenAI 兼容 `audio/transcriptions`（如 `whisper-1`、`gpt-4o-transcribe`）、**ElevenLabs Scribe**（`scribe_v1`）、**Deepgram**（`nova-2/3`）、**火山引擎豆包**（`bigmodel` 录音文件识别·极速版）、**腾讯云**（录音文件识别极速版，识别语言自动跟随任务原语言，可选普通版/大模型版档位）与 **阿里云**（录音文件识别极速版，识别语种在控制台项目中配置），支持多服务商、多实例、免 GPU | 在线服务（音频上传到你配置的端点） |
 
 > 提示：FunASR / Qwen3-ASR / FireRedASR 均通过内置的 sherpa-onnx 原生库运行，无需额外环境；faster-whisper 会在应用内下载一个自包含运行时。
+>
+> 云端听写在「引擎与模型 ▸ 云端听写」中配置服务商实例——面板按服务商类型（OpenAI 兼容 / ElevenLabs Scribe / Deepgram / 火山引擎豆包 / 腾讯云 / 阿里云）分区，在对应类型下点「添加实例」，填入 API Key 与模型即可（可「测试连接」）。火山引擎豆包使用新版「豆包语音」控制台「API Key 管理」签发的 API Key（需先开通「录音文件识别大模型-极速版」；火山方舟的 API Key 不通用），按转写时长计费。腾讯云使用「语音识别」控制台「API 密钥管理」的 AppID / SecretId / SecretKey（需先开通「录音文件识别极速版」，每月赠 5 小时免费额度），识别语言自动跟随任务的「原语言」选择，模型只需选档位——standard 普通版或 large 大模型版（识别更强、计费更高、免费并发仅 5），同样按转写时长计费。阿里云使用 RAM 访问控制的 AccessKey ID / Secret，外加智能语音交互控制台创建项目后的 Appkey——识别语种在项目的「功能配置」中设定（任务原语言对阿里云不生效），默认普通话模型可识别中英混合，其它语种在控制台把项目模型改为对应语种即可；注意其「录音文件识别极速版」**仅提供商用版（无免费试用）**，需先在控制台开通商用版、开通后按转写时长计费。转写时会把音频上传到你配置的第三方端点，首次运行会弹出隐私确认——请勿用于敏感内容，并注意服务商的用量费用。
 
 ### whisper 模型怎么选？
 

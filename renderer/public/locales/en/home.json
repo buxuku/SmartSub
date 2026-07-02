@@ -301,5 +301,11 @@
   "errorReadSubtitle": "Failed to read subtitle file: {{file}}",
   "errorConvertToVTT": "Failed to convert subtitle to VTT: {{file}}",
   "proofreadPageTitle": "Proofread Subtitles",
-  "proofreadPageDesc": "Import subtitles for line-by-line refinement with AI batch optimization"
+  "proofreadPageDesc": "Import subtitles for line-by-line refinement with AI batch optimization",
+  "cloudConsent": {
+    "title": "Upload audio to cloud ASR?",
+    "description": "This task uses a cloud transcription engine. The audio track of each file will be extracted and uploaded to the third-party endpoint you configured. Don't use it for sensitive content, and mind the provider's usage costs.",
+    "confirmOnce": "Upload this time",
+    "confirmRemember": "Upload and don't ask again"
+  }
 }

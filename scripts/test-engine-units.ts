@@ -95,6 +95,80 @@ import {
   isSherpaEngineId,
   outcomeSupportsContextKnobs,
 } from '../main/helpers/engines/outcomePresets';
+import {
+  parseAsrModels,
+  isAsrProviderConfigured,
+  groupInstancesByType,
+  ASR_PROVIDER_TYPES,
+  getAsrPresetsForType,
+  buildInstanceFromPreset,
+  getAsrProviderType,
+  resolveAudioLimits,
+  ASR_OPENAI_COMPATIBLE,
+  ASR_ELEVENLABS,
+  ASR_VOLCENGINE,
+  ASR_TENCENT,
+  ASR_ALIYUN,
+} from '../types/asrProvider';
+import { computeChunkBoundaries } from '../main/helpers/cloudAudioChunking';
+import {
+  needsSpaceBefore,
+  realignPunctuation,
+  wordsToNativeTokens,
+  wordCuesFromResult,
+  segmentCuesFromSegments,
+  singleCueFromText,
+  offsetWords,
+} from '../main/helpers/engines/cloudAsrShared';
+import {
+  normalizeBaseURL,
+  normalizeLanguage,
+  mapWords,
+  isVerboseUnsupportedError,
+} from '../main/service/asr/openaiCompatUtils';
+import {
+  normalizeElevenLabsBaseURL,
+  buildSpeechToTextURL,
+  mapElevenLabsWords,
+  isRetriableStatus,
+} from '../main/service/asr/elevenlabsUtils';
+import {
+  normalizeDeepgramBaseURL,
+  buildListenURL,
+  mapDeepgramWords,
+  extractDeepgramResult,
+} from '../main/service/asr/deepgramUtils';
+import {
+  normalizeVolcBaseURL,
+  buildVolcHeaders,
+  buildVolcRequestBody,
+  buildSilentWavBase64,
+  classifyVolcStatus,
+  extractVolcResult,
+} from '../main/service/asr/volcengineUtils';
+import {
+  TENCENT_ASR_HOST,
+  TENCENT_FLASH_PATH,
+  buildTencentParams,
+  buildTencentQuery,
+  resolveTencentEngineType,
+  signTencentRequest,
+  voiceFormatFromPath,
+  extractTencentResult,
+  classifyTencentCode,
+} from '../main/service/asr/tencentUtils';
+import {
+  ALIYUN_NLS_GATEWAY_HOST,
+  ALIYUN_FLASH_PATH,
+  ALIYUN_META_HOST,
+  percentEncodeRfc3986,
+  buildCreateTokenQuery,
+  signCreateToken,
+  isTokenExpired,
+  buildFlashQuery,
+  extractAliyunResult,
+  classifyAliyunStatus,
+} from '../main/service/asr/aliyunUtils';
 
 let passed = 0;
 let failed = 0;
@@ -1209,6 +1283,120 @@ eq(
   'splitConfig: segment-level fallback splits long CJK cue proportionally',
 );
 
+// --- subtitleSegmentation: 硬切回溯到最近可断标点（避免孤立句尾词） ---
+// 宽度超限时不在「当前词前」切，而是回溯到 cue 内最后一个可断标点后切；
+// 余部（真实词级时间）作新 cue 开头。「甲乙，丙」+丁 超宽 → 「甲乙，」|「丙丁戊」。
+eq(
+  groupTokenCues(
+    [
+      T('0', '0.3', '甲'),
+      T('0.3', '0.6', '乙'),
+      T('0.6', '0.9', '，'),
+      T('0.9', '1.2', '丙'),
+      T('1.2', '1.5', '丁'),
+      T('1.5', '1.8', '戊'),
+    ],
+    { maxWidth: 8 },
+  ),
+  [
+    ['00:00:00,000', '00:00:00,900', '甲乙，'],
+    ['00:00:00,900', '00:00:01,800', '丙丁戊'],
+  ],
+  'group: hard-cut backtracks to last breakable punct (comma)',
+);
+// 顿号不参与软切（枚举保护），但硬切被迫分割时参与回溯——切在顿号后优于切在词中。
+eq(
+  groupTokenCues(
+    [
+      T('0', '0.3', '甲'),
+      T('0.3', '0.6', '乙'),
+      T('0.6', '0.9', '、'),
+      T('0.9', '1.2', '丙'),
+      T('1.2', '1.5', '丁'),
+      T('1.5', '1.8', '戊'),
+    ],
+    { maxWidth: 8 },
+  ),
+  [
+    ['00:00:00,000', '00:00:00,900', '甲乙、'],
+    ['00:00:00,900', '00:00:01,800', '丙丁戊'],
+  ],
+  'group: hard-cut backtracks at dunhao (excluded from soft cut only)',
+);
+// 句内无可断标点 → 与回溯前行为一致（在当前词前切）。
+eq(
+  groupTokenCues(
+    [
+      T('0', '0.3', '甲'),
+      T('0.3', '0.6', '乙'),
+      T('0.6', '0.9', '丙'),
+      T('0.9', '1.2', '丁'),
+      T('1.2', '1.5', '戊'),
+    ],
+    { maxWidth: 8 },
+  ),
+  [
+    ['00:00:00,000', '00:00:01,200', '甲乙丙丁'],
+    ['00:00:01,200', '00:00:01,500', '戊'],
+  ],
+  'group: hard-cut without punct falls back to cut-before-token',
+);
+// 余部并入本 token 后仍超宽 → 余部单独成条（任何 cue 不超宽；单字余部交 mergeShortCues 回收）。
+eq(
+  groupTokenCues(
+    [
+      T('0', '0.3', '甲'),
+      T('0.3', '0.6', '，'),
+      T('0.6', '0.9', '乙'),
+      T('0.9', '1.2', '丙丙丙丙'),
+    ],
+    { maxWidth: 8 },
+  ),
+  [
+    ['00:00:00,000', '00:00:00,600', '甲，'],
+    ['00:00:00,600', '00:00:00,900', '乙'],
+    ['00:00:00,900', '00:00:01,200', '丙丙丙丙'],
+  ],
+  'group: rest still over limit -> rest flushed alone (never overflow)',
+);
+// 英文（拉丁词带前置空格）同样回溯：逗号后分割，余部起点取真实词时间。
+eq(
+  groupTokenCues(
+    [
+      T('0', '0.35', ' aaaa'),
+      T('0.4', '0.75', ' bb,'),
+      T('0.8', '1.15', ' cc'),
+      T('1.2', '1.55', ' dddd'),
+    ],
+    { maxWidth: 12 },
+  ),
+  [
+    ['00:00:00,000', '00:00:00,750', 'aaaa bb,'],
+    ['00:00:00,800', '00:00:01,550', 'cc dddd'],
+  ],
+  'group: hard-cut backtracks at latin comma with real word times',
+);
+// 真实回归（ASR ZH Longgap 阿里云词级结果原样）：整句超 20 汉字且句内仅有顿号 →
+// 回溯到顿号切，不再产出孤立的「广泛。」尾词条。
+eq(
+  groupTokenCues([
+    T('44.701', '45.212', '语音'),
+    T('45.212', '45.722', '识别、'),
+    T('45.722', '46.743', '机器翻译'),
+    T('46.743', '46.998', '和'),
+    T('46.998', '48.018', '自然语言'),
+    T('48.018', '48.529', '处理'),
+    T('48.529', '49.039', '应用'),
+    T('49.039', '49.549', '十分'),
+    T('49.549', '50.060', '广泛。'),
+  ]),
+  [
+    ['00:00:44,701', '00:00:45,722', '语音识别、'],
+    ['00:00:45,722', '00:00:50,060', '机器翻译和自然语言处理应用十分广泛。'],
+  ],
+  'group: real aliyun longgap sentence splits at dunhao, no orphan tail word',
+);
+
 // --- subtitleSegmentation: §6.2 标点优先软切 + 前导标点归属 ---
 // 软切：cue 达软宽度后，在停顿性标点（，）处断句（softMaxWidth 默认 10）。
 // 「今天是晴天」=10 + 「，」 → 收尾；「心情好」另起一条。
@@ -1781,6 +1969,1564 @@ eq(
     'ctxKnobs: sherpa hides ctx/repetition',
   );
 }
+
+// ===========================================================================
+// 云端听写（Cloud ASR）：服务商解析 / 切片边界 / 词级映射与降级（纯逻辑）
+// ===========================================================================
+
+// --- asrProvider: parseAsrModels ---
+eq(
+  parseAsrModels({ models: 'whisper-1, gpt-4o-transcribe' }),
+  ['whisper-1', 'gpt-4o-transcribe'],
+  'asr: parseAsrModels splits comma list',
+);
+eq(
+  parseAsrModels({ models: 'whisper-1\ngpt-4o-transcribe\nwhisper-1' }),
+  ['whisper-1', 'gpt-4o-transcribe'],
+  'asr: parseAsrModels newline + dedupe',
+);
+eq(
+  parseAsrModels({ models: ['a', ' b ', 'a'] }),
+  ['a', 'b'],
+  'asr: parseAsrModels array trims + dedupe',
+);
+eq(parseAsrModels({ models: '' }), [], 'asr: parseAsrModels empty -> []');
+eq(parseAsrModels(undefined), [], 'asr: parseAsrModels undefined -> []');
+eq(
+  parseAsrModels({ models: 'a，b、c；d;e' }),
+  ['a', 'b', 'c', 'd', 'e'],
+  'asr: parseAsrModels tolerates full-width comma/enum/semicolon separators',
+);
+
+// --- asrProvider: 品牌型模型清单为枚举 options（UI 勾选/只读，不做自由文本） ---
+eq(
+  getAsrProviderType(ASR_ELEVENLABS)?.fields.find((f) => f.key === 'models')
+    ?.options,
+  ['scribe_v2', 'scribe_v1'],
+  'asr: elevenlabs models are enumerable options (scribe_v2 first)',
+);
+eq(
+  getAsrProviderType(ASR_ELEVENLABS)?.fields.find((f) => f.key === 'models')
+    ?.defaultValue,
+  'scribe_v2',
+  'asr: elevenlabs default model scribe_v2 (v1 deprecated)',
+);
+eq(
+  getAsrProviderType('deepgram')?.fields.find((f) => f.key === 'models')
+    ?.options,
+  ['nova-2', 'nova-3'],
+  'asr: deepgram models are enumerable options',
+);
+eq(
+  getAsrProviderType(ASR_VOLCENGINE)?.fields.find((f) => f.key === 'models')
+    ?.options,
+  ['bigmodel'],
+  'asr: volcengine model fixed to single option (read-only in UI)',
+);
+eq(
+  getAsrProviderType(ASR_OPENAI_COMPATIBLE)?.fields.find(
+    (f) => f.key === 'models',
+  )?.options,
+  undefined,
+  'asr: openaiCompatible models stay free-form (tag input)',
+);
+// tencent：models = 计费档位（standard/large），识别语言跟随任务原语言映射 engine_type。
+{
+  const tencentModels = getAsrProviderType(ASR_TENCENT)?.fields.find(
+    (f) => f.key === 'models',
+  );
+  eq(
+    tencentModels?.options,
+    ['standard', 'large'],
+    'asr: tencent models are billing tiers, not engine ids',
+  );
+  eq(
+    tencentModels?.defaultValue,
+    'standard',
+    'asr: tencent default tier standard (cheaper, concurrency 20)',
+  );
+}
+// aliyun：模型固定 flash（接口无模型参数，语种由 appkey 项目配置决定）。
+{
+  const aliyunModels = getAsrProviderType(ASR_ALIYUN)?.fields.find(
+    (f) => f.key === 'models',
+  );
+  eq(
+    aliyunModels?.options,
+    ['flash'],
+    'asr: aliyun model fixed to single option (read-only in UI)',
+  );
+  eq(aliyunModels?.defaultValue, 'flash', 'asr: aliyun default model flash');
+  eq(
+    getAsrProviderType(ASR_ALIYUN)?.fields.some((f) => f.key === 'apiUrl'),
+    false,
+    'asr: aliyun has no apiUrl field (fixed endpoints)',
+  );
+}
+
+// --- asrProvider: isAsrProviderConfigured (required = apiUrl/apiKey/models) ---
+eq(
+  isAsrProviderConfigured({
+    id: '1',
+    name: 'x',
+    type: 'openaiCompatible',
+    apiUrl: 'https://api.openai.com/v1',
+    apiKey: 'sk-xxx',
+    models: 'whisper-1',
+  }),
+  true,
+  'asr: configured when all required present',
+);
+eq(
+  isAsrProviderConfigured({
+    id: '1',
+    name: 'x',
+    type: 'openaiCompatible',
+    apiUrl: 'https://api.openai.com/v1',
+    apiKey: '',
+    models: 'whisper-1',
+  }),
+  false,
+  'asr: not configured when apiKey empty',
+);
+eq(
+  isAsrProviderConfigured({
+    id: '1',
+    name: 'x',
+    type: 'openaiCompatible',
+    apiUrl: 'https://api.openai.com/v1',
+    apiKey: 'sk',
+    models: '',
+  }),
+  false,
+  'asr: not configured when models empty',
+);
+eq(
+  isAsrProviderConfigured({
+    id: '1',
+    name: 'x',
+    type: 'unknownType',
+    apiKey: 'sk',
+  }),
+  false,
+  'asr: unknown type -> not configured',
+);
+// volcengine：新版控制台单 API Key（标准 apiKey 字段）
+eq(
+  isAsrProviderConfigured({
+    id: 'v1',
+    name: 'volc',
+    type: ASR_VOLCENGINE,
+    apiKey: 'volc-api-key',
+    models: 'bigmodel',
+    apiUrl: 'https://openspeech.bytedance.com',
+  }),
+  true,
+  'asr: volcengine ready with apiKey',
+);
+eq(
+  isAsrProviderConfigured({
+    id: 'v1',
+    name: 'volc',
+    type: ASR_VOLCENGINE,
+    apiKey: '',
+    models: 'bigmodel',
+    apiUrl: 'https://openspeech.bytedance.com',
+  }),
+  false,
+  'asr: volcengine not ready without apiKey',
+);
+// tencent：三字段凭据（appid/secretId/secretKey），任缺未就绪。
+eq(
+  isAsrProviderConfigured({
+    id: 't1',
+    name: 'tencent',
+    type: ASR_TENCENT,
+    appid: '1300000000',
+    secretId: 'AKIDxxx',
+    secretKey: 'sk',
+    models: 'standard,large',
+  }),
+  true,
+  'asr: tencent ready with appid + secretId + secretKey',
+);
+eq(
+  isAsrProviderConfigured({
+    id: 't1',
+    name: 'tencent',
+    type: ASR_TENCENT,
+    appid: '1300000000',
+    secretId: 'AKIDxxx',
+    secretKey: '',
+    models: 'standard',
+  }),
+  false,
+  'asr: tencent not ready without secretKey',
+);
+eq(
+  isAsrProviderConfigured({
+    id: 't1',
+    name: 'tencent',
+    type: ASR_TENCENT,
+    appid: '',
+    secretId: 'AKIDxxx',
+    secretKey: 'sk',
+    models: 'standard',
+  }),
+  false,
+  'asr: tencent not ready without appid',
+);
+// aliyun：三字段凭据（accessKeyId/accessKeySecret/appkey），任缺未就绪。
+eq(
+  isAsrProviderConfigured({
+    id: 'a1',
+    name: 'aliyun',
+    type: ASR_ALIYUN,
+    accessKeyId: 'LTAIxxx',
+    accessKeySecret: 'secret',
+    appkey: 'a3Hwxxxx',
+    models: 'flash',
+  }),
+  true,
+  'asr: aliyun ready with accessKeyId + accessKeySecret + appkey',
+);
+eq(
+  isAsrProviderConfigured({
+    id: 'a1',
+    name: 'aliyun',
+    type: ASR_ALIYUN,
+    accessKeyId: 'LTAIxxx',
+    accessKeySecret: 'secret',
+    appkey: '',
+    models: 'flash',
+  }),
+  false,
+  'asr: aliyun not ready without appkey',
+);
+eq(
+  isAsrProviderConfigured({
+    id: 'a1',
+    name: 'aliyun',
+    type: ASR_ALIYUN,
+    accessKeyId: '',
+    accessKeySecret: 'secret',
+    appkey: 'a3Hwxxxx',
+    models: 'flash',
+  }),
+  false,
+  'asr: aliyun not ready without accessKeyId',
+);
+
+// --- asrProvider: groupInstancesByType (面板分区数据源) ---
+// 分区结构简化为 { id, insts:[实例id] } 便于断言（避免比对完整 type 对象）。
+const groupShape = (
+  gs: ReturnType<typeof groupInstancesByType>,
+): Array<{ id: string; insts: string[] }> =>
+  gs.map((g) => ({ id: g.type.id, insts: g.instances.map((i) => i.id) }));
+
+const GT = [
+  { id: 'a', name: 'A', fields: [] },
+  { id: 'b', name: 'B', fields: [] },
+];
+eq(
+  groupShape(
+    groupInstancesByType(
+      [
+        { id: '1', name: 'x', type: 'a' },
+        { id: '2', name: 'y', type: 'b' },
+        { id: '3', name: 'z', type: 'a' },
+      ],
+      GT,
+    ),
+  ),
+  [
+    { id: 'a', insts: ['1', '3'] },
+    { id: 'b', insts: ['2'] },
+  ],
+  'asr: groupInstancesByType groups by type in types order',
+);
+eq(
+  groupShape(groupInstancesByType([{ id: '9', name: 'q', type: 'gone' }], GT)),
+  [
+    { id: 'a', insts: [] },
+    { id: 'b', insts: [] },
+    { id: 'gone', insts: ['9'] },
+  ],
+  'asr: groupInstancesByType appends unknown-type instances at end',
+);
+eq(
+  groupShape(groupInstancesByType(undefined, GT)),
+  [
+    { id: 'a', insts: [] },
+    { id: 'b', insts: [] },
+  ],
+  'asr: groupInstancesByType undefined -> all known types empty, no orphans',
+);
+eq(
+  groupShape(groupInstancesByType([])).map((g) => g.id),
+  ASR_PROVIDER_TYPES.map((t) => t.id),
+  'asr: groupInstancesByType default types = ASR_PROVIDER_TYPES order',
+);
+
+// --- asrProvider: multiInstance flag (协议型 vs 品牌型) ---
+eq(
+  !!getAsrProviderType(ASR_OPENAI_COMPATIBLE)?.multiInstance,
+  true,
+  'asr: openaiCompatible is multiInstance (protocol-type)',
+);
+eq(
+  !!getAsrProviderType(ASR_ELEVENLABS)?.multiInstance,
+  false,
+  'asr: elevenlabs is singleton (brand-type)',
+);
+eq(
+  !!getAsrProviderType(ASR_VOLCENGINE)?.multiInstance,
+  false,
+  'asr: volcengine is singleton (brand-type)',
+);
+eq(
+  groupShape(groupInstancesByType([])).some(
+    (g) => g.id === ASR_VOLCENGINE && g.insts.length === 0,
+  ),
+  true,
+  'asr: volcengine appears as empty group by default',
+);
+eq(
+  !!getAsrProviderType(ASR_TENCENT)?.multiInstance,
+  false,
+  'asr: tencent is singleton (brand-type)',
+);
+eq(
+  groupShape(groupInstancesByType([])).some(
+    (g) => g.id === ASR_TENCENT && g.insts.length === 0,
+  ),
+  true,
+  'asr: tencent appears as empty group by default',
+);
+// aliyun：品牌型硬单例（语种绑定 NLS 项目，换语种在控制台改项目配置）。
+eq(
+  !!getAsrProviderType(ASR_ALIYUN)?.multiInstance,
+  false,
+  'asr: aliyun is singleton (brand-type; language configured on console project)',
+);
+eq(
+  groupShape(groupInstancesByType([])).some(
+    (g) => g.id === ASR_ALIYUN && g.insts.length === 0,
+  ),
+  true,
+  'asr: aliyun appears as empty group by default',
+);
+
+// --- asrProvider: resolveAudioLimits (类型声明覆盖全局默认) ---
+const LIMIT_DEFAULTS = {
+  maxUploadBytes: 23 * 1024 * 1024,
+  maxChunkSeconds: 600,
+};
+eq(
+  resolveAudioLimits(getAsrProviderType(ASR_VOLCENGINE), LIMIT_DEFAULTS),
+  { maxUploadBytes: 16 * 1024 * 1024, maxChunkSeconds: 480 },
+  'asr: volcengine declares tighter audio limits',
+);
+eq(
+  resolveAudioLimits(getAsrProviderType(ASR_TENCENT), LIMIT_DEFAULTS),
+  { maxUploadBytes: 24 * 1024 * 1024, maxChunkSeconds: 600 },
+  'asr: tencent declares 24MB byte cap, chunk seconds fall back to defaults',
+);
+eq(
+  resolveAudioLimits(getAsrProviderType(ASR_ALIYUN), LIMIT_DEFAULTS),
+  { maxUploadBytes: 24 * 1024 * 1024, maxChunkSeconds: 600 },
+  'asr: aliyun declares 24MB byte cap (same 100MB/2h rationale as tencent)',
+);
+eq(
+  resolveAudioLimits(getAsrProviderType(ASR_OPENAI_COMPATIBLE), LIMIT_DEFAULTS),
+  LIMIT_DEFAULTS,
+  'asr: undeclared audioLimits -> global defaults',
+);
+eq(
+  resolveAudioLimits(undefined, LIMIT_DEFAULTS),
+  LIMIT_DEFAULTS,
+  'asr: unknown type -> global defaults',
+);
+
+// --- asrProvider: getAsrPresetsForType (命名预设清单) ---
+eq(
+  getAsrPresetsForType(ASR_OPENAI_COMPATIBLE).map((p) => p.id),
+  ['openai', 'groq', 'siliconflow'],
+  'asr: openaiCompatible presets list',
+);
+eq(getAsrPresetsForType(ASR_ELEVENLABS), [], 'asr: brand type has no presets');
+eq(getAsrPresetsForType('nope'), [], 'asr: unknown type -> no presets');
+eq(getAsrPresetsForType(undefined), [], 'asr: undefined type -> no presets');
+
+// --- asrProvider: buildInstanceFromPreset (预设覆盖类型默认) ---
+const oaType = getAsrProviderType(ASR_OPENAI_COMPATIBLE)!;
+const groqPreset = getAsrPresetsForType(ASR_OPENAI_COMPATIBLE).find(
+  (p) => p.id === 'groq',
+)!;
+const groqInst = buildInstanceFromPreset(oaType, groqPreset, () => 'fixed1');
+eq(
+  {
+    id: groqInst.id,
+    name: groqInst.name,
+    type: groqInst.type,
+    apiUrl: groqInst.apiUrl,
+    models: groqInst.models,
+    requestTimeoutSec: groqInst.requestTimeoutSec,
+    concurrency: groqInst.concurrency,
+  },
+  {
+    id: 'fixed1',
+    name: 'Groq',
+    type: ASR_OPENAI_COMPATIBLE,
+    apiUrl: 'https://api.groq.com/openai/v1',
+    models: 'whisper-large-v3-turbo, whisper-large-v3',
+    requestTimeoutSec: 120,
+    concurrency: 4,
+  },
+  'asr: buildInstanceFromPreset applies preset over type defaults',
+);
+eq(
+  isAsrProviderConfigured(groqInst),
+  false,
+  'asr: preset instance still needs apiKey (not ready until key set)',
+);
+const customInst = buildInstanceFromPreset(oaType, undefined, () => 'fixed2');
+eq(
+  {
+    id: customInst.id,
+    name: customInst.name,
+    type: customInst.type,
+    apiUrl: customInst.apiUrl,
+    models: customInst.models,
+  },
+  {
+    id: 'fixed2',
+    name: 'OpenAI Compatible',
+    type: ASR_OPENAI_COMPATIBLE,
+    apiUrl: 'https://api.openai.com/v1',
+    models: 'whisper-1',
+  },
+  'asr: buildInstanceFromPreset without preset = type defaults (custom)',
+);
+
+// --- cloudAudioChunking: computeChunkBoundaries ---
+eq(
+  computeChunkBoundaries([], 120, 600),
+  [{ start: 0, end: 120 }],
+  'chunk: no segments + duration -> single chunk',
+);
+eq(
+  computeChunkBoundaries([], 0, 600),
+  [],
+  'chunk: no segments no duration -> []',
+);
+eq(
+  computeChunkBoundaries(
+    [
+      { start: 0, end: 10 },
+      { start: 12, end: 20 },
+    ],
+    20,
+    600,
+  ),
+  [{ start: 0, end: 20 }],
+  'chunk: within limit -> single chunk',
+);
+eq(
+  computeChunkBoundaries(
+    [
+      { start: 0, end: 4 },
+      { start: 5, end: 9 },
+      { start: 12, end: 16 },
+      { start: 18, end: 22 },
+    ],
+    22,
+    10,
+  ),
+  [
+    { start: 0, end: 10.5 },
+    { start: 10.5, end: 17 },
+    { start: 17, end: 22 },
+  ],
+  'chunk: exceeding limit splits at silence midpoints',
+);
+
+// --- cloudAsrShared: needsSpaceBefore ---
+eq(needsSpaceBefore('Hello'), true, 'asr: latin word needs leading space');
+eq(needsSpaceBefore('2026'), true, 'asr: digit word needs leading space');
+eq(needsSpaceBefore('你'), false, 'asr: CJK word no leading space');
+eq(needsSpaceBefore('，'), false, 'asr: punctuation no leading space');
+
+// --- cloudAsrShared: wordsToNativeTokens (sec->ms, latin spacing) ---
+eq(
+  wordsToNativeTokens([
+    { word: 'Hello', start: 0, end: 0.5 },
+    { word: '你', start: 0.5, end: 0.8 },
+  ]),
+  [
+    { text: ' Hello', t0: 0, t1: 500 },
+    { text: '你', t0: 500, t1: 800 },
+  ],
+  'asr: wordsToNativeTokens maps ms + latin leading space',
+);
+
+// --- cloudAsrShared: realignPunctuation (best-effort punctuation reattach) ---
+eq(
+  realignPunctuation(
+    [
+      { word: '你', start: 0, end: 0.3 },
+      { word: '好', start: 0.3, end: 0.6 },
+      { word: '世', start: 0.6, end: 0.9 },
+      { word: '界', start: 0.9, end: 1.2 },
+    ],
+    '你好，世界。',
+  ).map((w) => w.word),
+  ['你', '好，', '世', '界。'],
+  'asr: realign reattaches mid + trailing CJK punctuation',
+);
+eq(
+  realignPunctuation([{ word: 'x', start: 0, end: 1 }], '').map((w) => w.word),
+  ['x'],
+  'asr: realign with empty fullText is a no-op',
+);
+
+// --- cloudAsrShared: offsetWords ---
+eq(
+  offsetWords([{ word: 'a', start: 1, end: 2 }], 10),
+  [{ word: 'a', start: 11, end: 12 }],
+  'asr: offsetWords shifts by seconds',
+);
+
+// --- cloudAsrShared: wordCuesFromResult (word-level -> reuse builtin segmentation) ---
+// 中文字级 + 停顿 → 断成两条；标点回贴；最短显示时长护栏延长首条。
+eq(
+  wordCuesFromResult({
+    words: [
+      { word: '你', start: 0, end: 0.3 },
+      { word: '好', start: 0.3, end: 0.6 },
+      { word: '世', start: 2.0, end: 2.3 },
+      { word: '界', start: 2.3, end: 2.6 },
+    ],
+    text: '你好世界。',
+  }),
+  [
+    ['00:00:00,000', '00:00:00,800', '你好'],
+    ['00:00:02,000', '00:00:02,600', '世界。'],
+  ],
+  'asr: wordCues splits Chinese by pause + reattaches trailing punct',
+);
+// 英文子词拼接不加错空格（word 间空格由 latin 规则生成，非硬拼）。
+eq(
+  wordCuesFromResult({
+    words: [
+      { word: 'Hello', start: 0, end: 0.5 },
+      { word: 'world', start: 0.5, end: 1.0 },
+    ],
+    text: 'Hello world.',
+  }),
+  [['00:00:00,000', '00:00:01,000', 'Hello world.']],
+  'asr: wordCues joins English words with single spaces',
+);
+
+// --- cloudAsrShared: segmentCuesFromSegments (degrade path, with offset) ---
+eq(
+  segmentCuesFromSegments(
+    [
+      { start: 0, end: 2, text: 'hi' },
+      { start: 2, end: 2, text: 'empty-dur' },
+      { start: 3, end: 5, text: '  spaced  ' },
+    ],
+    10,
+  ),
+  [
+    ['00:00:10,000', '00:00:12,000', 'hi'],
+    ['00:00:13,000', '00:00:15,000', 'spaced'],
+  ],
+  'asr: segmentCues applies offset + filters invalid/empty',
+);
+
+// --- cloudAsrShared: singleCueFromText ---
+eq(
+  singleCueFromText('全部文本', 0, 12),
+  [['00:00:00,000', '00:00:12,000', '全部文本']],
+  'asr: singleCueFromText spans whole range',
+);
+eq(
+  singleCueFromText('x', 5, 5),
+  [],
+  'asr: singleCueFromText rejects non-positive span',
+);
+
+// --- openaiCompatUtils: normalizeBaseURL ---
+eq(
+  normalizeBaseURL('https://api.openai.com/v1'),
+  'https://api.openai.com/v1',
+  'asr: baseURL passthrough',
+);
+eq(
+  normalizeBaseURL('https://api.openai.com/v1/'),
+  'https://api.openai.com/v1',
+  'asr: baseURL trailing slash stripped',
+);
+eq(
+  normalizeBaseURL('https://api.openai.com/v1/audio/transcriptions'),
+  'https://api.openai.com/v1',
+  'asr: baseURL strips /audio/transcriptions suffix',
+);
+eq(
+  (() => {
+    try {
+      normalizeBaseURL('ftp://x');
+      return 'no-throw';
+    } catch {
+      return 'threw';
+    }
+  })(),
+  'threw',
+  'asr: baseURL rejects non-http(s)',
+);
+
+// --- openaiCompatUtils: normalizeLanguage ---
+eq(normalizeLanguage('auto'), undefined, 'asr: language auto -> undefined');
+eq(
+  normalizeLanguage(undefined),
+  undefined,
+  'asr: language undefined -> undefined',
+);
+eq(normalizeLanguage('zh-CN'), 'zh', 'asr: language zh-CN -> zh');
+eq(normalizeLanguage('EN'), 'en', 'asr: language EN -> en');
+
+// --- openaiCompatUtils: mapWords (filters non-finite times) ---
+eq(
+  mapWords([
+    { word: 'a', start: 0, end: 1 },
+    { word: 'b', start: 'x', end: 2 },
+  ]),
+  [{ word: 'a', start: 0, end: 1 }],
+  'asr: mapWords drops words with non-finite time',
+);
+
+// --- openaiCompatUtils: isVerboseUnsupportedError ---
+eq(
+  isVerboseUnsupportedError({ status: 400 }),
+  true,
+  'asr: 400 -> verbose unsupported',
+);
+eq(
+  isVerboseUnsupportedError({ status: 422 }),
+  true,
+  'asr: 422 -> verbose unsupported',
+);
+eq(
+  isVerboseUnsupportedError(new Error('timestamp_granularities not supported')),
+  true,
+  'asr: message match -> verbose unsupported',
+);
+eq(
+  isVerboseUnsupportedError(new Error('network timeout')),
+  false,
+  'asr: unrelated error -> not verbose-unsupported',
+);
+
+// ===========================================================================
+// ElevenLabs Scribe：Base URL 归一 / 端点拼接 / 词映射（过滤 spacing）/ 重试判定
+// ===========================================================================
+
+// --- elevenlabsUtils: normalizeElevenLabsBaseURL ---
+eq(
+  normalizeElevenLabsBaseURL(undefined),
+  'https://api.elevenlabs.io/v1',
+  'eleven: empty -> official default',
+);
+eq(
+  normalizeElevenLabsBaseURL('   '),
+  'https://api.elevenlabs.io/v1',
+  'eleven: blank -> official default',
+);
+eq(
+  normalizeElevenLabsBaseURL('ftp://bad'),
+  'https://api.elevenlabs.io/v1',
+  'eleven: non-http -> official default',
+);
+eq(
+  normalizeElevenLabsBaseURL('https://proxy.example.com/v1/'),
+  'https://proxy.example.com/v1',
+  'eleven: strips trailing slash on proxy base',
+);
+eq(
+  normalizeElevenLabsBaseURL('https://proxy.example.com/v1/speech-to-text'),
+  'https://proxy.example.com/v1',
+  'eleven: strips accidental /speech-to-text suffix',
+);
+
+// --- elevenlabsUtils: buildSpeechToTextURL ---
+eq(
+  buildSpeechToTextURL('https://api.elevenlabs.io/v1'),
+  'https://api.elevenlabs.io/v1/speech-to-text',
+  'eleven: builds speech-to-text endpoint',
+);
+
+// --- elevenlabsUtils: mapElevenLabsWords ---
+eq(
+  mapElevenLabsWords([
+    { text: 'Hello', start: 0, end: 0.4, type: 'word' },
+    { text: ' ', start: 0.4, end: 0.4, type: 'spacing' },
+    { text: 'world', start: 0.4, end: 0.9, type: 'word' },
+    { text: '[laughs]', start: 0.9, end: 1.2, type: 'audio_event' },
+  ]),
+  [
+    { word: 'Hello', start: 0, end: 0.4 },
+    { word: 'world', start: 0.4, end: 0.9 },
+  ],
+  'eleven: keeps word tokens, drops spacing + audio_event',
+);
+eq(
+  mapElevenLabsWords([
+    { text: '你好', start: 0, end: 0.5 },
+    { text: '，', start: 0.5, end: 0.5 },
+    { text: 'x', start: NaN, end: 1 },
+  ]),
+  [
+    { word: '你好', start: 0, end: 0.5 },
+    { word: '，', start: 0.5, end: 0.5 },
+  ],
+  'eleven: no-type kept; drops non-finite times',
+);
+eq(mapElevenLabsWords(null), [], 'eleven: non-array -> []');
+
+// --- elevenlabsUtils: isRetriableStatus ---
+eq(isRetriableStatus(429), true, 'eleven: 429 retriable');
+eq(isRetriableStatus(503), true, 'eleven: 503 retriable');
+eq(isRetriableStatus(400), false, 'eleven: 400 not retriable');
+eq(isRetriableStatus(200), false, 'eleven: 200 not retriable');
+
+// ===========================================================================
+// Deepgram：Base URL 归一 / listen 查询拼接 / 词映射（punctuated_word 优先）/ 结果提取
+// ===========================================================================
+
+// --- deepgramUtils: normalizeDeepgramBaseURL ---
+eq(
+  normalizeDeepgramBaseURL(undefined),
+  'https://api.deepgram.com/v1',
+  'deepgram: empty -> official default',
+);
+eq(
+  normalizeDeepgramBaseURL('https://proxy.example.com/v1/listen'),
+  'https://proxy.example.com/v1',
+  'deepgram: strips accidental /listen suffix',
+);
+eq(
+  normalizeDeepgramBaseURL('ftp://bad'),
+  'https://api.deepgram.com/v1',
+  'deepgram: non-http -> official default',
+);
+
+// --- deepgramUtils: buildListenURL ---
+eq(
+  buildListenURL('https://api.deepgram.com/v1', {
+    model: 'nova-2',
+    language: 'en',
+  }),
+  'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true&language=en',
+  'deepgram: builds listen url with language',
+);
+eq(
+  buildListenURL('https://api.deepgram.com/v1', { model: 'nova-2' }),
+  'https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true&detect_language=true',
+  'deepgram: no language -> detect_language=true',
+);
+
+// --- deepgramUtils: mapDeepgramWords (punctuated_word preferred) ---
+eq(
+  mapDeepgramWords([
+    { word: 'hello', punctuated_word: 'Hello,', start: 0, end: 0.4 },
+    { word: 'world', punctuated_word: 'world.', start: 0.4, end: 0.9 },
+    { word: 'x', start: NaN, end: 1 },
+  ]),
+  [
+    { word: 'Hello,', start: 0, end: 0.4 },
+    { word: 'world.', start: 0.4, end: 0.9 },
+  ],
+  'deepgram: prefers punctuated_word, drops non-finite',
+);
+eq(
+  mapDeepgramWords([{ word: 'plain', start: 1, end: 2 }]),
+  [{ word: 'plain', start: 1, end: 2 }],
+  'deepgram: falls back to word when no punctuated_word',
+);
+
+// --- deepgramUtils: extractDeepgramResult (nested structure) ---
+eq(
+  extractDeepgramResult({
+    results: {
+      channels: [
+        {
+          detected_language: 'en',
+          alternatives: [
+            {
+              transcript: 'Hello world.',
+              words: [
+                { word: 'hello', punctuated_word: 'Hello', start: 0, end: 0.4 },
+                {
+                  word: 'world',
+                  punctuated_word: 'world.',
+                  start: 0.4,
+                  end: 0.9,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  }),
+  {
+    text: 'Hello world.',
+    words: [
+      { word: 'Hello', start: 0, end: 0.4 },
+      { word: 'world.', start: 0.4, end: 0.9 },
+    ],
+    language: 'en',
+  },
+  'deepgram: extracts transcript + words + detected language',
+);
+eq(
+  extractDeepgramResult({}),
+  { text: '', words: [], language: undefined },
+  'deepgram: empty response -> safe defaults',
+);
+
+// ===========================================================================
+// 火山引擎豆包：Base URL 归一 / 新旧凭据 header / 请求体 / 状态码分类 / 结果提取
+// ===========================================================================
+
+// --- volcengineUtils: normalizeVolcBaseURL ---
+eq(
+  normalizeVolcBaseURL(undefined),
+  'https://openspeech.bytedance.com',
+  'volc: empty -> official default',
+);
+eq(
+  normalizeVolcBaseURL(
+    'https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash',
+  ),
+  'https://openspeech.bytedance.com',
+  'volc: strips accidental flash path suffix',
+);
+eq(
+  normalizeVolcBaseURL('https://proxy.example.com/volc/'),
+  'https://proxy.example.com/volc',
+  'volc: keeps custom prefix path, trims trailing slash',
+);
+eq(
+  normalizeVolcBaseURL('ftp://bad'),
+  'https://openspeech.bytedance.com',
+  'volc: non-http -> official default',
+);
+
+// --- volcengineUtils: buildVolcHeaders（新版控制台单 API Key） ---
+eq(
+  buildVolcHeaders('single-key', 'req-1'),
+  {
+    'X-Api-Key': 'single-key',
+    'X-Api-Resource-Id': 'volc.bigasr.auc_turbo',
+    'X-Api-Request-Id': 'req-1',
+    'X-Api-Sequence': '-1',
+    'Content-Type': 'application/json',
+  },
+  'volc: single API key -> X-Api-Key headers',
+);
+eq(
+  buildVolcHeaders('  padded  ', 'req-2')['X-Api-Key'],
+  'padded',
+  'volc: api key trimmed',
+);
+
+// --- volcengineUtils: buildVolcRequestBody ---
+eq(
+  buildVolcRequestBody('QUJD', 'bigmodel'),
+  {
+    user: { uid: 'video-subtitle-master' },
+    audio: { data: 'QUJD' },
+    request: {
+      model_name: 'bigmodel',
+      enable_punc: true,
+      enable_itn: true,
+      enable_ddc: false,
+      show_utterances: true,
+    },
+  },
+  'volc: request body base64 direct + utterances on, ddc off',
+);
+eq(
+  (buildVolcRequestBody('', '') as { request: { model_name: string } }).request
+    .model_name,
+  'bigmodel',
+  'volc: empty model -> bigmodel default',
+);
+
+// --- volcengineUtils: classifyVolcStatus（X-Api-Status-Code 优先于 HTTP） ---
+eq(classifyVolcStatus(200, '20000000'), 'success', 'volc: 20000000 success');
+eq(
+  classifyVolcStatus(200, '20000003'),
+  'empty',
+  'volc: 20000003 silent audio -> empty',
+);
+eq(classifyVolcStatus(401, null), 'auth', 'volc: HTTP 401 -> auth');
+eq(classifyVolcStatus(403, '40300001'), 'auth', 'volc: HTTP 403 -> auth');
+eq(
+  classifyVolcStatus(200, '55000031'),
+  'retriable',
+  'volc: 55000031 overload -> retriable',
+);
+eq(
+  classifyVolcStatus(200, '55012345'),
+  'retriable',
+  'volc: 550xxxxx internal error -> retriable',
+);
+eq(
+  classifyVolcStatus(503, null),
+  'retriable',
+  'volc: HTTP 5xx without api code -> retriable',
+);
+eq(classifyVolcStatus(429, ''), 'retriable', 'volc: HTTP 429 -> retriable');
+eq(
+  classifyVolcStatus(200, '45000001'),
+  'fatal',
+  'volc: 45xxxxxx param error -> fatal',
+);
+eq(classifyVolcStatus(200, null), 'fatal', 'volc: no api code -> fatal');
+
+// --- volcengineUtils: buildSilentWavBase64（连接自测的最小合法音频） ---
+{
+  const wav = Buffer.from(buildSilentWavBase64(1, 16000), 'base64');
+  eq(wav.length, 44 + 16000 * 2, 'volc: 1s/16k silent wav byte length');
+  eq(wav.toString('ascii', 0, 4), 'RIFF', 'volc: wav RIFF magic');
+  eq(wav.toString('ascii', 8, 12), 'WAVE', 'volc: wav WAVE magic');
+  eq(wav.readUInt32LE(24), 16000, 'volc: wav sample rate 16k');
+  eq(
+    wav.subarray(44).every((b) => b === 0),
+    true,
+    'volc: wav data all zero (silence)',
+  );
+}
+
+// --- volcengineUtils: extractVolcResult（毫秒→秒、words 拍平、utterance→segment） ---
+eq(
+  extractVolcResult({
+    result: {
+      text: '你好，世界。',
+      utterances: [
+        {
+          text: '你好，世界。',
+          start_time: 1000,
+          end_time: 2500,
+          words: [
+            { text: '你好', start_time: 1000, end_time: 1600 },
+            { text: '世界', start_time: 1800, end_time: 2500 },
+            { text: '', start_time: 2500, end_time: 2500 },
+            { text: 'x', start_time: 'oops', end_time: 2600 },
+          ],
+        },
+      ],
+    },
+  }),
+  {
+    text: '你好，世界。',
+    words: [
+      { word: '你好', start: 1, end: 1.6 },
+      { word: '世界', start: 1.8, end: 2.5 },
+    ],
+    segments: [{ start: 1, end: 2.5, text: '你好，世界。' }],
+  },
+  'volc: ms->s, flattens words, drops empty/non-finite, keeps utterance segment',
+);
+eq(
+  extractVolcResult({
+    result: {
+      text: 'Hello world.',
+      utterances: [{ text: 'Hello world.', start_time: 0, end_time: 900 }],
+    },
+  }),
+  {
+    text: 'Hello world.',
+    words: [],
+    segments: [{ start: 0, end: 0.9, text: 'Hello world.' }],
+  },
+  'volc: utterances without words -> segment-level fallback only',
+);
+eq(
+  extractVolcResult({}),
+  { text: '', words: [], segments: [] },
+  'volc: empty response -> safe defaults',
+);
+
+// ===========================================================================
+// 腾讯极速版：请求参数 / 字典序查询串 / 签名 v1 / voice_format / 结果提取 / code 分类
+// ===========================================================================
+
+// --- tencentUtils: 常量（签名原文绑定 Host，端点不开放自定义） ---
+eq(TENCENT_ASR_HOST, 'asr.cloud.tencent.com', 'tencent: fixed host');
+eq(
+  TENCENT_FLASH_PATH,
+  '/asr/flash/v1/',
+  'tencent: flash path with trailing slash',
+);
+
+// --- tencentUtils: buildTencentParams（固定参数集，URL 安全值） ---
+const tencentParams = buildTencentParams({
+  secretId: 'AKIDtest',
+  engineType: '16k_zh',
+  voiceFormat: 'wav',
+  timestamp: 1700000000,
+});
+eq(
+  tencentParams,
+  {
+    secretid: 'AKIDtest',
+    engine_type: '16k_zh',
+    voice_format: 'wav',
+    timestamp: '1700000000',
+    word_info: '1',
+    filter_punc: '0',
+    convert_num_mode: '1',
+    first_channel_only: '1',
+    speaker_diarization: '0',
+  },
+  'tencent: fixed param set (word_info=1, punct kept, mono, no diarization)',
+);
+eq(
+  Object.values(tencentParams).every((v) => /^[A-Za-z0-9_-]+$/.test(v)),
+  true,
+  'tencent: all param values URL-safe (no encoding ambiguity in signature)',
+);
+
+// --- tencentUtils: buildTencentQuery（key 字典序，排序串即最终 URL 查询串） ---
+const tencentQuery = buildTencentQuery(tencentParams);
+eq(
+  tencentQuery,
+  'convert_num_mode=1&engine_type=16k_zh&filter_punc=0&first_channel_only=1&secretid=AKIDtest&speaker_diarization=0&timestamp=1700000000&voice_format=wav&word_info=1',
+  'tencent: query sorted lexicographically by key',
+);
+eq(
+  buildTencentQuery({ b: '2', a: '1', c: '3' }),
+  'a=1&b=2&c=3',
+  'tencent: generic dict-order join',
+);
+
+// --- tencentUtils: signTencentRequest（HMAC-SHA1-base64 固定向量，独立预计算） ---
+// 向量生成：POST + asr.cloud.tencent.com/asr/flash/v1/1300000000?{上面 query}，
+// HMAC-SHA1(key='TestSecretKey') → base64（node:crypto 独立算出，防实现回归）。
+eq(
+  signTencentRequest('TestSecretKey', '1300000000', tencentQuery),
+  'a38vmBf1ujfiJ+tNg9z2viHpnns=',
+  'tencent: signature v1 matches precomputed HMAC-SHA1 vector',
+);
+eq(
+  signTencentRequest('AnotherKey', '1300000000', tencentQuery) !==
+    signTencentRequest('TestSecretKey', '1300000000', tencentQuery),
+  true,
+  'tencent: signature varies with secretKey',
+);
+
+// --- tencentUtils: resolveTencentEngineType（档位 + 原语言 → engine_type） ---
+eq(
+  resolveTencentEngineType('standard', 'zh'),
+  '16k_zh',
+  'tencent: standard + zh -> 16k_zh',
+);
+eq(
+  resolveTencentEngineType('standard', 'en'),
+  '16k_en',
+  'tencent: standard + en -> 16k_en',
+);
+eq(
+  resolveTencentEngineType('standard', 'ja'),
+  '16k_ja',
+  'tencent: standard + ja -> 16k_ja',
+);
+eq(
+  resolveTencentEngineType('standard', 'yue'),
+  '16k_yue',
+  'tencent: standard + yue -> 16k_yue',
+);
+eq(
+  resolveTencentEngineType('standard', 'zh-Hant'),
+  '16k_zh',
+  'tencent: zh-Hant treated as Mandarin speech',
+);
+eq(
+  resolveTencentEngineType('large', 'zh'),
+  '16k_zh_en',
+  'tencent: large + zh -> 16k_zh_en (LLM tier)',
+);
+eq(
+  resolveTencentEngineType('large', 'en'),
+  '16k_zh_en',
+  'tencent: large + en -> 16k_zh_en (covers zh/en/yue)',
+);
+eq(
+  resolveTencentEngineType('large', 'ja'),
+  '16k_multi_lang',
+  'tencent: large + ja -> 16k_multi_lang (15 languages, no zh)',
+);
+eq(
+  resolveTencentEngineType('standard', 'auto'),
+  '16k_zh-PY',
+  'tencent: standard + auto -> 16k_zh-PY mixed zh/en/yue',
+);
+eq(
+  resolveTencentEngineType('standard', undefined),
+  '16k_zh-PY',
+  'tencent: missing language treated as auto',
+);
+eq(
+  resolveTencentEngineType('large', 'auto'),
+  '16k_zh_en',
+  'tencent: large + auto -> 16k_zh_en',
+);
+eq(
+  resolveTencentEngineType('', 'zh'),
+  '16k_zh',
+  'tencent: empty tier falls back to standard',
+);
+eq(
+  resolveTencentEngineType('16k_yue', 'en'),
+  '16k_yue',
+  'tencent: raw engine_type passes through, language ignored (legacy)',
+);
+eq(
+  resolveTencentEngineType('standard', 'ru'),
+  null,
+  'tencent: unsupported language -> null (caller errors before upload)',
+);
+eq(
+  resolveTencentEngineType('large', 'it'),
+  null,
+  'tencent: unsupported language on large tier -> null',
+);
+
+// --- tencentUtils: voiceFormatFromPath（引擎产物仅 wav/mp3；其余透传/回落） ---
+eq(voiceFormatFromPath('/tmp/a.wav'), 'wav', 'tencent: .wav -> wav');
+eq(
+  voiceFormatFromPath('/tmp/b.MP3'),
+  'mp3',
+  'tencent: .MP3 -> mp3 (case-insensitive)',
+);
+eq(voiceFormatFromPath('/tmp/c.ogg'), 'ogg-opus', 'tencent: .ogg -> ogg-opus');
+eq(
+  voiceFormatFromPath('/tmp/noext'),
+  'wav',
+  'tencent: no extension -> wav fallback',
+);
+eq(voiceFormatFromPath(''), 'wav', 'tencent: empty path -> wav fallback');
+
+// --- tencentUtils: extractTencentResult（文档样例形态：毫秒→秒、words 拍平、text 带标点） ---
+eq(
+  extractTencentResult({
+    code: 0,
+    message: 'success',
+    audio_duration: 2500,
+    flash_result: [
+      {
+        text: '你好，世界。',
+        sentence_list: [
+          {
+            text: '你好，世界。',
+            start_time: 1000,
+            end_time: 2500,
+            word_list: [
+              { word: '你好', start_time: 1000, end_time: 1600 },
+              { word: '世界', start_time: 1800, end_time: 2500 },
+              { word: '', start_time: 2500, end_time: 2500 },
+              { word: 'x', start_time: 'oops', end_time: 2600 },
+            ],
+          },
+        ],
+      },
+    ],
+  }),
+  {
+    text: '你好，世界。',
+    words: [
+      { word: '你好', start: 1, end: 1.6 },
+      { word: '世界', start: 1.8, end: 2.5 },
+    ],
+    segments: [{ start: 1, end: 2.5, text: '你好，世界。' }],
+  },
+  'tencent: ms->s, flattens word_list, drops empty/non-finite, keeps punctuated text',
+);
+eq(
+  extractTencentResult({
+    code: 0,
+    flash_result: [
+      {
+        text: 'Hello world.',
+        sentence_list: [{ text: 'Hello world.', start_time: 0, end_time: 900 }],
+      },
+    ],
+  }),
+  {
+    text: 'Hello world.',
+    words: [],
+    segments: [{ start: 0, end: 0.9, text: 'Hello world.' }],
+  },
+  'tencent: sentence_list without word_list -> segment-level fallback only',
+);
+eq(
+  extractTencentResult({ code: 0, flash_result: [] }),
+  { text: '', words: [], segments: [] },
+  'tencent: empty flash_result -> safe defaults',
+);
+eq(
+  extractTencentResult({}),
+  { text: '', words: [], segments: [] },
+  'tencent: empty response -> safe defaults',
+);
+
+// --- tencentUtils: classifyTencentCode（code 优先于 HTTP；未知码不重试） ---
+eq(classifyTencentCode(200, 0), 'success', 'tencent: code 0 success');
+eq(classifyTencentCode(200, '0'), 'success', 'tencent: string code 0 success');
+eq(classifyTencentCode(200, 4002), 'auth', 'tencent: 4002 auth failure');
+eq(
+  classifyTencentCode(200, 4003),
+  'fatal',
+  'tencent: 4003 service not activated -> fatal',
+);
+eq(classifyTencentCode(200, 4005), 'fatal', 'tencent: 4005 arrears -> fatal');
+eq(
+  classifyTencentCode(200, 4006),
+  'retriable',
+  'tencent: 4006 concurrency -> retriable',
+);
+eq(
+  classifyTencentCode(200, 4008),
+  'retriable',
+  'tencent: 4008 queue timeout -> retriable',
+);
+eq(
+  classifyTencentCode(200, 5001),
+  'retriable',
+  'tencent: 5001 server error -> retriable',
+);
+eq(
+  classifyTencentCode(200, 5003),
+  'retriable',
+  'tencent: 5003 server error -> retriable',
+);
+eq(
+  classifyTencentCode(200, 4001),
+  'fatal',
+  'tencent: 4001 param error -> fatal',
+);
+eq(
+  classifyTencentCode(200, 4011),
+  'fatal',
+  'tencent: 4011 audio too large -> fatal',
+);
+eq(
+  classifyTencentCode(200, 9999),
+  'fatal',
+  'tencent: unknown code -> fatal (no silent retry)',
+);
+eq(
+  classifyTencentCode(503, null),
+  'retriable',
+  'tencent: HTTP 5xx without code -> retriable',
+);
+eq(
+  classifyTencentCode(429, null),
+  'retriable',
+  'tencent: HTTP 429 without code -> retriable',
+);
+eq(
+  classifyTencentCode(404, null),
+  'fatal',
+  'tencent: HTTP 404 without code -> fatal',
+);
+eq(
+  classifyTencentCode(200, null),
+  'fatal',
+  'tencent: no code + HTTP 200 -> fatal (unparseable)',
+);
+
+// ===========================================================================
+// 阿里云极速版：POP 签名 / RFC3986 编码 / Token 过期 / Flash 查询串 / 结果提取 / status 分类
+// ===========================================================================
+
+// --- aliyunUtils: 常量（识别与取号端点固定，不开放自定义） ---
+eq(
+  ALIYUN_NLS_GATEWAY_HOST,
+  'nls-gateway-cn-shanghai.aliyuncs.com',
+  'aliyun: fixed gateway host',
+);
+eq(ALIYUN_FLASH_PATH, '/stream/v1/FlashRecognizer', 'aliyun: flash path');
+eq(
+  ALIYUN_META_HOST,
+  'nls-meta.cn-shanghai.aliyuncs.com',
+  'aliyun: fixed meta (CreateToken) host',
+);
+
+// --- aliyunUtils: percentEncodeRfc3986（POP 签名编码口径，错一个字符即 401） ---
+eq(percentEncodeRfc3986('a b'), 'a%20b', 'aliyun: space -> %20 (not +)');
+eq(percentEncodeRfc3986('*'), '%2A', 'aliyun: * -> %2A');
+eq(
+  percentEncodeRfc3986('~'),
+  '~',
+  'aliyun: ~ stays unencoded (RFC3986 unreserved)',
+);
+eq(percentEncodeRfc3986("!'()"), '%21%27%28%29', "aliyun: !'() all encoded");
+eq(percentEncodeRfc3986('-_.'), '-_.', 'aliyun: -_. stay unencoded');
+eq(
+  percentEncodeRfc3986('2026-07-02T00:00:00Z'),
+  '2026-07-02T00%3A00%3A00Z',
+  'aliyun: ISO8601 colon encoded',
+);
+
+// --- aliyunUtils: buildCreateTokenQuery（9 公共参数、key 字典序、逐 k/v 编码） ---
+const aliyunTokenQuery = buildCreateTokenQuery(
+  'LTAItest',
+  'nonce-1234',
+  '2026-07-02T00:00:00Z',
+);
+eq(
+  aliyunTokenQuery,
+  'AccessKeyId=LTAItest&Action=CreateToken&Format=JSON&RegionId=cn-shanghai&SignatureMethod=HMAC-SHA1&SignatureNonce=nonce-1234&SignatureVersion=1.0&Timestamp=2026-07-02T00%3A00%3A00Z&Version=2019-02-28',
+  'aliyun: CreateToken query sorted + percent-encoded (9 params)',
+);
+
+// --- aliyunUtils: signCreateToken（HMAC-SHA1-base64 固定向量，独立预计算） ---
+// 向量生成：原文 GET&%2F&percentEncode(上面 query)，HMAC-SHA1(key='TestSecret&') → base64
+// （node:crypto 独立算出，防实现回归）。
+eq(
+  signCreateToken('TestSecret', aliyunTokenQuery),
+  'epSSDRaAbN3SlUcKjiHPrS1ke6g=',
+  'aliyun: POP signature matches precomputed HMAC-SHA1 vector',
+);
+eq(
+  signCreateToken('OtherSecret', aliyunTokenQuery) !==
+    signCreateToken('TestSecret', aliyunTokenQuery),
+  true,
+  'aliyun: signature varies with accessKeySecret',
+);
+
+// --- aliyunUtils: isTokenExpired（ExpireTime 秒级绝对时间戳，提前 5 分钟余量） ---
+{
+  const nowMs = 1_783_000_000_000; // 任意固定“当前时刻”
+  const nowSec = nowMs / 1000;
+  eq(
+    isTokenExpired(nowSec + 3600, nowMs),
+    false,
+    'aliyun: token valid 1h before expiry',
+  );
+  eq(
+    isTokenExpired(nowSec + 200, nowMs),
+    true,
+    'aliyun: token within 5min margin -> treated expired (proactive refresh)',
+  );
+  eq(isTokenExpired(nowSec - 1, nowMs), true, 'aliyun: token past expiry');
+  eq(isTokenExpired(NaN, nowMs), true, 'aliyun: invalid expireTime -> expired');
+  eq(isTokenExpired(0, nowMs), true, 'aliyun: zero expireTime -> expired');
+  eq(
+    isTokenExpired(nowSec + 200, nowMs, 0),
+    false,
+    'aliyun: margin 0 -> only actual expiry counts',
+  );
+}
+
+// --- aliyunUtils: buildFlashQuery（固定参数集：词级开、ITN 关、首声道） ---
+eq(
+  buildFlashQuery({ appkey: 'a3Hwxxxx', token: 'tok123', format: 'mp3' }),
+  'appkey=a3Hwxxxx&token=tok123&format=mp3&sample_rate=16000&enable_word_level_result=true&enable_inverse_text_normalization=false&first_channel_only=true',
+  'aliyun: flash query fixed param set',
+);
+
+// --- aliyunUtils: extractAliyunResult（实测形态：words 字符串毫秒、punc 拼接、trim 尾空格） ---
+// 中文样本实测形态（官方 nls-sample-16k.wav）：words 时间戳为字符串毫秒、punc 全角无空格。
+eq(
+  extractAliyunResult({
+    task_id: 'x',
+    status: 20000000,
+    flash_result: {
+      duration: 3101,
+      sentences: [
+        {
+          text: '北京的天气。',
+          begin_time: 880,
+          end_time: 3080,
+          channel_id: 0,
+          words: [
+            { text: '北京', begin_time: '880', end_time: '1760', punc: '' },
+            { text: '的', begin_time: '1760', end_time: '2200', punc: '' },
+            { text: '天气', begin_time: '2200', end_time: '3080', punc: '。' },
+          ],
+        },
+      ],
+    },
+  }),
+  {
+    text: '北京的天气。',
+    words: [
+      { word: '北京', start: 0.88, end: 1.76 },
+      { word: '的', start: 1.76, end: 2.2 },
+      { word: '天气。', start: 2.2, end: 3.08 },
+    ],
+    segments: [{ start: 0.88, end: 3.08, text: '北京的天气。' }],
+  },
+  'aliyun: string-ms words -> sec, punc appended to word text',
+);
+// 英文样本实测形态：词 text 自带尾空格（"welcome "）、punc 亦带尾空格（". "）——必须 trim，
+// 否则与下游拉丁词补前置空格逻辑叠出双空格；多句 text 以空格拼接（needsSpaceBefore）。
+eq(
+  extractAliyunResult({
+    status: 20000000,
+    flash_result: {
+      sentences: [
+        {
+          text: 'hello, ',
+          begin_time: 0,
+          end_time: 425,
+          words: [
+            { text: 'hello', begin_time: '0', end_time: '425', punc: ', ' },
+          ],
+        },
+        {
+          text: 'welcome to master. ',
+          begin_time: 1063,
+          end_time: 3402,
+          words: [
+            {
+              text: 'welcome ',
+              begin_time: '1063',
+              end_time: '1488',
+              punc: '',
+            },
+            { text: 'to ', begin_time: '1488', end_time: '1701', punc: '' },
+            {
+              text: 'master',
+              begin_time: '2977',
+              end_time: '3402',
+              punc: '. ',
+            },
+          ],
+        },
+      ],
+    },
+  }),
+  {
+    text: 'hello, welcome to master.',
+    words: [
+      { word: 'hello,', start: 0, end: 0.425 },
+      { word: 'welcome', start: 1.063, end: 1.488 },
+      { word: 'to', start: 1.488, end: 1.701 },
+      { word: 'master.', start: 2.977, end: 3.402 },
+    ],
+    segments: [
+      { start: 0, end: 0.425, text: 'hello,' },
+      { start: 1.063, end: 3.402, text: 'welcome to master.' },
+    ],
+  },
+  'aliyun: trailing spaces trimmed (text+punc), latin sentences joined with space',
+);
+eq(
+  extractAliyunResult({
+    status: 20000000,
+    flash_result: {
+      sentences: [{ text: '你好。', begin_time: 0, end_time: 900 }],
+    },
+  }),
+  {
+    text: '你好。',
+    words: [],
+    segments: [{ start: 0, end: 0.9, text: '你好。' }],
+  },
+  'aliyun: sentences without words -> segment-level fallback only',
+);
+eq(
+  extractAliyunResult({}),
+  { text: '', words: [], segments: [] },
+  'aliyun: empty response -> safe defaults',
+);
+
+// --- aliyunUtils: classifyAliyunStatus（status 优先于 HTTP；40270002 单列 empty） ---
+eq(classifyAliyunStatus(200, 20000000), 'success', 'aliyun: 20000000 success');
+eq(
+  classifyAliyunStatus(200, '20000000'),
+  'success',
+  'aliyun: string status success',
+);
+eq(
+  classifyAliyunStatus(400, 40270002),
+  'empty',
+  'aliyun: 40270002 vad silent -> empty (probe passes, task returns empty)',
+);
+eq(
+  classifyAliyunStatus(200, 40000001),
+  'auth',
+  'aliyun: 40000001 token expired -> auth (force refresh + retry once)',
+);
+eq(classifyAliyunStatus(403, null), 'auth', 'aliyun: HTTP 403 -> auth');
+eq(classifyAliyunStatus(200, 403), 'auth', 'aliyun: status 403 -> auth');
+eq(
+  classifyAliyunStatus(200, 40000004),
+  'retriable',
+  'aliyun: 40000004 idle timeout -> retriable (official guidance)',
+);
+eq(
+  classifyAliyunStatus(200, 40000005),
+  'retriable',
+  'aliyun: 40000005 concurrency -> retriable',
+);
+eq(
+  classifyAliyunStatus(500, 50000000),
+  'retriable',
+  'aliyun: 50000000 -> retriable',
+);
+eq(
+  classifyAliyunStatus(500, 52010001),
+  'retriable',
+  'aliyun: 52010001 -> retriable',
+);
+eq(
+  classifyAliyunStatus(400, 40000010),
+  'fatal',
+  'aliyun: 40000010 trial expired / not activated -> fatal',
+);
+eq(
+  classifyAliyunStatus(400, 40020105),
+  'fatal',
+  'aliyun: 40020105 appkey not exist -> fatal',
+);
+eq(
+  classifyAliyunStatus(400, 40020106),
+  'fatal',
+  'aliyun: 40020106 appkey mismatch -> fatal',
+);
+eq(
+  classifyAliyunStatus(400, 40270001),
+  'fatal',
+  'aliyun: unsupported format -> fatal',
+);
+eq(
+  classifyAliyunStatus(200, 99999999),
+  'fatal',
+  'aliyun: unknown status -> fatal (no silent retry)',
+);
+eq(
+  classifyAliyunStatus(503, null),
+  'retriable',
+  'aliyun: HTTP 5xx without status -> retriable',
+);
+eq(
+  classifyAliyunStatus(429, null),
+  'retriable',
+  'aliyun: HTTP 429 without status -> retriable',
+);
+eq(
+  classifyAliyunStatus(400, null),
+  'fatal',
+  'aliyun: HTTP 400 without status -> fatal',
+);
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) {
