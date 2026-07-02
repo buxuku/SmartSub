@@ -301,5 +301,11 @@
   "errorReadSubtitle": "读取字幕文件失败：{{file}}",
   "errorConvertToVTT": "字幕转换 VTT 失败：{{file}}",
   "proofreadPageTitle": "校对字幕",
-  "proofreadPageDesc": "导入字幕逐条精修，支持 AI 批量优化"
+  "proofreadPageDesc": "导入字幕逐条精修，支持 AI 批量优化",
+  "cloudConsent": {
+    "title": "上传音频到云端听写？",
+    "description": "本次任务使用云端转写引擎，会提取每个文件的音轨并上传到你配置的第三方服务端点。请勿用于敏感内容，并注意服务商的用量费用。",
+    "confirmOnce": "本次上传",
+    "confirmRemember": "上传并不再提醒"
+  }
 }

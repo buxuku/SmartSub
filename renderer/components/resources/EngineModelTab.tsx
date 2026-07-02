@@ -21,6 +21,7 @@ import SherpaEngineGroupPanel, {
 } from '@/components/resources/engines/SherpaEngineGroupPanel';
 import LocalCliPanel from '@/components/resources/engines/panels/LocalCliPanel';
 import BuiltinPanel from '@/components/resources/engines/panels/BuiltinPanel';
+import CloudAsrPanel from '@/components/resources/engines/panels/CloudAsrPanel';
 import EngineIcon from '@/components/resources/engines/EngineIcon';
 import ModelLibrarySection from '@/components/resources/ModelLibrarySection';
 import { type DownloadSourceConfig } from '@/components/resources/engines/DownloadSourcePopover';
@@ -38,6 +39,10 @@ import type {
   PyEngineUpdateInfo,
   TranscriptionEngine,
 } from '../../../types/engine';
+import {
+  isAsrProviderConfigured,
+  type AsrProvider,
+} from '../../../types/asrProvider';
 import { ISystemInfo } from '../../../types/types';
 
 type EngineStatuses = Partial<Record<TranscriptionEngine, EngineStatus>>;
@@ -57,6 +62,7 @@ const ENGINE_VIEWS: EngineView[] = [
   'fasterWhisper',
   'sherpa',
   'localCli',
+  'cloud',
 ];
 
 function isQueueBusy(status: string | undefined): boolean {
@@ -126,6 +132,8 @@ const EngineModelTab: React.FC = () => {
   const [funasrModelsReady, setFunasrModelsReady] = useState(false);
   const [qwenModelsReady, setQwenModelsReady] = useState(false);
   const [fireRedModelsReady, setFireRedModelsReady] = useState(false);
+  // 云端听写：已配置实例存在即就绪（面板内变更经 onProvidersChange 即时回传）。
+  const [asrProviders, setAsrProviders] = useState<AsrProvider[]>([]);
   const [binarySource, setBinarySource] = useState<DownloadSource>(() =>
     typeof window === 'undefined' ? 'github' : readPersistedDownloadSource(),
   );
@@ -192,6 +200,9 @@ const EngineModelTab: React.FC = () => {
       if (frr?.success) {
         setFireRedModelsReady(!!frr.ready);
       }
+
+      const asr = await window?.ipc?.invoke('getAsrProviders');
+      if (Array.isArray(asr)) setAsrProviders(asr);
     } catch (error) {
       console.error('Failed to refresh engine status:', error);
     }
@@ -448,6 +459,7 @@ const EngineModelTab: React.FC = () => {
     };
   });
   const sherpaAnyReady = sherpaFamilies.some((f) => f.modelsReady);
+  const cloudAnyReady = asrProviders.some((p) => isAsrProviderConfigured(p));
 
   const readyBadge = (
     <Badge variant="outline" className="border-success/40 text-success">
@@ -463,6 +475,16 @@ const EngineModelTab: React.FC = () => {
       ) : (
         <Badge variant="outline" className="border-primary/40 text-primary">
           {t('engines.sherpa.needsModels')}
+        </Badge>
+      );
+    }
+    if (view === 'cloud') {
+      // 云引擎无运行时/模型下载：有已配置实例即就绪，否则提示去添加实例。
+      return cloudAnyReady ? (
+        readyBadge
+      ) : (
+        <Badge variant="outline" className="border-primary/40 text-primary">
+          {t('engines.cloud.needsConfig')}
         </Badge>
       );
     }
@@ -516,6 +538,7 @@ const EngineModelTab: React.FC = () => {
 
   const engineTone = (view: EngineView): StatusTone => {
     if (view === 'sherpa') return sherpaAnyReady ? 'ready' : 'pending';
+    if (view === 'cloud') return cloudAnyReady ? 'ready' : 'pending';
     if (view === 'fasterWhisper') {
       if (isDownloading || showVerifying) return 'downloading';
       if (fasterInstalled) return 'ready';
@@ -628,6 +651,9 @@ const EngineModelTab: React.FC = () => {
         />
       );
     }
+    if (selectedView === 'cloud') {
+      return <CloudAsrPanel onProvidersChange={setAsrProviders} />;
+    }
     return <BuiltinPanel />;
   };
 
@@ -698,14 +724,19 @@ const EngineModelTab: React.FC = () => {
                   {t('engines.sherpa.subtitle')}
                 </p>
               )}
+              {selectedView === 'cloud' && (
+                <p className="text-xs text-muted-foreground">
+                  {t('engines.cloud.subtitle')}
+                </p>
+              )}
             </div>
             {renderEngineBadge(selectedView)}
           </div>
 
           {renderRuntimePanel()}
 
-          {/* sherpa 组的模型清单由组面板按族内联渲染，这里不再外挂统一清单 */}
-          {selectedView !== 'sherpa' && (
+          {/* sherpa 组的模型清单由组面板内联渲染；cloud 无本地模型清单（模型在实例内配置）。 */}
+          {selectedView !== 'sherpa' && selectedView !== 'cloud' && (
             <div className="border-t pt-4">
               <ModelLibrarySection
                 engine={selectedView}

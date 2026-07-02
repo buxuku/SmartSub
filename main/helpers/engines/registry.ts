@@ -4,6 +4,7 @@ import { funasrEngineAdapter } from './funasrEngine';
 import { qwenEngineAdapter } from './qwenEngine';
 import { fireRedEngineAdapter } from './fireRedEngine';
 import { localCliEngineAdapter } from './localCliEngine';
+import { cloudAsrEngineAdapter } from './cloudAsrEngine';
 import type { TranscriptionEngine } from '../../../types/engine';
 import type { TranscriptionEngineAdapter } from './types';
 
@@ -14,6 +15,7 @@ const adapters: TranscriptionEngineAdapter[] = [
   qwenEngineAdapter,
   fireRedEngineAdapter,
   localCliEngineAdapter,
+  cloudAsrEngineAdapter,
 ];
 
 export function getEngineAdapter(

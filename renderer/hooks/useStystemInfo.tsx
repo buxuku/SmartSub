@@ -7,6 +7,8 @@ export default function useSystemInfo() {
     modelsPath: '',
     downloadingModels: [],
   });
+  /** 首次 getSystemInfo 是否已返回：消费方据此区分「尚未加载」与「确实没装模型」 */
+  const [loaded, setLoaded] = useState(false);
 
   const updateSystemInfo = async () => {
     const systemInfoRes = await window?.ipc?.invoke('getSystemInfo', null);
@@ -14,8 +16,10 @@ export default function useSystemInfo() {
   };
 
   useEffect(() => {
-    updateSystemInfo();
+    updateSystemInfo()
+      .catch(() => {})
+      .finally(() => setLoaded(true));
   }, []);
 
-  return { systemInfo, updateSystemInfo };
+  return { systemInfo, updateSystemInfo, loaded };
 }

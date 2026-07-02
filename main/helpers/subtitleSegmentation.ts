@@ -9,7 +9,8 @@
  *
  * 因此本模块只剩「成句」职责（与边界/停顿还原无关）：
  *   tokensToTriples（毫秒 → [startStr,endStr,text]）
- *     → groupTokenCues（按 token gap / 句末标点 / 软切标点 / 长度上限成句）
+ *     → groupTokenCues（按 token gap / 句末标点 / 软切标点 / 长度上限成句；
+ *       硬上限切分回溯到最近可断标点，避免孤立句尾词）
  *     → mergeShortCues（单字碎片并回相邻 cue）
  *     → enforceMinDisplayDuration（最短可读显示时长护栏）。
  *
@@ -61,6 +62,14 @@ const SOFT_PUNCT = /[，,；;]["'”’）)]*$/;
 
 /** 纯标点 token：不应因长度/时长上限被切到单独一条（如孤立的「。」）。 */
 const PUNCT_ONLY = /^[\s。．.,，、!！?？…:：;；"'”’()（）【】《》\-—~～]+$/;
+
+/**
+ * 硬切回溯可断标点：句内停顿/枚举标点（含顿号、冒号）。
+ * 与 SOFT_PUNCT 的区别：软切是「主动提前断句」，顿号/冒号参与会切碎枚举与号码；
+ * 硬切回溯则发生在「必须切一刀」时——切在任何标点后都优于把句尾词孤立成条
+ * （如「…应用十分|广泛。」），故这里放宽收录。
+ */
+const HARD_BREAK_PUNCT = /[，,；;、：:]["'”’）)]*$/;
 
 /** 把 `HH:MM:SS.mmm` / `MM:SS` / 纯秒（逗号或点皆可）解析为秒；非法返回 null。 */
 function parseTime(time?: string): number | null {
@@ -319,6 +328,9 @@ export function dropCuesInDeepSilence(
  * 2) 当前 cue 命中句末标点（句子边界）；
  * 3) cue 达软长度（softMaxWidth / softMaxDuration）后命中停顿性标点（，,；;）→ 标点优先软切（§6.2）；
  * 4) 累计时长 / 宽度超硬上限（maxDuration / maxWidth）兜底，避免连续无停顿语流挤成一条。
+ *    硬切**优先回溯**到 cue 内最后一个可断标点（，,；;、：:）后分割，余部（真实词级时间）
+ *    作新 cue 开头，避免把句尾词孤切成条（如「…应用十分|广泛。」）；若余部并入本 token 后
+ *    仍超限则余部单独成条（保证任何 cue 不超宽）；句内无可断标点时行为与回溯前一致。
  *
  * 另：开新 cue 时若首 token 为纯标点，则贴回上一条 cue 末尾（前导标点归属 §6.2，
  * 避免出现以「，」开头的字幕条；不改上一条时间，仅补字符）。
@@ -331,10 +343,29 @@ export function groupTokenCues(
   const opts = { ...DEFAULTS, ...options };
   const cues: TokenTriple[] = [];
 
+  // 当前 cue 的 token 缓冲：保留逐 token 时间，供硬切回溯在标点处重新分割。
+  interface BufTok {
+    start: number;
+    end: number;
+    text: string;
+  }
+  let buf: BufTok[] = [];
   let curStart = 0;
   let curEnd = 0;
   let curText = '';
   let hasCur = false;
+
+  const setCur = (toks: BufTok[]) => {
+    buf = toks;
+    hasCur = toks.length > 0;
+    if (!hasCur) {
+      curText = '';
+      return;
+    }
+    curStart = toks[0].start;
+    curEnd = toks.reduce((m, t) => Math.max(m, t.end), toks[0].end);
+    curText = toks.map((t) => t.text).join('');
+  };
 
   const flush = () => {
     if (!hasCur) return;
@@ -342,8 +373,7 @@ export function groupTokenCues(
     if (text) {
       cues.push([formatTime(curStart), formatTime(curEnd), text]);
     }
-    hasCur = false;
-    curText = '';
+    setCur([]);
   };
 
   for (const token of tokens) {
@@ -353,7 +383,10 @@ export function groupTokenCues(
 
     // 时间戳缺失的 token：并入当前 cue 文本（不作为切分依据），避免丢字。
     if (start === null || end === null) {
-      if (hasCur) curText += text;
+      if (hasCur) {
+        curText += text;
+        if (buf.length) buf[buf.length - 1].text += text;
+      }
       continue;
     }
 
@@ -364,12 +397,38 @@ export function groupTokenCues(
       // 纯标点 token 不触发长度/时长切分（避免孤立的「。」「，」单独成条），
       // 但真实停顿（gap）仍然切分。
       const punctOnly = PUNCT_ONLY.test(text.trim());
-      if (
-        gap > opts.maxGapSeconds ||
-        (!punctOnly &&
-          (nextDuration > opts.maxDurationSeconds || nextWidth > opts.maxWidth))
-      ) {
+      if (gap > opts.maxGapSeconds) {
         flush();
+      } else if (
+        !punctOnly &&
+        (nextDuration > opts.maxDurationSeconds || nextWidth > opts.maxWidth)
+      ) {
+        // 硬上限触发：回溯到 cue 内最后一个可断标点后切分（避免孤立句尾词）。
+        // 余部（标点后的 token）留作新 cue 开头；若余部加上本 token 仍超限，
+        // 则余部也单独成条（保证任何 cue 不超宽；单字余部由 mergeShortCues 回收）。
+        let cut = -1;
+        for (let i = buf.length - 2; i >= 0; i -= 1) {
+          if (HARD_BREAK_PUNCT.test(buf[i].text.trim())) {
+            cut = i;
+            break;
+          }
+        }
+        if (cut >= 0) {
+          const rest = buf.slice(cut + 1);
+          setCur(buf.slice(0, cut + 1));
+          flush();
+          setCur(rest);
+          const restWidth = visualWidth(curText) + visualWidth(text);
+          const restDuration = Math.max(end, curEnd) - curStart;
+          if (
+            restWidth > opts.maxWidth ||
+            restDuration > opts.maxDurationSeconds
+          ) {
+            flush();
+          }
+        } else {
+          flush();
+        }
       }
     }
 
@@ -381,11 +440,9 @@ export function groupTokenCues(
         prev[2] += text.trim();
         continue;
       }
-      curStart = start;
-      curEnd = end;
-      curText = text;
-      hasCur = true;
+      setCur([{ start, end, text }]);
     } else {
+      buf.push({ start, end, text });
       curText += text;
       curEnd = Math.max(curEnd, end);
     }

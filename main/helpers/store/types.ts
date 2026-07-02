@@ -1,4 +1,5 @@
 import { Provider, CustomParameterConfig } from '../../../types/provider';
+import type { AsrProvider } from '../../../types/asrProvider';
 import { ProofreadHistory, ProofreadTask } from '../../../types/proofread';
 import { IFiles, TaskProject } from '../../../types';
 import { WorkItem } from '../../../types/workItem';
@@ -20,6 +21,8 @@ export type LogEntry = {
 
 export type StoreType = {
   translationProviders: Provider[];
+  /** 云端听写（在线 ASR）服务商实例列表（多实例，含凭据）。缺省未定义时按 [] 处理。 */
+  asrProviders?: AsrProvider[];
   userConfig: Record<string, any>;
   settings: {
     whisperCommand: string;
@@ -52,8 +55,15 @@ export type StoreType = {
      * 把这些底层旋钮收敛为意图单选，按引擎差异化派生底层参数；取值与映射见
      * main/helpers/engines/outcomePresets.ts。
      */
-    /** 任务默认引擎+模型的"上次使用"记忆（全局单条，二者作为整体，避免引擎/模型失配）。 */
-    lastUsedTranscription?: { engine: TranscriptionEngine; model?: string };
+    /**
+     * 任务默认引擎+模型的"上次使用"记忆（全局单条，三者作为整体，避免引擎/模型失配）。
+     * 云引擎(engine==='cloud')时 asrProviderId 标识具体服务商实例。
+     */
+    lastUsedTranscription?: {
+      engine: TranscriptionEngine;
+      model?: string;
+      asrProviderId?: string;
+    };
     fasterWhisperDevice?: 'auto' | 'cpu' | 'cuda';
     fasterWhisperComputeType?: string;
     fasterWhisperModelsPath?: string;
@@ -101,6 +111,8 @@ export type StoreType = {
     closeAction?: 'smart' | 'background' | 'quit';
     /** 首次「转入后台」提示是否已展示（勾「不再提示」后置 true） */
     closeHintShown?: boolean;
+    /** 云端听写「上传第三方」隐私确认：用户勾「不再提醒」后置 true，跳过后续开跑确认。 */
+    cloudUploadConsent?: boolean;
   };
   providerVersion?: number;
   logs: LogEntry[];

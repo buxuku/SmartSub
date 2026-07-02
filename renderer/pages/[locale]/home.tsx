@@ -130,13 +130,14 @@ export default function LaunchpadPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [systemInfo, providers, items] = await Promise.all([
+        const [systemInfo, providers, items, asrProviders] = await Promise.all([
           window?.ipc?.invoke('getSystemInfo', null),
           window?.ipc?.invoke('getTranslationProviders'),
           window?.ipc?.invoke('getWorkItems'),
+          window?.ipc?.invoke('getAsrProviders'),
         ]);
-        // 跨引擎就绪判断：任一引擎装有任一模型即视为已就绪（逐任务引擎下不再假设全局引擎）
-        setHasModels(hasAnyModelAnyEngine(systemInfo));
+        // 跨引擎就绪判断：任一引擎装有任一模型、或任一云实例已配置即视为已就绪
+        setHasModels(hasAnyModelAnyEngine(systemInfo, asrProviders || []));
         setHasProvider(
           (providers || []).some((p: any) => isProviderConfigured(p)),
         );

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CircleStop, Loader2, Pause, Play } from 'lucide-react';
+import { CircleStop, Cloud, Loader2, Pause, Play } from 'lucide-react';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
 import { cn } from 'lib/utils';
@@ -7,6 +7,16 @@ import { useTranslation } from 'next-i18next';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import { getFileStages, isFileDone } from './tasks/stageUtils';
 import { useHotkeys } from 'hooks/useHotkeys';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog';
 
 interface TaskControlsProps {
   files: any[];
@@ -33,6 +43,9 @@ const TaskControls = ({
   const [taskStatus, setTaskStatusState] = useState('idle');
   // 首次状态同步是否已完成:autostart 必须等它,否则迟到的 'idle' 会覆盖乐观 'running'
   const [statusSynced, setStatusSynced] = useState(false);
+  // 云端听写「上传确认」：首次开跑云任务时弹确认，勾选不再提醒后写入 settings。
+  const [cloudConsentOpen, setCloudConsentOpen] = useState(false);
+  const pendingCloudFilesRef = useRef<any[] | null>(null);
   const { t } = useTranslation(['home', 'common']);
 
   const setTaskStatus = (status: string) => {
@@ -100,7 +113,20 @@ const TaskControls = ({
       });
       return;
     }
-    // 记录"上次使用"的 (引擎,模型) 作为下次新任务默认（全局单条，二者作为整体）
+    // 云端听写：音频会上传到第三方端点，首次开跑前弹确认（隐私/成本护栏）。
+    if (typeDef.needsModel && formData?.transcriptionEngine === 'cloud') {
+      const settings = await window?.ipc?.invoke('getSettings');
+      if (!settings?.cloudUploadConsent) {
+        pendingCloudFilesRef.current = pendingFiles;
+        setCloudConsentOpen(true);
+        return;
+      }
+    }
+    dispatchTask(pendingFiles);
+  };
+
+  // 记录"上次使用"的 (引擎,模型[,云实例]) 并派发任务。
+  const dispatchTask = (pendingFiles: any[]) => {
     if (
       typeDef.needsModel &&
       formData?.transcriptionEngine &&
@@ -110,6 +136,9 @@ const TaskControls = ({
         lastUsedTranscription: {
           engine: formData.transcriptionEngine,
           model: formData.model,
+          ...(formData.transcriptionEngine === 'cloud'
+            ? { asrProviderId: formData.asrProviderId }
+            : {}),
         },
       });
     }
@@ -119,6 +148,20 @@ const TaskControls = ({
       formData,
       projectId,
     });
+  };
+
+  const handleConfirmCloudConsent = async (remember: boolean) => {
+    setCloudConsentOpen(false);
+    if (remember) {
+      try {
+        await window?.ipc?.invoke('setSettings', { cloudUploadConsent: true });
+      } catch {
+        // 忽略：确认后仍继续本次任务，仅"不再提醒"落库失败
+      }
+    }
+    const files = pendingCloudFilesRef.current;
+    pendingCloudFilesRef.current = null;
+    if (files?.length) dispatchTask(files);
   };
 
   // ?autostart=1 进入页面时自动开始一次(仅 idle 态,ref 防 StrictMode/重渲染重复触发)
@@ -222,6 +265,38 @@ const TaskControls = ({
           {t('home:cancelling')}
         </Button>
       )}
+
+      <AlertDialog open={cloudConsentOpen} onOpenChange={setCloudConsentOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Cloud className="h-5 w-5 text-sky-500" />
+              {t('home:cloudConsent.title')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('home:cloudConsent.description')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <AlertDialogCancel
+              onClick={() => {
+                pendingCloudFilesRef.current = null;
+              }}
+            >
+              {t('common:cancel')}
+            </AlertDialogCancel>
+            <Button
+              variant="outline"
+              onClick={() => handleConfirmCloudConsent(false)}
+            >
+              {t('home:cloudConsent.confirmOnce')}
+            </Button>
+            <AlertDialogAction onClick={() => handleConfirmCloudConsent(true)}>
+              {t('home:cloudConsent.confirmRemember')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

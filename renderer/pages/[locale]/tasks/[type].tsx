@@ -30,8 +30,13 @@ import {
 import { cn, isSubtitleFile } from 'lib/utils';
 import { resolveDefaultTranslateProviderId } from 'lib/providerPanelUtils';
 import { TASK_TYPES, getTaskTypeBySlug } from 'lib/taskTypes';
-import { getEngineModelGroups, pickDefaultEngineModel } from 'lib/engineModels';
+import {
+  getEngineModelGroups,
+  isEngineModelSelected,
+  pickDefaultEngineModel,
+} from 'lib/engineModels';
 import type { TranscriptionEngine } from '../../../../types/engine';
+import type { AsrProvider } from '../../../../types/asrProvider';
 import useSystemInfo from 'hooks/useStystemInfo';
 import useFormConfig from 'hooks/useFormConfig';
 import useIpcCommunication from 'hooks/useIpcCommunication';
@@ -66,10 +71,14 @@ export default function TaskPage() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [providers, setProviders] = useState([]);
+  const [asrProviders, setAsrProviders] = useState<AsrProvider[]>([]);
+  /** asrProviders/settings 首次加载是否完成（默认引擎校正须等它，避免按不完整分组误回填） */
+  const [providersLoaded, setProvidersLoaded] = useState(false);
   const [useLocalWhisper, setUseLocalWhisper] = useState(false);
   const [lastUsedTranscription, setLastUsedTranscription] = useState<{
     engine?: TranscriptionEngine;
     model?: string;
+    asrProviderId?: string;
   } | null>(null);
   const [taskStatus, setTaskStatus] = useState('idle');
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -77,7 +86,7 @@ export default function TaskPage() {
   const [proofreadFile, setProofreadFile] = useState<IFiles | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
-  const { systemInfo } = useSystemInfo();
+  const { systemInfo, loaded: systemInfoLoaded } = useSystemInfo();
   const { form, formData } = useFormConfig();
   /** 来自加载（而非用户/任务事件）的 files 引用，避免回写存储 */
   const loadedFilesRef = useRef<any[] | null>(null);
@@ -110,18 +119,24 @@ export default function TaskPage() {
 
   useEffect(() => {
     const load = async () => {
-      const storedProviders = await window?.ipc?.invoke(
-        'getTranslationProviders',
-      );
-      setProviders(storedProviders || []);
-      const settings = await window?.ipc?.invoke('getSettings');
-      setUseLocalWhisper(settings?.useLocalWhisper || false);
-      setLastUsedTranscription(settings?.lastUsedTranscription || null);
-      if (
-        settings?.taskViewMode === 'grid' ||
-        settings?.taskViewMode === 'list'
-      ) {
-        setViewMode(settings.taskViewMode);
+      try {
+        const storedProviders = await window?.ipc?.invoke(
+          'getTranslationProviders',
+        );
+        setProviders(storedProviders || []);
+        const storedAsrProviders = await window?.ipc?.invoke('getAsrProviders');
+        setAsrProviders(storedAsrProviders || []);
+        const settings = await window?.ipc?.invoke('getSettings');
+        setUseLocalWhisper(settings?.useLocalWhisper || false);
+        setLastUsedTranscription(settings?.lastUsedTranscription || null);
+        if (
+          settings?.taskViewMode === 'grid' ||
+          settings?.taskViewMode === 'list'
+        ) {
+          setViewMode(settings.taskViewMode);
+        }
+      } finally {
+        setProvidersLoaded(true);
       }
     };
     load();
@@ -253,23 +268,23 @@ export default function TaskPage() {
   // systemInfo / useLocalWhisper / lastUsed 变化时复跑，修正残留旧选择。
   useEffect(() => {
     if (!typeDef?.needsModel) return;
+    // 分组数据源（本地模型清单 / 云实例 / lastUsed）未齐前不校正：早跑会把
+    // 仍有效的选择（如云实例）误判失配、回填本地默认并随表单持久化，覆盖用户上次选择。
+    if (!systemInfoLoaded || !providersLoaded) return;
     if (!formData || Object.keys(formData).length === 0) return; // 配置未加载完
     const groups = getEngineModelGroups(systemInfo, {
       includeLocalCli: useLocalWhisper,
+      asrProviders,
     });
     if (!groups.length) return; // 无可选：保持空，InlineConfigBar 展示「去下载模型」
 
-    const currentEngine = formData.transcriptionEngine as
-      | TranscriptionEngine
-      | undefined;
-    const currentModel = (formData.model || '').toLowerCase();
-    const currentValid =
-      !!currentEngine &&
-      groups.some(
-        (g) =>
-          g.engine === currentEngine &&
-          g.models.some((m) => m.toLowerCase() === currentModel),
-      );
+    const currentValid = groups.some((g) =>
+      isEngineModelSelected(g, {
+        engine: formData.transcriptionEngine as TranscriptionEngine | undefined,
+        model: formData.model,
+        asrProviderId: formData.asrProviderId,
+      }),
+    );
     if (currentValid) return;
 
     const next = pickDefaultEngineModel(
@@ -279,14 +294,19 @@ export default function TaskPage() {
     if (next) {
       form.setValue('transcriptionEngine', next.engine);
       form.setValue('model', next.model);
+      form.setValue('asrProviderId', next.asrProviderId ?? '');
     }
   }, [
     typeDef,
     systemInfo,
+    systemInfoLoaded,
+    providersLoaded,
     useLocalWhisper,
+    asrProviders,
     lastUsedTranscription,
     formData?.transcriptionEngine,
     formData?.model,
+    formData?.asrProviderId,
     form,
   ]);
 
@@ -611,6 +631,7 @@ export default function TaskPage() {
           formData={formData}
           systemInfo={systemInfo}
           providers={providers}
+          asrProviders={asrProviders as any}
           typeDef={typeDef}
           useLocalWhisper={useLocalWhisper}
         />
