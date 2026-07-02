@@ -128,5 +128,14 @@ export type StoreType = {
   tasks?: IFiles[];
   /** 任务工程列表（任务维度，跨重启保留） */
   taskProjects?: TaskProject[];
+  /**
+   * 讯飞录音转写大模型进行中订单（跨会话续查）：
+   * 键=`sha1(压缩音频):服务商实例id:语种档位`；重启后重跑同任务跳过上传直接续查。
+   * 订单完结/失效即删；写入超 72h 惰性过期（服务端结果保留约 5 天）。
+   */
+  xfyunPendingOrders?: Record<
+    string,
+    { orderId: string; signatureRandom: string; createdAt: number }
+  >;
   [key: string]: any;
 };

@@ -338,5 +338,12 @@
   "phAliyunAccessKeySecret": "你的 AccessKey Secret",
   "asrAliyunAppkeyTips": "智能语音交互控制台 ▸「全部项目」创建项目后的 Appkey。识别语种在项目的「功能配置」中设定（任务里的「原语言」对阿里云不生效），默认的普通话模型可识别中英混合；转写其它语种时，请在控制台把该项目的模型改为对应语种。",
   "phAliyunAppkey": "项目 Appkey",
-  "asrModelsAliyunTips": "模型固定为 flash（录音文件识别极速版），不可修改；实际识别语种与模型由 Appkey 对应项目在控制台的配置决定。"
+  "asrModelsAliyunTips": "模型固定为 flash（录音文件识别极速版），不可修改；实际识别语种与模型由 Appkey 对应项目在控制台的配置决定。",
+  "asrXfyunAppidTips": "讯飞开放平台控制台 ▸ 应用的「服务接口认证信息」中的 APPID。需先创建应用并开通「录音文件转写大模型」服务（按音频时长计费，新用户有免费体验时长）。仅保存在本地。",
+  "phXfyunAppid": "8 位应用 ID，如 a1b2c3d4",
+  "asrXfyunApiKeyTips": "控制台「服务接口认证信息」中的 APIKey（对应接口参数 accessKeyId）。仅保存在本地。",
+  "phXfyunApiKey": "你的 APIKey",
+  "asrXfyunApiSecretTips": "控制台「服务接口认证信息」中的 APISecret（对应接口参数 accessKeySecret）。若报签名校验失败（code 100009）请检查此项；系统时间偏差过大会报 100008。仅保存在本地。",
+  "phXfyunApiSecret": "你的 APISecret",
+  "asrModelsXfyunTips": "语种档位（两档均自动识别语言，任务的「原语言」仅用于上传前校验档位是否支持）：autodialect 支持中文、英文及 202 种方言（含粤语），开通服务即可用；autominor 支持 37 个语种——中、英、日、韩、俄、法、西、阿拉伯、德、泰、越南、印地、葡、意、马来、印尼、菲律宾、土耳其、希腊、捷克、乌尔都、孟加拉、泰米尔、乌克兰、哈萨克、乌兹别克、波兰、蒙古、斯瓦希里、豪萨、波斯、荷兰、瑞典、罗马尼亚、保加利亚、维吾尔、藏语，需联系讯飞商务人工对接单独开通，未开通请勿选用。转写为异步订单制：上传后服务端排队处理，应用会自动轮询结果；中途退出应用也不丢任务，重新运行同一任务会直接续查原订单，不重复计费。"
 }

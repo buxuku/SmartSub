@@ -5,6 +5,7 @@ import {
   ASR_OPENAI_COMPATIBLE,
   ASR_TENCENT,
   ASR_VOLCENGINE,
+  ASR_XFYUN,
 } from '../../../types/asrProvider';
 import { transcribeWithOpenAiCompatible } from './openaiCompatible';
 import { transcribeWithElevenLabs } from './elevenlabs';
@@ -12,6 +13,7 @@ import { transcribeWithDeepgram } from './deepgram';
 import { transcribeWithVolcengine } from './volcengine';
 import { transcribeWithTencent } from './tencent';
 import { transcribeWithAliyun } from './aliyun';
+import { transcribeWithXfyun } from './xfyun';
 import type { AsrTranscriber } from './types';
 
 /**
@@ -25,6 +27,7 @@ export const ASR_TRANSCRIBER_MAP: Record<string, AsrTranscriber> = {
   [ASR_VOLCENGINE]: transcribeWithVolcengine,
   [ASR_TENCENT]: transcribeWithTencent,
   [ASR_ALIYUN]: transcribeWithAliyun,
+  [ASR_XFYUN]: transcribeWithXfyun,
 };
 
 export function getAsrTranscriber(

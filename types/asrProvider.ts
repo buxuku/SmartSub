@@ -56,6 +56,7 @@ export const ASR_DEEPGRAM = 'deepgram';
 export const ASR_VOLCENGINE = 'volcengine';
 export const ASR_TENCENT = 'tencent';
 export const ASR_ALIYUN = 'aliyun';
+export const ASR_XFYUN = 'xfyun';
 
 /**
  * 火山豆包极速版：官方音频上限 2h/100MB，但 base64 进 JSON 体膨胀 ×4/3 且整体驻留内存，
@@ -91,6 +92,23 @@ const ALIYUN_MAX_UPLOAD_BYTES = 24 * 1024 * 1024;
  * 历史存量若存有原始 engine_type（16k_*）仍原样透传，不受档位化影响。
  */
 const TENCENT_MODEL_TIERS = ['standard', 'large'];
+
+/**
+ * 讯飞「录音文件转写大模型」：官方双上限「500MB 且 ≤5 小时」，引擎切片判定只看字节。
+ * 压缩产物 32kbps mp3 ≈0.24MB/min，若按 500MB 声明可装 ≈34h、必撞 5h 时长上限；
+ * 取 48MB ≈ 3.3h mp3 间接钳制时长——字幕场景绝大多数视频整文件单订单转写、不切片
+ * （讯飞官方也建议转写 5 分钟以上长音频，与细切片相性差）。切片时长不声明回落全局 600s
+ * （WAV 切片 ≈18.4MB 达标）。若调整压缩码率需与腾讯/阿里常量联动复核。
+ */
+const XFYUN_MAX_UPLOAD_BYTES = 48 * 1024 * 1024;
+
+/**
+ * 讯飞「语种档位」（models 承载，语义对齐腾讯档位模式；识别语言免切自动，
+ * 任务原语言仅做上传前守卫，见 xfyunUtils.resolveXfyunLanguageSupport）：
+ * - autodialect（默认）：中英 + 202 种方言免切识别，开通服务即用；
+ * - autominor：37 语种免切识别，需联系讯飞人工对接单独开通。
+ */
+const XFYUN_LANGUAGE_TIERS = ['autodialect', 'autominor'];
 
 export const ASR_PROVIDER_TYPES: AsrProviderType[] = [
   {
@@ -480,6 +498,85 @@ export const ASR_PROVIDER_TYPES: AsrProviderType[] = [
         type: 'number',
         required: false,
         defaultValue: 120,
+        step: 10,
+        tips: 'asrRequestTimeoutTips',
+      },
+      {
+        key: 'concurrency',
+        label: 'asrConcurrency',
+        type: 'number',
+        required: false,
+        defaultValue: 4,
+        step: 1,
+        tips: 'asrConcurrencyTips',
+      },
+      {
+        key: 'requestInterval',
+        label: 'requestInterval',
+        type: 'number',
+        required: false,
+        defaultValue: 0,
+        step: 0.1,
+        tips: 'asrRequestIntervalTips',
+      },
+    ],
+  },
+  {
+    id: ASR_XFYUN,
+    name: '讯飞 录音文件转写大模型',
+    isBuiltin: true,
+    icon: '🎤',
+    iconImg: '/images/providers/spark-color.svg',
+    // 品牌型硬单例。端点固定 office-api-ist-dx.iflyaisol.com（模块内常量），不开放自定义。
+    // 异步订单制（上传→轮询），500MB/5h 经 48MB 字节上限间接钳制（详见常量注释）。
+    audioLimits: {
+      maxUploadBytes: XFYUN_MAX_UPLOAD_BYTES,
+    },
+    fields: [
+      {
+        // 讯飞开放平台控制台「服务接口认证信息」三件套：APPID / APIKey / APISecret
+        // （APIKey/APISecret 对应转写 API 的 accessKeyId/accessKeySecret，实测确认）。
+        key: 'appid',
+        label: 'APPID',
+        type: 'text',
+        required: true,
+        tips: 'asrXfyunAppidTips',
+        placeholder: 'phXfyunAppid',
+      },
+      {
+        key: 'apiKey',
+        label: 'APIKey',
+        type: 'password',
+        required: true,
+        tips: 'asrXfyunApiKeyTips',
+        placeholder: 'phXfyunApiKey',
+      },
+      {
+        key: 'apiSecret',
+        label: 'APISecret',
+        type: 'password',
+        required: true,
+        tips: 'asrXfyunApiSecretTips',
+        placeholder: 'phXfyunApiSecret',
+      },
+      {
+        // 语种档位点选（识别语言免切自动；任务原语言仅上传前守卫，不上行）。
+        key: 'models',
+        label: 'asrModels',
+        type: 'select',
+        options: XFYUN_LANGUAGE_TIERS,
+        required: true,
+        defaultValue: 'autodialect',
+        tips: 'asrModelsXfyunTips',
+      },
+      {
+        // 异步订单制：单次 HTTP 超时（上传大文件比同步各家更久），默认放宽到 300s；
+        // 轮询节奏与总等待上限由 service 内部策略驱动，不受此值控制。
+        key: 'requestTimeoutSec',
+        label: 'asrRequestTimeout',
+        type: 'number',
+        required: false,
+        defaultValue: 300,
         step: 10,
         tips: 'asrRequestTimeoutTips',
       },

@@ -338,5 +338,12 @@
   "phAliyunAccessKeySecret": "your AccessKey Secret",
   "asrAliyunAppkeyTips": "Appkey of a project created under \"All projects\" in the Intelligent Speech Interaction console. The recognition language is set in the project's feature configuration (the task's source language has no effect for Alibaba); the default Mandarin model also handles mixed Chinese-English. For other languages, switch the project's model in the console.",
   "phAliyunAppkey": "project Appkey",
-  "asrModelsAliyunTips": "Model is fixed to flash (flash file recognition) and cannot be changed; the actual recognition language and model are determined by the Appkey project's console configuration."
+  "asrModelsAliyunTips": "Model is fixed to flash (flash file recognition) and cannot be changed; the actual recognition language and model are determined by the Appkey project's console configuration.",
+  "asrXfyunAppidTips": "APPID from the app's \"Service API authentication\" panel in the iFlytek Open Platform console. Create an app and activate the \"LLM Audio File Transcription\" service first (billed by audio duration; new users get a free trial quota). Stored locally only.",
+  "phXfyunAppid": "8-char app id, e.g. a1b2c3d4",
+  "asrXfyunApiKeyTips": "APIKey from the console's \"Service API authentication\" panel (maps to the API parameter accessKeyId). Stored locally only.",
+  "phXfyunApiKey": "your APIKey",
+  "asrXfyunApiSecretTips": "APISecret from the console's \"Service API authentication\" panel (maps to the API parameter accessKeySecret). On signature failures (code 100009) double-check this value; a large system-clock skew causes code 100008. Stored locally only.",
+  "phXfyunApiSecret": "your APISecret",
+  "asrModelsXfyunTips": "Language tier (both tiers auto-detect the language; the task's source language is only validated against the tier before upload): autodialect covers Chinese, English and 202 Chinese dialects (incl. Cantonese) — available once the service is activated; autominor covers 37 languages — Chinese, English, Japanese, Korean, Russian, French, Spanish, Arabic, German, Thai, Vietnamese, Hindi, Portuguese, Italian, Malay, Indonesian, Filipino, Turkish, Greek, Czech, Urdu, Bengali, Tamil, Ukrainian, Kazakh, Uzbek, Polish, Mongolian, Swahili, Hausa, Persian, Dutch, Swedish, Romanian, Bulgarian, Uyghur and Tibetan — but requires a separate activation via iFlytek sales; do not select it unless activated. Transcription is an async order: after upload the server processes in a queue and the app polls for results automatically; quitting the app mid-task loses nothing — rerunning the same task resumes the existing order without double billing."
 }

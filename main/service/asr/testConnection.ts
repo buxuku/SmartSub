@@ -5,6 +5,7 @@ import {
   ASR_ELEVENLABS,
   ASR_TENCENT,
   ASR_VOLCENGINE,
+  ASR_XFYUN,
   parseAsrModels,
   type AsrProvider,
 } from '../../../types/asrProvider';
@@ -33,6 +34,14 @@ import {
   buildFlashQuery,
 } from './aliyunUtils';
 import { getAliyunToken } from './aliyun';
+import {
+  XFYUN_API_HOST,
+  XFYUN_GET_RESULT_PATH,
+  buildXfyunDateTime,
+  buildXfyunQuery,
+  buildXfyunRandom,
+  signXfyunRequest,
+} from './xfyunUtils';
 
 export interface AsrTestResult {
   ok: boolean;
@@ -101,12 +110,15 @@ async function readError(res: Response): Promise<string | undefined> {
 export async function testAsrConnection(
   provider: AsrProvider,
 ): Promise<AsrTestResult> {
-  // 腾讯/阿里无 apiKey 字段，按自身多字段守卫（design D1 注意项），不走下方通用 apiKey 守卫。
+  // 腾讯/阿里/讯飞是多字段凭据，按自身守卫，不走下方通用 apiKey 守卫。
   if (provider?.type === ASR_TENCENT) {
     return testTencentConnection(provider);
   }
   if (provider?.type === ASR_ALIYUN) {
     return testAliyunConnection(provider);
+  }
+  if (provider?.type === ASR_XFYUN) {
+    return testXfyunConnection(provider);
   }
 
   const apiKey = String(provider?.apiKey ?? '').trim();
@@ -339,6 +351,80 @@ async function testAliyunConnection(
       detail: detail
         ? `${detail}${Number.isFinite(status) ? ` (status ${status})` : ''}`
         : undefined,
+    };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * 配置类错误码的可行动提示（design D9，均为 2026-07 实测形态）。
+ * 探针无法验证服务开通/余量——那类问题（100007 等）首次真实转写时由 upload 文案兜底。
+ */
+const XFYUN_CODE_HINTS: Record<string, string> = {
+  '000002':
+    'APIKey 不存在或已被禁用：请检查控制台「服务接口认证信息」中的 APIKey',
+  '100009': '签名校验失败：请检查 APISecret 是否正确',
+  '100008': '请求时间超限：请检查系统时间是否准确（偏差过大会导致签名失效）',
+  '100007': '权限错误：请确认已在讯飞开放平台开通「录音文件转写大模型」服务',
+};
+
+/**
+ * 讯飞大模型转写：假 orderId + 完整签名探测 getResult（design D9，零成本——
+ * 不上传音频、不创建订单、不消耗转写时长）。签名通过则进入业务校验报
+ * `100037`（orderId is illegal）→ 凭据有效；否则按鉴权错误码给可行动提示。
+ */
+async function testXfyunConnection(
+  provider: AsrProvider,
+): Promise<AsrTestResult> {
+  const appid = String(provider?.appid ?? '').trim();
+  const apiKey = String(provider?.apiKey ?? '').trim();
+  const apiSecret = String(provider?.apiSecret ?? '').trim();
+  if (!appid || !apiKey || !apiSecret) {
+    return { ok: false, needsConfig: true };
+  }
+
+  try {
+    const query = buildXfyunQuery({
+      appId: appid,
+      accessKeyId: apiKey,
+      dateTime: buildXfyunDateTime(),
+      signatureRandom: buildXfyunRandom(),
+      orderId: `SMARTSUB_PROBE_${Date.now()}`,
+      resultType: 'transfer',
+    });
+    const res = await fetch(
+      `https://${XFYUN_API_HOST}${XFYUN_GET_RESULT_PATH}?${query}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          signature: signXfyunRequest(apiSecret, query),
+        },
+        body: '{}',
+        signal: timeoutSignal(),
+      },
+    );
+    let data: { code?: unknown; descInfo?: unknown } | undefined;
+    try {
+      data = JSON.parse(await res.text());
+    } catch {
+      data = undefined;
+    }
+    const code = String(data?.code ?? '').trim();
+    // 签名通过 → 业务层报「订单不存在/非法」（100037/100001/100039）→ 凭据有效。
+    if (code === '100037' || code === '100001' || code === '100039') {
+      return { ok: true };
+    }
+    const message = String(data?.descInfo ?? '').trim();
+    const hint = XFYUN_CODE_HINTS[code];
+    const detail = hint
+      ? `${hint}${message ? `（${message}）` : ''}`
+      : message || undefined;
+    return {
+      ok: false,
+      status: res.ok ? undefined : res.status,
+      detail: detail ? `${detail}${code ? ` (code ${code})` : ''}` : undefined,
     };
   } catch {
     return { ok: false };

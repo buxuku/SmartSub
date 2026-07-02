@@ -109,6 +109,7 @@ import {
   ASR_VOLCENGINE,
   ASR_TENCENT,
   ASR_ALIYUN,
+  ASR_XFYUN,
 } from '../types/asrProvider';
 import { computeChunkBoundaries } from '../main/helpers/cloudAudioChunking';
 import {
@@ -169,6 +170,23 @@ import {
   extractAliyunResult,
   classifyAliyunStatus,
 } from '../main/service/asr/aliyunUtils';
+import {
+  XFYUN_API_HOST,
+  XFYUN_UPLOAD_PATH,
+  XFYUN_GET_RESULT_PATH,
+  normalizeXfyunTier,
+  resolveXfyunLanguageSupport,
+  buildXfyunDateTime,
+  buildXfyunRandom,
+  javaUrlEncode,
+  buildXfyunQuery,
+  signXfyunRequest,
+  xfyunFileNameFromPath,
+  classifyXfyunCode,
+  isXfyunOrderGone,
+  mapXfyunFailType,
+  extractXfyunResult,
+} from '../main/service/asr/xfyunUtils';
 
 let passed = 0;
 let failed = 0;
@@ -2063,6 +2081,34 @@ eq(
     'asr: aliyun has no apiUrl field (fixed endpoints)',
   );
 }
+// xfyun：models = 语种档位（autodialect/autominor），识别语言免切自动。
+{
+  const xfyunModels = getAsrProviderType(ASR_XFYUN)?.fields.find(
+    (f) => f.key === 'models',
+  );
+  eq(
+    xfyunModels?.options,
+    ['autodialect', 'autominor'],
+    'asr: xfyun models are language tiers, not engine ids',
+  );
+  eq(
+    xfyunModels?.defaultValue,
+    'autodialect',
+    'asr: xfyun default tier autodialect (autominor needs manual activation)',
+  );
+  eq(
+    getAsrProviderType(ASR_XFYUN)?.fields.some((f) => f.key === 'apiUrl'),
+    false,
+    'asr: xfyun has no apiUrl field (fixed endpoint)',
+  );
+  eq(
+    getAsrProviderType(ASR_XFYUN)?.fields.find(
+      (f) => f.key === 'requestTimeoutSec',
+    )?.defaultValue,
+    300,
+    'asr: xfyun request timeout defaults to 300s (async upload is slower)',
+  );
+}
 
 // --- asrProvider: isAsrProviderConfigured (required = apiUrl/apiKey/models) ---
 eq(
@@ -2216,6 +2262,46 @@ eq(
   false,
   'asr: aliyun not ready without accessKeyId',
 );
+// xfyun：三字段凭据（appid/apiKey/apiSecret），任缺未就绪。
+eq(
+  isAsrProviderConfigured({
+    id: 'x1',
+    name: 'xfyun',
+    type: ASR_XFYUN,
+    appid: '9f000000',
+    apiKey: 'ak',
+    apiSecret: 'as',
+    models: 'autodialect',
+  }),
+  true,
+  'asr: xfyun ready with appid + apiKey + apiSecret',
+);
+eq(
+  isAsrProviderConfigured({
+    id: 'x1',
+    name: 'xfyun',
+    type: ASR_XFYUN,
+    appid: '9f000000',
+    apiKey: 'ak',
+    apiSecret: '',
+    models: 'autodialect',
+  }),
+  false,
+  'asr: xfyun not ready without apiSecret',
+);
+eq(
+  isAsrProviderConfigured({
+    id: 'x1',
+    name: 'xfyun',
+    type: ASR_XFYUN,
+    appid: '',
+    apiKey: 'ak',
+    apiSecret: 'as',
+    models: 'autodialect',
+  }),
+  false,
+  'asr: xfyun not ready without appid',
+);
 
 // --- asrProvider: groupInstancesByType (面板分区数据源) ---
 // 分区结构简化为 { id, insts:[实例id] } 便于断言（避免比对完整 type 对象）。
@@ -2316,6 +2402,19 @@ eq(
   true,
   'asr: aliyun appears as empty group by default',
 );
+// xfyun：品牌型硬单例（固定官方端点，档位在 models 内选）。
+eq(
+  !!getAsrProviderType(ASR_XFYUN)?.multiInstance,
+  false,
+  'asr: xfyun is singleton (brand-type)',
+);
+eq(
+  groupShape(groupInstancesByType([])).some(
+    (g) => g.id === ASR_XFYUN && g.insts.length === 0,
+  ),
+  true,
+  'asr: xfyun appears as empty group by default',
+);
 
 // --- asrProvider: resolveAudioLimits (类型声明覆盖全局默认) ---
 const LIMIT_DEFAULTS = {
@@ -2336,6 +2435,11 @@ eq(
   resolveAudioLimits(getAsrProviderType(ASR_ALIYUN), LIMIT_DEFAULTS),
   { maxUploadBytes: 24 * 1024 * 1024, maxChunkSeconds: 600 },
   'asr: aliyun declares 24MB byte cap (same 100MB/2h rationale as tencent)',
+);
+eq(
+  resolveAudioLimits(getAsrProviderType(ASR_XFYUN), LIMIT_DEFAULTS),
+  { maxUploadBytes: 48 * 1024 * 1024, maxChunkSeconds: 600 },
+  'asr: xfyun declares 48MB byte cap (~3.3h mp3, clamps 5h duration limit)',
 );
 eq(
   resolveAudioLimits(getAsrProviderType(ASR_OPENAI_COMPATIBLE), LIMIT_DEFAULTS),
@@ -3526,6 +3630,371 @@ eq(
   classifyAliyunStatus(400, null),
   'fatal',
   'aliyun: HTTP 400 without status -> fatal',
+);
+
+// --- xfyunUtils: 常量（签名原文绑定 Host，端点不开放自定义） ---
+eq(XFYUN_API_HOST, 'office-api-ist-dx.iflyaisol.com', 'xfyun: host constant');
+eq(XFYUN_UPLOAD_PATH, '/v2/upload', 'xfyun: upload path');
+eq(XFYUN_GET_RESULT_PATH, '/v2/getResult', 'xfyun: getResult path');
+
+// --- xfyunUtils: normalizeXfyunTier（仅 autominor 识别为多语种档，其余回落默认） ---
+eq(normalizeXfyunTier('autodialect'), 'autodialect', 'xfyun tier: autodialect');
+eq(normalizeXfyunTier('autominor'), 'autominor', 'xfyun tier: autominor');
+eq(
+  normalizeXfyunTier(' AutoMinor '),
+  'autominor',
+  'xfyun tier: trims + case-insensitive',
+);
+eq(
+  normalizeXfyunTier(undefined),
+  'autodialect',
+  'xfyun tier: undefined -> default',
+);
+eq(normalizeXfyunTier(''), 'autodialect', 'xfyun tier: empty -> default');
+eq(
+  normalizeXfyunTier('bogus'),
+  'autodialect',
+  'xfyun tier: unknown -> default',
+);
+
+// --- xfyunUtils: resolveXfyunLanguageSupport（档位 × 原语言上传前守卫） ---
+eq(
+  resolveXfyunLanguageSupport('autodialect', 'auto'),
+  'ok',
+  'xfyun guard: dialect + auto ok (tier itself is auto-detect)',
+);
+eq(
+  resolveXfyunLanguageSupport('autodialect', undefined),
+  'ok',
+  'xfyun guard: dialect + missing language -> auto ok',
+);
+eq(
+  resolveXfyunLanguageSupport('autodialect', 'zh'),
+  'ok',
+  'xfyun guard: dialect + zh ok',
+);
+eq(
+  resolveXfyunLanguageSupport('autodialect', 'yue'),
+  'ok',
+  'xfyun guard: dialect + Cantonese ok (in 202 dialects)',
+);
+eq(
+  resolveXfyunLanguageSupport('autodialect', 'en'),
+  'ok',
+  'xfyun guard: dialect + en ok',
+);
+eq(
+  resolveXfyunLanguageSupport('autodialect', 'ja'),
+  'switch-tier',
+  'xfyun guard: dialect + ja -> suggest autominor',
+);
+eq(
+  resolveXfyunLanguageSupport('autodialect', 'ko'),
+  'switch-tier',
+  'xfyun guard: dialect + ko -> suggest autominor',
+);
+eq(
+  resolveXfyunLanguageSupport('autominor', 'ja'),
+  'ok',
+  'xfyun guard: minor + ja ok',
+);
+eq(
+  resolveXfyunLanguageSupport('autominor', 'bo'),
+  'ok',
+  'xfyun guard: minor + Tibetan ok (37-language list)',
+);
+eq(
+  resolveXfyunLanguageSupport('autominor', 'yue'),
+  'switch-tier',
+  'xfyun guard: minor + Cantonese -> suggest autodialect',
+);
+eq(
+  resolveXfyunLanguageSupport('autodialect', 'am'),
+  'unsupported',
+  'xfyun guard: Amharic unsupported by both tiers',
+);
+eq(
+  resolveXfyunLanguageSupport('autominor', 'am'),
+  'unsupported',
+  'xfyun guard: minor + Amharic unsupported',
+);
+eq(
+  resolveXfyunLanguageSupport(undefined, 'ZH'),
+  'ok',
+  'xfyun guard: default tier + uppercase language normalized',
+);
+
+// --- xfyunUtils: buildXfyunDateTime（本地时区 yyyy-MM-ddTHH:mm:ss±HHmm） ---
+eq(
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{4}$/.test(buildXfyunDateTime()),
+  true,
+  'xfyun dateTime: shape yyyy-MM-ddTHH:mm:ss±HHmm',
+);
+{
+  const d = new Date(2026, 6, 2, 22, 30, 32); // 本地时区 2026-07-02 22:30:32
+  const s = buildXfyunDateTime(d);
+  eq(s.startsWith('2026-07-02T22:30:32'), true, 'xfyun dateTime: local fields');
+  const tzMin = -d.getTimezoneOffset();
+  const sign = tzMin >= 0 ? '+' : '-';
+  const abs = Math.abs(tzMin);
+  const hh = String(Math.floor(abs / 60)).padStart(2, '0');
+  const mm = String(abs % 60).padStart(2, '0');
+  eq(
+    s.slice(19),
+    `${sign}${hh}${mm}`,
+    'xfyun dateTime: tz suffix matches host tz',
+  );
+}
+
+// --- xfyunUtils: buildXfyunRandom（16 位字母数字，逐次不同） ---
+eq(buildXfyunRandom().length, 16, 'xfyun random: default 16 chars');
+eq(
+  /^[A-Za-z0-9]{16}$/.test(buildXfyunRandom()),
+  true,
+  'xfyun random: alphanumeric only',
+);
+eq(
+  buildXfyunRandom() === buildXfyunRandom(),
+  false,
+  'xfyun random: two draws differ',
+);
+
+// --- xfyunUtils: javaUrlEncode（Java URLEncoder 兼容：空格→+，!'()~ 转义） ---
+eq(javaUrlEncode('abc123.-*_'), 'abc123.-*_', 'xfyun encode: safe chars kept');
+eq(javaUrlEncode('a b'), 'a+b', 'xfyun encode: space -> +');
+eq(
+  javaUrlEncode("!'()~"),
+  '%21%27%28%29%7E',
+  'xfyun encode: java extras escaped',
+);
+eq(
+  javaUrlEncode('2026-07-02T22:30:32+0800'),
+  '2026-07-02T22%3A30%3A32%2B0800',
+  'xfyun encode: dateTime colon/plus escaped',
+);
+eq(javaUrlEncode('音频'), '%E9%9F%B3%E9%A2%91', 'xfyun encode: utf-8 percent');
+
+// --- xfyunUtils: buildXfyunQuery（过滤空值、按名 ASCII 排序、排序串即请求串） ---
+eq(
+  buildXfyunQuery({ b: '2', a: '1', c: undefined, d: '' }),
+  'a=1&b=2',
+  'xfyun query: sorts keys and drops empty values',
+);
+eq(
+  buildXfyunQuery({
+    signatureRandom: '0123456789abcdef',
+    appId: 'abc',
+    dateTime: '2026-07-02T10:00:00+0800',
+  }),
+  'appId=abc&dateTime=2026-07-02T10%3A00%3A00%2B0800&signatureRandom=0123456789abcdef',
+  'xfyun query: values java-url-encoded, ASCII key order',
+);
+
+// --- xfyunUtils: signXfyunRequest（HMAC-SHA1-base64 固定向量，独立预计算） ---
+eq(
+  signXfyunRequest(
+    'testsecret',
+    'appId=abc&dateTime=2026-07-02T10%3A00%3A00%2B0800&signatureRandom=0123456789abcdef',
+  ),
+  'TB+lxwHUWgBejbtkyD3TE6qyzxI=',
+  'xfyun sign: hmac-sha1 base64 fixed vector',
+);
+
+// --- xfyunUtils: xfyunFileNameFromPath（audio.<真实扩展名>，未知回落 wav） ---
+eq(
+  xfyunFileNameFromPath('/tmp/a b/视频.MP3'),
+  'audio.mp3',
+  'xfyun name: keeps ext, lowercased',
+);
+eq(xfyunFileNameFromPath('/tmp/x.wav'), 'audio.wav', 'xfyun name: wav');
+eq(
+  xfyunFileNameFromPath('/tmp/noext'),
+  'audio.wav',
+  'xfyun name: no ext -> wav',
+);
+eq(xfyunFileNameFromPath(''), 'audio.wav', 'xfyun name: empty -> wav');
+
+// --- xfyunUtils: classifyXfyunCode（code 优先于 HTTP；鉴权码不重试） ---
+eq(classifyXfyunCode(200, '000000'), 'success', 'xfyun code: 000000 success');
+eq(
+  classifyXfyunCode(200, '000002'),
+  'auth',
+  'xfyun code: 000002 bad APIKey -> auth',
+);
+eq(
+  classifyXfyunCode(200, '100009'),
+  'auth',
+  'xfyun code: 100009 bad signature -> auth',
+);
+eq(
+  classifyXfyunCode(200, '100008'),
+  'auth',
+  'xfyun code: 100008 clock skew -> auth',
+);
+eq(
+  classifyXfyunCode(200, '100007'),
+  'auth',
+  'xfyun code: 100007 permission -> auth',
+);
+eq(
+  classifyXfyunCode(200, '100012'),
+  'retriable',
+  'xfyun code: 100012 rate limit -> retriable',
+);
+eq(
+  classifyXfyunCode(200, '999999'),
+  'retriable',
+  'xfyun code: 999999 unknown -> retriable',
+);
+eq(
+  classifyXfyunCode(200, '100003'),
+  'fatal',
+  'xfyun code: param error -> fatal',
+);
+eq(
+  classifyXfyunCode(429, null),
+  'retriable',
+  'xfyun code: HTTP 429 no code -> retriable',
+);
+eq(
+  classifyXfyunCode(503, undefined),
+  'retriable',
+  'xfyun code: HTTP 5xx no code -> retriable',
+);
+eq(
+  classifyXfyunCode(400, null),
+  'fatal',
+  'xfyun code: HTTP 400 no code -> fatal',
+);
+
+// --- xfyunUtils: isXfyunOrderGone（订单不存在/非法 → 续查回落新上传） ---
+eq(isXfyunOrderGone('100037'), true, 'xfyun gone: 100037 orderId illegal');
+eq(isXfyunOrderGone('100001'), true, 'xfyun gone: 100001');
+eq(isXfyunOrderGone('100039'), true, 'xfyun gone: 100039');
+eq(
+  isXfyunOrderGone('100013'),
+  false,
+  'xfyun gone: 100013 in-progress is not gone',
+);
+eq(isXfyunOrderGone('000000'), false, 'xfyun gone: success is not gone');
+eq(isXfyunOrderGone(undefined), false, 'xfyun gone: missing code');
+
+// --- xfyunUtils: mapXfyunFailType（可行动文案；0/非数字无异常；6 静音由调用方处理） ---
+eq(mapXfyunFailType(0), null, 'xfyun fail: 0 -> no error');
+eq(mapXfyunFailType(undefined), null, 'xfyun fail: undefined -> no error');
+eq(
+  /5-hour/.test(String(mapXfyunFailType(4))),
+  true,
+  'xfyun fail: 4 -> duration limit message',
+);
+eq(
+  /failType 99/.test(String(mapXfyunFailType(99))),
+  true,
+  'xfyun fail: unknown type keeps code in message',
+);
+
+// --- xfyunUtils: extractXfyunResult（实测形态：json_1best 为字符串，标点内联，wb/we 帧换算） ---
+{
+  const orderResult = JSON.stringify({
+    lattice: [
+      {
+        json_1best: JSON.stringify({
+          st: {
+            bg: '1000',
+            ed: '3500',
+            rt: [
+              {
+                ws: [
+                  { cw: [{ w: '大家', wp: 'n' }], wb: 10, we: 40 },
+                  { cw: [{ w: '好', wp: 'n' }], wb: 41, we: 60 },
+                  { cw: [{ w: '，', wp: 'p' }], wb: 0, we: 0 },
+                  { cw: [{ w: '嗯', wp: 's' }], wb: 61, we: 70 },
+                  { cw: [{ w: 'hello', wp: 'n' }], wb: 71, we: 100 },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+      {
+        json_1best: JSON.stringify({
+          st: {
+            bg: '4000',
+            ed: '5000',
+            rt: [
+              {
+                ws: [
+                  { cw: [{ w: 'world', wp: 'n' }], wb: 5, we: 30 },
+                  { cw: [{ w: '。', wp: 'p' }], wb: 0, we: 0 },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+    ],
+  });
+  eq(
+    extractXfyunResult(orderResult),
+    {
+      text: '大家好，hello world。',
+      words: [
+        { word: '大家', start: 1.1, end: 1.4 },
+        { word: '好，', start: 1.41, end: 1.6 },
+        { word: 'hello', start: 1.71, end: 2.0 },
+        { word: 'world。', start: 4.05, end: 4.3 },
+      ],
+      segments: [
+        { start: 1, end: 3.5, text: '大家好，hello' },
+        { start: 4, end: 5, text: 'world。' },
+      ],
+    },
+    'xfyun extract: punctuation inlined, smooth words dropped, frame math (bg+wb*10)/1000',
+  );
+}
+{
+  // 文档示例形态：json_1best 已是对象（非字符串）。
+  const orderResult = {
+    lattice: [
+      {
+        json_1best: {
+          st: {
+            bg: '0',
+            ed: '2000',
+            rt: [
+              {
+                ws: [{ cw: [{ w: 'Hi', wp: 'n' }], wb: 1, we: 20 }],
+              },
+            ],
+          },
+        },
+      },
+    ],
+  };
+  eq(
+    extractXfyunResult(orderResult),
+    {
+      text: 'Hi',
+      words: [{ word: 'Hi', start: 0.01, end: 0.2 }],
+      segments: [{ start: 0, end: 2, text: 'Hi' }],
+    },
+    'xfyun extract: json_1best as object (doc sample shape)',
+  );
+}
+eq(
+  extractXfyunResult('not json'),
+  { text: '', words: [], segments: [] },
+  'xfyun extract: invalid json -> safe empty',
+);
+eq(
+  extractXfyunResult(JSON.stringify({ lattice: [{ json_1best: 'broken' }] })),
+  { text: '', words: [], segments: [] },
+  'xfyun extract: broken element skipped -> empty',
+);
+eq(
+  extractXfyunResult(undefined),
+  { text: '', words: [], segments: [] },
+  'xfyun extract: undefined -> safe empty',
 );
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
