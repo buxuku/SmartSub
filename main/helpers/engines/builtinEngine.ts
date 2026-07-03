@@ -13,6 +13,9 @@ import {
   groupTokenCues,
   mergeShortCues,
   enforceMinDisplayDuration,
+  getSubtitleCueOptions,
+  getMergeShortCueOptions,
+  resplitSubtitleCues,
   clampTriplesToSpeechSegments,
   clampCuesToDominantSegments,
   dropCuesInDeepSilence,
@@ -172,6 +175,12 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       t0: number;
       t1: number;
     }>;
+    const cueOptions = getSubtitleCueOptions(
+      formData as Record<string, unknown>,
+    );
+    const mergeOptions = getMergeShortCueOptions(
+      formData as Record<string, unknown>,
+    );
     let subtitles;
     if (nativeTokens.length > 0) {
       const triples = tokensToTriples(nativeTokens);
@@ -181,30 +190,43 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
         // VAD 开：token 已落在 whisper 内部 VAD 段（段感知映射）→ 逐 token 夹回语音段即稳，
         // 段间停顿与模型无关地还原（消除 medium 把 token 摊过人工静音导致的糊穿静音）。
         refined = mergeShortCues(
-          groupTokenCues(clampTriplesToSpeechSegments(triples, internalSpeech)),
+          groupTokenCues(
+            clampTriplesToSpeechSegments(triples, internalSpeech),
+            cueOptions,
+          ),
+          mergeOptions,
         );
       } else {
         // VAD 关（文字最准档）：token 时间是全程线性、无段间停顿，逐 token clamp 会切碎词、
         // 产 0 时长碎片。改用能量法估语音段，成句后做 cue 级「主导段」收敛 + 深静音幻觉丢弃——
         // 与模型无关地还原停顿且不碎词。能量不可用 → 仅成句（优雅降级，等于原行为）。
         const energy = energySpeechSegments(tempAudioFile);
-        const grouped = groupTokenCues(triples);
+        const grouped = groupTokenCues(triples, cueOptions);
         refined = energy.length
           ? dropCuesInDeepSilence(
-              mergeShortCues(clampCuesToDominantSegments(grouped, energy)),
+              mergeShortCues(
+                clampCuesToDominantSegments(grouped, energy),
+                mergeOptions,
+              ),
               energy,
             )
-          : mergeShortCues(grouped);
+          : mergeShortCues(grouped, mergeOptions);
       }
       const spaced = enforceMinDisplayDuration(refined);
-      subtitles = trimSubtitleTrailingSilence(spaced, tempAudioFile);
+      subtitles = trimSubtitleTrailingSilence(
+        resplitSubtitleCues(spaced, formData as Record<string, unknown>),
+        tempAudioFile,
+      );
     } else {
       logMessage(
         '内置加速包未返回 token 级时间戳（旧版加速包）：回退段级时间轴，建议更新加速包以启用细粒度字幕',
         'warning',
       );
       subtitles = trimSubtitleTrailingSilence(
-        result?.transcription || [],
+        resplitSubtitleCues(
+          result?.transcription || [],
+          formData as Record<string, unknown>,
+        ),
         tempAudioFile,
       );
     }

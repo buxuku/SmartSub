@@ -340,6 +340,32 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
 
                       <FormField
                         control={form.control}
+                        name="maxSubtitleChars"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('subtitleLength.label')}</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                min={0}
+                                max={120}
+                                placeholder="0"
+                                {...field}
+                                value={field.value ?? 0}
+                                onChange={(e) =>
+                                  field.onChange(Number(e.target.value || 0))
+                                }
+                              />
+                            </FormControl>
+                            <FormDescription className="text-xs">
+                              {t('subtitleLength.hint')}
+                            </FormDescription>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
                         name="prompt"
                         render={({ field }) => (
                           <FormItem>

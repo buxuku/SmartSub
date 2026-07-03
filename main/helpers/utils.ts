@@ -239,6 +239,7 @@ export const defaultUserConfig = {
   sourceSrtSaveOption: 'noSave',
   targetSrtSaveOption: 'fileNameWithLang',
   subtitleOutputFormat: 'srt',
+  maxSubtitleChars: 0,
   removeChinesePunctuation: false,
 };
 

@@ -86,6 +86,8 @@ export interface IFormData {
   targetLanguage: string;
   translateRetryTimes: string;
   subtitleOutputFormat?: 'srt' | 'vtt' | 'ass' | 'lrc' | 'txt';
+  /** 生成字幕时单条字幕最大显示字数 / 宽度；0 或空表示沿用引擎默认断句。 */
+  maxSubtitleChars?: number;
   /** 中文标点去除（任务级开关）：开启后把中文标点替换为空格。作用于源字幕(中文源)与译文(中文目标)。缺省关闭。 */
   removeChinesePunctuation?: boolean;
 }

@@ -48,6 +48,9 @@ const DEFAULTS: Required<GroupTokenCuesOptions> = {
   softMaxDuration: 2.5,
 };
 
+const MIN_USER_MAX_WIDTH = 8;
+const MAX_USER_MAX_WIDTH = 120;
+
 /** 句末标点：命中后在该 token 处收尾（标点保留在当前 cue 末尾）。 */
 const SENTENCE_END = /[。！？!?…]["'”’）)]*$/;
 
@@ -105,6 +108,42 @@ function visualWidth(text: string): number {
   return width;
 }
 
+function clampInteger(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+/**
+ * 任务级字幕长度上限。0 / 空 / 非法值表示沿用引擎默认断句；正数启用重分句。
+ * 这里沿用现有 `visualWidth` 语义：CJK / 全角算 2，其余算 1。
+ */
+function maxWidthFromConfig(
+  config?: Record<string, unknown>,
+): number | undefined {
+  const raw = config?.maxSubtitleChars;
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const parsed = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return clampInteger(parsed, MIN_USER_MAX_WIDTH, MAX_USER_MAX_WIDTH);
+}
+
+export function getSubtitleCueOptions(
+  config?: Record<string, unknown>,
+): GroupTokenCuesOptions | undefined {
+  const maxWidth = maxWidthFromConfig(config);
+  if (!maxWidth) return undefined;
+  return {
+    maxWidth,
+    softMaxWidth: clampInteger(maxWidth * 0.6, 6, maxWidth),
+  };
+}
+
+export function getMergeShortCueOptions(
+  config?: Record<string, unknown>,
+): MergeShortCuesOptions | undefined {
+  const maxWidth = maxWidthFromConfig(config);
+  return maxWidth ? { maxWidth } : undefined;
+}
+
 /**
  * 「实义字符」数：仅计字母 / 数字 / 表意文字（CJK / 假名 / 谚文），排除标点 / 空白 / 符号。
  * 按 codepoint 区间判定（不用 \p{…}/u 标志，兼容较低 TS target）。
@@ -144,6 +183,106 @@ export function tokensToTriples(tokens: NativeToken[]): TokenTriple[] {
     const endStr = Number.isFinite(t1) ? formatTime(t1 / 1000) : '';
     return [startStr, endStr, tok?.text ?? ''];
   });
+}
+
+/** faster-whisper 的词级输出（start/end 为秒）。 */
+export interface TimedWord {
+  start?: number;
+  end?: number;
+  word?: string;
+}
+
+export function wordsToTriples(words: TimedWord[] | undefined): TokenTriple[] {
+  if (!Array.isArray(words)) return [];
+  return words.map((word): TokenTriple => {
+    const start = Number(word?.start);
+    const end = Number(word?.end);
+    const startStr = Number.isFinite(start) ? formatTime(start) : '';
+    const endStr = Number.isFinite(end) ? formatTime(end) : '';
+    return [startStr, endStr, word?.word ?? ''];
+  });
+}
+
+function isSoftTextBreak(ch: string): boolean {
+  return /[\s。！？!?…，,；;]/.test(ch);
+}
+
+function splitTextByWidth(text: string, maxWidth: number): string[] {
+  const chunks: string[] = [];
+  let buffer = '';
+
+  for (const ch of text) {
+    const next = buffer + ch;
+    if (buffer.trim() && visualWidth(next.trim()) > maxWidth) {
+      const chars = Array.from(buffer);
+      let cutIndex = -1;
+      let offset = 0;
+      for (const cur of chars) {
+        offset += cur.length;
+        if (isSoftTextBreak(cur) && buffer.slice(0, offset).trim()) {
+          cutIndex = offset;
+        }
+      }
+
+      if (cutIndex > 0) {
+        const head = buffer.slice(0, cutIndex).trim();
+        if (head) chunks.push(head);
+        buffer = buffer.slice(cutIndex).trimStart() + ch;
+      } else {
+        chunks.push(buffer.trim());
+        buffer = ch;
+      }
+    } else {
+      buffer = next;
+    }
+  }
+
+  const tail = buffer.trim();
+  if (tail) chunks.push(tail);
+  return chunks;
+}
+
+export function resplitSubtitleCues(
+  cues: TokenTriple[],
+  config?: Record<string, unknown>,
+): TokenTriple[] {
+  const maxWidth = maxWidthFromConfig(config);
+  if (!maxWidth || cues.length === 0) return cues;
+
+  const out: TokenTriple[] = [];
+  for (const cue of cues) {
+    const text = cue?.[2] ?? '';
+    if (visualWidth(text.trim()) <= maxWidth) {
+      out.push(cue);
+      continue;
+    }
+
+    const start = parseTime(cue?.[0]);
+    const end = parseTime(cue?.[1]);
+    const parts = splitTextByWidth(text, maxWidth);
+    if (start === null || end === null || end <= start || parts.length <= 1) {
+      out.push(cue);
+      continue;
+    }
+
+    const weights = parts.map((part) => Math.max(1, visualWidth(part)));
+    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+    let cursor = start;
+    for (let i = 0; i < parts.length; i += 1) {
+      const partEnd =
+        i === parts.length - 1
+          ? end
+          : start +
+            ((end - start) *
+              weights
+                .slice(0, i + 1)
+                .reduce((sum, weight) => sum + weight, 0)) /
+              totalWeight;
+      out.push([formatTime(cursor), formatTime(partEnd), parts[i]]);
+      cursor = partEnd;
+    }
+  }
+  return out;
 }
 
 /** whisper 内部 VAD 暴露的语音段（秒，原始时间轴）。 */

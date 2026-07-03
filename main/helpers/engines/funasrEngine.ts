@@ -21,6 +21,7 @@ import {
   subtitleCueFromSegment,
   trimSubtitleTrailingSilence,
 } from '../subtitleTiming';
+import { resplitSubtitleCues } from '../subtitleSegmentation';
 import { buildFunasrParams } from './funasrParams';
 import { resolveEffectiveSettings } from './outcomePresets';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
@@ -146,7 +147,10 @@ async function transcribeFunasr(ctx: TranscribeContext): Promise<string> {
   if (signal?.aborted) throw new TaskCancelledError();
 
   const subtitles = trimSubtitleTrailingSilence(
-    (transcription?.segments || []).map(subtitleCueFromSegment),
+    resplitSubtitleCues(
+      (transcription?.segments || []).map(subtitleCueFromSegment),
+      formData as Record<string, unknown>,
+    ),
     tempAudioFile,
   );
   const formattedSrt = formatSrtContent(subtitles);

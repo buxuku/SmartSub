@@ -75,6 +75,10 @@
     "off": "Off: engine defaults (keeps cross-segment coherence); long videos or silence may produce repeated or hallucinated lines.",
     "hint": "Turn on when subtitles loop or repeat heavily. Global setting; applies to both faster-whisper and whisper.cpp."
   },
+  "subtitleLength": {
+    "label": "Max characters per subtitle",
+    "hint": "0 keeps the engine default. Use 20-60 to rebuild lines from word-level timestamps so fast English speech or bilingual subtitles do not become overly long."
+  },
   "chinesePunctuation": {
     "label": "Strip Chinese punctuation",
     "hint": "Replace Chinese punctuation (，。、？！ etc.) in Chinese subtitles with spaces and trim trailing spaces for cleaner subtitles. Applies to the source when the source language is Chinese, and to the translation when the target is Chinese."

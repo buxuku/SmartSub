@@ -75,7 +75,10 @@ import {
 } from '../renderer/lib/engineModels';
 import {
   tokensToTriples,
+  wordsToTriples,
   groupTokenCues,
+  getSubtitleCueOptions,
+  resplitSubtitleCues,
   mergeShortCues,
   enforceMinDisplayDuration,
   clampTriplesToSpeechSegments,
@@ -1161,6 +1164,50 @@ eq(
 );
 // 空输入 → 空输出
 eq(groupTokenCues([]), [], 'group: empty input -> empty output');
+
+// --- subtitleSegmentation: 任务级最大字数设置与重断句 ---
+eq(
+  getSubtitleCueOptions({ maxSubtitleChars: 0 }),
+  undefined,
+  'splitConfig: 0 keeps engine default',
+);
+eq(
+  getSubtitleCueOptions({ maxSubtitleChars: 20 }),
+  { maxWidth: 20, softMaxWidth: 12 },
+  'splitConfig: positive maxSubtitleChars maps to cue width options',
+);
+eq(
+  getSubtitleCueOptions({ maxSubtitleChars: 3 }),
+  { maxWidth: 8, softMaxWidth: 6 },
+  'splitConfig: user value is clamped to readable minimum',
+);
+eq(
+  groupTokenCues(
+    wordsToTriples([
+      { start: 0, end: 0.3, word: 'Hello ' },
+      { start: 0.3, end: 0.6, word: 'world ' },
+      { start: 0.6, end: 0.9, word: 'again ' },
+      { start: 0.9, end: 1.2, word: 'today' },
+    ]),
+    { maxWidth: 12, softMaxWidth: 8 },
+  ),
+  [
+    ['00:00:00,000', '00:00:00,600', 'Hello world'],
+    ['00:00:00,600', '00:00:01,200', 'again today'],
+  ],
+  'splitConfig: word-level timestamps rebuild long English subtitles by width',
+);
+eq(
+  resplitSubtitleCues([T('0', '5', '一二三四五六七八九十')], {
+    maxSubtitleChars: 8,
+  }),
+  [
+    ['00:00:00,000', '00:00:02,000', '一二三四'],
+    ['00:00:02,000', '00:00:04,000', '五六七八'],
+    ['00:00:04,000', '00:00:05,000', '九十'],
+  ],
+  'splitConfig: segment-level fallback splits long CJK cue proportionally',
+);
 
 // --- subtitleSegmentation: §6.2 标点优先软切 + 前导标点归属 ---
 // 软切：cue 达软宽度后，在停顿性标点（，）处断句（softMaxWidth 默认 10）。

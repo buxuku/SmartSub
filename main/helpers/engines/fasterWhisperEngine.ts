@@ -17,6 +17,15 @@ import {
   trimSubtitleTrailingSilence,
 } from '../subtitleTiming';
 import {
+  enforceMinDisplayDuration,
+  getMergeShortCueOptions,
+  getSubtitleCueOptions,
+  groupTokenCues,
+  mergeShortCues,
+  resplitSubtitleCues,
+  wordsToTriples,
+} from '../subtitleSegmentation';
+import {
   getTaskContext,
   isTaskCancelledError,
   TaskCancelledError,
@@ -304,10 +313,27 @@ async function transcribeFasterWhisper(
     throw new TaskCancelledError();
   }
 
-  const subtitles = trimSubtitleTrailingSilence(
-    (transcription?.segments || []).map(subtitleCueFromSegment),
-    tempAudioFile,
+  const cueOptions = getSubtitleCueOptions(formData as Record<string, unknown>);
+  const mergeOptions = getMergeShortCueOptions(
+    formData as Record<string, unknown>,
   );
+  const segments = transcription?.segments || [];
+  let subtitles;
+  if (cueOptions) {
+    const wordTriples = segments.flatMap((segment) => {
+      const triples = wordsToTriples(segment?.words);
+      return triples.length > 0 ? triples : [subtitleCueFromSegment(segment)];
+    });
+    subtitles = enforceMinDisplayDuration(
+      resplitSubtitleCues(
+        mergeShortCues(groupTokenCues(wordTriples, cueOptions), mergeOptions),
+        formData as Record<string, unknown>,
+      ),
+    );
+  } else {
+    subtitles = segments.map(subtitleCueFromSegment);
+  }
+  subtitles = trimSubtitleTrailingSilence(subtitles, tempAudioFile);
   const formattedSrt = formatSrtContent(subtitles);
   await fs.promises.writeFile(srtFile, formattedSrt);
 
