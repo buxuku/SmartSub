@@ -212,11 +212,10 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
             )
           : mergeShortCues(grouped, mergeOptions);
       }
+      // 词级路径不补文本级 resplit：宽度上限已由 groupTokenCues（含硬切回溯）在真实
+      // token 时间上保证，叠比例插值只会劣化时间轴（resplit 仅留给下方段级回退）。
       const spaced = enforceMinDisplayDuration(refined);
-      subtitles = trimSubtitleTrailingSilence(
-        resplitSubtitleCues(spaced, formData as Record<string, unknown>),
-        tempAudioFile,
-      );
+      subtitles = trimSubtitleTrailingSilence(spaced, tempAudioFile);
     } else {
       logMessage(
         '内置加速包未返回 token 级时间戳（旧版加速包）：回退段级时间轴，建议更新加速包以启用细粒度字幕',

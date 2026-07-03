@@ -52,27 +52,44 @@ const DEFAULTS: Required<GroupTokenCuesOptions> = {
 const MIN_USER_MAX_WIDTH = 8;
 const MAX_USER_MAX_WIDTH = 120;
 
-/** 句末标点：命中后在该 token 处收尾（标点保留在当前 cue 末尾）。 */
-const SENTENCE_END = /[。！？!?…]["'”’）)]*$/;
-
 /**
- * 停顿性（非句末）标点：cue 达软长度后命中即「软切」（标点优先于硬宽度/时长上限，
- * 让长语流在自然停顿处断句而非切在词中）。
- * 刻意排除顿号「、」与冒号「：」——它们常用于号码 / 枚举内部（如「138、0013、800」），
- * 软切会把同一逻辑单元切碎。
+ * 断句标点字符集（唯一事实来源）：groupTokenCues 的句末收尾/软切/硬切回溯与
+ * resplitSubtitleCues 的文本级兜底拆分都从这里派生，避免各处各养一套、行为漂移。
  */
-const SOFT_PUNCT = /[，,；;]["'”’）)]*$/;
+/** 句末标点字符：命中即视为句子边界。 */
+const SENTENCE_END_CHARS = '。！？!?…';
+/**
+ * 停顿性（非句末）标点字符：软切用。刻意排除顿号「、」与冒号「：」——它们常用于
+ * 号码 / 枚举内部（如「138、0013、800」），软切会把同一逻辑单元切碎。
+ */
+const SOFT_PUNCT_CHARS = '，,；;';
+/**
+ * 硬切回溯额外收录的标点字符（顿号、冒号）：软切是「主动提前断句」不收它们；
+ * 硬切回溯发生在「必须切一刀」时——切在任何标点后都优于把句尾词孤立成条
+ * （如「…应用十分|广泛。」），故放宽收录。
+ */
+const HARD_BREAK_EXTRA_CHARS = '、：:';
+/** 允许紧跟在断句标点后的收尾引号 / 括号。 */
+const TRAILING_CLOSERS = `["'”’）)]*`;
+
+/** 句末标点：命中后在该 token 处收尾（标点保留在当前 cue 末尾）。 */
+const SENTENCE_END = new RegExp(`[${SENTENCE_END_CHARS}]${TRAILING_CLOSERS}$`);
+
+/** 停顿性标点：cue 达软长度后命中即「软切」（标点优先于硬宽度/时长上限）。 */
+const SOFT_PUNCT = new RegExp(`[${SOFT_PUNCT_CHARS}]${TRAILING_CLOSERS}$`);
+
+/** 硬切回溯可断标点：句内停顿/枚举标点（含顿号、冒号）。 */
+const HARD_BREAK_PUNCT = new RegExp(
+  `[${SOFT_PUNCT_CHARS}${HARD_BREAK_EXTRA_CHARS}]${TRAILING_CLOSERS}$`,
+);
+
+/** 文本级可断字符（resplitSubtitleCues 兜底拆分用）：空白 + 句末 + 全部可断标点。 */
+const TEXT_BREAK_CHAR = new RegExp(
+  `[\\s${SENTENCE_END_CHARS}${SOFT_PUNCT_CHARS}${HARD_BREAK_EXTRA_CHARS}]`,
+);
 
 /** 纯标点 token：不应因长度/时长上限被切到单独一条（如孤立的「。」）。 */
 const PUNCT_ONLY = /^[\s。．.,，、!！?？…:：;；"'”’()（）【】《》\-—~～]+$/;
-
-/**
- * 硬切回溯可断标点：句内停顿/枚举标点（含顿号、冒号）。
- * 与 SOFT_PUNCT 的区别：软切是「主动提前断句」，顿号/冒号参与会切碎枚举与号码；
- * 硬切回溯则发生在「必须切一刀」时——切在任何标点后都优于把句尾词孤立成条
- * （如「…应用十分|广泛。」），故这里放宽收录。
- */
-const HARD_BREAK_PUNCT = /[，,；;、：:]["'”’）)]*$/;
 
 /** 把 `HH:MM:SS.mmm` / `MM:SS` / 纯秒（逗号或点皆可）解析为秒；非法返回 null。 */
 function parseTime(time?: string): number | null {
@@ -85,8 +102,8 @@ function parseTime(time?: string): number | null {
   return parts[0];
 }
 
-/** 秒 → `HH:MM:SS,mmm`（SRT 逗号形式）。 */
-function formatTime(seconds: number): string {
+/** 秒 → `HH:MM:SS,mmm`（SRT 逗号形式）。导出供纯逻辑模块（如 cloudAsrShared）复用。 */
+export function formatTime(seconds: number): string {
   const totalMs = Math.max(0, Math.round(seconds * 1000));
   const ms = totalMs % 1000;
   const totalSeconds = Math.floor(totalMs / 1000);
@@ -212,10 +229,6 @@ export function wordsToTriples(words: TimedWord[] | undefined): TokenTriple[] {
   });
 }
 
-function isSoftTextBreak(ch: string): boolean {
-  return /[\s。！？!?…，,；;]/.test(ch);
-}
-
 function splitTextByWidth(text: string, maxWidth: number): string[] {
   const chunks: string[] = [];
   let buffer = '';
@@ -228,7 +241,7 @@ function splitTextByWidth(text: string, maxWidth: number): string[] {
       let offset = 0;
       for (const cur of chars) {
         offset += cur.length;
-        if (isSoftTextBreak(cur) && buffer.slice(0, offset).trim()) {
+        if (TEXT_BREAK_CHAR.test(cur) && buffer.slice(0, offset).trim()) {
           cutIndex = offset;
         }
       }
@@ -251,6 +264,14 @@ function splitTextByWidth(text: string, maxWidth: number): string[] {
   return chunks;
 }
 
+/**
+ * 段级兜底重拆：把超过任务级宽度上限的 cue 按文本可断点（TEXT_BREAK_CHAR）拆开，
+ * 时间按各段文本宽度**比例插值**（拟造时间，非真实词时间）。
+ *
+ * 仅供**没有词级时间戳**的路径使用（FunASR / Qwen / FireRed / 旧加速包段级回退 /
+ * 云端段级、整段降级）。有词级时间戳的路径一律走 `composeWordCues`——
+ * groupTokenCues（含硬切回溯）在真实词时间上断句，质量严格优于比例插值。
+ */
 export function resplitSubtitleCues(
   cues: TokenTriple[],
   config?: Record<string, unknown>,
@@ -738,4 +759,25 @@ export function enforceMinDisplayDuration(
     if (newEnd <= e) return normalized; // 下一条太近，无空隙可延 → 原样
     return [formatTime(s), formatTime(newEnd), text];
   });
+}
+
+/**
+ * 词级成句统一出口：groupTokenCues → mergeShortCues → enforceMinDisplayDuration，
+ * 并接入任务级 `maxSubtitleChars`（0 / 缺省 = 引擎默认断句）。
+ *
+ * 词级路径**不做**文本级 resplit 兜底：宽度上限已由 groupTokenCues（含硬切回溯到
+ * 最近可断标点）在真实词时间上保证，叠一层比例插值只会劣化时间轴。
+ * faster-whisper / 云端听写等「纯词级」引擎直接用本出口；内置引擎因需在成句前后
+ * 插入 VAD / 能量收敛步骤，保持显式装配，但同样不再补 resplit。
+ */
+export function composeWordCues(
+  triples: TokenTriple[],
+  config?: Record<string, unknown>,
+): TokenTriple[] {
+  return enforceMinDisplayDuration(
+    mergeShortCues(
+      groupTokenCues(triples, getSubtitleCueOptions(config)),
+      getMergeShortCueOptions(config),
+    ),
+  );
 }

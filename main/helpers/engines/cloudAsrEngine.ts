@@ -32,6 +32,7 @@ import {
   singleCueFromText,
   offsetWords,
 } from './cloudAsrShared';
+import { resplitSubtitleCues } from '../subtitleSegmentation';
 import type { AsrWord } from '../../service/asr/types';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
@@ -76,10 +77,15 @@ function makeRateGate(intervalMs: number) {
   };
 }
 
-/** 从若干切片结果统一装配字幕：词级优先，其次段级，最后整段文本（粗粒度）。 */
+/**
+ * 从若干切片结果统一装配字幕：词级优先，其次段级，最后整段文本（粗粒度）。
+ * 任务级 maxSubtitleChars：词级走 composeWordCues（真实词时间断句）；
+ * 段级/整段无词时间 → 文本级 resplit 兜底（比例插值）。
+ */
 function assembleChunkedCues(
   chunks: CloudAudioChunk[],
   results: AsrTranscribeResult[],
+  config?: Record<string, unknown>,
 ): SubtitleCue[] {
   const useWordPath = results.some((r) => (r.words?.length ?? 0) > 0);
   if (useWordPath) {
@@ -92,7 +98,7 @@ function assembleChunkedCues(
       }
       if (r?.text) allText += (allText ? ' ' : '') + r.text;
     });
-    return wordCuesFromResult({ words: allWords, text: allText });
+    return wordCuesFromResult({ words: allWords, text: allText }, config);
   }
 
   const cues: SubtitleCue[] = [];
@@ -107,7 +113,7 @@ function assembleChunkedCues(
       );
     }
   });
-  return cues;
+  return resplitSubtitleCues(cues, config);
 }
 
 async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
@@ -178,9 +184,12 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
       throwIfSignalCancelled(signal);
 
       if (result.hasWordTimestamps) {
-        cues = wordCuesFromResult(result);
+        cues = wordCuesFromResult(result, formData as Record<string, unknown>);
       } else if (result.segments?.length) {
-        cues = segmentCuesFromSegments(result.segments, 0);
+        cues = resplitSubtitleCues(
+          segmentCuesFromSegments(result.segments, 0),
+          formData as Record<string, unknown>,
+        );
       } else {
         // 纯文本模型（无词/段时间戳）：按静音细切换取粗粒度时间轴（design 降级路径）。
         logMessage(
@@ -284,7 +293,11 @@ async function transcribeChunkedDegrade(
         return r;
       },
     );
-    return assembleChunkedCues(chunks, results);
+    return assembleChunkedCues(
+      chunks,
+      results,
+      ctx.formData as Record<string, unknown>,
+    );
   } finally {
     cleanupCloudChunks(chunks, tempAudioFile);
   }

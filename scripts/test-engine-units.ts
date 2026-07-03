@@ -79,6 +79,7 @@ import {
   groupTokenCues,
   getSubtitleCueOptions,
   resplitSubtitleCues,
+  composeWordCues,
   mergeShortCues,
   enforceMinDisplayDuration,
   clampTriplesToSpeechSegments,
@@ -1299,6 +1300,49 @@ eq(
     ['00:00:04,000', '00:00:05,000', '九十'],
   ],
   'splitConfig: segment-level fallback splits long CJK cue proportionally',
+);
+// 文本级兜底与 token 级硬切回溯共享同一份可断标点（含顿号）：切在「、」后而非句中。
+eq(
+  resplitSubtitleCues([T('0', '8', '一二、三四五六七')], {
+    maxSubtitleChars: 8,
+  }),
+  [
+    ['00:00:00,000', '00:00:03,000', '一二、'],
+    ['00:00:03,000', '00:00:07,000', '三四五六'],
+    ['00:00:07,000', '00:00:08,000', '七'],
+  ],
+  'splitConfig: text fallback breaks after dunhao (shared punct set)',
+);
+// composeWordCues 统一出口：词级三元组 + 任务级上限 → group(含硬切回溯)+merge+minDisplay。
+eq(
+  composeWordCues(
+    wordsToTriples([
+      { start: 0, end: 0.3, word: 'Hello ' },
+      { start: 0.3, end: 0.6, word: 'world ' },
+      { start: 0.6, end: 0.9, word: 'again ' },
+      { start: 0.9, end: 1.2, word: 'today' },
+    ]),
+    { maxSubtitleChars: 12 },
+  ),
+  [
+    ['00:00:00,000', '00:00:00,600', 'Hello world'],
+    ['00:00:00,600', '00:00:01,200', 'again today'],
+  ],
+  'splitConfig: composeWordCues applies user width on word timestamps',
+);
+// 未设上限（0/缺省）→ 引擎默认断句（单条，不受用户宽度影响）。
+eq(
+  composeWordCues(
+    wordsToTriples([
+      { start: 0, end: 0.3, word: 'Hello ' },
+      { start: 0.3, end: 0.6, word: 'world ' },
+      { start: 0.6, end: 0.9, word: 'again ' },
+      { start: 0.9, end: 1.2, word: 'today' },
+    ]),
+    { maxSubtitleChars: 0 },
+  ),
+  [['00:00:00,000', '00:00:01,200', 'Hello world again today']],
+  'splitConfig: composeWordCues keeps engine defaults when limit unset',
 );
 
 // --- subtitleSegmentation: 硬切回溯到最近可断标点（避免孤立句尾词） ---
@@ -2630,6 +2674,26 @@ eq(
   }),
   [['00:00:00,000', '00:00:01,000', 'Hello world.']],
   'asr: wordCues joins English words with single spaces',
+);
+// 云端词级路径接入任务级 maxSubtitleChars：与本地引擎同一统一出口（composeWordCues）。
+eq(
+  wordCuesFromResult(
+    {
+      words: [
+        { word: 'Hello', start: 0, end: 0.3 },
+        { word: 'world', start: 0.3, end: 0.6 },
+        { word: 'again', start: 0.6, end: 0.9 },
+        { word: 'today', start: 0.9, end: 1.2 },
+      ],
+      text: 'Hello world again today',
+    },
+    { maxSubtitleChars: 12 },
+  ),
+  [
+    ['00:00:00,000', '00:00:00,600', 'Hello world'],
+    ['00:00:00,600', '00:00:01,200', 'again today'],
+  ],
+  'asr: wordCues honors task-level maxSubtitleChars via shared exit',
 );
 
 // --- cloudAsrShared: segmentCuesFromSegments (degrade path, with offset) ---

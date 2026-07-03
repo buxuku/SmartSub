@@ -17,12 +17,8 @@ import {
   trimSubtitleTrailingSilence,
 } from '../subtitleTiming';
 import {
-  enforceMinDisplayDuration,
-  getMergeShortCueOptions,
+  composeWordCues,
   getSubtitleCueOptions,
-  groupTokenCues,
-  mergeShortCues,
-  resplitSubtitleCues,
   wordsToTriples,
 } from '../subtitleSegmentation';
 import {
@@ -313,22 +309,18 @@ async function transcribeFasterWhisper(
     throw new TaskCancelledError();
   }
 
-  const cueOptions = getSubtitleCueOptions(formData as Record<string, unknown>);
-  const mergeOptions = getMergeShortCueOptions(
-    formData as Record<string, unknown>,
-  );
+  // 任务级 maxSubtitleChars：设了上限才从词级时间戳重建成句（composeWordCues 统一出口，
+  // 含硬切回溯，宽度由真实词时间保证）；未设置沿用引擎段级断句（默认行为不变）。
   const segments = transcription?.segments || [];
   let subtitles;
-  if (cueOptions) {
+  if (getSubtitleCueOptions(formData as Record<string, unknown>)) {
     const wordTriples = segments.flatMap((segment) => {
       const triples = wordsToTriples(segment?.words);
       return triples.length > 0 ? triples : [subtitleCueFromSegment(segment)];
     });
-    subtitles = enforceMinDisplayDuration(
-      resplitSubtitleCues(
-        mergeShortCues(groupTokenCues(wordTriples, cueOptions), mergeOptions),
-        formData as Record<string, unknown>,
-      ),
+    subtitles = composeWordCues(
+      wordTriples,
+      formData as Record<string, unknown>,
     );
   } else {
     subtitles = segments.map(subtitleCueFromSegment);

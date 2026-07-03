@@ -2,34 +2,22 @@
  * 云端听写（在线 ASR）结果 → 字幕的「成句/降级」纯逻辑（无 electron / fs / 网络）。
  *
  * 词级时间戳优先：把 OpenAI 兼容返回的 word 时间戳映射为内置 NativeToken，复用 whisper.cpp
- * 引擎同一套成句管线（groupTokenCues → mergeShortCues → enforceMinDisplayDuration），从而
- * 让「whisper-1 中文单段 + 字级时间戳」自然断成多条自然字幕（与 spike 验证一致）。
+ * 引擎同一套成句管线（composeWordCues = groupTokenCues → mergeShortCues →
+ * enforceMinDisplayDuration，含任务级 maxSubtitleChars），从而让「whisper-1 中文单段 +
+ * 字级时间戳」自然断成多条自然字幕（与 spike 验证一致）。
  * 无词级时间戳（如 gpt-4o-transcribe）→ 段级/整段降级（由调用方选择）。
  *
- * 纯函数便于 test:engines 单测；故内联时间格式化，不引入 fileUtils（避免 electron 依赖）。
+ * 纯函数便于 test:engines 单测（时间格式化复用 subtitleSegmentation.formatTime，
+ * 不引入 fileUtils / electron 依赖）。
  */
 import {
   tokensToTriples,
-  groupTokenCues,
-  mergeShortCues,
-  enforceMinDisplayDuration,
+  composeWordCues,
+  formatTime,
   type NativeToken,
   type TokenTriple,
 } from '../subtitleSegmentation';
 import type { AsrSegment, AsrWord } from '../../service/asr/types';
-
-/** 秒 → `HH:MM:SS,mmm`（SRT 逗号形式）。 */
-function formatSrtTime(seconds: number): string {
-  const totalMs = Math.max(0, Math.round(seconds * 1000));
-  const ms = totalMs % 1000;
-  const totalSeconds = Math.floor(totalMs / 1000);
-  const s = totalSeconds % 60;
-  const totalMinutes = Math.floor(totalSeconds / 60);
-  const m = totalMinutes % 60;
-  const h = Math.floor(totalMinutes / 60);
-  const pad = (value: number, len = 2) => String(value).padStart(len, '0');
-  return `${pad(h)}:${pad(m)}:${pad(s)},${pad(ms, 3)}`;
-}
 
 /** token 是否需要前置空格：以 ASCII 字母/数字开头（拉丁词），CJK/标点不加空格。 */
 export function needsSpaceBefore(token: string): boolean {
@@ -93,17 +81,21 @@ export function offsetWords(words: AsrWord[], offsetSec: number): AsrWord[] {
 }
 
 /**
- * 词级路径：realign 标点 → NativeToken → 复用成句管线，得到字幕三元组（未裁尾）。
+ * 词级路径：realign 标点 → NativeToken → 复用成句统一出口（composeWordCues，
+ * 含任务级 maxSubtitleChars），得到字幕三元组（未裁尾）。
  * 裁尾（trimSubtitleTrailingSilence）由引擎在拿到本地 WAV 时补做。
  */
-export function wordCuesFromResult(result: {
-  words?: AsrWord[];
-  text?: string;
-}): TokenTriple[] {
+export function wordCuesFromResult(
+  result: {
+    words?: AsrWord[];
+    text?: string;
+  },
+  config?: Record<string, unknown>,
+): TokenTriple[] {
   const realigned = realignPunctuation(result.words ?? [], result.text);
   const tokens = wordsToNativeTokens(realigned);
   const triples = tokensToTriples(tokens);
-  return enforceMinDisplayDuration(mergeShortCues(groupTokenCues(triples)));
+  return composeWordCues(triples, config);
 }
 
 /** 段级降级：AsrSegment[] → 字幕三元组，可加偏移（秒）。 */
@@ -121,8 +113,8 @@ export function segmentCuesFromSegments(
     )
     .map(
       (s): TokenTriple => [
-        formatSrtTime(s.start + offsetSec),
-        formatSrtTime(s.end + offsetSec),
+        formatTime(s.start + offsetSec),
+        formatTime(s.end + offsetSec),
         String(s.text ?? '').trim(),
       ],
     );
@@ -136,5 +128,5 @@ export function singleCueFromText(
 ): TokenTriple[] {
   const t = String(text ?? '').trim();
   if (!t || !(endSec > startSec)) return [];
-  return [[formatSrtTime(startSec), formatSrtTime(endSec), t]];
+  return [[formatTime(startSec), formatTime(endSec), t]];
 }
