@@ -2,6 +2,7 @@ import {
   ASR_ALIYUN,
   ASR_DEEPGRAM,
   ASR_ELEVENLABS,
+  ASR_GLADIA,
   ASR_OPENAI_COMPATIBLE,
   ASR_TENCENT,
   ASR_VOLCENGINE,
@@ -14,6 +15,7 @@ import { transcribeWithVolcengine } from './volcengine';
 import { transcribeWithTencent } from './tencent';
 import { transcribeWithAliyun } from './aliyun';
 import { transcribeWithXfyun } from './xfyun';
+import { transcribeWithGladia } from './gladia';
 import type { AsrTranscriber } from './types';
 
 /**
@@ -28,6 +30,7 @@ export const ASR_TRANSCRIBER_MAP: Record<string, AsrTranscriber> = {
   [ASR_TENCENT]: transcribeWithTencent,
   [ASR_ALIYUN]: transcribeWithAliyun,
   [ASR_XFYUN]: transcribeWithXfyun,
+  [ASR_GLADIA]: transcribeWithGladia,
 };
 
 export function getAsrTranscriber(

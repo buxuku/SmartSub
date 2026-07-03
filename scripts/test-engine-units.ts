@@ -111,6 +111,7 @@ import {
   ASR_TENCENT,
   ASR_ALIYUN,
   ASR_XFYUN,
+  ASR_GLADIA,
 } from '../types/asrProvider';
 import { computeChunkBoundaries } from '../main/helpers/cloudAudioChunking';
 import {
@@ -188,6 +189,18 @@ import {
   mapXfyunFailType,
   extractXfyunResult,
 } from '../main/service/asr/xfyunUtils';
+import {
+  GLADIA_DEFAULT_BASE,
+  GLADIA_UPLOAD_PATH,
+  GLADIA_PRERECORDED_PATH,
+  normalizeGladiaBaseURL,
+  normalizeGladiaModel,
+  resolveGladiaLanguage,
+  buildGladiaInitBody,
+  classifyGladiaStatus,
+  isGladiaJobGone,
+  extractGladiaResult,
+} from '../main/service/asr/gladiaUtils';
 
 let passed = 0;
 let failed = 0;
@@ -2153,6 +2166,35 @@ eq(
     'asr: xfyun request timeout defaults to 300s (async upload is slower)',
   );
 }
+// gladia：models = 模型档位（solaria-1 全语种默认 / solaria-3 欧语特化），apiUrl 可选（反代）。
+{
+  const gladiaModels = getAsrProviderType(ASR_GLADIA)?.fields.find(
+    (f) => f.key === 'models',
+  );
+  eq(
+    gladiaModels?.options,
+    ['solaria-1', 'solaria-3'],
+    'asr: gladia models are solaria tiers',
+  );
+  eq(
+    gladiaModels?.defaultValue,
+    'solaria-1',
+    'asr: gladia default solaria-1 (100+ languages; solaria-3 is EU-specialized)',
+  );
+  eq(
+    getAsrProviderType(ASR_GLADIA)?.fields.find((f) => f.key === 'apiUrl')
+      ?.required,
+    false,
+    'asr: gladia apiUrl optional (official endpoint by default)',
+  );
+  eq(
+    getAsrProviderType(ASR_GLADIA)?.fields.find(
+      (f) => f.key === 'requestTimeoutSec',
+    )?.defaultValue,
+    300,
+    'asr: gladia request timeout defaults to 300s (async upload is slower)',
+  );
+}
 
 // --- asrProvider: isAsrProviderConfigured (required = apiUrl/apiKey/models) ---
 eq(
@@ -2346,6 +2388,29 @@ eq(
   false,
   'asr: xfyun not ready without appid',
 );
+// gladia：单字段凭据（apiKey），apiUrl 可选不影响就绪。
+eq(
+  isAsrProviderConfigured({
+    id: 'g1',
+    name: 'gladia',
+    type: ASR_GLADIA,
+    apiKey: 'gk',
+    models: 'solaria-1',
+  }),
+  true,
+  'asr: gladia ready with apiKey (apiUrl optional)',
+);
+eq(
+  isAsrProviderConfigured({
+    id: 'g1',
+    name: 'gladia',
+    type: ASR_GLADIA,
+    apiKey: '',
+    models: 'solaria-1',
+  }),
+  false,
+  'asr: gladia not ready without apiKey',
+);
 
 // --- asrProvider: groupInstancesByType (面板分区数据源) ---
 // 分区结构简化为 { id, insts:[实例id] } 便于断言（避免比对完整 type 对象）。
@@ -2459,6 +2524,18 @@ eq(
   true,
   'asr: xfyun appears as empty group by default',
 );
+eq(
+  !!getAsrProviderType(ASR_GLADIA)?.multiInstance,
+  false,
+  'asr: gladia is singleton (brand-type)',
+);
+eq(
+  groupShape(groupInstancesByType([])).some(
+    (g) => g.id === ASR_GLADIA && g.insts.length === 0,
+  ),
+  true,
+  'asr: gladia appears as empty group by default',
+);
 
 // --- asrProvider: resolveAudioLimits (类型声明覆盖全局默认) ---
 const LIMIT_DEFAULTS = {
@@ -2484,6 +2561,11 @@ eq(
   resolveAudioLimits(getAsrProviderType(ASR_XFYUN), LIMIT_DEFAULTS),
   { maxUploadBytes: 48 * 1024 * 1024, maxChunkSeconds: 600 },
   'asr: xfyun declares 48MB byte cap (~3.3h mp3, clamps 5h duration limit)',
+);
+eq(
+  resolveAudioLimits(getAsrProviderType(ASR_GLADIA), LIMIT_DEFAULTS),
+  { maxUploadBytes: 28 * 1024 * 1024, maxChunkSeconds: 600 },
+  'asr: gladia declares 28MB byte cap (~2h mp3, clamps 135min duration limit)',
 );
 eq(
   resolveAudioLimits(getAsrProviderType(ASR_OPENAI_COMPATIBLE), LIMIT_DEFAULTS),
@@ -4060,6 +4142,256 @@ eq(
   { text: '', words: [], segments: [] },
   'xfyun extract: undefined -> safe empty',
 );
+
+// --- gladiaUtils: 常量（v2 端点路径） ---
+eq(GLADIA_DEFAULT_BASE, 'https://api.gladia.io', 'gladia: default base');
+eq(GLADIA_UPLOAD_PATH, '/v2/upload', 'gladia: upload path');
+eq(GLADIA_PRERECORDED_PATH, '/v2/pre-recorded', 'gladia: pre-recorded path');
+
+// --- gladiaUtils: normalizeGladiaBaseURL（空/非法回落官方，去误粘 /v2 后缀） ---
+eq(
+  normalizeGladiaBaseURL(undefined),
+  'https://api.gladia.io',
+  'gladia base: undefined -> default',
+);
+eq(
+  normalizeGladiaBaseURL('  '),
+  'https://api.gladia.io',
+  'gladia base: blank -> default',
+);
+eq(
+  normalizeGladiaBaseURL('not a url'),
+  'https://api.gladia.io',
+  'gladia base: invalid -> default',
+);
+eq(
+  normalizeGladiaBaseURL('ftp://x.example.com'),
+  'https://api.gladia.io',
+  'gladia base: non-http protocol -> default',
+);
+eq(
+  normalizeGladiaBaseURL('https://api.gladia.io/'),
+  'https://api.gladia.io',
+  'gladia base: trailing slash stripped',
+);
+eq(
+  normalizeGladiaBaseURL('https://api.gladia.io/v2'),
+  'https://api.gladia.io',
+  'gladia base: /v2 suffix stripped',
+);
+eq(
+  normalizeGladiaBaseURL('https://api.gladia.io/v2/pre-recorded'),
+  'https://api.gladia.io',
+  'gladia base: /v2/... suffix stripped',
+);
+eq(
+  normalizeGladiaBaseURL('https://proxy.example.com/gladia'),
+  'https://proxy.example.com/gladia',
+  'gladia base: proxy sub-path kept',
+);
+
+// --- gladiaUtils: normalizeGladiaModel（已知保留，未知/缺省回落 solaria-1） ---
+eq(normalizeGladiaModel('solaria-1'), 'solaria-1', 'gladia model: solaria-1');
+eq(normalizeGladiaModel('solaria-3'), 'solaria-3', 'gladia model: solaria-3');
+eq(
+  normalizeGladiaModel(' Solaria-3 '),
+  'solaria-3',
+  'gladia model: trims + case-insensitive',
+);
+eq(
+  normalizeGladiaModel(undefined),
+  'solaria-1',
+  'gladia model: undefined -> default',
+);
+eq(
+  normalizeGladiaModel('whisper-1'),
+  'solaria-1',
+  'gladia model: unknown -> default',
+);
+
+// --- gladiaUtils: resolveGladiaLanguage（auto 透传检测；支持清单守卫；主标签归一） ---
+eq(
+  resolveGladiaLanguage('auto'),
+  { kind: 'auto' },
+  'gladia lang: auto -> server detection',
+);
+eq(
+  resolveGladiaLanguage(undefined),
+  { kind: 'auto' },
+  'gladia lang: missing -> auto',
+);
+eq(resolveGladiaLanguage('zh'), { kind: 'ok', code: 'zh' }, 'gladia lang: zh');
+eq(
+  resolveGladiaLanguage('zh-CN'),
+  { kind: 'ok', code: 'zh' },
+  'gladia lang: zh-CN -> primary subtag zh',
+);
+eq(
+  resolveGladiaLanguage(' EN '),
+  { kind: 'ok', code: 'en' },
+  'gladia lang: trims + lowercases',
+);
+eq(
+  resolveGladiaLanguage('haw'),
+  { kind: 'ok', code: 'haw' },
+  'gladia lang: 3-letter haw supported',
+);
+eq(
+  resolveGladiaLanguage('yue'),
+  { kind: 'unsupported', code: 'yue' },
+  'gladia lang: Cantonese unsupported -> actionable error upstream',
+);
+
+// --- gladiaUtils: buildGladiaInitBody（明确语言传 language_config，auto 整体省略） ---
+eq(
+  buildGladiaInitBody({
+    audioUrl: 'https://api.gladia.io/file/abc',
+    model: 'solaria-1',
+    language: 'zh',
+  }),
+  {
+    audio_url: 'https://api.gladia.io/file/abc',
+    model: 'solaria-1',
+    language_config: { languages: ['zh'] },
+  },
+  'gladia init body: with language hint',
+);
+eq(
+  buildGladiaInitBody({
+    audioUrl: 'https://api.gladia.io/file/abc',
+    model: 'solaria-3',
+  }),
+  { audio_url: 'https://api.gladia.io/file/abc', model: 'solaria-3' },
+  'gladia init body: auto omits language_config',
+);
+
+// --- gladiaUtils: classifyGladiaStatus / isGladiaJobGone ---
+eq(classifyGladiaStatus(401), 'auth', 'gladia status: 401 auth');
+eq(classifyGladiaStatus(403), 'auth', 'gladia status: 403 auth');
+eq(classifyGladiaStatus(429), 'retriable', 'gladia status: 429 retriable');
+eq(classifyGladiaStatus(408), 'retriable', 'gladia status: 408 retriable');
+eq(classifyGladiaStatus(503), 'retriable', 'gladia status: 5xx retriable');
+eq(classifyGladiaStatus(400), 'fatal', 'gladia status: 400 fatal');
+eq(classifyGladiaStatus(404), 'fatal', 'gladia status: 404 fatal (job gone)');
+eq(isGladiaJobGone(404), true, 'gladia gone: 404');
+eq(isGladiaJobGone(400), false, 'gladia gone: 400 is not gone');
+
+// --- gladiaUtils: extractGladiaResult（实测形态：拉丁词自带前导空格、标点内联） ---
+{
+  const pollBody = {
+    id: '3aeb5b54-a9f3-4dc9-b988-cfd94fba207c',
+    status: 'done',
+    result: {
+      metadata: { audio_duration: 10.624, billing_time: 10.624 },
+      transcription: {
+        full_transcript: 'Speech recognition, 应用广泛。',
+        languages: ['en'],
+        utterances: [
+          {
+            start: 0.07,
+            end: 1.09,
+            language: 'en',
+            text: 'Speech recognition,',
+            words: [
+              { word: 'Speech', start: 0.068, end: 0.348, confidence: 0.85 },
+              {
+                word: ' recognition,',
+                start: 0.429,
+                end: 1.09,
+                confidence: 0.97,
+              },
+            ],
+          },
+          {
+            start: 1.41,
+            end: 2.4,
+            language: 'zh',
+            text: '应用广泛。',
+            words: [
+              { word: '应用', start: 1.41, end: 1.9, confidence: 0.96 },
+              { word: '广泛。', start: 1.95, end: 2.4, confidence: 0.98 },
+            ],
+          },
+        ],
+      },
+    },
+  };
+  eq(
+    extractGladiaResult(pollBody),
+    {
+      text: 'Speech recognition, 应用广泛。',
+      words: [
+        { word: 'Speech', start: 0.068, end: 0.348 },
+        { word: 'recognition,', start: 0.429, end: 1.09 },
+        { word: '应用', start: 1.41, end: 1.9 },
+        { word: '广泛。', start: 1.95, end: 2.4 },
+      ],
+      segments: [
+        { start: 0.07, end: 1.09, text: 'Speech recognition,' },
+        { start: 1.41, end: 2.4, text: '应用广泛。' },
+      ],
+      language: 'en',
+      duration: 10.624,
+    },
+    'gladia extract: words trimmed (leading space), utterances -> segments',
+  );
+}
+eq(
+  extractGladiaResult({ status: 'done', result: {} }),
+  {
+    text: '',
+    words: [],
+    segments: [],
+    language: undefined,
+    duration: undefined,
+  },
+  'gladia extract: missing transcription -> safe empty',
+);
+eq(
+  extractGladiaResult(undefined),
+  {
+    text: '',
+    words: [],
+    segments: [],
+    language: undefined,
+    duration: undefined,
+  },
+  'gladia extract: undefined -> safe empty',
+);
+{
+  // 词条时间缺失/空词被跳过；utterance 时间非法不产段级。
+  const broken = {
+    result: {
+      transcription: {
+        full_transcript: 'x',
+        languages: [],
+        utterances: [
+          {
+            start: Number.NaN,
+            end: 2,
+            text: 'x',
+            words: [
+              { word: '  ', start: 0, end: 1 },
+              { word: 'ok', start: 'bad', end: 1 },
+              { word: 'kept', start: 0.5, end: 1 },
+            ],
+          },
+        ],
+      },
+    },
+  };
+  eq(
+    extractGladiaResult(broken),
+    {
+      text: 'x',
+      words: [{ word: 'kept', start: 0.5, end: 1 }],
+      segments: [],
+      language: undefined,
+      duration: undefined,
+    },
+    'gladia extract: invalid words/utterance times skipped safely',
+  );
+}
 
 console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) {

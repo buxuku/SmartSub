@@ -57,6 +57,7 @@ export const ASR_VOLCENGINE = 'volcengine';
 export const ASR_TENCENT = 'tencent';
 export const ASR_ALIYUN = 'aliyun';
 export const ASR_XFYUN = 'xfyun';
+export const ASR_GLADIA = 'gladia';
 
 /**
  * 火山豆包极速版：官方音频上限 2h/100MB，但 base64 进 JSON 体膨胀 ×4/3 且整体驻留内存，
@@ -109,6 +110,22 @@ const XFYUN_MAX_UPLOAD_BYTES = 48 * 1024 * 1024;
  * - autominor：37 语种免切识别，需联系讯飞人工对接单独开通。
  */
 const XFYUN_LANGUAGE_TIERS = ['autodialect', 'autominor'];
+
+/**
+ * Gladia：官方双上限「1GB 且 ≤135 分钟」（标准档），引擎切片判定只看字节。
+ * 压缩产物 32kbps mp3 ≈0.24MB/min，若按 1GB 声明可装 ≈70h、必撞 135min 时长上限；
+ * 取 28MB ≈ 2h mp3 间接钳制时长（~11% 余量）。切片时长不声明回落全局 600s
+ * （WAV 切片 ≈18.4MB 达标）。若调整压缩码率需与腾讯/阿里/讯飞常量联动复核。
+ */
+const GLADIA_MAX_UPLOAD_BYTES = 28 * 1024 * 1024;
+
+/**
+ * Gladia「模型档位」（识别语言免切自动，任务原语言仅做上传前守卫）：
+ * - solaria-1（默认）：全语种档，100+ 语言（含 42 家独有）+ 自动检测 + code-switching；
+ * - solaria-3（2026-06 发布）：欧语实录特化档（英法德西意），嘈杂/多说话人实录更强，
+ *   干净朗读与小语种反不如 solaria-1，勿作默认。
+ */
+const GLADIA_MODELS = ['solaria-1', 'solaria-3'];
 
 export const ASR_PROVIDER_TYPES: AsrProviderType[] = [
   {
@@ -571,6 +588,76 @@ export const ASR_PROVIDER_TYPES: AsrProviderType[] = [
       },
       {
         // 异步订单制：单次 HTTP 超时（上传大文件比同步各家更久），默认放宽到 300s；
+        // 轮询节奏与总等待上限由 service 内部策略驱动，不受此值控制。
+        key: 'requestTimeoutSec',
+        label: 'asrRequestTimeout',
+        type: 'number',
+        required: false,
+        defaultValue: 300,
+        step: 10,
+        tips: 'asrRequestTimeoutTips',
+      },
+      {
+        key: 'concurrency',
+        label: 'asrConcurrency',
+        type: 'number',
+        required: false,
+        defaultValue: 4,
+        step: 1,
+        tips: 'asrConcurrencyTips',
+      },
+      {
+        key: 'requestInterval',
+        label: 'requestInterval',
+        type: 'number',
+        required: false,
+        defaultValue: 0,
+        step: 0.1,
+        tips: 'asrRequestIntervalTips',
+      },
+    ],
+  },
+  {
+    id: ASR_GLADIA,
+    name: 'Gladia',
+    isBuiltin: true,
+    icon: '🎧',
+    // 品牌型硬单例。异步任务制（上传→建任务→轮询），x-gladia-key 头鉴权、无签名。
+    // 1GB/135min 经 28MB 字节上限间接钳制（详见常量注释）。
+    audioLimits: {
+      maxUploadBytes: GLADIA_MAX_UPLOAD_BYTES,
+    },
+    fields: [
+      {
+        // app.gladia.io 控制台「API Keys」签发（免费档每月 10h，免费档音频会用于模型训练）。
+        key: 'apiKey',
+        label: 'API Key',
+        type: 'password',
+        required: true,
+        tips: 'asrGladiaApiKeyTips',
+        placeholder: 'phGladiaApiKey',
+      },
+      {
+        // 模型档位点选（识别语言免切自动；任务原语言仅上传前守卫，命中支持清单才上行）。
+        key: 'models',
+        label: 'asrModels',
+        type: 'select',
+        options: GLADIA_MODELS,
+        required: true,
+        defaultValue: 'solaria-1',
+        tips: 'asrModelsGladiaTips',
+      },
+      {
+        key: 'apiUrl',
+        label: 'Base url',
+        type: 'url',
+        required: false,
+        defaultValue: 'https://api.gladia.io',
+        tips: 'asrApiUrlGladiaTips',
+        placeholder: 'https://api.gladia.io',
+      },
+      {
+        // 异步任务制：单次 HTTP 超时（上传大文件比同步各家更久），默认放宽到 300s；
         // 轮询节奏与总等待上限由 service 内部策略驱动，不受此值控制。
         key: 'requestTimeoutSec',
         label: 'asrRequestTimeout',

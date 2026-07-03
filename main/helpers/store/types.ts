@@ -137,5 +137,10 @@ export type StoreType = {
     string,
     { orderId: string; signatureRandom: string; createdAt: number }
   >;
+  /**
+   * Gladia 进行中转写任务（跨会话续查，语义对齐 xfyunPendingOrders）：
+   * 键=`sha1(压缩音频):服务商实例id:模型:语言`；任务完结/失效即删，写入超 72h 惰性过期。
+   */
+  gladiaPendingJobs?: Record<string, { id: string; createdAt: number }>;
   [key: string]: any;
 };

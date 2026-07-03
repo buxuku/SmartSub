@@ -3,6 +3,7 @@ import {
   ASR_ALIYUN,
   ASR_DEEPGRAM,
   ASR_ELEVENLABS,
+  ASR_GLADIA,
   ASR_TENCENT,
   ASR_VOLCENGINE,
   ASR_XFYUN,
@@ -42,6 +43,11 @@ import {
   buildXfyunRandom,
   signXfyunRequest,
 } from './xfyunUtils';
+import {
+  GLADIA_PRERECORDED_PATH,
+  GLADIA_PROBE_JOB_ID,
+  normalizeGladiaBaseURL,
+} from './gladiaUtils';
 
 export interface AsrTestResult {
   ok: boolean;
@@ -105,6 +111,8 @@ async function readError(res: Response): Promise<string | undefined> {
  * - 阿里极速版：两段探测——CreateToken 验 AccessKey（失败即密钥/签名问题），再携 1s 静音 WAV
  *   POST FlashRecognizer 验 appkey 与开通状态（20000000/40270002 均通过；40000010 未开通商用、
  *   40020105/40020106 appkey 问题，均给可行动提示）。
+ * - Gladia：GET 固定不存在 job id 的结果端点（零成本——不上传、不建任务、不计费）→
+ *   有效 key 过鉴权后得 404（job 不存在），无效 key 得 401（"gladia user not found"）。
  * 失败时回传服务端 detail，前端直接展示（如「缺少 speech_to_text 权限」）。
  */
 export async function testAsrConnection(
@@ -179,6 +187,20 @@ export async function testAsrConnection(
       });
       // 有效 key → 400（无音频体）；无效 key → 401。
       if (res.ok || res.status === 400) return { ok: true };
+      return { ok: false, status: res.status, detail: await readError(res) };
+    }
+
+    if (provider?.type === ASR_GLADIA) {
+      const base = normalizeGladiaBaseURL(provider.apiUrl);
+      const res = await fetch(
+        `${base}${GLADIA_PRERECORDED_PATH}/${GLADIA_PROBE_JOB_ID}`,
+        {
+          headers: { 'x-gladia-key': apiKey },
+          signal: timeoutSignal(),
+        },
+      );
+      // 有效 key → 404（探针 job 不存在，鉴权已通过）；无效 key → 401。
+      if (res.ok || res.status === 404) return { ok: true };
       return { ok: false, status: res.status, detail: await readError(res) };
     }
 
