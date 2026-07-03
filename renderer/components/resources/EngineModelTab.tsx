@@ -1,6 +1,13 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'next-i18next';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   AlertDialog,
@@ -12,22 +19,39 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Trash2, X } from 'lucide-react';
+import { Plus, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from 'lib/utils';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import FasterWhisperPanel from '@/components/resources/engines/panels/FasterWhisperPanel';
 import SherpaEngineGroupPanel, {
   type SherpaFamilyKey,
 } from '@/components/resources/engines/SherpaEngineGroupPanel';
 import LocalCliPanel from '@/components/resources/engines/panels/LocalCliPanel';
 import BuiltinPanel from '@/components/resources/engines/panels/BuiltinPanel';
-import CloudAsrPanel from '@/components/resources/engines/panels/CloudAsrPanel';
+import CloudProviderPanel from '@/components/resources/engines/panels/CloudProviderPanel';
 import EngineIcon from '@/components/resources/engines/EngineIcon';
+import AsrProviderIcon from '@/components/resources/engines/AsrProviderIcon';
 import ModelLibrarySection from '@/components/resources/ModelLibrarySection';
 import { type DownloadSourceConfig } from '@/components/resources/engines/DownloadSourcePopover';
 import { resolveModelDownloadUrl } from 'lib/resolveModelDownloadUrl';
 import { useSherpaRuntime } from '@/components/resources/engines/useSherpaRuntime';
 import useLocalStorageState from 'hooks/useLocalStorageState';
+import useAsrProviders from 'hooks/useAsrProviders';
+import {
+  LOCAL_ENGINE_VIEWS,
+  isEngineViewId,
+  type EngineView,
+  type LocalEngineView,
+} from 'lib/engineViews';
 import {
   readPersistedDownloadSource,
   persistDownloadSource,
@@ -40,30 +64,19 @@ import type {
   TranscriptionEngine,
 } from '../../../types/engine';
 import {
-  isAsrProviderConfigured,
-  type AsrProvider,
+  ASR_OPENAI_COMPATIBLE,
+  buildCloudViews,
+  cloudCustomViewId,
+  cloudViewTypeId,
+  resolveLegacyCloudView,
 } from '../../../types/asrProvider';
 import { ISystemInfo } from '../../../types/types';
 
 type EngineStatuses = Partial<Record<TranscriptionEngine, EngineStatus>>;
 type StatusTone = 'ready' | 'pending' | 'downloading' | 'error';
 
-/**
- * 左栏「视图」单位：多数与真实引擎 id 一一对应；'sherpa' 是把同源（共用 sherpa-onnx
- * 运行库）的 FunASR · Qwen · FireRed 合并为一项展示（仅 UI 合并，后端引擎 id 不变）。
- */
-type EngineView = TranscriptionEngine | 'sherpa';
-
 /** sherpa 展示组覆盖的真实引擎 id（顺序即组内分区顺序）。 */
 const SHERPA_FAMILIES: SherpaFamilyKey[] = ['funasr', 'qwen', 'fireRedAsr'];
-
-const ENGINE_VIEWS: EngineView[] = [
-  'builtin',
-  'fasterWhisper',
-  'sherpa',
-  'localCli',
-  'cloud',
-];
 
 function isQueueBusy(status: string | undefined): boolean {
   return status === 'running' || status === 'paused' || status === 'cancelling';
@@ -86,8 +99,9 @@ function StatusDot({ tone, label }: { tone: StatusTone; label?: string }) {
 }
 
 /**
- * 统一「引擎与模型」主从双栏视图：左栏引擎列表（状态点，无启用开关），
- * 右栏 = 选中引擎的运行时管理（内联各引擎面板，无弹窗）+ 该引擎模型清单。
+ * 统一「引擎与模型」主从双栏视图：左栏分「本地引擎」「云端听写」两组
+ * （本地 = 引擎列表；云 = 每个服务商类型一个平级入口，数据驱动自
+ * ASR_PROVIDER_TYPES），右栏 = 选中视图的运行时管理 / 服务商配置面板。
  * 选中态为本地 state，不写全局；不提供"设为当前/启用"。
  */
 const EngineModelTab: React.FC = () => {
@@ -95,12 +109,11 @@ const EngineModelTab: React.FC = () => {
   const { t: commonT } = useTranslation('common');
 
   // 记住上次选中的视图，避免每次进入页面都跳回 builtin。
-  // 用新 key（engineModelSelectedView）：旧 key 可能存了 funasr/qwen/fireRedAsr，
-  // 现已并入 'sherpa' 组，换 key 自然回落默认，避免读到失效选项。
+  // 校验宽进（接受 cloud:* 与历史遗留 'cloud'），实例加载后统一收敛（见下方 effect）。
   const [selectedView, setSelectedView] = useLocalStorageState<EngineView>(
     'engineModelSelectedView',
     'builtin',
-    (v) => (ENGINE_VIEWS as string[]).includes(v as string),
+    isEngineViewId,
   );
 
   // FunASR 与 Qwen 共用的 sherpa-onnx 运行库状态（上提到此常驻组件，切换引擎不丢进度）。
@@ -132,8 +145,12 @@ const EngineModelTab: React.FC = () => {
   const [funasrModelsReady, setFunasrModelsReady] = useState(false);
   const [qwenModelsReady, setQwenModelsReady] = useState(false);
   const [fireRedModelsReady, setFireRedModelsReady] = useState(false);
-  // 云端听写：已配置实例存在即就绪（面板内变更经 onProvidersChange 即时回传）。
-  const [asrProviders, setAsrProviders] = useState<AsrProvider[]>([]);
+  // 云端听写实例的单一事实源：左栏状态点/计数与右栏面板共用（见 useAsrProviders）。
+  const asr = useAsrProviders();
+  // 「添加自定义」对话框（云组末尾入口）：命名 + 可选 Base URL，新建 OpenAI 兼容实例。
+  const [addCustomOpen, setAddCustomOpen] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customApiUrl, setCustomApiUrl] = useState('');
   const [binarySource, setBinarySource] = useState<DownloadSource>(() =>
     typeof window === 'undefined' ? 'github' : readPersistedDownloadSource(),
   );
@@ -200,9 +217,6 @@ const EngineModelTab: React.FC = () => {
       if (frr?.success) {
         setFireRedModelsReady(!!frr.ready);
       }
-
-      const asr = await window?.ipc?.invoke('getAsrProviders');
-      if (Array.isArray(asr)) setAsrProviders(asr);
     } catch (error) {
       console.error('Failed to refresh engine status:', error);
     }
@@ -459,7 +473,48 @@ const EngineModelTab: React.FC = () => {
     };
   });
   const sherpaAnyReady = sherpaFamilies.some((f) => f.modelsReady);
-  const cloudAnyReady = asrProviders.some((p) => isAsrProviderConfigured(p));
+
+  // 左栏「云端听写」组条目清单（品牌单例 + 协议预设槽位 + 自定义实例 + 孤儿兜底）。
+  const cloudViews = useMemo(
+    () => buildCloudViews(asr.providers),
+    [asr.providers],
+  );
+
+  /**
+   * 视图归一：历史遗留 'cloud'（旧单一云入口）映射到首个已配置条目；
+   * cloud:* 命中条目清单则为云视图；其余按本地视图（未知值回落 builtin）。
+   */
+  const selectedRaw = selectedView as string;
+  const activeCloudView = (() => {
+    if (selectedRaw === 'cloud') {
+      const vid = resolveLegacyCloudView(asr.providers);
+      return cloudViews.find((v) => v.viewId === vid) ?? null;
+    }
+    return cloudViews.find((v) => v.viewId === selectedRaw) ?? null;
+  })();
+  const effectiveLocalView: LocalEngineView = (
+    LOCAL_ENGINE_VIEWS as readonly string[]
+  ).includes(selectedRaw)
+    ? (selectedRaw as LocalEngineView)
+    : 'builtin';
+
+  /**
+   * 实例加载后持续收敛选中态：legacy 'cloud' 写回新格式；失效的 cloud:* 视图
+   * （自定义条目被删 / 类型下线且无孤儿实例 / 旧格式 id）优先回落同类型首个
+   * 条目（如 OpenAI 预设槽位），无同类条目再回落 builtin。
+   */
+  useEffect(() => {
+    if (!asr.loaded) return;
+    const raw = selectedView as string;
+    if (raw === 'cloud') {
+      setSelectedView(resolveLegacyCloudView(asr.providers) as EngineView);
+      return;
+    }
+    const typeId = cloudViewTypeId(raw);
+    if (!typeId || cloudViews.some((v) => v.viewId === raw)) return;
+    const sameType = cloudViews.find((v) => v.type.id === typeId);
+    setSelectedView((sameType?.viewId ?? 'builtin') as EngineView);
+  }, [asr.loaded, asr.providers, cloudViews, selectedView, setSelectedView]);
 
   const readyBadge = (
     <Badge variant="outline" className="border-success/40 text-success">
@@ -467,7 +522,7 @@ const EngineModelTab: React.FC = () => {
     </Badge>
   );
 
-  const renderEngineBadge = (view: EngineView) => {
+  const renderEngineBadge = (view: LocalEngineView) => {
     if (view === 'sherpa') {
       // 组徽标：任一族就绪即视为可用；否则提示去下载模型（运行库已内置，无"未安装"态）。
       return sherpaAnyReady ? (
@@ -475,16 +530,6 @@ const EngineModelTab: React.FC = () => {
       ) : (
         <Badge variant="outline" className="border-primary/40 text-primary">
           {t('engines.sherpa.needsModels')}
-        </Badge>
-      );
-    }
-    if (view === 'cloud') {
-      // 云引擎无运行时/模型下载：有已配置实例即就绪，否则提示去添加实例。
-      return cloudAnyReady ? (
-        readyBadge
-      ) : (
-        <Badge variant="outline" className="border-primary/40 text-primary">
-          {t('engines.cloud.needsConfig')}
         </Badge>
       );
     }
@@ -536,9 +581,8 @@ const EngineModelTab: React.FC = () => {
     );
   };
 
-  const engineTone = (view: EngineView): StatusTone => {
+  const engineTone = (view: LocalEngineView): StatusTone => {
     if (view === 'sherpa') return sherpaAnyReady ? 'ready' : 'pending';
-    if (view === 'cloud') return cloudAnyReady ? 'ready' : 'pending';
     if (view === 'fasterWhisper') {
       if (isDownloading || showVerifying) return 'downloading';
       if (fasterInstalled) return 'ready';
@@ -550,11 +594,11 @@ const EngineModelTab: React.FC = () => {
     return (systemInfo.modelsInstalled?.length ?? 0) > 0 ? 'ready' : 'pending';
   };
 
-  const engineName = (view: EngineView) => t(`engines.${view}.name`);
+  const engineName = (view: LocalEngineView) => t(`engines.${view}.name`);
 
   // 引擎特色标签：sherpa 组展示 FunASR / Qwen3-ASR / FireRedASR 三平台，让用户一眼看出
   // 该引擎同时支持这三个平台；其余引擎展示能力关键词（如 NVIDIA / 高速 / Apple 芯片）。
-  const engineTags = (view: EngineView): string[] => {
+  const engineTags = (view: LocalEngineView): string[] => {
     const raw = t(`engines.${view}.tags`, { returnObjects: true });
     return Array.isArray(raw) ? (raw as string[]) : [];
   };
@@ -624,11 +668,38 @@ const EngineModelTab: React.FC = () => {
     onComputeTypeChange: handleComputeTypeChange,
   };
 
+  // 新建自定义 OpenAI 兼容实例并跳转到其条目（名称必填，Base URL 可选）。
+  const handleAddCustom = () => {
+    const id = asr.addCustomInstance(
+      ASR_OPENAI_COMPATIBLE,
+      customName,
+      customApiUrl,
+    );
+    setAddCustomOpen(false);
+    setCustomName('');
+    setCustomApiUrl('');
+    if (id) {
+      setSelectedView(
+        cloudCustomViewId(ASR_OPENAI_COMPATIBLE, id) as EngineView,
+      );
+    }
+  };
+
   const renderRuntimePanel = () => {
-    if (selectedView === 'fasterWhisper') {
+    if (activeCloudView) {
+      return (
+        <CloudProviderPanel
+          view={activeCloudView}
+          onUpdateField={asr.updateInstanceField}
+          onMaterialize={asr.addInstance}
+          onRemove={asr.removeInstance}
+        />
+      );
+    }
+    if (effectiveLocalView === 'fasterWhisper') {
       return <FasterWhisperPanel {...fasterWhisperPanelProps} />;
     }
-    if (selectedView === 'sherpa') {
+    if (effectiveLocalView === 'sherpa') {
       return (
         <SherpaEngineGroupPanel
           runtime={sherpa}
@@ -640,7 +711,7 @@ const EngineModelTab: React.FC = () => {
         />
       );
     }
-    if (selectedView === 'localCli') {
+    if (effectiveLocalView === 'localCli') {
       return (
         <LocalCliPanel
           whisperCommand={whisperCommand}
@@ -651,9 +722,6 @@ const EngineModelTab: React.FC = () => {
         />
       );
     }
-    if (selectedView === 'cloud') {
-      return <CloudAsrPanel onProvidersChange={setAsrProviders} />;
-    }
     return <BuiltinPanel />;
   };
 
@@ -661,85 +729,160 @@ const EngineModelTab: React.FC = () => {
     <TooltipProvider delayDuration={150}>
       {/* 左栏固定、仅右栏滚动：根容器撑满父高，左 nav 整列常驻，右栏独立纵向滚动。 */}
       <div className="flex h-full min-h-0 flex-col gap-4 md:flex-row">
-        {/* 左栏：引擎列表（状态点，无启用开关）——md 下整列固定，不随右栏滚动 */}
-        <nav className="flex shrink-0 gap-1 overflow-x-auto md:w-56 md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:pr-2">
-          {ENGINE_VIEWS.map((id) => {
-            const active = selectedView === id;
-            const tone = engineTone(id);
-            const tags = engineTags(id);
-            return (
-              <button
-                key={id}
-                type="button"
-                aria-current={active ? 'true' : undefined}
-                onClick={() => setSelectedView(id)}
-                className={cn(
-                  'flex items-start gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                  'shrink-0 md:w-full',
-                  active
-                    ? 'bg-primary/10 font-medium text-primary ring-1 ring-inset ring-primary/20'
-                    : 'text-foreground hover:bg-muted/60',
-                )}
-              >
-                <EngineIcon engine={id} className="mt-0.5 h-4 w-4 shrink-0" />
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="flex items-center gap-2">
-                    <span className="min-w-0 truncate">{engineName(id)}</span>
-                    <span className="ml-auto flex shrink-0">
-                      <StatusDot tone={tone} label={statusLabel(tone)} />
-                    </span>
-                  </span>
-                  {tags.length > 0 && (
-                    <span className="mt-1 flex flex-wrap gap-1">
-                      {tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className={cn(
-                            'rounded px-1.5 py-0.5 text-[10px] font-normal leading-none',
-                            active
-                              ? 'bg-primary/15 text-primary'
-                              : 'bg-muted text-muted-foreground',
-                          )}
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </span>
+        {/* 左栏两组：本地引擎（两行样式 + tags）/ 云端听写（每服务商一个紧凑入口）。
+            小屏退化为横向滚动，组标题隐藏、条目顺序不变。 */}
+        <nav className="flex shrink-0 gap-2 overflow-x-auto md:w-56 md:flex-col md:gap-3 md:overflow-x-visible md:overflow-y-auto md:border-r md:pr-2">
+          <div className="flex shrink-0 gap-1 md:flex-col">
+            <div className="hidden px-3 pb-1 text-xs font-medium text-muted-foreground md:block">
+              {t('engines.groups.local')}
+            </div>
+            {LOCAL_ENGINE_VIEWS.map((id) => {
+              const active = !activeCloudView && effectiveLocalView === id;
+              const tone = engineTone(id);
+              const tags = engineTags(id);
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  aria-current={active ? 'true' : undefined}
+                  onClick={() => setSelectedView(id)}
+                  className={cn(
+                    'flex items-start gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
+                    'shrink-0 md:w-full',
+                    active
+                      ? 'bg-primary/10 font-medium text-primary ring-1 ring-inset ring-primary/20'
+                      : 'text-foreground hover:bg-muted/60',
                   )}
-                </span>
-              </button>
-            );
-          })}
+                >
+                  <EngineIcon engine={id} className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="flex items-center gap-2">
+                      <span className="min-w-0 truncate">{engineName(id)}</span>
+                      <span className="ml-auto flex shrink-0">
+                        <StatusDot tone={tone} label={statusLabel(tone)} />
+                      </span>
+                    </span>
+                    {tags.length > 0 && (
+                      <span className="mt-1 flex flex-wrap gap-1">
+                        {tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className={cn(
+                              'rounded px-1.5 py-0.5 text-[10px] font-normal leading-none',
+                              active
+                                ? 'bg-primary/15 text-primary'
+                                : 'bg-muted text-muted-foreground',
+                            )}
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex shrink-0 gap-1 md:flex-col">
+            <div className="hidden px-3 pb-1 text-xs font-medium text-muted-foreground md:block">
+              {t('engines.groups.cloud')}
+            </div>
+            {cloudViews.map((v) => {
+              const active = activeCloudView?.viewId === v.viewId;
+              const tone: StatusTone = v.configured ? 'ready' : 'pending';
+              return (
+                <button
+                  key={v.viewId}
+                  type="button"
+                  aria-current={active ? 'true' : undefined}
+                  onClick={() => setSelectedView(v.viewId as EngineView)}
+                  className={cn(
+                    'flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors',
+                    'shrink-0 md:w-full',
+                    active
+                      ? 'bg-primary/10 font-medium text-primary ring-1 ring-inset ring-primary/20'
+                      : 'text-foreground hover:bg-muted/60',
+                  )}
+                >
+                  <AsrProviderIcon
+                    type={{ icon: v.icon, iconImg: v.iconImg }}
+                  />
+                  <span className="min-w-0 flex-1 truncate" title={v.label}>
+                    {v.label}
+                  </span>
+                  <StatusDot tone={tone} label={statusLabel(tone)} />
+                </button>
+              );
+            })}
+            {/* 固定在云组末尾的「添加自定义」：接入任意 OpenAI 兼容端点 */}
+            <button
+              type="button"
+              onClick={() => setAddCustomOpen(true)}
+              className={cn(
+                'flex items-center gap-2 rounded-lg border border-dashed border-input px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
+                'shrink-0 md:w-full',
+              )}
+            >
+              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
+                <Plus className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1 truncate">
+                {t('cloudAsr.addCustom')}
+              </span>
+            </button>
+          </div>
         </nav>
 
-        {/* 右栏：选中引擎运行时 + 模型清单（独立纵向滚动） */}
+        {/* 右栏：选中引擎运行时 / 云服务商配置 + 模型清单（独立纵向滚动） */}
         <div className="min-w-0 flex-1 space-y-4 overflow-y-auto pb-4 md:pl-1">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
             <div className="min-w-0">
               <h2 className="text-lg font-semibold">
-                {engineName(selectedView)}
+                {activeCloudView
+                  ? activeCloudView.kind === 'brand'
+                    ? activeCloudView.type.name
+                    : activeCloudView.label
+                  : engineName(effectiveLocalView)}
               </h2>
-              {selectedView === 'sherpa' && (
+              {/* 预设槽位/自定义条目以类型全名作副标题（标明协议归属） */}
+              {activeCloudView &&
+                (activeCloudView.kind === 'preset' ||
+                  activeCloudView.kind === 'custom') && (
+                  <p className="text-xs text-muted-foreground">
+                    {activeCloudView.type.name}
+                  </p>
+                )}
+              {!activeCloudView && effectiveLocalView === 'sherpa' && (
                 <p className="text-xs text-muted-foreground">
                   {t('engines.sherpa.subtitle')}
                 </p>
               )}
-              {selectedView === 'cloud' && (
-                <p className="text-xs text-muted-foreground">
-                  {t('engines.cloud.subtitle')}
-                </p>
-              )}
             </div>
-            {renderEngineBadge(selectedView)}
+            {activeCloudView ? (
+              activeCloudView.configured ? (
+                readyBadge
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="border-primary/40 text-primary"
+                >
+                  {t('engines.cloud.notConfigured')}
+                </Badge>
+              )
+            ) : (
+              renderEngineBadge(effectiveLocalView)
+            )}
           </div>
 
           {renderRuntimePanel()}
 
-          {/* sherpa 组的模型清单由组面板内联渲染；cloud 无本地模型清单（模型在实例内配置）。 */}
-          {selectedView !== 'sherpa' && selectedView !== 'cloud' && (
+          {/* sherpa 组的模型清单由组面板内联渲染；云服务商无本地模型清单（模型在面板内配置）。 */}
+          {!activeCloudView && effectiveLocalView !== 'sherpa' && (
             <div className="border-t pt-4">
               <ModelLibrarySection
-                engine={selectedView}
+                engine={effectiveLocalView}
                 systemInfo={systemInfo}
                 systemInfoLoaded={systemInfoLoaded}
                 globalDownloading={globalDownloading}
@@ -749,6 +892,66 @@ const EngineModelTab: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* 添加自定义 OpenAI 兼容实例 */}
+      <Dialog open={addCustomOpen} onOpenChange={setAddCustomOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>{t('cloudAsr.addCustom')}</DialogTitle>
+            <DialogDescription>{t('cloudAsr.addCustomDesc')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label htmlFor="asr-custom-name" className="text-sm font-medium">
+                {t('cloudAsr.instanceName')}
+                <span className="text-destructive"> *</span>
+              </label>
+              <Input
+                id="asr-custom-name"
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && customName.trim()) handleAddCustom();
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="asr-custom-url" className="text-sm font-medium">
+                {t('cloudAsr.baseUrlOptional')}
+              </label>
+              <Input
+                id="asr-custom-url"
+                value={customApiUrl}
+                onChange={(e) => setCustomApiUrl(e.target.value)}
+                placeholder="https://api.openai.com/v1"
+                className="font-mono"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => {
+                setAddCustomOpen(false);
+                setCustomName('');
+                setCustomApiUrl('');
+              }}
+            >
+              <X className="h-4 w-4" />
+              {commonT('cancel')}
+            </Button>
+            <Button
+              className="gap-1.5"
+              disabled={!customName.trim()}
+              onClick={handleAddCustom}
+            >
+              <Plus className="h-4 w-4" />
+              {t('cloudAsr.addCustom')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog
         open={showUninstallConfirm}

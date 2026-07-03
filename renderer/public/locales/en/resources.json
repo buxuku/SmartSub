@@ -271,38 +271,30 @@
       "commandSaveFailed": "Save failed"
     },
     "cloud": {
-      "name": "Cloud ASR",
-      "subtitle": "OpenAI-compatible · ElevenLabs · Deepgram · Doubao · Tencent · Alibaba",
-      "desc": "Transcribe via online ASR services. No local model or GPU needed — audio is uploaded to the endpoint you configure. Supports multiple providers: OpenAI-compatible (whisper-1, gpt-4o-transcribe, …), ElevenLabs Scribe, Deepgram, Volcengine Doubao, Tencent Cloud, and Alibaba Cloud, each with multiple instances. Great as a fallback or for machines that can't run local engines.",
-      "scenario": "Best for: no GPU / quick setup / offloading to the cloud",
-      "tags": [
-        "OpenAI Compatible",
-        "ElevenLabs",
-        "Deepgram",
-        "Doubao",
-        "Tencent",
-        "Alibaba"
-      ],
-      "needsConfig": "Add an instance"
+      "notConfigured": "Not configured"
+    },
+    "groups": {
+      "local": "Local engines",
+      "cloud": "Cloud ASR"
     }
   },
   "cloudAsr": {
-    "intro": "OpenAI-compatible supports multiple instances with one-click presets for OpenAI, Groq, and SiliconFlow; ElevenLabs, Deepgram, Volcengine Doubao, Tencent Cloud, and Alibaba Cloud each take a single configuration. Fill in credentials to transcribe; audio is uploaded to the endpoint you configure.",
-    "addInstance": "Add instance",
-    "configure": "Configure",
-    "customPreset": "Custom",
-    "newInstanceName": "OpenAI Compatible",
-    "empty": "No cloud instances yet. Add one to transcribe via an online ASR service.",
-    "typeEmpty": "No instances yet",
-    "configured": "Ready",
-    "instanceName": "Instance name",
+    "intro": "Audio is uploaded to the endpoint you configure during transcription; credentials are stored locally only.",
+    "addCustom": "Add custom",
+    "addCustomDesc": "Connect any OpenAI-compatible transcription endpoint (/audio/transcriptions), such as a self-hosted service or proxy.",
+    "baseUrlOptional": "Base URL (optional, can be set later)",
+    "clearConfig": "Clear configuration",
+    "clearConfigTitle": "Clear configuration",
+    "clearConfigDesc": "This removes the saved credentials and settings for \"{{name}}\" and resets it to unconfigured. This cannot be undone.",
+    "orphanHint": "This provider type is no longer supported. The entries below are legacy configurations — view or remove only.",
+    "instanceName": "Name",
     "testConnection": "Test connection",
     "testSuccess": "Connection OK",
     "testFailed": "Connection failed. Check the Base URL and API key.",
     "testFailedStatus": "Connection failed (HTTP {{status}}). Check the Base URL and API key.",
     "testNeedsConfig": "Enter Base URL and API key first.",
-    "removeTitle": "Remove instance",
-    "removeDesc": "Remove cloud ASR instance \"{{name}}\"? This cannot be undone.",
+    "removeTitle": "Remove configuration",
+    "removeDesc": "Remove cloud ASR configuration \"{{name}}\"? This cannot be undone.",
     "modelsAddHint": "Type a model id, press Enter to add"
   },
   "asrApiUrlTips": "Base URL of an OpenAI-compatible endpoint, e.g. https://api.openai.com/v1",

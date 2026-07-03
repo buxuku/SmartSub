@@ -271,38 +271,30 @@
       "commandSaveFailed": "保存失败"
     },
     "cloud": {
-      "name": "云端听写",
-      "subtitle": "OpenAI 兼容 · ElevenLabs · Deepgram · 豆包 · 腾讯云 · 阿里云",
-      "desc": "调用在线 ASR 服务转写，无需本地模型或 GPU——音频会上传到你配置的服务端点。支持 OpenAI 兼容（whisper-1、gpt-4o-transcribe 等）、ElevenLabs Scribe、Deepgram、火山引擎豆包、腾讯云、阿里云 等多家服务商，可各配置多个实例。适合无 GPU 的机器，或作为本地引擎的补充/兜底。",
-      "scenario": "适合：无 GPU / 快速上手 / 转写交给云端",
-      "tags": [
-        "OpenAI 兼容",
-        "ElevenLabs",
-        "Deepgram",
-        "豆包",
-        "腾讯云",
-        "阿里云"
-      ],
-      "needsConfig": "去添加实例"
+      "notConfigured": "未配置"
+    },
+    "groups": {
+      "local": "本地引擎",
+      "cloud": "云端听写"
     }
   },
   "cloudAsr": {
-    "intro": "OpenAI 兼容可添加多个实例，并从 OpenAI、Groq、硅基流动 等预设一键预填；ElevenLabs、Deepgram、火山引擎豆包、腾讯云、阿里云 各配置一个即可。填入凭据后即可转写；转写时音频会上传到你配置的服务端点。",
-    "addInstance": "添加实例",
-    "configure": "配置",
-    "customPreset": "自定义",
-    "newInstanceName": "OpenAI 兼容",
-    "empty": "还没有云实例。添加一个即可通过在线 ASR 服务转写。",
-    "typeEmpty": "还没有实例",
-    "configured": "已就绪",
-    "instanceName": "实例名称",
+    "intro": "转写时音频会上传到你配置的服务端点；凭据仅保存在本地。",
+    "addCustom": "添加自定义",
+    "addCustomDesc": "接入任意 OpenAI 兼容的转写端点（/audio/transcriptions），如自建服务或中转站。",
+    "baseUrlOptional": "Base URL（可选，稍后也可填写）",
+    "clearConfig": "清除配置",
+    "clearConfigTitle": "清除配置",
+    "clearConfigDesc": "将删除「{{name}}」已保存的凭据与设置，状态回到未配置。此操作不可撤销。",
+    "orphanHint": "该服务商类型已不再受支持。以下为历史配置，仅可查看或删除。",
+    "instanceName": "名称",
     "testConnection": "测试连接",
     "testSuccess": "连接正常",
     "testFailed": "连接失败，请检查 Base URL 与 API Key。",
     "testFailedStatus": "连接失败（HTTP {{status}}），请检查 Base URL 与 API Key。",
     "testNeedsConfig": "请先填写 Base URL 与 API Key。",
-    "removeTitle": "删除实例",
-    "removeDesc": "确定删除云端听写实例「{{name}}」？此操作不可撤销。",
+    "removeTitle": "删除配置",
+    "removeDesc": "确定删除云端听写配置「{{name}}」？此操作不可撤销。",
     "modelsAddHint": "输入模型 id，回车添加"
   },
   "asrApiUrlTips": "OpenAI 兼容端点的 Base URL，例如 https://api.openai.com/v1",

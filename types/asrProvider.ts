@@ -26,6 +26,8 @@ export type AsrAudioLimits = {
 export type AsrProviderType = {
   id: string;
   name: string;
+  /** 侧栏等窄空间用的品牌短名（如「腾讯云」）；缺省回落 name。 */
+  shortName?: string;
   fields: AsrProviderField[];
   isBuiltin?: boolean;
   icon?: string;
@@ -46,6 +48,11 @@ export type AsrProvider = {
   id: string;
   name: string;
   type: string;
+  /**
+   * 来源预设 id（如 'openai' / 'groq'）：由预设侧栏槽位物化的实例带此标记，
+   * 槽位绑定不随 URL 改动漂移；自定义实例与历史实例无此字段（后者按 URL 认领）。
+   */
+  presetId?: string;
   [key: string]: any;
 };
 
@@ -194,6 +201,7 @@ export const ASR_PROVIDER_TYPES: AsrProviderType[] = [
   {
     id: ASR_ELEVENLABS,
     name: 'ElevenLabs Scribe',
+    shortName: 'ElevenLabs',
     isBuiltin: true,
     icon: '🗣️',
     fields: [
@@ -318,6 +326,7 @@ export const ASR_PROVIDER_TYPES: AsrProviderType[] = [
   {
     id: ASR_VOLCENGINE,
     name: '火山引擎 豆包听写',
+    shortName: '豆包听写',
     isBuiltin: true,
     icon: '🌋',
     iconImg: '/images/providers/volcengine-color.svg',
@@ -387,6 +396,7 @@ export const ASR_PROVIDER_TYPES: AsrProviderType[] = [
   {
     id: ASR_TENCENT,
     name: '腾讯云 录音识别极速版',
+    shortName: '腾讯云',
     isBuiltin: true,
     icon: '🐧',
     iconImg: '/images/providers/tencentcloud-color.svg',
@@ -463,6 +473,7 @@ export const ASR_PROVIDER_TYPES: AsrProviderType[] = [
   {
     id: ASR_ALIYUN,
     name: '阿里云 录音识别极速版',
+    shortName: '阿里云',
     isBuiltin: true,
     icon: '☁️',
     iconImg: '/images/providers/alibabacloud.svg',
@@ -541,6 +552,7 @@ export const ASR_PROVIDER_TYPES: AsrProviderType[] = [
   {
     id: ASR_XFYUN,
     name: '讯飞 录音文件转写大模型',
+    shortName: '讯飞听写',
     isBuiltin: true,
     icon: '🎤',
     iconImg: '/images/providers/spark-color.svg',
@@ -796,32 +808,168 @@ export function buildInstanceFromPreset(
   return instance;
 }
 
-/** 一个「服务商类型分区」：类型定义 + 该类型下的实例。 */
-export interface AsrProviderTypeGroup {
-  type: AsrProviderType;
-  instances: AsrProvider[];
+/** 归一化端点 URL 供预设匹配：去空白、去尾斜杠、小写。 */
+function normalizeEndpoint(url: unknown): string {
+  return String(url ?? '')
+    .trim()
+    .replace(/\/+$/, '')
+    .toLowerCase();
 }
 
 /**
- * 把实例按服务商类型分区（供配置面板按类型分区呈现）。
- * - 已知类型（`types`，默认 `ASR_PROVIDER_TYPES`）**按其顺序**各成一组，无实例也保留（空组），
- *   使「支持哪些服务商」自解释；
- * - `type` 不在已知清单中的实例（如旧类型被移除）按其原始 `type` 兜底成组、追加在末尾，
- *   name 回落为原始 type id、`fields` 为空——避免这些实例从 UI 消失、无法查看/删除。
- * 纯函数（无 React / electron），便于 test:engines 单测。
+ * 按实例 `apiUrl` 反查其来源预设（实例行借此展示预设图标/身份）：
+ * 与某预设 `values.apiUrl` 归一化相等即命中；自定义或改过 URL 的实例返回 undefined。
  */
-export function groupInstancesByType(
+export function matchAsrPreset(
+  instance: AsrProvider,
+  presets: AsrProviderPreset[] = getAsrPresetsForType(instance.type),
+): AsrProviderPreset | undefined {
+  const url = normalizeEndpoint(instance.apiUrl);
+  if (!url) return undefined;
+  return presets.find((p) => normalizeEndpoint(p.values.apiUrl) === url);
+}
+
+/**
+ * 实例去重命名：`base` 未被占用则原样返回，否则追加序号
+ * （`OpenAI` → `OpenAI 2` → `OpenAI 3`…），避免同预设多次添加得到无法区分的同名实例。
+ */
+export function nextInstanceName(
+  existing: Pick<AsrProvider, 'name'>[] | undefined,
+  base: string,
+): string {
+  const names = new Set((existing ?? []).map((p) => p.name));
+  if (!names.has(base)) return base;
+  let n = 2;
+  while (names.has(`${base} ${n}`)) n += 1;
+  return `${base} ${n}`;
+}
+
+// ── 左栏「云端听写」分组导航 ────────────────────────────────────────────────
+//
+// 每个条目 = 一张可直接填写的表单（零实例管理概念）：
+// - 品牌型类型（ElevenLabs / 腾讯云 …）→ 一个条目；
+// - 协议型类型（OpenAI 兼容）→ **每个预设一个固定槽位条目**（OpenAI / Groq / 硅基
+//   流动，选中即表单，同品牌型），外加用户「添加自定义」产生的逐实例条目；
+// - 类型下线的孤儿实例 → 按类型兜底一个条目（可查可删）。
+
+/** 云视图 id 前缀：左栏云入口的视图 id 形如 `cloud:<typeId>[…]`。 */
+export const CLOUD_VIEW_PREFIX = 'cloud:';
+
+/** 品牌型/孤儿类型条目的视图 id。 */
+export function cloudViewId(typeId: string): string {
+  return `${CLOUD_VIEW_PREFIX}${typeId}`;
+}
+
+/** 协议型预设槽位条目的视图 id：`cloud:<typeId>:<presetId>`。 */
+export function cloudPresetViewId(typeId: string, presetId: string): string {
+  return `${CLOUD_VIEW_PREFIX}${typeId}:${presetId}`;
+}
+
+/** 协议型自定义实例条目的视图 id：`cloud:<typeId>:i:<instanceId>`。 */
+export function cloudCustomViewId(typeId: string, instanceId: string): string {
+  return `${CLOUD_VIEW_PREFIX}${typeId}:i:${instanceId}`;
+}
+
+/** 从任意云视图 id 提取类型 id（首段）；非云视图返回 null。 */
+export function cloudViewTypeId(viewId: string | undefined): string | null {
+  if (!viewId || !viewId.startsWith(CLOUD_VIEW_PREFIX)) return null;
+  const typeId = viewId.slice(CLOUD_VIEW_PREFIX.length).split(':')[0];
+  return typeId || null;
+}
+
+/** 左栏云组的一个条目（一条目 = 一张表单）。 */
+export interface CloudEngineView {
+  viewId: string;
+  /** 条目形态：品牌单例 / 协议预设槽位 / 协议自定义实例 / 孤儿类型。 */
+  kind: 'brand' | 'preset' | 'custom' | 'orphan';
+  type: AsrProviderType;
+  /** 侧栏显示名（brand=短名；preset=预设名；custom=实例名；orphan=类型 id）。 */
+  label: string;
+  icon?: string;
+  iconImg?: string;
+  /** kind='preset' 时的预设定义（图标 / 预填值）。 */
+  preset?: AsrProviderPreset;
+  /** 绑定实例：brand 单例 / preset 认领实例 / custom 实例；未物化或 orphan 时缺省。 */
+  instance?: AsrProvider;
+  /** kind='orphan' 时该下线类型的全部遗留实例。 */
+  orphanInstances?: AsrProvider[];
+  configured: boolean;
+}
+
+/**
+ * 产出左栏「云端听写」组条目清单。纯函数，供 EngineModelTab 渲染与 test:engines 单测。
+ *
+ * 协议型的「槽位认领」规则（每槽至多一个实例）：
+ * 1. 实例 `presetId` 显式指向该预设（新建槽位物化时打标，改 URL 不漂移）；
+ * 2. 兼容历史：无 `presetId` 且名称与 URL 均与预设一致（改过名/URL 的历史实例
+ *    视为自定义条目，保留用户身份）。
+ * 未被认领的协议型实例逐个成为自定义条目，追加在该类型预设槽位之后。
+ */
+export function buildCloudViews(
   providers?: AsrProvider[],
   types: AsrProviderType[] = ASR_PROVIDER_TYPES,
-): AsrProviderTypeGroup[] {
+  presetsByType: Record<string, AsrProviderPreset[]> = ASR_PROVIDER_PRESETS,
+): CloudEngineView[] {
   const list = providers ?? [];
   const knownIds = new Set(types.map((t) => t.id));
-  const groups: AsrProviderTypeGroup[] = types.map((type) => ({
-    type,
-    instances: list.filter((p) => p.type === type.id),
-  }));
+  const views: CloudEngineView[] = [];
 
-  // 兜底：未知类型的实例按原始 type 归组，追加末尾（保持首次出现顺序）。
+  for (const type of types) {
+    const instances = list.filter((p) => p.type === type.id);
+
+    if (!type.multiInstance) {
+      const instance = instances[0];
+      views.push({
+        viewId: cloudViewId(type.id),
+        kind: 'brand',
+        type,
+        label: type.shortName ?? type.name,
+        icon: type.icon,
+        iconImg: type.iconImg,
+        instance,
+        configured: instance ? isAsrProviderConfigured(instance, type) : false,
+      });
+      continue;
+    }
+
+    const presets = presetsByType[type.id] ?? [];
+    const claimed = new Set<string>();
+    for (const preset of presets) {
+      const instance =
+        instances.find((p) => !claimed.has(p.id) && p.presetId === preset.id) ??
+        instances.find(
+          (p) =>
+            !claimed.has(p.id) &&
+            p.presetId === undefined &&
+            p.name === preset.name &&
+            matchAsrPreset(p, presets)?.id === preset.id,
+        );
+      if (instance) claimed.add(instance.id);
+      views.push({
+        viewId: cloudPresetViewId(type.id, preset.id),
+        kind: 'preset',
+        type,
+        label: preset.name,
+        icon: preset.icon ?? type.icon,
+        preset,
+        instance,
+        configured: instance ? isAsrProviderConfigured(instance, type) : false,
+      });
+    }
+    for (const instance of instances) {
+      if (claimed.has(instance.id)) continue;
+      views.push({
+        viewId: cloudCustomViewId(type.id, instance.id),
+        kind: 'custom',
+        type,
+        label: instance.name,
+        instance,
+        configured: isAsrProviderConfigured(instance, type),
+      });
+    }
+  }
+
+  // 孤儿类型兜底：类型下线的遗留实例按类型成组追加末尾（可查可删，恒未配置）。
   const orphanByType = new Map<string, AsrProvider[]>();
   for (const p of list) {
     if (knownIds.has(p.type)) continue;
@@ -829,10 +977,30 @@ export function groupInstancesByType(
     if (arr) arr.push(p);
     else orphanByType.set(p.type, [p]);
   }
-  orphanByType.forEach((instances, typeId) => {
-    groups.push({ type: { id: typeId, name: typeId, fields: [] }, instances });
+  orphanByType.forEach((orphanInstances, typeId) => {
+    views.push({
+      viewId: cloudViewId(typeId),
+      kind: 'orphan',
+      type: { id: typeId, name: typeId, fields: [] },
+      label: typeId,
+      orphanInstances,
+      configured: false,
+    });
   });
-  return groups;
+  return views;
+}
+
+/**
+ * 历史遗留左栏选中值 `'cloud'`（旧单一云入口）的落点：首个「已配置」类型的
+ * 云视图 id；无任何已配置实例则回落云组首个类型。恒有已知类型，必有返回值。
+ */
+export function resolveLegacyCloudView(
+  providers?: AsrProvider[],
+  types: AsrProviderType[] = ASR_PROVIDER_TYPES,
+): string {
+  const views = buildCloudViews(providers, types);
+  const configured = views.find((v) => v.configured);
+  return (configured ?? views[0]).viewId;
 }
 
 /**

@@ -104,12 +104,19 @@ import {
 import {
   parseAsrModels,
   isAsrProviderConfigured,
-  groupInstancesByType,
   ASR_PROVIDER_TYPES,
   getAsrPresetsForType,
   buildInstanceFromPreset,
   getAsrProviderType,
   resolveAudioLimits,
+  buildCloudViews,
+  cloudViewId,
+  cloudPresetViewId,
+  cloudCustomViewId,
+  cloudViewTypeId,
+  resolveLegacyCloudView,
+  nextInstanceName,
+  matchAsrPreset,
   ASR_OPENAI_COMPATIBLE,
   ASR_ELEVENLABS,
   ASR_VOLCENGINE,
@@ -118,6 +125,10 @@ import {
   ASR_XFYUN,
   ASR_GLADIA,
 } from '../types/asrProvider';
+import {
+  isEngineViewId,
+  LOCAL_ENGINE_VIEWS,
+} from '../renderer/lib/engineViews';
 import { computeChunkBoundaries } from '../main/helpers/cloudAudioChunking';
 import {
   needsSpaceBefore,
@@ -2492,58 +2503,14 @@ eq(
   'asr: gladia not ready without apiKey',
 );
 
-// --- asrProvider: groupInstancesByType (面板分区数据源) ---
-// 分区结构简化为 { id, insts:[实例id] } 便于断言（避免比对完整 type 对象）。
-const groupShape = (
-  gs: ReturnType<typeof groupInstancesByType>,
-): Array<{ id: string; insts: string[] }> =>
-  gs.map((g) => ({ id: g.type.id, insts: g.instances.map((i) => i.id) }));
-
-const GT = [
-  { id: 'a', name: 'A', fields: [] },
-  { id: 'b', name: 'B', fields: [] },
-];
-eq(
-  groupShape(
-    groupInstancesByType(
-      [
-        { id: '1', name: 'x', type: 'a' },
-        { id: '2', name: 'y', type: 'b' },
-        { id: '3', name: 'z', type: 'a' },
-      ],
-      GT,
-    ),
-  ),
-  [
-    { id: 'a', insts: ['1', '3'] },
-    { id: 'b', insts: ['2'] },
-  ],
-  'asr: groupInstancesByType groups by type in types order',
-);
-eq(
-  groupShape(groupInstancesByType([{ id: '9', name: 'q', type: 'gone' }], GT)),
-  [
-    { id: 'a', insts: [] },
-    { id: 'b', insts: [] },
-    { id: 'gone', insts: ['9'] },
-  ],
-  'asr: groupInstancesByType appends unknown-type instances at end',
-);
-eq(
-  groupShape(groupInstancesByType(undefined, GT)),
-  [
-    { id: 'a', insts: [] },
-    { id: 'b', insts: [] },
-  ],
-  'asr: groupInstancesByType undefined -> all known types empty, no orphans',
-);
-eq(
-  groupShape(groupInstancesByType([])).map((g) => g.id),
-  ASR_PROVIDER_TYPES.map((t) => t.id),
-  'asr: groupInstancesByType default types = ASR_PROVIDER_TYPES order',
-);
-
 // --- asrProvider: multiInstance flag (协议型 vs 品牌型) ---
+// 品牌型的存在性断言基于 buildCloudViews 默认清单（详细行为见下方专组）。
+const defaultCloudViews = buildCloudViews([]);
+const hasEmptyBrandEntry = (typeId: string) =>
+  defaultCloudViews.some(
+    (v) =>
+      v.viewId === cloudViewId(typeId) && v.kind === 'brand' && !v.configured,
+  );
 eq(
   !!getAsrProviderType(ASR_OPENAI_COMPATIBLE)?.multiInstance,
   true,
@@ -2560,11 +2527,9 @@ eq(
   'asr: volcengine is singleton (brand-type)',
 );
 eq(
-  groupShape(groupInstancesByType([])).some(
-    (g) => g.id === ASR_VOLCENGINE && g.insts.length === 0,
-  ),
+  hasEmptyBrandEntry(ASR_VOLCENGINE),
   true,
-  'asr: volcengine appears as empty group by default',
+  'asr: volcengine appears as unconfigured brand entry by default',
 );
 eq(
   !!getAsrProviderType(ASR_TENCENT)?.multiInstance,
@@ -2572,11 +2537,9 @@ eq(
   'asr: tencent is singleton (brand-type)',
 );
 eq(
-  groupShape(groupInstancesByType([])).some(
-    (g) => g.id === ASR_TENCENT && g.insts.length === 0,
-  ),
+  hasEmptyBrandEntry(ASR_TENCENT),
   true,
-  'asr: tencent appears as empty group by default',
+  'asr: tencent appears as unconfigured brand entry by default',
 );
 // aliyun：品牌型硬单例（语种绑定 NLS 项目，换语种在控制台改项目配置）。
 eq(
@@ -2585,11 +2548,9 @@ eq(
   'asr: aliyun is singleton (brand-type; language configured on console project)',
 );
 eq(
-  groupShape(groupInstancesByType([])).some(
-    (g) => g.id === ASR_ALIYUN && g.insts.length === 0,
-  ),
+  hasEmptyBrandEntry(ASR_ALIYUN),
   true,
-  'asr: aliyun appears as empty group by default',
+  'asr: aliyun appears as unconfigured brand entry by default',
 );
 // xfyun：品牌型硬单例（固定官方端点，档位在 models 内选）。
 eq(
@@ -2598,11 +2559,9 @@ eq(
   'asr: xfyun is singleton (brand-type)',
 );
 eq(
-  groupShape(groupInstancesByType([])).some(
-    (g) => g.id === ASR_XFYUN && g.insts.length === 0,
-  ),
+  hasEmptyBrandEntry(ASR_XFYUN),
   true,
-  'asr: xfyun appears as empty group by default',
+  'asr: xfyun appears as unconfigured brand entry by default',
 );
 eq(
   !!getAsrProviderType(ASR_GLADIA)?.multiInstance,
@@ -2610,11 +2569,9 @@ eq(
   'asr: gladia is singleton (brand-type)',
 );
 eq(
-  groupShape(groupInstancesByType([])).some(
-    (g) => g.id === ASR_GLADIA && g.insts.length === 0,
-  ),
+  hasEmptyBrandEntry(ASR_GLADIA),
   true,
-  'asr: gladia appears as empty group by default',
+  'asr: gladia appears as unconfigured brand entry by default',
 );
 
 // --- asrProvider: resolveAudioLimits (类型声明覆盖全局默认) ---
@@ -2718,6 +2675,418 @@ eq(
   },
   'asr: buildInstanceFromPreset without preset = type defaults (custom)',
 );
+
+// --- asrProvider: cloudViewId 家族 (云视图 id 编解码) ---
+eq(cloudViewId('a'), 'cloud:a', 'asr: cloudViewId prefixes typeId');
+eq(
+  cloudPresetViewId('a', 'openai'),
+  'cloud:a:openai',
+  'asr: cloudPresetViewId type+preset',
+);
+eq(
+  cloudCustomViewId('a', 'i1'),
+  'cloud:a:i:i1',
+  'asr: cloudCustomViewId type+instance',
+);
+eq(cloudViewTypeId('cloud:a'), 'a', 'asr: cloudViewTypeId extracts typeId');
+eq(
+  cloudViewTypeId('cloud:a:openai'),
+  'a',
+  'asr: cloudViewTypeId multi-segment takes first segment',
+);
+eq(
+  cloudViewTypeId('cloud:a:i:i1'),
+  'a',
+  'asr: cloudViewTypeId custom id takes first segment',
+);
+eq(cloudViewTypeId('cloud:'), null, 'asr: bare cloud prefix -> null');
+eq(cloudViewTypeId('builtin'), null, 'asr: non-cloud view -> null');
+eq(cloudViewTypeId(undefined), null, 'asr: undefined view -> null');
+
+// --- asrProvider: buildCloudViews (左栏云组条目清单：一条目一表单) ---
+// 品牌型 a（必填 apiKey）+ 品牌型 b（无字段）+ 协议型 p（两个预设 x/y）。
+const CVT = [
+  {
+    id: 'a',
+    name: 'A',
+    shortName: 'A短',
+    fields: [{ key: 'apiKey', label: 'k', type: 'password', required: true }],
+  },
+  { id: 'b', name: 'B', fields: [] },
+  {
+    id: 'p',
+    name: 'P',
+    multiInstance: true,
+    fields: [
+      { key: 'apiUrl', label: 'u', type: 'url', required: true },
+      { key: 'apiKey', label: 'k', type: 'password', required: true },
+    ],
+  },
+] as typeof ASR_PROVIDER_TYPES;
+const CVP = {
+  p: [
+    { id: 'x', name: 'X', icon: '🅧', values: { apiUrl: 'https://x.example' } },
+    { id: 'y', name: 'Y', values: { apiUrl: 'https://y.example' } },
+  ],
+};
+const cvShape = (vs: ReturnType<typeof buildCloudViews>) =>
+  vs.map((v) => ({
+    viewId: v.viewId,
+    kind: v.kind,
+    label: v.label,
+    inst: v.instance?.id ?? null,
+    configured: v.configured,
+  }));
+
+eq(
+  cvShape(buildCloudViews(undefined, CVT, CVP)),
+  [
+    {
+      viewId: 'cloud:a',
+      kind: 'brand',
+      label: 'A短',
+      inst: null,
+      configured: false,
+    },
+    {
+      viewId: 'cloud:b',
+      kind: 'brand',
+      label: 'B',
+      inst: null,
+      configured: false,
+    },
+    {
+      viewId: 'cloud:p:x',
+      kind: 'preset',
+      label: 'X',
+      inst: null,
+      configured: false,
+    },
+    {
+      viewId: 'cloud:p:y',
+      kind: 'preset',
+      label: 'Y',
+      inst: null,
+      configured: false,
+    },
+  ],
+  'asr: buildCloudViews empty -> brand entries + preset slots, all unconfigured',
+);
+
+eq(
+  cvShape(
+    buildCloudViews(
+      [
+        { id: '1', name: 'a1', type: 'a', apiKey: 'k' },
+        // presetId 显式认领 x 槽位（URL 已改仍不漂移）
+        {
+          id: '2',
+          name: '改过名',
+          type: 'p',
+          presetId: 'x',
+          apiUrl: 'https://other',
+          apiKey: 'k',
+        },
+        // 历史实例：名称+URL 与预设 y 一致 -> 认领 y 槽位
+        { id: '3', name: 'Y', type: 'p', apiUrl: 'https://y.example/' },
+        // 未认领 -> 自定义条目
+        {
+          id: '4',
+          name: '我的中转',
+          type: 'p',
+          apiUrl: 'https://mine.example',
+          apiKey: 'k',
+        },
+        // 孤儿类型
+        { id: '5', name: 'legacy', type: 'gone' },
+      ],
+      CVT,
+      CVP,
+    ),
+  ),
+  [
+    {
+      viewId: 'cloud:a',
+      kind: 'brand',
+      label: 'A短',
+      inst: '1',
+      configured: true,
+    },
+    {
+      viewId: 'cloud:b',
+      kind: 'brand',
+      label: 'B',
+      inst: null,
+      configured: false,
+    },
+    {
+      viewId: 'cloud:p:x',
+      kind: 'preset',
+      label: 'X',
+      inst: '2',
+      configured: true,
+    },
+    {
+      viewId: 'cloud:p:y',
+      kind: 'preset',
+      label: 'Y',
+      inst: '3',
+      configured: false,
+    },
+    {
+      viewId: 'cloud:p:i:4',
+      kind: 'custom',
+      label: '我的中转',
+      inst: '4',
+      configured: true,
+    },
+    {
+      viewId: 'cloud:gone',
+      kind: 'orphan',
+      label: 'gone',
+      inst: null,
+      configured: false,
+    },
+  ],
+  'asr: buildCloudViews claims slots (presetId > name+url), customs appended, orphan last',
+);
+
+// 改过名的历史实例不被槽位认领（保留用户身份），成为自定义条目
+eq(
+  cvShape(
+    buildCloudViews(
+      [{ id: '6', name: 'Y 生产', type: 'p', apiUrl: 'https://y.example' }],
+      CVT,
+      CVP,
+    ),
+  ).filter((v) => v.viewId.startsWith('cloud:p')),
+  [
+    {
+      viewId: 'cloud:p:x',
+      kind: 'preset',
+      label: 'X',
+      inst: null,
+      configured: false,
+    },
+    {
+      viewId: 'cloud:p:y',
+      kind: 'preset',
+      label: 'Y',
+      inst: null,
+      configured: false,
+    },
+    {
+      viewId: 'cloud:p:i:6',
+      kind: 'custom',
+      label: 'Y 生产',
+      inst: '6',
+      configured: false,
+    },
+  ],
+  'asr: renamed legacy instance stays custom (not claimed by slot)',
+);
+
+// 孤儿条目携带全部遗留实例
+eq(
+  buildCloudViews(
+    [
+      { id: '7', name: 'l1', type: 'gone' },
+      { id: '8', name: 'l2', type: 'gone' },
+    ],
+    CVT,
+    CVP,
+  )
+    .find((v) => v.kind === 'orphan')
+    ?.orphanInstances?.map((p) => p.id),
+  ['7', '8'],
+  'asr: orphan entry carries all leftover instances',
+);
+
+// 品牌型无 shortName 回落 name；默认 presets 表 = ASR_PROVIDER_PRESETS
+eq(
+  buildCloudViews([]).map((v) => v.viewId),
+  [
+    ...getAsrPresetsForType(ASR_OPENAI_COMPATIBLE).map((p) =>
+      cloudPresetViewId(ASR_OPENAI_COMPATIBLE, p.id),
+    ),
+    ...ASR_PROVIDER_TYPES.filter((t) => !t.multiInstance).map((t) =>
+      cloudViewId(t.id),
+    ),
+  ],
+  'asr: default buildCloudViews = openai preset slots then brand types in order',
+);
+
+// --- asrProvider: nextInstanceName (预设重复添加去重命名) ---
+eq(nextInstanceName([], 'OpenAI'), 'OpenAI', 'asr: nextInstanceName free base');
+eq(
+  nextInstanceName(undefined, 'OpenAI'),
+  'OpenAI',
+  'asr: nextInstanceName undefined existing -> base',
+);
+eq(
+  nextInstanceName([{ name: 'OpenAI' }], 'OpenAI'),
+  'OpenAI 2',
+  'asr: nextInstanceName collision -> suffix 2',
+);
+eq(
+  nextInstanceName([{ name: 'OpenAI' }, { name: 'OpenAI 2' }], 'OpenAI'),
+  'OpenAI 3',
+  'asr: nextInstanceName consecutive suffixes',
+);
+eq(
+  nextInstanceName([{ name: 'OpenAI' }, { name: 'OpenAI 3' }], 'OpenAI'),
+  'OpenAI 2',
+  'asr: nextInstanceName fills gap',
+);
+eq(
+  nextInstanceName([{ name: 'Groq' }], 'OpenAI'),
+  'OpenAI',
+  'asr: nextInstanceName unrelated names ignored',
+);
+
+// --- asrProvider: matchAsrPreset (apiUrl 反查来源预设) ---
+{
+  const openaiPresets = getAsrPresetsForType(ASR_OPENAI_COMPATIBLE);
+  eq(
+    matchAsrPreset({
+      id: '1',
+      name: 'x',
+      type: ASR_OPENAI_COMPATIBLE,
+      apiUrl: 'https://api.groq.com/openai/v1',
+    })?.id,
+    'groq',
+    'asr: matchAsrPreset exact url -> groq',
+  );
+  eq(
+    matchAsrPreset({
+      id: '1',
+      name: 'x',
+      type: ASR_OPENAI_COMPATIBLE,
+      apiUrl: ' https://API.groq.com/openai/v1/ ',
+    })?.id,
+    'groq',
+    'asr: matchAsrPreset tolerates case/space/trailing slash',
+  );
+  eq(
+    matchAsrPreset({
+      id: '1',
+      name: 'x',
+      type: ASR_OPENAI_COMPATIBLE,
+      apiUrl: 'https://my-proxy.example.com/v1',
+    }),
+    undefined,
+    'asr: matchAsrPreset custom url -> undefined',
+  );
+  eq(
+    matchAsrPreset({ id: '1', name: 'x', type: ASR_OPENAI_COMPATIBLE }),
+    undefined,
+    'asr: matchAsrPreset missing url -> undefined',
+  );
+  eq(
+    matchAsrPreset(
+      {
+        id: '1',
+        name: 'x',
+        type: ASR_OPENAI_COMPATIBLE,
+        apiUrl: 'https://api.openai.com/v1',
+      },
+      openaiPresets,
+    )?.id,
+    'openai',
+    'asr: matchAsrPreset explicit presets list',
+  );
+  eq(
+    matchAsrPreset({
+      id: '1',
+      name: 'x',
+      type: 'elevenlabs',
+      apiUrl: 'https://api.groq.com/openai/v1',
+    }),
+    undefined,
+    'asr: matchAsrPreset brand type has no presets -> undefined',
+  );
+}
+
+// --- asrProvider: resolveLegacyCloudView (旧 'cloud' 选中态落点) ---
+eq(
+  resolveLegacyCloudView(
+    [
+      { id: '1', name: 'x', type: 'a' },
+      { id: '2', name: 'y', type: 'b' },
+    ],
+    CVT,
+  ),
+  'cloud:b',
+  'asr: legacy cloud -> first configured type (b has no required fields)',
+);
+eq(
+  resolveLegacyCloudView([{ id: '1', name: 'x', type: 'a' }], CVT),
+  'cloud:a',
+  'asr: legacy cloud with a configured=false b empty -> falls to first type',
+);
+eq(
+  resolveLegacyCloudView([], CVT),
+  'cloud:a',
+  'asr: legacy cloud no instances -> first known type',
+);
+eq(
+  resolveLegacyCloudView(undefined),
+  cloudPresetViewId(ASR_OPENAI_COMPATIBLE, 'openai'),
+  'asr: legacy cloud default types -> first entry (OpenAI preset slot)',
+);
+eq(
+  resolveLegacyCloudView([
+    {
+      id: '1',
+      name: '我的中转',
+      type: ASR_OPENAI_COMPATIBLE,
+      apiUrl: 'https://mine.example/v1',
+      apiKey: 'k',
+      models: 'whisper-1',
+    },
+  ]),
+  cloudCustomViewId(ASR_OPENAI_COMPATIBLE, '1'),
+  'asr: legacy cloud -> configured custom entry wins over empty slots',
+);
+
+// --- engineViews: isEngineViewId (localStorage 选中态校验，宽进) ---
+eq(
+  (LOCAL_ENGINE_VIEWS as readonly string[]).every((v) => isEngineViewId(v)),
+  true,
+  'views: local engine views accepted',
+);
+eq(
+  isEngineViewId('cloud'),
+  true,
+  'views: legacy cloud accepted (migrated later)',
+);
+eq(
+  isEngineViewId('cloud:openaiCompatible'),
+  true,
+  'views: cloud:<type> accepted',
+);
+eq(
+  isEngineViewId('cloud:unknownType'),
+  true,
+  'views: unknown cloud type accepted (lenient)',
+);
+eq(
+  isEngineViewId('cloud:openaiCompatible:groq'),
+  true,
+  'views: preset slot view id accepted',
+);
+eq(
+  isEngineViewId('cloud:openaiCompatible:i:asr_1'),
+  true,
+  'views: custom instance view id accepted',
+);
+eq(isEngineViewId('cloud:'), false, 'views: bare cloud prefix rejected');
+eq(
+  isEngineViewId('funasr'),
+  false,
+  'views: raw family id rejected (merged into sherpa)',
+);
+eq(isEngineViewId(42), false, 'views: non-string rejected');
 
 // --- cloudAudioChunking: computeChunkBoundaries ---
 eq(
