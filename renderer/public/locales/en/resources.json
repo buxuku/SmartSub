@@ -64,7 +64,8 @@
         "recommended": "Recommended",
         "noNvidia": "No NVIDIA GPU detected; GPU acceleration may be unavailable",
         "installedLabel": "Current runtime",
-        "switchTo": "Switch to {{target}}"
+        "switchTo": "Switch to {{target}}",
+        "parkedReady": "Local copy kept — switch instantly, no re-download"
       },
       "downloadConfirm": "This will download the faster-whisper engine runtime (~170MB). Continue?",
       "installedVersion": "Installed v{{version}}",

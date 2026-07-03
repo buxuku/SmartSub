@@ -24,6 +24,11 @@ import {
   SUPPORTED_PROTOCOL_MAX,
 } from '../main/helpers/pythonRuntime/protocolSupport';
 import {
+  getParkedSlotName,
+  planPreviousRuntimeDisposal,
+  canFastSwitchVariant,
+} from '../main/helpers/pythonRuntime/parking';
+import {
   getSourceFallbackOrder,
   DEFAULT_SOURCE_ORDER,
 } from '../main/helpers/downloadSourceOrder';
@@ -314,6 +319,81 @@ eq(
   }),
   false,
   'proto: remote v99 blocked',
+);
+
+// --- pythonRuntime/parking：变体驻留与免下载切换判定 ---
+eq(
+  getParkedSlotName('faster-whisper', 'cpu'),
+  'faster-whisper-cpu',
+  'parking: cpu slot name',
+);
+eq(
+  getParkedSlotName('faster-whisper', 'cuda'),
+  'faster-whisper-cuda',
+  'parking: cuda slot name',
+);
+eq(
+  planPreviousRuntimeDisposal({
+    previousVariant: 'cpu',
+    installedVariant: 'cuda',
+    previousIntact: true,
+  }),
+  'park',
+  'parking: variant switch parks previous runtime',
+);
+eq(
+  planPreviousRuntimeDisposal({
+    previousVariant: 'cuda',
+    installedVariant: 'cuda',
+    previousIntact: true,
+  }),
+  'discard',
+  'parking: same-variant upgrade discards backup',
+);
+eq(
+  planPreviousRuntimeDisposal({
+    previousVariant: 'cpu',
+    installedVariant: 'cuda',
+    previousIntact: false,
+  }),
+  'discard',
+  'parking: broken previous runtime discarded even on switch',
+);
+eq(
+  canFastSwitchVariant({
+    targetVariant: 'cpu',
+    installedVariant: 'cuda',
+    parkedTargetIntact: true,
+  }),
+  true,
+  'parking: parked target + different installed variant fast-switches',
+);
+eq(
+  canFastSwitchVariant({
+    targetVariant: 'cuda',
+    installedVariant: 'cuda',
+    parkedTargetIntact: true,
+  }),
+  false,
+  'parking: same-variant request is repair/upgrade, no fast-switch',
+);
+eq(
+  canFastSwitchVariant({
+    targetVariant: 'cpu',
+    installedVariant: 'cuda',
+    parkedTargetIntact: false,
+  }),
+  false,
+  'parking: missing/broken parked copy falls back to download',
+);
+eq(
+  canFastSwitchVariant({
+    targetVariant: 'cuda',
+    installedVariant: null,
+    parkedTargetIntact: true,
+  }),
+  true,
+  'parking: broken current + intact parked target still fast-switches',
 );
 
 eq(

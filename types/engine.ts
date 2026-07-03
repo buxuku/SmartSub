@@ -21,6 +21,11 @@ export interface EngineStatus {
   message?: string;
   /** 已安装的运行时变体：cpu=默认包，cuda=Full GPU 包（仅 win/linux）。 */
   variant?: PyEngineVariant;
+  /**
+   * 驻留的另一变体（变体切换时旧运行时被保留），存在即可免下载即时切换；
+   * 至多一个（恒为已装变体的另一侧），无驻留副本时缺省。
+   */
+  parkedVariant?: PyEngineVariant;
 }
 
 /**

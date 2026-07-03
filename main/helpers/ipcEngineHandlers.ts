@@ -8,7 +8,7 @@ import {
   getPythonRuntimeManager,
   shutdownPythonRuntime,
 } from './pythonRuntime';
-import { getEngineDir } from './pythonRuntime/paths';
+import { getEngineDir, getParkedEngineDir } from './pythonRuntime/paths';
 import type { TranscriptionEngine } from '../../types/engine';
 import type {
   PyEngineDownloadSource,
@@ -170,10 +170,18 @@ export function registerEngineIpcHandlers(): void {
         }
         await shutdownPythonRuntime();
 
-        // 整个引擎包目录（含内部 manifest.json）一并删除即回到未安装态
-        const engineDir = getEngineDir(coerceEngineId(payload?.engineId));
+        // 整个引擎包目录（含内部 manifest.json）一并删除即回到未安装态；
+        // 变体切换驻留的副本一并清理，避免卸载后残留大体积目录。
+        const engineId = coerceEngineId(payload?.engineId);
+        const engineDir = getEngineDir(engineId);
         if (fs.existsSync(engineDir)) {
           fs.rmSync(engineDir, { recursive: true, force: true });
+        }
+        for (const variant of ['cpu', 'cuda'] as PyEngineVariant[]) {
+          const parkedDir = getParkedEngineDir(engineId, variant);
+          if (fs.existsSync(parkedDir)) {
+            fs.rmSync(parkedDir, { recursive: true, force: true });
+          }
         }
 
         return { success: true };

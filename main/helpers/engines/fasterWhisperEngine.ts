@@ -4,6 +4,7 @@ import {
   isRuntimeInstalled,
   readEngineManifest,
   normalizePyEngineVariant,
+  getParkedVariant,
 } from '../pythonRuntime/paths';
 import {
   getFasterWhisperModelsPath,
@@ -359,6 +360,7 @@ export const fasterWhisperEngineAdapter: TranscriptionEngineAdapter = {
       state: 'ready',
       version: formatInstalledVersion(manifest),
       variant: normalizePyEngineVariant(manifest?.variant),
+      parkedVariant: getParkedVariant('faster-whisper') ?? undefined,
     };
   },
 

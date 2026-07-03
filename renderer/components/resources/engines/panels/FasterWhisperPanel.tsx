@@ -371,19 +371,28 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
             const target = installedVariant === 'cuda' ? 'cpu' : 'cuda';
             // 切到 GPU 仅在提供 GPU 包的平台展示；切到 CPU 始终可用。
             if (target === 'cuda' && !gpuVariantAvailable) return null;
+            // 目标变体已有驻留副本 → 免下载即时切换；否则切换意味着整包下载。
+            const parkedReady = status?.parkedVariant === target;
             return (
-              <Button
-                size="sm"
-                variant="outline"
-                className="ml-auto gap-1.5"
-                disabled={taskBusy}
-                onClick={() => onSwitchVariant(target)}
-              >
-                <ArrowLeftRight className="h-3.5 w-3.5" />
-                {t('engines.fasterWhisper.variant.switchTo', {
-                  target: t(`engines.fasterWhisper.variant.${target}`),
-                })}
-              </Button>
+              <span className="ml-auto flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {parkedReady
+                    ? t('engines.fasterWhisper.variant.parkedReady')
+                    : `~${variantSize(target)}`}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  disabled={taskBusy}
+                  onClick={() => onSwitchVariant(target)}
+                >
+                  <ArrowLeftRight className="h-3.5 w-3.5" />
+                  {t('engines.fasterWhisper.variant.switchTo', {
+                    target: t(`engines.fasterWhisper.variant.${target}`),
+                  })}
+                </Button>
+              </span>
             );
           })()}
         </div>

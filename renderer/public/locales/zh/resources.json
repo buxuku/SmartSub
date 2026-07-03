@@ -64,7 +64,8 @@
         "recommended": "推荐",
         "noNvidia": "未检测到 NVIDIA 显卡，选择后可能无法启用 GPU 加速",
         "installedLabel": "当前运行时",
-        "switchTo": "切换到 {{target}}"
+        "switchTo": "切换到 {{target}}",
+        "parkedReady": "本地已保留该版本，可免下载即时切换"
       },
       "downloadConfirm": "将下载 faster-whisper 引擎运行时（约 170MB），是否继续？",
       "installedVersion": "已安装 v{{version}}",

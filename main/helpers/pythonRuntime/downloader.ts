@@ -24,11 +24,16 @@ import {
   getPyEngineChecksumsUrl,
   getPyEngineManifestUrl,
   isRuntimeInstalled,
+  isRuntimeDirIntact,
+  getParkedEngineDir,
   getRuntimePythonPath,
   writeEngineManifest,
   readEngineManifest,
+  readEngineManifestFromDir,
+  getInstalledVariant,
   normalizePyEngineVariant,
 } from './paths';
+import { canFastSwitchVariant, planPreviousRuntimeDisposal } from './parking';
 import { adhocResignDir } from './macSign';
 import { getPythonRuntimeManager, shutdownPythonRuntime } from './index';
 import { PythonEngineError } from './manager';
@@ -216,6 +221,11 @@ export class PyEngineDownloader {
     variant: PyEngineVariant = 'cpu',
   ): Promise<void> {
     const resolvedVariant = normalizePyEngineVariant(variant);
+    // 变体切换的免下载快路径：目标变体已有完好驻留副本时目录互换即完成，
+    // 秒级、零流量、可离线；副本可能落后远端 latest，由既有 checkUpdate 提示升级。
+    if (await this.trySwitchToParkedVariant(resolvedVariant)) {
+      return;
+    }
     // 自包含运行时内嵌解释器，无外部基座依赖，可直接下载。
     return this.core.runWithFallback(
       source,
@@ -228,6 +238,118 @@ export class PyEngineDownloader {
       'Py-engine download',
       logMessage,
     );
+  }
+
+  /**
+   * 免下载即时切换：目标变体存在完好驻留副本时，停机 → 当前运行时驻留 →
+   * 副本换入 current → ensureStarted 自检。成功返回 true（调用方跳过下载）；
+   * 不满足条件返回 false；自检失败则回滚原运行时后返回 false，转入正常下载。
+   */
+  private async trySwitchToParkedVariant(
+    variant: PyEngineVariant,
+  ): Promise<boolean> {
+    const currentDir = getEngineDir(this.engineId);
+    const parkedTargetDir = getParkedEngineDir(this.engineId, variant);
+    const currentIntact = isRuntimeInstalled(this.engineId);
+    const installedVariant = currentIntact
+      ? getInstalledVariant(this.engineId)
+      : null;
+
+    if (
+      !canFastSwitchVariant({
+        targetVariant: variant,
+        installedVariant,
+        parkedTargetIntact: isRuntimeDirIntact(parkedTargetDir),
+      })
+    ) {
+      return false;
+    }
+
+    logMessage(
+      `Py-engine[${this.engineId}] switching to parked ${variant} runtime (no download)`,
+      'info',
+    );
+    this.core.resetForDownload();
+    this.core.updateProgress({
+      status: 'verifying',
+      progress: 100,
+      downloaded: 0,
+      total: 0,
+      speed: 0,
+      eta: 0,
+      error: undefined,
+    });
+
+    // 停机解 Windows 文件锁后再动目录
+    await shutdownPythonRuntime();
+
+    // 当前运行时完好则驻留（供切回），破损则丢弃；随后把目标副本换入 current。
+    let previousParkedDir: string | null = null;
+    try {
+      if (currentIntact && installedVariant) {
+        previousParkedDir = getParkedEngineDir(this.engineId, installedVariant);
+        if (fs.existsSync(previousParkedDir)) {
+          fs.rmSync(previousParkedDir, { recursive: true, force: true });
+        }
+        fs.mkdirSync(path.dirname(previousParkedDir), { recursive: true });
+        fs.renameSync(currentDir, previousParkedDir);
+      } else if (fs.existsSync(currentDir)) {
+        fs.rmSync(currentDir, { recursive: true, force: true });
+      }
+      fs.mkdirSync(path.dirname(currentDir), { recursive: true });
+      fs.renameSync(parkedTargetDir, currentDir);
+    } catch (swapError) {
+      logMessage(
+        `Py-engine fast-switch swap failed, falling back to download: ${swapError}`,
+        'warning',
+      );
+      try {
+        if (
+          !fs.existsSync(currentDir) &&
+          previousParkedDir &&
+          fs.existsSync(previousParkedDir)
+        ) {
+          fs.renameSync(previousParkedDir, currentDir);
+        }
+      } catch (restoreError) {
+        // 还原失败也无妨：随后的正常下载会重建 current
+        logMessage(
+          `Py-engine fast-switch restore failed: ${restoreError}`,
+          'warning',
+        );
+      }
+      return false;
+    }
+
+    // 自检：启动 + ping。失败删除坏副本、还原原运行时，转入正常下载。
+    try {
+      await getPythonRuntimeManager().ensureStarted(this.engineId);
+    } catch (selfCheckError) {
+      logMessage(
+        `Py-engine parked ${variant} runtime self-check failed, falling back to download: ${selfCheckError}`,
+        'warning',
+      );
+      await shutdownPythonRuntime();
+      try {
+        fs.rmSync(currentDir, { recursive: true, force: true });
+        if (previousParkedDir && fs.existsSync(previousParkedDir)) {
+          fs.renameSync(previousParkedDir, currentDir);
+        }
+      } catch (rollbackError) {
+        logMessage(
+          `Py-engine fast-switch rollback failed: ${rollbackError}`,
+          'error',
+        );
+      }
+      return false;
+    }
+
+    this.core.updateProgress({ status: 'completed', progress: 100 });
+    logMessage(
+      `Py-engine[${this.engineId}] switched to ${variant} from parked copy`,
+      'info',
+    );
+    return true;
   }
 
   private async downloadFromSource(
@@ -628,9 +750,55 @@ export class PyEngineDownloader {
       throw selfCheckError;
     }
 
-    // 6. 成功：删除备份
+    // 6. 成功：处置旧运行时备份——变体切换则驻留（供免下载切回），
+    //    同变体升级/修复或备份破损则删除（与旧行为一致）。
     if (fs.existsSync(previousDir)) {
-      fs.rmSync(previousDir, { recursive: true, force: true });
+      const previousVariant = normalizePyEngineVariant(
+        readEngineManifestFromDir(previousDir)?.variant,
+      );
+      const disposal = planPreviousRuntimeDisposal({
+        previousVariant,
+        installedVariant: variant,
+        previousIntact: isRuntimeDirIntact(previousDir),
+      });
+      if (disposal === 'park') {
+        try {
+          const parkedDir = getParkedEngineDir(this.engineId, previousVariant);
+          if (fs.existsSync(parkedDir)) {
+            fs.rmSync(parkedDir, { recursive: true, force: true });
+          }
+          fs.mkdirSync(path.dirname(parkedDir), { recursive: true });
+          fs.renameSync(previousDir, parkedDir);
+          logMessage(
+            `Py-engine previous ${previousVariant} runtime parked for instant switch-back`,
+            'info',
+          );
+        } catch (parkError) {
+          // 驻留失败不影响安装结果，退回删除
+          logMessage(
+            `Py-engine failed to park previous runtime: ${parkError}`,
+            'warning',
+          );
+          if (fs.existsSync(previousDir)) {
+            fs.rmSync(previousDir, { recursive: true, force: true });
+          }
+        }
+      } else {
+        fs.rmSync(previousDir, { recursive: true, force: true });
+      }
+    }
+
+    // 刚下载安装的变体即最新，同变体的驻留副本（若有）已过期 → 清理释放磁盘
+    try {
+      const staleParkedDir = getParkedEngineDir(this.engineId, variant);
+      if (fs.existsSync(staleParkedDir)) {
+        fs.rmSync(staleParkedDir, { recursive: true, force: true });
+      }
+    } catch (cleanError) {
+      logMessage(
+        `Py-engine failed to clean stale parked runtime: ${cleanError}`,
+        'warning',
+      );
     }
     logMessage('Py-engine installed and self-check passed', 'info');
   }
