@@ -728,6 +728,34 @@ export const useStandaloneSubtitles = (
     [applySubtitles, flushPendingEdit, history.push, t],
   );
 
+  // 删除字幕（区间命令：1 行 → 0 行；支持撤销恢复）
+  const handleDeleteSubtitle = useCallback(
+    (index: number) => {
+      const current = subtitlesRef.current;
+      if (index < 0 || index >= current.length) return;
+
+      flushPendingEdit();
+
+      const removed = current[index];
+      history.push({ start: index, removed: [removed], inserted: [] });
+
+      const next = current.slice();
+      next.splice(index, 1);
+      const normalized = renormalizeIds(next);
+      applySubtitles(normalized);
+
+      setCurrentSubtitleIndex((currentIndex) => {
+        if (normalized.length === 0) return -1;
+        if (currentIndex > index) return currentIndex - 1;
+        if (currentIndex >= normalized.length) return normalized.length - 1;
+        return currentIndex;
+      });
+      setIsDirty(true);
+      toast.success(t('deleteSubtitleSuccess'));
+    },
+    [applySubtitles, flushPendingEdit, history.push, t],
+  );
+
   // 更新光标位置
   const handleCursorPositionChange = useCallback((position: number) => {
     cursorPositionRef.current = position;
@@ -767,6 +795,7 @@ export const useStandaloneSubtitles = (
     canRedo,
     handleMergeSubtitles,
     handleSplitSubtitle,
+    handleDeleteSubtitle,
     handleTimeChange,
     // 光标位置
     handleCursorPositionChange,

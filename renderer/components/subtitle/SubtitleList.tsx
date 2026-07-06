@@ -22,6 +22,7 @@ import {
   Combine,
   CircleStop,
   X,
+  Trash2,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -51,6 +52,7 @@ interface SubtitleListProps {
   onCursorPositionChange?: (position: number) => void;
   onAiOptimizeClick?: (index: number) => void;
   onSplitClick?: (index: number) => void;
+  onDeleteClick?: (index: number) => void;
   /** 行内时间编辑提交；返回错误文案（不应用）或 null（已应用） */
   onTimeChange?: (
     index: number,
@@ -74,6 +76,7 @@ interface RowLabels {
   translationFailedPlaceholder: string;
   aiOptimize: string;
   split: string;
+  deleteSubtitle: string;
   timeInvalidFormat: string;
   timeEditHint: string;
 }
@@ -104,6 +107,7 @@ interface SubtitleRowProps {
   fontScale: 's' | 'm' | 'l';
   showAiOptimize: boolean;
   showSplit: boolean;
+  showDelete: boolean;
   labels: RowLabels;
   onRowClick: (index: number, shiftKey: boolean) => void;
   onFieldChange: (
@@ -122,6 +126,7 @@ interface SubtitleRowProps {
   ) => void;
   onAiOptimize: (index: number) => void;
   onSplit: (index: number) => void;
+  onDelete: (index: number) => void;
   onTimeCommit: (
     index: number,
     startSec: number,
@@ -141,6 +146,7 @@ const SubtitleRow = memo(function SubtitleRow({
   fontScale,
   showAiOptimize,
   showSplit,
+  showDelete,
   labels,
   onRowClick,
   onFieldChange,
@@ -149,6 +155,7 @@ const SubtitleRow = memo(function SubtitleRow({
   onTargetKeyDown,
   onAiOptimize,
   onSplit,
+  onDelete,
   onTimeCommit,
 }: SubtitleRowProps) {
   // 失败行降噪：左缘红条 + ⚠，不再整行红底
@@ -269,6 +276,27 @@ const SubtitleRow = memo(function SubtitleRow({
                 <TooltipContent side="top">{labels.split}</TooltipContent>
               </Tooltip>
             )}
+            {showDelete && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5 text-muted-foreground hover:text-destructive"
+                    aria-label={labels.deleteSubtitle}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(index);
+                    }}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {labels.deleteSubtitle}
+                </TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </TooltipProvider>
       </div>
@@ -321,6 +349,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   onCursorPositionChange,
   onAiOptimizeClick,
   onSplitClick,
+  onDeleteClick,
   onTimeChange,
   retranslate,
   onMergeRange,
@@ -386,6 +415,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     onCursorPositionChange,
     onAiOptimizeClick,
     onSplitClick,
+    onDeleteClick,
     onTimeChange,
     currentSubtitleIndex,
   });
@@ -395,6 +425,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     onCursorPositionChange,
     onAiOptimizeClick,
     onSplitClick,
+    onDeleteClick,
     onTimeChange,
     currentSubtitleIndex,
   };
@@ -537,6 +568,10 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     latestRef.current.onSplitClick?.(index);
   }, []);
 
+  const onDelete = useCallback((index: number) => {
+    latestRef.current.onDeleteClick?.(index);
+  }, []);
+
   const onTimeCommit = useCallback(
     (index: number, startSec: number, endSec: number): string | null => {
       return latestRef.current.onTimeChange?.(index, startSec, endSec) ?? null;
@@ -554,6 +589,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
       translationFailedPlaceholder: t('translationFailedPlaceholder'),
       aiOptimize: t('aiOptimize'),
       split: t('split'),
+      deleteSubtitle: t('deleteSubtitle'),
       timeInvalidFormat: t('timeEditInvalidFormat'),
       timeEditHint: t('timeEditHint'),
     }),
@@ -773,6 +809,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                     fontScale={fontScale}
                     showAiOptimize={!!onAiOptimizeClick}
                     showSplit={!!onSplitClick}
+                    showDelete={!!onDeleteClick}
                     labels={labels}
                     onRowClick={onRowClick}
                     onFieldChange={onFieldChange}
@@ -781,6 +818,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                     onTargetKeyDown={onTargetKeyDown}
                     onAiOptimize={onAiOptimize}
                     onSplit={onSplit}
+                    onDelete={onDelete}
                     onTimeCommit={onTimeCommit}
                   />
                 </div>
