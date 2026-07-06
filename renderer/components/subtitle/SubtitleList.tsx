@@ -247,6 +247,7 @@ const SubtitleRow = memo(function SubtitleRow({
                     variant="ghost"
                     size="icon"
                     className="h-5 w-5"
+                    aria-label={labels.aiOptimize}
                     onClick={(e) => {
                       e.stopPropagation();
                       onAiOptimize(index);
@@ -265,6 +266,7 @@ const SubtitleRow = memo(function SubtitleRow({
                     variant="ghost"
                     size="icon"
                     className="h-5 w-5"
+                    aria-label={labels.split}
                     onClick={(e) => {
                       e.stopPropagation();
                       onSplit(index);
@@ -283,6 +285,7 @@ const SubtitleRow = memo(function SubtitleRow({
                     variant="ghost"
                     size="icon"
                     className="h-5 w-5 hover:text-destructive"
+                    aria-label={labels.deleteRow}
                     onClick={(e) => {
                       e.stopPropagation();
                       onDelete(index);
