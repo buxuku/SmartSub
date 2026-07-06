@@ -91,6 +91,54 @@ const TEXT_BREAK_CHAR = new RegExp(
 /** 纯标点 token：不应因长度/时长上限被切到单独一条（如孤立的「。」）。 */
 const PUNCT_ONLY = /^[\s。．.,，、!！?？…:：;；"'”’()（）【】《》\-—~～]+$/;
 
+/**
+ * 词边界分词器（硬切第二级回退用）：Node / Electron 内置 ICU，含中日韩词典分词
+ * （如「我们|广泛|地|讨论」）。惰性单例；运行时不可用（裁剪版 ICU）→ null，
+ * 调用方降级为原 token / 字符边界行为（行为与引入前一致）。
+ * 结构化类型 + 运行时探测（不依赖 TS lib 的 Intl.Segmenter 声明，兼容较低 target）。
+ */
+interface WordSegmenter {
+  segment(input: string): Iterable<{ index: number }>;
+}
+type SegmenterCtor = new (
+  locale?: string,
+  options?: { granularity?: 'word' | 'grapheme' | 'sentence' },
+) => WordSegmenter;
+
+let wordSegmenter: WordSegmenter | null | undefined;
+function getWordSegmenter(): WordSegmenter | null {
+  if (wordSegmenter === undefined) {
+    try {
+      const ctor =
+        typeof Intl !== 'undefined'
+          ? (Intl as { Segmenter?: SegmenterCtor }).Segmenter
+          : undefined;
+      wordSegmenter =
+        typeof ctor === 'function'
+          ? new ctor(undefined, { granularity: 'word' })
+          : null;
+    } catch {
+      wordSegmenter = null;
+    }
+  }
+  return wordSegmenter;
+}
+
+/**
+ * text 的词边界偏移集合（各分词段起点 + 文本末尾，UTF-16 单位）：
+ * 切分点落在集合内 = 不会把词拆开。Segmenter 不可用 → null（调用方降级）。
+ */
+function wordBoundaryOffsets(text: string): Set<number> | null {
+  const segmenter = getWordSegmenter();
+  if (!segmenter) return null;
+  const bounds = new Set<number>();
+  for (const part of Array.from(segmenter.segment(text))) {
+    bounds.add(part.index);
+  }
+  bounds.add(text.length);
+  return bounds;
+}
+
 /** 把 `HH:MM:SS.mmm` / `MM:SS` / 纯秒（逗号或点皆可）解析为秒；非法返回 null。 */
 function parseTime(time?: string): number | null {
   if (!time) return null;
@@ -139,35 +187,46 @@ function clampInteger(value: number, min: number, max: number): number {
 }
 
 /**
- * 任务级字幕长度上限。0 / 空 / 非法值表示沿用引擎默认断句；正数启用重分句。
- * 这里沿用现有 `visualWidth` 语义：CJK / 全角算 2，其余算 1。
+ * 任务级字幕长度设置解析（UI「字幕断句方式」三态，共用 maxSubtitleChars 字段）：
+ *  - 0 / 空 / 非法 → undefined（智能断句：沿用引擎默认，内置/云端词级管线含 40 宽度兜底）；
+ *  - 负数（UI 存 -1）→ 'unlimited'（不限制长度：只按停顿/标点/时长断句，不按宽度硬切）；
+ *  - 正数 → 宽度上限，夹到可读范围。沿用 `visualWidth` 语义：CJK / 全角算 2，其余算 1。
  */
-function maxWidthFromConfig(
+function widthLimitFromConfig(
   config?: Record<string, unknown>,
-): number | undefined {
+): number | 'unlimited' | undefined {
   const raw = config?.maxSubtitleChars;
   if (raw === undefined || raw === null || raw === '') return undefined;
   const parsed = typeof raw === 'number' ? raw : Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  if (!Number.isFinite(parsed) || parsed === 0) return undefined;
+  if (parsed < 0) return 'unlimited';
   return clampInteger(parsed, MIN_USER_MAX_WIDTH, MAX_USER_MAX_WIDTH);
 }
 
 export function getSubtitleCueOptions(
   config?: Record<string, unknown>,
 ): GroupTokenCuesOptions | undefined {
-  const maxWidth = maxWidthFromConfig(config);
-  if (!maxWidth) return undefined;
+  const limit = widthLimitFromConfig(config);
+  if (!limit) return undefined;
+  if (limit === 'unlimited') {
+    // 不限制长度：关闭宽度硬切（软切/句末标点/停顿断句不变；8s 时长上限保留，
+    // 防无停顿无标点的病态语流整段糊成一条——时长触发的切分同样走标点/词边界回溯）。
+    return { maxWidth: Number.POSITIVE_INFINITY };
+  }
   return {
-    maxWidth,
-    softMaxWidth: clampInteger(maxWidth * 0.6, 6, maxWidth),
+    maxWidth: limit,
+    softMaxWidth: clampInteger(limit * 0.6, 6, limit),
   };
 }
 
 export function getMergeShortCueOptions(
   config?: Record<string, unknown>,
 ): MergeShortCuesOptions | undefined {
-  const maxWidth = maxWidthFromConfig(config);
-  return maxWidth ? { maxWidth } : undefined;
+  const limit = widthLimitFromConfig(config);
+  if (!limit) return undefined;
+  return {
+    maxWidth: limit === 'unlimited' ? Number.POSITIVE_INFINITY : limit,
+  };
 }
 
 /**
@@ -193,6 +252,29 @@ function contentCharCount(text: string): number {
     if (isAsciiAlnum || isCjk) n += 1;
   }
   return n;
+}
+
+/**
+ * 词边界回溯（硬切第二级回退，标点缺席时用）：给定当前 cue 各 token 文本与即将并入的
+ * token 文本，返回「切在 texts[i] 之后」的 i（语义同标点回溯）；-1 = 不回溯。
+ *
+ * 仅当在「texts 末尾 | incoming」处直切会把一个跨界词拆开（该处不是词边界）时才回溯，
+ * 且只回溯到与词边界对齐的 token 边界——保证切出来的两条都不含半个词。
+ * Segmenter 不可用 / 找不到对齐边界 → -1（降级为原 token 边界直切，行为同引入前）。
+ */
+function wordAlignedCutIndex(texts: string[], incoming: string): number {
+  const joined = texts.join('');
+  const bounds = wordBoundaryOffsets(joined + incoming);
+  if (!bounds) return -1;
+  if (bounds.has(joined.length)) return -1; // 直切处本就是词边界，无需回溯
+  let offset = 0;
+  const tokenEnds = texts.map((t) => (offset += t.length));
+  for (let i = texts.length - 2; i >= 0; i -= 1) {
+    if (bounds.has(tokenEnds[i]) && joined.slice(0, tokenEnds[i]).trim()) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 /**
@@ -231,7 +313,12 @@ export function wordsToTriples(words: TimedWord[] | undefined): TokenTriple[] {
 
 function splitTextByWidth(text: string, maxWidth: number): string[] {
   const chunks: string[] = [];
+  // 词边界集（全文一次分词，UTF-16 偏移）：无标点/空白可断时的第二级断点，避免拆词。
+  const wordBounds = wordBoundaryOffsets(text);
   let buffer = '';
+  // 不变式：buffer 始终等于 text.slice(bufStart, pos)，故 buffer 内偏移 off ↔ 全局 bufStart+off。
+  let bufStart = 0;
+  let pos = 0; // 当前字符 ch 在 text 中的起始偏移
 
   for (const ch of text) {
     const next = buffer + ch;
@@ -246,17 +333,33 @@ function splitTextByWidth(text: string, maxWidth: number): string[] {
         }
       }
 
+      // 第二级断点：无标点/空白可断，且在「buffer|ch」处直切会拆词（pos 非词边界）
+      // → 回退到 buffer 内最后一个词边界；仍无 → 维持字符直切（兜底，行为同引入前）。
+      if (cutIndex <= 0 && wordBounds && !wordBounds.has(pos)) {
+        for (let off = buffer.length - 1; off > 0; off -= 1) {
+          if (wordBounds.has(bufStart + off) && buffer.slice(0, off).trim()) {
+            cutIndex = off;
+            break;
+          }
+        }
+      }
+
       if (cutIndex > 0) {
         const head = buffer.slice(0, cutIndex).trim();
         if (head) chunks.push(head);
-        buffer = buffer.slice(cutIndex).trimStart() + ch;
+        const rest = buffer.slice(cutIndex);
+        const restTrimmed = rest.trimStart();
+        bufStart += cutIndex + (rest.length - restTrimmed.length);
+        buffer = restTrimmed + ch;
       } else {
         chunks.push(buffer.trim());
         buffer = ch;
+        bufStart = pos;
       }
     } else {
       buffer = next;
     }
+    pos += ch.length;
   }
 
   const tail = buffer.trim();
@@ -265,7 +368,8 @@ function splitTextByWidth(text: string, maxWidth: number): string[] {
 }
 
 /**
- * 段级兜底重拆：把超过任务级宽度上限的 cue 按文本可断点（TEXT_BREAK_CHAR）拆开，
+ * 段级兜底重拆：把超过任务级宽度上限的 cue 按文本可断点拆开（标点/空白优先，
+ * 缺席时回退 Intl.Segmenter 词边界，绝境才按字符直切——不拆词），
  * 时间按各段文本宽度**比例插值**（拟造时间，非真实词时间）。
  *
  * 仅供**没有词级时间戳**的路径使用（FunASR / Qwen / FireRed / 旧加速包段级回退 /
@@ -276,8 +380,10 @@ export function resplitSubtitleCues(
   cues: TokenTriple[],
   config?: Record<string, unknown>,
 ): TokenTriple[] {
-  const maxWidth = maxWidthFromConfig(config);
-  if (!maxWidth || cues.length === 0) return cues;
+  const limit = widthLimitFromConfig(config);
+  // 'unlimited'（不限制长度）与未设置一样不重拆：段级引擎的原生断句本就不按宽度硬切。
+  if (!limit || limit === 'unlimited' || cues.length === 0) return cues;
+  const maxWidth = limit;
 
   const out: TokenTriple[] = [];
   for (const cue of cues) {
@@ -490,7 +596,8 @@ export function dropCuesInDeepSilence(
  * 4) 累计时长 / 宽度超硬上限（maxDuration / maxWidth）兜底，避免连续无停顿语流挤成一条。
  *    硬切**优先回溯**到 cue 内最后一个可断标点（，,；;、：:）后分割，余部（真实词级时间）
  *    作新 cue 开头，避免把句尾词孤切成条（如「…应用十分|广泛。」）；若余部并入本 token 后
- *    仍超限则余部单独成条（保证任何 cue 不超宽）；句内无可断标点时行为与回溯前一致。
+ *    仍超限则余部单独成条（保证任何 cue 不超宽）；句内无可断标点时**再回退词边界**
+ *    （Intl.Segmenter，避免把「不错」这类词从 token 缝里拆开），仍无 → token 边界直切。
  *
  * 另：开新 cue 时若首 token 为纯标点，则贴回上一条 cue 末尾（前导标点归属 §6.2，
  * 避免出现以「，」开头的字幕条；不改上一条时间，仅补字符）。
@@ -572,6 +679,15 @@ export function groupTokenCues(
             cut = i;
             break;
           }
+        }
+        // 第二级回退：cue 内无可断标点（无标点长语流常见于云端/裸 whisper 输出）时，
+        // 若直切会把跨界词拆开（中文 token 常为单字，如「不|错」），改在最近的
+        // 「词边界对齐的 token 边界」处切，保证不拆词；仍找不到则维持 token 边界直切。
+        if (cut < 0) {
+          cut = wordAlignedCutIndex(
+            buf.map((t) => t.text),
+            text,
+          );
         }
         if (cut >= 0) {
           const rest = buf.slice(cut + 1);
@@ -763,7 +879,8 @@ export function enforceMinDisplayDuration(
 
 /**
  * 词级成句统一出口：groupTokenCues → mergeShortCues → enforceMinDisplayDuration，
- * 并接入任务级 `maxSubtitleChars`（0 / 缺省 = 引擎默认断句）。
+ * 并接入任务级 `maxSubtitleChars`（0 / 缺省 = 引擎默认断句；-1 = 不限制长度，
+ * 仅按停顿 / 标点 / 时长断句，不按宽度硬切）。
  *
  * 词级路径**不做**文本级 resplit 兜底：宽度上限已由 groupTokenCues（含硬切回溯到
  * 最近可断标点）在真实词时间上保证，叠一层比例插值只会劣化时间轴。

@@ -310,11 +310,13 @@ async function transcribeFasterWhisper(
     throw new TaskCancelledError();
   }
 
-  // 任务级 maxSubtitleChars：设了上限才从词级时间戳重建成句（composeWordCues 统一出口，
-  // 含硬切回溯，宽度由真实词时间保证）；未设置沿用引擎段级断句（默认行为不变）。
+  // 任务级 maxSubtitleChars：仅「正数上限」才从词级时间戳重建成句（composeWordCues
+  // 统一出口，含硬切回溯，宽度由真实词时间保证）；0 = 智能断句与 -1 = 不限制长度都
+  // 沿用引擎段级断句——whisper 原生按句分段，本就不按宽度硬切。
   const segments = transcription?.segments || [];
+  const cueOptions = getSubtitleCueOptions(formData as Record<string, unknown>);
   let subtitles;
-  if (getSubtitleCueOptions(formData as Record<string, unknown>)) {
+  if (cueOptions && Number.isFinite(cueOptions.maxWidth)) {
     const wordTriples = segments.flatMap((segment) => {
       const triples = wordsToTriples(segment?.words);
       return triples.length > 0 ? triples : [subtitleCueFromSegment(segment)];

@@ -92,7 +92,11 @@ export interface IFormData {
   targetLanguage: string;
   translateRetryTimes: string;
   subtitleOutputFormat?: 'srt' | 'vtt' | 'ass' | 'lrc' | 'txt';
-  /** 生成字幕时单条字幕最大显示字数 / 宽度；0 或空表示沿用引擎默认断句。 */
+  /**
+   * 生成字幕时单条字幕最大显示字数 / 宽度（CJK 记 2、其余记 1）。
+   * 0 或空 = 智能断句（引擎默认）；-1 = 不限制长度（仅按停顿/标点断句，不按字数硬切）；
+   * 正数 = 自定义上限（超出时在标点或词边界处拆分）。
+   */
   maxSubtitleChars?: number;
   /** 中文标点去除（任务级开关）：开启后把中文标点替换为空格。作用于源字幕(中文源)与译文(中文目标)。缺省关闭。 */
   removeChinesePunctuation?: boolean;

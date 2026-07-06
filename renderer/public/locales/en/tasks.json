@@ -76,8 +76,13 @@
     "hint": "Turn on when subtitles loop or repeat heavily. Global setting; applies to both faster-whisper and whisper.cpp."
   },
   "subtitleLength": {
-    "label": "Max characters per subtitle",
-    "hint": "0 keeps the engine default. Use 20-60 to rebuild lines from word-level timestamps so fast English speech or bilingual subtitles do not become overly long."
+    "label": "Subtitle line breaking",
+    "modeSmart": "Smart segmentation (recommended)",
+    "modeUnlimited": "No length limit",
+    "modeCustom": "Custom length limit",
+    "hintSmart": "The engine splits lines at pauses and punctuation, keeping each subtitle at a readable length.",
+    "hintUnlimited": "Split only at speech pauses and punctuation. Lines are never force-split by length and may run long.",
+    "hintCustom": "Lines over the limit are split at punctuation or word boundaries, never inside a word. CJK characters count as 2 (40 is about 20 Chinese characters); 30-50 suggested for Chinese, 40-60 for English."
   },
   "chinesePunctuation": {
     "label": "Strip Chinese punctuation",

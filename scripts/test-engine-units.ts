@@ -83,6 +83,7 @@ import {
   wordsToTriples,
   groupTokenCues,
   getSubtitleCueOptions,
+  getMergeShortCueOptions,
   resplitSubtitleCues,
   composeWordCues,
   mergeShortCues,
@@ -1378,6 +1379,25 @@ eq(
   { maxWidth: 8, softMaxWidth: 6 },
   'splitConfig: user value is clamped to readable minimum',
 );
+// -1 =「不限制长度」：关闭宽度硬切（仅按停顿/标点/时长断句），合并上限同步放开，
+// 段级兜底重拆不生效（原生断句本就不按宽度硬切）。
+eq(
+  getSubtitleCueOptions({ maxSubtitleChars: -1 }),
+  { maxWidth: Number.POSITIVE_INFINITY },
+  'splitConfig: -1 (unlimited) disables width hard cut',
+);
+eq(
+  getMergeShortCueOptions({ maxSubtitleChars: -1 }),
+  { maxWidth: Number.POSITIVE_INFINITY },
+  'splitConfig: -1 (unlimited) lifts merge width cap',
+);
+eq(
+  resplitSubtitleCues([T('0', '5', '一二三四五六七八九十')], {
+    maxSubtitleChars: -1,
+  }),
+  [['0', '5', '一二三四五六七八九十']],
+  'splitConfig: -1 (unlimited) keeps segment-level cues unsplit',
+);
 eq(
   groupTokenCues(
     wordsToTriples([
@@ -1417,6 +1437,18 @@ eq(
   ],
   'splitConfig: text fallback breaks after dunhao (shared punct set)',
 );
+// 文本级兜底第二级断点：无标点可断且直切会拆词（我们的人|工智能）→ 回退词边界
+// （Intl.Segmenter：我们|的|人工|智能）→「我们的|人工智能」，时间按宽度比例插值。
+eq(
+  resplitSubtitleCues([T('0', '7', '我们的人工智能')], {
+    maxSubtitleChars: 8,
+  }),
+  [
+    ['00:00:00,000', '00:00:03,000', '我们的'],
+    ['00:00:03,000', '00:00:07,000', '人工智能'],
+  ],
+  'splitConfig: text fallback backtracks to word boundary (no mid-word split)',
+);
 // composeWordCues 统一出口：词级三元组 + 任务级上限 → group(含硬切回溯)+merge+minDisplay。
 eq(
   composeWordCues(
@@ -1448,6 +1480,33 @@ eq(
   [['00:00:00,000', '00:00:01,200', 'Hello world again today']],
   'splitConfig: composeWordCues keeps engine defaults when limit unset',
 );
+// -1（不限制长度）对比默认档：同一段 25 汉字（宽度 50）无标点无停顿语流，
+// 默认档被 40 宽度兜底切开，-1 保持单条（只按停顿/标点/时长断句）。
+{
+  const longTokens = [
+    T('0', '0.5', '这是一段很'),
+    T('0.5', '1', '长很长的没'),
+    T('1', '1.5', '有任何标点'),
+    T('1.5', '2', '的中文语音'),
+    T('2', '2.5', '内容示例哦'),
+  ];
+  eq(
+    composeWordCues(longTokens, { maxSubtitleChars: 0 }).length > 1,
+    true,
+    'splitConfig: default 40-width guard still splits punctless stream (contrast)',
+  );
+  eq(
+    composeWordCues(longTokens, { maxSubtitleChars: -1 }),
+    [
+      [
+        '00:00:00,000',
+        '00:00:02,500',
+        '这是一段很长很长的没有任何标点的中文语音内容示例哦',
+      ],
+    ],
+    'splitConfig: -1 (unlimited) keeps punctless stream as one cue',
+  );
+}
 
 // --- subtitleSegmentation: 硬切回溯到最近可断标点（避免孤立句尾词） ---
 // 宽度超限时不在「当前词前」切，而是回溯到 cue 内最后一个可断标点后切；
@@ -1489,7 +1548,7 @@ eq(
   ],
   'group: hard-cut backtracks at dunhao (excluded from soft cut only)',
 );
-// 句内无可断标点 → 与回溯前行为一致（在当前词前切）。
+// 句内无可断标点、直切处恰为词边界（甲乙丙丁|戊）→ 与回溯前行为一致（在当前词前切）。
 eq(
   groupTokenCues(
     [
@@ -1506,6 +1565,25 @@ eq(
     ['00:00:01,200', '00:00:01,500', '戊'],
   ],
   'group: hard-cut without punct falls back to cut-before-token',
+);
+// 第二级回退：无标点且直切会把「不错」从 token 缝拆开（…很不|错）→ 回溯到
+// 词边界对齐的 token 边界（Intl.Segmenter：今天|天气|很|不错）→「今天天气很|不错」。
+eq(
+  groupTokenCues(
+    [
+      T('0', '0.3', '今天'),
+      T('0.3', '0.6', '天气'),
+      T('0.6', '0.9', '很'),
+      T('0.9', '1.2', '不'),
+      T('1.2', '1.5', '错'),
+    ],
+    { maxWidth: 12 },
+  ),
+  [
+    ['00:00:00,000', '00:00:00,900', '今天天气很'],
+    ['00:00:00,900', '00:00:01,500', '不错'],
+  ],
+  'group: hard-cut backtracks to word boundary (no mid-word split)',
 );
 // 余部并入本 token 后仍超宽 → 余部单独成条（任何 cue 不超宽；单字余部交 mergeShortCues 回收）。
 eq(
