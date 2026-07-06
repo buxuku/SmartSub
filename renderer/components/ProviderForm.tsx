@@ -10,6 +10,7 @@ import {
   Settings2,
   ChevronDown,
   ChevronUp,
+  Info,
   Plus,
   X,
 } from 'lucide-react';
@@ -48,8 +49,17 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { CustomParameterEditor } from './CustomParameterEditor';
-import { PROVIDER_ADVANCED_FIELD_KEYS } from 'lib/providerPanelUtils';
+import {
+  PROVIDER_ADVANCED_FIELD_KEYS,
+  PROVIDER_BATCH_ROW_FIELD_KEYS,
+} from 'lib/providerPanelUtils';
 import { cn } from 'lib/utils';
 import axios from 'axios';
 
@@ -107,8 +117,13 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
     },
   };
 
+  // 批量翻译三参数（批量数量 / 并发 / 请求间隔）单独成行直显，说明收进 tooltip
+  const batchRowFields = PROVIDER_BATCH_ROW_FIELD_KEYS.map((key) =>
+    fields.find((f) => f.key === key),
+  ).filter((f): f is ProviderField => !!f);
+  const batchRowKeys = new Set(batchRowFields.map((f) => f.key));
   const basicFields = fields.filter(
-    (f) => !PROVIDER_ADVANCED_FIELD_KEYS.has(f.key),
+    (f) => !PROVIDER_ADVANCED_FIELD_KEYS.has(f.key) && !batchRowKeys.has(f.key),
   );
   const advancedFields = fields.filter((f) =>
     PROVIDER_ADVANCED_FIELD_KEYS.has(f.key),
@@ -517,9 +532,40 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
     </div>
   );
 
+  /** 并排行的紧凑字段：长说明收进 label 旁的 info 图标 tooltip，避免三列文案拥挤 */
+  const renderCompactFieldBlock = (field: ProviderField) => (
+    <div key={field.key} className="space-y-2">
+      <label className="flex items-center gap-1 text-sm font-medium">
+        <span className="truncate" title={t(field.label)}>
+          {t(field.label)}
+        </span>
+        {field.required && <span className="text-destructive">*</span>}
+        {field.tips && (
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <Info className="h-3.5 w-3.5 shrink-0 cursor-help text-muted-foreground" />
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs text-xs leading-relaxed">
+              <p dangerouslySetInnerHTML={{ __html: t(field.tips) }} />
+            </TooltipContent>
+          </Tooltip>
+        )}
+      </label>
+      {renderField(field)}
+    </div>
+  );
+
   return (
     <div className="grid gap-4">
       {basicFields.map(renderFieldBlock)}
+
+      {batchRowFields.length > 0 && (
+        <TooltipProvider>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {batchRowFields.map(renderCompactFieldBlock)}
+          </div>
+        </TooltipProvider>
+      )}
 
       {advancedFields.length > 0 && (
         <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>

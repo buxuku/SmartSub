@@ -253,15 +253,26 @@ const CloudProviderPanel: React.FC<CloudProviderPanelProps> = ({
     );
   };
 
+  /**
+   * 字段说明文案：协议型预设槽位（OpenAI / Groq / 硅基流动）优先取
+   * `<tipsKey>_<presetId>` 的平台专属文案（带各家注册/控制台链接），缺失回落通用文案。
+   */
+  const resolveTips = (field: AsrProviderField): string | undefined => {
+    if (!field.tips) return undefined;
+    if (preset) {
+      const presetTips = t(`${field.tips}_${preset.id}`, { defaultValue: '' });
+      if (presetTips) return presetTips;
+    }
+    return t(field.tips, { defaultValue: field.tips });
+  };
+
   const renderField = (field: AsrProviderField) => {
     const value = instance?.[field.key] ?? defaults[field.key] ?? '';
     const label = t(field.label, { defaultValue: field.label });
     const placeholder = field.placeholder
       ? t(field.placeholder, { defaultValue: field.placeholder })
       : undefined;
-    const tips = field.tips
-      ? t(field.tips, { defaultValue: field.tips })
-      : undefined;
+    const tips = resolveTips(field);
 
     return (
       <div key={field.key} className="space-y-1.5">
@@ -315,7 +326,21 @@ const CloudProviderPanel: React.FC<CloudProviderPanelProps> = ({
             className={/url|key/i.test(field.key) ? 'font-mono' : undefined}
           />
         )}
-        {tips && <p className="text-xs text-muted-foreground">{tips}</p>}
+        {tips && (
+          // 与翻译服务商表单一致：说明支持内嵌 <a> 链接，点击经主进程用系统浏览器打开
+          <p
+            className="text-xs text-muted-foreground"
+            dangerouslySetInnerHTML={{ __html: tips }}
+            onClick={(e) => {
+              const target = e.target as HTMLElement;
+              if (target.tagName === 'A') {
+                e.preventDefault();
+                const url = target.getAttribute('href');
+                if (url) window?.ipc?.send('openUrl', url);
+              }
+            }}
+          />
+        )}
       </div>
     );
   };

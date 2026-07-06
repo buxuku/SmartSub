@@ -3,16 +3,20 @@ import { isProviderConfigured } from './providerUtils';
 
 export const LAST_PROVIDER_STORAGE_KEY = 'resourcesProvidersSelectedId';
 
-/** AI / 批量类表单项，折叠到「高级选项」 */
+/** AI / 限流类表单项，折叠到「高级选项」 */
 export const PROVIDER_ADVANCED_FIELD_KEYS = new Set([
   'systemPrompt',
   'prompt',
   'structuredOutput',
+  'windowMaxRequests',
+]);
+
+/** 批量翻译三参数：不折叠，在表单主体并排一行直显（顺序即展示顺序） */
+export const PROVIDER_BATCH_ROW_FIELD_KEYS = [
   'batchSize',
   'batchConcurrency',
   'requestInterval',
-  'windowMaxRequests',
-]);
+] as const;
 
 export function sortProvidersCustomFirst(list: Provider[]): Provider[] {
   const custom = list

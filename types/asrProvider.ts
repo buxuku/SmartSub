@@ -210,7 +210,7 @@ export const ASR_PROVIDER_TYPES: AsrProviderType[] = [
         label: 'API Key',
         type: 'password',
         required: true,
-        tips: 'asrApiKeyTips',
+        tips: 'asrElevenApiKeyTips',
         placeholder: 'phElevenApiKey',
       },
       {
@@ -272,7 +272,7 @@ export const ASR_PROVIDER_TYPES: AsrProviderType[] = [
         label: 'API Key',
         type: 'password',
         required: true,
-        tips: 'asrApiKeyTips',
+        tips: 'asrDeepgramApiKeyTips',
         placeholder: 'phDeepgramApiKey',
       },
       {
