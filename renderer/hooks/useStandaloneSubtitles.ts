@@ -663,6 +663,31 @@ export const useStandaloneSubtitles = (
     [applySubtitles, flushPendingEdit, history.push, t],
   );
 
+  // 删除单行字幕（区间命令：1 行 → 0 行；误删可通过撤销恢复）
+  const handleDeleteSubtitle = useCallback(
+    (index: number) => {
+      const current = subtitlesRef.current;
+      const row = current[index];
+      if (!row) return;
+
+      flushPendingEdit();
+      history.push({ start: index, removed: [row], inserted: [] });
+
+      const next = current.slice();
+      next.splice(index, 1);
+      applySubtitles(renormalizeIds(next));
+      // 删除行后后续索引整体前移：当前行指针跟随钳制，避免越界或指向错行
+      setCurrentSubtitleIndex((prev) => {
+        if (prev < 0) return prev;
+        if (prev === index) return Math.min(prev, next.length - 1);
+        return prev > index ? prev - 1 : prev;
+      });
+      setIsDirty(true);
+      toast.success(t('deleteSuccess'));
+    },
+    [applySubtitles, flushPendingEdit, history.push, t],
+  );
+
   // 拆分字幕（区间命令：1 行 → 2 行；支持自定义时间拆分点）
   const handleSplitSubtitle = useCallback(
     (index: number, splitPoint: number, splitTime?: number) => {
@@ -767,6 +792,7 @@ export const useStandaloneSubtitles = (
     canRedo,
     handleMergeSubtitles,
     handleSplitSubtitle,
+    handleDeleteSubtitle,
     handleTimeChange,
     // 光标位置
     handleCursorPositionChange,

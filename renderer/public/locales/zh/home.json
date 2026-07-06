@@ -219,6 +219,7 @@
   "split": "拆分",
   "mergeSuccess": "字幕已合并",
   "splitSuccess": "字幕已拆分",
+  "deleteSuccess": "字幕已删除，可通过撤销恢复",
   "splitSubtitleDesc": "选择文字拆分位置和时间分配",
   "textSplitPosition": "文字拆分位置",
   "sourcePreview": "原文预览",

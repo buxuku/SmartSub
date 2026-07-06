@@ -219,6 +219,7 @@
   "split": "Split",
   "mergeSuccess": "Subtitles merged",
   "splitSuccess": "Subtitle split",
+  "deleteSuccess": "Subtitle deleted, undo to restore",
   "splitSubtitleDesc": "Choose text split position and time allocation",
   "textSplitPosition": "Text split position",
   "sourcePreview": "Source preview",

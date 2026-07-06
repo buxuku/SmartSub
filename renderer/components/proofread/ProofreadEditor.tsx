@@ -99,6 +99,7 @@ export default function ProofreadEditor({
     canRedo,
     handleMergeSubtitles,
     handleSplitSubtitle,
+    handleDeleteSubtitle,
     handleTimeChange,
     // 光标位置
     handleCursorPositionChange,
@@ -462,6 +463,7 @@ export default function ProofreadEditor({
           onCursorPositionChange={handleCursorPositionChange}
           onAiOptimizeClick={handleAiOptimizeClick}
           onSplitClick={handleSplitClick}
+          onDeleteClick={handleDeleteSubtitle}
           onTimeChange={handleTimeChange}
           retranslate={retranslate}
           onMergeRange={handleMergeSubtitles}
