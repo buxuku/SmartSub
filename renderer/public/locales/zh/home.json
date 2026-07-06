@@ -12,6 +12,8 @@
   "customSettings": "自定义设置",
   "maxConcurrentTasks": "最大并发任务数",
   "pleaseInputMaxConcurrentTasks": "请输入最大并发任务数",
+  "maxConcurrentTasksHintSerialTranscribe": "该引擎共用单一本地运行时，多任务并发时「提取字幕」阶段会自动排队逐个执行；并发仍可加速多文件的音频提取与字幕翻译阶段。",
+  "maxConcurrentTasksHintCloud": "云端听写按任务并发执行；同一服务商的实际请求受其「并发请求数 / 请求间隔」设置全局约束，多任务叠加时自动排队，避免触发服务商限流。",
   "subtitleOutputFormat": "字幕输出格式",
   "subtitleOutputFormatTip": "设置生成/翻译后字幕文件的保存格式，对源字幕与翻译字幕同时生效。校对模块导入时会按文件后缀自动识别格式。TXT 为纯文本（无时间轴），LRC 仅含起始时间。",
   "format_srt": "SRT (.srt)",

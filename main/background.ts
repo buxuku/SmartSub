@@ -1,3 +1,6 @@
+// 必须是第一个 import：放大 libuv 线程池（首个异步 I/O 后定型，不可再改）
+import './helpers/uvThreadPool';
+
 // 在最开始加载环境变量（仅开发模式；路径相对 app/ 编译产物）
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config({

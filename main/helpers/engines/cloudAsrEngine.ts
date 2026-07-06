@@ -34,15 +34,12 @@ import {
 } from './cloudAsrShared';
 import { resplitSubtitleCues } from '../subtitleSegmentation';
 import type { AsrWord } from '../../service/asr/types';
+import { getCloudProviderGate } from './cloudProviderGate';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
 /** 无时间戳（text-only 模型）降级时，用更细的静音切片换取更细的粗粒度时间轴。 */
 const COARSE_DEGRADE_CHUNK_SECONDS = 20;
 const DEFAULT_CONCURRENCY = 4;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /** 有限并发 map，按序返回结果；worker 内任一失败即整体 reject。 */
 async function mapWithConcurrency<T, R>(
@@ -63,18 +60,6 @@ async function mapWithConcurrency<T, R>(
   });
   await Promise.all(workers);
   return results;
-}
-
-/** 近似速率闸：让并发请求的「开始时刻」间隔 ≥ intervalMs（requestInterval 秒）。 */
-function makeRateGate(intervalMs: number) {
-  let nextAllowed = 0;
-  return async () => {
-    if (intervalMs <= 0) return;
-    const now = Date.now();
-    const wait = Math.max(0, nextAllowed - now);
-    nextAllowed = Math.max(now, nextAllowed) + intervalMs;
-    if (wait > 0) await sleep(wait);
-  };
 }
 
 /**
@@ -152,6 +137,10 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
     Math.floor(Number(provider.concurrency) || DEFAULT_CONCURRENCY),
   );
   const intervalMs = Math.max(0, Number(provider.requestInterval) || 0) * 1000;
+  // 服务商级全局闸（跨任务共享）：任务级并发放开后，同一服务商的在途请求
+  // 总数仍 ≤ concurrency、请求起始间隔 ≥ requestInterval，避免多任务叠加打爆配额。
+  const gate = getCloudProviderGate(provider.id);
+  gate.setLimits(concurrency, intervalMs);
 
   logMessage(
     `cloud ASR start: provider=${provider.name} type=${provider.type} model=${model} lang=${language ?? 'auto'}`,
@@ -173,14 +162,21 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
 
   try {
     if (prepared.sizeBytes > 0 && prepared.sizeBytes <= limits.maxUploadBytes) {
-      // 单请求路径：整段上传。
+      // 单请求路径：整段上传。整个 transcriber 调用占一个服务商槽
+      // （订单制服务商含轮询等待，对应其"并发转写路数"配额）。
       event.sender.send('taskProgressChange', file, 'extractSubtitle', 10);
-      const result = await transcriber(provider, {
-        audioPath: prepared.path,
-        model,
-        language,
-        signal,
-      });
+      const releaseSlot = await gate.acquire(signal);
+      let result: AsrTranscribeResult;
+      try {
+        result = await transcriber(provider, {
+          audioPath: prepared.path,
+          model,
+          language,
+          signal,
+        });
+      } finally {
+        releaseSlot();
+      }
       throwIfSignalCancelled(signal);
 
       if (result.hasWordTimestamps) {
@@ -203,7 +199,7 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
           language,
           signal,
           concurrency,
-          intervalMs,
+          gate,
           chunkSeconds: COARSE_DEGRADE_CHUNK_SECONDS,
         });
       }
@@ -220,7 +216,7 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
         language,
         signal,
         concurrency,
-        intervalMs,
+        gate,
         chunkSeconds: limits.maxChunkSeconds,
       });
     }
@@ -246,8 +242,10 @@ interface ChunkTranscribeOptions {
   model: string;
   language?: string;
   signal?: AbortSignal;
+  /** 本任务内的切片 worker 数上限（全局在途总量由 gate 再约束）。 */
   concurrency: number;
-  intervalMs: number;
+  /** 服务商级全局闸（并发 + 速率，跨任务共享）。 */
+  gate: ReturnType<typeof getCloudProviderGate>;
   chunkSeconds: number;
 }
 
@@ -262,7 +260,6 @@ async function transcribeChunkedDegrade(
     maxChunkSeconds: opts.chunkSeconds,
     signal: opts.signal,
   });
-  const gate = makeRateGate(opts.intervalMs);
   let completed = 0;
 
   try {
@@ -271,14 +268,18 @@ async function transcribeChunkedDegrade(
       opts.concurrency,
       async (chunk) => {
         throwIfSignalCancelled(opts.signal);
-        await gate();
-        throwIfSignalCancelled(opts.signal);
-        const r = await opts.transcriber!(opts.provider, {
-          audioPath: chunk.path,
-          model: opts.model,
-          language: opts.language,
-          signal: opts.signal,
-        });
+        const releaseSlot = await opts.gate.acquire(opts.signal);
+        let r: AsrTranscribeResult;
+        try {
+          r = await opts.transcriber!(opts.provider, {
+            audioPath: chunk.path,
+            model: opts.model,
+            language: opts.language,
+            signal: opts.signal,
+          });
+        } finally {
+          releaseSlot();
+        }
         completed += 1;
         const percent = Math.min(
           99,

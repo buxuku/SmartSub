@@ -4920,7 +4920,202 @@ eq(
   );
 }
 
-console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
-if (failed > 0) {
-  process.exit(1);
+// --- transcribeGate / cloudProviderGate（异步并发原语，须在同步用例后运行） ---
+import { acquireTranscribeSlot } from '../main/helpers/engines/transcribeGate';
+import { getCloudProviderGate } from '../main/helpers/engines/cloudProviderGate';
+import { isTaskCancelledError } from '../main/helpers/taskContext';
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+async function runAsyncConcurrencyTests(): Promise<void> {
+  // 非受限引擎不排队：未释放前重复获取也立即放行
+  {
+    const r1 = await acquireTranscribeSlot('builtin');
+    const r2 = await acquireTranscribeSlot('cloud');
+    const r3 = await acquireTranscribeSlot('localCli');
+    eq(typeof r1, 'function', 'gate: builtin passes through');
+    r1();
+    r2();
+    r3();
+  }
+
+  // 同组互斥 + FIFO：funasr 持锁时 qwen 排队，释放后按序放行
+  {
+    const releaseA = await acquireTranscribeSlot('funasr');
+    let bAcquired = false;
+    let cAcquired = false;
+    const pB = acquireTranscribeSlot('qwen').then((r) => {
+      bAcquired = true;
+      return r;
+    });
+    const pC = acquireTranscribeSlot('fireRedAsr').then((r) => {
+      cAcquired = true;
+      return r;
+    });
+    await sleepMs(20);
+    eq(
+      [bAcquired, cAcquired],
+      [false, false],
+      'gate: sherpa group is mutually exclusive while held',
+    );
+    releaseA();
+    const releaseB = await pB;
+    await sleepMs(10);
+    eq(cAcquired, false, 'gate: FIFO — third waiter still queued');
+    releaseB();
+    const releaseC = await pC;
+    releaseC();
+  }
+
+  // 跨组并行：pySidecar 与 sherpaWorker 互不阻塞
+  {
+    const releaseFw = await acquireTranscribeSlot('fasterWhisper');
+    let sherpaAcquired = false;
+    const pSherpa = acquireTranscribeSlot('funasr').then((r) => {
+      sherpaAcquired = true;
+      return r;
+    });
+    await sleepMs(10);
+    eq(sherpaAcquired, true, 'gate: different executor groups run in parallel');
+    releaseFw();
+    (await pSherpa)();
+  }
+
+  // 排队等待可被取消：中断后抛取消错误且不再占队列
+  {
+    const releaseA = await acquireTranscribeSlot('fasterWhisper');
+    const abort = new AbortController();
+    let bError: unknown = null;
+    const pB = acquireTranscribeSlot('fasterWhisper', abort.signal).catch(
+      (e) => {
+        bError = e;
+        return null;
+      },
+    );
+    let cAcquired = false;
+    const pC = acquireTranscribeSlot('fasterWhisper').then((r) => {
+      cAcquired = true;
+      return r;
+    });
+    abort.abort();
+    await pB;
+    eq(
+      isTaskCancelledError(bError),
+      true,
+      'gate: queued waiter aborts with TaskCancelledError',
+    );
+    eq(cAcquired, false, 'gate: later waiter unaffected by aborted one');
+    releaseA();
+    (await pC)();
+    // 已中止的 signal 直接拒绝
+    let immediateError: unknown = null;
+    await acquireTranscribeSlot('fasterWhisper', abort.signal).catch((e) => {
+      immediateError = e;
+    });
+    eq(
+      isTaskCancelledError(immediateError),
+      true,
+      'gate: pre-aborted signal rejects immediately',
+    );
+  }
+
+  // 云端服务商闸：并发上限跨调用共享
+  {
+    const gate = getCloudProviderGate('test-provider-a');
+    gate.setLimits(2, 0);
+    const r1 = await gate.acquire();
+    const r2 = await gate.acquire();
+    let thirdAcquired = false;
+    const p3 = gate.acquire().then((r) => {
+      thirdAcquired = true;
+      return r;
+    });
+    await sleepMs(20);
+    eq(thirdAcquired, false, 'cloud gate: concurrency cap holds third request');
+    r1();
+    const r3 = await p3;
+    eq(thirdAcquired, true, 'cloud gate: slot handoff after release');
+    r2();
+    r3();
+  }
+
+  // 云端服务商闸：请求起始间隔 ≥ interval（跨调用生效）
+  {
+    const gate = getCloudProviderGate('test-provider-b');
+    gate.setLimits(4, 100);
+    const t0 = Date.now();
+    (await gate.acquire())();
+    (await gate.acquire())();
+    const elapsed = Date.now() - t0;
+    eq(
+      elapsed >= 90,
+      true,
+      `cloud gate: rate interval enforced (elapsed=${elapsed}ms)`,
+    );
+  }
+
+  // 云端服务商闸：等待槽位时可取消；release 幂等
+  {
+    const gate = getCloudProviderGate('test-provider-c');
+    gate.setLimits(1, 0);
+    const r1 = await gate.acquire();
+    const abort = new AbortController();
+    let err: unknown = null;
+    const p2 = gate.acquire(abort.signal).catch((e) => {
+      err = e;
+      return null;
+    });
+    abort.abort();
+    await p2;
+    eq(
+      isTaskCancelledError(err),
+      true,
+      'cloud gate: waiting acquire aborts with TaskCancelledError',
+    );
+    r1();
+    r1(); // 幂等：重复 release 不应放大计数
+    const r3 = await gate.acquire();
+    let fourthAcquired = false;
+    const p4 = gate.acquire().then((r) => {
+      fourthAcquired = true;
+      return r;
+    });
+    await sleepMs(20);
+    eq(fourthAcquired, false, 'cloud gate: double release does not leak slots');
+    r3();
+    (await p4)();
+  }
+
+  // 云端服务商闸：上调并发上限立即放行等待者
+  {
+    const gate = getCloudProviderGate('test-provider-d');
+    gate.setLimits(1, 0);
+    const r1 = await gate.acquire();
+    let secondAcquired = false;
+    const p2 = gate.acquire().then((r) => {
+      secondAcquired = true;
+      return r;
+    });
+    await sleepMs(10);
+    eq(secondAcquired, false, 'cloud gate: waiter queued at limit 1');
+    gate.setLimits(2, 0);
+    const r2 = await p2;
+    eq(secondAcquired, true, 'cloud gate: raising limit drains waiters');
+    r1();
+    r2();
+  }
+}
+
+runAsyncConcurrencyTests()
+  .catch((error) => {
+    failed++;
+    console.error(`✗ async concurrency tests crashed: ${error}`);
+  })
+  .finally(() => {
+    console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
+    if (failed > 0) {
+      process.exit(1);
+    }
+  });

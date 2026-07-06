@@ -7,11 +7,11 @@ import { getTaskContext, TaskCancelledError } from '../taskContext';
 import { getWhisperLanguage } from './transcribeShared';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
-let activeLocalCliChild: ChildProcess | null = null;
+/** 在途 CLI 子进程集合：任务级并发下可能同时存在多个，取消须精确到进程。 */
+const activeLocalCliChildren = new Set<ChildProcess>();
 
-function cancelLocalCliTranscription(): void {
-  const child = activeLocalCliChild;
-  if (!child || child.pid == null) return;
+function killLocalCliChild(child: ChildProcess): void {
+  if (child.pid == null) return;
   try {
     if (process.platform === 'win32') {
       // 杀整棵进程树（whisper CLI 常 fork 子进程）
@@ -22,7 +22,11 @@ function cancelLocalCliTranscription(): void {
   } catch {
     // 进程可能已退出
   }
-  activeLocalCliChild = null;
+}
+
+function cancelLocalCliTranscription(): void {
+  activeLocalCliChildren.forEach((child) => killLocalCliChild(child));
+  activeLocalCliChildren.clear();
 }
 
 /**
@@ -65,13 +69,15 @@ function transcribeLocalCli(ctx: TranscribeContext): Promise<string> {
     }
 
     const child = spawn(runShell, { shell: true, windowsHide: true });
-    activeLocalCliChild = child;
+    activeLocalCliChildren.add(child);
     let stderrBuf = '';
     let cancelled = false;
 
     const onAbort = () => {
       cancelled = true;
-      cancelLocalCliTranscription();
+      // 只终止本任务的子进程，不波及并发中的其它任务
+      killLocalCliChild(child);
+      activeLocalCliChildren.delete(child);
     };
     signal?.addEventListener('abort', onAbort, { once: true });
 
@@ -84,7 +90,7 @@ function transcribeLocalCli(ctx: TranscribeContext): Promise<string> {
 
     child.on('error', (error) => {
       signal?.removeEventListener('abort', onAbort);
-      if (activeLocalCliChild === child) activeLocalCliChild = null;
+      activeLocalCliChildren.delete(child);
       if (cancelled || signal?.aborted) {
         reject(new TaskCancelledError());
         return;
@@ -95,7 +101,7 @@ function transcribeLocalCli(ctx: TranscribeContext): Promise<string> {
 
     child.on('close', (code, sig) => {
       signal?.removeEventListener('abort', onAbort);
-      if (activeLocalCliChild === child) activeLocalCliChild = null;
+      activeLocalCliChildren.delete(child);
 
       if (cancelled || signal?.aborted) {
         reject(new TaskCancelledError());

@@ -14,10 +14,8 @@ import { killFfmpegForFiles } from './audioProcessor';
 import {
   listEngineAdapters,
   getEngineAdapterForTask,
-  resolveEngineIdForTask,
 } from './engines/registry';
 import { getPythonRuntimeManager } from './pythonRuntime';
-import type { TranscriptionEngine } from '../../types/engine';
 import {
   acquireTaskPowerSaveBlocker,
   releaseTaskPowerSaveBlocker,
@@ -84,21 +82,7 @@ let isProcessing = false;
 let maxConcurrentTasks = 3;
 let hasOpenAiWhisper = false;
 let activeTasksCount = 0;
-/** 执行中"受限引擎"(faster-whisper/funasr)任务数：混合引擎队列并发钳制用。 */
-let activeRestrictiveCount = 0;
 
-/**
- * faster-whisper / funasr / qwen / fireRedAsr 共享单 sidecar/worker，需钳制有效并发为 1。
- * 云引擎（'cloud'）为纯网络 I/O，可高并发，刻意不在此列（遵循用户配置的 maxConcurrentTasks）。
- */
-function isRestrictiveEngine(engine: TranscriptionEngine): boolean {
-  return (
-    engine === 'fasterWhisper' ||
-    engine === 'funasr' ||
-    engine === 'qwen' ||
-    engine === 'fireRedAsr'
-  );
-}
 /** 最近一次 handleTask 的 event：resume 触发派发时复用 */
 let dispatchEvent: any = null;
 /** Dock/任务栏进度条目标窗口 */
@@ -280,10 +264,11 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
       runtime.total += files.length;
       updateTaskbarProgress();
       syncTranscriptionPowerSaveBlocker();
+      // 每批都刷新并发上限：流水线跑着时追加新批次，用户最新设置也能生效
+      maxConcurrentTasks = formData.maxConcurrentTasks || 3;
       if (!isProcessing) {
         isProcessing = true;
         hasOpenAiWhisper = await checkOpenAiWhisper();
-        maxConcurrentTasks = formData.maxConcurrentTasks || 3;
         // 预热 sidecar：把冷启动成本移出首个文件关键路径（faster-whisper 等需运行时引擎）。
         // ensureStarted 成功后再 prewarm（按引擎预加载模型），与首个文件的音频抽取并行，
         // 避免 FunASR 等首个 transcribe 因首次加载原生库/ONNX 过慢而长时间卡在 0%。
@@ -357,19 +342,13 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
       if (runtime && runtime.active > 0) {
         runtime.cancelled = true;
         runtime.paused = false;
+        // 取消经各任务的 AbortSignal 精确中断：引擎适配器都监听了 signal
+        // （builtin/localCli/cloud 原生中断；faster-whisper/sherpa 系按转写 id 通知
+        // 各自 runtime 取消），不再对全部适配器广播 cancelActive——任务级并发下
+        // 广播会误伤其它工程正在执行的转写。
         runtime.controller.abort();
         // kill ffmpeg 提取；whisper 转写经 AbortSignal 同步中断
         killFfmpegForFiles(Array.from(runtime.activeFiles));
-        // 通知所有引擎中断进行中的转写（如 faster-whisper sidecar 的逐段取消）。
-        // 逐任务引擎下无全局"当前引擎"，对全部适配器调用 cancelActive；
-        // 未在运行的引擎为空操作（内置 whisper 已由 AbortSignal 中断）。
-        for (const adapter of listEngineAdapters()) {
-          try {
-            adapter.cancelActive();
-          } catch (err) {
-            logMessage(`cancelActive(${adapter.id}) failed: ${err}`, 'warning');
-          }
-        }
         logMessage(
           `cancel project ${id}: aborting ${runtime.active} running file(s)`,
           'warning',
@@ -377,6 +356,17 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
       } else {
         projectRuntimes.delete(id);
         sendTaskComplete(event, id, 'cancelled');
+      }
+    }
+    // 全局取消（未指定工程）时仍广播 cancelActive 作为兜底：
+    // 此时所有工程都要停，不存在误伤面。
+    if (!projectId) {
+      for (const adapter of listEngineAdapters()) {
+        try {
+          adapter.cancelActive();
+        } catch (err) {
+          logMessage(`cancelActive(${adapter.id}) failed: ${err}`, 'warning');
+        }
       }
     }
     updateTaskbarProgress();
@@ -463,29 +453,11 @@ async function processNextTasks(event) {
     return;
   }
 
-  // 混合引擎并发钳制：只要"执行中"或"待派发(可派发)"任务里含 faster-whisper/funasr，
-  // 有效并发钳为 1（共享单 sidecar/worker，避免显存争用与取消句柄相互覆盖）；
-  // 纯 builtin/localCli 队列遵循用户配置的并发。
-  let effectiveMax = maxConcurrentTasks;
-  try {
-    let hasRestrictive = activeRestrictiveCount > 0;
-    if (!hasRestrictive) {
-      for (const item of processingQueue) {
-        const runtime = projectRuntimes.get(item.projectId);
-        if (runtime?.paused || runtime?.cancelled) continue;
-        if (isRestrictiveEngine(resolveEngineIdForTask(item.formData))) {
-          hasRestrictive = true;
-          break;
-        }
-      }
-    }
-    if (hasRestrictive) effectiveMax = 1;
-  } catch {
-    // 解析引擎失败时回退到用户配置的并发
-  }
-
-  // 计算可以启动的新任务数量
-  const availableSlots = effectiveMax - activeTasksCount;
+  // 任务级并发统一遵循用户配置的 maxConcurrentTasks。
+  // 受限引擎（faster-whisper / funasr / qwen / fireRedAsr 共享单 sidecar/worker）
+  // 不再在此钳制整个队列：其「转写阶段」由 transcribeGate 按执行体组排队，
+  // 排队期间同批其它文件的音频提取 / 翻译 / 云端转写照常并行（阶段流水线）。
+  const availableSlots = maxConcurrentTasks - activeTasksCount;
 
   if (availableSlots > 0) {
     const tasksToProcess = takeEligibleItems(availableSlots);
@@ -495,10 +467,8 @@ async function processNextTasks(event) {
       tasksToProcess.forEach(async (task) => {
         const runtime = ensureRuntime(task.projectId);
         const fileUuid = task.file?.uuid;
-        const taskEngine = resolveEngineIdForTask(task.formData);
         activeTasksCount++;
         runtime.active++;
-        if (isRestrictiveEngine(taskEngine)) activeRestrictiveCount++;
         if (fileUuid) runtime.activeFiles.add(fileUuid);
         try {
           const baseProvider = translationProviders.find(
@@ -531,7 +501,6 @@ async function processNextTasks(event) {
         } finally {
           activeTasksCount--;
           runtime.active--;
-          if (isRestrictiveEngine(taskEngine)) activeRestrictiveCount--;
           runtime.completed++;
           if (fileUuid) runtime.activeFiles.delete(fileUuid);
           finalizeProjectIfDrained(event, task.projectId);

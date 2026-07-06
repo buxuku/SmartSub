@@ -697,6 +697,17 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                             value={field.value || 1}
                           />
                         </FormControl>
+                        {/* 并发语义按引擎明示：受限引擎转写阶段全局排队；云端受服务商级全局闸约束 */}
+                        {(engine === 'fasterWhisper' || sherpa) && (
+                          <FormDescription className="text-xs">
+                            {tHome('maxConcurrentTasksHintSerialTranscribe')}
+                          </FormDescription>
+                        )}
+                        {engine === 'cloud' && (
+                          <FormDescription className="text-xs">
+                            {tHome('maxConcurrentTasksHintCloud')}
+                          </FormDescription>
+                        )}
                       </FormItem>
                     )}
                   />

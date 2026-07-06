@@ -25,7 +25,8 @@ import { buildQwenParams } from './qwenParams';
 import { resolveEffectiveSettings } from './outcomePresets';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
-let activeTranscribeId: string | null = null;
+/** 在途转写 id 集合：任务级并发下可能同时存在多个（排队+执行），取消须精确到 id。 */
+const activeTranscribeIds = new Set<string>();
 
 type QwenSelection = NonNullable<ReturnType<typeof resolveQwenSelection>>;
 
@@ -110,11 +111,11 @@ async function transcribeQwen(ctx: TranscribeContext): Promise<string> {
   const { id, result } = runtime.transcribe(model, tempAudioFile, (percent) =>
     event.sender.send('taskProgressChange', file, 'extractSubtitle', percent),
   );
-  activeTranscribeId = id;
+  activeTranscribeIds.add(id);
 
   const signal = ctx.signal ?? getTaskContext()?.signal;
   const onAbort = () => {
-    if (activeTranscribeId === id) runtime.cancel(id);
+    if (activeTranscribeIds.has(id)) runtime.cancel(id);
   };
   if (signal?.aborted) runtime.cancel(id);
   else signal?.addEventListener('abort', onAbort, { once: true });
@@ -129,7 +130,7 @@ async function transcribeQwen(ctx: TranscribeContext): Promise<string> {
     throw error;
   } finally {
     signal?.removeEventListener('abort', onAbort);
-    activeTranscribeId = null;
+    activeTranscribeIds.delete(id);
   }
 
   if (signal?.aborted) throw new TaskCancelledError();
@@ -176,10 +177,9 @@ export const qwenEngineAdapter: TranscriptionEngineAdapter = {
   },
 
   cancelActive(): void {
-    if (activeTranscribeId) {
-      getSherpaAsrRuntime().cancel(activeTranscribeId);
-      activeTranscribeId = null;
-    }
+    const runtime = getSherpaAsrRuntime();
+    activeTranscribeIds.forEach((id) => runtime.cancel(id));
+    activeTranscribeIds.clear();
   },
 
   prewarm(formData: Record<string, unknown>): void {

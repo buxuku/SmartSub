@@ -61,13 +61,13 @@ function formatCudaRuntimeHint(error: unknown): string {
   return `faster-whisper GPU(CUDA) 加速所需的运行库（cuBLAS/cuDNN）缺失或无法加载，无法使用 CUDA。请在「资源中心 → 引擎 → faster-whisper」将「计算设备」改为 CPU，或改用其他转写引擎。原始错误：${raw}`;
 }
 
-let activeFasterWhisperTranscribeId: string | null = null;
+/** 在途转写 id 集合：任务级并发下可能同时存在多个（排队+执行），取消须精确到 id。 */
+const activeFasterWhisperTranscribeIds = new Set<string>();
 
 function cancelFasterWhisperTranscription(): void {
-  if (activeFasterWhisperTranscribeId) {
-    getPythonRuntimeManager().cancel(activeFasterWhisperTranscribeId);
-    activeFasterWhisperTranscribeId = null;
-  }
+  const manager = getPythonRuntimeManager();
+  activeFasterWhisperTranscribeIds.forEach((id) => manager.cancel(id));
+  activeFasterWhisperTranscribeIds.clear();
 }
 
 /**
@@ -248,10 +248,10 @@ async function transcribeFasterWhisper(
         );
       },
     });
-    activeFasterWhisperTranscribeId = id;
+    activeFasterWhisperTranscribeIds.add(id);
 
     const onAbort = () => {
-      if (activeFasterWhisperTranscribeId === id) manager.cancel(id);
+      if (activeFasterWhisperTranscribeIds.has(id)) manager.cancel(id);
     };
     if (signal?.aborted) {
       manager.cancel(id);
@@ -272,7 +272,7 @@ async function transcribeFasterWhisper(
       throw error;
     } finally {
       signal?.removeEventListener('abort', onAbort);
-      activeFasterWhisperTranscribeId = null;
+      activeFasterWhisperTranscribeIds.delete(id);
     }
   };
 

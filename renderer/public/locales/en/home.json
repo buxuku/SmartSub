@@ -12,6 +12,8 @@
   "customSettings": "Custom Settings",
   "maxConcurrentTasks": "Max Concurrent Tasks",
   "pleaseInputMaxConcurrentTasks": "Enter Maximum Concurrent Tasks",
+  "maxConcurrentTasksHintSerialTranscribe": "This engine shares a single local runtime, so the transcription stage automatically queues and runs one file at a time. Concurrency still speeds up audio extraction and subtitle translation across files.",
+  "maxConcurrentTasksHintCloud": "Cloud transcription runs tasks concurrently. Requests to the same provider are globally capped by its Concurrency / Request Interval settings, so stacked tasks queue automatically to avoid provider rate limits.",
   "subtitleOutputFormat": "Subtitle Output Format",
   "subtitleOutputFormatTip": "Format used when saving generated/translated subtitle files (applies to both source and translated subtitles). The proofreading module auto-detects format by file extension on import. TXT is plain text (no timing); LRC keeps start times only.",
   "format_srt": "SRT (.srt)",
