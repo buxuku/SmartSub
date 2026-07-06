@@ -38,6 +38,20 @@ export type Provider = {
   [key: string]: any;
 };
 
+/** 结构化输出（response_format）模式 */
+export type StructuredOutputMode = 'disabled' | 'json_object' | 'json_schema';
+
+/**
+ * 结构化输出模式优先级（能力从高到低）。
+ * 运行时静默降级与「测试自动探测」共用此顺序：
+ * json_schema 失败降到 json_object，再降到 disabled。
+ */
+export const STRUCTURED_OUTPUT_MODES: StructuredOutputMode[] = [
+  'json_schema',
+  'json_object',
+  'disabled',
+];
+
 export type ParameterValue = string | number | boolean | object | any[];
 
 export interface CustomParameterConfig {

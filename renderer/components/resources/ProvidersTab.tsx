@@ -24,6 +24,8 @@ import {
   CONFIG_TEMPLATES,
   defaultUserPrompt,
   defaultSystemPrompt,
+  STRUCTURED_OUTPUT_MODES,
+  StructuredOutputMode,
 } from '../../../types';
 import { cn } from 'lib/utils';
 import { isProviderConfigured } from 'lib/providerUtils';
@@ -120,7 +122,46 @@ type TestResult = {
   model?: string;
   source: string;
   target: string;
+  /** 自动探测成功后切换到的结构化输出模式 */
+  autoSwitchedMode?: StructuredOutputMode;
+  /** 自动探测已尝试所有结构化输出模式仍失败 */
+  triedAllModes?: boolean;
 };
+
+/** 结构化输出模式的展示名（与 structuredOutputTips 用词一致） */
+const STRUCTURED_OUTPUT_LABELS: Record<StructuredOutputMode, string> = {
+  disabled: 'Disabled',
+  json_object: 'JSON Object',
+  json_schema: 'JSON Schema',
+};
+
+/**
+ * 鉴权/网络类错误：换结构化输出参数无意义，跳过自动探测避免浪费调用。
+ */
+function isDetectSkippableError(error: unknown): boolean {
+  const raw = (
+    error instanceof Error ? error.message : String(error ?? '')
+  ).toLowerCase();
+  return [
+    '401',
+    '403',
+    'unauthorized',
+    'forbidden',
+    'api key',
+    'apikey',
+    'invalid credentials',
+    'missingkeyorsecret',
+    'quota',
+    'insufficient',
+    'enotfound',
+    'econnrefused',
+    'eai_again',
+    'etimedout',
+    'timeout',
+    'fetch failed',
+    '配置不完整',
+  ].some((keyword) => raw.includes(keyword));
+}
 
 /** 推荐卡：免费起步 / 质量优先，名字直接可点选中 */
 const RECOMMEND_ROWS: { labelKey: string; ids: string[] }[] = [
@@ -382,6 +423,10 @@ const ProvidersTab: React.FC = () => {
   };
 
   const [isTestLoading, setIsTestLoading] = useState(false);
+  // 自动探测进行中：当前正在尝试的结构化输出模式
+  const [detectingMode, setDetectingMode] =
+    useState<StructuredOutputMode | null>(null);
+
   const handleTestTranslation = async () => {
     const currentProvider = getCurrentProvider();
     if (!currentProvider) return;
@@ -398,21 +443,27 @@ const ProvidersTab: React.FC = () => {
       return;
     }
 
-    setIsTestLoading(true);
-    panelScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-    const startedAt = Date.now();
-    try {
-      const result = await window.ipc.invoke('testTranslation', {
-        provider: currentProvider,
+    // 结构化输出字段定义（仅 AI 服务商有）：存在才启用自动探测
+    const structuredOutputField = getCurrentProviderType()?.fields?.find(
+      (f) => f.key === 'structuredOutput',
+    );
+
+    const invokeTest = (provider: Provider) =>
+      window.ipc.invoke('testTranslation', {
+        provider,
         sourceLanguage: source,
         targetLanguage: target,
       });
 
+    const buildSuccessResult = (
+      result: any,
+      startedAt: number,
+      autoSwitchedMode?: StructuredOutputMode,
+    ): TestResult => {
       const translation =
         typeof result === 'string' ? result : result.translation;
       const analysis = typeof result === 'object' ? result.analysis : null;
-
-      setTestResult({
+      return {
         providerId: currentProvider.id,
         status: 'success',
         translation,
@@ -420,18 +471,77 @@ const ProvidersTab: React.FC = () => {
         model: analysis?.model_name || currentProvider.modelName,
         source,
         target,
-      });
+        autoSwitchedMode,
+      };
+    };
+
+    setIsTestLoading(true);
+    setDetectingMode(null);
+    panelScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    const startedAt = Date.now();
+    try {
+      // 有结构化输出字段时以严格模式测试（禁用主进程静默降级），
+      // 这样才能探测出真实可用的模式并写回配置
+      const result = await invokeTest(
+        structuredOutputField
+          ? { ...currentProvider, strictStructuredOutput: true }
+          : currentProvider,
+      );
+      setTestResult(buildSuccessResult(result, startedAt));
       toast.success(t('testSuccess'));
     } catch (error) {
+      // 自动探测：依次尝试其余结构化输出模式，找到可用项即保存
+      if (structuredOutputField && !isDetectSkippableError(error)) {
+        const currentMode: StructuredOutputMode =
+          currentProvider.structuredOutput &&
+          (STRUCTURED_OUTPUT_MODES as string[]).includes(
+            currentProvider.structuredOutput,
+          )
+            ? currentProvider.structuredOutput
+            : currentProvider.useJsonMode === false
+              ? 'disabled'
+              : (structuredOutputField.defaultValue as StructuredOutputMode) ||
+                'json_object';
+        const candidates = STRUCTURED_OUTPUT_MODES.filter(
+          (mode) => mode !== currentMode,
+        );
+
+        for (const mode of candidates) {
+          setDetectingMode(mode);
+          const retryStartedAt = Date.now();
+          try {
+            const result = await invokeTest({
+              ...currentProvider,
+              structuredOutput: mode,
+              strictStructuredOutput: true,
+            });
+            // 探测成功：自动写回配置（走既有编辑保存链路）
+            handleInputChange('structuredOutput', mode);
+            setTestResult(buildSuccessResult(result, retryStartedAt, mode));
+            toast.success(
+              t('autoDetectSwitched', {
+                mode: STRUCTURED_OUTPUT_LABELS[mode],
+              }),
+            );
+            return;
+          } catch {
+            // 该模式也不行，继续下一个
+          }
+        }
+      }
+
       setTestResult({
         providerId: currentProvider.id,
         status: 'error',
         error: formatProviderError(error, t),
         source,
         target,
+        triedAllModes:
+          !!structuredOutputField && !isDetectSkippableError(error),
       });
     } finally {
       setIsTestLoading(false);
+      setDetectingMode(null);
     }
   };
 
@@ -799,7 +909,11 @@ const ProvidersTab: React.FC = () => {
               {isTestLoading && (
                 <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-                  {t('testing')}
+                  {detectingMode
+                    ? t('autoDetectTrying', {
+                        mode: STRUCTURED_OUTPUT_LABELS[detectingMode],
+                      })
+                    : t('testing')}
                 </div>
               )}
 
@@ -839,6 +953,15 @@ const ProvidersTab: React.FC = () => {
                         <p className="break-all">
                           {t('translationResult')}: "{testResult.translation}"
                         </p>
+                        {testResult.autoSwitchedMode && (
+                          <p className="text-xs text-muted-foreground">
+                            {t('autoDetectSwitched', {
+                              mode: STRUCTURED_OUTPUT_LABELS[
+                                testResult.autoSwitchedMode
+                              ],
+                            })}
+                          </p>
+                        )}
                         {testResult.model && (
                           <p className="text-xs text-muted-foreground">
                             {t('model')}: {testResult.model}
@@ -846,9 +969,16 @@ const ProvidersTab: React.FC = () => {
                         )}
                       </>
                     ) : (
-                      <p className="break-all text-destructive">
-                        {testResult.error}
-                      </p>
+                      <>
+                        <p className="break-all text-destructive">
+                          {testResult.error}
+                        </p>
+                        {testResult.triedAllModes && (
+                          <p className="text-xs text-muted-foreground">
+                            {t('autoDetectAllFailed')}
+                          </p>
+                        )}
+                      </>
                     )}
                   </div>
                 )}

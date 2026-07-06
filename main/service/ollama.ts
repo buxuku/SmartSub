@@ -6,6 +6,11 @@ import {
   throwIfSignalCancelled,
 } from '../helpers/taskContext';
 import type { TranslationRequestOptions } from '../translate/types';
+import {
+  resolveStructuredOutputMode,
+  runWithStructuredOutputFallback,
+  type StructuredOutputMode,
+} from './structuredOutputFallback';
 
 interface OllamaConfig {
   apiUrl: string;
@@ -13,19 +18,11 @@ interface OllamaConfig {
   prompt: string;
   systemPrompt: string;
   useJsonMode?: boolean;
-  structuredOutput?: 'disabled' | 'json_object' | 'json_schema';
+  structuredOutput?: StructuredOutputMode;
+  strictStructuredOutput?: boolean;
 }
 
-type OllamaStructuredOutputMode = NonNullable<OllamaConfig['structuredOutput']>;
-
-function getStructuredOutputMode(
-  config: OllamaConfig,
-): OllamaStructuredOutputMode {
-  if (config.structuredOutput) return config.structuredOutput;
-  return config.useJsonMode === false ? 'disabled' : 'json_object';
-}
-
-function getOllamaFormat(mode: OllamaStructuredOutputMode) {
+function getOllamaFormat(mode: StructuredOutputMode) {
   if (mode === 'json_schema') return TRANSLATION_JSON_SCHEMA;
   if (mode === 'json_object') return 'json';
   return undefined;
@@ -61,7 +58,10 @@ export default async function translateWithOllama(
 ) {
   const { apiUrl, modelName, systemPrompt } = config;
   const url = apiUrl.replace('generate', 'chat'); // 兼容旧版本的ollama
-  const structuredOutputMode = getStructuredOutputMode(config);
+  const structuredOutputMode = resolveStructuredOutputMode(
+    config,
+    'json_object',
+  );
   const userPrompt = Array.isArray(text) ? text.join('\n') : text;
 
   try {
@@ -83,34 +83,23 @@ export default async function translateWithOllama(
       stream: false,
     };
 
-    const format = getOllamaFormat(structuredOutputMode);
-    if (format) {
-      requestBody.format = format;
-    }
-
     const postOllama = (body: Record<string, any>) =>
       axios.post(`${url}`, body, {
         timeout: OLLAMA_REQUEST_TIMEOUT,
         signal: options?.signal,
       });
 
-    let response;
-    try {
-      response = await postOllama(requestBody);
-    } catch (error) {
-      throwIfSignalCancelled(options?.signal);
-      if (
-        structuredOutputMode === 'json_schema' &&
-        isSchemaFormatUnsupportedError(error)
-      ) {
-        response = await postOllama({
-          ...requestBody,
-          format: 'json',
-        });
-      } else {
-        throw error;
-      }
-    }
+    // 按共享回退链降级：仅当 Ollama 明确报 format 不支持时才降级
+    const response = await runWithStructuredOutputFallback({
+      startMode: structuredOutputMode,
+      strict: config.strictStructuredOutput === true,
+      signal: options?.signal,
+      shouldFallback: (_from, error) => isSchemaFormatUnsupportedError(error),
+      attempt: (mode) => {
+        const format = getOllamaFormat(mode);
+        return postOllama(format ? { ...requestBody, format } : requestBody);
+      },
+    });
 
     if (response.data && response.data.message) {
       throwIfSignalCancelled(options?.signal);
