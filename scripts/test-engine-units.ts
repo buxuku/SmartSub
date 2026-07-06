@@ -95,6 +95,10 @@ import {
   isSherpaEngineId,
   outcomeSupportsContextKnobs,
 } from '../main/helpers/engines/outcomePresets';
+import {
+  createSerialTaskRunner,
+  shouldSerializeTranscriptionEngine,
+} from '../main/helpers/transcriptionConcurrency';
 
 let passed = 0;
 let failed = 0;
@@ -1782,7 +1786,96 @@ eq(
   );
 }
 
-console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
-if (failed > 0) {
-  process.exit(1);
+// --- transcriptionConcurrency: 仅串行共享 runtime 的 ASR 阶段 ---
+eq(
+  shouldSerializeTranscriptionEngine('builtin'),
+  false,
+  'concurrency: builtin transcriptions do not require router serialization',
+);
+eq(
+  shouldSerializeTranscriptionEngine('localCli'),
+  false,
+  'concurrency: local CLI transcriptions do not require router serialization',
+);
+eq(
+  shouldSerializeTranscriptionEngine('fasterWhisper'),
+  true,
+  'concurrency: faster-whisper transcriptions are serialized',
+);
+eq(
+  shouldSerializeTranscriptionEngine('funasr'),
+  true,
+  'concurrency: FunASR transcriptions are serialized',
+);
+eq(
+  shouldSerializeTranscriptionEngine('qwen'),
+  true,
+  'concurrency: Qwen transcriptions are serialized',
+);
+eq(
+  shouldSerializeTranscriptionEngine('fireRedAsr'),
+  true,
+  'concurrency: FireRed transcriptions are serialized',
+);
+
+function deferred<T = void>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
 }
+
+async function runAsyncTests(): Promise<void> {
+  const runSerially = createSerialTaskRunner();
+  const firstRelease = deferred();
+  const events: string[] = [];
+
+  const first = runSerially(async () => {
+    events.push('first:start');
+    await firstRelease.promise;
+    events.push('first:end');
+    return 'first';
+  });
+  const second = runSerially(async () => {
+    events.push('second:start');
+    events.push('second:end');
+    return 'second';
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  eq(
+    events,
+    ['first:start'],
+    'concurrency: queued serial task waits for the active task',
+  );
+  firstRelease.resolve();
+
+  eq(
+    await Promise.all([first, second]),
+    ['first', 'second'],
+    'concurrency: serial runner returns task results in order',
+  );
+  eq(
+    events,
+    ['first:start', 'first:end', 'second:start', 'second:end'],
+    'concurrency: serial runner does not overlap tasks',
+  );
+}
+
+runAsyncTests()
+  .then(() => {
+    console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
+    if (failed > 0) {
+      process.exit(1);
+    }
+  })
+  .catch((error) => {
+    failed++;
+    console.error(error);
+    console.log(`\nengine unit tests: ${passed} passed, ${failed} failed`);
+    process.exit(1);
+  });

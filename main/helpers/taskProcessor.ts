@@ -14,10 +14,8 @@ import { killFfmpegForFiles } from './audioProcessor';
 import {
   listEngineAdapters,
   getEngineAdapterForTask,
-  resolveEngineIdForTask,
 } from './engines/registry';
 import { getPythonRuntimeManager } from './pythonRuntime';
-import type { TranscriptionEngine } from '../../types/engine';
 import {
   acquireTaskPowerSaveBlocker,
   releaseTaskPowerSaveBlocker,
@@ -84,18 +82,6 @@ let isProcessing = false;
 let maxConcurrentTasks = 3;
 let hasOpenAiWhisper = false;
 let activeTasksCount = 0;
-/** 执行中"受限引擎"(faster-whisper/funasr)任务数：混合引擎队列并发钳制用。 */
-let activeRestrictiveCount = 0;
-
-/** faster-whisper / funasr / qwen / fireRedAsr 共享单 sidecar/worker，需钳制有效并发为 1。 */
-function isRestrictiveEngine(engine: TranscriptionEngine): boolean {
-  return (
-    engine === 'fasterWhisper' ||
-    engine === 'funasr' ||
-    engine === 'qwen' ||
-    engine === 'fireRedAsr'
-  );
-}
 /** 最近一次 handleTask 的 event：resume 触发派发时复用 */
 let dispatchEvent: any = null;
 /** Dock/任务栏进度条目标窗口 */
@@ -460,29 +446,9 @@ async function processNextTasks(event) {
     return;
   }
 
-  // 混合引擎并发钳制：只要"执行中"或"待派发(可派发)"任务里含 faster-whisper/funasr，
-  // 有效并发钳为 1（共享单 sidecar/worker，避免显存争用与取消句柄相互覆盖）；
-  // 纯 builtin/localCli 队列遵循用户配置的并发。
-  let effectiveMax = maxConcurrentTasks;
-  try {
-    let hasRestrictive = activeRestrictiveCount > 0;
-    if (!hasRestrictive) {
-      for (const item of processingQueue) {
-        const runtime = projectRuntimes.get(item.projectId);
-        if (runtime?.paused || runtime?.cancelled) continue;
-        if (isRestrictiveEngine(resolveEngineIdForTask(item.formData))) {
-          hasRestrictive = true;
-          break;
-        }
-      }
-    }
-    if (hasRestrictive) effectiveMax = 1;
-  } catch {
-    // 解析引擎失败时回退到用户配置的并发
-  }
-
-  // 计算可以启动的新任务数量
-  const availableSlots = effectiveMax - activeTasksCount;
+  // 计算可以启动的新任务数量。ASR 单 runtime 的串行保护已下沉到 transcriptionRouter，
+  // 这里只按用户设置控制文件级流水线并发，避免纯翻译/翻译阶段被误钳成单线程。
+  const availableSlots = maxConcurrentTasks - activeTasksCount;
 
   if (availableSlots > 0) {
     const tasksToProcess = takeEligibleItems(availableSlots);
@@ -492,10 +458,8 @@ async function processNextTasks(event) {
       tasksToProcess.forEach(async (task) => {
         const runtime = ensureRuntime(task.projectId);
         const fileUuid = task.file?.uuid;
-        const taskEngine = resolveEngineIdForTask(task.formData);
         activeTasksCount++;
         runtime.active++;
-        if (isRestrictiveEngine(taskEngine)) activeRestrictiveCount++;
         if (fileUuid) runtime.activeFiles.add(fileUuid);
         try {
           const baseProvider = translationProviders.find(
@@ -528,7 +492,6 @@ async function processNextTasks(event) {
         } finally {
           activeTasksCount--;
           runtime.active--;
-          if (isRestrictiveEngine(taskEngine)) activeRestrictiveCount--;
           runtime.completed++;
           if (fileUuid) runtime.activeFiles.delete(fileUuid);
           finalizeProjectIfDrained(event, task.projectId);
