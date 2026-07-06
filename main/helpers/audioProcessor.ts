@@ -13,6 +13,7 @@ import {
   parseSubtitleStreams,
   EmbeddedSubtitleStream,
 } from './embeddedSubtitleParser';
+import { stderrTail, toFriendlyFfmpegError } from './ffmpegErrorUtils';
 
 // 设置ffmpeg路径
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
@@ -111,7 +112,7 @@ export const extractAudio = (
           onProgress(100);
           resolve(true);
         })
-        .on('error', function (err) {
+        .on('error', function (err, _stdout, stderr) {
           unregister();
           if (signal?.aborted) {
             // 用户取消导致的 kill：清理半成品，按取消路径返回
@@ -127,8 +128,12 @@ export const extractAudio = (
             reject(new TaskCancelledError());
             return;
           }
-          logMessage(`extract audio error: ${err}`, 'error');
-          reject(err);
+          const tail = stderrTail(stderr);
+          logMessage(
+            `extract audio error: ${err}${tail ? `\nffmpeg stderr:\n${tail}` : ''}`,
+            'error',
+          );
+          reject(toFriendlyFfmpegError(err, stderr));
         });
       if (fileUuid) runningCommands.set(fileUuid, command);
       command.save(`${audioPath}`);
@@ -268,7 +273,7 @@ export const extractEmbeddedSubtitle = (
           logMessage(`extract embedded subtitle done!`, 'info');
           resolve();
         })
-        .on('error', function (err) {
+        .on('error', function (err, _stdout, stderr) {
           unregister();
           cleanupPartial();
           if (signal?.aborted) {
@@ -276,7 +281,11 @@ export const extractEmbeddedSubtitle = (
             reject(new TaskCancelledError());
             return;
           }
-          logMessage(`extract embedded subtitle error: ${err}`, 'error');
+          const tail = stderrTail(stderr);
+          logMessage(
+            `extract embedded subtitle error: ${err}${tail ? `\nffmpeg stderr:\n${tail}` : ''}`,
+            'error',
+          );
           reject(err);
         });
       if (fileUuid) runningCommands.set(fileUuid, command);
@@ -359,12 +368,16 @@ function runFfmpegSave(
         signal?.removeEventListener('abort', onAbort);
         resolve();
       })
-      .on('error', (err) => {
+      .on('error', (err, _stdout, stderr) => {
         signal?.removeEventListener('abort', onAbort);
         if (signal?.aborted) {
           cleanupPartial();
           reject(new TaskCancelledError());
           return;
+        }
+        const tail = stderrTail(stderr);
+        if (tail) {
+          logMessage(`ffmpeg save error stderr:\n${tail}`, 'error');
         }
         reject(err);
       })

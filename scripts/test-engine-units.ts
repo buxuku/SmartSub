@@ -42,6 +42,10 @@ import {
   srtHasCues,
 } from '../main/helpers/embeddedSubtitleParser';
 import { decideCloseIntent } from '../main/helpers/windowCloseDecision';
+import {
+  stderrTail,
+  toFriendlyFfmpegError,
+} from '../main/helpers/ffmpegErrorUtils';
 import fs from 'fs';
 import os from 'os';
 import nodePath from 'path';
@@ -623,6 +627,68 @@ eq(
 );
 eq(srtHasCues(''), false, 'embed: empty srt no cue');
 eq(srtHasCues('   \n  \n'), false, 'embed: whitespace srt no cue');
+
+// --- ffmpegErrorUtils: stderr 截尾 + 常见失败映射（issue #370） ---
+eq(stderrTail(undefined), '', 'ffmpegErr: undefined stderr -> empty');
+eq(
+  stderrTail('a\n\n  \nb\nc\n', 2),
+  'b\nc',
+  'ffmpegErr: tail skips blank lines and keeps last N',
+);
+{
+  // ffmpeg 6+ 无音轨：致命行带 [out#0/wav] 前缀，fluent-ffmpeg 的 message 为空尾
+  const noStreamStderr = [
+    "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'videoplayback.mp4':",
+    '  Stream #0:0(und): Video: h264 (High)',
+    "Output #0, wav, to 'out.wav':",
+    '[out#0/wav @ 0x155e09970] Output file does not contain any stream',
+  ].join('\n');
+  const mapped = toFriendlyFfmpegError(
+    new Error('ffmpeg exited with code 1: '),
+    noStreamStderr,
+  );
+  eq(
+    /不包含音频轨道/.test(mapped.message),
+    true,
+    'ffmpegErr: no-audio-stream -> friendly message',
+  );
+
+  const corruptStderr = [
+    '[mov,mp4,m4a,3gp,3g2,mj2 @ 0x7f8] moov atom not found',
+    'videoplayback.mp4: Invalid data found when processing input',
+  ].join('\n');
+  const mappedCorrupt = toFriendlyFfmpegError(
+    new Error('ffmpeg exited with code 1: '),
+    corruptStderr,
+  );
+  eq(
+    /损坏或下载不完整/.test(mappedCorrupt.message),
+    true,
+    'ffmpegErr: moov missing -> corrupt-file message',
+  );
+
+  // 未命中模式：把 stderr 最后一行拼进空尾 message，避免界面只剩 "code 1: "
+  const otherErr = toFriendlyFfmpegError(
+    new Error('ffmpeg exited with code 1: '),
+    'something\nPermission denied',
+  );
+  eq(
+    otherErr.message,
+    'ffmpeg exited with code 1: Permission denied',
+    'ffmpegErr: unmatched -> append last stderr line',
+  );
+
+  // message 已带原因（旧 ffmpeg / extractError 正常工作）时不重复拼接
+  const intactErr = toFriendlyFfmpegError(
+    new Error('ffmpeg exited with code 1: some reason'),
+    'other line',
+  );
+  eq(
+    intactErr.message,
+    'ffmpeg exited with code 1: some reason',
+    'ffmpegErr: message with reason kept as-is',
+  );
+}
 
 // --- decideCloseIntent (关闭窗口行为矩阵) ---
 eq(
