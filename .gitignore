@@ -21,5 +21,4 @@ extraResources/addons/*.node
 extraResources/py-base/
 extraResources/sherpa/native/
 .superpowers/
-openspec/
 .longgap/
