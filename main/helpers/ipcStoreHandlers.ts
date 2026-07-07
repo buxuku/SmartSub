@@ -6,6 +6,8 @@ import { inferDisplayOutcome } from './engines/outcomePresets';
 import { getAndInitializeProviders } from './providerManager';
 import { getAsrProviders, setAsrProviders } from './asrProviderManager';
 import { testAsrConnection } from '../service/asr/testConnection';
+import { getTtsProviders, setTtsProviders } from './ttsProviderManager';
+import { testTtsConnection } from '../service/tts/testConnection';
 import { logMessage } from './logger';
 import { LogEntry } from './store/types';
 import { getBuildInfo } from './buildInfo';
@@ -73,6 +75,20 @@ export function setupStoreHandlers() {
   // 云 ASR 实例连通性自测：跑在主进程规避渲染进程 CORS（对齐 testTranslation）。
   ipcMain.handle('testAsrProvider', async (_event, provider) => {
     return testAsrConnection(provider);
+  });
+
+  // 云端配音（TTS）服务商实例：语义对齐 asrProviders。
+  ipcMain.on('setTtsProviders', async (event, providers) => {
+    setTtsProviders(providers);
+  });
+
+  ipcMain.handle('getTtsProviders', async () => {
+    return getTtsProviders();
+  });
+
+  // 云 TTS 实例连通性自测：真实合成一句短文本（无零成本探针）。
+  ipcMain.handle('testTtsProvider', async (_event, provider) => {
+    return testTtsConnection(provider);
   });
 
   // 用户配置相关处理
