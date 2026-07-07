@@ -26,6 +26,7 @@ export const WORK_ITEM_TYPE_FILTERS: Array<'all' | WorkItemType> = [
   'generateOnly',
   'translateOnly',
   'proofread',
+  'dubbing',
 ];
 
 function getProjectTypeDef(project: { taskType?: string }): TaskTypeDef {
@@ -63,6 +64,18 @@ export function getWorkItemTarget(item: WorkItem, locale: string): string {
   if (item.type === 'proofread') {
     return `/${locale}/proofread?workItem=${item.id}`;
   }
+  if (item.type === 'dubbing') {
+    // 配音会话不持久化行状态：回开工作台并预填字幕/视频。
+    const snapshot = (item.configSnapshot ?? {}) as {
+      subtitlePath?: string;
+      videoPath?: string;
+    };
+    const params = new URLSearchParams();
+    if (snapshot.subtitlePath) params.set('subtitle', snapshot.subtitlePath);
+    if (snapshot.videoPath) params.set('video', snapshot.videoPath);
+    const query = params.toString();
+    return `/${locale}/dubbing${query ? `?${query}` : ''}`;
+  }
   const typeDef =
     getTaskTypeByValue(item.type) || getTaskTypeBySlug('generate-translate');
   return `/${locale}/tasks/${typeDef.slug}?project=${item.id}`;
@@ -72,6 +85,7 @@ export function getWorkItemFileCount(item: WorkItem): number {
   if (item.type === 'proofread') {
     return item.proofreadEntries?.length || 0;
   }
+  if (item.type === 'dubbing') return 1;
   return item.pipelineFiles?.length || 0;
 }
 
@@ -83,13 +97,16 @@ export function getWorkItemTypeLabel(
   if (item.type === 'proofread') {
     return tLaunchpad('card.proofread');
   }
+  if (item.type === 'dubbing') {
+    return tLaunchpad('card.dubbing');
+  }
   const typeDef =
     getTaskTypeByValue(item.type) || getTaskTypeBySlug('generate-translate');
   return tTasks(`pageTitle.${typeDef.slug}`);
 }
 
 export function getWorkItemStatus(item: WorkItem): RecentStatus {
-  if (item.type === 'proofread') {
+  if (item.type === 'proofread' || item.type === 'dubbing') {
     if (item.status === 'done') return 'done';
     if (item.status === 'running') return 'running';
     if (item.status === 'error' || item.status === 'interrupted') {

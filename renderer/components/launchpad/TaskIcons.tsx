@@ -132,6 +132,30 @@ export function MergeIcon({ className }: IconProps) {
   );
 }
 
+/** 配音：字幕行 → 声波（语音合成） */
+export function DubbingIcon({ className }: IconProps) {
+  return (
+    <svg className={className} {...base}>
+      <rect x="3" y="3.5" width="14.5" height="10.5" rx="2.5" />
+      <path d="M6.5 7.2h7.5" />
+      <path d="M6.5 10.3h4.5" opacity="0.45" />
+      <rect
+        x="9"
+        y="16"
+        width="16"
+        height="8.5"
+        rx="4.25"
+        fill="currentColor"
+        fillOpacity="0.12"
+      />
+      <path d="M12.4 18.6v3.3" />
+      <path d="M15.2 17.4v5.6" />
+      <path d="M18 18.9v2.7" />
+      <path d="M20.8 17.9v4.6" />
+    </svg>
+  );
+}
+
 /**
  * 卡片角落的淡线条装饰：同心圆弧 + 网格点，随卡片色调染色。
  * 父级用 text-*-500/[0.x] 控制颜色与强度。

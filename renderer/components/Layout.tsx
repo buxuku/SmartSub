@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/tooltip';
 import {
   AlertCircle,
+  AudioLines,
   CheckCircle2,
   Compass,
   Cpu,
@@ -28,6 +29,7 @@ import {
   Search,
   ScrollText,
   Settings,
+  Speech,
   X,
   Zap,
 } from 'lucide-react';
@@ -94,6 +96,18 @@ const NAV_ITEMS: NavItemDef[] = [
     labelKey: 'subtitleMerge',
     icon: Film,
     isActive: (p) => p.includes('subtitleMerge'),
+  },
+  {
+    href: 'dubbing',
+    labelKey: 'dubbing',
+    icon: AudioLines,
+    isActive: (p) => p.includes('/dubbing'),
+  },
+  {
+    href: 'ttsServices',
+    labelKey: 'ttsServices',
+    icon: Speech,
+    isActive: (p) => p.includes('ttsServices'),
   },
   {
     href: 'engines',

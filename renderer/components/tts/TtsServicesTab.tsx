@@ -1,0 +1,375 @@
+/**
+ * 「配音服务」主从双栏（形制 EngineModelTab）：
+ * 左栏分「本地模型」「在线服务」两组——本地 = 每个 TTS 模型一个条目；
+ * 在线 = 每个服务商预设/实例一个平级入口（OpenAI / 硅基流动 / Edge TTS + 自定义），
+ * 数据驱动自 TTS_PROVIDER_TYPES / TTS_PROVIDER_PRESETS。右栏 = 选中条目的管理面板。
+ */
+import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'next-i18next';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Plus, X } from 'lucide-react';
+import { cn } from 'lib/utils';
+import useLocalStorageState from 'hooks/useLocalStorageState';
+import useTtsProviders from 'hooks/useTtsProviders';
+import useTtsModels from './useTtsModels';
+import TtsModelPanel from './TtsModelPanel';
+import TtsProviderPanel from './TtsProviderPanel';
+import {
+  TTS_OPENAI_COMPATIBLE,
+  TTS_VIEW_PREFIX,
+  buildTtsViews,
+  ttsCustomViewId,
+  ttsViewTypeId,
+} from '../../../types/ttsProvider';
+
+const MODEL_VIEW_PREFIX = 'model:';
+
+function isTtsServicesViewId(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  return (
+    value.startsWith(MODEL_VIEW_PREFIX) || value.startsWith(TTS_VIEW_PREFIX)
+  );
+}
+
+function StatusDot({ ready, label }: { ready: boolean; label?: string }) {
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      className={cn(
+        'h-2 w-2 shrink-0 rounded-full',
+        ready ? 'bg-success' : 'bg-muted-foreground/40',
+      )}
+    />
+  );
+}
+
+const TtsServicesTab: React.FC = () => {
+  const { t } = useTranslation('resources');
+  const { t: commonT } = useTranslation('common');
+
+  const modelsApi = useTtsModels();
+  const tts = useTtsProviders();
+
+  const [selectedView, setSelectedView] = useLocalStorageState<string>(
+    'ttsServicesSelectedView',
+    `${MODEL_VIEW_PREFIX}kokoro-multi-lang-v1_1`,
+    isTtsServicesViewId,
+  );
+
+  const [addCustomOpen, setAddCustomOpen] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customApiUrl, setCustomApiUrl] = useState('');
+
+  const providerViews = useMemo(
+    () => buildTtsViews(tts.providers),
+    [tts.providers],
+  );
+
+  const activeModel = selectedView.startsWith(MODEL_VIEW_PREFIX)
+    ? modelsApi.models.find(
+        (m) => m.id === selectedView.slice(MODEL_VIEW_PREFIX.length),
+      )
+    : undefined;
+  const activeProviderView = providerViews.find(
+    (v) => v.viewId === selectedView,
+  );
+
+  // 选中态收敛：失效的 tts:*（自定义被删/类型下线）回落同类型首条目，
+  // 无同类再回落首个模型条目；失效的 model:* 回落首个模型。
+  useEffect(() => {
+    if (!tts.loaded || !modelsApi.loaded) return;
+    if (selectedView.startsWith(MODEL_VIEW_PREFIX)) {
+      if (!activeModel && modelsApi.models.length > 0) {
+        setSelectedView(`${MODEL_VIEW_PREFIX}${modelsApi.models[0].id}`);
+      }
+      return;
+    }
+    if (activeProviderView) return;
+    const typeId = ttsViewTypeId(selectedView);
+    const sameType = typeId
+      ? providerViews.find((v) => v.type.id === typeId)
+      : undefined;
+    setSelectedView(
+      sameType?.viewId ??
+        (modelsApi.models[0]
+          ? `${MODEL_VIEW_PREFIX}${modelsApi.models[0].id}`
+          : (providerViews[0]?.viewId ?? selectedView)),
+    );
+  }, [
+    tts.loaded,
+    modelsApi.loaded,
+    modelsApi.models,
+    selectedView,
+    activeModel,
+    activeProviderView,
+    providerViews,
+    setSelectedView,
+  ]);
+
+  const handleAddCustom = () => {
+    const id = tts.addCustomInstance(
+      TTS_OPENAI_COMPATIBLE,
+      customName,
+      customApiUrl,
+    );
+    setAddCustomOpen(false);
+    setCustomName('');
+    setCustomApiUrl('');
+    if (id) setSelectedView(ttsCustomViewId(TTS_OPENAI_COMPATIBLE, id));
+  };
+
+  const readyBadge = (
+    <Badge variant="outline" className="border-success/40 text-success">
+      {t('engines.statusAvailable')}
+    </Badge>
+  );
+
+  return (
+    <TooltipProvider delayDuration={150}>
+      <div className="flex h-full min-h-0 flex-col gap-4 md:flex-row">
+        <nav className="flex shrink-0 gap-2 overflow-x-auto md:w-56 md:flex-col md:gap-3 md:overflow-x-visible md:overflow-y-auto md:border-r md:pr-2">
+          {/* 本地模型组 */}
+          <div className="flex shrink-0 gap-1 md:flex-col">
+            <div className="hidden px-3 pb-1 text-xs font-medium text-muted-foreground md:block">
+              {t('ttsServices.groupLocal')}
+            </div>
+            {modelsApi.models.map((m) => {
+              const viewId = `${MODEL_VIEW_PREFIX}${m.id}`;
+              const active = selectedView === viewId;
+              return (
+                <button
+                  key={viewId}
+                  type="button"
+                  aria-current={active ? 'true' : undefined}
+                  onClick={() => setSelectedView(viewId)}
+                  className={cn(
+                    'flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors',
+                    'shrink-0 md:w-full',
+                    active
+                      ? 'bg-primary/10 font-medium text-primary ring-1 ring-inset ring-primary/20'
+                      : 'text-foreground hover:bg-muted/60',
+                  )}
+                >
+                  <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center text-base">
+                    💻
+                  </span>
+                  <span
+                    className="min-w-0 flex-1 truncate"
+                    title={m.displayName}
+                  >
+                    {m.displayName}
+                  </span>
+                  <StatusDot
+                    ready={m.installed}
+                    label={
+                      m.installed
+                        ? t('dubbingBlock.installed')
+                        : t('engines.status.pending')
+                    }
+                  />
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 在线服务组：每个服务商一个平级入口 + 添加自定义 */}
+          <div className="flex shrink-0 gap-1 md:flex-col">
+            <div className="hidden px-3 pb-1 text-xs font-medium text-muted-foreground md:block">
+              {t('ttsServices.groupCloud')}
+            </div>
+            {providerViews.map((v) => {
+              const active = selectedView === v.viewId;
+              return (
+                <button
+                  key={v.viewId}
+                  type="button"
+                  aria-current={active ? 'true' : undefined}
+                  onClick={() => setSelectedView(v.viewId)}
+                  className={cn(
+                    'flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors',
+                    'shrink-0 md:w-full',
+                    active
+                      ? 'bg-primary/10 font-medium text-primary ring-1 ring-inset ring-primary/20'
+                      : 'text-foreground hover:bg-muted/60',
+                  )}
+                >
+                  <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center text-base">
+                    {v.icon ?? '☁️'}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate" title={v.label}>
+                    {v.label}
+                  </span>
+                  {v.unstable && (
+                    <span className="shrink-0 rounded bg-amber-500/15 px-1 text-[10px] leading-4 text-amber-600">
+                      {t('dubbingBlock.unstable')}
+                    </span>
+                  )}
+                  <StatusDot
+                    ready={v.configured}
+                    label={
+                      v.configured
+                        ? t('engines.statusAvailable')
+                        : t('engines.status.pending')
+                    }
+                  />
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setAddCustomOpen(true)}
+              className={cn(
+                'flex items-center gap-2 rounded-lg border border-dashed border-input px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
+                'shrink-0 md:w-full',
+              )}
+            >
+              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
+                <Plus className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1 truncate">
+                {t('ttsServices.addCustom')}
+              </span>
+            </button>
+          </div>
+        </nav>
+
+        {/* 右栏 */}
+        <div className="min-w-0 flex-1 space-y-4 overflow-y-auto pb-4 md:pl-1">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold">
+                {activeModel
+                  ? activeModel.displayName
+                  : (activeProviderView?.kind === 'brand'
+                      ? activeProviderView.type.name
+                      : activeProviderView?.label) || ''}
+              </h2>
+              {activeProviderView &&
+                (activeProviderView.kind === 'preset' ||
+                  activeProviderView.kind === 'custom') && (
+                  <p className="text-xs text-muted-foreground">
+                    {activeProviderView.type.name}
+                  </p>
+                )}
+              {activeModel && (
+                <p className="text-xs text-muted-foreground">
+                  {t('ttsServices.localSubtitle')}
+                </p>
+              )}
+            </div>
+            {activeModel ? (
+              activeModel.installed ? (
+                readyBadge
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="border-primary/40 text-primary"
+                >
+                  {t('engines.fasterWhisper.notInstalled')}
+                </Badge>
+              )
+            ) : activeProviderView ? (
+              activeProviderView.configured ? (
+                readyBadge
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="border-primary/40 text-primary"
+                >
+                  {t('engines.cloud.notConfigured')}
+                </Badge>
+              )
+            ) : null}
+          </div>
+
+          {activeModel ? (
+            <TtsModelPanel model={activeModel} onUpdate={modelsApi.refresh} />
+          ) : activeProviderView ? (
+            <TtsProviderPanel
+              view={activeProviderView}
+              onUpdateField={tts.updateInstanceField}
+              onMaterialize={tts.addInstance}
+              onRemove={tts.removeInstance}
+            />
+          ) : null}
+        </div>
+      </div>
+
+      {/* 添加自定义 OpenAI 兼容 TTS 实例 */}
+      <Dialog open={addCustomOpen} onOpenChange={setAddCustomOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>{t('ttsServices.addCustom')}</DialogTitle>
+            <DialogDescription>
+              {t('ttsServices.addCustomDesc')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label htmlFor="tts-custom-name" className="text-sm font-medium">
+                {t('cloudAsr.instanceName')}
+                <span className="text-destructive"> *</span>
+              </label>
+              <Input
+                id="tts-custom-name"
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && customName.trim()) handleAddCustom();
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="tts-custom-url" className="text-sm font-medium">
+                {t('cloudAsr.baseUrlOptional')}
+              </label>
+              <Input
+                id="tts-custom-url"
+                value={customApiUrl}
+                onChange={(e) => setCustomApiUrl(e.target.value)}
+                placeholder="https://api.openai.com/v1"
+                className="font-mono"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => {
+                setAddCustomOpen(false);
+                setCustomName('');
+                setCustomApiUrl('');
+              }}
+            >
+              <X className="h-4 w-4" />
+              {commonT('cancel')}
+            </Button>
+            <Button
+              className="gap-1.5"
+              disabled={!customName.trim()}
+              onClick={handleAddCustom}
+            >
+              <Plus className="h-4 w-4" />
+              {t('ttsServices.addCustom')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </TooltipProvider>
+  );
+};
+
+export default TtsServicesTab;

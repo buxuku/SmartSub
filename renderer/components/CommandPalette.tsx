@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { useTranslation } from 'next-i18next';
 import { useTheme } from 'next-themes';
 import {
+  AudioLines,
   Compass,
   Cpu,
   Edit3,
@@ -18,6 +19,7 @@ import {
   RefreshCw,
   ScrollText,
   Settings,
+  Speech,
   Sun,
 } from 'lucide-react';
 import {
@@ -96,6 +98,8 @@ export default function CommandPalette({
     { href: 'home', label: t('tasks'), icon: MonitorPlay },
     { href: 'proofread', label: t('subtitleProofread'), icon: Edit3 },
     { href: 'subtitleMerge', label: t('subtitleMerge'), icon: Film },
+    { href: 'dubbing', label: t('dubbing'), icon: AudioLines },
+    { href: 'ttsServices', label: t('ttsServices'), icon: Speech },
     { href: 'engines', label: t('enginesAndModels'), icon: Cpu },
     { href: 'translation', label: t('translationServices'), icon: Languages },
     { href: 'recent-tasks', label: t('cmd.recentTasks'), icon: ScrollText },

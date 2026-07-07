@@ -105,6 +105,7 @@ export default function RecentTasksPage() {
   const getTypeFilterLabel = (value: 'all' | WorkItemType) => {
     if (value === 'all') return t('allTasks.typeAll');
     if (value === 'proofread') return t('card.proofread');
+    if (value === 'dubbing') return t('card.dubbing');
     const slug =
       value === 'generateAndTranslate'
         ? 'generate-translate'

@@ -11,7 +11,9 @@
     "proofread": "校对字幕",
     "proofreadDesc": "逐句检查修改，支持视频对照与 AI 润色",
     "merge": "合成到视频",
-    "mergeDesc": "把字幕烧录进画面，永久显示"
+    "mergeDesc": "把字幕烧录进画面，永久显示",
+    "dubbing": "配音",
+    "dubbingDesc": "把字幕逐条合成语音，对齐时间轴生成配音"
   },
   "needsModelBadge": "需要模型",
   "banner": {

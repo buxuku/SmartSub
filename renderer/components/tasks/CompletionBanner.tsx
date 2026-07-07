@@ -1,6 +1,7 @@
 import React from 'react';
 import { useRouter } from 'next/router';
 import {
+  AudioLines,
   CheckCircle2,
   ChevronDown,
   Edit2,
@@ -126,6 +127,21 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
         file.filePath,
       )}&subtitle=${encodeURIComponent(getMergeSubtitle(file))}`,
     );
+  };
+
+  // 去配音：产出字幕（优先译文）+ 源视频（媒体任务）预填工作台。
+  // 纯字幕任务（translateOnly）同样可配（仅音频输出），不带 video。
+  const dubbableFiles = doneFiles.filter((file) =>
+    Boolean(getMergeSubtitle(file)),
+  );
+
+  const handleGoDubbing = (file: any) => {
+    const params = new URLSearchParams();
+    params.set('subtitle', getMergeSubtitle(file));
+    if (typeDef.accepts === 'media' && file.filePath) {
+      params.set('video', file.filePath);
+    }
+    router.push(`/${locale}/dubbing?${params.toString()}`);
   };
 
   const fileLabel = (file: any) =>
@@ -297,6 +313,40 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
             >
               <Film className="h-3 w-3" />
               {t('completion.goMerge')}
+            </Button>
+          )
+        )}
+        {dubbableFiles.length > 1 ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
+                <AudioLines className="h-3 w-3" />
+                {t('completion.goDubbing')}
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-w-[320px]">
+              {dubbableFiles.map((file) => (
+                <DropdownMenuItem
+                  key={file.uuid}
+                  className="text-xs"
+                  onClick={() => handleGoDubbing(file)}
+                >
+                  <span className="truncate">{fileLabel(file)}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          dubbableFiles.length === 1 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1"
+              onClick={() => handleGoDubbing(dubbableFiles[0])}
+            >
+              <AudioLines className="h-3 w-3" />
+              {t('completion.goDubbing')}
             </Button>
           )
         )}

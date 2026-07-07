@@ -11,7 +11,9 @@
     "proofread": "Proofread subtitles",
     "proofreadDesc": "Review line by line, with video preview and AI polish",
     "merge": "Burn to Video",
-    "mergeDesc": "Burn subtitles into the picture so they always show"
+    "mergeDesc": "Burn subtitles into the picture so they always show",
+    "dubbing": "Dubbing",
+    "dubbingDesc": "Synthesize speech line by line and align it to the timeline"
   },
   "needsModelBadge": "Needs a model",
   "banner": {

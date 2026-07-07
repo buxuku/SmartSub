@@ -113,6 +113,7 @@
     "failed": "{{failed}} failed",
     "goProofread": "Proofread",
     "goMerge": "Burn into video",
+    "goDubbing": "Dub it",
     "openFolder": "Open folder",
     "retryFailed": "Retry failed",
     "allFailedTitle": "All {{failed}} files failed",

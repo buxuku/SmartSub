@@ -30,6 +30,7 @@ import { isProviderConfigured } from 'lib/providerUtils';
 import { hasAnyModelAnyEngine } from 'lib/engineModels';
 import {
   CardDecor,
+  DubbingIcon,
   GenerateIcon,
   GenerateTranslateIcon,
   MergeIcon,
@@ -94,6 +95,13 @@ const CARDS: CardDef[] = [
     icon: MergeIcon,
     chip: 'bg-gradient-to-br from-rose-500/20 via-rose-500/10 to-transparent ring-1 ring-inset ring-rose-500/20 text-rose-600 dark:text-rose-400',
     decor: 'text-rose-500/[0.09] dark:text-rose-400/[0.12]',
+  },
+  {
+    key: 'dubbing',
+    href: 'dubbing',
+    icon: DubbingIcon,
+    chip: 'bg-gradient-to-br from-violet-500/20 via-violet-500/10 to-transparent ring-1 ring-inset ring-violet-500/20 text-violet-600 dark:text-violet-400',
+    decor: 'text-violet-500/[0.09] dark:text-violet-400/[0.12]',
   },
 ];
 
