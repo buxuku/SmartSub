@@ -10,7 +10,13 @@ export type PipelineWorkItemType =
 /** 校对批次工作项 */
 export type ProofreadWorkItemType = 'proofread';
 
-export type WorkItemType = PipelineWorkItemType | ProofreadWorkItemType;
+/** 配音工作台工作项（会话级：字幕 + 可选视频 → 配音产物） */
+export type DubbingWorkItemType = 'dubbing';
+
+export type WorkItemType =
+  | PipelineWorkItemType
+  | ProofreadWorkItemType
+  | DubbingWorkItemType;
 
 export type WorkItemStatus =
   | 'waiting'
