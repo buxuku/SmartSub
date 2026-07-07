@@ -73,9 +73,21 @@ import {
   getFireRedModelsRoot,
   getFireRedArchiveUrl,
 } from './fireRedModelCatalog';
+import { getTtsModelDownloader, getTtsProgressKey } from './ttsModelDownloader';
+import {
+  TTS_MODELS,
+  TtsModelId,
+  TTS_DEFAULT_MODEL_ID,
+  TtsModelSource,
+  isTtsModelInstalled,
+  deleteTtsModel,
+  getTtsModelsRoot,
+  getTtsArchiveUrl,
+} from './ttsModelCatalog';
 import { shutdownPythonRuntime } from './pythonRuntime';
 import { isSherpaLibInstalled } from './sherpaOnnx/sherpaLibPaths';
 import { getSherpaAsrRuntime } from './sherpaOnnx/sherpaFunasrRuntime';
+import { getSherpaTtsRuntime } from './sherpaOnnx/ttsRuntime';
 import fse from 'fs-extra';
 import path from 'path';
 import { getTempDir } from './fileUtils';
@@ -86,7 +98,12 @@ import { getBuildInfo } from './buildInfo';
 let downloadingModels = new Set<string>();
 
 /** 可文件夹导入的引擎类型（builtin 走单文件导入，不在此列）。 */
-type FolderImportEngine = 'funasr' | 'qwen' | 'fireRedAsr' | 'fasterWhisper';
+type FolderImportEngine =
+  | 'funasr'
+  | 'qwen'
+  | 'fireRedAsr'
+  | 'fasterWhisper'
+  | 'tts';
 
 interface ImportPlan {
   /** 目标模型必需文件（相对源/目的目录），用于导入前后布局校验。 */
@@ -141,6 +158,14 @@ function resolveImportPlan(
       ),
     };
   }
+  if (engine === 'tts') {
+    const id = (modelId as TtsModelId) || TTS_DEFAULT_MODEL_ID;
+    if (!TTS_MODELS[id]) return null;
+    return {
+      requiredFiles: TTS_MODELS[id].requiredFiles,
+      destDir: path.join(getTtsModelsRoot(), TTS_MODELS[id].dirName),
+    };
+  }
   return null;
 }
 
@@ -150,6 +175,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   const funasrModelDownloader = getFunasrModelDownloader(mainWindow);
   const qwenModelDownloader = getQwenModelDownloader(mainWindow);
   const fireRedModelDownloader = getFireRedModelDownloader(mainWindow);
+  const ttsModelDownloader = getTtsModelDownloader(mainWindow);
 
   ipcMain.handle('getSystemInfo', async () => {
     // faster-whisper 自包含运行时：已落盘 → ready（附 manifest 版本）；
@@ -381,6 +407,58 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     },
   );
 
+  ipcMain.handle(
+    'downloadTtsModel',
+    async (
+      _event,
+      { model, source }: { model: TtsModelId; source?: TtsModelSource },
+    ) => {
+      if (downloadingModels.size > 0) {
+        return { success: false, error: 'anotherDownloadInProgress' };
+      }
+      const progressKey = getTtsProgressKey(model);
+      downloadingModels.add(progressKey);
+      try {
+        await ttsModelDownloader.download(model, source);
+        downloadingModels.delete(progressKey);
+        return { success: true };
+      } catch (error) {
+        logMessage(`tts model download error: ${error}`, 'error');
+        downloadingModels.delete(progressKey);
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle('getTtsModelStatus', async () => ({
+    success: true,
+    engineInstalled: isSherpaLibInstalled(),
+    models: (Object.keys(TTS_MODELS) as TtsModelId[]).map((id) => {
+      const spec = TTS_MODELS[id];
+      return {
+        id,
+        installed: isTtsModelInstalled(id),
+        displayName: spec.displayName,
+        languages: spec.languages,
+        approxInstallBytes: spec.approxInstallBytes,
+        sampleRate: spec.sampleRate,
+        defaultVoiceId: spec.defaultVoiceId,
+        voices: spec.voices,
+      };
+    }),
+  }));
+
+  ipcMain.handle('deleteTtsModel', async (_event, modelId: TtsModelId) => {
+    try {
+      // TTS worker 独立于 ASR worker：删除前释放自身实例，避免 Windows 文件锁。
+      getSherpaTtsRuntime().dispose();
+      deleteTtsModel(modelId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
   // 「复制下载链接」专用：按引擎域 + 模型 + 当前选中源解析一个可复制的下载/仓库链接。
   // 复用各 catalog 既有的 URL 构造，避免 renderer 重复实现导致与真实下载链接漂移。
   // - funasr（HF 仓库逐文件）/ qwen·firered（modelscope 逐文件）无单一直链 → 复制仓库页地址；
@@ -396,7 +474,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
         source,
         variant,
       }: {
-        scope: 'funasr' | 'qwen' | 'firered' | 'pyEngine';
+        scope: 'funasr' | 'qwen' | 'firered' | 'pyEngine' | 'tts';
         modelId?: string;
         source: string;
         variant?: PyEngineVariant;
@@ -454,6 +532,17 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
             ),
           };
         }
+        if (scope === 'tts') {
+          const spec = TTS_MODELS[modelId as TtsModelId];
+          if (!spec) return { success: false, error: 'unknownModel' };
+          return {
+            success: true,
+            url: getTtsArchiveUrl(
+              spec,
+              source === 'github' ? 'github' : 'ghproxy',
+            ),
+          };
+        }
         return { success: false, error: 'unknownScope' };
       } catch (error) {
         return { success: false, error: String(error) };
@@ -467,6 +556,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     funasrModelDownloader.cancel();
     qwenModelDownloader.cancel();
     fireRedModelDownloader.cancel();
+    ttsModelDownloader.cancel();
     downloadingModels.clear();
     return true;
   });
@@ -531,9 +621,11 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       }
 
       try {
-        // sherpa 三引擎共享同一 worker：覆盖模型目录前先释放，避免 Windows 文件锁
-        // （worker 会在下次转写/预热时自动重建）。fasterWhisper 不走此 worker。
-        if (engine !== 'fasterWhisper') {
+        // 覆盖模型目录前先释放对应 worker，避免 Windows 文件锁
+        // （worker 会在下次使用时自动重建）。fasterWhisper 不走 sherpa worker。
+        if (engine === 'tts') {
+          getSherpaTtsRuntime().dispose();
+        } else if (engine !== 'fasterWhisper') {
           getSherpaAsrRuntime().dispose();
         }
         await fse.ensureDir(plan.destDir);
@@ -561,7 +653,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     async (
       _event,
       options?: {
-        pathType?: 'ggml' | 'ct2' | 'funasr' | 'qwen' | 'firered';
+        pathType?: 'ggml' | 'ct2' | 'funasr' | 'qwen' | 'firered' | 'tts';
       },
     ) => {
       const modelsPath =
@@ -573,7 +665,9 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
               ? getQwenModelsRoot()
               : options?.pathType === 'firered'
                 ? getFireRedModelsRoot()
-                : (getPath('modelsPath') as string);
+                : options?.pathType === 'tts'
+                  ? getTtsModelsRoot()
+                  : (getPath('modelsPath') as string);
       try {
         await fse.ensureDir(modelsPath);
         const err = await shell.openPath(modelsPath);

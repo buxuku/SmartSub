@@ -1,5 +1,6 @@
 import { Provider, CustomParameterConfig } from '../../../types/provider';
 import type { AsrProvider } from '../../../types/asrProvider';
+import type { TtsProvider } from '../../../types/ttsProvider';
 import { ProofreadHistory, ProofreadTask } from '../../../types/proofread';
 import { IFiles, TaskProject } from '../../../types';
 import { WorkItem } from '../../../types/workItem';
@@ -23,6 +24,8 @@ export type StoreType = {
   translationProviders: Provider[];
   /** 云端听写（在线 ASR）服务商实例列表（多实例，含凭据）。缺省未定义时按 [] 处理。 */
   asrProviders?: AsrProvider[];
+  /** 云端配音（TTS）服务商实例列表（语义对齐 asrProviders）。缺省未定义时按 [] 处理。 */
+  ttsProviders?: TtsProvider[];
   userConfig: Record<string, any>;
   settings: {
     whisperCommand: string;
@@ -73,6 +76,8 @@ export type StoreType = {
     qwenModelsPath?: string;
     /** fireRed 模型根目录覆盖；缺省回退 userData/models/firered */
     fireRedModelsPath?: string;
+    /** TTS(配音) 模型根目录覆盖；缺省回退 userData/models/tts */
+    ttsModelsPath?: string;
     /** FunASR(SenseVoice via sherpa-onnx) 推理 provider；P1 仅 cpu 落地，cuda/coreml 预留 */
     funasrProvider?: 'cpu' | 'cuda' | 'coreml';
     /** FunASR 逆文本归一化（数字/标点），默认开启 */
