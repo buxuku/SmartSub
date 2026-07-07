@@ -301,6 +301,9 @@
   "importFolderFailed": "Failed to import folder. Please try again.",
   "selectProviderFirst": "Please select a translation provider first",
   "selectModelFirst": "Please select a speech model first",
+  "selectTtsModelFirst": "Please download and select a TTS model first",
+  "selectTtsProviderFirst": "Please configure a cloud TTS provider first",
+  "selectTtsModelOrProviderFirst": "Please download a local TTS model or configure cloud TTS first",
   "errorReadSubtitle": "Failed to read subtitle file: {{file}}",
   "errorConvertToVTT": "Failed to convert subtitle to VTT: {{file}}",
   "proofreadPageTitle": "Proofread Subtitles",
@@ -310,5 +313,11 @@
     "description": "This task uses a cloud transcription engine. The audio track of each file will be extracted and uploaded to the third-party endpoint you configured. Don't use it for sensitive content, and mind the provider's usage costs.",
     "confirmOnce": "Upload this time",
     "confirmRemember": "Upload and don't ask again"
+  },
+  "ttsCloudConsent": {
+    "title": "Send subtitle text to cloud TTS?",
+    "description": "This task uses cloud TTS. Each subtitle line will be sent to your configured third-party endpoint for speech synthesis. Don't use it for sensitive content, and mind per-character usage costs.",
+    "confirmOnce": "Send this time",
+    "confirmRemember": "Send and don't ask again"
   }
 }

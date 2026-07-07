@@ -110,7 +110,9 @@ export default function RecentTasksPage() {
         ? 'generate-translate'
         : value === 'generateOnly'
           ? 'generate'
-          : 'translate';
+          : value === 'dubbing'
+            ? 'dubbing'
+            : 'translate';
     return tTasks(`pageTitle.${slug}`);
   };
 

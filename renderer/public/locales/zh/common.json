@@ -198,7 +198,8 @@
     "recentTasks": "最近任务",
     "newGenerateTranslate": "新建：转写 + 翻译",
     "newGenerate": "新建：转写字幕",
-    "newTranslate": "新建：翻译字幕"
+    "newTranslate": "新建：翻译字幕",
+    "newDubbing": "新建：字幕配音"
   },
   "downloadBusy": "已有下载任务进行中，请稍后再试",
   "downloadFailedToast": "下载失败：{{error}}",

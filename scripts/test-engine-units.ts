@@ -136,6 +136,18 @@ import {
 } from '../renderer/lib/engineViews';
 import { computeChunkBoundaries } from '../main/helpers/cloudAudioChunking';
 import {
+  trimSilence,
+  splitCueIndices,
+  planChunkSpeed,
+  planPlacements,
+  planDubbingTimeline,
+  normalizeSegmentRms,
+  placedCuesToSrt,
+  analyzePlacements,
+  getAlignmentParams,
+  type DubCue,
+} from '../main/helpers/dubbingAlignment';
+import {
   needsSpaceBefore,
   realignPunctuation,
   wordsToNativeTokens,
@@ -4983,6 +4995,104 @@ eq(
       duration: undefined,
     },
     'gladia extract: invalid words/utterance times skipped safely',
+  );
+}
+
+// --- dubbingAlignment: 静音修剪 / chunk / 变速 / 非重叠拼装 ---
+{
+  const sr = 24000;
+  // 全静音 → 原样返回
+  {
+    const silent = new Float32Array(sr);
+    const out = trimSilence(silent, sr);
+    eq(out.length, silent.length, 'trimSilence: all-silent unchanged length');
+  }
+  // 中间 0.5s 语音，首尾静音应被裁掉
+  {
+    const n = sr * 2;
+    const samples = new Float32Array(n);
+    const speechStart = Math.round(sr * 0.5);
+    const speechEnd = Math.round(sr * 1.0);
+    for (let i = speechStart; i < speechEnd; i++) samples[i] = 0.5;
+    const out = trimSilence(samples, sr);
+    eq(out.length < n, true, 'trimSilence: trims leading/trailing silence');
+    eq(
+      out.length >= speechEnd - speechStart - sr * 0.1,
+      true,
+      'trimSilence: keeps speech core',
+    );
+  }
+
+  const cues: DubCue[] = [
+    { start: 0.5, end: 5.0, text: 'a' },
+    { start: 5.2, end: 9.5, text: 'b' },
+    { start: 12.0, end: 15.0, text: 'c' }, // gap 2.5s → new chunk
+  ];
+  const chunks = splitCueIndices(cues, 1.5);
+  eq(chunks.length, 2, 'splitCueIndices: large gap splits chunk');
+  eq(chunks[0].join(','), '0,1', 'splitCueIndices: first chunk indices');
+  eq(chunks[1].join(','), '2', 'splitCueIndices: second chunk index');
+
+  const params = getAlignmentParams('balanced');
+  const speech = [3.5, 3.0, 2.0];
+  const plan = planChunkSpeed([cues[0], cues[1]], speech.slice(0, 2), params);
+  eq(
+    plan.keepGaps,
+    plan.speed <= params.acceptSpeed,
+    'planChunkSpeed: keepGaps when within accept',
+  );
+  eq(
+    plan.clampedSpeed <= params.maxSpeed,
+    true,
+    'planChunkSpeed: clamped <= max',
+  );
+
+  const placed = planDubbingTimeline(cues, speech, 'balanced');
+  const report = analyzePlacements(placed);
+  eq(report.overlapTotalSec, 0, 'planDubbingTimeline: zero overlap');
+  eq(report.monotonic, true, 'planDubbingTimeline: monotonic starts');
+
+  // 极端超长：漂移增大但仍不重叠
+  const heavySpeech = [8, 8, 8];
+  const heavyPlaced = planDubbingTimeline(cues, heavySpeech, 'balanced');
+  const heavyReport = analyzePlacements(heavyPlaced);
+  eq(
+    heavyReport.overlapTotalSec,
+    0,
+    'planDubbingTimeline: extreme overflow still no overlap',
+  );
+  eq(
+    heavyReport.maxStartDriftSec >= 0,
+    true,
+    'planDubbingTimeline: allows positive drift',
+  );
+
+  // 三档策略差异：strict max > natural max
+  eq(
+    getAlignmentParams('strict').maxSpeed >
+      getAlignmentParams('natural').maxSpeed,
+    true,
+    'getAlignmentParams: strict allows higher max than natural',
+  );
+
+  // 响度归一：静音段不变；有信号段 RMS 抬升
+  {
+    const sig = new Float32Array(1000);
+    for (let i = 0; i < sig.length; i++) sig[i] = 0.01;
+    const norm = normalizeSegmentRms(sig, -20);
+    let sum = 0;
+    for (let i = 0; i < norm.length; i++) sum += norm[i] * norm[i];
+    const rms = Math.sqrt(sum / norm.length);
+    eq(rms > 0.05, true, 'normalizeSegmentRms: boosts low RMS toward target');
+  }
+
+  // SRT 重排单调
+  const srt = placedCuesToSrt(placed);
+  eq(srt.includes(' --> '), true, 'placedCuesToSrt: contains timestamps');
+  eq(
+    srt.split('\n\n').length,
+    placed.length,
+    'placedCuesToSrt: one block per cue',
   );
 }
 

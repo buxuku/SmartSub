@@ -5,7 +5,10 @@ import { defaultUserConfig } from './utils';
 import { inferDisplayOutcome } from './engines/outcomePresets';
 import { getAndInitializeProviders } from './providerManager';
 import { getAsrProviders, setAsrProviders } from './asrProviderManager';
+import { getTtsProviders, setTtsProviders } from './ttsProviderManager';
 import { testAsrConnection } from '../service/asr/testConnection';
+import { testTtsConnection } from '../service/tts/testConnection';
+import { estimateDubbingCharCount } from './ttsProcessor';
 import { logMessage } from './logger';
 import { LogEntry } from './store/types';
 import { getBuildInfo } from './buildInfo';
@@ -69,6 +72,29 @@ export function setupStoreHandlers() {
   ipcMain.handle('getAsrProviders', async () => {
     return getAsrProviders();
   });
+
+  ipcMain.on('setTtsProviders', async (_event, providers) => {
+    setTtsProviders(providers);
+  });
+
+  ipcMain.handle('getTtsProviders', async () => {
+    return getTtsProviders();
+  });
+
+  ipcMain.handle('testTtsProvider', async (_event, provider) => {
+    return testTtsConnection(provider);
+  });
+
+  ipcMain.handle(
+    'estimateDubbingCharCount',
+    async (
+      _event,
+      payload: { files?: unknown[]; formData?: Record<string, unknown> },
+    ) => {
+      const files = (payload?.files || []) as import('../../types').IFiles[];
+      return estimateDubbingCharCount(files, payload?.formData || {});
+    },
+  );
 
   // 云 ASR 实例连通性自测：跑在主进程规避渲染进程 CORS（对齐 testTranslation）。
   ipcMain.handle('testAsrProvider', async (_event, provider) => {

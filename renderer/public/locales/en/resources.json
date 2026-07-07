@@ -253,6 +253,67 @@
         }
       }
     },
+    "tts": {
+      "name": "Dubbing (TTS)",
+      "subtitle": "Subtitles → speech synthesis",
+      "tags": ["Speech synthesis", "Offline", "Multi-voice"],
+      "desc": "Local text-to-speech (TTS) engine powered by sherpa-onnx (runtime bundled with the app): synthesizes subtitles into a dubbed audio track, fully offline on CPU — no GPU or Python required. Download a model below to use it in dubbing tasks.",
+      "needsModels": "Models required",
+      "downloadSource": "Download source",
+      "extracting": "Extracting… (may take a while)",
+      "anotherDownload": "Another download is in progress. Please wait for it to finish.",
+      "modelsTitle": "Models",
+      "modelDownload": "Download",
+      "modelDelete": "Delete",
+      "modelSources": {
+        "ghproxy": "GitHub proxy (CN)",
+        "github": "GitHub"
+      },
+      "modelSourceHint": {
+        "ghproxy": "Via gh-proxy.com GitHub proxy; archive is extracted after download",
+        "github": "Direct GitHub download, faster outside China; archive is extracted after download"
+      },
+      "models": {
+        "kokoro-multi-lang-v1_1": {
+          "name": "Kokoro v1.1 (ZH/EN, 103 voices, ~220MB)",
+          "desc": "Recommended: 24kHz quality, Chinese-English code-switching in one pass; int8 quantized, CPU-friendly."
+        },
+        "vits-zh-aishell3": {
+          "name": "AISHELL-3 (Chinese, 174 voices, ~210MB)",
+          "desc": "Largest voice count, good for multi-speaker distinction; 8kHz telephone quality, Chinese only."
+        }
+      },
+      "auditionTitle": "Voice preview",
+      "audition": "Preview",
+      "auditionHint": "Synthesizes a fixed short sentence with the selected voice; the first preview loads the model, please wait a moment.",
+      "voiceGroups": {
+        "zhFemale": "Chinese female",
+        "zhMale": "Chinese male",
+        "en": "English"
+      },
+      "voiceTraits": {
+        "lang": {
+          "zh": "Chinese",
+          "enUs": "American English",
+          "enGb": "British English"
+        },
+        "gender": {
+          "female": "Female",
+          "male": "Male"
+        },
+        "age": {
+          "A": "Youth",
+          "B": "Young adult",
+          "C": "Middle-aged",
+          "D": "Senior"
+        },
+        "accent": {
+          "north": "Northern accent",
+          "south": "Southern accent",
+          "others": "Other accent"
+        }
+      }
+    },
     "localCli": {
       "name": "Local CLI",
       "desc": "Use a self-installed Whisper-compatible command-line tool",
@@ -347,5 +408,28 @@
   "asrGladiaApiKeyTips": "API Key created under \"API Keys\" in the <a href='https://app.gladia.io/' style='color: blue'>app.gladia.io console</a>. The free tier includes 10 hours of transcription per month; note that audio uploaded on the free tier may be used by Gladia for model training (paid tiers are not). Stored locally only.",
   "phGladiaApiKey": "your Gladia API Key",
   "asrModelsGladiaTips": "Model tier (both tiers auto-detect the language; an explicitly set task source language is sent as a hint): solaria-1 (default) covers 100+ languages (incl. Chinese, Japanese, Korean) with the broadest coverage; solaria-3 is specialized for real-world recordings in five European languages (English, French, German, Spanish, Italian) — stronger on noisy calls and multi-speaker audio, but weaker than solaria-1 on clean speech and other languages, so don't pick it by default. Transcription is an async job: after upload the server processes in a queue and the app polls for results automatically; quitting the app mid-task loses nothing — rerunning the same task resumes the existing job without double billing.",
-  "asrApiUrlGladiaTips": "Base URL of the Gladia endpoint; usually leave empty to use the official https://api.gladia.io (only set when going through a reverse proxy)."
+  "asrApiUrlGladiaTips": "Base URL of the Gladia endpoint; usually leave empty to use the official https://api.gladia.io (only set when going through a reverse proxy).",
+  "tts": {
+    "cloudTitle": "Cloud TTS",
+    "emptyHint": "Add an OpenAI-compatible TTS instance with Base URL, API Key, model and voice to use it in dubbing tasks.",
+    "configured": "Configured",
+    "needsConfig": "Please fill in required fields first",
+    "testOk": "Connection OK",
+    "testFailed": "Connection failed",
+    "testConnection": "Test connection",
+    "remove": "Remove",
+    "ttsApiUrlTips": "Base URL of the OpenAI-compatible TTS endpoint, e.g. https://api.openai.com/v1",
+    "ttsApiKeyTips": "Your API Key — stored locally only and sent to the endpoint above.",
+    "phTtsApiKey": "sk-...",
+    "ttsModel": "Model",
+    "ttsModelFieldTips": "TTS model id supported by your provider, e.g. tts-1, tts-1-hd.",
+    "ttsVoice": "Voice",
+    "ttsVoiceFieldTips": "Voice parameter supported by your provider, e.g. alloy, echo.",
+    "ttsResponseFormat": "Response format",
+    "ttsResponseFormatTips": "Prefer wav (no decode step); mp3 is decoded to PCM locally.",
+    "ttsRequestTimeout": "Request timeout (sec)",
+    "ttsRequestTimeoutTips": "Max seconds to wait before a request is treated as failed.",
+    "ttsMaxRetries": "Max retries",
+    "ttsMaxRetriesTips": "Retries on timeout or retriable errors (not counting the first attempt)."
+  }
 }

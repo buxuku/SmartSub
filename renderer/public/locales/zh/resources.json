@@ -253,6 +253,67 @@
         }
       }
     },
+    "tts": {
+      "name": "配音（TTS）",
+      "subtitle": "字幕 → 语音合成",
+      "tags": ["语音合成", "离线", "多音色"],
+      "desc": "本地语音合成（TTS）引擎，基于 sherpa-onnx 运行（运行库已随应用内置）：把字幕逐句合成为配音音轨，全程 CPU 离线、无需显卡或 Python。在下方下载模型后即可在配音任务中使用。",
+      "needsModels": "需下载模型",
+      "downloadSource": "下载源",
+      "extracting": "解包中…（可能需要一会儿）",
+      "anotherDownload": "已有下载任务进行中，请等待完成后再试。",
+      "modelsTitle": "模型",
+      "modelDownload": "下载",
+      "modelDelete": "删除",
+      "modelSources": {
+        "ghproxy": "github 国内加速",
+        "github": "GitHub"
+      },
+      "modelSourceHint": {
+        "ghproxy": "经 gh-proxy.com 代理 GitHub，下载整包后需解包",
+        "github": "GitHub 直连，海外网络较快，下载整包后需解包"
+      },
+      "models": {
+        "kokoro-multi-lang-v1_1": {
+          "name": "Kokoro v1.1（中英，103 音色，约 220MB）",
+          "desc": "推荐：24kHz 音质，中英混说单句直出；int8 量化，CPU 友好。"
+        },
+        "vits-zh-aishell3": {
+          "name": "AISHELL-3（中文，174 音色，约 210MB）",
+          "desc": "音色数量多，适合多角色区分；8kHz 电话音质，仅中文。"
+        }
+      },
+      "auditionTitle": "音色试听",
+      "audition": "试听",
+      "auditionHint": "合成一句固定短句试听所选音色；首次试听需加载模型，稍等片刻。",
+      "voiceGroups": {
+        "zhFemale": "中文女声",
+        "zhMale": "中文男声",
+        "en": "英文"
+      },
+      "voiceTraits": {
+        "lang": {
+          "zh": "中文",
+          "enUs": "美式英语",
+          "enGb": "英式英语"
+        },
+        "gender": {
+          "female": "女声",
+          "male": "男声"
+        },
+        "age": {
+          "A": "少年",
+          "B": "青年",
+          "C": "中年",
+          "D": "年长"
+        },
+        "accent": {
+          "north": "北方口音",
+          "south": "南方口音",
+          "others": "其他口音"
+        }
+      }
+    },
     "localCli": {
       "name": "本地命令行",
       "desc": "使用自行安装的 Whisper 兼容 CLI",
@@ -347,5 +408,28 @@
   "asrGladiaApiKeyTips": "<a href='https://app.gladia.io/' style='color: blue'>app.gladia.io 控制台</a> ▸「API Keys」注册并创建的 API Key。免费档每月 10 小时转写时长；注意：免费档上传的音频会被 Gladia 用于模型训练，付费档不会。仅保存在本地。",
   "phGladiaApiKey": "你的 Gladia API Key",
   "asrModelsGladiaTips": "模型档位（两档均自动识别语言，任务的「原语言」明确指定时会作为提示上行）：solaria-1（默认）支持 100+ 语言（含中文、日韩等），覆盖最全；solaria-3 为英法德西意五种欧洲语言的实录特化档（嘈杂通话、多说话人更强），干净朗读与其它语种反不如 solaria-1，请勿默认选用。转写为异步任务制：上传后服务端排队处理，应用会自动轮询结果；中途退出应用也不丢任务，重新运行同一任务会直接续查原任务，不重复计费。",
-  "asrApiUrlGladiaTips": "Gladia 端点的 Base URL，通常留空即用官方地址 https://api.gladia.io（走反向代理时再填写）。"
+  "asrApiUrlGladiaTips": "Gladia 端点的 Base URL，通常留空即用官方地址 https://api.gladia.io（走反向代理时再填写）。",
+  "tts": {
+    "cloudTitle": "云端 TTS",
+    "emptyHint": "添加 OpenAI 兼容 TTS 实例，填写 Base URL、API Key、模型与音色后即可在配音任务中使用。",
+    "configured": "已配置",
+    "needsConfig": "请先填写必填项",
+    "testOk": "连接正常",
+    "testFailed": "连接失败",
+    "testConnection": "测试连接",
+    "remove": "删除",
+    "ttsApiUrlTips": "OpenAI 兼容 TTS 端点的 Base URL，例如 https://api.openai.com/v1",
+    "ttsApiKeyTips": "API Key，仅保存在本地并发送到上面配置的端点。",
+    "phTtsApiKey": "sk-...",
+    "ttsModel": "模型",
+    "ttsModelFieldTips": "服务商支持的 TTS 模型 id，如 tts-1、tts-1-hd。",
+    "ttsVoice": "音色",
+    "ttsVoiceFieldTips": "服务商支持的 voice 参数，如 alloy、echo。",
+    "ttsResponseFormat": "响应格式",
+    "ttsResponseFormatTips": "优先 wav（无需解码）；mp3 会在本地解码为 PCM。",
+    "ttsRequestTimeout": "请求超时（秒）",
+    "ttsRequestTimeoutTips": "每次请求失败前最长等待的秒数。",
+    "ttsMaxRetries": "最大重试",
+    "ttsMaxRetriesTips": "超时或可重试错误时的重试次数（不含首次请求）。"
+  }
 }

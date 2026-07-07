@@ -14,6 +14,7 @@ export const LOCAL_ENGINE_VIEWS = [
   'fasterWhisper',
   'sherpa',
   'localCli',
+  'tts',
 ] as const;
 
 export type LocalEngineView = (typeof LOCAL_ENGINE_VIEWS)[number];

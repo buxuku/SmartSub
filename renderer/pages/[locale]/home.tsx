@@ -25,11 +25,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { cn } from 'lib/utils';
-import { getTaskTypeBySlug } from 'lib/taskTypes';
+import { getTaskTypeBySlug, resolveDropTaskType } from 'lib/taskTypes';
 import { isProviderConfigured } from 'lib/providerUtils';
+import { isTtsProviderConfigured } from '../../../types/ttsProvider';
 import { hasAnyModelAnyEngine } from 'lib/engineModels';
 import {
   CardDecor,
+  DubbingIcon,
   GenerateIcon,
   GenerateTranslateIcon,
   MergeIcon,
@@ -55,6 +57,7 @@ interface CardDef {
   /** 直达页面卡片 */
   href?: string;
   needsModel?: boolean;
+  needsTts?: boolean;
 }
 
 const CARDS: CardDef[] = [
@@ -82,6 +85,14 @@ const CARDS: CardDef[] = [
     decor: 'text-emerald-500/[0.09] dark:text-emerald-400/[0.12]',
   },
   {
+    key: 'dubbing',
+    slug: 'dubbing',
+    icon: DubbingIcon,
+    chip: 'bg-gradient-to-br from-violet-500/20 via-violet-500/10 to-transparent ring-1 ring-inset ring-violet-500/20 text-violet-600 dark:text-violet-400',
+    decor: 'text-violet-500/[0.09] dark:text-violet-400/[0.12]',
+    needsTts: true,
+  },
+  {
     key: 'proofread',
     href: 'proofread',
     icon: ProofreadIcon,
@@ -103,14 +114,20 @@ function getCardBlock(
   card: CardDef,
   hasModels: boolean,
   hasProvider: boolean,
-): 'model' | 'provider' | null {
+  hasTts: boolean,
+): 'model' | 'provider' | 'tts' | null {
   if (card.needsModel && !hasModels) return 'model';
+  if (card.needsTts && !hasTts) return 'tts';
   if (NEEDS_PROVIDER_KEYS.has(card.key) && !hasProvider) return 'provider';
   return null;
 }
 
-function resourcesHref(locale: string, block: 'model' | 'provider'): string {
-  return block === 'model' ? `/${locale}/engines` : `/${locale}/translation`;
+function resourcesHref(
+  locale: string,
+  block: 'model' | 'provider' | 'tts',
+): string {
+  if (block === 'provider') return `/${locale}/translation`;
+  return `/${locale}/engines`;
 }
 
 export default function LaunchpadPage() {
@@ -119,6 +136,7 @@ export default function LaunchpadPage() {
   const { t } = useTranslation('launchpad');
   const { t: tTasks } = useTranslation('tasks');
   const [hasModels, setHasModels] = useState(true);
+  const [hasTts, setHasTts] = useState(true);
   const [hasProvider, setHasProvider] = useState(true);
   const [workItems, setWorkItems] = useState<WorkItem[]>([]);
   const [recentLoading, setRecentLoading] = useState(true);
@@ -130,14 +148,23 @@ export default function LaunchpadPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [systemInfo, providers, items, asrProviders] = await Promise.all([
-          window?.ipc?.invoke('getSystemInfo', null),
-          window?.ipc?.invoke('getTranslationProviders'),
-          window?.ipc?.invoke('getWorkItems'),
-          window?.ipc?.invoke('getAsrProviders'),
-        ]);
+        const [systemInfo, providers, items, asrProviders, ttsProviders] =
+          await Promise.all([
+            window?.ipc?.invoke('getSystemInfo', null),
+            window?.ipc?.invoke('getTranslationProviders'),
+            window?.ipc?.invoke('getWorkItems'),
+            window?.ipc?.invoke('getAsrProviders'),
+            window?.ipc?.invoke('getTtsProviders'),
+          ]);
         // 跨引擎就绪判断：任一引擎装有任一模型、或任一云实例已配置即视为已就绪
         setHasModels(hasAnyModelAnyEngine(systemInfo, asrProviders || []));
+        const hasLocalTts = (systemInfo?.ttsModelsInstalled || []).length > 0;
+        const hasCloudTts = (ttsProviders || []).some((p: unknown) =>
+          isTtsProviderConfigured(
+            p as Parameters<typeof isTtsProviderConfigured>[0],
+          ),
+        );
+        setHasTts(hasLocalTts || hasCloudTts);
         setHasProvider(
           (providers || []).some((p: any) => isProviderConfigured(p)),
         );
@@ -161,7 +188,7 @@ export default function LaunchpadPage() {
     e.preventDefault();
     setDragCard(null);
     if (!card.slug) return;
-    const block = getCardBlock(card, hasModels, hasProvider);
+    const block = getCardBlock(card, hasModels, hasProvider, hasTts);
     if (block) {
       router.push(resourcesHref(String(locale || 'zh'), block));
       return;
@@ -187,7 +214,7 @@ export default function LaunchpadPage() {
 
     const dropped = await window?.ipc?.invoke('getDroppedFiles', {
       files: paths,
-      taskType: typeDef.accepts === 'subtitle' ? 'translate' : 'media',
+      taskType: resolveDropTaskType(typeDef),
     });
     if (!dropped?.length) {
       router.push(cardTarget(card));
@@ -276,7 +303,7 @@ export default function LaunchpadPage() {
           {CARDS.map((card) => {
             const Icon = card.icon;
             const droppable = Boolean(card.slug);
-            const block = getCardBlock(card, hasModels, hasProvider);
+            const block = getCardBlock(card, hasModels, hasProvider, hasTts);
             const href = block
               ? resourcesHref(localeStr, block)
               : cardTarget(card);
@@ -323,6 +350,14 @@ export default function LaunchpadPage() {
                     {t('needsModelBadge')}
                   </Badge>
                 )}
+                {card.needsTts && !hasTts && (
+                  <Badge
+                    variant="outline"
+                    className="absolute right-3 top-3 text-[10px] px-1.5 py-0 border-warning/40 text-warning bg-card"
+                  >
+                    {t('needsTtsBadge')}
+                  </Badge>
+                )}
                 <div
                   className={cn(
                     'mb-3 inline-flex h-11 w-11 items-center justify-center rounded-lg',
@@ -347,6 +382,11 @@ export default function LaunchpadPage() {
                 {block === 'provider' && (
                   <p className="mt-2 text-xs font-medium text-primary">
                     {t('banner.noProviderCta')} →
+                  </p>
+                )}
+                {block === 'tts' && (
+                  <p className="mt-2 text-xs font-medium text-primary">
+                    {t('banner.noTtsCta')} →
                   </p>
                 )}
               </Link>

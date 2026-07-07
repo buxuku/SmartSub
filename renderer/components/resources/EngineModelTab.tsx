@@ -145,6 +145,8 @@ const EngineModelTab: React.FC = () => {
   const [funasrModelsReady, setFunasrModelsReady] = useState(false);
   const [qwenModelsReady, setQwenModelsReady] = useState(false);
   const [fireRedModelsReady, setFireRedModelsReady] = useState(false);
+  // TTS（配音）与 ASR 同库随包内置，就绪 = 至少一个 TTS 模型已装。
+  const [ttsModelsReady, setTtsModelsReady] = useState(false);
   // 云端听写实例的单一事实源：左栏状态点/计数与右栏面板共用（见 useAsrProviders）。
   const asr = useAsrProviders();
   // 「添加自定义」对话框（云组末尾入口）：命名 + 可选 Base URL，新建 OpenAI 兼容实例。
@@ -216,6 +218,11 @@ const EngineModelTab: React.FC = () => {
       const frr = await window?.ipc?.invoke('getFireRedModelStatus');
       if (frr?.success) {
         setFireRedModelsReady(!!frr.ready);
+      }
+
+      const tr = await window?.ipc?.invoke('getTtsModelStatus');
+      if (tr?.success) {
+        setTtsModelsReady(!!tr.ready);
       }
     } catch (error) {
       console.error('Failed to refresh engine status:', error);
@@ -533,6 +540,16 @@ const EngineModelTab: React.FC = () => {
         </Badge>
       );
     }
+    if (view === 'tts') {
+      // 配音：运行库随包内置，就绪只看模型；未装则提示去下载。
+      return ttsModelsReady ? (
+        readyBadge
+      ) : (
+        <Badge variant="outline" className="border-primary/40 text-primary">
+          {t('engines.tts.needsModels')}
+        </Badge>
+      );
+    }
     const engine = view;
     if (engine === 'fasterWhisper') {
       if (isDownloading) {
@@ -583,6 +600,7 @@ const EngineModelTab: React.FC = () => {
 
   const engineTone = (view: LocalEngineView): StatusTone => {
     if (view === 'sherpa') return sherpaAnyReady ? 'ready' : 'pending';
+    if (view === 'tts') return ttsModelsReady ? 'ready' : 'pending';
     if (view === 'fasterWhisper') {
       if (isDownloading || showVerifying) return 'downloading';
       if (fasterInstalled) return 'ready';
@@ -722,6 +740,12 @@ const EngineModelTab: React.FC = () => {
         />
       );
     }
+    if (effectiveLocalView === 'tts') {
+      // 配音（TTS）：运行库随包内置，无运行时管理项；说明 + 模型清单（下方 ModelLibrarySection）。
+      return (
+        <p className="text-sm text-muted-foreground">{t('engines.tts.desc')}</p>
+      );
+    }
     return <BuiltinPanel />;
   };
 
@@ -857,6 +881,11 @@ const EngineModelTab: React.FC = () => {
               {!activeCloudView && effectiveLocalView === 'sherpa' && (
                 <p className="text-xs text-muted-foreground">
                   {t('engines.sherpa.subtitle')}
+                </p>
+              )}
+              {!activeCloudView && effectiveLocalView === 'tts' && (
+                <p className="text-xs text-muted-foreground">
+                  {t('engines.tts.subtitle')}
                 </p>
               )}
             </div>

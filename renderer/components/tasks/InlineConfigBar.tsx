@@ -13,6 +13,7 @@ import {
 import { AlertCircle, CheckCircle2, Download, Languages } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Models from '@/components/Models';
+import DubbingConfigBar from '@/components/tasks/DubbingConfigBar';
 import { supportedLanguage } from 'lib/utils';
 import { isProviderConfigured } from 'lib/providerUtils';
 import { hasAnyModelAnyEngine } from 'lib/engineModels';
@@ -35,6 +36,7 @@ interface InlineConfigBarProps {
   asrProviders?: Provider[];
   typeDef: TaskTypeDef;
   useLocalWhisper: boolean;
+  files?: any[];
 }
 
 function ConfigItem({
@@ -67,6 +69,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
   asrProviders,
   typeDef,
   useLocalWhisper,
+  files = [],
 }) => {
   const { t } = useTranslation('tasks');
   const { t: tHome } = useTranslation('home');
@@ -124,6 +127,15 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-muted/30 px-3 py-2">
+      {typeDef.taskType === 'dubbing' && (
+        <DubbingConfigBar
+          form={form}
+          formData={formData}
+          systemInfo={systemInfo}
+          files={files}
+        />
+      )}
+
       {typeDef.needsModel && (
         <ConfigItem label={t('configBar.model')}>
           {hasModels ? (
@@ -170,23 +182,25 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
         </ConfigItem>
       )}
 
-      <ConfigItem
-        label={
-          typeDef.accepts === 'subtitle'
-            ? t('configBar.subtitleSourceLanguage')
-            : t('configBar.sourceLanguage')
-        }
-      >
-        <Select
-          value={formData.sourceLanguage}
-          onValueChange={(v) => setValue('sourceLanguage', v)}
+      {typeDef.taskType !== 'dubbing' && (
+        <ConfigItem
+          label={
+            typeDef.accepts === 'subtitle'
+              ? t('configBar.subtitleSourceLanguage')
+              : t('configBar.sourceLanguage')
+          }
         >
-          <SelectTrigger className={triggerClass}>
-            <SelectValue placeholder={tHome('pleaseSelect')} />
-          </SelectTrigger>
-          {languageItems(true)}
-        </Select>
-      </ConfigItem>
+          <Select
+            value={formData.sourceLanguage}
+            onValueChange={(v) => setValue('sourceLanguage', v)}
+          >
+            <SelectTrigger className={triggerClass}>
+              <SelectValue placeholder={tHome('pleaseSelect')} />
+            </SelectTrigger>
+            {languageItems(true)}
+          </Select>
+        </ConfigItem>
+      )}
 
       {typeDef.hasTranslate && (
         <>
@@ -275,7 +289,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
         </>
       )}
 
-      {!typeDef.hasTranslate && (
+      {!typeDef.hasTranslate && typeDef.taskType !== 'dubbing' && (
         <ConfigItem label={t('configBar.format')}>
           <Select
             value={formData.subtitleOutputFormat || 'srt'}

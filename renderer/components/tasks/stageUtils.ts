@@ -1,7 +1,12 @@
 import { isSubtitleFile } from 'lib/utils';
 import type { TaskTypeDef } from 'lib/taskTypes';
 
-export type StageKey = 'extractAudio' | 'extractSubtitle' | 'translateSubtitle';
+export type StageKey =
+  | 'extractAudio'
+  | 'extractSubtitle'
+  | 'translateSubtitle'
+  | 'prepareSubtitle';
+
 export type StageStatus = 'pending' | 'loading' | 'done' | 'error';
 
 export interface StageDef {
@@ -16,6 +21,19 @@ export function getFileStages(
   typeDef: TaskTypeDef,
   formData: any,
 ): StageDef[] {
+  if (typeDef.taskType === 'dubbing') {
+    const stages: StageDef[] = [
+      { key: 'prepareSubtitle', labelKey: 'stage.dubbingParse' },
+      { key: 'extractSubtitle', labelKey: 'stage.dubbingSynthesize' },
+      { key: 'translateSubtitle', labelKey: 'stage.dubbingAssemble' },
+    ];
+    const mediaInput = !isSubtitleFile(file?.filePath || '');
+    if (mediaInput && formData?.dubbingOutputMode === 'softMux') {
+      stages.push({ key: 'extractAudio', labelKey: 'stage.dubbingMux' });
+    }
+    return stages;
+  }
+
   const subtitleInput = isSubtitleFile(file?.filePath || '');
   const stages: StageDef[] = [];
   if (!subtitleInput) {
@@ -80,6 +98,7 @@ export function getFileError(file: any, stages: StageDef[]): string {
 
 /** 校对解锁条件（沿用旧 TaskList 逻辑） */
 export function isProofreadReady(file: any, typeDef: TaskTypeDef): boolean {
+  if (typeDef.taskType === 'dubbing') return false;
   if (typeDef.taskType === 'generateOnly') {
     return file?.extractSubtitle === 'done';
   }
@@ -142,7 +161,15 @@ export function canProofreadFile(file: any, typeDef: TaskTypeDef): boolean {
 
 /** 打开所在文件夹时优先揭示的产物路径 */
 export function getRevealPath(file: any): string {
-  return file?.translatedSrtFile || file?.srtFile || file?.filePath || '';
+  return (
+    file?.dubVideoFile ||
+    file?.dubAudioFile ||
+    file?.alignedSrtFile ||
+    file?.translatedSrtFile ||
+    file?.srtFile ||
+    file?.filePath ||
+    ''
+  );
 }
 
 /** 字节数转人类可读（如 1.5 MB）；无效值返回空串 */

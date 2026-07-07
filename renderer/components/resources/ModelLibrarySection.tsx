@@ -60,6 +60,8 @@ import type { TranscriptionEngine } from '../../../types/engine';
 import FunasrModelSection from '@/components/resources/FunasrModelSection';
 import QwenModelSection from '@/components/resources/QwenModelSection';
 import FireRedModelSection from '@/components/resources/FireRedModelSection';
+import TtsModelSection from '@/components/resources/TtsModelSection';
+import TtsProviderSection from '@/components/resources/TtsProviderSection';
 
 type FasterWhisperModelEntry = {
   id: string;
@@ -821,8 +823,8 @@ function TierSection({
 }
 
 export interface ModelLibrarySectionProps {
-  /** 渲染哪个引擎的模型清单（由主从双栏左栏选中驱动，不依赖全局引擎）。 */
-  engine: TranscriptionEngine;
+  /** 渲染哪个引擎的模型清单（由主从双栏左栏选中驱动，不依赖全局引擎）；'tts' 为配音模型组。 */
+  engine: TranscriptionEngine | 'tts';
   systemInfo: ISystemInfo;
   systemInfoLoaded: boolean;
   globalDownloading: boolean;
@@ -886,6 +888,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
   const isFunasr = engine === 'funasr';
   const isQwen = engine === 'qwen';
   const isFireRed = engine === 'fireRedAsr';
+  const isTts = engine === 'tts';
   const isLocalCli = engine === 'localCli';
 
   const handleImportModel = async () => {
@@ -925,7 +928,9 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
             ? 'qwenModelsPath'
             : isFireRed
               ? 'fireRedModelsPath'
-              : 'modelsPath';
+              : isTts
+                ? 'ttsModelsPath'
+                : 'modelsPath';
       await window?.ipc?.invoke('setSettings', {
         [pathKey]: result.directoryPath,
       });
@@ -955,7 +960,9 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
               ? 'qwen'
               : isFireRed
                 ? 'firered'
-                : 'ggml',
+                : isTts
+                  ? 'tts'
+                  : 'ggml',
       });
       if (!result?.success) {
         toast.error(
@@ -1100,7 +1107,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
             />
           )}
 
-          {!isLocalCli && !isFunasr && !isQwen && !isFireRed && (
+          {!isLocalCli && !isFunasr && !isQwen && !isFireRed && !isTts && (
             <div className="flex flex-wrap items-center gap-3">
               <div className="relative flex-1 min-w-[180px]">
                 <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
@@ -1146,7 +1153,8 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
             isFasterWhisper ||
             isFunasr ||
             isQwen ||
-            isFireRed) && (
+            isFireRed ||
+            isTts) && (
             <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
               <HardDrive className="h-3 w-3 shrink-0" />
               <span className="shrink-0">
@@ -1164,7 +1172,9 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
                       ? systemInfo?.qwenModelsPath
                       : isFireRed
                         ? systemInfo?.fireRedModelsPath
-                        : systemInfo?.modelsPath}
+                        : isTts
+                          ? systemInfo?.ttsModelsPath
+                          : systemInfo?.modelsPath}
               </span>
               <button
                 type="button"
@@ -1195,6 +1205,11 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
             <QwenModelSection onUpdate={onUpdate} />
           ) : isFireRed ? (
             <FireRedModelSection onUpdate={onUpdate} />
+          ) : isTts ? (
+            <div className="space-y-4">
+              <TtsModelSection onUpdate={onUpdate} />
+              <TtsProviderSection />
+            </div>
           ) : installedOnly && !hasAnyInstalled ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
               {t('noInstalledModels')}

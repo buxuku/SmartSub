@@ -8,15 +8,20 @@
     "generateDesc": "只转写人声，不翻译",
     "translate": "翻译已有字幕",
     "translateDesc": "把 SRT 等字幕文件翻译成其它语言",
+    "dubbing": "字幕配音",
+    "dubbingDesc": "把字幕合成为配音音频，可选附加到视频",
     "proofread": "校对字幕",
     "proofreadDesc": "逐句检查修改，支持视频对照与 AI 润色",
     "merge": "合成到视频",
     "mergeDesc": "把字幕烧录进画面，永久显示"
   },
   "needsModelBadge": "需要模型",
+  "needsTtsBadge": "需要配音模型",
   "banner": {
     "noModel": "还没有语音模型——它负责把人声转写成文字，下载一个就能开始",
     "noModelCta": "下载推荐模型",
+    "noTts": "还没有配音模型——下载 Kokoro 等模型后即可本地合成配音",
+    "noTtsCta": "下载配音模型",
     "noProvider": "想翻译字幕？先配置一个翻译服务（也有免费选项）",
     "noProviderCta": "去配置"
   },

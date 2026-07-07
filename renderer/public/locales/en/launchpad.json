@@ -8,15 +8,20 @@
     "generateDesc": "Transcribe speech only, no translation",
     "translate": "Translate existing subtitles",
     "translateDesc": "Translate SRT and other subtitle files into another language",
+    "dubbing": "Subtitle dubbing",
+    "dubbingDesc": "Synthesize subtitles into dubbed audio; optionally mux into video",
     "proofread": "Proofread subtitles",
     "proofreadDesc": "Review line by line, with video preview and AI polish",
     "merge": "Burn to Video",
     "mergeDesc": "Burn subtitles into the picture so they always show"
   },
   "needsModelBadge": "Needs a model",
+  "needsTtsBadge": "Needs TTS model",
   "banner": {
     "noModel": "No speech model yet — it turns speech into text. Download one to get started",
     "noModelCta": "Download recommended model",
+    "noTts": "No TTS model yet — download Kokoro or similar to synthesize dubbing locally",
+    "noTtsCta": "Download TTS model",
     "noProvider": "Want translated subtitles? Set up a translation service first (free options available)",
     "noProviderCta": "Set up"
   },

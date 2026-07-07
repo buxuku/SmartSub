@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { cn } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
 import type { TaskTypeDef } from 'lib/taskTypes';
+import { isTtsProviderConfigured } from '../../types/ttsProvider';
 import { getFileStages, isFileDone } from './tasks/stageUtils';
 import { useHotkeys } from 'hooks/useHotkeys';
 import {
@@ -45,7 +46,9 @@ const TaskControls = ({
   const [statusSynced, setStatusSynced] = useState(false);
   // 云端听写「上传确认」：首次开跑云任务时弹确认，勾选不再提醒后写入 settings。
   const [cloudConsentOpen, setCloudConsentOpen] = useState(false);
+  const [ttsConsentOpen, setTtsConsentOpen] = useState(false);
   const pendingCloudFilesRef = useRef<any[] | null>(null);
+  const pendingTtsFilesRef = useRef<any[] | null>(null);
   const { t } = useTranslation(['home', 'common']);
 
   const setTaskStatus = (status: string) => {
@@ -113,6 +116,41 @@ const TaskControls = ({
       });
       return;
     }
+    if (typeDef.needsTts) {
+      const [status, providers] = await Promise.all([
+        window?.ipc?.invoke('getTtsModelStatus'),
+        window?.ipc?.invoke('getTtsProviders'),
+      ]);
+      const hasLocal = (status?.models || []).some(
+        (m: { installed?: boolean }) => m.installed,
+      );
+      const hasCloud = (providers || []).some((p: unknown) =>
+        isTtsProviderConfigured(
+          p as Parameters<typeof isTtsProviderConfigured>[0],
+        ),
+      );
+      const ttsSource =
+        formData?.ttsSource === 'cloud' ? 'cloud' : ('local' as const);
+      if (!hasLocal && !hasCloud) {
+        toast.error(t('home:selectTtsModelOrProviderFirst'));
+        return;
+      }
+      if (ttsSource === 'cloud') {
+        if (!hasCloud) {
+          toast.error(t('home:selectTtsProviderFirst'));
+          return;
+        }
+        const settings = await window?.ipc?.invoke('getSettings');
+        if (!settings?.ttsCloudConsent) {
+          pendingTtsFilesRef.current = pendingFiles;
+          setTtsConsentOpen(true);
+          return;
+        }
+      } else if (!hasLocal) {
+        toast.error(t('home:selectTtsModelFirst'));
+        return;
+      }
+    }
     // 云端听写：音频会上传到第三方端点，首次开跑前弹确认（隐私/成本护栏）。
     if (typeDef.needsModel && formData?.transcriptionEngine === 'cloud') {
       const settings = await window?.ipc?.invoke('getSettings');
@@ -161,6 +199,20 @@ const TaskControls = ({
     }
     const files = pendingCloudFilesRef.current;
     pendingCloudFilesRef.current = null;
+    if (files?.length) dispatchTask(files);
+  };
+
+  const handleConfirmTtsConsent = async (remember: boolean) => {
+    setTtsConsentOpen(false);
+    if (remember) {
+      try {
+        await window?.ipc?.invoke('setSettings', { ttsCloudConsent: true });
+      } catch {
+        // 忽略：确认后仍继续本次任务，仅"不再提醒"落库失败
+      }
+    }
+    const files = pendingTtsFilesRef.current;
+    pendingTtsFilesRef.current = null;
     if (files?.length) dispatchTask(files);
   };
 
@@ -293,6 +345,38 @@ const TaskControls = ({
             </Button>
             <AlertDialogAction onClick={() => handleConfirmCloudConsent(true)}>
               {t('home:cloudConsent.confirmRemember')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={ttsConsentOpen} onOpenChange={setTtsConsentOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Cloud className="h-5 w-5 text-violet-500" />
+              {t('home:ttsCloudConsent.title')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('home:ttsCloudConsent.description')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <AlertDialogCancel
+              onClick={() => {
+                pendingTtsFilesRef.current = null;
+              }}
+            >
+              {t('common:cancel')}
+            </AlertDialogCancel>
+            <Button
+              variant="outline"
+              onClick={() => handleConfirmTtsConsent(false)}
+            >
+              {t('home:ttsCloudConsent.confirmOnce')}
+            </Button>
+            <AlertDialogAction onClick={() => handleConfirmTtsConsent(true)}>
+              {t('home:ttsCloudConsent.confirmRemember')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

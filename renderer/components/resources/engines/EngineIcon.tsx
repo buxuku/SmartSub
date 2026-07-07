@@ -2,8 +2,8 @@ import React from 'react';
 import type { TranscriptionEngine } from '../../../../types/engine';
 
 interface EngineIconProps {
-  /** 真实引擎 id，或合并展示组 'sherpa'（FunASR · Qwen · FireRed）。 */
-  engine: TranscriptionEngine | 'sherpa';
+  /** 真实引擎 id、合并展示组 'sherpa'（FunASR · Qwen · FireRed），或配音 'tts'。 */
+  engine: TranscriptionEngine | 'sherpa' | 'tts';
   className?: string;
 }
 
@@ -15,8 +15,29 @@ interface EngineIconProps {
  * - funasr（阿里达摩院）：橙色声波（语音识别）
  * - sherpa（FunASR · Qwen · FireRed 合并组）：堆叠的声波层，示意「多模型共用一套运行库」
  * - localCli（本地命令行）：终端提示符
+ * - tts（配音）：扬声器出声
  */
 const EngineIcon: React.FC<EngineIconProps> = ({ engine, className }) => {
+  if (engine === 'tts') {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        fill="none"
+        aria-hidden="true"
+      >
+        <path
+          d="M4 9.5v5h3.2L12 18.5v-13L7.2 9.5H4Z"
+          fill="#EC4899"
+          fillOpacity={0.9}
+        />
+        <g stroke="#EC4899" strokeWidth={1.7} strokeLinecap="round" fill="none">
+          <path d="M15 9.5a3.6 3.6 0 0 1 0 5" />
+          <path d="M17.6 7.2a7 7 0 0 1 0 9.6" />
+        </g>
+      </svg>
+    );
+  }
   if (engine === 'sherpa') {
     return (
       <svg

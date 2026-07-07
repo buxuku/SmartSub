@@ -111,6 +111,30 @@ export function ProofreadIcon({ className }: IconProps) {
   );
 }
 
+/** 字幕配音：波形 + 扬声器 */
+export function DubbingIcon({ className }: IconProps) {
+  return (
+    <svg className={className} {...base}>
+      <path d="M4 15v-2" />
+      <path d="M7 15V11" />
+      <path d="M10 15V8" />
+      <path d="M13 15v-4" />
+      <path d="M16 15V10" />
+      <rect
+        x="18.5"
+        y="7"
+        width="6"
+        height="14"
+        rx="3"
+        fill="currentColor"
+        fillOpacity="0.12"
+      />
+      <path d="M21.5 11v6" />
+      <path d="M19.5 13.5h4" />
+    </svg>
+  );
+}
+
 /** 合成到视频：字幕压入画面底部 */
 export function MergeIcon({ className }: IconProps) {
   return (

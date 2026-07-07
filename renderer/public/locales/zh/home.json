@@ -301,6 +301,9 @@
   "importFolderFailed": "导入文件夹失败，请重试",
   "selectProviderFirst": "请先选择翻译服务商",
   "selectModelFirst": "请先选择语音模型",
+  "selectTtsModelFirst": "请先下载并选择配音模型",
+  "selectTtsProviderFirst": "请先配置云端 TTS 服务商",
+  "selectTtsModelOrProviderFirst": "请先下载本地配音模型或配置云端 TTS",
   "errorReadSubtitle": "读取字幕文件失败：{{file}}",
   "errorConvertToVTT": "字幕转换 VTT 失败：{{file}}",
   "proofreadPageTitle": "校对字幕",
@@ -310,5 +313,11 @@
     "description": "本次任务使用云端转写引擎，会提取每个文件的音轨并上传到你配置的第三方服务端点。请勿用于敏感内容，并注意服务商的用量费用。",
     "confirmOnce": "本次上传",
     "confirmRemember": "上传并不再提醒"
+  },
+  "ttsCloudConsent": {
+    "title": "将字幕文本发送至云端合成？",
+    "description": "本次任务使用云端 TTS，会把每条字幕文本发送到你配置的第三方服务端点进行语音合成。请勿用于敏感内容，并注意按字符计费的用量成本。",
+    "confirmOnce": "本次发送",
+    "confirmRemember": "发送并不再提醒"
   }
 }

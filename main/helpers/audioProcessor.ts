@@ -385,6 +385,149 @@ function runFfmpegSave(
   });
 }
 
+/** Float32 PCM → 16-bit PCM WAV（单声道）。 */
+export function encodeWav(samples: Float32Array, sampleRate: number): Buffer {
+  const dataLen = samples.length * 2;
+  const buf = Buffer.alloc(44 + dataLen);
+  buf.write('RIFF', 0);
+  buf.writeUInt32LE(36 + dataLen, 4);
+  buf.write('WAVE', 8);
+  buf.write('fmt ', 12);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20);
+  buf.writeUInt16LE(1, 22);
+  buf.writeUInt32LE(sampleRate, 24);
+  buf.writeUInt32LE(sampleRate * 2, 28);
+  buf.writeUInt16LE(2, 32);
+  buf.writeUInt16LE(16, 34);
+  buf.write('data', 36);
+  buf.writeUInt32LE(dataLen, 40);
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    buf.writeInt16LE(Math.round(s * 32767), 44 + i * 2);
+  }
+  return buf;
+}
+
+/** 将 Float32 PCM 写入 16-bit 单声道 WAV 文件。 */
+export function writePcm16Wav(
+  samples: Float32Array,
+  sampleRate: number,
+  outPath: string,
+): void {
+  fs.writeFileSync(outPath, encodeWav(samples, sampleRate));
+}
+
+/** 读取 16-bit PCM WAV，返回 Float32 样本与采样率。 */
+export function readPcm16Wav(filePath: string): {
+  samples: Float32Array;
+  sampleRate: number;
+} {
+  const buf = fs.readFileSync(filePath);
+  let sampleRate = 44100;
+  let off = 12;
+  while (off < buf.length) {
+    const id = buf.toString('ascii', off, off + 4);
+    const size = buf.readUInt32LE(off + 4);
+    if (id === 'fmt ') {
+      sampleRate = buf.readUInt32LE(off + 8 + 4);
+    }
+    if (id === 'data') {
+      const n = Math.floor(size / 2);
+      const out = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        out[i] = buf.readInt16LE(off + 8 + i * 2) / 32768;
+      }
+      return { samples: out, sampleRate };
+    }
+    off += 8 + size + (size % 2);
+  }
+  throw new Error('wav: data chunk not found');
+}
+
+/**
+ * ffmpeg atempo 变速（wav→wav）。factor ≥1 为加速压缩时长。
+ * 配音对齐硬上限 ≤1.5，单段 atempo 滤镜即可。
+ */
+export async function ffmpegAtempo(
+  inWav: string,
+  outWav: string,
+  factor: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  const command = ffmpeg(inWav)
+    .audioFilters(`atempo=${factor.toFixed(4)}`)
+    .audioCodec('pcm_s16le')
+    .outputOptions('-y');
+  await runFfmpegSave(command, outWav, signal);
+}
+
+/** 重采样到目标采样率（默认 48kHz，用于 mp3/软封装导出）。 */
+export async function resampleAudio(
+  inPath: string,
+  outPath: string,
+  sampleRate = 48_000,
+  signal?: AbortSignal,
+): Promise<void> {
+  const command = ffmpeg(inPath)
+    .audioFrequency(sampleRate)
+    .audioCodec('pcm_s16le')
+    .outputOptions('-y');
+  await runFfmpegSave(command, outPath, signal);
+}
+
+/** 将音频编码为 48kHz mp3（配音导出可选形态）。 */
+export async function encodeAudioMp3(
+  inPath: string,
+  outPath: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const command = ffmpeg(inPath)
+    .audioFrequency(48_000)
+    .audioCodec('libmp3lame')
+    .audioBitrate('192k')
+    .outputOptions('-y');
+  await runFfmpegSave(command, outPath, signal);
+}
+
+const SOFT_MUX_EXTENSIONS = new Set(['.mp4', '.mkv']);
+
+/** 容器是否支持软封装附加音轨（mp4/mkv）。 */
+export function canSoftMuxContainer(fileExtension: string): boolean {
+  return SOFT_MUX_EXTENSIONS.has((fileExtension || '').toLowerCase());
+}
+
+/**
+ * 软封装：保留原视频流与原音轨，附加配音为第二条音轨（配音轨转 AAC）。
+ */
+export async function muxSoftAudioTrack(
+  videoPath: string,
+  audioPath: string,
+  outPath: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const command = ffmpeg(videoPath)
+    .input(audioPath)
+    .outputOptions([
+      '-map',
+      '0:v:0',
+      '-map',
+      '0:a?',
+      '-map',
+      '1:a:0',
+      '-c:v',
+      'copy',
+      '-c:a:0',
+      'copy',
+      '-c:a:1',
+      'aac',
+      '-b:a:1',
+      '192k',
+      '-y',
+    ]);
+  await runFfmpegSave(command, outPath, signal);
+}
+
 /**
  * 压缩音频到 mp3（单声道 16kHz、低码率）以显著缩小上传体积。转写时间戳来自模型而非容器格式，
  * mp3 不影响词级/段级时间戳质量。返回压缩后临时文件路径。

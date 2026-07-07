@@ -32,6 +32,7 @@ import {
   isWhisperAbortError,
   TaskCancelledError,
 } from './taskContext';
+import { processTtsFile } from './ttsProcessor';
 
 /**
  * 处理任务错误
@@ -231,6 +232,12 @@ export async function processFile(
   try {
     const { filePath, fileName, fileExtension, directory } = file;
     console.log('filePath', file);
+
+    // 字幕配音：独立管线，不走转写/翻译流程
+    if (taskType === 'dubbing') {
+      await processTtsFile(event, file, formData);
+      return;
+    }
 
     const isSubtitleFile = [
       '.srt',

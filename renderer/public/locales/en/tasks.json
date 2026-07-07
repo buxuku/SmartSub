@@ -2,7 +2,8 @@
   "pageTitle": {
     "generate-translate": "Video → bilingual subtitles",
     "generate": "Video → original subtitles",
-    "translate": "Translate existing subtitles"
+    "translate": "Translate existing subtitles",
+    "dubbing": "Subtitle dubbing"
   },
   "backToLaunchpad": "Back to task picker",
   "newTaskHint": "New task · saved to recent tasks once files are added",
@@ -23,6 +24,8 @@
   },
   "skippedDuplicates": "Skipped {{count}} duplicate file(s)",
   "goDownloadModel": "Download a model",
+  "goDownloadTtsModel": "Download TTS model",
+  "goConfigureTtsProvider": "Set up cloud TTS",
   "goConfigureProvider": "Set up a translation service",
   "advanced": "Advanced options",
   "advancedDesc": "Details you rarely change — the defaults are best practice",
@@ -91,7 +94,71 @@
   "stage": {
     "extract": "Extract",
     "transcribe": "Transcribe",
-    "translate": "Translate"
+    "translate": "Translate",
+    "dubbingParse": "Parse",
+    "dubbingSynthesize": "Synthesize",
+    "dubbingAssemble": "Assemble",
+    "dubbingMux": "Mux"
+  },
+  "dubbing": {
+    "ttsSource": "Source",
+    "ttsModel": "TTS model",
+    "voice": "Voice",
+    "audition": "Preview",
+    "auditionFailed": "Preview failed",
+    "cloudProvider": "Cloud provider",
+    "cloudPrivacyHint": "Subtitle text will be sent to your configured third-party TTS endpoint. Mind privacy and usage costs (most providers bill per character).",
+    "cloudCostHint": "About {{count}} characters to synthesize — actual cost depends on your provider's pricing.",
+    "durationStrategy": "Timing",
+    "subtitleLanguage": "Subtitle language",
+    "outputModeLabel": "Output",
+    "audioFormat": "Audio format",
+    "exportAlignedSrt": "Export aligned SRT",
+    "strategy": {
+      "strict": "Strict sync",
+      "balanced": "Balanced",
+      "natural": "Natural"
+    },
+    "outputMode": {
+      "audioOnly": "Audio only",
+      "softMux": "Audio + soft mux"
+    },
+    "source": {
+      "local": "Local model",
+      "cloud": "Cloud service"
+    },
+    "model": {
+      "kokoro-multi-lang-v1_1": "Kokoro multilingual",
+      "vits-zh-aishell3": "Aishell3 Chinese"
+    },
+    "voiceGroups": {
+      "zhFemale": "Chinese · female",
+      "zhMale": "Chinese · male",
+      "en": "English",
+      "zhSpeakers": "Chinese speakers"
+    },
+    "voiceTraits": {
+      "lang": {
+        "zh": "Chinese",
+        "enUs": "American English",
+        "enGb": "British English"
+      },
+      "gender": {
+        "female": "Female",
+        "male": "Male"
+      },
+      "age": {
+        "A": "Youth",
+        "B": "Young adult",
+        "C": "Middle-aged",
+        "D": "Senior"
+      },
+      "accent": {
+        "north": "Northern accent",
+        "south": "Southern accent",
+        "others": "Other accent"
+      }
+    }
   },
   "row": {
     "cancelling": "Cancelling… interrupting transcription",

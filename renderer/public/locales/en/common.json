@@ -198,7 +198,8 @@
     "recentTasks": "Recent tasks",
     "newGenerateTranslate": "New: transcribe + translate",
     "newGenerate": "New: transcribe",
-    "newTranslate": "New: translate"
+    "newTranslate": "New: translate",
+    "newDubbing": "New: subtitle dubbing"
   },
   "downloadBusy": "Another download is already in progress",
   "downloadFailedToast": "Download failed: {{error}}",

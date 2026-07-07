@@ -29,7 +29,12 @@ import {
 } from '@/components/ui/tooltip';
 import { cn, isSubtitleFile } from 'lib/utils';
 import { resolveDefaultTranslateProviderId } from 'lib/providerPanelUtils';
-import { TASK_TYPES, getTaskTypeBySlug } from 'lib/taskTypes';
+import {
+  TASK_TYPES,
+  getTaskTypeBySlug,
+  resolveDropTaskType,
+  resolveImportFileType,
+} from 'lib/taskTypes';
 import {
   getEngineModelGroups,
   isEngineModelSelected,
@@ -321,6 +326,19 @@ export default function TaskPage() {
     }
   }, [typeDef, formData?.sourceSrtSaveOption, form]);
 
+  // 配音任务：默认选中首个已装 TTS 模型与推荐音色
+  useEffect(() => {
+    if (typeDef?.taskType !== 'dubbing') return;
+    if (!systemInfoLoaded) return;
+    if (!formData || Object.keys(formData).length === 0) return;
+    const installed = (systemInfo?.ttsModelsInstalled || []) as string[];
+    if (!installed.length) return;
+    const current = formData.ttsModelId as string | undefined;
+    if (!current || !installed.includes(current)) {
+      form.setValue('ttsModelId', installed[0]);
+    }
+  }, [typeDef, systemInfo, systemInfoLoaded, formData?.ttsModelId, form]);
+
   // 新一轮任务开始时恢复完成横幅
   useEffect(() => {
     if (taskStatus === 'running') setBannerDismissed(false);
@@ -356,8 +374,10 @@ export default function TaskPage() {
   );
 
   const handleImport = () => {
-    const fileType = typeDef?.accepts === 'subtitle' ? 'srt' : 'media';
-    window?.ipc?.send('openDialog', { dialogType: 'openDialog', fileType });
+    window?.ipc?.send('openDialog', {
+      dialogType: 'openDialog',
+      fileType: resolveImportFileType(typeDef),
+    });
   };
 
   // Cmd/Ctrl+O 导入文件（任务页范围）
@@ -441,7 +461,7 @@ export default function TaskPage() {
       window?.ipc
         ?.invoke('getDroppedFiles', {
           files: paths,
-          taskType: typeDef.accepts === 'subtitle' ? 'translate' : 'media',
+          taskType: resolveDropTaskType(typeDef),
         })
         .then((dropped) => {
           appendFiles(dropped);
@@ -634,6 +654,7 @@ export default function TaskPage() {
           asrProviders={asrProviders as any}
           typeDef={typeDef}
           useLocalWhisper={useLocalWhisper}
+          files={files}
         />
       </div>
 

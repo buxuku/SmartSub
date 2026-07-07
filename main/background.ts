@@ -15,6 +15,7 @@ import { createWindow } from './helpers/create-window';
 import { setupIpcHandlers } from './helpers/ipcHandlers';
 import { setupTaskProcessor } from './helpers/taskProcessor';
 import { setupSystemInfoManager } from './helpers/systemInfoManager';
+import { setupTtsAudition } from './helpers/ttsAudition';
 import { setupStoreHandlers, store } from './helpers/storeManager';
 import { setupTaskManager } from './helpers/taskManager';
 import {
@@ -166,6 +167,7 @@ app.on('before-quit', (event) => {
   setupNetworkHandlers();
   setupTaskProcessor(mainWindow);
   setupSystemInfoManager(mainWindow);
+  setupTtsAudition();
   initializeWorkItemStore();
   setupWorkItemStoreLifecycle();
   setupWorkItemHandlers();

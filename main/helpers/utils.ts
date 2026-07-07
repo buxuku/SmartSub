@@ -1,4 +1,5 @@
 import path from 'path';
+import fs from 'fs';
 import { app } from 'electron';
 import os from 'os';
 import { spawn } from 'child_process';
@@ -169,9 +170,13 @@ export const isAppleSilicon = () => {
 
 export const getExtraResourcesPath = () => {
   const isProd = process.env.NODE_ENV === 'production';
-  return isProd
-    ? path.join(process.resourcesPath, 'extraResources')
-    : path.join(app.getAppPath(), 'extraResources');
+  if (isProd) {
+    return path.join(process.resourcesPath, 'extraResources');
+  }
+  const inApp = path.join(app.getAppPath(), 'extraResources');
+  if (fs.existsSync(inApp)) return inApp;
+  // nextron dev：app/ 下无 extraResources，回退到仓库根目录
+  return path.join(app.getAppPath(), '..', 'extraResources');
 };
 
 export function runCommand(command, args, onProcess = undefined) {
@@ -241,6 +246,15 @@ export const defaultUserConfig = {
   subtitleOutputFormat: 'srt',
   maxSubtitleChars: 0,
   removeChinesePunctuation: false,
+  // 字幕配音（dubbing）任务默认
+  ttsModelId: 'kokoro-multi-lang-v1_1',
+  ttsVoiceSid: 3,
+  durationStrategy: 'balanced',
+  dubbingOutputFormat: 'wav',
+  dubbingOutputMode: 'audioOnly',
+  exportAlignedSrt: true,
+  ttsSource: 'local',
+  ttsProviderId: '',
 };
 
 export function getSrtFileName(

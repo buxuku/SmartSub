@@ -2,7 +2,8 @@
   "pageTitle": {
     "generate-translate": "视频 → 双语字幕",
     "generate": "视频 → 原文字幕",
-    "translate": "翻译已有字幕"
+    "translate": "翻译已有字幕",
+    "dubbing": "字幕配音"
   },
   "backToLaunchpad": "返回任务选择",
   "newTaskHint": "新任务 · 导入文件后自动保存到最近任务",
@@ -23,6 +24,8 @@
   },
   "skippedDuplicates": "已跳过 {{count}} 个重复文件",
   "goDownloadModel": "去下载模型",
+  "goDownloadTtsModel": "去下载配音模型",
+  "goConfigureTtsProvider": "去配置云端 TTS",
   "goConfigureProvider": "去配置翻译服务",
   "advanced": "高级选项",
   "advancedDesc": "不常改的细节设置，默认值即最佳实践",
@@ -91,7 +94,71 @@
   "stage": {
     "extract": "提取",
     "transcribe": "转写",
-    "translate": "翻译"
+    "translate": "翻译",
+    "dubbingParse": "解析",
+    "dubbingSynthesize": "合成",
+    "dubbingAssemble": "拼装",
+    "dubbingMux": "封装"
+  },
+  "dubbing": {
+    "ttsSource": "合成来源",
+    "ttsModel": "配音模型",
+    "voice": "音色",
+    "audition": "试听",
+    "auditionFailed": "试听失败",
+    "cloudProvider": "云端服务",
+    "cloudPrivacyHint": "字幕文本将发送至第三方服务商，请注意隐私与用量费用（多数按字符计费）。",
+    "cloudCostHint": "约 {{count}} 字待合成，费用以服务商定价为准。",
+    "durationStrategy": "时长策略",
+    "subtitleLanguage": "字幕语言",
+    "outputModeLabel": "输出形态",
+    "audioFormat": "音频格式",
+    "exportAlignedSrt": "导出对齐字幕",
+    "strategy": {
+      "strict": "严格对时轴",
+      "balanced": "平衡",
+      "natural": "自然优先"
+    },
+    "outputMode": {
+      "audioOnly": "仅音频",
+      "softMux": "音频+软封装"
+    },
+    "source": {
+      "local": "本地模型",
+      "cloud": "云端服务"
+    },
+    "model": {
+      "kokoro-multi-lang-v1_1": "Kokoro 中英",
+      "vits-zh-aishell3": "Aishell3 中文"
+    },
+    "voiceGroups": {
+      "zhFemale": "中文女声",
+      "zhMale": "中文男声",
+      "en": "英文",
+      "zhSpeakers": "中文说话人"
+    },
+    "voiceTraits": {
+      "lang": {
+        "zh": "中文",
+        "enUs": "美式英语",
+        "enGb": "英式英语"
+      },
+      "gender": {
+        "female": "女声",
+        "male": "男声"
+      },
+      "age": {
+        "A": "少年",
+        "B": "青年",
+        "C": "中年",
+        "D": "年长"
+      },
+      "accent": {
+        "north": "北方口音",
+        "south": "南方口音",
+        "others": "其他口音"
+      }
+    }
   },
   "row": {
     "cancelling": "取消中…正在中断转写",

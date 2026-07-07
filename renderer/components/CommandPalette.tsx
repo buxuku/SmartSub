@@ -106,6 +106,7 @@ export default function CommandPalette({
     { slug: 'generate-translate', label: t('cmd.newGenerateTranslate') },
     { slug: 'generate', label: t('cmd.newGenerate') },
     { slug: 'translate', label: t('cmd.newTranslate') },
+    { slug: 'dubbing', label: t('cmd.newDubbing') },
   ];
 
   return (

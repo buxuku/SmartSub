@@ -23,6 +23,8 @@ export type StoreType = {
   translationProviders: Provider[];
   /** 云端听写（在线 ASR）服务商实例列表（多实例，含凭据）。缺省未定义时按 [] 处理。 */
   asrProviders?: AsrProvider[];
+  /** 云端 TTS 服务商实例列表。 */
+  ttsProviders?: import('../../../types/ttsProvider').TtsProvider[];
   userConfig: Record<string, any>;
   settings: {
     whisperCommand: string;
@@ -97,6 +99,10 @@ export type StoreType = {
     fireRedProvider?: 'cpu' | 'cuda';
     /** FireRedASR-AED 解码线程数，默认 2 */
     fireRedNumThreads?: number;
+    /** TTS 模型根目录覆盖；缺省回退 userData/models/tts */
+    ttsModelsPath?: string;
+    /** TTS(sherpa-onnx) 合成线程数，默认 2 */
+    ttsNumThreads?: number;
     /** 全局网络代理模式（none=直连；custom=手动 URL） */
     proxyMode?: 'none' | 'custom';
     /** custom 模式的代理 URL，如 http://user:pass@host:port */
@@ -113,6 +119,8 @@ export type StoreType = {
     closeHintShown?: boolean;
     /** 云端听写「上传第三方」隐私确认：用户勾「不再提醒」后置 true，跳过后续开跑确认。 */
     cloudUploadConsent?: boolean;
+    /** 云端 TTS「字幕文本发送至第三方」隐私确认：用户勾「不再提醒」后置 true。 */
+    ttsCloudConsent?: boolean;
   };
   providerVersion?: number;
   logs: LogEntry[];

@@ -32,6 +32,12 @@ export interface ISystemInfo {
   fireRedModelsInstalled?: string[];
   /** fireRed 模型根目录（固定路径，仅展示用，不可更改） */
   fireRedModelsPath?: string;
+  /** TTS 运行库（sherpa-onnx，与 ASR 同库）是否已安装 */
+  ttsEngineInstalled?: boolean;
+  /** 已安装的 TTS 模型 id（如 ['kokoro-multi-lang-v1_1']） */
+  ttsModelsInstalled?: string[];
+  /** TTS 模型根目录（可在设置覆盖） */
+  ttsModelsPath?: string;
 }
 
 export interface IFiles {
@@ -55,12 +61,19 @@ export interface IFiles {
   whisperBackend?: string;
   /** 该文件走了内封软字幕直提（跳过抽音频 + ASR）：用于任务列表标识 */
   embeddedSubtitle?: boolean;
+  /** 配音产物：整轨音频（wav 或 mp3） */
+  dubAudioFile?: string;
+  /** 软封装视频（附加配音音轨） */
+  dubVideoFile?: string;
+  /** 对齐后字幕（时间轴跟随实际配音） */
+  alignedSrtFile?: string;
 }
 
 export type TaskProjectType =
   | 'generateAndTranslate'
   | 'generateOnly'
-  | 'translateOnly';
+  | 'translateOnly'
+  | 'dubbing';
 
 /** 一次任务工程：任务维度记录，下挂文件列表 */
 export interface TaskProject {
