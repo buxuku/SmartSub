@@ -1,0 +1,49 @@
+# builtin-subtitle-timeline Specification
+
+## Purpose
+
+TBD - created by archiving change builtin-subtitle-timeline-0fork. Update Purpose after archive.
+
+## Requirements
+
+### Requirement: 内置引擎细粒度分段（0-fork）
+
+内置 whisper.cpp 引擎 SHALL 以 `max_len=1` 请求 addon 的「每 token 一段 + token 级时间戳」输出，并在 TS 侧按「真实停顿 / 句末标点 / 长度上限」重新聚合成多条字幕。该流程 MUST NOT 依赖对 whisper.cpp 的源码修改（仅允许保留 AbortSignal 补丁）。聚合 MUST 对中文（CJK）有效，避免整段音频只产出一条字幕。
+
+#### Scenario: CJK 音频切成多条
+
+- **WHEN** 用内置引擎转写一段含多次停顿的中文音频
+- **THEN** 输出多条字幕（而非一条），普通模型与量化模型均如此
+
+#### Scenario: 纯标点不单独成条
+
+- **WHEN** 聚合时遇到仅含标点（如「。」「，」）的 token
+- **THEN** 该标点并入相邻字幕，不因长度上限被切成单独一条
+
+#### Scenario: 长句硬切回溯到最近可断标点
+
+- **WHEN** 一句超过长度硬上限、且句内存在停顿/枚举标点（，,；;、：:）
+- **THEN** 切分点回溯到最后一个可断标点之后（余部沿用真实词级时间作下一条开头），而非在句尾词前硬切出孤立尾词条；句内无可断标点时仍按硬上限切分
+
+### Requirement: 时间轴按语音边界贴齐（带停顿空隙）
+
+系统 SHALL 在聚合前，用 `speech-boundary-detection` 提供的语音段把每个 token 的时间区间收敛到其内部「真实有声」子窗口，使开启 VAD 时被「填满」的 token 时间戳重新表现出段间停顿。最终字幕时间轴 SHALL 在静音处呈现空隙（faster-whisper 式），而非首尾相接的连续时间轴。边界源不可用时 MUST 优雅降级（不报错，退回多段但连续的时间轴）。
+
+#### Scenario: 段间静音表现为时间轴空隙
+
+- **WHEN** 音频在两段语音之间有较长静音
+- **THEN** 对应两条字幕之间存在与该静音一致的时间空隙
+
+#### Scenario: 边界源不可用时降级
+
+- **WHEN** Silero VAD 与能量法均不可用
+- **THEN** 跳过时间轴贴齐，仍输出多段字幕且不抛错
+
+### Requirement: 尾部静音裁剪兜底
+
+内置引擎在生成 SRT 前 SHALL 复用 `trimSubtitleTrailingSilence`（PR #341）对每条字幕裁掉尾部静音，作为时间轴贴齐之后的最终兜底：仅当尾部静音达到阈值才裁剪，保留一小段 padding，并以下一条字幕起点封顶，避免裁过头或与下一条重叠。
+
+#### Scenario: 过长的字幕末尾被收敛到语音结束
+
+- **WHEN** 某条字幕的结束时间明显延伸进静音
+- **THEN** 其结束时间被收敛到语音结束附近（不超过下一条起点）
