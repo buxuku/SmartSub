@@ -8,6 +8,9 @@ import { getAsrProviders, setAsrProviders } from './asrProviderManager';
 import { testAsrConnection } from '../service/asr/testConnection';
 import { getTtsProviders, setTtsProviders } from './ttsProviderManager';
 import { testTtsConnection } from '../service/tts/testConnection';
+import { listElevenLabsVoices } from '../service/tts/elevenlabs';
+import { listAzureVoices } from '../service/tts/azure';
+import { TTS_AZURE_SPEECH, TTS_ELEVENLABS } from '../../types/ttsProvider';
 import { logMessage } from './logger';
 import { LogEntry } from './store/types';
 import { getBuildInfo } from './buildInfo';
@@ -89,6 +92,26 @@ export function setupStoreHandlers() {
   // 云 TTS 实例连通性自测：真实合成一句短文本（无零成本探针）。
   ipcMain.handle('testTtsProvider', async (_event, provider) => {
     return testTtsConnection(provider);
+  });
+
+  // 在线拉取音色清单（voiceListMode 类型：ElevenLabs 账号音色 / Azure 区域全量）。
+  ipcMain.handle('listTtsVoices', async (_event, provider) => {
+    try {
+      let voices: Array<{ id: string; name: string }>;
+      if (provider?.type === TTS_ELEVENLABS) {
+        voices = await listElevenLabsVoices(provider);
+      } else if (provider?.type === TTS_AZURE_SPEECH) {
+        voices = await listAzureVoices(provider);
+      } else {
+        return { ok: false, detail: `unsupported type: ${provider?.type}` };
+      }
+      return { ok: true, voices };
+    } catch (error) {
+      return {
+        ok: false,
+        detail: error instanceof Error ? error.message : String(error),
+      };
+    }
   });
 
   // 用户配置相关处理

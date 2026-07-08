@@ -6,10 +6,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import {
   AlertTriangle,
+  Check,
+  ChevronsUpDown,
   Eraser,
+  ExternalLink,
   Eye,
   EyeOff,
   FlaskConical,
+  ListRestart,
   Loader2,
   Plus,
   Trash2,
@@ -18,6 +22,18 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,11 +45,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { cn } from 'lib/utils';
+import { cn, openUrl } from 'lib/utils';
 import {
   buildTtsInstanceFromPreset,
   isTtsProviderConfigured,
+  parseTtsVoiceLabels,
   parseTtsVoices,
+  resolveTtsVoiceLabel,
   type TtsEngineView,
   type TtsProvider,
   type TtsProviderField,
@@ -65,8 +83,13 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
   const [removeTarget, setRemoveTarget] = useState<TtsProvider | null>(null);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [fetchingVoices, setFetchingVoices] = useState(false);
   // 音色标签录入的「输入中」草稿（回车/分隔符提交为标签，形制 ASR models 录入）。
   const [voiceDraft, setVoiceDraft] = useState('');
+  // 自动补全高亮项（-1 = 未选中，回车按原文提交）。
+  const [suggestIdx, setSuggestIdx] = useState(-1);
+  // 展开中的 select 字段（可搜索 combobox，单面板同刻只开一个）。
+  const [openSelectKey, setOpenSelectKey] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
     message: string;
@@ -76,6 +99,7 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
     setTestResult(null);
     setClearConfirmOpen(false);
     setVoiceDraft('');
+    setSuggestIdx(-1);
   }, [view.viewId]);
 
   const defaults = useMemo(
@@ -131,6 +155,55 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
     toast.success(t('ttsServices.enabled'));
   };
 
+  /**
+   * 在线拉取音色（voiceListMode 类型）：
+   * - replace（ElevenLabs）：清单替换为账号实际可用集 + 回填 id→名称映射；
+   * - label（Azure，区域全量 700+）：仅回填名称映射，不动当前清单。
+   * 标签与工作台下拉均按名称展示。
+   */
+  const handleFetchVoices = async () => {
+    const target = instance ?? defaults;
+    setFetchingVoices(true);
+    try {
+      const res = (await window?.ipc?.invoke('listTtsVoices', target)) as {
+        ok?: boolean;
+        voices?: Array<{ id: string; name: string }>;
+        detail?: string;
+      };
+      if (res?.ok && res.voices?.length) {
+        const id = instance?.id ?? onMaterialize(type.id, preset?.id);
+        if (!id) return;
+        if (type.voiceListMode === 'replace') {
+          onUpdateField(id, 'voices', res.voices.map((v) => v.id).join(', '));
+        }
+        onUpdateField(
+          id,
+          'voiceLabels',
+          JSON.stringify(
+            Object.fromEntries(res.voices.map((v) => [v.id, v.name])),
+          ),
+        );
+        toast.success(
+          type.voiceListMode === 'replace'
+            ? t('ttsServices.fetchVoicesDone', { count: res.voices.length })
+            : t('ttsServices.fetchVoicesLabeled', {
+                count: res.voices.length,
+              }),
+        );
+      } else {
+        toast.error(
+          res?.detail
+            ? `${t('ttsServices.fetchVoicesFailed')} ${res.detail}`
+            : t('ttsServices.fetchVoicesFailed'),
+        );
+      }
+    } catch {
+      toast.error(t('ttsServices.fetchVoicesFailed'));
+    } finally {
+      setFetchingVoices(false);
+    }
+  };
+
   /** 当前音色清单：未物化时按默认值（含预设预填）展示。 */
   const currentVoices = (): string[] => parseTtsVoices(instance ?? defaults);
 
@@ -150,47 +223,129 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
     setVoiceDraft('');
   };
 
-  /** 音色清单标签录入（数据仍存规范逗号串，仅录入交互结构化，形制 ASR models）。 */
+  /**
+   * 音色清单标签录入（数据仍存规范逗号串，仅录入交互结构化，形制 ASR models）。
+   * 已拉取名称映射（voiceLabels）时，输入草稿按「名称/ID 包含匹配」出自动补全，
+   * 上下键选择、回车录入（未选中项时回车按原文提交）。
+   */
   const renderVoicesField = () => {
     const voices = currentVoices();
+    const labelSource = instance ?? defaults;
+    const labelMap = parseTtsVoiceLabels(labelSource);
+    const hasLabels =
+      Boolean(type.voiceListMode) || Object.keys(labelMap).length > 0;
+
+    const q = voiceDraft.trim().toLowerCase();
+    const suggestions = q
+      ? Object.entries(labelMap)
+          .filter(
+            ([id, name]) =>
+              !voices.includes(id) &&
+              (id.toLowerCase().includes(q) || name.toLowerCase().includes(q)),
+          )
+          .slice(0, 12)
+      : [];
+
+    const addVoice = (id: string) => {
+      if (!voices.includes(id)) writeVoices([...voices, id]);
+      setVoiceDraft('');
+      setSuggestIdx(-1);
+    };
+
     return (
-      <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input px-2 py-1.5 focus-within:ring-1 focus-within:ring-ring">
-        {voices.map((v) => (
-          <Badge key={v} variant="secondary" className="gap-1 font-mono">
-            {v}
-            <button
-              type="button"
-              aria-label={commonT('delete')}
-              onClick={() => writeVoices(voices.filter((x) => x !== v))}
-            >
-              <X size={12} />
-            </button>
-          </Badge>
-        ))}
-        <input
-          value={voiceDraft}
-          onChange={(e) => {
-            const v = e.target.value;
-            // 输入任一分隔符（含全角）即时成标签，杜绝逗号串手拼。
-            if (/[,，、;；]/.test(v)) commitVoiceDraft(v);
-            else setVoiceDraft(v);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
+      <div className="relative">
+        <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input px-2 py-1.5 focus-within:ring-1 focus-within:ring-ring">
+          {voices.map((v) => {
+            const label = hasLabels ? resolveTtsVoiceLabel(labelSource, v) : v;
+            return (
+              <Badge
+                key={v}
+                variant="secondary"
+                className="gap-1 font-mono"
+                title={label === v ? undefined : v}
+              >
+                {label}
+                <button
+                  type="button"
+                  aria-label={commonT('delete')}
+                  onClick={() => writeVoices(voices.filter((x) => x !== v))}
+                >
+                  <X size={12} />
+                </button>
+              </Badge>
+            );
+          })}
+          <input
+            value={voiceDraft}
+            onChange={(e) => {
+              const v = e.target.value;
+              // 输入任一分隔符（含全角）即时成标签，杜绝逗号串手拼。
+              if (/[,，、;；]/.test(v)) commitVoiceDraft(v);
+              else setVoiceDraft(v);
+              setSuggestIdx(-1);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown' && suggestions.length > 0) {
+                e.preventDefault();
+                setSuggestIdx((i) => (i + 1) % suggestions.length);
+              } else if (e.key === 'ArrowUp' && suggestions.length > 0) {
+                e.preventDefault();
+                setSuggestIdx(
+                  (i) => (i - 1 + suggestions.length) % suggestions.length,
+                );
+              } else if (e.key === 'Escape') {
+                setSuggestIdx(-1);
+                setVoiceDraft('');
+              } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (suggestIdx >= 0 && suggestions[suggestIdx]) {
+                  addVoice(suggestions[suggestIdx][0]);
+                } else if (suggestions.length === 1) {
+                  addVoice(suggestions[0][0]);
+                } else {
+                  commitVoiceDraft(voiceDraft);
+                }
+              } else if (
+                e.key === 'Backspace' &&
+                !voiceDraft &&
+                voices.length > 0
+              ) {
+                writeVoices(voices.slice(0, -1));
+              }
+            }}
+            onBlur={() => {
+              // 点击补全项走 onMouseDown（先于 blur），此处仅兜底提交草稿。
               commitVoiceDraft(voiceDraft);
-            } else if (
-              e.key === 'Backspace' &&
-              !voiceDraft &&
-              voices.length > 0
-            ) {
-              writeVoices(voices.slice(0, -1));
-            }
-          }}
-          onBlur={() => commitVoiceDraft(voiceDraft)}
-          placeholder={t('ttsServices.voicesAddHint')}
-          className="min-w-28 flex-1 bg-transparent font-mono text-sm outline-none placeholder:text-muted-foreground"
-        />
+              setSuggestIdx(-1);
+            }}
+            placeholder={t('ttsServices.voicesAddHint')}
+            className="min-w-28 flex-1 bg-transparent font-mono text-sm outline-none placeholder:text-muted-foreground"
+          />
+        </div>
+        {suggestions.length > 0 && (
+          <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-md border bg-popover py-1 shadow-md">
+            {suggestions.map(([id, name], i) => (
+              <li key={id}>
+                <button
+                  type="button"
+                  className={cn(
+                    'flex w-full items-baseline gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-muted/60',
+                    i === suggestIdx && 'bg-muted/60',
+                  )}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    addVoice(id);
+                  }}
+                >
+                  <span className="truncate">{name}</span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+                    {id}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     );
   };
@@ -237,6 +392,55 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
               )}
             </Button>
           </div>
+        ) : field.type === 'select' ? (
+          // 可搜索 combobox（区域等长枚举，打字过滤快速定位）。
+          <Popover
+            open={openSelectKey === field.key}
+            onOpenChange={(open) => setOpenSelectKey(open ? field.key : null)}
+          >
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={openSelectKey === field.key}
+                // 与 Input 同宽同排版（全宽一行、px-3），仅右侧多一枚展开箭头。
+                className="w-full justify-between px-3 font-mono font-normal"
+              >
+                {String(value) || placeholder || ''}
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              className="w-[--radix-popover-trigger-width] p-0"
+              align="start"
+            >
+              <Command>
+                <CommandInput placeholder={t('ttsServices.searchOption')} />
+                <CommandList>
+                  <CommandEmpty>{t('ttsServices.noOptionMatch')}</CommandEmpty>
+                  {(field.options ?? []).map((opt) => (
+                    <CommandItem
+                      key={opt}
+                      value={opt}
+                      className="font-mono"
+                      onSelect={() => {
+                        handleField(field.key, opt);
+                        setOpenSelectKey(null);
+                      }}
+                    >
+                      <Check
+                        className={cn(
+                          'mr-2 h-4 w-4',
+                          String(value) === opt ? 'opacity-100' : 'opacity-0',
+                        )}
+                      />
+                      {opt}
+                    </CommandItem>
+                  ))}
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
         ) : field.type === 'number' ? (
           <Input
             type="number"
@@ -343,6 +547,18 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
       )}
 
       <div className="flex items-center justify-end gap-1.5">
+        {/* 音色/语音库官方文档外链 */}
+        {type.docsUrl && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-muted-foreground"
+            onClick={() => openUrl(type.docsUrl!)}
+          >
+            <ExternalLink className="h-4 w-4" />
+            {t('ttsServices.voiceDocs')}
+          </Button>
+        )}
         {kind === 'custom' && instance && (
           <Button
             variant="ghost"
@@ -363,6 +579,23 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
           >
             <Eraser className="h-4 w-4" />
             {t('cloudAsr.clearConfig')}
+          </Button>
+        )}
+        {/* 在线拉取音色清单（voiceListMode 类型：ElevenLabs/Azure） */}
+        {type.voiceListMode && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0 gap-1.5"
+            onClick={handleFetchVoices}
+            disabled={fetchingVoices}
+          >
+            {fetchingVoices ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ListRestart className="h-4 w-4" />
+            )}
+            {t('ttsServices.fetchVoices')}
           </Button>
         )}
         {/* 零凭据类型（Edge）默认值即可用，但需显式启用落库才进工作台引擎下拉 */}

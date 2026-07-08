@@ -1,5 +1,7 @@
 import {
+  TTS_AZURE_SPEECH,
   TTS_EDGE,
+  TTS_ELEVENLABS,
   TTS_OPENAI_COMPATIBLE,
   getTtsCapabilities,
   parseTtsVoices,
@@ -8,6 +10,8 @@ import {
 } from '../../../types/ttsProvider';
 import { synthesizeWithOpenAiCompatible } from './openaiCompatible';
 import { synthesizeWithEdge } from './edge';
+import { synthesizeWithAzure } from './azure';
+import { synthesizeWithElevenLabs } from './elevenlabs';
 import type { TtsSynthesizer, TtsSynthesizeResult } from './types';
 
 /**
@@ -17,6 +21,8 @@ import type { TtsSynthesizer, TtsSynthesizeResult } from './types';
 export const TTS_SYNTHESIZER_MAP: Record<string, TtsSynthesizer> = {
   [TTS_OPENAI_COMPATIBLE]: synthesizeWithOpenAiCompatible,
   [TTS_EDGE]: synthesizeWithEdge,
+  [TTS_AZURE_SPEECH]: synthesizeWithAzure,
+  [TTS_ELEVENLABS]: synthesizeWithElevenLabs,
 };
 
 export function getTtsSynthesizer(

@@ -381,6 +381,14 @@
   "ttsVoicesEdgeTips": "微软 Neural 音色名（如 zh-CN-XiaoxiaoNeural），逗号分隔；完整清单见微软语音服务文档",
   "ttsRequestTimeoutTips": "单次合成请求超时（秒）",
   "ttsConcurrencyTips": "批量合成时的并发请求数（跨任务全局生效）",
+  "ttsAzureRegionTips": "Speech 资源所在区域，需与 Key 匹配（Azure 门户资源概览可见）；F0 免费层每月 50 万字符。世纪互联等主权云区域不在列表内，请用下方 Endpoint 覆盖",
+  "ttsAzureKeyTips": "Azure 门户 ▸ Speech 资源 ▸ 密钥和终结点 中的 Key；按字符计费且包含 SSML 标记字符（略高于正文字符量）",
+  "ttsAzureEndpointTips": "可选，建议留空（由 Region 自动拼接 https://{region}.tts.speech.microsoft.com）。注意：门户「终结点」（*.api.cognitive.*）不是 TTS 端点，粘贴后会被自动改写；世纪互联等主权云填 https://{region}.tts.speech.azure.cn",
+  "ttsVoicesAzureTips": "微软 Neural 音色名（如 zh-CN-XiaoxiaoNeural），与 Edge 同一命名体系；完整清单见 Azure 语音库文档",
+  "ttsElevenKeyTips": "ElevenLabs dashboard ▸ API Keys 中的 xi-api-key；免费层每月 1 万字符，中文按字节膨胀计费（约 3 字符/字）；国内需网络代理直连",
+  "ttsElevenModelTips": "合成模型 id，如 eleven_multilingual_v2（多语推荐）/ eleven_flash_v2_5（低延迟低价）",
+  "ttsVoicesElevenTips": "voice_id 清单（逗号分隔），默认预填免费可用的官方音色（依次 Sarah / George / Adam / Daniel / Charlotte）；自有/克隆音色到 dashboard ▸ Voices 复制 id 追加。注意：Voice Library 里「添加」的社区音色免费账号经 API 调用会报 402",
+  "ttsElevenApiUrlTips": "可选：API Base URL，留空使用官方端点 https://api.elevenlabs.io/v1",
   "ttsServices": {
     "groupLocal": "本地模型",
     "groupCloud": "在线服务",
@@ -389,6 +397,13 @@
     "addCustomDesc": "接入任意 OpenAI 兼容的 /audio/speech 端点（自建服务、中转站等）",
     "enable": "启用",
     "enabled": "已启用，可在配音工作台选择该服务商",
-    "voicesAddHint": "输入音色名，回车添加"
+    "voicesAddHint": "输入音色名，回车添加",
+    "voiceDocs": "音色文档",
+    "searchOption": "输入关键字过滤…",
+    "noOptionMatch": "无匹配项",
+    "fetchVoices": "拉取音色",
+    "fetchVoicesDone": "已拉取 {{count}} 个音色（清单已替换为账号可用集，名称自动映射）",
+    "fetchVoicesLabeled": "已获取 {{count}} 个音色的名称映射（清单保持不变，标签按名称展示；可继续手动增删音色）",
+    "fetchVoicesFailed": "拉取音色失败："
   }
 }

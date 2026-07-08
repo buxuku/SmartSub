@@ -36,6 +36,8 @@ export interface CueSlot {
   index: number;
   /** 原字幕起点（ms）。 */
   startMs: number;
+  /** 原字幕终点（ms）——mix 模式轨道分配按原始区间划分。 */
+  endMs: number;
   /** 可用槽位（ms）：到下条 start 的窗口（间隙并入）；重叠时回落自身时长。 */
   slotMs: number;
   /** 与下条时间轴交叠（下条 start 早于本条 end）。 */
@@ -76,6 +78,7 @@ export function computeSlots(
     return {
       index: cue.index,
       startMs: cue.startMs,
+      endMs: cue.endMs,
       slotMs: Math.max(windowMs, ownDuration),
       overlapNext: i < ordered.length - 1 && ordered[i + 1].startMs < cue.endMs,
     };
@@ -297,15 +300,22 @@ export interface FinalCue {
 }
 
 /**
- * 产出最终 AlignmentPlan：按 start 顺序 cursor 走查。
- * - targetStart = max(原 start, cursor)：重叠（或 shift 模式溢出）的后条顺延；
- * - truncate 模式：占用时长封顶槽位（溢出截断），时间轴保持锚定；
- * - shift 模式：占用完整时长，后续整体顺延（配套导出顺延字幕）。
+ * 产出最终 AlignmentPlan：按 start 顺序、逐轨 cursor 走查。
+ * - 轨道分配（overlapMode='mix'）：按**原字幕区间**贪心划分——放入
+ *   「已放原区间末端 ≤ 本行原 start」的最小编号轨道，放不下开新轨；
+ *   'shift'（默认）全部落轨 0。分配以原始时间轴为准（而非合成时长），
+ *   保证无重叠字幕在两种模式下产出等价规划（合成溢出仍走轨内顺延语义）。
+ * - 轨内 targetStart = max(原 start, 该轨 cursor)：重叠（或 shift 模式溢出）
+ *   的后条顺延；truncate 模式占用时长封顶槽位（时间轴锚定），shift 模式
+ *   占用完整时长、后续同轨整体顺延（配套导出顺延字幕）。
  */
 export function buildAlignmentPlan(
   finals: FinalCue[],
   slots: CueSlot[],
-  opts: { overflow: 'truncate' | 'shift' },
+  opts: {
+    overflow: 'truncate' | 'shift';
+    overlapMode?: 'shift' | 'mix';
+  },
 ): AlignmentPlan {
   const slotByIndex = new Map(slots.map((s) => [s.index, s]));
   const ordered = [...finals].sort((a, b) => {
@@ -316,16 +326,38 @@ export function buildAlignmentPlan(
       a.index - b.index
     );
   });
+  const mix = opts.overlapMode === 'mix';
 
   const items: AlignmentPlanItem[] = [];
   const overlongIndexes: number[] = [];
   const overlapIndexes: number[] = [];
-  let cursor = 0;
+  /** 各轨的原字幕区间末端（轨道分配用）与拼接 cursor（顺延消解用）。 */
+  const laneOrigEnds: number[] = [];
+  const laneCursors: number[] = [];
 
   for (const cue of ordered) {
     const slot = slotByIndex.get(cue.index);
     const slotMs = slot?.slotMs ?? Math.max(0, cue.durationMs);
-    const targetStartMs = Math.max(cue.startMs, cursor);
+    const origStart = slot?.startMs ?? cue.startMs;
+    const origEnd = Math.max(
+      origStart,
+      slot?.endMs ?? cue.startMs + Math.max(0, cue.durationMs),
+    );
+
+    let lane = 0;
+    if (mix) {
+      lane = laneOrigEnds.findIndex((end) => end <= origStart);
+      if (lane < 0) lane = laneOrigEnds.length;
+    }
+    if (laneOrigEnds.length <= lane) {
+      laneOrigEnds.length = lane + 1;
+      laneCursors.length = lane + 1;
+      laneOrigEnds[lane] = 0;
+      laneCursors[lane] = 0;
+    }
+    laneOrigEnds[lane] = Math.max(laneOrigEnds[lane], origEnd);
+
+    const targetStartMs = Math.max(cue.startMs, laneCursors[lane]);
     const shifted = targetStartMs > cue.startMs;
     const durationMs =
       opts.overflow === 'truncate'
@@ -345,10 +377,11 @@ export function buildAlignmentPlan(
       padMs: Math.max(0, slotMs - durationMs),
       overlong: cue.overlong,
       overlap,
+      lane,
     });
     if (cue.overlong) overlongIndexes.push(cue.index);
     if (overlap) overlapIndexes.push(cue.index);
-    cursor = targetStartMs + durationMs;
+    laneCursors[lane] = targetStartMs + durationMs;
   }
 
   return { items, overlongIndexes, overlapIndexes };

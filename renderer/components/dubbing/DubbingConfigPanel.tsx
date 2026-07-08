@@ -25,6 +25,7 @@ import type { UseDubbingReturn } from '../../hooks/useDubbing';
 import type {
   DubbingBackgroundMode,
   DubbingOutputMode,
+  DubbingOverlapMode,
 } from '../../../types/dubbing';
 
 export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
@@ -221,6 +222,31 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
               <SelectItem value="mp3">MP3</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+      )}
+
+      {/* 重叠处理模式：仅当会话存在重叠行时展示（顺延是默认、多轨是升级） */}
+      {summary.overlap > 0 && (
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium">{t('overlapMode')}</label>
+          <Select
+            value={config.overlapMode ?? 'shift'}
+            onValueChange={(v) =>
+              updateConfig({ overlapMode: v as DubbingOverlapMode })
+            }
+            disabled={disabled}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="shift">{t('overlapShift')}</SelectItem>
+              <SelectItem value="mix">{t('overlapMix')}</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {t('overlapModeHint', { count: summary.overlap })}
+          </p>
         </div>
       )}
 

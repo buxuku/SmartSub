@@ -381,6 +381,14 @@
   "ttsVoicesEdgeTips": "Microsoft Neural voice names (e.g. zh-CN-XiaoxiaoNeural), comma separated; see Microsoft Speech docs for the full list",
   "ttsRequestTimeoutTips": "Per-request synthesis timeout (seconds)",
   "ttsConcurrencyTips": "Concurrent requests during batch synthesis (global across tasks)",
+  "ttsAzureRegionTips": "Region of your Speech resource, must match the key (shown in the Azure portal resource overview); F0 free tier includes 500K chars/month. Sovereign-cloud regions are not listed — use the Endpoint override below",
+  "ttsAzureKeyTips": "Key from Azure portal ▸ Speech resource ▸ Keys and Endpoint; billed per character including SSML markup (slightly above the shown text count)",
+  "ttsAzureEndpointTips": "Optional, best left empty (derived from Region as https://{region}.tts.speech.microsoft.com). Note: the portal \"Endpoint\" (*.api.cognitive.*) is not the TTS endpoint — it will be rewritten automatically; for sovereign clouds use https://{region}.tts.speech.azure.cn",
+  "ttsVoicesAzureTips": "Microsoft Neural voice names (e.g. zh-CN-XiaoxiaoNeural), same naming as Edge; see the Azure voice gallery for the full list",
+  "ttsElevenKeyTips": "xi-api-key from ElevenLabs dashboard ▸ API Keys; free tier 10K chars/month, Chinese bills ~3 chars per character; direct access requires a network proxy in some regions",
+  "ttsElevenModelTips": "Model id, e.g. eleven_multilingual_v2 (multilingual, recommended) / eleven_flash_v2_5 (low latency, cheaper)",
+  "ttsVoicesElevenTips": "Comma-separated voice_id list, prefilled with free-tier premade voices (Sarah / George / Adam / Daniel / Charlotte); copy ids of your own/cloned voices from dashboard ▸ Voices. Note: community voices added from the Voice Library return 402 over the API on free plans",
+  "ttsElevenApiUrlTips": "Optional: API base URL, leave empty for the official endpoint https://api.elevenlabs.io/v1",
   "ttsServices": {
     "groupLocal": "Local models",
     "groupCloud": "Online services",
@@ -389,6 +397,13 @@
     "addCustomDesc": "Connect any OpenAI-compatible /audio/speech endpoint (self-hosted, relays, etc.)",
     "enable": "Enable",
     "enabled": "Enabled. You can now pick this provider in the dubbing workbench.",
-    "voicesAddHint": "Type a voice name, press Enter"
+    "voicesAddHint": "Type a voice name, press Enter",
+    "voiceDocs": "Voice gallery",
+    "searchOption": "Type to filter…",
+    "noOptionMatch": "No match",
+    "fetchVoices": "Fetch voices",
+    "fetchVoicesDone": "Fetched {{count}} voice(s) — list replaced with your account's voices, names mapped automatically",
+    "fetchVoicesLabeled": "Fetched name mappings for {{count}} voice(s) — your list is unchanged, tags now show names; keep adding/removing voices manually",
+    "fetchVoicesFailed": "Failed to fetch voices:"
   }
 }

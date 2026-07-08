@@ -61,6 +61,13 @@ export type DubbingAudioFormat = 'wav' | 'mp3';
 /** 兜底后仍超长的行的处置（用户选项）。 */
 export type DubbingOverflowMode = 'truncate' | 'shift';
 
+/**
+ * 重叠 cue 消解策略（v1.5）：
+ * - shift（默认）：按 start 顺延后条（v1 行为）；
+ * - mix：重叠行分轨锚定原时间轴，导出期 amix 混为单条配音轨。
+ */
+export type DubbingOverlapMode = 'shift' | 'mix';
+
 /** 配音工作台全局配置（userConfig 记忆）。 */
 export interface DubbingConfig {
   engine: DubbingEngineSelection;
@@ -74,6 +81,8 @@ export interface DubbingConfig {
   audioFormat?: DubbingAudioFormat;
   /** 兜底后仍超长的行截断还是顺延（默认截断）。 */
   overflow?: DubbingOverflowMode;
+  /** 重叠 cue 消解策略（默认 shift 顺延）。 */
+  overlapMode?: DubbingOverlapMode;
   /** 同时导出时间轴顺延版字幕（纯音频输出场景有用）。 */
   exportShiftedSubtitle?: boolean;
 }
@@ -107,8 +116,10 @@ export interface AlignmentPlanItem {
   padMs: number;
   /** 所需倍率超红线，进人工兜底清单。 */
   overlong: boolean;
-  /** 与相邻 cue 时间轴交叠（已按 start 顺延消解）。 */
+  /** 与相邻 cue 时间轴交叠（shift 按 start 顺延消解；mix 分轨锚定原时间轴）。 */
   overlap: boolean;
+  /** 轨道编号（shift 模式恒 0；mix 模式重叠行分配到不同轨道）。 */
+  lane: number;
 }
 
 /** 对齐引擎输出：完整槽位规划，可直接驱动拼接器。 */

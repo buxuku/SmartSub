@@ -28,6 +28,7 @@ import {
   wavDurationMs,
   atempoWav,
   assembleTrack,
+  amixWavs,
   encodeMp3,
   replaceAudioTrack,
   duckMixIntoVideo,
@@ -593,6 +594,7 @@ export interface ExportResult {
 export function buildSessionPlan(
   session: DubbingSession,
   overflow: 'truncate' | 'shift',
+  overlapMode: 'shift' | 'mix' = 'shift',
 ): AlignmentPlan {
   const slots = computeSlots(session.cues, {
     mediaDurationMs: session.mediaDurationMs || undefined,
@@ -606,7 +608,7 @@ export function buildSessionPlan(
       action: c.action,
       overlong: c.status === 'overlong',
     }));
-  return buildAlignmentPlan(finals, slots, { overflow });
+  return buildAlignmentPlan(finals, slots, { overflow, overlapMode });
 }
 
 /** 导出：槽位拼接 → 背景音/输出形态 → 可选顺延字幕。 */
@@ -632,7 +634,8 @@ export async function exportDubbing(
 
   try {
     const overflow = config.overflow ?? 'truncate';
-    const plan = buildSessionPlan(session, overflow);
+    const overlapMode = config.overlapMode ?? 'shift';
+    const plan = buildSessionPlan(session, overflow, overlapMode);
     const wavByIndex = new Map(session.cues.map((c) => [c.index, c.wavPath]));
 
     emit('concat', 10);
@@ -640,17 +643,45 @@ export async function exportDubbing(
     const totalDurationMs =
       session.mediaDurationMs ||
       Math.max(...plan.items.map((i) => i.targetStartMs + i.durationMs), 0);
-    await assembleTrack(
-      plan.items
-        .filter((item) => wavByIndex.get(item.index))
-        .map((item) => ({
-          wavPath: wavByIndex.get(item.index)!,
-          targetStartMs: item.targetStartMs,
-          maxDurationMs: item.durationMs,
-        })),
-      trackPath,
-      { totalDurationMs, signal },
-    );
+
+    // 按轨道分组（shift 模式恒单轨 0；mix 模式重叠行分轨锚定原时间轴）。
+    const laneSegments = new Map<
+      number,
+      Array<{ wavPath: string; targetStartMs: number; maxDurationMs: number }>
+    >();
+    for (const item of plan.items) {
+      const wav = wavByIndex.get(item.index);
+      if (!wav) continue;
+      const arr = laneSegments.get(item.lane) ?? [];
+      arr.push({
+        wavPath: wav,
+        targetStartMs: item.targetStartMs,
+        maxDurationMs: item.durationMs,
+      });
+      laneSegments.set(item.lane, arr);
+    }
+    const lanes: number[] = [];
+    laneSegments.forEach((_, lane) => lanes.push(lane));
+    lanes.sort((a, b) => a - b);
+    if (lanes.length <= 1) {
+      // 单轨：与顺延模式同路径，零额外开销。
+      await assembleTrack(laneSegments.get(lanes[0] ?? 0) ?? [], trackPath, {
+        totalDurationMs,
+        signal,
+      });
+    } else {
+      // 多轨：逐轨拼接（统一总时长）→ amix 合为单条配音轨（限幅防削波）。
+      const laneTracks: string[] = [];
+      for (const lane of lanes) {
+        const lanePath = path.join(session.workDir, `dub-lane-${lane}.wav`);
+        await assembleTrack(laneSegments.get(lane)!, lanePath, {
+          totalDurationMs,
+          signal,
+        });
+        laneTracks.push(lanePath);
+      }
+      await amixWavs(laneTracks, trackPath, signal);
+    }
 
     emit('mux', 60);
     const outputPath = resolveOutputPath(session, config);

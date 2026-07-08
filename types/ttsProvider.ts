@@ -60,6 +60,14 @@ export type TtsProviderType = {
    * 「免费试用档，不承诺可用性」，断供错误引导切换其它引擎。
    */
   unstable?: boolean;
+  /**
+   * 支持经服务商 API 在线拉取音色清单（配置面板出现「拉取音色」）：
+   * - replace：清单替换为账号实际可用集并回填名称（ElevenLabs，账号音色少）；
+   * - label：仅为当前清单回填名称映射、不动清单（Azure，全量 700+ 不宜灌入）。
+   */
+  voiceListMode?: 'replace' | 'label';
+  /** 音色/语音库官方文档链接（配置面板出现「音色文档」外链）。 */
+  docsUrl?: string;
 };
 
 /** 用户配置的 TTS 服务商实例。type 指向 TtsProviderType.id。 */
@@ -75,11 +83,17 @@ export type TtsProvider = {
 /** 云 TTS 服务商类型 id。 */
 export const TTS_OPENAI_COMPATIBLE = 'openaiCompatible';
 export const TTS_EDGE = 'edge';
+export const TTS_AZURE_SPEECH = 'azureSpeech';
+export const TTS_ELEVENLABS = 'elevenlabs';
 
 /** OpenAI 官方 /audio/speech 单请求文本上限（字符）。 */
 const OPENAI_TTS_MAX_CHARS = 4096;
 /** Edge 逆向接口的保守单请求上限（官方无文档；2025-12 后按 4096 字节块收紧）。 */
 const EDGE_TTS_MAX_CHARS = 1500;
+/** Azure 真实上限是 10 分钟音频；单条字幕远不触顶，取保守字符值。 */
+const AZURE_TTS_MAX_CHARS = 3000;
+/** ElevenLabs 按模型 5k–40k 不等；取 v3 下限口径保守通用。 */
+const ELEVENLABS_TTS_MAX_CHARS = 5000;
 
 export const TTS_PROVIDER_TYPES: TtsProviderType[] = [
   {
@@ -156,6 +170,9 @@ export const TTS_PROVIDER_TYPES: TtsProviderType[] = [
     icon: '🌐',
     // 逆向接口：免费无 key，但随时可能断供（2025-12 曾大规模断），UI 显著标注试用档。
     unstable: true,
+    // 与 Azure 同一 Neural 音色命名体系，共用微软语音库文档。
+    docsUrl:
+      'https://learn.microsoft.com/azure/ai-services/speech-service/language-support?tabs=tts',
     capabilities: {
       speedControl: 'native', // rate ±%（由 speed 折算）
       maxCharsPerRequest: EDGE_TTS_MAX_CHARS,
@@ -171,6 +188,183 @@ export const TTS_PROVIDER_TYPES: TtsProviderType[] = [
         defaultValue:
           'zh-CN-XiaoxiaoNeural, zh-CN-YunxiNeural, zh-CN-YunyangNeural, zh-CN-XiaoyiNeural, en-US-AriaNeural, en-US-GuyNeural',
         tips: 'ttsVoicesEdgeTips',
+      },
+      {
+        key: 'requestTimeoutSec',
+        label: 'asrRequestTimeout',
+        type: 'number',
+        required: false,
+        defaultValue: 60,
+        step: 10,
+        tips: 'ttsRequestTimeoutTips',
+      },
+      {
+        key: 'concurrency',
+        label: 'asrConcurrency',
+        type: 'number',
+        required: false,
+        defaultValue: 2,
+        step: 1,
+        tips: 'ttsConcurrencyTips',
+      },
+    ],
+  },
+  {
+    id: TTS_AZURE_SPEECH,
+    name: 'Azure Speech',
+    shortName: 'Azure',
+    isBuiltin: true,
+    icon: '🔷',
+    // 品牌型硬单例：region + subscription key 凭据，可选 endpoint 覆盖主权云。
+    voiceListMode: 'label', // voices/list 全量 700+，仅回填名称不替换清单
+    docsUrl:
+      'https://learn.microsoft.com/azure/ai-services/speech-service/language-support?tabs=tts',
+    capabilities: {
+      speedControl: 'ssml', // SSML prosody rate（对齐引擎 ssml 分支首个实现者）
+      maxCharsPerRequest: AZURE_TTS_MAX_CHARS,
+      concurrency: 2, // F0 免费层并发配额低，保守默认
+    },
+    fields: [
+      {
+        // Speech 服务可用区域固定枚举（国际云；世纪互联主权云走 endpoint 覆盖）。
+        key: 'region',
+        label: 'Region',
+        type: 'select',
+        required: true,
+        defaultValue: 'eastasia',
+        // 按字母序排列（配合可搜索下拉快速定位）。
+        options: [
+          'australiaeast',
+          'brazilsouth',
+          'canadacentral',
+          'centralindia',
+          'centralus',
+          'eastasia',
+          'eastus',
+          'eastus2',
+          'francecentral',
+          'germanywestcentral',
+          'japaneast',
+          'japanwest',
+          'koreacentral',
+          'northcentralus',
+          'northeurope',
+          'norwayeast',
+          'qatarcentral',
+          'southafricanorth',
+          'southcentralus',
+          'southeastasia',
+          'swedencentral',
+          'switzerlandnorth',
+          'switzerlandwest',
+          'uaenorth',
+          'uksouth',
+          'westcentralus',
+          'westeurope',
+          'westus',
+          'westus2',
+          'westus3',
+        ],
+        tips: 'ttsAzureRegionTips',
+        placeholder: 'eastasia',
+      },
+      {
+        key: 'apiKey',
+        label: 'Subscription Key',
+        type: 'password',
+        required: true,
+        tips: 'ttsAzureKeyTips',
+        placeholder: 'phTtsApiKey',
+      },
+      {
+        key: 'endpoint',
+        label: 'Endpoint',
+        type: 'url',
+        required: false,
+        tips: 'ttsAzureEndpointTips',
+        placeholder: 'https://eastasia.tts.speech.microsoft.com',
+      },
+      {
+        // 微软 Neural 音色名（与 Edge 同一命名体系），默认中英常用集。
+        key: 'voices',
+        label: 'ttsVoices',
+        type: 'text',
+        required: true,
+        defaultValue:
+          'zh-CN-XiaoxiaoNeural, zh-CN-YunxiNeural, zh-CN-YunyangNeural, zh-CN-XiaoyiNeural, en-US-AriaNeural, en-US-GuyNeural, en-US-JennyNeural',
+        tips: 'ttsVoicesAzureTips',
+      },
+      {
+        key: 'requestTimeoutSec',
+        label: 'asrRequestTimeout',
+        type: 'number',
+        required: false,
+        defaultValue: 60,
+        step: 10,
+        tips: 'ttsRequestTimeoutTips',
+      },
+      {
+        key: 'concurrency',
+        label: 'asrConcurrency',
+        type: 'number',
+        required: false,
+        defaultValue: 2,
+        step: 1,
+        tips: 'ttsConcurrencyTips',
+      },
+    ],
+  },
+  {
+    id: TTS_ELEVENLABS,
+    name: 'ElevenLabs',
+    isBuiltin: true,
+    icon: '🎙️',
+    // 品牌型硬单例：xi-api-key 凭据；国内需网络代理直连。
+    voiceListMode: 'replace', // GET /v1/voices 账号音色少，整体替换 + 名称映射
+    docsUrl: 'https://elevenlabs.io/app/voice-library',
+    capabilities: {
+      speedControl: 'native', // voice_settings.speed（provider 内 clamp [0.7,1.2]）
+      clone: true,
+      maxCharsPerRequest: ELEVENLABS_TTS_MAX_CHARS,
+      concurrency: 2,
+    },
+    fields: [
+      {
+        key: 'apiKey',
+        label: 'API Key',
+        type: 'password',
+        required: true,
+        tips: 'ttsElevenKeyTips',
+        placeholder: 'phTtsApiKey',
+      },
+      {
+        key: 'model',
+        label: 'Model ID',
+        type: 'text',
+        required: true,
+        defaultValue: 'eleven_multilingual_v2',
+        tips: 'ttsElevenModelTips',
+      },
+      {
+        // voice_id 清单：预填官方 premade 通用款（Sarah/George/Adam/Daniel/
+        // Charlotte，2026-07 实测免费账号 API 可用；Rachel/Aria 已转 library
+        // 音色、免费层 402）。自有/克隆音色到 dashboard ▸ Voices 复制 id 追加。
+        key: 'voices',
+        label: 'ttsVoices',
+        type: 'text',
+        required: true,
+        defaultValue:
+          'EXAVITQu4vr4xnSDxMaL, JBFqnCBsd6RMkjVDRZzb, pNInz6obpgDQGcFmaJgB, onwK4e9ZLuTAKqWW03F9, cgSgspJ2msm6clMCkdW9',
+        tips: 'ttsVoicesElevenTips',
+      },
+      {
+        key: 'apiUrl',
+        label: 'Base url',
+        type: 'url',
+        required: false,
+        defaultValue: 'https://api.elevenlabs.io/v1',
+        tips: 'ttsElevenApiUrlTips',
+        placeholder: 'https://api.elevenlabs.io/v1',
       },
       {
         key: 'requestTimeoutSec',
@@ -275,6 +469,56 @@ export function buildTtsInstanceFromPreset(
     });
   }
   return instance;
+}
+
+/**
+ * 内置 premade 音色 id → 名称映射（ElevenLabs 默认预填集合，2026-07 实测
+ * 免费账号可用）：实例未拉取过账号音色时的展示兜底。
+ */
+export const ELEVENLABS_PREMADE_VOICE_LABELS: Record<string, string> = {
+  EXAVITQu4vr4xnSDxMaL: 'Sarah',
+  JBFqnCBsd6RMkjVDRZzb: 'George',
+  pNInz6obpgDQGcFmaJgB: 'Adam',
+  onwK4e9ZLuTAKqWW03F9: 'Daniel',
+  cgSgspJ2msm6clMCkdW9: 'Charlotte',
+};
+
+/**
+ * 解析实例的音色显示名映射（`voiceLabels`：JSON 字符串或对象，id → 名称）。
+ * ElevenLabs 等 voice_id 不可读的服务商用「拉取音色」回填；解析失败返回 {}。
+ */
+export function parseTtsVoiceLabels(
+  provider: (Partial<TtsProvider> & { voiceLabels?: unknown }) | undefined,
+): Record<string, string> {
+  const raw = provider?.voiceLabels;
+  let obj: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    if (k && typeof v === 'string' && v.trim()) out[k] = v.trim();
+  }
+  return out;
+}
+
+/** 音色显示名：实例映射 → 内置 premade 映射 → 原 id。 */
+export function resolveTtsVoiceLabel(
+  provider: (Partial<TtsProvider> & { voiceLabels?: unknown }) | undefined,
+  voiceId: string,
+): string {
+  return (
+    parseTtsVoiceLabels(provider)[voiceId] ??
+    (provider?.type === TTS_ELEVENLABS
+      ? ELEVENLABS_PREMADE_VOICE_LABELS[voiceId]
+      : undefined) ??
+    voiceId
+  );
 }
 
 /**

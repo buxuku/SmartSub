@@ -23,9 +23,11 @@ import {
   Loader2,
   History,
   ChevronDown,
+  Info,
 } from 'lucide-react';
 import type { UseDubbingReturn } from '../../hooks/useDubbing';
 import type { WorkItem } from '../../../types/workItem';
+import { TTS_AZURE_SPEECH, TTS_ELEVENLABS } from '../../../types/ttsProvider';
 
 function baseName(p: string): string {
   return p.split(/[\\/]/).pop() || p;
@@ -77,8 +79,34 @@ export default function DubbingFileBar({ dub }: { dub: UseDubbingReturn }) {
     isCancelling,
     canStart,
     summary,
+    charEstimate,
+    activeEngine,
     loading,
   } = dub;
+
+  // 全部完成时按钮为「全部重跑」→ 字符量按全量口径，否则按剩余待合成口径。
+  const isRedubAll = summary.total > 0 && summary.done === summary.total;
+  const estRows = isRedubAll
+    ? charEstimate.totalRows
+    : charEstimate.pendingRows;
+  const estChars = isRedubAll
+    ? charEstimate.totalChars
+    : charEstimate.pendingChars;
+  // 云端引擎：叠加计费口径提示（Azure 含 SSML 附加 / ElevenLabs 字节膨胀）。
+  const billingHint =
+    activeEngine?.kind === 'cloud'
+      ? [
+          t('charBillingCloud'),
+          activeEngine.providerType === TTS_AZURE_SPEECH
+            ? t('charBillingAzure')
+            : null,
+          activeEngine.providerType === TTS_ELEVENLABS
+            ? t('charBillingEleven')
+            : null,
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : undefined;
 
   const [recent, setRecent] = useState<RecentImportCandidate[]>([]);
   useEffect(() => {
@@ -218,6 +246,19 @@ export default function DubbingFileBar({ dub }: { dub: UseDubbingReturn }) {
       )}
 
       <div className="ml-auto flex items-center gap-2">
+        {/* 合成字符量预估（发起前可见；云端引擎附计费口径提示） */}
+        {!running && estRows > 0 && (
+          <span
+            className="flex items-center gap-1 text-xs tabular-nums text-muted-foreground"
+            title={billingHint}
+          >
+            {t('charEstimate', {
+              rows: estRows,
+              chars: estChars.toLocaleString(),
+            })}
+            {billingHint && <Info className="h-3 w-3" />}
+          </span>
+        )}
         {running && (
           <div className="flex w-40 items-center gap-2">
             <Progress value={percent} className="h-2" />

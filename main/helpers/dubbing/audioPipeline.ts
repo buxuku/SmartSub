@@ -210,6 +210,30 @@ export function wavDurationMs(file: string): number {
 }
 
 /**
+ * 裸 16-bit PCM（单声道小端）→ wav 落盘（拼 44 字节头，零 ffmpeg 转码）。
+ * ElevenLabs 等直出 pcm 的云端引擎用。返回按字节数折算的时长（ms）。
+ */
+export function writePcmAsWav(
+  pcm: Buffer,
+  sampleRate: number,
+  outPath: string,
+): number {
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
+    throw new Error(`writePcmAsWav: invalid sampleRate ${sampleRate}`);
+  }
+  const dataBytes = pcm.length - (pcm.length % 2);
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  fs.writeFileSync(
+    outPath,
+    Buffer.concat([
+      buildWavHeader(dataBytes, sampleRate, 1, 16),
+      pcm.subarray(0, dataBytes),
+    ]),
+  );
+  return Math.round((dataBytes / 2 / sampleRate) * 1000);
+}
+
+/**
  * atempo 链分解：单级 atempo 限 [0.5, 2.0]，超出自动串联
  * （3.0 → [2.0, 1.5]；0.4 → [0.5, 0.8]）。纯函数，供单测。
  */
@@ -437,6 +461,32 @@ function buildWavHeader(
 }
 
 // ── 输出形态（ffmpeg 封装）─────────────────────────────────────────────────
+
+/**
+ * 多轨 wav → 单轨 wav（重叠 cue 多轨混合的合轨步）：
+ * `amix normalize=0` 保持各轨电平叠加 + `alimiter` 限幅防人声叠加削波，
+ * 输出 16-bit PCM wav 供后续背景音/输出形态路径复用。单输入直接报错
+ * （调用方应跳过混流）。
+ */
+export async function amixWavs(
+  inputs: string[],
+  outPath: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (inputs.length < 2) {
+    throw new Error(`amixWavs expects >=2 inputs, got ${inputs.length}`);
+  }
+  const command = ffmpeg(inputs[0]);
+  for (const input of inputs.slice(1)) command.input(input);
+  const labels = inputs.map((_, i) => `[${i}:a]`).join('');
+  command
+    .complexFilter([
+      `${labels}amix=inputs=${inputs.length}:duration=longest:normalize=0[mixed]`,
+      '[mixed]alimiter=limit=0.95:level=disabled[out]',
+    ])
+    .outputOptions(['-map', '[out]', '-c:a', 'pcm_s16le', '-y']);
+  await runSave(command, outPath, signal);
+}
 
 /** wav → mp3（仅音频输出的 mp3 档；128k 对单声道语音充裕）。 */
 export async function encodeMp3(

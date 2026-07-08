@@ -17,17 +17,25 @@ import type {
   DubbingOutputMode,
   DubbingAudioFormat,
   DubbingOverflowMode,
+  DubbingOverlapMode,
 } from '../../types/dubbing';
+import {
+  getTtsProviderType,
+  isTtsProviderConfigured,
+  resolveTtsVoiceLabel,
+} from '../../types/ttsProvider';
 
 /** UI 的引擎候选项（本地模型 / 云服务商实例统一形状）。 */
 export interface DubbingEngineOption {
   key: string; // local:<modelId> | cloud:<providerId>
   kind: 'local' | 'cloud';
   label: string;
-  /** 本地=已安装；云=已配置。未就绪项禁用并提示去「引擎与模型」。 */
+  /** 本地=已安装；云=已配置（isTtsProviderConfigured，必填字段全就绪）。 */
   ready: boolean;
   /** Edge 等不稳定通道标注。 */
   unstable?: boolean;
+  /** 云服务商类型 id（计费口径提示按类型分流）。 */
+  providerType?: string;
   voices: Array<{ id: string; label: string }>;
   defaultVoiceId?: string;
 }
@@ -41,6 +49,7 @@ interface PersistedDubbingConfig {
   output: DubbingOutputMode;
   audioFormat: DubbingAudioFormat;
   overflow: DubbingOverflowMode;
+  overlapMode?: DubbingOverlapMode;
   exportShiftedSubtitle: boolean;
 }
 
@@ -52,6 +61,7 @@ const DEFAULT_PERSISTED: PersistedDubbingConfig = {
   output: 'replaceTrack',
   audioFormat: 'wav',
   overflow: 'truncate',
+  overlapMode: 'shift',
   exportShiftedSubtitle: false,
 };
 
@@ -122,9 +132,15 @@ export function useDubbing(options?: {
           key: `cloud:${p.id}`,
           kind: 'cloud',
           label: p.name,
-          ready: voices.length > 0,
-          unstable: p.type === 'edge',
-          voices: voices.map((v: string) => ({ id: v, label: v })),
+          // 必填字段全就绪才可选（半配置的品牌型实例不得进下拉）。
+          ready: isTtsProviderConfigured(p),
+          unstable: getTtsProviderType(p.type)?.unstable,
+          providerType: p.type,
+          // voice_id 不可读的服务商（ElevenLabs）按名称映射展示。
+          voices: voices.map((v: string) => ({
+            id: v,
+            label: resolveTtsVoiceLabel(p, v),
+          })),
           defaultVoiceId: voices[0],
         });
       }
@@ -189,6 +205,7 @@ export function useDubbing(options?: {
       output: videoPath && !mediaIsAudio ? persisted.output : 'audioOnly',
       audioFormat: persisted.audioFormat,
       overflow: persisted.overflow,
+      overlapMode: persisted.overlapMode ?? 'shift',
       exportShiftedSubtitle: persisted.exportShiftedSubtitle,
     };
   }, [activeEngine, activeVoice, persisted, videoPath, mediaIsAudio]);
@@ -564,6 +581,27 @@ export function useDubbing(options?: {
     return { total: cues.length, done, overlong, failed, overlap };
   }, [cues]);
 
+  // 合成字符量预估：待合成（非完成/非已确认）与全量两种口径，跳过纯空白行。
+  // 展示口径为正文字符数（含内部空格，贴近各商计费）；Azure SSML 附加、
+  // ElevenLabs 字节膨胀等差异由 UI 文案声明，不在数值内折算。
+  const charEstimate = useMemo(() => {
+    let pendingRows = 0;
+    let pendingChars = 0;
+    let totalRows = 0;
+    let totalChars = 0;
+    for (const c of cues) {
+      const len = c.text.trim().length;
+      if (len === 0) continue;
+      totalRows += 1;
+      totalChars += len;
+      if (c.status !== 'done' && c.status !== 'accepted') {
+        pendingRows += 1;
+        pendingChars += len;
+      }
+    }
+    return { pendingRows, pendingChars, totalRows, totalChars };
+  }, [cues]);
+
   const phase: DubbingUiPhase = !session
     ? 'idle'
     : running
@@ -630,6 +668,7 @@ export function useDubbing(options?: {
     openOutputFolder,
     // 汇总
     summary,
+    charEstimate,
     phase,
     canStart,
     canExport,

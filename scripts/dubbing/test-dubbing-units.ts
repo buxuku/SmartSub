@@ -4,11 +4,16 @@
  * 覆盖 main/helpers/dubbing 的可单测部分：
  *  - alignment: 槽位计算（间隙借用/末条/重叠/零长/空文件）、时长预估与校准、
  *    ratio 四档决策树、复测决策（重合成 vs atempo vs 过长零漏报）、
- *    最终规划 cursor 走查（顺延/截断/补静音）、顺延字幕时间轴
- *  - audioPipeline: buildAtempoChain 链分解（纯函数部分）
+ *    最终规划 cursor 走查（顺延/截断/补静音）、mix 模式轨道分配、顺延字幕时间轴
+ *  - audioPipeline: buildAtempoChain 链分解、writePcmAsWav 包头往返
+ *  - service/tts 纯工具: azureUtils（SSML 构造/转义/rate 折算/端点拼接）、
+ *    elevenlabsTtsUtils（base 规范化/speed clamp/body 构造）
  *
  * 运行：npm run test:dubbing
  */
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import {
   computeSlots,
   estimateDurationMs,
@@ -24,11 +29,37 @@ import {
   RESYNTH_MARGIN,
   type AlignCue,
 } from '../../main/helpers/dubbing/alignment';
-import { buildAtempoChain } from '../../main/helpers/dubbing/audioPipeline';
+import {
+  buildAtempoChain,
+  writePcmAsWav,
+  readWavInfo,
+} from '../../main/helpers/dubbing/audioPipeline';
+import {
+  escapeXml,
+  azureLangFromVoice,
+  speedToAzureProsodyRate,
+  buildAzureSsml,
+  buildAzureEndpoint,
+  buildAzureVoicesListURL,
+  mapAzureVoices,
+  normalizeAzureHost,
+} from '../../main/service/tts/azureUtils';
+import {
+  normalizeElevenLabsTtsBaseURL,
+  buildElevenLabsTtsURL,
+  buildElevenLabsVoicesURL,
+  mapElevenLabsVoices,
+  clampElevenLabsSpeed,
+  buildElevenLabsBody,
+} from '../../main/service/tts/elevenlabsTtsUtils';
 import {
   ALIGN_ONESHOT_THRESHOLD,
   ALIGN_OVERLONG_THRESHOLD,
 } from '../../types/dubbing';
+import {
+  parseTtsVoiceLabels,
+  resolveTtsVoiceLabel,
+} from '../../types/ttsProvider';
 
 let passed = 0;
 let failed = 0;
@@ -442,6 +473,127 @@ function cue(
   );
 }
 
+// ── buildAlignmentPlan:mix 模式轨道分配 ─────────────────────────────────────
+
+{
+  // 两两重叠:A 0–5000 与 B 3000–8000,mix 下各占一轨、锚定原 start
+  const cues = [cue(0, 0, 5000), cue(1, 3000, 8000)];
+  const slots = computeSlots(cues, { mediaDurationMs: 10000 });
+  const finals = [
+    {
+      index: 0,
+      startMs: 0,
+      durationMs: 4800,
+      action: { type: 'none' as const },
+      overlong: false,
+    },
+    {
+      index: 1,
+      startMs: 3000,
+      durationMs: 4000,
+      action: { type: 'none' as const },
+      overlong: false,
+    },
+  ];
+  const plan = buildAlignmentPlan(finals, slots, {
+    overflow: 'truncate',
+    overlapMode: 'mix',
+  });
+  eq(
+    plan.items.map((i) => [i.targetStartMs, i.lane]),
+    [
+      [0, 0],
+      [3000, 1],
+    ],
+    'mix: 重叠行分轨锚定原 start,互不顺延',
+  );
+  eq(plan.overlapIndexes, [0], 'mix: 重叠告警仍在(前条 overlapNext)');
+  // 同输入 shift 模式:后条顺延、单轨(回归)
+  const shiftPlan = buildAlignmentPlan(finals, slots, {
+    overflow: 'truncate',
+    overlapMode: 'shift',
+  });
+  eq(
+    shiftPlan.items.map((i) => [i.targetStartMs, i.lane]),
+    [
+      [0, 0],
+      [4800, 0],
+    ],
+    'mix 回归: shift 模式仍按 start 顺延且恒轨 0',
+  );
+}
+
+{
+  // 三行互叠:各占一轨;后续无重叠行回落轨 0
+  const cues = [
+    cue(0, 0, 6000),
+    cue(1, 1000, 7000),
+    cue(2, 2000, 8000),
+    cue(3, 9000, 10000),
+  ];
+  const slots = computeSlots(cues, { mediaDurationMs: 12000 });
+  const finals = cues.map((c) => ({
+    index: c.index,
+    startMs: c.startMs,
+    durationMs: 800,
+    action: { type: 'none' as const },
+    overlong: false,
+  }));
+  const plan = buildAlignmentPlan(finals, slots, {
+    overflow: 'truncate',
+    overlapMode: 'mix',
+  });
+  eq(
+    plan.items.map((i) => i.lane),
+    [0, 1, 2, 0],
+    'mix: 三行互叠占三轨,错开后回落轨 0(贪心最小编号)',
+  );
+  eq(
+    plan.items.map((i) => i.targetStartMs),
+    [0, 1000, 2000, 9000],
+    'mix: 全部锚定原 start',
+  );
+}
+
+{
+  // 无重叠字幕:mix 与 shift 产出等价(含 overflow shift 溢出仍走轨内顺延)
+  const cues = [cue(0, 0, 2000), cue(1, 2000, 4000)];
+  const slots = computeSlots(cues, { mediaDurationMs: 6000 });
+  const finals = [
+    {
+      index: 0,
+      startMs: 0,
+      durationMs: 2500, // 溢出槽位(2000)
+      action: { type: 'none' as const },
+      overlong: false,
+    },
+    {
+      index: 1,
+      startMs: 2000,
+      durationMs: 1000,
+      action: { type: 'none' as const },
+      overlong: false,
+    },
+  ];
+  const mixPlan = buildAlignmentPlan(finals, slots, {
+    overflow: 'shift',
+    overlapMode: 'mix',
+  });
+  const shiftPlan = buildAlignmentPlan(finals, slots, {
+    overflow: 'shift',
+    overlapMode: 'shift',
+  });
+  eq(mixPlan, shiftPlan, 'mix: 无重叠字幕两模式规划完全等价(溢出顺延同轨消解)');
+  eq(
+    mixPlan.items.map((i) => [i.targetStartMs, i.lane]),
+    [
+      [0, 0],
+      [2500, 0],
+    ],
+    'mix: 合成溢出不开新轨(轨道分配按原字幕区间)',
+  );
+}
+
 // ── buildAtempoChain(audioPipeline 纯函数部分)──────────────────────────────
 
 {
@@ -457,6 +609,237 @@ function cue(
     threw = true;
   }
   ok(threw, 'atempo: 非法倍率抛错');
+}
+
+// ── writePcmAsWav:裸 PCM 包头往返(ElevenLabs 零转码落盘)────────────────────
+
+{
+  const tmp = path.join(os.tmpdir(), `smartsub-test-pcm-${Date.now()}.wav`);
+  try {
+    // 1 秒 24kHz 16-bit 单声道 = 48000 字节
+    const pcm = Buffer.alloc(48000);
+    const durationMs = writePcmAsWav(pcm, 24000, tmp);
+    eq(durationMs, 1000, 'pcmWav: 返回时长按字节折算');
+    const info = readWavInfo(tmp);
+    eq(
+      [info.sampleRate, info.channels, info.bitsPerSample, info.durationMs],
+      [24000, 1, 16, 1000],
+      'pcmWav: readWavInfo 往返一致',
+    );
+    // 奇数字节:截齐 16-bit 对齐
+    const odd = writePcmAsWav(Buffer.alloc(3), 24000, tmp);
+    eq(readWavInfo(tmp).dataBytes, 2, 'pcmWav: 奇数字节截齐对齐');
+    ok(odd === 0, 'pcmWav: 不足 1ms 时长取整为 0');
+  } finally {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+// ── azureUtils:SSML 构造 / 转义 / rate 折算 / 端点拼接 ──────────────────────
+
+{
+  eq(
+    escapeXml(`a&b<c>"d'`),
+    'a&amp;b&lt;c&gt;&quot;d&apos;',
+    'azure: XML 五字符转义',
+  );
+  eq(
+    azureLangFromVoice('zh-CN-XiaoxiaoNeural'),
+    'zh-CN',
+    'azure: voice 名推导 lang',
+  );
+  eq(
+    azureLangFromVoice('yue-CN-XiaoMinNeural'),
+    'yue-CN',
+    'azure: 三字母语种前缀',
+  );
+  eq(azureLangFromVoice('weird'), 'en-US', 'azure: 非常规命名回落 en-US');
+
+  eq(speedToAzureProsodyRate(1), null, 'azure: speed=1 省略 prosody');
+  eq(speedToAzureProsodyRate(undefined), null, 'azure: 缺省 speed 省略');
+  eq(speedToAzureProsodyRate(1.004), null, 'azure: 折算 0% 省略');
+  eq(speedToAzureProsodyRate(1.3), '+30%', 'azure: 加速折算正百分比');
+  eq(speedToAzureProsodyRate(0.8), '-20%', 'azure: 减速折算负百分比');
+  eq(speedToAzureProsodyRate(3), '+100%', 'azure: clamp 上界 2.0');
+  eq(speedToAzureProsodyRate(0.2), '-50%', 'azure: clamp 下界 0.5');
+
+  const ssml = buildAzureSsml('Hi & bye', 'en-US-AriaNeural', 1.2);
+  ok(
+    ssml.includes('<prosody rate="+20%">Hi &amp; bye</prosody>') &&
+      ssml.includes('xml:lang="en-US"') &&
+      ssml.includes('<voice name="en-US-AriaNeural">'),
+    'azure: SSML 含转义文本与 prosody 包裹',
+  );
+  ok(
+    !buildAzureSsml('你好', 'zh-CN-XiaoxiaoNeural', 1).includes('<prosody'),
+    'azure: 原速 SSML 无 prosody 元素(省计费字符)',
+  );
+
+  eq(
+    buildAzureEndpoint('eastasia'),
+    'https://eastasia.tts.speech.microsoft.com/cognitiveservices/v1',
+    'azure: region 拼接默认端点',
+  );
+  eq(
+    buildAzureEndpoint('eastasia', 'https://chinaeast2.tts.speech.azure.cn'),
+    'https://chinaeast2.tts.speech.azure.cn/cognitiveservices/v1',
+    'azure: endpoint 覆盖并补全路径',
+  );
+  eq(
+    buildAzureEndpoint(undefined, 'https://x.azure.cn/cognitiveservices/v1/'),
+    'https://x.azure.cn/cognitiveservices/v1',
+    'azure: endpoint 已含路径不重复追加',
+  );
+  // 门户「终结点」域名（认知服务通用域）自动改写到 TTS 域名
+  eq(
+    normalizeAzureHost('eastus.api.cognitive.microsoft.com'),
+    'eastus.tts.speech.microsoft.com',
+    'azure: 门户终结点域名改写(国际云)',
+  );
+  eq(
+    normalizeAzureHost('chinaeast2.api.cognitive.azure.cn'),
+    'chinaeast2.tts.speech.azure.cn',
+    'azure: 门户终结点域名改写(21V 主权云)',
+  );
+  eq(
+    normalizeAzureHost('eastus.tts.speech.microsoft.com'),
+    'eastus.tts.speech.microsoft.com',
+    'azure: TTS 域名原样保留',
+  );
+  eq(
+    buildAzureEndpoint(
+      undefined,
+      'https://eastus.api.cognitive.microsoft.com/',
+    ),
+    'https://eastus.tts.speech.microsoft.com/cognitiveservices/v1',
+    'azure: 照抄门户终结点也能拼出正确合成端点',
+  );
+  let threw = false;
+  try {
+    buildAzureEndpoint(undefined, undefined);
+  } catch {
+    threw = true;
+  }
+  ok(threw, 'azure: 无 region 且无 endpoint 抛错');
+
+  // voices/list 端点与响应映射
+  eq(
+    buildAzureVoicesListURL('eastus'),
+    'https://eastus.tts.speech.microsoft.com/cognitiveservices/voices/list',
+    'azure: voices/list 端点与合成同源',
+  );
+  eq(
+    mapAzureVoices([
+      {
+        ShortName: 'zh-CN-XiaoxiaoNeural',
+        LocalName: '晓晓',
+        Locale: 'zh-CN',
+      },
+      { ShortName: 'en-US-GuyNeural', DisplayName: 'Guy' },
+      { LocalName: 'NoId' },
+    ]),
+    [
+      { id: 'zh-CN-XiaoxiaoNeural', name: '晓晓 (zh-CN)' },
+      { id: 'en-US-GuyNeural', name: 'Guy' },
+    ],
+    'azure: voices/list 映射(LocalName+locale、DisplayName 回落、缺 id 跳过)',
+  );
+  eq(mapAzureVoices({}), [], 'azure: 非数组响应返回空');
+}
+
+// ── elevenlabsTtsUtils:base 规范化 / speed clamp / body 构造 ────────────────
+
+{
+  eq(
+    normalizeElevenLabsTtsBaseURL(undefined),
+    'https://api.elevenlabs.io/v1',
+    'eleven: 空 base 回落官方端点',
+  );
+  eq(
+    normalizeElevenLabsTtsBaseURL('https://proxy.example.com/v1/'),
+    'https://proxy.example.com/v1',
+    'eleven: 去尾斜杠',
+  );
+  eq(
+    normalizeElevenLabsTtsBaseURL(
+      'https://proxy.example.com/v1/text-to-speech/abc',
+    ),
+    'https://proxy.example.com/v1',
+    'eleven: 去误粘的 text-to-speech 后缀',
+  );
+  eq(
+    buildElevenLabsTtsURL('https://api.elevenlabs.io/v1', 'voice id'),
+    'https://api.elevenlabs.io/v1/text-to-speech/voice%20id?output_format=pcm_24000',
+    'eleven: 端点拼接 + voiceId 编码 + pcm_24000',
+  );
+
+  eq(clampElevenLabsSpeed(1.4), 1.2, 'eleven: speed clamp 上界 1.2');
+  eq(clampElevenLabsSpeed(0.5), 0.7, 'eleven: speed clamp 下界 0.7');
+  eq(clampElevenLabsSpeed(undefined), 1, 'eleven: 无效 speed 回落 1');
+
+  eq(
+    buildElevenLabsBody('hi', 'eleven_multilingual_v2', 1),
+    { text: 'hi', model_id: 'eleven_multilingual_v2' },
+    'eleven: 原速省略 voice_settings',
+  );
+  eq(
+    buildElevenLabsBody('hi', 'eleven_multilingual_v2', 1.4),
+    {
+      text: 'hi',
+      model_id: 'eleven_multilingual_v2',
+      voice_settings: { speed: 1.2 },
+    },
+    'eleven: 超界 speed clamp 进 voice_settings',
+  );
+
+  // 音色清单拉取与名称映射
+  eq(
+    buildElevenLabsVoicesURL('https://api.elevenlabs.io/v1'),
+    'https://api.elevenlabs.io/v1/voices',
+    'eleven: voices 端点拼接',
+  );
+  eq(
+    mapElevenLabsVoices({
+      voices: [
+        { voice_id: 'a1', name: 'Sarah' },
+        { voice_id: 'b2', name: '' },
+        { voice_id: '', name: 'Ghost' },
+        'garbage',
+      ],
+    }),
+    [
+      { id: 'a1', name: 'Sarah' },
+      { id: 'b2', name: 'b2' },
+    ],
+    'eleven: voices 响应宽容解析(空名回落 id、坏条目跳过)',
+  );
+  eq(mapElevenLabsVoices({}), [], 'eleven: 无 voices 字段返回空');
+
+  const labeled = {
+    type: 'elevenlabs',
+    voiceLabels: '{"a1":"Sarah","bad":""}',
+  };
+  eq(
+    parseTtsVoiceLabels(labeled),
+    { a1: 'Sarah' },
+    'labels: JSON 字符串解析且剔除空值',
+  );
+  eq(parseTtsVoiceLabels({ voiceLabels: '{oops' }), {}, 'labels: 坏 JSON 回空');
+  eq(resolveTtsVoiceLabel(labeled, 'a1'), 'Sarah', 'labels: 实例映射优先');
+  eq(
+    resolveTtsVoiceLabel(labeled, 'EXAVITQu4vr4xnSDxMaL'),
+    'Sarah',
+    'labels: 未拉取时回落内置 premade 映射',
+  );
+  eq(
+    resolveTtsVoiceLabel(labeled, 'unknown-id'),
+    'unknown-id',
+    'labels: 无映射原样展示 id',
+  );
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
