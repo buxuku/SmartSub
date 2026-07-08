@@ -48,6 +48,7 @@
   "charBillingCloud": "Cloud TTS bills per character; previews and per-line regeneration cost extra",
   "charBillingAzure": "Azure billing includes SSML markup characters, slightly above this count",
   "charBillingEleven": "ElevenLabs bills Chinese at ~3 characters per character (byte-based)",
+  "charBillingVolc": "Doubao character tier ~¥1.3 per 1K chars, free quota for new users",
   "exportShiftedSubtitle": "Also export aligned subtitle",
   "export": "Export",
   "exportDone": "Export finished",

@@ -7,7 +7,8 @@
  *    最终规划 cursor 走查（顺延/截断/补静音）、mix 模式轨道分配、顺延字幕时间轴
  *  - audioPipeline: buildAtempoChain 链分解、writePcmAsWav 包头往返
  *  - service/tts 纯工具: azureUtils（SSML 构造/转义/rate 折算/端点拼接）、
- *    elevenlabsTtsUtils（base 规范化/speed clamp/body 构造）
+ *    elevenlabsTtsUtils（base 规范化/speed clamp/body 构造）、
+ *    volcengineTtsUtils（速率折算/body 构造/流解析/错误分类）
  *
  * 运行：npm run test:dubbing
  */
@@ -52,6 +53,13 @@ import {
   clampElevenLabsSpeed,
   buildElevenLabsBody,
 } from '../../main/service/tts/elevenlabsTtsUtils';
+import {
+  buildVolcTtsHeaders,
+  buildVolcTtsBody,
+  speedToVolcSpeechRate,
+  parseVolcTtsStream,
+  volcTtsErrorHint,
+} from '../../main/service/tts/volcengineTtsUtils';
 import {
   ALIGN_ONESHOT_THRESHOLD,
   ALIGN_OVERLONG_THRESHOLD,
@@ -839,6 +847,153 @@ function cue(
     resolveTtsVoiceLabel(labeled, 'unknown-id'),
     'unknown-id',
     'labels: 无映射原样展示 id',
+  );
+  eq(
+    resolveTtsVoiceLabel(
+      { type: 'volcengine' },
+      'zh_female_shuangkuaisisi_uranus_bigtts',
+    ),
+    '爽快思思 2.0',
+    'labels: volcengine 内置中文名映射',
+  );
+}
+
+// ── volcengineTtsUtils:速率折算 / body 构造 / 流解析 / 错误分类 ─────────────
+
+{
+  // speech_rate 线性折算：(speed - 1) × 100，clamp [-50, 100]，≈1/无效 → null
+  eq(speedToVolcSpeechRate(0.5), -50, 'volc: speed 0.5 → -50');
+  eq(speedToVolcSpeechRate(1), null, 'volc: 原速省略字段');
+  eq(speedToVolcSpeechRate(1.3), 30, 'volc: speed 1.3 → 30');
+  eq(speedToVolcSpeechRate(2), 100, 'volc: speed 2.0 → 100');
+  eq(speedToVolcSpeechRate(2.5), 100, 'volc: 超上界 clamp 100');
+  eq(speedToVolcSpeechRate(0.3), -50, 'volc: 超下界 clamp -50');
+  eq(speedToVolcSpeechRate(undefined), null, 'volc: 无效 speed → null');
+  eq(speedToVolcSpeechRate(1.004), null, 'volc: 折算后 ≈0 省略字段');
+
+  eq(
+    buildVolcTtsBody('你好', 'zh_female_xiaohe_uranus_bigtts', 1),
+    {
+      user: { uid: 'video-subtitle-master' },
+      req_params: {
+        text: '你好',
+        speaker: 'zh_female_xiaohe_uranus_bigtts',
+        audio_params: { format: 'pcm', sample_rate: 24000 },
+      },
+    },
+    'volc: body 原速省略 speech_rate、固定 pcm 24000',
+  );
+  eq(
+    (
+      buildVolcTtsBody('你好', 'v', 1.3) as {
+        req_params: { audio_params: Record<string, unknown> };
+      }
+    ).req_params.audio_params,
+    { format: 'pcm', sample_rate: 24000, speech_rate: 30 },
+    'volc: body 带 speech_rate',
+  );
+
+  const headers = buildVolcTtsHeaders(' key ', undefined, 'req-1');
+  eq(headers['X-Api-Key'], 'key', 'volc: header key trim');
+  eq(
+    headers['X-Api-Resource-Id'],
+    'seed-tts-2.0',
+    'volc: resourceId 缺省回落 seed-tts-2.0',
+  );
+  eq(headers['X-Api-Request-Id'], 'req-1', 'volc: header 请求 id');
+
+  // 流解析：分片按行分隔（官方 demo 语义）
+  const pcmA = Buffer.from([1, 2, 3, 4]).toString('base64');
+  const pcmB = Buffer.from([5, 6]).toString('base64');
+  const okStream = [
+    `{"code":0,"message":"","data":"${pcmA}"}`,
+    '',
+    `{"code":0,"message":"","data":"${pcmB}"}`,
+    '{"code":20000000,"message":"ok","data":null,"usage":{"text_words":2}}',
+  ].join('\n');
+  const parsedOk = parseVolcTtsStream(okStream);
+  eq(
+    Array.from(parsedOk.pcm),
+    [1, 2, 3, 4, 5, 6],
+    'volc: 多分片 base64 按序拼 PCM(容空行)',
+  );
+  eq(parsedOk.endCode, 20000000, 'volc: 终止分片 code 提取');
+  eq(parsedOk.errorCode, null, 'volc: 成功流无错误码');
+
+  // 无换行直拼形态（brace 扫描兜底）
+  const glued = parseVolcTtsStream(
+    `{"code":0,"data":"${pcmA}"}{"code":20000000,"message":"ok","data":null}`,
+  );
+  eq(Array.from(glued.pcm), [1, 2, 3, 4], 'volc: 无换行直拼分片可解析');
+  eq(glued.endCode, 20000000, 'volc: 直拼形态终止码提取');
+
+  const errStream = [
+    `{"code":0,"message":"","data":"${pcmA}"}`,
+    '{"code":55000000,"message":"resource ID is mismatched with speaker related resource","data":null}',
+    `{"code":0,"message":"","data":"${pcmB}"}`,
+  ].join('\n');
+  const parsedErr = parseVolcTtsStream(errStream);
+  eq(parsedErr.errorCode, 55000000, 'volc: 错误分片 code 提取并停止消费');
+  eq(Array.from(parsedErr.pcm), [1, 2, 3, 4], 'volc: 错误后分片不再消费');
+  ok(/mismatched/.test(parsedErr.message), 'volc: 错误 message 提取');
+
+  eq(
+    parseVolcTtsStream('garbage not json\n{"oops').pcm.length,
+    0,
+    'volc: 非 JSON 内容容错为空结果',
+  );
+  // 实测（2026-07）：HTTP 401 的错误 body 是 header 包裹形态
+  const headerErr = parseVolcTtsStream(
+    '{"header":{"reqid":"1b2a2d10","code":45000010,"message":"Invalid X-Api-Key"}}',
+  );
+  eq(headerErr.errorCode, 45000010, 'volc: header.code 错误形态可提取');
+  eq(headerErr.message, 'Invalid X-Api-Key', 'volc: header.message 提取');
+  // message 字符串内的花括号不干扰 brace 扫描
+  eq(
+    parseVolcTtsStream('{"code":20000000,"message":"a{b}c\\"d","data":null}')
+      .endCode,
+    20000000,
+    'volc: 字符串内花括号/转义不干扰分片提取',
+  );
+
+  // 错误分类四类定向 + 未知回落
+  ok(
+    /豆包语音|方舟/.test(volcTtsErrorHint(401, null, 'Invalid X-Api-Key')),
+    'volc: 401 指向 API Key 来源',
+  );
+  ok(
+    /并发|配额/.test(
+      volcTtsErrorHint(200, 45000000, 'quota exceeded for types: concurrency'),
+    ),
+    'volc: 并发限流引导(quota 关键词优先于 45000000)',
+  );
+  ok(
+    /音色/.test(
+      volcTtsErrorHint(
+        200,
+        45000000,
+        'speaker permission denied: get resource id: access denied',
+      ),
+    ),
+    'volc: 45000000 speaker 指向音色',
+  );
+  ok(
+    /seed-tts-2\.0/.test(
+      volcTtsErrorHint(
+        200,
+        55000000,
+        'resource ID is mismatched with speaker related resource',
+      ),
+    ),
+    'volc: 55000000 mismatch 指向资源版本对应关系',
+  );
+  ok(
+    /拆分/.test(volcTtsErrorHint(200, 40402003, 'exceed max limit')),
+    'volc: 40402003 指向文本超长',
+  );
+  ok(
+    /HTTP 500.*code 55000001/.test(volcTtsErrorHint(500, 55000001, 'boom')),
+    'volc: 未知错误透出 HTTP 状态与 code',
   );
 }
 

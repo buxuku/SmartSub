@@ -27,7 +27,11 @@ import {
 } from 'lucide-react';
 import type { UseDubbingReturn } from '../../hooks/useDubbing';
 import type { WorkItem } from '../../../types/workItem';
-import { TTS_AZURE_SPEECH, TTS_ELEVENLABS } from '../../../types/ttsProvider';
+import {
+  TTS_AZURE_SPEECH,
+  TTS_ELEVENLABS,
+  TTS_VOLCENGINE,
+} from '../../../types/ttsProvider';
 
 function baseName(p: string): string {
   return p.split(/[\\/]/).pop() || p;
@@ -92,7 +96,7 @@ export default function DubbingFileBar({ dub }: { dub: UseDubbingReturn }) {
   const estChars = isRedubAll
     ? charEstimate.totalChars
     : charEstimate.pendingChars;
-  // 云端引擎：叠加计费口径提示（Azure 含 SSML 附加 / ElevenLabs 字节膨胀）。
+  // 云端引擎：叠加计费口径提示（Azure 含 SSML 附加 / ElevenLabs 字节膨胀 / 豆包字符版）。
   const billingHint =
     activeEngine?.kind === 'cloud'
       ? [
@@ -102,6 +106,9 @@ export default function DubbingFileBar({ dub }: { dub: UseDubbingReturn }) {
             : null,
           activeEngine.providerType === TTS_ELEVENLABS
             ? t('charBillingEleven')
+            : null,
+          activeEngine.providerType === TTS_VOLCENGINE
+            ? t('charBillingVolc')
             : null,
         ]
           .filter(Boolean)

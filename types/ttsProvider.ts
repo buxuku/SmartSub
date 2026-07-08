@@ -85,6 +85,7 @@ export const TTS_OPENAI_COMPATIBLE = 'openaiCompatible';
 export const TTS_EDGE = 'edge';
 export const TTS_AZURE_SPEECH = 'azureSpeech';
 export const TTS_ELEVENLABS = 'elevenlabs';
+export const TTS_VOLCENGINE = 'volcengine';
 
 /** OpenAI 官方 /audio/speech 单请求文本上限（字符）。 */
 const OPENAI_TTS_MAX_CHARS = 4096;
@@ -94,6 +95,12 @@ const EDGE_TTS_MAX_CHARS = 1500;
 const AZURE_TTS_MAX_CHARS = 3000;
 /** ElevenLabs 按模型 5k–40k 不等；取 v3 下限口径保守通用。 */
 const ELEVENLABS_TTS_MAX_CHARS = 5000;
+/**
+ * 豆包接口文档未明示上限（错误码 40402003 存在）；2026-07 实测 10000 字符
+ * 不被前置拒绝（长文本合成耗时成为实际约束，必撞请求超时）。单条字幕远不
+ * 触顶，取保守值兼作超时防线。
+ */
+const VOLC_TTS_MAX_CHARS = 1000;
 
 export const TTS_PROVIDER_TYPES: TtsProviderType[] = [
   {
@@ -315,6 +322,71 @@ export const TTS_PROVIDER_TYPES: TtsProviderType[] = [
     ],
   },
   {
+    id: TTS_VOLCENGINE,
+    name: '火山引擎 豆包语音合成',
+    shortName: '豆包语音',
+    isBuiltin: true,
+    icon: '🌋',
+    iconImg: '/images/providers/volcengine-color.svg',
+    // 品牌型硬单例：新版「豆包语音」控制台单 API Key（与豆包听写 ASR 同 Key 体系）。
+    // 音色列表 API 属控制台 OpenAPI（AK/SK 签名体系），与语音 API Key 不通 → 不做在线拉取。
+    docsUrl: 'https://www.volcengine.com/docs/6561/1257544',
+    capabilities: {
+      speedControl: 'native', // audio_params.speech_rate [-50,100] ↔ 倍速 [0.5,2.0]
+      maxCharsPerRequest: VOLC_TTS_MAX_CHARS,
+      concurrency: 2, // 字符版并发上限保守默认
+    },
+    fields: [
+      {
+        key: 'apiKey',
+        label: 'API Key',
+        type: 'password',
+        required: true,
+        tips: 'ttsVolcKeyTips',
+        placeholder: 'phTtsApiKey',
+      },
+      {
+        // 资源版本决定可用音色集与计费商品（2.0 音色配 seed-tts-2.0、
+        // 1.0 音色（mars/moon 系列）配 seed-tts-1.0），错配报 55000000。
+        key: 'resourceId',
+        label: 'ttsVolcResource',
+        type: 'select',
+        required: true,
+        defaultValue: 'seed-tts-2.0',
+        options: ['seed-tts-2.0', 'seed-tts-1.0', 'seed-tts-1.0-concurr'],
+        tips: 'ttsVolcResourceTips',
+      },
+      {
+        // 2.0 通用音色（*_uranus_bigtts），中英混合、男女均衡预填。
+        key: 'voices',
+        label: 'ttsVoices',
+        type: 'text',
+        required: true,
+        defaultValue:
+          'zh_female_shuangkuaisisi_uranus_bigtts, zh_female_xiaohe_uranus_bigtts, zh_female_vv_uranus_bigtts, zh_male_m191_uranus_bigtts, zh_male_ruyayichen_uranus_bigtts',
+        tips: 'ttsVoicesVolcTips',
+      },
+      {
+        key: 'requestTimeoutSec',
+        label: 'asrRequestTimeout',
+        type: 'number',
+        required: false,
+        defaultValue: 60,
+        step: 10,
+        tips: 'ttsRequestTimeoutTips',
+      },
+      {
+        key: 'concurrency',
+        label: 'asrConcurrency',
+        type: 'number',
+        required: false,
+        defaultValue: 2,
+        step: 1,
+        tips: 'ttsConcurrencyTips',
+      },
+    ],
+  },
+  {
     id: TTS_ELEVENLABS,
     name: 'ElevenLabs',
     isBuiltin: true,
@@ -484,6 +556,48 @@ export const ELEVENLABS_PREMADE_VOICE_LABELS: Record<string, string> = {
 };
 
 /**
+ * 豆包 2.0 音色目录（voice_type → 中文名，官方音色列表口径）：
+ * 无在线拉取通道（音色列表属控制台 OpenAPI 签名体系）→ 静态目录同时
+ * 承担「标签/下拉按名称展示」与「录入自动补全」两个用途。
+ * 只收 2.0（*_uranus_bigtts，与默认资源 seed-tts-2.0 匹配；2026-07 逐一
+ * 真机验证可合成）；1.0 音色数百款不内置，走「音色文档」外链复制。
+ */
+export const VOLC_TTS_VOICE_LABELS: Record<string, string> = {
+  zh_female_shuangkuaisisi_uranus_bigtts: '爽快思思 2.0',
+  zh_female_xiaohe_uranus_bigtts: '小何 2.0',
+  zh_female_vv_uranus_bigtts: 'Vivi 2.0',
+  zh_female_cancan_uranus_bigtts: '知性灿灿 2.0',
+  zh_female_qingxinnvsheng_uranus_bigtts: '清新女声 2.0',
+  zh_female_linjianvhai_uranus_bigtts: '邻家女孩 2.0',
+  zh_female_tianmeixiaoyuan_uranus_bigtts: '甜美小源 2.0',
+  zh_female_tianmeitaozi_uranus_bigtts: '甜美桃子 2.0',
+  zh_female_meilinvyou_uranus_bigtts: '魅力女友 2.0',
+  zh_female_liuchangnv_uranus_bigtts: '流畅女声 2.0',
+  zh_female_mizai_uranus_bigtts: '黑猫侦探社咪仔 2.0',
+  zh_male_m191_uranus_bigtts: '云舟 2.0',
+  zh_male_ruyayichen_uranus_bigtts: '儒雅逸辰 2.0',
+  zh_male_taocheng_uranus_bigtts: '小天 2.0',
+  zh_male_liufei_uranus_bigtts: '刘飞 2.0',
+  zh_male_shaonianzixin_uranus_bigtts: '少年梓辛 2.0',
+  zh_male_sunwukong_uranus_bigtts: '猴哥 2.0',
+  zh_male_dayi_uranus_bigtts: '大壹 2.0',
+  en_male_tim_uranus_bigtts: 'Tim 2.0（仅英文）',
+};
+
+/** 按类型取内置音色名映射（无在线拉取或未拉取时的展示兜底）。 */
+const BUILTIN_VOICE_LABELS_BY_TYPE: Record<string, Record<string, string>> = {
+  [TTS_ELEVENLABS]: ELEVENLABS_PREMADE_VOICE_LABELS,
+  [TTS_VOLCENGINE]: VOLC_TTS_VOICE_LABELS,
+};
+
+/** 类型的内置音色名映射（配置面板标签展示与录入补全的兜底源）。 */
+export function getBuiltinTtsVoiceLabels(
+  typeId: string | undefined,
+): Record<string, string> {
+  return BUILTIN_VOICE_LABELS_BY_TYPE[typeId ?? ''] ?? {};
+}
+
+/**
  * 解析实例的音色显示名映射（`voiceLabels`：JSON 字符串或对象，id → 名称）。
  * ElevenLabs 等 voice_id 不可读的服务商用「拉取音色」回填；解析失败返回 {}。
  */
@@ -507,16 +621,14 @@ export function parseTtsVoiceLabels(
   return out;
 }
 
-/** 音色显示名：实例映射 → 内置 premade 映射 → 原 id。 */
+/** 音色显示名：实例映射 → 内置映射（按类型查表）→ 原 id。 */
 export function resolveTtsVoiceLabel(
   provider: (Partial<TtsProvider> & { voiceLabels?: unknown }) | undefined,
   voiceId: string,
 ): string {
   return (
     parseTtsVoiceLabels(provider)[voiceId] ??
-    (provider?.type === TTS_ELEVENLABS
-      ? ELEVENLABS_PREMADE_VOICE_LABELS[voiceId]
-      : undefined) ??
+    BUILTIN_VOICE_LABELS_BY_TYPE[provider?.type ?? '']?.[voiceId] ??
     voiceId
   );
 }

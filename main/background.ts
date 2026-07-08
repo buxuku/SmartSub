@@ -106,7 +106,9 @@ app.on('before-quit', (event) => {
 
   // 注册自定义协议处理本地媒体文件
   protocol.registerFileProtocol('media', (request, callback) => {
-    const url = request.url.substr(8); // 移除 "media://" 部分
+    // 查询串仅作回放缓存击穿用（配音行重合成后同名 wav 内容已变，
+    // Chromium 会按 URL 缓存媒体响应），取文件路径前剥离。
+    const url = request.url.substr(8).split('?')[0]; // 移除 "media://" 部分
     try {
       const decodedUrl = decodeURIComponent(url);
       return callback({ path: decodedUrl });

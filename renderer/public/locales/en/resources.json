@@ -389,6 +389,10 @@
   "ttsElevenModelTips": "Model id, e.g. eleven_multilingual_v2 (multilingual, recommended) / eleven_flash_v2_5 (low latency, cheaper)",
   "ttsVoicesElevenTips": "Comma-separated voice_id list, prefilled with free-tier premade voices (Sarah / George / Adam / Daniel / Charlotte); copy ids of your own/cloned voices from dashboard ▸ Voices. Note: community voices added from the Voice Library return 402 over the API on free plans",
   "ttsElevenApiUrlTips": "Optional: API base URL, leave empty for the official endpoint https://api.elevenlabs.io/v1",
+  "ttsVolcResource": "Resource ID",
+  "ttsVolcKeyTips": "API Key issued in the Volcengine \"Doubao Speech\" console ▸ API Key management (shared with Doubao ASR — reuse it if already configured); Volcano Ark / LLM inference keys do not work; the TTS big-model service must be activated. Character tier ~¥1.3 per 1K chars, free quota for new users",
+  "ttsVolcResourceTips": "Determines the usable voice set and billing product: 2.0 voices (*_uranus_bigtts) need seed-tts-2.0 (best quality); 1.0 voices (*_mars/moon_bigtts) need seed-tts-1.0 (per-character) or seed-tts-1.0-concurr (per-concurrency)",
+  "ttsVoicesVolcTips": "Comma-separated voice_type list, prefilled with 2.0 general voices (Shuangkuai Sisi / Xiaohe / Vivi / Yunzhou / Ruya Yichen); copy more from the official voice list docs and keep them matched with the Resource ID",
   "ttsServices": {
     "groupLocal": "Local models",
     "groupCloud": "Online services",

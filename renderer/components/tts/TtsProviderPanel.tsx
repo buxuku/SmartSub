@@ -48,6 +48,7 @@ import { toast } from 'sonner';
 import { cn, openUrl } from 'lib/utils';
 import {
   buildTtsInstanceFromPreset,
+  getBuiltinTtsVoiceLabels,
   isTtsProviderConfigured,
   parseTtsVoiceLabels,
   parseTtsVoices,
@@ -225,13 +226,17 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
 
   /**
    * 音色清单标签录入（数据仍存规范逗号串，仅录入交互结构化，形制 ASR models）。
-   * 已拉取名称映射（voiceLabels）时，输入草稿按「名称/ID 包含匹配」出自动补全，
-   * 上下键选择、回车录入（未选中项时回车按原文提交）。
+   * 名称映射 = 实例拉取的 voiceLabels ∪ 类型内置目录（豆包/ElevenLabs 预填集），
+   * 输入草稿按「名称/ID 包含匹配」出自动补全，上下键选择、回车录入
+   * （未选中项时回车按原文提交）。
    */
   const renderVoicesField = () => {
     const voices = currentVoices();
     const labelSource = instance ?? defaults;
-    const labelMap = parseTtsVoiceLabels(labelSource);
+    const labelMap = {
+      ...getBuiltinTtsVoiceLabels(type.id),
+      ...parseTtsVoiceLabels(labelSource),
+    };
     const hasLabels =
       Boolean(type.voiceListMode) || Object.keys(labelMap).length > 0;
 

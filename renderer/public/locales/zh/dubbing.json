@@ -48,6 +48,7 @@
   "charBillingCloud": "云端按字符计费；试听与单行重生成会产生额外消耗",
   "charBillingAzure": "Azure 实际计费包含 SSML 标记字符，略高于此值",
   "charBillingEleven": "ElevenLabs 中文按字节膨胀计费（约 3 字符/字）",
+  "charBillingVolc": "豆包字符版约 1.3 元/千字符，新用户有免费赠额",
   "exportShiftedSubtitle": "同时导出对齐后字幕",
   "export": "导出",
   "exportDone": "导出完成",

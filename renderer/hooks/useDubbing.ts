@@ -65,6 +65,15 @@ const DEFAULT_PERSISTED: PersistedDubbingConfig = {
   exportShiftedSubtitle: false,
 };
 
+/**
+ * 行级回放 URL：重合成会把 wav 原地覆盖（路径不变），Chromium 按 URL 缓存
+ * 媒体响应会播出旧音频（换 voice 重合成听不到变化）——时间戳查询串击穿缓存
+ * （media 协议 handler 取路径前会剥离查询串）。
+ */
+function mediaUrl(p: string): string {
+  return `media://${encodeURIComponent(p)}?v=${Date.now()}`;
+}
+
 export type DubbingUiPhase =
   | 'idle' // 未加载字幕
   | 'ready' // 已加载,可开始
@@ -461,7 +470,7 @@ export function useDubbing(options?: {
       playAllRef.current = false;
       setPlayingAll(false);
       stopAudio();
-      const audio = new Audio(`media://${encodeURIComponent(wavPath)}`);
+      const audio = new Audio(mediaUrl(wavPath));
       audioRef.current = audio;
       setPlayingKey(key);
       audio.onended = () => setPlayingKey(null);
@@ -488,7 +497,7 @@ export function useDubbing(options?: {
       // eslint-disable-next-line no-await-in-loop
       await new Promise<void>((resolve) => {
         audioRef.current?.pause();
-        const audio = new Audio(`media://${encodeURIComponent(cue.wavPath!)}`);
+        const audio = new Audio(mediaUrl(cue.wavPath!));
         audioRef.current = audio;
         setPlayingKey(`cue-${cue.index}`);
         audio.onended = () => resolve();
