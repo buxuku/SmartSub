@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: App checks (i18n / unit tests / build)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.14.0
+          cache: yarn
+
+      # CI=true 时 postinstall 的 ensure-native 会自动跳过原生依赖下载；
+      # yarn build（--no-pack）不依赖 addon.node / sherpa 原生库，无需 fetch。
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Check i18n key parity
+        run: yarn check:i18n
+
+      - name: Unit tests (engines)
+        run: yarn test:engines
+
+      - name: Unit tests (AI response parser)
+        run: yarn test:translate-parser
+
+      - name: Unit tests (structured output fallback)
+        run: yarn test:structured-output
+
+      - name: Unit tests (translation cancel)
+        run: yarn test:translation-cancel
+
+      - name: Unit tests (dubbing)
+        run: yarn test:dubbing
+
+      - name: Compile application (renderer + main)
+        run: yarn build
+
+  docs:
+    name: Docs build (Docusaurus)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.14.0
+          cache: yarn
+          cache-dependency-path: docs/yarn.lock
+
+      - name: Install docs dependencies
+        working-directory: docs
+        run: yarn install --frozen-lockfile
+
+      - name: Build docs site
+        working-directory: docs
+        run: yarn build
