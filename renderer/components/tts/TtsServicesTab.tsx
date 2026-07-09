@@ -19,7 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { HardDriveUpload, Mic2, Plus, X } from 'lucide-react';
+import { CloudDownload, HardDriveUpload, Mic2, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from 'lib/utils';
 import useLocalStorageState from 'hooks/useLocalStorageState';
@@ -30,6 +30,7 @@ import TtsModelPanel from './TtsModelPanel';
 import TtsProviderPanel from './TtsProviderPanel';
 import ClonedVoicePanel from './ClonedVoicePanel';
 import CloneVoiceWizard from '../voiceClone/CloneVoiceWizard';
+import LinkCloudVoiceDialog from '../voiceClone/LinkCloudVoiceDialog';
 import {
   TTS_OPENAI_COMPATIBLE,
   TTS_VIEW_PREFIX,
@@ -82,6 +83,7 @@ const TtsServicesTab: React.FC = () => {
   const [customName, setCustomName] = useState('');
   const [customApiUrl, setCustomApiUrl] = useState('');
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
 
   const providerViews = useMemo(
     () => buildTtsViews(tts.providers),
@@ -350,6 +352,21 @@ const TtsServicesTab: React.FC = () => {
                 {cloneT('importVoice')}
               </span>
             </button>
+            <button
+              type="button"
+              onClick={() => setLinkOpen(true)}
+              className={cn(
+                'flex items-center gap-2 rounded-lg border border-dashed border-input px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
+                'shrink-0 md:w-full',
+              )}
+            >
+              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
+                <CloudDownload className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1 truncate">
+                {cloneT('linkEntry')}
+              </span>
+            </button>
           </div>
         </nav>
 
@@ -444,6 +461,17 @@ const TtsServicesTab: React.FC = () => {
         onOpenChange={setWizardOpen}
         onCreated={(voice) => {
           clones.refresh();
+          setSelectedView(`${CLONE_VIEW_PREFIX}${voice.id}`);
+        }}
+      />
+
+      <LinkCloudVoiceDialog
+        open={linkOpen}
+        onOpenChange={setLinkOpen}
+        onListCloud={clones.listCloudVoices}
+        onLink={clones.linkCloudVoice}
+        onLinked={(voice) => {
+          toast.success(cloneT('linkDone', { name: voice.name }));
           setSelectedView(`${CLONE_VIEW_PREFIX}${voice.id}`);
         }}
       />

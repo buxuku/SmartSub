@@ -7,6 +7,7 @@ import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,7 +60,7 @@ export default function ClonedVoicePanel({
 }: {
   voice: ClonedVoiceView;
   onRename: (id: string, name: string) => Promise<unknown>;
-  onRemove: (id: string) => Promise<unknown>;
+  onRemove: (id: string, removeCloud?: boolean) => Promise<unknown>;
   onRegenerateSample: (id: string) => Promise<unknown>;
   onVolcRefreshStatus?: (id: string) => Promise<unknown>;
   onVolcRetrain?: (id: string) => Promise<unknown>;
@@ -70,6 +71,8 @@ export default function ClonedVoicePanel({
   const [nameDraft, setNameDraft] = useState(voice.name);
   const [regenerating, setRegenerating] = useState(false);
   const [volcBusy, setVolcBusy] = useState(false);
+  /** EL 删除时是否同步删云端音色（默认保留——账号资产可随时取回）。 */
+  const [removeCloud, setRemoveCloud] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playingKey, setPlayingKey] = useState<string | null>(null);
@@ -488,14 +491,26 @@ export default function ClonedVoicePanel({
               <AlertDialogHeader>
                 <AlertDialogTitle>{t('deleteTitle')}</AlertDialogTitle>
                 <AlertDialogDescription>
-                  {t('deleteDesc')}
+                  {voice.engine === 'elevenlabs'
+                    ? t('deleteDescEleven')
+                    : t('deleteDesc')}
                 </AlertDialogDescription>
               </AlertDialogHeader>
+              {voice.engine === 'elevenlabs' && (
+                <label className="flex cursor-pointer items-start gap-2 text-xs">
+                  <Checkbox
+                    checked={removeCloud}
+                    onCheckedChange={(v) => setRemoveCloud(v === true)}
+                    className="mt-0.5"
+                  />
+                  <span>{t('deleteCloudToo')}</span>
+                </label>
+              )}
               <AlertDialogFooter>
                 <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
                 <AlertDialogAction
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  onClick={() => onRemove(voice.id)}
+                  onClick={() => onRemove(voice.id, removeCloud)}
                 >
                   {t('deleteConfirm')}
                 </AlertDialogAction>

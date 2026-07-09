@@ -26,6 +26,29 @@ export function extractElevenVoiceId(payload: unknown): string | null {
 }
 
 /**
+ * /v1/voices 响应 → 账号内即时克隆音色 [{id, name}]（`category==='cloned'`；
+ * premade/professional/generated 一律排除——只有 IVC 同类目可直接接回合成）。
+ */
+export function mapElevenClonedVoices(
+  raw: unknown,
+): Array<{ id: string; name: string }> {
+  const voices = (raw as { voices?: unknown })?.voices;
+  if (!Array.isArray(voices)) return [];
+  const out: Array<{ id: string; name: string }> = [];
+  for (const v of voices) {
+    const rec = v as {
+      voice_id?: unknown;
+      name?: unknown;
+      category?: unknown;
+    };
+    if (String(rec?.category ?? '') !== 'cloned') continue;
+    const id = String(rec?.voice_id ?? '').trim();
+    if (id) out.push({ id, name: String(rec?.name ?? '').trim() || id });
+  }
+  return out;
+}
+
+/**
  * 错误定向文案：401/403 凭据、voice_limit_reached 槽位上限、
  * 素材质量拒绝（audio/sample 相关校验），其余回落原始信息。
  */

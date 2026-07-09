@@ -38,6 +38,7 @@ import {
 import {
   addElevenVoice,
   deleteElevenVoice,
+  listElevenClonedVoices,
 } from '../service/tts/elevenlabsVoiceClone';
 import {
   CLONE_TARGET_RANGES,
@@ -702,11 +703,15 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
   // 删除（store 记录 + 音色目录）。
   ipcMain.handle(
     'voiceClone:remove',
-    async (_event, { id }: { id: string }): Promise<VoiceCloneResponse> => {
+    async (
+      _event,
+      { id, removeCloud }: { id: string; removeCloud?: boolean },
+    ): Promise<VoiceCloneResponse> => {
       try {
         const voice = getClonedVoiceById(id);
-        // EL 云端音色 best-effort 同步删除（失败不阻断本地删除，占用槽位可去官网清理）。
-        if (voice?.engine === 'elevenlabs' && voice.speakerId) {
+        // EL 云端音色是账号资产：默认仅删本地（可随时「从平台取回」）；
+        // 显式勾选才 best-effort 同步删云端（失败不阻断本地删除）。
+        if (removeCloud && voice?.engine === 'elevenlabs' && voice.speakerId) {
           const provider = getTtsProviderById(voice.providerId);
           if (provider?.type === TTS_ELEVENLABS) {
             await deleteElevenVoice(provider, voice.speakerId);
@@ -715,6 +720,114 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
         removeClonedVoice(id);
         return { success: true, data: true };
       } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  // 云端克隆音色清单（EL：category==='cloned'；本地已接回的标记 linked）。
+  ipcMain.handle(
+    'voiceClone:listCloudVoices',
+    async (
+      _event,
+      { providerId }: { providerId: string },
+    ): Promise<VoiceCloneResponse> => {
+      try {
+        const provider = requireElevenCloneProvider(providerId);
+        const cloud = await listElevenClonedVoices(provider);
+        const linked = new Set(
+          getClonedVoices()
+            .filter((v) => v.engine === 'elevenlabs' && v.speakerId)
+            .map((v) => v.speakerId as string),
+        );
+        return {
+          success: true,
+          data: cloud.map((v) => ({ ...v, linked: linked.has(v.id) })),
+        };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  // 接回云端克隆音色：EL 即时 ready；火山先状态校验（存在性 + 实况状态）。
+  ipcMain.handle(
+    'voiceClone:linkCloudVoice',
+    async (
+      _event,
+      {
+        engine,
+        providerId,
+        speakerId,
+        name,
+        language,
+      }: {
+        engine: 'volcengine' | 'elevenlabs';
+        providerId: string;
+        speakerId: string;
+        name?: string;
+        language: 'zh' | 'en';
+      },
+    ): Promise<VoiceCloneResponse> => {
+      try {
+        const cloudId = String(speakerId ?? '').trim();
+        if (!cloudId) {
+          return { success: false, error: '请填写云端音色 ID' };
+        }
+        const dup = getClonedVoices().find(
+          (v) => v.engine === engine && v.speakerId === cloudId,
+        );
+        if (dup) {
+          return {
+            success: false,
+            error: `该云端音色已在本地列表中（${dup.name}）`,
+          };
+        }
+
+        const voice: ClonedVoice = {
+          id: newClonedVoiceId(),
+          name: name?.trim() || cloudId,
+          engine,
+          language,
+          speakerId: cloudId,
+          createdAt: Date.now(),
+        };
+
+        if (engine === 'elevenlabs') {
+          const provider = requireElevenCloneProvider(providerId);
+          voice.providerId = String(provider.id);
+          voice.trainStatus = 'ready';
+        } else {
+          if (!cloudId.startsWith('S_')) {
+            return {
+              success: false,
+              error: '请填写有效的音色槽位 ID（S_ 开头）',
+            };
+          }
+          const provider = requireVolcCloneProvider(providerId);
+          voice.providerId = String(provider.id);
+          // 状态校验兼存在性探测：不存在/无权会抛定向错误，不产生本地记录。
+          const status = await queryVolcCloneStatus(provider, cloudId);
+          voice.trainStatus =
+            status.state === 'failed' ? 'failed' : status.state;
+          if (status.trainingTimesLeft != null) {
+            voice.volcTrainingTimesLeft = status.trainingTimesLeft;
+          }
+        }
+
+        saveClonedVoice(voice);
+
+        if (voice.trainStatus === 'ready') {
+          try {
+            voice.sampleWavPath = await synthesizeSampleFor(voice);
+            saveClonedVoice(voice);
+          } catch (e) {
+            logMessage(`voiceClone link sample synth failed: ${e}`, 'warning');
+          }
+        }
+        return { success: true, data: voice };
+      } catch (error) {
+        logMessage(`voiceClone linkCloudVoice failed: ${error}`, 'error');
         return fail(error);
       }
     },

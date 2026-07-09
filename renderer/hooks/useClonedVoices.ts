@@ -35,8 +35,11 @@ export default function useClonedVoices() {
   );
 
   const remove = useCallback(
-    async (id: string) => {
-      const r = await window.ipc.invoke('voiceClone:remove', { id });
+    async (id: string, removeCloud?: boolean) => {
+      const r = await window.ipc.invoke('voiceClone:remove', {
+        id,
+        removeCloud,
+      });
       await refresh();
       return r;
     },
@@ -85,6 +88,25 @@ export default function useClonedVoices() {
     return r;
   }, [refresh]);
 
+  const listCloudVoices = useCallback(async (providerId: string) => {
+    return window.ipc.invoke('voiceClone:listCloudVoices', { providerId });
+  }, []);
+
+  const linkCloudVoice = useCallback(
+    async (args: {
+      engine: 'volcengine' | 'elevenlabs';
+      providerId: string;
+      speakerId: string;
+      name?: string;
+      language: 'zh' | 'en';
+    }) => {
+      const r = await window.ipc.invoke('voiceClone:linkCloudVoice', args);
+      await refresh();
+      return r;
+    },
+    [refresh],
+  );
+
   return {
     voices,
     loaded,
@@ -96,5 +118,7 @@ export default function useClonedVoices() {
     volcRetrain,
     exportVoice,
     importVoice,
+    listCloudVoices,
+    linkCloudVoice,
   };
 }

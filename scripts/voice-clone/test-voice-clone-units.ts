@@ -59,6 +59,7 @@ import {
   buildElevenDeleteVoiceURL,
   extractElevenVoiceId,
   elevenCloneErrorHint,
+  mapElevenClonedVoices,
 } from '../../main/service/tts/elevenlabsVoiceCloneUtils';
 
 let passed = 0;
@@ -1022,6 +1023,25 @@ const ttsConfig = require(
     elevenCloneErrorHint(500, 'internal').includes('HTTP 500'),
     'elevenHint: 兜底保留原始信息',
   );
+  // /v1/voices → cloned 类目过滤（premade/professional/generated 排除）。
+  eq(
+    mapElevenClonedVoices({
+      voices: [
+        { voice_id: 'v1', name: 'Rachel', category: 'premade' },
+        { voice_id: 'v2', name: '我的音色', category: 'cloned' },
+        { voice_id: 'v3', name: 'PVC', category: 'professional' },
+        { voice_id: 'v4', category: 'cloned' },
+        { name: 'no-id', category: 'cloned' },
+      ],
+    }),
+    [
+      { id: 'v2', name: '我的音色' },
+      { id: 'v4', name: 'v4' },
+    ],
+    'elevenList: cloned 过滤 + 缺名回落 id + 缺 id 跳过',
+  );
+  eq(mapElevenClonedVoices(null), [], 'elevenList: null 载荷');
+  eq(mapElevenClonedVoices({ voices: 'x' }), [], 'elevenList: 非数组');
 }
 
 // ── 汇总 ────────────────────────────────────────────────────────────────────

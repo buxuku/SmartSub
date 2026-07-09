@@ -7,7 +7,12 @@ import {
   buildElevenDeleteVoiceURL,
   elevenCloneErrorHint,
   extractElevenVoiceId,
+  mapElevenClonedVoices,
 } from './elevenlabsVoiceCloneUtils';
+import {
+  buildElevenLabsVoicesURL,
+  normalizeElevenLabsTtsBaseURL,
+} from './elevenlabsTtsUtils';
 
 /**
  * ElevenLabs 即时克隆（IVC）：上传参考音频 → 即返 voice_id（无训练轮询）。
@@ -77,7 +82,33 @@ export async function addElevenVoice(
   return voiceId;
 }
 
-/** 删除云端音色（本地删除时 best-effort 同步；失败仅记日志）。 */
+/** 账号内即时克隆音色清单（category==='cloned'；「从平台取回」用）。 */
+export async function listElevenClonedVoices(
+  provider: TtsProvider,
+): Promise<Array<{ id: string; name: string }>> {
+  const res = await fetch(
+    buildElevenLabsVoicesURL(
+      normalizeElevenLabsTtsBaseURL(provider.apiUrl as string),
+    ),
+    {
+      method: 'GET',
+      headers: { 'xi-api-key': apiKeyOf(provider) },
+      signal: AbortSignal.timeout(30_000),
+    },
+  );
+  if (!res.ok) {
+    const detail = await readErrorMessage(res);
+    if (res.status === 401 && /missing the permission/i.test(detail)) {
+      throw new Error(
+        `ElevenLabs 克隆: 该 Key 缺少 Voices 读取权限（HTTP 401）。请到 dashboard ▸ API Keys 勾选 Voices read 后重试`,
+      );
+    }
+    throw new Error(elevenCloneErrorHint(res.status, detail));
+  }
+  return mapElevenClonedVoices(await res.json().catch(() => null));
+}
+
+/** 删除云端音色（显式勾选时 best-effort 同步；失败仅记日志）。 */
 export async function deleteElevenVoice(
   provider: TtsProvider,
   voiceId: string,
