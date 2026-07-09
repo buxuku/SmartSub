@@ -1,10 +1,26 @@
 'use strict';
-// sherpa-onnx TTS worker（worker_threads，纯 JS，不经 webpack）。
+// sherpa-onnx TTS worker（纯 JS，不经 webpack）。
 // 与 ASR 的 sherpa-worker.js 同形制但独立实例（互不抢占、退出互不影响）。
 // 消息协议：load / synthesize / cancel / dispose。
 // 模型实例按参数缓存（tts-config.js 的 cacheKey）；合成结果写 16-bit PCM wav。
 const path = require('path');
-const { parentPort } = require('worker_threads');
+
+// 通道双运行时适配：应用内跑 Electron utilityProcess（独立进程，native 崩溃
+// 不带崩主进程；message 事件为 MessageEvent，取 .data），PoC/单测脚本跑纯
+// node worker_threads（message 事件即消息本体）。协议本体两侧一致。
+const channel = (() => {
+  if (process.parentPort) {
+    return {
+      post: (msg) => process.parentPort.postMessage(msg),
+      onMessage: (cb) => process.parentPort.on('message', (e) => cb(e.data)),
+    };
+  }
+  const { parentPort } = require('worker_threads');
+  return {
+    post: (msg) => parentPort.postMessage(msg),
+    onMessage: (cb) => parentPort.on('message', cb),
+  };
+})();
 
 const sherpa = require(path.join(__dirname, '..', 'vendor', 'sherpa-onnx.js'));
 const {
@@ -47,7 +63,7 @@ function ensureLoaded(req) {
 function postError(id, message, code) {
   const msg = { type: 'error', id, message: String(message) };
   if (code) msg.code = code;
-  parentPort.postMessage(msg);
+  channel.post(msg);
 }
 
 /** 克隆合成的块间停顿（拼接处自然过渡）。 */
@@ -118,7 +134,7 @@ async function synthesizeClone(req, sid, speed) {
   }
 
   sherpa.writeWave(req.outWavPath, { samples, sampleRate });
-  parentPort.postMessage({
+  channel.post({
     type: 'done',
     id: req.id,
     sampleRate,
@@ -163,7 +179,7 @@ async function synthesize(req) {
     samples: audio.samples,
     sampleRate: audio.sampleRate,
   });
-  parentPort.postMessage({
+  channel.post({
     type: 'done',
     id: req.id,
     sampleRate: audio.sampleRate,
@@ -172,11 +188,11 @@ async function synthesize(req) {
   });
 }
 
-parentPort.on('message', (req) => {
+channel.onMessage((req) => {
   if (req.type === 'load') {
     try {
       ensureLoaded(req);
-      parentPort.postMessage({
+      channel.post({
         type: 'ready',
         numSpeakers: tts.numSpeakers,
         sampleRate: tts.sampleRate,

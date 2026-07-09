@@ -1,9 +1,25 @@
 'use strict';
-// sherpa-onnx 转写 worker（worker_threads，纯 JS，不经 webpack）。
+// sherpa-onnx 转写 worker（纯 JS，不经 webpack）。
 // 读 wav → silero VAD 分段 → 逐段 decodeAsync → 回报 progress/done/error。
 // 原生库经 vendor/addon.js 从 SHERPA_ONNX_LIB_DIR dlopen（由主进程注入 env）。
 const path = require('path');
-const { parentPort } = require('worker_threads');
+
+// 通道双运行时适配：应用内跑 Electron utilityProcess（独立进程，native 崩溃
+// 不带崩主进程；message 事件为 MessageEvent，取 .data），PoC/单测脚本跑纯
+// node worker_threads（message 事件即消息本体）。协议本体两侧一致。
+const channel = (() => {
+  if (process.parentPort) {
+    return {
+      post: (msg) => process.parentPort.postMessage(msg),
+      onMessage: (cb) => process.parentPort.on('message', (e) => cb(e.data)),
+    };
+  }
+  const { parentPort } = require('worker_threads');
+  return {
+    post: (msg) => parentPort.postMessage(msg),
+    onMessage: (cb) => parentPort.on('message', cb),
+  };
+})();
 
 const sherpa = require(path.join(__dirname, '..', 'vendor', 'sherpa-onnx.js'));
 
@@ -191,7 +207,7 @@ function ensureLoaded(req) {
 
 function postCancelled(id) {
   cancelled.delete(id);
-  parentPort.postMessage({
+  channel.post({
     type: 'error',
     id,
     code: 'cancelled',
@@ -231,7 +247,7 @@ async function transcribe(req) {
     const pct = total > 0 ? Math.min(99, Math.round((i / total) * 100)) : 99;
     if (pct !== lastPercent) {
       lastPercent = pct;
-      parentPort.postMessage({ type: 'progress', id: req.id, percent: pct });
+      channel.post({ type: 'progress', id: req.id, percent: pct });
     }
   }
 
@@ -239,7 +255,7 @@ async function transcribe(req) {
   await drain();
   if (cancelled.has(req.id)) return postCancelled(req.id);
   cancelled.delete(req.id);
-  parentPort.postMessage({ type: 'done', id: req.id, segments });
+  channel.post({ type: 'done', id: req.id, segments });
 }
 
 // 仅 VAD：缓存一个独立的 silero VAD 实例（避免每个文件重载 onnx），按 vadModel+参数 复用。
@@ -281,16 +297,16 @@ async function detectSpeech(req) {
   drain();
   if (cancelled.has(req.id)) return postCancelled(req.id);
   cancelled.delete(req.id);
-  parentPort.postMessage({ type: 'done', id: req.id, segments });
+  channel.post({ type: 'done', id: req.id, segments });
 }
 
-parentPort.on('message', (req) => {
+channel.onMessage((req) => {
   if (req.type === 'load') {
     try {
       ensureLoaded(req);
-      parentPort.postMessage({ type: 'ready' });
+      channel.post({ type: 'ready' });
     } catch (e) {
-      parentPort.postMessage({ type: 'error', id: 'load', message: String(e) });
+      channel.post({ type: 'error', id: 'load', message: String(e) });
     }
     return;
   }
@@ -300,13 +316,13 @@ parentPort.on('message', (req) => {
   }
   if (req.type === 'transcribe') {
     transcribe(req).catch((e) =>
-      parentPort.postMessage({ type: 'error', id: req.id, message: String(e) }),
+      channel.post({ type: 'error', id: req.id, message: String(e) }),
     );
     return;
   }
   if (req.type === 'detectSpeech') {
     detectSpeech(req).catch((e) =>
-      parentPort.postMessage({ type: 'error', id: req.id, message: String(e) }),
+      channel.post({ type: 'error', id: req.id, message: String(e) }),
     );
     return;
   }

@@ -35,6 +35,7 @@
     "test:dubbing": "tsc scripts/dubbing/test-dubbing-units.ts --outDir node_modules/.cache/dubbing-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/dubbing-tests/scripts/dubbing/test-dubbing-units.js",
     "poc:zipvoice": "node scripts/voice-clone/zipvoice-poc.mjs",
     "smoke:voice-clone": "tsc scripts/voice-clone/pipeline-smoke.ts --outDir node_modules/.cache/voice-clone-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/voice-clone-tests/scripts/voice-clone/pipeline-smoke.js",
+    "smoke:utility": "electron scripts/voice-clone/utility-smoke-main.js",
     "test:voice-clone": "tsc scripts/voice-clone/test-voice-clone-units.ts --outDir node_modules/.cache/voice-clone-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/voice-clone-tests/scripts/voice-clone/test-voice-clone-units.js"
   },
   "dependencies": {

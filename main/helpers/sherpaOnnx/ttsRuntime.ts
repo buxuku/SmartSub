@@ -1,5 +1,5 @@
 import path from 'path';
-import { Worker } from 'worker_threads';
+import { utilityProcess, type UtilityProcess } from 'electron';
 import { logMessage } from '../storeManager';
 import { getExtraResourcesPath } from '../utils';
 import { getSherpaLibDir, isSherpaLibInstalled } from './sherpaLibPaths';
@@ -51,12 +51,15 @@ function workerPath(): string {
 }
 
 /**
- * 主侧本地 TTS 运行时：常驻一个独立 worker（与 ASR worker 不同实例，
- * 退出/重建互不影响；worker 内 dlopen 原生库、按参数缓存 OfflineTts 实例）。
+ * 主侧本地 TTS 运行时：常驻一个独立 worker **进程**（Electron utilityProcess）。
+ * 与 ASR worker 分进程（退出/重建互不影响）；worker 内 dlopen 原生库、按参数
+ * 缓存 OfflineTts 实例。native 层崩溃（onnxruntime abort 等）只死子进程——
+ * 在途请求 reject、下次调用自动重建（worker_threads 时代 SIGTRAP 直接带崩
+ * 整个应用，2026-07-09 真机事故）。
  * 提供 prewarm / synthesize / cancel / dispose，形制同 sherpaFunasrRuntime。
  */
 class SherpaTtsRuntime {
-  private worker: Worker | null = null;
+  private worker: UtilityProcess | null = null;
   private seq = 0;
   private pending = new Map<
     string,
@@ -66,13 +69,15 @@ class SherpaTtsRuntime {
     }
   >();
 
-  private ensureWorker(): Worker {
+  private ensureWorker(): UtilityProcess {
     if (this.worker) return this.worker;
     if (!isSherpaLibInstalled()) {
       throw new Error('sherpa native lib not installed');
     }
     const libDir = getSherpaLibDir();
-    const w = new Worker(workerPath(), {
+    const w = utilityProcess.fork(workerPath(), [], {
+      serviceName: 'smartsub-tts-worker',
+      stdio: 'pipe',
       env: {
         ...process.env,
         SHERPA_ONNX_LIB_DIR: libDir,
@@ -84,9 +89,20 @@ class SherpaTtsRuntime {
       },
     });
     w.on('message', (msg: any) => this.onMessage(msg));
-    w.on('error', (e) => this.failAll(e));
+    // native 崩溃前的 stderr 是关键诊断线索（onnxruntime/sherpa 报错都走这里）。
+    w.stderr?.on('data', (d: Buffer) => {
+      const line = String(d).trim();
+      if (line) logMessage(`tts worker stderr: ${line}`, 'warning');
+    });
     w.on('exit', (code) => {
-      if (code !== 0) this.failAll(new Error(`tts worker exited ${code}`));
+      if (code !== 0) {
+        this.failAll(
+          new Error(
+            `本地 TTS 引擎异常退出（code ${code}），已自动重置，请重试`,
+          ),
+        );
+        logMessage(`tts worker exited abnormally (code ${code})`, 'error');
+      }
       this.worker = null;
     });
     this.worker = w;
@@ -153,7 +169,7 @@ class SherpaTtsRuntime {
 
   dispose(): void {
     this.worker?.postMessage({ type: 'dispose' });
-    this.worker?.terminate();
+    this.worker?.kill();
     this.worker = null;
   }
 }
