@@ -1,6 +1,7 @@
 /**
  * 「配音服务」右栏：单个本地 TTS 模型的管理面板
- * （下载/进度/取消/删除/导入/打开目录，进度 key tts:<id>）。
+ * （下载/进度/取消/删除/导入/打开目录，进度 key tts:<id>；
+ * 克隆专用模型另给「去创建克隆音色」动线入口）。
  */
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'next-i18next';
@@ -12,6 +13,7 @@ import {
   FolderOpen,
   HardDriveUpload,
   Loader2,
+  Mic2,
   Trash2,
   X,
 } from 'lucide-react';
@@ -25,9 +27,12 @@ function fmtBytes(bytes: number): string {
 export default function TtsModelPanel({
   model,
   onUpdate,
+  onCreateVoice,
 }: {
   model: TtsModelItem;
   onUpdate: () => void;
+  /** 克隆专用模型（ZipVoice）说明区的「去创建克隆音色」动线。 */
+  onCreateVoice?: () => void;
 }) {
   const { t } = useTranslation('resources');
   const [downloading, setDownloading] = useState(false);
@@ -127,12 +132,23 @@ export default function TtsModelPanel({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3">
+      <div className="space-y-2 rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3">
         <p className="text-xs leading-relaxed text-muted-foreground">
           {model.cloneOnly
             ? t('dubbingBlock.cloneModelIntro')
             : t('dubbingBlock.modelsIntro')}
         </p>
+        {model.cloneOnly && onCreateVoice && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={onCreateVoice}
+          >
+            <Mic2 className="h-3.5 w-3.5" />
+            {t('dubbingBlock.goCreateVoice')}
+          </Button>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

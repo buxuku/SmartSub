@@ -619,25 +619,31 @@ export function useDubbing(options?: {
   );
 
   // ── 导出 ──────────────────────────────────────────────────────────────────
-  const exportDubbing = useCallback(async () => {
-    const config = buildConfig();
-    if (!session || !config || exporting) return;
-    setExporting(true);
-    setActionError(null);
-    try {
-      const result = await window.ipc.invoke('dubbing:export', {
-        sessionId: session.sessionId,
-        config,
-      });
-      if (result.success && result.data) {
-        setExportResult(result.data as DubbingExportView);
-      } else if (!result.success) {
-        setActionError(result.error || 'export failed');
+  // 返回导出结果视图（失败/中断返回 null），调用方据此做成功通知。
+  const exportDubbing =
+    useCallback(async (): Promise<DubbingExportView | null> => {
+      const config = buildConfig();
+      if (!session || !config || exporting) return null;
+      setExporting(true);
+      setActionError(null);
+      try {
+        const result = await window.ipc.invoke('dubbing:export', {
+          sessionId: session.sessionId,
+          config,
+        });
+        if (result.success && result.data) {
+          const view = result.data as DubbingExportView;
+          setExportResult(view);
+          return view;
+        }
+        if (!result.success) {
+          setActionError(result.error || 'export failed');
+        }
+        return null;
+      } finally {
+        setExporting(false);
       }
-    } finally {
-      setExporting(false);
-    }
-  }, [session, buildConfig, exporting]);
+    }, [session, buildConfig, exporting]);
 
   const openOutputFolder = useCallback(async () => {
     if (!exportResult?.outputPath) return;

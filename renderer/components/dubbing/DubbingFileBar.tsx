@@ -1,43 +1,26 @@
 /**
- * 工作台文件条：字幕（必选）+ 视频（可选）+ 从最近任务导入 + 开始/取消。
- * 支持把字幕/视频文件直接拖放到条上。
+ * 工作台文件条：字幕（必选）+ 视频（可选）+ 从最近任务导入 + 行数统计，
+ * 右端为主操作簇（开始/继续/导出 + 进度，见 DubbingActionBar）。
+ * 文件拖放由 DubbingPanel 整页接管。
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  FileText,
-  Film,
-  X,
-  Play,
-  RotateCcw,
-  Square,
-  Loader2,
-  History,
-  ChevronDown,
-  Info,
-} from 'lucide-react';
+import { FileText, Film, X, Loader2, History, ChevronDown } from 'lucide-react';
 import type { UseDubbingReturn } from '../../hooks/useDubbing';
 import type { WorkItem } from '../../../types/workItem';
-import {
-  TTS_AZURE_SPEECH,
-  TTS_ELEVENLABS,
-  TTS_VOLCENGINE,
-} from '../../../types/ttsProvider';
+import DubbingActionBar from './DubbingActionBar';
 
 function baseName(p: string): string {
   return p.split(/[\\/]/).pop() || p;
 }
-
-const SUBTITLE_EXT = /\.(srt|vtt|ass|ssa|lrc)$/i;
 
 /** 最近任务里可导入的候选：产出字幕（优先译文）+ 可选源视频。 */
 interface RecentImportCandidate {
@@ -77,43 +60,9 @@ export default function DubbingFileBar({ dub }: { dub: UseDubbingReturn }) {
     clearVideo,
     clearSubtitle,
     running,
-    percent,
-    start,
-    cancel,
-    isCancelling,
-    canStart,
     summary,
-    charEstimate,
-    activeEngine,
     loading,
   } = dub;
-
-  // 全部完成时按钮为「全部重跑」→ 字符量按全量口径，否则按剩余待合成口径。
-  const isRedubAll = summary.total > 0 && summary.done === summary.total;
-  const estRows = isRedubAll
-    ? charEstimate.totalRows
-    : charEstimate.pendingRows;
-  const estChars = isRedubAll
-    ? charEstimate.totalChars
-    : charEstimate.pendingChars;
-  // 云端引擎：叠加计费口径提示（Azure 含 SSML 附加 / ElevenLabs 字节膨胀 / 豆包字符版）。
-  const billingHint =
-    activeEngine?.kind === 'cloud'
-      ? [
-          t('charBillingCloud'),
-          activeEngine.providerType === TTS_AZURE_SPEECH
-            ? t('charBillingAzure')
-            : null,
-          activeEngine.providerType === TTS_ELEVENLABS
-            ? t('charBillingEleven')
-            : null,
-          activeEngine.providerType === TTS_VOLCENGINE
-            ? t('charBillingVolc')
-            : null,
-        ]
-          .filter(Boolean)
-          .join('\n')
-      : undefined;
 
   const [recent, setRecent] = useState<RecentImportCandidate[]>([]);
   useEffect(() => {
@@ -125,27 +74,8 @@ export default function DubbingFileBar({ dub }: { dub: UseDubbingReturn }) {
       .catch(() => setRecent([]));
   }, []);
 
-  // 拖放：字幕扩展名进字幕槽，其余按视频/音频处理。
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      if (running) return;
-      for (const file of Array.from(e.dataTransfer.files)) {
-        const p = window.ipc.getPathForFile(file);
-        if (!p) continue;
-        if (SUBTITLE_EXT.test(p)) setSubtitlePath(p);
-        else setVideoPath(p);
-      }
-    },
-    [running, setSubtitlePath, setVideoPath],
-  );
-
   return (
-    <div
-      className="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2"
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={handleDrop}
-    >
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2">
       {/* 字幕文件 */}
       <div className="flex items-center gap-1.5">
         <FileText className="h-4 w-4 text-muted-foreground" />
@@ -252,60 +182,12 @@ export default function DubbingFileBar({ dub }: { dub: UseDubbingReturn }) {
         </span>
       )}
 
-      <div className="ml-auto flex items-center gap-2">
-        {/* 合成字符量预估（发起前可见；云端引擎附计费口径提示） */}
-        {!running && estRows > 0 && (
-          <span
-            className="flex items-center gap-1 text-xs tabular-nums text-muted-foreground"
-            title={billingHint}
-          >
-            {t('charEstimate', {
-              rows: estRows,
-              chars: estChars.toLocaleString(),
-            })}
-            {billingHint && <Info className="h-3 w-3" />}
-          </span>
-        )}
-        {running && (
-          <div className="flex w-40 items-center gap-2">
-            <Progress value={percent} className="h-2" />
-            <span className="text-xs tabular-nums text-muted-foreground">
-              {percent}%
-            </span>
-          </div>
-        )}
-        {running ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={cancel}
-            disabled={isCancelling}
-          >
-            {isCancelling ? (
-              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Square className="mr-1 h-3.5 w-3.5" />
-            )}
-            {t('cancel')}
-          </Button>
-        ) : summary.total > 0 && summary.done === summary.total ? (
-          // 全部完成：按钮转「重新合成」= 全量重跑（换 voice/语速后再来一遍）。
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => start({ force: true })}
-            disabled={!canStart}
-          >
-            <RotateCcw className="mr-1 h-3.5 w-3.5" />
-            {t('redubAll')}
-          </Button>
-        ) : (
-          <Button size="sm" onClick={() => start()} disabled={!canStart}>
-            <Play className="mr-1 h-3.5 w-3.5" />
-            {summary.done > 0 ? t('resumeDubbing') : t('startDubbing')}
-          </Button>
-        )}
-      </div>
+      {/* 右上角主操作簇：开始/继续/重跑 + 导出 + 进度 */}
+      {subtitlePath && (
+        <div className="ml-auto">
+          <DubbingActionBar dub={dub} />
+        </div>
+      )}
     </div>
   );
 }

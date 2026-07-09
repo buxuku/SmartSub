@@ -1,9 +1,11 @@
 /**
  * 「配音服务」主从双栏（形制 EngineModelTab）：
- * 左栏分「本地模型」「在线服务」「我的音色」三组——本地 = 每个 TTS 模型一个条目；
- * 在线 = 每个服务商预设/实例一个平级入口（OpenAI / 硅基流动 / Edge TTS + 自定义），
- * 数据驱动自 TTS_PROVIDER_TYPES / TTS_PROVIDER_PRESETS；我的音色 = 每个克隆音色
- * 一个条目 + 创建向导入口。右栏 = 选中条目的管理面板。
+ * 左栏 =「总览」首项 + 「本地模型」「在线服务」「我的音色」三组——本地 = 每个
+ * TTS 模型一个条目；在线 = 每个服务商预设/实例一个平级入口（OpenAI / 硅基流动 /
+ * Edge TTS + 自定义），数据驱动自 TTS_PROVIDER_TYPES / TTS_PROVIDER_PRESETS；
+ * 我的音色 = 每个克隆音色一个条目。列表体只做导航选择，添加类操作收敛为每组
+ * 末尾一个入口（在线服务 =「添加自定义服务」；我的音色 =「添加音色」下拉菜单：
+ * 创建 / 导入 / 从平台取回）。右栏 = 选中条目的管理面板；「总览」= 新手落地页。
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'next-i18next';
@@ -19,7 +21,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { CloudDownload, HardDriveUpload, Mic2, Plus, X } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  ChevronDown,
+  CloudDownload,
+  HardDriveUpload,
+  LayoutGrid,
+  Mic2,
+  Plus,
+  X,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from 'lib/utils';
 import useLocalStorageState from 'hooks/useLocalStorageState';
@@ -29,6 +45,7 @@ import useTtsModels from './useTtsModels';
 import TtsModelPanel from './TtsModelPanel';
 import TtsProviderPanel from './TtsProviderPanel';
 import ClonedVoicePanel from './ClonedVoicePanel';
+import TtsOverviewPanel from './TtsOverviewPanel';
 import CloneVoiceWizard from '../voiceClone/CloneVoiceWizard';
 import LinkCloudVoiceDialog from '../voiceClone/LinkCloudVoiceDialog';
 import {
@@ -39,12 +56,14 @@ import {
   ttsViewTypeId,
 } from '../../../types/ttsProvider';
 
+const OVERVIEW_VIEW = 'overview';
 const MODEL_VIEW_PREFIX = 'model:';
 const CLONE_VIEW_PREFIX = 'clone:';
 
 function isTtsServicesViewId(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   return (
+    value === OVERVIEW_VIEW ||
     value.startsWith(MODEL_VIEW_PREFIX) ||
     value.startsWith(TTS_VIEW_PREFIX) ||
     value.startsWith(CLONE_VIEW_PREFIX)
@@ -75,7 +94,7 @@ const TtsServicesTab: React.FC = () => {
 
   const [selectedView, setSelectedView] = useLocalStorageState<string>(
     'ttsServicesSelectedView',
-    `${MODEL_VIEW_PREFIX}kokoro-multi-lang-v1_1`,
+    OVERVIEW_VIEW,
     isTtsServicesViewId,
   );
 
@@ -105,9 +124,11 @@ const TtsServicesTab: React.FC = () => {
     : undefined;
 
   // 选中态收敛：失效的 tts:*（自定义被删/类型下线）回落同类型首条目，
-  // 无同类再回落首个模型条目；失效的 model:* / clone:* 回落首个模型。
+  // 无同类再回落首个模型条目；失效的 model:* / clone:* 回落首个模型；
+  // 「总览」恒有效，不参与收敛。
   useEffect(() => {
     if (!tts.loaded || !modelsApi.loaded || !clones.loaded) return;
+    if (selectedView === OVERVIEW_VIEW) return;
     if (selectedView.startsWith(MODEL_VIEW_PREFIX)) {
       if (!activeModel && modelsApi.models.length > 0) {
         setSelectedView(`${MODEL_VIEW_PREFIX}${modelsApi.models[0].id}`);
@@ -163,6 +184,16 @@ const TtsServicesTab: React.FC = () => {
     if (id) setSelectedView(ttsCustomViewId(TTS_OPENAI_COMPATIBLE, id));
   };
 
+  const handleImportVoice = async () => {
+    const r = await clones.importVoice();
+    if (r?.success && r.data?.name) {
+      toast.success(cloneT('importDone', { name: r.data.name }));
+      setSelectedView(`${CLONE_VIEW_PREFIX}${r.data.id}`);
+    } else if (r && r.success === false && r.error) {
+      toast.error(r.error);
+    }
+  };
+
   const readyBadge = (
     <Badge variant="outline" className="border-success/40 text-success">
       {t('engines.statusAvailable')}
@@ -173,6 +204,29 @@ const TtsServicesTab: React.FC = () => {
     <TooltipProvider delayDuration={150}>
       <div className="flex h-full min-h-0 flex-col gap-4 md:flex-row">
         <nav className="flex shrink-0 gap-2 overflow-x-auto md:w-56 md:flex-col md:gap-3 md:overflow-x-visible md:overflow-y-auto md:border-r md:pr-2">
+          {/* 总览（默认落地视图，不属于任何分组） */}
+          <div className="flex shrink-0 gap-1 md:flex-col">
+            <button
+              type="button"
+              aria-current={selectedView === OVERVIEW_VIEW ? 'true' : undefined}
+              onClick={() => setSelectedView(OVERVIEW_VIEW)}
+              className={cn(
+                'flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors',
+                'shrink-0 md:w-full',
+                selectedView === OVERVIEW_VIEW
+                  ? 'bg-primary/10 font-medium text-primary ring-1 ring-inset ring-primary/20'
+                  : 'text-foreground hover:bg-muted/60',
+              )}
+            >
+              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
+                <LayoutGrid className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1 truncate">
+                {t('ttsServices.overview')}
+              </span>
+            </button>
+          </div>
+
           {/* 本地模型组 */}
           <div className="flex shrink-0 gap-1 md:flex-col">
             <div className="hidden px-3 pb-1 text-xs font-medium text-muted-foreground md:block">
@@ -277,7 +331,7 @@ const TtsServicesTab: React.FC = () => {
             </button>
           </div>
 
-          {/* 我的音色组：克隆音色逐条 + 创建向导入口 */}
+          {/* 我的音色组：克隆音色逐条 + 单一「添加音色」入口（创建/导入/取回三合一） */}
           <div className="flex shrink-0 gap-1 md:flex-col">
             <div className="hidden px-3 pb-1 text-xs font-medium text-muted-foreground md:block">
               {cloneT('groupMyVoices')}
@@ -314,59 +368,67 @@ const TtsServicesTab: React.FC = () => {
                 </button>
               );
             })}
-            <button
-              type="button"
-              onClick={() => setWizardOpen(true)}
-              className={cn(
-                'flex items-center gap-2 rounded-lg border border-dashed border-input px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
-                'shrink-0 md:w-full',
-              )}
-            >
-              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
-                <Plus className="h-4 w-4" />
-              </span>
-              <span className="min-w-0 flex-1 truncate">
-                {cloneT('createVoice')}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                const r = await clones.importVoice();
-                if (r?.success && r.data?.name) {
-                  toast.success(cloneT('importDone', { name: r.data.name }));
-                  setSelectedView(`${CLONE_VIEW_PREFIX}${r.data.id}`);
-                } else if (r && r.success === false && r.error) {
-                  toast.error(r.error);
-                }
-              }}
-              className={cn(
-                'flex items-center gap-2 rounded-lg border border-dashed border-input px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
-                'shrink-0 md:w-full',
-              )}
-            >
-              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
-                <HardDriveUpload className="h-4 w-4" />
-              </span>
-              <span className="min-w-0 flex-1 truncate">
-                {cloneT('importVoice')}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setLinkOpen(true)}
-              className={cn(
-                'flex items-center gap-2 rounded-lg border border-dashed border-input px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
-                'shrink-0 md:w-full',
-              )}
-            >
-              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
-                <CloudDownload className="h-4 w-4" />
-              </span>
-              <span className="min-w-0 flex-1 truncate">
-                {cloneT('linkEntry')}
-              </span>
-            </button>
+            {/* 添加音色：三种获得方式收敛为一个入口（创建 / 导入 / 从平台取回） */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    'flex items-center gap-2 rounded-lg border border-dashed border-input px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
+                    'shrink-0 md:w-full',
+                  )}
+                >
+                  <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
+                    <Plus className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {cloneT('addVoice')}
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="w-[--radix-dropdown-menu-trigger-width] min-w-48"
+              >
+                <DropdownMenuItem
+                  className="gap-2"
+                  onSelect={() => setWizardOpen(true)}
+                >
+                  <Mic2 className="h-4 w-4" />
+                  <div className="min-w-0">
+                    <p>{cloneT('createVoice')}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {cloneT('createVoiceHint')}
+                    </p>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="gap-2"
+                  onSelect={handleImportVoice}
+                >
+                  <HardDriveUpload className="h-4 w-4" />
+                  <div className="min-w-0">
+                    <p>{cloneT('importVoicePack')}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {cloneT('importVoiceHint')}
+                    </p>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="gap-2"
+                  onSelect={() => setLinkOpen(true)}
+                >
+                  <CloudDownload className="h-4 w-4" />
+                  <div className="min-w-0">
+                    <p>{cloneT('linkEntry')}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {cloneT('linkEntryHint')}
+                    </p>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </nav>
 
@@ -375,14 +437,21 @@ const TtsServicesTab: React.FC = () => {
           <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
             <div className="min-w-0">
               <h2 className="text-lg font-semibold">
-                {activeModel
-                  ? activeModel.displayName
-                  : activeClone
-                    ? activeClone.name
-                    : (activeProviderView?.kind === 'brand'
-                        ? activeProviderView.type.name
-                        : activeProviderView?.label) || ''}
+                {selectedView === OVERVIEW_VIEW
+                  ? t('ttsServices.overview')
+                  : activeModel
+                    ? activeModel.displayName
+                    : activeClone
+                      ? activeClone.name
+                      : (activeProviderView?.kind === 'brand'
+                          ? activeProviderView.type.name
+                          : activeProviderView?.label) || ''}
               </h2>
+              {selectedView === OVERVIEW_VIEW && (
+                <p className="text-xs text-muted-foreground">
+                  {t('ttsServices.overviewSubtitle')}
+                </p>
+              )}
               {activeProviderView &&
                 (activeProviderView.kind === 'preset' ||
                   activeProviderView.kind === 'custom') && (
@@ -432,8 +501,22 @@ const TtsServicesTab: React.FC = () => {
             ) : null}
           </div>
 
-          {activeModel ? (
-            <TtsModelPanel model={activeModel} onUpdate={modelsApi.refresh} />
+          {selectedView === OVERVIEW_VIEW ? (
+            <TtsOverviewPanel
+              models={modelsApi.models}
+              providerViews={providerViews}
+              voices={clones.voices}
+              onOpenModel={(id) => setSelectedView(`${MODEL_VIEW_PREFIX}${id}`)}
+              onOpenProviderView={setSelectedView}
+              onOpenClone={(id) => setSelectedView(`${CLONE_VIEW_PREFIX}${id}`)}
+              onCreateVoice={() => setWizardOpen(true)}
+            />
+          ) : activeModel ? (
+            <TtsModelPanel
+              model={activeModel}
+              onUpdate={modelsApi.refresh}
+              onCreateVoice={() => setWizardOpen(true)}
+            />
           ) : activeClone ? (
             <ClonedVoicePanel
               voice={activeClone}

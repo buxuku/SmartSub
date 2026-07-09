@@ -1,5 +1,6 @@
 /**
- * 左栏配置：引擎 / voice(试听) / 整体语速 / 背景音 / 输出形态 / 导出。
+ * 左栏配置（仅设置项，主操作在文件条右端的 DubbingActionBar）：
+ * 声音设置（引擎/音色/语速）→ 导出设置（形态/格式/背景音）→ 高级选项（折叠）。
  * 克隆引擎（zipvoice）空音色时内嵌创建向导入口。
  */
 import React, { useState } from 'react';
@@ -16,12 +17,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import {
   Volume2,
   Loader2,
-  Download,
-  FolderOpen,
   AlertTriangle,
   Mic2,
+  ChevronDown,
 } from 'lucide-react';
 import type { UseDubbingReturn } from '../../hooks/useDubbing';
 import type {
@@ -35,6 +40,7 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
   const { t } = useTranslation('dubbing');
   const { t: cloneT } = useTranslation('voiceClone');
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const {
     engineOptions,
     activeEngine,
@@ -50,11 +56,6 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
     exporting,
     videoPath,
     mediaIsAudio,
-    canExport,
-    exportDubbing,
-    exportResult,
-    openOutputFolder,
-    actionError,
     summary,
   } = dub;
 
@@ -73,8 +74,12 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
     ? 'audioOnly'
     : config.output;
 
+  // 高级选项里有条件项（并行/克隆质量/重叠），至少始终含超长处置与顺延字幕。
   return (
     <div className="space-y-4 p-4">
+      {/* ── 声音设置 ── */}
+      <p className="label-caps">{t('groupVoice')}</p>
+
       {/* 引擎 */}
       <div className="space-y-1.5">
         <label className="text-sm font-medium">{t('engine')}</label>
@@ -169,59 +174,6 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
         )}
       </div>
 
-      {/* 本地并行合成（仅本地引擎）：每路一份模型驻留内存 */}
-      {activeEngine?.kind === 'local' && (
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium">{t('localConcurrency')}</label>
-          <Select
-            value={String(config.localConcurrency ?? 1)}
-            onValueChange={(v) => updateConfig({ localConcurrency: Number(v) })}
-            disabled={disabled}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1">{t('localConcurrency1')}</SelectItem>
-              <SelectItem value="2">2</SelectItem>
-              <SelectItem value="3">3</SelectItem>
-            </SelectContent>
-          </Select>
-          {(config.localConcurrency ?? 1) > 1 && (
-            <p className="text-xs text-muted-foreground">
-              {t('localConcurrencyHint')}
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* 克隆质量档（仅克隆引擎） */}
-      {activeEngine?.cloneOnly && (
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium">{t('cloneQuality')}</label>
-          <Select
-            value={config.cloneQuality ?? 'standard'}
-            onValueChange={(v) =>
-              updateConfig({ cloneQuality: v as 'standard' | 'high' })
-            }
-            disabled={disabled}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="standard">
-                {t('cloneQualityStandard')}
-              </SelectItem>
-              <SelectItem value="high">{t('cloneQualityHigh')}</SelectItem>
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            {t('cloneQualityHint')}
-          </p>
-        </div>
-      )}
-
       {/* 整体语速 */}
       <div className="space-y-1.5">
         <label className="flex items-center justify-between text-sm font-medium">
@@ -242,26 +194,8 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
 
       <Separator />
 
-      {/* 背景音 */}
-      <div className="space-y-1.5">
-        <label className="text-sm font-medium">{t('background')}</label>
-        <Select
-          value={config.background}
-          onValueChange={(v) =>
-            updateConfig({ background: v as DubbingBackgroundMode })
-          }
-          disabled={disabled || effectiveOutput === 'audioOnly'}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="mute">{t('backgroundMute')}</SelectItem>
-            <SelectItem value="duck">{t('backgroundDuck')}</SelectItem>
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">{t('backgroundHint')}</p>
-      </div>
+      {/* ── 导出设置 ── */}
+      <p className="label-caps">{t('groupExport')}</p>
 
       {/* 输出形态 */}
       <div className="space-y-1.5">
@@ -317,14 +251,14 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
         </div>
       )}
 
-      {/* 重叠处理模式：仅当会话存在重叠行时展示（顺延是默认、多轨是升级） */}
-      {summary.overlap > 0 && (
+      {/* 背景音（仅视频类输出生效） */}
+      {effectiveOutput !== 'audioOnly' && (
         <div className="space-y-1.5">
-          <label className="text-sm font-medium">{t('overlapMode')}</label>
+          <label className="text-sm font-medium">{t('background')}</label>
           <Select
-            value={config.overlapMode ?? 'shift'}
+            value={config.background}
             onValueChange={(v) =>
-              updateConfig({ overlapMode: v as DubbingOverlapMode })
+              updateConfig({ background: v as DubbingBackgroundMode })
             }
             disabled={disabled}
           >
@@ -332,104 +266,143 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="shift">{t('overlapShift')}</SelectItem>
-              <SelectItem value="mix">{t('overlapMix')}</SelectItem>
+              <SelectItem value="mute">{t('backgroundMute')}</SelectItem>
+              <SelectItem value="duck">{t('backgroundDuck')}</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground">
-            {t('overlapModeHint', { count: summary.overlap })}
-          </p>
         </div>
       )}
 
-      {/* 超长处置 + 顺延字幕 */}
-      <div className="space-y-1.5">
-        <label className="text-sm font-medium">{t('overflow')}</label>
-        <Select
-          value={config.overflow}
-          onValueChange={(v) =>
-            updateConfig({ overflow: v as 'truncate' | 'shift' })
-          }
-          disabled={disabled}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="truncate">{t('overflowTruncate')}</SelectItem>
-            <SelectItem value="shift">{t('overflowShift')}</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <label className="text-sm font-medium">
-          {t('exportShiftedSubtitle')}
-        </label>
-        <Switch
-          checked={config.exportShiftedSubtitle}
-          onCheckedChange={(v) => updateConfig({ exportShiftedSubtitle: v })}
-          disabled={disabled}
-        />
-      </div>
-
       <Separator />
 
-      {/* 导出 */}
-      <div className="space-y-2">
-        {summary.overlong > 0 && (
-          <p className="flex items-start gap-1 rounded-md bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
-            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-            {t('overlongExportHint', { count: summary.overlong })}
-          </p>
-        )}
-        <Button
-          className="w-full"
-          onClick={exportDubbing}
-          disabled={!canExport}
-        >
-          {exporting ? (
-            <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-          ) : (
-            <Download className="mr-1.5 h-4 w-4" />
+      {/* ── 高级选项（默认折叠） ── */}
+      <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+        <CollapsibleTrigger className="-mx-2 flex w-full items-center justify-between rounded px-2 py-2 hover:bg-muted/50">
+          <span className="label-caps">{t('groupAdvanced')}</span>
+          <ChevronDown
+            className={`h-4 w-4 transition-transform ${advancedOpen ? 'rotate-180' : ''}`}
+          />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-4 pt-2">
+          {/* 本地并行合成（仅本地引擎）：每路一份模型驻留内存 */}
+          {activeEngine?.kind === 'local' && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">
+                {t('localConcurrency')}
+              </label>
+              <Select
+                value={String(config.localConcurrency ?? 1)}
+                onValueChange={(v) =>
+                  updateConfig({ localConcurrency: Number(v) })
+                }
+                disabled={disabled}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">{t('localConcurrency1')}</SelectItem>
+                  <SelectItem value="2">2</SelectItem>
+                  <SelectItem value="3">3</SelectItem>
+                </SelectContent>
+              </Select>
+              {(config.localConcurrency ?? 1) > 1 && (
+                <p className="text-xs text-muted-foreground">
+                  {t('localConcurrencyHint')}
+                </p>
+              )}
+            </div>
           )}
-          {t('export')}
-        </Button>
-        {actionError && (
-          <p className="break-all rounded-md bg-destructive/10 p-2 text-xs text-destructive">
-            {actionError}
-          </p>
-        )}
-        {exportResult && (
-          <div className="space-y-1 rounded-md border bg-muted/40 p-2 text-xs">
-            <p className="font-medium">{t('exportDone')}</p>
-            <p className="break-all text-muted-foreground">
-              {exportResult.outputPath}
-            </p>
-            {exportResult.shiftedSubtitlePath && (
-              <p className="break-all text-muted-foreground">
-                {exportResult.shiftedSubtitlePath}
+
+          {/* 克隆质量档（仅克隆引擎） */}
+          {activeEngine?.cloneOnly && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">{t('cloneQuality')}</label>
+              <Select
+                value={config.cloneQuality ?? 'standard'}
+                onValueChange={(v) =>
+                  updateConfig({ cloneQuality: v as 'standard' | 'high' })
+                }
+                disabled={disabled}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="standard">
+                    {t('cloneQualityStandard')}
+                  </SelectItem>
+                  <SelectItem value="high">{t('cloneQualityHigh')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {t('cloneQualityHint')}
               </p>
-            )}
-            {exportResult.skippedIndexes.length > 0 && (
-              <p className="text-amber-600">
-                {t('exportSkipped', {
-                  count: exportResult.skippedIndexes.length,
-                })}
+            </div>
+          )}
+
+          {/* 重叠处理模式：仅当会话存在重叠行时展示（顺延是默认、多轨是升级） */}
+          {summary.overlap > 0 && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">{t('overlapMode')}</label>
+              <Select
+                value={config.overlapMode ?? 'shift'}
+                onValueChange={(v) =>
+                  updateConfig({ overlapMode: v as DubbingOverlapMode })
+                }
+                disabled={disabled}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="shift">{t('overlapShift')}</SelectItem>
+                  <SelectItem value="mix">{t('overlapMix')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {t('overlapModeHint', { count: summary.overlap })}
               </p>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-1 h-7 w-full"
-              onClick={openOutputFolder}
+            </div>
+          )}
+
+          {/* 超长处置 */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">{t('overflow')}</label>
+            <Select
+              value={config.overflow}
+              onValueChange={(v) =>
+                updateConfig({ overflow: v as 'truncate' | 'shift' })
+              }
+              disabled={disabled}
             >
-              <FolderOpen className="mr-1 h-3.5 w-3.5" />
-              {t('openFolder')}
-            </Button>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="truncate">
+                  {t('overflowTruncate')}
+                </SelectItem>
+                <SelectItem value="shift">{t('overflowShift')}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-        )}
-      </div>
+
+          {/* 顺延字幕 */}
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium">
+              {t('exportShiftedSubtitle')}
+            </label>
+            <Switch
+              checked={config.exportShiftedSubtitle}
+              onCheckedChange={(v) =>
+                updateConfig({ exportShiftedSubtitle: v })
+              }
+              disabled={disabled}
+            />
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
 
       {/* 创建克隆音色向导（克隆引擎入口） */}
       <CloneVoiceWizard

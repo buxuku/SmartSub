@@ -536,13 +536,34 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
     );
   }
 
+  // 零凭据类型（Edge）：默认值即已配置，未启用时只差「启用」一步。
+  const zeroConfig = isTtsProviderConfigured(defaults, type);
+
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3">
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          {t('dubbingBlock.providersIntro')}
-        </p>
-      </div>
+      {/* 顶部说明：已配置 = 常规介绍；未配置 = 按类型给「下一步」引导 */}
+      {view.configured ? (
+        <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3">
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {t('dubbingBlock.providersIntro')}
+          </p>
+        </div>
+      ) : !instance && zeroConfig ? (
+        <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3">
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {t('ttsServices.setupZeroConfig')}
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3">
+          <p className="text-xs font-medium">{t('ttsServices.setupTitle')}</p>
+          <ol className="mt-1.5 list-decimal space-y-1 pl-4 text-xs leading-relaxed text-muted-foreground">
+            <li>{t('ttsServices.setupStep1')}</li>
+            <li>{t('ttsServices.setupStep2')}</li>
+            <li>{t('ttsServices.setupStep3')}</li>
+          </ol>
+        </div>
+      )}
 
       {view.unstable && (
         <p className="flex items-start gap-1.5 rounded-md bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
@@ -604,7 +625,7 @@ const TtsProviderPanel: React.FC<TtsProviderPanelProps> = ({
           </Button>
         )}
         {/* 零凭据类型（Edge）默认值即可用，但需显式启用落库才进工作台引擎下拉 */}
-        {!instance && isTtsProviderConfigured(defaults, type) && (
+        {!instance && zeroConfig && (
           <Button size="sm" className="shrink-0 gap-1.5" onClick={handleEnable}>
             <Plus className="h-4 w-4" />
             {t('ttsServices.enable')}
