@@ -3,7 +3,7 @@
  * （形制 ipcDubbingHandlers）。分析会话（帧级数据）驻留 main 内存，跨 IPC 只传
  * 会话 id 与轻量视图；向导关闭/换素材时 disposeAnalysis 释放。
  */
-import { ipcMain, BrowserWindow, dialog } from 'electron';
+import { ipcMain, BrowserWindow, dialog, systemPreferences } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { logMessage } from './storeManager';
@@ -196,6 +196,46 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
     }
     return { success: true, data: result.filePaths[0] };
   });
+
+  // 麦克风权限前置请求（darwin TCC 弹窗；其余平台无系统级门槛，直通）。
+  ipcMain.handle('voiceClone:requestMicAccess', async () => {
+    if (process.platform !== 'darwin') return { success: true, data: true };
+    try {
+      const status = systemPreferences.getMediaAccessStatus('microphone');
+      if (status === 'granted') return { success: true, data: true };
+      const granted = await systemPreferences.askForMediaAccess('microphone');
+      return { success: true, data: granted };
+    } catch (error) {
+      logMessage(`voiceClone mic access failed: ${error}`, 'warning');
+      return { success: true, data: false };
+    }
+  });
+
+  // 向导录音落盘：webm/opus 字节 → 临时目录，返回路径作为分析 sourcePath。
+  ipcMain.handle(
+    'voiceClone:saveRecording',
+    async (
+      _event,
+      { buffer }: { buffer: ArrayBuffer | Uint8Array },
+    ): Promise<VoiceCloneResponse> => {
+      try {
+        if (!buffer || buffer.byteLength === 0) {
+          return { success: false, error: '录音数据为空，请重试' };
+        }
+        const dir = path.join(ensureTempDir(), 'voice-clone');
+        fs.mkdirSync(dir, { recursive: true });
+        const dest = path.join(dir, `rec-${Date.now()}.webm`);
+        fs.writeFileSync(
+          dest,
+          buffer instanceof Uint8Array ? buffer : Buffer.from(buffer),
+        );
+        return { success: true, data: dest };
+      } catch (error) {
+        logMessage(`voiceClone saveRecording failed: ${error}`, 'error');
+        return fail(error);
+      }
+    },
+  );
 
   // 分析素材：16k 副本 + VAD 语音段 + 帧分析 + 推荐选段（会话驻留 main）。
   ipcMain.handle(

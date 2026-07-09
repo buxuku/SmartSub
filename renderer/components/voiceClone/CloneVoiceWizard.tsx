@@ -61,6 +61,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { cn } from 'lib/utils';
 import SegmentPicker, { type SegmentRange } from './SegmentPicker';
+import MicRecorder from './MicRecorder';
 import type {
   ClonedVoiceView,
   CloneAnalysisView,
@@ -137,6 +138,8 @@ export default function CloneVoiceWizard({
   const [sourcePath, setSourcePath] = useState<string | null>(null);
   const [sourceSubtitle, setSourceSubtitle] = useState<string | null>(null);
   const [recent, setRecent] = useState<RecentCandidate[]>([]);
+  /** Step1 麦克风录音面板开关（录音确认后回落文件分析链路）。 */
+  const [showRecorder, setShowRecorder] = useState(false);
   const [modelInstalled, setModelInstalled] = useState(true);
   /** 火山复刻可用的豆包实例（合成 Key 就绪；训练凭据在 Step4 前再校验）。 */
   const [volcProvider, setVolcProvider] = useState<TtsProvider | null>(null);
@@ -278,6 +281,7 @@ export default function CloneVoiceWizard({
     setEngine('zipvoice');
     setSourcePath(null);
     setSourceSubtitle(null);
+    setShowRecorder(false);
     setAnalyzing(false);
     setAnalyzeError(null);
     setAnalysisId(null);
@@ -723,44 +727,68 @@ export default function CloneVoiceWizard({
                   {t('modelMissingHint')}
                 </p>
               )}
-              <button
-                type="button"
-                onClick={pickSource}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={handleDrop}
-                className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-input px-4 py-10 text-center transition-colors hover:border-primary/50 hover:bg-muted/40"
-              >
-                <FileAudio className="h-8 w-8 text-muted-foreground" />
-                <span className="text-sm font-medium">{t('dropHint')}</span>
-                <span className="text-xs text-muted-foreground">
-                  {t('dropSubHint')}
-                </span>
-              </button>
+              {showRecorder ? (
+                <MicRecorder
+                  engine={engine}
+                  onCancel={() => setShowRecorder(false)}
+                  onConfirm={(recPath) => {
+                    setShowRecorder(false);
+                    startAnalyze(recPath);
+                  }}
+                />
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={pickSource}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={handleDrop}
+                    className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-input px-4 py-10 text-center transition-colors hover:border-primary/50 hover:bg-muted/40"
+                  >
+                    <FileAudio className="h-8 w-8 text-muted-foreground" />
+                    <span className="text-sm font-medium">{t('dropHint')}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {t('dropSubHint')}
+                    </span>
+                  </button>
 
-              {recent.length > 0 && (
-                <div className="flex justify-center">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm">
-                        <History className="mr-1 h-3.5 w-3.5" />
-                        {t('fromRecent')}
-                        <ChevronDown className="ml-0.5 h-3 w-3" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="center" className="max-w-md">
-                      {recent.map((c) => (
-                        <DropdownMenuItem
-                          key={c.key}
-                          onClick={() =>
-                            startAnalyze(c.videoPath, c.subtitlePath)
-                          }
+                  <div className="flex items-center justify-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowRecorder(true)}
+                    >
+                      <Mic2 className="mr-1 h-3.5 w-3.5" />
+                      {t('recordEntry')}
+                    </Button>
+                    {recent.length > 0 && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm">
+                            <History className="mr-1 h-3.5 w-3.5" />
+                            {t('fromRecent')}
+                            <ChevronDown className="ml-0.5 h-3 w-3" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="center"
+                          className="max-w-md"
                         >
-                          <span className="truncate">{c.label}</span>
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                          {recent.map((c) => (
+                            <DropdownMenuItem
+                              key={c.key}
+                              onClick={() =>
+                                startAnalyze(c.videoPath, c.subtitlePath)
+                              }
+                            >
+                              <span className="truncate">{c.label}</span>
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
+                </>
               )}
 
               {/* 素材要求指引 */}
