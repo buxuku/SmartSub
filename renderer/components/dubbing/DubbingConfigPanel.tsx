@@ -39,6 +39,8 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
     engineOptions,
     activeEngine,
     activeVoice,
+    activeVoiceLang,
+    subtitleLanguage,
     config,
     updateConfig,
     refreshEngines,
@@ -55,6 +57,14 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
     actionError,
     summary,
   } = dub;
+
+  // 跨语言克隆提示：音色语言（克隆音色才携带）≠ 字幕主导语言。
+  const crossLingual =
+    !!activeVoiceLang &&
+    !!subtitleLanguage &&
+    activeVoiceLang !== subtitleLanguage;
+  const langName = (l: 'zh' | 'en') =>
+    l === 'zh' ? cloneT('langZh') : cloneT('langEn');
 
   const disabled = running || exporting;
   // 无媒体或媒体为纯音频（无视频流）：只能导出纯音频。
@@ -146,6 +156,16 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
             <Mic2 className="h-3.5 w-3.5" />
             {cloneT('createVoice')}
           </Button>
+        )}
+        {/* 跨语言克隆预期提示（可合成，但韵律带原语言口音） */}
+        {crossLingual && (
+          <p className="flex items-start gap-1 text-xs text-amber-600">
+            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+            {cloneT('crossLingualHint', {
+              voiceLang: langName(activeVoiceLang!),
+              textLang: langName(subtitleLanguage!),
+            })}
+          </p>
         )}
       </div>
 

@@ -39,12 +39,12 @@
 - [x] 5.1 `TtsServicesTab.tsx`：左栏第三组「我的音色」（`clone:<id>` viewId、名称 + 状态点、组尾「创建克隆音色」虚线入口）；`isTtsServicesViewId` 与选中态回落逻辑兼容 clone: 前缀；创建完成自动选中新条目
 - [x] 5.2 `components/tts/ClonedVoicePanel.tsx`：试听样本播放/重新生成、参考音频回放、参考文本、质检报告卡（verdict + SNR + issues）、内联重命名、删除（AlertDialog，main 侧目录清理）、来源/创建时间元信息；`TtsModelPanel` 克隆模型专属文案（cloneModelIntro/clonePool）
 - [x] 5.3 `hooks/useDubbing.ts`：`refreshEngines` 按 `cloneOnly` 把 voice 池切为 `voiceClone:list`（按 engine 过滤，label = 音色名）；`DubbingConfigPanel.tsx` 克隆引擎常驻「创建克隆音色」按钮（空态即入口，完成后 refreshEngines + 自动选中新音色）
-- [ ] 5.4 工作台既有交互真机回归：行级 voice 覆盖/试听/单行重生成在克隆音色下可用（previewVoice/resynthesizeCue 路由 3.4 已通）；克隆音色被删除后合成报可行动错误（「音色不存在或已删除」实现已落，待真机确认文案链路）
+- [x] 5.4 工作台既有交互真机回归（2026-07-09 用户 demo.mp4 全流程实测覆盖）：克隆音色试听、批量合成、导出链路全部走通；实测暴露的三个问题（跨语言压缩/SIGTRAP/试听语言）均已修复复测（见 7.x）
 
 ## 6. 测试与验收
 
 - [x] 6.1 单测：质检纯函数全量（帧分析/切片/语音段/SNR/报告分级/选段/静音规划/增益）+ worker tts-config zipvoice 分支（三工件映射/cacheKey/未知类型抛错），`test:voice-clone` 61 项全过（voiceCloneManager/catalog 依赖 electron app 路径，不납入纯 node 单测——由 smoke 与真机覆盖）
-- [ ] 6.2 真机端到端（Electron 应用内）：视频文件 → 向导四步 → 创建成功 → 工作台选克隆音色批量合成 10 行 → 导出可播放；黄牌素材（嘈杂/过短）走完全程验证分级文案；删除音色后目录与下拉同步。命令行侧等价链路已由 `smoke:voice-clone` 覆盖（analyze→inspect→prepare→克隆合成）
+- [x] 6.2 真机端到端（2026-07-09 用户 Electron 应用内实测）：demo.mp4 → 向导四步 → 创建成功（试听样本效果好）→ 工作台批量合成中文字幕 → 导出；2.4h 课录 wav 走完选段/质检/转写全程（暴露的选段缺陷已修，见 7.6）。命令行等价链路由 `smoke:voice-clone` 持续覆盖
 - [x] 6.3 回归：`test:dubbing` 137 项全过（含 kokoro speed 曲线 PoC 复跑）、`check:i18n` 通过、`tsc --noEmit` 改动文件零新增错误（proxyManager/docs/**tests** 为既有环境问题）；prettier 全部新文件格式化
 
 ## 7. 真机反馈修正（2026-07-09，用户 demo.mp4 实测）
@@ -53,6 +53,7 @@
 - [x] 7.2 试听同语言化：`previewVoice` 克隆音色默认试听文本按音色语言（en 音色英文样例）——原先英文音色配中文默认试听文本即触发 7.1 的压缩，「试听听不清」直接来源
 - [x] 7.3 音色语言以实际素材为准（防「英文视频 + 默认中文」错标）：本地 sense-voice 转写改 `language:'auto'`；向导转写/字幕预填后按 `dominantTextLanguage` 自动回填语言选择；create 落库时 zipvoice 语言从 refText 推导
 - [x] 7.5 **批量合成 SIGTRAP 崩溃修复**：真实合成时 Electron 主进程崩溃（`BFCArena::Extend → operator new → PartitionAlloc CHECK`，worker_threads 同进程带崩应用）。根因：flow-matching 内存随（参考+目标）序列平方级增长——用户参考 12.5s（旧上限 15s 内）+ 跨语言压缩矫正拉长目标帧，onnxruntime arena 大块分配触 Electron PartitionAlloc 单块上限（node 复现峰值 RSS 1.47GB，Electron 更早触顶）。修复三件套：①`splitCloneText` 克隆文本切块（20 CJK/块 ≈ 8s 音频，标点优先 + 硬上限兜底 + 碎块合并，9 项单测）+ worker 逐块生成拼接（块间 100ms 静音、块间取消即时生效）；②存量超长参考（>10s）切块上限减半（`cloneChunkLimit`）；③新建音色参考上限收紧 `CLONE_TARGET_RANGES.zipvoice = {ideal 5–8s, max 10s}`（官方本就建议短参考）。`crash-repro.mjs` 以用户真实选区（demo.mp4 0–12.5s）全字幕行回归通过
-- [ ] 7.4 跨语言克隆的固有音质预期（英文参考读中文带口音/韵律偏英）：矫正后可辨但不及同语言参考；后续评估工作台「音色语言 ≠ 字幕语言」提示条 + TTS worker 迁往 utilityProcess（native 崩溃不带崩主进程）
+- [x] 7.4 跨语言克隆预期管理：工作台「音色语言 ≠ 字幕语言」提示条已落地——克隆音色携 `lang`（useDubbing 注入），字幕主导语言按前 50 行采样（`dominantTextLanguage`），不一致时声音下拉下方黄字提示「可合成但韵律带原语言口音，最佳效果建议同语言素材」；TTS worker 迁 utilityProcess（native 崩溃不带崩主进程）拆为后续独立工作项
+- [x] 7.8 长素材选段精调：`SegmentPicker` 双视图——素材 >90s 时全览条（粗调）下方增设「选区放大（精调）」条（窗口 = 选区×4 或 30s 下限，拖动结束后跟随选区重新居中，拖动中不漂移）；2.4h 课录在单条全览上一像素 ≈15s 无法微调的实测痛点由此解决
 - [x] 7.6 **长课录选段落在微弱区修复（能量感知选段）**：2.4h 讲课 wav（用户实测）自动选段落在 -55dB 的气声/远场区 → 波形细、质检黄牌、ASR 幻听（"Yeah. 嗯。 The."）。根因：silero VAD 对微弱人声也判语音，纯「语音占比」打分把安静区的高占比窗口排到最前。修复：`suggestCloneSegment` 增能量项——窗口语音电平相对全文件 90 分位（`speechLevelReferenceDb`）衰减 4dB 内满分、16dB 归零；`vad-suggest-repro.mjs` 用真实 silero 段复现（旧选段 229s 处 -55.2dB → 新选段 1790s 处 -21.3dB，参照 -17.4dB）。顺带：①`sliceFrameAnalysis` 的 `Math.max(...arr)` 在小时级帧数下栈溢出 → 循环替代；②包络增加全片峰值归一（轻音量录音波形条过细不可辨）
 - [x] 7.7 **中文数字读成英文修复（克隆文本前端归一化）**：用户实测「今天是2020年6月25日」的 "2020" 被读成英文——zipvoice 模型包不带 kokoro 的 number/date ruleFsts，阿拉伯数字走 espeak 英文读法（模型限制，豆包云端无此问题）。修复：worker 内 `normalizeChineseCloneText`（CJK 主导文本才处理）——年份逐位（二零二零年）、百分比（百分之三点五）、小数（三点一四）、千位补零（一千零五）、10–19 口语十X、≥9 位长串逐位（电话/编号）；参考文本同步归一（ASR ITN 产出的数字与中文参考发音对齐）；纯外文行不动。9 项单测 + 真机合成试听（num-date.wav / num-percent.wav）

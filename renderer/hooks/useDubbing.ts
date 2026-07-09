@@ -24,6 +24,7 @@ import {
   isTtsProviderConfigured,
   resolveTtsVoiceLabel,
 } from '../../types/ttsProvider';
+import { dominantTextLanguage } from '../../types/voiceClone';
 
 /** UI 的引擎候选项（本地模型 / 云服务商实例统一形状）。 */
 export interface DubbingEngineOption {
@@ -38,7 +39,8 @@ export interface DubbingEngineOption {
   providerType?: string;
   /** 克隆引擎（zipvoice）：voice 池 = 我的音色，空态引导创建。 */
   cloneOnly?: boolean;
-  voices: Array<{ id: string; label: string }>;
+  /** lang 仅克隆音色携带（跨语言提示用）。 */
+  voices: Array<{ id: string; label: string; lang?: 'zh' | 'en' }>;
   defaultVoiceId?: string;
 }
 
@@ -119,6 +121,7 @@ export function useDubbing(options?: {
       id: string;
       name: string;
       engine: string;
+      language?: 'zh' | 'en';
       speakerId?: string;
       providerId?: string;
       trainStatus?: string;
@@ -135,7 +138,7 @@ export function useDubbing(options?: {
         const voices = m.cloneOnly
           ? clonedVoices
               .filter((v) => v.engine === 'zipvoice')
-              .map((v) => ({ id: v.id, label: v.name }))
+              .map((v) => ({ id: v.id, label: v.name, lang: v.language }))
           : (m.voices ?? []).map((v: any) => ({
               id: v.id,
               label: v.label,
@@ -156,15 +159,16 @@ export function useDubbing(options?: {
     try {
       const providers = (await window.ipc.invoke('getTtsProviders')) ?? [];
       for (const p of providers) {
-        const voices = String(p.voices ?? '')
-          .split(/[,，、;；\n]/)
-          .map((s: string) => s.trim())
-          .filter(Boolean)
-          .map((v: string) => ({
-            id: v,
-            // voice_id 不可读的服务商（ElevenLabs）按名称映射展示。
-            label: resolveTtsVoiceLabel(p, v),
-          }));
+        const voices: Array<{ id: string; label: string; lang?: 'zh' | 'en' }> =
+          String(p.voices ?? '')
+            .split(/[,，、;；\n]/)
+            .map((s: string) => s.trim())
+            .filter(Boolean)
+            .map((v: string) => ({
+              id: v,
+              // voice_id 不可读的服务商（ElevenLabs）按名称映射展示。
+              label: resolveTtsVoiceLabel(p, v),
+            }));
         // 绑定该实例且训练就绪的克隆音色（S_ 槽位）追加进音色池。
         for (const cv of clonedVoices) {
           if (
@@ -173,7 +177,11 @@ export function useDubbing(options?: {
             cv.trainStatus === 'ready' &&
             cv.speakerId
           ) {
-            voices.push({ id: cv.speakerId, label: cv.name });
+            voices.push({
+              id: cv.speakerId,
+              label: cv.name,
+              lang: cv.language,
+            });
           }
         }
         opts.push({
@@ -230,6 +238,22 @@ export function useDubbing(options?: {
       ''
     );
   }, [activeEngine, persisted.voice]);
+
+  /** 选中音色的语言（仅克隆音色携带；内置音色 undefined）。 */
+  const activeVoiceLang = useMemo(
+    () => activeEngine?.voices.find((v) => v.id === activeVoice)?.lang,
+    [activeEngine, activeVoice],
+  );
+
+  /** 字幕主导语言（跨语言克隆提示用；前 50 行文本采样）。 */
+  const subtitleLanguage = useMemo(() => {
+    if (cues.length === 0) return undefined;
+    const sample = cues
+      .slice(0, 50)
+      .map((c) => c.text)
+      .join(' ');
+    return sample.trim() ? dominantTextLanguage(sample) : undefined;
+  }, [cues]);
 
   // 媒体是纯音频（导入音频 / 音频任务跳转）：无视频流,视频类输出形态不可用。
   const mediaIsAudio = useMemo(
@@ -683,6 +707,8 @@ export function useDubbing(options?: {
     engineOptions,
     activeEngine,
     activeVoice,
+    activeVoiceLang,
+    subtitleLanguage,
     config: persisted,
     updateConfig,
     refreshEngines,

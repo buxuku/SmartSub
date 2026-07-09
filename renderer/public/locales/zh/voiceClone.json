@@ -24,6 +24,8 @@
   "playRange": "试听选区",
   "stopPlay": "停止",
   "resetSuggestion": "恢复推荐选区",
+  "zoomView": "选区放大（精调）",
+  "crossLingualHint": "音色语言（{{voiceLang}}）与字幕语言（{{textLang}}）不一致：可以合成，但克隆韵律会带原语言口音，追求最佳效果建议用同语言素材克隆",
   "qualityTitle": "质量检测",
   "verdictGood": "良好",
   "verdictFair": "一般",

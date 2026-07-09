@@ -24,6 +24,8 @@
   "playRange": "Play Selection",
   "stopPlay": "Stop",
   "resetSuggestion": "Reset to Suggestion",
+  "zoomView": "Zoomed View (fine-tune)",
+  "crossLingualHint": "Voice language ({{voiceLang}}) differs from subtitle language ({{textLang}}): synthesis works, but the cloned prosody will carry an accent. For best results clone from same-language audio",
   "qualityTitle": "Quality Check",
   "verdictGood": "Good",
   "verdictFair": "Fair",

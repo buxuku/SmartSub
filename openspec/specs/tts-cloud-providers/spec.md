@@ -111,12 +111,12 @@
 
 ### Requirement: 火山引擎豆包语音合成服务商
 
-系统 SHALL 提供品牌型云 TTS 服务商类型 `volcengine`（硬单例）：凭据为必填的**单 API Key**（新版「豆包语音」控制台签发，走 `X-Api-Key` 头；与豆包听写 ASR 同 Key 体系可复用；旧版控制台 App ID + Access Token 两件套 MUST NOT 支持）；资源版本为必填枚举字段 `resourceId`（`seed-tts-2.0` 默认 / `seed-tts-1.0` / `seed-tts-1.0-concurr`），经 `X-Api-Resource-Id` 头传递。合成 SHALL 走 V3 单向流式 HTTP（`POST https://openspeech.bytedance.com/api/v3/tts/unidirectional`，固定官方域），请求 `audio_params.format = pcm`（24kHz）：chunked JSON 分片中的 base64 音频解码拼接为裸 PCM 后本地拼 WAV 头落盘为 16-bit PCM 单声道 wav，MUST NOT 经 ffmpeg 转码；流解析（分片 JSON → PCM + 终止码提取）MUST 为纯函数并有固定向量单测。能力声明 `speedControl` MUST 为 `'native'`：speed 折算为 `audio_params.speech_rate`（线性映射 `(speed - 1) × 100`，clamp 到官方区间 [-50, 100] 即倍速 [0.5, 2.0]，折算为纯函数并有单测），speed 无调整时 MUST 省略该字段。配置界面 MUST 提示计费口径：字符版按字符计费（约 1.3 元/千字符，2026-07 口径）、新用户有免费赠额、资源版本对应不同计费商品。
+系统 SHALL 提供品牌型云 TTS 服务商类型 `volcengine`（硬单例）：凭据为必填的**单 API Key**（新版「豆包语音」控制台签发，走 `X-Api-Key` 头；与豆包听写 ASR 同 Key 体系可复用；旧版控制台 App ID + Access Token 两件套 MUST NOT 用于合成鉴权）；资源版本为必填枚举字段 `resourceId`（`seed-tts-2.0` 默认 / `seed-tts-1.0` / `seed-tts-1.0-concurr`），经 `X-Api-Resource-Id` 头传递；**另 SHALL 提供可选的声音复刻凭据字段 `appId` 与 `accessToken`（训练接口走 `X-Api-App-Key` + `X-Api-Access-Key` 双凭据），二者 MUST NOT 参与合成就绪判定（`isTtsProviderConfigured`），仅克隆训练链路消费**。合成 SHALL 走 V3 单向流式 HTTP（`POST https://openspeech.bytedance.com/api/v3/tts/unidirectional`，固定官方域），请求 `audio_params.format = pcm`（24kHz）：chunked JSON 分片中的 base64 音频解码拼接为裸 PCM 后本地拼 WAV 头落盘为 16-bit PCM 单声道 wav，MUST NOT 经 ffmpeg 转码；流解析（分片 JSON → PCM + 终止码提取）MUST 为纯函数并有固定向量单测。**合成资源版本 SHALL 按音色自动路由：`S_` 开头克隆音色以 `seed-icl-2.0` 发起，其余音色沿用实例 `resourceId`（路由纯函数 + 单测）**。能力声明 `speedControl` MUST 为 `'native'`：speed 折算为 `audio_params.speech_rate`（线性映射 `(speed - 1) × 100`，clamp 到官方区间 [-50, 100] 即倍速 [0.5, 2.0]，折算为纯函数并有单测），speed 无调整时 MUST 省略该字段；能力声明 SHALL 含 `clone: true`。配置界面 MUST 提示计费口径：字符版按字符计费（约 1.3 元/千字符，2026-07 口径）、新用户有免费赠额、资源版本对应不同计费商品；克隆凭据字段 tips MUST 说明声音复刻需在控制台购买音色槽位。
 
 #### Scenario: 配音服务页出现豆包条目
 
 - **WHEN** 用户打开「配音服务」页
-- **THEN** 「在线服务」组出现火山引擎豆包品牌条目（单例），表单含 API Key、资源版本枚举、音色清单、超时与并发字段，且面板可见计费口径与免费赠额提示
+- **THEN** 「在线服务」组出现火山引擎豆包品牌条目（单例），表单含 API Key、资源版本枚举、音色清单、超时与并发字段，另含可选的声音复刻 APP ID / Access Token 字段（带控制台槽位购买指引），且面板可见计费口径与免费赠额提示
 
 #### Scenario: 裸 PCM 直接落盘
 
@@ -152,6 +152,11 @@
 
 - **WHEN** 用户在豆包实例的音色录入框输入关键字（如「男」或 `zh_male`）
 - **THEN** 出现按「名称/ID 包含匹配」的自动补全下拉（数据源为内置 2.0 音色目录 ∪ 实例名称映射），↑↓ 选择、回车/点击录入，无需手工拼写完整 voice_type
+
+#### Scenario: 克隆音色进入工作台音色池
+
+- **WHEN** 某豆包实例绑定的克隆音色训练就绪
+- **THEN** 工作台该实例的音色下拉出现该克隆音色（按音色名展示），选中后试听与批量合成自动以 `seed-icl-2.0` 资源发起
 
 ### Requirement: 音色清单在线拉取与名称映射
 

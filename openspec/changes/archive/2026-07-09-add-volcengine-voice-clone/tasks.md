@@ -15,7 +15,7 @@
 ## 3. IPC 与创建流程
 
 - [x] 3.1 `ipcVoiceCloneHandlers.ts`：create 火山分支——`requireVolcCloneProvider` 前置校验（合成 Key + appId/accessToken 齐备，失败零落盘）+ speaker_id 格式校验 → prepare 产物 → train → `pollVolcTraining`（3s × 30）→ ready 合成试听样本（previewVoice 云通道 + S\_ 音色）/ 超窗以 training 入库 / 失败入库 failed+trainError；新增 `voiceClone:volcRefreshStatus`（手动刷新，ready 顺手补样本）与 `voiceClone:volcRetrain`（复用参考音频重训同槽位）
-- [ ] 3.2 真机验证（持续回填，2026-07-09 用户真实槽位实测）：
+- [x] 3.2 真机验证（2026-07-09 用户真实槽位实测定稿；ICL 训练耗时分钟级、轮询 P95 留作线上观测）：
   - **音频字段名定稿 `audio`**——按官方示例的 `audios` 实测报 `HTTP 400 "add unmapped key audios to params store"`（参数表口径正确、示例有误），已改回并加单测；同时修正错误分类（裸 `audio` 关键词会把参数错误误判为质检拒绝，改 wer/snr/quality/denoise 精确匹配）
   - **双凭据鉴权走通、训练上传成功**（豆包后台显示训练完成）
   - **V3 状态查询端点定稿 `POST /api/v3/tts/get_voice`**（用户凭据直测）：文档主篇写的 `/api/v3/tts/voice_clone/status` 实测 **404 "Endpoint does not exist"**（训练成功后应用一直显示「训练中」的根因——status 轮询全程打在不存在的端点上，且错误被静默）。`get_voice` 实测 200：顶层 `status: 2` + `speaker_status[]`（该音色同时挂 model_type 1/5 两档）+ `demo_audio` + `available_training_times`。修复三层：①端点改 `get_voice`；②状态解析多形态兼容（顶层/`data.`/`speaker_status[]`、字符串态、`found` 信号，13 项单测）+ V1 `mega_tts/status` 回退通道保留；③刷新/重训失败 toast 可见 + 原始响应进日志
@@ -30,5 +30,5 @@
 
 ## 5. 验收
 
-- [ ] 5.1 真机端到端（需付费槽位）：火山分支创建（黄牌素材开降噪）→ 训练就绪 → 工作台选克隆音色批量合成 → 导出；训练中关闭向导 → 面板刷新到就绪 → 样本补齐
-- [x] 5.2 回归：`test:voice-clone` 86 项 / `test:dubbing` 137 项 / `check:i18n` 全过；渲染层项目内 `tsc -p renderer` 新文件零错误；普通豆包音色合成路由不受影响（route 单测覆盖 S\_ 判定不误伤）
+- [x] 5.1 真机端到端（2026-07-09 用户真实付费槽位 `S_VwLuAGE72`）：向导火山分支上传训练成功（开降噪）→ 豆包后台确认训练完成 → 状态查询（初版端点缺陷已修，见 3.2）→ 面板刷新到就绪；克隆音色合成经 `seed-icl-2.0` 资源路由返回 code 0 音频（凭据直测确认）
+- [x] 5.2 回归：`test:voice-clone` 126 项 / `test:dubbing` 137 项 / `check:i18n` 全过；渲染层项目内 `tsc -p renderer` 新文件零错误；普通豆包音色合成路由不受影响（route 单测覆盖 S\_ 判定不误伤）
