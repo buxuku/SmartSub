@@ -184,7 +184,7 @@ interface EngineAdapter {
 
 function buildEngineAdapter(
   engine: DubbingEngineSelection,
-  opts?: { cloneQuality?: 'standard' | 'high' },
+  opts?: { cloneQuality?: 'standard' | 'high'; localConcurrency?: number },
 ): EngineAdapter {
   if (engine.kind === 'local') {
     const modelId = engine.modelId as TtsModelId;
@@ -197,6 +197,12 @@ function buildEngineAdapter(
     }
     const model = getTtsModelRequest(modelId);
     const runtime = getSherpaTtsRuntime();
+    // 本地并行合成：进程池按需扩展（每路一份模型驻留内存，批量结束收缩）。
+    const localConcurrency = Math.max(
+      1,
+      Math.min(3, Math.floor(Number(opts?.localConcurrency)) || 1),
+    );
+    runtime.setPoolSize(localConcurrency);
 
     const runSynthesize = async (
       req: Parameters<typeof runtime.synthesize>[0],
@@ -228,7 +234,7 @@ function buildEngineAdapter(
       return {
         speedControl: 'none',
         canResynthesize: false, // 重合成不能改语速 → 复测直接 atempo
-        concurrency: 1,
+        concurrency: localConcurrency, // 进程池并行（每路一份模型内存）
         synthesize: async (text, voiceId, speed, outWavPath, signal) => {
           const voice = getClonedVoiceById(voiceId);
           if (!voice || voice.engine !== 'zipvoice') {
@@ -283,7 +289,7 @@ function buildEngineAdapter(
     return {
       speedControl: 'native',
       canResynthesize: true, // 本地合成免费 → 复测走重合成
-      concurrency: 1, // worker 单实例串行
+      concurrency: localConcurrency, // 进程池并行（每路一份模型内存）
       synthesize: async (text, voiceId, speed, outWavPath, signal) =>
         runSynthesize(
           {
@@ -465,6 +471,7 @@ export async function runDubbingBatch(
   if (session.running) throw new Error('该会话已有合成任务进行中');
   const adapter = buildEngineAdapter(config.engine, {
     cloneQuality: config.cloneQuality,
+    localConcurrency: config.localConcurrency,
   });
   session.running = true;
   session.abort = new AbortController();
@@ -550,6 +557,10 @@ export async function runDubbingBatch(
   } finally {
     session.running = false;
     session.abort = null;
+    // 并行批量结束：进程池收缩回 1（每个成员一份模型驻留内存）。
+    if (config.engine.kind === 'local' && adapter.concurrency > 1) {
+      getSherpaTtsRuntime().shrinkTo(1);
+    }
   }
 
   return {

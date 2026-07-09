@@ -80,6 +80,8 @@ export interface DubbingConfig {
   globalSpeed: number;
   /** 克隆引擎质量档（仅 cloneOnly 引擎消费；默认 standard）。 */
   cloneQuality?: DubbingCloneQuality;
+  /** 本地并行合成路数（1–3，默认 1；每路一份模型驻留内存）。 */
+  localConcurrency?: number;
   background: DubbingBackgroundMode;
   output: DubbingOutputMode;
   /** output = 'audioOnly' 时生效。 */

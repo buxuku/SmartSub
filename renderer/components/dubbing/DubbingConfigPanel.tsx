@@ -169,6 +169,32 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
         )}
       </div>
 
+      {/* 本地并行合成（仅本地引擎）：每路一份模型驻留内存 */}
+      {activeEngine?.kind === 'local' && (
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium">{t('localConcurrency')}</label>
+          <Select
+            value={String(config.localConcurrency ?? 1)}
+            onValueChange={(v) => updateConfig({ localConcurrency: Number(v) })}
+            disabled={disabled}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1">{t('localConcurrency1')}</SelectItem>
+              <SelectItem value="2">2</SelectItem>
+              <SelectItem value="3">3</SelectItem>
+            </SelectContent>
+          </Select>
+          {(config.localConcurrency ?? 1) > 1 && (
+            <p className="text-xs text-muted-foreground">
+              {t('localConcurrencyHint')}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* 克隆质量档（仅克隆引擎） */}
       {activeEngine?.cloneOnly && (
         <div className="space-y-1.5">

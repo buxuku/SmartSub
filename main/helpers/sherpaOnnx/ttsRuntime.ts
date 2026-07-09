@@ -50,32 +50,75 @@ function workerPath(): string {
   );
 }
 
+/** 池上限（每进程一份模型驻留内存，zipvoice 实测单进程峰值 ~1.5GB）。 */
+export const TTS_POOL_MAX = 3;
+
+interface TtsWorkerHandle {
+  proc: UtilityProcess;
+  /** 在途请求数（派发选最闲者）。 */
+  busy: number;
+  alive: boolean;
+}
+
 /**
- * 主侧本地 TTS 运行时：常驻一个独立 worker **进程**（Electron utilityProcess）。
- * 与 ASR worker 分进程（退出/重建互不影响）；worker 内 dlopen 原生库、按参数
- * 缓存 OfflineTts 实例。native 层崩溃（onnxruntime abort 等）只死子进程——
- * 在途请求 reject、下次调用自动重建（worker_threads 时代 SIGTRAP 直接带崩
- * 整个应用，2026-07-09 真机事故）。
- * 提供 prewarm / synthesize / cancel / dispose，形制同 sherpaFunasrRuntime。
+ * 主侧本地 TTS 运行时：独立 worker **进程池**（Electron utilityProcess，
+ * 上限 3、默认 1、按需扩展）。与 ASR worker 分进程；worker 内 dlopen 原生库、
+ * 按参数缓存 OfflineTts 实例。native 层崩溃只死对应子进程——该进程在途请求
+ * reject、成员移池，其余成员与主进程不受影响（worker_threads 时代 SIGTRAP
+ * 直接带崩整个应用，2026-07-09 真机事故）。批量结束后 shrinkTo(1) 回收
+ * 多余空闲进程，避免多份模型常驻内存。
+ * 提供 prewarm / synthesize / cancel / setPoolSize / shrinkTo / dispose。
  */
 class SherpaTtsRuntime {
-  private worker: UtilityProcess | null = null;
+  private pool: TtsWorkerHandle[] = [];
+  private poolSize = 1;
   private seq = 0;
   private pending = new Map<
     string,
     {
       resolve: (r: TtsSynthesisResult) => void;
       reject: (e: Error) => void;
+      handle: TtsWorkerHandle;
     }
   >();
 
-  private ensureWorker(): UtilityProcess {
-    if (this.worker) return this.worker;
+  /** 目标池量（1..TTS_POOL_MAX）；扩张按需、收缩走 shrinkTo。 */
+  setPoolSize(n: number): void {
+    const size = Math.max(1, Math.min(TTS_POOL_MAX, Math.floor(n) || 1));
+    this.poolSize = size;
+  }
+
+  /** 收缩池到 n：仅回收空闲成员（在途的自然跑完后由下次 shrink 回收）。 */
+  shrinkTo(n: number): void {
+    const target = Math.max(1, Math.min(TTS_POOL_MAX, Math.floor(n) || 1));
+    this.poolSize = target;
+    let toRemove = this.pool.length - target;
+    if (toRemove <= 0) return;
+    let removed = 0;
+    this.pool = this.pool.filter((h) => {
+      if (toRemove <= 0 || h.busy > 0) return true;
+      h.alive = false;
+      try {
+        h.proc.postMessage({ type: 'dispose' });
+        h.proc.kill();
+      } catch {
+        /* ignore */
+      }
+      toRemove -= 1;
+      removed += 1;
+      return false;
+    });
+    if (removed > 0) {
+      logMessage(`tts pool shrunk by ${removed} (target ${target})`, 'info');
+    }
+  }
+
+  private spawnWorker(): TtsWorkerHandle {
     if (!isSherpaLibInstalled()) {
       throw new Error('sherpa native lib not installed');
     }
     const libDir = getSherpaLibDir();
-    const w = utilityProcess.fork(workerPath(), [], {
+    const proc = utilityProcess.fork(workerPath(), [], {
       serviceName: 'smartsub-tts-worker',
       stdio: 'pipe',
       env: {
@@ -88,32 +131,47 @@ class SherpaTtsRuntime {
         }`,
       },
     });
-    w.on('message', (msg: any) => this.onMessage(msg));
+    const handle: TtsWorkerHandle = { proc, busy: 0, alive: true };
+    proc.on('message', (msg: any) => this.onMessage(handle, msg));
     // native 崩溃前的 stderr 是关键诊断线索（onnxruntime/sherpa 报错都走这里）。
-    w.stderr?.on('data', (d: Buffer) => {
+    proc.stderr?.on('data', (d: Buffer) => {
       const line = String(d).trim();
       if (line) logMessage(`tts worker stderr: ${line}`, 'warning');
     });
-    w.on('exit', (code) => {
+    proc.on('exit', (code) => {
+      handle.alive = false;
+      this.pool = this.pool.filter((h) => h !== handle);
       if (code !== 0) {
-        this.failAll(
+        this.failOwn(
+          handle,
           new Error(
             `本地 TTS 引擎异常退出（code ${code}），已自动重置，请重试`,
           ),
         );
         logMessage(`tts worker exited abnormally (code ${code})`, 'error');
       }
-      this.worker = null;
     });
-    this.worker = w;
-    return w;
+    this.pool.push(handle);
+    return handle;
   }
 
-  private onMessage(msg: any): void {
+  /** 派发目标：在途最少的存活成员；池未达目标量则扩员。 */
+  private pickWorker(): TtsWorkerHandle {
+    if (this.pool.length < this.poolSize) return this.spawnWorker();
+    if (this.pool.length === 0) return this.spawnWorker();
+    let best = this.pool[0];
+    for (const h of this.pool) {
+      if (h.busy < best.busy) best = h;
+    }
+    return best;
+  }
+
+  private onMessage(handle: TtsWorkerHandle, msg: any): void {
     if (msg.type === 'ready') return;
     const entry = this.pending.get(msg.id);
     if (!entry) return;
     this.pending.delete(msg.id);
+    entry.handle.busy = Math.max(0, entry.handle.busy - 1);
     if (msg.type === 'done') {
       entry.resolve({
         sampleRate: msg.sampleRate,
@@ -127,15 +185,23 @@ class SherpaTtsRuntime {
     }
   }
 
-  private failAll(e: Error): void {
-    this.pending.forEach((entry) => entry.reject(e));
-    this.pending.clear();
+  /** 仅 reject 某个进程的在途请求（池内其余成员不受影响）。 */
+  private failOwn(handle: TtsWorkerHandle, e: Error): void {
+    const own: string[] = [];
+    this.pending.forEach((entry, id) => {
+      if (entry.handle === handle) own.push(id);
+    });
+    for (const id of own) {
+      const entry = this.pending.get(id);
+      this.pending.delete(id);
+      entry?.reject(e);
+    }
   }
 
-  /** 预热：仅 load 模型，不合成。失败非致命。 */
+  /** 预热：仅 load 模型，不合成（只预热一个成员）。失败非致命。 */
   prewarm(model: TtsModelRequest): void {
     try {
-      this.ensureWorker().postMessage({ type: 'load', model });
+      this.pickWorker().proc.postMessage({ type: 'load', model });
     } catch (e) {
       logMessage(`tts prewarm skipped: ${e}`, 'warning');
     }
@@ -143,8 +209,8 @@ class SherpaTtsRuntime {
 
   /**
    * 单段合成：text 以 sid（音色序号，voice id 的映射在 catalog 层）与 speed
-   * 合成为 16-bit PCM wav 落盘 outWavPath。串行队列由调用方（管线并发闸）保证。
-   * 克隆合成（zipvoice）经 generationConfig 携参考音频路径与参考文本。
+   * 合成为 16-bit PCM wav 落盘 outWavPath。并发闸由调用方（管线）控制，
+   * 池内按在途最少派发。克隆合成（zipvoice）经 generationConfig 携参考对。
    */
   synthesize(req: {
     model: TtsModelRequest;
@@ -154,23 +220,34 @@ class SherpaTtsRuntime {
     outWavPath: string;
     generationConfig?: TtsGenerationConfig;
   }): { id: string; result: Promise<TtsSynthesisResult> } {
-    const w = this.ensureWorker();
+    const handle = this.pickWorker();
     const id = `s${++this.seq}`;
+    handle.busy += 1;
     const result = new Promise<TtsSynthesisResult>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { resolve, reject, handle });
     });
-    w.postMessage({ type: 'synthesize', id, ...req });
+    handle.proc.postMessage({ type: 'synthesize', id, ...req });
     return { id, result };
   }
 
   cancel(id: string): void {
-    this.worker?.postMessage({ type: 'cancel', id });
+    const entry = this.pending.get(id);
+    if (entry?.handle.alive) {
+      entry.handle.proc.postMessage({ type: 'cancel', id });
+    }
   }
 
   dispose(): void {
-    this.worker?.postMessage({ type: 'dispose' });
-    this.worker?.kill();
-    this.worker = null;
+    for (const h of this.pool) {
+      h.alive = false;
+      try {
+        h.proc.postMessage({ type: 'dispose' });
+        h.proc.kill();
+      } catch {
+        /* ignore */
+      }
+    }
+    this.pool = [];
   }
 }
 

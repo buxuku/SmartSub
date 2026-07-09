@@ -51,6 +51,7 @@ interface PersistedDubbingConfig {
   voice: string;
   globalSpeed: number;
   cloneQuality?: DubbingCloneQuality;
+  localConcurrency?: number;
   background: DubbingBackgroundMode;
   output: DubbingOutputMode;
   audioFormat: DubbingAudioFormat;
@@ -64,6 +65,7 @@ const DEFAULT_PERSISTED: PersistedDubbingConfig = {
   voice: '',
   globalSpeed: 1,
   cloneQuality: 'standard',
+  localConcurrency: 1,
   background: 'mute',
   output: 'replaceTrack',
   audioFormat: 'wav',
@@ -273,6 +275,7 @@ export function useDubbing(options?: {
       voice: activeVoice,
       globalSpeed: persisted.globalSpeed,
       cloneQuality: persisted.cloneQuality ?? 'standard',
+      localConcurrency: persisted.localConcurrency ?? 1,
       background: persisted.background,
       output: videoPath && !mediaIsAudio ? persisted.output : 'audioOnly',
       audioFormat: persisted.audioFormat,

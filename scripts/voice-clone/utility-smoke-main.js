@@ -120,7 +120,36 @@ async function main() {
     path.join(outDir, 'utility-smoke-3.wav'),
   );
   console.log(`阶段3 重建后合成 OK: ${r3.durationMs}ms`);
+
+  // ── 阶段 4：双进程并行（进程池语义）——墙钟应显著小于串行和 ──
+  const TEXT_A = '并行合成的第一句话，用来测量墙钟时间。';
+  const TEXT_B = '并行合成的第二句话，两个进程同时推理。';
+  // 串行基线（同一进程先后两句）。
+  let t = Date.now();
+  await synthOnce(w2, 's4a', TEXT_A, path.join(outDir, 'utility-serial-a.wav'));
+  await synthOnce(w2, 's4b', TEXT_B, path.join(outDir, 'utility-serial-b.wav'));
+  const serialMs = Date.now() - t;
+  // 双进程并行（w3 预热后计时）。
+  const w3 = forkWorker();
+  await synthOnce(w3, 'warm', '预热。', path.join(outDir, 'utility-warm.wav'));
+  t = Date.now();
+  const [p1, p2] = await Promise.all([
+    synthOnce(w2, 's5a', TEXT_A, path.join(outDir, 'utility-par-a.wav')),
+    synthOnce(w3, 's5b', TEXT_B, path.join(outDir, 'utility-par-b.wav')),
+  ]);
+  const parallelMs = Date.now() - t;
+  console.log(
+    `阶段4 串行 ${serialMs}ms vs 双进程并行 ${parallelMs}ms（音频 ${p1.durationMs}/${p2.durationMs}ms）`,
+  );
+  if (parallelMs > serialMs * 0.75) {
+    console.error('并行未获得预期收益（>75% 串行耗时）');
+    w2.kill();
+    w3.kill();
+    app.exit(1);
+    return;
+  }
   w2.kill();
+  w3.kill();
 
   console.log('\nutility-process smoke OK');
   app.exit(0);
