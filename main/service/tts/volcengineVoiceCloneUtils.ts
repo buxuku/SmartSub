@@ -153,24 +153,36 @@ export function extractVolcCloneStatusValue(payload: unknown): number | null {
   return null;
 }
 
+/** 剩余训练次数提取（get_voice 响应 `available_training_times`；缺省 null）。 */
+export function extractVolcTrainingTimesLeft(payload: unknown): number | null {
+  const n = Number(
+    (payload as { available_training_times?: unknown })
+      ?.available_training_times,
+  );
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 /**
  * 状态响应解析：官方 status 枚举——0 NotFound / 1 Training / 2 Success /
  * 3 Failed / 4 Active（2 与 4 均可发起合成）。`found=false` 表示响应里
  * 找不到状态字段（调用方走回退通道）；未知取值按 training 处理
- * （宁可多轮询，不误报失败）。
+ * （宁可多轮询，不误报失败）。剩余训练次数随包提取。
  */
 export function parseVolcCloneStatus(payload: unknown): {
   state: VolcCloneTrainState;
   raw?: number;
   found: boolean;
+  trainingTimesLeft: number | null;
 } {
   const status = extractVolcCloneStatusValue(payload);
-  if (status === null) return { state: 'training', found: false };
+  const trainingTimesLeft = extractVolcTrainingTimesLeft(payload);
+  if (status === null)
+    return { state: 'training', found: false, trainingTimesLeft };
   if (status === 2 || status === 4)
-    return { state: 'ready', raw: status, found: true };
+    return { state: 'ready', raw: status, found: true, trainingTimesLeft };
   if (status === 3 || status === 0)
-    return { state: 'failed', raw: status, found: true };
-  return { state: 'training', raw: status, found: true };
+    return { state: 'failed', raw: status, found: true, trainingTimesLeft };
+  return { state: 'training', raw: status, found: true, trainingTimesLeft };
 }
 
 /**

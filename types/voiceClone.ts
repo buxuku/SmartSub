@@ -29,6 +29,8 @@ export interface ClonedVoice {
   trainStatus?: VoiceCloneTrainStatus;
   /** 训练失败原因（trainStatus = 'failed' 时）。 */
   trainError?: string;
+  /** 火山：该槽位剩余训练次数（状态查询回填）。 */
+  volcTrainingTimesLeft?: number;
   /** 试听样本 wav（创建完成后自动合成）。 */
   sampleWavPath?: string;
   /** 创建期质检快照。 */
@@ -184,6 +186,50 @@ export const CLONE_ZH_RATE_TARGET_CPS = 4.5;
 /** 矫正 speed 下限（超压缩场景 4.5/11.6≈0.39；防极端值失真）。 */
 export const CLONE_CORRECTIVE_SPEED_MIN = 0.35;
 
+// ── 按字幕行选段（向导 Step2，来源含字幕时）─────────────────────────────────
+
+export interface SubtitleCueLite {
+  startMs: number;
+  endMs: number;
+  text: string;
+}
+
+/** 行间隙超过该值视为语境断开，不再吸收。 */
+export const CUE_ABSORB_MAX_GAP_MS = 2000;
+
+/**
+ * 以点选字幕行为起点向后吸收相邻行成选区：行间隙 ≤ maxGapMs 才继续、
+ * 窗口触引擎硬上限即止、累计行时长达到推荐上限收口（不贪长）。
+ * 首尾各留 150ms 余量。点选行本身超上限时按上限截断。
+ */
+export function absorbCuesFrom(
+  cues: SubtitleCueLite[],
+  index: number,
+  target: CloneTargetRange,
+  maxGapMs = CUE_ABSORB_MAX_GAP_MS,
+): { startMs: number; endMs: number } | null {
+  const first = cues[index];
+  if (!first) return null;
+  const pad = 150;
+  const startMs = Math.max(0, first.startMs - pad);
+  let endMs = first.endMs;
+  let speech = first.endMs - first.startMs;
+  for (let i = index + 1; i < cues.length; i += 1) {
+    const cue = cues[i];
+    const gap = cue.startMs - endMs;
+    if (gap > maxGapMs) break;
+    const candidateEnd = cue.endMs + pad;
+    if (candidateEnd - startMs > target.maxMs) break;
+    endMs = cue.endMs;
+    speech += cue.endMs - cue.startMs;
+    if (speech >= target.idealMaxMs) break;
+  }
+  return {
+    startMs,
+    endMs: Math.min(startMs + target.maxMs, endMs + pad),
+  };
+}
+
 /** 工作台 voiceId 的克隆音色前缀（`clone:<ClonedVoice.id>`）。 */
 export const CLONE_VOICE_PREFIX = 'clone:';
 
@@ -197,6 +243,83 @@ export function cloneIdFromVoiceId(voiceId: string): string {
 
 export function voiceIdOfClone(cloneId: string): string {
   return `${CLONE_VOICE_PREFIX}${cloneId}`;
+}
+
+// ── 音色导入导出（.svoice 单文件包）─────────────────────────────────────────
+
+export const SVOICE_FORMAT = 'smartsub-voice';
+export const SVOICE_VERSION = 1;
+export const SVOICE_EXT = 'svoice';
+
+/** .svoice 包结构：元信息 + 参考文本/质检快照 + wav 数据（base64）。 */
+export interface SvoicePackage {
+  format: typeof SVOICE_FORMAT;
+  version: number;
+  voice: {
+    name: string;
+    engine: VoiceCloneEngine;
+    language: 'zh' | 'en';
+    refText?: string;
+    /** 火山：同账号跨设备可复用的槽位 id。 */
+    speakerId?: string;
+    quality?: VoiceQualityReport;
+    createdAt: number;
+  };
+  refWavBase64?: string;
+  sampleWavBase64?: string;
+}
+
+/** 打包（wav 数据由调用方读盘转 base64 传入）。 */
+export function buildSvoicePackage(
+  voice: ClonedVoice,
+  refWavBase64?: string,
+  sampleWavBase64?: string,
+): SvoicePackage {
+  return {
+    format: SVOICE_FORMAT,
+    version: SVOICE_VERSION,
+    voice: {
+      name: voice.name,
+      engine: voice.engine,
+      language: voice.language,
+      refText: voice.refText,
+      speakerId: voice.speakerId,
+      quality: voice.quality,
+      createdAt: voice.createdAt,
+    },
+    refWavBase64,
+    sampleWavBase64,
+  };
+}
+
+/** 解析校验：结构/版本/引擎必备字段（zipvoice 需参考对；火山需槽位）。 */
+export function parseSvoicePackage(
+  payload: unknown,
+): { ok: true; pkg: SvoicePackage } | { ok: false; error: string } {
+  const p = payload as SvoicePackage | null;
+  if (!p || typeof p !== 'object' || p.format !== SVOICE_FORMAT) {
+    return { ok: false, error: 'format' };
+  }
+  if (p.version !== SVOICE_VERSION) {
+    return { ok: false, error: `version ${p.version}` };
+  }
+  const v = p.voice;
+  if (!v || typeof v.name !== 'string' || !v.name.trim()) {
+    return { ok: false, error: 'name' };
+  }
+  if (v.engine !== 'zipvoice' && v.engine !== 'volcengine') {
+    return { ok: false, error: 'engine' };
+  }
+  if (v.language !== 'zh' && v.language !== 'en') {
+    return { ok: false, error: 'language' };
+  }
+  if (v.engine === 'zipvoice' && (!p.refWavBase64 || !v.refText?.trim())) {
+    return { ok: false, error: 'reference' };
+  }
+  if (v.engine === 'volcengine' && !v.speakerId?.trim()) {
+    return { ok: false, error: 'speakerId' };
+  }
+  return { ok: true, pkg: p };
 }
 
 // ── 渲染层视图（voiceClone: IPC 的 data 形状）───────────────────────────────

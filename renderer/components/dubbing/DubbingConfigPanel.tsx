@@ -169,6 +169,33 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
         )}
       </div>
 
+      {/* 克隆质量档（仅克隆引擎） */}
+      {activeEngine?.cloneOnly && (
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium">{t('cloneQuality')}</label>
+          <Select
+            value={config.cloneQuality ?? 'standard'}
+            onValueChange={(v) =>
+              updateConfig({ cloneQuality: v as 'standard' | 'high' })
+            }
+            disabled={disabled}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="standard">
+                {t('cloneQualityStandard')}
+              </SelectItem>
+              <SelectItem value="high">{t('cloneQualityHigh')}</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {t('cloneQualityHint')}
+          </p>
+        </div>
+      )}
+
       {/* 整体语速 */}
       <div className="space-y-1.5">
         <label className="flex items-center justify-between text-sm font-medium">

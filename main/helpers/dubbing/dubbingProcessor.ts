@@ -182,7 +182,10 @@ interface EngineAdapter {
   ) => Promise<{ durationMs: number }>;
 }
 
-function buildEngineAdapter(engine: DubbingEngineSelection): EngineAdapter {
+function buildEngineAdapter(
+  engine: DubbingEngineSelection,
+  opts?: { cloneQuality?: 'standard' | 'high' },
+): EngineAdapter {
   if (engine.kind === 'local') {
     const modelId = engine.modelId as TtsModelId;
     const spec = TTS_MODELS[modelId];
@@ -246,6 +249,8 @@ function buildEngineAdapter(engine: DubbingEngineSelection): EngineAdapter {
               generationConfig: {
                 refWavPath: voice.refWavPath,
                 refText: voice.refText || '',
+                // 质量档：standard=4（RTF~0.44）/ high=8（~0.91，约两倍耗时）。
+                numSteps: opts?.cloneQuality === 'high' ? 8 : 4,
               },
             },
             signal,
@@ -458,7 +463,9 @@ export async function runDubbingBatch(
   opts?: { force?: boolean },
 ): Promise<BatchResult> {
   if (session.running) throw new Error('该会话已有合成任务进行中');
-  const adapter = buildEngineAdapter(config.engine);
+  const adapter = buildEngineAdapter(config.engine, {
+    cloneQuality: config.cloneQuality,
+  });
   session.running = true;
   session.abort = new AbortController();
   session.lastConfig = config;
@@ -573,7 +580,9 @@ export async function resynthesizeCue(
   if (!cue) throw new Error(`行不存在：${index}`);
   if (session.running) throw new Error('批量合成进行中，无法单行重生成');
 
-  const adapter = buildEngineAdapter(config.engine);
+  const adapter = buildEngineAdapter(config.engine, {
+    cloneQuality: config.cloneQuality,
+  });
   if (overrides.text !== undefined) cue.text = overrides.text.trim();
   if (overrides.voiceId !== undefined) {
     // '' = 清除行级覆盖，回落全局 voice。
@@ -845,8 +854,9 @@ export async function previewVoice(
   engine: DubbingEngineSelection,
   voiceId: string,
   text: string | undefined,
+  opts?: { cloneQuality?: 'standard' | 'high' },
 ): Promise<{ wavPath: string; durationMs: number }> {
-  const adapter = buildEngineAdapter(engine);
+  const adapter = buildEngineAdapter(engine, opts);
   // 克隆音色的默认试听文本按音色语言：ZipVoice 跨语言（参考英文 + 文本中文）
   // 时长预测严重不足，语音被压缩到不可辨——试听必须同语言才反映真实效果。
   let cloneLanguage: 'zh' | 'en' | undefined;

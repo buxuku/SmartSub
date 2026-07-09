@@ -29,14 +29,17 @@ import {
   saveClonedVoice,
 } from './voiceClone/voiceCloneManager';
 import { previewVoice } from './dubbing/dubbingProcessor';
-import { getTtsProviderById } from './ttsProviderManager';
+import { getTtsProviderById, getTtsProviders } from './ttsProviderManager';
 import {
   trainVolcCloneVoice,
   queryVolcCloneStatus,
 } from '../service/tts/volcengineVoiceClone';
 import {
   CLONE_TARGET_RANGES,
+  SVOICE_EXT,
+  buildSvoicePackage,
   dominantTextLanguage,
+  parseSvoicePackage,
   type ClonedVoice,
   type VoiceCloneEngine,
 } from '../../types/voiceClone';
@@ -117,21 +120,26 @@ function requireVolcCloneProvider(providerId: string | undefined) {
   return provider;
 }
 
-/** 轮询训练状态直至就绪/失败/超窗。 */
+/** 轮询训练状态直至就绪/失败/超窗（剩余训练次数随最后一次响应回传）。 */
 async function pollVolcTraining(
   provider: ReturnType<typeof requireVolcCloneProvider>,
   speakerId: string,
-): Promise<'ready' | 'training' | 'failed'> {
+): Promise<{
+  state: 'ready' | 'training' | 'failed';
+  trainingTimesLeft: number | null;
+}> {
+  let trainingTimesLeft: number | null = null;
   for (let i = 0; i < VOLC_POLL_MAX_TRIES; i += 1) {
     await new Promise((r) => setTimeout(r, VOLC_POLL_INTERVAL_MS));
     try {
-      const { state } = await queryVolcCloneStatus(provider, speakerId);
-      if (state !== 'training') return state;
+      const r = await queryVolcCloneStatus(provider, speakerId);
+      if (r.trainingTimesLeft != null) trainingTimesLeft = r.trainingTimesLeft;
+      if (r.state !== 'training') return { state: r.state, trainingTimesLeft };
     } catch (e) {
       logMessage(`volc clone status poll failed: ${e}`, 'warning');
     }
   }
-  return 'training';
+  return { state: 'training', trainingTimesLeft };
 }
 
 export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
@@ -263,6 +271,33 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
     },
   );
 
+  // 字幕行清单（「从最近任务」来源的按行选段）。
+  ipcMain.handle(
+    'voiceClone:subtitleCues',
+    async (
+      _event,
+      { subtitlePath }: { subtitlePath: string },
+    ): Promise<VoiceCloneResponse> => {
+      try {
+        if (!subtitlePath || !fs.existsSync(subtitlePath)) {
+          return { success: false, error: '字幕文件不存在' };
+        }
+        const content = fs.readFileSync(subtitlePath, 'utf-8');
+        const cues = parseSubtitleCues(
+          content,
+          detectSubtitleFormat(subtitlePath),
+        ).map((c) => ({
+          startMs: c.startMs,
+          endMs: c.endMs,
+          text: c.text.replace(/\n+/g, ' ').trim(),
+        }));
+        return { success: true, data: cues };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
   // 按选区时间窗取字幕文本（「从最近任务」来源的参考文本预填）。
   ipcMain.handle(
     'voiceClone:subtitleTextForRange',
@@ -309,6 +344,7 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
         language,
         name,
         refText,
+        localDenoise,
         volc,
       }: {
         analysisId: string;
@@ -318,6 +354,8 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
         language: 'zh' | 'en';
         name: string;
         refText: string;
+        /** zipvoice：本地降噪（gtcrn；损相似度，噪音黄牌素材建议开）。 */
+        localDenoise?: boolean;
         /** 火山分支参数（engine='volcengine' 时必传）。 */
         volc?: {
           providerId: string;
@@ -359,6 +397,8 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
           endMs,
           target,
           path.join(dir, 'ref.wav'),
+          // 本地降噪仅 zipvoice 消费（火山有服务端降噪开关）。
+          { denoise: engine === 'zipvoice' && !!localDenoise },
         );
         if (report.issues.some((i) => i.severity === 'error')) {
           fs.rmSync(dir, { recursive: true, force: true });
@@ -396,8 +436,14 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
             language,
             options: { denoise: volc?.denoise, mss: volc?.mss },
           });
-          const state = await pollVolcTraining(volcProvider, speakerId);
+          const { state, trainingTimesLeft } = await pollVolcTraining(
+            volcProvider,
+            speakerId,
+          );
           voice.trainStatus = state === 'failed' ? 'failed' : state;
+          if (trainingTimesLeft != null) {
+            voice.volcTrainingTimesLeft = trainingTimesLeft;
+          }
           if (state === 'failed') {
             voice.trainError = '服务端训练失败，请更换素材或开启降噪后重试';
           }
@@ -439,10 +485,16 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
       }
       try {
         const provider = requireVolcCloneProvider(voice.providerId);
-        const { state } = await queryVolcCloneStatus(provider, voice.speakerId);
+        const { state, trainingTimesLeft } = await queryVolcCloneStatus(
+          provider,
+          voice.speakerId,
+        );
         const updated: ClonedVoice = {
           ...voice,
           trainStatus: state,
+          ...(trainingTimesLeft != null
+            ? { volcTrainingTimesLeft: trainingTimesLeft }
+            : {}),
           trainError:
             state === 'failed'
               ? '服务端训练失败，请更换素材或开启降噪后重试'
@@ -488,10 +540,16 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
           language: voice.language,
           options: { denoise, mss },
         });
-        const state = await pollVolcTraining(provider, voice.speakerId);
+        const { state, trainingTimesLeft } = await pollVolcTraining(
+          provider,
+          voice.speakerId,
+        );
         const updated: ClonedVoice = {
           ...voice,
           trainStatus: state === 'failed' ? 'failed' : state,
+          ...(trainingTimesLeft != null
+            ? { volcTrainingTimesLeft: trainingTimesLeft }
+            : {}),
           trainError:
             state === 'failed'
               ? '服务端训练失败，请更换素材或开启降噪后重试'
@@ -576,6 +634,116 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
       return { success: true, data: true };
     },
   );
+
+  // 导出音色（.svoice 单文件：元信息 + 参考文本 + wav base64）。
+  ipcMain.handle(
+    'voiceClone:export',
+    async (_event, { id }: { id: string }): Promise<VoiceCloneResponse> => {
+      const voice = getClonedVoiceById(id);
+      if (!voice) return { success: false, error: '克隆音色不存在' };
+      try {
+        const result = await dialog.showSaveDialog(mainWindow, {
+          defaultPath: `${voice.name}.${SVOICE_EXT}`,
+          filters: [{ name: 'SmartSub Voice', extensions: [SVOICE_EXT] }],
+        });
+        if (result.canceled || !result.filePath) {
+          return { success: false, cancelled: true };
+        }
+        const readB64 = (p?: string) =>
+          p && fs.existsSync(p)
+            ? fs.readFileSync(p).toString('base64')
+            : undefined;
+        const pkg = buildSvoicePackage(
+          voice,
+          readB64(voice.refWavPath),
+          readB64(voice.sampleWavPath),
+        );
+        fs.writeFileSync(result.filePath, JSON.stringify(pkg));
+        return { success: true, data: result.filePath };
+      } catch (error) {
+        logMessage(`voiceClone export failed: ${error}`, 'error');
+        return fail(error);
+      }
+    },
+  );
+
+  // 导入音色（生成新 id，不覆盖既有；火山音色重绑本机豆包实例）。
+  ipcMain.handle('voiceClone:import', async (): Promise<VoiceCloneResponse> => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [{ name: 'SmartSub Voice', extensions: [SVOICE_EXT] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, cancelled: true };
+    }
+    let dir: string | null = null;
+    try {
+      let payload: unknown;
+      try {
+        payload = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf-8'));
+      } catch {
+        return {
+          success: false,
+          error: '文件不是有效的音色包（JSON 解析失败）',
+        };
+      }
+      const parsed = parseSvoicePackage(payload);
+      if (!parsed.ok) {
+        return {
+          success: false,
+          error: `音色包校验失败（${parsed.error}）`,
+        };
+      }
+      const { pkg } = parsed;
+      const id = newClonedVoiceId();
+      dir = getClonedVoiceDir(id);
+      const voice: ClonedVoice = {
+        id,
+        name: pkg.voice.name,
+        engine: pkg.voice.engine,
+        language: pkg.voice.language,
+        refText: pkg.voice.refText,
+        quality: pkg.voice.quality,
+        createdAt: Date.now(),
+      };
+      if (pkg.refWavBase64) {
+        voice.refWavPath = path.join(dir, 'ref.wav');
+        fs.writeFileSync(
+          voice.refWavPath,
+          Buffer.from(pkg.refWavBase64, 'base64'),
+        );
+      }
+      if (pkg.sampleWavBase64) {
+        voice.sampleWavPath = path.join(dir, 'sample.wav');
+        fs.writeFileSync(
+          voice.sampleWavPath,
+          Buffer.from(pkg.sampleWavBase64, 'base64'),
+        );
+      }
+      if (pkg.voice.engine === 'volcengine') {
+        voice.speakerId = pkg.voice.speakerId;
+        // 槽位属账号资产：重绑本机已配置的豆包实例（品牌单例），状态按就绪
+        // （导出前提是已训练），刷新可校正。
+        const volcProvider = getTtsProviders().find(
+          (p) => p.type === TTS_VOLCENGINE,
+        );
+        voice.providerId = volcProvider ? String(volcProvider.id) : undefined;
+        voice.trainStatus = 'ready';
+      }
+      saveClonedVoice(voice);
+      return { success: true, data: voice };
+    } catch (error) {
+      if (dir) {
+        try {
+          fs.rmSync(dir, { recursive: true, force: true });
+        } catch {
+          /* ignore */
+        }
+      }
+      logMessage(`voiceClone import failed: ${error}`, 'error');
+      return fail(error);
+    }
+  });
 
   logMessage('声音克隆 IPC 处理函数已注册', 'info');
 }

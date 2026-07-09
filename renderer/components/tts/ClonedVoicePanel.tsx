@@ -21,6 +21,7 @@ import {
 import {
   AlertTriangle,
   Check,
+  Download,
   Info,
   Loader2,
   Pencil,
@@ -54,6 +55,7 @@ export default function ClonedVoicePanel({
   onRegenerateSample,
   onVolcRefreshStatus,
   onVolcRetrain,
+  onExport,
 }: {
   voice: ClonedVoiceView;
   onRename: (id: string, name: string) => Promise<unknown>;
@@ -61,6 +63,7 @@ export default function ClonedVoicePanel({
   onRegenerateSample: (id: string) => Promise<unknown>;
   onVolcRefreshStatus?: (id: string) => Promise<unknown>;
   onVolcRetrain?: (id: string) => Promise<unknown>;
+  onExport?: (id: string) => Promise<unknown>;
 }) {
   const { t } = useTranslation('voiceClone');
   const [editing, setEditing] = useState(false);
@@ -187,6 +190,12 @@ export default function ClonedVoicePanel({
             {t('seconds', { value: sec(voice.quality.speechMs) })}
           </span>
         )}
+        {voice.engine === 'volcengine' &&
+          voice.volcTrainingTimesLeft != null && (
+            <span className="text-xs text-muted-foreground">
+              {t('trainingTimesLeft', { count: voice.volcTrainingTimesLeft })}
+            </span>
+          )}
         <div className="ml-auto flex items-center gap-1.5">
           {editing ? (
             <div className="flex items-center gap-1">
@@ -438,7 +447,30 @@ export default function ClonedVoicePanel({
         <span>
           {t('metaCreated')}: {new Date(voice.createdAt).toLocaleString()}
         </span>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1">
+          {onExport && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5"
+              onClick={async () => {
+                const r = (await onExport(voice.id)) as {
+                  success?: boolean;
+                  data?: string;
+                  error?: string;
+                  cancelled?: boolean;
+                } | null;
+                if (r?.success && r.data) {
+                  toast.success(t('exportDone', { path: r.data }));
+                } else if (r && r.success === false && r.error) {
+                  toast.error(r.error);
+                }
+              }}
+            >
+              <Download className="h-3.5 w-3.5" />
+              {t('exportVoice')}
+            </Button>
+          )}
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button

@@ -333,7 +333,7 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
     },
   );
 
-  // 试听（合成前预听 voice 效果）。
+  // 试听（合成前预听 voice 效果；克隆引擎随工作台质量档）。
   ipcMain.handle(
     'dubbing:previewVoice',
     async (
@@ -342,14 +342,16 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
         engine,
         voiceId,
         text,
+        cloneQuality,
       }: {
         engine: DubbingConfig['engine'];
         voiceId: string;
         text?: string;
+        cloneQuality?: DubbingConfig['cloneQuality'];
       },
     ): Promise<DubbingResponse> => {
       try {
-        const r = await previewVoice(engine, voiceId, text);
+        const r = await previewVoice(engine, voiceId, text, { cloneQuality });
         return { success: true, data: r.wavPath };
       } catch (error) {
         return fail(error);

@@ -70,7 +70,9 @@ import type {
 } from '../../../types/voiceClone';
 import {
   CLONE_TARGET_RANGES,
+  absorbCuesFrom,
   dominantTextLanguage,
+  type SubtitleCueLite,
 } from '../../../types/voiceClone';
 import type { WorkItem } from '../../../types/workItem';
 import {
@@ -140,6 +142,8 @@ export default function CloneVoiceWizard({
   const [speakerId, setSpeakerId] = useState('');
   const [denoise, setDenoise] = useState(false);
   const [mss, setMss] = useState(false);
+  /** zipvoice 分支：本地 gtcrn 降噪（噪音黄牌素材的兜底）。 */
+  const [localDenoise, setLocalDenoise] = useState(false);
 
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
@@ -148,6 +152,8 @@ export default function CloneVoiceWizard({
 
   const [range, setRange] = useState<SegmentRange>({ startMs: 0, endMs: 0 });
   const [report, setReport] = useState<VoiceQualityReport | null>(null);
+  /** 字幕行清单（来源含字幕时按行选段）。 */
+  const [subtitleCues, setSubtitleCues] = useState<SubtitleCueLite[]>([]);
 
   const [language, setLanguage] = useState<'zh' | 'en'>('zh');
   const [refText, setRefText] = useState('');
@@ -259,6 +265,7 @@ export default function CloneVoiceWizard({
     setAnalysis(null);
     setRange({ startMs: 0, endMs: 0 });
     setReport(null);
+    setSubtitleCues([]);
     setRefText('');
     setTextSource(null);
     setAsrEngineLabel('');
@@ -268,6 +275,7 @@ export default function CloneVoiceWizard({
     setSpeakerId('');
     setDenoise(false);
     setMss(false);
+    setLocalDenoise(false);
     setCreating(false);
     setCreateError(null);
     setCreated(null);
@@ -297,6 +305,15 @@ export default function CloneVoiceWizard({
       setReport(null);
       setRefText('');
       setTextSource(null);
+      setSubtitleCues([]);
+      if (subtitlePath) {
+        window.ipc
+          .invoke('voiceClone:subtitleCues', { subtitlePath })
+          .then((r: any) => {
+            if (r?.success) setSubtitleCues(r.data ?? []);
+          })
+          .catch(() => setSubtitleCues([]));
+      }
       try {
         const r = await window.ipc.invoke('voiceClone:analyze', {
           sourcePath: src,
@@ -435,6 +452,7 @@ export default function CloneVoiceWizard({
         language,
         name: name.trim(),
         refText: refText.trim(),
+        ...(engine === 'zipvoice' ? { localDenoise } : {}),
         ...(engine === 'volcengine' && volcProvider
           ? {
               volc: {
@@ -852,6 +870,57 @@ export default function CloneVoiceWizard({
                       )}
                     </div>
                   )}
+
+                  {/* 按字幕行选段（来源含字幕时）：点行吸收相邻行成选区 */}
+                  {subtitleCues.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        {t('cueListTitle')}
+                      </p>
+                      <div className="max-h-36 overflow-y-auto rounded-md border">
+                        {subtitleCues.map((cue, i) => {
+                          const inRange =
+                            cue.endMs > range.startMs &&
+                            cue.startMs < range.endMs;
+                          return (
+                            <button
+                              key={`${cue.startMs}-${i}`}
+                              type="button"
+                              onClick={() => {
+                                const next = absorbCuesFrom(
+                                  subtitleCues,
+                                  i,
+                                  target,
+                                );
+                                if (next && analysis) {
+                                  setRange({
+                                    startMs: next.startMs,
+                                    endMs: Math.min(
+                                      next.endMs,
+                                      analysis.durationMs,
+                                    ),
+                                  });
+                                }
+                              }}
+                              className={cn(
+                                'flex w-full items-baseline gap-2 px-2 py-1 text-left text-xs transition-colors hover:bg-muted/60',
+                                inRange && 'bg-primary/10',
+                              )}
+                            >
+                              <span className="shrink-0 tabular-nums text-muted-foreground">
+                                {new Date(cue.startMs)
+                                  .toISOString()
+                                  .slice(11, 19)}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate">
+                                {cue.text}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : null}
             </div>
@@ -1028,6 +1097,30 @@ export default function CloneVoiceWizard({
                         </div>
                       </div>
                     </>
+                  )}
+
+                  {/* zipvoice 分支：本地降噪开关（噪音黄牌时给建议） */}
+                  {engine === 'zipvoice' && (
+                    <div className="flex items-center justify-between rounded-md border p-2.5">
+                      <div>
+                        <p className="text-xs font-medium">
+                          {t('localDenoise')}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {t('localDenoiseHint')}
+                          {report?.issues.some((i) => i.code === 'low-snr') && (
+                            <span className="ml-1 text-amber-600">
+                              {t('localDenoiseSuggest')}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <Switch
+                        checked={localDenoise}
+                        onCheckedChange={setLocalDenoise}
+                        disabled={creating}
+                      />
+                    </div>
                   )}
 
                   <label className="flex cursor-pointer items-start gap-2 text-xs">

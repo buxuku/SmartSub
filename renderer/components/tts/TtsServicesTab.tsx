@@ -19,7 +19,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Mic2, Plus, X } from 'lucide-react';
+import { HardDriveUpload, Mic2, Plus, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from 'lib/utils';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import useTtsProviders from 'hooks/useTtsProviders';
@@ -326,6 +327,29 @@ const TtsServicesTab: React.FC = () => {
                 {cloneT('createVoice')}
               </span>
             </button>
+            <button
+              type="button"
+              onClick={async () => {
+                const r = await clones.importVoice();
+                if (r?.success && r.data?.name) {
+                  toast.success(cloneT('importDone', { name: r.data.name }));
+                  setSelectedView(`${CLONE_VIEW_PREFIX}${r.data.id}`);
+                } else if (r && r.success === false && r.error) {
+                  toast.error(r.error);
+                }
+              }}
+              className={cn(
+                'flex items-center gap-2 rounded-lg border border-dashed border-input px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
+                'shrink-0 md:w-full',
+              )}
+            >
+              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
+                <HardDriveUpload className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1 truncate">
+                {cloneT('importVoice')}
+              </span>
+            </button>
           </div>
         </nav>
 
@@ -399,6 +423,7 @@ const TtsServicesTab: React.FC = () => {
               onRegenerateSample={clones.regenerateSample}
               onVolcRefreshStatus={clones.volcRefreshStatus}
               onVolcRetrain={clones.volcRetrain}
+              onExport={clones.exportVoice}
             />
           ) : activeProviderView ? (
             <TtsProviderPanel

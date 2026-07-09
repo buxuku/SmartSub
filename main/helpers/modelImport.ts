@@ -48,6 +48,17 @@ export function resolveBundledVadPath(extraResourcesRoot: string): string {
   return path.join(extraResourcesRoot, SHERPA_VAD_SUBPATH);
 }
 
+/** 随包 gtcrn 降噪模型（克隆参考音频的本地降噪可选项）。 */
+export const SHERPA_DENOISE_SUBPATH = path.join(
+  'sherpa',
+  'denoise',
+  'gtcrn_simple.onnx',
+);
+
+export function resolveBundledDenoisePath(extraResourcesRoot: string): string {
+  return path.join(extraResourcesRoot, SHERPA_DENOISE_SUBPATH);
+}
+
 /** CT2(faster-whisper) 模型导入的最小必需文件集（模型权重 + 配置）。 */
 export const CT2_REQUIRED_FILES: string[] = ['model.bin', 'config.json'];
 

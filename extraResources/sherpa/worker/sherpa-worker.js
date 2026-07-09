@@ -267,6 +267,44 @@ function ensureVadOnly(req) {
   return vadOnly;
 }
 
+// 语音降噪（gtcrn，克隆参考音频的本地降噪可选项）：读 wav → 降噪 → 写 wav。
+// 模型 ~500KB 常驻缓存；输出采样率以 denoiser.sampleRate 为准（gtcrn 16k）。
+let denoiser = null;
+let denoiserKey = '';
+
+function denoise(req) {
+  if (!denoiser || denoiserKey !== req.denoiseModel) {
+    denoiser = new sherpa.OfflineSpeechDenoiser({
+      model: { gtcrn: { model: req.denoiseModel }, numThreads: 1, debug: 0 },
+    });
+    denoiserKey = req.denoiseModel;
+  }
+  const wave = sherpa.readWave(req.audioFile, false);
+  const out = denoiser.run({
+    samples: wave.samples,
+    sampleRate: wave.sampleRate,
+    enableExternalBuffer: false,
+  });
+  if (!out || !out.samples || out.samples.length === 0) {
+    channel.post({
+      type: 'error',
+      id: req.id,
+      message: 'denoise produced empty audio',
+    });
+    return;
+  }
+  sherpa.writeWave(req.outFile, {
+    samples: out.samples,
+    sampleRate: out.sampleRate,
+  });
+  channel.post({
+    type: 'done',
+    id: req.id,
+    segments: [],
+    sampleRate: out.sampleRate,
+  });
+}
+
 // 只跑 VAD 拿语音段 [{start,end}]（秒），不做 ASR。供 builtin 时间轴贴齐使用。
 async function detectSpeech(req) {
   const v = ensureVadOnly(req);
@@ -324,6 +362,14 @@ channel.onMessage((req) => {
     detectSpeech(req).catch((e) =>
       channel.post({ type: 'error', id: req.id, message: String(e) }),
     );
+    return;
+  }
+  if (req.type === 'denoise') {
+    try {
+      denoise(req);
+    } catch (e) {
+      channel.post({ type: 'error', id: req.id, message: String(e) });
+    }
     return;
   }
 });

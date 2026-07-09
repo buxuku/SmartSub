@@ -138,7 +138,11 @@ export async function queryVolcCloneStatus(
   provider: TtsProvider,
   speakerId: string,
   signal?: AbortSignal,
-): Promise<{ state: VolcCloneTrainState; raw?: number }> {
+): Promise<{
+  state: VolcCloneTrainState;
+  raw?: number;
+  trainingTimesLeft?: number | null;
+}> {
   const { appId, accessToken } = cloneCredentials(provider);
 
   let v3Snippet = '';

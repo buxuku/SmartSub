@@ -14,6 +14,7 @@ import type {
   DubbingExportView,
   DubbingEngineSelection,
   DubbingBackgroundMode,
+  DubbingCloneQuality,
   DubbingOutputMode,
   DubbingAudioFormat,
   DubbingOverflowMode,
@@ -49,6 +50,7 @@ interface PersistedDubbingConfig {
   engineKey: string;
   voice: string;
   globalSpeed: number;
+  cloneQuality?: DubbingCloneQuality;
   background: DubbingBackgroundMode;
   output: DubbingOutputMode;
   audioFormat: DubbingAudioFormat;
@@ -61,6 +63,7 @@ const DEFAULT_PERSISTED: PersistedDubbingConfig = {
   engineKey: '',
   voice: '',
   globalSpeed: 1,
+  cloneQuality: 'standard',
   background: 'mute',
   output: 'replaceTrack',
   audioFormat: 'wav',
@@ -269,6 +272,7 @@ export function useDubbing(options?: {
       engine,
       voice: activeVoice,
       globalSpeed: persisted.globalSpeed,
+      cloneQuality: persisted.cloneQuality ?? 'standard',
       background: persisted.background,
       output: videoPath && !mediaIsAudio ? persisted.output : 'audioOnly',
       audioFormat: persisted.audioFormat,
@@ -599,6 +603,7 @@ export function useDubbing(options?: {
           engine: config.engine,
           voiceId: voiceId || config.voice,
           text,
+          cloneQuality: config.cloneQuality,
         });
         if (result.success && result.data) playWav(result.data, 'preview');
         else if (!result.success)

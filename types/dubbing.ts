@@ -68,6 +68,9 @@ export type DubbingOverflowMode = 'truncate' | 'shift';
  */
 export type DubbingOverlapMode = 'shift' | 'mix';
 
+/** 克隆合成质量档（zipvoice numSteps 4/8；高档约两倍耗时）。 */
+export type DubbingCloneQuality = 'standard' | 'high';
+
 /** 配音工作台全局配置（userConfig 记忆）。 */
 export interface DubbingConfig {
   engine: DubbingEngineSelection;
@@ -75,6 +78,8 @@ export interface DubbingConfig {
   voice: string;
   /** 整体语速（1 = 原速），叠加在对齐引擎的行级变速之上。 */
   globalSpeed: number;
+  /** 克隆引擎质量档（仅 cloneOnly 引擎消费；默认 standard）。 */
+  cloneQuality?: DubbingCloneQuality;
   background: DubbingBackgroundMode;
   output: DubbingOutputMode;
   /** output = 'audioOnly' 时生效。 */

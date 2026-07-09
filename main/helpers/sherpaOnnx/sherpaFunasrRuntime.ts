@@ -177,6 +177,27 @@ class SherpaFunasrRuntime {
     return { id, result };
   }
 
+  /**
+   * 语音降噪（gtcrn 随包模型）：读 wav → 降噪 → 写 wav（输出 16k）。
+   * 克隆参考音频的本地降噪可选项；复用常驻 worker（模型 ~500KB 常驻缓存）。
+   */
+  denoise(
+    audioFile: string,
+    denoiseModel: string,
+    outFile: string,
+  ): { id: string; result: Promise<void> } {
+    const w = this.ensureWorker();
+    const id = `d${++this.seq}`;
+    const result = new Promise<void>((resolve, reject) => {
+      this.pending.set(id, {
+        resolve: () => resolve(),
+        reject,
+      });
+    });
+    w.postMessage({ type: 'denoise', id, audioFile, denoiseModel, outFile });
+    return { id, result };
+  }
+
   cancel(id: string): void {
     this.worker?.postMessage({ type: 'cancel', id });
   }

@@ -12,7 +12,11 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { TaskCancelledError } from '../taskContext';
 import { stderrTail } from '../ffmpegErrorUtils';
-import { readWavInfo, probeMediaDurationMs } from '../dubbing/audioPipeline';
+import {
+  readWavInfo,
+  probeMediaDurationMs,
+  transcodeToPcm16Wav,
+} from '../dubbing/audioPipeline';
 import type {
   CloneAnalysisView,
   CloneSegmentSuggestion,
@@ -276,10 +280,49 @@ export function inspectCloneRange(
   });
 }
 
+/** 本地降噪（gtcrn 随包模型，经 ASR 常驻 worker；lazy require 保持纯 node 可引入）。 */
+async function denoiseWavInPlace(
+  wavPath: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  /* eslint-disable @typescript-eslint/no-var-requires */
+  const { getSherpaFunasrRuntime } =
+    require('../sherpaOnnx/sherpaFunasrRuntime') as {
+      getSherpaFunasrRuntime: () => {
+        denoise: (
+          audioFile: string,
+          denoiseModel: string,
+          outFile: string,
+        ) => { id: string; result: Promise<void> };
+      };
+    };
+  const { resolveBundledDenoisePath } = require('../modelImport') as {
+    resolveBundledDenoisePath: (root: string) => string;
+  };
+  const { getExtraResourcesPath } = require('../utils') as {
+    getExtraResourcesPath: () => string;
+  };
+  /* eslint-enable @typescript-eslint/no-var-requires */
+  const model = resolveBundledDenoisePath(getExtraResourcesPath());
+  if (!fs.existsSync(model)) throw new Error('内置降噪模型缺失');
+  const denoised = wavPath.replace(/\.wav$/i, '.denoised.wav');
+  await getSherpaFunasrRuntime().denoise(wavPath, model, denoised).result;
+  // gtcrn 输出 16k：重采样回 24k mono 16-bit（与克隆参考合同一致）。
+  const resampled = wavPath.replace(/\.wav$/i, '.dn24k.wav');
+  await transcodeToPcm16Wav(denoised, resampled, {
+    sampleRate: 24000,
+    signal,
+  });
+  fs.copyFileSync(resampled, wavPath);
+  fs.rmSync(denoised, { force: true });
+  fs.rmSync(resampled, { force: true });
+}
+
 /**
  * 阶段 3 prepare：从「原始源媒体」按选区定稿参考音频（不用 16k 分析副本，
  * 保留源音质）——静音压缩区间 → filter_complex 一次成型（atrim 拼接 +
- * 可选增益 + 重采样 24k mono 16-bit）。返回产物路径与定稿质检报告。
+ * 可选增益 + 重采样 24k mono 16-bit）→ 可选本地降噪（gtcrn，定稿复测以
+ * 降噪后产物为准）。返回产物路径与定稿质检报告。
  */
 export async function prepareCloneReference(
   session: CloneAnalysisSession,
@@ -287,7 +330,7 @@ export async function prepareCloneReference(
   endMs: number,
   target: CloneTargetRange,
   outWavPath: string,
-  opts?: { signal?: AbortSignal },
+  opts?: { signal?: AbortSignal; denoise?: boolean },
 ): Promise<{ refWavPath: string; report: VoiceQualityReport }> {
   const from = Math.max(0, Math.min(startMs, session.durationMs));
   const to = Math.max(from, Math.min(endMs, session.durationMs));
@@ -329,6 +372,11 @@ export async function prepareCloneReference(
     .audioCodec('pcm_s16le')
     .outputOptions('-y');
   await runSave(command, outWavPath, opts?.signal);
+
+  // 可选本地降噪（噪音黄牌素材的兜底；会略损相似度，由用户显式开启）。
+  if (opts?.denoise) {
+    await denoiseWavInPlace(outWavPath, opts.signal);
+  }
 
   // 定稿复测：按最终产物重算报告（时长/静音已变，语音段用能量法就地重估）。
   const final = readWavSamples(outWavPath);

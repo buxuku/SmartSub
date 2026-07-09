@@ -37,12 +37,17 @@ import {
   CLONE_CORRECTIVE_SPEED_MIN,
   CLONE_ZH_RATE_MAX_CPS,
   CLONE_ZH_RATE_TARGET_CPS,
+  absorbCuesFrom,
+  buildSvoicePackage,
   cjkCharCount,
   dominantTextLanguage,
+  parseSvoicePackage,
+  type ClonedVoice,
 } from '../../types/voiceClone';
 import {
   buildVolcCloneHeaders,
   buildVolcCloneTrainBody,
+  extractVolcTrainingTimesLeft,
   parseVolcCloneStatus,
   volcResourceIdForVoice as volcCloneResourceRoute,
   isVolcCloneSpeaker,
@@ -853,6 +858,104 @@ const ttsConfig = require(
       'add unmapped key audios to params store: failed to convert',
     ).includes('质检'),
     'cloneHint: 参数错误类 message 含 audio 不误判为质检',
+  );
+}
+
+// ── 火山剩余训练次数提取 ────────────────────────────────────────────────────
+
+{
+  eq(
+    extractVolcTrainingTimesLeft({ available_training_times: 14, status: 2 }),
+    14,
+    'timesLeft: 正常提取',
+  );
+  eq(extractVolcTrainingTimesLeft({ status: 2 }), null, 'timesLeft: 缺省 null');
+  eq(
+    extractVolcTrainingTimesLeft({ available_training_times: -1 }),
+    null,
+    'timesLeft: 负值判无效',
+  );
+  eq(
+    parseVolcCloneStatus({ status: 2, available_training_times: 3 })
+      .trainingTimesLeft,
+    3,
+    'timesLeft: 随状态解析携带',
+  );
+}
+
+// ── 按字幕行选段吸收 ────────────────────────────────────────────────────────
+
+{
+  const target = CLONE_TARGET_RANGES.zipvoice; // ideal 5–8s, max 10s
+  const cues = [
+    { startMs: 1000, endMs: 3000, text: 'a' }, // 2s
+    { startMs: 3400, endMs: 6000, text: 'b' }, // gap 0.4s, 2.6s
+    { startMs: 6500, endMs: 9500, text: 'c' }, // gap 0.5s, 3s → 累计 7.6s ≥ ideal? 7.6<8 继续
+    { startMs: 9900, endMs: 12000, text: 'd' }, // gap 0.4s → 窗口 1000-12150 > 10s 触上限
+    { startMs: 20000, endMs: 22000, text: 'e' }, // gap 8s 断开
+  ];
+  const r = absorbCuesFrom(cues, 0, target)!;
+  eq(r.startMs, 850, 'absorb: 起点留边距');
+  ok(
+    r.endMs >= 9500 && r.endMs - r.startMs <= target.maxMs,
+    `absorb: 吸收到 c 且不超硬上限 (got ${r.startMs}–${r.endMs})`,
+  );
+  // 从 d 起点选：e 间隙 8s 不吸收。
+  const r2 = absorbCuesFrom(cues, 3, target)!;
+  ok(r2.endMs <= 12150, 'absorb: 大间隙断开');
+  eq(absorbCuesFrom(cues, 99, target), null, 'absorb: 越界返回 null');
+  // 累计达推荐上限即收口：三行各 4s。
+  const longCues = [
+    { startMs: 0, endMs: 4000, text: 'x' },
+    { startMs: 4200, endMs: 8200, text: 'y' },
+    { startMs: 8400, endMs: 12400, text: 'z' },
+  ];
+  const r3 = absorbCuesFrom(longCues, 0, target)!;
+  ok(r3.endMs <= 8400, `absorb: 达推荐量收口 (got ${r3.endMs})`);
+}
+
+// ── .svoice 包构造与解析 ────────────────────────────────────────────────────
+
+{
+  const voice: ClonedVoice = {
+    id: 'cv_x',
+    name: '测试音色',
+    engine: 'zipvoice',
+    language: 'zh',
+    refText: '参考文本',
+    createdAt: 123,
+  };
+  const pkg = buildSvoicePackage(voice, 'UkVG', 'U0FNUExF');
+  eq(pkg.format, 'smartsub-voice', 'svoice: format');
+  eq(pkg.voice.name, '测试音色', 'svoice: meta 透传');
+  const parsed = parseSvoicePackage(JSON.parse(JSON.stringify(pkg)));
+  ok(parsed.ok, 'svoice: 往返解析通过');
+
+  ok(!parseSvoicePackage(null).ok, 'svoice: null 拒绝');
+  ok(
+    !parseSvoicePackage({ format: 'other', version: 1 }).ok,
+    'svoice: format 不符拒绝',
+  );
+  ok(!parseSvoicePackage({ ...pkg, version: 99 }).ok, 'svoice: 版本不符拒绝');
+  ok(
+    !parseSvoicePackage({ ...pkg, refWavBase64: undefined }).ok,
+    'svoice: zipvoice 缺参考音频拒绝',
+  );
+  const volcPkg = buildSvoicePackage({
+    id: 'cv_y',
+    name: 'V',
+    engine: 'volcengine',
+    language: 'zh',
+    speakerId: 'S_abc',
+    createdAt: 1,
+  });
+  ok(parseSvoicePackage(volcPkg).ok, 'svoice: 火山包（无参考音频）通过');
+  ok(
+    !parseSvoicePackage({
+      ...volcPkg,
+      voice: { ...volcPkg.voice, speakerId: undefined },
+    }).ok,
+    'svoice: 火山缺槽位拒绝',
   );
 }
 

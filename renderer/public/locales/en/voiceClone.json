@@ -109,5 +109,15 @@
   "trainingSlowNotice": "Still training: you can finish now and refresh later in TTS Services · My Voices",
   "trainFailedDesc": "Training failed: {{error}}",
   "refreshStatus": "Refresh Status",
-  "retrain": "Re-upload & Train"
+  "retrain": "Re-upload & Train",
+  "trainingTimesLeft": "{{count}} training runs left",
+  "cueListTitle": "Pick by subtitle line (click a line to absorb neighbors)",
+  "exportVoice": "Export Voice",
+  "importVoice": "Import Voice",
+  "exportDone": "Exported: {{path}}",
+  "importDone": "Imported \"{{name}}\"",
+  "importInvalid": "Not a valid voice package: {{error}}",
+  "localDenoise": "Local Denoise",
+  "localDenoiseHint": "Removes background noise (local GTCRN model) at a slight cost to similarity",
+  "localDenoiseSuggest": "High noise detected, recommended"
 }

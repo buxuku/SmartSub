@@ -109,5 +109,15 @@
   "trainingSlowNotice": "训练仍在进行：可先完成，稍后到「配音服务 · 我的音色」刷新状态",
   "trainFailedDesc": "训练失败：{{error}}",
   "refreshStatus": "刷新状态",
-  "retrain": "重新上传训练"
+  "retrain": "重新上传训练",
+  "trainingTimesLeft": "剩余训练次数 {{count}}",
+  "cueListTitle": "按字幕行选段（点击某行，自动向后吸收相邻行）",
+  "exportVoice": "导出音色",
+  "importVoice": "导入音色",
+  "exportDone": "已导出：{{path}}",
+  "importDone": "已导入「{{name}}」",
+  "importInvalid": "不是有效的音色包：{{error}}",
+  "localDenoise": "本地降噪",
+  "localDenoiseHint": "去除背景噪音（本地 GTCRN 模型），会略损音色相似度",
+  "localDenoiseSuggest": "检测到噪音偏大，建议开启"
 }

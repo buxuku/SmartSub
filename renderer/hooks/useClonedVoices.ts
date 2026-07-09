@@ -75,6 +75,16 @@ export default function useClonedVoices() {
     [refresh],
   );
 
+  const exportVoice = useCallback(async (id: string) => {
+    return window.ipc.invoke('voiceClone:export', { id });
+  }, []);
+
+  const importVoice = useCallback(async () => {
+    const r = await window.ipc.invoke('voiceClone:import');
+    await refresh();
+    return r;
+  }, [refresh]);
+
   return {
     voices,
     loaded,
@@ -84,5 +94,7 @@ export default function useClonedVoices() {
     regenerateSample,
     volcRefreshStatus,
     volcRetrain,
+    exportVoice,
+    importVoice,
   };
 }
