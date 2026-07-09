@@ -36,6 +36,10 @@ import {
   queryVolcCloneStatus,
 } from '../service/tts/volcengineVoiceClone';
 import {
+  addElevenVoice,
+  deleteElevenVoice,
+} from '../service/tts/elevenlabsVoiceClone';
+import {
   CLONE_TARGET_RANGES,
   SVOICE_EXT,
   buildSvoicePackage,
@@ -44,7 +48,11 @@ import {
   type ClonedVoice,
   type VoiceCloneEngine,
 } from '../../types/voiceClone';
-import { TTS_VOLCENGINE } from '../../types/ttsProvider';
+import {
+  TTS_ELEVENLABS,
+  TTS_VOLCENGINE,
+  isTtsProviderConfigured,
+} from '../../types/ttsProvider';
 
 interface VoiceCloneResponse<T = unknown> {
   success: boolean;
@@ -79,8 +87,9 @@ function sampleText(language: 'zh' | 'en'): string {
 
 /** 创建/重生成试听样本：previewVoice 同链路合成到临时 wav，再归档进音色目录。 */
 async function synthesizeSampleFor(voice: ClonedVoice): Promise<string> {
+  // 云端克隆（火山/EL）走对应 provider 通道 + 云端音色 id；zipvoice 走本地。
   const r =
-    voice.engine === 'volcengine'
+    voice.engine !== 'zipvoice'
       ? await previewVoice(
           { kind: 'cloud', providerId: voice.providerId! },
           voice.speakerId!,
@@ -99,6 +108,18 @@ async function synthesizeSampleFor(voice: ClonedVoice): Promise<string> {
     /* ignore */
   }
   return dest;
+}
+
+/** EL 克隆的 provider 前置校验（合成 Key 即克隆 Key）。 */
+function requireElevenCloneProvider(providerId: string | undefined) {
+  const provider = getTtsProviderById(providerId);
+  if (!provider || provider.type !== TTS_ELEVENLABS) {
+    throw new Error('请先在「配音服务」页配置 ElevenLabs 实例');
+  }
+  if (!isTtsProviderConfigured(provider)) {
+    throw new Error('ElevenLabs 实例未配置完整，请先补齐 API Key');
+  }
+  return provider;
 }
 
 /** 火山克隆的 provider 前置校验：合成 Key + 训练双凭据齐备。 */
@@ -372,6 +393,7 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
         refText,
         localDenoise,
         volc,
+        eleven,
       }: {
         analysisId: string;
         startMs: number;
@@ -388,6 +410,12 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
           speakerId: string;
           denoise?: boolean;
           mss?: boolean;
+        };
+        /** ElevenLabs 分支参数（engine='elevenlabs' 时必传）。 */
+        eleven?: {
+          providerId: string;
+          /** 服务端去背景音（remove_background_noise）。 */
+          removeNoise?: boolean;
         };
       },
     ): Promise<VoiceCloneResponse> => {
@@ -408,10 +436,14 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
       }
       let dir: string | null = null;
       try {
-        // 火山凭据前置校验（失败不产生任何落盘）。
+        // 云端凭据前置校验（失败不产生任何落盘）。
         const volcProvider =
           engine === 'volcengine'
             ? requireVolcCloneProvider(volc!.providerId)
+            : null;
+        const elevenProvider =
+          engine === 'elevenlabs'
+            ? requireElevenCloneProvider(eleven?.providerId)
             : null;
 
         const target = CLONE_TARGET_RANGES[engine];
@@ -473,6 +505,17 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
           if (state === 'failed') {
             voice.trainError = '服务端训练失败，请更换素材或开启降噪后重试';
           }
+        }
+
+        if (engine === 'elevenlabs' && elevenProvider) {
+          // IVC 即时创建：上传即返 voice_id，无训练轮询。
+          voice.speakerId = await addElevenVoice(elevenProvider, {
+            name: voice.name,
+            refWavPath,
+            removeNoise: eleven?.removeNoise,
+          });
+          voice.providerId = String(elevenProvider.id);
+          voice.trainStatus = 'ready';
         }
 
         saveClonedVoice(voice);
@@ -621,6 +664,14 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
     'voiceClone:remove',
     async (_event, { id }: { id: string }): Promise<VoiceCloneResponse> => {
       try {
+        const voice = getClonedVoiceById(id);
+        // EL 云端音色 best-effort 同步删除（失败不阻断本地删除，占用槽位可去官网清理）。
+        if (voice?.engine === 'elevenlabs' && voice.speakerId) {
+          const provider = getTtsProviderById(voice.providerId);
+          if (provider?.type === TTS_ELEVENLABS) {
+            await deleteElevenVoice(provider, voice.speakerId);
+          }
+        }
         removeClonedVoice(id);
         return { success: true, data: true };
       } catch (error) {
@@ -746,14 +797,16 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
           Buffer.from(pkg.sampleWavBase64, 'base64'),
         );
       }
-      if (pkg.voice.engine === 'volcengine') {
+      if (pkg.voice.engine !== 'zipvoice') {
         voice.speakerId = pkg.voice.speakerId;
-        // 槽位属账号资产：重绑本机已配置的豆包实例（品牌单例），状态按就绪
-        // （导出前提是已训练），刷新可校正。
-        const volcProvider = getTtsProviders().find(
-          (p) => p.type === TTS_VOLCENGINE,
+        // 云端音色属账号资产：重绑本机已配置的同品牌实例（品牌单例），状态按
+        // 就绪（导出前提是已训练/已创建），刷新可校正。
+        const brandType =
+          pkg.voice.engine === 'volcengine' ? TTS_VOLCENGINE : TTS_ELEVENLABS;
+        const brandProvider = getTtsProviders().find(
+          (p) => p.type === brandType,
         );
-        voice.providerId = volcProvider ? String(volcProvider.id) : undefined;
+        voice.providerId = brandProvider ? String(brandProvider.id) : undefined;
         voice.trainStatus = 'ready';
       }
       saveClonedVoice(voice);

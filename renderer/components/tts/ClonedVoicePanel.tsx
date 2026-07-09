@@ -160,7 +160,9 @@ export default function ClonedVoicePanel({
         <Badge variant="outline" className="text-[11px]">
           {voice.engine === 'zipvoice'
             ? t('engineZipvoice')
-            : t('engineVolcengine')}
+            : voice.engine === 'elevenlabs'
+              ? t('engineElevenlabs')
+              : t('engineVolcengine')}
         </Badge>
         <Badge variant="outline" className="text-[11px]">
           {voice.language === 'zh' ? t('langZh') : t('langEn')}

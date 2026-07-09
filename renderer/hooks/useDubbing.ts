@@ -121,7 +121,7 @@ export function useDubbing(options?: {
 
   const refreshEngines = useCallback(async () => {
     const opts: DubbingEngineOption[] = [];
-    // 克隆音色清单：zipvoice 引擎的 voice 池 + 火山克隆音色注入豆包实例。
+    // 克隆音色清单：zipvoice 引擎的 voice 池 + 云端克隆音色（火山/EL）注入对应实例。
     let clonedVoices: Array<{
       id: string;
       name: string;
@@ -174,10 +174,10 @@ export function useDubbing(options?: {
               // voice_id 不可读的服务商（ElevenLabs）按名称映射展示。
               label: resolveTtsVoiceLabel(p, v),
             }));
-        // 绑定该实例且训练就绪的克隆音色（S_ 槽位）追加进音色池。
+        // 绑定该实例且就绪的云端克隆音色（火山 S_ 槽位 / EL voice_id）追加进音色池。
         for (const cv of clonedVoices) {
           if (
-            cv.engine === 'volcengine' &&
+            cv.engine !== 'zipvoice' &&
             cv.providerId === p.id &&
             cv.trainStatus === 'ready' &&
             cv.speakerId

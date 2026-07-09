@@ -54,6 +54,12 @@ import {
   volcCloneErrorHint,
 } from '../../main/service/tts/volcengineVoiceCloneUtils';
 import { volcResourceIdForVoice } from '../../main/service/tts/volcengineTtsUtils';
+import {
+  buildElevenAddVoiceURL,
+  buildElevenDeleteVoiceURL,
+  extractElevenVoiceId,
+  elevenCloneErrorHint,
+} from '../../main/service/tts/elevenlabsVoiceCloneUtils';
 
 let passed = 0;
 let failed = 0;
@@ -956,6 +962,65 @@ const ttsConfig = require(
       voice: { ...volcPkg.voice, speakerId: undefined },
     }).ok,
     'svoice: 火山缺槽位拒绝',
+  );
+  const elevenPkg = buildSvoicePackage({
+    id: 'cv_z',
+    name: 'E',
+    engine: 'elevenlabs',
+    language: 'en',
+    speakerId: 'pNInz6obpgDQGcFmaJgB',
+    createdAt: 1,
+  });
+  ok(parseSvoicePackage(elevenPkg).ok, 'svoice: EL 包（voice_id）通过');
+  ok(
+    !parseSvoicePackage({
+      ...elevenPkg,
+      voice: { ...elevenPkg.voice, speakerId: '' },
+    }).ok,
+    'svoice: EL 缺 voice_id 拒绝',
+  );
+}
+
+// ── ElevenLabs IVC 工具 ─────────────────────────────────────────────────────
+
+{
+  eq(
+    buildElevenAddVoiceURL(undefined),
+    'https://api.elevenlabs.io/v1/voices/add',
+    'eleven: 默认 base 创建端点',
+  );
+  eq(
+    buildElevenAddVoiceURL('https://api.elevenlabs.io/v1/'),
+    'https://api.elevenlabs.io/v1/voices/add',
+    'eleven: 尾斜杠归一',
+  );
+  eq(
+    buildElevenDeleteVoiceURL(undefined, ' abc123 '),
+    'https://api.elevenlabs.io/v1/voices/abc123',
+    'eleven: 删除端点含 trim',
+  );
+  eq(extractElevenVoiceId({ voice_id: 'xyz' }), 'xyz', 'eleven: voice_id 提取');
+  eq(
+    extractElevenVoiceId({ requires_verification: false }),
+    null,
+    'eleven: 缺 voice_id 返回 null',
+  );
+  eq(extractElevenVoiceId(null), null, 'eleven: null 载荷');
+  ok(
+    elevenCloneErrorHint(401, 'invalid api key').includes('API Key'),
+    'elevenHint: 401 指向凭据',
+  );
+  ok(
+    elevenCloneErrorHint(400, 'voice_limit_reached').includes('槽位'),
+    'elevenHint: 槽位上限',
+  );
+  ok(
+    elevenCloneErrorHint(400, 'sample audio too short').includes('校验'),
+    'elevenHint: 素材质量拒绝',
+  );
+  ok(
+    elevenCloneErrorHint(500, 'internal').includes('HTTP 500'),
+    'elevenHint: 兜底保留原始信息',
   );
 }
 

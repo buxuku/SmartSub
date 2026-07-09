@@ -382,7 +382,9 @@ const TtsServicesTab: React.FC = () => {
                 <p className="text-xs text-muted-foreground">
                   {activeClone.engine === 'zipvoice'
                     ? cloneT('engineZipvoice')
-                    : cloneT('engineVolcengine')}
+                    : activeClone.engine === 'elevenlabs'
+                      ? cloneT('engineElevenlabs')
+                      : cloneT('engineVolcengine')}
                 </p>
               )}
             </div>

@@ -76,6 +76,7 @@ import {
 } from '../../../types/voiceClone';
 import type { WorkItem } from '../../../types/workItem';
 import {
+  TTS_ELEVENLABS,
   TTS_VOLCENGINE,
   getTtsProviderType,
   isTtsProviderConfigured,
@@ -139,9 +140,15 @@ export default function CloneVoiceWizard({
   const [modelInstalled, setModelInstalled] = useState(true);
   /** 火山复刻可用的豆包实例（合成 Key 就绪；训练凭据在 Step4 前再校验）。 */
   const [volcProvider, setVolcProvider] = useState<TtsProvider | null>(null);
+  /** ElevenLabs 可用实例（IVC 与合成共用同一 API Key）。 */
+  const [elevenProvider, setElevenProvider] = useState<TtsProvider | null>(
+    null,
+  );
   const [speakerId, setSpeakerId] = useState('');
   const [denoise, setDenoise] = useState(false);
   const [mss, setMss] = useState(false);
+  /** ElevenLabs 分支：服务端去背景音开关。 */
+  const [removeNoise, setRemoveNoise] = useState(false);
   /** zipvoice 分支：本地 gtcrn 降噪（噪音黄牌素材的兜底）。 */
   const [localDenoise, setLocalDenoise] = useState(false);
   /** 降噪试听（Step2 即时对比）：临时产物路径 + 降噪后 SNR。 */
@@ -245,14 +252,20 @@ export default function CloneVoiceWizard({
     window.ipc
       .invoke('getTtsProviders')
       .then((providers: TtsProvider[]) => {
-        const p = (providers ?? []).find(
-          (x) =>
-            x.type === TTS_VOLCENGINE &&
-            isTtsProviderConfigured(x, getTtsProviderType(x.type)),
+        const configured = (providers ?? []).filter((x) =>
+          isTtsProviderConfigured(x, getTtsProviderType(x.type)),
         );
-        setVolcProvider(p ?? null);
+        setVolcProvider(
+          configured.find((x) => x.type === TTS_VOLCENGINE) ?? null,
+        );
+        setElevenProvider(
+          configured.find((x) => x.type === TTS_ELEVENLABS) ?? null,
+        );
       })
-      .catch(() => setVolcProvider(null));
+      .catch(() => {
+        setVolcProvider(null);
+        setElevenProvider(null);
+      });
   }, [open]);
 
   const resetAll = useCallback(() => {
@@ -281,6 +294,7 @@ export default function CloneVoiceWizard({
     setSpeakerId('');
     setDenoise(false);
     setMss(false);
+    setRemoveNoise(false);
     setLocalDenoise(false);
     setDenoisePreview(null);
     setDenoising(false);
@@ -461,8 +475,8 @@ export default function CloneVoiceWizard({
 
   const nextFromStep2 = useCallback(() => {
     stopAudio();
-    if (engine === 'volcengine') {
-      // 火山：训练接口不需要参考文本，直进命名保存步。
+    if (engine !== 'zipvoice') {
+      // 火山/EL：云端接口不需要参考文本，直进命名保存步。
       setStep(4);
       return;
     }
@@ -495,6 +509,14 @@ export default function CloneVoiceWizard({
               },
             }
           : {}),
+        ...(engine === 'elevenlabs' && elevenProvider
+          ? {
+              eleven: {
+                providerId: String(elevenProvider.id),
+                removeNoise,
+              },
+            }
+          : {}),
       });
       if (!r.success) {
         setCreateError(r.error || 'create failed');
@@ -518,6 +540,8 @@ export default function CloneVoiceWizard({
     speakerId,
     denoise,
     mss,
+    elevenProvider,
+    removeNoise,
     onCreated,
   ]);
 
@@ -537,8 +561,8 @@ export default function CloneVoiceWizard({
   }, [onOpenChange]);
 
   // ── 渲染 ────────────────────────────────────────────────────────────────────
-  // 火山分支跳过参考文本步（训练接口不需要转写文本），stepper 显示三步。
-  const skipTextStep = engine === 'volcengine';
+  // 云端分支（火山/EL）跳过参考文本步（接口不需要转写文本），stepper 显示三步。
+  const skipTextStep = engine !== 'zipvoice';
   const steps: Array<{ id: WizardStep; label: string }> = [
     { id: 1, label: t('stepSource') },
     { id: 2, label: t('stepSegment') },
@@ -629,55 +653,69 @@ export default function CloneVoiceWizard({
           {/* ── Step 1 选素材 ── */}
           {step === 1 && (
             <div className="space-y-3">
-              {/* 引擎选择：本地免费 / 火山复刻（需槽位） */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEngine('zipvoice')}
-                  className={cn(
-                    'rounded-lg border p-3 text-left transition-colors',
-                    engine === 'zipvoice'
-                      ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
-                      : 'hover:bg-muted/40',
-                  )}
-                >
-                  <p className="text-sm font-medium">
-                    {t('engineZipvoiceTitle')}
-                  </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {t('engineZipvoiceDesc')}
-                  </p>
-                </button>
-                <button
-                  type="button"
-                  disabled={!volcProvider}
-                  onClick={() => {
-                    setEngine('volcengine');
-                    // 已有分析时选区按新档位收口（质检卡随 engine 即时复检）。
-                    if (analysis) {
-                      const max = CLONE_TARGET_RANGES.volcengine.maxMs;
-                      setRange((r) =>
-                        r.endMs - r.startMs > max
-                          ? { startMs: r.startMs, endMs: r.startMs + max }
-                          : r,
-                      );
-                    }
-                  }}
-                  className={cn(
-                    'rounded-lg border p-3 text-left transition-colors',
-                    engine === 'volcengine'
-                      ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
-                      : 'hover:bg-muted/40',
-                    !volcProvider && 'cursor-not-allowed opacity-60',
-                  )}
-                >
-                  <p className="text-sm font-medium">{t('engineVolcTitle')}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {volcProvider
-                      ? t('engineVolcDesc')
-                      : t('engineVolcNeedProvider')}
-                  </p>
-                </button>
+              {/* 引擎选择：本地免费 / 火山复刻（需槽位）/ ElevenLabs IVC */}
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    {
+                      id: 'zipvoice' as VoiceCloneEngine,
+                      enabled: true,
+                      title: t('engineZipvoiceTitle'),
+                      desc: t('engineZipvoiceDesc'),
+                    },
+                    {
+                      id: 'volcengine' as VoiceCloneEngine,
+                      enabled: !!volcProvider,
+                      title: t('engineVolcTitle'),
+                      desc: volcProvider
+                        ? t('engineVolcDesc')
+                        : t('engineVolcNeedProvider'),
+                    },
+                    {
+                      id: 'elevenlabs' as VoiceCloneEngine,
+                      enabled: !!elevenProvider,
+                      title: t('engineElevenTitle'),
+                      desc: elevenProvider
+                        ? t('engineElevenDesc')
+                        : t('engineElevenNeedProvider'),
+                    },
+                  ] satisfies Array<{
+                    id: VoiceCloneEngine;
+                    enabled: boolean;
+                    title: string;
+                    desc: string;
+                  }>
+                ).map((card) => (
+                  <button
+                    key={card.id}
+                    type="button"
+                    disabled={!card.enabled}
+                    onClick={() => {
+                      setEngine(card.id);
+                      // 已有分析时选区按新档位收口（质检卡随 engine 即时复检）。
+                      if (analysis) {
+                        const max = CLONE_TARGET_RANGES[card.id].maxMs;
+                        setRange((r) =>
+                          r.endMs - r.startMs > max
+                            ? { startMs: r.startMs, endMs: r.startMs + max }
+                            : r,
+                        );
+                      }
+                    }}
+                    className={cn(
+                      'rounded-lg border p-3 text-left transition-colors',
+                      engine === card.id
+                        ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+                        : 'hover:bg-muted/40',
+                      !card.enabled && 'cursor-not-allowed opacity-60',
+                    )}
+                  >
+                    <p className="text-sm font-medium">{card.title}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {card.desc}
+                    </p>
+                  </button>
+                ))}
               </div>
               {engine === 'zipvoice' && !modelInstalled && (
                 <p className="flex items-start gap-1.5 rounded-md bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
@@ -953,7 +991,7 @@ export default function CloneVoiceWizard({
                             />
                           </div>
                         </div>
-                      ) : (
+                      ) : engine === 'volcengine' ? (
                         <>
                           <div className="flex items-center justify-between gap-2">
                             <div className="min-w-0">
@@ -986,6 +1024,28 @@ export default function CloneVoiceWizard({
                             <Switch checked={mss} onCheckedChange={setMss} />
                           </div>
                         </>
+                      ) : (
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium">
+                              {t('removeNoise')}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {t('removeNoiseHint')}
+                              {report.issues.some(
+                                (i) => i.code === 'low-snr',
+                              ) && (
+                                <span className="ml-1 text-amber-600">
+                                  {t('denoiseSuggest')}
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <Switch
+                            checked={removeNoise}
+                            onCheckedChange={setRemoveNoise}
+                          />
+                        </div>
                       )}
                     </div>
                   )}
@@ -1141,48 +1201,54 @@ export default function CloneVoiceWizard({
                     />
                   </div>
 
-                  {/* 火山分支：语言 + 槽位 + 服务端处理开关 */}
+                  {/* 云端分支（火山/EL）：语言（试听样本用）；火山另需槽位 ID */}
+                  {engine !== 'zipvoice' && (
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium">
+                        {t('language')}
+                      </label>
+                      <Select
+                        value={language}
+                        onValueChange={(v) => setLanguage(v as 'zh' | 'en')}
+                        disabled={creating}
+                      >
+                        <SelectTrigger className="h-8 w-28">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="zh">{t('langZh')}</SelectItem>
+                          <SelectItem value="en">{t('langEn')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   {engine === 'volcengine' && (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <label className="text-sm font-medium">
-                          {t('language')}
-                        </label>
-                        <Select
-                          value={language}
-                          onValueChange={(v) => setLanguage(v as 'zh' | 'en')}
-                          disabled={creating}
-                        >
-                          <SelectTrigger className="h-8 w-28">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="zh">{t('langZh')}</SelectItem>
-                            <SelectItem value="en">{t('langEn')}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium">
-                          {t('speakerIdLabel')}
-                          <span className="text-destructive"> *</span>
-                        </label>
-                        <Input
-                          value={speakerId}
-                          onChange={(e) => setSpeakerId(e.target.value)}
-                          placeholder={t('speakerIdPlaceholder')}
-                          className="font-mono"
-                          disabled={creating}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          {t('speakerIdHint')}
-                        </p>
-                      </div>
-                    </>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">
+                        {t('speakerIdLabel')}
+                        <span className="text-destructive"> *</span>
+                      </label>
+                      <Input
+                        value={speakerId}
+                        onChange={(e) => setSpeakerId(e.target.value)}
+                        placeholder={t('speakerIdPlaceholder')}
+                        className="font-mono"
+                        disabled={creating}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t('speakerIdHint')}
+                      </p>
+                    </div>
+                  )}
+                  {engine === 'elevenlabs' && (
+                    <p className="flex items-start gap-1.5 rounded-md bg-primary/5 p-2 text-xs text-muted-foreground">
+                      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      {t('elevenSlotHint')}
+                    </p>
                   )}
 
                   {/* 处理开关已前置到第②步质检卡旁；此处仅回显选中的处理项 */}
-                  {(localDenoise || denoise || mss) && (
+                  {(localDenoise || denoise || mss || removeNoise) && (
                     <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Info className="h-3 w-3" />
                       {[
@@ -1193,6 +1259,9 @@ export default function CloneVoiceWizard({
                           ? t('denoise')
                           : null,
                         engine === 'volcengine' && mss ? t('mss') : null,
+                        engine === 'elevenlabs' && removeNoise
+                          ? t('removeNoise')
+                          : null,
                       ]
                         .filter(Boolean)
                         .join(' · ')}

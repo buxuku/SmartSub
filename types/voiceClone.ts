@@ -4,8 +4,8 @@
  * 纯类型/常量（不依赖 electron / fs），main、renderer、test:dubbing 均可直接引入。
  */
 
-/** 克隆引擎：本地 zipvoice 零样本 / 火山复刻 2.0 云端训练。 */
-export type VoiceCloneEngine = 'zipvoice' | 'volcengine';
+/** 克隆引擎：本地 zipvoice 零样本 / 火山复刻 2.0 云端训练 / ElevenLabs 即时克隆。 */
+export type VoiceCloneEngine = 'zipvoice' | 'volcengine' | 'elevenlabs';
 
 /** 云端训练状态（zipvoice 即建即用，无此状态）。 */
 export type VoiceCloneTrainStatus = 'training' | 'ready' | 'failed';
@@ -114,7 +114,8 @@ export interface CloneTargetRange {
  *   flow-matching 内存随（参考+目标）序列平方级增长，Electron 进程内
  *   12.5s 参考实测峰值 ~1.5GB、触 PartitionAlloc 单块上限 SIGTRAP，
  *   故上限收紧到 10s（8s 甜点）；
- * - 火山复刻 2.0：官方最佳实践 10–30s，过短（<10s）效果打折。
+ * - 火山复刻 2.0：官方最佳实践 10–30s，过短（<10s）效果打折；
+ * - ElevenLabs IVC：官方推荐 1–2 分钟素材，上限收 3 分钟。
  */
 export const CLONE_TARGET_RANGES: Record<VoiceCloneEngine, CloneTargetRange> = {
   zipvoice: {
@@ -128,6 +129,12 @@ export const CLONE_TARGET_RANGES: Record<VoiceCloneEngine, CloneTargetRange> = {
     idealMinMs: 10000,
     idealMaxMs: 25000,
     maxMs: 30000,
+  },
+  elevenlabs: {
+    minSpeechMs: 5000,
+    idealMinMs: 30000,
+    idealMaxMs: 120000,
+    maxMs: 180000,
   },
 };
 
@@ -312,7 +319,11 @@ export function parseSvoicePackage(payload: unknown): SvoiceParseResult {
   if (!v || typeof v.name !== 'string' || !v.name.trim()) {
     return { ok: false, error: 'name' };
   }
-  if (v.engine !== 'zipvoice' && v.engine !== 'volcengine') {
+  if (
+    v.engine !== 'zipvoice' &&
+    v.engine !== 'volcengine' &&
+    v.engine !== 'elevenlabs'
+  ) {
     return { ok: false, error: 'engine' };
   }
   if (v.language !== 'zh' && v.language !== 'en') {
@@ -321,7 +332,8 @@ export function parseSvoicePackage(payload: unknown): SvoiceParseResult {
   if (v.engine === 'zipvoice' && (!p.refWavBase64 || !v.refText?.trim())) {
     return { ok: false, error: 'reference' };
   }
-  if (v.engine === 'volcengine' && !v.speakerId?.trim()) {
+  // 云端克隆（火山/EL）：音色即云端资产，speakerId/voice_id 必备。
+  if (v.engine !== 'zipvoice' && !v.speakerId?.trim()) {
     return { ok: false, error: 'speakerId' };
   }
   return { ok: true, pkg: p };
