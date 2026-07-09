@@ -49,8 +49,8 @@ export function mapElevenClonedVoices(
 }
 
 /**
- * 错误定向文案：401/403 凭据、voice_limit_reached 槽位上限、
- * 素材质量拒绝（audio/sample 相关校验），其余回落原始信息。
+ * 错误定向文案：401/403 凭据、套餐不含 IVC（免费版）、voice_limit_reached
+ * 槽位上限、素材质量拒绝（audio/sample 相关校验），其余回落原始信息。
  */
 export function elevenCloneErrorHint(
   httpStatus: number,
@@ -61,6 +61,13 @@ export function elevenCloneErrorHint(
     return `ElevenLabs 克隆: API Key 无效或无权限${raw}。请检查 Key 并确认套餐包含即时克隆（Starter 及以上）`;
   }
   const text = (message || '').toLowerCase();
+  if (
+    text.includes('subscription') ||
+    text.includes('upgrade your plan') ||
+    text.includes('can_not_use_instant_voice_cloning')
+  ) {
+    return `ElevenLabs 克隆: 当前套餐不含即时克隆${raw}。免费版不支持 IVC，需 Starter（约 $5/月）及以上套餐——升级后无需改配置即可使用`;
+  }
   if (text.includes('voice_limit') || text.includes('voice limit')) {
     return `ElevenLabs 克隆: 音色槽位已满${raw}。请在 ElevenLabs 控制台删除不用的克隆音色，或升级套餐`;
   }

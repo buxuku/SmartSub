@@ -1016,6 +1016,13 @@ const ttsConfig = require(
     'elevenHint: 槽位上限',
   );
   ok(
+    elevenCloneErrorHint(
+      400,
+      'Your subscription does not include instant voice cloning. Please upgrade your plan.',
+    ).includes('免费版不支持'),
+    'elevenHint: 免费套餐不含 IVC 定向',
+  );
+  ok(
     elevenCloneErrorHint(400, 'sample audio too short').includes('校验'),
     'elevenHint: 素材质量拒绝',
   );
