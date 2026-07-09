@@ -144,6 +144,12 @@ export default function CloneVoiceWizard({
   const [mss, setMss] = useState(false);
   /** zipvoice 分支：本地 gtcrn 降噪（噪音黄牌素材的兜底）。 */
   const [localDenoise, setLocalDenoise] = useState(false);
+  /** 降噪试听（Step2 即时对比）：临时产物路径 + 降噪后 SNR。 */
+  const [denoisePreview, setDenoisePreview] = useState<{
+    wavPath: string;
+    snrDb: number;
+  } | null>(null);
+  const [denoising, setDenoising] = useState(false);
 
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
@@ -276,6 +282,8 @@ export default function CloneVoiceWizard({
     setDenoise(false);
     setMss(false);
     setLocalDenoise(false);
+    setDenoisePreview(null);
+    setDenoising(false);
     setCreating(false);
     setCreateError(null);
     setCreated(null);
@@ -367,9 +375,10 @@ export default function CloneVoiceWizard({
     [startAnalyze],
   );
 
-  // ── Step2：选区变化 → 防抖质检 ─────────────────────────────────────────────
+  // ── Step2：选区变化 → 防抖质检（降噪试听随选区失效）──────────────────────
   useEffect(() => {
     if (!analysisId || range.endMs <= range.startMs) return;
+    setDenoisePreview(null);
     const timer = setTimeout(async () => {
       const r = await window.ipc.invoke('voiceClone:inspectRange', {
         analysisId,
@@ -383,6 +392,29 @@ export default function CloneVoiceWizard({
     }, 300);
     return () => clearTimeout(timer);
   }, [analysisId, range, engine]);
+
+  // 本地降噪试听：切选区 → gtcrn → 播放对比（结果缓存到选区变化）。
+  const previewDenoise = useCallback(async () => {
+    if (!analysisId || denoising) return;
+    if (denoisePreview) {
+      playFile(denoisePreview.wavPath, 'denoise-preview');
+      return;
+    }
+    setDenoising(true);
+    try {
+      const r = await window.ipc.invoke('voiceClone:denoisePreview', {
+        analysisId,
+        startMs: range.startMs,
+        endMs: range.endMs,
+      });
+      if (r.success && r.data?.wavPath) {
+        setDenoisePreview(r.data);
+        playFile(r.data.wavPath, 'denoise-preview');
+      }
+    } finally {
+      setDenoising(false);
+    }
+  }, [analysisId, denoising, denoisePreview, range, playFile]);
 
   const hasError = !!report?.issues.some((i) => i.severity === 'error');
 
@@ -871,6 +903,93 @@ export default function CloneVoiceWizard({
                     </div>
                   )}
 
+                  {/* 处理选项（与质检结果同屏）：本地降噪试听 / 火山服务端开关 */}
+                  {report && (
+                    <div className="space-y-2 rounded-lg border p-3">
+                      {engine === 'zipvoice' ? (
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium">
+                              {t('localDenoise')}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {t('localDenoiseHint')}
+                              {report.issues.some(
+                                (i) => i.code === 'low-snr',
+                              ) && (
+                                <span className="ml-1 text-amber-600">
+                                  {t('localDenoiseSuggest')}
+                                </span>
+                              )}
+                              {denoisePreview && (
+                                <span className="ml-1 text-success">
+                                  {t('denoiseSnrAfter', {
+                                    before: report.snrDb,
+                                    after: denoisePreview.snrDb,
+                                  })}
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={denoising}
+                              onClick={previewDenoise}
+                            >
+                              {denoising ? (
+                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                              ) : playingKey === 'denoise-preview' ? (
+                                <Square className="mr-1 h-3.5 w-3.5" />
+                              ) : (
+                                <Play className="mr-1 h-3.5 w-3.5" />
+                              )}
+                              {t('denoisePreview')}
+                            </Button>
+                            <Switch
+                              checked={localDenoise}
+                              onCheckedChange={setLocalDenoise}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium">
+                                {t('denoise')}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground">
+                                {t('denoiseHint')}
+                                {report.issues.some(
+                                  (i) => i.code === 'low-snr',
+                                ) && (
+                                  <span className="ml-1 text-amber-600">
+                                    {t('denoiseSuggest')}
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                            <Switch
+                              checked={denoise}
+                              onCheckedChange={setDenoise}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium">{t('mss')}</p>
+                              <p className="text-[11px] text-muted-foreground">
+                                {t('mssHint')}
+                              </p>
+                            </div>
+                            <Switch checked={mss} onCheckedChange={setMss} />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
                   {/* 按字幕行选段（来源含字幕时）：点行吸收相邻行成选区 */}
                   {subtitleCues.length > 0 && (
                     <div className="space-y-1">
@@ -1059,68 +1178,25 @@ export default function CloneVoiceWizard({
                           {t('speakerIdHint')}
                         </p>
                       </div>
-                      <div className="space-y-2 rounded-md border p-2.5">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-xs font-medium">
-                              {t('denoise')}
-                            </p>
-                            <p className="text-[11px] text-muted-foreground">
-                              {t('denoiseHint')}
-                              {report?.issues.some(
-                                (i) => i.code === 'low-snr',
-                              ) && (
-                                <span className="ml-1 text-amber-600">
-                                  {t('denoiseSuggest')}
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                          <Switch
-                            checked={denoise}
-                            onCheckedChange={setDenoise}
-                            disabled={creating}
-                          />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-xs font-medium">{t('mss')}</p>
-                            <p className="text-[11px] text-muted-foreground">
-                              {t('mssHint')}
-                            </p>
-                          </div>
-                          <Switch
-                            checked={mss}
-                            onCheckedChange={setMss}
-                            disabled={creating}
-                          />
-                        </div>
-                      </div>
                     </>
                   )}
 
-                  {/* zipvoice 分支：本地降噪开关（噪音黄牌时给建议） */}
-                  {engine === 'zipvoice' && (
-                    <div className="flex items-center justify-between rounded-md border p-2.5">
-                      <div>
-                        <p className="text-xs font-medium">
-                          {t('localDenoise')}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">
-                          {t('localDenoiseHint')}
-                          {report?.issues.some((i) => i.code === 'low-snr') && (
-                            <span className="ml-1 text-amber-600">
-                              {t('localDenoiseSuggest')}
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                      <Switch
-                        checked={localDenoise}
-                        onCheckedChange={setLocalDenoise}
-                        disabled={creating}
-                      />
-                    </div>
+                  {/* 处理开关已前置到第②步质检卡旁；此处仅回显选中的处理项 */}
+                  {(localDenoise || denoise || mss) && (
+                    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Info className="h-3 w-3" />
+                      {[
+                        engine === 'zipvoice' && localDenoise
+                          ? t('localDenoise')
+                          : null,
+                        engine === 'volcengine' && denoise
+                          ? t('denoise')
+                          : null,
+                        engine === 'volcengine' && mss ? t('mss') : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
                   )}
 
                   <label className="flex cursor-pointer items-start gap-2 text-xs">

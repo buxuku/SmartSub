@@ -119,5 +119,7 @@
   "importInvalid": "Not a valid voice package: {{error}}",
   "localDenoise": "Local Denoise",
   "localDenoiseHint": "Removes background noise (local GTCRN model) at a slight cost to similarity",
-  "localDenoiseSuggest": "High noise detected, recommended"
+  "localDenoiseSuggest": "High noise detected, recommended",
+  "denoisePreview": "Preview Denoise",
+  "denoiseSnrAfter": "SNR {{before}}dB → {{after}}dB"
 }

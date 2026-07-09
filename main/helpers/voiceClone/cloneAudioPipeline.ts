@@ -139,11 +139,17 @@ export function disposeCloneAnalysisSession(id: string): void {
   const s = sessions.get(id);
   if (!s) return;
   sessions.delete(id);
-  try {
-    if (fs.existsSync(s.analysisWavPath)) fs.unlinkSync(s.analysisWavPath);
-  } catch {
-    /* ignore */
+  for (const p of [s.analysisWavPath, denoisePreviewPath(s)]) {
+    try {
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    } catch {
+      /* ignore */
+    }
   }
+}
+
+function denoisePreviewPath(session: CloneAnalysisSession): string {
+  return session.analysisWavPath.replace(/\.wav$/i, '.dn-preview.wav');
 }
 
 /** silero VAD 依赖的最小结构类型（lazy require；不用 typeof import——
@@ -262,6 +268,45 @@ export function analysisView(session: CloneAnalysisSession): CloneAnalysisView {
   };
 }
 
+/**
+ * 选区降噪试听（向导质检步的即时反馈）：从分析副本切选区 → gtcrn 降噪 →
+ * 会话级临时 wav（media:// 播放；随会话释放）。返回降噪后 SNR 供评分卡对比。
+ */
+export async function denoiseRangePreview(
+  session: CloneAnalysisSession,
+  startMs: number,
+  endMs: number,
+): Promise<{ wavPath: string; snrDb: number }> {
+  const from = Math.max(0, Math.min(startMs, session.durationMs));
+  const to = Math.max(from, Math.min(endMs, session.durationMs));
+  const rangeWav = session.analysisWavPath.replace(/\.wav$/i, '.dn-range.wav');
+  const command = ffmpeg(session.analysisWavPath)
+    .setStartTime(from / 1000)
+    .setDuration(Math.max(0.1, (to - from) / 1000))
+    .audioCodec('pcm_s16le')
+    .outputOptions('-y');
+  await runSave(command, rangeWav);
+
+  const outWav = denoisePreviewPath(session);
+  try {
+    await denoiseWavToFile(rangeWav, outWav);
+  } finally {
+    fs.rmSync(rangeWav, { force: true });
+  }
+
+  // 降噪后 SNR（能量法段 + 质检管线估算，与评分卡同口径）。
+  const { samples, sampleRate } = readWavSamples(outWav);
+  const frames = analyzeSampleFrames(samples, sampleRate);
+  const segments = energySegmentsFromFrames(frames);
+  const report = buildQualityReport({
+    rangeStartMs: 0,
+    rangeEndMs: Math.round((samples.length / sampleRate) * 1000),
+    segments,
+    frames,
+  });
+  return { wavPath: outWav, snrDb: report.snrDb };
+}
+
 /** 阶段 2 inspect：选区质检（复用会话帧数据，零 IO）。 */
 export function inspectCloneRange(
   session: CloneAnalysisSession,
@@ -280,11 +325,8 @@ export function inspectCloneRange(
   });
 }
 
-/** 本地降噪（gtcrn 随包模型，经 ASR 常驻 worker；lazy require 保持纯 node 可引入）。 */
-async function denoiseWavInPlace(
-  wavPath: string,
-  signal?: AbortSignal,
-): Promise<void> {
+/** 本地降噪到指定文件（gtcrn 随包模型，经 ASR 常驻 worker；输出 16k）。 */
+async function denoiseWavToFile(srcWav: string, outWav: string): Promise<void> {
   /* eslint-disable @typescript-eslint/no-var-requires */
   const { getSherpaFunasrRuntime } =
     require('../sherpaOnnx/sherpaFunasrRuntime') as {
@@ -305,9 +347,16 @@ async function denoiseWavInPlace(
   /* eslint-enable @typescript-eslint/no-var-requires */
   const model = resolveBundledDenoisePath(getExtraResourcesPath());
   if (!fs.existsSync(model)) throw new Error('内置降噪模型缺失');
+  await getSherpaFunasrRuntime().denoise(srcWav, model, outWav).result;
+}
+
+/** 定稿产物就地降噪（gtcrn 16k 输出 → 重采样回 24k mono 16-bit 合同）。 */
+async function denoiseWavInPlace(
+  wavPath: string,
+  signal?: AbortSignal,
+): Promise<void> {
   const denoised = wavPath.replace(/\.wav$/i, '.denoised.wav');
-  await getSherpaFunasrRuntime().denoise(wavPath, model, denoised).result;
-  // gtcrn 输出 16k：重采样回 24k mono 16-bit（与克隆参考合同一致）。
+  await denoiseWavToFile(wavPath, denoised);
   const resampled = wavPath.replace(/\.wav$/i, '.dn24k.wav');
   await transcodeToPcm16Wav(denoised, resampled, {
     sampleRate: 24000,

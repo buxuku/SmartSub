@@ -119,5 +119,7 @@
   "importInvalid": "不是有效的音色包：{{error}}",
   "localDenoise": "本地降噪",
   "localDenoiseHint": "去除背景噪音（本地 GTCRN 模型），会略损音色相似度",
-  "localDenoiseSuggest": "检测到噪音偏大，建议开启"
+  "localDenoiseSuggest": "检测到噪音偏大，建议开启",
+  "denoisePreview": "试听降噪",
+  "denoiseSnrAfter": "信噪比 {{before}}dB → {{after}}dB"
 }

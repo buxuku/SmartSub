@@ -292,10 +292,15 @@ export function buildSvoicePackage(
   };
 }
 
+/** parseSvoicePackage 结果（单接口可选字段——项目 tsconfig 非严格模式下判别联合收窄不可靠）。 */
+export interface SvoiceParseResult {
+  ok: boolean;
+  pkg?: SvoicePackage;
+  error?: string;
+}
+
 /** 解析校验：结构/版本/引擎必备字段（zipvoice 需参考对；火山需槽位）。 */
-export function parseSvoicePackage(
-  payload: unknown,
-): { ok: true; pkg: SvoicePackage } | { ok: false; error: string } {
+export function parseSvoicePackage(payload: unknown): SvoiceParseResult {
   const p = payload as SvoicePackage | null;
   if (!p || typeof p !== 'object' || p.format !== SVOICE_FORMAT) {
     return { ok: false, error: 'format' };

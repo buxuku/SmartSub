@@ -13,6 +13,7 @@ import { parseSubtitleCues, detectSubtitleFormat } from './subtitleFormats';
 import {
   analyzeCloneSource,
   analysisView,
+  denoiseRangePreview,
   getCloneAnalysisSession,
   disposeCloneAnalysisSession,
   inspectCloneRange,
@@ -230,6 +231,31 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
         );
         return { success: true, data: { report } };
       } catch (error) {
+        return fail(error);
+      }
+    },
+  );
+
+  // 选区降噪试听（Step2 即时反馈：切选区 → gtcrn → 临时 wav 供 media:// 播放）。
+  ipcMain.handle(
+    'voiceClone:denoisePreview',
+    async (
+      _event,
+      {
+        analysisId,
+        startMs,
+        endMs,
+      }: { analysisId: string; startMs: number; endMs: number },
+    ): Promise<VoiceCloneResponse> => {
+      const session = getCloneAnalysisSession(analysisId);
+      if (!session) {
+        return { success: false, error: '分析会话已失效，请重新选择素材' };
+      }
+      try {
+        const r = await denoiseRangePreview(session, startMs, endMs);
+        return { success: true, data: r };
+      } catch (error) {
+        logMessage(`voiceClone denoise preview failed: ${error}`, 'warning');
         return fail(error);
       }
     },
@@ -688,13 +714,13 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
         };
       }
       const parsed = parseSvoicePackage(payload);
-      if (!parsed.ok) {
+      if (!parsed.ok || !parsed.pkg) {
         return {
           success: false,
-          error: `音色包校验失败（${parsed.error}）`,
+          error: `音色包校验失败（${parsed.error ?? 'unknown'}）`,
         };
       }
-      const { pkg } = parsed;
+      const pkg = parsed.pkg;
       const id = newClonedVoiceId();
       dir = getClonedVoiceDir(id);
       const voice: ClonedVoice = {
