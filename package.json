@@ -32,7 +32,10 @@
     "test:translation-cancel": "tsc scripts/test-translation-cancel.ts --outDir node_modules/.cache/translation-cancel-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/translation-cancel-tests/scripts/test-translation-cancel.js",
     "poc:dubbing-audio": "tsc scripts/dubbing/audio-poc.ts --outDir node_modules/.cache/dubbing-poc-build --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/dubbing-poc-build/scripts/dubbing/audio-poc.js",
     "poc:dubbing-e2e": "tsc scripts/dubbing/e2e-poc.ts --outDir node_modules/.cache/dubbing-poc-build --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/dubbing-poc-build/scripts/dubbing/e2e-poc.js",
-    "test:dubbing": "tsc scripts/dubbing/test-dubbing-units.ts --outDir node_modules/.cache/dubbing-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/dubbing-tests/scripts/dubbing/test-dubbing-units.js"
+    "test:dubbing": "tsc scripts/dubbing/test-dubbing-units.ts --outDir node_modules/.cache/dubbing-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/dubbing-tests/scripts/dubbing/test-dubbing-units.js",
+    "poc:zipvoice": "node scripts/voice-clone/zipvoice-poc.mjs",
+    "smoke:voice-clone": "tsc scripts/voice-clone/pipeline-smoke.ts --outDir node_modules/.cache/voice-clone-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/voice-clone-tests/scripts/voice-clone/pipeline-smoke.js",
+    "test:voice-clone": "tsc scripts/voice-clone/test-voice-clone-units.ts --outDir node_modules/.cache/voice-clone-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/voice-clone-tests/scripts/voice-clone/test-voice-clone-units.js"
   },
   "dependencies": {
     "@alicloud/alimt20181012": "^1.3.0",

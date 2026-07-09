@@ -44,6 +44,12 @@ import type {
   DubbingProgressEvent,
   DubbingStage,
 } from '../../../types/dubbing';
+import {
+  CLONE_CORRECTIVE_SPEED_MIN,
+  CLONE_ZH_RATE_MAX_CPS,
+  CLONE_ZH_RATE_TARGET_CPS,
+  cjkCharCount,
+} from '../../../types/voiceClone';
 import { getTtsCapabilities } from '../../../types/ttsProvider';
 import {
   TTS_MODELS,
@@ -183,38 +189,107 @@ function buildEngineAdapter(engine: DubbingEngineSelection): EngineAdapter {
     if (!spec) throw new Error(`未知本地 TTS 模型：${engine.modelId}`);
     if (!isTtsModelInstalled(modelId)) {
       throw new Error(
-        `本地模型 ${spec.displayName} 未安装，请先在「引擎与模型」页下载`,
+        `本地模型 ${spec.displayName} 未安装，请先在「配音服务」页下载`,
       );
     }
     const model = getTtsModelRequest(modelId);
     const runtime = getSherpaTtsRuntime();
+
+    const runSynthesize = async (
+      req: Parameters<typeof runtime.synthesize>[0],
+      signal?: AbortSignal,
+    ) => {
+      if (signal?.aborted) throw new TaskCancelledError();
+      const { id, result } = runtime.synthesize(req);
+      const onAbort = () => runtime.cancel(id);
+      signal?.addEventListener('abort', onAbort, { once: true });
+      try {
+        const r = await result;
+        return { durationMs: r.durationMs };
+      } catch (e) {
+        if ((e as { code?: string })?.code === 'cancelled') {
+          throw new TaskCancelledError();
+        }
+        throw e;
+      } finally {
+        signal?.removeEventListener('abort', onAbort);
+      }
+    };
+
+    if (spec.cloneOnly) {
+      // 零样本克隆（zipvoice）：voiceId = 克隆音色 id，参考对随每次合成注入。
+      // speed 参数实测严重非线性 → 声明 'none'，行级时长收敛走 atempo 复测分支；
+      // 用户整体语速仍经 speed 透传（听感调节，不参与对齐决策）。
+      const { getClonedVoiceById } =
+        require('../voiceClone/voiceCloneManager') as typeof import('../voiceClone/voiceCloneManager');
+      return {
+        speedControl: 'none',
+        canResynthesize: false, // 重合成不能改语速 → 复测直接 atempo
+        concurrency: 1,
+        synthesize: async (text, voiceId, speed, outWavPath, signal) => {
+          const voice = getClonedVoiceById(voiceId);
+          if (!voice || voice.engine !== 'zipvoice') {
+            throw new Error('克隆音色不存在或已删除，请重新选择音色');
+          }
+          if (!voice.refWavPath || !fs.existsSync(voice.refWavPath)) {
+            throw new Error(
+              `克隆音色「${voice.name}」的参考音频缺失，请删除后重新创建`,
+            );
+          }
+          const r = await runSynthesize(
+            {
+              model,
+              text,
+              sid: 0,
+              speed,
+              outWavPath,
+              generationConfig: {
+                refWavPath: voice.refWavPath,
+                refText: voice.refText || '',
+              },
+            },
+            signal,
+          );
+          // 跨语言压缩矫正（闭环、确定性）：英文参考 + 中文文本时模型
+          // 时长预测严重不足，中文被压到 8–12 字/秒（自然 3.5–5.5，听感
+          // 含糊）。speed 参数实测悬崖式非线性（0.53 → 0.9 字/秒过冲
+          // 10 倍）不可用——改按实测字符速率超阈即 atempo 慢放到目标
+          // 速率（线性精确）。慢放后仍超槽位的行走既有过长兜底。
+          const zhChars = cjkCharCount(text);
+          if (zhChars >= 4 && r.durationMs > 0) {
+            const cps = zhChars / (r.durationMs / 1000);
+            if (cps > CLONE_ZH_RATE_MAX_CPS) {
+              const factor = Math.max(
+                CLONE_CORRECTIVE_SPEED_MIN,
+                CLONE_ZH_RATE_TARGET_CPS / cps,
+              );
+              const ratePath = outWavPath.replace(/\.wav$/i, '.rate.wav');
+              await atempoWav(outWavPath, ratePath, factor, signal);
+              fs.copyFileSync(ratePath, outWavPath);
+              fs.rmSync(ratePath, { force: true });
+              return { durationMs: wavDurationMs(outWavPath) };
+            }
+          }
+          return r;
+        },
+      };
+    }
+
     return {
       speedControl: 'native',
       canResynthesize: true, // 本地合成免费 → 复测走重合成
       concurrency: 1, // worker 单实例串行
-      synthesize: async (text, voiceId, speed, outWavPath, signal) => {
-        if (signal?.aborted) throw new TaskCancelledError();
-        const { id, result } = runtime.synthesize({
-          model,
-          text,
-          sid: resolveTtsVoiceSid(spec, voiceId),
-          speed,
-          outWavPath,
-        });
-        const onAbort = () => runtime.cancel(id);
-        signal?.addEventListener('abort', onAbort, { once: true });
-        try {
-          const r = await result;
-          return { durationMs: r.durationMs };
-        } catch (e) {
-          if ((e as { code?: string })?.code === 'cancelled') {
-            throw new TaskCancelledError();
-          }
-          throw e;
-        } finally {
-          signal?.removeEventListener('abort', onAbort);
-        }
-      },
+      synthesize: async (text, voiceId, speed, outWavPath, signal) =>
+        runSynthesize(
+          {
+            model,
+            text,
+            sid: resolveTtsVoiceSid(spec, voiceId),
+            speed,
+            outWavPath,
+          },
+          signal,
+        ),
     };
   }
 
@@ -772,11 +847,23 @@ export async function previewVoice(
   text: string | undefined,
 ): Promise<{ wavPath: string; durationMs: number }> {
   const adapter = buildEngineAdapter(engine);
+  // 克隆音色的默认试听文本按音色语言：ZipVoice 跨语言（参考英文 + 文本中文）
+  // 时长预测严重不足，语音被压缩到不可辨——试听必须同语言才反映真实效果。
+  let cloneLanguage: 'zh' | 'en' | undefined;
+  if (engine.kind === 'local') {
+    const { getClonedVoiceById } =
+      require('../voiceClone/voiceCloneManager') as typeof import('../voiceClone/voiceCloneManager');
+    cloneLanguage = getClonedVoiceById(voiceId)?.language;
+  }
   const sample =
     text?.trim() ||
-    (/^[\x00-\x7F]*$/.test(voiceId) && engine.kind === 'cloud'
-      ? '你好，这是配音试听。Hello, this is a voice preview.'
-      : '你好，这是配音试听。');
+    (cloneLanguage === 'en'
+      ? 'Hello, this is a voice preview. Nice to meet you.'
+      : cloneLanguage === 'zh'
+        ? '你好，这是配音试听。'
+        : /^[\x00-\x7F]*$/.test(voiceId) && engine.kind === 'cloud'
+          ? '你好，这是配音试听。Hello, this is a voice preview.'
+          : '你好，这是配音试听。');
   const outWavPath = path.join(
     ensureTempDir(),
     'dubbing',

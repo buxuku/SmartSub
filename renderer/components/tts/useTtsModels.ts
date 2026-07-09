@@ -10,6 +10,8 @@ export interface TtsModelItem {
   sampleRate: number;
   defaultVoiceId: string;
   voices: Array<{ id: string; label: string }>;
+  /** 零样本克隆模型：无内置音色，voice 池 = 我的音色。 */
+  cloneOnly?: boolean;
 }
 
 /** 本地 TTS 模型清单的单一持有者（左栏状态点与右栏面板共用）。 */

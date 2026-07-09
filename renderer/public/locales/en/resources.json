@@ -369,7 +369,9 @@
     "downloadSourceHint": "Download source: ghproxy acceleration first, automatic fallback to GitHub; you can also download manually and use Import.",
     "unstable": "free trial",
     "edgeHint": "The Edge free channel is a reverse-engineered API (major outage in Dec 2025): it may break anytime and should not be your primary channel.",
-    "testSuccess": "Synthesis OK, connection works"
+    "testSuccess": "Synthesis OK, connection works",
+    "cloneModelIntro": "Zero-shot voice cloning model (ZipVoice): no built-in voices — create cloned voices in \"My Voices\" from your own recordings to dub. Slower than regular models.",
+    "clonePool": "Voices come from \"My Voices\""
   },
   "ttsApiUrlTips": "Base URL of the OpenAI-compatible TTS endpoint, e.g. https://api.openai.com/v1",
   "ttsApiKeyTips": "API key for this endpoint",
@@ -390,6 +392,10 @@
   "ttsVoicesElevenTips": "Comma-separated voice_id list, prefilled with free-tier premade voices (Sarah / George / Adam / Daniel / Charlotte); copy ids of your own/cloned voices from dashboard ▸ Voices. Note: community voices added from the Voice Library return 402 over the API on free plans",
   "ttsElevenApiUrlTips": "Optional: API base URL, leave empty for the official endpoint https://api.elevenlabs.io/v1",
   "ttsVolcResource": "Resource ID",
+  "ttsVolcAppId": "Clone APP ID (optional)",
+  "ttsVolcAccessToken": "Clone Access Token (optional)",
+  "ttsVolcAppIdTips": "Voice clone training credential: APP ID of your Volcengine \"Speech\" app. Only needed for creating cloned voices; purchase an S_ speaker slot in the console first",
+  "ttsVolcAccessTokenTips": "Voice clone training credential: Access Token of the same app. Independent of the synthesis API Key above; regular synthesis is unaffected",
   "ttsVolcKeyTips": "API Key issued in the Volcengine \"Doubao Speech\" console ▸ API Key management (shared with Doubao ASR — reuse it if already configured); Volcano Ark / LLM inference keys do not work; the TTS big-model service must be activated. Character tier ~¥1.3 per 1K chars, free quota for new users",
   "ttsVolcResourceTips": "Determines the usable voice set and billing product: 2.0 voices (*_uranus_bigtts) need seed-tts-2.0 (best quality); 1.0 voices (*_mars/moon_bigtts) need seed-tts-1.0 (per-character) or seed-tts-1.0-concurr (per-concurrency)",
   "ttsVoicesVolcTips": "Comma-separated voice_type list, prefilled with 2.0 general voices (Shuangkuai Sisi / Xiaohe / Vivi / Yunzhou / Ruya Yichen); copy more from the official voice list docs and keep them matched with the Resource ID",

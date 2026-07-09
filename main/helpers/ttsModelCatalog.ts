@@ -17,8 +17,11 @@ export function getTtsModelsRoot(): string {
   return root;
 }
 
-/** TTS 模型标识（与本地子目录一一对应）。v1 = kokoro 多语 + vits-zh 中文补充。 */
-export type TtsModelId = 'kokoro-multi-lang-v1_1' | 'vits-zh-aishell3';
+/** TTS 模型标识（与本地子目录一一对应）。v1 = kokoro 多语 + vits-zh 中文补充；v2 + zipvoice 克隆。 */
+export type TtsModelId =
+  | 'kokoro-multi-lang-v1_1'
+  | 'vits-zh-aishell3'
+  | 'zipvoice-distill-zh-en';
 
 export const TTS_DEFAULT_MODEL_ID: TtsModelId = 'kokoro-multi-lang-v1_1';
 
@@ -48,6 +51,14 @@ export interface TtsVoice {
   gender: 'f' | 'm';
 }
 
+/** 附加独立工件（整包之外的单文件，如 zipvoice 的 vocos vocoder 位于独立 release 路径）。 */
+export interface TtsModelExtraFile {
+  /** 落到模型目录的文件名（同时是 release 资产名）。 */
+  name: string;
+  /** GitHub release 路径（owner/repo/releases/download/tag）。 */
+  releasePath: string;
+}
+
 export interface TtsModelSpec {
   id: TtsModelId;
   dirName: string;
@@ -62,12 +73,16 @@ export interface TtsModelSpec {
   archiveName: string;
   /** 解包后顶层目录名（decompress strip:1 去掉，记录用）。 */
   archiveInnerDir: string;
+  /** 整包之外需单独下载的工件（随下载流程一并获取，计入安装判定）。 */
+  extraFiles?: TtsModelExtraFile[];
   /** 判定「已安装」必须存在的关键文件（相对 dirName）。 */
   requiredFiles: string[];
   /** 输出采样率（展示/预估用）。 */
   sampleRate: number;
   defaultVoiceId: string;
   voices: TtsVoice[];
+  /** 零样本克隆模型：无内置音色，voice 池 = 用户克隆音色（我的音色）。 */
+  cloneOnly?: boolean;
   /** 模型目录 → worker 模型请求（布局单一来源，经旧探索分支实测验证）。 */
   buildModelRequest: (dir: string, numThreads?: number) => TtsModelRequest;
 }
@@ -209,7 +224,56 @@ export const TTS_MODELS: Record<TtsModelId, TtsModelSpec> = {
       numThreads,
     }),
   },
+  'zipvoice-distill-zh-en': {
+    id: 'zipvoice-distill-zh-en',
+    dirName: 'zipvoice-distill-zh-en',
+    displayName: 'ZipVoice 声音克隆',
+    languages: ['zh', 'en'],
+    // 整包解包 ~163MB + vocoder 54MB。
+    approxInstallBytes: 217_000_000,
+    releasePath: TTS_RELEASE_PATH,
+    archiveName: 'sherpa-onnx-zipvoice-distill-int8-zh-en-emilia.tar.bz2',
+    archiveInnerDir: 'sherpa-onnx-zipvoice-distill-int8-zh-en-emilia',
+    // vocoder 位于独立 release 路径（vocoder-models），随下载流程一并获取。
+    extraFiles: [
+      {
+        name: 'vocos_24khz.onnx',
+        releasePath: 'k2-fsa/sherpa-onnx/releases/download/vocoder-models',
+      },
+    ],
+    requiredFiles: [
+      'encoder.int8.onnx',
+      'decoder.int8.onnx',
+      'tokens.txt',
+      'lexicon.txt',
+      'espeak-ng-data/phontab',
+      'vocos_24khz.onnx',
+    ],
+    sampleRate: 24000,
+    defaultVoiceId: '',
+    voices: [],
+    cloneOnly: true,
+    buildModelRequest: (dir, numThreads = 2) => ({
+      modelType: 'zipvoice',
+      encoder: path.join(dir, 'encoder.int8.onnx'),
+      decoder: path.join(dir, 'decoder.int8.onnx'),
+      vocoder: path.join(dir, 'vocos_24khz.onnx'),
+      tokens: path.join(dir, 'tokens.txt'),
+      dataDir: path.join(dir, 'espeak-ng-data'),
+      lexicon: path.join(dir, 'lexicon.txt'),
+      numThreads,
+    }),
+  },
 };
+
+/** 附加工件下载 URL（ghproxy 前置 / github 直连，同整包源语义）。 */
+export function getTtsExtraFileUrl(
+  extra: TtsModelExtraFile,
+  source: TtsModelSource,
+): string {
+  const github = `${getGithubBase()}/${extra.releasePath}/${extra.name}`;
+  return source === 'ghproxy' ? `${getGithubProxyPrefix()}/${github}` : github;
+}
 
 /** 整包下载 URL（ghproxy 前置 / github 直连）。 */
 export function getTtsArchiveUrl(

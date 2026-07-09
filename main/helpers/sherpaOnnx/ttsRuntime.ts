@@ -10,16 +10,29 @@ import { getSherpaLibDir, isSherpaLibInstalled } from './sherpaLibPaths';
  * （配置构建只在 worker 侧经 tts-config.js 完成，主侧不复制该逻辑）。
  */
 export interface TtsModelRequest {
-  modelType: 'kokoro' | 'vits';
-  model: string;
+  modelType: 'kokoro' | 'vits' | 'zipvoice';
+  /** kokoro / vits 模型 onnx。 */
+  model?: string;
   tokens: string;
   voices?: string;
   lexicon?: string;
   dataDir?: string;
   dictDir?: string;
   ruleFsts?: string;
+  /** zipvoice 三工件。 */
+  encoder?: string;
+  decoder?: string;
+  vocoder?: string;
   numThreads?: number;
   provider?: string;
+}
+
+/** 零样本克隆合成参数（zipvoice）：参考音频路径由 worker 侧读取并缓存。 */
+export interface TtsGenerationConfig {
+  refWavPath: string;
+  refText: string;
+  /** 生成质量/速度权衡（默认 4）。 */
+  numSteps?: number;
 }
 
 export interface TtsSynthesisResult {
@@ -115,6 +128,7 @@ class SherpaTtsRuntime {
   /**
    * 单段合成：text 以 sid（音色序号，voice id 的映射在 catalog 层）与 speed
    * 合成为 16-bit PCM wav 落盘 outWavPath。串行队列由调用方（管线并发闸）保证。
+   * 克隆合成（zipvoice）经 generationConfig 携参考音频路径与参考文本。
    */
   synthesize(req: {
     model: TtsModelRequest;
@@ -122,6 +136,7 @@ class SherpaTtsRuntime {
     sid: number;
     speed?: number;
     outWavPath: string;
+    generationConfig?: TtsGenerationConfig;
   }): { id: string; result: Promise<TtsSynthesisResult> } {
     const w = this.ensureWorker();
     const id = `s${++this.seq}`;

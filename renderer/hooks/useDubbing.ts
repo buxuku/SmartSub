@@ -36,6 +36,8 @@ export interface DubbingEngineOption {
   unstable?: boolean;
   /** 云服务商类型 id（计费口径提示按类型分流）。 */
   providerType?: string;
+  /** 克隆引擎（zipvoice）：voice 池 = 我的音色，空态引导创建。 */
+  cloneOnly?: boolean;
   voices: Array<{ id: string; label: string }>;
   defaultVoiceId?: string;
 }
@@ -112,19 +114,40 @@ export function useDubbing(options?: {
 
   const refreshEngines = useCallback(async () => {
     const opts: DubbingEngineOption[] = [];
+    // 克隆音色清单：zipvoice 引擎的 voice 池 + 火山克隆音色注入豆包实例。
+    let clonedVoices: Array<{
+      id: string;
+      name: string;
+      engine: string;
+      speakerId?: string;
+      providerId?: string;
+      trainStatus?: string;
+    }> = [];
+    try {
+      const r = await window.ipc.invoke('voiceClone:list');
+      if (r?.success) clonedVoices = r.data ?? [];
+    } catch {
+      /* ignore */
+    }
     try {
       const status = await window.ipc.invoke('getTtsModelStatus');
       for (const m of status?.models ?? []) {
+        const voices = m.cloneOnly
+          ? clonedVoices
+              .filter((v) => v.engine === 'zipvoice')
+              .map((v) => ({ id: v.id, label: v.name }))
+          : (m.voices ?? []).map((v: any) => ({
+              id: v.id,
+              label: v.label,
+            }));
         opts.push({
           key: `local:${m.id}`,
           kind: 'local',
           label: m.displayName ?? m.id,
           ready: !!m.installed,
-          voices: (m.voices ?? []).map((v: any) => ({
-            id: v.id,
-            label: v.label,
-          })),
-          defaultVoiceId: m.defaultVoiceId,
+          cloneOnly: !!m.cloneOnly,
+          voices,
+          defaultVoiceId: m.cloneOnly ? voices[0]?.id : m.defaultVoiceId,
         });
       }
     } catch (e) {
@@ -136,7 +159,23 @@ export function useDubbing(options?: {
         const voices = String(p.voices ?? '')
           .split(/[,，、;；\n]/)
           .map((s: string) => s.trim())
-          .filter(Boolean);
+          .filter(Boolean)
+          .map((v: string) => ({
+            id: v,
+            // voice_id 不可读的服务商（ElevenLabs）按名称映射展示。
+            label: resolveTtsVoiceLabel(p, v),
+          }));
+        // 绑定该实例且训练就绪的克隆音色（S_ 槽位）追加进音色池。
+        for (const cv of clonedVoices) {
+          if (
+            cv.engine === 'volcengine' &&
+            cv.providerId === p.id &&
+            cv.trainStatus === 'ready' &&
+            cv.speakerId
+          ) {
+            voices.push({ id: cv.speakerId, label: cv.name });
+          }
+        }
         opts.push({
           key: `cloud:${p.id}`,
           kind: 'cloud',
@@ -145,12 +184,8 @@ export function useDubbing(options?: {
           ready: isTtsProviderConfigured(p),
           unstable: getTtsProviderType(p.type)?.unstable,
           providerType: p.type,
-          // voice_id 不可读的服务商（ElevenLabs）按名称映射展示。
-          voices: voices.map((v: string) => ({
-            id: v,
-            label: resolveTtsVoiceLabel(p, v),
-          })),
-          defaultVoiceId: voices[0],
+          voices,
+          defaultVoiceId: voices[0]?.id,
         });
       }
     } catch (e) {

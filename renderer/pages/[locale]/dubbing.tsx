@@ -36,5 +36,9 @@ export default function DubbingPage() {
   );
 }
 
-export const getStaticProps = makeStaticProperties(['common', 'dubbing']);
+export const getStaticProps = makeStaticProperties([
+  'common',
+  'dubbing',
+  'voiceClone',
+]);
 export { getStaticPaths };

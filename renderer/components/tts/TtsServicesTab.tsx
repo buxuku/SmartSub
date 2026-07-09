@@ -1,8 +1,9 @@
 /**
  * 「配音服务」主从双栏（形制 EngineModelTab）：
- * 左栏分「本地模型」「在线服务」两组——本地 = 每个 TTS 模型一个条目；
+ * 左栏分「本地模型」「在线服务」「我的音色」三组——本地 = 每个 TTS 模型一个条目；
  * 在线 = 每个服务商预设/实例一个平级入口（OpenAI / 硅基流动 / Edge TTS + 自定义），
- * 数据驱动自 TTS_PROVIDER_TYPES / TTS_PROVIDER_PRESETS。右栏 = 选中条目的管理面板。
+ * 数据驱动自 TTS_PROVIDER_TYPES / TTS_PROVIDER_PRESETS；我的音色 = 每个克隆音色
+ * 一个条目 + 创建向导入口。右栏 = 选中条目的管理面板。
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'next-i18next';
@@ -18,13 +19,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Plus, X } from 'lucide-react';
+import { Mic2, Plus, X } from 'lucide-react';
 import { cn } from 'lib/utils';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import useTtsProviders from 'hooks/useTtsProviders';
+import useClonedVoices from 'hooks/useClonedVoices';
 import useTtsModels from './useTtsModels';
 import TtsModelPanel from './TtsModelPanel';
 import TtsProviderPanel from './TtsProviderPanel';
+import ClonedVoicePanel from './ClonedVoicePanel';
+import CloneVoiceWizard from '../voiceClone/CloneVoiceWizard';
 import {
   TTS_OPENAI_COMPATIBLE,
   TTS_VIEW_PREFIX,
@@ -34,11 +38,14 @@ import {
 } from '../../../types/ttsProvider';
 
 const MODEL_VIEW_PREFIX = 'model:';
+const CLONE_VIEW_PREFIX = 'clone:';
 
 function isTtsServicesViewId(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   return (
-    value.startsWith(MODEL_VIEW_PREFIX) || value.startsWith(TTS_VIEW_PREFIX)
+    value.startsWith(MODEL_VIEW_PREFIX) ||
+    value.startsWith(TTS_VIEW_PREFIX) ||
+    value.startsWith(CLONE_VIEW_PREFIX)
   );
 }
 
@@ -58,9 +65,11 @@ function StatusDot({ ready, label }: { ready: boolean; label?: string }) {
 const TtsServicesTab: React.FC = () => {
   const { t } = useTranslation('resources');
   const { t: commonT } = useTranslation('common');
+  const { t: cloneT } = useTranslation('voiceClone');
 
   const modelsApi = useTtsModels();
   const tts = useTtsProviders();
+  const clones = useClonedVoices();
 
   const [selectedView, setSelectedView] = useLocalStorageState<string>(
     'ttsServicesSelectedView',
@@ -71,6 +80,7 @@ const TtsServicesTab: React.FC = () => {
   const [addCustomOpen, setAddCustomOpen] = useState(false);
   const [customName, setCustomName] = useState('');
   const [customApiUrl, setCustomApiUrl] = useState('');
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const providerViews = useMemo(
     () => buildTtsViews(tts.providers),
@@ -85,14 +95,31 @@ const TtsServicesTab: React.FC = () => {
   const activeProviderView = providerViews.find(
     (v) => v.viewId === selectedView,
   );
+  const activeClone = selectedView.startsWith(CLONE_VIEW_PREFIX)
+    ? clones.voices.find(
+        (v) => v.id === selectedView.slice(CLONE_VIEW_PREFIX.length),
+      )
+    : undefined;
 
   // 选中态收敛：失效的 tts:*（自定义被删/类型下线）回落同类型首条目，
-  // 无同类再回落首个模型条目；失效的 model:* 回落首个模型。
+  // 无同类再回落首个模型条目；失效的 model:* / clone:* 回落首个模型。
   useEffect(() => {
-    if (!tts.loaded || !modelsApi.loaded) return;
+    if (!tts.loaded || !modelsApi.loaded || !clones.loaded) return;
     if (selectedView.startsWith(MODEL_VIEW_PREFIX)) {
       if (!activeModel && modelsApi.models.length > 0) {
         setSelectedView(`${MODEL_VIEW_PREFIX}${modelsApi.models[0].id}`);
+      }
+      return;
+    }
+    if (selectedView.startsWith(CLONE_VIEW_PREFIX)) {
+      if (!activeClone) {
+        setSelectedView(
+          clones.voices[0]
+            ? `${CLONE_VIEW_PREFIX}${clones.voices[0].id}`
+            : modelsApi.models[0]
+              ? `${MODEL_VIEW_PREFIX}${modelsApi.models[0].id}`
+              : selectedView,
+        );
       }
       return;
     }
@@ -110,10 +137,13 @@ const TtsServicesTab: React.FC = () => {
   }, [
     tts.loaded,
     modelsApi.loaded,
+    clones.loaded,
+    clones.voices,
     modelsApi.models,
     selectedView,
     activeModel,
     activeProviderView,
+    activeClone,
     providerViews,
     setSelectedView,
   ]);
@@ -243,6 +273,60 @@ const TtsServicesTab: React.FC = () => {
               </span>
             </button>
           </div>
+
+          {/* 我的音色组：克隆音色逐条 + 创建向导入口 */}
+          <div className="flex shrink-0 gap-1 md:flex-col">
+            <div className="hidden px-3 pb-1 text-xs font-medium text-muted-foreground md:block">
+              {cloneT('groupMyVoices')}
+            </div>
+            {clones.voices.map((v) => {
+              const viewId = `${CLONE_VIEW_PREFIX}${v.id}`;
+              const active = selectedView === viewId;
+              const ready =
+                v.engine === 'zipvoice' ? true : v.trainStatus === 'ready';
+              return (
+                <button
+                  key={viewId}
+                  type="button"
+                  aria-current={active ? 'true' : undefined}
+                  onClick={() => setSelectedView(viewId)}
+                  className={cn(
+                    'flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors',
+                    'shrink-0 md:w-full',
+                    active
+                      ? 'bg-primary/10 font-medium text-primary ring-1 ring-inset ring-primary/20'
+                      : 'text-foreground hover:bg-muted/60',
+                  )}
+                >
+                  <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
+                    <Mic2 className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate" title={v.name}>
+                    {v.name}
+                  </span>
+                  <StatusDot
+                    ready={ready}
+                    label={ready ? cloneT('trainReady') : cloneT('training')}
+                  />
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setWizardOpen(true)}
+              className={cn(
+                'flex items-center gap-2 rounded-lg border border-dashed border-input px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
+                'shrink-0 md:w-full',
+              )}
+            >
+              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
+                <Plus className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1 truncate">
+                {cloneT('createVoice')}
+              </span>
+            </button>
+          </div>
         </nav>
 
         {/* 右栏 */}
@@ -252,9 +336,11 @@ const TtsServicesTab: React.FC = () => {
               <h2 className="text-lg font-semibold">
                 {activeModel
                   ? activeModel.displayName
-                  : (activeProviderView?.kind === 'brand'
-                      ? activeProviderView.type.name
-                      : activeProviderView?.label) || ''}
+                  : activeClone
+                    ? activeClone.name
+                    : (activeProviderView?.kind === 'brand'
+                        ? activeProviderView.type.name
+                        : activeProviderView?.label) || ''}
               </h2>
               {activeProviderView &&
                 (activeProviderView.kind === 'preset' ||
@@ -266,6 +352,13 @@ const TtsServicesTab: React.FC = () => {
               {activeModel && (
                 <p className="text-xs text-muted-foreground">
                   {t('ttsServices.localSubtitle')}
+                </p>
+              )}
+              {activeClone && (
+                <p className="text-xs text-muted-foreground">
+                  {activeClone.engine === 'zipvoice'
+                    ? cloneT('engineZipvoice')
+                    : cloneT('engineVolcengine')}
                 </p>
               )}
             </div>
@@ -280,6 +373,8 @@ const TtsServicesTab: React.FC = () => {
                   {t('engines.fasterWhisper.notInstalled')}
                 </Badge>
               )
+            ) : activeClone ? (
+              readyBadge
             ) : activeProviderView ? (
               activeProviderView.configured ? (
                 readyBadge
@@ -296,6 +391,15 @@ const TtsServicesTab: React.FC = () => {
 
           {activeModel ? (
             <TtsModelPanel model={activeModel} onUpdate={modelsApi.refresh} />
+          ) : activeClone ? (
+            <ClonedVoicePanel
+              voice={activeClone}
+              onRename={clones.rename}
+              onRemove={clones.remove}
+              onRegenerateSample={clones.regenerateSample}
+              onVolcRefreshStatus={clones.volcRefreshStatus}
+              onVolcRetrain={clones.volcRetrain}
+            />
           ) : activeProviderView ? (
             <TtsProviderPanel
               view={activeProviderView}
@@ -306,6 +410,16 @@ const TtsServicesTab: React.FC = () => {
           ) : null}
         </div>
       </div>
+
+      {/* 创建克隆音色向导 */}
+      <CloneVoiceWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        onCreated={(voice) => {
+          clones.refresh();
+          setSelectedView(`${CLONE_VIEW_PREFIX}${voice.id}`);
+        }}
+      />
 
       {/* 添加自定义 OpenAI 兼容 TTS 实例 */}
       <Dialog open={addCustomOpen} onOpenChange={setAddCustomOpen}>

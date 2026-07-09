@@ -13,6 +13,7 @@ import {
   TTS_DEFAULT_SOURCE,
   getTtsSourceOrder,
   getTtsArchiveUrl,
+  getTtsExtraFileUrl,
   getTtsModelDir,
   getTtsModelsRoot,
   isTtsModelInstalled,
@@ -224,6 +225,28 @@ export class TtsModelDownloader {
     } finally {
       // 无论成功/失败/取消都清理临时整包，避免污染 models 根目录。
       if (fs.existsSync(tmp)) fs.rmSync(tmp, { force: true });
+    }
+
+    // 附加独立工件（如 zipvoice 的 vocos vocoder）：解包后逐个下载到模型目录。
+    // 进度按既有「分阶段重起」形制（下载 → 解包 → 附加件各自 0→99%）。
+    for (const extra of spec.extraFiles ?? []) {
+      const dest = path.join(destDir, extra.name);
+      if (fs.existsSync(dest)) continue;
+      this.update({
+        status: 'downloading',
+        downloaded: 0,
+        total: 0,
+        progress: 0,
+      });
+      const extraUrl = getTtsExtraFileUrl(extra, source);
+      const tmpExtra = `${dest}.part`;
+      try {
+        if (fs.existsSync(tmpExtra)) fs.rmSync(tmpExtra, { force: true });
+        await this.downloadArchive(extraUrl, tmpExtra);
+        fs.renameSync(tmpExtra, dest);
+      } finally {
+        if (fs.existsSync(tmpExtra)) fs.rmSync(tmpExtra, { force: true });
+      }
     }
   }
 

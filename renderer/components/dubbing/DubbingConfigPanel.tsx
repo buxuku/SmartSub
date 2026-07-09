@@ -1,7 +1,8 @@
 /**
  * 左栏配置：引擎 / voice(试听) / 整体语速 / 背景音 / 输出形态 / 导出。
+ * 克隆引擎（zipvoice）空音色时内嵌创建向导入口。
  */
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -20,6 +21,7 @@ import {
   Download,
   FolderOpen,
   AlertTriangle,
+  Mic2,
 } from 'lucide-react';
 import type { UseDubbingReturn } from '../../hooks/useDubbing';
 import type {
@@ -27,15 +29,19 @@ import type {
   DubbingOutputMode,
   DubbingOverlapMode,
 } from '../../../types/dubbing';
+import CloneVoiceWizard from '../voiceClone/CloneVoiceWizard';
 
 export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
   const { t } = useTranslation('dubbing');
+  const { t: cloneT } = useTranslation('voiceClone');
+  const [wizardOpen, setWizardOpen] = useState(false);
   const {
     engineOptions,
     activeEngine,
     activeVoice,
     config,
     updateConfig,
+    refreshEngines,
     previewVoice,
     previewing,
     running,
@@ -128,6 +134,19 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
             )}
           </Button>
         </div>
+        {/* 克隆引擎：音色即「我的音色」，空态/追加都从这里进向导 */}
+        {activeEngine?.cloneOnly && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full gap-1.5"
+            disabled={disabled}
+            onClick={() => setWizardOpen(true)}
+          >
+            <Mic2 className="h-3.5 w-3.5" />
+            {cloneT('createVoice')}
+          </Button>
+        )}
       </div>
 
       {/* 整体语速 */}
@@ -338,6 +357,16 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
           </div>
         )}
       </div>
+
+      {/* 创建克隆音色向导（克隆引擎入口） */}
+      <CloneVoiceWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        onCreated={(voice) => {
+          refreshEngines();
+          updateConfig({ voice: voice.id });
+        }}
+      />
     </div>
   );
 }

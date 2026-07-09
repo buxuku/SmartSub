@@ -29,6 +29,7 @@ import { setupParameterHandlers } from './helpers/ipcParameterHandlers';
 import { setupProofreadHandlers } from './helpers/ipcProofreadHandlers';
 import { setupSubtitleMergeHandlers } from './helpers/ipcSubtitleMergeHandlers';
 import { setupDubbingHandlers } from './helpers/ipcDubbingHandlers';
+import { setupVoiceCloneHandlers } from './helpers/ipcVoiceCloneHandlers';
 import { configurationManager } from './service/configurationManager';
 import {
   registerAddonIpcHandlers,
@@ -176,6 +177,7 @@ app.on('before-quit', (event) => {
   setupAutoUpdater(mainWindow);
   setupSubtitleMergeHandlers(mainWindow);
   setupDubbingHandlers(mainWindow);
+  setupVoiceCloneHandlers(mainWindow);
   setMainWindowForAddon(mainWindow);
   registerEngineIpcHandlers();
   setMainWindowForEngine(mainWindow);

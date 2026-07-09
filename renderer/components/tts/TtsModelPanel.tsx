@@ -129,7 +129,9 @@ export default function TtsModelPanel({
     <div className="space-y-4">
       <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3">
         <p className="text-xs leading-relaxed text-muted-foreground">
-          {t('dubbingBlock.modelsIntro')}
+          {model.cloneOnly
+            ? t('dubbingBlock.cloneModelIntro')
+            : t('dubbingBlock.modelsIntro')}
         </p>
       </div>
 
@@ -138,7 +140,9 @@ export default function TtsModelPanel({
           {model.languages.join(' / ')}
         </Badge>
         <Badge variant="outline" className="text-[11px]">
-          {t('dubbingBlock.voiceCount', { count: model.voices.length })}
+          {model.cloneOnly
+            ? t('dubbingBlock.clonePool')
+            : t('dubbingBlock.voiceCount', { count: model.voices.length })}
         </Badge>
         <span className="text-xs text-muted-foreground">
           {fmtBytes(model.approxInstallBytes)} · {model.sampleRate / 1000}kHz

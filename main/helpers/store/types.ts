@@ -1,6 +1,7 @@
 import { Provider, CustomParameterConfig } from '../../../types/provider';
 import type { AsrProvider } from '../../../types/asrProvider';
 import type { TtsProvider } from '../../../types/ttsProvider';
+import type { ClonedVoice } from '../../../types/voiceClone';
 import { ProofreadHistory, ProofreadTask } from '../../../types/proofread';
 import { IFiles, TaskProject } from '../../../types';
 import { WorkItem } from '../../../types/workItem';
@@ -26,6 +27,8 @@ export type StoreType = {
   asrProviders?: AsrProvider[];
   /** 云端配音（TTS）服务商实例列表（语义对齐 asrProviders）。缺省未定义时按 [] 处理。 */
   ttsProviders?: TtsProvider[];
+  /** 用户克隆音色（我的音色）列表。缺省未定义时按 [] 处理。 */
+  clonedVoices?: ClonedVoice[];
   userConfig: Record<string, any>;
   settings: {
     whisperCommand: string;

@@ -31,6 +31,20 @@ export function buildVolcTtsHeaders(
 }
 
 /**
+ * 合成资源版本按音色路由：`S_` 开头为控制台购买的克隆音色槽位，
+ * 须以 `seed-icl-2.0`（声音复刻 ICL 2.0 字符版）发起；其余沿用实例配置。
+ */
+export function volcResourceIdForVoice(
+  voice: unknown,
+  configured: unknown,
+): string {
+  if (typeof voice === 'string' && voice.startsWith('S_')) {
+    return 'seed-icl-2.0';
+  }
+  return String(configured ?? '').trim();
+}
+
+/**
  * speed（倍速）→ `audio_params.speech_rate`：官方定义 -50 = 0.5 倍速、
  * 0 = 原速、100 = 2 倍速，恰为线性 `(speed - 1) × 100`，clamp [-50, 100]
  * （即倍速 [0.5, 2.0]，完整覆盖对齐引擎实用区间）。
@@ -202,7 +216,7 @@ export function volcTtsErrorHint(
     return `豆包 TTS: 并发/配额受限${suffix}。请调低该实例的并发（默认 2）或稍后重试；免费赠额与字符版的并发上限有限`;
   }
   if (code === 45000000 && /speaker|permission/.test(msg)) {
-    return `豆包 TTS: 音色不可用${suffix}。请检查音色 id 拼写是否正确、账号是否已开通该音色对应的商品`;
+    return `豆包 TTS: 音色不可用${suffix}。请检查音色 id 拼写是否正确、账号是否已开通该音色对应的商品；克隆音色（S_ 开头）需确认训练已完成且属于当前账号`;
   }
   if (code === 55000000 && /mismatch/.test(msg)) {
     return `豆包 TTS: 音色 id 有误或与资源版本不匹配${suffix}。请检查音色 id 拼写；2.0 音色（*_uranus_bigtts 等）需选 seed-tts-2.0，1.0 音色（*_mars/moon_bigtts 等）需选 seed-tts-1.0`;

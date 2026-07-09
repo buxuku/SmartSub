@@ -444,6 +444,8 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
         sampleRate: spec.sampleRate,
         defaultVoiceId: spec.defaultVoiceId,
         voices: spec.voices,
+        // 克隆模型：voice 池 = 我的音色，渲染层据此改从 voiceClone:list 取。
+        cloneOnly: spec.cloneOnly ?? false,
       };
     }),
   }));

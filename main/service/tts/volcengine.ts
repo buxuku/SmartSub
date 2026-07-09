@@ -12,6 +12,7 @@ import {
   buildVolcTtsBody,
   buildVolcTtsHeaders,
   parseVolcTtsStream,
+  volcResourceIdForVoice,
   volcTtsErrorHint,
 } from './volcengineTtsUtils';
 
@@ -31,7 +32,8 @@ export async function synthesizeWithVolcengine(
 ): Promise<TtsSynthesizeResult> {
   const apiKey = String(provider.apiKey ?? '').trim();
   if (!apiKey) throw new Error('豆包 TTS: API Key is required');
-  const resourceId = String(provider.resourceId ?? '').trim();
+  // S_ 克隆音色自动切 seed-icl-2.0（声音复刻资源），普通音色沿用实例配置。
+  const resourceId = volcResourceIdForVoice(request.voice, provider.resourceId);
   const timeoutMs = toPositiveNumber(provider.requestTimeoutSec, 60) * 1000;
 
   const signals = [AbortSignal.timeout(timeoutMs)];

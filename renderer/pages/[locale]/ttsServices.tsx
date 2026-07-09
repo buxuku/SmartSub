@@ -22,5 +22,9 @@ const TtsServicesPage = () => {
 
 export default TtsServicesPage;
 
-export const getStaticProps = makeStaticProperties(['common', 'resources']);
+export const getStaticProps = makeStaticProperties([
+  'common',
+  'resources',
+  'voiceClone',
+]);
 export { getStaticPaths };

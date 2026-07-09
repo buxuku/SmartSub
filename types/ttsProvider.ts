@@ -333,6 +333,7 @@ export const TTS_PROVIDER_TYPES: TtsProviderType[] = [
     docsUrl: 'https://www.volcengine.com/docs/6561/1257544',
     capabilities: {
       speedControl: 'native', // audio_params.speech_rate [-50,100] ↔ 倍速 [0.5,2.0]
+      clone: true, // 声音复刻 2.0（S_ 音色 + seed-icl-2.0 资源路由）
       maxCharsPerRequest: VOLC_TTS_MAX_CHARS,
       concurrency: 2, // 字符版并发上限保守默认
     },
@@ -348,6 +349,7 @@ export const TTS_PROVIDER_TYPES: TtsProviderType[] = [
       {
         // 资源版本决定可用音色集与计费商品（2.0 音色配 seed-tts-2.0、
         // 1.0 音色（mars/moon 系列）配 seed-tts-1.0），错配报 55000000。
+        // S_ 克隆音色由合成层自动路由 seed-icl-2.0，不占本配置。
         key: 'resourceId',
         label: 'ttsVolcResource',
         type: 'select',
@@ -365,6 +367,22 @@ export const TTS_PROVIDER_TYPES: TtsProviderType[] = [
         defaultValue:
           'zh_female_shuangkuaisisi_uranus_bigtts, zh_female_xiaohe_uranus_bigtts, zh_female_vv_uranus_bigtts, zh_male_m191_uranus_bigtts, zh_male_ruyayichen_uranus_bigtts',
         tips: 'ttsVoicesVolcTips',
+      },
+      {
+        // 声音复刻训练凭据（可选）：训练接口走旧版双凭据（X-Api-App-Key +
+        // X-Api-Access-Key），与合成单 Key 并存；不参与就绪判定。
+        key: 'appId',
+        label: 'ttsVolcAppId',
+        type: 'text',
+        required: false,
+        tips: 'ttsVolcAppIdTips',
+      },
+      {
+        key: 'accessToken',
+        label: 'ttsVolcAccessToken',
+        type: 'password',
+        required: false,
+        tips: 'ttsVolcAccessTokenTips',
       },
       {
         key: 'requestTimeoutSec',
