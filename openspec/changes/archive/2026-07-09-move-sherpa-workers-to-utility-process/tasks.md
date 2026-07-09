@@ -14,4 +14,4 @@
 
 - [x] 3.1 `scripts/voice-clone/utility-smoke-main.js` + `npm run smoke:utility`：三阶段全过——①utilityProcess 合成 OK（stderr 采集同时验证：sherpa lexicon 警告被捕获）；②在途合成时 kill 子进程，主进程存活；③重新 fork 合成成功（自动重建语义）
 - [x] 3.2 回归：worker_threads 兼容路径全过——`poc:zipvoice`（RTF 0.44 与迁移前一致）/ `smoke:voice-clone` / `speed-curve`（zh 4.1 字/s 基准复现）；`test:voice-clone` 126 / `test:dubbing` 137 / `npm run build` 全过
-- [ ] 3.3 真机（用户）：dev 起应用跑一次克隆合成与 ASR 转写，确认行为无回归；（可选）复现一次超长文本克隆确认崩溃只影响子进程
+- [x] 3.3 真机（用户，2026-07-09）：dev 应用内克隆合成与本地转写均正常运行，无回归
