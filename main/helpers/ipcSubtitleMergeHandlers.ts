@@ -13,8 +13,11 @@ import {
   getSubtitleFormat,
   countSubtitles,
   cancelCurrentMerge,
+  buildAssForSubtitle,
   MERGE_CANCELLED,
 } from './subtitleMerger';
+import { loadFontData } from './fontResolver';
+import type { SubtitleStyle } from '../../types/subtitleMerge';
 import {
   acquireTaskPowerSaveBlocker,
   releaseTaskPowerSaveBlocker,
@@ -186,6 +189,77 @@ export function setupSubtitleMergeHandlers(mainWindow: BrowserWindow) {
         return { success: true, data: outputPath };
       } catch (error) {
         return { success: false, error: `生成输出路径失败: ${error}` };
+      }
+    },
+  );
+
+  // 生成预览用 ASS 内容（与烧录共用同一生成逻辑，保证所见即所得）
+  ipcMain.handle(
+    'subtitleMerge:buildPreviewAss',
+    async (
+      event,
+      {
+        subtitlePath,
+        sampleText,
+        style,
+      }: {
+        subtitlePath?: string | null;
+        sampleText?: string;
+        style: SubtitleStyle;
+      },
+    ): Promise<SubtitleMergeResponse<string>> => {
+      try {
+        let content: string;
+        let pathForFormat: string;
+        if (subtitlePath && fs.existsSync(subtitlePath)) {
+          content = await fs.promises.readFile(subtitlePath, 'utf-8');
+          pathForFormat = subtitlePath;
+        } else {
+          // 未选字幕文件：用样例文字生成一条全程显示的字幕（调样式用）
+          const text = (sampleText || '字幕预览效果').replace(/\r\n?/g, '\n');
+          content = `1\n00:00:00,000 --> 99:00:00,000\n${text}\n`;
+          pathForFormat = 'sample.srt';
+        }
+        const { assContent } = buildAssForSubtitle(
+          content,
+          pathForFormat,
+          style,
+        );
+        return { success: true, data: assContent };
+      } catch (error) {
+        logMessage(`生成预览 ASS 失败: ${error}`, 'error');
+        return { success: false, error: `生成预览 ASS 失败: ${error}` };
+      }
+    },
+  );
+
+  // 读取字体文件数据（供 JASSUB WASM 预览加载真实字形；WASM 无法直接访问系统字体）
+  ipcMain.handle(
+    'subtitleMerge:getFontData',
+    async (
+      event,
+      { fontName }: { fontName: string },
+    ): Promise<
+      SubtitleMergeResponse<{ fontName: string; data: Uint8Array }>
+    > => {
+      try {
+        const resolved = loadFontData(fontName);
+        if (!resolved) {
+          return {
+            success: false,
+            error: `无法定位字体文件: ${fontName}`,
+          };
+        }
+        return {
+          success: true,
+          data: {
+            fontName: resolved.fontName,
+            data: new Uint8Array(resolved.data),
+          },
+        };
+      } catch (error) {
+        logMessage(`读取字体数据失败: ${error}`, 'error');
+        return { success: false, error: `读取字体数据失败: ${error}` };
       }
     },
   );

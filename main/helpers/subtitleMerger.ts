@@ -15,9 +15,20 @@ import type {
   MergeConfig,
   MergeProgress,
   VideoInfo,
-  SubtitleAlignment,
 } from '../../types/subtitleMerge';
 import { VIDEO_QUALITY_CRF } from '../../types/subtitleMerge';
+import {
+  detectSubtitleFormatFromContent,
+  parseSubtitleCues,
+} from './subtitleFormats';
+import {
+  buildAssDocument,
+  buildAssStyleLine,
+  cssColorToAss,
+  convertAlignment,
+  backOpacityToAssAlpha,
+} from './assStyleBuilder';
+import { containsCJK, resolveBurnFontName } from './fontResolver';
 
 // 设置 ffmpeg 路径
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
@@ -45,103 +56,41 @@ export function cancelCurrentMerge(): boolean {
 }
 
 /**
- * 将前端 numpad 风格的 Alignment 转换为 ASS/SSA 格式
- *
- * 前端 numpad 风格 (我们使用的):
- * 7=左上, 8=中上, 9=右上
- * 4=左中, 5=居中, 6=右中
- * 1=左下, 2=中下, 3=右下
- *
- * ASS/SSA 格式 (FFmpeg libass 使用的):
- * 底部行: 1=左下, 2=中下, 3=右下
- * 中间行: 9=左中, 10=居中, 11=右中
- * 顶部行: 5=左上, 6=中上, 7=右上
- */
-function convertAlignment(numpadAlignment: SubtitleAlignment): number {
-  const alignmentMap: Record<SubtitleAlignment, number> = {
-    // 底部行 (保持不变)
-    1: 1, // 左下 -> 1
-    2: 2, // 中下 -> 2
-    3: 3, // 右下 -> 3
-    // 中间行
-    4: 9, // 左中 -> 9
-    5: 10, // 居中 -> 10
-    6: 11, // 右中 -> 11
-    // 顶部行
-    7: 5, // 左上 -> 5
-    8: 6, // 中上 -> 6
-    9: 7, // 右上 -> 7
-  };
-  return alignmentMap[numpadAlignment] || 2;
-}
-
-/**
- * 将 CSS 颜色转换为 ASS 颜色格式
- * CSS: #RRGGBB 或 rgba(r, g, b, a)
- * ASS: &HAABBGGRR (Alpha, Blue, Green, Red)
- */
-export function cssColorToAss(cssColor: string, alpha: number = 0): string {
-  let r: number, g: number, b: number;
-
-  if (cssColor.startsWith('#')) {
-    // 处理 #RRGGBB 格式
-    const hex = cssColor.slice(1);
-    r = parseInt(hex.substr(0, 2), 16);
-    g = parseInt(hex.substr(2, 2), 16);
-    b = parseInt(hex.substr(4, 2), 16);
-  } else if (cssColor.startsWith('rgb')) {
-    // 处理 rgba(r, g, b, a) 格式
-    const match = cssColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-    if (match) {
-      r = parseInt(match[1]);
-      g = parseInt(match[2]);
-      b = parseInt(match[3]);
-    } else {
-      // 默认白色
-      r = 255;
-      g = 255;
-      b = 255;
-    }
-  } else {
-    // 默认白色
-    r = 255;
-    g = 255;
-    b = 255;
-  }
-
-  // 转换为 ASS 格式: &HAABBGGRR
-  const alphaHex = alpha.toString(16).padStart(2, '0').toUpperCase();
-  const blueHex = b.toString(16).padStart(2, '0').toUpperCase();
-  const greenHex = g.toString(16).padStart(2, '0').toUpperCase();
-  const redHex = r.toString(16).padStart(2, '0').toUpperCase();
-
-  return `&H${alphaHex}${blueHex}${greenHex}${redHex}`;
-}
-
-/**
- * 构建 force_style 参数字符串
+ * 构建 force_style 参数字符串（仅用于 ASS/SSA 输入文件的样式覆盖路径；
+ * SRT/VTT/LRC 输入走预生成 ASS 管线，见 assStyleBuilder.buildAssDocument）。
+ * 颜色映射与 buildAssStyleLine 保持相同语义（BorderStyle=3 背景框取色自 OutlineColour）。
  */
 export function buildForceStyle(style: SubtitleStyle): string {
   const parts: string[] = [];
+  const assAlpha = backOpacityToAssAlpha(style.backOpacity);
+  const isBoxMode = style.borderStyle === 3;
 
   // 字体设置
   parts.push(`FontName=${style.fontName}`);
   parts.push(`FontSize=${style.fontSize}`);
 
-  // 颜色设置 (ASS 格式)
+  // 颜色设置（ASS 格式，背景框模式下 libass 用 OutlineColour 绘制背景框）
   parts.push(`PrimaryColour=${cssColorToAss(style.primaryColor)}`);
-  parts.push(`OutlineColour=${cssColorToAss(style.outlineColor)}`);
-  parts.push(`BackColour=${cssColorToAss(style.backColor, 128)}`);
+  parts.push(
+    `OutlineColour=${
+      isBoxMode
+        ? cssColorToAss(style.backColor, assAlpha)
+        : cssColorToAss(style.outlineColor)
+    }`,
+  );
+  parts.push(`BackColour=${cssColorToAss(style.backColor, assAlpha)}`);
 
   // 字体样式
   if (style.bold) parts.push('Bold=1');
   if (style.italic) parts.push('Italic=1');
   if (style.underline) parts.push('Underline=1');
 
-  // 边框和阴影
+  // 边框和阴影（与 buildAssStyleLine 同语义：背景框模式 Outline 钳到最小 1、Shadow 钳 0）
   parts.push(`BorderStyle=${style.borderStyle}`);
-  parts.push(`Outline=${style.outline}`);
-  parts.push(`Shadow=${style.shadow}`);
+  parts.push(
+    `Outline=${isBoxMode ? Math.max(style.outline, 1) : style.outline}`,
+  );
+  parts.push(`Shadow=${isBoxMode ? 0 : style.shadow}`);
 
   // 对齐位置 (转换为 ASS 格式)
   const assAlignment = convertAlignment(style.alignment);
@@ -214,129 +163,88 @@ function pathNeedsSafeCopy(filePath: string): boolean {
   return /['\[\];,]/.test(filePath);
 }
 
-// 纯拉丁字体（不含 CJK 字形）。中文字幕若用这些字体烧录，libass 找不到字形会渲染成
-// 豆腐块/乱码（issue: mac 中文烧录乱码）。命中且字幕含 CJK 时回退到平台 CJK 字体。
-const LATIN_ONLY_FONTS = new Set([
-  'arial',
-  'helvetica',
-  'helvetica neue',
-  'georgia',
-  'times new roman',
-  'verdana',
-  'roboto',
-  'impact',
-  'tahoma',
-  'courier new',
-]);
-
-/** 文本是否包含 CJK（中日韩）字符 */
-function containsCJK(text: string): boolean {
-  return /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/.test(
-    text,
-  );
-}
-
-/** 选中字体是否为纯拉丁字体（无 CJK 字形） */
-function isLatinOnlyFont(fontName: string): boolean {
-  return LATIN_ONLY_FONTS.has((fontName || '').trim().toLowerCase());
-}
-
-/**
- * macOS 上「确有字体文件」的常见 CJK 字体（按优先级）。
- * 关键点：PingFang 在部分 macOS 上没有可被 fontconfig 索引的字体文件
- * （仅 CoreText 可见），libass 解析「PingFang SC」会回退到 Helvetica → 中文渲染成乱码。
- * 因此烧录前必须挑一个「文件确实存在」的 CJK 字体，按 family 名交给 libass。
- * family 名取自 libass/fontconfig 对相应文件的实际解析结果（已实测）。
- */
-const MAC_CJK_FONTS: Array<{ name: string; files: string[] }> = [
-  { name: 'PingFang SC', files: ['/System/Library/Fonts/PingFang.ttc'] },
-  {
-    name: 'Hiragino Sans GB',
-    files: ['/System/Library/Fonts/Hiragino Sans GB.ttc'],
-  },
-  {
-    name: 'Heiti SC',
-    files: [
-      '/System/Library/Fonts/STHeiti Medium.ttc',
-      '/System/Library/Fonts/STHeiti Light.ttc',
-    ],
-  },
-  {
-    name: 'Songti SC',
-    files: ['/System/Library/Fonts/Supplemental/Songti.ttc'],
-  },
-  {
-    name: 'Arial Unicode MS',
-    files: ['/System/Library/Fonts/Supplemental/Arial Unicode.ttf'],
-  },
-];
-
-let cachedMacCJKFont: string | null = null;
-
-/** macOS：返回第一个字体文件确实存在的 CJK 字体名（结果缓存） */
-function resolveMacCJKFont(): string {
-  if (cachedMacCJKFont) return cachedMacCJKFont;
-  const found = MAC_CJK_FONTS.find((f) =>
-    f.files.some((p) => {
-      try {
-        return fs.existsSync(p);
-      } catch {
-        return false;
-      }
-    }),
-  );
-  cachedMacCJKFont = found?.name ?? 'Arial Unicode MS';
-  return cachedMacCJKFont;
-}
-
-/** 该字体在 macOS 上是否为「文件存在」的已知 CJK 字体（可被 libass 正常解析） */
-function isMacResolvableCJKFont(fontName: string): boolean {
-  const norm = (fontName || '').trim().toLowerCase();
-  const matched = MAC_CJK_FONTS.find((f) => f.name.toLowerCase() === norm);
-  return Boolean(
-    matched &&
-      matched.files.some((p) => {
-        try {
-          return fs.existsSync(p);
-        } catch {
-          return false;
-        }
-      }),
-  );
-}
-
-/** 按运行平台返回一个稳定可用的 CJK 字体名 */
-function getPlatformCJKFont(): string {
-  switch (process.platform) {
-    case 'darwin':
-      return resolveMacCJKFont();
-    case 'win32':
-      return 'Microsoft YaHei';
-    default:
-      return 'Noto Sans CJK SC';
-  }
-}
-
-// 备注：曾尝试给 libass 传 fontsdir 兜底，但实测打包版 ffmpeg 的默认 fontconfig
+// 备注：CJK 字体兜底逻辑已抽至 fontResolver.ts（烧录与 JASSUB 预览共用）。
+// 曾尝试给 libass 传 fontsdir 兜底，但实测打包版 ffmpeg 的默认 fontconfig
 // 已能按 family 名解析系统 CJK 字体（含 Supplemental 目录），fontsdir 反而会触发
 // 扫描整目录的无害告警（如 Apple Color Emoji 元数据读取失败），故移除。
 
-/**
- * 为「含 CJK 的字幕」决定最终烧录字体：
- * - 不含 CJK：原样使用用户所选字体；
- * - macOS：所选字体若不是「文件存在的已知 CJK 字体」（含用户默认 PingFang 在本机缺失的情况），
- *   一律换成 resolveMacCJKFont() 解析出的可用 CJK 字体；
- * - 其它平台：仅当所选为纯拉丁字体时回退到平台 CJK 字体。
- */
-function resolveBurnFontName(chosenFont: string, hasCJK: boolean): string {
-  if (!hasCJK) return chosenFont;
-  if (process.platform === 'darwin') {
-    return isMacResolvableCJKFont(chosenFont)
-      ? chosenFont
-      : resolveMacCJKFont();
-  }
-  return isLatinOnlyFont(chosenFont) ? getPlatformCJKFont() : chosenFont;
+/** ASS/SSA 输入走 force_style 覆盖路径；其它格式走预生成 ASS 管线 */
+function isAssInput(subtitlePath: string, content: string): boolean {
+  return detectSubtitleFormatFromContent(subtitlePath, content) === 'ass';
 }
+
+/**
+ * 按当前样式为字幕文件生成 ASS 文档（烧录与预览共用，保证所见即所得）。
+ * 内含 CJK 字体兜底：字幕含中文而所选字体无 CJK 字形/本机不可用时替换 Fontname。
+ */
+export function buildAssForSubtitle(
+  subtitleContent: string,
+  subtitlePath: string,
+  style: SubtitleStyle,
+): { assContent: string; effectiveStyle: SubtitleStyle } {
+  const format = detectSubtitleFormatFromContent(subtitlePath, subtitleContent);
+  const cues = parseSubtitleCues(subtitleContent, format);
+
+  let effectiveStyle = style;
+  const hasCJK = containsCJK(subtitleContent);
+  const burnFont = resolveBurnFontName(style.fontName, hasCJK);
+  if (burnFont !== style.fontName) {
+    effectiveStyle = { ...style, fontName: burnFont };
+    logMessage(
+      `字幕含中文，但所选字体「${style.fontName}」在本机不可用/无 CJK 字形，已改用「${burnFont}」`,
+      'warning',
+    );
+  }
+
+  return { assContent: buildAssDocument(cues, effectiveStyle), effectiveStyle };
+}
+
+/** 将生成的 ASS 文本写入临时目录，返回临时文件路径（调用方负责清理） */
+function writeTempAssFile(assContent: string): string {
+  const tmpDir = path.join(os.tmpdir(), 'video-subtitle-master');
+  if (!fs.existsSync(tmpDir)) {
+    fs.mkdirSync(tmpDir, { recursive: true });
+  }
+  const tmpPath = path.join(tmpDir, `burn_${Date.now()}.ass`);
+  fs.writeFileSync(tmpPath, assContent, 'utf-8');
+  logMessage(`生成临时 ASS 字幕文件: ${tmpPath}`, 'info');
+  return tmpPath;
+}
+
+/** 4K（高度≥1800）在画质档位基准上 CRF +2：高像素密度下感知质量冗余，控制体积 */
+const CRF_4K_HEIGHT_THRESHOLD = 1800;
+const CRF_4K_ADJUSTMENT = 2;
+
+/**
+ * 用打包的 ffmpeg-static 探测视频分辨率（ffprobe 兜底）。
+ * getVideoInfo 依赖系统 ffprobe（应用不打包），大量用户环境没有；
+ * `ffmpeg -i` 的 stderr 流信息始终可用。
+ */
+function probeResolutionViaFfmpeg(
+  videoPath: string,
+): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const { execFile } =
+      require('child_process') as typeof import('child_process');
+    // ffmpeg -i 无输出文件会以非零码退出，但 stderr 已包含流信息
+    execFile(
+      ffmpegPath,
+      ['-hide_banner', '-i', videoPath],
+      { timeout: 10000 },
+      (_err, _stdout, stderr) => {
+        const match = /Video:[^\n]*?(\d{2,5})x(\d{2,5})/.exec(stderr || '');
+        if (match) {
+          resolve({ width: Number(match[1]), height: Number(match[2]) });
+        } else {
+          resolve(null);
+        }
+      },
+    );
+  });
+}
+
+/** MP4 系容器（支持 -movflags +faststart） */
+const FASTSTART_EXTENSIONS = new Set(['.mp4', '.mov', '.m4v']);
 
 /**
  * 获取视频信息
@@ -387,12 +295,15 @@ export async function mergeSubtitleToVideo(
   // 获取视频分辨率，用于显式设置 original_size
   // 防止滤镜重新初始化时因自动检测失败而报错
   let originalSize = '';
+  // 视频高度：用于 4K 档 CRF 自适应偏移
+  let videoHeight = 0;
   // 视频总时长（秒），用于在 progress.percent 不可用时自算合并进度（issue #310）
   let totalDurationSec = 0;
   try {
     const videoInfo = await getVideoInfo(videoPath);
     if (videoInfo.width > 0 && videoInfo.height > 0) {
       originalSize = `:original_size=${videoInfo.width}x${videoInfo.height}`;
+      videoHeight = videoInfo.height;
     }
     totalDurationSec = videoInfo.duration || 0;
   } catch (err) {
@@ -401,14 +312,44 @@ export async function mergeSubtitleToVideo(
       'warning',
     );
   }
+  // ffprobe 不可用时（应用未打包 ffprobe），用打包的 ffmpeg 探测分辨率兜底
+  if (videoHeight <= 0) {
+    const probed = await probeResolutionViaFfmpeg(videoPath);
+    if (probed) {
+      videoHeight = probed.height;
+      if (!originalSize) {
+        originalSize = `:original_size=${probed.width}x${probed.height}`;
+      }
+      logMessage(
+        `ffmpeg 探测到分辨率: ${probed.width}x${probed.height}`,
+        'info',
+      );
+    }
+  }
+
+  // 硬字幕烧录：读取字幕内容，决定走「预生成 ASS 管线」还是「ASS 输入 force_style 覆盖」
+  let subtitleContent = '';
+  let useAssPipeline = false;
+  if (!isSoftMux) {
+    try {
+      subtitleContent = fs.readFileSync(subtitlePath, 'utf-8');
+      useAssPipeline = !isAssInput(subtitlePath, subtitleContent);
+    } catch (readErr) {
+      logMessage(
+        `读取字幕内容失败，回退 subtitles 滤镜路径: ${readErr}`,
+        'warning',
+      );
+    }
+  }
 
   // 如果字幕路径包含特殊字符（如单引号），则复制到临时目录使用安全文件名
   // 这是最可靠的方式，因为 ffmpeg 的滤镜字符串解析对特殊字符的处理在
   // 不同版本、不同平台、不同库封装下行为可能不一致
-  // 软字幕封装走普通 input 参数（不经滤镜字符串解析），无需安全副本
+  // 软字幕封装走普通 input 参数（不经滤镜字符串解析），无需安全副本；
+  // ASS 预生成管线写入的临时文件本身文件名安全，同样无需安全副本
   let actualSubPath = subtitlePath;
   let tmpSubPath: string | null = null;
-  if (!isSoftMux && pathNeedsSafeCopy(subtitlePath)) {
+  if (!isSoftMux && !useAssPipeline && pathNeedsSafeCopy(subtitlePath)) {
     tmpSubPath = createSafeSubtitleCopy(subtitlePath);
     actualSubPath = tmpSubPath;
   }
@@ -445,6 +386,7 @@ export async function mergeSubtitleToVideo(
     };
 
     mergeCancelled = false;
+    let tmpAssPath: string | null = null;
     let command: ReturnType<typeof ffmpeg>;
     if (isSoftMux) {
       // 软字幕封装：全流复制 + 字幕流转 srt 进 mkv，秒级完成无画质损失
@@ -462,13 +404,29 @@ export async function mergeSubtitleToVideo(
         '-y',
       ]);
     } else {
-      // 中文乱码兜底：字幕含 CJK 时，确保最终字体「文件确实存在且含 CJK 字形」。
-      // 典型坑：用户默认字体 PingFang 在部分 mac 上无字体文件，libass 会回退到 Helvetica
-      // 渲染成乱码（已实测）。这里换成本机存在的 CJK 字体（如 Hiragino Sans GB）。
-      let effectiveStyle = style;
-      try {
-        const subtitleSample = fs.readFileSync(subtitlePath, 'utf-8');
-        const hasCJK = containsCJK(subtitleSample);
+      let subtitleFilter: string;
+
+      if (useAssPipeline) {
+        // 预生成 ASS 管线（SRT/VTT/LRC）：样式完整承载在生成的 ASS 文档里，
+        // 显式 PlayRes + ScaledBorderAndShadow，语义确定；与预览共用同一生成逻辑。
+        const { assContent, effectiveStyle } = buildAssForSubtitle(
+          subtitleContent,
+          subtitlePath,
+          style,
+        );
+        try {
+          tmpAssPath = writeTempAssFile(assContent);
+        } catch (writeErr) {
+          reject(new Error(`写入临时 ASS 文件失败: ${writeErr}`));
+          return;
+        }
+        logMessage(`ASS Style: ${buildAssStyleLine(effectiveStyle)}`, 'info');
+        subtitleFilter = `ass='${escapeSubtitlePath(tmpAssPath)}'`;
+      } else {
+        // ASS/SSA 输入：尊重其自带样式结构，维持 subtitles + force_style 覆盖路径。
+        // 中文乱码兜底：字幕含 CJK 时，确保最终字体「文件确实存在且含 CJK 字形」。
+        let effectiveStyle = style;
+        const hasCJK = containsCJK(subtitleContent);
         const burnFont = resolveBurnFontName(style.fontName, hasCJK);
         if (burnFont !== style.fontName) {
           effectiveStyle = { ...style, fontName: burnFont };
@@ -477,30 +435,47 @@ export async function mergeSubtitleToVideo(
             'warning',
           );
         }
-      } catch (readErr) {
-        logMessage(`读取字幕用于字体检测失败（忽略）: ${readErr}`, 'warning');
-      }
 
-      const forceStyle = buildForceStyle(effectiveStyle);
-      const escapedSubPath = escapeSubtitlePath(actualSubPath);
-      const subtitlesFilter = `subtitles='${escapedSubPath}'${originalSize}:force_style='${forceStyle}'`;
-      logMessage(`subtitles filter: ${subtitlesFilter}`, 'info');
-      // 烧录必然重编码视频：显式指定 CRF 控制画质，避免沿用 libx264 默认(CRF23)
-      // 造成肉眼可见的压缩与体积骤减（issue #331）。音频仍直接复制不动。
-      const crf = VIDEO_QUALITY_CRF[videoQuality] ?? VIDEO_QUALITY_CRF.original;
+        const forceStyle = buildForceStyle(effectiveStyle);
+        const escapedSubPath = escapeSubtitlePath(actualSubPath);
+        subtitleFilter = `subtitles='${escapedSubPath}'${originalSize}:force_style='${forceStyle}'`;
+      }
+      logMessage(`subtitle filter: ${subtitleFilter}`, 'info');
+
+      // 烧录必然重编码视频：显式指定编码器/preset/CRF，不依赖 ffmpeg 隐式默认，
+      // 避免沿用 libx264 默认(CRF23) 造成肉眼可见的压缩与体积骤减（issue #331）。
+      // 音频仍直接复制不动。
+      const baseCrf =
+        VIDEO_QUALITY_CRF[videoQuality] ?? VIDEO_QUALITY_CRF.original;
+      // 4K 像素密度下同等 CRF 感知质量冗余，+2 控制体积（分辨率获取失败时不偏移）
+      const crfAdjustment =
+        videoHeight >= CRF_4K_HEIGHT_THRESHOLD ? CRF_4K_ADJUSTMENT : 0;
+      const crf = baseCrf + crfAdjustment;
       logMessage(
-        `hardcode video quality: ${videoQuality} (crf=${crf})`,
+        `hardcode video quality: ${videoQuality} (base crf=${baseCrf}, ` +
+          `resolution adjustment=${crfAdjustment > 0 ? `+${crfAdjustment} (height=${videoHeight})` : '0'}, final crf=${crf})`,
         'info',
       );
+
+      const outputOptions = [
+        '-c:v',
+        'libx264', // 显式编码器，不依赖容器隐式默认
+        '-preset',
+        'medium',
+        '-crf',
+        String(crf), // 画质档位（含分辨率偏移）→ libx264 CRF
+        '-c:a',
+        'copy', // 保持音频编码不变
+      ];
+      // MP4 系容器：moov box 前置，支持边下边播/秒开拖动
+      if (FASTSTART_EXTENSIONS.has(path.extname(outputPath).toLowerCase())) {
+        outputOptions.push('-movflags', '+faststart');
+      }
+      outputOptions.push('-y'); // 覆盖输出文件
+
       command = ffmpeg(videoPath)
-        .videoFilters(subtitlesFilter)
-        .outputOptions([
-          '-crf',
-          String(crf), // 画质档位 → libx264 CRF
-          '-c:a',
-          'copy', // 保持音频编码不变
-          '-y', // 覆盖输出文件
-        ]);
+        .videoFilters(subtitleFilter)
+        .outputOptions(outputOptions);
     }
 
     command
@@ -547,6 +522,9 @@ export async function mergeSubtitleToVideo(
         if (tmpSubPath) {
           cleanupTempSubtitle(tmpSubPath);
         }
+        if (tmpAssPath) {
+          cleanupTempSubtitle(tmpAssPath);
+        }
         logMessage('字幕合并完成', 'info');
         onProgress?.({
           percent: 100,
@@ -561,6 +539,9 @@ export async function mergeSubtitleToVideo(
         // 清理临时文件
         if (tmpSubPath) {
           cleanupTempSubtitle(tmpSubPath);
+        }
+        if (tmpAssPath) {
+          cleanupTempSubtitle(tmpAssPath);
         }
         // 用户取消：清理半成品、静默复位（不发 error 进度，不算失败）
         if (mergeCancelled) {

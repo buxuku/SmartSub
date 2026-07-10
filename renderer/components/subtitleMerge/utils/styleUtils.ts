@@ -53,11 +53,14 @@ export function subtitleStyleToCSS(
     overflowWrap: 'normal',
   };
 
+  // 背景不透明度（0-100%，缺省 50，与烧录端 backOpacityToAssAlpha 同语义）
+  const backAlpha = (style.backOpacity ?? 50) / 100;
+
   // 根据边框样式处理
   if (style.borderStyle === 3) {
-    // 背景框模式
-    css.backgroundColor = hexToRgba(style.backColor, 0.7);
-    css.borderRadius = `${4 * s}px`;
+    // 背景框模式：颜色与不透明度取用户设置（与烧录一致）；
+    // libass 的背景框是直角矩形，不加圆角，保证降级预览不失真
+    css.backgroundColor = hexToRgba(style.backColor, backAlpha);
   } else {
     // 边框 + 阴影模式
     const shadows: string[] = [];
@@ -74,10 +77,10 @@ export function subtitleStyleToCSS(
       }
     }
 
-    // 阴影效果
+    // 阴影效果（阴影色同样应用背景不透明度，与烧录端 BackColour alpha 一致）
     if (style.shadow > 0) {
       shadows.push(
-        `${style.shadow * s}px ${style.shadow * s}px ${style.shadow * s}px ${style.backColor}`,
+        `${style.shadow * s}px ${style.shadow * s}px ${style.shadow * s}px ${hexToRgba(style.backColor, backAlpha)}`,
       );
     }
 

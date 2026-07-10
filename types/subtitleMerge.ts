@@ -32,6 +32,11 @@ export interface SubtitleStyle {
   outlineColor: string;
   /** 背景/阴影颜色 (CSS 格式) */
   backColor: string;
+  /**
+   * 背景不透明度（0-100，百分比）。缺省按 50 处理（≈旧版硬编码 alpha=128）。
+   * ASS alpha 语义反转：assAlpha = round((1 - backOpacity/100) * 255)，00=不透明 FF=全透明。
+   */
+  backOpacity?: number;
   /** 是否加粗 */
   bold: boolean;
   /** 是否斜体 */

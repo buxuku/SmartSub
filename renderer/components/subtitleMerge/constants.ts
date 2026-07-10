@@ -25,6 +25,7 @@ export const DEFAULT_STYLE: SubtitleStyle = {
   primaryColor: '#FFFFFF',
   outlineColor: '#000000',
   backColor: '#000000',
+  backOpacity: 50,
   bold: false,
   italic: false,
   underline: false,
@@ -59,6 +60,7 @@ export const STYLE_PRESETS: StylePreset[] = [
       primaryColor: '#FFFFFF',
       outlineColor: '#000000',
       backColor: '#000000',
+      backOpacity: 50,
       bold: false,
       italic: false,
       underline: false,
@@ -81,6 +83,7 @@ export const STYLE_PRESETS: StylePreset[] = [
       primaryColor: '#FFFFC8',
       outlineColor: '#000000',
       backColor: '#000000',
+      backOpacity: 50,
       bold: false,
       italic: false,
       underline: false,
@@ -103,16 +106,43 @@ export const STYLE_PRESETS: StylePreset[] = [
       primaryColor: '#FFFFFF',
       outlineColor: '#000000',
       backColor: '#000000',
+      // YouTube 风格：背景框更实一些，接近官方播放器观感
+      backOpacity: 80,
       bold: false,
       italic: false,
       underline: false,
       borderStyle: 3,
-      outline: 0,
+      // 背景框模式下 outline 语义是框内边距（libass 要求 >0 才绘制框）
+      outline: 2,
       shadow: 0,
       alignment: 2,
       marginL: 20,
       marginR: 20,
       marginV: 15,
+    },
+  },
+  {
+    id: 'black_box',
+    name: '黑底白字',
+    nameKey: 'presetBlackBox',
+    style: {
+      fontName: 'Arial',
+      fontSize: 24,
+      primaryColor: '#FFFFFF',
+      outlineColor: '#000000',
+      backColor: '#000000',
+      // 完全不透明：字幕区域全遮挡，适合画面杂乱或需要突出字幕的场景
+      backOpacity: 100,
+      bold: false,
+      italic: false,
+      underline: false,
+      borderStyle: 3,
+      outline: 3,
+      shadow: 0,
+      alignment: 2,
+      marginL: 20,
+      marginR: 20,
+      marginV: 20,
     },
   },
   {
@@ -125,6 +155,7 @@ export const STYLE_PRESETS: StylePreset[] = [
       primaryColor: '#FFFFFF',
       outlineColor: '#333333',
       backColor: '#000000',
+      backOpacity: 50,
       bold: false,
       italic: false,
       underline: false,
@@ -147,6 +178,7 @@ export const STYLE_PRESETS: StylePreset[] = [
       primaryColor: '#FFFF00',
       outlineColor: '#000000',
       backColor: '#000000',
+      backOpacity: 50,
       bold: true,
       italic: false,
       underline: false,
@@ -210,6 +242,16 @@ export const SHADOW_RANGE = {
   min: 0,
   max: 10,
   default: 1,
+};
+
+/**
+ * 背景不透明度范围（百分比）
+ */
+export const BACK_OPACITY_RANGE = {
+  min: 0,
+  max: 100,
+  step: 5,
+  default: 50,
 };
 
 /**

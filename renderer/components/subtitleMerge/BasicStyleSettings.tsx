@@ -76,48 +76,25 @@ export default function BasicStyleSettings({
         </div>
       </div>
 
-      {/* 字体颜色 + 边框颜色 同行 */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label className="text-sm">{t('fontColor')}</Label>
-          <div className="flex items-center gap-2">
-            <Input
-              type="color"
-              value={style.primaryColor}
-              onChange={(e) => onUpdateStyle({ primaryColor: e.target.value })}
-              disabled={disabled}
-              className="w-10 h-9 p-1 cursor-pointer shrink-0"
-            />
-            <Input
-              type="text"
-              value={style.primaryColor}
-              onChange={(e) => onUpdateStyle({ primaryColor: e.target.value })}
-              disabled={disabled}
-              className="min-w-0 flex-1 font-mono text-sm"
-              placeholder="#FFFFFF"
-            />
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label className="text-sm">{t('outlineColor')}</Label>
-          <div className="flex items-center gap-2">
-            <Input
-              type="color"
-              value={style.outlineColor}
-              onChange={(e) => onUpdateStyle({ outlineColor: e.target.value })}
-              disabled={disabled}
-              className="w-10 h-9 p-1 cursor-pointer shrink-0"
-            />
-            <Input
-              type="text"
-              value={style.outlineColor}
-              onChange={(e) => onUpdateStyle({ outlineColor: e.target.value })}
-              disabled={disabled}
-              className="min-w-0 flex-1 font-mono text-sm"
-              placeholder="#000000"
-            />
-          </div>
+      {/* 字体颜色（描边/背景等效果类颜色移至「样式效果」区，按模式条件显示） */}
+      <div className="space-y-2">
+        <Label className="text-sm">{t('fontColor')}</Label>
+        <div className="flex items-center gap-2">
+          <Input
+            type="color"
+            value={style.primaryColor}
+            onChange={(e) => onUpdateStyle({ primaryColor: e.target.value })}
+            disabled={disabled}
+            className="w-10 h-9 p-1 cursor-pointer shrink-0"
+          />
+          <Input
+            type="text"
+            value={style.primaryColor}
+            onChange={(e) => onUpdateStyle({ primaryColor: e.target.value })}
+            disabled={disabled}
+            className="min-w-0 flex-1 font-mono text-sm"
+            placeholder="#FFFFFF"
+          />
         </div>
       </div>
 

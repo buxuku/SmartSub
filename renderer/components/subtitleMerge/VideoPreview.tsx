@@ -17,6 +17,7 @@ import type {
 } from '../../../types/subtitleMerge';
 import SubtitlePreviewOverlay from './SubtitlePreviewOverlay';
 import { LIBASS_SRT_PLAYRES_Y } from './utils/styleUtils';
+import { useJassubPreview } from './hooks/useJassubPreview';
 
 interface VideoPreviewProps {
   videoPath: string | null;
@@ -92,6 +93,8 @@ export default function VideoPreview({
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [cues, setCues] = useState<PreviewCue[]>([]);
+  // 底层 <video> 元素（ReactPlayer onReady 后可取），供 JASSUB 预览引擎挂载
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   // 预览框尺寸：按可视区宽高拟合最大矩形，保证完整可见且不撑出滚动条
   const [box, setBox] = useState<{ width: number; height: number }>({
     width: 0,
@@ -166,6 +169,15 @@ export default function VideoPreview({
     };
   }, [subtitlePath]);
 
+  // JASSUB（libass WASM）预览引擎：与烧录消费同一份生成的 ASS 内容，所见即所得。
+  // 引擎就绪前/初始化失败时回退下方 CSS 模拟叠加层。
+  const jassub = useJassubPreview({
+    videoEl,
+    subtitlePath,
+    sampleText,
+    style,
+  });
+
   // 叠加层文字：有字幕文件时所见即所得（空档期不显示），否则用样例文字调样式
   const currentCue = cues.length > 0 ? findCueAtTime(cues, currentTime) : null;
   const overlayText =
@@ -204,6 +216,12 @@ export default function VideoPreview({
                   height="100%"
                   playing={isPlaying}
                   controls={true}
+                  onReady={() => {
+                    const internal = playerRef.current?.getInternalPlayer();
+                    if (internal instanceof HTMLVideoElement) {
+                      setVideoEl(internal);
+                    }
+                  }}
                   onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
                   onProgress={handleProgress}
@@ -211,9 +229,9 @@ export default function VideoPreview({
                   style={{ position: 'absolute', top: 0, left: 0 }}
                 />
 
-                {/* CSS 模拟字幕叠加层（真实条目优先，未选字幕时显示样例）。
+                {/* CSS 模拟字幕叠加层（降级方案）：仅在 JASSUB 引擎未接管时显示。
                   scale=盒高/333：让预览字号随预览框大小等比缩放，≈烧录后字号 */}
-                {overlayText !== null && (
+                {!jassub.active && overlayText !== null && (
                   <SubtitlePreviewOverlay
                     style={style}
                     text={overlayText}

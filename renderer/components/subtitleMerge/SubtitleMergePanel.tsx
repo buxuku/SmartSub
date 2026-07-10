@@ -11,6 +11,7 @@ import { Separator } from '@/components/ui/separator';
 import FileSelector from './FileSelector';
 import StylePresets from './StylePresets';
 import BasicStyleSettings from './BasicStyleSettings';
+import EffectStyleSettings from './EffectStyleSettings';
 import AdvancedStyleSettings from './AdvancedStyleSettings';
 import VideoPreview from './VideoPreview';
 import MergeButton from './MergeButton';
@@ -139,6 +140,18 @@ export default function SubtitleMergePanel({
                 <div>
                   <h3 className="label-caps mb-2">{t('basicSettings')}</h3>
                   <BasicStyleSettings
+                    style={style}
+                    onUpdateStyle={updateStyle}
+                    disabled={styleDisabled}
+                  />
+                </div>
+
+                <Separator />
+
+                {/* 样式效果：描边/背景框模式二选一 + 按模式显示生效参数 */}
+                <div>
+                  <h3 className="label-caps mb-2">{t('effectSettings')}</h3>
+                  <EffectStyleSettings
                     style={style}
                     onUpdateStyle={updateStyle}
                     disabled={styleDisabled}
