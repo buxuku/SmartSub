@@ -45,8 +45,11 @@ jobs:
       - name: Unit tests (translation cancel)
         run: yarn test:translation-cancel
 
+      # 配音功能与 test:dubbing 脚本随 3.4.0 开发分支引入，尚未合入 main；
+      # 用 --if-present 让脚本存在才执行，避免 workflow 引用未合并脚本导致 main 恒红，
+      # 配音分支合入后本步骤自动生效、无需改 workflow。
       - name: Unit tests (dubbing)
-        run: yarn test:dubbing
+        run: npm run test:dubbing --if-present
 
       - name: Compile application (renderer + main)
         run: yarn build
