@@ -1269,7 +1269,7 @@ const T = (a: string, b: string, c: string): TokenTriple => [a, b, c];
     { start: 19.5, end: 21.51 },
     { start: 25.11, end: 27.14 },
   ];
-  // token 落在语音段内 → 原样保留；落在段间静音 → 就近吸附到边界（不再压在静音上）
+  // token 落在语音段内 → 原样保留；落在段间静音且靠前段 → 收敛到前段末点。
   eq(
     clampTriplesToSpeechSegments(
       [
@@ -1284,7 +1284,7 @@ const T = (a: string, b: string, c: string): TokenTriple => [a, b, c];
       ['00:00:21,510', '00:00:21,510', '度'],
       ['00:00:26,000', '00:00:26,500', '請'],
     ],
-    'clampTriplesToSpeechSegments: silence token snaps to nearest boundary',
+    'clampTriplesToSpeechSegments: silence tail token snaps to previous boundary',
   );
   // 夹紧后 group：静音前后被自然间隔切成两条，字幕不糊穿静音
   eq(
@@ -1300,6 +1300,198 @@ const T = (a: string, b: string, c: string): TokenTriple => [a, b, c];
     ).length >= 2,
     true,
     'clamp+group: silence yields a cue split (no spill across silence)',
+  );
+  // #372 真实公开视频片段：静音后首字「我」的 token 被 whisper 扩展为
+  // [上一段末点, 下一段起点]，逐 token 中点就近会把「我」误吸回上一句。
+  // 桥接完整静音的内容 token 应归到后段，恢复「通过」/「我这个」的句首归属。
+  eq(
+    groupTokenCues(
+      clampTriplesToSpeechSegments(
+        [
+          T('00:00:06,130', '00:00:06,400', '通过'),
+          T('00:00:06,400', '00:00:23,700', '我'),
+          T('00:00:23,700', '00:00:24,030', '这个'),
+        ],
+        [
+          { start: 4.7, end: 6.44 },
+          { start: 23.7, end: 25.83 },
+        ],
+      ),
+    ).map((cue) => cue[2]),
+    ['通过', '我这个'],
+    'clamp+group: full-gap bridge token belongs to following speech segment (#372)',
+  );
+  // #372 严格回归：同一句的连续 token 被线性摊进数秒静音时，必须按整个 run
+  // 归到同一语音段，不能从静音中点劈成「上一句后半 + 下一句前半」。
+  const issue372Speech = [
+    { start: 0, end: 2 },
+    { start: 7, end: 9 },
+    { start: 15, end: 17 },
+  ];
+  const issue372Input = [
+    T('00:00:00,200', '00:00:01,800', '语句1。'),
+    T('00:00:02,100', '00:00:02,800', '语句2前'),
+    T('00:00:04,200', '00:00:04,400', '中'),
+    T('00:00:06,700', '00:00:06,950', '后'),
+    T('00:00:07,600', '00:00:08,700', '收尾。'),
+    T('00:00:09,100', '00:00:09,800', '语句3前'),
+    T('00:00:12,200', '00:00:12,400', '中'),
+    T('00:00:14,700', '00:00:14,950', '后'),
+    T('00:00:15,600', '00:00:16,700', '收尾。'),
+  ];
+  const issue372Cues = groupTokenCues(
+    clampTriplesToSpeechSegments(issue372Input, issue372Speech),
+  );
+  const issue372Seconds = (value: string) => {
+    const parts = value.replace(',', '.').split(':').map(Number);
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  };
+  eq(
+    issue372Cues.map((cue) => cue[2]),
+    ['语句1。', '语句2前中后收尾。', '语句3前中后收尾。'],
+    'clamp+group: long-silence token runs keep complete sentences (#372)',
+  );
+  eq(
+    issue372Cues.map((cue) => [cue[0], cue[1]]),
+    [
+      ['00:00:00,200', '00:00:01,800'],
+      ['00:00:07,000', '00:00:08,700'],
+      ['00:00:15,000', '00:00:16,700'],
+    ],
+    'clamp+group: long-silence cues stay inside their speech segments (#372)',
+  );
+  eq(
+    issue372Cues.every(
+      (cue) => issue372Seconds(cue[1]) > issue372Seconds(cue[0]),
+    ),
+    true,
+    'clamp+group: long-silence fix emits no zero-duration cue (#372)',
+  );
+  eq(
+    issue372Cues.map((cue) => cue[2]).join(''),
+    issue372Input.map((token) => token[2]).join(''),
+    'clamp+group: long-silence fix preserves every token exactly once (#372)',
+  );
+  // 反向护栏：靠近前段的句尾拖尾字应整体回填前段，不能因为统一前移而变成下一句开头。
+  eq(
+    groupTokenCues(
+      clampTriplesToSpeechSegments(
+        [
+          T('00:00:49,850', '00:00:49,916', '广'),
+          T('00:00:50,090', '00:00:50,400', '泛'),
+          T('00:00:53,862', '00:00:54,200', '请'),
+        ],
+        [
+          { start: 44.96, end: 49.916 },
+          { start: 53.862, end: 56.76 },
+        ],
+      ),
+    ).map((cue) => cue[2]),
+    ['广泛', '请'],
+    'clamp+group: trailing token run stays with previous speech segment',
+  );
+  // 同一静音区同时包含前句尾与后句首时，句末标点必须切断 floating run；
+  // 否则整段按后句首的位置前移，会把「结尾。」从前句剥离成后段孤条。
+  eq(
+    groupTokenCues(
+      clampTriplesToSpeechSegments(
+        [
+          T('00:00:01,000', '00:00:01,900', '前句'),
+          T('00:00:02,100', '00:00:02,300', '结尾。'),
+          T('00:00:06,800', '00:00:06,950', '后句开头'),
+          T('00:00:07,200', '00:00:08,000', '后句'),
+        ],
+        [
+          { start: 0, end: 2 },
+          { start: 7, end: 9 },
+        ],
+      ),
+    ).map((cue) => cue[2]),
+    ['前句结尾。', '后句开头后句'],
+    'clamp+group: sentence end separates opposite floating runs in one gap',
+  );
+  // 只有起点贴着前段末点的 token 才是原生 VAD 产生的桥接 token；
+  // 从前段内部开始的长 token 应按实际最大重叠留在前段。
+  eq(
+    clampTriplesToSpeechSegments(
+      [T('00:00:00,500', '00:00:07,010', '前句长词')],
+      [
+        { start: 0, end: 2 },
+        { start: 7, end: 9 },
+      ],
+    ),
+    [['00:00:00,500', '00:00:02,000', '前句长词']],
+    'clamp: only an edge-aligned token can bridge a full VAD gap',
+  );
+  // 前向 run 必须在后续已锚定 token 之前收尾，不能占满目标语音段后再让时间倒退。
+  eq(
+    groupTokenCues(
+      clampTriplesToSpeechSegments(
+        [
+          T('00:00:01,000', '00:00:01,900', '前。'),
+          T('00:00:04,000', '00:00:05,000', '后句前'),
+          T('00:00:06,800', '00:00:06,900', '结束。'),
+          T('00:00:07,100', '00:00:07,500', '下一句'),
+        ],
+        [
+          { start: 0, end: 2 },
+          { start: 7, end: 9 },
+        ],
+      ),
+    ),
+    [
+      ['00:00:01,000', '00:00:01,900', '前。'],
+      ['00:00:07,000', '00:00:07,100', '后句前结束。'],
+      ['00:00:07,100', '00:00:07,500', '下一句'],
+    ],
+    'clamp+group: forward run reserves time for following anchored token',
+  );
+  // 独立标点会打断两个 forward run；第二个 run 仍须承接第一个的末点，
+  // 不能因为紧邻项是原样保留的标点就从目标段起点重新开始。
+  eq(
+    groupTokenCues(
+      clampTriplesToSpeechSegments(
+        [
+          T('00:00:01,000', '00:00:01,900', '前。'),
+          T('00:00:04,000', '00:00:05,000', '后句'),
+          T('00:00:05,100', '00:00:05,200', '。'),
+          T('00:00:06,800', '00:00:06,900', '下一句前'),
+          T('00:00:07,500', '00:00:08,000', '下一句后'),
+        ],
+        [
+          { start: 0, end: 2 },
+          { start: 7, end: 9 },
+        ],
+      ),
+    ),
+    [
+      ['00:00:01,000', '00:00:01,900', '前。'],
+      ['00:00:07,000', '00:00:07,500', '后句。'],
+      ['00:00:07,500', '00:00:08,000', '下一句前下一句后'],
+    ],
+    'clamp+group: punctuation-separated forward runs keep a monotonic cursor',
+  );
+  // 零时长内容 run 前移到后段起点后，应和后续真实 token 合成非零时长字幕。
+  eq(
+    groupTokenCues(
+      clampTriplesToSpeechSegments(
+        [
+          T('00:00:36,000', '00:00:36,956', '号'),
+          T('00:00:41,400', '00:00:41,400', '人'),
+          T('00:00:41,400', '00:00:41,400', '工'),
+          T('00:00:41,926', '00:00:43,400', '正在'),
+        ],
+        [
+          { start: 30, end: 36.956 },
+          { start: 41.926, end: 44.96 },
+        ],
+      ),
+    ),
+    [
+      ['00:00:36,000', '00:00:36,956', '号'],
+      ['00:00:41,926', '00:00:43,400', '人工正在'],
+    ],
+    'clamp+group: zero-duration run joins following speech without an orphan cue',
   );
   // 无段信息（VAD 关 / 旧加速包）→ 恒等变换
   eq(

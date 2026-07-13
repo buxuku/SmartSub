@@ -4,11 +4,11 @@
  * 上游 fork（buxuku/whisper.cpp）已在原生层提供：
  *   - `token_timestamps:true, max_len:0` → 逐 token 输出 `{ text, t0, t1, p }`（t0/t1 为毫秒）；
  *   - token 时间已做 **segment-aware 映射**：落在语音段内的 token 线性映射回原始时间轴，落在
- *     段间「人工静音」的 token 就近吸附到真实语音边界——于是**段间停顿天然以 token gap 体现**，
- *     不再需要 TS 侧用外部 VAD 把 token 贴回有声区间（旧 `retimeTokensToSpeech` 已删除）。
+ *     段间「人工静音」的 token 通常吸附到真实语音边界；原生层也会免费暴露本次转写使用的 VAD 段。
  *
- * 因此本模块只剩「成句」职责（与边界/停顿还原无关）：
+ * 本模块用同一组 VAD 段修正偶发的跨静音 token，再完成「成句」：
  *   tokensToTriples（毫秒 → [startStr,endStr,text]）
+ *     → clampTriplesToSpeechSegments（跨静音 token/run 收回真实语音段）
  *     → groupTokenCues（按 token gap / 句末标点 / 软切标点 / 长度上限成句；
  *       硬上限切分回溯到最近可断标点，避免孤立句尾词）
  *     → mergeShortCues（单字碎片并回相邻 cue）
@@ -441,51 +441,358 @@ export function vadSegmentsToSpeech(
     .sort((a, b) => a.start - b.start);
 }
 
-/** token 中点所属语音段索引：优先包含该中点的段，否则取距离最近的段。 */
-function segIndexForMid(mid: number, segs: SpeechSegment[]): number {
-  for (let i = 0; i < segs.length; i++) {
-    if (mid >= segs[i].start && mid <= segs[i].end) return i;
-  }
-  let best = 0;
-  let bestDist = Infinity;
-  for (let i = 0; i < segs.length; i++) {
-    const d = mid < segs[i].start ? segs[i].start - mid : mid - segs[i].end;
-    if (d < bestDist) {
-      bestDist = d;
-      best = i;
+const SPEECH_EDGE_EPSILON_SECONDS = 0.08;
+
+interface TokenSpeechContext {
+  prevIndex: number | null;
+  nextIndex: number | null;
+  bridgeTargetIndex: number | null;
+}
+
+interface ParsedSpeechToken {
+  start: number | null;
+  end: number | null;
+  text: string;
+  raw: TokenTriple;
+}
+
+/** token 与重叠最大的语音段交集；无重叠返回 null。 */
+function bestTokenOverlap(
+  start: number,
+  end: number,
+  segments: SpeechSegment[],
+): { index: number; start: number; end: number } | null {
+  let best: { index: number; start: number; end: number } | null = null;
+  let bestDuration = 0;
+  for (let i = 0; i < segments.length; i += 1) {
+    const segment = segments[i];
+    if (segment.start >= end) break;
+    if (segment.end <= start) continue;
+    const overlapStart = Math.max(start, segment.start);
+    const overlapEnd = Math.min(end, segment.end);
+    const duration = overlapEnd - overlapStart;
+    if (duration > bestDuration) {
+      bestDuration = duration;
+      best = { index: i, start: overlapStart, end: overlapEnd };
     }
   }
   return best;
 }
 
+/** 零时长 token 所在语音段；不在任何段内返回 null。 */
+function segmentIndexForPoint(
+  point: number,
+  segments: SpeechSegment[],
+): number | null {
+  const index = segments.findIndex(
+    (segment) => point >= segment.start && point <= segment.end,
+  );
+  return index >= 0 ? index : null;
+}
+
 /**
- * 用 whisper **内部 VAD 段**（addon 已免费暴露，非外部二次 VAD）把逐 token 时间「吸附」回真实语音：
- * 每个 token 按中点归属到最近的语音段，并把它的 [start,end] 夹在该段 [start,end] 内。
+ * 判断 token 是否横跨一整段真实静音。
+ *
+ * whisper.cpp 开 VAD 时，静音后的首 token 可能被扩展成
+ * `[前段末点, 后段起点/段内]`。这种 token 的中点没有语义，按最近边界会把句首误吸回前句；
+ * 只要内容 token 覆盖了完整的 >0.5s VAD gap，就明确归到后段。
+ */
+function bridgeTargetIndex(
+  start: number,
+  end: number,
+  segments: SpeechSegment[],
+): number | null {
+  for (let i = 0; i < segments.length - 1; i += 1) {
+    const previous = segments[i];
+    const next = segments[i + 1];
+    if (next.start - previous.end <= DEFAULTS.maxGapSeconds) continue;
+    if (
+      start >= previous.end - SPEECH_EDGE_EPSILON_SECONDS &&
+      start <= previous.end + SPEECH_EDGE_EPSILON_SECONDS &&
+      end >= next.start - SPEECH_EDGE_EPSILON_SECONDS
+    ) {
+      return i + 1;
+    }
+  }
+  return null;
+}
+
+function tokenSpeechContext(
+  start: number,
+  end: number,
+  segments: SpeechSegment[],
+): TokenSpeechContext {
+  const bridge = bridgeTargetIndex(start, end, segments);
+  if (bridge !== null) {
+    return {
+      prevIndex: bridge - 1,
+      nextIndex: bridge,
+      bridgeTargetIndex: bridge,
+    };
+  }
+
+  let prevIndex: number | null = null;
+  for (let i = 0; i < segments.length; i += 1) {
+    if (segments[i].end <= start + SPEECH_EDGE_EPSILON_SECONDS) {
+      prevIndex = i;
+    }
+  }
+  const nextIndex = segments.findIndex(
+    (segment) => segment.start >= end - SPEECH_EDGE_EPSILON_SECONDS,
+  );
+  return {
+    prevIndex,
+    nextIndex: nextIndex >= 0 ? nextIndex : null,
+    bridgeTargetIndex: null,
+  };
+}
+
+function sameTokenSpeechContext(
+  left: TokenSpeechContext,
+  right: TokenSpeechContext,
+): boolean {
+  return (
+    left.prevIndex === right.prevIndex && left.nextIndex === right.nextIndex
+  );
+}
+
+/**
+ * 把同一静音区里的连续内容 token 收进目标语音段。
+ * - 前向 run：去掉线性摊时产生的假空隙，紧凑排列；目标段装不下时等比压缩。
+ * - 后向 run：保持原有兼容语义，全部收敛到前段末点，交给 group 与前文合并。
+ */
+function packFloatingRun(
+  info: ParsedSpeechToken[],
+  from: number,
+  to: number,
+  window: SpeechSegment,
+  forward: boolean,
+  segments: SpeechSegment[],
+): TokenTriple[] {
+  if (!forward) {
+    return info
+      .slice(from, to)
+      .map((token) => [
+        formatTime(window.end),
+        formatTime(window.end),
+        token.text,
+      ]);
+  }
+
+  const durations = info.slice(from, to).map((token) => {
+    const start = token.start as number;
+    const end = token.end as number;
+    const rawDuration = Math.max(0, end - start);
+    if (bridgeTargetIndex(start, end, segments) === null) {
+      return Math.max(0.08, rawDuration);
+    }
+    let crossedSilence = 0;
+    for (let i = 0; i < segments.length - 1; i += 1) {
+      const gapStart = segments[i].end;
+      const gapEnd = segments[i + 1].start;
+      if (gapEnd <= start || gapStart >= end) continue;
+      crossedSilence += Math.min(end, gapEnd) - Math.max(start, gapStart);
+    }
+    // 横跨完整静音的首 token 只保留去掉静音后的有效时长；完全贴边时留 80ms，
+    // 避免它单独落成零时长字幕，同时不占满整个后段。
+    return Math.max(0.08, rawDuration - crossedSilence);
+  });
+  const totalDuration = durations.reduce((sum, duration) => sum + duration, 0);
+  const targetDuration = Math.max(0, window.end - window.start);
+  const scale =
+    totalDuration > targetDuration && totalDuration > 0
+      ? targetDuration / totalDuration
+      : 1;
+  const packedDuration = totalDuration * scale;
+  let cursor = forward ? window.start : window.end - packedDuration;
+
+  return info.slice(from, to).map((token, index): TokenTriple => {
+    const start = cursor;
+    cursor += durations[index] * scale;
+    return [formatTime(start), formatTime(cursor), token.text];
+  });
+}
+
+/**
+ * 用 whisper **内部 VAD 段**（addon 已免费暴露，非外部二次 VAD）把逐 token 时间收进真实语音：
+ * - 已与语音段重叠的 token 收敛到最大重叠段；
+ * - 横跨完整静音的桥接 token 明确归到后段；
+ * - 同一静音区里的连续内容 token 作为一个 run 整体判向并紧凑放入同一语音段。
  *
  * 解决的问题：whisper 的 token 级时间戳是「按 voice_length 把整段时长摊给 token」的启发式，
  * 当某个转写 segment 跨越了一段人工静音（VAD 删除的静音）时，medium 这类模型会把 token 时间
- * **连续地摊过静音**（实测 medium 在 21.5→25.1s 静音处最大 token 间隔仅 600ms，字幕直接糊穿静音；
- * 而 tiny 恰好摊出 3.67s 间隔才躲过）。夹紧后：静音前 token≤段尾、静音后 token≥段首，groupTokenCues
- * 依据由此产生的真实间隔自然断句，字幕不再压在静音上——且与模型无关（medium/tiny 一致）。
+ * **连续地摊过静音**。逐 token 按中点选最近段会从静音中间劈开同一句，形成 #372 的
+ * 「上一句后半 + 下一句前半」滚动错位；run 级归属恢复真实间隔，也不会把句尾拖尾字一律前移。
  */
 export function clampTriplesToSpeechSegments(
   triples: TokenTriple[],
   segments: SpeechSegment[],
 ): TokenTriple[] {
   if (!Array.isArray(triples) || !segments?.length) return triples;
-  const segs = [...segments].sort((a, b) => a.start - b.start);
-  return triples.map((triple): TokenTriple => {
-    const st = parseTime(triple?.[0]);
-    const en = parseTime(triple?.[1]);
-    const text = triple?.[2] ?? '';
-    if (st === null || en === null)
-      return [triple?.[0] ?? '', triple?.[1] ?? '', text];
-    const mid = (st + en) / 2;
-    const seg = segs[segIndexForMid(mid, segs)];
-    const cs = Math.min(Math.max(st, seg.start), seg.end);
-    const ce = Math.max(cs, Math.min(Math.max(en, seg.start), seg.end));
-    return [formatTime(cs), formatTime(ce), text];
-  });
+  const segs = [...segments]
+    .filter(
+      (segment) =>
+        Number.isFinite(segment.start) &&
+        Number.isFinite(segment.end) &&
+        segment.end > segment.start,
+    )
+    .sort((a, b) => a.start - b.start);
+  if (segs.length === 0) return triples;
+
+  const info: ParsedSpeechToken[] = triples.map((triple) => ({
+    start: parseTime(triple?.[0]),
+    end: parseTime(triple?.[1]),
+    text: triple?.[2] ?? '',
+    raw: triple,
+  }));
+  const out: TokenTriple[] = triples.map((triple) => triple);
+
+  const contextAt = (index: number): TokenSpeechContext | null => {
+    const token = info[index];
+    if (token.start === null || token.end === null) return null;
+    return tokenSpeechContext(token.start, token.end, segs);
+  };
+  const isFloatingContent = (index: number): boolean => {
+    const token = info[index];
+    if (token.start === null || token.end === null) return false;
+    const trimmed = token.text.trim();
+    if (!trimmed || PUNCT_ONLY.test(trimmed)) return false;
+    const context = contextAt(index);
+    if (context?.bridgeTargetIndex !== null) return true;
+    if (token.end > token.start) {
+      return bestTokenOverlap(token.start, token.end, segs) === null;
+    }
+    return segmentIndexForPoint(token.start, segs) === null;
+  };
+
+  // 记录每个语音段按 token 顺序已经占用的末点；同一段可能接收多个被空白/独立标点
+  // 隔开的 forward run，也可能已有锚定 token，后续 run 不能再从段首开始与它们重叠。
+  const outputCursorBySegment = new Map<number, number>();
+  const recordOutputCursor = (segmentIndex: number, end: number) => {
+    outputCursorBySegment.set(
+      segmentIndex,
+      Math.max(outputCursorBySegment.get(segmentIndex) ?? 0, end),
+    );
+  };
+  let index = 0;
+  while (index < info.length) {
+    const token = info[index];
+    if (token.start === null || token.end === null) {
+      out[index] = token.raw;
+      index += 1;
+      continue;
+    }
+
+    if (!isFloatingContent(index)) {
+      if (token.end > token.start) {
+        const overlap = bestTokenOverlap(token.start, token.end, segs);
+        out[index] = overlap
+          ? [formatTime(overlap.start), formatTime(overlap.end), token.text]
+          : token.raw;
+        if (overlap) recordOutputCursor(overlap.index, overlap.end);
+      } else {
+        out[index] = token.raw;
+        const pointSegment = segmentIndexForPoint(token.start, segs);
+        if (pointSegment !== null) {
+          recordOutputCursor(pointSegment, token.start);
+        }
+      }
+      index += 1;
+      continue;
+    }
+
+    const context = contextAt(index) as TokenSpeechContext;
+    let runEnd = index + 1;
+    while (
+      runEnd < info.length &&
+      !SENTENCE_END.test(info[runEnd - 1].text.trim()) &&
+      isFloatingContent(runEnd) &&
+      sameTokenSpeechContext(context, contextAt(runEnd) as TokenSpeechContext)
+    ) {
+      runEnd += 1;
+    }
+
+    const first = info[index];
+    const last = info[runEnd - 1];
+    const previous =
+      context.prevIndex !== null ? segs[context.prevIndex] : null;
+    const next = context.nextIndex !== null ? segs[context.nextIndex] : null;
+    const gapToPrevious = previous
+      ? Math.max(0, first.start! - previous.end)
+      : Number.POSITIVE_INFINITY;
+    const gapToNext = next
+      ? Math.max(0, next.start - last.end!)
+      : Number.POSITIVE_INFINITY;
+    const forward =
+      context.bridgeTargetIndex !== null || gapToNext <= gapToPrevious;
+    const target = forward ? next : previous;
+    const targetIndex = forward ? context.nextIndex : context.prevIndex;
+
+    if (target) {
+      let window = target;
+      if (forward) {
+        let windowStart = Math.max(
+          target.start,
+          targetIndex !== null
+            ? (outputCursorBySegment.get(targetIndex) ?? target.start)
+            : target.start,
+        );
+        const previousOutputEnd =
+          index > 0 ? parseTime(out[index - 1]?.[1]) : null;
+        if (previousOutputEnd !== null && previousOutputEnd > target.start) {
+          windowStart = Math.min(
+            Math.max(windowStart, previousOutputEnd),
+            target.end,
+          );
+        }
+
+        // 不占用后续已锚定 token 的时间，否则前移 run 可能越过后续 token，
+        // 让 group 产出倒序或互相重叠的 cue。
+        let windowEnd = target.end;
+        for (let i = runEnd; i < info.length; i += 1) {
+          const follower = info[i];
+          if (follower.start === null || follower.end === null) continue;
+          if (follower.start >= target.end) break;
+          if (isFloatingContent(i)) continue;
+          const overlapStart = Math.max(follower.start, target.start);
+          const overlapEnd = Math.min(follower.end, target.end);
+          if (
+            overlapEnd > overlapStart ||
+            (follower.start === follower.end &&
+              follower.start >= target.start &&
+              follower.start <= target.end)
+          ) {
+            windowEnd = Math.max(
+              windowStart,
+              Math.min(windowEnd, overlapStart),
+            );
+            break;
+          }
+        }
+        window = { start: windowStart, end: windowEnd };
+      }
+      const packed = packFloatingRun(
+        info,
+        index,
+        runEnd,
+        window,
+        forward,
+        segs,
+      );
+      for (let i = index; i < runEnd; i += 1) {
+        out[i] = packed[i - index];
+      }
+      if (forward && targetIndex !== null && packed.length > 0) {
+        const packedEnd = parseTime(packed[packed.length - 1][1]);
+        if (packedEnd !== null) {
+          recordOutputCursor(targetIndex, packedEnd);
+        }
+      }
+    }
+    index = runEnd;
+  }
+
+  return out;
 }
 
 export interface ClampDominantOptions {
