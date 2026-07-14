@@ -41,5 +41,10 @@ export const store = new Store<StoreType>({
       closeAction: 'smart' as const,
       closeHintShown: false,
     },
+    mergePreferences: {
+      outputMode: 'hardcode' as const,
+      videoQuality: 'original' as const,
+      encoderMode: 'cpu' as const,
+    },
   },
 });

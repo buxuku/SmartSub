@@ -59,6 +59,9 @@ export default function SubtitleMergePanel({
     outputPath,
     outputMode,
     videoQuality,
+    encoderMode,
+    hwAccelInfo,
+    hwFallbackOccurred,
 
     // 进度状态
     progress,
@@ -78,6 +81,7 @@ export default function SubtitleMergePanel({
     selectOutputPath,
     setOutputMode,
     setVideoQuality,
+    setEncoderMode,
 
     // 合并操作方法
     startMerge,
@@ -217,6 +221,9 @@ export default function SubtitleMergePanel({
               outputPath={outputPath}
               outputMode={outputMode}
               videoQuality={videoQuality}
+              encoderMode={encoderMode}
+              hwAccelInfo={hwAccelInfo}
+              hwFallbackOccurred={hwFallbackOccurred}
               status={status}
               canMerge={canMerge}
               needsOutputPath={Boolean(
@@ -225,6 +232,7 @@ export default function SubtitleMergePanel({
               onSelectOutputPath={selectOutputPath}
               onOutputModeChange={setOutputMode}
               onVideoQualityChange={setVideoQuality}
+              onEncoderModeChange={setEncoderMode}
               onStartMerge={startMerge}
             />
           </div>

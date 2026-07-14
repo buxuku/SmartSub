@@ -17,6 +17,9 @@ import {
   MERGE_CANCELLED,
 } from './subtitleMerger';
 import { loadFontData } from './fontResolver';
+import { getHwAccelInfo } from './hwEncoderDetector';
+import { store } from './store';
+import type { StoreType } from './store/types';
 import type { SubtitleStyle } from '../../types/subtitleMerge';
 import {
   acquireTaskPowerSaveBlocker,
@@ -28,6 +31,7 @@ import type {
   SubtitleMergeResponse,
   VideoInfo,
   SubtitleInfo,
+  HwAccelInfo,
 } from '../../types/subtitleMerge';
 
 // 存储当前进度回调
@@ -149,6 +153,40 @@ export function setupSubtitleMergeHandlers(mainWindow: BrowserWindow) {
     async (): Promise<SubtitleMergeResponse<boolean>> => {
       const killed = cancelCurrentMerge();
       return { success: true, data: killed };
+    },
+  );
+
+  // 硬件编码器探测结果（首次调用触发试编码探测，之后命中会话缓存）
+  ipcMain.handle(
+    'subtitleMerge:getHwAccelInfo',
+    async (): Promise<SubtitleMergeResponse<HwAccelInfo>> => {
+      try {
+        const info = await getHwAccelInfo();
+        return { success: true, data: info };
+      } catch (error) {
+        logMessage(`获取硬件加速信息失败: ${error}`, 'error');
+        return { success: false, error: `获取硬件加速信息失败: ${error}` };
+      }
+    },
+  );
+
+  // 合成输出偏好（outputMode/videoQuality/encoderMode 跨重启记忆）
+  ipcMain.handle(
+    'subtitleMerge:getPreferences',
+    async (): Promise<SubtitleMergeResponse<StoreType['mergePreferences']>> => {
+      return { success: true, data: store.get('mergePreferences') };
+    },
+  );
+
+  ipcMain.handle(
+    'subtitleMerge:setPreferences',
+    async (
+      event,
+      prefs: StoreType['mergePreferences'],
+    ): Promise<SubtitleMergeResponse<boolean>> => {
+      const prev = store.get('mergePreferences');
+      store.set('mergePreferences', { ...prev, ...prefs });
+      return { success: true, data: true };
     },
   );
 

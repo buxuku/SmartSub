@@ -13,6 +13,11 @@ import {
   AddonLoadHistoryEntry,
 } from '../../../types/addon';
 import type { DownloadEndpointConfig } from '../../../types/downloadConfig';
+import type {
+  MergeOutputMode,
+  VideoQuality,
+  EncoderMode,
+} from '../../../types/subtitleMerge';
 
 export type LogEntry = {
   timestamp: number;
@@ -154,5 +159,14 @@ export type StoreType = {
    * 键=`sha1(压缩音频):服务商实例id:模型:语言`；任务完结/失效即删，写入超 72h 惰性过期。
    */
   gladiaPendingJobs?: Record<string, { id: string; createdAt: number }>;
+  /**
+   * 合成页输出偏好（跨重启记忆）。encoderMode 持久化为 hardware 但本会话
+   * 探测不可用时，UI 回落 CPU 显示且不改写存储值（换回有硬件的环境自动恢复）。
+   */
+  mergePreferences?: {
+    outputMode?: MergeOutputMode;
+    videoQuality?: VideoQuality;
+    encoderMode?: EncoderMode;
+  };
   [key: string]: any;
 };

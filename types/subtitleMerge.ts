@@ -97,6 +97,78 @@ export const VIDEO_QUALITY_CRF: Record<VideoQuality, number> = {
 };
 
 /**
+ * 编码方式（仅 hardcode 生效）：
+ * - cpu      = libx264 软件编码（默认，体积更小）
+ * - hardware = 硬件加速编码（速度更快，同等观感体积通常增大 30%~100%）
+ */
+export type EncoderMode = 'cpu' | 'hardware';
+
+/** 支持的硬件编码器 ID（第一期：mac VideoToolbox；win NVENC/QSV；AMF、Linux 后续迭代） */
+export type HwEncoderId = 'h264_videotoolbox' | 'h264_nvenc' | 'h264_qsv';
+
+/**
+ * 硬件编码器质量控制方式：
+ * - cq      = 恒定质量参数（各编码器语义见 HW_QUALITY_MAPPING）
+ * - bitrate = 目标码率模式（仅 Intel Mac VideoToolbox：不支持 -q:v，按源码率估算）
+ */
+export type HwRateMode = 'cq' | 'bitrate';
+
+/** 硬件编码器探测结果（IPC subtitleMerge:getHwAccelInfo 返回） */
+export interface HwAccelInfo {
+  /** 本机存在可用硬件编码器 */
+  available: boolean;
+  /** 可用编码器 ID（available=true 时存在） */
+  encoderId?: HwEncoderId;
+  /** 展示用编码器名称，如 "NVIDIA NVENC" */
+  encoderLabel?: string;
+  /** 质量控制方式（available=true 时存在） */
+  rateMode?: HwRateMode;
+  /** 平台层面是否支持硬件加速（linux=false，UI 据此隐藏整个控件） */
+  platformSupported: boolean;
+}
+
+/**
+ * 硬件编码器画质档位映射（初值，实现期在真实素材上校准，允许 ±2 微调）。
+ * CQ 值相对 libx264 CRF 整体 +1：牺牲少量画质换体积贴近，缓解硬件编码体积膨胀。
+ * fourKAdjustment 与 libx264 的 4K CRF+2 语义等价（VideoToolbox q:v 量纲反向故为负）。
+ */
+export const HW_QUALITY_MAPPING: Record<
+  HwEncoderId,
+  {
+    /** 各画质档位的恒定质量参数值 */
+    cq: Record<VideoQuality, number>;
+    /** 4K（高度≥1800）时在档位值上的偏移 */
+    fourKAdjustment: number;
+  }
+> = {
+  // -rc vbr -cq N -b:v 0 -preset p5
+  h264_nvenc: {
+    cq: { original: 19, high: 21, standard: 24 },
+    fourKAdjustment: 2,
+  },
+  // -global_quality N（ICQ 模式）
+  h264_qsv: {
+    cq: { original: 19, high: 21, standard: 24 },
+    fourKAdjustment: 2,
+  },
+  // -q:v N（1-100，越大越好，仅 Apple Silicon；Intel 走码率模式）
+  h264_videotoolbox: {
+    cq: { original: 65, high: 58, standard: 50 },
+    fourKAdjustment: -5,
+  },
+};
+
+/**
+ * VideoToolbox 码率模式（Intel Mac）各档位的源码率系数。
+ * 目标视频码率 = 估算源视频码率 × 系数（源码率估算含 0.85 音频扣除，见 subtitleMerger）。
+ */
+export const VT_BITRATE_QUALITY_FACTOR: Record<VideoQuality, number> = {
+  original: 1.0,
+  high: 0.85,
+  standard: 0.65,
+};
+
+/**
  * 合并配置
  */
 export interface MergeConfig {
@@ -112,6 +184,11 @@ export interface MergeConfig {
   outputMode?: MergeOutputMode;
   /** 硬字幕烧录画质（缺省 original；仅 hardcode 生效） */
   videoQuality?: VideoQuality;
+  /**
+   * 编码方式（缺省 cpu，向后兼容；仅 hardcode 生效）。
+   * hardware 时主进程按探测缓存解析具体编码器；探测不可用则自动走 libx264。
+   */
+  encoderMode?: EncoderMode;
 }
 
 /**
@@ -133,6 +210,8 @@ export interface MergeProgress {
   status: MergeStatus;
   /** 错误消息 */
   errorMessage?: string;
+  /** 硬件编码失败已自动切换 CPU 重试（渲染层据此提示） */
+  hwFallback?: boolean;
 }
 
 /**

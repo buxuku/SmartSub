@@ -13,6 +13,8 @@ import type {
   MergeConfig,
   MergeOutputMode,
   VideoQuality,
+  EncoderMode,
+  HwAccelInfo,
 } from '../../../../types/subtitleMerge';
 import {
   getDefaultStyle,
@@ -38,6 +40,12 @@ export interface UseSubtitleMergeReturn {
   outputPath: string | null;
   outputMode: MergeOutputMode;
   videoQuality: VideoQuality;
+  /** 生效的编码方式（持久化为 hardware 但本会话不可用时回落 cpu 显示） */
+  encoderMode: EncoderMode;
+  /** 硬件编码器探测结果（null=探测中） */
+  hwAccelInfo: HwAccelInfo | null;
+  /** 本次会话发生过「硬件编码失败自动回退 CPU」 */
+  hwFallbackOccurred: boolean;
 
   // 进度状态
   progress: MergeProgress;
@@ -63,6 +71,7 @@ export interface UseSubtitleMergeReturn {
   setOutputPath: (path: string) => void;
   setOutputMode: (mode: MergeOutputMode) => void;
   setVideoQuality: (quality: VideoQuality) => void;
+  setEncoderMode: (mode: EncoderMode) => void;
 
   // 合并操作方法
   startMerge: () => Promise<void>;
@@ -132,6 +141,17 @@ export function useSubtitleMerge(
   // 烧录画质，默认原画质（CRF18），尽量贴近源文件画质（issue #331）
   const [videoQuality, setVideoQualityState] =
     useState<VideoQuality>('original');
+  // 编码方式偏好（原始持久化值；默认 CPU，硬件加速 opt-in）
+  const [encoderModeState, setEncoderModeState] = useState<EncoderMode>('cpu');
+  // 硬件编码器探测结果（null=探测中；挂载时异步获取，首个调用方触发主进程试编码）
+  const [hwAccelInfo, setHwAccelInfo] = useState<HwAccelInfo | null>(null);
+  // 本次会话是否发生过硬件编码失败自动回退
+  const [hwFallbackOccurred, setHwFallbackOccurred] = useState(false);
+  // 生效编码方式：偏好为 hardware 但本会话探测不可用时回落 cpu（不改写存储值）
+  const encoderMode: EncoderMode =
+    encoderModeState === 'hardware' && hwAccelInfo?.available
+      ? 'hardware'
+      : 'cpu';
   // 供异步回调读取最新输出方式（生成默认路径时按模式定扩展名）
   const outputModeRef = useRef<MergeOutputMode>('hardcode');
   outputModeRef.current = outputMode;
@@ -168,6 +188,10 @@ export function useSubtitleMerge(
 
     const handleProgress = (progressData: MergeProgress) => {
       if (isMountedRef.current && progressData.status === 'processing') {
+        // 硬件编码失败自动回退 CPU 的通知（界面提示，跨本次合成保留）
+        if (progressData.hwFallback) {
+          setHwFallbackOccurred(true);
+        }
         setProgress(progressData);
         onProgress?.(progressData);
       }
@@ -180,6 +204,67 @@ export function useSubtitleMerge(
       cleanup?.();
     };
   }, [onProgress]);
+
+  // 挂载时：异步探测硬件编码器（首个调用触发主进程试编码，之后命中会话缓存），
+  // 并恢复持久化的合成偏好（outputMode/videoQuality/encoderMode）
+  useEffect(() => {
+    let mounted = true;
+    window.ipc
+      ?.invoke('subtitleMerge:getHwAccelInfo')
+      .then((result) => {
+        if (mounted && result?.success && result.data) {
+          setHwAccelInfo(result.data);
+        }
+      })
+      .catch((error) => {
+        console.error('获取硬件加速信息失败:', error);
+      });
+    window.ipc
+      ?.invoke('subtitleMerge:getPreferences')
+      .then((result) => {
+        if (!mounted || !result?.success || !result.data) return;
+        const prefs = result.data as {
+          outputMode?: MergeOutputMode;
+          videoQuality?: VideoQuality;
+          encoderMode?: EncoderMode;
+        };
+        if (prefs.videoQuality) {
+          setVideoQualityState(prefs.videoQuality);
+        }
+        if (prefs.encoderMode) {
+          setEncoderModeState(prefs.encoderMode);
+        }
+        if (prefs.outputMode) {
+          setOutputModeState(prefs.outputMode);
+          // 手动同步 ref：覆盖「默认路径生成在本次渲染前发生」的窗口期
+          outputModeRef.current = prefs.outputMode;
+          setOutputPathState((prev) =>
+            prev ? applyModeExtension(prev, prefs.outputMode, videoPath) : prev,
+          );
+        }
+      })
+      .catch((error) => {
+        console.error('读取合成偏好失败:', error);
+      });
+    return () => {
+      mounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 持久化合成偏好（变更即写，失败静默——仅影响下次默认值）
+  const persistPreferences = useCallback(
+    (partial: {
+      outputMode?: MergeOutputMode;
+      videoQuality?: VideoQuality;
+      encoderMode?: EncoderMode;
+    }) => {
+      window.ipc?.invoke('subtitleMerge:setPreferences', partial).catch(() => {
+        // 持久化失败不影响本次合成
+      });
+    },
+    [],
+  );
 
   // 加载视频信息
   const loadVideoInfo = useCallback(
@@ -395,9 +480,22 @@ export function useSubtitleMerge(
   }, []);
 
   // 设置烧录画质（仅 hardcode 生效）
-  const setVideoQuality = useCallback((quality: VideoQuality) => {
-    setVideoQualityState(quality);
-  }, []);
+  const setVideoQuality = useCallback(
+    (quality: VideoQuality) => {
+      setVideoQualityState(quality);
+      persistPreferences({ videoQuality: quality });
+    },
+    [persistPreferences],
+  );
+
+  // 设置编码方式（仅 hardcode 生效；持久化原始偏好）
+  const setEncoderMode = useCallback(
+    (mode: EncoderMode) => {
+      setEncoderModeState(mode);
+      persistPreferences({ encoderMode: mode });
+    },
+    [persistPreferences],
+  );
 
   // 切换输出方式（联动输出扩展名；旧合成结果不再对应，复位状态）
   const setOutputMode = useCallback(
@@ -407,14 +505,16 @@ export function useSubtitleMerge(
         prev ? applyModeExtension(prev, mode, videoPath) : prev,
       );
       resetStaleProgress();
+      persistPreferences({ outputMode: mode });
     },
-    [applyModeExtension, videoPath, resetStaleProgress],
+    [applyModeExtension, videoPath, resetStaleProgress, persistPreferences],
   );
 
   // 开始合并
   const startMerge = useCallback(async () => {
     if (!videoPath || !subtitlePath || !outputPath) return;
 
+    setHwFallbackOccurred(false);
     setProgress({
       percent: 0,
       timeMark: '',
@@ -430,6 +530,8 @@ export function useSubtitleMerge(
         style,
         outputMode,
         videoQuality,
+        // 传生效值：偏好为 hardware 但本会话不可用时按 cpu 合成
+        encoderMode,
       };
       const result = await window.ipc.invoke(
         'subtitleMerge:startMerge',
@@ -484,6 +586,7 @@ export function useSubtitleMerge(
     style,
     outputMode,
     videoQuality,
+    encoderMode,
     onComplete,
     onError,
   ]);
@@ -533,6 +636,9 @@ export function useSubtitleMerge(
     outputPath,
     outputMode,
     videoQuality,
+    encoderMode,
+    hwAccelInfo,
+    hwFallbackOccurred,
 
     // 进度状态
     progress,
@@ -558,6 +664,7 @@ export function useSubtitleMerge(
     setOutputPath,
     setOutputMode,
     setVideoQuality,
+    setEncoderMode,
 
     // 合并操作方法
     startMerge,

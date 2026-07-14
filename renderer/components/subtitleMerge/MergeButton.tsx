@@ -22,17 +22,33 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { HelpHint } from '@/components/HelpHint';
-import { Loader2, Play, FolderOpen, Flame, Layers } from 'lucide-react';
+import {
+  Loader2,
+  Play,
+  FolderOpen,
+  Flame,
+  Layers,
+  Cpu,
+  Zap,
+} from 'lucide-react';
 import type {
   MergeStatus,
   MergeOutputMode,
   VideoQuality,
+  EncoderMode,
+  HwAccelInfo,
 } from '../../../types/subtitleMerge';
 
 interface MergeButtonProps {
   outputPath: string | null;
   outputMode: MergeOutputMode;
   videoQuality: VideoQuality;
+  /** 生效编码方式（偏好 hardware 但硬件不可用时上游已回落 cpu） */
+  encoderMode: EncoderMode;
+  /** 硬件编码器探测结果（null=探测中） */
+  hwAccelInfo: HwAccelInfo | null;
+  /** 本次会话发生过硬件编码失败自动回退 CPU */
+  hwFallbackOccurred?: boolean;
   status: MergeStatus;
   canMerge: boolean;
   /** 文件已就绪但未选输出路径：行动条内联提示 */
@@ -40,6 +56,7 @@ interface MergeButtonProps {
   onSelectOutputPath: () => void;
   onOutputModeChange: (mode: MergeOutputMode) => void;
   onVideoQualityChange: (quality: VideoQuality) => void;
+  onEncoderModeChange: (mode: EncoderMode) => void;
   onStartMerge: () => void;
 }
 
@@ -47,18 +64,39 @@ export default function MergeButton({
   outputPath,
   outputMode,
   videoQuality,
+  encoderMode,
+  hwAccelInfo,
+  hwFallbackOccurred = false,
   status,
   canMerge,
   needsOutputPath = false,
   onSelectOutputPath,
   onOutputModeChange,
   onVideoQualityChange,
+  onEncoderModeChange,
   onStartMerge,
 }: MergeButtonProps) {
   const { t } = useTranslation('subtitleMerge');
   const isProcessing = status === 'processing';
   // 画质仅对硬字幕烧录生效；软封装为流复制无损，无需该选项
   const isHardcode = outputMode === 'hardcode';
+  // 编码方式仅烧录生效；Linux（平台不支持）隐藏整个控件。
+  // 探测未返回（null）期间先按 preload 平台判断隐藏 Linux，避免闪现。
+  const isLinux =
+    typeof window !== 'undefined' && window.ipc?.platform === 'linux';
+  const platformSupportsHw = hwAccelInfo
+    ? hwAccelInfo.platformSupported
+    : !isLinux;
+  const hwAvailable = Boolean(hwAccelInfo?.available);
+  const showEncoderControl = isHardcode && platformSupportsHw;
+  // 硬件项 tooltip：可用（含编码器名 + 体积权衡）/ 探测中 / 不可用原因
+  const hwOptionTooltip = hwAccelInfo
+    ? hwAvailable
+      ? t('encoderModeHardwareDesc', {
+          encoder: hwAccelInfo.encoderLabel,
+        })
+      : t('encoderModeUnavailable')
+    : t('encoderModeDetecting');
   const qualityOptions: Array<{ value: VideoQuality; label: string }> = [
     { value: 'original', label: t('videoQualityOriginal') },
     { value: 'high', label: t('videoQualityHigh') },
@@ -141,6 +179,60 @@ export default function MergeButton({
           </div>
         )}
 
+        {/* 编码方式（仅烧录硬字幕生效；Linux 隐藏） */}
+        {showEncoderControl && (
+          <div className="flex flex-none items-center gap-1.5">
+            <Label className="text-xs text-muted-foreground">
+              {t('encoderMode')}
+            </Label>
+            <div className="flex h-8 items-stretch gap-0.5 rounded-md bg-muted p-0.5">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    disabled={isProcessing}
+                    onClick={() => onEncoderModeChange('cpu')}
+                    className={`flex items-center gap-1.5 rounded-[5px] px-2.5 text-xs transition-colors disabled:opacity-50 ${
+                      encoderMode === 'cpu'
+                        ? 'bg-card font-semibold text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Cpu className="h-3.5 w-3.5" />
+                    {t('encoderModeCpu')}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {t('encoderModeCpuDesc')}
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  {/* disabled 元素不触发 tooltip：包一层 span 保证不可用原因可见 */}
+                  <span className="flex">
+                    <button
+                      type="button"
+                      disabled={isProcessing || !hwAvailable}
+                      onClick={() => onEncoderModeChange('hardware')}
+                      className={`flex items-center gap-1.5 rounded-[5px] px-2.5 text-xs transition-colors disabled:opacity-50 ${
+                        encoderMode === 'hardware'
+                          ? 'bg-card font-semibold text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <Zap className="h-3.5 w-3.5" />
+                      {t('encoderModeHardware')}
+                    </button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[280px]">
+                  {hwOptionTooltip}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+        )}
+
         {/* 输出路径：占据剩余宽度 */}
         <div className="flex min-w-[240px] flex-1 items-center gap-1.5">
           <Label className="flex-none text-xs text-muted-foreground">
@@ -190,6 +282,20 @@ export default function MergeButton({
         {needsOutputPath && (
           <p className="w-full text-[11.5px] text-warning">
             {t('outputPathRequiredHint')}
+          </p>
+        )}
+
+        {/* 选中硬件加速：体积增大内联提示 */}
+        {showEncoderControl && encoderMode === 'hardware' && (
+          <p className="w-full text-[11.5px] text-muted-foreground">
+            {t('hwAccelSizeHint')}
+          </p>
+        )}
+
+        {/* 硬件编码失败已自动回退 CPU 重试的提示 */}
+        {hwFallbackOccurred && (
+          <p className="w-full text-[11.5px] text-warning">
+            {t('hwFallbackNotice')}
           </p>
         )}
       </div>
