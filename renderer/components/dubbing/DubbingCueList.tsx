@@ -119,21 +119,21 @@ export default function DubbingCueList({
       case 'done':
         return (
           <CheckCircle2
-            className="h-3.5 w-3.5 text-emerald-500"
+            className="h-3.5 w-3.5 text-success"
             aria-label={t('statusDone')}
           />
         );
       case 'accepted':
         return (
           <CheckCircle2
-            className="h-3.5 w-3.5 text-amber-500"
+            className="h-3.5 w-3.5 text-warning"
             aria-label={t('statusAccepted')}
           />
         );
       case 'overlong':
         return (
           <AlertTriangle
-            className="h-3.5 w-3.5 text-amber-500"
+            className="h-3.5 w-3.5 text-warning"
             aria-label={t('statusOverlong')}
           />
         );
@@ -178,7 +178,7 @@ export default function DubbingCueList({
         <Button
           variant={filter === 'overlong' ? 'secondary' : 'ghost'}
           size="sm"
-          className="h-6 px-2 text-xs text-amber-600"
+          className="h-6 px-2 text-xs text-warning"
           onClick={() => setFilter('overlong')}
           disabled={summary.overlong === 0 && filter !== 'overlong'}
         >
@@ -245,7 +245,7 @@ export default function DubbingCueList({
                 className={cn(
                   'absolute left-0 top-0 w-full border-b px-2 py-1.5',
                   isPlaybackRow && 'bg-primary/5',
-                  cue.status === 'overlong' && 'bg-amber-500/5',
+                  cue.status === 'overlong' && 'bg-warning/5',
                   cue.status === 'failed' && 'bg-destructive/5',
                 )}
                 style={{ transform: `translateY(${vi.start}px)` }}
@@ -279,7 +279,7 @@ export default function DubbingCueList({
                   </button>
 
                   {cue.status === 'overlong' && cue.requiredFactor && (
-                    <span className="shrink-0 rounded bg-amber-500/15 px-1 text-[11px] tabular-nums text-amber-700 dark:text-amber-400">
+                    <span className="shrink-0 rounded bg-warning/15 px-1 text-[11px] tabular-nums text-warning">
                       {cue.requiredFactor.toFixed(2)}x
                     </span>
                   )}
@@ -379,7 +379,7 @@ export default function DubbingCueList({
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-7 text-amber-600"
+                          className="h-7 text-warning"
                           disabled={running}
                           onClick={async () => {
                             await acceptOverlong(cue.index);

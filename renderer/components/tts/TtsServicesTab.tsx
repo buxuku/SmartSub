@@ -244,7 +244,7 @@ const TtsServicesTab: React.FC = () => {
               </span>
               <span className="flex min-w-0 flex-col">
                 <span className="truncate">{t('ttsServices.overview')}</span>
-                <span className="truncate text-[10.5px] font-normal text-faint">
+                <span className="truncate text-[11px] font-normal text-muted-foreground">
                   {t('ttsServices.overviewSubtitle')}
                 </span>
               </span>
@@ -317,7 +317,7 @@ const TtsServicesTab: React.FC = () => {
                     {v.label}
                   </span>
                   {v.unstable && (
-                    <span className="shrink-0 rounded bg-amber-500/15 px-1 text-[10px] leading-4 text-amber-600">
+                    <span className="shrink-0 rounded bg-warning/15 px-1 text-[10px] leading-4 text-warning">
                       {t('dubbingBlock.unstable')}
                     </span>
                   )}

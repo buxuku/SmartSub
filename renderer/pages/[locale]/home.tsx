@@ -466,7 +466,7 @@ export default function LaunchpadPage() {
                       {card.needsModel && !hasModels && (
                         <Badge
                           variant="outline"
-                          className="absolute right-2.5 top-2.5 border-warning/40 bg-card text-[10px] text-warning"
+                          className="absolute right-2.5 top-2.5 border-warning/40 bg-card text-warning"
                         >
                           {t('needsModelBadge')}
                         </Badge>

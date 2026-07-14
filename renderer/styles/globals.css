@@ -38,15 +38,16 @@
     --accent: 213 26% 93%;
     --accent-foreground: 213 20% 24%;
 
-    --destructive: 0 72% 51%;
+    --destructive: 0 72% 46%;
     --destructive-foreground: 0 0% 100%;
 
-    /* 状态色语义：成功/警告/错误/信息（soft 底用 /10 透明度工具类） */
-    --success: 140 75% 34%;
+    /* 状态色语义：成功/警告/错误/信息（soft 底用 /10 透明度工具类）。
+       浅色值按「可作小字号文字」标定：白底上 ≥ 4.5:1 */
+    --success: 140 75% 30%;
     --success-foreground: 0 0% 100%;
-    --warning: 32 95% 44%;
-    --warning-foreground: 213 30% 13%;
-    --info: 199 89% 48%;
+    --warning: 27 92% 37%;
+    --warning-foreground: 0 0% 100%;
+    --info: 200 95% 36%;
     --info-foreground: 0 0% 100%;
 
     --border: 216 22% 91%;

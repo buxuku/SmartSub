@@ -254,7 +254,7 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                                         {t(`outcome.${tier}.desc`)}
                                       </p>
                                       {tier !== 'custom' && (
-                                        <p className="text-[11px] text-muted-foreground/80">
+                                        <p className="text-[11px] text-muted-foreground">
                                           {t(`outcome.${tier}.scene`)}
                                         </p>
                                       )}
@@ -405,7 +405,7 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                                 <span className="w-16 shrink-0 font-medium text-muted-foreground">
                                   {t(`outcome.${tier}.title`)}
                                 </span>
-                                <span className="flex-1 text-foreground/90">
+                                <span className="flex-1 text-foreground">
                                   “{t(`outcome.compare.${tier}`)}”
                                 </span>
                               </div>

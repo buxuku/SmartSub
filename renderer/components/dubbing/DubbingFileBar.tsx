@@ -170,7 +170,7 @@ export default function DubbingFileBar({ dub }: { dub: UseDubbingReturn }) {
             done: summary.done,
           })}
           {summary.overlong > 0 && (
-            <span className="ml-1 text-amber-600">
+            <span className="ml-1 text-warning">
               {t('overlongCount', { count: summary.overlong })}
             </span>
           )}

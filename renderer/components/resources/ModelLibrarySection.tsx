@@ -199,12 +199,12 @@ function RecommendedHero({
             <div className="text-xs text-muted-foreground mt-0.5">{desc}</div>
           )}
           {basisLoading ? (
-            <div className="text-[11px] text-muted-foreground/70 mt-0.5 animate-pulse">
+            <div className="text-[11px] text-muted-foreground mt-0.5 animate-pulse">
               {t('detectingHardware')}
             </div>
           ) : (
             basis && (
-              <div className="text-[11px] text-muted-foreground/70 mt-0.5">
+              <div className="text-[11px] text-muted-foreground mt-0.5">
                 {basis}
               </div>
             )
@@ -1174,7 +1174,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
                 <FolderOpen className="h-3 w-3" />
                 <span>{t('openModelsFolder')}</span>
               </button>
-              <span className="text-muted-foreground/50">·</span>
+              <span className="text-faint">·</span>
               <button
                 type="button"
                 onClick={handleChangeModelsPath}

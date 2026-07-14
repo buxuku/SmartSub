@@ -18,10 +18,12 @@ export function PageHeader({
 }) {
   return (
     <div className={cn('flex items-start justify-between gap-4', className)}>
-      <div className="space-y-1 min-w-0">
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+      <div className="space-y-0.5 min-w-0">
+        <h1 className="text-lg font-semibold leading-tight tracking-tight">
+          {title}
+        </h1>
         {description ? (
-          <p className="text-sm text-muted-foreground">{description}</p>
+          <p className="text-xs text-muted-foreground">{description}</p>
         ) : null}
       </div>
       {actions ? (

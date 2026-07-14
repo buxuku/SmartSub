@@ -106,7 +106,7 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
           <p className="text-xs text-muted-foreground">{t('noEngineHint')}</p>
         )}
         {activeEngine?.unstable && (
-          <p className="flex items-start gap-1 text-xs text-amber-600">
+          <p className="flex items-start gap-1 text-xs text-warning">
             <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
             {t('edgeUnstableHint')}
           </p>
@@ -164,7 +164,7 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
         )}
         {/* 跨语言克隆预期提示（可合成，但韵律带原语言口音） */}
         {crossLingual && (
-          <p className="flex items-start gap-1 text-xs text-amber-600">
+          <p className="flex items-start gap-1 text-xs text-warning">
             <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
             {cloneT('crossLingualHint', {
               voiceLang: langName(activeVoiceLang!),

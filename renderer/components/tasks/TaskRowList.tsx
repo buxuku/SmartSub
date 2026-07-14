@@ -64,13 +64,11 @@ function StageChips({
         const status = getStageStatus(file, stage.key);
         return (
           <React.Fragment key={stage.key}>
-            {index > 0 && (
-              <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
-            )}
+            {index > 0 && <ChevronRight className="h-3 w-3 text-faint" />}
             <span
               className={cn(
                 'inline-flex items-center gap-1 text-xs whitespace-nowrap',
-                status === 'pending' && 'text-muted-foreground/60',
+                status === 'pending' && 'text-faint',
                 status === 'loading' && 'text-primary font-medium',
                 status === 'done' && 'text-success',
                 status === 'error' && 'text-destructive font-medium',

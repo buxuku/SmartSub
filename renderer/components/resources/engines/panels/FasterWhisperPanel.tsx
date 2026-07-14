@@ -233,7 +233,7 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
                       {t(`engines.fasterWhisper.variant.${v}Desc`)}
                     </span>
                     {isGpu && !nvidiaSupported && (
-                      <span className="text-xs text-amber-600 dark:text-amber-500">
+                      <span className="text-xs text-warning">
                         {t('engines.fasterWhisper.variant.noNvidia')}
                       </span>
                     )}

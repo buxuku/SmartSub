@@ -118,7 +118,7 @@ const SherpaAdvancedSettings: React.FC = () => {
           <p className="text-xs text-muted-foreground">
             {t('engines.sherpa.itnHint')}
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground/80">
+          <p className="mt-0.5 text-xs text-muted-foreground">
             {t('engines.sherpa.itnFunasrOnly')}
           </p>
         </div>

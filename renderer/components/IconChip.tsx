@@ -18,7 +18,7 @@ export function IconChip({
   return (
     <span
       className={cn(
-        'flex h-7 w-7 items-center justify-center rounded-md bg-muted text-foreground/70',
+        'flex h-7 w-7 items-center justify-center rounded-md bg-muted text-muted-foreground',
         className,
       )}
     >

@@ -270,7 +270,7 @@ const TaskControls = ({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <Cloud className="h-5 w-5 text-sky-500" />
+              <Cloud className="h-5 w-5 text-info" />
               {t('home:cloudConsent.title')}
             </AlertDialogTitle>
             <AlertDialogDescription>

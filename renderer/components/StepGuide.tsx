@@ -46,7 +46,9 @@ export default function StepGuide({
         {(actions || dropHint) && (
           <div className="flex flex-col items-center gap-2">
             {actions}
-            {dropHint && <p className="text-xs text-faint">{dropHint}</p>}
+            {dropHint && (
+              <p className="text-xs text-muted-foreground">{dropHint}</p>
+            )}
           </div>
         )}
       </div>

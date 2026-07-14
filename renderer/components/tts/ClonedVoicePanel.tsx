@@ -177,7 +177,7 @@ export default function ClonedVoicePanel({
               'text-[11px]',
               voice.trainStatus === 'ready' && 'border-success/50 text-success',
               voice.trainStatus === 'training' &&
-                'border-amber-500/50 text-amber-600',
+                'border-warning/50 text-warning',
               voice.trainStatus === 'failed' &&
                 'border-destructive/50 text-destructive',
             )}
@@ -307,7 +307,7 @@ export default function ClonedVoicePanel({
 
       {/* 火山训练状态动作：训练中可刷新；失败可复用参考音频重训 */}
       {voice.engine === 'volcengine' && voice.trainStatus !== 'ready' && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/5 p-3">
           {voice.trainStatus === 'failed' ? (
             <p className="w-full text-xs text-destructive">
               {t('trainFailedDesc', { error: voice.trainError || '' })}
@@ -388,7 +388,7 @@ export default function ClonedVoicePanel({
           className={cn(
             'space-y-2 rounded-lg border p-3',
             voice.quality.verdict === 'good' && 'border-success/40',
-            voice.quality.verdict === 'fair' && 'border-amber-500/40',
+            voice.quality.verdict === 'fair' && 'border-warning/40',
             voice.quality.verdict === 'poor' && 'border-destructive/40',
           )}
         >
@@ -401,7 +401,7 @@ export default function ClonedVoicePanel({
                 voice.quality.verdict === 'good' &&
                   'border-success/50 text-success',
                 voice.quality.verdict === 'fair' &&
-                  'border-amber-500/50 text-amber-600',
+                  'border-warning/50 text-warning',
                 voice.quality.verdict === 'poor' &&
                   'border-destructive/50 text-destructive',
               )}
@@ -424,8 +424,7 @@ export default function ClonedVoicePanel({
                   className={cn(
                     'flex items-start gap-1.5',
                     issue.severity === 'error' && 'text-destructive',
-                    issue.severity === 'warning' &&
-                      'text-amber-700 dark:text-amber-400',
+                    issue.severity === 'warning' && 'text-warning',
                     issue.severity === 'info' && 'text-muted-foreground',
                   )}
                 >

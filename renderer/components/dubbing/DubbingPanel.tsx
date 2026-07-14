@@ -93,7 +93,7 @@ export default function DubbingPanel({
 
       {/* 过长行未处理：导出前的预警 */}
       {!dub.running && dub.summary.overlong > 0 && (
-        <p className="flex flex-shrink-0 items-start gap-1.5 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+        <p className="flex flex-shrink-0 items-start gap-1.5 rounded-md bg-warning/10 px-3 py-2 text-xs text-warning">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           {t('overlongExportHint', { count: dub.summary.overlong })}
         </p>
@@ -101,8 +101,8 @@ export default function DubbingPanel({
 
       {/* 导出结果横幅：紧邻文件条，始终可见、可关闭 */}
       {dub.exportResult && dub.exportResult !== dismissedResult && (
-        <div className="flex flex-shrink-0 items-start gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs">
-          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+        <div className="flex flex-shrink-0 items-start gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-xs">
+          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
           <div className="min-w-0 flex-1 space-y-0.5">
             <p className="font-medium">{t('exportDone')}</p>
             <p className="break-all text-muted-foreground">
@@ -114,7 +114,7 @@ export default function DubbingPanel({
               </p>
             )}
             {dub.exportResult.skippedIndexes.length > 0 && (
-              <p className="text-amber-600">
+              <p className="text-warning">
                 {t('exportSkipped', {
                   count: dub.exportResult.skippedIndexes.length,
                 })}

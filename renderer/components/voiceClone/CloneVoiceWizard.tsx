@@ -722,7 +722,7 @@ export default function CloneVoiceWizard({
                 ))}
               </div>
               {engine === 'zipvoice' && !modelInstalled && (
-                <p className="flex items-start gap-1.5 rounded-md bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
+                <p className="flex items-start gap-1.5 rounded-md bg-warning/10 p-2 text-xs text-warning">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   {t('modelMissingHint')}
                 </p>
@@ -907,7 +907,7 @@ export default function CloneVoiceWizard({
                         report.verdict === 'good' &&
                           'border-success/40 bg-success/5',
                         report.verdict === 'fair' &&
-                          'border-amber-500/40 bg-amber-500/5',
+                          'border-warning/40 bg-warning/5',
                         report.verdict === 'poor' &&
                           'border-destructive/40 bg-destructive/5',
                       )}
@@ -923,7 +923,7 @@ export default function CloneVoiceWizard({
                             report.verdict === 'good' &&
                               'border-success/50 text-success',
                             report.verdict === 'fair' &&
-                              'border-amber-500/50 text-amber-600',
+                              'border-warning/50 text-warning',
                             report.verdict === 'poor' &&
                               'border-destructive/50 text-destructive',
                           )}
@@ -944,8 +944,7 @@ export default function CloneVoiceWizard({
                                 'flex items-start gap-1.5',
                                 issue.severity === 'error' &&
                                   'text-destructive',
-                                issue.severity === 'warning' &&
-                                  'text-amber-700 dark:text-amber-400',
+                                issue.severity === 'warning' && 'text-warning',
                                 issue.severity === 'info' &&
                                   'text-muted-foreground',
                               )}
@@ -983,7 +982,7 @@ export default function CloneVoiceWizard({
                               {report.issues.some(
                                 (i) => i.code === 'low-snr',
                               ) && (
-                                <span className="ml-1 text-amber-600">
+                                <span className="ml-1 text-warning">
                                   {t('localDenoiseSuggest')}
                                 </span>
                               )}
@@ -1031,7 +1030,7 @@ export default function CloneVoiceWizard({
                                 {report.issues.some(
                                   (i) => i.code === 'low-snr',
                                 ) && (
-                                  <span className="ml-1 text-amber-600">
+                                  <span className="ml-1 text-warning">
                                     {t('denoiseSuggest')}
                                   </span>
                                 )}
@@ -1063,7 +1062,7 @@ export default function CloneVoiceWizard({
                               {report.issues.some(
                                 (i) => i.code === 'low-snr',
                               ) && (
-                                <span className="ml-1 text-amber-600">
+                                <span className="ml-1 text-warning">
                                   {t('denoiseSuggest')}
                                 </span>
                               )}
@@ -1199,7 +1198,7 @@ export default function CloneVoiceWizard({
                 </p>
               )}
               {asrUnavailable && !transcribing && (
-                <p className="flex items-start gap-1.5 rounded-md bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
+                <p className="flex items-start gap-1.5 rounded-md bg-warning/10 p-2 text-xs text-warning">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   {t('transcribeUnavailable')}
                 </p>
@@ -1372,7 +1371,7 @@ export default function CloneVoiceWizard({
                   </div>
                   {!created.sampleWavPath &&
                     created.trainStatus !== 'training' && (
-                      <p className="flex items-start gap-1.5 rounded-md bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
+                      <p className="flex items-start gap-1.5 rounded-md bg-warning/10 p-2 text-xs text-warning">
                         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                         {t('sampleFailed')}
                       </p>

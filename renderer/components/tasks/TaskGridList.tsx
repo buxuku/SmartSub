@@ -289,7 +289,7 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
                     key={stage.key}
                     className={cn(
                       'inline-flex items-center gap-1 text-[11px] whitespace-nowrap',
-                      status === 'pending' && 'text-muted-foreground/60',
+                      status === 'pending' && 'text-faint',
                       status === 'loading' && 'text-primary font-medium',
                       status === 'done' && 'text-success',
                       status === 'error' && 'text-destructive font-medium',

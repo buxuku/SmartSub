@@ -355,7 +355,7 @@ export default function VideoPreview({
                 <p className="text-xs font-medium text-destructive">
                   {t('mergeError')}
                 </p>
-                <p className="mt-0.5 break-all text-[11px] text-destructive/70">
+                <p className="mt-0.5 break-all text-[11px] text-destructive">
                   {progress.errorMessage}
                 </p>
               </div>
@@ -368,7 +368,7 @@ export default function VideoPreview({
       {videoPath && duration > 0 && (
         <div className="mt-2 flex flex-none select-none overflow-hidden rounded-md border border-border bg-panel-2">
           {/* 轨道标签列 */}
-          <div className="flex w-14 flex-none flex-col border-r border-border text-[9.5px] tracking-wide text-faint">
+          <div className="flex w-14 flex-none flex-col border-r border-border text-[10px] tracking-wide text-faint">
             <span className="flex h-4 items-center border-b border-border pl-2" />
             <span className="flex h-[22px] items-center border-b border-border pl-2">
               {t('timelineVideoTrack')}
@@ -383,7 +383,7 @@ export default function VideoPreview({
             className="relative min-w-0 flex-1 cursor-pointer"
             onClick={seekFromTimeline}
           >
-            <div className="flex h-4 border-b border-border text-[8.5px] leading-4 text-faint">
+            <div className="tnum flex h-4 border-b border-border text-[10px] leading-4 text-faint">
               {timelineTicks.map((tick, i) => (
                 <span
                   key={i}

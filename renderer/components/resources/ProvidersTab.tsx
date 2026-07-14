@@ -717,7 +717,7 @@ const ProvidersTab: React.FC = () => {
             </span>
             <span className="flex min-w-0 flex-col">
               <span className="truncate">{t('overview.name')}</span>
-              <span className="truncate text-[10.5px] font-normal text-faint">
+              <span className="truncate text-[11px] font-normal text-muted-foreground">
                 {t('overview.subtitle')}
               </span>
             </span>

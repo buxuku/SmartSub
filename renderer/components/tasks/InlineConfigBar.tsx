@@ -215,7 +215,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
                   {configuredProviders.length > 0 && (
                     <SelectGroup>
                       <SelectLabel className="flex items-center gap-1.5 pl-2 text-foreground">
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                        <CheckCircle2 className="h-3.5 w-3.5 text-success" />
                         {t('providerGroup.configured')}
                       </SelectLabel>
                       {configuredProviders.map((provider) =>

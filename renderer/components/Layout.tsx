@@ -193,9 +193,7 @@ function NavItem({
       )}
     >
       <Icon className="h-[19px] w-[19px] flex-shrink-0" strokeWidth={1.8} />
-      <span className="text-[10px] font-medium leading-none tracking-wide">
-        {label}
-      </span>
+      <span className="text-[11px] font-medium leading-none">{label}</span>
     </Link>
   );
 }

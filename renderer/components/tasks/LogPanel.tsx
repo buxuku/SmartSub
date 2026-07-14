@@ -72,7 +72,7 @@ const LogPanel: React.FC<{
             {t('logs.title')}
           </span>
           {!expanded && (
-            <span className="text-[11px] text-muted-foreground/70 truncate font-mono min-w-0 flex-1">
+            <span className="text-[11px] text-faint truncate font-mono min-w-0 flex-1">
               {lastLog ? lastLogPreview : t('logs.empty')}
             </span>
           )}
@@ -91,7 +91,7 @@ const LogPanel: React.FC<{
               className="max-h-44 overflow-y-auto overflow-x-hidden px-3 py-2 space-y-0.5"
             >
               {logs.length === 0 && (
-                <p className="text-[11px] text-muted-foreground/70">
+                <p className="text-[11px] text-muted-foreground">
                   {t('logs.empty')}
                 </p>
               )}
@@ -106,7 +106,7 @@ const LogPanel: React.FC<{
                         : 'text-muted-foreground'
                   }`}
                 >
-                  <span className="text-muted-foreground/60">
+                  <span className="text-faint">
                     {new Date(log?.timestamp).toLocaleTimeString()}
                   </span>{' '}
                   {log?.message}

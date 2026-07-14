@@ -252,7 +252,7 @@ export default function MicRecorder({
       </div>
 
       {denied && (
-        <p className="rounded-md bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
+        <p className="rounded-md bg-warning/10 p-2 text-xs text-warning">
           {t('micDenied')}
         </p>
       )}
