@@ -96,7 +96,15 @@ export default function WorkItemList({
                 {formatWorkItemTime(item.updatedAt)}
               </span>
             ) : null}
-            <span className="text-xs text-muted-foreground flex-shrink-0 w-12 text-right">
+            <span
+              className={cn(
+                'w-12 flex-shrink-0 text-right text-xs',
+                status === 'running' && 'font-medium text-primary',
+                status === 'done' && 'text-success',
+                status === 'error' && 'text-destructive',
+                status === 'waiting' && 'text-faint',
+              )}
+            >
               {tLaunchpad(`status.${status as RecentStatus}`)}
             </span>
             <span

@@ -4,6 +4,22 @@
   "startPanel": {
     "title": "Start a new task"
   },
+  "hero": {
+    "morning": "Good morning",
+    "noon": "Good afternoon",
+    "afternoon": "Good afternoon",
+    "evening": "Good evening",
+    "statTasks": "{{count}} tasks",
+    "statRunning": "{{count}} running",
+    "statDone": "{{count}} done"
+  },
+  "tips": {
+    "title": "Quick tips",
+    "search": "Search features and tasks from anywhere",
+    "drop": "Drop files onto a task card to start instantly",
+    "shortcuts": "See all keyboard shortcuts",
+    "settings": "Open settings"
+  },
   "env": {
     "title": "Environment",
     "canWork": "Ready",
@@ -60,6 +76,7 @@
   "dropHint": "Drop to import files",
   "fileCount": "{{count}} files",
   "recent": {
+    "footerHint": "Drop files onto a task card above to start a new task",
     "rename": "Rename",
     "delete": "Delete",
     "deleteTitle": "Delete this task record?",

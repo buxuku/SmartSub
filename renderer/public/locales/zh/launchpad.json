@@ -4,6 +4,22 @@
   "startPanel": {
     "title": "开始新任务"
   },
+  "hero": {
+    "morning": "早上好",
+    "noon": "中午好",
+    "afternoon": "下午好",
+    "evening": "晚上好",
+    "statTasks": "{{count}} 条任务",
+    "statRunning": "{{count}} 个进行中",
+    "statDone": "{{count}} 个已完成"
+  },
+  "tips": {
+    "title": "快速上手",
+    "search": "全局搜索功能与任务，随处可唤起",
+    "drop": "把文件直接拖到任务卡上，立即开始",
+    "shortcuts": "查看全部键盘快捷键",
+    "settings": "打开设置"
+  },
   "env": {
     "title": "环境就绪度",
     "canWork": "可开工",
@@ -60,6 +76,7 @@
   "dropHint": "松手导入文件",
   "fileCount": "{{count}} 个文件",
   "recent": {
+    "footerHint": "把文件拖到上方任务卡即可开始新任务",
     "rename": "重命名",
     "delete": "删除",
     "deleteTitle": "删除这条任务记录？",
