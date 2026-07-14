@@ -18,16 +18,17 @@ export const LOCAL_ENGINE_VIEWS = [
 
 export type LocalEngineView = (typeof LOCAL_ENGINE_VIEWS)[number];
 
-/** 左栏视图 id：本地四视图 + 云服务商视图（cloud:<typeId>）。 */
-export type EngineView = LocalEngineView | `cloud:${string}`;
+/** 左栏视图 id：总览 + 本地四视图 + 云服务商视图（cloud:<typeId>）。 */
+export type EngineView = 'overview' | LocalEngineView | `cloud:${string}`;
 
 /**
- * localStorage 选中态校验（宽进严出）：接受本地四视图、任意 `cloud:*`
+ * localStorage 选中态校验（宽进严出）：接受总览、本地四视图、任意 `cloud:*`
  * （孤儿类型只有实例加载后才可知，先宽进、加载后由调用方收敛回落），
  * 以及历史遗留的 `'cloud'`（旧单一云入口，加载后经 resolveLegacyCloudView 迁移）。
  */
 export function isEngineViewId(value: unknown): boolean {
   if (typeof value !== 'string') return false;
+  if (value === 'overview') return true;
   if ((LOCAL_ENGINE_VIEWS as readonly string[]).includes(value)) return true;
   if (value === 'cloud') return true;
   return (

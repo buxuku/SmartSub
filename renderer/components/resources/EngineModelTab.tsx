@@ -38,8 +38,11 @@ import SherpaEngineGroupPanel, {
 import LocalCliPanel from '@/components/resources/engines/panels/LocalCliPanel';
 import BuiltinPanel from '@/components/resources/engines/panels/BuiltinPanel';
 import CloudProviderPanel from '@/components/resources/engines/panels/CloudProviderPanel';
+import EngineOverviewPanel from '@/components/resources/engines/EngineOverviewPanel';
 import EngineIcon from '@/components/resources/engines/EngineIcon';
 import AsrProviderIcon from '@/components/resources/engines/AsrProviderIcon';
+import { Panel, PanelHeader } from '@/components/ui/panel';
+import { LayoutGrid } from 'lucide-react';
 import ModelLibrarySection from '@/components/resources/ModelLibrarySection';
 import { type DownloadSourceConfig } from '@/components/resources/engines/DownloadSourcePopover';
 import { resolveModelDownloadUrl } from 'lib/resolveModelDownloadUrl';
@@ -108,11 +111,11 @@ const EngineModelTab: React.FC = () => {
   const { t } = useTranslation('resources');
   const { t: commonT } = useTranslation('common');
 
-  // 记住上次选中的视图，避免每次进入页面都跳回 builtin。
+  // 记住上次选中的视图；首次进入默认「总览」（三个配置页统一落地动线）。
   // 校验宽进（接受 cloud:* 与历史遗留 'cloud'），实例加载后统一收敛（见下方 effect）。
   const [selectedView, setSelectedView] = useLocalStorageState<EngineView>(
     'engineModelSelectedView',
-    'builtin',
+    'overview',
     isEngineViewId,
   );
 
@@ -481,11 +484,13 @@ const EngineModelTab: React.FC = () => {
   );
 
   /**
-   * 视图归一：历史遗留 'cloud'（旧单一云入口）映射到首个已配置条目；
-   * cloud:* 命中条目清单则为云视图；其余按本地视图（未知值回落 builtin）。
+   * 视图归一：'overview' 为总览；历史遗留 'cloud'（旧单一云入口）映射到首个
+   * 已配置条目；cloud:* 命中条目清单则为云视图；其余按本地视图（未知值回落 builtin）。
    */
   const selectedRaw = selectedView as string;
+  const isOverview = selectedRaw === 'overview';
   const activeCloudView = (() => {
+    if (isOverview) return null;
     if (selectedRaw === 'cloud') {
       const vid = resolveLegacyCloudView(asr.providers);
       return cloudViews.find((v) => v.viewId === vid) ?? null;
@@ -685,7 +690,31 @@ const EngineModelTab: React.FC = () => {
     }
   };
 
+  // 总览数据：本地就绪数 / 云配置数 / 起步路径就绪态
+  const localReadyCount = LOCAL_ENGINE_VIEWS.filter(
+    (v) => engineTone(v) === 'ready',
+  ).length;
+  const cloudConfiguredCount = cloudViews.filter((v) => v.configured).length;
+  const firstCloudViewId =
+    cloudViews.find((v) => v.configured)?.viewId ??
+    cloudViews[0]?.viewId ??
+    null;
+
   const renderRuntimePanel = () => {
+    if (isOverview) {
+      return (
+        <EngineOverviewPanel
+          localReadyCount={localReadyCount}
+          localTotal={LOCAL_ENGINE_VIEWS.length}
+          cloudConfiguredCount={cloudConfiguredCount}
+          cloudTotal={cloudViews.length}
+          builtinReady={(systemInfo.modelsInstalled?.length ?? 0) > 0}
+          firstCloudViewId={firstCloudViewId}
+          anyCloudConfigured={cloudConfiguredCount > 0}
+          onOpenView={(viewId) => setSelectedView(viewId as EngineView)}
+        />
+      );
+    }
     if (activeCloudView) {
       return (
         <CloudProviderPanel
@@ -727,17 +756,60 @@ const EngineModelTab: React.FC = () => {
 
   return (
     <TooltipProvider delayDuration={150}>
-      {/* 左栏固定、仅右栏滚动：根容器撑满父高，左 nav 整列常驻，右栏独立纵向滚动。 */}
-      <div className="flex h-full min-h-0 flex-col gap-4 md:flex-row">
-        {/* 左栏两组：本地引擎（两行样式 + tags）/ 云端听写（每服务商一个紧凑入口）。
-            小屏退化为横向滚动，组标题隐藏、条目顺序不变。 */}
-        <nav className="flex shrink-0 gap-2 overflow-x-auto md:w-56 md:flex-col md:gap-3 md:overflow-x-visible md:overflow-y-auto md:border-r md:pr-2">
-          <div className="flex shrink-0 gap-1 md:flex-col">
-            <div className="hidden px-3 pb-1 text-xs font-medium text-muted-foreground md:block">
+      {/* 主从双栏面板：左 = 听写引擎清单（总览 + 本地组 + 云端组），右 = 详情。 */}
+      <div className="grid h-full min-h-0 grid-cols-1 gap-2.5 md:grid-cols-[248px_minmax(0,1fr)]">
+        <Panel className="min-h-0 overflow-hidden">
+          <PanelHeader
+            title={t('engines.masterTitle')}
+            actions={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                aria-label={t('cloudAsr.addCustom')}
+                onClick={() => setAddCustomOpen(true)}
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            }
+          />
+          <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1.5">
+            {/* 总览首项：三个配置页统一的落地视图 */}
+            <button
+              type="button"
+              aria-current={isOverview ? 'true' : undefined}
+              onClick={() => setSelectedView('overview' as EngineView)}
+              className={cn(
+                'relative flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[13px] transition-colors',
+                isOverview
+                  ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-2 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                  : 'text-foreground hover:bg-accent',
+              )}
+            >
+              <span
+                className={cn(
+                  'flex h-6 w-6 flex-none items-center justify-center rounded-md',
+                  isOverview
+                    ? 'bg-primary/15 text-primary'
+                    : 'bg-muted text-muted-foreground',
+                )}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+              </span>
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate">{t('engines.overview.name')}</span>
+                <span className="truncate text-[10.5px] font-normal text-faint">
+                  {t('engines.overview.subtitle')}
+                </span>
+              </span>
+            </button>
+
+            <div className="label-caps px-2 pb-1 pt-2.5">
               {t('engines.groups.local')}
             </div>
             {LOCAL_ENGINE_VIEWS.map((id) => {
-              const active = !activeCloudView && effectiveLocalView === id;
+              const active =
+                !activeCloudView && !isOverview && effectiveLocalView === id;
               const tone = engineTone(id);
               const tags = engineTags(id);
               return (
@@ -747,14 +819,13 @@ const EngineModelTab: React.FC = () => {
                   aria-current={active ? 'true' : undefined}
                   onClick={() => setSelectedView(id)}
                   className={cn(
-                    'flex items-start gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                    'shrink-0 md:w-full',
+                    'relative flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
                     active
-                      ? 'bg-primary/10 font-medium text-primary ring-1 ring-inset ring-primary/20'
-                      : 'text-foreground hover:bg-muted/60',
+                      ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-2 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                      : 'text-foreground hover:bg-accent',
                   )}
                 >
-                  <EngineIcon engine={id} className="mt-0.5 h-4 w-4 shrink-0" />
+                  <EngineIcon engine={id} className="mt-1 h-4 w-4 shrink-0" />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="flex items-center gap-2">
                       <span className="min-w-0 truncate">{engineName(id)}</span>
@@ -783,10 +854,8 @@ const EngineModelTab: React.FC = () => {
                 </button>
               );
             })}
-          </div>
 
-          <div className="flex shrink-0 gap-1 md:flex-col">
-            <div className="hidden px-3 pb-1 text-xs font-medium text-muted-foreground md:block">
+            <div className="label-caps px-2 pb-1 pt-2.5">
               {t('engines.groups.cloud')}
             </div>
             {cloudViews.map((v) => {
@@ -799,11 +868,10 @@ const EngineModelTab: React.FC = () => {
                   aria-current={active ? 'true' : undefined}
                   onClick={() => setSelectedView(v.viewId as EngineView)}
                   className={cn(
-                    'flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors',
-                    'shrink-0 md:w-full',
+                    'relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
                     active
-                      ? 'bg-primary/10 font-medium text-primary ring-1 ring-inset ring-primary/20'
-                      : 'text-foreground hover:bg-muted/60',
+                      ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-1.5 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                      : 'text-foreground hover:bg-accent',
                   )}
                 >
                   <AsrProviderIcon
@@ -820,10 +888,7 @@ const EngineModelTab: React.FC = () => {
             <button
               type="button"
               onClick={() => setAddCustomOpen(true)}
-              className={cn(
-                'flex items-center gap-2 rounded-lg border border-dashed border-input px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
-                'shrink-0 md:w-full',
-              )}
+              className="flex w-full items-center gap-2 rounded-md border border-dashed border-border-strong px-2 py-1.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
                 <Plus className="h-4 w-4" />
@@ -832,21 +897,28 @@ const EngineModelTab: React.FC = () => {
                 {t('cloudAsr.addCustom')}
               </span>
             </button>
-          </div>
-        </nav>
+          </nav>
+        </Panel>
 
         {/* 右栏：选中引擎运行时 / 云服务商配置 + 模型清单（独立纵向滚动） */}
-        <div className="min-w-0 flex-1 space-y-4 overflow-y-auto pb-4 md:pl-1">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+        <Panel className="min-h-0 overflow-hidden">
+          <div className="flex flex-none flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2.5">
             <div className="min-w-0">
-              <h2 className="text-lg font-semibold">
-                {activeCloudView
-                  ? activeCloudView.kind === 'brand'
-                    ? activeCloudView.type.name
-                    : activeCloudView.label
-                  : engineName(effectiveLocalView)}
+              <h2 className="text-[15px] font-semibold leading-tight">
+                {isOverview
+                  ? t('engines.overview.name')
+                  : activeCloudView
+                    ? activeCloudView.kind === 'brand'
+                      ? activeCloudView.type.name
+                      : activeCloudView.label
+                    : engineName(effectiveLocalView)}
               </h2>
               {/* 预设槽位/自定义条目以类型全名作副标题（标明协议归属） */}
+              {isOverview && (
+                <p className="text-xs text-muted-foreground">
+                  {t('engines.overview.subtitle')}
+                </p>
+              )}
               {activeCloudView &&
                 (activeCloudView.kind === 'preset' ||
                   activeCloudView.kind === 'custom') && (
@@ -854,43 +926,50 @@ const EngineModelTab: React.FC = () => {
                     {activeCloudView.type.name}
                   </p>
                 )}
-              {!activeCloudView && effectiveLocalView === 'sherpa' && (
-                <p className="text-xs text-muted-foreground">
-                  {t('engines.sherpa.subtitle')}
-                </p>
-              )}
+              {!isOverview &&
+                !activeCloudView &&
+                effectiveLocalView === 'sherpa' && (
+                  <p className="text-xs text-muted-foreground">
+                    {t('engines.sherpa.subtitle')}
+                  </p>
+                )}
             </div>
-            {activeCloudView ? (
-              activeCloudView.configured ? (
-                readyBadge
+            {!isOverview &&
+              (activeCloudView ? (
+                activeCloudView.configured ? (
+                  readyBadge
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="border-primary/40 text-primary"
+                  >
+                    {t('engines.cloud.notConfigured')}
+                  </Badge>
+                )
               ) : (
-                <Badge
-                  variant="outline"
-                  className="border-primary/40 text-primary"
-                >
-                  {t('engines.cloud.notConfigured')}
-                </Badge>
-              )
-            ) : (
-              renderEngineBadge(effectiveLocalView)
-            )}
+                renderEngineBadge(effectiveLocalView)
+              ))}
           </div>
 
-          {renderRuntimePanel()}
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
+            {renderRuntimePanel()}
 
-          {/* sherpa 组的模型清单由组面板内联渲染；云服务商无本地模型清单（模型在面板内配置）。 */}
-          {!activeCloudView && effectiveLocalView !== 'sherpa' && (
-            <div className="border-t pt-4">
-              <ModelLibrarySection
-                engine={effectiveLocalView}
-                systemInfo={systemInfo}
-                systemInfoLoaded={systemInfoLoaded}
-                globalDownloading={globalDownloading}
-                onUpdate={handleResourcesUpdate}
-              />
-            </div>
-          )}
-        </div>
+            {/* sherpa 组的模型清单由组面板内联渲染；云服务商无本地模型清单（模型在面板内配置）。 */}
+            {!isOverview &&
+              !activeCloudView &&
+              effectiveLocalView !== 'sherpa' && (
+                <div className="border-t pt-4">
+                  <ModelLibrarySection
+                    engine={effectiveLocalView}
+                    systemInfo={systemInfo}
+                    systemInfoLoaded={systemInfoLoaded}
+                    globalDownloading={globalDownloading}
+                    onUpdate={handleResourcesUpdate}
+                  />
+                </div>
+              )}
+          </div>
+        </Panel>
       </div>
 
       {/* 添加自定义 OpenAI 兼容实例 */}

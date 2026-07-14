@@ -4,13 +4,10 @@
 
 import React from 'react';
 import { useRouter } from 'next/router';
-import { useTranslation } from 'next-i18next';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { SubtitleMergePanel } from '@/components/subtitleMerge';
-import PageHeader from '@/components/PageHeader';
 
 export default function SubtitleMergePage() {
-  const { t } = useTranslation('subtitleMerge');
   const router = useRouter();
 
   // 合成成功/失败均由面板内预览浮层呈现，不再额外弹 toast
@@ -25,15 +22,13 @@ export default function SubtitleMergePage() {
       ? router.query.subtitle
       : undefined;
 
+  // 编辑器页版式：无页内大标题（定位由顶栏面包屑承担），内容区直接是工作面板
   return (
-    <div className="flex h-full flex-col gap-4 p-4 overflow-hidden">
-      <PageHeader title={t('pageTitle')} description={t('pageDesc')} />
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <SubtitleMergePanel
-          initialVideoPath={initialVideoPath}
-          initialSubtitlePath={initialSubtitlePath}
-        />
-      </div>
+    <div className="h-full overflow-hidden p-3">
+      <SubtitleMergePanel
+        initialVideoPath={initialVideoPath}
+        initialSubtitlePath={initialSubtitlePath}
+      />
     </div>
   );
 }

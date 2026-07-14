@@ -91,5 +91,8 @@
   "alignBottomCenter": "Bottom Center",
   "alignBottomRight": "Bottom Right",
   "pageTitle": "Burn to Video",
+  "styleInspector": "Subtitle Style",
+  "timelineVideoTrack": "V1 Video",
+  "timelineSubtitleTrack": "S1 Subs",
   "pageDesc": "Burn subtitles into the video, or mux them as a soft subtitle track"
 }

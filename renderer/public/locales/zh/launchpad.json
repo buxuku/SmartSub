@@ -1,6 +1,39 @@
 {
   "title": "您想做什么？",
   "subtitle": "选择一个任务开始，文件也可以直接拖到卡片上",
+  "startPanel": {
+    "title": "开始新任务"
+  },
+  "env": {
+    "title": "环境就绪度",
+    "canWork": "可开工",
+    "model": "语音模型",
+    "gpu": "GPU 加速",
+    "translation": "翻译服务",
+    "voice": "配音服务",
+    "ready": "已就绪",
+    "notInstalled": "未安装",
+    "notConfigured": "未配置",
+    "notDetected": "待检测",
+    "gpuOn": "{{backend}} 已启用",
+    "cpuMode": "CPU 模式",
+    "configuredCount": "已配置 {{count}} 个服务",
+    "manage": "管理",
+    "detail": "详情",
+    "goConfigure": "去配置"
+  },
+  "continueWork": {
+    "title": "继续上次的工作",
+    "resume": "继续处理",
+    "queue": "查看队列"
+  },
+  "pipeline": {
+    "transcribe": "转写",
+    "translate": "翻译",
+    "proofread": "校对",
+    "compose": "合成",
+    "dubbing": "配音"
+  },
   "card": {
     "generateTranslate": "视频 → 双语字幕",
     "generateTranslateDesc": "转写人声并翻译成目标语言，一步到位",

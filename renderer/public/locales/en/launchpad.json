@@ -1,6 +1,39 @@
 {
   "title": "What would you like to do?",
   "subtitle": "Pick a task to start — you can also drop files straight onto a card",
+  "startPanel": {
+    "title": "Start a new task"
+  },
+  "env": {
+    "title": "Environment",
+    "canWork": "Ready",
+    "model": "Speech model",
+    "gpu": "GPU",
+    "translation": "Translation",
+    "voice": "Voice / TTS",
+    "ready": "Ready",
+    "notInstalled": "Not installed",
+    "notConfigured": "Not configured",
+    "notDetected": "Not detected",
+    "gpuOn": "{{backend}} enabled",
+    "cpuMode": "CPU mode",
+    "configuredCount": "{{count}} configured",
+    "manage": "Manage",
+    "detail": "Details",
+    "goConfigure": "Set up"
+  },
+  "continueWork": {
+    "title": "Pick up where you left off",
+    "resume": "Resume",
+    "queue": "View queue"
+  },
+  "pipeline": {
+    "transcribe": "Transcribe",
+    "translate": "Translate",
+    "proofread": "Proofread",
+    "compose": "Compose",
+    "dubbing": "Dubbing"
+  },
   "card": {
     "generateTranslate": "Video → bilingual subtitles",
     "generateTranslateDesc": "Transcribe speech and translate it into your target language in one go",

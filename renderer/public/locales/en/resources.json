@@ -276,6 +276,26 @@
     "groups": {
       "local": "Local engines",
       "cloud": "Cloud ASR"
+    },
+    "masterTitle": "Transcription Engines",
+    "overview": {
+      "name": "Overview",
+      "subtitle": "Readiness & getting started",
+      "intro": "Transcription engines turn speech into text. Local engines are free, offline, and keep data on your machine; cloud ASR works instantly with an API key, no model downloads. Either one is enough to start generating subtitles.",
+      "localDesc": "Models run on your machine: free, unlimited, works offline. Speed depends on your hardware.",
+      "cloudDesc": "Transcribe via provider APIs: instant to start, no local resources, billed by the provider.",
+      "statLocalReady": "{{ready}} / {{total}} ready",
+      "statCloudConfigured": "{{configured}} / {{total}} configured",
+      "viewLocal": "View local engines",
+      "viewCloud": "View cloud ASR",
+      "quickStart": "Recommended starting paths (pick one)",
+      "pathBuiltinTitle": "Built-in engine + recommended model",
+      "pathBuiltinDesc": "Zero dependencies — download one speech model and transcribe offline",
+      "pathBuiltinAction": "Download",
+      "pathCloudTitle": "Cloud ASR, no downloads",
+      "pathCloudDesc": "Add an API key for an OpenAI-compatible provider and start transcribing",
+      "pathCloudAction": "Set up",
+      "ready": "Ready"
     }
   },
   "cloudAsr": {

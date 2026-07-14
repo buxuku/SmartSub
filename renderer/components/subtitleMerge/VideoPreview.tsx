@@ -3,7 +3,7 @@
  * 按真实视频比例显示视频和字幕效果；使用原生播放控制条，处理状态以浮层呈现
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import ReactPlayer from 'react-player';
 import { Button } from '@/components/ui/button';
@@ -16,8 +16,11 @@ import type {
   MergeStatus,
 } from '../../../types/subtitleMerge';
 import SubtitlePreviewOverlay from './SubtitlePreviewOverlay';
-import { LIBASS_SRT_PLAYRES_Y } from './utils/styleUtils';
+import { LIBASS_SRT_PLAYRES_Y, formatDuration } from './utils/styleUtils';
 import { useJassubPreview } from './hooks/useJassubPreview';
+
+/** 迷你时间轴最多渲染的字幕块数：超出时相邻合并，避免超长字幕列表拖慢渲染 */
+const MAX_TIMELINE_BLOCKS = 600;
 
 interface VideoPreviewProps {
   videoPath: string | null;
@@ -190,6 +193,50 @@ export default function VideoPreview({
 
   const isProcessing = status === 'processing';
 
+  // ── 迷你时间轴：字幕块在片中的分布（只读展示 + 点击 seek）────────────
+  const duration = videoInfo?.duration || 0;
+  const timelineLaneRef = useRef<HTMLDivElement>(null);
+
+  // 超长字幕列表按步长合并相邻条目，控制 DOM 数量
+  const timelineBlocks = useMemo(() => {
+    if (!cues.length || duration <= 0) return [];
+    const step = Math.max(1, Math.ceil(cues.length / MAX_TIMELINE_BLOCKS));
+    const blocks: Array<{ left: number; width: number; active: boolean }> = [];
+    for (let i = 0; i < cues.length; i += step) {
+      const start = cues[i].startSec;
+      const end = cues[Math.min(i + step - 1, cues.length - 1)].endSec;
+      if (!(end > start)) continue;
+      blocks.push({
+        left: (start / duration) * 100,
+        width: Math.max(((end - start) / duration) * 100, 0.35),
+        active: currentTime >= start && currentTime < end,
+      });
+    }
+    return blocks;
+  }, [cues, duration, currentTime]);
+
+  const timelineTicks = useMemo(() => {
+    if (duration <= 0) return [];
+    const segments = 6;
+    return Array.from({ length: segments }, (_, i) =>
+      formatDuration((duration / segments) * i),
+    );
+  }, [duration]);
+
+  const seekFromTimeline = (e: React.MouseEvent) => {
+    const lane = timelineLaneRef.current;
+    if (!lane || duration <= 0) return;
+    const rect = lane.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const ratio = Math.min(
+      Math.max((e.clientX - rect.left) / rect.width, 0),
+      1,
+    );
+    const target = ratio * duration;
+    playerRef.current?.seekTo(target, 'seconds');
+    setCurrentTime(target);
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* 预览区域 - 自适应高度，保持真实比例完整可见 */}
@@ -316,6 +363,62 @@ export default function VideoPreview({
           )}
         </div>
       </div>
+
+      {/* 迷你时间轴：V1 视频轨 + S1 字幕块分布，点击任意处 seek */}
+      {videoPath && duration > 0 && (
+        <div className="mt-2 flex flex-none select-none overflow-hidden rounded-md border border-border bg-panel-2">
+          {/* 轨道标签列 */}
+          <div className="flex w-14 flex-none flex-col border-r border-border text-[9.5px] tracking-wide text-faint">
+            <span className="flex h-4 items-center border-b border-border pl-2" />
+            <span className="flex h-[22px] items-center border-b border-border pl-2">
+              {t('timelineVideoTrack')}
+            </span>
+            <span className="flex h-[22px] items-center pl-2">
+              {t('timelineSubtitleTrack')}
+            </span>
+          </div>
+          {/* 刻度 + 轨道 + 播放头 */}
+          <div
+            ref={timelineLaneRef}
+            className="relative min-w-0 flex-1 cursor-pointer"
+            onClick={seekFromTimeline}
+          >
+            <div className="flex h-4 border-b border-border text-[8.5px] leading-4 text-faint">
+              {timelineTicks.map((tick, i) => (
+                <span
+                  key={i}
+                  className="tnum flex-1 truncate border-l border-border/60 pl-1 first:border-l-0"
+                >
+                  {tick}
+                </span>
+              ))}
+            </div>
+            <div className="relative h-[22px] border-b border-border">
+              <span className="absolute inset-y-[3px] left-0 right-[1%] rounded-[3px] border border-info/50 bg-info/20" />
+            </div>
+            <div className="relative h-[22px]">
+              {timelineBlocks.map((block, i) => (
+                <span
+                  key={i}
+                  className={`absolute inset-y-[3px] rounded-[2.5px] border ${
+                    block.active
+                      ? 'border-primary bg-primary/50'
+                      : 'border-primary/50 bg-primary/20'
+                  }`}
+                  style={{ left: `${block.left}%`, width: `${block.width}%` }}
+                />
+              ))}
+            </div>
+            {/* 播放头 */}
+            <span
+              className="pointer-events-none absolute inset-y-0 z-10 w-px bg-primary"
+              style={{ left: `${(currentTime / duration) * 100}%` }}
+            >
+              <span className="absolute -left-[3.5px] top-0 border-[4px] border-transparent border-t-primary" />
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

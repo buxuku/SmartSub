@@ -91,5 +91,8 @@
   "alignBottomCenter": "中下",
   "alignBottomRight": "右下",
   "pageTitle": "合成到视频",
+  "styleInspector": "字幕样式",
+  "timelineVideoTrack": "V1 视频",
+  "timelineSubtitleTrack": "S1 字幕",
   "pageDesc": "把字幕烧录进画面，或封装为软字幕轨道"
 }

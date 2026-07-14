@@ -1,11 +1,11 @@
 /**
- * 字幕合并主面板组件
- * 左栏：文件 + 样式 + 输出控件（滚动）；右栏：预览独占并最大化，处理状态以浮层呈现
+ * 字幕合并主面板组件 — NLE 三区版式：
+ * 左 inspector（样式设置滚动栏）｜右舞台（文件条 + 预览 + 迷你时间轴）｜底部输出行动条
  */
 
 import React from 'react';
 import { useTranslation } from 'next-i18next';
-import { Card, CardContent } from '@/components/ui/card';
+import { Panel, PanelHeader } from '@/components/ui/panel';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import FileSelector from './FileSelector';
@@ -92,120 +92,112 @@ export default function SubtitleMergePanel({
   const styleDisabled = isProcessing || isSoftMux;
 
   return (
-    <div className={`h-full flex flex-col ${className}`}>
-      {videoPath && subtitlePath && !outputPath && status !== 'processing' && (
-        <div className="flex-shrink-0 mb-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-muted-foreground">
-          {t('outputPathRequiredHint')}
-        </div>
-      )}
-      {/* 文件选择区域 - 紧凑型，置顶全宽 */}
-      <div className="flex-shrink-0 mb-3">
-        <FileSelector
-          videoPath={videoPath}
-          subtitlePath={subtitlePath}
-          videoInfo={videoInfo}
-          subtitleInfo={subtitleInfo}
-          onSelectVideo={selectVideo}
-          onSelectSubtitle={selectSubtitle}
-          onClearVideo={clearVideo}
-          onClearSubtitle={clearSubtitle}
-          disabled={isProcessing}
+    <div
+      className={`grid h-full min-h-0 grid-cols-1 gap-2.5 lg:grid-cols-[332px_minmax(0,1fr)] ${className}`}
+    >
+      {/* 左 inspector：字幕样式（分区滚动） */}
+      <Panel className="min-h-0 overflow-hidden">
+        <PanelHeader
+          title={t('styleInspector')}
+          meta={isSoftMux ? t('styleOnlyForHardcode') : undefined}
         />
-      </div>
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="space-y-3 p-3">
+            {/* 预设样式 */}
+            <StylePresets
+              activePresetId={activePresetId}
+              onSelectPreset={applyPreset}
+              disabled={styleDisabled}
+            />
 
-      {/* 主内容区域 - 左：设置+输出（窄栏滚动）；右：预览独占（最大化） */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(340px,400px)_1fr] gap-3">
-        {/* 左侧：样式设置 + 输出控件 */}
-        <Card className="flex flex-col min-h-0 overflow-hidden">
-          <CardContent className="flex-1 min-h-0 p-0">
-            <ScrollArea className="h-full">
-              <div className="space-y-3 p-4">
-                {/* 软字幕模式提示：样式仅对烧录生效 */}
-                {isSoftMux && (
-                  <p className="rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
-                    {t('styleOnlyForHardcode')}
-                  </p>
-                )}
+            <Separator />
 
-                {/* 预设样式 */}
-                <StylePresets
-                  activePresetId={activePresetId}
-                  onSelectPreset={applyPreset}
-                  disabled={styleDisabled}
-                />
-
-                <Separator />
-
-                {/* 基础设置 */}
-                <div>
-                  <h3 className="label-caps mb-2">{t('basicSettings')}</h3>
-                  <BasicStyleSettings
-                    style={style}
-                    onUpdateStyle={updateStyle}
-                    disabled={styleDisabled}
-                  />
-                </div>
-
-                <Separator />
-
-                {/* 样式效果：描边/背景框模式二选一 + 按模式显示生效参数 */}
-                <div>
-                  <h3 className="label-caps mb-2">{t('effectSettings')}</h3>
-                  <EffectStyleSettings
-                    style={style}
-                    onUpdateStyle={updateStyle}
-                    disabled={styleDisabled}
-                  />
-                </div>
-
-                <Separator />
-
-                {/* 高级设置 */}
-                <AdvancedStyleSettings
-                  style={style}
-                  onUpdateStyle={updateStyle}
-                  disabled={styleDisabled}
-                />
-              </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
-
-        {/* 右侧：上=预览（最大化），下=输出控件，填满预览之外的竖向空间 */}
-        <div className="flex flex-col min-h-0 gap-3">
-          <Card className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            <CardContent className="flex-1 min-h-0 p-3 overflow-hidden">
-              <VideoPreview
-                videoPath={videoPath}
-                videoInfo={videoInfo}
+            {/* 基础设置 */}
+            <div>
+              <h3 className="label-caps mb-2">{t('basicSettings')}</h3>
+              <BasicStyleSettings
                 style={style}
-                subtitlePath={subtitlePath}
-                progress={progress}
-                status={status}
-                isCancelling={isCancelling}
-                onCancelMerge={cancelMerge}
-                onOpenOutputFolder={openOutputFolder}
+                onUpdateStyle={updateStyle}
+                disabled={styleDisabled}
               />
-            </CardContent>
-          </Card>
+            </div>
 
-          {/* 输出方式 + 画质 + 路径 + 生成 */}
-          <Card className="flex-shrink-0">
-            <CardContent className="p-4">
-              <MergeButton
-                outputPath={outputPath}
-                outputMode={outputMode}
-                videoQuality={videoQuality}
-                status={status}
-                canMerge={canMerge}
-                onSelectOutputPath={selectOutputPath}
-                onOutputModeChange={setOutputMode}
-                onVideoQualityChange={setVideoQuality}
-                onStartMerge={startMerge}
+            <Separator />
+
+            {/* 样式效果：描边/背景框模式二选一 + 按模式显示生效参数 */}
+            <div>
+              <h3 className="label-caps mb-2">{t('effectSettings')}</h3>
+              <EffectStyleSettings
+                style={style}
+                onUpdateStyle={updateStyle}
+                disabled={styleDisabled}
               />
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+
+            <Separator />
+
+            {/* 高级设置 */}
+            <AdvancedStyleSettings
+              style={style}
+              onUpdateStyle={updateStyle}
+              disabled={styleDisabled}
+            />
+          </div>
+        </ScrollArea>
+      </Panel>
+
+      {/* 右舞台 + 底部输出行动条 */}
+      <div className="flex min-h-0 flex-col gap-2.5">
+        <Panel className="min-h-0 flex-1 overflow-hidden">
+          {/* 文件条：视频槽 + 字幕槽（30px 紧凑槽位） */}
+          <div className="flex flex-none items-center gap-2 border-b border-border p-2">
+            <FileSelector
+              videoPath={videoPath}
+              subtitlePath={subtitlePath}
+              videoInfo={videoInfo}
+              subtitleInfo={subtitleInfo}
+              onSelectVideo={selectVideo}
+              onSelectSubtitle={selectSubtitle}
+              onClearVideo={clearVideo}
+              onClearSubtitle={clearSubtitle}
+              disabled={isProcessing}
+            />
+          </div>
+          {/* 舞台：预览 + 走带（原生控制条）+ 迷你时间轴 */}
+          <div className="min-h-0 flex-1 overflow-hidden p-2.5">
+            <VideoPreview
+              videoPath={videoPath}
+              videoInfo={videoInfo}
+              style={style}
+              subtitlePath={subtitlePath}
+              progress={progress}
+              status={status}
+              isCancelling={isCancelling}
+              onCancelMerge={cancelMerge}
+              onOpenOutputFolder={openOutputFolder}
+            />
+          </div>
+        </Panel>
+
+        {/* 输出行动条：方式 + 画质 + 路径 + 生成（主行动固定右下热区） */}
+        <Panel className="flex-none">
+          <div className="p-2.5">
+            <MergeButton
+              outputPath={outputPath}
+              outputMode={outputMode}
+              videoQuality={videoQuality}
+              status={status}
+              canMerge={canMerge}
+              needsOutputPath={Boolean(
+                videoPath && subtitlePath && !outputPath && !isProcessing,
+              )}
+              onSelectOutputPath={selectOutputPath}
+              onOutputModeChange={setOutputMode}
+              onVideoQualityChange={setVideoQuality}
+              onStartMerge={startMerge}
+            />
+          </div>
+        </Panel>
       </div>
     </div>
   );

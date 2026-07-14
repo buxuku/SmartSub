@@ -1,5 +1,6 @@
 /**
- * 输出控件与合成按钮组件（进度/成功/错误状态由预览区浮层呈现）
+ * 输出行动条（NLE 版式底部横条）：输出方式分段控件 + 画质 + 路径 + 生成按钮。
+ * 进度/成功/错误状态由预览区浮层呈现。
  */
 
 import React from 'react';
@@ -14,7 +15,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { TooltipProvider } from '@/components/ui/tooltip';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { HelpHint } from '@/components/HelpHint';
 import { Loader2, Play, FolderOpen, Flame, Layers } from 'lucide-react';
 import type {
@@ -29,6 +35,8 @@ interface MergeButtonProps {
   videoQuality: VideoQuality;
   status: MergeStatus;
   canMerge: boolean;
+  /** 文件已就绪但未选输出路径：行动条内联提示 */
+  needsOutputPath?: boolean;
   onSelectOutputPath: () => void;
   onOutputModeChange: (mode: MergeOutputMode) => void;
   onVideoQualityChange: (quality: VideoQuality) => void;
@@ -41,6 +49,7 @@ export default function MergeButton({
   videoQuality,
   status,
   canMerge,
+  needsOutputPath = false,
   onSelectOutputPath,
   onOutputModeChange,
   onVideoQualityChange,
@@ -64,13 +73,13 @@ export default function MergeButton({
   }> = [
     {
       value: 'hardcode',
-      icon: <Flame className="w-3.5 h-3.5" />,
+      icon: <Flame className="h-3.5 w-3.5" />,
       title: t('outputModeHardcode'),
       desc: t('outputModeHardcodeDesc'),
     },
     {
       value: 'softmux',
-      icon: <Layers className="w-3.5 h-3.5" />,
+      icon: <Layers className="h-3.5 w-3.5" />,
       title: t('outputModeSoftmux'),
       desc: t('outputModeSoftmuxDesc'),
     },
@@ -78,51 +87,47 @@ export default function MergeButton({
 
   return (
     <TooltipProvider>
-      <div className="space-y-3">
-        {/* 输出方式 */}
-        <div className="space-y-2">
-          <Label className="text-sm">{t('outputMode')}</Label>
-          <div className="grid grid-cols-2 gap-2">
-            {modeOptions.map((option) => {
-              const active = outputMode === option.value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  disabled={isProcessing}
-                  onClick={() => onOutputModeChange(option.value)}
-                  className={`rounded-md border p-2 text-left transition-colors disabled:opacity-50 ${
-                    active
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border hover:bg-accent/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 text-sm font-medium">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        {/* 输出方式：分段控件（说明入 tooltip） */}
+        <div className="flex h-8 flex-none items-stretch gap-0.5 rounded-md bg-muted p-0.5">
+          {modeOptions.map((option) => {
+            const active = outputMode === option.value;
+            return (
+              <Tooltip key={option.value}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    disabled={isProcessing}
+                    onClick={() => onOutputModeChange(option.value)}
+                    className={`flex items-center gap-1.5 rounded-[5px] px-2.5 text-xs transition-colors disabled:opacity-50 ${
+                      active
+                        ? 'bg-card font-semibold text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
                     {option.icon}
                     {option.title}
-                  </div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    {option.desc}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">{option.desc}</TooltipContent>
+              </Tooltip>
+            );
+          })}
         </div>
 
-        {/* 导出画质（仅烧录硬字幕生效；提示移入 HelpHint 以压缩高度） */}
+        {/* 导出画质（仅烧录硬字幕生效） */}
         {isHardcode && (
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5">
-              <Label className="text-sm">{t('videoQuality')}</Label>
-              <HelpHint text={t('videoQualityHint')} />
-            </div>
+          <div className="flex flex-none items-center gap-1.5">
+            <Label className="text-xs text-muted-foreground">
+              {t('videoQuality')}
+            </Label>
+            <HelpHint text={t('videoQualityHint')} />
             <Select
               value={videoQuality}
               onValueChange={(v) => onVideoQualityChange(v as VideoQuality)}
               disabled={isProcessing}
             >
-              <SelectTrigger className="h-8 w-[150px] text-sm">
+              <SelectTrigger className="w-[112px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -136,45 +141,57 @@ export default function MergeButton({
           </div>
         )}
 
-        {/* 输出路径：标签 + 输入框 + 选择按钮 同行 */}
-        <div className="flex items-center gap-2">
-          <Label className="shrink-0 text-sm">{t('outputPath')}</Label>
+        {/* 输出路径：占据剩余宽度 */}
+        <div className="flex min-w-[240px] flex-1 items-center gap-1.5">
+          <Label className="flex-none text-xs text-muted-foreground">
+            {t('outputPath')}
+          </Label>
           <Input
             type="text"
             value={outputPath || ''}
             readOnly
             placeholder={t('selectOutputPath')}
-            className="min-w-0 flex-1 text-sm"
+            className={`min-w-0 flex-1 font-mono text-xs ${
+              needsOutputPath ? 'border-warning/60' : ''
+            }`}
+            onClick={onSelectOutputPath}
           />
           <Button
             variant="outline"
             size="icon"
             onClick={onSelectOutputPath}
-            className="shrink-0"
+            className="flex-none"
+            aria-label={t('selectOutputPath')}
           >
-            <FolderOpen className="w-4 h-4" />
+            <FolderOpen className="h-4 w-4" />
           </Button>
         </div>
 
-        {/* 合并按钮 */}
+        {/* 合并按钮：行动条右端热区 */}
         <Button
-          className="w-full"
           size="lg"
+          className="min-w-[132px] flex-none"
           onClick={onStartMerge}
           disabled={!canMerge || isProcessing}
         >
           {isProcessing ? (
             <>
-              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
               {t('processing')}
             </>
           ) : (
             <>
-              <Play className="w-5 h-5 mr-2" />
+              <Play className="h-4 w-4" />
               {t('generateVideo')}
             </>
           )}
         </Button>
+
+        {needsOutputPath && (
+          <p className="w-full text-[11.5px] text-warning">
+            {t('outputPathRequiredHint')}
+          </p>
+        )}
       </div>
     </TooltipProvider>
   );

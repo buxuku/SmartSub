@@ -276,6 +276,26 @@
     "groups": {
       "local": "本地引擎",
       "cloud": "云端听写"
+    },
+    "masterTitle": "听写引擎",
+    "overview": {
+      "name": "总览",
+      "subtitle": "就绪状态与起步建议",
+      "intro": "听写引擎负责把人声转成文字。本地引擎免费、离线、数据不出本机；云端听写填好 API Key 即用、无需下载模型。任一类就绪即可开始生成字幕。",
+      "localDesc": "模型下载到本机运行：免费、不限量、断网可用，速度取决于电脑性能。",
+      "cloudDesc": "联网调用服务商 API 转写：即开即用、不占本机资源，按服务商计费。",
+      "statLocalReady": "{{ready}} / {{total}} 个就绪",
+      "statCloudConfigured": "已配置 {{configured}} / {{total}} 个",
+      "viewLocal": "查看本地引擎",
+      "viewCloud": "查看云端听写",
+      "quickStart": "推荐起步路径（任选其一）",
+      "pathBuiltinTitle": "用内置引擎 + 推荐模型",
+      "pathBuiltinDesc": "零依赖，下载一个语音模型即可离线转写",
+      "pathBuiltinAction": "去下载",
+      "pathCloudTitle": "用云端听写免下载",
+      "pathCloudDesc": "配置 OpenAI 兼容等服务商的 API Key 即可开始转写",
+      "pathCloudAction": "去配置",
+      "ready": "已就绪"
     }
   },
   "cloudAsr": {

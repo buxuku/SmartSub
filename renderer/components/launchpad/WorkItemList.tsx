@@ -27,6 +27,8 @@ export interface WorkItemListProps {
   tLaunchpad: (key: string, options?: Record<string, unknown>) => string;
   tTasks: (key: string) => string;
   showUpdatedAt?: boolean;
+  /** 嵌入 Panel 内时去掉外框（由容器提供边界） */
+  flush?: boolean;
 }
 
 export default function WorkItemList({
@@ -42,9 +44,10 @@ export default function WorkItemList({
   tLaunchpad,
   tTasks,
   showUpdatedAt = true,
+  flush = false,
 }: WorkItemListProps) {
   return (
-    <div className="rounded-lg border divide-y">
+    <div className={cn('divide-y', !flush && 'rounded-lg border')}>
       {items.map((item) => {
         const status = getWorkItemStatus(item);
         const editing = editingId === item.id;

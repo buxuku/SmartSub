@@ -2,18 +2,11 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { v4 as uuidv4 } from 'uuid';
-import {
-  AlertTriangle,
-  ChevronRight,
-  Download,
-  History,
-  Languages,
-  Trash2,
-} from 'lucide-react';
-import PageHeader from '@/components/PageHeader';
+import { ChevronRight, History, Trash2 } from 'lucide-react';
 import EmptyState from '@/components/EmptyState';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Panel, PanelHeader } from '@/components/ui/panel';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,6 +21,8 @@ import { cn } from 'lib/utils';
 import { getTaskTypeBySlug } from 'lib/taskTypes';
 import { isProviderConfigured } from 'lib/providerUtils';
 import { hasAnyModelAnyEngine } from 'lib/engineModels';
+import { isTtsProviderConfigured } from '../../../types/ttsProvider';
+import { backendDisplay } from '@/components/settings/gpu/gpuUtils';
 import {
   CardDecor,
   DubbingIcon,
@@ -39,6 +34,10 @@ import {
 } from '@/components/launchpad/TaskIcons';
 import WorkItemList from '@/components/launchpad/WorkItemList';
 import WorkItemRowsSkeleton from '@/components/launchpad/WorkItemRowsSkeleton';
+import EnvReadiness, { type EnvRow } from '@/components/launchpad/EnvReadiness';
+import ContinueWork, {
+  pickContinueItem,
+} from '@/components/launchpad/ContinueWork';
 import { getWorkItemTarget } from 'lib/workItemUtils';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { useTranslation } from 'next-i18next';
@@ -128,6 +127,10 @@ export default function LaunchpadPage() {
   const { t: tTasks } = useTranslation('tasks');
   const [hasModels, setHasModels] = useState(true);
   const [hasProvider, setHasProvider] = useState(true);
+  const [providerCount, setProviderCount] = useState(0);
+  const [gpuLabel, setGpuLabel] = useState<string | null>(null);
+  const [gpuAccel, setGpuAccel] = useState(false);
+  const [ttsReady, setTtsReady] = useState(false);
   const [workItems, setWorkItems] = useState<WorkItem[]>([]);
   const [recentLoading, setRecentLoading] = useState(true);
   const [dragCard, setDragCard] = useState<string | null>(null);
@@ -138,18 +141,42 @@ export default function LaunchpadPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [systemInfo, providers, items, asrProviders] = await Promise.all([
+        const [
+          systemInfo,
+          providers,
+          items,
+          asrProviders,
+          activeBackend,
+          ttsProviders,
+          ttsModelStatus,
+        ] = await Promise.all([
           window?.ipc?.invoke('getSystemInfo', null),
           window?.ipc?.invoke('getTranslationProviders'),
           window?.ipc?.invoke('getWorkItems'),
           window?.ipc?.invoke('getAsrProviders'),
+          window?.ipc?.invoke('get-active-backend').catch(() => null),
+          window?.ipc?.invoke('getTtsProviders').catch(() => []),
+          window?.ipc?.invoke('getTtsModelStatus').catch(() => null),
         ]);
         // 跨引擎就绪判断：任一引擎装有任一模型、或任一云实例已配置即视为已就绪
         setHasModels(hasAnyModelAnyEngine(systemInfo, asrProviders || []));
-        setHasProvider(
-          (providers || []).some((p: any) => isProviderConfigured(p)),
+        const configured = (providers || []).filter((p: any) =>
+          isProviderConfigured(p),
         );
+        setHasProvider(configured.length > 0);
+        setProviderCount(configured.length);
         setWorkItems(items || []);
+        if (activeBackend?.backend) {
+          setGpuLabel(backendDisplay(activeBackend));
+          setGpuAccel(activeBackend.backend !== 'cpu');
+        }
+        const ttsProviderReady = (ttsProviders || []).some((p: any) =>
+          isTtsProviderConfigured(p),
+        );
+        const ttsModelReady = Boolean(
+          ttsModelStatus?.models?.some((m: any) => m.installed),
+        );
+        setTtsReady(ttsProviderReady || ttsModelReady);
       } catch (error) {
         console.error('Failed to load launchpad data:', error);
       } finally {
@@ -243,164 +270,205 @@ export default function LaunchpadPage() {
   };
 
   const localeStr = String(locale || 'zh');
-  const previewWorkItems = workItems.slice(0, 5);
+  const previewWorkItems = workItems.slice(0, 8);
+  const continueItem = pickContinueItem(workItems);
+
+  const envRows: EnvRow[] = [
+    {
+      key: 'model',
+      label: t('env.model'),
+      ready: hasModels,
+      value: hasModels ? t('env.ready') : t('env.notInstalled'),
+      action: hasModels ? t('env.manage') : t('env.goConfigure'),
+      href: `/${localeStr}/engines`,
+    },
+    {
+      key: 'gpu',
+      label: t('env.gpu'),
+      ready: gpuAccel,
+      value: gpuLabel
+        ? gpuAccel
+          ? t('env.gpuOn', { backend: gpuLabel })
+          : t('env.cpuMode')
+        : t('env.notDetected'),
+      action: t('env.detail'),
+      href: `/${localeStr}/engines`,
+    },
+    {
+      key: 'translation',
+      label: t('env.translation'),
+      ready: hasProvider,
+      value: hasProvider
+        ? t('env.configuredCount', { count: providerCount })
+        : t('env.notConfigured'),
+      action: hasProvider ? t('env.manage') : t('env.goConfigure'),
+      href: `/${localeStr}/translation`,
+    },
+    {
+      key: 'voice',
+      label: t('env.voice'),
+      ready: ttsReady,
+      value: ttsReady ? t('env.ready') : t('env.notConfigured'),
+      action: ttsReady ? t('env.manage') : t('env.goConfigure'),
+      href: `/${localeStr}/ttsServices`,
+    },
+  ];
 
   return (
     <div className="h-full overflow-auto">
-      <div className="mx-auto max-w-4xl px-6 py-10 space-y-6">
-        <PageHeader title={t('title')} description={t('subtitle')} />
-
-        {!hasModels && (
-          <div className="flex items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 flex-wrap">
-            <AlertTriangle className="h-4 w-4 text-warning flex-shrink-0" />
-            <p className="text-sm min-w-0 flex-1">{t('banner.noModel')}</p>
-            <Button asChild size="sm" className="h-8 flex-shrink-0 gap-1.5">
-              <Link href={`/${locale}/engines`}>
-                <Download className="h-4 w-4" />
-                {t('banner.noModelCta')}
-              </Link>
-            </Button>
-          </div>
-        )}
-        {hasModels && !hasProvider && (
-          <div className="flex items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 flex-wrap">
-            <AlertTriangle className="h-4 w-4 text-warning flex-shrink-0" />
-            <p className="text-sm min-w-0 flex-1">{t('banner.noProvider')}</p>
-            <Button
-              asChild
-              size="sm"
-              variant="outline"
-              className="h-8 flex-shrink-0 gap-1.5"
-            >
-              <Link href={`/${locale}/translation`}>
-                <Languages className="h-4 w-4" />
-                {t('banner.noProviderCta')}
-              </Link>
-            </Button>
-          </div>
-        )}
-
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {CARDS.map((card) => {
-            const Icon = card.icon;
-            const droppable = Boolean(card.slug);
-            const block = getCardBlock(card, hasModels, hasProvider);
-            const href = block
-              ? resourcesHref(localeStr, block)
-              : cardTarget(card);
-            return (
-              <Link
-                key={card.key}
-                href={href}
-                className={cn(
-                  'group relative overflow-hidden rounded-lg border bg-card p-4 transition-all hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md',
-                  dragCard === card.key &&
-                    'border-2 border-dashed border-primary bg-muted/50',
-                  block &&
-                    'border-warning/40 hover:border-warning/60 bg-warning/[0.03]',
-                )}
-                onDragOver={
-                  droppable
-                    ? (e) => {
-                        e.preventDefault();
-                        setDragCard(card.key);
-                      }
-                    : undefined
-                }
-                onDragLeave={
-                  droppable
-                    ? (e) => {
-                        e.preventDefault();
-                        setDragCard(null);
-                      }
-                    : undefined
-                }
-                onDrop={droppable ? (e) => handleCardDrop(e, card) : undefined}
-              >
-                <CardDecor
-                  className={cn(
-                    'pointer-events-none absolute right-0 top-0 h-24 w-24 transition-transform duration-300 group-hover:scale-110',
-                    card.decor,
-                  )}
-                />
-                {card.needsModel && !hasModels && (
-                  <Badge
-                    variant="outline"
-                    className="absolute right-3 top-3 text-[10px] px-1.5 py-0 border-warning/40 text-warning bg-card"
+      <div className="grid min-h-full items-start gap-2.5 p-3 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="flex min-w-0 flex-col gap-2.5">
+          <Panel>
+            <PanelHeader title={t('startPanel.title')} meta={t('subtitle')} />
+            <div className="grid gap-2 p-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              {CARDS.map((card) => {
+                const Icon = card.icon;
+                const droppable = Boolean(card.slug);
+                const block = getCardBlock(card, hasModels, hasProvider);
+                const href = block
+                  ? resourcesHref(localeStr, block)
+                  : cardTarget(card);
+                return (
+                  <Link
+                    key={card.key}
+                    href={href}
+                    className={cn(
+                      'group relative overflow-hidden rounded-md border bg-panel-2 p-3 transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md',
+                      dragCard === card.key &&
+                        'border-2 border-dashed border-primary bg-primary/5',
+                      block &&
+                        'border-warning/40 bg-warning/[0.04] hover:border-warning/60',
+                    )}
+                    onDragOver={
+                      droppable
+                        ? (e) => {
+                            e.preventDefault();
+                            setDragCard(card.key);
+                          }
+                        : undefined
+                    }
+                    onDragLeave={
+                      droppable
+                        ? (e) => {
+                            e.preventDefault();
+                            setDragCard(null);
+                          }
+                        : undefined
+                    }
+                    onDrop={
+                      droppable ? (e) => handleCardDrop(e, card) : undefined
+                    }
                   >
-                    {t('needsModelBadge')}
+                    <CardDecor
+                      className={cn(
+                        'pointer-events-none absolute right-0 top-0 h-20 w-20 transition-transform duration-300 group-hover:scale-110',
+                        card.decor,
+                      )}
+                    />
+                    {card.needsModel && !hasModels && (
+                      <Badge
+                        variant="outline"
+                        className="absolute right-2.5 top-2.5 border-warning/40 bg-card text-[10px] text-warning"
+                      >
+                        {t('needsModelBadge')}
+                      </Badge>
+                    )}
+                    <div
+                      className={cn(
+                        'mb-2.5 inline-flex h-9 w-9 items-center justify-center rounded-lg',
+                        card.chip,
+                      )}
+                    >
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <div className="text-[13px] font-semibold">
+                      {dragCard === card.key
+                        ? t('dropHint')
+                        : t(`card.${card.key}`)}
+                    </div>
+                    <p className="mt-1 text-[11px] leading-relaxed text-faint">
+                      {t(`card.${card.key}Desc`)}
+                    </p>
+                    {block === 'model' && (
+                      <p className="mt-1.5 text-[11.5px] font-medium text-primary">
+                        {t('banner.noModelCta')} →
+                      </p>
+                    )}
+                    {block === 'provider' && (
+                      <p className="mt-1.5 text-[11.5px] font-medium text-primary">
+                        {t('banner.noProviderCta')} →
+                      </p>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          </Panel>
+
+          <Panel className="flex-1">
+            <PanelHeader
+              title={t('recentTasks')}
+              meta={
+                workItems.length > 0 ? (
+                  <Badge variant="secondary" className="tnum">
+                    {workItems.length}
                   </Badge>
-                )}
-                <div
-                  className={cn(
-                    'mb-3 inline-flex h-11 w-11 items-center justify-center rounded-lg',
-                    card.chip,
-                  )}
-                >
-                  <Icon className="h-6 w-6" />
-                </div>
-                <div className="text-sm font-semibold">
-                  {dragCard === card.key
-                    ? t('dropHint')
-                    : t(`card.${card.key}`)}
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-                  {t(`card.${card.key}Desc`)}
-                </p>
-                {block === 'model' && (
-                  <p className="mt-2 text-xs font-medium text-primary">
-                    {t('banner.noModelCta')} →
-                  </p>
-                )}
-                {block === 'provider' && (
-                  <p className="mt-2 text-xs font-medium text-primary">
-                    {t('banner.noProviderCta')} →
-                  </p>
-                )}
-              </Link>
-            );
-          })}
+                ) : undefined
+              }
+              actions={
+                workItems.length > 0 ? (
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link href={`/${localeStr}/recent-tasks`}>
+                      {t('recent.viewAllPage', { count: workItems.length })}
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                ) : undefined
+              }
+            />
+            {recentLoading ? (
+              <div className="p-2.5">
+                <WorkItemRowsSkeleton rows={3} />
+              </div>
+            ) : workItems.length === 0 ? (
+              <div className="p-2.5">
+                <EmptyState
+                  icon={History}
+                  title={t('noRecentTasks')}
+                  description={t('noRecentTasksHint')}
+                />
+              </div>
+            ) : (
+              <WorkItemList
+                flush
+                items={previewWorkItems}
+                locale={localeStr}
+                editingId={editingId}
+                nameDraft={nameDraft}
+                onNameDraftChange={setNameDraft}
+                onStartRename={startRename}
+                onCommitRename={commitRename}
+                onCancelRename={() => setEditingId(null)}
+                onDelete={setDeleteTarget}
+                onOpen={(item) => router.push(projectTarget(item))}
+                tLaunchpad={t}
+                tTasks={tTasks}
+              />
+            )}
+          </Panel>
         </div>
 
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-muted-foreground">
-              {t('recentTasks')}
-            </h2>
-            {workItems.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs text-muted-foreground hover:text-foreground"
-                asChild
-              >
-                <Link href={`/${localeStr}/recent-tasks`}>
-                  {t('recent.viewAllPage', { count: workItems.length })}
-                  <ChevronRight className="ml-0.5 h-3.5 w-3.5" />
-                </Link>
-              </Button>
-            )}
-          </div>
-          {recentLoading ? (
-            <WorkItemRowsSkeleton rows={3} />
-          ) : workItems.length === 0 ? (
-            <EmptyState
-              icon={History}
-              title={t('noRecentTasks')}
-              description={t('noRecentTasksHint')}
-            />
-          ) : (
-            <WorkItemList
-              items={previewWorkItems}
+        <div className="flex min-w-0 flex-col gap-2.5">
+          <EnvReadiness
+            title={t('env.title')}
+            readyBadge={hasModels ? t('env.canWork') : null}
+            rows={envRows}
+          />
+          {continueItem && (
+            <ContinueWork
+              item={continueItem}
               locale={localeStr}
-              editingId={editingId}
-              nameDraft={nameDraft}
-              onNameDraftChange={setNameDraft}
-              onStartRename={startRename}
-              onCommitRename={commitRename}
-              onCancelRename={() => setEditingId(null)}
-              onDelete={setDeleteTarget}
-              onOpen={(item) => router.push(projectTarget(item))}
+              t={t}
               tLaunchpad={t}
               tTasks={tTasks}
             />

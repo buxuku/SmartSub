@@ -1,6 +1,4 @@
 import React from 'react';
-import { useTranslation } from 'next-i18next';
-import PageHeader from '@/components/PageHeader';
 import EngineModelTab from '@/components/resources/EngineModelTab';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 
@@ -9,16 +7,10 @@ import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
  * 含转写引擎运行时管理、语音模型清单，以及 builtin 的 GPU 加速（见 fold-gpu-into-builtin）。
  */
 const EnginesPage = () => {
-  const { t } = useTranslation('common');
+  // 配置页版式：定位由顶栏面包屑与面板标题承担，无页内大标题
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 p-4">
-      <PageHeader
-        title={t('enginesAndModels')}
-        description={t('enginesAndModelsDesc')}
-      />
-      <div className="min-h-0 flex-1">
-        <EngineModelTab />
-      </div>
+    <div className="h-full min-h-0 overflow-hidden p-3">
+      <EngineModelTab />
     </div>
   );
 };
