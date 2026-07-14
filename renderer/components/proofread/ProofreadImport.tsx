@@ -1,7 +1,8 @@
 import React, { useCallback } from 'react';
 import { useTranslation } from 'next-i18next';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Video, FileText, FolderOpen } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import StepGuide from '@/components/StepGuide';
+import { Video, FileText, FolderOpen, PenLine, Save } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { toast } from 'sonner';
 import {
@@ -197,55 +198,51 @@ export default function ProofreadImport({
     }
   }, [onImportComplete, t]);
 
+  // 统一三步引导（P0 动线统一，与任务/配音/合成页同形态）；三种导入方式收敛为行动按钮组
   return (
-    <div className="space-y-6">
-      <div className="text-center mb-8">
-        <h2 className="text-xl font-semibold mb-2">
-          {t('selectImportMethod')}
-        </h2>
-        <p className="text-muted-foreground">{t('importMethodDescription')}</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto">
-        <Card
-          className="cursor-pointer hover:bg-accent transition-colors border-2 hover:border-primary"
-          onClick={handleImportVideos}
-        >
-          <CardHeader className="text-center pb-2">
-            <Video className="w-12 h-12 mx-auto text-primary" />
-            <CardTitle className="text-lg">{t('importVideos')}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-center text-sm text-muted-foreground">
-            {t('importVideosDesc')}
-          </CardContent>
-        </Card>
-
-        <Card
-          className="cursor-pointer hover:bg-accent transition-colors border-2 hover:border-primary"
-          onClick={handleImportSubtitles}
-        >
-          <CardHeader className="text-center pb-2">
-            <FileText className="w-12 h-12 mx-auto text-primary" />
-            <CardTitle className="text-lg">{t('importSubtitles')}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-center text-sm text-muted-foreground">
-            {t('importSubtitlesDesc')}
-          </CardContent>
-        </Card>
-
-        <Card
-          className="cursor-pointer hover:bg-accent transition-colors border-2 hover:border-primary"
-          onClick={handleImportFolder}
-        >
-          <CardHeader className="text-center pb-2">
-            <FolderOpen className="w-12 h-12 mx-auto text-primary" />
-            <CardTitle className="text-lg">{t('importFolder')}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-center text-sm text-muted-foreground">
-            {t('importFolderDesc')}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+    <StepGuide
+      steps={[
+        {
+          icon: Video,
+          title: t('guide.step1'),
+          desc: t('guide.step1Desc'),
+        },
+        {
+          icon: PenLine,
+          title: t('guide.step2'),
+          desc: t('guide.step2Desc'),
+        },
+        {
+          icon: Save,
+          title: t('guide.step3'),
+          desc: t('guide.step3Desc'),
+        },
+      ]}
+      actions={
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Button onClick={handleImportVideos} title={t('importVideosDesc')}>
+            <Video className="h-4 w-4" />
+            {t('importVideos')}
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={handleImportSubtitles}
+            title={t('importSubtitlesDesc')}
+          >
+            <FileText className="h-4 w-4" />
+            {t('importSubtitles')}
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={handleImportFolder}
+            title={t('importFolderDesc')}
+          >
+            <FolderOpen className="h-4 w-4" />
+            {t('importFolder')}
+          </Button>
+        </div>
+      }
+      dropHint={t('importMethodDescription')}
+    />
   );
 }

@@ -504,7 +504,7 @@ export default function TaskPage() {
   }
 
   return (
-    <div className="flex h-full flex-col gap-3 p-4 overflow-hidden">
+    <div className="flex h-full flex-col gap-2.5 p-3 overflow-hidden">
       <div className="flex items-center justify-between gap-3 flex-wrap flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <TooltipProvider>
@@ -651,8 +651,8 @@ export default function TaskPage() {
 
       <div
         className={cn(
-          'relative flex min-h-0 flex-1 flex-col rounded-lg border p-3 overflow-hidden',
-          isDragging && 'border-2 border-dashed border-primary bg-muted/50',
+          'relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card p-2.5 shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:shadow-none dark:[box-shadow:inset_0_1px_0_rgba(255,255,255,0.03)]',
+          isDragging && 'border-2 border-dashed border-primary bg-primary/5',
         )}
         onDrop={handleDrop}
         onDragOver={handleDragOver}

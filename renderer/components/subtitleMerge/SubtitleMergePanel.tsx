@@ -5,9 +5,12 @@
 
 import React from 'react';
 import { useTranslation } from 'next-i18next';
+import { Paintbrush, Play, Video } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Panel, PanelHeader } from '@/components/ui/panel';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import StepGuide from '@/components/StepGuide';
 import FileSelector from './FileSelector';
 import StylePresets from './StylePresets';
 import BasicStyleSettings from './BasicStyleSettings';
@@ -163,19 +166,47 @@ export default function SubtitleMergePanel({
               disabled={isProcessing}
             />
           </div>
-          {/* 舞台：预览 + 走带（原生控制条）+ 迷你时间轴 */}
+          {/* 舞台：预览 + 走带（原生控制条）+ 迷你时间轴；未选视频时为统一三步引导 */}
           <div className="min-h-0 flex-1 overflow-hidden p-2.5">
-            <VideoPreview
-              videoPath={videoPath}
-              videoInfo={videoInfo}
-              style={style}
-              subtitlePath={subtitlePath}
-              progress={progress}
-              status={status}
-              isCancelling={isCancelling}
-              onCancelMerge={cancelMerge}
-              onOpenOutputFolder={openOutputFolder}
-            />
+            {videoPath ? (
+              <VideoPreview
+                videoPath={videoPath}
+                videoInfo={videoInfo}
+                style={style}
+                subtitlePath={subtitlePath}
+                progress={progress}
+                status={status}
+                isCancelling={isCancelling}
+                onCancelMerge={cancelMerge}
+                onOpenOutputFolder={openOutputFolder}
+              />
+            ) : (
+              <StepGuide
+                steps={[
+                  {
+                    icon: Video,
+                    title: t('emptyGuide.step1'),
+                    desc: t('emptyGuide.step1Desc'),
+                  },
+                  {
+                    icon: Paintbrush,
+                    title: t('emptyGuide.step2'),
+                    desc: t('emptyGuide.step2Desc'),
+                  },
+                  {
+                    icon: Play,
+                    title: t('emptyGuide.step3'),
+                    desc: t('emptyGuide.step3Desc'),
+                  },
+                ]}
+                actions={
+                  <Button onClick={selectVideo} disabled={isProcessing}>
+                    <Video className="h-4 w-4" />
+                    {t('clickToSelectVideo')}
+                  </Button>
+                }
+              />
+            )}
           </div>
         </Panel>
 

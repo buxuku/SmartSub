@@ -5,7 +5,6 @@ import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import ProofreadImport from '@/components/proofread/ProofreadImport';
 import ProofreadFileList from '@/components/proofread/ProofreadFileList';
 import ProofreadEditor from '@/components/proofread/ProofreadEditor';
-import PageHeader from '@/components/PageHeader';
 import { ProofreadTask } from '../../../types/proofread';
 import {
   PendingFile,
@@ -247,7 +246,12 @@ export default function ProofreadPage() {
   const renderStage = () => {
     switch (stage) {
       case 'import':
-        return <ProofreadImport onImportComplete={handleImportComplete} />;
+        // 空态导入：统一三步引导，包在虚线面板里（与任务/配音/合成页同形态）
+        return (
+          <div className="h-full rounded-lg border-2 border-dashed border-border-strong">
+            <ProofreadImport onImportComplete={handleImportComplete} />
+          </div>
+        );
 
       case 'list':
         return (
@@ -282,14 +286,7 @@ export default function ProofreadPage() {
   };
 
   return (
-    <div className="h-full p-4 overflow-hidden flex flex-col gap-4">
-      {/* 仅导入阶段显示枢纽页大标题；列表/编辑阶段为工作页，用自带的返回箭头头部 */}
-      {stage === 'import' && (
-        <PageHeader
-          title={t('proofreadPageTitle')}
-          description={t('proofreadPageDesc')}
-        />
-      )}
+    <div className="h-full p-3 overflow-hidden flex flex-col gap-3">
       <div className="flex-1 overflow-auto min-h-0">{renderStage()}</div>
     </div>
   );

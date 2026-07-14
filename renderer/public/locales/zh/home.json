@@ -151,6 +151,14 @@
   "historyTasks": "历史任务",
   "selectImportMethod": "选择导入方式",
   "importMethodDescription": "导入视频或字幕文件开始批量校对",
+  "guide": {
+    "step1": "导入视频或字幕",
+    "step1Desc": "选视频会自动检测关联字幕，也可直接导入字幕或整个文件夹",
+    "step2": "逐句校对",
+    "step2Desc": "视频对照逐句修改文本与时间轴，支持 AI 批量润色",
+    "step3": "保存导出",
+    "step3Desc": "修改自动保存，完成后导出字幕或衔接合成、配音"
+  },
   "saved": "已保存",
   "updateTaskTip": "将当前文件列表与进度同步到已保存的历史任务",
   "saveTask": "保存任务",

@@ -125,10 +125,15 @@
     "empty": "暂无日志"
   },
   "empty": {
-    "dragMedia": "拖拽媒体文件或文件夹到这里，或点击上传",
-    "dragSubtitle": "拖拽字幕文件或文件夹到这里，或点击上传",
+    "dragMedia": "也可以把媒体文件或文件夹直接拖进本页",
+    "dragSubtitle": "也可以把字幕文件或文件夹直接拖进本页",
     "mediaFormats": "支持 MP4 / MKV / MOV / MP3 / WAV 等 29 种常见视频与音频格式",
-    "subtitleFormats": "支持 SRT / VTT / ASS / SSA / LRC 字幕"
+    "subtitleFormats": "支持 SRT / VTT / ASS / SSA / LRC 字幕",
+    "step1": "导入文件",
+    "step2": "核对配置",
+    "step2Desc": "在上方配置条选择引擎、模型与语言，高级参数在右上角",
+    "step3": "开始任务",
+    "step3Desc": "点击右下角开始按钮，批量处理并实时查看进度"
   },
   "import": "导入",
   "clearList": "清空列表",

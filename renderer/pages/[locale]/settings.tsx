@@ -521,7 +521,7 @@ const Settings = () => {
 
   return (
     <TooltipProvider>
-      <div className="container mx-auto p-4 space-y-6">
+      <div className="mx-auto max-w-4xl space-y-2.5 p-3">
         <PageHeader title={t('settings')} description={t('settingsDesc')} />
 
         <Card>

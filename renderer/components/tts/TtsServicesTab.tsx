@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from 'lib/utils';
+import { Panel, PanelHeader } from '@/components/ui/panel';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import useTtsProviders from 'hooks/useTtsProviders';
 import useClonedVoices from 'hooks/useClonedVoices';
@@ -202,34 +203,55 @@ const TtsServicesTab: React.FC = () => {
 
   return (
     <TooltipProvider delayDuration={150}>
-      <div className="flex h-full min-h-0 flex-col gap-4 md:flex-row">
-        <nav className="flex shrink-0 gap-2 overflow-x-auto md:w-56 md:flex-col md:gap-3 md:overflow-x-visible md:overflow-y-auto md:border-r md:pr-2">
-          {/* 总览（默认落地视图，不属于任何分组） */}
-          <div className="flex shrink-0 gap-1 md:flex-col">
+      <div className="grid h-full min-h-0 grid-cols-1 gap-2.5 overflow-hidden md:grid-cols-[248px_minmax(0,1fr)]">
+        <Panel className="min-h-0 overflow-hidden">
+          <PanelHeader
+            title={t('ttsServices.masterTitle')}
+            actions={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                aria-label={t('ttsServices.addCustom')}
+                onClick={() => setAddCustomOpen(true)}
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            }
+          />
+          <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1.5">
+            {/* 总览（默认落地视图，不属于任何分组） */}
             <button
               type="button"
               aria-current={selectedView === OVERVIEW_VIEW ? 'true' : undefined}
               onClick={() => setSelectedView(OVERVIEW_VIEW)}
               className={cn(
-                'flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors',
-                'shrink-0 md:w-full',
+                'relative flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[13px] transition-colors',
                 selectedView === OVERVIEW_VIEW
-                  ? 'bg-primary/10 font-medium text-primary ring-1 ring-inset ring-primary/20'
-                  : 'text-foreground hover:bg-muted/60',
+                  ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-2 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                  : 'text-foreground hover:bg-accent',
               )}
             >
-              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
-                <LayoutGrid className="h-4 w-4" />
+              <span
+                className={cn(
+                  'flex h-6 w-6 flex-none items-center justify-center rounded-md',
+                  selectedView === OVERVIEW_VIEW
+                    ? 'bg-primary/15 text-primary'
+                    : 'bg-muted text-muted-foreground',
+                )}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
               </span>
-              <span className="min-w-0 flex-1 truncate">
-                {t('ttsServices.overview')}
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate">{t('ttsServices.overview')}</span>
+                <span className="truncate text-[10.5px] font-normal text-faint">
+                  {t('ttsServices.overviewSubtitle')}
+                </span>
               </span>
             </button>
-          </div>
 
-          {/* 本地模型组 */}
-          <div className="flex shrink-0 gap-1 md:flex-col">
-            <div className="hidden px-3 pb-1 text-xs font-medium text-muted-foreground md:block">
+            {/* 本地模型组 */}
+            <div className="label-caps px-2 pb-1 pt-2.5">
               {t('ttsServices.groupLocal')}
             </div>
             {modelsApi.models.map((m) => {
@@ -242,11 +264,10 @@ const TtsServicesTab: React.FC = () => {
                   aria-current={active ? 'true' : undefined}
                   onClick={() => setSelectedView(viewId)}
                   className={cn(
-                    'flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors',
-                    'shrink-0 md:w-full',
+                    'relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
                     active
-                      ? 'bg-primary/10 font-medium text-primary ring-1 ring-inset ring-primary/20'
-                      : 'text-foreground hover:bg-muted/60',
+                      ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-1.5 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                      : 'text-foreground hover:bg-accent',
                   )}
                 >
                   <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center text-base">
@@ -269,11 +290,9 @@ const TtsServicesTab: React.FC = () => {
                 </button>
               );
             })}
-          </div>
 
-          {/* 在线服务组：每个服务商一个平级入口 + 添加自定义 */}
-          <div className="flex shrink-0 gap-1 md:flex-col">
-            <div className="hidden px-3 pb-1 text-xs font-medium text-muted-foreground md:block">
+            {/* 在线服务组：每个服务商一个平级入口 + 添加自定义 */}
+            <div className="label-caps px-2 pb-1 pt-2.5">
               {t('ttsServices.groupCloud')}
             </div>
             {providerViews.map((v) => {
@@ -285,11 +304,10 @@ const TtsServicesTab: React.FC = () => {
                   aria-current={active ? 'true' : undefined}
                   onClick={() => setSelectedView(v.viewId)}
                   className={cn(
-                    'flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors',
-                    'shrink-0 md:w-full',
+                    'relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
                     active
-                      ? 'bg-primary/10 font-medium text-primary ring-1 ring-inset ring-primary/20'
-                      : 'text-foreground hover:bg-muted/60',
+                      ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-1.5 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                      : 'text-foreground hover:bg-accent',
                   )}
                 >
                   <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center text-base">
@@ -317,10 +335,7 @@ const TtsServicesTab: React.FC = () => {
             <button
               type="button"
               onClick={() => setAddCustomOpen(true)}
-              className={cn(
-                'flex items-center gap-2 rounded-lg border border-dashed border-input px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
-                'shrink-0 md:w-full',
-              )}
+              className="flex w-full items-center gap-2 rounded-md border border-dashed border-border-strong px-2 py-1.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
                 <Plus className="h-4 w-4" />
@@ -329,11 +344,9 @@ const TtsServicesTab: React.FC = () => {
                 {t('ttsServices.addCustom')}
               </span>
             </button>
-          </div>
 
-          {/* 我的音色组：克隆音色逐条 + 单一「添加音色」入口（创建/导入/取回三合一） */}
-          <div className="flex shrink-0 gap-1 md:flex-col">
-            <div className="hidden px-3 pb-1 text-xs font-medium text-muted-foreground md:block">
+            {/* 我的音色组：克隆音色逐条 + 单一「添加音色」入口（创建/导入/取回三合一） */}
+            <div className="label-caps px-2 pb-1 pt-2.5">
               {cloneT('groupMyVoices')}
             </div>
             {clones.voices.map((v) => {
@@ -348,11 +361,10 @@ const TtsServicesTab: React.FC = () => {
                   aria-current={active ? 'true' : undefined}
                   onClick={() => setSelectedView(viewId)}
                   className={cn(
-                    'flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors',
-                    'shrink-0 md:w-full',
+                    'relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
                     active
-                      ? 'bg-primary/10 font-medium text-primary ring-1 ring-inset ring-primary/20'
-                      : 'text-foreground hover:bg-muted/60',
+                      ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-1.5 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                      : 'text-foreground hover:bg-accent',
                   )}
                 >
                   <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
@@ -373,10 +385,7 @@ const TtsServicesTab: React.FC = () => {
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className={cn(
-                    'flex items-center gap-2 rounded-lg border border-dashed border-input px-3 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
-                    'shrink-0 md:w-full',
-                  )}
+                  className="flex w-full items-center gap-2 rounded-md border border-dashed border-border-strong px-2 py-1.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 >
                   <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
                     <Plus className="h-4 w-4" />
@@ -429,14 +438,14 @@ const TtsServicesTab: React.FC = () => {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
-        </nav>
+          </nav>
+        </Panel>
 
         {/* 右栏 */}
-        <div className="min-w-0 flex-1 space-y-4 overflow-y-auto pb-4 md:pl-1">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+        <Panel className="min-h-0 overflow-hidden">
+          <div className="flex flex-none flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2.5">
             <div className="min-w-0">
-              <h2 className="text-lg font-semibold">
+              <h2 className="text-[15px] font-semibold leading-tight">
                 {selectedView === OVERVIEW_VIEW
                   ? t('ttsServices.overview')
                   : activeModel
@@ -501,41 +510,47 @@ const TtsServicesTab: React.FC = () => {
             ) : null}
           </div>
 
-          {selectedView === OVERVIEW_VIEW ? (
-            <TtsOverviewPanel
-              models={modelsApi.models}
-              providerViews={providerViews}
-              voices={clones.voices}
-              onOpenModel={(id) => setSelectedView(`${MODEL_VIEW_PREFIX}${id}`)}
-              onOpenProviderView={setSelectedView}
-              onOpenClone={(id) => setSelectedView(`${CLONE_VIEW_PREFIX}${id}`)}
-              onCreateVoice={() => setWizardOpen(true)}
-            />
-          ) : activeModel ? (
-            <TtsModelPanel
-              model={activeModel}
-              onUpdate={modelsApi.refresh}
-              onCreateVoice={() => setWizardOpen(true)}
-            />
-          ) : activeClone ? (
-            <ClonedVoicePanel
-              voice={activeClone}
-              onRename={clones.rename}
-              onRemove={clones.remove}
-              onRegenerateSample={clones.regenerateSample}
-              onVolcRefreshStatus={clones.volcRefreshStatus}
-              onVolcRetrain={clones.volcRetrain}
-              onExport={clones.exportVoice}
-            />
-          ) : activeProviderView ? (
-            <TtsProviderPanel
-              view={activeProviderView}
-              onUpdateField={tts.updateInstanceField}
-              onMaterialize={tts.addInstance}
-              onRemove={tts.removeInstance}
-            />
-          ) : null}
-        </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            {selectedView === OVERVIEW_VIEW ? (
+              <TtsOverviewPanel
+                models={modelsApi.models}
+                providerViews={providerViews}
+                voices={clones.voices}
+                onOpenModel={(id) =>
+                  setSelectedView(`${MODEL_VIEW_PREFIX}${id}`)
+                }
+                onOpenProviderView={setSelectedView}
+                onOpenClone={(id) =>
+                  setSelectedView(`${CLONE_VIEW_PREFIX}${id}`)
+                }
+                onCreateVoice={() => setWizardOpen(true)}
+              />
+            ) : activeModel ? (
+              <TtsModelPanel
+                model={activeModel}
+                onUpdate={modelsApi.refresh}
+                onCreateVoice={() => setWizardOpen(true)}
+              />
+            ) : activeClone ? (
+              <ClonedVoicePanel
+                voice={activeClone}
+                onRename={clones.rename}
+                onRemove={clones.remove}
+                onRegenerateSample={clones.regenerateSample}
+                onVolcRefreshStatus={clones.volcRefreshStatus}
+                onVolcRetrain={clones.volcRetrain}
+                onExport={clones.exportVoice}
+              />
+            ) : activeProviderView ? (
+              <TtsProviderPanel
+                view={activeProviderView}
+                onUpdateField={tts.updateInstanceField}
+                onMaterialize={tts.addInstance}
+                onRemove={tts.removeInstance}
+              />
+            ) : null}
+          </div>
+        </Panel>
       </div>
 
       {/* 创建克隆音色向导 */}

@@ -8,10 +8,13 @@ import {
   FileUp,
   FolderOpen,
   Loader2,
+  Play,
   RotateCcw,
+  Settings2,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import StepGuide from '@/components/StepGuide';
 import { Progress } from '@/components/ui/progress';
 import {
   Tooltip,
@@ -155,22 +158,48 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
   };
 
   if (!files.length) {
+    // 空态：统一三步引导（P0 动线统一，与配音/合成页同形态）
+    const subtitleInput = typeDef.accepts === 'subtitle';
     return (
       <div
-        className="flex flex-col cursor-pointer items-center justify-center h-[360px] border-2 border-dashed rounded-lg p-8"
+        className="h-[380px] cursor-pointer rounded-lg border-2 border-dashed border-border-strong transition-colors hover:border-primary/50"
         onClick={handleImport}
       >
-        <FileUp className="w-14 h-14 text-muted-foreground/50 mb-4" />
-        <p className="text-base text-center text-muted-foreground mb-1">
-          {typeDef.accepts === 'subtitle'
-            ? t('empty.dragSubtitle')
-            : t('empty.dragMedia')}
-        </p>
-        <p className="text-xs text-center text-muted-foreground/70">
-          {typeDef.accepts === 'subtitle'
-            ? t('empty.subtitleFormats')
-            : t('empty.mediaFormats')}
-        </p>
+        <StepGuide
+          steps={[
+            {
+              icon: FileUp,
+              title: t('empty.step1'),
+              desc: subtitleInput
+                ? t('empty.subtitleFormats')
+                : t('empty.mediaFormats'),
+            },
+            {
+              icon: Settings2,
+              title: t('empty.step2'),
+              desc: t('empty.step2Desc'),
+            },
+            {
+              icon: Play,
+              title: t('empty.step3'),
+              desc: t('empty.step3Desc'),
+            },
+          ]}
+          actions={
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleImport();
+              }}
+            >
+              <FileUp className="h-4 w-4" />
+              {t('import')}
+            </Button>
+          }
+          dropHint={
+            subtitleInput ? t('empty.dragSubtitle') : t('empty.dragMedia')
+          }
+        />
       </div>
     );
   }

@@ -151,6 +151,14 @@
   "historyTasks": "History",
   "selectImportMethod": "Select Import Method",
   "importMethodDescription": "Import video or subtitle files to start batch proofreading",
+  "guide": {
+    "step1": "Import videos or subtitles",
+    "step1Desc": "Picking videos auto-detects matching subtitles; you can also import subtitles or a whole folder",
+    "step2": "Proofread line by line",
+    "step2Desc": "Edit text and timing against the video, with AI batch polish",
+    "step3": "Save and export",
+    "step3Desc": "Changes save automatically; export subtitles or continue to compose / dubbing"
+  },
   "saved": "Saved",
   "updateTaskTip": "Sync the current file list and progress to this saved task",
   "saveTask": "Save Task",

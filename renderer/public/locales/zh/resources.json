@@ -424,6 +424,7 @@
     "groupLocal": "本地模型",
     "groupCloud": "在线服务",
     "localSubtitle": "本地语音合成（sherpa-onnx）",
+    "masterTitle": "配音声音",
     "overview": "总览",
     "overviewSubtitle": "三类声音来源一览与推荐起步路径",
     "overviewIntro": "配音的声音来自三类来源：本地模型（免费·离线）、在线服务（联网合成）、我的音色（克隆你自己的声音）。任意一类就绪后，就能在「配音」工作台开始配音。",

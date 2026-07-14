@@ -424,6 +424,7 @@
     "groupLocal": "Local models",
     "groupCloud": "Online services",
     "localSubtitle": "Local speech synthesis (sherpa-onnx)",
+    "masterTitle": "Voices",
     "overview": "Overview",
     "overviewSubtitle": "Your voice sources at a glance, with recommended starting paths",
     "overviewIntro": "Dubbing voices come from three sources: local models (free, offline), online services (cloud synthesis), and My Voices (clones of your own voice). Once any of them is ready, you can start dubbing in the workbench.",

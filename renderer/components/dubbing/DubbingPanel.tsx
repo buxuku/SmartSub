@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useDubbing } from '../../hooks/useDubbing';
 import type { DubbingExportView } from '../../../types/dubbing';
+import StepGuide from '@/components/StepGuide';
 import DubbingFileBar from './DubbingFileBar';
 import DubbingConfigPanel from './DubbingConfigPanel';
 import DubbingCueList from './DubbingCueList';
@@ -141,39 +142,18 @@ export default function DubbingPanel({
       )}
 
       {!dub.subtitlePath ? (
-        /* 空态：三步流程引导 + 直接选文件 */
+        /* 空态：统一三步引导组件 + 直接选文件 */
         <Card className="flex flex-1 items-center justify-center">
-          <CardContent className="max-w-lg py-10">
-            <div className="space-y-6">
-              <div className="space-y-4">
-                {steps.map((step, i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-                      {i + 1}
-                    </div>
-                    <div className="min-w-0 space-y-0.5 pt-0.5">
-                      <p className="flex items-center gap-1.5 text-sm font-medium">
-                        <step.icon className="h-4 w-4 text-muted-foreground" />
-                        {step.title}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {step.desc}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="flex flex-col items-center gap-2">
-                <Button onClick={dub.pickSubtitle}>
-                  <FileText className="mr-1.5 h-4 w-4" />
-                  {t('selectSubtitle')}
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  {t('emptyDropHint')}
-                </p>
-              </div>
-            </div>
-          </CardContent>
+          <StepGuide
+            steps={steps}
+            actions={
+              <Button onClick={dub.pickSubtitle}>
+                <FileText className="h-4 w-4" />
+                {t('selectSubtitle')}
+              </Button>
+            }
+            dropHint={t('emptyDropHint')}
+          />
         </Card>
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(300px,340px)_1fr]">

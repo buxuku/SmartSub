@@ -4,13 +4,10 @@
  */
 import React from 'react';
 import { useRouter } from 'next/router';
-import { useTranslation } from 'next-i18next';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { DubbingPanel } from '@/components/dubbing';
-import PageHeader from '@/components/PageHeader';
 
 export default function DubbingPage() {
-  const { t } = useTranslation('dubbing');
   const router = useRouter();
 
   // 等 query 就绪再挂载面板，保证衔接入口的预填参数进入初始状态
@@ -23,15 +20,13 @@ export default function DubbingPage() {
   const initialVideoPath =
     typeof router.query.video === 'string' ? router.query.video : undefined;
 
+  // 编辑器页版式：无页内大标题（定位由顶栏面包屑承担），内容区直接是工作面板
   return (
-    <div className="flex h-full flex-col gap-4 overflow-hidden p-4">
-      <PageHeader title={t('pageTitle')} description={t('pageDesc')} />
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <DubbingPanel
-          initialSubtitlePath={initialSubtitlePath}
-          initialVideoPath={initialVideoPath}
-        />
-      </div>
+    <div className="h-full overflow-hidden p-3">
+      <DubbingPanel
+        initialSubtitlePath={initialSubtitlePath}
+        initialVideoPath={initialVideoPath}
+      />
     </div>
   );
 }

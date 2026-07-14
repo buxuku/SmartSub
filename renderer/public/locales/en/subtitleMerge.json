@@ -94,5 +94,13 @@
   "styleInspector": "Subtitle Style",
   "timelineVideoTrack": "V1 Video",
   "timelineSubtitleTrack": "S1 Subs",
+  "emptyGuide": {
+    "step1": "Pick a video and subtitles",
+    "step1Desc": "Choose files in the bar above — the preview appears instantly",
+    "step2": "Style the subtitles",
+    "step2Desc": "Pick a preset or fine-tune font, position and effects with live rendering",
+    "step3": "Generate the video",
+    "step3Desc": "Choose burn-in or soft mux, confirm the output path, and go"
+  },
   "pageDesc": "Burn subtitles into the video, or mux them as a soft subtitle track"
 }

@@ -94,5 +94,13 @@
   "styleInspector": "字幕样式",
   "timelineVideoTrack": "V1 视频",
   "timelineSubtitleTrack": "S1 字幕",
+  "emptyGuide": {
+    "step1": "选择视频与字幕",
+    "step1Desc": "在上方文件条选择视频和字幕文件，选中后即刻预览",
+    "step2": "调整字幕样式",
+    "step2Desc": "左侧挑预设或微调字体、位置与效果，画面实时渲染",
+    "step3": "生成视频",
+    "step3Desc": "选择烧录或软封装，确认输出路径后一键生成"
+  },
   "pageDesc": "把字幕烧录进画面，或封装为软字幕轨道"
 }

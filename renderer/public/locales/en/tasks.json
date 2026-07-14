@@ -125,10 +125,15 @@
     "empty": "No logs yet"
   },
   "empty": {
-    "dragMedia": "Drag media files or folders here, or click to upload",
-    "dragSubtitle": "Drag subtitle files or folders here, or click to upload",
+    "dragMedia": "You can also drop media files or folders anywhere on this page",
+    "dragSubtitle": "You can also drop subtitle files or folders anywhere on this page",
     "mediaFormats": "Supports MP4 / MKV / MOV / MP3 / WAV and 24+ more video & audio formats",
-    "subtitleFormats": "Supports SRT / VTT / ASS / SSA / LRC subtitles"
+    "subtitleFormats": "Supports SRT / VTT / ASS / SSA / LRC subtitles",
+    "step1": "Import files",
+    "step2": "Check the configuration",
+    "step2Desc": "Pick engine, model and languages in the config bar above; advanced options are top right",
+    "step3": "Start the task",
+    "step3Desc": "Hit Start in the bottom-right corner to batch-process with live progress"
   },
   "import": "Import",
   "clearList": "Clear list",

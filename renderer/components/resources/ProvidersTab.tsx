@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'next-i18next';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Panel, PanelHeader } from '@/components/ui/panel';
+import TranslationOverviewPanel from '@/components/resources/TranslationOverviewPanel';
 import {
   Plus,
   Trash2,
@@ -11,6 +12,7 @@ import {
   Search,
   FlaskConical,
   X,
+  LayoutGrid,
   Loader2,
   ChevronDown,
   ChevronLeft,
@@ -163,11 +165,8 @@ function isDetectSkippableError(error: unknown): boolean {
   ].some((keyword) => raw.includes(keyword));
 }
 
-/** 推荐卡：免费起步 / 质量优先，名字直接可点选中 */
-const RECOMMEND_ROWS: { labelKey: string; ids: string[] }[] = [
-  { labelKey: 'groupFree', ids: ['autoFree'] },
-  { labelKey: 'recommendQuality', ids: ['deepseek', 'Gemini'] },
-];
+/** 「总览」哨兵值：lastSelectedId 记忆为它时落地总览视图（与引擎/配音服务页动线一致） */
+const OVERVIEW_ID = '__overview__';
 
 const ProvidersTab: React.FC = () => {
   const { t } = useTranslation('translateControl');
@@ -229,7 +228,13 @@ const ProvidersTab: React.FC = () => {
   );
 
   useEffect(() => {
-    if (!lastSelectedId || providers.length === 0) return;
+    if (
+      !lastSelectedId ||
+      lastSelectedId === OVERVIEW_ID ||
+      providers.length === 0
+    ) {
+      return;
+    }
     if (
       providers.some((p) => p.id === lastSelectedId) &&
       selectedProvider !== lastSelectedId
@@ -245,12 +250,26 @@ const ProvidersTab: React.FC = () => {
       window?.ipc?.send('setTranslationProviders', storedProviders);
     }
     setProviders(storedProviders);
+    // 首次进入（无记忆）或记忆为总览时落地总览视图；否则恢复上次选中的服务商
+    if (!lastSelectedId || lastSelectedId === OVERVIEW_ID) {
+      setSelectedProvider(null);
+      return;
+    }
     const resolved = await resolveSelectedProviderIdAsync(
       storedProviders,
-      lastSelectedId || undefined,
+      lastSelectedId,
     );
     setSelectedProvider(resolved);
     if (resolved) setLastSelectedId(resolved);
+  };
+
+  /** 回到总览视图（左栏首项） */
+  const goOverview = () => {
+    setSelectedProvider(null);
+    setLastSelectedId(OVERVIEW_ID);
+    setTestResult(null);
+    setIsRenaming(false);
+    setMobileShowPanel(true);
   };
 
   // 持久化降噪：本地 state 即时更新，IPC 写入 500ms debounce，卸载时 flush
@@ -578,12 +597,26 @@ const ProvidersTab: React.FC = () => {
     ),
   }));
 
-  const visibleCustomProviders = providers.filter(
+  const customProviders = providers.filter((p) => p.type === 'openai');
+
+  const visibleCustomProviders = customProviders.filter(
     (p) =>
-      p.type === 'openai' &&
-      matchesQuery(p.name) &&
-      (!showConfiguredOnly || isConfiguredById(p.id)),
+      matchesQuery(p.name) && (!showConfiguredOnly || isConfiguredById(p.id)),
   );
+
+  // 总览三组统计：free/ai/mt 各组的已配置数与首个条目（供「查看」跳转）
+  const overviewGroups = (['free', 'ai', 'mt'] as const).map((key) => {
+    const items = PROVIDER_TYPES.filter(
+      (pt) => pt.isBuiltin && (pt.group ?? 'mt') === key,
+    );
+    return {
+      key,
+      configured: items.filter((pt) => isConfiguredById(pt.id)).length,
+      total: items.length,
+      firstId:
+        items.find((pt) => isConfiguredById(pt.id))?.id ?? items[0]?.id ?? null,
+    };
+  });
 
   const nothingMatched =
     trimmedQuery &&
@@ -601,108 +634,98 @@ const ProvidersTab: React.FC = () => {
   };
 
   return (
-    <div className="flex h-full overflow-hidden flex-col lg:flex-row">
+    <div className="grid h-full min-h-0 grid-cols-1 gap-2.5 overflow-hidden lg:grid-cols-[248px_minmax(0,1fr)]">
       {/* 左侧服务商列表 */}
-      <div
+      <Panel
         className={cn(
-          'w-full lg:w-64 border-b lg:border-b-0 lg:border-r p-4 space-y-2 overflow-auto shrink-0',
-          'max-h-[42vh] lg:max-h-none',
-          mobileShowPanel && selectedProvider && 'hidden lg:block',
+          'min-h-0 overflow-hidden',
+          mobileShowPanel && 'hidden lg:flex',
         )}
       >
-        <div className="flex flex-col space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-muted-foreground">
-              {t('providerListTitle')}
-            </h2>
-            {saveFlash && (
-              <span className="flex items-center gap-1 text-xs text-success animate-in fade-in">
+        <PanelHeader
+          title={t('providerListTitle')}
+          meta={
+            saveFlash ? (
+              <span className="flex items-center gap-1 text-success animate-in fade-in">
                 <Check className="h-3 w-3" />
                 {t('savedFlash')}
               </span>
-            )}
-          </div>
-
-          {/* 添加自定义 AI 服务 */}
-          <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3 space-y-2">
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              {t('addCustomProviderHint')}
-            </p>
+            ) : undefined
+          }
+          actions={
             <Button
-              variant="default"
-              size="sm"
-              className="w-full flex items-center justify-center gap-1.5"
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              aria-label={t('addCustomProvider')}
+              title={t('addCustomProviderHint')}
               onClick={() => setIsAddDialogOpen(true)}
             >
-              <Plus size={16} />
-              {t('addCustomProvider')}
+              <Plus className="h-3.5 w-3.5" />
             </Button>
+          }
+        />
+
+        {/* 搜索 + 已配置过滤 */}
+        <div className="flex flex-none flex-col gap-1.5 border-b border-border p-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" />
+            <Input
+              value={providerQuery}
+              onChange={(e) => setProviderQuery(e.target.value)}
+              placeholder={t('providerSearchPlaceholder')}
+              className="h-7 pl-8 text-xs"
+            />
+          </div>
+          <div className="flex items-center justify-between gap-2 px-0.5">
+            <label
+              htmlFor="show-configured-only"
+              className="cursor-pointer select-none text-xs text-muted-foreground"
+            >
+              {t('showConfiguredOnly')}
+            </label>
+            <Switch
+              id="show-configured-only"
+              checked={showConfiguredOnly}
+              onCheckedChange={setShowConfiguredOnly}
+            />
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-2 py-1">
-          <label
-            htmlFor="show-configured-only"
-            className="text-xs text-muted-foreground cursor-pointer select-none"
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-1.5">
+          {/* 总览首项：三个配置页统一的落地视图 */}
+          <button
+            type="button"
+            aria-current={!selectedProvider ? 'true' : undefined}
+            onClick={goOverview}
+            className={cn(
+              'relative flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[13px] transition-colors',
+              !selectedProvider
+                ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-2 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                : 'text-foreground hover:bg-accent',
+            )}
           >
-            {t('showConfiguredOnly')}
-          </label>
-          <Switch
-            id="show-configured-only"
-            checked={showConfiguredOnly}
-            onCheckedChange={setShowConfiguredOnly}
-          />
-        </div>
-
-        {/* 搜索 */}
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={providerQuery}
-            onChange={(e) => setProviderQuery(e.target.value)}
-            placeholder={t('providerSearchPlaceholder')}
-            className="h-8 pl-8 text-sm"
-          />
-        </div>
-
-        {/* 推荐卡：搜索时隐藏 */}
-        {!trimmedQuery && (
-          <div className="rounded-lg border bg-muted/40 px-3 py-2 space-y-1.5">
-            <div className="label-caps">{t('recommendTitle')}</div>
-            {RECOMMEND_ROWS.map((row) => (
-              <div
-                key={row.labelKey}
-                className="flex flex-wrap items-center gap-x-1 text-xs"
-              >
-                <span className="text-muted-foreground">{t(row.labelKey)}</span>
-                {row.ids.map((id, i) => {
-                  const type = PROVIDER_TYPES.find((pt) => pt.id === id);
-                  if (!type) return null;
-                  return (
-                    <React.Fragment key={id}>
-                      {i > 0 && (
-                        <span className="text-muted-foreground">·</span>
-                      )}
-                      <button
-                        type="button"
-                        className="text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded"
-                        onClick={() => selectProvider(id)}
-                      >
-                        {typeDisplayName(type)}
-                      </button>
-                    </React.Fragment>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="space-y-1 mt-4">
+            <span
+              className={cn(
+                'flex h-6 w-6 flex-none items-center justify-center rounded-md',
+                !selectedProvider
+                  ? 'bg-primary/15 text-primary'
+                  : 'bg-muted text-muted-foreground',
+              )}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+            </span>
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate">{t('overview.name')}</span>
+              <span className="truncate text-[10.5px] font-normal text-faint">
+                {t('overview.subtitle')}
+              </span>
+            </span>
+          </button>
           {/* 自定义服务商（置顶：用户自添的一般为常用） */}
           {visibleCustomProviders.length > 0 && (
             <>
-              <div className="text-sm font-medium text-muted-foreground mb-2">
+              <div className="label-caps px-2 pb-1 pt-2.5">
                 {t('customProviders')}
               </div>
               {visibleCustomProviders.map((provider) => (
@@ -718,10 +741,10 @@ const ProvidersTab: React.FC = () => {
                     }
                   }}
                   className={cn(
-                    'w-full text-left px-4 py-2 rounded-lg flex items-center justify-between group cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+                    'group relative flex w-full cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                     selectedProvider === provider.id
-                      ? 'bg-primary/10 text-primary ring-1 ring-inset ring-primary/20'
-                      : 'hover:bg-muted',
+                      ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-1.5 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                      : 'hover:bg-accent',
                   )}
                 >
                   <div className="flex items-center space-x-2 min-w-0 flex-1">
@@ -765,25 +788,25 @@ const ProvidersTab: React.FC = () => {
                   open={!collapsedGroups[section.key]}
                   onOpenChange={() => toggleGroupCollapsed(section.key)}
                 >
-                  <CollapsibleTrigger className="flex w-full items-center justify-between mt-4 mb-2 first:mt-0 text-muted-foreground hover:text-foreground">
+                  <CollapsibleTrigger className="flex w-full items-center justify-between px-2 pb-1 pt-2.5 text-muted-foreground hover:text-foreground">
                     <span className="label-caps">{t(section.titleKey)}</span>
                     <ChevronDown
                       className={cn(
-                        'h-4 w-4 transition-transform',
+                        'h-3.5 w-3.5 transition-transform',
                         collapsedGroups[section.key] && '-rotate-90',
                       )}
                     />
                   </CollapsibleTrigger>
-                  <CollapsibleContent className="space-y-1">
+                  <CollapsibleContent className="space-y-0.5">
                     {section.items.map((type) => (
                       <button
                         key={type.id}
                         onClick={() => selectProvider(type.id)}
                         className={cn(
-                          'w-full text-left px-4 py-2 rounded-lg flex items-center space-x-2',
+                          'relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
                           selectedProvider === type.id
-                            ? 'bg-primary/10 text-primary ring-1 ring-inset ring-primary/20'
-                            : 'hover:bg-muted',
+                            ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-1.5 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                            : 'hover:bg-accent',
                         )}
                       >
                         <ProviderIcon iconImg={type.iconImg} icon={type.icon} />
@@ -815,19 +838,44 @@ const ProvidersTab: React.FC = () => {
             </p>
           )}
         </div>
-      </div>
+      </Panel>
 
-      {/* 右侧配置面板 */}
-      <div
-        ref={panelScrollRef}
+      {/* 右侧：总览 / 服务商配置面板 */}
+      <Panel
         className={cn(
-          'flex-1 overflow-auto min-h-0',
-          !mobileShowPanel && !selectedProvider && 'hidden lg:block',
+          'min-h-0 overflow-hidden',
+          !mobileShowPanel && 'hidden lg:flex',
         )}
       >
-        {selectedProvider && getCurrentProviderType() && (
+        {!selectedProvider && (
           <>
-            <div className="sticky top-0 z-10 border-b bg-background px-4 lg:px-6 py-4 shadow-sm space-y-3">
+            <div className="flex flex-none items-center gap-2 border-b border-border px-3 py-2.5">
+              <div className="min-w-0">
+                <h2 className="text-[15px] font-semibold leading-tight">
+                  {t('overview.name')}
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  {t('overview.subtitle')}
+                </p>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              <TranslationOverviewPanel
+                groups={overviewGroups}
+                freeReady={isConfiguredById('autoFree')}
+                aiReady={
+                  isConfiguredById('deepseek') || isConfiguredById('Gemini')
+                }
+                customCount={customProviders.length}
+                onSelectProvider={selectProvider}
+                onAddCustom={() => setIsAddDialogOpen(true)}
+              />
+            </div>
+          </>
+        )}
+        {selectedProvider && getCurrentProviderType() && (
+          <div ref={panelScrollRef} className="min-h-0 flex-1 overflow-y-auto">
+            <div className="sticky top-0 z-10 border-b bg-card px-3 py-2.5 shadow-sm space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <Button
@@ -840,7 +888,7 @@ const ProvidersTab: React.FC = () => {
                   >
                     <ChevronLeft className="h-5 w-5" />
                   </Button>
-                  <h1 className="text-xl lg:text-2xl font-bold flex items-center space-x-2.5 min-w-0">
+                  <h1 className="flex min-w-0 items-center space-x-2 text-[15px] font-semibold">
                     <ProviderIcon
                       iconImg={getCurrentProviderType()?.iconImg}
                       icon={getCurrentProviderType()?.icon}
@@ -984,29 +1032,22 @@ const ProvidersTab: React.FC = () => {
                 )}
             </div>
 
-            <div className="p-4 lg:p-6 pt-4">
-              <Card>
-                <CardContent className="pt-6">
-                  <ProviderForm
-                    fields={getCurrentProviderType()?.fields || []}
-                    values={getCurrentProvider() || {}}
-                    onChange={handleInputChange}
-                    showPassword={showPassword}
-                    onTogglePassword={togglePasswordVisibility}
-                    providerId={selectedProvider || ''}
-                    autoFocusField={autoFocusField}
-                  />
-                </CardContent>
-              </Card>
+            <div className="p-3">
+              <div className="rounded-lg border bg-panel-2/50 p-3.5">
+                <ProviderForm
+                  fields={getCurrentProviderType()?.fields || []}
+                  values={getCurrentProvider() || {}}
+                  onChange={handleInputChange}
+                  showPassword={showPassword}
+                  onTogglePassword={togglePasswordVisibility}
+                  providerId={selectedProvider || ''}
+                  autoFocusField={autoFocusField}
+                />
+              </div>
             </div>
-          </>
-        )}
-        {!selectedProvider && (
-          <div className="hidden lg:flex h-full items-center justify-center text-sm text-muted-foreground p-6">
-            {t('selectProviderHint')}
           </div>
         )}
-      </div>
+      </Panel>
 
       {/* 添加服务商对话框 */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
