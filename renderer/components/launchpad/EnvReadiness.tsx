@@ -25,13 +25,15 @@ export default function EnvReadiness({
   title,
   readyBadge,
   rows,
+  className,
 }: {
   title: string;
   readyBadge: string | null;
   rows: EnvRow[];
+  className?: string;
 }) {
   return (
-    <Panel>
+    <Panel className={className}>
       <PanelHeader
         title={title}
         actions={

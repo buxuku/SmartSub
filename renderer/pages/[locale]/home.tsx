@@ -312,7 +312,7 @@ export default function LaunchpadPage() {
   };
 
   const localeStr = String(locale || 'zh');
-  // 面板内部自适应填满，最多渲染 30 条防止超长列表拖慢首页
+  // 列表只在面板内滚动，不撑高页面；30 条为渲染上限，防止超长列表拖慢首页
   const previewWorkItems = workItems.slice(0, 30);
   const continueItem = pickContinueItem(workItems);
 
@@ -377,8 +377,9 @@ export default function LaunchpadPage() {
 
   return (
     <div className="h-full overflow-auto">
-      {/* min-h-full + flex：内容短时拉伸填满视口（消除页面级底部空白），内容长时自然滚动 */}
-      <div className="flex min-h-full flex-col gap-2.5 p-3">
+      {/* 窄屏：min-h-full，内容长时页面自然滚动；xl 双栏：h-full 锁定视口高度，
+          最近任务在面板内滚动，右栏不再被超长列表撑高 */}
+      <div className="flex min-h-full flex-col gap-2.5 p-3 xl:h-full">
         {/* 问候行：时间问候 + 日期 ｜ 任务统计 chips（首页仪表盘的「人味」层） */}
         <div className="flex flex-none flex-wrap items-end justify-between gap-2 px-1 pt-0.5">
           <div className="min-w-0">
@@ -411,8 +412,10 @@ export default function LaunchpadPage() {
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 items-stretch gap-2.5 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="flex min-w-0 flex-col gap-2.5">
+        {/* xl 显式 minmax(0,1fr) 行：行高锁定为剩余视口高度（默认隐式行按内容撑高，
+            长列表会把两栏一起拉长）；两列 min-h-0 允许随行收缩 */}
+        <div className="grid min-h-0 flex-1 items-stretch gap-2.5 xl:grid-cols-[minmax(0,1fr)_340px] xl:grid-rows-[minmax(0,1fr)]">
+          <div className="flex min-h-0 min-w-0 flex-col gap-2.5">
             <Panel className="flex-none">
               <PanelHeader title={t('startPanel.title')} />
               <div className="grid gap-2 p-2.5 sm:grid-cols-2 lg:grid-cols-3">
@@ -540,7 +543,8 @@ export default function LaunchpadPage() {
                 </div>
               ) : (
                 <>
-                  <div className="min-h-0 flex-1 overflow-y-auto">
+                  {/* xl 视口锁高后在面板内滚动；窄屏堆叠时用 max-h 限高，避免长列表撑爆页面 */}
+                  <div className="max-h-[420px] min-h-0 flex-1 overflow-y-auto xl:max-h-none">
                     <WorkItemList
                       flush
                       items={previewWorkItems}
@@ -567,14 +571,17 @@ export default function LaunchpadPage() {
             </Panel>
           </div>
 
-          <div className="flex min-w-0 flex-col gap-2.5">
+          <div className="flex min-h-0 min-w-0 flex-col gap-2.5">
+            {/* flex-none：视口锁高后右栏空间有限时，常显仪表不被压缩，剩余高度全部交给快速上手 */}
             <EnvReadiness
+              className="flex-none"
               title={t('env.title')}
               readyBadge={hasModels ? t('env.canWork') : null}
               rows={envRows}
             />
             {continueItem && (
               <ContinueWork
+                className="flex-none"
                 item={continueItem}
                 locale={localeStr}
                 t={t}
@@ -582,10 +589,11 @@ export default function LaunchpadPage() {
                 tTasks={tTasks}
               />
             )}
-            {/* 快速上手：右栏弹性收尾模块，把剩余高度吃掉（消除右栏底部空白） */}
+            {/* 快速上手：右栏收尾模块，面板边框拉到列底对齐左栏；
+                行距固定顶部对齐，面板再高条目也不会被均摊拉稀 */}
             <Panel className="min-h-[150px] flex-1">
               <PanelHeader title={t('tips.title')} />
-              <div className="flex flex-1 flex-col justify-evenly gap-0.5 px-1.5 py-1.5">
+              <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1.5 py-1.5">
                 {tipRows.map((tip) => {
                   const TipIcon = tip.icon;
                   return (

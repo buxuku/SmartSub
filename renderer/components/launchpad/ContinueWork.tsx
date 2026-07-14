@@ -140,12 +140,14 @@ export default function ContinueWork({
   t,
   tLaunchpad,
   tTasks,
+  className,
 }: {
   item: WorkItem;
   locale: string;
   t: (key: string, options?: Record<string, unknown>) => string;
   tLaunchpad: (key: string, options?: Record<string, unknown>) => string;
   tTasks: (key: string) => string;
+  className?: string;
 }) {
   const router = useRouter();
   const status = getWorkItemStatus(item);
@@ -157,7 +159,7 @@ export default function ContinueWork({
   const percent = isPipeline ? pipelinePercent(item) : null;
 
   return (
-    <Panel>
+    <Panel className={className}>
       <PanelHeader title={t('continueWork.title')} />
       <div className="flex flex-col gap-2 px-3 pt-2.5">
         <p className="truncate text-[13px] font-semibold">{item.name}</p>
