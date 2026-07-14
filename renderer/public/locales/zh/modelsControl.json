@@ -88,7 +88,7 @@
     "large-v3-turbo": "精度接近顶级，速度还不错",
     "large-v3": "顶级精度，速度最慢",
     "large-v2": "上一代顶级模型",
-    "distil-large-v3": "蒸馏版 large-v3，体积更小、速度更快",
+    "distil-large-v3": "蒸馏版 large-v3，体积更小、速度更快，仅英文",
     "distil-medium.en": "蒸馏版 medium，仅英文",
     "distil-small.en": "蒸馏版 small，仅英文"
   }

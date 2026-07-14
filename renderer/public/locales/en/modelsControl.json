@@ -88,7 +88,7 @@
     "large-v3-turbo": "Near top accuracy at a decent speed",
     "large-v3": "Top accuracy, slowest",
     "large-v2": "Previous-generation flagship",
-    "distil-large-v3": "Distilled large-v3 — smaller and faster",
+    "distil-large-v3": "Distilled large-v3 — smaller and faster, English only",
     "distil-medium.en": "Distilled medium, English only",
     "distil-small.en": "Distilled small, English only"
   }

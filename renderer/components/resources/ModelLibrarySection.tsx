@@ -1000,7 +1000,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
 
   const recommendedCt2Id =
     recommendedId === 'largeTurbo'
-      ? 'distil-large-v3'
+      ? 'large-v3-turbo'
       : recommendedId === 'large'
         ? 'large-v3'
         : recommendedId;

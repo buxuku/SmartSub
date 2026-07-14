@@ -124,7 +124,7 @@ export function toFasterWhisperModelId(ggmlName: string): string {
     .replace(/-q\d+_\d+$/, '')
     .replace(/\.en$/, '.en');
   const map: Record<string, string> = {
-    'large-v3-turbo': 'distil-large-v3',
+    'large-v3-turbo': 'large-v3-turbo',
     'large-v3': 'large-v3',
     'large-v2': 'large-v2',
     'large-v1': 'large-v1',
