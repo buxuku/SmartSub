@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import type {
   GpuEnvironment,
   GpuMode,
+  MacAccelMode,
   AddonVariant,
   AddonLoadResultInfo,
   AddonUpdateInfo,
@@ -24,6 +25,7 @@ import { parseRemoteCudaVersions } from './gpu/gpuDownloadUtils';
 import CudaDownloadSheet from './gpu/CudaDownloadSheet';
 import GpuStatusHero from './gpu/GpuStatusHero';
 import GpuModeSelector from './gpu/GpuModeSelector';
+import MacAccelSelector from './gpu/MacAccelSelector';
 import GpuBackendSwitcher from './gpu/GpuBackendSwitcher';
 import GpuDownloadProgress from './gpu/GpuDownloadProgress';
 import GpuInstalledList from './gpu/GpuInstalledList';
@@ -58,6 +60,7 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
   const [activeBackend, setActiveBackend] =
     useState<AddonLoadResultInfo | null>(null);
   const [gpuMode, setGpuMode] = useState<GpuMode>('auto');
+  const [macAccelMode, setMacAccelMode] = useState<MacAccelMode>('auto');
   const [installedAddons, setInstalledAddons] = useState<InstalledAddonInfo[]>(
     [],
   );
@@ -120,6 +123,7 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
 
       const settings = await window?.ipc?.invoke('getSettings');
       setGpuMode(settings?.gpuMode || 'auto');
+      setMacAccelMode(settings?.macAccelMode || 'auto');
 
       const remote = (await window?.ipc?.invoke(
         'get-remote-addon-versions',
@@ -228,6 +232,17 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
       if (mode === 'gpu-only') {
         toast.warning(t('gpuAcceleration.gpuOnlyWarning'));
       }
+    } catch {
+      toast.error(t('saveFailed'));
+    }
+  };
+
+  const handleMacAccelChange = async (mode: MacAccelMode) => {
+    try {
+      await window?.ipc?.invoke('setSettings', { macAccelMode: mode });
+      setMacAccelMode(mode);
+      notifyGpuSettingsChanged();
+      toast.success(t('gpuAcceleration.macAccelChanged'));
     } catch {
       toast.error(t('saveFailed'));
     }
@@ -361,6 +376,7 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
       gpuEnv,
       activeBackend,
       gpuMode,
+      macAccelMode,
       selectedVersion,
       customAddonPath,
       installed: installedAddons,
@@ -443,6 +459,15 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
 
   const modeEl = (
     <GpuModeSelector gpuMode={gpuMode} onModeChange={handleModeChange} />
+  );
+
+  // macOS：加速方式选择（Apple Silicon: 自动/Metal；Intel: 仅 CPU 说明）
+  const macAccelEl = (
+    <MacAccelSelector
+      appleSilicon={!!gpuEnv.appleSilicon}
+      macAccelMode={macAccelMode}
+      onModeChange={handleMacAccelChange}
+    />
   );
 
   const backendEl = (
@@ -556,7 +581,10 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
             {sheetEl}
           </>
         ) : (
-          diagnosticsEl
+          <>
+            {macAccelEl}
+            {diagnosticsEl}
+          </>
         )}
       </div>
     );
@@ -603,7 +631,12 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
         </>
       )}
 
-      {!isDesktopGpuPlatform && diagnosticsEl}
+      {!isDesktopGpuPlatform && (
+        <>
+          {macAccelEl}
+          {diagnosticsEl}
+        </>
+      )}
     </div>
   );
 };

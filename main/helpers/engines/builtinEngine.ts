@@ -89,6 +89,48 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
 
     const vad = getVadSettings(settings as Record<string, unknown>);
     const signal = ctx.signal ?? getTaskContext()?.signal;
+
+    // CoreML 首次使用该模型：系统要先做 ANE 编译特化（medium/large 可达几十分钟），
+    // 期间无进度回调且不可中断，提前告知用户避免误判卡死后强退（强退会遗留残缺缓存）。
+    const coremlFirstRun =
+      backend === 'coreml' &&
+      !!whisperModel &&
+      !(store.get('coremlCompiledModels') || []).includes(whisperModel);
+    if (coremlFirstRun) {
+      logMessage(
+        `CoreML first run for model ${whisperModel}: system (ANE) compilation may take minutes to tens of minutes, progress will stay at the start meanwhile`,
+        'info',
+      );
+      event.sender.send('message', 'coremlFirstRunHint');
+    }
+
+    // 转写看门狗：首个进度回调到来之前长时间无响应 → 仅提示用户，不自动降级。
+    // whisper 的进度回调只在解码循环里触发，模型初始化（含 CoreML 加载/编译）挂起时
+    // 永远等不到回调，这正是 issue #381 的卡死位置。
+    const WATCHDOG_NO_PROGRESS_MS = 5 * 60 * 1000;
+    let watchdogTimer: NodeJS.Timeout | null = null;
+    const clearWatchdog = () => {
+      if (watchdogTimer) {
+        clearTimeout(watchdogTimer);
+        watchdogTimer = null;
+      }
+    };
+    const startWatchdog = () => {
+      watchdogTimer = setTimeout(() => {
+        watchdogTimer = null;
+        if (signal?.aborted) return;
+        logMessage(
+          `transcribe watchdog: no progress callback within ${WATCHDOG_NO_PROGRESS_MS / 60000} min (backend=${backend}, model=${whisperModel})`,
+          'warning',
+        );
+        event.sender.send(
+          'message',
+          backend === 'coreml'
+            ? 'transcribeStallCoremlHint'
+            : 'transcribeStallHint',
+        );
+      }, WATCHDOG_NO_PROGRESS_MS);
+    };
     const whisperParams = {
       language: getWhisperLanguage(sourceLanguage),
       model: modelPath,
@@ -123,6 +165,7 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       vad_speech_pad_ms: vad.vadSpeechPad,
       vad_samples_overlap: vad.vadSamplesOverlap,
       progress_callback: (progress: number) => {
+        clearWatchdog();
         if (signal?.aborted) return;
         event.sender.send(
           'taskProgressChange',
@@ -140,7 +183,13 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
     );
     event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
     throwIfTaskCancelled();
-    const result = await whisperAsync(whisperParams);
+    startWatchdog();
+    let result;
+    try {
+      result = await whisperAsync(whisperParams);
+    } finally {
+      clearWatchdog();
+    }
 
     if (isWhisperCancelledResult(result) || signal?.aborted) {
       if (file.srtFile && fs.existsSync(file.srtFile)) {
@@ -152,6 +201,14 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       }
       logMessage(`generate subtitle cancelled for ${file.fileName}`, 'warning');
       throw new TaskCancelledError();
+    }
+
+    // CoreML 跑通一次即视为编译完成，后续该模型不再弹「首次编译耗时」提示
+    if (coremlFirstRun && whisperModel) {
+      const compiled: string[] = store.get('coremlCompiledModels') || [];
+      if (!compiled.includes(whisperModel)) {
+        store.set('coremlCompiledModels', [...compiled, whisperModel]);
+      }
     }
 
     // 细粒度时间轴：优先消费原生逐 token 输出（result.tokens，t0/t1 毫秒、已 segment-aware

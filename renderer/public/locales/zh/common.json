@@ -159,6 +159,9 @@
   "gpuAccelerationEnabledTip": "GPU 加速已启用，点击查看详细设置",
   "gpuFallbackToast": "GPU 加速暂不可用，已自动切换到 {{backend}} 继续转写",
   "gpuMigrationNotice": "新版本已支持通用 GPU 加速（Vulkan）并默认启用，可在设置 → GPU 加速中调整",
+  "coremlFirstRunHint": "首次使用 CoreML 加速此模型，系统需要先编译优化（大模型可能需要几分钟到几十分钟），期间进度会停留不动，请耐心等待",
+  "transcribeStallCoremlHint": "转写长时间无进度：可能仍在进行 CoreML 首次编译，可继续等待；若始终无进展，请重启应用，并在引擎管理 → whisper.cpp 中将加速方式改为 Metal 后重试",
+  "transcribeStallHint": "转写长时间无进度，请查看日志了解详情；若持续无响应，请重启应用后重试",
   "brandName": "妙幕",
   "sidebar": {
     "collapse": "收起菜单",

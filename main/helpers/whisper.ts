@@ -9,7 +9,7 @@ import { store, logMessage } from './storeManager';
 import { getEffectivePlatform } from './cudaUtils';
 import { loadBestAddon } from './addonLoader';
 import { getHfHost } from './config/downloadConfig';
-import type { GpuMode } from '../../types/addon';
+import type { GpuMode, MacAccelMode } from '../../types/addon';
 
 export const getPath = (key?: string) => {
   const userDataPath = app.getPath('userData');
@@ -230,13 +230,43 @@ export const isQuantizedModel = (model) => {
   return model.includes('-q5_') || model.includes('-q8_');
 };
 
-// 判断 encoder 模型是否存在
+/**
+ * 校验 .mlmodelc 目录完整性（下载解压中断/强退会留下残缺目录，
+ * 残缺模型交给 CoreML 加载可能无限挂起——见 issue #381）。
+ * 编译产物必含根 coremldata.bin + 权重体（mlprogram: model.mil + weights/weight.bin；
+ * 旧版 espresso: model.espresso.net/.weights）。
+ */
+export function isValidMlmodelc(dirPath: string): boolean {
+  try {
+    if (!fs.statSync(dirPath).isDirectory()) return false;
+    if (!fs.existsSync(path.join(dirPath, 'coremldata.bin'))) return false;
+    const hasMlProgram =
+      fs.existsSync(path.join(dirPath, 'model.mil')) &&
+      fs.existsSync(path.join(dirPath, 'weights', 'weight.bin'));
+    const hasEspresso =
+      fs.existsSync(path.join(dirPath, 'model.espresso.net')) &&
+      fs.existsSync(path.join(dirPath, 'model.espresso.weights'));
+    return hasMlProgram || hasEspresso;
+  } catch {
+    return false;
+  }
+}
+
+// 判断 encoder 模型是否存在且完整（残缺目录视为不存在，自动改走 Metal，避免 CoreML 加载挂死）
 export const hasEncoderModel = (model) => {
   const encoderModelPath = path.join(
     getPath('modelsPath'),
     `ggml-${model}-encoder.mlmodelc`,
   );
-  return fs.existsSync(encoderModelPath);
+  if (!fs.existsSync(encoderModelPath)) return false;
+  if (!isValidMlmodelc(encoderModelPath)) {
+    logMessage(
+      `CoreML encoder for ${model} is incomplete/corrupted (${encoderModelPath}), falling back to Metal. Re-download the model to restore CoreML.`,
+      'warning',
+    );
+    return false;
+  }
+  return true;
 };
 
 /**
@@ -244,13 +274,16 @@ export const hasEncoderModel = (model) => {
  *
  * 实际决策与降级链见 addonLoader.resolveCandidates；
  * 此处仅负责组装 LoadContext（gpuMode + CoreML 可用性）。
+ * macAccelMode=metal 时显式跳过 CoreML 候选（用户在引擎管理中选择）。
  */
 export async function loadWhisperAddon(model: string) {
   const settings = store.get('settings');
   const gpuMode: GpuMode = settings?.gpuMode || 'auto';
+  const macAccelMode: MacAccelMode = settings?.macAccelMode || 'auto';
   const coremlEligible =
     getEffectivePlatform() === 'darwin' &&
     isAppleSilicon() &&
+    macAccelMode !== 'metal' &&
     hasEncoderModel(model);
 
   return loadBestAddon({ gpuMode, coremlEligible });

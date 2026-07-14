@@ -19,6 +19,7 @@ export const store = new Store<StoreType>({
       builtinWhisperCommand: defaultWhisperCommand,
       useCuda: true,
       gpuMode: 'auto' as const,
+      macAccelMode: 'auto' as const,
       modelsPath: path.join(app.getPath('userData'), 'whisper-models'),
       maxContext: -1,
       useCustomTempDir: false,

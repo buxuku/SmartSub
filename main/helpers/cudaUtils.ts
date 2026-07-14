@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as si from 'systeminformation';
 import { logMessage } from './storeManager';
-import { getExtraResourcesPath } from './utils';
+import { getExtraResourcesPath, isAppleSilicon } from './utils';
 
 /**
  * 异步执行外部命令（不阻塞主进程 event loop）。
@@ -528,6 +528,7 @@ export async function getGpuEnvironment(
 
   cachedGpuEnvironment = {
     platform,
+    appleSilicon: isAppleSilicon(),
     gpus,
     vulkanRuntime,
     builtinVulkanAvailable,

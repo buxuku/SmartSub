@@ -8,6 +8,7 @@ import { WorkItem } from '../../../types/workItem';
 import type { TranscriptionEngine } from '../../../types/engine';
 import {
   GpuMode,
+  MacAccelMode,
   AddonLoadResultInfo,
   AddonLoadHistoryEntry,
 } from '../../../types/addon';
@@ -36,10 +37,12 @@ export type StoreType = {
     useLocalWhisper: boolean;
     builtinWhisperCommand: string;
     useCuda: boolean;
-    /** GPU 加速模式（取代 useCuda；useCuda 保留仅为回滚安全） */
+    /** GPU 加速模式（取代 useCuda；useCuda 保留仅为回滚安全；仅 win/linux 生效） */
     gpuMode?: GpuMode;
     /** gpuMode 迁移一次性通知标记：false=待通知，true=已通知 */
     gpuMigrationNotified?: boolean;
+    /** macOS(Apple Silicon) 转写加速方式：auto=优先 CoreML（缺省），metal=始终 Metal */
+    macAccelMode?: MacAccelMode;
     modelsPath: string;
     maxContext?: number;
     useCustomTempDir?: boolean;
@@ -126,6 +129,8 @@ export type StoreType = {
   logs: LogEntry[];
   lastAddonLoadResult?: AddonLoadResultInfo;
   addonLoadHistory?: AddonLoadHistoryEntry[];
+  /** 已完成过 CoreML 首次编译（成功跑完一次转写）的模型名，用于「首次使用耗时」提示去重 */
+  coremlCompiledModels?: string[];
   customParameters?: Record<string, CustomParameterConfig>;
   proofreadHistories?: ProofreadHistory[]; // 旧版，保留兼容
   proofreadTasks?: ProofreadTask[]; // 新版批量任务

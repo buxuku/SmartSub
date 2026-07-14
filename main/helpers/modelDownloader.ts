@@ -5,7 +5,7 @@ import * as https from 'https';
 import * as http from 'http';
 import decompress from 'decompress';
 import { logMessage } from './storeManager';
-import { getPath } from './whisper';
+import { getPath, isValidMlmodelc } from './whisper';
 import { isAppleSilicon } from './utils';
 import {
   downloadFileParallel,
@@ -163,11 +163,20 @@ export class ModelDownloader {
     );
 
     const needDownloadMain = !fs.existsSync(modelPath);
+    // 目录存在但残缺（解压中断/强退遗留）同样视为需要重下——残缺 mlmodelc 会让 CoreML 加载挂死
     const needDownloadCoreML =
-      needsCoreML && isAppleSilicon() && !fs.existsSync(coreMLModelPath);
+      needsCoreML && isAppleSilicon() && !isValidMlmodelc(coreMLModelPath);
 
     if (!needDownloadMain && !needDownloadCoreML) {
       return true;
+    }
+
+    if (needDownloadCoreML && fs.existsSync(coreMLModelPath)) {
+      logMessage(
+        `CoreML model ${model} is incomplete/corrupted, removing and re-downloading`,
+        'warning',
+      );
+      fs.rmSync(coreMLModelPath, { recursive: true, force: true });
     }
 
     const baseUrl = `${getHfHost(source)}/ggerganov/whisper.cpp/resolve/main`;
@@ -245,7 +254,19 @@ export class ModelDownloader {
         this.updateProgress({ status: 'extracting' });
         await decompress(coreMLZipPath, modelsPath);
         fs.unlinkSync(coreMLZipPath);
-        logMessage(`CoreML model ${model} extracted`, 'info');
+        // 清理 zip 附带的 macOS 元数据目录
+        const macosxDir = path.join(modelsPath, '__MACOSX');
+        if (fs.existsSync(macosxDir)) {
+          fs.rmSync(macosxDir, { recursive: true, force: true });
+        }
+        // 解压后完整性校验：残缺目录立即删除，避免下次转写走 CoreML 挂死
+        if (!isValidMlmodelc(coreMLModelPath)) {
+          fs.rmSync(coreMLModelPath, { recursive: true, force: true });
+          throw new Error(
+            `CoreML model ${model} extraction incomplete or corrupted, please retry the download`,
+          );
+        }
+        logMessage(`CoreML model ${model} extracted and verified`, 'info');
       }
 
       this.currentProgress = {

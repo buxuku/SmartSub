@@ -159,6 +159,9 @@
   "gpuAccelerationEnabledTip": "GPU acceleration is enabled. Click to view settings.",
   "gpuFallbackToast": "GPU acceleration unavailable, automatically switched to {{backend}}",
   "gpuMigrationNotice": "This version adds universal GPU acceleration (Vulkan), enabled by default. Adjust in Settings → GPU Acceleration.",
+  "coremlFirstRunHint": "First CoreML run for this model: the system needs to compile it first (large models may take minutes to tens of minutes). Progress will appear frozen during compilation — please wait.",
+  "transcribeStallCoremlHint": "Transcription has made no progress for a while: CoreML first-run compilation may still be in progress — you can keep waiting. If it never proceeds, restart the app and switch the acceleration method to Metal in Engine Management → whisper.cpp, then retry.",
+  "transcribeStallHint": "Transcription has made no progress for a while. Check the logs for details; if it stays unresponsive, restart the app and retry.",
   "brandName": "SmartSub",
   "sidebar": {
     "collapse": "Collapse menu",

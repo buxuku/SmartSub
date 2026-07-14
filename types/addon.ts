@@ -25,9 +25,16 @@ export const ALL_ADDON_VARIANTS = [
 export type AddonVariant = (typeof ALL_ADDON_VARIANTS)[number];
 
 /**
- * GPU 加速模式（取代 useCuda 布尔开关）
+ * GPU 加速模式（取代 useCuda 布尔开关；仅 win/linux 生效）
  */
 export type GpuMode = 'auto' | 'gpu-only' | 'cpu-only';
+
+/**
+ * macOS(Apple Silicon) 转写加速方式：
+ * auto=优先 CoreML（ANE，需模型 encoder 存在），不可用时回落 Metal；metal=始终 Metal GPU。
+ * Intel Mac 无此选项（仅 CPU）。
+ */
+export type MacAccelMode = 'auto' | 'metal';
 
 /**
  * GPU 厂商
@@ -161,6 +168,8 @@ export interface CudaEnvironment {
 export interface GpuEnvironment {
   /** 有效平台（含 dev 模拟） */
   platform: string;
+  /** 是否 Apple Silicon（darwin+arm64；渲染层区分 mac 加速能力用） */
+  appleSilicon: boolean;
   /** systeminformation 枚举的显卡列表 */
   gpus: GpuInfo[];
   /** Vulkan 运行库是否存在（仅 win/linux 有意义） */
