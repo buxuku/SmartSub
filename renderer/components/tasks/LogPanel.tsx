@@ -26,9 +26,11 @@ const LogPanel: React.FC<{
       return;
     }
     setLogs([]);
-    window?.ipc?.invoke('getLogs', projectId).then((initial: LogEntry[]) => {
-      setLogs(initial || []);
-    });
+    window?.ipc
+      ?.invoke('getLogs', { projectId, limit: 200 })
+      .then((initial: LogEntry[]) => {
+        setLogs(initial || []);
+      });
     const unsubscribe = window?.ipc?.on(
       'newLog',
       (log: LogEntry & { projectId?: string }) => {

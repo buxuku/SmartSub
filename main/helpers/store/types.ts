@@ -126,7 +126,6 @@ export type StoreType = {
     cloudUploadConsent?: boolean;
   };
   providerVersion?: number;
-  logs: LogEntry[];
   lastAddonLoadResult?: AddonLoadResultInfo;
   addonLoadHistory?: AddonLoadHistoryEntry[];
   /** 已完成过 CoreML 首次编译（成功跑完一次转写）的模型名，用于「首次使用耗时」提示去重 */

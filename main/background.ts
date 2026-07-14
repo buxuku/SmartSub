@@ -50,6 +50,7 @@ import {
   setAppDisplayNameEarly,
 } from './helpers/appBranding';
 import { getDevSimulationConfig, getGpuEnvironment } from './helpers/cudaUtils';
+import { cleanupOldLogs } from './helpers/logStorage';
 
 //控制台出现中文乱码，需要去node_modules\electron\cli.js中修改启动代码页
 
@@ -120,6 +121,15 @@ app.on('before-quit', (event) => {
   });
 
   setupStoreHandlers();
+  // 日志已迁移到按日 JSONL 文件：清理过期文件，并移除旧版本遗留在 config.json 中的 logs 键
+  void cleanupOldLogs();
+  const legacyStore = store as unknown as {
+    has(key: string): boolean;
+    delete(key: string): void;
+  };
+  if (legacyStore.has('logs')) {
+    legacyStore.delete('logs');
+  }
   // 代理须在任何联网（providers 初始化 / 下载 / 更新检测）前生效
   applyProxyFromSettings();
   setupParameterHandlers();

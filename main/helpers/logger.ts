@@ -1,6 +1,6 @@
 import { BrowserWindow } from 'electron';
-import { store } from './store';
 import { LogEntry } from './store/types';
+import { appendLog } from './logStorage';
 import { sanitizeLogMessage } from './utils';
 import { getTaskContext } from './taskContext';
 
@@ -8,7 +8,6 @@ export function logMessage(
   message: string | Error,
   type: 'info' | 'error' | 'warning' = 'info',
 ) {
-  const logs = store.get('logs');
   const messageStr =
     message instanceof Error ? message.message : String(message);
 
@@ -22,7 +21,7 @@ export function logMessage(
     timestamp: Date.now(),
     ...(projectId ? { projectId } : {}),
   };
-  store.set('logs', [...logs, newLog]);
+  appendLog(newLog);
 
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send('newLog', newLog);

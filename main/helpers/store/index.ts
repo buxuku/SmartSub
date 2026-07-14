@@ -41,6 +41,5 @@ export const store = new Store<StoreType>({
       closeAction: 'smart' as const,
       closeHintShown: false,
     },
-    logs: [],
   },
 });

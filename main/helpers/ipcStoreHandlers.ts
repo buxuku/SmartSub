@@ -13,6 +13,13 @@ import { listAzureVoices } from '../service/tts/azure';
 import { TTS_AZURE_SPEECH, TTS_ELEVENLABS } from '../../types/ttsProvider';
 import { logMessage } from './logger';
 import { LogEntry } from './store/types';
+import {
+  appendLog,
+  queryLogs,
+  listLogDates,
+  clearLogs,
+  LogQuery,
+} from './logStorage';
 import { getBuildInfo } from './buildInfo';
 import { exportConfig, importConfig } from './configExporter';
 import { rebuildAppMenu } from './menu';
@@ -170,36 +177,29 @@ export function setupStoreHandlers() {
     return store.get('settings');
   });
 
-  // 日志相关处理
+  // 日志相关处理（按日 JSONL 文件存储，见 logStorage.ts）
   ipcMain.handle(
     'addLog',
     async (event, logEntry: Omit<LogEntry, 'timestamp'>) => {
-      const logs = store.get('logs');
-      const newLog = {
+      const newLog: LogEntry = {
         ...logEntry,
         timestamp: Date.now(),
       };
-      store.set('logs', [...logs, newLog]);
+      appendLog(newLog);
       event.sender.send('newLog', newLog);
     },
   );
 
-  ipcMain.handle('getLogs', async (event, projectId?: string) => {
-    const logs = store.get('logs') || [];
-    if (!projectId) return logs;
-    return logs.filter((log) => log.projectId === projectId);
+  ipcMain.handle('getLogs', async (_event, query?: LogQuery) => {
+    return queryLogs(query || {});
+  });
+
+  ipcMain.handle('getLogDates', async () => {
+    return listLogDates();
   });
 
   ipcMain.handle('clearLogs', async (_event, projectId?: string) => {
-    const logs = store.get('logs') || [];
-    if (!projectId) {
-      store.set('logs', []);
-      return true;
-    }
-    store.set(
-      'logs',
-      logs.filter((log) => log.projectId !== projectId),
-    );
+    await clearLogs(projectId);
     return true;
   });
 

@@ -92,7 +92,8 @@
 
     --faint: 216 12% 52%;
 
-    --accent: 215 14% 17%;
+    /* hover 高亮：须高于 popover(17%) 一档，否则菜单 hover 不可见 */
+    --accent: 215 14% 23%;
     --accent-foreground: 218 22% 93%;
 
     --destructive: 4 91% 69%;
