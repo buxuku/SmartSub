@@ -621,9 +621,9 @@ const Layout = ({ children }) => {
           <Image
             src="/images/brand/logo-mark.png"
             alt=""
-            width={34}
-            height={34}
-            className="h-[34px] w-[34px] rounded-[9px] object-contain shadow-[0_2px_6px_rgba(18,87,196,0.25)]"
+            width={32}
+            height={32}
+            className="h-8 w-8 object-contain drop-shadow-[0_2px_5px_rgba(22,104,220,0.35)]"
             priority
           />
         </Link>
