@@ -1,5 +1,20 @@
 {
   "notification": "Notification",
+  "nav": {
+    "launchpad": "Launchpad",
+    "subtitles": "Subtitles",
+    "proofread": "Proofread",
+    "compose": "Compose",
+    "dubbing": "Dubbing",
+    "engines": "Engines",
+    "translation": "Translate",
+    "voices": "Voices",
+    "settings": "Settings"
+  },
+  "statusbar": {
+    "engineReady": "Engine ready",
+    "gpuPending": "Detecting"
+  },
   "tasks": "Tasks",
   "modelManagement": "Model Management",
   "settings": "Settings",

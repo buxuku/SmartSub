@@ -4,48 +4,57 @@
 
 @layer base {
   :root {
-    /* Precision Slate — 浅色（由深色同语义推导，主色加深以满足白字 AA） */
-    --background: 0 0% 99%;
-    --foreground: 222 18% 12%;
+    /* Studio Blue — 浅色。四级面：chrome 外壳 → background 画布 → card 面板 → panel-2 内嵌面。
+       画布压灰让白色面板「浮」出来，层次靠色阶而非硬线。 */
+    --background: 220 20% 97%;
+    --foreground: 213 30% 13%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222 18% 12%;
+    --card-foreground: 213 30% 13%;
 
-    /* 应用外壳面（侧栏 + 顶栏）：以「色阶」而非硬分割线区隔；浅色取微灰，内容区为近白画布 */
-    --chrome: 0 0% 97%;
+    /* 应用外壳面（导航 rail + 顶栏 + 状态栏） */
+    --chrome: 216 17% 94%;
+
+    /* 面板内嵌面：表头 / strip / 缩略图底 / kbd 等 */
+    --panel-2: 220 27% 98%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 18% 12%;
+    --popover-foreground: 213 30% 13%;
 
-    /* 品牌主色：Editing Blue（浅色加深 #0070c2 区间，配白字 ≥ AA） */
-    --primary: 204 100% 38%;
+    /* 品牌主色：Studio Blue #1668dc（配白字 ≥ AA） */
+    --primary: 215 82% 47%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 222 18% 20%;
+    --secondary: 216 20% 95%;
+    --secondary-foreground: 213 20% 24%;
 
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 9% 43%;
+    --muted: 214 21% 92%;
+    --muted-foreground: 213 15% 36%;
 
-    --accent: 220 14% 93%;
-    --accent-foreground: 222 18% 20%;
+    /* 三级文字中的 t3（弱化说明 / 占位 / 元信息） */
+    --faint: 217 13% 60%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --accent: 213 26% 93%;
+    --accent-foreground: 213 20% 24%;
 
-    /* 状态色语义：成功/警告/信息（失败用 destructive） */
-    --success: 142 76% 36%;
-    --success-foreground: 210 40% 98%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 222.2 47.4% 11.2%;
-    --info: 204 100% 40%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* 状态色语义：成功/警告/错误/信息（soft 底用 /10 透明度工具类） */
+    --success: 140 75% 34%;
+    --success-foreground: 0 0% 100%;
+    --warning: 32 95% 44%;
+    --warning-foreground: 213 30% 13%;
+    --info: 199 89% 48%;
     --info-foreground: 0 0% 100%;
 
-    --border: 220 13% 90%;
-    --input: 220 13% 90%;
-    --ring: 204 100% 38%;
+    --border: 216 22% 91%;
+    /* 强边框：分段控件 / 输入框 / 虚线拖放区 */
+    --border-strong: 213 22% 84%;
+    --input: 213 22% 84%;
+    --ring: 215 82% 47%;
 
-    --radius: 0.375rem;
+    --radius: 0.625rem;
 
     /* Spacing variables for responsive design */
     --spacing-form-gap: 1rem;
@@ -54,50 +63,56 @@
   }
 
   .dark {
-    /* Precision Slate — 深色（三层中性面：画布 → 卡片 → 浮层） */
-    --background: 0 0% 7%;
-    --foreground: 0 0% 92%;
+    /* Studio Blue — 深色。中性阶带微蓝冷相（避免纯灰发脏）：
+       画布 #101114 → 外壳 #16181c → 面板 #1b1e23 → 内嵌面 #22262c */
+    --background: 225 11% 7%;
+    --foreground: 218 22% 93%;
 
-    --card: 0 0% 11%;
-    --card-foreground: 0 0% 92%;
+    --card: 218 13% 12%;
+    --card-foreground: 218 22% 93%;
 
-    /* 应用外壳面：画布 7% → 外壳 9% → 卡片 11%，单调抬升，外壳作安静面板而非硬线分区 */
-    --chrome: 0 0% 9%;
+    --chrome: 220 12% 10%;
 
-    --popover: 0 0% 13%;
-    --popover-foreground: 0 0% 94%;
+    --panel-2: 216 13% 15%;
 
-    /* 品牌主色：Editing Blue #00A3FF；实心填充用近黑深蓝前景保证对比度 */
-    --primary: 201 100% 50%;
-    --primary-foreground: 205 100% 13%;
+    --popover: 216 14% 17%;
+    --popover-foreground: 218 22% 93%;
 
-    --secondary: 0 0% 16%;
-    --secondary-foreground: 0 0% 92%;
+    /* 品牌主色：Studio Blue #409cff；实心填充用近黑深蓝前景保证对比度 */
+    --primary: 211 100% 63%;
+    --primary-foreground: 207 88% 13%;
 
-    --muted: 0 0% 16%;
-    --muted-foreground: 215 14% 65%;
+    --secondary: 216 13% 15%;
+    --secondary-foreground: 218 22% 93%;
 
-    --accent: 0 0% 19%;
-    --accent-foreground: 0 0% 97%;
+    --muted: 215 13% 19%;
+    --muted-foreground: 215 15% 69%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --faint: 217 11% 45%;
 
-    /* 状态色语义（暗色提亮一档） */
-    --success: 142 71% 45%;
-    --success-foreground: 222.2 47.4% 11.2%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 222.2 47.4% 11.2%;
-    --info: 201 90% 60%;
-    --info-foreground: 205 100% 13%;
+    --accent: 215 14% 17%;
+    --accent-foreground: 218 22% 93%;
 
-    --border: 0 0% 20%;
-    --input: 0 0% 20%;
-    --ring: 201 100% 50%;
+    --destructive: 4 91% 69%;
+    --destructive-foreground: 0 60% 12%;
+
+    /* 状态色语义（暗色提亮一档，前景用近黑深色） */
+    --success: 151 65% 54%;
+    --success-foreground: 216 30% 10%;
+    --warning: 37 91% 55%;
+    --warning-foreground: 216 30% 10%;
+    --info: 206 100% 67%;
+    --info-foreground: 207 88% 13%;
+
+    --border: 214 8% 18%;
+    --border-strong: 214 6% 25%;
+    --input: 214 6% 25%;
+    --ring: 211 100% 63%;
   }
 
   body {
-    @apply bg-background text-foreground font-sans;
+    /* 13px 基准：信息密度对齐专业剪辑/编码工具 */
+    @apply bg-background text-foreground font-sans text-[13px];
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }

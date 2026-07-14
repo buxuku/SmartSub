@@ -1,5 +1,20 @@
 {
   "notification": "消息通知",
+  "nav": {
+    "launchpad": "启动台",
+    "subtitles": "字幕",
+    "proofread": "校对",
+    "compose": "合成",
+    "dubbing": "配音",
+    "engines": "引擎",
+    "translation": "翻译",
+    "voices": "声音",
+    "settings": "设置"
+  },
+  "statusbar": {
+    "engineReady": "引擎就绪",
+    "gpuPending": "待检测"
+  },
   "tasks": "任务",
   "modelManagement": "模型管理",
   "settings": "设置",

@@ -44,11 +44,14 @@ module.exports = {
       },
       colors: {
         border: 'hsl(var(--border))',
+        'border-strong': 'hsl(var(--border-strong))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         chrome: 'hsl(var(--chrome))',
+        'panel-2': 'hsl(var(--panel-2))',
+        faint: 'hsl(var(--faint))',
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',

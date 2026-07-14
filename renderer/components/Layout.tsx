@@ -11,27 +11,27 @@ import {
 import {
   AlertCircle,
   AudioLines,
+  Captions,
   CheckCircle2,
+  Clapperboard,
   Compass,
   Cpu,
-  Edit3,
-  Film,
   Github,
   HelpCircle,
+  Home,
   Keyboard,
   Languages,
   Loader2,
   MessageCircleQuestion,
-  MonitorPlay,
-  PanelLeftClose,
-  PanelLeftOpen,
+  Mic,
+  PenLine,
   RefreshCw,
   Search,
   ScrollText,
   Settings,
-  Speech,
   X,
   Zap,
+  type LucideIcon,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -54,7 +54,6 @@ import { LogDialog } from './LogDialog';
 import OnboardingDialog from './onboarding/OnboardingDialog';
 import ShortcutsHelpDialog from './ShortcutsHelpDialog';
 import FaqDialog from './FaqDialog';
-import useLocalStorageState from 'hooks/useLocalStorageState';
 import { useHotkeys, isMacPlatform } from 'hooks/useHotkeys';
 import { useRadixPointerEventsGuard } from 'hooks/useRadixPointerEventsGuard';
 import packageInfo from '../../package.json';
@@ -74,44 +73,49 @@ interface UpdateStatus {
 interface NavItemDef {
   href: string;
   labelKey: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: LucideIcon;
   isActive: (asPath: string) => boolean;
 }
 
-const NAV_ITEMS: NavItemDef[] = [
+/** 任务组：按创作流水线排序（启动台 → 字幕 → 校对 → 合成 → 配音） */
+const NAV_TASK_ITEMS: NavItemDef[] = [
   {
     href: 'home',
-    labelKey: 'tasks',
-    icon: MonitorPlay,
-    isActive: (p) => p.includes('home') || p.includes('/tasks/'),
+    labelKey: 'nav.launchpad',
+    icon: Home,
+    isActive: (p) => p.includes('home') || p.includes('recent-tasks'),
+  },
+  {
+    href: 'tasks/generate-translate',
+    labelKey: 'nav.subtitles',
+    icon: Captions,
+    isActive: (p) => p.includes('/tasks/'),
   },
   {
     href: 'proofread',
-    labelKey: 'subtitleProofread',
-    icon: Edit3,
+    labelKey: 'nav.proofread',
+    icon: PenLine,
     isActive: (p) => p.includes('proofread'),
   },
   {
     href: 'subtitleMerge',
-    labelKey: 'subtitleMerge',
-    icon: Film,
+    labelKey: 'nav.compose',
+    icon: Clapperboard,
     isActive: (p) => p.includes('subtitleMerge'),
   },
   {
     href: 'dubbing',
-    labelKey: 'dubbing',
-    icon: AudioLines,
+    labelKey: 'nav.dubbing',
+    icon: Mic,
     isActive: (p) => p.includes('/dubbing'),
   },
-  {
-    href: 'ttsServices',
-    labelKey: 'ttsServices',
-    icon: Speech,
-    isActive: (p) => p.includes('ttsServices'),
-  },
+];
+
+/** 配置组：引擎 / 翻译 / 声音 */
+const NAV_CONFIG_ITEMS: NavItemDef[] = [
   {
     href: 'engines',
-    labelKey: 'enginesAndModels',
+    labelKey: 'nav.engines',
     icon: Cpu,
     // 资源中心已拆分：/engines 与旧 /resources、/modelsControl 重定向均落于此。
     isActive: (p) =>
@@ -121,17 +125,31 @@ const NAV_ITEMS: NavItemDef[] = [
   },
   {
     href: 'translation',
-    labelKey: 'translationServices',
+    labelKey: 'nav.translation',
     icon: Languages,
     isActive: (p) =>
       p.includes('/translation') || p.includes('/translateControl'),
   },
   {
-    href: 'settings',
-    labelKey: 'settings',
-    icon: Settings,
-    isActive: (p) => p.includes('settings'),
+    href: 'ttsServices',
+    labelKey: 'nav.voices',
+    icon: AudioLines,
+    isActive: (p) => p.includes('ttsServices'),
   },
+];
+
+const NAV_SETTINGS_ITEM: NavItemDef = {
+  href: 'settings',
+  labelKey: 'nav.settings',
+  icon: Settings,
+  isActive: (p) => p.includes('settings'),
+};
+
+/** 平铺清单：面包屑定位与路由预取用 */
+const NAV_ITEMS: NavItemDef[] = [
+  ...NAV_TASK_ITEMS,
+  ...NAV_CONFIG_ITEMS,
+  NAV_SETTINGS_ITEM,
 ];
 
 // 全部页面用到的 i18n 语言包：首屏空闲后一次性预加载，避免逐页按需 fetch 造成的切换延迟
@@ -148,46 +166,37 @@ const PREFETCH_NAMESPACES = [
   'modelsControl',
 ];
 
+/** 竖排导航项：图标在上、文字在下（P0 导航规范），选中态 = soft 底 + 左缘指示条 */
 function NavItem({
   item,
   locale,
   asPath,
-  expanded,
   label,
 }: {
   item: NavItemDef;
   locale: string;
   asPath: string;
-  expanded: boolean;
   label: string;
 }) {
   const Icon = item.icon;
   const active = item.isActive(asPath);
-  const link = (
+  return (
     <Link
       href={`/${locale}/${item.href}`}
       aria-label={label}
+      aria-current={active ? 'page' : undefined}
       className={cn(
-        'relative flex h-9 items-center gap-2.5 rounded-lg text-sm font-medium transition-colors',
-        expanded ? 'px-2.5' : 'w-9 justify-center mx-auto',
+        'relative flex h-12 w-[52px] flex-col items-center justify-center gap-1 rounded-lg transition-colors',
         active
-          ? 'bg-primary/10 text-primary before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-r-full before:bg-primary'
-          : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+          ? 'bg-primary/10 text-primary before:absolute before:inset-y-3 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+          : 'text-faint hover:bg-accent hover:text-muted-foreground',
       )}
     >
-      <Icon className="h-5 w-5 flex-shrink-0" />
-      {expanded && <span className="truncate">{label}</span>}
-    </Link>
-  );
-
-  if (expanded) return link;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{link}</TooltipTrigger>
-      <TooltipContent side="right" sideOffset={5}>
+      <Icon className="h-[19px] w-[19px] flex-shrink-0" strokeWidth={1.8} />
+      <span className="text-[10px] font-medium leading-none tracking-wide">
         {label}
-      </TooltipContent>
-    </Tooltip>
+      </span>
+    </Link>
   );
 }
 
@@ -234,11 +243,6 @@ const Layout = ({ children }) => {
     number | null
   >(null);
   const onboardingPausedRef = useRef(false);
-  const [sidebarExpanded, setSidebarExpanded] = useLocalStorageState<boolean>(
-    'sidebarExpanded',
-    true,
-    (val) => typeof val === 'boolean',
-  );
   const [downloadPill, setDownloadPill] = useState<{
     model: string;
     progress: number;
@@ -606,168 +610,61 @@ const Layout = ({ children }) => {
     }
   };
 
-  // 中文标签较短（176px 足够），英文标签如「Translation Services / Proofread Subtitles」
-  // 更宽，176px 会被右边框裁断；按 UI 语言放宽展开宽度，保证标签完整可见。
-  const isZhLocale = (locale || '').toLowerCase().startsWith('zh');
-  const expandedSidebarWidth = isZhLocale ? 'w-[176px]' : 'w-[216px]';
-  const expandedContentPad = isZhLocale ? 'pl-[176px]' : 'pl-[216px]';
-  const sidebarWidth = sidebarExpanded ? expandedSidebarWidth : 'w-[56px]';
-
   return (
-    <div
-      className={cn(
-        'grid h-screen w-full transition-[padding-left] duration-200',
-        sidebarExpanded ? expandedContentPad : 'pl-[56px]',
-      )}
-    >
-      <aside
-        className={cn(
-          'inset-y fixed left-0 z-20 flex h-full flex-col bg-chrome transition-[width] duration-200',
-          sidebarWidth,
-        )}
-      >
-        <div className="p-2">
-          <Link
-            href={`/${locale}/home`}
-            aria-label="Home"
-            className={cn(
-              'flex h-10 items-center gap-2 rounded-lg',
-              sidebarExpanded ? 'px-2' : 'justify-center',
-            )}
-          >
-            <Image
-              src="/images/brand/logo-mark.png"
-              alt=""
-              width={36}
-              height={36}
-              className="h-9 w-9 flex-shrink-0 rounded-lg object-contain"
-              priority
-            />
-            {sidebarExpanded && (
-              <span className="flex min-w-0 items-baseline gap-1.5">
-                <span className="truncate text-sm font-semibold">
-                  {t('brandName')}
-                </span>
-                {t('brandName') !== 'SmartSub' && (
-                  <span className="truncate text-xs font-medium tracking-wide text-muted-foreground">
-                    SmartSub
-                  </span>
-                )}
-              </span>
-            )}
-          </Link>
-        </div>
-        <nav className="grid gap-1 p-2">
-          <TooltipProvider>
-            {NAV_ITEMS.map((item) => (
-              <NavItem
-                key={item.href}
-                item={item}
-                locale={locale}
-                asPath={asPath}
-                expanded={sidebarExpanded}
-                label={t(item.labelKey)}
-              />
-            ))}
-          </TooltipProvider>
-        </nav>
-        {(taskRunning || downloadPill) && (
-          <div className="mt-auto flex flex-col gap-1 px-2 pb-1">
-            {taskRunning && (
-              <button
-                type="button"
-                onClick={() => router.push(`/${locale}/recent-tasks`)}
-                aria-label={t('taskRunningPill.aria')}
-                className={cn(
-                  'flex w-full items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-2 py-1.5 text-[11px] text-primary transition-colors hover:bg-primary/10',
-                  sidebarExpanded ? '' : 'justify-center',
-                )}
-              >
-                <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin" />
-                {sidebarExpanded && (
-                  <span className="truncate">{t('taskRunningPill.label')}</span>
-                )}
-              </button>
-            )}
-            {downloadPill && (
-              <button
-                type="button"
-                onClick={() => router.push(`/${locale}/engines`)}
-                aria-label={t('downloadPill.aria')}
-                className={cn(
-                  'flex w-full items-center gap-1.5 rounded-full border px-2 py-1.5 text-[11px] transition-colors',
-                  sidebarExpanded ? '' : 'justify-center',
-                  downloadPill.status === 'error'
-                    ? 'border-destructive/40 text-destructive hover:bg-destructive/10'
-                    : 'text-muted-foreground hover:bg-muted',
-                )}
-              >
-                {downloadPill.status === 'error' ? (
-                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
-                ) : downloadPill.status === 'completed' ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-success" />
-                ) : (
-                  <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin" />
-                )}
-                {sidebarExpanded && (
-                  <span className="truncate">
-                    {downloadPill.status === 'completed'
-                      ? t('downloadPill.done', { model: downloadPill.model })
-                      : downloadPill.status === 'error'
-                        ? t('downloadPill.failed', {
-                            model: downloadPill.model,
-                          })
-                        : downloadPill.status === 'extracting'
-                          ? t('downloadPill.extracting', {
-                              model: downloadPill.model,
-                            })
-                          : `${downloadPill.model} ${Math.round(downloadPill.progress)}%`}
-                  </span>
-                )}
-              </button>
-            )}
-          </div>
-        )}
-        <nav
-          className={cn(
-            'p-2 flex gap-1',
-            !taskRunning && !downloadPill && 'mt-auto',
-            sidebarExpanded
-              ? 'flex-row items-center justify-between'
-              : 'flex-col items-center',
-          )}
+    <div className="grid h-screen w-full pl-16">
+      {/* 左侧竖排导航 rail：固定 64px，任务组 / 配置组以分隔线区分，设置沉底。
+          底部预留 26px 给全宽状态栏。 */}
+      <aside className="fixed left-0 top-0 bottom-[26px] z-20 flex w-16 flex-col items-center gap-0.5 border-r border-border bg-chrome px-1.5 pt-2.5 pb-2">
+        <Link
+          href={`/${locale}/home`}
+          aria-label="Home"
+          className="mb-2 flex h-9 w-9 items-center justify-center"
         >
-          <ThemeToggle />
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={
-                    sidebarExpanded
-                      ? t('sidebar.collapse')
-                      : t('sidebar.expand')
-                  }
-                  onClick={() => setSidebarExpanded(!sidebarExpanded)}
-                >
-                  {sidebarExpanded ? (
-                    <PanelLeftClose className="h-5 w-5" />
-                  ) : (
-                    <PanelLeftOpen className="h-5 w-5" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={5}>
-                {sidebarExpanded ? t('sidebar.collapse') : t('sidebar.expand')}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <Image
+            src="/images/brand/logo-mark.png"
+            alt=""
+            width={34}
+            height={34}
+            className="h-[34px] w-[34px] rounded-[9px] object-contain shadow-[0_2px_6px_rgba(18,87,196,0.25)]"
+            priority
+          />
+        </Link>
+        <nav className="flex flex-col items-center gap-0.5" aria-label="tasks">
+          {NAV_TASK_ITEMS.map((item) => (
+            <NavItem
+              key={item.href}
+              item={item}
+              locale={locale}
+              asPath={asPath}
+              label={t(item.labelKey)}
+            />
+          ))}
         </nav>
+        <div className="my-1.5 h-px w-7 bg-border-strong" role="separator" />
+        <nav className="flex flex-col items-center gap-0.5" aria-label="config">
+          {NAV_CONFIG_ITEMS.map((item) => (
+            <NavItem
+              key={item.href}
+              item={item}
+              locale={locale}
+              asPath={asPath}
+              label={t(item.labelKey)}
+            />
+          ))}
+        </nav>
+        <div className="flex-1" />
+        <div className="mb-0.5 h-px w-7 bg-border-strong" role="separator" />
+        <NavItem
+          item={NAV_SETTINGS_ITEM}
+          locale={locale}
+          asPath={asPath}
+          label={t(NAV_SETTINGS_ITEM.labelKey)}
+        />
       </aside>
-      {/* min-w-0：阻止 grid 子项被内容最小宽度撑开，避免侧边栏展开后出现页面级横向滚动条 */}
-      <div className="flex min-w-0 flex-col h-screen">
-        <header className="flex-shrink-0 z-10 flex h-[57px] items-center gap-1 bg-chrome px-4 overflow-hidden">
+      {/* min-w-0：阻止 grid 子项被内容最小宽度撑开，避免出现页面级横向滚动条；
+          pb 为底部全宽状态栏让位 */}
+      <div className="flex min-w-0 flex-col h-screen pb-[26px]">
+        <header className="flex-shrink-0 z-10 flex h-11 items-center gap-1 border-b border-border bg-chrome px-3 overflow-hidden">
           {currentSectionLabel && (
             <span className="flex-shrink-0 truncate text-sm font-medium text-muted-foreground">
               {currentSectionLabel}
@@ -911,15 +808,82 @@ const Layout = ({ children }) => {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <ThemeToggle />
           </div>
         </header>
-        {/* 内容区上/左发丝线：仅勾勒 chrome↔画布的内 L 边（main 起于顶栏下方，
-            故顶栏与侧栏仍为无缝同色 chrome，不复现网格与转角十字）。/60 较旧硬线更柔。 */}
-        <main className="flex-1 min-h-0 overflow-auto border-l border-t border-border/60">
-          {children}
-        </main>
+        <main className="flex-1 min-h-0 overflow-auto">{children}</main>
         <Toaster />
       </div>
+
+      {/* 底部全宽状态栏：引擎/GPU/队列/下载常显，仪表盘式定位信息 */}
+      <footer className="fixed bottom-0 inset-x-0 z-20 flex h-[26px] items-center gap-4 border-t border-border bg-chrome px-3 text-[11px] text-muted-foreground">
+        <span className="flex items-center gap-1.5 whitespace-nowrap">
+          <span
+            className={cn(
+              'h-[7px] w-[7px] rounded-full',
+              accelBadge?.mode === 'warning'
+                ? 'bg-warning shadow-[0_0_0_3px_hsl(var(--warning)/0.15)]'
+                : 'bg-success shadow-[0_0_0_3px_hsl(var(--success)/0.15)]',
+            )}
+          />
+          {t('statusbar.engineReady')}
+        </span>
+        {accelBadge && (
+          <span className="whitespace-nowrap">
+            GPU:{' '}
+            <span className="font-medium text-foreground">
+              {accelBadge.mode === 'accel' && accelBadge.label
+                ? accelBadge.label
+                : accelBadge.mode === 'pending'
+                  ? t('statusbar.gpuPending')
+                  : 'CPU'}
+            </span>
+          </span>
+        )}
+        {taskRunning && (
+          <button
+            type="button"
+            onClick={() => router.push(`/${locale}/recent-tasks`)}
+            aria-label={t('taskRunningPill.aria')}
+            className="flex items-center gap-1.5 whitespace-nowrap text-primary transition-colors hover:text-primary/80"
+          >
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {t('taskRunningPill.label')}
+          </button>
+        )}
+        {downloadPill && (
+          <button
+            type="button"
+            onClick={() => router.push(`/${locale}/engines`)}
+            aria-label={t('downloadPill.aria')}
+            className={cn(
+              'flex items-center gap-1.5 whitespace-nowrap transition-colors',
+              downloadPill.status === 'error'
+                ? 'text-destructive hover:text-destructive/80'
+                : 'hover:text-foreground',
+            )}
+          >
+            {downloadPill.status === 'error' ? (
+              <AlertCircle className="h-3 w-3" />
+            ) : downloadPill.status === 'completed' ? (
+              <CheckCircle2 className="h-3 w-3 text-success" />
+            ) : (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            )}
+            {downloadPill.status === 'completed'
+              ? t('downloadPill.done', { model: downloadPill.model })
+              : downloadPill.status === 'error'
+                ? t('downloadPill.failed', { model: downloadPill.model })
+                : downloadPill.status === 'extracting'
+                  ? t('downloadPill.extracting', { model: downloadPill.model })
+                  : `${downloadPill.model} ${Math.round(downloadPill.progress)}%`}
+          </button>
+        )}
+        <span className="flex-1" />
+        <span className="tnum whitespace-nowrap font-mono text-[10.5px] text-faint">
+          v{packageInfo.version}
+        </span>
+      </footer>
 
       {/* 引导暂停后的「继续」悬浮入口 */}
       {onboardingResumeStep !== null && !showOnboarding && (
@@ -977,7 +941,6 @@ const Layout = ({ children }) => {
           setOnboardingResumeStep(null);
           setShowOnboarding(true);
         }}
-        onToggleSidebar={() => setSidebarExpanded(!sidebarExpanded)}
       />
     </div>
   );
