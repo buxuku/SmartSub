@@ -189,7 +189,7 @@ function NavItem({
         'relative flex h-12 w-[52px] flex-col items-center justify-center gap-1 rounded-lg transition-colors',
         active
           ? 'bg-primary/10 text-primary before:absolute before:inset-y-3 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
-          : 'text-faint hover:bg-accent hover:text-muted-foreground',
+          : 'text-muted-foreground hover:bg-accent hover:text-foreground',
       )}
     >
       <Icon className="h-[19px] w-[19px] flex-shrink-0" strokeWidth={1.8} />

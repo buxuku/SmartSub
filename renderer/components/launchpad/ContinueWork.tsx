@@ -161,7 +161,7 @@ export default function ContinueWork({
       <PanelHeader title={t('continueWork.title')} />
       <div className="flex flex-col gap-2 px-3 pt-2.5">
         <p className="truncate text-[13px] font-semibold">{item.name}</p>
-        <p className="text-[11.5px] text-faint">
+        <p className="text-[11.5px] text-muted-foreground">
           {getWorkItemTypeLabel(item, tLaunchpad, tTasks)}
           {' · '}
           {tLaunchpad(`status.${status}`)}

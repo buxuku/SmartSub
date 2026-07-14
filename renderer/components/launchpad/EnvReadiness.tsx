@@ -50,7 +50,9 @@ export default function EnvReadiness({
             href={row.href}
             className="group flex h-[34px] items-center gap-2 px-3 text-[12.5px] transition-colors hover:bg-accent/60"
           >
-            <span className="w-16 flex-none text-faint">{row.label}</span>
+            <span className="w-16 flex-none text-muted-foreground">
+              {row.label}
+            </span>
             <span className="flex min-w-0 flex-1 items-center gap-1.5 font-medium">
               <span
                 className={cn(

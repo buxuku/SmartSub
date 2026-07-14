@@ -92,7 +92,7 @@ export default function WorkItemList({
               })}
             </span>
             {showUpdatedAt ? (
-              <span className="hidden md:inline text-xs text-muted-foreground/70 tabular-nums flex-shrink-0">
+              <span className="tnum hidden flex-shrink-0 text-xs text-faint md:inline">
                 {formatWorkItemTime(item.updatedAt)}
               </span>
             ) : null}

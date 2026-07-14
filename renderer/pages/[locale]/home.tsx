@@ -385,7 +385,7 @@ export default function LaunchpadPage() {
             <h1 className="text-lg font-semibold leading-tight tracking-tight">
               {greetingKey ? t(`hero.${greetingKey}`) : '\u00A0'}
             </h1>
-            <p className="mt-0.5 text-xs text-faint">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {dateLabel}
               {dateLabel ? ' · ' : ''}
               {t('subtitle')}
@@ -484,7 +484,7 @@ export default function LaunchpadPage() {
                           ? t('dropHint')
                           : t(`card.${card.key}`)}
                       </div>
-                      <p className="mt-1 text-[11px] leading-relaxed text-faint">
+                      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
                         {t(`card.${card.key}Desc`)}
                       </p>
                       {block === 'model' && (

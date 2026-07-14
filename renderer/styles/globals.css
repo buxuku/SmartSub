@@ -31,8 +31,9 @@
     --muted: 214 21% 92%;
     --muted-foreground: 213 15% 36%;
 
-    /* 三级文字中的 t3（弱化说明 / 占位 / 元信息） */
-    --faint: 217 13% 60%;
+    /* 三级文字中的 t3：仅用于占位符 / kbd / 时间戳等辅助信息，
+       不承载正文内容（内容层最低用 muted-foreground，保 AA） */
+    --faint: 216 12% 54%;
 
     --accent: 213 26% 93%;
     --accent-foreground: 213 20% 24%;
@@ -88,7 +89,7 @@
     --muted: 215 13% 19%;
     --muted-foreground: 215 15% 69%;
 
-    --faint: 217 11% 45%;
+    --faint: 216 12% 52%;
 
     --accent: 215 14% 17%;
     --accent-foreground: 218 22% 93%;
