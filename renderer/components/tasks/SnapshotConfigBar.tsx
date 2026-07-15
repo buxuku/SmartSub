@@ -135,11 +135,26 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
   }, [snapshot, engineOptions]);
 
   const composeValue = useMemo(() => {
-    const mode = snapshot?.compose?.subtitle;
-    if (!mode) return '';
-    if (mode === 'hard') return t('snapshotBar.composeHard');
-    if (mode === 'soft') return t('snapshotBar.composeSoft');
-    return t('snapshotBar.composeNone');
+    const compose = snapshot?.compose;
+    if (!compose?.subtitle) return '';
+    if (compose.subtitle === 'soft') return t('snapshotBar.composeSoft');
+    if (compose.subtitle === 'none') return t('snapshotBar.composeNone');
+    // 硬字幕烧录：追加样式名/画质/硬件加速（快照记录的创建时选择）
+    const parts = [t('snapshotBar.composeHard')];
+    if (compose.styleName) parts.push(compose.styleName);
+    if (compose.videoQuality) {
+      const qualityKey =
+        compose.videoQuality === 'original'
+          ? 'snapshotBar.qualityOriginal'
+          : compose.videoQuality === 'high'
+            ? 'snapshotBar.qualityHigh'
+            : 'snapshotBar.qualityStandard';
+      parts.push(t(qualityKey));
+    }
+    if (compose.encoderMode === 'hardware') {
+      parts.push(t('snapshotBar.encoderHardware'));
+    }
+    return parts.join(' · ');
   }, [snapshot, t]);
 
   const manualGates = useMemo(() => {

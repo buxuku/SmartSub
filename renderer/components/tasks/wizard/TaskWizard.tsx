@@ -49,7 +49,9 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -73,11 +75,26 @@ import {
   WIZARD_DROP_KEY,
 } from 'lib/recipes';
 import { pairMediaWithSubtitles } from 'lib/filePairing';
+import {
+  STYLE_PRESETS,
+  getDefaultStyle,
+  getPlatformDefaultFont,
+} from '@/components/subtitleMerge/constants';
 import { useTranslation } from 'next-i18next';
 import type { TranscriptionEngine } from '../../../../types/engine';
 import type { AsrProvider } from '../../../../types/asrProvider';
-import type { IFiles, IFormData } from '../../../../types';
+import type {
+  IFiles,
+  IFormData,
+  PipelineComposeConfig,
+} from '../../../../types';
 import type { TaskRecipe } from '../../../../types/recipe';
+import type {
+  EncoderMode,
+  HwAccelInfo,
+  UserStylePreset,
+  VideoQuality,
+} from '../../../../types/subtitleMerge';
 
 type GoalKey = 'translate' | 'dub' | 'video';
 
@@ -97,6 +114,7 @@ export default function TaskWizard() {
   const locale =
     typeof router.query.locale === 'string' ? router.query.locale : 'zh';
   const { t } = useTranslation('tasks');
+  const { t: tMerge } = useTranslation('subtitleMerge');
 
   // ── 文件区 ────────────────────────────────────────────────────────────────
   // 支持三种输入形态：纯媒体（转写起步）、纯字幕（翻译/配音起步）、
@@ -166,10 +184,12 @@ export default function TaskWizard() {
     return () => cleanup?.();
   }, [appendFiles]);
 
-  const handleImport = (kind: 'media' | 'subtitle') => {
+  // 单按钮混合导入：一次选择即可同时带入视频/音频与字幕（含目录展开），
+  // 同名字幕自动进入配对模式
+  const handleImport = () => {
     window?.ipc?.send('openDialog', {
       dialogType: 'openDialog',
-      fileType: kind === 'subtitle' ? 'srt' : 'media',
+      fileType: 'any',
     });
   };
 
@@ -360,6 +380,110 @@ export default function TaskWizard() {
   const [composeSubtitle, setComposeSubtitle] = useState<
     'hard' | 'soft' | 'none'
   >('hard');
+  // 烧录样式/画质/编码（仅 hard 生效）：样式候选 = 系统预设 + 我的样式；
+  // 画质/编码默认沿用合成工作台偏好，配方带值时以配方为准
+  const [composeStyleId, setComposeStyleId] = useState('classic');
+  const [composeQuality, setComposeQuality] =
+    useState<VideoQuality>('original');
+  const [composeEncoder, setComposeEncoder] = useState<EncoderMode>('cpu');
+  const [userStylePresets, setUserStylePresets] = useState<UserStylePreset[]>(
+    [],
+  );
+  const [mergeHwInfo, setMergeHwInfo] = useState<HwAccelInfo | null>(null);
+  /** 画质/编码已被配方或用户显式设定：合成偏好加载不再覆盖 */
+  const composeMetaTouchedRef = useRef(false);
+  const composeMetaLoadedRef = useRef(false);
+
+  // 勾选成品视频后按需加载：我的样式清单、合成偏好默认值、硬件编码探测
+  useEffect(() => {
+    if (!videoOn || composeMetaLoadedRef.current) return;
+    composeMetaLoadedRef.current = true;
+    (async () => {
+      try {
+        const presets = await window?.ipc?.invoke(
+          'subtitleMerge:listStylePresets',
+        );
+        if (presets?.success && Array.isArray(presets.data)) {
+          setUserStylePresets(presets.data);
+        }
+      } catch {
+        /* ignore */
+      }
+      try {
+        const prefs = await window?.ipc?.invoke('subtitleMerge:getPreferences');
+        if (prefs?.success && prefs.data && !composeMetaTouchedRef.current) {
+          if (prefs.data.videoQuality) {
+            setComposeQuality(prefs.data.videoQuality);
+          }
+          if (prefs.data.encoderMode) {
+            setComposeEncoder(prefs.data.encoderMode);
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+      try {
+        const hw = await window?.ipc?.invoke('subtitleMerge:getHwAccelInfo');
+        if (hw?.success && hw.data) setMergeHwInfo(hw.data);
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [videoOn]);
+
+  /** 选中样式失效（我的样式被删/配方引用失效）时回落经典预设 */
+  const effectiveComposeStyleId = useMemo(() => {
+    if (STYLE_PRESETS.some((p) => p.id === composeStyleId)) {
+      return composeStyleId;
+    }
+    if (userStylePresets.some((p) => p.id === composeStyleId)) {
+      return composeStyleId;
+    }
+    return 'classic';
+  }, [composeStyleId, userStylePresets]);
+
+  /** 生效编码方式：选了硬件但本机不可用时按 CPU（与合成工作台同语义） */
+  const effectiveComposeEncoder: EncoderMode =
+    composeEncoder === 'hardware' && mergeHwInfo?.available
+      ? 'hardware'
+      : 'cpu';
+
+  /** 解析选中样式为可执行的样式对象 + 展示名（写入任务快照） */
+  const resolveComposeStyle = () => {
+    const userPreset = userStylePresets.find(
+      (p) => p.id === effectiveComposeStyleId,
+    );
+    if (userPreset) {
+      return {
+        style: { ...getDefaultStyle(), ...userPreset.style },
+        name: userPreset.name,
+      };
+    }
+    const system =
+      STYLE_PRESETS.find((p) => p.id === effectiveComposeStyleId) ??
+      STYLE_PRESETS[0];
+    return {
+      style:
+        system.id === 'classic'
+          ? { ...system.style, fontName: getPlatformDefaultFont() }
+          : system.style,
+      name: tMerge(system.nameKey) || system.name,
+    };
+  };
+
+  /** 组装合成配置（任务 payload 与配方共用）：soft/none 无烧录参数 */
+  const buildComposePayload = (): PipelineComposeConfig => {
+    if (composeSubtitle !== 'hard') return { subtitle: composeSubtitle };
+    const resolved = resolveComposeStyle();
+    return {
+      subtitle: 'hard',
+      styleId: effectiveComposeStyleId,
+      styleName: resolved.name,
+      style: resolved.style,
+      videoQuality: composeQuality,
+      encoderMode: effectiveComposeEncoder,
+    };
+  };
 
   // ── 人工把关（下游有成本型阶段时显示；字幕校对默认开，配音确认默认关）────
   const gatesVisible = dubOn || videoOn;
@@ -435,6 +559,20 @@ export default function TaskWizard() {
       }));
     }
     if (compose?.subtitle) setComposeSubtitle(compose.subtitle);
+    // 配方带的烧录参数优先于合成偏好默认值（touched 标记阻止偏好覆盖）；
+    // styleId 若已失效（我的样式被删）由 effectiveComposeStyleId 回落经典
+    if (compose?.styleId) {
+      setComposeStyleId(compose.styleId);
+      composeMetaTouchedRef.current = true;
+    }
+    if (compose?.videoQuality) {
+      setComposeQuality(compose.videoQuality);
+      composeMetaTouchedRef.current = true;
+    }
+    if (compose?.encoderMode) {
+      setComposeEncoder(compose.encoderMode);
+      composeMetaTouchedRef.current = true;
+    }
     setPendingRecipeConfig(null);
   }, [pendingRecipeConfig, formLoaded, form, setDubPersisted]);
 
@@ -573,7 +711,7 @@ export default function TaskWizard() {
           overlapMode: 'shift',
         };
       }
-      if (videoOn) config.compose = { subtitle: composeSubtitle };
+      if (videoOn) config.compose = buildComposePayload();
       if (gatesVisible) {
         config.gates = {
           subtitle: subtitleGateOn ? 'manual' : 'auto',
@@ -633,7 +771,7 @@ export default function TaskWizard() {
               },
             }
           : {}),
-        ...(videoOn ? { compose: { subtitle: composeSubtitle } } : {}),
+        ...(videoOn ? { compose: buildComposePayload() } : {}),
         ...(gatesVisible
           ? {
               gates: {
@@ -721,24 +859,10 @@ export default function TaskWizard() {
               : undefined
           }
           actions={
-            <div className="flex gap-1.5">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleImport('media')}
-              >
-                <Import className="h-3.5 w-3.5" />
-                {t('wizard.importMedia')}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleImport('subtitle')}
-              >
-                <Import className="h-3.5 w-3.5" />
-                {t('wizard.importSubtitle')}
-              </Button>
-            </div>
+            <Button variant="outline" size="sm" onClick={handleImport}>
+              <Import className="h-3.5 w-3.5" />
+              {t('wizard.importFiles')}
+            </Button>
           }
         />
         <div
@@ -1053,21 +1177,127 @@ export default function TaskWizard() {
                 </SelectContent>
               </Select>
             </div>
+            {/* 烧录参数：样式（系统预设 + 我的样式）/ 画质 / 编码，仅硬字幕生效 */}
+            {composeSubtitle === 'hard' && (
+              <>
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-xs text-muted-foreground">
+                    {t('wizard.composeStyle')}
+                  </Label>
+                  <Select
+                    value={effectiveComposeStyleId}
+                    onValueChange={(v) => setComposeStyleId(v)}
+                  >
+                    <SelectTrigger className="w-[170px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectLabel>
+                          {t('wizard.composeStyleGroupSystem')}
+                        </SelectLabel>
+                        {STYLE_PRESETS.map((preset) => (
+                          <SelectItem key={preset.id} value={preset.id}>
+                            {tMerge(preset.nameKey) || preset.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                      {userStylePresets.length > 0 && (
+                        <SelectGroup>
+                          <SelectLabel>
+                            {t('wizard.composeStyleGroupMine')}
+                          </SelectLabel>
+                          {userStylePresets.map((preset) => (
+                            <SelectItem key={preset.id} value={preset.id}>
+                              {preset.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-xs text-muted-foreground">
+                    {t('wizard.composeQuality')}
+                  </Label>
+                  <Select
+                    value={composeQuality}
+                    onValueChange={(v) => {
+                      composeMetaTouchedRef.current = true;
+                      setComposeQuality(v as VideoQuality);
+                    }}
+                  >
+                    <SelectTrigger className="w-[110px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="original">
+                        {tMerge('videoQualityOriginal')}
+                      </SelectItem>
+                      <SelectItem value="high">
+                        {tMerge('videoQualityHigh')}
+                      </SelectItem>
+                      <SelectItem value="standard">
+                        {tMerge('videoQualityStandard')}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {mergeHwInfo?.platformSupported !== false && (
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-xs text-muted-foreground">
+                      {t('wizard.composeEncoder')}
+                    </Label>
+                    <Select
+                      value={effectiveComposeEncoder}
+                      onValueChange={(v) => {
+                        composeMetaTouchedRef.current = true;
+                        setComposeEncoder(v as EncoderMode);
+                      }}
+                    >
+                      <SelectTrigger className="w-[130px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cpu">
+                          {tMerge('encoderModeCpu')}
+                        </SelectItem>
+                        <SelectItem
+                          value="hardware"
+                          disabled={!mergeHwInfo?.available}
+                        >
+                          {tMerge('encoderModeHardware')}
+                          {mergeHwInfo?.encoderLabel
+                            ? ` (${mergeHwInfo.encoderLabel})`
+                            : ''}
+                          {mergeHwInfo && !mergeHwInfo.available
+                            ? ` ${t('wizard.composeEncoderUnavailable')}`
+                            : ''}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </>
+            )}
             {dubOn && (
               <span className="text-[11px] text-muted-foreground">
                 {t('wizard.composeAudioHint')}
               </span>
             )}
-            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Info className="h-3 w-3" />
-              {t('wizard.composeStyleHint')}
-              <Link
-                href={`/${locale}/subtitleMerge`}
-                className="text-primary hover:underline"
-              >
-                {t('wizard.composeStyleLink')}
-              </Link>
-            </span>
+            {composeSubtitle === 'hard' && (
+              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                <Info className="h-3 w-3" />
+                {t('wizard.composeStyleHint')}
+                <Link
+                  href={`/${locale}/subtitleMerge`}
+                  className="text-primary hover:underline"
+                >
+                  {t('wizard.composeStyleLink')}
+                </Link>
+              </span>
+            )}
           </div>
         </Panel>
       )}

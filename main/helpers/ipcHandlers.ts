@@ -105,17 +105,25 @@ async function isImportableSubtitleFile(filePath: string): Promise<boolean> {
   }
 }
 
+/** 按任务类型判断文件是否可导入（translate=字幕，any=媒体或字幕，其余=媒体） */
+async function isAcceptableTaskFile(
+  filePath: string,
+  taskType: string,
+): Promise<boolean> {
+  const acceptSubtitle = taskType === 'translate' || taskType === 'any';
+  const acceptMedia = taskType !== 'translate';
+  if (acceptMedia && isMediaFile(filePath)) return true;
+  if (acceptSubtitle && (await isImportableSubtitleFile(filePath))) {
+    return true;
+  }
+  return false;
+}
+
 // 递归获取文件夹中的符合任务类型的文件
 async function getMediaFilesFromDirectory(
   directoryPath: string,
   taskType: string,
 ): Promise<string[]> {
-  // 根据任务类型选择扩展名
-  const supportedExtensions =
-    taskType === 'translate'
-      ? IMPORTABLE_SUBTITLE_EXTENSIONS
-      : MEDIA_EXTENSIONS;
-
   const files: string[] = [];
 
   try {
@@ -134,13 +142,7 @@ async function getMediaFilesFromDirectory(
         );
         files.push(...subDirFiles);
       } else if (entry.isFile()) {
-        if (
-          taskType === 'translate'
-            ? await isImportableSubtitleFile(fullPath)
-            : supportedExtensions.includes(
-                path.extname(entry.name).toLowerCase(),
-              )
-        ) {
+        if (await isAcceptableTaskFile(fullPath, taskType)) {
           files.push(fullPath);
         }
       }
@@ -223,15 +225,28 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
   });
 
   ipcMain.on('openDialog', async (event, data) => {
+    // fileType: 'srt'=仅字幕 | 'media'=仅媒体 | 'any'=媒体+字幕混合导入（向导单按钮）
     const { fileType } = data;
-    console.log(fileType, 'fileType');
-    const name = fileType === 'srt' ? 'Subtitle Files' : 'Media Files';
-    const taskType = fileType === 'srt' ? 'translate' : 'media';
+    const taskType =
+      fileType === 'srt' ? 'translate' : fileType === 'any' ? 'any' : 'media';
 
-    const extensions =
+    const subtitleExtensions = IMPORTABLE_SUBTITLE_EXTENSIONS.map((ext) =>
+      ext.substring(1),
+    );
+    const mediaExtensions = MEDIA_EXTENSIONS.map((ext) => ext.substring(1));
+    const filters: Electron.FileFilter[] =
       fileType === 'srt'
-        ? IMPORTABLE_SUBTITLE_EXTENSIONS.map((ext) => ext.substring(1))
-        : MEDIA_EXTENSIONS.map((ext) => ext.substring(1));
+        ? [{ name: 'Subtitle Files', extensions: subtitleExtensions }]
+        : fileType === 'any'
+          ? [
+              {
+                name: 'Media & Subtitle Files',
+                extensions: [...mediaExtensions, ...subtitleExtensions],
+              },
+              { name: 'Media Files', extensions: mediaExtensions },
+              { name: 'Subtitle Files', extensions: subtitleExtensions },
+            ]
+          : [{ name: 'Media Files', extensions: mediaExtensions }];
 
     // macOS 支持同时选择文件和文件夹；Windows/Linux 两者互斥，仅支持选择文件
     const properties: Electron.OpenDialogOptions['properties'] =
@@ -241,12 +256,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
 
     const result = await dialog.showOpenDialog({
       properties,
-      filters: [
-        {
-          name: name,
-          extensions: extensions,
-        },
-      ],
+      filters,
     });
 
     const allValidPaths: string[] = [];
@@ -258,9 +268,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
           allValidPaths.push(...dirFiles);
         } else if (
           stats.isFile() &&
-          (taskType === 'translate'
-            ? await isImportableSubtitleFile(filePath)
-            : isMediaFile(filePath))
+          (await isAcceptableTaskFile(filePath, taskType))
         ) {
           allValidPaths.push(filePath);
         }

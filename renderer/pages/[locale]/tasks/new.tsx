@@ -14,6 +14,12 @@ export default function NewTaskPage() {
   return <TaskWizard />;
 }
 
-// home 命名空间为 InlineConfigBar 的历史文案（输出内容/格式下拉等）所需
-export const getStaticProps = makeStaticProperties(['common', 'home', 'tasks']);
+// home 命名空间为 InlineConfigBar 的历史文案（输出内容/格式下拉等）所需；
+// subtitleMerge 为合成配置的样式预设名/画质/编码文案所需
+export const getStaticProps = makeStaticProperties([
+  'common',
+  'home',
+  'tasks',
+  'subtitleMerge',
+]);
 export { getStaticPaths };

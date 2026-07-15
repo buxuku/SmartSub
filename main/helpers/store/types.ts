@@ -17,6 +17,7 @@ import type {
   MergeOutputMode,
   VideoQuality,
   EncoderMode,
+  UserStylePreset,
 } from '../../../types/subtitleMerge';
 import type { TaskRecipe } from '../../../types/recipe';
 
@@ -169,6 +170,8 @@ export type StoreType = {
     videoQuality?: VideoQuality;
     encoderMode?: EncoderMode;
   };
+  /** 用户保存的字幕样式预设（合成工作台「我的样式」，任务向导样式选择共用） */
+  mergeStylePresets?: UserStylePreset[];
   /** 用户任务配方（内置配方为 renderer 代码常量，不落库） */
   taskRecipes?: TaskRecipe[];
   [key: string]: any;

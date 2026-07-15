@@ -14,25 +14,15 @@ import {
 import { enqueueCompose, cancelComposeJob } from '../compose/composeQueue';
 import {
   deriveComposeConfig,
-  platformDefaultFont,
-  DEFAULT_PIPELINE_STYLE,
+  resolveComposeRunOptions,
 } from './deriveComposeConfig';
 import type { IFiles, IFormData } from '../../../types';
-import type { SubtitleStyle } from '../../../types/subtitleMerge';
 
 const STAGE_KEY = 'composeVideo';
 
 function emitError(event: any, file: IFiles, message: string) {
   event.sender.send('taskStatusChange', file, STAGE_KEY, 'error');
   event.sender.send('taskErrorChange', file, STAGE_KEY, message);
-}
-
-/** 默认烧录样式：与合成工作台默认一致（字体按平台） */
-function defaultStyle(): SubtitleStyle {
-  return {
-    ...DEFAULT_PIPELINE_STYLE,
-    fontName: platformDefaultFont(process.platform),
-  };
 }
 
 const DERIVE_ERROR_MESSAGES: Record<string, string> = {
@@ -60,20 +50,25 @@ export async function runComposeStage(
 
   try {
     throwIfTaskCancelled();
-    // 画质/编码方式沿用合成偏好（工作台持久化），样式用默认（工作台可重烧微调）
+    // 样式/画质/编码方式：任务快照（向导选择）优先，缺省回退合成偏好与默认样式
     const prefs = store.get('mergePreferences') as
       | {
           videoQuality?: 'original' | 'high' | 'standard';
           encoderMode?: 'cpu' | 'hardware';
         }
       | undefined;
+    const runOptions = resolveComposeRunOptions(
+      compose,
+      prefs,
+      process.platform,
+    );
 
     const derived = deriveComposeConfig({
       file,
       compose,
-      style: defaultStyle(),
-      videoQuality: prefs?.videoQuality ?? 'original',
-      encoderMode: prefs?.encoderMode ?? 'cpu',
+      style: runOptions.style,
+      videoQuality: runOptions.videoQuality,
+      encoderMode: runOptions.encoderMode,
       exists: (p) => fs.existsSync(p),
     });
     if (!derived.ok) {

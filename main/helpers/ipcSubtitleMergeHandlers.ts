@@ -3,6 +3,7 @@
  */
 
 import { ipcMain, dialog, BrowserWindow, shell } from 'electron';
+import { randomUUID } from 'crypto';
 import * as path from 'path';
 import * as fs from 'fs';
 import { logMessage } from './storeManager';
@@ -31,7 +32,13 @@ import type {
   VideoInfo,
   SubtitleInfo,
   HwAccelInfo,
+  UserStylePreset,
 } from '../../types/subtitleMerge';
+
+function readStylePresets(): UserStylePreset[] {
+  const list = store.get('mergeStylePresets');
+  return Array.isArray(list) ? list : [];
+}
 
 /** MergeConfig（渲染层合成面板契约）→ ComposeConfig（统一合成引擎矩阵） */
 function mergeConfigToComposeConfig(
@@ -233,6 +240,57 @@ export function setupSubtitleMergeHandlers(mainWindow: BrowserWindow) {
     ): Promise<SubtitleMergeResponse<boolean>> => {
       const prev = store.get('mergePreferences');
       store.set('mergePreferences', { ...prev, ...prefs });
+      return { success: true, data: true };
+    },
+  );
+
+  // ── 用户样式预设（我的样式）：合成工作台保存/删除，任务向导样式选择共用 ──
+  ipcMain.handle(
+    'subtitleMerge:listStylePresets',
+    async (): Promise<SubtitleMergeResponse<UserStylePreset[]>> => {
+      return { success: true, data: readStylePresets() };
+    },
+  );
+
+  // 按 id 幂等 upsert（无 id 新建）；同名不去重——名字只是标签，允许用户自理
+  ipcMain.handle(
+    'subtitleMerge:saveStylePreset',
+    async (
+      event,
+      payload: { id?: string; name: string; style: SubtitleStyle },
+    ): Promise<SubtitleMergeResponse<UserStylePreset>> => {
+      const name = payload?.name?.trim();
+      if (!name || !payload?.style) {
+        return { success: false, error: '样式名称与内容不能为空' };
+      }
+      const now = Date.now();
+      const list = readStylePresets();
+      const index = payload.id
+        ? list.findIndex((p) => p.id === payload.id)
+        : -1;
+      const saved: UserStylePreset = {
+        id: index >= 0 ? payload.id! : randomUUID(),
+        name,
+        style: payload.style,
+        createdAt: index >= 0 ? (list[index].createdAt ?? now) : now,
+        updatedAt: now,
+      };
+      if (index >= 0) list[index] = saved;
+      else list.push(saved);
+      store.set('mergeStylePresets', list);
+      return { success: true, data: saved };
+    },
+  );
+
+  ipcMain.handle(
+    'subtitleMerge:deleteStylePreset',
+    async (event, id: string): Promise<SubtitleMergeResponse<boolean>> => {
+      const list = readStylePresets();
+      const next = list.filter((p) => p.id !== id);
+      if (next.length === list.length) {
+        return { success: false, error: '样式不存在' };
+      }
+      store.set('mergeStylePresets', next);
       return { success: true, data: true };
     },
   );

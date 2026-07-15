@@ -15,6 +15,7 @@ import type {
   VideoQuality,
   EncoderMode,
   HwAccelInfo,
+  UserStylePreset,
 } from '../../../../types/subtitleMerge';
 import {
   getDefaultStyle,
@@ -42,6 +43,8 @@ export interface UseSubtitleMergeReturn {
   // 样式状态
   style: SubtitleStyle;
   activePresetId: string | null;
+  /** 用户保存的样式预设（我的样式） */
+  userPresets: UserStylePreset[];
 
   // 输出状态
   outputPath: string | null;
@@ -76,6 +79,10 @@ export interface UseSubtitleMergeReturn {
   updateStyle: (updates: Partial<SubtitleStyle>) => void;
   applyPreset: (presetId: string) => void;
   resetStyle: () => void;
+  /** 把当前样式存为我的样式（成功返回保存的预设并选中） */
+  saveStylePreset: (name: string) => Promise<UserStylePreset | null>;
+  /** 删除我的样式 */
+  deleteStylePreset: (id: string) => Promise<boolean>;
 
   // 输出操作方法
   selectOutputPath: () => Promise<void>;
@@ -150,6 +157,24 @@ export function useSubtitleMerge(
   const [activePresetId, setActivePresetId] = useState<string | null>(
     'classic',
   );
+  // 用户样式预设（我的样式）：挂载时加载，保存/删除后就地维护
+  const [userPresets, setUserPresets] = useState<UserStylePreset[]>([]);
+  useEffect(() => {
+    let mounted = true;
+    window.ipc
+      ?.invoke('subtitleMerge:listStylePresets')
+      .then((result) => {
+        if (mounted && result?.success && Array.isArray(result.data)) {
+          setUserPresets(result.data);
+        }
+      })
+      .catch(() => {
+        /* 加载失败仅少「我的样式」区块，不影响合成 */
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // 输出状态
   const [outputPath, setOutputPathState] = useState<string | null>(null);
@@ -632,18 +657,76 @@ export function useSubtitleMerge(
     setActivePresetId(null);
   }, []);
 
-  // 应用预设样式
-  const applyPreset = useCallback((presetId: string) => {
-    const preset = STYLE_PRESETS.find((p) => p.id === presetId);
-    if (preset) {
-      // classic 预设字体跟随平台，避免 Arial 渲染不了 CJK
-      const nextStyle =
-        preset.id === 'classic'
-          ? { ...preset.style, fontName: getPlatformDefaultFont() }
-          : preset.style;
-      setStyleState(nextStyle);
-      setActivePresetId(presetId);
+  // 应用预设样式（系统预设 + 我的样式统一入口）
+  const applyPreset = useCallback(
+    (presetId: string) => {
+      const userPreset = userPresets.find((p) => p.id === presetId);
+      if (userPreset) {
+        // 与默认样式浅合并：老预设缺后续新增字段时有默认兜底
+        setStyleState({ ...getDefaultStyle(), ...userPreset.style });
+        setActivePresetId(presetId);
+        return;
+      }
+      const preset = STYLE_PRESETS.find((p) => p.id === presetId);
+      if (preset) {
+        // classic 预设字体跟随平台，避免 Arial 渲染不了 CJK
+        const nextStyle =
+          preset.id === 'classic'
+            ? { ...preset.style, fontName: getPlatformDefaultFont() }
+            : preset.style;
+        setStyleState(nextStyle);
+        setActivePresetId(presetId);
+      }
+    },
+    [userPresets],
+  );
+
+  // 把当前样式存为我的样式
+  const saveStylePreset = useCallback(
+    async (name: string): Promise<UserStylePreset | null> => {
+      try {
+        const result = await window.ipc.invoke(
+          'subtitleMerge:saveStylePreset',
+          { name, style },
+        );
+        if (result?.success && result.data) {
+          const saved = result.data as UserStylePreset;
+          setUserPresets((prev) => {
+            const index = prev.findIndex((p) => p.id === saved.id);
+            if (index >= 0) {
+              const next = [...prev];
+              next[index] = saved;
+              return next;
+            }
+            return [...prev, saved];
+          });
+          setActivePresetId(saved.id);
+          return saved;
+        }
+      } catch (error) {
+        console.error('保存样式预设失败:', error);
+      }
+      return null;
+    },
+    [style],
+  );
+
+  // 删除我的样式（当前选中被删时保留样式值、清除选中态）
+  const deleteStylePreset = useCallback(async (id: string) => {
+    try {
+      const result = await window.ipc.invoke(
+        'subtitleMerge:deleteStylePreset',
+        id,
+      );
+      if (result?.success) {
+        setUserPresets((prev) => prev.filter((p) => p.id !== id));
+        setActivePresetId((prev) => (prev === id ? null : prev));
+        return true;
+      }
+    } catch (error) {
+      console.error('删除样式预设失败:', error);
     }
+    return false;
   }, []);
 
   // 重置样式
@@ -848,6 +931,7 @@ export function useSubtitleMerge(
     // 样式状态
     style,
     activePresetId,
+    userPresets,
 
     // 输出状态
     outputPath,
@@ -879,6 +963,8 @@ export function useSubtitleMerge(
     updateStyle,
     applyPreset,
     resetStyle,
+    saveStylePreset,
+    deleteStylePreset,
 
     // 输出操作方法
     selectOutputPath,

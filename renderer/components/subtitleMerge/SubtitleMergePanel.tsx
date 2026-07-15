@@ -56,6 +56,7 @@ export default function SubtitleMergePanel({
     // 样式状态
     style,
     activePresetId,
+    userPresets,
 
     // 输出状态
     outputPath,
@@ -81,6 +82,8 @@ export default function SubtitleMergePanel({
     // 样式操作方法
     updateStyle,
     applyPreset,
+    saveStylePreset,
+    deleteStylePreset,
 
     // 输出操作方法
     selectOutputPath,
@@ -115,11 +118,14 @@ export default function SubtitleMergePanel({
         />
         <ScrollArea className="min-h-0 flex-1">
           <div className="space-y-3 p-3">
-            {/* 预设样式 */}
+            {/* 预设样式（系统预设 + 我的样式） */}
             <StylePresets
               activePresetId={activePresetId}
               onSelectPreset={applyPreset}
               disabled={styleDisabled}
+              userPresets={userPresets}
+              onSaveStylePreset={saveStylePreset}
+              onDeleteStylePreset={deleteStylePreset}
             />
 
             <Separator />

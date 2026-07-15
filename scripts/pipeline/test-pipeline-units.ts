@@ -19,6 +19,7 @@ import {
   finalOutputPath,
   pickComposeSubtitle,
   platformDefaultFont,
+  resolveComposeRunOptions,
   DEFAULT_PIPELINE_STYLE,
 } from '../../main/helpers/pipeline/deriveComposeConfig';
 import {
@@ -270,6 +271,76 @@ eq(
   { ok: false, reason: 'no-subtitle' },
   '矩阵推导: 无可用字幕 → 错误',
 );
+
+// ── resolveComposeRunOptions：任务快照 → 合成偏好 → 默认 的三级回退 ─────────
+
+{
+  const wizardStyle: SubtitleStyle = {
+    ...DEFAULT_PIPELINE_STYLE,
+    fontName: 'Georgia',
+    fontSize: 28,
+    primaryColor: '#FFFFC8',
+  };
+  const resolved = resolveComposeRunOptions(
+    {
+      style: wizardStyle,
+      videoQuality: 'high',
+      encoderMode: 'hardware',
+    },
+    { videoQuality: 'standard', encoderMode: 'cpu' },
+    'darwin',
+  );
+  eq(
+    resolved,
+    { style: wizardStyle, videoQuality: 'high', encoderMode: 'hardware' },
+    'compose 生效参数: 任务快照优先于合成偏好',
+  );
+}
+
+eq(
+  resolveComposeRunOptions(
+    { subtitle: 'hard' } as any,
+    { videoQuality: 'standard', encoderMode: 'hardware' },
+    'darwin',
+  ),
+  {
+    style: {
+      ...DEFAULT_PIPELINE_STYLE,
+      fontName: platformDefaultFont('darwin'),
+    },
+    videoQuality: 'standard',
+    encoderMode: 'hardware',
+  },
+  'compose 生效参数: 快照缺省回退合成偏好 + 平台默认样式',
+);
+
+eq(
+  resolveComposeRunOptions({ subtitle: 'hard' } as any, undefined, 'win32'),
+  {
+    style: {
+      ...DEFAULT_PIPELINE_STYLE,
+      fontName: platformDefaultFont('win32'),
+    },
+    videoQuality: 'original',
+    encoderMode: 'cpu',
+  },
+  'compose 生效参数: 无偏好回退默认（original/cpu）',
+);
+
+{
+  // 旧配方/快照样式缺新增字段：与默认浅合并兜底
+  const partial = { fontName: 'Impact', fontSize: 30 } as any;
+  const resolved = resolveComposeRunOptions(
+    { style: partial },
+    undefined,
+    'linux',
+  );
+  eq(
+    resolved.style,
+    { ...DEFAULT_PIPELINE_STYLE, fontName: 'Impact', fontSize: 30 },
+    'compose 生效参数: 部分样式与默认浅合并',
+  );
+}
 
 // ── gateLogic：检查点停靠判定 / 放行过滤 / 幂等 ─────────────────────────────
 

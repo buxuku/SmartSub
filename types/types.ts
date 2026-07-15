@@ -5,6 +5,7 @@ import type {
   DubbingOverflowMode,
   DubbingOverlapMode,
 } from './dubbing';
+import type { EncoderMode, SubtitleStyle, VideoQuality } from './subtitleMerge';
 
 export interface ISystemInfo {
   modelsInstalled: string[];
@@ -126,6 +127,16 @@ export interface PipelineDubConfig {
 export interface PipelineComposeConfig {
   /** 字幕并入方式（默认 hard 烧录；none 仅换配音轨，要求配音阶段开启） */
   subtitle: 'hard' | 'soft' | 'none';
+  /** 烧录样式来源预设 id（系统预设或用户样式；UI 展示与配方回填用） */
+  styleId?: string;
+  /** 样式显示名快照（任务详情/最近任务展示，不随预设改名变化） */
+  styleName?: string;
+  /** 烧录样式（任务创建时解析内嵌；缺省回退工作台默认样式） */
+  style?: SubtitleStyle;
+  /** 烧录导出画质（缺省回退全局合成偏好） */
+  videoQuality?: VideoQuality;
+  /** 烧录编码方式（缺省回退全局合成偏好；运行期硬件不可用自动回落 CPU） */
+  encoderMode?: EncoderMode;
 }
 
 /** 人工检查点档位 */

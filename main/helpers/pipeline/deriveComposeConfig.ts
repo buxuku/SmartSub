@@ -42,6 +42,34 @@ export function platformDefaultFont(platform: NodeJS.Platform): string {
   return 'Noto Sans CJK SC';
 }
 
+/**
+ * 合成阶段生效参数解析：任务快照（向导选择的样式/画质/编码）优先，
+ * 回退全局合成偏好，最后回退默认值。快照样式与默认样式浅合并，
+ * 兼容旧快照/配方缺字段（后续样式新增字段有默认兜底）。
+ */
+export function resolveComposeRunOptions(
+  compose: Pick<
+    PipelineComposeConfig,
+    'style' | 'videoQuality' | 'encoderMode'
+  >,
+  prefs: { videoQuality?: VideoQuality; encoderMode?: EncoderMode } | undefined,
+  platform: NodeJS.Platform,
+): {
+  style: SubtitleStyle;
+  videoQuality: VideoQuality;
+  encoderMode: EncoderMode;
+} {
+  return {
+    style: {
+      ...DEFAULT_PIPELINE_STYLE,
+      fontName: platformDefaultFont(platform),
+      ...(compose.style ?? {}),
+    },
+    videoQuality: compose.videoQuality ?? prefs?.videoQuality ?? 'original',
+    encoderMode: compose.encoderMode ?? prefs?.encoderMode ?? 'cpu',
+  };
+}
+
 function isPlainText(p?: string): boolean {
   return /\.txt$/i.test(p || '');
 }
