@@ -10,17 +10,31 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import {
   ArrowLeft,
+  AudioLines,
   Check,
+  Diamond,
+  Edit2,
   Import,
   LayoutGrid,
   List,
   Pencil,
+  Play,
   SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Tooltip,
   TooltipContent,
@@ -83,11 +97,15 @@ export default function TaskPage() {
   const [taskStatus, setTaskStatus] = useState('idle');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  /** 向导任务的配置快照（含 dub/compose）：阶段轨道与横幅按它渲染 */
+  const [configSnapshot, setConfigSnapshot] = useState<any>(null);
   const [proofreadFile, setProofreadFile] = useState<IFiles | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const { systemInfo, loaded: systemInfoLoaded } = useSystemInfo();
   const { form, formData } = useFormConfig();
+  /** 列表/横幅的有效配置：向导任务用快照（附加阶段轨道），否则用全局表单 */
+  const listFormData = configSnapshot ?? formData;
   /** 来自加载（而非用户/任务事件）的 files 引用，避免回写存储 */
   const loadedFilesRef = useRef<any[] | null>(null);
   const projectIdRef = useRef<string | null>(null);
@@ -177,12 +195,21 @@ export default function TaskPage() {
     (async () => {
       let nextFiles: any[] = [];
       let name: string | null = null;
+      let snapshot: any = null;
       const id = q || uuidv4();
       if (q) {
         const project = await window?.ipc?.invoke('getTaskProject', q);
         if (project) {
           nextFiles = project.files || [];
           name = project.name || null;
+        }
+        // 向导任务：配置快照携带附加阶段（配音/合成），阶段轨道按快照渲染
+        try {
+          const workItem = await window?.ipc?.invoke('getWorkItem', q);
+          const snap = workItem?.configSnapshot;
+          if (snap && (snap.dub || snap.compose)) snapshot = snap;
+        } catch {
+          /* ignore */
         }
       }
       if (cancelled) return;
@@ -192,6 +219,7 @@ export default function TaskPage() {
       setProjectName(name);
       setEditingName(false);
       setProjectId(id);
+      setConfigSnapshot(snapshot);
       setBannerDismissed(false);
     })();
     return () => {
@@ -343,6 +371,64 @@ export default function TaskPage() {
     [formData, projectId],
   );
 
+  // ── 人工检查点：统计、放行、检查配音 ─────────────────────────────────────
+  const reviewCounts = useMemo(() => {
+    let subtitle = 0;
+    let dubbing = 0;
+    for (const file of files as any[]) {
+      if (file?.subtitleGate === 'review') subtitle += 1;
+      if (file?.dubbingGate === 'review') dubbing += 1;
+    }
+    return { subtitle, dubbing };
+  }, [files]);
+
+  /** 全部放行确认对话框的目标检查点（null=关闭） */
+  const [releaseAllGate, setReleaseAllGate] = useState<
+    'subtitle' | 'dubbing' | null
+  >(null);
+
+  const handleReleaseGate = useCallback(
+    async (gate: 'subtitle' | 'dubbing', fileUuids?: string[]) => {
+      if (!projectId) return;
+      const result = await window?.ipc?.invoke('pipeline:releaseGate', {
+        projectId,
+        gate,
+        fileUuids,
+      });
+      if (result?.success) {
+        if (result.data?.released > 0) setTaskStatus('running');
+      } else {
+        toast.error(result?.error || 'release failed');
+      }
+    },
+    [projectId],
+  );
+
+  const handleInspectDubbing = useCallback(
+    (file: any) => {
+      if (!projectId) return;
+      const params = new URLSearchParams();
+      if (file?.dubbingSessionId) params.set('session', file.dubbingSessionId);
+      params.set('gateProject', projectId);
+      params.set('gateFile', file?.uuid || '');
+      router.push(`/${locale}/dubbing?${params.toString()}`);
+    },
+    [projectId, router, locale],
+  );
+
+  /** 字幕校对点的待校清单（检查员包壳「放行并继续下一个」用） */
+  const subtitleReviewQueue = useMemo(
+    () => (files as any[]).filter((f) => f?.subtitleGate === 'review'),
+    [files],
+  );
+
+  const handleReleaseAndNext = useCallback(async () => {
+    if (!proofreadFile) return;
+    await handleReleaseGate('subtitle', [proofreadFile.uuid]);
+    const next = subtitleReviewQueue.find((f) => f.uuid !== proofreadFile.uuid);
+    setProofreadFile(next ?? null);
+  }, [proofreadFile, subtitleReviewQueue, handleReleaseGate]);
+
   const handleRetryFailed = useCallback(
     (failedFiles: any[]) => {
       window?.ipc?.send('handleTask', {
@@ -492,13 +578,45 @@ export default function TaskPage() {
   if (!typeDef) return null;
 
   if (proofreadFile && pendingFileForProofread) {
+    // 检查员包壳：停靠在字幕校对点的文件叠加「放行并继续」动线（流式审片）
+    const atSubtitleGate = (proofreadFile as any).subtitleGate === 'review';
+    const queueIndex = subtitleReviewQueue.findIndex(
+      (f) => f.uuid === proofreadFile.uuid,
+    );
     return (
-      <div className="h-full p-4">
-        <ProofreadEditor
-          file={pendingFileForProofread}
-          onMarkComplete={() => setProofreadFile(null)}
-          onBack={() => setProofreadFile(null)}
-        />
+      <div className="flex h-full flex-col gap-2 p-4">
+        {atSubtitleGate && (
+          <div className="flex flex-none flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/[0.06] px-3 py-2">
+            <Diamond className="h-3.5 w-3.5 flex-none text-warning" />
+            <span className="min-w-0 flex-1 truncate text-xs font-medium">
+              {t('gate.inspectorLabel', {
+                index: Math.max(queueIndex, 0) + 1,
+                total: subtitleReviewQueue.length,
+              })}
+              <span className="ml-2 text-muted-foreground">
+                {proofreadFile.fileName}
+                {proofreadFile.fileExtension}
+              </span>
+            </span>
+            <Button
+              size="sm"
+              className="h-7 gap-1 text-xs"
+              onClick={handleReleaseAndNext}
+            >
+              <Play className="h-3 w-3" />
+              {subtitleReviewQueue.length > 1
+                ? t('gate.releaseAndNext')
+                : t('gate.releaseAndFinish')}
+            </Button>
+          </div>
+        )}
+        <div className="min-h-0 flex-1">
+          <ProofreadEditor
+            file={pendingFileForProofread}
+            onMarkComplete={() => setProofreadFile(null)}
+            onBack={() => setProofreadFile(null)}
+          />
+        </div>
       </div>
     );
   }
@@ -640,7 +758,7 @@ export default function TaskPage() {
       <CompletionBanner
         files={files}
         typeDef={typeDef}
-        formData={formData}
+        formData={listFormData}
         taskStatus={taskStatus}
         dismissed={bannerDismissed}
         projectId={projectId}
@@ -648,6 +766,77 @@ export default function TaskPage() {
         onProofread={handleProofread}
         onRetryFailed={handleRetryFailed}
       />
+
+      {/* 人工检查点聚合操作条：有停靠文件时常驻 */}
+      {(reviewCounts.subtitle > 0 || reviewCounts.dubbing > 0) && (
+        <div className="flex flex-shrink-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-warning/40 bg-warning/[0.06] px-4 py-2.5">
+          <Diamond className="h-4 w-4 flex-none text-warning" />
+          <div className="min-w-0 flex-1 space-y-0.5 text-sm">
+            {reviewCounts.subtitle > 0 && (
+              <p className="font-medium">
+                {t('gate.barSubtitle', { count: reviewCounts.subtitle })}
+              </p>
+            )}
+            {reviewCounts.dubbing > 0 && (
+              <p className="font-medium">
+                {t('gate.barDubbing', { count: reviewCounts.dubbing })}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-none items-center gap-2">
+            {reviewCounts.subtitle > 0 && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1 text-xs"
+                  onClick={() => {
+                    const first = subtitleReviewQueue[0];
+                    if (first) setProofreadFile(first);
+                  }}
+                >
+                  <Edit2 className="h-3 w-3" />
+                  {t('gate.reviewOneByOne')}
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-7 gap-1 text-xs"
+                  onClick={() => setReleaseAllGate('subtitle')}
+                >
+                  <Play className="h-3 w-3" />
+                  {t('gate.releaseAll')}
+                </Button>
+              </>
+            )}
+            {reviewCounts.dubbing > 0 && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1 text-xs"
+                  onClick={() => {
+                    const first = (files as any[]).find(
+                      (f) => f?.dubbingGate === 'review',
+                    );
+                    if (first) handleInspectDubbing(first);
+                  }}
+                >
+                  <AudioLines className="h-3 w-3" />
+                  {t('gate.inspectDubbing')}
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-7 gap-1 text-xs"
+                  onClick={() => setReleaseAllGate('dubbing')}
+                >
+                  <Play className="h-3 w-3" />
+                  {t('gate.releaseAll')}
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <div
         className={cn(
@@ -663,25 +852,33 @@ export default function TaskPage() {
             <TaskGridList
               files={files}
               typeDef={typeDef}
-              formData={formData}
+              formData={listFormData}
               taskStatus={taskStatus}
               onProofread={handleProofread}
               onDelete={(uuid) =>
                 setFiles((prev) => prev.filter((f) => f.uuid !== uuid))
               }
               onRetry={handleRetry}
+              onReleaseGate={(file, gate) =>
+                handleReleaseGate(gate, [file.uuid])
+              }
+              onInspectDubbing={handleInspectDubbing}
             />
           ) : (
             <TaskRowList
               files={files}
               typeDef={typeDef}
-              formData={formData}
+              formData={listFormData}
               taskStatus={taskStatus}
               onProofread={handleProofread}
               onDelete={(uuid) =>
                 setFiles((prev) => prev.filter((f) => f.uuid !== uuid))
               }
               onRetry={handleRetry}
+              onReleaseGate={(file, gate) =>
+                handleReleaseGate(gate, [file.uuid])
+              }
+              onInspectDubbing={handleInspectDubbing}
             />
           )}
         </ScrollArea>
@@ -709,6 +906,39 @@ export default function TaskPage() {
         formData={formData}
         typeDef={typeDef}
       />
+
+      {/* 全部放行二次确认（含文件数） */}
+      <AlertDialog
+        open={releaseAllGate !== null}
+        onOpenChange={(open) => {
+          if (!open) setReleaseAllGate(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('gate.releaseAllTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('gate.releaseAllDesc', {
+                count:
+                  releaseAllGate === 'subtitle'
+                    ? reviewCounts.subtitle
+                    : reviewCounts.dubbing,
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('gate.releaseAllCancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (releaseAllGate) handleReleaseGate(releaseAllGate);
+                setReleaseAllGate(null);
+              }}
+            >
+              {t('gate.releaseAllConfirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

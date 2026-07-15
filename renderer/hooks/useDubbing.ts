@@ -20,30 +20,14 @@ import type {
   DubbingOverflowMode,
   DubbingOverlapMode,
 } from '../../types/dubbing';
-import {
-  getTtsProviderType,
-  isTtsProviderConfigured,
-  resolveTtsVoiceLabel,
-} from '../../types/ttsProvider';
 import { dominantTextLanguage } from '../../types/voiceClone';
+import {
+  loadTtsEngineOptions,
+  parseEngineKey,
+  type DubbingEngineOption,
+} from './useTtsEngineOptions';
 
-/** UI 的引擎候选项（本地模型 / 云服务商实例统一形状）。 */
-export interface DubbingEngineOption {
-  key: string; // local:<modelId> | cloud:<providerId>
-  kind: 'local' | 'cloud';
-  label: string;
-  /** 本地=已安装；云=已配置（isTtsProviderConfigured，必填字段全就绪）。 */
-  ready: boolean;
-  /** Edge 等不稳定通道标注。 */
-  unstable?: boolean;
-  /** 云服务商类型 id（计费口径提示按类型分流）。 */
-  providerType?: string;
-  /** 克隆引擎（zipvoice）：voice 池 = 我的音色，空态引导创建。 */
-  cloneOnly?: boolean;
-  /** lang 仅克隆音色携带（跨语言提示用）。 */
-  voices: Array<{ id: string; label: string; lang?: 'zh' | 'en' }>;
-  defaultVoiceId?: string;
-}
+export type { DubbingEngineOption } from './useTtsEngineOptions';
 
 /** 可持久化的工作台配置（localStorage 记忆，下次进入恢复）。 */
 interface PersistedDubbingConfig {
@@ -90,19 +74,13 @@ export type DubbingUiPhase =
   | 'exporting' // 导出中
   | 'done'; // 有合成结果
 
-function parseEngineKey(key: string): DubbingEngineSelection | null {
-  if (key.startsWith('local:')) {
-    return { kind: 'local', modelId: key.slice('local:'.length) };
-  }
-  if (key.startsWith('cloud:')) {
-    return { kind: 'cloud', providerId: key.slice('cloud:'.length) };
-  }
-  return null;
-}
-
 export function useDubbing(options?: {
   initialSubtitlePath?: string;
   initialVideoPath?: string;
+  /** 最近任务回开：尝试恢复的持久化会话 */
+  initialSessionId?: string;
+  /** 关联的工作项（恢复/重建保持同一条最近任务记录） */
+  workItemId?: string;
 }) {
   // ── 文件与会话 ────────────────────────────────────────────────────────────
   const [subtitlePath, setSubtitlePath] = useState<string | null>(
@@ -115,96 +93,29 @@ export function useDubbing(options?: {
   const [cues, setCues] = useState<DubbingCueView[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // 会话恢复：一次性消费的初始 sessionId（仅首载尝试恢复）
+  const restoreSessionIdRef = useRef<string | null>(
+    options?.initialSessionId || null,
+  );
+  // 纯会话恢复成功后回填文件状态时，挡住加载 effect 的重入
+  const syncFromRestoreRef = useRef(false);
+  // 用户确认重建后一次性消费的旧会话 id（loadSession 内取用，避免双载竞态）
+  const rebuildSessionIdRef = useRef<string | null>(null);
+  const workItemIdRef = useRef<string | null>(options?.workItemId || null);
+  /** 恢复成功提示（行级进度已回填） */
+  const [restoredFromSession, setRestoredFromSession] = useState(false);
+  /** 字幕已变，等待用户确认重建（保留旧产物直至确认） */
+  const [staleRestore, setStaleRestore] = useState<{
+    sessionId: string;
+    subtitlePath: string;
+    videoPath?: string;
+  } | null>(null);
 
-  // ── 引擎候选 ──────────────────────────────────────────────────────────────
+  // ── 引擎候选（加载逻辑与新建任务向导共用）────────────────────────────────
   const [engineOptions, setEngineOptions] = useState<DubbingEngineOption[]>([]);
 
   const refreshEngines = useCallback(async () => {
-    const opts: DubbingEngineOption[] = [];
-    // 克隆音色清单：zipvoice 引擎的 voice 池 + 云端克隆音色（火山/EL）注入对应实例。
-    let clonedVoices: Array<{
-      id: string;
-      name: string;
-      engine: string;
-      language?: 'zh' | 'en';
-      speakerId?: string;
-      providerId?: string;
-      trainStatus?: string;
-    }> = [];
-    try {
-      const r = await window.ipc.invoke('voiceClone:list');
-      if (r?.success) clonedVoices = r.data ?? [];
-    } catch {
-      /* ignore */
-    }
-    try {
-      const status = await window.ipc.invoke('getTtsModelStatus');
-      for (const m of status?.models ?? []) {
-        const voices = m.cloneOnly
-          ? clonedVoices
-              .filter((v) => v.engine === 'zipvoice')
-              .map((v) => ({ id: v.id, label: v.name, lang: v.language }))
-          : (m.voices ?? []).map((v: any) => ({
-              id: v.id,
-              label: v.label,
-            }));
-        opts.push({
-          key: `local:${m.id}`,
-          kind: 'local',
-          label: m.displayName ?? m.id,
-          ready: !!m.installed,
-          cloneOnly: !!m.cloneOnly,
-          voices,
-          defaultVoiceId: m.cloneOnly ? voices[0]?.id : m.defaultVoiceId,
-        });
-      }
-    } catch (e) {
-      console.error('load tts models failed:', e);
-    }
-    try {
-      const providers = (await window.ipc.invoke('getTtsProviders')) ?? [];
-      for (const p of providers) {
-        const voices: Array<{ id: string; label: string; lang?: 'zh' | 'en' }> =
-          String(p.voices ?? '')
-            .split(/[,，、;；\n]/)
-            .map((s: string) => s.trim())
-            .filter(Boolean)
-            .map((v: string) => ({
-              id: v,
-              // voice_id 不可读的服务商（ElevenLabs）按名称映射展示。
-              label: resolveTtsVoiceLabel(p, v),
-            }));
-        // 绑定该实例且就绪的云端克隆音色（火山 S_ 槽位 / EL voice_id）追加进音色池。
-        for (const cv of clonedVoices) {
-          if (
-            cv.engine !== 'zipvoice' &&
-            cv.providerId === p.id &&
-            cv.trainStatus === 'ready' &&
-            cv.speakerId
-          ) {
-            voices.push({
-              id: cv.speakerId,
-              label: cv.name,
-              lang: cv.language,
-            });
-          }
-        }
-        opts.push({
-          key: `cloud:${p.id}`,
-          kind: 'cloud',
-          label: p.name,
-          // 必填字段全就绪才可选（半配置的品牌型实例不得进下拉）。
-          ready: isTtsProviderConfigured(p),
-          unstable: getTtsProviderType(p.type)?.unstable,
-          providerType: p.type,
-          voices,
-          defaultVoiceId: voices[0]?.id,
-        });
-      }
-    } catch (e) {
-      console.error('load tts providers failed:', e);
-    }
-    setEngineOptions(opts);
+    setEngineOptions(await loadTtsEngineOptions());
   }, []);
 
   useEffect(() => {
@@ -299,6 +210,11 @@ export function useDubbing(options?: {
   const [actionError, setActionError] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   sessionIdRef.current = session?.sessionId ?? null;
+  // 卸载清理时判断批量/导出是否进行中（进行中则后台继续，不中断）
+  const runningRef = useRef(false);
+  runningRef.current = running;
+  const exportingRef = useRef(false);
+  exportingRef.current = exporting;
 
   useEffect(() => {
     const cleanup = window.ipc?.on(
@@ -309,6 +225,11 @@ export function useDubbing(options?: {
         if (payload.cue) {
           const cue = payload.cue;
           setCues((prev) => prev.map((c) => (c.index === cue.index ? cue : c)));
+        }
+        // 批量终态事件：重连场景（发起批量的页面已卸载）靠它退出运行态
+        if (payload.stage === 'done') {
+          setRunning(false);
+          setIsCancelling(false);
         }
       },
     );
@@ -323,14 +244,24 @@ export function useDubbing(options?: {
       setBatchSummary(null);
       setExportResult(null);
       setPercent(0);
+      setRestoredFromSession(false);
+      setStaleRestore(null);
       const staleId = sessionIdRef.current;
       if (staleId) {
         window.ipc.invoke('dubbing:disposeSession', { sessionId: staleId });
       }
+      // 恢复/重建都是一次性消费：仅本次 load 携带
+      const restoreId = restoreSessionIdRef.current;
+      restoreSessionIdRef.current = null;
+      const rebuildId = rebuildSessionIdRef.current;
+      rebuildSessionIdRef.current = null;
       try {
         const result = await window.ipc.invoke('dubbing:loadSubtitle', {
           subtitlePath: nextSubtitle,
           videoPath: nextVideo || undefined,
+          sessionId: restoreId || undefined,
+          rebuildSessionId: rebuildId || undefined,
+          workItemId: workItemIdRef.current || undefined,
         });
         if (!result.success) {
           setSession(null);
@@ -338,9 +269,33 @@ export function useDubbing(options?: {
           setLoadError(result.error || 'load failed');
           return;
         }
-        const view = result.data as DubbingSessionView;
+        const data = result.data as
+          | (DubbingSessionView & { restored?: boolean })
+          | { stale: true; subtitlePath: string; videoPath?: string };
+        if ('stale' in data && data.stale) {
+          // 字幕已变：不静默重建，弹确认（确认后携 rebuildSessionId 重载）
+          setSession(null);
+          setCues([]);
+          setStaleRestore({
+            sessionId: restoreId!,
+            subtitlePath: data.subtitlePath,
+            videoPath: data.videoPath,
+          });
+          return;
+        }
+        const view = data as DubbingSessionView & { restored?: boolean };
         setSession(view);
         setCues(view.cues);
+        if (view.restored) setRestoredFromSession(true);
+        // 批量在后台进行中（页面离开后回连）：恢复运行态，进度事件自动续接
+        if (view.running) setRunning(true);
+        // 仅凭会话 id 恢复（检查员模式/回开未携字幕路径）：把元数据里的
+        // 文件路径回填到状态供文件条/播放器展示；ref 挡住 effect 的重复加载
+        if (!nextSubtitle && view.subtitlePath) {
+          syncFromRestoreRef.current = true;
+          setSubtitlePath(view.subtitlePath);
+          setVideoPath(view.videoPath ?? null);
+        }
       } catch (e) {
         setSession(null);
         setCues([]);
@@ -352,10 +307,36 @@ export function useDubbing(options?: {
     [],
   );
 
+  /** 字幕已变 → 用户确认重建：删除旧会话数据后按当前字幕新建 */
+  const confirmRebuild = useCallback(() => {
+    if (!staleRestore) return;
+    const { sessionId, subtitlePath: sub, videoPath: vid } = staleRestore;
+    setStaleRestore(null);
+    rebuildSessionIdRef.current = sessionId;
+    setSubtitlePath(sub);
+    setVideoPath(vid || null);
+    loadSession(sub, vid || null);
+  }, [staleRestore, loadSession]);
+
+  /** 放弃重建：回到空态（旧会话数据保留） */
+  const cancelRebuild = useCallback(() => {
+    setStaleRestore(null);
+    setSubtitlePath(null);
+    setVideoPath(null);
+  }, []);
+
   // 字幕/视频路径变化 → 重建会话（含 query 预填首载）。
+  // 仅携 session id 打开（检查员模式跳转）时走纯恢复：字幕路径在会话元数据里，
+  // 恢复成功后回填状态（syncFromRestoreRef 挡住由回填触发的本 effect 重入）。
   useEffect(() => {
+    if (syncFromRestoreRef.current) {
+      syncFromRestoreRef.current = false;
+      return;
+    }
     if (subtitlePath) {
       loadSession(subtitlePath, videoPath);
+    } else if (restoreSessionIdRef.current) {
+      loadSession('', null);
     } else {
       const staleId = sessionIdRef.current;
       if (staleId) {
@@ -367,14 +348,19 @@ export function useDubbing(options?: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subtitlePath, videoPath]);
 
-  // 卸载时释放会话。
+  // 卸载时释放会话：批量进行中则后台继续（keepRunning），
+  // 经最近任务回开可实时重连；空闲会话正常释放内存态。
   useEffect(() => {
     return () => {
       const staleId = sessionIdRef.current;
       if (staleId) {
-        window.ipc.invoke('dubbing:disposeSession', { sessionId: staleId });
+        window.ipc.invoke('dubbing:disposeSession', {
+          sessionId: staleId,
+          keepRunning: runningRef.current || exportingRef.current,
+        });
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const pickSubtitle = useCallback(async () => {
@@ -717,6 +703,10 @@ export function useDubbing(options?: {
     cues,
     loading,
     loadError,
+    restoredFromSession,
+    staleRestore,
+    confirmRebuild,
+    cancelRebuild,
     // 引擎与配置
     engineOptions,
     activeEngine,

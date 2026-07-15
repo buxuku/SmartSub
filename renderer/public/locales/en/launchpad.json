@@ -2,7 +2,20 @@
   "title": "What would you like to do?",
   "subtitle": "Pick a task to start — you can also drop files straight onto a card",
   "startPanel": {
-    "title": "Start a new task"
+    "title": "Start creating"
+  },
+  "recipes": {
+    "custom": "Custom flow",
+    "customDesc": "Open the wizard, mix goals and settings, save as a recipe",
+    "rename": "Rename",
+    "delete": "Delete",
+    "deleteTitle": "Delete this recipe?",
+    "deleteDesc": "This removes the \"{{name}}\" recipe. Existing tasks are not affected.",
+    "cancel": "Cancel",
+    "confirmDelete": "Delete"
+  },
+  "tools": {
+    "title": "Tools"
   },
   "hero": {
     "morning": "Good morning",
@@ -51,6 +64,8 @@
     "dubbing": "Dubbing"
   },
   "card": {
+    "pipeline": "Video → dubbed final cut",
+    "pipelineDesc": "Transcribe, translate, dub and compose — fully automatic, straight to a final video",
     "generateTranslate": "Video → bilingual subtitles",
     "generateTranslateDesc": "Transcribe speech and translate it into your target language in one go",
     "generate": "Video → original subtitles",
@@ -69,7 +84,8 @@
     "noModel": "No speech model yet — it turns speech into text. Download one to get started",
     "noModelCta": "Download recommended model",
     "noProvider": "Want translated subtitles? Set up a translation service first (free options available)",
-    "noProviderCta": "Set up"
+    "noProviderCta": "Set up",
+    "noTtsCta": "Set up a dubbing engine"
   },
   "recentTasks": "Recent tasks",
   "noRecentTasks": "No tasks yet — pick one above to get started",
@@ -114,7 +130,8 @@
     "waiting": "Waiting",
     "running": "Running",
     "done": "Done",
-    "error": "Error"
+    "error": "Error",
+    "review": "Needs review"
   },
   "noRecentTasksHint": "Finished tasks appear here. Drag files onto a card above to get started"
 }

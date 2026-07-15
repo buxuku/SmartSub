@@ -46,5 +46,6 @@ export const store = new Store<StoreType>({
       videoQuality: 'original' as const,
       encoderMode: 'cpu' as const,
     },
+    taskRecipes: [],
   },
 });

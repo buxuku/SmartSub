@@ -22,6 +22,7 @@ import {
   setupWorkItemStoreLifecycle,
 } from './helpers/workItemStore';
 import { setupWorkItemHandlers } from './helpers/workItemHandlers';
+import { setupRecipeHandlers } from './helpers/ipcRecipeHandlers';
 import { setupAutoUpdater } from './helpers/updater';
 import { setupAppMenu } from './helpers/menu';
 import { setupWindowCloseBehavior, markQuitting } from './helpers/windowClose';
@@ -29,6 +30,7 @@ import { setupParameterHandlers } from './helpers/ipcParameterHandlers';
 import { setupProofreadHandlers } from './helpers/ipcProofreadHandlers';
 import { setupSubtitleMergeHandlers } from './helpers/ipcSubtitleMergeHandlers';
 import { setupDubbingHandlers } from './helpers/ipcDubbingHandlers';
+import { setupPipelineHandlers } from './helpers/ipcPipelineHandlers';
 import { setupVoiceCloneHandlers } from './helpers/ipcVoiceCloneHandlers';
 import { configurationManager } from './service/configurationManager';
 import {
@@ -183,10 +185,12 @@ app.on('before-quit', (event) => {
   initializeWorkItemStore();
   setupWorkItemStoreLifecycle();
   setupWorkItemHandlers();
+  setupRecipeHandlers();
   setupTaskManager();
   setupAutoUpdater(mainWindow);
   setupSubtitleMergeHandlers(mainWindow);
   setupDubbingHandlers(mainWindow);
+  setupPipelineHandlers(mainWindow);
   setupVoiceCloneHandlers(mainWindow);
   setMainWindowForAddon(mainWindow);
   registerEngineIpcHandlers();

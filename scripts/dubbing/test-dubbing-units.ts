@@ -63,7 +63,17 @@ import {
 import {
   ALIGN_ONESHOT_THRESHOLD,
   ALIGN_OVERLONG_THRESHOLD,
+  type DubbingSessionMeta,
 } from '../../types/dubbing';
+import {
+  setDubbingSessionsRoot,
+  getSessionDir,
+  hashSubtitleContent,
+  flushSessionMeta,
+  readSessionMeta,
+  deleteSessionData,
+  resolvePersistedCue,
+} from '../../main/helpers/dubbing/sessionStore';
 import {
   parseTtsVoiceLabels,
   resolveTtsVoiceLabel,
@@ -995,6 +1005,109 @@ function cue(
     /HTTP 500.*code 55000001/.test(volcTtsErrorHint(500, 55000001, 'boom')),
     'volc: 未知错误透出 HTTP 状态与 code',
   );
+}
+
+// ── sessionStore：会话持久化（元数据往返 / hash 校验 / 产物缺失降级 / 删除）──
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dub-session-test-'));
+  setDubbingSessionsRoot(root);
+
+  // hash 确定性与内容敏感
+  eq(
+    hashSubtitleContent('hello'),
+    hashSubtitleContent('hello'),
+    'session: 同内容 hash 一致',
+  );
+  ok(
+    hashSubtitleContent('hello') !== hashSubtitleContent('hello!'),
+    'session: 内容变化 hash 不同',
+  );
+
+  const sessionId = 'test-session-1';
+  const dir = getSessionDir(sessionId);
+  fs.mkdirSync(dir, { recursive: true });
+  // 行级 wav：0 号存在、1 号缺失
+  fs.writeFileSync(path.join(dir, 'cue-0.wav'), Buffer.alloc(64));
+
+  const meta: DubbingSessionMeta = {
+    version: 1,
+    sessionId,
+    subtitlePath: '/tmp/a.srt',
+    subtitleHash: hashSubtitleContent('1\n00:00:00,000 --> 00:00:01,000\nhi\n'),
+    videoPath: undefined,
+    mediaDurationMs: 60000,
+    updatedAt: Date.now(),
+    cues: [
+      {
+        index: 0,
+        startMs: 0,
+        endMs: 1000,
+        text: 'hi',
+        status: 'done',
+        overlap: false,
+        finalMs: 900,
+        appliedSpeed: 1,
+        wavFile: 'cue-0.wav',
+        action: { type: 'none' },
+      },
+      {
+        index: 1,
+        startMs: 1000,
+        endMs: 2000,
+        text: 'yo',
+        voiceId: 'voice-x',
+        status: 'done',
+        overlap: false,
+        finalMs: 800,
+        appliedSpeed: 1.1,
+        wavFile: 'cue-1.wav',
+        action: { type: 'preSpeed', speed: 1.1 },
+      },
+      {
+        index: 2,
+        startMs: 2000,
+        endMs: 3000,
+        text: 'err',
+        status: 'failed',
+        overlap: false,
+        error: 'boom',
+        action: { type: 'none' },
+      },
+    ],
+  };
+
+  // 元数据往返
+  flushSessionMeta(meta);
+  const readBack = readSessionMeta(sessionId);
+  ok(readBack !== null, 'session: 元数据可读回');
+  eq(readBack?.cues.length, 3, 'session: 行数往返一致');
+  eq(readBack?.subtitleHash, meta.subtitleHash, 'session: hash 往返一致');
+  eq(readBack?.cues[1].voiceId, 'voice-x', 'session: 行级 voice 覆盖往返');
+
+  // 产物解析：存在 → 绝对路径；缺失 → 降级待合成（保留文本与 voice）
+  const resolved0 = resolvePersistedCue(sessionId, readBack!.cues[0]);
+  eq(
+    resolved0.wavPath,
+    path.join(dir, 'cue-0.wav'),
+    'session: 产物存在解析为绝对路径',
+  );
+  eq(resolved0.status, 'done', 'session: 产物存在保持完成态');
+  const resolved1 = resolvePersistedCue(sessionId, readBack!.cues[1]);
+  eq(resolved1.status, 'pending', 'session: 产物缺失降级待合成');
+  eq(resolved1.wavPath, undefined, 'session: 缺失行清空产物路径');
+  eq(resolved1.voiceId, 'voice-x', 'session: 降级保留行级 voice');
+  const resolved2 = resolvePersistedCue(sessionId, readBack!.cues[2]);
+  eq(resolved2.status, 'failed', 'session: 失败行保持失败态（可重试）');
+
+  // 损坏元数据 → null
+  fs.writeFileSync(path.join(dir, 'session.json'), '{broken');
+  eq(readSessionMeta(sessionId), null, 'session: 损坏元数据返回 null');
+
+  // 删除联动
+  deleteSessionData(sessionId);
+  ok(!fs.existsSync(dir), 'session: 删除清理会话目录');
+
+  fs.rmSync(root, { recursive: true, force: true });
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

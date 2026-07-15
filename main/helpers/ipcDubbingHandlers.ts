@@ -3,7 +3,7 @@
  * `{success, data?, error?, cancelled?}`，进度经 `dubbing:progress` 事件推送
  * （形制 ipcSubtitleMergeHandlers）。
  */
-import { ipcMain, BrowserWindow, dialog } from 'electron';
+import { ipcMain, app, BrowserWindow, dialog } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
@@ -15,7 +15,9 @@ import {
 } from './powerSaveManager';
 import {
   createDubbingSession,
+  restoreDubbingSession,
   disposeDubbingSession,
+  deleteDubbingSessionData,
   getDubbingSession,
   runDubbingBatch,
   resynthesizeCue,
@@ -24,9 +26,11 @@ import {
   exportDubbing,
   previewVoice,
   cancelDubbing,
+  flushDubbingSession,
   type DubbingSession,
   type SessionCue,
 } from './dubbing/dubbingProcessor';
+import { setDubbingSessionsRoot } from './dubbing/sessionStore';
 import { saveWorkItem, getWorkItemById } from './workItemStore';
 import type { WorkItem } from '../../types/workItem';
 import type { DubbingConfig, DubbingProgressEvent } from '../../types/dubbing';
@@ -65,6 +69,8 @@ function sessionView(session: DubbingSession) {
     videoPath: session.videoPath,
     mediaDurationMs: session.mediaDurationMs,
     cues: session.cues.map(cueView),
+    // 批量在后台进行中：回开重连时渲染层恢复运行态并续接进度事件
+    running: session.running,
   };
 }
 
@@ -78,7 +84,10 @@ function fail(error: unknown): DubbingResponse {
   };
 }
 
-/** 配音 workItem：会话首跑创建，导出后补 artifacts。 */
+/**
+ * 配音 workItem：会话首跑创建，导出后补 artifacts。
+ * configSnapshot 恒携带 sessionId：最近任务回开按会话恢复行级状态与产物。
+ */
 function upsertDubbingWorkItem(
   session: DubbingSession,
   status: WorkItem['status'],
@@ -88,11 +97,18 @@ function upsertDubbingWorkItem(
     ? getWorkItemById(session.workItemId)
     : null;
   const now = Date.now();
+  const snapshot = {
+    subtitlePath: session.subtitlePath,
+    videoPath: session.videoPath,
+    cueCount: session.cues.length,
+    sessionId: session.id,
+  };
   const item: WorkItem = existing
     ? {
         ...existing,
         status,
         updatedAt: now,
+        configSnapshot: { ...existing.configSnapshot, ...snapshot },
         ...(status === 'done' ? { finishedAt: now } : {}),
         ...(artifacts ? { artifacts } : {}),
       }
@@ -103,11 +119,7 @@ function upsertDubbingWorkItem(
         status,
         createdAt: now,
         updatedAt: now,
-        configSnapshot: {
-          subtitlePath: session.subtitlePath,
-          videoPath: session.videoPath,
-          cueCount: session.cues.length,
-        },
+        configSnapshot: snapshot,
         ...(artifacts ? { artifacts } : {}),
       };
   session.workItemId = item.id;
@@ -115,6 +127,11 @@ function upsertDubbingWorkItem(
 }
 
 export function setupDubbingHandlers(mainWindow: BrowserWindow) {
+  // 会话持久化根目录：应用数据目录下（dispose 不删除，重开可恢复）
+  setDubbingSessionsRoot(
+    path.join(app.getPath('userData'), 'dubbing-sessions'),
+  );
+
   const emitProgress = (e: DubbingProgressEvent, cue?: SessionCue) => {
     if (mainWindow.isDestroyed()) return;
     mainWindow.webContents.send('dubbing:progress', {
@@ -160,21 +177,83 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
     },
   );
 
-  // 加载字幕（+ 可选视频）创建会话。
+  // 加载字幕（+ 可选视频）创建会话；携 sessionId 时优先恢复既有会话。
   ipcMain.handle(
     'dubbing:loadSubtitle',
     async (
       _event,
-      { subtitlePath, videoPath }: { subtitlePath: string; videoPath?: string },
+      {
+        subtitlePath,
+        videoPath,
+        sessionId,
+        rebuildSessionId,
+        workItemId,
+      }: {
+        subtitlePath: string;
+        videoPath?: string;
+        /** 尝试恢复的既有会话（最近任务回开携带） */
+        sessionId?: string;
+        /** 用户确认重建：删除旧会话数据后新建 */
+        rebuildSessionId?: string;
+        /** 关联的工作项（恢复/重建时保持同一条最近任务记录） */
+        workItemId?: string;
+      },
     ): Promise<DubbingResponse> => {
       try {
+        // 恢复路径：字幕 hash 一致 → 直接恢复行级状态与产物
+        if (sessionId) {
+          const restored = restoreDubbingSession(sessionId);
+          if (restored.kind === 'ok') {
+            if (workItemId) restored.session.workItemId = workItemId;
+            return {
+              success: true,
+              data: {
+                ...sessionView(restored.session),
+                restored: true,
+                configSnapshot: restored.session.lastConfig,
+              },
+            };
+          }
+          if (restored.kind === 'stale') {
+            // 字幕已变：不静默重建，交由用户确认（保留旧产物直至确认）
+            return {
+              success: true,
+              data: {
+                stale: true,
+                subtitlePath: restored.subtitlePath,
+                videoPath: restored.videoPath,
+              },
+            };
+          }
+          // missing：无可恢复数据——纯会话打开（检查员/回开未携字幕路径）
+          // 时给出明确指引，否则落回按路径新建
+          if (!subtitlePath) {
+            return {
+              success: false,
+              error: '配音会话不存在或已被清理，请回到任务重新发起',
+            };
+          }
+        }
+
         if (!subtitlePath || !fs.existsSync(subtitlePath)) {
           return { success: false, error: '字幕文件不存在' };
         }
         if (videoPath && !fs.existsSync(videoPath)) {
           return { success: false, error: '视频文件不存在' };
         }
+        // 用户确认重建：清掉旧会话目录再新建
+        if (rebuildSessionId) {
+          deleteDubbingSessionData(rebuildSessionId);
+        }
         const session = await createDubbingSession(subtitlePath, videoPath);
+        if (workItemId) {
+          session.workItemId = workItemId;
+          // 重建后立即刷新工作项的会话引用，避免旧 sessionId 悬挂
+          upsertDubbingWorkItem(
+            session,
+            getWorkItemById(workItemId)?.status || 'waiting',
+          );
+        }
         return { success: true, data: sessionView(session) };
       } catch (error) {
         logMessage(`dubbing load failed: ${error}`, 'error');
@@ -235,6 +314,13 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
         if (powerSaveAcquired) {
           releaseTaskPowerSaveBlocker(DUBBING_POWER_SAVE_REASON);
         }
+        // 批量终态事件：页面离开后重连的渲染层靠它退出运行态
+        // （发起批量的 invoke promise 随页面卸载丢失，事件是唯一通知通道）
+        emitProgress({
+          taskId: session.id,
+          stage: 'done',
+          percent: 100,
+        });
       }
     },
   );
@@ -415,11 +501,14 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
     },
   );
 
-  // 释放会话（关闭页面/换文件）。
+  // 释放会话（关闭页面/换文件）。keepRunning=true 时批量在后台继续。
   ipcMain.handle(
     'dubbing:disposeSession',
-    async (_event, { sessionId }: { sessionId: string }) => {
-      disposeDubbingSession(sessionId);
+    async (
+      _event,
+      { sessionId, keepRunning }: { sessionId: string; keepRunning?: boolean },
+    ) => {
+      disposeDubbingSession(sessionId, { keepRunning });
       return { success: true, data: true };
     },
   );

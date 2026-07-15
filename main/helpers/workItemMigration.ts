@@ -11,6 +11,8 @@ const STAGE_KEYS = [
   'extractSubtitle',
   'translateSubtitle',
   'prepareSubtitle',
+  'dubbing',
+  'composeVideo',
 ] as const;
 
 type StageKey = (typeof STAGE_KEYS)[number];
@@ -36,10 +38,15 @@ export function derivePipelineWorkItemStatus(files: IFiles[]): WorkItemStatus {
   let anyLoading = false;
   let anyError = false;
   let anyInterrupted = false;
+  let anyReview = false;
   let hasAnyStage = false;
   let allStagesDone = true;
 
   for (const file of files) {
+    // 人工检查点停靠：非完成、非错误的中间态
+    if (file.subtitleGate === 'review' || file.dubbingGate === 'review') {
+      anyReview = true;
+    }
     for (const key of STAGE_KEYS) {
       const value = file[key as keyof IFiles];
       if (value === undefined || value === false) continue;
@@ -59,6 +66,7 @@ export function derivePipelineWorkItemStatus(files: IFiles[]): WorkItemStatus {
   if (anyLoading) return 'running';
   if (anyInterrupted) return 'interrupted';
   if (anyError) return 'error';
+  if (anyReview) return 'review';
   if (hasAnyStage && allStagesDone) return 'done';
   return 'waiting';
 }

@@ -9,6 +9,7 @@ import { IFiles } from '../../types';
 import { ExtendedProvider, CustomParameterConfig } from '../../types/provider';
 import { configurationManager } from '../service/configurationManager';
 import { applyTaskEventToProjects } from './taskManager';
+import { getWorkItemById, saveWorkItem } from './workItemStore';
 import { runWithTaskContext } from './taskContext';
 import { killFfmpegForFiles } from './audioProcessor';
 import {
@@ -179,7 +180,7 @@ function finalizeProjectIfDrained(event: any, projectId: string) {
   projectRuntimes.delete(projectId);
   updateTaskbarProgress();
   sendTaskComplete(event, projectId, status);
-  if (status === 'completed') notifyProjectDone(event);
+  if (status === 'completed') notifyProjectDone(event, projectId);
 }
 
 /**
@@ -233,65 +234,114 @@ async function createExtendedProvider(
   }
 }
 
+/** 任务派发共用体：渲染层 handleTask 与主进程内部派发（闸门放行）同路径。 */
+async function startTaskRun(
+  event: any,
+  {
+    files,
+    formData: incomingFormData,
+    projectId,
+  }: { files: IFiles[]; formData: any; projectId?: string },
+) {
+  const pid = projectId || DEFAULT_PROJECT_ID;
+  dispatchEvent = event;
+
+  // 任务级配置快照：带附加阶段（配音/合成）的任务以创建时快照为准执行，
+  // 重试/续跑不受此后全局设置变更影响；首次提交时把有效配置写入快照。
+  let formData = incomingFormData;
+  const workItem = getWorkItemById(pid);
+  if (workItem) {
+    const snapshot = workItem.configSnapshot as any;
+    if (
+      (snapshot?.dub || snapshot?.compose) &&
+      !incomingFormData?.dub &&
+      !incomingFormData?.compose
+    ) {
+      // 旧任务页重试向导任务：回退到快照配置
+      formData = { ...snapshot };
+      logMessage(`handleTask: using config snapshot for ${pid}`, 'info');
+    } else {
+      saveWorkItem({
+        ...workItem,
+        configSnapshot: { ...(formData || {}) },
+      });
+    }
+  }
+
+  await runWithTaskContext({ projectId: pid }, async () => {
+    logMessage(`handleTask start`, 'info');
+    logMessage(`formData: \n ${JSON.stringify(formData, null, 2)}`, 'info');
+  });
+  const runtime = ensureRuntime(pid);
+  // 重新开始：清除上一轮的暂停/取消残留
+  runtime.paused = false;
+  runtime.cancelled = false;
+  if (runtime.controller.signal.aborted) {
+    runtime.controller = new AbortController();
+  }
+  processingQueue.push(
+    ...files.map((file) => ({ file, formData, projectId: pid })),
+  );
+  runtime.total += files.length;
+  updateTaskbarProgress();
+  syncTranscriptionPowerSaveBlocker();
+  // 每批都刷新并发上限：流水线跑着时追加新批次，用户最新设置也能生效
+  maxConcurrentTasks = formData.maxConcurrentTasks || 3;
+  if (!isProcessing) {
+    isProcessing = true;
+    hasOpenAiWhisper = await checkOpenAiWhisper();
+    // 预热 sidecar：把冷启动成本移出首个文件关键路径（faster-whisper 等需运行时引擎）。
+    // ensureStarted 成功后再 prewarm（按引擎预加载模型），与首个文件的音频抽取并行，
+    // 避免 FunASR 等首个 transcribe 因首次加载原生库/ONNX 过慢而长时间卡在 0%。
+    try {
+      // 按本批任务携带的引擎预热（缺省回退全局/默认）。
+      const batchAdapter = getEngineAdapterForTask(formData);
+      if (batchAdapter.requiresRuntime && batchAdapter.pyEngineId) {
+        // Python 运行时引擎（faster-whisper）：先拉起 sidecar 再预热。
+        void getPythonRuntimeManager()
+          .ensureStarted(batchAdapter.pyEngineId)
+          .then(() => batchAdapter.prewarm?.(formData))
+          .catch((e) =>
+            logMessage(`engine warmup failed (non-fatal): ${e}`, 'warning'),
+          );
+      } else if (batchAdapter.prewarm) {
+        // 无 Python 的引擎（funasr/sherpa）：worker 线程直接预加载模型。
+        batchAdapter.prewarm(formData);
+      }
+    } catch (e) {
+      logMessage(`engine warmup skipped: ${e}`, 'warning');
+    }
+    processNextTasks(event);
+  }
+}
+
+/**
+ * 主进程内部派发入口（闸门放行续跑用）：以主窗口 webContents 合成事件 sender，
+ * 走与渲染层 handleTask 完全相同的队列/并发/快照路径。窗口不可用时返回 false。
+ */
+export function enqueueProjectFiles(
+  projectId: string,
+  files: IFiles[],
+  formData: any,
+): boolean {
+  if (!progressWindow || progressWindow.isDestroyed()) {
+    logMessage('enqueueProjectFiles: no window available', 'warning');
+    return false;
+  }
+  const event = { sender: progressWindow.webContents };
+  void startTaskRun(event, { files, formData, projectId });
+  return true;
+}
+
 export function setupTaskProcessor(mainWindow: BrowserWindow) {
   progressWindow = mainWindow;
   ipcMain.on(
     'handleTask',
     async (
       event,
-      {
-        files,
-        formData,
-        projectId,
-      }: { files: IFiles[]; formData: any; projectId?: string },
+      payload: { files: IFiles[]; formData: any; projectId?: string },
     ) => {
-      const pid = projectId || DEFAULT_PROJECT_ID;
-      dispatchEvent = event;
-      await runWithTaskContext({ projectId: pid }, async () => {
-        logMessage(`handleTask start`, 'info');
-        logMessage(`formData: \n ${JSON.stringify(formData, null, 2)}`, 'info');
-      });
-      const runtime = ensureRuntime(pid);
-      // 重新开始：清除上一轮的暂停/取消残留
-      runtime.paused = false;
-      runtime.cancelled = false;
-      if (runtime.controller.signal.aborted) {
-        runtime.controller = new AbortController();
-      }
-      processingQueue.push(
-        ...files.map((file) => ({ file, formData, projectId: pid })),
-      );
-      runtime.total += files.length;
-      updateTaskbarProgress();
-      syncTranscriptionPowerSaveBlocker();
-      // 每批都刷新并发上限：流水线跑着时追加新批次，用户最新设置也能生效
-      maxConcurrentTasks = formData.maxConcurrentTasks || 3;
-      if (!isProcessing) {
-        isProcessing = true;
-        hasOpenAiWhisper = await checkOpenAiWhisper();
-        // 预热 sidecar：把冷启动成本移出首个文件关键路径（faster-whisper 等需运行时引擎）。
-        // ensureStarted 成功后再 prewarm（按引擎预加载模型），与首个文件的音频抽取并行，
-        // 避免 FunASR 等首个 transcribe 因首次加载原生库/ONNX 过慢而长时间卡在 0%。
-        try {
-          // 按本批任务携带的引擎预热（缺省回退全局/默认）。
-          const batchAdapter = getEngineAdapterForTask(formData);
-          if (batchAdapter.requiresRuntime && batchAdapter.pyEngineId) {
-            // Python 运行时引擎（faster-whisper）：先拉起 sidecar 再预热。
-            void getPythonRuntimeManager()
-              .ensureStarted(batchAdapter.pyEngineId)
-              .then(() => batchAdapter.prewarm?.(formData))
-              .catch((e) =>
-                logMessage(`engine warmup failed (non-fatal): ${e}`, 'warning'),
-              );
-          } else if (batchAdapter.prewarm) {
-            // 无 Python 的引擎（funasr/sherpa）：worker 线程直接预加载模型。
-            batchAdapter.prewarm(formData);
-          }
-        } catch (e) {
-          logMessage(`engine warmup skipped: ${e}`, 'warning');
-        }
-        processNextTasks(event);
-      }
+      await startTaskRun(event, payload);
     },
   );
 
@@ -405,20 +455,43 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
   });
 }
 
-/** 工程全部完成且应用不在前台时发系统通知 */
-function notifyProjectDone(event) {
+/** 工程执行排空且应用不在前台时发系统通知（有停靠文件时表达「等待校对」） */
+function notifyProjectDone(event, projectId?: string) {
   try {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win?.isFocused()) return;
     if (!Notification.isSupported()) return;
     const lang = store.get('settings')?.language || 'zh';
-    const notification = new Notification({
-      title: lang === 'zh' ? '任务全部完成' : 'All tasks completed',
-      body:
-        lang === 'zh'
-          ? '字幕任务已处理完毕，点击查看结果'
-          : 'Your subtitle tasks are done — click to view results',
-    });
+
+    // 排空但有文件停靠在人工检查点：不误报「全部完成」
+    let reviewCount = 0;
+    if (projectId) {
+      const item = getWorkItemById(projectId);
+      for (const file of item?.pipelineFiles ?? []) {
+        const f = file as { subtitleGate?: string; dubbingGate?: string };
+        if (f?.subtitleGate === 'review' || f?.dubbingGate === 'review') {
+          reviewCount += 1;
+        }
+      }
+    }
+
+    const notification = new Notification(
+      reviewCount > 0
+        ? {
+            title: lang === 'zh' ? '等待人工校对' : 'Waiting for review',
+            body:
+              lang === 'zh'
+                ? `有 ${reviewCount} 个文件等待校对，处理后将自动继续`
+                : `${reviewCount} file(s) are waiting for review; they continue automatically once released`,
+          }
+        : {
+            title: lang === 'zh' ? '任务全部完成' : 'All tasks completed',
+            body:
+              lang === 'zh'
+                ? '字幕任务已处理完毕，点击查看结果'
+                : 'Your subtitle tasks are done — click to view results',
+          },
+    );
     notification.on('click', () => {
       win?.show();
       win?.focus();

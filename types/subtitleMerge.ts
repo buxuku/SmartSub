@@ -168,6 +168,94 @@ export const VT_BITRATE_QUALITY_FACTOR: Record<VideoQuality, number> = {
   standard: 0.65,
 };
 
+// ── 统一合成引擎（compose）：字幕 × 音轨矩阵 ────────────────────────────────
+
+/**
+ * 合成字幕维度：
+ * - none = 不处理字幕
+ * - soft = 软字幕封装（流复制进 mkv，播放器可开关）
+ * - hard = 硬字幕烧录（重编码视频）
+ */
+export type ComposeSubtitleMode = 'none' | 'soft' | 'hard';
+
+/**
+ * 合成音轨维度：
+ * - keep     = 保留原声（流复制）
+ * - replace  = 配音轨替换原声
+ * - mix      = 配音 + 原声压低混音（ducking）
+ * - addTrack = mkv 新增音轨（原声 + 配音双轨）
+ */
+export type ComposeAudioMode = 'keep' | 'replace' | 'mix' | 'addTrack';
+
+export type ComposeSubtitleSpec =
+  | { mode: 'none' }
+  | { mode: 'soft'; subtitlePath: string }
+  | {
+      mode: 'hard';
+      subtitlePath: string;
+      style: SubtitleStyle;
+      videoQuality?: VideoQuality;
+      encoderMode?: EncoderMode;
+    };
+
+export type ComposeAudioSpec =
+  | { mode: 'keep' }
+  | {
+      mode: 'replace' | 'mix' | 'addTrack';
+      /** 配音音轨文件（wav/mp3/m4a 等音频） */
+      trackPath: string;
+      /** mix 模式的原声压低强度（sidechaincompress ratio，缺省 8） */
+      duckRatio?: number;
+    };
+
+/**
+ * 统一合成作业配置：一次 ffmpeg 执行完成「字幕 × 音轨」组合。
+ * 约束：subtitle=none 且 audio=keep 为无效作业（无处理内容）；
+ * soft 或 addTrack 参与时输出容器必须为 mkv（见 composeRequiresMkv）。
+ */
+export interface ComposeConfig {
+  videoPath: string;
+  outputPath: string;
+  subtitle: ComposeSubtitleSpec;
+  audio: ComposeAudioSpec;
+}
+
+/** soft 字幕轨与双音轨均依赖 mkv 容器（mp4 系不支持 srt 字幕流/多轨语义受限） */
+export function composeRequiresMkv(config: {
+  subtitle: { mode: ComposeSubtitleMode };
+  audio: { mode: ComposeAudioMode };
+}): boolean {
+  return config.subtitle.mode === 'soft' || config.audio.mode === 'addTrack';
+}
+
+/** 合成作业来源（队列 UI 展示与取消定位用） */
+export type ComposeJobSource = 'subtitleMerge' | 'dubbingExport' | 'pipeline';
+
+export type ComposeJobStatus =
+  | 'queued'
+  | 'running'
+  | 'done'
+  | 'error'
+  | 'cancelled';
+
+/** 队列快照中的作业视图（渲染层展示排队状态 + 页面重开时重连上下文） */
+export interface ComposeJobView {
+  id: string;
+  status: ComposeJobStatus;
+  source: ComposeJobSource;
+  outputPath: string;
+  createdAt: number;
+  error?: string;
+  /** 重连上下文：合成页重挂载时据此恢复文件区与进行中状态 */
+  videoPath: string;
+  subtitlePath?: string;
+  subtitleMode: ComposeSubtitleMode;
+  audioTrack?: {
+    mode: 'replace' | 'mix' | 'addTrack';
+    trackPath: string;
+  };
+}
+
 /**
  * 合并配置
  */
@@ -189,6 +277,16 @@ export interface MergeConfig {
    * hardware 时主进程按探测缓存解析具体编码器；探测不可用则自动走 libx264。
    */
   encoderMode?: EncoderMode;
+  /**
+   * 可选配音音轨（合成矩阵的音轨维度）：缺省保留原声，行为与引入前一致。
+   * addTrack 模式输出容器必须为 mkv。
+   */
+  audioTrack?: {
+    mode: 'replace' | 'mix' | 'addTrack';
+    trackPath: string;
+    /** mix 模式原声压低强度（缺省 8） */
+    duckRatio?: number;
+  };
 }
 
 /**
@@ -212,6 +310,12 @@ export interface MergeProgress {
   errorMessage?: string;
   /** 硬件编码失败已自动切换 CPU 重试（渲染层据此提示） */
   hwFallback?: boolean;
+  /** 所属合成作业（队列化后增量携带；既有消费方可忽略） */
+  jobId?: string;
+  /** 作业来源（渲染层按来源过滤各自面板的进度） */
+  source?: ComposeJobSource;
+  /** 作业排队中：前方还有 N 个作业（>0 时为排队等待态） */
+  queuedAhead?: number;
 }
 
 /**

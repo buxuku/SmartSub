@@ -18,6 +18,8 @@ const STAGE_KEYS = [
   'extractSubtitle',
   'translateSubtitle',
   'prepareSubtitle',
+  'dubbing',
+  'composeVideo',
 ] as const;
 
 function markInterruptedFile(file: IFiles): IFiles {

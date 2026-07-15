@@ -190,6 +190,8 @@ export interface DubbingSessionView {
   videoPath?: string;
   mediaDurationMs: number;
   cues: DubbingCueView[];
+  /** 批量合成正在后台进行（回开重连时渲染层据此恢复运行态） */
+  running?: boolean;
 }
 
 /** dubbing:progress 事件载荷（含可选行快照）。 */
@@ -213,3 +215,40 @@ export interface DubbingExportView {
   shiftedSubtitlePath?: string;
   skippedIndexes: number[];
 }
+
+// ── 会话持久化（session.json，P1：重开可恢复行级状态与产物）──────────────────
+
+/** 持久化的单行记录（wavFile 为相对会话目录的文件名）。 */
+export interface PersistedDubbingCue {
+  index: number;
+  startMs: number;
+  endMs: number;
+  text: string;
+  voiceId?: string;
+  status: DubbingCueStatus;
+  overlap: boolean;
+  finalMs?: number;
+  appliedSpeed?: number;
+  requiredFactor?: number;
+  /** 合成产物文件名（相对会话目录；恢复时缺失该文件则该行降级待合成） */
+  wavFile?: string;
+  error?: string;
+  action: AlignmentSpeedAction;
+}
+
+/** 会话元数据文件（<sessionsRoot>/<sessionId>/session.json）。 */
+export interface DubbingSessionMeta {
+  version: 1;
+  sessionId: string;
+  subtitlePath: string;
+  /** 字幕内容 hash（sha1）：恢复合法性校验，内容变化即判定过期 */
+  subtitleHash: string;
+  videoPath?: string;
+  mediaDurationMs: number;
+  updatedAt: number;
+  /** 最近一次使用的配音配置（恢复时回填工作台） */
+  configSnapshot?: DubbingConfig;
+  cues: PersistedDubbingCue[];
+}
+
+export const DUBBING_SESSION_META_VERSION = 1;

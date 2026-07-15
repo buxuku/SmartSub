@@ -50,6 +50,8 @@ export default function SubtitleMergePanel({
     subtitlePath,
     videoInfo,
     subtitleInfo,
+    audioTrackPath,
+    audioTrackMode,
 
     // 样式状态
     style,
@@ -70,8 +72,11 @@ export default function SubtitleMergePanel({
     // 文件操作方法
     selectVideo,
     selectSubtitle,
+    selectAudioTrack,
+    setAudioTrackMode,
     clearVideo,
     clearSubtitle,
+    clearAudioTrack,
 
     // 样式操作方法
     updateStyle,
@@ -163,10 +168,13 @@ export default function SubtitleMergePanel({
               subtitlePath={subtitlePath}
               videoInfo={videoInfo}
               subtitleInfo={subtitleInfo}
+              audioTrackPath={audioTrackPath}
               onSelectVideo={selectVideo}
               onSelectSubtitle={selectSubtitle}
+              onSelectAudioTrack={selectAudioTrack}
               onClearVideo={clearVideo}
               onClearSubtitle={clearSubtitle}
+              onClearAudioTrack={clearAudioTrack}
               disabled={isProcessing}
             />
           </div>
@@ -224,6 +232,9 @@ export default function SubtitleMergePanel({
               encoderMode={encoderMode}
               hwAccelInfo={hwAccelInfo}
               hwFallbackOccurred={hwFallbackOccurred}
+              hasAudioTrack={Boolean(audioTrackPath)}
+              audioTrackMode={audioTrackMode}
+              queuedAhead={progress.queuedAhead || 0}
               status={status}
               canMerge={canMerge}
               needsOutputPath={Boolean(
@@ -233,6 +244,7 @@ export default function SubtitleMergePanel({
               onOutputModeChange={setOutputMode}
               onVideoQualityChange={setVideoQuality}
               onEncoderModeChange={setEncoderMode}
+              onAudioTrackModeChange={setAudioTrackMode}
               onStartMerge={startMerge}
             />
           </div>

@@ -5,6 +5,16 @@ import { logMessage } from '../storeManager';
 import { ensureTempDir } from '../fileUtils';
 import { TaskCancelledError } from '../taskContext';
 import {
+  getSessionDir,
+  hashSubtitleContent,
+  persistSessionMeta,
+  flushSessionMeta,
+  readSessionMeta,
+  deleteSessionData,
+  resolvePersistedCue,
+} from './sessionStore';
+import type { DubbingSessionMeta } from '../../../types/dubbing';
+import {
   parseSubtitleCues,
   detectSubtitleFormat,
   serializeSubtitleCues,
@@ -30,17 +40,17 @@ import {
   assembleTrack,
   amixWavs,
   encodeMp3,
-  replaceAudioTrack,
-  duckMixIntoVideo,
-  addAudioTrack,
   probeMediaDurationMs,
 } from './audioPipeline';
+import { enqueueCompose, cancelComposeJob } from '../compose/composeQueue';
 import type {
   AlignmentPlan,
   AlignmentSpeedAction,
   DubbingConfig,
   DubbingCueStatus,
   DubbingEngineSelection,
+  DubbingOverflowMode,
+  DubbingOverlapMode,
   DubbingProgressEvent,
   DubbingStage,
 } from '../../../types/dubbing';
@@ -91,6 +101,8 @@ export interface SessionCue {
 export interface DubbingSession {
   id: string;
   subtitlePath: string;
+  /** 字幕内容 hash（会话持久化恢复的合法性依据） */
+  subtitleHash: string;
   videoPath?: string;
   mediaDurationMs: number;
   cues: SessionCue[];
@@ -108,6 +120,46 @@ export function getDubbingSession(id: string): DubbingSession | undefined {
   return sessions.get(id);
 }
 
+/** 会话 → 持久化元数据（wav 路径折算为相对会话目录的文件名） */
+function toSessionMeta(session: DubbingSession): DubbingSessionMeta {
+  return {
+    version: 1,
+    sessionId: session.id,
+    subtitlePath: session.subtitlePath,
+    subtitleHash: session.subtitleHash,
+    videoPath: session.videoPath,
+    mediaDurationMs: session.mediaDurationMs,
+    updatedAt: Date.now(),
+    configSnapshot: session.lastConfig,
+    cues: session.cues.map((c) => ({
+      index: c.index,
+      startMs: c.startMs,
+      endMs: c.endMs,
+      text: c.text,
+      voiceId: c.voiceId,
+      // 中断快照：synthesizing 落盘为 pending（重开后继续合成）
+      status: c.status === 'synthesizing' ? 'pending' : c.status,
+      overlap: c.overlap,
+      finalMs: c.finalMs,
+      appliedSpeed: c.appliedSpeed,
+      requiredFactor: c.requiredFactor,
+      wavFile: c.wavPath ? path.basename(c.wavPath) : undefined,
+      error: c.error,
+      action: c.action,
+    })),
+  };
+}
+
+/** 行级状态变更后的节流落盘（批量合成中高频调用） */
+export function persistDubbingSession(session: DubbingSession): void {
+  persistSessionMeta(toSessionMeta(session));
+}
+
+/** 关键节点立即落盘（批量结束/导出后/dispose） */
+export function flushDubbingSession(session: DubbingSession): void {
+  flushSessionMeta(toSessionMeta(session));
+}
+
 /** 解析字幕并创建会话（媒体时长经 ffmpeg -i 探测，无视频则 0）。 */
 export async function createDubbingSession(
   subtitlePath: string,
@@ -122,12 +174,14 @@ export async function createDubbingSession(
   const mediaDurationMs = videoPath ? await probeMediaDurationMs(videoPath) : 0;
 
   const id = randomUUID();
-  const workDir = path.join(ensureTempDir(), 'dubbing', id);
+  // 持久会话目录（应用数据目录下）：dispose 不删除，重开可恢复
+  const workDir = getSessionDir(id);
   fs.mkdirSync(workDir, { recursive: true });
 
   const session: DubbingSession = {
     id,
     subtitlePath,
+    subtitleHash: hashSubtitleContent(content),
     videoPath,
     mediaDurationMs,
     workDir,
@@ -152,19 +206,115 @@ export async function createDubbingSession(
     if (slot.overlapNext) session.cues[slot.index].overlap = true;
   }
   sessions.set(id, session);
+  flushDubbingSession(session);
   return session;
 }
 
-export function disposeDubbingSession(id: string): void {
+/** 会话恢复结果：ok=恢复成功；stale=字幕已变需重建；missing=无可恢复数据 */
+export type RestoreSessionResult =
+  | { kind: 'ok'; session: DubbingSession }
+  | { kind: 'stale'; subtitlePath: string; videoPath?: string }
+  | { kind: 'missing' };
+
+/**
+ * 按 sessionId 恢复会话：字幕内容 hash 一致才恢复行状态与产物；
+ * 单行 wav 缺失仅该行降级待合成。已在内存中的会话直接复用。
+ */
+export function restoreDubbingSession(sessionId: string): RestoreSessionResult {
+  const existing = sessions.get(sessionId);
+  if (existing) return { kind: 'ok', session: existing };
+
+  const meta = readSessionMeta(sessionId);
+  if (!meta) return { kind: 'missing' };
+  if (!fs.existsSync(meta.subtitlePath)) {
+    return { kind: 'missing' };
+  }
+  const content = fs.readFileSync(meta.subtitlePath, 'utf-8');
+  if (hashSubtitleContent(content) !== meta.subtitleHash) {
+    return {
+      kind: 'stale',
+      subtitlePath: meta.subtitlePath,
+      videoPath: meta.videoPath,
+    };
+  }
+
+  const session: DubbingSession = {
+    id: meta.sessionId,
+    subtitlePath: meta.subtitlePath,
+    subtitleHash: meta.subtitleHash,
+    videoPath:
+      meta.videoPath && fs.existsSync(meta.videoPath)
+        ? meta.videoPath
+        : undefined,
+    mediaDurationMs: meta.mediaDurationMs,
+    workDir: getSessionDir(meta.sessionId),
+    running: false,
+    abort: null,
+    calibration: createCalibration(),
+    lastConfig: meta.configSnapshot,
+    cues: meta.cues.map((persisted) => {
+      const resolved = resolvePersistedCue(meta.sessionId, persisted);
+      return {
+        index: resolved.index,
+        startMs: resolved.startMs,
+        endMs: resolved.endMs,
+        text: resolved.text,
+        voiceId: resolved.voiceId,
+        status: resolved.status,
+        overlap: resolved.overlap,
+        finalMs: resolved.finalMs,
+        appliedSpeed: resolved.appliedSpeed,
+        requiredFactor: resolved.requiredFactor,
+        wavPath: resolved.wavPath,
+        error: resolved.error,
+        action: resolved.action,
+      };
+    }),
+  };
+  sessions.set(session.id, session);
+  logMessage(
+    `dubbing session restored: ${session.id} (${session.cues.filter((c) => c.wavPath).length}/${session.cues.length} cues with artifacts)`,
+    'info',
+  );
+  return { kind: 'ok', session };
+}
+
+/**
+ * 释放会话（换文件/关页面）：目录与元数据保留，重开可恢复。
+ * keepRunning=true（页面离开）且批量进行中时不中断执行——批量在后台继续，
+ * 会话保留在内存，经最近任务回开可实时重连；完成后由 IPC 层更新工作项状态。
+ */
+export function disposeDubbingSession(
+  id: string,
+  opts?: { keepRunning?: boolean },
+): void {
   const session = sessions.get(id);
   if (!session) return;
+  if (opts?.keepRunning && session.running) {
+    persistDubbingSession(session);
+    return;
+  }
   session.abort?.abort();
   sessions.delete(id);
-  try {
-    fs.rmSync(session.workDir, { recursive: true, force: true });
-  } catch {
-    /* ignore */
+  // 从未产出任何行级结果的会话没有可恢复价值：直接清理目录，防止空目录堆积
+  const hasArtifacts = session.cues.some(
+    (c) => c.wavPath || c.status === 'failed',
+  );
+  if (hasArtifacts) {
+    flushDubbingSession(session);
+  } else {
+    deleteSessionData(id);
   }
+}
+
+/** 彻底删除会话数据（工作项删除联动/用户确认重建）。 */
+export function deleteDubbingSessionData(id: string): void {
+  const session = sessions.get(id);
+  if (session) {
+    session.abort?.abort();
+    sessions.delete(id);
+  }
+  deleteSessionData(id);
 }
 
 // ── 引擎适配（本地 worker / 云端 service 收敛为统一 synth 函数）──────────────
@@ -527,6 +677,8 @@ export async function runDubbingBatch(
     }
     processed += 1;
     emit(cue, 'synthesize');
+    // 行级状态节流落盘：崩溃/退出后重开最多丢一个防抖窗口
+    persistDubbingSession(session);
   };
 
   try {
@@ -557,6 +709,7 @@ export async function runDubbingBatch(
   } finally {
     session.running = false;
     session.abort = null;
+    flushDubbingSession(session);
     // 并行批量结束：进程池收缩回 1（每个成员一份模型驻留内存）。
     if (config.engine.kind === 'local' && adapter.concurrency > 1) {
       getSherpaTtsRuntime().shrinkTo(1);
@@ -629,6 +782,7 @@ export async function resynthesizeCue(
   } finally {
     session.running = false;
     session.abort = null;
+    flushDubbingSession(session);
   }
   return cue;
 }
@@ -642,6 +796,7 @@ export function setCueVoiceOverride(
   const cue = session.cues.find((c) => c.index === index);
   if (!cue) throw new Error(`行不存在：${index}`);
   cue.voiceId = voiceId || undefined;
+  persistDubbingSession(session);
   return cue;
 }
 
@@ -670,6 +825,7 @@ export async function acceptOverlongCue(
     cue.action = { type: 'atempo', factor };
   }
   cue.status = 'accepted';
+  persistDubbingSession(session);
   return cue;
 }
 
@@ -706,7 +862,136 @@ export function buildSessionPlan(
   return buildAlignmentPlan(finals, slots, { overflow, overlapMode });
 }
 
-/** 导出：槽位拼接 → 背景音/输出形态 → 可选顺延字幕。 */
+/** buildDubTrack 产物：完整配音轨 + 可选顺延字幕 + 规划。 */
+export interface DubTrackResult {
+  /** 完整配音轨 wav（会话目录内，锚定媒体时间轴） */
+  trackPath: string;
+  shiftedSubtitlePath?: string;
+  /** 无合成产物被跳过的行（失败/未合成） */
+  skippedIndexes: number[];
+  plan: AlignmentPlan;
+}
+
+/**
+ * 由会话已合成行构建完整配音轨（规划 → 槽位拼接 → 多轨混流），可选产出顺延字幕。
+ * 不做视频封装（导出/合成阶段各自处理）。工作台导出与流水线配音阶段共用。
+ */
+export async function buildDubTrack(
+  session: DubbingSession,
+  opts: {
+    overflow?: DubbingOverflowMode;
+    overlapMode?: DubbingOverlapMode;
+    signal?: AbortSignal;
+    /**
+     * 顺延字幕输出：always=只要请求就写（工作台导出语义）；
+     * ifShifted=仅当规划实际改变了时间轴才写（流水线语义）。
+     * displayTextByIndex=展示文本覆盖（cue index → 文本）：流水线用交付字幕
+     * 文本（如双语）替换配音用的纯译文，时间轴仍取规划结果；缺省用会话行文本。
+     */
+    shiftedSubtitle?: {
+      path: string;
+      mode: 'always' | 'ifShifted';
+      displayTextByIndex?: Map<number, string>;
+    };
+  },
+): Promise<DubTrackResult> {
+  const withWav = session.cues.filter((c) => c.wavPath && c.finalMs);
+  if (withWav.length === 0) {
+    throw new Error('没有可导出的配音行，请先开始配音');
+  }
+  const overflow = opts.overflow ?? 'truncate';
+  const overlapMode = opts.overlapMode ?? 'shift';
+  const signal = opts.signal;
+  const plan = buildSessionPlan(session, overflow, overlapMode);
+  const wavByIndex = new Map(session.cues.map((c) => [c.index, c.wavPath]));
+
+  const trackPath = path.join(session.workDir, 'dub-track.wav');
+  const totalDurationMs =
+    session.mediaDurationMs ||
+    Math.max(...plan.items.map((i) => i.targetStartMs + i.durationMs), 0);
+
+  // 按轨道分组（shift 模式恒单轨 0；mix 模式重叠行分轨锚定原时间轴）。
+  const laneSegments = new Map<
+    number,
+    Array<{ wavPath: string; targetStartMs: number; maxDurationMs: number }>
+  >();
+  for (const item of plan.items) {
+    const wav = wavByIndex.get(item.index);
+    if (!wav) continue;
+    const arr = laneSegments.get(item.lane) ?? [];
+    arr.push({
+      wavPath: wav,
+      targetStartMs: item.targetStartMs,
+      maxDurationMs: item.durationMs,
+    });
+    laneSegments.set(item.lane, arr);
+  }
+  const lanes: number[] = [];
+  laneSegments.forEach((_, lane) => lanes.push(lane));
+  lanes.sort((a, b) => a - b);
+  if (lanes.length <= 1) {
+    // 单轨：与顺延模式同路径，零额外开销。
+    await assembleTrack(laneSegments.get(lanes[0] ?? 0) ?? [], trackPath, {
+      totalDurationMs,
+      signal,
+    });
+  } else {
+    // 多轨：逐轨拼接（统一总时长）→ amix 合为单条配音轨（限幅防削波）。
+    const laneTracks: string[] = [];
+    for (const lane of lanes) {
+      const lanePath = path.join(session.workDir, `dub-lane-${lane}.wav`);
+      await assembleTrack(laneSegments.get(lane)!, lanePath, {
+        totalDurationMs,
+        signal,
+      });
+      laneTracks.push(lanePath);
+    }
+    await amixWavs(laneTracks, trackPath, signal);
+  }
+
+  // 顺延字幕：按规划后的时间轴序列化；ifShifted 模式仅在时间轴实际变化时产出
+  let shiftedSubtitlePath: string | undefined;
+  if (opts.shiftedSubtitle) {
+    const timeline = shiftedTimeline(plan);
+    const originalByIndex = new Map(
+      session.cues.map((c) => [c.index, c] as const),
+    );
+    const timelineChanged = timeline.some((t) => {
+      const original = originalByIndex.get(t.index);
+      return (
+        !original ||
+        t.startMs !== original.startMs ||
+        t.endMs !== original.endMs
+      );
+    });
+    if (opts.shiftedSubtitle.mode === 'always' || timelineChanged) {
+      const textByIndex = new Map(session.cues.map((c) => [c.index, c.text]));
+      const displayByIndex = opts.shiftedSubtitle.displayTextByIndex;
+      const cues: SubtitleCue[] = timeline
+        .filter((t) => t.endMs > t.startMs)
+        .map((t) => ({
+          startMs: t.startMs,
+          endMs: t.endMs,
+          text: displayByIndex?.get(t.index) ?? textByIndex.get(t.index) ?? '',
+        }));
+      shiftedSubtitlePath = opts.shiftedSubtitle.path;
+      fs.mkdirSync(path.dirname(shiftedSubtitlePath), { recursive: true });
+      fs.writeFileSync(shiftedSubtitlePath, serializeSubtitleCues(cues, 'srt'));
+    }
+  }
+
+  const planned = new Set(plan.items.map((i) => i.index));
+  return {
+    trackPath,
+    shiftedSubtitlePath,
+    skippedIndexes: session.cues
+      .filter((c) => !planned.has(c.index) || !c.wavPath)
+      .map((c) => c.index),
+    plan,
+  };
+}
+
+/** 导出：配音轨构建 → 背景音/输出形态 → 可选顺延字幕。 */
 export async function exportDubbing(
   session: DubbingSession,
   config: DubbingConfig,
@@ -723,112 +1008,79 @@ export async function exportDubbing(
 
   session.running = true;
   session.abort = new AbortController();
+  session.lastConfig = config;
   const signal = session.abort.signal;
   const emit = (stage: DubbingStage, percent: number) =>
     onProgress({ taskId: session.id, stage, percent });
 
   try {
-    const overflow = config.overflow ?? 'truncate';
-    const overlapMode = config.overlapMode ?? 'shift';
-    const plan = buildSessionPlan(session, overflow, overlapMode);
-    const wavByIndex = new Map(session.cues.map((c) => [c.index, c.wavPath]));
-
     emit('concat', 10);
-    const trackPath = path.join(session.workDir, 'dub-track.wav');
-    const totalDurationMs =
-      session.mediaDurationMs ||
-      Math.max(...plan.items.map((i) => i.targetStartMs + i.durationMs), 0);
-
-    // 按轨道分组（shift 模式恒单轨 0；mix 模式重叠行分轨锚定原时间轴）。
-    const laneSegments = new Map<
-      number,
-      Array<{ wavPath: string; targetStartMs: number; maxDurationMs: number }>
-    >();
-    for (const item of plan.items) {
-      const wav = wavByIndex.get(item.index);
-      if (!wav) continue;
-      const arr = laneSegments.get(item.lane) ?? [];
-      arr.push({
-        wavPath: wav,
-        targetStartMs: item.targetStartMs,
-        maxDurationMs: item.durationMs,
-      });
-      laneSegments.set(item.lane, arr);
-    }
-    const lanes: number[] = [];
-    laneSegments.forEach((_, lane) => lanes.push(lane));
-    lanes.sort((a, b) => a - b);
-    if (lanes.length <= 1) {
-      // 单轨：与顺延模式同路径，零额外开销。
-      await assembleTrack(laneSegments.get(lanes[0] ?? 0) ?? [], trackPath, {
-        totalDurationMs,
-        signal,
-      });
-    } else {
-      // 多轨：逐轨拼接（统一总时长）→ amix 合为单条配音轨（限幅防削波）。
-      const laneTracks: string[] = [];
-      for (const lane of lanes) {
-        const lanePath = path.join(session.workDir, `dub-lane-${lane}.wav`);
-        await assembleTrack(laneSegments.get(lane)!, lanePath, {
-          totalDurationMs,
-          signal,
-        });
-        laneTracks.push(lanePath);
-      }
-      await amixWavs(laneTracks, trackPath, signal);
-    }
-
-    emit('mux', 60);
     const outputPath = resolveOutputPath(session, config);
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    const track = await buildDubTrack(session, {
+      overflow: config.overflow,
+      overlapMode: config.overlapMode,
+      signal,
+      shiftedSubtitle: config.exportShiftedSubtitle
+        ? {
+            path: outputPath.replace(/\.[^.]+$/, '') + '.dubbed.srt',
+            mode: 'always',
+          }
+        : undefined,
+    });
+    const trackPath = track.trackPath;
+
+    emit('mux', 60);
     if (config.output === 'audioOnly') {
       if ((config.audioFormat ?? 'wav') === 'mp3') {
         await encodeMp3(trackPath, outputPath, signal);
       } else {
         fs.copyFileSync(trackPath, outputPath);
       }
-    } else if (config.output === 'replaceTrack') {
-      await replaceAudioTrack(
-        session.videoPath!,
-        trackPath,
-        outputPath,
-        signal,
-      );
-    } else if (config.output === 'mixTrack') {
-      await duckMixIntoVideo(session.videoPath!, trackPath, outputPath, {
-        signal,
-      });
     } else {
-      await addAudioTrack(session.videoPath!, trackPath, outputPath, signal);
-    }
-
-    let shiftedSubtitlePath: string | undefined;
-    if (config.exportShiftedSubtitle) {
-      const textByIndex = new Map(session.cues.map((c) => [c.index, c.text]));
-      const cues: SubtitleCue[] = shiftedTimeline(plan)
-        .filter((t) => t.endMs > t.startMs)
-        .map((t) => ({
-          startMs: t.startMs,
-          endMs: t.endMs,
-          text: textByIndex.get(t.index) ?? '',
-        }));
-      shiftedSubtitlePath = outputPath.replace(/\.[^.]+$/, '') + '.dubbed.srt';
-      fs.writeFileSync(shiftedSubtitlePath, serializeSubtitleCues(cues, 'srt'));
+      // 视频形态（替换/混音/双轨）经统一合成队列执行（全局单编码槽，可排队）；
+      // 会话取消联动取消对应合成作业。
+      const audioMode =
+        config.output === 'replaceTrack'
+          ? ('replace' as const)
+          : config.output === 'mixTrack'
+            ? ('mix' as const)
+            : ('addTrack' as const);
+      const { jobId, done } = enqueueCompose(
+        {
+          videoPath: session.videoPath!,
+          outputPath,
+          subtitle: { mode: 'none' },
+          audio: { mode: audioMode, trackPath },
+        },
+        'dubbingExport',
+      );
+      const onAbort = () => cancelComposeJob(jobId);
+      signal.addEventListener('abort', onAbort, { once: true });
+      try {
+        const composeResult = await done;
+        if (composeResult.cancelled || signal.aborted) {
+          throw new TaskCancelledError();
+        }
+        if (!composeResult.success) {
+          throw new Error(composeResult.error || '合成音轨封装失败');
+        }
+      } finally {
+        signal.removeEventListener('abort', onAbort);
+      }
     }
 
     emit('done', 100);
-    const planned = new Set(plan.items.map((i) => i.index));
     return {
       outputPath,
-      shiftedSubtitlePath,
-      skippedIndexes: session.cues
-        .filter((c) => !planned.has(c.index) || !c.wavPath)
-        .map((c) => c.index),
-      plan,
+      shiftedSubtitlePath: track.shiftedSubtitlePath,
+      skippedIndexes: track.skippedIndexes,
+      plan: track.plan,
     };
   } finally {
     session.running = false;
     session.abort = null;
+    flushDubbingSession(session);
   }
 }
 

@@ -97,6 +97,13 @@ class SherpaFunasrRuntime {
       if (line) logMessage(`asr worker stderr: ${line}`, 'warning');
     });
     w.on('exit', (code) => {
+      // dispose() 先置 this.worker=null 再 kill：此时的非零退出码是信号终止的
+      // 垃圾值，属预期停止（模型删除/导入前释放），不按异常处理。
+      const expected = this.worker !== w;
+      if (expected) {
+        this.failAll(new Error('本地转写引擎已释放（模型切换），请重试'));
+        return;
+      }
       if (code !== 0) {
         this.failAll(
           new Error(`本地转写引擎异常退出（code ${code}），已自动重置，请重试`),

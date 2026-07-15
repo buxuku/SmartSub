@@ -23,7 +23,9 @@ export type WorkItemStatus =
   | 'running'
   | 'done'
   | 'error'
-  | 'interrupted';
+  | 'interrupted'
+  /** 有文件停靠在人工检查点等待校对（非完成、非错误的中间态） */
+  | 'review';
 
 /** 流水线文件 — P19-1 先与 IFiles 对齐，后续正型 */
 export type PipelineFile = IFiles;

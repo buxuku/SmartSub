@@ -1,7 +1,12 @@
 import { isSubtitleFile } from 'lib/utils';
 import type { TaskTypeDef } from 'lib/taskTypes';
 
-export type StageKey = 'extractAudio' | 'extractSubtitle' | 'translateSubtitle';
+export type StageKey =
+  | 'extractAudio'
+  | 'extractSubtitle'
+  | 'translateSubtitle'
+  | 'dubbing'
+  | 'composeVideo';
 export type StageStatus = 'pending' | 'loading' | 'done' | 'error';
 
 export interface StageDef {
@@ -10,20 +15,32 @@ export interface StageDef {
   labelKey: string;
 }
 
-/** 按任务类型 + 输入文件种类推导该文件要经过的阶段 */
+/**
+ * 按任务类型 + 输入文件种类推导该文件要经过的阶段。
+ * formData 可为任务配置快照（含 dub/compose 附加阶段）——向导任务据此扩列。
+ */
 export function getFileStages(
   file: any,
   typeDef: TaskTypeDef,
   formData: any,
 ): StageDef[] {
   const subtitleInput = isSubtitleFile(file?.filePath || '');
+  // 配对模式（媒体携带既有字幕）：跳过提取/听写，不在轨道上展示
+  const hasProvidedSubtitle = Boolean(file?.providedSubtitlePath);
   const stages: StageDef[] = [];
-  if (!subtitleInput) {
+  if (!subtitleInput && !hasProvidedSubtitle) {
     stages.push({ key: 'extractAudio', labelKey: 'stage.extract' });
     stages.push({ key: 'extractSubtitle', labelKey: 'stage.transcribe' });
   }
   if (typeDef.hasTranslate && formData?.translateProvider !== '-1') {
     stages.push({ key: 'translateSubtitle', labelKey: 'stage.translate' });
+  }
+  // 附加阶段：配置快照声明，或文件上已有阶段状态（快照缺失时兜底）
+  if (formData?.dub || file?.dubbing !== undefined) {
+    stages.push({ key: 'dubbing', labelKey: 'stage.dubbing' });
+  }
+  if (formData?.compose || file?.composeVideo !== undefined) {
+    stages.push({ key: 'composeVideo', labelKey: 'stage.compose' });
   }
   return stages;
 }
@@ -34,6 +51,90 @@ export function getStageStatus(file: any, key: StageKey): StageStatus {
   if (value === 'done') return 'done';
   if (value === 'error') return 'error';
   return 'pending';
+}
+
+// ── 人工检查点（白话：字幕校对 / 配音确认）────────────────────────────────
+
+export type GateKey = 'subtitleGate' | 'dubbingGate';
+export type GateStatus = 'pending' | 'review' | 'passed';
+
+export interface GateDef {
+  key: GateKey;
+  /** i18n key inside tasks namespace */
+  labelKey: string;
+}
+
+export function getGateStatus(file: any, key: GateKey): GateStatus {
+  const value = file?.[key];
+  if (value === 'review') return 'review';
+  if (value === 'passed') return 'passed';
+  return 'pending';
+}
+
+/** 任务启用的检查点清单（按配置快照推导） */
+export function getFileGates(formData: any): GateDef[] {
+  const gates: GateDef[] = [];
+  if (
+    formData?.gates?.subtitle === 'manual' &&
+    (formData?.dub || formData?.compose)
+  ) {
+    gates.push({ key: 'subtitleGate', labelKey: 'gate.subtitle' });
+  }
+  if (formData?.dub && formData?.gates?.dubbing === 'manual') {
+    gates.push({ key: 'dubbingGate', labelKey: 'gate.dubbing' });
+  }
+  return gates;
+}
+
+/** 轨道条目：阶段方块与检查点菱形交错排列 */
+export type RailItem =
+  | { kind: 'stage'; stage: StageDef }
+  | { kind: 'gate'; gate: GateDef };
+
+/**
+ * 文件的完整轨道：字幕校对点插在字幕段之后（配音/合成之前），
+ * 配音确认点插在配音阶段之后。
+ */
+export function getFileRail(
+  file: any,
+  typeDef: TaskTypeDef,
+  formData: any,
+): RailItem[] {
+  const stages = getFileStages(file, typeDef, formData);
+  const gates = getFileGates(formData);
+  const subtitleGate = gates.find((g) => g.key === 'subtitleGate');
+  const dubbingGate = gates.find((g) => g.key === 'dubbingGate');
+  const hasDub = stages.some((s) => s.key === 'dubbing');
+  const hasCompose = stages.some((s) => s.key === 'composeVideo');
+
+  const rail: RailItem[] = [];
+  for (const stage of stages) {
+    // 字幕校对点：字幕段之后（第一个附加阶段之前）
+    if (
+      subtitleGate &&
+      (stage.key === 'dubbing' || (stage.key === 'composeVideo' && !hasDub))
+    ) {
+      rail.push({ kind: 'gate', gate: subtitleGate });
+    }
+    // 配音确认点：配音之后、合成之前
+    if (dubbingGate && stage.key === 'composeVideo' && hasDub) {
+      rail.push({ kind: 'gate', gate: dubbingGate });
+    }
+    rail.push({ kind: 'stage', stage });
+  }
+  // 仅配音无合成：配音确认点收尾
+  if (dubbingGate && hasDub && !hasCompose) {
+    rail.push({ kind: 'gate', gate: dubbingGate });
+  }
+  return rail;
+}
+
+/** 文件当前停靠的检查点（无停靠返回 null） */
+export function getDockedGate(file: any, formData: any): GateDef | null {
+  for (const gate of getFileGates(formData)) {
+    if (getGateStatus(file, gate.key) === 'review') return gate;
+  }
+  return null;
 }
 
 /** 文件整体进度（0-100）：完成阶段均摊 + 当前阶段按其进度折算 */
@@ -140,9 +241,16 @@ export function canProofreadFile(file: any, typeDef: TaskTypeDef): boolean {
   );
 }
 
-/** 打开所在文件夹时优先揭示的产物路径 */
+/** 打开所在文件夹时优先揭示的产物路径（成品视频 > 配音音频 > 译文 > 源字幕 > 输入文件） */
 export function getRevealPath(file: any): string {
-  return file?.translatedSrtFile || file?.srtFile || file?.filePath || '';
+  return (
+    file?.finalVideoPath ||
+    file?.dubbedAudioPath ||
+    file?.translatedSrtFile ||
+    file?.srtFile ||
+    file?.filePath ||
+    ''
+  );
 }
 
 /** 字节数转人类可读（如 1.5 MB）；无效值返回空串 */

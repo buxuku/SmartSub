@@ -486,7 +486,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     'selectFile',
     async (
       event,
-      options: { type: 'video' | 'subtitle' | 'any'; title?: string },
+      options: { type: 'video' | 'subtitle' | 'audio' | 'any'; title?: string },
     ) => {
       const { type, title } = options;
 
@@ -504,6 +504,13 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
           {
             name: 'Subtitle Files',
             extensions: SUBTITLE_EXTENSIONS.map((ext) => ext.substring(1)),
+          },
+        ];
+      } else if (type === 'audio') {
+        filters = [
+          {
+            name: 'Audio Files',
+            extensions: ['wav', 'mp3', 'm4a', 'aac', 'flac', 'ogg', 'opus'],
           },
         ];
       }

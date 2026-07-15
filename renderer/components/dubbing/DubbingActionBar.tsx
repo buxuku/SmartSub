@@ -20,7 +20,14 @@ function baseName(p: string): string {
   return p.split(/[\\/]/).pop() || p;
 }
 
-export default function DubbingActionBar({ dub }: { dub: UseDubbingReturn }) {
+export default function DubbingActionBar({
+  dub,
+  hideExport = false,
+}: {
+  dub: UseDubbingReturn;
+  /** 检查员模式：产出由任务的合成阶段负责，隐藏导出入口 */
+  hideExport?: boolean;
+}) {
   const { t } = useTranslation('dubbing');
   const {
     running,
@@ -106,21 +113,22 @@ export default function DubbingActionBar({ dub }: { dub: UseDubbingReturn }) {
     );
   }
 
-  const exportButton = (variant: 'default' | 'outline') => (
-    <Button
-      variant={variant}
-      size="sm"
-      onClick={handleExport}
-      disabled={!canExport}
-    >
-      {exporting ? (
-        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-      ) : (
-        <Download className="mr-1 h-3.5 w-3.5" />
-      )}
-      {t('export')}
-    </Button>
-  );
+  const exportButton = (variant: 'default' | 'outline') =>
+    hideExport ? null : (
+      <Button
+        variant={variant}
+        size="sm"
+        onClick={handleExport}
+        disabled={!canExport}
+      >
+        {exporting ? (
+          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Download className="mr-1 h-3.5 w-3.5" />
+        )}
+        {t('export')}
+      </Button>
+    );
 
   return (
     <div className="flex items-center gap-2">

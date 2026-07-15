@@ -33,7 +33,8 @@ interface Waiter {
   onAbort?: () => void;
 }
 
-class GroupMutex {
+/** 通用组互斥（FIFO、等待可被 AbortSignal 取消）；配音阶段闸等复用 */
+export class GroupMutex {
   private locked = false;
   private waiters: Waiter[] = [];
 

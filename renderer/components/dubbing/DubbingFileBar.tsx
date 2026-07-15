@@ -48,7 +48,13 @@ function collectRecentCandidates(items: WorkItem[]): RecentImportCandidate[] {
   return out;
 }
 
-export default function DubbingFileBar({ dub }: { dub: UseDubbingReturn }) {
+export default function DubbingFileBar({
+  dub,
+  hideExport = false,
+}: {
+  dub: UseDubbingReturn;
+  hideExport?: boolean;
+}) {
   const { t } = useTranslation('dubbing');
   const {
     subtitlePath,
@@ -185,7 +191,7 @@ export default function DubbingFileBar({ dub }: { dub: UseDubbingReturn }) {
       {/* 右上角主操作簇：开始/继续/重跑 + 导出 + 进度 */}
       {subtitlePath && (
         <div className="ml-auto">
-          <DubbingActionBar dub={dub} />
+          <DubbingActionBar dub={dub} hideExport={hideExport} />
         </div>
       )}
     </div>

@@ -139,8 +139,18 @@ class SherpaTtsRuntime {
       if (line) logMessage(`tts worker stderr: ${line}`, 'warning');
     });
     proc.on('exit', (code) => {
+      // shrinkTo/dispose 先置 alive=false 再 kill：此时的非零退出码是
+      // 信号终止的垃圾值（如 0x6B0E7680），属预期停止，不按异常处理。
+      const expected = !handle.alive;
       handle.alive = false;
       this.pool = this.pool.filter((h) => h !== handle);
+      if (expected) {
+        this.failOwn(
+          handle,
+          new Error('本地 TTS 引擎已释放（模型切换/回收），请重试'),
+        );
+        return;
+      }
       if (code !== 0) {
         this.failOwn(
           handle,

@@ -2,7 +2,20 @@
   "title": "您想做什么？",
   "subtitle": "选择一个任务开始，文件也可以直接拖到卡片上",
   "startPanel": {
-    "title": "开始新任务"
+    "title": "开始创作"
+  },
+  "recipes": {
+    "custom": "自定义流程",
+    "customDesc": "打开向导，自由组合目标与配置，可存为配方",
+    "rename": "重命名",
+    "delete": "删除",
+    "deleteTitle": "删除这个配方？",
+    "deleteDesc": "将删除配方「{{name}}」，已创建的任务不受影响。",
+    "cancel": "取消",
+    "confirmDelete": "删除"
+  },
+  "tools": {
+    "title": "工具"
   },
   "hero": {
     "morning": "早上好",
@@ -51,6 +64,8 @@
     "dubbing": "配音"
   },
   "card": {
+    "pipeline": "视频 → 配音成片",
+    "pipelineDesc": "听写、翻译、配音、合成一条龙，全自动出成品视频",
     "generateTranslate": "视频 → 双语字幕",
     "generateTranslateDesc": "转写人声并翻译成目标语言，一步到位",
     "generate": "视频 → 原文字幕",
@@ -69,7 +84,8 @@
     "noModel": "还没有语音模型——它负责把人声转写成文字，下载一个就能开始",
     "noModelCta": "下载推荐模型",
     "noProvider": "想翻译字幕？先配置一个翻译服务（也有免费选项）",
-    "noProviderCta": "去配置"
+    "noProviderCta": "去配置",
+    "noTtsCta": "配置配音引擎"
   },
   "recentTasks": "最近任务",
   "noRecentTasks": "还没有任务记录，从上面选一个任务开始吧",
@@ -114,7 +130,8 @@
     "waiting": "等待中",
     "running": "进行中",
     "done": "已完成",
-    "error": "出错"
+    "error": "出错",
+    "review": "待校对"
   },
   "noRecentTasksHint": "完成的任务会出现在这里，把文件拖到上方卡片即可开始"
 }

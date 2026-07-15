@@ -1,9 +1,11 @@
 import React, { useRef } from 'react';
 import {
+  AudioLines,
   Captions,
   CheckCircle2,
   ChevronRight,
   CircleAlert,
+  Diamond,
   Edit2,
   FileUp,
   FolderOpen,
@@ -27,7 +29,10 @@ import type { TaskTypeDef } from 'lib/taskTypes';
 import { useTranslation } from 'next-i18next';
 import {
   getFileStages,
+  getFileRail,
   getStageStatus,
+  getGateStatus,
+  getDockedGate,
   getFilePercent,
   getFileError,
   hasFileError,
@@ -36,6 +41,7 @@ import {
   getRevealPath,
   formatBytes,
   formatMediaDuration,
+  type RailItem,
   type StageDef,
 } from './stageUtils';
 
@@ -47,20 +53,57 @@ interface TaskRowListProps {
   onProofread: (file: any) => void;
   onDelete: (uuid: string) => void;
   onRetry: (file: any) => void;
+  /** 放行停靠在检查点的文件 */
+  onReleaseGate?: (file: any, gate: 'subtitle' | 'dubbing') => void;
+  /** 打开配音工作台检查该文件的配音 */
+  onInspectDubbing?: (file: any) => void;
 }
 
-function StageChips({
+export function RailChips({
   file,
-  stages,
+  rail,
   t,
+  className,
 }: {
   file: any;
-  stages: StageDef[];
+  rail: RailItem[];
   t: (key: string) => string;
+  className?: string;
 }) {
   return (
-    <div className="flex items-center gap-1 flex-shrink-0">
-      {stages.map((stage, index) => {
+    <div className={cn('flex items-center gap-1 flex-shrink-0', className)}>
+      {rail.map((item, index) => {
+        if (item.kind === 'gate') {
+          const status = getGateStatus(file, item.gate.key);
+          return (
+            <React.Fragment key={item.gate.key}>
+              {index > 0 && <ChevronRight className="h-3 w-3 text-faint" />}
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1 text-xs whitespace-nowrap',
+                  status === 'pending' && 'text-faint',
+                  status === 'review' && 'text-warning font-medium',
+                  status === 'passed' && 'text-success',
+                )}
+                title={
+                  status === 'review' ? t('gate.reviewTooltip') : undefined
+                }
+              >
+                <Diamond
+                  className={cn(
+                    'h-3 w-3',
+                    status === 'review' && 'animate-pulse fill-warning/30',
+                    status === 'passed' && 'fill-success/30',
+                  )}
+                />
+                {status === 'review'
+                  ? t('gate.reviewBadge')
+                  : t(item.gate.labelKey)}
+              </span>
+            </React.Fragment>
+          );
+        }
+        const stage = item.stage;
         const status = getStageStatus(file, stage.key);
         return (
           <React.Fragment key={stage.key}>
@@ -103,6 +146,8 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
   onProofread,
   onDelete,
   onRetry,
+  onReleaseGate,
+  onInspectDubbing,
 }) => {
   const { t } = useTranslation('tasks');
   const queueBusy =
@@ -206,6 +251,8 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
     <div className="space-y-1.5">
       {files.map((file) => {
         const stages = getFileStages(file, typeDef, formData);
+        const rail = getFileRail(file, typeDef, formData);
+        const dockedGate = getDockedGate(file, formData);
         const percent = getFilePercent(file, stages);
         const failed = hasFileError(file, stages);
         const rawError = failed ? getFileError(file, stages) : '';
@@ -289,7 +336,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                 )}
               </div>
 
-              <StageChips file={file} stages={stages} t={t} />
+              <RailChips file={file} rail={rail} t={t} />
 
               <div className="flex items-center gap-2 w-[160px] flex-shrink-0">
                 <Progress value={percent} className="h-1.5" />
@@ -306,6 +353,47 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
               )}
 
               <div className="flex items-center gap-1 flex-shrink-0">
+                {/* 停靠在检查点：校对/检查配音 + 放行 */}
+                {dockedGate && (
+                  <>
+                    {dockedGate.key === 'subtitleGate' ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1 border-warning/50 text-warning hover:text-warning"
+                        onClick={() => onProofread(file)}
+                      >
+                        <Edit2 className="h-3 w-3" />
+                        {t('gate.review')}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1 border-warning/50 text-warning hover:text-warning"
+                        onClick={() => onInspectDubbing?.(file)}
+                      >
+                        <AudioLines className="h-3 w-3" />
+                        {t('gate.inspectDubbing')}
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs gap-1"
+                      onClick={() =>
+                        onReleaseGate?.(
+                          file,
+                          dockedGate.key === 'subtitleGate'
+                            ? 'subtitle'
+                            : 'dubbing',
+                        )
+                      }
+                    >
+                      <Play className="h-3 w-3" />
+                      {t('gate.release')}
+                    </Button>
+                  </>
+                )}
                 {failed && (
                   <Button
                     variant="outline"

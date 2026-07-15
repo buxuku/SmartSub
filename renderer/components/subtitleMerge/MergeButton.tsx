@@ -30,6 +30,9 @@ import {
   Layers,
   Cpu,
   Zap,
+  Replace,
+  Blend,
+  ListPlus,
 } from 'lucide-react';
 import type {
   MergeStatus,
@@ -38,6 +41,7 @@ import type {
   EncoderMode,
   HwAccelInfo,
 } from '../../../types/subtitleMerge';
+import type { AudioTrackMode } from './hooks/useSubtitleMerge';
 
 interface MergeButtonProps {
   outputPath: string | null;
@@ -49,6 +53,12 @@ interface MergeButtonProps {
   hwAccelInfo: HwAccelInfo | null;
   /** 本次会话发生过硬件编码失败自动回退 CPU */
   hwFallbackOccurred?: boolean;
+  /** 已选配音音轨（显示音轨模式控件） */
+  hasAudioTrack?: boolean;
+  /** 音轨并入模式 */
+  audioTrackMode?: AudioTrackMode;
+  /** 作业排队中：前方还有 N 个作业 */
+  queuedAhead?: number;
   status: MergeStatus;
   canMerge: boolean;
   /** 文件已就绪但未选输出路径：行动条内联提示 */
@@ -57,6 +67,7 @@ interface MergeButtonProps {
   onOutputModeChange: (mode: MergeOutputMode) => void;
   onVideoQualityChange: (quality: VideoQuality) => void;
   onEncoderModeChange: (mode: EncoderMode) => void;
+  onAudioTrackModeChange?: (mode: AudioTrackMode) => void;
   onStartMerge: () => void;
 }
 
@@ -67,6 +78,9 @@ export default function MergeButton({
   encoderMode,
   hwAccelInfo,
   hwFallbackOccurred = false,
+  hasAudioTrack = false,
+  audioTrackMode = 'replace',
+  queuedAhead = 0,
   status,
   canMerge,
   needsOutputPath = false,
@@ -74,6 +88,7 @@ export default function MergeButton({
   onOutputModeChange,
   onVideoQualityChange,
   onEncoderModeChange,
+  onAudioTrackModeChange,
   onStartMerge,
 }: MergeButtonProps) {
   const { t } = useTranslation('subtitleMerge');
@@ -122,6 +137,35 @@ export default function MergeButton({
       desc: t('outputModeSoftmuxDesc'),
     },
   ];
+
+  const audioModeOptions: Array<{
+    value: AudioTrackMode;
+    icon: React.ReactNode;
+    title: string;
+    desc: string;
+  }> = [
+    {
+      value: 'replace',
+      icon: <Replace className="h-3.5 w-3.5" />,
+      title: t('audioModeReplace'),
+      desc: t('audioModeReplaceDesc'),
+    },
+    {
+      value: 'mix',
+      icon: <Blend className="h-3.5 w-3.5" />,
+      title: t('audioModeMix'),
+      desc: t('audioModeMixDesc'),
+    },
+    {
+      value: 'addTrack',
+      icon: <ListPlus className="h-3.5 w-3.5" />,
+      title: t('audioModeAddTrack'),
+      desc: t('audioModeAddTrackDesc'),
+    },
+  ];
+  // mkv 容器约束提示：软封装或双音轨参与时输出为 mkv
+  const showMkvHint =
+    hasAudioTrack && audioTrackMode === 'addTrack' && outputMode !== 'softmux';
 
   return (
     <TooltipProvider>
@@ -233,6 +277,42 @@ export default function MergeButton({
           </div>
         )}
 
+        {/* 音轨模式（选中配音音轨后显示）：替换 / 混音 / 双轨 */}
+        {hasAudioTrack && onAudioTrackModeChange && (
+          <div className="flex flex-none items-center gap-1.5">
+            <Label className="text-xs text-muted-foreground">
+              {t('audioTrackMode')}
+            </Label>
+            <div className="flex h-8 items-stretch gap-0.5 rounded-md bg-muted p-0.5">
+              {audioModeOptions.map((option) => {
+                const active = audioTrackMode === option.value;
+                return (
+                  <Tooltip key={option.value}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        disabled={isProcessing}
+                        onClick={() => onAudioTrackModeChange(option.value)}
+                        className={`flex items-center gap-1.5 rounded-[5px] px-2.5 text-xs transition-colors disabled:opacity-50 ${
+                          active
+                            ? 'bg-card font-semibold text-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {option.icon}
+                        {option.title}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[260px]">
+                      {option.desc}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* 输出路径：占据剩余宽度 */}
         <div className="flex min-w-[240px] flex-1 items-center gap-1.5">
           <Label className="flex-none text-xs text-muted-foreground">
@@ -269,7 +349,9 @@ export default function MergeButton({
           {isProcessing ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              {t('processing')}
+              {queuedAhead > 0
+                ? t('queuedAhead', { count: queuedAhead })
+                : t('processing')}
             </>
           ) : (
             <>
@@ -282,6 +364,13 @@ export default function MergeButton({
         {needsOutputPath && (
           <p className="w-full text-[11.5px] text-warning">
             {t('outputPathRequiredHint')}
+          </p>
+        )}
+
+        {/* 双音轨参与：输出容器为 mkv 的约束提示 */}
+        {showMkvHint && (
+          <p className="w-full text-[11.5px] text-muted-foreground">
+            {t('audioModeMkvHint')}
           </p>
         )}
 

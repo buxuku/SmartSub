@@ -25,12 +25,20 @@ import {
   SubtitleFormat,
 } from './subtitleFormats';
 import { writeProofreadDataFromFiles } from './proofreadData';
+import { runDubStage, rebuildDubTrackForFile } from './pipeline/dubStage';
+import { runComposeStage } from './pipeline/composeStage';
+import {
+  shouldDockAtSubtitleGate,
+  shouldDockAtDubbingGate,
+} from './pipeline/gateLogic';
+import { notifyGateReview } from './pipeline/gateManager';
 import {
   throwIfTaskCancelled,
   isTaskCancelled,
   isTaskCancelledError,
   isWhisperAbortError,
   TaskCancelledError,
+  getTaskContext,
 } from './taskContext';
 
 /**
@@ -137,7 +145,12 @@ async function stripSourceSubtitlePunctuation(
 /**
  * 翻译字幕
  */
-async function translateSubtitle(event, file: IFiles, formData, provider) {
+async function translateSubtitle(
+  event,
+  file: IFiles,
+  formData,
+  provider,
+): Promise<boolean> {
   // 强制发送翻译开始状态
   event.sender.send('taskFileChange', {
     ...file,
@@ -173,6 +186,7 @@ async function translateSubtitle(event, file: IFiles, formData, provider) {
       `Translation completed successfully for ${file.fileName}`,
       'info',
     );
+    return true;
   } catch (error) {
     if (isTaskCancelledError(error) || isTaskCancelled()) {
       // 用户取消：翻译阶段回退为待处理，不计错误，并中止后续流程
@@ -185,6 +199,7 @@ async function translateSubtitle(event, file: IFiles, formData, provider) {
     }
     // 确保错误状态下也发送当前进度（从文件状态获取）
     onError(event, file, 'translateSubtitle', error);
+    return false;
   }
 }
 
@@ -209,6 +224,39 @@ export async function processFile(
     taskType,
   } = formData || {};
 
+  // 带附加阶段（配音/合成）的任务：重试时复用上游已完成阶段的产物直接续跑
+  // （避免为重跑配音/合成而重新转写整个视频）。判定须在清理残留状态之前完成；
+  // 无附加阶段任务不参与（维持既有全量重跑语义）。
+  const hasPipelineStages = Boolean(formData?.dub || formData?.compose);
+  const srtExists = Boolean(file.srtFile && fs.existsSync(file.srtFile));
+  const tempSrtExists = Boolean(
+    file.tempSrtFile && fs.existsSync(file.tempSrtFile),
+  );
+  const resume = hasPipelineStages
+    ? {
+        /** 字幕已产出（任意交付格式；skip-all 或仅供合成烧录时够用） */
+        subtitleProduced:
+          (file as any).extractSubtitle === 'done' &&
+          (srtExists || tempSrtExists),
+        /** 字幕以 srt 形态可直接进翻译（交付物已转 vtt 等格式时不满足） */
+        srtForTranslate:
+          (file as any).extractSubtitle === 'done' &&
+          srtExists &&
+          /\.srt$/i.test(file.srtFile!),
+        translateDone:
+          (file as any).translateSubtitle === 'done' &&
+          Boolean(
+            (file.tempTranslatedSrtFile &&
+              fs.existsSync(file.tempTranslatedSrtFile)) ||
+              file.proofreadDataFile ||
+              (file.translatedSrtFile && fs.existsSync(file.translatedSrtFile)),
+          ),
+        dubbingDone:
+          (file as any).dubbing === 'done' &&
+          Boolean(file.dubbedTrackPath && fs.existsSync(file.dubbedTrackPath)),
+      }
+    : null;
+
   // 进入处理前清理上一轮残留的阶段状态/进度/错误。后续 taskFileChange 习惯铺开整个 file
   // （`{ ...file, extractSubtitle: 'loading' }`），若 file 仍带着旧值——尤其取消时回灌的空串
   // ——渲染层 `{ ...prev, ...res }` 合并会把刚置好的新状态覆盖回去，造成「取消→重启」时
@@ -218,12 +266,18 @@ export async function processFile(
     'extractSubtitle',
     'prepareSubtitle',
     'translateSubtitle',
+    'dubbing',
+    'composeVideo',
     'extractAudioProgress',
     'extractSubtitleProgress',
     'translateSubtitleProgress',
+    'dubbingProgress',
+    'composeVideoProgress',
     'extractAudioError',
     'extractSubtitleError',
     'translateSubtitleError',
+    'dubbingError',
+    'composeVideoError',
   ]) {
     delete (file as any)[k];
   }
@@ -240,6 +294,13 @@ export async function processFile(
       '.lrc',
       '.txt',
     ].includes(fileExtension);
+    // 配对模式：媒体文件携带既有字幕 → 跳过提取/听写，字幕语义等同用户导入
+    // （绝不改写/转换/删除用户的字幕文件）
+    const hasProvidedSubtitle = Boolean(
+      !isSubtitleFile &&
+        file.providedSubtitlePath &&
+        fs.existsSync(file.providedSubtitlePath),
+    );
     logMessage(`begin process ${fileName} with task type: ${taskType}`, 'info');
 
     // 确定是否需要生成字幕
@@ -250,8 +311,118 @@ export async function processFile(
     const shouldTranslateSubtitle =
       taskType === 'generateAndTranslate' || taskType === 'translateOnly';
 
+    const translationActive =
+      shouldTranslateSubtitle && translateProvider !== '-1';
+
+    /** 文件停靠在人工检查点：置待校对、发聚合通知、结束本轮（不占并发槽） */
+    const dockAtGate = (gate: 'subtitle' | 'dubbing') => {
+      const field = gate === 'subtitle' ? 'subtitleGate' : 'dubbingGate';
+      (file as any)[field] = 'review';
+      event.sender.send('taskFileChange', { ...file, [field]: 'review' });
+      const projectId = getTaskContext()?.projectId;
+      if (projectId) notifyGateReview(projectId, gate);
+      logMessage(`file docked at ${gate} gate: ${fileName}`, 'info');
+    };
+
+    /**
+     * 附加阶段（配音 → 合成）：字幕段之后顺序执行；重试跳过已完成配音。
+     * 人工检查点（gates=manual）到点停靠，放行后重派发续跑从此处穿过。
+     * 返回 false 表示本轮停靠（调用方直接结束，不算完成不算失败）。
+     */
+    const runPipelineStages = async (
+      translateOk: boolean,
+    ): Promise<boolean> => {
+      // 字幕校对检查点：字幕段成功后、配音/合成前（翻译失败时交由下方报错）
+      if (translateOk && shouldDockAtSubtitleGate(formData, file as any)) {
+        dockAtGate('subtitle');
+        return false;
+      }
+      if (formData?.dub) {
+        throwIfTaskCancelled();
+        if (translationActive && !translateOk) {
+          const msg = '翻译未完成，无法配音（请先重试翻译）';
+          event.sender.send('taskStatusChange', file, 'dubbing', 'error');
+          event.sender.send('taskErrorChange', file, 'dubbing', msg);
+          throw new Error(msg);
+        }
+        if (resume?.dubbingDone) {
+          // 续跑：跳过批量合成但总是重建配音轨（吸收检查点里的行级修改）
+          await rebuildDubTrackForFile(event, file, formData);
+        } else {
+          await runDubStage(event, file, formData);
+        }
+        // 配音确认检查点：配音成功后、合成前
+        if (shouldDockAtDubbingGate(formData, file as any)) {
+          dockAtGate('dubbing');
+          return false;
+        }
+      }
+      if (formData?.compose) {
+        throwIfTaskCancelled();
+        await runComposeStage(event, file, formData);
+      }
+      return true;
+    };
+
+    // 重试续跑：字幕段（含翻译）产物完好 → 直接复用，跳到附加阶段。
+    // 仅带附加阶段的任务参与（resume 判定已含产物存在性校验）。
+    const skipSubtitleSegment = Boolean(
+      resume &&
+        (isSubtitleFile ? true : resume.subtitleProduced) &&
+        (!translationActive || resume.translateDone),
+    );
+    if (skipSubtitleSegment) {
+      logMessage(`resume: reuse subtitle segment for ${fileName}`, 'info');
+      if (isSubtitleFile) {
+        file.srtFile = filePath;
+        event.sender.send('taskFileChange', {
+          ...file,
+          prepareSubtitle: 'done',
+        });
+      } else {
+        event.sender.send('taskFileChange', { ...file, extractAudio: 'done' });
+        event.sender.send('taskFileChange', {
+          ...file,
+          extractSubtitle: 'done',
+        });
+      }
+      if (translationActive) {
+        event.sender.send('taskFileChange', {
+          ...file,
+          translateSubtitle: 'done',
+        });
+      }
+      await runPipelineStages(true);
+      logMessage(`process file done ${fileName}`, 'info');
+      return;
+    }
+
     // 处理非字幕文件 - 需要生成字幕的情况
-    if (!isSubtitleFile && shouldGenerateSubtitle) {
+    if (!isSubtitleFile && shouldGenerateSubtitle && hasProvidedSubtitle) {
+      // 配对模式：既有字幕即源字幕，提取/听写两节点直接就绪
+      logMessage(
+        `use provided subtitle for ${fileName}: ${file.providedSubtitlePath}`,
+        'info',
+      );
+      file.srtFile = file.providedSubtitlePath;
+      event.sender.send('taskFileChange', { ...file, extractAudio: 'done' });
+      event.sender.send('taskFileChange', {
+        ...file,
+        extractSubtitle: 'done',
+      });
+    } else if (
+      !isSubtitleFile &&
+      shouldGenerateSubtitle &&
+      resume?.srtForTranslate
+    ) {
+      // 重试续跑：转写产物完好，仅重放完成态（翻译/附加阶段继续正常执行）
+      logMessage(`resume: reuse transcription for ${fileName}`, 'info');
+      event.sender.send('taskFileChange', { ...file, extractAudio: 'done' });
+      event.sender.send('taskFileChange', {
+        ...file,
+        extractSubtitle: 'done',
+      });
+    } else if (!isSubtitleFile && shouldGenerateSubtitle) {
       const templateData = {
         fileName,
         sourceLanguage,
@@ -400,9 +571,14 @@ export async function processFile(
       throw new Error(errorMsg);
     }
 
-    // 中文简繁归一：仅对「转写/内封提取生成」的源字幕生效（不动用户导入的字幕文件）。
+    // 中文简繁归一：仅对「转写/内封提取生成」的源字幕生效（不动用户导入/配对的字幕文件）。
     // 源语言选中文时，按其简/繁取向把产物统一字形；检测到相反字形才实际改写。
-    if (!isSubtitleFile && shouldGenerateSubtitle && file.srtFile) {
+    if (
+      !isSubtitleFile &&
+      shouldGenerateSubtitle &&
+      !hasProvidedSubtitle &&
+      file.srtFile
+    ) {
       const desiredScript = getDesiredChineseScript(sourceLanguage);
       if (desiredScript) {
         try {
@@ -434,6 +610,7 @@ export async function processFile(
     if (
       !isSubtitleFile &&
       shouldGenerateSubtitle &&
+      !hasProvidedSubtitle &&
       taskType === 'generateOnly' &&
       file.srtFile &&
       formData?.removeChinesePunctuation === true &&
@@ -444,6 +621,7 @@ export async function processFile(
 
     // 翻译字幕（取消后不再进入）
     throwIfTaskCancelled();
+    let translateOk = !translationActive;
     if (shouldTranslateSubtitle && translateProvider !== '-1') {
       if (!provider) {
         // '-1' 历史残留或服务商已被删除：明确报错而非深层崩溃
@@ -452,7 +630,7 @@ export async function processFile(
         throw new Error(errorMsg);
       }
       logMessage(`translate subtitle ${file.srtFile}`, 'info');
-      await translateSubtitle(event, file, formData, provider);
+      translateOk = await translateSubtitle(event, file, formData, provider);
     }
 
     // 源字幕中文标点去除 · generateAndTranslate：翻译完成后再剥离源交付物，
@@ -460,6 +638,7 @@ export async function processFile(
     if (
       !isSubtitleFile &&
       shouldGenerateSubtitle &&
+      !hasProvidedSubtitle &&
       taskType === 'generateAndTranslate' &&
       sourceSrtSaveOption !== 'noSave' &&
       file.srtFile &&
@@ -496,10 +675,12 @@ export async function processFile(
     // 将交付字幕转换为用户选择的输出格式（内部流程始终为 SRT，此处仅转换最终交付物）
     const outputFormat = resolveOutputFormat(formData);
     if (outputFormat !== 'srt') {
-      // 源字幕：仅在由 ASR 生成且需要保存时转换（noSave 时源字幕会被清理，保持 srt）
+      // 源字幕：仅在由 ASR 生成且需要保存时转换（noSave 时源字幕会被清理，保持 srt；
+      // 配对模式的源字幕是用户文件，不做格式转换）
       if (
         !isSubtitleFile &&
         shouldGenerateSubtitle &&
+        !hasProvidedSubtitle &&
         sourceSrtSaveOption !== 'noSave' &&
         file.srtFile &&
         fs.existsSync(file.srtFile)
@@ -535,9 +716,11 @@ export async function processFile(
     }
 
     // 清理临时文件：仅在「生成并翻译」且确实产生了译文交付物时才删除源字幕。
-    // 「仅生成字幕」任务的源字幕是最终交付物，绝不能因 noSave 而被删除。
+    // 「仅生成字幕」任务的源字幕是最终交付物，绝不能因 noSave 而被删除；
+    // 配对模式的源字幕是用户文件，绝不删除。
     if (
       !isSubtitleFile &&
+      !hasProvidedSubtitle &&
       sourceSrtSaveOption === 'noSave' &&
       shouldGenerateSubtitle &&
       shouldTranslateSubtitle &&
@@ -558,6 +741,9 @@ export async function processFile(
         if (err) console.log(err);
       });
     }
+
+    // 附加阶段：配音 → 合成（任一失败中断该文件后续阶段）
+    await runPipelineStages(translateOk);
 
     logMessage(`process file done ${fileName}`, 'info');
   } catch (error) {

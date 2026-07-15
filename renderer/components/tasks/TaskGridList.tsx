@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  AudioLines,
   Captions,
   CheckCircle2,
   CircleAlert,
@@ -29,7 +30,9 @@ import type { TaskTypeDef } from 'lib/taskTypes';
 import { useTranslation } from 'next-i18next';
 import {
   getFileStages,
+  getFileRail,
   getStageStatus,
+  getDockedGate,
   getFilePercent,
   getFileError,
   hasFileError,
@@ -38,8 +41,8 @@ import {
   getRevealPath,
   formatBytes,
   formatMediaDuration,
-  type StageDef,
 } from './stageUtils';
+import { RailChips } from './TaskRowList';
 
 interface TaskGridListProps {
   files: any[];
@@ -49,6 +52,8 @@ interface TaskGridListProps {
   onProofread: (file: any) => void;
   onDelete: (uuid: string) => void;
   onRetry: (file: any) => void;
+  onReleaseGate?: (file: any, gate: 'subtitle' | 'dubbing') => void;
+  onInspectDubbing?: (file: any) => void;
 }
 
 // 仅在卡片进入视口时挂载 <video>，限制同时存在的解码器数量
@@ -132,6 +137,8 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
   onProofread,
   onDelete,
   onRetry,
+  onReleaseGate,
+  onInspectDubbing,
 }) => {
   const { t } = useTranslation('tasks');
   const queueBusy =
@@ -201,7 +208,9 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
       {files.map((file) => {
-        const stages: StageDef[] = getFileStages(file, typeDef, formData);
+        const stages = getFileStages(file, typeDef, formData);
+        const rail = getFileRail(file, typeDef, formData);
+        const dockedGate = getDockedGate(file, formData);
         const percent = getFilePercent(file, stages);
         const failed = hasFileError(file, stages);
         const rawError = failed ? getFileError(file, stages) : '';
@@ -281,30 +290,7 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
               <span className="text-[11px] text-muted-foreground">{meta}</span>
             )}
 
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              {stages.map((stage) => {
-                const status = getStageStatus(file, stage.key);
-                return (
-                  <span
-                    key={stage.key}
-                    className={cn(
-                      'inline-flex items-center gap-1 text-[11px] whitespace-nowrap',
-                      status === 'pending' && 'text-faint',
-                      status === 'loading' && 'text-primary font-medium',
-                      status === 'done' && 'text-success',
-                      status === 'error' && 'text-destructive font-medium',
-                    )}
-                  >
-                    {status === 'loading' && (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    )}
-                    {status === 'done' && <CheckCircle2 className="h-3 w-3" />}
-                    {status === 'error' && <CircleAlert className="h-3 w-3" />}
-                    {t(stage.labelKey)}
-                  </span>
-                );
-              })}
-            </div>
+            <RailChips file={file} rail={rail} t={t} className="flex-wrap" />
 
             <div className="flex items-center gap-2">
               <Progress value={percent} className="h-1.5" />
@@ -329,6 +315,46 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
             )}
 
             <div className="mt-auto flex items-center justify-end gap-1">
+              {dockedGate && (
+                <>
+                  {dockedGate.key === 'subtitleGate' ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1 text-xs border-warning/50 text-warning hover:text-warning"
+                      onClick={() => onProofread(file)}
+                    >
+                      <Edit2 className="h-3 w-3" />
+                      {t('gate.review')}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1 text-xs border-warning/50 text-warning hover:text-warning"
+                      onClick={() => onInspectDubbing?.(file)}
+                    >
+                      <AudioLines className="h-3 w-3" />
+                      {t('gate.inspectDubbing')}
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    className="h-7 gap-1 text-xs"
+                    onClick={() =>
+                      onReleaseGate?.(
+                        file,
+                        dockedGate.key === 'subtitleGate'
+                          ? 'subtitle'
+                          : 'dubbing',
+                      )
+                    }
+                  >
+                    <Play className="h-3 w-3" />
+                    {t('gate.release')}
+                  </Button>
+                </>
+              )}
               {failed && (
                 <Button
                   variant="outline"

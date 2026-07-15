@@ -7,7 +7,7 @@ import React from 'react';
 import path from 'path';
 import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
-import { Video, FileText, X } from 'lucide-react';
+import { Video, FileText, AudioLines, X } from 'lucide-react';
 import type { VideoInfo, SubtitleInfo } from '../../../types/subtitleMerge';
 import { formatDuration } from './utils/styleUtils';
 
@@ -16,10 +16,14 @@ interface FileSelectorProps {
   subtitlePath: string | null;
   videoInfo: VideoInfo | null;
   subtitleInfo: SubtitleInfo | null;
+  /** 可选配音音轨（合成矩阵音轨维度） */
+  audioTrackPath?: string | null;
   onSelectVideo: () => void;
   onSelectSubtitle: () => void;
+  onSelectAudioTrack?: () => void;
   onClearVideo?: () => void;
   onClearSubtitle?: () => void;
+  onClearAudioTrack?: () => void;
   disabled?: boolean;
 }
 
@@ -28,10 +32,13 @@ export default function FileSelector({
   subtitlePath,
   videoInfo,
   subtitleInfo,
+  audioTrackPath = null,
   onSelectVideo,
   onSelectSubtitle,
+  onSelectAudioTrack,
   onClearVideo,
   onClearSubtitle,
+  onClearAudioTrack,
   disabled = false,
 }: FileSelectorProps) {
   const { t } = useTranslation('subtitleMerge');
@@ -120,6 +127,18 @@ export default function FileSelector({
         onClear: subtitlePath ? onClearSubtitle : undefined,
         grow: 'sm:flex-1',
       })}
+      {onSelectAudioTrack &&
+        slot({
+          filled: Boolean(audioTrackPath),
+          icon: <AudioLines className="h-3.5 w-3.5" />,
+          name: audioTrackPath ? path.basename(audioTrackPath) : null,
+          meta: audioTrackPath ? t('audioTrackFilled') : null,
+          placeholder: t('clickToSelectAudioTrack'),
+          title: audioTrackPath || undefined,
+          onClick: onSelectAudioTrack,
+          onClear: audioTrackPath ? onClearAudioTrack : undefined,
+          grow: 'sm:flex-1',
+        })}
     </div>
   );
 }

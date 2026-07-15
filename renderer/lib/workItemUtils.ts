@@ -11,13 +11,14 @@ import {
 } from 'lib/taskTypes';
 import type { WorkItem, WorkItemType } from '../../types/workItem';
 
-export type RecentStatus = 'waiting' | 'running' | 'done' | 'error';
+export type RecentStatus = 'waiting' | 'running' | 'done' | 'error' | 'review';
 
 export const STATUS_DOT: Record<RecentStatus, string> = {
   waiting: 'bg-muted-foreground/40',
   running: 'bg-primary animate-pulse',
   done: 'bg-success',
   error: 'bg-destructive',
+  review: 'bg-warning animate-pulse',
 };
 
 export const WORK_ITEM_TYPE_FILTERS: Array<'all' | WorkItemType> = [
@@ -39,23 +40,30 @@ function getProjectTypeDef(project: { taskType?: string }): TaskTypeDef {
 function getProjectStatus(project: {
   taskType?: string;
   files?: unknown[];
+  configSnapshot?: unknown;
 }): RecentStatus {
   const typeDef = getProjectTypeDef(project);
   const files: unknown[] = project?.files || [];
   if (!files.length) return 'waiting';
   let anyLoading = false;
   let anyError = false;
+  let anyReview = false;
   let allDone = true;
   for (const file of files) {
-    const stages = getFileStages(file, typeDef, undefined);
+    const stages = getFileStages(file, typeDef, project?.configSnapshot);
     if (stages.some((s) => getStageStatus(file, s.key) === 'loading')) {
       anyLoading = true;
     }
     if (hasFileError(file, stages)) anyError = true;
     if (!isFileDone(file, stages)) allDone = false;
+    const f = file as { subtitleGate?: string; dubbingGate?: string };
+    if (f?.subtitleGate === 'review' || f?.dubbingGate === 'review') {
+      anyReview = true;
+    }
   }
   if (anyLoading) return 'running';
   if (anyError) return 'error';
+  if (anyReview) return 'review';
   if (allDone) return 'done';
   return 'waiting';
 }
@@ -65,14 +73,18 @@ export function getWorkItemTarget(item: WorkItem, locale: string): string {
     return `/${locale}/proofread?workItem=${item.id}`;
   }
   if (item.type === 'dubbing') {
-    // 配音会话不持久化行状态：回开工作台并预填字幕/视频。
+    // 回开配音工作台：携 sessionId 恢复行级状态与产物（旧记录无 sessionId
+    // 时降级为路径预填重建）。
     const snapshot = (item.configSnapshot ?? {}) as {
       subtitlePath?: string;
       videoPath?: string;
+      sessionId?: string;
     };
     const params = new URLSearchParams();
     if (snapshot.subtitlePath) params.set('subtitle', snapshot.subtitlePath);
     if (snapshot.videoPath) params.set('video', snapshot.videoPath);
+    if (snapshot.sessionId) params.set('session', snapshot.sessionId);
+    params.set('workItem', item.id);
     const query = params.toString();
     return `/${locale}/dubbing${query ? `?${query}` : ''}`;
   }
@@ -118,6 +130,7 @@ export function getWorkItemStatus(item: WorkItem): RecentStatus {
   return getProjectStatus({
     taskType: item.type,
     files: item.pipelineFiles || [],
+    configSnapshot: item.configSnapshot,
   });
 }
 

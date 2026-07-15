@@ -18,6 +18,7 @@ import type {
   VideoQuality,
   EncoderMode,
 } from '../../../types/subtitleMerge';
+import type { TaskRecipe } from '../../../types/recipe';
 
 export type LogEntry = {
   timestamp: number;
@@ -168,5 +169,7 @@ export type StoreType = {
     videoQuality?: VideoQuality;
     encoderMode?: EncoderMode;
   };
+  /** 用户任务配方（内置配方为 renderer 代码常量，不落库） */
+  taskRecipes?: TaskRecipe[];
   [key: string]: any;
 };
