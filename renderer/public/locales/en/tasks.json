@@ -2,7 +2,17 @@
   "pageTitle": {
     "generate-translate": "Video → bilingual subtitles",
     "generate": "Video → original subtitles",
-    "translate": "Translate existing subtitles"
+    "translate": "Translate existing subtitles",
+    "pipelineDubCompose": "Video → dubbed final cut",
+    "pipelineCompose": "Video → subtitled final cut",
+    "pipelineDub": "Video → dubbing",
+    "pipelineDubSubtitle": "Subtitles → dubbing"
+  },
+  "snapshotBar": {
+    "fixedTip": "Created via the wizard — the configuration was locked in at creation and runs with the task. To change it, start a new task from the launchpad.",
+    "composeHard": "Burned-in subtitles",
+    "composeSoft": "Soft subtitles",
+    "composeNone": "No subtitles"
   },
   "wizard": {
     "filesTitle": "Step 1 · Add files",
@@ -214,6 +224,7 @@
     "openFolder": "Open folder",
     "retryFailed": "Retry failed",
     "allFailedTitle": "All {{failed}} files failed",
+    "someFailedTitle": "{{failed}} file(s) failed",
     "dismiss": "Dismiss"
   },
   "logs": {

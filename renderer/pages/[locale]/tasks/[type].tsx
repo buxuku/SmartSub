@@ -43,7 +43,11 @@ import {
 } from '@/components/ui/tooltip';
 import { cn, isSubtitleFile } from 'lib/utils';
 import { resolveDefaultTranslateProviderId } from 'lib/providerPanelUtils';
-import { TASK_TYPES, getTaskTypeBySlug } from 'lib/taskTypes';
+import {
+  TASK_TYPES,
+  getPipelineTitleKey,
+  getTaskTypeBySlug,
+} from 'lib/taskTypes';
 import {
   getEngineModelGroups,
   isEngineModelSelected,
@@ -58,6 +62,7 @@ import { useConfirmOrUndo } from 'hooks/useConfirmOrUndo';
 import { useHotkeys } from 'hooks/useHotkeys';
 import TaskControls from '@/components/TaskControls';
 import InlineConfigBar from '@/components/tasks/InlineConfigBar';
+import SnapshotConfigBar from '@/components/tasks/SnapshotConfigBar';
 import AdvancedSheet from '@/components/tasks/AdvancedSheet';
 import TaskRowList from '@/components/tasks/TaskRowList';
 import TaskGridList from '@/components/tasks/TaskGridList';
@@ -365,10 +370,15 @@ export default function TaskPage() {
 
   const handleRetry = useCallback(
     (file: any) => {
-      window?.ipc?.send('handleTask', { files: [file], formData, projectId });
+      // 向导任务重试携带配置快照（含 dub/compose），普通任务用全局表单
+      window?.ipc?.send('handleTask', {
+        files: [file],
+        formData: listFormData,
+        projectId,
+      });
       setTaskStatus('running');
     },
-    [formData, projectId],
+    [listFormData, projectId],
   );
 
   // ── 人工检查点：统计、放行、检查配音 ─────────────────────────────────────
@@ -433,12 +443,12 @@ export default function TaskPage() {
     (failedFiles: any[]) => {
       window?.ipc?.send('handleTask', {
         files: failedFiles,
-        formData,
+        formData: listFormData,
         projectId,
       });
       setTaskStatus('running');
     },
-    [formData, projectId],
+    [listFormData, projectId],
   );
 
   const handleImport = () => {
@@ -566,16 +576,23 @@ export default function TaskPage() {
       fileName: proofreadFile.fileName,
       selectedSource: sourceSubtitlePath,
       selectedTarget: targetSubtitlePath,
-      sourceLanguage: formData.sourceLanguage,
-      targetLanguage: formData.targetLanguage,
+      sourceLanguage: listFormData.sourceLanguage,
+      targetLanguage: listFormData.targetLanguage,
       status: 'proofreading' as const,
       finalTargetPath,
-      translateContent: formData.translateContent,
+      translateContent: listFormData.translateContent,
       proofreadDataFile: proofreadFile.proofreadDataFile,
     };
-  }, [proofreadFile, typeDef, formData]);
+  }, [proofreadFile, typeDef, listFormData]);
 
   if (!typeDef) return null;
+
+  // 向导任务标题：来自已存配方的任务显示配方名，否则按快照的实际流程
+  // （配音/成片）命名，而非固定的字幕段类型
+  const pipelineTitleKey = getPipelineTitleKey(configSnapshot, typeDef.accepts);
+  const pageTitle =
+    configSnapshot?.recipeName ||
+    t(`pageTitle.${pipelineTitleKey ?? typeDef.slug}`);
 
   if (proofreadFile && pendingFileForProofread) {
     // 检查员包壳：停靠在字幕校对点的文件叠加「放行并继续」动线（流式审片）
@@ -643,8 +660,11 @@ export default function TaskPage() {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <h1 className="text-lg font-semibold whitespace-nowrap">
-            {t(`pageTitle.${typeDef.slug}`)}
+          <h1
+            className="min-w-0 truncate text-lg font-semibold"
+            title={pageTitle}
+          >
+            {pageTitle}
           </h1>
           {editingName ? (
             <div className="flex items-center gap-1 min-w-0">
@@ -731,28 +751,41 @@ export default function TaskPage() {
             <Trash2 className="h-3.5 w-3.5" />
             {t('clearList')}
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs gap-1.5"
-            onClick={() => setAdvancedOpen(true)}
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            {t('advanced')}
-          </Button>
+          {!configSnapshot && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5"
+              onClick={() => setAdvancedOpen(true)}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              {t('advanced')}
+            </Button>
+          )}
         </div>
       </div>
 
       <div className="flex-shrink-0">
-        <InlineConfigBar
-          form={form}
-          formData={formData}
-          systemInfo={systemInfo}
-          providers={providers}
-          asrProviders={asrProviders as any}
-          typeDef={typeDef}
-          useLocalWhisper={useLocalWhisper}
-        />
+        {configSnapshot ? (
+          // 向导任务：配置随创建时快照固定，只读展示实际生效参数
+          <SnapshotConfigBar
+            snapshot={configSnapshot}
+            files={files}
+            typeDef={typeDef}
+            providers={providers}
+            asrProviders={asrProviders as any}
+          />
+        ) : (
+          <InlineConfigBar
+            form={form}
+            formData={formData}
+            systemInfo={systemInfo}
+            providers={providers}
+            asrProviders={asrProviders as any}
+            typeDef={typeDef}
+            useLocalWhisper={useLocalWhisper}
+          />
+        )}
       </div>
 
       <CompletionBanner
@@ -887,7 +920,7 @@ export default function TaskPage() {
             {files.length > 0 ? t('taskCount', { count: files.length }) : ''}
           </span>
           <TaskControls
-            formData={formData}
+            formData={listFormData}
             files={files}
             typeDef={typeDef}
             projectId={projectId}

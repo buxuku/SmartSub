@@ -381,6 +381,10 @@ export default function TaskWizard() {
   const appliedRecipeRef = useRef(false);
   const [pendingRecipeConfig, setPendingRecipeConfig] =
     useState<Partial<IFormData> | null>(null);
+  /** 已应用的用户配方名：随任务快照记录，任务页标题展示（内置配方无名） */
+  const [appliedRecipeName, setAppliedRecipeName] = useState<string | null>(
+    null,
+  );
   useEffect(() => {
     if (!recipeId || appliedRecipeRef.current) return;
     appliedRecipeRef.current = true;
@@ -398,6 +402,7 @@ export default function TaskWizard() {
       setSubtitleGateOn(prefill.subtitleGateOn);
       setDubbingGateOn(prefill.dubbingGateOn);
       if (prefill.config) setPendingRecipeConfig(prefill.config);
+      setAppliedRecipeName(recipe.name?.trim() || null);
       if (!recipe.builtin) {
         toast.success(t('wizard.recipe.applied', { name: recipe.name }));
       }
@@ -586,6 +591,8 @@ export default function TaskWizard() {
         toast.success(t('wizard.recipe.saved', { name }));
         setRecipeDialogOpen(false);
         setRecipeName('');
+        // 存完即跑的任务同样视为「来自该配方」，标题沿用配方名
+        setAppliedRecipeName(name);
       }
     } finally {
       setSavingRecipe(false);
@@ -611,6 +618,7 @@ export default function TaskWizard() {
       const payload = {
         ...formData,
         taskType,
+        ...(appliedRecipeName ? { recipeName: appliedRecipeName } : {}),
         translateProvider: translateOn ? formData?.translateProvider : '-1',
         ...(dubOn && dubEngine
           ? {

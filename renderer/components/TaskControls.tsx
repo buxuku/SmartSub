@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CircleStop, Cloud, Loader2, Pause, Play } from 'lucide-react';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
-import { cn } from 'lib/utils';
+import { cn, isSubtitleFile } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import { getFileStages, isFileDone } from './tasks/stageUtils';
@@ -90,18 +90,15 @@ const TaskControls = ({
       });
       return;
     }
+    // 向导任务的配置快照（含 dub/compose）里 '-1' 是合法的「不翻译」语义
+    const isSnapshotTask = Boolean(formData?.dub || formData?.compose);
     // 带翻译的任务必须有有效翻译服务商（'-1' 为历史「不翻译」残留值）
-    if (typeDef.hasTranslate) {
+    if (typeDef.hasTranslate && !isSnapshotTask) {
       const provider = formData?.translateProvider;
       if (!provider || provider === '-1') {
         toast.error(t('home:selectProviderFirst'));
         return;
       }
-    }
-    // 需要模型的任务必须已选模型：自动选择兜底后仍为空，说明确实没有可用模型，拦截并指引下载
-    if (typeDef.needsModel && !formData?.model) {
-      toast.error(t('home:selectModelFirst'));
-      return;
     }
     // 只派发未完成的文件（error 不算完成，可重跑；已完成文件不重做）
     const pendingFiles = files.filter(
@@ -113,8 +110,22 @@ const TaskControls = ({
       });
       return;
     }
+    // 需要模型的任务必须已选模型：自动选择兜底后仍为空，说明确实没有可用模型，
+    // 拦截并指引下载。配对模式文件自带字幕（跳过听写），不需要模型。
+    const needsTranscription = pendingFiles.some(
+      (file) =>
+        !isSubtitleFile(file?.filePath || '') && !file?.providedSubtitlePath,
+    );
+    if (typeDef.needsModel && needsTranscription && !formData?.model) {
+      toast.error(t('home:selectModelFirst'));
+      return;
+    }
     // 云端听写：音频会上传到第三方端点，首次开跑前弹确认（隐私/成本护栏）。
-    if (typeDef.needsModel && formData?.transcriptionEngine === 'cloud') {
+    if (
+      typeDef.needsModel &&
+      needsTranscription &&
+      formData?.transcriptionEngine === 'cloud'
+    ) {
       const settings = await window?.ipc?.invoke('getSettings');
       if (!settings?.cloudUploadConsent) {
         pendingCloudFilesRef.current = pendingFiles;

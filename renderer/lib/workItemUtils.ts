@@ -5,6 +5,7 @@ import {
   isFileDone,
 } from '@/components/tasks/stageUtils';
 import {
+  getPipelineTitleKey,
   getTaskTypeBySlug,
   getTaskTypeByValue,
   type TaskTypeDef,
@@ -114,7 +115,12 @@ export function getWorkItemTypeLabel(
   }
   const typeDef =
     getTaskTypeByValue(item.type) || getTaskTypeBySlug('generate-translate');
-  return tTasks(`pageTitle.${typeDef.slug}`);
+  // 向导流水线任务（快照含配音/成片）按实际流程命名，而非字幕段类型
+  const pipelineKey = getPipelineTitleKey(
+    item.configSnapshot as { dub?: unknown; compose?: unknown } | undefined,
+    typeDef.accepts,
+  );
+  return tTasks(`pageTitle.${pipelineKey ?? typeDef.slug}`);
 }
 
 export function getWorkItemStatus(item: WorkItem): RecentStatus {

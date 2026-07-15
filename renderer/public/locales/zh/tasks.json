@@ -2,7 +2,17 @@
   "pageTitle": {
     "generate-translate": "视频 → 双语字幕",
     "generate": "视频 → 原文字幕",
-    "translate": "翻译已有字幕"
+    "translate": "翻译已有字幕",
+    "pipelineDubCompose": "视频 → 配音成片",
+    "pipelineCompose": "视频 → 字幕成片",
+    "pipelineDub": "视频 → 配音",
+    "pipelineDubSubtitle": "字幕 → 配音"
+  },
+  "snapshotBar": {
+    "fixedTip": "该任务由向导创建，配置在创建时已固定随任务执行；如需调整配置，请回启动台新建任务。",
+    "composeHard": "烧录字幕",
+    "composeSoft": "软字幕",
+    "composeNone": "不带字幕"
   },
   "wizard": {
     "filesTitle": "第一步 · 放入文件",
@@ -214,6 +224,7 @@
     "openFolder": "打开文件夹",
     "retryFailed": "重试失败项",
     "allFailedTitle": "全部 {{failed}} 个文件处理失败",
+    "someFailedTitle": "{{failed}} 个文件处理失败",
     "dismiss": "关闭"
   },
   "logs": {

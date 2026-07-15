@@ -143,6 +143,8 @@ export interface PipelineGatesConfig {
 export interface IFormData {
   /** 任务类型（运行时由任务携带）：用于区分源字幕是 ASR 生成还是用户导入。 */
   taskType?: TaskProjectType;
+  /** 创建来源配方名（向导应用用户配方时随任务快照记录，任务页标题展示） */
+  recipeName?: string;
   /** 配音附加阶段（缺省不配音） */
   dub?: PipelineDubConfig;
   /** 合成附加阶段（缺省不合成；仅媒体输入任务可用） */
