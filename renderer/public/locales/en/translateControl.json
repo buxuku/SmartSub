@@ -57,7 +57,7 @@
   "ApiUrl": "API Url",
   "API Key": "API Key",
   "systemPrompt": "System Prompt",
-  "systemPromptTips": "System prompt, supports variables: <br /> ${sourceLanguage} Source language <br /> ${targetLanguage} Target language <br /> ${content} Source subtitle",
+  "systemPromptTips": "System prompt, supports variables: <br /> ${sourceLanguage} Source language <br /> ${targetLanguage} Target language <br /> ${content} Source subtitle <br /> ${glossary} Global terms matched in this batch",
   "userPromptTips": "User prompt, supports variables: <br /> ${sourceLanguage} Source language <br /> ${targetLanguage} Target language <br /> ${content} Source subtitle",
   "testTranslation": "Test Translation",
   "testSuccess": "Test Successful",

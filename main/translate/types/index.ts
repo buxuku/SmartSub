@@ -1,3 +1,5 @@
+import type { ResolvedGlossaryEntry } from '../../../types/glossary';
+
 export interface Subtitle {
   id: string;
   startEndTime: string;
@@ -16,6 +18,7 @@ export interface TranslationConfig {
   targetLanguage: string;
   provider: Provider;
   translator: TranslatorFunction;
+  glossaryEntries?: ResolvedGlossaryEntry[];
   signal?: AbortSignal;
 }
 

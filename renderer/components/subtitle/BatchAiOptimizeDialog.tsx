@@ -264,6 +264,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
         batchSize,
         maxRetries: 2,
         batchId,
+        mode: isTranscriptMode ? 'transcript' : 'translation',
       });
 
       if (result.success && result.data) {

@@ -1,0 +1,111 @@
+{
+  "list": {
+    "title": "全局词库",
+    "priorityHint": "从上到下优先",
+    "toggleAria": "启用或停用词库「{{name}}」",
+    "entryCount": "{{count}} 条词条"
+  },
+  "status": {
+    "enabled": "已启用",
+    "disabled": "已停用"
+  },
+  "actions": {
+    "addGlossary": "新建词库",
+    "editGlossary": "编辑词库",
+    "deleteGlossary": "删除词库",
+    "moveUp": "提高词库优先级",
+    "moveDown": "降低词库优先级",
+    "backToList": "返回词库列表",
+    "addEntry": "新增词条",
+    "editEntry": "编辑词条",
+    "deleteEntry": "删除词条",
+    "import": "导入",
+    "export": "导出",
+    "exportCsv": "导出 CSV",
+    "exportTxt": "导出 TXT",
+    "cancel": "取消",
+    "save": "保存",
+    "saving": "保存中…",
+    "delete": "删除"
+  },
+  "empty": {
+    "noGlossaries": "还没有词库",
+    "noGlossariesHint": "按剧集或领域建立多套词库，需要使用时打开启用开关。",
+    "selectGlossary": "选择一个词库",
+    "selectGlossaryHint": "词库是全局资源，不需要在每个任务里重复选择。",
+    "noEntries": "这个词库还没有词条",
+    "noEntriesHint": "新增词条，或从 CSV / TXT 文件批量导入。",
+    "noSearchResults": "没有匹配的词条",
+    "noSearchResultsHint": "可按原文、期望译文或备注搜索。"
+  },
+  "aiGuide": {
+    "title": "AI 翻译自动使用已启用词库",
+    "description": "每个 AI/LLM 批次只注入当前源字幕实际命中的词条；翻译任务、校对重译和翻译 AI 优化使用同一规则。多个启用词库出现相同原文时，采用列表中最靠上的词条并写入日志。"
+  },
+  "traditionalGuide": {
+    "title": "传统机翻请在厂商控制台维护术语",
+    "description": "应用内词库不会修改百度、阿里、火山、腾讯等传统机翻结果；如服务商支持术语库，请在对应控制台配置。",
+    "providers": {
+      "baidu": "百度翻译",
+      "aliyun": "阿里云",
+      "volc": "火山引擎",
+      "tencent": "腾讯云"
+    }
+  },
+  "search": {
+    "placeholder": "搜索原文、译文或备注",
+    "resultCount": "找到 {{count}} 条"
+  },
+  "fields": {
+    "source": "原文",
+    "target": "期望译文",
+    "note": "备注",
+    "actions": "操作"
+  },
+  "glossaryDialog": {
+    "addTitle": "新建词库",
+    "editTitle": "编辑词库",
+    "description": "词库顺序决定相同原文冲突时的优先级。",
+    "name": "词库名称",
+    "namePlaceholder": "例如：第一季角色名",
+    "descriptionLabel": "说明（可选）",
+    "descriptionPlaceholder": "记录适用剧集、领域或使用约定"
+  },
+  "entryDialog": {
+    "addTitle": "新增词条",
+    "editTitle": "编辑词条",
+    "description": "使用纯文本填写，不需要正则表达式。拉丁词会按单词边界匹配，避免误伤子串。",
+    "sourcePlaceholder": "例如：Alice、C++、Dr. Smith",
+    "targetPlaceholder": "例如：艾丽丝",
+    "notePlaceholder": "角色、语境或其它说明（可选）"
+  },
+  "deleteGlossary": {
+    "title": "删除整个词库？",
+    "description": "词库「{{name}}」及其中 {{count}} 条词条将被永久删除。"
+  },
+  "deleteEntry": {
+    "title": "删除词条？",
+    "description": "原文「{{source}}」将从当前词库删除。"
+  },
+  "toasts": {
+    "glossaryCreated": "词库已创建",
+    "glossaryUpdated": "词库已更新",
+    "glossaryDeleted": "词库已删除",
+    "entryCreated": "词条已新增",
+    "entryUpdated": "词条已更新",
+    "entryDeleted": "词条已删除",
+    "imported": "导入完成：新增 {{added}}，更新 {{updated}}，跳过 {{skipped}}",
+    "exported": "词库已导出"
+  },
+  "errors": {
+    "GLOSSARY_NAME_REQUIRED": "请输入词库名称",
+    "DUPLICATE_GLOSSARY_NAME": "已存在同名词库",
+    "GLOSSARY_NOT_FOUND": "词库不存在或已被删除",
+    "ENTRY_SOURCE_REQUIRED": "请输入原文",
+    "ENTRY_TARGET_REQUIRED": "请输入期望译文",
+    "DUPLICATE_ENTRY_SOURCE": "当前词库已存在相同原文",
+    "UNSUPPORTED_FILE_TYPE": "仅支持 CSV 或 TXT 文件",
+    "NO_VALID_ENTRIES": "文件中没有可导入的有效词条",
+    "generic": "操作失败，请查看日志后重试"
+  }
+}

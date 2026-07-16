@@ -11,6 +11,7 @@ import {
 import {
   AlertCircle,
   AudioLines,
+  BookOpenText,
   Captions,
   CheckCircle2,
   Clapperboard,
@@ -111,7 +112,7 @@ const NAV_TASK_ITEMS: NavItemDef[] = [
   },
 ];
 
-/** 配置组：引擎 / 翻译 / 声音 */
+/** 配置组：引擎 / 翻译 / 词库 / 声音 */
 const NAV_CONFIG_ITEMS: NavItemDef[] = [
   {
     href: 'engines',
@@ -129,6 +130,12 @@ const NAV_CONFIG_ITEMS: NavItemDef[] = [
     icon: Languages,
     isActive: (p) =>
       p.includes('/translation') || p.includes('/translateControl'),
+  },
+  {
+    href: 'glossary',
+    labelKey: 'nav.glossary',
+    icon: BookOpenText,
+    isActive: (p) => p.includes('/glossary'),
   },
   {
     href: 'ttsServices',
@@ -160,6 +167,7 @@ const PREFETCH_NAMESPACES = [
   'launchpad',
   'settings',
   'translateControl',
+  'glossary',
   'resources',
   'subtitleMerge',
   'parameters',

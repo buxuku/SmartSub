@@ -48,5 +48,6 @@ export const store = new Store<StoreType>({
     },
     mergeStylePresets: [],
     taskRecipes: [],
+    glossaries: [],
   },
 });

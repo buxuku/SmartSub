@@ -57,7 +57,7 @@
   "ApiUrl": "API 地址",
   "API Key": "API Key",
   "systemPrompt": "系统提示词",
-  "systemPromptTips": "系统提示词, 支持变量: <br /> ${sourceLanguage} 源语言 <br /> ${targetLanguage} 目标语言 <br /> ${content} 源字幕",
+  "systemPromptTips": "系统提示词, 支持变量: <br /> ${sourceLanguage} 源语言 <br /> ${targetLanguage} 目标语言 <br /> ${content} 源字幕 <br /> ${glossary} 本批命中的全局词条",
   "userPromptTips": "用户提示词, 支持变量: <br /> ${sourceLanguage} 源语言 <br /> ${targetLanguage} 目标语言 <br /> ${content} 源字幕",
   "batchSizeTip": "每次翻译的字幕数量，建议设置为 5-20 之间",
   "batchConcurrencyTip": "同时发起的翻译批次数，最多 10。默认 1 为顺序处理；调大可以提升速度，但需要服务商配额支持，并可能触发限流。",

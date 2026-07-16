@@ -1,0 +1,111 @@
+{
+  "list": {
+    "title": "Global glossaries",
+    "priorityHint": "Top wins",
+    "toggleAria": "Enable or disable glossary {{name}}",
+    "entryCount": "{{count}} entries"
+  },
+  "status": {
+    "enabled": "Enabled",
+    "disabled": "Disabled"
+  },
+  "actions": {
+    "addGlossary": "New glossary",
+    "editGlossary": "Edit glossary",
+    "deleteGlossary": "Delete glossary",
+    "moveUp": "Increase glossary priority",
+    "moveDown": "Decrease glossary priority",
+    "backToList": "Back to glossary list",
+    "addEntry": "Add entry",
+    "editEntry": "Edit entry",
+    "deleteEntry": "Delete entry",
+    "import": "Import",
+    "export": "Export",
+    "exportCsv": "Export CSV",
+    "exportTxt": "Export TXT",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…",
+    "delete": "Delete"
+  },
+  "empty": {
+    "noGlossaries": "No glossaries yet",
+    "noGlossariesHint": "Create separate glossaries for a show or domain, then enable the ones you need.",
+    "selectGlossary": "Select a glossary",
+    "selectGlossaryHint": "Glossaries are global resources, so tasks never need a separate glossary selection.",
+    "noEntries": "This glossary has no entries",
+    "noEntriesHint": "Add an entry or import a CSV / TXT file.",
+    "noSearchResults": "No matching entries",
+    "noSearchResultsHint": "Search the source, expected translation, or note."
+  },
+  "aiGuide": {
+    "title": "Enabled glossaries apply automatically to AI translation",
+    "description": "Each AI/LLM batch receives only terms matched in its source subtitles. Translation tasks, proofread retranslations, and translation AI optimization share the same rule. If enabled glossaries contain the same source, the top glossary wins and the conflict is logged."
+  },
+  "traditionalGuide": {
+    "title": "Configure terminology for machine translation at the provider",
+    "description": "Local glossaries do not modify results from traditional providers such as Baidu, Aliyun, Volcano, or Tencent. Configure a provider glossary in its console when supported.",
+    "providers": {
+      "baidu": "Baidu Translate",
+      "aliyun": "Aliyun",
+      "volc": "Volcano Engine",
+      "tencent": "Tencent Cloud"
+    }
+  },
+  "search": {
+    "placeholder": "Search source, translation, or note",
+    "resultCount": "{{count}} found"
+  },
+  "fields": {
+    "source": "Source",
+    "target": "Expected translation",
+    "note": "Note",
+    "actions": "Actions"
+  },
+  "glossaryDialog": {
+    "addTitle": "New glossary",
+    "editTitle": "Edit glossary",
+    "description": "Glossary order determines which entry wins when sources conflict.",
+    "name": "Glossary name",
+    "namePlaceholder": "For example: Season 1 characters",
+    "descriptionLabel": "Description (optional)",
+    "descriptionPlaceholder": "Record the show, domain, or usage notes"
+  },
+  "entryDialog": {
+    "addTitle": "Add entry",
+    "editTitle": "Edit entry",
+    "description": "Enter plain text—no regular expressions. Latin terms use word boundaries to avoid matching inside longer words.",
+    "sourcePlaceholder": "For example: Alice, C++, Dr. Smith",
+    "targetPlaceholder": "For example: 艾丽丝",
+    "notePlaceholder": "Character, context, or other notes (optional)"
+  },
+  "deleteGlossary": {
+    "title": "Delete this glossary?",
+    "description": "Glossary {{name}} and its {{count}} entries will be permanently deleted."
+  },
+  "deleteEntry": {
+    "title": "Delete this entry?",
+    "description": "Source term {{source}} will be removed from this glossary."
+  },
+  "toasts": {
+    "glossaryCreated": "Glossary created",
+    "glossaryUpdated": "Glossary updated",
+    "glossaryDeleted": "Glossary deleted",
+    "entryCreated": "Entry added",
+    "entryUpdated": "Entry updated",
+    "entryDeleted": "Entry deleted",
+    "imported": "Import complete: {{added}} added, {{updated}} updated, {{skipped}} skipped",
+    "exported": "Glossary exported"
+  },
+  "errors": {
+    "GLOSSARY_NAME_REQUIRED": "Enter a glossary name",
+    "DUPLICATE_GLOSSARY_NAME": "A glossary with this name already exists",
+    "GLOSSARY_NOT_FOUND": "The glossary no longer exists",
+    "ENTRY_SOURCE_REQUIRED": "Enter a source term",
+    "ENTRY_TARGET_REQUIRED": "Enter an expected translation",
+    "DUPLICATE_ENTRY_SOURCE": "This source already exists in the glossary",
+    "UNSUPPORTED_FILE_TYPE": "Only CSV and TXT files are supported",
+    "NO_VALID_ENTRIES": "The file contains no valid glossary entries",
+    "generic": "The operation failed. Check the logs and try again."
+  }
+}

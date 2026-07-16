@@ -8,7 +8,7 @@ import {
 import { store } from './store';
 import { logMessage } from './logger';
 
-const CURRENT_PROVIDER_VERSION = 19;
+const CURRENT_PROVIDER_VERSION = 20;
 
 const FREE_PROVIDER_IDS = ['autoFree', 'bingFree', 'googleFree'];
 

@@ -82,6 +82,7 @@ function collectExportData(): Record<string, any> {
     userConfig: store.get('userConfig') || {},
     settings: portableSettings,
     customParameters: store.get('customParameters') || {},
+    glossaries: store.get('glossaries') || [],
   };
 }
 
@@ -190,6 +191,9 @@ export async function importConfig(
     });
     if (data.customParameters) {
       store.set('customParameters', data.customParameters);
+    }
+    if (Array.isArray(data.glossaries)) {
+      store.set('glossaries', data.glossaries);
     }
 
     logMessage(`Config imported from ${result.filePaths[0]}`, 'info');

@@ -4,6 +4,7 @@ import { useTranslation } from 'next-i18next';
 import { useTheme } from 'next-themes';
 import {
   AudioLines,
+  BookOpenText,
   Captions,
   Clapperboard,
   Compass,
@@ -104,6 +105,7 @@ export default function CommandPalette({
     { href: 'dubbing', label: t('nav.dubbing'), icon: Mic },
     { href: 'engines', label: t('nav.engines'), icon: Cpu },
     { href: 'translation', label: t('nav.translation'), icon: Languages },
+    { href: 'glossary', label: t('nav.glossary'), icon: BookOpenText },
     { href: 'ttsServices', label: t('nav.voices'), icon: AudioLines },
     { href: 'recent-tasks', label: t('cmd.recentTasks'), icon: ScrollText },
     { href: 'settings', label: t('nav.settings'), icon: Settings },

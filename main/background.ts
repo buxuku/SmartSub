@@ -23,6 +23,7 @@ import {
 } from './helpers/workItemStore';
 import { setupWorkItemHandlers } from './helpers/workItemHandlers';
 import { setupRecipeHandlers } from './helpers/ipcRecipeHandlers';
+import { setupGlossaryHandlers } from './helpers/ipcGlossaryHandlers';
 import { setupAutoUpdater } from './helpers/updater';
 import { setupAppMenu } from './helpers/menu';
 import { setupWindowCloseBehavior, markQuitting } from './helpers/windowClose';
@@ -186,6 +187,7 @@ app.on('before-quit', (event) => {
   setupWorkItemStoreLifecycle();
   setupWorkItemHandlers();
   setupRecipeHandlers();
+  setupGlossaryHandlers(mainWindow);
   setupTaskManager();
   setupAutoUpdater(mainWindow);
   setupSubtitleMergeHandlers(mainWindow);

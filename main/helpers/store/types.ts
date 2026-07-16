@@ -20,6 +20,7 @@ import type {
   UserStylePreset,
 } from '../../../types/subtitleMerge';
 import type { TaskRecipe } from '../../../types/recipe';
+import type { Glossary } from '../../../types/glossary';
 
 export type LogEntry = {
   timestamp: number;
@@ -174,5 +175,7 @@ export type StoreType = {
   mergeStylePresets?: UserStylePreset[];
   /** 用户任务配方（内置配方为 renderer 代码常量，不落库） */
   taskRecipes?: TaskRecipe[];
+  /** 全局翻译词库；按 order 排序，所有启用词库自动供 AI 翻译/优化读取。 */
+  glossaries?: Glossary[];
   [key: string]: any;
 };

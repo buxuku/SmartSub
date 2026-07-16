@@ -85,10 +85,7 @@ export interface ValidationRule {
 }
 
 export type ParameterCategory =
-  | 'provider'
-  | 'performance'
-  | 'quality'
-  | 'experimental';
+  'provider' | 'performance' | 'quality' | 'experimental';
 
 export interface ProcessedParameters {
   headers: Record<string, string | number>;
@@ -154,7 +151,7 @@ Output:
 `,
 ];
 
-export const defaultSystemPrompt = `# Role: 资深翻译专家
+const DEFAULT_SYSTEM_PROMPT_BEFORE_GLOSSARY = `# Role: 资深翻译专家
 您是一位经验丰富的字幕翻译专家,精通\${sourceLanguage}的翻译,擅长将视频字幕译成流畅易懂的\${targetLanguage}。
 
 # Attention:
@@ -181,6 +178,16 @@ Input:
 Output:
 {\"0\": \"欢迎来到中国\", \"1\": \"中国是一个美丽的国家\"}
 `;
+
+// v3.4 及更早版本的默认提示词没有词库变量。加入历史列表后，provider v20
+// 迁移只更新仍在使用旧默认值的服务商；用户自定义 prompt 保持不变。
+HISTORICAL_DEFAULT_PROMPTS.push(DEFAULT_SYSTEM_PROMPT_BEFORE_GLOSSARY);
+
+export const defaultSystemPrompt =
+  DEFAULT_SYSTEM_PROMPT_BEFORE_GLOSSARY.replace(
+    '\n# 输出格式要求：',
+    '\n\${glossary}\n\n# 输出格式要求：',
+  );
 
 // ============================================================
 // 共享字段定义

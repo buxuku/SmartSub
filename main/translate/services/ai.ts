@@ -18,6 +18,12 @@ import {
   runTranslationBatchesInOrder,
   type TranslationBatch,
 } from '../utils/batchConcurrency';
+import {
+  buildGlossaryPromptBlock,
+  matchGlossaryEntries,
+  renderGlossarySystemPrompt,
+} from '../../glossary/core';
+import { logGlossaryMatches } from '../../helpers/glossaryManager';
 
 function getLanguageName(code: string): string {
   // 中文目标须向 AI 明确简/繁，避免「中文」歧义导致译文简繁混杂（issue #332）。
@@ -85,6 +91,16 @@ export async function handleAIBatchTranslation(
       'info',
     );
 
+    const glossaryMatches = matchGlossaryEntries(
+      config.glossaryEntries || [],
+      batch.map((item) => item.content.join('\n')),
+    );
+    const glossaryBlock = buildGlossaryPromptBlock(glossaryMatches);
+    logGlossaryMatches(
+      glossaryMatches,
+      `AI 翻译批次 ${currentBatchIndex}/${totalBatches}`,
+    );
+
     while (!batchSuccess && retryCount <= maxRetries) {
       throwIfTaskCancelled();
       try {
@@ -99,6 +115,7 @@ export async function handleAIBatchTranslation(
             sourceLanguage: sourceLanguageName,
             targetLanguage: targetLanguageName,
             content: fullContent,
+            glossary: glossaryBlock,
           },
         );
 
@@ -107,13 +124,14 @@ export async function handleAIBatchTranslation(
             '\n\n上一次响应无法解析。请只返回一个 JSON 对象，键必须是输入字幕 ID，值必须是翻译结果；不要返回 markdown、解释、注释或思考过程。';
         }
 
-        const systemPrompt = renderTemplate(
+        const systemPrompt = renderGlossarySystemPrompt(
           provider.systemPrompt || defaultSystemPrompt,
           {
             sourceLanguage: sourceLanguageName,
             targetLanguage: targetLanguageName,
             content: fullContent,
           },
+          glossaryBlock,
         );
 
         // 更新配置，保持原有的结构化输出设置

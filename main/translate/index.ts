@@ -228,6 +228,10 @@ export async function testTranslation(
       sourceLanguage,
       targetLanguage,
       translator,
+      undefined,
+      undefined,
+      0,
+      false,
     );
 
     let translation: string;

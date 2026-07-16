@@ -638,6 +638,7 @@ Only respond with the corrected text, nothing else.`;
         sourceText,
         targetText: isTranscriptMode ? '' : targetText,
         providerId: selectedProviderId || undefined,
+        mode: isTranscriptMode ? 'transcript' : 'translation',
         customPrompt:
           customPrompt.trim() ||
           (isTranscriptMode ? defaultProofreadPrompt : undefined),

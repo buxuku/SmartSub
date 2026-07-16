@@ -2,6 +2,9 @@ import path from 'path';
 import { app } from 'electron';
 import os from 'os';
 import { spawn } from 'child_process';
+import { renderTemplate } from './template';
+
+export { renderTemplate } from './template';
 
 /**
  * 敏感字段列表（小写形式，用于不区分大小写匹配）
@@ -148,16 +151,6 @@ export function sanitizeLogMessage(message: string): string {
 
   return sanitized;
 }
-
-// 将字符串转成模板字符串
-export const renderTemplate = (template, data) => {
-  let result = template;
-  for (const [key, value] of Object.entries(data)) {
-    const regex = new RegExp(`\\$\\{${key}\\}`, 'g');
-    result = result.replace(regex, value?.toString() || '');
-  }
-  return result;
-};
 
 export const isDarwin = () => os.platform() === 'darwin';
 
