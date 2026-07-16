@@ -92,7 +92,12 @@
 
 ### Requirement: ElevenLabs 服务商
 
-系统 SHALL 提供品牌型云 TTS 服务商类型 `elevenlabs`（硬单例）：凭据为必填的 xi-api-key；model_id 可配置（默认 `eleven_multilingual_v2`）；音色清单为 voice_id 列表（预填官方通用 premade 音色，提示用户可从 dashboard 复制自有/克隆音色 id）；base URL 非必填，缺省回落 `https://api.elevenlabs.io/v1`。合成 SHALL 请求 `output_format=pcm_24000` 直出裸 PCM，本地拼接 WAV 头落盘为 16-bit PCM 单声道 wav，MUST NOT 经 ffmpeg 转码（WAV 包头构造为纯函数并有单测）。能力声明 `speedControl` MUST 为 `'native'`：speed 经 `voice_settings.speed` 传递并 clamp 到保守区间 [0.7, 1.2]（超出部分由既有云端 atempo 复测分支补足）。网络类失败（连接失败/超时）的错误信息 MUST 附「该服务国内无法直连，需配置网络代理或切换其它服务商」引导；配置界面 MUST 提示免费额度（1 万字符/月）与中文按字节膨胀计费（约 3 字符/字）。
+系统 SHALL 提供品牌型云 TTS 服务商类型 `elevenlabs`（硬单例）：凭据为必填的 xi-api-key；model_id 可配置（默认 `eleven_multilingual_v2`）；音色清单支持在线拉取（`voiceListMode`，拉取账号音色）与预置名称映射（预填官方通用 premade 音色）；base URL 非必填，缺省回落 `https://api.elevenlabs.io/v1`。合成 SHALL 请求 `output_format=pcm_24000` 直出裸 PCM，本地拼接 WAV 头落盘为 16-bit PCM 单声道 wav，MUST NOT 经 ffmpeg 转码（WAV 包头构造为纯函数并有单测）。能力声明 `speedControl` MUST 为 `'native'`：speed 经 `voice_settings.speed` 传递并 clamp 到保守区间 [0.7, 1.2]（超出部分由既有云端 atempo 复测分支补足）；能力声明 SHALL 含 `clone: true`：即时克隆（IVC）产出的 `voice_id` MUST 可直接作为合成 voice 使用（与内置音色同池、无需资源切换）。网络类失败（连接失败/超时）的错误信息 MUST 附「该服务国内无法直连，需配置网络代理或切换其它服务商」引导；配置界面 MUST 提示免费额度（1 万字符/月）与中文按字节膨胀计费（约 3 字符/字）。
+
+#### Scenario: 克隆音色直接合成
+
+- **WHEN** 工作台以 IVC 克隆音色的 voice_id 发起合成
+- **THEN** 走既有 ElevenLabs 合成通道成功产出音频，无需任何额外资源头或路由
 
 #### Scenario: 裸 PCM 直接落盘
 

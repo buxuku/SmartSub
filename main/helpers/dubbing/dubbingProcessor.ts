@@ -112,6 +112,12 @@ export interface DubbingSession {
   calibration: RateCalibration;
   lastConfig?: DubbingConfig;
   workItemId?: string;
+  /**
+   * 会话数据已被删除（工作项删除联动/确认重建）。
+   * 置位后一切落盘操作变为 no-op：批量 finally / 行级节流落盘
+   * 不得把已 rmSync 的会话目录重新写回（删除↔flush 竞态防线）。
+   */
+  disposed?: boolean;
 }
 
 const sessions = new Map<string, DubbingSession>();
@@ -131,6 +137,8 @@ function toSessionMeta(session: DubbingSession): DubbingSessionMeta {
     mediaDurationMs: session.mediaDurationMs,
     updatedAt: Date.now(),
     configSnapshot: session.lastConfig,
+    // 校准随会话落盘：半成品会话重开后续行的语速预估不从零开始
+    calibration: session.calibration,
     cues: session.cues.map((c) => ({
       index: c.index,
       startMs: c.startMs,
@@ -152,11 +160,13 @@ function toSessionMeta(session: DubbingSession): DubbingSessionMeta {
 
 /** 行级状态变更后的节流落盘（批量合成中高频调用） */
 export function persistDubbingSession(session: DubbingSession): void {
+  if (session.disposed) return;
   persistSessionMeta(toSessionMeta(session));
 }
 
 /** 关键节点立即落盘（批量结束/导出后/dispose） */
 export function flushDubbingSession(session: DubbingSession): void {
+  if (session.disposed) return;
   flushSessionMeta(toSessionMeta(session));
 }
 
@@ -250,7 +260,16 @@ export function restoreDubbingSession(sessionId: string): RestoreSessionResult {
     workDir: getSessionDir(meta.sessionId),
     running: false,
     abort: null,
-    calibration: createCalibration(),
+    // 优先还原落盘校准（旧版 meta 无此字段则从零累计）
+    calibration:
+      meta.calibration &&
+      Number.isFinite(meta.calibration.totalEstimatedMs) &&
+      Number.isFinite(meta.calibration.totalMeasuredMs)
+        ? {
+            totalEstimatedMs: meta.calibration.totalEstimatedMs,
+            totalMeasuredMs: meta.calibration.totalMeasuredMs,
+          }
+        : createCalibration(),
     lastConfig: meta.configSnapshot,
     cues: meta.cues.map((persisted) => {
       const resolved = resolvePersistedCue(meta.sessionId, persisted);
@@ -303,6 +322,7 @@ export function disposeDubbingSession(
   if (hasArtifacts) {
     flushDubbingSession(session);
   } else {
+    session.disposed = true;
     deleteSessionData(id);
   }
 }
@@ -311,6 +331,9 @@ export function disposeDubbingSession(
 export function deleteDubbingSessionData(id: string): void {
   const session = sessions.get(id);
   if (session) {
+    // 先置 disposed 再 abort：进行中批量被中断后，其 finally/行级落盘
+    // 全部变 no-op，避免把刚删除的会话目录重新写回
+    session.disposed = true;
     session.abort?.abort();
     sessions.delete(id);
   }
@@ -535,6 +558,8 @@ async function synthesizeAndAlignCue(
     signal,
   );
   // 校准样本：折回 1.0x 等效时长（实测 × 综合速度）。
+  // 并发安全不变式：读旧值与写新值必须保持在同一条同步语句内（中间不得插入
+  // await），Node 单线程下即原子累加；拆开会在并行合成时丢样本。
   session.calibration = updateCalibration(
     session.calibration,
     est,

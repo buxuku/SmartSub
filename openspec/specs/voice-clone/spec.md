@@ -8,7 +8,7 @@ TBD - created by archiving change add-voice-clone. Update Purpose after archive.
 
 ### Requirement: 克隆音色实体与存储
 
-系统 SHALL 提供用户克隆音色实体 `ClonedVoice`（id `cv_<uuid>` / 名称 / 引擎判别 `zipvoice | volcengine` / 语言 / 参考音频路径与参考文本（本地引擎）/ 质检快照 / 试听样本 / 来源与创建时间），持久化于独立 store 键 `clonedVoices`；参考音频与试听样本 SHALL 落 `userData/voiceClones/<音色id>/`，删除音色 MUST 同步清理该目录。音色 SHALL 支持重命名与删除；删除后工作台引用该音色的合成 MUST 报可行动错误（提示重新选择音色），不得静默回落其它音色。
+系统 SHALL 提供用户克隆音色实体 `ClonedVoice`（id `cv_<uuid>` / 名称 / 引擎判别 `zipvoice | volcengine | elevenlabs` / 语言 / 参考音频路径与参考文本（本地引擎）/ 质检快照 / 试听样本 / 来源与创建时间），持久化于独立 store 键 `clonedVoices`；参考音频与试听样本 SHALL 落 `userData/voiceClones/<音色id>/`，删除音色 MUST 同步清理该目录。音色 SHALL 支持重命名与删除；删除后工作台引用该音色的合成 MUST 报可行动错误（提示重新选择音色），不得静默回落其它音色。
 
 #### Scenario: 创建后持久可用
 
@@ -88,6 +88,25 @@ TBD - created by archiving change add-voice-clone. Update Purpose after archive.
 - **WHEN** zipvoice 分支选区质检含噪音黄牌且用户开启本地降噪
 - **THEN** 定稿参考音频先经本地降噪再落盘，定稿质检报告以降噪后产物为准
 
+### Requirement: 麦克风录音素材入口
+
+创建向导 Step1 SHALL 提供「用麦克风录制」入口，与文件拖放/最近任务并列：进入录音面板后 SHALL 展示实时电平指示与已录时长；SHALL 按界面语言展示一段内置朗读脚本与按引擎档位的目标时长提示；录音 MUST 在 5 分钟处自动停止；停止后 SHALL 支持试听与重录，确认后录音 MUST 落盘临时目录并进入既有分析链路（与文件素材共用质检/选段/文本/创建全部后续步骤）。macOS SHALL 前置请求麦克风权限（`askForMediaAccess`），拒绝时 SHALL 展示系统设置开启指引而非静默失败；打包配置 MUST 携带 `NSMicrophoneUsageDescription`。
+
+#### Scenario: 从零录音创建音色
+
+- **WHEN** 用户无现成素材，点击「用麦克风录制」，照读脚本约 30 秒后停止并确认
+- **THEN** 录音进入分析链路，自动推荐选段与质检评分，后续步骤与文件素材完全一致
+
+#### Scenario: 权限被拒绝可自助恢复
+
+- **WHEN** macOS 用户此前拒绝过麦克风权限，再次进入录音面板
+- **THEN** 面板展示「系统设置 → 隐私与安全性 → 麦克风」开启指引，不发生无提示的录音失败
+
+#### Scenario: 超长录音自动护栏
+
+- **WHEN** 用户开始录音后离开电脑超过 5 分钟
+- **THEN** 录音在 5 分钟处自动停止并保留已录内容，不产生无限增长的后台录音
+
 ### Requirement: 参考文本获取
 
 参考文本获取 SHALL 按三级回退：字幕预填（素材来自带字幕的最近任务）→ ASR 自动转写（本地 ASR 已安装优先，其次用户已配置的云端 ASR 服务商）→ 手动输入；转写不可用 MUST 降级为手动输入并说明原因，不得阻断向导。任何来源的文本 MUST 允许用户编辑校对后再提交。
@@ -148,6 +167,49 @@ TBD - created by archiving change add-voice-clone. Update Purpose after archive.
 
 - **WHEN** 训练被服务端拒绝（speaker_id 不存在/次数上限/音频质量不达标）
 - **THEN** 音色标记失败并展示定向原因，支持更换素材或槽位后重新上传
+
+### Requirement: ElevenLabs 即时克隆引擎
+
+系统 SHALL 支持 ElevenLabs 即时克隆（IVC）作为第三条克隆引擎轨道：创建走 `POST /v1/voices/add`（`xi-api-key` 鉴权，multipart：name/files/可选 `remove_background_noise`），上传成功即返回 `voice_id` 并 MUST 立即置为可用（无训练轮询）；合成复用现有 ElevenLabs provider 通道（`voice_id` 直接作为合成音色）；创建前 MUST 校验已配置的 ElevenLabs 实例（合成 Key 即克隆 Key）。创建向导的 ElevenLabs 分支 MUST 跳过参考文本步（IVC 不需要转写）；素材时长档位按 IVC 推荐（30–120s，上限 180s）。本地删除 EL 音色时 SHALL 默认仅删除本地记录（云端资产保留、可随时取回）；删除对话框 SHALL 提供「同时删除云端音色（释放槽位）」显式勾选（默认关），勾选时才 best-effort 调用 `DELETE /v1/voices/{id}`，失败不阻断本地删除。错误 MUST 定向分类：401/403 凭据或套餐、voice_limit 槽位上限、素材质量拒绝。
+
+#### Scenario: 上传即用
+
+- **WHEN** 用户以 60 秒清晰素材走向导创建 EL 克隆音色
+- **THEN** 创建完成即为可用状态并合成试听样本，音色出现在工作台 ElevenLabs 实例的音色池
+
+#### Scenario: 槽位上限可诊断
+
+- **WHEN** 账号 IVC 槽位已满（服务端 voice_limit_reached）
+- **THEN** 报错指向「删除不用的克隆音色或升级套餐」，而非笼统失败
+
+#### Scenario: 默认删除保留云端
+
+- **WHEN** 用户删除某 EL 克隆音色且未勾选「同时删除云端音色」
+- **THEN** 仅本地记录与文件被删除，ElevenLabs 账号中的音色保留，可经「从平台取回」重新接入
+
+#### Scenario: 勾选后同步删云端
+
+- **WHEN** 用户删除时勾选「同时删除云端音色（释放槽位）」
+- **THEN** 系统调用云端删除；即使云端删除失败，本地删除仍完成且失败仅记日志
+
+### Requirement: 云端克隆音色接回
+
+系统 SHALL 提供「从平台取回」入口（「我的音色」组），把平台上已存在的云端克隆音色重新接入本地列表：ElevenLabs SHALL 拉取账号音色清单并仅展示 `category === 'cloned'` 的即时克隆音色（本地已存在的条目 MUST 标记且不可重复接回）；火山 SHALL 支持输入 S\_ 槽位 ID 并用状态接口校验存在性（ready/training 均可接回，训练次数随状态回填）。接回生成的新音色记录 MUST 标注云端实况状态、绑定对应 provider 实例，并 best-effort 合成试听样本；无本地参考音频与质检快照时管理面板 MUST 正常展示。
+
+#### Scenario: 误删后取回 EL 音色
+
+- **WHEN** 用户本地删除过某 EL 克隆音色（未勾选删云端），点击「从平台取回」并选择该音色
+- **THEN** 音色重新出现在「我的音色」并可直接配音，无需重新上传素材
+
+#### Scenario: 换机接回火山槽位
+
+- **WHEN** 用户在新设备输入已训练的 S\_ 槽位 ID
+- **THEN** 状态校验通过后音色入库（状态与训练次数按云端实况），可直接在工作台使用
+
+#### Scenario: 无效槽位可诊断
+
+- **WHEN** 用户输入不存在或无权访问的 S\_ 槽位 ID
+- **THEN** 展示状态接口的定向错误（凭据/槽位不存在），不产生本地记录
 
 ### Requirement: 克隆音色合成资源路由
 

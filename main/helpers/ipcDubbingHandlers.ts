@@ -315,11 +315,19 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
           releaseTaskPowerSaveBlocker(DUBBING_POWER_SAVE_REASON);
         }
         // 批量终态事件：页面离开后重连的渲染层靠它退出运行态
-        // （发起批量的 invoke promise 随页面卸载丢失，事件是唯一通知通道）
+        // （发起批量的 invoke promise 随页面卸载丢失，事件是唯一通知通道）。
+        // stage='done' 仅表示「批量已结束」；percent 取真实完成度，
+        // 取消/失败场景不再谎报 100%。
+        const doneCount = session.cues.filter(
+          (c) => c.status === 'done' || c.status === 'accepted',
+        ).length;
         emitProgress({
           taskId: session.id,
           stage: 'done',
-          percent: 100,
+          percent:
+            session.cues.length > 0
+              ? Math.round((doneCount / session.cues.length) * 100)
+              : 100,
         });
       }
     },

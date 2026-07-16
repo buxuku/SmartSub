@@ -58,9 +58,6 @@ import {
 import WorkItemList from '@/components/launchpad/WorkItemList';
 import WorkItemRowsSkeleton from '@/components/launchpad/WorkItemRowsSkeleton';
 import EnvReadiness, { type EnvRow } from '@/components/launchpad/EnvReadiness';
-import ContinueWork, {
-  pickContinueItem,
-} from '@/components/launchpad/ContinueWork';
 import { getWorkItemStatus, getWorkItemTarget } from 'lib/workItemUtils';
 import { isMacPlatform } from 'hooks/useHotkeys';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
@@ -111,15 +108,35 @@ const USER_RECIPE_VISUAL: RecipeVisual = {
   decor: 'text-amber-500/[0.09] dark:text-amber-400/[0.12]',
 };
 
-/** 工具行：单文件精修工作台入口（与配方卡视觉分层） */
+/**
+ * 独立工具：单文件精修工作台入口（与配方卡视觉分层）。
+ * xl 宽屏在右栏以「工具箱」面板常显；窄屏右栏沉底，回退为开始创作面板底部的工具行。
+ */
 const TOOLS: Array<{
   key: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** 工具箱面板的图标 chip 配色（沿用配方卡视觉语言，色相与配方卡错开） */
+  chip: string;
 }> = [
-  { key: 'proofread', href: 'proofread', icon: ProofreadIcon },
-  { key: 'merge', href: 'subtitleMerge', icon: MergeIcon },
-  { key: 'dubbing', href: 'dubbing', icon: DubbingIcon },
+  {
+    key: 'proofread',
+    href: 'proofread',
+    icon: ProofreadIcon,
+    chip: 'bg-gradient-to-br from-violet-500/20 via-violet-500/10 to-transparent ring-1 ring-inset ring-violet-500/25 text-violet-600 dark:text-violet-400',
+  },
+  {
+    key: 'merge',
+    href: 'subtitleMerge',
+    icon: MergeIcon,
+    chip: 'bg-gradient-to-br from-rose-500/20 via-rose-500/10 to-transparent ring-1 ring-inset ring-rose-500/25 text-rose-600 dark:text-rose-400',
+  },
+  {
+    key: 'dubbing',
+    href: 'dubbing',
+    icon: DubbingIcon,
+    chip: 'bg-gradient-to-br from-orange-500/20 via-orange-500/10 to-transparent ring-1 ring-inset ring-orange-500/25 text-orange-600 dark:text-orange-400',
+  },
 ];
 
 export default function LaunchpadPage() {
@@ -391,7 +408,6 @@ export default function LaunchpadPage() {
   const localeStr = String(locale || 'zh');
   // 列表只在面板内滚动，不撑高页面；30 条为渲染上限，防止超长列表拖慢首页
   const previewWorkItems = workItems.slice(0, 30);
-  const continueItem = pickContinueItem(workItems);
 
   const workItemStats = useMemo(() => {
     let running = 0;
@@ -660,8 +676,8 @@ export default function LaunchpadPage() {
                   </p>
                 </Link>
               </div>
-              {/* 工具行：单文件精修工作台（与配方卡分层） */}
-              <div className="flex flex-wrap items-center gap-1.5 border-t border-border px-3 py-2">
+              {/* 窄屏工具行：右栏（工具箱面板）堆叠后沉底，这里保留紧凑入口兜底可见性 */}
+              <div className="flex flex-wrap items-center gap-1.5 border-t border-border px-3 py-2 xl:hidden">
                 <span className="text-[11px] text-faint">
                   {t('tools.title')}
                 </span>
@@ -746,7 +762,8 @@ export default function LaunchpadPage() {
             </Panel>
           </div>
 
-          <div className="flex min-h-0 min-w-0 flex-col gap-2.5">
+          {/* 右栏固定三模块（环境+工具箱+上手），极矮窗口装不下时列内滚动兜底 */}
+          <div className="flex min-h-0 min-w-0 flex-col gap-2.5 xl:overflow-y-auto">
             {/* flex-none：视口锁高后右栏空间有限时，常显仪表不被压缩，剩余高度全部交给快速上手 */}
             <EnvReadiness
               className="flex-none"
@@ -754,16 +771,41 @@ export default function LaunchpadPage() {
               readyBadge={hasModels ? t('env.canWork') : null}
               rows={envRows}
             />
-            {continueItem && (
-              <ContinueWork
-                className="flex-none"
-                item={continueItem}
-                locale={localeStr}
-                t={t}
-                tLaunchpad={t}
-                tTasks={tTasks}
-              />
-            )}
+            {/* 工具箱：三个独立工具的常显入口，紧跟环境就绪（xl 专属；窄屏由左栏工具行兜底）。
+                行式布局带图标 chip + 名称 + 一句话说明，可见度与配方卡对齐但不抢「开始创作」主动线 */}
+            <Panel className="hidden flex-none xl:flex">
+              <PanelHeader title={t('tools.panelTitle')} />
+              <div className="flex flex-col py-1">
+                {TOOLS.map((tool) => {
+                  const ToolIcon = tool.icon;
+                  return (
+                    <Link
+                      key={tool.key}
+                      href={`/${localeStr}/${tool.href}`}
+                      className="group flex items-center gap-2.5 px-3 py-2 transition-colors hover:bg-accent/60"
+                    >
+                      <span
+                        className={cn(
+                          'flex h-8 w-8 flex-none items-center justify-center rounded-lg transition-transform duration-200 group-hover:scale-105',
+                          tool.chip,
+                        )}
+                      >
+                        <ToolIcon className="h-[18px] w-[18px]" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[12.5px] font-medium leading-tight">
+                          {t(`card.${tool.key}`)}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[11px] leading-tight text-muted-foreground">
+                          {t(`tools.${tool.key}Hint`)}
+                        </span>
+                      </span>
+                      <ChevronRight className="h-3.5 w-3.5 flex-none text-faint opacity-0 transition-opacity group-hover:opacity-100" />
+                    </Link>
+                  );
+                })}
+              </div>
+            </Panel>
             {/* 快速上手：右栏收尾模块，面板边框拉到列底对齐左栏；
                 行距固定顶部对齐，面板再高条目也不会被均摊拉稀 */}
             <Panel className="min-h-[150px] flex-1">

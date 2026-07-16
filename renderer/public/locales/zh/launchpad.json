@@ -15,7 +15,11 @@
     "confirmDelete": "删除"
   },
   "tools": {
-    "title": "工具"
+    "title": "工具",
+    "panelTitle": "工具箱",
+    "proofreadHint": "逐句检查修改，AI 润色",
+    "mergeHint": "把字幕烧录进画面",
+    "dubbingHint": "字幕逐条合成语音"
   },
   "hero": {
     "morning": "早上好",
@@ -50,11 +54,6 @@
     "manage": "管理",
     "detail": "详情",
     "goConfigure": "去配置"
-  },
-  "continueWork": {
-    "title": "继续上次的工作",
-    "resume": "继续处理",
-    "queue": "查看队列"
   },
   "pipeline": {
     "transcribe": "转写",

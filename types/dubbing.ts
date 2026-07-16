@@ -248,6 +248,11 @@ export interface DubbingSessionMeta {
   updatedAt: number;
   /** 最近一次使用的配音配置（恢复时回填工作台） */
   configSnapshot?: DubbingConfig;
+  /**
+   * 运行期语速校准累计（Σ预估/Σ实测）。可选：旧 session.json 无此字段，
+   * 恢复时回落零校准，不影响版本兼容。
+   */
+  calibration?: { totalEstimatedMs: number; totalMeasuredMs: number };
   cues: PersistedDubbingCue[];
 }
 

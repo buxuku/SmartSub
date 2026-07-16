@@ -15,7 +15,11 @@
     "confirmDelete": "Delete"
   },
   "tools": {
-    "title": "Tools"
+    "title": "Tools",
+    "panelTitle": "Toolbox",
+    "proofreadHint": "Review line by line, AI polish",
+    "mergeHint": "Burn subtitles into the picture",
+    "dubbingHint": "Turn subtitle lines into speech"
   },
   "hero": {
     "morning": "Good morning",
@@ -50,11 +54,6 @@
     "manage": "Manage",
     "detail": "Details",
     "goConfigure": "Set up"
-  },
-  "continueWork": {
-    "title": "Pick up where you left off",
-    "resume": "Resume",
-    "queue": "View queue"
   },
   "pipeline": {
     "transcribe": "Transcribe",

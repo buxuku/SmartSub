@@ -223,6 +223,16 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
         if (!buffer || buffer.byteLength === 0) {
           return { success: false, error: '录音数据为空，请重试' };
         }
+        // 主进程侧硬顶：录音时长上限（5 分钟）在渲染层计时器控制，
+        // 这里按 webm/opus 码率上界折算字节顶（约 64kbps × 300s ≈ 2.4MB，
+        // 放宽到 50MB 容错高码率实现），防越过渲染层约束的超大写盘。
+        const MAX_RECORDING_BYTES = 50 * 1024 * 1024;
+        if (buffer.byteLength > MAX_RECORDING_BYTES) {
+          return {
+            success: false,
+            error: '录音数据超出大小上限，请缩短录音时长后重试',
+          };
+        }
         const dir = path.join(ensureTempDir(), 'voice-clone');
         fs.mkdirSync(dir, { recursive: true });
         const dest = path.join(dir, `rec-${Date.now()}.webm`);

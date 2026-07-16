@@ -125,9 +125,13 @@ export function buildAssStyleLine(style: SubtitleStyle): string {
   // UI 在该模式下不提供阴影设置，生成端同步钳 0，保证所配即所得。
   const effectiveShadow = isBoxMode ? 0 : style.shadow;
 
+  // Style 行是逗号分隔的定长 CSV，字体名含逗号/换行会让后续字段整体错位、
+  // libass 静默错渲。ASS 无转义语法，只能剥离（字体族名本身不含这些字符）。
+  const safeFontName = style.fontName.replace(/[,\r\n]/g, ' ').trim();
+
   const fields = [
     'Default', // Name
-    style.fontName, // Fontname
+    safeFontName, // Fontname
     String(style.fontSize), // Fontsize
     primaryColour, // PrimaryColour
     '&H000000FF', // SecondaryColour（卡拉OK用，不涉及）
