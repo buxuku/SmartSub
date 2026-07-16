@@ -138,7 +138,7 @@ export default function TaskPage() {
     [files, t],
   );
 
-  useIpcCommunication(setFiles, appendFiles);
+  const { hydrateFiles } = useIpcCommunication(setFiles, appendFiles);
 
   useEffect(() => {
     const load = async () => {
@@ -218,9 +218,10 @@ export default function TaskPage() {
         }
       }
       if (cancelled) return;
-      loadedFilesRef.current = nextFiles;
       projectIdRef.current = id;
-      setFiles(nextFiles);
+      // 经 hydrateFiles 合并装载窗口内暂存的任务事件（向导起跑后立刻跳转时，
+      // 秒级阶段事件先于文件加载到达），并以实际写入的数组标记「来自加载」。
+      loadedFilesRef.current = hydrateFiles(nextFiles);
       setProjectName(name);
       setEditingName(false);
       setProjectId(id);
@@ -230,7 +231,7 @@ export default function TaskPage() {
     return () => {
       cancelled = true;
     };
-  }, [router.isReady, router.query.project, slug, typeDef]);
+  }, [router.isReady, router.query.project, slug, typeDef, hydrateFiles]);
 
   // ?autostart=1 一次性消费进 state 并从 URL 剥离:避免刷新/回退重新触发自动开始
   const [autoStartPending, setAutoStartPending] = useState(false);

@@ -24,6 +24,65 @@ function isPlainTextPath(p: string): boolean {
   return /\.txt$/i.test(p);
 }
 
+/**
+ * 带手动指派的配对：manualPairs（媒体路径 → 字幕路径）优先生效，
+ * 未指派的媒体在剩余字幕池里按同名规则自动配对——覆盖字幕名与视频名
+ * 不一致的场景（如 demo.mp4 ↔ demo_1.srt）。
+ * 手动指派做兜底校验：字幕须仍在列表中、txt 拒绝、同一字幕被多条手动
+ * 指派引用时按媒体顺序先到先得（调用方 setter 应保证唯一）。
+ */
+export function pairMediaWithSubtitlesManual<
+  M extends PairableFile,
+  S extends PairableFile,
+>(
+  mediaFiles: M[],
+  subtitleFiles: S[],
+  manualPairs: ReadonlyMap<string, string>,
+): PairingResult<M, S> {
+  const subtitleByPath = new Map(subtitleFiles.map((s) => [s.filePath, s]));
+  const manualTaken = new Set<string>();
+  const manualByMedia = new Map<string, S>();
+  const autoMedia: M[] = [];
+
+  for (const media of mediaFiles) {
+    const manualPath = manualPairs.get(media.filePath);
+    const subtitle = manualPath ? subtitleByPath.get(manualPath) : undefined;
+    if (
+      subtitle &&
+      !isPlainTextPath(subtitle.filePath) &&
+      !manualTaken.has(subtitle.filePath)
+    ) {
+      manualTaken.add(subtitle.filePath);
+      manualByMedia.set(media.filePath, subtitle);
+    } else {
+      autoMedia.push(media);
+    }
+  }
+
+  const auto = pairMediaWithSubtitles(
+    autoMedia,
+    subtitleFiles.filter((s) => !manualTaken.has(s.filePath)),
+  );
+  const autoByMedia = new Map(
+    auto.pairs.map((p) => [p.media.filePath, p.subtitle]),
+  );
+
+  const pairs: Array<{ media: M; subtitle: S }> = [];
+  const unpairedMedia: M[] = [];
+  for (const media of mediaFiles) {
+    const subtitle =
+      manualByMedia.get(media.filePath) ?? autoByMedia.get(media.filePath);
+    if (subtitle) pairs.push({ media, subtitle });
+    else unpairedMedia.push(media);
+  }
+  const taken = new Set(pairs.map((p) => p.subtitle.filePath));
+  return {
+    pairs,
+    unpairedMedia,
+    unpairedSubtitles: subtitleFiles.filter((s) => !taken.has(s.filePath)),
+  };
+}
+
 export function pairMediaWithSubtitles<
   M extends PairableFile,
   S extends PairableFile,

@@ -22,7 +22,10 @@ import {
   recipeTarget,
   recipeToWizardPrefill,
 } from '../../renderer/lib/recipes';
-import { pairMediaWithSubtitles } from '../../renderer/lib/filePairing';
+import {
+  pairMediaWithSubtitles,
+  pairMediaWithSubtitlesManual,
+} from '../../renderer/lib/filePairing';
 import type { TaskRecipe } from '../../types/recipe';
 
 let failed = 0;
@@ -319,6 +322,96 @@ const pf = (filePath: string) => ({
     [r.pairs.length, r.unpairedMedia.map((m) => m.filePath)],
     [1, ['/w/a.mkv']],
     'pair: 字幕单次占用（先到先得）',
+  );
+}
+
+// ── pairMediaWithSubtitlesManual ────────────────────────────────────────────
+
+{
+  // 名字对不上（demo.mp4 ↔ demo_1.srt）：自动配不上，手动指派后配对成功
+  const auto = pairMediaWithSubtitlesManual(
+    [pf('/v/demo.mp4')],
+    [pf('/v/demo_1.srt')],
+    new Map(),
+  );
+  eq(
+    [auto.pairs.length, auto.unpairedMedia.length],
+    [0, 1],
+    'manual: 无指派时 demo_1 不会误配 demo',
+  );
+  const r = pairMediaWithSubtitlesManual(
+    [pf('/v/demo.mp4')],
+    [pf('/v/demo_1.srt')],
+    new Map([['/v/demo.mp4', '/v/demo_1.srt']]),
+  );
+  eq(
+    [
+      r.pairs.map((p) => [p.media.fileName, p.subtitle.fileName]),
+      r.unpairedMedia.length,
+    ],
+    [[['demo', 'demo_1']], 0],
+    'manual: 手动指派兼容文件名不一致',
+  );
+}
+{
+  // 手动抢走他人自动配对的字幕：被抢的视频回退自动池（无候选则未配对）
+  const r = pairMediaWithSubtitlesManual(
+    [pf('/v/a.mp4'), pf('/v/b.mp4')],
+    [pf('/v/b.srt')],
+    new Map([['/v/a.mp4', '/v/b.srt']]),
+  );
+  eq(
+    [
+      r.pairs.map((p) => [p.media.fileName, p.subtitle.fileName]),
+      r.unpairedMedia.map((m) => m.fileName),
+    ],
+    [[['a', 'b']], ['b']],
+    'manual: 指派优先于自动同名，被抢视频转未配对',
+  );
+}
+{
+  // 未被指派的媒体照常自动配对；失效指派（字幕已移除）回退自动
+  const r = pairMediaWithSubtitlesManual(
+    [pf('/v/a.mp4'), pf('/v/b.mp4')],
+    [pf('/v/a.srt'), pf('/v/b.srt')],
+    new Map([['/v/a.mp4', '/v/gone.srt']]),
+  );
+  eq(
+    r.pairs.map((p) => [p.media.fileName, p.subtitle.fileName]),
+    [
+      ['a', 'a'],
+      ['b', 'b'],
+    ],
+    'manual: 失效指派忽略，同名自动配对兜底',
+  );
+}
+{
+  // txt 手动指派拒绝（无时间轴）；重复指派同一字幕先到先得
+  const txt = pairMediaWithSubtitlesManual(
+    [pf('/v/a.mp4')],
+    [pf('/v/x.txt')],
+    new Map([['/v/a.mp4', '/v/x.txt']]),
+  );
+  eq(
+    [txt.pairs.length, txt.unpairedSubtitles.map((s) => s.fileName)],
+    [0, ['x']],
+    'manual: txt 指派被拒绝',
+  );
+  const dup = pairMediaWithSubtitlesManual(
+    [pf('/v/a.mp4'), pf('/v/b.mp4')],
+    [pf('/v/s.srt')],
+    new Map([
+      ['/v/a.mp4', '/v/s.srt'],
+      ['/v/b.mp4', '/v/s.srt'],
+    ]),
+  );
+  eq(
+    [
+      dup.pairs.map((p) => p.media.fileName),
+      dup.unpairedMedia.map((m) => m.fileName),
+    ],
+    [['a'], ['b']],
+    'manual: 重复指派同一字幕按媒体顺序先到先得',
   );
 }
 

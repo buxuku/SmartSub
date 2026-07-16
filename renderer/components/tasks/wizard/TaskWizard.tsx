@@ -30,6 +30,7 @@ import {
   Play,
   Trash2,
   TriangleAlert,
+  Upload,
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -74,7 +75,7 @@ import {
   recipeToWizardPrefill,
   WIZARD_DROP_KEY,
 } from 'lib/recipes';
-import { pairMediaWithSubtitles } from 'lib/filePairing';
+import { pairMediaWithSubtitlesManual } from 'lib/filePairing';
 import {
   STYLE_PRESETS,
   getDefaultStyle,
@@ -137,21 +138,100 @@ export default function TaskWizard() {
         : subtitleFiles.length
           ? 'subtitle'
           : null;
+  // 手动指派的配对（媒体路径 → 字幕路径）：兼容字幕名与视频名不一致的场景，
+  // 未指派的媒体照常走同名自动配对；指派同一字幕会从其它视频行「抢走」它
+  const [manualPairs, setManualPairs] = useState<Map<string, string>>(
+    () => new Map(),
+  );
   const pairing = useMemo(
     () =>
       inputKind === 'paired'
-        ? pairMediaWithSubtitles(mediaFiles, subtitleFiles)
+        ? pairMediaWithSubtitlesManual(mediaFiles, subtitleFiles, manualPairs)
         : null,
-    [inputKind, mediaFiles, subtitleFiles],
+    [inputKind, mediaFiles, subtitleFiles, manualPairs],
   );
   const pairedSubtitleByMediaPath = useMemo(() => {
     const map = new Map<string, IFiles>();
     pairing?.pairs.forEach((p) => map.set(p.media.filePath, p.subtitle));
     return map;
   }, [pairing]);
-  const pairedSubtitlePaths = useMemo(
-    () => new Set(pairing?.pairs.map((p) => p.subtitle.filePath) ?? []),
-    [pairing],
+  /** 字幕 → 占用它的视频（下拉里给已被其它行选中的字幕加标记） */
+  const subtitleOwnerByPath = useMemo(() => {
+    const map = new Map<string, string>();
+    pairing?.pairs.forEach((p) =>
+      map.set(p.subtitle.filePath, p.media.filePath),
+    );
+    return map;
+  }, [pairing]);
+  /** 可参与配对的字幕（txt 无时间轴，烧录/配音均不可用） */
+  const pairableSubtitles = useMemo(
+    () => subtitleFiles.filter((s) => !/\.txt$/i.test(s.filePath)),
+    [subtitleFiles],
+  );
+
+  /** 删除视频行：合并行语义，连同其配对字幕一起移除（含手动指派记录） */
+  const removeMediaRow = useCallback(
+    (mediaPath: string) => {
+      const paired = pairedSubtitleByMediaPath.get(mediaPath);
+      setFiles((prev) =>
+        prev.filter(
+          (f) => f.filePath !== mediaPath && f.filePath !== paired?.filePath,
+        ),
+      );
+      setManualPairs((prev) => {
+        if (!prev.has(mediaPath)) return prev;
+        const next = new Map(prev);
+        next.delete(mediaPath);
+        return next;
+      });
+    },
+    [pairedSubtitleByMediaPath],
+  );
+
+  /** 给视频行手动指派字幕；同一字幕的旧指派让位（最后操作生效） */
+  const assignSubtitle = useCallback(
+    (mediaPath: string, subtitlePath: string) => {
+      setManualPairs((prev) => {
+        const next = new Map(prev);
+        next.forEach((subtitle, media) => {
+          if (subtitle === subtitlePath && media !== mediaPath) {
+            next.delete(media);
+          }
+        });
+        next.set(mediaPath, subtitlePath);
+        return next;
+      });
+    },
+    [],
+  );
+
+  /** 从磁盘挑字幕文件配给指定视频（文件同时进入列表，供其它行选用） */
+  const handleBrowseSubtitle = useCallback(
+    async (mediaPath: string) => {
+      const result = await window?.ipc?.invoke('selectFiles', {
+        type: 'subtitle',
+        multiple: false,
+      });
+      if (!result || result.canceled || !result.filePaths?.length) return;
+      const picked = result.filePaths[0] as string;
+      if (/\.txt$/i.test(picked)) {
+        toast.error(t('wizard.pairTxtUnsupported'));
+        return;
+      }
+      const wrapped = ((await window?.ipc?.invoke('getDroppedFiles', {
+        files: [picked],
+        taskType: 'translate',
+      })) ?? [])[0] as IFiles | undefined;
+      if (!wrapped) return;
+      // 已导入过同一文件属预期（重新指派），静默去重不提示
+      setFiles((prev) =>
+        prev.some((f) => f.filePath === wrapped.filePath)
+          ? prev
+          : [...prev, wrapped],
+      );
+      assignSubtitle(mediaPath, wrapped.filePath);
+    },
+    [assignSubtitle, t],
   );
 
   const appendFiles = useCallback(
@@ -885,78 +965,143 @@ export default function TaskWizard() {
               <p className="text-[11px] text-faint">{t('wizard.pairHint')}</p>
             </div>
           ) : (
-            <ul className="max-h-44 space-y-1 overflow-y-auto">
-              {files.map((file) => {
-                const isSub = isSubtitleFile(file.filePath);
-                // 配对模式行内状态：媒体行显示配对到的字幕 / 缺配对告警；
-                // 字幕行显示已配对 / 未匹配（将被忽略）
-                let pairBadge: React.ReactNode = null;
-                if (pairing) {
-                  if (!isSub) {
-                    const paired = pairedSubtitleByMediaPath.get(file.filePath);
-                    pairBadge = paired ? (
-                      <span
-                        className="flex min-w-0 max-w-[40%] items-center gap-1 rounded-full border border-success/30 bg-success/[0.08] px-2 py-0.5 text-[11px] text-success"
-                        title={paired.filePath}
+            <div className="max-h-80 space-y-1.5 overflow-y-auto">
+              {/* 媒体行：两列铺开（批量时一屏可见更多）；配对模式把配上的
+                  字幕合并进本行（可下拉换、可从磁盘挑） */}
+              {mediaFiles.length > 0 && (
+                <ul className="grid gap-1 sm:grid-cols-2">
+                  {mediaFiles.map((file) => {
+                    const paired = pairing
+                      ? pairedSubtitleByMediaPath.get(file.filePath)
+                      : undefined;
+                    return (
+                      <li
+                        key={file.filePath}
+                        className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-panel-2 px-2.5 py-1 text-xs"
                       >
-                        <FileText className="h-3 w-3 flex-none" />
-                        <span className="truncate">
-                          {paired.fileName}
-                          {paired.fileExtension}
+                        <Film className="h-3.5 w-3.5 flex-none text-faint" />
+                        <span
+                          className="min-w-0 flex-1 truncate"
+                          title={file.filePath}
+                        >
+                          {file.fileName}
+                          {file.fileExtension}
                         </span>
-                      </span>
-                    ) : (
-                      <span className="flex flex-none items-center gap-1 rounded-full border border-warning/40 bg-warning/[0.08] px-2 py-0.5 text-[11px] text-warning">
-                        <TriangleAlert className="h-3 w-3" />
-                        {t('wizard.pairMissing')}
-                      </span>
+                        {pairing && (
+                          <Select
+                            value={paired?.filePath ?? ''}
+                            onValueChange={(v) =>
+                              assignSubtitle(file.filePath, v)
+                            }
+                          >
+                            <SelectTrigger
+                              className={cn(
+                                'h-7 w-[200px] flex-none gap-1 px-2 text-xs',
+                                paired
+                                  ? 'border-success/40 text-success'
+                                  : 'border-warning/60 text-warning',
+                              )}
+                              title={paired?.filePath}
+                            >
+                              <FileText className="h-3 w-3 flex-none" />
+                              <SelectValue
+                                placeholder={t('wizard.pairSelectPlaceholder')}
+                              />
+                            </SelectTrigger>
+                            <SelectContent className="max-w-[420px]">
+                              {pairableSubtitles.map((sub) => {
+                                const owner = subtitleOwnerByPath.get(
+                                  sub.filePath,
+                                );
+                                const takenElsewhere =
+                                  owner != null && owner !== file.filePath;
+                                return (
+                                  <SelectItem
+                                    key={sub.filePath}
+                                    value={sub.filePath}
+                                    textValue={`${sub.fileName}${sub.fileExtension}`}
+                                  >
+                                    <span className="flex min-w-0 items-center gap-2">
+                                      <span className="truncate">
+                                        {sub.fileName}
+                                        {sub.fileExtension}
+                                      </span>
+                                      {takenElsewhere && (
+                                        <span className="flex-none text-[11px] text-muted-foreground">
+                                          {t('wizard.pairAttached')}
+                                        </span>
+                                      )}
+                                    </span>
+                                  </SelectItem>
+                                );
+                              })}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        <button
+                          type="button"
+                          aria-label={t('wizard.pairBrowse')}
+                          title={t('wizard.pairBrowse')}
+                          className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          onClick={() => handleBrowseSubtitle(file.filePath)}
+                        >
+                          <Upload className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={t('wizard.removeFile')}
+                          className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          onClick={() => removeMediaRow(file.filePath)}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </li>
                     );
-                  } else {
-                    pairBadge = pairedSubtitlePaths.has(file.filePath) ? (
-                      <span className="flex-none rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                        {t('wizard.pairAttached')}
-                      </span>
-                    ) : (
-                      <span className="flex-none rounded-full border border-warning/40 bg-warning/[0.08] px-2 py-0.5 text-[11px] text-warning">
-                        {t('wizard.pairUnmatched')}
-                      </span>
-                    );
-                  }
-                }
-                return (
-                  <li
-                    key={file.filePath}
-                    className="flex items-center gap-2 rounded-md border border-border bg-panel-2 px-2.5 py-1.5 text-xs"
-                  >
-                    {isSub ? (
-                      <FileText className="h-3.5 w-3.5 flex-none text-faint" />
-                    ) : (
-                      <Film className="h-3.5 w-3.5 flex-none text-faint" />
-                    )}
-                    <span
-                      className="min-w-0 flex-1 truncate"
-                      title={file.filePath}
-                    >
-                      {file.fileName}
-                      {file.fileExtension}
-                    </span>
-                    {pairBadge}
-                    <button
-                      type="button"
-                      aria-label={t('wizard.removeFile')}
-                      className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      onClick={() =>
-                        setFiles((prev) =>
-                          prev.filter((f) => f.filePath !== file.filePath),
-                        )
-                      }
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+                  })}
+                </ul>
+              )}
+              {/* 字幕行：纯字幕任务全部铺开；配对模式只列未被选用的（可在上方视频行选中） */}
+              {(pairing
+                ? pairing.unpairedSubtitles.length > 0
+                : inputKind === 'subtitle') && (
+                <ul className="grid gap-1 sm:grid-cols-2">
+                  {(pairing ? pairing.unpairedSubtitles : subtitleFiles).map(
+                    (file) => (
+                      <li
+                        key={file.filePath}
+                        className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-panel-2 px-2.5 py-1 text-xs"
+                      >
+                        <FileText className="h-3.5 w-3.5 flex-none text-faint" />
+                        <span
+                          className="min-w-0 flex-1 truncate"
+                          title={file.filePath}
+                        >
+                          {file.fileName}
+                          {file.fileExtension}
+                        </span>
+                        {pairing && (
+                          <span className="flex-none rounded-full border border-warning/40 bg-warning/[0.08] px-2 py-0.5 text-[11px] text-warning">
+                            {t('wizard.pairUnmatched')}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          aria-label={t('wizard.removeFile')}
+                          className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          onClick={() =>
+                            setFiles((prev) =>
+                              prev.filter((f) => f.filePath !== file.filePath),
+                            )
+                          }
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </li>
+                    ),
+                  )}
+                </ul>
+              )}
+            </div>
           )}
         </div>
       </Panel>
@@ -1378,7 +1523,10 @@ export default function TaskWizard() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setFiles([])}
+              onClick={() => {
+                setFiles([]);
+                setManualPairs(new Map());
+              }}
               className="flex-none"
             >
               <Trash2 className="h-3.5 w-3.5" />

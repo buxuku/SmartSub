@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { IFiles } from '../../types';
 
 export default function useIpcCommunication(
@@ -9,7 +9,25 @@ export default function useIpcCommunication(
   const appendFilesRef = useRef(appendFiles);
   appendFilesRef.current = appendFiles;
 
+  // 装载窗口事件缓存：向导「保存工程→派发任务→跳转任务页」后主进程立即开跑，
+  // 秒级完成的阶段事件（如音频缓存命中时提取阶段瞬时 loading→done）可能在
+  // 工程文件尚未加载进 state 时到达——此时按 uuid 找不到文件会被丢弃，且随后
+  // 的 files 持久化回写会把主进程镜像里的正确状态覆盖掉（进度永远缺一段）。
+  // 这里将找不到文件的事件按 uuid 暂存为补丁，hydrateFiles 加载时合并回放。
+  const pendingEventsRef = useRef<Map<string, Record<string, any>>>(new Map());
+
   useEffect(() => {
+    // 注意：stash 在 setFiles 更新器内调用（需要 prevFiles 判断是否命中），
+    // 补丁按 key 覆盖合并，同一事件重放（StrictMode 双调用）幂等。
+    const stashPendingEvent = (
+      uuid: string | undefined,
+      patch: Record<string, any>,
+    ) => {
+      if (!uuid) return;
+      const prev = pendingEventsRef.current.get(uuid) || {};
+      pendingEventsRef.current.set(uuid, { ...prev, ...patch });
+    };
+
     const cleanupFileSelected = window?.ipc?.on(
       'file-selected',
       (res: IFiles[]) => {
@@ -27,9 +45,16 @@ export default function useIpcCommunication(
       status: string,
     ) => {
       setFiles((prevFiles) => {
-        const updatedFiles = prevFiles.map((file) =>
-          file.uuid === res?.uuid ? { ...file, [key]: status } : file,
-        );
+        let matched = false;
+        const updatedFiles = prevFiles.map((file) => {
+          if (file.uuid !== res?.uuid) return file;
+          matched = true;
+          return { ...file, [key]: status };
+        });
+        if (!matched) {
+          stashPendingEvent(res?.uuid, { [key]: status });
+          return prevFiles;
+        }
         return updatedFiles;
       });
     };
@@ -44,8 +69,10 @@ export default function useIpcCommunication(
 
       setFiles((prevFiles) => {
         const progressKey = `${key}Progress`;
+        let matched = false;
         const updatedFiles = prevFiles.map((file) => {
           if (file.uuid === res?.uuid) {
+            matched = true;
             const currentProgress = file[progressKey] || 0;
 
             // 防止进度回退，除非是重新开始（进度为0）
@@ -64,6 +91,10 @@ export default function useIpcCommunication(
           }
           return file;
         });
+        if (!matched) {
+          stashPendingEvent(res?.uuid, { [progressKey]: normalizedProgress });
+          return prevFiles;
+        }
         return updatedFiles;
       });
     };
@@ -75,17 +106,26 @@ export default function useIpcCommunication(
     ) => {
       setFiles((prevFiles) => {
         const errorKey = `${key}Error`;
-        const updatedFiles = prevFiles.map((file) =>
-          file.uuid === res?.uuid ? { ...file, [errorKey]: errorMsg } : file,
-        );
+        let matched = false;
+        const updatedFiles = prevFiles.map((file) => {
+          if (file.uuid !== res?.uuid) return file;
+          matched = true;
+          return { ...file, [errorKey]: errorMsg };
+        });
+        if (!matched) {
+          stashPendingEvent(res?.uuid, { [errorKey]: errorMsg });
+          return prevFiles;
+        }
         return updatedFiles;
       });
     };
 
     const handleFileChange = (res: IFiles) => {
       setFiles((prevFiles) => {
+        let matched = false;
         const updatedFiles = prevFiles.map((file) => {
           if (file.uuid === res?.uuid) {
+            matched = true;
             const updatedFile = { ...file, ...res };
 
             // 状态一致性检查：如果状态变为 'done'，确保进度为100%
@@ -119,6 +159,10 @@ export default function useIpcCommunication(
           }
           return file;
         });
+        if (!matched) {
+          stashPendingEvent(res?.uuid, { ...res });
+          return prevFiles;
+        }
         return updatedFiles;
       });
     };
@@ -134,4 +178,27 @@ export default function useIpcCommunication(
       cleanups.forEach((cleanup) => cleanup?.());
     };
   }, []);
+
+  /**
+   * 用加载到的工程文件初始化 state，并合并装载窗口内暂存的任务事件补丁。
+   * 返回实际写入 state 的数组（调用方可用它标记「来自加载」以跳过持久化回写）。
+   */
+  const hydrateFiles = useCallback(
+    (loaded: IFiles[]): IFiles[] => {
+      const pending = pendingEventsRef.current;
+      pendingEventsRef.current = new Map();
+      const merged = pending.size
+        ? loaded.map((file) =>
+            pending.has(file.uuid)
+              ? { ...file, ...pending.get(file.uuid) }
+              : file,
+          )
+        : loaded;
+      setFiles(merged);
+      return merged;
+    },
+    [setFiles],
+  );
+
+  return { hydrateFiles };
 }
