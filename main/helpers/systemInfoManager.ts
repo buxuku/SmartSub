@@ -8,6 +8,7 @@ import {
 } from './modelCatalog';
 import {
   validateModelLayout,
+  validateCt2ModelSnapshot,
   CT2_REQUIRED_FILES,
   CT2_IMPORT_SNAPSHOT_REV,
 } from './modelImport';
@@ -99,17 +100,24 @@ let downloadingModels = new Set<string>();
 
 /** 可文件夹导入的引擎类型（builtin 走单文件导入，不在此列）。 */
 type FolderImportEngine =
-  | 'funasr'
-  | 'qwen'
-  | 'fireRedAsr'
-  | 'fasterWhisper'
-  | 'tts';
+  'funasr' | 'qwen' | 'fireRedAsr' | 'fasterWhisper' | 'tts';
 
 interface ImportPlan {
   /** 目标模型必需文件（相对源/目的目录），用于导入前后布局校验。 */
   requiredFiles: string[];
   /** 拷贝目的地（绝对路径）。 */
   destDir: string;
+  /** 引擎专用的额外内容校验；默认仅检查 requiredFiles。 */
+  validate?: (dir: string) => { ok: boolean; missing: string[] };
+}
+
+function validateImportLayout(
+  plan: ImportPlan,
+  dir: string,
+): { ok: boolean; missing: string[] } {
+  return plan.validate
+    ? plan.validate(dir)
+    : validateModelLayout(dir, plan.requiredFiles);
 }
 
 /**
@@ -156,6 +164,10 @@ function resolveImportPlan(
         'snapshots',
         CT2_IMPORT_SNAPSHOT_REV,
       ),
+      validate: (dir) => {
+        const result = validateCt2ModelSnapshot(dir);
+        return { ok: result.ok, missing: result.issues };
+      },
     };
   }
   if (engine === 'tts') {
@@ -613,7 +625,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       const srcDir = picked.filePaths[0];
 
       // 导入前校验布局：缺关键文件直接拒绝，不写盘
-      const pre = validateModelLayout(srcDir, plan.requiredFiles);
+      const pre = validateImportLayout(plan, srcDir);
       if (!pre.ok) {
         return {
           success: false,
@@ -638,7 +650,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       }
 
       // 导入后复校验：拷贝后目的地必须齐备
-      const post = validateModelLayout(plan.destDir, plan.requiredFiles);
+      const post = validateImportLayout(plan, plan.destDir);
       if (!post.ok) {
         return {
           success: false,

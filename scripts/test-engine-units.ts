@@ -57,11 +57,20 @@ import {
 import { QWEN_MODELS } from '../main/helpers/qwenModelCatalog';
 import { FIRERED_MODELS } from '../main/helpers/fireRedModelCatalog';
 import {
+  CT2_REQUIRED_FILES,
+  CT2_REQUIRED_CONFIG_ARRAYS,
+  inspectCt2SnapshotRoot,
   validateModelLayout,
+  validateCt2ModelSnapshot,
   resolveOverridePath,
   resolveBundledVadPath,
   SHERPA_VAD_SUBPATH,
 } from '../main/helpers/modelImport';
+import {
+  assertFileSize,
+  prepareDownloadTarget,
+  validateDownloadResponse,
+} from '../main/helpers/download/resumeIntegrity';
 import {
   buildVadConfig,
   buildRecognizerConfig,
@@ -1194,6 +1203,136 @@ eq(
   '/default/models',
   'path: whitespace -> fallback',
 );
+
+// --- CT2 模型完整性：残缺快照不算已安装，完整快照优先 ---
+{
+  const tmp = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'ct2-integrity-'));
+  const snapshots = nodePath.join(tmp, 'snapshots');
+  const incomplete = nodePath.join(snapshots, 'a-incomplete');
+  const complete = nodePath.join(snapshots, 'b-complete');
+  fs.mkdirSync(incomplete, { recursive: true });
+  fs.mkdirSync(complete, { recursive: true });
+  fs.writeFileSync(nodePath.join(incomplete, 'model.bin'), 'model');
+  fs.writeFileSync(nodePath.join(complete, 'model.bin'), 'model');
+  fs.writeFileSync(
+    nodePath.join(complete, 'config.json'),
+    JSON.stringify({
+      lang_ids: [],
+      suppress_ids: [],
+      suppress_ids_begin: [],
+    }),
+  );
+
+  eq(
+    CT2_REQUIRED_FILES,
+    ['model.bin', 'config.json'],
+    'ct2 integrity: minimum required files stay centralized',
+  );
+  eq(
+    CT2_REQUIRED_CONFIG_ARRAYS,
+    ['lang_ids', 'suppress_ids', 'suppress_ids_begin'],
+    'ct2 integrity: native config arrays stay centralized',
+  );
+  eq(
+    validateCt2ModelSnapshot(incomplete).issues,
+    ['config.json is missing'],
+    'ct2 integrity: missing config is diagnosed',
+  );
+  eq(
+    inspectCt2SnapshotRoot(snapshots).snapshotDir,
+    complete,
+    'ct2 integrity: complete snapshot wins over earlier incomplete snapshot',
+  );
+
+  fs.writeFileSync(nodePath.join(complete, 'config.json'), 'null');
+  eq(
+    validateCt2ModelSnapshot(complete).issues,
+    ['config.json is invalid'],
+    'ct2 integrity: null config is rejected before native runtime',
+  );
+  fs.writeFileSync(nodePath.join(complete, 'config.json'), '{}');
+  eq(
+    validateCt2ModelSnapshot(complete).issues,
+    [
+      'config.json.lang_ids is missing or invalid',
+      'config.json.suppress_ids is missing or invalid',
+      'config.json.suppress_ids_begin is missing or invalid',
+    ],
+    'ct2 integrity: missing native config arrays are diagnosed',
+  );
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+// --- CT2 下载恢复：最终文件按大小校验，短文件续传，错误 Range 拒绝 ---
+{
+  const tmp = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'ct2-resume-'));
+  const dest = nodePath.join(tmp, 'model.bin');
+  const partial = `${dest}.download`;
+
+  fs.writeFileSync(dest, 'abc');
+  eq(
+    prepareDownloadTarget(dest, partial, 5),
+    { complete: false, startByte: 3 },
+    'ct2 resume: short final file becomes resumable temp file',
+  );
+  eq(
+    [fs.existsSync(dest), fs.statSync(partial).size],
+    [false, 3],
+    'ct2 resume: incomplete final file is never skipped',
+  );
+
+  fs.writeFileSync(partial, 'abcdef');
+  eq(
+    prepareDownloadTarget(dest, partial, 5),
+    { complete: false, startByte: 0 },
+    'ct2 resume: oversized temp file is discarded',
+  );
+
+  fs.writeFileSync(dest, 'abcde');
+  eq(
+    prepareDownloadTarget(dest, partial, 5),
+    { complete: true, startByte: 0 },
+    'ct2 resume: exact-size final file may be skipped',
+  );
+  assertFileSize(dest, 5);
+
+  fs.writeFileSync(dest, 'abc');
+  let shortFileError = '';
+  try {
+    assertFileSize(dest, 5, 'model.bin');
+  } catch (error) {
+    shortFileError = error instanceof Error ? error.message : String(error);
+  }
+  eq(
+    shortFileError.includes('size mismatch'),
+    true,
+    'ct2 resume: early EOF cannot pass final size check',
+  );
+
+  eq(
+    validateDownloadResponse(200, undefined, 3, 5),
+    'restart',
+    'ct2 resume: ignored Range restarts from zero',
+  );
+  eq(
+    validateDownloadResponse(206, 'bytes 3-4/5', 3, 5),
+    'accept',
+    'ct2 resume: matching Content-Range is accepted',
+  );
+  let rangeError = '';
+  try {
+    validateDownloadResponse(206, 'bytes 2-4/5', 3, 5);
+  } catch (error) {
+    rangeError = error instanceof Error ? error.message : String(error);
+  }
+  eq(
+    rangeError.includes('Content-Range mismatch'),
+    true,
+    'ct2 resume: mismatched Content-Range is rejected',
+  );
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
 
 // --- modelImport: 内置共享 VAD 路径（随包内置，与引擎模型根解耦） ---
 eq(

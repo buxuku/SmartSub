@@ -8,6 +8,10 @@ import {
   hfRepoToCacheDirName,
   getCt2HfRepo,
 } from './fasterWhisperModelCatalog';
+import {
+  inspectCt2SnapshotRoot,
+  type Ct2SnapshotInspection,
+} from './modelImport';
 
 /** ggml 路径：语义不变，复用 getPath('modelsPath') */
 export function getGgmlModelsPath(): string {
@@ -61,34 +65,41 @@ export function getCt2ModelCacheDir(modelId: string): string {
   return path.join(getFasterWhisperHubDir(), toCt2CacheDirName(modelId));
 }
 
-/** 解析 UI 模型目录下的 snapshot 绝对路径（仅查 fasterWhisperModelsPath） */
-export function resolveCt2ModelSnapshotDir(modelId: string): string | null {
+/** 检查 UI 模型目录下的 snapshot，并保留残缺模型的诊断信息。 */
+export function inspectCt2ModelSnapshot(
+  modelId: string,
+): Ct2SnapshotInspection {
   const dirName = toCt2CacheDirName(modelId);
   const snapshotRoots = [
     path.join(getFasterWhisperHubDir(), dirName, 'snapshots'),
     path.join(getFasterWhisperModelsPath(), dirName, 'snapshots'),
   ];
 
+  let firstIncomplete: Ct2SnapshotInspection | null = null;
   for (const snapshotRoot of snapshotRoots) {
-    if (!fs.existsSync(snapshotRoot)) continue;
-    for (const rev of fs.readdirSync(snapshotRoot)) {
-      const snapshotDir = path.join(snapshotRoot, rev);
-      if (fs.existsSync(path.join(snapshotDir, 'model.bin'))) {
-        return snapshotDir;
-      }
+    const inspection = inspectCt2SnapshotRoot(snapshotRoot);
+    if (inspection.snapshotDir) return inspection;
+    if (!firstIncomplete && inspection.incompleteSnapshotDir) {
+      firstIncomplete = inspection;
     }
   }
-  return null;
+  return (
+    firstIncomplete || {
+      ok: false,
+      snapshotDir: null,
+      incompleteSnapshotDir: null,
+      issues: [],
+    }
+  );
 }
 
-function snapshotDirHasModelBin(snapshotRoot: string): boolean {
-  if (!fs.existsSync(snapshotRoot)) return false;
-  for (const rev of fs.readdirSync(snapshotRoot)) {
-    if (fs.existsSync(path.join(snapshotRoot, rev, 'model.bin'))) {
-      return true;
-    }
-  }
-  return false;
+/** 仅返回完整、可加载的 CT2 snapshot 绝对路径。 */
+export function resolveCt2ModelSnapshotDir(modelId: string): string | null {
+  return inspectCt2ModelSnapshot(modelId).snapshotDir;
+}
+
+function snapshotDirHasCompleteModel(snapshotRoot: string): boolean {
+  return inspectCt2SnapshotRoot(snapshotRoot).snapshotDir !== null;
 }
 
 function collectInstalledFromHubLikeDir(
@@ -100,7 +111,7 @@ function collectInstalledFromHubLikeDir(
     const mapped = cacheDirNameToModelId(entry);
     if (!mapped) continue;
     const snapshotRoot = path.join(hubDir, entry, 'snapshots');
-    if (snapshotDirHasModelBin(snapshotRoot)) {
+    if (snapshotDirHasCompleteModel(snapshotRoot)) {
       found.add(mapped);
     }
   }

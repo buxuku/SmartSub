@@ -16,7 +16,13 @@ import {
   downloadFileParallel,
   RangeNotSupportedError,
 } from './download/parallelDownloader';
+import {
+  assertFileSize,
+  prepareDownloadTarget,
+  validateDownloadResponse,
+} from './download/resumeIntegrity';
 import { getHfHost as resolveHfHost } from './config/downloadConfig';
+import { validateCt2ModelSnapshot } from './modelImport';
 
 interface HfTreeEntry {
   path: string;
@@ -275,35 +281,28 @@ export class FasterWhisperModelDownloader {
       error: undefined,
     });
 
+    // 进度和续传位置一律从磁盘实况重建，避免状态文件与残留文件不一致时
+    // 重复计数或跳过未完成文件。
     let downloadedBytes = 0;
-    let startFileIndex = 0;
-    const existingState = readDownloadState();
-    if (
-      existingState &&
-      existingState.modelId === modelId &&
-      existingState.revision === revision &&
-      existingState.source === source
-    ) {
-      downloadedBytes = existingState.downloaded;
-      startFileIndex = existingState.fileIndex;
-    }
 
     try {
-      for (let i = startFileIndex; i < plannedFiles.length; i++) {
+      for (let i = 0; i < plannedFiles.length; i++) {
         const file = plannedFiles[i];
         fs.mkdirSync(path.dirname(file.destPath), { recursive: true });
 
         const url = `${base}/${repoId}/resolve/${revision}/${file.path}`;
         const tempPath = `${file.destPath}.download`;
-        let startByte = 0;
-        if (fs.existsSync(file.destPath)) {
+        const prepared = prepareDownloadTarget(
+          file.destPath,
+          tempPath,
+          file.size,
+        );
+        if (prepared.complete) {
           downloadedBytes += file.size;
           this.updateProgress({ downloaded: downloadedBytes });
           continue;
         }
-        if (fs.existsSync(tempPath)) {
-          startByte = fs.statSync(tempPath).size;
-        }
+        const startByte = prepared.startByte;
 
         saveDownloadState({
           modelId,
@@ -337,11 +336,17 @@ export class FasterWhisperModelDownloader {
               },
               log: (message, level) => logMessage(message, level),
             });
+            assertFileSize(file.destPath, file.size, file.path);
             usedParallel = true;
           } catch (error) {
             const message =
               error instanceof Error ? error.message : String(error);
             if (message === 'Download cancelled') throw error;
+            // 并行下载可能已按服务端探测大小落盘，但仍与 Hub tree 声明不符；
+            // 回退单连接前清掉该最终文件，避免 Windows rename 冲突。
+            if (fs.existsSync(file.destPath)) {
+              fs.rmSync(file.destPath, { force: true });
+            }
             logMessage(
               `CT2 ${file.path} parallel download fallback (${message})`,
               error instanceof RangeNotSupportedError ? 'info' : 'warning',
@@ -359,10 +364,25 @@ export class FasterWhisperModelDownloader {
             totalBytes,
             file.size,
           );
+          assertFileSize(tempPath, file.size, file.path);
+          if (fs.existsSync(file.destPath)) {
+            fs.rmSync(file.destPath, { force: true });
+          }
           fs.renameSync(tempPath, file.destPath);
         }
-        downloadedBytes += file.size - startByte;
+        assertFileSize(file.destPath, file.size, file.path);
+        downloadedBytes += file.size;
         this.updateProgress({ downloaded: downloadedBytes });
+      }
+
+      for (const file of plannedFiles) {
+        assertFileSize(file.destPath, file.size, file.path);
+      }
+      const snapshotValidation = validateCt2ModelSnapshot(snapshotDir);
+      if (!snapshotValidation.ok) {
+        throw new Error(
+          `CT2 model snapshot is incomplete: ${snapshotValidation.issues.join(', ')}`,
+        );
       }
 
       saveDownloadState(null);
@@ -496,6 +516,47 @@ export class FasterWhisperModelDownloader {
           return;
         }
 
+        const contentRangeHeader = response.headers['content-range'];
+        const contentRange = Array.isArray(contentRangeHeader)
+          ? contentRangeHeader[0]
+          : contentRangeHeader;
+        let disposition: ReturnType<typeof validateDownloadResponse>;
+        try {
+          disposition = validateDownloadResponse(
+            response.statusCode,
+            contentRange,
+            startByte,
+            fileSize,
+          );
+        } catch (error) {
+          isCompleted = true;
+          clearInactivityTimer();
+          signal?.removeEventListener('abort', onAbort);
+          response.resume();
+          reject(error);
+          return;
+        }
+
+        if (disposition === 'restart') {
+          isCompleted = true;
+          clearInactivityTimer();
+          signal?.removeEventListener('abort', onAbort);
+          response.resume();
+          fs.rmSync(destPath, { force: true });
+          this.downloadFile(
+            url,
+            destPath,
+            0,
+            progressKey,
+            baseDownloaded,
+            totalBytes,
+            fileSize,
+          )
+            .then(resolve)
+            .catch(reject);
+          return;
+        }
+
         const fileStream = fs.createWriteStream(destPath, {
           flags: startByte > 0 ? 'a' : 'w',
         });
@@ -517,11 +578,24 @@ export class FasterWhisperModelDownloader {
           isCompleted = true;
           clearInactivityTimer();
           signal?.removeEventListener('abort', onAbort);
-          if (fileDownloaded < fileSize && response.statusCode === 200) {
+          try {
+            assertFileSize(destPath, fileSize);
             resolve();
-            return;
+          } catch (error) {
+            reject(error);
           }
-          resolve();
+        });
+
+        response.on('aborted', () => {
+          fileStream.destroy();
+          isCompleted = true;
+          clearInactivityTimer();
+          signal?.removeEventListener('abort', onAbort);
+          reject(
+            new Error(
+              `Download ended early: got ${fileDownloaded}, expected ${fileSize}`,
+            ),
+          );
         });
 
         fileStream.on('error', (error) => {
