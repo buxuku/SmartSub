@@ -480,6 +480,11 @@ function testConflictFingerprint(): void {
 }
 
 function testCsvImportExport(): void {
+  equal(
+    serializeGlossaryEntries([], 'csv'),
+    'source,target,note',
+    'an empty CSV export is a safe header-only import template',
+  );
   const parsed = parseGlossaryContent(
     '\uFEFFsource,target,note\r\n"Alice","艾丽丝","lead, role"\r\n"Dr. Smith","史密斯博士","line 1\nline 2"',
     'csv',
@@ -551,6 +556,20 @@ function testTxtImportExport(): void {
     parseGlossaryContent('source\ttarget\tnote\na\tb\nc\td\t', 'txt'),
     [imported('a', 'b'), imported('c', 'd', providedNote(''))],
     'TXT distinguishes a missing note cell from a trailing empty note cell',
+  );
+  equal(
+    serializeGlossaryEntries(
+      [
+        {
+          source: 'source\nline',
+          target: 'target\tvalue',
+          note: 'note\r\nvalue',
+        },
+      ],
+      'txt',
+    ),
+    'source\ttarget\tnote\nsource line\ttarget value\tnote value',
+    'TXT export replaces line breaks and tabs in every field with spaces',
   );
 }
 

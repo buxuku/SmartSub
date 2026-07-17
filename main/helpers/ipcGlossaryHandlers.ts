@@ -175,5 +175,33 @@ export function setupGlossaryHandlers(mainWindow: BrowserWindow): void {
     },
   );
 
+  ipcMain.handle('glossaries:export-template', async () => {
+    try {
+      const language = store.get('settings')?.language || 'zh';
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title:
+          language === 'zh'
+            ? '导出词库导入模板'
+            : 'Export glossary import template',
+        defaultPath: 'glossary-import-template.csv',
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+      });
+      if (result.canceled || !result.filePath) {
+        return { success: false, canceled: true };
+      }
+      const serialized = serializeGlossaryEntries([], 'csv');
+      await fs.promises.writeFile(
+        result.filePath,
+        `\uFEFF${serialized}`,
+        'utf-8',
+      );
+      logMessage(`词库 CSV 导入模板已导出：${result.filePath}`, 'info');
+      return { success: true, data: { filePath: result.filePath } };
+    } catch (error) {
+      logMessage(`词库 CSV 导入模板导出失败：${errorCode(error)}`, 'error');
+      return { success: false, error: errorCode(error) };
+    }
+  });
+
   logMessage('词库 IPC 处理函数已注册', 'info');
 }

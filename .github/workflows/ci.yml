@@ -39,6 +39,9 @@ jobs:
       - name: Unit tests (AI response parser)
         run: yarn test:translate-parser
 
+      - name: Unit tests (glossary)
+        run: yarn test:glossary
+
       - name: Unit tests (structured output fallback)
         run: yarn test:structured-output
 

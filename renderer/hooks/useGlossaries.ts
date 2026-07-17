@@ -19,8 +19,8 @@ export function useGlossaries() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const list = (await window?.ipc?.invoke('glossaries:list')) as
-        Glossary[] | undefined;
+      const list: Glossary[] | undefined =
+        await window?.ipc?.invoke('glossaries:list');
       setGlossaries(Array.isArray(list) ? list : []);
       return Array.isArray(list) ? list : [];
     } finally {
@@ -132,6 +132,14 @@ export function useGlossaries() {
     [],
   );
 
+  const exportTemplate = useCallback(
+    async () =>
+      (await window.ipc.invoke(
+        'glossaries:export-template',
+      )) as GlossaryIpcResult<{ filePath: string }>,
+    [],
+  );
+
   return {
     glossaries,
     loading,
@@ -144,5 +152,6 @@ export function useGlossaries() {
     deleteEntry,
     importEntries,
     exportEntries,
+    exportTemplate,
   };
 }

@@ -23,6 +23,7 @@
     "export": "Export",
     "exportCsv": "Export CSV",
     "exportTxt": "Export TXT",
+    "downloadCsvTemplate": "Download CSV template",
     "cancel": "Cancel",
     "save": "Save",
     "saving": "Saving…",
@@ -37,6 +38,10 @@
     "noEntriesHint": "Add an entry or import a CSV / TXT file.",
     "noSearchResults": "No matching entries",
     "noSearchResultsHint": "Search the source, expected translation, or note."
+  },
+  "format": {
+    "templateHint": "The template columns are source, target, and note; note is optional. CSV is recommended for full fidelity.",
+    "txtExportHint": "TXT replaces line breaks and tabs in source, target, and note with spaces. Use CSV to preserve them."
   },
   "aiGuide": {
     "title": "Enabled glossaries apply automatically to AI translation",
@@ -95,7 +100,8 @@
     "entryUpdated": "Entry updated",
     "entryDeleted": "Entry deleted",
     "imported": "Import complete: {{added}} added, {{updated}} updated, {{skipped}} skipped",
-    "exported": "Glossary exported"
+    "exported": "Glossary exported",
+    "templateExported": "CSV template exported"
   },
   "errors": {
     "GLOSSARY_NAME_REQUIRED": "Enter a glossary name",

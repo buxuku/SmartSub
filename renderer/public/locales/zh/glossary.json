@@ -23,6 +23,7 @@
     "export": "导出",
     "exportCsv": "导出 CSV",
     "exportTxt": "导出 TXT",
+    "downloadCsvTemplate": "下载 CSV 模板",
     "cancel": "取消",
     "save": "保存",
     "saving": "保存中…",
@@ -37,6 +38,10 @@
     "noEntriesHint": "新增词条，或从 CSV / TXT 文件批量导入。",
     "noSearchResults": "没有匹配的词条",
     "noSearchResultsHint": "可按原文、期望译文或备注搜索。"
+  },
+  "format": {
+    "templateHint": "模板列为 source、target、note，备注可选；需要完整保留字段内容时推荐使用 CSV。",
+    "txtExportHint": "TXT 会把原文、译文和备注中的换行与制表符替换为空格；需要保真请使用 CSV。"
   },
   "aiGuide": {
     "title": "AI 翻译自动使用已启用词库",
@@ -95,7 +100,8 @@
     "entryUpdated": "词条已更新",
     "entryDeleted": "词条已删除",
     "imported": "导入完成：新增 {{added}}，更新 {{updated}}，跳过 {{skipped}}",
-    "exported": "词库已导出"
+    "exported": "词库已导出",
+    "templateExported": "CSV 模板已导出"
   },
   "errors": {
     "GLOSSARY_NAME_REQUIRED": "请输入词库名称",

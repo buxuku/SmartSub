@@ -75,6 +75,7 @@ export default function GlossaryManager() {
     deleteEntry,
     importEntries,
     exportEntries,
+    exportTemplate,
   } = useGlossaries();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mobileShowPanel, setMobileShowPanel] = useState(false);
@@ -265,6 +266,21 @@ export default function GlossaryManager() {
         return;
       }
       toast.success(t('toasts.exported'));
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const handleExportTemplate = async () => {
+    setBusyAction('export-template');
+    try {
+      const result = await exportTemplate();
+      if (result.canceled) return;
+      if (!result.success) {
+        toast.error(errorText(result.error));
+        return;
+      }
+      toast.success(t('toasts.templateExported'));
     } finally {
       setBusyAction(null);
     }
@@ -465,14 +481,22 @@ export default function GlossaryManager() {
                     {t('actions.export')}
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end" className="w-72">
                   <DropdownMenuItem onClick={() => void handleExport('csv')}>
-                    <FileSpreadsheet className="mr-2 h-4 w-4" />
+                    <FileSpreadsheet className="mr-2 h-4 w-4 flex-none" />
                     {t('actions.exportCsv')}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => void handleExport('txt')}>
-                    <FileText className="mr-2 h-4 w-4" />
-                    {t('actions.exportTxt')}
+                  <DropdownMenuItem
+                    className="items-start"
+                    onClick={() => void handleExport('txt')}
+                  >
+                    <FileText className="mr-2 mt-0.5 h-4 w-4 flex-none" />
+                    <div className="min-w-0">
+                      <div>{t('actions.exportTxt')}</div>
+                      <div className="mt-0.5 whitespace-normal text-xs text-muted-foreground">
+                        {t('format.txtExportHint')}
+                      </div>
+                    </div>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -557,6 +581,27 @@ export default function GlossaryManager() {
                       ? t('empty.noSearchResultsHint')
                       : t('empty.noEntriesHint')}
                   </p>
+                  {!query && (
+                    <div className="mt-1 flex flex-col items-center gap-1">
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-7 gap-1.5 px-2"
+                        disabled={busyAction !== null}
+                        onClick={() => void handleExportTemplate()}
+                      >
+                        {busyAction === 'export-template' ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <FileSpreadsheet className="h-3.5 w-3.5" />
+                        )}
+                        {t('actions.downloadCsvTemplate')}
+                      </Button>
+                      <p className="max-w-md text-xs text-muted-foreground">
+                        {t('format.templateHint')}
+                      </p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex h-full min-w-0 flex-col">

@@ -85,7 +85,10 @@ export interface ValidationRule {
 }
 
 export type ParameterCategory =
-  'provider' | 'performance' | 'quality' | 'experimental';
+  | 'provider'
+  | 'performance'
+  | 'quality'
+  | 'experimental';
 
 export interface ProcessedParameters {
   headers: Record<string, string | number>;
