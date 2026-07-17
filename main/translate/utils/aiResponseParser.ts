@@ -8,6 +8,22 @@ import {
 
 export type AITranslationResponse = Record<string, string>;
 
+/**
+ * 锚定解析结果：单条译文 + 可选的原文回显。
+ * 回显锚定协议下模型返回 {id: {src, tr}}；旧协议 {id: 译文} 时 hasEcho=false，
+ * 调用方据此降级为「条数+空值」校验（兼容用户自定义提示词，见 design D5）。
+ */
+export interface AnchoredTranslationEntry {
+  translation: string;
+  srcEcho?: string;
+  hasEcho: boolean;
+}
+
+export type AnchoredTranslationResponse = Record<
+  string,
+  AnchoredTranslationEntry
+>;
+
 const JSON_BLOCK_REGEX = /```(?:json)?\s*([\s\S]*?)```/gi;
 const UNCLOSED_THINK_REGEX = /<think>[\s\S]*?(?=(?:```|<result|\{)|$)/gi;
 
@@ -121,6 +137,7 @@ function coerceTranslationValue(value: unknown): string | undefined {
     'translation',
     'translated',
     'target',
+    'tr',
     'text',
     'value',
   ]) {
@@ -129,6 +146,56 @@ function coerceTranslationValue(value: unknown): string | undefined {
   }
 
   return undefined;
+}
+
+function toAnchoredEntry(value: unknown): AnchoredTranslationEntry | undefined {
+  if (typeof value === 'string') {
+    return { translation: value, hasEcho: false };
+  }
+  if (value == null) {
+    return { translation: '', hasEcho: false };
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return { translation: String(value), hasEcho: false };
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) return undefined;
+
+  const nested = value as Record<string, unknown>;
+  if (typeof nested.tr === 'string') {
+    const srcEcho = typeof nested.src === 'string' ? nested.src : undefined;
+    return {
+      translation: nested.tr,
+      srcEcho,
+      hasEcho: srcEcho !== undefined,
+    };
+  }
+
+  const coerced = coerceTranslationValue(value);
+  if (coerced === undefined) return undefined;
+  return { translation: coerced, hasEcho: false };
+}
+
+function normalizeAnchoredObject(
+  parsedContent: unknown,
+): AnchoredTranslationResponse | undefined {
+  if (
+    !parsedContent ||
+    typeof parsedContent !== 'object' ||
+    Array.isArray(parsedContent)
+  ) {
+    return undefined;
+  }
+
+  const normalized: AnchoredTranslationResponse = {};
+  for (const [key, value] of Object.entries(
+    parsedContent as Record<string, unknown>,
+  )) {
+    const entry = toAnchoredEntry(value);
+    if (entry === undefined) return undefined;
+    normalized[key] = entry;
+  }
+
+  return normalized;
 }
 
 function normalizeTranslationObject(
@@ -154,16 +221,17 @@ function normalizeTranslationObject(
   return normalized;
 }
 
-export function parseAITranslationResponse(
+function parseWithNormalizer<T>(
   response: string,
-): AITranslationResponse {
+  normalize: (parsedContent: unknown) => T | undefined,
+): T {
   const candidates = collectAIJsonCandidates(response);
   const errors: string[] = [];
 
   for (const candidate of candidates) {
     try {
       const parsedContent = parseJsonWithFallbacks(candidate);
-      const normalized = normalizeTranslationObject(parsedContent);
+      const normalized = normalize(parsedContent);
       if (normalized) return normalized;
       errors.push('解析结果不是字幕翻译 JSON 对象');
     } catch (error) {
@@ -173,4 +241,20 @@ export function parseAITranslationResponse(
 
   const lastError = errors[errors.length - 1] || '未找到 JSON 内容';
   throw new Error(`无法解析AI返回的JSON内容: ${lastError}`);
+}
+
+export function parseAITranslationResponse(
+  response: string,
+): AITranslationResponse {
+  return parseWithNormalizer(response, normalizeTranslationObject);
+}
+
+/**
+ * 锚定解析：值为 {src, tr} 时保留回显供对齐校验，
+ * 纯字符串/旧嵌套形态降级为无回显条目；两种形态可混合出现。
+ */
+export function parseAIAnchoredTranslationResponse(
+  response: string,
+): AnchoredTranslationResponse {
+  return parseWithNormalizer(response, normalizeAnchoredObject);
 }

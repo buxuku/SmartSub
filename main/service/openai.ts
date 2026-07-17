@@ -207,12 +207,37 @@ function createBaseParams(text: string | string[], provider: OpenAIProvider) {
 
 /**
  * 使用JSON Schema方式调用API（支持结构化解析）；失败由共享回退链降级
+ *
+ * 传入动态批次 schema 时走原生 response_format（zod 无法表达运行时生成的
+ * 键集合，design D3）；未传时保持 zodResponseFormat 旧行为。
  */
 async function callWithJsonSchema(
   openai: OpenAI,
   baseParams: any,
   options?: TranslationRequestOptions,
 ): Promise<string | undefined> {
+  const dynamicSchema = options?.responseJsonSchema;
+  if (dynamicSchema) {
+    console.log('Using JSON Schema API with dynamic batch schema');
+    throwIfSignalCancelled(options?.signal);
+    const completion = (await openai.chat.completions.create(
+      {
+        ...baseParams,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'subtitle_translation',
+            strict: true,
+            schema: dynamicSchema,
+          },
+        },
+      },
+      { signal: options?.signal },
+    )) as OpenAI.Chat.Completions.ChatCompletion;
+    throwIfSignalCancelled(options?.signal);
+    return completion?.choices?.[0]?.message?.content?.trim();
+  }
+
   console.log('Using JSON Schema API with zod schema');
   throwIfSignalCancelled(options?.signal);
   const completion = await openai.beta.chat.completions.parse(

@@ -8,7 +8,8 @@ import {
 import { store } from './store';
 import { logMessage } from './logger';
 
-const CURRENT_PROVIDER_VERSION = 20;
+// v21：默认提示词升级为 src/tr 回显协议 + echoAnchoring 字段默认开启（openspec: ai-translation-alignment）
+const CURRENT_PROVIDER_VERSION = 21;
 
 const FREE_PROVIDER_IDS = ['autoFree', 'bingFree', 'googleFree'];
 
@@ -130,6 +131,14 @@ function migrateProviders(oldProviders: any[]): Provider[] {
               template.fields.find((f) => f.key === 'structuredOutput')
                 ?.defaultValue ||
               'json_object',
+            // v21：回显锚定默认开启；用户显式关闭过则保留
+            echoAnchoring: p.echoAnchoring !== false,
+            // v21：ollama 升级为 schema 约束解码（本地小模型条数对齐收益最大，
+            // 旧版 ollama 由运行时回退链降级）；显式 disabled 的用户保留原选择
+            ...(p.id === 'ollama' &&
+              p.structuredOutput !== 'disabled' && {
+                structuredOutput: 'json_schema',
+              }),
           }),
         }),
       );
@@ -150,6 +159,8 @@ function migrateProviders(oldProviders: any[]): Provider[] {
         ? defaultSystemPrompt
         : p.systemPrompt,
       structuredOutput: p.structuredOutput || 'json_object',
+      // v21：回显锚定默认开启；用户显式关闭过则保留
+      echoAnchoring: p.echoAnchoring !== false,
     }));
 
   // 添加缺失的内置服务商

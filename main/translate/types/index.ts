@@ -32,6 +32,12 @@ export type TranslatorFunction = (
 
 export interface TranslationRequestOptions {
   signal?: AbortSignal;
+  /**
+   * 按批次动态生成的响应 JSON Schema（design D1）。
+   * 提供时 service 层在 json_schema 模式下优先使用它（锁死批次键集合）；
+   * 未提供时沿用各 service 的静态 schema 行为（向后兼容）。
+   */
+  responseJsonSchema?: Record<string, unknown>;
 }
 
 export interface Provider {

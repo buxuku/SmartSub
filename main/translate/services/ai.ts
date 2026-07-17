@@ -10,7 +10,19 @@ import {
   throwIfSignalCancelled,
   waitForTaskDelay,
 } from '../../helpers/taskContext';
-import { parseAITranslationResponse } from '../utils/aiResponseParser';
+import {
+  parseAIAnchoredTranslationResponse,
+  type AnchoredTranslationResponse,
+} from '../utils/aiResponseParser';
+import {
+  buildRepairRequest,
+  validateAnchoredBatch,
+  REPAIR_MAX_ATTEMPTS,
+} from '../utils/alignment';
+import {
+  BATCH_SCHEMA_MAX_PROPERTIES,
+  makeBatchSchema,
+} from '../constants/schema';
 import {
   createTranslationBatches,
   normalizeBatchSize,
@@ -48,6 +60,63 @@ function getLanguageName(code: string): string {
   return lang?.name || code;
 }
 
+interface RepairEntryParams {
+  subtitle: Subtitle;
+  batch: Subtitle[];
+  accepted: Record<string, string>;
+  translator: TranslationConfig['translator'];
+  translationConfig: Record<string, any>;
+  sourceLanguage: string;
+  targetLanguage: string;
+  targetLanguageName: string;
+  signal?: AbortSignal;
+}
+
+/**
+ * 单条定点补翻（design D7）：请求构造见 alignment.buildRepairRequest，
+ * 此处负责执行与重试（最多 REPAIR_MAX_ATTEMPTS 次）。
+ */
+async function repairSubtitleEntry(
+  params: RepairEntryParams,
+): Promise<string | undefined> {
+  const { subtitle, batch, accepted, targetLanguageName } = params;
+  const { prompt: repairPrompt, schema: repairSchema } = buildRepairRequest(
+    subtitle,
+    batch,
+    accepted,
+    targetLanguageName,
+  );
+
+  for (let attempt = 0; attempt < REPAIR_MAX_ATTEMPTS; attempt++) {
+    throwIfTaskCancelled();
+    try {
+      const responseOrigin = await params.translator(
+        repairPrompt,
+        params.translationConfig,
+        params.sourceLanguage,
+        params.targetLanguage,
+        { signal: params.signal, responseJsonSchema: repairSchema },
+      );
+      throwIfSignalCancelled(params.signal);
+      const responseText = Array.isArray(responseOrigin)
+        ? responseOrigin.join('\n')
+        : responseOrigin;
+      const parsed = parseAIAnchoredTranslationResponse(responseText ?? '');
+      const translation = parsed[subtitle.id]?.translation?.trim();
+      if (translation) return translation;
+    } catch (error) {
+      if (isTaskCancelledError(error)) throw error;
+      throwIfSignalCancelled(params.signal);
+      if (isConfigurationError(error)) throw error;
+      logMessage(
+        `定点补翻条目 ${subtitle.id} 第 ${attempt + 1}/${REPAIR_MAX_ATTEMPTS} 次失败: ${error.message}`,
+        'warning',
+      );
+    }
+  }
+  return undefined;
+}
+
 export async function handleAIBatchTranslation(
   subtitles: Subtitle[],
   config: TranslationConfig,
@@ -59,10 +128,23 @@ export async function handleAIBatchTranslation(
   const { provider, sourceLanguage, targetLanguage, translator } = config;
   const sourceLanguageName = getLanguageName(sourceLanguage);
   const targetLanguageName = getLanguageName(targetLanguage);
-  const normalizedBatchSize = normalizeBatchSize(
+  // 回显锚定默认开启（design D4）：模型逐条回显原文，用于检测合并/滑移错位。
+  const echoEnabled = provider.echoAnchoring !== false;
+  const requestedBatchSize = normalizeBatchSize(
     batchSize,
     DEFAULT_BATCH_SIZE.AI,
   );
+  // schema 属性数上限保护（design D8）：超限自动拆小，规避渠道 schema 复杂度限制。
+  const normalizedBatchSize = Math.min(
+    requestedBatchSize,
+    BATCH_SCHEMA_MAX_PROPERTIES,
+  );
+  if (normalizedBatchSize < requestedBatchSize) {
+    logMessage(
+      `批量大小 ${requestedBatchSize} 超过 schema 上限，已自动降为 ${normalizedBatchSize}`,
+      'warning',
+    );
+  }
   const batches = createTranslationBatches(subtitles, normalizedBatchSize);
   const totalBatches = batches.length;
   const batchConcurrency = resolveBatchConcurrency(
@@ -104,6 +186,9 @@ export async function handleAIBatchTranslation(
       glossarySelection.omittedCount,
     );
 
+    // 「大面积错位 → 整批重试一次」独立于 maxRetries（design D7）
+    let alignmentRetryUsed = false;
+
     while (!batchSuccess && retryCount <= maxRetries) {
       throwIfTaskCancelled();
       try {
@@ -121,9 +206,10 @@ export async function handleAIBatchTranslation(
           },
         );
 
-        if (retryCount > 0) {
-          translationContent +=
-            '\n\n上一次响应无法解析。请只返回一个 JSON 对象，键必须是输入字幕 ID，值必须是翻译结果；不要返回 markdown、解释、注释或思考过程。';
+        if (retryCount > 0 || alignmentRetryUsed) {
+          translationContent += echoEnabled
+            ? '\n\n上一次响应存在错位或无法解析。请只返回一个 JSON 对象：键必须与输入字幕 ID 完全一致，每个键的值是 {"src": ..., "tr": ...}。注意：src 必须逐字复制输入中该 ID 对应的原文（保持原语言，绝对不能填译文），tr 才是译文；禁止合并或拆分条目，不要返回 markdown、解释或思考过程。'
+            : '\n\n上一次响应无法解析。请只返回一个 JSON 对象，键必须是输入字幕 ID，值必须是翻译结果；不要返回 markdown、解释、注释或思考过程。';
         }
 
         const systemPrompt = renderGlossarySystemPrompt(
@@ -145,6 +231,12 @@ export async function handleAIBatchTranslation(
           useJsonMode: provider.useJsonMode !== false,
         };
 
+        // 动态批次 schema（design D1/D2）：json_schema 渠道在解码层面锁死键集合
+        const batchSchema = makeBatchSchema(
+          batch.map((item) => item.id),
+          { echo: echoEnabled },
+        );
+
         logMessage(
           `AI translate batch ${currentBatchIndex}/${totalBatches} (尝试 ${retryCount + 1}/${maxRetries + 1}): \n ${translationContent}`,
           'info',
@@ -154,63 +246,107 @@ export async function handleAIBatchTranslation(
           translationConfig,
           sourceLanguage,
           targetLanguage,
-          { signal: config.signal },
+          { signal: config.signal, responseJsonSchema: batchSchema },
         );
         throwIfSignalCancelled(config.signal);
         const responseText = Array.isArray(responseOrigin)
           ? responseOrigin.join('\n')
           : responseOrigin;
         logMessage(`AI response: \n ${responseText}`, 'info');
-        const parsedContent = parseAITranslationResponse(responseText);
 
-        // 检查解析结果是否有效
-        if (parsedContent) {
-          const parsedKeys = Object.keys(parsedContent);
-          const parsedValues = Object.values(parsedContent);
-
-          // 校验返回条数是否与请求一致：
-          // 若数量不一致（例如请求 50 条只回 40 条），按数组索引兜底会让译文与
-          // 时间轴错位，因此视为本批次失败并触发重试，避免产生错位结果（issue #308）。
-          if (parsedKeys.length !== batch.length) {
-            throw new Error(
-              `翻译返回条数与请求不一致：请求 ${batch.length} 条，返回 ${parsedKeys.length} 条`,
-            );
-          }
-
-          const missingIds = batch
-            .filter((subtitle) => parsedContent[subtitle.id] === undefined)
-            .map((subtitle) => subtitle.id);
-          if (missingIds.length > 0) {
-            logMessage(
-              `翻译返回 ID 与请求不完全一致，将按返回顺序兜底匹配，缺失 ID: ${missingIds.join(', ')}`,
-              'warning',
-            );
-          }
-
-          logMessage(`JSON parsing successful`, 'info');
-
-          batchResults = batch.map((subtitle, index) => ({
-            id: subtitle.id,
-            startEndTime: subtitle.startEndTime,
-            sourceContent: subtitle.content.join('\n'),
-            // 优先使用ID匹配；数量已校验一致，按索引兜底是安全的
-            targetContent:
-              parsedContent[subtitle.id] !== undefined
-                ? parsedContent[subtitle.id]
-                : (parsedValues[index] ?? ''),
-          }));
-
-          batchSuccess = true;
-
+        // 解析失败视同全量错位：享受一次对齐整批重试，之后走逐条补翻兜底
+        let parsedContent: AnchoredTranslationResponse;
+        try {
+          parsedContent = parseAIAnchoredTranslationResponse(responseText);
+        } catch (parseError) {
           logMessage(
-            `批次 ${currentBatchIndex}/${totalBatches} 翻译成功`,
+            `批次 ${currentBatchIndex}/${totalBatches} 响应解析失败: ${parseError.message}`,
+            'warning',
+          );
+          parsedContent = {};
+        }
+
+        const validation = validateAnchoredBatch(
+          parsedContent,
+          batch,
+          echoEnabled,
+        );
+
+        if (validation.echoChecked > 0) {
+          logMessage(
+            `批次 ${currentBatchIndex}/${totalBatches} 回显校验 ${validation.echoChecked}/${batch.length} 条，检出待修复 ${validation.flagged.length} 条`,
             'info',
           );
-        } else {
-          throw new Error(
-            'Invalid response format: Failed to parse JSON structure',
+        }
+
+        // 大面积错位（>1/3）→ 整批重试一次（不消耗 maxRetries 次数）
+        if (
+          validation.flagged.length > Math.ceil(batch.length / 3) &&
+          !alignmentRetryUsed
+        ) {
+          alignmentRetryUsed = true;
+          logMessage(
+            `批次 ${currentBatchIndex}/${totalBatches} 错位/缺失 ${validation.flagged.length}/${batch.length} 条超过阈值，整批重试一次`,
+            'warning',
+          );
+          continue;
+        }
+
+        // 个别错位/空值 → 单条定点补翻（design D7）
+        if (validation.flagged.length > 0) {
+          logMessage(
+            `批次 ${currentBatchIndex}/${totalBatches} 对 ${validation.flagged.length} 条错位/空值条目定点补翻: ${validation.flagged.join(', ')}`,
+            'warning',
+          );
+          for (const flaggedId of validation.flagged) {
+            const subtitle = batch.find((item) => item.id === flaggedId);
+            if (!subtitle) continue;
+            const repaired = await repairSubtitleEntry({
+              subtitle,
+              batch,
+              accepted: validation.accepted,
+              translator,
+              translationConfig,
+              sourceLanguage,
+              targetLanguage,
+              targetLanguageName,
+              signal: config.signal,
+            });
+            if (repaired !== undefined) {
+              validation.accepted[flaggedId] = repaired;
+            }
+          }
+        }
+
+        // 补翻后仍失败的条目单独标记，不再整批报废（design D7）
+        const unresolved = batch.filter(
+          (subtitle) =>
+            subtitle.content.join('\n').trim() &&
+            validation.accepted[subtitle.id] === undefined,
+        );
+        if (unresolved.length > 0) {
+          logMessage(
+            `批次 ${currentBatchIndex}/${totalBatches} 有 ${unresolved.length} 条补翻失败，单独标记: ${unresolved.map((s) => s.id).join(', ')}`,
+            'error',
           );
         }
+
+        batchResults = batch.map((subtitle) => ({
+          id: subtitle.id,
+          startEndTime: subtitle.startEndTime,
+          sourceContent: subtitle.content.join('\n'),
+          targetContent:
+            validation.accepted[subtitle.id] !== undefined
+              ? validation.accepted[subtitle.id]
+              : '[翻译失败: 对齐校验与定点补翻均未成功]',
+        }));
+
+        batchSuccess = true;
+
+        logMessage(
+          `批次 ${currentBatchIndex}/${totalBatches} 翻译完成（回显校验 ${validation.echoChecked} 条，补翻 ${validation.flagged.length} 条，失败 ${unresolved.length} 条）`,
+          'info',
+        );
       } catch (error) {
         if (isTaskCancelledError(error)) throw error;
         throwIfSignalCancelled(config.signal);

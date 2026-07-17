@@ -27,14 +27,18 @@ type AzureOpenAIProvider = {
 function buildResponseFormat(
   mode: StructuredOutputMode,
   apiVersion: string,
+  responseJsonSchema?: Record<string, unknown>,
 ): Record<string, any> | undefined {
   if (parseFloat(apiVersion) < 2023.12) return undefined;
   if (mode === 'json_schema') {
+    // 优先使用按批次动态生成的 schema（锁死键集合，design D1/D2）
+    const schema = responseJsonSchema ?? TRANSLATION_JSON_SCHEMA;
     return {
       type: 'json_schema',
       json_schema: {
         name: 'subtitle_translation',
-        schema: TRANSLATION_JSON_SCHEMA,
+        ...(responseJsonSchema ? { strict: true } : {}),
+        schema,
       },
     };
   }
@@ -94,7 +98,11 @@ export async function translateWithAzureOpenAI(
           error,
         ),
       attempt: (mode) => {
-        const responseFormat = buildResponseFormat(mode, apiVersion);
+        const responseFormat = buildResponseFormat(
+          mode,
+          apiVersion,
+          options?.responseJsonSchema,
+        );
         const requestParams = responseFormat
           ? { ...baseParams, response_format: responseFormat }
           : baseParams;

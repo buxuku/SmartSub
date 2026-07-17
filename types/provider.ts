@@ -182,18 +182,65 @@ Output:
 {\"0\": \"欢迎来到中国\", \"1\": \"中国是一个美丽的国家\"}
 `;
 
-// v3.4 及更早版本的默认提示词没有词库变量。provider v20 迁移只更新仍在
-// 使用旧默认值的服务商；用户自定义 prompt 保持不变。
-export const HISTORICAL_DEFAULT_PROMPTS: string[] = [
-  ...HISTORICAL_DEFAULT_PROMPTS_BEFORE_GLOSSARY,
-  DEFAULT_SYSTEM_PROMPT_BEFORE_GLOSSARY,
-];
-
-export const defaultSystemPrompt =
+/** v20 时代的默认提示词（含词库变量、无回显协议），迁移判定用 */
+const DEFAULT_SYSTEM_PROMPT_BEFORE_ECHO =
   DEFAULT_SYSTEM_PROMPT_BEFORE_GLOSSARY.replace(
     '\n# 输出格式要求：',
     '\n\${glossary}\n\n# 输出格式要求：',
   );
+
+// v3.4 及更早版本的默认提示词没有词库变量（provider v20 迁移）；
+// v20 的默认提示词没有 src/tr 回显协议（provider v21 迁移）。
+// 迁移只更新仍在使用旧默认值的服务商；用户自定义 prompt 保持不变。
+export const HISTORICAL_DEFAULT_PROMPTS: string[] = [
+  ...HISTORICAL_DEFAULT_PROMPTS_BEFORE_GLOSSARY,
+  DEFAULT_SYSTEM_PROMPT_BEFORE_GLOSSARY,
+  DEFAULT_SYSTEM_PROMPT_BEFORE_ECHO,
+];
+
+/**
+ * 当前默认系统提示词：回显锚定协议（design D4/D9）。
+ * 模型对每条字幕返回 {src: 原文回显, tr: 译文}，回显用于检测合并/滑移错位；
+ * 配合按批次动态生成的 JSON Schema 在解码层面锁死条数。
+ */
+export const defaultSystemPrompt = `# Role: 资深翻译专家
+您是一位经验丰富的字幕翻译专家,精通\${sourceLanguage}的翻译,擅长将视频字幕译成流畅易懂的\${targetLanguage}。
+
+# Attention:
+在整个翻译过程中，您需要注意以下几点：
+
+1. 保持每条字幕的独立性和完整性，严禁合并或拆分条目。
+2. 使用口语化的\${targetLanguage}，避免过于书面化的表达，以符合字幕的特点。
+3. 适当使用标点符号，如逗号、句号，甚至省略号，来增强语气和节奏感。
+4. 确保专业术语的准确性，并且在上下文中保持一致性。
+
+\${glossary}
+
+# 输出格式要求：
+1. 输入是一个 JSON 对象，键是字幕 ID，值是该条字幕的原文。
+2. 您必须返回一个 JSON 对象，键与输入完全一致（相同的 ID，相同的数量）。
+3. 每个键的值是一个包含两个字段的对象：
+   - "src"：逐字复制该条字幕的原文，不做任何修改。
+   - "tr"：该条字幕的\${targetLanguage}译文。
+4. 每条译文只对应该条原文：即使句子跨越多条字幕，也严禁把相邻条目合并翻译或移动内容。
+5. 不要添加任何额外的文本、注释或解释，只返回纯JSON，且不能有语法错误。
+
+最后，您需要检查整个翻译是否流畅，是否有语法错误，以及是否忠实于原文意思。特别是要注意译文与原文之间的差异，比如英语中常用被动语态，而中文则更多使用主动语态，所以在翻译时可能会做一些调整，以适应\${targetLanguage}的表达习惯。
+
+# Examples
+
+Input:
+{"0": "Welcome to China", "1": "China is a beautiful country"}
+
+Output:
+{"0": {"src": "Welcome to China", "tr": "欢迎来到中国"}, "1": {"src": "China is a beautiful country", "tr": "中国是一个美丽的国家"}}
+`;
+
+/** 提示词是否包含 src/tr 回显协议约定（UI 用于提示自定义提示词用户更新，design D5） */
+export function promptSupportsEchoAnchoring(prompt?: string): boolean {
+  if (!prompt) return true; // 空值走默认提示词，天然支持
+  return prompt.includes('"src"') && prompt.includes('"tr"');
+}
 
 // ============================================================
 // 共享字段定义
@@ -263,6 +310,16 @@ const structuredOutputField = (
   tips: 'structuredOutputTips',
 });
 
+/** 回显锚定开关（design D4）：默认开启，可关闭以节省输出 token。 */
+const FIELD_ECHO_ANCHORING: ProviderField = {
+  key: 'echoAnchoring',
+  label: 'echoAnchoring',
+  type: 'switch',
+  required: false,
+  defaultValue: true,
+  tips: 'echoAnchoringTips',
+};
+
 const aiCommonFields = (overrides?: {
   batchSize?: number;
   batchSizeTips?: string;
@@ -271,6 +328,7 @@ const aiCommonFields = (overrides?: {
   FIELD_SYSTEM_PROMPT,
   FIELD_USER_PROMPT,
   structuredOutputField(overrides?.structuredOutput),
+  FIELD_ECHO_ANCHORING,
   batchSizeField(overrides?.batchSize, overrides?.batchSizeTips),
   FIELD_BATCH_CONCURRENCY,
   FIELD_REQUEST_INTERVAL,
@@ -673,7 +731,9 @@ export const PROVIDER_TYPES: ProviderType[] = [
         placeholder: 'selectModel',
         options: [],
       },
-      ...aiCommonFields({ batchSize: 10 }),
+      // ollama ≥0.5 支持 schema 约束解码，是本地小模型条数对齐的最大收益点；
+      // 旧版本由运行时回退链自动降级（openspec: ai-translation-alignment）
+      ...aiCommonFields({ batchSize: 10, structuredOutput: 'json_schema' }),
     ],
   },
   {

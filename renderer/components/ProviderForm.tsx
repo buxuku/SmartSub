@@ -14,7 +14,7 @@ import {
   Plus,
   X,
 } from 'lucide-react';
-import { ProviderField } from '../../types';
+import { ProviderField, promptSupportsEchoAnchoring } from '../../types';
 import { useTranslation } from 'next-i18next';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -506,6 +506,13 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
     }
   };
 
+  // 自定义提示词缺少 src/tr 回显协议时提示更新：
+  // 旧协议仍可翻译（解析器优雅降级），但享受不到错位检测保护（design D5）
+  const showEchoPromptHint = (field: ProviderField) =>
+    field.key === 'systemPrompt' &&
+    values.echoAnchoring !== false &&
+    !promptSupportsEchoAnchoring(String(values[field.key] ?? ''));
+
   const renderFieldBlock = (field: ProviderField) => (
     <div key={field.key} className="space-y-2">
       <label className="text-sm font-medium">
@@ -513,6 +520,11 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
         {field.required && <span className="text-destructive">*</span>}
       </label>
       {renderField(field)}
+      {showEchoPromptHint(field) && (
+        <p className="text-xs text-amber-600 dark:text-amber-500">
+          {t('echoPromptOutdatedHint')}
+        </p>
+      )}
       {field.tips && (
         <p
           className="text-xs text-muted-foreground"

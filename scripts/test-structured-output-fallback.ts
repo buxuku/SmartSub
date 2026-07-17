@@ -6,6 +6,10 @@ import {
   type StructuredOutputMode,
 } from '../main/service/structuredOutputFallback';
 import { TaskCancelledError } from '../main/helpers/taskContext';
+import {
+  BATCH_SCHEMA_MAX_PROPERTIES,
+  makeBatchSchema,
+} from '../main/translate/constants/schema';
 
 let passed = 0;
 let failed = 0;
@@ -163,6 +167,44 @@ async function run(): Promise<void> {
     }
     eq((error as Error)?.message, 'boom', 'tail: disabled failure rethrown');
     eq(tried, ['disabled'], 'tail: no further modes after disabled');
+  }
+
+  // 动态批次 schema 工厂（design D2）
+  {
+    const echoSchema = makeBatchSchema(['1', '2', '3']) as any;
+    eq(
+      Object.keys(echoSchema.properties),
+      ['1', '2', '3'],
+      'batch-schema: one property per subtitle id',
+    );
+    eq(echoSchema.required, ['1', '2', '3'], 'batch-schema: all ids required');
+    eq(
+      echoSchema.additionalProperties,
+      false,
+      'batch-schema: no additional properties',
+    );
+    eq(
+      echoSchema.properties['1'].required,
+      ['src', 'tr'],
+      'batch-schema: echo entries require src and tr',
+    );
+    eq(
+      echoSchema.properties['1'].additionalProperties,
+      false,
+      'batch-schema: echo entries closed',
+    );
+
+    const plainSchema = makeBatchSchema(['7'], { echo: false }) as any;
+    eq(
+      plainSchema.properties['7'].type,
+      'string',
+      'batch-schema: non-echo entries are plain strings',
+    );
+    eq(
+      BATCH_SCHEMA_MAX_PROPERTIES,
+      100,
+      'batch-schema: property cap constant exposed',
+    );
   }
 
   console.log(
