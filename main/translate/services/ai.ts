@@ -22,6 +22,7 @@ import {
   buildGlossaryPromptBlock,
   matchGlossaryEntries,
   renderGlossarySystemPrompt,
+  selectGlossaryPromptEntries,
 } from '../../glossary/core';
 import { logGlossaryMatches } from '../../helpers/glossaryManager';
 
@@ -95,10 +96,12 @@ export async function handleAIBatchTranslation(
       config.glossaryEntries || [],
       batch.map((item) => item.content.join('\n')),
     );
-    const glossaryBlock = buildGlossaryPromptBlock(glossaryMatches);
+    const glossarySelection = selectGlossaryPromptEntries(glossaryMatches);
+    const glossaryBlock = buildGlossaryPromptBlock(glossarySelection.included);
     logGlossaryMatches(
-      glossaryMatches,
+      glossarySelection.included,
       `AI 翻译批次 ${currentBatchIndex}/${totalBatches}`,
+      glossarySelection.omittedCount,
     );
 
     while (!batchSuccess && retryCount <= maxRetries) {
@@ -115,7 +118,6 @@ export async function handleAIBatchTranslation(
             sourceLanguage: sourceLanguageName,
             targetLanguage: targetLanguageName,
             content: fullContent,
-            glossary: glossaryBlock,
           },
         );
 

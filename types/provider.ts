@@ -121,7 +121,7 @@ export const TENCENT_DEFAULT_REQUEST_INTERVAL_SECONDS = 0.25;
  * 历史版本的默认系统提示词，用于迁移时判断用户是否修改过
  * 每次修改 defaultSystemPrompt 时，将旧版本追加到此数组末尾
  */
-export const HISTORICAL_DEFAULT_PROMPTS: string[] = [
+const HISTORICAL_DEFAULT_PROMPTS_BEFORE_GLOSSARY: string[] = [
   `# Role: 资深翻译专家
 您是一位经验丰富的字幕翻译专家,精通\${targetLanguage}的翻译,擅长将视频字幕译成流畅易懂的\${targetLanguage}。
 
@@ -179,9 +179,12 @@ Output:
 {\"0\": \"欢迎来到中国\", \"1\": \"中国是一个美丽的国家\"}
 `;
 
-// v3.4 及更早版本的默认提示词没有词库变量。加入历史列表后，provider v20
-// 迁移只更新仍在使用旧默认值的服务商；用户自定义 prompt 保持不变。
-HISTORICAL_DEFAULT_PROMPTS.push(DEFAULT_SYSTEM_PROMPT_BEFORE_GLOSSARY);
+// v3.4 及更早版本的默认提示词没有词库变量。provider v20 迁移只更新仍在
+// 使用旧默认值的服务商；用户自定义 prompt 保持不变。
+export const HISTORICAL_DEFAULT_PROMPTS: string[] = [
+  ...HISTORICAL_DEFAULT_PROMPTS_BEFORE_GLOSSARY,
+  DEFAULT_SYSTEM_PROMPT_BEFORE_GLOSSARY,
+];
 
 export const defaultSystemPrompt =
   DEFAULT_SYSTEM_PROMPT_BEFORE_GLOSSARY.replace(

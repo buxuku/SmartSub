@@ -27,7 +27,10 @@ import {
 } from '../../service';
 import { DEFAULT_BATCH_SIZE } from '../constants';
 import { getTaskSignal } from '../../helpers/taskContext';
-import { getActiveGlossaryResolution } from '../../helpers/glossaryManager';
+import {
+  getActiveGlossaryResolution,
+  logGlossaryConflicts,
+} from '../../helpers/glossaryManager';
 
 /** autoFree 默认回退链：Bing 免费 → Google 免费 → DeepLX */
 export const DEFAULT_FREE_FALLBACK_CHAIN = ['bingFree', 'googleFree', 'deeplx'];
@@ -67,10 +70,12 @@ export async function translateWithProvider(
   maxRetries: number = 0,
   useGlossary: boolean = true,
 ): Promise<TranslationResult[] | string[]> {
-  const glossaryEntries =
-    provider.isAi && useGlossary
-      ? getActiveGlossaryResolution().entries
-      : undefined;
+  const glossaryResolution =
+    provider.isAi && useGlossary ? getActiveGlossaryResolution() : undefined;
+  if (glossaryResolution) {
+    logGlossaryConflicts(glossaryResolution.conflicts, 'AI 翻译');
+  }
+  const glossaryEntries = glossaryResolution?.entries;
   const config = {
     provider,
     sourceLanguage,

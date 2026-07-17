@@ -17,6 +17,8 @@ export const GLOSSARY_LIMITS = {
   note: 1000,
 } as const;
 
+export const MAX_GLOSSARY_PROMPT_ENTRIES = 100;
+
 // Keep this compatible with the project's legacy TypeScript target. The range
 // covers ASCII plus Latin-1/Extended characters without requiring Unicode
 // property escapes, which TypeScript only permits when targeting ES6+.
@@ -163,6 +165,30 @@ export function resolveEnabledGlossaryEntries(
   return { entries, conflicts };
 }
 
+/** 单条优化用稳定指纹去重；冲突消失后返回空串，恢复时会重新记录。 */
+export function glossaryConflictFingerprint(
+  conflicts: GlossaryConflict[],
+): string {
+  if (!conflicts.length) return '';
+  return JSON.stringify(
+    conflicts.map(({ source, kept, ignored }) => [
+      glossarySourceKey(source),
+      kept.glossaryId,
+      kept.glossaryName,
+      kept.id,
+      kept.glossaryOrder,
+      kept.entryOrder,
+      kept.target,
+      ignored.glossaryId,
+      ignored.glossaryName,
+      ignored.id,
+      ignored.glossaryOrder,
+      ignored.entryOrder,
+      ignored.target,
+    ]),
+  );
+}
+
 function isLatinWordChar(char: string | undefined): boolean {
   return !!char && LATIN_WORD_CHAR.test(char);
 }
@@ -224,6 +250,22 @@ export function matchGlossaryEntries(
       normalizedTextContainsGlossarySource(text, needle),
     );
   });
+}
+
+export interface GlossaryPromptSelection {
+  included: ResolvedGlossaryEntry[];
+  omittedCount: number;
+}
+
+/** 按已有词库优先级选取 prompt 词条，并显式报告省略数量。 */
+export function selectGlossaryPromptEntries(
+  matches: ResolvedGlossaryEntry[],
+): GlossaryPromptSelection {
+  const included = matches.slice(0, MAX_GLOSSARY_PROMPT_ENTRIES);
+  return {
+    included,
+    omittedCount: Math.max(0, matches.length - included.length),
+  };
 }
 
 export type GlossaryImportMerge =

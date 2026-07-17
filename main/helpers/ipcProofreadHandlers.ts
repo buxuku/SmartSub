@@ -49,16 +49,20 @@ import {
 } from './taskContext';
 import {
   buildGlossaryPromptBlock,
+  glossaryConflictFingerprint,
   injectGlossaryPromptBlock,
   matchGlossaryEntries,
+  selectGlossaryPromptEntries,
 } from '../glossary/core';
 import {
   getActiveGlossaryResolution,
+  logGlossaryConflicts,
   logGlossaryMatches,
 } from './glossaryManager';
 
 // 校对批量操作（批量 AI 优化 / 重翻失败）取消注册表
 const batchAbortControllers = new Map<string, AbortController>();
+const singleOptimizeConflictFingerprints = new WeakMap<object, string>();
 
 /**
  * 设置字幕校对相关的 IPC 处理器
@@ -481,7 +485,7 @@ export function setupProofreadHandlers(): void {
   ipcMain.handle(
     'optimizeSubtitle',
     async (
-      _event,
+      event,
       {
         sourceText,
         targetText,
@@ -546,14 +550,34 @@ export function setupProofreadHandlers(): void {
         // 获取源语言和目标语言
         const sourceLanguage = userConfig.sourceLanguage || 'en';
         const targetLanguage = userConfig.targetLanguage || 'zh';
-        const glossaryMatches =
-          mode === 'translation'
-            ? matchGlossaryEntries(getActiveGlossaryResolution().entries, [
-                sourceText,
-              ])
-            : [];
-        const glossaryBlock = buildGlossaryPromptBlock(glossaryMatches);
-        logGlossaryMatches(glossaryMatches, '校对页单条 AI 优化');
+        const glossaryResolution =
+          mode === 'translation' ? getActiveGlossaryResolution() : undefined;
+        if (glossaryResolution) {
+          const fingerprint = glossaryConflictFingerprint(
+            glossaryResolution.conflicts,
+          );
+          if (
+            singleOptimizeConflictFingerprints.get(event.sender) !== fingerprint
+          ) {
+            logGlossaryConflicts(
+              glossaryResolution.conflicts,
+              '校对页单条 AI 优化',
+            );
+            singleOptimizeConflictFingerprints.set(event.sender, fingerprint);
+          }
+        }
+        const glossaryMatches = glossaryResolution
+          ? matchGlossaryEntries(glossaryResolution.entries, [sourceText])
+          : [];
+        const glossarySelection = selectGlossaryPromptEntries(glossaryMatches);
+        const glossaryBlock = buildGlossaryPromptBlock(
+          glossarySelection.included,
+        );
+        logGlossaryMatches(
+          glossarySelection.included,
+          '校对页单条 AI 优化',
+          glossarySelection.omittedCount,
+        );
 
         // 根据是否有翻译内容选择不同的默认提示词
         const hasTranslation = targetText && targetText.trim();
@@ -733,8 +757,15 @@ Only respond with the translation, nothing else.`;
 
         const sourceLanguage = userConfig.sourceLanguage || 'en';
         const targetLanguage = userConfig.targetLanguage || 'zh';
-        const glossaryEntries =
-          mode === 'translation' ? getActiveGlossaryResolution().entries : [];
+        const glossaryResolution =
+          mode === 'translation' ? getActiveGlossaryResolution() : undefined;
+        if (glossaryResolution) {
+          logGlossaryConflicts(
+            glossaryResolution.conflicts,
+            '校对页批量 AI 优化',
+          );
+        }
+        const glossaryEntries = glossaryResolution?.entries || [];
 
         // 构建默认批量优化提示词
         const defaultBatchPrompt = `You are a professional subtitle translator and proofreader. Optimize the following subtitle translations.
@@ -777,10 +808,15 @@ IMPORTANT: You MUST return a valid JSON object. Do NOT include any text before o
             glossaryEntries,
             batch.map((subtitle) => subtitle.sourceContent),
           );
-          const glossaryBlock = buildGlossaryPromptBlock(glossaryMatches);
+          const glossarySelection =
+            selectGlossaryPromptEntries(glossaryMatches);
+          const glossaryBlock = buildGlossaryPromptBlock(
+            glossarySelection.included,
+          );
           logGlossaryMatches(
-            glossaryMatches,
+            glossarySelection.included,
             `校对页批量 AI 优化 ${currentBatchIndex}/${totalBatches}`,
+            glossarySelection.omittedCount,
           );
           let retryCount = 0;
           let batchSuccess = false;

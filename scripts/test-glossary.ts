@@ -1,5 +1,6 @@
 import {
   buildGlossaryPromptBlock,
+  glossaryConflictFingerprint,
   injectGlossaryPromptBlock,
   matchGlossaryEntries,
   mergeGlossaryImportEntry,
@@ -8,6 +9,7 @@ import {
   renderGlossarySystemPrompt,
   reorderGlossaries,
   resolveEnabledGlossaryEntries,
+  selectGlossaryPromptEntries,
   serializeGlossaryEntries,
   textContainsGlossarySource,
 } from '../main/glossary/core';
@@ -419,6 +421,62 @@ function testPromptInjection(): void {
     ),
     'the provider migration recognizes pre-glossary default prompts',
   );
+
+  const cappedMatches = resolveEnabledGlossaryEntries([
+    glossary(
+      'cap',
+      'Prompt cap',
+      0,
+      Array.from({ length: 101 }, (_, index) =>
+        entry(String(index), `term-${index}`, `target-${index}`),
+      ),
+    ),
+  ]).entries;
+  const selection = selectGlossaryPromptEntries(cappedMatches);
+  equal(selection.omittedCount, 1, 'reports terms omitted from the prompt');
+  equal(
+    selection.included.map((item) => item.source),
+    cappedMatches.slice(0, 100).map((item) => item.source),
+    'keeps the first 100 glossary matches in priority order',
+  );
+  const cappedBlock = buildGlossaryPromptBlock(selection.included);
+  equal(
+    (cappedBlock.match(/"source":/g) || []).length,
+    100,
+    'injects at most 100 glossary entries',
+  );
+  ok(
+    cappedBlock.includes('"source": "term-99"') &&
+      !cappedBlock.includes('"source": "term-100"'),
+    'the prompt cap excludes only lower-priority overflow entries',
+  );
+}
+
+function testConflictFingerprint(): void {
+  const conflicts = resolveEnabledGlossaryEntries([
+    glossary('first', 'First', 0, [entry('1', 'Alice', '艾丽丝')]),
+    glossary('second', 'Second', 1, [entry('2', 'alice', '爱丽丝')]),
+  ]).conflicts;
+  const fingerprint = glossaryConflictFingerprint(conflicts);
+  equal(
+    glossaryConflictFingerprint(conflicts),
+    fingerprint,
+    'the same conflict set has a stable fingerprint',
+  );
+  ok(
+    glossaryConflictFingerprint([
+      {
+        ...conflicts[0],
+        kept: { ...conflicts[0].kept, target: 'new winner' },
+      },
+    ]) !== fingerprint,
+    'the fingerprint changes when a conflict winner changes',
+  );
+  equal(
+    glossaryConflictFingerprint([]),
+    '',
+    'an empty conflict set resets the fingerprint',
+  );
 }
 
 function testCsvImportExport(): void {
@@ -502,6 +560,7 @@ function main(): void {
   testPlainTextMatching();
   testImportMergeSemantics();
   testPromptInjection();
+  testConflictFingerprint();
   testCsvImportExport();
   testTxtImportExport();
 

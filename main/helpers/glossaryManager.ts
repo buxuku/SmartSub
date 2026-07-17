@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import type {
   Glossary,
+  GlossaryConflict,
   GlossaryEntry,
   GlossaryImportEntry,
   GlossaryResolution,
@@ -284,31 +285,45 @@ export function importGlossaryEntries(
   return { glossary, added, updated, skipped };
 }
 
-/** 读取运行期快照并把重复原文的优先级选择写入现有日志系统。 */
+/** 读取运行期快照；日志由每次翻译/优化操作在自己的边界显式记录。 */
 export function getActiveGlossaryResolution(): GlossaryResolution {
-  const resolution = resolveEnabledGlossaryEntries(listGlossaries());
-  resolution.conflicts.forEach((conflict) => {
+  return resolveEnabledGlossaryEntries(listGlossaries());
+}
+
+export function logGlossaryConflicts(
+  conflicts: GlossaryConflict[],
+  context?: string,
+): void {
+  conflicts.forEach((conflict) => {
     logMessage(
-      `词库原文冲突「${conflict.source}」：按词库顺序采用「${conflict.kept.glossaryName}」中的“${conflict.kept.target}”，忽略「${conflict.ignored.glossaryName}」中的“${conflict.ignored.target}”`,
+      `词库原文冲突${context ? `（${context}）` : ''}「${conflict.source}」：按词库顺序采用「${conflict.kept.glossaryName}」中的“${conflict.kept.target}”，忽略「${conflict.ignored.glossaryName}」中的“${conflict.ignored.target}”`,
       'warning',
     );
   });
-  return resolution;
 }
 
 export function logGlossaryMatches(
   matches: ResolvedGlossaryEntry[],
   context: string,
+  omittedCount: number = 0,
 ): void {
-  if (!matches.length) return;
-  const visible = matches.slice(0, 50);
-  const remainder = matches.length - visible.length;
-  logMessage(
-    `词库命中（${context}）：${visible
-      .map(
-        (entry) => `${entry.source} → ${entry.target} [${entry.glossaryName}]`,
-      )
-      .join('；')}${remainder > 0 ? `；另有 ${remainder} 条命中` : ''}`,
-    'info',
-  );
+  if (matches.length) {
+    const visible = matches.slice(0, 50);
+    const remainder = matches.length - visible.length;
+    logMessage(
+      `词库命中（${context}）：${visible
+        .map(
+          (entry) =>
+            `${entry.source} → ${entry.target} [${entry.glossaryName}]`,
+        )
+        .join('；')}${remainder > 0 ? `；另有 ${remainder} 条已注入` : ''}`,
+      'info',
+    );
+  }
+  if (omittedCount > 0) {
+    logMessage(
+      `词库命中超出提示词上限（${context}）：共命中 ${matches.length + omittedCount} 条，按优先级注入 ${matches.length} 条，省略 ${omittedCount} 条`,
+      'warning',
+    );
+  }
 }
