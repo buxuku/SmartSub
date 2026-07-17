@@ -104,6 +104,24 @@ export function normalizeGlossaries(raw: unknown): Glossary[] {
     }));
 }
 
+/** 按当前逻辑顺序移动词库，并重写连续 order；不会修改调用方数据。 */
+export function reorderGlossaries(
+  raw: readonly Glossary[],
+  id: string,
+  direction: -1 | 1,
+): Glossary[] {
+  const glossaries = normalizeGlossaries(raw);
+  const index = glossaries.findIndex((glossary) => glossary.id === id);
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= glossaries.length) {
+    return glossaries;
+  }
+
+  const reordered = glossaries.slice();
+  [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+  return reordered.map((glossary, order) => ({ ...glossary, order }));
+}
+
 /** 匹配与去重统一使用 NFKC + 不区分大小写键。 */
 export function glossarySourceKey(source: string): string {
   return source.normalize('NFKC').toLowerCase();
@@ -149,18 +167,16 @@ function isLatinWordChar(char: string | undefined): boolean {
   return !!char && LATIN_WORD_CHAR.test(char);
 }
 
-/**
- * 纯文本命中：拉丁字母/数字边界避免 `cat` 误中 `category`；CJK 等无空格语言
- * 仍采用自然的子串匹配。大小写与全/半角差异不影响命中。
- */
-export function textContainsGlossarySource(
-  text: string,
-  source: string,
-): boolean {
-  const haystack = String(text ?? '')
+function normalizeMatchText(value: unknown): string {
+  return String(value ?? '')
     .normalize('NFKC')
     .toLowerCase();
-  const needle = glossarySourceKey(source);
+}
+
+function normalizedTextContainsGlossarySource(
+  haystack: string,
+  needle: string,
+): boolean {
   if (!haystack || !needle) return false;
 
   let offset = 0;
@@ -174,9 +190,23 @@ export function textContainsGlossarySource(
     const leftBoundary = !isLatinWordChar(first) || !isLatinWordChar(before);
     const rightBoundary = !isLatinWordChar(last) || !isLatinWordChar(after);
     if (leftBoundary && rightBoundary) return true;
-    offset = index + Math.max(needle.length, 1);
+    // A failed boundary may still be followed by an overlapping valid match.
+    offset = index + 1;
   }
   return false;
+}
+
+/**
+ * 纯文本命中：拉丁字母/数字边界避免 `cat` 误中 `category`；CJK 等无空格语言
+ * 仍采用自然的子串匹配。大小写与全/半角差异不影响命中。
+ */
+export function textContainsGlossarySource(
+  text: string,
+  source: string,
+): boolean {
+  const haystack = normalizeMatchText(text);
+  const needle = glossarySourceKey(source);
+  return normalizedTextContainsGlossarySource(haystack, needle);
 }
 
 /** 每批只返回在源字幕中实际出现的词条，保持词库优先级顺序。 */
@@ -184,11 +214,50 @@ export function matchGlossaryEntries(
   entries: ResolvedGlossaryEntry[],
   sourceTexts: string[],
 ): ResolvedGlossaryEntry[] {
-  const texts = sourceTexts.filter((text) => typeof text === 'string' && text);
+  const texts = sourceTexts
+    .filter((text) => typeof text === 'string' && text)
+    .map(normalizeMatchText);
   if (!entries.length || !texts.length) return [];
-  return entries.filter((entry) =>
-    texts.some((text) => textContainsGlossarySource(text, entry.source)),
-  );
+  return entries.filter((entry) => {
+    const needle = glossarySourceKey(entry.source);
+    return texts.some((text) =>
+      normalizedTextContainsGlossarySource(text, needle),
+    );
+  });
+}
+
+export type GlossaryImportMerge =
+  | { kind: 'invalid' }
+  | {
+      kind: 'skip' | 'add' | 'update';
+      value: Pick<GlossaryEntry, 'source' | 'target' | 'note'>;
+    };
+
+/**
+ * 合并一个导入词条。缺少备注列会保留旧备注；显式空备注会清空旧备注。
+ */
+export function mergeGlossaryImportEntry(
+  current: Pick<GlossaryEntry, 'source' | 'target' | 'note'> | undefined,
+  incoming: GlossaryImportEntry,
+): GlossaryImportMerge {
+  const source = cleanString(incoming?.source, GLOSSARY_LIMITS.source);
+  const target = cleanString(incoming?.target, GLOSSARY_LIMITS.target);
+  if (!source || !target) return { kind: 'invalid' };
+
+  const note =
+    incoming.note?.kind === 'provided'
+      ? cleanString(incoming.note.value, GLOSSARY_LIMITS.note)
+      : current?.note || '';
+  const value = {
+    source,
+    target,
+    ...(note ? { note } : {}),
+  };
+  if (!current) return { kind: 'add', value };
+  if (current.target === target && (current.note || '') === note) {
+    return { kind: 'skip', value: current };
+  }
+  return { kind: 'update', value };
 }
 
 /** 将命中词条序列化为明确的数据块，避免把备注或术语内容误当作 prompt 指令。 */
@@ -302,9 +371,18 @@ function rowsToImportEntries(rows: string[][]): GlossaryImportEntry[] {
     .map((row): GlossaryImportEntry | null => {
       const source = cleanString(row[sourceIndex], GLOSSARY_LIMITS.source);
       const target = cleanString(row[targetIndex], GLOSSARY_LIMITS.target);
-      const note = cleanString(row[noteIndex], GLOSSARY_LIMITS.note);
       if (!source || !target) return null;
-      return { source, target, ...(note ? { note } : {}) };
+      const noteProvided = noteIndex >= 0 && noteIndex < row.length;
+      return {
+        source,
+        target,
+        note: noteProvided
+          ? {
+              kind: 'provided',
+              value: cleanString(row[noteIndex], GLOSSARY_LIMITS.note),
+            }
+          : { kind: 'missing' },
+      };
     })
     .filter((entry): entry is GlossaryImportEntry => entry !== null);
 }
@@ -313,17 +391,20 @@ function parseTxtRows(content: string): string[][] {
   const separators = ['=>', '->', '→', '='];
   return content
     .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
+    .filter((line) => Boolean(line.trim()))
     .map((line) => {
       if (line.includes('\t')) return line.split('\t');
+      const trimmed = line.trim();
       for (const separator of separators) {
-        const index = line.indexOf(separator);
+        const index = trimmed.indexOf(separator);
         if (index > 0) {
-          return [line.slice(0, index), line.slice(index + separator.length)];
+          return [
+            trimmed.slice(0, index),
+            trimmed.slice(index + separator.length),
+          ];
         }
       }
-      return [line];
+      return [trimmed];
     });
 }
 

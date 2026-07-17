@@ -2,15 +2,21 @@ import {
   buildGlossaryPromptBlock,
   injectGlossaryPromptBlock,
   matchGlossaryEntries,
+  mergeGlossaryImportEntry,
   normalizeGlossaries,
   parseGlossaryContent,
   renderGlossarySystemPrompt,
+  reorderGlossaries,
   resolveEnabledGlossaryEntries,
   serializeGlossaryEntries,
   textContainsGlossarySource,
 } from '../main/glossary/core';
 import { renderTemplate } from '../main/helpers/template';
-import type { Glossary } from '../types/glossary';
+import type {
+  Glossary,
+  GlossaryImportEntry,
+  GlossaryImportNote,
+} from '../types/glossary';
 import {
   defaultSystemPrompt,
   HISTORICAL_DEFAULT_PROMPTS,
@@ -59,6 +65,20 @@ function glossary(
   };
 }
 
+const missingNote: GlossaryImportNote = { kind: 'missing' };
+
+function providedNote(value: string): GlossaryImportNote {
+  return { kind: 'provided', value };
+}
+
+function imported(
+  source: string,
+  target: string,
+  note: GlossaryImportNote = missingNote,
+): GlossaryImportEntry {
+  return { source, target, note };
+}
+
 function testNormalizationAndPriority(): void {
   const normalized = normalizeGlossaries([
     glossary('later', 'Later', 8, [entry('2', 'Alice', '后者')]),
@@ -86,6 +106,63 @@ function testNormalizationAndPriority(): void {
     resolution.conflicts[0].kept.glossaryName === 'First' &&
       resolution.conflicts[0].ignored.glossaryName === 'Later',
     'conflict records kept and ignored libraries',
+  );
+}
+
+function testGlossaryReordering(): void {
+  const original = [
+    glossary('a', 'A', 10, [entry('a1', 'Alice', 'A target')]),
+    glossary('b', 'B', 20, [entry('b1', 'Alice', 'B target')]),
+    glossary('c', 'C', 40, []),
+  ];
+  const snapshot = JSON.stringify(original);
+  const movedDown = reorderGlossaries(original, 'a', 1);
+  equal(
+    movedDown.map((item) => [item.id, item.order]),
+    [
+      ['b', 0],
+      ['a', 1],
+      ['c', 2],
+    ],
+    'moving a glossary down rewrites the persisted priority order',
+  );
+  equal(
+    normalizeGlossaries(movedDown).map((item) => item.id),
+    ['b', 'a', 'c'],
+    'normalization does not undo a glossary move',
+  );
+  equal(
+    reorderGlossaries(original, 'c', -1).map((item) => item.id),
+    ['a', 'c', 'b'],
+    'moves the last glossary up',
+  );
+  equal(
+    reorderGlossaries(original, 'a', -1).map((item) => item.id),
+    ['a', 'b', 'c'],
+    'moving the first glossary up is a boundary no-op',
+  );
+  equal(
+    reorderGlossaries(original, 'c', 1).map((item) => item.id),
+    ['a', 'b', 'c'],
+    'moving the last glossary down is a boundary no-op',
+  );
+  equal(
+    reorderGlossaries(original, 'missing', 1).map((item) => [
+      item.id,
+      item.order,
+    ]),
+    [
+      ['a', 0],
+      ['b', 1],
+      ['c', 2],
+    ],
+    'an unknown glossary is a normalized pure-function no-op',
+  );
+  equal(JSON.stringify(original), snapshot, 'reordering does not mutate input');
+  equal(
+    resolveEnabledGlossaryEntries(movedDown).entries.map((item) => item.target),
+    ['B target'],
+    'moving a glossary changes the winner for duplicate source terms',
   );
 }
 
@@ -118,6 +195,19 @@ function testPlainTextMatching(): void {
     textContainsGlossarySource('a cat!', 'cat'),
     'matches a standalone Latin word',
   );
+  ok(
+    textContainsGlossarySource('xa-a-a', 'a-a'),
+    'finds a valid overlapping match after an invalid boundary',
+  );
+  ok(
+    !textContainsGlossarySource('xa-a', 'a-a'),
+    'still rejects an overlapping candidate without a left boundary',
+  );
+  ok(
+    textContainsGlossarySource('xＡ-Ａ-Ａ', 'A-a'),
+    'overlapping matches remain case-insensitive and NFKC-normalized',
+  );
+  ok(!textContainsGlossarySource('Alice', ''), 'empty terms never match');
 
   const resolution = resolveEnabledGlossaryEntries([
     glossary('g', 'Characters', 0, [
@@ -131,6 +221,118 @@ function testPlainTextMatching(): void {
     ),
     ['Bob'],
     'a batch includes only terms matched in its source subtitles',
+  );
+  equal(
+    matchGlossaryEntries(
+      resolveEnabledGlossaryEntries([
+        glossary('g', 'Phrases', 0, [entry('1', 'foo bar', '组合')]),
+      ]).entries,
+      ['foo', 'bar'],
+    ),
+    [],
+    'matching never creates a term across subtitle boundaries',
+  );
+}
+
+function testImportMergeSemantics(): void {
+  const current = { source: 'Alice', target: '艾丽丝', note: 'lead role' };
+  equal(
+    mergeGlossaryImportEntry(current, imported('Alice', '艾丽丝')),
+    { kind: 'skip', value: current },
+    'a missing note column preserves an existing note and skips no-op updates',
+  );
+  equal(
+    mergeGlossaryImportEntry(current, imported('Alice', '爱丽丝')),
+    {
+      kind: 'update',
+      value: { source: 'Alice', target: '爱丽丝', note: 'lead role' },
+    },
+    'a missing note column preserves the note while updating the target',
+  );
+  equal(
+    mergeGlossaryImportEntry(
+      current,
+      imported('Alice', '艾丽丝', providedNote('lead role')),
+    ),
+    { kind: 'skip', value: current },
+    'an unchanged explicitly provided note is skipped',
+  );
+  equal(
+    mergeGlossaryImportEntry(
+      current,
+      imported('Alice', '艾丽丝', providedNote('protagonist')),
+    ),
+    {
+      kind: 'update',
+      value: {
+        source: 'Alice',
+        target: '艾丽丝',
+        note: 'protagonist',
+      },
+    },
+    'an explicitly provided note overwrites the existing note',
+  );
+  equal(
+    mergeGlossaryImportEntry(
+      current,
+      imported('Alice', '艾丽丝', providedNote('')),
+    ),
+    { kind: 'update', value: { source: 'Alice', target: '艾丽丝' } },
+    'an explicitly empty note clears the existing note',
+  );
+  equal(
+    mergeGlossaryImportEntry(
+      { source: 'Bob', target: '鲍勃' },
+      imported('Bob', '鲍勃', providedNote('   ')),
+    ),
+    { kind: 'skip', value: { source: 'Bob', target: '鲍勃' } },
+    'an empty note is a no-op when the entry already has no note',
+  );
+  equal(
+    mergeGlossaryImportEntry(undefined, imported('Bob', '鲍勃')),
+    { kind: 'add', value: { source: 'Bob', target: '鲍勃' } },
+    'a new two-column entry is added without a note',
+  );
+  equal(
+    mergeGlossaryImportEntry(undefined, imported('', 'missing source')),
+    { kind: 'invalid' },
+    'invalid imported entries are rejected',
+  );
+
+  const first = mergeGlossaryImportEntry(
+    undefined,
+    imported('Alice', 'first', providedNote('one')),
+  );
+  const second =
+    first.kind === 'add'
+      ? mergeGlossaryImportEntry(
+          first.value,
+          imported('Alice', 'last', providedNote('two')),
+        )
+      : first;
+  equal(
+    second,
+    {
+      kind: 'update',
+      value: { source: 'Alice', target: 'last', note: 'two' },
+    },
+    'duplicate imported sources use the last row',
+  );
+
+  const persistent = entry('persisted-id', 'Alice', 'old', 'old note');
+  const merged = mergeGlossaryImportEntry(
+    persistent,
+    imported('Alice', 'new', providedNote('new note')),
+  );
+  const updated =
+    merged.kind === 'update'
+      ? { ...persistent, ...merged.value, updatedAt: 2 }
+      : persistent;
+  ok(
+    updated.id === persistent.id &&
+      updated.createdAt === persistent.createdAt &&
+      updated.updatedAt === 2,
+    'an imported update preserves identity and creation time',
   );
 }
 
@@ -227,13 +429,17 @@ function testCsvImportExport(): void {
   equal(
     parsed,
     [
-      { source: 'Alice', target: '艾丽丝', note: 'lead, role' },
-      { source: 'Dr. Smith', target: '史密斯博士', note: 'line 1\nline 2' },
+      imported('Alice', '艾丽丝', providedNote('lead, role')),
+      imported('Dr. Smith', '史密斯博士', providedNote('line 1\nline 2')),
     ],
     'parses BOM, quoted commas, and quoted newlines in CSV',
   );
 
-  const serialized = serializeGlossaryEntries(parsed, 'csv');
+  const csvEntries = [
+    { source: 'Alice', target: '艾丽丝', note: 'lead, role' },
+    { source: 'Dr. Smith', target: '史密斯博士', note: 'line 1\nline 2' },
+  ];
+  const serialized = serializeGlossaryEntries(csvEntries, 'csv');
   equal(
     parseGlossaryContent(serialized, 'csv'),
     parsed,
@@ -246,8 +452,13 @@ function testCsvImportExport(): void {
   );
   equal(
     localized,
-    [{ source: 'Alice', target: '艾丽丝', note: '角色' }],
+    [imported('Alice', '艾丽丝', providedNote('角色'))],
     'accepts localized CSV headers',
+  );
+  equal(
+    parseGlossaryContent('source,target,note\na,b\nc,d,', 'csv'),
+    [imported('a', 'b'), imported('c', 'd', providedNote(''))],
+    'CSV distinguishes a missing note cell from an explicit empty note cell',
   );
 }
 
@@ -259,23 +470,37 @@ function testTxtImportExport(): void {
   equal(
     parsed,
     [
-      { source: 'C++', target: 'C 加加', note: 'language' },
-      { source: 'Dr. Smith', target: '史密斯博士' },
-      { source: 'cat', target: '猫' },
-      { source: 'Alice', target: '艾丽丝' },
+      imported('C++', 'C 加加', providedNote('language')),
+      imported('Dr. Smith', '史密斯博士'),
+      imported('cat', '猫'),
+      imported('Alice', '艾丽丝'),
     ],
     'parses tab, arrow, and legacy equals TXT separators',
   );
+  const txtEntries = [
+    { source: 'C++', target: 'C 加加', note: 'language' },
+    { source: 'Dr. Smith', target: '史密斯博士' },
+  ];
   equal(
-    parseGlossaryContent(serializeGlossaryEntries(parsed, 'txt'), 'txt'),
-    parsed,
-    'TXT serialization round-trips glossary entries',
+    parseGlossaryContent(serializeGlossaryEntries(txtEntries, 'txt'), 'txt'),
+    [
+      imported('C++', 'C 加加', providedNote('language')),
+      imported('Dr. Smith', '史密斯博士', providedNote('')),
+    ],
+    'TXT serialization round-trips values with an explicit note column',
+  );
+  equal(
+    parseGlossaryContent('source\ttarget\tnote\na\tb\nc\td\t', 'txt'),
+    [imported('a', 'b'), imported('c', 'd', providedNote(''))],
+    'TXT distinguishes a missing note cell from a trailing empty note cell',
   );
 }
 
 function main(): void {
   testNormalizationAndPriority();
+  testGlossaryReordering();
   testPlainTextMatching();
+  testImportMergeSemantics();
   testPromptInjection();
   testCsvImportExport();
   testTxtImportExport();

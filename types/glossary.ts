@@ -44,10 +44,13 @@ export interface GlossaryResolution {
   conflicts: GlossaryConflict[];
 }
 
+export type GlossaryImportNote =
+  { kind: 'missing' } | { kind: 'provided'; value: string };
+
 export interface GlossaryImportEntry {
   source: string;
   target: string;
-  note?: string;
+  note: GlossaryImportNote;
 }
 
 export type GlossaryFileFormat = 'csv' | 'txt';

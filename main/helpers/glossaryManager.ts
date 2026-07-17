@@ -9,7 +9,9 @@ import type {
 import {
   GLOSSARY_LIMITS,
   glossarySourceKey,
+  mergeGlossaryImportEntry,
   normalizeGlossaries,
+  reorderGlossaries,
   resolveEnabledGlossaryEntries,
 } from '../glossary/core';
 import { logMessage, store } from './storeManager';
@@ -133,11 +135,7 @@ export function moveGlossary(id: string, direction: -1 | 1): Glossary[] {
   if (index < 0) throw new GlossaryManagerError('GLOSSARY_NOT_FOUND');
   const target = index + direction;
   if (target < 0 || target >= glossaries.length) return glossaries;
-  [glossaries[index], glossaries[target]] = [
-    glossaries[target],
-    glossaries[index],
-  ];
-  return writeGlossaries(glossaries);
+  return writeGlossaries(reorderGlossaries(glossaries, id, direction));
 }
 
 function normalizeEntryInput(input: Partial<GlossaryEntry>): {
@@ -242,22 +240,24 @@ export function importGlossaryEntries(
   let skipped = 0;
 
   imported.forEach((input) => {
-    let normalized: ReturnType<typeof normalizeEntryInput>;
-    try {
-      normalized = normalizeEntryInput(input);
-    } catch {
+    const key = glossarySourceKey(input.source);
+    const index = bySource.get(key);
+    const current = index === undefined ? undefined : glossary.entries[index];
+    const merged = mergeGlossaryImportEntry(current, input);
+    if (merged.kind === 'invalid') {
       skipped++;
       return;
     }
-    const key = glossarySourceKey(normalized.source);
-    const index = bySource.get(key);
+    if (merged.kind === 'skip') {
+      skipped++;
+      return;
+    }
+
     const now = Date.now();
     if (index === undefined) {
       const entry: GlossaryEntry = {
         id: randomUUID(),
-        source: normalized.source,
-        target: normalized.target,
-        ...(normalized.note ? { note: normalized.note } : {}),
+        ...merged.value,
         createdAt: now,
         updatedAt: now,
       };
@@ -266,24 +266,18 @@ export function importGlossaryEntries(
       added++;
       return;
     }
-    const current = glossary.entries[index];
-    if (
-      current.target === normalized.target &&
-      (current.note || '') === normalized.note
-    ) {
-      skipped++;
-      return;
-    }
     glossary.entries[index] = {
       ...current,
-      source: normalized.source,
-      target: normalized.target,
-      ...(normalized.note ? { note: normalized.note } : { note: undefined }),
+      ...merged.value,
+      ...(merged.value.note ? {} : { note: undefined }),
       updatedAt: now,
     };
     updated++;
   });
 
+  if (!added && !updated) {
+    return { glossary, added, updated, skipped };
+  }
   glossary.updatedAt = Date.now();
   glossaries[glossaryIndex] = glossary;
   writeGlossaries(glossaries);
