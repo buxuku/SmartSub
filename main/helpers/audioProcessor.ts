@@ -14,6 +14,14 @@ import {
   EmbeddedSubtitleStream,
 } from './embeddedSubtitleParser';
 import { stderrTail, toFriendlyFfmpegError } from './ffmpegErrorUtils';
+import { readWavInfo, type WavInfo } from './dubbing/audioPipeline';
+import { windowFrameDb } from './wavWindowEnergy';
+import {
+  planEvenChunkTargets,
+  pickSilenceCut,
+  boundariesFromCuts,
+  CUT_SEARCH_WINDOW_SECONDS,
+} from './builtinAudioChunking';
 
 // 设置ffmpeg路径
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
@@ -470,12 +478,27 @@ export async function splitBySilence(
     ];
   }
 
+  return cutWavByBoundaries(audioPath, boundaries, 'cloud-asr-chunk', {
+    signal: opts?.signal,
+  });
+}
+
+/**
+ * 按边界列表用 ffmpeg 切出 16kHz 单声道 PCM WAV 切片（splitBySilence 与内置引擎
+ * 超长音频分片共用的执行器）。失败/取消时清理已产出的切片，避免残留。
+ */
+async function cutWavByBoundaries(
+  audioPath: string,
+  boundaries: Array<{ start: number; end: number }>,
+  filePrefix: string,
+  opts?: { signal?: AbortSignal },
+): Promise<CloudAudioChunk[]> {
   const tempDir = ensureTempDir();
   const chunks: CloudAudioChunk[] = [];
   try {
     for (const b of boundaries) {
       if (opts?.signal?.aborted) throw new TaskCancelledError();
-      const outPath = path.join(tempDir, `cloud-asr-chunk-${uuidv4()}.wav`);
+      const outPath = path.join(tempDir, `${filePrefix}-${uuidv4()}.wav`);
       const command = ffmpeg(audioPath)
         .setStartTime(b.start)
         .setDuration(Math.max(0.1, b.end - b.start))
@@ -491,7 +514,6 @@ export async function splitBySilence(
       });
     }
   } catch (error) {
-    // 失败/取消：清理已产出的切片，避免残留。
     for (const c of chunks) {
       try {
         if (fs.existsSync(c.path)) fs.unlinkSync(c.path);
@@ -502,6 +524,76 @@ export async function splitBySilence(
     throw error;
   }
   return chunks;
+}
+
+/**
+ * 内置引擎超长音频分片：按调用方预先算好的「静音对齐」边界切片（16kHz 单声道 PCM WAV），
+ * 返回带起始偏移的切片列表供转写结果回拼。清理责任在调用方（cleanupCloudChunks）。
+ */
+export async function splitWavAtBoundaries(
+  audioPath: string,
+  boundaries: Array<{ start: number; end: number }>,
+  opts?: { signal?: AbortSignal },
+): Promise<CloudAudioChunk[]> {
+  return cutWavByBoundaries(audioPath, boundaries, 'builtin-chunk', opts);
+}
+
+/**
+ * 内置引擎超长音频分片准备（crash fix：≥2GiB 单笔分配被 Electron PartitionAlloc 拒绝，
+ * 约 9.3h 的 16kHz 音频在 addon 内一次性 resize 必崩）：
+ *  - 时长 ≤ 激活阈值（1.5h）→ null，走原单次转写路径（常规视频零变化）；
+ *  - 超阈值 → 按 ~1h 均衡片数定目标切点，每个切点在 ±45s 窗口内吸附到「最长静音 run 中点」
+ *    （避免把一句完整的话切成两段），ffmpeg 切片后返回带偏移的切片列表。
+ * WAV 头不可解析 → null（保持旧行为，交由 addon 自行处理）。
+ */
+export async function prepareBuiltinChunks(
+  audioPath: string,
+  opts?: { signal?: AbortSignal },
+): Promise<CloudAudioChunk[] | null> {
+  let info: WavInfo;
+  try {
+    info = readWavInfo(audioPath);
+  } catch (error) {
+    logMessage(
+      `builtin chunking: unreadable wav header, fallback to single pass (${error})`,
+      'warning',
+    );
+    return null;
+  }
+  const durationSec = info.durationMs / 1000;
+  const targets = planEvenChunkTargets(durationSec);
+  if (targets.length === 0) return null;
+
+  const cuts = targets.map((target) => {
+    const winStart = Math.max(0, target - CUT_SEARCH_WINDOW_SECONDS);
+    const winEnd = Math.min(durationSec, target + CUT_SEARCH_WINDOW_SECONDS);
+    try {
+      const window = windowFrameDb(audioPath, info, winStart, winEnd);
+      if (!window) return target;
+      return pickSilenceCut(
+        window.frameDb,
+        window.frameDurationSec,
+        winStart,
+        target,
+      );
+    } catch (error) {
+      logMessage(
+        `builtin chunking: window energy analysis failed at ${target.toFixed(1)}s, cutting at target (${error})`,
+        'warning',
+      );
+      return target;
+    }
+  });
+  const boundaries = boundariesFromCuts(durationSec, cuts);
+  if (boundaries.length < 2) return null;
+
+  logMessage(
+    `builtin long-audio chunking: ${durationSec.toFixed(0)}s -> ${boundaries.length} chunks [${boundaries
+      .map((b) => `${b.start.toFixed(1)}-${b.end.toFixed(1)}`)
+      .join(', ')}]`,
+    'info',
+  );
+  return splitWavAtBoundaries(audioPath, boundaries, opts);
 }
 
 /** 清理切片临时文件（跳过原始音频路径本身）。 */

@@ -136,6 +136,18 @@ import {
 } from '../renderer/lib/engineViews';
 import { computeChunkBoundaries } from '../main/helpers/cloudAudioChunking';
 import {
+  planEvenChunkTargets,
+  silenceThresholdDb,
+  pickSilenceCut,
+  boundariesFromCuts,
+  offsetNativeTokens,
+  offsetVadSegments,
+  offsetSegmentCues,
+  chunkedProgressPercent,
+  BUILTIN_CHUNK_ACTIVATE_SECONDS,
+} from '../main/helpers/builtinAudioChunking';
+import { windowFrameDb } from '../main/helpers/wavWindowEnergy';
+import {
   needsSpaceBefore,
   realignPunctuation,
   wordsToNativeTokens,
@@ -3465,6 +3477,237 @@ eq(
   ],
   'chunk: exceeding limit splits at silence midpoints',
 );
+
+// --- builtinAudioChunking: planEvenChunkTargets ---
+eq(
+  planEvenChunkTargets(3600),
+  [],
+  'builtin chunk: 1h below activate threshold -> no chunking',
+);
+eq(
+  planEvenChunkTargets(BUILTIN_CHUNK_ACTIVATE_SECONDS),
+  [],
+  'builtin chunk: exactly at activate threshold -> no chunking',
+);
+eq(
+  planEvenChunkTargets(43200),
+  [3600, 7200, 10800, 14400, 18000, 21600, 25200, 28800, 32400, 36000, 39600],
+  'builtin chunk: 12h -> 11 even cut targets (12 chunks of 1h)',
+);
+eq(
+  planEvenChunkTargets(5401),
+  [2700.5],
+  'builtin chunk: just above threshold -> two balanced halves (no tiny tail)',
+);
+eq(
+  planEvenChunkTargets(7000, { targetSeconds: 3600, activateSeconds: 5400 }),
+  [3500],
+  'builtin chunk: ceil-balanced targets keep chunks under target size',
+);
+eq(planEvenChunkTargets(NaN), [], 'builtin chunk: invalid duration -> []');
+
+// --- builtinAudioChunking: silenceThresholdDb ---
+eq(silenceThresholdDb([]), -55, 'builtin chunk: empty frames -> default');
+eq(
+  silenceThresholdDb(Array(100).fill(-70)),
+  -61,
+  'builtin chunk: quiet floor -> floor + 9dB',
+);
+eq(
+  silenceThresholdDb(Array(100).fill(-20)),
+  -38,
+  'builtin chunk: loud continuous speech -> capped at -38dB',
+);
+
+// --- builtinAudioChunking: pickSilenceCut ---
+{
+  // 20ms 帧、窗口起点 100s：语音 -20dB，帧 400–500 为 -70dB 静音 run（108–110s，中点 109s）
+  const frames = Array(1000).fill(-20);
+  for (let i = 400; i < 500; i += 1) frames[i] = -70;
+  eq(
+    pickSilenceCut(frames, 0.02, 100, 105),
+    109,
+    'builtin chunk: cut lands at midpoint of longest silence run',
+  );
+  // 两个静音 run：更长者胜出（帧 100–150 中点 102.5s vs 帧 700–900 中点 116s）
+  const twoRuns = Array(1000).fill(-20);
+  for (let i = 100; i < 150; i += 1) twoRuns[i] = -70;
+  for (let i = 700; i < 900; i += 1) twoRuns[i] = -70;
+  eq(
+    pickSilenceCut(twoRuns, 0.02, 100, 103),
+    116,
+    'builtin chunk: longer silence run wins over nearer short one',
+  );
+  // 全程语音（无合格静音 run）→ 退回目标位置
+  eq(
+    pickSilenceCut(Array(1000).fill(-20), 0.02, 100, 105),
+    105,
+    'builtin chunk: continuous speech window falls back to target cut',
+  );
+  // 短于 minRun 的间隙不算切点
+  const shortGap = Array(1000).fill(-20);
+  for (let i = 500; i < 510; i += 1) shortGap[i] = -70; // 0.2s < 0.3s
+  eq(
+    pickSilenceCut(shortGap, 0.02, 100, 105),
+    105,
+    'builtin chunk: sub-minimum silence gap is not a cut candidate',
+  );
+}
+
+// --- builtinAudioChunking: boundariesFromCuts ---
+eq(
+  boundariesFromCuts(100, [30, 60]),
+  [
+    { start: 0, end: 30 },
+    { start: 30, end: 60 },
+    { start: 60, end: 100 },
+  ],
+  'builtin chunk: cuts -> contiguous boundaries',
+);
+eq(
+  boundariesFromCuts(100, [60, 30, 60, NaN, -5, 200]),
+  [
+    { start: 0, end: 30 },
+    { start: 30, end: 60 },
+    { start: 60, end: 100 },
+  ],
+  'builtin chunk: boundaries dedupe/sort and drop invalid cuts',
+);
+eq(
+  boundariesFromCuts(100, [0.5, 99.5]),
+  [{ start: 0, end: 100 }],
+  'builtin chunk: cuts creating <1s fragments are skipped',
+);
+eq(boundariesFromCuts(0, [10]), [], 'builtin chunk: no duration -> []');
+
+// --- builtinAudioChunking: offset merge helpers ---
+eq(
+  offsetNativeTokens(
+    [
+      { text: ' Hello', t0: 100, t1: 500, p: 0.9 },
+      { text: ' world', t0: NaN, t1: 800 },
+    ],
+    3600000,
+  ),
+  [
+    { text: ' Hello', t0: 3600100, t1: 3600500, p: 0.9 },
+    { text: ' world', t0: NaN, t1: 3600800 },
+  ],
+  'builtin chunk: token offset in ms, invalid times preserved',
+);
+eq(
+  offsetVadSegments([{ t0: 0, t1: 1500 }], 7200000),
+  [{ t0: 7200000, t1: 7201500 }],
+  'builtin chunk: vad segment offset in ms',
+);
+eq(
+  offsetSegmentCues(
+    [
+      ['00:00:01,000', '00:00:02,500', 'hi'],
+      ['bogus', '00:00:03,000', 'kept'],
+    ],
+    3600,
+  ),
+  [
+    ['01:00:01,000', '01:00:02,500', 'hi'],
+    ['bogus', '00:00:03,000', 'kept'],
+  ],
+  'builtin chunk: segment cue offset in sec, unparseable kept as-is',
+);
+
+// --- builtinAudioChunking: chunkedProgressPercent ---
+eq(
+  chunkedProgressPercent(0, 12, 50),
+  4,
+  'builtin chunk: progress scales within first chunk',
+);
+eq(
+  chunkedProgressPercent(6, 12, 0),
+  50,
+  'builtin chunk: chunk index maps to overall baseline',
+);
+eq(
+  chunkedProgressPercent(11, 12, 100),
+  99,
+  'builtin chunk: final chunk caps at 99 until done',
+);
+eq(chunkedProgressPercent(0, 0, 50), 0, 'builtin chunk: zero chunks -> 0');
+
+// --- wavWindowEnergy: windowFrameDb（合成 WAV：窗口读取 + 静音切点端到端） ---
+{
+  const writeTestWav = (
+    file: string,
+    samples: Int16Array,
+    sampleRate: number,
+  ) => {
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0, 'ascii');
+    header.writeUInt32LE(36 + samples.length * 2, 4);
+    header.write('WAVE', 8, 'ascii');
+    header.write('fmt ', 12, 'ascii');
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20); // PCM
+    header.writeUInt16LE(1, 22); // mono
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(sampleRate * 2, 28);
+    header.writeUInt16LE(2, 32);
+    header.writeUInt16LE(16, 34);
+    header.write('data', 36, 'ascii');
+    header.writeUInt32LE(samples.length * 2, 40);
+    fs.writeFileSync(
+      file,
+      Buffer.concat([
+        header,
+        Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength),
+      ]),
+    );
+  };
+
+  // 4s @16kHz 单声道：全程"语音"（幅值 6000），1.5s–2.5s 为纯静音
+  const sampleRate = 16000;
+  const samples = new Int16Array(4 * sampleRate).fill(6000);
+  samples.fill(0, 1.5 * sampleRate, 2.5 * sampleRate);
+  const wavPath = nodePath.join(os.tmpdir(), `smartsub-test-${Date.now()}.wav`);
+  writeTestWav(wavPath, samples, sampleRate);
+  const layout = {
+    sampleRate,
+    channels: 1,
+    bitsPerSample: 16,
+    dataOffset: 44,
+    dataBytes: samples.length * 2,
+  };
+
+  const window = windowFrameDb(wavPath, layout, 1, 3);
+  eq(window !== null, true, 'wav window: analyzable window returns frames');
+  eq(
+    window!.frameDb.length,
+    100,
+    'wav window: 2s window at 20ms frames -> 100 frames',
+  );
+  eq(
+    Math.abs(window!.frameDurationSec - 0.02) < 1e-9,
+    true,
+    'wav window: frame duration is 20ms',
+  );
+  // 端到端：窗口能量 → 静音切点落在静音区正中（2.0s），而不是目标位置（1.8s）
+  eq(
+    pickSilenceCut(window!.frameDb, window!.frameDurationSec, 1, 1.8),
+    2,
+    'wav window: end-to-end cut lands at silence midpoint, not mid-sentence',
+  );
+
+  eq(
+    windowFrameDb(wavPath, { ...layout, bitsPerSample: 32 }, 1, 3),
+    null,
+    'wav window: non-PCM16 layout rejected',
+  );
+  eq(
+    windowFrameDb(wavPath, layout, 10, 12),
+    null,
+    'wav window: window beyond data -> null',
+  );
+  fs.unlinkSync(wavPath);
+}
 
 // --- cloudAsrShared: needsSpaceBefore ---
 eq(needsSpaceBefore('Hello'), true, 'asr: latin word needs leading space');

@@ -139,8 +139,8 @@ function wordBoundaryOffsets(text: string): Set<number> | null {
   return bounds;
 }
 
-/** 把 `HH:MM:SS.mmm` / `MM:SS` / 纯秒（逗号或点皆可）解析为秒；非法返回 null。 */
-function parseTime(time?: string): number | null {
+/** 把 `HH:MM:SS.mmm` / `MM:SS` / 纯秒（逗号或点皆可）解析为秒；非法返回 null。导出供纯逻辑模块复用。 */
+export function parseTime(time?: string): number | null {
   if (!time) return null;
   const normalized = time.trim().replace(',', '.');
   const parts = normalized.split(':').map((part) => Number(part));

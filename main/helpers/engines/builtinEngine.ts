@@ -36,6 +36,19 @@ import {
   getNumericSetting,
 } from './transcribeShared';
 import { resolveEffectiveSettings } from './outcomePresets';
+import {
+  prepareBuiltinChunks,
+  cleanupCloudChunks,
+  type CloudAudioChunk,
+} from '../audioProcessor';
+import {
+  offsetNativeTokens,
+  offsetVadSegments,
+  offsetSegmentCues,
+  chunkedProgressPercent,
+  type RawVadSegment,
+} from '../builtinAudioChunking';
+import type { NativeToken, TokenTriple } from '../subtitleSegmentation';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
 /**
@@ -183,12 +196,83 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
     );
     event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
     throwIfTaskCancelled();
-    startWatchdog();
+
+    // 逐片转写 + 按偏移回拼（token/VAD 段为毫秒、段级回退为秒），输出与单次调用同构，
+    // 下游成句管线无感知。任一片取消 → 返回 cancelled 结果，走统一取消清理。
+    const transcribeChunked = async (chunkList: CloudAudioChunk[]) => {
+      const merged = {
+        tokens: [] as NativeToken[],
+        vadSegments: [] as RawVadSegment[],
+        transcription: [] as TokenTriple[],
+      };
+      for (let i = 0; i < chunkList.length; i += 1) {
+        const chunk = chunkList[i];
+        throwIfTaskCancelled();
+        logMessage(
+          `builtin chunk ${i + 1}/${chunkList.length}: ${chunk.startOffsetSec.toFixed(1)}s -> ${chunk.endOffsetSec.toFixed(1)}s`,
+          'info',
+        );
+        const chunkParams = {
+          ...whisperParams,
+          fname_inp: chunk.path,
+          progress_callback: (progress: number) => {
+            clearWatchdog();
+            if (signal?.aborted) return;
+            event.sender.send(
+              'taskProgressChange',
+              file,
+              'extractSubtitle',
+              chunkedProgressPercent(i, chunkList.length, progress),
+            );
+          },
+        };
+        startWatchdog();
+        let chunkResult;
+        try {
+          chunkResult = await whisperAsync(chunkParams);
+        } finally {
+          clearWatchdog();
+        }
+        if (isWhisperCancelledResult(chunkResult) || signal?.aborted) {
+          return { cancelled: true };
+        }
+        const offsetMs = Math.round(chunk.startOffsetSec * 1000);
+        merged.tokens.push(
+          ...offsetNativeTokens(chunkResult?.tokens, offsetMs),
+        );
+        merged.vadSegments.push(
+          ...offsetVadSegments(chunkResult?.vadSegments, offsetMs),
+        );
+        merged.transcription.push(
+          ...offsetSegmentCues(
+            chunkResult?.transcription,
+            chunk.startOffsetSec,
+          ),
+        );
+      }
+      return merged;
+    };
+
+    // 超长音频（>1.5h）先按静音对齐切片再转写：addon 在 Electron 主进程内一次性
+    // resize 整段 f32 缓冲，约 9.3h 起超过 PartitionAlloc 的 2GiB 单笔分配上限必崩
+    // （SIGTRAP @ operator new，与空闲内存无关）；whisper 内部 VAD 还会整段复制音频。
+    // 常规时长返回 null → 原单次调用路径，零行为变化。
+    const chunks = await prepareBuiltinChunks(tempAudioFile, { signal });
+
     let result;
-    try {
-      result = await whisperAsync(whisperParams);
-    } finally {
-      clearWatchdog();
+    if (chunks) {
+      try {
+        result = await transcribeChunked(chunks);
+      } finally {
+        cleanupCloudChunks(chunks, tempAudioFile);
+      }
+    } else {
+      startWatchdog();
+      try {
+        result = await whisperAsync(whisperParams);
+      } finally {
+        clearWatchdog();
+      }
     }
 
     if (isWhisperCancelledResult(result) || signal?.aborted) {

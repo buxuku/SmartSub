@@ -209,7 +209,14 @@ export function energySpeechSegments(
   audioFile?: string,
 ): Array<{ start: number; end: number }> {
   if (!audioFile || !fs.existsSync(audioFile)) return [];
-  const energy = analyzePcm16WavEnergy(audioFile);
+  let energy: AudioEnergy | null = null;
+  try {
+    energy = analyzePcm16WavEnergy(audioFile);
+  } catch (error) {
+    // 与文档合同一致：解析失败（如 >2GiB WAV 超出 readFileSync 上限）→ []，调用方降级。
+    logMessage(`energy speech segments skipped: ${error}`, 'warning');
+    return [];
+  }
   if (!energy) return [];
   const { frameDb, frameDurationSeconds: fd, thresholdDb } = energy;
 
