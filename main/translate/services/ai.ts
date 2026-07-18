@@ -37,6 +37,7 @@ import {
   selectGlossaryPromptEntries,
 } from '../../glossary/core';
 import { logGlossaryMatches } from '../../helpers/glossaryManager';
+import { buildAITranslationPromptForAttempt } from '../utils/aiRetryPrompt';
 
 function getLanguageName(code: string): string {
   // 中文目标须向 AI 明确简/繁，避免「中文」歧义导致译文简繁混杂（issue #332）。
@@ -197,20 +198,18 @@ export async function handleAIBatchTranslation(
           batchJsonContent[item.id] = item.content.join('\n');
         });
         const fullContent = `${JSON.stringify(batchJsonContent, null, 2)}`;
-        let translationContent = renderTemplate(
-          provider.prompt || defaultUserPrompt,
-          {
+        const translationContent = buildAITranslationPromptForAttempt(
+          renderTemplate(provider.prompt || defaultUserPrompt, {
             sourceLanguage: sourceLanguageName,
             targetLanguage: targetLanguageName,
             content: fullContent,
+          }),
+          {
+            isRetry: retryCount > 0 || alignmentRetryUsed,
+            echoEnabled,
+            appendRetryPrompt: provider.appendRetryPrompt,
           },
         );
-
-        if (retryCount > 0 || alignmentRetryUsed) {
-          translationContent += echoEnabled
-            ? '\n\n上一次响应存在错位或无法解析。请只返回一个 JSON 对象：键必须与输入字幕 ID 完全一致，每个键的值是 {"src": ..., "tr": ...}。注意：src 必须逐字复制输入中该 ID 对应的原文（保持原语言，绝对不能填译文），tr 才是译文；禁止合并或拆分条目，不要返回 markdown、解释或思考过程。'
-            : '\n\n上一次响应无法解析。请只返回一个 JSON 对象，键必须是输入字幕 ID，值必须是翻译结果；不要返回 markdown、解释、注释或思考过程。';
-        }
 
         const systemPrompt = renderGlossarySystemPrompt(
           provider.systemPrompt || defaultSystemPrompt,

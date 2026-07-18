@@ -9,6 +9,11 @@ import {
   normalizeForComparison,
   textSimilarity,
 } from '../main/translate/utils/similarity';
+import {
+  AI_ECHO_RETRY_FORMAT_INSTRUCTION,
+  AI_RETRY_FORMAT_INSTRUCTION,
+  buildAITranslationPromptForAttempt,
+} from '../main/translate/utils/aiRetryPrompt';
 
 let passed = 0;
 let failed = 0;
@@ -223,6 +228,47 @@ eq(
   ) < 0.75,
   true,
   'similarity: merged echo falls below threshold',
+);
+
+const basePrompt = 'Translate this JSON exactly.';
+
+eq(
+  buildAITranslationPromptForAttempt(basePrompt, {
+    isRetry: false,
+    echoEnabled: true,
+    appendRetryPrompt: true,
+  }),
+  basePrompt,
+  'retry prompt: first attempt stays unchanged',
+);
+
+eq(
+  buildAITranslationPromptForAttempt(basePrompt, {
+    isRetry: true,
+    echoEnabled: false,
+  }),
+  `${basePrompt}\n\n${AI_RETRY_FORMAT_INSTRUCTION}`,
+  'retry prompt: missing setting preserves enabled default',
+);
+
+eq(
+  buildAITranslationPromptForAttempt(basePrompt, {
+    isRetry: true,
+    echoEnabled: true,
+    appendRetryPrompt: true,
+  }),
+  `${basePrompt}\n\n${AI_ECHO_RETRY_FORMAT_INSTRUCTION}`,
+  'retry prompt: enabled appends the echo-alignment instruction',
+);
+
+eq(
+  buildAITranslationPromptForAttempt(basePrompt, {
+    isRetry: true,
+    echoEnabled: true,
+    appendRetryPrompt: false,
+  }),
+  basePrompt,
+  'retry prompt: disabled reuses the original prompt for aligned retries',
 );
 
 if (failed > 0) {

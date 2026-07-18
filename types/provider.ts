@@ -277,6 +277,15 @@ const FIELD_USER_PROMPT: ProviderField = {
   tips: 'userPromptTips',
 };
 
+const FIELD_APPEND_RETRY_PROMPT: ProviderField = {
+  key: 'appendRetryPrompt',
+  label: 'appendRetryPrompt',
+  type: 'switch',
+  required: false,
+  defaultValue: true,
+  tips: 'appendRetryPromptTips',
+};
+
 const batchSizeField = (
   defaultValue: number = 1,
   tips: string = 'batchSizeTip',
@@ -327,6 +336,7 @@ const aiCommonFields = (overrides?: {
 }): ProviderField[] => [
   FIELD_SYSTEM_PROMPT,
   FIELD_USER_PROMPT,
+  FIELD_APPEND_RETRY_PROMPT,
   structuredOutputField(overrides?.structuredOutput),
   FIELD_ECHO_ANCHORING,
   batchSizeField(overrides?.batchSize, overrides?.batchSizeTips),

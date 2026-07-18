@@ -100,6 +100,8 @@
   "echoAnchoring": "回显对齐校验",
   "echoAnchoringTips": "开启后模型会对每条字幕同时返回原文回显与译文，系统据此检测并修复「相邻字幕被合并翻译导致的错位」，确保译文与时间轴逐条对齐。会增加约一倍的输出 token 消耗；关闭后仅校验条数与空值。",
   "echoPromptOutdatedHint": "当前自定义提示词未包含 src/tr 回显协议，翻译仍可进行，但无法享受错位检测保护。建议参考默认提示词更新，或恢复默认值。",
+  "appendRetryPrompt": "重试时追加格式提示词",
+  "appendRetryPromptTips": "开启后，重试请求会在用户提示词末尾追加 JSON 格式或回显对齐要求；关闭后，重试将原样沿用用户提示词。",
   "doubaoApiKeyTips": "豆包翻译 API Key，可在 <a href='https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey' style='color: blue'>火山方舟控制台</a> 获取",
   "doubaoModelNameTips": "豆包翻译模型名称，默认为 doubao-seed-translation-250915，一般无需修改",
   "batchSizeDoubaoTips": "豆包翻译批量大小，由于 API 限制，建议设置为 1",
