@@ -125,6 +125,8 @@
       "checkFailed": "检查更新失败，请稍后重试。",
       "protocolUnsupported": "该引擎版本需要更新版本的 SmartSub，请先升级 SmartSub 后再安装或升级引擎。",
       "anotherDownload": "已有下载任务进行中，请等待完成后再试。",
+      "downloadFailed": "FunASR 模型下载失败",
+      "downloadFailedManualHint": "如果当前下载源被拦截或超时，可在下载源弹窗复制模型页链接，手动下载模型文件夹后使用「从文件夹导入」。该文件夹必须包含：{{files}}。",
       "advanced": "高级设置",
       "itn": "逆文本规整（ITN）",
       "itnHint": "将口语化的数字、日期等转换为标准书写形式，并自动补全标点",

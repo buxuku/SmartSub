@@ -82,6 +82,7 @@ import {
   getInstalledModelsForEngine,
   hasModelsForEngine,
 } from '../renderer/lib/engineModels';
+import { formatFunasrDownloadFailureToast } from '../renderer/lib/funasrDownloadError';
 import {
   tokensToTriples,
   wordsToTriples,
@@ -1223,6 +1224,40 @@ eq(
   ['encoder.int8.onnx', 'decoder.int8.onnx', 'tokens.txt'],
   'import: fireRed requiredFiles',
 );
+
+// --- funasr download failure: surface manual fallback next step ---
+{
+  const translations: Record<string, string> = {
+    'engines.funasr.downloadFailed': 'FunASR model download failed',
+    'engines.funasr.downloadFailedManualHint':
+      'Manual import requires: {{files}}.',
+  };
+  const t = (key: string, values?: Record<string, string>) =>
+    (translations[key] || key).replace(
+      /\{\{(\w+)\}\}/g,
+      (_match, name: string) => values?.[name] ?? '',
+    );
+  const toast = formatFunasrDownloadFailureToast(
+    t,
+    'sensevoice-small',
+    'HTTP Error: 403',
+  );
+  eq(
+    toast.title,
+    'FunASR model download failed',
+    'funasr download error: localized title',
+  );
+  eq(
+    toast.description.includes('HTTP Error: 403'),
+    true,
+    'funasr download error: keeps raw failure detail',
+  );
+  eq(
+    toast.description.includes('model.int8.onnx, tokens.txt'),
+    true,
+    'funasr download error: names required manual import files',
+  );
+}
 
 // --- subtitleSegmentation: tokensToTriples（原生逐 token 毫秒 → 字幕三元组） ---
 const T = (a: string, b: string, c: string): TokenTriple => [a, b, c];

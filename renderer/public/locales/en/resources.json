@@ -125,6 +125,8 @@
       "checkFailed": "Failed to check for updates. Please try again later.",
       "protocolUnsupported": "This engine version requires a newer SmartSub. Please update SmartSub before installing or upgrading the engine.",
       "anotherDownload": "Another download is in progress. Please wait for it to finish.",
+      "downloadFailed": "FunASR model download failed",
+      "downloadFailedManualHint": "If the selected source is blocked or times out, copy the model page link from the download source popover, download the folder manually, then use Import from folder. The folder must contain: {{files}}.",
       "advanced": "Advanced settings",
       "itn": "Inverse text normalization (ITN)",
       "itnHint": "Converts spoken numbers, dates, etc. into standard written form and restores punctuation",

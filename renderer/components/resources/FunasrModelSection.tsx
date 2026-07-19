@@ -18,6 +18,7 @@ import SherpaModelRow from '@/components/resources/SherpaModelRow';
 import DownloadSourcePopover, {
   useDownloadSource,
 } from '@/components/resources/engines/DownloadSourcePopover';
+import { formatFunasrDownloadFailureToast } from '@/lib/funasrDownloadError';
 import { importModelFromFolder } from 'lib/importModel';
 import { resolveModelDownloadUrl } from 'lib/resolveModelDownloadUrl';
 
@@ -90,14 +91,26 @@ const FunasrModelSection: React.FC<{
         await load();
         onUpdate?.();
       } else {
-        toast.error(
-          r?.error === 'anotherDownloadInProgress'
-            ? t('engines.funasr.anotherDownload')
-            : r?.error || 'Failed to download model',
-        );
+        if (r?.error === 'anotherDownloadInProgress') {
+          toast.error(t('engines.funasr.anotherDownload'));
+        } else {
+          const failure = formatFunasrDownloadFailureToast(
+            t,
+            id,
+            r?.error || '',
+          );
+          toast.error(failure.title, {
+            description: failure.description,
+            duration: 8000,
+          });
+        }
       }
     } catch (e) {
-      toast.error(String(e));
+      const failure = formatFunasrDownloadFailureToast(t, id, String(e));
+      toast.error(failure.title, {
+        description: failure.description,
+        duration: 8000,
+      });
     } finally {
       setDownloading(null);
       setProgress((prev) => ({ ...prev, [`funasr:${id}`]: 0 }));
