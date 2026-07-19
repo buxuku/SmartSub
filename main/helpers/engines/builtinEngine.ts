@@ -253,7 +253,7 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       return merged;
     };
 
-    // 超长音频（>1.5h）先按静音对齐切片再转写：addon 在 Electron 主进程内一次性
+    // 超长音频（>4h）先按静音对齐切片再转写：addon 在 Electron 主进程内一次性
     // resize 整段 f32 缓冲，约 9.3h 起超过 PartitionAlloc 的 2GiB 单笔分配上限必崩
     // （SIGTRAP @ operator new，与空闲内存无关）；whisper 内部 VAD 还会整段复制音频。
     // 常规时长返回 null → 原单次调用路径，零行为变化。

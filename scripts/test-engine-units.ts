@@ -3485,6 +3485,11 @@ eq(
   'builtin chunk: 1h below activate threshold -> no chunking',
 );
 eq(
+  planEvenChunkTargets(10800),
+  [],
+  'builtin chunk: common long content (3h movie/podcast) keeps single pass',
+);
+eq(
   planEvenChunkTargets(BUILTIN_CHUNK_ACTIVATE_SECONDS),
   [],
   'builtin chunk: exactly at activate threshold -> no chunking',
@@ -3495,9 +3500,9 @@ eq(
   'builtin chunk: 12h -> 11 even cut targets (12 chunks of 1h)',
 );
 eq(
-  planEvenChunkTargets(5401),
-  [2700.5],
-  'builtin chunk: just above threshold -> two balanced halves (no tiny tail)',
+  planEvenChunkTargets(15000),
+  [3000, 6000, 9000, 12000],
+  'builtin chunk: just above threshold -> balanced chunks (no tiny tail)',
 );
 eq(
   planEvenChunkTargets(7000, { targetSeconds: 3600, activateSeconds: 5400 }),

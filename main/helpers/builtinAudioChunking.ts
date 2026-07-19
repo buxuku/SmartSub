@@ -21,10 +21,12 @@ import {
 /** 单片目标时长（秒）：1 小时 ≈ 230MB float 缓冲，内存安全且模型重载开销可忽略。 */
 export const BUILTIN_CHUNK_TARGET_SECONDS = 3600;
 /**
- * 分片激活阈值（秒）：短于 1.5 小时完全走原单次调用路径（常规视频零行为变化），
- * 也避免 61 分钟这类文件被切出无意义的小尾片。
+ * 分片激活阈值（秒）：4 小时。常见长内容（电影/播客/讲座/赛事，≤3.5h）单次转写内存
+ * ≤~3GB 且一直工作正常，保持原路径零行为变化；>4h（直播录像/整套课程）恰是内存压力
+ * 真实出现的区间，且距 ~9.3h 的 PartitionAlloc 2GiB 崩溃红线留有 2.3 倍裕量
+ * （WAV 头损坏按字节数估算时长有偏差也安全）。
  */
-export const BUILTIN_CHUNK_ACTIVATE_SECONDS = 5400;
+export const BUILTIN_CHUNK_ACTIVATE_SECONDS = 14400;
 /** 切点搜索窗口半径（秒）：在目标切点 ±45s 内找静音；相对 1h 片长偏移可忽略。 */
 export const CUT_SEARCH_WINDOW_SECONDS = 45;
 /** 静音 run 最短时长（秒）：短于此视为词内间隙，不作为切点候选。 */

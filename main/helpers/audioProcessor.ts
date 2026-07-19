@@ -541,7 +541,7 @@ export async function splitWavAtBoundaries(
 /**
  * 内置引擎超长音频分片准备（crash fix：≥2GiB 单笔分配被 Electron PartitionAlloc 拒绝，
  * 约 9.3h 的 16kHz 音频在 addon 内一次性 resize 必崩）：
- *  - 时长 ≤ 激活阈值（1.5h）→ null，走原单次转写路径（常规视频零变化）；
+ *  - 时长 ≤ 激活阈值（4h）→ null，走原单次转写路径（常见内容零变化）；
  *  - 超阈值 → 按 ~1h 均衡片数定目标切点，每个切点在 ±45s 窗口内吸附到「最长静音 run 中点」
  *    （避免把一句完整的话切成两段），ffmpeg 切片后返回带偏移的切片列表。
  * WAV 头不可解析 → null（保持旧行为，交由 addon 自行处理）。
