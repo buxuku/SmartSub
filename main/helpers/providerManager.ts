@@ -9,7 +9,8 @@ import { store } from './store';
 import { logMessage } from './logger';
 
 // v21：默认提示词升级为 src/tr 回显协议 + echoAnchoring 字段默认开启（openspec: ai-translation-alignment）
-const CURRENT_PROVIDER_VERSION = 21;
+// v22：思考模式开关 enableThinking 默认关闭（= 主动禁用思考，openspec: ai-thinking-mode-control）
+const CURRENT_PROVIDER_VERSION = 22;
 
 const FREE_PROVIDER_IDS = ['autoFree', 'bingFree', 'googleFree'];
 
@@ -133,6 +134,8 @@ function migrateProviders(oldProviders: any[]): Provider[] {
               'json_object',
             // v21：回显锚定默认开启；用户显式关闭过则保留
             echoAnchoring: p.echoAnchoring !== false,
+            // v22：思考模式默认关闭（= 主动禁用思考）；用户显式开启过则保留
+            enableThinking: p.enableThinking === true,
             // v21：ollama 升级为 schema 约束解码（本地小模型条数对齐收益最大，
             // 旧版 ollama 由运行时回退链降级）；显式 disabled 的用户保留原选择
             ...(p.id === 'ollama' &&
@@ -161,6 +164,8 @@ function migrateProviders(oldProviders: any[]): Provider[] {
       structuredOutput: p.structuredOutput || 'json_object',
       // v21：回显锚定默认开启；用户显式关闭过则保留
       echoAnchoring: p.echoAnchoring !== false,
+      // v22：思考模式默认关闭（= 主动禁用思考）；用户显式开启过则保留
+      enableThinking: p.enableThinking === true,
     }));
 
   // 添加缺失的内置服务商

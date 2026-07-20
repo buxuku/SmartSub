@@ -14,6 +14,7 @@ import {
   ValidationRule,
   ParameterValidationResult,
 } from '../../types/parameterSystem';
+import { isThinkingOnlyModelName } from '../../types/provider';
 
 /**
  * Parameter Registry - Known parameters with validation rules
@@ -22,7 +23,7 @@ export const PARAMETER_REGISTRY: Record<string, ParameterDefinition> = {
   // Core AI parameters
   temperature: {
     key: 'temperature',
-    type: 'number',
+    type: 'float',
     category: 'behavior',
     required: false,
     defaultValue: 0.7,
@@ -32,7 +33,7 @@ export const PARAMETER_REGISTRY: Record<string, ParameterDefinition> = {
   },
   max_tokens: {
     key: 'max_tokens',
-    type: 'number',
+    type: 'integer',
     category: 'response',
     required: false,
     defaultValue: 1000,
@@ -42,7 +43,7 @@ export const PARAMETER_REGISTRY: Record<string, ParameterDefinition> = {
   },
   top_p: {
     key: 'top_p',
-    type: 'number',
+    type: 'float',
     category: 'behavior',
     required: false,
     defaultValue: 1.0,
@@ -52,7 +53,7 @@ export const PARAMETER_REGISTRY: Record<string, ParameterDefinition> = {
   },
   top_k: {
     key: 'top_k',
-    type: 'number',
+    type: 'integer',
     category: 'behavior',
     required: false,
     defaultValue: 50,
@@ -91,7 +92,7 @@ export const PARAMETER_REGISTRY: Record<string, ParameterDefinition> = {
   },
   presence_penalty: {
     key: 'presence_penalty',
-    type: 'number',
+    type: 'float',
     category: 'behavior',
     required: false,
     defaultValue: 0.0,
@@ -101,7 +102,7 @@ export const PARAMETER_REGISTRY: Record<string, ParameterDefinition> = {
   },
   frequency_penalty: {
     key: 'frequency_penalty',
-    type: 'number',
+    type: 'float',
     category: 'behavior',
     required: false,
     defaultValue: 0.0,
@@ -147,9 +148,6 @@ export class ParameterProcessor {
       provider,
       result,
     );
-
-    // Apply hard-coded parameter logic (highest precedence)
-    this.applyHardCodedParameters(provider, result);
 
     // Validate model compatibility with applied parameters
     this.validateModelCompatibility(provider, result);
@@ -239,35 +237,10 @@ export class ParameterProcessor {
     });
   }
 
-  /**
-   * Apply hard-coded parameters (highest precedence for backward compatibility)
-   * Updated to respect user settings while providing sensible defaults
-   */
-  private static applyHardCodedParameters(
-    provider: ExtendedProvider,
-    result: ProcessedParameters,
-  ): void {
-    // Apply default thinking mode for Qwen/Bailian providers ONLY if user hasn't specified a preference
-    if (
-      provider.id === 'qwen' ||
-      provider.apiUrl?.includes('dashscope.aliyuncs.com')
-    ) {
-      // Only set default if user hasn't specified enable_thinking in custom parameters
-      if (!result.body.hasOwnProperty('enable_thinking')) {
-        result.body.enable_thinking = false; // Default to false for performance
-        result.appliedParameters.push('default:enable_thinking');
-        console.log(
-          'Applied default enable_thinking: false (no user preference specified)',
-        );
-      } else {
-        console.log(
-          `Respecting user preference for enable_thinking: ${result.body.enable_thinking}`,
-        );
-      }
-    }
-
-    // Add other hard-coded logic as needed for backward compatibility
-  }
+  // qwen 的 enable_thinking 硬编码默认值已移除：
+  // 思考控制统一由 provider.enableThinking 开关驱动（main/service/thinkingControl.ts），
+  // 开关派生参数作为 baseParams 传入本处理器，自定义参数仍可覆盖
+  // （openspec: ai-thinking-mode-control D3）。
 
   /**
    * Validate a single parameter
@@ -361,18 +334,10 @@ export class ParameterProcessor {
 
   /**
    * Detect if a model is a thinking-only model that cannot disable thinking mode
+   * (shared single source: types/provider.ts, openspec: ai-thinking-mode-control D6)
    */
   private static isThinkingOnlyModel(provider: ExtendedProvider): boolean {
-    const modelName = provider.modelName?.toLowerCase() || '';
-
-    // Known thinking-only model patterns for Ali-Bailian
-    const thinkingOnlyPatterns = [
-      'thinking-2507', // qwen3-235b-a22b-thinking-2507
-      'thinking-', // Any model with "thinking-" in the name
-      '-reasoning', // Models with reasoning suffix
-    ];
-
-    return thinkingOnlyPatterns.some((pattern) => modelName.includes(pattern));
+    return isThinkingOnlyModelName(provider.modelName);
   }
 
   /**
@@ -639,7 +604,7 @@ export class ParameterProcessor {
     }
 
     // Validate header parameters
-    Object.entries(provider.customParameters.headerConfigs).forEach(
+    Object.entries(provider.customParameters.headerParameters || {}).forEach(
       ([key, value]) => {
         const result = this.validateParameter(key, value, provider);
         if (!result.isValid) {
@@ -649,7 +614,7 @@ export class ParameterProcessor {
     );
 
     // Validate body parameters
-    Object.entries(provider.customParameters.bodyConfigs).forEach(
+    Object.entries(provider.customParameters.bodyParameters || {}).forEach(
       ([key, value]) => {
         const result = this.validateParameter(key, value, provider);
         if (!result.isValid) {

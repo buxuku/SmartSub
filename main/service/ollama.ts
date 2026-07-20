@@ -11,8 +11,16 @@ import {
   runWithStructuredOutputFallback,
   type StructuredOutputMode,
 } from './structuredOutputFallback';
+import {
+  resolveThinkingParams,
+  isThinkingParamRejectedError,
+  markThinkingParamRejected,
+  appendNoThinkSoftSwitch,
+} from './thinkingControl';
 
 interface OllamaConfig {
+  id?: string;
+  type?: string;
   apiUrl: string;
   modelName: string;
   prompt: string;
@@ -20,6 +28,7 @@ interface OllamaConfig {
   useJsonMode?: boolean;
   structuredOutput?: StructuredOutputMode;
   strictStructuredOutput?: boolean;
+  enableThinking?: boolean;
 }
 
 function getOllamaFormat(
@@ -72,33 +81,46 @@ export default async function translateWithOllama(
 
   try {
     throwIfSignalCancelled(options?.signal);
-    // 为JSON模式增强system prompt
-    let enhancedSystemPrompt = systemPrompt;
 
-    // 如果开启了JSON模式，添加JSON格式说明
-    if (structuredOutputMode !== 'disabled') {
-      if (options?.responseJsonSchema) {
-        // 动态批次 schema 体积随批量线性增长（45 条 echo schema ≈ 3900 tokens），
-        // 全文内嵌会挤爆上下文窗口、把字幕原文截断（实测回显崩坏 44/45）。
-        // 结构约束交给 format 参数，提示词只留一句说明。
-        enhancedSystemPrompt = `${systemPrompt}\n\n你必须以JSON格式返回数据，不要包含任何其他文本、解释或思考过程。`;
-      } else {
-        // 未传动态 schema 的调用方（如校对）沿用静态 schema 全文内嵌（体积很小）
-        enhancedSystemPrompt = `${systemPrompt}\n\n你必须以JSON格式返回数据，不要包含任何其他文本或说明。输出应该是一个有效的JSON对象，其中键是字幕ID，值是翻译后的内容。\n\n下面是返回的JSON Schema:\n${JSON.stringify(TRANSLATION_JSON_SCHEMA, null, 2)}`;
+    const buildRequestBody = (): Record<string, any> => {
+      // 为JSON模式增强system prompt
+      let enhancedSystemPrompt = systemPrompt;
+
+      // 如果开启了JSON模式，添加JSON格式说明
+      if (structuredOutputMode !== 'disabled') {
+        if (options?.responseJsonSchema) {
+          // 动态批次 schema 体积随批量线性增长（45 条 echo schema ≈ 3900 tokens），
+          // 全文内嵌会挤爆上下文窗口、把字幕原文截断（实测回显崩坏 44/45）。
+          // 结构约束交给 format 参数，提示词只留一句说明。
+          enhancedSystemPrompt = `${systemPrompt}\n\n你必须以JSON格式返回数据，不要包含任何其他文本、解释或思考过程。`;
+        } else {
+          // 未传动态 schema 的调用方（如校对）沿用静态 schema 全文内嵌（体积很小）
+          enhancedSystemPrompt = `${systemPrompt}\n\n你必须以JSON格式返回数据，不要包含任何其他文本或说明。输出应该是一个有效的JSON对象，其中键是字幕ID，值是翻译后的内容。\n\n下面是返回的JSON Schema:\n${JSON.stringify(TRANSLATION_JSON_SCHEMA, null, 2)}`;
+        }
       }
-    }
 
-    const requestBody: Record<string, any> = {
-      model: modelName,
-      messages: [
-        { role: 'system', content: enhancedSystemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      stream: false,
-      // 与 openai.ts 的 temperature 0.3 对齐：翻译任务低温更稳。
-      // num_ctx：ollama 默认上下文窗口偏小（2048/4096），批量翻译输入+回显输出
-      // 极易超窗导致原文被截断、回显崩坏（实测 45 条批次 44/45 错位），显式放宽。
-      options: { temperature: 0.3, num_ctx: 8192 },
+      // L2 软开关（openspec: ai-thinking-mode-control D5）：
+      // think 参数被旧版 Ollama 拒绝（拒绝缓存命中）后，qwen3 型号退回 /no_think
+      enhancedSystemPrompt = appendNoThinkSoftSwitch(
+        enhancedSystemPrompt,
+        config,
+      );
+
+      return {
+        model: modelName,
+        messages: [
+          { role: 'system', content: enhancedSystemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        stream: false,
+        // 思考模式开关（openspec: ai-thinking-mode-control D2）：
+        // 开关为关时注入顶层 think: false（Ollama ≥0.9），旧版本由去参重试兜底
+        ...(resolveThinkingParams(config) || {}),
+        // 与 openai.ts 的 temperature 0.3 对齐：翻译任务低温更稳。
+        // num_ctx：ollama 默认上下文窗口偏小（2048/4096），批量翻译输入+回显输出
+        // 极易超窗导致原文被截断、回显崩坏（实测 45 条批次 44/45 错位），显式放宽。
+        options: { temperature: 0.3, num_ctx: 8192 },
+      };
     };
 
     const postOllama = (body: Record<string, any>) =>
@@ -108,20 +130,55 @@ export default async function translateWithOllama(
       });
 
     // 按共享回退链降级：仅当 Ollama 明确报 format 不支持时才降级
-    const response = await runWithStructuredOutputFallback({
-      startMode: structuredOutputMode,
-      strict: config.strictStructuredOutput === true,
-      signal: options?.signal,
-      shouldFallback: (_from, error) => isSchemaFormatUnsupportedError(error),
-      attempt: (mode) => {
-        const format = getOllamaFormat(mode, options?.responseJsonSchema);
-        return postOllama(format ? { ...requestBody, format } : requestBody);
-      },
-    });
+    const runTranslation = () => {
+      const requestBody = buildRequestBody();
+      return runWithStructuredOutputFallback({
+        startMode: structuredOutputMode,
+        strict: config.strictStructuredOutput === true,
+        signal: options?.signal,
+        shouldFallback: (_from, error) => isSchemaFormatUnsupportedError(error),
+        attempt: (mode) => {
+          const format = getOllamaFormat(mode, options?.responseJsonSchema);
+          return postOllama(format ? { ...requestBody, format } : requestBody);
+        },
+      });
+    };
+
+    // 思考参数去参重试（openspec: ai-thinking-mode-control D4）：
+    // 旧版 Ollama 对未知字段报 unknown field 类错误，去掉 think 重跑并缓存
+    const thinkingParamsInjected = resolveThinkingParams(config) !== undefined;
+    let response;
+    try {
+      response = await runTranslation();
+    } catch (error) {
+      if (
+        thinkingParamsInjected &&
+        !options?.signal?.aborted &&
+        isThinkingParamRejectedError(error)
+      ) {
+        markThinkingParamRejected(config);
+        console.warn(
+          'Ollama rejected think param (likely <0.9), retrying without it:',
+          getErrorMessage(error),
+        );
+        response = await runTranslation();
+      } else {
+        throw error;
+      }
+    }
 
     if (response.data && response.data.message) {
       throwIfSignalCancelled(options?.signal);
-      return response.data.message?.content?.trim();
+      const message = response.data.message;
+      const content = message?.content?.trim();
+      options?.onResponseMeta?.({
+        // Ollama ≥0.9 把思考放在 message.thinking 独立字段
+        reasoningContentPresent:
+          typeof message?.thinking === 'string' &&
+          message.thinking.trim() !== '',
+        contentThinkTagPresent: /<think>/i.test(content || ''),
+      });
+      return content;
     } else {
       throw new Error(
         response?.data?.error || 'Unexpected response from Ollama',

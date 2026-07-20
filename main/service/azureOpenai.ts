@@ -11,8 +11,15 @@ import {
   runWithStructuredOutputFallback,
   type StructuredOutputMode,
 } from './structuredOutputFallback';
+import {
+  resolveThinkingParams,
+  isThinkingParamRejectedError,
+  markThinkingParamRejected,
+  extractOpenAIResponseMeta,
+} from './thinkingControl';
 
 type AzureOpenAIProvider = {
+  id?: string;
   apiUrl: string;
   apiKey: string;
   modelName?: string;
@@ -21,6 +28,7 @@ type AzureOpenAIProvider = {
   useJsonMode?: boolean;
   structuredOutput?: StructuredOutputMode;
   strictStructuredOutput?: boolean;
+  enableThinking?: boolean;
 };
 
 /** 老 api-version 不支持 response_format，任何结构化模式都退化为普通输出 */
@@ -76,43 +84,80 @@ export async function translateWithAzureOpenAI(
       'You are a professional subtitle translation tool';
     const userPrompt = Array.isArray(text) ? text.join('\n') : text;
 
-    const baseParams: any = {
-      model: undefined,
-      messages: [
-        { role: 'system', content: sysPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.3,
+    // 思考控制克制接入（openspec: ai-thinking-mode-control D9）：
+    // Azure 部署名是用户自定义的，仅当 deployment/modelName 命中 o 系/gpt-5
+    // 推理型号模式时才注入 reasoning_effort，常规模型不干预
+    const thinkingProvider = {
+      ...provider,
+      id: provider.id || 'azureopenai',
+      apiUrl: undefined, // 屏蔽 URL 嗅探，Azure 只按型号嗅探
+      modelName: provider.modelName || deploymentName,
     };
 
-    // 结构化输出走共享回退链（json_schema → json_object → disabled）
-    const completion = await runWithStructuredOutputFallback({
-      startMode: resolveStructuredOutputMode(provider, 'json_schema'),
-      strict: provider.strictStructuredOutput === true,
-      signal: options?.signal,
-      shouldFallback: (from, error) =>
-        from === 'json_schema' || isStructuredOutputUnsupportedError(error),
-      onFallback: (from, to, error) =>
+    const runTranslation = async () => {
+      const baseParams: any = {
+        model: undefined,
+        messages: [
+          { role: 'system', content: sysPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.3,
+        ...(resolveThinkingParams(thinkingProvider) || {}),
+      };
+
+      // 结构化输出走共享回退链（json_schema → json_object → disabled）
+      return runWithStructuredOutputFallback({
+        startMode: resolveStructuredOutputMode(provider, 'json_schema'),
+        strict: provider.strictStructuredOutput === true,
+        signal: options?.signal,
+        shouldFallback: (from, error) =>
+          from === 'json_schema' || isStructuredOutputUnsupportedError(error),
+        onFallback: (from, to, error) =>
+          console.warn(
+            `Azure OpenAI structured output ${from} failed, falling back to ${to}:`,
+            error,
+          ),
+        attempt: (mode) => {
+          const responseFormat = buildResponseFormat(
+            mode,
+            apiVersion,
+            options?.responseJsonSchema,
+          );
+          const requestParams = responseFormat
+            ? { ...baseParams, response_format: responseFormat }
+            : baseParams;
+          return openai.chat.completions.create(requestParams, {
+            signal: options?.signal,
+          });
+        },
+      });
+    };
+
+    // 思考参数去参重试（design D4）：被拒则缓存并重跑完整调用
+    const thinkingParamsInjected =
+      resolveThinkingParams(thinkingProvider) !== undefined;
+    let completion;
+    try {
+      completion = await runTranslation();
+    } catch (error) {
+      if (
+        thinkingParamsInjected &&
+        !options?.signal?.aborted &&
+        isThinkingParamRejectedError(error)
+      ) {
+        markThinkingParamRejected(thinkingProvider);
         console.warn(
-          `Azure OpenAI structured output ${from} failed, falling back to ${to}:`,
+          'Azure OpenAI rejected reasoning_effort, retrying without it:',
           error,
-        ),
-      attempt: (mode) => {
-        const responseFormat = buildResponseFormat(
-          mode,
-          apiVersion,
-          options?.responseJsonSchema,
         );
-        const requestParams = responseFormat
-          ? { ...baseParams, response_format: responseFormat }
-          : baseParams;
-        return openai.chat.completions.create(requestParams, {
-          signal: options?.signal,
-        });
-      },
-    });
+        completion = await runTranslation();
+      } else {
+        throw error;
+      }
+    }
     throwIfSignalCancelled(options?.signal);
 
+    options?.onResponseMeta?.(extractOpenAIResponseMeta(completion));
     const result = completion?.choices?.[0]?.message?.content?.trim();
 
     return result;

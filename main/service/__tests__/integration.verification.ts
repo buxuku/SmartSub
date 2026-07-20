@@ -42,8 +42,8 @@ function expect(actual: any) {
 function runIntegrationTests() {
   console.log('Running OpenAI Service Integration Tests...\n');
 
-  // Test 1: Qwen thinking mode backward compatibility
-  console.log('Test 1: Qwen thinking mode backward compatibility...');
+  // Test 1: 自定义参数优先于思考开关派生值（openspec: ai-thinking-mode-control D3）
+  console.log('Test 1: Custom parameter precedence over thinking switch...');
   try {
     const qwenProvider: ExtendedProvider = {
       id: 'qwen',
@@ -56,7 +56,8 @@ function runIntegrationTests() {
       customParameters: {
         headerConfigs: {},
         bodyConfigs: {
-          enable_thinking: true, // Should be overridden
+          // 用户显式配置优先于思考开关派生值
+          enable_thinking: true,
           temperature: 0.8,
         },
         templates: [],
@@ -65,14 +66,16 @@ function runIntegrationTests() {
       },
     };
 
-    const result = ParameterProcessor.processCustomParameters(qwenProvider, {});
+    // 思考开关（默认关）派生的 enable_thinking: false 作为 baseParams 传入
+    const result = ParameterProcessor.processCustomParameters(qwenProvider, {
+      enable_thinking: false,
+    });
 
-    expect(result.body.enable_thinking).toBe(false); // Hard-coded override
-    expect(result.appliedParameters).toContain('hardcoded:enable_thinking');
+    expect(result.body.enable_thinking).toBe(true); // 用户显式配置胜出
     expect(result.body.temperature).toBe(0.8); // Custom parameter preserved
-    console.log('✅ Qwen thinking mode backward compatibility test passed');
+    console.log('✅ Custom parameter precedence test passed');
   } catch (error) {
-    console.log('❌ Qwen thinking mode test failed:', error.message);
+    console.log('❌ Custom parameter precedence test failed:', error.message);
   }
 
   // Test 2: Custom headers processing

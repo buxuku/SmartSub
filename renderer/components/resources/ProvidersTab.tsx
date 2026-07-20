@@ -128,6 +128,12 @@ type TestResult = {
   autoSwitchedMode?: StructuredOutputMode;
   /** 自动探测已尝试所有结构化输出模式仍失败 */
   triedAllModes?: boolean;
+  /**
+   * 思考状态徽标（openspec: ai-thinking-mode-control D7）：
+   * 仅开关为关且主进程返回了判定结论时有值——
+   * 'disabled' = 思考已关闭；'active' = 无法关闭思考（模型限制）
+   */
+  thinkingStatus?: 'disabled' | 'active';
 };
 
 /** 结构化输出模式的展示名（与 structuredOutputTips 用词一致） */
@@ -482,6 +488,16 @@ const ProvidersTab: React.FC = () => {
       const translation =
         typeof result === 'string' ? result : result.translation;
       const analysis = typeof result === 'object' ? result.analysis : null;
+      // 思考徽标仅在「开关为关 + 主进程给出判定」时展示（design D7）；
+      // 开关为开表示用户主动放行思考，无需反馈
+      const thinkingDisabledByUser = currentProvider.enableThinking !== true;
+      const thinkingStatus =
+        thinkingDisabledByUser &&
+        typeof analysis?.thinking_enabled === 'boolean'
+          ? analysis.thinking_enabled
+            ? ('active' as const)
+            : ('disabled' as const)
+          : undefined;
       return {
         providerId: currentProvider.id,
         status: 'success',
@@ -491,6 +507,7 @@ const ProvidersTab: React.FC = () => {
         source,
         target,
         autoSwitchedMode,
+        thinkingStatus,
       };
     };
 
@@ -1001,6 +1018,20 @@ const ProvidersTab: React.FC = () => {
                         <p className="break-all">
                           {t('translationResult')}: "{testResult.translation}"
                         </p>
+                        {testResult.thinkingStatus && (
+                          <p
+                            className={cn(
+                              'text-xs',
+                              testResult.thinkingStatus === 'disabled'
+                                ? 'text-muted-foreground'
+                                : 'text-amber-600 dark:text-amber-500',
+                            )}
+                          >
+                            {testResult.thinkingStatus === 'disabled'
+                              ? t('testThinkingDisabled')
+                              : t('testThinkingCannotDisable')}
+                          </p>
+                        )}
                         {testResult.autoSwitchedMode && (
                           <p className="text-xs text-muted-foreground">
                             {t('autoDetectSwitched', {

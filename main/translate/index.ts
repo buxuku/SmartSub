@@ -1,7 +1,9 @@
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { Provider, TranslationResult } from './types';
+import { Provider, TranslationResult, TranslationResponseMeta } from './types';
+import { clearThinkingParamRejection } from '../service/thinkingControl';
+import { isThinkingActiveFromMeta } from '../helpers/thinkingModeDetector';
 import { CONTENT_TEMPLATES } from './constants';
 import { createOrClearFile, appendToFile } from './utils/file';
 import {
@@ -221,6 +223,16 @@ export async function testTranslation(
       throw new Error(`Unknown translation provider: ${provider.type}`);
     }
 
+    // 测试永远是新鲜探测（openspec: ai-thinking-mode-control D7）：
+    // 用户可能已升级后端（如 Ollama），清除会话内的思考参数拒绝缓存
+    clearThinkingParamRejection(provider);
+
+    // 收集服务层回传的响应元数据，判定思考是否实际发生
+    let responseMeta: TranslationResponseMeta | undefined;
+    const collectMeta = (meta: TranslationResponseMeta) => {
+      responseMeta = meta;
+    };
+
     const startTime = Date.now();
     const results = await translateWithProvider(
       provider,
@@ -232,6 +244,7 @@ export async function testTranslation(
       undefined,
       0,
       false,
+      provider.isAi ? collectMeta : undefined,
     );
 
     let translation: string;
@@ -243,8 +256,13 @@ export async function testTranslation(
 
     assertValidTestTranslation(translation);
 
-    // For now, return basic result until we implement full analysis
-    // TODO: Add thinking mode analysis when we have access to raw API response
+    // 思考状态判定（design D7）：仅 AI 服务商且拿到元数据时给出结论，
+    // 元数据缺失（服务商未接入回调）时不下结论，UI 不展示徽标
+    const thinkingEnabled =
+      provider.isAi && responseMeta
+        ? isThinkingActiveFromMeta(responseMeta)
+        : undefined;
+
     return {
       translation,
       analysis: {
@@ -252,6 +270,7 @@ export async function testTranslation(
         provider_name: provider.name,
         model_name: provider.modelName,
         test_completed: true,
+        thinking_enabled: thinkingEnabled,
       },
     };
   } catch (error) {

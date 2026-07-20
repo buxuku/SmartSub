@@ -70,17 +70,16 @@ const mockProvider: ExtendedProvider = {
   apiUrl: 'https://api.test.com',
   modelName: 'test-model',
   customParameters: {
-    headerConfigs: {
+    headerParameters: {
       Authorization: 'Bearer ${API_KEY}',
       'X-Custom-Header': 'test-value',
     },
-    bodyConfigs: {
+    bodyParameters: {
       temperature: 0.8,
       max_tokens: 2000,
       stream: true,
       custom_param: 'custom-value',
     },
-    templates: [],
     configVersion: '1.0.0',
     lastModified: Date.now(),
   },
@@ -95,12 +94,12 @@ const mockQwenProvider: ExtendedProvider = {
   apiUrl: 'https://dashscope.aliyuncs.com',
   modelName: 'qwen-turbo',
   customParameters: {
-    headerConfigs: {},
-    bodyConfigs: {
-      enable_thinking: true, // Should be overridden by hard-coded logic
+    headerParameters: {},
+    bodyParameters: {
+      // 用户显式配置优先于思考开关派生值（openspec: ai-thinking-mode-control D3）
+      enable_thinking: true,
       temperature: 0.5,
     },
-    templates: [],
     configVersion: '1.0.0',
     lastModified: Date.now(),
   },
@@ -158,21 +157,21 @@ function runTests() {
     );
   }
 
-  // Test 3: Hard-coded parameters precedence
+  // Test 3: 自定义参数优先于思考开关派生值（openspec: ai-thinking-mode-control D3）
+  // 开关派生的 enable_thinking: false 以 baseParams 传入，用户显式配置覆盖它
   try {
     const result = ParameterProcessor.processCustomParameters(
       mockQwenProvider,
-      {},
+      { enable_thinking: false }, // 思考开关（默认关）派生的基础参数
     );
 
-    // Hard-coded logic should override custom parameter
-    expect(result.body.enable_thinking).toBe(false);
-    expect(result.appliedParameters).toContain('hardcoded:enable_thinking');
+    // 用户在自定义参数里显式配置的值胜出，qwen 硬编码块已移除
+    expect(result.body.enable_thinking).toBe(true);
     expect(result.body.temperature).toBe(0.5); // Custom parameter should remain
-    console.log('✅ Hard-coded parameters precedence test passed');
+    console.log('✅ Custom parameter precedence over thinking switch passed');
   } catch (error) {
     console.log(
-      '❌ Hard-coded parameters precedence test failed:',
+      '❌ Custom parameter precedence over thinking switch failed:',
       error.message,
     );
   }
@@ -340,7 +339,7 @@ function runTests() {
 
     expect(definition).not.toBeNull();
     expect(definition?.key).toBe('temperature');
-    expect(definition?.type).toBe('number');
+    expect(definition?.type).toBe('float');
     console.log('✅ Known parameter definition test passed');
   } catch (error) {
     console.log('❌ Known parameter definition test failed:', error.message);
@@ -398,7 +397,7 @@ function runTests() {
         throw new Error(`Invalid providerSupport for parameter ${param.key}`);
 
       if (param.validation) {
-        if (param.type === 'number') {
+        if (param.type === 'integer' || param.type === 'float') {
           if (
             param.validation.min !== undefined &&
             typeof param.validation.min !== 'number'

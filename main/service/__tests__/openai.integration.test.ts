@@ -35,7 +35,7 @@ jest.mock('openai', () => {
 describe('OpenAI Service Integration with Parameter Processor', () => {
   // Test the parameter processing logic directly
   describe('Parameter Processing Integration', () => {
-    it('should maintain Qwen thinking mode backward compatibility', () => {
+    it('should let explicit custom parameters override thinking switch defaults', () => {
       const qwenProvider = {
         id: 'qwen',
         name: 'Qwen Provider',
@@ -47,7 +47,8 @@ describe('OpenAI Service Integration with Parameter Processor', () => {
         customParameters: {
           headerConfigs: {},
           bodyConfigs: {
-            enable_thinking: true, // Should be overridden by hard-coded logic
+            // 用户显式配置优先于思考开关派生值（openspec: ai-thinking-mode-control D3）
+            enable_thinking: true,
             temperature: 0.8,
           },
           templates: [],
@@ -56,14 +57,13 @@ describe('OpenAI Service Integration with Parameter Processor', () => {
         },
       };
 
-      const result = ParameterProcessor.processCustomParameters(
-        qwenProvider,
-        {},
-      );
+      // 思考开关（默认关）派生的 enable_thinking: false 作为 baseParams 传入
+      const result = ParameterProcessor.processCustomParameters(qwenProvider, {
+        enable_thinking: false,
+      });
 
-      // Hard-coded logic should override custom parameter
-      expect(result.body.enable_thinking).toBe(false);
-      expect(result.appliedParameters).toContain('hardcoded:enable_thinking');
+      // 用户显式配置胜出，qwen 硬编码块已移除
+      expect(result.body.enable_thinking).toBe(true);
       expect(result.body.temperature).toBe(0.8); // Custom parameter should remain
     });
 

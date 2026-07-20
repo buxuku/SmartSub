@@ -14,7 +14,11 @@ import {
   Plus,
   X,
 } from 'lucide-react';
-import { ProviderField, promptSupportsEchoAnchoring } from '../../types';
+import {
+  ProviderField,
+  promptSupportsEchoAnchoring,
+  isThinkingOnlyModelName,
+} from '../../types';
 import { useTranslation } from 'next-i18next';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -513,6 +517,13 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
     values.echoAnchoring !== false &&
     !promptSupportsEchoAnchoring(String(values[field.key] ?? ''));
 
+  // 纯思考模型（deepseek-reasoner 等）无法通过参数关闭思考：
+  // 非阻断提示建议换非思考模型，开关保持可操作（openspec: ai-thinking-mode-control D6）
+  const showThinkingOnlyHint = (field: ProviderField) =>
+    field.key === 'enableThinking' &&
+    values.enableThinking !== true &&
+    isThinkingOnlyModelName(String(values.modelName ?? ''));
+
   const renderFieldBlock = (field: ProviderField) => (
     <div key={field.key} className="space-y-2">
       <label className="text-sm font-medium">
@@ -523,6 +534,11 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
       {showEchoPromptHint(field) && (
         <p className="text-xs text-amber-600 dark:text-amber-500">
           {t('echoPromptOutdatedHint')}
+        </p>
+      )}
+      {showThinkingOnlyHint(field) && (
+        <p className="text-xs text-amber-600 dark:text-amber-500">
+          {t('thinkingOnlyModelHint')}
         </p>
       )}
       {field.tips && (

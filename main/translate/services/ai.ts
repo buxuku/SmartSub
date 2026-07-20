@@ -246,7 +246,11 @@ export async function handleAIBatchTranslation(
           translationConfig,
           sourceLanguage,
           targetLanguage,
-          { signal: config.signal, responseJsonSchema: batchSchema },
+          {
+            signal: config.signal,
+            responseJsonSchema: batchSchema,
+            onResponseMeta: config.onResponseMeta,
+          },
         );
         throwIfSignalCancelled(config.signal);
         const responseText = Array.isArray(responseOrigin)

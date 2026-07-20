@@ -14,6 +14,13 @@ import {
   runWithStructuredOutputFallback,
   type StructuredOutputMode,
 } from './structuredOutputFallback';
+import {
+  resolveThinkingParams,
+  isThinkingParamRejectedError,
+  markThinkingParamRejected,
+  appendNoThinkSoftSwitch,
+  extractOpenAIResponseMeta,
+} from './thinkingControl';
 
 type OpenAIProvider = {
   apiUrl: string;
@@ -26,6 +33,7 @@ type OpenAIProvider = {
   strictStructuredOutput?: boolean;
   providerType?: string;
   id?: string;
+  enableThinking?: boolean;
 };
 
 /**
@@ -104,17 +112,11 @@ function getProviderSpecificParams(
   // Convert to ExtendedProvider for parameter processing
   const extendedProvider = toExtendedProvider(provider);
 
-  // Base parameters for backward compatibility
-  const baseParams: Record<string, any> = {};
-
-  // Original hard-coded logic (maintained for backward compatibility)
-  // 通义千问需要禁用thinking模式
-  if (
-    provider.id === 'qwen' ||
-    provider.apiUrl?.includes('dashscope.aliyuncs.com')
-  ) {
-    baseParams.enable_thinking = false;
-  }
+  // 思考模式开关派生参数（openspec: ai-thinking-mode-control D2/D3）：
+  // 作为基础参数先注入，自定义参数处理在其上合并（用户显式配置覆盖开关派生值）
+  const baseParams: Record<string, any> = {
+    ...(resolveThinkingParams(provider) || {}),
+  };
 
   // Process custom parameters if available
   if (extendedProvider.customParameters) {
@@ -187,8 +189,12 @@ function getCustomHeaders(provider: OpenAIProvider): Record<string, string> {
  * 创建基础请求参数 (Enhanced with Parameter Processor)
  */
 function createBaseParams(text: string | string[], provider: OpenAIProvider) {
-  const sysPrompt =
-    provider.systemPrompt || 'You are a professional subtitle translation tool';
+  // L2 软开关（openspec: ai-thinking-mode-control D5）：
+  // 参数路径不可用（未命中映射/已缓存拒绝）且型号为 qwen3 时追加 /no_think
+  const sysPrompt = appendNoThinkSoftSwitch(
+    provider.systemPrompt || 'You are a professional subtitle translation tool',
+    provider,
+  );
   const userPrompt = Array.isArray(text) ? text.join('\n') : text;
 
   const baseParams = {
@@ -235,6 +241,7 @@ async function callWithJsonSchema(
       { signal: options?.signal },
     )) as OpenAI.Chat.Completions.ChatCompletion;
     throwIfSignalCancelled(options?.signal);
+    options?.onResponseMeta?.(extractOpenAIResponseMeta(completion));
     return completion?.choices?.[0]?.message?.content?.trim();
   }
 
@@ -253,6 +260,7 @@ async function callWithJsonSchema(
 
   console.log('JSON Schema completion:', completion?.choices);
   throwIfSignalCancelled(options?.signal);
+  options?.onResponseMeta?.(extractOpenAIResponseMeta(completion));
   const parsed = completion?.choices?.[0]?.message?.parsed;
   if (parsed && typeof parsed === 'object') {
     return JSON.stringify(parsed);
@@ -284,6 +292,7 @@ async function callWithStandardAPI(
   })) as OpenAI.Chat.Completions.ChatCompletion;
   console.log('Standard completion:', completion?.choices);
   throwIfSignalCancelled(options?.signal);
+  options?.onResponseMeta?.(extractOpenAIResponseMeta(completion));
   return completion?.choices?.[0]?.message?.content?.trim();
 }
 
@@ -321,21 +330,11 @@ export async function translateWithOpenAI(
       },
     });
 
-    const baseParams = createBaseParams(text, provider);
-
     // Get detailed parameter processing information
     const extendedProvider = toExtendedProvider(provider);
     const processedParams = extendedProvider.customParameters
       ? ParameterProcessor.processCustomParameters(extendedProvider, {})
       : null;
-
-    console.log('Request params:', {
-      model: baseParams.model,
-      temperature: baseParams.temperature,
-      additionalParams: getProviderSpecificParams(provider),
-      customHeaders:
-        Object.keys(customHeaders).length > 0 ? customHeaders : 'none',
-    });
 
     // Enhanced logging for custom parameters
     if (processedParams) {
@@ -355,24 +354,59 @@ export async function translateWithOpenAI(
       console.log('No custom parameters configured for this provider');
     }
 
-    // 根据结构化输出配置选择调用方式，失败时按共享回退链降级：
-    // json_schema 任何失败都值得降级重试；json_object 仅在服务明确不支持时降级
-    return await runWithStructuredOutputFallback({
-      startMode: getStructuredOutputMode(provider),
-      strict: provider.strictStructuredOutput === true,
-      signal: options?.signal,
-      shouldFallback: (from, error) =>
-        from === 'json_schema' || isStructuredOutputUnsupportedError(error),
-      onFallback: (from, to, error) =>
+    // 每次执行时重新构造请求参数：思考参数被拒后重试时（拒绝缓存已写入）
+    // 会自动去掉思考参数并按需启用 /no_think 软开关（design D4/D5）
+    const runTranslation = () => {
+      const baseParams = createBaseParams(text, provider);
+      console.log('Request params:', {
+        model: baseParams.model,
+        temperature: baseParams.temperature,
+        customHeaders:
+          Object.keys(customHeaders).length > 0 ? customHeaders : 'none',
+      });
+
+      // 根据结构化输出配置选择调用方式，失败时按共享回退链降级：
+      // json_schema 任何失败都值得降级重试；json_object 仅在服务明确不支持时降级
+      return runWithStructuredOutputFallback({
+        startMode: getStructuredOutputMode(provider),
+        strict: provider.strictStructuredOutput === true,
+        signal: options?.signal,
+        shouldFallback: (from, error) =>
+          from === 'json_schema' || isStructuredOutputUnsupportedError(error),
+        onFallback: (from, to, error) =>
+          console.warn(
+            `Structured output ${from} failed, falling back to ${to}:`,
+            error,
+          ),
+        attempt: (mode) =>
+          mode === 'json_schema'
+            ? callWithJsonSchema(openai, baseParams, options)
+            : callWithStandardAPI(openai, baseParams, mode, options),
+      });
+    };
+
+    // 思考参数去参重试（openspec: ai-thinking-mode-control D4）：
+    // 必须在结构化输出回退链外层——参数被拒时内层降级拿到的是同一错误，
+    // 只有去掉思考参数重跑完整调用才有意义。缓存后同会话不再重复失败。
+    const thinkingParamsInjected =
+      resolveThinkingParams(provider) !== undefined;
+    try {
+      return await runTranslation();
+    } catch (error) {
+      if (
+        thinkingParamsInjected &&
+        !options?.signal?.aborted &&
+        isThinkingParamRejectedError(error)
+      ) {
+        markThinkingParamRejected(provider);
         console.warn(
-          `Structured output ${from} failed, falling back to ${to}:`,
+          `Thinking control param rejected by provider ${provider.id || provider.apiUrl}, retrying without it:`,
           error,
-        ),
-      attempt: (mode) =>
-        mode === 'json_schema'
-          ? callWithJsonSchema(openai, baseParams, options)
-          : callWithStandardAPI(openai, baseParams, mode, options),
-    });
+        );
+        return await runTranslation();
+      }
+      throw error;
+    }
   } catch (error) {
     if (options?.signal?.aborted) throw new TaskCancelledError();
     console.error('OpenAI translation error:', error);

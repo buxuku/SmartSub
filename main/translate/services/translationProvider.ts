@@ -3,6 +3,7 @@ import {
   TranslationResult,
   Subtitle,
   TranslatorFunction,
+  TranslationConfig,
 } from '../types';
 import { handleAIBatchTranslation } from './ai';
 import { handleAPIBatchTranslation } from './api';
@@ -69,6 +70,7 @@ export async function translateWithProvider(
   onTranslationResult?: (results: TranslationResult[]) => Promise<void>,
   maxRetries: number = 0,
   useGlossary: boolean = true,
+  onResponseMeta?: TranslationConfig['onResponseMeta'],
 ): Promise<TranslationResult[] | string[]> {
   const glossaryResolution =
     provider.isAi && useGlossary ? getActiveGlossaryResolution() : undefined;
@@ -83,6 +85,7 @@ export async function translateWithProvider(
     translator,
     glossaryEntries,
     signal: getTaskSignal(),
+    onResponseMeta,
   };
 
   logMessage(

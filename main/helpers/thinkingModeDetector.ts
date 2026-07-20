@@ -227,6 +227,23 @@ export function hasThinkingMode(response: APIResponse): boolean {
   return ThinkingModeDetector.hasThinking(response);
 }
 
+/**
+ * 基于服务层回传的响应元数据判定思考是否实际发生
+ * （openspec: ai-thinking-mode-control D7，测试面板徽标用）。
+ * 独立 reasoning 字段、reasoning token 计数、content 内联 <think> 任一命中即视为思考中。
+ */
+export function isThinkingActiveFromMeta(meta: {
+  reasoningContentPresent?: boolean;
+  reasoningTokens?: number;
+  contentThinkTagPresent?: boolean;
+}): boolean {
+  return (
+    meta.reasoningContentPresent === true ||
+    (meta.reasoningTokens || 0) > 0 ||
+    meta.contentThinkTagPresent === true
+  );
+}
+
 export function generateThinkingStatusMessage(
   response: APIResponse,
   startTime?: number,

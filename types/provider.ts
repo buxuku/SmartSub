@@ -242,6 +242,27 @@ export function promptSupportsEchoAnchoring(prompt?: string): boolean {
   return prompt.includes('"src"') && prompt.includes('"tr"');
 }
 
+/**
+ * 纯思考模型（无法通过参数关闭思考）的型号名模式
+ * （openspec: ai-thinking-mode-control D6）。
+ * 放在共享 types 层：主进程 thinkingControl 与渲染层 UI 提示共用单一来源。
+ */
+export const THINKING_ONLY_MODEL_PATTERNS = [
+  'deepseek-reasoner',
+  'deepseek-r1', // R1 及其蒸馏系列（含 ollama deepseek-r1:xx 标签）
+  'qwq', // 通义 QwQ 系列
+  'thinking-', // e.g. qwen3-235b-a22b-thinking-2507
+  '-reasoning',
+] as const;
+
+export function isThinkingOnlyModelName(modelName?: string): boolean {
+  const normalized = (modelName || '').toLowerCase();
+  if (!normalized) return false;
+  return THINKING_ONLY_MODEL_PATTERNS.some((pattern) =>
+    normalized.includes(pattern),
+  );
+}
+
 // ============================================================
 // 共享字段定义
 // ============================================================
@@ -320,6 +341,20 @@ const FIELD_ECHO_ANCHORING: ProviderField = {
   tips: 'echoAnchoringTips',
 };
 
+/**
+ * 思考模式开关（openspec: ai-thinking-mode-control D1）：
+ * 默认关闭 = 主动禁用思考（按服务商映射下发关闭参数）；
+ * 开启 = 不干预，跟随模型默认行为。翻译场景思考几乎零收益高成本，故默认关。
+ */
+const FIELD_ENABLE_THINKING: ProviderField = {
+  key: 'enableThinking',
+  label: 'enableThinking',
+  type: 'switch',
+  required: false,
+  defaultValue: false,
+  tips: 'enableThinkingTips',
+};
+
 const aiCommonFields = (overrides?: {
   batchSize?: number;
   batchSizeTips?: string;
@@ -329,6 +364,7 @@ const aiCommonFields = (overrides?: {
   FIELD_USER_PROMPT,
   structuredOutputField(overrides?.structuredOutput),
   FIELD_ECHO_ANCHORING,
+  FIELD_ENABLE_THINKING,
   batchSizeField(overrides?.batchSize, overrides?.batchSizeTips),
   FIELD_BATCH_CONCURRENCY,
   FIELD_REQUEST_INTERVAL,
