@@ -100,7 +100,11 @@ let downloadingModels = new Set<string>();
 
 /** 可文件夹导入的引擎类型（builtin 走单文件导入，不在此列）。 */
 type FolderImportEngine =
-  'funasr' | 'qwen' | 'fireRedAsr' | 'fasterWhisper' | 'tts';
+  | 'funasr'
+  | 'qwen'
+  | 'fireRedAsr'
+  | 'fasterWhisper'
+  | 'tts';
 
 interface ImportPlan {
   /** 目标模型必需文件（相对源/目的目录），用于导入前后布局校验。 */

@@ -174,7 +174,7 @@ async function transcribeFasterWhisper(
   if (!modelSnapshotDir) {
     if (modelInspection.incompleteSnapshotDir) {
       throw new Error(
-        `faster-whisper model "${modelId}" is incomplete (${modelInspection.issues.join(', ')}). Delete it and download it again from Resource Hub > Models.`,
+        `faster-whisper model "${modelId}" is incomplete (${modelInspection.issues.join(', ')}). Download it again from Resource Hub > Models to repair the missing files; deleting it first is not required.`,
       );
     }
     throw new Error(
@@ -182,7 +182,9 @@ async function transcribeFasterWhisper(
     );
   }
   const configuredDevice = (settings.fasterWhisperDevice || 'auto') as
-    'auto' | 'cpu' | 'cuda';
+    | 'auto'
+    | 'cpu'
+    | 'cuda';
   // device 逐次尝试注入，便于 CUDA 运行库缺失时回退 CPU 重试；其余参数对各设备一致。
   const baseParams = {
     engine: 'faster_whisper',
