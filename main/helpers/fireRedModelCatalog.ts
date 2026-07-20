@@ -1,21 +1,22 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
-import { resolveOverridePath, resolveBundledVadPath } from './modelImport';
+import { resolveBundledVadPath } from './modelImport';
+import { resolveModelRoot } from './storagePaths';
 import {
   getGithubBase,
   getGithubProxyPrefix,
   getModelScopeBase,
 } from './config/downloadConfig';
 
-/** fireRed 模型根目录：settings.fireRedModelsPath 覆盖，否则 userData/models/firered */
+/** fireRed 模型根目录：单独覆盖 > 统一存储目录 > userData/models/firered */
 export function getFireRedModelsRoot(): string {
   const { store } = require('./store') as typeof import('./store');
-  const fallback = path.join(app.getPath('userData'), 'models', 'firered');
-  const root = resolveOverridePath(
-    store.get('settings')?.fireRedModelsPath,
-    fallback,
-  );
+  const root = resolveModelRoot(
+    'firered',
+    store.get('settings'),
+    app.getPath('userData'),
+  ).path;
   if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true });
   return root;
 }

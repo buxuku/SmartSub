@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { createHash } from 'crypto';
 import { logMessage, store } from './storeManager';
+import { resolveTempDir } from './storagePaths';
 
 /**
  * 计算字符串的MD5哈希值
@@ -27,31 +28,31 @@ export function timemarkToSeconds(timemark: string | number): number {
 }
 
 /**
- * 获取临时目录路径
+ * 获取临时目录路径。
+ * 三级解析（storagePaths.resolveTempDir）：自定义临时目录 > 统一存储目录/temp > 系统默认。
  */
 export function getTempDir() {
   const settings = store.get('settings');
+  const resolved = resolveTempDir({
+    useCustomTempDir: settings?.useCustomTempDir,
+    customTempDir: settings?.customTempDir,
+    storageRoot: settings?.storageRoot,
+    systemTempDir: app.getPath('temp'),
+  });
 
-  // 判断是否使用自定义临时目录
-  if (settings.useCustomTempDir && settings.customTempDir) {
-    // 确保自定义目录存在
-    const customDir = settings.customTempDir as string;
-    if (!fs.existsSync(customDir)) {
-      try {
-        fs.mkdirSync(customDir, { recursive: true });
-      } catch (error) {
-        logMessage(
-          `无法创建自定义临时目录: ${error.message}，将使用默认临时目录`,
-          'error',
-        );
-        return path.join(app.getPath('temp'), 'whisper-subtitles');
-      }
+  // 非默认目录创建失败时回退系统默认（沿用既有自定义临时目录的失败语义）
+  if (resolved.source !== 'default' && !fs.existsSync(resolved.path)) {
+    try {
+      fs.mkdirSync(resolved.path, { recursive: true });
+    } catch (error) {
+      logMessage(
+        `无法创建临时目录(${resolved.source}): ${error.message}，将使用默认临时目录`,
+        'error',
+      );
+      return path.join(app.getPath('temp'), 'whisper-subtitles');
     }
-    return customDir;
   }
-
-  // 默认临时目录
-  return path.join(app.getPath('temp'), 'whisper-subtitles');
+  return resolved.path;
 }
 
 /**

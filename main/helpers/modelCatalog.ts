@@ -3,6 +3,7 @@ import fs from 'fs';
 import { app } from 'electron';
 import { store } from './storeManager';
 import { getPath } from './whisper';
+import { resolveModelRoot } from './storagePaths';
 import {
   cacheDirNameToModelId,
   hfRepoToCacheDirName,
@@ -19,11 +20,12 @@ export function getGgmlModelsPath(): string {
 }
 
 export function getFasterWhisperModelsPath(): string {
-  const settings = store.get('settings');
-  const userData = app.getPath('userData');
-  const resolved =
-    settings?.fasterWhisperModelsPath ||
-    path.join(userData, 'faster-whisper-models');
+  // 解析链：单独覆盖 > 统一存储目录 > userData 默认（storagePaths.ts）
+  const resolved = resolveModelRoot(
+    'ct2',
+    store.get('settings'),
+    app.getPath('userData'),
+  ).path;
   if (!fs.existsSync(resolved)) {
     fs.mkdirSync(resolved, { recursive: true });
   }

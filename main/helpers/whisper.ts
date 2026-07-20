@@ -6,6 +6,7 @@ import { BrowserWindow, DownloadItem } from 'electron';
 import decompress from 'decompress';
 import fs from 'fs-extra';
 import { store, logMessage } from './storeManager';
+import { resolveModelRoot } from './storagePaths';
 import { getEffectivePlatform } from './cudaUtils';
 import { loadBestAddon } from './addonLoader';
 import { getHfHost } from './config/downloadConfig';
@@ -13,12 +14,12 @@ import type { GpuMode, MacAccelMode } from '../../types/addon';
 
 export const getPath = (key?: string) => {
   const userDataPath = app.getPath('userData');
-  const settings = store.get('settings') || {
-    modelsPath: path.join(userDataPath, 'whisper-models'),
-  };
-  // 使用用户自定义的模型路径或默认路径
-  const modelsPath =
-    settings.modelsPath || path.join(userDataPath, 'whisper-models');
+  // 解析链：单独覆盖 > 统一存储目录 > userData 默认（storagePaths.ts）
+  const modelsPath = resolveModelRoot(
+    'ggml',
+    store.get('settings'),
+    userDataPath,
+  ).path;
   if (!fs.existsSync(modelsPath)) {
     fs.mkdirSync(modelsPath, { recursive: true });
   }

@@ -2,16 +2,17 @@ import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
 import { getDownloadEndpoints } from './config/downloadConfig';
-import { resolveOverridePath, resolveBundledVadPath } from './modelImport';
+import { resolveBundledVadPath } from './modelImport';
+import { resolveModelRoot } from './storagePaths';
 
-/** funasr 模型根目录：userData/models/funasr */
+/** funasr 模型根目录：单独覆盖 > 统一存储目录 > userData/models/funasr */
 export function getFunasrModelsRoot(): string {
   const { store } = require('./store') as typeof import('./store');
-  const fallback = path.join(app.getPath('userData'), 'models', 'funasr');
-  const root = resolveOverridePath(
-    store.get('settings')?.funasrModelsPath,
-    fallback,
-  );
+  const root = resolveModelRoot(
+    'funasr',
+    store.get('settings'),
+    app.getPath('userData'),
+  ).path;
   if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true });
   return root;
 }

@@ -1,21 +1,22 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
-import { resolveOverridePath, resolveBundledVadPath } from './modelImport';
+import { resolveBundledVadPath } from './modelImport';
+import { resolveModelRoot } from './storagePaths';
 import {
   getGithubBase,
   getGithubProxyPrefix,
   getModelScopeBase,
 } from './config/downloadConfig';
 
-/** qwen 模型根目录：settings.qwenModelsPath 覆盖，否则 userData/models/qwen */
+/** qwen 模型根目录：单独覆盖 > 统一存储目录 > userData/models/qwen */
 export function getQwenModelsRoot(): string {
   const { store } = require('./store') as typeof import('./store');
-  const fallback = path.join(app.getPath('userData'), 'models', 'qwen');
-  const root = resolveOverridePath(
-    store.get('settings')?.qwenModelsPath,
-    fallback,
-  );
+  const root = resolveModelRoot(
+    'qwen',
+    store.get('settings'),
+    app.getPath('userData'),
+  ).path;
   if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true });
   return root;
 }

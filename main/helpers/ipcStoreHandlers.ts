@@ -26,6 +26,11 @@ import { rebuildAppMenu } from './menu';
 import { shutdownPythonRuntime } from './pythonRuntime';
 import { applyProxyFromSettings } from './network/proxyManager';
 import { syncTaskPowerSaveBlocker } from './powerSaveManager';
+import {
+  isFactoryDefaultGgmlPath,
+  resolveModelRoot,
+  sanitizeStoragePathPatch,
+} from './storagePaths';
 
 console.log(app.getVersion(), 'version');
 
@@ -42,6 +47,26 @@ export function setupStoreHandlers() {
     });
     logMessage(
       `Migrated GPU settings: useCuda=${currentSettings.useCuda} -> gpuMode=auto`,
+      'info',
+    );
+  }
+
+  // modelsPath 归一化（unified-storage-root, design D4-2）：
+  // 该键曾写在 store defaults 里，绝对默认路径会随任意一次 setSettings 被动持久化，
+  // 与「用户主动自定义」不可区分，导致 whisper.cpp 永远不跟随统一存储目录。
+  // 等于出厂默认（userData/whisper-models）即删除该键，恢复「未覆盖」语义。
+  const settingsForNormalize = store.get('settings');
+  if (
+    settingsForNormalize &&
+    isFactoryDefaultGgmlPath(
+      settingsForNormalize.modelsPath,
+      app.getPath('userData'),
+    )
+  ) {
+    const { modelsPath: _factoryDefault, ...normalized } = settingsForNormalize;
+    store.set('settings', normalized);
+    logMessage(
+      'Normalized legacy default modelsPath; ggml models now follow storageRoot/default chain',
       'info',
     );
   }
@@ -146,31 +171,50 @@ export function setupStoreHandlers() {
   // 设置相关处理
   ipcMain.handle('setSettings', async (event, settings) => {
     const preSettings = store.get('settings');
-    store.set('settings', { ...preSettings, ...settings });
+    // 中文路径兜底（design D6-2）：渲染层选路校验是主执法，此处防旁路写入
+    const { sanitized, rejectedKeys } = sanitizeStoragePathPatch(settings);
+    if (rejectedKeys.length > 0) {
+      logMessage(
+        `Rejected storage path keys containing CJK characters: ${rejectedKeys.join(', ')}`,
+        'warning',
+      );
+    }
+    const nextSettings = { ...preSettings, ...sanitized };
+    store.set('settings', nextSettings);
     if (
-      settings?.proxyMode !== undefined ||
-      settings?.proxyUrl !== undefined ||
-      settings?.proxyNoProxy !== undefined
+      sanitized?.proxyMode !== undefined ||
+      sanitized?.proxyUrl !== undefined ||
+      sanitized?.proxyNoProxy !== undefined
     ) {
       applyProxyFromSettings();
     }
-    if (settings?.preventSleepDuringTask !== undefined) {
+    if (sanitized?.preventSleepDuringTask !== undefined) {
       syncTaskPowerSaveBlocker();
     }
-    if (
-      settings?.fasterWhisperModelsPath &&
-      settings.fasterWhisperModelsPath !== preSettings?.fasterWhisperModelsPath
-    ) {
+    // Python 运行时重启判定（design D7）：比较 CT2「有效根目录」写入前后变化，
+    // 覆盖改单独覆盖、设置/清除统一目录、清空覆盖恢复跟随三类场景。
+    const userDataPath = app.getPath('userData');
+    const preCt2Root = resolveModelRoot('ct2', preSettings, userDataPath).path;
+    const nextCt2Root = resolveModelRoot(
+      'ct2',
+      nextSettings,
+      userDataPath,
+    ).path;
+    if (preCt2Root !== nextCt2Root) {
       await shutdownPythonRuntime();
       logMessage(
-        `faster-whisper models path changed, python engine restarted`,
+        `faster-whisper effective models path changed (${preCt2Root} -> ${nextCt2Root}), python engine restarted`,
         'info',
       );
     }
     // 语言切换后重建应用菜单
-    if (settings?.language && settings.language !== preSettings?.language) {
-      rebuildAppMenu(settings.language);
+    if (
+      typeof sanitized?.language === 'string' &&
+      sanitized.language !== preSettings?.language
+    ) {
+      rebuildAppMenu(sanitized.language);
     }
+    return { rejectedKeys };
   });
 
   ipcMain.handle('getSettings', async () => {

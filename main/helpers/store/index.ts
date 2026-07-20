@@ -1,8 +1,6 @@
 import Store from 'electron-store';
 import { StoreType } from './types';
 import { defaultUserConfig, isAppleSilicon } from '../utils';
-import path from 'path';
-import { app } from 'electron';
 
 const defaultWhisperCommand = isAppleSilicon()
   ? 'whisper "${audioFile}" --model ${whisperModel} --output_format srt --output_dir "${outputDir}" --language ${sourceLanguage}'
@@ -20,7 +18,8 @@ export const store = new Store<StoreType>({
       useCuda: true,
       gpuMode: 'auto' as const,
       macAccelMode: 'auto' as const,
-      modelsPath: path.join(app.getPath('userData'), 'whisper-models'),
+      // modelsPath 不再写入 defaults：绝对默认路径会随任意一次 setSettings 被动
+      // 持久化，导致与「用户主动自定义」不可区分，阻断统一存储目录跟随（design D4）。
       maxContext: -1,
       useCustomTempDir: false,
       customTempDir: '',

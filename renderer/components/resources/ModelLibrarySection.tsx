@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { ISystemInfo } from '../../../types/types';
+import { validateStoragePath } from '../../../types/pathValidation';
 import DeleteModel from '@/components/DeleteModel';
 import DownModel, { type ModelDownloadFormat } from '@/components/DownModel';
 import DownModelButton from '@/components/DownModelButton';
@@ -888,6 +889,30 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
   const isFireRed = engine === 'fireRedAsr';
   const isLocalCli = engine === 'localCli';
 
+  // 当前引擎的路径覆盖键与来源（默认 / 统一目录 / 单独设置）
+  const modelPathKey = isFasterWhisper
+    ? 'fasterWhisperModelsPath'
+    : isFunasr
+      ? 'funasrModelsPath'
+      : isQwen
+        ? 'qwenModelsPath'
+        : isFireRed
+          ? 'fireRedModelsPath'
+          : 'modelsPath';
+  const modelPathSource =
+    systemInfo?.modelPathSources?.[
+      isFasterWhisper
+        ? 'ct2'
+        : isFunasr
+          ? 'funasr'
+          : isQwen
+            ? 'qwen'
+            : isFireRed
+              ? 'firered'
+              : 'ggml'
+    ];
+  const storageRootSet = !!systemInfo?.storageRoot;
+
   const handleImportModel = async () => {
     try {
       const result = await window?.ipc?.invoke('importModel');
@@ -916,18 +941,15 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
     const result = await window?.ipc?.invoke('selectDirectory');
     if (result.canceled) return;
 
+    // 中文路径硬校验（design D6）：本地引擎无法读取含 CJK 字符的路径
+    if (!validateStoragePath(result.directoryPath).ok) {
+      toast.error(t('pathContainsCjkError'));
+      return;
+    }
+
     try {
-      const pathKey = isFasterWhisper
-        ? 'fasterWhisperModelsPath'
-        : isFunasr
-          ? 'funasrModelsPath'
-          : isQwen
-            ? 'qwenModelsPath'
-            : isFireRed
-              ? 'fireRedModelsPath'
-              : 'modelsPath';
       await window?.ipc?.invoke('setSettings', {
-        [pathKey]: result.directoryPath,
+        [modelPathKey]: result.directoryPath,
       });
       toast.success(t('modelPathChanged'), {
         duration: 4000,
@@ -936,6 +958,25 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
       onUpdate();
     } catch (error) {
       console.error('Failed to change models path:', error);
+      toast.error(
+        t('changePathFailed', {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
+  };
+
+  // 清空单独覆盖，恢复跟随统一存储目录（CT2 场景由主进程按有效路径变化重启 Python 运行时）
+  const handleFollowStorageRoot = async () => {
+    try {
+      await window?.ipc?.invoke('setSettings', { [modelPathKey]: '' });
+      toast.success(t('modelPathFollowedRoot'), {
+        duration: 4000,
+        description: t('modelPathChangedHint'),
+      });
+      onUpdate();
+    } catch (error) {
+      console.error('Failed to reset models path:', error);
       toast.error(
         t('changePathFailed', {
           error: error instanceof Error ? error.message : String(error),
@@ -1166,6 +1207,18 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
                         ? systemInfo?.fireRedModelsPath
                         : systemInfo?.modelsPath}
               </span>
+              {modelPathSource && (
+                <Badge
+                  variant="outline"
+                  className="h-4 shrink-0 px-1 text-[10px] font-normal text-muted-foreground"
+                >
+                  {modelPathSource === 'override'
+                    ? t('pathSourceOverride')
+                    : modelPathSource === 'storageRoot'
+                      ? t('pathSourceStorageRoot')
+                      : t('pathSourceDefault')}
+                </Badge>
+              )}
               <button
                 type="button"
                 onClick={handleOpenModelsFolder}
@@ -1182,6 +1235,18 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
               >
                 <span>{t('changePath')}</span>
               </button>
+              {modelPathSource === 'override' && storageRootSet && (
+                <>
+                  <span className="text-faint">·</span>
+                  <button
+                    type="button"
+                    onClick={handleFollowStorageRoot}
+                    className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 transition-colors"
+                  >
+                    <span>{t('followStorageRoot')}</span>
+                  </button>
+                </>
+              )}
             </div>
           )}
 

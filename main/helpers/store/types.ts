@@ -51,7 +51,18 @@ export type StoreType = {
     gpuMigrationNotified?: boolean;
     /** macOS(Apple Silicon) 转写加速方式：auto=优先 CoreML（缺省），metal=始终 Metal */
     macAccelMode?: MacAccelMode;
-    modelsPath: string;
+    /**
+     * 统一存储根目录（Issue #388）。设置后 6 个模型目录与临时目录按
+     * 「引擎单独覆盖 > storageRoot/<既有默认子目录名> > userData 默认」解析，
+     * 见 storagePaths.ts。空串/undefined = 未设置。
+     */
+    storageRoot?: string;
+    /**
+     * whisper.cpp(ggml) 模型目录单独覆盖；缺省跟随 storageRoot / userData。
+     * 注意：曾在 store defaults 中写死绝对默认路径（被动持久化），启动时对
+     * 等于出厂默认的持久化值做归一化删除（ipcStoreHandlers）。
+     */
+    modelsPath?: string;
     maxContext?: number;
     useCustomTempDir?: boolean;
     customTempDir?: string;

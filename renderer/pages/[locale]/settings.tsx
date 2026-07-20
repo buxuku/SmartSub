@@ -32,6 +32,10 @@ import {
   RotateCcw,
   Server,
   X,
+  HardDrive,
+  ExternalLink,
+  TriangleAlert,
+  Check,
 } from 'lucide-react';
 import {
   Collapsible,
@@ -71,6 +75,10 @@ import {
   normalizeDownloadEndpoints,
   type DownloadEndpointConfig,
 } from '../../../types/downloadConfig';
+import {
+  containsCjk,
+  validateStoragePath,
+} from '../../../types/pathValidation';
 import { invalidateDownloadEndpointsCache } from 'hooks/useDownloadEndpoints';
 
 // 三档 VAD 环境预设。数值依据：标准=whisper.cpp 官方默认；
@@ -140,6 +148,13 @@ const Settings = () => {
   const [tempDir, setTempDir] = useState('');
   const [customTempDir, setCustomTempDir] = useState('');
   const [useCustomTempDir, setUseCustomTempDir] = useState(false);
+  const [storageRoot, setStorageRoot] = useState('');
+  const [userDataPath, setUserDataPath] = useState('');
+  // 换目录成功后的「新旧位置对照」对话框（手动迁移引导，design D9）
+  const [storageMoveDialog, setStorageMoveDialog] = useState<{
+    oldBase: string;
+    newBase: string;
+  } | null>(null);
   const [checkUpdateOnStartup, setCheckUpdateOnStartup] = useState(true);
   const [preventSleepDuringTask, setPreventSleepDuringTask] = useState(true);
   const [vadThreshold, setVADThreshold] = useState(0.5);
@@ -178,6 +193,7 @@ const Settings = () => {
         setCurrentLanguage(settings.language || router.locale);
         setUseCustomTempDir(settings.useCustomTempDir || false);
         setCustomTempDir(settings.customTempDir || '');
+        setStorageRoot(settings.storageRoot || '');
         setCheckUpdateOnStartup(settings.checkUpdateOnStartup !== false);
         setPreventSleepDuringTask(settings.preventSleepDuringTask !== false);
         setVADThreshold(settings.vadThreshold ?? 0.5);
@@ -198,6 +214,10 @@ const Settings = () => {
       // 获取临时目录路径
       const tempDirPath = await window?.ipc?.invoke('getTempDir');
       setTempDir(tempDirPath || '');
+
+      // userData 默认基座：用于「默认路径含中文」警示（design D6-3）
+      const systemInfo = await window?.ipc?.invoke('getSystemInfo');
+      setUserDataPath(systemInfo?.userDataPath || '');
     };
     loadSettings();
   }, []);
@@ -223,12 +243,22 @@ const Settings = () => {
     }
   };
 
-  // 选择自定义临时目录
+  // 有效临时目录随统一目录/自定义开关变化，操作后刷新展示
+  const refreshTempDir = async () => {
+    const tempDirPath = await window?.ipc?.invoke('getTempDir');
+    setTempDir(tempDirPath || '');
+  };
+
+  // 选择自定义临时目录（先过中文路径硬校验，design D6）
   const handleSelectCustomTempDir = async () => {
     const result = await window?.ipc?.invoke('selectDirectory');
     if (result.canceled) return;
 
     const selectedPath = result.directoryPath;
+    if (!validateStoragePath(selectedPath).ok) {
+      toast.error(t('pathContainsCjkError'));
+      return;
+    }
     setCustomTempDir(selectedPath);
 
     try {
@@ -238,6 +268,7 @@ const Settings = () => {
       });
       setUseCustomTempDir(true);
       toast.success(t('tempDirSaved'));
+      void refreshTempDir();
     } catch (error) {
       toast.error(t('saveFailed'));
     }
@@ -251,10 +282,74 @@ const Settings = () => {
       toast.success(
         checked ? t('useCustomTempDirEnabled') : t('useCustomTempDirDisabled'),
       );
+      void refreshTempDir();
     } catch (error) {
       toast.error(t('saveFailed'));
     }
   };
+
+  // 选择统一存储根目录（中文路径硬校验，design D6；不迁移+对照引导，design D9）
+  const handleSelectStorageRoot = async () => {
+    const result = await window?.ipc?.invoke('selectDirectory');
+    if (result.canceled) return;
+
+    const selectedPath = result.directoryPath;
+    if (!validateStoragePath(selectedPath).ok) {
+      toast.error(t('pathContainsCjkError'));
+      return;
+    }
+    try {
+      const oldBase = storageRoot || userDataPath;
+      await window?.ipc?.invoke('setSettings', { storageRoot: selectedPath });
+      setStorageRoot(selectedPath);
+      if (oldBase && oldBase !== selectedPath) {
+        setStorageMoveDialog({ oldBase, newBase: selectedPath });
+      } else {
+        toast.success(t('storageRootSaved'), {
+          description: t('storageRootNoMigrateHint'),
+        });
+      }
+      void refreshTempDir();
+    } catch (error) {
+      toast.error(t('saveFailed'));
+    }
+  };
+
+  // 清除统一存储根目录（恢复跟随系统默认）
+  const handleClearStorageRoot = async () => {
+    try {
+      const oldBase = storageRoot;
+      await window?.ipc?.invoke('setSettings', { storageRoot: '' });
+      setStorageRoot('');
+      if (oldBase && userDataPath && oldBase !== userDataPath) {
+        setStorageMoveDialog({ oldBase, newBase: userDataPath });
+      } else {
+        toast.success(t('storageRootCleared'), {
+          description: t('storageRootNoMigrateHint'),
+        });
+      }
+      void refreshTempDir();
+    } catch (error) {
+      toast.error(t('saveFailed'));
+    }
+  };
+
+  const handleOpenOldStorageBase = async () => {
+    if (!storageMoveDialog) return;
+    const result = await window?.ipc?.invoke('openDirectoryPath', {
+      path: storageMoveDialog.oldBase,
+    });
+    if (!result?.success) {
+      toast.error(t('openOldDirFailed'));
+    }
+  };
+
+  const handleOpenStorageRoot = async () => {
+    await window?.ipc?.invoke('openStorageRoot');
+  };
+
+  // 默认存储基座含中文且未设置统一目录：常驻警示引导（design D6-3）
+  const showDefaultCjkWarning = !storageRoot && containsCjk(userDataPath);
 
   // 切换启动时检查更新
   const handleCheckUpdateOnStartupChange = async (checked: boolean) => {
@@ -599,6 +694,77 @@ const Settings = () => {
                 </Select>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <IconChip icon={HardDrive} />
+              {t('storageLocationTitle')}
+            </CardTitle>
+            <p className="text-sm text-muted-foreground pt-1">
+              {t('storageLocationDesc')}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {showDefaultCjkWarning && (
+              <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
+                <TriangleAlert className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                <span>
+                  {t('defaultPathCjkWarning', { path: userDataPath })}
+                </span>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span>{t('storageRoot')}</span>
+                <HelpHint text={t('storageRootTip')} />
+              </div>
+              <div className="flex gap-2">
+                {/* 未设置时回显 userData 默认基座（弱化配色区分「跟随默认」与「已设置」） */}
+                <Input
+                  value={storageRoot || userDataPath}
+                  readOnly
+                  className={`font-mono text-sm flex-1 ${
+                    storageRoot ? '' : 'text-muted-foreground'
+                  }`}
+                  placeholder={t('storageRootPlaceholder')}
+                />
+                <Button
+                  onClick={handleSelectStorageRoot}
+                  size="sm"
+                  className="flex-shrink-0 gap-1.5"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  {t('selectPath')}
+                </Button>
+                <Button
+                  onClick={handleOpenStorageRoot}
+                  variant="outline"
+                  size="sm"
+                  className="flex-shrink-0 gap-1.5"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  {t('openStorageRoot')}
+                </Button>
+                {storageRoot && (
+                  <Button
+                    onClick={handleClearStorageRoot}
+                    variant="outline"
+                    size="sm"
+                    className="flex-shrink-0 gap-1.5"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    {t('storageRootClear')}
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t('storageRootHint')}
+              </p>
+            </div>
 
             <div className="space-y-2">
               <div className="flex items-center gap-2">
@@ -1117,6 +1283,79 @@ const Settings = () => {
                     {t('confirm')}
                   </>
                 )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 换存储目录后的新旧位置对照：子目录同名，手动迁移只需整体复制（design D9） */}
+        <Dialog
+          open={!!storageMoveDialog}
+          onOpenChange={(open) => {
+            if (!open) setStorageMoveDialog(null);
+          }}
+        >
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>{t('storageMoveDialogTitle')}</DialogTitle>
+              <DialogDescription>
+                {t('storageMoveDialogDesc')}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-1">
+              <div className="space-y-1.5">
+                <div className="text-xs text-muted-foreground">
+                  {t('storageMoveOldDir')}
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    value={storageMoveDialog?.oldBase || ''}
+                    readOnly
+                    className="font-mono text-sm flex-1"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-shrink-0 gap-1.5 self-center"
+                    onClick={handleOpenOldStorageBase}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    {t('openOldDir')}
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <div className="text-xs text-muted-foreground">
+                  {t('storageMoveNewDir')}
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    value={storageMoveDialog?.newBase || ''}
+                    readOnly
+                    className="font-mono text-sm flex-1"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-shrink-0 gap-1.5 self-center"
+                    onClick={handleOpenStorageRoot}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    {t('openNewDir')}
+                  </Button>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {t('storageMoveOverrideNote')}
+              </p>
+            </div>
+            <DialogFooter>
+              <Button
+                onClick={() => setStorageMoveDialog(null)}
+                className="gap-1.5"
+              >
+                <Check className="h-4 w-4" />
+                {t('storageMoveGotIt')}
               </Button>
             </DialogFooter>
           </DialogContent>

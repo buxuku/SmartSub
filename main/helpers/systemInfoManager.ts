@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, dialog, shell } from 'electron';
+import { app, ipcMain, BrowserWindow, dialog, shell } from 'electron';
 import os from 'os';
 import { getModelsInstalled, getPath, deleteModel } from './whisper';
 import {
@@ -92,7 +92,8 @@ import { getSherpaTtsRuntime } from './sherpaOnnx/ttsRuntime';
 import fse from 'fs-extra';
 import path from 'path';
 import { getTempDir } from './fileUtils';
-import { logMessage } from './storeManager';
+import { logMessage, store } from './storeManager';
+import { resolveModelRoot, type StorageKind } from './storagePaths';
 import { testTranslation } from '../translate';
 import { getBuildInfo } from './buildInfo';
 
@@ -204,9 +205,23 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
           version: readEngineManifest('faster-whisper')?.version,
         }
       : { state: 'not_installed' };
+    // 各模型目录来源（默认/统一目录/单独设置），供引擎页 Badge 与恢复跟随（design D8）
+    const settingsSnapshot = store.get('settings');
+    const userDataPath = app.getPath('userData');
+    const sourceOf = (kind: StorageKind) =>
+      resolveModelRoot(kind, settingsSnapshot, userDataPath).source;
     return {
       modelsInstalled: getModelsInstalled(),
       modelsPath: getPath('modelsPath'),
+      userDataPath,
+      storageRoot: settingsSnapshot?.storageRoot?.trim() || '',
+      modelPathSources: {
+        ggml: sourceOf('ggml'),
+        ct2: sourceOf('ct2'),
+        funasr: sourceOf('funasr'),
+        qwen: sourceOf('qwen'),
+        firered: sourceOf('firered'),
+      },
       downloadingModels: Array.from(downloadingModels),
       buildInfo: getBuildInfo(),
       totalMemoryGB: Math.round(os.totalmem() / (1024 * 1024 * 1024)),
@@ -703,6 +718,37 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   // 获取临时目录路径
   ipcMain.handle('getTempDir', async () => {
     return getTempDir();
+  });
+
+  // 打开任意本地目录（存储目录变更对话框「打开旧目录」用；目录不存在时报错、不创建）
+  ipcMain.handle(
+    'openDirectoryPath',
+    async (_event, options?: { path?: string }) => {
+      const target = (options?.path || '').trim();
+      if (!target || !fse.existsSync(target)) {
+        return { success: false, error: 'directory not found' };
+      }
+      const err = await shell.openPath(target);
+      return err ? { success: false, error: err } : { success: true };
+    },
+  );
+
+  // 打开统一存储根目录（未设置时打开 userData 默认基座）
+  ipcMain.handle('openStorageRoot', async () => {
+    const root =
+      (store.get('settings')?.storageRoot || '').trim() ||
+      app.getPath('userData');
+    try {
+      await fse.ensureDir(root);
+      const err = await shell.openPath(root);
+      if (err) {
+        return { success: false, error: err };
+      }
+      return { success: true };
+    } catch (error) {
+      logMessage(`Failed to open storage root: ${error}`, 'error');
+      return { success: false, error: String(error) };
+    }
   });
 
   // 清除缓存

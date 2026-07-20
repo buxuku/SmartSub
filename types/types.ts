@@ -39,7 +39,22 @@ export interface ISystemInfo {
   fireRedModelsInstalled?: string[];
   /** fireRed 模型根目录（固定路径，仅展示用，不可更改） */
   fireRedModelsPath?: string;
+  /** userData 默认存储基座（「默认路径含中文」警示判定用） */
+  userDataPath?: string;
+  /** 统一存储根目录原始设置值（'' = 未设置） */
+  storageRoot?: string;
+  /** 各引擎模型目录来源：默认 / 统一目录 / 单独设置（引擎页 Badge 用） */
+  modelPathSources?: {
+    ggml: StoragePathSource;
+    ct2: StoragePathSource;
+    funasr: StoragePathSource;
+    qwen: StoragePathSource;
+    firered: StoragePathSource;
+  };
 }
+
+/** 与 main/helpers/storagePaths.ts 的 StorageSource 对齐（types 层无法反向依赖 main）。 */
+export type StoragePathSource = 'override' | 'storageRoot' | 'default';
 
 export interface IFiles {
   uuid: string;

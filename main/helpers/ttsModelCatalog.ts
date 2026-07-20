@@ -1,18 +1,18 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
-import { resolveOverridePath } from './modelImport';
+import { resolveModelRoot } from './storagePaths';
 import { getGithubBase, getGithubProxyPrefix } from './config/downloadConfig';
 import type { TtsModelRequest } from './sherpaOnnx/ttsRuntime';
 
-/** TTS 模型根目录：settings.ttsModelsPath 覆盖，否则 userData/models/tts */
+/** TTS 模型根目录：单独覆盖 > 统一存储目录 > userData/models/tts */
 export function getTtsModelsRoot(): string {
   const { store } = require('./store') as typeof import('./store');
-  const fallback = path.join(app.getPath('userData'), 'models', 'tts');
-  const root = resolveOverridePath(
-    store.get('settings')?.ttsModelsPath,
-    fallback,
-  );
+  const root = resolveModelRoot(
+    'tts',
+    store.get('settings'),
+    app.getPath('userData'),
+  ).path;
   if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true });
   return root;
 }
