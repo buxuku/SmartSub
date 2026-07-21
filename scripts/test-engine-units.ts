@@ -4176,6 +4176,56 @@ eq(
   [{ word: 'plain', start: 1, end: 2 }],
   'deepgram: falls back to word when no punctuated_word',
 );
+eq(
+  mapDeepgramWords([
+    { word: 'これは', punctuated_word: '「これは', start: 0, end: 1 },
+    { word: '次', punctuated_word: '。」次', start: 1, end: 2 },
+    { word: 'です', punctuated_word: 'です。', start: 2, end: 3 },
+  ]),
+  [
+    { word: '「これは。」', start: 0, end: 1 },
+    { word: '次', start: 1, end: 2 },
+    { word: 'です。', start: 2, end: 3 },
+  ],
+  'deepgram: Japanese leading closing punctuation reattaches to previous word (#391)',
+);
+eq(
+  mapDeepgramWords([
+    { word: '前', punctuated_word: '前。', start: 0, end: 1 },
+    { word: '次', punctuated_word: '「次', start: 1, end: 2 },
+  ]),
+  [
+    { word: '前。', start: 0, end: 1 },
+    { word: '「次', start: 1, end: 2 },
+  ],
+  'deepgram: Japanese opening quote remains with the following word',
+);
+eq(
+  mapDeepgramWords([
+    { word: 'Use', punctuated_word: 'Use', start: 0, end: 1 },
+    { word: '.NET', punctuated_word: '.NET', start: 1, end: 2 },
+  ]),
+  [
+    { word: 'Use', start: 0, end: 1 },
+    { word: '.NET', start: 1, end: 2 },
+  ],
+  'deepgram: lexical ASCII leading period is not reattached',
+);
+eq(
+  wordCuesFromResult({
+    words: mapDeepgramWords([
+      { word: 'これは', punctuated_word: 'これは', start: 0, end: 1 },
+      { word: '次', punctuated_word: '。次', start: 1, end: 2 },
+      { word: 'です', punctuated_word: 'です。', start: 2, end: 3 },
+    ]),
+    text: 'これは。次です。',
+  }),
+  [
+    ['00:00:00,000', '00:00:01,000', 'これは。'],
+    ['00:00:01,000', '00:00:03,000', '次です。'],
+  ],
+  'deepgram: Japanese leading punctuation produces natural sentence cues (#391)',
+);
 
 // --- deepgramUtils: extractDeepgramResult (nested structure) ---
 eq(

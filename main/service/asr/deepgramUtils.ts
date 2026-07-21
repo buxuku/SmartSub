@@ -6,6 +6,27 @@ import type { AsrWord } from './types';
 const DEEPGRAM_DEFAULT_BASE = 'https://api.deepgram.com/v1';
 
 /**
+ * Deepgram 的日语 punctuated_word 偶尔会把上一句的收尾标点放到下一个词前面，
+ * 例如 plain word 为「次」而 punctuated_word 为「。次」。成句器只会把纯标点 token
+ * 贴回上一条，因此这里先把「收尾标点 + 正文」拆开并归还给前一个词。
+ *
+ * 左引号（「『“）不在集合内，避免把新一句的开引号错误移到上一句。
+ */
+const LEADING_CLOSING_PUNCTUATION =
+  /^((?:[。．!！?？…，,、:：;；]+["'」』”’）)\]】》〉〕］}]*|[」』”’）)\]】》〉〕］}]+))(.+)$/u;
+
+function reattachLeadingClosingPunctuation(
+  word: string,
+  previous?: AsrWord,
+): string {
+  if (!previous) return word;
+  const matched = word.match(LEADING_CLOSING_PUNCTUATION);
+  if (!matched) return word;
+  previous.word = `${previous.word}${matched[1]}`;
+  return matched[2];
+}
+
+/**
  * 规范化 Base URL：空/非法 → 官方默认；去除误粘的 /listen 后缀；去尾部斜杠。
  * base 非必填，缺省回落官方端点。
  */
@@ -58,7 +79,11 @@ export function mapDeepgramWords(raw: unknown): AsrWord[] {
     const start = Number((w as { start?: unknown })?.start);
     const end = Number((w as { end?: unknown })?.end);
     if (Number.isFinite(start) && Number.isFinite(end)) {
-      out.push({ word, start, end });
+      const normalizedWord = reattachLeadingClosingPunctuation(
+        word,
+        out[out.length - 1],
+      );
+      if (normalizedWord) out.push({ word: normalizedWord, start, end });
     }
   }
   return out;
