@@ -15,6 +15,7 @@ import {
   Captions,
   CheckCircle2,
   Clapperboard,
+  CloudDownload,
   Compass,
   Cpu,
   Github,
@@ -78,13 +79,19 @@ interface NavItemDef {
   isActive: (asPath: string) => boolean;
 }
 
-/** 任务组：按创作流水线排序（启动台 → 字幕 → 校对 → 合成 → 配音） */
+/** 任务组：按创作流水线排序（启动台 → 下载 → 字幕 → 校对 → 合成 → 配音） */
 const NAV_TASK_ITEMS: NavItemDef[] = [
   {
     href: 'home',
     labelKey: 'nav.launchpad',
     icon: Home,
     isActive: (p) => p.includes('home') || p.includes('recent-tasks'),
+  },
+  {
+    href: 'download',
+    labelKey: 'nav.download',
+    icon: CloudDownload,
+    isActive: (p) => p.includes('/download'),
   },
   {
     href: 'tasks/generate-translate',
@@ -172,6 +179,7 @@ const PREFETCH_NAMESPACES = [
   'subtitleMerge',
   'parameters',
   'modelsControl',
+  'download',
 ];
 
 /** 竖排导航项：图标在上、文字在下（P0 导航规范），选中态 = soft 底 + 左缘指示条 */
@@ -255,6 +263,12 @@ const Layout = ({ children }) => {
     status: string;
   } | null>(null);
   const [taskRunning, setTaskRunning] = useState(false);
+  // 在线视频下载全局摘要（状态栏 pill；主进程仅在内容变化时广播）
+  const [videoDownload, setVideoDownload] = useState<{
+    running: boolean;
+    activeCount: number;
+    progress: number;
+  } | null>(null);
   // 手动检查更新会话：等待 update-status 终态时为 true，持有 loading toast id
   const manualCheckRef = useRef<{ toastId: string | number } | null>(null);
 
@@ -497,6 +511,21 @@ const Layout = ({ children }) => {
       clearInterval(interval);
       cleanupComplete?.();
     };
+  }, []);
+
+  // 视频下载摘要（下载页外持续可见）
+  useEffect(() => {
+    const unsub = window?.ipc?.on(
+      'videoDownload:summary',
+      (summary: {
+        running: boolean;
+        activeCount: number;
+        progress: number;
+      }) => {
+        setVideoDownload(summary?.running ? summary : null);
+      },
+    );
+    return () => unsub?.();
   }, []);
 
   // 模型下载全局可见：主进程 modelDownloadDetail 是全局广播，任何页面都能收到
@@ -855,6 +884,20 @@ const Layout = ({ children }) => {
           >
             <Loader2 className="h-3 w-3 animate-spin" />
             {t('taskRunningPill.label')}
+          </button>
+        )}
+        {videoDownload && (
+          <button
+            type="button"
+            onClick={() => router.push(`/${locale}/download`)}
+            aria-label={t('videoDownloadPill.aria')}
+            className="flex items-center gap-1.5 whitespace-nowrap text-primary transition-colors hover:text-primary/80"
+          >
+            <CloudDownload className="h-3 w-3" />
+            {t('videoDownloadPill.label', {
+              count: videoDownload.activeCount,
+              progress: videoDownload.progress,
+            })}
           </button>
         )}
         {downloadPill && (

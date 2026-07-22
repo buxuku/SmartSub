@@ -106,6 +106,7 @@ export default function RecentTasksPage() {
     if (value === 'all') return t('allTasks.typeAll');
     if (value === 'proofread') return t('card.proofread');
     if (value === 'dubbing') return t('card.dubbing');
+    if (value === 'download') return t('card.download');
     const slug =
       value === 'generateAndTranslate'
         ? 'generate-translate'
@@ -259,6 +260,9 @@ export default function RecentTasksPage() {
               onCancelRename={() => setEditingId(null)}
               onDelete={setDeleteTarget}
               onOpen={(item) => router.push(getWorkItemTarget(item, localeStr))}
+              onOpenSource={(downloadId) =>
+                router.push(`/${localeStr}/download?workItem=${downloadId}`)
+              }
               tLaunchpad={t}
               tTasks={tTasks}
             />

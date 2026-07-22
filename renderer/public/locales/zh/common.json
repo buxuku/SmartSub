@@ -2,6 +2,7 @@
   "notification": "消息通知",
   "nav": {
     "launchpad": "启动台",
+    "download": "下载",
     "subtitles": "字幕",
     "proofread": "校对",
     "compose": "合成",
@@ -206,6 +207,10 @@
   "taskRunningPill": {
     "aria": "有任务正在运行，点击查看最近任务",
     "label": "任务运行中"
+  },
+  "videoDownloadPill": {
+    "aria": "视频下载进行中，点击查看",
+    "label": "下载中 {{count}} 项 · {{progress}}%"
   },
   "activity": {
     "aria": "活动与状态",

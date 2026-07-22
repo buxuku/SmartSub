@@ -7,6 +7,7 @@ import {
   BookOpenText,
   Captions,
   Clapperboard,
+  CloudDownload,
   Compass,
   Cpu,
   Github,
@@ -95,6 +96,7 @@ export default function CommandPalette({
 
   const nav = [
     { href: 'home', label: t('nav.launchpad'), icon: Home },
+    { href: 'download', label: t('nav.download'), icon: CloudDownload },
     {
       href: 'tasks/generate-translate',
       label: t('nav.subtitles'),

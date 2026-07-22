@@ -29,6 +29,8 @@ export interface WorkItemListProps {
   showUpdatedAt?: boolean;
   /** 嵌入 Panel 内时去掉外框（由容器提供边界） */
   flush?: boolean;
+  /** 任务来源回溯（如「来自下载」徽章）点击回调；未提供则不渲染徽章 */
+  onOpenSource?: (downloadWorkItemId: string) => void;
 }
 
 export default function WorkItemList({
@@ -45,12 +47,18 @@ export default function WorkItemList({
   tTasks,
   showUpdatedAt = true,
   flush = false,
+  onOpenSource,
 }: WorkItemListProps) {
   return (
     <div className={cn('divide-y', !flush && 'rounded-lg border')}>
       {items.map((item) => {
         const status = getWorkItemStatus(item);
         const editing = editingId === item.id;
+        const sourceDownloadId = (
+          item.configSnapshot as
+            | { sourceDownloadWorkItemId?: string }
+            | undefined
+        )?.sourceDownloadWorkItemId;
         return (
           <div
             key={item.id}
@@ -86,6 +94,18 @@ export default function WorkItemList({
             <span className="hidden sm:inline text-[11px] text-muted-foreground rounded bg-muted px-1.5 py-0.5 flex-shrink-0">
               {getWorkItemTypeLabel(item, tLaunchpad, tTasks)}
             </span>
+            {sourceDownloadId && onOpenSource ? (
+              <button
+                type="button"
+                className="hidden sm:inline flex-shrink-0 rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-[11px] text-primary transition-colors hover:bg-primary/10"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenSource(sourceDownloadId);
+                }}
+              >
+                {tLaunchpad('fromDownload')}
+              </button>
+            ) : null}
             <span className="text-xs text-muted-foreground flex-shrink-0">
               {tLaunchpad('fileCount', {
                 count: getWorkItemFileCount(item),

@@ -300,7 +300,7 @@ export default function TaskWizard() {
     [appendFiles],
   );
 
-  // 启动台拖放交接：sessionStorage 一次性消费
+  // 启动台/下载页交接：sessionStorage 一次性消费
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem(WIZARD_DROP_KEY);
@@ -314,6 +314,12 @@ export default function TaskWizard() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 下载页交接来源（?fromDownload=<downloadWorkItemId>）：写入任务快照供回溯
+  const sourceDownloadWorkItemId =
+    typeof router.query.fromDownload === 'string' && router.query.fromDownload
+      ? router.query.fromDownload
+      : null;
 
   // ── 目标产物 ──────────────────────────────────────────────────────────────
   const presetFull = router.query.preset === 'full';
@@ -837,6 +843,7 @@ export default function TaskWizard() {
         ...formData,
         taskType,
         ...(appliedRecipeName ? { recipeName: appliedRecipeName } : {}),
+        ...(sourceDownloadWorkItemId ? { sourceDownloadWorkItemId } : {}),
         translateProvider: translateOn ? formData?.translateProvider : '-1',
         ...(dubOn && dubEngine
           ? {

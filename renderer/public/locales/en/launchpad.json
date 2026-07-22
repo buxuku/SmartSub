@@ -76,8 +76,10 @@
     "merge": "Burn to Video",
     "mergeDesc": "Burn subtitles into the picture so they always show",
     "dubbing": "Dubbing",
-    "dubbingDesc": "Synthesize speech line by line and align it to the timeline"
+    "dubbingDesc": "Synthesize speech line by line and align it to the timeline",
+    "download": "Video download"
   },
+  "fromDownload": "From download",
   "needsModelBadge": "Needs a model",
   "banner": {
     "noModel": "No speech model yet — it turns speech into text. Download one to get started",

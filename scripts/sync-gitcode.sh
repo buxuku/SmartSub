@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # 在「国内机器」上手动执行：从 GitHub latest 拉取产物，再推送到 GitCode。
-# 一个入口同步两个 smartsub 依赖产物，用 --target 选择：
-#   --target engine  → smartsub-py-engine runtime   (buxuku/smartsub-py-engine → buxuku1/smartsub-py-engine)
-#   --target addon   → whisper.cpp addon/CUDA 产物   (buxuku/whisper.cpp       → buxuku1/whisper.node)
+# 一个入口同步 smartsub 依赖产物，用 --target 选择：
+#   --target engine       → smartsub-py-engine runtime   (buxuku/smartsub-py-engine   → buxuku1/smartsub-py-engine)
+#   --target addon        → whisper.cpp addon/CUDA 产物   (buxuku/whisper.cpp          → buxuku1/whisper.node)
+#   --target downloaders  → yt-dlp/lux 下载器产物         (buxuku/smartsub-downloaders → buxuku1/smartsub-downloaders)
 #
 # 设计目标（应对 GitHub 境外 → GitCode 国内上传慢、且 GitCode 同名附件 PUT 不覆盖的问题）：
 #   - 「下载 + 上传」整段放到国内本机执行 → 上传 GitCode 走域内网络，快且稳；
@@ -30,10 +31,11 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 usage() {
   cat >&2 <<'EOF'
-用法: bash scripts/sync-gitcode.sh --target <addon|engine>
-  --target addon    同步 whisper.cpp addon/CUDA 产物 → GitCode buxuku1/whisper.node
-  --target engine   同步 smartsub-py-engine runtime  → GitCode buxuku1/smartsub-py-engine
-也可用环境变量 TARGET=addon|engine 代替 --target。
+用法: bash scripts/sync-gitcode.sh --target <addon|engine|downloaders>
+  --target addon        同步 whisper.cpp addon/CUDA 产物   → GitCode buxuku1/whisper.node
+  --target engine       同步 smartsub-py-engine runtime    → GitCode buxuku1/smartsub-py-engine
+  --target downloaders  同步 yt-dlp/lux 下载器产物          → GitCode buxuku1/smartsub-downloaders
+也可用环境变量 TARGET=addon|engine|downloaders 代替 --target。
 常用开关: FORCE=1 SKIP_VERIFY=1 USE_GHPROXY=0|1 GITCODE_DRY_RUN=1 GITCODE_TOKEN=<token>
 EOF
 }
@@ -189,8 +191,39 @@ case "$TARGET" in
     update_body() { addon_update_body; }
     ;;
 
+  downloaders)
+    GH_REPO="${GH_REPO:-buxuku/smartsub-downloaders}"
+    GITCODE_OWNER="${GITCODE_OWNER:-buxuku1}"
+    GITCODE_REPO="${GITCODE_REPO:-smartsub-downloaders}"
+    USE_GHPROXY="${USE_GHPROXY:-1}"
+    REQUIRED_CMDS=(curl jq)
+    FILES=(
+      "yt-dlp-win32-x64.exe"
+      "yt-dlp-win32-arm64.exe"
+      "yt-dlp-macos"
+      "yt-dlp-linux-x64"
+      "yt-dlp-linux-arm64"
+      "lux-win32-x64.exe"
+      "lux-win32-arm64.exe"
+      "lux-darwin-x64"
+      "lux-darwin-arm64"
+      "lux-linux-x64"
+      "lux-linux-arm64"
+      "downloader-versions.json"
+      "checksums.sha256"
+    )
+    LEGACY_FILES=()
+    FRESHNESS_FILE="downloader-versions.json"
+    FRESHNESS_JQ='.generatedAt // empty'
+    UPLOAD_FIRST="downloader-versions.json"
+    TAG_MESSAGE="Latest downloader builds"
+    RELEASE_NAME="latest"
+    RELEASE_BODY="Auto-synced from smartsub-downloaders CI (yt-dlp official + lux from master)"
+    do_verify() { verify_checksums_file "checksums.sha256"; }
+    ;;
+
   *)
-    echo "未知 target: ${TARGET}（应为 addon 或 engine）" >&2
+    echo "未知 target: ${TARGET}（应为 addon、engine 或 downloaders）" >&2
     usage
     exit 1
     ;;

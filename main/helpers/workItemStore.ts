@@ -36,6 +36,17 @@ function markInterruptedFile(file: IFiles): IFiles {
 function applyInterruptedMarkToWorkItems() {
   workItems = workItems.map((item) => {
     if (item.type === 'proofread') return item;
+    if (item.type === 'download') {
+      // 下载可断点续传：执行中的条目退回待下载（''），任务标记中断，
+      // 「继续下载」时对未完成条目重新入列即可从断点恢复。
+      if (item.status !== 'running' && item.status !== 'waiting') return item;
+      const downloadEntries = (item.downloadEntries || []).map((entry) =>
+        entry.status === 'loading' ? { ...entry, status: '' as const } : entry,
+      );
+      return item.status === 'running'
+        ? { ...item, downloadEntries, status: 'interrupted' as const }
+        : { ...item, downloadEntries };
+    }
     if (item.type === 'dubbing') {
       // 配音是会话级工作项（无 pipelineFiles）：上次退出时仍在跑 → 标记中断。
       return item.status === 'running'

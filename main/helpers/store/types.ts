@@ -137,6 +137,14 @@ export type StoreType = {
     downloadEndpoints?: Partial<DownloadEndpointConfig>;
     /** 任务列表视图：list=列表，grid=网格（全局统一，跨重启保留） */
     taskViewMode?: 'list' | 'grid';
+    /** 在线视频下载：保存目录（记忆上次使用值） */
+    videoDownloadSavePath?: string;
+    /** 在线视频下载：清晰度档位 */
+    videoDownloadQuality?: 'best' | '1080p' | '720p';
+    /** 在线视频下载：引擎选择（auto=按域名路由） */
+    videoDownloadEngine?: 'auto' | 'yt-dlp' | 'lux';
+    /** 在线视频下载：并发数（1-5，默认 2） */
+    videoDownloadConcurrency?: number;
     /** 关闭窗口行为：smart=有任务转后台/空闲退出，background=始终后台，quit=始终退出（仅 macOS 生效，Win/Linux 固定兜底） */
     closeAction?: 'smart' | 'background' | 'quit';
     /** 首次「转入后台」提示是否已展示（勾「不再提示」后置 true） */

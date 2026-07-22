@@ -2,6 +2,7 @@
   "notification": "Notification",
   "nav": {
     "launchpad": "Launchpad",
+    "download": "Download",
     "subtitles": "Subtitles",
     "proofread": "Proofread",
     "compose": "Compose",
@@ -206,6 +207,10 @@
   "taskRunningPill": {
     "aria": "A task is running, click to view recent tasks",
     "label": "Task running"
+  },
+  "videoDownloadPill": {
+    "aria": "Video downloads in progress, click to view",
+    "label": "Downloading {{count}} · {{progress}}%"
   },
   "activity": {
     "aria": "Activity & status",

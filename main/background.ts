@@ -33,6 +33,7 @@ import { setupSubtitleMergeHandlers } from './helpers/ipcSubtitleMergeHandlers';
 import { setupDubbingHandlers } from './helpers/ipcDubbingHandlers';
 import { setupPipelineHandlers } from './helpers/ipcPipelineHandlers';
 import { setupVoiceCloneHandlers } from './helpers/ipcVoiceCloneHandlers';
+import { setupVideoDownloadHandlers } from './helpers/ipcVideoDownloadHandlers';
 import { configurationManager } from './service/configurationManager';
 import {
   registerAddonIpcHandlers,
@@ -194,6 +195,7 @@ app.on('before-quit', (event) => {
   setupDubbingHandlers(mainWindow);
   setupPipelineHandlers(mainWindow);
   setupVoiceCloneHandlers(mainWindow);
+  setupVideoDownloadHandlers(mainWindow);
   setMainWindowForAddon(mainWindow);
   registerEngineIpcHandlers();
   setMainWindowForEngine(mainWindow);

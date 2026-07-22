@@ -1,5 +1,6 @@
 import type { IFiles } from './types';
 import type { ProofreadItem } from './proofread';
+import type { DownloadEntry } from './download';
 
 /** 流水线类工作项（转写 / 翻译） */
 export type PipelineWorkItemType =
@@ -13,10 +14,14 @@ export type ProofreadWorkItemType = 'proofread';
 /** 配音工作台工作项（会话级：字幕 + 可选视频 → 配音产物） */
 export type DubbingWorkItemType = 'dubbing';
 
+/** 在线视频下载批次工作项（一次「开始下载」= 一个工作项） */
+export type DownloadWorkItemType = 'download';
+
 export type WorkItemType =
   | PipelineWorkItemType
   | ProofreadWorkItemType
-  | DubbingWorkItemType;
+  | DubbingWorkItemType
+  | DownloadWorkItemType;
 
 export type WorkItemStatus =
   | 'waiting'
@@ -54,6 +59,9 @@ export interface WorkItem {
   proofreadEntries?: ProofreadEntry[];
   currentProofreadIndex?: number;
 
+  /** download（每条粘贴链接一项） */
+  downloadEntries?: DownloadEntry[];
+
   configSnapshot?: Record<string, unknown>;
   artifacts?: WorkItemArtifact[];
 }
@@ -76,4 +84,10 @@ export function isProofreadWorkItem(
   item: WorkItem,
 ): item is WorkItem & { proofreadEntries: ProofreadEntry[] } {
   return item.type === 'proofread';
+}
+
+export function isDownloadWorkItem(
+  item: WorkItem,
+): item is WorkItem & { downloadEntries: DownloadEntry[] } {
+  return item.type === 'download';
 }

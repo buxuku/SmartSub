@@ -8,11 +8,17 @@ import {
   clearAllWorkItems,
 } from './workItemStore';
 import { deleteDubbingSessionData } from './dubbing/dubbingProcessor';
+import { cancelDownloadBatch } from './videoDownload/scheduler';
 import type { WorkItem } from '../../types/workItem';
 
 /** 工作项删除时联动清理配音会话目录（行级 wav + 元数据） */
 function cleanupDubbingSession(item: WorkItem | null): void {
   if (!item) return;
+  if (item.type === 'download') {
+    // 删除进行中的下载批次：先停进程/清队列（已落盘文件保留）
+    cancelDownloadBatch(item.id);
+    return;
+  }
   if (item.type === 'dubbing') {
     const sessionId = (
       item.configSnapshot as { sessionId?: string } | undefined

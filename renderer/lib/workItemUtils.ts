@@ -29,6 +29,7 @@ export const WORK_ITEM_TYPE_FILTERS: Array<'all' | WorkItemType> = [
   'translateOnly',
   'proofread',
   'dubbing',
+  'download',
 ];
 
 function getProjectTypeDef(project: { taskType?: string }): TaskTypeDef {
@@ -73,6 +74,9 @@ export function getWorkItemTarget(item: WorkItem, locale: string): string {
   if (item.type === 'proofread') {
     return `/${locale}/proofread?workItem=${item.id}`;
   }
+  if (item.type === 'download') {
+    return `/${locale}/download?workItem=${item.id}`;
+  }
   if (item.type === 'dubbing') {
     // 回开配音工作台：携 sessionId 恢复行级状态与产物（旧记录无 sessionId
     // 时降级为路径预填重建）。
@@ -99,6 +103,7 @@ export function getWorkItemFileCount(item: WorkItem): number {
     return item.proofreadEntries?.length || 0;
   }
   if (item.type === 'dubbing') return 1;
+  if (item.type === 'download') return item.downloadEntries?.length || 0;
   return item.pipelineFiles?.length || 0;
 }
 
@@ -113,6 +118,9 @@ export function getWorkItemTypeLabel(
   if (item.type === 'dubbing') {
     return tLaunchpad('card.dubbing');
   }
+  if (item.type === 'download') {
+    return tLaunchpad('card.download');
+  }
   const typeDef =
     getTaskTypeByValue(item.type) || getTaskTypeBySlug('generate-translate');
   // 向导流水线任务（快照含配音/成片）按实际流程命名，而非字幕段类型
@@ -124,7 +132,11 @@ export function getWorkItemTypeLabel(
 }
 
 export function getWorkItemStatus(item: WorkItem): RecentStatus {
-  if (item.type === 'proofread' || item.type === 'dubbing') {
+  if (
+    item.type === 'proofread' ||
+    item.type === 'dubbing' ||
+    item.type === 'download'
+  ) {
     if (item.status === 'done') return 'done';
     if (item.status === 'running') return 'running';
     if (item.status === 'error' || item.status === 'interrupted') {
