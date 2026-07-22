@@ -1,4 +1,4 @@
-import { ipcMain, shell, BrowserWindow } from 'electron';
+import { ipcMain, shell, dialog, BrowserWindow } from 'electron';
 import { logMessage } from './storeManager';
 import {
   cancelDownloaderInstall,
@@ -20,6 +20,17 @@ import {
 } from './videoDownload/scheduler';
 import { ytDlpAdapter } from './videoDownload/ytDlpAdapter';
 import { luxAdapter } from './videoDownload/luxAdapter';
+import { withCookieFile } from './videoDownload/engineAdapter';
+import {
+  deleteCookieProfile,
+  listCookieProfiles,
+} from './videoDownload/cookieProfileStore';
+import {
+  importCookiesFromBrowser,
+  importCookiesFromFile,
+  importCookiesFromPaste,
+  type SupportedBrowser,
+} from './videoDownload/cookieImport';
 import { routeEngines } from '../../types/download';
 import type {
   DownloadEngineChoice,
@@ -46,24 +57,30 @@ async function preflightOne(
       error: 'No downloader engine installed',
     };
   }
-  const errors: string[] = [];
-  for (const engine of order) {
-    const binaryPath = getDownloaderBinaryPath(engine);
-    if (!binaryPath) continue;
-    try {
-      const meta = await ADAPTERS[engine].preflight(binaryPath, { url });
-      return { url, ok: true, engine, meta };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      errors.push(`${engine}: ${message}`);
+  // cookie 临时副本按 url 匹配档案生成，供本 url 的所有引擎预检尝试共用
+  return withCookieFile(url, async (cookieFilePath) => {
+    const errors: string[] = [];
+    for (const engine of order) {
+      const binaryPath = getDownloaderBinaryPath(engine);
+      if (!binaryPath) continue;
+      try {
+        const meta = await ADAPTERS[engine].preflight(binaryPath, {
+          url,
+          cookieFilePath,
+        });
+        return { url, ok: true, engine, meta };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`${engine}: ${message}`);
+      }
     }
-  }
-  return {
-    url,
-    ok: false,
-    engine: order[0],
-    error: errors.join(' || ') || 'preflight failed',
-  };
+    return {
+      url,
+      ok: false,
+      engine: order[0],
+      error: errors.join(' || ') || 'preflight failed',
+    };
+  });
 }
 
 /** 有限并发跑完全部预检（单条失败不阻断其余） */
@@ -247,5 +264,80 @@ export function setupVideoDownloadHandlers(mainWindow: BrowserWindow): void {
       shell.showItemInFolder(payload.filePath);
       return true;
     },
+  );
+
+  // ── 站点 Cookie 档案 ──────────────────────────────────────────────
+
+  interface CustomDefPayload {
+    name: string;
+    matchDomains: string[];
+    cookieDomains: string[];
+  }
+
+  ipcMain.handle('videoDownload:cookieProfiles:list', () => {
+    try {
+      return listCookieProfiles();
+    } catch (error) {
+      logMessage(`cookieProfiles:list failed: ${error}`, 'error');
+      return [];
+    }
+  });
+
+  ipcMain.handle(
+    'videoDownload:cookieProfiles:importFile',
+    async (_event, payload: { id: string; customDef?: CustomDefPayload }) => {
+      const picked = await dialog.showOpenDialog(mainWindow, {
+        title: 'Select cookies.txt',
+        properties: ['openFile'],
+        filters: [
+          { name: 'Cookies', extensions: ['txt'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+      if (picked.canceled || !picked.filePaths[0]) {
+        return { cancelled: true };
+      }
+      const result = importCookiesFromFile({
+        id: payload.id,
+        filePath: picked.filePaths[0],
+        customDef: payload.customDef,
+      });
+      return { cancelled: false, ...result };
+    },
+  );
+
+  ipcMain.handle(
+    'videoDownload:cookieProfiles:importPaste',
+    (
+      _event,
+      payload: { id: string; raw: string; customDef?: CustomDefPayload },
+    ) =>
+      importCookiesFromPaste({
+        id: payload.id,
+        raw: payload.raw,
+        customDef: payload.customDef,
+      }),
+  );
+
+  ipcMain.handle(
+    'videoDownload:cookieProfiles:importFromBrowser',
+    (
+      _event,
+      payload: {
+        id: string;
+        browser: SupportedBrowser;
+        customDef?: CustomDefPayload;
+      },
+    ) =>
+      importCookiesFromBrowser({
+        id: payload.id,
+        browser: payload.browser,
+        customDef: payload.customDef,
+      }),
+  );
+
+  ipcMain.handle(
+    'videoDownload:cookieProfiles:delete',
+    (_event, payload: { id: string }) => deleteCookieProfile(payload.id),
   );
 }

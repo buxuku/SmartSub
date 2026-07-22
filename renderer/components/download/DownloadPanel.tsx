@@ -19,6 +19,7 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
+  Cookie,
   CloudDownload,
   FolderOpen,
   ListVideo,
@@ -45,8 +46,11 @@ import { cn } from 'lib/utils';
 import { WIZARD_DROP_KEY } from 'lib/recipes';
 import { readPersistedDownloadSource } from '@/components/settings/gpu/gpuDownloadUtils';
 import EngineSetupCard from './EngineSetupCard';
+import CookieProfilesDialog from './CookieProfilesDialog';
 import {
   extractUrls,
+  matchCookieProfile,
+  type CookieProfileView,
   type DownloadEngineChoice,
   type DownloadEntry,
   type DownloadPreflightResult,
@@ -60,6 +64,7 @@ type Phase = 'compose' | 'review' | 'task';
 
 const LARGE_PLAYLIST_THRESHOLD = 100;
 const MAYBE_OUTDATED_PREFIX = 'MAYBE_OUTDATED::';
+const MAYBE_COOKIE_EXPIRED_PREFIX = 'MAYBE_COOKIE_EXPIRED::';
 
 function formatDuration(seconds?: number): string {
   if (!seconds || seconds <= 0) return '';
@@ -128,6 +133,46 @@ export default function DownloadPanel() {
     useState<DownloadEngineChoice>('auto');
   const [concurrency, setConcurrency] = useState(2);
   const [writeSubs, setWriteSubs] = useState(true);
+
+  // ── 站点 Cookie 档案 ────────────────────────────────────────────────────────
+  const [cookieProfiles, setCookieProfiles] = useState<CookieProfileView[]>([]);
+  const [cookieDialogOpen, setCookieDialogOpen] = useState(false);
+  const [cookieFocusId, setCookieFocusId] = useState<string | null>(null);
+  const loadCookieProfiles = useCallback(async () => {
+    try {
+      const list = await window?.ipc?.invoke(
+        'videoDownload:cookieProfiles:list',
+      );
+      setCookieProfiles(Array.isArray(list) ? list : []);
+    } catch {
+      setCookieProfiles([]);
+    }
+  }, []);
+  useEffect(() => {
+    void loadCookieProfiles();
+  }, [loadCookieProfiles]);
+  const configuredCookieCount = useMemo(
+    () => cookieProfiles.filter((p) => p.configured).length,
+    [cookieProfiles],
+  );
+  const openCookieDialog = useCallback((focusId?: string | null) => {
+    setCookieFocusId(focusId ?? null);
+    setCookieDialogOpen(true);
+  }, []);
+  // 失败条目「重新导入 Cookie」：按条目 URL 匹配档案并聚焦
+  const reimportCookieForUrl = useCallback(
+    (url: string) => {
+      const matched = matchCookieProfile(
+        url,
+        cookieProfiles.map((p) => ({
+          id: p.id,
+          matchDomains: p.matchDomains,
+        })),
+      );
+      openCookieDialog(matched);
+    },
+    [cookieProfiles, openCookieDialog],
+  );
 
   useEffect(() => {
     (async () => {
@@ -594,6 +639,21 @@ export default function DownloadPanel() {
                   {t('compose.writeSubs')}
                 </span>
               </label>
+              <button
+                type="button"
+                onClick={() => openCookieDialog()}
+                className="flex items-center gap-1.5 rounded border bg-muted/40 px-2 py-1 transition-colors hover:bg-muted"
+              >
+                <Cookie className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                <span className="text-muted-foreground">
+                  {t('cookie.entry')}
+                </span>
+                {configuredCookieCount > 0 && (
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                    {configuredCookieCount}
+                  </Badge>
+                )}
+              </button>
             </div>
             <div className="flex items-center justify-end gap-2">
               {!anyEngineInstalled && statuses && (
@@ -665,8 +725,23 @@ export default function DownloadPanel() {
           onResume={resumeBatch}
           onNewBatch={resetToCompose}
           onReveal={revealFile}
+          onReimportCookie={reimportCookieForUrl}
         />
       )}
+
+      <CookieProfilesDialog
+        open={cookieDialogOpen}
+        onOpenChange={(next) => {
+          setCookieDialogOpen(next);
+          if (!next) {
+            setCookieFocusId(null);
+            void loadCookieProfiles();
+          }
+        }}
+        profiles={cookieProfiles}
+        onChanged={loadCookieProfiles}
+        focusProfileId={cookieFocusId}
+      />
     </div>
   );
 }
@@ -856,6 +931,7 @@ function TaskView({
   onResume,
   onNewBatch,
   onReveal,
+  onReimportCookie,
 }: {
   item: WorkItem;
   videoArtifacts: WorkItemArtifact[];
@@ -873,6 +949,7 @@ function TaskView({
   onResume: () => void;
   onNewBatch: () => void;
   onReveal: (path: string) => void;
+  onReimportCookie: (url: string) => void;
 }) {
   const { t } = useTranslation('download');
   const entries = item.downloadEntries || [];
@@ -940,6 +1017,7 @@ function TaskView({
               onRetry={onRetry}
               onCancel={onCancelEntry}
               onReveal={onReveal}
+              onReimportCookie={onReimportCookie}
             />
           ))}
         </div>
@@ -1031,17 +1109,25 @@ function EntryRow({
   onRetry,
   onCancel,
   onReveal,
+  onReimportCookie,
 }: {
   entry: DownloadEntry;
   onRetry: (entryId: string, updateFirst?: boolean) => void;
   onCancel: (entryId: string) => void;
   onReveal: (path: string) => void;
+  onReimportCookie: (url: string) => void;
 }) {
   const { t } = useTranslation('download');
   const isCancelled = entry.error === 'CANCELLED';
   const maybeOutdated = Boolean(entry.error?.startsWith(MAYBE_OUTDATED_PREFIX));
+  const maybeCookieExpired = Boolean(
+    entry.error?.startsWith(MAYBE_COOKIE_EXPIRED_PREFIX),
+  );
   const errorText = entry.error
-    ? entry.error.replace(MAYBE_OUTDATED_PREFIX, '').slice(0, 200)
+    ? entry.error
+        .replace(MAYBE_OUTDATED_PREFIX, '')
+        .replace(MAYBE_COOKIE_EXPIRED_PREFIX, '')
+        .slice(0, 200)
     : '';
 
   return (
@@ -1104,7 +1190,12 @@ function EntryRow({
         {entry.status === 'error' && (
           <div className="mt-0.5 text-[11px] text-destructive">
             {isCancelled ? t('task.statusCancelled') : errorText}
-            {maybeOutdated && (
+            {maybeCookieExpired && (
+              <span className="ml-1 text-muted-foreground">
+                （{t('cookie.maybeExpiredHint')}）
+              </span>
+            )}
+            {maybeOutdated && !maybeCookieExpired && (
               <span className="ml-1 text-muted-foreground">
                 （{t('task.maybeOutdatedHint')}）
               </span>
@@ -1134,7 +1225,7 @@ function EntryRow({
               <RotateCcw className="mr-1 h-3 w-3" />
               {t('task.retry')}
             </Button>
-            {maybeOutdated && (
+            {maybeOutdated && !maybeCookieExpired && (
               <Button
                 variant="outline"
                 size="sm"
@@ -1142,6 +1233,17 @@ function EntryRow({
                 onClick={() => onRetry(entry.id, true)}
               >
                 {t('task.retryWithUpdate')}
+              </Button>
+            )}
+            {maybeCookieExpired && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-[11px]"
+                onClick={() => onReimportCookie(entry.url)}
+              >
+                <Cookie className="mr-1 h-3 w-3" />
+                {t('cookie.reimport')}
               </Button>
             )}
           </>

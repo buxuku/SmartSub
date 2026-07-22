@@ -13,6 +13,7 @@ import {
   AddonLoadHistoryEntry,
 } from '../../../types/addon';
 import type { DownloadEndpointConfig } from '../../../types/downloadConfig';
+import type { CookieProfileMeta } from '../../../types/download';
 import type {
   MergeOutputMode,
   VideoQuality,
@@ -145,6 +146,8 @@ export type StoreType = {
     videoDownloadEngine?: 'auto' | 'yt-dlp' | 'lux';
     /** 在线视频下载：并发数（1-5，默认 2） */
     videoDownloadConcurrency?: number;
+    /** 在线视频下载：站点 Cookie 档案元数据（内容单独落盘 userData/downloader-cookies/） */
+    videoDownloadCookieProfiles?: CookieProfileMeta[];
     /** 关闭窗口行为：smart=有任务转后台/空闲退出，background=始终后台，quit=始终退出（仅 macOS 生效，Win/Linux 固定兜底） */
     closeAction?: 'smart' | 'background' | 'quit';
     /** 首次「转入后台」提示是否已展示（勾「不再提示」后置 true） */

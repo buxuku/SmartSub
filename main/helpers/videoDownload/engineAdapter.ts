@@ -1,8 +1,12 @@
 import { spawn, type ChildProcess } from 'child_process';
 import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs';
+import { v4 as uuidv4 } from 'uuid';
 import ffmpegStatic from 'ffmpeg-static';
 import { store } from '../store';
 import { resolveProxyEnv } from '../network/proxyEnv';
+import { resolveCookieTextForUrl } from './cookieProfileStore';
 import type {
   DownloaderEngine,
   DownloadEntryMeta,
@@ -13,6 +17,8 @@ import type { ParsedProgress } from './parsers';
 export interface PreflightOptions {
   url: string;
   timeoutMs?: number;
+  /** 命中站点档案时的 cookie 临时副本路径（withCookieFile 提供） */
+  cookieFilePath?: string;
 }
 
 export interface DownloadJobOptions {
@@ -25,6 +31,8 @@ export interface DownloadJobOptions {
   writeSubs?: boolean;
   /** 预检元数据（lux 命名输出/进度估算依赖 title/totalBytes） */
   meta?: DownloadEntryMeta;
+  /** 命中站点档案时的 cookie 临时副本路径（withCookieFile 提供） */
+  cookieFilePath?: string;
   onProgress: (p: ParsedProgress) => void;
   signal: AbortSignal;
 }
@@ -67,6 +75,55 @@ export function ffmpegLocation(): string {
     'app.asar',
     'app.asar.unpacked',
   );
+}
+
+/**
+ * 按 URL 匹配站点 Cookie 档案：命中则解密内容写入进程级临时副本并返回其路径，
+ * 未命中/失败返回 undefined。临时副本规避两个问题：(1) yt-dlp 退出写回 cookie jar，
+ * 多进程共写主档案会竞争损坏；(2) 加密落盘的主档案无法被子进程直接读取。
+ * 调用方 MUST 在子进程结束后调用 cleanupCookieTempFile 删除。
+ */
+export function createCookieTempFile(url: string): string | undefined {
+  let text: string | null = null;
+  try {
+    text = resolveCookieTextForUrl(url);
+  } catch {
+    // 档案解析失败不阻断下载（退化为匿名态）
+    text = null;
+  }
+  if (!text) return undefined;
+  const tmpPath = path.join(os.tmpdir(), `smartsub-cookies-${uuidv4()}.txt`);
+  try {
+    fs.writeFileSync(tmpPath, text, 'utf8');
+    return tmpPath;
+  } catch {
+    return undefined;
+  }
+}
+
+export function cleanupCookieTempFile(tmpPath: string | undefined): void {
+  if (!tmpPath) return;
+  try {
+    if (fs.existsSync(tmpPath)) fs.rmSync(tmpPath, { force: true });
+  } catch {
+    // 清理失败静默（OS 临时目录兜底回收）
+  }
+}
+
+/**
+ * createCookieTempFile + cleanup 的回调封装（适合单次 spawn，如预检）。
+ * 复杂控制流（scheduler 多引擎回退 + break/return）改用上面的 create/cleanup 原语。
+ */
+export async function withCookieFile<T>(
+  url: string,
+  fn: (cookieFilePath: string | undefined) => Promise<T>,
+): Promise<T> {
+  const tmpPath = createCookieTempFile(url);
+  try {
+    return await fn(tmpPath);
+  } finally {
+    cleanupCookieTempFile(tmpPath);
+  }
 }
 
 /**

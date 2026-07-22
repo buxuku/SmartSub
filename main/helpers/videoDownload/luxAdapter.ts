@@ -102,7 +102,12 @@ export const luxAdapter: DownloadEngineAdapter = {
     binaryPath: string,
     opts: PreflightOptions,
   ): Promise<DownloadEntryMeta> {
-    const result = await runProcess(binaryPath, ['-j', opts.url], {
+    const preflightArgs = [
+      '-j',
+      ...(opts.cookieFilePath ? ['-c', opts.cookieFilePath] : []),
+      opts.url,
+    ];
+    const result = await runProcess(binaryPath, preflightArgs, {
       timeoutMs: opts.timeoutMs ?? PREFLIGHT_TIMEOUT_MS,
     });
     if (result.code !== 0) {
@@ -158,6 +163,7 @@ export const luxAdapter: DownloadEngineAdapter = {
         '-o',
         opts.savePath,
         ...(baseName ? ['-O', baseName] : []),
+        ...(opts.cookieFilePath ? ['-c', opts.cookieFilePath] : []),
         ...(opts.expandPlaylist ? ['-p'] : []),
         opts.url,
       ];

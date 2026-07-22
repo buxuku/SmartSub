@@ -166,6 +166,8 @@ export function extractUrls(text: string): string[] {
  * lux 优先的域名（含子域匹配）；未命中一律 yt-dlp。
  * 注意 B 站不在列：实测匿名态 lux 只能取到 360P/480P，而 yt-dlp 能取到 1080P，
  * B 站走 yt-dlp 优先（失败仍会回退 lux）。lux 保留给 yt-dlp 适配不稳的国内站点。
+ * （配置 bilibili Cookie 档案后 lux 亦可取登录态高清，但 yt-dlp 优先不变——
+ * 匿名基线 yt-dlp 仍更优，cookie 只是叠加登录态收益，见 add-downloader-cookie-import）
  */
 export const LUX_PREFERRED_DOMAINS = [
   'douyin.com',
@@ -206,4 +208,120 @@ export function routeEngines(
     ? ['lux', 'yt-dlp']
     : ['yt-dlp', 'lux'];
   return order.filter((engine) => installed.includes(engine));
+}
+
+// ── 站点 Cookie 档案（登录态注入） ──────────────────────────────────────────
+
+/** cookie 档案导入来源 */
+export type CookieProfileSource = 'browser' | 'file' | 'paste';
+
+/**
+ * 预设站点档案定义（代码常量，非持久化）。
+ * matchDomains：条目 URL → 档案匹配域（含短链别名，如 b23.tv/youtu.be）。
+ * cookieDomains：导入过滤白名单（cookie 行 domain 字段后缀匹配，丢弃无关站点）。
+ * keyCookieNames：过期判定基准 cookie 名（登录态失效的关键凭据）。
+ */
+export interface CookieProfilePreset {
+  id: string;
+  /** i18n 展示名键（renderer 用 t() 解析） */
+  nameKey: string;
+  matchDomains: string[];
+  cookieDomains: string[];
+  keyCookieNames: string[];
+  /** 附账号风控提示（youtube 带 cookie 批量下载有风险） */
+  hasRiskNote?: boolean;
+}
+
+/**
+ * 预设站点档案表。lux 对文件内 cookie 不做域名匹配（全量附到每个请求），
+ * 因此每档案的 cookieDomains 决定导入过滤边界，避免跨站会话泄漏。
+ */
+export const COOKIE_SITE_PRESETS: CookieProfilePreset[] = [
+  {
+    id: 'bilibili',
+    nameKey: 'cookie.presetBilibili',
+    matchDomains: ['bilibili.com', 'b23.tv'],
+    cookieDomains: ['bilibili.com'],
+    keyCookieNames: ['SESSDATA'],
+  },
+  {
+    id: 'youtube',
+    nameKey: 'cookie.presetYoutube',
+    matchDomains: ['youtube.com', 'youtu.be'],
+    cookieDomains: ['youtube.com', 'google.com'],
+    keyCookieNames: ['LOGIN_INFO'],
+    hasRiskNote: true,
+  },
+];
+
+export function getCookiePresetById(
+  id: string,
+): CookieProfilePreset | undefined {
+  return COOKIE_SITE_PRESETS.find((p) => p.id === id);
+}
+
+/**
+ * 持久化的档案元数据（内容单独落盘 userData/cookies/{id}.cookies）。
+ * 预设档案仅在已导入时才有元数据记录；自定义档案额外带 name/域定义。
+ */
+export interface CookieProfileMeta {
+  id: string;
+  kind: 'preset' | 'custom';
+  importedAt: number;
+  source: CookieProfileSource;
+  /** safeStorage 加密落盘（false=明文回退，如 Linux 无 keyring） */
+  encrypted: boolean;
+  /** 自定义档案的展示名与域定义（预设从 COOKIE_SITE_PRESETS 取） */
+  name?: string;
+  matchDomains?: string[];
+  cookieDomains?: string[];
+}
+
+/** cookie 档案 + 计算状态（渲染层与匹配消费） */
+export interface CookieProfileView {
+  id: string;
+  kind: 'preset' | 'custom';
+  /** 预设为 i18n 键，自定义为用户输入的原文名 */
+  name: string;
+  /** 自定义档案 name 为原文（非 i18n 键） */
+  isNameLiteral: boolean;
+  matchDomains: string[];
+  cookieDomains: string[];
+  hasRiskNote?: boolean;
+  /** 是否已导入内容 */
+  configured: boolean;
+  source?: CookieProfileSource;
+  importedAt?: number;
+  encrypted?: boolean;
+  /** cookie 条数 */
+  cookieCount?: number;
+  /** 关键/最早 cookie 过期（秒 epoch，0/缺省=会话 cookie 无过期信息） */
+  expiresAt?: number;
+  /** 已过期 */
+  expired?: boolean;
+  /** 解密失败/内容损坏，需重新导入 */
+  needsReimport?: boolean;
+}
+
+/**
+ * URL 匹配站点档案：返回命中档案 id（后缀域匹配，含短链别名），未命中 null。
+ * 仅匹配已配置（configured）档案，避免给未导入档案传空 cookie 文件。
+ */
+export function matchCookieProfile(
+  url: string,
+  profiles: Array<{ id: string; matchDomains: string[]; configured?: boolean }>,
+): string | null {
+  let host = '';
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+  for (const profile of profiles) {
+    if (profile.configured === false) continue;
+    if (profile.matchDomains.some((d) => hostMatches(host, d))) {
+      return profile.id;
+    }
+  }
+  return null;
 }

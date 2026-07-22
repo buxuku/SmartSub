@@ -79,7 +79,14 @@ export const ytDlpAdapter: DownloadEngineAdapter = {
     binaryPath: string,
     opts: PreflightOptions,
   ): Promise<DownloadEntryMeta> {
-    const args = [...commonArgs(), '-J', '--flat-playlist', '--', opts.url];
+    const args = [
+      ...commonArgs(),
+      ...(opts.cookieFilePath ? ['--cookies', opts.cookieFilePath] : []),
+      '-J',
+      '--flat-playlist',
+      '--',
+      opts.url,
+    ];
     const result = await runProcess(binaryPath, args, {
       timeoutMs: opts.timeoutMs ?? PREFLIGHT_TIMEOUT_MS,
     });
@@ -95,6 +102,7 @@ export const ytDlpAdapter: DownloadEngineAdapter = {
   ): Promise<DownloadJobResult> {
     const args = [
       ...commonArgs(),
+      ...(opts.cookieFilePath ? ['--cookies', opts.cookieFilePath] : []),
       '-c',
       '-P',
       opts.savePath,

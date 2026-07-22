@@ -201,6 +201,17 @@ export function isLikelyOutdatedEngineError(message: string): boolean {
   );
 }
 
+/**
+ * 引擎报错是否疑似「登录态/权限」问题（cookie 失效或未登录），驱动重新导入引导。
+ * 仅在本次执行附带了 cookie 时用于加 MAYBE_COOKIE_EXPIRED 前缀（见 scheduler）。
+ * 关键词避开与 isLikelyOutdatedEngineError 的「提取器失效」语义重叠。
+ */
+export function isLikelyAuthError(message: string): boolean {
+  return /\b(401|403)\b|http error 4(01|03)|forbidden|login|log ?in|sign ?in|members[- ]only|member.only|premium|account|cookies?|需要登录|请登录|登录后|大会员|会员|付费|权限/i.test(
+    message,
+  );
+}
+
 /** 进程 stderr 尾部裁剪为可展示的错误信息 */
 export function tailForError(output: string, maxLength = 300): string {
   const lines = output

@@ -16,8 +16,12 @@ import type {
   DownloaderEngine,
 } from '../../../types/download';
 import type { WorkItem, WorkItemStatus } from '../../../types/workItem';
-import { isLikelyOutdatedEngineError } from './parsers';
-import { isCancelledError } from './engineAdapter';
+import { isLikelyAuthError, isLikelyOutdatedEngineError } from './parsers';
+import {
+  cleanupCookieTempFile,
+  createCookieTempFile,
+  isCancelledError,
+} from './engineAdapter';
 import { ytDlpAdapter } from './ytDlpAdapter';
 import { luxAdapter } from './luxAdapter';
 import type { DownloadEngineAdapter } from './engineAdapter';
@@ -429,142 +433,160 @@ async function runEntry(job: QueuedJob): Promise<void> {
   const errors: string[] = [];
   let succeeded = false;
   let entryMeta = entry.meta;
+  // cookie 临时副本按条目 URL 匹配档案生成（与引擎无关），供本条目内所有引擎尝试
+  // （lux 元数据补拉 + 各引擎 download）共用，条目结束统一清理。
+  const cookieFilePath = createCookieTempFile(entry.url);
+  const hadCookie = Boolean(cookieFilePath);
 
-  for (let i = 0; i < engineOrder.length; i++) {
-    const engine = engineOrder[i];
-    const binaryPath = getDownloaderBinaryPath(engine);
-    if (!binaryPath) {
-      errors.push(`${engine}: not installed`);
-      continue;
-    }
-    const adapter = ADAPTERS[engine];
-
-    updateEntry(
-      workItemId,
-      entryId,
-      {
-        status: 'loading',
-        engine,
-        progress: 0,
-        error: undefined,
-      },
-      { deriveItemStatus: true, forceEmit: true },
-    );
-
-    // 跳过预检的 lux 条目先补拉元数据：标题用于 -O 确定性命名（否则同域名批量
-    // 下载会撞名认领错文件）与 UI 展示，totalBytes 供进度降级估算。失败不阻断
-    // （lux 会按自身提取的标题命名，产物走目录 diff 认领）。
-    if (engine === 'lux' && !entryMeta?.title && !controller.signal.aborted) {
-      try {
-        const meta = await adapter.preflight(binaryPath, { url: entry.url });
-        entryMeta = { ...entryMeta, ...meta };
-        updateEntry(
-          workItemId,
-          entryId,
-          { meta: entryMeta },
-          { forceEmit: true },
-        );
-      } catch (error) {
-        logMessage(
-          `lux meta backfill failed (${entry.url}): ${error}`,
-          'warning',
-        );
+  try {
+    for (let i = 0; i < engineOrder.length; i++) {
+      const engine = engineOrder[i];
+      const binaryPath = getDownloaderBinaryPath(engine);
+      if (!binaryPath) {
+        errors.push(`${engine}: not installed`);
+        continue;
       }
-    }
+      const adapter = ADAPTERS[engine];
 
-    try {
-      const result = await adapter.download(binaryPath, {
-        url: entry.url,
-        savePath: snapshot.savePath,
-        quality: snapshot.quality || 'best',
-        expandPlaylist: entry.expandPlaylist,
-        // 旧批次快照无此字段，缺省按默认开（仅 yt-dlp 适配器消费）
-        writeSubs: snapshot.writeSubs !== false,
-        meta: entryMeta,
-        signal: controller.signal,
-        onProgress: (p) => {
-          updateEntry(workItemId, entryId, {
-            progress: p.progress,
-            speed: p.speed,
-            eta: p.eta,
-          });
-        },
-      });
-
-      // 产物登记：主路径进 entry，全部路径进 artifacts（播放列表兜底可能多个）；
-      // 同取字幕以 kind:'subtitle' 并列登记，路径去重保证重试/续传幂等
-      const subtitlePaths = result.subtitlePaths || [];
-      const latest = getWorkItemById(workItemId);
-      if (latest && latest.type === 'download') {
-        const artifacts = [...(latest.artifacts || [])];
-        for (const outputPath of result.outputPaths) {
-          if (!artifacts.some((a) => a.path === outputPath)) {
-            artifacts.push({ kind: 'video', path: outputPath });
-          }
-        }
-        for (const subtitlePath of subtitlePaths) {
-          if (!artifacts.some((a) => a.path === subtitlePath)) {
-            artifacts.push({ kind: 'subtitle', path: subtitlePath });
-          }
-        }
-        saveWorkItem({ ...latest, artifacts, updatedAt: Date.now() });
-      }
       updateEntry(
         workItemId,
         entryId,
         {
-          status: 'done',
-          progress: 100,
-          speed: undefined,
-          eta: undefined,
-          outputPath: result.outputPaths[0],
-          ...(subtitlePaths.length ? { subtitlePaths } : {}),
+          status: 'loading',
+          engine,
+          progress: 0,
+          error: undefined,
         },
         { deriveItemStatus: true, forceEmit: true },
       );
-      succeeded = true;
-      break;
-    } catch (error) {
-      if (isCancelledError(error) || controller.signal.aborted) {
-        // 整批取消：cancelDownloadBatch 已把条目回置''；单条取消：落 CANCELLED
-        if (!runtime.cancelled) {
+
+      // 跳过预检的 lux 条目先补拉元数据：标题用于 -O 确定性命名（否则同域名批量
+      // 下载会撞名认领错文件）与 UI 展示，totalBytes 供进度降级估算。失败不阻断
+      // （lux 会按自身提取的标题命名，产物走目录 diff 认领）。
+      if (engine === 'lux' && !entryMeta?.title && !controller.signal.aborted) {
+        try {
+          const meta = await adapter.preflight(binaryPath, {
+            url: entry.url,
+            cookieFilePath,
+          });
+          entryMeta = { ...entryMeta, ...meta };
           updateEntry(
             workItemId,
             entryId,
-            {
-              status: 'error',
-              error: CANCELLED_ERROR,
-              speed: undefined,
-              eta: undefined,
-            },
-            { deriveItemStatus: true, forceEmit: true },
+            { meta: entryMeta },
+            { forceEmit: true },
+          );
+        } catch (error) {
+          logMessage(
+            `lux meta backfill failed (${entry.url}): ${error}`,
+            'warning',
           );
         }
-        runtime.controllers.delete(entryId);
-        emitItemChanged(workItemId);
-        return;
       }
-      const message = error instanceof Error ? error.message : String(error);
-      errors.push(`${engine}: ${message}`);
-      logMessage(
-        `videoDownload entry failed via ${engine} (${entry.url}): ${message}`,
-        'warning',
-      );
+
+      try {
+        const result = await adapter.download(binaryPath, {
+          url: entry.url,
+          savePath: snapshot.savePath,
+          quality: snapshot.quality || 'best',
+          expandPlaylist: entry.expandPlaylist,
+          // 旧批次快照无此字段，缺省按默认开（仅 yt-dlp 适配器消费）
+          writeSubs: snapshot.writeSubs !== false,
+          meta: entryMeta,
+          cookieFilePath,
+          signal: controller.signal,
+          onProgress: (p) => {
+            updateEntry(workItemId, entryId, {
+              progress: p.progress,
+              speed: p.speed,
+              eta: p.eta,
+            });
+          },
+        });
+
+        // 产物登记：主路径进 entry，全部路径进 artifacts（播放列表兜底可能多个）；
+        // 同取字幕以 kind:'subtitle' 并列登记，路径去重保证重试/续传幂等
+        const subtitlePaths = result.subtitlePaths || [];
+        const latest = getWorkItemById(workItemId);
+        if (latest && latest.type === 'download') {
+          const artifacts = [...(latest.artifacts || [])];
+          for (const outputPath of result.outputPaths) {
+            if (!artifacts.some((a) => a.path === outputPath)) {
+              artifacts.push({ kind: 'video', path: outputPath });
+            }
+          }
+          for (const subtitlePath of subtitlePaths) {
+            if (!artifacts.some((a) => a.path === subtitlePath)) {
+              artifacts.push({ kind: 'subtitle', path: subtitlePath });
+            }
+          }
+          saveWorkItem({ ...latest, artifacts, updatedAt: Date.now() });
+        }
+        updateEntry(
+          workItemId,
+          entryId,
+          {
+            status: 'done',
+            progress: 100,
+            speed: undefined,
+            eta: undefined,
+            outputPath: result.outputPaths[0],
+            ...(subtitlePaths.length ? { subtitlePaths } : {}),
+          },
+          { deriveItemStatus: true, forceEmit: true },
+        );
+        succeeded = true;
+        break;
+      } catch (error) {
+        if (isCancelledError(error) || controller.signal.aborted) {
+          // 整批取消：cancelDownloadBatch 已把条目回置''；单条取消：落 CANCELLED
+          if (!runtime.cancelled) {
+            updateEntry(
+              workItemId,
+              entryId,
+              {
+                status: 'error',
+                error: CANCELLED_ERROR,
+                speed: undefined,
+                eta: undefined,
+              },
+              { deriveItemStatus: true, forceEmit: true },
+            );
+          }
+          runtime.controllers.delete(entryId);
+          emitItemChanged(workItemId);
+          return;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`${engine}: ${message}`);
+        logMessage(
+          `videoDownload entry failed via ${engine} (${entry.url}): ${message}`,
+          'warning',
+        );
+      }
     }
+  } finally {
+    cleanupCookieTempFile(cookieFilePath);
   }
 
   runtime.controllers.delete(entryId);
 
   if (!succeeded) {
     const combined = errors.join(' || ') || 'download failed';
+    // 前缀优先级：带 cookie 的鉴权失败大概率是 cookie 失效（而非引擎过旧），
+    // MAYBE_COOKIE_EXPIRED 优先于 MAYBE_OUTDATED。
+    let errorValue = combined;
+    if (hadCookie && isLikelyAuthError(combined)) {
+      errorValue = `MAYBE_COOKIE_EXPIRED::${combined}`;
+    } else if (isLikelyOutdatedEngineError(combined)) {
+      errorValue = `MAYBE_OUTDATED::${combined}`;
+    }
     updateEntry(
       workItemId,
       entryId,
       {
         status: 'error',
-        error: isLikelyOutdatedEngineError(combined)
-          ? `MAYBE_OUTDATED::${combined}`
-          : combined,
+        error: errorValue,
         speed: undefined,
         eta: undefined,
       },

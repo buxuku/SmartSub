@@ -14,6 +14,8 @@ import {
   extractUrls,
   routeEngines,
   LUX_PREFERRED_DOMAINS,
+  COOKIE_SITE_PRESETS,
+  matchCookieProfile,
 } from '../types/download';
 import { compareDateVersion } from '../main/helpers/download/versionCompare';
 import {
@@ -23,10 +25,19 @@ import {
   parseLuxProgressChunk,
   parseLuxPreflightJson,
   isLikelyOutdatedEngineError,
+  isLikelyAuthError,
   isLuxPartFileName,
   tailForError,
   YTDLP_PROGRESS_TEMPLATE,
 } from '../main/helpers/videoDownload/parsers';
+import {
+  parseNetscapeCookies,
+  serializeNetscapeCookies,
+  filterCookiesByDomains,
+  cookiesFromRawString,
+  computeCookieStatus,
+  normalizeExpiryToUnixSeconds,
+} from '../main/helpers/videoDownload/cookies';
 
 let passed = 0;
 let failed = 0;
@@ -367,6 +378,267 @@ function run(): void {
     'error: 优先提取 ERROR 行',
   );
   eq(tailForError('a\nb\nc\nd'), 'b | c | d', 'error: 无 ERROR 行时取末尾行');
+
+  // ==========================================================
+  // matchCookieProfile（spec: 子进程环境注入 - URL→档案匹配）
+  // ==========================================================
+  const presetMatchList = COOKIE_SITE_PRESETS.map((p) => ({
+    id: p.id,
+    matchDomains: p.matchDomains,
+  }));
+  eq(
+    matchCookieProfile('https://www.bilibili.com/video/BV1', presetMatchList),
+    'bilibili',
+    'matchCookie: bilibili 主域命中',
+  );
+  eq(
+    matchCookieProfile('https://b23.tv/abc', presetMatchList),
+    'bilibili',
+    'matchCookie: b23.tv 短链别名命中 bilibili',
+  );
+  eq(
+    matchCookieProfile('https://youtu.be/xyz', presetMatchList),
+    'youtube',
+    'matchCookie: youtu.be 别名命中 youtube',
+  );
+  eq(
+    matchCookieProfile('https://www.youtube.com/watch?v=1', presetMatchList),
+    'youtube',
+    'matchCookie: youtube 子域命中',
+  );
+  eq(
+    matchCookieProfile('https://example.com/v', presetMatchList),
+    null,
+    'matchCookie: 未命中返回 null',
+  );
+  eq(
+    matchCookieProfile('not-a-url', presetMatchList),
+    null,
+    'matchCookie: 非法 URL 返回 null',
+  );
+  eq(
+    matchCookieProfile('https://www.bilibili.com/x', [
+      { id: 'bilibili', matchDomains: ['bilibili.com'], configured: false },
+    ]),
+    null,
+    'matchCookie: 未配置档案（configured:false）跳过',
+  );
+  eq(
+    matchCookieProfile('https://vimeo.com/1', [
+      { id: 'custom-1', matchDomains: ['vimeo.com'] },
+    ]),
+    'custom-1',
+    'matchCookie: 自定义域名档案命中',
+  );
+
+  // ==========================================================
+  // Netscape 解析 / 过滤 / 序列化
+  // ==========================================================
+  const biliSess = [
+    '#HttpOnly_.bilibili.com',
+    'TRUE',
+    '/',
+    'TRUE',
+    '1893456000',
+    'SESSDATA',
+    'abc',
+  ].join('\t');
+  const biliJct = [
+    '.bilibili.com',
+    'TRUE',
+    '/',
+    'FALSE',
+    '0',
+    'bili_jct',
+    'def',
+  ].join('\t');
+  const twitterTok = [
+    '.twitter.com',
+    'TRUE',
+    '/',
+    'TRUE',
+    '1893456000',
+    'auth_token',
+    'zzz',
+  ].join('\t');
+  const sampleFile = [
+    '# Netscape HTTP Cookie File',
+    '',
+    biliSess,
+    biliJct,
+    'malformed-line-without-tabs',
+  ].join('\n');
+  const parsedCookies = parseNetscapeCookies(sampleFile);
+  eq(
+    parsedCookies.length,
+    2,
+    'netscape: 注释/空行/字段不足行跳过，保留 #HttpOnly_ 数据行',
+  );
+  eq(parsedCookies[0].name, 'SESSDATA', 'netscape: 首行 name');
+  eq(parsedCookies[0].expiry, 1893456000, 'netscape: expiry 解析');
+  eq(parsedCookies[1].expiry, 0, 'netscape: 会话 cookie expiry=0');
+  eq(
+    parsedCookies[0].domain,
+    '.bilibili.com',
+    'netscape: #HttpOnly_ 前缀从 domain 剥离',
+  );
+  eq(parsedCookies[0].httpOnly, true, 'netscape: #HttpOnly_ → httpOnly 标记');
+  eq(parsedCookies[1].httpOnly, false, 'netscape: 普通行 httpOnly=false');
+  // 序列化不得回写 #HttpOnly_（lux 的 cookiemonster 会把 # 开头行当注释丢弃）
+  const serialized = serializeNetscapeCookies(parsedCookies);
+  ok(
+    !serialized.includes('#HttpOnly_'),
+    'netscape: 序列化输出不含 #HttpOnly_ 前缀（lux 兼容）',
+  );
+  ok(
+    /^\.bilibili\.com\tTRUE\t\/\tTRUE\t1893456000\tSESSDATA\t/m.test(
+      serialized,
+    ),
+    'netscape: HttpOnly cookie 序列化为普通 domain 行',
+  );
+  // 历史损坏值 .#HttpOnly_.x 容错：前缀在首个 TAB 前仍识别，domain 恢复
+  const corrupted = [
+    '.#HttpOnly_.bilibili.com',
+    'TRUE',
+    '/',
+    'TRUE',
+    '1893456000',
+    'SESSDATA',
+    'abc',
+  ].join('\t');
+  eq(
+    parseNetscapeCookies(corrupted)[0].domain,
+    '.bilibili.com',
+    'netscape: 容错历史损坏前缀 .#HttpOnly_ → 恢复 domain',
+  );
+
+  // ==========================================================
+  // expiry 归一化（Chrome 原生微秒 / 毫秒 → Unix 秒）
+  // ==========================================================
+  eq(
+    normalizeExpiryToUnixSeconds(1795317817),
+    1795317817,
+    'expiry: 已是 Unix 秒原样返回',
+  );
+  eq(
+    normalizeExpiryToUnixSeconds(13439791416831512),
+    1795317817,
+    'expiry: Chromium 微秒(自1601)→Unix 秒（B站 SESSDATA 实测值）',
+  );
+  eq(
+    normalizeExpiryToUnixSeconds(1795317817000),
+    1795317817,
+    'expiry: 毫秒→秒',
+  );
+  eq(normalizeExpiryToUnixSeconds(0), 0, 'expiry: 0 会话 cookie');
+  eq(normalizeExpiryToUnixSeconds(NaN), 0, 'expiry: 非法→0');
+  ok(
+    !Number.isNaN(
+      new Date(
+        normalizeExpiryToUnixSeconds(13439791416831512) * 1000,
+      ).getTime(),
+    ),
+    'expiry: 归一后 new Date 有效（非 Invalid Date）',
+  );
+  // Netscape 行携带 Chromium 微秒时间戳也应被归一
+  const microLine = [
+    '#HttpOnly_.bilibili.com',
+    'TRUE',
+    '/',
+    'TRUE',
+    '13439791416831512',
+    'SESSDATA',
+    'abc',
+  ].join('\t');
+  eq(
+    parseNetscapeCookies(microLine)[0].expiry,
+    1795317817,
+    'netscape: 行内 Chromium 微秒 expiry 被归一',
+  );
+  eq(
+    filterCookiesByDomains(
+      parseNetscapeCookies([biliSess, twitterTok].join('\n')),
+      ['bilibili.com'],
+    ).length,
+    1,
+    'netscape: 域过滤剔除无关站点（含 #HttpOnly_/. 前缀归一）',
+  );
+  eq(
+    parseNetscapeCookies(serializeNetscapeCookies(parsedCookies)).length,
+    2,
+    'netscape: 序列化后可回解析（round-trip）',
+  );
+
+  // ==========================================================
+  // 原始 Cookie 串合成
+  // ==========================================================
+  const synth = cookiesFromRawString(
+    'SESSDATA=xxx; bili_jct=yyy',
+    'bilibili.com',
+  );
+  eq(synth.length, 2, 'rawCookie: 分号分隔合成两条');
+  eq(synth[0].domain, '.bilibili.com', 'rawCookie: 主域带前导点覆盖子域');
+  eq(synth[0].expiry, 0, 'rawCookie: 会话 cookie 无过期');
+  ok(synth[0].secure, 'rawCookie: secure=TRUE');
+  eq(
+    cookiesFromRawString('  ; =noname; onlyname', 'x.com').length,
+    0,
+    'rawCookie: 非法片段全丢弃',
+  );
+
+  // ==========================================================
+  // 档案状态计算（过期判定）
+  // ==========================================================
+  eq(
+    computeCookieStatus(parsedCookies, ['SESSDATA'], 1000000000).expired,
+    false,
+    'cookieStatus: 关键 cookie 未过期',
+  );
+  eq(
+    computeCookieStatus(parsedCookies, ['SESSDATA'], 2000000000).expired,
+    true,
+    'cookieStatus: 关键 cookie 已过期',
+  );
+  eq(
+    computeCookieStatus(parsedCookies, ['SESSDATA'], 1000000000).expiresAt,
+    1893456000,
+    'cookieStatus: expiresAt 取关键 cookie',
+  );
+  eq(
+    computeCookieStatus(
+      cookiesFromRawString('a=b; c=d', 'x.com'),
+      [],
+      1000000000,
+    ).expiresAt,
+    undefined,
+    'cookieStatus: 全会话 cookie → expiresAt 缺省',
+  );
+
+  // ==========================================================
+  // isLikelyAuthError（spec: Cookie 失效提示 - 鉴权特征）
+  // ==========================================================
+  ok(isLikelyAuthError('HTTP Error 403: Forbidden'), 'authError: 403 命中');
+  ok(
+    isLikelyAuthError('This video is members-only content'),
+    'authError: members-only 命中',
+  );
+  ok(isLikelyAuthError('需要登录后观看'), 'authError: 中文需登录命中');
+  ok(isLikelyAuthError('大会员专享清晰度'), 'authError: 大会员命中');
+  ok(
+    !isLikelyAuthError('HTTP Error 404: Not Found'),
+    'authError: 404 不判为鉴权',
+  );
+  ok(
+    !isLikelyAuthError('Unsupported URL: https://x'),
+    'authError: 提取器失效不判为鉴权',
+  );
+  const comboErr =
+    'yt-dlp: HTTP Error 403: Forbidden || lux: unable to extract';
+  ok(isLikelyAuthError(comboErr), 'authError: 组合信息命中鉴权');
+  ok(
+    isLikelyOutdatedEngineError(comboErr),
+    'authError: 组合信息也含过旧特征（scheduler 侧 cookie 前缀优先）',
+  );
 
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
