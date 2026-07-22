@@ -18,7 +18,10 @@ import SherpaModelRow from '@/components/resources/SherpaModelRow';
 import DownloadSourcePopover, {
   useDownloadSource,
 } from '@/components/resources/engines/DownloadSourcePopover';
-import { formatFunasrDownloadFailureToast } from '@/lib/funasrDownloadError';
+import {
+  formatFunasrDownloadFailureToast,
+  isFunasrDownloadCancelled,
+} from '@/lib/funasrDownloadError';
 import { importModelFromFolder } from 'lib/importModel';
 import { resolveModelDownloadUrl } from 'lib/resolveModelDownloadUrl';
 
@@ -91,6 +94,9 @@ const FunasrModelSection: React.FC<{
         await load();
         onUpdate?.();
       } else {
+        if (isFunasrDownloadCancelled(r?.error)) {
+          return;
+        }
         if (r?.error === 'anotherDownloadInProgress') {
           toast.error(t('engines.funasr.anotherDownload'));
         } else {
@@ -106,6 +112,7 @@ const FunasrModelSection: React.FC<{
         }
       }
     } catch (e) {
+      if (isFunasrDownloadCancelled(e)) return;
       const failure = formatFunasrDownloadFailureToast(t, id, String(e));
       toast.error(failure.title, {
         description: failure.description,

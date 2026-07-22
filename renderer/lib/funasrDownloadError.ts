@@ -16,6 +16,18 @@ export interface FunasrDownloadFailureToast {
   description: string;
 }
 
+export function isFunasrDownloadCancelled(error: unknown): boolean {
+  if (!error) return false;
+  if (error instanceof DOMException && error.name === 'AbortError') return true;
+  const message =
+    typeof error === 'string'
+      ? error
+      : error instanceof Error
+        ? `${error.name} ${error.message}`
+        : String(error);
+  return /\b(cancelled|canceled|abort(?:ed)?)\b/i.test(message);
+}
+
 export function formatFunasrDownloadFailureToast(
   t: Translate,
   modelId: FunasrModelId,

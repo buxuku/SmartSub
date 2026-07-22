@@ -82,7 +82,10 @@ import {
   getInstalledModelsForEngine,
   hasModelsForEngine,
 } from '../renderer/lib/engineModels';
-import { formatFunasrDownloadFailureToast } from '../renderer/lib/funasrDownloadError';
+import {
+  formatFunasrDownloadFailureToast,
+  isFunasrDownloadCancelled,
+} from '../renderer/lib/funasrDownloadError';
 import {
   tokensToTriples,
   wordsToTriples,
@@ -1256,6 +1259,26 @@ eq(
     toast.description.includes('model.int8.onnx, tokens.txt'),
     true,
     'funasr download error: names required manual import files',
+  );
+  eq(
+    isFunasrDownloadCancelled('Download cancelled'),
+    true,
+    'funasr download error: suppresses active user cancellation',
+  );
+  eq(
+    isFunasrDownloadCancelled('Download canceled'),
+    true,
+    'funasr download error: suppresses alternate canceled spelling',
+  );
+  eq(
+    isFunasrDownloadCancelled(new DOMException('The operation was aborted.', 'AbortError')),
+    true,
+    'funasr download error: suppresses abort errors',
+  );
+  eq(
+    isFunasrDownloadCancelled('HTTP Error: 403'),
+    false,
+    'funasr download error: keeps real download failures visible',
   );
 }
 
