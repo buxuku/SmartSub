@@ -31,6 +31,7 @@
     "engine": "Engine",
     "engineAuto": "Auto (route by site)",
     "concurrency": "Concurrency",
+    "writeSubs": "Also download official subtitles",
     "preflightBtn": "Analyze links",
     "directBtn": "Download now",
     "needEngine": "Install a download engine first"
@@ -48,6 +49,7 @@
     "largePlaylistConfirm": "Confirm download all",
     "durationLabel": "{{duration}}",
     "resolutionLabel": "Up to {{height}}p",
+    "subtitleBadge": "Official subs · {{langs}}",
     "noneSelectable": "Nothing to download"
   },
   "task": {
@@ -69,6 +71,9 @@
     "handoffTitle": "Downloads finished — what's next?",
     "handoffDesc": "Send the selected videos into the task wizard for subtitles, translation, or dubbing",
     "selectAll": "Select all",
+    "subtitleTag": "Subs saved",
+    "carrySubs": "Include official subtitles",
+    "subtitleRideTag": "with subs",
     "sendToTasks": "Send to tasks ({{count}})",
     "handoffSkipped": "{{count}} file(s) no longer exist and were skipped",
     "handoffNothing": "No files to send",

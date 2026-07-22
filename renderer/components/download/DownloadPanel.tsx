@@ -75,6 +75,22 @@ function fileNameOf(filePath: string): string {
   return filePath.split(/[\\/]/).pop() || filePath;
 }
 
+function stemOf(fileName: string): string {
+  return fileName.replace(/\.[^.]+$/, '');
+}
+
+/** 目录部分（含结尾分隔符）：字幕随行按同目录同主干匹配 */
+function dirOf(filePath: string): string {
+  return filePath.slice(0, filePath.length - fileNameOf(filePath).length);
+}
+
+/** 预检字幕语言展示：最多 3 个，超出折叠为 +N */
+function formatSubtitleLangs(langs: string[]): string {
+  const shown = langs.slice(0, 3).join('/');
+  const extra = langs.length - 3;
+  return extra > 0 ? `${shown} +${extra}` : shown;
+}
+
 export default function DownloadPanel() {
   const router = useRouter();
   const locale =
@@ -111,6 +127,7 @@ export default function DownloadPanel() {
   const [engineChoice, setEngineChoice] =
     useState<DownloadEngineChoice>('auto');
   const [concurrency, setConcurrency] = useState(2);
+  const [writeSubs, setWriteSubs] = useState(true);
 
   useEffect(() => {
     (async () => {
@@ -127,6 +144,9 @@ export default function DownloadPanel() {
         }
         if (settings?.videoDownloadConcurrency) {
           setConcurrency(settings.videoDownloadConcurrency);
+        }
+        if (settings?.videoDownloadWriteSubs === false) {
+          setWriteSubs(false);
         }
       } catch {
         // 设置读取失败走默认值
@@ -270,6 +290,7 @@ export default function DownloadPanel() {
         videoDownloadQuality: quality,
         videoDownloadEngine: engineChoice,
         videoDownloadConcurrency: concurrency,
+        videoDownloadWriteSubs: writeSubs,
       });
       try {
         const created: WorkItem = await window?.ipc?.invoke(
@@ -279,6 +300,7 @@ export default function DownloadPanel() {
             savePath,
             quality,
             engine: engineChoice,
+            writeSubs,
             entries,
           },
         );
@@ -298,6 +320,7 @@ export default function DownloadPanel() {
       quality,
       engineChoice,
       concurrency,
+      writeSubs,
       buildBatchName,
       persistSetting,
       router,
@@ -341,6 +364,30 @@ export default function DownloadPanel() {
     () => (item?.artifacts || []).filter((a) => a.kind === 'video'),
     [item],
   );
+  const subtitleArtifacts = useMemo(
+    () => (item?.artifacts || []).filter((a) => a.kind === 'subtitle'),
+    [item],
+  );
+  /** 视频路径 → 同目录同主干的字幕产物路径（随行交接与行内标记共用） */
+  const subtitlesByVideoPath = useMemo(() => {
+    const map = new Map<string, string[]>();
+    if (!subtitleArtifacts.length) return map;
+    for (const video of videoArtifacts) {
+      const dir = dirOf(video.path);
+      const prefix = `${stemOf(fileNameOf(video.path))}.`;
+      const subs = subtitleArtifacts
+        .filter(
+          (s) =>
+            dirOf(s.path) === dir &&
+            stemOf(fileNameOf(s.path)).startsWith(prefix),
+        )
+        .map((s) => s.path);
+      if (subs.length) map.set(video.path, subs);
+    }
+    return map;
+  }, [videoArtifacts, subtitleArtifacts]);
+  /** 携带官方字幕开关（有字幕产物时展示，默认开） */
+  const [carrySubs, setCarrySubs] = useState(true);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const entriesTerminal = useMemo(
     () =>
@@ -361,15 +408,19 @@ export default function DownloadPanel() {
   }, [entriesTerminal, videoArtifacts]);
 
   const sendToTasks = useCallback(async () => {
-    const paths = Array.from(selectedPaths);
-    if (!paths.length) {
+    const videoPaths = Array.from(selectedPaths);
+    if (!videoPaths.length) {
       toast.warning(t('task.handoffNothing'));
       return;
     }
+    // 字幕随行：选中视频的同主干字幕一并预填，向导侧自动配对跳过听写
+    const paths = carrySubs
+      ? videoPaths.flatMap((p) => [p, ...(subtitlesByVideoPath.get(p) || [])])
+      : videoPaths;
     const wrapped: IFiles[] =
       (await window?.ipc?.invoke('getDroppedFiles', {
         files: paths,
-        taskType: 'media',
+        taskType: 'any',
       })) || [];
     if (!wrapped.length) {
       toast.error(t('task.handoffNothing'));
@@ -388,7 +439,7 @@ export default function DownloadPanel() {
     void router.push(
       `/${locale}/tasks/new?fromDownload=${encodeURIComponent(item?.id || '')}`,
     );
-  }, [selectedPaths, item, locale, router, t]);
+  }, [selectedPaths, carrySubs, subtitlesByVideoPath, item, locale, router, t]);
 
   // ── 任务态动作 ────────────────────────────────────────────────────────────
   const retryEntry = useCallback((entryId: string, updateFirst = false) => {
@@ -530,6 +581,19 @@ export default function DownloadPanel() {
                   </SelectContent>
                 </Select>
               </div>
+              <label className="flex cursor-pointer items-center gap-1.5">
+                <Checkbox
+                  checked={writeSubs}
+                  onCheckedChange={(v) => {
+                    const next = v === true;
+                    setWriteSubs(next);
+                    persistSetting({ videoDownloadWriteSubs: next });
+                  }}
+                />
+                <span className="text-muted-foreground">
+                  {t('compose.writeSubs')}
+                </span>
+              </label>
             </div>
             <div className="flex items-center justify-end gap-2">
               {!anyEngineInstalled && statuses && (
@@ -576,6 +640,9 @@ export default function DownloadPanel() {
         <TaskView
           item={item}
           videoArtifacts={videoArtifacts}
+          subtitlesByVideoPath={subtitlesByVideoPath}
+          carrySubs={carrySubs}
+          onCarrySubsChange={setCarrySubs}
           entriesTerminal={entriesTerminal}
           selectedPaths={selectedPaths}
           onTogglePath={(path, checked) =>
@@ -699,6 +766,16 @@ function ReviewList({
                     <Badge variant="outline" className="h-4 px-1 text-[10px]">
                       {result.engine}
                     </Badge>
+                    {meta.subtitleLangs?.length ? (
+                      <Badge
+                        variant="secondary"
+                        className="h-4 px-1 text-[10px]"
+                      >
+                        {t('review.subtitleBadge', {
+                          langs: formatSubtitleLangs(meta.subtitleLangs),
+                        })}
+                      </Badge>
+                    ) : null}
                     {meta.duration ? formatDuration(meta.duration) : null}
                     {meta.heights?.length
                       ? t('review.resolutionLabel', { height: meta.heights[0] })
@@ -765,6 +842,9 @@ function ReviewList({
 function TaskView({
   item,
   videoArtifacts,
+  subtitlesByVideoPath,
+  carrySubs,
+  onCarrySubsChange,
   entriesTerminal,
   selectedPaths,
   onTogglePath,
@@ -779,6 +859,9 @@ function TaskView({
 }: {
   item: WorkItem;
   videoArtifacts: WorkItemArtifact[];
+  subtitlesByVideoPath: Map<string, string[]>;
+  carrySubs: boolean;
+  onCarrySubsChange: (checked: boolean) => void;
   entriesTerminal: boolean;
   selectedPaths: Set<string>;
   onTogglePath: (path: string, checked: boolean) => void;
@@ -880,16 +963,27 @@ function TaskView({
             }
           />
           <div className="flex flex-col gap-1 p-2">
-            <label className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs text-muted-foreground hover:bg-muted/50">
-              <Checkbox
-                checked={
-                  selectedPaths.size === videoArtifacts.length &&
-                  videoArtifacts.length > 0
-                }
-                onCheckedChange={(v) => onToggleAll(v === true)}
-              />
-              {t('task.selectAll')}
-            </label>
+            <div className="flex items-center justify-between gap-2 px-1.5">
+              <label className="flex cursor-pointer items-center gap-2 rounded py-1 text-xs text-muted-foreground hover:bg-muted/50">
+                <Checkbox
+                  checked={
+                    selectedPaths.size === videoArtifacts.length &&
+                    videoArtifacts.length > 0
+                  }
+                  onCheckedChange={(v) => onToggleAll(v === true)}
+                />
+                {t('task.selectAll')}
+              </label>
+              {subtitlesByVideoPath.size > 0 && (
+                <label className="flex cursor-pointer items-center gap-2 rounded py-1 text-xs text-muted-foreground hover:bg-muted/50">
+                  <Checkbox
+                    checked={carrySubs}
+                    onCheckedChange={(v) => onCarrySubsChange(v === true)}
+                  />
+                  {t('task.carrySubs')}
+                </label>
+              )}
+            </div>
             {videoArtifacts.map((artifact) => (
               <label
                 key={artifact.path}
@@ -904,6 +998,14 @@ function TaskView({
                 <span className="min-w-0 flex-1 truncate">
                   {fileNameOf(artifact.path)}
                 </span>
+                {carrySubs && subtitlesByVideoPath.has(artifact.path) && (
+                  <Badge
+                    variant="secondary"
+                    className="h-4 flex-shrink-0 px-1 text-[10px]"
+                  >
+                    {t('task.subtitleRideTag')}
+                  </Badge>
+                )}
                 <button
                   type="button"
                   onClick={(e) => {
@@ -966,6 +1068,14 @@ function EntryRow({
           >
             {entry.engine}
           </Badge>
+          {entry.subtitlePaths?.length ? (
+            <Badge
+              variant="secondary"
+              className="h-4 flex-shrink-0 px-1 text-[10px]"
+            >
+              {t('task.subtitleTag')}
+            </Badge>
+          ) : null}
         </div>
         {entry.status === 'loading' && (
           <div className="mt-1.5 flex items-center gap-2">

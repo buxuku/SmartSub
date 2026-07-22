@@ -31,6 +31,8 @@ export interface DownloadEntryMeta {
   heights?: number[];
   /** 远端声明的总字节数（lux 进度降级估算用） */
   totalBytes?: number;
+  /** 官方字幕语言列表（yt-dlp 预检 `subtitles` 字段；自动字幕不计入） */
+  subtitleLangs?: string[];
 }
 
 /** 一条下载链接在任务里的状态载体（一个 download WorkItem 含 N 条） */
@@ -49,6 +51,8 @@ export interface DownloadEntry {
   meta?: DownloadEntryMeta;
   /** 完成后的媒体文件绝对路径 */
   outputPath?: string;
+  /** 同取的官方字幕文件绝对路径（与视频同目录同主干） */
+  subtitlePaths?: string[];
   error?: string;
   /** 该 URL 是播放列表且用户确认展开全部（引擎侧传 --yes-playlist 语义） */
   expandPlaylist?: boolean;
@@ -68,6 +72,8 @@ export interface DownloadConfigSnapshot {
   savePath: string;
   quality: DownloadQuality;
   engine: DownloadEngineChoice;
+  /** 同时下载官方字幕（默认开；仅 yt-dlp 引擎生效） */
+  writeSubs?: boolean;
   /** 预留：链式自动化（本期不实现） */
   autoChain?: Record<string, unknown>;
 }

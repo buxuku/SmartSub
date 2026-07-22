@@ -1,8 +1,11 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import type {
   DownloadEntryMeta,
   DownloadQuality,
 } from '../../../types/download';
 import {
+  claimSubtitleFileNames,
   parseYtDlpPreflightJson,
   parseYtDlpProgressLine,
   tailForError,
@@ -38,6 +41,35 @@ function commonArgs(): string[] {
   const proxy = getProxyUrl();
   if (proxy) args.push('--proxy', proxy);
   return args;
+}
+
+/**
+ * 按视频最终路径认领同目录的字幕文件（--write-subs 产物：`主干.lang.srt`）。
+ * 扫描失败不阻断下载结果（字幕是增益产物）。
+ */
+async function scanSubtitleFiles(videoPaths: string[]): Promise<string[]> {
+  const claimed: string[] = [];
+  const dirCache = new Map<string, string[]>();
+  for (const videoPath of videoPaths) {
+    const dir = path.dirname(videoPath);
+    try {
+      let names = dirCache.get(dir);
+      if (!names) {
+        names = await fs.promises.readdir(dir);
+        dirCache.set(dir, names);
+      }
+      for (const name of claimSubtitleFileNames(
+        path.basename(videoPath),
+        names,
+      )) {
+        const full = path.join(dir, name);
+        if (!claimed.includes(full)) claimed.push(full);
+      }
+    } catch {
+      // 目录读取失败：跳过该视频的字幕认领
+    }
+  }
+  return claimed;
 }
 
 export const ytDlpAdapter: DownloadEngineAdapter = {
@@ -77,6 +109,9 @@ export const ytDlpAdapter: DownloadEngineAdapter = {
       '--print',
       `after_move:${FILEPATH_PREFIX}%(filepath)s`,
       ...qualityArgs(opts.quality),
+      // 官方字幕直取：仅人工字幕（不开 --write-auto-subs），统一转 srt
+      // （依赖已注入的 --ffmpeg-location；转换失败 yt-dlp 保留原格式）
+      ...(opts.writeSubs ? ['--write-subs', '--convert-subs', 'srt'] : []),
       opts.expandPlaylist ? '--yes-playlist' : '--no-playlist',
       '--',
       opts.url,
@@ -113,6 +148,11 @@ export const ytDlpAdapter: DownloadEngineAdapter = {
     if (outputPaths.length === 0) {
       throw new Error('yt-dlp finished without reporting output file');
     }
-    return { outputPaths };
+    if (!opts.writeSubs) return { outputPaths };
+    const subtitlePaths = await scanSubtitleFiles(outputPaths);
+    return {
+      outputPaths,
+      ...(subtitlePaths.length ? { subtitlePaths } : {}),
+    };
   },
 };

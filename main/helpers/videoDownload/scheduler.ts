@@ -181,6 +181,8 @@ export interface StartDownloadPayload {
   savePath: string;
   quality: DownloadQuality;
   engine: DownloadEngineChoice;
+  /** 同时下载官方字幕（缺省视为开启） */
+  writeSubs?: boolean;
   entries: Array<{
     url: string;
     meta?: DownloadEntryMeta;
@@ -233,6 +235,7 @@ export function startDownloadBatch(payload: StartDownloadPayload): WorkItem {
     savePath: payload.savePath,
     quality: payload.quality,
     engine: payload.engine,
+    writeSubs: payload.writeSubs !== false,
   };
   const now = Date.now();
   const item: WorkItem = {
@@ -475,6 +478,8 @@ async function runEntry(job: QueuedJob): Promise<void> {
         savePath: snapshot.savePath,
         quality: snapshot.quality || 'best',
         expandPlaylist: entry.expandPlaylist,
+        // 旧批次快照无此字段，缺省按默认开（仅 yt-dlp 适配器消费）
+        writeSubs: snapshot.writeSubs !== false,
         meta: entryMeta,
         signal: controller.signal,
         onProgress: (p) => {
@@ -486,13 +491,20 @@ async function runEntry(job: QueuedJob): Promise<void> {
         },
       });
 
-      // 产物登记：主路径进 entry，全部路径进 artifacts（播放列表兜底可能多个）
+      // 产物登记：主路径进 entry，全部路径进 artifacts（播放列表兜底可能多个）；
+      // 同取字幕以 kind:'subtitle' 并列登记，路径去重保证重试/续传幂等
+      const subtitlePaths = result.subtitlePaths || [];
       const latest = getWorkItemById(workItemId);
       if (latest && latest.type === 'download') {
         const artifacts = [...(latest.artifacts || [])];
         for (const outputPath of result.outputPaths) {
           if (!artifacts.some((a) => a.path === outputPath)) {
             artifacts.push({ kind: 'video', path: outputPath });
+          }
+        }
+        for (const subtitlePath of subtitlePaths) {
+          if (!artifacts.some((a) => a.path === subtitlePath)) {
+            artifacts.push({ kind: 'subtitle', path: subtitlePath });
           }
         }
         saveWorkItem({ ...latest, artifacts, updatedAt: Date.now() });
@@ -506,6 +518,7 @@ async function runEntry(job: QueuedJob): Promise<void> {
           speed: undefined,
           eta: undefined,
           outputPath: result.outputPaths[0],
+          ...(subtitlePaths.length ? { subtitlePaths } : {}),
         },
         { deriveItemStatus: true, forceEmit: true },
       );

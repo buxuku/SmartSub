@@ -50,7 +50,12 @@ interface YtDlpJson {
   entries?: Array<{ url?: string; title?: string; id?: string }>;
   formats?: YtDlpJsonFormat[];
   filesize_approx?: number;
+  /** 官方（人工上传）字幕：键为语言代码；automatic_captions 有意不读 */
+  subtitles?: Record<string, unknown>;
 }
+
+/** yt-dlp 把直播聊天回放也塞进 subtitles，非字幕语言，剔除 */
+const NON_LANG_SUBTITLE_KEYS = new Set(['live_chat', 'rechat']);
 
 /** yt-dlp -J（--flat-playlist）输出 → 预检元数据 */
 export function parseYtDlpPreflightJson(raw: string): DownloadEntryMeta {
@@ -78,7 +83,45 @@ export function parseYtDlpPreflightJson(raw: string): DownloadEntryMeta {
     ).sort((a, b) => b - a);
     if (heights.length) meta.heights = heights;
   }
+  if (data.subtitles && typeof data.subtitles === 'object') {
+    const langs = Object.keys(data.subtitles)
+      .filter((lang) => !NON_LANG_SUBTITLE_KEYS.has(lang))
+      .sort();
+    if (langs.length) meta.subtitleLangs = langs;
+  }
   return meta;
+}
+
+/** 认领的字幕扩展名白名单（--convert-subs srt 失败时保留 vtt/ass 原格式） */
+const CLAIMABLE_SUBTITLE_EXTENSIONS = ['.srt', '.vtt', '.ass'];
+
+/**
+ * 按视频文件名认领同目录字幕文件（纯函数，入参出参均为 basename）。
+ * 规则对齐向导配对语义：字幕主干 = 视频主干 + `.语言` 前缀
+ * （yt-dlp --write-subs 固定产出 `主干.lang.srt`，裸 `主干.srt` 不认领），
+ * 扩展名白名单剔除 live_chat.json 等非字幕产物；结果排序保证确定性。
+ */
+export function claimSubtitleFileNames(
+  videoFileName: string,
+  candidateFileNames: string[],
+): string[] {
+  const videoStem = videoFileName.replace(/\.[^.]+$/, '');
+  if (!videoStem) return [];
+  const prefix = `${videoStem}.`;
+  return candidateFileNames
+    .filter((name) => {
+      if (name === videoFileName) return false;
+      const extMatch = name.match(/\.[^.]+$/);
+      if (
+        !extMatch ||
+        !CLAIMABLE_SUBTITLE_EXTENSIONS.includes(extMatch[0].toLowerCase())
+      ) {
+        return false;
+      }
+      const stem = name.slice(0, -extMatch[0].length);
+      return stem.startsWith(prefix);
+    })
+    .sort((a, b) => a.localeCompare(b));
 }
 
 interface LuxStreamPart {

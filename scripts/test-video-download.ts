@@ -17,6 +17,7 @@ import {
 } from '../types/download';
 import { compareDateVersion } from '../main/helpers/download/versionCompare';
 import {
+  claimSubtitleFileNames,
   parseYtDlpProgressLine,
   parseYtDlpPreflightJson,
   parseLuxProgressChunk,
@@ -202,6 +203,76 @@ function run(): void {
     },
     'ytdlp preflight: 播放列表（条目数 + 有效条目提取）',
   );
+
+  // ==========================================================
+  // yt-dlp 预检官方字幕（spec: 下载前预检 - 官方字幕徽章标注）
+  // ==========================================================
+  eq(
+    parseYtDlpPreflightJson(
+      JSON.stringify({
+        title: 'Subbed',
+        subtitles: { 'zh-Hans': [{}], en: [{}], live_chat: [{}] },
+        automatic_captions: { ja: [{}], ko: [{}] },
+      }),
+    ),
+    { title: 'Subbed', subtitleLangs: ['en', 'zh-Hans'] },
+    'ytdlp preflight: 官方字幕语言排序 + live_chat 剔除 + 自动字幕无视',
+  );
+  eq(
+    parseYtDlpPreflightJson(
+      JSON.stringify({
+        title: 'AutoOnly',
+        subtitles: {},
+        automatic_captions: { en: [{}] },
+      }),
+    ),
+    { title: 'AutoOnly' },
+    'ytdlp preflight: 仅自动字幕 → 无 subtitleLangs',
+  );
+  eq(
+    parseYtDlpPreflightJson(
+      JSON.stringify({ title: 'LiveOnly', subtitles: { live_chat: [{}] } }),
+    ),
+    { title: 'LiveOnly' },
+    'ytdlp preflight: 仅 live_chat → 无 subtitleLangs',
+  );
+
+  // ==========================================================
+  // 字幕文件认领（spec: 源站字幕直取 - 按视频主干认领）
+  // ==========================================================
+  const dirListing = [
+    'Foo Video [abc123].mp4',
+    'Foo Video [abc123].en.srt',
+    'Foo Video [abc123].zh-Hans.vtt',
+    'Foo Video [abc123].live_chat.json',
+    'Foo Video [abc123].srt.part',
+    'Bar Video [xyz789].en.srt',
+    'Foo Video [abc123] another.en.srt',
+    '全世界笑点[0].mp4',
+  ];
+  eq(
+    claimSubtitleFileNames('Foo Video [abc123].mp4', dirListing),
+    ['Foo Video [abc123].en.srt', 'Foo Video [abc123].zh-Hans.vtt'],
+    'claimSubs: 同主干多语言认领（srt/vtt）+ 无关文件/json/part 排除 + 排序确定',
+  );
+  eq(
+    claimSubtitleFileNames('Foo Video [abc123].mp4', [
+      'Foo Video [abc123].srt',
+    ]),
+    [],
+    'claimSubs: 裸 `主干.srt`（无语言中缀）不认领',
+  );
+  eq(
+    claimSubtitleFileNames('Ep 1 [id1].mp4', ['Ep 1.5 [id2].en.srt']),
+    [],
+    'claimSubs: 相近主干不误认领（[id] 唯一性）',
+  );
+  eq(
+    claimSubtitleFileNames('demo.mkv', ['demo.en.ASS', 'demo.en.ssa']),
+    ['demo.en.ASS'],
+    'claimSubs: 扩展名大小写不敏感 + ssa 不在白名单',
+  );
+  eq(claimSubtitleFileNames('.mp4', ['.en.srt']), [], 'claimSubs: 空主干防御');
 
   // ==========================================================
   // lux 解析

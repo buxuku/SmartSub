@@ -21,6 +21,8 @@ export interface DownloadJobOptions {
   quality: DownloadQuality;
   /** 播放列表 URL 且用户确认整表下载（未展开条目的兜底路径） */
   expandPlaylist?: boolean;
+  /** 同时下载官方字幕（仅 yt-dlp 消费；lux 无字幕能力忽略） */
+  writeSubs?: boolean;
   /** 预检元数据（lux 命名输出/进度估算依赖 title/totalBytes） */
   meta?: DownloadEntryMeta;
   onProgress: (p: ParsedProgress) => void;
@@ -30,6 +32,8 @@ export interface DownloadJobOptions {
 export interface DownloadJobResult {
   /** 产出的媒体文件绝对路径（播放列表兜底路径可能多个） */
   outputPaths: string[];
+  /** 同取的官方字幕文件绝对路径（writeSubs 关闭或无字幕时缺省） */
+  subtitlePaths?: string[];
 }
 
 /** 下载引擎适配器统一签名（yt-dlp / lux；后续 BBDown 等按此扩展） */

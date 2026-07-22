@@ -31,6 +31,7 @@
     "engine": "引擎",
     "engineAuto": "自动（按站点路由）",
     "concurrency": "并发数",
+    "writeSubs": "同时下载官方字幕",
     "preflightBtn": "解析链接",
     "directBtn": "直接下载",
     "needEngine": "请先安装下载引擎"
@@ -48,6 +49,7 @@
     "largePlaylistConfirm": "确认全部下载",
     "durationLabel": "{{duration}}",
     "resolutionLabel": "最高 {{height}}p",
+    "subtitleBadge": "官方字幕 · {{langs}}",
     "noneSelectable": "没有可下载的条目"
   },
   "task": {
@@ -69,6 +71,9 @@
     "handoffTitle": "下载完成，接着做什么？",
     "handoffDesc": "把选中的视频送入任务向导，生成字幕、翻译或配音",
     "selectAll": "全选",
+    "subtitleTag": "已取字幕",
+    "carrySubs": "携带官方字幕",
+    "subtitleRideTag": "含字幕",
     "sendToTasks": "发送到任务流（{{count}}）",
     "handoffSkipped": "{{count}} 个文件已不存在，已自动跳过",
     "handoffNothing": "没有可发送的文件",
