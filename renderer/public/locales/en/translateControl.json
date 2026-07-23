@@ -95,6 +95,8 @@
   "model": "Model",
   "structuredOutput": "Structured Output",
   "structuredOutputTips": "Select the structured output type supported by your AI service provider:<br/>• <strong>Disabled</strong> - No structured output, model returns content freely<br/>• <strong>JSON Object</strong> - Standard JSON object format (suitable for DeepSeek, Qwen, etc.)<br/>• <strong>JSON Schema</strong> - Strict JSON schema validation (suitable for OpenAI, Azure OpenAI, Gemini, etc.; locks the translation count at the decoding level — strongly recommended for large batches)<br/><br/>Different AI providers support different structured output types. Selecting the wrong type may cause translation failures.",
+  "messageLayout": "Message Layout",
+  "messageLayoutTips": "Controls the messages sent to an OpenAI-compatible API:<br/>• <strong>Auto</strong> - Qwen-MT models use one user message; other models use system + user<br/>• <strong>System + User</strong> - Standard chat-model layout<br/>• <strong>Single User Message</strong> - Merges the system prompt and user content for translation models that reject system messages or multiple messages",
   "echoAnchoring": "Echo Alignment Check",
   "echoAnchoringTips": "When enabled, the model returns both the source echo and the translation for every subtitle entry. The app uses the echo to detect and repair misalignment caused by merged neighbouring subtitles, keeping translations aligned with the timeline. Roughly doubles output token usage; when disabled, only count and empty-value checks apply.",
   "echoPromptOutdatedHint": "Your custom prompt does not include the src/tr echo protocol. Translation still works, but misalignment detection is unavailable. Consider updating it based on the default prompt, or restoring the default.",
@@ -130,6 +132,9 @@
   "confirmRemoveProvider": "Remove this provider?",
   "removeProviderConfirmDesc": "After removal, the configuration (including the API key) for provider \"{{name}}\" will be deleted and you'll need to add it again.",
   "option": {
+    "auto": "Auto (single user message for Qwen-MT)",
+    "system_user": "System + User",
+    "single_user": "Single User Message",
     "disabled": "Disabled",
     "json_object": "JSON Object",
     "json_schema": "JSON Schema"

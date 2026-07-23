@@ -97,6 +97,8 @@
   "model": "模型",
   "structuredOutput": "结构化输出",
   "structuredOutputTips": "选择AI服务提供商支持的结构化输出类型：<br/>• <strong>Disabled</strong> - 不使用结构化输出，模型自由返回内容<br/>• <strong>JSON Object</strong> - 使用标准JSON对象格式（适用于DeepSeek、Qwen等）<br/>• <strong>JSON Schema</strong> - 使用严格的JSON模式验证（适用于OpenAI、Azure OpenAI、Gemini等，可在解码层面锁定译文条数，强烈推荐大批量时开启）<br/><br/>不同的AI服务商对结构化输出支持不同，选择错误的类型可能导致翻译失败。",
+  "messageLayout": "消息结构",
+  "messageLayoutTips": "控制发送到 OpenAI 兼容接口的 messages：<br/>• <strong>自动</strong> - Qwen-MT 型号使用单条 user 消息，其他型号使用 system + user<br/>• <strong>系统消息 + 用户消息</strong> - 标准聊天模型格式<br/>• <strong>单条用户消息</strong> - 将系统提示词与用户内容合并，适用于不支持 system 消息或多消息输入的翻译专用模型",
   "echoAnchoring": "回显对齐校验",
   "echoAnchoringTips": "开启后模型会对每条字幕同时返回原文回显与译文，系统据此检测并修复「相邻字幕被合并翻译导致的错位」，确保译文与时间轴逐条对齐。会增加约一倍的输出 token 消耗；关闭后仅校验条数与空值。",
   "echoPromptOutdatedHint": "当前自定义提示词未包含 src/tr 回显协议，翻译仍可进行，但无法享受错位检测保护。建议参考默认提示词更新，或恢复默认值。",
@@ -130,6 +132,9 @@
   "confirmRemoveProvider": "确认删除该服务商？",
   "removeProviderConfirmDesc": "删除后服务商「{{name}}」的配置（含 API Key）将被移除，需要重新添加。",
   "option": {
+    "auto": "自动（Qwen-MT 使用单条用户消息）",
+    "system_user": "系统消息 + 用户消息",
+    "single_user": "单条用户消息",
     "disabled": "不使用",
     "json_object": "JSON Object（标准 JSON 对象）",
     "json_schema": "JSON Schema（严格模式校验）"

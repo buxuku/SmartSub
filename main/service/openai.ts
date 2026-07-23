@@ -21,6 +21,10 @@ import {
   appendNoThinkSoftSwitch,
   extractOpenAIResponseMeta,
 } from './thinkingControl';
+import {
+  buildOpenAIRequestMessages,
+  type OpenAIMessageLayout,
+} from './openaiMessageLayout';
 
 type OpenAIProvider = {
   apiUrl: string;
@@ -34,6 +38,7 @@ type OpenAIProvider = {
   providerType?: string;
   id?: string;
   enableThinking?: boolean;
+  messageLayout?: OpenAIMessageLayout;
 };
 
 /**
@@ -199,10 +204,12 @@ function createBaseParams(text: string | string[], provider: OpenAIProvider) {
 
   const baseParams = {
     model: provider.modelName || 'gpt-3.5-turbo',
-    messages: [
-      { role: 'system', content: sysPrompt },
-      { role: 'user', content: userPrompt },
-    ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+    messages: buildOpenAIRequestMessages(
+      sysPrompt,
+      userPrompt,
+      provider.messageLayout,
+      provider.modelName,
+    ) as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
     temperature: 0.3,
     stream: false,
     ...getProviderSpecificParams(provider),

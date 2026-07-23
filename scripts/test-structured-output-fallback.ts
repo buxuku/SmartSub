@@ -10,6 +10,12 @@ import {
   BATCH_SCHEMA_MAX_PROPERTIES,
   makeBatchSchema,
 } from '../main/translate/constants/schema';
+import {
+  buildOpenAIRequestMessages,
+  requiresSingleUserMessage,
+  resolveOpenAIMessageLayout,
+} from '../main/service/openaiMessageLayout';
+import { CONFIG_TEMPLATES, PROVIDER_TYPES } from '../types/provider';
 
 let passed = 0;
 let failed = 0;
@@ -206,6 +212,84 @@ async function run(): Promise<void> {
       'batch-schema: property cap constant exposed',
     );
   }
+
+  // OpenAI 兼容消息结构：Qwen-MT 自动合并为唯一 user 消息（issue #376）
+  eq(
+    requiresSingleUserMessage('qwen-mt-plus'),
+    true,
+    'message-layout: detects official qwen-mt model id',
+  );
+  eq(
+    requiresSingleUserMessage('Qwen/Qwen-MT-Turbo'),
+    true,
+    'message-layout: detects namespaced qwen-mt model id',
+  );
+  eq(
+    resolveOpenAIMessageLayout(undefined, 'gpt-4o-mini'),
+    'system_user',
+    'message-layout: auto keeps standard models unchanged',
+  );
+  eq(
+    buildOpenAIRequestMessages(
+      'System instructions',
+      '{"1":"Hello"}',
+      'auto',
+      'qwen-mt-plus',
+    ),
+    [
+      {
+        role: 'user',
+        content: 'System instructions\n\n{"1":"Hello"}',
+      },
+    ],
+    'message-layout: auto merges qwen-mt into one user message',
+  );
+  eq(
+    buildOpenAIRequestMessages(
+      'System instructions',
+      'User content',
+      'system_user',
+      'qwen-mt-plus',
+    ),
+    [
+      { role: 'system', content: 'System instructions' },
+      { role: 'user', content: 'User content' },
+    ],
+    'message-layout: explicit system_user overrides qwen-mt auto detection',
+  );
+  eq(
+    buildOpenAIRequestMessages(
+      'System instructions',
+      'User content',
+      'single_user',
+      'gpt-4o-mini',
+    ),
+    [{ role: 'user', content: 'System instructions\n\nUser content' }],
+    'message-layout: explicit single_user supports other constrained APIs',
+  );
+
+  const qwenMessageLayout = PROVIDER_TYPES.find(
+    (provider) => provider.id === 'qwen',
+  )?.fields.find((field) => field.key === 'messageLayout');
+  eq(
+    qwenMessageLayout?.defaultValue,
+    'auto',
+    'message-layout: qwen provider exposes auto default',
+  );
+  eq(
+    CONFIG_TEMPLATES.openai.fields.some(
+      (field) => field.key === 'messageLayout',
+    ),
+    true,
+    'message-layout: custom OpenAI provider exposes configuration',
+  );
+  eq(
+    PROVIDER_TYPES.find((provider) => provider.id === 'ollama')?.fields.some(
+      (field) => field.key === 'messageLayout',
+    ),
+    false,
+    'message-layout: unrelated Ollama transport does not expose setting',
+  );
 
   console.log(
     `\nstructured-output-fallback: ${passed} passed, ${failed} failed`,

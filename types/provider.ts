@@ -355,13 +355,29 @@ const FIELD_ENABLE_THINKING: ProviderField = {
   tips: 'enableThinkingTips',
 };
 
+/**
+ * OpenAI 兼容接口的消息结构。
+ * auto 会为 Qwen-MT 合并成单条 user 消息，其余模型保持 system + user。
+ */
+const FIELD_MESSAGE_LAYOUT: ProviderField = {
+  key: 'messageLayout',
+  label: 'messageLayout',
+  type: 'select',
+  required: false,
+  defaultValue: 'auto',
+  options: ['auto', 'system_user', 'single_user'],
+  tips: 'messageLayoutTips',
+};
+
 const aiCommonFields = (overrides?: {
   batchSize?: number;
   batchSizeTips?: string;
   structuredOutput?: string;
+  messageLayout?: boolean;
 }): ProviderField[] => [
   FIELD_SYSTEM_PROMPT,
   FIELD_USER_PROMPT,
+  ...(overrides?.messageLayout === false ? [] : [FIELD_MESSAGE_LAYOUT]),
   structuredOutputField(overrides?.structuredOutput),
   FIELD_ECHO_ANCHORING,
   FIELD_ENABLE_THINKING,
@@ -769,7 +785,11 @@ export const PROVIDER_TYPES: ProviderType[] = [
       },
       // ollama ≥0.5 支持 schema 约束解码，是本地小模型条数对齐的最大收益点；
       // 旧版本由运行时回退链自动降级（openspec: ai-translation-alignment）
-      ...aiCommonFields({ batchSize: 10, structuredOutput: 'json_schema' }),
+      ...aiCommonFields({
+        batchSize: 10,
+        structuredOutput: 'json_schema',
+        messageLayout: false,
+      }),
     ],
   },
   {
@@ -835,7 +855,10 @@ export const PROVIDER_TYPES: ProviderType[] = [
         tips: 'azureOpenAiApiKeyTips',
         placeholder: 'phAzureOpenAiApiKey',
       },
-      ...aiCommonFields({ structuredOutput: 'json_schema' }),
+      ...aiCommonFields({
+        structuredOutput: 'json_schema',
+        messageLayout: false,
+      }),
     ],
   },
   {

@@ -7,6 +7,7 @@ export const LAST_PROVIDER_STORAGE_KEY = 'resourcesProvidersSelectedId';
 export const PROVIDER_ADVANCED_FIELD_KEYS = new Set([
   'systemPrompt',
   'prompt',
+  'messageLayout',
   'structuredOutput',
   'windowMaxRequests',
 ]);
