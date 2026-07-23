@@ -6,10 +6,7 @@ const REQUIRED_FILES: Record<FunasrModelId, string[]> = {
   'silero-vad': ['silero_vad.onnx'],
 };
 
-type Translate = (
-  key: string,
-  values?: Record<string, string>,
-) => string;
+type Translate = (key: string, values?: Record<string, string>) => string;
 
 export interface FunasrDownloadFailureToast {
   title: string;
@@ -25,7 +22,7 @@ export function isFunasrDownloadCancelled(error: unknown): boolean {
       : error instanceof Error
         ? `${error.name} ${error.message}`
         : String(error);
-  return /\b(cancelled|canceled|abort(?:ed)?)\b/i.test(message);
+  return /\bDownload cancell?ed\b/i.test(message);
 }
 
 export function formatFunasrDownloadFailureToast(

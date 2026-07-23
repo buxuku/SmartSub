@@ -1271,7 +1271,9 @@ eq(
     'funasr download error: suppresses alternate canceled spelling',
   );
   eq(
-    isFunasrDownloadCancelled(new DOMException('The operation was aborted.', 'AbortError')),
+    isFunasrDownloadCancelled(
+      new DOMException('The operation was aborted.', 'AbortError'),
+    ),
     true,
     'funasr download error: suppresses abort errors',
   );
@@ -1279,6 +1281,11 @@ eq(
     isFunasrDownloadCancelled('HTTP Error: 403'),
     false,
     'funasr download error: keeps real download failures visible',
+  );
+  eq(
+    isFunasrDownloadCancelled('Error: aborted'),
+    false,
+    'funasr download error: keeps aborted network failures visible',
   );
 }
 
