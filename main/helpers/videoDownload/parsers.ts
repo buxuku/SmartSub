@@ -1,7 +1,10 @@
 /**
  * yt-dlp / lux 输出解析（纯函数，无 Electron/Node 依赖，供单测直接编译）。
  */
-import type { DownloadEntryMeta } from '../../../types/download';
+import type {
+  DownloadEntryMeta,
+  DownloadQuality,
+} from '../../../types/download';
 
 export interface ParsedProgress {
   /** 0-100 */
@@ -130,6 +133,7 @@ interface LuxStreamPart {
 
 interface LuxStream {
   size?: number;
+  quality?: string;
   parts?: LuxStreamPart[];
 }
 
@@ -138,27 +142,76 @@ interface LuxJson {
   streams?: Record<string, LuxStream>;
 }
 
-/** lux -j 输出（JSON 数组）→ 预检元数据（取首个媒体项 + 最大流体积） */
+/** lux -j 输出（JSON 数组）→ 预检元数据（取首个媒体项 + 最大流体积 + 流列表） */
 export function parseLuxPreflightJson(raw: string): DownloadEntryMeta {
   const parsed = JSON.parse(raw) as LuxJson[] | LuxJson;
   const item = Array.isArray(parsed) ? parsed[0] : parsed;
   const meta: DownloadEntryMeta = {};
   if (!item) return meta;
   if (item.title) meta.title = item.title;
-  const streams = item.streams ? Object.values(item.streams) : [];
+  const luxStreams: NonNullable<DownloadEntryMeta['luxStreams']> = [];
   let maxSize = 0;
-  for (const stream of streams) {
+  for (const [id, stream] of Object.entries(item.streams || {})) {
     const size =
       typeof stream?.size === 'number' && stream.size > 0
         ? stream.size
         : (stream?.parts || []).reduce((sum, p) => sum + (p?.size || 0), 0);
     if (size > maxSize) maxSize = size;
+    luxStreams.push({
+      id,
+      ...(stream?.quality ? { quality: stream.quality } : {}),
+      ...(size > 0 ? { size } : {}),
+    });
   }
   if (maxSize > 0) meta.totalBytes = maxSize;
+  if (luxStreams.length) {
+    // 体积降序：最优流在前（选流回退与 UI 展示均受益于确定性排序）
+    luxStreams.sort((a, b) => (b.size || 0) - (a.size || 0));
+    meta.luxStreams = luxStreams;
+  }
   if (Array.isArray(parsed) && parsed.length > 1) {
     meta.playlistCount = parsed.length;
   }
   return meta;
+}
+
+/** 画质字符串中的分辨率高度（"高清 1080P60" → 1080；解析不出 → undefined） */
+export function parseLuxQualityHeight(quality?: string): number | undefined {
+  if (!quality) return undefined;
+  const match = quality.match(/(\d{3,4})\s*[pP]/);
+  if (!match) return undefined;
+  const height = parseInt(match[1], 10);
+  return Number.isFinite(height) && height > 0 ? height : undefined;
+}
+
+/**
+ * 按画质档位从 lux 流列表选流（返回 `-f` 的流 id）：
+ * 取 ≤ 目标高度的最高档（spec：档位不满足时就近降档）；全部高于目标时取最低档；
+ * best / 无流 / 高度全不可解析 → undefined（lux 默认最优流）。同高度取更大体积。
+ */
+export function pickLuxStreamId(
+  streams: DownloadEntryMeta['luxStreams'],
+  quality: DownloadQuality,
+): string | undefined {
+  if (!streams?.length || quality === 'best') return undefined;
+  const target = quality === '1080p' ? 1080 : 720;
+  const parsed: Array<{ id: string; size: number; height: number }> = [];
+  for (const stream of streams) {
+    const height = parseLuxQualityHeight(stream.quality);
+    if (height !== undefined) {
+      parsed.push({ id: stream.id, size: stream.size || 0, height });
+    }
+  }
+  if (!parsed.length) return undefined;
+  const below = parsed.filter((s) => s.height <= target);
+  const pool = below.length ? below : parsed;
+  const preferHigh = below.length > 0;
+  pool.sort(
+    (a, b) =>
+      (preferHigh ? b.height - a.height : a.height - b.height) ||
+      b.size - a.size,
+  );
+  return pool[0].id;
 }
 
 /**

@@ -6,7 +6,7 @@ import {
   getDownloaderBinaryPath,
   getInstalledEngines,
 } from '../downloaderManager';
-import { routeEngines } from '../../../types/download';
+import { isDownloadableHttpUrl, routeEngines } from '../../../types/download';
 import type {
   DownloadConfigSnapshot,
   DownloadEngineChoice,
@@ -21,6 +21,7 @@ import {
   cleanupCookieTempFile,
   createCookieTempFile,
   isCancelledError,
+  shutdownDownloaderProcesses,
 } from './engineAdapter';
 import { ytDlpAdapter } from './ytDlpAdapter';
 import { luxAdapter } from './luxAdapter';
@@ -72,13 +73,19 @@ const runtimes = new Map<string, BatchRuntime>();
 let activeCount = 0;
 const lastEmitAt = new Map<string, number>();
 
+function clampConcurrency(value: unknown): number | null {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(Math.max(Math.round(n), 1), 5);
+}
+
 function getConcurrency(): number {
   try {
     const value = (
       store.get('settings') as { videoDownloadConcurrency?: number }
     )?.videoDownloadConcurrency;
-    const n = Number(value);
-    if (Number.isFinite(n)) return Math.min(Math.max(Math.round(n), 1), 5);
+    const clamped = clampConcurrency(value);
+    if (clamped !== null) return clamped;
   } catch {
     // fallthrough
   }
@@ -97,6 +104,19 @@ function ensureRuntime(workItemId: string): BatchRuntime {
 /** 下载批次是否有执行/排队中的条目（外部忙判定：如更新引擎前检查） */
 export function isVideoDownloadBusy(): boolean {
   return activeCount > 0 || queue.length > 0;
+}
+
+/**
+ * 应用退出：清空队列、中止全部执行中条目并终止引擎子进程（含临时 cookie 清理）。
+ * 不在此持久化批次状态——启动恢复会把 running 的下载任务标记 interrupted。
+ */
+export function shutdownVideoDownloads(): void {
+  queue = [];
+  runtimes.forEach((runtime) => {
+    runtime.cancelled = true;
+    runtime.controllers.forEach((controller) => controller.abort());
+  });
+  shutdownDownloaderProcesses();
 }
 
 function deriveStatus(entries: DownloadEntry[]): WorkItemStatus {
@@ -187,6 +207,8 @@ export interface StartDownloadPayload {
   engine: DownloadEngineChoice;
   /** 同时下载官方字幕（缺省视为开启） */
   writeSubs?: boolean;
+  /** 批次并发（1-5）；主进程在此持久化，避免依赖渲染层异步写设置的时序 */
+  concurrency?: number;
   entries: Array<{
     url: string;
     meta?: DownloadEntryMeta;
@@ -210,10 +232,17 @@ export function startDownloadBatch(payload: StartDownloadPayload): WorkItem {
 
   const entries: DownloadEntry[] = [];
   for (const input of payload.entries) {
+    // 边界校验：URL 会成为引擎命令行参数（lux 位置参数前无 `--`），仅放行 http(s)
+    if (!isDownloadableHttpUrl(input.url)) {
+      throw new Error(`Invalid download URL: ${String(input.url)}`);
+    }
     const routed = routeEngines(input.url, payload.engine, installed);
     const engine = routed[0] || installed[0];
     if (input.expandPlaylist && input.meta?.playlistItems?.length) {
       for (const item of input.meta.playlistItems) {
+        if (!isDownloadableHttpUrl(item.url)) {
+          throw new Error(`Invalid download URL: ${String(item.url)}`);
+        }
         entries.push({
           id: uuidv4(),
           url: item.url,
@@ -235,11 +264,24 @@ export function startDownloadBatch(payload: StartDownloadPayload): WorkItem {
   }
   if (entries.length === 0) throw new Error('No entries to download');
 
+  // 并发主写点在主进程：渲染层 fire-and-forget 写设置存在时序不确定性（design D6）
+  const concurrency = clampConcurrency(payload.concurrency) ?? getConcurrency();
+  try {
+    const settings = (store.get('settings') || {}) as Record<string, unknown>;
+    store.set('settings', {
+      ...settings,
+      videoDownloadConcurrency: concurrency,
+    });
+  } catch (error) {
+    logMessage(`persist download concurrency failed: ${error}`, 'warning');
+  }
+
   const snapshot: DownloadConfigSnapshot = {
     savePath: payload.savePath,
     quality: payload.quality,
     engine: payload.engine,
     writeSubs: payload.writeSubs !== false,
+    concurrency,
   };
   const now = Date.now();
   const item: WorkItem = {
@@ -463,7 +505,16 @@ async function runEntry(job: QueuedJob): Promise<void> {
       // 跳过预检的 lux 条目先补拉元数据：标题用于 -O 确定性命名（否则同域名批量
       // 下载会撞名认领错文件）与 UI 展示，totalBytes 供进度降级估算。失败不阻断
       // （lux 会按自身提取的标题命名，产物走目录 diff 认领）。
-      if (engine === 'lux' && !entryMeta?.title && !controller.signal.aborted) {
+      // 指定画质档位而流列表缺失（如 yt-dlp 预检后回退到 lux）时也补拉，供 -f 选流。
+      const needLuxStreams =
+        (snapshot.quality || 'best') !== 'best' &&
+        !entry.expandPlaylist &&
+        !entryMeta?.luxStreams;
+      if (
+        engine === 'lux' &&
+        (!entryMeta?.title || needLuxStreams) &&
+        !controller.signal.aborted
+      ) {
         try {
           const meta = await adapter.preflight(binaryPath, {
             url: entry.url,

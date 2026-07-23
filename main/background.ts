@@ -34,6 +34,7 @@ import { setupDubbingHandlers } from './helpers/ipcDubbingHandlers';
 import { setupPipelineHandlers } from './helpers/ipcPipelineHandlers';
 import { setupVoiceCloneHandlers } from './helpers/ipcVoiceCloneHandlers';
 import { setupVideoDownloadHandlers } from './helpers/ipcVideoDownloadHandlers';
+import { shutdownVideoDownloads } from './helpers/videoDownload/scheduler';
 import { configurationManager } from './service/configurationManager';
 import {
   registerAddonIpcHandlers,
@@ -93,6 +94,8 @@ app.on('before-quit', (event) => {
   if (!runtimeShutdownDone) {
     event.preventDefault();
     runtimeShutdownDone = true;
+    // 同步终止下载器子进程并清理 cookie 临时副本（否则子进程变孤儿继续下载）
+    shutdownVideoDownloads();
     void shutdownPythonRuntime().finally(() => {
       app.exit(0);
     });

@@ -8,6 +8,9 @@
  * - compareDateVersion：清单版本比较（yt-dlp 日期版式）
  * - parseYtDlpProgressLine / parseYtDlpPreflightJson：进度模板与 -J 元数据
  * - parseLuxProgressChunk / parseLuxPreflightJson：进度文本与 -j 元数据（含降级判定）
+ * - pickLuxStreamId / parseLuxQualityHeight：画质档位 → lux 选流（就近降档）
+ * - isValidCookieProfileId / isValidCookieDomain / isDownloadableHttpUrl：
+ *   档案 id 路径穿越、裸 TLD 域名、引擎命令行 URL 的边界校验
  * - isLikelyOutdatedEngineError / tailForError：错误分类与裁剪
  */
 import {
@@ -16,6 +19,9 @@ import {
   LUX_PREFERRED_DOMAINS,
   COOKIE_SITE_PRESETS,
   matchCookieProfile,
+  isValidCookieProfileId,
+  isValidCookieDomain,
+  isDownloadableHttpUrl,
 } from '../types/download';
 import { compareDateVersion } from '../main/helpers/download/versionCompare';
 import {
@@ -24,6 +30,8 @@ import {
   parseYtDlpPreflightJson,
   parseLuxProgressChunk,
   parseLuxPreflightJson,
+  parseLuxQualityHeight,
+  pickLuxStreamId,
   isLikelyOutdatedEngineError,
   isLikelyAuthError,
   isLuxPartFileName,
@@ -317,13 +325,62 @@ function run(): void {
         },
       ]),
     ),
-    { title: 'B站视频', totalBytes: 3000 },
-    'lux preflight: 标题 + 最大流体积（parts 求和）',
+    {
+      title: 'B站视频',
+      totalBytes: 3000,
+      luxStreams: [
+        { id: '80', size: 3000 },
+        { id: '32', size: 500 },
+      ],
+    },
+    'lux preflight: 标题 + 最大流体积（parts 求和）+ 流列表体积降序',
   );
   eq(
     parseLuxPreflightJson(JSON.stringify([{ title: 'a' }, { title: 'b' }])),
     { title: 'a', playlistCount: 2 },
-    'lux preflight: 多条目 → playlistCount',
+    'lux preflight: 多条目 → playlistCount（无流列表不带 luxStreams）',
+  );
+
+  // ==========================================================
+  // lux 画质选流（spec: 清晰度档位 - 不满足时就近降档）
+  // ==========================================================
+  const luxStreams = [
+    { id: '116', quality: '高清 1080P60', size: 900 },
+    { id: '80', quality: '高清 1080P', size: 800 },
+    { id: '64', quality: '高清 720P', size: 500 },
+    { id: '32', quality: '清晰 480P', size: 300 },
+  ];
+  eq(
+    pickLuxStreamId(luxStreams, 'best'),
+    undefined,
+    'luxStream: best 不选流（lux 默认最优）',
+  );
+  eq(
+    pickLuxStreamId(luxStreams, '1080p'),
+    '116',
+    'luxStream: 1080p 取 ≤1080 最高档（同高度取更大体积）',
+  );
+  eq(pickLuxStreamId(luxStreams, '720p'), '64', 'luxStream: 720p 档位命中');
+  eq(
+    pickLuxStreamId([{ id: '80', quality: '高清 1080P' }], '720p'),
+    '80',
+    'luxStream: 全部高于目标 → 就近取最低档',
+  );
+  eq(
+    pickLuxStreamId([{ id: 'hd', quality: '超清' }], '1080p'),
+    undefined,
+    'luxStream: 高度不可解析 → lux 默认',
+  );
+  eq(pickLuxStreamId(undefined, '1080p'), undefined, 'luxStream: 无流列表');
+  eq(
+    parseLuxQualityHeight('高清 1080P60'),
+    1080,
+    'luxStream: 画质字符串高度解析（P 后带帧率）',
+  );
+  eq(
+    parseLuxQualityHeight('4K 超清'),
+    undefined,
+    'luxStream: 无 <高度>P 形状不解析',
   );
 
   // ==========================================================
@@ -639,6 +696,52 @@ function run(): void {
     isLikelyOutdatedEngineError(comboErr),
     'authError: 组合信息也含过旧特征（scheduler 侧 cookie 前缀优先）',
   );
+
+  // ==========================================================
+  // isValidCookieProfileId（安全：id 拼接 {id}.cookies 路径，防穿越）
+  // ==========================================================
+  ok(isValidCookieProfileId('bilibili'), 'profileId: 预设 bilibili');
+  ok(isValidCookieProfileId('youtube'), 'profileId: 预设 youtube');
+  ok(
+    isValidCookieProfileId('custom-6f9619ff-8b86-d011-b42d-00cf4fc964ff'),
+    'profileId: custom-<uuid>',
+  );
+  ok(!isValidCookieProfileId('../../evil'), 'profileId: 路径穿越拒绝');
+  ok(!isValidCookieProfileId('bilibili/../x'), 'profileId: 内嵌路径段拒绝');
+  ok(!isValidCookieProfileId('custom-..'), 'profileId: 非 uuid custom 拒绝');
+  ok(!isValidCookieProfileId(''), 'profileId: 空串拒绝');
+  ok(!isValidCookieProfileId(undefined), 'profileId: 非字符串拒绝');
+
+  // ==========================================================
+  // isValidCookieDomain（安全：裸 TLD 后缀匹配全网 + lux 全量附 jar）
+  // ==========================================================
+  ok(isValidCookieDomain('bilibili.com'), 'cookieDomain: 常规域名');
+  ok(isValidCookieDomain('b23.tv'), 'cookieDomain: 短域名');
+  ok(isValidCookieDomain('EXAMPLE.COM'), 'cookieDomain: 大小写归一');
+  ok(!isValidCookieDomain('com'), 'cookieDomain: 裸 TLD 拒绝');
+  ok(!isValidCookieDomain('evil.com/path'), 'cookieDomain: 含路径拒绝');
+  ok(!isValidCookieDomain('.com'), 'cookieDomain: 空标签拒绝');
+  ok(!isValidCookieDomain('-bad.com'), 'cookieDomain: 连字符开头标签拒绝');
+  ok(!isValidCookieDomain(''), 'cookieDomain: 空串拒绝');
+
+  // ==========================================================
+  // isDownloadableHttpUrl（安全：URL 直达引擎命令行，仅放行 http(s)）
+  // ==========================================================
+  ok(
+    isDownloadableHttpUrl('https://www.youtube.com/watch?v=1'),
+    'httpUrl: https 放行',
+  );
+  ok(isDownloadableHttpUrl('http://example.com/v'), 'httpUrl: http 放行');
+  ok(!isDownloadableHttpUrl('file:///etc/passwd'), 'httpUrl: file 协议拒绝');
+  ok(
+    !isDownloadableHttpUrl('javascript:alert(1)'),
+    'httpUrl: javascript 协议拒绝',
+  );
+  ok(
+    !isDownloadableHttpUrl('-o/tmp/evil'),
+    'httpUrl: `-` 开头伪 URL 拒绝（lux 参数注入面）',
+  );
+  ok(!isDownloadableHttpUrl(''), 'httpUrl: 空串拒绝');
 
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);

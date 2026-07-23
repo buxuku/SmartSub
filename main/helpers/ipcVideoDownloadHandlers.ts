@@ -31,7 +31,7 @@ import {
   importCookiesFromPaste,
   type SupportedBrowser,
 } from './videoDownload/cookieImport';
-import { routeEngines } from '../../types/download';
+import { isDownloadableHttpUrl, routeEngines } from '../../types/download';
 import type {
   DownloadEngineChoice,
   DownloadPreflightResult,
@@ -47,6 +47,15 @@ async function preflightOne(
   url: string,
   engineChoice: DownloadEngineChoice,
 ): Promise<DownloadPreflightResult> {
+  // URL 直达引擎命令行，边界只放行 http(s)（UI 侧 extractUrls 已保证，此处防旁路）
+  if (!isDownloadableHttpUrl(url)) {
+    return {
+      url,
+      ok: false,
+      engine: engineChoice === 'lux' ? 'lux' : 'yt-dlp',
+      error: 'Invalid URL',
+    };
+  }
   const installed = getInstalledEngines();
   const order = routeEngines(url, engineChoice, installed);
   if (order.length === 0) {

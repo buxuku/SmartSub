@@ -33,6 +33,8 @@ export interface DownloadEntryMeta {
   totalBytes?: number;
   /** 官方字幕语言列表（yt-dlp 预检 `subtitles` 字段；自动字幕不计入） */
   subtitleLangs?: string[];
+  /** lux -j 流列表（画质档位 → -f 选流用；yt-dlp 预检无此字段） */
+  luxStreams?: Array<{ id: string; quality?: string; size?: number }>;
 }
 
 /** 一条下载链接在任务里的状态载体（一个 download WorkItem 含 N 条） */
@@ -74,6 +76,8 @@ export interface DownloadConfigSnapshot {
   engine: DownloadEngineChoice;
   /** 同时下载官方字幕（默认开；仅 yt-dlp 引擎生效） */
   writeSubs?: boolean;
+  /** 批次并发（1-5；design D6，开始下载时随批落快照并持久化到设置） */
+  concurrency?: number;
   /** 预留：链式自动化（本期不实现） */
   autoChain?: Record<string, unknown>;
 }
@@ -301,6 +305,56 @@ export interface CookieProfileView {
   expired?: boolean;
   /** 解密失败/内容损坏，需重新导入 */
   needsReimport?: boolean;
+}
+
+/** 自定义档案 id 形状：custom-<uuid>（渲染层 crypto.randomUUID 生成） */
+const CUSTOM_PROFILE_ID_RE =
+  /^custom-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * cookie 档案 id 白名单：预设 id 或 custom-<uuid>。
+ * id 会拼进 userData 下的内容文件路径（{id}.cookies），
+ * 未通过校验的 id 一律拒绝，杜绝 `../` 路径穿越。
+ */
+export function isValidCookieProfileId(id: unknown): id is string {
+  if (typeof id !== 'string') return false;
+  return Boolean(getCookiePresetById(id)) || CUSTOM_PROFILE_ID_RE.test(id);
+}
+
+/**
+ * cookie 档案域名合法性：字母/数字/连字符标签，至少两级。
+ * 拒绝裸 TLD（如 `com`）——后缀匹配下会命中全部 *.com 站点，
+ * 而 lux 对文件内 cookie 不做域名匹配（全量附到每个请求），会造成跨站泄漏。
+ */
+export function isValidCookieDomain(domain: unknown): domain is string {
+  if (typeof domain !== 'string') return false;
+  const d = domain.trim().toLowerCase();
+  if (!d || d.length > 253) return false;
+  const labels = d.split('.');
+  if (labels.length < 2) return false;
+  return labels.every(
+    (label) =>
+      label.length > 0 &&
+      label.length <= 63 &&
+      /^[a-z0-9-]+$/.test(label) &&
+      !label.startsWith('-') &&
+      !label.endsWith('-'),
+  );
+}
+
+/**
+ * 下载 URL 边界校验：仅接受 http(s)。
+ * 拦截 file:/data: 等协议，以及 `-` 开头的伪 URL（lux 位置参数前无 `--`，
+ * 直连 IPC 传入的非 URL 串可能被 Go flag 解析成引擎参数）。
+ */
+export function isDownloadableHttpUrl(url: unknown): url is string {
+  if (typeof url !== 'string') return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 /**

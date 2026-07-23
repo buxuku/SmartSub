@@ -5,6 +5,7 @@ import {
   isLuxPartFileName,
   parseLuxPreflightJson,
   parseLuxProgressChunk,
+  pickLuxStreamId,
   tailForError,
 } from './parsers';
 import {
@@ -158,11 +159,18 @@ export const luxAdapter: DownloadEngineAdapter = {
       }
     }, SIZE_POLL_INTERVAL_MS);
 
+    // 画质档位 → 预检流列表选流（-f）。播放列表不选流：各条目流 id 不同，
+    // 共用一个 -f 会导致后续条目下载失败，交给 lux 默认最优流。
+    const streamId = opts.expandPlaylist
+      ? undefined
+      : pickLuxStreamId(opts.meta?.luxStreams, opts.quality);
+
     try {
       const args = [
         '-o',
         opts.savePath,
         ...(baseName ? ['-O', baseName] : []),
+        ...(streamId ? ['-f', streamId] : []),
         ...(opts.cookieFilePath ? ['-c', opts.cookieFilePath] : []),
         ...(opts.expandPlaylist ? ['-p'] : []),
         opts.url,

@@ -77,6 +77,9 @@ export function ffmpegLocation(): string {
   );
 }
 
+/** 存活的 cookie 临时副本（退出兜底清理用；正常流程由 cleanupCookieTempFile 移除） */
+const liveCookieTempFiles = new Set<string>();
+
 /**
  * 按 URL 匹配站点 Cookie 档案：命中则解密内容写入进程级临时副本并返回其路径，
  * 未命中/失败返回 undefined。临时副本规避两个问题：(1) yt-dlp 退出写回 cookie jar，
@@ -94,7 +97,10 @@ export function createCookieTempFile(url: string): string | undefined {
   if (!text) return undefined;
   const tmpPath = path.join(os.tmpdir(), `smartsub-cookies-${uuidv4()}.txt`);
   try {
-    fs.writeFileSync(tmpPath, text, 'utf8');
+    // 0o600：Linux /tmp 全局可读，会话 cookie 明文必须仅属主可读
+    //（yt-dlp 退出写回 jar 是原地截断写，创建时的权限位得以保留）
+    fs.writeFileSync(tmpPath, text, { encoding: 'utf8', mode: 0o600 });
+    liveCookieTempFiles.add(tmpPath);
     return tmpPath;
   } catch {
     return undefined;
@@ -103,6 +109,7 @@ export function createCookieTempFile(url: string): string | undefined {
 
 export function cleanupCookieTempFile(tmpPath: string | undefined): void {
   if (!tmpPath) return;
+  liveCookieTempFiles.delete(tmpPath);
   try {
     if (fs.existsSync(tmpPath)) fs.rmSync(tmpPath, { force: true });
   } catch {
@@ -161,6 +168,33 @@ export interface RunProcessResult {
   code: number | null;
   stdout: string;
   stderr: string;
+}
+
+/** 存活的下载器子进程（runProcess 是唯一 spawn 点；退出时统一终止） */
+const liveChildren = new Set<ChildProcess>();
+
+/**
+ * 应用退出前的兜底清理：终止全部下载器子进程（否则退出后变孤儿继续下载），
+ * 并删除仍存活的 cookie 临时副本（runEntry 的 finally 在退出时序下不保证执行）。
+ * 同步尽力而为；批次状态无需在此持久化——启动恢复会把 running 任务标记 interrupted。
+ */
+export function shutdownDownloaderProcesses(): void {
+  for (const child of Array.from(liveChildren)) {
+    try {
+      child.kill();
+    } catch {
+      // 已退出
+    }
+  }
+  liveChildren.clear();
+  for (const tmpPath of Array.from(liveCookieTempFiles)) {
+    try {
+      fs.rmSync(tmpPath, { force: true });
+    } catch {
+      // 尽力而为
+    }
+  }
+  liveCookieTempFiles.clear();
 }
 
 const CANCELLED = 'Download cancelled';
@@ -237,10 +271,13 @@ export function runProcess(
       stderr += text;
       opts.onStderr?.(text);
     });
+    liveChildren.add(child);
     child.on('error', (error) => {
+      liveChildren.delete(child);
       finish(() => reject(error));
     });
     child.on('close', (code) => {
+      liveChildren.delete(child);
       finish(() => resolve({ code, stdout, stderr }));
     });
   });

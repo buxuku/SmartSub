@@ -5,7 +5,6 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { v4 as uuidv4 } from 'uuid';
 import { logMessage } from '../storeManager';
 import { getDownloaderBinaryPath } from '../downloaderManager';
 import { runProcess } from './engineAdapter';
@@ -27,12 +26,15 @@ const BROWSER_EXTRACT_TIMEOUT_MS = 180_000;
 /** 提取用 dummy URL：连接秒败、零外网请求，仅触发 cookie jar 写出 */
 const DUMMY_URL = 'http://127.0.0.1:0/';
 
-export type SupportedBrowser =
-  | 'chrome'
-  | 'edge'
-  | 'firefox'
-  | 'safari'
-  | 'brave';
+export const SUPPORTED_BROWSERS = [
+  'chrome',
+  'edge',
+  'firefox',
+  'safari',
+  'brave',
+] as const;
+
+export type SupportedBrowser = (typeof SUPPORTED_BROWSERS)[number];
 
 interface CustomDef {
   name: string;
@@ -92,14 +94,20 @@ export async function importCookiesFromBrowser(params: {
   browser: SupportedBrowser;
   customDef?: CustomDef;
 }): Promise<ImportResult> {
+  // 运行时白名单：browser 来自渲染进程，直接拼进 yt-dlp 参数，类型标注不设防
+  if (!(SUPPORTED_BROWSERS as readonly string[]).includes(params.browser)) {
+    throw new Error(`Unsupported browser: ${String(params.browser)}`);
+  }
   const binaryPath = getDownloaderBinaryPath('yt-dlp');
   if (!binaryPath) {
     throw new Error('YTDLP_NOT_INSTALLED');
   }
-  const outPath = path.join(
-    os.tmpdir(),
-    `smartsub-cookie-extract-${uuidv4()}.txt`,
+  // 0o700 私有临时目录（mkdtemp 默认）：yt-dlp 导出的是整个浏览器 cookie jar
+  //（全站点会话），落文件由 yt-dlp 创建、权限位不受我们控制，用目录权限兜底
+  const outDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'smartsub-cookie-extract-'),
   );
+  const outPath = path.join(outDir, 'cookies.txt');
   const args = [
     '--cookies-from-browser',
     params.browser,
@@ -117,7 +125,7 @@ export async function importCookiesFromBrowser(params: {
     });
   } catch (error) {
     // 超时等 spawn 级错误：清理后抛出
-    safeUnlink(outPath);
+    safeRemove(outDir);
     throw error;
   }
 
@@ -155,7 +163,7 @@ export async function importCookiesFromBrowser(params: {
       customDef: params.customDef,
     });
   } finally {
-    safeUnlink(outPath);
+    safeRemove(outDir);
   }
 }
 
@@ -173,9 +181,9 @@ function isBrowserNotFoundError(output: string): boolean {
   );
 }
 
-function safeUnlink(filePath: string): void {
+function safeRemove(targetPath: string): void {
   try {
-    if (fs.existsSync(filePath)) fs.rmSync(filePath, { force: true });
+    fs.rmSync(targetPath, { recursive: true, force: true });
   } catch (error) {
     logMessage(`cookie extract temp cleanup failed: ${error}`, 'warning');
   }

@@ -331,10 +331,10 @@ export default function DownloadPanel() {
         toast.warning(t('review.noneSelectable'));
         return;
       }
+      // 并发数不在此持久化：随 start payload 交给主进程写入（消除异步写设置的时序依赖）
       persistSetting({
         videoDownloadQuality: quality,
         videoDownloadEngine: engineChoice,
-        videoDownloadConcurrency: concurrency,
         videoDownloadWriteSubs: writeSubs,
       });
       try {
@@ -346,6 +346,7 @@ export default function DownloadPanel() {
             quality,
             engine: engineChoice,
             writeSubs,
+            concurrency,
             entries,
           },
         );
