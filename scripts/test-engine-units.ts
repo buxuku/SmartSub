@@ -3891,6 +3891,28 @@ eq(
   ['x'],
   'asr: realign with empty fullText is a no-op',
 );
+eq(
+  realignPunctuation(
+    [
+      { word: 'これは。', start: 0, end: 1 },
+      { word: '次', start: 1, end: 2 },
+    ],
+    'これは 。次',
+  ).map((w) => w.word),
+  ['これは。', '次'],
+  'asr: realign ignores a gap containing transcript text',
+);
+eq(
+  realignPunctuation(
+    [
+      { word: 'known', start: 0, end: 1 },
+      { word: 'missing', start: 1, end: 2 },
+    ],
+    'known trailing text.',
+  ).map((w) => w.word),
+  ['known', 'missing'],
+  'asr: realign ignores a tail containing transcript text',
+);
 
 // --- cloudAsrShared: offsetWords ---
 eq(
@@ -4191,6 +4213,17 @@ eq(
 );
 eq(
   mapDeepgramWords([
+    { word: 'これは', punctuated_word: '「これは', start: 0, end: 1 },
+    { word: '次', punctuated_word: '」。次', start: 1, end: 2 },
+  ]),
+  [
+    { word: '「これは」。', start: 0, end: 1 },
+    { word: '次', start: 1, end: 2 },
+  ],
+  'deepgram: Japanese closing quote then period both reattach to previous word',
+);
+eq(
+  mapDeepgramWords([
     { word: '前', punctuated_word: '前。', start: 0, end: 1 },
     { word: '次', punctuated_word: '「次', start: 1, end: 2 },
   ]),
@@ -4218,13 +4251,14 @@ eq(
       { word: '次', punctuated_word: '。次', start: 1, end: 2 },
       { word: 'です', punctuated_word: 'です。', start: 2, end: 3 },
     ]),
-    text: 'これは。次です。',
+    // Deepgram 的真实 transcript 由 punctuated_word 以空格连接。
+    text: 'これは 。次 です。',
   }),
   [
     ['00:00:00,000', '00:00:01,000', 'これは。'],
     ['00:00:01,000', '00:00:03,000', '次です。'],
   ],
-  'deepgram: Japanese leading punctuation produces natural sentence cues (#391)',
+  'deepgram: works with real space-joined transcript (#391)',
 );
 
 // --- deepgramUtils: extractDeepgramResult (nested structure) ---

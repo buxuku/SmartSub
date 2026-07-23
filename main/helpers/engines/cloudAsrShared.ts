@@ -24,10 +24,13 @@ export function needsSpaceBefore(token: string): boolean {
   return /^[A-Za-z0-9]/.test(token);
 }
 
+const PUNCTUATION_OR_SYMBOL_ONLY = /^[\p{P}\p{S}]+$/u;
+
 /**
  * 标点回贴（best-effort）：whisper-1 的词级时间戳（尤其中文）不含标点，但整段 `text` 含标点。
  * 在 fullText 里按序定位每个 word，把 word 间/尾部出现的标点补回「前一个 word」文本，
- * 使成句后的字幕带上自然标点。定位失败的 word 跳过（不误贴、不丢词）。
+ * 使成句后的字幕带上自然标点。只有纯标点/符号的间隙才会回贴，定位失败产生的正文间隙
+ * 会被忽略，避免重复字幕文本。
  */
 export function realignPunctuation(
   words: AsrWord[],
@@ -44,13 +47,13 @@ export function realignPunctuation(
     const idx = text.indexOf(token, cursor);
     if (idx < 0) continue; // 定位失败：跳过该 word（不改动）
     const gap = text.slice(cursor, idx).replace(/\s+/g, '');
-    if (gap && i > 0) {
+    if (gap && i > 0 && PUNCTUATION_OR_SYMBOL_ONLY.test(gap)) {
       result[i - 1].word = String(result[i - 1].word ?? '') + gap;
     }
     cursor = idx + token.length;
   }
   const tail = text.slice(cursor).replace(/\s+/g, '');
-  if (tail) {
+  if (tail && PUNCTUATION_OR_SYMBOL_ONLY.test(tail)) {
     result[result.length - 1].word =
       String(result[result.length - 1].word ?? '') + tail;
   }

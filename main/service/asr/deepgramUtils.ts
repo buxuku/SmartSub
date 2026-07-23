@@ -20,10 +20,14 @@ function reattachLeadingClosingPunctuation(
   previous?: AsrWord,
 ): string {
   if (!previous) return word;
-  const matched = word.match(LEADING_CLOSING_PUNCTUATION);
-  if (!matched) return word;
-  previous.word = `${previous.word}${matched[1]}`;
-  return matched[2];
+  let remaining = word;
+  let matched = remaining.match(LEADING_CLOSING_PUNCTUATION);
+  while (matched) {
+    previous.word = `${previous.word}${matched[1]}`;
+    remaining = matched[2];
+    matched = remaining.match(LEADING_CLOSING_PUNCTUATION);
+  }
+  return remaining;
 }
 
 /**
