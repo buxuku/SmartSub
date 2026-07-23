@@ -13,3 +13,4 @@ export { default as doubaoTranslator } from './doubao';
 export { default as niutransTranslator } from './niutrans';
 export { default as tencentTranslator } from './tencent';
 export { default as xunfeiTranslator } from './xunfei';
+export { default as qwenMtTranslator } from './qwenMt';

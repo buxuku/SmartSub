@@ -65,7 +65,10 @@ export async function handleAPIBatchTranslation(
           provider,
           sourceLanguage,
           targetLanguage,
-          { signal: config.signal },
+          {
+            signal: config.signal,
+            glossaryEntries: config.glossaryEntries,
+          },
         );
         throwIfSignalCancelled(config.signal);
 

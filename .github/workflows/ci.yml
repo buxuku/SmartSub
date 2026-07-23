@@ -48,6 +48,9 @@ jobs:
       - name: Unit tests (translation cancel)
         run: yarn test:translation-cancel
 
+      - name: Unit tests (Qwen-MT)
+        run: yarn test:qwen-mt
+
       # 配音功能与 test:dubbing 脚本随 3.4.0 开发分支引入，尚未合入 main；
       # 用 --if-present 让脚本存在才执行，避免 workflow 引用未合并脚本导致 main 恒红，
       # 配音分支合入后本步骤自动生效、无需改 workflow。

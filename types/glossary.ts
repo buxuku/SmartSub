@@ -2,7 +2,7 @@
  * 全局翻译词库。
  *
  * 词库是应用级资源，不进入任务 formData / snapshot。所有启用词库按 order
- * 依次参与 AI 翻译和 AI 校对；相同原文由排在最前的词库获胜。
+ * 依次参与支持词库的翻译服务和 AI 校对；相同原文由排在最前的词库获胜。
  */
 
 export interface GlossaryEntry {
@@ -45,7 +45,8 @@ export interface GlossaryResolution {
 }
 
 export type GlossaryImportNote =
-  { kind: 'missing' } | { kind: 'provided'; value: string };
+  | { kind: 'missing' }
+  | { kind: 'provided'; value: string };
 
 export interface GlossaryImportEntry {
   source: string;

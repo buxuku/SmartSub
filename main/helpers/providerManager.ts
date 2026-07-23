@@ -10,7 +10,8 @@ import { logMessage } from './logger';
 
 // v21：默认提示词升级为 src/tr 回显协议 + echoAnchoring 字段默认开启（openspec: ai-translation-alignment）
 // v22：思考模式开关 enableThinking 默认关闭（= 主动禁用思考，openspec: ai-thinking-mode-control）
-const CURRENT_PROVIDER_VERSION = 22;
+// v23：新增独立的 Qwen-MT 机器翻译服务商
+const CURRENT_PROVIDER_VERSION = 23;
 
 const FREE_PROVIDER_IDS = ['autoFree', 'bingFree', 'googleFree'];
 
