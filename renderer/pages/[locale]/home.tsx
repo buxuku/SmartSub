@@ -6,6 +6,7 @@ import {
   BookMarked,
   ChevronRight,
   Clapperboard,
+  CloudDownload,
   History,
   Keyboard,
   MousePointerClick,
@@ -119,6 +120,12 @@ const TOOLS: Array<{
   /** 工具箱面板的图标 chip 配色（沿用配方卡视觉语言，色相与配方卡错开） */
   chip: string;
 }> = [
+  {
+    key: 'download',
+    href: 'download',
+    icon: CloudDownload,
+    chip: 'bg-gradient-to-br from-sky-500/20 via-sky-500/10 to-transparent ring-1 ring-inset ring-sky-500/25 text-sky-600 dark:text-sky-400',
+  },
   {
     key: 'proofread',
     href: 'proofread',

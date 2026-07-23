@@ -16,6 +16,7 @@ import {
   Plus,
   ShieldAlert,
   Trash2,
+  X,
 } from 'lucide-react';
 import {
   Dialog,
@@ -103,6 +104,8 @@ export default function CookieProfilesDialog({
   const [showCustom, setShowCustom] = useState(false);
   const [customName, setCustomName] = useState('');
   const [customDomain, setCustomDomain] = useState('');
+  // 导入失败信息内联展示（文案偏长、含操作指引，比短 toast 更完整可读）
+  const [importError, setImportError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -111,6 +114,7 @@ export default function CookieProfilesDialog({
       setShowCustom(false);
       setCustomName('');
       setCustomDomain('');
+      setImportError(null);
     }
   }, [open]);
 
@@ -119,6 +123,7 @@ export default function CookieProfilesDialog({
   const runImport = useCallback(
     async (channel: string, payload: Record<string, unknown>, id: string) => {
       setBusyId(id);
+      setImportError(null);
       try {
         const res = await window?.ipc?.invoke(channel, payload);
         if (res?.cancelled) return;
@@ -135,10 +140,17 @@ export default function CookieProfilesDialog({
         reload();
       } catch (error) {
         const raw = error instanceof Error ? error.message : String(error);
-        const msg = raw.includes('YTDLP_NOT_INSTALLED')
-          ? t('cookie.errNoYtdlp')
-          : raw;
-        toast.error(t('cookie.importFailed', { msg }));
+        let msg = raw;
+        if (raw.includes('YTDLP_NOT_INSTALLED')) {
+          msg = t('cookie.errNoYtdlp');
+        } else if (raw.includes('BROWSER_PERMISSION_DENIED')) {
+          msg = t('cookie.errBrowserPermission');
+        } else if (raw.includes('BROWSER_NOT_FOUND')) {
+          const browser = raw.split('BROWSER_NOT_FOUND::')[1]?.trim() || '';
+          msg = t('cookie.errBrowserNotFound', { browser });
+        }
+        // 内联展示（持久、可读全文），长文案不再被短 toast 截断
+        setImportError(msg);
       } finally {
         setBusyId(null);
       }
@@ -251,6 +263,9 @@ export default function CookieProfilesDialog({
                 <DropdownMenuItem
                   key={browser}
                   disabled={compat.level === 'blocked'}
+                  // 显式 hover 高亮：嵌在模态 Dialog 内时 Radix 的 pointermove→focus
+                  // 高亮驱动失灵，直接用 CSS hover 兜底（不影响键盘 focus 高亮）
+                  className="cursor-pointer hover:bg-accent hover:text-accent-foreground"
                   onSelect={() => {
                     if (isDraft && draftBrowserImport) {
                       draftBrowserImport(browser);
@@ -422,6 +437,23 @@ export default function CookieProfilesDialog({
           </DialogTitle>
           <DialogDescription>{t('cookie.description')}</DialogDescription>
         </DialogHeader>
+
+        {importError && (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-xs text-destructive">
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+            <span className="min-w-0 flex-1 leading-relaxed">
+              {importError}
+            </span>
+            <button
+              type="button"
+              onClick={() => setImportError(null)}
+              className="flex-shrink-0 rounded p-0.5 opacity-70 transition-opacity hover:opacity-100"
+              aria-label={t('cookie.cancel')}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
 
         <div className="max-h-[60vh] space-y-2.5 overflow-y-auto pr-1">
           {profiles.map((profile) => (

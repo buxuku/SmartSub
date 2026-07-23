@@ -109,6 +109,8 @@
     "importSuccess": "Imported {{count}} cookies",
     "importFailed": "Import failed: {{msg}}",
     "errNoYtdlp": "Browser extraction requires the yt-dlp engine to be installed",
+    "errBrowserPermission": "Can't read browser cookies (system permission). Grant this app Full Disk Access in System Settings → Privacy & Security, then retry; or import a cookies.txt file instead",
+    "errBrowserNotFound": "{{browser}} not detected (not installed or no signed-in data). Pick an installed, signed-in browser, or import a cookies.txt file instead",
     "errNoDomain": "Please enter a domain",
     "errNoPaste": "Please paste cookie content",
     "riskNote": "Bulk downloading with account cookies may trigger platform anti-abuse; use with caution",

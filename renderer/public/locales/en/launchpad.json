@@ -17,6 +17,7 @@
   "tools": {
     "title": "Tools",
     "panelTitle": "Toolbox",
+    "downloadHint": "Batch-download online videos from links",
     "proofreadHint": "Review line by line, AI polish",
     "mergeHint": "Burn subtitles into the picture",
     "dubbingHint": "Turn subtitle lines into speech"
@@ -71,6 +72,7 @@
     "generateDesc": "Transcribe speech only, no translation",
     "translate": "Translate existing subtitles",
     "translateDesc": "Translate SRT and other subtitle files into another language",
+    "download": "Video download",
     "proofread": "Proofread subtitles",
     "proofreadDesc": "Review line by line, with video preview and AI polish",
     "merge": "Burn to Video",

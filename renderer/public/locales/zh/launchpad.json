@@ -17,6 +17,7 @@
   "tools": {
     "title": "工具",
     "panelTitle": "工具箱",
+    "downloadHint": "粘贴链接批量下载在线视频",
     "proofreadHint": "逐句检查修改，AI 润色",
     "mergeHint": "把字幕烧录进画面",
     "dubbingHint": "字幕逐条合成语音"
@@ -71,6 +72,7 @@
     "generateDesc": "只转写人声，不翻译",
     "translate": "翻译已有字幕",
     "translateDesc": "把 SRT 等字幕文件翻译成其它语言",
+    "download": "视频下载",
     "proofread": "校对字幕",
     "proofreadDesc": "逐句检查修改，支持视频对照与 AI 润色",
     "merge": "合成到视频",

@@ -35,5 +35,5 @@
 
 - [x] 6.1 `scripts/test-video-download.ts` 增补：`matchCookieProfile`（预设域/别名/自定义/未命中/configured:false）、Netscape 解析与域过滤、原始串合成、状态计算（过期判定）、`isLikelyAuthError` 与前缀优先级（组合信息）
 - [x] 6.2 `yarn test:video-download` 78 passed / 0 failed；renderer 与 root `tsc --noEmit` 对本变更文件零报错（预存 jest/alias 报错与本变更无关）
-- [ ] 6.3 手动验证矩阵（需真实 B 站登录态 + 联网，留待用户）：B 站已登录 cookie 下载出 1080P+（对照匿名 480P）；b23.tv 短链手动指定 lux 走 `-c` 且重定向后带登录态；同档案两条目并发主档案无损；删除档案后回匿名行为；预检清晰度反映登录态。已机验：yt-dlp `--cookies` 吃 Netscape、lux `-c` flag 存在、浏览器提取 dummy URL 行为（见 2.4）
+- [x] 6.3 手动验证矩阵（用户端到端验证通过）：B 站已登录 cookie 下载出 1080P+（对照匿名 480P）；b23.tv 短链手动指定 lux 走 `-c` 且重定向后带登录态；同档案两条目并发主档案无损；删除档案后回匿名行为；预检清晰度反映登录态。已机验：yt-dlp `--cookies` 吃 Netscape、lux `-c` flag 存在、浏览器提取 dummy URL 行为（见 2.4）
 - [x] 6.4 代码内 `LUX_PREFERRED_DOMAINS` 注释已补「配置 cookie 后 lux 亦可高清、yt-dlp 优先不变」依据；`openspec/specs` 正式合并留待归档

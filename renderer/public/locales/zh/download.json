@@ -109,6 +109,8 @@
     "importSuccess": "已导入 {{count}} 条 Cookie",
     "importFailed": "导入失败：{{msg}}",
     "errNoYtdlp": "浏览器提取需要先安装 yt-dlp 引擎",
+    "errBrowserPermission": "无法读取浏览器 Cookie（系统权限限制）。Safari 需在「系统设置 → 隐私与安全性 → 完全磁盘访问权限」中授权本应用后重试；或改用导出 cookies.txt 文件导入",
+    "errBrowserNotFound": "未检测到 {{browser}}（可能未安装或无登录数据），请选择已安装并已登录的浏览器，或改用 cookies.txt 文件导入",
     "errNoDomain": "请填写域名",
     "errNoPaste": "请粘贴 Cookie 内容",
     "riskNote": "使用账号 Cookie 批量下载可能触发平台风控，请谨慎",

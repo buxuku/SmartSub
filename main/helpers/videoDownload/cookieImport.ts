@@ -122,6 +122,16 @@ export async function importCookiesFromBrowser(params: {
   }
 
   try {
+    const rawOut = `${result.stderr}\n${result.stdout}`;
+    // macOS TCC：Safari(容器) 与 Chromium 系读 cookie 库需「完全磁盘访问权限」，
+    // 未授权时 yt-dlp 报 Operation not permitted / binarycookies。给可操作提示。
+    if (isBrowserPermissionError(rawOut)) {
+      throw new Error('BROWSER_PERMISSION_DENIED');
+    }
+    // 浏览器未安装 / 无用户数据：yt-dlp 报 could not find <browser> cookies database
+    if (isBrowserNotFoundError(rawOut)) {
+      throw new Error(`BROWSER_NOT_FOUND::${params.browser}`);
+    }
     if (!fs.existsSync(outPath)) {
       const detail = tailForError(result.stderr || result.stdout);
       throw new Error(
@@ -147,6 +157,20 @@ export async function importCookiesFromBrowser(params: {
   } finally {
     safeUnlink(outPath);
   }
+}
+
+/** macOS 完全磁盘访问权限缺失（TCC 拦截 Safari 容器 / Chromium cookie 库读取） */
+function isBrowserPermissionError(output: string): boolean {
+  return /operation not permitted|not permitted|permission denied|binarycookies/i.test(
+    output,
+  );
+}
+
+/** 浏览器未安装 / 无 cookie 数据库（yt-dlp: could not find <browser> cookies database） */
+function isBrowserNotFoundError(output: string): boolean {
+  return /could not find .*(cookies database|cookies? file)|no such file or directory/i.test(
+    output,
+  );
 }
 
 function safeUnlink(filePath: string): void {
