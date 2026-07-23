@@ -22,3 +22,5 @@ extraResources/py-base/
 extraResources/sherpa/native/
 .superpowers/
 .longgap/
+# TypeScript 增量构建缓存（构建产物，不入库）
+*.tsbuildinfo
