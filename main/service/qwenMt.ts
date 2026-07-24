@@ -76,6 +76,7 @@ async function translateOne(
   options?: TranslationRequestOptions,
 ): Promise<string> {
   throwIfSignalCancelled(options?.signal);
+  if (!text.trim()) return text;
   const glossaryMatches = matchGlossaryEntries(options?.glossaryEntries || [], [
     text,
   ]);

@@ -152,6 +152,24 @@ async function run(): Promise<void> {
       'Bearer test-key',
       '使用 Bearer API Key',
     );
+
+    const requestCountBeforeEmptySubtitles = calls.length;
+    const emptyResults = await qwenMtTranslator(
+      ['', '   '],
+      {
+        apiKey: 'test-key',
+        apiUrl: 'https://example.com/v1',
+        modelName: 'qwen-mt-plus',
+      },
+      'zh',
+      'en',
+    );
+    eq(emptyResults, ['', '   '], '空白字幕原样返回');
+    eq(
+      calls.length,
+      requestCountBeforeEmptySubtitles,
+      '空白字幕不发送 API 请求',
+    );
   } finally {
     (axios as any).post = originalPost;
   }
