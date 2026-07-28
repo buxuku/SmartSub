@@ -198,9 +198,10 @@ function hasDifferentKnownLanguageDirection(
   sourceLanguage?: string,
   targetLanguage?: string,
 ): boolean {
-  const sourceCode = normalizeLanguageCode(sourceLanguage);
   const targetCode = normalizeLanguageCode(targetLanguage);
-  return Boolean(sourceCode && targetCode && sourceCode !== targetCode);
+  if (!targetCode) return false;
+  const sourceCode = normalizeLanguageCode(sourceLanguage);
+  return !sourceCode || sourceCode !== targetCode;
 }
 
 export type UntranslatedEvidenceStrength = 'none' | 'weak' | 'strong';
@@ -244,7 +245,7 @@ function prepareComparison(
  * 为“译文仍像原文”提供分级证据：
  * - strong：源文主文字系统与目标语言不兼容，且为精确复制或长近似复制；
  * - weak：同文字系统的精确/近似结果，或短标题式/疑似专名；
- * - none：语言方向不明确、非语言内容、单字符或相似度不足。
+ * - none：目标语言不明确、源/目标同语言、非语言内容、单字符或相似度不足。
  *
  * 只有 strong 可单条送修。weak 仅供批次聚合观察；同文字系统的 weak
  * 不得单独触发补翻耗尽后的硬失败。
@@ -321,8 +322,8 @@ export function isExactSourceCopyCandidate(
 /**
  * 判断译文是否很可能只是原文回传。
  *
- * source/target 语言缺失、自动检测或语言代码相同时不判定，避免同语种润色、
- * 简繁转换等场景误报。
+ * 目标语言缺失或源/目标语言代码相同时不判定，避免同语种润色、简繁转换等
+ * 场景误报。源语言自动检测/未知时仍可依靠源文本文字系统与已知目标语言判定。
  */
 export function isLikelyUntranslated(
   sourceText: string,

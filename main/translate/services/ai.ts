@@ -354,6 +354,11 @@ export async function handleAIBatchTranslation(
             });
             if (repaired !== undefined) {
               validation.accepted[flaggedId] = repaired;
+            } else if (validation.promotedExactCopies.includes(flaggedId)) {
+              // 批次证据升级的条目本质仍是弱证据。补翻耗尽时保留模型原输出，
+              // 避免 OpenAI、iPhone 等无需翻译的专名被失败占位符覆盖。
+              const original = parsedContent[flaggedId]?.translation?.trim();
+              if (original) validation.accepted[flaggedId] = original;
             }
           }
         }

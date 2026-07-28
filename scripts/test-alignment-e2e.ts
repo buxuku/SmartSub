@@ -112,13 +112,22 @@ function offlineChecks(): void {
     'same language code is exempt',
   );
   ok(
-    !isLikelyUntranslated(
+    isLikelyUntranslated(
       'Please keep moving forward',
       'Please keep moving forward',
       'auto',
       'zh',
     ),
-    'automatic source language is exempt',
+    'automatic source language still detects cross-script source copies',
+  );
+  ok(
+    !isLikelyUntranslated(
+      'Please keep moving forward',
+      'Please keep moving forward',
+      'en',
+      'auto',
+    ),
+    'unknown target language remains exempt',
   );
   ok(
     !isLikelyUntranslated('Yes', 'Yes', 'en', 'zh') &&

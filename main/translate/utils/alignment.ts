@@ -58,7 +58,8 @@ export function hasStrongBatchCopyEvidence(
  * 回显锚定校验（design D4/D5）：
  * - 条目带回显（{src,tr}）→ 回显与真实原文相似度 ≥ 阈值才采信，
  *   否则视为合并/滑移错位（条数正确也可能对应错行）。
- * - 无论回显或纯字符串协议，只要语言方向明确，都会拒绝疑似直接复制原文的译文。
+ * - 无论回显或纯字符串协议，只要目标语言明确且源语言未知或与目标不同，
+ *   都会拒绝有强证据表明直接复制原文的译文。
  * - 缺失或空译文一律标记待修复。
  */
 export function validateAnchoredBatch(

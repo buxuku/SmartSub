@@ -307,6 +307,104 @@ async function testRepairAttemptCap() {
   );
 }
 
+async function testPromotedExactCopyFallsBackToOriginal() {
+  capturedLogs.length = 0;
+  const subtitles = makeSubtitles([
+    'Please keep moving forward',
+    'We need to leave right now',
+    'This problem is very important',
+    'OpenAI',
+  ]);
+  const repairedTranslations = {
+    1: '请继续向前走',
+    2: '我们现在得离开',
+    3: '这个问题非常重要',
+    4: 'OpenAI',
+  };
+  let batchCalls = 0;
+  const repairCallsById = {};
+
+  const translator = async (_text, _config, _from, _to, options) => {
+    const ids = requiredIds(options);
+    if (ids.length > 1) {
+      batchCalls++;
+      return sourceResponse(subtitles);
+    }
+
+    const id = ids[0];
+    repairCallsById[id] = (repairCallsById[id] || 0) + 1;
+    return JSON.stringify({ [id]: repairedTranslations[id] });
+  };
+
+  const results = await handleAIBatchTranslation(
+    subtitles,
+    config(translator, 'en', 'zh'),
+    4,
+    undefined,
+    undefined,
+    0,
+  );
+
+  ok(batchCalls === 2, 'promoted-copy batch is retried exactly once');
+  ok(
+    repairCallsById['1'] === 1 &&
+      repairCallsById['2'] === 1 &&
+      repairCallsById['3'] === 1 &&
+      repairCallsById['4'] === 3,
+    'promoted proper name exhausts repair while strong copies repair once',
+  );
+  ok(
+    results[3].targetContent === 'OpenAI' &&
+      results
+        .slice(0, 3)
+        .every(
+          (result) => result.targetContent === repairedTranslations[result.id],
+        ),
+    'repair exhaustion preserves the original weak-evidence output',
+  );
+}
+
+async function testAutoSourceLanguageStillDetectsCopies() {
+  capturedLogs.length = 0;
+  const subtitles = makeSubtitles(issue283Source.slice(0, 4));
+  let batchCalls = 0;
+  let repairCalls = 0;
+
+  const translator = async (_text, _config, _from, _to, options) => {
+    const ids = requiredIds(options);
+    if (ids.length > 1) {
+      batchCalls++;
+      return JSON.stringify({
+        1: subtitles[0].content[0],
+        2: issue283Translations[2],
+        3: issue283Translations[3],
+        4: issue283Translations[4],
+      });
+    }
+
+    repairCalls++;
+    return JSON.stringify({ 1: issue283Translations[1] });
+  };
+
+  const results = await handleAIBatchTranslation(
+    subtitles,
+    config(translator, 'auto', 'en'),
+    4,
+    undefined,
+    undefined,
+    0,
+  );
+
+  ok(batchCalls === 1, 'auto source uses the original batch response');
+  ok(repairCalls === 1, 'auto source routes the copied entry to repair');
+  ok(
+    results.every(
+      (result) => result.targetContent === issue283Translations[result.id],
+    ),
+    'auto source detection replaces the copied output without affecting peers',
+  );
+}
+
 async function testSameScriptWeakEvidenceStaysAccepted() {
   const scenarios = [
     {
@@ -354,6 +452,8 @@ async function main() {
     await testIssue283FullRepairFlow();
     await testFourOfTenRetryBoundary();
     await testRepairAttemptCap();
+    await testPromotedExactCopyFallsBackToOriginal();
+    await testAutoSourceLanguageStillDetectsCopies();
     await testSameScriptWeakEvidenceStaysAccepted();
   } finally {
     Module._load = originalLoad;
