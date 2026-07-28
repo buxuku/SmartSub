@@ -18,6 +18,8 @@ import { isProviderConfigured } from 'lib/providerUtils';
 import { hasAnyModelAnyEngine } from 'lib/engineModels';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import { useTranslation } from 'next-i18next';
+import { useCustomLanguages } from 'hooks/useCustomLanguages';
+import { mergeLanguageOptions } from '../../../types/language';
 
 interface Provider {
   id: string;
@@ -73,6 +75,11 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
   const { t: tCommon } = useTranslation('common');
   const router = useRouter();
   const { locale } = router.query;
+  const customLanguages = useCustomLanguages();
+  const languageOptions = React.useMemo(
+    () => mergeLanguageOptions(supportedLanguage, customLanguages),
+    [customLanguages],
+  );
 
   const setValue = (name: string, value: unknown) => {
     form.setValue(name, value);
@@ -90,9 +97,11 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
       {includeAuto && (
         <SelectItem value="auto">{tHome('autoRecognition')}</SelectItem>
       )}
-      {supportedLanguage.map((item) => (
+      {languageOptions.map((item) => (
         <SelectItem key={item.value} value={item.value}>
-          {tCommon(`language.${item.value}`)}
+          {item.isCustom
+            ? `${item.name} (${item.value})`
+            : tCommon(`language.${item.value}`)}
         </SelectItem>
       ))}
     </SelectContent>

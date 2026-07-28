@@ -1,7 +1,7 @@
 import { TranslationConfig, TranslationResult, Subtitle } from '../types';
 import { DEFAULT_BATCH_SIZE } from '../constants';
 import { renderTemplate, supportedLanguage } from '../../helpers/utils';
-import { logMessage } from '../../helpers/storeManager';
+import { logMessage, store } from '../../helpers/storeManager';
 import { defaultSystemPrompt, defaultUserPrompt } from '../../../types';
 import { isConfigurationError } from '../utils/error';
 import {
@@ -42,6 +42,7 @@ import {
   selectGlossaryPromptEntries,
 } from '../../glossary/core';
 import { logGlossaryMatches } from '../../helpers/glossaryManager';
+import { getCustomLanguageName } from '../../../types/language';
 
 function getLanguageName(code: string): string {
   // 中文目标须向 AI 明确简/繁，避免「中文」歧义导致译文简繁混杂（issue #332）。
@@ -61,6 +62,11 @@ function getLanguageName(code: string): string {
   ) {
     return '繁体中文';
   }
+  const customName = getCustomLanguageName(
+    code,
+    store.get('settings')?.customLanguages,
+  );
+  if (customName) return customName;
   const lang = supportedLanguage.find((l) => l.value === code);
   return lang?.name || code;
 }
