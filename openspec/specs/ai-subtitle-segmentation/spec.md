@@ -1,6 +1,10 @@
-# ai-subtitle-segmentation Specification (Delta)
+# ai-subtitle-segmentation Specification
 
-## ADDED Requirements
+## Purpose
+
+AI 语义断句：转写完成后、翻译之前，用大模型按语义重构字幕条边界。词级引擎（内置 whisper.cpp、faster-whisper、云端听写词级路径）按真实词时间戳精确对齐，段级引擎近似插值；校验反馈循环保证原文逐字不变，任何失败自动降级为规则断句，任务不失败。
+
+## Requirements
 
 ### Requirement: 可选的 AI 语义断句阶段
 
@@ -13,7 +17,7 @@
 
 #### Scenario: 未开启时行为不变
 
-- **WHEN** 任务使用「智能断句 / 不限制 / 固定宽度」任一档
+- **WHEN** 任务使用「标准断句 / 不限制长度 / 自定义字数上限」任一档
 - **THEN** 不发起任何 LLM 请求，产出与现版本规则断句一致
 
 ### Requirement: verbatim 断句协议与校验反馈循环
