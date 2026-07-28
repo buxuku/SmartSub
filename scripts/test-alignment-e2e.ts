@@ -28,8 +28,15 @@ import { makeBatchSchema } from '../main/translate/constants/schema';
 import { parseAIAnchoredTranslationResponse } from '../main/translate/utils/aiResponseParser';
 import {
   buildRepairRequest,
+  exceedsOneThird,
+  hasStrongBatchCopyEvidence,
   validateAnchoredBatch,
 } from '../main/translate/utils/alignment';
+import {
+  classifyUntranslatedEvidence,
+  isExactSourceCopyCandidate,
+  isLikelyUntranslated,
+} from '../main/translate/utils/untranslated';
 import type { Subtitle } from '../main/translate/types';
 import { defaultSystemPrompt } from '../types/provider';
 
@@ -49,6 +56,173 @@ function ok(value: unknown, name: string): void {
 // ---------------- 离线单测（validateAnchoredBatch / buildRepairRequest） ----------------
 
 function offlineChecks(): void {
+  console.log('offline: isLikelyUntranslated');
+  ok(
+    isLikelyUntranslated(
+      '我眼神都懒得搭理他',
+      '我眼神都懒得搭理他',
+      'zh',
+      'en',
+    ),
+    'exact source copy is detected across different languages',
+  );
+  ok(
+    isLikelyUntranslated(
+      'Please keep moving forward!',
+      'please keep moving forward...',
+      'en',
+      'zh',
+    ),
+    'case and punctuation-only changes are detected',
+  );
+  ok(
+    isLikelyUntranslated(
+      'Please keep moving forward carefully',
+      'Please keep moving forwards carefully',
+      'en',
+      'zh',
+    ),
+    'long near-copy with a token-level change is detected',
+  );
+  ok(
+    isLikelyUntranslated(
+      'Пожалуйста, продолжайте двигаться вперед',
+      'Пожалуйста продолжайте двигаться вперед',
+      'ru',
+      'en',
+    ),
+    'Unicode scripts are compared instead of being normalized away',
+  );
+  ok(
+    !isLikelyUntranslated(
+      'Please keep moving forward',
+      '请继续向前走',
+      'en',
+      'zh',
+    ),
+    'a real translation is accepted',
+  );
+  ok(
+    !isLikelyUntranslated(
+      'Please keep moving forward',
+      'Please keep moving forward',
+      'en-US',
+      'en-GB',
+    ),
+    'same language code is exempt',
+  );
+  ok(
+    !isLikelyUntranslated(
+      'Please keep moving forward',
+      'Please keep moving forward',
+      'auto',
+      'zh',
+    ),
+    'automatic source language is exempt',
+  );
+  ok(
+    !isLikelyUntranslated('Yes', 'Yes', 'en', 'zh') &&
+      !isLikelyUntranslated('好', '好', 'zh', 'en') &&
+      !isLikelyUntranslated('OK', 'OK', 'zh', 'en'),
+    'single-character, title-like, and target-script short text is exempt',
+  );
+  ok(
+    isLikelyUntranslated('继续向前跑', '继续向前跑', 'zh', 'en'),
+    'cross-script exact copy with at least two letters is a single-entry strong signal',
+  );
+  ok(
+    !isLikelyUntranslated('2026/02/03 19:30', '2026/02/03 19:30', 'en', 'zh'),
+    'numeric content is exempt',
+  );
+  ok(
+    !isLikelyUntranslated(
+      'https://github.com/buxuku/SmartSub/issues/283',
+      'https://github.com/buxuku/SmartSub/issues/283',
+      'en',
+      'zh',
+    ) &&
+      !isLikelyUntranslated(
+        'support@example.com',
+        'support@example.com',
+        'en',
+        'zh',
+      ),
+    'URL and email content is exempt',
+  );
+  ok(
+    !isLikelyUntranslated('OpenAI', 'OpenAI', 'en', 'zh') &&
+      !isLikelyUntranslated('Harry Potter', 'Harry Potter', 'en', 'zh') &&
+      !isLikelyUntranslated('NASA Apollo', 'NASA Apollo', 'en', 'zh'),
+    'single and multi-word proper names are exempt',
+  );
+  ok(
+    isLikelyUntranslated(
+      'Please visit https://example.com after the meeting',
+      'Please visit https://example.com after the meeting',
+      'en',
+      'zh',
+    ),
+    'a URL does not hide surrounding untranslated prose',
+  );
+  ok(
+    isLikelyUntranslated(
+      '{\\an8}<i>Please keep moving forward</i>',
+      '{\\an8}<i>Please keep moving forward</i>',
+      'en',
+      'zh',
+    ),
+    'subtitle formatting tags do not affect detection',
+  );
+  ok(
+    classifyUntranslatedEvidence(
+      'Este problema es importante',
+      'Este problema é importante',
+      'es',
+      'pt',
+    ) === 'weak' &&
+      !isLikelyUntranslated(
+        'Este problema es importante',
+        'Este problema é importante',
+        'es',
+        'pt',
+      ),
+    'same-script Spanish to Portuguese near-copy is weak evidence, not a hard failure',
+  );
+  ok(
+    classifyUntranslatedEvidence(
+      'Ovo je veoma važno pitanje',
+      'Ovo je veoma važno pitanje',
+      'hr',
+      'sr',
+    ) === 'weak' &&
+      !isLikelyUntranslated(
+        'Ovo je veoma važno pitanje',
+        'Ovo je veoma važno pitanje',
+        'hr',
+        'sr',
+      ),
+    'legal same-text Croatian to Serbian output is weak evidence, not a hard failure',
+  );
+  ok(
+    isExactSourceCopyCandidate('闭嘴', '闭嘴', 'zh', 'en') &&
+      !isExactSourceCopyCandidate('OpenAI', 'OpenAI', 'zh', 'en') &&
+      !isExactSourceCopyCandidate('2026', '2026', 'zh', 'en') &&
+      !isExactSourceCopyCandidate(
+        'https://example.com',
+        'https://example.com',
+        'zh',
+        'en',
+      ),
+    'batch candidates include cross-script short copies but exclude target-script names and non-language values',
+  );
+  ok(
+    exceedsOneThird(4, 10) &&
+      !exceedsOneThird(3, 9) &&
+      hasStrongBatchCopyEvidence(4, 10) &&
+      !hasStrongBatchCopyEvidence(1, 2),
+    'more-than-one-third uses exact arithmetic and requires two strong copies',
+  );
+
   console.log('offline: validateAnchoredBatch');
   const batch: Subtitle[] = [
     {
@@ -122,7 +296,7 @@ function offlineChecks(): void {
     legacy.flagged.length === 1 &&
       legacy.flagged[0] === '2' &&
       legacy.echoChecked === 0,
-    'legacy strings degrade to empty-value check only',
+    'legacy strings without language context keep empty-value-only behavior',
   );
 
   // 空原文透传
@@ -144,6 +318,181 @@ function offlineChecks(): void {
   );
   ok(!blank.flagged.includes('1'), 'blank source passes through without flag');
 
+  // 批量结果语义校验：回显正确但 tr 仍为原文，也必须进入现有补翻列表
+  const untranslated = validateAnchoredBatch(
+    {
+      '1': {
+        translation: 'Hello world',
+        srcEcho: 'Hello world',
+        hasEcho: true,
+      },
+      '2': { translation: '你好吗', srcEcho: 'How are you', hasEcho: true },
+      '3': {
+        translation: '很高兴认识你',
+        srcEcho: 'Nice to meet you',
+        hasEcho: true,
+      },
+    },
+    batch,
+    true,
+    { sourceLanguage: 'en', targetLanguage: 'zh' },
+  );
+  ok(
+    untranslated.flagged.includes('1') &&
+      untranslated.untranslated.includes('1') &&
+      untranslated.accepted['1'] === undefined,
+    'aligned response that copies source is routed to targeted repair',
+  );
+
+  const legacyUntranslated = validateAnchoredBatch(
+    {
+      '1': { translation: 'Hello world', hasEcho: false },
+      '2': { translation: '你好吗', hasEcho: false },
+      '3': { translation: '很高兴认识你', hasEcho: false },
+    },
+    batch,
+    true,
+    { sourceLanguage: 'en', targetLanguage: 'zh' },
+  );
+  ok(
+    legacyUntranslated.flagged.includes('1') &&
+      legacyUntranslated.untranslated.includes('1'),
+    'legacy string responses receive the same untranslated-output check',
+  );
+
+  // 短句/专名即使原样返回也不应误送补翻
+  const exemptBatch: Subtitle[] = [
+    { id: 'short', startEndTime: '', content: ['Yes'] },
+    { id: 'name', startEndTime: '', content: ['Harry Potter'] },
+    { id: 'number', startEndTime: '', content: ['2026/02/03'] },
+    { id: 'url', startEndTime: '', content: ['https://example.com'] },
+  ];
+  const exemptions = validateAnchoredBatch(
+    Object.fromEntries(
+      exemptBatch.map((subtitle) => [
+        subtitle.id,
+        {
+          translation: subtitle.content[0],
+          srcEcho: subtitle.content[0],
+          hasEcho: true,
+        },
+      ]),
+    ),
+    exemptBatch,
+    true,
+    { sourceLanguage: 'en', targetLanguage: 'zh' },
+  );
+  ok(
+    exemptions.flagged.length === 0 &&
+      Object.keys(exemptions.accepted).length === exemptBatch.length,
+    'short/name/number/URL batch entries remain accepted',
+  );
+
+  // Issue #283 原始 10 条：本地模型按旧字符串协议逐条原样返回。
+  const issue283Source = [
+    '我眼神都懒得搭理他',
+    '继续向前跑',
+    '老公',
+    '你跟他说什么话啊',
+    '你看看他都干了些什么',
+    '地上躺了这么多',
+    '好多好多人',
+    '我们要报警把他抓起来',
+    '闭嘴',
+    '快跟上',
+  ];
+  const issue283Batch: Subtitle[] = issue283Source.map((content, index) => ({
+    id: String(index + 1),
+    startEndTime: '',
+    content: [content],
+  }));
+  const issue283Parsed = parseAIAnchoredTranslationResponse(
+    JSON.stringify(
+      Object.fromEntries(
+        issue283Batch.map((subtitle) => [subtitle.id, subtitle.content[0]]),
+      ),
+    ),
+  );
+  const issue283Validation = validateAnchoredBatch(
+    issue283Parsed,
+    issue283Batch,
+    true,
+    { sourceLanguage: 'zh', targetLanguage: 'en' },
+  );
+  ok(
+    issue283Validation.flagged.join(',') ===
+      issue283Batch.map((subtitle) => subtitle.id).join(',') &&
+      issue283Validation.untranslated.length === 10 &&
+      issue283Validation.promotedExactCopies.length === 0 &&
+      Object.keys(issue283Validation.accepted).length === 0,
+    'issue #283: all ten cross-script exact copies are rejected',
+  );
+
+  // 正常混合批次：单个短复制不足以升级；目标文字专名与非语言内容保持原样。
+  const normalMixedBatch: Subtitle[] = [
+    { id: '1', startEndTime: '', content: ['我们现在开始准备工作'] },
+    { id: '2', startEndTime: '', content: ['OK'] },
+    { id: '3', startEndTime: '', content: ['OpenAI'] },
+    { id: '4', startEndTime: '', content: ['2026'] },
+    { id: '5', startEndTime: '', content: ['https://example.com'] },
+    { id: '6', startEndTime: '', content: ['support@example.com'] },
+  ];
+  const normalMixedValidation = validateAnchoredBatch(
+    {
+      '1': {
+        translation: 'We are starting the preparations now',
+        hasEcho: false,
+      },
+      '2': { translation: 'OK', hasEcho: false },
+      '3': { translation: 'OpenAI', hasEcho: false },
+      '4': { translation: '2026', hasEcho: false },
+      '5': { translation: 'https://example.com', hasEcho: false },
+      '6': { translation: 'support@example.com', hasEcho: false },
+    },
+    normalMixedBatch,
+    false,
+    { sourceLanguage: 'zh', targetLanguage: 'en' },
+  );
+  ok(
+    normalMixedValidation.flagged.length === 0 &&
+      normalMixedValidation.accepted['2'] === 'OK' &&
+      normalMixedValidation.accepted['3'] === 'OpenAI',
+    'normal mixed batch retains target-script short text, names, and non-language values',
+  );
+
+  // 群体证据成立时，标题式/全大写弱豁免可以升级；目标文字专名仍不参与候选。
+  const evidenceBatch: Subtitle[] = [
+    { id: '1', startEndTime: '', content: ['Please keep moving forward'] },
+    { id: '2', startEndTime: '', content: ['We need to leave right now'] },
+    { id: '3', startEndTime: '', content: ['This problem is very important'] },
+    { id: '4', startEndTime: '', content: ['You should listen carefully'] },
+    { id: '5', startEndTime: '', content: ['STOP RIGHT THERE'] },
+    { id: '6', startEndTime: '', content: ['Harry Potter'] },
+    { id: '7', startEndTime: '', content: ['好'] },
+    { id: '8', startEndTime: '', content: ['2026'] },
+    { id: '9', startEndTime: '', content: ['https://example.com'] },
+    { id: '10', startEndTime: '', content: ['support@example.com'] },
+  ];
+  const evidenceValidation = validateAnchoredBatch(
+    Object.fromEntries(
+      evidenceBatch.map((subtitle) => [
+        subtitle.id,
+        { translation: subtitle.content[0], hasEcho: false },
+      ]),
+    ),
+    evidenceBatch,
+    false,
+    { sourceLanguage: 'en', targetLanguage: 'zh' },
+  );
+  ok(
+    evidenceValidation.flagged.join(',') === '1,2,3,4,5,6' &&
+      evidenceValidation.promotedExactCopies.join(',') === '5,6' &&
+      evidenceValidation.weakUntranslated.length === 0 &&
+      evidenceValidation.accepted['7'] === '好' &&
+      evidenceValidation.accepted['8'] === '2026',
+    'batch evidence promotes title/name weak copies while retaining one-character and non-language values',
+  );
+
   console.log('offline: buildRepairRequest');
   const repair = buildRepairRequest(
     batch[1],
@@ -154,8 +503,9 @@ function offlineChecks(): void {
   ok(
     repair.prompt.includes('How are you') &&
       repair.prompt.includes('请勿翻译') &&
+      repair.prompt.includes('不要把原文直接复制为译文') &&
       repair.prompt.includes('"2"'),
-    'repair prompt quotes target line and marks context as reference-only',
+    'repair prompt quotes target line and explicitly rejects source copying',
   );
   const schema = repair.schema as any;
   ok(
@@ -231,7 +581,10 @@ async function runScenario(params: {
   } as any);
 
   const parsed = parseAIAnchoredTranslationResponse(String(response ?? ''));
-  const validation = validateAnchoredBatch(parsed, batch, params.echo);
+  const validation = validateAnchoredBatch(parsed, batch, params.echo, {
+    sourceLanguage: 'en',
+    targetLanguage: 'zh',
+  });
 
   let repaired = 0;
   for (const flaggedId of validation.flagged) {
@@ -255,7 +608,24 @@ async function runScenario(params: {
           String(repairResponse ?? ''),
         );
         const translation = repairParsed[flaggedId]?.translation?.trim();
-        if (translation) {
+        if (
+          translation &&
+          !isLikelyUntranslated(
+            subtitle.content.join('\n'),
+            translation,
+            'en',
+            'zh',
+          ) &&
+          !(
+            validation.untranslated.includes(flaggedId) &&
+            isExactSourceCopyCandidate(
+              subtitle.content.join('\n'),
+              translation,
+              'en',
+              'zh',
+            )
+          )
+        ) {
           validation.accepted[flaggedId] = translation;
           repaired++;
           break;
