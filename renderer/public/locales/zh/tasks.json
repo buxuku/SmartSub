@@ -85,6 +85,8 @@
     "blockVideoNeedsMedia": "成品视频需要视频输入，请取消勾选或改放视频文件",
     "blockUnpairedMedia": "有 {{count}} 个视频还没配上字幕，请在视频行选择字幕、补充文件或移除它们",
     "blockNoGoal": "请至少勾选一个要得到的产物",
+    "blockRefineFollow": "AI 精修的「跟随翻译服务」无法解析（翻译未开启或非 AI 类型），请在高级设置里显式选择精修服务商",
+    "blockRefineProviderInvalid": "AI 精修选择的服务商不可用（不存在或未配置），请重新选择",
     "goConfigure": "去配置",
     "readyHint": "就绪：开始后 {{count}} 个文件将按流程自动处理",
     "clearFiles": "清空列表",
@@ -213,21 +215,55 @@
     }
   },
   "subtitleLength": {
-    "label": "字幕断句方式",
-    "modeSmart": "智能断句（推荐）",
+    "label": "断句方式",
+    "modeSmart": "标准断句（默认）",
     "modeUnlimited": "不限制长度",
     "modeCustom": "自定义字数上限",
-    "hintSmart": "由引擎在停顿和标点处自动断句，单条字幕保持适合阅读的长度。",
+    "modeAi": "AI 语义断句（更像人工）",
+    "hintSmart": "按说话停顿和标点自动断句，单条字幕保持适合阅读的长度。零成本，开箱即用。",
     "hintUnlimited": "只在说话停顿和标点处断句，不按字数强制拆分，单条字幕可能较长。",
-    "hintCustom": "超过上限时在标点或词语边界处拆分，不会拆开词语。中文一个汉字按 2 计（如 40 约等于 20 个汉字），中文建议 30-50，英文建议 40-60。"
+    "hintCustom": "超过上限时在标点或词语边界处拆分，不会拆开词语。",
+    "hintAi": "AI 按语义断句，数字和固定搭配不被停顿切开。需要 AI 服务商，失败自动回退标准断句。"
   },
   "chinesePunctuation": {
     "label": "中文字幕去标点",
     "hint": "把中文字幕里的中文标点（，。、？！等）替换为空格并去掉行尾空格，让字幕更清爽。源语言为中文时作用于源字幕，目标为中文时作用于译文。"
   },
+  "refine": {
+    "provider": {
+      "label": "精修服务商",
+      "follow": "跟随翻译服务（当前：{{name}}）",
+      "followUnavailable": "跟随翻译服务（当前不可解析）",
+      "followBlocked": "翻译服务未开启或非 AI 类型，请显式选择一个 AI 服务商。",
+      "hint": "AI 语义断句与字幕校正共用此服务商。默认跟随翻译服务；也可以单独指定（如翻译用大模型、精修用本地 Ollama 省成本）。"
+    },
+    "approxNote": "当前转写引擎无词级时间戳，AI 断句将采用近似时间轴（条内按比例插值）。",
+    "summary": {
+      "segmentation": "语义断句",
+      "correction": "字幕校正"
+    },
+    "control": {
+      "label": "断句与精修",
+      "title": "断句与精修",
+      "intro": "决定字幕怎么断、要不要 AI 帮忙修文本。AI 能力失败会自动回退，不会比不开更差。",
+      "state": {
+        "smart": "标准断句",
+        "unlimited": "不限长度",
+        "custom": "≤ {{n}} 字",
+        "ai": "AI 断句",
+        "corrSuffix": " · 校正"
+      },
+      "corrLabel": "AI 文本校正",
+      "corrHint": "自动修同音字错字、删掉「呃、嗯」等口头语、规范标点和英文大小写；不改变时间轴。",
+      "maxCharsLabel": "单条最长字数",
+      "maxCharsPlaceholder": "留空 = 智能默认（约 20 个汉字）",
+      "maxCharsHint": "中文按汉字数 ×2 计（如 40 ≈ 20 个汉字），英文按字符数计。超长时在词语边界安全拆分，不会拆开词语。"
+    }
+  },
   "stage": {
     "extract": "提取",
     "transcribe": "转写",
+    "refine": "精修",
     "translate": "翻译",
     "dubbing": "配音",
     "compose": "合成"

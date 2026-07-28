@@ -4,6 +4,7 @@ import type { TaskTypeDef } from 'lib/taskTypes';
 export type StageKey =
   | 'extractAudio'
   | 'extractSubtitle'
+  | 'refineSubtitle'
   | 'translateSubtitle'
   | 'dubbing'
   | 'composeVideo';
@@ -31,6 +32,14 @@ export function getFileStages(
   if (!subtitleInput && !hasProvidedSubtitle) {
     stages.push({ key: 'extractAudio', labelKey: 'stage.extract' });
     stages.push({ key: 'extractSubtitle', labelKey: 'stage.transcribe' });
+    // AI 字幕精修：配置快照声明开启，或文件上已有阶段状态（旧记录无该阶段不渲染）
+    if (
+      formData?.aiSegmentation === true ||
+      formData?.aiCorrection === true ||
+      file?.refineSubtitle !== undefined
+    ) {
+      stages.push({ key: 'refineSubtitle', labelKey: 'stage.refine' });
+    }
   }
   if (typeDef.hasTranslate && formData?.translateProvider !== '-1') {
     stages.push({ key: 'translateSubtitle', labelKey: 'stage.translate' });

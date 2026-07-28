@@ -22,7 +22,10 @@ import {
   composeWordCues,
   getSubtitleCueOptions,
   wordsToTriples,
+  type TimedWord,
 } from '../subtitleSegmentation';
+import { writeWordTimelineSidecar } from '../wordTimelineSidecar';
+import { refineWordsFromTimedWords } from '../subtitleRefine';
 import {
   getTaskContext,
   isTaskCancelledError,
@@ -343,6 +346,21 @@ async function transcribeFasterWhisper(
   subtitles = trimSubtitleTrailingSilence(subtitles, tempAudioFile);
   const formattedSrt = formatSrtContent(subtitles);
   await fs.promises.writeFile(srtFile, formattedSrt);
+
+  // 词级时间轴 sidecar（openspec: add-ai-subtitle-refine D6）：word_timestamps 恒开，
+  // segments[].words 缺失（旧 sidecar/异常返回）时不落盘——精修阶段自动走近似模式。
+  const timelineWords = segments.flatMap(
+    (segment: { words?: Array<TimedWord & { probability?: number }> }) =>
+      segment?.words ?? [],
+  );
+  file.wordTimelineFile =
+    timelineWords.length > 0
+      ? writeWordTimelineSidecar(
+          tempAudioFile,
+          'fasterWhisper',
+          refineWordsFromTimedWords(timelineWords),
+        )
+      : undefined;
 
   event.sender.send('taskProgressChange', file, 'extractSubtitle', 100);
   event.sender.send('taskFileChange', { ...file, extractSubtitle: 'done' });

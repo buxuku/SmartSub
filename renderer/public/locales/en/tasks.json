@@ -85,6 +85,8 @@
     "blockVideoNeedsMedia": "Final video needs video input — uncheck it or add video files",
     "blockUnpairedMedia": "{{count}} video(s) have no subtitle paired — pick one on the video row, add files, or remove them",
     "blockNoGoal": "Pick at least one goal",
+    "blockRefineFollow": "AI refine cannot follow the translation service (translation is off or not an AI provider) — pick a refine provider explicitly in Advanced settings",
+    "blockRefineProviderInvalid": "The selected AI refine provider is unavailable (missing or not configured) — pick another one",
     "goConfigure": "Configure",
     "readyHint": "Ready: {{count}} file(s) will be processed automatically",
     "clearFiles": "Clear list",
@@ -213,21 +215,55 @@
     }
   },
   "subtitleLength": {
-    "label": "Subtitle line breaking",
-    "modeSmart": "Smart segmentation (recommended)",
+    "label": "Line breaking",
+    "modeSmart": "Standard segmentation (default)",
     "modeUnlimited": "No length limit",
     "modeCustom": "Custom length limit",
-    "hintSmart": "The engine splits lines at pauses and punctuation, keeping each subtitle at a readable length.",
+    "modeAi": "AI semantic segmentation (human-like)",
+    "hintSmart": "Splits lines at speech pauses and punctuation, keeping each subtitle at a readable length. Free and works out of the box.",
     "hintUnlimited": "Split only at speech pauses and punctuation. Lines are never force-split by length and may run long.",
-    "hintCustom": "Lines over the limit are split at punctuation or word boundaries, never inside a word. CJK characters count as 2 (40 is about 20 Chinese characters); 30-50 suggested for Chinese, 40-60 for English."
+    "hintCustom": "Lines over the limit are split at punctuation or word boundaries, never inside a word.",
+    "hintAi": "The AI breaks lines by meaning — numbers and fixed phrases are never cut by pauses. Requires an AI provider; falls back to standard segmentation on failure."
   },
   "chinesePunctuation": {
     "label": "Strip Chinese punctuation",
     "hint": "Replace Chinese punctuation (，。、？！ etc.) in Chinese subtitles with spaces and trim trailing spaces for cleaner subtitles. Applies to the source when the source language is Chinese, and to the translation when the target is Chinese."
   },
+  "refine": {
+    "provider": {
+      "label": "Refine provider",
+      "follow": "Follow translation service (current: {{name}})",
+      "followUnavailable": "Follow translation service (unresolvable)",
+      "followBlocked": "Translation is off or not an AI provider — pick an AI provider explicitly.",
+      "hint": "Shared by AI segmentation and correction. Defaults to following the translation service; you can also pick a different one (e.g. a large model for translation, local Ollama for refining)."
+    },
+    "approxNote": "The current transcription engine has no word-level timestamps; AI segmentation will use an approximate timeline (proportional interpolation within each cue).",
+    "summary": {
+      "segmentation": "Semantic split",
+      "correction": "Correction"
+    },
+    "control": {
+      "label": "Line break & refine",
+      "title": "Line break & refine",
+      "intro": "Choose how lines break, and whether AI should polish the text. AI features fall back automatically on failure — never worse than off.",
+      "state": {
+        "smart": "Standard",
+        "unlimited": "No limit",
+        "custom": "≤ {{n}} chars",
+        "ai": "AI split",
+        "corrSuffix": " · Fix"
+      },
+      "corrLabel": "AI text correction",
+      "corrHint": "Fix homophones and typos, remove fillers like \"um / uh\", normalize punctuation and casing — timing stays untouched.",
+      "maxCharsLabel": "Max length per line",
+      "maxCharsPlaceholder": "Empty = smart default (~20 CJK chars)",
+      "maxCharsHint": "CJK characters count as 2 (40 ≈ 20 Chinese characters), Latin counts per character. Over-long lines split safely at word boundaries."
+    }
+  },
   "stage": {
     "extract": "Extract",
     "transcribe": "Transcribe",
+    "refine": "Refine",
     "translate": "Translate",
     "dubbing": "Dub",
     "compose": "Compose"

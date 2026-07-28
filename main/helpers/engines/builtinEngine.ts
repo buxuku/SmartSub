@@ -49,6 +49,8 @@ import {
   type RawVadSegment,
 } from '../builtinAudioChunking';
 import type { NativeToken, TokenTriple } from '../subtitleSegmentation';
+import { writeWordTimelineSidecar } from '../wordTimelineSidecar';
+import { refineWordsFromNativeTokens } from '../subtitleRefine';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
 /**
@@ -372,6 +374,17 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
     }
     const formattedSrt = formatSrtContent(subtitles);
     await fs.promises.writeFile(srtFile, formattedSrt);
+
+    // 词级时间轴 sidecar（openspec: add-ai-subtitle-refine D6）：供 AI 语义断句精确
+    // 对齐消费。旧加速包无 token 输出时不落盘——精修阶段自动走近似模式。
+    file.wordTimelineFile =
+      nativeTokens.length > 0
+        ? writeWordTimelineSidecar(
+            tempAudioFile,
+            'builtin',
+            refineWordsFromNativeTokens(nativeTokens),
+          )
+        : undefined;
 
     event.sender.send('taskFileChange', { ...file, extractSubtitle: 'done' });
     logMessage(`generate subtitle done!`, 'info');

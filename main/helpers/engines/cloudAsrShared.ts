@@ -84,6 +84,19 @@ export function offsetWords(words: AsrWord[], offsetSec: number): AsrWord[] {
 }
 
 /**
+ * 词级时间轴（毫秒 NativeToken，标点已回贴）：与成句同源，供词级 sidecar 落盘
+ * （openspec: add-ai-subtitle-refine D6）。
+ */
+export function wordTimelineTokens(result: {
+  words?: AsrWord[];
+  text?: string;
+}): NativeToken[] {
+  return wordsToNativeTokens(
+    realignPunctuation(result.words ?? [], result.text),
+  );
+}
+
+/**
  * 词级路径：realign 标点 → NativeToken → 复用成句统一出口（composeWordCues，
  * 含任务级 maxSubtitleChars），得到字幕三元组（未裁尾）。
  * 裁尾（trimSubtitleTrailingSilence）由引擎在拿到本地 WAV 时补做。
@@ -95,9 +108,7 @@ export function wordCuesFromResult(
   },
   config?: Record<string, unknown>,
 ): TokenTriple[] {
-  const realigned = realignPunctuation(result.words ?? [], result.text);
-  const tokens = wordsToNativeTokens(realigned);
-  const triples = tokensToTriples(tokens);
+  const triples = tokensToTriples(wordTimelineTokens(result));
   return composeWordCues(triples, config);
 }
 
