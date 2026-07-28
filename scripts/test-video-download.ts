@@ -7,6 +7,7 @@
  * - routeEngines：域名路由（lux 优先域/默认 yt-dlp）、手动指定、单引擎降级
  * - compareDateVersion：清单版本比较（yt-dlp 日期版式）
  * - parseYtDlpProgressLine / parseYtDlpPreflightJson：进度模板与 -J 元数据
+ * - parseYtDlpFilePathLine：--print 文件路径哨兵行（JSON ASCII 转义防 Windows 代码页乱码）
  * - parseLuxProgressChunk / parseLuxPreflightJson：进度文本与 -j 元数据（含降级判定）
  * - pickLuxStreamId / parseLuxQualityHeight：画质档位 → lux 选流（就近降档）
  * - isValidCookieProfileId / isValidCookieDomain / isDownloadableHttpUrl：
@@ -27,6 +28,7 @@ import { compareDateVersion } from '../main/helpers/download/versionCompare';
 import {
   claimSubtitleFileNames,
   parseYtDlpProgressLine,
+  parseYtDlpFilePathLine,
   parseYtDlpPreflightJson,
   parseLuxProgressChunk,
   parseLuxPreflightJson,
@@ -173,6 +175,40 @@ function run(): void {
     parseYtDlpProgressLine('[download] Destination: foo.mp4'),
     null,
     'ytdlp: 非进度行返回 null',
+  );
+
+  // ==========================================================
+  // yt-dlp --print 文件路径哨兵行解析
+  //（%(filepath)j 输出 ASCII 转义 JSON，Windows ANSI 代码页下字节不损坏）
+  // ==========================================================
+  eq(
+    parseYtDlpFilePathLine(
+      'SMARTSUB-FILE;"C:\\\\Users\\\\u\\\\Downloads\\\\The most important theorem in (differential) geometry \\uff5c Euler characteristic #3 [m2Ba6Mlv1LY].mp4"',
+    ),
+    'C:\\Users\\u\\Downloads\\The most important theorem in (differential) geometry ｜ Euler characteristic #3 [m2Ba6Mlv1LY].mp4',
+    'ytdlp: JSON 转义路径还原（全角竖线 \\uff5c + Windows 反斜杠）',
+  );
+  eq(
+    parseYtDlpFilePathLine('SMARTSUB-FILE;"/tmp/a \\"quoted\\" title.mp4"'),
+    '/tmp/a "quoted" title.mp4',
+    'ytdlp: JSON 路径内嵌引号还原',
+  );
+  eq(
+    parseYtDlpFilePathLine(
+      'SMARTSUB-FILE;/Users/x/Movies/geometry ｜ Euler.mp4',
+    ),
+    '/Users/x/Movies/geometry ｜ Euler.mp4',
+    'ytdlp: 非 JSON 裸路径向后兼容',
+  );
+  eq(
+    parseYtDlpFilePathLine('[Merger] Merging formats into "out.mp4"'),
+    null,
+    'ytdlp: 无哨兵前缀返回 null',
+  );
+  eq(
+    parseYtDlpFilePathLine('SMARTSUB-FILE;  '),
+    null,
+    'ytdlp: 空路径返回 null',
   );
 
   // ==========================================================

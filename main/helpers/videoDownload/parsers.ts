@@ -41,6 +41,34 @@ export function parseYtDlpProgressLine(line: string): ParsedProgress | null {
   return result.progress === undefined ? null : result;
 }
 
+/** yt-dlp --print 最终文件路径行的机器可读前缀（after_move 模板） */
+export const YTDLP_FILEPATH_PREFIX = 'SMARTSUB-FILE;';
+
+/**
+ * 解析 `--print after_move:` 的文件路径哨兵行。
+ * 模板用 %(filepath)j（JSON 转义，yt-dlp 默认 ensure_ascii）：Windows 版 yt-dlp 是
+ * PyInstaller 冻结程序，忽略 PYTHONIOENCODING，管道输出走系统 ANSI 代码页——
+ * 非 ASCII 文件名（如全角竖线 ｜）直接打印会在 Node 侧 UTF-8 解码成乱码，
+ * 与磁盘真实文件名对不上（表现为列表乱码 + 发送任务列表被 stat 剔除）。
+ * ASCII 转义序列在任何代码页下字节不变，JSON.parse 可无损还原；
+ * 裸路径分支兼容非 JSON 输出（防御性兜底）。
+ */
+export function parseYtDlpFilePathLine(line: string): string | null {
+  const idx = line.indexOf(YTDLP_FILEPATH_PREFIX);
+  if (idx < 0) return null;
+  const token = line.slice(idx + YTDLP_FILEPATH_PREFIX.length).trim();
+  if (!token) return null;
+  if (token.startsWith('"')) {
+    try {
+      const parsed = JSON.parse(token) as unknown;
+      if (typeof parsed === 'string' && parsed) return parsed;
+    } catch {
+      // 非法 JSON：按裸路径兜底
+    }
+  }
+  return token;
+}
+
 interface YtDlpJsonFormat {
   height?: number | null;
 }
