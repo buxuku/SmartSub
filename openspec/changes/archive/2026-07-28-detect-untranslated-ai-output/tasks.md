@@ -19,3 +19,5 @@
 - [x] 3.2 Add same-script Spanish/Portuguese and Croatian/Serbian regressions.
 - [x] 3.3 Invoke real `handleAIBatchTranslation` with an injected offline translator for retry, repair, and cap coverage.
 - [x] 3.4 Update canonical spec and this delta.
+- [x] 3.5 Cover promoted proper-name repair exhaustion and preserve the original weak-evidence output.
+- [x] 3.6 Cover `auto` source-language detection while retaining the explicit same-language exemption.
