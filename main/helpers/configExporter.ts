@@ -4,6 +4,8 @@ import { dialog } from 'electron';
 import { store } from './store';
 import { logMessage } from './logger';
 import { sanitizeStoragePathPatch } from './storagePaths';
+import { supportedLanguage } from './utils';
+import { sanitizeCustomLanguages } from '../../types/language';
 
 const MAGIC = 'VSM_CONFIG';
 const FORMAT_VERSION = 1;
@@ -191,6 +193,12 @@ export async function importConfig(
       logMessage(
         `Config import: dropped storage path keys containing CJK characters: ${rejectedKeys.join(', ')}`,
         'warning',
+      );
+    }
+    if (Object.prototype.hasOwnProperty.call(sanitized, 'customLanguages')) {
+      sanitized.customLanguages = sanitizeCustomLanguages(
+        sanitized.customLanguages,
+        supportedLanguage.map((language) => language.value),
       );
     }
     store.set('settings', {

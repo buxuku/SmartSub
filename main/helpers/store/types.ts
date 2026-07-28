@@ -22,6 +22,7 @@ import type {
 } from '../../../types/subtitleMerge';
 import type { TaskRecipe } from '../../../types/recipe';
 import type { Glossary } from '../../../types/glossary';
+import type { CustomLanguage } from '../../../types/language';
 
 export type LogEntry = {
   timestamp: number;
@@ -43,6 +44,8 @@ export type StoreType = {
   settings: {
     whisperCommand: string;
     language: string;
+    /** User-defined language codes shown alongside the built-in task languages. */
+    customLanguages?: CustomLanguage[];
     useLocalWhisper: boolean;
     builtinWhisperCommand: string;
     useCuda: boolean;

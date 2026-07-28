@@ -14,7 +14,9 @@ import {
 import { isSubtitleFile } from 'lib/utils';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import { useTtsEngineOptions } from 'hooks/useTtsEngineOptions';
+import { useCustomLanguages } from 'hooks/useCustomLanguages';
 import { useTranslation } from 'next-i18next';
+import { getCustomLanguageName } from '../../../types/language';
 
 interface Provider {
   id: string;
@@ -59,6 +61,7 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
   const { t: tHome } = useTranslation('home');
   const { t: tCommon } = useTranslation('common');
   const { engineOptions } = useTtsEngineOptions();
+  const customLanguages = useCustomLanguages();
 
   // 是否存在真正要转写的文件（字幕输入/配对自带字幕的都跳过听写）
   const needsTranscription = files.length
@@ -74,6 +77,8 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
   const languageLabel = (value?: string) => {
     if (!value) return '';
     if (value === 'auto') return tHome('autoRecognition');
+    const customName = getCustomLanguageName(value, customLanguages);
+    if (customName) return `${customName} (${value})`;
     return tCommon(`language.${value}`, { defaultValue: value });
   };
 

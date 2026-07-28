@@ -67,6 +67,7 @@ import {
 import PageHeader from '@/components/PageHeader';
 import HelpHint from '@/components/HelpHint';
 import IconChip from '@/components/IconChip';
+import CustomLanguageManager from '@/components/settings/CustomLanguageManager';
 import { openUrl } from 'lib/utils';
 import packageInfo from '../../../package.json';
 import {
@@ -642,6 +643,8 @@ const Settings = () => {
                 </SelectContent>
               </Select>
             </div>
+
+            <CustomLanguageManager />
 
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">

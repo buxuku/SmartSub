@@ -1,7 +1,7 @@
 import { app, ipcMain } from 'electron';
 import os from 'os';
 import { store } from './store';
-import { defaultUserConfig } from './utils';
+import { defaultUserConfig, supportedLanguage } from './utils';
 import { inferDisplayOutcome } from './engines/outcomePresets';
 import { getAndInitializeProviders } from './providerManager';
 import { getAsrProviders, setAsrProviders } from './asrProviderManager';
@@ -31,6 +31,7 @@ import {
   resolveModelRoot,
   sanitizeStoragePathPatch,
 } from './storagePaths';
+import { sanitizeCustomLanguages } from '../../types/language';
 
 console.log(app.getVersion(), 'version');
 
@@ -177,6 +178,12 @@ export function setupStoreHandlers() {
       logMessage(
         `Rejected storage path keys containing CJK characters: ${rejectedKeys.join(', ')}`,
         'warning',
+      );
+    }
+    if (Object.prototype.hasOwnProperty.call(sanitized, 'customLanguages')) {
+      sanitized.customLanguages = sanitizeCustomLanguages(
+        sanitized.customLanguages,
+        supportedLanguage.map((language) => language.value),
       );
     }
     const nextSettings = { ...preSettings, ...sanitized };
