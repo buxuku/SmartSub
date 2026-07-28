@@ -8,7 +8,7 @@ import { getEngineDir, getRuntimePythonPath } from './paths';
  * 清理历史架构遗留的 userData 目录与状态文件（自包含运行时 + 内置 sherpa 改造前的产物）。
  *
  * 当前架构使用：
- *   - userData/py-engines/<engineId>  （faster-whisper 单自包含运行时，含内嵌解释器）
+ *   - <storageRoot|userData>/py-engines/<engineId>（faster-whisper 单自包含运行时，含内嵌解释器）
  *   - userData/py-engine-download-state-<engineId>.json （按引擎隔离的下载状态）
  *   - sherpa-onnx 原生库随安装包内置（extraResources/sherpa/native/<platformKey>/），不落 userData
  *
@@ -22,7 +22,7 @@ import { getEngineDir, getRuntimePythonPath } from './paths';
  *
  * 不在清理范围（仍被现网代码使用，误删会丢数据）：
  *   - userData/py-engine-cache         （faster-whisper 旧 HF 缓存，按模型在 UI 内清理）
- *   - userData/py-engines              （复数：当前运行时根目录）
+ *   - <storageRoot|userData>/py-engines（复数：当前运行时根目录）
  *
  * 幂等：仅当目标存在时删除并记日志；缺省静默。任何异常都吞掉，不影响启动。
  */

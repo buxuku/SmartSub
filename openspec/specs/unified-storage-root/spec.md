@@ -2,7 +2,7 @@
 
 ## Purpose
 
-统一存储根目录（Issue #388）：6 个模型目录与临时目录此前是 7 个互相独立的 settings 键，换盘需逐个修改且 TTS 无 UI 入口。提供 `settings.storageRoot` 一处设置全部跟随，解析链为「引擎单独设置 > 统一目录/既有默认子目录名 > userData 默认」；同时把中文（CJK）路径校验收口到所有目录选择入口（Windows 非 UTF-8 locale 下本地引擎打不开中文路径模型文件），并为中文用户名的默认路径提供主动引导。产品语义保持「改路径不迁移文件」，以新旧位置对照对话框与首次引导前置决策降低迁移摩擦（详见 archive/2026-07-20-unified-storage-root）。
+统一存储根目录（Issue #388、#401）：6 个模型目录、faster-whisper 自包含运行时与临时目录此前分散在 userData 或独立 settings 键，换盘后仍可能继续占用系统盘。提供 `settings.storageRoot` 一处设置使模型、运行时与临时文件全部跟随，同时把中文（CJK）路径校验收口到所有目录选择入口（Windows 非 UTF-8 locale 下本地引擎打不开中文路径模型文件），并为中文用户名的默认路径提供主动引导。Electron Store 配置仍留在 userData；产品语义保持「改路径不迁移文件」，以新旧位置对照对话框与首次引导前置决策降低迁移摩擦（详见 archive/2026-07-20-unified-storage-root）。
 
 ## Requirements
 
@@ -38,6 +38,25 @@
 
 - **WHEN** 用户启用自定义临时目录 `E:\tmp` 且设置了统一存储目录
 - **THEN** 临时文件写入 `E:\tmp`
+
+### Requirement: faster-whisper 自包含运行时纳入统一根
+
+faster-whisper 自包含运行时根目录 SHALL 按「`storageRoot/py-engines` > `userData/py-engines`」解析。运行时安装、安装状态检测、启动、更新、变体驻留与下载暂存 MUST 使用同一解析结果。设置或清除统一目录导致有效运行时根变化时，系统 MUST 停止正在运行的 Python 进程并释放旧目录句柄。更改目录 MUST 不自动移动已有运行时。
+
+#### Scenario: 设置统一目录后运行时下载到新位置
+
+- **WHEN** 用户将统一存储目录设为 `D:\SmartSub`，随后安装 faster-whisper CPU 或 CUDA 运行时
+- **THEN** 运行时及其下载暂存、变体驻留文件写入 `D:\SmartSub\py-engines`
+
+#### Scenario: 未设置统一目录保持兼容
+
+- **WHEN** `storageRoot` 未设置
+- **THEN** faster-whisper 运行时仍从 `userData/py-engines` 检测、启动与更新
+
+#### Scenario: 模型单独覆盖不阻止运行时换根
+
+- **WHEN** faster-whisper 模型目录已单独设置，用户变更统一存储目录
+- **THEN** 模型目录保持单独设置，Python 进程仍因有效运行时根变化而停止，后续运行时操作使用新的 `storageRoot/py-engines`
 
 ### Requirement: 中文路径硬阻止
 
@@ -114,9 +133,9 @@
 - **WHEN** 用户对 FunASR 点击「恢复跟随统一目录」
 - **THEN** `funasrModelsPath` 被清除，路径行更新为统一目录下的解析路径，标识变为「统一目录」
 
-### Requirement: CT2 有效路径变化驱动 Python 运行时重启
+### Requirement: CT2 模型或运行时有效路径变化驱动 Python 运行时重启
 
-Python 运行时重启判定 SHALL 基于 faster-whisper **有效根目录**（完整解析链结果）在设置写入前后的变化，而非 `fasterWhisperModelsPath` 键的字面变化。设置/清除统一目录导致 CT2 有效路径变化、清空单独设置恢复跟随，均 MUST 触发重启；CT2 存在单独设置时仅变更统一目录 MUST 不触发。
+Python 运行时重启判定 SHALL 同时基于 faster-whisper **有效模型根目录**（完整解析链结果）与**有效自包含运行时根目录**在设置写入前后的变化，而非 `fasterWhisperModelsPath` 或 `storageRoot` 键的字面变化。任一路径变化均 MUST 触发停止运行时；两者均未变化时 MUST 不触发。
 
 #### Scenario: 设置统一目录触发重启
 
@@ -128,16 +147,21 @@ Python 运行时重启判定 SHALL 基于 faster-whisper **有效根目录**（�
 - **WHEN** 用户清除 `fasterWhisperModelsPath`（恢复跟随）且有效路径因此变化
 - **THEN** Python 运行时被重启
 
-#### Scenario: 有效路径未变不重启
+#### Scenario: CT2 单独设置时统一目录变化仍停止旧运行时
 
-- **WHEN** CT2 已有单独设置 `E:\ct2`，用户变更统一存储目录
+- **WHEN** CT2 已有单独设置 `E:\ct2`，用户将统一存储目录从 `D:\SmartSub` 改为 `F:\SmartSub`
+- **THEN** CT2 模型路径保持 `E:\ct2`，但自包含运行时根从 `D:\SmartSub\py-engines` 变为 `F:\SmartSub\py-engines`，因此 Python 运行时被停止
+
+#### Scenario: 两个有效路径均未变不重启
+
+- **WHEN** 用户仅修改语言或其他不影响 CT2 模型根与自包含运行时根的设置
 - **THEN** Python 运行时不重启
 
 ### Requirement: 不迁移语义与手动迁移引导
 
-设置、变更或清除统一存储目录 MUST 不移动任何已有模型与临时文件；旧目录内容原样保留，新目录按需创建。变更成功且新旧基座不同时，系统 SHALL 展示「新旧位置对照」对话框：包含旧位置与新位置路径、「打开旧目录」与「打开新目录」操作、子目录同名可整体复制的迁移说明、以及单独设置引擎不受影响的注记；「打开旧目录」在旧目录已不存在时 MUST 报错且不创建目录。
+设置、变更或清除统一存储目录 MUST 不移动任何已有模型、运行时与临时文件；旧目录内容原样保留，新目录按需创建。Electron Store 配置（包括 `config.json` 中的应用设置与自定义服务）MUST 继续留在 userData，且 `storageRoot` MUST NOT 改写 Electron 的 userData 路径。变更成功且新旧基座不同时，系统 SHALL 展示「新旧位置对照」对话框：包含旧位置与新位置路径、「打开旧目录」与「打开新目录」操作、仅复制 `whisper-models`、`faster-whisper-models`、`models`、`py-engines` 子目录的迁移说明、不得移动整个旧目录或 `config.json` 的警示、以及单独设置引擎不受影响的注记；「打开旧目录」在旧目录已不存在时 MUST 报错且不创建目录。
 
 #### Scenario: 换根目录不动旧文件并展示对照引导
 
 - **WHEN** 用户把统一存储目录从未设置改为 `D:\SmartSub`，userData 下已有已下载模型
-- **THEN** userData 下文件原样保留，引擎页按新路径重扫模型清单（新路径下未搬移的模型显示为未安装），并弹出新旧位置对照对话框（旧位置为 userData，新位置为 `D:\SmartSub`），两个打开目录按钮分别定位到对应位置
+- **THEN** userData 下文件原样保留，引擎页按新路径重扫模型与运行时状态（新路径下未复制的模型和运行时显示为未安装），并弹出新旧位置对照对话框（旧位置为 userData，新位置为 `D:\SmartSub`），两个打开目录按钮分别定位到对应位置，文案明确配置仍留在旧位置

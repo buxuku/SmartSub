@@ -7,6 +7,8 @@ import type {
   PyEngineVariant,
 } from '../../../types/engine';
 import { resolveReleaseBaseUrl } from '../download/sources';
+import { store } from '../store';
+import { resolvePyEnginesRoot } from '../storagePaths';
 import { getParkedSlotName } from './parking';
 
 /** 独立发布仓库：https://github.com/buxuku/smartsub-py-engine */
@@ -86,12 +88,13 @@ export function getRuntimePythonPath(runtimeDir: string): string {
     : path.join(runtimeDir, 'bin', 'python3');
 }
 
-/** 所有引擎运行时的根目录：userData/py-engines */
+/** 所有引擎运行时的根目录：storageRoot/py-engines > userData/py-engines */
 export function getPyEnginesRoot(): string {
-  return path.join(app.getPath('userData'), 'py-engines');
+  return resolvePyEnginesRoot(store.get('settings'), app.getPath('userData'))
+    .path;
 }
 
-/** 单个引擎运行时目录：userData/py-engines/<engineId> */
+/** 单个引擎运行时目录：<有效运行时根>/<engineId> */
 export function getEngineDir(engineId: PyEngineId = DEFAULT_ENGINE_ID): string {
   return path.join(getPyEnginesRoot(), engineId);
 }
@@ -137,7 +140,7 @@ export function isRuntimeInstalled(
 // 切回时目录互换即可免下载完成（决策纯逻辑见 parking.ts）。
 // ---------------------------------------------------------------------------
 
-/** 驻留副本根目录：userData/py-engines/.parked（与引擎目录同盘，保证 rename 原子） */
+/** 驻留副本根目录：<有效运行时根>/.parked（与引擎目录同盘，保证 rename 原子） */
 export function getPyEngineParkedRoot(): string {
   return path.join(getPyEnginesRoot(), '.parked');
 }
