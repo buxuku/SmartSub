@@ -403,6 +403,7 @@ export class PyEngineDownloader {
       if (
         existingState &&
         existingState.url === url &&
+        existingState.tempPath === tempPath &&
         fs.existsSync(existingState.tempPath)
       ) {
         downloadedPath = existingState.tempPath;
