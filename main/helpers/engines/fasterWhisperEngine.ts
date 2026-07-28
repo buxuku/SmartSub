@@ -36,6 +36,7 @@ import {
 } from './transcribeShared';
 import { resolveEffectiveSettings } from './outcomePresets';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
+import { buildFasterWhisperAdvancedParams } from '../../../types/transcriptionParams';
 
 /**
  * 判定是否为 CUDA 运行库（cuBLAS/cuDNN/cudart）缺失或无法加载类错误。
@@ -216,6 +217,10 @@ async function transcribeFasterWhisper(
     vad_speech_pad_ms: getNumericSetting(settings.vadSpeechPad, 200),
     // 抗幻觉/抗重复参数（仅开关开启时注入；关闭则不下发，sidecar 回落默认）。
     ...getFasterWhisperAntiRepetitionParams(settings),
+    // 任务级高级解码参数：只下发新版 sidecar 契约支持且通过类型/范围校验的显式值；
+    // 未设置或非法值保持缺键，完整保留 faster-whisper 默认行为。旧 runtime 可能
+    // 忽略新增字段，UI 会明确提示用户先更新。
+    ...buildFasterWhisperAdvancedParams(formData),
   };
 
   const signal = ctx.signal ?? getTaskContext()?.signal;

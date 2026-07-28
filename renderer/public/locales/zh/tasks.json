@@ -171,6 +171,47 @@
     "off": "已关闭：使用引擎默认（保留上文连贯性）；长视频或静音处可能出现重复或幻觉字幕。",
     "hint": "遇到字幕大段重复/鬼畜时开启。全局设置，对 faster-whisper 与 whisper.cpp 同时生效。"
   },
+  "fasterWhisperAdvanced": {
+    "title": "高级解码参数",
+    "summary": "可选；留空使用引擎默认值",
+    "description": "仅对当前 faster-whisper 任务生效。参数会先经过类型和范围校验；留空不会下发任何覆盖值，仍使用引擎默认策略。",
+    "runtimeNote": "需要使用包含高级参数透传支持的最新版 faster-whisper runtime；较旧 runtime 可能忽略部分设置。可在资源中心 → 引擎检查并更新。",
+    "rangeError": "请输入 {{min}} 到 {{max}} 之间的数字",
+    "integerRangeError": "请输入 {{min}} 到 {{max}} 之间的整数",
+    "reset": "全部恢复为引擎默认值",
+    "fields": {
+      "beam_size": {
+        "label": "束搜索宽度（Beam size）",
+        "placeholder": "引擎默认：5",
+        "hint": "范围 1–20 的整数。值越大通常识别更稳，但会增加计算量和耗时。"
+      },
+      "best_of": {
+        "label": "候选采样数（Best of）",
+        "placeholder": "引擎默认：5",
+        "hint": "范围 1–20 的整数。在非零温度采样时保留更多候选，值越大计算量越高。"
+      },
+      "temperature": {
+        "label": "采样温度",
+        "placeholder": "引擎默认：0.0 → 1.0 自适应回退",
+        "hint": "范围 0–1。越高越随机；设置单个值会替代引擎默认的多温度回退序列。"
+      },
+      "compression_ratio_threshold": {
+        "label": "压缩比阈值",
+        "placeholder": "引擎默认：2.4",
+        "hint": "范围 0–10。文本压缩比超过该值时会触发解码回退；过低可能增加重试。"
+      },
+      "log_prob_threshold": {
+        "label": "平均对数概率阈值",
+        "placeholder": "引擎默认：-1.0",
+        "hint": "范围 -5–0。平均对数概率低于该值时会触发解码回退。"
+      },
+      "no_speech_threshold": {
+        "label": "无语音阈值",
+        "placeholder": "引擎默认：0.6",
+        "hint": "范围 0–1。与对数概率阈值共同判断是否跳过无语音片段；越低越容易跳过。"
+      }
+    }
+  },
   "subtitleLength": {
     "label": "字幕断句方式",
     "modeSmart": "智能断句（推荐）",

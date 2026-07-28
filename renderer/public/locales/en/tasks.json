@@ -171,6 +171,47 @@
     "off": "Off: engine defaults (keeps cross-segment coherence); long videos or silence may produce repeated or hallucinated lines.",
     "hint": "Turn on when subtitles loop or repeat heavily. Global setting; applies to both faster-whisper and whisper.cpp."
   },
+  "fasterWhisperAdvanced": {
+    "title": "Advanced decoding parameters",
+    "summary": "Optional; leave blank to use engine defaults",
+    "description": "Applies only to the current faster-whisper task. Values are type- and range-checked before dispatch. Blank fields send no overrides and preserve the engine's default strategy.",
+    "runtimeNote": "Requires the latest faster-whisper runtime with advanced-parameter forwarding. Older runtimes may ignore some settings; check for updates in Resources → Engines.",
+    "rangeError": "Enter a number between {{min}} and {{max}}",
+    "integerRangeError": "Enter a whole number between {{min}} and {{max}}",
+    "reset": "Reset all to engine defaults",
+    "fields": {
+      "beam_size": {
+        "label": "Beam size",
+        "placeholder": "Engine default: 5",
+        "hint": "Whole number from 1–20. Higher values can improve decoding stability at the cost of more computation and time."
+      },
+      "best_of": {
+        "label": "Best of",
+        "placeholder": "Engine default: 5",
+        "hint": "Whole number from 1–20. Keeps more candidates when sampling above zero temperature; higher values cost more computation."
+      },
+      "temperature": {
+        "label": "Sampling temperature",
+        "placeholder": "Engine default: adaptive 0.0 → 1.0 fallback",
+        "hint": "Range 0–1. Higher is more random; a single value replaces the engine's default multi-temperature fallback sequence."
+      },
+      "compression_ratio_threshold": {
+        "label": "Compression ratio threshold",
+        "placeholder": "Engine default: 2.4",
+        "hint": "Range 0–10. Decoding falls back when text compression exceeds this value; low values may cause more retries."
+      },
+      "log_prob_threshold": {
+        "label": "Average log-probability threshold",
+        "placeholder": "Engine default: -1.0",
+        "hint": "Range -5–0. Decoding falls back when the average log probability is below this value."
+      },
+      "no_speech_threshold": {
+        "label": "No-speech threshold",
+        "placeholder": "Engine default: 0.6",
+        "hint": "Range 0–1. Works with the log-probability threshold to skip no-speech segments; lower values skip more readily."
+      }
+    }
+  },
   "subtitleLength": {
     "label": "Subtitle line breaking",
     "modeSmart": "Smart segmentation (recommended)",
