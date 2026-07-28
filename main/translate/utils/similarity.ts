@@ -5,11 +5,19 @@
  * 回显必然与该 ID 的真实原文对不上，以归一化编辑相似度做确定性检测。
  */
 
-/** 归一化：小写、去掉标点与空白，仅保留字母数字与 CJK，弱化格式差异。 */
+const NON_LETTER_OR_NUMBER = new RegExp('[^\\p{L}\\p{N}]+', 'gu');
+
+/**
+ * 归一化：兼容 Unicode 的大小写与宽度归一，去掉标点和空白。
+ *
+ * 使用 Unicode 字符类别而不是枚举部分脚本，避免俄语、阿拉伯语等内容
+ * 在比较前被清空。
+ */
 export function normalizeForComparison(text: string): string {
   return (text || '')
+    .normalize('NFKC')
     .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]+/g, '');
+    .replace(NON_LETTER_OR_NUMBER, '');
 }
 
 /** 两行 DP 的 Levenshtein 距离，批次内逐条比对为毫秒级。 */

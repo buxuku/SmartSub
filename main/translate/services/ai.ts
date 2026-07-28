@@ -16,9 +16,14 @@ import {
 } from '../utils/aiResponseParser';
 import {
   buildRepairRequest,
+  exceedsOneThird,
   validateAnchoredBatch,
   REPAIR_MAX_ATTEMPTS,
 } from '../utils/alignment';
+import {
+  isExactSourceCopyCandidate,
+  isLikelyUntranslated,
+} from '../utils/untranslated';
 import {
   BATCH_SCHEMA_MAX_PROPERTIES,
   makeBatchSchema,
@@ -69,6 +74,7 @@ interface RepairEntryParams {
   sourceLanguage: string;
   targetLanguage: string;
   targetLanguageName: string;
+  rejectExactSourceCopy?: boolean;
   signal?: AbortSignal;
 }
 
@@ -80,6 +86,7 @@ async function repairSubtitleEntry(
   params: RepairEntryParams,
 ): Promise<string | undefined> {
   const { subtitle, batch, accepted, targetLanguageName } = params;
+  const sourceText = subtitle.content.join('\n');
   const { prompt: repairPrompt, schema: repairSchema } = buildRepairRequest(
     subtitle,
     batch,
@@ -90,8 +97,12 @@ async function repairSubtitleEntry(
   for (let attempt = 0; attempt < REPAIR_MAX_ATTEMPTS; attempt++) {
     throwIfTaskCancelled();
     try {
+      const attemptPrompt =
+        attempt === 0
+          ? repairPrompt
+          : `${repairPrompt}\n\n上一次结果仍为空、无效或直接重复了原文。请实际翻译目标句后再返回。`;
       const responseOrigin = await params.translator(
-        repairPrompt,
+        attemptPrompt,
         params.translationConfig,
         params.sourceLanguage,
         params.targetLanguage,
@@ -103,7 +114,29 @@ async function repairSubtitleEntry(
         : responseOrigin;
       const parsed = parseAIAnchoredTranslationResponse(responseText ?? '');
       const translation = parsed[subtitle.id]?.translation?.trim();
-      if (translation) return translation;
+      if (!translation) continue;
+      if (
+        isLikelyUntranslated(
+          sourceText,
+          translation,
+          params.sourceLanguage,
+          params.targetLanguage,
+        ) ||
+        (params.rejectExactSourceCopy &&
+          isExactSourceCopyCandidate(
+            sourceText,
+            translation,
+            params.sourceLanguage,
+            params.targetLanguage,
+          ))
+      ) {
+        logMessage(
+          `定点补翻条目 ${subtitle.id} 第 ${attempt + 1}/${REPAIR_MAX_ATTEMPTS} 次仍疑似返回原文，继续重试`,
+          'warning',
+        );
+        continue;
+      }
+      return translation;
     } catch (error) {
       if (isTaskCancelledError(error)) throw error;
       throwIfSignalCancelled(params.signal);
@@ -208,8 +241,8 @@ export async function handleAIBatchTranslation(
 
         if (retryCount > 0 || alignmentRetryUsed) {
           translationContent += echoEnabled
-            ? '\n\n上一次响应存在错位或无法解析。请只返回一个 JSON 对象：键必须与输入字幕 ID 完全一致，每个键的值是 {"src": ..., "tr": ...}。注意：src 必须逐字复制输入中该 ID 对应的原文（保持原语言，绝对不能填译文），tr 才是译文；禁止合并或拆分条目，不要返回 markdown、解释或思考过程。'
-            : '\n\n上一次响应无法解析。请只返回一个 JSON 对象，键必须是输入字幕 ID，值必须是翻译结果；不要返回 markdown、解释、注释或思考过程。';
+            ? '\n\n上一次响应存在错位、未翻译或无法解析。请只返回一个 JSON 对象：键必须与输入字幕 ID 完全一致，每个键的值是 {"src": ..., "tr": ...}。注意：src 必须逐字复制输入中该 ID 对应的原文（保持原语言，绝对不能填译文），tr 才是目标语言译文且不能直接复制原文；禁止合并或拆分条目，不要返回 markdown、解释或思考过程。'
+            : '\n\n上一次响应存在未翻译或无法解析。请只返回一个 JSON 对象，键必须是输入字幕 ID，值必须是目标语言翻译结果且不能直接复制原文；不要返回 markdown、解释、注释或思考过程。';
         }
 
         const systemPrompt = renderGlossarySystemPrompt(
@@ -274,32 +307,33 @@ export async function handleAIBatchTranslation(
           parsedContent,
           batch,
           echoEnabled,
+          { sourceLanguage, targetLanguage },
         );
 
-        if (validation.echoChecked > 0) {
+        if (validation.echoChecked > 0 || validation.untranslated.length > 0) {
           logMessage(
-            `批次 ${currentBatchIndex}/${totalBatches} 回显校验 ${validation.echoChecked}/${batch.length} 条，检出待修复 ${validation.flagged.length} 条`,
+            `批次 ${currentBatchIndex}/${totalBatches} 回显校验 ${validation.echoChecked}/${batch.length} 条，疑似未翻译 ${validation.untranslated.length} 条（批次证据升级 ${validation.promotedExactCopies.length} 条，保守放行弱证据 ${validation.weakUntranslated.length} 条），检出待修复 ${validation.flagged.length} 条`,
             'info',
           );
         }
 
         // 大面积错位（>1/3）→ 整批重试一次（不消耗 maxRetries 次数）
         if (
-          validation.flagged.length > Math.ceil(batch.length / 3) &&
+          exceedsOneThird(validation.flagged.length, batch.length) &&
           !alignmentRetryUsed
         ) {
           alignmentRetryUsed = true;
           logMessage(
-            `批次 ${currentBatchIndex}/${totalBatches} 错位/缺失 ${validation.flagged.length}/${batch.length} 条超过阈值，整批重试一次`,
+            `批次 ${currentBatchIndex}/${totalBatches} 错位/缺失/未翻译 ${validation.flagged.length}/${batch.length} 条超过阈值，整批重试一次`,
             'warning',
           );
           continue;
         }
 
-        // 个别错位/空值 → 单条定点补翻（design D7）
+        // 个别错位/空值/未翻译 → 单条定点补翻（design D7）
         if (validation.flagged.length > 0) {
           logMessage(
-            `批次 ${currentBatchIndex}/${totalBatches} 对 ${validation.flagged.length} 条错位/空值条目定点补翻: ${validation.flagged.join(', ')}`,
+            `批次 ${currentBatchIndex}/${totalBatches} 对 ${validation.flagged.length} 条错位/空值/未翻译条目定点补翻: ${validation.flagged.join(', ')}`,
             'warning',
           );
           for (const flaggedId of validation.flagged) {
@@ -314,6 +348,8 @@ export async function handleAIBatchTranslation(
               sourceLanguage,
               targetLanguage,
               targetLanguageName,
+              rejectExactSourceCopy:
+                validation.untranslated.includes(flaggedId),
               signal: config.signal,
             });
             if (repaired !== undefined) {
@@ -348,7 +384,7 @@ export async function handleAIBatchTranslation(
         batchSuccess = true;
 
         logMessage(
-          `批次 ${currentBatchIndex}/${totalBatches} 翻译完成（回显校验 ${validation.echoChecked} 条，补翻 ${validation.flagged.length} 条，失败 ${unresolved.length} 条）`,
+          `批次 ${currentBatchIndex}/${totalBatches} 翻译完成（回显校验 ${validation.echoChecked} 条，疑似未翻译 ${validation.untranslated.length} 条，补翻 ${validation.flagged.length} 条，失败 ${unresolved.length} 条）`,
           'info',
         );
       } catch (error) {
