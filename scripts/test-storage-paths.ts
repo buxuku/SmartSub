@@ -5,6 +5,7 @@
  * 覆盖：
  * - resolveStorageLocation 三级优先级与 source 判定、trim 判空语义
  * - STORAGE_SUBPATHS 逐引擎子路径映射（resolveModelRoot）
+ * - faster-whisper 自包含运行时跟随 storageRoot，并在未设置时回退 userData
  * - resolveTempDir 三级优先级（自定义 > storageRoot/temp > 系统默认）
  * - containsCjk / validateStoragePath 正反例（中文/CJK 标点/全角/纯英文/西文变音符/空串）
  * - isFactoryDefaultGgmlPath 归一化判定（等于出厂默认删除、自定义保留）
@@ -14,6 +15,7 @@ import path from 'path';
 import {
   resolveStorageLocation,
   resolveModelRoot,
+  resolvePyEnginesRoot,
   resolveTempDir,
   isFactoryDefaultGgmlPath,
   sanitizeStoragePathPatch,
@@ -145,6 +147,25 @@ function run(): void {
     ),
     { path: '/ggml/override', source: 'override' },
     'modelRoot: ggml override key mapped correctly',
+  );
+
+  // ==========================================================
+  // faster-whisper 自包含运行时：storageRoot > userData
+  // ==========================================================
+  eq(
+    resolvePyEnginesRoot({ storageRoot: ROOT }, USER_DATA),
+    { path: path.join(ROOT, 'py-engines'), source: 'storageRoot' },
+    'py-engines: runtime follows storageRoot',
+  );
+  eq(
+    resolvePyEnginesRoot({ storageRoot: '   ' }, USER_DATA),
+    { path: path.join(USER_DATA, 'py-engines'), source: 'default' },
+    'py-engines: blank storageRoot falls back to userData',
+  );
+  eq(
+    resolvePyEnginesRoot(undefined, USER_DATA),
+    { path: path.join(USER_DATA, 'py-engines'), source: 'default' },
+    'py-engines: missing settings keeps legacy default',
   );
 
   // ==========================================================

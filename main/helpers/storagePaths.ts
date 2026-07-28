@@ -37,6 +37,9 @@ export const STORAGE_SUBPATHS: Record<StorageKind, string[]> = {
   tts: ['models', 'tts'],
 };
 
+/** faster-whisper 自包含运行时在统一根目录与 userData 下共用的子路径。 */
+export const PY_ENGINES_SUBPATH = ['py-engines'];
+
 /** trim 判空语义对齐 modelImport.resolveOverridePath：空串/仅空白/undefined 视为未设置。 */
 function normalized(value: string | undefined | null): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -101,6 +104,24 @@ export function resolveModelRoot(
     override: settings?.[OVERRIDE_KEYS[kind]] as string | undefined,
     storageRoot: settings?.storageRoot,
     subpath: STORAGE_SUBPATHS[kind],
+    defaultBase: userDataPath,
+  });
+}
+
+/**
+ * faster-whisper 自包含运行时根目录：
+ *   storageRoot/py-engines > userData/py-engines
+ *
+ * 运行时没有单独覆盖设置；与模型目录分开解析，避免把 CT2 模型覆盖路径
+ * 误当作运行时基座。
+ */
+export function resolvePyEnginesRoot(
+  settings: Pick<StoragePathSettings, 'storageRoot'> | undefined | null,
+  userDataPath: string,
+): ResolvedStorageLocation {
+  return resolveStorageLocation({
+    storageRoot: settings?.storageRoot,
+    subpath: PY_ENGINES_SUBPATH,
     defaultBase: userDataPath,
   });
 }

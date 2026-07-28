@@ -29,6 +29,7 @@ import { syncTaskPowerSaveBlocker } from './powerSaveManager';
 import {
   isFactoryDefaultGgmlPath,
   resolveModelRoot,
+  resolvePyEnginesRoot,
   sanitizeStoragePathPatch,
 } from './storagePaths';
 
@@ -191,8 +192,9 @@ export function setupStoreHandlers() {
     if (sanitized?.preventSleepDuringTask !== undefined) {
       syncTaskPowerSaveBlocker();
     }
-    // Python 运行时重启判定（design D7）：比较 CT2「有效根目录」写入前后变化，
-    // 覆盖改单独覆盖、设置/清除统一目录、清空覆盖恢复跟随三类场景。
+    // Python 运行时重启判定：比较 CT2 模型根与自包含运行时根写入前后的变化。
+    // 运行时根单独比较很重要：即使 CT2 有独立覆盖，storageRoot 变化仍会把
+    // py-engines 切到新位置，必须先停掉旧目录中的进程并释放文件句柄。
     const userDataPath = app.getPath('userData');
     const preCt2Root = resolveModelRoot('ct2', preSettings, userDataPath).path;
     const nextCt2Root = resolveModelRoot(
@@ -200,10 +202,23 @@ export function setupStoreHandlers() {
       nextSettings,
       userDataPath,
     ).path;
-    if (preCt2Root !== nextCt2Root) {
+    const preRuntimeRoot = resolvePyEnginesRoot(preSettings, userDataPath).path;
+    const nextRuntimeRoot = resolvePyEnginesRoot(
+      nextSettings,
+      userDataPath,
+    ).path;
+    if (preCt2Root !== nextCt2Root || preRuntimeRoot !== nextRuntimeRoot) {
       await shutdownPythonRuntime();
+      const changes = [
+        preCt2Root !== nextCt2Root
+          ? `models ${preCt2Root} -> ${nextCt2Root}`
+          : '',
+        preRuntimeRoot !== nextRuntimeRoot
+          ? `runtime ${preRuntimeRoot} -> ${nextRuntimeRoot}`
+          : '',
+      ].filter(Boolean);
       logMessage(
-        `faster-whisper effective models path changed (${preCt2Root} -> ${nextCt2Root}), python engine restarted`,
+        `faster-whisper storage changed (${changes.join('; ')}), python engine restarted`,
         'info',
       );
     }
