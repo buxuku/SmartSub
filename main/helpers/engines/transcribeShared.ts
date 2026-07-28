@@ -1,7 +1,14 @@
 /**
- * 各引擎转写实现共用的纯工具：数值兜底、语言归一、SRT 时间格式化、VAD 设置归一。
- * 不依赖任何引擎实现，供 builtin / faster-whisper / localCli 适配器复用。
+ * 各引擎转写实现共用的纯工具：数值兜底、语言归一、SRT 时间格式化、VAD 设置归一、
+ * 模型外重复护栏。不依赖任何具体引擎实现，供所有 ASR 适配器复用。
  */
+import {
+  applyAsrRepetitionGuard,
+  formatRepetitionGuardDiagnostic,
+  getAsrRepetitionGuardMode,
+  type AsrSubtitleCue,
+  type RepetitionGuardStats,
+} from '../asrRepetitionGuard';
 
 export function getNumericSetting(
   value: unknown,
@@ -69,6 +76,32 @@ export function getFasterWhisperAntiRepetitionParams(
     no_repeat_ngram_size: 3,
     repetition_penalty: 1.1,
     hallucination_silence_threshold: 2.0,
+  };
+}
+
+export interface GuardedAsrSubtitleCues {
+  cues: AsrSubtitleCue[];
+  stats: RepetitionGuardStats;
+  diagnostic: string | null;
+}
+
+/**
+ * 各引擎写 SRT 前的统一出口：根据任务意图启用模型外重复护栏，并生成不含用户文本的诊断。
+ */
+export function guardAsrSubtitleCues(
+  cues: AsrSubtitleCue[],
+  formData: Record<string, unknown> | undefined,
+  effectiveSettings: Record<string, unknown> | undefined,
+  engine: string,
+): GuardedAsrSubtitleCues {
+  const taskMode = getAsrRepetitionGuardMode(formData, effectiveSettings);
+  const result = applyAsrRepetitionGuard(cues, {
+    enabled: taskMode !== 'off',
+    mode: taskMode === 'off' ? 'standard' : taskMode,
+  });
+  return {
+    ...result,
+    diagnostic: formatRepetitionGuardDiagnostic(engine, result.stats),
   };
 }
 

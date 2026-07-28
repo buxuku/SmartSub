@@ -33,6 +33,7 @@ import {
   getNumericSetting,
   getWhisperLanguage,
   getFasterWhisperAntiRepetitionParams,
+  guardAsrSubtitleCues,
 } from './transcribeShared';
 import { resolveEffectiveSettings } from './outcomePresets';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
@@ -336,7 +337,14 @@ async function transcribeFasterWhisper(
     subtitles = segments.map(subtitleCueFromSegment);
   }
   subtitles = trimSubtitleTrailingSilence(subtitles, tempAudioFile);
-  const formattedSrt = formatSrtContent(subtitles);
+  const guarded = guardAsrSubtitleCues(
+    subtitles,
+    formData as Record<string, unknown>,
+    settings,
+    'faster-whisper',
+  );
+  if (guarded.diagnostic) logMessage(guarded.diagnostic, 'warning');
+  const formattedSrt = formatSrtContent(guarded.cues);
   await fs.promises.writeFile(srtFile, formattedSrt);
 
   event.sender.send('taskProgressChange', file, 'extractSubtitle', 100);

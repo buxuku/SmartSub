@@ -23,6 +23,7 @@ import {
 import { resplitSubtitleCues } from '../subtitleSegmentation';
 import { buildQwenParams } from './qwenParams';
 import { resolveEffectiveSettings } from './outcomePresets';
+import { guardAsrSubtitleCues } from './transcribeShared';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
 /** 在途转写 id 集合：任务级并发下可能同时存在多个（排队+执行），取消须精确到 id。 */
@@ -142,7 +143,14 @@ async function transcribeQwen(ctx: TranscribeContext): Promise<string> {
     ),
     tempAudioFile,
   );
-  const formattedSrt = formatSrtContent(subtitles);
+  const guarded = guardAsrSubtitleCues(
+    subtitles,
+    formData as Record<string, unknown>,
+    settings,
+    'qwen',
+  );
+  if (guarded.diagnostic) logMessage(guarded.diagnostic, 'warning');
+  const formattedSrt = formatSrtContent(guarded.cues);
   await fs.promises.writeFile(srtFile, formattedSrt);
 
   event.sender.send('taskProgressChange', file, 'extractSubtitle', 100);
