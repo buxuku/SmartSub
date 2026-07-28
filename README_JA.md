@@ -343,6 +343,12 @@ yarn dev
 
 </details>
 
+## スポンサー
+
+このプロジェクトは以下のスポンサーに支援されています：
+
+<a href="https://m.do.co/c/604498b8a664" target="_blank" rel="noopener noreferrer"><img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" width="201" alt="DigitalOcean" /></a>
+
 ## コミュニティとサポート
 
 このプロジェクトが役立ったら、スターを付けていただくか、作者にコーヒーをおごってください（GitHub アカウントを備考欄にご記入ください）。使い方の質問は WeChat グループへどうぞ。

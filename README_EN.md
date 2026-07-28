@@ -343,6 +343,12 @@ If the native dependencies fail to download automatically (e.g. restricted netwo
 
 </details>
 
+## Sponsors
+
+This project is supported by:
+
+<a href="https://m.do.co/c/604498b8a664" target="_blank" rel="noopener noreferrer"><img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" width="201" alt="DigitalOcean" /></a>
+
 ## Community and support
 
 If this project helps you, a star is appreciated — or buy the author a coffee (please mention your GitHub account). For usage questions, the WeChat group is open to everyone.
