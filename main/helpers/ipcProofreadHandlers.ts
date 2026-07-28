@@ -41,12 +41,8 @@ import {
   TranslationResult,
   TranslatorFunction,
 } from '../translate/types';
-import {
-  runWithTaskContext,
-  isTaskCancelledError,
-  throwIfSignalCancelled,
-  waitForTaskDelay,
-} from './taskContext';
+import { runWithTaskContext, isTaskCancelledError } from './taskContext';
+import { runSubtitleCorrection } from './subtitleCorrectionService';
 import {
   buildGlossaryPromptBlock,
   glossaryConflictFingerprint,
@@ -757,240 +753,54 @@ Only respond with the translation, nothing else.`;
 
         const sourceLanguage = userConfig.sourceLanguage || 'en';
         const targetLanguage = userConfig.targetLanguage || 'zh';
-        const glossaryResolution =
-          mode === 'translation' ? getActiveGlossaryResolution() : undefined;
-        if (glossaryResolution) {
-          logGlossaryConflicts(
-            glossaryResolution.conflicts,
-            '校对页批量 AI 优化',
-          );
-        }
-        const glossaryEntries = glossaryResolution?.entries || [];
 
-        // 构建默认批量优化提示词
-        const defaultBatchPrompt = `You are a professional subtitle translator and proofreader. Optimize the following subtitle translations.
-
-For each subtitle, improve the translation to:
-1. More accurately convey the original meaning
-2. Use natural and fluent expressions
-3. Be appropriate for subtitle display (concise but complete)
-4. Maintain the original tone and style
-
-Input format: JSON object with subtitle IDs as keys and {source, target} as values
-Output format: JSON object with the same IDs and optimized translations as values
-
-IMPORTANT: You MUST return a valid JSON object. Do NOT include any text before or after the JSON. Only output the JSON object.`;
-
-        const results: Array<{
-          id: string;
-          index: number;
-          sourceContent: string;
-          originalTarget: string;
-          optimizedTarget: string;
-          status: 'success' | 'error' | 'skipped';
-          error?: string;
-        }> = [];
-
+        // 批处理循环已抽取到共享校正服务（openspec: add-ai-subtitle-refine D7）：
+        // legacyMap 协议保持既有请求/响应格式、默认提示词与逐项提取规则，
+        // 校对台交互与用户缓存的自定义提示词行为不变；管线遍 B 走同一服务的
+        // anchored 协议，消除两套批处理逻辑漂移。
         const totalBatches = Math.ceil(subtitles.length / batchSize);
-        let processedCount = 0;
-        let cancelled = false;
-
-        // 分批处理
-        for (let i = 0; i < subtitles.length; i += batchSize) {
-          // 每批边界检查取消信号
-          if (abortController.signal.aborted) {
-            cancelled = true;
-            break;
-          }
-          const batch = subtitles.slice(i, i + batchSize);
-          const currentBatchIndex = Math.floor(i / batchSize) + 1;
-          const glossaryMatches = matchGlossaryEntries(
-            glossaryEntries,
-            batch.map((subtitle) => subtitle.sourceContent),
-          );
-          const glossarySelection =
-            selectGlossaryPromptEntries(glossaryMatches);
-          const glossaryBlock = buildGlossaryPromptBlock(
-            glossarySelection.included,
-          );
-          logGlossaryMatches(
-            glossarySelection.included,
-            `校对页批量 AI 优化 ${currentBatchIndex}/${totalBatches}`,
-            glossarySelection.omittedCount,
-          );
-          let retryCount = 0;
-          let batchSuccess = false;
-
-          logMessage(
-            `Processing batch ${currentBatchIndex}/${totalBatches} with ${batch.length} subtitles`,
-            'info',
-          );
-
-          // 发送进度更新
-          const progress = Math.round(
-            (processedCount / subtitles.length) * 100,
-          );
-          event.sender.send('batchOptimizeProgress', {
-            progress,
-            currentBatch: currentBatchIndex,
-            totalBatches,
-            processedCount,
-            totalCount: subtitles.length,
-          });
-
-          while (!batchSuccess && retryCount <= maxRetries) {
-            if (abortController.signal.aborted) {
-              cancelled = true;
-              break;
-            }
-            try {
-              // 构建批量输入
-              const batchInput: Record<
-                string,
-                { source: string; target: string }
-              > = {};
-              batch.forEach((sub) => {
-                batchInput[sub.id] = {
-                  source: sub.sourceContent,
-                  target: sub.targetContent || '',
-                };
-              });
-
-              // 构建提示词
-              let optimizePrompt = customPrompt || defaultBatchPrompt;
-              optimizePrompt = optimizePrompt
-                .replace(/\{\{sourceLanguage\}\}/g, sourceLanguage)
-                .replace(/\{\{targetLanguage\}\}/g, targetLanguage);
-
-              const fullPrompt = `${optimizePrompt}\n\nSubtitles to optimize:\n${JSON.stringify(batchInput, null, 2)}`;
-
-              // 配置翻译器
-              const optimizedProvider = {
-                ...provider,
-                systemPrompt: injectGlossaryPromptBlock(
-                  'You are a professional subtitle optimizer. Output ONLY valid JSON. No explanations, no markdown, just the JSON object.',
-                  glossaryBlock,
-                ),
-                useJsonMode: true,
-                structuredOutput: 'disabled' as const,
-              };
-
-              logMessage(
-                `Batch ${currentBatchIndex} attempt ${retryCount + 1}/${maxRetries + 1}`,
-                'info',
-              );
-
-              const response = await translator(
-                fullPrompt,
-                optimizedProvider,
-                sourceLanguage,
-                targetLanguage,
-                { signal: abortController.signal },
-              );
-              throwIfSignalCancelled(abortController.signal);
-              const responseText = Array.isArray(response)
-                ? response.join('\n')
-                : response;
-
-              logMessage(
-                `Batch ${currentBatchIndex} response: ${responseText}`,
-                'info',
-              );
-
-              // 解析响应
-              const parsedResponse = parseOptimizationResponse(responseText);
-
-              if (parsedResponse && typeof parsedResponse === 'object') {
-                // 处理结果
-                batch.forEach((sub) => {
-                  const optimized = parsedResponse[sub.id];
-                  if (optimized !== undefined) {
-                    results.push({
-                      id: sub.id,
-                      index: sub.index,
-                      sourceContent: sub.sourceContent,
-                      originalTarget: sub.targetContent,
-                      optimizedTarget:
-                        typeof optimized === 'string'
-                          ? optimized
-                          : optimized?.target ||
-                            optimized?.translation ||
-                            String(optimized),
-                      status: 'success',
-                    });
-                  } else {
-                    results.push({
-                      id: sub.id,
-                      index: sub.index,
-                      sourceContent: sub.sourceContent,
-                      originalTarget: sub.targetContent,
-                      optimizedTarget: sub.targetContent,
-                      status: 'skipped',
-                      error: '未在响应中找到对应结果',
-                    });
-                  }
-                });
-
-                processedCount += batch.length;
-                batchSuccess = true;
-                logMessage(
-                  `Batch ${currentBatchIndex}/${totalBatches} completed successfully`,
-                  'info',
-                );
-              } else {
-                throw new Error('无法解析 AI 响应');
-              }
-            } catch (error) {
-              if (isTaskCancelledError(error)) {
-                cancelled = true;
-                break;
-              }
-              if (abortController.signal.aborted) {
-                cancelled = true;
-                break;
-              }
-              retryCount++;
-              if (retryCount <= maxRetries) {
-                logMessage(
-                  `Batch ${currentBatchIndex} failed, retry ${retryCount}/${maxRetries}: ${error}`,
-                  'warning',
-                );
-                try {
-                  await waitForTaskDelay(
-                    1000 * retryCount,
-                    abortController.signal,
-                  );
-                } catch (delayError) {
-                  if (isTaskCancelledError(delayError)) {
-                    cancelled = true;
-                    break;
-                  }
-                  throw delayError;
-                }
-              } else {
-                logMessage(
-                  `Batch ${currentBatchIndex} failed after ${maxRetries} retries: ${error}`,
-                  'error',
-                );
-                // 批次失败，标记所有字幕为错误
-                batch.forEach((sub) => {
-                  results.push({
-                    id: sub.id,
-                    index: sub.index,
-                    sourceContent: sub.sourceContent,
-                    originalTarget: sub.targetContent,
-                    optimizedTarget: sub.targetContent,
-                    status: 'error',
-                    error: String(error),
-                  });
-                });
-                processedCount += batch.length;
-                batchSuccess = true; // 继续下一批
-              }
-            }
-          }
-          if (cancelled) break;
-        }
+        const run = await runSubtitleCorrection({
+          items: subtitles.map((sub) => ({
+            id: sub.id,
+            index: sub.index,
+            source: sub.sourceContent,
+            target: sub.targetContent,
+          })),
+          provider,
+          translator: translator as unknown as TranslatorFunction,
+          mode,
+          protocol: 'legacyMap',
+          customPrompt,
+          sourceLanguage,
+          targetLanguage,
+          batchSize,
+          maxRetries,
+          signal: abortController.signal,
+          useGlossary: mode === 'translation',
+          glossaryLabel: '校对页批量 AI 优化',
+          onBatchProgress: (info) => {
+            event.sender.send('batchOptimizeProgress', {
+              progress: Math.round(
+                (info.processedCount / info.totalCount) * 100,
+              ),
+              currentBatch: info.currentBatch,
+              totalBatches: info.totalBatches,
+              processedCount: info.processedCount,
+              totalCount: info.totalCount,
+            });
+          },
+        });
+        const cancelled = run.cancelled;
+        const processedCount = run.processedCount;
+        const results = run.results.map((r) => ({
+          id: r.id,
+          index: r.index ?? 0,
+          sourceContent: r.source,
+          originalTarget: r.originalTarget,
+          optimizedTarget: r.corrected,
+          status: r.status,
+          ...(r.error ? { error: r.error } : {}),
+        }));
 
         // 发送完成进度
         event.sender.send('batchOptimizeProgress', {
@@ -1143,43 +953,4 @@ IMPORTANT: You MUST return a valid JSON object. Do NOT include any text before o
   );
 
   logMessage('Proofread IPC handlers initialized', 'info');
-}
-
-// 辅助函数：解析优化响应
-function parseOptimizationResponse(
-  response: string,
-): Record<string, any> | null {
-  const cleanResponse = response
-    .replace(/<think>[\s\S]*?<\/think>/g, '')
-    .trim();
-
-  // 尝试直接解析
-  try {
-    return JSON.parse(cleanResponse);
-  } catch {}
-
-  // 尝试提取 JSON 块
-  const jsonMatch = cleanResponse.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) {
-    try {
-      return JSON.parse(jsonMatch[1].trim());
-    } catch {}
-  }
-
-  // 尝试找到 JSON 对象
-  const objectMatch = cleanResponse.match(/\{[\s\S]*\}/);
-  if (objectMatch) {
-    try {
-      return JSON.parse(objectMatch[0]);
-    } catch {
-      // 尝试修复常见的 JSON 错误
-      try {
-        const { jsonrepair } = require('jsonrepair');
-        const repaired = jsonrepair(objectMatch[0]);
-        return JSON.parse(repaired);
-      } catch {}
-    }
-  }
-
-  return null;
 }

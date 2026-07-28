@@ -58,6 +58,7 @@ Online video **download** / local media → **transcribe** → **translate** →
 - Batch subtitle generation for a wide range of video / audio formats, with configurable concurrency
 - 7 engine families, switchable per task: built-in `whisper.cpp`, `faster-whisper`, `FunASR`, `Qwen3-ASR`, `FireRedASR`, your local `Whisper CLI`, plus GPU-free Cloud ASR (8 providers)
 - Local engines are fully offline — nothing gets uploaded; FunASR / FireRedASR shine on Chinese content
+- Optional AI subtitle refine: LLM semantic segmentation + batch correction — lines are regrouped by meaning while timing stays word-accurate (no dangling connectives, numbers never split by pauses); correction fixes homophones, removes fillers and normalizes punctuation. Defaults to your AI translation provider (free with local Ollama) and falls back to rule-based segmentation on failure
 - Simplified/Traditional Chinese conversion, custom subtitle file naming (for player auto-loading), optional punctuation removal for Chinese subtitles
 
 ### Subtitle translation

@@ -77,6 +77,8 @@ export interface IFiles {
   tempTranslatedSrtFile?: string;
   /** 校对用无损中间态 sidecar，保存源文/译文/时间轴，避免直接读写有损交付物。 */
   proofreadDataFile?: string;
+  /** 词级时间轴 sidecar（`<tempAudio>.words.json`）：AI 语义断句精确对齐用；无词级引擎缺省。 */
+  wordTimelineFile?: string;
   /** 本次转写实际使用的后端标签（如 "CUDA 12.4.0" / "Vulkan" / "CPU"） */
   whisperBackend?: string;
   /** 该文件走了内封软字幕直提（跳过抽音频 + ASR）：用于任务列表标识 */
@@ -211,4 +213,10 @@ export interface IFormData {
   fasterWhisperNoSpeechThreshold?: number;
   /** 中文标点去除（任务级开关）：开启后把中文标点替换为空格。作用于源字幕(中文源)与译文(中文目标)。缺省关闭。 */
   removeChinesePunctuation?: boolean;
+  /** AI 语义断句（精修遍 A，openspec: add-ai-subtitle-refine）。缺省关闭；旧快照无此键即关闭。 */
+  aiSegmentation?: boolean;
+  /** AI 字幕校正（精修遍 B）。缺省关闭。 */
+  aiCorrection?: boolean;
+  /** 精修服务商：缺省/'follow-translation' = 跟随翻译服务（AI 类型时解析为同一服务商），或显式 AI 服务商 id。 */
+  refineProvider?: string;
 }

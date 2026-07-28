@@ -171,6 +171,27 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
     return list;
   }, [snapshot, t]);
 
+  // AI 字幕精修（openspec: add-ai-subtitle-refine）：开启的遍 + 解析后的服务商
+  const refineValue = useMemo(() => {
+    const seg = snapshot?.aiSegmentation === true;
+    const corr = snapshot?.aiCorrection === true;
+    if (!seg && !corr) return '';
+    const parts: string[] = [];
+    if (seg) parts.push(t('refine.summary.segmentation'));
+    if (corr) parts.push(t('refine.summary.correction'));
+    const setting = snapshot?.refineProvider || 'follow-translation';
+    const target =
+      setting === 'follow-translation'
+        ? providers.find((p) => p.id === snapshot?.translateProvider)
+        : providers.find((p) => p.id === setting);
+    if (target?.name) {
+      parts.push(
+        tCommon(`provider.${target.name}`, { defaultValue: target.name }),
+      );
+    }
+    return parts.join(' · ');
+  }, [snapshot, providers, t, tCommon]);
+
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-muted/30 px-3 py-2">
       <TooltipProvider>
@@ -188,6 +209,10 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
 
       {needsTranscription && modelValue && (
         <SummaryItem label={t('configBar.model')} value={modelValue} />
+      )}
+
+      {needsTranscription && refineValue && (
+        <SummaryItem label={t('stage.refine')} value={refineValue} />
       )}
 
       {snapshot?.sourceLanguage && (

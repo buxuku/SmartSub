@@ -28,11 +28,15 @@ import { trimSubtitleTrailingSilence } from '../subtitleTiming';
 import type { SubtitleCue } from '../subtitleTiming';
 import {
   wordCuesFromResult,
+  wordTimelineTokens,
   segmentCuesFromSegments,
   singleCueFromText,
   offsetWords,
 } from './cloudAsrShared';
 import { resplitSubtitleCues } from '../subtitleSegmentation';
+import type { NativeToken } from '../subtitleSegmentation';
+import { writeWordTimelineSidecar } from '../wordTimelineSidecar';
+import { refineWordsFromNativeTokens } from '../subtitleRefine';
 import type { AsrWord } from '../../service/asr/types';
 import { getCloudProviderGate } from './cloudProviderGate';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
@@ -71,7 +75,7 @@ function assembleChunkedCues(
   chunks: CloudAudioChunk[],
   results: AsrTranscribeResult[],
   config?: Record<string, unknown>,
-): SubtitleCue[] {
+): { cues: SubtitleCue[]; wordTokens: NativeToken[] | null } {
   const useWordPath = results.some((r) => (r.words?.length ?? 0) > 0);
   if (useWordPath) {
     const allWords: AsrWord[] = [];
@@ -83,7 +87,11 @@ function assembleChunkedCues(
       }
       if (r?.text) allText += (allText ? ' ' : '') + r.text;
     });
-    return wordCuesFromResult({ words: allWords, text: allText }, config);
+    const merged = { words: allWords, text: allText };
+    return {
+      cues: wordCuesFromResult(merged, config),
+      wordTokens: wordTimelineTokens(merged),
+    };
   }
 
   const cues: SubtitleCue[] = [];
@@ -98,7 +106,7 @@ function assembleChunkedCues(
       );
     }
   });
-  return resplitSubtitleCues(cues, config);
+  return { cues: resplitSubtitleCues(cues, config), wordTokens: null };
 }
 
 async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
@@ -150,6 +158,8 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
   throwIfSignalCancelled(signal);
 
   let cues: SubtitleCue[] = [];
+  // 词级时间轴（sidecar 用）：仅词级路径产出；段级/整段降级为 null（精修走近似模式）。
+  let wordTokens: NativeToken[] | null = null;
   // 上传约束：服务商类型声明值优先（如火山 base64 直传需更保守），未声明回落全局默认。
   const limits = resolveAudioLimits(getAsrProviderType(provider.type), {
     maxUploadBytes: CLOUD_MAX_UPLOAD_BYTES,
@@ -181,6 +191,7 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
 
       if (result.hasWordTimestamps) {
         cues = wordCuesFromResult(result, formData as Record<string, unknown>);
+        wordTokens = wordTimelineTokens(result);
       } else if (result.segments?.length) {
         cues = resplitSubtitleCues(
           segmentCuesFromSegments(result.segments, 0),
@@ -192,7 +203,7 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
           `cloud ASR: model ${model} returned no timestamps, degrading via silence chunking for coarse timing`,
           'warning',
         );
-        cues = await transcribeChunkedDegrade(ctx, {
+        ({ cues, wordTokens } = await transcribeChunkedDegrade(ctx, {
           transcriber,
           provider,
           model,
@@ -201,7 +212,7 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
           concurrency,
           gate,
           chunkSeconds: COARSE_DEGRADE_CHUNK_SECONDS,
-        });
+        }));
       }
     } else {
       // 超限：按静音切片、并发转写、按偏移回拼。
@@ -209,7 +220,7 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
         `cloud ASR: prepared audio ${(prepared.sizeBytes / 1048576).toFixed(1)}MB exceeds limit, chunking by silence`,
         'info',
       );
-      cues = await transcribeChunkedDegrade(ctx, {
+      ({ cues, wordTokens } = await transcribeChunkedDegrade(ctx, {
         transcriber,
         provider,
         model,
@@ -218,7 +229,7 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
         concurrency,
         gate,
         chunkSeconds: limits.maxChunkSeconds,
-      });
+      }));
     }
   } finally {
     prepared.cleanup();
@@ -229,6 +240,16 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
   const subtitles = trimSubtitleTrailingSilence(cues, tempAudioFile);
   const formattedSrt = formatSrtContent(subtitles);
   await fs.promises.writeFile(srtFile, formattedSrt);
+
+  // 词级时间轴 sidecar（openspec: add-ai-subtitle-refine D6）：仅词级路径落盘；
+  // 段级/整段降级无词时间——精修阶段自动走近似模式。
+  file.wordTimelineFile = wordTokens?.length
+    ? writeWordTimelineSidecar(
+        tempAudioFile,
+        `cloud:${provider.type}`,
+        refineWordsFromNativeTokens(wordTokens),
+      )
+    : undefined;
 
   event.sender.send('taskProgressChange', file, 'extractSubtitle', 100);
   event.sender.send('taskFileChange', { ...file, extractSubtitle: 'done' });
@@ -253,7 +274,7 @@ interface ChunkTranscribeOptions {
 async function transcribeChunkedDegrade(
   ctx: TranscribeContext,
   opts: ChunkTranscribeOptions,
-): Promise<SubtitleCue[]> {
+): Promise<{ cues: SubtitleCue[]; wordTokens: NativeToken[] | null }> {
   const { event, file } = ctx;
   const { tempAudioFile } = file;
   const chunks = await splitBySilence(tempAudioFile, {

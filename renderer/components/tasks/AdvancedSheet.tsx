@@ -267,79 +267,10 @@ const FasterWhisperAdvancedFields: React.FC<{ form: any }> = ({ form }) => {
 
 type SubtitleLengthMode = 'smart' | 'unlimited' | 'custom';
 
-/**
- * 「字幕断句方式」三态选择（共用 maxSubtitleChars 字段，数字编码不暴露给用户）：
- * 智能断句 = 0；不限制长度 = -1；自定义字数上限 = 正数（8-120）。
- * 自定义数字走本地草稿：输入框清空时不回写 0，避免模式瞬间塌回「智能断句」。
- */
-const SubtitleLengthField: React.FC<{
-  field: { value?: unknown; onChange: (value: number) => void };
-}> = ({ field }) => {
-  const { t } = useTranslation('tasks');
-  const { t: tHome } = useTranslation('home');
-  const raw = Number(field.value ?? 0);
-  const mode: SubtitleLengthMode =
-    raw < 0 ? 'unlimited' : raw > 0 ? 'custom' : 'smart';
-  const [draft, setDraft] = useState<string>(raw > 0 ? String(raw) : '40');
-  useEffect(() => {
-    if (raw > 0) setDraft(String(raw));
-  }, [raw]);
+// 「字幕断句方式」已整体迁入任务工具栏的「断句与精修」控件（AiRefineControl，
+// openspec: add-ai-subtitle-refine 8.7）：断句是"呈现层"决策，与此处「字幕效果」
+// 档位（转写引擎的识别取舍）物理分离，消除两处配置的心智负担。
 
-  return (
-    <FormItem>
-      <FormLabel>{t('subtitleLength.label')}</FormLabel>
-      <Select
-        value={mode}
-        onValueChange={(value) => {
-          if (value === 'unlimited') {
-            field.onChange(-1);
-          } else if (value === 'custom') {
-            const parsed = Number(draft);
-            field.onChange(parsed > 0 ? Math.round(parsed) : 40);
-          } else {
-            field.onChange(0);
-          }
-        }}
-      >
-        <FormControl>
-          <SelectTrigger>
-            <SelectValue placeholder={tHome('pleaseSelect')} />
-          </SelectTrigger>
-        </FormControl>
-        <SelectContent>
-          <SelectItem value="smart">{t('subtitleLength.modeSmart')}</SelectItem>
-          <SelectItem value="unlimited">
-            {t('subtitleLength.modeUnlimited')}
-          </SelectItem>
-          <SelectItem value="custom">
-            {t('subtitleLength.modeCustom')}
-          </SelectItem>
-        </SelectContent>
-      </Select>
-      {mode === 'custom' && (
-        <Input
-          type="number"
-          min={8}
-          max={120}
-          value={draft}
-          onChange={(e) => {
-            const value = e.target.value;
-            setDraft(value);
-            const parsed = Number(value);
-            if (Number.isFinite(parsed) && parsed > 0) {
-              field.onChange(Math.round(parsed));
-            }
-          }}
-        />
-      )}
-      <FormDescription className="text-xs">
-        {mode === 'smart' && t('subtitleLength.hintSmart')}
-        {mode === 'unlimited' && t('subtitleLength.hintUnlimited')}
-        {mode === 'custom' && t('subtitleLength.hintCustom')}
-      </FormDescription>
-    </FormItem>
-  );
-};
 
 const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
   open,
@@ -619,14 +550,6 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                           </div>
                         </CollapsibleContent>
                       </Collapsible>
-
-                      <FormField
-                        control={form.control}
-                        name="maxSubtitleChars"
-                        render={({ field }) => (
-                          <SubtitleLengthField field={field} />
-                        )}
-                      />
 
                       <FormField
                         control={form.control}

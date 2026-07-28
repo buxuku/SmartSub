@@ -163,8 +163,8 @@ export function formatTime(seconds: number): string {
   return `${pad(h)}:${pad(m)}:${pad(s)},${pad(ms, 3)}`;
 }
 
-/** East-Asian-Width 近似：CJK / 全角记 2，其余记 1。用于单行字幕宽度上限。 */
-function visualWidth(text: string): number {
+/** East-Asian-Width 近似：CJK / 全角记 2，其余记 1。用于单行字幕宽度上限。导出供 subtitleRefine 护栏复用。 */
+export function visualWidth(text: string): number {
   let width = 0;
   for (const ch of text) {
     const code = ch.codePointAt(0) ?? 0;

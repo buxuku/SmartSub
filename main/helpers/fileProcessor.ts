@@ -25,6 +25,7 @@ import {
   SubtitleFormat,
 } from './subtitleFormats';
 import { writeProofreadDataFromFiles } from './proofreadData';
+import { runSubtitleRefineStage } from './subtitleRefineStage';
 import { runDubStage, rebuildDubTrackForFile } from './pipeline/dubStage';
 import { runComposeStage } from './pipeline/composeStage';
 import {
@@ -265,16 +266,19 @@ export async function processFile(
     'extractAudio',
     'extractSubtitle',
     'prepareSubtitle',
+    'refineSubtitle',
     'translateSubtitle',
     'dubbing',
     'composeVideo',
     'extractAudioProgress',
     'extractSubtitleProgress',
+    'refineSubtitleProgress',
     'translateSubtitleProgress',
     'dubbingProgress',
     'composeVideoProgress',
     'extractAudioError',
     'extractSubtitleError',
+    'refineSubtitleError',
     'translateSubtitleError',
     'dubbingError',
     'composeVideoError',
@@ -532,6 +536,12 @@ export async function processFile(
           logMessage(`generate subtitle ${file.srtFile}`, 'info');
           throwIfTaskCancelled();
           await generateSubtitle(event, file, formData, hasOpenAiWhisper);
+
+          // AI 字幕精修（openspec: add-ai-subtitle-refine）：语义断句 + 文本校正，
+          // 仅对本轮 ASR 转写产物执行（内封提取/配对/导入字幕不重断句），位于
+          // 简繁归一/中文去标点与翻译之前；未开启或降级时字幕保持原样。
+          throwIfTaskCancelled();
+          await runSubtitleRefineStage(event, file, formData);
         } catch (error) {
           if (isTaskCancelledError(error) || isTaskCancelled()) {
             // 用户取消：把本轮 loading 阶段回退为待处理

@@ -747,6 +747,35 @@ export default function TaskWizard() {
     ) {
       list.push({ key: 'goal', text: t('wizard.blockNoGoal') });
     }
+    // AI 字幕精修（openspec: add-ai-subtitle-refine D9 即时校验）：
+    // 开启精修但「跟随翻译服务」不可解析（翻译未开启/非 AI 类型）且未显式指定，
+    // 或显式指定的服务商已失效 → 阻断开始，避免运行时才降级。
+    if (
+      inputKind === 'media' &&
+      (formData?.aiSegmentation === true || formData?.aiCorrection === true)
+    ) {
+      const refineSetting = formData?.refineProvider || 'follow-translation';
+      if (refineSetting === 'follow-translation') {
+        const tp = providers.find(
+          (p: any) => p.id === formData?.translateProvider,
+        );
+        if (!translateOn || !tp?.isAi) {
+          list.push({
+            key: 'refine',
+            text: t('wizard.blockRefineFollow'),
+          });
+        }
+      } else {
+        const rp = providers.find((p: any) => p.id === refineSetting);
+        if (!rp?.isAi || !isProviderConfigured(rp)) {
+          list.push({
+            key: 'refine',
+            text: t('wizard.blockRefineProviderInvalid'),
+            href: `/${locale}/translation`,
+          });
+        }
+      }
+    }
     return list;
   }, [
     files.length,
@@ -758,6 +787,9 @@ export default function TaskWizard() {
     translateOn,
     providers,
     formData?.translateProvider,
+    formData?.aiSegmentation,
+    formData?.aiCorrection,
+    formData?.refineProvider,
     dubOn,
     activeEngine,
     activeVoice,
