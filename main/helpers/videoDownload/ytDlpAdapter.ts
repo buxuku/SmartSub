@@ -6,9 +6,11 @@ import type {
 } from '../../../types/download';
 import {
   claimSubtitleFileNames,
+  parseYtDlpFilePathLine,
   parseYtDlpPreflightJson,
   parseYtDlpProgressLine,
   tailForError,
+  YTDLP_FILEPATH_PREFIX,
   YTDLP_PROGRESS_TEMPLATE,
 } from './parsers';
 import {
@@ -25,9 +27,6 @@ const PREFLIGHT_TIMEOUT_MS = 45_000;
 
 /** 输出模板：标题 + 站点 id 保证唯一性；扩展名交给引擎（合流后可能变化） */
 const OUTPUT_TEMPLATE = '%(title)s [%(id)s].%(ext)s';
-
-/** 最终文件路径打印哨兵（--print after_move:filepath 输出行前缀） */
-const FILEPATH_PREFIX = 'SMARTSUB-FILE;';
 
 function qualityArgs(quality: DownloadQuality): string[] {
   // -S res:N 为「偏好排序」：不满足档位时就近降档而非报错
@@ -112,10 +111,12 @@ export const ytDlpAdapter: DownloadEngineAdapter = {
       ffmpegLocation(),
       '--progress-template',
       `download:${YTDLP_PROGRESS_TEMPLATE}`,
-      // --print 默认蕴含 simulate，必须显式关闭；after_move 才是合流/移动后的最终路径
+      // --print 默认蕴含 simulate，必须显式关闭；after_move 才是合流/移动后的最终路径。
+      // %(filepath)j = JSON ASCII 转义：Windows 冻结版 yt-dlp 管道输出走 ANSI 代码页，
+      // 裸打印非 ASCII 文件名必乱码（解析函数注释有完整链路），ASCII 转义不受代码页影响
       '--no-simulate',
       '--print',
-      `after_move:${FILEPATH_PREFIX}%(filepath)s`,
+      `after_move:${YTDLP_FILEPATH_PREFIX}%(filepath)j`,
       ...qualityArgs(opts.quality),
       // 官方字幕直取：仅人工字幕（不开 --write-auto-subs），统一转 srt
       // （依赖已注入的 --ffmpeg-location；转换失败 yt-dlp 保留原格式）
@@ -132,10 +133,9 @@ export const ytDlpAdapter: DownloadEngineAdapter = {
       const lines = lineBuffer.split(/\r?\n/);
       lineBuffer = lines.pop() ?? '';
       for (const line of lines) {
-        const fileIdx = line.indexOf(FILEPATH_PREFIX);
-        if (fileIdx >= 0) {
-          const filePath = line.slice(fileIdx + FILEPATH_PREFIX.length).trim();
-          if (filePath) outputPaths.push(filePath);
+        const filePath = parseYtDlpFilePathLine(line);
+        if (filePath) {
+          outputPaths.push(filePath);
           continue;
         }
         const progress = parseYtDlpProgressLine(line);

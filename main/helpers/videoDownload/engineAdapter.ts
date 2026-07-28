@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'child_process';
+import { StringDecoder } from 'string_decoder';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
@@ -134,13 +135,17 @@ export async function withCookieFile<T>(
 }
 
 /**
- * 子进程环境：透传代理（lux/Go 走环境变量）+ 稳定 UTF-8 输出。
+ * 子进程环境：透传代理（lux/Go 走环境变量）。
  * 随包 ffmpeg 目录前置进 PATH——lux 合并 DASH 分离流（B站等）依赖 PATH 上的
  * ffmpeg，打包后的应用环境 PATH 里没有它，缺失时合并失败只留分片。
  */
 export function buildChildEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    // 注意：官方 yt-dlp 二进制是 PyInstaller 冻结程序（隔离模式），会忽略
+    // PYTHONIOENCODING——Windows 管道输出仍走 ANSI 代码页。此处仅作为
+    // 非冻结运行场景（如系统 Python 脚本）的兜底；跨代码页的路径回传保障
+    // 依赖 %(filepath)j ASCII 转义（见 ytDlpAdapter/parsers）。
     PYTHONIOENCODING: 'utf-8',
   };
   try {
@@ -261,13 +266,19 @@ export function runProcess(
       }, opts.timeoutMs);
     }
 
+    // StringDecoder 缓存跨 chunk 的 UTF-8 多字节残端：直接逐块 toString() 会把
+    // 恰好被 chunk 边界切开的字符解码成 U+FFFD（CJK 输出行损坏的隐性来源）
+    const stdoutDecoder = new StringDecoder('utf8');
+    const stderrDecoder = new StringDecoder('utf8');
     child.stdout?.on('data', (data: Buffer) => {
-      const text = data.toString();
+      const text = stdoutDecoder.write(data);
+      if (!text) return;
       stdout += text;
       opts.onStdout?.(text);
     });
     child.stderr?.on('data', (data: Buffer) => {
-      const text = data.toString();
+      const text = stderrDecoder.write(data);
+      if (!text) return;
       stderr += text;
       opts.onStderr?.(text);
     });
@@ -278,6 +289,16 @@ export function runProcess(
     });
     child.on('close', (code) => {
       liveChildren.delete(child);
+      const stdoutTail = stdoutDecoder.end();
+      if (stdoutTail) {
+        stdout += stdoutTail;
+        opts.onStdout?.(stdoutTail);
+      }
+      const stderrTail = stderrDecoder.end();
+      if (stderrTail) {
+        stderr += stderrTail;
+        opts.onStderr?.(stderrTail);
+      }
       finish(() => resolve({ code, stdout, stderr }));
     });
   });
