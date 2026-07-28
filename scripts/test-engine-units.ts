@@ -17,6 +17,12 @@ import {
   secondsToSrtTime,
   getVadSettings,
 } from '../main/helpers/engines/transcribeShared';
+import {
+  buildFasterWhisperAdvancedParams,
+  FASTER_WHISPER_ADVANCED_PARAM_SPECS,
+  isValidFasterWhisperAdvancedParamValue,
+  supportsFasterWhisperAdvancedParams,
+} from '../types/transcriptionParams';
 import { toFasterWhisperModel } from '../main/helpers/engines/modelMap';
 import {
   isProtocolSupported,
@@ -303,6 +309,119 @@ eq(
   getVadSettings({ vadThreshold: 0.8 }).vadThreshold,
   0.8,
   'vad: custom threshold passthrough',
+);
+
+// --- faster-whisper advanced transcription params ---
+eq(
+  buildFasterWhisperAdvancedParams({}),
+  {},
+  'faster advanced: unset preserves engine defaults',
+);
+eq(
+  buildFasterWhisperAdvancedParams({
+    fasterWhisperBeamSize: 6,
+    fasterWhisperBestOf: 4,
+    fasterWhisperTemperature: 0.4,
+    fasterWhisperCompressionRatioThreshold: 2.8,
+    fasterWhisperLogProbThreshold: -0.8,
+    fasterWhisperNoSpeechThreshold: 0.7,
+  }),
+  {
+    beam_size: 6,
+    best_of: 4,
+    temperature: 0.4,
+    compression_ratio_threshold: 2.8,
+    log_prob_threshold: -0.8,
+    no_speech_threshold: 0.7,
+  },
+  'faster advanced: valid task values map to sidecar keys',
+);
+eq(
+  buildFasterWhisperAdvancedParams({
+    fasterWhisperBeamSize: 1,
+    fasterWhisperBestOf: 20,
+    fasterWhisperTemperature: 0,
+    fasterWhisperCompressionRatioThreshold: 10,
+    fasterWhisperLogProbThreshold: -5,
+    fasterWhisperNoSpeechThreshold: 1,
+  }),
+  {
+    beam_size: 1,
+    best_of: 20,
+    temperature: 0,
+    compression_ratio_threshold: 10,
+    log_prob_threshold: -5,
+    no_speech_threshold: 1,
+  },
+  'faster advanced: inclusive range boundaries are accepted',
+);
+eq(
+  buildFasterWhisperAdvancedParams({
+    fasterWhisperBeamSize: 0,
+    fasterWhisperBestOf: 21,
+    fasterWhisperTemperature: 1.1,
+    fasterWhisperCompressionRatioThreshold: -0.1,
+    fasterWhisperLogProbThreshold: 0.1,
+    fasterWhisperNoSpeechThreshold: NaN,
+  }),
+  {},
+  'faster advanced: non-finite and out-of-range values are ignored',
+);
+eq(
+  buildFasterWhisperAdvancedParams({
+    fasterWhisperBeamSize: 1.5,
+    fasterWhisperBestOf: 2.2,
+    fasterWhisperTemperature: 0.5,
+  }),
+  { temperature: 0.5 },
+  'faster advanced: fractional integer parameters are rejected',
+);
+eq(
+  buildFasterWhisperAdvancedParams({
+    fasterWhisperTemperature: '0.4',
+    fasterWhisperCompressionRatioThreshold: null,
+  }),
+  {},
+  'faster advanced: non-number values are ignored',
+);
+eq(
+  FASTER_WHISPER_ADVANCED_PARAM_SPECS.map((spec) => spec.engineDefault),
+  [5, 5, [0, 0.2, 0.4, 0.6, 0.8, 1], 2.4, -1, 0.6],
+  'faster advanced: documented defaults match faster-whisper',
+);
+eq(
+  isValidFasterWhisperAdvancedParamValue(
+    5,
+    FASTER_WHISPER_ADVANCED_PARAM_SPECS[0],
+  ),
+  true,
+  'faster advanced: integer validator accepts whole numbers',
+);
+eq(
+  isValidFasterWhisperAdvancedParamValue(
+    5.5,
+    FASTER_WHISPER_ADVANCED_PARAM_SPECS[0],
+  ),
+  false,
+  'faster advanced: integer validator rejects fractions',
+);
+eq(
+  supportsFasterWhisperAdvancedParams('fasterWhisper'),
+  true,
+  'faster advanced: faster-whisper capability enabled',
+);
+eq(
+  [
+    'builtin',
+    'localCli',
+    'funasr',
+    'qwen',
+    'fireRedAsr',
+    'cloud',
+    undefined,
+  ].some(supportsFasterWhisperAdvancedParams),
+  false,
+  'faster advanced: unsupported engines do not expose controls',
 );
 
 // --- toFasterWhisperModel ---

@@ -199,6 +199,16 @@ export interface IFormData {
    * 正数 = 自定义上限（超出时在标点或词边界处拆分）。
    */
   maxSubtitleChars?: number;
+  /**
+   * faster-whisper 解码高级参数（均为任务级、可选）。
+   * 缺省时不下发，让引擎保留自身默认与 temperature 回退序列。
+   */
+  fasterWhisperBeamSize?: number;
+  fasterWhisperBestOf?: number;
+  fasterWhisperTemperature?: number;
+  fasterWhisperCompressionRatioThreshold?: number;
+  fasterWhisperLogProbThreshold?: number;
+  fasterWhisperNoSpeechThreshold?: number;
   /** 中文标点去除（任务级开关）：开启后把中文标点替换为空格。作用于源字幕(中文源)与译文(中文目标)。缺省关闭。 */
   removeChinesePunctuation?: boolean;
 }
