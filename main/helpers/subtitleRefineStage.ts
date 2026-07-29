@@ -58,7 +58,8 @@ export interface RefineProviderResolution {
  * 精修服务商解析（D9）：
  *  - 缺省 / 'follow-translation' → 跟随任务翻译服务商（须 AI 类型，运行时解析）；
  *  - 显式 id → 对应已配置 AI 服务商；
- *  - 不可解析（翻译非 AI / 未选翻译 / id 不存在）→ null，阶段降级（向导校验兜底正常路径）。
+ *  - 不可解析（翻译非 AI / 未选翻译 / id 不存在）→ null；阶段结算为 done（降级）并写入
+ *    refineSubtitleError；向导与旧任务页启动前校验兜底正常路径。
  */
 export function resolveRefineProvider(
   formData?: Record<string, unknown>,
@@ -104,6 +105,23 @@ export function resolveRefineProvider(
   return { provider, source: 'explicit' };
 }
 
+/**
+ * resume / 跳过字幕段时结算精修阶段态：SRT 已含首轮精修产物（或本路径本就不跑精修），
+ * 但 processFile 开头会清掉 refineSubtitle；若不回写 done，阶段格会永久 pending、
+ * isFileDone 永远为 false。
+ */
+export function settleSkippedRefineStage(
+  event: { sender: { send: (channel: string, ...args: unknown[]) => void } },
+  file: IFiles,
+  formData?: Record<string, unknown>,
+): void {
+  const cfg = getRefineStageConfig(formData);
+  if (!cfg.segmentation && !cfg.correction) return;
+  (file as any).refineSubtitle = 'done';
+  event.sender.send('taskFileChange', { ...file, refineSubtitle: 'done' });
+  event.sender.send('taskProgressChange', file, 'refineSubtitle', 100);
+}
+
 export async function runSubtitleRefineStage(
   event: { sender: { send: (channel: string, ...args: unknown[]) => void } },
   file: IFiles,
@@ -113,23 +131,6 @@ export async function runSubtitleRefineStage(
   if (!cfg.segmentation && !cfg.correction) return;
   if (!file.srtFile || !fs.existsSync(file.srtFile)) return;
   const signal = getTaskContext()?.signal;
-
-  const resolution = resolveRefineProvider(formData);
-  if (!resolution.provider) {
-    // 等同未开启：不触碰字幕、不渲染阶段状态（正常路径由任务向导即时校验兜住）。
-    logMessage(
-      `refine stage skipped (degraded): ${resolution.reason}`,
-      'warning',
-    );
-    return;
-  }
-  const provider = resolution.provider;
-  logMessage(
-    `refine provider resolved: ${provider.name} (${
-      resolution.source === 'follow' ? '跟随翻译服务' : '显式指定'
-    })`,
-    'info',
-  );
 
   const sendState = (state: string) => {
     (file as any).refineSubtitle = state;
@@ -143,8 +144,32 @@ export async function runSubtitleRefineStage(
       Math.max(0, Math.min(100, Math.round(pct))),
     );
   };
+  const sendDegradedDone = (reason: string) => {
+    (file as any).refineSubtitleError = reason;
+    sendProgress(100);
+    // 非致命降级：任务继续；用 done + error 文案让 UI 可见，不阻断 isFileDone。
+    sendState('done');
+  };
+
+  const resolution = resolveRefineProvider(formData);
+  if (!resolution.provider) {
+    logMessage(
+      `refine stage skipped (degraded): ${resolution.reason}`,
+      'warning',
+    );
+    sendDegradedDone(resolution.reason || 'refine provider unresolved');
+    return;
+  }
+  const provider = resolution.provider;
+  logMessage(
+    `refine provider resolved: ${provider.name} (${
+      resolution.source === 'follow' ? '跟随翻译服务' : '显式指定'
+    })`,
+    'info',
+  );
 
   try {
+    delete (file as any).refineSubtitleError;
     sendState('loading');
     sendProgress(0);
 
@@ -195,11 +220,14 @@ export async function runSubtitleRefineStage(
           sendProgress(base + (done / Math.max(1, total)) * (100 - base)),
       });
       // 不变性断言（spec: ai-subtitle-correction）：校正不得改变条数与时间轴。
-      if (outcome.cues.length === beforeCount) {
+      const timesOk = outcome.cues.every(
+        (cue, i) => cue?.[0] === cues[i]?.[0] && cue?.[1] === cues[i]?.[1],
+      );
+      if (outcome.cues.length === beforeCount && timesOk) {
         cues = outcome.cues;
       } else {
         logMessage(
-          `AI correction invariant violated (${beforeCount} -> ${outcome.cues.length}), keeping uncorrected cues`,
+          `AI correction invariant violated (count ${beforeCount} -> ${outcome.cues.length}, timesOk=${timesOk}), keeping uncorrected cues`,
           'error',
         );
       }
@@ -221,13 +249,11 @@ export async function runSubtitleRefineStage(
     }
     // 阶段级兜底（spec: 整体降级与取消语义）：任何异常等同未开启本阶段，
     // 字幕保持进入本阶段前的形态，任务继续、不失败。
+    const message = error instanceof Error ? error.message : String(error);
     logMessage(
-      `refine stage failed (degraded, non-fatal): ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      `refine stage failed (degraded, non-fatal): ${message}`,
       'warning',
     );
-    sendProgress(100);
-    sendState('done');
+    sendDegradedDone(message);
   }
 }

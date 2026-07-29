@@ -85,7 +85,7 @@
     "blockVideoNeedsMedia": "Final video needs video input — uncheck it or add video files",
     "blockUnpairedMedia": "{{count}} video(s) have no subtitle paired — pick one on the video row, add files, or remove them",
     "blockNoGoal": "Pick at least one goal",
-    "blockRefineFollow": "AI refine cannot follow the translation service (translation is off or not an AI provider) — pick a refine provider explicitly in Advanced settings",
+    "blockRefineFollow": "AI refine cannot follow the translation service (translation is off or not an AI provider) — open Segmentation & Refine in the toolbar and pick a provider explicitly",
     "blockRefineProviderInvalid": "The selected AI refine provider is unavailable (missing or not configured) — pick another one",
     "goConfigure": "Configure",
     "readyHint": "Ready: {{count}} file(s) will be processed automatically",

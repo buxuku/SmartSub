@@ -13,9 +13,10 @@
  */
 
 import {
+  composeWordCues,
   getMergeShortCueOptions,
   getSubtitleCueOptions,
-  parseTime,
+  tokensToTriples,
   type TokenTriple,
 } from '../subtitleSegmentation';
 import { logMessage } from '../storeManager';
@@ -72,35 +73,15 @@ export interface AiSegmentationOutcome {
   degraded: boolean;
 }
 
-/** 词切片的时间范围（毫秒）；全无可信时间返回 null。 */
-function windowTimeRangeMs(
-  words: RefineWord[],
-): { start: number; end: number } | null {
-  let start: number | null = null;
-  let end: number | null = null;
-  for (const w of words) {
-    if (w.start !== null && (start === null || w.start < start)) {
-      start = w.start;
-    }
-    if (w.end !== null && (end === null || w.end > end)) end = w.end;
-  }
-  if (start === null || end === null) return null;
-  return { start, end };
-}
-
-/** 按中点时间归属，取窗口时间范围内的规则 cues（单窗降级兜底用）。 */
-function ruleCuesInRange(
-  cues: TokenTriple[],
-  startMs: number,
-  endMs: number,
-): TokenTriple[] {
-  return cues.filter((cue) => {
-    const s = parseTime(cue?.[0]);
-    const e = parseTime(cue?.[1]);
-    if (s === null || e === null) return false;
-    const midMs = ((s + e) / 2) * 1000;
-    return midMs >= startMs && midMs < endMs;
-  });
+/** RefineWord → TokenTriple，供单窗规则成句兜底。 */
+function wordsToTriples(words: RefineWord[]): TokenTriple[] {
+  return tokensToTriples(
+    words.map((w) => ({
+      text: w.text ?? '',
+      t0: w.start === null ? Number.NaN : w.start,
+      t1: w.end === null ? Number.NaN : w.end,
+    })),
+  );
 }
 
 export async function runAiSegmentation(
@@ -151,31 +132,6 @@ export async function runAiSegmentation(
   const totalWindows = tier === 'word' ? wordWindows.length : cueRanges.length;
   if (totalWindows === 0) {
     return { cues, tier, totalWindows: 0, degradedWindows: 0, degraded: false };
-  }
-
-  // Tier 'word' 单窗降级兜底的时间边界：相邻窗口时间范围的中点，首尾开区间，
-  // 保证规则 cues 恰好被划分一次（即便个别 cue 轻微跨窗也不重不漏）。
-  const wordWindowBounds: Array<{ start: number; end: number }> = [];
-  if (tier === 'word') {
-    const ranges = wordWindows.map((w) => windowTimeRangeMs(w));
-    for (let i = 0; i < ranges.length; i += 1) {
-      const cur = ranges[i];
-      const prev = i > 0 ? ranges[i - 1] : null;
-      const next = i < ranges.length - 1 ? ranges[i + 1] : null;
-      const start =
-        i === 0
-          ? Number.NEGATIVE_INFINITY
-          : prev && cur
-            ? (prev.end + cur.start) / 2
-            : (wordWindowBounds[i - 1]?.end ?? Number.NEGATIVE_INFINITY);
-      const end =
-        i === ranges.length - 1
-          ? Number.POSITIVE_INFINITY
-          : cur && next
-            ? (cur.end + next.start) / 2
-            : start;
-      wordWindowBounds.push({ start, end });
-    }
   }
 
   let degradedWindows = 0;
@@ -239,17 +195,16 @@ export async function runAiSegmentation(
     return alignedCues ? alignedCues.map((cue) => ({ cue })) : null;
   };
 
-  /** 单窗降级兜底：换回该窗时间范围内的规则 cues。 */
+  /** 单窗降级兜底：词级按该窗词索引跑规则成句（与成功窗同轴，无 mid-point 混拼）；段级按 cue 切片。 */
   const fallbackForWindow = (index: number): AlignedCue[] => {
     if (tier === 'segment') {
       const [from, to] = cueRanges[index];
       return cues.slice(from, to).map((cue) => ({ cue }));
     }
-    const bounds = wordWindowBounds[index];
-    if (!bounds) return [];
-    return ruleCuesInRange(cues, bounds.start, bounds.end).map((cue) => ({
-      cue,
-    }));
+    const windowWords = wordWindows[index];
+    if (!windowWords?.length) return [];
+    const ruleCues = composeWordCues(wordsToTriples(windowWords), formData);
+    return ruleCues.map((cue) => ({ cue, words: windowWords }));
   };
 
   const results: AlignedCue[][] = new Array(totalWindows);
@@ -324,8 +279,9 @@ export async function runAiSegmentation(
     cueOptions,
     mergeOptions,
   });
+  const approxNote = tier === 'segment' ? ', timeline=approximate/近似' : '';
   logMessage(
-    `AI segmentation done: tier=${tier}, windows=${totalWindows}, degradedWindows=${degradedWindows}, cues ${cues.length} -> ${guarded.length}`,
+    `AI segmentation done: tier=${tier}${approxNote}, windows=${totalWindows}, degradedWindows=${degradedWindows}, cues ${cues.length} -> ${guarded.length}`,
     'info',
   );
   return {

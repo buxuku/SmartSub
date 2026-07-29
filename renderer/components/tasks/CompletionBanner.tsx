@@ -95,7 +95,7 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
   const multiDone = doneFiles.length > 1;
   const isSample = projectId === 'sample-onboarding';
   const hasProofreadableFile = doneFiles.some((file) =>
-    canProofreadFile(file, typeDef),
+    canProofreadFile(file, typeDef, formData),
   );
   const firstProofreadUnavailableReason = getProofreadUnavailableReason(
     firstDone,
@@ -272,7 +272,7 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
                     variant="outline"
                     size="sm"
                     className="h-7 text-xs gap-1"
-                    disabled={!canProofreadFile(firstDone, typeDef)}
+                    disabled={!canProofreadFile(firstDone, typeDef, formData)}
                     onClick={() => onProofread(firstDone)}
                   >
                     <Edit2 className="h-3 w-3" />
@@ -281,7 +281,7 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
                 </span>
               </TooltipTrigger>
               <TooltipContent className="max-w-[280px]">
-                {canProofreadFile(firstDone, typeDef)
+                {canProofreadFile(firstDone, typeDef, formData)
                   ? t('completion.goProofread')
                   : proofreadDisabledTooltip}
               </TooltipContent>

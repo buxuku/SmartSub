@@ -34,6 +34,10 @@ import {
   splitCuesIntoWindows,
 } from '../main/helpers/subtitleRefine/windowing';
 import { applySegmentationGuards } from '../main/helpers/subtitleRefine/guards';
+import {
+  collectSuspectWords,
+  filterSuspectWordsForBatch,
+} from '../main/helpers/subtitleRefine/wordSources';
 import type { TokenTriple } from '../main/helpers/subtitleSegmentation';
 
 let passed = 0;
@@ -372,6 +376,24 @@ ok(
     return toSec(e) - toSec(s) >= 0.7;
   })(),
   'guards: 最短显示时长延展',
+);
+
+// ---------------- suspect words ----------------
+
+ok(
+  collectSuspectWords([
+    { text: 'hello', start: 0, end: 100, p: 0.2 },
+    { text: 'world', start: 100, end: 200, p: 0.9 },
+    { text: 'hello', start: 200, end: 300, p: 0.1 },
+  ]).join(',') === 'hello',
+  'suspect: 低置信去重',
+);
+
+ok(
+  filterSuspectWordsForBatch(['hello', 'ghost'], ['say hello there']).join(
+    ',',
+  ) === 'hello',
+  'suspect: 仅保留本批出现的词',
 );
 
 // ---------------- summary ----------------
