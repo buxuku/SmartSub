@@ -61,6 +61,10 @@ import {
   elevenCloneErrorHint,
   mapElevenClonedVoices,
 } from '../../main/service/tts/elevenlabsVoiceCloneUtils';
+import {
+  joinSegmentTexts,
+  pickSmallestWhisperModel,
+} from '../../main/helpers/voiceClone/referenceTranscribeUtils';
 
 let passed = 0;
 let failed = 0;
@@ -1049,6 +1053,53 @@ const ttsConfig = require(
   );
   eq(mapElevenClonedVoices(null), [], 'elevenList: null 载荷');
   eq(mapElevenClonedVoices({ voices: 'x' }), [], 'elevenList: 非数组');
+}
+
+// ── 参考文本 ASR：最小模型启发式 / 段文本拼接 ───────────────────────────────
+
+{
+  eq(pickSmallestWhisperModel([]), null, 'pickModel: 空列表');
+  eq(
+    pickSmallestWhisperModel(['large-v3', 'base', 'tiny']),
+    'tiny',
+    'pickModel: 偏好 tiny',
+  );
+  eq(
+    pickSmallestWhisperModel(['medium', 'base.en', 'small']),
+    'base.en',
+    'pickModel: tiny 缺失时取 base.en',
+  );
+  eq(
+    pickSmallestWhisperModel(['large-v3-turbo', 'small-q5_0']),
+    'small-q5_0',
+    'pickModel: ggml 量化后缀对齐 small',
+  );
+  eq(
+    pickSmallestWhisperModel(['custom-foo', 'weird']),
+    'custom-foo',
+    'pickModel: 无偏好命中回落首项',
+  );
+  eq(
+    joinSegmentTexts([{ text: '你好' }, { text: '世界' }], 'zh'),
+    '你好，世界',
+    'joinText: 中文顿号',
+  );
+  eq(
+    joinSegmentTexts(
+      [
+        [0, 1, 'hello'],
+        [1, 2, 'world'],
+      ],
+      'en',
+    ),
+    'hello, world',
+    'joinText: 英文逗号 + TokenTriple',
+  );
+  eq(
+    joinSegmentTexts([{ text: '  ' }, { text: '' }], 'zh'),
+    '',
+    'joinText: 全空',
+  );
 }
 
 // ── 汇总 ────────────────────────────────────────────────────────────────────

@@ -42,7 +42,7 @@
   "textPlaceholder": "输入选区录音的文字内容…",
   "transcribing": "正在识别选区语音…",
   "transcribedBy": "已由 {{engine}} 自动识别，请核对",
-  "transcribeUnavailable": "没有可用的语音识别引擎（本地模型未安装、云服务未配置），请边听边手动输入",
+  "transcribeUnavailable": "未检测到可用的 SenseVoice / Whisper（faster-whisper 或内置）/ 已配置云 ASR，请边听边手动输入，或先安装本地模型 / 配置云服务",
   "retranscribe": "重新识别",
   "fromSubtitle": "已按选区时间从字幕预填，请核对",
   "language": "语言",
