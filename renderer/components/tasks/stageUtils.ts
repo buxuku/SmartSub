@@ -189,9 +189,19 @@ export function getFileError(file: any, stages: StageDef[]): string {
 }
 
 /** 校对解锁条件（沿用旧 TaskList 逻辑） */
-export function isProofreadReady(file: any, typeDef: TaskTypeDef): boolean {
+export function isProofreadReady(
+  file: any,
+  typeDef: TaskTypeDef,
+  formData?: any,
+): boolean {
   if (typeDef.taskType === 'generateOnly') {
-    return file?.extractSubtitle === 'done';
+    if (file?.extractSubtitle !== 'done') return false;
+    // 精修会改写 srtFile：阶段在轨时须等 refine 完成，避免校对读到旧内容后被覆盖。
+    const stages = getFileStages(file, typeDef, formData);
+    if (stages.some((s) => s.key === 'refineSubtitle')) {
+      return file?.refineSubtitle === 'done';
+    }
+    return true;
   }
   return file?.translateSubtitle === 'done';
 }
@@ -243,9 +253,13 @@ export function getProofreadUnavailableReason(
   return null;
 }
 
-export function canProofreadFile(file: any, typeDef: TaskTypeDef): boolean {
+export function canProofreadFile(
+  file: any,
+  typeDef: TaskTypeDef,
+  formData?: any,
+): boolean {
   return (
-    isProofreadReady(file, typeDef) &&
+    isProofreadReady(file, typeDef, formData) &&
     getProofreadUnavailableReason(file, typeDef) === null
   );
 }

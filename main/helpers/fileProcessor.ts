@@ -25,7 +25,10 @@ import {
   SubtitleFormat,
 } from './subtitleFormats';
 import { writeProofreadDataFromFiles } from './proofreadData';
-import { runSubtitleRefineStage } from './subtitleRefineStage';
+import {
+  runSubtitleRefineStage,
+  settleSkippedRefineStage,
+} from './subtitleRefineStage';
 import { runDubStage, rebuildDubTrackForFile } from './pipeline/dubStage';
 import { runComposeStage } from './pipeline/composeStage';
 import {
@@ -389,6 +392,8 @@ export async function processFile(
           ...file,
           extractSubtitle: 'done',
         });
+        // 首轮精修已写入 SRT；结算阶段态，避免 refine 格永久 pending。
+        settleSkippedRefineStage(event, file, formData);
       }
       if (translationActive) {
         event.sender.send('taskFileChange', {
@@ -426,6 +431,8 @@ export async function processFile(
         ...file,
         extractSubtitle: 'done',
       });
+      // 转写复用意味着首轮精修（若开启）已写入 srtForTranslate；结算阶段态。
+      settleSkippedRefineStage(event, file, formData);
     } else if (!isSubtitleFile && shouldGenerateSubtitle) {
       const templateData = {
         fileName,
@@ -549,6 +556,7 @@ export async function processFile(
               ...file,
               extractAudio: '',
               extractSubtitle: '',
+              refineSubtitle: '',
             });
             throw new TaskCancelledError();
           }

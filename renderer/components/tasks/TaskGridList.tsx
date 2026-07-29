@@ -230,7 +230,7 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
           typeDef,
         );
         const proofreadDisabled =
-          !isProofreadReady(file, typeDef) ||
+          !isProofreadReady(file, typeDef, formData) ||
           proofreadUnavailableReason !== null;
         const proofreadTooltip =
           proofreadUnavailableReason === 'txt'

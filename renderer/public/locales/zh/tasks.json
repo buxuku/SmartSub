@@ -85,7 +85,7 @@
     "blockVideoNeedsMedia": "成品视频需要视频输入，请取消勾选或改放视频文件",
     "blockUnpairedMedia": "有 {{count}} 个视频还没配上字幕，请在视频行选择字幕、补充文件或移除它们",
     "blockNoGoal": "请至少勾选一个要得到的产物",
-    "blockRefineFollow": "AI 精修的「跟随翻译服务」无法解析（翻译未开启或非 AI 类型），请在高级设置里显式选择精修服务商",
+    "blockRefineFollow": "AI 精修的「跟随翻译服务」无法解析（翻译未开启或非 AI 类型），请在工具栏「断句与精修」里显式选择精修服务商",
     "blockRefineProviderInvalid": "AI 精修选择的服务商不可用（不存在或未配置），请重新选择",
     "goConfigure": "去配置",
     "readyHint": "就绪：开始后 {{count}} 个文件将按流程自动处理",

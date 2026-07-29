@@ -38,6 +38,7 @@ import {
   logGlossaryConflicts,
   logGlossaryMatches,
 } from './glossaryManager';
+import { filterSuspectWordsForBatch } from './subtitleRefine/wordSources';
 
 export interface CorrectionItem {
   id: string;
@@ -397,7 +398,12 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
           batch.forEach((item) => {
             batchJson[item.id] = item.source;
           });
-          let userPrompt = `Proofread the following ASR subtitle entries. Return the same JSON keys with {"src": exact original, "tr": corrected text}:\n${JSON.stringify(batchJson, null, 2)}${buildSuspectWordsBlock(params.suspectWords)}`;
+          let userPrompt = `Proofread the following ASR subtitle entries. Return the same JSON keys with {"src": exact original, "tr": corrected text}:\n${JSON.stringify(batchJson, null, 2)}${buildSuspectWordsBlock(
+            filterSuspectWordsForBatch(
+              params.suspectWords,
+              batch.map((item) => item.source),
+            ),
+          )}`;
           if (alignmentRetryUsed || retryCount > 0) {
             userPrompt +=
               '\n\nYour previous response was misaligned or unparsable. Return ONLY a JSON object whose keys exactly match the input IDs; each value must be {"src": exact copy of that entry\'s original text, "tr": corrected text}. Do NOT merge or split entries.';

@@ -49,6 +49,19 @@ export function collectSuspectWords(
   return out;
 }
 
+/** 只保留出现在本批字幕原文中的低置信词（spec: 进入本批提示词）。 */
+export function filterSuspectWordsForBatch(
+  suspectWords: string[] | undefined,
+  sources: string[],
+): string[] {
+  if (!suspectWords?.length) return [];
+  const haystack = sources.join('\n');
+  return suspectWords.filter((w) => {
+    const token = w.trim();
+    return token.length > 0 && haystack.includes(token);
+  });
+}
+
 /** faster-whisper 词级输出（秒，或含 probability）→ RefineWord（毫秒）。 */
 export function refineWordsFromTimedWords(
   words: Array<TimedWord & { probability?: number }> | undefined,
