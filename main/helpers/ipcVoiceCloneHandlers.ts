@@ -333,7 +333,10 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
     },
   );
 
-  // 选区参考文本自动转写（本地 ASR → 云 ASR → 不可用降级手动）。
+  // 在途选区转写 AbortController（按 analysisId）；dispose / 重识别时中止。
+  const rangeTranscribeAborts = new Map<string, AbortController>();
+
+  // 选区参考文本自动转写（窄本地级联 → 云 ASR → 不可用降级手动）。
   ipcMain.handle(
     'voiceClone:transcribeRange',
     async (
@@ -354,17 +357,29 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
       if (!session) {
         return { success: false, error: '分析会话已失效，请重新选择素材' };
       }
+      // 同会话重识别：先中止上一轮，避免僵尸请求。
+      rangeTranscribeAborts.get(analysisId)?.abort();
+      const ac = new AbortController();
+      rangeTranscribeAborts.set(analysisId, ac);
       try {
         const r = await transcribeReferenceRange(
           session.analysisWavPath,
           startMs,
           endMs,
           language,
+          ac.signal,
         );
         return { success: true, data: r };
       } catch (error) {
+        if (error instanceof TaskCancelledError || ac.signal.aborted) {
+          return { success: false, error: 'cancelled' };
+        }
         logMessage(`voiceClone transcribe failed: ${error}`, 'warning');
         return fail(error);
+      } finally {
+        if (rangeTranscribeAborts.get(analysisId) === ac) {
+          rangeTranscribeAborts.delete(analysisId);
+        }
       }
     },
   );
@@ -863,13 +878,15 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
     },
   );
 
-  // 释放分析会话（向导关闭/换素材）。
+  // 释放分析会话（向导关闭/换素材）；同步中止在途选区转写。
   ipcMain.handle(
     'voiceClone:disposeAnalysis',
     async (
       _event,
       { analysisId }: { analysisId: string },
     ): Promise<VoiceCloneResponse> => {
+      rangeTranscribeAborts.get(analysisId)?.abort();
+      rangeTranscribeAborts.delete(analysisId);
       disposeCloneAnalysisSession(analysisId);
       return { success: true, data: true };
     },

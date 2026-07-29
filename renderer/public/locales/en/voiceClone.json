@@ -42,7 +42,7 @@
   "textPlaceholder": "Type what is spoken in the selection…",
   "transcribing": "Transcribing selection…",
   "transcribedBy": "Auto-transcribed by {{engine}}, please proofread",
-  "transcribeUnavailable": "No speech recognition engine available (no local model installed, no cloud ASR configured). Please listen and type manually",
+  "transcribeUnavailable": "No SenseVoice / Whisper (faster-whisper or built-in) / configured cloud ASR detected. Please listen and type manually, or install a local model / configure cloud ASR",
   "retranscribe": "Re-transcribe",
   "fromSubtitle": "Prefilled from subtitles by selection time, please proofread",
   "language": "Language",

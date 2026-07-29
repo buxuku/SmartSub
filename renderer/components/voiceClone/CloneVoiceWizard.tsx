@@ -463,6 +463,8 @@ export default function CloneVoiceWizard({
         endMs: range.endMs,
         language,
       });
+      // 向导关闭 / 重识别中止：不落「不可用」文案。
+      if (!r.success && r.error === 'cancelled') return;
       if (r.success && r.data?.available && r.data?.text) {
         setRefText(r.data.text);
         setLanguage(dominantTextLanguage(String(r.data.text)));
