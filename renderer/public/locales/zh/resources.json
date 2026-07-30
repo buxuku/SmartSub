@@ -154,7 +154,7 @@
     "qwen": {
       "name": "Qwen3-ASR",
       "builtinRuntime": "运行库已随应用内置（与 FunASR 共用），无需单独下载。",
-      "desc": "阿里 Qwen3-ASR（0.6B）本地引擎，基于 sherpa-onnx 运行（与 FunASR 共用运行库）：开源、多语种、CPU 友好，无需显卡或 Python。段级时间戳来自 VAD 切分。",
+      "desc": "阿里 Qwen3-ASR（0.6B / 1.7B）本地引擎，基于 sherpa-onnx 运行（与 FunASR 共用运行库）：开源、多语种，无需显卡或 Python。段级时间戳来自 VAD 切分。",
       "scenario": "适合：CPU 本地多语种转写，Apache-2.0 开源",
       "notInstalled": "未安装",
       "needsModels": "需下载模型",
@@ -178,14 +178,14 @@
       "checkFailed": "检查更新失败，请稍后重试。",
       "anotherDownload": "已有下载任务进行中，请等待完成后再试。",
       "advanced": "高级设置",
-      "providerNote": "当前范围：仅 CPU（0.6B）。GPU 支持计划在后续版本提供。",
+      "providerNote": "当前范围：CPU 推理。0.6B 更轻量，1.7B 精度更高但需要更多内存和时间；GPU 支持计划在后续版本提供。",
       "numThreads": "推理线程数",
       "numThreadsHint": "CPU 推理使用的线程数，越大越快但占用更多 CPU",
       "modelsTitle": "模型",
       "needModelsHint": "下载后才能使用",
       "modelDownload": "下载",
       "modelDelete": "删除",
-      "modelDownloadConfirm": "Qwen3-ASR（0.6B）约 {{size}}。可在 CPU 上运行，但非实时。是否继续？",
+      "modelDownloadConfirm": "Qwen3-ASR 模型约 {{size}}。可在 CPU 上运行，但非实时。是否继续？",
       "modelSources": {
         "modelscope": "ModelScope（国内）",
         "ghproxy": "github 国内加速",
@@ -200,6 +200,10 @@
         "qwen3-asr-0.6b": {
           "name": "Qwen3-ASR 0.6B（int8，约 0.95GB）",
           "desc": "多语种本地识别；int8 量化，CPU 友好。段级时间戳来自 VAD。"
+        },
+        "qwen3-asr-1.7b": {
+          "name": "Qwen3-ASR 1.7B（int8，约 2.4GB）",
+          "desc": "更大模型，识别精度更高；需要更多内存，CPU 推理速度也更慢。当前通过 ModelScope 下载。"
         }
       }
     },

@@ -31,7 +31,7 @@ keywords:
 | **whisper.cpp（内置）** | 默认引擎，ggml 量化模型 + GPU 加速，低配电脑也能流畅跑             | 随应用内置，开箱即用             |
 | **faster-whisper**      | 基于 CTranslate2，速度更快、精度更高                               | 自包含运行时（应用内下载）       |
 | **FunASR**              | SenseVoice（中 / 英 / 日 / 韩 / 粤）与 Paraformer-zh，中文表现优秀 | 内置 sherpa-onnx，无需额外环境   |
-| **Qwen3-ASR**           | 通义千问语音识别（qwen3-asr-0.6b）                                 | 内置 sherpa-onnx，无需额外环境   |
+| **Qwen3-ASR**           | 通义千问语音识别（qwen3-asr-0.6b / 1.7b）                          | 内置 sherpa-onnx，无需额外环境   |
 | **FireRedASR**          | FireRedASR-AED large（中英），中文表现优秀                         | 内置 sherpa-onnx，无需额外环境   |
 | **本地 Whisper CLI**    | 调用你自行安装的 whisper 兼容命令                                  | 使用系统已装命令                 |
 | **云端听写**            | 8 家在线服务商，免 GPU 免模型，部分有免费额度                      | 在线服务（音频上传到配置的端点） |

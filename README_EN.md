@@ -158,7 +158,7 @@ The engine is a per-task choice. Manage runtimes and models from the "Engines & 
 | **whisper.cpp (built-in)** | Default engine; ggml quantized models and GPU acceleration           | Bundled, works out of the box                    |
 | **faster-whisper**         | CTranslate2-based, faster; models fetched on demand from HuggingFace | Self-contained Python runtime (in-app download)  |
 | **FunASR**                 | SenseVoice (zh/en/ja/ko/yue) and Paraformer-zh; great for Chinese    | Bundled sherpa-onnx native library               |
-| **Qwen3-ASR**              | Qwen speech recognition (qwen3-asr-0.6b)                             | Bundled sherpa-onnx native library               |
+| **Qwen3-ASR**              | Qwen speech recognition (qwen3-asr-0.6b / 1.7b)                      | Bundled sherpa-onnx native library               |
 | **FireRedASR**             | FireRedASR-AED large (zh-en); great for Chinese                      | Bundled sherpa-onnx native library               |
 | **Local Whisper CLI**      | Calls a whisper-compatible command you installed yourself            | Uses your system command                         |
 | **Cloud ASR (online)**     | 8 providers, no GPU needed, multi-provider and multi-instance        | Online service (audio uploaded to your endpoint) |
