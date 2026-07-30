@@ -35,7 +35,7 @@ export function applyCudaDeviceSelection(
   }
 
   const original = env[ORIGINAL_VALUE];
-  if (!original || original === UNSET_SENTINEL) {
+  if (original === undefined || original === UNSET_SENTINEL) {
     delete env.CUDA_VISIBLE_DEVICES;
   } else {
     env.CUDA_VISIBLE_DEVICES = original;
@@ -50,4 +50,33 @@ export function validateSelectedCudaDevice(
   const selected = sanitizeSelectedCudaDevice(selectedDevice);
   if (!selected) return '';
   return resolveSelectedCudaGpu(gpus, selected)?.uuid ?? '';
+}
+
+interface NvidiaGpuEnumerationSnapshot {
+  status: 'success' | 'failed';
+  gpus: readonly GpuInfo[];
+}
+
+export interface StartupCudaDeviceResolution {
+  selectedDevice: string;
+  clearPersistedSelection: boolean;
+}
+
+export function resolveStartupCudaDeviceSelection(
+  selectedDevice: unknown,
+  enumeration: NvidiaGpuEnumerationSnapshot,
+): StartupCudaDeviceResolution {
+  const selected = sanitizeSelectedCudaDevice(selectedDevice);
+  if (!selected || enumeration.status === 'failed') {
+    return {
+      selectedDevice: selected,
+      clearPersistedSelection: false,
+    };
+  }
+
+  const validated = validateSelectedCudaDevice(selected, enumeration.gpus);
+  return {
+    selectedDevice: validated,
+    clearPersistedSelection: !validated,
+  };
 }

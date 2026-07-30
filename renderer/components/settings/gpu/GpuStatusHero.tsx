@@ -25,7 +25,7 @@ interface GpuStatusHeroProps {
   gpuEnv: GpuEnvironment;
   activeBackend: AddonLoadResultInfo | null;
   gpuMode: GpuMode;
-  selectedCudaDevice: string;
+  activeCudaDevice: string;
   isDesktopGpuPlatform: boolean;
   selectedVersion: AddonVariant | null;
   customAddonPath: string | null;
@@ -39,7 +39,7 @@ const GpuStatusHero: React.FC<GpuStatusHeroProps> = ({
   gpuEnv,
   activeBackend,
   gpuMode,
-  selectedCudaDevice,
+  activeCudaDevice,
   isDesktopGpuPlatform,
   selectedVersion,
   customAddonPath,
@@ -80,12 +80,9 @@ const GpuStatusHero: React.FC<GpuStatusHeroProps> = ({
       ? t('gpuAcceleration.fullEditionSizeHint')
       : t('gpuAcceleration.liteEditionSizeHint'));
 
-  const selectedCudaGpu = resolveSelectedCudaGpu(
-    gpuEnv.gpus,
-    selectedCudaDevice,
-  );
+  const activeCudaGpu = resolveSelectedCudaGpu(gpuEnv.gpus, activeCudaDevice);
   const gpuName =
-    selectedCudaGpu?.name ||
+    activeCudaGpu?.name ||
     gpuEnv.gpus?.[0]?.name ||
     gpuEnv.nvidia?.gpuSupport?.gpuName ||
     t('gpuAcceleration.notDetected');

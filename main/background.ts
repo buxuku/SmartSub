@@ -54,13 +54,15 @@ import {
   resolveAppIcon,
   setAppDisplayNameEarly,
 } from './helpers/appBranding';
-import { getDevSimulationConfig, getGpuEnvironment } from './helpers/cudaUtils';
-import { applyCudaDeviceSelection } from './helpers/cudaDeviceSelection';
 import {
-  resolveSelectedCudaGpu,
-  sanitizeSelectedCudaDevice,
-  selectableNvidiaGpus,
-} from '../types/gpuDevice';
+  enumerateNvidiaGpus,
+  getDevSimulationConfig,
+} from './helpers/cudaUtils';
+import {
+  applyCudaDeviceSelection,
+  resolveStartupCudaDeviceSelection,
+} from './helpers/cudaDeviceSelection';
+import { sanitizeSelectedCudaDevice } from '../types/gpuDevice';
 import { cleanupOldLogs } from './helpers/logStorage';
 
 //控制台出现中文乱码，需要去node_modules\electron\cli.js中修改启动代码页
@@ -119,19 +121,24 @@ app.on('before-quit', (event) => {
   );
   let startupCudaDevice = configuredCudaDevice;
   if (configuredCudaDevice) {
-    const gpuEnvironment = await getGpuEnvironment();
-    const selectableGpus = selectableNvidiaGpus(gpuEnvironment.gpus);
-    if (
-      selectableGpus.length > 0 &&
-      !resolveSelectedCudaGpu(selectableGpus, configuredCudaDevice)
-    ) {
-      startupCudaDevice = '';
+    const enumeration = await enumerateNvidiaGpus(3000);
+    const resolution = resolveStartupCudaDeviceSelection(
+      configuredCudaDevice,
+      enumeration,
+    );
+    startupCudaDevice = resolution.selectedDevice;
+    if (resolution.clearPersistedSelection) {
       store.set('settings', {
         ...startupSettings,
         selectedCudaDevice: '',
       });
       logMessage(
         `Configured CUDA GPU ${configuredCudaDevice} is no longer available; restored automatic selection`,
+        'warning',
+      );
+    } else if (enumeration.status === 'failed') {
+      logMessage(
+        `Could not validate configured CUDA GPU ${configuredCudaDevice}; preserving the selection for this launch`,
         'warning',
       );
     }

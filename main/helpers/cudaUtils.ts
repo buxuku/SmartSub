@@ -1,4 +1,4 @@
-import { execSync, exec } from 'child_process';
+import { execSync, exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -12,6 +12,7 @@ import { getExtraResourcesPath, isAppleSilicon } from './utils';
  * 否则同步 execSync 会卡死主进程，连带阻塞所有并发 IPC（引擎/模型状态等），UI 卡顿。
  */
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 import type {
   CudaEnvironment,
   CudaToolkitInfo,
@@ -420,16 +421,61 @@ function normalizeGpuVendor(vendor: string, model: string): GpuVendor {
   return 'unknown';
 }
 
-async function detectNvidiaGpus(): Promise<GpuInfo[]> {
-  if (!isPlatformCudaCapable()) return [];
+const NVIDIA_GPU_QUERY_ARGS = [
+  '--query-gpu=index,uuid,name',
+  '--format=csv,noheader,nounits',
+];
+
+export interface NvidiaGpuEnumerationResult {
+  status: 'success' | 'failed';
+  gpus: GpuInfo[];
+}
+
+function getSimulatedNvidiaGpus(): GpuInfo[] | null {
+  const simConfig = getDevSimulationConfig();
+  if (!simConfig?.enabled) return null;
+
+  const requestedCount = Number(process.env.DEV_SIMULATE_GPU_COUNT || '1');
+  const count = Math.max(
+    1,
+    Math.min(8, Number.isInteger(requestedCount) ? requestedCount : 1),
+  );
+  return Array.from({ length: count }, (_, index) => ({
+    name:
+      count === 1 ? simConfig.gpuName : `${simConfig.gpuName} #${index + 1}`,
+    vendor: 'nvidia' as const,
+    index,
+    uuid: `GPU-SIMULATED-${index}`,
+  }));
+}
+
+/**
+ * Query only the stable NVIDIA UUID list. Unlike the full GPU environment
+ * probe, this has a caller-controlled short timeout and reports command
+ * failure separately from a successful result containing zero cards.
+ */
+export async function enumerateNvidiaGpus(
+  timeoutMs = 3000,
+): Promise<NvidiaGpuEnumerationResult> {
+  const simulatedGpus = getSimulatedNvidiaGpus();
+  if (simulatedGpus) return { status: 'success', gpus: simulatedGpus };
+  if (!isPlatformCudaCapable()) return { status: 'success', gpus: [] };
+
   try {
-    const { stdout } = await execAsync(
-      'nvidia-smi --query-gpu=index,uuid,name --format=csv,noheader,nounits',
-      { encoding: 'utf8', timeout: 10000 },
+    const { stdout } = await execFileAsync(
+      'nvidia-smi',
+      NVIDIA_GPU_QUERY_ARGS,
+      {
+        encoding: 'utf8',
+        timeout: timeoutMs,
+      },
     );
-    return parseNvidiaSmiGpuList(stdout);
+    return {
+      status: 'success',
+      gpus: parseNvidiaSmiGpuList(String(stdout)),
+    };
   } catch {
-    return [];
+    return { status: 'failed', gpus: [] };
   }
 }
 
@@ -438,21 +484,8 @@ async function detectNvidiaGpus(): Promise<GpuInfo[]> {
  * NVIDIA 设备优先使用 nvidia-smi，以获得 CUDA 索引与跨重启稳定的 UUID。
  */
 async function detectGpus(): Promise<GpuInfo[]> {
-  const simConfig = getDevSimulationConfig();
-  if (simConfig?.enabled) {
-    const requestedCount = Number(process.env.DEV_SIMULATE_GPU_COUNT || '1');
-    const count = Math.max(
-      1,
-      Math.min(8, Number.isInteger(requestedCount) ? requestedCount : 1),
-    );
-    return Array.from({ length: count }, (_, index) => ({
-      name:
-        count === 1 ? simConfig.gpuName : `${simConfig.gpuName} #${index + 1}`,
-      vendor: 'nvidia' as const,
-      index,
-      uuid: `GPU-SIMULATED-${index}`,
-    }));
-  }
+  const simulatedGpus = getSimulatedNvidiaGpus();
+  if (simulatedGpus) return simulatedGpus;
 
   if (
     process.env.NODE_ENV === 'development' &&
@@ -462,7 +495,9 @@ async function detectGpus(): Promise<GpuInfo[]> {
     return [{ name: `Simulated ${vendor.toUpperCase()} GPU`, vendor }];
   }
 
-  const nvidiaGpusPromise = detectNvidiaGpus();
+  const nvidiaGpusPromise = enumerateNvidiaGpus(10000).then(
+    (result) => result.gpus,
+  );
   try {
     const graphics = await Promise.race([
       si.graphics(),
