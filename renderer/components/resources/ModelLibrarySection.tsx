@@ -61,6 +61,7 @@ import type { TranscriptionEngine } from '../../../types/engine';
 import FunasrModelSection from '@/components/resources/FunasrModelSection';
 import QwenModelSection from '@/components/resources/QwenModelSection';
 import FireRedModelSection from '@/components/resources/FireRedModelSection';
+import ParakeetModelSection from '@/components/resources/ParakeetModelSection';
 
 type FasterWhisperModelEntry = {
   id: string;
@@ -887,6 +888,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
   const isFunasr = engine === 'funasr';
   const isQwen = engine === 'qwen';
   const isFireRed = engine === 'fireRedAsr';
+  const isParakeet = engine === 'parakeet';
   const isLocalCli = engine === 'localCli';
 
   // 当前引擎的路径覆盖键与来源（默认 / 统一目录 / 单独设置）
@@ -898,7 +900,9 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
         ? 'qwenModelsPath'
         : isFireRed
           ? 'fireRedModelsPath'
-          : 'modelsPath';
+          : isParakeet
+            ? 'parakeetModelsPath'
+            : 'modelsPath';
   const modelPathSource =
     systemInfo?.modelPathSources?.[
       isFasterWhisper
@@ -909,7 +913,9 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
             ? 'qwen'
             : isFireRed
               ? 'firered'
-              : 'ggml'
+              : isParakeet
+                ? 'parakeet'
+                : 'ggml'
     ];
   const storageRootSet = !!systemInfo?.storageRoot;
 
@@ -996,7 +1002,9 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
               ? 'qwen'
               : isFireRed
                 ? 'firered'
-                : 'ggml',
+                : isParakeet
+                  ? 'parakeet'
+                  : 'ggml',
       });
       if (!result?.success) {
         toast.error(
@@ -1096,7 +1104,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
 
   // HuggingFace 系下载源（官方/国内镜像）：ggml/ct2/FunASR 共用同一持久化偏好。
   // 统一为「点击下载时再选源」——通过 Context 下发给真正发起下载的叶子组件，
-  // 由其就地弹出气泡选源，零常驻占位。qwen/firered 自管各自源（弹窗内选）。
+  // 由其就地弹出气泡选源，零常驻占位。其余 Sherpa 模型族自管各自源。
   const downloadSourceConfig: DownloadSourceConfig | null =
     isBuiltin || isFasterWhisper || isFunasr
       ? {
@@ -1141,7 +1149,7 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
             />
           )}
 
-          {!isLocalCli && !isFunasr && !isQwen && !isFireRed && (
+          {!isLocalCli && !isFunasr && !isQwen && !isFireRed && !isParakeet && (
             <div className="flex flex-wrap items-center gap-3">
               <div className="relative flex-1 min-w-[180px]">
                 <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
@@ -1187,7 +1195,8 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
             isFasterWhisper ||
             isFunasr ||
             isQwen ||
-            isFireRed) && (
+            isFireRed ||
+            isParakeet) && (
             <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-1 gap-y-1">
               <HardDrive className="h-3 w-3 shrink-0" />
               <span className="shrink-0">
@@ -1205,7 +1214,9 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
                       ? systemInfo?.qwenModelsPath
                       : isFireRed
                         ? systemInfo?.fireRedModelsPath
-                        : systemInfo?.modelsPath}
+                        : isParakeet
+                          ? systemInfo?.parakeetModelsPath
+                          : systemInfo?.modelsPath}
               </span>
               {modelPathSource && (
                 <Badge
@@ -1260,6 +1271,8 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
             <QwenModelSection onUpdate={onUpdate} />
           ) : isFireRed ? (
             <FireRedModelSection onUpdate={onUpdate} />
+          ) : isParakeet ? (
+            <ParakeetModelSection onUpdate={onUpdate} />
           ) : installedOnly && !hasAnyInstalled ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
               {t('noInstalledModels')}

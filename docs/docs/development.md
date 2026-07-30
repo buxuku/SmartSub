@@ -14,7 +14,7 @@ keywords: [SmartSub 开发, Electron, 源码构建, 贡献指南, whisper.cpp ad
 - **Electron**（v30）+ **Next.js**（nextron）：跨平台桌面应用与界面
 - **TypeScript** + **Tailwind CSS**
 - **whisper.cpp**：内置转写引擎的 C++ 实现（Node addon 形式集成，支持 CUDA / Vulkan / CoreML / Metal）
-- **sherpa-onnx**：FunASR / Qwen3-ASR / FireRedASR 与本地 TTS 的原生运行库
+- **sherpa-onnx**：FunASR / Qwen3-ASR / FireRedASR / Parakeet 与本地 TTS 的原生运行库
 - **FFmpeg**：音视频处理与字幕烧录
 
 ## 本地开发

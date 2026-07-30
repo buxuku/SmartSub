@@ -117,7 +117,7 @@ export function isFunasrModelInstalled(id: FunasrModelId): boolean {
 
 /**
  * 共享 silero VAD 的绝对路径：随应用内置（extraResources/sherpa/vad/silero_vad.onnx），
- * 不再依赖下载。funasr / qwen / fireRedAsr 共用这一份，与各引擎可自定义的模型根目录解耦。
+ * 不再依赖下载。所有本地 sherpa ASR 引擎共用这一份，与各引擎可自定义的模型根目录解耦。
  */
 export function getFunasrVadModelPath(): string {
   const { getExtraResourcesPath } =

@@ -25,6 +25,7 @@ export type StorageKind =
   | 'funasr'
   | 'qwen'
   | 'firered'
+  | 'parakeet'
   | 'tts';
 
 /** 各用途在「统一根目录」与「userData 默认」下共用的子路径段（design D2）。 */
@@ -34,6 +35,7 @@ export const STORAGE_SUBPATHS: Record<StorageKind, string[]> = {
   funasr: ['models', 'funasr'],
   qwen: ['models', 'qwen'],
   firered: ['models', 'firered'],
+  parakeet: ['models', 'parakeet'],
   tts: ['models', 'tts'],
 };
 
@@ -46,7 +48,7 @@ function normalized(value: string | undefined | null): string {
 }
 
 export function resolveStorageLocation(input: {
-  /** 该用途的单独覆盖值（settings 中既有的 7 个路径键之一） */
+  /** 该用途的单独覆盖值（settings 中既有的模型路径键之一） */
   override?: string | null;
   /** settings.storageRoot */
   storageRoot?: string | null;
@@ -80,6 +82,7 @@ export interface StoragePathSettings {
   funasrModelsPath?: string;
   qwenModelsPath?: string;
   fireRedModelsPath?: string;
+  parakeetModelsPath?: string;
   ttsModelsPath?: string;
   useCustomTempDir?: boolean;
   customTempDir?: string;
@@ -91,6 +94,7 @@ const OVERRIDE_KEYS: Record<StorageKind, keyof StoragePathSettings> = {
   funasr: 'funasrModelsPath',
   qwen: 'qwenModelsPath',
   firered: 'fireRedModelsPath',
+  parakeet: 'parakeetModelsPath',
   tts: 'ttsModelsPath',
 };
 
@@ -161,6 +165,7 @@ export const STORAGE_PATH_SETTING_KEYS = [
   'funasrModelsPath',
   'qwenModelsPath',
   'fireRedModelsPath',
+  'parakeetModelsPath',
   'ttsModelsPath',
   'customTempDir',
 ] as const;

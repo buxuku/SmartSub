@@ -1,5 +1,5 @@
 ---
-sidebar_position: 7
+sidebar_position: 8
 title: 本地 Whisper CLI
 description: 妙幕本地命令行引擎配置指南：调用你自行安装的 whisper 兼容命令（openai-whisper、whisper-ctranslate2 等）执行转写，支持自定义命令模板。
 keywords: [whisper 命令行, openai-whisper, 自定义转写命令, whisper CLI]

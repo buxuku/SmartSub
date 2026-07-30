@@ -372,7 +372,7 @@ function splitTextByWidth(text: string, maxWidth: number): string[] {
  * 缺席时回退 Intl.Segmenter 词边界，绝境才按字符直切——不拆词），
  * 时间按各段文本宽度**比例插值**（拟造时间，非真实词时间）。
  *
- * 仅供**没有词级时间戳**的路径使用（FunASR / Qwen / FireRed / 旧加速包段级回退 /
+ * 仅供**没有词级时间戳**的路径使用（本地 sherpa ASR / 旧加速包段级回退 /
  * 云端段级、整段降级）。有词级时间戳的路径一律走 `composeWordCues`——
  * groupTokenCues（含硬切回溯）在真实词时间上断句，质量严格优于比例插值。
  */

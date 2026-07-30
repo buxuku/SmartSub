@@ -8,7 +8,7 @@ export interface SherpaRuntime {
 }
 
 /**
- * FunASR / Qwen / FireRed 共用的 sherpa-onnx 原生运行库已随安装包内置（不再运行时下载）。
+ * 本地 sherpa ASR 引擎共用的原生运行库已随安装包内置（不再运行时下载）。
  * 此 hook 仅查询内置状态（installed + 内置版本），供各引擎面板展示「已随应用内置」。
  * 状态上提到常驻挂载的父组件（EngineModelTab）统一持有，避免各面板重复查询。
  */

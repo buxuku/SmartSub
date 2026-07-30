@@ -11,7 +11,9 @@
 （见 `main/helpers/sherpaOnnx/sherpaLibDownloader.ts`，产物由引擎仓
 `smartsub-py-engine` 的 `sherpa-libs` workflow 发布）。
 
-`worker/sherpa-worker.js` 是转写 worker 入口（worker_threads，纯 JS，不经 webpack）。
+`worker/sherpa-worker.js` 是转写 worker 入口（Electron utility process，纯 JS，
+不经 webpack），支持 SenseVoice、Paraformer、Qwen3-ASR、FireRedASR 与
+NeMo transducer（NVIDIA Parakeet TDT）配置。
 
 升级 sherpa 版本：重新 `npm pack sherpa-onnx-node@<ver>` 覆盖 `vendor/` 内除
 `addon.js` 外的文件，并同步更新引擎仓 `pack_sherpa_libs.mjs` / 下载器中的版本号。

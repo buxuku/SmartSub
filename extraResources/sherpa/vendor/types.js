@@ -283,6 +283,7 @@
  * @property {number} [numThreads]
  * @property {boolean|number} [debug]
  * @property {string} [provider]
+ * @property {string} [modelType]
  */
 
 /**

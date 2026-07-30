@@ -39,7 +39,7 @@ export function validateModelLayout(
 
 /**
  * sherpa 系共享 VAD（silero）随应用内置的相对子路径（相对 extraResources 根）。
- * funasr / qwen / fireRedAsr 共用这一份；与各引擎可自定义的模型根目录解耦。
+ * 所有本地 sherpa ASR 引擎共用这一份；与各引擎可自定义的模型根目录解耦。
  */
 export const SHERPA_VAD_SUBPATH = path.join('sherpa', 'vad', 'silero_vad.onnx');
 

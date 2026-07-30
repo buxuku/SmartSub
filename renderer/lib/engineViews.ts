@@ -3,7 +3,7 @@ import { CLOUD_VIEW_PREFIX } from '../../types/asrProvider';
 /**
  * 「引擎与模型」左栏视图 id 体系。
  *
- * 本地四视图为固定枚举（'sherpa' 是 FunASR · Qwen · FireRed 的 UI 合并组）；
+ * 本地四视图为固定枚举（'sherpa' 是各本地 sherpa ASR 模型族的 UI 合并组）；
  * 云端听写为逐条目平级入口，视图 id 形如 `cloud:<typeId>`（品牌/孤儿）、
  * `cloud:<typeId>:<presetId>`（预设槽位）、`cloud:<typeId>:i:<instanceId>`
  * （自定义实例），见 types/asrProvider 的 cloudViewId 家族 / buildCloudViews。

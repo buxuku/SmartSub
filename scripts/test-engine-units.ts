@@ -62,6 +62,7 @@ import {
 } from '../main/helpers/funasrModelCatalog';
 import { QWEN_MODELS } from '../main/helpers/qwenModelCatalog';
 import { FIRERED_MODELS } from '../main/helpers/fireRedModelCatalog';
+import { PARAKEET_MODELS } from '../main/helpers/parakeetModelCatalog';
 import {
   CT2_REQUIRED_FILES,
   CT2_REQUIRED_CONFIG_ARRAYS,
@@ -82,6 +83,7 @@ import {
   buildRecognizerConfig,
   buildQwenRecognizerConfig,
   buildFireRedRecognizerConfig,
+  buildParakeetRecognizerConfig,
   segmentTiming,
   progressPercent,
 } from '../main/helpers/sherpaOnnx/sherpaConfig';
@@ -92,10 +94,13 @@ import {
   FIRERED_HARD_MAX_SPEECH_S,
   FIRERED_DEFAULT_MAX_SPEECH_S,
 } from '../main/helpers/engines/fireRedParams';
+import { buildParakeetParams } from '../main/helpers/engines/parakeetParams';
 import {
   getSelectableModelsForEngine,
   getInstalledModelsForEngine,
+  getEngineModelGroups,
   hasModelsForEngine,
+  hasAnyModelAnyEngine,
 } from '../renderer/lib/engineModels';
 import {
   formatFunasrDownloadFailureToast,
@@ -417,6 +422,7 @@ eq(
     'funasr',
     'qwen',
     'fireRedAsr',
+    'parakeet',
     'cloud',
     undefined,
   ].some(supportsFasterWhisperAdvancedParams),
@@ -1238,6 +1244,140 @@ eq(
   ).modelConfig.qwen3Asr,
   undefined,
   'sherpa: fire_red_asr has no qwen3Asr block',
+);
+
+// --- engineModels/catalog: NVIDIA Parakeet awareness ---
+const parakeetReady = {
+  transcriptionEngine: 'parakeet' as const,
+  parakeetEngineInstalled: true,
+  parakeetVadInstalled: true,
+  parakeetModelsInstalled: ['parakeet-tdt-0.6b-v3'],
+};
+eq(
+  getSelectableModelsForEngine(parakeetReady),
+  ['parakeet-tdt-0.6b-v3'],
+  'engineModels: parakeet selectable = installed models',
+);
+eq(
+  getInstalledModelsForEngine(parakeetReady),
+  ['parakeet-tdt-0.6b-v3'],
+  'engineModels: parakeet installed = installed models',
+);
+eq(
+  hasModelsForEngine(parakeetReady),
+  true,
+  'engineModels: parakeet ready w/ vad+model',
+);
+eq(
+  getEngineModelGroups(parakeetReady),
+  [
+    {
+      engine: 'parakeet',
+      models: ['parakeet-tdt-0.6b-v3'],
+    },
+  ],
+  'engineModels: parakeet appears in task model groups',
+);
+eq(
+  hasAnyModelAnyEngine(parakeetReady),
+  true,
+  'engineModels: parakeet satisfies cross-engine readiness',
+);
+eq(
+  hasModelsForEngine({
+    transcriptionEngine: 'parakeet',
+    parakeetVadInstalled: false,
+    parakeetModelsInstalled: ['parakeet-tdt-0.6b-v3'],
+  }),
+  false,
+  'engineModels: parakeet not ready without vad',
+);
+eq(
+  hasModelsForEngine({
+    transcriptionEngine: 'parakeet',
+    parakeetVadInstalled: true,
+    parakeetModelsInstalled: [],
+  }),
+  false,
+  'engineModels: parakeet not ready without model',
+);
+eq(
+  PARAKEET_MODELS['parakeet-tdt-0.6b-v3'].requiredFiles,
+  ['encoder.int8.onnx', 'decoder.int8.onnx', 'joiner.int8.onnx', 'tokens.txt'],
+  'parakeet: catalog validates the complete int8 transducer layout',
+);
+eq(
+  {
+    upstreamModel: PARAKEET_MODELS['parakeet-tdt-0.6b-v3'].upstreamModel,
+    license: PARAKEET_MODELS['parakeet-tdt-0.6b-v3'].license,
+    languageCount: PARAKEET_MODELS['parakeet-tdt-0.6b-v3'].languageCount,
+    supportsPunctuation:
+      PARAKEET_MODELS['parakeet-tdt-0.6b-v3'].supportsPunctuation,
+  },
+  {
+    upstreamModel: 'nvidia/parakeet-tdt-0.6b-v3',
+    license: 'CC-BY-4.0',
+    languageCount: 25,
+    supportsPunctuation: true,
+  },
+  'parakeet: catalog exposes upstream capability and license metadata',
+);
+
+const PARAKEET_RP = { num_threads: 4, provider: 'cpu' };
+const parakeetRecognizerConfig = buildParakeetRecognizerConfig(
+  {
+    encoder: '/m/encoder.int8.onnx',
+    decoder: '/m/decoder.int8.onnx',
+    joiner: '/m/joiner.int8.onnx',
+  },
+  '/m/tokens.txt',
+  PARAKEET_RP,
+);
+eq(
+  parakeetRecognizerConfig.modelConfig.transducer,
+  {
+    encoder: '/m/encoder.int8.onnx',
+    decoder: '/m/decoder.int8.onnx',
+    joiner: '/m/joiner.int8.onnx',
+  },
+  'sherpa: parakeet maps encoder+decoder+joiner',
+);
+eq(
+  parakeetRecognizerConfig.modelConfig.tokens,
+  '/m/tokens.txt',
+  'sherpa: parakeet uses top-level tokens',
+);
+eq(
+  parakeetRecognizerConfig.modelConfig.modelType,
+  'nemo_transducer',
+  'sherpa: parakeet explicitly selects nemo_transducer',
+);
+eq(
+  buildParakeetParams({}),
+  {
+    provider: 'cpu',
+    num_threads: 2,
+    vad_threshold: 0.5,
+    vad_min_silence_duration_ms: 100,
+    vad_min_speech_duration_ms: 250,
+    vad_max_speech_duration_s: 0,
+  },
+  'parakeet: default params reuse shared VAD defaults',
+);
+eq(
+  buildParakeetParams({
+    parakeetProvider: 'cuda',
+    parakeetNumThreads: 8,
+  }),
+  {
+    provider: 'cuda',
+    num_threads: 8,
+    vad_threshold: 0.5,
+    vad_min_silence_duration_ms: 100,
+    vad_min_speech_duration_ms: 250,
+    vad_max_speech_duration_s: 0,
+  },
+  'parakeet: provider and threads passthrough',
 );
 
 // --- fireRedParams: 默认值 + 段长安全闸（design D8） ---
@@ -2575,7 +2715,7 @@ eq(
     'outcome/fw: clean → reduceRepetition on',
   );
 
-  // sherpa（funasr/qwen/fireRedAsr）：只映射 VAD 灵敏度，绝不关 VAD / 设 ctx / 抗重复
+  // sherpa：只映射 VAD 灵敏度，绝不关 VAD / 设 ctx / 抗重复
   const sherpaAccurate = resolveEffectiveSettings(
     { transcriptionEngine: 'funasr', subtitleOutcome: 'accurate' },
     {},
@@ -2620,6 +2760,14 @@ eq(
     ).vadThreshold,
     0.5,
     'outcome/sherpa(fireRed): balanced → VAD standard threshold',
+  );
+  eq(
+    resolveEffectiveSettings(
+      { transcriptionEngine: 'parakeet', subtitleOutcome: 'clean' },
+      {},
+    ).vadThreshold,
+    0.65,
+    'outcome/sherpa(parakeet): clean → VAD conservative threshold',
   );
 
   // custom 档：回读用户底层值（builtin 从 formData.maxContext 取）
@@ -2793,6 +2941,7 @@ eq(
   eq(isSherpaEngineId('funasr'), true, 'isSherpa: funasr');
   eq(isSherpaEngineId('qwen'), true, 'isSherpa: qwen');
   eq(isSherpaEngineId('fireRedAsr'), true, 'isSherpa: fireRedAsr');
+  eq(isSherpaEngineId('parakeet'), true, 'isSherpa: parakeet');
   eq(isSherpaEngineId('builtin'), false, 'isSherpa: builtin no');
   eq(isSherpaEngineId('fasterWhisper'), false, 'isSherpa: fasterWhisper no');
   eq(
@@ -5863,7 +6012,7 @@ async function runAsyncConcurrencyTests(): Promise<void> {
       bAcquired = true;
       return r;
     });
-    const pC = acquireTranscribeSlot('fireRedAsr').then((r) => {
+    const pC = acquireTranscribeSlot('parakeet').then((r) => {
       cAcquired = true;
       return r;
     });

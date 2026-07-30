@@ -105,6 +105,7 @@ function run(): void {
     funasr: ['models', 'funasr'],
     qwen: ['models', 'qwen'],
     firered: ['models', 'firered'],
+    parakeet: ['models', 'parakeet'],
     tts: ['models', 'tts'],
   };
   (Object.keys(expectedSubpaths) as StorageKind[]).forEach((kind) => {

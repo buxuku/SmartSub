@@ -49,7 +49,7 @@ const VAD_NOISY: VadTuning = {
 };
 
 /** sherpa-onnx 系引擎：VAD 结构性常开、无上下文/抗重复概念，档位只映射 VAD 灵敏度。 */
-const SHERPA_ENGINES = new Set(['funasr', 'qwen', 'fireRedAsr']);
+const SHERPA_ENGINES = new Set(['funasr', 'qwen', 'fireRedAsr', 'parakeet']);
 
 export function isSherpaEngineId(engine?: string): boolean {
   return !!engine && SHERPA_ENGINES.has(engine);
@@ -167,7 +167,7 @@ export function resolveEffectiveSettings(
     return resolved;
   }
 
-  // sherpa 系（funasr / qwen / fireRedAsr）：只映射 VAD 灵敏度，不动上下文/抗重复（不适用）。
+  // sherpa 系：只映射 VAD 灵敏度，不动上下文/抗重复（不适用）。
   if (isSherpaEngineId(engine)) {
     const tuning =
       outcome === 'accurate'

@@ -42,6 +42,12 @@ interface IProps {
   fireRedModelsInstalled?: string[];
   /** fireRed 运行库（与 funasr 同库）是否已安装 */
   fireRedEngineInstalled?: boolean;
+  /** Parakeet 共享 silero VAD 是否就绪 */
+  parakeetVadInstalled?: boolean;
+  /** Parakeet 已安装模型 id 列表 */
+  parakeetModelsInstalled?: string[];
+  /** Parakeet 运行库（与其它 sherpa ASR 共用）是否已安装 */
+  parakeetEngineInstalled?: boolean;
   /** 是否把 localCli 作为独立分组列出（内置规范模型名，保 `${whisperModel}` 替换）。 */
   includeLocalCli?: boolean;
   /** 云端听写服务商实例（每个已配置实例为一分组，实例名为组名）。 */
@@ -83,6 +89,9 @@ const Models = React.forwardRef<
     fireRedVadInstalled,
     fireRedModelsInstalled,
     fireRedEngineInstalled,
+    parakeetVadInstalled,
+    parakeetModelsInstalled,
+    parakeetEngineInstalled,
     includeLocalCli,
     asrProviders,
     engine,
@@ -107,6 +116,9 @@ const Models = React.forwardRef<
       fireRedVadInstalled,
       fireRedModelsInstalled,
       fireRedEngineInstalled,
+      parakeetVadInstalled,
+      parakeetModelsInstalled,
+      parakeetEngineInstalled,
     },
     { includeLocalCli, asrProviders },
   );

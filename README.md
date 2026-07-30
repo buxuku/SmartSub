@@ -56,8 +56,8 @@
 ### 字幕生成（转写）
 
 - 多种视频 / 音频格式批量生成字幕，并发任务数可调
-- 7 类转写引擎逐任务切换：内置 `whisper.cpp`、`faster-whisper`、`FunASR`、`Qwen3-ASR`、`FireRedASR`、本地 `Whisper CLI`，以及免 GPU 的云端听写（8 家服务商）
-- 本地引擎完全离线，无需联网上传；中文场景可直接选用 FunASR / FireRedASR
+- 8 类转写引擎逐任务切换：内置 `whisper.cpp`、`faster-whisper`、`FunASR`、`Qwen3-ASR`、`FireRedASR`、`NVIDIA Parakeet`、本地 `Whisper CLI`，以及免 GPU 的云端听写（8 家服务商）
+- 本地引擎完全离线，无需联网上传；中文场景可选 FunASR / FireRedASR，英文与欧洲语言可选 Parakeet
 - AI 字幕精修（可选）：大模型语义断句 + 批量校正——断句按语义重组且时间轴仍精确到词（连接词不吊行尾、数字不被停顿劈开），校正修同音字、去语气词、规范标点；服务商默认跟随 AI 翻译配置（本地 Ollama 零成本），失败自动回退规则断句
 - 简繁转换、自定义字幕文件名（方便不同播放器挂载识别）、可选中文字幕去标点
 
@@ -107,13 +107,13 @@
 
 对价格敏感的用户，下面这条路线不花一分钱，也不需要注册任何服务：
 
-| 环节     | 免费方案                                                                | 说明                         |
-| -------- | ----------------------------------------------------------------------- | ---------------------------- |
-| 视频下载 | yt-dlp / lux 开源引擎                                                   | 应用内一键安装，免费使用     |
-| 语音转写 | whisper.cpp / faster-whisper / FunASR / Qwen3-ASR / FireRedASR 本地模型 | 模型下载一次，离线可用       |
-| 字幕翻译 | 内置免费翻译（必应 / 谷歌接口，自动回退）、Ollama 本地大模型、DeepLX    | 免费翻译开箱即用，零配置     |
-| TTS 配音 | 本地 Kokoro / VITS / ZipVoice 声音克隆；Edge TTS 免费档                 | 本地模型离线合成，无用量限制 |
-| 字幕烧录 | 内置 ffmpeg                                                             | 本地合成                     |
+| 环节     | 免费方案                                                                           | 说明                         |
+| -------- | ---------------------------------------------------------------------------------- | ---------------------------- |
+| 视频下载 | yt-dlp / lux 开源引擎                                                              | 应用内一键安装，免费使用     |
+| 语音转写 | whisper.cpp / faster-whisper / FunASR / Qwen3-ASR / FireRedASR / Parakeet 本地模型 | 模型下载一次，离线可用       |
+| 字幕翻译 | 内置免费翻译（必应 / 谷歌接口，自动回退）、Ollama 本地大模型、DeepLX               | 免费翻译开箱即用，零配置     |
+| TTS 配音 | 本地 Kokoro / VITS / ZipVoice 声音克隆；Edge TTS 免费档                            | 本地模型离线合成，无用量限制 |
+| 字幕烧录 | 内置 ffmpeg                                                                        | 本地合成                     |
 
 付费云服务（OpenAI、ElevenLabs、火山引擎、腾讯云等）全部是可选增强，按需选用。
 
@@ -160,10 +160,11 @@ brew upgrade --cask smartsub # 升级
 | **FunASR**               | SenseVoice（中 / 英 / 日 / 韩 / 粤）与 Paraformer-zh，中文表现优秀 | 内置 sherpa-onnx 原生库            |
 | **Qwen3-ASR**            | 通义千问语音识别（qwen3-asr-0.6b）                                 | 内置 sherpa-onnx 原生库            |
 | **FireRedASR**           | FireRedASR-AED large（中英），中文表现优秀                         | 内置 sherpa-onnx 原生库            |
+| **NVIDIA Parakeet**      | Parakeet TDT 0.6B v3，支持 25 种欧洲语言及标点、大小写             | 内置 sherpa-onnx 原生库            |
 | **本地 Whisper CLI**     | 调用你自行安装的 whisper 兼容命令                                  | 使用系统已装命令                   |
 | **云端听写（在线 ASR）** | 8 家在线服务商，免 GPU、支持多服务商多实例                         | 在线服务（音频上传到你配置的端点） |
 
-FunASR / Qwen3-ASR / FireRedASR 均通过内置的 sherpa-onnx 原生库运行，无需额外环境；faster-whisper 会在应用内下载一个自包含运行时。
+FunASR / Qwen3-ASR / FireRedASR / Parakeet 均通过内置的 sherpa-onnx 原生库运行，无需额外环境；faster-whisper 会在应用内下载一个自包含运行时。
 
 </details>
 
@@ -280,7 +281,7 @@ AI 翻译的结果受模型和提示词影响较大，可以尝试不同的模�
 
 导入步骤：在「引擎与模型」页面点击「导入模型」，选择下载好的模型文件确认导入；或直接复制到模型目录。
 
-FunASR / Qwen3-ASR / FireRedASR 等引擎的模型可在「引擎与模型」页面内按需下载（支持 ModelScope / GitHub 等多源）。
+FunASR / Qwen3-ASR / FireRedASR / Parakeet 等引擎的模型可在「引擎与模型」页面内按需下载（支持 ModelScope / GitHub 等多源）。
 
 </details>
 
@@ -361,7 +362,7 @@ yarn dev
 ## 致谢
 
 - [whisper.cpp](https://github.com/ggerganov/whisper.cpp) — 本地转写引擎基础
-- [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) — FunASR / Qwen3-ASR / FireRedASR 与本地 TTS 的运行时
+- [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) — FunASR / Qwen3-ASR / FireRedASR / Parakeet 与本地 TTS 的运行时
 - [FFmpeg](https://ffmpeg.org/) — 音视频处理与字幕烧录
 - [Bob](https://bobtranslate.com/) — 翻译服务申请文档
 

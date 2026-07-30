@@ -39,6 +39,14 @@ export interface ISystemInfo {
   fireRedModelsInstalled?: string[];
   /** fireRed 模型根目录（固定路径，仅展示用，不可更改） */
   fireRedModelsPath?: string;
+  /** Parakeet 引擎包（sherpa-onnx，与其它本地 sherpa ASR 共用）是否已安装 */
+  parakeetEngineInstalled?: boolean;
+  /** Parakeet 共用 silero VAD 是否已安装 */
+  parakeetVadInstalled?: boolean;
+  /** 已安装的 Parakeet 模型 id */
+  parakeetModelsInstalled?: string[];
+  /** Parakeet 模型根目录 */
+  parakeetModelsPath?: string;
   /** userData 默认存储基座（「默认路径含中文」警示判定用） */
   userDataPath?: string;
   /** 统一存储根目录原始设置值（'' = 未设置） */
@@ -50,6 +58,7 @@ export interface ISystemInfo {
     funasr: StoragePathSource;
     qwen: StoragePathSource;
     firered: StoragePathSource;
+    parakeet: StoragePathSource;
   };
 }
 

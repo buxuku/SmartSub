@@ -181,7 +181,7 @@ export function getQwenModelFiles(id: QwenModelId): {
   };
 }
 
-/** 共享 silero VAD：随应用内置（extraResources/sherpa/vad/silero_vad.onnx），与 funasr/fireRed 共用同一份。 */
+/** 共享 silero VAD：随应用内置（extraResources/sherpa/vad/silero_vad.onnx），与其它本地 sherpa ASR 共用同一份。 */
 export function getQwenVadModelPath(): string {
   const { getExtraResourcesPath } =
     require('./utils') as typeof import('./utils');
