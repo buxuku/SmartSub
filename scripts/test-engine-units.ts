@@ -53,6 +53,7 @@ import {
   toFriendlyFfmpegError,
 } from '../main/helpers/ffmpegErrorUtils';
 import fs from 'fs';
+import http from 'http';
 import os from 'os';
 import nodePath from 'path';
 import {
@@ -66,6 +67,9 @@ import {
   getQwenModelIds,
   getQwenSourceOrder,
   getQwenSupportedSources,
+  getQwenRequiredFileExpectations,
+  getQwenModelScopeFileUrl,
+  getQwenModelScopeTreeUrl,
   resolveQwenSelection,
 } from '../main/helpers/qwenModelCatalog';
 import { FIRERED_MODELS } from '../main/helpers/fireRedModelCatalog';
@@ -74,6 +78,7 @@ import {
   CT2_REQUIRED_CONFIG_ARRAYS,
   inspectCt2SnapshotRoot,
   validateModelLayout,
+  validateModelLayoutWithSizes,
   validateCt2ModelSnapshot,
   resolveOverridePath,
   resolveBundledVadPath,
@@ -84,6 +89,7 @@ import {
   prepareDownloadTarget,
   validateDownloadResponse,
 } from '../main/helpers/download/resumeIntegrity';
+import { fetchJson } from '../main/helpers/download/fetchJson';
 import {
   buildVadConfig,
   buildRecognizerConfig,
@@ -1321,6 +1327,21 @@ eq(
     true,
     'import: present nested file -> ok',
   );
+  fs.writeFileSync(nodePath.join(tmp, 'empty.onnx'), '');
+  fs.mkdirSync(nodePath.join(tmp, 'directory.onnx'));
+  eq(
+    validateModelLayout(tmp, ['empty.onnx', 'directory.onnx']).missing,
+    ['empty.onnx', 'directory.onnx'],
+    'import: empty files and directories are rejected',
+  );
+  eq(
+    validateModelLayoutWithSizes(tmp, [
+      { path: 'encoder.int8.onnx', size: 1 },
+      { path: 'decoder.int8.onnx', size: 2 },
+    ]).missing,
+    ['decoder.int8.onnx'],
+    'import: exact-size validation reports wrong-sized files',
+  );
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
@@ -1505,6 +1526,47 @@ eq(
   'import: qwen model sizes share the same runtime layout',
 );
 eq(
+  QWEN_MODELS['qwen3-asr-1.7b'].requiredFiles.includes(
+    'tokenizer/tokenizer_config.json',
+  ),
+  true,
+  'import: qwen runtime marker includes required tokenizer_config.json',
+);
+{
+  const qwen06Sizes = Object.fromEntries(
+    getQwenRequiredFileExpectations('qwen3-asr-0.6b').map((file) => [
+      file.path,
+      file.size,
+    ]),
+  );
+  const qwen17Sizes = Object.fromEntries(
+    getQwenRequiredFileExpectations('qwen3-asr-1.7b').map((file) => [
+      file.path,
+      file.size,
+    ]),
+  );
+  eq(
+    qwen06Sizes['decoder.int8.onnx'],
+    755_914_231,
+    'qwen catalog: 0.6B decoder has pinned official size',
+  );
+  eq(
+    qwen17Sizes['decoder.int8.onnx'],
+    2_037_458_645,
+    'qwen catalog: 1.7B decoder has pinned official size',
+  );
+  eq(
+    qwen17Sizes['decoder.int8.onnx'] === qwen06Sizes['decoder.int8.onnx'],
+    false,
+    'qwen import: 0.6B decoder cannot satisfy the 1.7B slot identity',
+  );
+  eq(
+    qwen17Sizes['tokenizer/tokenizer_config.json'],
+    12_487,
+    'qwen catalog: tokenizer_config has pinned official size',
+  );
+}
+eq(
   QWEN_MODELS['qwen3-asr-1.7b'].modelScopeFiles
     .map((file) => file.remote)
     .slice(0, 3),
@@ -1514,6 +1576,29 @@ eq(
     'model_1.7B/decoder.int8.onnx',
   ],
   'qwen catalog: 1.7B points at the official int8 ModelScope layout',
+);
+eq(
+  QWEN_MODELS['qwen3-asr-1.7b'].modelScopeFiles.reduce(
+    (total, file) => total + file.size,
+    0,
+  ),
+  2_404_230_105,
+  'qwen catalog: 1.7B pinned files total 2.404 GB',
+);
+eq(
+  getQwenModelScopeFileUrl(
+    QWEN_MODELS['qwen3-asr-1.7b'],
+    'model_1.7B/decoder.int8.onnx',
+  ).includes('/resolve/master/'),
+  false,
+  'qwen catalog: file downloads use an immutable revision',
+);
+eq(
+  getQwenModelScopeTreeUrl(QWEN_MODELS['qwen3-asr-1.7b']).includes(
+    'Revision=master',
+  ),
+  false,
+  'qwen catalog: tree metadata uses the same immutable revision',
 );
 eq(
   getQwenModelIds(),
@@ -5901,6 +5986,52 @@ function sleepMs(ms: number): Promise<void> {
 }
 
 async function runAsyncConcurrencyTests(): Promise<void> {
+  // 可取消 JSON 请求：重定向后的慢文件树请求仍必须响应同一个 AbortSignal。
+  {
+    const server = http.createServer((req, res) => {
+      if (req.url === '/redirect') {
+        res.statusCode = 302;
+        res.setHeader('Location', '/slow-tree');
+        res.end();
+      }
+      // /slow-tree 故意不结束响应；测试必须依赖 abort 退出。
+    });
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => reject(error);
+      server.once('error', onError);
+      server.listen(0, '127.0.0.1', () => {
+        server.removeListener('error', onError);
+        resolve();
+      });
+    });
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('test server did not expose a TCP port');
+      }
+      const abort = new AbortController();
+      let fetchError: unknown = null;
+      const pending = fetchJson(`http://127.0.0.1:${address.port}/redirect`, {
+        signal: abort.signal,
+        timeoutMs: 2_000,
+        cancelMessage: 'Download cancelled',
+      }).catch((error) => {
+        fetchError = error;
+        return null;
+      });
+      await sleepMs(20);
+      abort.abort();
+      await pending;
+      eq(
+        fetchError instanceof Error ? fetchError.message : String(fetchError),
+        'Download cancelled',
+        'qwen download: abort survives JSON redirect and cancels tree fetch',
+      );
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+
   // 非受限引擎不排队：未释放前重复获取也立即放行
   {
     const r1 = await acquireTranscribeSlot('builtin');

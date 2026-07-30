@@ -23,17 +23,49 @@ export interface LayoutCheckResult {
   missing: string[];
 }
 
+export interface ModelFileSizeExpectation {
+  path: string;
+  size: number;
+}
+
 /**
  * 校验源目录是否含某模型的全部必需文件。
- * requiredFiles 支持嵌套相对路径（如 `tokenizer/vocab.json`），逐项检查存在性。
+ * requiredFiles 支持嵌套相对路径（如 `tokenizer/vocab.json`）；目录、空文件与
+ * 无法 stat 的路径都视为无效，避免把占位文件误报为可加载模型。
  */
 export function validateModelLayout(
   srcDir: string,
-  requiredFiles: string[],
+  requiredFiles: readonly string[],
 ): LayoutCheckResult {
-  const missing = requiredFiles.filter(
-    (rel) => !fs.existsSync(path.join(srcDir, rel)),
-  );
+  const missing = requiredFiles.filter((rel) => {
+    try {
+      const stat = fs.statSync(path.join(srcDir, rel));
+      return !stat.isFile() || stat.size <= 0;
+    } catch {
+      return true;
+    }
+  });
+  return { ok: missing.length === 0, missing };
+}
+
+/**
+ * 在通用非空文件校验之上要求精确字节数。
+ * 适用于同名布局对应多个模型规格的场景，防止较小模型被导入到较大模型槽位。
+ */
+export function validateModelLayoutWithSizes(
+  srcDir: string,
+  expectedFiles: readonly ModelFileSizeExpectation[],
+): LayoutCheckResult {
+  const missing = expectedFiles
+    .filter(({ path: rel, size }) => {
+      try {
+        const stat = fs.statSync(path.join(srcDir, rel));
+        return !stat.isFile() || stat.size !== size;
+      } catch {
+        return true;
+      }
+    })
+    .map(({ path: rel }) => rel);
   return { ok: missing.length === 0, missing };
 }
 
