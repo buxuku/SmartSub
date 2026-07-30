@@ -18,7 +18,7 @@ import {
   type CloudAudioChunk,
 } from '../audioProcessor';
 import { formatSrtContent } from '../fileUtils';
-import { logMessage } from '../storeManager';
+import { logMessage, store } from '../storeManager';
 import {
   getTaskContext,
   TaskCancelledError,
@@ -39,6 +39,8 @@ import { writeWordTimelineSidecar } from '../wordTimelineSidecar';
 import { refineWordsFromNativeTokens } from '../subtitleRefine';
 import type { AsrWord } from '../../service/asr/types';
 import { getCloudProviderGate } from './cloudProviderGate';
+import { resolveEffectiveSettings } from './outcomePresets';
+import { guardAsrSubtitleCues } from './transcribeShared';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
 /** 无时间戳（text-only 模型）降级时，用更细的静音切片换取更细的粗粒度时间轴。 */
@@ -115,6 +117,10 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
 
   const { tempAudioFile, srtFile } = file;
   const signal = ctx.signal ?? getTaskContext()?.signal;
+  const settings = resolveEffectiveSettings(
+    formData,
+    store.get('settings') as Record<string, unknown>,
+  );
 
   const f = formData as {
     asrProviderId?: string;
@@ -238,7 +244,14 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
   throwIfSignalCancelled(signal);
   // 词级/段级路径统一补一次「裁尾」护栏（基于原始 16kHz WAV 能量）。
   const subtitles = trimSubtitleTrailingSilence(cues, tempAudioFile);
-  const formattedSrt = formatSrtContent(subtitles);
+  const guarded = guardAsrSubtitleCues(
+    subtitles,
+    formData as Record<string, unknown>,
+    settings,
+    'cloud',
+  );
+  if (guarded.diagnostic) logMessage(guarded.diagnostic, 'warning');
+  const formattedSrt = formatSrtContent(guarded.cues);
   await fs.promises.writeFile(srtFile, formattedSrt);
 
   // 词级时间轴 sidecar（openspec: add-ai-subtitle-refine D6）：仅词级路径落盘；

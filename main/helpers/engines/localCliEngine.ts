@@ -3,8 +3,11 @@ import path from 'path';
 import fs from 'fs';
 import type { EngineStatus } from '../../../types/engine';
 import { logMessage, store } from '../storeManager';
+import { formatSrtContent, secondsToSubtitleTime } from '../fileUtils';
+import { parseSubtitleCues } from '../subtitleFormats';
 import { getTaskContext, TaskCancelledError } from '../taskContext';
-import { getWhisperLanguage } from './transcribeShared';
+import { resolveEffectiveSettings } from './outcomePresets';
+import { getWhisperLanguage, guardAsrSubtitleCues } from './transcribeShared';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
 /** 在途 CLI 子进程集合：任务级并发下可能同时存在多个，取消须精确到进程。 */
@@ -39,8 +42,11 @@ function transcribeLocalCli(ctx: TranscribeContext): Promise<string> {
     sourceLanguage?: string;
   };
   const whisperModel = model?.toLowerCase();
-  const settings = store.get('settings');
-  const whisperCommand = settings?.whisperCommand;
+  const settings = resolveEffectiveSettings(
+    formData,
+    store.get('settings') as Record<string, unknown>,
+  );
+  const whisperCommand = String(settings?.whisperCommand ?? '');
   const { tempAudioFile, srtFile, directory } = file;
 
   let runShell = whisperCommand
@@ -128,6 +134,33 @@ function transcribeLocalCli(ctx: TranscribeContext): Promise<string> {
       const tempSrtFile = path.join(directory, `${md5BaseName}.srt`);
       if (fs.existsSync(tempSrtFile)) {
         fs.renameSync(tempSrtFile, srtFile);
+      }
+
+      // 外部 CLI 直接产出 SRT：解析成共享 cue 形状后走同一模型外重复护栏。
+      // 未命中时不重写文件，保留 CLI 的原始格式；解析失败也不影响已成功的转写。
+      if (fs.existsSync(srtFile)) {
+        try {
+          const parsed = parseSubtitleCues(
+            fs.readFileSync(srtFile, 'utf-8'),
+            'srt',
+          );
+          const guarded = guardAsrSubtitleCues(
+            parsed.map((cue) => [
+              secondsToSubtitleTime(cue.startMs / 1000),
+              secondsToSubtitleTime(cue.endMs / 1000),
+              cue.text,
+            ]),
+            formData as Record<string, unknown>,
+            settings,
+            'local-cli',
+          );
+          if (guarded.diagnostic) {
+            logMessage(guarded.diagnostic, 'warning');
+            fs.writeFileSync(srtFile, formatSrtContent(guarded.cues), 'utf-8');
+          }
+        } catch (error) {
+          logMessage(`local CLI repetition guard skipped: ${error}`, 'warning');
+        }
       }
 
       event.sender.send('taskFileChange', { ...file, extractSubtitle: 'done' });

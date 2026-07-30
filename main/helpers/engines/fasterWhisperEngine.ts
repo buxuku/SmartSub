@@ -36,6 +36,7 @@ import {
   getNumericSetting,
   getWhisperLanguage,
   getFasterWhisperAntiRepetitionParams,
+  guardAsrSubtitleCues,
 } from './transcribeShared';
 import { resolveEffectiveSettings } from './outcomePresets';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
@@ -344,7 +345,14 @@ async function transcribeFasterWhisper(
     subtitles = segments.map(subtitleCueFromSegment);
   }
   subtitles = trimSubtitleTrailingSilence(subtitles, tempAudioFile);
-  const formattedSrt = formatSrtContent(subtitles);
+  const guarded = guardAsrSubtitleCues(
+    subtitles,
+    formData as Record<string, unknown>,
+    settings,
+    'faster-whisper',
+  );
+  if (guarded.diagnostic) logMessage(guarded.diagnostic, 'warning');
+  const formattedSrt = formatSrtContent(guarded.cues);
   await fs.promises.writeFile(srtFile, formattedSrt);
 
   // 词级时间轴 sidecar（openspec: add-ai-subtitle-refine D6）：word_timestamps 恒开，

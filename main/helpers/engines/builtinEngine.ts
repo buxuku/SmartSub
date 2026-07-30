@@ -34,6 +34,7 @@ import {
   getVadSettings,
   isReduceRepetitionEnabled,
   getNumericSetting,
+  guardAsrSubtitleCues,
 } from './transcribeShared';
 import { resolveEffectiveSettings } from './outcomePresets';
 import {
@@ -372,7 +373,14 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
         tempAudioFile,
       );
     }
-    const formattedSrt = formatSrtContent(subtitles);
+    const guarded = guardAsrSubtitleCues(
+      subtitles,
+      formData as Record<string, unknown>,
+      settings,
+      'builtin',
+    );
+    if (guarded.diagnostic) logMessage(guarded.diagnostic, 'warning');
+    const formattedSrt = formatSrtContent(guarded.cues);
     await fs.promises.writeFile(srtFile, formattedSrt);
 
     // 词级时间轴 sidecar（openspec: add-ai-subtitle-refine D6）：供 AI 语义断句精确

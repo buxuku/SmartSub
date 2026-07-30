@@ -146,7 +146,7 @@
       "title": "Custom",
       "desc": "Manually tune context length, VAD, repetition reduction and other low-level parameters.",
       "sectionTitle": "Custom parameters",
-      "sherpaNote": "For the current engine (FunASR / Qwen / FireRed), VAD is always on and there is no context-length / repetition concept. To fine-tune VAD sensitivity, use the Settings page."
+      "sherpaNote": "For the current engine (FunASR / Qwen / FireRed), VAD is always on and there are no decoder-level context or repetition controls. Cleanest & most stable enables the shared high-confidence repetition post-processor. To fine-tune VAD sensitivity, use the Settings page."
     },
     "compare": {
       "toggle": "See how the effects differ",
@@ -171,7 +171,7 @@
     "label": "Reduce repetition / hallucinated lines",
     "on": "On: drops previous-text conditioning and suppresses repeats, greatly reducing looped lines over silence/repetition; coherence on clean speech may drop slightly.",
     "off": "Off: engine defaults (keeps cross-segment coherence); long videos or silence may produce repeated or hallucinated lines.",
-    "hint": "Turn on when subtitles loop or repeat heavily. Global setting; applies to both faster-whisper and whisper.cpp."
+    "hint": "Repetition post-processing runs only with Cleanest & most stable or when this custom option is enabled. In addition to engine-native controls, it blocks sliding, exact-repeat and multi-line window cycles."
   },
   "fasterWhisperAdvanced": {
     "title": "Advanced decoding parameters",
