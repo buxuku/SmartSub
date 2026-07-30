@@ -15,7 +15,7 @@ import { createWindow } from './helpers/create-window';
 import { setupIpcHandlers } from './helpers/ipcHandlers';
 import { setupTaskProcessor } from './helpers/taskProcessor';
 import { setupSystemInfoManager } from './helpers/systemInfoManager';
-import { setupStoreHandlers, store } from './helpers/storeManager';
+import { setupStoreHandlers, store, logMessage } from './helpers/storeManager';
 import { setupTaskManager } from './helpers/taskManager';
 import {
   initializeWorkItemStore,
@@ -55,6 +55,12 @@ import {
   setAppDisplayNameEarly,
 } from './helpers/appBranding';
 import { getDevSimulationConfig, getGpuEnvironment } from './helpers/cudaUtils';
+import { applyCudaDeviceSelection } from './helpers/cudaDeviceSelection';
+import {
+  resolveSelectedCudaGpu,
+  sanitizeSelectedCudaDevice,
+  selectableNvidiaGpus,
+} from '../types/gpuDevice';
 import { cleanupOldLogs } from './helpers/logStorage';
 
 //控制台出现中文乱码，需要去node_modules\electron\cli.js中修改启动代码页
@@ -104,6 +110,34 @@ app.on('before-quit', (event) => {
 
 (async () => {
   await app.whenReady();
+
+  // CUDA reads CUDA_VISIBLE_DEVICES when its runtime first initializes. Apply
+  // the persisted selection before any addon/utility/Python engine can start.
+  const startupSettings = store.get('settings');
+  const configuredCudaDevice = sanitizeSelectedCudaDevice(
+    startupSettings?.selectedCudaDevice,
+  );
+  let startupCudaDevice = configuredCudaDevice;
+  if (configuredCudaDevice) {
+    const gpuEnvironment = await getGpuEnvironment();
+    const selectableGpus = selectableNvidiaGpus(gpuEnvironment.gpus);
+    if (
+      selectableGpus.length > 0 &&
+      !resolveSelectedCudaGpu(selectableGpus, configuredCudaDevice)
+    ) {
+      startupCudaDevice = '';
+      store.set('settings', {
+        ...startupSettings,
+        selectedCudaDevice: '',
+      });
+      logMessage(
+        `Configured CUDA GPU ${configuredCudaDevice} is no longer available; restored automatic selection`,
+        'warning',
+      );
+    }
+  }
+  applyCudaDeviceSelection(startupCudaDevice);
+
   applyMacAppBranding();
 
   const sim = getDevSimulationConfig();

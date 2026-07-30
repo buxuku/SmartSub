@@ -253,6 +253,13 @@ import {
   isGladiaJobGone,
   extractGladiaResult,
 } from '../main/service/asr/gladiaUtils';
+import {
+  parseNvidiaSmiGpuList,
+  resolveSelectedCudaGpu,
+  sanitizeSelectedCudaDevice,
+  selectableNvidiaGpus,
+} from '../types/gpuDevice';
+import { applyCudaDeviceSelection } from '../main/helpers/cudaDeviceSelection';
 
 let passed = 0;
 let failed = 0;
@@ -266,6 +273,89 @@ function eq(actual: unknown, expected: unknown, name: string): void {
     failed++;
     console.error(`✗ ${name}\n    expected: ${e}\n    actual:   ${a}`);
   }
+}
+
+// --- CUDA multi-GPU selection ---
+const parsedCudaGpus = parseNvidiaSmiGpuList(
+  [
+    '0, GPU-aaaa-1111, NVIDIA GeForce RTX 4090',
+    '1, GPU-bbbb-2222, NVIDIA RTX 6000, Ada Generation',
+    'invalid row',
+  ].join('\n'),
+);
+eq(
+  parsedCudaGpus,
+  [
+    {
+      name: 'NVIDIA GeForce RTX 4090',
+      vendor: 'nvidia',
+      index: 0,
+      uuid: 'GPU-aaaa-1111',
+    },
+    {
+      name: 'NVIDIA RTX 6000, Ada Generation',
+      vendor: 'nvidia',
+      index: 1,
+      uuid: 'GPU-bbbb-2222',
+    },
+  ],
+  'cuda device: parse stable index/uuid/name list',
+);
+eq(
+  sanitizeSelectedCudaDevice(' GPU-aaaa-1111 '),
+  'GPU-aaaa-1111',
+  'cuda device: sanitize valid UUID',
+);
+eq(
+  sanitizeSelectedCudaDevice('0; remove-item'),
+  '',
+  'cuda device: reject non-UUID value',
+);
+eq(
+  selectableNvidiaGpus([
+    ...parsedCudaGpus,
+    { name: 'Intel Arc', vendor: 'intel' },
+    { name: 'NVIDIA without UUID', vendor: 'nvidia' },
+  ]).length,
+  2,
+  'cuda device: expose only addressable NVIDIA GPUs',
+);
+eq(
+  resolveSelectedCudaGpu(parsedCudaGpus, 'GPU-BBBB-2222')?.index,
+  1,
+  'cuda device: resolve UUID case-insensitively',
+);
+{
+  const inheritedEnv: NodeJS.ProcessEnv = {
+    NODE_ENV: 'test',
+    CUDA_VISIBLE_DEVICES: '2',
+  };
+  eq(
+    applyCudaDeviceSelection('GPU-aaaa-1111', inheritedEnv),
+    'GPU-aaaa-1111',
+    'cuda device: apply selected UUID',
+  );
+  eq(
+    inheritedEnv.CUDA_VISIBLE_DEVICES,
+    'GPU-aaaa-1111',
+    'cuda device: selected UUID reaches child environment',
+  );
+  applyCudaDeviceSelection('', inheritedEnv);
+  eq(
+    inheritedEnv.CUDA_VISIBLE_DEVICES,
+    '2',
+    'cuda device: auto restores inherited visibility',
+  );
+}
+{
+  const cleanEnv: NodeJS.ProcessEnv = { NODE_ENV: 'test' };
+  applyCudaDeviceSelection('GPU-bbbb-2222', cleanEnv);
+  applyCudaDeviceSelection('', cleanEnv);
+  eq(
+    cleanEnv.CUDA_VISIBLE_DEVICES,
+    undefined,
+    'cuda device: auto removes SmartSub-only visibility',
+  );
 }
 
 // --- secondsToSrtTime ---

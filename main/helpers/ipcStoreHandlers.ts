@@ -33,6 +33,8 @@ import {
   sanitizeStoragePathPatch,
 } from './storagePaths';
 import { sanitizeCustomLanguages } from '../../types/language';
+import { sanitizeSelectedCudaDevice } from '../../types/gpuDevice';
+import { applyCudaDeviceSelection } from './cudaDeviceSelection';
 
 console.log(app.getVersion(), 'version');
 
@@ -187,6 +189,11 @@ export function setupStoreHandlers() {
         supportedLanguage.map((language) => language.value),
       );
     }
+    if (Object.prototype.hasOwnProperty.call(sanitized, 'selectedCudaDevice')) {
+      sanitized.selectedCudaDevice = sanitizeSelectedCudaDevice(
+        sanitized.selectedCudaDevice,
+      );
+    }
     const nextSettings = { ...preSettings, ...sanitized };
     store.set('settings', nextSettings);
     if (
@@ -241,6 +248,14 @@ export function setupStoreHandlers() {
 
   ipcMain.handle('getSettings', async () => {
     return store.get('settings');
+  });
+
+  ipcMain.handle('restart-app', async () => {
+    const settings = store.get('settings');
+    applyCudaDeviceSelection(settings?.selectedCudaDevice);
+    app.relaunch();
+    setImmediate(() => app.quit());
+    return { success: true };
   });
 
   // 日志相关处理（按日 JSONL 文件存储，见 logStorage.ts）

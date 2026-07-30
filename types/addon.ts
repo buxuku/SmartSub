@@ -44,6 +44,10 @@ export type GpuVendor = 'nvidia' | 'amd' | 'intel' | 'apple' | 'unknown';
 export interface GpuInfo {
   name: string;
   vendor: GpuVendor;
+  /** CUDA device index reported by nvidia-smi (NVIDIA only). */
+  index?: number;
+  /** Stable NVIDIA GPU UUID used by CUDA_VISIBLE_DEVICES. */
+  uuid?: string;
 }
 
 /**
@@ -170,7 +174,7 @@ export interface GpuEnvironment {
   platform: string;
   /** 是否 Apple Silicon（darwin+arm64；渲染层区分 mac 加速能力用） */
   appleSilicon: boolean;
-  /** systeminformation 枚举的显卡列表 */
+  /** 枚举到的显卡；NVIDIA 项在可用时包含 nvidia-smi 索引与 UUID */
   gpus: GpuInfo[];
   /** Vulkan 运行库是否存在（仅 win/linux 有意义） */
   vulkanRuntime: boolean;
