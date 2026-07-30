@@ -69,6 +69,16 @@ export interface ISystemInfo {
 /** 与 main/helpers/storagePaths.ts 的 StorageSource 对齐（types 层无法反向依赖 main）。 */
 export type StoragePathSource = 'override' | 'storageRoot' | 'default';
 
+/** 单个文件的文稿匹配结果摘要（详细替换内容不落任务存储，避免泄露整篇文稿）。 */
+export interface ManuscriptMatchSummary {
+  manuscriptName: string;
+  totalCues: number;
+  replacedCues: number;
+  matchedGroups: number;
+  /** 已替换 cue 的平均相似度，0–1。 */
+  averageConfidence: number;
+}
+
 export interface IFiles {
   uuid: string;
   filePath: string;
@@ -96,6 +106,13 @@ export interface IFiles {
   proofreadDataFile?: string;
   /** 词级时间轴 sidecar（`<tempAudio>.words.json`）：AI 语义断句精确对齐用；无词级引擎缺省。 */
   wordTimelineFile?: string;
+  /** ASR 后参考文稿匹配阶段；缺省不存在即功能关闭。 */
+  manuscriptMatch?: '' | 'loading' | 'done';
+  /** 稳定的非致命回退码，renderer 据此本地化；不会令任务失败。 */
+  manuscriptMatchError?: string;
+  /** 仅供日志/tooltip 兜底的诊断细节，不参与本地化键。 */
+  manuscriptMatchErrorDetail?: string;
+  manuscriptMatchSummary?: ManuscriptMatchSummary;
   /** 本次转写实际使用的后端标签（如 "CUDA 12.4.0" / "Vulkan" / "CPU"） */
   whisperBackend?: string;
   /** 该文件走了内封软字幕直提（跳过 ASR；角色分离开启时仍会抽音频）：用于任务列表标识 */
@@ -242,4 +259,11 @@ export interface IFormData {
   speakerDiarizationCount?: number;
   /** 是否把 `[Speaker N]` 角色标签写入字幕交付物；缺省 false，仅存 sidecar metadata。 */
   speakerDiarizationEmbedInSubtitle?: boolean;
+  /**
+   * ASR 参考文稿（TXT / Markdown）。路径存在即开启；只替换高置信匹配文本，
+   * 时间轴始终来自 ASR。缺省/空字符串关闭，保持旧任务与配方行为。
+   */
+  manuscriptPath?: string;
+  /** 创建快照时的显示名；运行时仍以 manuscriptPath 为唯一数据源。 */
+  manuscriptName?: string;
 }

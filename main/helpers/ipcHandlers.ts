@@ -20,6 +20,12 @@ import {
   readProofreadDataFile,
   updateProofreadDataFromSubtitles,
 } from './proofreadData';
+import {
+  MANUSCRIPT_EXTENSIONS,
+  ManuscriptFileError,
+  readManuscriptFile,
+  toManuscriptSelectionPayload,
+} from './manuscriptMatching';
 
 // 定义支持的文件扩展名常量
 export const MEDIA_EXTENSIONS = [
@@ -277,6 +283,34 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
       }
     }
     event.sender.send('file-selected', allValidPaths.map(wrapFileObject));
+  });
+
+  /**
+   * 参考文稿使用独立 invoke 通道，不复用 file-selected 广播，避免选中的 txt/md
+   * 被任务页误当成媒体或字幕追加到文件列表。主进程在返回路径前完成扩展名、大小、
+   * 编码和非空校验；运行阶段会再次读取校验，以覆盖文件被移动/修改的情况。
+   */
+  ipcMain.handle('manuscript:select', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [
+        {
+          name: 'Reference Manuscript',
+          extensions: MANUSCRIPT_EXTENSIONS.map((ext) => ext.slice(1)),
+        },
+      ],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    try {
+      const manuscript = await readManuscriptFile(result.filePaths[0]);
+      return toManuscriptSelectionPayload(manuscript);
+    } catch (error) {
+      const code =
+        error instanceof ManuscriptFileError ? error.code : 'unreadable';
+      const message = error instanceof Error ? error.message : String(error);
+      logMessage(`select manuscript failed (${code}): ${message}`, 'warning');
+      return { errorCode: code, error: message };
+    }
   });
 
   ipcMain.on('openUrl', (event, url) => {

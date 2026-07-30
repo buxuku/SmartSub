@@ -69,7 +69,7 @@ export function RailChips({
 }: {
   file: any;
   rail: RailItem[];
-  t: (key: string) => string;
+  t: (key: string, options?: Record<string, unknown>) => string;
   className?: string;
 }) {
   return (
@@ -107,6 +107,31 @@ export function RailChips({
         }
         const stage = item.stage;
         const status = getStageStatus(file, stage.key);
+        const manuscriptSummary =
+          stage.key === 'manuscriptMatch' ? file?.manuscriptMatchSummary : null;
+        const manuscriptWarning =
+          stage.key === 'manuscriptMatch' && status === 'done'
+            ? file?.manuscriptMatchError
+            : '';
+        const manuscriptWarningReason = manuscriptWarning
+          ? t(`manuscript.error.${manuscriptWarning}`, {
+              defaultValue:
+                file?.manuscriptMatchErrorDetail || manuscriptWarning,
+            })
+          : '';
+        const manuscriptTitle = manuscriptWarning
+          ? t('manuscript.stageWarning', {
+              reason: manuscriptWarningReason,
+            })
+          : manuscriptSummary
+            ? t('manuscript.stageSummary', {
+                replaced: manuscriptSummary.replacedCues,
+                total: manuscriptSummary.totalCues,
+                confidence: Math.round(
+                  Number(manuscriptSummary.averageConfidence || 0) * 100,
+                ),
+              })
+            : undefined;
         return (
           <React.Fragment key={stage.key}>
             {index > 0 && <ChevronRight className="h-3 w-3 text-faint" />}
@@ -115,16 +140,28 @@ export function RailChips({
                 'inline-flex items-center gap-1 text-xs whitespace-nowrap',
                 status === 'pending' && 'text-faint',
                 status === 'loading' && 'text-primary font-medium',
-                status === 'done' && 'text-success',
+                status === 'done' &&
+                  (manuscriptWarning ? 'text-warning' : 'text-success'),
                 status === 'error' && 'text-destructive font-medium',
               )}
+              title={manuscriptTitle}
             >
               {status === 'loading' && (
                 <Loader2 className="h-3 w-3 animate-spin" />
               )}
-              {status === 'done' && <CheckCircle2 className="h-3 w-3" />}
+              {status === 'done' &&
+                (manuscriptWarning ? (
+                  <CircleAlert className="h-3 w-3" />
+                ) : (
+                  <CheckCircle2 className="h-3 w-3" />
+                ))}
               {status === 'error' && <CircleAlert className="h-3 w-3" />}
               {t(stage.labelKey)}
+              {status === 'done' && manuscriptSummary && (
+                <span className="text-[10px]">
+                  {manuscriptSummary.replacedCues}/{manuscriptSummary.totalCues}
+                </span>
+              )}
               {status === 'loading' &&
                 stage.key === 'extractSubtitle' &&
                 file.whisperBackend && (

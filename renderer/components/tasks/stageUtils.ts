@@ -6,6 +6,7 @@ export type StageKey =
   | 'extractAudio'
   | 'extractSubtitle'
   | 'refineSubtitle'
+  | 'manuscriptMatch'
   | 'translateSubtitle'
   | 'speakerDiarization'
   | 'dubbing'
@@ -41,6 +42,12 @@ export function getFileStages(
       file?.refineSubtitle !== undefined
     ) {
       stages.push({ key: 'refineSubtitle', labelKey: 'stage.refine' });
+    }
+    if (formData?.manuscriptPath || file?.manuscriptMatch !== undefined) {
+      stages.push({
+        key: 'manuscriptMatch',
+        labelKey: 'stage.manuscript',
+      });
     }
   }
   if (typeDef.hasTranslate && formData?.translateProvider !== '-1') {
@@ -225,12 +232,11 @@ export function isProofreadReady(
   const stages = getFileStages(file, typeDef, formData);
   if (typeDef.taskType === 'generateOnly') {
     if (file?.extractSubtitle !== 'done') return false;
-    // 精修会改写 srtFile：阶段在轨时须等 refine 完成，避免校对读到旧内容后被覆盖。
-    if (
-      stages.some((s) => s.key === 'refineSubtitle') &&
-      file?.refineSubtitle !== 'done'
-    ) {
-      return false;
+    // 精修/文稿匹配会改写 srtFile：在轨时须全部完成，避免校对读到旧内容后被覆盖。
+    for (const key of ['refineSubtitle', 'manuscriptMatch'] as const) {
+      if (stages.some((stage) => stage.key === key) && file?.[key] !== 'done') {
+        return false;
+      }
     }
   } else if (file?.translateSubtitle !== 'done') {
     return false;
