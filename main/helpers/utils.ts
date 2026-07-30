@@ -234,6 +234,8 @@ export const defaultUserConfig = {
   subtitleOutputFormat: 'srt',
   maxSubtitleChars: 0,
   removeChinesePunctuation: false,
+  speakerDiarization: false,
+  speakerDiarizationCount: 0,
 };
 
 export function getSrtFileName(

@@ -44,6 +44,7 @@ import {
   TaskCancelledError,
   getTaskContext,
 } from './taskContext';
+import { runSpeakerDiarizationStage } from './speakerDiarization/stage';
 
 /**
  * 处理任务错误
@@ -665,6 +666,23 @@ export async function processFile(
       getDesiredChineseScript(sourceLanguage)
     ) {
       await stripSourceSubtitlePunctuation(file.srtFile, fileName);
+    }
+
+    // 可选说话者分离：仅对本轮真实 ASR 的音频执行。放在翻译之后，避免
+    // `[Speaker N]` 标签污染翻译提示；同时在 proofread sidecar 生成前写入
+    // 源/译字幕，使交付物与校对台显示一致。模型缺失/推理失败安全降级为原字幕。
+    if (
+      !isSubtitleFile &&
+      shouldGenerateSubtitle &&
+      !hasProvidedSubtitle &&
+      formData?.speakerDiarization === true
+    ) {
+      throwIfTaskCancelled();
+      await runSpeakerDiarizationStage({
+        file,
+        formData,
+        signal: getTaskContext()?.signal,
+      });
     }
 
     if (file.srtFile && fs.existsSync(file.srtFile)) {

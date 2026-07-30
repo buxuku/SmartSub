@@ -4,7 +4,7 @@
  * 替代可编辑的 InlineConfigBar——避免全局配置与本任务无关却可改的误导。
  */
 import React, { useMemo } from 'react';
-import { AudioLines, Diamond, Film, Lock } from 'lucide-react';
+import { AudioLines, Diamond, Film, Lock, Users } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -213,6 +213,22 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
 
       {needsTranscription && refineValue && (
         <SummaryItem label={t('stage.refine')} value={refineValue} />
+      )}
+
+      {needsTranscription && snapshot?.speakerDiarization === true && (
+        <SummaryItem
+          label={t('speakerDiarization.summaryLabel')}
+          value={
+            <span className="flex items-center gap-1">
+              <Users className="h-3 w-3 flex-none text-muted-foreground" />
+              {snapshot?.speakerDiarizationCount >= 2
+                ? t('speakerDiarization.summaryKnown', {
+                    count: snapshot.speakerDiarizationCount,
+                  })
+                : t('speakerDiarization.summaryAuto')}
+            </span>
+          }
+        />
       )}
 
       {snapshot?.sourceLanguage && (

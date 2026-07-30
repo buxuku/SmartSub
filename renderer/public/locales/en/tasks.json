@@ -229,6 +229,19 @@
     "label": "Strip Chinese punctuation",
     "hint": "Replace Chinese punctuation (，。、？！ etc.) in Chinese subtitles with spaces and trim trailing spaces for cleaner subtitles. Applies to the source when the source language is Chinese, and to the translation when the target is Chinese."
   },
+  "speakerDiarization": {
+    "label": "Distinguish speakers",
+    "hint": "After transcription, analyze the full audio locally and add labels such as [Speaker 1] to source and translated subtitles. Off by default; overlapping speech shows multiple speaker numbers.",
+    "modelReady": "Model ready",
+    "modelMissing": "Model not downloaded",
+    "modelMissingHint": "You can save this setting, but the run will safely skip diarization. Download the model first from Resources → Local multi-model engine → Speaker diarization.",
+    "speakerCount": "Number of speakers",
+    "speakerCountHint": "Specifying a known count is usually more stable",
+    "autoDetect": "Auto detect",
+    "summaryLabel": "Speakers",
+    "summaryAuto": "Auto detect",
+    "summaryKnown": "{{count}} speakers"
+  },
   "refine": {
     "provider": {
       "label": "Refine provider",

@@ -96,6 +96,28 @@
       "itnHint": "Converts spoken numbers, dates, etc. into standard written form and restores punctuation",
       "itnFunasrOnly": "Only supported by FunASR (SenseVoice); Qwen, FireRed and Parakeet handle text formatting internally."
     },
+    "speakerDiarization": {
+      "name": "Speaker diarization (optional post-processing)",
+      "desc": "Works with every local or cloud transcription engine. After transcription, audio is analyzed locally and speaker numbers are aligned to subtitle cues. It is off by default and leaves subtitles unchanged if the model or inference fails.",
+      "needsModel": "Model required",
+      "modelName": "Pyannote + 3D-Speaker (about 45 MB)",
+      "modelDesc": "Offline speaker segmentation and voice clustering models. Speaker count can be detected automatically or specified per task.",
+      "download": "Download",
+      "downloaded": "Speaker diarization model is ready",
+      "downloadFailed": "Failed to download speaker diarization model",
+      "deleteFailed": "Failed to delete speaker diarization model",
+      "anotherDownload": "Another download is already in progress. Please wait for it to finish.",
+      "extracting": "Extracting segmentation model…",
+      "downloadSource": "Download source",
+      "sources": {
+        "ghproxy": "GitHub mirror",
+        "github": "GitHub"
+      },
+      "sourceHints": {
+        "ghproxy": "Download the two official model files through the configured GitHub proxy",
+        "github": "Download directly from official sherpa-onnx GitHub Releases"
+      }
+    },
     "funasr": {
       "name": "FunASR",
       "builtinRuntime": "The runtime is bundled with the app — no download needed.",
