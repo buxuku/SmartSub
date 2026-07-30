@@ -272,7 +272,10 @@ import {
   sanitizeSelectedCudaDevice,
   selectableNvidiaGpus,
 } from '../types/gpuDevice';
-import { applyCudaDeviceSelection } from '../main/helpers/cudaDeviceSelection';
+import {
+  applyCudaDeviceSelection,
+  resolveStartupCudaDeviceSelection,
+} from '../main/helpers/cudaDeviceSelection';
 
 let passed = 0;
 let failed = 0;
@@ -338,6 +341,25 @@ eq(
   1,
   'cuda device: resolve UUID case-insensitively',
 );
+eq(
+  resolveStartupCudaDeviceSelection('GPU-aaaa-1111', {
+    status: 'success',
+    gpus: [],
+  }),
+  { selectedDevice: '', clearPersistedSelection: true },
+  'cuda device: successful zero-card enumeration clears stale selection',
+);
+eq(
+  resolveStartupCudaDeviceSelection('GPU-aaaa-1111', {
+    status: 'failed',
+    gpus: [],
+  }),
+  {
+    selectedDevice: 'GPU-aaaa-1111',
+    clearPersistedSelection: false,
+  },
+  'cuda device: failed enumeration preserves selection',
+);
 {
   const inheritedEnv: NodeJS.ProcessEnv = {
     NODE_ENV: 'test',
@@ -368,6 +390,20 @@ eq(
     cleanEnv.CUDA_VISIBLE_DEVICES,
     undefined,
     'cuda device: auto removes SmartSub-only visibility',
+  );
+}
+{
+  const inheritedEmptyEnv: NodeJS.ProcessEnv = {
+    NODE_ENV: 'test',
+    CUDA_VISIBLE_DEVICES: '',
+  };
+  applyCudaDeviceSelection('GPU-aaaa-1111', inheritedEmptyEnv);
+  const relaunchedEnv = { ...inheritedEmptyEnv };
+  applyCudaDeviceSelection('', relaunchedEnv);
+  eq(
+    relaunchedEnv.CUDA_VISIBLE_DEVICES,
+    '',
+    'cuda device: auto restores inherited empty visibility across relaunch',
   );
 }
 
