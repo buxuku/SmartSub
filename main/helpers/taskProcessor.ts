@@ -248,7 +248,7 @@ async function startTaskRun(
   const pid = projectId || DEFAULT_PROJECT_ID;
   dispatchEvent = event;
 
-  // 任务级配置快照：带附加阶段（配音/合成）或角色分离的任务以创建时快照为准，
+  // 任务级配置快照：带附加阶段、参考文稿或角色分离的任务以创建时快照为准，
   // 重试/续跑不受此后全局设置变更影响；首次提交时把有效配置写入快照。
   let formData = enforceSpeakerDiarizationTaskBoundary({
     ...(incomingFormData || {}),

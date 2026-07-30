@@ -2,13 +2,16 @@ import fs from 'fs';
 import path from 'path';
 
 export const MANUSCRIPT_EXTENSIONS = ['.txt', '.md', '.markdown'] as const;
-export const MANUSCRIPT_MAX_BYTES = 10 * 1024 * 1024;
+export const MANUSCRIPT_MAX_BYTES = 1024 * 1024;
+export const MANUSCRIPT_MAX_COMPARABLE_CHARS = 500_000;
+export const MANUSCRIPT_MAX_UNITS = 20_000;
 
 export type ManuscriptFileErrorCode =
   | 'unsupported'
   | 'notFound'
   | 'notFile'
   | 'tooLarge'
+  | 'tooComplex'
   | 'empty'
   | 'invalidEncoding'
   | 'unreadable';
@@ -30,9 +33,12 @@ export interface ManuscriptConfig {
 
 export interface LoadedManuscript extends ManuscriptConfig {
   text: string;
+  /** Pre-segmented once during validated loading; never crosses the IPC boundary. */
+  units: string[];
   size: number;
   encoding: 'utf-8' | 'utf-16le' | 'utf-16be' | 'gb18030';
   characterCount: number;
+  comparableCharacterCount: number;
 }
 
 /** Renderer 所需的最小 IPC 返回值；刻意不包含文稿正文。 */
@@ -67,6 +73,12 @@ export interface ManuscriptMatchResult<T extends ManuscriptMatchCue> {
   matches: ManuscriptCueMatch[];
 }
 
+export interface ManuscriptMatchOptions {
+  signal?: AbortSignal;
+  /** Reuses units produced by readManuscriptFile to avoid parsing a large file twice. */
+  manuscriptUnits?: string[];
+}
+
 interface ComparableChar {
   value: string;
   start: number;
@@ -96,6 +108,24 @@ const MAX_GROUP_SIZE = 3;
 const LOCAL_LOOKAHEAD = 24;
 const MAX_INDEXED_POSITIONS = 120;
 const MAX_FAR_CANDIDATES = 60;
+const MAX_UNORDERED_ORDERED_GAP = 0.08;
+const YIELD_EVERY_OPERATIONS = 2048;
+
+function manuscriptAbortError(): Error {
+  const error = new Error('Manuscript matching cancelled');
+  error.name = 'AbortError';
+  return error;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw manuscriptAbortError();
+}
+
+async function cooperativeYield(signal?: AbortSignal): Promise<void> {
+  throwIfAborted(signal);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  throwIfAborted(signal);
+}
 
 export function getManuscriptConfig(
   formData?: Record<string, unknown>,
@@ -208,7 +238,9 @@ export function normalizeManuscriptText(
 
 export async function readManuscriptFile(
   filePath: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<LoadedManuscript> {
+  throwIfAborted(options.signal);
   if (!isSupportedManuscriptPath(filePath)) {
     throw new ManuscriptFileError(
       'unsupported',
@@ -241,20 +273,32 @@ export async function readManuscriptFile(
 
   let buffer: Buffer;
   try {
-    buffer = await fs.promises.readFile(filePath);
+    buffer = await fs.promises.readFile(filePath, {
+      signal: options.signal,
+    });
   } catch (error) {
+    if (options.signal?.aborted) throw manuscriptAbortError();
     throw new ManuscriptFileError(
       'unreadable',
       `Cannot read manuscript: ${error}`,
     );
   }
+  // Recheck the bytes actually read: the file may have grown between stat/read.
+  if (buffer.length > MANUSCRIPT_MAX_BYTES) {
+    throw new ManuscriptFileError(
+      'tooLarge',
+      `Manuscript exceeds ${MANUSCRIPT_MAX_BYTES} bytes`,
+    );
+  }
+  throwIfAborted(options.signal);
   const decoded = decodeManuscriptBuffer(buffer);
   const extension = path.extname(filePath).toLowerCase();
   const text = normalizeManuscriptText(
     decoded.text,
     extension === '.md' || extension === '.markdown',
   );
-  if (!text || toComparableChars(text).length === 0) {
+  const segmented = await segmentManuscriptWithMetrics(text, options.signal);
+  if (!text || segmented.comparableCharacterCount === 0) {
     throw new ManuscriptFileError(
       'empty',
       'The manuscript contains no matchable text',
@@ -264,9 +308,11 @@ export async function readManuscriptFile(
     path: filePath,
     name: path.basename(filePath),
     text,
-    size: stat.size,
+    units: segmented.units,
+    size: buffer.length,
     encoding: decoded.encoding,
-    characterCount: Array.from(text).length,
+    characterCount: segmented.characterCount,
+    comparableCharacterCount: segmented.comparableCharacterCount,
   };
 }
 
@@ -282,15 +328,27 @@ export function toManuscriptSelectionPayload(
   };
 }
 
+const MATCHABLE_CHARACTER = /[\p{L}\p{N}]/u;
+const SOFT_SPLIT_CHARACTER = /[\s，,、：:]/u;
+
+function comparableValues(rawCharacter: string): string[] {
+  const values: string[] = [];
+  const normalized = rawCharacter.normalize('NFKC').toLowerCase();
+  for (const normalizedCharacter of normalized) {
+    if (MATCHABLE_CHARACTER.test(normalizedCharacter)) {
+      values.push(normalizedCharacter);
+    }
+  }
+  return values;
+}
+
 function toComparableChars(text: string): ComparableChar[] {
   const chars: ComparableChar[] = [];
   const matcher = /./gu;
   let match: RegExpExecArray | null;
   while ((match = matcher.exec(text))) {
     // 不使用 toLocaleLowerCase：土耳其语等系统区域会让相同文件产生不同匹配结果。
-    const normalized = match[0].normalize('NFKC').toLowerCase();
-    for (const normalizedChar of normalized) {
-      if (!/[\p{L}\p{N}]/u.test(normalizedChar)) continue;
+    for (const normalizedChar of comparableValues(match[0])) {
       chars.push({
         value: normalizedChar,
         start: match.index,
@@ -302,7 +360,10 @@ function toComparableChars(text: string): ComparableChar[] {
 }
 
 function makeComparable(text: string): ComparableSequence {
-  const symbols = toComparableChars(text).map((item) => item.value);
+  const symbols: string[] = [];
+  for (const rawCharacter of text) {
+    symbols.push(...comparableValues(rawCharacter));
+  }
   const value = symbols.join('');
   const bigrams = new Map<string, number>();
   if (symbols.length === 1) {
@@ -338,40 +399,169 @@ function joinVisibleText(parts: string[]): string {
   return output;
 }
 
-function splitLongUnit(text: string, targetLength = 56): string[] {
+interface TextMetrics {
+  characterCount: number;
+  comparableCharacterCount: number;
+}
+
+interface SegmentedManuscript extends TextMetrics {
+  units: string[];
+}
+
+async function measureText(
+  text: string,
+  signal?: AbortSignal,
+): Promise<TextMetrics> {
+  let characterCount = 0;
+  let comparableCharacterCount = 0;
+  let rawIndex = 0;
+  let nextYield = YIELD_EVERY_OPERATIONS;
+  for (const rawCharacter of text) {
+    characterCount += 1;
+    comparableCharacterCount += comparableValues(rawCharacter).length;
+    if (comparableCharacterCount > MANUSCRIPT_MAX_COMPARABLE_CHARS) {
+      throw new ManuscriptFileError(
+        'tooComplex',
+        `Manuscript exceeds ${MANUSCRIPT_MAX_COMPARABLE_CHARS} comparable characters`,
+      );
+    }
+    rawIndex += rawCharacter.length;
+    if (rawIndex >= nextYield) {
+      await cooperativeYield(signal);
+      nextYield = rawIndex + YIELD_EVERY_OPERATIONS;
+    }
+  }
+  return { characterCount, comparableCharacterCount };
+}
+
+/**
+ * Splits one long sentence in linear time. Comparable offsets and soft
+ * boundaries are collected once; each subsequent cut advances monotonically.
+ */
+async function splitLongUnit(
+  input: string,
+  targetLength = 56,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const text = input.trim();
+  if (!text) return [];
+
+  const comparableEnds: number[] = [];
+  const boundaries: Array<{ comparableCount: number; rawEnd: number }> = [];
+  let rawIndex = 0;
+  let nextYield = YIELD_EVERY_OPERATIONS;
+  for (const rawCharacter of text) {
+    rawIndex += rawCharacter.length;
+    for (const _value of comparableValues(rawCharacter)) {
+      comparableEnds.push(rawIndex);
+    }
+    if (SOFT_SPLIT_CHARACTER.test(rawCharacter)) {
+      boundaries.push({
+        comparableCount: comparableEnds.length,
+        rawEnd: rawIndex,
+      });
+    }
+    if (rawIndex >= nextYield) {
+      await cooperativeYield(signal);
+      nextYield = rawIndex + YIELD_EVERY_OPERATIONS;
+    }
+  }
+
+  const maxTailLength = Math.floor(targetLength * 1.5);
+  if (comparableEnds.length <= maxTailLength) {
+    return comparableEnds.length > 0 ? [text] : [];
+  }
+
+  const minimumOffset = Math.max(1, Math.floor(targetLength * 0.55));
+  const maximumOffset = Math.max(minimumOffset, Math.ceil(targetLength * 1.35));
   const parts: string[] = [];
-  let rest = text.trim();
-  while (toComparableChars(rest).length > targetLength * 1.5) {
-    const chars = toComparableChars(rest);
-    const targetIndex = Math.min(targetLength, chars.length - 1);
-    const minRaw = chars[Math.max(1, Math.floor(targetLength * 0.55))]?.start;
-    const maxRaw =
-      chars[Math.min(chars.length - 1, Math.ceil(targetLength * 1.35))]?.end ??
-      rest.length;
-    const targetRaw = chars[targetIndex]?.end ?? rest.length;
-    const candidates: number[] = [];
-    for (let index = minRaw ?? 1; index <= maxRaw; index += 1) {
-      if (/[\s，,、：:]/u.test(rest[index] ?? '')) {
-        candidates.push(index + 1);
+  let comparableStart = 0;
+  let rawStart = 0;
+  let boundaryStart = 0;
+  let nextSplitYield = YIELD_EVERY_OPERATIONS;
+
+  while (comparableEnds.length - comparableStart > maxTailLength) {
+    const targetComparable = Math.min(
+      comparableEnds.length,
+      comparableStart + targetLength,
+    );
+    const minimumComparable = comparableStart + minimumOffset;
+    const maximumComparable = Math.min(
+      comparableEnds.length,
+      comparableStart + maximumOffset,
+    );
+    while (
+      boundaryStart < boundaries.length &&
+      boundaries[boundaryStart].comparableCount <= comparableStart
+    ) {
+      boundaryStart += 1;
+    }
+
+    let bestBoundary: { comparableCount: number; rawEnd: number } | undefined;
+    for (
+      let boundaryIndex = boundaryStart;
+      boundaryIndex < boundaries.length;
+      boundaryIndex += 1
+    ) {
+      const boundary = boundaries[boundaryIndex];
+      if (boundary.comparableCount > maximumComparable) break;
+      if (boundary.comparableCount < minimumComparable) continue;
+      if (
+        !bestBoundary ||
+        Math.abs(boundary.comparableCount - targetComparable) <
+          Math.abs(bestBoundary.comparableCount - targetComparable)
+      ) {
+        bestBoundary = boundary;
       }
     }
-    const cut =
-      candidates.sort(
-        (left, right) =>
-          Math.abs(left - targetRaw) - Math.abs(right - targetRaw),
-      )[0] ?? targetRaw;
-    const head = rest.slice(0, cut).trim();
-    if (!head || cut <= 0) break;
-    parts.push(head);
-    rest = rest.slice(cut).trim();
+
+    const rawCut =
+      bestBoundary?.rawEnd ??
+      comparableEnds[Math.max(comparableStart, targetComparable - 1)];
+    if (!rawCut || rawCut <= rawStart) break;
+    const head = text.slice(rawStart, rawCut).trim();
+    if (head) parts.push(head);
+    rawStart = rawCut;
+    while (
+      comparableStart < comparableEnds.length &&
+      comparableEnds[comparableStart] <= rawCut
+    ) {
+      comparableStart += 1;
+    }
+    if (comparableStart >= nextSplitYield) {
+      await cooperativeYield(signal);
+      nextSplitYield = comparableStart + YIELD_EVERY_OPERATIONS;
+    }
   }
-  if (rest) parts.push(rest);
+
+  const tail = text.slice(rawStart).trim();
+  if (tail) parts.push(tail);
   return parts;
 }
 
-export function segmentManuscript(text: string): string[] {
+async function segmentManuscriptWithMetrics(
+  text: string,
+  signal?: AbortSignal,
+): Promise<SegmentedManuscript> {
+  throwIfAborted(signal);
   const normalized = normalizeManuscriptText(text);
-  const initial: string[] = [];
+  const metrics = await measureText(normalized, signal);
+  const units: string[] = [];
+
+  const appendPiece = async (piece: string): Promise<void> => {
+    for (const part of await splitLongUnit(piece, 56, signal)) {
+      if (units.length >= MANUSCRIPT_MAX_UNITS) {
+        throw new ManuscriptFileError(
+          'tooComplex',
+          `Manuscript exceeds ${MANUSCRIPT_MAX_UNITS} matching units`,
+        );
+      }
+      units.push(part);
+    }
+  };
+
+  let processed = 0;
+  let nextYield = YIELD_EVERY_OPERATIONS;
   for (const paragraph of normalized.split(/\n+/)) {
     let start = 0;
     for (let index = 0; index < paragraph.length; index += 1) {
@@ -380,21 +570,32 @@ export function segmentManuscript(text: string): string[] {
       const hardBoundary = /[。！？!?；;]/u.test(current);
       const englishPeriodBoundary =
         current === '.' && (!next || /\s/u.test(next));
-      if (!hardBoundary && !englishPeriodBoundary) continue;
-      const piece = paragraph.slice(start, index + 1).trim();
-      if (piece) initial.push(piece);
-      start = index + 1;
-      while (start < paragraph.length && /\s/u.test(paragraph[start])) {
-        start += 1;
+      if (hardBoundary || englishPeriodBoundary) {
+        const piece = paragraph.slice(start, index + 1).trim();
+        if (piece) await appendPiece(piece);
+        start = index + 1;
+        while (start < paragraph.length && /\s/u.test(paragraph[start])) {
+          start += 1;
+        }
+        index = start - 1;
       }
-      index = start - 1;
+      processed += 1;
+      if (processed >= nextYield) {
+        await cooperativeYield(signal);
+        nextYield = processed + YIELD_EVERY_OPERATIONS;
+      }
     }
     const tail = paragraph.slice(start).trim();
-    if (tail) initial.push(tail);
+    if (tail) await appendPiece(tail);
   }
-  return initial
-    .flatMap((piece) => splitLongUnit(piece))
-    .filter((piece) => toComparableChars(piece).length > 0);
+  return { ...metrics, units };
+}
+
+export async function segmentManuscript(
+  text: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<string[]> {
+  return (await segmentManuscriptWithMetrics(text, options.signal)).units;
 }
 
 function diceSimilarity(
@@ -419,6 +620,92 @@ function diceSimilarity(
   const lengthRatio =
     Math.min(left.length, right.length) / Math.max(left.length, right.length);
   return dice * 0.88 + lengthRatio * 0.12;
+}
+
+function orderedBigrams(value: string): string[] {
+  const symbols = Array.from(value);
+  if (symbols.length <= 1) return symbols;
+  const grams = new Array<string>(symbols.length - 1);
+  for (let index = 0; index + 1 < symbols.length; index += 1) {
+    grams[index] = symbols[index] + symbols[index + 1];
+  }
+  return grams;
+}
+
+/**
+ * Banded Levenshtein over the ordered bigram sequence. Dice is fast and useful
+ * for candidate discovery, but its multiset representation cannot distinguish
+ * reordered clauses. This gate restores order while limiting work to the edit
+ * band implied by the current confidence threshold.
+ */
+function orderedBigramSimilarity(
+  left: ComparableSequence,
+  right: ComparableSequence,
+  minimumSimilarity: number,
+): number {
+  if (left.value === right.value) return 1;
+  const leftGrams = orderedBigrams(left.value);
+  const rightGrams = orderedBigrams(right.value);
+  const maximumComparableLength = Math.max(left.length, right.length);
+  if (maximumComparableLength === 0) return 0;
+  const maximumDistance = Math.floor(
+    (1 - minimumSimilarity) * maximumComparableLength,
+  );
+  if (Math.abs(leftGrams.length - rightGrams.length) > maximumDistance) {
+    return 0;
+  }
+
+  const infinity =
+    maximumDistance + Math.max(leftGrams.length, rightGrams.length) + 1;
+  let previous = new Int32Array(rightGrams.length + 1);
+  let current = new Int32Array(rightGrams.length + 1);
+  previous.fill(infinity);
+  for (
+    let index = 0;
+    index <= Math.min(rightGrams.length, maximumDistance);
+    index += 1
+  ) {
+    previous[index] = index;
+  }
+
+  for (let leftIndex = 1; leftIndex <= leftGrams.length; leftIndex += 1) {
+    current.fill(infinity);
+    if (leftIndex <= maximumDistance) current[0] = leftIndex;
+    const from = Math.max(1, leftIndex - maximumDistance);
+    const to = Math.min(rightGrams.length, leftIndex + maximumDistance);
+    let rowMinimum = infinity;
+    for (let rightIndex = from; rightIndex <= to; rightIndex += 1) {
+      const substitution =
+        previous[rightIndex - 1] +
+        (leftGrams[leftIndex - 1] === rightGrams[rightIndex - 1] ? 0 : 1);
+      const distance = Math.min(
+        previous[rightIndex] + 1,
+        current[rightIndex - 1] + 1,
+        substitution,
+      );
+      current[rightIndex] = distance;
+      rowMinimum = Math.min(rowMinimum, distance);
+    }
+    if (rowMinimum > maximumDistance) return 0;
+    [previous, current] = [current, previous];
+  }
+
+  const distance = previous[rightGrams.length];
+  return distance <= maximumDistance
+    ? 1 - distance / maximumComparableLength
+    : 0;
+}
+
+function safeSimilarity(
+  left: ComparableSequence,
+  right: ComparableSequence,
+  threshold: number,
+): number {
+  const unordered = diceSimilarity(left, right);
+  if (unordered < threshold) return unordered;
+  const ordered = orderedBigramSimilarity(left, right, threshold);
+  if (unordered - ordered > MAX_UNORDERED_ORDERED_GAP) return 0;
+  return Math.min(unordered, ordered);
 }
 
 /**
@@ -461,15 +748,20 @@ function uniqueTrigrams(value: string): string[] {
   return Array.from(grams);
 }
 
-function buildTrigramIndex(units: ManuscriptUnit[]): Map<string, number[]> {
+async function buildTrigramIndex(
+  units: ManuscriptUnit[],
+  signal?: AbortSignal,
+): Promise<Map<string, number[]>> {
   const index = new Map<string, number[]>();
-  units.forEach((unit, unitIndex) => {
+  for (let unitIndex = 0; unitIndex < units.length; unitIndex += 1) {
+    const unit = units[unitIndex];
     for (const gram of uniqueTrigrams(unit.comparable.value)) {
       const positions = index.get(gram) ?? [];
       if (positions.length < MAX_INDEXED_POSITIONS) positions.push(unitIndex);
       index.set(gram, positions);
     }
-  });
+    if ((unitIndex + 1) % 256 === 0) await cooperativeYield(signal);
+  }
   return index;
 }
 
@@ -556,14 +848,29 @@ function roundConfidence(value: number): number {
  * 只有超过长度分级阈值且不存在近似等价次优位置的组才替换。未命中的 cue 原样复制，
  * 返回对象也只修改 text 字段，调用方可据此保证时间轴不变。
  */
-export function matchManuscriptToCues<T extends ManuscriptMatchCue>(
+export async function matchManuscriptToCues<T extends ManuscriptMatchCue>(
   inputCues: T[],
   manuscriptText: string,
-): ManuscriptMatchResult<T> {
+  options: ManuscriptMatchOptions = {},
+): Promise<ManuscriptMatchResult<T>> {
+  throwIfAborted(options.signal);
+  await cooperativeYield(options.signal);
   const cues = inputCues.map((cue) => ({ ...cue }));
-  const manuscriptUnits: ManuscriptUnit[] = segmentManuscript(
-    manuscriptText,
-  ).map((text) => ({ text, comparable: makeComparable(text) }));
+  const segmentedUnits =
+    options.manuscriptUnits ??
+    (await segmentManuscript(manuscriptText, { signal: options.signal }));
+  if (segmentedUnits.length > MANUSCRIPT_MAX_UNITS) {
+    throw new ManuscriptFileError(
+      'tooComplex',
+      `Manuscript exceeds ${MANUSCRIPT_MAX_UNITS} matching units`,
+    );
+  }
+  const manuscriptUnits: ManuscriptUnit[] = [];
+  for (let index = 0; index < segmentedUnits.length; index += 1) {
+    const text = segmentedUnits[index];
+    manuscriptUnits.push({ text, comparable: makeComparable(text) });
+    if ((index + 1) % 256 === 0) await cooperativeYield(options.signal);
+  }
   const result: ManuscriptMatchResult<T> = {
     cues,
     totalCues: cues.length,
@@ -582,12 +889,17 @@ export function matchManuscriptToCues<T extends ManuscriptMatchCue>(
   manuscriptUnits.forEach((unit, index) => {
     manuscriptCache.set(`${index}:1`, unit.comparable);
   });
-  const trigramIndex = buildTrigramIndex(manuscriptUnits);
+  const trigramIndex = await buildTrigramIndex(manuscriptUnits, options.signal);
 
   let cueIndex = 0;
   let manuscriptCursor = 0;
   let confidenceTotal = 0;
+  let comparisonsSinceYield = 0;
   while (cueIndex < cues.length && manuscriptCursor < manuscriptUnits.length) {
+    throwIfAborted(options.signal);
+    if (cueIndex > 0 && cueIndex % 8 === 0) {
+      await cooperativeYield(options.signal);
+    }
     // 同一文稿起点可能因 1↔多分组产生多个候选。先按起点去重，最终再从
     // “不同起点”里取次优，避免把同一位置的另一分组误当成歧义候选。
     const bestByManuscriptStart = new Map<number, MatchCandidate>();
@@ -604,6 +916,7 @@ export function matchManuscriptToCues<T extends ManuscriptMatchCue>(
         cueCache,
       );
       if (!cueComparable.length) continue;
+      const threshold = manuscriptConfidenceThreshold(cueComparable.length);
       const starts = candidateStarts(
         cueComparable,
         manuscriptCursor,
@@ -627,7 +940,11 @@ export function matchManuscriptToCues<T extends ManuscriptMatchCue>(
             Math.min(cueComparable.length, referenceComparable.length) /
             Math.max(cueComparable.length, referenceComparable.length);
           if (lengthRatio < 0.45) continue;
-          const similarity = diceSimilarity(cueComparable, referenceComparable);
+          const similarity = safeSimilarity(
+            cueComparable,
+            referenceComparable,
+            threshold,
+          );
           // 远距离锚点轻微降权，只负责打破相似候选平局；高置信远端仍可恢复。
           const skippedUnits = manuscriptStart - manuscriptCursor;
           const rank =
@@ -644,6 +961,11 @@ export function matchManuscriptToCues<T extends ManuscriptMatchCue>(
           const existingAtStart = bestByManuscriptStart.get(manuscriptStart);
           if (!existingAtStart || candidate.rank > existingAtStart.rank) {
             bestByManuscriptStart.set(manuscriptStart, candidate);
+          }
+          comparisonsSinceYield += 1;
+          if (comparisonsSinceYield >= 64) {
+            await cooperativeYield(options.signal);
+            comparisonsSinceYield = 0;
           }
         }
       }
@@ -712,6 +1034,7 @@ export function matchManuscriptToCues<T extends ManuscriptMatchCue>(
     confidenceTotal += best.similarity * best.cueCount;
     cueIndex += best.cueCount;
     manuscriptCursor = best.manuscriptStart + best.manuscriptCount;
+    if (cueIndex % 16 === 0) await cooperativeYield(options.signal);
   }
 
   result.averageConfidence =
@@ -719,4 +1042,75 @@ export function matchManuscriptToCues<T extends ManuscriptMatchCue>(
       ? roundConfidence(confidenceTotal / result.replacedCues)
       : 0;
   return result;
+}
+
+interface RawLineSpan {
+  text: string;
+  start: number;
+  end: number;
+}
+
+function rawLineSpans(block: string): RawLineSpan[] {
+  const lines: RawLineSpan[] = [];
+  const lineBreak = /\r\n|\n|\r/g;
+  let start = 0;
+  let match: RegExpExecArray | null;
+  while ((match = lineBreak.exec(block))) {
+    lines.push({
+      text: block.slice(start, match.index),
+      start,
+      end: match.index,
+    });
+    start = match.index + match[0].length;
+  }
+  if (start < block.length) {
+    lines.push({ text: block.slice(start), start, end: block.length });
+  }
+  return lines;
+}
+
+/**
+ * Replaces only selected cue text spans in an SRT string. Sequence identifiers,
+ * timing lines, separators, line endings, and every unmatched cue remain byte
+ * for byte identical.
+ */
+export function replaceMatchedSrtCueTexts(
+  originalSrt: string,
+  replacements: ReadonlyMap<number, string>,
+): string {
+  if (replacements.size === 0) return originalSrt;
+  const parts = originalSrt.split(/((?:\r?\n){2,}|\r{2,})/);
+  let cueIndex = 0;
+  let applied = 0;
+
+  for (let partIndex = 0; partIndex < parts.length; partIndex += 2) {
+    const block = parts[partIndex];
+    const lines = rawLineSpans(block);
+    const nonEmptyLines = lines.filter((line) => line.text.trim() !== '');
+    const timingIndex = nonEmptyLines.findIndex((line) =>
+      line.text.includes('-->'),
+    );
+    if (timingIndex < 0) continue;
+    const textLines = nonEmptyLines.slice(timingIndex + 1);
+    if (textLines.length === 0) continue;
+
+    const replacement = replacements.get(cueIndex);
+    if (replacement !== undefined) {
+      const firstTextLine = textLines[0];
+      const lastTextLine = textLines[textLines.length - 1];
+      parts[partIndex] =
+        block.slice(0, firstTextLine.start) +
+        replacement +
+        block.slice(lastTextLine.end);
+      applied += 1;
+    }
+    cueIndex += 1;
+  }
+
+  if (applied !== replacements.size) {
+    throw new Error(
+      `Could not safely locate all matched SRT cues (${applied}/${replacements.size})`,
+    );
+  }
+  return parts.join('');
 }

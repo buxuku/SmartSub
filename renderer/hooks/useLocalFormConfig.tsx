@@ -6,6 +6,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { isEqual } from 'lodash';
+import { omitTaskManuscript } from '../../types/taskConfig';
 
 export default function useLocalFormConfig() {
   const form = useForm();
@@ -15,7 +16,8 @@ export default function useLocalFormConfig() {
 
   useEffect(() => {
     (async () => {
-      const storeUserConfig = await window?.ipc?.invoke('getUserConfig');
+      const persistedConfig = await window?.ipc?.invoke('getUserConfig');
+      const storeUserConfig = omitTaskManuscript(persistedConfig);
       form.reset(storeUserConfig);
       setFormData(storeUserConfig);
       formDataRef.current = storeUserConfig;

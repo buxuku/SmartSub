@@ -103,14 +103,14 @@ export default function TaskPage() {
   const [taskStatus, setTaskStatus] = useState('idle');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
-  /** 向导任务的配置快照（含 dub/compose）：阶段轨道与横幅按它渲染 */
+  /** 固定任务的配置快照（附加阶段/参考文稿）：阶段轨道与横幅按它渲染 */
   const [configSnapshot, setConfigSnapshot] = useState<any>(null);
   const [proofreadFile, setProofreadFile] = useState<IFiles | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const { systemInfo, loaded: systemInfoLoaded } = useSystemInfo();
   const { form, formData } = useFormConfig();
-  /** 列表/横幅的有效配置：向导任务用快照（附加阶段轨道），否则用全局表单 */
+  /** 列表/横幅的有效配置：固定任务用快照，否则使用当前表单。 */
   const listFormData = configSnapshot ?? formData;
   /** 来自加载（而非用户/任务事件）的 files 引用，避免回写存储 */
   const loadedFilesRef = useRef<any[] | null>(null);
@@ -209,7 +209,7 @@ export default function TaskPage() {
           nextFiles = project.files || [];
           name = project.name || null;
         }
-        // 配音/合成及说话者分离任务：按创建时配置快照渲染并固定重试参数。
+        // 附加阶段、参考文稿及角色分离是任务级输入：创建后固定快照。
         try {
           const workItem = await window?.ipc?.invoke('getWorkItem', q);
           const snap = workItem?.configSnapshot;
@@ -365,6 +365,12 @@ export default function TaskPage() {
     setTaskStatus(status);
   }, []);
 
+  const handleTaskDispatched = useCallback((effectiveFormData: any) => {
+    if (isPinnedTaskConfigSnapshot(effectiveFormData)) {
+      setConfigSnapshot({ ...effectiveFormData });
+    }
+  }, []);
+
   const handleViewModeChange = useCallback((mode: 'list' | 'grid') => {
     setViewMode(mode);
     window?.ipc?.invoke('setSettings', { taskViewMode: mode });
@@ -372,7 +378,7 @@ export default function TaskPage() {
 
   const handleRetry = useCallback(
     (file: any) => {
-      // 向导任务重试携带配置快照（含 dub/compose），普通任务用全局表单
+      // 固定任务重试携带其创建时快照，普通任务仍使用当前表单。
       window?.ipc?.send('handleTask', {
         files: [file],
         formData: listFormData,
@@ -769,7 +775,7 @@ export default function TaskPage() {
 
       <div className="flex-shrink-0">
         {configSnapshot ? (
-          // 向导任务：配置随创建时快照固定，只读展示实际生效参数
+          // 固定任务：配置随首次派发快照锁定，只读展示实际生效参数。
           <SnapshotConfigBar
             snapshot={configSnapshot}
             files={files}
@@ -927,11 +933,7 @@ export default function TaskPage() {
             typeDef={typeDef}
             projectId={projectId}
             onStatusChange={handleStatusChange}
-            onTaskDispatched={(snapshot) => {
-              if (isPinnedTaskConfigSnapshot(snapshot)) {
-                setConfigSnapshot({ ...snapshot });
-              }
-            }}
+            onTaskDispatched={handleTaskDispatched}
             autoStart={autoStartPending}
           />
         </div>

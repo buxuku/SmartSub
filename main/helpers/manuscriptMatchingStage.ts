@@ -1,8 +1,7 @@
 import fs from 'fs';
-import { formatSrtContent } from './fileUtils';
 import { parseSubtitleCues } from './subtitleFormats';
-import { formatTime, type TokenTriple } from './subtitleSegmentation';
 import { logMessage } from './storeManager';
+import { atomicReplaceTextFile } from './atomicFile';
 import {
   TaskCancelledError,
   getTaskContext,
@@ -14,6 +13,7 @@ import {
   getManuscriptConfig,
   matchManuscriptToCues,
   readManuscriptFile,
+  replaceMatchedSrtCueTexts,
 } from './manuscriptMatching';
 
 interface TaskEvent {
@@ -107,7 +107,7 @@ export async function runManuscriptMatchingStage(
 
     const [originalSrt, manuscript] = await Promise.all([
       fs.promises.readFile(file.srtFile, 'utf-8'),
-      readManuscriptFile(config.path),
+      readManuscriptFile(config.path, { signal }),
     ]);
     if (signal?.aborted) throw new TaskCancelledError();
     sendProgress(event, file, 25);
@@ -117,7 +117,9 @@ export async function runManuscriptMatchingStage(
     const sourceCues = parsed.map((cue) => ({
       startMs: cue.startMs,
       endMs: cue.endMs,
-      text: cue.text.replace(/\s*\n+\s*/g, ' ').trim(),
+      // Comparable normalization ignores whitespace; retain the exact text so
+      // an unmatched cue can remain byte-for-byte untouched in the source SRT.
+      text: cue.text,
     }));
     if (sourceCues.length === 0) {
       degrade(
@@ -128,7 +130,10 @@ export async function runManuscriptMatchingStage(
       return;
     }
 
-    const outcome = matchManuscriptToCues(sourceCues, manuscript.text);
+    const outcome = await matchManuscriptToCues(sourceCues, manuscript.text, {
+      signal,
+      manuscriptUnits: manuscript.units,
+    });
     const summary = toSummary(
       manuscript.name,
       outcome.totalCues,
@@ -158,23 +163,36 @@ export async function runManuscriptMatchingStage(
       return;
     }
 
-    const triples: TokenTriple[] = outcome.cues.map((cue) => [
-      formatTime(cue.startMs / 1000),
-      formatTime(cue.endMs / 1000),
-      cue.text,
-    ]);
-    const output = formatSrtContent(triples);
-    // 所有计算与校验完成后才触碰交付文件；写失败时尽力恢复内存中的原始 SRT。
-    try {
-      await fs.promises.writeFile(file.srtFile, output, 'utf-8');
-    } catch (error) {
-      try {
-        await fs.promises.writeFile(file.srtFile, originalSrt, 'utf-8');
-      } catch {
-        // 恢复失败由原始写入异常一并记录；不掩盖首个错误。
-      }
-      throw error;
+    const replacements = new Map<number, string>();
+    for (const match of outcome.matches) {
+      match.replacementTexts.forEach((replacement, offset) => {
+        replacements.set(match.cueStart + offset, replacement);
+      });
     }
+    const output = replaceMatchedSrtCueTexts(originalSrt, replacements);
+    const writtenCues = parseSubtitleCues(output, 'srt');
+    const writtenTimelineUnchanged =
+      writtenCues.length === parsed.length &&
+      writtenCues.every(
+        (cue, index) =>
+          cue.startMs === originalTimes[index]?.[0] &&
+          cue.endMs === originalTimes[index]?.[1],
+      );
+    if (
+      replacements.size !== outcome.replacedCues ||
+      !writtenTimelineUnchanged
+    ) {
+      degrade(
+        'timeline',
+        'safe SRT text replacement validation failed; original ASR kept',
+        summary,
+      );
+      return;
+    }
+
+    // Temp is flushed and closed before a single same-directory atomic rename.
+    // Any failure leaves the existing SRT untouched.
+    await atomicReplaceTextFile(file.srtFile, output, { signal });
 
     event.sender.send('taskFileChange', { ...file });
     sendProgress(event, file, 100);

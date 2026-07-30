@@ -2,6 +2,7 @@ import store from 'lib/store';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { isEqual } from 'lodash';
+import { omitTaskManuscript } from '../../types/taskConfig';
 
 export default function useFormConfig() {
   const form = useForm();
@@ -11,7 +12,12 @@ export default function useFormConfig() {
 
   useEffect(() => {
     (async () => {
-      const storeUserConfig = await window?.ipc?.invoke('getUserConfig');
+      const persistedConfig = await window?.ipc?.invoke('getUserConfig');
+      const storeUserConfig = omitTaskManuscript(persistedConfig);
+      if (!isEqual(storeUserConfig, persistedConfig)) {
+        window?.ipc?.send('setUserConfig', storeUserConfig);
+        store.setItem('userConfig', storeUserConfig);
+      }
       form.reset(storeUserConfig);
       setFormData(storeUserConfig);
       formDataRef.current = storeUserConfig;
@@ -22,8 +28,9 @@ export default function useFormConfig() {
     if (!isEqual(values, formDataRef.current)) {
       formDataRef.current = values;
       setFormData(values);
-      window?.ipc?.send('setUserConfig', values);
-      store.setItem('userConfig', values);
+      const persistedValues = omitTaskManuscript(values);
+      window?.ipc?.send('setUserConfig', persistedValues);
+      store.setItem('userConfig', persistedValues);
     }
   }, []);
 

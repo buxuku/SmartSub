@@ -14,14 +14,23 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import {
+  MANUSCRIPT_MAX_BYTES,
+  MANUSCRIPT_MAX_COMPARABLE_CHARS,
+  MANUSCRIPT_MAX_UNITS,
   ManuscriptFileError,
   getManuscriptConfig,
   matchManuscriptToCues,
   normalizeManuscriptText,
   readManuscriptFile,
+  replaceMatchedSrtCueTexts,
   segmentManuscript,
   toManuscriptSelectionPayload,
 } from '../main/helpers/manuscriptMatching';
+import { atomicReplaceTextFile } from '../main/helpers/atomicFile';
+import {
+  isPinnedTaskConfigSnapshot,
+  omitTaskManuscript,
+} from '../types/taskConfig';
 
 let passed = 0;
 let failed = 0;
@@ -100,9 +109,23 @@ async function run(): Promise<void> {
     'markdown: 可见文本保留',
   );
   eq(
-    segmentManuscript('第一句。Second sentence. 最后一段').length,
+    (await segmentManuscript('第一句。Second sentence. 最后一段')).length,
     3,
     'segment: 中英文句末 + 尾段',
+  );
+
+  const longUnpunctuated = 'a'.repeat(128 * 1024);
+  const segmentStartedAt = Date.now();
+  const longUnits = await segmentManuscript(longUnpunctuated);
+  const segmentElapsed = Date.now() - segmentStartedAt;
+  eq(
+    longUnits.join(''),
+    longUnpunctuated,
+    'segment: 无标点长段线性切分且不丢字',
+  );
+  ok(
+    segmentElapsed < 5000,
+    `performance: 128 KiB 无标点分段应在 5 秒内完成（实际 ${segmentElapsed}ms）`,
   );
 
   // exact/high-confidence matching with skipped title
@@ -126,7 +149,7 @@ async function run(): Promise<void> {
       speaker: 'B',
     },
   ];
-  const matched = matchManuscriptToCues(
+  const matched = await matchManuscriptToCues(
     sourceCues,
     [
       '第一章：产品介绍',
@@ -154,7 +177,7 @@ async function run(): Promise<void> {
   );
 
   // two cues to one manuscript sentence
-  const regrouped = matchManuscriptToCues(
+  const regrouped = await matchManuscriptToCues(
     [
       { text: 'hello world', startMs: 0, endMs: 1000 },
       { text: 'this is a test', startMs: 1000, endMs: 2200 },
@@ -172,7 +195,7 @@ async function run(): Promise<void> {
     'align: 1 文稿单元按 cue 权重安全分配',
   );
 
-  const mergedUnits = matchManuscriptToCues(
+  const mergedUnits = await matchManuscriptToCues(
     [
       {
         text: 'alpha beta gamma delta',
@@ -197,7 +220,7 @@ async function run(): Promise<void> {
     ),
     'Second spoken sentence after the long omitted section.',
   ].join('\n');
-  const recovered = matchManuscriptToCues(
+  const recovered = await matchManuscriptToCues(
     [
       { text: 'first spoken sentence', startMs: 0, endMs: 1000 },
       {
@@ -213,14 +236,14 @@ async function run(): Promise<void> {
   const unrelated = [
     { text: 'completely unrelated recognition', startMs: 0, endMs: 1000 },
   ];
-  const safeFallback = matchManuscriptToCues(
+  const safeFallback = await matchManuscriptToCues(
     unrelated,
     '正确文稿描述的是另一段完全不同的内容。',
   );
   eq(safeFallback.replacedCues, 0, 'safety: 低置信不替换');
   eq(safeFallback.cues, unrelated, 'safety: 低置信完整回退原 ASR');
 
-  const uniqueModerate = matchManuscriptToCues(
+  const uniqueModerate = await matchManuscriptToCues(
     [{ text: 'the product is redy for lunch today' }],
     'The project is ready for launch today.',
   );
@@ -229,7 +252,7 @@ async function run(): Promise<void> {
     1,
     'margin: 同一位置的不同分组不被误算成次优位置',
   );
-  const repeatedModerate = matchManuscriptToCues(
+  const repeatedModerate = await matchManuscriptToCues(
     [{ text: 'the product is redy for lunch today' }],
     [
       'The project is ready for launch today.',
@@ -243,11 +266,104 @@ async function run(): Promise<void> {
     'margin: 两个不同位置近似等价时安全拒配',
   );
 
-  const localeStable = matchManuscriptToCues(
+  const localeStable = await matchManuscriptToCues(
     [{ text: 'istanbul integration is deterministic' }],
     'Istanbul integration is deterministic.',
   );
   eq(localeStable.replacedCues, 1, 'normalization: 大小写不随系统区域变化');
+
+  const reorderedClauses = await matchManuscriptToCues(
+    [
+      { text: '我们先介绍中文', startMs: 0, endMs: 1000 },
+      { text: '然后介绍英文最后总结', startMs: 1000, endMs: 2000 },
+    ],
+    '我们先介绍英文然后介绍中文最后总结',
+  );
+  eq(
+    reorderedClauses.replacedCues,
+    0,
+    'safety: bigram 集合相同但词序互换时不得替换',
+  );
+  const longReorderedClauses = await matchManuscriptToCues(
+    [
+      {
+        text: '在本课程的第一部分我们先介绍中文然后介绍英文最后总结全部内容谢谢大家',
+      },
+    ],
+    '在本课程的第一部分我们先介绍英文然后介绍中文最后总结全部内容谢谢大家',
+  );
+  eq(
+    longReorderedClauses.replacedCues,
+    0,
+    'safety: 长上下文不能稀释词序互换风险',
+  );
+  const alignedTypo = await matchManuscriptToCues(
+    [{ text: '今天我们介少文稿匹配功能' }],
+    '今天我们介绍文稿匹配功能',
+  );
+  eq(
+    alignedTypo.replacedCues,
+    1,
+    'order gate: 保留按原顺序的一处中段 ASR 错字校正能力',
+  );
+
+  const cancellation = new AbortController();
+  const cancellationPromise = matchManuscriptToCues(
+    Array.from({ length: 500 }, () => ({
+      text: 'a repeated cue that requires matching work',
+    })),
+    'a'.repeat(128 * 1024),
+    { signal: cancellation.signal },
+  );
+  setTimeout(() => cancellation.abort(), 0);
+  try {
+    await cancellationPromise;
+    eq('resolved', 'AbortError', 'cancel: 计算中应响应 AbortSignal');
+  } catch (error) {
+    eq((error as Error).name, 'AbortError', 'cancel: 计算中响应 AbortSignal');
+  }
+
+  const originalSrt = [
+    '7',
+    '00:00:00,000 --> 00:00:01,000',
+    'unmatched first line',
+    'unmatched second line',
+    '',
+    '9',
+    '00:00:01,000 --> 00:00:02,000',
+    'old matched text',
+    '',
+  ].join('\r\n');
+  const patchedSrt = replaceMatchedSrtCueTexts(
+    originalSrt,
+    new Map([[1, 'corrected matched text']]),
+  );
+  eq(
+    patchedSrt,
+    originalSrt.replace('old matched text', 'corrected matched text'),
+    'srt: 仅替换命中 cue，未命中多行/序号/时间/CRLF 原样保留',
+  );
+
+  eq(
+    omitTaskManuscript({
+      model: 'base',
+      manuscriptPath: 'C:\\private\\episode.md',
+      manuscriptName: 'episode.md',
+    }),
+    { model: 'base' },
+    'config: 文稿路径不进入全局 userConfig',
+  );
+  ok(
+    isPinnedTaskConfigSnapshot({
+      manuscriptPath: 'C:\\private\\episode.md',
+    }),
+    'config: 带文稿的任务快照固定',
+  );
+  eq(
+    isPinnedTaskConfigSnapshot({ model: 'base' }),
+    false,
+    'config: 普通任务配置仍可编辑',
+  );
 
   // File + IPC contract.
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smartsub-manuscript-'));
@@ -263,6 +379,11 @@ async function run(): Promise<void> {
       Object.prototype.hasOwnProperty.call(payload, 'text'),
       false,
       'ipc: selection payload 不回传/持久化正文',
+    );
+    eq(
+      Object.prototype.hasOwnProperty.call(payload, 'units'),
+      false,
+      'ipc: selection payload 不回传预分段正文',
     );
     eq(payload.path, utf8Path, 'ipc: selection payload 返回绝对路径');
     ok(payload.characterCount > 0 && payload.size > 0, 'ipc: 返回校验元数据');
@@ -301,6 +422,98 @@ async function run(): Promise<void> {
     const gb18030 = await readManuscriptFile(gb18030Path);
     eq(gb18030.encoding, 'gb18030', 'file: GBK/GB18030 回退识别');
     eq(gb18030.text, '中文文稿', 'file: GB18030 正文');
+
+    const oversizedPath = path.join(tmpDir, 'oversized.txt');
+    fs.writeFileSync(
+      oversizedPath,
+      Buffer.alloc(MANUSCRIPT_MAX_BYTES + 1, 0x61),
+    );
+    await expectFileError(
+      readManuscriptFile(oversizedPath),
+      'tooLarge',
+      'file: 1 MiB raw cap',
+    );
+
+    const grewAfterStatPath = path.join(tmpDir, 'grew-after-stat.txt');
+    fs.writeFileSync(grewAfterStatPath, 'small', 'utf-8');
+    const originalReadFile = fs.promises.readFile;
+    (fs.promises as any).readFile = async (
+      requestedPath: fs.PathLike,
+      ...args: unknown[]
+    ) =>
+      requestedPath === grewAfterStatPath
+        ? Buffer.alloc(MANUSCRIPT_MAX_BYTES + 1, 0x61)
+        : (originalReadFile as any)(requestedPath, ...args);
+    try {
+      await expectFileError(
+        readManuscriptFile(grewAfterStatPath),
+        'tooLarge',
+        'file: stat 后增长仍由实际 buffer 大小拒绝',
+      );
+    } finally {
+      (fs.promises as any).readFile = originalReadFile;
+    }
+
+    const tooManyCharactersPath = path.join(tmpDir, 'too-many-chars.txt');
+    fs.writeFileSync(
+      tooManyCharactersPath,
+      'a'.repeat(MANUSCRIPT_MAX_COMPARABLE_CHARS + 1),
+      'utf-8',
+    );
+    await expectFileError(
+      readManuscriptFile(tooManyCharactersPath),
+      'tooComplex',
+      'file: 规范化后 comparable 字符上限',
+    );
+
+    const tooManyUnitsPath = path.join(tmpDir, 'too-many-units.txt');
+    fs.writeFileSync(
+      tooManyUnitsPath,
+      Array.from({ length: MANUSCRIPT_MAX_UNITS + 1 }, () => 'a.').join('\n'),
+      'utf-8',
+    );
+    await expectFileError(
+      readManuscriptFile(tooManyUnitsPath),
+      'tooComplex',
+      'file: 文稿分段单元上限',
+    );
+
+    const atomicPath = path.join(tmpDir, 'atomic.srt');
+    fs.writeFileSync(atomicPath, 'original subtitle', 'utf-8');
+    await atomicReplaceTextFile(atomicPath, 'replacement subtitle');
+    eq(
+      fs.readFileSync(atomicPath, 'utf-8'),
+      'replacement subtitle',
+      'atomic: flush/close 后替换成功',
+    );
+    fs.writeFileSync(atomicPath, 'must survive rename failure', 'utf-8');
+    try {
+      await atomicReplaceTextFile(atomicPath, 'must not become visible', {
+        operations: {
+          open: fs.promises.open.bind(fs.promises),
+          rm: fs.promises.rm.bind(fs.promises),
+          rename: async () => {
+            throw new Error('simulated rename failure');
+          },
+        } as any,
+      });
+      eq('resolved', 'rejected', 'atomic: rename failure should reject');
+    } catch {
+      eq(
+        fs.readFileSync(atomicPath, 'utf-8'),
+        'must survive rename failure',
+        'atomic: rename failure leaves original untouched',
+      );
+    }
+    eq(
+      fs
+        .readdirSync(tmpDir)
+        .some(
+          (name) => name.startsWith('.atomic.srt.') && name.endsWith('.tmp'),
+        ),
+      false,
+      'atomic: failure cleans sibling temp',
+    );
 
     const unsupportedPath = path.join(tmpDir, 'episode.rtf');
     fs.writeFileSync(unsupportedPath, 'text', 'utf-8');
