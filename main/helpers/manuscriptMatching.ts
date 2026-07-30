@@ -109,6 +109,9 @@ const LOCAL_LOOKAHEAD = 24;
 const MAX_INDEXED_POSITIONS = 120;
 const MAX_FAR_CANDIDATES = 60;
 const MAX_UNORDERED_ORDERED_GAP = 0.08;
+const MIN_SINGLE_CHARACTER_EDIT_LENGTH = 10;
+const MIN_OFF_ORDER_UNIQUE_TRIGRAMS = 2;
+const MIN_REORDER_ANCHOR_DISPLACEMENT = 3;
 const YIELD_EVERY_OPERATIONS = 2048;
 
 function manuscriptAbortError(): Error {
@@ -696,13 +699,145 @@ function orderedBigramSimilarity(
     : 0;
 }
 
+function uniqueNgramPositions(
+  value: string,
+  size: number,
+): Map<string, number> {
+  const symbols = Array.from(value);
+  const positions = new Map<string, number | null>();
+  for (let index = 0; index + size <= symbols.length; index += 1) {
+    const gram = symbols.slice(index, index + size).join('');
+    positions.set(gram, positions.has(gram) ? null : index);
+  }
+  const unique = new Map<string, number>();
+  positions.forEach((position, gram) => {
+    if (position !== null) unique.set(gram, position);
+  });
+  return unique;
+}
+
+function longestIncreasingSubsequenceLength(values: number[]): number {
+  const tails: number[] = [];
+  for (const value of values) {
+    let low = 0;
+    let high = tails.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (tails[middle] < value) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    tails[low] = value;
+  }
+  return tails.length;
+}
+
+/**
+ * Shared trigrams that occur exactly once are stable local anchors. Their
+ * dominant alignment must stay monotonic after ordinary edits. Requiring
+ * multiple anchors outside the LIS avoids treating one coincidental shared
+ * trigram as a reorder, while still detecting a small swapped phrase inside a
+ * much longer shared prefix/suffix.
+ */
+function hasSupportedUniqueTrigramReordering(
+  left: ComparableSequence,
+  right: ComparableSequence,
+): boolean {
+  const leftPositions = uniqueNgramPositions(left.value, 3);
+  const rightPositions = uniqueNgramPositions(right.value, 3);
+  const anchors = Array.from(leftPositions.entries())
+    .map(([gram, leftPosition]) => ({
+      leftPosition,
+      rightPosition: rightPositions.get(gram),
+    }))
+    .filter(
+      (anchor): anchor is { leftPosition: number; rightPosition: number } =>
+        anchor.rightPosition !== undefined,
+    )
+    .sort((leftAnchor, rightAnchor) => {
+      return leftAnchor.leftPosition - rightAnchor.leftPosition;
+    });
+
+  if (anchors.length < MIN_OFF_ORDER_UNIQUE_TRIGRAMS + 1) return false;
+  const maximumDisplacement = anchors.reduce((maximum, anchor) => {
+    return Math.max(
+      maximum,
+      Math.abs(anchor.leftPosition - anchor.rightPosition),
+    );
+  }, 0);
+  if (maximumDisplacement < MIN_REORDER_ANCHOR_DISPLACEMENT) return false;
+  const orderedAnchorCount = longestIncreasingSubsequenceLength(
+    anchors.map((anchor) => anchor.rightPosition),
+  );
+  return anchors.length - orderedAnchorCount >= MIN_OFF_ORDER_UNIQUE_TRIGRAMS;
+}
+
+/**
+ * Exact one-character insertion, deletion, or substitution, computed in
+ * linear time. Requiring at least ten characters on the shorter side keeps
+ * very short utterances from receiving an overly permissive one-edit budget.
+ */
+function singleCharacterEditSimilarity(
+  left: ComparableSequence,
+  right: ComparableSequence,
+): number | null {
+  if (Math.abs(left.length - right.length) > 1) return null;
+  if (Math.min(left.length, right.length) < MIN_SINGLE_CHARACTER_EDIT_LENGTH) {
+    return null;
+  }
+  if (left.length === right.length) {
+    const leftSymbols = Array.from(left.value);
+    const rightSymbols = Array.from(right.value);
+    let mismatches = 0;
+    for (let index = 0; index < leftSymbols.length; index += 1) {
+      if (leftSymbols[index] !== rightSymbols[index]) {
+        mismatches += 1;
+        if (mismatches > 1) return null;
+      }
+    }
+    return mismatches === 1 ? 1 - 1 / left.length : null;
+  }
+  const shorter = Array.from(
+    left.length < right.length ? left.value : right.value,
+  );
+  const longer = Array.from(
+    left.length < right.length ? right.value : left.value,
+  );
+  let shorterIndex = 0;
+  let longerIndex = 0;
+  let skipped = false;
+  while (shorterIndex < shorter.length && longerIndex < longer.length) {
+    if (shorter[shorterIndex] === longer[longerIndex]) {
+      shorterIndex += 1;
+      longerIndex += 1;
+      continue;
+    }
+    if (skipped) return null;
+    skipped = true;
+    longerIndex += 1;
+  }
+  // With a one-character length difference, an unmatched trailing character
+  // is the single edit when no earlier skip was needed.
+  return 1 - 1 / longer.length;
+}
+
 function safeSimilarity(
   left: ComparableSequence,
   right: ComparableSequence,
   threshold: number,
 ): number {
+  if (left.value === right.value) return 1;
   const unordered = diceSimilarity(left, right);
+  const singleCharacterEdit = singleCharacterEditSimilarity(left, right);
+  if (singleCharacterEdit !== null) {
+    return Math.max(unordered, singleCharacterEdit);
+  }
+  // Position maps and LIS are only built for viable candidates. Ordinary
+  // low-confidence pairs leave through this fast path.
   if (unordered < threshold) return unordered;
+  if (hasSupportedUniqueTrigramReordering(left, right)) return 0;
   const ordered = orderedBigramSimilarity(left, right, threshold);
   if (unordered - ordered > MAX_UNORDERED_ORDERED_GAP) return 0;
   return Math.min(unordered, ordered);
