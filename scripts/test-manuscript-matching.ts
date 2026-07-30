@@ -297,6 +297,25 @@ async function run(): Promise<void> {
     0,
     'safety: 长上下文不能稀释词序互换风险',
   );
+  const threeCueLocalReorder = await matchManuscriptToCues(
+    [
+      {
+        text: '在这次完整详细的课程讲解当中我们会依次讨论所有重',
+      },
+      {
+        text: '要内容并且先介绍中文然后介绍英文最后总结全部内容并',
+      },
+      {
+        text: '给出实践建议方便大家理解和应用这些知识解决真实问题',
+      },
+    ],
+    '在这次完整详细的课程讲解当中我们会依次讨论所有重要内容并且先介绍英文然后介绍中文最后总结全部内容并给出实践建议方便大家理解和应用这些知识解决真实问题',
+  );
+  eq(
+    threeCueLocalReorder.replacedCues,
+    0,
+    'safety: 3 cue 长上下文中的局部词序互换不得被稀释',
+  );
   const alignedTypo = await matchManuscriptToCues(
     [{ text: '今天我们介少文稿匹配功能' }],
     '今天我们介绍文稿匹配功能',
@@ -305,6 +324,72 @@ async function run(): Promise<void> {
     alignedTypo.replacedCues,
     1,
     'order gate: 保留按原顺序的一处中段 ASR 错字校正能力',
+  );
+  const tenCharacterSubstitution = await matchManuscriptToCues(
+    [{ text: '今天介绍文稿匹陪功能' }],
+    '今天介绍文稿匹配功能',
+  );
+  eq(
+    tenCharacterSubstitution.replacedCues,
+    1,
+    'single edit: 10 字文本的一处替换与增删使用相同预算',
+  );
+  const missingCharacter = await matchManuscriptToCues(
+    [{ text: '今天我们介绍文匹配功能' }],
+    '今天我们介绍文稿匹配功能',
+  );
+  eq(
+    missingCharacter.replacedCues,
+    1,
+    'single edit: 短句漏识一个汉字仍可由文稿校正',
+  );
+  const extraCharacter = await matchManuscriptToCues(
+    [{ text: '今天我们介绍文稿稿匹配功能' }],
+    '今天我们介绍文稿匹配功能',
+  );
+  eq(
+    extraCharacter.replacedCues,
+    1,
+    'single edit: 短句多识一个汉字与漏识对称容错',
+  );
+  const unsafeShortSingleEdit = await matchManuscriptToCues(
+    [{ text: '今天介绍文匹配功能' }],
+    '今天介绍文稿匹配功能',
+  );
+  eq(
+    unsafeShortSingleEdit.replacedCues,
+    0,
+    'single edit safety: 过短文本不放宽一个汉字的编辑预算',
+  );
+  const unsafeShortSubstitution = await matchManuscriptToCues(
+    [{ text: '今天介绍稿匹陪功能' }],
+    '今天介绍稿匹配功能',
+  );
+  eq(
+    unsafeShortSubstitution.replacedCues,
+    0,
+    'single edit safety: 过短文本的一处替换同样不放宽',
+  );
+  const repeatedNgramSingleEdit = await matchManuscriptToCues(
+    [{ text: '哈哈哈哈今天我们介绍文匹配功能哈哈哈哈' }],
+    '哈哈哈哈今天我们介绍文稿匹配功能哈哈哈哈',
+  );
+  eq(
+    repeatedNgramSingleEdit.replacedCues,
+    1,
+    'order anchors: 重复三元组不应让正常单字符增删产生伪换序',
+  );
+  // Two aligned substitutions in repeated content leave one coincidental
+  // off-LIS anchor (displacement 10), which is noise rather than a supported
+  // local reorder.
+  const coincidentalAnchorCrossing = await matchManuscriptToCues(
+    [{ text: '丁丙甲戊甲丙甲戊丙戊丁丙甲甲甲丙丁' }],
+    '丁丙甲戊乙丙甲戊丙戊丁丙甲甲甲丙甲',
+  );
+  eq(
+    coincidentalAnchorCrossing.replacedCues,
+    1,
+    'order anchors: 单个偶然 crossing 不足以判定局部换序',
   );
 
   const cancellation = new AbortController();
