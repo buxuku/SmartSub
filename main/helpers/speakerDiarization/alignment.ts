@@ -45,6 +45,14 @@ const DEFAULT_OPTIONS: Required<SpeakerAlignmentOptions> = {
 
 const SPEAKER_PREFIX = /^\[Speaker\s+\d+(?:\s*\+\s*Speaker\s+\d+)*\]\s*/i;
 
+/**
+ * 移除本功能写入的说话者前缀。该函数同时供字幕重试幂等处理与 TTS 文本边界使用；
+ * 其它方括号文本（例如舞台提示）保持不变。
+ */
+export function stripSpeakerLabelPrefix(text: string): string {
+  return (text || '').replace(SPEAKER_PREFIX, '');
+}
+
 function finiteNonNegative(value: number): boolean {
   return Number.isFinite(value) && value >= 0;
 }
@@ -148,7 +156,7 @@ export function annotateCuesWithSpeakers(
 ): TimedSubtitleCue[] {
   const assignments = alignSpeakersToCues(cues, segments, options);
   return cues.map((cue, index) => {
-    const text = (cue.text || '').replace(SPEAKER_PREFIX, '');
+    const text = stripSpeakerLabelPrefix(cue.text || '');
     const speakers = assignments[index]?.speakers || [];
     if (speakers.length === 0) return { ...cue, text };
     return {

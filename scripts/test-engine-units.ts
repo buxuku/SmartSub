@@ -287,6 +287,7 @@ import {
   applyCudaDeviceSelection,
   resolveStartupCudaDeviceSelection,
 } from '../main/helpers/cudaDeviceSelection';
+import { isPinnedTaskConfigSnapshot } from '../types/taskSnapshot';
 
 let passed = 0;
 let failed = 0;
@@ -417,6 +418,31 @@ eq(
     'cuda device: auto restores inherited empty visibility across relaunch',
   );
 }
+
+// --- task config snapshot pinning ---
+eq(
+  isPinnedTaskConfigSnapshot({ speakerDiarization: true }),
+  true,
+  'task snapshot: enabled diarization pins an otherwise plain subtitle task',
+);
+eq(
+  isPinnedTaskConfigSnapshot({
+    speakerDiarization: true,
+    speakerDiarizationCount: 4,
+  }),
+  true,
+  'task snapshot: known speaker count remains part of a pinned snapshot',
+);
+eq(
+  isPinnedTaskConfigSnapshot({ speakerDiarization: false }),
+  false,
+  'task snapshot: disabled diarization keeps a plain task editable',
+);
+eq(
+  isPinnedTaskConfigSnapshot({ dub: { engine: 'local' } }),
+  true,
+  'task snapshot: existing dubbing pinning remains supported',
+);
 
 // --- secondsToSrtTime ---
 eq(secondsToSrtTime(0), '00:00:00.000', 'srt: zero');

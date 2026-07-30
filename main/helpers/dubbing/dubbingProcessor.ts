@@ -20,6 +20,7 @@ import {
   serializeSubtitleCues,
   type SubtitleCue,
 } from '../subtitleFormats';
+import { normalizeDubbingSpeechText } from './textNormalization';
 import {
   computeSlots,
   estimateDurationMs,
@@ -525,8 +526,10 @@ async function synthesizeAndAlignCue(
       : 1;
   const voiceId = cue.voiceId || config.voice;
   const wavPath = path.join(session.workDir, `cue-${cue.index}.wav`);
+  // 会话/展示字幕保留 `[Speaker N]`；仅在估时与 TTS 的最终输入边界剥离。
+  const speechText = normalizeDubbingSpeechText(cue.text);
 
-  if (!cue.text) {
+  if (!speechText) {
     // 空行：静音占位，无需合成。
     cue.status = 'done';
     cue.finalMs = 0;
@@ -538,7 +541,7 @@ async function synthesizeAndAlignCue(
 
   // 第 1 层：预估（含校准与整体语速）→ speed 预控制。
   const est = calibratedEstimate(
-    estimateDurationMs(cue.text),
+    estimateDurationMs(speechText),
     session.calibration,
   );
   const estAtGlobal = Math.round(est / globalSpeed);
@@ -551,7 +554,7 @@ async function synthesizeAndAlignCue(
   let appliedExtra = decision.preSpeed;
   let synthSpeed = globalSpeed * decision.preSpeed;
   let r = await adapter.synthesize(
-    cue.text,
+    speechText,
     voiceId,
     synthSpeed,
     wavPath,
@@ -592,7 +595,7 @@ async function synthesizeAndAlignCue(
     if (recheck.type === 'resynthesize') {
       synthSpeed = globalSpeed * recheck.speed;
       r = await adapter.synthesize(
-        cue.text,
+        speechText,
         voiceId,
         synthSpeed,
         wavPath,

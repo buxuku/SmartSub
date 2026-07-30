@@ -2,7 +2,9 @@ import {
   alignSpeakersToCues,
   annotateCuesWithSpeakers,
   normalizeDiarizationSegments,
+  stripSpeakerLabelPrefix,
 } from '../main/helpers/speakerDiarization/alignment';
+import { normalizeDubbingSpeechText } from '../main/helpers/dubbing/textNormalization';
 
 let passed = 0;
 
@@ -85,6 +87,30 @@ equal(
   )[0].speakers,
   [0],
   'tiny boundary overlap does not create a false overlap label',
+);
+
+equal(
+  stripSpeakerLabelPrefix('[Speaker 1 + Speaker 2] Together'),
+  'Together',
+  'speaker metadata prefix can be removed without touching cue timing',
+);
+
+equal(
+  normalizeDubbingSpeechText('[Speaker 1] Hello\nworld'),
+  'Hello world',
+  'TTS input strips a single-speaker label and keeps the spoken content',
+);
+
+equal(
+  normalizeDubbingSpeechText('[Speaker 1 + Speaker 2] Together'),
+  'Together',
+  'TTS input strips an overlapping-speaker label',
+);
+
+equal(
+  normalizeDubbingSpeechText('[Director] Keep this cue'),
+  '[Director] Keep this cue',
+  'TTS input preserves unrelated bracketed text',
 );
 
 console.log(`✓ speaker diarization alignment tests passed (${passed})`);
