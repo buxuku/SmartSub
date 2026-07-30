@@ -110,8 +110,8 @@ const MAX_INDEXED_POSITIONS = 120;
 const MAX_FAR_CANDIDATES = 60;
 const MAX_UNORDERED_ORDERED_GAP = 0.08;
 const MIN_SINGLE_CHARACTER_EDIT_LENGTH = 10;
-const MIN_OFF_ORDER_UNIQUE_TRIGRAMS = 2;
-const MIN_REORDER_ANCHOR_DISPLACEMENT = 3;
+const REORDER_NGRAM_SIZES = [2, 3] as const;
+const MIN_REORDER_ANCHOR_DISPLACEMENT = 4;
 const YIELD_EVERY_OPERATIONS = 2048;
 
 function manuscriptAbortError(): Error {
@@ -716,37 +716,22 @@ function uniqueNgramPositions(
   return unique;
 }
 
-function longestIncreasingSubsequenceLength(values: number[]): number {
-  const tails: number[] = [];
-  for (const value of values) {
-    let low = 0;
-    let high = tails.length;
-    while (low < high) {
-      const middle = Math.floor((low + high) / 2);
-      if (tails[middle] < value) {
-        low = middle + 1;
-      } else {
-        high = middle;
-      }
-    }
-    tails[low] = value;
-  }
-  return tails.length;
-}
-
 /**
- * Shared trigrams that occur exactly once are stable local anchors. Their
- * dominant alignment must stay monotonic after ordinary edits. Requiring
- * multiple anchors outside the LIS avoids treating one coincidental shared
- * trigram as a reorder, while still detecting a small swapped phrase inside a
- * much longer shared prefix/suffix.
+ * A real local swap supplies two directional anchors: an earlier source anchor
+ * moves right in the manuscript, a later source anchor moves left, and their
+ * mapped order crosses. A single coincidental anchor or monotonic ASR edits
+ * cannot satisfy that pair. Bigrams catch swapped two-character words while
+ * trigrams provide a stronger fallback when a bigram is repeated elsewhere.
+ * Single-character anchors are intentionally excluded because two ordinary
+ * substitutions are indistinguishable from swapping two isolated characters.
  */
-function hasSupportedUniqueTrigramReordering(
+function hasDirectionalUniqueNgramCrossing(
   left: ComparableSequence,
   right: ComparableSequence,
+  size: number,
 ): boolean {
-  const leftPositions = uniqueNgramPositions(left.value, 3);
-  const rightPositions = uniqueNgramPositions(right.value, 3);
+  const leftPositions = uniqueNgramPositions(left.value, size);
+  const rightPositions = uniqueNgramPositions(right.value, size);
   const anchors = Array.from(leftPositions.entries())
     .map(([gram, leftPosition]) => ({
       leftPosition,
@@ -760,18 +745,32 @@ function hasSupportedUniqueTrigramReordering(
       return leftAnchor.leftPosition - rightAnchor.leftPosition;
     });
 
-  if (anchors.length < MIN_OFF_ORDER_UNIQUE_TRIGRAMS + 1) return false;
-  const maximumDisplacement = anchors.reduce((maximum, anchor) => {
-    return Math.max(
-      maximum,
-      Math.abs(anchor.leftPosition - anchor.rightPosition),
-    );
-  }, 0);
-  if (maximumDisplacement < MIN_REORDER_ANCHOR_DISPLACEMENT) return false;
-  const orderedAnchorCount = longestIncreasingSubsequenceLength(
-    anchors.map((anchor) => anchor.rightPosition),
-  );
-  return anchors.length - orderedAnchorCount >= MIN_OFF_ORDER_UNIQUE_TRIGRAMS;
+  let furthestRightMovingPosition = -1;
+  for (const anchor of anchors) {
+    const displacement = anchor.rightPosition - anchor.leftPosition;
+    if (
+      displacement <= -MIN_REORDER_ANCHOR_DISPLACEMENT &&
+      furthestRightMovingPosition > anchor.rightPosition
+    ) {
+      return true;
+    }
+    if (displacement >= MIN_REORDER_ANCHOR_DISPLACEMENT) {
+      furthestRightMovingPosition = Math.max(
+        furthestRightMovingPosition,
+        anchor.rightPosition,
+      );
+    }
+  }
+  return false;
+}
+
+function hasSupportedLocalReordering(
+  left: ComparableSequence,
+  right: ComparableSequence,
+): boolean {
+  return REORDER_NGRAM_SIZES.some((size) => {
+    return hasDirectionalUniqueNgramCrossing(left, right, size);
+  });
 }
 
 /**
@@ -834,10 +833,10 @@ function safeSimilarity(
   if (singleCharacterEdit !== null) {
     return Math.max(unordered, singleCharacterEdit);
   }
-  // Position maps and LIS are only built for viable candidates. Ordinary
+  // Position maps are only built for viable candidates. Ordinary
   // low-confidence pairs leave through this fast path.
   if (unordered < threshold) return unordered;
-  if (hasSupportedUniqueTrigramReordering(left, right)) return 0;
+  if (hasSupportedLocalReordering(left, right)) return 0;
   const ordered = orderedBigramSimilarity(left, right, threshold);
   if (unordered - ordered > MAX_UNORDERED_ORDERED_GAP) return 0;
   return Math.min(unordered, ordered);
