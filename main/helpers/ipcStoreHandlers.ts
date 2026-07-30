@@ -26,6 +26,7 @@ import { rebuildAppMenu } from './menu';
 import { shutdownPythonRuntime } from './pythonRuntime';
 import { applyProxyFromSettings } from './network/proxyManager';
 import { syncTaskPowerSaveBlocker } from './powerSaveManager';
+import { omitTaskManuscript } from '../../types/taskConfig';
 import {
   isFactoryDefaultGgmlPath,
   resolveModelRoot,
@@ -151,15 +152,22 @@ export function setupStoreHandlers() {
   });
 
   // 用户配置相关处理
-  ipcMain.on('setUserConfig', async (event, config) => {
-    store.set('userConfig', config);
+  ipcMain.on('setUserConfig', async (_event, config) => {
+    store.set('userConfig', omitTaskManuscript(config));
   });
 
   ipcMain.handle('getUserConfig', async () => {
     const storedConfig = store.get('userConfig');
+    const reusableConfig = omitTaskManuscript(storedConfig);
+    if (
+      storedConfig &&
+      ('manuscriptPath' in storedConfig || 'manuscriptName' in storedConfig)
+    ) {
+      store.set('userConfig', reusableConfig);
+    }
     const merged: Record<string, unknown> = {
       ...defaultUserConfig,
-      ...storedConfig,
+      ...reusableConfig,
     };
     // 字幕效果默认档：缺省时按既有旋钮惰性推断（全新/默认→均衡；老用户自定义→对应档或
     // custom，逐字保留行为）。在此补齐而非写 store 默认值，避免回灌覆盖老用户底层旋钮。
