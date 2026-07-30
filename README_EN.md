@@ -352,11 +352,11 @@ This project is supported by:
 
 ## Community and support
 
-If this project helps you, a star is appreciated — or buy the author a coffee (please mention your GitHub account). For usage questions, the WeChat group is open to everyone.
+If this project helps you, a star is appreciated — or buy the author a coffee (please mention your GitHub account). For usage questions, the QQ group is open to everyone (group ID: 655348339).
 
-| Alipay                                            | WeChat donation                                   | WeChat group                                  |
-| ------------------------------------------------- | ------------------------------------------------- | --------------------------------------------- |
-| ![Alipay donation](./resources/donate_alipay.jpg) | ![WeChat donation](./resources/donate_wechat.jpg) | ![WeChat group](./resources/WechatIMG428.png) |
+| Alipay                                            | WeChat donation                                   | QQ group                              |
+| ------------------------------------------------- | ------------------------------------------------- | ------------------------------------- |
+| ![Alipay donation](./resources/donate_alipay.jpg) | ![WeChat donation](./resources/donate_wechat.jpg) | ![QQ group](./resources/qq-group.jpg) |
 
 ## Acknowledgements
 
