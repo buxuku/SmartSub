@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
@@ -51,6 +57,7 @@ import { useRouter } from 'next/router';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
 import { useTranslation } from 'next-i18next';
+import { useTheme } from 'next-themes';
 import { UpdateDialog } from './UpdateDialog';
 import { LogDialog } from './LogDialog';
 import OnboardingDialog from './onboarding/OnboardingDialog';
@@ -62,6 +69,10 @@ import packageInfo from '../../package.json';
 import { deriveGpuDisplayState } from '@/components/settings/gpu/gpuDisplayState';
 import { backendDisplay } from '@/components/settings/gpu/gpuUtils';
 import type { GpuMode } from '../../types/addon';
+import {
+  MAC_SIDEBAR_TRAFFIC_LIGHT_CLEARANCE,
+  WIN_CAPTION_BUTTONS_WIDTH,
+} from '../../types/windowChrome';
 
 // 添加更新状态的类型定义
 interface UpdateStatus {
@@ -202,7 +213,7 @@ function NavItem({
       aria-label={label}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'relative flex h-12 w-[52px] flex-col items-center justify-center gap-1 rounded-lg transition-colors',
+        'titlebar-no-drag relative flex h-12 w-[52px] flex-col items-center justify-center gap-1 rounded-lg transition-colors',
         active
           ? 'bg-primary/10 text-primary before:absolute before:inset-y-3 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
           : 'text-muted-foreground hover:bg-accent hover:text-foreground',
@@ -220,6 +231,7 @@ const openAfterMenuClose = (open: () => void) => setTimeout(open, 0);
 
 const Layout = ({ children }) => {
   const { t, i18n } = useTranslation('common');
+  const { resolvedTheme } = useTheme();
   const locale = i18n.language;
   const router = useRouter();
   // 兜底清理 Radix 残留的 body pointer-events 锁（从帮助菜单打开弹窗关闭后整页失效）
@@ -251,8 +263,10 @@ const Layout = ({ children }) => {
   const [showFaq, setShowFaq] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
-  // SSR 默认 ⌘，挂载后按平台校正为 Ctrl（非 mac），避免水合不一致
+  // SSR / 首屏与静态导出一致：平台相关布局仅在 mount 后写入，避免水合不一致
   const [modKey, setModKey] = useState('⌘');
+  const [isMac, setIsMac] = useState(false);
+  const [usesTitleBarOverlay, setUsesTitleBarOverlay] = useState(false);
   const [onboardingResumeStep, setOnboardingResumeStep] = useState<
     number | null
   >(null);
@@ -282,9 +296,21 @@ const Layout = ({ children }) => {
     });
   }, [t]);
 
-  useEffect(() => {
-    setModKey(isMacPlatform() ? '⌘' : 'Ctrl');
+  useLayoutEffect(() => {
+    const mac = window?.ipc?.platform === 'darwin' || isMacPlatform();
+    const overlayPlatform =
+      window?.ipc?.platform === 'win32' || window?.ipc?.platform === 'linux';
+    setModKey(mac ? '⌘' : 'Ctrl');
+    setIsMac(mac);
+    setUsesTitleBarOverlay(overlayPlatform);
   }, []);
+
+  // Win/Linux：标题栏叠层颜色随明暗主题同步
+  useEffect(() => {
+    if (!usesTitleBarOverlay) return;
+    const theme = resolvedTheme === 'light' ? 'light' : 'dark';
+    void window?.ipc?.invoke('sync-title-bar-overlay', theme);
+  }, [resolvedTheme, usesTitleBarOverlay]);
 
   useEffect(() => {
     // 首次启动（无已装模型且无完成标记）自动打开新手引导
@@ -649,11 +675,23 @@ const Layout = ({ children }) => {
     <div className="grid h-screen w-full pl-16">
       {/* 左侧竖排导航 rail：固定 64px，任务组 / 配置组以分隔线区分，设置沉底。
           底部预留 26px 给全宽状态栏。 */}
-      <aside className="fixed left-0 top-0 bottom-[26px] z-20 flex w-16 flex-col items-center gap-0.5 border-r border-border bg-chrome px-1.5 pt-2.5 pb-2">
+      <aside
+        className={cn(
+          'titlebar-drag fixed left-0 top-0 bottom-[26px] z-20 flex w-16 flex-col items-center gap-0.5 border-r border-border bg-chrome px-1.5 pb-2',
+          !isMac && 'pt-2.5',
+        )}
+      >
+        {isMac && (
+          <div
+            className="w-full shrink-0"
+            style={{ height: MAC_SIDEBAR_TRAFFIC_LIGHT_CLEARANCE }}
+            aria-hidden
+          />
+        )}
         <Link
           href={`/${locale}/home`}
           aria-label="Home"
-          className="mb-2 flex h-9 w-9 items-center justify-center"
+          className="titlebar-no-drag mb-2 flex h-9 w-9 items-center justify-center"
         >
           <Image
             src="/images/brand/logo-mark.png"
@@ -699,9 +737,18 @@ const Layout = ({ children }) => {
       {/* min-w-0：阻止 grid 子项被内容最小宽度撑开，避免出现页面级横向滚动条；
           pb 为底部全宽状态栏让位 */}
       <div className="flex min-w-0 flex-col h-screen pb-[26px]">
-        <header className="flex-shrink-0 z-10 flex h-11 items-center gap-1 border-b border-border bg-chrome px-3 overflow-hidden">
+        <header
+          className={cn(
+            'titlebar-drag flex-shrink-0 z-10 flex h-11 items-center gap-1 border-b border-border bg-chrome px-3 overflow-hidden',
+          )}
+          style={
+            usesTitleBarOverlay
+              ? { paddingRight: WIN_CAPTION_BUTTONS_WIDTH }
+              : undefined
+          }
+        >
           {currentSectionLabel && (
-            <span className="flex-shrink-0 truncate text-sm font-medium text-muted-foreground">
+            <span className="titlebar-no-drag flex-shrink-0 truncate text-sm font-medium text-muted-foreground">
               {currentSectionLabel}
             </span>
           )}
@@ -709,7 +756,7 @@ const Layout = ({ children }) => {
             type="button"
             onClick={() => setShowCommandPalette(true)}
             aria-label={t('cmd.open')}
-            className="mx-auto flex h-7 w-full max-w-sm items-center gap-2 rounded-md border bg-muted/40 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="titlebar-no-drag mx-auto flex h-7 w-full max-w-sm items-center gap-2 rounded-md border bg-muted/40 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <Search className="h-3.5 w-3.5 flex-shrink-0" />
             <span className="truncate">{t('cmd.placeholder')}</span>
@@ -717,7 +764,7 @@ const Layout = ({ children }) => {
               {modKey}K
             </kbd>
           </button>
-          <div className="flex flex-shrink-0 items-center gap-1">
+          <div className="titlebar-no-drag flex flex-shrink-0 items-center gap-1">
             {/* 加速状态指示器（加速=正向绿徽章，CPU=中性灯） */}
             {accelBadge && (
               <TooltipProvider>
@@ -851,7 +898,7 @@ const Layout = ({ children }) => {
       </div>
 
       {/* 底部全宽状态栏：引擎/GPU/队列/下载常显，仪表盘式定位信息 */}
-      <footer className="fixed bottom-0 inset-x-0 z-20 flex h-[26px] items-center gap-4 border-t border-border bg-chrome px-3 text-[11px] text-muted-foreground">
+      <footer className="titlebar-drag fixed bottom-0 inset-x-0 z-20 flex h-[26px] items-center gap-4 border-t border-border bg-chrome px-3 text-[11px] text-muted-foreground">
         <span className="flex items-center gap-1.5 whitespace-nowrap">
           <span
             className={cn(
@@ -880,7 +927,7 @@ const Layout = ({ children }) => {
             type="button"
             onClick={() => router.push(`/${locale}/recent-tasks`)}
             aria-label={t('taskRunningPill.aria')}
-            className="flex items-center gap-1.5 whitespace-nowrap text-primary transition-colors hover:text-primary/80"
+            className="titlebar-no-drag flex items-center gap-1.5 whitespace-nowrap text-primary transition-colors hover:text-primary/80"
           >
             <Loader2 className="h-3 w-3 animate-spin" />
             {t('taskRunningPill.label')}
@@ -891,7 +938,7 @@ const Layout = ({ children }) => {
             type="button"
             onClick={() => router.push(`/${locale}/download`)}
             aria-label={t('videoDownloadPill.aria')}
-            className="flex items-center gap-1.5 whitespace-nowrap text-primary transition-colors hover:text-primary/80"
+            className="titlebar-no-drag flex items-center gap-1.5 whitespace-nowrap text-primary transition-colors hover:text-primary/80"
           >
             <CloudDownload className="h-3 w-3" />
             {t('videoDownloadPill.label', {
@@ -906,7 +953,7 @@ const Layout = ({ children }) => {
             onClick={() => router.push(`/${locale}/engines`)}
             aria-label={t('downloadPill.aria')}
             className={cn(
-              'flex items-center gap-1.5 whitespace-nowrap transition-colors',
+              'titlebar-no-drag flex items-center gap-1.5 whitespace-nowrap transition-colors',
               downloadPill.status === 'error'
                 ? 'text-destructive hover:text-destructive/80'
                 : 'hover:text-foreground',

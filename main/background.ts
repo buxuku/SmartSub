@@ -56,6 +56,10 @@ import {
 } from './helpers/appBranding';
 import { getDevSimulationConfig, getGpuEnvironment } from './helpers/cudaUtils';
 import { cleanupOldLogs } from './helpers/logStorage';
+import {
+  getHiddenNativeTitleBarOptions,
+  setupWindowChromeHandlers,
+} from './helpers/windowChrome';
 
 //控制台出现中文乱码，需要去node_modules\electron\cli.js中修改启动代码页
 
@@ -160,6 +164,7 @@ app.on('before-quit', (event) => {
     minWidth: 1024,
     minHeight: 700,
     icon: resolveAppIcon(),
+    ...getHiddenNativeTitleBarOptions(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       // 本地媒体经 media:// 协议加载；紧急回退 SMARTSUB_LEGACY_WEB_SECURITY=true
@@ -173,6 +178,7 @@ app.on('before-quit', (event) => {
 
   // 关窗行为（macOS 智能模式 / Win·Linux 防误杀）+ Dock 激活恢复
   setupWindowCloseBehavior(mainWindow);
+  setupWindowChromeHandlers(mainWindow);
 
   if (isProd) {
     await mainWindow.loadURL(`app://./${userLanguage}/home/`);
