@@ -51,6 +51,11 @@ export type StoreType = {
     useCuda: boolean;
     /** GPU 加速模式（取代 useCuda；useCuda 保留仅为回滚安全；仅 win/linux 生效） */
     gpuMode?: GpuMode;
+    /**
+     * NVIDIA GPU UUID selected for CUDA engines. Empty/undefined keeps the
+     * system default. UUID is machine-local and intentionally not exported.
+     */
+    selectedCudaDevice?: string;
     /** gpuMode 迁移一次性通知标记：false=待通知，true=已通知 */
     gpuMigrationNotified?: boolean;
     /** macOS(Apple Silicon) 转写加速方式：auto=优先 CoreML（缺省），metal=始终 Metal */

@@ -24,6 +24,7 @@ import type {
   GpuVendor,
 } from '../../types/addon';
 import { AVAILABLE_CUDA_VERSIONS } from '../../types/addon';
+import { parseNvidiaSmiGpuList } from '../../types/gpuDevice';
 
 /**
  * 开发模式模拟配置
@@ -419,13 +420,38 @@ function normalizeGpuVendor(vendor: string, model: string): GpuVendor {
   return 'unknown';
 }
 
+async function detectNvidiaGpus(): Promise<GpuInfo[]> {
+  if (!isPlatformCudaCapable()) return [];
+  try {
+    const { stdout } = await execAsync(
+      'nvidia-smi --query-gpu=index,uuid,name --format=csv,noheader,nounits',
+      { encoding: 'utf8', timeout: 10000 },
+    );
+    return parseNvidiaSmiGpuList(stdout);
+  } catch {
+    return [];
+  }
+}
+
 /**
- * 枚举显卡（systeminformation，跨平台），带 10s 超时与 dev 模拟
+ * 枚举显卡（systeminformation，跨平台），带 10s 超时与 dev 模拟。
+ * NVIDIA 设备优先使用 nvidia-smi，以获得 CUDA 索引与跨重启稳定的 UUID。
  */
 async function detectGpus(): Promise<GpuInfo[]> {
   const simConfig = getDevSimulationConfig();
   if (simConfig?.enabled) {
-    return [{ name: simConfig.gpuName, vendor: 'nvidia' }];
+    const requestedCount = Number(process.env.DEV_SIMULATE_GPU_COUNT || '1');
+    const count = Math.max(
+      1,
+      Math.min(8, Number.isInteger(requestedCount) ? requestedCount : 1),
+    );
+    return Array.from({ length: count }, (_, index) => ({
+      name:
+        count === 1 ? simConfig.gpuName : `${simConfig.gpuName} #${index + 1}`,
+      vendor: 'nvidia' as const,
+      index,
+      uuid: `GPU-SIMULATED-${index}`,
+    }));
   }
 
   if (
@@ -436,6 +462,7 @@ async function detectGpus(): Promise<GpuInfo[]> {
     return [{ name: `Simulated ${vendor.toUpperCase()} GPU`, vendor }];
   }
 
+  const nvidiaGpusPromise = detectNvidiaGpus();
   try {
     const graphics = await Promise.race([
       si.graphics(),
@@ -443,15 +470,21 @@ async function detectGpus(): Promise<GpuInfo[]> {
         setTimeout(() => reject(new Error('GPU detection timeout')), 10000),
       ),
     ]);
-    return (graphics.controllers || [])
+    const genericGpus = (graphics.controllers || [])
       .filter((c) => c.model || c.vendor)
       .map((c) => ({
         name: c.model || c.vendor || 'Unknown GPU',
         vendor: normalizeGpuVendor(c.vendor || '', c.model || ''),
       }));
+    const nvidiaGpus = await nvidiaGpusPromise;
+    if (nvidiaGpus.length === 0) return genericGpus;
+    return [
+      ...nvidiaGpus,
+      ...genericGpus.filter((gpu) => gpu.vendor !== 'nvidia'),
+    ];
   } catch (error) {
     logMessage(`GPU enumeration failed: ${error}`, 'warning');
-    return [];
+    return nvidiaGpusPromise;
   }
 }
 

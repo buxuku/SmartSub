@@ -78,6 +78,7 @@ function collectExportData(): Record<string, any> {
     modelsPath: _modelsPath,
     customTempDir: _customTempDir,
     storageRoot: _storageRoot,
+    selectedCudaDevice: _selectedCudaDevice,
     ...portableSettings
   } = settings;
 
@@ -208,6 +209,8 @@ export async function importConfig(
       modelsPath: currentSettings.modelsPath,
       customTempDir: currentSettings.customTempDir,
       storageRoot: currentSettings.storageRoot,
+      // GPU UUID is machine-local and must never migrate across computers.
+      selectedCudaDevice: currentSettings.selectedCudaDevice,
     });
     if (data.customParameters) {
       store.set('customParameters', data.customParameters);
