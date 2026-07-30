@@ -158,7 +158,7 @@ brew upgrade --cask smartsub # 升级
 | **whisper.cpp（内置）**  | 默认引擎，支持 ggml 量化模型与 GPU 加速                            | 随应用内置，开箱即用               |
 | **faster-whisper**       | 基于 CTranslate2，速度更快，模型按需从 HuggingFace 下载            | 自包含 Python 运行时（应用内下载） |
 | **FunASR**               | SenseVoice（中 / 英 / 日 / 韩 / 粤）与 Paraformer-zh，中文表现优秀 | 内置 sherpa-onnx 原生库            |
-| **Qwen3-ASR**            | 通义千问语音识别（qwen3-asr-0.6b）                                 | 内置 sherpa-onnx 原生库            |
+| **Qwen3-ASR**            | 通义千问语音识别（qwen3-asr-0.6b / 1.7b）                          | 内置 sherpa-onnx 原生库            |
 | **FireRedASR**           | FireRedASR-AED large（中英），中文表现优秀                         | 内置 sherpa-onnx 原生库            |
 | **本地 Whisper CLI**     | 调用你自行安装的 whisper 兼容命令                                  | 使用系统已装命令                   |
 | **云端听写（在线 ASR）** | 8 家在线服务商，免 GPU、支持多服务商多实例                         | 在线服务（音频上传到你配置的端点） |

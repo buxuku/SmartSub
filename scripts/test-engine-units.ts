@@ -60,7 +60,14 @@ import {
   resolveFunasrAsrSelection,
   FUNASR_MODELS,
 } from '../main/helpers/funasrModelCatalog';
-import { QWEN_MODELS } from '../main/helpers/qwenModelCatalog';
+import {
+  QWEN_MODELS,
+  getQwenArchiveUrl,
+  getQwenModelIds,
+  getQwenSourceOrder,
+  getQwenSupportedSources,
+  resolveQwenSelection,
+} from '../main/helpers/qwenModelCatalog';
 import { FIRERED_MODELS } from '../main/helpers/fireRedModelCatalog';
 import {
   CT2_REQUIRED_FILES,
@@ -989,17 +996,17 @@ const qwenReady = {
   transcriptionEngine: 'qwen' as const,
   qwenEngineInstalled: true,
   qwenVadInstalled: true,
-  qwenModelsInstalled: ['qwen3-asr-0.6b'],
+  qwenModelsInstalled: ['qwen3-asr-0.6b', 'qwen3-asr-1.7b'],
 };
 eq(
   getSelectableModelsForEngine(qwenReady),
-  ['qwen3-asr-0.6b'],
-  'engineModels: qwen selectable = installed qwen models',
+  ['qwen3-asr-0.6b', 'qwen3-asr-1.7b'],
+  'engineModels: qwen selectable includes both installed model sizes',
 );
 eq(
   getInstalledModelsForEngine(qwenReady),
-  ['qwen3-asr-0.6b'],
-  'engineModels: qwen installed = installed qwen models',
+  ['qwen3-asr-0.6b', 'qwen3-asr-1.7b'],
+  'engineModels: qwen installed includes both installed model sizes',
 );
 eq(
   hasModelsForEngine(qwenReady),
@@ -1491,6 +1498,57 @@ eq(
   QWEN_MODELS['qwen3-asr-0.6b'].requiredFiles.includes('tokenizer/vocab.json'),
   true,
   'import: qwen requiredFiles include nested tokenizer file',
+);
+eq(
+  QWEN_MODELS['qwen3-asr-1.7b'].requiredFiles,
+  QWEN_MODELS['qwen3-asr-0.6b'].requiredFiles,
+  'import: qwen model sizes share the same runtime layout',
+);
+eq(
+  QWEN_MODELS['qwen3-asr-1.7b'].modelScopeFiles
+    .map((file) => file.remote)
+    .slice(0, 3),
+  [
+    'model_1.7B/conv_frontend.onnx',
+    'model_1.7B/encoder.int8.onnx',
+    'model_1.7B/decoder.int8.onnx',
+  ],
+  'qwen catalog: 1.7B points at the official int8 ModelScope layout',
+);
+eq(
+  getQwenModelIds(),
+  ['qwen3-asr-0.6b', 'qwen3-asr-1.7b'],
+  'qwen catalog: exposes both 0.6B and 1.7B',
+);
+eq(
+  getQwenSupportedSources('qwen3-asr-0.6b'),
+  ['modelscope', 'ghproxy', 'github'],
+  'qwen catalog: 0.6B retains all download sources',
+);
+eq(
+  getQwenSupportedSources('qwen3-asr-1.7b'),
+  ['modelscope'],
+  'qwen catalog: 1.7B only exposes its available ModelScope source',
+);
+eq(
+  getQwenArchiveUrl(QWEN_MODELS['qwen3-asr-1.7b'], 'github'),
+  null,
+  'qwen catalog: 1.7B never fabricates a missing GitHub archive URL',
+);
+eq(
+  getQwenSourceOrder('github', getQwenSupportedSources('qwen3-asr-1.7b')),
+  ['modelscope'],
+  'qwen catalog: unsupported 1.7B source safely falls back to ModelScope',
+);
+eq(
+  resolveQwenSelection('qwen3-asr-1.7b', ['qwen3-asr-0.6b', 'qwen3-asr-1.7b']),
+  { id: 'qwen3-asr-1.7b' },
+  'qwen selection: requested installed 1.7B reaches the runtime',
+);
+eq(
+  resolveQwenSelection('qwen3-asr-1.7b', ['qwen3-asr-0.6b']),
+  { id: 'qwen3-asr-0.6b' },
+  'qwen selection: missing 1.7B falls back to an installed model',
 );
 eq(
   FIRERED_MODELS['fire-red-asr-large-zh-en'].requiredFiles,

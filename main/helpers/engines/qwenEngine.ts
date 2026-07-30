@@ -153,7 +153,7 @@ async function transcribeQwen(ctx: TranscribeContext): Promise<string> {
 
 export const qwenEngineAdapter: TranscriptionEngineAdapter = {
   id: 'qwen',
-  displayName: 'Qwen3-ASR (0.6B)',
+  displayName: 'Qwen3-ASR',
   requiresRuntime: true,
 
   async isAvailable(): Promise<EngineStatus> {

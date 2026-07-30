@@ -12,6 +12,7 @@ import {
   QwenModelSpec,
   QWEN_DEFAULT_SOURCE,
   getQwenSourceOrder,
+  getQwenSupportedSources,
   getQwenArchiveUrl,
   getQwenModelScopeFileUrl,
   getQwenModelScopeTreeUrl,
@@ -85,9 +86,10 @@ function fetchJson<T>(url: string): Promise<T> {
 }
 
 /**
- * Qwen 模型下载器：整包（tar.bz2）下载 + 解包到 userData/models/qwen/<id>/。
- * 复用 downloadFileParallel（断点续传 + 多连接 + 取消），解包用 decompress（含 tarbz2 插件）。
- * 与 FunasrModelDownloader 同构（同事件名 downloadProgress / modelDownloadDetail）。
+ * Qwen 模型下载器：
+ * - ModelScope 按 catalog 逐文件下载（所有规格可用）；
+ * - 有 sherpa-onnx release 整包的规格可经 GitHub / ghproxy 下载并解包。
+ * 复用 downloadFileParallel（多连接 + 取消），与 FunasrModelDownloader 使用相同进度事件。
  */
 export class QwenModelDownloader {
   private abortController: AbortController | null = null;
@@ -200,7 +202,7 @@ export class QwenModelDownloader {
 
     let lastError: unknown = null;
     // 按所选源优先、其余按国内优先顺序回退（modelscope → ghproxy → github）。
-    for (const src of getQwenSourceOrder(source)) {
+    for (const src of getQwenSourceOrder(source, getQwenSupportedSources(id))) {
       try {
         if (src === 'modelscope') {
           await this.downloadFromModelScope(spec);
@@ -323,9 +325,15 @@ export class QwenModelDownloader {
     spec: QwenModelSpec,
     source: 'ghproxy' | 'github',
   ): Promise<void> {
+    if (!spec.archiveName) {
+      throw new Error(`archive source is unavailable for ${spec.id}`);
+    }
     const destDir = getQwenModelDir(spec.id);
     const tmp = path.join(getQwenModelsRoot(), spec.archiveName);
     const url = getQwenArchiveUrl(spec, source);
+    if (!url) {
+      throw new Error(`archive source is unavailable for ${spec.id}`);
+    }
 
     this.update({
       status: 'downloading',

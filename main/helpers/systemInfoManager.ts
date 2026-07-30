@@ -56,6 +56,7 @@ import {
   getInstalledQwenModels,
   getQwenModelsRoot,
   getQwenArchiveUrl,
+  getQwenSupportedSources,
 } from './qwenModelCatalog';
 import {
   getFireRedModelDownloader,
@@ -374,6 +375,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     models: (Object.keys(QWEN_MODELS) as QwenModelId[]).map((id) => ({
       id,
       installed: isQwenModelInstalled(id),
+      sources: getQwenSupportedSources(id),
     })),
   }));
 
@@ -528,13 +530,13 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
               url: `${getModelScopeBase()}/models/${spec.modelScopeRepo}`,
             };
           }
-          return {
-            success: true,
-            url: getQwenArchiveUrl(
-              spec,
-              source === 'github' ? 'github' : 'ghproxy',
-            ),
-          };
+          const url = getQwenArchiveUrl(
+            spec,
+            source === 'github' ? 'github' : 'ghproxy',
+          );
+          return url
+            ? { success: true, url }
+            : { success: false, error: 'sourceUnavailable' };
         }
         if (scope === 'firered') {
           const spec = FIRERED_MODELS[modelId as FireRedModelId];

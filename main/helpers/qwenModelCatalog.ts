@@ -21,10 +21,10 @@ export function getQwenModelsRoot(): string {
   return root;
 }
 
-/** qwen 子模型标识（与本地子目录一一对应）。P2 仅 0.6B。 */
-export type QwenModelId = 'qwen3-asr-0.6b';
+/** qwen 子模型标识（与本地子目录一一对应）。 */
+export type QwenModelId = 'qwen3-asr-0.6b' | 'qwen3-asr-1.7b';
 
-/** 默认（当前唯一）qwen 模型。 */
+/** 默认 qwen 模型：保留体积更小、CPU 更友好的 0.6B，兼容历史选择。 */
 export const QWEN_DEFAULT_MODEL_ID: QwenModelId = 'qwen3-asr-0.6b';
 
 /**
@@ -45,11 +45,23 @@ const QWEN_SOURCE_ORDER: QwenModelSource[] = [
   'github',
 ];
 
-/** 所选源排第一，其余按规范顺序补齐，供下载失败时自动回退。 */
+/**
+ * 所选源排第一，其余按规范顺序补齐，供下载失败时自动回退。
+ * supported 可限制到模型实际具备的源（1.7B 当前仅有 ModelScope 逐文件资产）。
+ */
 export function getQwenSourceOrder(
   selected: QwenModelSource,
+  supported: readonly QwenModelSource[] = QWEN_SOURCE_ORDER,
 ): QwenModelSource[] {
-  return [selected, ...QWEN_SOURCE_ORDER.filter((s) => s !== selected)];
+  const supportedSet = new Set(supported);
+  const ordered = [
+    selected,
+    ...QWEN_SOURCE_ORDER.filter((s) => s !== selected),
+  ];
+  return ordered.filter(
+    (source, index) =>
+      supportedSet.has(source) && ordered.indexOf(source) === index,
+  );
 }
 
 /** ModelScope 逐文件映射：remote=仓库内路径，local=相对模型目录的落地路径。 */
@@ -67,18 +79,21 @@ export interface QwenModelScopeFile {
 export interface QwenModelSpec {
   id: QwenModelId;
   dirName: string;
-  /** 体积/硬件提示用（解包后约 0.95GB；tar.bz2 下载包约 838MB）。 */
+  /** 体积/硬件提示用（模型安装后的近似字节数）。 */
   approxInstallBytes: number;
   /** ModelScope 仓库 id（逐文件国内源）。 */
   modelScopeRepo: string;
   /** ModelScope 逐文件清单（remote→local）。 */
   modelScopeFiles: QwenModelScopeFile[];
-  /** GitHub release 路径（owner/repo/releases/download/tag），用于整包源拼 URL。 */
-  releasePath: string;
-  /** release 整包文件名（tar.bz2）。 */
-  archiveName: string;
-  /** 解包后顶层目录名（用 decompress strip:1 去掉，此处仅作记录）。 */
-  archiveInnerDir: string;
+  /**
+   * GitHub release 路径（owner/repo/releases/download/tag），用于整包源拼 URL。
+   * 省略表示 sherpa-onnx 尚未发布该规格的 release 整包，只能走 ModelScope。
+   */
+  releasePath?: string;
+  /** release 整包文件名（tar.bz2）；与 releasePath 同时存在。 */
+  archiveName?: string;
+  /** 解包后顶层目录名（用 strip:1 去掉，此处仅作记录）。 */
+  archiveInnerDir?: string;
   /** 判定「已安装」必须存在的关键文件（相对 dirName）。 */
   requiredFiles: string[];
 }
@@ -128,13 +143,57 @@ export const QWEN_MODELS: Record<QwenModelId, QwenModelSpec> = {
       'tokenizer/merges.txt',
     ],
   },
+  'qwen3-asr-1.7b': {
+    id: 'qwen3-asr-1.7b',
+    dirName: 'qwen3-asr-1.7b',
+    // ModelScope int8 三件套 + tokenizer 实际合计约 2.40 GB（十进制）。
+    approxInstallBytes: 2_405_000_000,
+    modelScopeRepo: QWEN_MS_REPO,
+    modelScopeFiles: [
+      { remote: 'model_1.7B/conv_frontend.onnx', local: 'conv_frontend.onnx' },
+      { remote: 'model_1.7B/encoder.int8.onnx', local: 'encoder.int8.onnx' },
+      { remote: 'model_1.7B/decoder.int8.onnx', local: 'decoder.int8.onnx' },
+      { remote: 'tokenizer/vocab.json', local: 'tokenizer/vocab.json' },
+      { remote: 'tokenizer/merges.txt', local: 'tokenizer/merges.txt' },
+      {
+        remote: 'tokenizer/tokenizer_config.json',
+        local: 'tokenizer/tokenizer_config.json',
+      },
+      { remote: 'tokenizer/config.json', local: 'tokenizer/config.json' },
+      {
+        remote: 'tokenizer/chat_template.json',
+        local: 'tokenizer/chat_template.json',
+      },
+      {
+        remote: 'tokenizer/preprocessor_config.json',
+        local: 'tokenizer/preprocessor_config.json',
+      },
+    ],
+    // sherpa-onnx 当前未发布 1.7B 的 GitHub release 整包，因此不填写 archive 字段。
+    requiredFiles: [
+      'conv_frontend.onnx',
+      'encoder.int8.onnx',
+      'decoder.int8.onnx',
+      'tokenizer/vocab.json',
+      'tokenizer/merges.txt',
+    ],
+  },
 };
 
-/** 整包源（ghproxy/github）的 tar.bz2 下载 URL。 */
+/** 模型实际支持的下载源；无 release 整包时仅返回 ModelScope。 */
+export function getQwenSupportedSources(id: QwenModelId): QwenModelSource[] {
+  const spec = QWEN_MODELS[id];
+  return spec.releasePath && spec.archiveName
+    ? [...QWEN_SOURCE_ORDER]
+    : ['modelscope'];
+}
+
+/** 整包源（ghproxy/github）的 tar.bz2 下载 URL；无整包资产返回 null。 */
 export function getQwenArchiveUrl(
   spec: QwenModelSpec,
   source: 'ghproxy' | 'github',
-): string {
+): string | null {
+  if (!spec.releasePath || !spec.archiveName) return null;
   const github = `${getGithubBase()}/${spec.releasePath}/${spec.archiveName}`;
   return source === 'ghproxy' ? `${getGithubProxyPrefix()}/${github}` : github;
 }

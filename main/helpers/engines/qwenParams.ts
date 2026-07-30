@@ -7,7 +7,7 @@ import { getNumericSetting } from './transcribeShared';
  *   max_total_len=512, max_new_tokens=128, temperature=1e-6, top_p=0.8, seed=42。
  * 注意：Node 绑定对该 config 先 memset(0) 再覆盖存在的键，故每个字段都必须显式给值。
  *
- * 当前范围（P2）：仅 0.6B / CPU / 段级时间戳。语言由 Qwen 内部 prompt 处理，
+ * 当前范围：0.6B / 1.7B、CPU、段级时间戳。语言由 Qwen 内部 prompt 处理，
  * sherpa 的 qwen3Asr 配置不暴露 language 字段，故此处不接收/不映射 sourceLanguage。
  */
 
