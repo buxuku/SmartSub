@@ -1,7 +1,12 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
-import { resolveBundledVadPath } from './modelImport';
+import {
+  resolveBundledVadPath,
+  validateModelLayoutWithSizes,
+  type LayoutCheckResult,
+  type ModelFileSizeExpectation,
+} from './modelImport';
 import { resolveModelRoot } from './storagePaths';
 import {
   getGithubBase,
@@ -68,6 +73,8 @@ export function getQwenSourceOrder(
 export interface QwenModelScopeFile {
   remote: string;
   local: string;
+  /** 固定 revision 上的官方文件大小，用于下载完整性与模型槽身份校验。 */
+  size: number;
 }
 
 /**
@@ -83,7 +90,9 @@ export interface QwenModelSpec {
   approxInstallBytes: number;
   /** ModelScope 仓库 id（逐文件国内源）。 */
   modelScopeRepo: string;
-  /** ModelScope 逐文件清单（remote→local）。 */
+  /** 固定 ModelScope revision，确保 catalog 大小不会随 master 漂移。 */
+  modelScopeRevision: string;
+  /** ModelScope 逐文件清单（remote→local + 精确大小）。 */
   modelScopeFiles: QwenModelScopeFile[];
   /**
    * GitHub release 路径（owner/repo/releases/download/tag），用于整包源拼 URL。
@@ -104,6 +113,41 @@ const QWEN_0_6B_RELEASE_PATH =
   'k2-fsa/sherpa-onnx/releases/download/asr-models';
 /** sherpa-onnx 的 Qwen3-ASR onnx 即源自该 ModelScope 仓库（k2-fsa 据此打包 tar.bz2）。 */
 const QWEN_MS_REPO = 'zengshuishui/Qwen3-ASR-onnx';
+/** 与下方精确文件大小对应的不可变 ModelScope revision。 */
+const QWEN_MS_REVISION = '9c182309f7bb075f241424441add9e16c5086dfb';
+
+const QWEN_SHARED_TOKENIZER_FILES: QwenModelScopeFile[] = [
+  {
+    remote: 'tokenizer/vocab.json',
+    local: 'tokenizer/vocab.json',
+    size: 2_776_833,
+  },
+  {
+    remote: 'tokenizer/merges.txt',
+    local: 'tokenizer/merges.txt',
+    size: 1_671_853,
+  },
+  {
+    remote: 'tokenizer/tokenizer_config.json',
+    local: 'tokenizer/tokenizer_config.json',
+    size: 12_487,
+  },
+  {
+    remote: 'tokenizer/config.json',
+    local: 'tokenizer/config.json',
+    size: 6_193,
+  },
+  {
+    remote: 'tokenizer/chat_template.json',
+    local: 'tokenizer/chat_template.json',
+    size: 1_161,
+  },
+  {
+    remote: 'tokenizer/preprocessor_config.json',
+    local: 'tokenizer/preprocessor_config.json',
+    size: 330,
+  },
+];
 
 export const QWEN_MODELS: Record<QwenModelId, QwenModelSpec> = {
   'qwen3-asr-0.6b': {
@@ -111,36 +155,36 @@ export const QWEN_MODELS: Record<QwenModelId, QwenModelSpec> = {
     dirName: 'qwen3-asr-0.6b',
     approxInstallBytes: 1_020_000_000,
     modelScopeRepo: QWEN_MS_REPO,
+    modelScopeRevision: QWEN_MS_REVISION,
     modelScopeFiles: [
-      { remote: 'model_0.6B/conv_frontend.onnx', local: 'conv_frontend.onnx' },
-      { remote: 'model_0.6B/encoder.int8.onnx', local: 'encoder.int8.onnx' },
-      { remote: 'model_0.6B/decoder.int8.onnx', local: 'decoder.int8.onnx' },
-      { remote: 'tokenizer/vocab.json', local: 'tokenizer/vocab.json' },
-      { remote: 'tokenizer/merges.txt', local: 'tokenizer/merges.txt' },
       {
-        remote: 'tokenizer/tokenizer_config.json',
-        local: 'tokenizer/tokenizer_config.json',
-      },
-      { remote: 'tokenizer/config.json', local: 'tokenizer/config.json' },
-      {
-        remote: 'tokenizer/chat_template.json',
-        local: 'tokenizer/chat_template.json',
+        remote: 'model_0.6B/conv_frontend.onnx',
+        local: 'conv_frontend.onnx',
+        size: 44_148_281,
       },
       {
-        remote: 'tokenizer/preprocessor_config.json',
-        local: 'tokenizer/preprocessor_config.json',
+        remote: 'model_0.6B/encoder.int8.onnx',
+        local: 'encoder.int8.onnx',
+        size: 182_491_662,
       },
+      {
+        remote: 'model_0.6B/decoder.int8.onnx',
+        local: 'decoder.int8.onnx',
+        size: 755_914_231,
+      },
+      ...QWEN_SHARED_TOKENIZER_FILES,
     ],
     releasePath: QWEN_0_6B_RELEASE_PATH,
     archiveName: QWEN_0_6B_ARCHIVE,
     archiveInnerDir: QWEN_0_6B_INNER,
-    // tokenizer 是目录；以其中两个关键文件作为安装完整性标记。
+    // sherpa-onnx v1.13.2 会显式校验 tokenizer_config.json，三项缺一不可。
     requiredFiles: [
       'conv_frontend.onnx',
       'encoder.int8.onnx',
       'decoder.int8.onnx',
       'tokenizer/vocab.json',
       'tokenizer/merges.txt',
+      'tokenizer/tokenizer_config.json',
     ],
   },
   'qwen3-asr-1.7b': {
@@ -149,25 +193,24 @@ export const QWEN_MODELS: Record<QwenModelId, QwenModelSpec> = {
     // ModelScope int8 三件套 + tokenizer 实际合计约 2.40 GB（十进制）。
     approxInstallBytes: 2_405_000_000,
     modelScopeRepo: QWEN_MS_REPO,
+    modelScopeRevision: QWEN_MS_REVISION,
     modelScopeFiles: [
-      { remote: 'model_1.7B/conv_frontend.onnx', local: 'conv_frontend.onnx' },
-      { remote: 'model_1.7B/encoder.int8.onnx', local: 'encoder.int8.onnx' },
-      { remote: 'model_1.7B/decoder.int8.onnx', local: 'decoder.int8.onnx' },
-      { remote: 'tokenizer/vocab.json', local: 'tokenizer/vocab.json' },
-      { remote: 'tokenizer/merges.txt', local: 'tokenizer/merges.txt' },
       {
-        remote: 'tokenizer/tokenizer_config.json',
-        local: 'tokenizer/tokenizer_config.json',
-      },
-      { remote: 'tokenizer/config.json', local: 'tokenizer/config.json' },
-      {
-        remote: 'tokenizer/chat_template.json',
-        local: 'tokenizer/chat_template.json',
+        remote: 'model_1.7B/conv_frontend.onnx',
+        local: 'conv_frontend.onnx',
+        size: 48_080_441,
       },
       {
-        remote: 'tokenizer/preprocessor_config.json',
-        local: 'tokenizer/preprocessor_config.json',
+        remote: 'model_1.7B/encoder.int8.onnx',
+        local: 'encoder.int8.onnx',
+        size: 314_222_162,
       },
+      {
+        remote: 'model_1.7B/decoder.int8.onnx',
+        local: 'decoder.int8.onnx',
+        size: 2_037_458_645,
+      },
+      ...QWEN_SHARED_TOKENIZER_FILES,
     ],
     // sherpa-onnx 当前未发布 1.7B 的 GitHub release 整包，因此不填写 archive 字段。
     requiredFiles: [
@@ -176,6 +219,7 @@ export const QWEN_MODELS: Record<QwenModelId, QwenModelSpec> = {
       'decoder.int8.onnx',
       'tokenizer/vocab.json',
       'tokenizer/merges.txt',
+      'tokenizer/tokenizer_config.json',
     ],
   },
 };
@@ -203,12 +247,12 @@ export function getQwenModelScopeFileUrl(
   spec: QwenModelSpec,
   remote: string,
 ): string {
-  return `${getModelScopeBase()}/models/${spec.modelScopeRepo}/resolve/master/${remote}`;
+  return `${getModelScopeBase()}/models/${spec.modelScopeRepo}/resolve/${spec.modelScopeRevision}/${remote}`;
 }
 
 /** ModelScope 文件树 API（取各文件 size 以计算总进度）。 */
 export function getQwenModelScopeTreeUrl(spec: QwenModelSpec): string {
-  return `${getModelScopeBase()}/api/v1/models/${spec.modelScopeRepo}/repo/files?Revision=master&Recursive=true`;
+  return `${getModelScopeBase()}/api/v1/models/${spec.modelScopeRepo}/repo/files?Revision=${spec.modelScopeRevision}&Recursive=true`;
 }
 
 export function getQwenModelDir(id: QwenModelId): string {
@@ -217,11 +261,36 @@ export function getQwenModelDir(id: QwenModelId): string {
   return dir;
 }
 
+/** 运行时必需文件及其固定 revision 官方大小。 */
+export function getQwenRequiredFileExpectations(
+  id: QwenModelId,
+): ModelFileSizeExpectation[] {
+  const spec = QWEN_MODELS[id];
+  const byLocal = new Map(
+    spec.modelScopeFiles.map((file) => [file.local, file]),
+  );
+  return spec.requiredFiles.map((requiredPath) => {
+    const file = byLocal.get(requiredPath);
+    if (!file) {
+      throw new Error(
+        `qwen catalog missing size metadata for ${id}: ${requiredPath}`,
+      );
+    }
+    return { path: requiredPath, size: file.size };
+  });
+}
+
+/** 检查 Qwen 目录是否完整且确实属于指定模型槽位。 */
+export function validateQwenModelLayout(
+  id: QwenModelId,
+  dir: string,
+): LayoutCheckResult {
+  return validateModelLayoutWithSizes(dir, getQwenRequiredFileExpectations(id));
+}
+
 export function isQwenModelInstalled(id: QwenModelId): boolean {
   const dir = path.join(getQwenModelsRoot(), QWEN_MODELS[id].dirName);
-  return QWEN_MODELS[id].requiredFiles.every((f) =>
-    fs.existsSync(path.join(dir, f)),
-  );
+  return validateQwenModelLayout(id, dir).ok;
 }
 
 /** 四件套绝对路径（供 adapter 注入 worker 模型请求；tokenizer 为目录）。 */
