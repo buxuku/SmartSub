@@ -53,6 +53,7 @@ import {
   toFriendlyFfmpegError,
 } from '../main/helpers/ffmpegErrorUtils';
 import fs from 'fs';
+import * as http from 'http';
 import os from 'os';
 import nodePath from 'path';
 import {
@@ -78,6 +79,12 @@ import {
   prepareDownloadTarget,
   validateDownloadResponse,
 } from '../main/helpers/download/resumeIntegrity';
+import { commitStagedDirectory } from '../main/helpers/download/atomicDirectoryInstall';
+import { DownloadSessionTracker } from '../main/helpers/download/downloadSession';
+import {
+  downloadFileSingle,
+  SINGLE_DOWNLOAD_CANCELLED,
+} from '../main/helpers/download/singleFileDownloader';
 import {
   buildVadConfig,
   buildRecognizerConfig,
@@ -1454,7 +1461,41 @@ eq(
     true,
     'import: present nested file -> ok',
   );
+  fs.writeFileSync(nodePath.join(tmp, 'empty.onnx'), '');
+  eq(
+    validateModelLayout(tmp, ['empty.onnx']),
+    { ok: false, missing: ['empty.onnx'] },
+    'import: zero-byte required file is rejected',
+  );
+  fs.mkdirSync(nodePath.join(tmp, 'not-a-file.onnx'));
+  eq(
+    validateModelLayout(tmp, ['not-a-file.onnx']),
+    { ok: false, missing: ['not-a-file.onnx'] },
+    'import: directory cannot satisfy a required model file',
+  );
   fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+// --- downloadSession: stale finally 不能清掉新会话 ---
+{
+  const tracker = new DownloadSessionTracker();
+  const oldSession = tracker.begin();
+  const newSession = tracker.begin();
+  eq(
+    tracker.finish(oldSession),
+    false,
+    'download session: stale completion does not own active session',
+  );
+  eq(
+    tracker.owns(newSession),
+    true,
+    'download session: new session survives stale completion',
+  );
+  eq(
+    tracker.finish(newSession),
+    true,
+    'download session: active completion clears its own session',
+  );
 }
 
 // --- modelImport: resolveOverridePath（覆盖优先/空值回退） ---
@@ -6081,6 +6122,154 @@ async function runAsyncConcurrencyTests(): Promise<void> {
       true,
       'gate: pre-aborted signal rejects immediately',
     );
+  }
+
+  // 模型目录事务提交：提交失败恢复旧目录，成功后替换旧目录。
+  {
+    const tmp = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'model-atomic-'));
+    const dest = nodePath.join(tmp, 'model');
+    const missingStaged = nodePath.join(tmp, 'missing-stage');
+    const rollbackBackup = nodePath.join(tmp, 'rollback-backup');
+    fs.mkdirSync(dest);
+    fs.writeFileSync(nodePath.join(dest, 'marker.txt'), 'old');
+    let rollbackError: unknown = null;
+    await commitStagedDirectory({
+      stagedDir: missingStaged,
+      destDir: dest,
+      backupDir: rollbackBackup,
+    }).catch((error) => {
+      rollbackError = error;
+    });
+    eq(
+      rollbackError instanceof Error,
+      true,
+      'atomic install: missing staging fails the commit',
+    );
+    eq(
+      fs.readFileSync(nodePath.join(dest, 'marker.txt'), 'utf8'),
+      'old',
+      'atomic install: failed commit restores the existing model',
+    );
+
+    const staged = nodePath.join(tmp, 'valid-stage');
+    const successBackup = nodePath.join(tmp, 'success-backup');
+    fs.mkdirSync(staged);
+    fs.writeFileSync(nodePath.join(staged, 'marker.txt'), 'new');
+    await commitStagedDirectory({
+      stagedDir: staged,
+      destDir: dest,
+      backupDir: successBackup,
+    });
+    eq(
+      fs.readFileSync(nodePath.join(dest, 'marker.txt'), 'utf8'),
+      'new',
+      'atomic install: valid staging replaces the existing model',
+    );
+    eq(
+      fs.existsSync(successBackup),
+      false,
+      'atomic install: successful commit removes the backup',
+    );
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // 单连接下载：完整响应成功；截断、停滞和取消都必须可靠拒绝。
+  {
+    const tmp = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'single-download-'));
+    const server = http.createServer((req, res) => {
+      if (req.url === '/ok') {
+        res.writeHead(200, { 'Content-Length': '5' });
+        res.end('hello');
+        return;
+      }
+      if (req.url === '/truncated') {
+        res.writeHead(200, { 'Content-Length': '10' });
+        res.end('short');
+        return;
+      }
+      if (req.url === '/stall') {
+        res.writeHead(200, { 'Content-Length': '5' });
+        res.flushHeaders();
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    const port = await new Promise<number>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => {
+        const address = server.address();
+        if (!address || typeof address === 'string') {
+          reject(new Error('test server did not expose a TCP port'));
+          return;
+        }
+        resolve(address.port);
+      });
+    });
+    const base = `http://127.0.0.1:${port}`;
+    try {
+      const okPath = nodePath.join(tmp, 'ok.bin');
+      await downloadFileSingle({
+        url: `${base}/ok`,
+        destPath: okPath,
+        timeoutMs: 100,
+      });
+      eq(
+        fs.readFileSync(okPath, 'utf8'),
+        'hello',
+        'single download: complete response closes successfully',
+      );
+
+      let truncatedError: unknown = null;
+      await downloadFileSingle({
+        url: `${base}/truncated`,
+        destPath: nodePath.join(tmp, 'truncated.bin'),
+        timeoutMs: 100,
+      }).catch((error) => {
+        truncatedError = error;
+      });
+      eq(
+        truncatedError instanceof Error,
+        true,
+        'single download: truncated content-length is rejected',
+      );
+
+      let timeoutError: unknown = null;
+      await downloadFileSingle({
+        url: `${base}/stall`,
+        destPath: nodePath.join(tmp, 'timeout.bin'),
+        timeoutMs: 40,
+      }).catch((error) => {
+        timeoutError = error;
+      });
+      eq(
+        String(timeoutError).includes('timed out'),
+        true,
+        'single download: stalled response hits the inactivity timeout',
+      );
+
+      const abort = new AbortController();
+      let cancelError: unknown = null;
+      const pending = downloadFileSingle({
+        url: `${base}/stall`,
+        destPath: nodePath.join(tmp, 'cancel.bin'),
+        signal: abort.signal,
+        timeoutMs: 1000,
+      }).catch((error) => {
+        cancelError = error;
+      });
+      setTimeout(() => abort.abort(), 20);
+      await pending;
+      eq(
+        cancelError instanceof Error &&
+          cancelError.message === SINGLE_DOWNLOAD_CANCELLED,
+        true,
+        'single download: abort rejects with the shared cancellation marker',
+      );
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   }
 
   // 云端服务商闸：并发上限跨调用共享

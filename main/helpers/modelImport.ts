@@ -25,15 +25,21 @@ export interface LayoutCheckResult {
 
 /**
  * 校验源目录是否含某模型的全部必需文件。
- * requiredFiles 支持嵌套相对路径（如 `tokenizer/vocab.json`），逐项检查存在性。
+ * requiredFiles 支持嵌套相对路径（如 `tokenizer/vocab.json`）。每项必须是
+ * 非符号链接的普通文件且大小大于 0，避免把半截下载、空占位文件或目录误判为模型。
  */
 export function validateModelLayout(
   srcDir: string,
   requiredFiles: string[],
 ): LayoutCheckResult {
-  const missing = requiredFiles.filter(
-    (rel) => !fs.existsSync(path.join(srcDir, rel)),
-  );
+  const missing = requiredFiles.filter((rel) => {
+    try {
+      const stat = fs.lstatSync(path.join(srcDir, rel));
+      return !stat.isFile() || stat.size <= 0;
+    } catch {
+      return true;
+    }
+  });
   return { ok: missing.length === 0, missing };
 }
 

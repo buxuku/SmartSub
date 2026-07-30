@@ -1,5 +1,6 @@
 import { app, ipcMain, BrowserWindow, dialog, shell } from 'electron';
 import os from 'os';
+import { randomUUID } from 'crypto';
 import { getModelsInstalled, getPath, deleteModel } from './whisper';
 import {
   getFasterWhisperModelsInstalled,
@@ -12,6 +13,7 @@ import {
   CT2_REQUIRED_FILES,
   CT2_IMPORT_SNAPSHOT_REV,
 } from './modelImport';
+import { commitStagedDirectory } from './download/atomicDirectoryInstall';
 import {
   isRuntimeInstalled,
   readEngineManifest,
@@ -685,8 +687,10 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     funasrModelDownloader.cancel();
     qwenModelDownloader.cancel();
     fireRedModelDownloader.cancel();
-    parakeetModelDownloader.cancel();
     ttsModelDownloader.cancel();
+    // Parakeet 等待当前会话真正退出并完成 finally 清理，避免取消后立即重试时
+    // 旧任务清掉新任务的进度键/互斥状态。
+    await parakeetModelDownloader.cancel();
     downloadingModels.clear();
     return true;
   });
@@ -750,31 +754,42 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
         };
       }
 
+      const transactionId = randomUUID();
+      const stagedDir = `${plan.destDir}.import-${transactionId}`;
+      const backupDir = `${plan.destDir}.backup-${transactionId}`;
       try {
-        // 覆盖模型目录前先释放对应 worker，避免 Windows 文件锁
-        // （worker 会在下次使用时自动重建）。fasterWhisper 不走 sherpa worker。
+        // 先复制到同父目录 staging 并复校验，失败时不触碰已有模型。
+        await fse.copy(srcDir, stagedDir, { overwrite: true });
+        const post = validateImportLayout(plan, stagedDir);
+        if (!post.ok) {
+          return {
+            success: false,
+            reason: 'invalid-layout',
+            missing: post.missing,
+          };
+        }
+
+        // 仅在 staging 完整后释放 worker 并原子替换；提交失败自动恢复旧目录。
         if (engine === 'tts') {
           getSherpaTtsRuntime().dispose();
         } else if (engine !== 'fasterWhisper') {
           getSherpaAsrRuntime().dispose();
         }
-        await fse.ensureDir(plan.destDir);
-        await fse.copy(srcDir, plan.destDir, { overwrite: true });
+        await commitStagedDirectory({
+          stagedDir,
+          destDir: plan.destDir,
+          backupDir,
+          onCleanupWarning: (message) => logMessage(message, 'warning'),
+        });
+        return { success: true };
       } catch (error) {
         logMessage(`import model error: ${error}`, 'error');
         return { success: false, error: String(error) };
+      } finally {
+        // commit 成功后 staging 已被 rename；失败时清理新内容。backup 不在此删除，
+        // 因为极端回滚失败时它是用户旧模型的唯一副本。
+        await fse.remove(stagedDir).catch(() => {});
       }
-
-      // 导入后复校验：拷贝后目的地必须齐备
-      const post = validateImportLayout(plan, plan.destDir);
-      if (!post.ok) {
-        return {
-          success: false,
-          reason: 'invalid-layout',
-          missing: post.missing,
-        };
-      }
-      return { success: true };
     },
   );
 

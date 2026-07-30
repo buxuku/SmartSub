@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
-import { resolveBundledVadPath } from './modelImport';
+import { resolveBundledVadPath, validateModelLayout } from './modelImport';
 import { resolveModelRoot } from './storagePaths';
 import { getGithubBase, getGithubProxyPrefix } from './config/downloadConfig';
 
@@ -97,9 +97,7 @@ export function getParakeetModelDir(id: ParakeetModelId): string {
 
 export function isParakeetModelInstalled(id: ParakeetModelId): boolean {
   const dir = path.join(getParakeetModelsRoot(), PARAKEET_MODELS[id].dirName);
-  return PARAKEET_MODELS[id].requiredFiles.every((file) =>
-    fs.existsSync(path.join(dir, file)),
-  );
+  return validateModelLayout(dir, PARAKEET_MODELS[id].requiredFiles).ok;
 }
 
 /** NeMo transducer 三件套 + tokens 的绝对路径。 */
