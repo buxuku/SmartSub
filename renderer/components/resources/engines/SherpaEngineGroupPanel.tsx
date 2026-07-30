@@ -15,9 +15,10 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { CheckCircle2, ChevronDown, Settings2 } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Settings2, Users } from 'lucide-react';
 import EngineIcon from '@/components/resources/engines/EngineIcon';
 import ModelLibrarySection from '@/components/resources/ModelLibrarySection';
+import SpeakerDiarizationModelSection from '@/components/resources/SpeakerDiarizationModelSection';
 import type { SherpaRuntime } from '@/components/resources/engines/useSherpaRuntime';
 import type { EngineStatus } from '../../../../types/engine';
 import type { ISystemInfo } from '../../../../types/types';
@@ -220,6 +221,46 @@ const SherpaEngineGroupPanel: React.FC<SherpaEngineGroupPanelProps> = ({
             </CollapsibleContent>
           </Collapsible>
         ))}
+
+        {/* 说话者分离是所有 ASR 引擎都可选用的后处理能力，不属于某个模型族。 */}
+        <Collapsible
+          defaultOpen={systemInfo.speakerDiarizationModelInstalled === true}
+          className="rounded-lg border"
+        >
+          <CollapsibleTrigger className="group flex w-full items-center gap-2 px-3 py-2.5 text-left">
+            <Users className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="text-sm font-medium">
+              {t('engines.speakerDiarization.name')}
+            </span>
+            {systemInfo.speakerDiarizationModelInstalled ? (
+              <Badge
+                variant="outline"
+                className="border-success/40 text-success"
+              >
+                {t('engines.statusAvailable')}
+              </Badge>
+            ) : (
+              <Badge
+                variant="outline"
+                className="border-primary/40 text-primary"
+              >
+                {t('engines.speakerDiarization.needsModel')}
+              </Badge>
+            )}
+            <ChevronDown className="ml-auto h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="border-t p-3">
+              <p className="mb-3 text-xs text-muted-foreground">
+                {t('engines.speakerDiarization.desc')}
+              </p>
+              <SpeakerDiarizationModelSection
+                globalDownloading={globalDownloading}
+                onUpdate={onUpdate}
+              />
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
       </div>
 
       {/* 合并的高级设置：线程数（各族统一）+ ITN（仅 FunASR） */}

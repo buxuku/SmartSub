@@ -96,6 +96,28 @@
       "itnHint": "将口语化的数字、日期等转换为标准书写形式，并自动补全标点",
       "itnFunasrOnly": "仅 FunASR（SenseVoice）支持；Qwen、FireRed、Parakeet 已在内部处理文本格式。"
     },
+    "speakerDiarization": {
+      "name": "说话者分离（可选后处理）",
+      "desc": "适用于所有本地或云端转写引擎。转写完成后在本地分析音频，把说话者编号对齐到每条字幕；默认关闭，模型或推理异常时保留原字幕。",
+      "needsModel": "需下载模型",
+      "modelName": "Pyannote + 3D-Speaker（约 45MB）",
+      "modelDesc": "离线说话者分段与声纹聚类模型；支持自动判断人数，也可在任务中指定人数。",
+      "download": "下载",
+      "downloaded": "说话者分离模型已就绪",
+      "downloadFailed": "说话者分离模型下载失败",
+      "deleteFailed": "删除说话者分离模型失败",
+      "anotherDownload": "已有下载任务进行中，请等待完成后再试。",
+      "extracting": "正在解包分段模型…",
+      "downloadSource": "下载源",
+      "sources": {
+        "ghproxy": "github 国内加速",
+        "github": "GitHub"
+      },
+      "sourceHints": {
+        "ghproxy": "经 GitHub 代理下载两个官方模型文件（推荐国内网络）",
+        "github": "从 sherpa-onnx 官方 GitHub Release 直连下载"
+      }
+    },
     "funasr": {
       "name": "FunASR",
       "builtinRuntime": "运行库已随应用内置，无需单独下载。",

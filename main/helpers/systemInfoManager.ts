@@ -117,6 +117,18 @@ import { logMessage, store } from './storeManager';
 import { resolveModelRoot, type StorageKind } from './storagePaths';
 import { testTranslation } from '../translate';
 import { getBuildInfo } from './buildInfo';
+import { getSpeakerDiarizationModelDownloader } from './speakerDiarization/modelDownloader';
+import {
+  SPEAKER_DIARIZATION_EMBEDDING_FILE,
+  SPEAKER_DIARIZATION_PROGRESS_KEY,
+  type SpeakerDiarizationModelSource,
+  deleteSpeakerDiarizationModel,
+  getSpeakerDiarizationModelDir,
+  getSpeakerDiarizationModelsRoot,
+  isSpeakerDiarizationModelInstalled,
+  validateSpeakerDiarizationModelDir,
+} from './speakerDiarization/modelCatalog';
+import { getSpeakerDiarizationRuntime } from './speakerDiarization/runtime';
 
 let downloadingModels = new Set<string>();
 
@@ -127,7 +139,8 @@ type FolderImportEngine =
   | 'fireRedAsr'
   | 'parakeet'
   | 'fasterWhisper'
-  | 'tts';
+  | 'tts'
+  | 'speakerDiarization';
 
 interface ImportPlan {
   /** 目标模型必需文件（相对源/目的目录），用于导入前后布局校验。 */
@@ -214,6 +227,16 @@ function resolveImportPlan(
       destDir: path.join(getTtsModelsRoot(), TTS_MODELS[id].dirName),
     };
   }
+  if (engine === 'speakerDiarization') {
+    return {
+      requiredFiles: [
+        path.join('pyannote', 'model.onnx'),
+        SPEAKER_DIARIZATION_EMBEDDING_FILE,
+      ],
+      destDir: getSpeakerDiarizationModelDir(),
+      validate: validateSpeakerDiarizationModelDir,
+    };
+  }
   return null;
 }
 
@@ -225,6 +248,8 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   const fireRedModelDownloader = getFireRedModelDownloader(mainWindow);
   const parakeetModelDownloader = getParakeetModelDownloader(mainWindow);
   const ttsModelDownloader = getTtsModelDownloader(mainWindow);
+  const speakerDiarizationModelDownloader =
+    getSpeakerDiarizationModelDownloader(mainWindow);
 
   ipcMain.handle('getSystemInfo', async () => {
     // faster-whisper 自包含运行时：已落盘 → ready（附 manifest 版本）；
@@ -277,6 +302,8 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       parakeetVadInstalled: isParakeetVadInstalled(),
       parakeetModelsInstalled: getInstalledParakeetModels(),
       parakeetModelsPath: getParakeetModelsRoot(),
+      speakerDiarizationModelInstalled: isSpeakerDiarizationModelInstalled(),
+      speakerDiarizationModelsPath: getSpeakerDiarizationModelsRoot(),
     };
   });
 
@@ -421,6 +448,47 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       // 大模型文件被加载占用导致 rm 失败（worker 会在下次转写/预热时自动重建）。
       getSherpaAsrRuntime().dispose();
       deleteQwenModel(modelId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle(
+    'downloadSpeakerDiarizationModel',
+    async (
+      _event,
+      { source }: { source?: SpeakerDiarizationModelSource } = {},
+    ) => {
+      if (downloadingModels.size > 0) {
+        return { success: false, error: 'anotherDownloadInProgress' };
+      }
+      downloadingModels.add(SPEAKER_DIARIZATION_PROGRESS_KEY);
+      try {
+        await speakerDiarizationModelDownloader.download(source);
+        downloadingModels.delete(SPEAKER_DIARIZATION_PROGRESS_KEY);
+        return { success: true };
+      } catch (error) {
+        logMessage(
+          `speaker diarization model download error: ${error}`,
+          'error',
+        );
+        downloadingModels.delete(SPEAKER_DIARIZATION_PROGRESS_KEY);
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle('getSpeakerDiarizationModelStatus', async () => ({
+    success: true,
+    installed: isSpeakerDiarizationModelInstalled(),
+    modelsPath: getSpeakerDiarizationModelsRoot(),
+  }));
+
+  ipcMain.handle('deleteSpeakerDiarizationModel', async () => {
+    try {
+      getSpeakerDiarizationRuntime().dispose();
+      deleteSpeakerDiarizationModel();
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -692,6 +760,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     qwenModelDownloader.cancel();
     fireRedModelDownloader.cancel();
     ttsModelDownloader.cancel();
+    speakerDiarizationModelDownloader.cancel();
     // Parakeet 等待当前会话真正退出并完成 finally 清理，避免取消后立即重试时
     // 旧任务清掉新任务的进度键/互斥状态。
     await parakeetModelDownloader.cancel();
@@ -777,6 +846,8 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
         // 仅在 staging 完整后释放 worker 并原子替换；提交失败自动恢复旧目录。
         if (engine === 'tts') {
           getSherpaTtsRuntime().dispose();
+        } else if (engine === 'speakerDiarization') {
+          getSpeakerDiarizationRuntime().dispose();
         } else if (engine !== 'fasterWhisper') {
           getSherpaAsrRuntime().dispose();
         }
@@ -810,7 +881,8 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
           | 'qwen'
           | 'firered'
           | 'parakeet'
-          | 'tts';
+          | 'tts'
+          | 'speakerDiarization';
       },
     ) => {
       const modelsPath =
@@ -826,7 +898,9 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
                   ? getParakeetModelsRoot()
                   : options?.pathType === 'tts'
                     ? getTtsModelsRoot()
-                    : (getPath('modelsPath') as string);
+                    : options?.pathType === 'speakerDiarization'
+                      ? getSpeakerDiarizationModelsRoot()
+                      : (getPath('modelsPath') as string);
       try {
         await fse.ensureDir(modelsPath);
         const err = await shell.openPath(modelsPath);

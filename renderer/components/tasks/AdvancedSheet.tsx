@@ -293,6 +293,9 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
   // 仍读一次全局 settings：① 作为老任务（formData 无该字段）的迁移回退显示值；
   // ② 供 inferDisplayOutcome 在任务无显式档位时推断显示默认。
   const [settings, setSettings] = useState<Record<string, unknown>>({});
+  const [diarizationReady, setDiarizationReady] = useState<boolean | null>(
+    null,
+  );
   useEffect(() => {
     if (!open) return;
     let active = true;
@@ -300,6 +303,21 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
       const s = await window?.ipc?.invoke('getSettings');
       if (active) setSettings(s ?? {});
     })();
+    return () => {
+      active = false;
+    };
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    window?.ipc
+      ?.invoke('getSpeakerDiarizationModelStatus')
+      .then((result) => {
+        if (active) setDiarizationReady(result?.installed === true);
+      })
+      .catch(() => {
+        if (active) setDiarizationReady(false);
+      });
     return () => {
       active = false;
     };
@@ -592,6 +610,96 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                                 onCheckedChange={field.onChange}
                               />
                             </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="speakerDiarization"
+                        render={({ field }) => (
+                          <FormItem className="space-y-2 rounded-lg border p-2">
+                            <div className="flex flex-row items-center justify-between gap-3">
+                              <div className="space-y-0.5">
+                                <FormLabel className="flex items-center gap-2">
+                                  {t('speakerDiarization.label')}
+                                  {diarizationReady !== null && (
+                                    <Badge
+                                      variant="outline"
+                                      className={
+                                        diarizationReady
+                                          ? 'border-success/40 text-success'
+                                          : 'border-amber-500/40 text-amber-600'
+                                      }
+                                    >
+                                      {t(
+                                        diarizationReady
+                                          ? 'speakerDiarization.modelReady'
+                                          : 'speakerDiarization.modelMissing',
+                                      )}
+                                    </Badge>
+                                  )}
+                                </FormLabel>
+                                <FormDescription className="text-xs">
+                                  {t('speakerDiarization.hint')}
+                                </FormDescription>
+                              </div>
+                              <FormControl>
+                                <Switch
+                                  checked={field.value === true}
+                                  onCheckedChange={field.onChange}
+                                />
+                              </FormControl>
+                            </div>
+                            {field.value === true && (
+                              <FormField
+                                control={form.control}
+                                name="speakerDiarizationCount"
+                                render={({ field: countField }) => (
+                                  <div className="flex items-center justify-between gap-3 border-t pt-2">
+                                    <div>
+                                      <FormLabel className="text-xs">
+                                        {t('speakerDiarization.speakerCount')}
+                                      </FormLabel>
+                                      <p className="text-[11px] text-muted-foreground">
+                                        {t(
+                                          'speakerDiarization.speakerCountHint',
+                                        )}
+                                      </p>
+                                    </div>
+                                    <Select
+                                      value={String(countField.value || 0)}
+                                      onValueChange={(value) =>
+                                        countField.onChange(Number(value))
+                                      }
+                                    >
+                                      <SelectTrigger className="w-28">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="0">
+                                          {t('speakerDiarization.autoDetect')}
+                                        </SelectItem>
+                                        {[2, 3, 4, 5, 6, 7, 8].map((count) => (
+                                          <SelectItem
+                                            key={count}
+                                            value={String(count)}
+                                          >
+                                            {count}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                )}
+                              />
+                            )}
+                            {field.value === true &&
+                              diarizationReady === false && (
+                                <p className="text-xs text-amber-600">
+                                  {t('speakerDiarization.modelMissingHint')}
+                                </p>
+                              )}
                           </FormItem>
                         )}
                       />

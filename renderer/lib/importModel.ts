@@ -10,7 +10,13 @@ export type ImportOutcome =
   | { kind: 'error'; message: string };
 
 export async function importModelFromFolder(
-  engine: 'funasr' | 'qwen' | 'fireRedAsr' | 'parakeet' | 'fasterWhisper',
+  engine:
+    | 'funasr'
+    | 'qwen'
+    | 'fireRedAsr'
+    | 'parakeet'
+    | 'fasterWhisper'
+    | 'speakerDiarization',
   modelId: string,
 ): Promise<ImportOutcome> {
   try {
