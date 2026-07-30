@@ -316,6 +316,32 @@ async function run(): Promise<void> {
     0,
     'safety: 3 cue 长上下文中的局部词序互换不得被稀释',
   );
+  const longTwoCharacterWordReorder = await matchManuscriptToCues(
+    [
+      {
+        text: '在这次完整详细的课程讲解当中我们会依次讨论所有重要内容并且先说明苹果然后结合案例详细讨论香蕉最后总结全部内容并给出实践建议方便大家理解和应用这些知识解决真实问题',
+      },
+    ],
+    '在这次完整详细的课程讲解当中我们会依次讨论所有重要内容并且先说明香蕉然后结合案例详细讨论苹果最后总结全部内容并给出实践建议方便大家理解和应用这些知识解决真实问题',
+  );
+  eq(
+    longTwoCharacterWordReorder.replacedCues,
+    0,
+    'safety: 长上下文中的两个双字词换位不得被稀释',
+  );
+  const mediumTwoCharacterWordReorder = await matchManuscriptToCues(
+    [
+      {
+        text: '今天我们会先分析需求然后逐步说明设计最后结合实例验证全部流程确保每一位学习者都能理解核心方法并正确应用',
+      },
+    ],
+    '今天我们会先分析设计然后逐步说明需求最后结合实例验证全部流程确保每一位学习者都能理解核心方法并正确应用',
+  );
+  eq(
+    mediumTwoCharacterWordReorder.replacedCues,
+    0,
+    'safety: 中等上下文中的两个双字词换位不得被稀释',
+  );
   const alignedTypo = await matchManuscriptToCues(
     [{ text: '今天我们介少文稿匹配功能' }],
     '今天我们介绍文稿匹配功能',
@@ -390,6 +416,15 @@ async function run(): Promise<void> {
     coincidentalAnchorCrossing.replacedCues,
     1,
     'order anchors: 单个偶然 crossing 不足以判定局部换序',
+  );
+  const twoAlignedSubstitutions = await matchManuscriptToCues(
+    [{ text: '甲丙丙戊丁甲甲丙甲丙甲丁丙甲甲乙丙戊甲丁丙丙乙' }],
+    '甲乙丙戊丁甲甲丙甲丙甲丁丙甲甲乙甲戊甲丁丙丙乙',
+  );
+  eq(
+    twoAlignedSubstitutions.replacedCues,
+    1,
+    'order anchors: 两处普通错字不得被误判为局部换序',
   );
 
   const cancellation = new AbortController();
