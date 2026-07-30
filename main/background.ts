@@ -57,6 +57,7 @@ import {
 import {
   enumerateNvidiaGpus,
   getDevSimulationConfig,
+  getGpuEnvironment,
 } from './helpers/cudaUtils';
 import {
   applyCudaDeviceSelection,
