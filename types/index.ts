@@ -5,3 +5,4 @@ export * from './proofread';
 export * from './addon';
 export * from './workItem';
 export * from './transcriptionParams';
+export * from './taskSnapshot';

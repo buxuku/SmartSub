@@ -6,6 +6,7 @@ import { logMessage, store } from './storeManager';
 import path from 'path';
 import { isAppleSilicon } from './utils';
 import { IFiles } from '../../types';
+import { isPinnedTaskConfigSnapshot } from '../../types/taskSnapshot';
 import { ExtendedProvider, CustomParameterConfig } from '../../types/provider';
 import { configurationManager } from '../service/configurationManager';
 import { applyTaskEventToProjects } from './taskManager';
@@ -246,18 +247,14 @@ async function startTaskRun(
   const pid = projectId || DEFAULT_PROJECT_ID;
   dispatchEvent = event;
 
-  // 任务级配置快照：带附加阶段（配音/合成）的任务以创建时快照为准执行，
+  // 任务级配置快照：带附加阶段（配音/合成）或说话者分离的任务以创建时快照为准，
   // 重试/续跑不受此后全局设置变更影响；首次提交时把有效配置写入快照。
   let formData = incomingFormData;
   const workItem = getWorkItemById(pid);
   if (workItem) {
     const snapshot = workItem.configSnapshot as any;
-    if (
-      (snapshot?.dub || snapshot?.compose) &&
-      !incomingFormData?.dub &&
-      !incomingFormData?.compose
-    ) {
-      // 旧任务页重试向导任务：回退到快照配置
+    if (isPinnedTaskConfigSnapshot(snapshot)) {
+      // 固定快照任务的重试/闸门续跑始终复用创建时配置，禁止当前全局表单覆盖。
       formData = { ...snapshot };
       logMessage(`handleTask: using config snapshot for ${pid}`, 'info');
     } else {

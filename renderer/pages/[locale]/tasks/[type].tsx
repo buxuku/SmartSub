@@ -72,6 +72,7 @@ import { ProofreadEditor } from '@/components/proofread';
 import { getProofreadUnavailableReason } from '@/components/tasks/stageUtils';
 import { getI18nProperties } from '../../../lib/get-static';
 import { IFiles } from '../../../../types';
+import { isPinnedTaskConfigSnapshot } from '../../../../types/taskSnapshot';
 import { useTranslation } from 'next-i18next';
 import { toast } from 'sonner';
 
@@ -208,11 +209,11 @@ export default function TaskPage() {
           nextFiles = project.files || [];
           name = project.name || null;
         }
-        // 向导任务：配置快照携带附加阶段（配音/合成），阶段轨道按快照渲染
+        // 配音/合成及说话者分离任务：按创建时配置快照渲染并固定重试参数。
         try {
           const workItem = await window?.ipc?.invoke('getWorkItem', q);
           const snap = workItem?.configSnapshot;
-          if (snap && (snap.dub || snap.compose)) snapshot = snap;
+          if (isPinnedTaskConfigSnapshot(snap)) snapshot = snap;
         } catch {
           /* ignore */
         }
@@ -926,6 +927,11 @@ export default function TaskPage() {
             typeDef={typeDef}
             projectId={projectId}
             onStatusChange={handleStatusChange}
+            onTaskDispatched={(snapshot) => {
+              if (isPinnedTaskConfigSnapshot(snapshot)) {
+                setConfigSnapshot({ ...snapshot });
+              }
+            }}
             autoStart={autoStartPending}
           />
         </div>

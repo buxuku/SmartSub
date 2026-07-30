@@ -27,6 +27,8 @@ interface TaskControlsProps {
   className?: string;
   /** 可选：状态变化时上抛（任务页用于联动重试按钮/完成横幅） */
   onStatusChange?: (status: string) => void;
+  /** 任务成功派发时回传本轮配置；需要固定快照的任务可立即切换为只读展示。 */
+  onTaskDispatched?: (snapshot: any) => void;
   autoStart?: boolean;
 }
 
@@ -39,6 +41,7 @@ const TaskControls = ({
   projectId,
   className,
   onStatusChange,
+  onTaskDispatched,
   autoStart,
 }: TaskControlsProps) => {
   const [taskStatus, setTaskStatusState] = useState('idle');
@@ -182,6 +185,7 @@ const TaskControls = ({
       });
     }
     setTaskStatus('running');
+    onTaskDispatched?.(formData);
     window?.ipc?.send('handleTask', {
       files: pendingFiles,
       formData,
