@@ -29,6 +29,10 @@ import {
   runSubtitleRefineStage,
   settleSkippedRefineStage,
 } from './subtitleRefineStage';
+import {
+  runManuscriptMatchingStage,
+  settleSkippedManuscriptMatchStage,
+} from './manuscriptMatchingStage';
 import { runDubStage, rebuildDubTrackForFile } from './pipeline/dubStage';
 import { runComposeStage } from './pipeline/composeStage';
 import {
@@ -277,6 +281,7 @@ export async function processFile(
     'extractSubtitle',
     'prepareSubtitle',
     'refineSubtitle',
+    'manuscriptMatch',
     'translateSubtitle',
     'speakerDiarization',
     'dubbing',
@@ -284,6 +289,7 @@ export async function processFile(
     'extractAudioProgress',
     'extractSubtitleProgress',
     'refineSubtitleProgress',
+    'manuscriptMatchProgress',
     'translateSubtitleProgress',
     'speakerDiarizationProgress',
     'dubbingProgress',
@@ -291,6 +297,8 @@ export async function processFile(
     'extractAudioError',
     'extractSubtitleError',
     'refineSubtitleError',
+    'manuscriptMatchError',
+    'manuscriptMatchErrorDetail',
     'translateSubtitleError',
     'speakerDiarizationError',
     'dubbingError',
@@ -411,6 +419,8 @@ export async function processFile(
         });
         // 首轮精修已写入 SRT；结算阶段态，避免 refine 格永久 pending。
         settleSkippedRefineStage(event, file, formData);
+        // 首轮文稿匹配同样已写入 SRT，续跑不重新读取可能变化的外部文稿。
+        settleSkippedManuscriptMatchStage(event, file, formData);
       }
       if (translationActive) {
         event.sender.send('taskFileChange', {
@@ -450,6 +460,7 @@ export async function processFile(
       });
       // 转写复用意味着首轮精修（若开启）已写入 srtForTranslate；结算阶段态。
       settleSkippedRefineStage(event, file, formData);
+      settleSkippedManuscriptMatchStage(event, file, formData);
     } else if (!isSubtitleFile && shouldGenerateSubtitle) {
       const templateData = {
         fileName,
@@ -529,6 +540,9 @@ export async function processFile(
               extractSubtitle: 'done',
               embeddedSubtitle: true,
             });
+            // 精修与文稿匹配只作用于 ASR cue；内封字幕保持媒体原文，并结算可见阶段。
+            settleSkippedRefineStage(event, file, formData);
+            settleSkippedManuscriptMatchStage(event, file, formData);
             usedEmbedded = true;
           }
         } catch (error) {
@@ -582,6 +596,11 @@ export async function processFile(
           // 简繁归一/中文去标点与翻译之前；未开启或降级时字幕保持原样。
           throwIfTaskCancelled();
           await runSubtitleRefineStage(event, file, formData);
+
+          // 参考文稿匹配：在 AI 精修之后、简繁归一与翻译之前执行。只改写高置信
+          // cue 文本，时间轴不变；读取/对齐失败为非致命降级并保留原 ASR。
+          throwIfTaskCancelled();
+          await runManuscriptMatchingStage(event, file, formData);
         } catch (error) {
           if (isTaskCancelledError(error) || isTaskCancelled()) {
             // 用户取消：把本轮 loading 阶段回退为待处理
@@ -590,6 +609,7 @@ export async function processFile(
               extractAudio: '',
               extractSubtitle: '',
               refineSubtitle: '',
+              manuscriptMatch: '',
             });
             throw new TaskCancelledError();
           }

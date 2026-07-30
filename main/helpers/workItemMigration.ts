@@ -9,6 +9,8 @@ import {
 const STAGE_KEYS = [
   'extractAudio',
   'extractSubtitle',
+  'refineSubtitle',
+  'manuscriptMatch',
   'translateSubtitle',
   'prepareSubtitle',
   'dubbing',

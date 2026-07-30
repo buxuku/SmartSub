@@ -4,7 +4,14 @@
  * 替代可编辑的 InlineConfigBar——避免全局配置与本任务无关却可改的误导。
  */
 import React, { useMemo } from 'react';
-import { AudioLines, Diamond, Film, Lock, Users } from 'lucide-react';
+import {
+  AudioLines,
+  Diamond,
+  FileText,
+  Film,
+  Lock,
+  Users,
+} from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -242,6 +249,24 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
             }
           />
         )}
+
+      {needsTranscription && snapshot?.manuscriptPath && (
+        <SummaryItem
+          label={t('manuscript.label')}
+          value={
+            <span
+              className="flex min-w-0 items-center gap-1"
+              title={snapshot.manuscriptPath}
+            >
+              <FileText className="h-3 w-3 flex-none text-muted-foreground" />
+              <span className="truncate">
+                {snapshot.manuscriptName ||
+                  String(snapshot.manuscriptPath).split(/[\\/]/).pop()}
+              </span>
+            </span>
+          }
+        />
+      )}
 
       {snapshot?.sourceLanguage && (
         <SummaryItem

@@ -629,6 +629,8 @@ export default function TaskWizard() {
       compose,
       gates: _gates,
       taskType: _taskType,
+      manuscriptPath: _manuscriptPath,
+      manuscriptName: _manuscriptName,
       ...subtitleFields
     } = pendingRecipeConfig;
     form.reset({ ...form.getValues(), ...subtitleFields });
@@ -673,6 +675,13 @@ export default function TaskWizard() {
         label: t('stage.transcribe'),
         icon: Mic2,
       });
+      if (formData?.manuscriptPath) {
+        list.push({
+          key: 'manuscript',
+          label: t('stage.manuscript'),
+          icon: FileText,
+        });
+      }
     }
     if (translateOn) {
       list.push({
@@ -688,7 +697,7 @@ export default function TaskWizard() {
       list.push({ key: 'compose', label: t('stage.compose'), icon: Film });
     }
     return list;
-  }, [inputKind, translateOn, dubOn, videoOn, t]);
+  }, [inputKind, formData?.manuscriptPath, translateOn, dubOn, videoOn, t]);
 
   const blockers = useMemo(() => {
     const list: Array<{ key: string; text: string; href?: string }> = [];
@@ -821,6 +830,9 @@ export default function TaskWizard() {
       delete config.dub;
       delete config.compose;
       delete config.gates;
+      // 参考文稿属于单次任务输入，不写入可复用配方，避免下次误用旧文件路径。
+      delete config.manuscriptPath;
+      delete config.manuscriptName;
       if (dubOn && dubEngine) {
         config.dub = {
           engine: dubEngine,
@@ -877,6 +889,9 @@ export default function TaskWizard() {
       const payload = stripSpeakerDiarizationConfig({
         ...formData,
         taskType,
+        ...(inputKind !== 'media'
+          ? { manuscriptPath: '', manuscriptName: '' }
+          : {}),
         ...(appliedRecipeName ? { recipeName: appliedRecipeName } : {}),
         ...(sourceDownloadWorkItemId ? { sourceDownloadWorkItemId } : {}),
         translateProvider: translateOn ? formData?.translateProvider : '-1',

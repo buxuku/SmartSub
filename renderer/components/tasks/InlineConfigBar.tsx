@@ -14,6 +14,7 @@ import { AlertCircle, CheckCircle2, Download, Languages } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Models from '@/components/Models';
 import AiRefineControl from '@/components/tasks/AiRefineControl';
+import ManuscriptControl from '@/components/tasks/ManuscriptControl';
 import { supportedLanguage } from 'lib/utils';
 import { isProviderConfigured } from 'lib/providerUtils';
 import { hasAnyModelAnyEngine } from 'lib/engineModels';
@@ -185,12 +186,15 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
 
       {/* AI 精修（外化到工具栏，openspec: add-ai-subtitle-refine）：仅转写类任务展示 */}
       {typeDef.needsModel && (
-        <AiRefineControl
-          form={form}
-          formData={formData}
-          providers={providers}
-          typeDef={typeDef}
-        />
+        <>
+          <AiRefineControl
+            form={form}
+            formData={formData}
+            providers={providers}
+            typeDef={typeDef}
+          />
+          <ManuscriptControl form={form} formData={formData} />
+        </>
       )}
 
       <ConfigItem

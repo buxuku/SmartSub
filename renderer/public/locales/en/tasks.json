@@ -114,6 +114,29 @@
     "style": "Output content",
     "format": "Subtitle format"
   },
+  "manuscript": {
+    "label": "Reference script",
+    "select": "Choose TXT / Markdown",
+    "clear": "Clear reference script",
+    "hint": "Optional. Matches the script in order after transcription, replaces only high-confidence text, and always keeps the ASR timeline.",
+    "selected": "Reference script selected: {{name}}",
+    "cleared": "Reference script cleared",
+    "stageSummary": "Script matched {{replaced}}/{{total}} cues, {{confidence}}% average confidence",
+    "stageWarning": "Script matching safely fell back: {{reason}}",
+    "error": {
+      "unsupported": "Only TXT, MD, or Markdown reference scripts are supported",
+      "notFound": "The reference script no longer exists",
+      "notFile": "The selected item is not a file",
+      "tooLarge": "The reference script must be 10 MB or smaller",
+      "empty": "The reference script contains no matchable text",
+      "invalidEncoding": "The script encoding is unsupported; use UTF-8, UTF-16, GBK, or GB18030",
+      "unreadable": "The reference script could not be read",
+      "noCues": "The source subtitle has no timed cues to match",
+      "noMatch": "No match met the safety threshold; the original transcription was kept",
+      "timeline": "Timeline validation failed; the original transcription was kept",
+      "processing": "The script could not be processed; the original transcription was kept"
+    }
+  },
   "notConfigured": " (not configured)",
   "providerGroup": {
     "configured": "Configured",
@@ -281,6 +304,7 @@
     "extract": "Extract",
     "transcribe": "Transcribe",
     "refine": "Refine",
+    "manuscript": "Script match",
     "translate": "Translate",
     "speakerDiarization": "Speaker diarization",
     "dubbing": "Dub",

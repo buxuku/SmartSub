@@ -114,6 +114,29 @@
     "style": "输出内容",
     "format": "字幕格式"
   },
+  "manuscript": {
+    "label": "参考文稿",
+    "select": "选择 TXT / Markdown",
+    "clear": "清除参考文稿",
+    "hint": "可选。转写后按顺序匹配参考文稿，只用高置信文本替换识别结果，始终保留 ASR 时间轴。",
+    "selected": "已选择参考文稿：{{name}}",
+    "cleared": "已清除参考文稿",
+    "stageSummary": "文稿匹配 {{replaced}}/{{total}} 条，平均置信度 {{confidence}}%",
+    "stageWarning": "文稿匹配已安全回退：{{reason}}",
+    "error": {
+      "unsupported": "仅支持 TXT、MD 或 Markdown 参考文稿",
+      "notFound": "参考文稿不存在或已被移动",
+      "notFile": "所选项目不是文件",
+      "tooLarge": "参考文稿不能超过 10 MB",
+      "empty": "参考文稿中没有可匹配的文字",
+      "invalidEncoding": "无法识别文稿编码；请使用 UTF-8、UTF-16、GBK 或 GB18030",
+      "unreadable": "无法读取参考文稿",
+      "noCues": "源字幕中没有可匹配的时间轴条目",
+      "noMatch": "没有达到安全阈值的匹配，已保留原识别文本",
+      "timeline": "时间轴校验未通过，已保留原识别文本",
+      "processing": "处理文稿时出现问题，已保留原识别文本"
+    }
+  },
   "notConfigured": "（未配置）",
   "providerGroup": {
     "configured": "已配置",
@@ -281,6 +304,7 @@
     "extract": "提取",
     "transcribe": "转写",
     "refine": "精修",
+    "manuscript": "文稿匹配",
     "translate": "翻译",
     "speakerDiarization": "角色分离",
     "dubbing": "配音",
