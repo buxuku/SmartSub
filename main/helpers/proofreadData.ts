@@ -10,6 +10,10 @@ import {
   type SubtitleEntry,
 } from './subtitleFormats';
 import { logMessage } from './storeManager';
+import {
+  speakerIdsForCues,
+  type SpeakerDiarizationSegment,
+} from './speakerDiarization/alignment';
 
 export interface ProofreadDataCue {
   id: string;
@@ -17,6 +21,8 @@ export interface ProofreadDataCue {
   endMs: number;
   source: string;
   target: string;
+  /** 一基角色编号，与可选文本标签 `[Speaker N]` 的 N 一致。 */
+  speakerIds?: number[];
 }
 
 export interface ProofreadDataFile {
@@ -44,6 +50,7 @@ export interface ProofreadSubtitleRow {
   startTimeInSeconds: number;
   endTimeInSeconds: number;
   isEditing: boolean;
+  speakerIds?: number[];
 }
 
 function safeFileNamePart(input: string): string {
@@ -86,6 +93,7 @@ function entryText(entry?: SubtitleEntry): string {
 function buildCues(
   sourceEntries: SubtitleEntry[],
   targetEntries: SubtitleEntry[],
+  speakerSegments: SpeakerDiarizationSegment[] = [],
 ): ProofreadDataCue[] {
   const targetByTime = new Map<string, SubtitleEntry>();
   for (const entry of targetEntries) {
@@ -94,18 +102,26 @@ function buildCues(
     }
   }
 
+  const timedCues = sourceEntries.map((sourceEntry) => {
+    const { startMs, endMs } = parseStartEndTime(sourceEntry.startEndTime);
+    return { startMs, endMs, text: entryText(sourceEntry) };
+  });
+  const speakerIds = speakerIdsForCues(timedCues, speakerSegments);
+
   return sourceEntries.map((sourceEntry, index) => {
     const targetEntry =
       targetByTime.get(sourceEntry.startEndTime) || targetEntries[index];
     const { startMs, endMs } = parseStartEndTime(sourceEntry.startEndTime);
 
-    return {
+    const cue: ProofreadDataCue = {
       id: sourceEntry.id || String(index + 1),
       startMs,
       endMs,
       source: entryText(sourceEntry),
       target: entryText(targetEntry),
     };
+    if (speakerIds[index]?.length) cue.speakerIds = speakerIds[index];
+    return cue;
   });
 }
 
@@ -118,6 +134,7 @@ export async function writeProofreadDataFromFiles({
   targetLanguage,
   translateContent,
   outputFormat,
+  speakerSegments,
 }: {
   file: IFiles;
   sourceFile?: string;
@@ -127,6 +144,7 @@ export async function writeProofreadDataFromFiles({
   targetLanguage?: string;
   translateContent?: string;
   outputFormat?: string;
+  speakerSegments?: SpeakerDiarizationSegment[];
 }): Promise<string | null> {
   try {
     const sourceEntries = await readSubtitleEntries(sourceFile);
@@ -153,7 +171,7 @@ export async function writeProofreadDataFromFiles({
         targetFile,
         finalTargetFile,
       },
-      cues: buildCues(sourceEntries, targetEntries),
+      cues: buildCues(sourceEntries, targetEntries, speakerSegments),
     };
 
     const proofreadDataFile = getProofreadDataPath(file);
@@ -200,6 +218,7 @@ export function proofreadDataToSubtitleRows(
       startTimeInSeconds: cue.startMs / 1000,
       endTimeInSeconds: cue.endMs / 1000,
       isEditing: false,
+      ...(cue.speakerIds?.length ? { speakerIds: [...cue.speakerIds] } : {}),
     };
   });
 }
@@ -209,6 +228,7 @@ export async function updateProofreadDataFromSubtitles(
   subtitles: ProofreadSubtitleRow[],
 ): Promise<ProofreadDataFile> {
   const existing = await readProofreadDataFile(filePath);
+  const existingById = new Map(existing.cues.map((cue) => [cue.id, cue]));
   const now = new Date().toISOString();
   const updated: ProofreadDataFile = {
     ...existing,
@@ -220,12 +240,15 @@ export async function updateProofreadDataFromSubtitles(
       const { startMs, endMs } = parseStartEndTime(subtitle.startEndTime);
       const source =
         subtitle.sourceContent ?? subtitle.content?.join('\n') ?? '';
+      const previous = existingById.get(subtitle.id) || existing.cues[index];
+      const speakerIds = subtitle.speakerIds ?? previous?.speakerIds;
       return {
         id: subtitle.id || String(index + 1),
         startMs,
         endMs,
         source,
         target: subtitle.targetContent ?? '',
+        ...(speakerIds?.length ? { speakerIds: [...speakerIds] } : {}),
       };
     }),
   };

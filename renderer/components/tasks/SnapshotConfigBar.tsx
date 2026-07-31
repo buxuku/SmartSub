@@ -17,6 +17,7 @@ import { useTtsEngineOptions } from 'hooks/useTtsEngineOptions';
 import { useCustomLanguages } from 'hooks/useCustomLanguages';
 import { useTranslation } from 'next-i18next';
 import { getCustomLanguageName } from '../../../types/language';
+import { isSpeakerDiarizationStandardTaskContext } from '../../../types/speakerDiarization';
 
 interface Provider {
   id: string;
@@ -215,21 +216,29 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
         <SummaryItem label={t('stage.refine')} value={refineValue} />
       )}
 
-      {needsTranscription && snapshot?.speakerDiarization === true && (
-        <SummaryItem
-          label={t('speakerDiarization.summaryLabel')}
-          value={
-            <span className="flex items-center gap-1">
-              <Users className="h-3 w-3 flex-none text-muted-foreground" />
-              {snapshot?.speakerDiarizationCount >= 2
-                ? t('speakerDiarization.summaryKnown', {
-                    count: snapshot.speakerDiarizationCount,
-                  })
-                : t('speakerDiarization.summaryAuto')}
-            </span>
-          }
-        />
-      )}
+      {needsTranscription &&
+        snapshot?.speakerDiarization === true &&
+        isSpeakerDiarizationStandardTaskContext(snapshot) && (
+          <SummaryItem
+            label={t('speakerDiarization.summaryLabel')}
+            value={
+              <span className="flex items-center gap-1">
+                <Users className="h-3 w-3 flex-none text-muted-foreground" />
+                {snapshot?.speakerDiarizationCount >= 2
+                  ? t('speakerDiarization.summaryKnown', {
+                      count: snapshot.speakerDiarizationCount,
+                    })
+                  : t('speakerDiarization.summaryAuto')}
+                {' · '}
+                {t(
+                  snapshot?.speakerDiarizationEmbedInSubtitle === true
+                    ? 'speakerDiarization.summaryEmbedded'
+                    : 'speakerDiarization.summaryMetadataOnly',
+                )}
+              </span>
+            }
+          />
+        )}
 
       {snapshot?.sourceLanguage && (
         <SummaryItem

@@ -197,8 +197,21 @@ eq(recipeBlockHref('en', 'tts'), '/en/ttsServices', 'recipeBlockHref: tts');
   eq(
     (p.config as Record<string, unknown>)?.sourceLanguage,
     'en',
-    'prefill: config 原样透传（浅合并交给向导）',
+    'prefill: 普通 config 浅合并字段保持不变',
   );
+}
+{
+  const p = recipeToWizardPrefill(
+    recipe({
+      config: {
+        sourceLanguage: 'en',
+        speakerDiarization: true,
+        speakerDiarizationCount: 3,
+        speakerDiarizationEmbedInSubtitle: true,
+      },
+    }),
+  );
+  eq(p.config, { sourceLanguage: 'en' }, 'prefill: 用户配方不回填角色分离字段');
 }
 
 // ── recipeStageKeys ─────────────────────────────────────────────────────────

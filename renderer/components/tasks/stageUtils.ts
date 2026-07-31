@@ -1,11 +1,13 @@
-import { isSubtitleFile } from 'lib/utils';
-import type { TaskTypeDef } from 'lib/taskTypes';
+import { isSubtitleFile } from '../../lib/utils';
+import type { TaskTypeDef } from '../../lib/taskTypes';
+import { isSpeakerDiarizationStandardTaskContext } from '../../../types/speakerDiarization';
 
 export type StageKey =
   | 'extractAudio'
   | 'extractSubtitle'
   | 'refineSubtitle'
   | 'translateSubtitle'
+  | 'speakerDiarization'
   | 'dubbing'
   | 'composeVideo';
 export type StageStatus = 'pending' | 'loading' | 'done' | 'error';
@@ -43,6 +45,19 @@ export function getFileStages(
   }
   if (typeDef.hasTranslate && formData?.translateProvider !== '-1') {
     stages.push({ key: 'translateSubtitle', labelKey: 'stage.translate' });
+  }
+  // 角色分离是标准转写任务的独立后处理阶段：翻译之后、任何附加阶段之前。
+  if (
+    !subtitleInput &&
+    !hasProvidedSubtitle &&
+    isSpeakerDiarizationStandardTaskContext(formData) &&
+    (formData?.speakerDiarization === true ||
+      file?.speakerDiarization !== undefined)
+  ) {
+    stages.push({
+      key: 'speakerDiarization',
+      labelKey: 'stage.speakerDiarization',
+    });
   }
   // 附加阶段：配置快照声明，或文件上已有阶段状态（快照缺失时兜底）
   if (formData?.dub || file?.dubbing !== undefined) {
@@ -194,16 +209,28 @@ export function isProofreadReady(
   typeDef: TaskTypeDef,
   formData?: any,
 ): boolean {
+  const stages = getFileStages(file, typeDef, formData);
   if (typeDef.taskType === 'generateOnly') {
     if (file?.extractSubtitle !== 'done') return false;
     // 精修会改写 srtFile：阶段在轨时须等 refine 完成，避免校对读到旧内容后被覆盖。
-    const stages = getFileStages(file, typeDef, formData);
-    if (stages.some((s) => s.key === 'refineSubtitle')) {
-      return file?.refineSubtitle === 'done';
+    if (
+      stages.some((s) => s.key === 'refineSubtitle') &&
+      file?.refineSubtitle !== 'done'
+    ) {
+      return false;
     }
-    return true;
+  } else if (file?.translateSubtitle !== 'done') {
+    return false;
   }
-  return file?.translateSubtitle === 'done';
+
+  // 角色分离会在 sidecar 落盘前保持 loading；必须等 done 才能进入校对。
+  if (
+    stages.some((s) => s.key === 'speakerDiarization') &&
+    file?.speakerDiarization !== 'done'
+  ) {
+    return false;
+  }
+  return true;
 }
 
 export type ProofreadUnavailableReason = 'txt';

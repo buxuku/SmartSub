@@ -482,6 +482,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   ipcMain.handle('getSpeakerDiarizationModelStatus', async () => ({
     success: true,
     installed: isSpeakerDiarizationModelInstalled(),
+    runtimeInstalled: isSherpaLibInstalled(),
     modelsPath: getSpeakerDiarizationModelsRoot(),
   }));
 

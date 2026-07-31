@@ -47,9 +47,9 @@ export interface ISystemInfo {
   parakeetModelsInstalled?: string[];
   /** Parakeet 模型根目录 */
   parakeetModelsPath?: string;
-  /** 可选说话者分离模型（pyannote + 3D-Speaker）是否完整安装。 */
+  /** 可选角色分离模型（pyannote + 3D-Speaker）是否完整安装。 */
   speakerDiarizationModelInstalled?: boolean;
-  /** 说话者分离模型根目录。 */
+  /** 角色分离模型根目录。 */
   speakerDiarizationModelsPath?: string;
   /** userData 默认存储基座（「默认路径含中文」警示判定用） */
   userDataPath?: string;
@@ -78,6 +78,10 @@ export interface IFiles {
   extractAudio?: boolean;
   extractSubtitle?: boolean;
   translateSubtitle?: boolean;
+  /** 角色分离独立阶段状态；undefined 表示尚未进入该阶段。 */
+  speakerDiarization?: '' | 'loading' | 'done' | 'error';
+  speakerDiarizationProgress?: number;
+  speakerDiarizationError?: string;
   /** 配音附加阶段状态（运行时同其余阶段字段为 ''|loading|done|error 字符串） */
   dubbing?: boolean;
   /** 合成附加阶段状态（同上字符串状态机约定） */
@@ -232,11 +236,10 @@ export interface IFormData {
   aiCorrection?: boolean;
   /** 精修服务商：缺省/'follow-translation' = 跟随翻译服务（AI 类型时解析为同一服务商），或显式 AI 服务商 id。 */
   refineProvider?: string;
-  /**
-   * 说话者分离：在转写/翻译后用本地 sherpa 模型识别说话者并为每条字幕添加
-   * `[Speaker N]` 标签。缺省关闭，旧任务快照保持原行为。
-   */
+  /** 角色分离：在转写/翻译后用本地 sherpa 模型分析角色并对齐字幕。 */
   speakerDiarization?: boolean;
-  /** 已知说话者数量（2–8）；0/undefined = 自动聚类。 */
+  /** 已知角色数量（2–8）；0/undefined = 自动聚类。 */
   speakerDiarizationCount?: number;
+  /** 是否把 `[Speaker N]` 角色标签写入字幕交付物；缺省 false，仅存 sidecar metadata。 */
+  speakerDiarizationEmbedInSubtitle?: boolean;
 }

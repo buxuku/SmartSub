@@ -222,7 +222,7 @@ const SherpaEngineGroupPanel: React.FC<SherpaEngineGroupPanelProps> = ({
           </Collapsible>
         ))}
 
-        {/* 说话者分离是所有 ASR 引擎都可选用的后处理能力，不属于某个模型族。 */}
+        {/* 角色分离是所有 ASR 引擎都可选用的后处理能力，不属于某个模型族。 */}
         <Collapsible
           defaultOpen={systemInfo.speakerDiarizationModelInstalled === true}
           className="rounded-lg border"

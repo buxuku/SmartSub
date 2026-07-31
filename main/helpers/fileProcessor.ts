@@ -45,6 +45,8 @@ import {
   getTaskContext,
 } from './taskContext';
 import { runSpeakerDiarizationStage } from './speakerDiarization/stage';
+import type { SpeakerDiarizationSegment } from './speakerDiarization/alignment';
+import { isSpeakerDiarizationStandardTaskContext } from '../../types/speakerDiarization';
 
 /**
  * 处理任务错误
@@ -272,18 +274,21 @@ export async function processFile(
     'prepareSubtitle',
     'refineSubtitle',
     'translateSubtitle',
+    'speakerDiarization',
     'dubbing',
     'composeVideo',
     'extractAudioProgress',
     'extractSubtitleProgress',
     'refineSubtitleProgress',
     'translateSubtitleProgress',
+    'speakerDiarizationProgress',
     'dubbingProgress',
     'composeVideoProgress',
     'extractAudioError',
     'extractSubtitleError',
     'refineSubtitleError',
     'translateSubtitleError',
+    'speakerDiarizationError',
     'dubbingError',
     'composeVideoError',
   ]) {
@@ -668,23 +673,34 @@ export async function processFile(
       await stripSourceSubtitlePunctuation(file.srtFile, fileName);
     }
 
-    // 可选说话者分离：仅对本轮真实 ASR 的音频执行。放在翻译之后，避免
-    // `[Speaker N]` 标签污染翻译提示；同时在 proofread sidecar 生成前写入
-    // 源/译字幕，使交付物与校对台显示一致。模型缺失/推理失败安全降级为原字幕。
-    if (
+    // 可选角色分离：仅对标准字幕任务中本轮真实 ASR 的音频执行。放在翻译之后，
+    // 避免角色信息污染翻译提示；独立阶段保持 loading，直到 sidecar 写入完成后
+    // 才置 done，从而保证校对入口不会抢先读到旧内容。
+    const speakerDiarizationStageActive =
       !isSubtitleFile &&
       shouldGenerateSubtitle &&
       !hasProvidedSubtitle &&
-      formData?.speakerDiarization === true
-    ) {
+      formData?.speakerDiarization === true &&
+      isSpeakerDiarizationStandardTaskContext(formData);
+    let speakerSegments: SpeakerDiarizationSegment[] | undefined;
+    let speakerDiarizationWarning: string | undefined;
+    if (speakerDiarizationStageActive) {
       throwIfTaskCancelled();
-      await runSpeakerDiarizationStage({
+      file.speakerDiarization = 'loading';
+      file.speakerDiarizationProgress = 0;
+      delete file.speakerDiarizationError;
+      event.sender.send('taskFileChange', { ...file });
+      logMessage(`speaker diarization stage started: ${fileName}`, 'info');
+      const result = await runSpeakerDiarizationStage({
         file,
         formData,
         signal: getTaskContext()?.signal,
       });
+      speakerSegments = result.segments;
+      speakerDiarizationWarning = result.reason;
     }
 
+    throwIfTaskCancelled();
     if (file.srtFile && fs.existsSync(file.srtFile)) {
       const proofreadDataFile = await writeProofreadDataFromFiles({
         file,
@@ -701,11 +717,25 @@ export async function processFile(
         targetLanguage,
         translateContent: formData?.translateContent,
         outputFormat: formData?.subtitleOutputFormat,
+        speakerSegments,
       });
       if (proofreadDataFile) {
         file.proofreadDataFile = proofreadDataFile;
         event.sender.send('taskFileChange', file);
       }
+    }
+
+    if (speakerDiarizationStageActive) {
+      throwIfTaskCancelled();
+      file.speakerDiarization = 'done';
+      file.speakerDiarizationProgress = 100;
+      event.sender.send('taskFileChange', { ...file });
+      logMessage(
+        speakerDiarizationWarning
+          ? `speaker diarization stage done with warning (${speakerDiarizationWarning}): ${fileName}`
+          : `speaker diarization stage done: ${fileName}`,
+        speakerDiarizationWarning ? 'warning' : 'info',
+      );
     }
 
     // 将交付字幕转换为用户选择的输出格式（内部流程始终为 SRT，此处仅转换最终交付物）
@@ -790,6 +820,7 @@ export async function processFile(
         extractAudio: '',
         extractSubtitle: '',
         translateSubtitle: '',
+        speakerDiarization: '',
       });
       return;
     }

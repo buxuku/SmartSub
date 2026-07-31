@@ -146,6 +146,20 @@ export function speakerLabel(speakers: number[]): string {
 }
 
 /**
+ * sidecar 对外使用与标签一致的一基角色编号（Speaker 1 => 1）。
+ * 未匹配到角色的 cue 返回空数组，序列化时由调用方省略字段。
+ */
+export function speakerIdsForCues(
+  cues: TimedSubtitleCue[],
+  segments: SpeakerDiarizationSegment[],
+  options?: SpeakerAlignmentOptions,
+): number[][] {
+  return alignSpeakersToCues(cues, segments, options).map((assignment) =>
+    assignment.speakers.map((speaker) => speaker + 1),
+  );
+}
+
+/**
  * 为字幕添加稳定、语言中立的可读前缀。未知说话者不改文本；重复执行会先移除
  * 本功能写入的旧前缀，保证重试/重新对齐幂等。
  */

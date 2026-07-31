@@ -236,6 +236,7 @@ export const defaultUserConfig = {
   removeChinesePunctuation: false,
   speakerDiarization: false,
   speakerDiarizationCount: 0,
+  speakerDiarizationEmbedInSubtitle: false,
 };
 
 export function getSrtFileName(
