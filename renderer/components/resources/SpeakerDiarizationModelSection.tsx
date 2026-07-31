@@ -34,6 +34,7 @@ function readSource(): ModelSource {
 interface Status {
   success: boolean;
   installed: boolean;
+  runtimeInstalled?: boolean;
   modelsPath: string;
 }
 
@@ -175,7 +176,9 @@ const SpeakerDiarizationModelSection: React.FC<{
     const result = await window?.ipc?.invoke('openModelsFolder', {
       pathType: 'speakerDiarization',
     });
-    if (!result?.success) toast.error(result?.error || 'Open folder failed');
+    if (!result?.success) {
+      toast.error(result?.error || t('openFolderFailed'));
+    }
   };
 
   const installed = status?.installed === true;

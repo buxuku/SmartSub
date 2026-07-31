@@ -8,12 +8,19 @@ import {
 import { logMessage } from '../storeManager';
 import { isSherpaLibInstalled } from '../sherpaOnnx/sherpaLibPaths';
 import { TaskCancelledError } from '../taskContext';
-import { annotateCuesWithSpeakers } from './alignment';
+import {
+  annotateCuesWithSpeakers,
+  type SpeakerDiarizationSegment,
+} from './alignment';
 import {
   getSpeakerDiarizationModelFiles,
   isSpeakerDiarizationModelInstalled,
 } from './modelCatalog';
 import { getSpeakerDiarizationRuntime } from './runtime';
+import {
+  normalizeSpeakerDiarizationCount,
+  shouldEmbedSpeakerLabels,
+} from '../../../types/speakerDiarization';
 
 interface SubtitleAnnotationPlan {
   filePath: string;
@@ -64,49 +71,56 @@ async function applySubtitleAnnotations(
 }
 
 /**
- * 可选的说话者分离后处理。失败时保持字幕原样并继续流水线；取消仍严格中止任务。
+ * 可选的角色分离后处理。失败时保持字幕原样并继续任务；取消仍严格中止任务。
  *
- * 调用位置在翻译完成之后，因此说话者标签不会污染翻译提示，同时源字幕、译文字幕
- * 和随后生成的 proofread sidecar 都能读到相同标签。
+ * 调用位置在翻译完成之后，因此角色信息不会污染翻译提示。推理片段始终供 proofread
+ * sidecar 写入 metadata；只有用户显式开启时才额外把可读标签渲染进字幕文件。
  */
+export interface SpeakerDiarizationStageResult {
+  /** 推理成功并得到可写入 sidecar 的角色片段。 */
+  applied: boolean;
+  /** 是否实际把可读标签写入至少一个字幕文件。 */
+  embedded: boolean;
+  segments?: SpeakerDiarizationSegment[];
+  reason?: string;
+}
+
 export async function runSpeakerDiarizationStage(input: {
   file: IFiles;
   formData: IFormData | Record<string, any>;
   signal?: AbortSignal;
-}): Promise<{ applied: boolean; reason?: string }> {
+}): Promise<SpeakerDiarizationStageResult> {
   const { file, formData, signal } = input;
   if (formData?.speakerDiarization !== true) {
-    return { applied: false, reason: 'disabled' };
+    return { applied: false, embedded: false, reason: 'disabled' };
   }
   if (!file.tempAudioFile || !fs.existsSync(file.tempAudioFile)) {
     logMessage(
       `speaker diarization skipped (${file.fileName}): extracted audio is unavailable`,
       'warning',
     );
-    return { applied: false, reason: 'audio-unavailable' };
+    return { applied: false, embedded: false, reason: 'audio-unavailable' };
   }
   if (!isSherpaLibInstalled() || !isSpeakerDiarizationModelInstalled()) {
     logMessage(
-      `speaker diarization skipped (${file.fileName}): model is not installed`,
+      `speaker diarization skipped (${file.fileName}): runtime or model is unavailable`,
       'warning',
     );
-    return { applied: false, reason: 'model-unavailable' };
+    return { applied: false, embedded: false, reason: 'model-unavailable' };
   }
   if (signal?.aborted) throw new TaskCancelledError();
 
   const models = getSpeakerDiarizationModelFiles();
   const runtime = getSpeakerDiarizationRuntime();
-  const requestedCount = Number(formData?.speakerDiarizationCount);
   let request: ReturnType<typeof runtime.diarize>;
   try {
     request = runtime.diarize({
       audioFile: file.tempAudioFile,
       segmentationModel: models.segmentation,
       embeddingModel: models.embedding,
-      numClusters:
-        Number.isInteger(requestedCount) && requestedCount >= 2
-          ? requestedCount
-          : -1,
+      numClusters: normalizeSpeakerDiarizationCount(
+        formData?.speakerDiarizationCount,
+      ),
       numThreads: 2,
     });
   } catch (error) {
@@ -114,23 +128,46 @@ export async function runSpeakerDiarizationStage(input: {
       `speaker diarization could not start; subtitle kept unchanged (${file.fileName}): ${error}`,
       'warning',
     );
-    return { applied: false, reason: 'inference-failed' };
+    return { applied: false, embedded: false, reason: 'inference-failed' };
   }
   const { id, result } = request;
   const onAbort = () => runtime.cancel(id);
   signal?.addEventListener('abort', onAbort, { once: true });
 
+  let segments: SpeakerDiarizationSegment[];
   try {
-    const { segments } = await result;
-    if (signal?.aborted) throw new TaskCancelledError();
-    if (segments.length === 0) {
-      logMessage(
-        `speaker diarization returned no segments (${file.fileName}); subtitle unchanged`,
-        'warning',
-      );
-      return { applied: false, reason: 'empty-result' };
+    segments = (await result).segments;
+  } catch (error) {
+    if (signal?.aborted || (error as { code?: string })?.code === 'cancelled') {
+      throw new TaskCancelledError();
     }
+    logMessage(
+      `speaker diarization failed; subtitle kept unchanged (${file.fileName}): ${error}`,
+      'warning',
+    );
+    return { applied: false, embedded: false, reason: 'inference-failed' };
+  } finally {
+    signal?.removeEventListener('abort', onAbort);
+  }
 
+  if (signal?.aborted) throw new TaskCancelledError();
+  if (segments.length === 0) {
+    logMessage(
+      `speaker diarization returned no segments (${file.fileName}); subtitle unchanged`,
+      'warning',
+    );
+    return { applied: false, embedded: false, reason: 'empty-result' };
+  }
+
+  if (!shouldEmbedSpeakerLabels(formData)) {
+    logMessage(
+      `speaker diarization metadata ready (${segments.length} segment(s)); subtitle files kept unchanged: ${file.fileName}`,
+      'info',
+    );
+    return { applied: true, embedded: false, segments };
+  }
+
+  try {
     const paths = [
       file.srtFile,
       file.tempSrtFile,
@@ -143,29 +180,36 @@ export async function runSpeakerDiarizationStage(input: {
       const plan = await prepareSubtitleAnnotation(subtitlePath, segments);
       if (plan) plans.push(plan);
     }
+    if (signal?.aborted) throw new TaskCancelledError();
     if (plans.length === 0) {
       logMessage(
         `speaker diarization produced segments but found no subtitle cues (${file.fileName})`,
         'warning',
       );
-      return { applied: false, reason: 'subtitle-unavailable' };
+      return {
+        applied: true,
+        embedded: false,
+        segments,
+        reason: 'subtitle-unavailable',
+      };
     }
     await applySubtitleAnnotations(plans);
     logMessage(
-      `speaker diarization applied to ${plans.length} subtitle file(s), ${segments.length} speaker segment(s): ${file.fileName}`,
+      `speaker diarization embedded labels in ${plans.length} subtitle file(s), ${segments.length} speaker segment(s): ${file.fileName}`,
       'info',
     );
-    return { applied: true };
+    return { applied: true, embedded: true, segments };
   } catch (error) {
-    if (signal?.aborted || (error as { code?: string })?.code === 'cancelled') {
-      throw new TaskCancelledError();
-    }
+    if (signal?.aborted) throw new TaskCancelledError();
     logMessage(
-      `speaker diarization failed; subtitle kept unchanged (${file.fileName}): ${error}`,
+      `speaker diarization label embedding failed; metadata kept and subtitle files restored (${file.fileName}): ${error}`,
       'warning',
     );
-    return { applied: false, reason: 'inference-failed' };
-  } finally {
-    signal?.removeEventListener('abort', onAbort);
+    return {
+      applied: true,
+      embedded: false,
+      segments,
+      reason: 'annotation-failed',
+    };
   }
 }

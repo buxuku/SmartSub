@@ -230,17 +230,21 @@
     "hint": "把中文字幕里的中文标点（，。、？！等）替换为空格并去掉行尾空格，让字幕更清爽。源语言为中文时作用于源字幕，目标为中文时作用于译文。"
   },
   "speakerDiarization": {
-    "label": "区分说话者",
-    "hint": "转写完成后用本地模型分析整段音频，为源字幕和译文添加 [Speaker 1] 等标签。默认关闭；重叠说话会显示多个编号。",
-    "modelReady": "模型已就绪",
-    "modelMissing": "模型未下载",
-    "modelMissingHint": "可以保存此设置，但运行时会安全跳过。请先到「资源中心 → 本地多模型引擎 → 说话者分离」下载模型。",
-    "speakerCount": "说话者人数",
+    "label": "角色分离",
+    "hint": "转写与翻译完成后，在本地分析整段音频，按不同角色分离发言并对齐到每条字幕。耗时与音频长度成正比，可选择是否将角色标签写入导出的字幕文件。",
+    "modelReady": "运行库与模型已就绪",
+    "modelMissing": "尚未就绪",
+    "modelMissingHint": "可以保存此设置，但运行时会安全跳过。请确认「资源中心 → 本地多模型引擎」运行库和角色分离模型均已安装。",
+    "speakerCount": "角色数量",
     "speakerCountHint": "已知人数时指定通常更稳定",
     "autoDetect": "自动判断",
-    "summaryLabel": "说话者",
+    "embedInSubtitle": "将角色标签写入字幕文件",
+    "embedInSubtitleHint": "关闭后导出的 SRT/TXT 等文件不含标签；角色信息仅保存在应用内校对数据中。",
+    "summaryLabel": "角色分离",
     "summaryAuto": "自动判断人数",
-    "summaryKnown": "{{count}} 人"
+    "summaryKnown": "{{count}} 人",
+    "summaryEmbedded": "写入字幕",
+    "summaryMetadataOnly": "仅应用内"
   },
   "refine": {
     "provider": {
@@ -278,6 +282,7 @@
     "transcribe": "转写",
     "refine": "精修",
     "translate": "翻译",
+    "speakerDiarization": "角色分离",
     "dubbing": "配音",
     "compose": "合成"
   },

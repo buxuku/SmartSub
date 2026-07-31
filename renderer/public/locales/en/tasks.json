@@ -230,17 +230,21 @@
     "hint": "Replace Chinese punctuation (，。、？！ etc.) in Chinese subtitles with spaces and trim trailing spaces for cleaner subtitles. Applies to the source when the source language is Chinese, and to the translation when the target is Chinese."
   },
   "speakerDiarization": {
-    "label": "Distinguish speakers",
-    "hint": "After transcription, analyze the full audio locally and add labels such as [Speaker 1] to source and translated subtitles. Off by default; overlapping speech shows multiple speaker numbers.",
-    "modelReady": "Model ready",
-    "modelMissing": "Model not downloaded",
-    "modelMissingHint": "You can save this setting, but the run will safely skip diarization. Download the model first from Resources → Local multi-model engine → Speaker diarization.",
+    "label": "Speaker diarization",
+    "hint": "After transcription and translation, analyze the full audio locally and align each cue with its speakers. Processing time scales with audio length; you can choose whether to write speaker labels into exported subtitle files.",
+    "modelReady": "Runtime and model ready",
+    "modelMissing": "Not ready",
+    "modelMissingHint": "You can save this setting, but the run will safely skip diarization. Make sure both the runtime and speaker diarization model are installed under Resources → Local multi-model engine.",
     "speakerCount": "Number of speakers",
     "speakerCountHint": "Specifying a known count is usually more stable",
     "autoDetect": "Auto detect",
-    "summaryLabel": "Speakers",
+    "embedInSubtitle": "Write speaker labels to subtitle files",
+    "embedInSubtitleHint": "When off, exported SRT/TXT and other subtitle files stay clean; speaker metadata is kept only in the app's proofread data.",
+    "summaryLabel": "Speaker diarization",
     "summaryAuto": "Auto detect",
-    "summaryKnown": "{{count}} speakers"
+    "summaryKnown": "{{count}} speakers",
+    "summaryEmbedded": "embedded",
+    "summaryMetadataOnly": "in-app only"
   },
   "refine": {
     "provider": {
@@ -278,6 +282,7 @@
     "transcribe": "Transcribe",
     "refine": "Refine",
     "translate": "Translate",
+    "speakerDiarization": "Speaker diarization",
     "dubbing": "Dub",
     "compose": "Compose"
   },

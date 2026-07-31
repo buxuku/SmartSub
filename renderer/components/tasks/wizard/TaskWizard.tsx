@@ -96,6 +96,7 @@ import type {
   UserStylePreset,
   VideoQuality,
 } from '../../../../types/subtitleMerge';
+import { stripSpeakerDiarizationConfig } from '../../../../types/speakerDiarization';
 
 type GoalKey = 'translate' | 'dub' | 'video';
 
@@ -813,7 +814,9 @@ export default function TaskWizard() {
     try {
       const dubEngine =
         dubOn && activeEngine ? parseEngineKey(activeEngine.key) : null;
-      const config: Partial<IFormData> = { ...formData };
+      const config: Partial<IFormData> = stripSpeakerDiarizationConfig({
+        ...formData,
+      });
       delete config.taskType;
       delete config.dub;
       delete config.compose;
@@ -871,7 +874,7 @@ export default function TaskWizard() {
               providedSubtitlePath: p.subtitle.filePath,
             }))
           : files;
-      const payload = {
+      const payload = stripSpeakerDiarizationConfig({
         ...formData,
         taskType,
         ...(appliedRecipeName ? { recipeName: appliedRecipeName } : {}),
@@ -901,7 +904,7 @@ export default function TaskWizard() {
               },
             }
           : {}),
-      };
+      });
       await window?.ipc?.invoke('saveTaskProject', {
         id: projectId,
         taskType,

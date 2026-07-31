@@ -7,6 +7,8 @@
   "importModelSuccess": "模型导入成功",
   "importModelFailed": "导入失败：{{error}}",
   "importInvalidLayout": "所选文件夹不是有效模型，缺少文件：{{files}}",
+  "openModelsFolder": "打开模型目录",
+  "openFolderFailed": "打开模型目录失败",
   "engines": {
     "statusAvailable": "可用",
     "status": {
@@ -97,15 +99,15 @@
       "itnFunasrOnly": "仅 FunASR（SenseVoice）支持；Qwen、FireRed、Parakeet 已在内部处理文本格式。"
     },
     "speakerDiarization": {
-      "name": "说话者分离（可选后处理）",
-      "desc": "适用于所有本地或云端转写引擎。转写完成后在本地分析音频，把说话者编号对齐到每条字幕；默认关闭，模型或推理异常时保留原字幕。",
+      "name": "角色分离",
+      "desc": "适用于所有本地或云端转写引擎。转写完成后在本地分析音频，把角色编号对齐到每条字幕并保存在应用内；可在任务中选择写入导出字幕。默认关闭，模型或推理异常时保留原字幕。",
       "needsModel": "需下载模型",
       "modelName": "Pyannote + 3D-Speaker（约 45MB）",
-      "modelDesc": "离线说话者分段与声纹聚类模型；支持自动判断人数，也可在任务中指定人数。",
+      "modelDesc": "离线角色分段与聚类模型；支持自动判断人数，也可在任务中指定人数。",
       "download": "下载",
-      "downloaded": "说话者分离模型已就绪",
-      "downloadFailed": "说话者分离模型下载失败",
-      "deleteFailed": "删除说话者分离模型失败",
+      "downloaded": "角色分离模型已就绪",
+      "downloadFailed": "角色分离模型下载失败",
+      "deleteFailed": "删除角色分离模型失败",
       "anotherDownload": "已有下载任务进行中，请等待完成后再试。",
       "extracting": "正在解包分段模型…",
       "downloadSource": "下载源",

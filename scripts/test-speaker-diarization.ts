@@ -1,10 +1,23 @@
+/// <reference path="./test-globals.d.ts" />
+
 import {
   alignSpeakersToCues,
   annotateCuesWithSpeakers,
   normalizeDiarizationSegments,
+  speakerIdsForCues,
   stripSpeakerLabelPrefix,
 } from '../main/helpers/speakerDiarization/alignment';
 import { normalizeDubbingSpeechText } from '../main/helpers/dubbing/textNormalization';
+import {
+  enforceSpeakerDiarizationTaskBoundary,
+  normalizeSpeakerDiarizationCount,
+  shouldEmbedSpeakerLabels,
+  stripSpeakerDiarizationConfig,
+} from '../types/speakerDiarization';
+import {
+  getFileStages,
+  isProofreadReady,
+} from '../renderer/components/tasks/stageUtils';
 
 let passed = 0;
 
@@ -111,6 +124,139 @@ equal(
   normalizeDubbingSpeechText('[Director] Keep this cue'),
   '[Director] Keep this cue',
   'TTS input preserves unrelated bracketed text',
+);
+
+equal(
+  speakerIdsForCues(cues, segments),
+  [[1], [2], []],
+  'sidecar speaker metadata uses the same one-based ids as visible labels',
+);
+
+equal(
+  shouldEmbedSpeakerLabels(undefined),
+  false,
+  'speaker labels are not embedded by default',
+);
+
+equal(
+  shouldEmbedSpeakerLabels({ speakerDiarizationEmbedInSubtitle: true }),
+  true,
+  'speaker labels are embedded only when explicitly enabled',
+);
+
+equal(
+  [
+    normalizeSpeakerDiarizationCount(2),
+    normalizeSpeakerDiarizationCount(8),
+    normalizeSpeakerDiarizationCount(9),
+    normalizeSpeakerDiarizationCount(1),
+  ],
+  [2, 8, -1, -1],
+  'runtime speaker count is capped to the UI range 2-8',
+);
+
+equal(
+  stripSpeakerDiarizationConfig({
+    speakerDiarization: true,
+    speakerDiarizationCount: 3,
+    speakerDiarizationEmbedInSubtitle: true,
+    translateProvider: 'provider-1',
+  }),
+  { translateProvider: 'provider-1' },
+  'recipe and wizard sanitization removes every diarization setting',
+);
+
+equal(
+  enforceSpeakerDiarizationTaskBoundary({
+    speakerDiarization: true,
+    speakerDiarizationCount: 2,
+    speakerDiarizationEmbedInSubtitle: true,
+    dub: { engine: { kind: 'local', modelId: 'vits-zh' } },
+  }),
+  { dub: { engine: { kind: 'local', modelId: 'vits-zh' } } },
+  'runtime boundary disables diarization for pipeline tasks',
+);
+
+const generateOnly = {
+  slug: 'generate',
+  taskType: 'generateOnly' as const,
+  accepts: 'media' as const,
+  needsModel: true,
+  hasTranslate: false,
+};
+const generateAndTranslate = {
+  slug: 'generate-translate',
+  taskType: 'generateAndTranslate' as const,
+  accepts: 'media' as const,
+  needsModel: true,
+  hasTranslate: true,
+};
+const mediaFile = { filePath: 'interview.mp4' };
+
+equal(
+  getFileStages(mediaFile, generateAndTranslate, {
+    translateProvider: 'provider-1',
+    speakerDiarization: true,
+  }).map((stage) => stage.key),
+  [
+    'extractAudio',
+    'extractSubtitle',
+    'translateSubtitle',
+    'speakerDiarization',
+  ],
+  'speaker diarization is a visible stage after translation',
+);
+
+equal(
+  getFileStages(
+    { ...mediaFile, providedSubtitlePath: 'interview.srt' },
+    generateAndTranslate,
+    { translateProvider: 'provider-1', speakerDiarization: true },
+  ).map((stage) => stage.key),
+  ['translateSubtitle'],
+  'paired subtitle input does not expose the diarization stage',
+);
+
+equal(
+  isProofreadReady(
+    {
+      ...mediaFile,
+      extractSubtitle: 'done',
+      speakerDiarization: 'loading',
+    },
+    generateOnly,
+    { speakerDiarization: true },
+  ),
+  false,
+  'proofread remains locked while diarization is loading',
+);
+
+equal(
+  isProofreadReady(
+    {
+      ...mediaFile,
+      extractSubtitle: 'done',
+      speakerDiarization: 'done',
+    },
+    generateOnly,
+    { speakerDiarization: true },
+  ),
+  true,
+  'proofread unlocks after diarization and sidecar writing finish',
+);
+
+equal(
+  isProofreadReady(
+    {
+      ...mediaFile,
+      translateSubtitle: 'done',
+      speakerDiarization: 'loading',
+    },
+    generateAndTranslate,
+    { translateProvider: 'provider-1', speakerDiarization: true },
+  ),
+  false,
+  'translated tasks also wait for diarization before proofreading',
 );
 
 console.log(`✓ speaker diarization alignment tests passed (${passed})`);

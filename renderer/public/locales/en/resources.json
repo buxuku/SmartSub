@@ -7,6 +7,8 @@
   "importModelSuccess": "Model imported",
   "importModelFailed": "Import failed: {{error}}",
   "importInvalidLayout": "The selected folder is not a valid model. Missing files: {{files}}",
+  "openModelsFolder": "Open models folder",
+  "openFolderFailed": "Failed to open models folder",
   "engines": {
     "statusAvailable": "Available",
     "status": {
@@ -97,8 +99,8 @@
       "itnFunasrOnly": "Only supported by FunASR (SenseVoice); Qwen, FireRed and Parakeet handle text formatting internally."
     },
     "speakerDiarization": {
-      "name": "Speaker diarization (optional post-processing)",
-      "desc": "Works with every local or cloud transcription engine. After transcription, audio is analyzed locally and speaker numbers are aligned to subtitle cues. It is off by default and leaves subtitles unchanged if the model or inference fails.",
+      "name": "Speaker diarization",
+      "desc": "Works with every local or cloud transcription engine. After transcription, audio is analyzed locally and speaker numbers are aligned to subtitle cues as in-app metadata; tasks can optionally embed labels in exported subtitles. It is off by default and leaves subtitles unchanged if the model or inference fails.",
       "needsModel": "Model required",
       "modelName": "Pyannote + 3D-Speaker (about 45 MB)",
       "modelDesc": "Offline speaker segmentation and voice clustering models. Speaker count can be detected automatically or specified per task.",
