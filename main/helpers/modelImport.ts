@@ -23,6 +23,11 @@ export interface LayoutCheckResult {
   missing: string[];
 }
 
+export interface ModelFileSizeExpectation {
+  path: string;
+  size: number;
+}
+
 /**
  * 校验源目录是否含某模型的全部必需文件。
  * requiredFiles 支持嵌套相对路径（如 `tokenizer/vocab.json`）。每项必须是
@@ -30,7 +35,7 @@ export interface LayoutCheckResult {
  */
 export function validateModelLayout(
   srcDir: string,
-  requiredFiles: string[],
+  requiredFiles: readonly string[],
 ): LayoutCheckResult {
   const missing = requiredFiles.filter((rel) => {
     try {
@@ -40,6 +45,27 @@ export function validateModelLayout(
       return true;
     }
   });
+  return { ok: missing.length === 0, missing };
+}
+
+/**
+ * 在通用非空文件校验之上要求精确字节数。
+ * 适用于同名布局对应多个模型规格的场景，防止较小模型被导入到较大模型槽位。
+ */
+export function validateModelLayoutWithSizes(
+  srcDir: string,
+  expectedFiles: readonly ModelFileSizeExpectation[],
+): LayoutCheckResult {
+  const missing = expectedFiles
+    .filter(({ path: rel, size }) => {
+      try {
+        const stat = fs.lstatSync(path.join(srcDir, rel));
+        return !stat.isFile() || stat.size !== size;
+      } catch {
+        return true;
+      }
+    })
+    .map(({ path: rel }) => rel);
   return { ok: missing.length === 0, missing };
 }
 

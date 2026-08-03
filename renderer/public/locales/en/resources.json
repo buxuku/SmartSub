@@ -154,7 +154,7 @@
     "qwen": {
       "name": "Qwen3-ASR",
       "builtinRuntime": "The runtime is bundled with the app (shared with FunASR) — no download needed.",
-      "desc": "Alibaba Qwen3-ASR (0.6B) running locally on the sherpa-onnx runtime (shared with FunASR). Open-source, multilingual, CPU-friendly — no GPU or Python required. Segment-level timestamps come from VAD.",
+      "desc": "Alibaba Qwen3-ASR (0.6B / 1.7B) running locally on the sherpa-onnx runtime (shared with FunASR). Open-source and multilingual — no GPU or Python required. Segment-level timestamps come from VAD.",
       "scenario": "Best for: multilingual local transcription on CPU, Apache-2.0",
       "notInstalled": "Not installed",
       "needsModels": "Models needed",
@@ -178,14 +178,14 @@
       "checkFailed": "Failed to check for updates. Please try again later.",
       "anotherDownload": "Another download is in progress. Please wait for it to finish.",
       "advanced": "Advanced settings",
-      "providerNote": "Current scope: CPU only (0.6B). GPU support is planned for a future release.",
+      "providerNote": "Current scope: CPU inference. 0.6B is lighter; 1.7B offers higher accuracy but needs more memory and time. GPU support is planned for a future release.",
       "numThreads": "Inference threads",
       "numThreadsHint": "Threads used for CPU inference — higher is faster but uses more CPU",
       "modelsTitle": "Models",
       "needModelsHint": "Download to enable",
       "modelDownload": "Download",
       "modelDelete": "Delete",
-      "modelDownloadConfirm": "Qwen3-ASR (0.6B) is about {{size}}. It runs on CPU but is not real-time. Continue?",
+      "modelDownloadConfirm": "The Qwen3-ASR model is about {{size}}. It runs on CPU but is not real-time. Continue?",
       "modelSources": {
         "modelscope": "ModelScope (CN)",
         "ghproxy": "GitHub Mirror (China)",
@@ -200,6 +200,10 @@
         "qwen3-asr-0.6b": {
           "name": "Qwen3-ASR 0.6B (int8, ~0.95GB)",
           "desc": "Multilingual local ASR; int8 quantized, CPU-friendly. Segment-level timestamps via VAD."
+        },
+        "qwen3-asr-1.7b": {
+          "name": "Qwen3-ASR 1.7B (int8, ~2.4GB)",
+          "desc": "Larger model for higher recognition accuracy; needs more memory and is slower on CPU. Currently downloaded from ModelScope."
         }
       }
     },

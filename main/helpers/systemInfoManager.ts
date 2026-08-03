@@ -58,6 +58,8 @@ import {
   getInstalledQwenModels,
   getQwenModelsRoot,
   getQwenArchiveUrl,
+  getQwenSupportedSources,
+  validateQwenModelLayout,
 } from './qwenModelCatalog';
 import {
   getFireRedModelDownloader,
@@ -169,6 +171,7 @@ function resolveImportPlan(
     return {
       requiredFiles: QWEN_MODELS[id].requiredFiles,
       destDir: path.join(getQwenModelsRoot(), QWEN_MODELS[id].dirName),
+      validate: (dir) => validateQwenModelLayout(id, dir),
     };
   }
   if (engine === 'fireRedAsr') {
@@ -408,6 +411,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     models: (Object.keys(QWEN_MODELS) as QwenModelId[]).map((id) => ({
       id,
       installed: isQwenModelInstalled(id),
+      sources: getQwenSupportedSources(id),
     })),
   }));
 
@@ -615,13 +619,13 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
               url: `${getModelScopeBase()}/models/${spec.modelScopeRepo}`,
             };
           }
-          return {
-            success: true,
-            url: getQwenArchiveUrl(
-              spec,
-              source === 'github' ? 'github' : 'ghproxy',
-            ),
-          };
+          const url = getQwenArchiveUrl(
+            spec,
+            source === 'github' ? 'github' : 'ghproxy',
+          );
+          return url
+            ? { success: true, url }
+            : { success: false, error: 'sourceUnavailable' };
         }
         if (scope === 'firered') {
           const spec = FIRERED_MODELS[modelId as FireRedModelId];
@@ -691,7 +695,8 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     // Parakeet 等待当前会话真正退出并完成 finally 清理，避免取消后立即重试时
     // 旧任务清掉新任务的进度键/互斥状态。
     await parakeetModelDownloader.cancel();
-    downloadingModels.clear();
+    // 不提前清空下载锁：各下载 session 在真正响应 abort 并退出后自行移除 key。
+    // 否则 UI 可立即启动新任务，让旧异步链复用新 controller / 混写进度与文件。
     return true;
   });
 

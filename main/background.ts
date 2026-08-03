@@ -15,7 +15,7 @@ import { createWindow } from './helpers/create-window';
 import { setupIpcHandlers } from './helpers/ipcHandlers';
 import { setupTaskProcessor } from './helpers/taskProcessor';
 import { setupSystemInfoManager } from './helpers/systemInfoManager';
-import { setupStoreHandlers, store } from './helpers/storeManager';
+import { setupStoreHandlers, store, logMessage } from './helpers/storeManager';
 import { setupTaskManager } from './helpers/taskManager';
 import {
   initializeWorkItemStore,
@@ -54,8 +54,21 @@ import {
   resolveAppIcon,
   setAppDisplayNameEarly,
 } from './helpers/appBranding';
-import { getDevSimulationConfig, getGpuEnvironment } from './helpers/cudaUtils';
+import {
+  enumerateNvidiaGpus,
+  getDevSimulationConfig,
+  getGpuEnvironment,
+} from './helpers/cudaUtils';
+import {
+  applyCudaDeviceSelection,
+  resolveStartupCudaDeviceSelection,
+} from './helpers/cudaDeviceSelection';
+import { sanitizeSelectedCudaDevice } from '../types/gpuDevice';
 import { cleanupOldLogs } from './helpers/logStorage';
+import {
+  getHiddenNativeTitleBarOptions,
+  setupWindowChromeHandlers,
+} from './helpers/windowChrome';
 
 //控制台出现中文乱码，需要去node_modules\electron\cli.js中修改启动代码页
 
@@ -104,6 +117,39 @@ app.on('before-quit', (event) => {
 
 (async () => {
   await app.whenReady();
+
+  // CUDA reads CUDA_VISIBLE_DEVICES when its runtime first initializes. Apply
+  // the persisted selection before any addon/utility/Python engine can start.
+  const startupSettings = store.get('settings');
+  const configuredCudaDevice = sanitizeSelectedCudaDevice(
+    startupSettings?.selectedCudaDevice,
+  );
+  let startupCudaDevice = configuredCudaDevice;
+  if (configuredCudaDevice) {
+    const enumeration = await enumerateNvidiaGpus(3000);
+    const resolution = resolveStartupCudaDeviceSelection(
+      configuredCudaDevice,
+      enumeration,
+    );
+    startupCudaDevice = resolution.selectedDevice;
+    if (resolution.clearPersistedSelection) {
+      store.set('settings', {
+        ...startupSettings,
+        selectedCudaDevice: '',
+      });
+      logMessage(
+        `Configured CUDA GPU ${configuredCudaDevice} is no longer available; restored automatic selection`,
+        'warning',
+      );
+    } else if (enumeration.status === 'failed') {
+      logMessage(
+        `Could not validate configured CUDA GPU ${configuredCudaDevice}; preserving the selection for this launch`,
+        'warning',
+      );
+    }
+  }
+  applyCudaDeviceSelection(startupCudaDevice);
+
   applyMacAppBranding();
 
   const sim = getDevSimulationConfig();
@@ -160,6 +206,7 @@ app.on('before-quit', (event) => {
     minWidth: 1024,
     minHeight: 700,
     icon: resolveAppIcon(),
+    ...getHiddenNativeTitleBarOptions(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       // 本地媒体经 media:// 协议加载；紧急回退 SMARTSUB_LEGACY_WEB_SECURITY=true
@@ -173,6 +220,7 @@ app.on('before-quit', (event) => {
 
   // 关窗行为（macOS 智能模式 / Win·Linux 防误杀）+ Dock 激活恢复
   setupWindowCloseBehavior(mainWindow);
+  setupWindowChromeHandlers(mainWindow);
 
   if (isProd) {
     await mainWindow.loadURL(`app://./${userLanguage}/home/`);

@@ -140,6 +140,16 @@
   }
 }
 
+/* 隐藏系统标题栏后：顶栏 / 侧栏非交互区作为窗口拖拽把手 */
+@layer utilities {
+  .titlebar-drag {
+    -webkit-app-region: drag;
+  }
+  .titlebar-no-drag {
+    -webkit-app-region: no-drag;
+  }
+}
+
 /* 滚动条：Windows 默认常驻滚动条不美观。改为细滚动条、默认透明、悬停才显现，
    仍可正常滚动；macOS 原生 overlay 行为不受影响。 */
 * {

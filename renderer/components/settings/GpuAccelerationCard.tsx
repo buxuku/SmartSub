@@ -25,6 +25,7 @@ import { parseRemoteCudaVersions } from './gpu/gpuDownloadUtils';
 import CudaDownloadSheet from './gpu/CudaDownloadSheet';
 import GpuStatusHero from './gpu/GpuStatusHero';
 import GpuModeSelector from './gpu/GpuModeSelector';
+import GpuDeviceSelector from './gpu/GpuDeviceSelector';
 import MacAccelSelector from './gpu/MacAccelSelector';
 import GpuBackendSwitcher from './gpu/GpuBackendSwitcher';
 import GpuDownloadProgress from './gpu/GpuDownloadProgress';
@@ -60,6 +61,9 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
   const [activeBackend, setActiveBackend] =
     useState<AddonLoadResultInfo | null>(null);
   const [gpuMode, setGpuMode] = useState<GpuMode>('auto');
+  const [selectedCudaDevice, setSelectedCudaDevice] = useState('');
+  const [cudaDeviceRestartRequired, setCudaDeviceRestartRequired] =
+    useState(false);
   const [macAccelMode, setMacAccelMode] = useState<MacAccelMode>('auto');
   const [installedAddons, setInstalledAddons] = useState<InstalledAddonInfo[]>(
     [],
@@ -92,6 +96,7 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
   const downloadingVariantRef = useRef<AddonVariant | null>(null);
   const downloadSourceRef = useRef<DownloadSource>(downloadSource);
   const failedCudaVersionRef = useRef<CudaVersion | null>(null);
+  const activeCudaDeviceRef = useRef<string | null>(null);
 
   useEffect(() => {
     downloadSourceRef.current = downloadSource;
@@ -124,6 +129,17 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
       const settings = await window?.ipc?.invoke('getSettings');
       setGpuMode(settings?.gpuMode || 'auto');
       setMacAccelMode(settings?.macAccelMode || 'auto');
+      const persistedCudaDevice =
+        typeof settings?.selectedCudaDevice === 'string'
+          ? settings.selectedCudaDevice
+          : '';
+      setSelectedCudaDevice(persistedCudaDevice);
+      if (activeCudaDeviceRef.current === null) {
+        activeCudaDeviceRef.current = persistedCudaDevice;
+      }
+      setCudaDeviceRestartRequired(
+        persistedCudaDevice !== activeCudaDeviceRef.current,
+      );
 
       const remote = (await window?.ipc?.invoke(
         'get-remote-addon-versions',
@@ -245,6 +261,27 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
       toast.success(t('gpuAcceleration.macAccelChanged'));
     } catch {
       toast.error(t('saveFailed'));
+    }
+  };
+
+  const handleCudaDeviceChange = async (deviceUuid: string) => {
+    try {
+      await window?.ipc?.invoke('setSettings', {
+        selectedCudaDevice: deviceUuid,
+      });
+      setSelectedCudaDevice(deviceUuid);
+      setCudaDeviceRestartRequired(deviceUuid !== activeCudaDeviceRef.current);
+      toast.success(t('gpuAcceleration.cudaDeviceChanged'));
+    } catch {
+      toast.error(t('saveFailed'));
+    }
+  };
+
+  const handleRestartApp = async () => {
+    try {
+      await window?.ipc?.invoke('restart-app');
+    } catch {
+      toast.error(t('gpuAcceleration.restartFailed'));
     }
   };
 
@@ -377,6 +414,7 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
       activeBackend,
       gpuMode,
       macAccelMode,
+      selectedCudaDevice,
       selectedVersion,
       customAddonPath,
       installed: installedAddons,
@@ -434,6 +472,7 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
       gpuEnv={gpuEnv}
       activeBackend={resolveActiveBackendForPlatform(activeBackend, gpuEnv)}
       gpuMode={gpuMode}
+      activeCudaDevice={activeCudaDeviceRef.current ?? ''}
       isDesktopGpuPlatform={isDesktopGpuPlatform}
       selectedVersion={selectedVersion}
       customAddonPath={customAddonPath}
@@ -459,6 +498,16 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
 
   const modeEl = (
     <GpuModeSelector gpuMode={gpuMode} onModeChange={handleModeChange} />
+  );
+
+  const deviceEl = (
+    <GpuDeviceSelector
+      gpus={gpuEnv.gpus}
+      selectedDevice={selectedCudaDevice}
+      restartRequired={cudaDeviceRestartRequired}
+      onDeviceChange={handleCudaDeviceChange}
+      onRestart={handleRestartApp}
+    />
   );
 
   // macOS：加速方式选择（Apple Silicon: 自动/Metal；Intel: 仅 CPU 说明）
@@ -571,6 +620,7 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
               </CollapsibleTrigger>
               <CollapsibleContent className="pt-3 space-y-4">
                 {modeEl}
+                {deviceEl}
                 {backendEl}
                 {installedEl}
                 {customEl}
@@ -605,6 +655,7 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
       {isDesktopGpuPlatform && (
         <>
           {modeEl}
+          {deviceEl}
           {backendEl}
 
           <Collapsible open={moreOpen} onOpenChange={setMoreOpen}>

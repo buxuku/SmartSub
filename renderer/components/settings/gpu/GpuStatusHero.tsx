@@ -19,11 +19,13 @@ import {
   resolveActiveBackendForPlatform,
   type StatusTone,
 } from './gpuUtils';
+import { resolveSelectedCudaGpu } from '../../../../types/gpuDevice';
 
 interface GpuStatusHeroProps {
   gpuEnv: GpuEnvironment;
   activeBackend: AddonLoadResultInfo | null;
   gpuMode: GpuMode;
+  activeCudaDevice: string;
   isDesktopGpuPlatform: boolean;
   selectedVersion: AddonVariant | null;
   customAddonPath: string | null;
@@ -37,6 +39,7 @@ const GpuStatusHero: React.FC<GpuStatusHeroProps> = ({
   gpuEnv,
   activeBackend,
   gpuMode,
+  activeCudaDevice,
   isDesktopGpuPlatform,
   selectedVersion,
   customAddonPath,
@@ -77,7 +80,9 @@ const GpuStatusHero: React.FC<GpuStatusHeroProps> = ({
       ? t('gpuAcceleration.fullEditionSizeHint')
       : t('gpuAcceleration.liteEditionSizeHint'));
 
+  const activeCudaGpu = resolveSelectedCudaGpu(gpuEnv.gpus, activeCudaDevice);
   const gpuName =
+    activeCudaGpu?.name ||
     gpuEnv.gpus?.[0]?.name ||
     gpuEnv.nvidia?.gpuSupport?.gpuName ||
     t('gpuAcceleration.notDetected');

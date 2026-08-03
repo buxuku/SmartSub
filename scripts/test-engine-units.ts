@@ -53,7 +53,7 @@ import {
   toFriendlyFfmpegError,
 } from '../main/helpers/ffmpegErrorUtils';
 import fs from 'fs';
-import * as http from 'http';
+import http from 'http';
 import os from 'os';
 import nodePath from 'path';
 import {
@@ -61,7 +61,17 @@ import {
   resolveFunasrAsrSelection,
   FUNASR_MODELS,
 } from '../main/helpers/funasrModelCatalog';
-import { QWEN_MODELS } from '../main/helpers/qwenModelCatalog';
+import {
+  QWEN_MODELS,
+  getQwenArchiveUrl,
+  getQwenModelIds,
+  getQwenSourceOrder,
+  getQwenSupportedSources,
+  getQwenRequiredFileExpectations,
+  getQwenModelScopeFileUrl,
+  getQwenModelScopeTreeUrl,
+  resolveQwenSelection,
+} from '../main/helpers/qwenModelCatalog';
 import { FIRERED_MODELS } from '../main/helpers/fireRedModelCatalog';
 import { PARAKEET_MODELS } from '../main/helpers/parakeetModelCatalog';
 import {
@@ -69,6 +79,7 @@ import {
   CT2_REQUIRED_CONFIG_ARRAYS,
   inspectCt2SnapshotRoot,
   validateModelLayout,
+  validateModelLayoutWithSizes,
   validateCt2ModelSnapshot,
   resolveOverridePath,
   resolveBundledVadPath,
@@ -85,6 +96,7 @@ import {
   downloadFileSingle,
   SINGLE_DOWNLOAD_CANCELLED,
 } from '../main/helpers/download/singleFileDownloader';
+import { fetchJson } from '../main/helpers/download/fetchJson';
 import {
   buildVadConfig,
   buildRecognizerConfig,
@@ -265,6 +277,16 @@ import {
   isGladiaJobGone,
   extractGladiaResult,
 } from '../main/service/asr/gladiaUtils';
+import {
+  parseNvidiaSmiGpuList,
+  resolveSelectedCudaGpu,
+  sanitizeSelectedCudaDevice,
+  selectableNvidiaGpus,
+} from '../types/gpuDevice';
+import {
+  applyCudaDeviceSelection,
+  resolveStartupCudaDeviceSelection,
+} from '../main/helpers/cudaDeviceSelection';
 
 let passed = 0;
 let failed = 0;
@@ -278,6 +300,122 @@ function eq(actual: unknown, expected: unknown, name: string): void {
     failed++;
     console.error(`✗ ${name}\n    expected: ${e}\n    actual:   ${a}`);
   }
+}
+
+// --- CUDA multi-GPU selection ---
+const parsedCudaGpus = parseNvidiaSmiGpuList(
+  [
+    '0, GPU-aaaa-1111, NVIDIA GeForce RTX 4090',
+    '1, GPU-bbbb-2222, NVIDIA RTX 6000, Ada Generation',
+    'invalid row',
+  ].join('\n'),
+);
+eq(
+  parsedCudaGpus,
+  [
+    {
+      name: 'NVIDIA GeForce RTX 4090',
+      vendor: 'nvidia',
+      index: 0,
+      uuid: 'GPU-aaaa-1111',
+    },
+    {
+      name: 'NVIDIA RTX 6000, Ada Generation',
+      vendor: 'nvidia',
+      index: 1,
+      uuid: 'GPU-bbbb-2222',
+    },
+  ],
+  'cuda device: parse stable index/uuid/name list',
+);
+eq(
+  sanitizeSelectedCudaDevice(' GPU-aaaa-1111 '),
+  'GPU-aaaa-1111',
+  'cuda device: sanitize valid UUID',
+);
+eq(
+  sanitizeSelectedCudaDevice('0; remove-item'),
+  '',
+  'cuda device: reject non-UUID value',
+);
+eq(
+  selectableNvidiaGpus([
+    ...parsedCudaGpus,
+    { name: 'Intel Arc', vendor: 'intel' },
+    { name: 'NVIDIA without UUID', vendor: 'nvidia' },
+  ]).length,
+  2,
+  'cuda device: expose only addressable NVIDIA GPUs',
+);
+eq(
+  resolveSelectedCudaGpu(parsedCudaGpus, 'GPU-BBBB-2222')?.index,
+  1,
+  'cuda device: resolve UUID case-insensitively',
+);
+eq(
+  resolveStartupCudaDeviceSelection('GPU-aaaa-1111', {
+    status: 'success',
+    gpus: [],
+  }),
+  { selectedDevice: '', clearPersistedSelection: true },
+  'cuda device: successful zero-card enumeration clears stale selection',
+);
+eq(
+  resolveStartupCudaDeviceSelection('GPU-aaaa-1111', {
+    status: 'failed',
+    gpus: [],
+  }),
+  {
+    selectedDevice: 'GPU-aaaa-1111',
+    clearPersistedSelection: false,
+  },
+  'cuda device: failed enumeration preserves selection',
+);
+{
+  const inheritedEnv: NodeJS.ProcessEnv = {
+    NODE_ENV: 'test',
+    CUDA_VISIBLE_DEVICES: '2',
+  };
+  eq(
+    applyCudaDeviceSelection('GPU-aaaa-1111', inheritedEnv),
+    'GPU-aaaa-1111',
+    'cuda device: apply selected UUID',
+  );
+  eq(
+    inheritedEnv.CUDA_VISIBLE_DEVICES,
+    'GPU-aaaa-1111',
+    'cuda device: selected UUID reaches child environment',
+  );
+  applyCudaDeviceSelection('', inheritedEnv);
+  eq(
+    inheritedEnv.CUDA_VISIBLE_DEVICES,
+    '2',
+    'cuda device: auto restores inherited visibility',
+  );
+}
+{
+  const cleanEnv: NodeJS.ProcessEnv = { NODE_ENV: 'test' };
+  applyCudaDeviceSelection('GPU-bbbb-2222', cleanEnv);
+  applyCudaDeviceSelection('', cleanEnv);
+  eq(
+    cleanEnv.CUDA_VISIBLE_DEVICES,
+    undefined,
+    'cuda device: auto removes SmartSub-only visibility',
+  );
+}
+{
+  const inheritedEmptyEnv: NodeJS.ProcessEnv = {
+    NODE_ENV: 'test',
+    CUDA_VISIBLE_DEVICES: '',
+  };
+  applyCudaDeviceSelection('GPU-aaaa-1111', inheritedEmptyEnv);
+  const relaunchedEnv = { ...inheritedEmptyEnv };
+  applyCudaDeviceSelection('', relaunchedEnv);
+  eq(
+    relaunchedEnv.CUDA_VISIBLE_DEVICES,
+    '',
+    'cuda device: auto restores inherited empty visibility across relaunch',
+  );
 }
 
 // --- secondsToSrtTime ---
@@ -1002,17 +1140,17 @@ const qwenReady = {
   transcriptionEngine: 'qwen' as const,
   qwenEngineInstalled: true,
   qwenVadInstalled: true,
-  qwenModelsInstalled: ['qwen3-asr-0.6b'],
+  qwenModelsInstalled: ['qwen3-asr-0.6b', 'qwen3-asr-1.7b'],
 };
 eq(
   getSelectableModelsForEngine(qwenReady),
-  ['qwen3-asr-0.6b'],
-  'engineModels: qwen selectable = installed qwen models',
+  ['qwen3-asr-0.6b', 'qwen3-asr-1.7b'],
+  'engineModels: qwen selectable includes both installed model sizes',
 );
 eq(
   getInstalledModelsForEngine(qwenReady),
-  ['qwen3-asr-0.6b'],
-  'engineModels: qwen installed = installed qwen models',
+  ['qwen3-asr-0.6b', 'qwen3-asr-1.7b'],
+  'engineModels: qwen installed includes both installed model sizes',
 );
 eq(
   hasModelsForEngine(qwenReady),
@@ -1462,16 +1600,19 @@ eq(
     'import: present nested file -> ok',
   );
   fs.writeFileSync(nodePath.join(tmp, 'empty.onnx'), '');
+  fs.mkdirSync(nodePath.join(tmp, 'directory.onnx'));
   eq(
-    validateModelLayout(tmp, ['empty.onnx']),
-    { ok: false, missing: ['empty.onnx'] },
-    'import: zero-byte required file is rejected',
+    validateModelLayout(tmp, ['empty.onnx', 'directory.onnx']).missing,
+    ['empty.onnx', 'directory.onnx'],
+    'import: empty files and directories are rejected',
   );
-  fs.mkdirSync(nodePath.join(tmp, 'not-a-file.onnx'));
   eq(
-    validateModelLayout(tmp, ['not-a-file.onnx']),
-    { ok: false, missing: ['not-a-file.onnx'] },
-    'import: directory cannot satisfy a required model file',
+    validateModelLayoutWithSizes(tmp, [
+      { path: 'encoder.int8.onnx', size: 1 },
+      { path: 'decoder.int8.onnx', size: 2 },
+    ]).missing,
+    ['decoder.int8.onnx'],
+    'import: exact-size validation reports wrong-sized files',
   );
   fs.rmSync(tmp, { recursive: true, force: true });
 }
@@ -1672,6 +1813,121 @@ eq(
   QWEN_MODELS['qwen3-asr-0.6b'].requiredFiles.includes('tokenizer/vocab.json'),
   true,
   'import: qwen requiredFiles include nested tokenizer file',
+);
+eq(
+  QWEN_MODELS['qwen3-asr-1.7b'].requiredFiles,
+  QWEN_MODELS['qwen3-asr-0.6b'].requiredFiles,
+  'import: qwen model sizes share the same runtime layout',
+);
+eq(
+  QWEN_MODELS['qwen3-asr-1.7b'].requiredFiles.includes(
+    'tokenizer/tokenizer_config.json',
+  ),
+  true,
+  'import: qwen runtime marker includes required tokenizer_config.json',
+);
+{
+  const qwen06Sizes = Object.fromEntries(
+    getQwenRequiredFileExpectations('qwen3-asr-0.6b').map((file) => [
+      file.path,
+      file.size,
+    ]),
+  );
+  const qwen17Sizes = Object.fromEntries(
+    getQwenRequiredFileExpectations('qwen3-asr-1.7b').map((file) => [
+      file.path,
+      file.size,
+    ]),
+  );
+  eq(
+    qwen06Sizes['decoder.int8.onnx'],
+    755_914_231,
+    'qwen catalog: 0.6B decoder has pinned official size',
+  );
+  eq(
+    qwen17Sizes['decoder.int8.onnx'],
+    2_037_458_645,
+    'qwen catalog: 1.7B decoder has pinned official size',
+  );
+  eq(
+    qwen17Sizes['decoder.int8.onnx'] === qwen06Sizes['decoder.int8.onnx'],
+    false,
+    'qwen import: 0.6B decoder cannot satisfy the 1.7B slot identity',
+  );
+  eq(
+    qwen17Sizes['tokenizer/tokenizer_config.json'],
+    12_487,
+    'qwen catalog: tokenizer_config has pinned official size',
+  );
+}
+eq(
+  QWEN_MODELS['qwen3-asr-1.7b'].modelScopeFiles
+    .map((file) => file.remote)
+    .slice(0, 3),
+  [
+    'model_1.7B/conv_frontend.onnx',
+    'model_1.7B/encoder.int8.onnx',
+    'model_1.7B/decoder.int8.onnx',
+  ],
+  'qwen catalog: 1.7B points at the official int8 ModelScope layout',
+);
+eq(
+  QWEN_MODELS['qwen3-asr-1.7b'].modelScopeFiles.reduce(
+    (total, file) => total + file.size,
+    0,
+  ),
+  2_404_230_105,
+  'qwen catalog: 1.7B pinned files total 2.404 GB',
+);
+eq(
+  getQwenModelScopeFileUrl(
+    QWEN_MODELS['qwen3-asr-1.7b'],
+    'model_1.7B/decoder.int8.onnx',
+  ).includes('/resolve/master/'),
+  false,
+  'qwen catalog: file downloads use an immutable revision',
+);
+eq(
+  getQwenModelScopeTreeUrl(QWEN_MODELS['qwen3-asr-1.7b']).includes(
+    'Revision=master',
+  ),
+  false,
+  'qwen catalog: tree metadata uses the same immutable revision',
+);
+eq(
+  getQwenModelIds(),
+  ['qwen3-asr-0.6b', 'qwen3-asr-1.7b'],
+  'qwen catalog: exposes both 0.6B and 1.7B',
+);
+eq(
+  getQwenSupportedSources('qwen3-asr-0.6b'),
+  ['modelscope', 'ghproxy', 'github'],
+  'qwen catalog: 0.6B retains all download sources',
+);
+eq(
+  getQwenSupportedSources('qwen3-asr-1.7b'),
+  ['modelscope'],
+  'qwen catalog: 1.7B only exposes its available ModelScope source',
+);
+eq(
+  getQwenArchiveUrl(QWEN_MODELS['qwen3-asr-1.7b'], 'github'),
+  null,
+  'qwen catalog: 1.7B never fabricates a missing GitHub archive URL',
+);
+eq(
+  getQwenSourceOrder('github', getQwenSupportedSources('qwen3-asr-1.7b')),
+  ['modelscope'],
+  'qwen catalog: unsupported 1.7B source safely falls back to ModelScope',
+);
+eq(
+  resolveQwenSelection('qwen3-asr-1.7b', ['qwen3-asr-0.6b', 'qwen3-asr-1.7b']),
+  { id: 'qwen3-asr-1.7b' },
+  'qwen selection: requested installed 1.7B reaches the runtime',
+);
+eq(
+  resolveQwenSelection('qwen3-asr-1.7b', ['qwen3-asr-0.6b']),
+  { id: 'qwen3-asr-0.6b' },
+  'qwen selection: missing 1.7B falls back to an installed model',
 );
 eq(
   FIRERED_MODELS['fire-red-asr-large-zh-en'].requiredFiles,
@@ -6033,6 +6289,52 @@ function sleepMs(ms: number): Promise<void> {
 }
 
 async function runAsyncConcurrencyTests(): Promise<void> {
+  // 可取消 JSON 请求：重定向后的慢文件树请求仍必须响应同一个 AbortSignal。
+  {
+    const server = http.createServer((req, res) => {
+      if (req.url === '/redirect') {
+        res.statusCode = 302;
+        res.setHeader('Location', '/slow-tree');
+        res.end();
+      }
+      // /slow-tree 故意不结束响应；测试必须依赖 abort 退出。
+    });
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => reject(error);
+      server.once('error', onError);
+      server.listen(0, '127.0.0.1', () => {
+        server.removeListener('error', onError);
+        resolve();
+      });
+    });
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('test server did not expose a TCP port');
+      }
+      const abort = new AbortController();
+      let fetchError: unknown = null;
+      const pending = fetchJson(`http://127.0.0.1:${address.port}/redirect`, {
+        signal: abort.signal,
+        timeoutMs: 2_000,
+        cancelMessage: 'Download cancelled',
+      }).catch((error) => {
+        fetchError = error;
+        return null;
+      });
+      await sleepMs(20);
+      abort.abort();
+      await pending;
+      eq(
+        fetchError instanceof Error ? fetchError.message : String(fetchError),
+        'Download cancelled',
+        'qwen download: abort survives JSON redirect and cancels tree fetch',
+      );
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+
   // 非受限引擎不排队：未释放前重复获取也立即放行
   {
     const r1 = await acquireTranscribeSlot('builtin');

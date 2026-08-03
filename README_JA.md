@@ -158,7 +158,7 @@ brew upgrade --cask smartsub # アップグレード
 | **whisper.cpp（内蔵）**  | デフォルトエンジン。ggml 量子化モデルと GPU アクセラレーションに対応        | アプリ内蔵、すぐに利用可能                               |
 | **faster-whisper**       | CTranslate2 ベースで高速。モデルは HuggingFace から必要に応じてダウンロード | 自己完結型 Python ランタイム（アプリ内でダウンロード）   |
 | **FunASR**               | SenseVoice（中/英/日/韓/粤）と Paraformer-zh。中国語に強い                  | 内蔵 sherpa-onnx ネイティブライブラリ                    |
-| **Qwen3-ASR**            | 通義千問の音声認識（qwen3-asr-0.6b）                                        | 内蔵 sherpa-onnx ネイティブライブラリ                    |
+| **Qwen3-ASR**            | 通義千問の音声認識（qwen3-asr-0.6b / 1.7b）                                 | 内蔵 sherpa-onnx ネイティブライブラリ                    |
 | **FireRedASR**           | FireRedASR-AED large（中英）。中国語に強い                                  | 内蔵 sherpa-onnx ネイティブライブラリ                    |
 | **ローカル Whisper CLI** | 自分でインストールした whisper 互換コマンドを呼び出し                       | システムにインストール済みのコマンドを使用               |
 | **クラウド文字起こし**   | 8 社のオンラインサービス。GPU 不要、複数プロバイダー・複数インスタンス対応  | オンラインサービス（設定したエンドポイントへ音声を送信） |

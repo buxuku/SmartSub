@@ -246,14 +246,38 @@ jobs:
             echo "is_beta=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Resolve release notes
+        id: notes
+        run: |
+          NOTES="Changelog/${{ github.ref_name }}-release-note.md"
+          TITLE="${{ github.ref_name }}"
+
+          if [[ -f "$NOTES" ]]; then
+            HEADING=$(grep -m1 '^# ' "$NOTES" | sed 's/^# //')
+            if [[ -n "$HEADING" ]]; then
+              TITLE="$HEADING"
+            fi
+            echo "path=$NOTES" >> "$GITHUB_OUTPUT"
+            echo "Using release notes from $NOTES"
+          else
+            echo "path=" >> "$GITHUB_OUTPUT"
+            echo "No changelog found at $NOTES; release body will be empty"
+          fi
+
+          # Multiline-safe: title may contain emoji / CJK
+          {
+            echo "title<<EOF"
+            echo "$TITLE"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Publish Release
         uses: softprops/action-gh-release@v2 # Updated to a newer version
         with:
           # token: ${{ secrets.GITHUB_TOKEN }} # Provided by default
           tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          # body: | # Optional: Add release notes here
-          #   Automated release for version ${{ github.ref_name }}
+          name: ${{ steps.notes.outputs.title }}
+          body_path: ${{ steps.notes.outputs.path }}
           draft: ${{ steps.check_beta.outputs.is_beta == 'true' }}
           prerelease: ${{ steps.check_beta.outputs.is_beta == 'true' }}
           files: |
