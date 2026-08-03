@@ -79,7 +79,12 @@ type EngineStatuses = Partial<Record<TranscriptionEngine, EngineStatus>>;
 type StatusTone = 'ready' | 'pending' | 'downloading' | 'error';
 
 /** sherpa 展示组覆盖的真实引擎 id（顺序即组内分区顺序）。 */
-const SHERPA_FAMILIES: SherpaFamilyKey[] = ['funasr', 'qwen', 'fireRedAsr'];
+const SHERPA_FAMILIES: SherpaFamilyKey[] = [
+  'funasr',
+  'qwen',
+  'fireRedAsr',
+  'parakeet',
+];
 
 function isQueueBusy(status: string | undefined): boolean {
   return status === 'running' || status === 'paused' || status === 'cancelling';
@@ -144,10 +149,11 @@ const EngineModelTab: React.FC = () => {
   const taskBusyRef = useRef(false);
   const [updateInfo, setUpdateInfo] = useState<PyEngineUpdateInfo | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
-  // 运行库（sherpa-onnx）随包内置，不再做安装检测；三族状态只看「是否已下载模型」。
+  // 运行库（sherpa-onnx）随包内置，不再做安装检测；各族状态只看「是否已下载模型」。
   const [funasrModelsReady, setFunasrModelsReady] = useState(false);
   const [qwenModelsReady, setQwenModelsReady] = useState(false);
   const [fireRedModelsReady, setFireRedModelsReady] = useState(false);
+  const [parakeetModelsReady, setParakeetModelsReady] = useState(false);
   // 云端听写实例的单一事实源：左栏状态点/计数与右栏面板共用（见 useAsrProviders）。
   const asr = useAsrProviders();
   // 「添加自定义」对话框（云组末尾入口）：命名 + 可选 Base URL，新建 OpenAI 兼容实例。
@@ -219,6 +225,11 @@ const EngineModelTab: React.FC = () => {
       const frr = await window?.ipc?.invoke('getFireRedModelStatus');
       if (frr?.success) {
         setFireRedModelsReady(!!frr.ready);
+      }
+
+      const pr = await window?.ipc?.invoke('getParakeetModelStatus');
+      if (pr?.success) {
+        setParakeetModelsReady(!!pr.ready);
       }
     } catch (error) {
       console.error('Failed to refresh engine status:', error);
@@ -453,7 +464,7 @@ const EngineModelTab: React.FC = () => {
         ? ['auto', 'cpu', 'cuda']
         : ['auto', 'cpu'];
 
-  // sherpa 展示组三族就绪态（共用内置运行库，差异在模型）；供合并面板、左栏状态点、徽标聚合。
+  // sherpa 展示组各族就绪态（共用内置运行库，差异在模型）。
   const sherpaFamilies = SHERPA_FAMILIES.map((engine) => {
     if (engine === 'funasr') {
       return {
@@ -469,10 +480,17 @@ const EngineModelTab: React.FC = () => {
         status: engineStatuses.qwen,
       };
     }
+    if (engine === 'fireRedAsr') {
+      return {
+        engine,
+        modelsReady: fireRedModelsReady,
+        status: engineStatuses.fireRedAsr,
+      };
+    }
     return {
       engine,
-      modelsReady: fireRedModelsReady,
-      status: engineStatuses.fireRedAsr,
+      modelsReady: parakeetModelsReady,
+      status: engineStatuses.parakeet,
     };
   });
   const sherpaAnyReady = sherpaFamilies.some((f) => f.modelsReady);

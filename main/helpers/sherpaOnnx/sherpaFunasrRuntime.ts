@@ -6,10 +6,16 @@ import { getSherpaLibDir, isSherpaLibInstalled } from './sherpaLibPaths';
 import type { FunasrAddonParams } from '../engines/funasrParams';
 import type { QwenAddonParams } from '../engines/qwenParams';
 import type { FireRedAddonParams } from '../engines/fireRedParams';
+import type { ParakeetAddonParams } from '../engines/parakeetParams';
 
 export interface SherpaModelRequest {
   vadModel: string;
-  modelType: 'sense_voice' | 'paraformer' | 'qwen3_asr' | 'fire_red_asr';
+  modelType:
+    | 'sense_voice'
+    | 'paraformer'
+    | 'qwen3_asr'
+    | 'fire_red_asr'
+    | 'nemo_transducer';
   /** sense_voice / paraformer：单模型文件 + tokens.txt；fire_red_asr 复用 tokens 承载 tokens.txt。 */
   asrModel?: string;
   tokens?: string;
@@ -25,8 +31,18 @@ export interface SherpaModelRequest {
     encoder: string;
     decoder: string;
   };
-  /** funasr 用 FunasrAddonParams；qwen 用 QwenAddonParams；fireRed 用 FireRedAddonParams（共享 VAD/线程字段）。 */
-  params: FunasrAddonParams | QwenAddonParams | FireRedAddonParams;
+  /** nemo_transducer：encoder + decoder + joiner 三件套（tokens 走 tokens 字段）。 */
+  transducer?: {
+    encoder: string;
+    decoder: string;
+    joiner: string;
+  };
+  /** 各 sherpa ASR 引擎参数；共同包含 provider、线程和 VAD 字段。 */
+  params:
+    | FunasrAddonParams
+    | QwenAddonParams
+    | FireRedAddonParams
+    | ParakeetAddonParams;
 }
 
 export interface Segment {
@@ -223,7 +239,7 @@ export function getSherpaFunasrRuntime(): SherpaFunasrRuntime {
 }
 
 /**
- * 引擎无关的 sherpa ASR 运行时入口（D4）：funasr 与 qwen 复用同一常驻 worker 与缓存。
- * worker 依 `SherpaModelRequest.modelType` 选择 sense_voice / paraformer / qwen3_asr 分支。
+ * 引擎无关的 sherpa ASR 运行时入口（D4）：所有本地 sherpa ASR 复用同一常驻 worker 与缓存。
+ * worker 依 `SherpaModelRequest.modelType` 选择具体识别器配置分支。
  */
 export const getSherpaAsrRuntime = getSherpaFunasrRuntime;

@@ -527,7 +527,7 @@ async function processNextTasks(event) {
   }
 
   // 任务级并发统一遵循用户配置的 maxConcurrentTasks。
-  // 受限引擎（faster-whisper / funasr / qwen / fireRedAsr 共享单 sidecar/worker）
+  // 受限引擎（faster-whisper / sherpa ASR 共享单 sidecar/worker）
   // 不再在此钳制整个队列：其「转写阶段」由 transcribeGate 按执行体组排队，
   // 排队期间同批其它文件的音频提取 / 翻译 / 云端转写照常并行（阶段流水线）。
   const availableSlots = maxConcurrentTasks - activeTasksCount;

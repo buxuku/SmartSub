@@ -63,6 +63,18 @@ function buildKey(req) {
       req.params.provider,
     ].join('|');
   }
+  if (req.modelType === 'nemo_transducer') {
+    const t = req.transducer || {};
+    return [
+      'nemo_transducer',
+      t.encoder,
+      t.decoder,
+      t.joiner,
+      req.tokens,
+      req.params.num_threads,
+      req.params.provider,
+    ].join('|');
+  }
   return [
     req.modelType,
     req.asrModel,
@@ -173,6 +185,26 @@ function buildFireRedRecognizerConfig(f, tokens, p) {
   };
 }
 
+// NVIDIA Parakeet TDT：通用 transducer 三件套 + 顶层 tokens，并显式指定
+// nemo_transducer，避免 sherpa 按普通 transducer decoder 结构解析。
+function buildParakeetRecognizerConfig(t, tokens, p) {
+  return {
+    featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
+    modelConfig: {
+      transducer: {
+        encoder: t.encoder,
+        decoder: t.decoder,
+        joiner: t.joiner,
+      },
+      tokens,
+      numThreads: p.num_threads,
+      provider: p.provider,
+      debug: 0,
+      modelType: 'nemo_transducer',
+    },
+  };
+}
+
 function ensureLoaded(req) {
   const key = buildKey(req);
   if (!recognizer || key !== cacheKey) {
@@ -182,6 +214,12 @@ function ensureLoaded(req) {
     } else if (req.modelType === 'fire_red_asr') {
       config = buildFireRedRecognizerConfig(
         req.fireRed,
+        req.tokens,
+        req.params,
+      );
+    } else if (req.modelType === 'nemo_transducer') {
+      config = buildParakeetRecognizerConfig(
+        req.transducer,
         req.tokens,
         req.params,
       );

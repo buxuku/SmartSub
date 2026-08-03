@@ -73,6 +73,7 @@ import {
   resolveQwenSelection,
 } from '../main/helpers/qwenModelCatalog';
 import { FIRERED_MODELS } from '../main/helpers/fireRedModelCatalog';
+import { PARAKEET_MODELS } from '../main/helpers/parakeetModelCatalog';
 import {
   CT2_REQUIRED_FILES,
   CT2_REQUIRED_CONFIG_ARRAYS,
@@ -89,12 +90,19 @@ import {
   prepareDownloadTarget,
   validateDownloadResponse,
 } from '../main/helpers/download/resumeIntegrity';
+import { commitStagedDirectory } from '../main/helpers/download/atomicDirectoryInstall';
+import { DownloadSessionTracker } from '../main/helpers/download/downloadSession';
+import {
+  downloadFileSingle,
+  SINGLE_DOWNLOAD_CANCELLED,
+} from '../main/helpers/download/singleFileDownloader';
 import { fetchJson } from '../main/helpers/download/fetchJson';
 import {
   buildVadConfig,
   buildRecognizerConfig,
   buildQwenRecognizerConfig,
   buildFireRedRecognizerConfig,
+  buildParakeetRecognizerConfig,
   segmentTiming,
   progressPercent,
 } from '../main/helpers/sherpaOnnx/sherpaConfig';
@@ -105,10 +113,13 @@ import {
   FIRERED_HARD_MAX_SPEECH_S,
   FIRERED_DEFAULT_MAX_SPEECH_S,
 } from '../main/helpers/engines/fireRedParams';
+import { buildParakeetParams } from '../main/helpers/engines/parakeetParams';
 import {
   getSelectableModelsForEngine,
   getInstalledModelsForEngine,
+  getEngineModelGroups,
   hasModelsForEngine,
+  hasAnyModelAnyEngine,
 } from '../renderer/lib/engineModels';
 import {
   formatFunasrDownloadFailureToast,
@@ -556,6 +567,7 @@ eq(
     'funasr',
     'qwen',
     'fireRedAsr',
+    'parakeet',
     'cloud',
     undefined,
   ].some(supportsFasterWhisperAdvancedParams),
@@ -1379,6 +1391,140 @@ eq(
   'sherpa: fire_red_asr has no qwen3Asr block',
 );
 
+// --- engineModels/catalog: NVIDIA Parakeet awareness ---
+const parakeetReady = {
+  transcriptionEngine: 'parakeet' as const,
+  parakeetEngineInstalled: true,
+  parakeetVadInstalled: true,
+  parakeetModelsInstalled: ['parakeet-tdt-0.6b-v3'],
+};
+eq(
+  getSelectableModelsForEngine(parakeetReady),
+  ['parakeet-tdt-0.6b-v3'],
+  'engineModels: parakeet selectable = installed models',
+);
+eq(
+  getInstalledModelsForEngine(parakeetReady),
+  ['parakeet-tdt-0.6b-v3'],
+  'engineModels: parakeet installed = installed models',
+);
+eq(
+  hasModelsForEngine(parakeetReady),
+  true,
+  'engineModels: parakeet ready w/ vad+model',
+);
+eq(
+  getEngineModelGroups(parakeetReady),
+  [
+    {
+      engine: 'parakeet',
+      models: ['parakeet-tdt-0.6b-v3'],
+    },
+  ],
+  'engineModels: parakeet appears in task model groups',
+);
+eq(
+  hasAnyModelAnyEngine(parakeetReady),
+  true,
+  'engineModels: parakeet satisfies cross-engine readiness',
+);
+eq(
+  hasModelsForEngine({
+    transcriptionEngine: 'parakeet',
+    parakeetVadInstalled: false,
+    parakeetModelsInstalled: ['parakeet-tdt-0.6b-v3'],
+  }),
+  false,
+  'engineModels: parakeet not ready without vad',
+);
+eq(
+  hasModelsForEngine({
+    transcriptionEngine: 'parakeet',
+    parakeetVadInstalled: true,
+    parakeetModelsInstalled: [],
+  }),
+  false,
+  'engineModels: parakeet not ready without model',
+);
+eq(
+  PARAKEET_MODELS['parakeet-tdt-0.6b-v3'].requiredFiles,
+  ['encoder.int8.onnx', 'decoder.int8.onnx', 'joiner.int8.onnx', 'tokens.txt'],
+  'parakeet: catalog validates the complete int8 transducer layout',
+);
+eq(
+  {
+    upstreamModel: PARAKEET_MODELS['parakeet-tdt-0.6b-v3'].upstreamModel,
+    license: PARAKEET_MODELS['parakeet-tdt-0.6b-v3'].license,
+    languageCount: PARAKEET_MODELS['parakeet-tdt-0.6b-v3'].languageCount,
+    supportsPunctuation:
+      PARAKEET_MODELS['parakeet-tdt-0.6b-v3'].supportsPunctuation,
+  },
+  {
+    upstreamModel: 'nvidia/parakeet-tdt-0.6b-v3',
+    license: 'CC-BY-4.0',
+    languageCount: 25,
+    supportsPunctuation: true,
+  },
+  'parakeet: catalog exposes upstream capability and license metadata',
+);
+
+const PARAKEET_RP = { num_threads: 4, provider: 'cpu' };
+const parakeetRecognizerConfig = buildParakeetRecognizerConfig(
+  {
+    encoder: '/m/encoder.int8.onnx',
+    decoder: '/m/decoder.int8.onnx',
+    joiner: '/m/joiner.int8.onnx',
+  },
+  '/m/tokens.txt',
+  PARAKEET_RP,
+);
+eq(
+  parakeetRecognizerConfig.modelConfig.transducer,
+  {
+    encoder: '/m/encoder.int8.onnx',
+    decoder: '/m/decoder.int8.onnx',
+    joiner: '/m/joiner.int8.onnx',
+  },
+  'sherpa: parakeet maps encoder+decoder+joiner',
+);
+eq(
+  parakeetRecognizerConfig.modelConfig.tokens,
+  '/m/tokens.txt',
+  'sherpa: parakeet uses top-level tokens',
+);
+eq(
+  parakeetRecognizerConfig.modelConfig.modelType,
+  'nemo_transducer',
+  'sherpa: parakeet explicitly selects nemo_transducer',
+);
+eq(
+  buildParakeetParams({}),
+  {
+    provider: 'cpu',
+    num_threads: 2,
+    vad_threshold: 0.5,
+    vad_min_silence_duration_ms: 100,
+    vad_min_speech_duration_ms: 250,
+    vad_max_speech_duration_s: 0,
+  },
+  'parakeet: default params reuse shared VAD defaults',
+);
+eq(
+  buildParakeetParams({
+    parakeetProvider: 'cuda',
+    parakeetNumThreads: 8,
+  }),
+  {
+    provider: 'cuda',
+    num_threads: 8,
+    vad_threshold: 0.5,
+    vad_min_silence_duration_ms: 100,
+    vad_min_speech_duration_ms: 250,
+    vad_max_speech_duration_s: 0,
+  },
+  'parakeet: provider and threads passthrough',
+);
+
 // --- fireRedParams: 默认值 + 段长安全闸（design D8） ---
 eq(
   buildFireRedParams({}),
@@ -1469,6 +1615,28 @@ eq(
     'import: exact-size validation reports wrong-sized files',
   );
   fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+// --- downloadSession: stale finally 不能清掉新会话 ---
+{
+  const tracker = new DownloadSessionTracker();
+  const oldSession = tracker.begin();
+  const newSession = tracker.begin();
+  eq(
+    tracker.finish(oldSession),
+    false,
+    'download session: stale completion does not own active session',
+  );
+  eq(
+    tracker.owns(newSession),
+    true,
+    'download session: new session survives stale completion',
+  );
+  eq(
+    tracker.finish(newSession),
+    true,
+    'download session: active completion clears its own session',
+  );
 }
 
 // --- modelImport: resolveOverridePath（覆盖优先/空值回退） ---
@@ -2844,7 +3012,7 @@ eq(
     'outcome/fw: clean → reduceRepetition on',
   );
 
-  // sherpa（funasr/qwen/fireRedAsr）：只映射 VAD 灵敏度，绝不关 VAD / 设 ctx / 抗重复
+  // sherpa：只映射 VAD 灵敏度，绝不关 VAD / 设 ctx / 抗重复
   const sherpaAccurate = resolveEffectiveSettings(
     { transcriptionEngine: 'funasr', subtitleOutcome: 'accurate' },
     {},
@@ -2889,6 +3057,14 @@ eq(
     ).vadThreshold,
     0.5,
     'outcome/sherpa(fireRed): balanced → VAD standard threshold',
+  );
+  eq(
+    resolveEffectiveSettings(
+      { transcriptionEngine: 'parakeet', subtitleOutcome: 'clean' },
+      {},
+    ).vadThreshold,
+    0.65,
+    'outcome/sherpa(parakeet): clean → VAD conservative threshold',
   );
 
   // custom 档：回读用户底层值（builtin 从 formData.maxContext 取）
@@ -3062,6 +3238,7 @@ eq(
   eq(isSherpaEngineId('funasr'), true, 'isSherpa: funasr');
   eq(isSherpaEngineId('qwen'), true, 'isSherpa: qwen');
   eq(isSherpaEngineId('fireRedAsr'), true, 'isSherpa: fireRedAsr');
+  eq(isSherpaEngineId('parakeet'), true, 'isSherpa: parakeet');
   eq(isSherpaEngineId('builtin'), false, 'isSherpa: builtin no');
   eq(isSherpaEngineId('fasterWhisper'), false, 'isSherpa: fasterWhisper no');
   eq(
@@ -6178,7 +6355,7 @@ async function runAsyncConcurrencyTests(): Promise<void> {
       bAcquired = true;
       return r;
     });
-    const pC = acquireTranscribeSlot('fireRedAsr').then((r) => {
+    const pC = acquireTranscribeSlot('parakeet').then((r) => {
       cAcquired = true;
       return r;
     });
@@ -6247,6 +6424,154 @@ async function runAsyncConcurrencyTests(): Promise<void> {
       true,
       'gate: pre-aborted signal rejects immediately',
     );
+  }
+
+  // 模型目录事务提交：提交失败恢复旧目录，成功后替换旧目录。
+  {
+    const tmp = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'model-atomic-'));
+    const dest = nodePath.join(tmp, 'model');
+    const missingStaged = nodePath.join(tmp, 'missing-stage');
+    const rollbackBackup = nodePath.join(tmp, 'rollback-backup');
+    fs.mkdirSync(dest);
+    fs.writeFileSync(nodePath.join(dest, 'marker.txt'), 'old');
+    let rollbackError: unknown = null;
+    await commitStagedDirectory({
+      stagedDir: missingStaged,
+      destDir: dest,
+      backupDir: rollbackBackup,
+    }).catch((error) => {
+      rollbackError = error;
+    });
+    eq(
+      rollbackError instanceof Error,
+      true,
+      'atomic install: missing staging fails the commit',
+    );
+    eq(
+      fs.readFileSync(nodePath.join(dest, 'marker.txt'), 'utf8'),
+      'old',
+      'atomic install: failed commit restores the existing model',
+    );
+
+    const staged = nodePath.join(tmp, 'valid-stage');
+    const successBackup = nodePath.join(tmp, 'success-backup');
+    fs.mkdirSync(staged);
+    fs.writeFileSync(nodePath.join(staged, 'marker.txt'), 'new');
+    await commitStagedDirectory({
+      stagedDir: staged,
+      destDir: dest,
+      backupDir: successBackup,
+    });
+    eq(
+      fs.readFileSync(nodePath.join(dest, 'marker.txt'), 'utf8'),
+      'new',
+      'atomic install: valid staging replaces the existing model',
+    );
+    eq(
+      fs.existsSync(successBackup),
+      false,
+      'atomic install: successful commit removes the backup',
+    );
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // 单连接下载：完整响应成功；截断、停滞和取消都必须可靠拒绝。
+  {
+    const tmp = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'single-download-'));
+    const server = http.createServer((req, res) => {
+      if (req.url === '/ok') {
+        res.writeHead(200, { 'Content-Length': '5' });
+        res.end('hello');
+        return;
+      }
+      if (req.url === '/truncated') {
+        res.writeHead(200, { 'Content-Length': '10' });
+        res.end('short');
+        return;
+      }
+      if (req.url === '/stall') {
+        res.writeHead(200, { 'Content-Length': '5' });
+        res.flushHeaders();
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    const port = await new Promise<number>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => {
+        const address = server.address();
+        if (!address || typeof address === 'string') {
+          reject(new Error('test server did not expose a TCP port'));
+          return;
+        }
+        resolve(address.port);
+      });
+    });
+    const base = `http://127.0.0.1:${port}`;
+    try {
+      const okPath = nodePath.join(tmp, 'ok.bin');
+      await downloadFileSingle({
+        url: `${base}/ok`,
+        destPath: okPath,
+        timeoutMs: 100,
+      });
+      eq(
+        fs.readFileSync(okPath, 'utf8'),
+        'hello',
+        'single download: complete response closes successfully',
+      );
+
+      let truncatedError: unknown = null;
+      await downloadFileSingle({
+        url: `${base}/truncated`,
+        destPath: nodePath.join(tmp, 'truncated.bin'),
+        timeoutMs: 100,
+      }).catch((error) => {
+        truncatedError = error;
+      });
+      eq(
+        truncatedError instanceof Error,
+        true,
+        'single download: truncated content-length is rejected',
+      );
+
+      let timeoutError: unknown = null;
+      await downloadFileSingle({
+        url: `${base}/stall`,
+        destPath: nodePath.join(tmp, 'timeout.bin'),
+        timeoutMs: 40,
+      }).catch((error) => {
+        timeoutError = error;
+      });
+      eq(
+        String(timeoutError).includes('timed out'),
+        true,
+        'single download: stalled response hits the inactivity timeout',
+      );
+
+      const abort = new AbortController();
+      let cancelError: unknown = null;
+      const pending = downloadFileSingle({
+        url: `${base}/stall`,
+        destPath: nodePath.join(tmp, 'cancel.bin'),
+        signal: abort.signal,
+        timeoutMs: 1000,
+      }).catch((error) => {
+        cancelError = error;
+      });
+      setTimeout(() => abort.abort(), 20);
+      await pending;
+      eq(
+        cancelError instanceof Error &&
+          cancelError.message === SINGLE_DOWNLOAD_CANCELLED,
+        true,
+        'single download: abort rejects with the shared cancellation marker',
+      );
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   }
 
   // 云端服务商闸：并发上限跨调用共享

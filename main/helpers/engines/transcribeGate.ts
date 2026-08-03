@@ -4,7 +4,7 @@ import { TaskCancelledError } from '../taskContext';
 /**
  * 转写阶段互斥闸（阶段流水线的核心）。
  *
- * 背景：faster-whisper 共享单 Python sidecar，funasr/qwen/fireRedAsr 共享单 sherpa
+ * 背景：faster-whisper 共享单 Python sidecar，所有本地 sherpa ASR 引擎共享单
  * worker（单例 recognizer/VAD，两个转写交错会互相污染状态），这些引擎的「转写阶段」
  * 必须串行。旧实现是在调度器把整个任务队列的有效并发钳为 1——代价是排队文件的
  * 音频提取、翻译等本可并行的阶段也被迫干等。
@@ -20,7 +20,12 @@ type ExecutorGroup = 'pySidecar' | 'sherpaWorker';
 
 function executorGroupOf(engine: TranscriptionEngine): ExecutorGroup | null {
   if (engine === 'fasterWhisper') return 'pySidecar';
-  if (engine === 'funasr' || engine === 'qwen' || engine === 'fireRedAsr') {
+  if (
+    engine === 'funasr' ||
+    engine === 'qwen' ||
+    engine === 'fireRedAsr' ||
+    engine === 'parakeet'
+  ) {
     return 'sherpaWorker';
   }
   return null;

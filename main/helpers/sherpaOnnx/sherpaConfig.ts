@@ -54,10 +54,17 @@ export interface OfflineRecognizerConfig {
       encoder: string;
       decoder: string;
     };
+    /** 通用离线 transducer 三件套；Parakeet TDT 需配合 modelType=nemo_transducer。 */
+    transducer?: {
+      encoder: string;
+      decoder: string;
+      joiner: string;
+    };
     tokens: string;
     numThreads: number;
     provider: string;
     debug: number;
+    modelType?: string;
   };
 }
 
@@ -199,6 +206,44 @@ export function buildFireRedRecognizerConfig(
       numThreads: p.num_threads,
       provider: p.provider,
       debug: 0,
+    },
+  };
+}
+
+export interface ParakeetRecognizerParams {
+  num_threads: number;
+  provider: string;
+}
+
+/**
+ * NVIDIA Parakeet TDT OfflineRecognizer 配置。
+ *
+ * Parakeet 属 NeMo transducer：模型放在 `transducer` 块，tokens 走顶层，
+ * 并且必须显式传 `modelType: 'nemo_transducer'`，否则 sherpa 会按普通
+ * transducer 解析 decoder 输出而加载失败。
+ */
+export function buildParakeetRecognizerConfig(
+  files: {
+    encoder: string;
+    decoder: string;
+    joiner: string;
+  },
+  tokens: string,
+  p: ParakeetRecognizerParams,
+): OfflineRecognizerConfig {
+  return {
+    featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
+    modelConfig: {
+      transducer: {
+        encoder: files.encoder,
+        decoder: files.decoder,
+        joiner: files.joiner,
+      },
+      tokens,
+      numThreads: p.num_threads,
+      provider: p.provider,
+      debug: 0,
+      modelType: 'nemo_transducer',
     },
   };
 }

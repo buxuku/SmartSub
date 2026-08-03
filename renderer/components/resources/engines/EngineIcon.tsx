@@ -2,7 +2,7 @@ import React from 'react';
 import type { TranscriptionEngine } from '../../../../types/engine';
 
 interface EngineIconProps {
-  /** 真实引擎 id，或合并展示组 'sherpa'（FunASR · Qwen · FireRed）。 */
+  /** 真实引擎 id，或合并展示组 'sherpa'。 */
   engine: TranscriptionEngine | 'sherpa';
   className?: string;
 }
@@ -13,7 +13,7 @@ interface EngineIconProps {
  * - builtin（whisper.cpp，内置本地）：芯片内的声波
  * - fasterWhisper（主打速度）：闪电
  * - funasr（阿里达摩院）：橙色声波（语音识别）
- * - sherpa（FunASR · Qwen · FireRed 合并组）：堆叠的声波层，示意「多模型共用一套运行库」
+ * - sherpa（本地多模型合并组）：堆叠的声波层，示意「多模型共用一套运行库」
  * - localCli（本地命令行）：终端提示符
  */
 const EngineIcon: React.FC<EngineIconProps> = ({ engine, className }) => {
@@ -97,6 +97,29 @@ const EngineIcon: React.FC<EngineIconProps> = ({ engine, className }) => {
           d="M12 2.5c1.8 2.4 1.2 4.3-.2 5.8-1.5 1.6-3.6 3.2-3.6 6.1A4.3 4.3 0 0 0 12 18.7a4.3 4.3 0 0 0 3.8-4.3c0-1.3-.5-2.4-1.1-3.4.9.4 1.7 1.1 2.2 2.2.7 1.4.8 3.2-.2 5 1.7-1 2.8-2.9 2.8-5.4 0-3.7-2.9-6.4-3.8-9.6-1.1 1-1.6 2.2-1.5 3.6-1.4-1.4-2-3.4-.2-5.9Z"
           fill="#FF2442"
         />
+      </svg>
+    );
+  }
+  if (engine === 'parakeet') {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        className={className}
+        fill="none"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="9" fill="#76B900" fillOpacity={0.14} />
+        <g
+          stroke="#76B900"
+          strokeWidth={1.7}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        >
+          <path d="M6.5 13.5c2.2-4.4 5.8-6.2 10.8-5.2" />
+          <path d="M7.5 16c2.8-2.8 6-3.8 9.4-2.8" />
+          <path d="M13.5 8.3 17.8 6l-1 4.8" />
+        </g>
       </svg>
     );
   }

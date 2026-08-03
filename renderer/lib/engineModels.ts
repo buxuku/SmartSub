@@ -37,6 +37,12 @@ export interface EngineModelInfo {
   fireRedModelsInstalled?: string[];
   /** fireRed 运行库（sherpa-onnx，与 funasr 同库）是否已安装 */
   fireRedEngineInstalled?: boolean;
+  /** Parakeet 共享 silero VAD 是否就绪 */
+  parakeetVadInstalled?: boolean;
+  /** Parakeet 已安装的模型 id 列表 */
+  parakeetModelsInstalled?: string[];
+  /** Parakeet 运行库（sherpa-onnx，与其它本地 sherpa ASR 共用）是否已安装 */
+  parakeetEngineInstalled?: boolean;
 }
 
 /** 解析当前转写引擎，兼容旧的 useLocalWhisper 开关 */
@@ -73,6 +79,9 @@ export function getInstalledModelsForEngine(
   if (engine === 'fireRedAsr') {
     return info?.fireRedModelsInstalled ?? [];
   }
+  if (engine === 'parakeet') {
+    return info?.parakeetModelsInstalled ?? [];
+  }
   return info?.modelsInstalled ?? [];
 }
 
@@ -102,6 +111,9 @@ export function getSelectableModelsForEngine(
   if (engine === 'fireRedAsr') {
     return info?.fireRedModelsInstalled ?? [];
   }
+  if (engine === 'parakeet') {
+    return info?.parakeetModelsInstalled ?? [];
+  }
   return info?.modelsInstalled ?? [];
 }
 
@@ -127,6 +139,12 @@ export function hasModelsForEngine(
     return (
       !!info?.fireRedVadInstalled &&
       (info?.fireRedModelsInstalled?.length ?? 0) > 0
+    );
+  }
+  if (engine === 'parakeet') {
+    return (
+      !!info?.parakeetVadInstalled &&
+      (info?.parakeetModelsInstalled?.length ?? 0) > 0
     );
   }
   return getInstalledModelsForEngine(info, useLocalWhisper).length > 0;
@@ -176,9 +194,7 @@ export function encodeEngineModel(
 }
 
 /** 解析分组下拉选项 value 为 (引擎,模型[,云实例])；非法返回 null。 */
-export function decodeEngineModel(
-  value: string | undefined,
-): {
+export function decodeEngineModel(value: string | undefined): {
   engine: TranscriptionEngine;
   model: string;
   asrProviderId?: string;
@@ -226,8 +242,8 @@ function isFasterWhisperRunnable(info: EngineModelInfo | undefined): boolean {
  * 仅纳入「引擎运行时已安装」的引擎——只下了模型但没装对应引擎不可转写，故从任务选择中过滤掉。
  * - builtin: ggml 已装模型（内置运行时，始终可运行）
  * - fasterWhisper: ct2 已装模型，且引擎包已安装（`pythonEngineStatus.state==='ready'`）
- * - funasr / qwen / fireRedAsr: 需 VAD 就绪 + 至少一个模型即可。
- *   三族共用的 sherpa-onnx 运行库现随安装包内置（见 sherpaLibPaths / fetch-sherpa-native），
+ * - funasr / qwen / fireRedAsr / parakeet: 需 VAD 就绪 + 至少一个模型即可。
+ *   各族共用的 sherpa-onnx 运行库现随安装包内置（见 sherpaLibPaths / fetch-sherpa-native），
  *   不再单独安装，故口径与引擎页（`is*Ready()` = 内置 VAD + 模型）一致，
  *   不再附加 `*EngineInstalled` 条件——否则会出现「引擎页显示已就绪、任务页下拉却不列出」的不一致。
  * - localCli: 用户自备模型/命令，无"已装模型"概念；仅当 `includeLocalCli` 时以
@@ -263,6 +279,11 @@ export function getEngineModelGroups(
     groups.push({ engine: 'fireRedAsr', models: fireRedModels });
   }
 
+  const parakeetModels = info?.parakeetModelsInstalled ?? [];
+  if (info?.parakeetVadInstalled && parakeetModels.length) {
+    groups.push({ engine: 'parakeet', models: parakeetModels });
+  }
+
   if (opts?.includeLocalCli) {
     groups.push({ engine: 'localCli', models: models.map((m) => m.name) });
   }
@@ -287,7 +308,7 @@ export function getEngineModelGroups(
 /**
  * 跨引擎就绪判断："任意引擎装有任意可运行模型即视为就绪"。
  * 用于新手引导 / 全景概览 / 任务页"去下载模型"引导。
- * 与 getEngineModelGroups 同口径：fw 还需引擎包已安装；funasr/qwen/fireRedAsr 的
+ * 与 getEngineModelGroups 同口径：fw 还需引擎包已安装；本地 sherpa ASR 的
  * sherpa-onnx 运行库随包内置（见 getEngineModelGroups 注释），只看内置 VAD + 模型；
  * localCli 不计入（自备模型，无可下载模型；其可用性由是否配置命令决定，另行处理）。
  */
@@ -316,6 +337,12 @@ export function hasAnyModelAnyEngine(
   if (
     info?.fireRedVadInstalled &&
     (info?.fireRedModelsInstalled?.length ?? 0) > 0
+  ) {
+    return true;
+  }
+  if (
+    info?.parakeetVadInstalled &&
+    (info?.parakeetModelsInstalled?.length ?? 0) > 0
   ) {
     return true;
   }

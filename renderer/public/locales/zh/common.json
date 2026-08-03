@@ -333,6 +333,7 @@
     "funasr": "FunASR",
     "qwen": "Qwen3-ASR",
     "fireRedAsr": "FireRedASR",
+    "parakeet": "Parakeet TDT",
     "localCli": "本地命令",
     "cloud": "云端听写"
   }

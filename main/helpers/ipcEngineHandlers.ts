@@ -19,7 +19,7 @@ import { normalizePyEngineVariant } from './pythonRuntime/paths';
 
 let mainWindow: BrowserWindow | null = null;
 
-/** 仅 faster-whisper 走 Python 运行时下载（funasr/qwen/firered 已迁移内置 sherpa 原生库）。 */
+/** 仅 faster-whisper 走 Python 运行时下载（其它本地 ASR 使用内置 sherpa 原生库）。 */
 function coerceEngineId(_value: unknown): PyEngineId {
   return 'faster-whisper';
 }
@@ -51,7 +51,7 @@ export function registerEngineIpcHandlers(): void {
     }
   });
 
-  // --- sherpa-onnx 原生运行库（funasr / qwen / fireRed 引擎共用）：随安装包内置 ---
+  // --- sherpa-onnx 原生运行库（所有本地 sherpa ASR 引擎共用）：随安装包内置 ---
   // 库随 App 固定发布、整体随版本升级，故无下载/升级/卸载通道，仅暴露内置状态。
   ipcMain.handle('sherpa-lib-status', async () => {
     const { getSherpaLibStatus } = await import(
@@ -302,6 +302,35 @@ export function registerEngineIpcHandlers(): void {
         return { success: true };
       } catch (error) {
         logMessage(`Error setting firered settings: ${error}`, 'error');
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'set-parakeet-settings',
+    async (
+      _event,
+      {
+        provider,
+        numThreads,
+      }: {
+        provider?: 'cpu' | 'cuda';
+        numThreads?: number;
+      },
+    ) => {
+      try {
+        const settings = store.get('settings');
+        store.set('settings', {
+          ...settings,
+          ...(provider !== undefined ? { parakeetProvider: provider } : {}),
+          ...(numThreads !== undefined
+            ? { parakeetNumThreads: numThreads }
+            : {}),
+        });
+        return { success: true };
+      } catch (error) {
+        logMessage(`Error setting parakeet settings: ${error}`, 'error');
         return { success: false, error: String(error) };
       }
     },

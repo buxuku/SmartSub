@@ -30,8 +30,8 @@ export interface ModelFileSizeExpectation {
 
 /**
  * 校验源目录是否含某模型的全部必需文件。
- * requiredFiles 支持嵌套相对路径（如 `tokenizer/vocab.json`）；目录、空文件与
- * 无法 stat 的路径都视为无效，避免把占位文件误报为可加载模型。
+ * requiredFiles 支持嵌套相对路径（如 `tokenizer/vocab.json`）。每项必须是
+ * 非符号链接的普通文件且大小大于 0，避免把半截下载、空占位文件或目录误判为模型。
  */
 export function validateModelLayout(
   srcDir: string,
@@ -39,7 +39,7 @@ export function validateModelLayout(
 ): LayoutCheckResult {
   const missing = requiredFiles.filter((rel) => {
     try {
-      const stat = fs.statSync(path.join(srcDir, rel));
+      const stat = fs.lstatSync(path.join(srcDir, rel));
       return !stat.isFile() || stat.size <= 0;
     } catch {
       return true;
@@ -59,7 +59,7 @@ export function validateModelLayoutWithSizes(
   const missing = expectedFiles
     .filter(({ path: rel, size }) => {
       try {
-        const stat = fs.statSync(path.join(srcDir, rel));
+        const stat = fs.lstatSync(path.join(srcDir, rel));
         return !stat.isFile() || stat.size !== size;
       } catch {
         return true;
@@ -71,7 +71,7 @@ export function validateModelLayoutWithSizes(
 
 /**
  * sherpa 系共享 VAD（silero）随应用内置的相对子路径（相对 extraResources 根）。
- * funasr / qwen / fireRedAsr 共用这一份；与各引擎可自定义的模型根目录解耦。
+ * 所有本地 sherpa ASR 引擎共用这一份；与各引擎可自定义的模型根目录解耦。
  */
 export const SHERPA_VAD_SUBPATH = path.join('sherpa', 'vad', 'silero_vad.onnx');
 

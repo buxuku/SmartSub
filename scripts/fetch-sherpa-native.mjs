@@ -2,7 +2,7 @@
 /**
  * 构建期拉取 sherpa-onnx 原生库到 extraResources/sherpa/native/<platformKey>/。
  *
- * funasr / qwen / fireRedAsr 三引擎共用 sherpa-onnx 原生运行库。过去它在运行时下载
+ * 本地 sherpa ASR 引擎共用 sherpa-onnx 原生运行库。过去它在运行时下载
  * 到 userData（下载/重签/自检失败面大）；现改为**随安装包内置**（像 whisper.cpp 的
  * addon.node 一样走 extraResources，asar 内 .node 不可 dlopen 的限制只针对 asar，
  * extraResources 不受限）。
@@ -58,7 +58,13 @@ function releaseUrl(asset) {
 async function main() {
   const platformKey = getPlatformKey();
   const asset = assetName(platformKey);
-  const outDir = path.join(root, 'extraResources', 'sherpa', 'native', platformKey);
+  const outDir = path.join(
+    root,
+    'extraResources',
+    'sherpa',
+    'native',
+    platformKey,
+  );
   const tmp = path.join(os.tmpdir(), asset);
 
   console.log(`Fetching ${asset} ...`);

@@ -83,18 +83,18 @@
     },
     "sherpa": {
       "name": "本地多模型引擎",
-      "subtitle": "FunASR · Qwen · FireRed",
-      "tags": ["FunASR", "Qwen3-ASR", "FireRedASR"],
-      "desc": "FunASR、Qwen3-ASR、FireRedASR 共用同一套 sherpa-onnx 本地运行库（已随应用内置），区别只在模型与少量参数。在下方按需选择并下载对应模型即可使用，全程 CPU 离线、无需显卡或 Python。",
-      "builtinRuntime": "运行库已随应用内置（FunASR · Qwen · FireRed 共用），无需单独下载。",
+      "subtitle": "FunASR · Qwen · FireRed · Parakeet",
+      "tags": ["FunASR", "Qwen3-ASR", "FireRedASR", "Parakeet TDT"],
+      "desc": "FunASR、Qwen3-ASR、FireRedASR、NVIDIA Parakeet 共用同一套 sherpa-onnx 本地运行库（已随应用内置），区别只在模型与少量参数。在下方按需选择并下载对应模型即可使用，全程离线、无需 Python。",
+      "builtinRuntime": "运行库已随应用内置，由四个模型族共用，无需单独下载。",
       "installedVersion": "内置 v{{version}}",
       "needsModels": "下载任一族模型即可开始使用",
       "advanced": "高级设置",
       "numThreads": "推理线程数",
-      "numThreadsHint": "CPU 推理使用的线程数，越大越快但占用更多 CPU（三族共用同一运行库，统一生效）",
+      "numThreadsHint": "CPU 推理使用的线程数，越大越快但占用更多 CPU（四族共用同一运行库，统一生效）",
       "itn": "逆文本规整（ITN）",
       "itnHint": "将口语化的数字、日期等转换为标准书写形式，并自动补全标点",
-      "itnFunasrOnly": "仅 FunASR（SenseVoice）支持；Qwen、FireRed 已在内部处理规整。"
+      "itnFunasrOnly": "仅 FunASR（SenseVoice）支持；Qwen、FireRed、Parakeet 已在内部处理文本格式。"
     },
     "funasr": {
       "name": "FunASR",
@@ -256,6 +256,34 @@
         "fire-red-asr-large-zh-en": {
           "name": "FireRedASR-AED-L（int8，约 1.7GB）",
           "desc": "中英混说与多种中文方言识别强；int8 量化，CPU 友好。段级时间戳来自 VAD。"
+        }
+      }
+    },
+    "parakeet": {
+      "name": "NVIDIA Parakeet",
+      "builtinRuntime": "运行库已随应用内置，并与其它 sherpa ASR 引擎共用。",
+      "desc": "NVIDIA Parakeet TDT 0.6B v3 本地引擎，基于 sherpa-onnx 运行，支持 25 种欧洲语言、自带标点与大小写。int8 模型可在 CPU 上运行，无需 Python；段级时间戳来自 VAD。",
+      "scenario": "适合：英文及欧洲语言高质量转写，CC-BY-4.0",
+      "needsModels": "需下载模型",
+      "anotherDownload": "已有下载任务进行中，请等待完成后再试。",
+      "downloading": "下载中…",
+      "extracting": "解包中…（可能需要一会儿）",
+      "downloadSource": "下载源",
+      "modelsTitle": "模型",
+      "modelDownload": "下载",
+      "modelDelete": "删除",
+      "modelSources": {
+        "ghproxy": "GitHub 国内加速",
+        "github": "GitHub"
+      },
+      "modelSourceHint": {
+        "ghproxy": "经 gh-proxy.com 下载 sherpa-onnx 官方整包，下载后自动解包",
+        "github": "直连 sherpa-onnx 官方 GitHub Release，适合海外网络"
+      },
+      "models": {
+        "parakeet-tdt-0.6b-v3": {
+          "name": "Parakeet TDT 0.6B v3（int8，约 670MB）",
+          "desc": "支持 25 种欧洲语言、自带标点与大小写；NeMo transducer 架构，英文识别准确率高。"
         }
       }
     },

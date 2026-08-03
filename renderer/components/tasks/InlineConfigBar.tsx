@@ -162,6 +162,9 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
               fireRedVadInstalled={systemInfo?.fireRedVadInstalled}
               fireRedModelsInstalled={systemInfo?.fireRedModelsInstalled}
               fireRedEngineInstalled={systemInfo?.fireRedEngineInstalled}
+              parakeetVadInstalled={systemInfo?.parakeetVadInstalled}
+              parakeetModelsInstalled={systemInfo?.parakeetModelsInstalled}
+              parakeetEngineInstalled={systemInfo?.parakeetEngineInstalled}
               includeLocalCli={includeLocalCli}
             />
           ) : (

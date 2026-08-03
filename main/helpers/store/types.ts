@@ -110,6 +110,8 @@ export type StoreType = {
     qwenModelsPath?: string;
     /** fireRed 模型根目录覆盖；缺省回退 userData/models/firered */
     fireRedModelsPath?: string;
+    /** NVIDIA Parakeet 模型根目录覆盖；缺省回退 userData/models/parakeet */
+    parakeetModelsPath?: string;
     /** TTS(配音) 模型根目录覆盖；缺省回退 userData/models/tts */
     ttsModelsPath?: string;
     /** FunASR(SenseVoice via sherpa-onnx) 推理 provider；P1 仅 cpu 落地，cuda/coreml 预留 */
@@ -136,6 +138,10 @@ export type StoreType = {
     fireRedProvider?: 'cpu' | 'cuda';
     /** FireRedASR-AED 解码线程数，默认 2 */
     fireRedNumThreads?: number;
+    /** NVIDIA Parakeet TDT(sherpa-onnx) 推理 provider */
+    parakeetProvider?: 'cpu' | 'cuda';
+    /** NVIDIA Parakeet TDT 解码线程数，默认 2 */
+    parakeetNumThreads?: number;
     /** 全局网络代理模式（none=直连；custom=手动 URL） */
     proxyMode?: 'none' | 'custom';
     /** custom 模式的代理 URL，如 http://user:pass@host:port */

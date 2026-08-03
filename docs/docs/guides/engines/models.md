@@ -1,5 +1,5 @@
 ---
-sidebar_position: 8
+sidebar_position: 9
 title: 模型选择与手动导入
 description: whisper 模型怎么选：tiny 到 large-v3-turbo 各档位建议、量化版本说明、国内镜像手动下载与导入方法、Apple 芯片 CoreML 文件说明。
 keywords:
@@ -46,7 +46,7 @@ Apple 芯片走 CoreML 加速时，非量化模型需要配套的 `<模型名>-e
 ## 其它引擎的模型
 
 - **faster-whisper**：模型在引擎页内按需下载（HuggingFace / 镜像源），同样支持导入
-- **FunASR / Qwen3-ASR / FireRedASR**：在「本地多模型引擎」分组内下载，支持 ModelScope / GitHub 多源
+- **FunASR / Qwen3-ASR / FireRedASR / Parakeet**：在「本地多模型引擎」分组内下载，支持应用内选择下载源或从文件夹导入
 - 所有模型的存放位置由[统一存储目录](/advanced/storage)管理，可迁移到大容量磁盘
 
 ---

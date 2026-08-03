@@ -83,18 +83,18 @@
     },
     "sherpa": {
       "name": "Local multi-model engine",
-      "subtitle": "FunASR · Qwen · FireRed",
-      "tags": ["FunASR", "Qwen3-ASR", "FireRedASR"],
-      "desc": "FunASR, Qwen3-ASR and FireRedASR share one bundled sherpa-onnx runtime; they differ only in models and a few parameters. Pick and download a model from any family below to start — fully offline on CPU, no GPU or Python required.",
-      "builtinRuntime": "The runtime is bundled with the app (shared by FunASR · Qwen · FireRed) — no separate download needed.",
+      "subtitle": "FunASR · Qwen · FireRed · Parakeet",
+      "tags": ["FunASR", "Qwen3-ASR", "FireRedASR", "Parakeet TDT"],
+      "desc": "FunASR, Qwen3-ASR, FireRedASR and NVIDIA Parakeet share one bundled sherpa-onnx runtime; they differ only in models and a few parameters. Pick and download a model from any family below to start — fully offline, no Python required.",
+      "builtinRuntime": "The runtime is bundled with the app and shared by all four model families — no separate download needed.",
       "installedVersion": "Bundled v{{version}}",
       "needsModels": "Download a model from any family to get started",
       "advanced": "Advanced settings",
       "numThreads": "Inference threads",
-      "numThreadsHint": "Threads used for CPU inference — higher is faster but uses more CPU (shared by all three families)",
+      "numThreadsHint": "Threads used for CPU inference — higher is faster but uses more CPU (shared by all four families)",
       "itn": "Inverse text normalization (ITN)",
       "itnHint": "Converts spoken numbers, dates, etc. into standard written form and restores punctuation",
-      "itnFunasrOnly": "Only supported by FunASR (SenseVoice); Qwen and FireRed handle normalization internally."
+      "itnFunasrOnly": "Only supported by FunASR (SenseVoice); Qwen, FireRed and Parakeet handle text formatting internally."
     },
     "funasr": {
       "name": "FunASR",
@@ -256,6 +256,34 @@
         "fire-red-asr-large-zh-en": {
           "name": "FireRedASR-AED-L (int8, ~1.7GB)",
           "desc": "Strong Chinese-English code-switching and Chinese dialects; int8 quantized, CPU-friendly. Segment-level timestamps via VAD."
+        }
+      }
+    },
+    "parakeet": {
+      "name": "NVIDIA Parakeet",
+      "builtinRuntime": "The runtime is bundled with the app and shared with the other sherpa ASR engines.",
+      "desc": "NVIDIA Parakeet TDT 0.6B v3 running locally through sherpa-onnx. It supports 25 European languages, punctuation and capitalization. The int8 model runs on CPU without Python; segment timestamps come from VAD.",
+      "scenario": "Best for: English and European-language transcription, CC-BY-4.0",
+      "needsModels": "Models needed",
+      "anotherDownload": "Another download is in progress. Please wait for it to finish.",
+      "downloading": "Downloading…",
+      "extracting": "Extracting… (this can take a while)",
+      "downloadSource": "Download source",
+      "modelsTitle": "Models",
+      "modelDownload": "Download",
+      "modelDelete": "Delete",
+      "modelSources": {
+        "ghproxy": "GitHub Mirror (China)",
+        "github": "GitHub"
+      },
+      "modelSourceHint": {
+        "ghproxy": "Downloads the official sherpa-onnx release through gh-proxy.com, then extracts it",
+        "github": "Direct official sherpa-onnx GitHub release; recommended outside mainland China"
+      },
+      "models": {
+        "parakeet-tdt-0.6b-v3": {
+          "name": "Parakeet TDT 0.6B v3 (int8, ~670MB)",
+          "desc": "25 European languages with punctuation and capitalization; optimized NeMo transducer model for accurate English transcription."
         }
       }
     },

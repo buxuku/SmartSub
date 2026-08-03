@@ -5,7 +5,12 @@
  * 导致与真实下载链接漂移。解析失败（未知模型/源、IPC 异常）统一返回 null，
  * 由调用方（气泡复制按钮）给出失败提示。
  */
-export type ModelUrlScope = 'funasr' | 'qwen' | 'firered' | 'pyEngine';
+export type ModelUrlScope =
+  | 'funasr'
+  | 'qwen'
+  | 'firered'
+  | 'parakeet'
+  | 'pyEngine';
 
 export async function resolveModelDownloadUrl(
   scope: ModelUrlScope,

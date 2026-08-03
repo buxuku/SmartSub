@@ -1,5 +1,6 @@
 import { app, ipcMain, BrowserWindow, dialog, shell } from 'electron';
 import os from 'os';
+import { randomUUID } from 'crypto';
 import { getModelsInstalled, getPath, deleteModel } from './whisper';
 import {
   getFasterWhisperModelsInstalled,
@@ -12,6 +13,7 @@ import {
   CT2_REQUIRED_FILES,
   CT2_IMPORT_SNAPSHOT_REV,
 } from './modelImport';
+import { commitStagedDirectory } from './download/atomicDirectoryInstall';
 import {
   isRuntimeInstalled,
   readEngineManifest,
@@ -76,6 +78,23 @@ import {
   getFireRedModelsRoot,
   getFireRedArchiveUrl,
 } from './fireRedModelCatalog';
+import {
+  getParakeetModelDownloader,
+  getParakeetProgressKey,
+} from './parakeetModelDownloader';
+import {
+  PARAKEET_MODELS,
+  ParakeetModelId,
+  PARAKEET_DEFAULT_MODEL_ID,
+  ParakeetModelSource,
+  isParakeetModelInstalled,
+  isParakeetVadInstalled,
+  isParakeetReady,
+  deleteParakeetModel,
+  getInstalledParakeetModels,
+  getParakeetModelsRoot,
+  getParakeetArchiveUrl,
+} from './parakeetModelCatalog';
 import { getTtsModelDownloader, getTtsProgressKey } from './ttsModelDownloader';
 import {
   TTS_MODELS,
@@ -106,6 +125,7 @@ type FolderImportEngine =
   | 'funasr'
   | 'qwen'
   | 'fireRedAsr'
+  | 'parakeet'
   | 'fasterWhisper'
   | 'tts';
 
@@ -129,7 +149,7 @@ function validateImportLayout(
 
 /**
  * 解析「从文件夹导入」的校验集与目的地（按指定引擎+模型槽消歧）。
- * - sherpa 三引擎：落 `<engine root>/<dirName>`，校验集取 catalog requiredFiles；
+ * - sherpa ASR 引擎：落 `<engine root>/<dirName>`，校验集取 catalog requiredFiles；
  * - fasterWhisper：落合成快照目录，使 resolveCt2ModelSnapshotDir 命中，校验集为 CT2 关键文件。
  * 返回 null 表示模型 id 非法/缺失。
  */
@@ -160,6 +180,14 @@ function resolveImportPlan(
     return {
       requiredFiles: FIRERED_MODELS[id].requiredFiles,
       destDir: path.join(getFireRedModelsRoot(), FIRERED_MODELS[id].dirName),
+    };
+  }
+  if (engine === 'parakeet') {
+    const id = (modelId as ParakeetModelId) || PARAKEET_DEFAULT_MODEL_ID;
+    if (!PARAKEET_MODELS[id]) return null;
+    return {
+      requiredFiles: PARAKEET_MODELS[id].requiredFiles,
+      destDir: path.join(getParakeetModelsRoot(), PARAKEET_MODELS[id].dirName),
     };
   }
   if (engine === 'fasterWhisper') {
@@ -195,6 +223,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   const funasrModelDownloader = getFunasrModelDownloader(mainWindow);
   const qwenModelDownloader = getQwenModelDownloader(mainWindow);
   const fireRedModelDownloader = getFireRedModelDownloader(mainWindow);
+  const parakeetModelDownloader = getParakeetModelDownloader(mainWindow);
   const ttsModelDownloader = getTtsModelDownloader(mainWindow);
 
   ipcMain.handle('getSystemInfo', async () => {
@@ -224,6 +253,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
         funasr: sourceOf('funasr'),
         qwen: sourceOf('qwen'),
         firered: sourceOf('firered'),
+        parakeet: sourceOf('parakeet'),
       },
       downloadingModels: Array.from(downloadingModels),
       buildInfo: getBuildInfo(),
@@ -243,6 +273,10 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       fireRedVadInstalled: isFireRedVadInstalled(),
       fireRedModelsInstalled: getInstalledFireRedModels(),
       fireRedModelsPath: getFireRedModelsRoot(),
+      parakeetEngineInstalled: isSherpaLibInstalled(),
+      parakeetVadInstalled: isParakeetVadInstalled(),
+      parakeetModelsInstalled: getInstalledParakeetModels(),
+      parakeetModelsPath: getParakeetModelsRoot(),
     };
   });
 
@@ -443,6 +477,59 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   );
 
   ipcMain.handle(
+    'downloadParakeetModel',
+    async (
+      _event,
+      {
+        model,
+        source,
+      }: {
+        model: ParakeetModelId;
+        source?: ParakeetModelSource;
+      },
+    ) => {
+      if (downloadingModels.size > 0) {
+        return { success: false, error: 'anotherDownloadInProgress' };
+      }
+      const progressKey = getParakeetProgressKey(model);
+      downloadingModels.add(progressKey);
+      try {
+        await parakeetModelDownloader.download(model, source);
+        downloadingModels.delete(progressKey);
+        return { success: true };
+      } catch (error) {
+        logMessage(`parakeet model download error: ${error}`, 'error');
+        downloadingModels.delete(progressKey);
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle('getParakeetModelStatus', async () => ({
+    success: true,
+    engineInstalled: isSherpaLibInstalled(),
+    vadInstalled: isParakeetVadInstalled(),
+    ready: isParakeetReady(),
+    models: (Object.keys(PARAKEET_MODELS) as ParakeetModelId[]).map((id) => ({
+      id,
+      installed: isParakeetModelInstalled(id),
+    })),
+  }));
+
+  ipcMain.handle(
+    'deleteParakeetModel',
+    async (_event, modelId: ParakeetModelId) => {
+      try {
+        getSherpaAsrRuntime().dispose();
+        deleteParakeetModel(modelId);
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle(
     'downloadTtsModel',
     async (
       _event,
@@ -511,7 +598,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
         source,
         variant,
       }: {
-        scope: 'funasr' | 'qwen' | 'firered' | 'pyEngine' | 'tts';
+        scope: 'funasr' | 'qwen' | 'firered' | 'parakeet' | 'pyEngine' | 'tts';
         modelId?: string;
         source: string;
         variant?: PyEngineVariant;
@@ -557,6 +644,17 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
             ),
           };
         }
+        if (scope === 'parakeet') {
+          const spec = PARAKEET_MODELS[modelId as ParakeetModelId];
+          if (!spec) return { success: false, error: 'unknownModel' };
+          return {
+            success: true,
+            url: getParakeetArchiveUrl(
+              spec,
+              source === 'github' ? 'github' : 'ghproxy',
+            ),
+          };
+        }
         if (scope === 'pyEngine') {
           const s =
             source === 'github' || source === 'gitcode' ? source : 'ghproxy';
@@ -594,6 +692,9 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     qwenModelDownloader.cancel();
     fireRedModelDownloader.cancel();
     ttsModelDownloader.cancel();
+    // Parakeet 等待当前会话真正退出并完成 finally 清理，避免取消后立即重试时
+    // 旧任务清掉新任务的进度键/互斥状态。
+    await parakeetModelDownloader.cancel();
     // 不提前清空下载锁：各下载 session 在真正响应 abort 并退出后自行移除 key。
     // 否则 UI 可立即启动新任务，让旧异步链复用新 controller / 混写进度与文件。
     return true;
@@ -658,31 +759,42 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
         };
       }
 
+      const transactionId = randomUUID();
+      const stagedDir = `${plan.destDir}.import-${transactionId}`;
+      const backupDir = `${plan.destDir}.backup-${transactionId}`;
       try {
-        // 覆盖模型目录前先释放对应 worker，避免 Windows 文件锁
-        // （worker 会在下次使用时自动重建）。fasterWhisper 不走 sherpa worker。
+        // 先复制到同父目录 staging 并复校验，失败时不触碰已有模型。
+        await fse.copy(srcDir, stagedDir, { overwrite: true });
+        const post = validateImportLayout(plan, stagedDir);
+        if (!post.ok) {
+          return {
+            success: false,
+            reason: 'invalid-layout',
+            missing: post.missing,
+          };
+        }
+
+        // 仅在 staging 完整后释放 worker 并原子替换；提交失败自动恢复旧目录。
         if (engine === 'tts') {
           getSherpaTtsRuntime().dispose();
         } else if (engine !== 'fasterWhisper') {
           getSherpaAsrRuntime().dispose();
         }
-        await fse.ensureDir(plan.destDir);
-        await fse.copy(srcDir, plan.destDir, { overwrite: true });
+        await commitStagedDirectory({
+          stagedDir,
+          destDir: plan.destDir,
+          backupDir,
+          onCleanupWarning: (message) => logMessage(message, 'warning'),
+        });
+        return { success: true };
       } catch (error) {
         logMessage(`import model error: ${error}`, 'error');
         return { success: false, error: String(error) };
+      } finally {
+        // commit 成功后 staging 已被 rename；失败时清理新内容。backup 不在此删除，
+        // 因为极端回滚失败时它是用户旧模型的唯一副本。
+        await fse.remove(stagedDir).catch(() => {});
       }
-
-      // 导入后复校验：拷贝后目的地必须齐备
-      const post = validateImportLayout(plan, plan.destDir);
-      if (!post.ok) {
-        return {
-          success: false,
-          reason: 'invalid-layout',
-          missing: post.missing,
-        };
-      }
-      return { success: true };
     },
   );
 
@@ -691,7 +803,14 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     async (
       _event,
       options?: {
-        pathType?: 'ggml' | 'ct2' | 'funasr' | 'qwen' | 'firered' | 'tts';
+        pathType?:
+          | 'ggml'
+          | 'ct2'
+          | 'funasr'
+          | 'qwen'
+          | 'firered'
+          | 'parakeet'
+          | 'tts';
       },
     ) => {
       const modelsPath =
@@ -703,9 +822,11 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
               ? getQwenModelsRoot()
               : options?.pathType === 'firered'
                 ? getFireRedModelsRoot()
-                : options?.pathType === 'tts'
-                  ? getTtsModelsRoot()
-                  : (getPath('modelsPath') as string);
+                : options?.pathType === 'parakeet'
+                  ? getParakeetModelsRoot()
+                  : options?.pathType === 'tts'
+                    ? getTtsModelsRoot()
+                    : (getPath('modelsPath') as string);
       try {
         await fse.ensureDir(modelsPath);
         const err = await shell.openPath(modelsPath);

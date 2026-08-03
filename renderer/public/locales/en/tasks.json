@@ -146,7 +146,7 @@
       "title": "Custom",
       "desc": "Manually tune context length, VAD, repetition reduction and other low-level parameters.",
       "sectionTitle": "Custom parameters",
-      "sherpaNote": "For the current engine (FunASR / Qwen / FireRed), VAD is always on and there is no context-length / repetition concept. To fine-tune VAD sensitivity, use the Settings page."
+      "sherpaNote": "For the current engine (FunASR / Qwen / FireRed / Parakeet), VAD is always on and there is no context-length / repetition concept. To fine-tune VAD sensitivity, use the Settings page."
     },
     "compare": {
       "toggle": "See how the effects differ",

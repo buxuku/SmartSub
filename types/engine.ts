@@ -4,6 +4,7 @@ export type TranscriptionEngine =
   | 'funasr'
   | 'qwen'
   | 'fireRedAsr'
+  | 'parakeet'
   | 'localCli'
   /** 云端听写（在线 ASR）：单一适配器，按 asrProviderId 实例分发到具体 service。 */
   | 'cloud';
@@ -79,7 +80,7 @@ export interface RemoteEngineManifest {
   runtime?: RemoteRuntimeInfo;
 }
 
-/** 可独立下载的 Python 引擎运行时标识。faster-whisper 是唯一 Python 引擎（funasr/qwen/firered 已改用内置 sherpa-onnx 原生库）。 */
+/** 可独立下载的 Python 引擎运行时标识。faster-whisper 是唯一 Python 引擎（其余本地 ASR 使用内置 sherpa-onnx）。 */
 export type PyEngineId = 'faster-whisper';
 
 export interface PyEngineUpdateInfo {

@@ -17,7 +17,7 @@ export const SUBTITLE_OUTCOME_TIERS: Exclude<SubtitleOutcome, 'custom'>[] = [
   'clean',
 ];
 
-const SHERPA_ENGINES = new Set(['funasr', 'qwen', 'fireRedAsr']);
+const SHERPA_ENGINES = new Set(['funasr', 'qwen', 'fireRedAsr', 'parakeet']);
 
 /** sherpa 系：VAD 结构性常开、无上下文/抗重复概念。 */
 export function isSherpaEngine(engine?: string): boolean {
