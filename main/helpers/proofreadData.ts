@@ -14,6 +14,10 @@ import {
   speakerIdsForCues,
   type SpeakerDiarizationSegment,
 } from './speakerDiarization/alignment';
+import {
+  mergeSpeakerIds,
+  realignSpeakerIdsForCue,
+} from '../../types/speakerDiarization';
 
 export interface ProofreadDataCue {
   id: string;
@@ -52,6 +56,14 @@ export interface ProofreadSubtitleRow {
   isEditing: boolean;
   speakerIds?: number[];
 }
+
+export type ProofreadDataWriteResult =
+  | { ok: true; filePath: string }
+  | {
+      ok: false;
+      reason: 'source-unavailable' | 'write-failed';
+      error?: string;
+    };
 
 function safeFileNamePart(input: string): string {
   const cleaned = input
@@ -145,7 +157,7 @@ export async function writeProofreadDataFromFiles({
   translateContent?: string;
   outputFormat?: string;
   speakerSegments?: SpeakerDiarizationSegment[];
-}): Promise<string | null> {
+}): Promise<ProofreadDataWriteResult> {
   try {
     const sourceEntries = await readSubtitleEntries(sourceFile);
     if (sourceEntries.length === 0) {
@@ -153,7 +165,7 @@ export async function writeProofreadDataFromFiles({
         `skip proofread data: source subtitle has no cues (${sourceFile})`,
         'warning',
       );
-      return null;
+      return { ok: false, reason: 'source-unavailable' };
     }
 
     const targetEntries = await readSubtitleEntries(targetFile);
@@ -184,10 +196,14 @@ export async function writeProofreadDataFromFiles({
       'utf-8',
     );
     logMessage(`proofread data written: ${proofreadDataFile}`, 'info');
-    return proofreadDataFile;
+    return { ok: true, filePath: proofreadDataFile };
   } catch (error) {
     logMessage(`write proofread data failed: ${error}`, 'warning');
-    return null;
+    return {
+      ok: false,
+      reason: 'write-failed',
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -241,7 +257,17 @@ export async function updateProofreadDataFromSubtitles(
       const source =
         subtitle.sourceContent ?? subtitle.content?.join('\n') ?? '';
       const previous = existingById.get(subtitle.id) || existing.cues[index];
-      const speakerIds = subtitle.speakerIds ?? previous?.speakerIds;
+      const timingChanged = Boolean(
+        previous && (previous.startMs !== startMs || previous.endMs !== endMs),
+      );
+      const speakerIds = timingChanged
+        ? realignSpeakerIdsForCue(
+            startMs,
+            endMs,
+            existing.cues,
+            subtitle.speakerIds || previous?.speakerIds,
+          )
+        : mergeSpeakerIds(subtitle.speakerIds || previous?.speakerIds);
       return {
         id: subtitle.id || String(index + 1),
         startMs,

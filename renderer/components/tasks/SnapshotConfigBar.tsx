@@ -18,6 +18,7 @@ import { useCustomLanguages } from 'hooks/useCustomLanguages';
 import { useTranslation } from 'next-i18next';
 import { getCustomLanguageName } from '../../../types/language';
 import { isSpeakerDiarizationStandardTaskContext } from '../../../types/speakerDiarization';
+import { isTaskSnapshotTranslationEnabled } from '../../../types/taskSnapshot';
 
 interface Provider {
   id: string;
@@ -72,8 +73,10 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
       )
     : typeDef.accepts === 'media';
 
-  const translateOn =
-    Boolean(snapshot?.translateProvider) && snapshot.translateProvider !== '-1';
+  const translateOn = isTaskSnapshotTranslationEnabled(
+    snapshot,
+    typeDef.hasTranslate,
+  );
 
   const languageLabel = (value?: string) => {
     if (!value) return '';

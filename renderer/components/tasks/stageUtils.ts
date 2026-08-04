@@ -203,6 +203,19 @@ export function getFileError(file: any, stages: StageDef[]): string {
   return '';
 }
 
+/** 已完成阶段仍可携带非阻断 warning（例如 metadata 持久化失败）。 */
+export function getFileWarning(file: any, stages: StageDef[]): string {
+  for (const stage of stages) {
+    if (
+      getStageStatus(file, stage.key) === 'done' &&
+      file?.[`${stage.key}Error`]
+    ) {
+      return file[`${stage.key}Error`];
+    }
+  }
+  return '';
+}
+
 /** 校对解锁条件（沿用旧 TaskList 逻辑） */
 export function isProofreadReady(
   file: any,

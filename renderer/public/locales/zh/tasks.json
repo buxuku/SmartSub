@@ -313,6 +313,7 @@
     "retry": "重试",
     "remove": "移除",
     "embeddedSubtitle": "内封软字幕直提（已跳过听写/ASR）",
+    "speakerDiarizationMetadataSaveFailed": "角色分离已完成，但角色 metadata 写入失败；字幕处理已继续，请查看日志后重试。",
     "proofreadTxtUnsupported": "TXT 文件不包含时间轴，暂不支持校对。请生成 SRT/VTT/ASS 后校对，或校对完成后另存为 TXT。",
     "proofreadTxtUnsupportedShort": "TXT 不支持校对"
   },

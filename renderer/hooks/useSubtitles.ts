@@ -15,6 +15,8 @@ export interface Subtitle {
   startTimeInSeconds?: number;
   endTimeInSeconds?: number;
   isEditing?: boolean;
+  /** 一基角色编号；校对合并/拆分时随 cue 一起保留。 */
+  speakerIds?: number[];
 }
 
 export interface SubtitleStats {

@@ -98,7 +98,7 @@ export interface IFiles {
   wordTimelineFile?: string;
   /** 本次转写实际使用的后端标签（如 "CUDA 12.4.0" / "Vulkan" / "CPU"） */
   whisperBackend?: string;
-  /** 该文件走了内封软字幕直提（跳过抽音频 + ASR）：用于任务列表标识 */
+  /** 该文件走了内封软字幕直提（跳过 ASR；角色分离开启时仍会抽音频）：用于任务列表标识 */
   embeddedSubtitle?: boolean;
   /**
    * 人工检查点状态（'' 未到达 | 'review' 待校对 | 'passed' 已通过）。

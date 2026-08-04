@@ -10,14 +10,21 @@ import {
 import { normalizeDubbingSpeechText } from '../main/helpers/dubbing/textNormalization';
 import {
   enforceSpeakerDiarizationTaskBoundary,
+  getSpeakerDiarizationMetadataWarning,
+  mergeSpeakerIds,
   normalizeSpeakerDiarizationCount,
+  realignSpeakerIdsForCue,
   shouldEmbedSpeakerLabels,
+  shouldExtractAudioForEmbeddedSubtitle,
+  SPEAKER_DIARIZATION_METADATA_SAVE_FAILED,
   stripSpeakerDiarizationConfig,
 } from '../types/speakerDiarization';
 import {
+  getFileWarning,
   getFileStages,
   isProofreadReady,
 } from '../renderer/components/tasks/stageUtils';
+import { isTaskSnapshotTranslationEnabled } from '../types/taskSnapshot';
 
 let passed = 0;
 
@@ -145,6 +152,53 @@ equal(
 );
 
 equal(
+  shouldExtractAudioForEmbeddedSubtitle({ speakerDiarization: true }),
+  true,
+  'embedded subtitle flow still extracts audio when diarization is enabled',
+);
+
+equal(
+  shouldExtractAudioForEmbeddedSubtitle({
+    speakerDiarization: true,
+    recipeName: 'pipeline-recipe',
+  }),
+  false,
+  'unsupported pipeline contexts do not extract audio for diarization',
+);
+
+equal(
+  getSpeakerDiarizationMetadataWarning(true, false),
+  SPEAKER_DIARIZATION_METADATA_SAVE_FAILED,
+  'sidecar persistence failure is classified as a visible non-blocking warning',
+);
+
+equal(
+  getSpeakerDiarizationMetadataWarning(true, true),
+  undefined,
+  'persisted speaker metadata does not produce a warning',
+);
+
+equal(
+  mergeSpeakerIds([1], [2, 1], undefined),
+  [1, 2],
+  'merging subtitle cues preserves every distinct speaker id',
+);
+
+equal(
+  realignSpeakerIdsForCue(
+    0,
+    4000,
+    [
+      { startMs: 0, endMs: 2000, speakerIds: [1] },
+      { startMs: 2000, endMs: 4000, speakerIds: [2] },
+    ],
+    [1],
+  ),
+  [1, 2],
+  'edited cue timing realigns metadata from every overlapping original cue',
+);
+
+equal(
   [
     normalizeSpeakerDiarizationCount(2),
     normalizeSpeakerDiarizationCount(8),
@@ -192,6 +246,21 @@ const generateAndTranslate = {
   hasTranslate: true,
 };
 const mediaFile = { filePath: 'interview.mp4' };
+
+equal(
+  isTaskSnapshotTranslationEnabled(
+    { translateProvider: 'stale-provider-from-global-form' },
+    false,
+  ),
+  false,
+  'generate-only pinned snapshot hides stale translation configuration',
+);
+
+equal(
+  isTaskSnapshotTranslationEnabled({ translateProvider: 'provider-1' }, true),
+  true,
+  'translation task pinned snapshot still shows its translation configuration',
+);
 
 equal(
   getFileStages(mediaFile, generateAndTranslate, {
@@ -257,6 +326,19 @@ equal(
   ),
   false,
   'translated tasks also wait for diarization before proofreading',
+);
+
+equal(
+  getFileWarning(
+    {
+      ...mediaFile,
+      speakerDiarization: 'done',
+      speakerDiarizationError: SPEAKER_DIARIZATION_METADATA_SAVE_FAILED,
+    },
+    getFileStages(mediaFile, generateOnly, { speakerDiarization: true }),
+  ),
+  SPEAKER_DIARIZATION_METADATA_SAVE_FAILED,
+  'completed diarization surfaces sidecar persistence failures as warnings',
 );
 
 console.log(`✓ speaker diarization alignment tests passed (${passed})`);

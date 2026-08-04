@@ -46,7 +46,11 @@ import {
 } from './taskContext';
 import { runSpeakerDiarizationStage } from './speakerDiarization/stage';
 import type { SpeakerDiarizationSegment } from './speakerDiarization/alignment';
-import { isSpeakerDiarizationStandardTaskContext } from '../../types/speakerDiarization';
+import {
+  isSpeakerDiarizationStandardTaskContext,
+  shouldExtractAudioForEmbeddedSubtitle,
+  getSpeakerDiarizationMetadataWarning,
+} from '../../types/speakerDiarization';
 
 /**
  * 处理任务错误
@@ -327,6 +331,13 @@ export async function processFile(
     const translationActive =
       shouldTranslateSubtitle && translateProvider !== '-1';
 
+    const speakerDiarizationStageActive =
+      !isSubtitleFile &&
+      shouldGenerateSubtitle &&
+      !hasProvidedSubtitle &&
+      formData?.speakerDiarization === true &&
+      isSpeakerDiarizationStandardTaskContext(formData);
+
     /** 文件停靠在人工检查点：置待校对、发聚合通知、结束本轮（不占并发槽） */
     const dockAtGate = (gate: 'subtitle' | 'dubbing') => {
       const field = gate === 'subtitle' ? 'subtitleGate' : 'dubbingGate';
@@ -487,6 +498,22 @@ export async function processFile(
             const srtContent = fs.readFileSync(file.srtFile, 'utf-8');
             if (!srtHasCues(srtContent)) {
               throw new Error('extracted embedded subtitle has no cues');
+            }
+            // 内封字幕只替代 ASR，不替代角色分离所需的整段音频。
+            // 在角色分离开启时仍抽取并记录 tempAudioFile，供后处理阶段使用。
+            if (shouldExtractAudioForEmbeddedSubtitle(formData)) {
+              logMessage(
+                `extract audio for speaker diarization: ${fileName}`,
+                'info',
+              );
+              throwIfTaskCancelled();
+              const tempAudioFile = await extractAudioFromVideo(event, file);
+              if (saveAudio) {
+                const audioFileName = `${fileName}.wav`;
+                const targetAudioPath = path.join(directory, audioFileName);
+                file.audioFile = targetAudioPath;
+                fs.copyFileSync(tempAudioFile, targetAudioPath);
+              }
             }
             event.sender.send('taskFileChange', {
               ...file,
@@ -676,12 +703,6 @@ export async function processFile(
     // 可选角色分离：仅对标准字幕任务中本轮真实 ASR 的音频执行。放在翻译之后，
     // 避免角色信息污染翻译提示；独立阶段保持 loading，直到 sidecar 写入完成后
     // 才置 done，从而保证校对入口不会抢先读到旧内容。
-    const speakerDiarizationStageActive =
-      !isSubtitleFile &&
-      shouldGenerateSubtitle &&
-      !hasProvidedSubtitle &&
-      formData?.speakerDiarization === true &&
-      isSpeakerDiarizationStandardTaskContext(formData);
     let speakerSegments: SpeakerDiarizationSegment[] | undefined;
     let speakerDiarizationWarning: string | undefined;
     if (speakerDiarizationStageActive) {
@@ -701,8 +722,10 @@ export async function processFile(
     }
 
     throwIfTaskCancelled();
+    let speakerMetadataPersisted = false;
+    let proofreadDataFailure: string | undefined;
     if (file.srtFile && fs.existsSync(file.srtFile)) {
-      const proofreadDataFile = await writeProofreadDataFromFiles({
+      const proofreadDataResult = await writeProofreadDataFromFiles({
         file,
         sourceFile: file.srtFile,
         targetFile:
@@ -719,10 +742,26 @@ export async function processFile(
         outputFormat: formData?.subtitleOutputFormat,
         speakerSegments,
       });
-      if (proofreadDataFile) {
-        file.proofreadDataFile = proofreadDataFile;
+      if ('filePath' in proofreadDataResult) {
+        file.proofreadDataFile = proofreadDataResult.filePath;
+        speakerMetadataPersisted = true;
         event.sender.send('taskFileChange', file);
+      } else {
+        proofreadDataFailure = `${proofreadDataResult.reason}${proofreadDataResult.error ? `: ${proofreadDataResult.error}` : ''}`;
       }
+    }
+
+    const metadataWarning = getSpeakerDiarizationMetadataWarning(
+      Boolean(speakerSegments?.length),
+      speakerMetadataPersisted,
+    );
+    if (speakerDiarizationStageActive && metadataWarning) {
+      file.speakerDiarizationError = metadataWarning;
+      speakerDiarizationWarning = 'metadata-save-failed';
+      logMessage(
+        `speaker diarization metadata could not be saved${proofreadDataFailure ? ` (${proofreadDataFailure})` : ''}: ${fileName}`,
+        'warning',
+      );
     }
 
     if (speakerDiarizationStageActive) {
