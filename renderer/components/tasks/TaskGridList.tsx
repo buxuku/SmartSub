@@ -35,6 +35,7 @@ import {
   getDockedGate,
   getFilePercent,
   getFileError,
+  getFileWarning,
   hasFileError,
   isProofreadReady,
   getProofreadUnavailableReason,
@@ -43,6 +44,7 @@ import {
   formatMediaDuration,
 } from './stageUtils';
 import { RailChips } from './TaskRowList';
+import { SPEAKER_DIARIZATION_METADATA_SAVE_FAILED } from '../../../types/speakerDiarization';
 
 interface TaskGridListProps {
   files: any[];
@@ -216,6 +218,11 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
         const rawError = failed ? getFileError(file, stages) : '';
         const errorMsg =
           rawError === 'TASK_INTERRUPTED' ? t('interrupted') : rawError;
+        const rawWarning = getFileWarning(file, stages);
+        const warningMsg =
+          rawWarning === SPEAKER_DIARIZATION_METADATA_SAVE_FAILED
+            ? t('row.speakerDiarizationMetadataSaveFailed')
+            : rawWarning;
         const started = stages.some(
           (s) => getStageStatus(file, s.key) !== 'pending',
         );
@@ -243,6 +250,7 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
             className={cn(
               'group relative flex flex-col gap-2 rounded-lg border p-2 transition-colors hover:bg-muted/40',
               failed && 'border-destructive/30',
+              !failed && warningMsg && 'border-warning/30',
             )}
           >
             <div className="relative">
@@ -309,6 +317,20 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-md">
                     <p className="break-all">{errorMsg}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            {!failed && warningMsg && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <p className="cursor-default truncate text-xs text-warning">
+                      {warningMsg}
+                    </p>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-md">
+                    <p className="break-all">{warningMsg}</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

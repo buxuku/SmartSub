@@ -21,3 +21,15 @@ export function isPinnedTaskConfigSnapshot(
         snapshot.speakerDiarization === true),
   );
 }
+
+/** 只读快照可能携带全局表单残留；任务类型不含翻译时不得展示这些字段。 */
+export function isTaskSnapshotTranslationEnabled(
+  snapshot: { translateProvider?: unknown } | null | undefined,
+  taskHasTranslate: boolean,
+): boolean {
+  return Boolean(
+    taskHasTranslate &&
+      snapshot?.translateProvider &&
+      snapshot.translateProvider !== '-1',
+  );
+}

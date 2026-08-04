@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
 import { Subtitle, SubtitleStats, PlayerSubtitleTrack } from './useSubtitles';
 import { useSubtitleHistory, computeRangeDiff } from './useSubtitleHistory';
+import { mergeSpeakerIds } from '../../types/speakerDiarization';
 
 interface StandaloneSubtitlesConfig {
   videoPath?: string;
@@ -650,6 +651,7 @@ export const useStandaloneSubtitles = (
         startEndTime: `${secondsToTime(startTime)} --> ${secondsToTime(endTime)}`,
         startTimeInSeconds: startTime,
         endTimeInSeconds: endTime,
+        speakerIds: mergeSpeakerIds(...toMerge.map((s) => s.speakerIds)),
       };
 
       history.push({ start: startIndex, removed: toMerge, inserted: [merged] });

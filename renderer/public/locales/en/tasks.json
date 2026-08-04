@@ -313,6 +313,7 @@
     "retry": "Retry",
     "remove": "Remove",
     "embeddedSubtitle": "Extracted from embedded subtitles",
+    "speakerDiarizationMetadataSaveFailed": "Speaker diarization finished, but its metadata could not be saved. Subtitle processing continued; check the logs and retry.",
     "proofreadTxtUnsupported": "TXT files do not include timing, so they cannot be proofread here. Generate SRT/VTT/ASS for proofreading, then export plain text after proofreading.",
     "proofreadTxtUnsupportedShort": "TXT not supported"
   },
