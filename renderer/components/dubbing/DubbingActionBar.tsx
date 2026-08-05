@@ -45,9 +45,12 @@ export default function DubbingActionBar({
     activeEngine,
   } = dub;
 
-  const allDone = summary.total > 0 && summary.done === summary.total;
+  const allDone =
+    summary.total > 0 &&
+    summary.done === summary.total &&
+    summary.needsUpdate === 0;
   // 有可导出的结果（含过长行，与 canExport 同口径）才展示导出按钮。
-  const hasResults = summary.done + summary.overlong > 0;
+  const hasResults = summary.generated > 0;
   // 全部完成时重跑为全量口径，否则按剩余待合成口径预估。
   const estRows = allDone ? charEstimate.totalRows : charEstimate.pendingRows;
   const estChars = allDone

@@ -32,6 +32,7 @@ import {
   Clapperboard,
   Play,
   X,
+  RotateCcw,
 } from 'lucide-react';
 import { useDubbing } from '../../hooks/useDubbing';
 import { getWorkItemTarget } from 'lib/workItemUtils';
@@ -47,6 +48,7 @@ interface DubbingPanelProps {
   initialVideoPath?: string;
   /** 最近任务回开：尝试恢复的持久化会话 */
   initialSessionId?: string;
+  initialProofreadDataFile?: string;
   /** 关联的工作项 id */
   workItemId?: string;
   /** 检查员模式：配音确认检查点的流水线上下文（任务 id + 文件 uuid） */
@@ -61,6 +63,7 @@ export default function DubbingPanel({
   initialSubtitlePath,
   initialVideoPath,
   initialSessionId,
+  initialProofreadDataFile,
   workItemId,
   gateProject,
   gateFile,
@@ -74,6 +77,7 @@ export default function DubbingPanel({
     initialSubtitlePath,
     initialVideoPath,
     initialSessionId,
+    initialProofreadDataFile,
     workItemId,
   });
   const playerRef = useRef<DubbingPlayerHandle>(null);
@@ -306,6 +310,26 @@ export default function DubbingPanel({
         </p>
       )}
 
+      {!dub.running && dub.summary.needsUpdate > 0 && (
+        <div className="flex flex-shrink-0 items-center gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-warning">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <span className="flex-1">
+            {t('staleAudioHint', { count: dub.summary.needsUpdate })}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1 text-xs"
+            disabled={!dub.canStart}
+            onClick={dub.regenerateStale}
+          >
+            <RotateCcw className="h-3 w-3" />
+            {t('regenerateAllStale')}
+          </Button>
+        </div>
+      )}
+
       {/* 导出结果横幅：紧邻文件条，始终可见、可关闭 */}
       {dub.exportResult && dub.exportResult !== dismissedResult && (
         <div className="flex flex-shrink-0 items-start gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-xs">
@@ -397,6 +421,30 @@ export default function DubbingPanel({
             </AlertDialogCancel>
             <AlertDialogAction onClick={dub.confirmRebuild}>
               {t('staleSessionRebuild')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={dub.staleExportWarning}
+        onOpenChange={(open) => {
+          if (!open) dub.cancelStaleExport();
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('staleExportTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('staleExportDesc', { count: dub.summary.needsUpdate })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={dub.cancelStaleExport}>
+              {t('staleExportCancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={dub.confirmStaleRegeneration}>
+              {t('regenerateAllStale')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

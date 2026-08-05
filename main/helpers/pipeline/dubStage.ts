@@ -172,6 +172,7 @@ async function ensureDubSession(
   return createDubbingSession(
     subtitlePath,
     isMediaInput ? file.filePath : undefined,
+    file.proofreadDataFile,
   );
 }
 

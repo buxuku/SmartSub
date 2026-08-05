@@ -29,6 +29,10 @@ import {
 import { cn } from 'lib/utils';
 import type { UseDubbingReturn } from '../../hooks/useDubbing';
 import type { DubbingCueView } from '../../../types/dubbing';
+import {
+  primaryDubbingSpeakerId,
+  resolveDubbingVoiceId,
+} from '../../../types/dubbing';
 
 function fmtTime(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -37,7 +41,7 @@ function fmtTime(ms: number): string {
   return `${mm}:${ss}`;
 }
 
-type CueFilter = 'all' | 'overlong' | 'failed';
+type CueFilter = 'all' | 'overlong' | 'failed' | 'needsUpdate';
 
 export default function DubbingCueList({
   dub,
@@ -62,6 +66,9 @@ export default function DubbingCueList({
     playAll,
     playingAll,
     summary,
+    speakers,
+    speakerVoiceMap,
+    activeVoice,
   } = dub;
 
   const [filter, setFilter] = useState<CueFilter>('all');
@@ -75,6 +82,7 @@ export default function DubbingCueList({
       );
     }
     if (filter === 'failed') return cues.filter((c) => c.status === 'failed');
+    if (filter === 'needsUpdate') return cues.filter((c) => c.needsUpdate);
     return cues;
   }, [cues, filter]);
 
@@ -176,6 +184,15 @@ export default function DubbingCueList({
           {t('filterAll', { count: cues.length })}
         </Button>
         <Button
+          variant={filter === 'needsUpdate' ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-6 px-2 text-xs text-warning"
+          onClick={() => setFilter('needsUpdate')}
+          disabled={summary.needsUpdate === 0 && filter !== 'needsUpdate'}
+        >
+          {t('filterNeedsUpdate', { count: summary.needsUpdate })}
+        </Button>
+        <Button
           variant={filter === 'overlong' ? 'secondary' : 'ghost'}
           size="sm"
           className="h-6 px-2 text-xs text-warning"
@@ -237,6 +254,25 @@ export default function DubbingCueList({
             const slotSec = cue.synthesizedMs
               ? (cue.synthesizedMs / 1000).toFixed(1)
               : null;
+            const primarySpeakerId = primaryDubbingSpeakerId(cue);
+            const assignedSpeakers = (cue.speakerIds || [])
+              .map((id) => speakers.find((speaker) => speaker.id === id))
+              .filter(Boolean);
+            const primarySpeaker = speakers.find(
+              (speaker) => speaker.id === primarySpeakerId,
+            );
+            const resolvedVoiceId = resolveDubbingVoiceId(
+              cue,
+              speakerVoiceMap,
+              activeVoice,
+            );
+            const resolvedVoiceLabel =
+              activeEngine?.voices.find((voice) => voice.id === resolvedVoiceId)
+                ?.label || resolvedVoiceId;
+            const overrideUnavailable = Boolean(
+              cue.voiceId &&
+                !activeEngine?.voices.some((voice) => voice.id === cue.voiceId),
+            );
             return (
               <div
                 key={cue.index}
@@ -268,6 +304,34 @@ export default function DubbingCueList({
                       aria-label={t('overlapTag')}
                     />
                   )}
+                  {assignedSpeakers.length > 0 ? (
+                    <span className="flex max-w-36 shrink-0 items-center gap-1 overflow-hidden">
+                      {assignedSpeakers.map((speaker) => (
+                        <span
+                          key={speaker!.id}
+                          className="inline-flex min-w-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px]"
+                          style={{ borderColor: speaker!.color }}
+                          title={speaker!.name}
+                        >
+                          <span
+                            className="h-1.5 w-1.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: speaker!.color }}
+                          />
+                          <span className="truncate">{speaker!.name}</span>
+                        </span>
+                      ))}
+                    </span>
+                  ) : dub.speakerMode ? (
+                    <span className="shrink-0 text-[10px] text-muted-foreground">
+                      {t('cueUnassigned')}
+                    </span>
+                  ) : null}
+                  {(cue.speakerIds?.length || 0) > 1 && (
+                    <Layers
+                      className="h-3 w-3 shrink-0 text-muted-foreground"
+                      aria-label={t('cueSpeakerOverlap')}
+                    />
+                  )}
                   <button
                     className="min-w-0 flex-1 truncate text-left text-sm hover:text-primary"
                     onClick={() => toggleExpand(cue)}
@@ -292,21 +356,47 @@ export default function DubbingCueList({
                     </span>
                   )}
 
+                  {cue.voiceId && (
+                    <span className="shrink-0 rounded bg-primary/10 px-1 text-[10px] text-primary">
+                      {t('cueVoiceOverride')}
+                    </span>
+                  )}
+                  {cue.needsUpdate && (
+                    <span className="shrink-0 rounded bg-warning/15 px-1 text-[10px] text-warning">
+                      {t('cueNeedsUpdate')}
+                    </span>
+                  )}
+
                   {/* 行级 voice 覆盖 */}
                   <Select
-                    value={cue.voiceId || '__global__'}
+                    value={cue.voiceId || '__follow__'}
                     onValueChange={(v) =>
-                      setCueVoice(cue.index, v === '__global__' ? '' : v)
+                      setCueVoice(cue.index, v === '__follow__' ? '' : v)
                     }
                     disabled={running || !activeEngine}
                   >
-                    <SelectTrigger className="h-6 w-28 shrink-0 px-2 text-xs">
+                    <SelectTrigger
+                      className="h-6 w-44 shrink-0 px-2 text-xs"
+                      aria-label={t('cueVoiceFor', { index: cue.index + 1 })}
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="max-h-56">
-                      <SelectItem value="__global__">
-                        {t('voiceGlobal')}
+                      <SelectItem value="__follow__">
+                        {primarySpeaker
+                          ? t('voiceFollowSpeaker', {
+                              name: primarySpeaker.name,
+                              voice: resolvedVoiceLabel,
+                            })
+                          : t('voiceUnassignedGlobal', {
+                              voice: resolvedVoiceLabel,
+                            })}
                       </SelectItem>
+                      {overrideUnavailable && cue.voiceId && (
+                        <SelectItem value={cue.voiceId} disabled>
+                          {t('voiceUnavailable')}
+                        </SelectItem>
+                      )}
                       {(activeEngine?.voices ?? []).map((v) => (
                         <SelectItem key={v.id} value={v.id}>
                           {v.label}
