@@ -69,6 +69,7 @@ import {
   missingDubbingSpeakerVoiceIds,
   primaryDubbingSpeakerId,
   resolveDubbingVoiceId,
+  withDubbingGlobalSpeakerFallback,
   type DubbingSessionMeta,
 } from '../../types/dubbing';
 import {
@@ -1099,6 +1100,16 @@ function cue(
     missingDubbingSpeakerVoiceIds([{ id: 1, cueCount: 3 }], {}, new Set()),
     [],
     'speaker voice: 单角色保持原全局音色流程',
+  );
+  eq(
+    withDubbingGlobalSpeakerFallback(speakers, { '1': 'host-voice' }),
+    { '1': 'host-voice', '2': DUBBING_GLOBAL_VOICE_ID },
+    'speaker voice: headless 流水线保留已有映射并让未配置角色显式跟随全局',
+  );
+  eq(
+    withDubbingGlobalSpeakerFallback(speakers, {}, new Set([2])),
+    { '1': DUBBING_GLOBAL_VOICE_ID },
+    'speaker voice: headless 流水线不覆盖仍需确认的角色合并冲突',
   );
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dub-speaker-test-'));

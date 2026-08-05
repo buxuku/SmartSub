@@ -104,6 +104,30 @@ export function missingDubbingSpeakerVoiceIds(
     .map((speaker) => speaker.id);
 }
 
+/**
+ * Headless flows have an explicit task-level global voice but no role picker.
+ * Record that choice for active, unmapped roles while preserving user mappings
+ * and roles whose merge conflict still requires an explicit decision.
+ */
+export function withDubbingGlobalSpeakerFallback(
+  speakers: readonly Pick<DubbingSpeaker, 'id' | 'cueCount'>[],
+  speakerVoiceMap: DubbingSpeakerVoiceMap,
+  excludedSpeakerIds: ReadonlySet<number> = new Set<number>(),
+): DubbingSpeakerVoiceMap {
+  const next = { ...speakerVoiceMap };
+  for (const speaker of speakers) {
+    if (
+      speaker.cueCount <= 0 ||
+      excludedSpeakerIds.has(speaker.id) ||
+      next[String(speaker.id)]
+    ) {
+      continue;
+    }
+    next[String(speaker.id)] = DUBBING_GLOBAL_VOICE_ID;
+  }
+  return next;
+}
+
 /** 一条配音 cue = 字幕 cue + 配音扩展。 */
 export interface DubbingCue {
   /** 行号（0-based），会话内稳定标识。 */

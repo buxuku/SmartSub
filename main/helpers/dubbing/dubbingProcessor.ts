@@ -1129,6 +1129,8 @@ export interface DubTrackResult {
 export async function buildDubTrack(
   session: DubbingSession,
   opts: {
+    /** Current task/workbench global voice, used to reject stale artifacts. */
+    globalVoiceId: string;
     overflow?: DubbingOverflowMode;
     overlapMode?: DubbingOverlapMode;
     signal?: AbortSignal;
@@ -1145,6 +1147,11 @@ export async function buildDubTrack(
     };
   },
 ): Promise<DubTrackResult> {
+  const staleCount = syncDubbingVoiceStaleness(session, opts.globalVoiceId);
+  if (staleCount > 0) {
+    flushDubbingSession(session);
+    throw new Error(`还有 ${staleCount} 条配音使用旧音色，请先重新生成`);
+  }
   const withWav = session.cues.filter((c) => c.wavPath && c.finalMs);
   if (withWav.length === 0) {
     throw new Error('没有可导出的配音行，请先开始配音');
@@ -1248,10 +1255,6 @@ export async function exportDubbing(
   onProgress: (e: DubbingProgressEvent) => void,
 ): Promise<ExportResult> {
   if (session.running) throw new Error('合成进行中，请先等待或取消');
-  const staleCount = syncDubbingVoiceStaleness(session, config.voice);
-  if (staleCount > 0) {
-    throw new Error(`还有 ${staleCount} 条配音使用旧音色，请先重新生成`);
-  }
   const withWav = session.cues.filter((c) => c.wavPath && c.finalMs);
   if (withWav.length === 0) {
     throw new Error('没有可导出的配音行，请先开始配音');
@@ -1272,6 +1275,7 @@ export async function exportDubbing(
     const outputPath = resolveOutputPath(session, config);
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     const track = await buildDubTrack(session, {
+      globalVoiceId: config.voice,
       overflow: config.overflow,
       overlapMode: config.overlapMode,
       signal,
