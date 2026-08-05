@@ -6,6 +6,12 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { Subtitle } from './useSubtitles';
+import {
+  normalizePrimarySpeakerId,
+  normalizeSpeakerIds,
+  speakerListsEqual,
+  type SpeakerInfo,
+} from '../../types/proofreadData';
 
 export interface RangeCommand {
   /** 区间起点（应用前数组中的下标） */
@@ -18,13 +24,36 @@ export interface RangeCommand {
 
 const MAX_HISTORY = 200;
 
+interface ProofreadCommand {
+  range?: RangeCommand;
+  speakersBefore?: SpeakerInfo[];
+  speakersAfter?: SpeakerInfo[];
+}
+
+export interface ProofreadHistoryState {
+  subtitles: Subtitle[];
+  speakers: SpeakerInfo[];
+}
+
+const speakerAssignmentEquals = (a: Subtitle, b: Subtitle): boolean => {
+  const left = normalizeSpeakerIds(a.speakerIds);
+  const right = normalizeSpeakerIds(b.speakerIds);
+  return (
+    left.length === right.length &&
+    left.every((id, index) => id === right[index]) &&
+    normalizePrimarySpeakerId(a.primarySpeakerId, left) ===
+      normalizePrimarySpeakerId(b.primarySpeakerId, right)
+  );
+};
+
 /** 行内容等价（用于批量操作的最小区间 diff 计算） */
 export const subtitleRowEquals = (a: Subtitle, b: Subtitle): boolean =>
   a === b ||
   (a.id === b.id &&
     a.startEndTime === b.startEndTime &&
     (a.sourceContent ?? '') === (b.sourceContent ?? '') &&
-    (a.targetContent ?? '') === (b.targetContent ?? ''));
+    (a.targetContent ?? '') === (b.targetContent ?? '') &&
+    speakerAssignmentEquals(a, b));
 
 /**
  * 计算 before → after 的最小连续区间 diff；无变化返回 null。
@@ -62,7 +91,7 @@ export const computeRangeDiff = (
 };
 
 export function useSubtitleHistory() {
-  const commandsRef = useRef<RangeCommand[]>([]);
+  const commandsRef = useRef<ProofreadCommand[]>([]);
   const cursorRef = useRef(0);
   // 仅用于在栈变化后触发重渲染，让 canUndo/canRedo 反映最新值
   const [, setVersion] = useState(0);
@@ -72,7 +101,36 @@ export function useSubtitleHistory() {
     (cmd: RangeCommand) => {
       // 新命令入栈：丢弃 redo 分支
       const cmds = commandsRef.current.slice(0, cursorRef.current);
-      cmds.push(cmd);
+      cmds.push({ range: cmd });
+      while (cmds.length > MAX_HISTORY) cmds.shift();
+      commandsRef.current = cmds;
+      cursorRef.current = cmds.length;
+      bump();
+    },
+    [bump],
+  );
+
+  const pushDocument = useCallback(
+    (
+      beforeSubtitles: Subtitle[],
+      afterSubtitles: Subtitle[],
+      beforeSpeakers: SpeakerInfo[],
+      afterSpeakers: SpeakerInfo[],
+    ) => {
+      const range =
+        computeRangeDiff(beforeSubtitles, afterSubtitles) || undefined;
+      const speakersChanged = !speakerListsEqual(beforeSpeakers, afterSpeakers);
+      if (!range && !speakersChanged) return;
+      const cmds = commandsRef.current.slice(0, cursorRef.current);
+      cmds.push({
+        range,
+        ...(speakersChanged
+          ? {
+              speakersBefore: beforeSpeakers.map((speaker) => ({ ...speaker })),
+              speakersAfter: afterSpeakers.map((speaker) => ({ ...speaker })),
+            }
+          : {}),
+      });
       while (cmds.length > MAX_HISTORY) cmds.shift();
       commandsRef.current = cmds;
       cursorRef.current = cmds.length;
@@ -87,45 +145,75 @@ export function useSubtitleHistory() {
     bump();
   }, [bump]);
 
-  /** 应用撤销：返回新数组；无可撤销或数据漂移时返回 null */
+  /** 应用撤销：同步恢复字幕区间和角色名册。 */
   const undo = useCallback(
-    (current: Subtitle[]): Subtitle[] | null => {
+    (
+      current: Subtitle[],
+      currentSpeakers: SpeakerInfo[],
+    ): ProofreadHistoryState | null => {
       if (cursorRef.current <= 0) return null;
       const cmd = commandsRef.current[cursorRef.current - 1];
+      const range = cmd.range;
       // 区间防御：命令与当前数组不再吻合时清栈，避免错位应用
-      if (cmd.start < 0 || cmd.start + cmd.inserted.length > current.length) {
+      if (
+        range &&
+        (range.start < 0 ||
+          range.start + range.inserted.length > current.length)
+      ) {
         reset();
         return null;
       }
       const next = current.slice();
-      next.splice(cmd.start, cmd.inserted.length, ...cmd.removed);
+      if (range) {
+        next.splice(range.start, range.inserted.length, ...range.removed);
+      }
       cursorRef.current -= 1;
       bump();
-      return next;
+      return {
+        subtitles: next,
+        speakers: (cmd.speakersBefore || currentSpeakers).map((speaker) => ({
+          ...speaker,
+        })),
+      };
     },
     [bump, reset],
   );
 
-  /** 应用重做：返回新数组；无可重做或数据漂移时返回 null */
+  /** 应用重做：同步恢复字幕区间和角色名册。 */
   const redo = useCallback(
-    (current: Subtitle[]): Subtitle[] | null => {
+    (
+      current: Subtitle[],
+      currentSpeakers: SpeakerInfo[],
+    ): ProofreadHistoryState | null => {
       if (cursorRef.current >= commandsRef.current.length) return null;
       const cmd = commandsRef.current[cursorRef.current];
-      if (cmd.start < 0 || cmd.start + cmd.removed.length > current.length) {
+      const range = cmd.range;
+      if (
+        range &&
+        (range.start < 0 || range.start + range.removed.length > current.length)
+      ) {
         reset();
         return null;
       }
       const next = current.slice();
-      next.splice(cmd.start, cmd.removed.length, ...cmd.inserted);
+      if (range) {
+        next.splice(range.start, range.removed.length, ...range.inserted);
+      }
       cursorRef.current += 1;
       bump();
-      return next;
+      return {
+        subtitles: next,
+        speakers: (cmd.speakersAfter || currentSpeakers).map((speaker) => ({
+          ...speaker,
+        })),
+      };
     },
     [bump, reset],
   );
 
   return {
     push,
+    pushDocument,
     undo,
     redo,
     reset,

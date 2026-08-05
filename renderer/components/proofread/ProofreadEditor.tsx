@@ -28,6 +28,7 @@ import VideoPlayer from '../subtitle/VideoPlayer';
 import VideoInfo from '../subtitle/VideoInfo';
 import SubtitleList from '../subtitle/SubtitleList';
 import SubtitleEditToolbar from '../subtitle/SubtitleEditToolbar';
+import SpeakerToolbar, { type SpeakerFilter } from './SpeakerToolbar';
 
 interface PendingFile {
   id: string;
@@ -77,6 +78,9 @@ export default function ProofreadEditor({
     mergedSubtitles,
     updateSubtitles,
     getSubtitles,
+    speakers,
+    embedSpeakerNames,
+    hasSpeakerData,
     videoPath,
     currentSubtitleIndex,
     setCurrentSubtitleIndex,
@@ -101,6 +105,13 @@ export default function ProofreadEditor({
     handleSplitSubtitle,
     handleDeleteSubtitle,
     handleTimeChange,
+    handleSetCueSpeakers,
+    handleCreateSpeaker,
+    handleRenameSpeaker,
+    handleSetSpeakerColor,
+    handleMoveSpeaker,
+    handleDeleteSpeaker,
+    handleEmbedSpeakerNamesChange,
     // 光标位置
     handleCursorPositionChange,
     getCursorPosition,
@@ -144,6 +155,15 @@ export default function ProofreadEditor({
   const [videoCollapsed, setVideoCollapsed] = useState(false);
   const [expandAll, setExpandAll] = useState(false);
   const [fontScale, setFontScale] = useState<'s' | 'm' | 'l'>('m');
+  const [speakerFilter, setSpeakerFilter] = useState<SpeakerFilter>('all');
+
+  useEffect(() => {
+    if (!speakerFilter.startsWith('speaker:')) return;
+    const speakerId = Number(speakerFilter.slice('speaker:'.length));
+    if (!speakers.some((speaker) => speaker.id === speakerId)) {
+      setSpeakerFilter('all');
+    }
+  }, [speakerFilter, speakers]);
 
   // 读取持久化偏好（仅客户端，避免 SSR 不一致）
   useEffect(() => {
@@ -385,6 +405,21 @@ export default function ProofreadEditor({
         </TooltipProvider>
 
         {/* 编辑工具栏 */}
+        {hasSpeakerData && (
+          <SpeakerToolbar
+            speakers={speakers}
+            subtitles={mergedSubtitles}
+            filter={speakerFilter}
+            onFilterChange={setSpeakerFilter}
+            embedSpeakerNames={embedSpeakerNames}
+            onEmbedSpeakerNamesChange={handleEmbedSpeakerNamesChange}
+            onCreateSpeaker={() => handleCreateSpeaker()}
+            onRenameSpeaker={handleRenameSpeaker}
+            onSetSpeakerColor={handleSetSpeakerColor}
+            onMoveSpeaker={handleMoveSpeaker}
+            onDeleteSpeaker={handleDeleteSpeaker}
+          />
+        )}
         <SubtitleEditToolbar
           subtitles={mergedSubtitles}
           onSubtitlesChange={updateSubtitles}
@@ -469,6 +504,10 @@ export default function ProofreadEditor({
           onMergeRange={handleMergeSubtitles}
           expandAll={expandAll}
           fontScale={fontScale}
+          speakers={speakers}
+          speakerFilter={speakerFilter}
+          onCueSpeakersChange={handleSetCueSpeakers}
+          onCreateSpeaker={handleCreateSpeaker}
         />
       </div>
 

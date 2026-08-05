@@ -12,38 +12,26 @@ import {
 import { logMessage } from './storeManager';
 import {
   speakerIdsForCues,
+  stripSpeakerLabelPrefix,
   type SpeakerDiarizationSegment,
 } from './speakerDiarization/alignment';
 import {
   mergeSpeakerIds,
   realignSpeakerIdsForCue,
 } from '../../types/speakerDiarization';
+import {
+  PROOFREAD_DATA_VERSION,
+  normalizePrimarySpeakerId,
+  normalizeProofreadData,
+  normalizeSpeakerIds,
+  normalizeSpeakerRoster,
+  type ProofreadDataCue,
+  type ProofreadDataFileV2,
+  type SpeakerInfo,
+} from '../../types/proofreadData';
 
-export interface ProofreadDataCue {
-  id: string;
-  startMs: number;
-  endMs: number;
-  source: string;
-  target: string;
-  /** 一基角色编号，与可选文本标签 `[Speaker N]` 的 N 一致。 */
-  speakerIds?: number[];
-}
-
-export interface ProofreadDataFile {
-  version: 1;
-  meta: {
-    createdAt: string;
-    updatedAt: string;
-    sourceLanguage?: string;
-    targetLanguage?: string;
-    translateContent?: string;
-    outputFormat?: string;
-    sourceFile?: string;
-    targetFile?: string;
-    finalTargetFile?: string;
-  };
-  cues: ProofreadDataCue[];
-}
+export type { ProofreadDataCue, SpeakerInfo } from '../../types/proofreadData';
+export type ProofreadDataFile = ProofreadDataFileV2;
 
 export interface ProofreadSubtitleRow {
   id: string;
@@ -55,6 +43,7 @@ export interface ProofreadSubtitleRow {
   endTimeInSeconds: number;
   isEditing: boolean;
   speakerIds?: number[];
+  primarySpeakerId?: number;
 }
 
 export type ProofreadDataWriteResult =
@@ -125,14 +114,23 @@ function buildCues(
       targetByTime.get(sourceEntry.startEndTime) || targetEntries[index];
     const { startMs, endMs } = parseStartEndTime(sourceEntry.startEndTime);
 
+    const assignedSpeakerIds = normalizeSpeakerIds(speakerIds[index]);
+    const cleanSpeakerPrefix = assignedSpeakerIds.length > 0;
     const cue: ProofreadDataCue = {
       id: sourceEntry.id || String(index + 1),
       startMs,
       endMs,
-      source: entryText(sourceEntry),
-      target: entryText(targetEntry),
+      source: cleanSpeakerPrefix
+        ? stripSpeakerLabelPrefix(entryText(sourceEntry))
+        : entryText(sourceEntry),
+      target: cleanSpeakerPrefix
+        ? stripSpeakerLabelPrefix(entryText(targetEntry))
+        : entryText(targetEntry),
     };
-    if (speakerIds[index]?.length) cue.speakerIds = speakerIds[index];
+    if (assignedSpeakerIds.length) {
+      cue.speakerIds = assignedSpeakerIds;
+      cue.primarySpeakerId = assignedSpeakerIds[0];
+    }
     return cue;
   });
 }
@@ -170,8 +168,9 @@ export async function writeProofreadDataFromFiles({
 
     const targetEntries = await readSubtitleEntries(targetFile);
     const now = new Date().toISOString();
+    const cues = buildCues(sourceEntries, targetEntries, speakerSegments);
     const proofreadData: ProofreadDataFile = {
-      version: 1,
+      version: PROOFREAD_DATA_VERSION,
       meta: {
         createdAt: now,
         updatedAt: now,
@@ -183,7 +182,8 @@ export async function writeProofreadDataFromFiles({
         targetFile,
         finalTargetFile,
       },
-      cues: buildCues(sourceEntries, targetEntries, speakerSegments),
+      speakers: normalizeSpeakerRoster([], cues),
+      cues,
     };
 
     const proofreadDataFile = getProofreadDataPath(file);
@@ -211,11 +211,27 @@ export async function readProofreadDataFile(
   filePath: string,
 ): Promise<ProofreadDataFile> {
   const content = await fs.promises.readFile(filePath, 'utf-8');
-  const parsed = JSON.parse(content) as ProofreadDataFile;
-  if (parsed?.version !== 1 || !Array.isArray(parsed.cues)) {
+  try {
+    const raw = JSON.parse(content);
+    const normalized = normalizeProofreadData(raw);
+    // v1 was created while technical labels could still be embedded in the
+    // source/target text. Keep migration idempotent and only strip labels from
+    // cues that already carry structured speaker assignments.
+    if (raw?.version === 1) {
+      normalized.cues = normalized.cues.map((cue) =>
+        cue.speakerIds?.length
+          ? {
+              ...cue,
+              source: stripSpeakerLabelPrefix(cue.source),
+              target: stripSpeakerLabelPrefix(cue.target),
+            }
+          : cue,
+      );
+    }
+    return normalized;
+  } catch {
     throw new Error(`Invalid proofread data file: ${filePath}`);
   }
-  return parsed;
 }
 
 export function proofreadDataToSubtitleRows(
@@ -235,6 +251,9 @@ export function proofreadDataToSubtitleRows(
       endTimeInSeconds: cue.endMs / 1000,
       isEditing: false,
       ...(cue.speakerIds?.length ? { speakerIds: [...cue.speakerIds] } : {}),
+      ...(cue.primarySpeakerId
+        ? { primarySpeakerId: cue.primarySpeakerId }
+        : {}),
     };
   });
 }
@@ -242,16 +261,19 @@ export function proofreadDataToSubtitleRows(
 export async function updateProofreadDataFromSubtitles(
   filePath: string,
   subtitles: ProofreadSubtitleRow[],
+  speakers?: SpeakerInfo[],
 ): Promise<ProofreadDataFile> {
   const existing = await readProofreadDataFile(filePath);
   const existingById = new Map(existing.cues.map((cue) => [cue.id, cue]));
   const now = new Date().toISOString();
   const updated: ProofreadDataFile = {
     ...existing,
+    version: PROOFREAD_DATA_VERSION,
     meta: {
       ...existing.meta,
       updatedAt: now,
     },
+    speakers: normalizeSpeakerRoster(speakers || existing.speakers, subtitles),
     cues: subtitles.map((subtitle, index) => {
       const { startMs, endMs } = parseStartEndTime(subtitle.startEndTime);
       const source =
@@ -268,13 +290,23 @@ export async function updateProofreadDataFromSubtitles(
             subtitle.speakerIds || previous?.speakerIds,
           )
         : mergeSpeakerIds(subtitle.speakerIds || previous?.speakerIds);
+      const normalizedSpeakerIds = normalizeSpeakerIds(speakerIds);
+      const primarySpeakerId = normalizePrimarySpeakerId(
+        subtitle.primarySpeakerId || previous?.primarySpeakerId,
+        normalizedSpeakerIds,
+      );
       return {
         id: subtitle.id || String(index + 1),
         startMs,
         endMs,
         source,
         target: subtitle.targetContent ?? '',
-        ...(speakerIds?.length ? { speakerIds: [...speakerIds] } : {}),
+        ...(normalizedSpeakerIds.length
+          ? {
+              speakerIds: normalizedSpeakerIds,
+              primarySpeakerId,
+            }
+          : {}),
       };
     }),
   };

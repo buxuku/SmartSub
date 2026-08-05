@@ -17,6 +17,8 @@ export interface Subtitle {
   isEditing?: boolean;
   /** 一基角色编号；校对合并/拆分时随 cue 一起保留。 */
   speakerIds?: number[];
+  /** 显式主要角色；多角色时不依赖 ID 排序推断。 */
+  primarySpeakerId?: number;
 }
 
 export interface SubtitleStats {
