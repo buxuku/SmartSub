@@ -18,6 +18,7 @@ import {
   nextSpeakerId,
   normalizePrimarySpeakerId,
   normalizeSpeakerAssignment,
+  normalizeSpeakerIds,
   sanitizeSpeakerDisplayName,
   speakerListsEqual,
   type SpeakerInfo,
@@ -713,6 +714,11 @@ export const useStandaloneSubtitles = (
               ),
             }
           : { speakerIds: undefined, primarySpeakerId: undefined }),
+        ...(toMerge.some(
+          (subtitle) => subtitle.speakerAssignmentSource === 'manual',
+        )
+          ? { speakerAssignmentSource: 'manual' as const }
+          : {}),
       };
 
       history.push({ start: startIndex, removed: toMerge, inserted: [merged] });
@@ -785,6 +791,7 @@ export const useStandaloneSubtitles = (
         ...row,
         speakerIds,
         primarySpeakerId,
+        speakerAssignmentSource: 'manual' as const,
       });
       const next = current.slice();
       next[index] = updated;
@@ -808,6 +815,7 @@ export const useStandaloneSubtitles = (
           ...nextSubtitles[cueIndex],
           speakerIds: [id],
           primarySpeakerId: id,
+          speakerAssignmentSource: 'manual' as const,
         });
       }
       commitSpeakerDocument(nextSubtitles, nextSpeakers);
@@ -845,10 +853,18 @@ export const useStandaloneSubtitles = (
   const handleMoveSpeaker = useCallback(
     (sourceId: number, targetId: number, removeSource: boolean) => {
       if (sourceId === targetId) return;
+      const currentSubtitles = subtitlesRef.current;
+      const affected = currentSubtitles.map((subtitle) =>
+        normalizeSpeakerIds(subtitle.speakerIds).includes(sourceId),
+      );
       const nextSubtitles = moveSpeakerAssignments(
-        subtitlesRef.current,
+        currentSubtitles,
         sourceId,
         targetId,
+      ).map((subtitle, index) =>
+        affected[index]
+          ? { ...subtitle, speakerAssignmentSource: 'manual' as const }
+          : subtitle,
       );
       const nextSpeakers = removeSource
         ? speakersRef.current.filter((speaker) => speaker.id !== sourceId)

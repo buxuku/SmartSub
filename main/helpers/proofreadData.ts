@@ -21,10 +21,12 @@ import {
 } from '../../types/speakerDiarization';
 import {
   PROOFREAD_DATA_VERSION,
+  hasExplicitSpeakerAssignment,
   normalizePrimarySpeakerId,
   normalizeProofreadData,
   normalizeSpeakerIds,
   normalizeSpeakerRoster,
+  shouldRealignSpeakerAssignment,
   type ProofreadDataCue,
   type ProofreadDataFileV2,
   type SpeakerInfo,
@@ -44,6 +46,7 @@ export interface ProofreadSubtitleRow {
   isEditing: boolean;
   speakerIds?: number[];
   primarySpeakerId?: number;
+  speakerAssignmentSource?: 'manual';
 }
 
 export type ProofreadDataWriteResult =
@@ -250,9 +253,14 @@ export function proofreadDataToSubtitleRows(
       startTimeInSeconds: cue.startMs / 1000,
       endTimeInSeconds: cue.endMs / 1000,
       isEditing: false,
-      ...(cue.speakerIds?.length ? { speakerIds: [...cue.speakerIds] } : {}),
+      ...(hasExplicitSpeakerAssignment(cue)
+        ? { speakerIds: [...(cue.speakerIds || [])] }
+        : {}),
       ...(cue.primarySpeakerId
         ? { primarySpeakerId: cue.primarySpeakerId }
+        : {}),
+      ...(cue.speakerAssignmentSource === 'manual'
+        ? { speakerAssignmentSource: 'manual' as const }
         : {}),
     };
   });
@@ -282,17 +290,29 @@ export async function updateProofreadDataFromSubtitles(
       const timingChanged = Boolean(
         previous && (previous.startMs !== startMs || previous.endMs !== endMs),
       );
-      const speakerIds = timingChanged
+      const hasCurrentAssignment = hasExplicitSpeakerAssignment(subtitle);
+      const currentSpeakerIds = hasCurrentAssignment
+        ? subtitle.speakerIds
+        : previous?.speakerIds;
+      const speakerAssignmentSource =
+        subtitle.speakerAssignmentSource || previous?.speakerAssignmentSource;
+      // Timing-based realignment is only valid for automatic assignments.
+      // Once the user has corrected a cue, the current row (including an
+      // explicit empty array) is authoritative across timing edits and saves.
+      const speakerIds = shouldRealignSpeakerAssignment(
+        timingChanged,
+        speakerAssignmentSource,
+      )
         ? realignSpeakerIdsForCue(
             startMs,
             endMs,
             existing.cues,
-            subtitle.speakerIds || previous?.speakerIds,
+            currentSpeakerIds,
           )
-        : mergeSpeakerIds(subtitle.speakerIds || previous?.speakerIds);
+        : mergeSpeakerIds(currentSpeakerIds);
       const normalizedSpeakerIds = normalizeSpeakerIds(speakerIds);
       const primarySpeakerId = normalizePrimarySpeakerId(
-        subtitle.primarySpeakerId || previous?.primarySpeakerId,
+        subtitle.primarySpeakerId ?? previous?.primarySpeakerId,
         normalizedSpeakerIds,
       );
       return {
@@ -301,11 +321,14 @@ export async function updateProofreadDataFromSubtitles(
         endMs,
         source,
         target: subtitle.targetContent ?? '',
-        ...(normalizedSpeakerIds.length
+        ...(normalizedSpeakerIds.length || speakerAssignmentSource === 'manual'
           ? {
               speakerIds: normalizedSpeakerIds,
-              primarySpeakerId,
+              ...(primarySpeakerId ? { primarySpeakerId } : {}),
             }
+          : {}),
+        ...(speakerAssignmentSource === 'manual'
+          ? { speakerAssignmentSource: 'manual' as const }
           : {}),
       };
     }),
