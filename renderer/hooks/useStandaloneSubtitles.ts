@@ -10,6 +10,18 @@ import { useTranslation } from 'next-i18next';
 import { Subtitle, SubtitleStats, PlayerSubtitleTrack } from './useSubtitles';
 import { useSubtitleHistory, computeRangeDiff } from './useSubtitleHistory';
 import { mergeSpeakerIds } from '../../types/speakerDiarization';
+import {
+  SPEAKER_COLOR_PALETTE,
+  countSpeakerCues,
+  createDefaultSpeaker,
+  moveSpeakerAssignments,
+  nextSpeakerId,
+  normalizePrimarySpeakerId,
+  normalizeSpeakerAssignment,
+  sanitizeSpeakerDisplayName,
+  speakerListsEqual,
+  type SpeakerInfo,
+} from '../../types/proofreadData';
 
 interface StandaloneSubtitlesConfig {
   videoPath?: string;
@@ -75,6 +87,9 @@ export const useStandaloneSubtitles = (
     PlayerSubtitleTrack[]
   >([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [speakers, setSpeakers] = useState<SpeakerInfo[]>([]);
+  const speakersRef = useRef<SpeakerInfo[]>([]);
+  const [embedSpeakerNames, setEmbedSpeakerNames] = useState(false);
 
   // 撤销/重做历史（命令模式：区间 diff 命令栈）
   const history = useSubtitleHistory();
@@ -105,6 +120,11 @@ export const useStandaloneSubtitles = (
     setMergedSubtitles(next);
   }, []);
 
+  const applySpeakers = useCallback((next: SpeakerInfo[]) => {
+    speakersRef.current = next;
+    setSpeakers(next);
+  }, []);
+
   // 读取最新字幕数组（异步流程结束后回填用，避免拿到过期快照）
   const getSubtitles = useCallback(() => subtitlesRef.current, []);
 
@@ -123,18 +143,32 @@ export const useStandaloneSubtitles = (
 
   const readProofreadDataFile = async (
     filePath: string,
-  ): Promise<Subtitle[]> => {
+  ): Promise<{ subtitles: Subtitle[]; speakers: SpeakerInfo[] }> => {
     try {
-      const result: Subtitle[] = await window.ipc.invoke(
-        'readProofreadDataFile',
-        {
-          filePath,
-        },
+      const result = await window.ipc.invoke('readProofreadDataFile', {
+        filePath,
+      });
+      if (Array.isArray(result)) {
+        return { subtitles: result, speakers: [] };
+      }
+      const localizedSpeakers = (result?.speakers || []).map(
+        (speaker: SpeakerInfo) =>
+          speaker.autoName
+            ? {
+                ...speaker,
+                displayName: t('speakers.defaultName', {
+                  number: speaker.id,
+                }),
+              }
+            : speaker,
       );
-      return result;
+      return {
+        subtitles: Array.isArray(result?.subtitles) ? result.subtitles : [],
+        speakers: localizedSpeakers,
+      };
     } catch (error) {
       console.error('Error reading proofread data file:', error);
-      return [];
+      return { subtitles: [], speakers: [] };
     }
   };
 
@@ -182,9 +216,11 @@ export const useStandaloneSubtitles = (
       const playerTracks: PlayerSubtitleTrack[] = [];
 
       // 读取源字幕
-      const proofreadDataSubtitles = config.proofreadDataFile
+      const proofreadData = config.proofreadDataFile
         ? await readProofreadDataFile(config.proofreadDataFile)
-        : [];
+        : { subtitles: [], speakers: [] };
+      const proofreadDataSubtitles = proofreadData.subtitles;
+      applySpeakers(proofreadData.speakers);
       const sourceSubtitles =
         proofreadDataSubtitles.length > 0
           ? proofreadDataSubtitles
@@ -272,7 +308,14 @@ export const useStandaloneSubtitles = (
     } finally {
       setIsLoading(false);
     }
-  }, [config, shouldShowTranslation, t, applySubtitles, history.reset]);
+  }, [
+    config,
+    shouldShowTranslation,
+    t,
+    applySubtitles,
+    applySpeakers,
+    history.reset,
+  ]);
 
   // 加载文件
   useEffect(() => {
@@ -390,6 +433,8 @@ export const useStandaloneSubtitles = (
         const result = await window.ipc.invoke('saveProofreadDataAndRender', {
           proofreadDataFile: config.proofreadDataFile,
           subtitles: mergedSubtitles,
+          speakers: speakersRef.current,
+          embedSpeakerNames,
           outputs: outputs.filter((output) => output.filePath),
         });
 
@@ -534,22 +579,24 @@ export const useStandaloneSubtitles = (
   // 撤销：先提交合并窗口（保证「最后一次输入」也可撤销），再应用区间命令
   const handleUndo = useCallback(() => {
     flushPendingEdit();
-    const next = history.undo(subtitlesRef.current);
+    const next = history.undo(subtitlesRef.current, speakersRef.current);
     if (next) {
-      applySubtitles(renormalizeIds(next));
+      applySubtitles(renormalizeIds(next.subtitles));
+      applySpeakers(next.speakers);
       setIsDirty(true);
     }
-  }, [applySubtitles, flushPendingEdit, history.undo]);
+  }, [applySpeakers, applySubtitles, flushPendingEdit, history.undo]);
 
   // 重做：合并窗口若有内容会作为新命令清空 redo 分支（与主流编辑器一致）
   const handleRedo = useCallback(() => {
     flushPendingEdit();
-    const next = history.redo(subtitlesRef.current);
+    const next = history.redo(subtitlesRef.current, speakersRef.current);
     if (next) {
-      applySubtitles(renormalizeIds(next));
+      applySubtitles(renormalizeIds(next.subtitles));
+      applySpeakers(next.speakers);
       setIsDirty(true);
     }
-  }, [applySubtitles, flushPendingEdit, history.redo]);
+  }, [applySpeakers, applySubtitles, flushPendingEdit, history.redo]);
 
   // 是否可以撤销/重做（合并窗口中有未提交输入也算可撤销）
   const canUndo = history.canUndo || pendingEditRef.current !== null;
@@ -643,6 +690,12 @@ export const useStandaloneSubtitles = (
       const startTime = toMerge[0].startTimeInSeconds || 0;
       const endTime = toMerge[toMerge.length - 1].endTimeInSeconds || 0;
 
+      const mergedSpeakerIds = mergeSpeakerIds(
+        ...toMerge.map((s) => s.speakerIds),
+      );
+      const preferredPrimary = toMerge.find((subtitle) =>
+        mergedSpeakerIds.includes(subtitle.primarySpeakerId || -1),
+      )?.primarySpeakerId;
       const merged: Subtitle = {
         ...toMerge[0],
         sourceContent: mergedContent,
@@ -651,7 +704,15 @@ export const useStandaloneSubtitles = (
         startEndTime: `${secondsToTime(startTime)} --> ${secondsToTime(endTime)}`,
         startTimeInSeconds: startTime,
         endTimeInSeconds: endTime,
-        speakerIds: mergeSpeakerIds(...toMerge.map((s) => s.speakerIds)),
+        ...(mergedSpeakerIds.length
+          ? {
+              speakerIds: mergedSpeakerIds,
+              primarySpeakerId: normalizePrimarySpeakerId(
+                preferredPrimary,
+                mergedSpeakerIds,
+              ),
+            }
+          : { speakerIds: undefined, primarySpeakerId: undefined }),
       };
 
       history.push({ start: startIndex, removed: toMerge, inserted: [merged] });
@@ -689,6 +750,133 @@ export const useStandaloneSubtitles = (
     },
     [applySubtitles, flushPendingEdit, history.push, t],
   );
+
+  const commitSpeakerDocument = useCallback(
+    (nextSubtitles: Subtitle[], nextSpeakers: SpeakerInfo[]) => {
+      flushPendingEdit();
+      const currentSubtitles = subtitlesRef.current;
+      const currentSpeakers = speakersRef.current;
+      if (
+        !computeRangeDiff(currentSubtitles, nextSubtitles) &&
+        speakerListsEqual(currentSpeakers, nextSpeakers)
+      ) {
+        return false;
+      }
+      history.pushDocument(
+        currentSubtitles,
+        nextSubtitles,
+        currentSpeakers,
+        nextSpeakers,
+      );
+      applySubtitles(nextSubtitles);
+      applySpeakers(nextSpeakers);
+      setIsDirty(true);
+      return true;
+    },
+    [applySpeakers, applySubtitles, flushPendingEdit, history.pushDocument],
+  );
+
+  const handleSetCueSpeakers = useCallback(
+    (index: number, speakerIds: number[], primarySpeakerId?: number) => {
+      const current = subtitlesRef.current;
+      const row = current[index];
+      if (!row) return;
+      const updated = normalizeSpeakerAssignment({
+        ...row,
+        speakerIds,
+        primarySpeakerId,
+      });
+      const next = current.slice();
+      next[index] = updated;
+      commitSpeakerDocument(next, speakersRef.current);
+    },
+    [commitSpeakerDocument],
+  );
+
+  const handleCreateSpeaker = useCallback(
+    (cueIndex?: number): number => {
+      const id = nextSpeakerId(speakersRef.current);
+      const speaker = createDefaultSpeaker(
+        id,
+        t('speakers.defaultName', { number: id }),
+      );
+      const nextSpeakers = [...speakersRef.current, speaker];
+      let nextSubtitles = subtitlesRef.current;
+      if (cueIndex !== undefined && nextSubtitles[cueIndex]) {
+        nextSubtitles = nextSubtitles.slice();
+        nextSubtitles[cueIndex] = normalizeSpeakerAssignment({
+          ...nextSubtitles[cueIndex],
+          speakerIds: [id],
+          primarySpeakerId: id,
+        });
+      }
+      commitSpeakerDocument(nextSubtitles, nextSpeakers);
+      return id;
+    },
+    [commitSpeakerDocument, t],
+  );
+
+  const handleRenameSpeaker = useCallback(
+    (speakerId: number, displayName: string): boolean => {
+      const normalized = sanitizeSpeakerDisplayName(displayName);
+      if (!normalized) return false;
+      const next = speakersRef.current.map((speaker) =>
+        speaker.id === speakerId
+          ? { ...speaker, displayName: normalized, autoName: false }
+          : speaker,
+      );
+      commitSpeakerDocument(subtitlesRef.current, next);
+      return true;
+    },
+    [commitSpeakerDocument],
+  );
+
+  const handleSetSpeakerColor = useCallback(
+    (speakerId: number, color: string) => {
+      if (!SPEAKER_COLOR_PALETTE.includes(color as any)) return;
+      const next = speakersRef.current.map((speaker) =>
+        speaker.id === speakerId ? { ...speaker, color } : speaker,
+      );
+      commitSpeakerDocument(subtitlesRef.current, next);
+    },
+    [commitSpeakerDocument],
+  );
+
+  const handleMoveSpeaker = useCallback(
+    (sourceId: number, targetId: number, removeSource: boolean) => {
+      if (sourceId === targetId) return;
+      const nextSubtitles = moveSpeakerAssignments(
+        subtitlesRef.current,
+        sourceId,
+        targetId,
+      );
+      const nextSpeakers = removeSource
+        ? speakersRef.current.filter((speaker) => speaker.id !== sourceId)
+        : speakersRef.current;
+      commitSpeakerDocument(nextSubtitles, nextSpeakers);
+    },
+    [commitSpeakerDocument],
+  );
+
+  const handleDeleteSpeaker = useCallback(
+    (speakerId: number): boolean => {
+      if (countSpeakerCues(subtitlesRef.current, speakerId) > 0) return false;
+      const next = speakersRef.current.filter(
+        (speaker) => speaker.id !== speakerId,
+      );
+      commitSpeakerDocument(subtitlesRef.current, next);
+      return true;
+    },
+    [commitSpeakerDocument],
+  );
+
+  const handleEmbedSpeakerNamesChange = useCallback((enabled: boolean) => {
+    setEmbedSpeakerNames((current) => {
+      if (current === enabled) return current;
+      setIsDirty(true);
+      return enabled;
+    });
+  }, []);
 
   // 拆分字幕（区间命令：1 行 → 2 行；支持自定义时间拆分点）
   const handleSplitSubtitle = useCallback(
@@ -770,6 +958,11 @@ export const useStandaloneSubtitles = (
     setMergedSubtitles,
     updateSubtitles,
     getSubtitles,
+    speakers,
+    embedSpeakerNames,
+    hasSpeakerData:
+      speakers.length > 0 ||
+      mergedSubtitles.some((subtitle) => subtitle.speakerIds?.length),
     videoPath,
     currentSubtitleIndex,
     setCurrentSubtitleIndex,
@@ -796,6 +989,13 @@ export const useStandaloneSubtitles = (
     handleSplitSubtitle,
     handleDeleteSubtitle,
     handleTimeChange,
+    handleSetCueSpeakers,
+    handleCreateSpeaker,
+    handleRenameSpeaker,
+    handleSetSpeakerColor,
+    handleMoveSpeaker,
+    handleDeleteSpeaker,
+    handleEmbedSpeakerNamesChange,
     // 光标位置
     handleCursorPositionChange,
     getCursorPosition,

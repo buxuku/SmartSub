@@ -34,6 +34,12 @@ import { Subtitle } from '../../hooks/useSubtitles';
 import { useTranslation } from 'next-i18next';
 import TimeRangeEditor from './TimeRangeEditor';
 import type { RetranslateControl } from '../../hooks/useRetranslateFailed';
+import SpeakerCueControl from '../proofread/SpeakerCueControl';
+import type { SpeakerFilter } from '../proofread/SpeakerToolbar';
+import {
+  normalizeSpeakerIds,
+  type SpeakerInfo,
+} from '../../../types/proofreadData';
 
 interface SubtitleListProps {
   mergedSubtitles: Subtitle[];
@@ -66,6 +72,14 @@ interface SubtitleListProps {
   /** 视图偏好由父级（编辑工具栏）统一控制 */
   expandAll: boolean;
   fontScale: 's' | 'm' | 'l';
+  speakers?: SpeakerInfo[];
+  speakerFilter?: SpeakerFilter;
+  onCueSpeakersChange?: (
+    index: number,
+    speakerIds: number[],
+    primarySpeakerId?: number,
+  ) => void;
+  onCreateSpeaker?: (index: number) => number;
 }
 
 interface RowLabels {
@@ -132,6 +146,14 @@ interface SubtitleRowProps {
     startSec: number,
     endSec: number,
   ) => string | null;
+  speakers: SpeakerInfo[];
+  showSpeakerControl: boolean;
+  onCueSpeakersChange?: (
+    index: number,
+    speakerIds: number[],
+    primarySpeakerId?: number,
+  ) => void;
+  onCreateSpeaker?: (index: number) => number;
 }
 
 // 行组件：紧凑单行（默认） / 展开编辑（当前行）
@@ -157,6 +179,10 @@ const SubtitleRow = memo(function SubtitleRow({
   onSplit,
   onDelete,
   onTimeCommit,
+  speakers,
+  showSpeakerControl,
+  onCueSpeakersChange,
+  onCreateSpeaker,
 }: SubtitleRowProps) {
   // 失败行降噪：左缘红条 + ⚠，不再整行红底
   const failedEdge = isFailed
@@ -189,6 +215,15 @@ const SubtitleRow = memo(function SubtitleRow({
           #{subtitle.id} {compactTime(subtitle.startTimeInSeconds)}→
           {compactTime(subtitle.endTimeInSeconds)}
         </span>
+        {showSpeakerControl && onCueSpeakersChange && onCreateSpeaker && (
+          <SpeakerCueControl
+            subtitle={subtitle}
+            index={index}
+            speakers={speakers}
+            onChange={onCueSpeakersChange}
+            onCreate={onCreateSpeaker}
+          />
+        )}
         <span
           className={`min-w-0 flex-1 truncate text-foreground/90 ${bodyFont}`}
         >
@@ -237,6 +272,15 @@ const SubtitleRow = memo(function SubtitleRow({
                 : ''
             }
           />
+          {showSpeakerControl && onCueSpeakersChange && onCreateSpeaker && (
+            <SpeakerCueControl
+              subtitle={subtitle}
+              index={index}
+              speakers={speakers}
+              onChange={onCueSpeakersChange}
+              onCreate={onCreateSpeaker}
+            />
+          )}
         </div>
         <TooltipProvider delayDuration={200}>
           <div className="flex items-center gap-0.5">
@@ -355,6 +399,10 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   onMergeRange,
   expandAll,
   fontScale,
+  speakers = [],
+  speakerFilter = 'all',
+  onCueSpeakersChange,
+  onCreateSpeaker,
 }) => {
   const { t } = useTranslation('home');
 
@@ -388,14 +436,35 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
         : -1;
   }
 
+  const speakerFilteredIndices = useMemo(() => {
+    if (speakerFilter === 'all') return null;
+    return mergedSubtitles
+      .map((subtitle, index) => {
+        const ids = normalizeSpeakerIds(subtitle.speakerIds);
+        if (speakerFilter === 'unassigned')
+          return ids.length === 0 ? index : -1;
+        if (speakerFilter === 'overlap') return ids.length > 1 ? index : -1;
+        const speakerId = Number(speakerFilter.slice('speaker:'.length));
+        return ids.includes(speakerId) ? index : -1;
+      })
+      .filter((index) => index >= 0);
+  }, [mergedSubtitles, speakerFilter]);
+
   // 过滤映射：null = 不过滤（虚拟索引即真实索引）
   let displayIndices: number[] | null = null;
   if (failedOnly) {
     const pinned = pinnedIndexRef.current;
-    displayIndices =
+    const failedDisplayIndices =
       pinned >= 0 && !failedIndices.includes(pinned)
         ? [...failedIndices, pinned].sort((a, b) => a - b)
         : failedIndices;
+    displayIndices = speakerFilteredIndices
+      ? failedDisplayIndices.filter((index) =>
+          speakerFilteredIndices.includes(index),
+        )
+      : failedDisplayIndices;
+  } else if (speakerFilteredIndices) {
+    displayIndices = speakerFilteredIndices;
   }
   const displayCount = displayIndices
     ? displayIndices.length
@@ -456,13 +525,14 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   // 多选区间（归一化 [lo, hi]，含两端）；anchor 为最后一次普通点击的行
   const [selRange, setSelRange] = useState<[number, number] | null>(null);
   const selAnchorRef = useRef(-1);
-  const selectionEnabled = !!onMergeRange;
+  const selectionEnabled =
+    !!onMergeRange && !failedOnly && speakerFilter === 'all';
 
   // 行点击：普通点击 = 选中 + 展开 + 视频跳转（沿用现有联动）并清选区；
   // Shift+点击 = 仅扩展选区（不展开不跳转）；失败过滤视图下退化为普通点击
   const onRowClick = useCallback(
     (index: number, shiftKey: boolean) => {
-      if (shiftKey && selectionEnabled && !failedOnly) {
+      if (shiftKey && selectionEnabled) {
         const anchor =
           selAnchorRef.current >= 0
             ? selAnchorRef.current
@@ -480,7 +550,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
       }
       latestRef.current.handleSubtitleClick(index);
     },
-    [selectionEnabled, failedOnly],
+    [selectionEnabled],
   );
 
   // Esc 清除选区
@@ -615,7 +685,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     return () => cancelAnimationFrame(frame);
     // displayIndices 内容随失败行变化，仅在当前行/过滤开关变化时重定位
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSubtitleIndex, failedOnly, virtualizer]);
+  }, [currentSubtitleIndex, failedOnly, speakerFilter, virtualizer]);
 
   const virtualItems = virtualizer.getVirtualItems();
 
@@ -764,18 +834,22 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
 
       {/* 字幕列表（虚拟化；只看失败时为过滤视图） */}
       <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
-        {failedOnly && displayCount === 0 ? (
+        {displayCount === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-sm text-muted-foreground">
             <CheckCircle2 className="h-8 w-8 text-success" />
-            <span>{t('failedAllClear')}</span>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-3 text-xs"
-              onClick={() => handleFailedOnlyChange(false)}
-            >
-              {t('showAllSubtitles')}
-            </Button>
+            <span>
+              {failedOnly ? t('failedAllClear') : t('speakers.filterEmpty')}
+            </span>
+            {failedOnly && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-3 text-xs"
+                onClick={() => handleFailedOnlyChange(false)}
+              >
+                {t('showAllSubtitles')}
+              </Button>
+            )}
           </div>
         ) : (
           <div
@@ -820,6 +894,10 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                     onSplit={onSplit}
                     onDelete={onDelete}
                     onTimeCommit={onTimeCommit}
+                    speakers={speakers}
+                    showSpeakerControl={speakers.length > 0}
+                    onCueSpeakersChange={onCueSpeakersChange}
+                    onCreateSpeaker={onCreateSpeaker}
                   />
                 </div>
               );

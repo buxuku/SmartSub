@@ -21,6 +21,10 @@ import {
   updateProofreadDataFromSubtitles,
 } from './proofreadData';
 import {
+  prefixTextWithSpeakerNames,
+  type SpeakerInfo,
+} from '../../types/proofreadData';
+import {
   MANUSCRIPT_EXTENSIONS,
   ManuscriptFileError,
   readManuscriptFile,
@@ -164,18 +168,33 @@ function buildSubtitleFileContent(
   filePath: string,
   subtitles: any[],
   contentType = 'source',
+  speakerOptions?: {
+    speakers?: SpeakerInfo[];
+    embedSpeakerNames?: boolean;
+  },
 ): string {
   const format = detectSubtitleFormat(filePath);
+  const withSpeakerPrefix = (subtitle: any, text: string): string => {
+    if (!speakerOptions?.embedSpeakerNames) return text;
+    return prefixTextWithSpeakerNames(
+      text,
+      subtitle,
+      speakerOptions.speakers || [],
+    );
+  };
   const buildText = (subtitle): string => {
+    let text: string;
     if (contentType === 'source') {
-      return subtitle.sourceContent ?? '';
+      text = subtitle.sourceContent ?? '';
+    } else {
+      const template =
+        CONTENT_TEMPLATES[contentType] || CONTENT_TEMPLATES.onlyTranslate;
+      text = renderTemplate(template, {
+        sourceContent: subtitle.sourceContent ?? '',
+        targetContent: subtitle.targetContent ?? '',
+      }).replace(/\n+$/, '');
     }
-    const template =
-      CONTENT_TEMPLATES[contentType] || CONTENT_TEMPLATES.onlyTranslate;
-    return renderTemplate(template, {
-      sourceContent: subtitle.sourceContent ?? '',
-      targetContent: subtitle.targetContent ?? '',
-    }).replace(/\n+$/, '');
+    return withSpeakerPrefix(subtitle, text);
   };
 
   return (
@@ -218,8 +237,17 @@ async function writeSubtitleFile(
   filePath: string,
   subtitles: any[],
   contentType = 'source',
+  speakerOptions?: {
+    speakers?: SpeakerInfo[];
+    embedSpeakerNames?: boolean;
+  },
 ): Promise<void> {
-  const content = buildSubtitleFileContent(filePath, subtitles, contentType);
+  const content = buildSubtitleFileContent(
+    filePath,
+    subtitles,
+    contentType,
+    speakerOptions,
+  );
   await backupSubtitleFile(filePath);
   await fs.promises.writeFile(filePath, content, 'utf-8');
   logMessage(`保存字幕文件成功: ${filePath}`, 'info');
@@ -386,7 +414,10 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         return [];
       }
       const proofreadData = await readProofreadDataFile(filePath);
-      return proofreadDataToSubtitleRows(proofreadData);
+      return {
+        subtitles: proofreadDataToSubtitleRows(proofreadData),
+        speakers: proofreadData.speakers,
+      };
     } catch (error) {
       logMessage(`读取校对中间态错误: ${error.message}`, 'error');
       return [];
@@ -447,10 +478,14 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
       {
         proofreadDataFile,
         subtitles,
+        speakers = [],
+        embedSpeakerNames = false,
         outputs = [],
       }: {
         proofreadDataFile: string;
         subtitles: any[];
+        speakers?: SpeakerInfo[];
+        embedSpeakerNames?: boolean;
         outputs: { filePath?: string; contentType?: string }[];
       },
     ) => {
@@ -461,7 +496,11 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
           );
         }
 
-        await updateProofreadDataFromSubtitles(proofreadDataFile, subtitles);
+        const updated = await updateProofreadDataFromSubtitles(
+          proofreadDataFile,
+          subtitles,
+          speakers,
+        );
 
         const rendered = new Set<string>();
         for (const output of outputs) {
@@ -474,6 +513,10 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
             filePath,
             subtitles,
             output.contentType || 'source',
+            {
+              speakers: updated.speakers,
+              embedSpeakerNames,
+            },
           );
         }
 
