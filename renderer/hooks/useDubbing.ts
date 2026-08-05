@@ -19,6 +19,13 @@ import type {
   DubbingAudioFormat,
   DubbingOverflowMode,
   DubbingOverlapMode,
+  DubbingSpeaker,
+  DubbingSpeakerVoiceMap,
+} from '../../types/dubbing';
+import {
+  missingDubbingSpeakerVoiceIds,
+  primaryDubbingSpeakerId,
+  resolveDubbingVoiceId,
 } from '../../types/dubbing';
 import { dominantTextLanguage } from '../../types/voiceClone';
 import {
@@ -79,6 +86,7 @@ export function useDubbing(options?: {
   initialVideoPath?: string;
   /** 最近任务回开：尝试恢复的持久化会话 */
   initialSessionId?: string;
+  initialProofreadDataFile?: string;
   /** 关联的工作项（恢复/重建保持同一条最近任务记录） */
   workItemId?: string;
 }) {
@@ -102,6 +110,9 @@ export function useDubbing(options?: {
   // 用户确认重建后一次性消费的旧会话 id（loadSession 内取用，避免双载竞态）
   const rebuildSessionIdRef = useRef<string | null>(null);
   const workItemIdRef = useRef<string | null>(options?.workItemId || null);
+  const proofreadDataFileRef = useRef<string | null>(
+    options?.initialProofreadDataFile || null,
+  );
   /** 恢复成功提示（行级进度已回填） */
   const [restoredFromSession, setRestoredFromSession] = useState(false);
   /** 字幕已变，等待用户确认重建（保留旧产物直至确认） */
@@ -159,6 +170,55 @@ export function useDubbing(options?: {
   const activeVoiceLang = useMemo(
     () => activeEngine?.voices.find((v) => v.id === activeVoice)?.lang,
     [activeEngine, activeVoice],
+  );
+
+  const speakers: DubbingSpeaker[] = session?.speakers || [];
+  const speakerVoiceMap: DubbingSpeakerVoiceMap =
+    session?.speakerVoiceMap || {};
+  const speakerVoiceConflicts = session?.speakerVoiceConflicts || {};
+  const availableVoiceIds = useMemo(
+    () => new Set((activeEngine?.voices || []).map((voice) => voice.id)),
+    [activeEngine],
+  );
+  const speakerMode =
+    speakers.filter((speaker) => speaker.cueCount > 0).length > 1;
+  const missingSpeakerVoiceIds = useMemo(
+    () =>
+      missingDubbingSpeakerVoiceIds(
+        speakers,
+        speakerVoiceMap,
+        availableVoiceIds,
+      ),
+    [speakers, speakerVoiceMap, availableVoiceIds],
+  );
+  const conflictingSpeakerIds = useMemo(() => {
+    const activeSpeakerIds = new Set(
+      speakers
+        .filter((speaker) => speaker.cueCount > 0)
+        .map((speaker) => speaker.id),
+    );
+    return Object.keys(speakerVoiceConflicts)
+      .filter(
+        (id) =>
+          activeSpeakerIds.has(Number(id)) &&
+          (speakerVoiceConflicts[id] || []).length > 1,
+      )
+      .map(Number);
+  }, [speakers, speakerVoiceConflicts]);
+  const invalidCueOverrideCount = useMemo(
+    () =>
+      activeEngine
+        ? cues.filter(
+            (cue) => cue.voiceId && !availableVoiceIds.has(cue.voiceId),
+          ).length
+        : 0,
+    [activeEngine, availableVoiceIds, cues],
+  );
+
+  const resolvedVoiceForCue = useCallback(
+    (cue: DubbingCueView): string =>
+      resolveDubbingVoiceId(cue, speakerVoiceMap, activeVoice),
+    [speakerVoiceMap, activeVoice],
   );
 
   /** 字幕主导语言（跨语言克隆提示用；前 50 行文本采样）。 */
@@ -236,6 +296,26 @@ export function useDubbing(options?: {
     return () => cleanup?.();
   }, []);
 
+  const activeSessionId = session?.sessionId;
+  useEffect(() => {
+    if (!activeSessionId || !activeVoice) return;
+    let cancelled = false;
+    window.ipc
+      .invoke('dubbing:syncVoiceState', {
+        sessionId: activeSessionId,
+        globalVoiceId: activeVoice,
+      })
+      .then((result) => {
+        if (!cancelled && result.success && result.data?.cues) {
+          setCues(result.data.cues as DubbingCueView[]);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId, activeVoice]);
+
   // ── 会话生命周期 ──────────────────────────────────────────────────────────
   const loadSession = useCallback(
     async (nextSubtitle: string, nextVideo: string | null) => {
@@ -262,6 +342,7 @@ export function useDubbing(options?: {
           sessionId: restoreId || undefined,
           rebuildSessionId: rebuildId || undefined,
           workItemId: workItemIdRef.current || undefined,
+          proofreadDataFile: proofreadDataFileRef.current || undefined,
         });
         if (!result.success) {
           setSession(null);
@@ -284,7 +365,13 @@ export function useDubbing(options?: {
           return;
         }
         const view = data as DubbingSessionView & { restored?: boolean };
-        setSession(view);
+        const normalizedView: DubbingSessionView & { restored?: boolean } = {
+          ...view,
+          speakers: view.speakers || [],
+          speakerVoiceMap: view.speakerVoiceMap || {},
+          speakerVoiceConflicts: view.speakerVoiceConflicts || {},
+        };
+        setSession(normalizedView);
         setCues(view.cues);
         if (view.restored) setRestoredFromSession(true);
         // 批量在后台进行中（页面离开后回连）：恢复运行态，进度事件自动续接
@@ -381,9 +468,21 @@ export function useDubbing(options?: {
 
   // ── 批量合成 ──────────────────────────────────────────────────────────────
   const start = useCallback(
-    async (opts?: { force?: boolean }) => {
+    async (opts?: {
+      force?: boolean;
+      staleOnly?: boolean;
+      speakerId?: number;
+    }) => {
       const config = buildConfig();
-      if (!session || !config || running) return;
+      if (
+        !session ||
+        !config ||
+        running ||
+        missingSpeakerVoiceIds.length > 0 ||
+        conflictingSpeakerIds.length > 0 ||
+        invalidCueOverrideCount > 0
+      )
+        return;
       setRunning(true);
       setActionError(null);
       setBatchSummary(null);
@@ -400,6 +499,8 @@ export function useDubbing(options?: {
           sessionId: session.sessionId,
           config,
           force: opts?.force,
+          staleOnly: opts?.staleOnly,
+          speakerId: opts?.speakerId,
         });
         if (result.success && result.data) {
           const batch = result.data as DubbingBatchView;
@@ -413,7 +514,14 @@ export function useDubbing(options?: {
         setIsCancelling(false);
       }
     },
-    [session, buildConfig, running],
+    [
+      session,
+      buildConfig,
+      running,
+      missingSpeakerVoiceIds,
+      conflictingSpeakerIds,
+      invalidCueOverrideCount,
+    ],
   );
 
   const cancel = useCallback(async () => {
@@ -452,7 +560,12 @@ export function useDubbing(options?: {
         setCues((prev) =>
           prev.map((c) =>
             c.index === index
-              ? { ...c, status: 'failed', error: result.error }
+              ? {
+                  ...c,
+                  status: 'failed',
+                  error: result.error,
+                  needsUpdate: Boolean(c.wavPath) || c.needsUpdate,
+                }
               : c,
           ),
         );
@@ -480,11 +593,7 @@ export function useDubbing(options?: {
     async (index: number, voiceId: string) => {
       const cue = cues.find((c) => c.index === index);
       if (!cue || !session) return;
-      if (
-        cue.status === 'done' ||
-        cue.status === 'overlong' ||
-        cue.status === 'accepted'
-      ) {
+      if (cue.wavPath) {
         await resynthesizeCue(index, { voiceId });
       } else {
         applyCue({ ...cue, voiceId: voiceId || undefined });
@@ -497,6 +606,50 @@ export function useDubbing(options?: {
     },
     [cues, resynthesizeCue, applyCue, session],
   );
+
+  const setSpeakerVoice = useCallback(
+    async (speakerId: number, voiceId: string) => {
+      if (!session || !activeVoice) return;
+      setActionError(null);
+      const result = await window.ipc.invoke('dubbing:setSpeakerVoice', {
+        sessionId: session.sessionId,
+        speakerId,
+        voiceId,
+        globalVoiceId: activeVoice,
+      });
+      if (!result.success || !result.data) {
+        setActionError(result.error || 'speaker voice update failed');
+        return;
+      }
+      const data = result.data as {
+        speakerVoiceMap: DubbingSpeakerVoiceMap;
+        speakerVoiceConflicts: Record<string, string[]>;
+        cues: DubbingCueView[];
+      };
+      setSession((current) =>
+        current
+          ? {
+              ...current,
+              speakerVoiceMap: data.speakerVoiceMap,
+              speakerVoiceConflicts: data.speakerVoiceConflicts,
+            }
+          : current,
+      );
+      setCues(data.cues);
+    },
+    [session, activeVoice],
+  );
+
+  const regenerateSpeaker = useCallback(
+    async (speakerId: number) => {
+      await start({ staleOnly: true, speakerId });
+    },
+    [start],
+  );
+
+  const regenerateStale = useCallback(async () => {
+    await start({ staleOnly: true });
+  }, [start]);
 
   // ── 播放（行级回放 / 试听 / 顺序播放全部）────────────────────────────────
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -605,11 +758,16 @@ export function useDubbing(options?: {
   );
 
   // ── 导出 ──────────────────────────────────────────────────────────────────
+  const [staleExportWarning, setStaleExportWarning] = useState(false);
   // 返回导出结果视图（失败/中断返回 null），调用方据此做成功通知。
   const exportDubbing =
     useCallback(async (): Promise<DubbingExportView | null> => {
       const config = buildConfig();
       if (!session || !config || exporting) return null;
+      if (cues.some((cue) => cue.needsUpdate)) {
+        setStaleExportWarning(true);
+        return null;
+      }
       setExporting(true);
       setActionError(null);
       try {
@@ -629,7 +787,16 @@ export function useDubbing(options?: {
       } finally {
         setExporting(false);
       }
-    }, [session, buildConfig, exporting]);
+    }, [session, buildConfig, exporting, cues]);
+
+  const cancelStaleExport = useCallback(() => {
+    setStaleExportWarning(false);
+  }, []);
+
+  const confirmStaleRegeneration = useCallback(async () => {
+    setStaleExportWarning(false);
+    await regenerateStale();
+  }, [regenerateStale]);
 
   const openOutputFolder = useCallback(async () => {
     if (!exportResult?.outputPath) return;
@@ -643,10 +810,20 @@ export function useDubbing(options?: {
     const overlong = cues.filter((c) => c.status === 'overlong').length;
     const failed = cues.filter((c) => c.status === 'failed').length;
     const done = cues.filter(
-      (c) => c.status === 'done' || c.status === 'accepted',
+      (c) => !c.needsUpdate && (c.status === 'done' || c.status === 'accepted'),
     ).length;
     const overlap = cues.filter((c) => c.overlap).length;
-    return { total: cues.length, done, overlong, failed, overlap };
+    const needsUpdate = cues.filter((c) => c.needsUpdate).length;
+    const generated = cues.filter((c) => c.wavPath).length;
+    return {
+      total: cues.length,
+      done,
+      overlong,
+      failed,
+      overlap,
+      needsUpdate,
+      generated,
+    };
   }, [cues]);
 
   // 合成字符量预估：待合成（非完成/非已确认）与全量两种口径，跳过纯空白行。
@@ -662,7 +839,7 @@ export function useDubbing(options?: {
       if (len === 0) continue;
       totalRows += 1;
       totalChars += len;
-      if (c.status !== 'done' && c.status !== 'accepted') {
+      if (c.needsUpdate || (c.status !== 'done' && c.status !== 'accepted')) {
         pendingRows += 1;
         pendingChars += len;
       }
@@ -681,10 +858,17 @@ export function useDubbing(options?: {
           : 'ready';
 
   const canStart = Boolean(
-    session && activeEngine && activeVoice && !running && !exporting,
+    session &&
+      activeEngine &&
+      activeVoice &&
+      !running &&
+      !exporting &&
+      missingSpeakerVoiceIds.length === 0 &&
+      conflictingSpeakerIds.length === 0 &&
+      invalidCueOverrideCount === 0,
   );
   const canExport = Boolean(
-    session && summary.done + summary.overlong > 0 && !running && !exporting,
+    session && summary.generated > 0 && !running && !exporting,
   );
 
   return {
@@ -713,6 +897,14 @@ export function useDubbing(options?: {
     activeVoice,
     activeVoiceLang,
     subtitleLanguage,
+    speakers,
+    speakerVoiceMap,
+    speakerVoiceConflicts,
+    speakerMode,
+    missingSpeakerVoiceIds,
+    conflictingSpeakerIds,
+    invalidCueOverrideCount,
+    resolvedVoiceForCue,
     config: persisted,
     updateConfig,
     refreshEngines,
@@ -729,6 +921,9 @@ export function useDubbing(options?: {
     resynthesizeCue,
     acceptOverlong,
     setCueVoice,
+    setSpeakerVoice,
+    regenerateSpeaker,
+    regenerateStale,
     playCue,
     previewVoice,
     previewing,
@@ -739,6 +934,9 @@ export function useDubbing(options?: {
     // 导出
     exportDubbing,
     exportResult,
+    staleExportWarning,
+    cancelStaleExport,
+    confirmStaleRegeneration,
     openOutputFolder,
     // 汇总
     summary,

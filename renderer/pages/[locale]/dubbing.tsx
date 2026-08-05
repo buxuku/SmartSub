@@ -21,6 +21,7 @@ export default function DubbingPage() {
   const initialSubtitlePath = queryString('subtitle');
   const initialVideoPath = queryString('video');
   const initialSessionId = queryString('session');
+  const initialProofreadDataFile = queryString('proofreadData');
   const workItemId = queryString('workItem');
   // 检查员模式：配音确认检查点的流水线上下文（切换待检文件时以 key 重挂载面板）
   const gateProject = queryString('gateProject');
@@ -34,6 +35,7 @@ export default function DubbingPage() {
         initialSubtitlePath={initialSubtitlePath}
         initialVideoPath={initialVideoPath}
         initialSessionId={initialSessionId}
+        initialProofreadDataFile={initialProofreadDataFile}
         workItemId={workItemId}
         gateProject={gateProject}
         gateFile={gateFile}

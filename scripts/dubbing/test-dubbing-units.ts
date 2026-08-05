@@ -63,6 +63,12 @@ import {
 import {
   ALIGN_ONESHOT_THRESHOLD,
   ALIGN_OVERLONG_THRESHOLD,
+  DUBBING_GLOBAL_VOICE_ID,
+  cueInheritsSpeaker,
+  dubbingVoiceNeedsUpdate,
+  missingDubbingSpeakerVoiceIds,
+  primaryDubbingSpeakerId,
+  resolveDubbingVoiceId,
   type DubbingSessionMeta,
 } from '../../types/dubbing';
 import {
@@ -78,6 +84,7 @@ import {
   parseTtsVoiceLabels,
   resolveTtsVoiceLabel,
 } from '../../types/ttsProvider';
+import { loadDubbingSpeakerMetadata } from '../../main/helpers/dubbing/speakerMetadata';
 
 let passed = 0;
 let failed = 0;
@@ -1007,6 +1014,156 @@ function cue(
   );
 }
 
+// ── 角色音色：解析优先级 / 配置门禁 / sidecar 对齐 ─────────────────────────
+{
+  const cue = {
+    speakerIds: [2, 1],
+    primarySpeakerId: 1,
+  };
+  eq(primaryDubbingSpeakerId(cue), 1, 'speaker voice: 显式主要角色优先');
+  eq(
+    resolveDubbingVoiceId(cue, { '1': 'host-voice' }, 'global-voice'),
+    'host-voice',
+    'speaker voice: 无单句覆盖时继承主要角色',
+  );
+  eq(
+    resolveDubbingVoiceId(
+      { ...cue, voiceId: 'override-voice' },
+      { '1': 'host-voice' },
+      'global-voice',
+    ),
+    'override-voice',
+    'speaker voice: 单句覆盖优先于角色',
+  );
+  eq(
+    resolveDubbingVoiceId(
+      cue,
+      { '1': DUBBING_GLOBAL_VOICE_ID },
+      'global-voice',
+    ),
+    'global-voice',
+    'speaker voice: 显式跟随全局不与未配置混淆',
+  );
+  ok(cueInheritsSpeaker(cue, 1), 'speaker voice: 主要角色 cue 继承该角色');
+  ok(
+    !cueInheritsSpeaker({ ...cue, voiceId: 'override' }, 1),
+    'speaker voice: 单句覆盖不受角色批量修改影响',
+  );
+  ok(
+    dubbingVoiceNeedsUpdate(
+      cue,
+      { '1': 'guest-voice' },
+      'global-voice',
+      'host-voice',
+    ),
+    'speaker voice: 角色音色变化后已生成 cue 标记过期',
+  );
+  ok(
+    !dubbingVoiceNeedsUpdate(
+      { ...cue, voiceId: 'override-voice' },
+      { '1': 'guest-voice' },
+      'global-voice',
+      'override-voice',
+    ),
+    'speaker voice: 角色音色变化不影响显式单句覆盖',
+  );
+  ok(
+    !dubbingVoiceNeedsUpdate(
+      cue,
+      { '1': 'host-voice' },
+      'global-voice',
+      'host-voice',
+    ),
+    'speaker voice: 映射恢复后旧音频不再过期',
+  );
+
+  const speakers = [
+    { id: 1, cueCount: 2 },
+    { id: 2, cueCount: 1 },
+  ];
+  eq(
+    missingDubbingSpeakerVoiceIds(speakers, {}, new Set(['a'])),
+    [1, 2],
+    'speaker voice: 多角色均需明确配置',
+  );
+  eq(
+    missingDubbingSpeakerVoiceIds(
+      speakers,
+      { '1': DUBBING_GLOBAL_VOICE_ID, '2': 'missing' },
+      new Set(['a']),
+    ),
+    [2],
+    'speaker voice: 引擎切换后不可用音色回到待选择',
+  );
+  eq(
+    missingDubbingSpeakerVoiceIds([{ id: 1, cueCount: 3 }], {}, new Set()),
+    [],
+    'speaker voice: 单角色保持原全局音色流程',
+  );
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dub-speaker-test-'));
+  const subtitlePath = path.join(root, 'episode.srt');
+  fs.writeFileSync(subtitlePath, 'fixture');
+  const sidecarDir = path.join(root, '.smartsub-proofread');
+  fs.mkdirSync(sidecarDir);
+  fs.writeFileSync(
+    path.join(sidecarDir, 'episode.json'),
+    JSON.stringify({
+      version: 2,
+      meta: {
+        createdAt: '2026-08-05T00:00:00.000Z',
+        updatedAt: '2026-08-05T00:00:00.000Z',
+        targetFile: subtitlePath,
+      },
+      speakers: [
+        { id: 1, displayName: '主持人', color: '#2563eb' },
+        { id: 2, displayName: '嘉宾', color: '#dc2626' },
+      ],
+      cues: [
+        {
+          id: '1',
+          startMs: 0,
+          endMs: 1000,
+          source: '',
+          target: '你好',
+          speakerIds: [1],
+          primarySpeakerId: 1,
+        },
+        {
+          id: '2',
+          startMs: 1000,
+          endMs: 3000,
+          source: '',
+          target: '欢迎',
+          speakerIds: [2, 1],
+          primarySpeakerId: 2,
+        },
+      ],
+    }),
+  );
+  const metadata = loadDubbingSpeakerMetadata(subtitlePath, [
+    { startMs: 0, endMs: 1000, text: '你好' },
+    { startMs: 1000, endMs: 3000, text: '欢迎' },
+  ]);
+  eq(
+    metadata.speakers.map((speaker) => speaker.name),
+    ['主持人', '嘉宾'],
+    'speaker voice: 自动发现同源 sidecar 并按首次出现排序',
+  );
+  eq(
+    metadata.assignments[1],
+    { speakerIds: [2, 1], primarySpeakerId: 2 },
+    'speaker voice: 多角色归属与主要角色完整保留',
+  );
+  eq(metadata.speakers[0].cueCount, 2, 'speaker voice: 重叠 cue 计入角色句数');
+  eq(
+    metadata.speakers[1].totalDurationMs,
+    2000,
+    'speaker voice: 角色预计总时长按 cue 累计',
+  );
+  fs.rmSync(root, { recursive: true, force: true });
+}
+
 // ── sessionStore：会话持久化（元数据往返 / hash 校验 / 产物缺失降级 / 删除）──
 {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dub-session-test-'));
@@ -1037,12 +1194,27 @@ function cue(
     videoPath: undefined,
     mediaDurationMs: 60000,
     updatedAt: Date.now(),
+    proofreadDataFile: '/tmp/proofread.json',
+    speakers: [
+      {
+        id: 1,
+        name: 'Host',
+        color: '#2563eb',
+        cueCount: 2,
+        totalDurationMs: 2000,
+      },
+    ],
+    speakerVoiceMap: { '1': 'host-voice' },
     cues: [
       {
         index: 0,
         startMs: 0,
         endMs: 1000,
         text: 'hi',
+        speakerIds: [1],
+        primarySpeakerId: 1,
+        synthesizedVoiceId: 'host-voice',
+        needsUpdate: false,
         status: 'done',
         overlap: false,
         finalMs: 900,
@@ -1083,6 +1255,17 @@ function cue(
   eq(readBack?.cues.length, 3, 'session: 行数往返一致');
   eq(readBack?.subtitleHash, meta.subtitleHash, 'session: hash 往返一致');
   eq(readBack?.cues[1].voiceId, 'voice-x', 'session: 行级 voice 覆盖往返');
+  eq(
+    readBack?.speakerVoiceMap,
+    { '1': 'host-voice' },
+    'session: 角色音色映射往返',
+  );
+  eq(readBack?.speakers?.[0].name, 'Host', 'session: 角色名册往返');
+  eq(
+    readBack?.cues[0].synthesizedVoiceId,
+    'host-voice',
+    'session: 实际合成音色往返',
+  );
 
   // 产物解析：存在 → 绝对路径；缺失 → 降级待合成（保留文本与 voice）
   const resolved0 = resolvePersistedCue(sessionId, readBack!.cues[0]);

@@ -35,6 +35,7 @@ import type {
   DubbingOverlapMode,
 } from '../../../types/dubbing';
 import CloneVoiceWizard from '../voiceClone/CloneVoiceWizard';
+import DubbingSpeakerVoices from './DubbingSpeakerVoices';
 
 export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
   const { t } = useTranslation('dubbing');
@@ -173,6 +174,13 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
           </p>
         )}
       </div>
+
+      {dub.speakerMode && (
+        <>
+          <Separator />
+          <DubbingSpeakerVoices dub={dub} />
+        </>
+      )}
 
       {/* 整体语速 */}
       <div className="space-y-1.5">

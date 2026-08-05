@@ -73,6 +73,16 @@ import { getSherpaTtsRuntime } from '../sherpaOnnx/ttsRuntime';
 import { getTtsProviderById } from '../ttsProviderManager';
 import { synthesizeSegment } from '../../service/tts';
 import { getCloudProviderGate } from '../engines/cloudProviderGate';
+import { loadDubbingSpeakerMetadata } from './speakerMetadata';
+import {
+  cueInheritsSpeaker,
+  dubbingVoiceNeedsUpdate,
+  missingDubbingSpeakerVoiceIds,
+  primaryDubbingSpeakerId,
+  resolveDubbingVoiceId,
+  type DubbingSpeaker,
+  type DubbingSpeakerVoiceMap,
+} from '../../../types/dubbing';
 
 // ===========================================================================
 // 配音会话与管线编排：解析字幕 → 逐条合成（本地串行 / 云端并发闸）→ 对齐复测
@@ -86,6 +96,10 @@ export interface SessionCue {
   endMs: number;
   text: string;
   voiceId?: string;
+  speakerIds?: number[];
+  primarySpeakerId?: number;
+  synthesizedVoiceId?: string;
+  needsUpdate?: boolean;
   status: DubbingCueStatus;
   overlap: boolean;
   /** 实测最终时长（ms，含一切变速后）。 */
@@ -107,6 +121,10 @@ export interface DubbingSession {
   videoPath?: string;
   mediaDurationMs: number;
   cues: SessionCue[];
+  proofreadDataFile?: string;
+  speakers: DubbingSpeaker[];
+  speakerVoiceMap: DubbingSpeakerVoiceMap;
+  speakerVoiceConflicts: Record<string, string[]>;
   workDir: string;
   running: boolean;
   abort: AbortController | null;
@@ -127,6 +145,36 @@ export function getDubbingSession(id: string): DubbingSession | undefined {
   return sessions.get(id);
 }
 
+export function resolvedSessionCueVoice(
+  session: DubbingSession,
+  cue: SessionCue,
+  globalVoiceId: string,
+): string {
+  return resolveDubbingVoiceId(cue, session.speakerVoiceMap, globalVoiceId);
+}
+
+/** Recompute stale from the voice that actually produced each retained artifact. */
+export function syncDubbingVoiceStaleness(
+  session: DubbingSession,
+  globalVoiceId: string,
+): number {
+  let count = 0;
+  for (const cue of session.cues) {
+    if (!cue.wavPath) continue;
+    const synthesizedVoiceId =
+      cue.synthesizedVoiceId || session.lastConfig?.voice;
+    if (!synthesizedVoiceId) continue;
+    cue.needsUpdate = dubbingVoiceNeedsUpdate(
+      cue,
+      session.speakerVoiceMap,
+      globalVoiceId,
+      synthesizedVoiceId,
+    );
+    if (cue.needsUpdate) count += 1;
+  }
+  return count;
+}
+
 /** 会话 → 持久化元数据（wav 路径折算为相对会话目录的文件名） */
 function toSessionMeta(session: DubbingSession): DubbingSessionMeta {
   return {
@@ -138,6 +186,10 @@ function toSessionMeta(session: DubbingSession): DubbingSessionMeta {
     mediaDurationMs: session.mediaDurationMs,
     updatedAt: Date.now(),
     configSnapshot: session.lastConfig,
+    proofreadDataFile: session.proofreadDataFile,
+    speakers: session.speakers,
+    speakerVoiceMap: session.speakerVoiceMap,
+    speakerVoiceConflicts: session.speakerVoiceConflicts,
     // 校准随会话落盘：半成品会话重开后续行的语速预估不从零开始
     calibration: session.calibration,
     cues: session.cues.map((c) => ({
@@ -146,6 +198,10 @@ function toSessionMeta(session: DubbingSession): DubbingSessionMeta {
       endMs: c.endMs,
       text: c.text,
       voiceId: c.voiceId,
+      speakerIds: c.speakerIds,
+      primarySpeakerId: c.primarySpeakerId,
+      synthesizedVoiceId: c.synthesizedVoiceId,
+      needsUpdate: c.needsUpdate,
       // 中断快照：synthesizing 落盘为 pending（重开后继续合成）
       status: c.status === 'synthesizing' ? 'pending' : c.status,
       overlap: c.overlap,
@@ -175,6 +231,7 @@ export function flushDubbingSession(session: DubbingSession): void {
 export async function createDubbingSession(
   subtitlePath: string,
   videoPath?: string,
+  proofreadDataFile?: string,
 ): Promise<DubbingSession> {
   const content = fs.readFileSync(subtitlePath, 'utf-8');
   const format = detectSubtitleFormat(subtitlePath);
@@ -183,6 +240,11 @@ export async function createDubbingSession(
     throw new Error('字幕文件为空或无法解析');
   }
   const mediaDurationMs = videoPath ? await probeMediaDurationMs(videoPath) : 0;
+  const speakerMetadata = loadDubbingSpeakerMetadata(
+    subtitlePath,
+    parsed,
+    proofreadDataFile,
+  );
 
   const id = randomUUID();
   // 持久会话目录（应用数据目录下）：dispose 不删除，重开可恢复
@@ -199,15 +261,28 @@ export async function createDubbingSession(
     running: false,
     abort: null,
     calibration: createCalibration(),
-    cues: parsed.map((c: SubtitleCue, index: number) => ({
-      index,
-      startMs: c.startMs,
-      endMs: c.endMs,
-      text: c.text.replace(/\n+/g, ' ').trim(),
-      status: 'pending' as DubbingCueStatus,
-      overlap: false,
-      action: { type: 'none' as const },
-    })),
+    proofreadDataFile: speakerMetadata.proofreadDataFile,
+    speakers: speakerMetadata.speakers,
+    speakerVoiceMap: {},
+    speakerVoiceConflicts: {},
+    cues: parsed.map((c: SubtitleCue, index: number) => {
+      const assignment = speakerMetadata.assignments[index] || {};
+      return {
+        index,
+        startMs: c.startMs,
+        endMs: c.endMs,
+        text: c.text.replace(/\n+/g, ' ').trim(),
+        ...(Object.prototype.hasOwnProperty.call(assignment, 'speakerIds')
+          ? { speakerIds: [...(assignment.speakerIds || [])] }
+          : {}),
+        ...(assignment.primarySpeakerId
+          ? { primarySpeakerId: assignment.primarySpeakerId }
+          : {}),
+        status: 'pending' as DubbingCueStatus,
+        overlap: false,
+        action: { type: 'none' as const },
+      };
+    }),
   };
   // 重叠检测前置到加载期（UI 立即可见告警）。
   const slots = computeSlots(session.cues, {
@@ -249,6 +324,63 @@ export function restoreDubbingSession(sessionId: string): RestoreSessionResult {
     };
   }
 
+  const parsed = parseSubtitleCues(
+    content,
+    detectSubtitleFormat(meta.subtitlePath),
+  );
+  const refreshed = loadDubbingSpeakerMetadata(
+    meta.subtitlePath,
+    parsed,
+    meta.proofreadDataFile,
+  );
+  const hasRefreshedMetadata = Boolean(refreshed.proofreadDataFile);
+  const speakerVoiceMap: DubbingSpeakerVoiceMap = {
+    ...(meta.speakerVoiceMap || {}),
+  };
+  const speakerVoiceConflicts: Record<string, string[]> = {
+    ...(meta.speakerVoiceConflicts || {}),
+  };
+
+  // A renamed role keeps the same ID and therefore its mapping. If assignments
+  // changed (for example a merge), collect all old candidate voices for the new
+  // primary role; one candidate can migrate automatically, conflicting voices
+  // require an explicit choice in the workbench.
+  if (hasRefreshedMetadata) {
+    const activeSpeakerIds = new Set(
+      refreshed.speakers.map((speaker) => String(speaker.id)),
+    );
+    for (const speakerId of Object.keys(speakerVoiceConflicts)) {
+      if (!activeSpeakerIds.has(speakerId)) {
+        delete speakerVoiceConflicts[speakerId];
+      }
+    }
+    const candidates = new Map<number, Set<string>>();
+    meta.cues.forEach((persisted, index) => {
+      const newAssignment = refreshed.assignments[index];
+      if (!newAssignment) return;
+      const newPrimary = primaryDubbingSpeakerId(newAssignment);
+      const oldPrimary = primaryDubbingSpeakerId(persisted);
+      if (!newPrimary) return;
+      const values = candidates.get(newPrimary) || new Set<string>();
+      const currentVoice = speakerVoiceMap[String(newPrimary)];
+      const previousVoice = oldPrimary
+        ? speakerVoiceMap[String(oldPrimary)]
+        : undefined;
+      if (currentVoice) values.add(currentVoice);
+      if (previousVoice) values.add(previousVoice);
+      candidates.set(newPrimary, values);
+    });
+    for (const [speakerId, voices] of candidates) {
+      if (voices.size === 1) {
+        speakerVoiceMap[String(speakerId)] = Array.from(voices)[0];
+        delete speakerVoiceConflicts[String(speakerId)];
+      } else if (voices.size > 1) {
+        delete speakerVoiceMap[String(speakerId)];
+        speakerVoiceConflicts[String(speakerId)] = Array.from(voices);
+      }
+    }
+  }
+
   const session: DubbingSession = {
     id: meta.sessionId,
     subtitlePath: meta.subtitlePath,
@@ -272,14 +404,29 @@ export function restoreDubbingSession(sessionId: string): RestoreSessionResult {
           }
         : createCalibration(),
     lastConfig: meta.configSnapshot,
+    proofreadDataFile: refreshed.proofreadDataFile || meta.proofreadDataFile,
+    speakers: hasRefreshedMetadata ? refreshed.speakers : meta.speakers || [],
+    speakerVoiceMap,
+    speakerVoiceConflicts,
     cues: meta.cues.map((persisted) => {
       const resolved = resolvePersistedCue(meta.sessionId, persisted);
+      const assignment = hasRefreshedMetadata
+        ? refreshed.assignments[resolved.index] || {}
+        : resolved;
       return {
         index: resolved.index,
         startMs: resolved.startMs,
         endMs: resolved.endMs,
         text: resolved.text,
         voiceId: resolved.voiceId,
+        ...(Object.prototype.hasOwnProperty.call(assignment, 'speakerIds')
+          ? { speakerIds: [...(assignment.speakerIds || [])] }
+          : {}),
+        ...(assignment.primarySpeakerId
+          ? { primarySpeakerId: assignment.primarySpeakerId }
+          : {}),
+        synthesizedVoiceId: resolved.synthesizedVoiceId,
+        needsUpdate: resolved.needsUpdate,
         status: resolved.status,
         overlap: resolved.overlap,
         finalMs: resolved.finalMs,
@@ -291,6 +438,8 @@ export function restoreDubbingSession(sessionId: string): RestoreSessionResult {
       };
     }),
   };
+  if (session.lastConfig)
+    syncDubbingVoiceStaleness(session, session.lastConfig.voice);
   sessions.set(session.id, session);
   logMessage(
     `dubbing session restored: ${session.id} (${session.cues.filter((c) => c.wavPath).length}/${session.cues.length} cues with artifacts)`,
@@ -524,8 +673,13 @@ async function synthesizeAndAlignCue(
     Number.isFinite(config.globalSpeed) && config.globalSpeed > 0
       ? config.globalSpeed
       : 1;
-  const voiceId = cue.voiceId || config.voice;
-  const wavPath = path.join(session.workDir, `cue-${cue.index}.wav`);
+  const voiceId = resolvedSessionCueVoice(session, cue, config.voice);
+  const previousWavPath = cue.wavPath;
+  const attemptId = `${Date.now()}-${randomUUID().slice(0, 8)}`;
+  const wavPath = path.join(
+    session.workDir,
+    `cue-${cue.index}-${attemptId}.wav`,
+  );
   // 会话/展示字幕保留 `[Speaker N]`；仅在估时与 TTS 的最终输入边界剥离。
   const speechText = normalizeDubbingSpeechText(cue.text);
 
@@ -535,6 +689,8 @@ async function synthesizeAndAlignCue(
     cue.finalMs = 0;
     cue.appliedSpeed = 1;
     cue.wavPath = undefined;
+    cue.synthesizedVoiceId = voiceId;
+    cue.needsUpdate = false;
     cue.action = { type: 'none' };
     return;
   }
@@ -608,7 +764,10 @@ async function synthesizeAndAlignCue(
       continue;
     }
     // atempo：对已产出 wav 后处理变速。
-    const tempoPath = path.join(session.workDir, `cue-${cue.index}-atempo.wav`);
+    const tempoPath = path.join(
+      session.workDir,
+      `cue-${cue.index}-${attemptId}-atempo.wav`,
+    );
     await atempoWav(currentWav, tempoPath, recheck.factor, signal);
     currentWav = tempoPath;
     appliedExtra *= recheck.factor;
@@ -623,6 +782,20 @@ async function synthesizeAndAlignCue(
   cue.requiredFactor = requiredFactor;
   cue.status = overlong ? 'overlong' : 'done';
   cue.error = undefined;
+  cue.synthesizedVoiceId = voiceId;
+  cue.needsUpdate = false;
+  if (previousWavPath && previousWavPath !== currentWav) {
+    try {
+      if (
+        path.dirname(previousWavPath) === session.workDir &&
+        fs.existsSync(previousWavPath)
+      ) {
+        fs.unlinkSync(previousWavPath);
+      }
+    } catch {
+      // The new artifact is already authoritative; stale-file cleanup is best effort.
+    }
+  }
 }
 
 // ── 批量合成 ────────────────────────────────────────────────────────────────
@@ -644,9 +817,17 @@ export async function runDubbingBatch(
   session: DubbingSession,
   config: DubbingConfig,
   onProgress: (e: DubbingProgressEvent) => void,
-  opts?: { force?: boolean },
+  opts?: { force?: boolean; staleOnly?: boolean; speakerId?: number },
 ): Promise<BatchResult> {
   if (session.running) throw new Error('该会话已有合成任务进行中');
+  const missingSpeakers = missingDubbingSpeakerVoiceIds(
+    session.speakers,
+    session.speakerVoiceMap,
+  );
+  if (missingSpeakers.length) {
+    throw new Error(`还有 ${missingSpeakers.length} 个角色未选择音色`);
+  }
+  syncDubbingVoiceStaleness(session, config.voice);
   const adapter = buildEngineAdapter(config.engine, {
     cloneQuality: config.cloneQuality,
     localConcurrency: config.localConcurrency,
@@ -661,11 +842,19 @@ export async function runDubbingBatch(
   });
   const slotByIndex = new Map(slots.map((s) => [s.index, s]));
 
-  const targets = opts?.force
-    ? session.cues
-    : session.cues.filter(
-        (c) => c.status !== 'done' && c.status !== 'accepted',
-      );
+  const targets = session.cues.filter((cue) => {
+    if (
+      opts?.speakerId !== undefined &&
+      !cueInheritsSpeaker(cue, opts.speakerId)
+    ) {
+      return false;
+    }
+    if (opts?.staleOnly) return Boolean(cue.needsUpdate);
+    if (opts?.force) return true;
+    return (
+      cue.needsUpdate || (cue.status !== 'done' && cue.status !== 'accepted')
+    );
+  });
   const total = targets.length;
   let processed = 0;
   let cancelled = false;
@@ -746,7 +935,7 @@ export async function runDubbingBatch(
 
   return {
     doneCount: session.cues.filter(
-      (c) => c.status === 'done' || c.status === 'accepted',
+      (c) => !c.needsUpdate && (c.status === 'done' || c.status === 'accepted'),
     ).length,
     overlongIndexes: session.cues
       .filter((c) => c.status === 'overlong')
@@ -771,6 +960,7 @@ export async function resynthesizeCue(
   const cue = session.cues.find((c) => c.index === index);
   if (!cue) throw new Error(`行不存在：${index}`);
   if (session.running) throw new Error('批量合成进行中，无法单行重生成');
+  const hadPreviousArtifact = Boolean(cue.wavPath);
 
   const adapter = buildEngineAdapter(config.engine, {
     cloneQuality: config.cloneQuality,
@@ -806,6 +996,7 @@ export async function resynthesizeCue(
     }
     cue.status = 'failed';
     cue.error = e instanceof Error ? e.message : String(e);
+    if (hadPreviousArtifact) cue.needsUpdate = true;
     throw e;
   } finally {
     session.running = false;
@@ -826,6 +1017,37 @@ export function setCueVoiceOverride(
   cue.voiceId = voiceId || undefined;
   persistDubbingSession(session);
   return cue;
+}
+
+export function setSpeakerVoiceMapping(
+  session: DubbingSession,
+  speakerId: number,
+  voiceId: string,
+  globalVoiceId: string,
+): { affectedCount: number } {
+  if (!session.speakers.some((speaker) => speaker.id === speakerId)) {
+    throw new Error(`角色不存在：${speakerId}`);
+  }
+  if (!voiceId) throw new Error('角色音色不能为空');
+  session.speakerVoiceMap = {
+    ...session.speakerVoiceMap,
+    [String(speakerId)]: voiceId,
+  };
+  delete session.speakerVoiceConflicts[String(speakerId)];
+
+  let affectedCount = 0;
+  for (const cue of session.cues) {
+    if (!cueInheritsSpeaker(cue, speakerId) || !cue.wavPath) continue;
+    const resolved = resolvedSessionCueVoice(session, cue, globalVoiceId);
+    const synthesizedVoiceId =
+      cue.synthesizedVoiceId || session.lastConfig?.voice;
+    cue.needsUpdate = Boolean(
+      synthesizedVoiceId && synthesizedVoiceId !== resolved,
+    );
+    if (cue.needsUpdate) affectedCount += 1;
+  }
+  persistDubbingSession(session);
+  return { affectedCount };
 }
 
 /** 过长行「接受变速」：按所需残余倍率 atempo 对齐进槽位，状态转 accepted。 */
@@ -1026,6 +1248,10 @@ export async function exportDubbing(
   onProgress: (e: DubbingProgressEvent) => void,
 ): Promise<ExportResult> {
   if (session.running) throw new Error('合成进行中，请先等待或取消');
+  const staleCount = syncDubbingVoiceStaleness(session, config.voice);
+  if (staleCount > 0) {
+    throw new Error(`还有 ${staleCount} 条配音使用旧音色，请先重新生成`);
+  }
   const withWav = session.cues.filter((c) => c.wavPath && c.finalMs);
   if (withWav.length === 0) {
     throw new Error('没有可导出的配音行，请先开始配音');

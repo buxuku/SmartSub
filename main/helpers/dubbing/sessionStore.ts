@@ -157,6 +157,8 @@ export function resolvePersistedCue(
     status: cue.status === 'failed' ? 'failed' : 'pending',
     finalMs: undefined,
     appliedSpeed: undefined,
+    synthesizedVoiceId: undefined,
+    needsUpdate: false,
     action: { type: 'none' },
   };
 }

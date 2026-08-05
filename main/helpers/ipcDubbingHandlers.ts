@@ -23,6 +23,8 @@ import {
   resynthesizeCue,
   acceptOverlongCue,
   setCueVoiceOverride,
+  setSpeakerVoiceMapping,
+  syncDubbingVoiceStaleness,
   exportDubbing,
   previewVoice,
   cancelDubbing,
@@ -52,6 +54,10 @@ function cueView(cue: SessionCue) {
     endMs: cue.endMs,
     text: cue.text,
     voiceId: cue.voiceId,
+    speakerIds: cue.speakerIds,
+    primarySpeakerId: cue.primarySpeakerId,
+    synthesizedVoiceId: cue.synthesizedVoiceId,
+    needsUpdate: cue.needsUpdate,
     status: cue.status,
     overlap: cue.overlap,
     synthesizedMs: cue.finalMs,
@@ -69,6 +75,9 @@ function sessionView(session: DubbingSession) {
     videoPath: session.videoPath,
     mediaDurationMs: session.mediaDurationMs,
     cues: session.cues.map(cueView),
+    speakers: session.speakers,
+    speakerVoiceMap: session.speakerVoiceMap,
+    speakerVoiceConflicts: session.speakerVoiceConflicts,
     // 批量在后台进行中：回开重连时渲染层恢复运行态并续接进度事件
     running: session.running,
   };
@@ -102,6 +111,7 @@ function upsertDubbingWorkItem(
     videoPath: session.videoPath,
     cueCount: session.cues.length,
     sessionId: session.id,
+    proofreadDataFile: session.proofreadDataFile,
   };
   const item: WorkItem = existing
     ? {
@@ -130,6 +140,27 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
   // 会话持久化根目录：应用数据目录下（dispose 不删除，重开可恢复）
   setDubbingSessionsRoot(
     path.join(app.getPath('userData'), 'dubbing-sessions'),
+  );
+
+  ipcMain.handle(
+    'dubbing:syncVoiceState',
+    async (
+      _event,
+      {
+        sessionId,
+        globalVoiceId,
+      }: { sessionId: string; globalVoiceId: string },
+    ): Promise<DubbingResponse> => {
+      const session = getDubbingSession(sessionId);
+      if (!session)
+        return { success: false, error: '会话不存在，请重新加载字幕' };
+      syncDubbingVoiceStaleness(session, globalVoiceId);
+      flushDubbingSession(session);
+      return {
+        success: true,
+        data: { cues: session.cues.map(cueView) },
+      };
+    },
   );
 
   const emitProgress = (e: DubbingProgressEvent, cue?: SessionCue) => {
@@ -188,6 +219,7 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
         sessionId,
         rebuildSessionId,
         workItemId,
+        proofreadDataFile,
       }: {
         subtitlePath: string;
         videoPath?: string;
@@ -197,6 +229,8 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
         rebuildSessionId?: string;
         /** 关联的工作项（恢复/重建时保持同一条最近任务记录） */
         workItemId?: string;
+        /** 流水线/衔接入口可直接传递已知 sidecar；普通导入会自动发现。 */
+        proofreadDataFile?: string;
       },
     ): Promise<DubbingResponse> => {
       try {
@@ -245,7 +279,11 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
         if (rebuildSessionId) {
           deleteDubbingSessionData(rebuildSessionId);
         }
-        const session = await createDubbingSession(subtitlePath, videoPath);
+        const session = await createDubbingSession(
+          subtitlePath,
+          videoPath,
+          proofreadDataFile,
+        );
         if (workItemId) {
           session.workItemId = workItemId;
           // 重建后立即刷新工作项的会话引用，避免旧 sessionId 悬挂
@@ -271,7 +309,15 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
         sessionId,
         config,
         force,
-      }: { sessionId: string; config: DubbingConfig; force?: boolean },
+        staleOnly,
+        speakerId,
+      }: {
+        sessionId: string;
+        config: DubbingConfig;
+        force?: boolean;
+        staleOnly?: boolean;
+        speakerId?: number;
+      },
     ): Promise<DubbingResponse> => {
       const session = getDubbingSession(sessionId);
       if (!session)
@@ -291,7 +337,7 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
                 : undefined;
             emitProgress(e, cue);
           },
-          { force },
+          { force, staleOnly, speakerId },
         );
         upsertDubbingWorkItem(
           session,
@@ -319,7 +365,8 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
         // stage='done' 仅表示「批量已结束」；percent 取真实完成度，
         // 取消/失败场景不再谎报 100%。
         const doneCount = session.cues.filter(
-          (c) => c.status === 'done' || c.status === 'accepted',
+          (c) =>
+            !c.needsUpdate && (c.status === 'done' || c.status === 'accepted'),
         ).length;
         emitProgress({
           taskId: session.id,
@@ -329,6 +376,48 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
               ? Math.round((doneCount / session.cues.length) * 100)
               : 100,
         });
+      }
+    },
+  );
+
+  // 角色默认音色：只标记继承该角色且已有产物的 cue 为需要更新。
+  ipcMain.handle(
+    'dubbing:setSpeakerVoice',
+    async (
+      _event,
+      {
+        sessionId,
+        speakerId,
+        voiceId,
+        globalVoiceId,
+      }: {
+        sessionId: string;
+        speakerId: number;
+        voiceId: string;
+        globalVoiceId: string;
+      },
+    ): Promise<DubbingResponse> => {
+      const session = getDubbingSession(sessionId);
+      if (!session)
+        return { success: false, error: '会话不存在，请重新加载字幕' };
+      try {
+        const result = setSpeakerVoiceMapping(
+          session,
+          speakerId,
+          voiceId,
+          globalVoiceId,
+        );
+        return {
+          success: true,
+          data: {
+            ...result,
+            speakerVoiceMap: session.speakerVoiceMap,
+            speakerVoiceConflicts: session.speakerVoiceConflicts,
+            cues: session.cues.map(cueView),
+          },
+        };
+      } catch (error) {
+        return fail(error);
       }
     },
   );

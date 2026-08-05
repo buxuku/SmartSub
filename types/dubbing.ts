@@ -15,6 +15,95 @@ export type DubbingCueStatus =
   | 'accepted' // 过长但用户已确认「接受变速」
   | 'failed'; // 合成失败，可重试
 
+/** 角色明确选择“使用全局默认音色”，与尚未配置的 undefined 区分。 */
+export const DUBBING_GLOBAL_VOICE_ID = '__global__' as const;
+
+export interface DubbingSpeaker {
+  id: number;
+  name: string;
+  color: string;
+  cueCount: number;
+  totalDurationMs: number;
+}
+
+export type DubbingSpeakerVoiceMap = Record<string, string>;
+
+export interface DubbingSpeakerCueLike {
+  speakerIds?: readonly number[];
+  primarySpeakerId?: number;
+  /** 仅表示显式单句覆盖。 */
+  voiceId?: string;
+}
+
+export function primaryDubbingSpeakerId(
+  cue: DubbingSpeakerCueLike,
+): number | undefined {
+  const ids = (cue.speakerIds || []).filter(
+    (id, index, all) =>
+      Number.isInteger(id) && id > 0 && all.indexOf(id) === index,
+  );
+  return cue.primarySpeakerId && ids.includes(cue.primarySpeakerId)
+    ? cue.primarySpeakerId
+    : ids[0];
+}
+
+/** 单句覆盖 > 主要角色映射 > 全局音色。 */
+export function resolveDubbingVoiceId(
+  cue: DubbingSpeakerCueLike,
+  speakerVoiceMap: DubbingSpeakerVoiceMap,
+  globalVoiceId: string,
+): string {
+  if (cue.voiceId) return cue.voiceId;
+  const primaryId = primaryDubbingSpeakerId(cue);
+  const speakerVoice = primaryId
+    ? speakerVoiceMap[String(primaryId)]
+    : undefined;
+  return !speakerVoice || speakerVoice === DUBBING_GLOBAL_VOICE_ID
+    ? globalVoiceId
+    : speakerVoice;
+}
+
+export function cueInheritsSpeaker(
+  cue: DubbingSpeakerCueLike,
+  speakerId: number,
+): boolean {
+  return !cue.voiceId && primaryDubbingSpeakerId(cue) === speakerId;
+}
+
+/** Compare a retained artifact's actual voice with the cue's current resolution. */
+export function dubbingVoiceNeedsUpdate(
+  cue: DubbingSpeakerCueLike,
+  speakerVoiceMap: DubbingSpeakerVoiceMap,
+  globalVoiceId: string,
+  synthesizedVoiceId?: string,
+): boolean {
+  return Boolean(
+    synthesizedVoiceId &&
+      synthesizedVoiceId !==
+        resolveDubbingVoiceId(cue, speakerVoiceMap, globalVoiceId),
+  );
+}
+
+export function missingDubbingSpeakerVoiceIds(
+  speakers: readonly Pick<DubbingSpeaker, 'id' | 'cueCount'>[],
+  speakerVoiceMap: DubbingSpeakerVoiceMap,
+  availableVoiceIds?: ReadonlySet<string>,
+): number[] {
+  if (speakers.filter((speaker) => speaker.cueCount > 0).length <= 1) return [];
+  return speakers
+    .filter((speaker) => speaker.cueCount > 0)
+    .filter((speaker) => {
+      const voiceId = speakerVoiceMap[String(speaker.id)];
+      if (!voiceId) return true;
+      return (
+        voiceId !== DUBBING_GLOBAL_VOICE_ID &&
+        availableVoiceIds !== undefined &&
+        !availableVoiceIds.has(voiceId)
+      );
+    })
+    .map((speaker) => speaker.id);
+}
+
 /** 一条配音 cue = 字幕 cue + 配音扩展。 */
 export interface DubbingCue {
   /** 行号（0-based），会话内稳定标识。 */
@@ -27,6 +116,12 @@ export interface DubbingCue {
    * D2：v1 仅手动指定，此字段同时为将来自动说话人分离预留。
    */
   voiceId?: string;
+  speakerIds?: number[];
+  primarySpeakerId?: number;
+  /** 上一次成功合成实际使用的音色，用于精确判断 stale。 */
+  synthesizedVoiceId?: string;
+  /** 保留旧音频但禁止静默导出的过期标记。 */
+  needsUpdate?: boolean;
   status: DubbingCueStatus;
   /** 与相邻 cue 时间轴交叠（重叠告警，v1 按 start 顺延消解）。 */
   overlap?: boolean;
@@ -170,6 +265,10 @@ export interface DubbingCueView {
   endMs: number;
   text: string;
   voiceId?: string;
+  speakerIds?: number[];
+  primarySpeakerId?: number;
+  synthesizedVoiceId?: string;
+  needsUpdate?: boolean;
   status: DubbingCueStatus;
   overlap: boolean;
   /** 实测最终时长（ms）。 */
@@ -190,6 +289,10 @@ export interface DubbingSessionView {
   videoPath?: string;
   mediaDurationMs: number;
   cues: DubbingCueView[];
+  speakers: DubbingSpeaker[];
+  speakerVoiceMap: DubbingSpeakerVoiceMap;
+  /** 角色合并/重新归属后存在多个旧映射，必须由用户重新确认。 */
+  speakerVoiceConflicts?: Record<string, string[]>;
   /** 批量合成正在后台进行（回开重连时渲染层据此恢复运行态） */
   running?: boolean;
 }
@@ -225,6 +328,10 @@ export interface PersistedDubbingCue {
   endMs: number;
   text: string;
   voiceId?: string;
+  speakerIds?: number[];
+  primarySpeakerId?: number;
+  synthesizedVoiceId?: string;
+  needsUpdate?: boolean;
   status: DubbingCueStatus;
   overlap: boolean;
   finalMs?: number;
@@ -248,6 +355,10 @@ export interface DubbingSessionMeta {
   updatedAt: number;
   /** 最近一次使用的配音配置（恢复时回填工作台） */
   configSnapshot?: DubbingConfig;
+  proofreadDataFile?: string;
+  speakers?: DubbingSpeaker[];
+  speakerVoiceMap?: DubbingSpeakerVoiceMap;
+  speakerVoiceConflicts?: Record<string, string[]>;
   /**
    * 运行期语速校准累计（Σ预估/Σ实测）。可选：旧 session.json 无此字段，
    * 恢复时回落零校准，不影响版本兼容。
