@@ -45,10 +45,12 @@ export interface ProofreadDataCue {
   endMs: number;
   source: string;
   target: string;
-  /** Complete role assignment; absence/empty means the product state "unassigned". */
+  /** Complete assignment; [] is explicit unassigned, absence means no role metadata. */
   speakerIds?: number[];
   /** Explicit primary role. Never infer priority from sorted IDs after editing. */
   primarySpeakerId?: number;
+  /** Manual assignments remain authoritative when cue timing is edited later. */
+  speakerAssignmentSource?: 'manual';
 }
 
 export interface ProofreadDataFileV1 {
@@ -69,6 +71,17 @@ export type ProofreadDataFileInput = ProofreadDataFileV1 | ProofreadDataFileV2;
 export interface SpeakerAssignableCue {
   speakerIds?: readonly number[];
   primarySpeakerId?: number;
+}
+
+export function hasExplicitSpeakerAssignment(value: object): boolean {
+  return Object.prototype.hasOwnProperty.call(value, 'speakerIds');
+}
+
+export function shouldRealignSpeakerAssignment(
+  timingChanged: boolean,
+  source?: 'manual',
+): boolean {
+  return timingChanged && source !== 'manual';
 }
 
 export function isValidSpeakerId(value: unknown): value is number {
@@ -150,6 +163,7 @@ function normalizeSpeakerInfo(value: unknown): SpeakerInfo | null {
 export function normalizeSpeakerAssignment<T extends SpeakerAssignableCue>(
   cue: T,
 ): T {
+  const hasExplicitAssignment = hasExplicitSpeakerAssignment(cue);
   const speakerIds = normalizeSpeakerIds(cue.speakerIds);
   const primarySpeakerId = normalizePrimarySpeakerId(
     cue.primarySpeakerId,
@@ -163,7 +177,8 @@ export function normalizeSpeakerAssignment<T extends SpeakerAssignableCue>(
     result.speakerIds = speakerIds;
     result.primarySpeakerId = primarySpeakerId;
   } else {
-    delete result.speakerIds;
+    if (hasExplicitAssignment) result.speakerIds = [];
+    else delete result.speakerIds;
     delete result.primarySpeakerId;
   }
   return result;
@@ -231,14 +246,18 @@ export function normalizeProofreadData(input: unknown): ProofreadDataFileV2 {
   }
   const cues = raw.cues.map((value, index) => {
     const cue = (value || {}) as Partial<ProofreadDataCue>;
+    const hasExplicitAssignment = hasExplicitSpeakerAssignment(cue);
     const normalized = normalizeSpeakerAssignment({
       id: String(cue.id || index + 1),
       startMs: Number.isFinite(cue.startMs) ? Number(cue.startMs) : 0,
       endMs: Number.isFinite(cue.endMs) ? Number(cue.endMs) : 0,
       source: String(cue.source ?? ''),
       target: String(cue.target ?? ''),
-      speakerIds: cue.speakerIds,
+      ...(hasExplicitAssignment ? { speakerIds: cue.speakerIds } : {}),
       primarySpeakerId: cue.primarySpeakerId,
+      ...(cue.speakerAssignmentSource === 'manual'
+        ? { speakerAssignmentSource: 'manual' as const }
+        : {}),
     });
     return normalized as ProofreadDataCue;
   });

@@ -42,7 +42,8 @@ const speakerAssignmentEquals = (a: Subtitle, b: Subtitle): boolean => {
     left.length === right.length &&
     left.every((id, index) => id === right[index]) &&
     normalizePrimarySpeakerId(a.primarySpeakerId, left) ===
-      normalizePrimarySpeakerId(b.primarySpeakerId, right)
+      normalizePrimarySpeakerId(b.primarySpeakerId, right) &&
+    a.speakerAssignmentSource === b.speakerAssignmentSource
   );
 };
 

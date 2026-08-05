@@ -19,6 +19,8 @@ export interface Subtitle {
   speakerIds?: number[];
   /** 显式主要角色；多角色时不依赖 ID 排序推断。 */
   primarySpeakerId?: number;
+  /** 人工角色归属在后续时间调整时保持优先。 */
+  speakerAssignmentSource?: 'manual';
 }
 
 export interface SubtitleStats {

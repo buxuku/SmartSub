@@ -3,6 +3,7 @@ import {
   SPEAKER_COLOR_PALETTE,
   countSpeakerCues,
   createDefaultSpeaker,
+  hasExplicitSpeakerAssignment,
   moveSpeakerAssignments,
   nextSpeakerId,
   normalizeProofreadData,
@@ -11,6 +12,7 @@ import {
   orderedSpeakerIds,
   prefixTextWithSpeakerNames,
   sanitizeSpeakerDisplayName,
+  shouldRealignSpeakerAssignment,
   speakerListsEqual,
   type ProofreadDataCue,
   type SpeakerInfo,
@@ -88,6 +90,10 @@ check(
   ),
   'generated speakers use the stable palette',
 );
+check(
+  !Object.prototype.hasOwnProperty.call(migrated.cues[1], 'speakerIds'),
+  'migration keeps missing role metadata distinct from explicit unassigned',
+);
 
 const normalizedV2 = normalizeProofreadData({
   version: 2,
@@ -137,9 +143,13 @@ equal(
   'speaker ID normalization is stable and rejects invalid IDs',
 );
 equal(
-  normalizeSpeakerAssignment({ speakerIds: [], primarySpeakerId: 2 }),
-  {},
-  'unassigned cues do not retain a fake primary role',
+  normalizeSpeakerAssignment({
+    speakerIds: [],
+    primarySpeakerId: 2,
+    speakerAssignmentSource: 'manual' as const,
+  }),
+  { speakerIds: [], speakerAssignmentSource: 'manual' },
+  'explicit unassigned survives normalization without a fake primary role',
 );
 equal(
   orderedSpeakerIds({ speakerIds: [1, 3, 2], primarySpeakerId: 3 }),
@@ -232,6 +242,45 @@ check(
 check(
   !speakerListsEqual(roster, [{ ...roster[0], color: '#16a34a' }, roster[1]]),
   'speaker roster equality detects color changes for undo history',
+);
+
+const explicitUnassigned = normalizeProofreadData({
+  version: 2,
+  meta,
+  speakers: roster,
+  cues: [
+    {
+      id: '1',
+      startMs: 0,
+      endMs: 1000,
+      source: 'Hello',
+      target: '',
+      speakerIds: [],
+      speakerAssignmentSource: 'manual',
+    },
+  ],
+});
+equal(
+  explicitUnassigned.cues[0].speakerIds,
+  [],
+  'sidecar normalization persists explicit unassigned',
+);
+equal(
+  explicitUnassigned.cues[0].speakerAssignmentSource,
+  'manual',
+  'sidecar normalization persists manual assignment precedence',
+);
+check(
+  hasExplicitSpeakerAssignment(explicitUnassigned.cues[0]),
+  'explicit unassigned remains distinguishable after reopening',
+);
+check(
+  !shouldRealignSpeakerAssignment(true, 'manual'),
+  'timing edits never realign a manual role correction',
+);
+check(
+  shouldRealignSpeakerAssignment(true),
+  'timing edits can still realign untouched automatic assignments',
 );
 
 console.log(`proofread speakers: ${passed} passed, ${failed} failed`);
