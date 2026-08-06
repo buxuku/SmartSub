@@ -648,8 +648,8 @@ export default function TaskPage() {
 
   return (
     <div className="flex h-full flex-col gap-2.5 p-3 overflow-hidden">
-      <div className="flex items-center justify-between gap-3 flex-wrap flex-shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center justify-between gap-3 flex-shrink-0">
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -669,7 +669,7 @@ export default function TaskPage() {
             </Tooltip>
           </TooltipProvider>
           <h1
-            className="min-w-0 truncate text-lg font-semibold"
+            className="shrink-0 truncate text-lg font-semibold"
             title={pageTitle}
           >
             {pageTitle}
@@ -699,8 +699,11 @@ export default function TaskPage() {
               </Button>
             </div>
           ) : projectName ? (
-            <div className="group/name flex items-center gap-1 min-w-0">
-              <span className="truncate text-xs text-muted-foreground min-w-0">
+            <div className="group/name flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+              <span
+                className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
+                title={projectName}
+              >
                 {projectName}
               </span>
               <Button
