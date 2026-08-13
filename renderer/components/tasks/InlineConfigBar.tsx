@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import Models from '@/components/Models';
 import AiRefineControl from '@/components/tasks/AiRefineControl';
 import GlossarySelectControl from '@/components/tasks/GlossarySelectControl';
+import SummaryGenerateControl from '@/components/tasks/SummaryGenerateControl';
 import ScenarioPresetControl from '@/components/tasks/ScenarioPresetControl';
 import OutputFormatControl from '@/components/tasks/OutputFormatControl';
 import { cn, supportedLanguage } from 'lib/utils';
@@ -368,6 +369,11 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
                 )}
               </ConfigItem>
               <GlossarySelectControl form={form} formData={formData} />
+              <SummaryGenerateControl
+                form={form}
+                formData={formData}
+                providers={providers}
+              />
             </>
           )}
 

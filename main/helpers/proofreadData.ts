@@ -179,6 +179,7 @@ export async function writeProofreadDataFromFiles({
   missedSpeechWarnings,
   missedSpeechSummary,
   glossaryIds,
+  episodeSummary,
 }: {
   file: IFiles;
   sourceFile?: string;
@@ -195,6 +196,7 @@ export async function writeProofreadDataFromFiles({
   missedSpeechWarnings?: MissedSpeechWarning[];
   missedSpeechSummary?: MissedSpeechSummary;
   glossaryIds?: string[];
+  episodeSummary?: string;
 }): Promise<ProofreadDataWriteResult> {
   try {
     const sourceEntries = await readSubtitleEntries(sourceFile);
@@ -230,6 +232,7 @@ export async function writeProofreadDataFromFiles({
         targetFile,
         finalTargetFile,
         ...(glossaryIds !== undefined ? { glossaryIds } : {}),
+        ...(episodeSummary ? { episodeSummary } : {}),
       },
       speakers: normalizeSpeakerRoster([], cues),
       cues,

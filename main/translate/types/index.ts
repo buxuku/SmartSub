@@ -27,6 +27,8 @@ export interface TranslationConfig {
   subtitleTranslationStyle?: 'neutral' | 'conversational';
   /** 词库来源标注；缺省时 match 日志保持旧文案。 */
   glossarySourceLabel?: string;
+  /** 通读摘要正文；仅 AI 翻译注入 system。 */
+  episodeSummary?: string;
   signal?: AbortSignal;
   /** 同一任务内按顺序尝试的备用实例；候选实例必须与 provider.type 相同。 */
   fallbackProviders?: Provider[];

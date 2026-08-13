@@ -223,7 +223,10 @@ export default async function translate(
       },
       formData.subtitleTranslationStyle,
       onActivity,
-      { glossaryIds: formData?.glossaryIds },
+      {
+        glossaryIds: formData?.glossaryIds,
+        episodeSummary: file.episodeSummary,
+      },
     );
 
     logMessage('Translation completed', 'info');

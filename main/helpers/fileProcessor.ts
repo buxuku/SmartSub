@@ -43,6 +43,7 @@ import {
   runManuscriptMatchingStage,
   settleSkippedManuscriptMatchStage,
 } from './manuscriptMatchingStage';
+import { runEpisodeSummaryStage } from './episodeSummary';
 import { runDubStage, rebuildDubTrackForFile } from './pipeline/dubStage';
 import { runComposeStage } from './pipeline/composeStage';
 import {
@@ -322,6 +323,7 @@ async function processFileImpl(
     'prepareSubtitle',
     'refineSubtitle',
     'manuscriptMatch',
+    'summarizeEpisode',
     'translateSubtitle',
     'speakerDiarization',
     'dubbing',
@@ -339,6 +341,7 @@ async function processFileImpl(
     'refineSubtitleError',
     'manuscriptMatchError',
     'manuscriptMatchErrorDetail',
+    'summarizeEpisodeError',
     'translateSubtitleError',
     'speakerDiarizationError',
     'dubbingError',
@@ -571,6 +574,17 @@ async function processFileImpl(
         settleSkippedRefineStage(event, file, formData);
         // 首轮文稿匹配同样已写入 SRT，续跑不重新读取可能变化的外部文稿。
         settleSkippedManuscriptMatchStage(event, file, formData);
+      }
+      if (formData?.generateSummary === true || file.summarizeEpisode) {
+        const summaryActivity = getTaskContext()?.activity?.start(
+          'summarizeEpisode',
+          'organizing',
+        );
+        summaryActivity?.finish();
+        event.sender.send('taskFileChange', {
+          ...file,
+          summarizeEpisode: 'done',
+        });
       }
       if (translationActive) {
         (file as any).translateSubtitle = 'done';
@@ -873,6 +887,22 @@ async function processFileImpl(
       await stripSourceSubtitlePunctuation(file.srtFile, fileName);
     }
 
+    // 通读摘要：翻译前、精修/文稿匹配之后。失败降级，不阻断。
+    if (
+      formData?.generateSummary === true &&
+      shouldTranslateSubtitle &&
+      translateProvider !== '-1'
+    ) {
+      throwIfTaskCancelled();
+      await runEpisodeSummaryStage({
+        event,
+        file,
+        formData,
+        sourceLanguage,
+        targetLanguage,
+      });
+    }
+
     // 翻译字幕（取消后不再进入）
     throwIfTaskCancelled();
     let translateOk = !translationActive;
@@ -970,6 +1000,7 @@ async function processFileImpl(
         missedSpeechWarnings: file.missedSpeechWarnings,
         missedSpeechSummary: file.missedSpeechSummary,
         glossaryIds: formData?.glossaryIds,
+        episodeSummary: file.episodeSummary,
       });
       if ('filePath' in proofreadDataResult) {
         file.proofreadDataFile = proofreadDataResult.filePath;
