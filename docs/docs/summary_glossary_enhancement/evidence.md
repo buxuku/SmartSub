@@ -6,11 +6,11 @@ unlisted: true
 
 # 摘要与任务词库：手测证据链
 
-内部报告，2026-08-13。对照 `feat/summary_glossary_enhancement` 实现与一次完整 `translateOnly` 手测，回答四件事：过程日志与临时文件在哪、摘要是否真正生成、摘要落在何处、每一批是否带上词库和摘要。
+内部报告。主体是 2026-08-13 一次完整 `translateOnly` 手测的证据链；同日稍后出厂摘要稿已改（`b533bef`，专名保持源文、不再要求摘要用表内译名）。下文区分「当时跑出来的事实」和「事后订正的解读」。
 
 手测样本：`A.French.Village.S01E06.eng.srt`（英语 → 简体中文，647 条，13 批 × 50，末批 47）。应用为本地打包的 macOS 版（`userData` = `smartsub`，不是 `smartsub-dev`）。
 
-**总判：** 摘要生成、注入第 1 批 system、任务结束后写入校对 sidecar，均已证实。临时目录里的 srt **不是**摘要存档。后 12 批摘要注入只能由代码闭包证明，日志策略故意不 dump 全文。
+**总判：** 摘要生成、注入第 1 批 system、任务结束后写入校对 sidecar，均已证实。临时目录里的 srt **不是**摘要存档。后 12 批摘要注入只能由代码闭包证明，日志策略故意不 dump 全文。摘要请求按代码是「整集源文命中 ∩ 任务词库」，不是整表全量，也不是逐批；该次 HTTP 的词库块没有日志可核。
 
 ---
 
@@ -67,7 +67,9 @@ unlisted: true
 
 对应 `main/helpers/episodeSummary.ts`：`shouldSkipTrivialSummary` 未触发（647 ≫ 20 条、13 ≫ 2 批）；`settleSummaryText` 成功；无 `degraded` / `empty` / `provider-unresolved` / `skipped-trivial` / `call-failed`。
 
-摘要请求本身**不写过程日志**：`translator(...)` 只回收 `onResponseMeta`，不 dump system / user / 模型原文。所以「摘要 LLM 原始往返」在磁盘上不存在。
+摘要请求本身**不写过程日志**：`translator(...)` 只回收 `onResponseMeta`，不 dump system / user / 模型原文。所以「摘要 LLM 原始往返」和「那一次有没有带上词库块」在磁盘上都不存在。
+
+按当时与现在的代码，摘要侧词库不是整表灌入：`matchGlossaryEntries` 对 **647 条全文**做一次命中，再 `selectGlossaryPromptEntries`（上限 100）后 `buildSummaryGlossaryBlock`。本集后续翻译批次出现过的专名都在全文里，按代码应当进摘要 prompt；本趟没有「词库命中超出上限」日志。这与翻译侧「每批只带本批命中」不是同一套匹配。
 
 ### 3.2 注入结论 + 第 1 批 system
 
@@ -164,9 +166,11 @@ unlisted: true
 
 - 第 2–13 批 HTTP 请求的 system 里是否真有摘要块（策略不 dump）。
 - 摘要调用是否 `structuredOutput: disabled`（代码如此，无请求 dump）。
-- 摘要请求是否带了任务词库块（代码 `buildSummaryGlossaryBlock` 如此；摘要正文专名与后续命中一致，只是旁证）。
+- 摘要请求的 system 里是否真有词库附录（代码会拼 `buildSummaryGlossaryBlock`，但该次调用不打命中日志、不 dump system）。
 
-若要手测闭环「每批 HTTP 都带摘要」，应给后续批次打一行摘要指纹 / 短 hash，而不是再 dump 全文。
+**已订正的误读：** 不能用「摘要里出现 Villeneuve / Marcel Larcher 等，与后面词库命中一致」当作「摘要请求带了词库表」的旁证。那些字符串来自源字幕；模型写成「专有名词保留原文」只说明它按源文（以及当时出厂稿里的「保留原文」例子）输出，**不能**证明表内中文译名进了摘要 prompt，更不能证明它用了表内译名。
+
+若要手测闭环「每批 HTTP 都带摘要」或「摘要请求带了哪些词条」，应给摘要阶段和后续批次各打一行命中列表 / 短 hash，而不是再 dump 全文。
 
 ---
 
@@ -181,10 +185,11 @@ unlisted: true
 - 注入结论日志 + 仅首批 system 全文。
 - sidecar `meta` 同时写 `glossaryIds` 与 `episodeSummary`，不 bump `PROOFREAD_DATA_VERSION`。
 
-模型行为（不是注入失败）：
+模型 / 规格（不是注入失败）：
 
-- cue 21 `November 11th` → 「双十一」；摘要写的是 1940 年 11 月 11 日。后文 168/184 又译成「11月11日」。
-- 人名不稳定：第 1 批 `Gustave` 保留原文，第 2 批「居斯塔夫」，第 3 批命中全名后才「古斯塔夫·拉尔谢」。这是按批命中的已知代价。
+- cue 21 `November 11th` → 「双十一」；摘要写的是 1940 年 11 月 11 日。后文 168/184 又译成「11月11日」。摘要进了 system，模型仍可忽略。
+- 人名跨批不稳定：第 1 批 `Gustave` 保留原文，第 2 批「居斯塔夫」，第 3 批命中全名后才「古斯塔夫·拉尔谢」。这是按批命中的已知代价，与摘要是否全简中无关。
+- sidecar 里摘要专名保持源文（Villeneuve、Marcel Larcher…）是模型原文，没有后处理剥中文。当时出厂稿仍写「有表用表内译名」，模型却走了「保留原文」；`b533bef` 已把出厂稿改成与此一致（摘要专名跟源文，译名交给各批词库）。从本趟译文看，摘要不写中文译名并不妨碍命中项译对。
 
 ---
 
