@@ -151,6 +151,27 @@ const TaskControls = ({
         }
       }
     }
+    if (typeDef.hasTranslate && formData?.generateSummary === true) {
+      const summaryProviders =
+        (await window?.ipc?.invoke('getTranslationProviders')) || [];
+      const summarySetting =
+        formData?.summaryProvider || 'follow-translation';
+      if (summarySetting === 'follow-translation') {
+        const tp = summaryProviders.find(
+          (p: any) => p.id === formData?.translateProvider,
+        );
+        if (!tp?.isAi || !isProviderConfigured(tp)) {
+          toast.error(t('tasks:wizard.blockSummaryFollow'));
+          return;
+        }
+      } else {
+        const sp = summaryProviders.find((p: any) => p.id === summarySetting);
+        if (!sp?.isAi || !isProviderConfigured(sp)) {
+          toast.error(t('tasks:wizard.blockSummaryProviderInvalid'));
+          return;
+        }
+      }
+    }
     // 云端听写：音频会上传到第三方端点，首次开跑前弹确认（隐私/成本护栏）。
     if (
       typeDef.needsModel &&

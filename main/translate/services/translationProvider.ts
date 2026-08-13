@@ -74,7 +74,7 @@ export async function translateWithProvider(
   maxRetries: number = 0,
   useGlossary: boolean = true,
   onResponseMeta?: TranslationConfig['onResponseMeta'],
-  options?: { glossaryIds?: string[] },
+  options?: { glossaryIds?: string[]; episodeSummary?: string },
 ): Promise<TranslationResult[] | string[]> {
   const supportsGlossary = provider.isAi || provider.type === 'qwenMt';
   const glossaryResolution =
@@ -96,6 +96,9 @@ export async function translateWithProvider(
     translator,
     glossaryEntries,
     ...(options ? { glossarySourceLabel } : {}),
+    ...(options?.episodeSummary
+      ? { episodeSummary: options.episodeSummary }
+      : {}),
     signal: getTaskSignal(),
     onResponseMeta,
   };
@@ -105,6 +108,12 @@ export async function translateWithProvider(
     'info',
   );
   onProgress && onProgress(0);
+  if (options?.episodeSummary && !provider.isAi) {
+    logMessage(
+      `翻译服务 ${provider.name} 非 AI（机翻 / Qwen-MT），摘要未注入，仅供对照`,
+      'info',
+    );
+  }
   if (provider.isAi) {
     return handleAIBatchTranslation(
       subtitles,

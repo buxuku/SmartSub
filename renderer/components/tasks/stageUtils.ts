@@ -7,6 +7,7 @@ export type StageKey =
   | 'extractSubtitle'
   | 'refineSubtitle'
   | 'manuscriptMatch'
+  | 'summarizeEpisode'
   | 'translateSubtitle'
   | 'speakerDiarization'
   | 'dubbing'
@@ -49,6 +50,14 @@ export function getFileStages(
         labelKey: 'stage.manuscript',
       });
     }
+  }
+  if (
+    typeDef.hasTranslate &&
+    formData?.translateProvider !== '-1' &&
+    (formData?.generateSummary === true ||
+      file?.summarizeEpisode !== undefined)
+  ) {
+    stages.push({ key: 'summarizeEpisode', labelKey: 'stage.summarize' });
   }
   if (typeDef.hasTranslate && formData?.translateProvider !== '-1') {
     stages.push({ key: 'translateSubtitle', labelKey: 'stage.translate' });

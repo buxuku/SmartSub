@@ -194,7 +194,10 @@ export default async function translate(
       retryCount,
       undefined,
       undefined,
-      { glossaryIds: formData?.glossaryIds },
+      {
+        glossaryIds: formData?.glossaryIds,
+        episodeSummary: file.episodeSummary,
+      },
     );
 
     logMessage('Translation completed', 'info');

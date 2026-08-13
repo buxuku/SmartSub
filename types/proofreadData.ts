@@ -39,6 +39,8 @@ export interface ProofreadDataMeta {
   finalTargetFile?: string;
   /** 任务选用词库 id；undefined = 回落全部已启用；[] = 明确不用词库 */
   glossaryIds?: string[];
+  /** 本集通读摘要；缺省表示未生成 */
+  episodeSummary?: string;
 }
 
 export interface ProofreadDataCue {

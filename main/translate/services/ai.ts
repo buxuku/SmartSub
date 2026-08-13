@@ -37,8 +37,9 @@ import {
 } from '../utils/batchConcurrency';
 import {
   buildGlossaryPromptBlock,
+  buildSummaryPromptBlock,
   matchGlossaryEntries,
-  renderGlossarySystemPrompt,
+  renderTranslationSystemPrompt,
   selectGlossaryPromptEntries,
 } from '../../glossary/core';
 import { logGlossaryMatches } from '../../helpers/glossaryManager';
@@ -167,6 +168,16 @@ export async function handleAIBatchTranslation(
   const { provider, sourceLanguage, targetLanguage, translator } = config;
   const sourceLanguageName = getLanguageName(sourceLanguage);
   const targetLanguageName = getLanguageName(targetLanguage);
+  const summaryText = String(config.episodeSummary || '').trim();
+  const summaryBlock = buildSummaryPromptBlock(summaryText);
+  if (summaryText) {
+    logMessage(
+      `本集摘要已注入翻译提示词（${summaryText.length} 字）`,
+      'info',
+    );
+  } else {
+    logMessage('本文件无摘要（未生成或已降级），翻译提示词不附加摘要', 'info');
+  }
   // 回显锚定默认开启（design D4）：模型逐条回显原文，用于检测合并/滑移错位。
   const echoEnabled = provider.echoAnchoring !== false;
   const requestedBatchSize = normalizeBatchSize(
@@ -253,14 +264,14 @@ export async function handleAIBatchTranslation(
             : '\n\n上一次响应存在未翻译或无法解析。请只返回一个 JSON 对象，键必须是输入字幕 ID，值必须是目标语言翻译结果且不能直接复制原文；不要返回 markdown、解释、注释或思考过程。';
         }
 
-        const systemPrompt = renderGlossarySystemPrompt(
+        const systemPrompt = renderTranslationSystemPrompt(
           provider.systemPrompt || defaultSystemPrompt,
           {
             sourceLanguage: sourceLanguageName,
             targetLanguage: targetLanguageName,
             content: fullContent,
           },
-          glossaryBlock,
+          { glossary: glossaryBlock, summary: summaryBlock },
         );
 
         // 更新配置，保持原有的结构化输出设置
@@ -282,6 +293,9 @@ export async function handleAIBatchTranslation(
           `AI translate batch ${currentBatchIndex}/${totalBatches} (尝试 ${retryCount + 1}/${maxRetries + 1}): \n ${translationContent}`,
           'info',
         );
+        if (currentBatchIndex === 1 && retryCount === 0) {
+          logMessage(`翻译 system 全文（仅首批）：\n${systemPrompt}`, 'info');
+        }
         const responseOrigin = await translator(
           translationContent,
           translationConfig,

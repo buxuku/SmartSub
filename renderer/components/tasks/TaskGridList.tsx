@@ -222,7 +222,9 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
         const warningMsg =
           rawWarning === SPEAKER_DIARIZATION_METADATA_SAVE_FAILED
             ? t('row.speakerDiarizationMetadataSaveFailed')
-            : rawWarning;
+            : t(`summarize.error.${rawWarning}`, {
+                defaultValue: rawWarning,
+              });
         const started = stages.some(
           (s) => getStageStatus(file, s.key) !== 'pending',
         );
