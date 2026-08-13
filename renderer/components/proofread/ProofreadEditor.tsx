@@ -186,6 +186,7 @@ export default function ProofreadEditor({
     shouldShowTranslation,
     sourceLanguage: file.sourceLanguage,
     targetLanguage: file.targetLanguage,
+    proofreadDataFile: file.proofreadDataFile,
   });
 
   // 失败字幕批量重翻（复用任务翻译链路）
@@ -201,6 +202,7 @@ export default function ProofreadEditor({
     updateSubtitles,
     sourceLanguage: file.sourceLanguage,
     targetLanguage: file.targetLanguage,
+    proofreadDataFile: file.proofreadDataFile,
   });
 
   // 使用视频播放器 hook

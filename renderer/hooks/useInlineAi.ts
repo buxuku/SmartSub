@@ -14,6 +14,7 @@ import {
 
 interface Options {
   projectId?: string;
+  proofreadDataFile?: string;
   documentKey: string;
   getSubtitles: () => Subtitle[];
   updateSubtitles: (cues: Subtitle[]) => void;
@@ -230,6 +231,7 @@ export function useInlineAi(options: Options) {
       setProgress(0);
       const settings = {
         projectId: context.projectId,
+        proofreadDataFile: context.proofreadDataFile,
         providerId,
         batchId: id,
         mode: requestMode,

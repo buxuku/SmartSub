@@ -60,7 +60,11 @@ Module._load = function (request, parent, isMain) {
       },
     };
   if (request.endsWith('/glossaryManager'))
-    return { getActiveGlossaryResolution: () => null };
+    return {
+      // No ids: same empty resolution the old getActiveGlossaryResolution mock returned.
+      getActiveGlossaryResolution: () => null,
+      getTaskGlossaryResolution: () => null,
+    };
   return originalLoad.call(this, request, parent, isMain);
 };
 require.extensions['.ts'] = (module, filename) =>

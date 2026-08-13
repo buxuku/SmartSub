@@ -60,14 +60,36 @@ import {
   selectGlossaryPromptEntries,
 } from '../glossary/core';
 import {
-  getActiveGlossaryResolution,
+  getTaskGlossaryResolution,
   logGlossaryConflicts,
   logGlossaryMatches,
 } from './glossaryManager';
+import { readProofreadDataFile } from './proofreadData';
 
 // 校对批量操作（批量 AI 优化 / 重翻失败）取消注册表
 const batchAbortControllers = new Map<string, AbortController>();
 const singleOptimizeConflictFingerprints = new WeakMap<object, string>();
+
+/**
+ * 从 sidecar 读任务词库；缺路径 / 读失败 → undefined（回落全部已启用）。
+ * 调用方在没有路径时不要 await 本函数，否则会多一次事件循环让出，
+ * 取消/销毁无法在 handler 返回前看到已经开始的请求。
+ */
+async function readSidecarGlossaryIds(
+  proofreadDataFile?: string,
+): Promise<string[] | undefined> {
+  if (!proofreadDataFile) return undefined;
+  try {
+    const data = await readProofreadDataFile(proofreadDataFile);
+    return data.meta.glossaryIds;
+  } catch (error) {
+    logMessage(
+      `Failed to read sidecar glossaryIds from ${proofreadDataFile}: ${error}`,
+      'warning',
+    );
+    return undefined;
+  }
+}
 
 /**
  * 设置字幕校对相关的 IPC 处理器
@@ -586,6 +608,7 @@ export function setupProofreadHandlers(): void {
         batchId,
         projectId,
         intent = 'polish',
+        proofreadDataFile,
       }: {
         sourceText: string;
         targetText: string;
@@ -597,6 +620,7 @@ export function setupProofreadHandlers(): void {
         batchId?: string;
         projectId?: string;
         intent?: 'polish' | 'shorten';
+        proofreadDataFile?: string;
       },
     ) => {
       const abortController = new AbortController();
@@ -659,9 +683,12 @@ export function setupProofreadHandlers(): void {
           requestedSourceLanguage || userConfig.sourceLanguage || 'en';
         const targetLanguage =
           requestedTargetLanguage || userConfig.targetLanguage || 'zh';
+        const ids = proofreadDataFile
+          ? await readSidecarGlossaryIds(proofreadDataFile)
+          : undefined;
         const glossaryResolution =
           mode === 'translation'
-            ? getActiveGlossaryResolution(projectId)
+            ? getTaskGlossaryResolution(ids, projectId)
             : undefined;
         if (glossaryResolution) {
           const fingerprint = glossaryConflictFingerprint(
@@ -828,6 +855,7 @@ Only respond with the translation, nothing else.`;
         sourceLanguage: requestedSourceLanguage,
         targetLanguage: requestedTargetLanguage,
         projectId,
+        proofreadDataFile,
       }: {
         subtitles: Array<{
           id: string;
@@ -844,6 +872,7 @@ Only respond with the translation, nothing else.`;
         sourceLanguage?: string;
         targetLanguage?: string;
         projectId?: string;
+        proofreadDataFile?: string;
       },
     ) => {
       const abortController = new AbortController();
@@ -906,6 +935,9 @@ Only respond with the translation, nothing else.`;
           requestedSourceLanguage || userConfig.sourceLanguage || 'en';
         const targetLanguage =
           requestedTargetLanguage || userConfig.targetLanguage || 'zh';
+        const ids = proofreadDataFile
+          ? await readSidecarGlossaryIds(proofreadDataFile)
+          : undefined;
 
         // 批处理循环已抽取到共享校正服务（openspec: add-ai-subtitle-refine D7）：
         // legacyMap 协议保持既有请求/响应格式、默认提示词与逐项提取规则，
@@ -931,6 +963,7 @@ Only respond with the translation, nothing else.`;
           maxRetries,
           signal: abortController.signal,
           useGlossary: mode === 'translation',
+          glossaryIds: ids,
           glossaryLabel: '校对页批量 AI 优化',
           onResult: (result) => {
             if (!event.sender.isDestroyed())
@@ -1026,6 +1059,7 @@ Only respond with the translation, nothing else.`;
         targetLanguage,
         batchId,
         projectId,
+        proofreadDataFile,
       }: {
         subtitles: Array<{
           id: string;
@@ -1037,6 +1071,7 @@ Only respond with the translation, nothing else.`;
         targetLanguage?: string;
         batchId?: string;
         projectId?: string;
+        proofreadDataFile?: string;
       },
     ) => {
       const abortController = new AbortController();
@@ -1076,6 +1111,9 @@ Only respond with the translation, nothing else.`;
 
         const from = sourceLanguage || userConfig.sourceLanguage || 'en';
         const to = targetLanguage || userConfig.targetLanguage || 'zh';
+        const ids = proofreadDataFile
+          ? await readSidecarGlossaryIds(proofreadDataFile)
+          : undefined;
 
         logMessage(
           `Retranslating ${subtitles.length} subtitles with ${provider.name} (${from} -> ${to})`,
@@ -1116,6 +1154,9 @@ Only respond with the translation, nothing else.`;
                     },
                   });
               },
+              undefined,
+              undefined,
+              { glossaryIds: ids },
             );
           },
         );
