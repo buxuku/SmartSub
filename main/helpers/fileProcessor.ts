@@ -969,6 +969,7 @@ async function processFileImpl(
         translationFailures: file.translationFailures,
         missedSpeechWarnings: file.missedSpeechWarnings,
         missedSpeechSummary: file.missedSpeechSummary,
+        glossaryIds: formData?.glossaryIds,
       });
       if ('filePath' in proofreadDataResult) {
         file.proofreadDataFile = proofreadDataResult.filePath;
