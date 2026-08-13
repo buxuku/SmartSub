@@ -8,7 +8,9 @@ import {
   parseGlossaryContent,
   renderGlossarySystemPrompt,
   reorderGlossaries,
+  describeGlossarySource,
   resolveEnabledGlossaryEntries,
+  resolveTaskGlossaryEntries,
   selectGlossaryPromptEntries,
   serializeGlossaryEntries,
   textContainsGlossarySource,
@@ -573,6 +575,166 @@ function testTxtImportExport(): void {
   );
 }
 
+function testTaskGlossarySelection(): void {
+  const glossaries = [
+    glossary('later', 'Later', 8, [entry('2', 'Alice', '后者')]),
+    glossary('first', 'First', 1, [entry('1', 'Alice', '艾丽丝')]),
+    glossary('off', 'Disabled', 0, [entry('3', 'Bob', '鲍勃')], false),
+  ];
+  const snapshot = JSON.stringify(glossaries);
+
+  const enabled = resolveEnabledGlossaryEntries(glossaries);
+  const taskDefault = resolveTaskGlossaryEntries(glossaries, undefined);
+  equal(
+    taskDefault,
+    enabled,
+    'undefined ids reproduce resolveEnabledGlossaryEntries exactly',
+  );
+  equal(
+    taskDefault.entries.map((item) => [
+      item.source,
+      item.target,
+      item.glossaryName,
+    ]),
+    [['Alice', '艾丽丝', 'First']],
+    'undefined ids use only enabled glossaries sorted by global order',
+  );
+  ok(
+    taskDefault.conflicts.length === 1 &&
+      taskDefault.conflicts[0].kept.glossaryName === 'First' &&
+      taskDefault.conflicts[0].ignored.glossaryName === 'Later',
+    'undefined ids report first-source-wins conflicts in the same shape',
+  );
+
+  const nfkcCase = [
+    glossary('upper', 'Upper', 0, [entry('1', 'Alice', '艾丽丝')]),
+    glossary('wide', 'Wide', 1, [entry('2', 'Ａｌｉｃｅ', '爱丽丝')]),
+  ];
+  const nfkcResolution = resolveTaskGlossaryEntries(nfkcCase, undefined);
+  equal(
+    nfkcResolution.entries.map((item) => item.target),
+    ['艾丽丝'],
+    'undefined ids dedup with NFKC and case-insensitive keys',
+  );
+  ok(
+    nfkcResolution.conflicts.length === 1,
+    'NFKC duplicate reports a conflict',
+  );
+
+  equal(
+    resolveTaskGlossaryEntries(glossaries, []),
+    { entries: [], conflicts: [] },
+    'an empty id array means explicitly no glossary, not all enabled',
+  );
+
+  const disabledSelected = resolveTaskGlossaryEntries(glossaries, ['off']);
+  equal(
+    disabledSelected.entries.map((item) => [
+      item.source,
+      item.target,
+      item.glossaryId,
+    ]),
+    [['Bob', '鲍勃', 'off']],
+    'explicit ids include a disabled glossary and ignore the enabled flag',
+  );
+  equal(
+    resolveTaskGlossaryEntries(glossaries, ['first']).entries.map(
+      (item) => item.glossaryId,
+    ),
+    ['first'],
+    'explicit ids use only the selected glossaries',
+  );
+  ok(
+    resolveTaskGlossaryEntries(glossaries, ['first']).conflicts.length === 0,
+    'unselected later glossary does not contribute a conflict',
+  );
+
+  const reversedIds = resolveTaskGlossaryEntries(glossaries, [
+    'later',
+    'first',
+  ]);
+  equal(
+    reversedIds.entries.map((item) => item.target),
+    ['艾丽丝'],
+    'explicit ids still follow global order, not the id argument order',
+  );
+  ok(
+    reversedIds.conflicts.length === 1 &&
+      reversedIds.conflicts[0].kept.glossaryName === 'First' &&
+      reversedIds.conflicts[0].ignored.glossaryName === 'Later',
+    'conflict winner follows global order when ids are reversed',
+  );
+
+  const unknownAndDup = resolveTaskGlossaryEntries(glossaries, [
+    'missing',
+    'first',
+    'first',
+    'nope',
+  ]);
+  equal(
+    unknownAndDup.entries.map((item) => [
+      item.source,
+      item.target,
+      item.glossaryId,
+    ]),
+    [['Alice', '艾丽丝', 'first']],
+    'unknown ids are ignored and duplicate ids do not double-inject entries',
+  );
+  ok(
+    unknownAndDup.conflicts.length === 0,
+    'duplicate ids do not fabricate self-conflicts',
+  );
+
+  const enabledFallback = resolveTaskGlossaryEntries(glossaries, undefined);
+  for (const malformed of [null, 'abc', 42, {}]) {
+    equal(
+      resolveTaskGlossaryEntries(glossaries, malformed as never),
+      enabledFallback,
+      `${JSON.stringify(malformed)} is treated as undefined, not as empty ids`,
+    );
+  }
+
+  equal(
+    resolveTaskGlossaryEntries(
+      glossaries,
+      ['first', 1, null, 'later', {}] as never,
+    ),
+    resolveTaskGlossaryEntries(glossaries, ['first', 'later']),
+    'non-string members in an id array are ignored, valid string ids are kept',
+  );
+
+  ok(
+    typeof resolveEnabledGlossaryEntries === 'function' &&
+      resolveEnabledGlossaryEntries.length === 1,
+    'resolveEnabledGlossaryEntries remains exported with one argument',
+  );
+  equal(
+    resolveEnabledGlossaryEntries(glossaries),
+    resolveTaskGlossaryEntries(glossaries, undefined),
+    'resolveEnabledGlossaryEntries is a thin wrapper over undefined ids',
+  );
+
+  equal(JSON.stringify(glossaries), snapshot, 'resolver does not mutate input');
+}
+
+function testGlossarySourceLabel(): void {
+  equal(
+    describeGlossarySource(undefined),
+    '全局已启用',
+    'undefined ids label as globally enabled fallback',
+  );
+  equal(
+    describeGlossarySource([]),
+    '任务词库 0 个',
+    'empty id array labels as zero task glossaries',
+  );
+  equal(
+    describeGlossarySource(['a', 'b']),
+    '任务词库 2 个',
+    'explicit ids label counts the ids that were passed',
+  );
+}
+
 function main(): void {
   testNormalizationAndPriority();
   testGlossaryReordering();
@@ -582,6 +744,8 @@ function main(): void {
   testConflictFingerprint();
   testCsvImportExport();
   testTxtImportExport();
+  testTaskGlossarySelection();
+  testGlossarySourceLabel();
 
   console.log(`\nglossary tests: ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);

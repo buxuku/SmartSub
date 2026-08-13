@@ -29,8 +29,9 @@ import {
 } from '../../service';
 import { DEFAULT_BATCH_SIZE } from '../constants';
 import { getTaskSignal } from '../../helpers/taskContext';
+import { describeGlossarySource } from '../../glossary/core';
 import {
-  getActiveGlossaryResolution,
+  getTaskGlossaryResolution,
   logGlossaryConflicts,
 } from '../../helpers/glossaryManager';
 
@@ -73,14 +74,18 @@ export async function translateWithProvider(
   maxRetries: number = 0,
   useGlossary: boolean = true,
   onResponseMeta?: TranslationConfig['onResponseMeta'],
+  options?: { glossaryIds?: string[] },
 ): Promise<TranslationResult[] | string[]> {
   const supportsGlossary = provider.isAi || provider.type === 'qwenMt';
   const glossaryResolution =
-    supportsGlossary && useGlossary ? getActiveGlossaryResolution() : undefined;
+    supportsGlossary && useGlossary
+      ? getTaskGlossaryResolution(options?.glossaryIds)
+      : undefined;
+  const glossarySourceLabel = describeGlossarySource(options?.glossaryIds);
   if (glossaryResolution) {
     logGlossaryConflicts(
       glossaryResolution.conflicts,
-      provider.type === 'qwenMt' ? 'Qwen-MT 翻译' : 'AI 翻译',
+      `${provider.type === 'qwenMt' ? 'Qwen-MT 翻译' : 'AI 翻译'}，${glossarySourceLabel}`,
     );
   }
   const glossaryEntries = glossaryResolution?.entries;
@@ -90,6 +95,7 @@ export async function translateWithProvider(
     targetLanguage,
     translator,
     glossaryEntries,
+    ...(options ? { glossarySourceLabel } : {}),
     signal: getTaskSignal(),
     onResponseMeta,
   };

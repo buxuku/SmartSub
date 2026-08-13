@@ -266,4 +266,6 @@ export interface IFormData {
   manuscriptPath?: string;
   /** 创建快照时的显示名；运行时仍以 manuscriptPath 为唯一数据源。 */
   manuscriptName?: string;
+  /** 本次任务参与匹配的词库 id；undefined = 回落「全部已启用」（旧行为） */
+  glossaryIds?: string[];
 }

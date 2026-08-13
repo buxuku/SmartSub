@@ -192,6 +192,9 @@ export default async function translate(
       onProgress,
       handleTranslationResult,
       retryCount,
+      undefined,
+      undefined,
+      { glossaryIds: formData?.glossaryIds },
     );
 
     logMessage('Translation completed', 'info');

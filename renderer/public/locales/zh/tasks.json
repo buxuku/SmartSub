@@ -112,7 +112,16 @@
     "targetLanguage": "翻译成",
     "provider": "翻译服务",
     "style": "输出内容",
-    "format": "字幕格式"
+    "format": "字幕格式",
+    "glossary": "词库",
+    "glossaryAllEnabled": "全局已启用",
+    "glossaryNone": "不使用词库",
+    "glossaryCount": "{{count}} 个词库",
+    "glossaryDisabled": "已停用",
+    "glossaryRestoreDefault": "恢复默认（全部已启用）",
+    "glossaryEmpty": "还没有词库",
+    "glossaryGoManage": "去词库",
+    "glossaryIntro": "选择本次任务参与匹配的词库。未选择时使用全部已启用词库。"
   },
   "manuscript": {
     "label": "参考文稿",

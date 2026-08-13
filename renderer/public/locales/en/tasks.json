@@ -112,7 +112,16 @@
     "targetLanguage": "Translate to",
     "provider": "Translation service",
     "style": "Output content",
-    "format": "Subtitle format"
+    "format": "Subtitle format",
+    "glossary": "Glossary",
+    "glossaryAllEnabled": "All enabled",
+    "glossaryNone": "None",
+    "glossaryCount": "{{count}} selected",
+    "glossaryDisabled": "disabled",
+    "glossaryRestoreDefault": "Restore default (all enabled)",
+    "glossaryEmpty": "No glossaries yet",
+    "glossaryGoManage": "Go to glossaries",
+    "glossaryIntro": "Choose which glossaries this task will match. Leave untouched to use every enabled glossary."
   },
   "manuscript": {
     "label": "Reference script",

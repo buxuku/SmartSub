@@ -129,41 +129,63 @@ export function glossarySourceKey(source: string): string {
   return source.normalize('NFKC').toLowerCase();
 }
 
+/** 词库来源标注：undefined = 全局已启用回落；数组 = 本次任务显式选用。 */
+export function describeGlossarySource(glossaryIds?: string[]): string {
+  if (!Array.isArray(glossaryIds)) return '全局已启用';
+  return `任务词库 ${glossaryIds.length} 个`;
+}
+
 /**
- * 将所有启用词库解析为一条优先级有序的词条流。
- * 相同原文（忽略大小写与全/半角）只保留首个，并返回冲突供任务日志提示。
+ * 按任务选用解析词条。`glossaryIds === undefined` 回落全部已启用（旧行为）；
+ * `[]` 表示明确不用词库。筛选发生在 normalize 之后：给了 ids 就按 id 取
+ * （忽略 enabled），没给就按 enabled。两条路径都按全局 order 与「同原文首个胜出」。
  */
-export function resolveEnabledGlossaryEntries(
+export function resolveTaskGlossaryEntries(
   glossaries: Glossary[],
+  glossaryIds?: string[],
 ): GlossaryResolution {
   const entries: ResolvedGlossaryEntry[] = [];
   const conflicts: GlossaryConflict[] = [];
   const firstBySource = new Map<string, ResolvedGlossaryEntry>();
 
-  normalizeGlossaries(glossaries)
-    .filter((glossary) => glossary.enabled)
-    .forEach((glossary) => {
-      glossary.entries.forEach((entry, entryOrder) => {
-        const resolved: ResolvedGlossaryEntry = {
-          ...entry,
-          glossaryId: glossary.id,
-          glossaryName: glossary.name,
-          glossaryOrder: glossary.order,
-          entryOrder,
-        };
-        const key = glossarySourceKey(entry.source);
-        const kept = firstBySource.get(key);
-        if (kept) {
-          conflicts.push({ source: entry.source, kept, ignored: resolved });
-          return;
-        }
-        firstBySource.set(key, resolved);
-        entries.push(resolved);
-      });
+  const normalized = normalizeGlossaries(glossaries);
+  const selectedIds = Array.isArray(glossaryIds)
+    ? glossaryIds.filter((id): id is string => typeof id === 'string')
+    : undefined;
+  const selected =
+    selectedIds === undefined
+      ? normalized.filter((glossary) => glossary.enabled)
+      : normalized.filter((glossary) => selectedIds.includes(glossary.id));
+
+  selected.forEach((glossary) => {
+    glossary.entries.forEach((entry, entryOrder) => {
+      const resolved: ResolvedGlossaryEntry = {
+        ...entry,
+        glossaryId: glossary.id,
+        glossaryName: glossary.name,
+        glossaryOrder: glossary.order,
+        entryOrder,
+      };
+      const key = glossarySourceKey(entry.source);
+      const kept = firstBySource.get(key);
+      if (kept) {
+        conflicts.push({ source: entry.source, kept, ignored: resolved });
+        return;
+      }
+      firstBySource.set(key, resolved);
+      entries.push(resolved);
     });
+  });
 
   return { entries, conflicts };
 }
+
+/**
+ * 将所有启用词库解析为一条优先级有序的词条流。
+ * 相同原文（忽略大小写与全/半角）只保留首个，并返回冲突供任务日志提示。
+ */
+export const resolveEnabledGlossaryEntries = (glossaries: Glossary[]) =>
+  resolveTaskGlossaryEntries(glossaries, undefined);
 
 /** 单条优化用稳定指纹去重；冲突消失后返回空串，恢复时会重新记录。 */
 export function glossaryConflictFingerprint(

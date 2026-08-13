@@ -221,7 +221,9 @@ export async function handleAIBatchTranslation(
     const glossaryBlock = buildGlossaryPromptBlock(glossarySelection.included);
     logGlossaryMatches(
       glossarySelection.included,
-      `AI 翻译批次 ${currentBatchIndex}/${totalBatches}`,
+      `AI 翻译批次 ${currentBatchIndex}/${totalBatches}${
+        config.glossarySourceLabel ? `，${config.glossarySourceLabel}` : ''
+      }`,
       glossarySelection.omittedCount,
     );
 

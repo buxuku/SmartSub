@@ -13,7 +13,7 @@ import {
   mergeGlossaryImportEntry,
   normalizeGlossaries,
   reorderGlossaries,
-  resolveEnabledGlossaryEntries,
+  resolveTaskGlossaryEntries,
 } from '../glossary/core';
 import { logMessage, store } from './storeManager';
 
@@ -285,9 +285,14 @@ export function importGlossaryEntries(
   return { glossary, added, updated, skipped };
 }
 
+/** 按任务选用读取运行期快照；`ids === undefined` 回落全部已启用。 */
+export function getTaskGlossaryResolution(ids?: string[]): GlossaryResolution {
+  return resolveTaskGlossaryEntries(listGlossaries(), ids);
+}
+
 /** 读取运行期快照；日志由每次翻译/优化操作在自己的边界显式记录。 */
 export function getActiveGlossaryResolution(): GlossaryResolution {
-  return resolveEnabledGlossaryEntries(listGlossaries());
+  return getTaskGlossaryResolution(undefined);
 }
 
 export function logGlossaryConflicts(
