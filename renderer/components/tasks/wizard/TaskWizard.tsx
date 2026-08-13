@@ -1384,6 +1384,29 @@ export default function TaskWizard() {
     ) {
       list.push({ key: 'goal', text: t('wizard.blockNoGoal') });
     }
+    if (translateOn && formData?.generateSummary === true) {
+      const summarySetting = formData?.summaryProvider || 'follow-translation';
+      if (summarySetting === 'follow-translation') {
+        const tp = providers.find(
+          (p: any) => p.id === formData?.translateProvider,
+        );
+        if (!tp?.isAi || !isProviderConfigured(tp)) {
+          list.push({
+            key: 'summary',
+            text: t('wizard.blockSummaryFollow'),
+          });
+        }
+      } else {
+        const sp = providers.find((p: any) => p.id === summarySetting);
+        if (!sp?.isAi || !isProviderConfigured(sp)) {
+          list.push({
+            key: 'summary',
+            text: t('wizard.blockSummaryProviderInvalid'),
+            href: `/${locale}/translation`,
+          });
+        }
+      }
+    }
     // AI 字幕精修（openspec: add-ai-subtitle-refine D9 即时校验）：
     // 开启精修但跟随不可解析（翻译未开启/非 AI 类型）且未显式指定，
     // 或显式指定的服务商已失效 → 阻断开始，避免运行时才降级。
@@ -1484,6 +1507,8 @@ export default function TaskWizard() {
     translateOn,
     providers,
     formData?.translateProvider,
+    formData?.generateSummary,
+    formData?.summaryProvider,
     formData?.subtitleTranslationStyle,
     formData?.transcriptionEngine,
     formData?.model,

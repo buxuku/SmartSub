@@ -79,7 +79,7 @@ export async function translateWithProvider(
   onProviderFallback?: TranslationConfig['onProviderFallback'],
   subtitleTranslationStyle?: TranslationConfig['subtitleTranslationStyle'],
   onActivity?: TranslationConfig['onActivity'],
-  options?: { glossaryIds?: string[] },
+  options?: { glossaryIds?: string[]; episodeSummary?: string },
 ): Promise<TranslationResult[] | string[]> {
   if (subtitleTranslationStyle === 'conversational' && !provider.isAi) {
     throw new Error(
@@ -108,6 +108,9 @@ export async function translateWithProvider(
     glossaryEntries,
     subtitleTranslationStyle,
     ...(options ? { glossarySourceLabel } : {}),
+    ...(options?.episodeSummary
+      ? { episodeSummary: options.episodeSummary }
+      : {}),
     signal: getTaskSignal(),
     onResponseMeta,
     fallbackProviders,
@@ -141,6 +144,12 @@ export async function translateWithProvider(
     'info',
   );
   onProgress && onProgress(0);
+  if (options?.episodeSummary && !provider.isAi) {
+    logMessage(
+      `翻译服务 ${provider.name} 非 AI（机翻 / Qwen-MT），摘要未注入，仅供对照`,
+      'info',
+    );
+  }
   if (provider.isAi) {
     return handleAIBatchTranslation(
       subtitles,

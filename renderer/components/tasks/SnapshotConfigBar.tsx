@@ -265,6 +265,26 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
               {styleValue && (
                 <SummaryItem label={t('configBar.style')} value={styleValue} />
               )}
+              {snapshot?.generateSummary === true && (
+                <SummaryItem
+                  label={t('configBar.generateSummary')}
+                  value={(() => {
+                    const setting =
+                      snapshot?.summaryProvider || 'follow-translation';
+                    const target =
+                      setting === 'follow-translation'
+                        ? providers.find(
+                            (p) => p.id === snapshot?.translateProvider,
+                          )
+                        : providers.find((p) => p.id === setting);
+                    return target?.name
+                      ? tCommon(`provider.${target.name}`, {
+                          defaultValue: target.name,
+                        })
+                      : t('configBar.summaryFollowHint');
+                  })()}
+                />
+              )}
             </>
           )}
         </div>
