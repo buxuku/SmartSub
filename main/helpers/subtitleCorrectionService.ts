@@ -34,7 +34,7 @@ import {
   selectGlossaryPromptEntries,
 } from '../glossary/core';
 import {
-  getActiveGlossaryResolution,
+  getTaskGlossaryResolution,
   logGlossaryConflicts,
   logGlossaryMatches,
 } from './glossaryManager';
@@ -76,6 +76,8 @@ export interface CorrectionParams {
   maxRetries?: number;
   signal?: AbortSignal;
   useGlossary?: boolean;
+  /** 本次任务选用词库；undefined = 回落全部已启用。 */
+  glossaryIds?: string[];
   /** 术语冲突/命中日志的场景标签（如「校对页批量 AI 优化」/「AI 字幕校正」）。 */
   glossaryLabel?: string;
   /** anchored：低置信词标注（whisper token p 低于阈值的词，辅助定点修正）。 */
@@ -216,7 +218,7 @@ export async function runSubtitleCorrection(
   // 术语表：调用方决定是否启用（校对台仅 translation 模式；管线校正恒开）。
   let glossaryEntries: Parameters<typeof matchGlossaryEntries>[0] = [];
   if (params.useGlossary) {
-    const resolution = getActiveGlossaryResolution();
+    const resolution = getTaskGlossaryResolution(params.glossaryIds);
     if (resolution) {
       logGlossaryConflicts(
         resolution.conflicts,

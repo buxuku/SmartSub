@@ -124,6 +124,7 @@ export default function ProofreadEditor({
     updateSubtitles,
     sourceLanguage: file.sourceLanguage,
     targetLanguage: file.targetLanguage,
+    proofreadDataFile: file.proofreadDataFile,
   });
 
   // 使用视频播放器 hook
@@ -444,6 +445,7 @@ export default function ProofreadEditor({
           onToggleExpandAll={toggleExpandAll}
           fontScale={fontScale}
           onFontScale={handleFontScale}
+          proofreadDataFile={file.proofreadDataFile}
         />
       </div>
 

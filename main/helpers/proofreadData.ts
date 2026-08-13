@@ -148,6 +148,7 @@ export async function writeProofreadDataFromFiles({
   translateContent,
   outputFormat,
   speakerSegments,
+  glossaryIds,
 }: {
   file: IFiles;
   sourceFile?: string;
@@ -158,6 +159,7 @@ export async function writeProofreadDataFromFiles({
   translateContent?: string;
   outputFormat?: string;
   speakerSegments?: SpeakerDiarizationSegment[];
+  glossaryIds?: string[];
 }): Promise<ProofreadDataWriteResult> {
   try {
     const sourceEntries = await readSubtitleEntries(sourceFile);
@@ -184,6 +186,7 @@ export async function writeProofreadDataFromFiles({
         sourceFile,
         targetFile,
         finalTargetFile,
+        ...(glossaryIds !== undefined ? { glossaryIds } : {}),
       },
       speakers: normalizeSpeakerRoster([], cues),
       cues,

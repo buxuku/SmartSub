@@ -135,6 +135,7 @@ interface SubtitleEditToolbarProps {
   onToggleExpandAll?: () => void;
   fontScale?: 's' | 'm' | 'l';
   onFontScale?: (scale: 's' | 'm' | 'l') => void;
+  proofreadDataFile?: string;
 }
 
 export default function SubtitleEditToolbar({
@@ -161,6 +162,7 @@ export default function SubtitleEditToolbar({
   onToggleExpandAll,
   fontScale,
   onFontScale,
+  proofreadDataFile,
 }: SubtitleEditToolbarProps) {
   const { t } = useTranslation('home');
 
@@ -642,6 +644,7 @@ Only respond with the corrected text, nothing else.`;
         customPrompt:
           customPrompt.trim() ||
           (isTranscriptMode ? defaultProofreadPrompt : undefined),
+        proofreadDataFile,
       });
 
       if (result.success && result.data) {
@@ -664,6 +667,7 @@ Only respond with the corrected text, nothing else.`;
     customPrompt,
     isTranscriptMode,
     defaultProofreadPrompt,
+    proofreadDataFile,
   ]);
 
   // 采纳 AI 优化结果（纯转写模式写回原文）
@@ -1281,6 +1285,7 @@ Only respond with the corrected text, nothing else.`;
         subtitles={subtitles}
         onApplyOptimizations={handleApplyBatchOptimizations}
         shouldShowTranslation={shouldShowTranslation}
+        proofreadDataFile={proofreadDataFile}
       />
 
       {/* 视图控制（右对齐）：折叠左侧面板 / 展开全部 / 字号 */}

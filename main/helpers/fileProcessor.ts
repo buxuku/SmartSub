@@ -761,6 +761,7 @@ export async function processFile(
         translateContent: formData?.translateContent,
         outputFormat: formData?.subtitleOutputFormat,
         speakerSegments,
+        glossaryIds: formData?.glossaryIds,
       });
       if ('filePath' in proofreadDataResult) {
         file.proofreadDataFile = proofreadDataResult.filePath;
