@@ -223,6 +223,7 @@ export default async function translate(
       },
       formData.subtitleTranslationStyle,
       onActivity,
+      { glossaryIds: formData?.glossaryIds },
     );
 
     logMessage('Translation completed', 'info');

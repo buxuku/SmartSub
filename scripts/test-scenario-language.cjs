@@ -73,6 +73,12 @@ Module._load = function (request, parent, isMain) {
   if (request.endsWith('/glossaryManager'))
     return {
       getActiveGlossaryResolution: () => glossary,
+      // No ids keeps the fixture glossary so GLOSSARY_TRANSLATION_ONLY is still injected.
+      // An explicit empty id list means no glossary, matching resolveTaskGlossaryEntries.
+      getTaskGlossaryResolution: (ids) =>
+        Array.isArray(ids) && ids.length === 0
+          ? { entries: [], conflicts: [] }
+          : glossary,
       logGlossaryConflicts() {},
       logGlossaryMatches() {},
     };
