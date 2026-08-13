@@ -74,7 +74,11 @@ export async function translateWithProvider(
   maxRetries: number = 0,
   useGlossary: boolean = true,
   onResponseMeta?: TranslationConfig['onResponseMeta'],
-  options?: { glossaryIds?: string[]; episodeSummary?: string },
+  options?: {
+    glossaryIds?: string[];
+    episodeSummary?: string;
+    summarySkipReason?: string;
+  },
 ): Promise<TranslationResult[] | string[]> {
   const supportsGlossary = provider.isAi || provider.type === 'qwenMt';
   const glossaryResolution =
@@ -98,6 +102,9 @@ export async function translateWithProvider(
     ...(options ? { glossarySourceLabel } : {}),
     ...(options?.episodeSummary
       ? { episodeSummary: options.episodeSummary }
+      : {}),
+    ...(options?.summarySkipReason
+      ? { summarySkipReason: options.summarySkipReason }
       : {}),
     signal: getTaskSignal(),
     onResponseMeta,

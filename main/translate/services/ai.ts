@@ -175,8 +175,11 @@ export async function handleAIBatchTranslation(
       `本集摘要已注入翻译提示词（${summaryText.length} 字）`,
       'info',
     );
-  } else {
-    logMessage('本文件无摘要（未生成或已降级），翻译提示词不附加摘要', 'info');
+  } else if (config.summarySkipReason) {
+    logMessage(
+      `本文件无摘要（原因：${config.summarySkipReason}），翻译提示词不附加摘要`,
+      'info',
+    );
   }
   // 回显锚定默认开启（design D4）：模型逐条回显原文，用于检测合并/滑移错位。
   const echoEnabled = provider.echoAnchoring !== false;

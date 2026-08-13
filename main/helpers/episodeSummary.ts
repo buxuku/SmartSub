@@ -15,6 +15,7 @@ import {
 } from './subtitleFormats';
 import { supportedLanguage } from './utils';
 import { TRANSLATOR_MAP } from '../translate/services/translationProvider';
+import { DEFAULT_BATCH_SIZE } from '../translate/constants';
 import type { Provider, TranslatorFunction } from '../translate/types';
 import { getCustomLanguageName } from '../../types/language';
 import {
@@ -189,13 +190,21 @@ export async function runEpisodeSummaryStage(params: {
       return;
     }
 
-    if (shouldSkipTrivialSummary(cues.length, provider.batchSize)) {
+    const translators: Provider[] = store.get('translationProviders') || [];
+    const translateProvider = translators.find(
+      (item) => item.id === formData?.translateProvider,
+    );
+    const translateBatchSize = translateProvider?.isAi
+      ? translateProvider.batchSize
+      : DEFAULT_BATCH_SIZE.API;
+
+    if (shouldSkipTrivialSummary(cues.length, translateBatchSize)) {
       applySummaryState(
         file,
         { summarizeEpisode: 'done', summarizeEpisodeError: 'skipped-trivial' },
         event,
       );
-      const batches = estimateSummaryBatches(cues.length, provider.batchSize);
+      const batches = estimateSummaryBatches(cues.length, translateBatchSize);
       logMessage(
         `字幕仅 ${cues.length} 条 / 预计 ${batches} 批，已跳过摘要（省一次调用）: ${file.fileName}`,
         'info',
@@ -238,9 +247,9 @@ export async function runEpisodeSummaryStage(params: {
       glossaryBlock,
     });
     const userText = buildSummaryInput(cues);
-    const batches = estimateSummaryBatches(cues.length, provider.batchSize);
+    const batches = estimateSummaryBatches(cues.length, translateBatchSize);
     logMessage(
-      `📖 通读摘要 ${file.fileName}: cues=${cues.length} batches≈${batches} provider=${provider.name}`,
+      `📖 通读摘要 ${file.fileName}: cues=${cues.length} translateBatches≈${batches} provider=${provider.name}`,
       'info',
     );
 
@@ -252,6 +261,7 @@ export async function runEpisodeSummaryStage(params: {
         ...provider,
         systemPrompt: instructions,
         useJsonMode: false,
+        structuredOutput: 'disabled' as const,
       },
       sourceLanguage,
       targetLanguage,
@@ -298,10 +308,10 @@ export async function runEpisodeSummaryStage(params: {
       `✓ 摘要完成 ${file.fileName} chars=${settled.text.length}`,
       'info',
     );
-    if (provider.isAi) {
+    if (translateProvider?.isAi) {
       const extra = Math.ceil(settled.text.length / 1.5) * batches;
       logMessage(
-        `摘要将随 ${batches} 个批次重发，约 ${extra} token`,
+        `摘要将随 ${batches} 个翻译批次重发，约 ${extra} token`,
         'info',
       );
     }

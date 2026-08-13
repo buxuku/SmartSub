@@ -132,6 +132,15 @@ export function RailChips({
                 ),
               })
             : undefined;
+        const summarizeWarning =
+          stage.key === 'summarizeEpisode' && status === 'done'
+            ? file?.summarizeEpisodeError
+            : '';
+        const summarizeTitle = summarizeWarning
+          ? t(`summarize.error.${summarizeWarning}`, {
+              defaultValue: summarizeWarning,
+            })
+          : undefined;
         return (
           <React.Fragment key={stage.key}>
             {index > 0 && <ChevronRight className="h-3 w-3 text-faint" />}
@@ -144,7 +153,7 @@ export function RailChips({
                   (manuscriptWarning ? 'text-warning' : 'text-success'),
                 status === 'error' && 'text-destructive font-medium',
               )}
-              title={manuscriptTitle}
+              title={summarizeTitle || manuscriptTitle}
             >
               {status === 'loading' && (
                 <Loader2 className="h-3 w-3 animate-spin" />
