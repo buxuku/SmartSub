@@ -163,7 +163,16 @@
     "toastTraditionalRefineConflict": "Switched to \"{{provider}}\". Since \"{{feature}}\" is enabled, traditional MT cannot be used for AI refine — please select an AI provider in \"Line break & refine\" or disable it.",
     "style": "Output content",
     "format": "Subtitle format",
-    "embeddedSubtitles": "Prefer embedded subtitles"
+    "embeddedSubtitles": "Prefer embedded subtitles",
+    "glossary": "Glossary",
+    "glossaryAllEnabled": "All enabled",
+    "glossaryNone": "None",
+    "glossaryCount": "{{count}} selected",
+    "glossaryDisabled": "disabled",
+    "glossaryRestoreDefault": "Restore default (all enabled)",
+    "glossaryEmpty": "No glossaries yet",
+    "glossaryGoManage": "Go to glossaries",
+    "glossaryIntro": "Choose which glossaries this task will match. Leave untouched to use every enabled glossary."
   },
   "manuscript": {
     "label": "Reference script",

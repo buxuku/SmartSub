@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import Models from '@/components/Models';
 import AiRefineControl from '@/components/tasks/AiRefineControl';
+import GlossarySelectControl from '@/components/tasks/GlossarySelectControl';
 import ScenarioPresetControl from '@/components/tasks/ScenarioPresetControl';
 import OutputFormatControl from '@/components/tasks/OutputFormatControl';
 import { cn, supportedLanguage } from 'lib/utils';
@@ -366,6 +367,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
                   </Button>
                 )}
               </ConfigItem>
+              <GlossarySelectControl form={form} formData={formData} />
             </>
           )}
 
