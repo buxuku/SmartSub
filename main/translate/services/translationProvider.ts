@@ -79,7 +79,11 @@ export async function translateWithProvider(
   onProviderFallback?: TranslationConfig['onProviderFallback'],
   subtitleTranslationStyle?: TranslationConfig['subtitleTranslationStyle'],
   onActivity?: TranslationConfig['onActivity'],
-  options?: { glossaryIds?: string[]; episodeSummary?: string },
+  options?: {
+    glossaryIds?: string[];
+    episodeSummary?: string;
+    summarySkipReason?: string;
+  },
 ): Promise<TranslationResult[] | string[]> {
   if (subtitleTranslationStyle === 'conversational' && !provider.isAi) {
     throw new Error(
@@ -110,6 +114,9 @@ export async function translateWithProvider(
     ...(options ? { glossarySourceLabel } : {}),
     ...(options?.episodeSummary
       ? { episodeSummary: options.episodeSummary }
+      : {}),
+    ...(options?.summarySkipReason
+      ? { summarySkipReason: options.summarySkipReason }
       : {}),
     signal: getTaskSignal(),
     onResponseMeta,

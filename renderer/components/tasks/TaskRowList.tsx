@@ -160,6 +160,15 @@ export function RailChips({
             })
           : undefined;
         const stageWarning = Boolean(file?.[`${stage.key}Error`]);
+        const summarizeWarning =
+          stage.key === 'summarizeEpisode' && status === 'done'
+            ? file?.summarizeEpisodeError
+            : '';
+        const summarizeTitle = summarizeWarning
+          ? t(`summarize.error.${summarizeWarning}`, {
+              defaultValue: summarizeWarning,
+            })
+          : undefined;
         return (
           <React.Fragment key={stage.key}>
             {index > 0 && <ChevronRight className="h-3 w-3 text-faint" />}
@@ -177,7 +186,7 @@ export function RailChips({
                   ? missedSpeechTitle
                   : stage.key === 'translateSubtitle' && translationFailureTitle
                     ? translationFailureTitle
-                    : manuscriptTitle
+                    : summarizeTitle || manuscriptTitle
               }
             >
               {status === 'loading' && (
