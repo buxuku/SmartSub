@@ -226,6 +226,7 @@ export default async function translate(
       {
         glossaryIds: formData?.glossaryIds,
         episodeSummary: file.episodeSummary,
+        summarySkipReason: file.summarizeEpisodeError,
       },
     );
 

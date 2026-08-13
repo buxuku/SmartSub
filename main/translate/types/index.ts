@@ -29,6 +29,8 @@ export interface TranslationConfig {
   glossarySourceLabel?: string;
   /** 通读摘要正文；仅 AI 翻译注入 system。 */
   episodeSummary?: string;
+  /** 无摘要时的稳定原因码，供日志说明。 */
+  summarySkipReason?: string;
   signal?: AbortSignal;
   /** 同一任务内按顺序尝试的备用实例；候选实例必须与 provider.type 相同。 */
   fallbackProviders?: Provider[];
