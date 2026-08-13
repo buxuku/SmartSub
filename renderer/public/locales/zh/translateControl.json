@@ -57,7 +57,7 @@
   "ApiUrl": "API 地址",
   "API Key": "API Key",
   "systemPrompt": "系统提示词",
-  "systemPromptTips": "系统提示词, 支持变量: <br /> ${sourceLanguage} 源语言 <br /> ${targetLanguage} 目标语言 <br /> ${content} 源字幕 <br /> ${glossary} 本批命中的全局词条",
+  "systemPromptTips": "系统提示词, 支持变量: <br /> ${sourceLanguage} 源语言 <br /> ${targetLanguage} 目标语言 <br /> ${content} 源字幕 <br /> ${glossary} 本批命中的词条 <br /> ${summary} 本集通读摘要（可选；未写时系统自动追加）",
   "summaryPrompt": {
     "title": "摘要提示词",
     "meta": "通读摘要用，与翻译服务商无关",

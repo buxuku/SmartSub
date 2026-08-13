@@ -57,7 +57,7 @@
   "ApiUrl": "API Url",
   "API Key": "API Key",
   "systemPrompt": "System Prompt",
-  "systemPromptTips": "System prompt, supports variables: <br /> ${sourceLanguage} Source language <br /> ${targetLanguage} Target language <br /> ${content} Source subtitle <br /> ${glossary} Global terms matched in this batch",
+  "systemPromptTips": "System prompt, supports variables: <br /> ${sourceLanguage} Source language <br /> ${targetLanguage} Target language <br /> ${content} Source subtitle <br /> ${glossary} Glossary terms matched in this batch <br /> ${summary} Episode summary (optional; appended automatically if omitted)",
   "summaryPrompt": {
     "title": "Summary prompt",
     "meta": "Used for episode summaries, independent of any translation provider",

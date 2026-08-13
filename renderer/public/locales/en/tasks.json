@@ -129,6 +129,7 @@
     "summaryProviderPlaceholder": "Choose an AI service",
     "summaryProviderMissing": "No configured AI translation service yet",
     "summaryFollowHint": " (follows translation)",
+    "summaryFollowLabel": "Follows translation service",
     "summarySkipHint": "Short files (under 20 cues, or a single translation batch) skip the summary automatically.",
     "summaryNotInjectedHint": "The current translation service cannot receive the summary in its prompt; it is kept for reference only."
   },

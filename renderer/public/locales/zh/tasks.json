@@ -129,6 +129,7 @@
     "summaryProviderPlaceholder": "选择 AI 服务",
     "summaryProviderMissing": "还没有已配置的 AI 翻译服务",
     "summaryFollowHint": "（跟随翻译服务）",
+    "summaryFollowLabel": "跟随翻译服务",
     "summarySkipHint": "短字幕（少于 20 条，或全文可在一个批次内译完）会自动跳过摘要。",
     "summaryNotInjectedHint": "当前翻译服务无法把摘要写入提示词，摘要仅供对照。"
   },

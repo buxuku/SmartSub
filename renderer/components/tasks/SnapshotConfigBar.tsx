@@ -23,9 +23,11 @@ import type { TaskTypeDef } from 'lib/taskTypes';
 import { useTtsEngineOptions } from 'hooks/useTtsEngineOptions';
 import { useCustomLanguages } from 'hooks/useCustomLanguages';
 import { useTranslation } from 'next-i18next';
+import { useGlossaries } from 'hooks/useGlossaries';
 import { getCustomLanguageName } from '../../../types/language';
 import { isSpeakerDiarizationStandardTaskContext } from '../../../types/speakerDiarization';
 import { isTaskSnapshotTranslationEnabled } from '../../../types/taskSnapshot';
+import { FOLLOW_TRANSLATION_PROVIDER } from '../../../types/summaryPrompt';
 
 interface Provider {
   id: string;
@@ -71,6 +73,7 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
   const { t: tCommon } = useTranslation('common');
   const { engineOptions } = useTtsEngineOptions();
   const customLanguages = useCustomLanguages();
+  const { glossaries } = useGlossaries();
 
   // 是否存在真正要转写的文件（字幕输入/配对自带字幕的都跳过听写）
   const needsTranscription = files.length
@@ -294,21 +297,41 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
         <SummaryItem label={t('configBar.style')} value={styleValue} />
       )}
 
+      {translateOn && (
+        <SummaryItem
+          label={t('configBar.glossary')}
+          value={(() => {
+            const rawIds = snapshot?.glossaryIds;
+            if (!Array.isArray(rawIds)) {
+              return t('configBar.glossaryAllEnabled');
+            }
+            if (rawIds.length === 0) return t('configBar.glossaryNone');
+            const selected = glossaries.filter((glossary) =>
+              rawIds.includes(glossary.id),
+            );
+            if (selected.length === 1) return selected[0].name;
+            return t('configBar.glossaryCount', {
+              count: selected.length || rawIds.length,
+            });
+          })()}
+        />
+      )}
+
       {translateOn && snapshot?.generateSummary === true && (
         <SummaryItem
           label={t('configBar.generateSummary')}
           value={(() => {
             const setting =
-              snapshot?.summaryProvider || 'follow-translation';
-            const target =
-              setting === 'follow-translation'
-                ? providers.find((p) => p.id === snapshot?.translateProvider)
-                : providers.find((p) => p.id === setting);
-            return target?.name
-              ? tCommon(`provider.${target.name}`, {
-                  defaultValue: target.name,
-                })
-              : t('configBar.summaryFollowHint');
+              snapshot?.summaryProvider || FOLLOW_TRANSLATION_PROVIDER;
+            const following = setting === FOLLOW_TRANSLATION_PROVIDER;
+            const target = following
+              ? providers.find((p) => p.id === snapshot?.translateProvider)
+              : providers.find((p) => p.id === setting);
+            if (!target?.name) return t('configBar.summaryFollowLabel');
+            const name = tCommon(`provider.${target.name}`, {
+              defaultValue: target.name,
+            });
+            return following ? `${name}${t('configBar.summaryFollowHint')}` : name;
           })()}
         />
       )}
