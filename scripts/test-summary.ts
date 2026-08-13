@@ -70,6 +70,16 @@ ok(
   !defaultSummaryPrompt.includes('一整集英文字幕'),
   'factory prompt is not hardcoded to English episodes',
 );
+ok(
+  !defaultSummaryPrompt.includes('使用表内译名'),
+  'factory prompt does not ask the summary to use glossary translations',
+);
+ok(
+  defaultSummaryPrompt.includes('源字幕中的写法') &&
+    defaultSummaryPrompt.includes('不要') &&
+    defaultSummaryPrompt.includes('表内译文'),
+  'factory prompt keeps source proper nouns; glossary is not for rewriting the summary',
+);
 
 // ── buildSummaryInput ─────────────────────────────────────────────────────
 
