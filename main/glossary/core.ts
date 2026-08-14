@@ -135,6 +135,14 @@ export function describeGlossarySource(glossaryIds?: string[]): string {
   return `任务词库 ${glossaryIds.length} 个`;
 }
 
+/** 统一运行日志上下文，确保每个消费点都能区分任务显式选择与全局回落。 */
+export function describeGlossaryContext(
+  context: string,
+  glossaryIds?: string[],
+): string {
+  return `${context}，${describeGlossarySource(glossaryIds)}`;
+}
+
 /**
  * 按任务选用解析词条。`glossaryIds === undefined` 回落全部已启用（旧行为）；
  * `[]` 表示明确不用词库。筛选发生在 normalize 之后：给了 ids 就按 id 取

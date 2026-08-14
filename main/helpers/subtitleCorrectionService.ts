@@ -29,6 +29,7 @@ import { validateAnchoredBatch } from '../translate/utils/alignment';
 import { BATCH_SCHEMA_MAX_PROPERTIES } from '../translate/constants/schema';
 import {
   buildGlossaryPromptBlock,
+  describeGlossaryContext,
   injectGlossaryPromptBlock,
   matchGlossaryEntries,
   selectGlossaryPromptEntries,
@@ -214,16 +215,18 @@ export async function runSubtitleCorrection(
   );
   const maxRetries = Math.max(0, params.maxRetries ?? 2);
   const echoEnabled = provider.echoAnchoring !== false;
+  const glossaryLabel = params.glossaryLabel || '字幕校正';
+  const glossaryContext = describeGlossaryContext(
+    glossaryLabel,
+    params.glossaryIds,
+  );
 
   // 术语表：调用方决定是否启用（校对台仅 translation 模式；管线校正恒开）。
   let glossaryEntries: Parameters<typeof matchGlossaryEntries>[0] = [];
   if (params.useGlossary) {
     const resolution = getTaskGlossaryResolution(params.glossaryIds);
     if (resolution) {
-      logGlossaryConflicts(
-        resolution.conflicts,
-        params.glossaryLabel || '字幕校正',
-      );
+      logGlossaryConflicts(resolution.conflicts, glossaryContext);
       glossaryEntries = resolution.entries;
     }
   }
@@ -250,7 +253,7 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
     : '';
   if (correctionTerms.length > 0) {
     logMessage(
-      `${params.glossaryLabel || '字幕校正'}: 注入 ${correctionTerms.length} 条术语原文标准写法（不含译文）`,
+      `${glossaryContext}: 注入 ${correctionTerms.length} 条术语原文标准写法（不含译文）`,
       'info',
     );
   }
@@ -304,7 +307,10 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
       glossaryBlock = buildGlossaryPromptBlock(glossarySelection.included);
       logGlossaryMatches(
         glossarySelection.included,
-        `${params.glossaryLabel || '字幕校正'} ${currentBatch}/${totalBatches}`,
+        describeGlossaryContext(
+          `${glossaryLabel} ${currentBatch}/${totalBatches}`,
+          params.glossaryIds,
+        ),
         glossarySelection.omittedCount,
       );
     }

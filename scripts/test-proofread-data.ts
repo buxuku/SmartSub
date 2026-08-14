@@ -3,6 +3,7 @@ import {
   normalizeMetaGlossaryIds,
   normalizeProofreadData,
 } from '../types/proofreadData';
+import { loadSidecarGlossaryIds } from '../main/helpers/sidecarGlossaryIds';
 
 let passed = 0;
 let failed = 0;
@@ -160,16 +161,57 @@ function testDropsNonStringGlossaryIdMembers(): void {
   );
 }
 
-function main(): void {
+async function testSidecarGlossaryIdsLoadBoundary(): Promise<void> {
+  let absentReadCount = 0;
+  equal(
+    await loadSidecarGlossaryIds(undefined, async () => {
+      absentReadCount++;
+      return { meta: { glossaryIds: ['unexpected'] } };
+    }),
+    undefined,
+    'missing sidecar path falls back without reading a file',
+  );
+  equal(absentReadCount, 0, 'missing sidecar path does not call the reader');
+
+  equal(
+    await loadSidecarGlossaryIds('explicit-empty.json', async () => ({
+      meta: { glossaryIds: [] },
+    })),
+    [],
+    'sidecar keeps an explicit empty glossary selection',
+  );
+  equal(
+    await loadSidecarGlossaryIds('legacy.json', async () => ({ meta: {} })),
+    undefined,
+    'legacy sidecar without glossaryIds falls back to globally enabled',
+  );
+
+  const corrupt = new Error('corrupt sidecar');
+  let observed: unknown;
+  try {
+    await loadSidecarGlossaryIds('corrupt.json', async () => {
+      throw corrupt;
+    });
+  } catch (error) {
+    observed = error;
+  }
+  ok(
+    observed === corrupt,
+    'sidecar read or parse errors propagate instead of falling back globally',
+  );
+}
+
+async function main(): Promise<void> {
   testKeepsExplicitGlossaryIds();
   testKeepsEmptyGlossaryIds();
   testLegacySidecarOmitsGlossaryIds();
   testMalformedGlossaryIdsBecomeUndefined();
   testDropsNonStringGlossaryIdMembers();
   testUnknownMetaFieldsArePreserved();
+  await testSidecarGlossaryIdsLoadBoundary();
 
   console.log(`\nproofread-data tests: ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
 }
 
-main();
+void main();

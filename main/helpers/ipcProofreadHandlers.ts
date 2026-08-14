@@ -45,6 +45,7 @@ import { runWithTaskContext, isTaskCancelledError } from './taskContext';
 import { runSubtitleCorrection } from './subtitleCorrectionService';
 import {
   buildGlossaryPromptBlock,
+  describeGlossaryContext,
   glossaryConflictFingerprint,
   injectGlossaryPromptBlock,
   matchGlossaryEntries,
@@ -56,25 +57,27 @@ import {
   logGlossaryMatches,
 } from './glossaryManager';
 import { readProofreadDataFile } from './proofreadData';
+import { loadSidecarGlossaryIds } from './sidecarGlossaryIds';
 
 // 校对批量操作（批量 AI 优化 / 重翻失败）取消注册表
 const batchAbortControllers = new Map<string, AbortController>();
 const singleOptimizeConflictFingerprints = new WeakMap<object, string>();
 
-/** 从 sidecar 读任务词库；缺路径 / 读失败 → undefined（回落全部已启用）。 */
+/** 从 sidecar 读任务词库；仅缺路径 / 缺键回落，读失败交给 IPC 错误边界。 */
 async function readSidecarGlossaryIds(
   proofreadDataFile?: string,
 ): Promise<string[] | undefined> {
-  if (!proofreadDataFile) return undefined;
   try {
-    const data = await readProofreadDataFile(proofreadDataFile);
-    return data.meta.glossaryIds;
+    return await loadSidecarGlossaryIds(
+      proofreadDataFile,
+      readProofreadDataFile,
+    );
   } catch (error) {
     logMessage(
       `Failed to read sidecar glossaryIds from ${proofreadDataFile}: ${error}`,
       'warning',
     );
-    return undefined;
+    throw error;
   }
 }
 
@@ -567,6 +570,10 @@ export function setupProofreadHandlers(): void {
         const sourceLanguage = userConfig.sourceLanguage || 'en';
         const targetLanguage = userConfig.targetLanguage || 'zh';
         const ids = await readSidecarGlossaryIds(proofreadDataFile);
+        const glossaryContext = describeGlossaryContext(
+          '校对页单条 AI 优化',
+          ids,
+        );
         const glossaryResolution =
           mode === 'translation' ? getTaskGlossaryResolution(ids) : undefined;
         if (glossaryResolution) {
@@ -576,10 +583,7 @@ export function setupProofreadHandlers(): void {
           if (
             singleOptimizeConflictFingerprints.get(event.sender) !== fingerprint
           ) {
-            logGlossaryConflicts(
-              glossaryResolution.conflicts,
-              '校对页单条 AI 优化',
-            );
+            logGlossaryConflicts(glossaryResolution.conflicts, glossaryContext);
             singleOptimizeConflictFingerprints.set(event.sender, fingerprint);
           }
         }
@@ -592,7 +596,7 @@ export function setupProofreadHandlers(): void {
         );
         logGlossaryMatches(
           glossarySelection.included,
-          '校对页单条 AI 优化',
+          glossaryContext,
           glossarySelection.omittedCount,
         );
 

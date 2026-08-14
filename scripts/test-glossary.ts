@@ -14,6 +14,7 @@ import {
   selectGlossaryPromptEntries,
   serializeGlossaryEntries,
   textContainsGlossarySource,
+  describeGlossaryContext,
 } from '../main/glossary/core';
 import { renderTemplate } from '../main/helpers/template';
 import type {
@@ -695,10 +696,13 @@ function testTaskGlossarySelection(): void {
   }
 
   equal(
-    resolveTaskGlossaryEntries(
-      glossaries,
-      ['first', 1, null, 'later', {}] as never,
-    ),
+    resolveTaskGlossaryEntries(glossaries, [
+      'first',
+      1,
+      null,
+      'later',
+      {},
+    ] as never),
     resolveTaskGlossaryEntries(glossaries, ['first', 'later']),
     'non-string members in an id array are ignored, valid string ids are kept',
   );
@@ -732,6 +736,21 @@ function testGlossarySourceLabel(): void {
     describeGlossarySource(['a', 'b']),
     '任务词库 2 个',
     'explicit ids label counts the ids that were passed',
+  );
+  equal(
+    describeGlossaryContext('通读摘要', undefined),
+    '通读摘要，全局已启用',
+    'summary context identifies the globally enabled fallback',
+  );
+  equal(
+    describeGlossaryContext('校对页单条 AI 优化', []),
+    '校对页单条 AI 优化，任务词库 0 个',
+    'proofread context identifies an explicit empty selection',
+  );
+  equal(
+    describeGlossaryContext('AI 字幕校正 1/2', ['a', 'b']),
+    'AI 字幕校正 1/2，任务词库 2 个',
+    'correction batch context identifies explicit task glossaries',
   );
 }
 

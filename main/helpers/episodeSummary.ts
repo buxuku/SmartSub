@@ -23,10 +23,15 @@ import {
   resolveSummaryPrompt,
 } from '../../types/summaryPrompt';
 import {
+  describeGlossaryContext,
   matchGlossaryEntries,
   selectGlossaryPromptEntries,
 } from '../glossary/core';
-import { getTaskGlossaryResolution } from './glossaryManager';
+import {
+  getTaskGlossaryResolution,
+  logGlossaryConflicts,
+  logGlossaryMatches,
+} from './glossaryManager';
 import {
   buildSummaryGlossaryBlock,
   buildSummaryInput,
@@ -230,11 +235,18 @@ export async function runEpisodeSummaryStage(params: {
 
     const glossaryIds = formData?.glossaryIds as string[] | undefined;
     const glossaryResolution = getTaskGlossaryResolution(glossaryIds);
+    const glossaryContext = describeGlossaryContext('通读摘要', glossaryIds);
+    logGlossaryConflicts(glossaryResolution.conflicts, glossaryContext);
     const matches = matchGlossaryEntries(
       glossaryResolution.entries,
       cues.map((cue) => cue.text),
     );
     const selection = selectGlossaryPromptEntries(matches);
+    logGlossaryMatches(
+      selection.included,
+      glossaryContext,
+      selection.omittedCount,
+    );
     const glossaryBlock = buildSummaryGlossaryBlock(selection.included);
     const settings = store.get('settings');
     const prompt = resolveSummaryPrompt(settings?.summaryPrompt);
@@ -249,7 +261,7 @@ export async function runEpisodeSummaryStage(params: {
     const userText = buildSummaryInput(cues);
     const batches = estimateSummaryBatches(cues.length, translateBatchSize);
     logMessage(
-      `📖 通读摘要 ${file.fileName}: cues=${cues.length} translateBatches≈${batches} provider=${provider.name}`,
+      `📖 通读摘要 ${file.fileName}: cues=${cues.length} translateBatches≈${batches} provider=${provider.name} [${glossaryContext}]`,
       'info',
     );
 
@@ -277,7 +289,7 @@ export async function runEpisodeSummaryStage(params: {
     );
 
     const settled = settleSummaryText(raw);
-    if (!settled.ok) {
+    if (settled.ok === false) {
       applySummaryState(
         file,
         {
