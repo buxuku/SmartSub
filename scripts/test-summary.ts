@@ -22,6 +22,7 @@ import {
   renderTranslationSystemPrompt,
 } from '../main/glossary/core';
 import { defaultSystemPrompt } from '../types/provider';
+import { createDebouncedPersist } from '../renderer/lib/debouncedPersist';
 
 let passed = 0;
 let failed = 0;
@@ -100,7 +101,10 @@ equal(
     sourceLanguage: '法语',
     targetLanguage: '简体中文',
   });
-  ok(inst.includes('当前法语→简体中文'), 'summary instructions replace language vars');
+  ok(
+    inst.includes('当前法语→简体中文'),
+    'summary instructions replace language vars',
+  );
   ok(
     !inst.includes(SUMMARY_GLOSSARY_HEADING),
     'no glossary heading when block is empty',
@@ -130,7 +134,10 @@ equal(
     inst.includes(SUMMARY_GLOSSARY_HEADING),
     'summary glossary uses the summary-only heading',
   );
-  ok(inst.includes('Alice') && inst.includes('艾丽丝'), 'summary glossary lists terms');
+  ok(
+    inst.includes('Alice') && inst.includes('艾丽丝'),
+    'summary glossary lists terms',
+  );
   ok(
     !inst.includes('必须遵守，不得另译'),
     'summary glossary heading is not the translation heading',
@@ -161,10 +168,36 @@ equal(
 );
 ok(
   settleSummaryText('<think>hide</think>\nVisible summary').ok === true &&
-    (settleSummaryText('<think>hide</think>\nVisible summary') as { text: string })
-      .text === 'Visible summary',
+    (
+      settleSummaryText('<think>hide</think>\nVisible summary') as {
+        text: string;
+      }
+    ).text === 'Visible summary',
   'closed think tags are stripped and remaining text kept',
 );
+
+// ── debounced summary-prompt persistence ─────────────────────────────────
+
+{
+  const persisted: string[] = [];
+  const writer = createDebouncedPersist<string>((value) => {
+    persisted.push(value);
+  }, 400);
+
+  writer.schedule('first draft');
+  writer.schedule('latest draft');
+  equal(persisted, [], 'debounced prompt edits do not persist immediately');
+
+  writer.flush();
+  equal(
+    persisted,
+    ['latest draft'],
+    'page-exit flush persists the latest pending prompt edit',
+  );
+
+  writer.flush();
+  equal(persisted, ['latest draft'], 'flush is a no-op with no pending edit');
+}
 
 // ── skip guards ───────────────────────────────────────────────────────────
 
@@ -197,7 +230,10 @@ equal(estimateSummaryBatches(20, 10), 2, '20 / 10 = 2 batches');
     { sourceLanguage: '英语', targetLanguage: '中文' },
     { summary: buildSummaryPromptBlock('CONTEXT') },
   );
-  ok(rendered.includes('CONTEXT'), 'placeholder ${summary} is replaced in place');
+  ok(
+    rendered.includes('CONTEXT'),
+    'placeholder ${summary} is replaced in place',
+  );
   ok(
     !rendered.endsWith('CONTEXT'),
     'placeholder replacement does not also append',
