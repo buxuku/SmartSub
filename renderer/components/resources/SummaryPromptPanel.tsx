@@ -8,6 +8,10 @@ import { RotateCcw } from 'lucide-react';
 import { Panel, PanelHeader } from '@/components/ui/panel';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  createDebouncedPersist,
+  type DebouncedPersist,
+} from '@/lib/debouncedPersist';
 import { defaultSummaryPrompt, resolveSummaryPrompt } from '../../../types';
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -16,7 +20,19 @@ const SummaryPromptPanel: React.FC = () => {
   const { t } = useTranslation('translateControl');
   const [draft, setDraft] = useState(defaultSummaryPrompt);
   const [loaded, setLoaded] = useState(false);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const persist = useCallback(async (next: string) => {
+    const trimmed = next.trim();
+    await window?.ipc?.invoke('setSettings', {
+      summaryPrompt: trimmed === defaultSummaryPrompt.trim() ? '' : next,
+    });
+  }, []);
+
+  const writerRef = useRef<DebouncedPersist<string> | null>(null);
+  if (!writerRef.current) {
+    writerRef.current = createDebouncedPersist(persist, SAVE_DEBOUNCE_MS);
+  }
+  const writer = writerRef.current;
 
   useEffect(() => {
     let cancelled = false;
@@ -28,27 +44,17 @@ const SummaryPromptPanel: React.FC = () => {
     })();
     return () => {
       cancelled = true;
-      if (saveTimer.current) clearTimeout(saveTimer.current);
+      writer.flush();
     };
-  }, []);
-
-  const persist = useCallback(async (next: string) => {
-    const trimmed = next.trim();
-    await window?.ipc?.invoke('setSettings', {
-      summaryPrompt: trimmed === defaultSummaryPrompt.trim() ? '' : next,
-    });
-  }, []);
+  }, [writer]);
 
   const handleChange = (value: string) => {
     setDraft(value);
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      void persist(value);
-    }, SAVE_DEBOUNCE_MS);
+    writer.schedule(value);
   };
 
   const handleRestore = async () => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
+    writer.cancel();
     setDraft(defaultSummaryPrompt);
     await persist(defaultSummaryPrompt);
   };
