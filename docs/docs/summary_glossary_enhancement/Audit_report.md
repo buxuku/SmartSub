@@ -1,7 +1,6 @@
 ---
 title: 摘要与任务词库增强：分支代码审计报告
 description: feat/summary_glossary_enhancement 相对 main 的代码、契约、安全与验证审计。
-unlisted: true
 draft: true
 ---
 
@@ -117,7 +116,7 @@ classic preset 使用默认 `docs` 内容目录并把 `routeBasePath` 设为 `/`
 
 **Recommendation**
 
-把内部审计/方案/原始证据移出 Docusaurus 内容根，或在 docs plugin 中显式排除内部子树，并在发布流水线检查生成 route 清单。本报告因用户指定路径保存在此处，并额外设置 `draft: true` + `unlisted: true`；这只降低生产构建/发现风险，不替代仓库权限或内容脱敏。
+把内部审计/方案/原始证据移出 Docusaurus 内容根，或在 docs plugin 中显式排除内部子树，并在发布流水线检查生成 route 清单。本报告因用户指定路径保存在此处，并设置 `draft: true`；这只降低生产构建风险，不替代仓库权限或内容脱敏。
 
 ### 5. [P2] sidecar 读取/解析失败会误回落到“全部全局已启用词库”
 

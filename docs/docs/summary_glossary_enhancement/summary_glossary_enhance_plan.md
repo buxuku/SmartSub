@@ -405,7 +405,7 @@ rev.5 把 i18n 散写在步骤 3 / 5 / 7，只点了 `stage.summarize` 和「跑
 | `summaryPrompt.title` / `meta` / `restore` / `tips` | 翻译页「摘要提示词」面板 |
 | `systemPromptTips` | 服务商系统提示词变量表，含 `${glossary}` 与 `${summary}` |
 
-renderer 全部走 `useTranslation`，不在组件里写中文/英文用户可见字面量。`t(\`summarize.error.${code}\`, { defaultValue: code })` 只用于未知错误码回退显示稳定码，不算兜底文案。
+renderer 全部走 `useTranslation`，不在组件里写中文/英文用户可见字面量。``t(`summarize.error.${code}`, { defaultValue: code })`` 只用于未知错误码回退显示稳定码，不算兜底文案。
 
 ### 校验
 
