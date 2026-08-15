@@ -245,6 +245,79 @@ function ensureLoaded(req) {
 
 // Qwen3-ASR 聊天模板：language Chinese<asr_text>正文
 // 逻辑与 main/helpers/engines/qwenText.ts 保持一致。
+const QWEN_TEMPLATE_LEFTOVER =
+  /^(?:language|chinese|english|none|zh|en|auto)$/i;
+
+const QWEN_LATIN_KEEP = new Set([
+  'ok',
+  'okay',
+  'yes',
+  'no',
+  'yeah',
+  'yep',
+  'nope',
+  'right',
+  'so',
+  'well',
+  'um',
+  'uh',
+  'ah',
+  'oh',
+  'wow',
+  'next',
+  'thanks',
+  'hello',
+  'hi',
+  'bye',
+  'alpha',
+  'beta',
+  'gamma',
+  'delta',
+  'epsilon',
+  'theta',
+  'lambda',
+  'mu',
+  'nu',
+  'xi',
+  'pi',
+  'rho',
+  'sigma',
+  'tau',
+  'phi',
+  'psi',
+  'chi',
+  'eta',
+  'omega',
+]);
+
+function stripQwenCueDecorations(text) {
+  return text
+    .replace(/^[("'“‘]+/, '')
+    .replace(/[)"'”’.,!?。！？]+$/, '')
+    .trim();
+}
+
+function isQwenFormulaToken(token) {
+  return (
+    /^[A-Za-z]$/.test(token) ||
+    /^[A-Za-z]\d{1,3}$/.test(token) ||
+    /^[A-Z]{2,4}$/.test(token) ||
+    /^[A-Z]{2,4}\d{1,3}$/.test(token)
+  );
+}
+
+function isQwenHallucinatedCue(text) {
+  const token = stripQwenCueDecorations(text);
+  if (!token) return true;
+  if (QWEN_TEMPLATE_LEFTOVER.test(token)) return true;
+  if (/[\u4e00-\u9fff]/.test(text)) return false;
+  if (/\s/.test(token)) return false;
+  if (/^[\d.]+$/.test(token)) return false;
+  if (isQwenFormulaToken(token)) return false;
+  if (QWEN_LATIN_KEEP.has(token.toLowerCase())) return false;
+  return /^[A-Za-z][A-Za-z0-9]{1,23}$/.test(token);
+}
+
 function sanitizeQwenAsrText(raw) {
   if (typeof raw !== 'string' || raw.length === 0) return '';
   let text = raw;
@@ -264,6 +337,7 @@ function sanitizeQwenAsrText(raw) {
   ) {
     return '';
   }
+  if (isQwenHallucinatedCue(text)) return '';
   return text;
 }
 

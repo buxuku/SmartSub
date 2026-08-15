@@ -1380,6 +1380,31 @@ eq(
 );
 eq(sanitizeQwenAsrText(''), '', 'qwen: empty stays empty');
 eq(sanitizeQwenAsrText(undefined), '', 'qwen: undefined stays empty');
+eq(
+  sanitizeQwenAsrText('demand'),
+  '',
+  'qwen: drops isolated english hallucination',
+);
+eq(
+  sanitizeQwenAsrText('detract.'),
+  '',
+  'qwen: drops isolated english with period',
+);
+eq(sanitizeQwenAsrText('imageUrl'), '', 'qwen: drops camelCase identifier');
+eq(sanitizeQwenAsrText('picture.'), '', 'qwen: drops caption-like fragment');
+eq(sanitizeQwenAsrText('Finds.'), '', 'qwen: drops titlecase english fragment');
+eq(sanitizeQwenAsrText('aiyun'), '', 'qwen: drops random latin token');
+eq(
+  sanitizeQwenAsrText('language'),
+  '',
+  'qwen: leftover language token is empty',
+);
+eq(sanitizeQwenAsrText('None'), '', 'qwen: leftover None token is empty');
+eq(sanitizeQwenAsrText('DXY'), 'DXY', 'qwen: keeps formula identifier');
+eq(sanitizeQwenAsrText('p'), 'p', 'qwen: keeps single-letter formula');
+eq(sanitizeQwenAsrText('EX1'), 'EX1', 'qwen: keeps formula with digits');
+eq(sanitizeQwenAsrText('sigma'), 'sigma', 'qwen: keeps math symbol name');
+eq(sanitizeQwenAsrText('OK'), 'OK', 'qwen: keeps short spoken interjection');
 
 // --- engineModels: fireRedAsr awareness ---
 const fireRedReady = {
