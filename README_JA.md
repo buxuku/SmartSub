@@ -63,7 +63,7 @@
 
 ### 字幕翻訳
 
-- 20 の翻訳サービス：内蔵の無料翻訳（Bing / Google 無料エンドポイント、自動フォールバックとレート制限付き）、百度、阿里云、騰訊、讯飞、火山エンジン、豆包、小牛、DeepLX、Azure、Google に加え、Ollama（ローカルモデル）、DeepSeek、Gemini、通義千問（Qwen）、SiliconFlow、Azure OpenAI、[DeerAPI](https://api.deerapi.com/register?aff=QvHM) などの LLM サービス
+- 20 の翻訳サービス：内蔵の無料翻訳（Bing / Google 無料エンドポイント、自動フォールバックとレート制限付き）、百度、阿里云、騰訊、讯飞、火山エンジン、豆包、小牛、DeepLX、Azure、Google に加え、Ollama（ローカルモデル）、DeepSeek、Gemini、通義千問（Qwen）、SiliconFlow、Azure OpenAI、[OrcaRouter](https://www.orcarouter.ai)、[DeerAPI](https://api.deerapi.com/register?aff=QvHM) などの LLM サービス
 - 任意の OpenAI スタイル API に対応——自前のエンドポイントも接続可能
 - 翻訳のみ、または「原文 + 訳文」のバイリンガル字幕を出力
 - 各 AI サービスのリクエストパラメータを UI から直接設定、インポート/エクスポート対応——コード変更不要

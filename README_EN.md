@@ -63,7 +63,7 @@ Online video **download** / local media → **transcribe** → **translate** →
 
 ### Subtitle translation
 
-- 20 translation services: built-in free translation (Bing / Google free endpoints with automatic fallback and rate limiting), Baidu, Aliyun, Tencent, iFlytek, Volcano Engine, Doubao, NiuTrans, DeepLX, Azure, Google, plus LLM services such as Ollama (local models), DeepSeek, Gemini, Qwen, SiliconFlow, Azure OpenAI, and [DeerAPI](https://api.deerapi.com/register?aff=QvHM)
+- 20 translation services: built-in free translation (Bing / Google free endpoints with automatic fallback and rate limiting), Baidu, Aliyun, Tencent, iFlytek, Volcano Engine, Doubao, NiuTrans, DeepLX, Azure, Google, plus LLM services such as Ollama (local models), DeepSeek, Gemini, Qwen, SiliconFlow, Azure OpenAI, [OrcaRouter](https://www.orcarouter.ai), and [DeerAPI](https://api.deerapi.com/register?aff=QvHM)
 - Compatible with any OpenAI-style API — bring your own endpoint
 - Output translation only, or bilingual "original + translation" subtitles
 - Per-service custom request parameters configured right in the UI, with import/export — no code changes

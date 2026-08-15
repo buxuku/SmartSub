@@ -116,6 +116,9 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
         'THUDM/glm-4-9b-chat',
       ],
     },
+    orcarouter: {
+      fallbackModels: ['orcarouter/auto', 'orcarouter/fusion'],
+    },
     qwen: {
       fallbackModels: ['qwen-turbo', 'qwen-plus', 'qwen-max'],
     },
