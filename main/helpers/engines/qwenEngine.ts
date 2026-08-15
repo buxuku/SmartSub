@@ -22,6 +22,7 @@ import {
 } from '../subtitleTiming';
 import { resplitSubtitleCues } from '../subtitleSegmentation';
 import { buildQwenParams } from './qwenParams';
+import { sanitizeQwenAsrText } from './qwenText';
 import { resolveEffectiveSettings } from './outcomePresets';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
@@ -137,7 +138,13 @@ async function transcribeQwen(ctx: TranscribeContext): Promise<string> {
 
   const subtitles = trimSubtitleTrailingSilence(
     resplitSubtitleCues(
-      (transcription?.segments || []).map(subtitleCueFromSegment),
+      (transcription?.segments || [])
+        .map((segment) => ({
+          ...segment,
+          text: sanitizeQwenAsrText(segment.text),
+        }))
+        .filter((segment) => Boolean(segment.text))
+        .map(subtitleCueFromSegment),
       formData as Record<string, unknown>,
     ),
     tempAudioFile,

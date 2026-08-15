@@ -243,6 +243,30 @@ function ensureLoaded(req) {
   }
 }
 
+// Qwen3-ASR 聊天模板：language Chinese<asr_text>正文
+// 逻辑与 main/helpers/engines/qwenText.ts 保持一致。
+function sanitizeQwenAsrText(raw) {
+  if (typeof raw !== 'string' || raw.length === 0) return '';
+  let text = raw;
+  if (/<\s*asr_text\s*>/i.test(text)) {
+    const parts = text.split(/<\s*asr_text\s*>/i);
+    text = parts[parts.length - 1] || '';
+  }
+  text = text.replace(/<\s*\/\s*asr_text\s*>/gi, '');
+  text = text
+    .replace(/^\*+\s*/, '')
+    .replace(/\s*\*+$/, '')
+    .trim();
+  if (
+    /^language\s*[:：]?\s*[A-Z][A-Za-z]+(?:[\s-][A-Z][A-Za-z]+){0,2}$/.test(
+      text,
+    )
+  ) {
+    return '';
+  }
+  return text;
+}
+
 function postCancelled(id) {
   cancelled.delete(id);
   channel.post({
@@ -273,7 +297,9 @@ async function transcribe(req) {
       const r = await recognizer.decodeAsync(stream);
       const start = seg.start / SAMPLE_RATE;
       const end = (seg.start + seg.samples.length) / SAMPLE_RATE;
-      const text = r && r.text ? r.text.trim() : '';
+      const rawText = r && r.text ? r.text.trim() : '';
+      const text =
+        req.modelType === 'qwen3_asr' ? sanitizeQwenAsrText(rawText) : rawText;
       if (text) segments.push({ start, end, text });
     }
   };

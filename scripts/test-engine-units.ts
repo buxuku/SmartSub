@@ -107,6 +107,7 @@ import {
   progressPercent,
 } from '../main/helpers/sherpaOnnx/sherpaConfig';
 import { buildQwenParams } from '../main/helpers/engines/qwenParams';
+import { sanitizeQwenAsrText } from '../main/helpers/engines/qwenText';
 import {
   buildFireRedParams,
   clampFireRedMaxSpeech,
@@ -1345,6 +1346,40 @@ eq(
   256,
   'qwen: custom max_new_tokens passthrough',
 );
+
+// --- qwenText: 剥掉 Qwen3-ASR 聊天模板 ---
+eq(
+  sanitizeQwenAsrText('language Chinese<asr_text>所以'),
+  '所以',
+  'qwen: strips language Chinese<asr_text> prefix',
+);
+eq(
+  sanitizeQwenAsrText('**language Chinese<asr_text>开玩笑 **'),
+  '开玩笑',
+  'qwen: strips markdown-wrapped language header',
+);
+eq(
+  sanitizeQwenAsrText('<asr_text>正态分布'),
+  '正态分布',
+  'qwen: strips lone asr_text tag',
+);
+eq(
+  sanitizeQwenAsrText('language Chinese'),
+  '',
+  'qwen: header-only cue becomes empty',
+);
+eq(
+  sanitizeQwenAsrText('language is important'),
+  'language is important',
+  'qwen: keeps ordinary speech starting with language',
+);
+eq(
+  sanitizeQwenAsrText('所以 x加y'),
+  '所以 x加y',
+  'qwen: keeps clean transcript unchanged',
+);
+eq(sanitizeQwenAsrText(''), '', 'qwen: empty stays empty');
+eq(sanitizeQwenAsrText(undefined), '', 'qwen: undefined stays empty');
 
 // --- engineModels: fireRedAsr awareness ---
 const fireRedReady = {
