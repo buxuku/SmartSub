@@ -11,7 +11,8 @@ import { logMessage } from './logger';
 // v21：默认提示词升级为 src/tr 回显协议 + echoAnchoring 字段默认开启（openspec: ai-translation-alignment）
 // v22：思考模式开关 enableThinking 默认关闭（= 主动禁用思考，openspec: ai-thinking-mode-control）
 // v23：新增独立的 Qwen-MT 机器翻译服务商
-const CURRENT_PROVIDER_VERSION = 23;
+// v24: add built-in LiteLLM provider (OpenAI-compatible gateway to 100+ models)
+const CURRENT_PROVIDER_VERSION = 24;
 
 const FREE_PROVIDER_IDS = ['autoFree', 'bingFree', 'googleFree'];
 
