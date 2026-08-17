@@ -815,7 +815,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: true,
     group: 'ai',
-    icon: '🚀',
+    icon: '🚅',
     fields: [
       {
         key: 'apiUrl',
