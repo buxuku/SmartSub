@@ -73,6 +73,7 @@ export async function runAiCorrection(
     maxRetries: 2,
     signal,
     useGlossary: true,
+    glossaryIds: formData?.glossaryIds as string[] | undefined,
     glossaryLabel: 'AI 字幕校正',
     suspectWords,
     onBatchProgress: (info) =>

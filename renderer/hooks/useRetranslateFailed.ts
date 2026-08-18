@@ -25,6 +25,7 @@ interface UseRetranslateFailedOptions {
   updateSubtitles: (subtitles: Subtitle[]) => void;
   sourceLanguage?: string;
   targetLanguage?: string;
+  proofreadDataFile?: string;
 }
 
 export function useRetranslateFailed({
@@ -33,6 +34,7 @@ export function useRetranslateFailed({
   updateSubtitles,
   sourceLanguage,
   targetLanguage,
+  proofreadDataFile,
 }: UseRetranslateFailedOptions): RetranslateControl {
   const { t } = useTranslation('home');
   const [running, setRunning] = useState(false);
@@ -48,6 +50,7 @@ export function useRetranslateFailed({
     updateSubtitles,
     sourceLanguage,
     targetLanguage,
+    proofreadDataFile,
   });
   latestRef.current = {
     getSubtitles,
@@ -55,6 +58,7 @@ export function useRetranslateFailed({
     updateSubtitles,
     sourceLanguage,
     targetLanguage,
+    proofreadDataFile,
   };
 
   // 进度事件（按 batchId 过滤）
@@ -77,6 +81,7 @@ export function useRetranslateFailed({
       getFailedTranslationIndices: getFailed,
       sourceLanguage: from,
       targetLanguage: to,
+      proofreadDataFile: sidecarFile,
     } = latestRef.current;
 
     const current = getSubs();
@@ -105,6 +110,7 @@ export function useRetranslateFailed({
         sourceLanguage: from,
         targetLanguage: to,
         batchId,
+        proofreadDataFile: sidecarFile,
       });
 
       if (!result?.success && result?.error === 'NO_DEFAULT_PROVIDER') {

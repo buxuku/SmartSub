@@ -87,6 +87,8 @@
     "blockNoGoal": "Pick at least one goal",
     "blockRefineFollow": "AI refine cannot follow the translation service (translation is off or not an AI provider) — open Segmentation & Refine in the toolbar and pick a provider explicitly",
     "blockRefineProviderInvalid": "The selected AI refine provider is unavailable (missing or not configured) — pick another one",
+    "blockSummaryFollow": "Summary cannot follow the translation service because it is not a configured AI provider — pick a summary provider",
+    "blockSummaryProviderInvalid": "The selected summary provider is unavailable (missing, not AI, or not configured) — pick another one",
     "goConfigure": "Configure",
     "readyHint": "Ready: {{count}} file(s) will be processed automatically",
     "clearFiles": "Clear list",
@@ -112,7 +114,24 @@
     "targetLanguage": "Translate to",
     "provider": "Translation service",
     "style": "Output content",
-    "format": "Subtitle format"
+    "format": "Subtitle format",
+    "glossary": "Glossary",
+    "glossaryAllEnabled": "All enabled",
+    "glossaryNone": "None",
+    "glossaryCount": "{{count}} selected",
+    "glossaryDisabled": "disabled",
+    "glossaryRestoreDefault": "Restore default (all enabled)",
+    "glossaryEmpty": "No glossaries yet",
+    "glossaryGoManage": "Go to glossaries",
+    "glossaryIntro": "Choose which glossaries this task will match. Leave untouched to use every enabled glossary.",
+    "generateSummary": "Generate summary",
+    "summaryProvider": "Summary service",
+    "summaryProviderPlaceholder": "Choose an AI service",
+    "summaryProviderMissing": "No configured AI translation service yet",
+    "summaryFollowHint": " (follows translation)",
+    "summaryFollowLabel": "Follows translation service",
+    "summarySkipHint": "Short files (under 20 cues, or a single translation batch) skip the summary automatically.",
+    "summaryNotInjectedHint": "The current translation service cannot receive the summary in its prompt; it is kept for reference only."
   },
   "manuscript": {
     "label": "Reference script",
@@ -306,10 +325,21 @@
     "transcribe": "Transcribe",
     "refine": "Refine",
     "manuscript": "Script match",
+    "summarize": "Summary",
     "translate": "Translate",
     "speakerDiarization": "Speaker diarization",
     "dubbing": "Dub",
     "compose": "Compose"
+  },
+  "summarize": {
+    "error": {
+      "skipped-trivial": "File is short or fits in one batch; summary skipped",
+      "empty": "Summary was empty; translation continued",
+      "empty-after-think-strip": "Summary contained only thinking text; skipped",
+      "provider-unresolved": "Summary provider could not be resolved; skipped",
+      "provider-not-ai": "Summary provider is not an AI service; skipped",
+      "call-failed": "Summary call failed; translation continued"
+    }
   },
   "gate": {
     "subtitle": "Subtitle review",

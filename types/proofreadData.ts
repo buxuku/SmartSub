@@ -37,6 +37,10 @@ export interface ProofreadDataMeta {
   sourceFile?: string;
   targetFile?: string;
   finalTargetFile?: string;
+  /** 任务选用词库 id；undefined = 回落全部已启用；[] = 明确不用词库 */
+  glossaryIds?: string[];
+  /** 本集通读摘要；缺省表示未生成 */
+  episodeSummary?: string;
 }
 
 export interface ProofreadDataCue {
@@ -230,6 +234,32 @@ export function normalizeSpeakerRoster(
   return roster;
 }
 
+/**
+ * 归一化 sidecar meta.glossaryIds。
+ * 非数组 → undefined（旧 sidecar / 回落全部已启用）；
+ * 数组（含 []）只保留字符串成员，顺序不变；[] = 明确不用词库。
+ */
+export function normalizeMetaGlossaryIds(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((id): id is string => typeof id === 'string');
+}
+
+function normalizeProofreadMeta(rawMeta: unknown): ProofreadDataMeta {
+  const metaInput =
+    rawMeta && typeof rawMeta === 'object'
+      ? (rawMeta as Partial<ProofreadDataMeta>)
+      : {};
+  const now = new Date(0).toISOString();
+  const { glossaryIds: rawGlossaryIds, ...restMeta } = metaInput;
+  const glossaryIds = normalizeMetaGlossaryIds(rawGlossaryIds);
+  return {
+    ...restMeta,
+    createdAt: String(metaInput.createdAt || now),
+    updatedAt: String(metaInput.updatedAt || metaInput.createdAt || now),
+    ...(glossaryIds !== undefined ? { glossaryIds } : {}),
+  };
+}
+
 /** Accept v1/v2 sidecars and return the single canonical v2 shape. */
 export function normalizeProofreadData(input: unknown): ProofreadDataFileV2 {
   if (!input || typeof input !== 'object') {
@@ -261,19 +291,9 @@ export function normalizeProofreadData(input: unknown): ProofreadDataFileV2 {
     });
     return normalized as ProofreadDataCue;
   });
-  const metaInput =
-    raw.meta && typeof raw.meta === 'object'
-      ? (raw.meta as Partial<ProofreadDataMeta>)
-      : {};
-  const now = new Date(0).toISOString();
-  const meta: ProofreadDataMeta = {
-    ...metaInput,
-    createdAt: String(metaInput.createdAt || now),
-    updatedAt: String(metaInput.updatedAt || metaInput.createdAt || now),
-  };
   return {
     version: PROOFREAD_DATA_VERSION,
-    meta,
+    meta: normalizeProofreadMeta(raw.meta),
     speakers: normalizeSpeakerRoster(
       raw.version === 2 && Array.isArray(raw.speakers) ? raw.speakers : [],
       cues,

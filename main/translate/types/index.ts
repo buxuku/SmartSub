@@ -19,6 +19,12 @@ export interface TranslationConfig {
   provider: Provider;
   translator: TranslatorFunction;
   glossaryEntries?: ResolvedGlossaryEntry[];
+  /** 词库来源标注；缺省时 match 日志保持旧文案。 */
+  glossarySourceLabel?: string;
+  /** 通读摘要正文；仅 AI 翻译注入 system。 */
+  episodeSummary?: string;
+  /** 无摘要时的稳定原因码，供日志说明。 */
+  summarySkipReason?: string;
   signal?: AbortSignal;
   /** 测试面板注入的思考元数据收集器（openspec: ai-thinking-mode-control D7） */
   onResponseMeta?: (meta: TranslationResponseMeta) => void;

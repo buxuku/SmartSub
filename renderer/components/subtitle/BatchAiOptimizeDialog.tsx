@@ -62,6 +62,7 @@ interface BatchAiOptimizeDialogProps {
     optimizations: Array<{ index: number; targetContent: string }>,
   ) => void;
   shouldShowTranslation: boolean;
+  proofreadDataFile?: string;
 }
 
 export default function BatchAiOptimizeDialog({
@@ -70,6 +71,7 @@ export default function BatchAiOptimizeDialog({
   subtitles,
   onApplyOptimizations,
   shouldShowTranslation,
+  proofreadDataFile,
 }: BatchAiOptimizeDialogProps) {
   const { t } = useTranslation('home');
 
@@ -265,6 +267,7 @@ IMPORTANT: Return ONLY a valid JSON object with subtitle IDs as keys and optimiz
         maxRetries: 2,
         batchId,
         mode: isTranscriptMode ? 'transcript' : 'translation',
+        proofreadDataFile,
       });
 
       if (result.success && result.data) {

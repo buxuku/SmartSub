@@ -14,7 +14,9 @@ import { AlertCircle, CheckCircle2, Download, Languages } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Models from '@/components/Models';
 import AiRefineControl from '@/components/tasks/AiRefineControl';
+import GlossarySelectControl from '@/components/tasks/GlossarySelectControl';
 import ManuscriptControl from '@/components/tasks/ManuscriptControl';
+import SummaryGenerateControl from '@/components/tasks/SummaryGenerateControl';
 import { supportedLanguage } from 'lib/utils';
 import { isProviderConfigured } from 'lib/providerUtils';
 import { hasAnyModelAnyEngine } from 'lib/engineModels';
@@ -299,6 +301,13 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
               </SelectContent>
             </Select>
           </ConfigItem>
+
+          <GlossarySelectControl form={form} formData={formData} />
+          <SummaryGenerateControl
+            form={form}
+            formData={formData}
+            providers={providers}
+          />
         </>
       )}
 
