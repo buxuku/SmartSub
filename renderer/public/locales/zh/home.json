@@ -114,6 +114,7 @@
   "retranslateNoResult": "没有可回填的翻译结果",
   "retranslateDone": "重翻完成，已回填 {{count}} 条",
   "retranslateCancelledPartial": "已取消，已回填 {{count}} 条",
+  "retranslateProviderFallback": "翻译服务「{{from}}」暂时不可用，已切换到「{{to}}」继续翻译",
   "translationFailedPlaceholder": "翻译失败，请手动输入",
   "history": "历史记录",
   "clickToSelectVideo": "点击选择视频文件",

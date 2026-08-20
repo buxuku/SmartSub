@@ -1,19 +1,16 @@
-import {
-  Provider,
-  PROVIDER_TYPES,
-  TENCENT_DEFAULT_REQUEST_INTERVAL_SECONDS,
-  defaultSystemPrompt,
-  HISTORICAL_DEFAULT_PROMPTS,
-} from '../../types/provider';
+import { Provider, PROVIDER_TYPES } from '../../types/provider';
 import { store } from './store';
 import { logMessage } from './logger';
+import {
+  migrateProviders,
+  normalizeFallbackProviderIds,
+} from './providerMigration';
 
 // v21：默认提示词升级为 src/tr 回显协议 + echoAnchoring 字段默认开启（openspec: ai-translation-alignment）
 // v22：思考模式开关 enableThinking 默认关闭（= 主动禁用思考，openspec: ai-thinking-mode-control）
 // v23：新增独立的 Qwen-MT 机器翻译服务商
-const CURRENT_PROVIDER_VERSION = 23;
-
-const FREE_PROVIDER_IDS = ['autoFree', 'bingFree', 'googleFree'];
+// v24：同 type 服务实例与任务内回退链
+const CURRENT_PROVIDER_VERSION = 24;
 
 export async function getAndInitializeProviders(): Promise<Provider[]> {
   try {
@@ -26,7 +23,11 @@ export async function getAndInitializeProviders(): Promise<Provider[]> {
     }
 
     if (savedVersion === CURRENT_PROVIDER_VERSION) {
-      return savedProviders;
+      const normalizedProviders = normalizeFallbackProviderIds(savedProviders);
+      if (normalizedProviders !== savedProviders) {
+        store.set('translationProviders', normalizedProviders);
+      }
+      return normalizedProviders;
     }
 
     // 需要迁移的情况
@@ -60,134 +61,4 @@ function initializeDefaultProviders(): Provider[] {
   store.set('translationProviders', providers);
   store.set('providerVersion', CURRENT_PROVIDER_VERSION);
   return providers;
-}
-
-/**
- * 判断用户的 systemPrompt 是否需要更新为新的默认值
- * 如果用户的值为空、等于当前默认值、或匹配任意历史默认值 → 更新
- * 否则说明用户自定义过 → 保留
- */
-function shouldUpdateSystemPrompt(currentPrompt: string | undefined): boolean {
-  if (!currentPrompt) return true;
-  const trimmed = currentPrompt.trim();
-  if (trimmed === defaultSystemPrompt.trim()) return false;
-  return HISTORICAL_DEFAULT_PROMPTS.some(
-    (historical) => trimmed === historical.trim(),
-  );
-}
-
-function withTencentRateLimitDefaults(provider: any): any {
-  if (provider.id !== 'tencent') return provider;
-
-  const currentInterval = Number(provider.requestInterval || 0);
-  if (currentInterval > 0) return provider;
-
-  return {
-    ...provider,
-    requestInterval: TENCENT_DEFAULT_REQUEST_INTERVAL_SECONDS,
-  };
-}
-
-// 为免费翻译源补齐合理的默认请求间隔（用户未自定义时），降低被按 IP 限流的概率。
-function withFreeRateLimitDefaults(provider: any): any {
-  if (!FREE_PROVIDER_IDS.includes(provider.id)) return provider;
-
-  const currentInterval = Number(provider.requestInterval || 0);
-  if (currentInterval > 0) return provider;
-
-  const template = PROVIDER_TYPES.find((type) => type.id === provider.id);
-  const defaultInterval = template?.fields.find(
-    (field) => field.key === 'requestInterval',
-  )?.defaultValue;
-  if (defaultInterval === undefined) return provider;
-
-  return {
-    ...provider,
-    requestInterval: defaultInterval,
-  };
-}
-
-function migrateProviders(oldProviders: any[]): Provider[] {
-  // 分离内置和自定义服务商
-  const builtinProviders = oldProviders
-    .filter((p) => PROVIDER_TYPES.some((type) => type.id === p.id))
-    .map((p) => {
-      const template = PROVIDER_TYPES.find((type) => type.id === p.id)!;
-      return withTencentRateLimitDefaults(
-        withFreeRateLimitDefaults({
-          ...p,
-          type: p.id,
-          isAi: template.isAi || false,
-          batchConcurrency: p.batchConcurrency || 1,
-          ...(p.id === 'baidu' && { batchSize: 18 }),
-          ...(p.id === 'volc' && { batchSize: 16 }),
-          ...(p.id === 'azure' && { batchSize: 50 }),
-          ...(template.isAi && {
-            useBatchTranslation: false,
-            batchTranslationSize: 10,
-            systemPrompt: shouldUpdateSystemPrompt(p.systemPrompt)
-              ? defaultSystemPrompt
-              : p.systemPrompt,
-            structuredOutput:
-              p.structuredOutput ||
-              template.fields.find((f) => f.key === 'structuredOutput')
-                ?.defaultValue ||
-              'json_object',
-            // v21：回显锚定默认开启；用户显式关闭过则保留
-            echoAnchoring: p.echoAnchoring !== false,
-            // v22：思考模式默认关闭（= 主动禁用思考）；用户显式开启过则保留
-            enableThinking: p.enableThinking === true,
-            // v21：ollama 升级为 schema 约束解码（本地小模型条数对齐收益最大，
-            // 旧版 ollama 由运行时回退链降级）；显式 disabled 的用户保留原选择
-            ...(p.id === 'ollama' &&
-              p.structuredOutput !== 'disabled' && {
-                structuredOutput: 'json_schema',
-              }),
-          }),
-        }),
-      );
-    });
-
-  const customProviders = oldProviders
-    .filter(
-      (p) =>
-        p.type === 'openai' && !PROVIDER_TYPES.some((type) => type.id === p.id),
-    )
-    .map((p) => ({
-      ...p,
-      isAi: true,
-      useBatchTranslation: false,
-      batchTranslationSize: 10,
-      batchConcurrency: p.batchConcurrency || 1,
-      systemPrompt: shouldUpdateSystemPrompt(p.systemPrompt)
-        ? defaultSystemPrompt
-        : p.systemPrompt,
-      structuredOutput: p.structuredOutput || 'json_object',
-      // v21：回显锚定默认开启；用户显式关闭过则保留
-      echoAnchoring: p.echoAnchoring !== false,
-      // v22：思考模式默认关闭（= 主动禁用思考）；用户显式开启过则保留
-      enableThinking: p.enableThinking === true,
-    }));
-
-  // 添加缺失的内置服务商
-  const existingIds = builtinProviders.map((p) => p.id);
-  const missingProviders = PROVIDER_TYPES.filter(
-    (type) => type.isBuiltin && !existingIds.includes(type.id),
-  ).map((type) => ({
-    id: type.id,
-    name: type.name,
-    type: type.id,
-    isAi: type.isAi || false,
-    ...Object.fromEntries(
-      type.fields
-        .filter((field) => field.defaultValue !== undefined)
-        .map((field) => [field.key, field.defaultValue]),
-    ),
-  }));
-
-  return [
-    ...builtinProviders,
-    ...missingProviders,
-    ...customProviders,
-  ] as Provider[];
 }

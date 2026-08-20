@@ -35,6 +35,8 @@ export type Provider = {
   name: string;
   type: string;
   isAi: boolean;
+  /** 当前实例失败时，按顺序尝试的同 type 实例 ID。 */
+  fallbackProviderIds?: string[];
   [key: string]: any;
 };
 
@@ -1067,3 +1069,62 @@ export const CONFIG_TEMPLATES: Record<string, ProviderType> = {
     ],
   },
 };
+
+/**
+ * 复制服务实例时需要清空的凭据字段。
+ * endpoint、模型、批量参数等非凭据配置会保留，降低备用实例的填写成本。
+ */
+export function isProviderCredentialField(key: string): boolean {
+  return /(?:api)?key|secret|appid|token|password|access.?id/i.test(key);
+}
+
+/** 使用界面提供的本地化后缀生成不重复的同类型实例名。 */
+export function nextProviderInstanceName(
+  existing: Pick<Provider, 'name'>[] | undefined,
+  baseName: string,
+  suffixLabel: string,
+): string {
+  const suffix = suffixLabel.trim();
+  const originalBase = baseName.trim() || suffix;
+  const escapedSuffix = suffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const base = escapedSuffix
+    ? originalBase.replace(new RegExp(`\\s+${escapedSuffix}\\s+\\d+$`, 'i'), '')
+    : originalBase;
+  const names = new Set((existing ?? []).map((provider) => provider.name));
+  if (!names.has(base)) return base;
+
+  let index = 1;
+  while (names.has(`${base} ${suffix} ${index}`)) index += 1;
+  return `${base} ${suffix} ${index}`;
+}
+
+/**
+ * 从已有实例创建一个待填写凭据的副本。
+ * `idFactory` 可在单测中注入确定性 ID。
+ */
+export function cloneProviderForFallback(
+  source: Provider,
+  typeDefinition: ProviderType,
+  idFactory: () => string = () => {
+    const random =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    return `provider_${source.type}_${random}`;
+  },
+): Provider {
+  const clone: Provider = {
+    ...source,
+    id: idFactory(),
+    name: source.name,
+    fallbackProviderIds: undefined,
+  };
+
+  for (const field of typeDefinition.fields) {
+    if (isProviderCredentialField(field.key)) {
+      clone[field.key] = '';
+    }
+  }
+
+  return clone;
+}

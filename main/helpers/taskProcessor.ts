@@ -9,6 +9,7 @@ import { IFiles } from '../../types';
 import { isPinnedTaskConfigSnapshot } from '../../types/taskSnapshot';
 import { enforceSpeakerDiarizationTaskBoundary } from '../../types/speakerDiarization';
 import { ExtendedProvider, CustomParameterConfig } from '../../types/provider';
+import { resolveProviderFallbacks } from './providerMigration';
 import { configurationManager } from '../service/configurationManager';
 import { applyTaskEventToProjects } from './taskManager';
 import { getWorkItemById, saveWorkItem } from './workItemStore';
@@ -560,9 +561,18 @@ async function processNextTasks(event) {
 
           // 找不到服务商（'-1' 残留或已删除）时不加载扩展参数；
           // 是否报错由翻译阶段判定，转写等阶段照常执行
-          const extendedProvider = baseProvider
-            ? await createExtendedProvider(baseProvider)
-            : undefined;
+          const fallbackBaseProviders = resolveProviderFallbacks(
+            translationProviders,
+            baseProvider,
+          );
+          const providerCandidates = baseProvider
+            ? await Promise.all(
+                [baseProvider, ...fallbackBaseProviders].map((candidate) =>
+                  createExtendedProvider(candidate),
+                ),
+              )
+            : [];
+          const extendedProvider = providerCandidates[0];
 
           await runWithTaskContext(
             {
@@ -577,6 +587,7 @@ async function processNextTasks(event) {
                 task.formData,
                 hasOpenAiWhisper,
                 extendedProvider,
+                providerCandidates.slice(1),
               ),
           );
         } catch (error) {

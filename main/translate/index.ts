@@ -15,7 +15,7 @@ import {
   TRANSLATOR_MAP,
 } from './services/translationProvider';
 import { getSrtFileName, renderTemplate } from '../helpers/utils';
-import { logMessage } from '../helpers/storeManager';
+import { logMessage, store } from '../helpers/storeManager';
 import { IFiles, IFormData } from '../../types';
 import { ensureTempDir } from '../helpers/fileUtils';
 import { isTaskCancelledError } from '../helpers/taskContext';
@@ -42,6 +42,7 @@ export default async function translate(
   provider: Provider,
   onProgress?: (progress: number) => void,
   maxRetries?: number,
+  fallbackProviders?: Provider[],
 ): Promise<boolean> {
   const {
     translateContent,
@@ -192,6 +193,18 @@ export default async function translate(
       onProgress,
       handleTranslationResult,
       retryCount,
+      true,
+      undefined,
+      fallbackProviders,
+      (fallback) => {
+        const language = store.get('settings')?.language || 'zh';
+        event.sender.send(
+          'message',
+          language === 'en'
+            ? `${fallback.from.name} is temporarily unavailable. Continuing with ${fallback.to.name}`
+            : `翻译服务「${fallback.from.name}」暂时不可用，已切换到「${fallback.to.name}」继续翻译`,
+        );
+      },
     );
 
     logMessage('Translation completed', 'info');

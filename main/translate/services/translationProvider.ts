@@ -33,6 +33,7 @@ import {
   getActiveGlossaryResolution,
   logGlossaryConflicts,
 } from '../../helpers/glossaryManager';
+import { ProviderFallbackRunner } from './providerFallback';
 
 /** autoFree 默认回退链：Bing 免费 → Google 免费 → DeepLX */
 export const DEFAULT_FREE_FALLBACK_CHAIN = ['bingFree', 'googleFree', 'deeplx'];
@@ -73,6 +74,8 @@ export async function translateWithProvider(
   maxRetries: number = 0,
   useGlossary: boolean = true,
   onResponseMeta?: TranslationConfig['onResponseMeta'],
+  fallbackProviders?: Provider[],
+  onProviderFallback?: TranslationConfig['onProviderFallback'],
 ): Promise<TranslationResult[] | string[]> {
   const supportsGlossary = provider.isAi || provider.type === 'qwenMt';
   const glossaryResolution =
@@ -84,7 +87,7 @@ export async function translateWithProvider(
     );
   }
   const glossaryEntries = glossaryResolution?.entries;
-  const config = {
+  const config: TranslationConfig = {
     provider,
     sourceLanguage,
     targetLanguage,
@@ -92,10 +95,34 @@ export async function translateWithProvider(
     glossaryEntries,
     signal: getTaskSignal(),
     onResponseMeta,
+    fallbackProviders,
+    onProviderFallback,
+    fallbackRunner: undefined,
   };
 
+  const fallbackRunner = new ProviderFallbackRunner({
+    primary: provider,
+    fallbacks: fallbackProviders,
+    resolveTranslator: (candidate) => {
+      if (candidate.id === provider.id) return translator;
+      return TRANSLATOR_MAP[
+        candidate.type as keyof typeof TRANSLATOR_MAP
+      ] as unknown as typeof translator;
+    },
+    signal: config.signal,
+    onFallback: onProviderFallback,
+    log: logMessage,
+  });
+  config.fallbackRunner = fallbackRunner;
+
   logMessage(
-    `Translation started with provider: ${JSON.stringify(provider, null, 2)}`,
+    `Translation started with provider: ${JSON.stringify({
+      id: provider.id,
+      name: provider.name,
+      type: provider.type,
+      isAi: provider.isAi,
+      modelName: provider.modelName,
+    })}`,
     'info',
   );
   onProgress && onProgress(0);

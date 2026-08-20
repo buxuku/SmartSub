@@ -1,4 +1,9 @@
-import { TranslationConfig, TranslationResult, Subtitle } from '../types';
+import {
+  TranslationConfig,
+  TranslationResult,
+  Subtitle,
+  TranslatorFunction,
+} from '../types';
 import { DEFAULT_BATCH_SIZE } from '../constants';
 import { logMessage } from '../../helpers/storeManager';
 import { isConfigurationError } from '../utils/error';
@@ -25,6 +30,26 @@ export async function handleAPIBatchTranslation(
   maxRetries: number = 0,
 ): Promise<TranslationResult[]> {
   const { provider, sourceLanguage, targetLanguage, translator } = config;
+  const fallbackTranslator: TranslatorFunction = async (
+    text,
+    requestConfig,
+    from,
+    to,
+    options,
+  ) => {
+    if (!config.fallbackRunner?.hasFallbacks) {
+      return translator(text, requestConfig, from, to, options);
+    }
+    return config.fallbackRunner.run((activeProvider, activeTranslator) =>
+      activeTranslator(
+        text,
+        { ...requestConfig, ...activeProvider },
+        from,
+        to,
+        options,
+      ),
+    );
+  };
   const normalizedBatchSize = normalizeBatchSize(
     batchSize,
     DEFAULT_BATCH_SIZE.API,
@@ -60,7 +85,7 @@ export async function handleAPIBatchTranslation(
         logMessage(
           `API翻译批次 ${currentBatchIndex}/${totalBatches} (尝试 ${retryCount + 1}/${maxRetries + 1})`,
         );
-        const translatedContent = await translator(
+        const translatedContent = await fallbackTranslator(
           batchContents,
           provider,
           sourceLanguage,
