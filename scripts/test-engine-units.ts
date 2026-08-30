@@ -45,6 +45,8 @@ import { MirrorDownloader } from '../main/helpers/download/mirrorDownloader';
 import {
   canHaveEmbeddedSubtitle,
   parseSubtitleStreams,
+  shouldInvalidateEmbeddedSubtitleResult,
+  shouldUseEmbeddedSubtitles,
   srtHasCues,
 } from '../main/helpers/embeddedSubtitleParser';
 import { decideCloseIntent } from '../main/helpers/windowCloseDecision';
@@ -442,6 +444,16 @@ eq(
   isPinnedTaskConfigSnapshot({ dub: { engine: 'local' } }),
   true,
   'task snapshot: existing dubbing pinning remains supported',
+);
+eq(
+  isPinnedTaskConfigSnapshot({ useEmbeddedSubtitles: false }),
+  true,
+  'task snapshot: forcing ASR pins the task-level source choice',
+);
+eq(
+  isPinnedTaskConfigSnapshot({ useEmbeddedSubtitles: true }),
+  false,
+  'task snapshot: default embedded-subtitle preference stays editable',
 );
 
 // --- secondsToSrtTime ---
@@ -939,6 +951,37 @@ eq(canHaveEmbeddedSubtitle('.MP4'), true, 'embed: .MP4 case-insensitive');
 eq(canHaveEmbeddedSubtitle('.mp3'), false, 'embed: .mp3 audio skipped');
 eq(canHaveEmbeddedSubtitle('.avi'), false, 'embed: .avi skipped');
 eq(canHaveEmbeddedSubtitle(''), false, 'embed: empty ext skipped');
+
+// --- embedded subtitle: task-level preference (issue #419) ---
+eq(
+  shouldUseEmbeddedSubtitles(undefined),
+  true,
+  'embed: legacy task without preference keeps extraction enabled',
+);
+eq(
+  shouldUseEmbeddedSubtitles({ useEmbeddedSubtitles: true }),
+  true,
+  'embed: explicit preference enables extraction',
+);
+eq(
+  shouldUseEmbeddedSubtitles({ useEmbeddedSubtitles: false }),
+  false,
+  'embed: disabled preference forces ASR',
+);
+eq(
+  shouldInvalidateEmbeddedSubtitleResult(true, {
+    useEmbeddedSubtitles: false,
+  }),
+  true,
+  'embed: force ASR invalidates a prior embedded-subtitle result on retry',
+);
+eq(
+  shouldInvalidateEmbeddedSubtitleResult(false, {
+    useEmbeddedSubtitles: false,
+  }),
+  false,
+  'embed: force ASR still allows reuse of an existing ASR result',
+);
 
 // --- embedded subtitle: srtHasCues ---
 eq(

@@ -4,14 +4,7 @@
  * 替代可编辑的 InlineConfigBar——避免全局配置与本任务无关却可改的误导。
  */
 import React, { useMemo } from 'react';
-import {
-  AudioLines,
-  Diamond,
-  FileText,
-  Film,
-  Lock,
-  Users,
-} from 'lucide-react';
+import { AudioLines, Diamond, FileText, Film, Lock, Users } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -220,6 +213,13 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
 
       {needsTranscription && modelValue && (
         <SummaryItem label={t('configBar.model')} value={modelValue} />
+      )}
+
+      {needsTranscription && snapshot?.useEmbeddedSubtitles === false && (
+        <SummaryItem
+          label={t('configBar.embeddedSubtitles')}
+          value={t('snapshotBar.forceTranscription')}
+        />
       )}
 
       {needsTranscription && refineValue && (

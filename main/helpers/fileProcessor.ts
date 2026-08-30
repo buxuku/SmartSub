@@ -8,7 +8,12 @@ import {
   probeEmbeddedSubtitles,
   extractEmbeddedSubtitle,
 } from './audioProcessor';
-import { canHaveEmbeddedSubtitle, srtHasCues } from './embeddedSubtitleParser';
+import {
+  canHaveEmbeddedSubtitle,
+  shouldInvalidateEmbeddedSubtitleResult,
+  shouldUseEmbeddedSubtitles,
+  srtHasCues,
+} from './embeddedSubtitleParser';
 import { routeTranscription } from './transcriptionRouter';
 import {
   getDesiredChineseScript,
@@ -247,14 +252,20 @@ export async function processFile(
   const tempSrtExists = Boolean(
     file.tempSrtFile && fs.existsSync(file.tempSrtFile),
   );
+  const invalidateEmbeddedResult = shouldInvalidateEmbeddedSubtitleResult(
+    file.embeddedSubtitle,
+    formData,
+  );
   const resume = hasPipelineStages
     ? {
         /** 字幕已产出（任意交付格式；skip-all 或仅供合成烧录时够用） */
         subtitleProduced:
+          !invalidateEmbeddedResult &&
           (file as any).extractSubtitle === 'done' &&
           (srtExists || tempSrtExists),
         /** 字幕以 srt 形态可直接进翻译（交付物已转 vtt 等格式时不满足） */
         srtForTranslate:
+          !invalidateEmbeddedResult &&
           (file as any).extractSubtitle === 'done' &&
           srtExists &&
           /\.srt$/i.test(file.srtFile!),
@@ -267,6 +278,7 @@ export async function processFile(
               (file.translatedSrtFile && fs.existsSync(file.translatedSrtFile)),
           ),
         dubbingDone:
+          !invalidateEmbeddedResult &&
           (file as any).dubbing === 'done' &&
           Boolean(file.dubbedTrackPath && fs.existsSync(file.dubbedTrackPath)),
       }
@@ -480,9 +492,12 @@ export async function processFile(
 
       file.srtFile = path.join(directory, `${sourceSrtFileName}.srt`);
 
-      // 优先尝试直接抽取内封文本软字幕：命中则复用「提取/听写」两节点、跳过抽音频 + ASR
+      // 默认优先抽取内封文本软字幕；用户可显式关闭并强制走 ASR（issue #419）。
       let usedEmbedded = false;
-      if (canHaveEmbeddedSubtitle(fileExtension)) {
+      if (
+        shouldUseEmbeddedSubtitles(formData) &&
+        canHaveEmbeddedSubtitle(fileExtension)
+      ) {
         try {
           throwIfTaskCancelled();
           const textTracks = (await probeEmbeddedSubtitles(filePath)).filter(
@@ -563,6 +578,9 @@ export async function processFile(
 
       if (!usedEmbedded) {
         try {
+          // 重试从内封直提切到强制 ASR 时，必须同步清掉文件状态；否则后续铺开
+          // `{ ...file }` 的阶段事件会把旧 embeddedSubtitle:true 带回 renderer。
+          file.embeddedSubtitle = false;
           // 提取音频
           logMessage(`extract audio for ${fileName}`, 'info');
           event.sender.send('taskFileChange', {
