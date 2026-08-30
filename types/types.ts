@@ -219,6 +219,8 @@ export interface IFormData {
   model?: string;
   /** 云端听写：选中的云 ASR 服务商实例 id（transcriptionEngine==='cloud' 时必填）。 */
   asrProviderId?: string;
+  /** 优先直提媒体内封文本字幕；显式 false 时忽略内封字幕并强制使用 ASR。缺省 true。 */
+  useEmbeddedSubtitles?: boolean;
   translateContent:
     | 'onlyTranslate'
     | 'sourceAndTranslate'

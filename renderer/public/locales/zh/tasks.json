@@ -16,7 +16,8 @@
     "qualityOriginal": "原画质",
     "qualityHigh": "高画质",
     "qualityStandard": "标准画质",
-    "encoderHardware": "硬件加速"
+    "encoderHardware": "硬件加速",
+    "forceTranscription": "已关闭，强制听写"
   },
   "wizard": {
     "filesTitle": "第一步 · 放入文件",
@@ -112,7 +113,8 @@
     "targetLanguage": "翻译成",
     "provider": "翻译服务",
     "style": "输出内容",
-    "format": "字幕格式"
+    "format": "字幕格式",
+    "embeddedSubtitles": "优先内封字幕"
   },
   "manuscript": {
     "label": "参考文稿",
