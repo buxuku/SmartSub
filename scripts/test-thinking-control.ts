@@ -4,6 +4,7 @@
  *
  * 覆盖：
  * - resolveThinkingParams 映射表各分支（id/URL/型号嗅探）与未知服务商返回空
+ * - GPT-5.6 使用 none，且用户自定义 reasoning_effort 仍可覆盖自动值
  * - 纯思考模型跳过发参、开关为开不干预
  * - isThinkingParamRejectedError 拒绝判定关键词（含 axios 响应体形态）
  * - 会话级拒绝缓存写入/命中/清除
@@ -20,6 +21,7 @@ import {
   isThinkingOnlyModelName,
 } from '../main/service/thinkingControl';
 import { isThinkingActiveFromMeta } from '../main/helpers/thinkingModeDetector';
+import { ParameterProcessor } from '../main/helpers/parameterProcessor';
 import { PROVIDER_TYPES, CONFIG_TEMPLATES } from '../types/provider';
 
 let passed = 0;
@@ -88,6 +90,47 @@ function run(): void {
     resolveThinkingParams({ id: 'openai_789', modelName: 'gpt-5-mini' }),
     { reasoning_effort: 'minimal' },
     'map: gpt-5 model sniff → reasoning_effort minimal',
+  );
+  eq(
+    resolveThinkingParams({ id: 'openai_789', modelName: 'gpt-5.6-sol' }),
+    { reasoning_effort: 'none' },
+    'map: gpt-5.6-sol → reasoning_effort none',
+  );
+  eq(
+    resolveThinkingParams({ id: 'openai_789', modelName: 'GPT-5.6' }),
+    { reasoning_effort: 'none' },
+    'map: gpt-5.6 alias is case-insensitive',
+  );
+  eq(
+    resolveThinkingParams({ id: 'openai_789', modelName: 'gpt-5.6:latest' }),
+    { reasoning_effort: 'none' },
+    'map: gpt-5.6 provider suffix → reasoning_effort none',
+  );
+  eq(
+    resolveThinkingParams({ id: 'openai_789', modelName: 'gpt-5.60-sol' }),
+    { reasoning_effort: 'minimal' },
+    'map: non-gpt-5.6 prefix keeps legacy gpt-5 fallback',
+  );
+  const gpt56CustomProvider = {
+    id: 'openai_789',
+    name: 'OpenAI Compatible',
+    type: 'openai',
+    isAi: true,
+    modelName: 'gpt-5.6-sol',
+    customParameters: {
+      headerParameters: {},
+      bodyParameters: { reasoning_effort: 'low' },
+      configVersion: '1',
+      lastModified: 0,
+    },
+  };
+  eq(
+    ParameterProcessor.processCustomParameters(
+      gpt56CustomProvider,
+      resolveThinkingParams(gpt56CustomProvider) || {},
+    ).body,
+    { reasoning_effort: 'low' },
+    'map: custom reasoning_effort overrides gpt-5.6 automatic none',
   );
   eq(
     resolveThinkingParams({ id: 'azureopenai', modelName: 'o3-mini' }),
