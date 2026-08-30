@@ -84,6 +84,10 @@ const O_SERIES_MODEL_REGEX = /^o[134]([.:-]|$)/;
 /** GPT-5.6 系列不支持旧 GPT-5 的 minimal 档位，关闭思考应使用 none。 */
 const GPT_5_6_MODEL_REGEX = /^gpt-5\.6([.:-]|$)/;
 
+/** 已知不接受 reasoning_effort:none 的 Gemini OpenAI-compatible 型号。 */
+const GEMINI_NONE_UNSUPPORTED_MODEL_REGEX =
+  /^gemini-(?:3\.5-flash-lite|3\.6-flash(?:-lite)?)([.:-]|$)/;
+
 /**
  * 解析应注入请求体的思考关闭参数。
  * 返回 undefined 表示不干预：开关为开、纯思考模型、已缓存拒绝、或未命中映射
@@ -115,11 +119,13 @@ export function resolveThinkingParams(
   if (id === 'ollama' || type === 'ollama') {
     return { think: false };
   }
-  if (
+  const isGemini =
     id === 'Gemini' ||
     type === 'gemini' ||
-    matchesUrl(provider, 'generativelanguage.googleapis.com')
-  ) {
+    matchesUrl(provider, 'generativelanguage.googleapis.com');
+  if (isGemini) {
+    // 这些型号关闭思考时不发参数：none 会被端点拒绝，low 又不等价于关闭。
+    if (GEMINI_NONE_UNSUPPORTED_MODEL_REGEX.test(model)) return undefined;
     return { reasoning_effort: 'none' };
   }
   // deepseek 官方无思考参数：deepseek-chat 不思考 / deepseek-reasoner 必思考，
@@ -145,16 +151,37 @@ export function resolveThinkingParams(
 // 拒绝错误判定（design D4，镜像 isStructuredOutputUnsupportedError）
 // ============================================================
 
+function stringifyErrorPart(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value instanceof Error) return value.message;
+  if (value === undefined || value === null) return '';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function getErrorMessage(error: any): string {
-  // axios 类错误的真实原因在响应体里（如 Ollama 的 {"error": "json: unknown field \"think\""}），
-  // error.message 只有 "Request failed with status code 400"
-  return String(
-    error?.response?.data?.error ||
-      error?.response?.data?.message ||
-      error?.error?.message ||
-      error?.message ||
-      error,
+  // 同时收集 SDK / axios / 数组响应体，避免第三方兼容端点的真实错误被
+  // "400 status code (no body)" 覆盖。
+  return [
+    error?.response?.data,
+    error?.body,
+    error?.error,
+    error?.message,
+    error,
+  ]
+    .map(stringifyErrorPart)
+    .filter(Boolean)
+    .join(' ');
+}
+
+function getErrorStatus(error: any): number | undefined {
+  const status = Number(
+    error?.status ?? error?.response?.status ?? error?.response?.statusCode,
   );
+  return Number.isFinite(status) ? status : undefined;
 }
 
 /**
@@ -192,6 +219,88 @@ export function isThinkingParamRejectedError(error: unknown): boolean {
     '未知',
     '不允许',
   ].some((keyword) => message.includes(keyword));
+}
+
+/**
+ * 自动思考参数是否值得去参重试。
+ *
+ * 除明确的参数拒绝外，仅兼容 400/422 下两类常见不透明错误。认证、限流、
+ * 网络及服务端错误不会触发，避免把真正故障伪装成能力探测。
+ */
+export function shouldRetryWithoutAutomaticThinkingParams(
+  error: unknown,
+): boolean {
+  const status = getErrorStatus(error);
+  if (status !== undefined && status !== 400 && status !== 422) return false;
+  if (isThinkingParamRejectedError(error)) return true;
+
+  if (status !== 400 && status !== 422) return false;
+
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    message.includes('status code (no body)') ||
+    message.includes('request contains an invalid argument')
+  );
+}
+
+function hasExplicitThinkingParamOverride(
+  automaticParams: Record<string, any>,
+  explicitBodyParams?: Record<string, unknown>,
+): boolean {
+  if (!explicitBodyParams) return false;
+  const explicitKeys = new Set(Object.keys(explicitBodyParams));
+  return Object.keys(automaticParams).some((key) => {
+    if (explicitKeys.has(key)) return true;
+    // 参数编辑器中的通用 thinking 会按 provider 转成以下两种格式。
+    return key === 'enable_thinking' && explicitKeys.has('thinking');
+  });
+}
+
+export interface ThinkingParamFallbackOptions<T> {
+  provider: ThinkingControlProvider;
+  /** 用户显式配置的请求体参数；命中自动参数时禁止应用自行去参。 */
+  explicitBodyParams?: Record<string, unknown>;
+  signal?: AbortSignal;
+  attempt: () => Promise<T>;
+  onFallback?: (error: unknown) => void;
+}
+
+/**
+ * 同一请求模式内执行一次受控能力降级：自动参数失败后去参重试一次并缓存。
+ * 第二次失败直接透传，不循环，也不修改用户显式配置。
+ */
+export async function runWithThinkingParamFallback<T>(
+  options: ThinkingParamFallbackOptions<T>,
+): Promise<T> {
+  const { provider, explicitBodyParams, signal, attempt, onFallback } = options;
+  const automaticParams = resolveThinkingParams(provider);
+  const canRemoveAutomaticParams =
+    automaticParams !== undefined &&
+    !hasExplicitThinkingParamOverride(automaticParams, explicitBodyParams);
+
+  try {
+    return await attempt();
+  } catch (error) {
+    const rejectionWasExplicit = isThinkingParamRejectedError(error);
+    if (
+      !canRemoveAutomaticParams ||
+      signal?.aborted ||
+      !shouldRetryWithoutAutomaticThinkingParams(error)
+    ) {
+      throw error;
+    }
+
+    markThinkingParamRejected(provider);
+    onFallback?.(error);
+    try {
+      return await attempt();
+    } catch (retryError) {
+      // 不透明 400/422 可能来自别的参数；只有去参后成功才能确认能力不兼容。
+      // 明确的参数拒绝已经是充分证据，即使第二次暴露出另一个请求错误也保留缓存。
+      if (!rejectionWasExplicit) rejectedParamCache.delete(cacheKey(provider));
+      throw retryError;
+    }
+  }
 }
 
 // ============================================================

@@ -13,8 +13,7 @@ import {
 } from './structuredOutputFallback';
 import {
   resolveThinkingParams,
-  isThinkingParamRejectedError,
-  markThinkingParamRejected,
+  runWithThinkingParamFallback,
   extractOpenAIResponseMeta,
 } from './thinkingControl';
 
@@ -94,19 +93,9 @@ export async function translateWithAzureOpenAI(
       modelName: provider.modelName || deploymentName,
     };
 
-    const runTranslation = async () => {
-      const baseParams: any = {
-        model: undefined,
-        messages: [
-          { role: 'system', content: sysPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.3,
-        ...(resolveThinkingParams(thinkingProvider) || {}),
-      };
-
+    const runTranslation = async () =>
       // 结构化输出走共享回退链（json_schema → json_object → disabled）
-      return runWithStructuredOutputFallback({
+      runWithStructuredOutputFallback({
         startMode: resolveStructuredOutputMode(provider, 'json_schema'),
         strict: provider.strictStructuredOutput === true,
         signal: options?.signal,
@@ -117,44 +106,40 @@ export async function translateWithAzureOpenAI(
             `Azure OpenAI structured output ${from} failed, falling back to ${to}:`,
             error,
           ),
-        attempt: (mode) => {
-          const responseFormat = buildResponseFormat(
-            mode,
-            apiVersion,
-            options?.responseJsonSchema,
-          );
-          const requestParams = responseFormat
-            ? { ...baseParams, response_format: responseFormat }
-            : baseParams;
-          return openai.chat.completions.create(requestParams, {
+        attempt: (mode) =>
+          runWithThinkingParamFallback({
+            provider: thinkingProvider,
             signal: options?.signal,
-          });
-        },
+            onFallback: (error) =>
+              console.warn(
+                'Azure OpenAI rejected automatic reasoning_effort; retrying the same request mode without it:',
+                error,
+              ),
+            attempt: () => {
+              const baseParams: any = {
+                model: undefined,
+                messages: [
+                  { role: 'system', content: sysPrompt },
+                  { role: 'user', content: userPrompt },
+                ],
+                temperature: 0.3,
+                ...(resolveThinkingParams(thinkingProvider) || {}),
+              };
+              const responseFormat = buildResponseFormat(
+                mode,
+                apiVersion,
+                options?.responseJsonSchema,
+              );
+              const requestParams = responseFormat
+                ? { ...baseParams, response_format: responseFormat }
+                : baseParams;
+              return openai.chat.completions.create(requestParams, {
+                signal: options?.signal,
+              });
+            },
+          }),
       });
-    };
-
-    // 思考参数去参重试（design D4）：被拒则缓存并重跑完整调用
-    const thinkingParamsInjected =
-      resolveThinkingParams(thinkingProvider) !== undefined;
-    let completion;
-    try {
-      completion = await runTranslation();
-    } catch (error) {
-      if (
-        thinkingParamsInjected &&
-        !options?.signal?.aborted &&
-        isThinkingParamRejectedError(error)
-      ) {
-        markThinkingParamRejected(thinkingProvider);
-        console.warn(
-          'Azure OpenAI rejected reasoning_effort, retrying without it:',
-          error,
-        );
-        completion = await runTranslation();
-      } else {
-        throw error;
-      }
-    }
+    const completion = await runTranslation();
     throwIfSignalCancelled(options?.signal);
 
     options?.onResponseMeta?.(extractOpenAIResponseMeta(completion));

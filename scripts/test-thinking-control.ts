@@ -6,7 +6,7 @@
  * - resolveThinkingParams 映射表各分支（id/URL/型号嗅探）与未知服务商返回空
  * - GPT-5.6 使用 none，且用户自定义 reasoning_effort 仍可覆盖自动值
  * - 纯思考模型跳过发参、开关为开不干预
- * - isThinkingParamRejectedError 拒绝判定关键词（含 axios 响应体形态）
+ * - 思考参数拒绝判定与自动去参重试边界（含不透明 400/422）
  * - 会话级拒绝缓存写入/命中/清除
  * - appendNoThinkSoftSwitch 仅命中 qwen3 且 L1 不可用时注入
  * - v21 → v22 迁移的 enableThinking 写入语义（displayed via provider defaults）
@@ -19,9 +19,12 @@ import {
   clearThinkingParamRejection,
   appendNoThinkSoftSwitch,
   isThinkingOnlyModelName,
+  shouldRetryWithoutAutomaticThinkingParams,
+  runWithThinkingParamFallback,
 } from '../main/service/thinkingControl';
 import { isThinkingActiveFromMeta } from '../main/helpers/thinkingModeDetector';
 import { ParameterProcessor } from '../main/helpers/parameterProcessor';
+import { runWithStructuredOutputFallback } from '../main/service/structuredOutputFallback';
 import { PROVIDER_TYPES, CONFIG_TEMPLATES } from '../types/provider';
 
 let passed = 0;
@@ -40,7 +43,7 @@ function eq(actual: unknown, expected: unknown, name: string): void {
   }
 }
 
-function run(): void {
+async function run(): Promise<void> {
   // ==========================================================
   // resolveThinkingParams：映射表分支（design D2）
   // ==========================================================
@@ -85,6 +88,31 @@ function run(): void {
     }),
     { reasoning_effort: 'none' },
     'map: gemini → reasoning_effort none',
+  );
+  eq(
+    resolveThinkingParams({
+      id: 'Gemini',
+      modelName: 'gemini-3.5-flash-lite',
+    }),
+    undefined,
+    'map: gemini-3.5-flash-lite skips unsupported none',
+  );
+  eq(
+    resolveThinkingParams({
+      id: 'openai_gemini',
+      apiUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      modelName: 'gemini-3.6-flash',
+    }),
+    undefined,
+    'map: gemini-3.6-flash URL sniff skips unsupported none',
+  );
+  eq(
+    resolveThinkingParams({
+      id: 'Gemini',
+      modelName: 'gemini-3.6-flash-lite:latest',
+    }),
+    undefined,
+    'map: gemini-3.6-flash-lite provider suffix skips unsupported none',
   );
   eq(
     resolveThinkingParams({ id: 'openai_789', modelName: 'gpt-5-mini' }),
@@ -261,6 +289,207 @@ function run(): void {
   );
 
   // ==========================================================
+  // 不透明兼容错误与受控去参重试
+  // ==========================================================
+  eq(
+    shouldRetryWithoutAutomaticThinkingParams({
+      status: 400,
+      message: '400 status code (no body)',
+    }),
+    true,
+    'fallback: opaque OpenAI-compatible 400 is retryable',
+  );
+  eq(
+    shouldRetryWithoutAutomaticThinkingParams({
+      response: {
+        status: 422,
+        data: [
+          {
+            error: {
+              message: 'Request contains an invalid argument.',
+            },
+          },
+        ],
+      },
+    }),
+    true,
+    'fallback: array-shaped invalid-argument 422 is retryable',
+  );
+  eq(
+    shouldRetryWithoutAutomaticThinkingParams({
+      status: 401,
+      message: 'reasoning_effort is not supported',
+    }),
+    false,
+    'fallback: authentication status wins over parameter-like text',
+  );
+  eq(
+    shouldRetryWithoutAutomaticThinkingParams({
+      status: 401,
+      message: '401 Unauthorized',
+    }),
+    false,
+    'fallback: authentication error is not retryable',
+  );
+  eq(
+    shouldRetryWithoutAutomaticThinkingParams({
+      status: 429,
+      message: '429 rate limit exceeded',
+    }),
+    false,
+    'fallback: rate limit is not retryable',
+  );
+  eq(
+    shouldRetryWithoutAutomaticThinkingParams(new Error('Connection error.')),
+    false,
+    'fallback: network error is not retryable',
+  );
+  eq(
+    shouldRetryWithoutAutomaticThinkingParams({
+      status: 400,
+      message: '400 malformed subtitle payload',
+    }),
+    false,
+    'fallback: unrelated transparent 400 is not retryable',
+  );
+
+  const adaptiveProvider = {
+    id: 'adaptive_gpt56',
+    modelName: 'gpt-5.6-sol',
+  };
+  const adaptiveParams: Array<Record<string, any> | undefined> = [];
+  let adaptiveAttempts = 0;
+  const adaptiveResult = await runWithThinkingParamFallback({
+    provider: adaptiveProvider,
+    attempt: async () => {
+      adaptiveAttempts += 1;
+      adaptiveParams.push(resolveThinkingParams(adaptiveProvider));
+      if (adaptiveAttempts === 1) {
+        throw { status: 400, message: '400 status code (no body)' };
+      }
+      return 'ok';
+    },
+  });
+  eq(adaptiveResult, 'ok', 'fallback runner: returns second attempt result');
+  eq(adaptiveAttempts, 2, 'fallback runner: retries automatic param once');
+  eq(
+    adaptiveParams,
+    [{ reasoning_effort: 'none' }, undefined],
+    'fallback runner: second attempt observes rejection cache and removes param',
+  );
+  clearThinkingParamRejection(adaptiveProvider);
+
+  const nestedProvider = {
+    id: 'nested_gpt56',
+    modelName: 'gpt-5.6-sol',
+  };
+  const nestedModes: string[] = [];
+  const nestedResult = await runWithStructuredOutputFallback({
+    startMode: 'json_schema',
+    shouldFallback: () => true,
+    attempt: (mode) =>
+      runWithThinkingParamFallback({
+        provider: nestedProvider,
+        attempt: async () => {
+          nestedModes.push(mode);
+          if (resolveThinkingParams(nestedProvider)) {
+            throw { status: 400, message: '400 status code (no body)' };
+          }
+          return 'ok';
+        },
+      }),
+  });
+  eq(nestedResult, 'ok', 'fallback order: same-mode retry succeeds');
+  eq(
+    nestedModes,
+    ['json_schema', 'json_schema'],
+    'fallback order: removes thinking param before structured-output downgrade',
+  );
+  clearThinkingParamRejection(nestedProvider);
+
+  const explicitProvider = {
+    id: 'explicit_gpt56',
+    modelName: 'gpt-5.6-sol',
+  };
+  let explicitAttempts = 0;
+  let explicitError = '';
+  try {
+    await runWithThinkingParamFallback({
+      provider: explicitProvider,
+      explicitBodyParams: { reasoning_effort: 'low' },
+      attempt: async () => {
+        explicitAttempts += 1;
+        throw { status: 400, message: '400 status code (no body)' };
+      },
+    });
+  } catch (error) {
+    explicitError = (error as { message?: string })?.message || '';
+  }
+  eq(
+    explicitAttempts,
+    1,
+    'fallback runner: never removes user-explicit thinking param',
+  );
+  eq(
+    explicitError,
+    '400 status code (no body)',
+    'fallback runner: preserves explicit-param error',
+  );
+  eq(
+    hasThinkingParamRejection(explicitProvider),
+    false,
+    'fallback runner: explicit-param failure is not cached as automatic rejection',
+  );
+
+  const boundedProvider = {
+    id: 'bounded_qwen',
+    apiUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    modelName: 'qwen-plus',
+  };
+  let boundedAttempts = 0;
+  try {
+    await runWithThinkingParamFallback({
+      provider: boundedProvider,
+      attempt: async () => {
+        boundedAttempts += 1;
+        throw new Error('enable_thinking is not supported');
+      },
+    });
+  } catch {
+    // 第二次错误应原样透传，不能形成重试循环。
+  }
+  eq(boundedAttempts, 2, 'fallback runner: retries at most once');
+  eq(
+    hasThinkingParamRejection(boundedProvider),
+    true,
+    'fallback runner: explicit rejection remains cached after second error',
+  );
+  clearThinkingParamRejection(boundedProvider);
+
+  const opaqueProvider = {
+    id: 'opaque_gpt56',
+    modelName: 'gpt-5.6-sol',
+  };
+  let opaqueAttempts = 0;
+  try {
+    await runWithThinkingParamFallback({
+      provider: opaqueProvider,
+      attempt: async () => {
+        opaqueAttempts += 1;
+        throw { status: 400, message: '400 status code (no body)' };
+      },
+    });
+  } catch {
+    // 两次不透明错误无法证明 reasoning_effort 是根因。
+  }
+  eq(opaqueAttempts, 2, 'fallback runner: probes opaque 400 once');
+  eq(
+    hasThinkingParamRejection(opaqueProvider),
+    false,
+    'fallback runner: failed opaque probe rolls back rejection cache',
+  );
+
+  // ==========================================================
   // 会话级拒绝缓存（design D4）
   // ==========================================================
   const cachedProvider = { id: 'openai_777', modelName: 'qwen3:4b' };
@@ -421,4 +650,7 @@ function run(): void {
   if (failed > 0) process.exit(1);
 }
 
-run();
+void run().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
