@@ -2868,6 +2868,15 @@ eq(
     ],
     'merge: skip when joined width would exceed maxWidth',
   );
+  // 阿拉伯文等非 ASCII 字母也属于实义字符，完整词不能被误判成碎片并回上一条。
+  eq(
+    mergeShortCues([T('0', '1.0', 'عيون'), T('1.0', '1.4', 'ماما.')]),
+    [
+      ['00:00:00,000', '00:00:01,000', 'عيون'],
+      ['00:00:01,000', '00:00:01,400', 'ماما.'],
+    ],
+    'merge: Arabic words are not misclassified as short fragments',
+  );
 }
 
 // --- subtitleSegmentation: enforceMinDisplayDuration（最短可读显示时长护栏，D15） ---
@@ -4729,7 +4738,7 @@ eq(
 );
 
 // ===========================================================================
-// ElevenLabs Scribe：Base URL 归一 / 端点拼接 / 词映射（过滤 spacing）/ 重试判定
+// ElevenLabs Scribe：Base URL 归一 / 端点拼接 / 词映射（折叠 spacing）/ 重试判定
 // ===========================================================================
 
 // --- elevenlabsUtils: normalizeElevenLabsBaseURL ---
@@ -4771,14 +4780,27 @@ eq(
   mapElevenLabsWords([
     { text: 'Hello', start: 0, end: 0.4, type: 'word' },
     { text: ' ', start: 0.4, end: 0.4, type: 'spacing' },
+    { text: '\t', start: 0.4, end: 0.4, type: 'spacing' },
     { text: 'world', start: 0.4, end: 0.9, type: 'word' },
     { text: '[laughs]', start: 0.9, end: 1.2, type: 'audio_event' },
   ]),
   [
     { word: 'Hello', start: 0, end: 0.4 },
-    { word: 'world', start: 0.4, end: 0.9 },
+    { word: ' world', start: 0.4, end: 0.9 },
   ],
-  'eleven: keeps word tokens, drops spacing + audio_event',
+  'eleven: folds spacing into next word and drops audio_event',
+);
+eq(
+  wordCuesFromResult({
+    words: mapElevenLabsWords([
+      { text: 'Hello', start: 0, end: 0.4, type: 'word' },
+      { text: ' ', start: 0.4, end: 0.4, type: 'spacing' },
+      { text: 'world.', start: 0.4, end: 0.9, type: 'word' },
+    ]),
+    text: 'Hello world.',
+  }).map((cue) => cue[2]),
+  ['Hello world.'],
+  'eleven: explicit spacing does not duplicate Latin automatic spacing',
 );
 eq(
   mapElevenLabsWords([
@@ -4793,6 +4815,35 @@ eq(
   'eleven: no-type kept; drops non-finite times',
 );
 eq(mapElevenLabsWords(null), [], 'eleven: non-array -> []');
+
+const elevenArabicText = 'ماما أبي ألعب بالآيباد. طيب يا عيون ماما.';
+const elevenArabicWords = mapElevenLabsWords([
+  { text: 'ماما', start: 0, end: 0.4, type: 'word' },
+  { text: ' ', start: 0.4, end: 0.4, type: 'spacing' },
+  { text: 'أبي', start: 0.4, end: 0.7, type: 'word' },
+  { text: ' ', start: 0.7, end: 0.7, type: 'spacing' },
+  { text: 'ألعب', start: 0.7, end: 1, type: 'word' },
+  { text: ' ', start: 1, end: 1, type: 'spacing' },
+  { text: 'بالآيباد.', start: 1, end: 1.5, type: 'word' },
+  { text: ' ', start: 1.5, end: 1.5, type: 'spacing' },
+  { text: 'طيب', start: 1.5, end: 1.8, type: 'word' },
+  { text: ' ', start: 1.8, end: 1.8, type: 'spacing' },
+  { text: 'يا', start: 1.8, end: 2, type: 'word' },
+  { text: ' ', start: 2, end: 2, type: 'spacing' },
+  { text: 'عيون', start: 2, end: 2.3, type: 'word' },
+  { text: ' ', start: 2.3, end: 2.3, type: 'spacing' },
+  { text: 'ماما.', start: 2.3, end: 2.7, type: 'word' },
+]);
+eq(
+  wordCuesFromResult({
+    words: elevenArabicWords,
+    text: elevenArabicText,
+  })
+    .map((cue) => cue[2])
+    .join(' '),
+  elevenArabicText,
+  'eleven: issue #449 Arabic spacing survives through final subtitle cue',
+);
 
 // --- elevenlabsUtils: isRetriableStatus ---
 eq(isRetriableStatus(429), true, 'eleven: 429 retriable');
