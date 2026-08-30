@@ -16,8 +16,7 @@ import {
 } from './structuredOutputFallback';
 import {
   resolveThinkingParams,
-  isThinkingParamRejectedError,
-  markThinkingParamRejected,
+  runWithThinkingParamFallback,
   appendNoThinkSoftSwitch,
   extractOpenAIResponseMeta,
 } from './thinkingControl';
@@ -354,20 +353,10 @@ export async function translateWithOpenAI(
       console.log('No custom parameters configured for this provider');
     }
 
-    // 每次执行时重新构造请求参数：思考参数被拒后重试时（拒绝缓存已写入）
-    // 会自动去掉思考参数并按需启用 /no_think 软开关（design D4/D5）
-    const runTranslation = () => {
-      const baseParams = createBaseParams(text, provider);
-      console.log('Request params:', {
-        model: baseParams.model,
-        temperature: baseParams.temperature,
-        customHeaders:
-          Object.keys(customHeaders).length > 0 ? customHeaders : 'none',
-      });
-
+    const runTranslation = () =>
       // 根据结构化输出配置选择调用方式，失败时按共享回退链降级：
-      // json_schema 任何失败都值得降级重试；json_object 仅在服务明确不支持时降级
-      return runWithStructuredOutputFallback({
+      // 每个模式先完成思考参数去参探测，再决定是否降级结构化输出。
+      runWithStructuredOutputFallback({
         startMode: getStructuredOutputMode(provider),
         strict: provider.strictStructuredOutput === true,
         signal: options?.signal,
@@ -379,34 +368,36 @@ export async function translateWithOpenAI(
             error,
           ),
         attempt: (mode) =>
-          mode === 'json_schema'
-            ? callWithJsonSchema(openai, baseParams, options)
-            : callWithStandardAPI(openai, baseParams, mode, options),
+          runWithThinkingParamFallback({
+            provider,
+            explicitBodyParams:
+              extendedProvider.customParameters?.bodyParameters,
+            signal: options?.signal,
+            onFallback: (error) =>
+              console.warn(
+                `Automatic thinking control param rejected by ${provider.id || provider.apiUrl}; retrying the same request mode without it:`,
+                error,
+              ),
+            attempt: () => {
+              // 拒绝缓存可能刚在首次失败后写入，每次尝试都必须重新构造参数。
+              const baseParams = createBaseParams(text, provider);
+              console.log('Request params:', {
+                model: baseParams.model,
+                temperature: baseParams.temperature,
+                structuredOutputMode: mode,
+                customHeaders:
+                  Object.keys(customHeaders).length > 0
+                    ? customHeaders
+                    : 'none',
+              });
+              return mode === 'json_schema'
+                ? callWithJsonSchema(openai, baseParams, options)
+                : callWithStandardAPI(openai, baseParams, mode, options);
+            },
+          }),
       });
-    };
 
-    // 思考参数去参重试（openspec: ai-thinking-mode-control D4）：
-    // 必须在结构化输出回退链外层——参数被拒时内层降级拿到的是同一错误，
-    // 只有去掉思考参数重跑完整调用才有意义。缓存后同会话不再重复失败。
-    const thinkingParamsInjected =
-      resolveThinkingParams(provider) !== undefined;
-    try {
-      return await runTranslation();
-    } catch (error) {
-      if (
-        thinkingParamsInjected &&
-        !options?.signal?.aborted &&
-        isThinkingParamRejectedError(error)
-      ) {
-        markThinkingParamRejected(provider);
-        console.warn(
-          `Thinking control param rejected by provider ${provider.id || provider.apiUrl}, retrying without it:`,
-          error,
-        );
-        return await runTranslation();
-      }
-      throw error;
-    }
+    return await runTranslation();
   } catch (error) {
     if (options?.signal?.aborted) throw new TaskCancelledError();
     console.error('OpenAI translation error:', error);
