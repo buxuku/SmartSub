@@ -81,6 +81,9 @@ function matchesUrl(provider: ThinkingControlProvider, needle: string) {
 /** o1/o3/o4 系推理模型（避免误伤 gpt-4o 等含 "o" 型号，锚定开头） */
 const O_SERIES_MODEL_REGEX = /^o[134]([.:-]|$)/;
 
+/** GPT-5.6 系列不支持旧 GPT-5 的 minimal 档位，关闭思考应使用 none。 */
+const GPT_5_6_MODEL_REGEX = /^gpt-5\.6([.:-]|$)/;
+
 /**
  * 解析应注入请求体的思考关闭参数。
  * 返回 undefined 表示不干预：开关为开、纯思考模型、已缓存拒绝、或未命中映射
@@ -125,6 +128,9 @@ export function resolveThinkingParams(
     return undefined;
   }
   // 型号嗅探（OpenAI 官方/Azure 部署/聚合商透传均适用，design D9）
+  if (GPT_5_6_MODEL_REGEX.test(model)) {
+    return { reasoning_effort: 'none' };
+  }
   if (model.startsWith('gpt-5')) {
     return { reasoning_effort: 'minimal' };
   }
