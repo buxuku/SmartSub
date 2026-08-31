@@ -104,6 +104,13 @@ export function resolveThinkingParams(
   const type = provider.type || provider.providerType || '';
   const model = (provider.modelName || '').toLowerCase();
 
+  // LiteLLM normalizes thinking/reasoning params across providers and drops
+  // unsupported ones at the gateway, so we must not inject provider-specific
+  // thinking params here. Injecting them reintroduces failures such as Gemini
+  // 2.5 rejecting reasoning_effort:'none' behind an OpenAI-compatible endpoint
+  // (issue #439); let the gateway handle it instead.
+  if (id === 'litellm' || type === 'litellm') return undefined;
+
   if (id === 'qwen' || matchesUrl(provider, 'dashscope.aliyuncs.com')) {
     return { enable_thinking: false };
   }

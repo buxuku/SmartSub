@@ -47,6 +47,9 @@ export const TRANSLATOR_MAP = {
   openai: openaiTranslator,
   deepseek: openaiTranslator,
   DeerAPI: openaiTranslator,
+  // LiteLLM exposes an OpenAI-compatible proxy endpoint, so it reuses the
+  // OpenAI translator and routes to 100+ providers behind the gateway.
+  litellm: openaiTranslator,
   aliyun: aliyunTranslator,
   Gemini: openaiTranslator,
   qwen: openaiTranslator,
