@@ -86,6 +86,7 @@ import {
   resolveTtsVoiceLabel,
 } from '../../types/ttsProvider';
 import { loadDubbingSpeakerMetadata } from '../../main/helpers/dubbing/speakerMetadata';
+import { resolveTtsModelRequestForVoice } from '../../main/helpers/dubbing/ttsLanguageRules';
 
 let passed = 0;
 let failed = 0;
@@ -108,6 +109,63 @@ function ok(cond: boolean, name: string): void {
     failed++;
     console.error(`✗ ${name}`);
   }
+}
+
+// ── Kokoro 多语音色：英文 sid 不加载中文数字 FST（issue #426）──────────────
+
+{
+  const kokoro = {
+    id: 'kokoro-multi-lang-v1_1',
+    defaultVoiceId: '10',
+    voices: [
+      { id: '0', lang: 'en' as const },
+      { id: '1', lang: 'en' as const },
+      { id: '2', lang: 'en' as const },
+      { id: '10', lang: 'zh' as const },
+    ],
+  };
+  const baseModel = {
+    modelType: 'kokoro',
+    ruleFsts:
+      '/models/kokoro/phone-zh.fst,/models/kokoro/date-zh.fst,/models/kokoro/number-zh.fst',
+  };
+
+  for (const voiceId of ['0', '1', '2']) {
+    const englishModel = resolveTtsModelRequestForVoice(
+      kokoro,
+      baseModel,
+      voiceId,
+    );
+    eq(
+      englishModel.ruleFsts,
+      undefined,
+      `kokoro: 英文音色 ${voiceId} 不加载中文数字 FST`,
+    );
+  }
+
+  eq(
+    resolveTtsModelRequestForVoice(kokoro, baseModel, '10').ruleFsts,
+    baseModel.ruleFsts,
+    'kokoro: 中文音色继续加载中文数字 FST',
+  );
+  eq(
+    resolveTtsModelRequestForVoice(kokoro, baseModel, 'missing').ruleFsts,
+    baseModel.ruleFsts,
+    'kokoro: 未知音色按默认中文音色回退',
+  );
+  ok(Boolean(baseModel.ruleFsts), 'kokoro: 语言适配不修改基础模型请求');
+
+  const vits = {
+    id: 'vits-zh-aishell3',
+    defaultVoiceId: '0',
+    voices: [{ id: '0', lang: 'zh' as const }],
+  };
+  const vitsModel = { modelType: 'vits', ruleFsts: '/models/vits/number.fst' };
+  eq(
+    resolveTtsModelRequestForVoice(vits, vitsModel, '0').ruleFsts,
+    vitsModel.ruleFsts,
+    'vits: 非 Kokoro 模型不受影响',
+  );
 }
 
 function cue(
