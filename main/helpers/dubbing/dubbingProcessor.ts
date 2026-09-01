@@ -21,6 +21,7 @@ import {
   type SubtitleCue,
 } from '../subtitleFormats';
 import { normalizeDubbingSpeechText } from './textNormalization';
+import { resolveTtsModelRequestForVoice } from './ttsLanguageRules';
 import {
   computeSlots,
   estimateDurationMs,
@@ -616,7 +617,7 @@ function buildEngineAdapter(
       synthesize: async (text, voiceId, speed, outWavPath, signal) =>
         runSynthesize(
           {
-            model,
+            model: resolveTtsModelRequestForVoice(spec, model, voiceId),
             text,
             sid: resolveTtsVoiceSid(spec, voiceId),
             speed,
