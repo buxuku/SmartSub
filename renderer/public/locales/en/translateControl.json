@@ -79,7 +79,7 @@
   "siliconflowApiKeyTips": "SiliconFlow API Key — create in <a href='https://cloud.siliconflow.cn/account/ak' style='color: blue'>API Key Management</a>.",
   "qwenApiUrlTips": "Qwen OpenAI-compatible endpoint — DashScope default URL, usually no change needed.",
   "qwenMtApiUrlTips": "Dedicated Qwen-MT OpenAI-compatible endpoint. Each request sends one user message and specifies languages and terms through translation_options.",
-  "qwenApiKeyTips": "DashScope API Key — get one from the <a href='https://dashscope.console.aliyun.com/apiKey' style='color: blue'>Bailian Console</a>.",
+  "qwenApiKeyTips": "DashScope API Key — get one from the <a href='https://bailian.console.aliyun.com/?tab=model#/api-key' style='color: blue'>Bailian Console</a>.",
   "openaiApiUrlTips": "OpenAI-compatible API base URL, usually ending in /v1, e.g. https://api.openai.com/v1. Do not paste a model detail page or /chat/completions endpoint — SmartSub appends the chat path automatically.",
   "openaiModelNameTips": "Enter the exact model id from your provider, e.g. hunyuan-3.0-preview. If the test fails with a response_format error, set Structured Output to Disabled.",
   "openaiApiKeyTips": "OpenAI API Key — create at the <a href='https://platform.openai.com/api-keys' style='color: blue'>OpenAI Platform</a>.",
