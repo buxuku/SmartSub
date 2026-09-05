@@ -22,7 +22,7 @@ AI 翻译请求的思考模式控制：字幕翻译场景思考几乎零质量�
 
 ### Requirement: 服务商感知参数映射
 
-思考禁用逻辑 SHALL 按服务商 id、apiUrl、modelName 嗅探下发对应参数：qwen/dashscope 与 siliconflow 用 `enable_thinking: false`；火山方舟 URL 用 `thinking: {type: "disabled"}`；ollama 用顶层 `think: false`；Gemini 用 `reasoning_effort: "none"`；型号命中 gpt-5 系用 `reasoning_effort: "minimal"`、o 系推理模型用 `reasoning_effort: "low"`。未命中任何映射规则的服务商（含 deepseek、DeerAPI、未知自定义服务商）MUST 不下发思考参数。
+思考禁用逻辑 SHALL 按服务商 id、apiUrl、modelName 嗅探下发对应参数：qwen/dashscope、siliconflow 与 Atlas Cloud（透传 `openai/` 前缀型号时除外）用 `enable_thinking: false`；火山方舟 URL 用 `thinking: {type: "disabled"}`；ollama 用顶层 `think: false`；Gemini 用 `reasoning_effort: "none"`；型号命中 gpt-5 系用 `reasoning_effort: "minimal"`、o 系推理模型用 `reasoning_effort: "low"`。未命中任何映射规则的服务商（含 deepseek、DeerAPI、未知自定义服务商）MUST 不下发思考参数。
 
 #### Scenario: qwen 下发布尔参数
 
