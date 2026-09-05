@@ -19,7 +19,7 @@ keywords:
 | 类别         | 服务                                                                                                                                                                                       | 免费情况             | 质量特点                         |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------- | -------------------------------- |
 | **免费起步** | [内置免费翻译](./free)、[Ollama 本地模型](./ollama)、[DeepLX](./deeplx)、[谷歌翻译](./google)                                                                                              | 免费为主             | 日常够用，零或低成本             |
-| **AI 翻译**  | [DeepSeek](./deepseek)、[Gemini](./gemini)、[通义千问](./qwen)、[硅基流动](./siliconflow)、[DeerAPI](./deerapi)、[Azure OpenAI](./azure-openai)、[自定义 OpenAI 兼容](./openai-compatible) | 部分有免费额度       | 语义准确、可调提示词、支持术语表 |
+| **AI 翻译**  | [DeepSeek](./deepseek)、[Gemini](./gemini)、[通义千问](./qwen)、[硅基流动](./siliconflow)、[DeerAPI](./deerapi)、[Azure OpenAI](./azure-openai)、[OrcaRouter](./orcarouter)、[自定义 OpenAI 兼容](./openai-compatible) | 部分有免费额度       | 语义准确、可调提示词、支持术语表 |
 | **传统机翻** | [百度](./baidu)、[阿里云](./aliyun)、[火山](./volcengine)、[豆包](./doubao)、[小牛](./niutrans)、[腾讯](./tencent)、[讯飞](./xunfei)、[微软](./azure)                                      | 多家有月度免费字符量 | 稳定快速、按量计费，适合大批量   |
 
 ## 按需求推荐
