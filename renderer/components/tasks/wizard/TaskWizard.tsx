@@ -97,12 +97,18 @@ import type {
   VideoQuality,
 } from '../../../../types/subtitleMerge';
 import { stripSpeakerDiarizationConfig } from '../../../../types/speakerDiarization';
+import DubbingLanguageSelect from '../../dubbing/DubbingLanguageSelect';
+import {
+  localTtsLanguageError,
+  resolveTtsLanguage,
+} from '../../../../types/ttsLanguage';
 
 type GoalKey = 'translate' | 'dub' | 'video';
 
 /** 工作台同款配音记忆配置（同 key 共享，向导改动同步为工作台默认） */
 interface PersistedDubbing {
   engineKey: string;
+  language?: string;
   voice: string;
   globalSpeed: number;
   cloneQuality?: 'standard' | 'high';
@@ -117,6 +123,7 @@ export default function TaskWizard() {
     typeof router.query.locale === 'string' ? router.query.locale : 'zh';
   const { t } = useTranslation('tasks');
   const { t: tMerge } = useTranslation('subtitleMerge');
+  const { t: commonT } = useTranslation('common');
 
   // ── 文件区 ────────────────────────────────────────────────────────────────
   // 支持三种输入形态：纯媒体（转写起步）、纯字幕（翻译/配音起步）、
@@ -463,6 +470,24 @@ export default function TaskWizard() {
     );
   }, [activeEngine, dubPersisted.voice]);
 
+  const automaticDubLanguage = resolveTtsLanguage({
+    subtitleLanguage: translateOn
+      ? formData?.targetLanguage
+      : formData?.sourceLanguage,
+    voiceLanguage: activeEngine?.voices.find((v) => v.id === activeVoice)?.lang,
+  });
+  const effectiveDubLanguage = resolveTtsLanguage({
+    language: dubPersisted.language,
+    subtitleLanguage: automaticDubLanguage,
+  });
+  const unsupportedDubLanguage =
+    activeEngine?.kind === 'local'
+      ? localTtsLanguageError(
+          activeEngine.key.slice('local:'.length),
+          effectiveDubLanguage,
+        )
+      : undefined;
+
   // ── 合成配置 ──────────────────────────────────────────────────────────────
   const [composeSubtitle, setComposeSubtitle] = useState<
     'hard' | 'soft' | 'none'
@@ -642,6 +667,7 @@ export default function TaskWizard() {
             ? `local:${dub.engine.modelId}`
             : `cloud:${dub.engine.providerId}`,
         voice: dub.voice,
+        language: dub.language || 'auto',
         globalSpeed: dub.globalSpeed || 1,
         cloneQuality: dub.cloneQuality ?? prev.cloneQuality,
         localConcurrency: dub.localConcurrency ?? prev.localConcurrency,
@@ -746,6 +772,14 @@ export default function TaskWizard() {
         href: `/${locale}/ttsServices`,
       });
     }
+    if (dubOn && unsupportedDubLanguage) {
+      list.push({
+        key: 'tts-language',
+        text: commonT('ttsLanguageUnsupported', {
+          language: unsupportedDubLanguage,
+        }),
+      });
+    }
     if (goals.video && !videoAllowed) {
       list.push({ key: 'video', text: t('wizard.blockVideoNeedsMedia') });
     }
@@ -803,6 +837,8 @@ export default function TaskWizard() {
     dubOn,
     activeEngine,
     activeVoice,
+    unsupportedDubLanguage,
+    commonT,
     goals.video,
     videoAllowed,
     videoOn,
@@ -837,6 +873,7 @@ export default function TaskWizard() {
         config.dub = {
           engine: dubEngine,
           voice: activeVoice,
+          language: dubPersisted.language || 'auto',
           globalSpeed: dubPersisted.globalSpeed || 1,
           cloneQuality: dubPersisted.cloneQuality ?? 'standard',
           localConcurrency: dubPersisted.localConcurrency ?? 1,
@@ -900,6 +937,7 @@ export default function TaskWizard() {
               dub: {
                 engine: dubEngine,
                 voice: activeVoice,
+                language: dubPersisted.language || 'auto',
                 globalSpeed: dubPersisted.globalSpeed || 1,
                 cloneQuality: dubPersisted.cloneQuality ?? 'standard',
                 localConcurrency: dubPersisted.localConcurrency ?? 1,
@@ -1312,6 +1350,23 @@ export default function TaskWizard() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Label className="text-xs text-muted-foreground">
+                {commonT('ttsLanguage')}
+              </Label>
+              <div className="w-[180px] max-w-full">
+                <DubbingLanguageSelect
+                  value={dubPersisted.language}
+                  resolved={automaticDubLanguage}
+                  onChange={(language) =>
+                    setDubPersisted((prev: PersistedDubbing) => ({
+                      ...prev,
+                      language,
+                    }))
+                  }
+                />
+              </div>
             </div>
             <div className="flex items-center gap-1.5">
               <Label className="text-xs text-muted-foreground">

@@ -576,6 +576,46 @@ const ttsConfig = require(
 {
   // 中文数字归一化（zipvoice 无 ruleFsts，阿拉伯数字会读成英文）。
   const { normalizeChineseCloneText } = ttsConfig;
+  for (const [text, language, expected] of [
+    ['90%', 'zh', '百分之九十'],
+    ['2026', 'zh', '二千零二十六'],
+    ['90%', 'en', '90%'],
+    [
+      'The project is 90% complete, 小明.',
+      'en',
+      'The project is 90% complete, 小明.',
+    ],
+    [
+      'The project is 90% complete, 小明.',
+      undefined,
+      'The project is 90% complete, 小明.',
+    ],
+    ['価格は1500円です。', undefined, '価格は1500円です。'],
+    ['价格1,234.56元', 'zh-CN', '价格一千二百三十四点五六元'],
+    ['总量100,000,000', 'zh', '总量一亿'],
+    ['增长-3.5%', 'zh', '增长负百分之三点五'],
+    ['９０％', 'zh-Hant', '百分之九十'],
+    ['2026-09-05', 'zh', '二零二六年九月五日'],
+    ['2024/02/29', 'zh', '二零二四年二月二十九日'],
+    ['2026/02/29', 'zh', '2026/02/29'],
+    ['电话010-12345678', 'zh', '电话零一零，一二三四五六七八'],
+    ['编号007', 'zh', '编号零零七'],
+    ['版本1.2.3', 'zh', '版本1.2.3'],
+    ['v1.2.3', 'zh', 'v1.2.3'],
+    ['地址192.168.1.1', 'zh', '地址192.168.1.1'],
+    ['https://example.com/v1/2026', 'zh', 'https://example.com/v1/2026'],
+    ['价格1,00元', 'zh', '价格1,00元'],
+    ['03/04/2026', 'zh', '03/04/2026'],
+    ['总数9,007,199,254,740,992', 'zh', '总数9,007,199,254,740,992'],
+    ['邮箱hello2026@example.com', 'zh', '邮箱hello2026@example.com'],
+    ['编号A123和123B', 'zh', '编号A123和123B'],
+    ['时间12:30和范围10-20', 'zh', '时间12:30和范围10-20'],
+  ])
+    eq(
+      normalizeChineseCloneText(text, language),
+      expected,
+      `nzh: ${language || 'auto'} ${text}`,
+    );
   eq(
     normalizeChineseCloneText('今天是2020年6月25日'),
     '今天是二零二零年六月二十五日',

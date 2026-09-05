@@ -288,34 +288,94 @@ function intToChinese(n) {
   }
   // 口语惯例：10–19 开头的「一十」省成「十」。
   if (out.startsWith('一十')) out = out.slice(1);
-  return out;
+  return out.replace(/零$/, '');
 }
 
 /**
- * 中文主导文本的数字归一化：年份逐位、百分比、小数、日期/普通整数。
- * 无 CJK 字符（纯外文行）原样返回——英文读数字本就正确。
+ * Chinese speech input only. Explicit locale also covers numeric-only cues.
+ * Without a locale, retain a conservative fallback for standalone worker clients.
  * @param {string} text
+ * @param {string} [language]
  */
-function normalizeChineseCloneText(text) {
+function normalizeChineseCloneText(text, language) {
   const raw = String(text || '');
-  if (!/[\u4e00-\u9fff]/.test(raw)) return raw;
-  let t = raw;
-  // 年份（2–4 位 + 年）逐位：2020年 → 二零二零年。
-  t = t.replace(/(\d{2,4})(?=年)/g, (m) => digitByDigit(m));
-  // 百分比：3.5% → 百分之三点五。
-  t = t.replace(/(\d+)\.(\d+)%/g, (_m, i, f) => {
-    return `百分之${intToChinese(parseInt(i, 10))}点${digitByDigit(f)}`;
+  const locale = String(language || '')
+    .toLowerCase()
+    .split(/[-_]/)[0];
+  if (locale && locale !== 'auto' && locale !== 'zh') return raw;
+  if (!locale || locale === 'auto') {
+    const han = (raw.match(/[\u4e00-\u9fff]/g) || []).length;
+    const latin = (raw.match(/[a-z]/gi) || []).length;
+    if (!han || han * 3 < latin || /[\u3040-\u30ff\uac00-\ud7af]/.test(raw))
+      return raw;
+  }
+
+  // Match protected structures first, then whole numeric tokens. A malformed
+  // separator sequence must not be partially converted by a later regex.
+  const tokens =
+    /https?:\/\/[^\s，。！？]+|[\w.+-]+@[\w.-]+\.[a-z]+|[a-z][a-z\d_.+-]*\d[a-z\d_.+-]*|[+-]?[\d０-９]+(?:[.,，．/：:\-][\d０-９]+)*(?:[%％])?/gi;
+  return raw.replace(tokens, (token, offset) => {
+    if (/[a-z@]/i.test(token)) return token;
+    if (
+      /[a-z_]/i.test(raw[offset - 1] || '') ||
+      /^[a-z_]/i.test(raw.slice(offset + token.length))
+    )
+      return token;
+    const value = token
+      .replace(/[０-９]/g, (ch) => String(ch.charCodeAt(0) - 0xff10))
+      .replace(/，/g, ',')
+      .replace(/．/g, '.')
+      .replace(/％/g, '%');
+    const after = raw.slice(offset + token.length);
+    const before = raw.slice(Math.max(0, offset - 8), offset);
+    // Versions/IP addresses, ranges, clocks and ambiguous slash dates remain intact.
+    if (/(?:版本|version|\bv)\s*$/i.test(before)) return token;
+    const date = /^(\d{4})([-/])(\d{1,2})\2(\d{1,2})$/.exec(value);
+    if (date) {
+      const year = Number(date[1]),
+        month = Number(date[3]),
+        day = Number(date[4]);
+      const days = [
+        31,
+        year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28,
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+      ];
+      return month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1]
+        ? `${digitByDigit(date[1])}年${intToChinese(month)}月${intToChinese(day)}日`
+        : token;
+    }
+    if (/^(?:0\d{2,3}-\d{7,8}|1[3-9]\d-\d{4}-\d{4})$/.test(value))
+      return value.split('-').map(digitByDigit).join('，');
+    if (/^\d{2,4}$/.test(value) && /^年/.test(after))
+      return digitByDigit(value);
+    const number = /^([+-]?)(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(%)?$/.exec(
+      value,
+    );
+    if (!number) return token;
+    const integer = number[2].replace(/,/g, '');
+    const n = Number(integer);
+    if (!Number.isSafeInteger(n)) return token;
+    const digits =
+      /^0\d/.test(integer) ||
+      (integer.length >= 9 &&
+        !number[2].includes(',') &&
+        !number[3] &&
+        !number[4]);
+    const sign = number[1] === '-' ? '负' : number[1] === '+' ? '正' : '';
+    const spoken =
+      (digits ? digitByDigit(integer) : intToChinese(n)) +
+      (number[3] ? `点${digitByDigit(number[3])}` : '');
+    return sign + (number[4] ? '百分之' : '') + spoken;
   });
-  t = t.replace(/(\d+)%/g, (_m, i) => `百分之${intToChinese(parseInt(i, 10))}`);
-  // 小数：3.14 → 三点一四。
-  t = t.replace(/(\d+)\.(\d+)/g, (_m, i, f) => {
-    return `${intToChinese(parseInt(i, 10))}点${digitByDigit(f)}`;
-  });
-  // 其余整数：超长串（≥9 位，电话号/编号）逐位，否则按数值读。
-  t = t.replace(/\d+/g, (m) =>
-    m.length >= 9 ? digitByDigit(m) : intToChinese(parseInt(m, 10)),
-  );
-  return t;
 }
 
 module.exports = {

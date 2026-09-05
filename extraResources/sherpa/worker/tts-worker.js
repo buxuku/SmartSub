@@ -82,7 +82,7 @@ async function synthesizeClone(req, sid, speed) {
   // 中文数字归一化：zipvoice 无 ruleFsts，阿拉伯数字会被读成英文
   // （"2020年" → "twenty twenty 年"）；参考文本同步处理（与参考音频
   // 发音对齐）。
-  const text = normalizeChineseCloneText(req.text);
+  const text = normalizeChineseCloneText(req.text, req.language);
   const chunks = splitCloneText(text, cloneChunkLimit(refSeconds));
   if (chunks.length === 0) {
     return postError(req.id, 'tts generated empty audio');
@@ -91,7 +91,10 @@ async function synthesizeClone(req, sid, speed) {
     speed,
     referenceAudio: ref.samples,
     referenceSampleRate: ref.sampleRate,
-    referenceText: normalizeChineseCloneText(String(gc.refText || '')),
+    referenceText: normalizeChineseCloneText(
+      String(gc.refText || ''),
+      gc.referenceLanguage,
+    ),
     numSteps: Number.isFinite(Number(gc.numSteps)) ? Number(gc.numSteps) : 4,
     // 短行（一两个字）易吞音，官方建议合并短句下限。
     extra: { min_char_in_sentence: 10 },

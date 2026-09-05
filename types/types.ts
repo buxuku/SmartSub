@@ -162,6 +162,7 @@ export interface TaskProject {
  */
 export interface PipelineDubConfig {
   engine: DubbingEngineSelection;
+  language?: string;
   voice: string;
   /** 整体语速（1 = 原速） */
   globalSpeed: number;
