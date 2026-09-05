@@ -67,6 +67,25 @@ async function run(): Promise<void> {
     'map: siliconflow by id → enable_thinking false',
   );
   eq(
+    resolveThinkingParams({ id: 'atlascloud', modelName: 'zai-org/glm-5' }),
+    { enable_thinking: false },
+    'map: atlascloud by id → enable_thinking false',
+  );
+  eq(
+    resolveThinkingParams({
+      id: 'openai_789',
+      apiUrl: 'https://api.atlascloud.ai/v1',
+      modelName: 'qwen/qwen3.5-35b-a3b',
+    }),
+    { enable_thinking: false },
+    'map: atlascloud by url → enable_thinking false',
+  );
+  eq(
+    resolveThinkingParams({ id: 'atlascloud', modelName: 'openai/gpt-5.4' }),
+    undefined,
+    'map: atlascloud passthrough of an OpenAI model → no thinking param',
+  );
+  eq(
     resolveThinkingParams({
       id: 'openai_456',
       apiUrl: 'https://ark.cn-beijing.volces.com/api/v3',
