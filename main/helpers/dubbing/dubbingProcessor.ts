@@ -22,6 +22,13 @@ import {
 } from '../subtitleFormats';
 import { normalizeDubbingSpeechText } from './textNormalization';
 import { resolveTtsModelRequestForVoice } from './ttsLanguageRules';
+import { detectDubbingLanguage, dubbingSubtitleLanguage } from './language';
+import { dubbingInputKey, dubbingInputNeedsUpdate } from './synthesisIdentity';
+import {
+  resolveTtsLanguage,
+  localTtsLanguageError,
+  ttsBaseLanguage,
+} from '../../../types/ttsLanguage';
 import {
   computeSlots,
   estimateDurationMs,
@@ -100,6 +107,7 @@ export interface SessionCue {
   speakerIds?: number[];
   primarySpeakerId?: number;
   synthesizedVoiceId?: string;
+  synthesizedInputKey?: string;
   needsUpdate?: boolean;
   status: DubbingCueStatus;
   overlap: boolean;
@@ -131,6 +139,8 @@ export interface DubbingSession {
   abort: AbortController | null;
   calibration: RateCalibration;
   lastConfig?: DubbingConfig;
+  subtitleLanguage?: string;
+  detectedLanguage?: string;
   workItemId?: string;
   /**
    * 会话数据已被删除（工作项删除联动/确认重建）。
@@ -154,23 +164,65 @@ export function resolvedSessionCueVoice(
   return resolveDubbingVoiceId(cue, session.speakerVoiceMap, globalVoiceId);
 }
 
-/** Recompute stale from the voice that actually produced each retained artifact. */
+export function resolvedDubbingLanguage(
+  config: Pick<DubbingConfig, 'engine' | 'language'>,
+  voiceId: string,
+  context: { subtitleLanguage?: string; detectedLanguage?: string } = {},
+): string | undefined {
+  let voiceLanguage: string | undefined;
+  if (config.engine.kind === 'local') {
+    const spec = TTS_MODELS[config.engine.modelId as TtsModelId];
+    if (spec?.cloneOnly) {
+      const { getClonedVoiceById } =
+        require('../voiceClone/voiceCloneManager') as typeof import('../voiceClone/voiceCloneManager');
+      voiceLanguage = getClonedVoiceById(voiceId)?.language;
+    } else {
+      voiceLanguage =
+        spec?.voices.find((v) => v.id === voiceId)?.lang ??
+        spec?.voices.find((v) => v.id === spec.defaultVoiceId)?.lang;
+    }
+  } else {
+    const provider = getTtsProviderById(config.engine.providerId);
+    if (provider?.type === 'edge' || provider?.type === 'azureSpeech') {
+      voiceLanguage = /^([a-z]{2,3}-[A-Za-z]{2,4})-/.exec(voiceId)?.[1];
+    }
+  }
+  return resolveTtsLanguage({
+    ...context,
+    language: config.language,
+    voiceLanguage,
+  });
+}
+
+/** Recompute from successful artifacts, never from the last attempted batch. */
 export function syncDubbingVoiceStaleness(
   session: DubbingSession,
-  globalVoiceId: string,
+  config: DubbingConfig,
 ): number {
+  session.detectedLanguage = detectDubbingLanguage(
+    session.cues.map((c) => c.text).join('\n'),
+  );
   let count = 0;
   for (const cue of session.cues) {
     if (!cue.wavPath) continue;
     const synthesizedVoiceId =
       cue.synthesizedVoiceId || session.lastConfig?.voice;
-    if (!synthesizedVoiceId) continue;
-    cue.needsUpdate = dubbingVoiceNeedsUpdate(
-      cue,
-      session.speakerVoiceMap,
-      globalVoiceId,
-      synthesizedVoiceId,
+    if (!cue.synthesizedVoiceId) cue.synthesizedVoiceId = synthesizedVoiceId;
+    const voiceId = resolvedSessionCueVoice(session, cue, config.voice);
+    const key = dubbingInputKey(
+      config,
+      voiceId,
+      normalizeDubbingSpeechText(cue.text),
+      resolvedDubbingLanguage(config, voiceId, session),
     );
+    cue.needsUpdate =
+      dubbingInputNeedsUpdate(cue.synthesizedInputKey, key, config) ||
+      dubbingVoiceNeedsUpdate(
+        cue,
+        session.speakerVoiceMap,
+        config.voice,
+        synthesizedVoiceId,
+      );
     if (cue.needsUpdate) count += 1;
   }
   return count;
@@ -187,6 +239,7 @@ function toSessionMeta(session: DubbingSession): DubbingSessionMeta {
     mediaDurationMs: session.mediaDurationMs,
     updatedAt: Date.now(),
     configSnapshot: session.lastConfig,
+    subtitleLanguage: session.subtitleLanguage,
     proofreadDataFile: session.proofreadDataFile,
     speakers: session.speakers,
     speakerVoiceMap: session.speakerVoiceMap,
@@ -202,6 +255,7 @@ function toSessionMeta(session: DubbingSession): DubbingSessionMeta {
       speakerIds: c.speakerIds,
       primarySpeakerId: c.primarySpeakerId,
       synthesizedVoiceId: c.synthesizedVoiceId,
+      synthesizedInputKey: c.synthesizedInputKey,
       needsUpdate: c.needsUpdate,
       // 中断快照：synthesizing 落盘为 pending（重开后继续合成）
       status: c.status === 'synthesizing' ? 'pending' : c.status,
@@ -233,6 +287,7 @@ export async function createDubbingSession(
   subtitlePath: string,
   videoPath?: string,
   proofreadDataFile?: string,
+  subtitleLanguage?: string,
 ): Promise<DubbingSession> {
   const content = fs.readFileSync(subtitlePath, 'utf-8');
   const format = detectSubtitleFormat(subtitlePath);
@@ -256,6 +311,12 @@ export async function createDubbingSession(
     id,
     subtitlePath,
     subtitleHash: hashSubtitleContent(content),
+    subtitleLanguage:
+      subtitleLanguage ??
+      dubbingSubtitleLanguage(subtitlePath, proofreadDataFile),
+    detectedLanguage: detectDubbingLanguage(
+      parsed.map((c) => c.text).join('\n'),
+    ),
     videoPath,
     mediaDurationMs,
     workDir,
@@ -405,6 +466,9 @@ export function restoreDubbingSession(sessionId: string): RestoreSessionResult {
           }
         : createCalibration(),
     lastConfig: meta.configSnapshot,
+    subtitleLanguage:
+      meta.subtitleLanguage ??
+      dubbingSubtitleLanguage(meta.subtitlePath, meta.proofreadDataFile),
     proofreadDataFile: refreshed.proofreadDataFile || meta.proofreadDataFile,
     speakers: hasRefreshedMetadata ? refreshed.speakers : meta.speakers || [],
     speakerVoiceMap,
@@ -427,6 +491,7 @@ export function restoreDubbingSession(sessionId: string): RestoreSessionResult {
           ? { primarySpeakerId: assignment.primarySpeakerId }
           : {}),
         synthesizedVoiceId: resolved.synthesizedVoiceId,
+        synthesizedInputKey: resolved.synthesizedInputKey,
         needsUpdate: resolved.needsUpdate,
         status: resolved.status,
         overlap: resolved.overlap,
@@ -440,7 +505,7 @@ export function restoreDubbingSession(sessionId: string): RestoreSessionResult {
     }),
   };
   if (session.lastConfig)
-    syncDubbingVoiceStaleness(session, session.lastConfig.voice);
+    syncDubbingVoiceStaleness(session, session.lastConfig);
   sessions.set(session.id, session);
   logMessage(
     `dubbing session restored: ${session.id} (${session.cues.filter((c) => c.wavPath).length}/${session.cues.length} cues with artifacts)`,
@@ -503,6 +568,7 @@ interface EngineAdapter {
     speed: number,
     outWavPath: string,
     signal?: AbortSignal,
+    language?: string,
   ) => Promise<{ durationMs: number }>;
 }
 
@@ -559,7 +625,18 @@ function buildEngineAdapter(
         speedControl: 'none',
         canResynthesize: false, // 重合成不能改语速 → 复测直接 atempo
         concurrency: localConcurrency, // 进程池并行（每路一份模型内存）
-        synthesize: async (text, voiceId, speed, outWavPath, signal) => {
+        synthesize: async (
+          text,
+          voiceId,
+          speed,
+          outWavPath,
+          signal,
+          language,
+        ) => {
+          if (localTtsLanguageError(modelId, language))
+            throw new Error(
+              `${spec.displayName} 不支持配音语言 ${language}，请选择支持该语言的引擎`,
+            );
           const voice = getClonedVoiceById(voiceId);
           if (!voice || voice.engine !== 'zipvoice') {
             throw new Error('克隆音色不存在或已删除，请重新选择音色');
@@ -573,12 +650,14 @@ function buildEngineAdapter(
             {
               model,
               text,
+              language,
               sid: 0,
               speed,
               outWavPath,
               generationConfig: {
                 refWavPath: voice.refWavPath,
                 refText: voice.refText || '',
+                referenceLanguage: voice.language,
                 // 质量档：standard=4（RTF~0.44）/ high=8（~0.91，约两倍耗时）。
                 numSteps: opts?.cloneQuality === 'high' ? 8 : 4,
               },
@@ -614,17 +693,35 @@ function buildEngineAdapter(
       speedControl: 'native',
       canResynthesize: true, // 本地合成免费 → 复测走重合成
       concurrency: localConcurrency, // 进程池并行（每路一份模型内存）
-      synthesize: async (text, voiceId, speed, outWavPath, signal) =>
-        runSynthesize(
+      synthesize: async (
+        text,
+        voiceId,
+        speed,
+        outWavPath,
+        signal,
+        language,
+      ) => {
+        if (localTtsLanguageError(modelId, language))
+          throw new Error(
+            `${spec.displayName} 不支持配音语言 ${language}，请选择支持该语言的引擎`,
+          );
+        return runSynthesize(
           {
-            model: resolveTtsModelRequestForVoice(spec, model, voiceId),
+            model: resolveTtsModelRequestForVoice(
+              spec,
+              model,
+              voiceId,
+              language,
+            ),
             text,
+            language,
             sid: resolveTtsVoiceSid(spec, voiceId),
             speed,
             outWavPath,
           },
           signal,
-        ),
+        );
+      },
     };
   }
 
@@ -642,11 +739,12 @@ function buildEngineAdapter(
     speedControl: caps.speedControl,
     canResynthesize: false, // 云端重合成花钱 → 复测走 atempo
     concurrency,
-    synthesize: async (text, voiceId, speed, outWavPath, signal) => {
+    synthesize: async (text, voiceId, speed, outWavPath, signal, language) => {
       const release = await gate.acquire(signal);
       try {
         const r = await synthesizeSegment(provider, {
           text,
+          language,
           voice: voiceId,
           speed,
           outWavPath,
@@ -683,6 +781,8 @@ async function synthesizeAndAlignCue(
   );
   // 会话/展示字幕保留 `[Speaker N]`；仅在估时与 TTS 的最终输入边界剥离。
   const speechText = normalizeDubbingSpeechText(cue.text);
+  const language = resolvedDubbingLanguage(config, voiceId, session);
+  const inputKey = dubbingInputKey(config, voiceId, speechText, language);
 
   if (!speechText) {
     // 空行：静音占位，无需合成。
@@ -691,6 +791,7 @@ async function synthesizeAndAlignCue(
     cue.appliedSpeed = 1;
     cue.wavPath = undefined;
     cue.synthesizedVoiceId = voiceId;
+    cue.synthesizedInputKey = inputKey;
     cue.needsUpdate = false;
     cue.action = { type: 'none' };
     return;
@@ -716,6 +817,7 @@ async function synthesizeAndAlignCue(
     synthSpeed,
     wavPath,
     signal,
+    language,
   );
   // 校准样本：折回 1.0x 等效时长（实测 × 综合速度）。
   // 并发安全不变式：读旧值与写新值必须保持在同一条同步语句内（中间不得插入
@@ -757,6 +859,7 @@ async function synthesizeAndAlignCue(
         synthSpeed,
         wavPath,
         signal,
+        language,
       );
       appliedExtra = recheck.speed;
       action = { type: 'preSpeed', speed: recheck.speed };
@@ -784,6 +887,7 @@ async function synthesizeAndAlignCue(
   cue.status = overlong ? 'overlong' : 'done';
   cue.error = undefined;
   cue.synthesizedVoiceId = voiceId;
+  cue.synthesizedInputKey = inputKey;
   cue.needsUpdate = false;
   if (previousWavPath && previousWavPath !== currentWav) {
     try {
@@ -828,7 +932,7 @@ export async function runDubbingBatch(
   if (missingSpeakers.length) {
     throw new Error(`还有 ${missingSpeakers.length} 个角色未选择音色`);
   }
-  syncDubbingVoiceStaleness(session, config.voice);
+  syncDubbingVoiceStaleness(session, config);
   const adapter = buildEngineAdapter(config.engine, {
     cloneQuality: config.cloneQuality,
     localConcurrency: config.localConcurrency,
@@ -971,6 +1075,7 @@ export async function resynthesizeCue(
     // '' = 清除行级覆盖，回落全局 voice。
     cue.voiceId = overrides.voiceId || undefined;
   }
+  syncDubbingVoiceStaleness(session, config);
   session.lastConfig = config;
 
   const slots = computeSlots(session.cues, {
@@ -1042,9 +1147,9 @@ export function setSpeakerVoiceMapping(
     const resolved = resolvedSessionCueVoice(session, cue, globalVoiceId);
     const synthesizedVoiceId =
       cue.synthesizedVoiceId || session.lastConfig?.voice;
-    cue.needsUpdate = Boolean(
-      synthesizedVoiceId && synthesizedVoiceId !== resolved,
-    );
+    cue.needsUpdate =
+      Boolean(cue.needsUpdate) ||
+      Boolean(synthesizedVoiceId && synthesizedVoiceId !== resolved);
     if (cue.needsUpdate) affectedCount += 1;
   }
   persistDubbingSession(session);
@@ -1130,8 +1235,8 @@ export interface DubTrackResult {
 export async function buildDubTrack(
   session: DubbingSession,
   opts: {
-    /** Current task/workbench global voice, used to reject stale artifacts. */
-    globalVoiceId: string;
+    /** Current task/workbench synthesis settings, used to reject stale artifacts. */
+    config: DubbingConfig;
     overflow?: DubbingOverflowMode;
     overlapMode?: DubbingOverlapMode;
     signal?: AbortSignal;
@@ -1148,10 +1253,12 @@ export async function buildDubTrack(
     };
   },
 ): Promise<DubTrackResult> {
-  const staleCount = syncDubbingVoiceStaleness(session, opts.globalVoiceId);
+  const staleCount = syncDubbingVoiceStaleness(session, opts.config);
   if (staleCount > 0) {
     flushDubbingSession(session);
-    throw new Error(`还有 ${staleCount} 条配音使用旧音色，请先重新生成`);
+    throw new Error(
+      `还有 ${staleCount} 条配音的语言、文本或合成设置已变化，请先重新生成`,
+    );
   }
   const withWav = session.cues.filter((c) => c.wavPath && c.finalMs);
   if (withWav.length === 0) {
@@ -1276,7 +1383,7 @@ export async function exportDubbing(
     const outputPath = resolveOutputPath(session, config);
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     const track = await buildDubTrack(session, {
-      globalVoiceId: config.voice,
+      config,
       overflow: config.overflow,
       overlapMode: config.overlapMode,
       signal,
@@ -1376,33 +1483,43 @@ export async function previewVoice(
   engine: DubbingEngineSelection,
   voiceId: string,
   text: string | undefined,
-  opts?: { cloneQuality?: 'standard' | 'high' },
+  opts?: {
+    cloneQuality?: 'standard' | 'high';
+    language?: string;
+    subtitleLanguage?: string;
+    detectedLanguage?: string;
+  },
 ): Promise<{ wavPath: string; durationMs: number }> {
   const adapter = buildEngineAdapter(engine, opts);
-  // 克隆音色的默认试听文本按音色语言：ZipVoice 跨语言（参考英文 + 文本中文）
-  // 时长预测严重不足，语音被压缩到不可辨——试听必须同语言才反映真实效果。
-  let cloneLanguage: 'zh' | 'en' | undefined;
-  if (engine.kind === 'local') {
-    const { getClonedVoiceById } =
-      require('../voiceClone/voiceCloneManager') as typeof import('../voiceClone/voiceCloneManager');
-    cloneLanguage = getClonedVoiceById(voiceId)?.language;
-  }
+  const language = resolvedDubbingLanguage(
+    { engine, language: opts?.language },
+    voiceId,
+    {
+      subtitleLanguage: opts?.subtitleLanguage,
+      detectedLanguage:
+        opts?.detectedLanguage ??
+        (text ? detectDubbingLanguage(text) : undefined),
+    },
+  );
   const sample =
     text?.trim() ||
-    (cloneLanguage === 'en'
-      ? 'Hello, this is a voice preview. Nice to meet you.'
-      : cloneLanguage === 'zh'
-        ? '你好，这是配音试听。'
-        : /^[\x00-\x7F]*$/.test(voiceId) && engine.kind === 'cloud'
-          ? '你好，这是配音试听。Hello, this is a voice preview.'
-          : '你好，这是配音试听。');
+    (ttsBaseLanguage(language) === 'zh'
+      ? '你好，项目已经完成了90%。'
+      : 'Hello, the project is 90% complete.');
   const outWavPath = path.join(
     ensureTempDir(),
     'dubbing',
     `preview-${Date.now()}.wav`,
   );
   fs.mkdirSync(path.dirname(outWavPath), { recursive: true });
-  const r = await adapter.synthesize(sample, voiceId, 1, outWavPath);
+  const r = await adapter.synthesize(
+    normalizeDubbingSpeechText(sample),
+    voiceId,
+    1,
+    outWavPath,
+    undefined,
+    language,
+  );
   return { wavPath: outWavPath, durationMs: r.durationMs };
 }
 

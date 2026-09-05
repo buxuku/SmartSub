@@ -87,6 +87,21 @@ import {
 } from '../../types/ttsProvider';
 import { loadDubbingSpeakerMetadata } from '../../main/helpers/dubbing/speakerMetadata';
 import { resolveTtsModelRequestForVoice } from '../../main/helpers/dubbing/ttsLanguageRules';
+import {
+  detectDubbingLanguage,
+  dubbingSubtitleLanguage,
+} from '../../main/helpers/dubbing/language';
+import {
+  normalizeTtsLanguage,
+  resolveTtsLanguage,
+  localTtsLanguageError,
+} from '../../types/ttsLanguage';
+import {
+  dubbingInputKey,
+  dubbingInputNeedsUpdate,
+} from '../../main/helpers/dubbing/synthesisIdentity';
+import { pipelineDubLanguage } from '../../main/helpers/pipeline/dubTextSource';
+import type { DubbingConfig } from '../../types/dubbing';
 
 let passed = 0;
 let failed = 0;
@@ -108,6 +123,225 @@ function ok(cond: boolean, name: string): void {
   } else {
     failed++;
     console.error(`✗ ${name}`);
+  }
+}
+
+// Language provenance, conservative detection and artifact compatibility.
+{
+  eq(normalizeTtsLanguage('en_GB'), 'en-GB', 'locale: preserve region');
+  eq(normalizeTtsLanguage('zh-hant'), 'zh-Hant', 'locale: preserve script');
+  eq(normalizeTtsLanguage('auto'), undefined, 'locale: auto is not a language');
+  eq(normalizeTtsLanguage(' AUTO '), undefined, 'locale: trim auto');
+  eq(
+    normalizeTtsLanguage('not valid'),
+    undefined,
+    'locale: reject malformed tags',
+  );
+  eq(
+    resolveTtsLanguage({
+      language: 'en-GB',
+      subtitleLanguage: 'zh',
+      voiceLanguage: 'zh',
+    }),
+    'en-GB',
+    'language: explicit wins',
+  );
+  eq(
+    resolveTtsLanguage({
+      language: 'auto',
+      subtitleLanguage: 'zh',
+      detectedLanguage: 'en',
+      voiceLanguage: 'en',
+    }),
+    'zh',
+    'language: subtitle metadata wins',
+  );
+  eq(
+    resolveTtsLanguage({ detectedLanguage: 'fr', voiceLanguage: 'en' }),
+    'fr',
+    'language: foreign text is not English',
+  );
+  eq(
+    resolveTtsLanguage({ voiceLanguage: 'zh' }),
+    'zh',
+    'language: numeric-only subtitle uses voice fallback',
+  );
+  eq(resolveTtsLanguage({}), undefined, 'language: unknown remains unknown');
+  eq(
+    detectDubbingLanguage('90%\n2026\n12345'),
+    undefined,
+    'detection: numbers have no language',
+  );
+  eq(detectDubbingLanguage('Hi'), undefined, 'detection: too short');
+  eq(
+    detectDubbingLanguage('The project is 90% complete, 小明.'),
+    'en',
+    'detection: Chinese name does not change English sentence',
+  );
+  eq(
+    detectDubbingLanguage('这是一个中文字幕，我们已经完成了整个项目。'),
+    'zh',
+    'detection: Chinese',
+  );
+  eq(
+    detectDubbingLanguage('これは日本語の字幕です。価格は1500円です。'),
+    'ja',
+    'detection: Japanese is not Chinese',
+  );
+  eq(
+    detectDubbingLanguage(
+      'Bonjour, nous avons terminé le travail et nous reviendrons demain pour continuer le projet.',
+    ),
+    'fr',
+    'detection: French is not English',
+  );
+  eq(
+    pipelineDubLanguage({
+      taskType: 'generateAndTranslate',
+      translateProvider: 'p',
+      sourceLanguage: 'en',
+      targetLanguage: 'zh-Hant',
+    }),
+    'zh-Hant',
+    'pipeline: translated text inherits target',
+  );
+  eq(
+    pipelineDubLanguage({
+      taskType: 'generateOnly',
+      sourceLanguage: 'en-GB',
+      targetLanguage: 'zh',
+    }),
+    'en-GB',
+    'pipeline: original text ignores target',
+  );
+  eq(
+    pipelineDubLanguage({
+      taskType: 'translateOnly',
+      translateProvider: '-1',
+      sourceLanguage: 'auto',
+      targetLanguage: 'zh',
+    }),
+    undefined,
+    'pipeline: disabled translation and auto source need detection',
+  );
+  eq(
+    localTtsLanguageError('vits-zh-aishell3', 'en'),
+    'en',
+    'VITS: reject unsupported language',
+  );
+  eq(
+    localTtsLanguageError('kokoro-multi-lang-v1_1', 'ja'),
+    'ja',
+    'Kokoro: reject unsupported language',
+  );
+  eq(
+    localTtsLanguageError('zipvoice-distill-zh-en', 'en-GB'),
+    undefined,
+    'ZipVoice: accept English regional locale',
+  );
+
+  const config: DubbingConfig = {
+    engine: { kind: 'local', modelId: 'kokoro-multi-lang-v1_1' },
+    voice: '0',
+    globalSpeed: 1,
+    background: 'mute',
+    output: 'audioOnly',
+  };
+  const key = dubbingInputKey(config, '0', '90%', 'en-GB');
+  eq(
+    dubbingInputKey({ ...config, cloneQuality: 'high' }, '0', '90%', 'en-GB'),
+    key,
+    'identity: irrelevant clone quality does not invalidate Kokoro',
+  );
+  eq(
+    dubbingInputKey(config, '0', '90%', 'en_GB'),
+    key,
+    'identity: canonical locales reuse audio',
+  );
+  ok(
+    key !== dubbingInputKey(config, '0', '90%', 'zh'),
+    'identity: same text/voice changed language invalidates',
+  );
+  ok(
+    key !== dubbingInputKey(config, '0', '80%', 'en-GB'),
+    'identity: edited text invalidates',
+  );
+  eq(
+    dubbingInputNeedsUpdate(key, key, config),
+    false,
+    'identity: unchanged input reuses',
+  );
+  eq(
+    dubbingInputNeedsUpdate(undefined, key, config),
+    true,
+    'identity: legacy local audio requires regeneration',
+  );
+  eq(
+    dubbingInputNeedsUpdate('old-rule-key', key, config),
+    true,
+    'identity: rule changes invalidate',
+  );
+  const cloud: DubbingConfig = {
+    ...config,
+    engine: { kind: 'cloud', providerId: 'p' },
+  };
+  eq(
+    dubbingInputNeedsUpdate(undefined, key, cloud),
+    false,
+    'identity: retain legacy cloud audio without explicit language',
+  );
+  eq(
+    dubbingInputNeedsUpdate(undefined, key, { ...cloud, language: 'zh' }),
+    true,
+    'identity: explicit language invalidates legacy cloud audio',
+  );
+
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'dubbing-language-'));
+  try {
+    const sidecar = path.join(temp, 'meta.json');
+    const source = path.join(temp, 'source.srt');
+    const target = path.join(temp, 'target.srt');
+    fs.writeFileSync(
+      sidecar,
+      JSON.stringify({
+        version: 2,
+        speakers: [],
+        cues: [],
+        meta: {
+          sourceFile: source,
+          targetFile: target,
+          sourceLanguage: 'en-GB',
+          targetLanguage: 'zh-Hant',
+        },
+      }),
+    );
+    eq(
+      dubbingSubtitleLanguage(source, sidecar),
+      'en-GB',
+      'metadata: source path selects source language',
+    );
+    eq(
+      dubbingSubtitleLanguage(target, sidecar),
+      'zh-Hant',
+      'metadata: target path selects target language',
+    );
+    eq(
+      dubbingSubtitleLanguage(path.join(temp, 'unrelated.srt'), sidecar),
+      undefined,
+      'metadata: explicit sidecar does not assign unrelated text its target language',
+    );
+    eq(
+      dubbingSubtitleLanguage(path.join(temp, 'movie.pt-BR.srt')),
+      'pt-BR',
+      'metadata: filename preserves region',
+    );
+    eq(
+      dubbingSubtitleLanguage(path.join(temp, 'movie.foo.srt')),
+      undefined,
+      'metadata: ordinary filename suffix is not a language',
+    );
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
   }
 }
 
@@ -160,6 +394,16 @@ function ok(cond: boolean, name: string): void {
     defaultVoiceId: '0',
     voices: [{ id: '0', lang: 'zh' as const }],
   };
+  eq(
+    resolveTtsModelRequestForVoice(kokoro, baseModel, '10', 'en-GB').ruleFsts,
+    undefined,
+    'Kokoro: speech language overrides voice language',
+  );
+  eq(
+    resolveTtsModelRequestForVoice(kokoro, baseModel, '0', 'zh-Hant').ruleFsts,
+    baseModel.ruleFsts,
+    'Kokoro: Chinese text keeps Chinese FST with English voice',
+  );
   const vitsModel = { modelType: 'vits', ruleFsts: '/models/vits/number.fst' };
   eq(
     resolveTtsModelRequestForVoice(vits, vitsModel, '0').ruleFsts,
