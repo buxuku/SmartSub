@@ -9,6 +9,7 @@ import { renderTemplate, supportedLanguage } from '../../helpers/utils';
 import { logMessage, store } from '../../helpers/storeManager';
 import { defaultSystemPrompt, defaultUserPrompt } from '../../../types';
 import { isConfigurationError } from '../utils/error';
+import { ProviderFallbackExhaustedError } from './providerFallback';
 import {
   throwIfTaskCancelled,
   isTaskCancelledError,
@@ -151,6 +152,7 @@ async function repairSubtitleEntry(
     } catch (error) {
       if (isTaskCancelledError(error)) throw error;
       throwIfSignalCancelled(params.signal);
+      if (error instanceof ProviderFallbackExhaustedError) throw error;
       if (isConfigurationError(error)) throw error;
       logMessage(
         `定点补翻条目 ${subtitle.id} 第 ${attempt + 1}/${REPAIR_MAX_ATTEMPTS} 次失败: ${error.message}`,
@@ -433,6 +435,7 @@ export async function handleAIBatchTranslation(
       } catch (error) {
         if (isTaskCancelledError(error)) throw error;
         throwIfSignalCancelled(config.signal);
+        if (error instanceof ProviderFallbackExhaustedError) throw error;
         // 检查是否是配置错误，如果是则直接抛出，不进行重试
         if (isConfigurationError(error)) {
           throw new Error(
@@ -477,7 +480,9 @@ export async function handleAIBatchTranslation(
   const results = await runTranslationBatchesInOrder({
     batches,
     concurrency: batchConcurrency,
-    requestIntervalMs: requestInterval,
+    requestIntervalMs: config.fallbackRunner?.hasFallbacks
+      ? 0
+      : requestInterval,
     totalSubtitles: subtitles.length,
     processBatch,
     onProgress,

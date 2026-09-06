@@ -14,6 +14,8 @@ import {
   ProviderFallbackRunner,
 } from '../main/translate/services/providerFallback';
 import { isFallbackEligibleError } from '../main/translate/utils/error';
+import { isFallbackProviderInstance } from '../renderer/lib/providerUtils';
+import { ParameterProcessor } from '../main/helpers/parameterProcessor';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -26,6 +28,8 @@ function provider(overrides: Partial<Provider> = {}): Provider {
     type: 'openai',
     isAi: true,
     apiKey: 'primary-key',
+    apiUrl: 'https://example.test/v1',
+    modelName: 'test-model',
     ...overrides,
   };
 }
@@ -340,6 +344,46 @@ function testMigrationPreservesProviderInstances() {
   );
 }
 
+async function testDraftFallbackIsSkipped() {
+  const primary = provider({ fallbackProviderIds: ['draft', 'backup'] });
+  const draft = provider({ id: 'draft', apiKey: '  ' });
+  const backup = provider({ id: 'backup' });
+  const providers = [primary, draft, backup];
+  assert(
+    JSON.stringify(
+      resolveProviderFallbacks(providers, primary).map((item) => item.id),
+    ) === JSON.stringify(['backup']),
+    'runtime resolution should skip draft credentials',
+  );
+  assert(
+    primary.fallbackProviderIds?.includes('draft'),
+    'draft should remain editable in the saved chain',
+  );
+  const calls: string[] = [];
+  const runner = new ProviderFallbackRunner({
+    primary,
+    fallbacks: [
+      draft,
+      provider({ id: 'missing-url', apiUrl: '' }),
+      provider({ id: 'missing-model', modelName: '' }),
+      backup,
+    ],
+    resolveTranslator: (candidate) => async () => {
+      calls.push(candidate.id);
+      if (candidate.id === primary.id) throw new Error('HTTP 429');
+      return 'ok';
+    },
+    log: () => {},
+  });
+  await runner.run((candidate, translator) =>
+    translator('text', candidate, 'en', 'zh'),
+  );
+  assert(
+    JSON.stringify(calls) === JSON.stringify(['primary', 'backup']),
+    'drafts must not block configured fallbacks',
+  );
+}
+
 function testLocalizedInstanceNames() {
   const existing = [
     { name: 'DeepSeek' },
@@ -350,6 +394,77 @@ function testLocalizedInstanceNames() {
     nextProviderInstanceName(existing, 'DeepSeek Backup 1', 'Backup') ===
       'DeepSeek Backup 3',
     'localized suffix should produce a stable root name',
+  );
+  assert(
+    nextProviderInstanceName(
+      [{ name: 'baidu' }],
+      '\u767e\u5ea6\u7ffb\u8bd1',
+      '\u5907\u7528',
+    ) === '\u767e\u5ea6\u7ffb\u8bd1 \u5907\u7528 1',
+    'localized built-in copies must always have a numbered suffix',
+  );
+  assert(
+    nextProviderInstanceName(
+      [{ name: 'DeepSeek Backup 1' }],
+      'DeepSeek',
+      'Backup',
+    ) === 'DeepSeek Backup 2',
+    'suffix must remain unique even without a matching root name',
+  );
+}
+
+function testFallbackBrowsing() {
+  const primary = provider({ fallbackProviderIds: ['existing-custom'] });
+  const existing = provider({ id: 'existing-custom' });
+  const detachedClone = provider({ id: 'provider_openai_detached' });
+  const builtinClone = provider({ id: 'qwen-backup', type: 'qwen' });
+  const independent = provider({ id: 'openai_123' });
+  const providers = [
+    primary,
+    existing,
+    detachedClone,
+    builtinClone,
+    independent,
+  ];
+  for (const backup of [existing, detachedClone, builtinClone]) {
+    assert(
+      isFallbackProviderInstance(providers, backup.id),
+      'all fallback browsing entries must preserve the default provider',
+    );
+  }
+  assert(
+    !isFallbackProviderInstance(providers, primary.id),
+    'primary selection should retain its existing behavior',
+  );
+  assert(
+    !isFallbackProviderInstance(providers, independent.id),
+    'independent custom providers should remain selectable as default',
+  );
+}
+
+function testParameterCompatibilityUsesType() {
+  const qwen = provider({ id: 'provider_qwen_copy', type: 'qwen' });
+  assert(
+    ParameterProcessor.validateParameter('top_k', 10, qwen).isValid,
+    'Qwen clones must accept top_k',
+  );
+  assert(
+    ParameterProcessor.validateParameter('enable_thinking', true, qwen).isValid,
+    'Qwen clones must accept enable_thinking',
+  );
+  assert(
+    !ParameterProcessor.validateParameter(
+      'top_k',
+      10,
+      provider({ id: 'qwen', type: 'openai' }),
+    ).isValid,
+    'instance IDs must not grant capabilities of another type',
+  );
+  assert(
+    ParameterProcessor.getSupportedParameters(qwen.type).some(
+      (item) => item.key === 'top_k',
+    ),
+    'supported parameters should use the resolved type',
   );
 }
 
@@ -398,7 +513,10 @@ export async function runProviderFallbackTests() {
   testCloneClearsCredentials();
   testFallbackConfigNormalization();
   testMigrationPreservesProviderInstances();
+  await testDraftFallbackIsSkipped();
   testLocalizedInstanceNames();
+  testFallbackBrowsing();
+  testParameterCompatibilityUsesType();
   console.log('provider fallback tests passed');
 }
 

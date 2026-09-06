@@ -262,7 +262,7 @@ export class ParameterProcessor {
     if (
       definition.providerSupport &&
       !definition.providerSupport.includes('*') &&
-      !definition.providerSupport.includes(provider.id || '')
+      !definition.providerSupport.includes(provider.type || provider.id || '')
     ) {
       errors.push({
         key,
@@ -583,11 +583,11 @@ export class ParameterProcessor {
   /**
    * Get all supported parameters for a provider
    */
-  static getSupportedParameters(providerId: string): ParameterDefinition[] {
+  static getSupportedParameters(providerType: string): ParameterDefinition[] {
     return Object.values(PARAMETER_REGISTRY).filter(
       (param) =>
         param.providerSupport.includes('*') ||
-        param.providerSupport.includes(providerId),
+        param.providerSupport.includes(providerType),
     );
   }
 

@@ -135,7 +135,11 @@ async function validateParameterConfiguration(
  */
 async function getSupportedParameters(providerId: string) {
   try {
-    return ParameterProcessor.getSupportedParameters(providerId);
+    const providers = store.get('translationProviders') || [];
+    const provider = providers.find((candidate) => candidate.id === providerId);
+    return ParameterProcessor.getSupportedParameters(
+      provider?.type || providerId,
+    );
   } catch (error) {
     logMessage(
       `Error getting supported parameters for ${providerId}: ${error}`,

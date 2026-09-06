@@ -34,7 +34,10 @@ import {
   nextProviderInstanceName,
 } from '../../../types';
 import { cn } from 'lib/utils';
-import { isProviderConfigured } from 'lib/providerUtils';
+import {
+  isProviderConfigured,
+  isFallbackProviderInstance,
+} from 'lib/providerUtils';
 import {
   formatProviderError,
   LAST_PROVIDER_STORAGE_KEY,
@@ -335,7 +338,9 @@ const ProvidersTab: React.FC = () => {
     setTestResult(null);
     setIsRenaming(false);
     setMobileShowPanel(true);
-    if (syncDefault) void syncTranslateProviderToUserConfig(providerId);
+    if (syncDefault && !isFallbackProviderInstance(providers, providerId)) {
+      void syncTranslateProviderToUserConfig(providerId);
+    }
   };
 
   const handleInputChange = (
@@ -409,7 +414,12 @@ const ProvidersTab: React.FC = () => {
     const baseName =
       current.type === 'openai' ? current.name : typeDisplayName(type);
     clone.name = nextProviderInstanceName(
-      sameTypeProviders,
+      sameTypeProviders.map((provider) => ({
+        name:
+          provider.type !== 'openai' && provider.id === provider.type
+            ? typeDisplayName(type)
+            : provider.name,
+      })),
       baseName,
       t('fallbackProviderNameSuffix'),
     );

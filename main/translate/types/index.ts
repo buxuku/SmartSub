@@ -59,6 +59,8 @@ export interface TranslationResponseMeta {
 
 export interface TranslationRequestOptions {
   signal?: AbortSignal;
+  /** Fallback scheduler hook for each SDK request, including format retries. */
+  beforeRequest?: () => Promise<void>;
   /** 支持原生术语参数的非 AI 翻译服务可读取当前批次的词库。 */
   glossaryEntries?: ResolvedGlossaryEntry[];
   /**

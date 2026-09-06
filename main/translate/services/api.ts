@@ -7,6 +7,7 @@ import {
 import { DEFAULT_BATCH_SIZE } from '../constants';
 import { logMessage } from '../../helpers/storeManager';
 import { isConfigurationError } from '../utils/error';
+import { ProviderFallbackExhaustedError } from './providerFallback';
 import {
   throwIfTaskCancelled,
   isTaskCancelledError,
@@ -118,6 +119,7 @@ export async function handleAPIBatchTranslation(
       } catch (error) {
         if (isTaskCancelledError(error)) throw error;
         throwIfSignalCancelled(config.signal);
+        if (error instanceof ProviderFallbackExhaustedError) throw error;
         // 检查是否是配置错误，如果是则直接抛出，不进行重试
         if (isConfigurationError(error)) {
           throw new Error(
@@ -157,7 +159,9 @@ export async function handleAPIBatchTranslation(
   const results = await runTranslationBatchesInOrder({
     batches,
     concurrency: batchConcurrency,
-    requestIntervalMs: requestInterval,
+    requestIntervalMs: config.fallbackRunner?.hasFallbacks
+      ? 0
+      : requestInterval,
     totalSubtitles: subtitles.length,
     processBatch,
     onProgress,

@@ -1,5 +1,8 @@
 import type { Provider, TranslatorFunction } from '../types';
 import { isFallbackEligibleError } from '../utils/error';
+import { acquireProviderRequestSlot } from '../utils/providerRequestScheduler';
+import { acquire, resolveRateLimitConfig } from '../utils/rateLimiter';
+import { isProviderConfigured } from '../../../types/provider';
 import {
   isTaskCancelledError,
   throwIfSignalCancelled,
@@ -78,6 +81,11 @@ export class ProviderFallbackRunner {
     this.candidates = [options.primary, ...(options.fallbacks ?? [])].filter(
       (provider) => {
         if (!provider || provider.type !== options.primary.type) return false;
+        if (
+          provider.id !== options.primary.id &&
+          !isProviderConfigured(provider)
+        )
+          return false;
         if (seen.has(provider.id)) return false;
         seen.add(provider.id);
         return true;
@@ -108,6 +116,7 @@ export class ProviderFallbackRunner {
     let lastError: unknown;
 
     while (index < this.candidates.length) {
+      if (this.exhaustedError) throw this.exhaustedError;
       const provider = this.candidates[index];
       if (this.failed.has(provider.id)) {
         index += 1;
@@ -120,11 +129,43 @@ export class ProviderFallbackRunner {
         throw new Error(`Unknown translation provider: ${provider.type}`);
       }
 
+      const release = await acquireProviderRequestSlot(provider, this.signal);
       try {
-        const result = await operation(provider, translator);
-        this.activeIndex = index;
+        if (this.exhaustedError) throw this.exhaustedError;
+        if (this.failed.has(provider.id)) {
+          index += 1;
+          continue;
+        }
+        let firstRequest = true;
+        const scheduledTranslator: TranslatorFunction = (
+          text,
+          config,
+          from,
+          to,
+          options,
+        ) =>
+          translator(text, config, from, to, {
+            ...options,
+            beforeRequest: async () => {
+              // The outer slot already scheduled the first request. SDK-level
+              // format/thinking retries must reserve subsequent start times.
+              if (!firstRequest) {
+                await acquire(
+                  `provider-fallback:${provider.id}`,
+                  resolveRateLimitConfig(provider),
+                  this.signal,
+                );
+              }
+              firstRequest = false;
+              throwIfSignalCancelled(this.signal);
+              await options?.beforeRequest?.();
+            },
+          });
+        const result = await operation(provider, scheduledTranslator);
+        this.activeIndex = Math.max(this.activeIndex, index);
         return result;
       } catch (error) {
+        if (error instanceof ProviderFallbackExhaustedError) throw error;
         if (isTaskCancelledError(error)) throw error;
         throwIfSignalCancelled(this.signal);
         if (!isFallbackEligibleError(error)) throw error;
@@ -134,7 +175,7 @@ export class ProviderFallbackRunner {
         this.failed.add(provider.id);
         const nextIndex = this.findNextAvailable(index + 1);
         if (nextIndex === -1) {
-          this.exhaustedError = new ProviderFallbackExhaustedError(
+          this.exhaustedError ??= new ProviderFallbackExhaustedError(
             this.candidates,
             error,
           );
@@ -155,10 +196,12 @@ export class ProviderFallbackRunner {
           this.onFallback?.({ from: provider, to: nextProvider, reason });
         }
         index = nextIndex;
+      } finally {
+        release();
       }
     }
 
-    this.exhaustedError = new ProviderFallbackExhaustedError(
+    this.exhaustedError ??= new ProviderFallbackExhaustedError(
       this.candidates,
       lastError,
     );

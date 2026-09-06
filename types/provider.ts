@@ -1078,6 +1078,23 @@ export function isProviderCredentialField(key: string): boolean {
   return /(?:api)?key|secret|appid|token|password|access.?id/i.test(key);
 }
 
+/** Shared by the settings UI and runtime fallback resolution. */
+export function isProviderConfigured(provider: Provider | undefined): boolean {
+  if (!provider) return false;
+  const template =
+    PROVIDER_TYPES.find((type) => type.id === provider.type) ??
+    CONFIG_TEMPLATES[provider.type];
+  if (!template) return true;
+  return template.fields
+    .filter((field) => field.required)
+    .every((field) => {
+      const value = provider[field.key];
+      return (
+        value !== undefined && value !== null && String(value).trim() !== ''
+      );
+    });
+}
+
 /** 使用界面提供的本地化后缀生成不重复的同类型实例名。 */
 export function nextProviderInstanceName(
   existing: Pick<Provider, 'name'>[] | undefined,
@@ -1091,7 +1108,6 @@ export function nextProviderInstanceName(
     ? originalBase.replace(new RegExp(`\\s+${escapedSuffix}\\s+\\d+$`, 'i'), '')
     : originalBase;
   const names = new Set((existing ?? []).map((provider) => provider.name));
-  if (!names.has(base)) return base;
 
   let index = 1;
   while (names.has(`${base} ${suffix} ${index}`)) index += 1;

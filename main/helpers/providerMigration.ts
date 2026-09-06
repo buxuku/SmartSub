@@ -4,6 +4,7 @@ import {
   TENCENT_DEFAULT_REQUEST_INTERVAL_SECONDS,
   defaultSystemPrompt,
   HISTORICAL_DEFAULT_PROMPTS,
+  isProviderConfigured,
 } from '../../types/provider';
 
 const FREE_PROVIDER_IDS = ['autoFree', 'bingFree', 'googleFree'];
@@ -212,7 +213,12 @@ export function resolveProviderFallbacks(
   return primary.fallbackProviderIds
     .map((id) => byId.get(id))
     .filter((candidate): candidate is Provider => {
-      if (!candidate || candidate.id === primary.id) return false;
+      if (
+        !candidate ||
+        candidate.id === primary.id ||
+        !isProviderConfigured(candidate)
+      )
+        return false;
       if (candidate.type !== primary.type || seen.has(candidate.id)) {
         return false;
       }
