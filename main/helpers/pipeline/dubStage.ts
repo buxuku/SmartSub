@@ -38,7 +38,11 @@ import {
   detectSubtitleFormatFromContent,
 } from '../subtitleFormats';
 import { readProofreadDataFile } from '../proofreadData';
-import { pickDubTextSource, cuesFromSidecarTargets } from './dubTextSource';
+import {
+  pickDubTextSource,
+  cuesFromSidecarTargets,
+  pipelineDubLanguage,
+} from './dubTextSource';
 import type { IFiles, IFormData, PipelineDubConfig } from '../../../types';
 import {
   withDubbingGlobalSpeakerFallback,
@@ -159,10 +163,13 @@ async function ensureDubSession(
   file: IFiles,
   subtitlePath: string,
   isMediaInput: boolean,
+  subtitleLanguage?: string,
 ): Promise<DubbingSession> {
   if (file.dubbingSessionId) {
     const restored = restoreDubbingSession(file.dubbingSessionId);
     if (restored.kind === 'ok') {
+      restored.session.subtitleLanguage =
+        subtitleLanguage ?? restored.session.subtitleLanguage;
       logMessage(
         `dub stage: session restored (${restored.session.cues.filter((c) => c.wavPath).length} cues reusable)`,
         'info',
@@ -176,12 +183,14 @@ async function ensureDubSession(
     subtitlePath,
     isMediaInput ? file.filePath : undefined,
     file.proofreadDataFile,
+    subtitleLanguage,
   );
 }
 
 function toDubbingConfig(dub: PipelineDubConfig): DubbingConfig {
   return {
     engine: dub.engine,
+    language: dub.language,
     voice: dub.voice,
     globalSpeed: dub.globalSpeed || 1,
     cloneQuality: dub.cloneQuality ?? 'standard',
@@ -235,12 +244,15 @@ export async function rebuildDubTrackForFile(
     return;
   }
   const session = restored.session;
+  session.subtitleLanguage =
+    pipelineDubLanguage(formData) ?? session.subtitleLanguage;
   const signal = getTaskSignal();
   emitStatus(event, file, 'loading');
   try {
     throwIfTaskCancelled();
     const track = await buildDubTrack(session, {
-      globalVoiceId: dub.voice,
+      // Review workbench settings are authoritative after a completed stage.
+      config: session.lastConfig ?? toDubbingConfig(dub),
       overflow: dub.overflow ?? 'truncate',
       overlapMode: dub.overlapMode ?? 'shift',
       signal,
@@ -312,7 +324,12 @@ export async function runDubStage(
     release = await dubStageMutex.acquire(signal);
     throwIfTaskCancelled();
 
-    session = await ensureDubSession(file, subtitlePath, isMediaInput);
+    session = await ensureDubSession(
+      file,
+      subtitlePath,
+      isMediaInput,
+      pipelineDubLanguage(formData),
+    );
     file.dubbingSessionId = session.id;
     event.sender.send('taskFileChange', { ...file, [STAGE_KEY]: 'loading' });
 
@@ -335,7 +352,7 @@ export async function runDubStage(
 
     // 构建完整配音轨 + 顺延字幕（仅时移发生时产出；展示文本跟随交付字幕）
     const track = await buildDubTrack(session, {
-      globalVoiceId: config.voice,
+      config,
       overflow: config.overflow,
       overlapMode: config.overlapMode,
       signal,

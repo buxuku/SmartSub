@@ -57,6 +57,9 @@ jobs:
       - name: Unit tests (dubbing)
         run: npm run test:dubbing --if-present
 
+      - name: Unit tests (voice clone and number normalization)
+        run: yarn test:voice-clone
+
       - name: Compile application (renderer + main)
         run: yarn build
 

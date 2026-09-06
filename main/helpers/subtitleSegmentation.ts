@@ -229,27 +229,13 @@ export function getMergeShortCueOptions(
   };
 }
 
-/**
- * 「实义字符」数：仅计字母 / 数字 / 表意文字（CJK / 假名 / 谚文），排除标点 / 空白 / 符号。
- * 按 codepoint 区间判定（不用 \p{…}/u 标志，兼容较低 TS target）。
- */
+const CONTENT_CHAR = /[\p{L}\p{N}]/u;
+
+/** 「实义字符」数：计所有 Unicode 字母 / 数字，排除标点、空白和符号。 */
 function contentCharCount(text: string): number {
   let n = 0;
   for (const ch of text) {
-    const code = ch.codePointAt(0) ?? 0;
-    const isAsciiAlnum =
-      (code >= 0x30 && code <= 0x39) ||
-      (code >= 0x41 && code <= 0x5a) ||
-      (code >= 0x61 && code <= 0x7a);
-    const isCjk =
-      (code >= 0x3400 && code <= 0x9fff) || // CJK 统一表意（含扩展 A）
-      (code >= 0xf900 && code <= 0xfaff) || // CJK 兼容表意
-      (code >= 0x3040 && code <= 0x30ff) || // 平假名 + 片假名
-      (code >= 0xac00 && code <= 0xd7a3) || // 谚文音节
-      (code >= 0xff10 && code <= 0xff19) || // 全角数字
-      (code >= 0xff21 && code <= 0xff3a) || // 全角大写
-      (code >= 0xff41 && code <= 0xff5a); // 全角小写
-    if (isAsciiAlnum || isCjk) n += 1;
+    if (CONTENT_CHAR.test(ch)) n += 1;
   }
   return n;
 }

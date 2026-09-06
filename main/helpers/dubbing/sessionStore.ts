@@ -158,6 +158,7 @@ export function resolvePersistedCue(
     finalMs: undefined,
     appliedSpeed: undefined,
     synthesizedVoiceId: undefined,
+    synthesizedInputKey: undefined,
     needsUpdate: false,
     action: { type: 'none' },
   };

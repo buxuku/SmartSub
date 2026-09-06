@@ -35,6 +35,8 @@ export interface TtsCapabilities {
  */
 export interface TtsSegmentRequest {
   text: string;
+  /** Resolved speech locale. Providers consume it only when supported. */
+  language?: string;
   voice: string;
   /** 1.0 = 原速；speedControl='native' 时折算为引擎原生参数。 */
   speed?: number;

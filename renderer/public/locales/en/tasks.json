@@ -16,7 +16,8 @@
     "qualityOriginal": "Original quality",
     "qualityHigh": "High quality",
     "qualityStandard": "Standard quality",
-    "encoderHardware": "Hardware accel"
+    "encoderHardware": "Hardware accel",
+    "forceTranscription": "Off, force transcription"
   },
   "wizard": {
     "filesTitle": "Step 1 · Add files",
@@ -112,7 +113,8 @@
     "targetLanguage": "Translate to",
     "provider": "Translation service",
     "style": "Output content",
-    "format": "Subtitle format"
+    "format": "Subtitle format",
+    "embeddedSubtitles": "Prefer embedded subtitles"
   },
   "manuscript": {
     "label": "Reference script",

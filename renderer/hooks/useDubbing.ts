@@ -27,7 +27,10 @@ import {
   primaryDubbingSpeakerId,
   resolveDubbingVoiceId,
 } from '../../types/dubbing';
-import { dominantTextLanguage } from '../../types/voiceClone';
+import {
+  resolveTtsLanguage,
+  localTtsLanguageError,
+} from '../../types/ttsLanguage';
 import {
   loadTtsEngineOptions,
   parseEngineKey,
@@ -39,6 +42,7 @@ export type { DubbingEngineOption } from './useTtsEngineOptions';
 /** 可持久化的工作台配置（localStorage 记忆，下次进入恢复）。 */
 interface PersistedDubbingConfig {
   engineKey: string;
+  language?: string;
   voice: string;
   globalSpeed: number;
   cloneQuality?: DubbingCloneQuality;
@@ -166,7 +170,7 @@ export function useDubbing(options?: {
     );
   }, [activeEngine, persisted.voice]);
 
-  /** 选中音色的语言（仅克隆音色携带；内置音色 undefined）。 */
+  /** Voice language is a fallback; subtitle language determines pronunciation. */
   const activeVoiceLang = useMemo(
     () => activeEngine?.voices.find((v) => v.id === activeVoice)?.lang,
     [activeEngine, activeVoice],
@@ -221,15 +225,24 @@ export function useDubbing(options?: {
     [speakerVoiceMap, activeVoice],
   );
 
-  /** 字幕主导语言（跨语言克隆提示用；前 50 行文本采样）。 */
-  const subtitleLanguage = useMemo(() => {
-    if (cues.length === 0) return undefined;
-    const sample = cues
-      .slice(0, 50)
-      .map((c) => c.text)
-      .join(' ');
-    return sample.trim() ? dominantTextLanguage(sample) : undefined;
-  }, [cues]);
+  const subtitleLanguage =
+    session?.subtitleLanguage ?? session?.detectedLanguage;
+  const autoSpeechLanguage = resolveTtsLanguage({
+    subtitleLanguage,
+    voiceLanguage: activeVoiceLang,
+  });
+  const speechLanguage = resolveTtsLanguage({
+    language: persisted.language,
+    subtitleLanguage,
+    voiceLanguage: activeVoiceLang,
+  });
+  const unsupportedLanguage =
+    activeEngine?.kind === 'local'
+      ? localTtsLanguageError(
+          activeEngine.key.slice('local:'.length),
+          speechLanguage,
+        )
+      : undefined;
 
   // 媒体是纯音频（导入音频 / 音频任务跳转）：无视频流,视频类输出形态不可用。
   const mediaIsAudio = useMemo(
@@ -243,6 +256,7 @@ export function useDubbing(options?: {
     if (!engine) return null;
     return {
       engine,
+      language: persisted.language || 'auto',
       voice: activeVoice,
       globalSpeed: persisted.globalSpeed,
       cloneQuality: persisted.cloneQuality ?? 'standard',
@@ -298,23 +312,29 @@ export function useDubbing(options?: {
 
   const activeSessionId = session?.sessionId;
   useEffect(() => {
-    if (!activeSessionId || !activeVoice) return;
+    const config = buildConfig();
+    if (!activeSessionId || !config || running || exporting) return;
     let cancelled = false;
     window.ipc
       .invoke('dubbing:syncVoiceState', {
         sessionId: activeSessionId,
-        globalVoiceId: activeVoice,
+        config,
       })
       .then((result) => {
         if (!cancelled && result.success && result.data?.cues) {
           setCues(result.data.cues as DubbingCueView[]);
+          setSession((current) =>
+            current
+              ? { ...current, detectedLanguage: result.data.detectedLanguage }
+              : current,
+          );
         }
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, activeVoice]);
+  }, [activeSessionId, buildConfig, running, exporting]);
 
   // ── 会话生命周期 ──────────────────────────────────────────────────────────
   const loadSession = useCallback(
@@ -373,6 +393,24 @@ export function useDubbing(options?: {
         };
         setSession(normalizedView);
         setCues(view.cues);
+        if (view.configSnapshot) {
+          const snapshot = view.configSnapshot;
+          setPersisted((prev) => ({
+            ...prev,
+            ...snapshot,
+            engineKey:
+              snapshot.engine.kind === 'local'
+                ? `local:${snapshot.engine.modelId}`
+                : `cloud:${snapshot.engine.providerId}`,
+            language: snapshot.language || 'auto',
+            audioFormat: snapshot.audioFormat ?? prev.audioFormat,
+            overflow: snapshot.overflow ?? prev.overflow,
+            exportShiftedSubtitle:
+              snapshot.exportShiftedSubtitle ?? prev.exportShiftedSubtitle,
+          }));
+        } else {
+          setPersisted((prev) => ({ ...prev, language: 'auto' }));
+        }
         if (view.restored) setRestoredFromSession(true);
         // 批量在后台进行中（页面离开后回连）：恢复运行态，进度事件自动续接
         if (view.running) setRunning(true);
@@ -477,6 +515,7 @@ export function useDubbing(options?: {
       if (
         !session ||
         !config ||
+        unsupportedLanguage ||
         running ||
         missingSpeakerVoiceIds.length > 0 ||
         conflictingSpeakerIds.length > 0 ||
@@ -521,6 +560,7 @@ export function useDubbing(options?: {
       missingSpeakerVoiceIds,
       conflictingSpeakerIds,
       invalidCueOverrideCount,
+      unsupportedLanguage,
     ],
   );
 
@@ -555,6 +595,18 @@ export function useDubbing(options?: {
       });
       if (result.success && result.data) {
         applyCue(result.data as DubbingCueView);
+        const synced = await window.ipc.invoke('dubbing:syncVoiceState', {
+          sessionId: session.sessionId,
+          config,
+        });
+        if (synced.success && synced.data?.cues) {
+          setCues(synced.data.cues);
+          setSession((current) =>
+            current
+              ? { ...current, detectedLanguage: synced.data.detectedLanguage }
+              : current,
+          );
+        }
       } else if (!result.success) {
         setActionError(result.error || 'resynthesize failed');
         setCues((prev) =>
@@ -616,6 +668,7 @@ export function useDubbing(options?: {
         speakerId,
         voiceId,
         globalVoiceId: activeVoice,
+        config: buildConfig(),
       });
       if (!result.success || !result.data) {
         setActionError(result.error || 'speaker voice update failed');
@@ -637,7 +690,7 @@ export function useDubbing(options?: {
       );
       setCues(data.cues);
     },
-    [session, activeVoice],
+    [session, activeVoice, buildConfig],
   );
 
   const regenerateSpeaker = useCallback(
@@ -743,8 +796,10 @@ export function useDubbing(options?: {
       try {
         const result = await window.ipc.invoke('dubbing:previewVoice', {
           engine: config.engine,
+          language: config.language,
+          sessionId: session?.sessionId,
           voiceId: voiceId || config.voice,
-          text,
+          text: text ?? cues.find((c) => c.text.trim())?.text,
           cloneQuality: config.cloneQuality,
         });
         if (result.success && result.data) playWav(result.data, 'preview');
@@ -754,7 +809,7 @@ export function useDubbing(options?: {
         setPreviewing(false);
       }
     },
-    [buildConfig, playWav, previewing],
+    [buildConfig, playWav, previewing, session?.sessionId, cues],
   );
 
   // ── 导出 ──────────────────────────────────────────────────────────────────
@@ -861,6 +916,7 @@ export function useDubbing(options?: {
     session &&
       activeEngine &&
       activeVoice &&
+      !unsupportedLanguage &&
       !running &&
       !exporting &&
       missingSpeakerVoiceIds.length === 0 &&
@@ -897,6 +953,9 @@ export function useDubbing(options?: {
     activeVoice,
     activeVoiceLang,
     subtitleLanguage,
+    speechLanguage,
+    autoSpeechLanguage,
+    unsupportedLanguage,
     speakers,
     speakerVoiceMap,
     speakerVoiceConflicts,

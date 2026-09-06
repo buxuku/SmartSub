@@ -8,6 +8,7 @@
  */
 
 const addon = require('./addon.js');
+const { parseJsonResult } = require('./json-result.js');
 
 /**
  * Internal symbol to mark async-created recognizers.
@@ -127,7 +128,7 @@ class OfflineRecognizer {
       this.handle,
       stream.handle,
     );
-    return JSON.parse(jsonStr);
+    return parseJsonResult(jsonStr);
   }
 
   /**
@@ -137,7 +138,7 @@ class OfflineRecognizer {
    */
   getResult(stream) {
     const jsonStr = addon.getOfflineStreamResultAsJson(stream.handle);
-    return JSON.parse(jsonStr);
+    return parseJsonResult(jsonStr);
   }
 }
 

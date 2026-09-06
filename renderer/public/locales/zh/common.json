@@ -1,4 +1,10 @@
 {
+  "ttsLanguage": "配音语言",
+  "ttsVoiceLanguageMismatch": "当前音色主要使用{{voiceLang}}，朗读{{textLang}}时可能带有口音。",
+  "ttsLanguageAuto": "自动",
+  "ttsLanguageResolved": "自动（{{language}}）",
+  "ttsLanguageUnsupported": "当前模型不支持 {{language}}，请选择支持该语言的引擎。",
+  "ttsLanguageCloud": "云端发音由服务商模型和音色决定，请选择支持该语言的音色。",
   "notification": "消息通知",
   "nav": {
     "launchpad": "启动台",

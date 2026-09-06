@@ -36,10 +36,13 @@ import type {
 } from '../../../types/dubbing';
 import CloneVoiceWizard from '../voiceClone/CloneVoiceWizard';
 import DubbingSpeakerVoices from './DubbingSpeakerVoices';
+import DubbingLanguageSelect from './DubbingLanguageSelect';
+import { ttsBaseLanguage } from '../../../types/ttsLanguage';
 
 export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
   const { t } = useTranslation('dubbing');
   const { t: cloneT } = useTranslation('voiceClone');
+  const { t: commonT } = useTranslation('common');
   const [wizardOpen, setWizardOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const {
@@ -47,7 +50,9 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
     activeEngine,
     activeVoice,
     activeVoiceLang,
-    subtitleLanguage,
+    speechLanguage,
+    autoSpeechLanguage,
+    unsupportedLanguage,
     config,
     updateConfig,
     refreshEngines,
@@ -60,13 +65,13 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
     summary,
   } = dub;
 
-  // 跨语言克隆提示：音色语言（克隆音色才携带）≠ 字幕主导语言。
+  // A bilingual voice can speak both languages, but its accent can differ.
   const crossLingual =
     !!activeVoiceLang &&
-    !!subtitleLanguage &&
-    activeVoiceLang !== subtitleLanguage;
-  const langName = (l: 'zh' | 'en') =>
-    l === 'zh' ? cloneT('langZh') : cloneT('langEn');
+    !!speechLanguage &&
+    ttsBaseLanguage(activeVoiceLang) !== ttsBaseLanguage(speechLanguage);
+  const langName = (l: string) =>
+    commonT(`language.${ttsBaseLanguage(l)}`, { defaultValue: l });
 
   const disabled = running || exporting;
   // 无媒体或媒体为纯音频（无视频流）：只能导出纯音频。
@@ -114,6 +119,30 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
         )}
       </div>
 
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium">{commonT('ttsLanguage')}</label>
+        <DubbingLanguageSelect
+          value={config.language}
+          onChange={(language) => updateConfig({ language })}
+          resolved={autoSpeechLanguage}
+          disabled={disabled}
+        />
+        {unsupportedLanguage && (
+          <p role="alert" className="text-xs text-destructive">
+            {commonT('ttsLanguageUnsupported', {
+              language: unsupportedLanguage,
+            })}
+          </p>
+        )}
+        {activeEngine?.kind === 'cloud' &&
+          config.language &&
+          config.language !== 'auto' && (
+            <p className="text-xs text-muted-foreground">
+              {commonT('ttsLanguageCloud')}
+            </p>
+          )}
+      </div>
+
       {/* 音色 + 试听 */}
       <div className="space-y-1.5">
         <label className="text-sm font-medium">{t('voice')}</label>
@@ -140,7 +169,9 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
             className="shrink-0"
             title={t('previewVoice')}
             aria-label={t('previewVoice')}
-            disabled={disabled || previewing || !activeVoice}
+            disabled={
+              disabled || previewing || !activeVoice || !!unsupportedLanguage
+            }
             onClick={() => previewVoice()}
           >
             {previewing ? (
@@ -164,12 +195,12 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
           </Button>
         )}
         {/* 跨语言克隆预期提示（可合成，但韵律带原语言口音） */}
-        {crossLingual && (
+        {crossLingual && !unsupportedLanguage && (
           <p className="flex items-start gap-1 text-xs text-warning">
             <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-            {cloneT('crossLingualHint', {
+            {commonT('ttsVoiceLanguageMismatch', {
               voiceLang: langName(activeVoiceLang!),
-              textLang: langName(subtitleLanguage!),
+              textLang: langName(speechLanguage!),
             })}
           </p>
         )}

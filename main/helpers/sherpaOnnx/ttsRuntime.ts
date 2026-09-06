@@ -31,6 +31,7 @@ export interface TtsModelRequest {
 export interface TtsGenerationConfig {
   refWavPath: string;
   refText: string;
+  referenceLanguage?: string;
   /** 生成质量/速度权衡（默认 4）。 */
   numSteps?: number;
 }
@@ -225,6 +226,7 @@ class SherpaTtsRuntime {
   synthesize(req: {
     model: TtsModelRequest;
     text: string;
+    language?: string;
     sid: number;
     speed?: number;
     outWavPath: string;

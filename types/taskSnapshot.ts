@@ -1,8 +1,8 @@
 /**
  * 会把任务页切换为只读快照、并在重试时固定复用的配置。
  *
- * 普通字幕任务仍沿用可编辑的全局配置；一旦启用角色分离，它和带配音/合成的
- * 流水线任务一样需要固定创建时配置；参考文稿作为一次性任务输入也必须固定。
+ * 普通字幕任务仍沿用可编辑的全局配置；一旦启用角色分离、强制忽略内封字幕，
+ * 它和带配音/合成的流水线任务一样需要固定创建时配置；参考文稿作为一次性任务输入也必须固定。
  */
 export interface PinnableTaskConfigSnapshot {
   [key: string]: unknown;
@@ -10,6 +10,7 @@ export interface PinnableTaskConfigSnapshot {
   compose?: unknown;
   speakerDiarization?: unknown;
   manuscriptPath?: unknown;
+  useEmbeddedSubtitles?: unknown;
 }
 
 export function isPinnedTaskConfigSnapshot(
@@ -24,6 +25,7 @@ export function isPinnedTaskConfigSnapshot(
       (snapshot.dub ||
         snapshot.compose ||
         snapshot.speakerDiarization === true ||
+        snapshot.useEmbeddedSubtitles === false ||
         manuscriptPath),
   );
 }

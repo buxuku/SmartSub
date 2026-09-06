@@ -35,21 +35,31 @@ export function buildSpeechToTextURL(baseURL: string): string {
 
 /**
  * Scribe 返回的 words 映射为词级时间戳（秒）。
- * 仅保留 `type === 'word'`（丢弃 `spacing` / `audio_event`）；缺 type 时按有文本+有时间保留。
- * 空白 token 一律丢弃，交由下游 needsSpaceBefore 复原空格。
+ * `spacing` 没有语音时间语义，不单独生成词；将连续空白折叠为下一个有效词的前导空格，
+ * 供阿拉伯文等不能由下游 ASCII 规则推断词间距的语言保留边界。`audio_event` 仍丢弃；
+ * 缺 type 时按有文本+有时间保留。
  */
 export function mapElevenLabsWords(raw: unknown): AsrWord[] {
   if (!Array.isArray(raw)) return [];
   const out: AsrWord[] = [];
+  let hasPendingSpacing = false;
   for (const w of raw) {
     const type = (w as { type?: unknown })?.type;
+    if (type === 'spacing') {
+      const spacing = String((w as { text?: unknown })?.text ?? '');
+      if (/\s/.test(spacing)) hasPendingSpacing = true;
+      continue;
+    }
     if (typeof type === 'string' && type !== 'word') continue;
     const word = String((w as { text?: unknown })?.text ?? '').trim();
     if (!word) continue;
+    const leadingSpace = hasPendingSpacing ? ' ' : '';
+    // spacing 属于紧随其后的词；该词时间非法被丢弃时不能泄漏到更后面的词。
+    hasPendingSpacing = false;
     const start = Number((w as { start?: unknown })?.start);
     const end = Number((w as { end?: unknown })?.end);
     if (Number.isFinite(start) && Number.isFinite(end)) {
-      out.push({ word, start, end });
+      out.push({ word: leadingSpace + word, start, end });
     }
   }
   return out;

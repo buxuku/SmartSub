@@ -226,6 +226,8 @@ export const defaultUserConfig = {
   // 逐任务引擎：任务携带引擎，后端按此解析执行（缺省 builtin，任务页默认逻辑会按"上次使用"细化）
   transcriptionEngine: 'builtin',
   model: 'tiny',
+  // 默认优先直提媒体内封文本字幕；用户可按任务关闭并强制走 ASR。
+  useEmbeddedSubtitles: true,
   translateProvider: 'baidu',
   translateContent: 'onlyTranslate',
   maxConcurrentTasks: 1,

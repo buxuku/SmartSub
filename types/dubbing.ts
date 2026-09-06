@@ -144,6 +144,7 @@ export interface DubbingCue {
   primarySpeakerId?: number;
   /** 上一次成功合成实际使用的音色，用于精确判断 stale。 */
   synthesizedVoiceId?: string;
+  synthesizedInputKey?: string;
   /** 保留旧音频但禁止静默导出的过期标记。 */
   needsUpdate?: boolean;
   status: DubbingCueStatus;
@@ -193,6 +194,8 @@ export type DubbingCloneQuality = 'standard' | 'high';
 /** 配音工作台全局配置（userConfig 记忆）。 */
 export interface DubbingConfig {
   engine: DubbingEngineSelection;
+  /** Explicit speech language; missing/auto inherits this subtitle's language. */
+  language?: string;
   /** 全局默认 voice（可被行级 voiceId 覆盖）。 */
   voice: string;
   /** 整体语速（1 = 原速），叠加在对齐引擎的行级变速之上。 */
@@ -292,6 +295,7 @@ export interface DubbingCueView {
   speakerIds?: number[];
   primarySpeakerId?: number;
   synthesizedVoiceId?: string;
+  synthesizedInputKey?: string;
   needsUpdate?: boolean;
   status: DubbingCueStatus;
   overlap: boolean;
@@ -312,6 +316,9 @@ export interface DubbingSessionView {
   subtitlePath: string;
   videoPath?: string;
   mediaDurationMs: number;
+  subtitleLanguage?: string;
+  detectedLanguage?: string;
+  configSnapshot?: DubbingConfig;
   cues: DubbingCueView[];
   speakers: DubbingSpeaker[];
   speakerVoiceMap: DubbingSpeakerVoiceMap;
@@ -355,6 +362,7 @@ export interface PersistedDubbingCue {
   speakerIds?: number[];
   primarySpeakerId?: number;
   synthesizedVoiceId?: string;
+  synthesizedInputKey?: string;
   needsUpdate?: boolean;
   status: DubbingCueStatus;
   overlap: boolean;
@@ -379,6 +387,7 @@ export interface DubbingSessionMeta {
   updatedAt: number;
   /** 最近一次使用的配音配置（恢复时回填工作台） */
   configSnapshot?: DubbingConfig;
+  subtitleLanguage?: string;
   proofreadDataFile?: string;
   speakers?: DubbingSpeaker[];
   speakerVoiceMap?: DubbingSpeakerVoiceMap;

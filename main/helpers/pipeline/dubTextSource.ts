@@ -12,6 +12,20 @@
  */
 
 import type { IFiles, IFormData } from '../../../types';
+import { normalizeTtsLanguage } from '../../../types/ttsLanguage';
+
+export function pipelineDubLanguage(formData: {
+  taskType?: string;
+  translateProvider?: string;
+  sourceLanguage?: string;
+  targetLanguage?: string;
+}): string | undefined {
+  return normalizeTtsLanguage(
+    taskHasTranslation(formData)
+      ? formData.targetLanguage
+      : formData.sourceLanguage,
+  );
+}
 
 /** 校对 sidecar 的 cue 形状（与 proofreadData.ProofreadDataCue 结构兼容；
  * 此处本地声明以保持本模块零主进程依赖、可在纯 node 下单测） */

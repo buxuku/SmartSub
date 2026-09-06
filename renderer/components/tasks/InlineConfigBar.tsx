@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/select';
 import { AlertCircle, CheckCircle2, Download, Languages } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import Models from '@/components/Models';
 import AiRefineControl from '@/components/tasks/AiRefineControl';
 import ManuscriptControl from '@/components/tasks/ManuscriptControl';
@@ -181,6 +182,18 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
               </Link>
             </Button>
           )}
+        </ConfigItem>
+      )}
+
+      {typeDef.needsModel && (
+        <ConfigItem label={t('configBar.embeddedSubtitles')}>
+          <Switch
+            checked={formData.useEmbeddedSubtitles !== false}
+            onCheckedChange={(checked) =>
+              setValue('useEmbeddedSubtitles', checked)
+            }
+            aria-label={t('configBar.embeddedSubtitles')}
+          />
         </ConfigItem>
       )}
 

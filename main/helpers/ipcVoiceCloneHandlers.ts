@@ -95,11 +95,13 @@ async function synthesizeSampleFor(voice: ClonedVoice): Promise<string> {
           { kind: 'cloud', providerId: voice.providerId! },
           voice.speakerId!,
           sampleText(voice.language),
+          { language: voice.language },
         )
       : await previewVoice(
           { kind: 'local', modelId: ZIPVOICE_MODEL_ID },
           voice.id,
           sampleText(voice.language),
+          { language: voice.language },
         );
   const dest = path.join(getClonedVoiceDir(voice.id), 'sample.wav');
   fs.copyFileSync(r.wavPath, dest);

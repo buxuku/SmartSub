@@ -1,4 +1,10 @@
 {
+  "ttsLanguage": "Speech language",
+  "ttsVoiceLanguageMismatch": "This voice is primarily {{voiceLang}}. Speech in {{textLang}} may have an accent.",
+  "ttsLanguageAuto": "Automatic",
+  "ttsLanguageResolved": "Automatic ({{language}})",
+  "ttsLanguageUnsupported": "This model does not support {{language}}. Choose a compatible engine.",
+  "ttsLanguageCloud": "Pronunciation is controlled by the cloud model and voice. Choose a voice that supports this language.",
   "notification": "Notification",
   "nav": {
     "launchpad": "Launchpad",

@@ -41,6 +41,26 @@ export const TEXT_SUBTITLE_CODECS = new Set([
   'text',
 ]);
 
+/**
+ * 是否优先使用媒体内封文本字幕。只有用户显式关闭时才强制走 ASR；旧任务/配方
+ * 没有该字段时保持原有直提行为。
+ */
+export function shouldUseEmbeddedSubtitles(config?: {
+  useEmbeddedSubtitles?: unknown;
+}): boolean {
+  return config?.useEmbeddedSubtitles !== false;
+}
+
+/** 关闭内封直提后，重试时不得复用上一轮由内封字幕生成的结果。 */
+export function shouldInvalidateEmbeddedSubtitleResult(
+  embeddedSubtitle: unknown,
+  config?: { useEmbeddedSubtitles?: unknown },
+): boolean {
+  return (
+    embeddedSubtitle === true && shouldUseEmbeddedSubtitles(config) === false
+  );
+}
+
 /** 扩展名预过滤：仅对可能内封字幕的容器才值得 spawn 探测 */
 export function canHaveEmbeddedSubtitle(ext: string): boolean {
   if (!ext) return false;

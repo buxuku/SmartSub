@@ -57,6 +57,7 @@ function cueView(cue: SessionCue) {
     speakerIds: cue.speakerIds,
     primarySpeakerId: cue.primarySpeakerId,
     synthesizedVoiceId: cue.synthesizedVoiceId,
+    synthesizedInputKey: cue.synthesizedInputKey,
     needsUpdate: cue.needsUpdate,
     status: cue.status,
     overlap: cue.overlap,
@@ -74,6 +75,9 @@ function sessionView(session: DubbingSession) {
     subtitlePath: session.subtitlePath,
     videoPath: session.videoPath,
     mediaDurationMs: session.mediaDurationMs,
+    subtitleLanguage: session.subtitleLanguage,
+    detectedLanguage: session.detectedLanguage,
+    configSnapshot: session.lastConfig,
     cues: session.cues.map(cueView),
     speakers: session.speakers,
     speakerVoiceMap: session.speakerVoiceMap,
@@ -146,19 +150,18 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
     'dubbing:syncVoiceState',
     async (
       _event,
-      {
-        sessionId,
-        globalVoiceId,
-      }: { sessionId: string; globalVoiceId: string },
+      { sessionId, config }: { sessionId: string; config: DubbingConfig },
     ): Promise<DubbingResponse> => {
       const session = getDubbingSession(sessionId);
       if (!session)
         return { success: false, error: '会话不存在，请重新加载字幕' };
-      syncDubbingVoiceStaleness(session, globalVoiceId);
+      if (session.running) return { success: true, data: sessionView(session) };
+      syncDubbingVoiceStaleness(session, config);
+      session.lastConfig = config;
       flushDubbingSession(session);
       return {
         success: true,
-        data: { cues: session.cues.map(cueView) },
+        data: sessionView(session),
       };
     },
   );
@@ -390,23 +393,27 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
         speakerId,
         voiceId,
         globalVoiceId,
+        config,
       }: {
         sessionId: string;
         speakerId: number;
         voiceId: string;
         globalVoiceId: string;
+        config?: DubbingConfig;
       },
     ): Promise<DubbingResponse> => {
       const session = getDubbingSession(sessionId);
       if (!session)
         return { success: false, error: '会话不存在，请重新加载字幕' };
       try {
+        if (session.running) throw new Error('配音正在进行中，请稍后修改音色');
         const result = setSpeakerVoiceMapping(
           session,
           speakerId,
           voiceId,
           globalVoiceId,
         );
+        if (config) syncDubbingVoiceStaleness(session, config);
         return {
           success: true,
           data: {
@@ -526,15 +533,25 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
         voiceId,
         text,
         cloneQuality,
+        sessionId,
+        language,
       }: {
         engine: DubbingConfig['engine'];
         voiceId: string;
         text?: string;
         cloneQuality?: DubbingConfig['cloneQuality'];
+        sessionId?: string;
+        language?: string;
       },
     ): Promise<DubbingResponse> => {
       try {
-        const r = await previewVoice(engine, voiceId, text, { cloneQuality });
+        const session = sessionId ? getDubbingSession(sessionId) : undefined;
+        const r = await previewVoice(engine, voiceId, text, {
+          cloneQuality,
+          language,
+          subtitleLanguage: session?.subtitleLanguage,
+          detectedLanguage: session?.detectedLanguage,
+        });
         return { success: true, data: r.wavPath };
       } catch (error) {
         return fail(error);

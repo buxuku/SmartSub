@@ -13,8 +13,7 @@ import {
 } from './structuredOutputFallback';
 import {
   resolveThinkingParams,
-  isThinkingParamRejectedError,
-  markThinkingParamRejected,
+  runWithThinkingParamFallback,
   appendNoThinkSoftSwitch,
 } from './thinkingControl';
 
@@ -130,42 +129,32 @@ export default async function translateWithOllama(
       });
 
     // 按共享回退链降级：仅当 Ollama 明确报 format 不支持时才降级
-    const runTranslation = () => {
-      const requestBody = buildRequestBody();
-      return runWithStructuredOutputFallback({
+    const runTranslation = () =>
+      runWithStructuredOutputFallback({
         startMode: structuredOutputMode,
         strict: config.strictStructuredOutput === true,
         signal: options?.signal,
         shouldFallback: (_from, error) => isSchemaFormatUnsupportedError(error),
-        attempt: (mode) => {
-          const format = getOllamaFormat(mode, options?.responseJsonSchema);
-          return postOllama(format ? { ...requestBody, format } : requestBody);
-        },
+        attempt: (mode) =>
+          runWithThinkingParamFallback({
+            provider: config,
+            signal: options?.signal,
+            onFallback: (error) =>
+              console.warn(
+                'Ollama rejected automatic think param; retrying the same request mode without it:',
+                getErrorMessage(error),
+              ),
+            attempt: () => {
+              const requestBody = buildRequestBody();
+              const format = getOllamaFormat(mode, options?.responseJsonSchema);
+              return postOllama(
+                format ? { ...requestBody, format } : requestBody,
+              );
+            },
+          }),
       });
-    };
 
-    // 思考参数去参重试（openspec: ai-thinking-mode-control D4）：
-    // 旧版 Ollama 对未知字段报 unknown field 类错误，去掉 think 重跑并缓存
-    const thinkingParamsInjected = resolveThinkingParams(config) !== undefined;
-    let response;
-    try {
-      response = await runTranslation();
-    } catch (error) {
-      if (
-        thinkingParamsInjected &&
-        !options?.signal?.aborted &&
-        isThinkingParamRejectedError(error)
-      ) {
-        markThinkingParamRejected(config);
-        console.warn(
-          'Ollama rejected think param (likely <0.9), retrying without it:',
-          getErrorMessage(error),
-        );
-        response = await runTranslation();
-      } else {
-        throw error;
-      }
-    }
+    const response = await runTranslation();
 
     if (response.data && response.data.message) {
       throwIfSignalCancelled(options?.signal);

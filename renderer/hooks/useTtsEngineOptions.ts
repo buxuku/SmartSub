@@ -22,8 +22,7 @@ export interface DubbingEngineOption {
   providerType?: string;
   /** 克隆引擎（zipvoice）：voice 池 = 我的音色，空态引导创建。 */
   cloneOnly?: boolean;
-  /** lang 仅克隆音色携带（跨语言提示用）。 */
-  voices: Array<{ id: string; label: string; lang?: 'zh' | 'en' }>;
+  voices: Array<{ id: string; label: string; lang?: string }>;
   defaultVoiceId?: string;
 }
 
@@ -65,6 +64,7 @@ export async function loadTtsEngineOptions(): Promise<DubbingEngineOption[]> {
         : (m.voices ?? []).map((v: any) => ({
             id: v.id,
             label: v.label,
+            lang: v.lang,
           }));
       opts.push({
         key: `local:${m.id}`,
@@ -82,7 +82,7 @@ export async function loadTtsEngineOptions(): Promise<DubbingEngineOption[]> {
   try {
     const providers = (await window.ipc.invoke('getTtsProviders')) ?? [];
     for (const p of providers) {
-      const voices: Array<{ id: string; label: string; lang?: 'zh' | 'en' }> =
+      const voices: Array<{ id: string; label: string; lang?: string }> =
         String(p.voices ?? '')
           .split(/[,，、;；\n]/)
           .map((s: string) => s.trim())
@@ -91,6 +91,10 @@ export async function loadTtsEngineOptions(): Promise<DubbingEngineOption[]> {
             id: v,
             // voice_id 不可读的服务商（ElevenLabs）按名称映射展示。
             label: resolveTtsVoiceLabel(p, v),
+            lang:
+              p.type === 'edge' || p.type === 'azureSpeech'
+                ? /^([a-z]{2,3}-[A-Za-z]{2,4})-/.exec(v)?.[1]
+                : undefined,
           }));
       // 绑定该实例且就绪的云端克隆音色（火山 S_ 槽位 / EL voice_id）追加进音色池。
       for (const cv of clonedVoices) {
