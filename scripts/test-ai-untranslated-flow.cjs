@@ -297,7 +297,8 @@ async function testRepairAttemptCap() {
   ok(batchCalls === 1, 'one copied entry in four skips whole-batch retry');
   ok(repairCalls === 3, 'copied repair output stops at the three-attempt cap');
   ok(
-    results[0].targetContent.startsWith('[翻译失败:') &&
+    results[0].targetContent === subtitles[0].content[0] &&
+      results[0].translationStatus === 'failed' &&
       results
         .slice(1)
         .every(

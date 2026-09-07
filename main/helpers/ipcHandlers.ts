@@ -417,6 +417,8 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
       return {
         subtitles: proofreadDataToSubtitleRows(proofreadData),
         speakers: proofreadData.speakers,
+        missedSpeechWarnings: proofreadData.missedSpeechWarnings || [],
+        missedSpeechSummary: proofreadData.missedSpeechSummary,
       };
     } catch (error) {
       logMessage(`读取校对中间态错误: ${error.message}`, 'error');

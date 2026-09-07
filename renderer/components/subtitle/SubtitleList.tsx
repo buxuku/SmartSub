@@ -37,12 +37,21 @@ import type { RetranslateControl } from '../../hooks/useRetranslateFailed';
 import SpeakerCueControl from '../proofread/SpeakerCueControl';
 import type { SpeakerFilter } from '../proofread/SpeakerToolbar';
 import {
+  associateMissedSpeechWarnings,
+  type MissedSpeechWarning,
+} from '../../../types/missedSpeech';
+import MissedSpeechControls, {
+  missedSpeechDescription,
+} from './MissedSpeechControls';
+import {
   normalizeSpeakerIds,
   type SpeakerInfo,
 } from '../../../types/proofreadData';
 
 interface SubtitleListProps {
   mergedSubtitles: Subtitle[];
+  missedSpeechWarnings?: MissedSpeechWarning[];
+  onSeekMissedSpeech?: (startMs: number) => void;
   currentSubtitleIndex: number;
   shouldShowTranslation: boolean;
   handleSubtitleClick: (index: number) => void;
@@ -115,6 +124,7 @@ interface SubtitleRowProps {
   index: number;
   isCurrent: boolean;
   isFailed: boolean;
+  warningTitle?: string;
   isSelected: boolean;
   shouldShowTranslation: boolean;
   forceExpanded: boolean;
@@ -162,6 +172,7 @@ const SubtitleRow = memo(function SubtitleRow({
   index,
   isCurrent,
   isFailed,
+  warningTitle,
   isSelected,
   shouldShowTranslation,
   forceExpanded,
@@ -187,7 +198,28 @@ const SubtitleRow = memo(function SubtitleRow({
   // 失败行降噪：左缘红条 + ⚠，不再整行红底
   const failedEdge = isFailed
     ? 'border-l-2 border-l-red-500'
-    : 'border-l-2 border-l-transparent';
+    : warningTitle
+      ? 'border-l-2 border-l-warning'
+      : 'border-l-2 border-l-transparent';
+
+  const warningIcon = warningTitle ? (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            tabIndex={0}
+            aria-label={warningTitle}
+            className="shrink-0 text-warning"
+          >
+            <AlertTriangle className="h-3 w-3" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-sm whitespace-pre-line">
+          {warningTitle}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  ) : null;
 
   const expanded = isCurrent || forceExpanded;
   const bodyFont =
@@ -211,6 +243,7 @@ const SubtitleRow = memo(function SubtitleRow({
         {isFailed && (
           <AlertTriangle className="h-3 w-3 flex-shrink-0 text-destructive" />
         )}
+        {warningIcon}
         <span className="flex-shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
           #{subtitle.id} {compactTime(subtitle.startTimeInSeconds)}→
           {compactTime(subtitle.endTimeInSeconds)}
@@ -254,6 +287,7 @@ const SubtitleRow = memo(function SubtitleRow({
       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
         <div className="flex min-w-0 items-center gap-1">
           {isFailed && <AlertTriangle className="h-3 w-3 text-destructive" />}
+          {warningIcon}
           <TimeRangeEditor
             rowId={subtitle.id}
             startEndTime={subtitle.startEndTime}
@@ -382,6 +416,8 @@ const SubtitleRow = memo(function SubtitleRow({
 
 const SubtitleList: React.FC<SubtitleListProps> = ({
   mergedSubtitles,
+  missedSpeechWarnings = [],
+  onSeekMissedSpeech,
   currentSubtitleIndex,
   shouldShowTranslation,
   handleSubtitleClick,
@@ -405,6 +441,30 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   onCreateSpeaker,
 }) => {
   const { t } = useTranslation('home');
+  const warnings = useMemo(
+    () =>
+      associateMissedSpeechWarnings(
+        missedSpeechWarnings,
+        mergedSubtitles.map((cue) => ({
+          id: cue.id,
+          startMs: (cue.startTimeInSeconds ?? 0) * 1000,
+          endMs: (cue.endTimeInSeconds ?? 0) * 1000,
+        })),
+      ),
+    [missedSpeechWarnings, mergedSubtitles],
+  );
+  const warningTitles = useMemo(() => {
+    const result = new Map<string, string>();
+    for (const warning of warnings) {
+      const description = missedSpeechDescription(warning, t);
+      for (const id of warning.cueIds)
+        result.set(
+          id,
+          [result.get(id), description].filter(Boolean).join('\n'),
+        );
+    }
+    return result;
+  }, [warnings, t]);
 
   // 获取翻译失败的字幕索引
   const failedIndices = getFailedTranslationIndices();
@@ -691,6 +751,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
 
   return (
     <div className="h-full flex flex-col border rounded-md overflow-hidden">
+      <MissedSpeechControls warnings={warnings} onSeek={onSeekMissedSpeech} />
       {/* 状态/失败操作栏（视图控制已上移至编辑工具栏；窄宽下换行避免重叠）
           纯转写模式无翻译状态与失败操作，整条隐藏避免空栏 */}
       {shouldShowTranslation && (
@@ -875,6 +936,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                     index={index}
                     isCurrent={index === currentSubtitleIndex}
                     isFailed={isTranslationFailed(subtitle)}
+                    warningTitle={warningTitles.get(subtitle.id)}
                     isSelected={
                       !!selRange && index >= selRange[0] && index <= selRange[1]
                     }

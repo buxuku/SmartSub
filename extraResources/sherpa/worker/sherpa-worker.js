@@ -262,6 +262,7 @@ async function transcribe(req) {
   const total = samples.length;
   const segments = [];
   let lastPercent = -1;
+  const vadSegments = [];
 
   const drain = async () => {
     while (!vad.isEmpty()) {
@@ -273,6 +274,7 @@ async function transcribe(req) {
       const r = await recognizer.decodeAsync(stream);
       const start = seg.start / SAMPLE_RATE;
       const end = (seg.start + seg.samples.length) / SAMPLE_RATE;
+      vadSegments.push({ start, end });
       const text = r && r.text ? r.text.trim() : '';
       if (text) segments.push({ start, end, text });
     }
@@ -293,7 +295,7 @@ async function transcribe(req) {
   await drain();
   if (cancelled.has(req.id)) return postCancelled(req.id);
   cancelled.delete(req.id);
-  channel.post({ type: 'done', id: req.id, segments });
+  channel.post({ type: 'done', id: req.id, segments, vadSegments });
 }
 
 // 仅 VAD：缓存一个独立的 silero VAD 实例（避免每个文件重载 onnx），按 vadModel+参数 复用。

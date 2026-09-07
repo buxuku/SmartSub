@@ -1,4 +1,5 @@
 import type { EngineStatus, TranscriptionEngine } from './engine';
+import type { MissedSpeechSummary, MissedSpeechWarning } from './missedSpeech';
 import type {
   DubbingEngineSelection,
   DubbingCloneQuality,
@@ -102,10 +103,16 @@ export interface IFiles {
   tempAudioFile?: string;
   translatedSrtFile?: string;
   tempTranslatedSrtFile?: string;
+  /** 字幕翻译失败行；译文文件保留原文作为可播放回退。 */
+  translationFailures?: Array<{ subtitleId: string; error?: string }>;
   /** 校对用无损中间态 sidecar，保存源文/译文/时间轴，避免直接读写有损交付物。 */
   proofreadDataFile?: string;
+  /** 校对 sidecar 是否已基于本轮字幕和诊断数据写入完成。 */
+  proofreadDataReady?: 'loading' | 'done' | 'error';
   /** 词级时间轴 sidecar（`<tempAudio>.words.json`）：AI 语义断句精确对齐用；无词级引擎缺省。 */
   wordTimelineFile?: string;
+  missedSpeechSummary?: MissedSpeechSummary;
+  missedSpeechWarnings?: MissedSpeechWarning[];
   /** ASR 后参考文稿匹配阶段；缺省不存在即功能关闭。 */
   manuscriptMatch?: '' | 'loading' | 'done';
   /** 稳定的非致命回退码，renderer 据此本地化；不会令任务失败。 */

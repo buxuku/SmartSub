@@ -223,6 +223,17 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
           rawWarning === SPEAKER_DIARIZATION_METADATA_SAVE_FAILED
             ? t('row.speakerDiarizationMetadataSaveFailed')
             : rawWarning;
+        const missedSpeechWarning = file?.missedSpeechSummary?.count
+          ? t('row.missedSpeechWarning', {
+              count: file.missedSpeechSummary.count,
+              level: t(
+                `row.missedSpeechLevel.${file.missedSpeechSummary.highestLevel || 'low'}`,
+              ),
+            })
+          : '';
+        const displayWarning = [warningMsg, missedSpeechWarning]
+          .filter(Boolean)
+          .join(' · ');
         const started = stages.some(
           (s) => getStageStatus(file, s.key) !== 'pending',
         );
@@ -321,16 +332,16 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
                 </Tooltip>
               </TooltipProvider>
             )}
-            {!failed && warningMsg && (
+            {!failed && displayWarning && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <p className="cursor-default truncate text-xs text-warning">
-                      {warningMsg}
+                      {displayWarning}
                     </p>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-md">
-                    <p className="break-all">{warningMsg}</p>
+                    <p className="break-all">{displayWarning}</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

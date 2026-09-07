@@ -132,6 +132,15 @@ export function RailChips({
                 ),
               })
             : undefined;
+        const missedSpeechSummary = file?.missedSpeechSummary;
+        const missedSpeechTitle = missedSpeechSummary?.count
+          ? t('row.missedSpeechWarning', {
+              count: missedSpeechSummary.count,
+              level: t(
+                `row.missedSpeechLevel.${missedSpeechSummary.highestLevel || 'low'}`,
+              ),
+            })
+          : undefined;
         return (
           <React.Fragment key={stage.key}>
             {index > 0 && <ChevronRight className="h-3 w-3 text-faint" />}
@@ -144,7 +153,11 @@ export function RailChips({
                   (manuscriptWarning ? 'text-warning' : 'text-success'),
                 status === 'error' && 'text-destructive font-medium',
               )}
-              title={manuscriptTitle}
+              title={
+                stage.key === 'extractSubtitle' && missedSpeechTitle
+                  ? missedSpeechTitle
+                  : manuscriptTitle
+              }
             >
               {status === 'loading' && (
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -169,6 +182,17 @@ export function RailChips({
                     {file.whisperBackend}
                   </span>
                 )}
+              {stage.key === 'extractSubtitle' && missedSpeechSummary?.count ? (
+                <span
+                  className="inline-flex items-center gap-0.5 text-warning"
+                  title={missedSpeechTitle}
+                >
+                  <CircleAlert className="h-3 w-3" />
+                  <span className="text-[10px]">
+                    {missedSpeechSummary.count}
+                  </span>
+                </span>
+              ) : null}
             </span>
           </React.Fragment>
         );
@@ -302,6 +326,17 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
           rawWarning === SPEAKER_DIARIZATION_METADATA_SAVE_FAILED
             ? t('row.speakerDiarizationMetadataSaveFailed')
             : rawWarning;
+        const missedSpeechWarning = file?.missedSpeechSummary?.count
+          ? t('row.missedSpeechWarning', {
+              count: file.missedSpeechSummary.count,
+              level: t(
+                `row.missedSpeechLevel.${file.missedSpeechSummary.highestLevel || 'low'}`,
+              ),
+            })
+          : '';
+        const displayWarning = [warningMsg, missedSpeechWarning]
+          .filter(Boolean)
+          .join(' · ');
         const started = stages.some(
           (s) => getStageStatus(file, s.key) !== 'pending',
         );
@@ -333,7 +368,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
             className={cn(
               'group rounded-lg border px-3 py-2.5 transition-colors hover:bg-muted/40',
               failed && 'border-destructive/30',
-              !failed && warningMsg && 'border-warning/30',
+              !failed && displayWarning && 'border-warning/30',
             )}
           >
             <div className="flex items-center gap-3">
@@ -511,16 +546,16 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                 </Tooltip>
               </TooltipProvider>
             )}
-            {!failed && warningMsg && (
+            {!failed && displayWarning && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <p className="mt-1.5 pl-5 text-xs text-warning truncate cursor-default">
-                      {warningMsg}
+                      {displayWarning}
                     </p>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-md">
-                    <p className="break-all">{warningMsg}</p>
+                    <p className="break-all">{displayWarning}</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

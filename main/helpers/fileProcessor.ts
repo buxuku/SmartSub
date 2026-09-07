@@ -193,7 +193,7 @@ async function translateSubtitle(
   };
 
   try {
-    await translate(
+    const completed = await translate(
       event,
       file,
       formData,
@@ -202,6 +202,15 @@ async function translateSubtitle(
       undefined,
       fallbackProviders,
     );
+
+    if (!completed) {
+      event.sender.send('taskFileChange', {
+        ...file,
+        translateSubtitle: 'error',
+        translateSubtitleProgress: 100,
+      });
+      return false;
+    }
 
     // 确保最终状态的正确发送
     event.sender.send('taskProgressChange', file, 'translateSubtitle', 100);
@@ -215,7 +224,7 @@ async function translateSubtitle(
       `Translation completed successfully for ${file.fileName}`,
       'info',
     );
-    return true;
+    return !(file.translationFailures && file.translationFailures.length > 0);
   } catch (error) {
     if (isTaskCancelledError(error) || isTaskCancelled()) {
       // 用户取消：翻译阶段回退为待处理，不计错误，并中止后续流程
@@ -294,6 +303,7 @@ export async function processFile(
       }
     : null;
 
+  const previousProofreadDataReady = file.proofreadDataReady;
   // 进入处理前清理上一轮残留的阶段状态/进度/错误。后续 taskFileChange 习惯铺开整个 file
   // （`{ ...file, extractSubtitle: 'loading' }`），若 file 仍带着旧值——尤其取消时回灌的空串
   // ——渲染层 `{ ...prev, ...res }` 合并会把刚置好的新状态覆盖回去，造成「取消→重启」时
@@ -325,6 +335,7 @@ export async function processFile(
     'speakerDiarizationError',
     'dubbingError',
     'composeVideoError',
+    'proofreadDataReady',
   ]) {
     delete (file as any)[k];
   }
@@ -348,6 +359,28 @@ export async function processFile(
         file.providedSubtitlePath &&
         fs.existsSync(file.providedSubtitlePath),
     );
+    // Sidecar is regenerated after transcription/diagnostics. Clear the old
+    // pointer on a fresh run so the proofread page cannot open stale cues
+    // while the current run is still finishing its metadata stage.
+    const reusingSubtitle = Boolean(
+      resume?.subtitleProduced || resume?.srtForTranslate,
+    );
+    if (!reusingSubtitle) delete file.proofreadDataFile;
+    file.proofreadDataReady =
+      reusingSubtitle &&
+      file.proofreadDataFile &&
+      previousProofreadDataReady !== 'error'
+        ? 'done'
+        : 'loading';
+    event.sender.send('taskFileChange', { ...file });
+    if (
+      isSubtitleFile ||
+      hasProvidedSubtitle ||
+      !(resume?.subtitleProduced || resume?.srtForTranslate)
+    ) {
+      file.missedSpeechWarnings = [];
+      file.missedSpeechSummary = undefined;
+    }
     logMessage(`begin process ${fileName} with task type: ${taskType}`, 'info');
 
     // 确定是否需要生成字幕
@@ -386,6 +419,17 @@ export async function processFile(
     const runPipelineStages = async (
       translateOk: boolean,
     ): Promise<boolean> => {
+      if (translationActive && !translateOk) {
+        const msg = '翻译未完成，无法继续后续处理（请先在校对中重试失败行）';
+        event.sender.send(
+          'taskStatusChange',
+          file,
+          'translateSubtitle',
+          'error',
+        );
+        event.sender.send('taskErrorChange', file, 'translateSubtitle', msg);
+        return false;
+      }
       // 字幕校对检查点：字幕段成功后、配音/合成前（翻译失败时交由下方报错）
       if (translateOk && shouldDockAtSubtitleGate(formData, file as any)) {
         dockAtGate('subtitle');
@@ -795,12 +839,17 @@ export async function processFile(
         translateContent: formData?.translateContent,
         outputFormat: formData?.subtitleOutputFormat,
         speakerSegments,
+        translationFailures: file.translationFailures,
+        missedSpeechWarnings: file.missedSpeechWarnings,
+        missedSpeechSummary: file.missedSpeechSummary,
       });
       if ('filePath' in proofreadDataResult) {
         file.proofreadDataFile = proofreadDataResult.filePath;
+        file.proofreadDataReady = 'done';
         speakerMetadataPersisted = true;
         event.sender.send('taskFileChange', file);
       } else {
+        file.proofreadDataReady = 'error';
         proofreadDataFailure = `${proofreadDataResult.reason}${proofreadDataResult.error ? `: ${proofreadDataResult.error}` : ''}`;
       }
     }

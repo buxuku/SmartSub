@@ -145,7 +145,10 @@ export async function handleAPIBatchTranslation(
             id: subtitle.id,
             startEndTime: subtitle.startEndTime,
             sourceContent: subtitle.content.join('\n'),
-            targetContent: `[翻译失败: ${error.message}]`,
+            targetContent: subtitle.content.join('\n'),
+            translationStatus: 'failed',
+            translationError:
+              error instanceof Error ? error.message : String(error),
           }));
 
           batchSuccess = true; // 标记为完成，继续下一批次

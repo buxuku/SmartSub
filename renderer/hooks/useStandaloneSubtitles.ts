@@ -11,6 +11,10 @@ import { Subtitle, SubtitleStats, PlayerSubtitleTrack } from './useSubtitles';
 import { useSubtitleHistory, computeRangeDiff } from './useSubtitleHistory';
 import { mergeSpeakerIds } from '../../types/speakerDiarization';
 import {
+  normalizeMissedSpeechWarnings,
+  type MissedSpeechWarning,
+} from '../../types/missedSpeech';
+import {
   SPEAKER_COLOR_PALETTE,
   countSpeakerCues,
   createDefaultSpeaker,
@@ -89,6 +93,9 @@ export const useStandaloneSubtitles = (
   >([]);
   const [isLoading, setIsLoading] = useState(false);
   const [speakers, setSpeakers] = useState<SpeakerInfo[]>([]);
+  const [missedSpeechWarnings, setMissedSpeechWarnings] = useState<
+    MissedSpeechWarning[]
+  >([]);
   const speakersRef = useRef<SpeakerInfo[]>([]);
   const [embedSpeakerNames, setEmbedSpeakerNames] = useState(false);
 
@@ -144,7 +151,11 @@ export const useStandaloneSubtitles = (
 
   const readProofreadDataFile = async (
     filePath: string,
-  ): Promise<{ subtitles: Subtitle[]; speakers: SpeakerInfo[] }> => {
+  ): Promise<{
+    subtitles: Subtitle[];
+    speakers: SpeakerInfo[];
+    missedSpeechWarnings?: MissedSpeechWarning[];
+  }> => {
     try {
       const result = await window.ipc.invoke('readProofreadDataFile', {
         filePath,
@@ -166,6 +177,9 @@ export const useStandaloneSubtitles = (
       return {
         subtitles: Array.isArray(result?.subtitles) ? result.subtitles : [],
         speakers: localizedSpeakers,
+        missedSpeechWarnings: normalizeMissedSpeechWarnings(
+          result?.missedSpeechWarnings,
+        ),
       };
     } catch (error) {
       console.error('Error reading proofread data file:', error);
@@ -205,6 +219,7 @@ export const useStandaloneSubtitles = (
 
   // 加载文件
   const loadFiles = useCallback(async () => {
+    setMissedSpeechWarnings([]);
     if (!config.sourceSubtitlePath) return;
 
     setIsLoading(true);
@@ -222,6 +237,7 @@ export const useStandaloneSubtitles = (
         : { subtitles: [], speakers: [] };
       const proofreadDataSubtitles = proofreadData.subtitles;
       applySpeakers(proofreadData.speakers);
+      setMissedSpeechWarnings(proofreadData.missedSpeechWarnings || []);
       const sourceSubtitles =
         proofreadDataSubtitles.length > 0
           ? proofreadDataSubtitles
@@ -524,7 +540,10 @@ export const useStandaloneSubtitles = (
     return (
       !!subtitle.sourceContent &&
       subtitle.sourceContent.trim() !== '' &&
-      (!subtitle.targetContent || subtitle.targetContent.trim() === '')
+      (subtitle.translationStatus === 'failed' ||
+        !subtitle.targetContent ||
+        subtitle.targetContent.trim() === '' ||
+        /^\[翻译失败:/.test(subtitle.targetContent.trim()))
     );
   };
 
@@ -971,6 +990,7 @@ export const useStandaloneSubtitles = (
 
   return {
     mergedSubtitles,
+    missedSpeechWarnings,
     setMergedSubtitles,
     updateSubtitles,
     getSubtitles,

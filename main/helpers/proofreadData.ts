@@ -31,6 +31,10 @@ import {
   type ProofreadDataFileV2,
   type SpeakerInfo,
 } from '../../types/proofreadData';
+import type {
+  MissedSpeechSummary,
+  MissedSpeechWarning,
+} from '../../types/missedSpeech';
 
 export type { ProofreadDataCue, SpeakerInfo } from '../../types/proofreadData';
 export type ProofreadDataFile = ProofreadDataFileV2;
@@ -41,6 +45,9 @@ export interface ProofreadSubtitleRow {
   content: string[];
   sourceContent: string;
   targetContent: string;
+  translationStatus?: 'success' | 'failed';
+  translationError?: string;
+  missedSpeechWarnings?: MissedSpeechWarning[];
   startTimeInSeconds: number;
   endTimeInSeconds: number;
   isEditing: boolean;
@@ -98,7 +105,12 @@ function buildCues(
   sourceEntries: SubtitleEntry[],
   targetEntries: SubtitleEntry[],
   speakerSegments: SpeakerDiarizationSegment[] = [],
+  translationFailures: Array<{ subtitleId: string; error?: string }> = [],
+  missedSpeechWarnings: MissedSpeechWarning[] = [],
 ): ProofreadDataCue[] {
+  const failures = new Map(
+    translationFailures.map((item) => [String(item.subtitleId), item]),
+  );
   const targetByTime = new Map<string, SubtitleEntry>();
   for (const entry of targetEntries) {
     if (!targetByTime.has(entry.startEndTime)) {
@@ -119,6 +131,10 @@ function buildCues(
 
     const assignedSpeakerIds = normalizeSpeakerIds(speakerIds[index]);
     const cleanSpeakerPrefix = assignedSpeakerIds.length > 0;
+    const failure = failures.get(String(sourceEntry.id || index + 1));
+    const cueWarnings = missedSpeechWarnings.filter(
+      (warning) => warning.startMs < endMs && startMs < warning.endMs,
+    );
     const cue: ProofreadDataCue = {
       id: sourceEntry.id || String(index + 1),
       startMs,
@@ -129,6 +145,13 @@ function buildCues(
       target: cleanSpeakerPrefix
         ? stripSpeakerLabelPrefix(entryText(targetEntry))
         : entryText(targetEntry),
+      ...(failure
+        ? {
+            translationStatus: 'failed' as const,
+            ...(failure.error ? { translationError: failure.error } : {}),
+          }
+        : { translationStatus: 'success' as const }),
+      ...(cueWarnings.length ? { missedSpeechWarnings: cueWarnings } : {}),
     };
     if (assignedSpeakerIds.length) {
       cue.speakerIds = assignedSpeakerIds;
@@ -148,6 +171,9 @@ export async function writeProofreadDataFromFiles({
   translateContent,
   outputFormat,
   speakerSegments,
+  translationFailures,
+  missedSpeechWarnings,
+  missedSpeechSummary,
 }: {
   file: IFiles;
   sourceFile?: string;
@@ -158,10 +184,13 @@ export async function writeProofreadDataFromFiles({
   translateContent?: string;
   outputFormat?: string;
   speakerSegments?: SpeakerDiarizationSegment[];
+  translationFailures?: Array<{ subtitleId: string; error?: string }>;
+  missedSpeechWarnings?: MissedSpeechWarning[];
+  missedSpeechSummary?: MissedSpeechSummary;
 }): Promise<ProofreadDataWriteResult> {
   try {
     const sourceEntries = await readSubtitleEntries(sourceFile);
-    if (sourceEntries.length === 0) {
+    if (sourceEntries.length === 0 && !missedSpeechWarnings?.length) {
       logMessage(
         `skip proofread data: source subtitle has no cues (${sourceFile})`,
         'warning',
@@ -171,8 +200,14 @@ export async function writeProofreadDataFromFiles({
 
     const targetEntries = await readSubtitleEntries(targetFile);
     const now = new Date().toISOString();
-    const cues = buildCues(sourceEntries, targetEntries, speakerSegments);
-    const proofreadData: ProofreadDataFile = {
+    const cues = buildCues(
+      sourceEntries,
+      targetEntries,
+      speakerSegments,
+      translationFailures,
+      missedSpeechWarnings,
+    );
+    const proofreadData: ProofreadDataFile = normalizeProofreadData({
       version: PROOFREAD_DATA_VERSION,
       meta: {
         createdAt: now,
@@ -187,7 +222,9 @@ export async function writeProofreadDataFromFiles({
       },
       speakers: normalizeSpeakerRoster([], cues),
       cues,
-    };
+      ...(missedSpeechWarnings ? { missedSpeechWarnings } : {}),
+      ...(missedSpeechSummary ? { missedSpeechSummary } : {}),
+    });
 
     const proofreadDataFile = getProofreadDataPath(file);
     await fs.promises.mkdir(path.dirname(proofreadDataFile), {
@@ -250,6 +287,15 @@ export function proofreadDataToSubtitleRows(
       content: sourceContent.split('\n'),
       sourceContent,
       targetContent,
+      ...(cue.translationStatus
+        ? { translationStatus: cue.translationStatus }
+        : {}),
+      ...(cue.translationError
+        ? { translationError: cue.translationError }
+        : {}),
+      ...(cue.missedSpeechWarnings?.length
+        ? { missedSpeechWarnings: cue.missedSpeechWarnings }
+        : {}),
       startTimeInSeconds: cue.startMs / 1000,
       endTimeInSeconds: cue.endMs / 1000,
       isEditing: false,
@@ -274,7 +320,7 @@ export async function updateProofreadDataFromSubtitles(
   const existing = await readProofreadDataFile(filePath);
   const existingById = new Map(existing.cues.map((cue) => [cue.id, cue]));
   const now = new Date().toISOString();
-  const updated: ProofreadDataFile = {
+  const updated: ProofreadDataFile = normalizeProofreadData({
     ...existing,
     version: PROOFREAD_DATA_VERSION,
     meta: {
@@ -321,6 +367,17 @@ export async function updateProofreadDataFromSubtitles(
         endMs,
         source,
         target: subtitle.targetContent ?? '',
+        ...(subtitle.translationStatus
+          ? { translationStatus: subtitle.translationStatus }
+          : previous?.translationStatus
+            ? { translationStatus: previous.translationStatus }
+            : {}),
+        ...(subtitle.translationError || previous?.translationError
+          ? {
+              translationError:
+                subtitle.translationError || previous?.translationError,
+            }
+          : {}),
         ...(normalizedSpeakerIds.length || speakerAssignmentSource === 'manual'
           ? {
               speakerIds: normalizedSpeakerIds,
@@ -332,7 +389,7 @@ export async function updateProofreadDataFromSubtitles(
           : {}),
       };
     }),
-  };
+  });
 
   await fs.promises.writeFile(
     filePath,

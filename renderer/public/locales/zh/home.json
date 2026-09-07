@@ -32,6 +32,23 @@
   "pleaseInputCustomTargetSrtFileName": "请输入自定义文件名",
   "extractAudio": "提取音频",
   "extractSubtitle": "提取字幕",
+  "missedSpeech": {
+    "title": "疑似漏听",
+    "count": "疑似漏听 {{count}} 处",
+    "range": "疑似漏听区间",
+    "taskWarning": "疑似漏听 {{count}} 处，最高等级：{{level}}",
+    "caution": "仅供人工复核，不代表确定漏听",
+    "previous": "上一个疑似漏听区间",
+    "next": "下一个疑似漏听区间",
+    "listen": "试听该区间",
+    "level": { "low": "低", "medium": "中", "high": "高" },
+    "signal": {
+      "energySpeech": "音频能量显示有语音",
+      "engineVad": "引擎 VAD 检测到语音",
+      "subtitleGap": "字幕覆盖存在缺口",
+      "wordGap": "词级时间轴存在缺口"
+    }
+  },
   "translateSubtitle": "翻译字幕",
   "noTask": "没有任务需要处理",
   "allFilesProcessed": "所有文件已处理完成",

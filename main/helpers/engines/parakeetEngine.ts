@@ -134,6 +134,14 @@ async function transcribeParakeet(ctx: TranscribeContext): Promise<string> {
 
   if (signal?.aborted) throw new TaskCancelledError();
 
+  ctx.onDiagnostics?.({
+    vadAvailable: Array.isArray(transcription?.vadSegments),
+    vadSegments: transcription?.vadSegments?.map((segment) => ({
+      startMs: Number(segment.start) * 1000,
+      endMs: Number(segment.end) * 1000,
+    })),
+  });
+
   const subtitles = trimSubtitleTrailingSilence(
     resplitSubtitleCues(
       (transcription?.segments || []).map(subtitleCueFromSegment),
