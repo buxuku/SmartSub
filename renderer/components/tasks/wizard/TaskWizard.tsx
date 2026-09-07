@@ -105,6 +105,30 @@ import {
 
 type GoalKey = 'translate' | 'dub' | 'video';
 
+const VIDEO_MEDIA_EXTENSIONS = new Set([
+  'mp4',
+  'avi',
+  'mov',
+  'mkv',
+  'flv',
+  'wmv',
+  'webm',
+  '3gp',
+  'asf',
+  'rm',
+  'rmvb',
+  'vob',
+  'ts',
+  'mts',
+  'm2ts',
+  'm4v',
+]);
+
+const isVideoMediaPath = (filePath: string): boolean => {
+  const extension = filePath.split('.').pop()?.toLowerCase();
+  return Boolean(extension && VIDEO_MEDIA_EXTENSIONS.has(extension));
+};
+
 /** 工作台同款配音记忆配置（同 key 共享，向导改动同步为工作台默认） */
 interface PersistedDubbing {
   engineKey: string;
@@ -338,10 +362,19 @@ export default function TaskWizard() {
   });
   const toggleGoal = (key: GoalKey) =>
     setGoals((prev) => ({ ...prev, [key]: !prev[key] }));
-  const videoAllowed = inputKind !== 'subtitle';
+  const nonVideoMediaFiles = mediaFiles.filter(
+    (file) => !isVideoMediaPath(file.filePath),
+  );
+  const videoAllowed =
+    inputKind !== 'subtitle' && nonVideoMediaFiles.length === 0;
   const videoOn = goals.video && videoAllowed;
   const dubOn = goals.dub;
   const translateOn = goals.translate;
+
+  useEffect(() => {
+    if (videoAllowed) return;
+    setGoals((prev) => (prev.video ? { ...prev, video: false } : prev));
+  }, [videoAllowed]);
 
   // ── 字幕段配置（本地表单 + InlineConfigBar 复用）─────────────────────────
   const { form, formData, loaded: formLoaded } = useLocalFormConfig();
@@ -781,7 +814,13 @@ export default function TaskWizard() {
       });
     }
     if (goals.video && !videoAllowed) {
-      list.push({ key: 'video', text: t('wizard.blockVideoNeedsMedia') });
+      list.push({
+        key: 'video',
+        text:
+          inputKind === 'subtitle'
+            ? t('wizard.blockVideoNeedsMedia')
+            : t('wizard.blockVideoNeedsVideoStream'),
+      });
     }
     if (
       !translateOn &&
@@ -1006,7 +1045,11 @@ export default function TaskWizard() {
       icon: Clapperboard,
       checked: videoOn,
       disabled: !videoAllowed,
-      hint: !videoAllowed ? t('wizard.goalVideoNeedsMedia') : undefined,
+      hint: !videoAllowed
+        ? inputKind === 'subtitle'
+          ? t('wizard.goalVideoNeedsMedia')
+          : t('wizard.goalVideoNeedsVideoStream')
+        : undefined,
     },
   ];
 

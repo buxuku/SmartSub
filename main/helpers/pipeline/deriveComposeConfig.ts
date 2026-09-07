@@ -139,12 +139,38 @@ export interface DeriveComposeInput {
 
 export type DeriveComposeResult =
   | { ok: true; config: ComposeConfig }
-  | { ok: false; reason: 'no-subtitle' | 'none-without-dub' };
+  | {
+      ok: false;
+      reason: 'no-subtitle' | 'none-without-dub' | 'video-input-required';
+    };
+
+/** The compose stage muxes a video stream; audio-only media must use audio delivery. */
+const VIDEO_EXTENSIONS = new Set([
+  '.mp4',
+  '.avi',
+  '.mov',
+  '.mkv',
+  '.flv',
+  '.wmv',
+  '.webm',
+  '.3gp',
+  '.asf',
+  '.rm',
+  '.rmvb',
+  '.vob',
+  '.ts',
+  '.mts',
+  '.m2ts',
+  '.m4v',
+]);
 
 export function deriveComposeConfig(
   input: DeriveComposeInput,
 ): DeriveComposeResult {
   const { file, compose, style, videoQuality, encoderMode, exists } = input;
+  if (!VIDEO_EXTENSIONS.has(path.extname(file.filePath).toLowerCase())) {
+    return { ok: false, reason: 'video-input-required' };
+  }
   const dubbedTrack =
     file.dubbedTrackPath && exists(file.dubbedTrackPath)
       ? file.dubbedTrackPath

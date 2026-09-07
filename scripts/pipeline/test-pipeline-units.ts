@@ -263,6 +263,21 @@ eq(
 
 eq(
   deriveComposeConfig({
+    file: {
+      filePath: '/v/voice.mp3',
+      fileExtension: '.mp3',
+      dubbedTrackPath: '/sess/dub-track.wav',
+    } as any,
+    compose: { subtitle: 'none' },
+    style: STYLE,
+    exists: existsIn(['/sess/dub-track.wav']),
+  }),
+  { ok: false, reason: 'video-input-required' },
+  '矩阵推导: 纯音频输入拒绝进入成品视频合成',
+);
+
+eq(
+  deriveComposeConfig({
     file: { filePath: '/v/ep4.mp4', fileExtension: '.mp4' } as any,
     compose: { subtitle: 'hard' },
     style: STYLE,
