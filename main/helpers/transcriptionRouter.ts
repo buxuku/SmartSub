@@ -4,6 +4,8 @@ import { getTaskContext } from './taskContext';
 import { logMessage } from './storeManager';
 import type { TranscribeContext } from './engines/types';
 import type { TranscriptionEngine } from '../../types/engine';
+import type { TranscriptionDiagnostics } from './missedSpeechWarning';
+import { runMissedSpeechCheck } from './missedSpeechStage';
 
 export async function routeTranscription(
   ctx: TranscribeContext,
@@ -31,9 +33,31 @@ export async function routeTranscription(
       'info',
     );
   }
+  let diagnostics: TranscriptionDiagnostics = {};
+  const mergeDiagnostics = (value: TranscriptionDiagnostics) => {
+    diagnostics = {
+      vadAvailable: value.vadAvailable ?? diagnostics.vadAvailable,
+      vadSegments: value.vadSegments ?? diagnostics.vadSegments,
+      wordSegments: value.wordSegments ?? diagnostics.wordSegments,
+    };
+  };
+  let output: string;
+  ctx.file.missedSpeechWarnings = [];
+  ctx.file.missedSpeechSummary = undefined;
+  ctx.file.wordTimelineFile = undefined;
   try {
-    return await adapter.transcribe({ ...ctx, signal });
+    output = await adapter.transcribe({
+      ...ctx,
+      signal,
+      onDiagnostics: (value) => {
+        mergeDiagnostics(value);
+        ctx.onDiagnostics?.(value);
+      },
+    });
   } finally {
     release();
   }
+  await runMissedSpeechCheck(ctx.file, diagnostics, signal);
+  ctx.event.sender.send('taskFileChange', { ...ctx.file });
+  return output;
 }

@@ -12,6 +12,9 @@ export interface Subtitle {
   content: string[];
   sourceContent?: string;
   targetContent?: string;
+  translationStatus?: 'success' | 'failed';
+  translationError?: string;
+  missedSpeechWarnings?: import('../../types/missedSpeech').MissedSpeechWarning[];
   startTimeInSeconds?: number;
   endTimeInSeconds?: number;
   isEditing?: boolean;
@@ -265,6 +268,16 @@ export const useSubtitles = (
             ...sub,
             sourceContent: sub.content.join('\n'),
             targetContent: translated ? translated.content.join('\n') : '',
+            ...(file.translationFailures?.some(
+              (f) => String(f.subtitleId) === String(sub.id),
+            )
+              ? {
+                  translationStatus: 'failed' as const,
+                  translationError: file.translationFailures.find(
+                    (f) => String(f.subtitleId) === String(sub.id),
+                  )?.error,
+                }
+              : {}),
             isEditing: false,
             // 添加计算出的开始和结束时间（秒）
             startTimeInSeconds: start,
@@ -372,7 +385,10 @@ export const useSubtitles = (
     return (
       subtitle.sourceContent &&
       subtitle.sourceContent.trim() !== '' &&
-      (!subtitle.targetContent || subtitle.targetContent.trim() === '')
+      (subtitle.translationStatus === 'failed' ||
+        !subtitle.targetContent ||
+        subtitle.targetContent.trim() === '' ||
+        /^\[翻译失败:/.test(subtitle.targetContent.trim()))
     );
   };
 

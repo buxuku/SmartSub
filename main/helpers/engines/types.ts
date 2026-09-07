@@ -5,6 +5,7 @@ import type {
 } from '../../../types/engine';
 import type { IpcMainInvokeEvent } from 'electron';
 import type { IFiles } from '../../../types';
+import type { TranscriptionDiagnostics } from '../missedSpeechWarning';
 
 export interface TranscribeContext {
   event: IpcMainInvokeEvent;
@@ -13,6 +14,7 @@ export interface TranscribeContext {
   hasOpenAiWhisper: boolean;
   /** 取消信号。由 router 从任务上下文注入，各引擎据此中断转写。 */
   signal?: AbortSignal;
+  onDiagnostics?: (diagnostics: TranscriptionDiagnostics) => void;
 }
 
 export interface TranscriptionEngineAdapter {

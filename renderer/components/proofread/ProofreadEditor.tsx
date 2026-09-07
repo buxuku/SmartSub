@@ -76,6 +76,7 @@ export default function ProofreadEditor({
   // 使用独立的字幕 hook
   const {
     mergedSubtitles,
+    missedSpeechWarnings,
     updateSubtitles,
     getSubtitles,
     speakers,
@@ -487,6 +488,14 @@ export default function ProofreadEditor({
         {/* 右侧/全屏：字幕列表组件 */}
         <SubtitleList
           mergedSubtitles={mergedSubtitles}
+          missedSpeechWarnings={missedSpeechWarnings}
+          onSeekMissedSpeech={
+            hasVideo
+              ? (startMs) => {
+                  playerRef.current?.seekTo(startMs / 1000, 'seconds');
+                }
+              : undefined
+          }
           currentSubtitleIndex={currentSubtitleIndex}
           shouldShowTranslation={shouldShowTranslation}
           handleSubtitleClick={handleSubtitleClick}

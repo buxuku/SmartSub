@@ -76,7 +76,11 @@ function assembleChunkedCues(
   results: AsrTranscribeResult[],
   config?: Record<string, unknown>,
 ): { cues: SubtitleCue[]; wordTokens: NativeToken[] | null } {
-  const useWordPath = results.some((r) => (r.words?.length ?? 0) > 0);
+  // Mixed chunk capabilities must not be presented as a complete word timeline:
+  // missing words in one chunk would look like a false omission to diagnostics.
+  const useWordPath =
+    results.length > 0 &&
+    results.every((r) => r.hasWordTimestamps && (r.words?.length ?? 0) > 0);
   if (useWordPath) {
     const allWords: AsrWord[] = [];
     let allText = '';
@@ -189,7 +193,7 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
       }
       throwIfSignalCancelled(signal);
 
-      if (result.hasWordTimestamps) {
+      if (result.hasWordTimestamps && (result.words?.length ?? 0) > 0) {
         cues = wordCuesFromResult(result, formData as Record<string, unknown>);
         wordTokens = wordTimelineTokens(result);
       } else if (result.segments?.length) {
@@ -237,6 +241,15 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
 
   throwIfSignalCancelled(signal);
   // 词级/段级路径统一补一次「裁尾」护栏（基于原始 16kHz WAV 能量）。
+  ctx.onDiagnostics?.({
+    vadAvailable: false,
+    wordSegments: wordTokens
+      ?.filter((word) => word.text.trim())
+      .map((word) => ({
+        startMs: word.t0,
+        endMs: word.t1,
+      })),
+  });
   const subtitles = trimSubtitleTrailingSilence(cues, tempAudioFile);
   const formattedSrt = formatSrtContent(subtitles);
   await fs.promises.writeFile(srtFile, formattedSrt);

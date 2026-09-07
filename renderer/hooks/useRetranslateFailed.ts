@@ -150,9 +150,20 @@ export function useRetranslateFailed({
         const next = latest.map((row) => {
           const hit = resultMap.get(`${row.id}|${row.startEndTime}`);
           // 只回填仍为空的行，避免覆盖用户在重翻期间手动填写的内容
-          if (hit && (!row.targetContent || !row.targetContent.trim())) {
+          if (
+            hit &&
+            (row.translationStatus === 'failed' ||
+              !row.targetContent ||
+              !row.targetContent.trim() ||
+              /^\[翻译失败:/.test(row.targetContent.trim()))
+          ) {
             applied += 1;
-            return { ...row, targetContent: hit };
+            return {
+              ...row,
+              targetContent: hit,
+              translationStatus: 'success' as const,
+              translationError: undefined,
+            };
           }
           return row;
         });

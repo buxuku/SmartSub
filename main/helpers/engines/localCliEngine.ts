@@ -42,6 +42,9 @@ function transcribeLocalCli(ctx: TranscribeContext): Promise<string> {
   const settings = store.get('settings');
   const whisperCommand = settings?.whisperCommand;
   const { tempAudioFile, srtFile, directory } = file;
+  // The user-provided CLI contract only guarantees an SRT path. It does not
+  // expose reliable VAD or word timestamps, so keep diagnostics explicit.
+  ctx.onDiagnostics?.({ vadAvailable: false });
 
   let runShell = whisperCommand
     .replace(/\${audioFile}/g, tempAudioFile)

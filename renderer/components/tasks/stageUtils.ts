@@ -229,6 +229,12 @@ export function isProofreadReady(
   typeDef: TaskTypeDef,
   formData?: any,
 ): boolean {
+  if (
+    file?.proofreadDataReady === 'loading' ||
+    file?.proofreadDataReady === 'error'
+  ) {
+    return false;
+  }
   const stages = getFileStages(file, typeDef, formData);
   if (typeDef.taskType === 'generateOnly') {
     if (file?.extractSubtitle !== 'done') return false;

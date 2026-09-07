@@ -13,6 +13,7 @@ const STAGE_KEYS = [
   'manuscriptMatch',
   'translateSubtitle',
   'prepareSubtitle',
+  'speakerDiarization',
   'dubbing',
   'composeVideo',
 ] as const;
