@@ -224,6 +224,7 @@ async function callWithJsonSchema(
   const dynamicSchema = options?.responseJsonSchema;
   if (dynamicSchema) {
     console.log('Using JSON Schema API with dynamic batch schema');
+    await options?.beforeRequest?.();
     throwIfSignalCancelled(options?.signal);
     const completion = (await openai.chat.completions.create(
       {
@@ -245,6 +246,7 @@ async function callWithJsonSchema(
   }
 
   console.log('Using JSON Schema API with zod schema');
+  await options?.beforeRequest?.();
   throwIfSignalCancelled(options?.signal);
   const completion = await openai.beta.chat.completions.parse(
     {
@@ -285,6 +287,7 @@ async function callWithStandardAPI(
     requestParams.response_format = { type: 'json_object' };
   }
 
+  await options?.beforeRequest?.();
   throwIfSignalCancelled(options?.signal);
   const completion = (await openai.chat.completions.create(requestParams, {
     signal: options?.signal,
@@ -322,6 +325,8 @@ export async function translateWithOpenAI(
     const customHeaders = getCustomHeaders(provider);
 
     const openai = new OpenAI({
+      // Fallback requests are retried/switched by the task scheduler.
+      ...(options?.beforeRequest ? { maxRetries: 0 } : {}),
       baseURL: normalizedApiUrl,
       apiKey: provider.apiKey,
       defaultHeaders: {

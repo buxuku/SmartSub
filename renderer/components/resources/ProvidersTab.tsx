@@ -20,6 +20,7 @@ import {
   Check,
 } from 'lucide-react';
 import { ProviderForm } from '@/components/ProviderForm';
+import ProviderFallbackEditor from '@/components/ProviderFallbackEditor';
 import {
   Provider,
   PROVIDER_TYPES,
@@ -28,9 +29,15 @@ import {
   defaultSystemPrompt,
   STRUCTURED_OUTPUT_MODES,
   StructuredOutputMode,
+  cloneProviderForFallback,
+  isProviderCredentialField,
+  nextProviderInstanceName,
 } from '../../../types';
 import { cn } from 'lib/utils';
-import { isProviderConfigured } from 'lib/providerUtils';
+import {
+  isProviderConfigured,
+  isFallbackProviderInstance,
+} from 'lib/providerUtils';
 import {
   formatProviderError,
   LAST_PROVIDER_STORAGE_KEY,
@@ -325,16 +332,21 @@ const ProvidersTab: React.FC = () => {
     };
   }, []);
 
-  const selectProvider = (providerId: string) => {
+  const selectProvider = (providerId: string, syncDefault = true) => {
     setSelectedProvider(providerId);
     setLastSelectedId(providerId);
     setTestResult(null);
     setIsRenaming(false);
     setMobileShowPanel(true);
-    void syncTranslateProviderToUserConfig(providerId);
+    if (syncDefault && !isFallbackProviderInstance(providers, providerId)) {
+      void syncTranslateProviderToUserConfig(providerId);
+    }
   };
 
-  const handleInputChange = (key: string, value: string | boolean | number) => {
+  const handleInputChange = (
+    key: string,
+    value: string | boolean | number | string[],
+  ) => {
     const updatedProviders = providers.map((provider) =>
       provider.id === selectedProvider
         ? { ...provider, [key]: value }
@@ -390,6 +402,52 @@ const ProvidersTab: React.FC = () => {
     return providerType;
   };
 
+  const handleAddFallbackProvider = () => {
+    const current = getCurrentProvider();
+    const type = getCurrentProviderType();
+    if (!current || !type) return;
+
+    const sameTypeProviders = providers.filter(
+      (provider) => provider.type === current.type,
+    );
+    const clone = cloneProviderForFallback(current, type);
+    const baseName =
+      current.type === 'openai' ? current.name : typeDisplayName(type);
+    clone.name = nextProviderInstanceName(
+      sameTypeProviders.map((provider) => ({
+        name:
+          provider.type !== 'openai' && provider.id === provider.type
+            ? typeDisplayName(type)
+            : provider.name,
+      })),
+      baseName,
+      t('fallbackProviderNameSuffix'),
+    );
+
+    const currentFallbackIds = Array.isArray(current.fallbackProviderIds)
+      ? current.fallbackProviderIds
+      : [];
+    const updatedProviders = sortProvidersCustomFirst([
+      clone,
+      ...providers.map((provider) =>
+        provider.id === current.id
+          ? {
+              ...provider,
+              fallbackProviderIds: [...currentFallbackIds, clone.id],
+            }
+          : provider,
+      ),
+    ]);
+    setProviders(updatedProviders);
+    persistNow(updatedProviders);
+    selectProvider(clone.id, false);
+    setAutoFocusField(
+      type.fields.find((field) => isProviderCredentialField(field.key))?.key ??
+        null,
+    );
+    toast.success(t('fallbackProviderAdded', { name: clone.name }));
+  };
+
   const handleAddProvider = () => {
     if (!newProviderName.trim()) return;
 
@@ -426,7 +484,18 @@ const ProvidersTab: React.FC = () => {
     const prevProviders = providers;
     const prevSelected = selectedProvider;
     const removed = providers.find((p) => p.id === providerId);
-    const updatedProviders = providers.filter((p) => p.id !== providerId);
+    const updatedProviders = providers
+      .filter((p) => p.id !== providerId)
+      .map((provider) => {
+        if (!Array.isArray(provider.fallbackProviderIds)) return provider;
+        const fallbackProviderIds = provider.fallbackProviderIds.filter(
+          (id) => id !== providerId,
+        );
+        return fallbackProviderIds.length ===
+          provider.fallbackProviderIds.length
+          ? provider
+          : { ...provider, fallbackProviderIds };
+      });
     setProviders(updatedProviders);
     persistNow(updatedProviders);
     // 删的是当前选中项：回落到第一个仍存在的服务商
@@ -597,6 +666,33 @@ const ProvidersTab: React.FC = () => {
     displayName.toLowerCase().includes(trimmedQuery) ||
     (rawName ?? '').toLowerCase().includes(trimmedQuery);
 
+  const currentProvider = getCurrentProvider();
+  const isCustomSelected = currentProvider?.type === 'openai';
+  const isAdditionalInstance = Boolean(
+    currentProvider && currentProvider.id !== currentProvider.type,
+  );
+  const canRenameSelected = isCustomSelected || isAdditionalInstance;
+  const supportsFallback = Boolean(
+    currentProvider &&
+      getCurrentProviderType()?.fields?.some((field) =>
+        isProviderCredentialField(field.key),
+      ),
+  );
+
+  const additionalBuiltinProviders = providers.filter((provider) => {
+    if (provider.type === 'openai' || provider.id === provider.type)
+      return false;
+    return PROVIDER_TYPES.some(
+      (type) => type.isBuiltin && type.id === provider.type,
+    );
+  });
+
+  const visibleAdditionalBuiltinProviders = additionalBuiltinProviders.filter(
+    (provider) =>
+      matchesQuery(provider.name, provider.type) &&
+      (!showConfiguredOnly || isConfiguredById(provider.id)),
+  );
+
   const groupSections = (
     [
       { key: 'free', titleKey: 'groupFree' },
@@ -638,14 +734,13 @@ const ProvidersTab: React.FC = () => {
   const nothingMatched =
     trimmedQuery &&
     groupSections.every((s) => s.items.length === 0) &&
-    visibleCustomProviders.length === 0;
-
-  const isCustomSelected = getCurrentProvider()?.type === 'openai';
+    visibleCustomProviders.length === 0 &&
+    visibleAdditionalBuiltinProviders.length === 0;
 
   const panelTitle = () => {
     const provider = getCurrentProvider();
     const type = getCurrentProviderType();
-    if (isCustomSelected && provider) return provider.name;
+    if (canRenameSelected && provider) return provider.name;
     if (!type) return '';
     return commonT(`provider.${type.name}`, { defaultValue: type.name });
   };
@@ -796,6 +891,70 @@ const ProvidersTab: React.FC = () => {
             </>
           )}
 
+          {visibleAdditionalBuiltinProviders.length > 0 && (
+            <>
+              <div className="label-caps px-2 pb-1 pt-2.5">
+                {t('fallbackInstances')}
+              </div>
+              {visibleAdditionalBuiltinProviders.map((provider) => {
+                const type = PROVIDER_TYPES.find(
+                  (candidate) => candidate.id === provider.type,
+                );
+                return (
+                  <div
+                    key={provider.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => selectProvider(provider.id, false)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        selectProvider(provider.id, false);
+                      }
+                    }}
+                    className={cn(
+                      'group relative flex w-full cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+                      selectedProvider === provider.id
+                        ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-1.5 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                        : 'hover:bg-accent',
+                    )}
+                  >
+                    <div className="flex min-w-0 flex-1 items-center space-x-2">
+                      <ProviderIcon iconImg={type?.iconImg} icon={type?.icon} />
+                      <span className="truncate" title={provider.name}>
+                        {provider.name}
+                      </span>
+                    </div>
+                    {isConfiguredById(provider.id) && (
+                      <Badge
+                        variant="outline"
+                        className="mr-1 flex-shrink-0 border-success/40 px-1.5 py-0 text-[10px] text-success"
+                      >
+                        {t('configured')}
+                      </Badge>
+                    )}
+                    <button
+                      type="button"
+                      aria-label={t('removeProviderAria', {
+                        name: provider.name,
+                      })}
+                      className="ml-2 flex-shrink-0 cursor-pointer rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRemoveTarget({
+                          id: provider.id,
+                          name: provider.name,
+                        });
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                );
+              })}
+            </>
+          )}
+
           {/* 三个分组段（可折叠） */}
           {groupSections.map(
             (section) =>
@@ -911,7 +1070,7 @@ const ProvidersTab: React.FC = () => {
                       icon={getCurrentProviderType()?.icon}
                       size="lg"
                     />
-                    {isRenaming && isCustomSelected ? (
+                    {isRenaming && canRenameSelected ? (
                       <Input
                         value={renameDraft}
                         onChange={(e) => setRenameDraft(e.target.value)}
@@ -925,7 +1084,7 @@ const ProvidersTab: React.FC = () => {
                     ) : (
                       <span className="truncate">{panelTitle()}</span>
                     )}
-                    {isCustomSelected && !isRenaming && (
+                    {canRenameSelected && !isRenaming && (
                       <Button
                         type="button"
                         variant="ghost"
@@ -940,7 +1099,7 @@ const ProvidersTab: React.FC = () => {
                         <Pencil className="h-4 w-4" />
                       </Button>
                     )}
-                    {isRenaming && isCustomSelected && (
+                    {isRenaming && canRenameSelected && (
                       <Button
                         type="button"
                         variant="ghost"
@@ -1074,6 +1233,17 @@ const ProvidersTab: React.FC = () => {
                   providerId={selectedProvider || ''}
                   autoFocusField={autoFocusField}
                 />
+                {supportsFallback && currentProvider && (
+                  <ProviderFallbackEditor
+                    provider={currentProvider}
+                    providers={providers}
+                    onChange={(ids) =>
+                      handleInputChange('fallbackProviderIds', ids)
+                    }
+                    onSelectProvider={(id) => selectProvider(id, false)}
+                    onAddFallback={handleAddFallbackProvider}
+                  />
+                )}
               </div>
             </div>
           </div>

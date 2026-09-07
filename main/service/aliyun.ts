@@ -8,6 +8,9 @@ import type { TranslationRequestOptions } from '../translate/types';
 
 // 客户端实例
 let client: any = null;
+let clientCredentials:
+  | { accessKeyId: string; accessKeySecret: string; endpoint: string }
+  | undefined;
 
 /**
  * 阿里云翻译服务
@@ -47,8 +50,14 @@ export default async function translate(
   }
 
   // 初始化客户端
-  if (!client) {
+  if (
+    !client ||
+    clientCredentials?.accessKeyId !== accessKeyId ||
+    clientCredentials?.accessKeySecret !== accessKeySecret ||
+    clientCredentials?.endpoint !== endpoint
+  ) {
     client = createClient(accessKeyId, accessKeySecret, endpoint);
+    clientCredentials = { accessKeyId, accessKeySecret, endpoint };
   }
 
   try {

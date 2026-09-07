@@ -1,9 +1,15 @@
-import { TranslationConfig, TranslationResult, Subtitle } from '../types';
+import {
+  TranslationConfig,
+  TranslationResult,
+  Subtitle,
+  TranslatorFunction,
+} from '../types';
 import { DEFAULT_BATCH_SIZE } from '../constants';
 import { renderTemplate, supportedLanguage } from '../../helpers/utils';
 import { logMessage, store } from '../../helpers/storeManager';
 import { defaultSystemPrompt, defaultUserPrompt } from '../../../types';
 import { isConfigurationError } from '../utils/error';
+import { ProviderFallbackExhaustedError } from './providerFallback';
 import {
   throwIfTaskCancelled,
   isTaskCancelledError,
@@ -146,6 +152,7 @@ async function repairSubtitleEntry(
     } catch (error) {
       if (isTaskCancelledError(error)) throw error;
       throwIfSignalCancelled(params.signal);
+      if (error instanceof ProviderFallbackExhaustedError) throw error;
       if (isConfigurationError(error)) throw error;
       logMessage(
         `定点补翻条目 ${subtitle.id} 第 ${attempt + 1}/${REPAIR_MAX_ATTEMPTS} 次失败: ${error.message}`,
@@ -165,6 +172,33 @@ export async function handleAIBatchTranslation(
   maxRetries: number = 0,
 ): Promise<TranslationResult[]> {
   const { provider, sourceLanguage, targetLanguage, translator } = config;
+  const fallbackTranslator: TranslatorFunction = async (
+    text,
+    requestConfig,
+    from,
+    to,
+    options,
+  ) => {
+    if (!config.fallbackRunner?.hasFallbacks) {
+      return translator(text, requestConfig, from, to, options);
+    }
+    return config.fallbackRunner.run((activeProvider, activeTranslator) =>
+      activeTranslator(
+        text,
+        {
+          ...requestConfig,
+          ...activeProvider,
+          // 保留当前批次生成的 glossary/system prompt，凭据和模型取备用实例。
+          ...(requestConfig?.systemPrompt && {
+            systemPrompt: requestConfig.systemPrompt,
+          }),
+        },
+        from,
+        to,
+        options,
+      ),
+    );
+  };
   const sourceLanguageName = getLanguageName(sourceLanguage);
   const targetLanguageName = getLanguageName(targetLanguage);
   // 回显锚定默认开启（design D4）：模型逐条回显原文，用于检测合并/滑移错位。
@@ -280,7 +314,7 @@ export async function handleAIBatchTranslation(
           `AI translate batch ${currentBatchIndex}/${totalBatches} (尝试 ${retryCount + 1}/${maxRetries + 1}): \n ${translationContent}`,
           'info',
         );
-        const responseOrigin = await translator(
+        const responseOrigin = await fallbackTranslator(
           translationContent,
           translationConfig,
           sourceLanguage,
@@ -349,7 +383,7 @@ export async function handleAIBatchTranslation(
               subtitle,
               batch,
               accepted: validation.accepted,
-              translator,
+              translator: fallbackTranslator,
               translationConfig,
               sourceLanguage,
               targetLanguage,
@@ -401,6 +435,7 @@ export async function handleAIBatchTranslation(
       } catch (error) {
         if (isTaskCancelledError(error)) throw error;
         throwIfSignalCancelled(config.signal);
+        if (error instanceof ProviderFallbackExhaustedError) throw error;
         // 检查是否是配置错误，如果是则直接抛出，不进行重试
         if (isConfigurationError(error)) {
           throw new Error(
@@ -445,7 +480,9 @@ export async function handleAIBatchTranslation(
   const results = await runTranslationBatchesInOrder({
     batches,
     concurrency: batchConcurrency,
-    requestIntervalMs: requestInterval,
+    requestIntervalMs: config.fallbackRunner?.hasFallbacks
+      ? 0
+      : requestInterval,
     totalSubtitles: subtitles.length,
     processBatch,
     onProgress,

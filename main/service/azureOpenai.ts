@@ -72,6 +72,7 @@ export async function translateWithAzureOpenAI(
     const baseURL = `${url.protocol}//${url.host}/`;
 
     const openai = new AzureOpenAI({
+      ...(options?.beforeRequest ? { maxRetries: 0 } : {}),
       endpoint: baseURL,
       apiKey: provider.apiKey,
       deployment: deploymentName,
@@ -133,9 +134,13 @@ export async function translateWithAzureOpenAI(
               const requestParams = responseFormat
                 ? { ...baseParams, response_format: responseFormat }
                 : baseParams;
-              return openai.chat.completions.create(requestParams, {
-                signal: options?.signal,
-              });
+              return (async () => {
+                await options?.beforeRequest?.();
+                throwIfSignalCancelled(options?.signal);
+                return openai.chat.completions.create(requestParams, {
+                  signal: options?.signal,
+                });
+              })();
             },
           }),
       });

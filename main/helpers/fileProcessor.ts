@@ -170,6 +170,7 @@ async function translateSubtitle(
   file: IFiles,
   formData,
   provider,
+  fallbackProviders = [],
 ): Promise<boolean> {
   // 强制发送翻译开始状态
   event.sender.send('taskFileChange', {
@@ -192,7 +193,15 @@ async function translateSubtitle(
   };
 
   try {
-    await translate(event, file, formData, provider, onProgress);
+    await translate(
+      event,
+      file,
+      formData,
+      provider,
+      onProgress,
+      undefined,
+      fallbackProviders,
+    );
 
     // 确保最终状态的正确发送
     event.sender.send('taskProgressChange', file, 'translateSubtitle', 100);
@@ -232,6 +241,7 @@ export async function processFile(
   formData,
   hasOpenAiWhisper,
   provider,
+  fallbackProviders = [],
 ) {
   const {
     sourceLanguage,
@@ -719,7 +729,13 @@ export async function processFile(
         throw new Error(errorMsg);
       }
       logMessage(`translate subtitle ${file.srtFile}`, 'info');
-      translateOk = await translateSubtitle(event, file, formData, provider);
+      translateOk = await translateSubtitle(
+        event,
+        file,
+        formData,
+        provider,
+        fallbackProviders,
+      );
     }
 
     // 源字幕中文标点去除 · generateAndTranslate：翻译完成后再剥离源交付物，

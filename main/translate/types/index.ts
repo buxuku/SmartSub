@@ -1,4 +1,5 @@
 import type { ResolvedGlossaryEntry } from '../../../types/glossary';
+import type { ProviderFallbackRunner } from '../services/providerFallback';
 
 export interface Subtitle {
   id: string;
@@ -20,6 +21,16 @@ export interface TranslationConfig {
   translator: TranslatorFunction;
   glossaryEntries?: ResolvedGlossaryEntry[];
   signal?: AbortSignal;
+  /** 同一任务内按顺序尝试的备用实例；候选实例必须与 provider.type 相同。 */
+  fallbackProviders?: Provider[];
+  /** 已由 translationProvider 创建的任务级回退状态机。 */
+  fallbackRunner?: ProviderFallbackRunner;
+  /** 发生实例切换时的用户提示/日志回调。 */
+  onProviderFallback?: (event: {
+    from: Provider;
+    to: Provider;
+    reason: string;
+  }) => void;
   /** 测试面板注入的思考元数据收集器（openspec: ai-thinking-mode-control D7） */
   onResponseMeta?: (meta: TranslationResponseMeta) => void;
 }
@@ -48,6 +59,8 @@ export interface TranslationResponseMeta {
 
 export interface TranslationRequestOptions {
   signal?: AbortSignal;
+  /** Fallback scheduler hook for each SDK request, including format retries. */
+  beforeRequest?: () => Promise<void>;
   /** 支持原生术语参数的非 AI 翻译服务可读取当前批次的词库。 */
   glossaryEntries?: ResolvedGlossaryEntry[];
   /**

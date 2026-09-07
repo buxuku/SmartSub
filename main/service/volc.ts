@@ -5,6 +5,7 @@ import type { TranslationRequestOptions } from '../translate/types';
 
 let service;
 let fetchApi;
+let serviceCredentials: { accessKeyId: string; secretKey: string } | undefined;
 
 export default async function translate(
   query,
@@ -25,7 +26,12 @@ export default async function translate(
     console.log('不支持的语言');
     throw new Error('not supported language');
   }
-  if (!service || !fetchApi) {
+  if (
+    !service ||
+    !fetchApi ||
+    serviceCredentials?.accessKeyId !== accessKeyId ||
+    serviceCredentials?.secretKey !== secretKey
+  ) {
     service = new Service({
       host: 'open.volcengineapi.com',
       serviceName: 'translate',
@@ -38,6 +44,7 @@ export default async function translate(
       method: 'POST',
       contentType: 'json',
     });
+    serviceCredentials = { accessKeyId, secretKey };
   }
   const postBody = {
     SourceLanguage:

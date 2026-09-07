@@ -61,14 +61,27 @@ export function useRetranslateFailed({
   useEffect(() => {
     const cleanup = window.ipc.on(
       'retranslateProgress',
-      (data: { batchId?: string; done?: number; total?: number }) => {
+      (data: {
+        batchId?: string;
+        done?: number;
+        total?: number;
+        fallback?: { fromName: string; toName: string };
+      }) => {
         if (!batchIdRef.current || data?.batchId !== batchIdRef.current) return;
-        setDone(data.done ?? 0);
-        setTotal(data.total ?? 0);
+        if (typeof data.done === 'number') setDone(data.done);
+        if (typeof data.total === 'number') setTotal(data.total);
+        if (data.fallback) {
+          toast.info(
+            t('retranslateProviderFallback', {
+              from: data.fallback.fromName,
+              to: data.fallback.toName,
+            }),
+          );
+        }
       },
     );
     return cleanup;
-  }, []);
+  }, [t]);
 
   const start = useCallback(async () => {
     if (batchIdRef.current) return;

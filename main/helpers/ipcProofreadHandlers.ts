@@ -42,6 +42,7 @@ import {
   TranslatorFunction,
 } from '../translate/types';
 import { runWithTaskContext, isTaskCancelledError } from './taskContext';
+import { resolveProviderFallbacks } from './providerMigration';
 import { runSubtitleCorrection } from './subtitleCorrectionService';
 import {
   buildGlossaryPromptBlock,
@@ -894,6 +895,7 @@ Only respond with the translation, nothing else.`;
             error: `不支持的翻译服务类型: ${provider.type}`,
           };
         }
+        const fallbackProviders = resolveProviderFallbacks(providers, provider);
 
         const from = sourceLanguage || userConfig.sourceLanguage || 'en';
         const to = targetLanguage || userConfig.targetLanguage || 'zh';
@@ -923,6 +925,18 @@ Only respond with the translation, nothing else.`;
                 });
               },
               1,
+              true,
+              undefined,
+              fallbackProviders,
+              (fallback) => {
+                event.sender.send('retranslateProgress', {
+                  batchId,
+                  fallback: {
+                    fromName: fallback.from.name,
+                    toName: fallback.to.name,
+                  },
+                });
+              },
             );
           },
         );

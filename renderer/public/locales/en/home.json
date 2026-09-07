@@ -114,6 +114,7 @@
   "retranslateNoResult": "No translation results to apply",
   "retranslateDone": "Retranslation complete, {{count}} lines filled",
   "retranslateCancelledPartial": "Cancelled, {{count}} lines filled",
+  "retranslateProviderFallback": "{{from}} is temporarily unavailable. Continuing with {{to}}",
   "translationFailedPlaceholder": "Translation failed, please enter manually",
   "history": "History",
   "clickToSelectVideo": "Click to select video file",

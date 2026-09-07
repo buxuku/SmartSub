@@ -52,6 +52,123 @@ export function isConfigurationError(error: Error): boolean {
   return hasExplicitConfigError || hasAuthError || hasOriginalConfigError;
 }
 
+/**
+ * 判断是否值得切换到同 type 的备用实例。
+ *
+ * 认证、额度、限流和临时网络错误通常只说明当前实例不可用；语言、模型、
+ * 请求格式等错误换 key 也无法修复，必须保留原错误直接反馈给用户。
+ */
+export function isFallbackEligibleError(error: unknown): boolean {
+  const raw = (error instanceof Error ? error.message : String(error ?? ''))
+    .toLowerCase()
+    .trim();
+  if (!raw) return false;
+
+  const explicitNonFallbackErrors = [
+    'aborted',
+    'aborterror',
+    'cancelled',
+    'canceled',
+    'task cancelled',
+    'not supported language',
+    'unsupported language',
+    'language not supported',
+    'missing configuration',
+    'configuration error',
+    'api key is required',
+    'missing api key',
+    'missingkeyorsecret',
+    'invalid model',
+    'model not found',
+    'invalid request',
+    'bad request',
+    'response_format',
+    'structured output',
+    'invalid parameter',
+    'unsupported parameter',
+    'parameter error',
+  ];
+  if (explicitNonFallbackErrors.some((pattern) => raw.includes(pattern))) {
+    return false;
+  }
+
+  const statusValue = Number(
+    (error as any)?.status ??
+      (error as any)?.statusCode ??
+      (error as any)?.response?.status,
+  );
+  const statusMatch = raw.match(
+    /(?:^|:\s*|http\s*(?:status\s*)?|status(?:\s+code)?\s*)(4\d\d|5\d\d)\b/,
+  );
+  const status =
+    Number.isFinite(statusValue) && statusValue > 0
+      ? statusValue
+      : statusMatch
+        ? Number(statusMatch[1])
+        : 0;
+  if (
+    status === 401 ||
+    status === 403 ||
+    status === 408 ||
+    status === 429 ||
+    (status >= 500 && status <= 599)
+  ) {
+    return true;
+  }
+
+  return [
+    'unauthorized',
+    'forbidden',
+    'access denied',
+    'authentication failed',
+    'auth failed',
+    'invalid credentials',
+    'invalid api key',
+    'incorrect api key',
+    'api key not valid',
+    'quota',
+    'rate limit',
+    'ratelimit',
+    'too many requests',
+    'insufficient balance',
+    'insufficient_quota',
+    'insufficient quota',
+    'billing hard limit',
+    'credit balance',
+    'econnreset',
+    'econnrefused',
+    'enotfound',
+    'eai_again',
+    'etimedout',
+    'timeout',
+    'timed out',
+    'connection error',
+    'fetch failed',
+    'network error',
+    'socket hang up',
+    'service unavailable',
+    'bad gateway',
+    'gateway timeout',
+    'network connection failed',
+    'limit exceeded',
+    'requestlimit',
+    'throttling',
+    'account overdue',
+    '网络连接失败',
+    '网络错误',
+    '鉴权失败',
+    '访问被拒绝',
+    '权限不足',
+    '请求超时',
+    '服务不可用',
+    '请求过于频繁',
+    '频率限制',
+    '余额不足',
+    '额度不足',
+    '配额不足',
+  ].some((pattern) => raw.includes(pattern));
+}
+
 /** 批量翻译失败时写入 targetContent 的前缀 */
 const TRANSLATION_FAILURE_PREFIX = '[翻译失败:';
 

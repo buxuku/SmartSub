@@ -28,6 +28,8 @@ function emitError(event: any, file: IFiles, message: string) {
 const DERIVE_ERROR_MESSAGES: Record<string, string> = {
   'no-subtitle': '找不到可合成的字幕文件（txt 格式不支持烧录）',
   'none-without-dub': '合成配置为不含字幕，但该文件没有配音轨，无事可做',
+  'video-input-required':
+    '成品视频合成需要包含视频流的输入；纯音频文件请取消成品视频或改用视频文件',
 };
 
 /**

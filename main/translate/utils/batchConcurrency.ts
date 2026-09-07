@@ -4,6 +4,7 @@ import {
   waitForTaskDelay,
 } from '../../helpers/taskContext';
 import { logMessage } from '../../helpers/storeManager';
+import { ProviderFallbackExhaustedError } from '../services/providerFallback';
 
 export type TranslationBatch = {
   index: number;
@@ -79,6 +80,7 @@ export async function runTranslationBatchesInOrder({
   let processedSubtitles = 0;
   let nextRequestStartAt = 0;
   let flushPromise = Promise.resolve();
+  let failure: { error: unknown } | undefined;
 
   const waitForRequestSlot = async (displayIndex: number) => {
     if (requestIntervalMs <= 0) return;
@@ -117,12 +119,14 @@ export async function runTranslationBatchesInOrder({
   const worker = async () => {
     while (true) {
       throwIfTaskCancelled();
+      if (failure) return;
       const batchIndex = nextBatchIndex++;
       if (batchIndex >= batches.length) return;
 
       const batch = batches[batchIndex];
       await waitForRequestSlot(batch.displayIndex);
       throwIfTaskCancelled();
+      if (failure) return;
 
       const batchResults = await processBatch(batch);
       completedBatches[batch.index] = batchResults;
@@ -142,8 +146,29 @@ export async function runTranslationBatchesInOrder({
     }
   };
 
-  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  // Stop assigning batches on failure, and settle all in-flight writes before
+  // returning control to the task/pipeline failure handler.
+  await Promise.all(
+    Array.from({ length: concurrency }, () =>
+      worker().catch((error) => {
+        failure ??= { error };
+      }),
+    ),
+  );
   await flushPromise;
+
+  if (failure) {
+    if (failure.error instanceof ProviderFallbackExhaustedError) {
+      // A failed batch can leave a gap before later successful batches.
+      for (let index = nextFlushIndex; index < batches.length; index++) {
+        const batchResults = completedBatches[index];
+        if (batchResults && onTranslationResult) {
+          await onTranslationResult(batchResults);
+        }
+      }
+    }
+    throw failure.error;
+  }
 
   return results;
 }
