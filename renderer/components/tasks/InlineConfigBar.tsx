@@ -18,7 +18,11 @@ import AiRefineControl from '@/components/tasks/AiRefineControl';
 import ManuscriptControl from '@/components/tasks/ManuscriptControl';
 import { supportedLanguage } from 'lib/utils';
 import { isProviderConfigured } from 'lib/providerUtils';
-import { hasAnyModelAnyEngine } from 'lib/engineModels';
+import {
+  hasAnyModelAnyEngine,
+  hasUnavailableParakeetModel,
+} from 'lib/engineModels';
+import { isParakeetLanguageMismatch } from '../../../types/parakeet';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import { useTranslation } from 'next-i18next';
 import { useCustomLanguages } from 'hooks/useCustomLanguages';
@@ -138,7 +142,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-muted/30 px-3 py-2">
       {typeDef.needsModel && (
         <ConfigItem label={t('configBar.model')}>
-          {hasModels ? (
+          {hasModels || formData.transcriptionEngine === 'parakeet' ? (
             <Models
               className={modelTriggerClass}
               engine={formData.transcriptionEngine}
@@ -314,6 +318,34 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
           </ConfigItem>
         </>
       )}
+
+      {typeDef.needsModel &&
+        formData.transcriptionEngine === 'parakeet' &&
+        (hasUnavailableParakeetModel(systemInfo, formData) ? (
+          <p
+            role="alert"
+            className="flex w-full items-start gap-1.5 break-words text-xs text-destructive"
+          >
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {t('parakeet.modelUnavailable', {
+              model: formData.model || 'Parakeet',
+            })}
+          </p>
+        ) : isParakeetLanguageMismatch(
+            formData.model,
+            formData.sourceLanguage,
+          ) ? (
+          <p
+            role="status"
+            className="flex w-full items-start gap-1.5 break-words text-xs text-muted-foreground"
+          >
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {t('parakeet.languageMismatch', {
+              model: formData.model,
+              language: formData.sourceLanguage,
+            })}
+          </p>
+        ) : null)}
 
       {!typeDef.hasTranslate && (
         <ConfigItem label={t('configBar.format')}>

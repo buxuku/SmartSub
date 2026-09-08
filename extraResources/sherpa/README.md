@@ -15,7 +15,7 @@
 
 `worker/sherpa-worker.js` 是转写 worker 入口（Electron utility process，纯 JS，
 不经 webpack），支持 SenseVoice、Paraformer、Qwen3-ASR、FireRedASR 与
-NeMo transducer（NVIDIA Parakeet TDT）配置。
+NeMo transducer（NVIDIA Parakeet TDT v2/v3）与 NeMo CTC（日语 Parakeet）配置。
 
 升级 sherpa 版本：重新 `npm pack sherpa-onnx-node@<ver>` 覆盖 `vendor/` 内除
 `addon.js` 外的文件，并同步更新引擎仓 `pack_sherpa_libs.mjs` / 下载器中的版本号。

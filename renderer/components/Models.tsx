@@ -170,6 +170,10 @@ const Models = React.forwardRef<
               {selected.model}
             </span>
           </div>
+        ) : engine === 'parakeet' && model ? (
+          <span className="truncate text-destructive" title={model}>
+            {model}
+          </span>
         ) : (
           <SelectValue placeholder={t('pleaseSelect')} />
         )}

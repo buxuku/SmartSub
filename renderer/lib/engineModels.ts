@@ -5,6 +5,7 @@ import {
   parseAsrModels,
 } from '../../types/asrProvider';
 import { models } from './utils';
+import { resolveParakeetSelection } from '../../types/parakeet';
 
 /**
  * 引擎感知的模型就绪判断。
@@ -173,6 +174,20 @@ export interface EngineModelSelection {
   engine?: TranscriptionEngine;
   model?: string;
   asrProviderId?: string;
+}
+
+export function hasUnavailableParakeetModel(
+  info: EngineModelInfo | undefined,
+  selection: { transcriptionEngine?: string; model?: string },
+): boolean {
+  if (selection.transcriptionEngine !== 'parakeet') return false;
+  return (
+    !info?.parakeetVadInstalled ||
+    !resolveParakeetSelection(
+      selection.model,
+      info.parakeetModelsInstalled ?? [],
+    )
+  );
 }
 
 /** (引擎,模型) 选项值的分隔符；引擎 id 与模型名均不含 "::"，故可安全编码/解码。 */
@@ -365,6 +380,17 @@ export function pickDefaultEngineModel(
 } | null {
   if (!groups.length) return null;
 
+  if (last?.engine === 'parakeet') {
+    const installed = groups.find((g) => g.engine === 'parakeet')?.models ?? [];
+    return {
+      engine: 'parakeet',
+      model:
+        last.model?.trim() ||
+        resolveParakeetSelection(undefined, installed)?.id ||
+        '',
+    };
+  }
+
   if (last?.engine) {
     // 云引擎按实例 id 精确回落；其它引擎按引擎 id。
     const g =
@@ -393,7 +419,10 @@ export function pickDefaultEngineModel(
   if (preferred?.models.length) {
     return {
       engine: preferred.engine,
-      model: preferred.models[0],
+      model:
+        preferred.engine === 'parakeet'
+          ? resolveParakeetSelection(undefined, preferred.models)?.id || ''
+          : preferred.models[0],
       asrProviderId: preferred.asrProviderId,
     };
   }

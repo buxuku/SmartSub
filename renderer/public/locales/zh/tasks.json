@@ -1,4 +1,8 @@
 {
+  "parakeet": {
+    "modelUnavailable": "模型 {{model}} 未就绪。请在任务配置中选择已安装的模型；固定配置任务可重新安装原模型或新建任务。",
+    "languageMismatch": "{{model}} 不支持源语言 {{language}}，识别结果可能不准确。当前选择已保留。"
+  },
   "pageTitle": {
     "generate-translate": "视频 → 双语字幕",
     "generate": "视频 → 原文字幕",

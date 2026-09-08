@@ -86,7 +86,7 @@
     "sherpa": {
       "name": "本地多模型引擎",
       "subtitle": "FunASR · Qwen · FireRed · Parakeet",
-      "tags": ["FunASR", "Qwen3-ASR", "FireRedASR", "Parakeet TDT"],
+      "tags": ["FunASR", "Qwen3-ASR", "FireRedASR", "Parakeet"],
       "desc": "FunASR、Qwen3-ASR、FireRedASR、NVIDIA Parakeet 共用同一套 sherpa-onnx 本地运行库（已随应用内置），区别只在模型与少量参数。在下方按需选择并下载对应模型即可使用，全程离线、无需 Python。",
       "builtinRuntime": "运行库已随应用内置，由四个模型族共用，无需单独下载。",
       "installedVersion": "内置 v{{version}}",
@@ -286,8 +286,8 @@
     "parakeet": {
       "name": "NVIDIA Parakeet",
       "builtinRuntime": "运行库已随应用内置，并与其它 sherpa ASR 引擎共用。",
-      "desc": "NVIDIA Parakeet TDT 0.6B v3 本地引擎，基于 sherpa-onnx 运行，支持 25 种欧洲语言、自带标点与大小写。int8 模型可在 CPU 上运行，无需 Python；段级时间戳来自 VAD。",
-      "scenario": "适合：英文及欧洲语言高质量转写，CC-BY-4.0",
+      "desc": "英语 v2、多语种 v3 与日语 CTC 模型，均为 int8 量化，支持本地 CPU 转写及标点。共用 sherpa-onnx 运行库，无需 Python；提供段级时间戳。",
+      "scenario": "适合：英语、欧洲语言及日语转写，CC-BY-4.0",
       "needsModels": "需下载模型",
       "anotherDownload": "已有下载任务进行中，请等待完成后再试。",
       "downloading": "下载中…",
@@ -307,7 +307,15 @@
       "models": {
         "parakeet-tdt-0.6b-v3": {
           "name": "Parakeet TDT 0.6B v3（int8，约 670MB）",
-          "desc": "支持 25 种欧洲语言、自带标点与大小写；NeMo transducer 架构，英文识别准确率高。"
+          "desc": "25 种欧洲语言，包含英语；支持标点与大小写。下载约 487MB。"
+        },
+        "parakeet-tdt-0.6b-v2": {
+          "name": "Parakeet TDT 0.6B v2（英语，int8，约 662MB）",
+          "desc": "英语专用，支持标点与大小写。下载约 482MB。"
+        },
+        "parakeet-tdt_ctc-0.6b-ja": {
+          "name": "Parakeet 0.6B 日语（CTC，int8，约 656MB）",
+          "desc": "日语专用，支持标点；使用 TDT/CTC 混合模型的 CTC 分支。下载约 489MB。"
         }
       }
     },

@@ -57,7 +57,7 @@ Online video **download** / local media → **transcribe** → **translate** →
 
 - Batch subtitle generation for a wide range of video / audio formats, with configurable concurrency
 - 8 engine families, switchable per task: built-in `whisper.cpp`, `faster-whisper`, `FunASR`, `Qwen3-ASR`, `FireRedASR`, `NVIDIA Parakeet`, your local `Whisper CLI`, plus GPU-free Cloud ASR (8 providers)
-- Local engines are fully offline — nothing gets uploaded; FunASR / FireRedASR shine on Chinese, while Parakeet targets English and European languages
+- Local engines are fully offline; FunASR / FireRedASR cover Chinese, while Parakeet offers English, European-language and Japanese models
 - Optional AI subtitle refine: LLM semantic segmentation + batch correction — lines are regrouped by meaning while timing stays word-accurate (no dangling connectives, numbers never split by pauses); correction fixes homophones, removes fillers and normalizes punctuation. Defaults to your AI translation provider (free with local Ollama) and falls back to rule-based segmentation on failure
 - Simplified/Traditional Chinese conversion, custom subtitle file naming (for player auto-loading), optional punctuation removal for Chinese subtitles
 
@@ -160,7 +160,7 @@ The engine is a per-task choice. Manage runtimes and models from the "Engines & 
 | **FunASR**                 | SenseVoice (zh/en/ja/ko/yue) and Paraformer-zh; great for Chinese    | Bundled sherpa-onnx native library               |
 | **Qwen3-ASR**              | Qwen speech recognition (qwen3-asr-0.6b / 1.7b)                      | Bundled sherpa-onnx native library               |
 | **FireRedASR**             | FireRedASR-AED large (zh-en); great for Chinese                      | Bundled sherpa-onnx native library               |
-| **NVIDIA Parakeet**        | Parakeet TDT 0.6B v3; 25 European languages with punctuation/casing  | Bundled sherpa-onnx native library               |
+| **NVIDIA Parakeet**        | English TDT v2, multilingual TDT v3 (25 European languages), Japanese 0.6B CTC; punctuation supported | Bundled sherpa-onnx native library               |
 | **Local Whisper CLI**      | Calls a whisper-compatible command you installed yourself            | Uses your system command                         |
 | **Cloud ASR (online)**     | 8 providers, no GPU needed, multi-provider and multi-instance        | Online service (audio uploaded to your endpoint) |
 

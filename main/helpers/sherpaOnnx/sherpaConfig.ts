@@ -37,6 +37,7 @@ export interface OfflineRecognizerConfig {
       useInverseTextNormalization: number;
     };
     paraformer?: { model: string };
+    nemoCtc?: { model: string };
     /** Qwen3-ASR 四件套 + 自回归解码参数（sherpa-onnx >= 1.12.34）。 */
     qwen3Asr?: {
       convFrontend: string;
@@ -244,6 +245,23 @@ export function buildParakeetRecognizerConfig(
       provider: p.provider,
       debug: 0,
       modelType: 'nemo_transducer',
+    },
+  };
+}
+
+export function buildParakeetCtcRecognizerConfig(
+  model: string,
+  tokens: string,
+  p: ParakeetRecognizerParams,
+): OfflineRecognizerConfig {
+  return {
+    featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
+    modelConfig: {
+      nemoCtc: { model },
+      tokens,
+      numThreads: p.num_threads,
+      provider: p.provider,
+      debug: 0,
     },
   };
 }
