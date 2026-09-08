@@ -16,7 +16,9 @@
  *     以兼容翻译流程边翻译边写入（流式追加）的既有实现。
  */
 
-export type SubtitleFormat = 'srt' | 'vtt' | 'ass' | 'lrc' | 'txt';
+import type { SubtitleOutputFormat } from '../../types/subtitleOutput';
+
+export type SubtitleFormat = SubtitleOutputFormat;
 
 export interface SubtitleCue {
   startMs: number;

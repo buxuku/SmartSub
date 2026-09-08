@@ -102,7 +102,7 @@ export function pickDubTextSource(
   }
 
   // 无翻译：源字幕（ASR 产物 / 用户导入的字幕文件 / noSave 时的临时缓存）
-  const candidates = [file.srtFile, file.tempSrtFile, file.filePath];
+  const candidates = [file.tempSrtFile, file.srtFile, file.filePath];
   for (const candidate of candidates) {
     if (candidate && !isPlainText(candidate) && exists(candidate)) {
       return { type: 'ready', path: candidate };

@@ -35,6 +35,7 @@ import { Badge } from '@/components/ui/badge';
 import { Check, ChevronDown, SlidersHorizontal } from 'lucide-react';
 import { cn } from 'lib/utils';
 import SavePathNotice from '@/components/SavePathNotice';
+import SubtitleFormatSelect from '@/components/tasks/SubtitleFormatSelect';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import {
   SUBTITLE_OUTCOME_TIERS,
@@ -343,7 +344,10 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-[420px] sm:max-w-[420px] p-0">
+      <SheetContent
+        side="right"
+        className="w-[420px] max-w-full sm:max-w-[420px] p-0"
+      >
         <div className="flex h-full flex-col">
           <SheetHeader className="px-6 pt-6">
             <SheetTitle>{t('advanced')}</SheetTitle>
@@ -916,39 +920,20 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                   {showFormatHere && (
                     <FormField
                       control={form.control}
-                      name="subtitleOutputFormat"
+                      name="subtitleOutputFormats"
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>{tHome('subtitleOutputFormat')}</FormLabel>
-                          <Select
-                            onValueChange={field.onChange}
-                            value={field.value || 'srt'}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue
-                                  placeholder={tHome('pleaseSelect')}
-                                />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="srt">
-                                {tHome('format_srt')}
-                              </SelectItem>
-                              <SelectItem value="vtt">
-                                {tHome('format_vtt')}
-                              </SelectItem>
-                              <SelectItem value="ass">
-                                {tHome('format_ass')}
-                              </SelectItem>
-                              <SelectItem value="lrc">
-                                {tHome('format_lrc')}
-                              </SelectItem>
-                              <SelectItem value="txt">
-                                {tHome('format_txt')}
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <SubtitleFormatSelect
+                            config={{
+                              ...formData,
+                              subtitleOutputFormats: field.value,
+                            }}
+                            onChange={(formats) => {
+                              field.onChange(formats);
+                              form.setValue('subtitleOutputFormat', formats[0]);
+                            }}
+                          />
                           <FormDescription className="text-xs">
                             {tHome('subtitleOutputFormatTip')}
                           </FormDescription>

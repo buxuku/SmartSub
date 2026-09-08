@@ -4,6 +4,7 @@ import { isSubtitleFile } from 'lib/utils';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
 import { IFiles } from '../../types';
+import { subtitleOutputFilesToSave } from '../../types/subtitleOutput';
 
 // 字幕格式接口
 export interface Subtitle {
@@ -320,18 +321,20 @@ export const useSubtitles = (
       const { srtFile, tempSrtFile, translatedSrtFile, tempTranslatedSrtFile } =
         file;
 
+      const outputs = subtitleOutputFilesToSave(
+        file,
+        formData.translateContent,
+      );
       // 保存原始字幕
       if (srtFile && formData.sourceSrtSaveOption !== 'noSave') {
-        window.ipc.invoke('saveSubtitleFile', {
+        outputs.push({
           filePath: srtFile,
-          subtitles: mergedSubtitles,
           contentType: 'source',
         });
       }
       if (tempSrtFile) {
-        window.ipc.invoke('saveSubtitleFile', {
+        outputs.push({
           filePath: tempSrtFile,
-          subtitles: mergedSubtitles,
           contentType: 'source',
         });
       }
@@ -340,21 +343,29 @@ export const useSubtitles = (
       if (shouldShowTranslation) {
         // 保存到翻译字幕文件
         if (translatedSrtFile) {
-          window.ipc.invoke('saveSubtitleFile', {
+          outputs.push({
             filePath: translatedSrtFile,
-            subtitles: mergedSubtitles,
             contentType: formData.translateContent,
           });
         }
 
         // 如果有指定的临时翻译文件且不同于主翻译文件，也保存一份
         if (tempTranslatedSrtFile) {
-          window.ipc.invoke('saveSubtitleFile', {
+          outputs.push({
             filePath: tempTranslatedSrtFile,
-            subtitles: mergedSubtitles,
             contentType: 'onlyTranslate',
           });
         }
+      }
+      const written = new Set<string>();
+      for (const output of outputs) {
+        if (written.has(output.filePath)) continue;
+        written.add(output.filePath);
+        const result = await window.ipc.invoke('saveSubtitleFile', {
+          ...output,
+          subtitles: mergedSubtitles,
+        });
+        if (result?.error) throw new Error(result.error);
       }
       toast.success(t('subtitleSavedSuccess'));
     } catch (error) {

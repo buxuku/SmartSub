@@ -316,6 +316,7 @@
     "manuscript": "Script match",
     "translate": "Translate",
     "speakerDiarization": "Speaker diarization",
+    "export": "Export subtitles",
     "dubbing": "Dub",
     "compose": "Compose"
   },

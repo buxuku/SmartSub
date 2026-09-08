@@ -12,6 +12,7 @@ import {
   type MissedSpeechWarning,
   type MissedSpeechSummary,
 } from './missedSpeech';
+import type { SubtitleOutputFiles } from './subtitleOutput';
 
 export const PROOFREAD_DATA_VERSION = 2 as const;
 
@@ -35,7 +36,7 @@ export interface SpeakerInfo {
   autoName?: boolean;
 }
 
-export interface ProofreadDataMeta {
+export interface ProofreadDataMeta extends SubtitleOutputFiles {
   createdAt: string;
   updatedAt: string;
   sourceLanguage?: string;

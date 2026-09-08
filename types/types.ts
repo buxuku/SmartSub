@@ -7,6 +7,10 @@ import type {
   DubbingOverlapMode,
 } from './dubbing';
 import type { EncoderMode, SubtitleStyle, VideoQuality } from './subtitleMerge';
+import type {
+  SubtitleOutputFiles,
+  SubtitleOutputFormat,
+} from './subtitleOutput';
 
 export interface ISystemInfo {
   modelsInstalled: string[];
@@ -80,7 +84,7 @@ export interface ManuscriptMatchSummary {
   averageConfidence: number;
 }
 
-export interface IFiles {
+export interface IFiles extends SubtitleOutputFiles {
   uuid: string;
   filePath: string;
   fileName: string;
@@ -103,6 +107,8 @@ export interface IFiles {
   tempAudioFile?: string;
   translatedSrtFile?: string;
   tempTranslatedSrtFile?: string;
+  exportSubtitle?: '' | 'loading' | 'done' | 'error';
+  exportSubtitleError?: string;
   /** 字幕翻译失败行；译文文件保留原文作为可播放回退。 */
   translationFailures?: Array<{ subtitleId: string; error?: string }>;
   /** 校对用无损中间态 sidecar，保存源文/译文/时间轴，避免直接读写有损交付物。 */
@@ -238,7 +244,9 @@ export interface IFormData {
   sourceLanguage: string;
   targetLanguage: string;
   translateRetryTimes: string;
-  subtitleOutputFormat?: 'srt' | 'vtt' | 'ass' | 'lrc' | 'txt';
+  subtitleOutputFormat?: SubtitleOutputFormat;
+  /** Missing on legacy tasks; the singular format remains the compatibility fallback. */
+  subtitleOutputFormats?: SubtitleOutputFormat[];
   /**
    * 生成字幕时单条字幕最大显示字数 / 宽度（CJK 记 2、其余记 1）。
    * 0 或空 = 智能断句（引擎默认）；-1 = 不限制长度（仅按停顿/标点断句，不按字数硬切）；

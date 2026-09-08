@@ -24,6 +24,8 @@ import {
   prefixTextWithSpeakerNames,
   type SpeakerInfo,
 } from '../../types/proofreadData';
+import { subtitleOutputFilesToSave } from '../../types/subtitleOutput';
+import { atomicReplaceTextFile } from './atomicFile';
 import {
   MANUSCRIPT_EXTENSIONS,
   ManuscriptFileError,
@@ -249,7 +251,7 @@ async function writeSubtitleFile(
     speakerOptions,
   );
   await backupSubtitleFile(filePath);
-  await fs.promises.writeFile(filePath, content, 'utf-8');
+  await atomicReplaceTextFile(filePath, content);
   logMessage(`保存字幕文件成功: ${filePath}`, 'info');
 }
 
@@ -505,7 +507,13 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         );
 
         const rendered = new Set<string>();
-        for (const output of outputs) {
+        for (const output of [
+          ...subtitleOutputFilesToSave(
+            updated.meta,
+            updated.meta.translateContent,
+          ),
+          ...outputs,
+        ]) {
           const filePath = output?.filePath;
           if (!filePath) continue;
           const key = path.resolve(filePath).toLowerCase();

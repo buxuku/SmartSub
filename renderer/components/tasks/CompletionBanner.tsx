@@ -114,7 +114,11 @@ const CompletionBanner: React.FC<CompletionBannerProps> = ({
   };
 
   const getMergeSubtitle = (file: any): string =>
-    file?.translatedSrtFile || file?.srtFile || '';
+    file?.tempFinalSubtitleFile ||
+    file?.translatedSrtFile ||
+    file?.tempSrtFile ||
+    file?.srtFile ||
+    '';
 
   const mergeableFiles =
     typeDef.accepts === 'media'
