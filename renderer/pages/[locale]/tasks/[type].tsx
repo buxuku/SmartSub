@@ -53,6 +53,7 @@ import {
   isEngineModelSelected,
   pickDefaultEngineModel,
 } from 'lib/engineModels';
+import { canStartParakeetTask } from 'lib/parakeetTask';
 import type { TranscriptionEngine } from '../../../../types/engine';
 import type { AsrProvider } from '../../../../types/asrProvider';
 import useSystemInfo from 'hooks/useStystemInfo';
@@ -324,7 +325,9 @@ export default function TaskPage() {
 
     const next = pickDefaultEngineModel(
       groups,
-      lastUsedTranscription ?? undefined,
+      formData.transcriptionEngine === 'parakeet'
+        ? { engine: 'parakeet', model: formData.model }
+        : (lastUsedTranscription ?? undefined),
     );
     if (next) {
       form.setValue('transcriptionEngine', next.engine);
@@ -376,17 +379,43 @@ export default function TaskPage() {
     window?.ipc?.invoke('setSettings', { taskViewMode: mode });
   }, []);
 
-  const handleRetry = useCallback(
-    (file: any) => {
-      // 固定任务重试携带其创建时快照，普通任务仍使用当前表单。
-      window?.ipc?.send('handleTask', {
-        files: [file],
-        formData: listFormData,
-        projectId,
-      });
-      setTaskStatus('running');
+  const retryingRef = useRef(false);
+  const handleRetryFiles = useCallback(
+    async (retryFiles: any[]) => {
+      if (retryingRef.current) return;
+      retryingRef.current = true;
+      try {
+        if (
+          !(await canStartParakeetTask(
+            retryFiles,
+            !!typeDef?.needsModel,
+            listFormData,
+          ))
+        ) {
+          toast.error(
+            t('parakeet.modelUnavailable', {
+              model: listFormData?.model || 'Parakeet',
+            }),
+          );
+          return;
+        }
+        // 固定任务重试携带其创建时快照，普通任务仍使用当前表单。
+        window?.ipc?.send('handleTask', {
+          files: retryFiles,
+          formData: listFormData,
+          projectId,
+        });
+        setTaskStatus('running');
+      } finally {
+        retryingRef.current = false;
+      }
     },
-    [listFormData, projectId],
+    [listFormData, projectId, typeDef?.needsModel, t],
+  );
+
+  const handleRetry = useCallback(
+    (file: any) => handleRetryFiles([file]),
+    [handleRetryFiles],
   );
 
   // ── 人工检查点：统计、放行、检查配音 ─────────────────────────────────────
@@ -447,17 +476,7 @@ export default function TaskPage() {
     setProofreadFile(next ?? null);
   }, [proofreadFile, subtitleReviewQueue, handleReleaseGate]);
 
-  const handleRetryFailed = useCallback(
-    (failedFiles: any[]) => {
-      window?.ipc?.send('handleTask', {
-        files: failedFiles,
-        formData: listFormData,
-        projectId,
-      });
-      setTaskStatus('running');
-    },
-    [listFormData, projectId],
-  );
+  const handleRetryFailed = handleRetryFiles;
 
   const handleImport = () => {
     const fileType = typeDef?.accepts === 'subtitle' ? 'srt' : 'media';

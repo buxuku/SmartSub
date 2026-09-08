@@ -8,6 +8,7 @@ import type { TaskTypeDef } from 'lib/taskTypes';
 import { getFileStages, isFileDone } from './tasks/stageUtils';
 import { useHotkeys } from 'hooks/useHotkeys';
 import { isProviderConfigured } from 'lib/providerUtils';
+import { canStartParakeetTask } from 'lib/parakeetTask';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,6 +46,8 @@ const TaskControls = ({
   autoStart,
 }: TaskControlsProps) => {
   const [taskStatus, setTaskStatusState] = useState('idle');
+  const [starting, setStarting] = useState(false);
+  const startingRef = useRef(false);
   // 首次状态同步是否已完成:autostart 必须等它,否则迟到的 'idle' 会覆盖乐观 'running'
   const [statusSynced, setStatusSynced] = useState(false);
   // 云端听写「上传确认」：首次开跑云任务时弹确认，勾选不再提醒后写入 settings。
@@ -88,83 +91,110 @@ const TaskControls = ({
   }, [projectId]);
 
   const handleTask = async () => {
-    if (!files?.length) {
-      toast(t('common:notification'), {
-        description: t('home:noTask'),
-      });
-      return;
-    }
-    // 向导任务的配置快照（含 dub/compose）里 '-1' 是合法的「不翻译」语义
-    const isSnapshotTask = Boolean(formData?.dub || formData?.compose);
-    // 带翻译的任务必须有有效翻译服务商（'-1' 为历史「不翻译」残留值）
-    if (typeDef.hasTranslate && !isSnapshotTask) {
-      const provider = formData?.translateProvider;
-      if (!provider || provider === '-1') {
-        toast.error(t('home:selectProviderFirst'));
+    if (startingRef.current) return;
+    startingRef.current = true;
+    setStarting(true);
+    try {
+      if (!files?.length) {
+        toast(t('common:notification'), {
+          description: t('home:noTask'),
+        });
         return;
       }
-    }
-    // 只派发未完成的文件（error 不算完成，可重跑；已完成文件不重做）
-    const pendingFiles = files.filter(
-      (file) => !isFileDone(file, getFileStages(file, typeDef, formData)),
-    );
-    if (!pendingFiles.length) {
-      toast(t('common:notification'), {
-        description: t('home:allFilesProcessed'),
-      });
-      return;
-    }
-    // 需要模型的任务必须已选模型：自动选择兜底后仍为空，说明确实没有可用模型，
-    // 拦截并指引下载。配对模式文件自带字幕（跳过听写），不需要模型。
-    const needsTranscription = pendingFiles.some(
-      (file) =>
-        !isSubtitleFile(file?.filePath || '') && !file?.providedSubtitlePath,
-    );
-    if (typeDef.needsModel && needsTranscription && !formData?.model) {
-      toast.error(t('home:selectModelFirst'));
-      return;
-    }
-    // AI 精修：与向导 D9 一致——跟随不可解析 / 显式服务商失效时阻断开始。
-    if (
-      needsTranscription &&
-      (formData?.aiSegmentation === true || formData?.aiCorrection === true)
-    ) {
-      const providers =
-        (await window?.ipc?.invoke('getTranslationProviders')) || [];
-      const refineSetting = formData?.refineProvider || 'follow-translation';
-      if (refineSetting === 'follow-translation') {
-        const translateOn =
-          Boolean(formData?.translateProvider) &&
-          formData?.translateProvider !== '-1';
-        const tp = providers.find(
-          (p: any) => p.id === formData?.translateProvider,
+      // 向导任务的配置快照（含 dub/compose）里 '-1' 是合法的「不翻译」语义
+      const isSnapshotTask = Boolean(formData?.dub || formData?.compose);
+      // 带翻译的任务必须有有效翻译服务商（'-1' 为历史「不翻译」残留值）
+      if (typeDef.hasTranslate && !isSnapshotTask) {
+        const provider = formData?.translateProvider;
+        if (!provider || provider === '-1') {
+          toast.error(t('home:selectProviderFirst'));
+          return;
+        }
+      }
+      // 只派发未完成的文件（error 不算完成，可重跑；已完成文件不重做）
+      const pendingFiles = files.filter(
+        (file) => !isFileDone(file, getFileStages(file, typeDef, formData)),
+      );
+      if (!pendingFiles.length) {
+        toast(t('common:notification'), {
+          description: t('home:allFilesProcessed'),
+        });
+        return;
+      }
+      // 需要模型的任务必须已选模型：自动选择兜底后仍为空，说明确实没有可用模型，
+      // 拦截并指引下载。配对模式文件自带字幕（跳过听写），不需要模型。
+      const needsTranscription = pendingFiles.some(
+        (file) =>
+          !isSubtitleFile(file?.filePath || '') && !file?.providedSubtitlePath,
+      );
+      if (
+        !(await canStartParakeetTask(
+          pendingFiles,
+          typeDef.needsModel,
+          formData,
+        ))
+      ) {
+        toast.error(
+          t('tasks:parakeet.modelUnavailable', {
+            model: formData?.model || 'Parakeet',
+          }),
         );
-        if (!translateOn || !tp?.isAi) {
-          toast.error(t('tasks:wizard.blockRefineFollow'));
-          return;
-        }
-      } else {
-        const rp = providers.find((p: any) => p.id === refineSetting);
-        if (!rp?.isAi || !isProviderConfigured(rp)) {
-          toast.error(t('tasks:wizard.blockRefineProviderInvalid'));
-          return;
-        }
-      }
-    }
-    // 云端听写：音频会上传到第三方端点，首次开跑前弹确认（隐私/成本护栏）。
-    if (
-      typeDef.needsModel &&
-      needsTranscription &&
-      formData?.transcriptionEngine === 'cloud'
-    ) {
-      const settings = await window?.ipc?.invoke('getSettings');
-      if (!settings?.cloudUploadConsent) {
-        pendingCloudFilesRef.current = pendingFiles;
-        setCloudConsentOpen(true);
         return;
       }
+      if (
+        formData?.transcriptionEngine !== 'parakeet' &&
+        typeDef.needsModel &&
+        needsTranscription &&
+        !formData?.model
+      ) {
+        toast.error(t('home:selectModelFirst'));
+        return;
+      }
+      // AI 精修：与向导 D9 一致——跟随不可解析 / 显式服务商失效时阻断开始。
+      if (
+        needsTranscription &&
+        (formData?.aiSegmentation === true || formData?.aiCorrection === true)
+      ) {
+        const providers =
+          (await window?.ipc?.invoke('getTranslationProviders')) || [];
+        const refineSetting = formData?.refineProvider || 'follow-translation';
+        if (refineSetting === 'follow-translation') {
+          const translateOn =
+            Boolean(formData?.translateProvider) &&
+            formData?.translateProvider !== '-1';
+          const tp = providers.find(
+            (p: any) => p.id === formData?.translateProvider,
+          );
+          if (!translateOn || !tp?.isAi) {
+            toast.error(t('tasks:wizard.blockRefineFollow'));
+            return;
+          }
+        } else {
+          const rp = providers.find((p: any) => p.id === refineSetting);
+          if (!rp?.isAi || !isProviderConfigured(rp)) {
+            toast.error(t('tasks:wizard.blockRefineProviderInvalid'));
+            return;
+          }
+        }
+      }
+      // 云端听写：音频会上传到第三方端点，首次开跑前弹确认（隐私/成本护栏）。
+      if (
+        typeDef.needsModel &&
+        needsTranscription &&
+        formData?.transcriptionEngine === 'cloud'
+      ) {
+        const settings = await window?.ipc?.invoke('getSettings');
+        if (!settings?.cloudUploadConsent) {
+          pendingCloudFilesRef.current = pendingFiles;
+          setCloudConsentOpen(true);
+          return;
+        }
+      }
+      dispatchTask(pendingFiles);
+    } finally {
+      startingRef.current = false;
+      setStarting(false);
     }
-    dispatchTask(pendingFiles);
   };
 
   // 记录"上次使用"的 (引擎,模型[,云实例]) 并派发任务。
@@ -266,7 +296,7 @@ const TaskControls = ({
         <Button
           className="gap-1.5"
           onClick={handleTask}
-          disabled={!files.length}
+          disabled={!files.length || starting}
         >
           <Play className="h-4 w-4" />
           {taskStatus === 'cancelled'

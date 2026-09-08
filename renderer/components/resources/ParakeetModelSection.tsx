@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'next-i18next';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -20,8 +19,11 @@ import DownloadSourcePopover, {
 import SherpaModelRow from '@/components/resources/SherpaModelRow';
 import { importModelFromFolder } from 'lib/importModel';
 import { resolveModelDownloadUrl } from 'lib/resolveModelDownloadUrl';
+import {
+  PARAKEET_MODEL_IDS,
+  type ParakeetModelId,
+} from '../../../types/parakeet';
 
-type ParakeetModelId = 'parakeet-tdt-0.6b-v3';
 type ParakeetModelSource = 'ghproxy' | 'github';
 
 const PARAKEET_MODEL_SOURCES: ParakeetModelSource[] = ['ghproxy', 'github'];
@@ -40,9 +42,6 @@ interface ParakeetModelStatus {
   models: { id: ParakeetModelId; installed: boolean }[];
 }
 
-const MODEL_ID: ParakeetModelId = 'parakeet-tdt-0.6b-v3';
-const PROGRESS_KEY = `parakeet:${MODEL_ID}`;
-
 const ParakeetModelSection: React.FC<{ onUpdate?: () => void }> = ({
   onUpdate,
 }) => {
@@ -51,9 +50,10 @@ const ParakeetModelSection: React.FC<{ onUpdate?: () => void }> = ({
   const [status, setStatus] = useState<ParakeetModelStatus | null>(null);
   const [progress, setProgress] = useState<Record<string, number>>({});
   const [phase, setPhase] = useState<Record<string, string>>({});
-  const [downloading, setDownloading] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [downloading, setDownloading] = useState<ParakeetModelId | null>(null);
+  const [confirmId, setConfirmId] = useState<ParakeetModelId | null>(null);
+  const [deleteId, setDeleteId] = useState<ParakeetModelId | null>(null);
+  const [importing, setImporting] = useState<ParakeetModelId | null>(null);
   const [source, setSource] = useState<ParakeetModelSource>('ghproxy');
 
   useEffect(() => {
@@ -105,9 +105,6 @@ const ParakeetModelSection: React.FC<{ onUpdate?: () => void }> = ({
     };
   }, [load, onUpdate]);
 
-  const installed =
-    status?.models.find((model) => model.id === MODEL_ID)?.installed ?? false;
-
   const sourceConfig: DownloadSourceConfig = {
     value: source,
     options: PARAKEET_MODEL_SOURCES.map((item) => ({
@@ -118,21 +115,23 @@ const ParakeetModelSection: React.FC<{ onUpdate?: () => void }> = ({
     label: t('engines.parakeet.downloadSource'),
     confirmLabel: commonT('startDownload'),
     hint: t(`engines.parakeet.modelSourceHint.${source}`),
-    getCopyUrl: (next) => resolveModelDownloadUrl('parakeet', next, MODEL_ID),
+    getCopyUrl: (next) =>
+      resolveModelDownloadUrl('parakeet', next, confirmId || undefined),
   };
 
-  const handleDownload = async () => {
-    setShowConfirm(false);
-    setDownloading(true);
+  const handleDownload = async (id: ParakeetModelId) => {
+    setConfirmId(null);
+    setDownloading(id);
+    setPhase((previous) => ({ ...previous, [`parakeet:${id}`]: '' }));
     try {
       const result = await window?.ipc?.invoke('downloadParakeetModel', {
-        model: MODEL_ID,
+        model: id,
         source,
       });
       if (result?.success) {
         await load();
         onUpdate?.();
-      } else {
+      } else if (!String(result?.error).includes('Download cancelled')) {
         toast.error(
           result?.error === 'anotherDownloadInProgress'
             ? t('engines.parakeet.anotherDownload')
@@ -142,34 +141,40 @@ const ParakeetModelSection: React.FC<{ onUpdate?: () => void }> = ({
     } catch (error) {
       toast.error(String(error));
     } finally {
-      setDownloading(false);
-      setProgress((previous) => ({ ...previous, [PROGRESS_KEY]: 0 }));
+      setDownloading(null);
+      setProgress((previous) => ({ ...previous, [`parakeet:${id}`]: 0 }));
     }
   };
 
   const handleCancel = async () => {
     await window?.ipc?.invoke('cancelModelDownload');
-    setDownloading(false);
   };
 
-  const handleImport = async () => {
-    const outcome = await importModelFromFolder('parakeet', MODEL_ID);
-    if (outcome.kind === 'success') {
-      toast.success(t('importModelSuccess'), { duration: 2000 });
-      await load();
-      onUpdate?.();
-    } else if (outcome.kind === 'invalid-layout') {
-      toast.error(
-        t('importInvalidLayout', { files: outcome.missing.join(', ') }),
-      );
-    } else if (outcome.kind === 'error') {
-      toast.error(t('importModelFailed', { error: outcome.message }));
+  const handleImport = async (id: ParakeetModelId) => {
+    setImporting(id);
+    try {
+      const outcome = await importModelFromFolder('parakeet', id);
+      if (outcome.kind === 'success') {
+        toast.success(t('importModelSuccess'), { duration: 2000 });
+        await load();
+        onUpdate?.();
+      } else if (outcome.kind === 'invalid-layout') {
+        toast.error(
+          t('importInvalidLayout', { files: outcome.missing.join(', ') }),
+        );
+      } else if (outcome.kind === 'error') {
+        toast.error(t('importModelFailed', { error: outcome.message }));
+      }
+    } finally {
+      setImporting(null);
     }
   };
 
   const handleDelete = async () => {
-    setShowDeleteConfirm(false);
-    const result = await window?.ipc?.invoke('deleteParakeetModel', MODEL_ID);
+    if (!deleteId) return;
+    const id = deleteId;
+    setDeleteId(null);
+    const result = await window?.ipc?.invoke('deleteParakeetModel', id);
     if (result?.success) {
       await load();
       onUpdate?.();
@@ -187,81 +192,100 @@ const ParakeetModelSection: React.FC<{ onUpdate?: () => void }> = ({
             {t('engines.parakeet.modelsTitle')}
           </h3>
         </div>
-        <Card>
-          <CardContent className="space-y-2 p-2">
-            <SherpaModelRow
-              icon={Mic}
-              name={t(`engines.parakeet.models.${MODEL_ID}.name`)}
-              desc={t(`engines.parakeet.models.${MODEL_ID}.desc`)}
-              installed={installed}
-              busy={downloading}
-              progressPercent={Math.round((progress[PROGRESS_KEY] ?? 0) * 100)}
-              phaseText={
-                phase[PROGRESS_KEY] === 'extracting'
-                  ? t('engines.parakeet.extracting')
-                  : undefined
-              }
-              progressWidthClass="w-44"
-              trailing={
-                downloading ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="gap-1.5 text-muted-foreground"
-                    onClick={handleCancel}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                    {commonT('cancel')}
-                  </Button>
-                ) : installed ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="gap-1.5 text-muted-foreground hover:text-destructive"
-                    onClick={() => setShowDeleteConfirm(true)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    {t('engines.parakeet.modelDelete')}
-                  </Button>
-                ) : (
-                  <div className="flex items-center gap-1.5">
-                    <DownloadSourcePopover
-                      open={showConfirm}
-                      onOpenChange={setShowConfirm}
-                      config={sourceConfig}
-                      onConfirm={handleDownload}
-                    >
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5"
-                        onClick={() => setShowConfirm(true)}
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        {t('engines.parakeet.modelDownload')}
-                      </Button>
-                    </DownloadSourcePopover>
+        <div className="space-y-2">
+          {PARAKEET_MODEL_IDS.map((id) => {
+            const installed =
+              status?.models.find((model) => model.id === id)?.installed ??
+              false;
+            const busy = downloading === id;
+            const progressKey = `parakeet:${id}`;
+            return (
+              <SherpaModelRow
+                key={id}
+                icon={Mic}
+                name={t(`engines.parakeet.models.${id}.name`)}
+                desc={t(`engines.parakeet.models.${id}.desc`)}
+                installed={installed}
+                busy={busy}
+                progressPercent={Math.round((progress[progressKey] ?? 0) * 100)}
+                phaseText={
+                  phase[progressKey] === 'extracting'
+                    ? t('engines.parakeet.extracting')
+                    : undefined
+                }
+                progressWidthClass="w-44"
+                trailing={
+                  busy ? (
                     <Button
                       size="sm"
                       variant="ghost"
                       className="gap-1.5 text-muted-foreground"
-                      onClick={handleImport}
+                      onClick={handleCancel}
                     >
-                      <Upload className="h-3.5 w-3.5" />
-                      {t('importFromFolder')}
+                      <X className="h-3.5 w-3.5" />
+                      {commonT('cancel')}
                     </Button>
-                  </div>
-                )
-              }
-            />
-          </CardContent>
-        </Card>
+                  ) : installed ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="gap-1.5 text-muted-foreground hover:text-destructive"
+                      disabled={!!downloading || !!importing}
+                      onClick={() => setDeleteId(id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      {t('engines.parakeet.modelDelete')}
+                    </Button>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <DownloadSourcePopover
+                        open={confirmId === id}
+                        onOpenChange={(open) => setConfirmId(open ? id : null)}
+                        config={sourceConfig}
+                        onConfirm={() => handleDownload(id)}
+                      >
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5"
+                          disabled={!!downloading || !!importing}
+                          onClick={() => setConfirmId(id)}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          {t('engines.parakeet.modelDownload')}
+                        </Button>
+                      </DownloadSourcePopover>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="gap-1.5 text-muted-foreground"
+                        disabled={!!downloading || !!importing}
+                        onClick={() => handleImport(id)}
+                      >
+                        <Upload className="h-3.5 w-3.5" />
+                        {t('importFromFolder')}
+                      </Button>
+                    </div>
+                  )
+                }
+              />
+            );
+          })}
+        </div>
       </section>
 
-      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+      <AlertDialog
+        open={deleteId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteId(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{commonT('confirmDeleteModel')}</AlertDialogTitle>
+            <AlertDialogTitle className="break-words">
+              {commonT('confirmDeleteModel')}
+              {deleteId ? `: ${deleteId}` : ''}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {commonT('deleteModelDesc')}
             </AlertDialogDescription>

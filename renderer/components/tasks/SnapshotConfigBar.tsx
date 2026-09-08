@@ -4,7 +4,16 @@
  * 替代可编辑的 InlineConfigBar——避免全局配置与本任务无关却可改的误导。
  */
 import React, { useMemo } from 'react';
-import { AudioLines, Diamond, FileText, Film, Lock, Users } from 'lucide-react';
+import {
+  AlertCircle,
+  AudioLines,
+  Diamond,
+  FileText,
+  Film,
+  Lock,
+  Users,
+} from 'lucide-react';
+import { isParakeetLanguageMismatch } from '../../../types/parakeet';
 import {
   Tooltip,
   TooltipContent,
@@ -214,6 +223,20 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
       {needsTranscription && modelValue && (
         <SummaryItem label={t('configBar.model')} value={modelValue} />
       )}
+      {needsTranscription &&
+        snapshot?.transcriptionEngine === 'parakeet' &&
+        isParakeetLanguageMismatch(snapshot.model, snapshot.sourceLanguage) && (
+          <p
+            role="status"
+            className="flex items-start gap-1.5 break-words text-xs text-muted-foreground"
+          >
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {t('parakeet.languageMismatch', {
+              model: snapshot.model,
+              language: snapshot.sourceLanguage,
+            })}
+          </p>
+        )}
 
       {needsTranscription && snapshot?.useEmbeddedSubtitles === false && (
         <SummaryItem

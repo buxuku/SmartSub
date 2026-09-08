@@ -339,7 +339,7 @@
     "funasr": "FunASR",
     "qwen": "Qwen3-ASR",
     "fireRedAsr": "FireRedASR",
-    "parakeet": "Parakeet TDT",
+    "parakeet": "Parakeet",
     "localCli": "Local command",
     "cloud": "Cloud ASR"
   }

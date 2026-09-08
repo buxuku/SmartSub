@@ -86,7 +86,7 @@
     "sherpa": {
       "name": "Local multi-model engine",
       "subtitle": "FunASR · Qwen · FireRed · Parakeet",
-      "tags": ["FunASR", "Qwen3-ASR", "FireRedASR", "Parakeet TDT"],
+      "tags": ["FunASR", "Qwen3-ASR", "FireRedASR", "Parakeet"],
       "desc": "FunASR, Qwen3-ASR, FireRedASR and NVIDIA Parakeet share one bundled sherpa-onnx runtime; they differ only in models and a few parameters. Pick and download a model from any family below to start — fully offline, no Python required.",
       "builtinRuntime": "The runtime is bundled with the app and shared by all four model families — no separate download needed.",
       "installedVersion": "Bundled v{{version}}",
@@ -286,8 +286,8 @@
     "parakeet": {
       "name": "NVIDIA Parakeet",
       "builtinRuntime": "The runtime is bundled with the app and shared with the other sherpa ASR engines.",
-      "desc": "NVIDIA Parakeet TDT 0.6B v3 running locally through sherpa-onnx. It supports 25 European languages, punctuation and capitalization. The int8 model runs on CPU without Python; segment timestamps come from VAD.",
-      "scenario": "Best for: English and European-language transcription, CC-BY-4.0",
+      "desc": "English v2, multilingual v3 and Japanese CTC models with int8 quantization, local CPU transcription and punctuation. All share the sherpa-onnx runtime without Python and provide segment timestamps.",
+      "scenario": "Best for: English, European languages and Japanese, CC-BY-4.0",
       "needsModels": "Models needed",
       "anotherDownload": "Another download is in progress. Please wait for it to finish.",
       "downloading": "Downloading…",
@@ -307,7 +307,15 @@
       "models": {
         "parakeet-tdt-0.6b-v3": {
           "name": "Parakeet TDT 0.6B v3 (int8, ~670MB)",
-          "desc": "25 European languages with punctuation and capitalization; optimized NeMo transducer model for accurate English transcription."
+          "desc": "25 European languages including English, with punctuation and capitalization. Download: ~487MB."
+        },
+        "parakeet-tdt-0.6b-v2": {
+          "name": "Parakeet TDT 0.6B v2 (English, int8, ~662MB)",
+          "desc": "English only, with punctuation and capitalization. Download: ~482MB."
+        },
+        "parakeet-tdt_ctc-0.6b-ja": {
+          "name": "Parakeet 0.6B Japanese (CTC, int8, ~656MB)",
+          "desc": "Japanese with punctuation; uses the CTC branch of the hybrid TDT/CTC model. Download: ~489MB."
         }
       }
     },

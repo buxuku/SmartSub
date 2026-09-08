@@ -64,7 +64,9 @@ import {
   getEngineModelGroups,
   isEngineModelSelected,
   pickDefaultEngineModel,
+  hasUnavailableParakeetModel,
 } from 'lib/engineModels';
+import { canStartParakeetTask } from 'lib/parakeetTask';
 import InlineConfigBar from '@/components/tasks/InlineConfigBar';
 import useSystemInfo from 'hooks/useStystemInfo';
 import useLocalFormConfig from 'hooks/useLocalFormConfig';
@@ -441,7 +443,9 @@ export default function TaskWizard() {
     if (currentValid) return;
     const next = pickDefaultEngineModel(
       groups,
-      lastUsedTranscription ?? undefined,
+      formData.transcriptionEngine === 'parakeet'
+        ? { engine: 'parakeet', model: formData.model }
+        : (lastUsedTranscription ?? undefined),
     );
     if (next) {
       form.setValue('transcriptionEngine', next.engine);
@@ -769,7 +773,15 @@ export default function TaskWizard() {
         includeLocalCli: useLocalWhisper,
         asrProviders,
       });
-      if (!groups.length) {
+      if (hasUnavailableParakeetModel(systemInfo, formData)) {
+        list.push({
+          key: 'model',
+          text: t('parakeet.modelUnavailable', {
+            model: formData?.model || 'Parakeet',
+          }),
+          href: `/${locale}/engines`,
+        });
+      } else if (!groups.length) {
         list.push({
           key: 'model',
           text: t('wizard.blockNoModel'),
@@ -870,6 +882,8 @@ export default function TaskWizard() {
     translateOn,
     providers,
     formData?.translateProvider,
+    formData?.transcriptionEngine,
+    formData?.model,
     formData?.aiSegmentation,
     formData?.aiCorrection,
     formData?.refineProvider,
@@ -952,9 +966,6 @@ export default function TaskWizard() {
     if (!canStart || starting) return;
     setStarting(true);
     try {
-      const projectId = uuidv4();
-      const dubEngine = dubOn ? parseEngineKey(activeEngine!.key) : null;
-      // 配对模式：任务文件 = 媒体文件（携带配对字幕路径）；未配对字幕不进任务
       const taskFiles =
         inputKind === 'paired'
           ? pairing!.pairs.map((p) => ({
@@ -962,6 +973,22 @@ export default function TaskWizard() {
               providedSubtitlePath: p.subtitle.filePath,
             }))
           : files;
+      if (
+        !(await canStartParakeetTask(
+          taskFiles,
+          inputKind !== 'subtitle',
+          formData,
+        ))
+      ) {
+        toast.error(
+          t('parakeet.modelUnavailable', {
+            model: formData?.model || 'Parakeet',
+          }),
+        );
+        return;
+      }
+      const projectId = uuidv4();
+      const dubEngine = dubOn ? parseEngineKey(activeEngine!.key) : null;
       const payload = stripSpeakerDiarizationConfig({
         ...formData,
         taskType,

@@ -75,7 +75,17 @@ import {
   resolveQwenSelection,
 } from '../main/helpers/qwenModelCatalog';
 import { FIRERED_MODELS } from '../main/helpers/fireRedModelCatalog';
-import { PARAKEET_MODELS } from '../main/helpers/parakeetModelCatalog';
+import {
+  PARAKEET_MODELS,
+  getParakeetArchiveUrl,
+  getParakeetSourceOrder,
+} from '../main/helpers/parakeetModelCatalog';
+import {
+  PARAKEET_MODEL_IDS,
+  resolveParakeetSelection,
+  isParakeetLanguageMismatch,
+} from '../types/parakeet';
+import { canStartParakeetTask } from '../renderer/lib/parakeetTask';
 import {
   CT2_REQUIRED_FILES,
   CT2_REQUIRED_CONFIG_ARRAYS,
@@ -105,6 +115,7 @@ import {
   buildQwenRecognizerConfig,
   buildFireRedRecognizerConfig,
   buildParakeetRecognizerConfig,
+  buildParakeetCtcRecognizerConfig,
   segmentTiming,
   progressPercent,
 } from '../main/helpers/sherpaOnnx/sherpaConfig';
@@ -122,6 +133,8 @@ import {
   getEngineModelGroups,
   hasModelsForEngine,
   hasAnyModelAnyEngine,
+  hasUnavailableParakeetModel,
+  pickDefaultEngineModel,
 } from '../renderer/lib/engineModels';
 import {
   formatFunasrDownloadFailureToast,
@@ -1538,6 +1551,179 @@ eq(
 );
 
 const PARAKEET_RP = { num_threads: 4, provider: 'cpu' };
+const PARAKEET_V2 = 'parakeet-tdt-0.6b-v2';
+const PARAKEET_V3 = 'parakeet-tdt-0.6b-v3';
+const PARAKEET_JA = 'parakeet-tdt_ctc-0.6b-ja';
+eq(
+  PARAKEET_MODELS[PARAKEET_JA].requiredFiles,
+  ['model.int8.onnx', 'tokens.txt'],
+  'parakeet: CTC import requires single model and tokens',
+);
+eq(
+  PARAKEET_MODELS[PARAKEET_V2].requiredFiles,
+  PARAKEET_MODELS[PARAKEET_V3].requiredFiles,
+  'parakeet: v2 reuses TDT layout',
+);
+for (const id of PARAKEET_MODEL_IDS) {
+  const spec = PARAKEET_MODELS[id];
+  eq(
+    spec.languageCount,
+    spec.languages.length,
+    `parakeet: ${id} language metadata`,
+  );
+  eq(
+    getParakeetArchiveUrl(spec, 'github'),
+    `https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/${spec.archiveInnerDir}.tar.bz2`,
+    `parakeet: ${id} archive`,
+  );
+  eq(
+    resolveParakeetSelection(id, [...PARAKEET_MODEL_IDS]),
+    { id },
+    `parakeet: explicit ${id} preserved`,
+  );
+}
+eq(
+  getParakeetSourceOrder('github'),
+  ['github', 'ghproxy'],
+  'parakeet: requested source takes precedence',
+);
+eq(
+  resolveParakeetSelection(PARAKEET_JA, [PARAKEET_V2, PARAKEET_V3]),
+  null,
+  'parakeet: missing Japanese model cannot fall back to English',
+);
+eq(
+  resolveParakeetSelection('unknown', [...PARAKEET_MODEL_IDS]),
+  null,
+  'parakeet: unknown model rejected',
+);
+eq(
+  resolveParakeetSelection(undefined, [PARAKEET_V2, PARAKEET_JA]),
+  null,
+  'parakeet: no implicit language model choice',
+);
+eq(
+  resolveParakeetSelection(undefined, [...PARAKEET_MODEL_IDS]),
+  { id: PARAKEET_V3 },
+  'parakeet: legacy default remains v3',
+);
+eq(
+  resolveParakeetSelection(PARAKEET_V2.toUpperCase(), [PARAKEET_V2]),
+  { id: PARAKEET_V2 },
+  'parakeet: normalize model id',
+);
+eq(
+  isParakeetLanguageMismatch(PARAKEET_V2, 'ja'),
+  true,
+  'parakeet: English model warns for Japanese',
+);
+eq(
+  isParakeetLanguageMismatch(PARAKEET_JA, 'en'),
+  true,
+  'parakeet: Japanese model warns for English',
+);
+eq(
+  isParakeetLanguageMismatch(PARAKEET_JA, 'ja-JP'),
+  false,
+  'parakeet: Japanese locale supported',
+);
+eq(
+  isParakeetLanguageMismatch(PARAKEET_V2, 'en_US'),
+  false,
+  'parakeet: English locale supported',
+);
+eq(
+  isParakeetLanguageMismatch(PARAKEET_V3, 'de-DE'),
+  false,
+  'parakeet: European languages retained',
+);
+eq(
+  isParakeetLanguageMismatch(PARAKEET_V3, 'zh'),
+  true,
+  'parakeet: v3 does not support Chinese',
+);
+eq(
+  isParakeetLanguageMismatch(PARAKEET_JA, 'auto'),
+  false,
+  'parakeet: auto has no mismatch warning',
+);
+eq(
+  isParakeetLanguageMismatch(PARAKEET_JA, undefined),
+  false,
+  'parakeet: absent language has no warning',
+);
+eq(
+  hasUnavailableParakeetModel(parakeetReady, {
+    transcriptionEngine: 'parakeet',
+    model: PARAKEET_JA,
+  }),
+  true,
+  'parakeet: selected missing model blocks',
+);
+eq(
+  hasUnavailableParakeetModel(parakeetReady, {
+    transcriptionEngine: 'parakeet',
+    model: PARAKEET_V3,
+  }),
+  false,
+  'parakeet: installed selection ready',
+);
+eq(
+  hasUnavailableParakeetModel(parakeetReady, {
+    transcriptionEngine: 'builtin',
+    model: 'missing',
+  }),
+  false,
+  'parakeet: guard does not change other engines',
+);
+eq(
+  hasUnavailableParakeetModel(parakeetReady, {
+    transcriptionEngine: 'parakeet',
+  }),
+  false,
+  'parakeet: absent selection may use installed v3',
+);
+eq(
+  hasUnavailableParakeetModel(
+    { parakeetVadInstalled: true, parakeetModelsInstalled: [PARAKEET_JA] },
+    { transcriptionEngine: 'parakeet' },
+  ),
+  true,
+  'parakeet: absent selection cannot choose Japanese implicitly',
+);
+eq(
+  pickDefaultEngineModel(getEngineModelGroups(parakeetReady), {
+    engine: 'parakeet',
+    model: PARAKEET_JA,
+  }),
+  { engine: 'parakeet', model: PARAKEET_JA },
+  'parakeet: frontend preserves deleted selection',
+);
+eq(
+  pickDefaultEngineModel([
+    { engine: 'parakeet', models: [PARAKEET_V2, PARAKEET_JA] },
+  ]),
+  { engine: 'parakeet', model: '' },
+  'parakeet: frontend requires explicit choice without v3',
+);
+eq(
+  buildParakeetCtcRecognizerConfig(
+    '/ja/model.int8.onnx',
+    '/ja/tokens.txt',
+    PARAKEET_RP,
+  ),
+  {
+    featConfig: { sampleRate: 16000, featureDim: 80 },
+    modelConfig: {
+      nemoCtc: { model: '/ja/model.int8.onnx' },
+      tokens: '/ja/tokens.txt',
+      numThreads: 4,
+      provider: 'cpu',
+      debug: 0,
+    },
+  },
+  'parakeet: CTC binding config',
+);
 const parakeetRecognizerConfig = buildParakeetRecognizerConfig(
   {
     encoder: '/m/encoder.int8.onnx',
@@ -6409,6 +6595,130 @@ function sleepMs(ms: number): Promise<void> {
 }
 
 async function runAsyncConcurrencyTests(): Promise<void> {
+  const previousWindow = (globalThis as any).window;
+  try {
+    let statusReads = 0;
+    let installed = [PARAKEET_V3];
+    let subtitleExists = true;
+    (globalThis as any).window = {
+      ipc: {
+        invoke: async (channel: string, args?: { filePath: string }) => {
+          if (channel === 'checkFileExists') {
+            eq(
+              args?.filePath,
+              '/test.srt',
+              'parakeet: verifies subtitle artifact',
+            );
+            return { exists: subtitleExists };
+          }
+          eq(
+            channel,
+            'getParakeetModelStatus',
+            'parakeet: fresh model status IPC',
+          );
+          statusReads++;
+          return {
+            success: true,
+            engineInstalled: true,
+            vadInstalled: true,
+            models: installed.map((id) => ({ id, installed: true })),
+          };
+        },
+      },
+    };
+    const form = { transcriptionEngine: 'parakeet', model: PARAKEET_JA };
+    eq(
+      await canStartParakeetTask([{ filePath: '/test.wav' }], true, form),
+      false,
+      'parakeet: start/retry rejects deleted model',
+    );
+    installed = [PARAKEET_JA];
+    eq(
+      await canStartParakeetTask([{ filePath: '/test.wav' }], true, form),
+      true,
+      'parakeet: fresh status recognizes reinstalled model',
+    );
+    const beforeSkipped = statusReads;
+    eq(
+      await canStartParakeetTask([{ filePath: '/test.srt' }], false, form),
+      true,
+      'parakeet: translation only requires no model',
+    );
+    eq(
+      await canStartParakeetTask(
+        [{ filePath: '/test.mp4', providedSubtitlePath: '/test.srt' }],
+        true,
+        form,
+      ),
+      true,
+      'parakeet: paired subtitles require no model',
+    );
+    eq(
+      await canStartParakeetTask(
+        [
+          {
+            filePath: '/test.mp4',
+            extractSubtitle: 'done',
+            srtFile: '/test.srt',
+          },
+        ],
+        true,
+        { ...form, model: '', dub: {} },
+      ),
+      true,
+      'parakeet: downstream pipeline retry remains available',
+    );
+    eq(
+      statusReads,
+      beforeSkipped,
+      'parakeet: skipped ASR does not query model status',
+    );
+    installed = [];
+    subtitleExists = false;
+    eq(
+      await canStartParakeetTask(
+        [{ filePath: '/test.mp4', providedSubtitlePath: '/test.srt' }],
+        true,
+        form,
+      ),
+      false,
+      'parakeet: deleted paired subtitle requires installed model',
+    );
+    const completedAsr = {
+      filePath: '/test.mp4',
+      extractSubtitle: 'done',
+      srtFile: '/test.srt',
+    };
+    eq(
+      await canStartParakeetTask([completedAsr], true, {
+        ...form,
+        compose: {},
+      }),
+      false,
+      'parakeet: deleted pipeline subtitle requires installed model',
+    );
+    subtitleExists = true;
+    eq(
+      await canStartParakeetTask(
+        [{ ...completedAsr, embeddedSubtitle: true }],
+        true,
+        { ...form, compose: {}, useEmbeddedSubtitles: false },
+      ),
+      false,
+      'parakeet: invalidated embedded subtitle requires installed model',
+    );
+    (globalThis as any).window.ipc.invoke = async () => {
+      throw new Error('IPC unavailable');
+    };
+    eq(
+      await canStartParakeetTask([{ filePath: '/test.wav' }], true, form),
+      false,
+      'parakeet: unavailable status cannot start',
+    );
+  } finally {
+    if (previousWindow === undefined) delete (globalThis as any).window;
+    else (globalThis as any).window = previousWindow;
+  }
   // 可取消 JSON 请求：重定向后的慢文件树请求仍必须响应同一个 AbortSignal。
   {
     const server = http.createServer((req, res) => {

@@ -15,8 +15,9 @@ export interface SherpaModelRequest {
     | 'paraformer'
     | 'qwen3_asr'
     | 'fire_red_asr'
-    | 'nemo_transducer';
-  /** sense_voice / paraformer：单模型文件 + tokens.txt；fire_red_asr 复用 tokens 承载 tokens.txt。 */
+    | 'nemo_transducer'
+    | 'nemo_ctc';
+  /** sense_voice / paraformer / nemo_ctc：单模型文件 + tokens.txt。 */
   asrModel?: string;
   tokens?: string;
   /** qwen3_asr：四件套（tokenizer 为目录）。 */

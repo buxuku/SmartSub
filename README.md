@@ -57,7 +57,7 @@
 
 - 多种视频 / 音频格式批量生成字幕，并发任务数可调
 - 8 类转写引擎逐任务切换：内置 `whisper.cpp`、`faster-whisper`、`FunASR`、`Qwen3-ASR`、`FireRedASR`、`NVIDIA Parakeet`、本地 `Whisper CLI`，以及免 GPU 的云端听写（8 家服务商）
-- 本地引擎完全离线，无需联网上传；中文场景可选 FunASR / FireRedASR，英文与欧洲语言可选 Parakeet
+- 本地引擎完全离线，无需联网上传；中文场景可选 FunASR / FireRedASR，英语、欧洲语言与日语可选对应 Parakeet 模型
 - AI 字幕精修（可选）：大模型语义断句 + 批量校正——断句按语义重组且时间轴仍精确到词（连接词不吊行尾、数字不被停顿劈开），校正修同音字、去语气词、规范标点；服务商默认跟随 AI 翻译配置（本地 Ollama 零成本），失败自动回退规则断句
 - 简繁转换、自定义字幕文件名（方便不同播放器挂载识别）、可选中文字幕去标点
 
@@ -160,7 +160,7 @@ brew upgrade --cask smartsub # 升级
 | **FunASR**               | SenseVoice（中 / 英 / 日 / 韩 / 粤）与 Paraformer-zh，中文表现优秀 | 内置 sherpa-onnx 原生库            |
 | **Qwen3-ASR**            | 通义千问语音识别（qwen3-asr-0.6b / 1.7b）                          | 内置 sherpa-onnx 原生库            |
 | **FireRedASR**           | FireRedASR-AED large（中英），中文表现优秀                         | 内置 sherpa-onnx 原生库            |
-| **NVIDIA Parakeet**      | Parakeet TDT 0.6B v3，支持 25 种欧洲语言及标点、大小写             | 内置 sherpa-onnx 原生库            |
+| **NVIDIA Parakeet**      | 英语 TDT v2、多语种 TDT v3（25 种欧洲语言）、日语 0.6B CTC，支持标点 | 内置 sherpa-onnx 原生库            |
 | **本地 Whisper CLI**     | 调用你自行安装的 whisper 兼容命令                                  | 使用系统已装命令                   |
 | **云端听写（在线 ASR）** | 8 家在线服务商，免 GPU、支持多服务商多实例                         | 在线服务（音频上传到你配置的端点） |
 
