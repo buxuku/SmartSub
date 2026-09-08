@@ -28,7 +28,7 @@ Make every frame speak beautifully
 
 SmartSub is an open-source subtitle and dubbing tool that packs the whole pipeline — **speech-to-text → subtitle translation → proofreading → AI dubbing → burn-in** — into one desktop app, with a built-in online video downloader: paste a YouTube / Bilibili link and the source video is fetched for you. Transcription runs on local models (whisper.cpp, sherpa-onnx and more), so your files never leave your machine. It handles batch jobs, accelerates on NVIDIA / AMD / Intel / Apple Silicon GPUs, and runs on Windows, macOS, and Linux.
 
-If you've been juggling separate tools for transcription, translation, text-to-speech, and burning subtitles with ffmpeg, SmartSub is a free, offline-friendly way to do all of it in one place. **The entire pipeline can run at zero cost**: local Whisper transcription, built-in free translation sources, local TTS dubbing with voice cloning, and local ffmpeg burn-in — no API keys required, no usage caps on local processing. When you want more, plug in any of 20 translation services, 8 cloud transcription providers, and 5 cloud TTS services.
+If you've been juggling separate tools for transcription, translation, text-to-speech, and burning subtitles with ffmpeg, SmartSub is a free, offline-friendly way to do all of it in one place. **The entire pipeline can run at zero cost**: local Whisper transcription, built-in free translation sources, local TTS dubbing with voice cloning, and local ffmpeg burn-in — no API keys required, no usage caps on local processing. When you want more, plug in any of 20 translation services, 9 cloud transcription providers, and 6 cloud TTS services.
 
 ## What can it do for you?
 
@@ -56,7 +56,7 @@ Online video **download** / local media → **transcribe** → **translate** →
 ### Subtitle generation (transcription)
 
 - Batch subtitle generation for a wide range of video / audio formats, with configurable concurrency
-- 8 engine families, switchable per task: built-in `whisper.cpp`, `faster-whisper`, `FunASR`, `Qwen3-ASR`, `FireRedASR`, `NVIDIA Parakeet`, your local `Whisper CLI`, plus GPU-free Cloud ASR (8 providers)
+- 8 engine families, switchable per task: built-in `whisper.cpp`, `faster-whisper`, `FunASR`, `Qwen3-ASR`, `FireRedASR`, `NVIDIA Parakeet`, your local `Whisper CLI`, plus GPU-free Cloud ASR (9 providers)
 - Local engines are fully offline; FunASR / FireRedASR cover Chinese, while Parakeet offers English, European-language and Japanese models
 - Optional AI subtitle refine: LLM semantic segmentation + batch correction — lines are regrouped by meaning while timing stays word-accurate (no dangling connectives, numbers never split by pauses); correction fixes homophones, removes fillers and normalizes punctuation. Defaults to your AI translation provider (free with local Ollama) and falls back to rule-based segmentation on failure
 - Simplified/Traditional Chinese conversion, custom subtitle file naming (for player auto-loading), optional punctuation removal for Chinese subtitles
@@ -79,7 +79,7 @@ Online video **download** / local media → **transcribe** → **translate** →
 - A dedicated dubbing workbench: one subtitle file plus an optional video, synthesized line by line and aligned to the timeline automatically
 - Local engines, offline and free: Kokoro multilingual (103 voices), VITS Chinese (174 voices)
 - Voice cloning: local ZipVoice zero-shot cloning (one reference clip and it's ready), plus Volcengine Voice Cloning 2.0 and ElevenLabs instant cloning
-- Cloud services: Edge TTS free tier, OpenAI-compatible endpoints (OpenAI / SiliconFlow and others), Azure Speech, Volcengine Doubao, ElevenLabs
+- Cloud services: Edge TTS free tier, OpenAI-compatible endpoints (OpenAI / SiliconFlow and others), Azure Speech, Volcengine Doubao, ElevenLabs, Xiaomi MiMo
 - Timeline alignment: speech-rate pre-control, measured re-checks, borrowing from silent gaps; lines over the limit go to a review list (edit the text, regenerate the line, or accept a tempo change)
 - Per-line preview, voice switching, and re-synthesis; keep the original track muted or ducked under the dub
 - Export audio only (wav / mp3), replace the audio track, mix into the video, or produce a dual-audio MKV — with the aligned subtitles alongside
@@ -153,23 +153,23 @@ brew upgrade --cask smartsub # upgrade
 
 The engine is a per-task choice. Manage runtimes and models from the "Engines & Models" page:
 
-| Engine                     | Notes                                                                | How it runs                                      |
-| -------------------------- | -------------------------------------------------------------------- | ------------------------------------------------ |
-| **whisper.cpp (built-in)** | Default engine; ggml quantized models and GPU acceleration           | Bundled, works out of the box                    |
-| **faster-whisper**         | CTranslate2-based, faster; models fetched on demand from HuggingFace | Self-contained Python runtime (in-app download)  |
-| **FunASR**                 | SenseVoice (zh/en/ja/ko/yue) and Paraformer-zh; great for Chinese    | Bundled sherpa-onnx native library               |
-| **Qwen3-ASR**              | Qwen speech recognition (qwen3-asr-0.6b / 1.7b)                      | Bundled sherpa-onnx native library               |
-| **FireRedASR**             | FireRedASR-AED large (zh-en); great for Chinese                      | Bundled sherpa-onnx native library               |
+| Engine                     | Notes                                                                                                 | How it runs                                      |
+| -------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **whisper.cpp (built-in)** | Default engine; ggml quantized models and GPU acceleration                                            | Bundled, works out of the box                    |
+| **faster-whisper**         | CTranslate2-based, faster; models fetched on demand from HuggingFace                                  | Self-contained Python runtime (in-app download)  |
+| **FunASR**                 | SenseVoice (zh/en/ja/ko/yue) and Paraformer-zh; great for Chinese                                     | Bundled sherpa-onnx native library               |
+| **Qwen3-ASR**              | Qwen speech recognition (qwen3-asr-0.6b / 1.7b)                                                       | Bundled sherpa-onnx native library               |
+| **FireRedASR**             | FireRedASR-AED large (zh-en); great for Chinese                                                       | Bundled sherpa-onnx native library               |
 | **NVIDIA Parakeet**        | English TDT v2, multilingual TDT v3 (25 European languages), Japanese 0.6B CTC; punctuation supported | Bundled sherpa-onnx native library               |
-| **Local Whisper CLI**      | Calls a whisper-compatible command you installed yourself            | Uses your system command                         |
-| **Cloud ASR (online)**     | 8 providers, no GPU needed, multi-provider and multi-instance        | Online service (audio uploaded to your endpoint) |
+| **Local Whisper CLI**      | Calls a whisper-compatible command you installed yourself                                             | Uses your system command                         |
+| **Cloud ASR (online)**     | 9 providers, no GPU needed, multi-provider and multi-instance                                         | Online service (audio uploaded to your endpoint) |
 
 FunASR / Qwen3-ASR / FireRedASR / Parakeet all run on the bundled sherpa-onnx native library with no extra setup; faster-whisper downloads a self-contained runtime inside the app.
 
 </details>
 
 <details>
-<summary><b>Cloud ASR: the 8 providers</b></summary>
+<summary><b>Cloud ASR: the 9 providers</b></summary>
 
 <br/>
 
@@ -183,6 +183,7 @@ Cloud ASR lives in the "Cloud ASR" group of the Engines & Models sidebar. Each p
 - **Alibaba Cloud**: flash file recognition. Uses a RAM AccessKey ID / Secret plus the Appkey of a project in the Intelligent Speech Interaction console. The recognition language is set in the project's configuration (the task's source language has no effect); the default Mandarin model also handles mixed Chinese-English. Note this service is **commercial-only (no free trial)** — billed by duration after activation
 - **iFlytek**: LLM-based audio file transcription. Asynchronous orders that survive app restarts
 - **Gladia**: solaria models, 100+ languages, 10 free hours per month
+- **Xiaomi MiMo**: `mimo-v2.5-asr` for Chinese, English, and Chinese dialects; billed by duration, with a coarse timeline built from 20-second silence chunks
 
 </details>
 
@@ -260,6 +261,7 @@ Cloud providers, all optional:
 | Azure Speech      | Microsoft Neural voices (700+), SSML rate control                                                             |
 | Volcengine Doubao | Doubao TTS voices, plus Voice Cloning 2.0 for cloned voices                                                   |
 | ElevenLabs        | Multilingual models with instant voice cloning (IVC)                                                          |
+| Xiaomi MiMo       | `mimo-v2.5-tts`, eight fixed Chinese/English voices, currently free for a limited time                        |
 
 Timeline alignment: speech rate is pre-set from the target duration, the result is measured and re-checked (local engines re-synthesize for free, cloud output is tempo-adjusted with atempo), and remaining overruns borrow time from adjacent silent gaps. Lines still past the 1.5x rate limit land on a review list where you can edit the text, regenerate the line, or accept the tempo change.
 

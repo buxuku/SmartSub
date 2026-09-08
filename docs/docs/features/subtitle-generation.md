@@ -35,7 +35,7 @@ keywords:
 | **FireRedASR**          | FireRedASR-AED large（中英），中文表现优秀                         | 内置 sherpa-onnx，无需额外环境   |
 | **NVIDIA Parakeet**     | Parakeet TDT 0.6B v3，英文与 25 种欧洲语言，自动标点及大小写       | 内置 sherpa-onnx，无需额外环境   |
 | **本地 Whisper CLI**    | 调用你自行安装的 whisper 兼容命令                                  | 使用系统已装命令                 |
-| **云端听写**            | 8 家在线服务商，免 GPU 免模型，部分有免费额度                      | 在线服务（音频上传到配置的端点） |
+| **云端听写**            | 9 家在线服务商，免 GPU 免模型，部分有免费额度                      | 在线服务（音频上传到配置的端点） |
 
 - 引擎选型与逐个安装说明见[转写引擎总览](/guides/engines/overview)
 - 中文内容推荐 FunASR / FireRedASR；英文与欧洲语言可试 Parakeet；没有显卡且不想下载模型时推荐[云端听写](/guides/cloud-asr/overview)

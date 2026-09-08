@@ -8,7 +8,7 @@
 
 ### Requirement: 每个服务商拥有独立配置指南页
 
-配置指南 SHALL 为以下每个服务商/引擎提供独立文档页：转写引擎 7 类（whisper.cpp、faster-whisper、FunASR、Qwen3-ASR、FireRedASR、本地 Whisper CLI、云端听写总览）、云端听写服务商 8 家（OpenAI 兼容、ElevenLabs Scribe、Deepgram、火山引擎豆包、腾讯云、阿里云、讯飞、Gladia）、翻译服务商（对照 `types/provider.ts` 的全部内置服务商，含内置免费翻译、百度、阿里云、腾讯、讯飞、火山、豆包、小牛、DeepLX、Azure、Google、Ollama、DeepSeek、Gemini、通义千问、SiliconFlow、Azure OpenAI、DeerAPI 及 OpenAI 兼容模板）、配音服务（本地 Kokoro/VITS/ZipVoice 与云端 Edge TTS、OpenAI 兼容、Azure Speech、火山引擎豆包、ElevenLabs）。
+配置指南 SHALL 为以下每个服务商/引擎提供独立文档页：转写引擎 7 类（whisper.cpp、faster-whisper、FunASR、Qwen3-ASR、FireRedASR、本地 Whisper CLI、云端听写总览）、云端听写服务商 9 家（OpenAI 兼容、ElevenLabs Scribe、Deepgram、火山引擎豆包、腾讯云、阿里云、讯飞、Gladia、Xiaomi MiMo）、翻译服务商（对照 `types/provider.ts` 的全部内置服务商，含内置免费翻译、百度、阿里云、腾讯、讯飞、火山、豆包、小牛、DeepLX、Azure、Google、Ollama、DeepSeek、Gemini、通义千问、SiliconFlow、Azure OpenAI、DeerAPI 及 OpenAI 兼容模板）、配音服务（本地 Kokoro/VITS/ZipVoice 与云端 Edge TTS、OpenAI 兼容、Azure Speech、火山引擎豆包、ElevenLabs、Xiaomi MiMo）。
 
 #### Scenario: 服务商页可直达
 

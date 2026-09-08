@@ -46,7 +46,7 @@ keywords:
 
 | 环节 | 能力概要                                                                                                                                                        | 详细文档                                      |
 | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| 转写 | 8 类转写引擎逐任务切换：内置 whisper.cpp、faster-whisper、FunASR、Qwen3-ASR、FireRedASR、NVIDIA Parakeet、本地 Whisper CLI，以及免 GPU 的云端听写（8 家服务商） | [字幕生成](../features/subtitle-generation)   |
+| 转写 | 8 类转写引擎逐任务切换：内置 whisper.cpp、faster-whisper、FunASR、Qwen3-ASR、FireRedASR、NVIDIA Parakeet、本地 Whisper CLI，以及免 GPU 的云端听写（9 家服务商） | [字幕生成](../features/subtitle-generation)   |
 | 翻译 | 20 个翻译服务：内置免费翻译开箱即用，可接入 DeepSeek、Gemini 等大模型与百度、火山等传统机翻，支持术语表与双语字幕                                               | [字幕翻译](../features/subtitle-translation)  |
 | 校对 | 内置校对台，逐句对照视频检查修改，支持撤销重做与 AI 一键润色                                                                                                    | [字幕校对](../features/proofreading)          |
 | 配音 | TTS 逐条合成并自动对齐时间轴；本地引擎离线免费（Kokoro / VITS），支持 ZipVoice 零样本声音克隆                                                                   | [TTS 配音与声音克隆](../features/tts-dubbing) |
