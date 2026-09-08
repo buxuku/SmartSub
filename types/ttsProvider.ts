@@ -88,6 +88,7 @@ export const TTS_EDGE = 'edge';
 export const TTS_AZURE_SPEECH = 'azureSpeech';
 export const TTS_ELEVENLABS = 'elevenlabs';
 export const TTS_VOLCENGINE = 'volcengine';
+export const TTS_XIAOMI_MIMO = 'xiaomiMimo';
 
 /** OpenAI 官方 /audio/speech 单请求文本上限（字符）。 */
 const OPENAI_TTS_MAX_CHARS = 4096;
@@ -481,6 +482,83 @@ export const TTS_PROVIDER_TYPES: TtsProviderType[] = [
       },
     ],
   },
+  {
+    id: TTS_XIAOMI_MIMO,
+    name: 'Xiaomi MiMo 语音合成',
+    shortName: 'MiMo TTS',
+    isBuiltin: true,
+    icon: '🔊',
+    iconImg: '/images/providers/xiaomi-mimo.svg',
+    docsUrl:
+      'https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/audio/speech-synthesis-v2.5',
+    capabilities: {
+      speedControl: 'none',
+      concurrency: 2,
+    },
+    fields: [
+      {
+        key: 'apiKey',
+        label: 'API Key',
+        type: 'password',
+        required: true,
+        tips: 'ttsXiaomiMimoApiKeyTips',
+        placeholder: 'phXiaomiMimoApiKey',
+      },
+      {
+        key: 'model',
+        label: 'ttsModel',
+        type: 'select',
+        options: ['mimo-v2.5-tts'],
+        required: true,
+        defaultValue: 'mimo-v2.5-tts',
+        tips: 'ttsXiaomiMimoModelTips',
+      },
+      {
+        key: 'voices',
+        label: 'ttsVoices',
+        type: 'text',
+        required: true,
+        defaultValue: '冰糖, 茉莉, 苏打, 白桦, Mia, Chloe, Milo, Dean',
+        tips: 'ttsXiaomiMimoVoicesTips',
+      },
+      {
+        key: 'apiUrl',
+        label: 'Base url',
+        type: 'url',
+        required: true,
+        defaultValue: 'https://api.xiaomimimo.com/v1',
+        tips: 'ttsXiaomiMimoApiUrlTips',
+        placeholder: 'https://api.xiaomimimo.com/v1',
+      },
+      {
+        key: 'requestTimeoutSec',
+        label: 'asrRequestTimeout',
+        type: 'number',
+        required: false,
+        defaultValue: 60,
+        step: 10,
+        tips: 'ttsRequestTimeoutTips',
+      },
+      {
+        key: 'concurrency',
+        label: 'asrConcurrency',
+        type: 'number',
+        required: false,
+        defaultValue: 2,
+        step: 1,
+        tips: 'ttsConcurrencyTips',
+      },
+      {
+        key: 'requestInterval',
+        label: 'requestInterval',
+        type: 'number',
+        required: false,
+        defaultValue: 0.7,
+        step: 0.1,
+        tips: 'ttsXiaomiMimoRequestIntervalTips',
+      },
+    ],
+  },
 ];
 
 /** 按 id 取服务商类型定义。 */
@@ -499,6 +577,11 @@ export function getTtsCapabilities(type: string | undefined): TtsCapabilities {
       concurrency: 1,
     }
   );
+}
+
+/** Optional provider pacing in milliseconds; legacy providers default to no delay. */
+export function resolveTtsRequestIntervalMs(provider: TtsProvider): number {
+  return Math.max(0, Number(provider.requestInterval) || 0) * 1000;
 }
 
 /** 命名预设（形制 ASR_PROVIDER_PRESETS）：仅协议型需要。 */

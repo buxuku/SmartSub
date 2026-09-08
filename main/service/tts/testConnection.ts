@@ -2,6 +2,7 @@ import os from 'os';
 import path from 'path';
 import fs from 'fs';
 import {
+  TTS_XIAOMI_MIMO,
   isTtsProviderConfigured,
   type TtsProvider,
 } from '../../../types/ttsProvider';
@@ -37,7 +38,7 @@ export async function testTtsConnection(
   );
   try {
     const result = await synthesizeSegment(provider, {
-      text: 'Hello',
+      text: provider.type === TTS_XIAOMI_MIMO ? '你好' : 'Hello',
       voice,
       outWavPath,
       signal: AbortSignal.timeout(TEST_TIMEOUT_MS),

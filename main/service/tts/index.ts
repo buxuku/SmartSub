@@ -4,6 +4,7 @@ import {
   TTS_ELEVENLABS,
   TTS_OPENAI_COMPATIBLE,
   TTS_VOLCENGINE,
+  TTS_XIAOMI_MIMO,
   getTtsCapabilities,
   parseTtsVoices,
   type TtsProvider,
@@ -14,6 +15,7 @@ import { synthesizeWithEdge } from './edge';
 import { synthesizeWithAzure } from './azure';
 import { synthesizeWithElevenLabs } from './elevenlabs';
 import { synthesizeWithVolcengine } from './volcengine';
+import { synthesizeWithXiaomiMimo } from './xiaomiMimo';
 import type { TtsSynthesizer, TtsSynthesizeResult } from './types';
 
 /**
@@ -26,6 +28,7 @@ export const TTS_SYNTHESIZER_MAP: Record<string, TtsSynthesizer> = {
   [TTS_AZURE_SPEECH]: synthesizeWithAzure,
   [TTS_ELEVENLABS]: synthesizeWithElevenLabs,
   [TTS_VOLCENGINE]: synthesizeWithVolcengine,
+  [TTS_XIAOMI_MIMO]: synthesizeWithXiaomiMimo,
 };
 
 export function getTtsSynthesizer(
