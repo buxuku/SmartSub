@@ -69,7 +69,10 @@ import {
   CLONE_ZH_RATE_TARGET_CPS,
   cjkCharCount,
 } from '../../../types/voiceClone';
-import { getTtsCapabilities } from '../../../types/ttsProvider';
+import {
+  getTtsCapabilities,
+  resolveTtsRequestIntervalMs,
+} from '../../../types/ttsProvider';
 import {
   TTS_MODELS,
   type TtsModelId,
@@ -734,7 +737,7 @@ function buildEngineAdapter(
     Math.floor(Number(provider.concurrency)) || caps.concurrency || 1,
   );
   const gate = getCloudProviderGate(`tts:${provider.id}`);
-  gate.setLimits(concurrency, 0);
+  gate.setLimits(concurrency, resolveTtsRequestIntervalMs(provider));
   return {
     speedControl: caps.speedControl,
     canResynthesize: false, // 云端重合成花钱 → 复测走 atempo

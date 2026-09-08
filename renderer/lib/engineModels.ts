@@ -1,6 +1,7 @@
 import type { EngineStatus, TranscriptionEngine } from '../../types/engine';
 import type { AsrProvider } from '../../types/asrProvider';
 import {
+  getAsrProviderType,
   isAsrProviderConfigured,
   parseAsrModels,
 } from '../../types/asrProvider';
@@ -167,6 +168,8 @@ export interface EngineModelGroup {
   asrProviderId?: string;
   /** 分组显示名覆盖（云实例用实例名）。 */
   label?: string;
+  /** 服务商无原生时间戳时，模型选择器向用户提示粗粒度时间轴。 */
+  coarseTimeline?: boolean;
 }
 
 /** 逐任务的 (引擎,模型[,云实例]) 选择。 */
@@ -314,6 +317,8 @@ export function getEngineModelGroups(
       models: cloudModels,
       asrProviderId: provider.id,
       label: provider.name,
+      coarseTimeline:
+        getAsrProviderType(provider.type)?.timestampMode === 'none',
     });
   }
 

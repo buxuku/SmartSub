@@ -6,6 +6,7 @@ import {
   isAsrProviderConfigured,
   parseAsrModels,
   resolveAudioLimits,
+  shouldPreChunkAsr,
 } from '../../../types/asrProvider';
 import { getAsrTranscriber } from '../../service/asr';
 import type { AsrTranscribeResult } from '../../service/asr/types';
@@ -165,47 +166,86 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
   // 词级时间轴（sidecar 用）：仅词级路径产出；段级/整段降级为 null（精修走近似模式）。
   let wordTokens: NativeToken[] | null = null;
   // 上传约束：服务商类型声明值优先（如火山 base64 直传需更保守），未声明回落全局默认。
-  const limits = resolveAudioLimits(getAsrProviderType(provider.type), {
+  const providerType = getAsrProviderType(provider.type);
+  const limits = resolveAudioLimits(providerType, {
     maxUploadBytes: CLOUD_MAX_UPLOAD_BYTES,
     maxChunkSeconds: CLOUD_MAX_CHUNK_SECONDS,
   });
-  const prepared = await prepareCloudAudio(tempAudioFile, {
-    maxBytes: limits.maxUploadBytes,
-    signal,
-  });
+  if (shouldPreChunkAsr(providerType)) {
+    logMessage(
+      `cloud ASR: ${provider.name} has no native timestamps, using silence chunks for coarse timing`,
+      'info',
+    );
+    ({ cues, wordTokens } = await transcribeChunkedDegrade(ctx, {
+      transcriber,
+      provider,
+      model,
+      language,
+      signal,
+      concurrency,
+      gate,
+      chunkSeconds: COARSE_DEGRADE_CHUNK_SECONDS,
+    }));
+  } else {
+    const prepared = await prepareCloudAudio(tempAudioFile, {
+      maxBytes: limits.maxUploadBytes,
+      signal,
+    });
+    try {
+      if (
+        prepared.sizeBytes > 0 &&
+        prepared.sizeBytes <= limits.maxUploadBytes
+      ) {
+        // 单请求路径：整段上传。整个 transcriber 调用占一个服务商槽
+        // （订单制服务商含轮询等待，对应其"并发转写路数"配额）。
+        event.sender.send('taskProgressChange', file, 'extractSubtitle', 10);
+        const releaseSlot = await gate.acquire(signal);
+        let result: AsrTranscribeResult;
+        try {
+          result = await transcriber(provider, {
+            audioPath: prepared.path,
+            model,
+            language,
+            signal,
+          });
+        } finally {
+          releaseSlot();
+        }
+        throwIfSignalCancelled(signal);
 
-  try {
-    if (prepared.sizeBytes > 0 && prepared.sizeBytes <= limits.maxUploadBytes) {
-      // 单请求路径：整段上传。整个 transcriber 调用占一个服务商槽
-      // （订单制服务商含轮询等待，对应其"并发转写路数"配额）。
-      event.sender.send('taskProgressChange', file, 'extractSubtitle', 10);
-      const releaseSlot = await gate.acquire(signal);
-      let result: AsrTranscribeResult;
-      try {
-        result = await transcriber(provider, {
-          audioPath: prepared.path,
-          model,
-          language,
-          signal,
-        });
-      } finally {
-        releaseSlot();
-      }
-      throwIfSignalCancelled(signal);
-
-      if (result.hasWordTimestamps && (result.words?.length ?? 0) > 0) {
-        cues = wordCuesFromResult(result, formData as Record<string, unknown>);
-        wordTokens = wordTimelineTokens(result);
-      } else if (result.segments?.length) {
-        cues = resplitSubtitleCues(
-          segmentCuesFromSegments(result.segments, 0),
-          formData as Record<string, unknown>,
-        );
+        if (result.hasWordTimestamps && (result.words?.length ?? 0) > 0) {
+          cues = wordCuesFromResult(
+            result,
+            formData as Record<string, unknown>,
+          );
+          wordTokens = wordTimelineTokens(result);
+        } else if (result.segments?.length) {
+          cues = resplitSubtitleCues(
+            segmentCuesFromSegments(result.segments, 0),
+            formData as Record<string, unknown>,
+          );
+        } else {
+          // 纯文本模型（无词/段时间戳）：按静音细切换取粗粒度时间轴（design 降级路径）。
+          logMessage(
+            `cloud ASR: model ${model} returned no timestamps, degrading via silence chunking for coarse timing`,
+            'warning',
+          );
+          ({ cues, wordTokens } = await transcribeChunkedDegrade(ctx, {
+            transcriber,
+            provider,
+            model,
+            language,
+            signal,
+            concurrency,
+            gate,
+            chunkSeconds: COARSE_DEGRADE_CHUNK_SECONDS,
+          }));
+        }
       } else {
-        // 纯文本模型（无词/段时间戳）：按静音细切换取粗粒度时间轴（design 降级路径）。
+        // 超限：按静音切片、并发转写、按偏移回拼。
         logMessage(
-          `cloud ASR: model ${model} returned no timestamps, degrading via silence chunking for coarse timing`,
-          'warning',
+          `cloud ASR: prepared audio ${(prepared.sizeBytes / 1048576).toFixed(1)}MB exceeds limit, chunking by silence`,
+          'info',
         );
         ({ cues, wordTokens } = await transcribeChunkedDegrade(ctx, {
           transcriber,
@@ -215,28 +255,12 @@ async function transcribeCloud(ctx: TranscribeContext): Promise<string> {
           signal,
           concurrency,
           gate,
-          chunkSeconds: COARSE_DEGRADE_CHUNK_SECONDS,
+          chunkSeconds: limits.maxChunkSeconds,
         }));
       }
-    } else {
-      // 超限：按静音切片、并发转写、按偏移回拼。
-      logMessage(
-        `cloud ASR: prepared audio ${(prepared.sizeBytes / 1048576).toFixed(1)}MB exceeds limit, chunking by silence`,
-        'info',
-      );
-      ({ cues, wordTokens } = await transcribeChunkedDegrade(ctx, {
-        transcriber,
-        provider,
-        model,
-        language,
-        signal,
-        concurrency,
-        gate,
-        chunkSeconds: limits.maxChunkSeconds,
-      }));
+    } finally {
+      prepared.cleanup();
     }
-  } finally {
-    prepared.cleanup();
   }
 
   throwIfSignalCancelled(signal);

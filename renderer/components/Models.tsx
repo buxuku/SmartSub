@@ -166,6 +166,11 @@ const Models = React.forwardRef<
             <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground">
               {groupLabel(selected.group)}
             </span>
+            {selected.group.coarseTimeline && (
+              <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                {t('coarseTimeline')}
+              </span>
+            )}
             <span className="truncate font-medium text-foreground">
               {selected.model}
             </span>
@@ -191,6 +196,11 @@ const Models = React.forwardRef<
                 <SelectLabel className="flex items-center gap-1.5 pl-2 text-foreground">
                   <EngineIcon engine={group.engine} className="h-4 w-4" />
                   <span>{groupLabel(group)}</span>
+                  {group.coarseTimeline && (
+                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                      {t('coarseTimeline')}
+                    </span>
+                  )}
                 </SelectLabel>
                 {group.models.map((m) => (
                   <SelectItem

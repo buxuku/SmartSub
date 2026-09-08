@@ -7,6 +7,7 @@ import {
   ASR_TENCENT,
   ASR_VOLCENGINE,
   ASR_XFYUN,
+  ASR_XIAOMI_MIMO,
   parseAsrModels,
   type AsrProvider,
 } from '../../../types/asrProvider';
@@ -48,6 +49,12 @@ import {
   GLADIA_PROBE_JOB_ID,
   normalizeGladiaBaseURL,
 } from './gladiaUtils';
+import {
+  buildXiaomiMimoHeaders,
+  readXiaomiMimoError,
+  xiaomiMimoChatURL,
+} from '../xiaomiMimoUtils';
+import { buildXiaomiMimoAsrBody } from './xiaomiMimoUtils';
 
 export interface AsrTestResult {
   ok: boolean;
@@ -133,6 +140,27 @@ export async function testAsrConnection(
   if (!apiKey) return { ok: false, needsConfig: true };
 
   try {
+    if (provider?.type === ASR_XIAOMI_MIMO) {
+      const res = await fetch(xiaomiMimoChatURL(provider.apiUrl), {
+        method: 'POST',
+        headers: buildXiaomiMimoHeaders(apiKey),
+        body: JSON.stringify(
+          buildXiaomiMimoAsrBody({
+            data: buildSilentWavBase64(),
+            format: 'wav',
+            language: 'auto',
+          }),
+        ),
+        signal: timeoutSignal(),
+      });
+      if (res.ok) return { ok: true };
+      return {
+        ok: false,
+        status: res.status,
+        detail: await readXiaomiMimoError(res),
+      };
+    }
+
     if (provider?.type === ASR_VOLCENGINE) {
       const base = normalizeVolcBaseURL(provider.apiUrl);
       const res = await fetch(`${base}${VOLC_FLASH_PATH}`, {
