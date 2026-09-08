@@ -1,7 +1,7 @@
 ---
 sidebar_position: 1
 title: 配音服务选型总览
-description: 妙幕配音（TTS）服务怎么选：本地 Kokoro / VITS 离线免费、Edge TTS 免费试用档、Azure / 火山豆包 / ElevenLabs 云端服务与 ZipVoice 声音克隆的对比与推荐。
+description: 妙幕配音（TTS）服务怎么选：本地 Kokoro / VITS 离线免费、Edge TTS 免费试用档、Azure / 火山豆包 / ElevenLabs / Xiaomi MiMo 云端服务与 ZipVoice 声音克隆的对比与推荐。
 keywords: [TTS 服务对比, AI 配音选择, 免费配音, 文字转语音服务, 配音音色]
 ---
 
@@ -25,13 +25,14 @@ keywords: [TTS 服务对比, AI 配音选择, 免费配音, 文字转语音服�
 | [Azure Speech](./azure)               |  F0 免费层   |  ❌  | 700+             | 微软 Neural 全量音色，SSML 语速控制     |
 | [火山引擎豆包](./volcengine)          |      无      |  ❌  | 豆包大模型音色   | 中文音色出众，支持声音复刻 2.0          |
 | [ElevenLabs](./elevenlabs)            | 免费计划少量 |  ❌  | 多语             | 多语模型 + 即时声音克隆（IVC）          |
+| [Xiaomi MiMo](./xiaomi-mimo)          |   限时免费   |  ❌  | 8 个中英文音色   | 基础模型；返回后统一对齐与语速处理      |
 
 ## 按需求推荐（任选其一即可开工）
 
 1. **完全免费·离线可用**：下载 Kokoro 多语 v1.1，配音不联网、不花钱
 2. **零配置在线试用**：启用 Edge TTS，无需注册和 API Key（试用档，不承诺可用性）
 3. **用自己的声音配音**：录一段话或选一段视频，[ZipVoice 克隆](./zipvoice)出专属音色
-4. **正式发布品质**：Azure Speech（中文 Neural 音色全）或火山豆包（中文大模型音色）；多语出海选 ElevenLabs
+4. **正式发布品质**：Azure Speech（中文 Neural 音色全）或火山豆包（中文大模型音色）；基础中英音色可选当前限时免费的 MiMo，多语出海选 ElevenLabs
 
 ## 配置入口
 

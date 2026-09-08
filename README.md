@@ -28,7 +28,7 @@
 
 妙幕（SmartSub）是一款开源的字幕与配音工具，把「语音转文字 → 字幕翻译 → 校对润色 → TTS 配音 → 烧录合成」整条流水线装进一个桌面应用，还内置在线视频下载，粘贴 B 站 / YouTube 等平台链接即可直接取材。转写基于 whisper.cpp、sherpa-onnx 等本地模型完成，文件不出本机；支持批量处理，支持 NVIDIA / AMD / Intel / Apple Silicon 硬件加速，可在 Windows、macOS、Linux 上运行。
 
-**整条流水线可以完全免费跑通**：本地模型转写、内置免费翻译源、本地 TTS 配音（含声音克隆）、本地 ffmpeg 烧录——不需要 API Key，本地环节也没有用量限制。同时可按需接入 20 个翻译服务、8 家云端听写、5 类云端配音服务作为增强。
+**整条流水线可以完全免费跑通**：本地模型转写、内置免费翻译源、本地 TTS 配音（含声音克隆）、本地 ffmpeg 烧录——不需要 API Key，本地环节也没有用量限制。同时可按需接入 20 个翻译服务、9 家云端听写、6 类云端配音服务作为增强。
 
 ## 它能帮你做什么
 
@@ -56,7 +56,7 @@
 ### 字幕生成（转写）
 
 - 多种视频 / 音频格式批量生成字幕，并发任务数可调
-- 8 类转写引擎逐任务切换：内置 `whisper.cpp`、`faster-whisper`、`FunASR`、`Qwen3-ASR`、`FireRedASR`、`NVIDIA Parakeet`、本地 `Whisper CLI`，以及免 GPU 的云端听写（8 家服务商）
+- 8 类转写引擎逐任务切换：内置 `whisper.cpp`、`faster-whisper`、`FunASR`、`Qwen3-ASR`、`FireRedASR`、`NVIDIA Parakeet`、本地 `Whisper CLI`，以及免 GPU 的云端听写（9 家服务商）
 - 本地引擎完全离线，无需联网上传；中文场景可选 FunASR / FireRedASR，英语、欧洲语言与日语可选对应 Parakeet 模型
 - AI 字幕精修（可选）：大模型语义断句 + 批量校正——断句按语义重组且时间轴仍精确到词（连接词不吊行尾、数字不被停顿劈开），校正修同音字、去语气词、规范标点；服务商默认跟随 AI 翻译配置（本地 Ollama 零成本），失败自动回退规则断句
 - 简繁转换、自定义字幕文件名（方便不同播放器挂载识别）、可选中文字幕去标点
@@ -79,7 +79,7 @@
 - 独立配音工作台：一份字幕 + 可选视频，逐条语音合成并自动对齐时间轴
 - 本地引擎离线免费：Kokoro 多语 103 音色、VITS 中文 174 音色
 - 声音克隆：本地 ZipVoice 零样本克隆（一段参考音频即建即用），也支持火山引擎声音复刻 2.0、ElevenLabs 即时克隆
-- 云端服务：Edge TTS 免费档、OpenAI 兼容端点（OpenAI / 硅基流动等）、Azure Speech、火山引擎豆包、ElevenLabs
+- 云端服务：Edge TTS 免费档、OpenAI 兼容端点（OpenAI / 硅基流动等）、Azure Speech、火山引擎豆包、ElevenLabs、Xiaomi MiMo
 - 时间轴对齐：语速预控制、实测复核、静音间隙借用；超限行列入人工处理清单（改文案 / 单行重生成 / 接受变速）
 - 逐行试听、换音色、重新合成；背景音可静音原轨或压低原轨（ducking）
 - 输出纯音频（wav / mp3）、替换音轨、混音视频或 MKV 双音轨，可同时导出对齐后的字幕
@@ -153,23 +153,23 @@ brew upgrade --cask smartsub # 升级
 
 转写引擎可逐任务切换，运行时与模型在「引擎与模型」页面统一管理：
 
-| 引擎                     | 说明                                                               | 运行方式                           |
-| ------------------------ | ------------------------------------------------------------------ | ---------------------------------- |
-| **whisper.cpp（内置）**  | 默认引擎，支持 ggml 量化模型与 GPU 加速                            | 随应用内置，开箱即用               |
-| **faster-whisper**       | 基于 CTranslate2，速度更快，模型按需从 HuggingFace 下载            | 自包含 Python 运行时（应用内下载） |
-| **FunASR**               | SenseVoice（中 / 英 / 日 / 韩 / 粤）与 Paraformer-zh，中文表现优秀 | 内置 sherpa-onnx 原生库            |
-| **Qwen3-ASR**            | 通义千问语音识别（qwen3-asr-0.6b / 1.7b）                          | 内置 sherpa-onnx 原生库            |
-| **FireRedASR**           | FireRedASR-AED large（中英），中文表现优秀                         | 内置 sherpa-onnx 原生库            |
+| 引擎                     | 说明                                                                 | 运行方式                           |
+| ------------------------ | -------------------------------------------------------------------- | ---------------------------------- |
+| **whisper.cpp（内置）**  | 默认引擎，支持 ggml 量化模型与 GPU 加速                              | 随应用内置，开箱即用               |
+| **faster-whisper**       | 基于 CTranslate2，速度更快，模型按需从 HuggingFace 下载              | 自包含 Python 运行时（应用内下载） |
+| **FunASR**               | SenseVoice（中 / 英 / 日 / 韩 / 粤）与 Paraformer-zh，中文表现优秀   | 内置 sherpa-onnx 原生库            |
+| **Qwen3-ASR**            | 通义千问语音识别（qwen3-asr-0.6b / 1.7b）                            | 内置 sherpa-onnx 原生库            |
+| **FireRedASR**           | FireRedASR-AED large（中英），中文表现优秀                           | 内置 sherpa-onnx 原生库            |
 | **NVIDIA Parakeet**      | 英语 TDT v2、多语种 TDT v3（25 种欧洲语言）、日语 0.6B CTC，支持标点 | 内置 sherpa-onnx 原生库            |
-| **本地 Whisper CLI**     | 调用你自行安装的 whisper 兼容命令                                  | 使用系统已装命令                   |
-| **云端听写（在线 ASR）** | 8 家在线服务商，免 GPU、支持多服务商多实例                         | 在线服务（音频上传到你配置的端点） |
+| **本地 Whisper CLI**     | 调用你自行安装的 whisper 兼容命令                                    | 使用系统已装命令                   |
+| **云端听写（在线 ASR）** | 9 家在线服务商，免 GPU、支持多服务商多实例                           | 在线服务（音频上传到你配置的端点） |
 
 FunASR / Qwen3-ASR / FireRedASR / Parakeet 均通过内置的 sherpa-onnx 原生库运行，无需额外环境；faster-whisper 会在应用内下载一个自包含运行时。
 
 </details>
 
 <details>
-<summary><b>云端听写：8 家服务商配置说明</b></summary>
+<summary><b>云端听写：9 家服务商配置说明</b></summary>
 
 <br/>
 
@@ -183,6 +183,7 @@ FunASR / Qwen3-ASR / FireRedASR / Parakeet 均通过内置的 sherpa-onnx 原生
 - **阿里云**：录音文件识别极速版。使用 RAM 访问控制的 AccessKey ID / Secret，外加智能语音交互控制台项目的 Appkey。识别语种在项目「功能配置」中设定（任务原语言对阿里云不生效），默认普通话模型可识别中英混合。注意该服务**仅提供商用版（无免费试用）**，开通后按转写时长计费
 - **讯飞**：录音文件转写大模型。异步订单制，退出应用不丢任务
 - **Gladia**：solaria 模型，支持 100+ 语种，每月赠 10 小时免费额度
+- **Xiaomi MiMo**：`mimo-v2.5-asr`，中英文与中文方言；按时长计费，使用 20 秒静音分片生成粗粒度时间轴
 
 </details>
 
@@ -260,6 +261,7 @@ AI 翻译的结果受模型和提示词影响较大，可以尝试不同的模�
 | Azure Speech | 微软 Neural 音色体系（700+ 音色），SSML 语速控制                       |
 | 火山引擎豆包 | 豆包语音合成大模型音色，支持声音复刻 2.0 克隆音色                      |
 | ElevenLabs   | 多语模型，支持即时声音克隆（IVC）                                      |
+| Xiaomi MiMo  | `mimo-v2.5-tts`，8 个中英文预置音色，当前限时免费                      |
 
 时间轴对齐机制：合成前按目标时长预控语速，合成后实测时长复核（本地引擎免费重合成，云端用 atempo 变速），不足时向相邻静音间隙借用时间；仍超过 1.5 倍语速红线的行进入人工处理清单，可改文案、单行重生成或接受变速。
 

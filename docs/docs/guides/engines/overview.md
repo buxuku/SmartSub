@@ -25,7 +25,7 @@ keywords:
 | [FireRedASR](./firered-asr)                    |       ✅       |  ✅  | **优秀** | 内置原生库       | 中文精度优先                |
 | [NVIDIA Parakeet](./parakeet)                  |       ✅       |  ✅  | 不适用   | 内置原生库       | 英文与欧洲语言精度优先      |
 | [本地 Whisper CLI](./whisper-cli)              |       ✅       |  ✅  | 好       | 自装命令         | 已有 whisper 环境的高级用户 |
-| [云端听写（8 家）](/guides/cloud-asr/overview) | 部分有免费额度 |  ❌  | 好       | API Key          | 无 GPU / 低配电脑，省心起步 |
+| [云端听写（9 家）](/guides/cloud-asr/overview) | 部分有免费额度 |  ❌  | 好       | API Key          | 无 GPU / 低配电脑，省心起步 |
 
 ## 按需求推荐
 
