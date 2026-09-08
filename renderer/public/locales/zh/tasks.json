@@ -316,6 +316,7 @@
     "manuscript": "文稿匹配",
     "translate": "翻译",
     "speakerDiarization": "角色分离",
+    "export": "导出字幕",
     "dubbing": "配音",
     "compose": "合成"
   },

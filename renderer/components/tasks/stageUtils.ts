@@ -9,6 +9,7 @@ export type StageKey =
   | 'manuscriptMatch'
   | 'translateSubtitle'
   | 'speakerDiarization'
+  | 'exportSubtitle'
   | 'dubbing'
   | 'composeVideo';
 export type StageStatus = 'pending' | 'loading' | 'done' | 'error';
@@ -65,6 +66,12 @@ export function getFileStages(
       key: 'speakerDiarization',
       labelKey: 'stage.speakerDiarization',
     });
+  }
+  if (
+    file?.exportSubtitle !== undefined ||
+    formData?.subtitleOutputFormats?.length > 1
+  ) {
+    stages.push({ key: 'exportSubtitle', labelKey: 'stage.export' });
   }
   // 附加阶段：配置快照声明，或文件上已有阶段状态（快照缺失时兜底）
   if (formData?.dub || file?.dubbing !== undefined) {
@@ -188,6 +195,11 @@ export function isFileTerminal(file: any, stages: StageDef[]): boolean {
   if (!stages.length) return false;
   return stages.every((s) => {
     const status = getStageStatus(file, s.key);
+    if (s.key === 'exportSubtitle' && status === 'pending') {
+      return stages.some(
+        (stage) => getStageStatus(file, stage.key) === 'error',
+      );
+    }
     return status === 'done' || status === 'error';
   });
 }
@@ -235,6 +247,8 @@ export function isProofreadReady(
   ) {
     return false;
   }
+  if (file?.exportSubtitle !== undefined && file.exportSubtitle !== 'done')
+    return false;
   const stages = getFileStages(file, typeDef, formData);
   if (typeDef.taskType === 'generateOnly') {
     if (file?.extractSubtitle !== 'done') return false;

@@ -28,6 +28,7 @@ import { useTranslation } from 'next-i18next';
 import { getCustomLanguageName } from '../../../types/language';
 import { isSpeakerDiarizationStandardTaskContext } from '../../../types/speakerDiarization';
 import { isTaskSnapshotTranslationEnabled } from '../../../types/taskSnapshot';
+import { resolveSubtitleOutputFormats } from '../../../types/subtitleOutput';
 
 interface Provider {
   id: string;
@@ -207,6 +208,12 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-muted/30 px-3 py-2">
+      <SummaryItem
+        label={t('configBar.format')}
+        value={resolveSubtitleOutputFormats(snapshot)
+          .map((format) => format.toUpperCase())
+          .join(' + ')}
+      />
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>

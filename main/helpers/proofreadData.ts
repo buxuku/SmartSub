@@ -10,6 +10,7 @@ import {
   type SubtitleEntry,
 } from './subtitleFormats';
 import { logMessage } from './storeManager';
+import { atomicReplaceTextFile } from './atomicFile';
 import {
   speakerIdsForCues,
   stripSpeakerLabelPrefix,
@@ -272,6 +273,29 @@ export async function readProofreadDataFile(
   } catch {
     throw new Error(`Invalid proofread data file: ${filePath}`);
   }
+}
+
+export async function updateProofreadDataOutputs(
+  file: IFiles,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (!file.proofreadDataFile) return;
+  const data = await readProofreadDataFile(file.proofreadDataFile);
+  data.meta = {
+    ...data.meta,
+    sourceFile: file.srtFile || file.tempSrtFile,
+    finalTargetFile: file.translatedSrtFile,
+    sourceSubtitleFiles: file.sourceSubtitleFiles,
+    translatedSubtitleFiles: file.translatedSubtitleFiles,
+    tempSrtFile: file.tempSrtFile,
+    tempFinalSubtitleFile: file.tempFinalSubtitleFile,
+    updatedAt: new Date().toISOString(),
+  };
+  await atomicReplaceTextFile(
+    file.proofreadDataFile,
+    JSON.stringify(data, null, 2),
+    { signal },
+  );
 }
 
 export function proofreadDataToSubtitleRows(
