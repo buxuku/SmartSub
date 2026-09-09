@@ -7,7 +7,7 @@ import {
   isProviderConfigured,
 } from '../../types/provider';
 
-const FREE_PROVIDER_IDS = ['autoFree', 'bingFree', 'googleFree'];
+const FREE_PROVIDER_IDS = ['autoFree', 'bingFree', 'googleFree', 'deeplx'];
 
 function shouldUpdateSystemPrompt(currentPrompt: string | undefined): boolean {
   if (!currentPrompt) return true;

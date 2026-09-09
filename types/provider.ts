@@ -714,6 +714,15 @@ export const PROVIDER_TYPES: ProviderType[] = [
         tips: 'deeplxApiUrlTips',
         placeholder: 'phDeeplxApiUrl',
       },
+      {
+        key: 'requestInterval',
+        label: 'requestInterval',
+        type: 'number',
+        defaultValue: 1,
+        step: 0.1,
+        tips: 'requestIntervalTip',
+        placeholder: 'phRequestInterval',
+      },
     ],
   },
   {

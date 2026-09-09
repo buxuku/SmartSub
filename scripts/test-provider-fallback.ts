@@ -344,6 +344,23 @@ function testMigrationPreservesProviderInstances() {
   );
 }
 
+function testDeepLXGetsConservativeRateLimitDefault() {
+  const migrated = migrateProviders([
+    provider({
+      id: 'deeplx',
+      name: 'DeepLX',
+      type: 'deeplx',
+      isAi: false,
+      apiUrl: 'http://localhost:1188/translate',
+    }),
+  ]);
+  const deeplx = migrated.find((candidate) => candidate.type === 'deeplx');
+  assert(
+    deeplx?.requestInterval === 1,
+    'DeepLX should get a one-second default request interval',
+  );
+}
+
 async function testDraftFallbackIsSkipped() {
   const primary = provider({ fallbackProviderIds: ['draft', 'backup'] });
   const draft = provider({ id: 'draft', apiKey: '  ' });
@@ -513,6 +530,7 @@ export async function runProviderFallbackTests() {
   testCloneClearsCredentials();
   testFallbackConfigNormalization();
   testMigrationPreservesProviderInstances();
+  testDeepLXGetsConservativeRateLimitDefault();
   await testDraftFallbackIsSkipped();
   testLocalizedInstanceNames();
   testFallbackBrowsing();
