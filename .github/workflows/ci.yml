@@ -48,6 +48,9 @@ jobs:
       - name: Unit tests (translation cancel)
         run: yarn test:translation-cancel
 
+      - name: Unit tests (free translators)
+        run: yarn test:free-translators
+
       - name: Unit tests (Qwen-MT)
         run: yarn test:qwen-mt
 
