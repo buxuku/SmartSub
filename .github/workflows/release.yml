@@ -119,6 +119,7 @@ jobs:
             staging/*.tar.gz
             staging/*.deb
             staging/*.snap
+          retention-days: 1
           if-no-files-found: error # Important: fail if no package found
 
       - name: Upload update YAML artifact
@@ -126,6 +127,7 @@ jobs:
         with:
           name: update-yaml-${{ matrix.artifact_suffix }}
           path: staging/*latest*.yml
+          retention-days: 1
           if-no-files-found: error # Important: fail if no YML found
 
   publish_release:
