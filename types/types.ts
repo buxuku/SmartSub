@@ -109,6 +109,14 @@ export interface IFiles extends SubtitleOutputFiles {
   tempTranslatedSrtFile?: string;
   exportSubtitle?: '' | 'loading' | 'done' | 'error';
   exportSubtitleError?: string;
+  /** Canonical inputs retained until export succeeds, so retry never calls ASR/translation. */
+  subtitleExportCheckpoint?: {
+    sourceSrtPath?: string;
+    translatedSrtPath?: string;
+    sourceOwned: boolean;
+    translationActive: boolean;
+    translateOk: boolean;
+  };
   /** 字幕翻译失败行；译文文件保留原文作为可播放回退。 */
   translationFailures?: Array<{ subtitleId: string; error?: string }>;
   /** 校对用无损中间态 sidecar，保存源文/译文/时间轴，避免直接读写有损交付物。 */

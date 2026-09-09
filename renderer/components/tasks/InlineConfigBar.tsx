@@ -348,18 +348,16 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
           </p>
         ) : null)}
 
-      {!typeDef.hasTranslate && (
-        <ConfigItem label={t('configBar.format')}>
-          <SubtitleFormatSelect
-            compact
-            config={formData}
-            onChange={(formats) => {
-              setValue('subtitleOutputFormats', formats);
-              setValue('subtitleOutputFormat', formats[0]);
-            }}
-          />
-        </ConfigItem>
-      )}
+      <ConfigItem label={t('configBar.format')}>
+        <SubtitleFormatSelect
+          compact
+          config={formData}
+          onChange={(formats) => {
+            setValue('subtitleOutputFormats', formats);
+            setValue('subtitleOutputFormat', formats[0]);
+          }}
+        />
+      </ConfigItem>
     </div>
   );
 };

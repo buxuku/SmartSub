@@ -74,6 +74,7 @@ import { getProofreadUnavailableReason } from '@/components/tasks/stageUtils';
 import { getI18nProperties } from '../../../lib/get-static';
 import { IFiles } from '../../../../types';
 import { isPinnedTaskConfigSnapshot } from '../../../../types/taskSnapshot';
+import { getProofreadSourcePath } from '../../../../types/subtitleOutput';
 import { useTranslation } from 'next-i18next';
 import { toast } from 'sonner';
 
@@ -583,8 +584,7 @@ export default function TaskPage() {
       : proofreadFile.filePath;
 
     const sourceSubtitlePath =
-      proofreadFile.srtFile ||
-      proofreadFile.tempSrtFile ||
+      getProofreadSourcePath(proofreadFile) ||
       (isSubtitleFile(proofreadFile.filePath)
         ? proofreadFile.filePath
         : path.join(proofreadFile.directory, `${proofreadFile.fileName}.srt`));

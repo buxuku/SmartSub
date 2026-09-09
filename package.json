@@ -17,7 +17,7 @@
     "postinstall": "electron-builder install-app-deps && node scripts/ensure-native.mjs",
     "format": "prettier --write .",
     "check:i18n": "node scripts/check-i18n.mjs",
-    "test:subtitle-output": "tsc types/subtitleOutput.ts main/helpers/subtitleDeliverables.ts --outDir node_modules/.cache/subtitle-output-tests --module commonjs --moduleResolution node --target es2020 --esModuleInterop --skipLibCheck && node scripts/test-subtitle-output.cjs",
+    "test:subtitle-output": "tsc types/subtitleOutput.ts main/helpers/subtitleDeliverables.ts --outDir node_modules/.cache/subtitle-output-tests --module commonjs --moduleResolution node --target es2020 --esModuleInterop --skipLibCheck && node scripts/test-subtitle-output.cjs && node scripts/test-subtitle-output-ui.cjs",
     "sherpa:fetch": "node scripts/fetch-sherpa-native.mjs",
     "addon:fetch": "node scripts/fetch-whisper-addon.mjs",
     "native:fetch": "node scripts/fetch-sherpa-native.mjs && node scripts/fetch-whisper-addon.mjs",
