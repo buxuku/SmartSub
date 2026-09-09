@@ -4,7 +4,10 @@ import { isSubtitleFile } from 'lib/utils';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
 import { IFiles } from '../../types';
-import { subtitleOutputFilesToSave } from '../../types/subtitleOutput';
+import {
+  subtitleOutputFilesToSave,
+  getProofreadSourcePath,
+} from '../../types/subtitleOutput';
 
 // 字幕格式接口
 export interface Subtitle {
@@ -140,13 +143,7 @@ export const useSubtitles = (
   const loadFiles = async () => {
     try {
       // 获取文件路径
-      const {
-        filePath,
-        srtFile,
-        tempSrtFile,
-        translatedSrtFile,
-        tempTranslatedSrtFile,
-      } = file;
+      const { filePath, translatedSrtFile, tempTranslatedSrtFile } = file;
       const directory = path.dirname(filePath);
       const fileName = path.basename(filePath, path.extname(filePath));
 
@@ -161,12 +158,15 @@ export const useSubtitles = (
 
       // 根据任务类型确定使用哪个原始字幕文件
       if (taskType === 'generateOnly') {
-        originalSrtPath = srtFile || path.join(directory, `${fileName}.srt`);
+        originalSrtPath =
+          getProofreadSourcePath(file) ||
+          path.join(directory, `${fileName}.srt`);
         setHasTranslationFile(false);
       } else {
         // 对于需要翻译的任务，优先使用临时原始字幕文件
         originalSrtPath =
-          tempSrtFile || srtFile || path.join(directory, `${fileName}.srt`);
+          getProofreadSourcePath(file) ||
+          path.join(directory, `${fileName}.srt`);
 
         // 翻译字幕直接使用tempTranslatedSrtFile
         if (tempTranslatedSrtFile) {

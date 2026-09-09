@@ -41,6 +41,13 @@ export interface SubtitleOutputFiles {
   tempFinalSubtitleFile?: string;
 }
 
+/** Preview and editing need the original time axis, not a lossy delivery file. */
+export function getProofreadSourcePath(
+  file: SubtitleOutputFiles & { srtFile?: string },
+): string | undefined {
+  return file.tempSrtFile || file.srtFile;
+}
+
 export function subtitleOutputFilesToSave(
   files: SubtitleOutputFiles,
   translateContent = 'onlyTranslate',

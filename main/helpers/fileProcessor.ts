@@ -21,18 +21,10 @@ import {
   removeChineseSubtitlePunctuation,
 } from './chineseConvert';
 import translate from '../translate';
-import { ensureTempDir, getMd5 } from './fileUtils';
 import { IFiles } from '../../types';
-import { atomicReplaceTextFile } from './atomicFile';
 import { resolveSubtitleOutputFormats } from '../../types/subtitleOutput';
-import {
-  writeSubtitleDeliverables,
-  type SubtitleDeliverableRequest,
-} from './subtitleDeliverables';
-import {
-  writeProofreadDataFromFiles,
-  updateProofreadDataOutputs,
-} from './proofreadData';
+import { runSubtitleExportStage } from './subtitleExportStage';
+import { writeProofreadDataFromFiles } from './proofreadData';
 import {
   runSubtitleRefineStage,
   settleSkippedRefineStage,
@@ -275,6 +267,9 @@ export async function processFile(
 
   const previousProofreadDataReady = file.proofreadDataReady;
   const previousExportSubtitle = file.exportSubtitle;
+  const retryExport =
+    previousExportSubtitle === 'error' ||
+    Boolean(file.subtitleExportCheckpoint && previousExportSubtitle !== 'done');
   // 进入处理前清理上一轮残留的阶段状态/进度/错误。后续 taskFileChange 习惯铺开整个 file
   // （`{ ...file, extractSubtitle: 'loading' }`），若 file 仍带着旧值——尤其取消时回灌的空串
   // ——渲染层 `{ ...prev, ...res }` 合并会把刚置好的新状态覆盖回去，造成「取消→重启」时
@@ -311,6 +306,7 @@ export async function processFile(
     'exportSubtitleError',
     'exportSubtitleProgress',
   ]) {
+    if (retryExport && !k.startsWith('exportSubtitle')) continue;
     delete (file as any)[k];
   }
   file.exportSubtitle = '';
@@ -339,20 +335,22 @@ export async function processFile(
     // pointer on a fresh run so the proofread page cannot open stale cues
     // while the current run is still finishing its metadata stage.
     const reusingSubtitle = Boolean(
-      resume?.subtitleProduced || resume?.srtForTranslate,
+      retryExport || resume?.subtitleProduced || resume?.srtForTranslate,
     );
     if (!reusingSubtitle) delete file.proofreadDataFile;
-    file.proofreadDataReady =
-      reusingSubtitle &&
-      file.proofreadDataFile &&
-      previousProofreadDataReady !== 'error'
-        ? 'done'
-        : 'loading';
+    if (!retryExport)
+      file.proofreadDataReady =
+        reusingSubtitle &&
+        file.proofreadDataFile &&
+        previousProofreadDataReady !== 'error'
+          ? 'done'
+          : 'loading';
     event.sender.send('taskFileChange', { ...file });
     if (
-      isSubtitleFile ||
-      hasProvidedSubtitle ||
-      !(resume?.subtitleProduced || resume?.srtForTranslate)
+      !retryExport &&
+      (isSubtitleFile ||
+        hasProvidedSubtitle ||
+        !(resume?.subtitleProduced || resume?.srtForTranslate))
     ) {
       file.missedSpeechWarnings = [];
       file.missedSpeechSummary = undefined;
@@ -438,6 +436,31 @@ export async function processFile(
       return true;
     };
 
+    if (retryExport) {
+      // Older failed tasks may predate the explicit checkpoint. Never fall back to paid work.
+      file.subtitleExportCheckpoint ??= {
+        sourceSrtPath: file.srtFile,
+        translatedSrtPath: file.translatedSrtFile,
+        sourceOwned:
+          !isSubtitleFile && shouldGenerateSubtitle && !hasProvidedSubtitle,
+        translationActive,
+        translateOk:
+          !translationActive ||
+          ((file as any).translateSubtitle === 'done' &&
+            !file.translationFailures?.length),
+      };
+      const { translateOk } = file.subtitleExportCheckpoint;
+      await runSubtitleExportStage(
+        event,
+        file,
+        formData,
+        getTaskContext()?.signal,
+      );
+      await runPipelineStages(translateOk);
+      return;
+    }
+
+    file.subtitleExportCheckpoint = undefined;
     // 重试续跑：字幕段（含翻译）产物完好 → 直接复用，跳到附加阶段。
     // 仅带附加阶段的任务参与（resume 判定已含产物存在性校验）。
     const skipSubtitleSegment = Boolean(
@@ -864,109 +887,20 @@ export async function processFile(
       );
     }
 
-    file.exportSubtitle = 'loading';
-    event.sender.send('taskFileChange', { ...file });
-    const formats = resolveSubtitleOutputFormats(formData);
-    const requests: SubtitleDeliverableRequest[] = [];
-    if (
-      !isSubtitleFile &&
-      shouldGenerateSubtitle &&
-      !hasProvidedSubtitle &&
-      (!translationActive || sourceSrtSaveOption !== 'noSave') &&
-      file.srtFile
-    ) {
-      requests.push({ kind: 'source', srtPath: file.srtFile, formats });
-    }
-    if (translationActive && file.translatedSrtFile) {
-      requests.push({
-        kind: 'target',
-        srtPath: file.translatedSrtFile,
-        formats,
-      });
-    }
-    const outputs = await writeSubtitleDeliverables(
-      requests,
-      [
-        filePath,
-        file.providedSubtitlePath,
-        !requests.some((r) => r.kind === 'source') && file.srtFile,
-      ].filter(Boolean) as string[],
+    file.subtitleExportCheckpoint = {
+      sourceSrtPath: file.srtFile,
+      translatedSrtPath: file.translatedSrtFile,
+      sourceOwned:
+        !isSubtitleFile && shouldGenerateSubtitle && !hasProvidedSubtitle,
+      translationActive,
+      translateOk,
+    };
+    await runSubtitleExportStage(
+      event,
+      file,
+      formData,
       getTaskContext()?.signal,
     );
-    for (const output of outputs) {
-      if (output.kind === 'source') {
-        file.sourceSubtitleFiles = output.files;
-        if (!output.files.includes(output.srtPath)) {
-          const cachedSource = path.join(
-            ensureTempDir(),
-            `${getMd5(`${filePath}|${file.uuid}`)}-source.srt`,
-          );
-          await atomicReplaceTextFile(
-            cachedSource,
-            await fs.promises.readFile(output.srtPath, 'utf-8'),
-            { signal: getTaskContext()?.signal },
-          );
-          file.tempSrtFile = cachedSource;
-        }
-        file.srtFile = output.files[0];
-      } else {
-        file.translatedSubtitleFiles = output.files;
-        if (!output.files.includes(output.srtPath)) {
-          const cachedTarget = path.join(
-            ensureTempDir(),
-            `${getMd5(`${filePath}|${file.uuid}`)}-final.srt`,
-          );
-          await atomicReplaceTextFile(
-            cachedTarget,
-            await fs.promises.readFile(output.srtPath, 'utf-8'),
-            { signal: getTaskContext()?.signal },
-          );
-          file.tempFinalSubtitleFile = cachedTarget;
-        }
-        file.translatedSrtFile = output.files[0];
-      }
-    }
-    await updateProofreadDataOutputs(file, getTaskContext()?.signal);
-    for (const output of outputs) {
-      if (!output.files.includes(output.srtPath)) {
-        await fs.promises.unlink(output.srtPath).catch((error) => {
-          logMessage(`Cannot remove intermediate SRT: ${error}`, 'warning');
-        });
-      }
-    }
-
-    // 清理临时文件：仅在「生成并翻译」且确实产生了译文交付物时才删除源字幕。
-    // 「仅生成字幕」任务的源字幕是最终交付物，绝不能因 noSave 而被删除；
-    // 配对模式的源字幕是用户文件，绝不删除。
-    if (
-      !isSubtitleFile &&
-      !hasProvidedSubtitle &&
-      sourceSrtSaveOption === 'noSave' &&
-      shouldGenerateSubtitle &&
-      shouldTranslateSubtitle &&
-      translateProvider !== '-1'
-    ) {
-      const { srtFile } = file;
-      logMessage(`delete temp subtitle ${srtFile}`, 'warning');
-      // 缓存一份到临时文件，用于字幕校对
-      const tempDir = ensureTempDir();
-      const md5FileName = getMd5(filePath);
-      const tempSrtFile = path.join(tempDir, `${md5FileName}.srt`);
-      file.tempSrtFile = tempSrtFile;
-      // 清除已删除文件的路径，确保校对时使用临时目录的文件
-      file.srtFile = undefined;
-      event.sender.send('taskFileChange', file);
-      await atomicReplaceTextFile(
-        tempSrtFile,
-        await fs.promises.readFile(srtFile, 'utf-8'),
-        { signal: getTaskContext()?.signal },
-      );
-      await updateProofreadDataOutputs(file, getTaskContext()?.signal);
-      await fs.promises.unlink(srtFile);
-    }
-
-    file.exportSubtitle = 'done';
-    event.sender.send('taskFileChange', { ...file });
 
     // 附加阶段：配音 → 合成（任一失败中断该文件后续阶段）
     await runPipelineStages(translateOk);
@@ -977,10 +911,14 @@ export async function processFile(
       logMessage(`processing cancelled: ${file.fileName}`, 'warning');
       event.sender.send('taskFileChange', {
         ...file,
-        extractAudio: '',
-        extractSubtitle: '',
-        translateSubtitle: '',
-        speakerDiarization: '',
+        ...(file.subtitleExportCheckpoint
+          ? {}
+          : {
+              extractAudio: '',
+              extractSubtitle: '',
+              translateSubtitle: '',
+              speakerDiarization: '',
+            }),
         exportSubtitle: '',
       });
       return;

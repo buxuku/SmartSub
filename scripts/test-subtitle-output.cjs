@@ -12,6 +12,7 @@ const originalTs = require.extensions['.ts'];
 const handlers = new Map();
 let active;
 let passed = 0;
+let workItems = [];
 const source =
   '1\n00:00:01,123 --> 00:00:03,456\nHello\nsecond line\n\n2\n00:00:05,000 --> 00:00:06,000\nWorld\n\n';
 const target = source
@@ -46,6 +47,14 @@ Module._load = function (request, parent, isMain) {
     };
   if (req.endsWith('/storeManager'))
     return { logMessage() {}, store: { get: () => ({}) } };
+  if (parent?.filename.endsWith('taskManager.ts') && req === './workItemStore')
+    return {
+      getWorkItems: () => workItems,
+      saveWorkItem: (item) => {
+        workItems = [JSON.parse(JSON.stringify(item))];
+        return item;
+      },
+    };
   if (req.endsWith('/messageHandler'))
     return { createMessageSender: () => ({ send() {} }) };
   if (req.endsWith('/fileUtils'))
@@ -127,6 +136,7 @@ const {
   resolveSubtitleOutputFormats,
   SUBTITLE_OUTPUT_FORMATS,
   subtitleOutputFilesToSave,
+  getProofreadSourcePath,
 } = require('../types/subtitleOutput.ts');
 const {
   writeSubtitleDeliverables,
@@ -147,6 +157,13 @@ const {
 const { setupIpcHandlers } = require('../main/helpers/ipcHandlers.ts');
 const { recipeToWizardPrefill } = require('../renderer/lib/recipes.ts');
 const { isPinnedTaskConfigSnapshot } = require('../types/taskSnapshot.ts');
+const {
+  createSubtitlePathIdentity,
+} = require('../main/helpers/subtitlePathIdentity.ts');
+const {
+  derivePipelineWorkItemStatus,
+} = require('../main/helpers/workItemMigration.ts');
+const { applyTaskEventToProjects } = require('../main/helpers/taskManager.ts');
 const {
   getFileStages,
   isFileTerminal,
@@ -206,6 +223,51 @@ async function task(root, name, config = {}, fileOverrides = {}, onEvent) {
 }
 
 async function run(root) {
+  for (const [exportSubtitle, expected] of [
+    ['loading', 'running'],
+    ['error', 'error'],
+    ['done', 'done'],
+    ['', 'waiting'],
+  ]) {
+    const file = {
+      uuid: 'status',
+      extractAudio: 'done',
+      extractSubtitle: 'done',
+      translateSubtitle: 'done',
+      exportSubtitle,
+    };
+    check(
+      derivePipelineWorkItemStatus([file]),
+      expected,
+      `export ${exportSubtitle} participates in status derivation`,
+    );
+    workItems = [
+      {
+        id: 'status',
+        type: 'generateAndTranslate',
+        status: 'done',
+        pipelineFiles: [{ ...file, exportSubtitle: 'done' }],
+      },
+    ];
+    applyTaskEventToProjects(
+      'taskStatusChange',
+      file,
+      'exportSubtitle',
+      exportSubtitle,
+    );
+    check(
+      workItems[0].status,
+      expected,
+      `taskManager persists export ${exportSubtitle} correctly`,
+    );
+  }
+  check(
+    derivePipelineWorkItemStatus([
+      { exportSubtitle: 'error', exportSubtitleError: 'TASK_INTERRUPTED' },
+    ]),
+    'interrupted',
+    'export interruption survives restart',
+  );
   check(resolveSubtitleOutputFormats(), ['srt'], 'default');
   for (const format of SUBTITLE_OUTPUT_FORMATS)
     check(
@@ -574,6 +636,25 @@ async function run(root) {
   });
   check(txtOnly.state.exportSubtitle, 'done', 'TXT-only export succeeds');
   check(
+    getProofreadSourcePath(txtOnly.state),
+    txtOnly.state.tempSrtFile,
+    'TXT-only proofread preview selects timed cache',
+  );
+  const preview = await handlers.get('getSubtitleAsVtt')(
+    {},
+    { filePath: getProofreadSourcePath(txtOnly.state) },
+  );
+  check(
+    parseSubtitleCues(preview.content, 'vtt').length,
+    2,
+    'actual preview IPC creates a nonempty TXT-only subtitle track',
+  );
+  check(
+    parseSubtitleCues(preview.content, 'vtt')[0].endMs,
+    3456,
+    'preview keeps exact source timing',
+  );
+  check(
     pickDubTextSource(txtOnly.state, txtOnly.form, fs.existsSync).path,
     txtOnly.state.tempSrtFile,
     'TXT-only source keeps timed TTS input',
@@ -707,6 +788,206 @@ async function run(root) {
     true,
     'retry writes the missing format',
   );
+  check(failed.counters.asr, 1, 'pipeline export retry does not repeat ASR');
+
+  const missing = JSON.parse(JSON.stringify(failed.state));
+  missing.exportSubtitle = 'error';
+  missing.subtitleExportCheckpoint = {
+    sourceSrtPath: path.join(active.root, 'missing.srt'),
+    sourceOwned: true,
+    translationActive: false,
+    translateOk: true,
+  };
+  const callsBeforeMissing = [
+    failed.counters.asr,
+    failed.counters.translations,
+  ];
+  await processFile(failed.event, missing, failed.form, false, { id: 'test' });
+  check(
+    failed.state.exportSubtitle,
+    'error',
+    'missing checkpoint input remains an explicit export error',
+  );
+  check(
+    [failed.counters.asr, failed.counters.translations],
+    callsBeforeMissing,
+    'missing inputs never silently fall back to paid work',
+  );
+
+  for (const taskType of [
+    'generateOnly',
+    'generateAndTranslate',
+    'translateOnly',
+  ]) {
+    for (const phase of ['delivery', 'cache', 'metadata']) {
+      const name = `retry-${taskType}-${phase}`;
+      const rename = fs.promises.rename;
+      let injected = false;
+      fs.promises.rename = async (from, to) => {
+        const hit =
+          phase === 'delivery'
+            ? to.endsWith('.txt')
+            : phase === 'cache'
+              ? /-(source|final)\.srt$/.test(to)
+              : to.endsWith('.json');
+        if (!injected && hit) {
+          injected = true;
+          throw new Error(`injected ${phase} failure`);
+        }
+        return rename(from, to);
+      };
+      let result;
+      try {
+        result = await task(
+          root,
+          name,
+          {
+            taskType,
+            subtitleOutputFormats: ['vtt', 'txt'],
+            sourceSrtSaveOption:
+              taskType === 'generateAndTranslate'
+                ? 'noSave'
+                : 'fileNameWithLang',
+          },
+          taskType === 'translateOnly'
+            ? {
+                filePath: path.join(root, name, 'input.srt'),
+                fileExtension: '.srt',
+              }
+            : {},
+        );
+      } finally {
+        fs.promises.rename = rename;
+      }
+      check(injected, true, `${name} exercised failure point`);
+      check(result.state.exportSubtitle, 'error', `${name} exposes failure`);
+      const checkpoint = result.state.subtitleExportCheckpoint;
+      check(
+        fs.existsSync(checkpoint.sourceSrtPath),
+        true,
+        `${name} preserves canonical source before retry`,
+      );
+      if (checkpoint.translatedSrtPath)
+        check(
+          fs.existsSync(checkpoint.translatedSrtPath),
+          true,
+          `${name} preserves canonical translation before retry`,
+        );
+      const calls = [result.counters.asr, result.counters.translations];
+      await processFile(
+        result.event,
+        JSON.parse(JSON.stringify(result.state)),
+        result.form,
+        false,
+        { id: 'test' },
+      );
+      check(
+        result.state.exportSubtitle,
+        'done',
+        `${name} reopens and exports successfully`,
+      );
+      check(
+        [result.counters.asr, result.counters.translations],
+        calls,
+        `${name} retry incurs no ASR or translation calls`,
+      );
+      check(
+        result.state.subtitleExportCheckpoint,
+        undefined,
+        `${name} clears completed checkpoint`,
+      );
+      check(
+        result.state.proofreadDataReady,
+        'done',
+        `${name} retains proofread readiness`,
+      );
+      const files =
+        taskType === 'generateOnly'
+          ? result.state.sourceSubtitleFiles
+          : result.state.translatedSubtitleFiles;
+      check(files.length, 2, `${name} restores all outputs`);
+    }
+  }
+
+  await fixture(root, 'filesystem-case');
+  const caseSource = path.join(active.root, 'Clip.SRT');
+  const caseInput = path.join(active.root, 'clip.TXT');
+  await fs.promises.writeFile(caseSource, source);
+  await fs.promises.writeFile(caseInput, 'protected case-insensitive input');
+  const caseOperations = (caseSensitive) => ({
+    readdir: fs.promises.readdir.bind(fs.promises),
+    stat: async (filePath) => {
+      const directory = path.dirname(filePath);
+      const name = path.basename(filePath);
+      const entries = await fs.promises.readdir(directory);
+      const entry = entries.find((item) =>
+        caseSensitive
+          ? item === name
+          : item.toLowerCase() === name.toLowerCase(),
+      );
+      if (!entry)
+        throw Object.assign(new Error('not found'), { code: 'ENOENT' });
+      return fs.promises.stat(path.join(directory, entry));
+    },
+  });
+  const insensitive = caseOperations(false);
+  insensitive.lstat = insensitive.stat;
+  await assert.rejects(
+    writeSubtitleDeliverables(
+      [{ kind: 'source', srtPath: caseSource, formats: ['vtt', 'txt'] }],
+      [caseInput],
+      undefined,
+      insensitive,
+    ),
+    /overwrite/,
+  );
+  check(
+    await fs.promises.readFile(caseInput, 'utf8'),
+    'protected case-insensitive input',
+    'macOS-style case collision preserves input',
+  );
+  check(
+    fs.existsSync(path.join(active.root, 'Clip.vtt')),
+    false,
+    'case conflicts fail before any export writes',
+  );
+  await assert.rejects(
+    writeSubtitleDeliverables(
+      [
+        { kind: 'source', srtPath: caseSource, formats: ['txt'] },
+        {
+          kind: 'target',
+          srtPath: path.join(active.root, 'clip.srt'),
+          formats: ['txt'],
+        },
+      ],
+      [],
+      undefined,
+      insensitive,
+    ),
+    /overlap/,
+  );
+  passed++;
+  const sensitive = caseOperations(true);
+  sensitive.lstat = sensitive.stat;
+  const sensitiveIdentity = createSubtitlePathIdentity(sensitive);
+  check(
+    (await sensitiveIdentity(path.join(active.root, 'Clip.txt'))).name ===
+      (await sensitiveIdentity(caseInput)).name,
+    false,
+    'case-sensitive volumes keep distinct basenames',
+  );
+  const [upperSrt] = await writeSubtitleDeliverables(
+    [{ kind: 'source', srtPath: caseSource, formats: ['srt'] }],
+    [],
+    undefined,
+    insensitive,
+  );
+  check(
+    upperSrt.files,
+    [caseSource],
+    'case-insensitive SRT alias retains canonical spelling and is not cleaned up',
+  );
 
   const cancelled = new AbortController();
   const cancelledTask = await runWithTaskContext(
@@ -735,6 +1016,23 @@ async function run(root) {
     fs.existsSync(path.join(active.root, 'clip.en.txt')),
     false,
     'cancelled task does not export TXT',
+  );
+  await processFile(
+    cancelledTask.event,
+    JSON.parse(JSON.stringify(cancelledTask.state)),
+    cancelledTask.form,
+    false,
+    { id: 'test' },
+  );
+  check(
+    cancelledTask.state.exportSubtitle,
+    'done',
+    'cancelled export checkpoint can resume',
+  );
+  check(
+    cancelledTask.counters.asr,
+    1,
+    'cancelled export resume does not repeat recognition',
   );
 }
 
