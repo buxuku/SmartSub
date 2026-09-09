@@ -50,12 +50,16 @@ interface InlineConfigBarProps {
 function ConfigItem({
   label,
   children,
+  wrap = false,
 }: {
   label: string;
   children: React.ReactNode;
+  wrap?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-1.5">
+    <div
+      className={`flex items-center gap-1.5${wrap ? ' max-w-full flex-wrap' : ''}`}
+    >
       <span className="text-xs text-muted-foreground whitespace-nowrap">
         {label}
       </span>
@@ -348,7 +352,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
           </p>
         ) : null)}
 
-      <ConfigItem label={t('configBar.format')}>
+      <ConfigItem label={t('configBar.format')} wrap>
         <SubtitleFormatSelect
           compact
           config={formData}
