@@ -5,6 +5,15 @@
  * tests all consume the same normalization rules.
  */
 
+import {
+  associateMissedSpeechWarnings,
+  normalizeMissedSpeechWarnings,
+  summarizeMissedSpeech,
+  type MissedSpeechWarning,
+  type MissedSpeechSummary,
+} from './missedSpeech';
+import type { SubtitleOutputFiles } from './subtitleOutput';
+
 export const PROOFREAD_DATA_VERSION = 2 as const;
 
 export const SPEAKER_COLOR_PALETTE = [
@@ -27,7 +36,7 @@ export interface SpeakerInfo {
   autoName?: boolean;
 }
 
-export interface ProofreadDataMeta {
+export interface ProofreadDataMeta extends SubtitleOutputFiles {
   createdAt: string;
   updatedAt: string;
   sourceLanguage?: string;
@@ -45,6 +54,10 @@ export interface ProofreadDataCue {
   endMs: number;
   source: string;
   target: string;
+  /** 翻译阶段的逐行状态；缺省表示历史文件中的成功/未知状态。 */
+  translationStatus?: 'success' | 'failed';
+  translationError?: string;
+  missedSpeechWarnings?: MissedSpeechWarning[];
   /** Complete assignment; [] is explicit unassigned, absence means no role metadata. */
   speakerIds?: number[];
   /** Explicit primary role. Never infer priority from sorted IDs after editing. */
@@ -64,6 +77,8 @@ export interface ProofreadDataFileV2 {
   meta: ProofreadDataMeta;
   speakers: SpeakerInfo[];
   cues: ProofreadDataCue[];
+  missedSpeechWarnings?: MissedSpeechWarning[];
+  missedSpeechSummary?: MissedSpeechSummary;
 }
 
 export type ProofreadDataFileInput = ProofreadDataFileV1 | ProofreadDataFileV2;
@@ -240,6 +255,8 @@ export function normalizeProofreadData(input: unknown): ProofreadDataFileV2 {
     cues?: unknown;
     meta?: unknown;
     speakers?: unknown;
+    missedSpeechWarnings?: unknown;
+    missedSpeechSummary?: unknown;
   };
   if ((raw.version !== 1 && raw.version !== 2) || !Array.isArray(raw.cues)) {
     throw new Error('Unsupported proofread data version');
@@ -253,6 +270,20 @@ export function normalizeProofreadData(input: unknown): ProofreadDataFileV2 {
       endMs: Number.isFinite(cue.endMs) ? Number(cue.endMs) : 0,
       source: String(cue.source ?? ''),
       target: String(cue.target ?? ''),
+      ...(cue.translationStatus === 'failed' ||
+      cue.translationStatus === 'success'
+        ? { translationStatus: cue.translationStatus }
+        : {}),
+      ...(cue.translationError
+        ? { translationError: String(cue.translationError) }
+        : {}),
+      ...(Array.isArray(cue.missedSpeechWarnings)
+        ? {
+            missedSpeechWarnings: normalizeMissedSpeechWarnings(
+              cue.missedSpeechWarnings,
+            ),
+          }
+        : {}),
       ...(hasExplicitAssignment ? { speakerIds: cue.speakerIds } : {}),
       primarySpeakerId: cue.primarySpeakerId,
       ...(cue.speakerAssignmentSource === 'manual'
@@ -271,6 +302,26 @@ export function normalizeProofreadData(input: unknown): ProofreadDataFileV2 {
     createdAt: String(metaInput.createdAt || now),
     updatedAt: String(metaInput.updatedAt || metaInput.createdAt || now),
   };
+  // Warning ranges are authoritative. Older sidecars may only have stored
+  // them on individual cues, so recover those ranges when the file-level
+  // collection is absent before rebuilding cue associations from timing.
+  const rawWarnings = Array.isArray(raw.missedSpeechWarnings)
+    ? raw.missedSpeechWarnings
+    : cues.flatMap((cue) => cue.missedSpeechWarnings || []);
+  const warnings = associateMissedSpeechWarnings(
+    normalizeMissedSpeechWarnings(rawWarnings),
+    cues,
+  );
+  for (const cue of cues) {
+    const related = warnings.filter((warning) =>
+      warning.cueIds.includes(cue.id),
+    );
+    // Rebuild cue-local associations on every read/save. This prevents stale
+    // cue IDs after split, merge, or timing edits while retaining file-level
+    // warnings that currently overlap no cue.
+    delete cue.missedSpeechWarnings;
+    if (related.length) cue.missedSpeechWarnings = related;
+  }
   return {
     version: PROOFREAD_DATA_VERSION,
     meta,
@@ -279,6 +330,16 @@ export function normalizeProofreadData(input: unknown): ProofreadDataFileV2 {
       cues,
     ),
     cues,
+    ...(warnings.length || Array.isArray(raw.missedSpeechWarnings)
+      ? {
+          missedSpeechWarnings: warnings,
+          missedSpeechSummary: summarizeMissedSpeech(
+            warnings,
+            (raw.missedSpeechSummary as MissedSpeechSummary | undefined)
+              ?.engineVadAvailable === true,
+          ),
+        }
+      : {}),
   };
 }
 

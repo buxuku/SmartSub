@@ -329,6 +329,15 @@ async function transcribeFasterWhisper(
   // 统一出口，含硬切回溯，宽度由真实词时间保证）；0 = 智能断句与 -1 = 不限制长度都
   // 沿用引擎段级断句——whisper 原生按句分段，本就不按宽度硬切。
   const segments = transcription?.segments || [];
+  ctx.onDiagnostics?.({
+    vadAvailable: false,
+    wordSegments: segments.flatMap((segment: any) =>
+      (segment?.words || []).map((word: any) => ({
+        startMs: Number(word.start) * 1000,
+        endMs: Number(word.end) * 1000,
+      })),
+    ),
+  });
   const cueOptions = getSubtitleCueOptions(formData as Record<string, unknown>);
   let subtitles;
   if (cueOptions && Number.isFinite(cueOptions.maxWidth)) {

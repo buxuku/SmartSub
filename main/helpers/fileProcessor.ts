@@ -21,14 +21,9 @@ import {
   removeChineseSubtitlePunctuation,
 } from './chineseConvert';
 import translate from '../translate';
-import { ensureTempDir, getMd5 } from './fileUtils';
 import { IFiles } from '../../types';
-import {
-  convertSubtitleContent,
-  getFormatExtension,
-  isSupportedSubtitleFormat,
-  SubtitleFormat,
-} from './subtitleFormats';
+import { resolveSubtitleOutputFormats } from '../../types/subtitleOutput';
+import { runSubtitleExportStage } from './subtitleExportStage';
 import { writeProofreadDataFromFiles } from './proofreadData';
 import {
   runSubtitleRefineStage,
@@ -105,39 +100,6 @@ async function generateSubtitle(
 }
 
 /**
- * 解析用户选择的输出字幕格式，非法值回退为 srt。
- */
-function resolveOutputFormat(formData): SubtitleFormat {
-  const fmt = formData?.subtitleOutputFormat;
-  return isSupportedSubtitleFormat(fmt) ? fmt : 'srt';
-}
-
-/**
- * 将规范 SRT 交付字幕转换为目标格式，写入新扩展名文件并删除原 .srt。
- * 整个处理流程内部始终使用 SRT，仅在最终交付物上做一次格式转换，
- * 以隔离各格式差异、最大限度降低对既有流程的影响。
- * 返回转换后的新文件路径。
- */
-async function convertDeliverable(
-  srtPath: string,
-  format: SubtitleFormat,
-): Promise<string> {
-  const ext = getFormatExtension(format);
-  const newPath = srtPath.replace(/\.srt$/i, ext);
-  const content = await fs.promises.readFile(srtPath, 'utf-8');
-  const converted = convertSubtitleContent(content, 'srt', format);
-  await fs.promises.writeFile(newPath, converted, 'utf-8');
-  if (newPath !== srtPath) {
-    try {
-      fs.unlinkSync(srtPath);
-    } catch (err) {
-      logMessage(`删除中间 srt 文件失败: ${err}`, 'warning');
-    }
-  }
-  return newPath;
-}
-
-/**
  * 源字幕中文标点去除（issue #330）：把中文标点替换为空格并清理空白，原位写回。
  * 仅清理文本；SRT 序号/时间码为 ASCII，不受 CJK 标点正则影响。失败仅告警，不阻断主流程。
  */
@@ -193,7 +155,7 @@ async function translateSubtitle(
   };
 
   try {
-    await translate(
+    const completed = await translate(
       event,
       file,
       formData,
@@ -202,6 +164,15 @@ async function translateSubtitle(
       undefined,
       fallbackProviders,
     );
+
+    if (!completed) {
+      event.sender.send('taskFileChange', {
+        ...file,
+        translateSubtitle: 'error',
+        translateSubtitleProgress: 100,
+      });
+      return false;
+    }
 
     // 确保最终状态的正确发送
     event.sender.send('taskProgressChange', file, 'translateSubtitle', 100);
@@ -215,7 +186,7 @@ async function translateSubtitle(
       `Translation completed successfully for ${file.fileName}`,
       'info',
     );
-    return true;
+    return !(file.translationFailures && file.translationFailures.length > 0);
   } catch (error) {
     if (isTaskCancelledError(error) || isTaskCancelled()) {
       // 用户取消：翻译阶段回退为待处理，不计错误，并中止后续流程
@@ -294,6 +265,11 @@ export async function processFile(
       }
     : null;
 
+  const previousProofreadDataReady = file.proofreadDataReady;
+  const previousExportSubtitle = file.exportSubtitle;
+  const retryExport =
+    previousExportSubtitle === 'error' ||
+    Boolean(file.subtitleExportCheckpoint && previousExportSubtitle !== 'done');
   // 进入处理前清理上一轮残留的阶段状态/进度/错误。后续 taskFileChange 习惯铺开整个 file
   // （`{ ...file, extractSubtitle: 'loading' }`），若 file 仍带着旧值——尤其取消时回灌的空串
   // ——渲染层 `{ ...prev, ...res }` 合并会把刚置好的新状态覆盖回去，造成「取消→重启」时
@@ -325,9 +301,16 @@ export async function processFile(
     'speakerDiarizationError',
     'dubbingError',
     'composeVideoError',
+    'proofreadDataReady',
+    'exportSubtitle',
+    'exportSubtitleError',
+    'exportSubtitleProgress',
   ]) {
+    if (retryExport && !k.startsWith('exportSubtitle')) continue;
     delete (file as any)[k];
   }
+  file.exportSubtitle = '';
+  file.exportSubtitleError = undefined;
 
   try {
     const { filePath, fileName, fileExtension, directory } = file;
@@ -348,6 +331,30 @@ export async function processFile(
         file.providedSubtitlePath &&
         fs.existsSync(file.providedSubtitlePath),
     );
+    // Sidecar is regenerated after transcription/diagnostics. Clear the old
+    // pointer on a fresh run so the proofread page cannot open stale cues
+    // while the current run is still finishing its metadata stage.
+    const reusingSubtitle = Boolean(
+      retryExport || resume?.subtitleProduced || resume?.srtForTranslate,
+    );
+    if (!reusingSubtitle) delete file.proofreadDataFile;
+    if (!retryExport)
+      file.proofreadDataReady =
+        reusingSubtitle &&
+        file.proofreadDataFile &&
+        previousProofreadDataReady !== 'error'
+          ? 'done'
+          : 'loading';
+    event.sender.send('taskFileChange', { ...file });
+    if (
+      !retryExport &&
+      (isSubtitleFile ||
+        hasProvidedSubtitle ||
+        !(resume?.subtitleProduced || resume?.srtForTranslate))
+    ) {
+      file.missedSpeechWarnings = [];
+      file.missedSpeechSummary = undefined;
+    }
     logMessage(`begin process ${fileName} with task type: ${taskType}`, 'info');
 
     // 确定是否需要生成字幕
@@ -386,6 +393,17 @@ export async function processFile(
     const runPipelineStages = async (
       translateOk: boolean,
     ): Promise<boolean> => {
+      if (translationActive && !translateOk) {
+        const msg = '翻译未完成，无法继续后续处理（请先在校对中重试失败行）';
+        event.sender.send(
+          'taskStatusChange',
+          file,
+          'translateSubtitle',
+          'error',
+        );
+        event.sender.send('taskErrorChange', file, 'translateSubtitle', msg);
+        return false;
+      }
       // 字幕校对检查点：字幕段成功后、配音/合成前（翻译失败时交由下方报错）
       if (translateOk && shouldDockAtSubtitleGate(formData, file as any)) {
         dockAtGate('subtitle');
@@ -418,14 +436,42 @@ export async function processFile(
       return true;
     };
 
+    if (retryExport) {
+      // Older failed tasks may predate the explicit checkpoint. Never fall back to paid work.
+      file.subtitleExportCheckpoint ??= {
+        sourceSrtPath: file.srtFile,
+        translatedSrtPath: file.translatedSrtFile,
+        sourceOwned:
+          !isSubtitleFile && shouldGenerateSubtitle && !hasProvidedSubtitle,
+        translationActive,
+        translateOk:
+          !translationActive ||
+          ((file as any).translateSubtitle === 'done' &&
+            !file.translationFailures?.length),
+      };
+      const { translateOk } = file.subtitleExportCheckpoint;
+      await runSubtitleExportStage(
+        event,
+        file,
+        formData,
+        getTaskContext()?.signal,
+      );
+      await runPipelineStages(translateOk);
+      return;
+    }
+
+    file.subtitleExportCheckpoint = undefined;
     // 重试续跑：字幕段（含翻译）产物完好 → 直接复用，跳到附加阶段。
     // 仅带附加阶段的任务参与（resume 判定已含产物存在性校验）。
     const skipSubtitleSegment = Boolean(
       resume &&
+        (previousExportSubtitle === undefined ||
+          previousExportSubtitle === 'done') &&
         (isSubtitleFile ? true : resume.subtitleProduced) &&
         (!translationActive || resume.translateDone),
     );
     if (skipSubtitleSegment) {
+      file.exportSubtitle = 'done';
       logMessage(`resume: reuse subtitle segment for ${fileName}`, 'info');
       if (isSubtitleFile) {
         file.srtFile = filePath;
@@ -454,6 +500,11 @@ export async function processFile(
       logMessage(`process file done ${fileName}`, 'info');
       return;
     }
+
+    file.sourceSubtitleFiles = [];
+    file.translatedSubtitleFiles = [];
+    file.tempFinalSubtitleFile = undefined;
+    if (!reusingSubtitle) file.tempSrtFile = undefined;
 
     // 处理非字幕文件 - 需要生成字幕的情况
     if (!isSubtitleFile && shouldGenerateSubtitle && hasProvidedSubtitle) {
@@ -793,14 +844,19 @@ export async function processFile(
         sourceLanguage,
         targetLanguage,
         translateContent: formData?.translateContent,
-        outputFormat: formData?.subtitleOutputFormat,
+        outputFormat: resolveSubtitleOutputFormats(formData)[0],
         speakerSegments,
+        translationFailures: file.translationFailures,
+        missedSpeechWarnings: file.missedSpeechWarnings,
+        missedSpeechSummary: file.missedSpeechSummary,
       });
       if ('filePath' in proofreadDataResult) {
         file.proofreadDataFile = proofreadDataResult.filePath;
+        file.proofreadDataReady = 'done';
         speakerMetadataPersisted = true;
         event.sender.send('taskFileChange', file);
       } else {
+        file.proofreadDataReady = 'error';
         proofreadDataFailure = `${proofreadDataResult.reason}${proofreadDataResult.error ? `: ${proofreadDataResult.error}` : ''}`;
       }
     }
@@ -831,75 +887,20 @@ export async function processFile(
       );
     }
 
-    // 将交付字幕转换为用户选择的输出格式（内部流程始终为 SRT，此处仅转换最终交付物）
-    const outputFormat = resolveOutputFormat(formData);
-    if (outputFormat !== 'srt') {
-      // 源字幕：仅在由 ASR 生成且需要保存时转换（noSave 时源字幕会被清理，保持 srt；
-      // 配对模式的源字幕是用户文件，不做格式转换）
-      if (
-        !isSubtitleFile &&
-        shouldGenerateSubtitle &&
-        !hasProvidedSubtitle &&
-        sourceSrtSaveOption !== 'noSave' &&
-        file.srtFile &&
-        fs.existsSync(file.srtFile)
-      ) {
-        try {
-          file.srtFile = await convertDeliverable(file.srtFile, outputFormat);
-          logMessage(`source subtitle converted to ${outputFormat}`, 'info');
-        } catch (err) {
-          logMessage(`转换源字幕格式失败: ${err}`, 'error');
-        }
-      }
-      // 翻译字幕交付物
-      if (
-        shouldTranslateSubtitle &&
-        translateProvider !== '-1' &&
-        file.translatedSrtFile &&
-        fs.existsSync(file.translatedSrtFile)
-      ) {
-        try {
-          file.translatedSrtFile = await convertDeliverable(
-            file.translatedSrtFile,
-            outputFormat,
-          );
-          logMessage(
-            `translated subtitle converted to ${outputFormat}`,
-            'info',
-          );
-        } catch (err) {
-          logMessage(`转换翻译字幕格式失败: ${err}`, 'error');
-        }
-      }
-      event.sender.send('taskFileChange', file);
-    }
-
-    // 清理临时文件：仅在「生成并翻译」且确实产生了译文交付物时才删除源字幕。
-    // 「仅生成字幕」任务的源字幕是最终交付物，绝不能因 noSave 而被删除；
-    // 配对模式的源字幕是用户文件，绝不删除。
-    if (
-      !isSubtitleFile &&
-      !hasProvidedSubtitle &&
-      sourceSrtSaveOption === 'noSave' &&
-      shouldGenerateSubtitle &&
-      shouldTranslateSubtitle &&
-      translateProvider !== '-1'
-    ) {
-      const { srtFile } = file;
-      logMessage(`delete temp subtitle ${srtFile}`, 'warning');
-      // 缓存一份到临时文件，用于字幕校对
-      const tempDir = ensureTempDir();
-      const md5FileName = getMd5(filePath);
-      const tempSrtFile = path.join(tempDir, `${md5FileName}.srt`);
-      file.tempSrtFile = tempSrtFile;
-      // 清除已删除文件的路径，确保校对时使用临时目录的文件
-      file.srtFile = undefined;
-      event.sender.send('taskFileChange', file);
-      fs.copyFileSync(srtFile, tempSrtFile);
-      fs.unlink(srtFile, (err) => {
-        if (err) console.log(err);
-      });
-    }
+    file.subtitleExportCheckpoint = {
+      sourceSrtPath: file.srtFile,
+      translatedSrtPath: file.translatedSrtFile,
+      sourceOwned:
+        !isSubtitleFile && shouldGenerateSubtitle && !hasProvidedSubtitle,
+      translationActive,
+      translateOk,
+    };
+    await runSubtitleExportStage(
+      event,
+      file,
+      formData,
+      getTaskContext()?.signal,
+    );
 
     // 附加阶段：配音 → 合成（任一失败中断该文件后续阶段）
     await runPipelineStages(translateOk);
@@ -910,11 +911,21 @@ export async function processFile(
       logMessage(`processing cancelled: ${file.fileName}`, 'warning');
       event.sender.send('taskFileChange', {
         ...file,
-        extractAudio: '',
-        extractSubtitle: '',
-        translateSubtitle: '',
-        speakerDiarization: '',
+        ...(file.subtitleExportCheckpoint
+          ? {}
+          : {
+              extractAudio: '',
+              extractSubtitle: '',
+              translateSubtitle: '',
+              speakerDiarization: '',
+            }),
+        exportSubtitle: '',
       });
+      return;
+    }
+    if (file.exportSubtitle === 'loading') {
+      file.exportSubtitle = 'error';
+      onError(event, file, 'exportSubtitle', error);
       return;
     }
     // 使用通用错误处理方法

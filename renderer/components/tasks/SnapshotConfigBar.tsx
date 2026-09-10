@@ -4,7 +4,16 @@
  * 替代可编辑的 InlineConfigBar——避免全局配置与本任务无关却可改的误导。
  */
 import React, { useMemo } from 'react';
-import { AudioLines, Diamond, FileText, Film, Lock, Users } from 'lucide-react';
+import {
+  AlertCircle,
+  AudioLines,
+  Diamond,
+  FileText,
+  Film,
+  Lock,
+  Users,
+} from 'lucide-react';
+import { isParakeetLanguageMismatch } from '../../../types/parakeet';
 import {
   Tooltip,
   TooltipContent,
@@ -19,6 +28,7 @@ import { useTranslation } from 'next-i18next';
 import { getCustomLanguageName } from '../../../types/language';
 import { isSpeakerDiarizationStandardTaskContext } from '../../../types/speakerDiarization';
 import { isTaskSnapshotTranslationEnabled } from '../../../types/taskSnapshot';
+import { resolveSubtitleOutputFormats } from '../../../types/subtitleOutput';
 
 interface Provider {
   id: string;
@@ -198,6 +208,12 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-muted/30 px-3 py-2">
+      <SummaryItem
+        label={t('configBar.format')}
+        value={resolveSubtitleOutputFormats(snapshot)
+          .map((format) => format.toUpperCase())
+          .join(' + ')}
+      />
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -214,6 +230,20 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
       {needsTranscription && modelValue && (
         <SummaryItem label={t('configBar.model')} value={modelValue} />
       )}
+      {needsTranscription &&
+        snapshot?.transcriptionEngine === 'parakeet' &&
+        isParakeetLanguageMismatch(snapshot.model, snapshot.sourceLanguage) && (
+          <p
+            role="status"
+            className="flex items-start gap-1.5 break-words text-xs text-muted-foreground"
+          >
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {t('parakeet.languageMismatch', {
+              model: snapshot.model,
+              language: snapshot.sourceLanguage,
+            })}
+          </p>
+        )}
 
       {needsTranscription && snapshot?.useEmbeddedSubtitles === false && (
         <SummaryItem

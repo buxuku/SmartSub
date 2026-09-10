@@ -3,11 +3,20 @@ import {
   PROVIDER_TYPES,
   TENCENT_DEFAULT_REQUEST_INTERVAL_SECONDS,
   defaultSystemPrompt,
+  DEFAULT_AI_BATCH_SIZE,
+  DEFAULT_AI_BATCH_CONCURRENCY,
   HISTORICAL_DEFAULT_PROMPTS,
   isProviderConfigured,
 } from '../../types/provider';
 
-const FREE_PROVIDER_IDS = ['autoFree', 'bingFree', 'googleFree'];
+const FREE_PROVIDER_IDS = ['autoFree', 'bingFree', 'googleFree', 'deeplx'];
+const LEGACY_AI_BATCH_SIZE = 1;
+const LEGACY_AI_BATCH_CONCURRENCY = 1;
+const LEGACY_AI_BATCH_DEFAULTS: Record<string, number> = {
+  ollama: 10,
+  DeerAPI: 10,
+  openai: 10,
+};
 
 function shouldUpdateSystemPrompt(currentPrompt: string | undefined): boolean {
   if (!currentPrompt) return true;
@@ -48,6 +57,42 @@ function withFreeRateLimitDefaults(provider: any): any {
   };
 }
 
+/**
+ * Upgrade only values that came from the old AI defaults. Providers do not
+ * persist per-field dirty state, so non-legacy values are preserved as user
+ * choices.
+ */
+function withAiPerformanceDefaults(provider: any, template: any): any {
+  if (!template.isAi) return provider;
+
+  const templateBatchSize = template.fields.find(
+    (field: any) => field.key === 'batchSize',
+  )?.defaultValue;
+  const templateConcurrency = template.fields.find(
+    (field: any) => field.key === 'batchConcurrency',
+  )?.defaultValue;
+  const batchSize = Number(provider.batchSize);
+  const batchConcurrency = Number(provider.batchConcurrency);
+  const legacyBatchSize =
+    LEGACY_AI_BATCH_DEFAULTS[provider.type] ?? LEGACY_AI_BATCH_SIZE;
+
+  return {
+    ...provider,
+    ...(templateBatchSize !== undefined &&
+      (!Number.isFinite(batchSize) ||
+        batchSize < 1 ||
+        batchSize === legacyBatchSize) && {
+        batchSize: templateBatchSize,
+      }),
+    ...(templateConcurrency !== undefined &&
+      (!Number.isFinite(batchConcurrency) ||
+        batchConcurrency < 1 ||
+        batchConcurrency === LEGACY_AI_BATCH_CONCURRENCY) && {
+        batchConcurrency: templateConcurrency,
+      }),
+  };
+}
+
 /** 将旧服务配置升级为按 `type` 识别的独立实例，并保留同类型重复实例。 */
 export function migrateProviders(oldProviders: any[]): Provider[] {
   const knownBuiltinTypeIds = new Set(
@@ -70,33 +115,36 @@ export function migrateProviders(oldProviders: any[]): Provider[] {
       const template = PROVIDER_TYPES.find(
         (type) => type.id === provider.type,
       )!;
-      return withTencentRateLimitDefaults(
-        withFreeRateLimitDefaults({
-          ...provider,
-          isAi: template.isAi || false,
-          batchConcurrency: provider.batchConcurrency || 1,
-          ...(provider.type === 'baidu' && { batchSize: 18 }),
-          ...(provider.type === 'volc' && { batchSize: 16 }),
-          ...(provider.type === 'azure' && { batchSize: 50 }),
-          ...(template.isAi && {
-            useBatchTranslation: false,
-            batchTranslationSize: 10,
-            systemPrompt: shouldUpdateSystemPrompt(provider.systemPrompt)
-              ? defaultSystemPrompt
-              : provider.systemPrompt,
-            structuredOutput:
-              provider.structuredOutput ||
-              template.fields.find((field) => field.key === 'structuredOutput')
-                ?.defaultValue ||
-              'json_object',
-            echoAnchoring: provider.echoAnchoring !== false,
-            enableThinking: provider.enableThinking === true,
-            ...(provider.type === 'ollama' &&
-              provider.structuredOutput !== 'disabled' && {
-                structuredOutput: 'json_schema',
-              }),
-          }),
+      const migrated = {
+        ...provider,
+        isAi: template.isAi || false,
+        batchConcurrency: provider.batchConcurrency || 1,
+        ...(provider.type === 'baidu' && { batchSize: 18 }),
+        ...(provider.type === 'volc' && { batchSize: 16 }),
+        ...(provider.type === 'azure' && { batchSize: 50 }),
+        ...(template.isAi && {
+          useBatchTranslation: false,
+          batchTranslationSize: DEFAULT_AI_BATCH_SIZE,
+          systemPrompt: shouldUpdateSystemPrompt(provider.systemPrompt)
+            ? defaultSystemPrompt
+            : provider.systemPrompt,
+          structuredOutput:
+            provider.structuredOutput ||
+            template.fields.find((field) => field.key === 'structuredOutput')
+              ?.defaultValue ||
+            'json_object',
+          echoAnchoring: provider.echoAnchoring !== false,
+          enableThinking: provider.enableThinking === true,
+          ...(provider.type === 'ollama' &&
+            provider.structuredOutput !== 'disabled' && {
+              structuredOutput: 'json_schema',
+            }),
         }),
+      };
+      return withTencentRateLimitDefaults(
+        withFreeRateLimitDefaults(
+          withAiPerformanceDefaults(migrated, template),
+        ),
       );
     });
 
@@ -106,8 +154,20 @@ export function migrateProviders(oldProviders: any[]): Provider[] {
       ...provider,
       isAi: true,
       useBatchTranslation: false,
-      batchTranslationSize: 10,
-      batchConcurrency: provider.batchConcurrency || 1,
+      batchTranslationSize: DEFAULT_AI_BATCH_SIZE,
+      batchSize:
+        !Number.isFinite(Number(provider.batchSize)) ||
+        Number(provider.batchSize) < 1 ||
+        Number(provider.batchSize) ===
+          (LEGACY_AI_BATCH_DEFAULTS[provider.type] ?? LEGACY_AI_BATCH_SIZE)
+          ? DEFAULT_AI_BATCH_SIZE
+          : provider.batchSize,
+      batchConcurrency:
+        !Number.isFinite(Number(provider.batchConcurrency)) ||
+        Number(provider.batchConcurrency) < 1 ||
+        Number(provider.batchConcurrency) === LEGACY_AI_BATCH_CONCURRENCY
+          ? DEFAULT_AI_BATCH_CONCURRENCY
+          : provider.batchConcurrency,
       systemPrompt: shouldUpdateSystemPrompt(provider.systemPrompt)
         ? defaultSystemPrompt
         : provider.systemPrompt,

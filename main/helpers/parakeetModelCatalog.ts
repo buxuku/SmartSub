@@ -4,6 +4,18 @@ import { app } from 'electron';
 import { resolveBundledVadPath, validateModelLayout } from './modelImport';
 import { resolveModelRoot } from './storagePaths';
 import { getGithubBase, getGithubProxyPrefix } from './config/downloadConfig';
+import {
+  PARAKEET_MODEL_DEFINITIONS,
+  PARAKEET_MODEL_IDS,
+  type ParakeetModelDefinition,
+  type ParakeetModelId,
+} from '../../types/parakeet';
+
+export {
+  PARAKEET_DEFAULT_MODEL_ID,
+  resolveParakeetSelection,
+  type ParakeetModelId,
+} from '../../types/parakeet';
 
 /** Parakeet 模型根目录：单独覆盖 > 统一存储目录 > userData/models/parakeet */
 export function getParakeetModelsRoot(): string {
@@ -16,12 +28,6 @@ export function getParakeetModelsRoot(): string {
   if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true });
   return root;
 }
-
-/** Parakeet 子模型标识（与本地子目录一一对应）。 */
-export type ParakeetModelId = 'parakeet-tdt-0.6b-v3';
-
-export const PARAKEET_DEFAULT_MODEL_ID: ParakeetModelId =
-  'parakeet-tdt-0.6b-v3';
 
 /** 官方 sherpa-onnx release 整包下载源。 */
 export type ParakeetModelSource = 'ghproxy' | 'github';
@@ -40,14 +46,12 @@ export function getParakeetSourceOrder(
   ];
 }
 
-export interface ParakeetModelSpec {
+export interface ParakeetModelSpec extends ParakeetModelDefinition {
   id: ParakeetModelId;
   dirName: string;
   upstreamModel: string;
-  license: 'CC-BY-4.0';
   languageCount: number;
-  supportsPunctuation: boolean;
-  /** 解包后约 670MB；用于解包进度估算。 */
+  /** 用于解包进度估算。 */
   approxInstallBytes: number;
   releasePath: string;
   archiveName: string;
@@ -55,29 +59,55 @@ export interface ParakeetModelSpec {
   requiredFiles: string[];
 }
 
-const PARAKEET_ARCHIVE = 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2';
-const PARAKEET_INNER = 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8';
 const PARAKEET_RELEASE_PATH = 'k2-fsa/sherpa-onnx/releases/download/asr-models';
 
 export const PARAKEET_MODELS: Record<ParakeetModelId, ParakeetModelSpec> = {
   'parakeet-tdt-0.6b-v3': {
+    ...PARAKEET_MODEL_DEFINITIONS['parakeet-tdt-0.6b-v3'],
     id: 'parakeet-tdt-0.6b-v3',
     dirName: 'parakeet-tdt-0.6b-v3',
     upstreamModel: 'nvidia/parakeet-tdt-0.6b-v3',
-    license: 'CC-BY-4.0',
     languageCount: 25,
-    supportsPunctuation: true,
     // encoder 652MB + decoder 11.8MB + joiner 6.36MB + tokens 94KB。
     approxInstallBytes: 671_000_000,
     releasePath: PARAKEET_RELEASE_PATH,
-    archiveName: PARAKEET_ARCHIVE,
-    archiveInnerDir: PARAKEET_INNER,
+    archiveName: 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2',
+    archiveInnerDir: 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8',
     requiredFiles: [
       'encoder.int8.onnx',
       'decoder.int8.onnx',
       'joiner.int8.onnx',
       'tokens.txt',
     ],
+  },
+  'parakeet-tdt-0.6b-v2': {
+    ...PARAKEET_MODEL_DEFINITIONS['parakeet-tdt-0.6b-v2'],
+    id: 'parakeet-tdt-0.6b-v2',
+    dirName: 'parakeet-tdt-0.6b-v2',
+    upstreamModel: 'nvidia/parakeet-tdt-0.6b-v2',
+    languageCount: 1,
+    approxInstallBytes: 662_000_000,
+    releasePath: PARAKEET_RELEASE_PATH,
+    archiveName: 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2',
+    archiveInnerDir: 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8',
+    requiredFiles: [
+      'encoder.int8.onnx',
+      'decoder.int8.onnx',
+      'joiner.int8.onnx',
+      'tokens.txt',
+    ],
+  },
+  'parakeet-tdt_ctc-0.6b-ja': {
+    ...PARAKEET_MODEL_DEFINITIONS['parakeet-tdt_ctc-0.6b-ja'],
+    id: 'parakeet-tdt_ctc-0.6b-ja',
+    dirName: 'parakeet-tdt_ctc-0.6b-ja',
+    upstreamModel: 'nvidia/parakeet-tdt_ctc-0.6b-ja',
+    languageCount: 1,
+    approxInstallBytes: 656_000_000,
+    releasePath: PARAKEET_RELEASE_PATH,
+    archiveName: 'sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8.tar.bz2',
+    archiveInnerDir: 'sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8',
+    requiredFiles: ['model.int8.onnx', 'tokens.txt'],
   },
 };
 
@@ -100,19 +130,32 @@ export function isParakeetModelInstalled(id: ParakeetModelId): boolean {
   return validateModelLayout(dir, PARAKEET_MODELS[id].requiredFiles).ok;
 }
 
-/** NeMo transducer 三件套 + tokens 的绝对路径。 */
-export function getParakeetModelFiles(id: ParakeetModelId): {
-  encoder: string;
-  decoder: string;
-  joiner: string;
-  tokens: string;
-} {
+export type ParakeetModelFiles =
+  | {
+      modelType: 'nemo_transducer';
+      encoder: string;
+      decoder: string;
+      joiner: string;
+      tokens: string;
+    }
+  | { modelType: 'nemo_ctc'; asrModel: string; tokens: string };
+
+export function getParakeetModelFiles(id: ParakeetModelId): ParakeetModelFiles {
   const dir = getParakeetModelDir(id);
+  const tokens = path.join(dir, 'tokens.txt');
+  if (PARAKEET_MODELS[id].modelType === 'nemo_ctc') {
+    return {
+      modelType: 'nemo_ctc',
+      asrModel: path.join(dir, 'model.int8.onnx'),
+      tokens,
+    };
+  }
   return {
+    modelType: 'nemo_transducer',
     encoder: path.join(dir, 'encoder.int8.onnx'),
     decoder: path.join(dir, 'decoder.int8.onnx'),
     joiner: path.join(dir, 'joiner.int8.onnx'),
-    tokens: path.join(dir, 'tokens.txt'),
+    tokens,
   };
 }
 
@@ -128,24 +171,11 @@ export function isParakeetVadInstalled(): boolean {
 }
 
 export function getParakeetModelIds(): ParakeetModelId[] {
-  return Object.keys(PARAKEET_MODELS) as ParakeetModelId[];
+  return [...PARAKEET_MODEL_IDS];
 }
 
 export function getInstalledParakeetModels(): ParakeetModelId[] {
   return getParakeetModelIds().filter((id) => isParakeetModelInstalled(id));
-}
-
-export function resolveParakeetSelection(
-  requested: string | undefined,
-  installed: ParakeetModelId[],
-): { id: ParakeetModelId } | null {
-  if (installed.length === 0) return null;
-  const ids = getParakeetModelIds();
-  const normalized = (requested || '').toLowerCase();
-  const chosen =
-    ids.find((id) => id === normalized && installed.includes(id)) ??
-    installed[0];
-  return { id: chosen };
 }
 
 export function isParakeetReady(): boolean {

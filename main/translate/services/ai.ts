@@ -423,7 +423,14 @@ export async function handleAIBatchTranslation(
           targetContent:
             validation.accepted[subtitle.id] !== undefined
               ? validation.accepted[subtitle.id]
-              : '[翻译失败: 对齐校验与定点补翻均未成功]',
+              : subtitle.content.join('\n'),
+          translationStatus:
+            validation.accepted[subtitle.id] !== undefined
+              ? 'success'
+              : 'failed',
+          ...(validation.accepted[subtitle.id] === undefined
+            ? { translationError: '对齐校验与定点补翻均未成功' }
+            : {}),
         }));
 
         batchSuccess = true;
@@ -461,7 +468,10 @@ export async function handleAIBatchTranslation(
             id: subtitle.id,
             startEndTime: subtitle.startEndTime,
             sourceContent: subtitle.content.join('\n'),
-            targetContent: `[翻译失败: ${error.message}]`,
+            targetContent: subtitle.content.join('\n'),
+            translationStatus: 'failed',
+            translationError:
+              error instanceof Error ? error.message : String(error),
           }));
 
           batchSuccess = true; // 标记为完成，继续下一批次

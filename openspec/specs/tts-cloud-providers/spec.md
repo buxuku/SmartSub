@@ -8,12 +8,12 @@
 
 ### Requirement: 云端 TTS 服务商框架
 
-系统 SHALL 提供云端 TTS 服务商框架,形制对齐云 ASR:类型以 schema 驱动表单声明字段(`ProviderField[]`)、实例持久化于 `ttsProviders` 存储键、提供 `isTtsProviderConfigured` 就绪判定、service 层以分发表(`TTS_SYNTHESIZER_MAP`)按类型路由。每个服务商 MUST 声明能力:`speedControl: 'native' | 'ssml' | 'none'`、可选 `maxCharsPerRequest`、可选 `concurrency`。内置类型 SHALL 覆盖:OpenAI 兼容(协议型多实例)、Edge TTS、Azure Speech、ElevenLabs、火山引擎豆包(品牌型单例),新增类型 MUST 经 `buildTtsViews` 数据驱动自动外显于「配音服务」页,无需逐处修改 UI。
+系统 SHALL 提供云端 TTS 服务商框架,形制对齐云 ASR:类型以 schema 驱动表单声明字段(`ProviderField[]`)、实例持久化于 `ttsProviders` 存储键、提供 `isTtsProviderConfigured` 就绪判定、service 层以分发表(`TTS_SYNTHESIZER_MAP`)按类型路由。每个服务商 MUST 声明能力:`speedControl: 'native' | 'ssml' | 'none'`、可选 `maxCharsPerRequest`、可选 `concurrency`。内置类型 SHALL 覆盖:OpenAI 兼容(协议型多实例)、Edge TTS、Azure Speech、ElevenLabs、火山引擎豆包、Xiaomi MiMo(品牌型单例),新增类型 MUST 经 `buildTtsViews` 数据驱动自动外显于「配音服务」页,无需逐处修改 UI。
 
 #### Scenario: 类型出现在配音服务页
 
 - **WHEN** 用户打开「配音服务」页的「在线服务」组
-- **THEN** OpenAI 兼容(含预设槽位与自定义实例)、Edge TTS、Azure Speech、ElevenLabs、火山引擎豆包各为可配置条目,表单由各自 schema 字段驱动渲染
+- **THEN** OpenAI 兼容(含预设槽位与自定义实例)、Edge TTS、Azure Speech、ElevenLabs、火山引擎豆包、Xiaomi MiMo 各为可配置条目,表单由各自 schema 字段驱动渲染
 
 #### Scenario: 能力声明驱动对齐分支
 

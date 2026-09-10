@@ -12,6 +12,8 @@ export interface TranslationResult {
   startEndTime: string;
   sourceContent: string;
   targetContent: string;
+  translationStatus?: 'success' | 'failed';
+  translationError?: string;
 }
 
 export interface TranslationConfig {

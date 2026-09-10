@@ -7,6 +7,7 @@ import {
   ASR_TENCENT,
   ASR_VOLCENGINE,
   ASR_XFYUN,
+  ASR_XIAOMI_MIMO,
 } from '../../../types/asrProvider';
 import { transcribeWithOpenAiCompatible } from './openaiCompatible';
 import { transcribeWithElevenLabs } from './elevenlabs';
@@ -16,6 +17,7 @@ import { transcribeWithTencent } from './tencent';
 import { transcribeWithAliyun } from './aliyun';
 import { transcribeWithXfyun } from './xfyun';
 import { transcribeWithGladia } from './gladia';
+import { transcribeWithXiaomiMimo } from './xiaomiMimo';
 import type { AsrTranscriber } from './types';
 
 /**
@@ -31,6 +33,7 @@ export const ASR_TRANSCRIBER_MAP: Record<string, AsrTranscriber> = {
   [ASR_ALIYUN]: transcribeWithAliyun,
   [ASR_XFYUN]: transcribeWithXfyun,
   [ASR_GLADIA]: transcribeWithGladia,
+  [ASR_XIAOMI_MIMO]: transcribeWithXiaomiMimo,
 };
 
 export function getAsrTranscriber(

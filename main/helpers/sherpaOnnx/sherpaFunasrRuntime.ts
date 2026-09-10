@@ -15,8 +15,9 @@ export interface SherpaModelRequest {
     | 'paraformer'
     | 'qwen3_asr'
     | 'fire_red_asr'
-    | 'nemo_transducer';
-  /** sense_voice / paraformer：单模型文件 + tokens.txt；fire_red_asr 复用 tokens 承载 tokens.txt。 */
+    | 'nemo_transducer'
+    | 'nemo_ctc';
+  /** sense_voice / paraformer / nemo_ctc：单模型文件 + tokens.txt。 */
   asrModel?: string;
   tokens?: string;
   /** qwen3_asr：四件套（tokenizer 为目录）。 */
@@ -51,6 +52,11 @@ export interface Segment {
   text: string;
 }
 
+interface TranscriptionResult {
+  segments: Segment[];
+  vadSegments?: Array<{ start: number; end: number }>;
+}
+
 /** 仅 VAD 边界检测参数（与 transcribe 用的 FunasrAddonParams 的 VAD 字段同名子集）。 */
 export interface VadParams {
   vad_threshold: number;
@@ -81,7 +87,7 @@ class SherpaFunasrRuntime {
   private pending = new Map<
     string,
     {
-      resolve: (s: { segments: Segment[] }) => void;
+      resolve: (s: TranscriptionResult) => void;
       reject: (e: Error) => void;
       onProgress?: (p: number) => void;
     }
@@ -140,7 +146,7 @@ class SherpaFunasrRuntime {
       entry.onProgress?.(msg.percent);
     } else if (msg.type === 'done') {
       this.pending.delete(msg.id);
-      entry.resolve({ segments: msg.segments });
+      entry.resolve({ segments: msg.segments, vadSegments: msg.vadSegments });
     } else if (msg.type === 'error') {
       this.pending.delete(msg.id);
       const err = new Error(msg.message) as Error & { code?: string };
@@ -167,10 +173,10 @@ class SherpaFunasrRuntime {
     model: SherpaModelRequest,
     audioFile: string,
     onProgress?: (p: number) => void,
-  ): { id: string; result: Promise<{ segments: Segment[] }> } {
+  ): { id: string; result: Promise<TranscriptionResult> } {
     const w = this.ensureWorker();
     const id = `t${++this.seq}`;
-    const result = new Promise<{ segments: Segment[] }>((resolve, reject) => {
+    const result = new Promise<TranscriptionResult>((resolve, reject) => {
       this.pending.set(id, { resolve, reject, onProgress });
     });
     w.postMessage({ type: 'transcribe', id, audioFile, ...model });

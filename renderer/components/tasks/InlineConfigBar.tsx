@@ -16,9 +16,14 @@ import { Switch } from '@/components/ui/switch';
 import Models from '@/components/Models';
 import AiRefineControl from '@/components/tasks/AiRefineControl';
 import ManuscriptControl from '@/components/tasks/ManuscriptControl';
+import SubtitleFormatSelect from '@/components/tasks/SubtitleFormatSelect';
 import { supportedLanguage } from 'lib/utils';
 import { isProviderConfigured } from 'lib/providerUtils';
-import { hasAnyModelAnyEngine } from 'lib/engineModels';
+import {
+  hasAnyModelAnyEngine,
+  hasUnavailableParakeetModel,
+} from 'lib/engineModels';
+import { isParakeetLanguageMismatch } from '../../../types/parakeet';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import { useTranslation } from 'next-i18next';
 import { useCustomLanguages } from 'hooks/useCustomLanguages';
@@ -45,12 +50,16 @@ interface InlineConfigBarProps {
 function ConfigItem({
   label,
   children,
+  wrap = false,
 }: {
   label: string;
   children: React.ReactNode;
+  wrap?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-1.5">
+    <div
+      className={`flex items-center gap-1.5${wrap ? ' max-w-full flex-wrap' : ''}`}
+    >
       <span className="text-xs text-muted-foreground whitespace-nowrap">
         {label}
       </span>
@@ -138,7 +147,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-muted/30 px-3 py-2">
       {typeDef.needsModel && (
         <ConfigItem label={t('configBar.model')}>
-          {hasModels ? (
+          {hasModels || formData.transcriptionEngine === 'parakeet' ? (
             <Models
               className={modelTriggerClass}
               engine={formData.transcriptionEngine}
@@ -315,25 +324,44 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
         </>
       )}
 
-      {!typeDef.hasTranslate && (
-        <ConfigItem label={t('configBar.format')}>
-          <Select
-            value={formData.subtitleOutputFormat || 'srt'}
-            onValueChange={(v) => setValue('subtitleOutputFormat', v)}
+      {typeDef.needsModel &&
+        formData.transcriptionEngine === 'parakeet' &&
+        (hasUnavailableParakeetModel(systemInfo, formData) ? (
+          <p
+            role="alert"
+            className="flex w-full items-start gap-1.5 break-words text-xs text-destructive"
           >
-            <SelectTrigger className={triggerClass}>
-              <SelectValue placeholder={tHome('pleaseSelect')} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="srt">{tHome('format_srt')}</SelectItem>
-              <SelectItem value="vtt">{tHome('format_vtt')}</SelectItem>
-              <SelectItem value="ass">{tHome('format_ass')}</SelectItem>
-              <SelectItem value="lrc">{tHome('format_lrc')}</SelectItem>
-              <SelectItem value="txt">{tHome('format_txt')}</SelectItem>
-            </SelectContent>
-          </Select>
-        </ConfigItem>
-      )}
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {t('parakeet.modelUnavailable', {
+              model: formData.model || 'Parakeet',
+            })}
+          </p>
+        ) : isParakeetLanguageMismatch(
+            formData.model,
+            formData.sourceLanguage,
+          ) ? (
+          <p
+            role="status"
+            className="flex w-full items-start gap-1.5 break-words text-xs text-muted-foreground"
+          >
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {t('parakeet.languageMismatch', {
+              model: formData.model,
+              language: formData.sourceLanguage,
+            })}
+          </p>
+        ) : null)}
+
+      <ConfigItem label={t('configBar.format')} wrap>
+        <SubtitleFormatSelect
+          compact
+          config={formData}
+          onChange={(formats) => {
+            setValue('subtitleOutputFormats', formats);
+            setValue('subtitleOutputFormat', formats[0]);
+          }}
+        />
+      </ConfigItem>
     </div>
   );
 };

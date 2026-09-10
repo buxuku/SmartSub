@@ -1,4 +1,8 @@
 {
+  "parakeet": {
+    "modelUnavailable": "模型 {{model}} 未就绪。请在任务配置中选择已安装的模型；固定配置任务可重新安装原模型或新建任务。",
+    "languageMismatch": "{{model}} 不支持源语言 {{language}}，识别结果可能不准确。当前选择已保留。"
+  },
   "pageTitle": {
     "generate-translate": "视频 → 双语字幕",
     "generate": "视频 → 原文字幕",
@@ -312,6 +316,7 @@
     "manuscript": "文稿匹配",
     "translate": "翻译",
     "speakerDiarization": "角色分离",
+    "export": "导出字幕",
     "dubbing": "配音",
     "compose": "合成"
   },
@@ -343,6 +348,8 @@
     "remove": "移除",
     "embeddedSubtitle": "内封软字幕直提（已跳过听写/ASR）",
     "speakerDiarizationMetadataSaveFailed": "角色分离已完成，但角色 metadata 写入失败；字幕处理已继续，请查看日志后重试。",
+    "missedSpeechWarning": "疑似漏听 {{count}} 处（最高等级：{{level}}），请打开校对复核",
+    "missedSpeechLevel": { "low": "低", "medium": "中", "high": "高" },
     "proofreadTxtUnsupported": "TXT 文件不包含时间轴，暂不支持校对。请生成 SRT/VTT/ASS 后校对，或校对完成后另存为 TXT。",
     "proofreadTxtUnsupportedShort": "TXT 不支持校对"
   },

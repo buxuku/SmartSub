@@ -333,13 +333,14 @@
   "gpuModeCpuOnly": "CPU only",
   "cpuModeBadge": "CPU mode",
   "cpuModeTip": "Transcription runs on CPU. Click to view acceleration options.",
+  "coarseTimeline": "Coarse timeline",
   "engineBadge": {
     "builtin": "Whisper.cpp",
     "fasterWhisper": "Faster-Whisper",
     "funasr": "FunASR",
     "qwen": "Qwen3-ASR",
     "fireRedAsr": "FireRedASR",
-    "parakeet": "Parakeet TDT",
+    "parakeet": "Parakeet",
     "localCli": "Local command",
     "cloud": "Cloud ASR"
   }

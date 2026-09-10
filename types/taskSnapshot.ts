@@ -11,6 +11,7 @@ export interface PinnableTaskConfigSnapshot {
   speakerDiarization?: unknown;
   manuscriptPath?: unknown;
   useEmbeddedSubtitles?: unknown;
+  subtitleOutputFormats?: unknown;
 }
 
 export function isPinnedTaskConfigSnapshot(
@@ -26,6 +27,8 @@ export function isPinnedTaskConfigSnapshot(
         snapshot.compose ||
         snapshot.speakerDiarization === true ||
         snapshot.useEmbeddedSubtitles === false ||
+        (Array.isArray(snapshot.subtitleOutputFormats) &&
+          snapshot.subtitleOutputFormats.length > 0) ||
         manuscriptPath),
   );
 }

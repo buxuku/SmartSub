@@ -333,13 +333,14 @@
   "gpuModeCpuOnly": "仅 CPU",
   "cpuModeBadge": "CPU 模式",
   "cpuModeTip": "当前使用 CPU 转写，点击查看加速选项",
+  "coarseTimeline": "粗粒度时间轴",
   "engineBadge": {
     "builtin": "Whisper.cpp",
     "fasterWhisper": "Faster-Whisper",
     "funasr": "FunASR",
     "qwen": "Qwen3-ASR",
     "fireRedAsr": "FireRedASR",
-    "parakeet": "Parakeet TDT",
+    "parakeet": "Parakeet",
     "localCli": "本地命令",
     "cloud": "云端听写"
   }

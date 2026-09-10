@@ -318,6 +318,16 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       t0: number;
       t1: number;
     }>;
+    ctx.onDiagnostics?.({
+      vadAvailable: vad.useVAD && Array.isArray(result?.vadSegments),
+      vadSegments:
+        vad.useVAD && Array.isArray(result?.vadSegments)
+          ? vadSegments.map((segment) => ({
+              startMs: Number(segment.t0),
+              endMs: Number(segment.t1),
+            }))
+          : undefined,
+    });
     const cueOptions = getSubtitleCueOptions(
       formData as Record<string, unknown>,
     );

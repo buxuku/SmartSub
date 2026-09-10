@@ -41,6 +41,8 @@ export type AsrProviderType = {
   multiInstance?: boolean;
   /** 音频上传约束声明；未声明 = 沿用云引擎全局默认。 */
   audioLimits?: AsrAudioLimits;
+  /** 无原生时间戳的服务商直接走静音切片，避免先提交一次整文件请求。 */
+  timestampMode?: 'dynamic' | 'none';
 };
 
 /** 用户配置的云 ASR 服务商实例（多实例）。type 指向 AsrProviderType.id。 */
@@ -65,6 +67,7 @@ export const ASR_TENCENT = 'tencent';
 export const ASR_ALIYUN = 'aliyun';
 export const ASR_XFYUN = 'xfyun';
 export const ASR_GLADIA = 'gladia';
+export const ASR_XIAOMI_MIMO = 'xiaomiMimo';
 
 /**
  * 火山豆包极速版：官方音频上限 2h/100MB，但 base64 进 JSON 体膨胀 ×4/3 且整体驻留内存，
@@ -125,6 +128,8 @@ const XFYUN_LANGUAGE_TIERS = ['autodialect', 'autominor'];
  * （WAV 切片 ≈18.4MB 达标）。若调整压缩码率需与腾讯/阿里/讯飞常量联动复核。
  */
 const GLADIA_MAX_UPLOAD_BYTES = 28 * 1024 * 1024;
+/** Base64 字符串上限 10MB，按 4/3 膨胀留出 JSON 开销和边界余量。 */
+const XIAOMI_MIMO_MAX_UPLOAD_BYTES = 7 * 1024 * 1024;
 
 /**
  * Gladia「模型档位」（识别语言免切自动，任务原语言仅做上传前守卫）：
@@ -699,6 +704,74 @@ export const ASR_PROVIDER_TYPES: AsrProviderType[] = [
       },
     ],
   },
+  {
+    id: ASR_XIAOMI_MIMO,
+    name: 'Xiaomi MiMo 语音识别',
+    shortName: 'MiMo ASR',
+    isBuiltin: true,
+    icon: '🎙️',
+    iconImg: '/images/providers/xiaomi-mimo.svg',
+    timestampMode: 'none',
+    audioLimits: {
+      maxUploadBytes: XIAOMI_MIMO_MAX_UPLOAD_BYTES,
+      maxChunkSeconds: 20,
+    },
+    fields: [
+      {
+        key: 'apiKey',
+        label: 'API Key',
+        type: 'password',
+        required: true,
+        tips: 'asrXiaomiMimoApiKeyTips',
+        placeholder: 'phXiaomiMimoApiKey',
+      },
+      {
+        key: 'models',
+        label: 'asrModels',
+        type: 'select',
+        options: ['mimo-v2.5-asr'],
+        required: true,
+        defaultValue: 'mimo-v2.5-asr',
+        tips: 'asrModelsXiaomiMimoTips',
+      },
+      {
+        key: 'apiUrl',
+        label: 'Base url',
+        type: 'url',
+        required: true,
+        defaultValue: 'https://api.xiaomimimo.com/v1',
+        tips: 'asrApiUrlXiaomiMimoTips',
+        placeholder: 'https://api.xiaomimimo.com/v1',
+      },
+      {
+        key: 'requestTimeoutSec',
+        label: 'asrRequestTimeout',
+        type: 'number',
+        required: false,
+        defaultValue: 120,
+        step: 10,
+        tips: 'asrRequestTimeoutTips',
+      },
+      {
+        key: 'concurrency',
+        label: 'asrConcurrency',
+        type: 'number',
+        required: false,
+        defaultValue: 2,
+        step: 1,
+        tips: 'asrConcurrencyTips',
+      },
+      {
+        key: 'requestInterval',
+        label: 'requestInterval',
+        type: 'number',
+        required: false,
+        defaultValue: 0.7,
+        step: 0.1,
+        tips: 'asrRequestIntervalTips',
+      },
+    ],
+  },
 ];
 
 /** 按 id 取服务商类型定义。 */
@@ -723,6 +796,10 @@ export function resolveAudioLimits(
     maxChunkSeconds:
       type?.audioLimits?.maxChunkSeconds ?? defaults.maxChunkSeconds,
   };
+}
+
+export function shouldPreChunkAsr(type: AsrProviderType | undefined): boolean {
+  return type?.timestampMode === 'none';
 }
 
 /**

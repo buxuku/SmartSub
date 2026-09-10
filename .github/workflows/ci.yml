@@ -39,6 +39,9 @@ jobs:
       - name: Unit tests (AI response parser)
         run: yarn test:translate-parser
 
+      - name: Unit tests (multi-format subtitle output)
+        run: yarn test:subtitle-output
+
       - name: Unit tests (glossary)
         run: yarn test:glossary
 
@@ -48,6 +51,9 @@ jobs:
       - name: Unit tests (translation cancel)
         run: yarn test:translation-cancel
 
+      - name: Unit tests (free translators)
+        run: yarn test:free-translators
+
       - name: Unit tests (Qwen-MT)
         run: yarn test:qwen-mt
 
@@ -56,6 +62,9 @@ jobs:
       # 配音分支合入后本步骤自动生效、无需改 workflow。
       - name: Unit tests (dubbing)
         run: npm run test:dubbing --if-present
+
+      - name: Unit tests (Xiaomi MiMo audio)
+        run: yarn test:mimo-audio
 
       - name: Unit tests (voice clone and number normalization)
         run: yarn test:voice-clone

@@ -1,6 +1,7 @@
 import {
   cloneProviderForFallback,
   nextProviderInstanceName,
+  PROVIDER_TYPES,
   type Provider,
   type ProviderType,
 } from '../types/provider';
@@ -344,6 +345,117 @@ function testMigrationPreservesProviderInstances() {
   );
 }
 
+function testDeepLXGetsConservativeRateLimitDefault() {
+  const migrated = migrateProviders([
+    provider({
+      id: 'deeplx',
+      name: 'DeepLX',
+      type: 'deeplx',
+      isAi: false,
+      apiUrl: 'http://localhost:1188/translate',
+    }),
+  ]);
+  const deeplx = migrated.find((candidate) => candidate.type === 'deeplx');
+  assert(
+    deeplx?.requestInterval === 1,
+    'DeepLX should get a one-second default request interval',
+  );
+}
+
+function testAiPerformanceDefaults() {
+  const migrated = migrateProviders([
+    provider({
+      id: 'deepseek',
+      name: 'DeepSeek',
+      type: 'deepseek',
+      batchSize: 1,
+      batchConcurrency: 1,
+    }),
+    provider({
+      id: 'ollama',
+      name: 'Ollama',
+      type: 'ollama',
+      batchSize: 10,
+      batchConcurrency: 1,
+    }),
+    provider({
+      id: 'deer',
+      name: 'DeerAPI',
+      type: 'DeerAPI',
+      batchSize: 10,
+      batchConcurrency: 1,
+    }),
+    provider({
+      id: 'custom',
+      name: 'Custom',
+      type: 'openai',
+      batchSize: 10,
+      batchConcurrency: 1,
+    }),
+    provider({
+      id: 'tuned',
+      name: 'Tuned',
+      type: 'deepseek',
+      batchSize: 8,
+      batchConcurrency: 3,
+    }),
+  ]);
+  const find = (id: string) => migrated.find((item) => item.id === id)!;
+
+  assert(
+    find('deepseek').batchSize === 20 &&
+      find('deepseek').batchConcurrency === 2,
+    'legacy cloud AI defaults should migrate to 20 lines and concurrency 2',
+  );
+  assert(
+    find('ollama').batchSize === 10 && find('ollama').batchConcurrency === 1,
+    'Ollama should keep conservative local-model defaults',
+  );
+  assert(
+    find('deer').batchSize === 20 && find('deer').batchConcurrency === 2,
+    'legacy DeerAPI defaults should migrate to cloud AI defaults',
+  );
+  assert(
+    find('custom').batchSize === 20 && find('custom').batchConcurrency === 2,
+    'legacy custom OpenAI defaults should migrate to cloud AI defaults',
+  );
+  assert(
+    find('tuned').batchSize === 8 && find('tuned').batchConcurrency === 3,
+    'non-default AI performance settings should remain unchanged',
+  );
+
+  const deepseekTemplate = PROVIDER_TYPES.find(
+    (item) => item.id === 'deepseek',
+  )!;
+  assert(
+    deepseekTemplate.fields.find((field) => field.key === 'batchSize')
+      ?.defaultValue === 20,
+    'DeepSeek template should expose the optimized batch size',
+  );
+
+  const expectedDefaults: Record<string, [number, number]> = {
+    ollama: [10, 1],
+    deepseek: [20, 2],
+    azureopenai: [20, 2],
+    DeerAPI: [20, 2],
+    Gemini: [20, 1],
+    siliconflow: [20, 1],
+    qwen: [20, 2],
+  };
+  for (const [typeId, [batchSize, batchConcurrency]] of Object.entries(
+    expectedDefaults,
+  )) {
+    const type = PROVIDER_TYPES.find((item) => item.id === typeId)!;
+    assert(
+      type.fields.find((field) => field.key === 'batchSize')?.defaultValue ===
+        batchSize &&
+        type.fields.find((field) => field.key === 'batchConcurrency')
+          ?.defaultValue === batchConcurrency,
+      `${typeId} should expose batch defaults ${batchSize}x${batchConcurrency}`,
+    );
+  }
+}
+
 async function testDraftFallbackIsSkipped() {
   const primary = provider({ fallbackProviderIds: ['draft', 'backup'] });
   const draft = provider({ id: 'draft', apiKey: '  ' });
@@ -513,6 +625,8 @@ export async function runProviderFallbackTests() {
   testCloneClearsCredentials();
   testFallbackConfigNormalization();
   testMigrationPreservesProviderInstances();
+  testDeepLXGetsConservativeRateLimitDefault();
+  testAiPerformanceDefaults();
   await testDraftFallbackIsSkipped();
   testLocalizedInstanceNames();
   testFallbackBrowsing();

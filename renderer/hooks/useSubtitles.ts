@@ -4,6 +4,10 @@ import { isSubtitleFile } from 'lib/utils';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
 import { IFiles } from '../../types';
+import {
+  subtitleOutputFilesToSave,
+  getProofreadSourcePath,
+} from '../../types/subtitleOutput';
 
 // 字幕格式接口
 export interface Subtitle {
@@ -12,6 +16,9 @@ export interface Subtitle {
   content: string[];
   sourceContent?: string;
   targetContent?: string;
+  translationStatus?: 'success' | 'failed';
+  translationError?: string;
+  missedSpeechWarnings?: import('../../types/missedSpeech').MissedSpeechWarning[];
   startTimeInSeconds?: number;
   endTimeInSeconds?: number;
   isEditing?: boolean;
@@ -136,13 +143,7 @@ export const useSubtitles = (
   const loadFiles = async () => {
     try {
       // 获取文件路径
-      const {
-        filePath,
-        srtFile,
-        tempSrtFile,
-        translatedSrtFile,
-        tempTranslatedSrtFile,
-      } = file;
+      const { filePath, translatedSrtFile, tempTranslatedSrtFile } = file;
       const directory = path.dirname(filePath);
       const fileName = path.basename(filePath, path.extname(filePath));
 
@@ -157,12 +158,15 @@ export const useSubtitles = (
 
       // 根据任务类型确定使用哪个原始字幕文件
       if (taskType === 'generateOnly') {
-        originalSrtPath = srtFile || path.join(directory, `${fileName}.srt`);
+        originalSrtPath =
+          getProofreadSourcePath(file) ||
+          path.join(directory, `${fileName}.srt`);
         setHasTranslationFile(false);
       } else {
         // 对于需要翻译的任务，优先使用临时原始字幕文件
         originalSrtPath =
-          tempSrtFile || srtFile || path.join(directory, `${fileName}.srt`);
+          getProofreadSourcePath(file) ||
+          path.join(directory, `${fileName}.srt`);
 
         // 翻译字幕直接使用tempTranslatedSrtFile
         if (tempTranslatedSrtFile) {
@@ -265,6 +269,16 @@ export const useSubtitles = (
             ...sub,
             sourceContent: sub.content.join('\n'),
             targetContent: translated ? translated.content.join('\n') : '',
+            ...(file.translationFailures?.some(
+              (f) => String(f.subtitleId) === String(sub.id),
+            )
+              ? {
+                  translationStatus: 'failed' as const,
+                  translationError: file.translationFailures.find(
+                    (f) => String(f.subtitleId) === String(sub.id),
+                  )?.error,
+                }
+              : {}),
             isEditing: false,
             // 添加计算出的开始和结束时间（秒）
             startTimeInSeconds: start,
@@ -307,18 +321,20 @@ export const useSubtitles = (
       const { srtFile, tempSrtFile, translatedSrtFile, tempTranslatedSrtFile } =
         file;
 
+      const outputs = subtitleOutputFilesToSave(
+        file,
+        formData.translateContent,
+      );
       // 保存原始字幕
       if (srtFile && formData.sourceSrtSaveOption !== 'noSave') {
-        window.ipc.invoke('saveSubtitleFile', {
+        outputs.push({
           filePath: srtFile,
-          subtitles: mergedSubtitles,
           contentType: 'source',
         });
       }
       if (tempSrtFile) {
-        window.ipc.invoke('saveSubtitleFile', {
+        outputs.push({
           filePath: tempSrtFile,
-          subtitles: mergedSubtitles,
           contentType: 'source',
         });
       }
@@ -327,21 +343,29 @@ export const useSubtitles = (
       if (shouldShowTranslation) {
         // 保存到翻译字幕文件
         if (translatedSrtFile) {
-          window.ipc.invoke('saveSubtitleFile', {
+          outputs.push({
             filePath: translatedSrtFile,
-            subtitles: mergedSubtitles,
             contentType: formData.translateContent,
           });
         }
 
         // 如果有指定的临时翻译文件且不同于主翻译文件，也保存一份
         if (tempTranslatedSrtFile) {
-          window.ipc.invoke('saveSubtitleFile', {
+          outputs.push({
             filePath: tempTranslatedSrtFile,
-            subtitles: mergedSubtitles,
             contentType: 'onlyTranslate',
           });
         }
+      }
+      const written = new Set<string>();
+      for (const output of outputs) {
+        if (written.has(output.filePath)) continue;
+        written.add(output.filePath);
+        const result = await window.ipc.invoke('saveSubtitleFile', {
+          ...output,
+          subtitles: mergedSubtitles,
+        });
+        if (result?.error) throw new Error(result.error);
       }
       toast.success(t('subtitleSavedSuccess'));
     } catch (error) {
@@ -372,7 +396,10 @@ export const useSubtitles = (
     return (
       subtitle.sourceContent &&
       subtitle.sourceContent.trim() !== '' &&
-      (!subtitle.targetContent || subtitle.targetContent.trim() === '')
+      (subtitle.translationStatus === 'failed' ||
+        !subtitle.targetContent ||
+        subtitle.targetContent.trim() === '' ||
+        /^\[翻译失败:/.test(subtitle.targetContent.trim()))
     );
   };
 

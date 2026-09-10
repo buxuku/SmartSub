@@ -53,6 +53,7 @@ export default async function translate(
     translateRetryTimes,
   } = formData || {};
   const { fileName, directory, srtFile } = file;
+  file.translationFailures = [];
 
   // 如果参数中有指定重试次数，则使用参数值，否则使用表单中的值或默认为2
   const retryCount =
@@ -151,6 +152,18 @@ export default async function translate(
     );
 
     const handleTranslationResult = async (results: TranslationResult[]) => {
+      const failures = results.filter(
+        (result) => result.translationStatus === 'failed',
+      );
+      if (failures.length > 0) {
+        file.translationFailures = [
+          ...(file.translationFailures || []),
+          ...failures.map((result) => ({
+            subtitleId: result.id,
+            error: result.translationError,
+          })),
+        ];
+      }
       let concatContent = '';
       let tempTranslatedContent = '';
 
@@ -208,7 +221,7 @@ export default async function translate(
     );
 
     logMessage('Translation completed', 'info');
-    return true;
+    return !(file.translationFailures && file.translationFailures.length > 0);
   } catch (error) {
     if (!isTaskCancelledError(error)) {
       event.sender.send('message', error.message || error);

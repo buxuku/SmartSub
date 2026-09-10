@@ -9,70 +9,136 @@ import { throwIfSignalCancelled } from '../helpers/taskContext';
 import type { TranslationRequestOptions } from '../translate/types';
 
 /**
- * Bing（Edge 浏览器内置）免费翻译，无需 API Key。
- * 原理：先从 edge.microsoft.com/translate/auth 取匿名 JWT（约 10 分钟有效），
- * 再调用 Edge 翻译接口批量翻译。质量等同付费 Azure Translator，且原生支持一次多条。
+ * Bing 网页版免费翻译，无需 API Key。
  *
- * 注意：token 过期/被拒（401/403）时自动续期重试一次；为避免被
- * isConfigurationError 误判为“配置错误中止任务”，对外抛出的错误信息统一带
- * “(network)”且不包含 401/403/unauthorized 等字样。
+ * Bing 已下线旧的 Edge auth/JWT 和 cognitive translator 接口。当前网页
+ * 通过 /translator 页面下发一次性会话参数，再向同域 /ttranslatev3 发送
+ * 表单请求；会话参数包括 IG、IID、key 和 token。
  */
 
-const AUTH_ENDPOINT = 'https://edge.microsoft.com/translate/auth';
-const TRANSLATE_ENDPOINT =
-  'https://api-edge.cognitive.microsofttranslator.com/translate';
-const TOKEN_TTL_MS = 9 * 60 * 1000; // 提前于 ~10 分钟过期续期
+const BING_ORIGIN = 'https://www.bing.com';
+const TRANSLATOR_PAGE = `${BING_ORIGIN}/translator`;
+const TRANSLATE_PATH = '/ttranslatev3';
 const MAX_TEXT_LENGTH = 5000;
+const SESSION_TTL_MS = 50 * 60 * 1000;
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0';
 
-let cachedToken = '';
-let tokenFetchedAt = 0;
+interface BingSession {
+  ig: string;
+  iid: string;
+  key: string;
+  token: string;
+  fetchedAt: number;
+}
 
-async function getToken(
+let cachedSession: BingSession | undefined;
+
+function parseQuotedOrBareValues(raw: string): string[] {
+  return (
+    raw.match(/(?:"(?:[^"\\]|\\.)*"|[^,]+)/g)?.map((value) => {
+      const trimmed = value.trim();
+      if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+        try {
+          return JSON.parse(trimmed);
+        } catch {
+          return trimmed.slice(1, -1);
+        }
+      }
+      return trimmed;
+    }) || []
+  );
+}
+
+function parseSession(html: string): BingSession {
+  const ig = html.match(/"ig":"([A-Z0-9]+)"/)?.[1];
+  const abuseParams = html.match(
+    /params_AbusePreventionHelper\s*=\s*\[([^\]]+)\]/,
+  )?.[1];
+  const [key, token] = abuseParams ? parseQuotedOrBareValues(abuseParams) : [];
+  const iid = html.match(/data-iid="([^"]+)"/)?.[1];
+
+  if (!ig || !iid || !key || !token) {
+    throw new Error('Bing free translate failed (network): invalid session');
+  }
+
+  return { ig, iid, key, token, fetchedAt: Date.now() };
+}
+
+async function getSession(
   force = false,
   options?: TranslationRequestOptions,
-): Promise<string> {
-  if (!force && cachedToken && Date.now() - tokenFetchedAt < TOKEN_TTL_MS) {
-    return cachedToken;
+): Promise<BingSession> {
+  if (
+    !force &&
+    cachedSession &&
+    Date.now() - cachedSession.fetchedAt < SESSION_TTL_MS
+  ) {
+    return cachedSession;
   }
+
   throwIfSignalCancelled(options?.signal);
-  const res = await axios.get(AUTH_ENDPOINT, {
-    timeout: TRANSLATION_REQUEST_TIMEOUT,
+  const response = await axios.get(TRANSLATOR_PAGE, {
+    params: { from: 'auto-detect', to: 'zh-Hans' },
     headers: { 'User-Agent': USER_AGENT },
+    timeout: TRANSLATION_REQUEST_TIMEOUT,
     signal: options?.signal,
   });
   throwIfSignalCancelled(options?.signal);
-  if (!res.data || typeof res.data !== 'string') {
-    throw new Error('Bing free translate failed (network): empty auth token');
+
+  if (typeof response.data !== 'string') {
+    throw new Error('Bing free translate failed (network): empty session page');
   }
-  cachedToken = res.data.trim();
-  tokenFetchedAt = Date.now();
-  return cachedToken;
+
+  cachedSession = parseSession(response.data);
+  return cachedSession;
 }
 
 async function requestTranslate(
-  texts: string[],
+  text: string,
+  from: string,
   to: string,
-  token: string,
+  session: BingSession,
   options?: TranslationRequestOptions,
-): Promise<any[]> {
-  const res = await axios.post(
-    TRANSLATE_ENDPOINT,
-    texts.map((t) => ({ Text: t })),
+): Promise<string> {
+  const body = new URLSearchParams({
+    fromLang: from || 'auto-detect',
+    to,
+    text: text.slice(0, MAX_TEXT_LENGTH),
+    token: session.token,
+    key: session.key,
+  });
+  const response = await axios.post(
+    `${BING_ORIGIN}${TRANSLATE_PATH}`,
+    body.toString(),
     {
-      params: { to, 'api-version': '3.0', includeSentenceLength: 'true' },
+      params: { isVertical: 1, IG: session.ig, IID: session.iid },
       headers: {
         'User-Agent': USER_AGENT,
-        authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
+        Referer: TRANSLATOR_PAGE,
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
       timeout: TRANSLATION_REQUEST_TIMEOUT,
       signal: options?.signal,
     },
   );
   throwIfSignalCancelled(options?.signal);
-  return res.data;
+
+  if (
+    response.data &&
+    typeof response.data === 'object' &&
+    response.data.statusCode === 205
+  ) {
+    throw new Error('Bing free translate failed (network): session expired');
+  }
+
+  const translation = response.data?.[0]?.translations?.[0]?.text;
+  if (typeof translation !== 'string' || !translation.trim()) {
+    throw new Error(
+      'Bing free translate failed (network): unexpected response',
+    );
+  }
+  return translation;
 }
 
 export default async function bingFree(
@@ -84,6 +150,10 @@ export default async function bingFree(
 ): Promise<string | string[]> {
   throwIfSignalCancelled(options?.signal);
   const list = Array.isArray(query) ? query : [query];
+  const from =
+    !sourceLanguage || sourceLanguage.toLowerCase() === 'auto'
+      ? 'auto-detect'
+      : convertLanguageCode(sourceLanguage, 'bing') || 'auto-detect';
   const to = convertLanguageCode(targetLanguage, 'bing');
   if (!to) {
     throw new Error('not supported language');
@@ -92,50 +162,49 @@ export default async function bingFree(
   const providerId = proof?.id || 'bingFree';
   const rateKey = `bingFree:${providerId}`;
   const rateCfg = resolveRateLimitConfig(proof);
+  const results: string[] = [];
 
-  const texts = list.map((t) => (t ?? '').slice(0, MAX_TEXT_LENGTH));
+  for (const text of list) {
+    if (!text || !text.trim()) {
+      results.push(text ?? '');
+      continue;
+    }
 
-  const runOnce = async (forceToken: boolean): Promise<any[]> => {
-    const token = await getToken(forceToken, options);
-    await acquire(rateKey, rateCfg, options?.signal);
-    return requestTranslate(texts, to, token, options);
-  };
+    let session = await getSession(false, options);
+    try {
+      await acquire(rateKey, rateCfg, options?.signal);
+      results.push(await requestTranslate(text, from, to, session, options));
+    } catch (error: any) {
+      throwIfSignalCancelled(options?.signal);
+      const status = error?.response?.status;
+      const message = String(error?.message || '');
+      const sessionExpired =
+        status === 401 || status === 403 || message.includes('session expired');
+      if (!sessionExpired) {
+        throw new Error(
+          `Bing free translate failed (network): ${message || 'request error'}`,
+        );
+      }
 
-  let data: any[];
-  try {
-    data = await runOnce(false);
-  } catch (error: any) {
-    throwIfSignalCancelled(options?.signal);
-    const status = error?.response?.status;
-    if (status === 401 || status === 403) {
-      // token 失效，强制续期后重试一次
+      session = await getSession(true, options);
+      await acquire(rateKey, rateCfg, options?.signal);
       try {
-        data = await runOnce(true);
+        results.push(await requestTranslate(text, from, to, session, options));
       } catch (retryError: any) {
         throwIfSignalCancelled(options?.signal);
         throw new Error(
           `Bing free translate failed (network): ${retryError?.message || 'retry error'}`,
         );
       }
-    } else {
-      throw new Error(
-        `Bing free translate failed (network): ${error?.message || 'request error'}`,
-      );
     }
   }
 
-  if (!Array.isArray(data)) {
-    throw new Error(
-      'Bing free translate failed (network): unexpected response',
-    );
-  }
-
-  const result = data.map((item) => item?.translations?.[0]?.text ?? '');
-  if (result.length !== list.length) {
-    throw new Error(
-      'Bing free translate failed (network): result count mismatch',
-    );
-  }
-
-  return Array.isArray(query) ? result : result[0];
+  return Array.isArray(query) ? results : results[0];
 }
+
+export const __test__ = {
+  parseSession,
+  resetSession: () => {
+    cachedSession = undefined;
+  },
+};

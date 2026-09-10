@@ -6,6 +6,7 @@
 import type { IFormData } from '../../types';
 import type { RecipeGoals, TaskRecipe } from '../../types/recipe';
 import { stripSpeakerDiarizationConfig } from '../../types/speakerDiarization';
+import { resolveSubtitleOutputFormats } from '../../types/subtitleOutput';
 
 /** 启动台拖放带入向导的 sessionStorage 交接键 */
 export const WIZARD_DROP_KEY = 'wizard:droppedFiles';
@@ -132,7 +133,19 @@ export function recipeToWizardPrefill(recipe: TaskRecipe): RecipeWizardPrefill {
     // 缺省语义与向导默认一致：字幕校对开、配音确认关
     subtitleGateOn: gates ? gates.subtitle === 'manual' : true,
     dubbingGateOn: gates ? gates.dubbing === 'manual' : false,
-    config: recipe.config ? stripSpeakerDiarizationConfig(recipe.config) : null,
+    config: recipe.config
+      ? {
+          ...stripSpeakerDiarizationConfig(recipe.config),
+          ...(recipe.config.subtitleOutputFormat ||
+          recipe.config.subtitleOutputFormats
+            ? {
+                subtitleOutputFormats: resolveSubtitleOutputFormats(
+                  recipe.config,
+                ),
+              }
+            : {}),
+        }
+      : null,
   };
 }
 

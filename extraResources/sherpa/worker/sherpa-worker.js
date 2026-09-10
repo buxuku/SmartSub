@@ -35,8 +35,18 @@ let vadKey = '';
 let vadOnly = null;
 let vadOnlyKey = '';
 const cancelled = new Set();
+let transcribing = false;
 
 function buildKey(req) {
+  if (req.modelType === 'nemo_ctc') {
+    return [
+      'nemo_ctc',
+      req.asrModel,
+      req.tokens,
+      req.params.num_threads,
+      req.params.provider,
+    ].join('|');
+  }
   if (req.modelType === 'qwen3_asr') {
     const q = req.qwen || {};
     return [
@@ -205,6 +215,19 @@ function buildParakeetRecognizerConfig(t, tokens, p) {
   };
 }
 
+function buildParakeetCtcRecognizerConfig(model, tokens, p) {
+  return {
+    featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
+    modelConfig: {
+      nemoCtc: { model },
+      tokens,
+      numThreads: p.num_threads,
+      provider: p.provider,
+      debug: 0,
+    },
+  };
+}
+
 function ensureLoaded(req) {
   const key = buildKey(req);
   if (!recognizer || key !== cacheKey) {
@@ -220,6 +243,12 @@ function ensureLoaded(req) {
     } else if (req.modelType === 'nemo_transducer') {
       config = buildParakeetRecognizerConfig(
         req.transducer,
+        req.tokens,
+        req.params,
+      );
+    } else if (req.modelType === 'nemo_ctc') {
+      config = buildParakeetCtcRecognizerConfig(
+        req.asrModel,
         req.tokens,
         req.params,
       );
@@ -262,6 +291,7 @@ async function transcribe(req) {
   const total = samples.length;
   const segments = [];
   let lastPercent = -1;
+  const vadSegments = [];
 
   const drain = async () => {
     while (!vad.isEmpty()) {
@@ -273,6 +303,7 @@ async function transcribe(req) {
       const r = await recognizer.decodeAsync(stream);
       const start = seg.start / SAMPLE_RATE;
       const end = (seg.start + seg.samples.length) / SAMPLE_RATE;
+      vadSegments.push({ start, end });
       const text = r && r.text ? r.text.trim() : '';
       if (text) segments.push({ start, end, text });
     }
@@ -293,7 +324,7 @@ async function transcribe(req) {
   await drain();
   if (cancelled.has(req.id)) return postCancelled(req.id);
   cancelled.delete(req.id);
-  channel.post({ type: 'done', id: req.id, segments });
+  channel.post({ type: 'done', id: req.id, segments, vadSegments });
 }
 
 // 仅 VAD：缓存一个独立的 silero VAD 实例（避免每个文件重载 onnx），按 vadModel+参数 复用。
@@ -378,6 +409,8 @@ async function detectSpeech(req) {
 
 channel.onMessage((req) => {
   if (req.type === 'load') {
+    // Prewarm is optional and must not replace a recognizer while decodeAsync yields.
+    if (transcribing) return;
     try {
       ensureLoaded(req);
       channel.post({ type: 'ready' });
@@ -391,9 +424,22 @@ channel.onMessage((req) => {
     return;
   }
   if (req.type === 'transcribe') {
-    transcribe(req).catch((e) =>
-      channel.post({ type: 'error', id: req.id, message: String(e) }),
-    );
+    if (transcribing) {
+      channel.post({
+        type: 'error',
+        id: req.id,
+        message: 'ASR worker is busy',
+      });
+      return;
+    }
+    transcribing = true;
+    transcribe(req)
+      .catch((e) =>
+        channel.post({ type: 'error', id: req.id, message: String(e) }),
+      )
+      .finally(() => {
+        transcribing = false;
+      });
     return;
   }
   if (req.type === 'detectSpeech') {

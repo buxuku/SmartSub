@@ -80,6 +80,7 @@ export function pickComposeSubtitle(
     IFiles,
     | 'shiftedSubtitlePath'
     | 'translatedSrtFile'
+    | 'tempFinalSubtitleFile'
     | 'srtFile'
     | 'tempSrtFile'
     | 'filePath'
@@ -89,9 +90,10 @@ export function pickComposeSubtitle(
 ): string | null {
   const candidates = [
     file.shiftedSubtitlePath,
+    file.tempFinalSubtitleFile,
     file.translatedSrtFile,
-    file.srtFile,
     file.tempSrtFile,
+    file.srtFile,
     isSubtitleInput ? file.filePath : undefined,
   ];
   for (const candidate of candidates) {
@@ -127,6 +129,7 @@ export interface DeriveComposeInput {
     | 'dubbedTrackPath'
     | 'shiftedSubtitlePath'
     | 'translatedSrtFile'
+    | 'tempFinalSubtitleFile'
     | 'srtFile'
     | 'tempSrtFile'
   >;

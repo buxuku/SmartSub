@@ -37,12 +37,16 @@ function buildModelRequest(
 ): SherpaModelRequest {
   const files = getParakeetModelFiles(selection.id);
   return {
-    modelType: 'nemo_transducer',
-    transducer: {
-      encoder: files.encoder,
-      decoder: files.decoder,
-      joiner: files.joiner,
-    },
+    ...(files.modelType === 'nemo_ctc'
+      ? { modelType: files.modelType, asrModel: files.asrModel }
+      : {
+          modelType: files.modelType,
+          transducer: {
+            encoder: files.encoder,
+            decoder: files.decoder,
+            joiner: files.joiner,
+          },
+        }),
     tokens: files.tokens,
     vadModel: getParakeetVadModelPath(),
     params: buildParakeetParams(settings),
@@ -88,7 +92,7 @@ async function transcribeParakeet(ctx: TranscribeContext): Promise<string> {
   }
   if (!isParakeetReady()) {
     throw new Error(
-      'parakeet model not installed. Download Parakeet TDT + silero-VAD from Resource Hub > Models.',
+      'Parakeet model or VAD unavailable. Download a model from Engines & Models.',
     );
   }
 
@@ -98,7 +102,7 @@ async function transcribeParakeet(ctx: TranscribeContext): Promise<string> {
   );
   if (!selection) {
     throw new Error(
-      'parakeet ASR model not installed. Download Parakeet TDT from Resource Hub > Models.',
+      `Parakeet model unavailable: ${formData.model || '(not selected)'}. Select an installed model in task settings.`,
     );
   }
 
@@ -134,6 +138,14 @@ async function transcribeParakeet(ctx: TranscribeContext): Promise<string> {
 
   if (signal?.aborted) throw new TaskCancelledError();
 
+  ctx.onDiagnostics?.({
+    vadAvailable: Array.isArray(transcription?.vadSegments),
+    vadSegments: transcription?.vadSegments?.map((segment) => ({
+      startMs: Number(segment.start) * 1000,
+      endMs: Number(segment.end) * 1000,
+    })),
+  });
+
   const subtitles = trimSubtitleTrailingSilence(
     resplitSubtitleCues(
       (transcription?.segments || []).map(subtitleCueFromSegment),
@@ -154,7 +166,7 @@ async function transcribeParakeet(ctx: TranscribeContext): Promise<string> {
 
 export const parakeetEngineAdapter: TranscriptionEngineAdapter = {
   id: 'parakeet',
-  displayName: 'NVIDIA Parakeet TDT 0.6B v3',
+  displayName: 'NVIDIA Parakeet',
   requiresRuntime: true,
 
   async isAvailable(): Promise<EngineStatus> {

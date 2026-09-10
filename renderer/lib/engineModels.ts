@@ -1,10 +1,12 @@
 import type { EngineStatus, TranscriptionEngine } from '../../types/engine';
 import type { AsrProvider } from '../../types/asrProvider';
 import {
+  getAsrProviderType,
   isAsrProviderConfigured,
   parseAsrModels,
 } from '../../types/asrProvider';
 import { models } from './utils';
+import { resolveParakeetSelection } from '../../types/parakeet';
 
 /**
  * 引擎感知的模型就绪判断。
@@ -166,6 +168,8 @@ export interface EngineModelGroup {
   asrProviderId?: string;
   /** 分组显示名覆盖（云实例用实例名）。 */
   label?: string;
+  /** 服务商无原生时间戳时，模型选择器向用户提示粗粒度时间轴。 */
+  coarseTimeline?: boolean;
 }
 
 /** 逐任务的 (引擎,模型[,云实例]) 选择。 */
@@ -173,6 +177,20 @@ export interface EngineModelSelection {
   engine?: TranscriptionEngine;
   model?: string;
   asrProviderId?: string;
+}
+
+export function hasUnavailableParakeetModel(
+  info: EngineModelInfo | undefined,
+  selection: { transcriptionEngine?: string; model?: string },
+): boolean {
+  if (selection.transcriptionEngine !== 'parakeet') return false;
+  return (
+    !info?.parakeetVadInstalled ||
+    !resolveParakeetSelection(
+      selection.model,
+      info.parakeetModelsInstalled ?? [],
+    )
+  );
 }
 
 /** (引擎,模型) 选项值的分隔符；引擎 id 与模型名均不含 "::"，故可安全编码/解码。 */
@@ -299,6 +317,8 @@ export function getEngineModelGroups(
       models: cloudModels,
       asrProviderId: provider.id,
       label: provider.name,
+      coarseTimeline:
+        getAsrProviderType(provider.type)?.timestampMode === 'none',
     });
   }
 
@@ -365,6 +385,17 @@ export function pickDefaultEngineModel(
 } | null {
   if (!groups.length) return null;
 
+  if (last?.engine === 'parakeet') {
+    const installed = groups.find((g) => g.engine === 'parakeet')?.models ?? [];
+    return {
+      engine: 'parakeet',
+      model:
+        last.model?.trim() ||
+        resolveParakeetSelection(undefined, installed)?.id ||
+        '',
+    };
+  }
+
   if (last?.engine) {
     // 云引擎按实例 id 精确回落；其它引擎按引擎 id。
     const g =
@@ -393,7 +424,10 @@ export function pickDefaultEngineModel(
   if (preferred?.models.length) {
     return {
       engine: preferred.engine,
-      model: preferred.models[0],
+      model:
+        preferred.engine === 'parakeet'
+          ? resolveParakeetSelection(undefined, preferred.models)?.id || ''
+          : preferred.models[0],
       asrProviderId: preferred.asrProviderId,
     };
   }
