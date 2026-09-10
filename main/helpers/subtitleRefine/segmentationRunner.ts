@@ -226,6 +226,11 @@ export async function runAiSegmentation(
 
   let cursor = 0;
   const workerCount = Math.max(1, Math.min(concurrency, totalWindows));
+  const startedAt = Date.now();
+  logMessage(
+    `AI segmentation windows=${totalWindows}, concurrency=${workerCount}, requestInterval=${requestIntervalMs}ms`,
+    'info',
+  );
   const workers = Array.from({ length: workerCount }, async () => {
     for (;;) {
       const index = cursor;
@@ -281,7 +286,7 @@ export async function runAiSegmentation(
   });
   const approxNote = tier === 'segment' ? ', timeline=approximate/近似' : '';
   logMessage(
-    `AI segmentation done: tier=${tier}${approxNote}, windows=${totalWindows}, degradedWindows=${degradedWindows}, cues ${cues.length} -> ${guarded.length}`,
+    `AI segmentation done: tier=${tier}${approxNote}, windows=${totalWindows}, concurrency=${workerCount}, elapsed=${Date.now() - startedAt}ms, degradedWindows=${degradedWindows}, cues ${cues.length} -> ${guarded.length}`,
     'info',
   );
   return {

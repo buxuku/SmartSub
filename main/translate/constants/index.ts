@@ -1,3 +1,5 @@
+import { DEFAULT_AI_BATCH_SIZE } from '../../../types/provider';
+
 export const CONTENT_TEMPLATES = {
   onlyTranslate: '${targetContent}\n\n',
   sourceAndTranslate: '${sourceContent}\n${targetContent}\n\n',
@@ -5,7 +7,9 @@ export const CONTENT_TEMPLATES = {
 } as const;
 
 export const DEFAULT_BATCH_SIZE = {
-  AI: 10,
+  // 20 subtitle lines usually stay well below common context limits while
+  // providing enough neighbouring text for consistent terminology and tone.
+  AI: DEFAULT_AI_BATCH_SIZE,
   API: 1,
 } as const;
 

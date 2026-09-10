@@ -10,7 +10,8 @@ import {
 // v22：思考模式开关 enableThinking 默认关闭（= 主动禁用思考，openspec: ai-thinking-mode-control）
 // v23：新增独立的 Qwen-MT 机器翻译服务商
 // v24：同 type 服务实例与任务内回退链
-const CURRENT_PROVIDER_VERSION = 24;
+// v25：AI 翻译默认批次与并发调优；AI 断句复用服务商并发配置
+const CURRENT_PROVIDER_VERSION = 25;
 
 export async function getAndInitializeProviders(): Promise<Provider[]> {
   try {

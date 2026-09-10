@@ -121,6 +121,8 @@ export interface ParameterTemplate {
 
 export const defaultUserPrompt = '${content}';
 export const TENCENT_DEFAULT_REQUEST_INTERVAL_SECONDS = 0.25;
+export const DEFAULT_AI_BATCH_SIZE = 20;
+export const DEFAULT_AI_BATCH_CONCURRENCY = 2;
 
 /**
  * 历史版本的默认系统提示词，用于迁移时判断用户是否修改过
@@ -301,7 +303,7 @@ const FIELD_USER_PROMPT: ProviderField = {
 };
 
 const batchSizeField = (
-  defaultValue: number = 1,
+  defaultValue: number = DEFAULT_AI_BATCH_SIZE,
   tips: string = 'batchSizeTip',
 ): ProviderField => ({
   key: 'batchSize',
@@ -360,6 +362,7 @@ const FIELD_ENABLE_THINKING: ProviderField = {
 const aiCommonFields = (overrides?: {
   batchSize?: number;
   batchSizeTips?: string;
+  batchConcurrency?: number;
   structuredOutput?: string;
 }): ProviderField[] => [
   FIELD_SYSTEM_PROMPT,
@@ -368,7 +371,10 @@ const aiCommonFields = (overrides?: {
   FIELD_ECHO_ANCHORING,
   FIELD_ENABLE_THINKING,
   batchSizeField(overrides?.batchSize, overrides?.batchSizeTips),
-  FIELD_BATCH_CONCURRENCY,
+  {
+    ...FIELD_BATCH_CONCURRENCY,
+    defaultValue: overrides?.batchConcurrency ?? DEFAULT_AI_BATCH_CONCURRENCY,
+  },
   FIELD_REQUEST_INTERVAL,
 ];
 
@@ -780,7 +786,11 @@ export const PROVIDER_TYPES: ProviderType[] = [
       },
       // ollama ≥0.5 支持 schema 约束解码，是本地小模型条数对齐的最大收益点；
       // 旧版本由运行时回退链自动降级（openspec: ai-translation-alignment）
-      ...aiCommonFields({ batchSize: 10, structuredOutput: 'json_schema' }),
+      ...aiCommonFields({
+        batchSize: 10,
+        batchConcurrency: 1,
+        structuredOutput: 'json_schema',
+      }),
     ],
   },
   {
@@ -817,7 +827,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
         placeholder: 'selectModel',
         options: [],
       },
-      ...aiCommonFields(),
+      ...aiCommonFields({ batchSize: 20 }),
     ],
   },
   {
@@ -846,7 +856,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
         tips: 'azureOpenAiApiKeyTips',
         placeholder: 'phAzureOpenAiApiKey',
       },
-      ...aiCommonFields({ structuredOutput: 'json_schema' }),
+      ...aiCommonFields({ batchSize: 20, structuredOutput: 'json_schema' }),
     ],
   },
   {
@@ -883,7 +893,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
         placeholder: 'selectModel',
         options: [],
       },
-      ...aiCommonFields({ batchSize: 10 }),
+      ...aiCommonFields({ batchSize: 20 }),
     ],
   },
   {
@@ -921,7 +931,11 @@ export const PROVIDER_TYPES: ProviderType[] = [
         placeholder: 'gemini-2.0-flash',
         defaultValue: 'gemini-2.0-flash',
       },
-      ...aiCommonFields({ structuredOutput: 'json_schema' }),
+      ...aiCommonFields({
+        batchSize: 20,
+        batchConcurrency: 1,
+        structuredOutput: 'json_schema',
+      }),
     ],
   },
   {
@@ -958,7 +972,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
         placeholder: 'selectModel',
         options: [],
       },
-      ...aiCommonFields(),
+      ...aiCommonFields({ batchSize: 20, batchConcurrency: 1 }),
     ],
   },
   {
@@ -1038,7 +1052,7 @@ export const PROVIDER_TYPES: ProviderType[] = [
         placeholder: 'selectModel',
         options: [],
       },
-      ...aiCommonFields(),
+      ...aiCommonFields({ batchSize: 20 }),
     ],
   },
 ];
@@ -1074,7 +1088,7 @@ export const CONFIG_TEMPLATES: Record<string, ProviderType> = {
         placeholder: 'hunyuan-3.0-preview',
         tips: 'openaiModelNameTips',
       },
-      ...aiCommonFields({ structuredOutput: 'json_object' }),
+      ...aiCommonFields({ batchSize: 20, structuredOutput: 'json_object' }),
     ],
   },
 };
