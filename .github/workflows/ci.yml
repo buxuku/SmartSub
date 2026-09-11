@@ -48,6 +48,9 @@ jobs:
       - name: Unit tests (structured output fallback)
         run: yarn test:structured-output
 
+      - name: Tests (custom parameter editing and requests)
+        run: yarn test:custom-parameters
+
       - name: Unit tests (translation cancel)
         run: yarn test:translation-cancel
 

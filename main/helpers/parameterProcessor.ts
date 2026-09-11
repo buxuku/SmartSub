@@ -273,6 +273,13 @@ export class ParameterProcessor {
       return { isValid: false, errors };
     }
 
+    // `thinking` also accepts a provider-native JSON object. Only legacy
+    // string values use the registry enum and provider-specific conversion;
+    // explicit objects must reach the provider unchanged.
+    if (key === 'thinking' && typeof value === 'object') {
+      return this.validateType(value, 'object');
+    }
+
     // Type validation and conversion
     const typeValidation = this.validateType(value, definition.type);
     if (!typeValidation.isValid) {
