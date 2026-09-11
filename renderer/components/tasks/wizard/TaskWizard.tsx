@@ -349,6 +349,27 @@ export default function TaskWizard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 支持 URL 参数直接预填媒体（如工具箱无损视频裁剪/提取后一键「新建任务」：?video=...）
+  useEffect(() => {
+    if (!router.isReady) return;
+    const targetVideo = typeof router.query.video === 'string' ? router.query.video : null;
+    if (targetVideo) {
+      (async () => {
+        try {
+          const droppedMedia = await window?.ipc?.invoke('getDroppedFiles', {
+            files: [targetVideo],
+            taskType: 'media',
+          });
+          if (droppedMedia && droppedMedia.length) {
+            appendFiles(droppedMedia);
+          }
+        } catch (err) {
+          console.error('Failed to import video from query:', err);
+        }
+      })();
+    }
+  }, [router.isReady, router.query.video, appendFiles]);
+
   // 下载页交接来源（?fromDownload=<downloadWorkItemId>）：写入任务快照供回溯
   const sourceDownloadWorkItemId =
     typeof router.query.fromDownload === 'string' && router.query.fromDownload

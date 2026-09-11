@@ -5,6 +5,7 @@ import { useTheme } from 'next-themes';
 import {
   AudioLines,
   BookOpenText,
+  Boxes,
   Captions,
   Clapperboard,
   CloudDownload,
@@ -105,6 +106,7 @@ export default function CommandPalette({
     { href: 'proofread', label: t('nav.proofread'), icon: PenLine },
     { href: 'subtitleMerge', label: t('nav.compose'), icon: Clapperboard },
     { href: 'dubbing', label: t('nav.dubbing'), icon: Mic },
+    { href: 'toolbox', label: t('nav.toolbox'), icon: Boxes },
     { href: 'engines', label: t('nav.engines'), icon: Cpu },
     { href: 'translation', label: t('nav.translation'), icon: Languages },
     { href: 'glossary', label: t('nav.glossary'), icon: BookOpenText },

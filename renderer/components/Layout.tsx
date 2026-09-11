@@ -18,6 +18,7 @@ import {
   AlertCircle,
   AudioLines,
   BookOpenText,
+  Boxes,
   Captions,
   CheckCircle2,
   Clapperboard,
@@ -128,6 +129,12 @@ const NAV_TASK_ITEMS: NavItemDef[] = [
     icon: Mic,
     isActive: (p) => p.includes('/dubbing'),
   },
+  {
+    href: 'toolbox',
+    labelKey: 'nav.toolbox',
+    icon: Boxes,
+    isActive: (p) => p.includes('/toolbox'),
+  },
 ];
 
 /** 配置组：引擎 / 翻译 / 词库 / 声音 */
@@ -191,6 +198,7 @@ const PREFETCH_NAMESPACES = [
   'parameters',
   'modelsControl',
   'download',
+  'toolbox',
 ];
 
 /** 竖排导航项：图标在上、文字在下（P0 导航规范），选中态 = soft 底 + 左缘指示条 */
