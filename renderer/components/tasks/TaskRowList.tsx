@@ -284,6 +284,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
   if (!files.length) {
     // 空态：统一三步引导（P0 动线统一，与配音/合成页同形态）
     const subtitleInput = typeDef.accepts === 'subtitle';
+    const canAcceptManuscript = !subtitleInput && Boolean(typeDef.needsModel);
     return (
       <div
         className="h-[380px] cursor-pointer rounded-lg border-2 border-dashed border-border-strong transition-colors hover:border-primary/50"
@@ -296,7 +297,9 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
               title: t('empty.step1'),
               desc: subtitleInput
                 ? t('empty.subtitleFormats')
-                : t('empty.mediaFormats'),
+                : canAcceptManuscript
+                  ? t('empty.mediaAndManuscriptFormats')
+                  : t('empty.mediaFormats'),
             },
             {
               icon: Settings2,
@@ -321,7 +324,11 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
             </Button>
           }
           dropHint={
-            subtitleInput ? t('empty.dragSubtitle') : t('empty.dragMedia')
+            subtitleInput
+              ? t('empty.dragSubtitle')
+              : canAcceptManuscript
+                ? t('empty.dragMediaAndManuscript')
+                : t('empty.dragMedia')
           }
         />
       </div>

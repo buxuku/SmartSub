@@ -105,8 +105,17 @@ const ManuscriptControl: React.FC<ManuscriptControlProps> = ({
               </span>
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-[360px]">
-            {manuscriptPath || t('manuscript.hint')}
+          <TooltipContent side="bottom" className="max-w-[360px] space-y-1">
+            <p className="text-xs font-medium">{t('manuscript.globalHint')}</p>
+            {manuscriptPath ? (
+              <p className="break-all text-[11px] text-muted-foreground">
+                {manuscriptPath}
+              </p>
+            ) : (
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {t('manuscript.hint')}
+              </p>
+            )}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
