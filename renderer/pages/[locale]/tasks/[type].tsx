@@ -71,7 +71,10 @@ import CompletionBanner from '@/components/tasks/CompletionBanner';
 import LogPanel from '@/components/tasks/LogPanel';
 import { ProofreadEditor } from '@/components/proofread';
 import { getProofreadUnavailableReason } from '@/components/tasks/stageUtils';
-import { pairMediaWithManuscriptsManual } from '@/lib/filePairing';
+import {
+  isManuscriptPath,
+  pairMediaWithManuscriptsManual,
+} from '@/lib/filePairing';
 import { getI18nProperties } from '../../../lib/get-static';
 import { IFiles } from '../../../../types';
 import { isPinnedTaskConfigSnapshot } from '../../../../types/taskSnapshot';
@@ -119,10 +122,116 @@ export default function TaskPage() {
   const loadedFilesRef = useRef<any[] | null>(null);
   const projectIdRef = useRef<string | null>(null);
 
-  // 统一导入入口：按 filePath 去重（对既有列表与本批内部），跳过时提示
+  const handleIncomingMediaAndManuscripts = useCallback(
+    (incomingMedia: IFiles[], incomingManuscripts: IFiles[]) => {
+      const seen = new Set(files.map((f) => f.filePath));
+      const freshMedia: IFiles[] = [];
+      let skipped = 0;
+      for (const file of incomingMedia) {
+        if (file?.filePath && seen.has(file.filePath)) {
+          skipped++;
+          continue;
+        }
+        if (file?.filePath) seen.add(file.filePath);
+        freshMedia.push(file);
+      }
+      if (skipped > 0) {
+        toast.info(t('skippedDuplicates', { count: skipped }));
+      }
+
+      const allMedia = [...files, ...freshMedia];
+
+      if (!incomingManuscripts || incomingManuscripts.length === 0) {
+        if (freshMedia.length > 0) {
+          setFiles((prev) => [...prev, ...freshMedia]);
+        }
+        return;
+      }
+
+      if (allMedia.length === 0) {
+        for (const s of incomingManuscripts) {
+          toast.info(t('manuscript.unmatchedToast', { name: s.fileName }));
+        }
+        return;
+      }
+
+      const manualPairs = new Map<string, string>();
+      for (const m of allMedia) {
+        if (m.manuscriptPath) {
+          manualPairs.set(m.filePath, m.manuscriptPath);
+        }
+      }
+
+      const pairing = pairMediaWithManuscriptsManual(
+        allMedia,
+        incomingManuscripts,
+        manualPairs,
+      );
+
+      const newlyMatched = pairing.pairs.filter(
+        (p) => p.media.manuscriptPath !== p.manuscript.filePath,
+      );
+
+      const matchedByMediaPath = new Map(
+        pairing.pairs.map((p) => [p.media.filePath, p.manuscript]),
+      );
+
+      setFiles((prev) => {
+        const combined = [...prev, ...freshMedia];
+        return combined.map((file) => {
+          const matched = matchedByMediaPath.get(file.filePath);
+          if (matched && file.manuscriptPath !== matched.filePath) {
+            return {
+              ...file,
+              manuscriptPath: matched.filePath,
+              manuscriptName: matched.fileName,
+            };
+          }
+          return file;
+        });
+      });
+
+      if (newlyMatched.length === 1) {
+        toast.success(
+          t('manuscript.singleMatchedToast', {
+            scriptName: newlyMatched[0].manuscript.fileName,
+            videoName: newlyMatched[0].media.fileName,
+          }),
+        );
+      } else if (newlyMatched.length > 1) {
+        toast.success(
+          t('manuscript.autoMatchedToast', {
+            count: newlyMatched.length,
+          }),
+        );
+      }
+
+      if (pairing.unpairedManuscripts.length > 0) {
+        for (const s of pairing.unpairedManuscripts) {
+          toast.info(t('manuscript.unmatchedToast', { name: s.fileName }));
+        }
+      }
+    },
+    [files, t],
+  );
+
+  // 统一导入入口：支持文件选择对话框（file-selected）与外部事件传入
   const appendFiles = useCallback(
     (incoming: IFiles[]) => {
       if (!incoming?.length) return;
+
+      // 若当前任务为需要模型的媒体转写类任务，支持自动分离媒体与参考文稿并进行同名配对
+      if (typeDef?.needsModel) {
+        const incomingManuscripts = incoming.filter((f) =>
+          isManuscriptPath(f.filePath),
+        );
+        const incomingMedia = incoming.filter(
+          (f) => !isManuscriptPath(f.filePath),
+        );
+        handleIncomingMediaAndManuscripts(incomingMedia, incomingManuscripts);
+        return;
+      }
+
       const seen = new Set(files.map((f) => f.filePath));
       const fresh: IFiles[] = [];
       let skipped = 0;
@@ -139,7 +248,7 @@ export default function TaskPage() {
         toast.info(t('skippedDuplicates', { count: skipped }));
       }
     },
-    [files, t],
+    [files, typeDef?.needsModel, handleIncomingMediaAndManuscripts, t],
   );
 
   const { hydrateFiles } = useIpcCommunication(setFiles, appendFiles);
@@ -480,10 +589,15 @@ export default function TaskPage() {
 
   const handleRetryFailed = handleRetryFiles;
 
-  const handleImport = () => {
-    const fileType = typeDef?.accepts === 'subtitle' ? 'srt' : 'media';
+  const handleImport = useCallback(() => {
+    const fileType =
+      typeDef?.accepts === 'subtitle'
+        ? 'srt'
+        : typeDef?.needsModel
+          ? 'media-and-manuscript'
+          : 'media';
     window?.ipc?.send('openDialog', { dialogType: 'openDialog', fileType });
-  };
+  }, [typeDef]);
 
   // Cmd/Ctrl+O 导入文件（任务页范围）
   useHotkeys([
@@ -575,99 +689,6 @@ export default function TaskPage() {
     [],
   );
 
-  const handleDroppedMediaAndManuscripts = useCallback(
-    (droppedMedia: IFiles[], droppedManuscripts: IFiles[]) => {
-      const seen = new Set(files.map((f) => f.filePath));
-      const freshMedia: IFiles[] = [];
-      let skipped = 0;
-      for (const file of droppedMedia) {
-        if (file?.filePath && seen.has(file.filePath)) {
-          skipped++;
-          continue;
-        }
-        if (file?.filePath) seen.add(file.filePath);
-        freshMedia.push(file);
-      }
-      if (skipped > 0) {
-        toast.info(t('skippedDuplicates', { count: skipped }));
-      }
-
-      const allMedia = [...files, ...freshMedia];
-
-      if (!droppedManuscripts || droppedManuscripts.length === 0) {
-        if (freshMedia.length > 0) {
-          setFiles((prev) => [...prev, ...freshMedia]);
-        }
-        return;
-      }
-
-      if (allMedia.length === 0) {
-        for (const s of droppedManuscripts) {
-          toast.info(t('manuscript.unmatchedToast', { name: s.fileName }));
-        }
-        return;
-      }
-
-      const manualPairs = new Map<string, string>();
-      for (const m of allMedia) {
-        if (m.manuscriptPath) {
-          manualPairs.set(m.filePath, m.manuscriptPath);
-        }
-      }
-
-      const pairing = pairMediaWithManuscriptsManual(
-        allMedia,
-        droppedManuscripts,
-        manualPairs,
-      );
-
-      const newlyMatched = pairing.pairs.filter(
-        (p) => p.media.manuscriptPath !== p.manuscript.filePath,
-      );
-
-      const matchedByMediaPath = new Map(
-        pairing.pairs.map((p) => [p.media.filePath, p.manuscript]),
-      );
-
-      setFiles((prev) => {
-        const combined = [...prev, ...freshMedia];
-        return combined.map((file) => {
-          const matched = matchedByMediaPath.get(file.filePath);
-          if (matched && file.manuscriptPath !== matched.filePath) {
-            return {
-              ...file,
-              manuscriptPath: matched.filePath,
-              manuscriptName: matched.fileName,
-            };
-          }
-          return file;
-        });
-      });
-
-      if (newlyMatched.length === 1) {
-        toast.success(
-          t('manuscript.singleMatchedToast', {
-            scriptName: newlyMatched[0].manuscript.fileName,
-            videoName: newlyMatched[0].media.fileName,
-          }),
-        );
-      } else if (newlyMatched.length > 1) {
-        toast.success(
-          t('manuscript.autoMatchedToast', {
-            count: newlyMatched.length,
-          }),
-        );
-      }
-
-      if (pairing.unpairedManuscripts.length > 0) {
-        for (const s of pairing.unpairedManuscripts) {
-          toast.info(t('manuscript.unmatchedToast', { name: s.fileName }));
-        }
-      }
-    },
-    [files, t],
-  );
-
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
@@ -703,7 +724,7 @@ export default function TaskPage() {
             taskType: 'manuscript',
           }),
         ]);
-        handleDroppedMediaAndManuscripts(
+        handleIncomingMediaAndManuscripts(
           droppedMedia || [],
           droppedManuscript || [],
         );
@@ -1065,6 +1086,7 @@ export default function TaskPage() {
               }
               onInspectDubbing={handleInspectDubbing}
               onAssignManuscript={handleAssignManuscript}
+              onImport={handleImport}
             />
           ) : (
             <TaskRowList
@@ -1082,6 +1104,7 @@ export default function TaskPage() {
               }
               onInspectDubbing={handleInspectDubbing}
               onAssignManuscript={handleAssignManuscript}
+              onImport={handleImport}
             />
           )}
         </ScrollArea>
