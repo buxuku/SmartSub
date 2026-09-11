@@ -527,7 +527,7 @@ const pf = (filePath: string) => ({
 // ── pairMediaWithManuscriptsManual ──────────────────────────────────────────
 
 {
-  // 手动指派文稿
+  // 手动指派文稿（当剩余未指派媒体与文稿各为 1 个时，自动触发宽容配对）
   const r = pairMediaWithManuscriptsManual(
     [pf('/v/a.mp4'), pf('/v/b.mp4')],
     [pf('/v/s1.txt'), pf('/v/s2.txt')],
@@ -535,8 +535,25 @@ const pf = (filePath: string) => ({
   );
   eq(
     r.pairs.map((p) => [p.media.fileName, p.manuscript.fileName]),
+    [
+      ['a', 's2'],
+      ['b', 's1'],
+    ],
+    'manual-manuscript: 手动指派文稿生效且剩余单项宽容配对',
+  );
+}
+
+{
+  // 手动指派文稿（当剩余未指派媒体 > 1 时，非同名不乱配）
+  const r = pairMediaWithManuscriptsManual(
+    [pf('/v/a.mp4'), pf('/v/b.mp4'), pf('/v/c.mp4')],
+    [pf('/v/s1.txt'), pf('/v/s2.txt'), pf('/v/s3.txt')],
+    new Map([['/v/a.mp4', '/v/s2.txt']]),
+  );
+  eq(
+    r.pairs.map((p) => [p.media.fileName, p.manuscript.fileName]),
     [['a', 's2']],
-    'manual-manuscript: 手动指派文稿生效',
+    'manual-manuscript: 剩余多个媒体非同名不乱配',
   );
 }
 
@@ -572,6 +589,23 @@ const pf = (filePath: string) => ({
     ],
     [1, '/external/path/script.md', 'script'],
     'manual-manuscript: 支持外部指定路径自动合成文稿条目',
+  );
+}
+
+{
+  // 剩余媒体和文稿各为 1 个时触发单文件宽容配对（即使总数 > 1）
+  const r = pairMediaWithManuscriptsManual(
+    [pf('/v/a.mp4'), pf('/v/b.mp4')],
+    [pf('/v/notes.txt')],
+    new Map([['/v/a.mp4', '__none__']]),
+  );
+  eq(
+    [
+      r.pairs.map((p) => [p.media.fileName, p.manuscript.fileName]),
+      r.skippedMedia.map((m) => m.fileName),
+    ],
+    [[['b', 'notes']], ['a']],
+    'manual-manuscript: 部分媒体跳过或手动绑定后，剩余单媒体与单文稿仍可宽容配对',
   );
 }
 

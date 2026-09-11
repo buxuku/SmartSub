@@ -247,7 +247,8 @@ export function pairMediaWithManuscriptsManual<
   const remainingManuscripts = usable.filter(
     (s) => !manualTaken.has(s.filePath),
   );
-  const allowSingleFallback = mediaFiles.length === 1 && usable.length === 1;
+  const allowSingleFallback =
+    autoMedia.length === 1 && remainingManuscripts.length === 1;
   const auto = pairMediaWithManuscripts(autoMedia, remainingManuscripts, {
     allowSingleFallback,
   });
