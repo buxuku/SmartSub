@@ -62,6 +62,7 @@ interface TaskGridListProps {
     manuscriptPath: string,
     manuscriptName?: string,
   ) => void;
+  onImport?: () => void;
 }
 
 // 仅在卡片进入视口时挂载 <video>，限制同时存在的解码器数量
@@ -148,6 +149,7 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
   onReleaseGate,
   onInspectDubbing,
   onAssignManuscript,
+  onImport,
 }) => {
   const { t } = useTranslation('tasks');
   const queueBusy =
@@ -156,7 +158,16 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
     taskStatus === 'cancelling';
 
   const handleImport = () => {
-    const fileType = typeDef.accepts === 'subtitle' ? 'srt' : 'media';
+    if (onImport) {
+      onImport();
+      return;
+    }
+    const fileType =
+      typeDef.accepts === 'subtitle'
+        ? 'srt'
+        : typeDef.needsModel
+          ? 'media-and-manuscript'
+          : 'media';
     window?.ipc?.send('openDialog', { dialogType: 'openDialog', fileType });
   };
 

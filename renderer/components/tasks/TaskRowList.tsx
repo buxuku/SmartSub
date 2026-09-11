@@ -65,6 +65,7 @@ interface TaskRowListProps {
     manuscriptPath: string,
     manuscriptName?: string,
   ) => void;
+  onImport?: () => void;
 }
 
 export function RailChips({
@@ -218,6 +219,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
   onReleaseGate,
   onInspectDubbing,
   onAssignManuscript,
+  onImport,
 }) => {
   const { t } = useTranslation('tasks');
   const queueBusy =
@@ -259,7 +261,16 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
   };
 
   const handleImport = () => {
-    const fileType = typeDef.accepts === 'subtitle' ? 'srt' : 'media';
+    if (onImport) {
+      onImport();
+      return;
+    }
+    const fileType =
+      typeDef.accepts === 'subtitle'
+        ? 'srt'
+        : typeDef.needsModel
+          ? 'media-and-manuscript'
+          : 'media';
     window?.ipc?.send('openDialog', { dialogType: 'openDialog', fileType });
   };
 
