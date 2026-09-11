@@ -52,6 +52,7 @@ interface TaskGridListProps {
   typeDef: TaskTypeDef;
   formData: any;
   taskStatus: string;
+  manuscriptPool?: any[];
   onProofread: (file: any) => void;
   onDelete: (uuid: string) => void;
   onRetry: (file: any) => void;
@@ -143,6 +144,7 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
   typeDef,
   formData,
   taskStatus,
+  manuscriptPool,
   onProofread,
   onDelete,
   onRetry,
@@ -210,15 +212,27 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
             },
           ]}
           actions={
-            <Button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleImport();
-              }}
-            >
-              <FileUp className="h-4 w-4" />
-              {t('import')}
-            </Button>
+            <div className="flex flex-col items-center gap-2">
+              {Boolean(canAcceptManuscript && manuscriptPool?.length) && (
+                <div className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                  <FileText className="h-3.5 w-3.5" />
+                  <span>
+                    {t('manuscript.emptyWaitingVideos', {
+                      count: manuscriptPool!.length,
+                    })}
+                  </span>
+                </div>
+              )}
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleImport();
+                }}
+              >
+                <FileUp className="h-4 w-4" />
+                {t('import')}
+              </Button>
+            </div>
           }
           dropHint={
             subtitleInput
@@ -341,6 +355,7 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
                   formData={formData}
                   disabled={queueBusy}
                   compact
+                  manuscriptPool={manuscriptPool}
                   onAssignManuscript={onAssignManuscript}
                 />
               </div>

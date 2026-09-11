@@ -121,6 +121,7 @@ export default function TaskPage() {
   /** 来自加载（而非用户/任务事件）的 files 引用，避免回写存储 */
   const loadedFilesRef = useRef<any[] | null>(null);
   const projectIdRef = useRef<string | null>(null);
+  const [manuscriptPool, setManuscriptPool] = useState<IFiles[]>([]);
 
   const handleIncomingMediaAndManuscripts = useCallback(
     (incomingMedia: IFiles[], incomingManuscripts: IFiles[]) => {
@@ -139,22 +140,54 @@ export default function TaskPage() {
         toast.info(t('skippedDuplicates', { count: skipped }));
       }
 
+      // 维护文稿池：合并已有的 manuscriptPool 与新传入的 incomingManuscripts
+      const poolMap = new Map<string, IFiles>();
+      for (const s of manuscriptPool) {
+        if (s?.filePath) poolMap.set(s.filePath, s);
+      }
+      for (const s of incomingManuscripts || []) {
+        if (s?.filePath) poolMap.set(s.filePath, s);
+      }
+      const currentPool = Array.from(poolMap.values());
+      if (currentPool.length !== manuscriptPool.length) {
+        setManuscriptPool(currentPool);
+      }
+
       const allMedia = [...files, ...freshMedia];
 
-      if (!incomingManuscripts || incomingManuscripts.length === 0) {
+      // 若当前没有媒体文件（仅导入了文稿）
+      if (allMedia.length === 0) {
+        if (incomingManuscripts && incomingManuscripts.length > 0) {
+          if (incomingManuscripts.length === 1) {
+            toast.info(
+              t('manuscript.poolSingleAddedToast', {
+                defaultValue: t('manuscript.poolAddedToast', {
+                  count: 1,
+                  name: incomingManuscripts[0].fileName,
+                }),
+                name: incomingManuscripts[0].fileName,
+              }),
+            );
+          } else {
+            toast.info(
+              t('manuscript.poolAddedToast', {
+                count: incomingManuscripts.length,
+              }),
+            );
+          }
+        }
+        return;
+      }
+
+      // 若文稿池为空且没有传入新文稿，直接追加媒体
+      if (currentPool.length === 0) {
         if (freshMedia.length > 0) {
           setFiles((prev) => [...prev, ...freshMedia]);
         }
         return;
       }
 
-      if (allMedia.length === 0) {
-        for (const s of incomingManuscripts) {
-          toast.info(t('manuscript.unmatchedToast', { name: s.fileName }));
-        }
-        return;
-      }
-
+      // 存在媒体和候选文稿池，执行配对
       const manualPairs = new Map<string, string>();
       for (const m of allMedia) {
         if (m.manuscriptPath) {
@@ -164,7 +197,7 @@ export default function TaskPage() {
 
       const pairing = pairMediaWithManuscriptsManual(
         allMedia,
-        incomingManuscripts,
+        currentPool,
         manualPairs,
       );
 
@@ -206,13 +239,20 @@ export default function TaskPage() {
         );
       }
 
-      if (pairing.unpairedManuscripts.length > 0) {
-        for (const s of pairing.unpairedManuscripts) {
+      // 仅针对本次新增的 incomingManuscripts 中未匹配成功的给出 toast 提示
+      if (incomingManuscripts && incomingManuscripts.length > 0) {
+        const allMatchedPaths = new Set(
+          pairing.pairs.map((p) => p.manuscript.filePath),
+        );
+        const unmatchedFresh = incomingManuscripts.filter(
+          (s) => !allMatchedPaths.has(s.filePath),
+        );
+        for (const s of unmatchedFresh) {
           toast.info(t('manuscript.unmatchedToast', { name: s.fileName }));
         }
       }
     },
-    [files, t],
+    [files, manuscriptPool, t],
   );
 
   // 统一导入入口：支持文件选择对话框（file-selected）与外部事件传入
@@ -335,6 +375,35 @@ export default function TaskPage() {
       // 经 hydrateFiles 合并装载窗口内暂存的任务事件（向导起跑后立刻跳转时，
       // 秒级阶段事件先于文件加载到达），并以实际写入的数组标记「来自加载」。
       loadedFilesRef.current = hydrateFiles(nextFiles);
+      if (nextFiles && nextFiles.length > 0) {
+        const pool: IFiles[] = [];
+        const seen = new Set<string>();
+        for (const f of nextFiles) {
+          if (
+            f.manuscriptPath &&
+            f.manuscriptPath !== '__none__' &&
+            !seen.has(f.manuscriptPath)
+          ) {
+            seen.add(f.manuscriptPath);
+            pool.push({
+              uuid: uuidv4(),
+              filePath: f.manuscriptPath,
+              fileName:
+                f.manuscriptName ||
+                f.manuscriptPath
+                  .split(/[\\/]/)
+                  .pop()
+                  ?.replace(/\.[^.]+$/, '') ||
+                '',
+              originPath: f.manuscriptPath,
+              ext: f.manuscriptPath.split('.').pop() || '',
+            } as unknown as IFiles);
+          }
+        }
+        setManuscriptPool(pool);
+      } else {
+        setManuscriptPool([]);
+      }
       setProjectName(name);
       setEditingName(false);
       setProjectId(id);
@@ -613,10 +682,13 @@ export default function TaskPage() {
   const handleClearList = () => {
     if (!files.length || queueBusy) return;
     const prevFiles = files;
+    const prevPool = manuscriptPool;
     setFiles([]);
+    setManuscriptPool([]);
     setBannerDismissed(false);
     confirmOrUndo(t('listCleared'), () => {
       setFiles(prevFiles);
+      setManuscriptPool(prevPool);
     });
   };
 
@@ -661,6 +733,28 @@ export default function TaskPage() {
 
   const handleAssignManuscript = useCallback(
     (targetFile: IFiles, manuscriptPath: string, manuscriptName?: string) => {
+      if (manuscriptPath && manuscriptPath !== '__none__') {
+        const name =
+          manuscriptName ||
+          manuscriptPath
+            .split(/[\\/]/)
+            .pop()
+            ?.replace(/\.[^.]+$/, '') ||
+          '';
+        setManuscriptPool((prev) => {
+          if (prev.some((f) => f.filePath === manuscriptPath)) return prev;
+          return [
+            ...prev,
+            {
+              uuid: uuidv4(),
+              filePath: manuscriptPath,
+              fileName: name,
+              originPath: manuscriptPath,
+              ext: manuscriptPath.split('.').pop() || '',
+            } as unknown as IFiles,
+          ];
+        });
+      }
       setFiles((prev) =>
         prev.map((f) => {
           if (f.uuid !== targetFile.uuid) return f;
@@ -1076,6 +1170,7 @@ export default function TaskPage() {
               typeDef={typeDef}
               formData={listFormData}
               taskStatus={taskStatus}
+              manuscriptPool={manuscriptPool}
               onProofread={handleProofread}
               onDelete={(uuid) =>
                 setFiles((prev) => prev.filter((f) => f.uuid !== uuid))
@@ -1094,6 +1189,7 @@ export default function TaskPage() {
               typeDef={typeDef}
               formData={listFormData}
               taskStatus={taskStatus}
+              manuscriptPool={manuscriptPool}
               onProofread={handleProofread}
               onDelete={(uuid) =>
                 setFiles((prev) => prev.filter((f) => f.uuid !== uuid))
