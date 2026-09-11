@@ -44,7 +44,18 @@ export function getFileStages(
     ) {
       stages.push({ key: 'refineSubtitle', labelKey: 'stage.refine' });
     }
-    if (formData?.manuscriptPath || file?.manuscriptMatch !== undefined) {
+    const hasFileManuscript =
+      file?.manuscriptPath && file.manuscriptPath !== '__none__';
+    const isExplicitNone = file?.manuscriptPath === '__none__';
+    const hasGlobalManuscript =
+      Boolean(formData?.manuscriptPath) &&
+      formData.manuscriptPath !== '__none__';
+    const shouldMatchManuscript =
+      hasFileManuscript ||
+      (!isExplicitNone && hasGlobalManuscript) ||
+      file?.manuscriptMatch !== undefined;
+
+    if (shouldMatchManuscript) {
       stages.push({
         key: 'manuscriptMatch',
         labelKey: 'stage.manuscript',

@@ -23,6 +23,9 @@ import {
   recipeToWizardPrefill,
 } from '../../renderer/lib/recipes';
 import {
+  isManuscriptPath,
+  pairMediaWithManuscripts,
+  pairMediaWithManuscriptsManual,
   pairMediaWithSubtitles,
   pairMediaWithSubtitlesManual,
 } from '../../renderer/lib/filePairing';
@@ -425,6 +428,150 @@ const pf = (filePath: string) => ({
     ],
     [['a'], ['b']],
     'manual: 重复指派同一字幕按媒体顺序先到先得',
+  );
+}
+
+// ── pairMediaWithManuscripts ────────────────────────────────────────────────
+
+{
+  eq(
+    [
+      isManuscriptPath('/docs/notes.txt'),
+      isManuscriptPath('/docs/notes.md'),
+      isManuscriptPath('/docs/notes.markdown'),
+      isManuscriptPath('/docs/sub.srt'),
+      isManuscriptPath('/docs/sub.vtt'),
+    ],
+    [true, true, true, false, false],
+    'isManuscriptPath: 支持 txt/md/markdown，忽略 srt/vtt',
+  );
+}
+
+{
+  const r = pairMediaWithManuscripts(
+    [pf('/v/a.mp4'), pf('/v/b.mkv')],
+    [pf('/v/a.txt'), pf('/v/b.md')],
+  );
+  eq(
+    r.pairs.map((p) => [p.media.fileName, p.manuscript.fileName]),
+    [
+      ['a', 'a'],
+      ['b', 'b'],
+    ],
+    'pair-manuscript: 精确同名配对',
+  );
+  eq(
+    [r.unpairedMedia.length, r.unpairedManuscripts.length],
+    [0, 0],
+    'pair-manuscript: 全配对无剩余',
+  );
+}
+
+{
+  const r = pairMediaWithManuscripts(
+    [pf('/v/a.mp4')],
+    [pf('/v/a.zh.md'), pf('/v/a.en.txt')],
+  );
+  eq(
+    r.pairs[0]?.manuscript.fileName,
+    'a.en',
+    'pair-manuscript: 前缀匹配取字典序首位',
+  );
+  eq(
+    r.unpairedManuscripts.map((s) => s.fileName),
+    ['a.zh'],
+    'pair-manuscript: 未选中的候选文稿归入未配对',
+  );
+}
+
+{
+  // 单视频 + 单文稿容错配对（即便文件名不同名）
+  const r = pairMediaWithManuscripts(
+    [pf('/v/lesson.mp4')],
+    [pf('/v/notes.txt')],
+  );
+  eq(
+    [
+      r.pairs.length,
+      r.pairs[0]?.media.fileName,
+      r.pairs[0]?.manuscript.fileName,
+    ],
+    [1, 'lesson', 'notes'],
+    'pair-manuscript: 单视频 + 单文稿宽容自动配对',
+  );
+}
+
+{
+  // 多视频存在但只有一个非同名文稿：不乱猜，归入未配对
+  const r = pairMediaWithManuscripts(
+    [pf('/v/a.mp4'), pf('/v/b.mp4')],
+    [pf('/v/other.txt')],
+  );
+  eq(
+    [r.pairs.length, r.unpairedMedia.length, r.unpairedManuscripts.length],
+    [0, 2, 1],
+    'pair-manuscript: 多视频非同名文稿不乱配',
+  );
+}
+
+{
+  // 非文稿文件（如 srt）不参与文稿配对
+  const r = pairMediaWithManuscripts([pf('/v/a.mp4')], [pf('/v/a.srt')]);
+  eq(
+    [r.pairs.length, r.unpairedMedia.length, r.unpairedManuscripts.length],
+    [0, 1, 1],
+    'pair-manuscript: srt 不参与文稿配对',
+  );
+}
+
+// ── pairMediaWithManuscriptsManual ──────────────────────────────────────────
+
+{
+  // 手动指派文稿
+  const r = pairMediaWithManuscriptsManual(
+    [pf('/v/a.mp4'), pf('/v/b.mp4')],
+    [pf('/v/s1.txt'), pf('/v/s2.txt')],
+    new Map([['/v/a.mp4', '/v/s2.txt']]),
+  );
+  eq(
+    r.pairs.map((p) => [p.media.fileName, p.manuscript.fileName]),
+    [['a', 's2']],
+    'manual-manuscript: 手动指派文稿生效',
+  );
+}
+
+{
+  // 显式禁用匹配 '__none__'
+  const r = pairMediaWithManuscriptsManual(
+    [pf('/v/a.mp4'), pf('/v/b.mp4')],
+    [pf('/v/a.txt'), pf('/v/b.txt')],
+    new Map([['/v/a.mp4', '__none__']]),
+  );
+  eq(
+    [
+      r.pairs.map((p) => [p.media.fileName, p.manuscript.fileName]),
+      r.skippedMedia.map((m) => m.fileName),
+    ],
+    [[['b', 'b']], ['a']],
+    'manual-manuscript: 显式跳过 __none__ 不参与匹配',
+  );
+}
+
+{
+  // 手动指派一个未在 manuscriptFiles 中的外部路径（自动合成对象）
+  const r = pairMediaWithManuscriptsManual(
+    [pf('/v/a.mp4')],
+    [],
+    new Map([['/v/a.mp4', '/external/path/script.md']]),
+  );
+  eq(
+    [
+      r.pairs.length,
+      r.pairs[0]?.manuscript.filePath,
+      r.pairs[0]?.manuscript.fileName,
+    ],
+    [1, '/external/path/script.md', 'script'],
+    'manual-manuscript: 支持外部指定路径自动合成文稿条目',
   );
 }
 

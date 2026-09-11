@@ -132,12 +132,35 @@ async function cooperativeYield(signal?: AbortSignal): Promise<void> {
 
 export function getManuscriptConfig(
   formData?: Record<string, unknown>,
+  file?: {
+    manuscriptPath?: unknown;
+    manuscriptName?: unknown;
+    [key: string]: unknown;
+  } | null,
 ): ManuscriptConfig | null {
+  // 文件专属配置优先于全局配置
+  if (typeof file?.manuscriptPath === 'string') {
+    const trimmed = file.manuscriptPath.trim();
+    if (trimmed === '__none__') {
+      return null;
+    }
+    if (trimmed) {
+      const configuredName =
+        typeof file?.manuscriptName === 'string'
+          ? file.manuscriptName.trim()
+          : '';
+      return {
+        path: trimmed,
+        name: configuredName || path.basename(trimmed),
+      };
+    }
+  }
+
   const manuscriptPath =
     typeof formData?.manuscriptPath === 'string'
       ? formData.manuscriptPath.trim()
       : '';
-  if (!manuscriptPath) return null;
+  if (!manuscriptPath || manuscriptPath === '__none__') return null;
   const configuredName =
     typeof formData?.manuscriptName === 'string'
       ? formData.manuscriptName.trim()

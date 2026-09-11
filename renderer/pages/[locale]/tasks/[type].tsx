@@ -71,6 +71,7 @@ import CompletionBanner from '@/components/tasks/CompletionBanner';
 import LogPanel from '@/components/tasks/LogPanel';
 import { ProofreadEditor } from '@/components/proofread';
 import { getProofreadUnavailableReason } from '@/components/tasks/stageUtils';
+import { pairMediaWithManuscriptsManual } from '@/lib/filePairing';
 import { getI18nProperties } from '../../../lib/get-static';
 import { IFiles } from '../../../../types';
 import { isPinnedTaskConfigSnapshot } from '../../../../types/taskSnapshot';
@@ -544,7 +545,130 @@ export default function TaskPage() {
     setIsDragging(false);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleAssignManuscript = useCallback(
+    (targetFile: IFiles, manuscriptPath: string, manuscriptName?: string) => {
+      setFiles((prev) =>
+        prev.map((f) => {
+          if (f.uuid !== targetFile.uuid) return f;
+          if (!manuscriptPath) {
+            const next = { ...f };
+            delete next.manuscriptPath;
+            delete next.manuscriptName;
+            return next;
+          }
+          return {
+            ...f,
+            manuscriptPath,
+            manuscriptName:
+              manuscriptPath === '__none__'
+                ? ''
+                : manuscriptName ||
+                  manuscriptPath
+                    .split(/[\\/]/)
+                    .pop()
+                    ?.replace(/\.[^.]+$/, '') ||
+                  '',
+          };
+        }),
+      );
+    },
+    [],
+  );
+
+  const handleDroppedMediaAndManuscripts = useCallback(
+    (droppedMedia: IFiles[], droppedManuscripts: IFiles[]) => {
+      const seen = new Set(files.map((f) => f.filePath));
+      const freshMedia: IFiles[] = [];
+      let skipped = 0;
+      for (const file of droppedMedia) {
+        if (file?.filePath && seen.has(file.filePath)) {
+          skipped++;
+          continue;
+        }
+        if (file?.filePath) seen.add(file.filePath);
+        freshMedia.push(file);
+      }
+      if (skipped > 0) {
+        toast.info(t('skippedDuplicates', { count: skipped }));
+      }
+
+      const allMedia = [...files, ...freshMedia];
+
+      if (!droppedManuscripts || droppedManuscripts.length === 0) {
+        if (freshMedia.length > 0) {
+          setFiles((prev) => [...prev, ...freshMedia]);
+        }
+        return;
+      }
+
+      if (allMedia.length === 0) {
+        for (const s of droppedManuscripts) {
+          toast.info(t('manuscript.unmatchedToast', { name: s.fileName }));
+        }
+        return;
+      }
+
+      const manualPairs = new Map<string, string>();
+      for (const m of allMedia) {
+        if (m.manuscriptPath) {
+          manualPairs.set(m.filePath, m.manuscriptPath);
+        }
+      }
+
+      const pairing = pairMediaWithManuscriptsManual(
+        allMedia,
+        droppedManuscripts,
+        manualPairs,
+      );
+
+      const newlyMatched = pairing.pairs.filter(
+        (p) => p.media.manuscriptPath !== p.manuscript.filePath,
+      );
+
+      const matchedByMediaPath = new Map(
+        pairing.pairs.map((p) => [p.media.filePath, p.manuscript]),
+      );
+
+      setFiles((prev) => {
+        const combined = [...prev, ...freshMedia];
+        return combined.map((file) => {
+          const matched = matchedByMediaPath.get(file.filePath);
+          if (matched && file.manuscriptPath !== matched.filePath) {
+            return {
+              ...file,
+              manuscriptPath: matched.filePath,
+              manuscriptName: matched.fileName,
+            };
+          }
+          return file;
+        });
+      });
+
+      if (newlyMatched.length === 1) {
+        toast.success(
+          t('manuscript.singleMatchedToast', {
+            scriptName: newlyMatched[0].manuscript.fileName,
+            videoName: newlyMatched[0].media.fileName,
+          }),
+        );
+      } else if (newlyMatched.length > 1) {
+        toast.success(
+          t('manuscript.autoMatchedToast', {
+            count: newlyMatched.length,
+          }),
+        );
+      }
+
+      if (pairing.unpairedManuscripts.length > 0) {
+        for (const s of pairing.unpairedManuscripts) {
+          toast.info(t('manuscript.unmatchedToast', { name: s.fileName }));
+        }
+      }
+    },
+    [files, t],
+  );
+
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     if (!typeDef) return;
@@ -562,14 +686,28 @@ export default function TaskPage() {
     }
 
     if (paths.length > 0) {
-      window?.ipc
-        ?.invoke('getDroppedFiles', {
+      if (typeDef.accepts === 'subtitle') {
+        const dropped = await window?.ipc?.invoke('getDroppedFiles', {
           files: paths,
-          taskType: typeDef.accepts === 'subtitle' ? 'translate' : 'media',
-        })
-        .then((dropped) => {
-          appendFiles(dropped);
+          taskType: 'translate',
         });
+        appendFiles(dropped || []);
+      } else {
+        const [droppedMedia, droppedManuscript] = await Promise.all([
+          window?.ipc?.invoke('getDroppedFiles', {
+            files: paths,
+            taskType: 'media',
+          }),
+          window?.ipc?.invoke('getDroppedFiles', {
+            files: paths,
+            taskType: 'manuscript',
+          }),
+        ]);
+        handleDroppedMediaAndManuscripts(
+          droppedMedia || [],
+          droppedManuscript || [],
+        );
+      }
     }
   };
 
@@ -926,6 +1064,7 @@ export default function TaskPage() {
                 handleReleaseGate(gate, [file.uuid])
               }
               onInspectDubbing={handleInspectDubbing}
+              onAssignManuscript={handleAssignManuscript}
             />
           ) : (
             <TaskRowList
@@ -942,6 +1081,7 @@ export default function TaskPage() {
                 handleReleaseGate(gate, [file.uuid])
               }
               onInspectDubbing={handleInspectDubbing}
+              onAssignManuscript={handleAssignManuscript}
             />
           )}
         </ScrollArea>

@@ -44,6 +44,7 @@ import {
   formatMediaDuration,
 } from './stageUtils';
 import { RailChips } from './TaskRowList';
+import { ManuscriptRowBadge } from './ManuscriptRowBadge';
 import { SPEAKER_DIARIZATION_METADATA_SAVE_FAILED } from '../../../types/speakerDiarization';
 
 interface TaskGridListProps {
@@ -56,6 +57,11 @@ interface TaskGridListProps {
   onRetry: (file: any) => void;
   onReleaseGate?: (file: any, gate: 'subtitle' | 'dubbing') => void;
   onInspectDubbing?: (file: any) => void;
+  onAssignManuscript?: (
+    file: any,
+    manuscriptPath: string,
+    manuscriptName?: string,
+  ) => void;
 }
 
 // 仅在卡片进入视口时挂载 <video>，限制同时存在的解码器数量
@@ -141,6 +147,7 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
   onRetry,
   onReleaseGate,
   onInspectDubbing,
+  onAssignManuscript,
 }) => {
   const { t } = useTranslation('tasks');
   const queueBusy =
@@ -307,6 +314,18 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
 
             {meta && (
               <span className="text-[11px] text-muted-foreground">{meta}</span>
+            )}
+
+            {typeDef?.needsModel && (
+              <div className="flex items-center min-w-0">
+                <ManuscriptRowBadge
+                  file={file}
+                  formData={formData}
+                  disabled={queueBusy}
+                  compact
+                  onAssignManuscript={onAssignManuscript}
+                />
+              </div>
             )}
 
             <RailChips file={file} rail={rail} t={t} className="flex-wrap" />

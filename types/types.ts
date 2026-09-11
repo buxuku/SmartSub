@@ -134,6 +134,10 @@ export interface IFiles extends SubtitleOutputFiles {
   /** 仅供日志/tooltip 兜底的诊断细节，不参与本地化键。 */
   manuscriptMatchErrorDetail?: string;
   manuscriptMatchSummary?: ManuscriptMatchSummary;
+  /** 单文件独立绑定的参考文稿路径（若指定，优先于 formData.manuscriptPath；设为 '__none__' 表示显式不匹配） */
+  manuscriptPath?: string;
+  /** 单文件独立绑定的参考文稿显示名 */
+  manuscriptName?: string;
   /** 本次转写实际使用的后端标签（如 "CUDA 12.4.0" / "Vulkan" / "CPU"） */
   whisperBackend?: string;
   /** 该文件走了内封软字幕直提（跳过 ASR；角色分离开启时仍会抽音频）：用于任务列表标识 */

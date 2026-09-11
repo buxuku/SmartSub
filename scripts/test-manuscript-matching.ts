@@ -88,6 +88,30 @@ async function run(): Promise<void> {
     { path: 'C:\\scripts\\episode.md', name: '第一期.md' },
     'config: 路径与显示名 trim 后进入任务快照',
   );
+  eq(
+    getManuscriptConfig(
+      { manuscriptPath: '/global/script.md', manuscriptName: 'global.md' },
+      { manuscriptPath: '/file/specific.txt', manuscriptName: 'specific.txt' },
+    ),
+    { path: '/file/specific.txt', name: 'specific.txt' },
+    'config: 文件专属文稿优先于全局文稿',
+  );
+  eq(
+    getManuscriptConfig(
+      { manuscriptPath: '/global/script.md', manuscriptName: 'global.md' },
+      { manuscriptPath: '__none__' },
+    ),
+    null,
+    'config: 文件显式 __none__ 跳过匹配并阻止全局回退',
+  );
+  eq(
+    getManuscriptConfig(
+      { manuscriptPath: '/global/script.md', manuscriptName: 'global.md' },
+      { manuscriptPath: '   ' },
+    ),
+    { path: '/global/script.md', name: 'global.md' },
+    'config: 文件文稿为空白时安全回退至全局文稿',
+  );
 
   // normalization / segmentation
   const markdown = [
@@ -650,6 +674,72 @@ async function run(): Promise<void> {
       'empty',
       'file: 空文稿拒绝',
     );
+
+    // 多文件独立文稿配置验证 (Multi-file independent manuscript matching)
+    const file1Manuscript = path.join(tmpDir, 'v1_script.txt');
+    fs.writeFileSync(
+      file1Manuscript,
+      '这是视频一的独立专属文稿内容。',
+      'utf-8',
+    );
+    const file2Manuscript = path.join(tmpDir, 'v2_script.txt');
+    fs.writeFileSync(
+      file2Manuscript,
+      '这是视频二的独立专属文稿内容。',
+      'utf-8',
+    );
+    const globalManuscript = path.join(tmpDir, 'global_script.txt');
+    fs.writeFileSync(globalManuscript, '这是全局兜底文稿内容。', 'utf-8');
+
+    const globalForm = {
+      manuscriptPath: globalManuscript,
+      manuscriptName: 'global_script',
+    };
+
+    // 视频1配置了专属文稿
+    const cfg1 = getManuscriptConfig(globalForm, {
+      filePath: '/videos/v1.mp4',
+      fileName: 'v1',
+      manuscriptPath: file1Manuscript,
+      manuscriptName: 'v1_script',
+    });
+    eq(cfg1?.path, file1Manuscript, 'multi-file: 视频1优先读取专属文稿');
+    eq(cfg1?.name, 'v1_script', 'multi-file: 视频1专属文稿名称');
+
+    // 视频2配置了专属文稿
+    const cfg2 = getManuscriptConfig(globalForm, {
+      filePath: '/videos/v2.mp4',
+      fileName: 'v2',
+      manuscriptPath: file2Manuscript,
+      manuscriptName: 'v2_script',
+    });
+    eq(cfg2?.path, file2Manuscript, 'multi-file: 视频2优先读取专属文稿');
+    eq(cfg2?.name, 'v2_script', 'multi-file: 视频2专属文稿名称');
+
+    // 视频3显式禁用文稿 (__none__)
+    const cfg3 = getManuscriptConfig(globalForm, {
+      filePath: '/videos/v3.mp4',
+      fileName: 'v3',
+      manuscriptPath: '__none__',
+    });
+    eq(cfg3, null, 'multi-file: 视频3显式禁用返回 null (跳过文稿匹配)');
+
+    // 视频4未配置专属文稿，回退至全局兜底
+    const cfg4 = getManuscriptConfig(globalForm, {
+      filePath: '/videos/v4.mp4',
+      fileName: 'v4',
+    });
+    eq(cfg4?.path, globalManuscript, 'multi-file: 视频4回退使用全局文稿');
+
+    // 视频5在无全局文稿且无专属文稿时为 null
+    const cfg5 = getManuscriptConfig(
+      {},
+      {
+        filePath: '/videos/v5.mp4',
+        fileName: 'v5',
+      },
+    );
+    eq(cfg5, null, 'multi-file: 视频5无专属且无全局时为 null');
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
