@@ -52,7 +52,7 @@ keywords:
 | 配音 | TTS 逐条合成并自动对齐时间轴；本地引擎离线免费（Kokoro / VITS），支持 ZipVoice 零样本声音克隆                                                                   | [TTS 配音与声音克隆](../features/tts-dubbing) |
 | 合成 | 硬字幕烧录 / 软字幕封装，字体样式所见即所得，支持硬件加速编码                                                                                                   | [视频合成](../features/video-merge)           |
 
-流水线之外，还有一个「视频下载」入口：粘贴 B 站、YouTube 等平台链接即可下载在线视频并衔接字幕任务，详见[在线视频下载](../features/video-download)。
+流水线之外，还提供「在线视频下载」与全新「音视频工具箱」：支持粘贴 B 站、YouTube 等链接下载视频，以及无损视频裁剪、音频提取、字幕格式与编码转换、内封字幕提取等 8 大离线实用工具，详见[在线视频下载](../features/video-download)与[音视频工具箱](../features/toolbox)。
 
 ## 隐私与硬件加速
 

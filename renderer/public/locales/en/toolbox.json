@@ -1,0 +1,171 @@
+{
+  "title": "Toolbox",
+  "subtitle": "Lightweight media utilities for audio, video, and subtitle workflows, processed 100% locally.",
+  "categories": {
+    "all": "All Tools",
+    "subtitles": "Subtitles",
+    "video": "Video",
+    "audio": "Audio"
+  },
+  "searchPlaceholder": "Search tools...",
+  "noToolsFound": "No matching tools found",
+  "backToDashboard": "Back to Toolbox",
+  "openFolder": "Open Folder",
+  "selectFile": "Select File",
+  "dropFilesHere": "Drag and drop files here, or click to browse",
+  "processing": "Processing...",
+  "success": "Success",
+  "failed": "Failed",
+  "cancel": "Cancel",
+  "confirm": "Confirm",
+  "save": "Save",
+  "outputFolder": "Output Folder",
+  "defaultOutputFolder": "Default (Same directory as source)",
+  "changeFolder": "Change Folder",
+  "sendToTask": "Send to Subtitle Task",
+  "badges": {
+    "popular": "Popular",
+    "lossless": "Lossless",
+    "new": "New"
+  },
+  "tools": {
+    "subtitle-converter": {
+      "name": "Subtitle Format & Encoding Converter",
+      "desc": "Convert between SRT, VTT, ASS, LRC, TXT, auto-detect & fix ANSI/GBK encoding, and convert Traditional/Simplified Chinese"
+    },
+    "video-trimmer": {
+      "name": "Lossless Video Trimmer",
+      "desc": "Millisecond-precise dual-handle trimmer with stream-copy export in seconds, with seamless handoff to transcription"
+    },
+    "audio-extractor": {
+      "name": "Fast Audio Extractor & Converter",
+      "desc": "Extract audio tracks to MP3, WAV, AAC, or FLAC, with preset 16kHz standard voice format for ASR"
+    },
+    "embedded-subtitles": {
+      "name": "Embedded Subtitle Extractor",
+      "desc": "Quickly inspect MKV/MP4 embedded text subtitle tracks and extract selected streams to separate files"
+    },
+    "subtitle-sync": {
+      "name": "Subtitle Time Shifter & Sync",
+      "desc": "Shift timecodes globally, stretch/compress by frame rate ratio, or calibrate via two-point linear interpolation"
+    },
+    "bilingual-subtitles": {
+      "name": "Bilingual Subtitle Merger & Splitter",
+      "desc": "Merge two monolingual subtitle files by overlapping timestamps or split bilingual subtitles into separate files"
+    },
+    "video-compressor": {
+      "name": "Quick Video Compressor",
+      "desc": "Easily reduce video file size with presets for WeChat (<25MB) or standard 1080p/720p sharing"
+    },
+    "video-to-gif": {
+      "name": "Video to High-Quality GIF",
+      "desc": "Clip video segments into crisp, noise-free GIFs using two-pass palette generation"
+    }
+  },
+  "subtitleConverter": {
+    "targetFormat": "Target Format",
+    "targetEncoding": "Target Encoding",
+    "encodingAuto": "Auto Detect",
+    "detectedEncoding": "Detected Encoding",
+    "chineseConversion": "Chinese Conversion",
+    "chineseNone": "None",
+    "chineseS2T": "Simplified → Traditional (Standard)",
+    "chineseT2S": "Traditional → Simplified (Standard)",
+    "chineseS2TW": "Simplified → Traditional (Taiwan)",
+    "chineseTW2S": "Traditional (Taiwan) → Simplified",
+    "chineseS2HK": "Simplified → Traditional (Hong Kong)",
+    "chineseHK2S": "Traditional (Hong Kong) → Simplified",
+    "cleanFormatting": "Strip Style Tags (Plain Text Only)",
+    "includeTimestampsInTxt": "Keep Timestamps When Exporting TXT",
+    "batchAction": "Convert All",
+    "clearList": "Clear List",
+    "statusReady": "Ready",
+    "statusConverting": "Converting",
+    "statusDone": "Done",
+    "statusError": "Failed",
+    "fileCount": "{{count}} files",
+    "previewTitle": "Content Preview (First 5 Cues)"
+  },
+  "videoTrimmer": {
+    "inPoint": "In Point (Start)",
+    "outPoint": "Out Point (End)",
+    "duration": "Clip Duration",
+    "totalDuration": "Total Duration",
+    "mode": "Trimming Mode",
+    "modeLossless": "Lossless Stream Copy",
+    "modeLosslessDesc": "Direct stream copy, 100% original quality and container, keyframe aligned, takes seconds (Recommended)",
+    "modeAccurate": "Accurate Re-encode",
+    "modeAccurateDesc": "Frame-by-frame decode and re-encode, strict frame-accurate alignment, takes longer",
+    "exportButton": "Export Clip",
+    "exporting": "Exporting...",
+    "shortcutTip": "Tips: Drag [ ] handles to set clip boundaries; click [-1s][-0.1s][+0.1s][+1s] to fine-tune; [ for In point, ] for Out point, Space to play/pause, Left/Right to step frames",
+    "sendToTranscribe": "Create Task with This Clip",
+    "previewClip": "Preview Selected Clip",
+    "pausePreview": "Pause Preview",
+    "resetRange": "Reset to Full Video",
+    "setAsIn": "Set as In",
+    "setAsOut": "Set as Out"
+  },
+  "audioExtractor": {
+    "format": "Target Audio Format",
+    "quality": "Quality / Preset",
+    "bitrate": "Bitrate",
+    "presetAsr": "16kHz Mono WAV (ASR Standard Speech Format)",
+    "presetStandard": "Original Sample Rate Stereo",
+    "startExtract": "Extract Audio",
+    "batchTip": "Supports batch extraction from multiple videos"
+  },
+  "embeddedSubtitles": {
+    "scanning": "Scanning embedded subtitle streams...",
+    "noSubtitlesFound": "No embedded text subtitle tracks found in this video",
+    "streamList": "Embedded subtitle tracks detected:",
+    "trackHeader": "Track",
+    "codecHeader": "Codec",
+    "langHeader": "Language",
+    "titleHeader": "Title",
+    "exportSelected": "Export Selected Tracks",
+    "selectAll": "Select All",
+    "deselectAll": "Deselect All"
+  },
+  "subtitleSync": {
+    "mode": "Sync Mode",
+    "modeOffset": "Global Time Offset (+/- ms)",
+    "modeScale": "Framerate Ratio Stretch / Compress",
+    "modeTwoPoint": "Two-Point Linear Resampling",
+    "offsetInput": "Offset (ms, positive delays, negative advances)",
+    "scaleRatioInput": "Scale Ratio (e.g. 24/25 = 0.96, 25/24 = 1.04167)",
+    "p1Source": "First line current time (ms or 00:00:00,000)",
+    "p1Target": "First line target time (ms or 00:00:00,000)",
+    "p2Source": "Last line current time (ms or 00:00:00,000)",
+    "p2Target": "Last line target time (ms or 00:00:00,000)",
+    "startSync": "Apply & Export",
+    "syncSuccess": "Synchronization completed, updated {{count}} subtitle cues"
+  },
+  "bilingualSubtitles": {
+    "action": "Action",
+    "actionMerge": "Merge Two Monolingual Subtitles into Bilingual",
+    "actionSplit": "Split Bilingual Subtitle into Two Monolingual Files",
+    "primaryFile": "Primary Subtitle (Main Language)",
+    "secondaryFile": "Secondary Subtitle (Second Language)",
+    "position": "Order",
+    "posTop": "Primary on Top, Secondary on Bottom",
+    "posBottom": "Primary on Bottom, Secondary on Top",
+    "startMerge": "Merge Subtitles",
+    "startSplit": "Split Subtitles"
+  },
+  "videoCompressor": {
+    "preset": "Compression Preset",
+    "presetWechat": "WeChat Share Preset (Under 25MB, adaptive bitrate)",
+    "presetBalanced": "1080p Balanced (H.264 CRF 24 optimized size & quality)",
+    "presetFast": "720p Fast (Smaller file, faster transfer)",
+    "presetTarget": "Specify Target File Size",
+    "targetSize": "Target Size (MB)",
+    "startCompress": "Compress Video"
+  },
+  "videoToGif": {
+    "fps": "GIF Frame Rate",
+    "width": "GIF Width",
+    "startExport": "Generate High-Quality GIF",
+    "highQualityNotice": "Uses two-pass PaletteGen algorithm for vibrant, artifact-free GIFs"
+  }
+}

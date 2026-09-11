@@ -1,0 +1,171 @@
+{
+  "title": "周边工具箱",
+  "subtitle": "提供常用音视频处理与字幕辅助周边轻量小工具，全本地极速处理",
+  "categories": {
+    "all": "全部工具",
+    "subtitles": "字幕处理",
+    "video": "视频剪辑",
+    "audio": "音频转换"
+  },
+  "searchPlaceholder": "搜索工具...",
+  "noToolsFound": "未找到匹配的工具",
+  "backToDashboard": "返回工具箱",
+  "openFolder": "打开所在目录",
+  "selectFile": "选择文件",
+  "dropFilesHere": "拖拽文件到此处，或点击浏览选择",
+  "processing": "正在处理...",
+  "success": "处理成功",
+  "failed": "处理失败",
+  "cancel": "取消",
+  "confirm": "确定",
+  "save": "保存",
+  "outputFolder": "输出目录",
+  "defaultOutputFolder": "默认（原文件同级目录）",
+  "changeFolder": "更改目录",
+  "sendToTask": "发送至字幕转写任务",
+  "badges": {
+    "popular": "常用",
+    "lossless": "极速无损",
+    "new": "新工具"
+  },
+  "tools": {
+    "subtitle-converter": {
+      "name": "字幕格式与编码转换",
+      "desc": "支持 SRT、VTT、ASS、LRC、TXT 互转，智能探测修复 ANSI/GBK 乱码，支持简繁体一键转换"
+    },
+    "video-trimmer": {
+      "name": "极速无损视频裁剪",
+      "desc": "双滑块毫秒级精确区间选择，直接流拷贝秒级无损导出，支持直接送入字幕转写"
+    },
+    "audio-extractor": {
+      "name": "音频快速提取与转换",
+      "desc": "一键提取音轨，支持导出 MP3、WAV、AAC、FLAC，预设 16kHz ASR 标准语音格式"
+    },
+    "embedded-subtitles": {
+      "name": "容器内封软字幕提取",
+      "desc": "快速扫描 MKV/MP4 内封的文本字幕轨道，按需一键导出独立字幕文件"
+    },
+    "subtitle-sync": {
+      "name": "时间轴平移与漂移校准",
+      "desc": "支持全篇字幕时间整体平移、按帧率比例伸缩、首尾双锚点线性时间轴重采样校准"
+    },
+    "bilingual-subtitles": {
+      "name": "双语字幕智能合并/拆分",
+      "desc": "基于时间轴重叠区间智能合并双语字幕，或将双语字幕按语言自动拆离为两份单语"
+    },
+    "video-compressor": {
+      "name": "社交分享轻量压缩",
+      "desc": "快速压缩视频体积，提供微信分享（<25MB）及 1080p/720p 社交分享轻量预设"
+    },
+    "video-to-gif": {
+      "name": "视频片段转高清 GIF",
+      "desc": "利用双通道调色板算法截取精彩片段，生成色彩丰富、无噪点的表情包 GIF 动图"
+    }
+  },
+  "subtitleConverter": {
+    "targetFormat": "目标格式",
+    "targetEncoding": "目标编码",
+    "encodingAuto": "自动探测",
+    "detectedEncoding": "探测编码",
+    "chineseConversion": "简繁转换",
+    "chineseNone": "不转换",
+    "chineseS2T": "简体 → 繁体 (标准)",
+    "chineseT2S": "繁体 → 简体 (标准)",
+    "chineseS2TW": "简体 → 繁体 (台湾正体)",
+    "chineseTW2S": "繁体 (台湾) → 简体",
+    "chineseS2HK": "简体 → 繁体 (香港常用)",
+    "chineseHK2S": "繁体 (香港) → 简体",
+    "cleanFormatting": "清洗样式标签 (仅保留纯文本)",
+    "includeTimestampsInTxt": "TXT 导出时保留时间轴标记",
+    "batchAction": "开始批量转换",
+    "clearList": "清空列表",
+    "statusReady": "待转换",
+    "statusConverting": "转换中",
+    "statusDone": "完成",
+    "statusError": "失败",
+    "fileCount": "共 {{count}} 个文件",
+    "previewTitle": "字幕内容预览 (前 5 条)"
+  },
+  "videoTrimmer": {
+    "inPoint": "入点 (Start)",
+    "outPoint": "出点 (End)",
+    "duration": "截取时长",
+    "totalDuration": "总时长",
+    "mode": "裁剪模式",
+    "modeLossless": "极速无损流拷贝",
+    "modeLosslessDesc": "直接复制码流，100% 原始画质与原容器格式，关键帧极速对齐，秒级完成（推荐）",
+    "modeAccurate": "精确重新编码",
+    "modeAccurateDesc": "逐帧解码重新编码，严格帧级精准对齐，耗时稍长",
+    "exportButton": "导出裁剪片段",
+    "exporting": "正在导出...",
+    "shortcutTip": "操作提示：拖拽时间轴两端 [ ] 滑块划定范围；点击 [-1s][-0.1s][+0.1s][+1s] 精调数据；快捷键：[ 设入点，] 设出点，空格播放/暂停，←/→ 逐帧微调",
+    "sendToTranscribe": "直接以此片段新建任务",
+    "previewClip": "预览裁剪选区",
+    "pausePreview": "暂停预览",
+    "resetRange": "重置为整段",
+    "setAsIn": "设为入点",
+    "setAsOut": "设为出点"
+  },
+  "audioExtractor": {
+    "format": "目标音频格式",
+    "quality": "音质 / 预设",
+    "bitrate": "码率",
+    "presetAsr": "16kHz 单声道 WAV (ASR 语音转写标准格式)",
+    "presetStandard": "原采样率立体声",
+    "startExtract": "开始提取音频",
+    "batchTip": "支持同时批量提取多个音视频"
+  },
+  "embeddedSubtitles": {
+    "scanning": "正在探测内封字幕流...",
+    "noSubtitlesFound": "该视频容器中未发现内封软字幕轨",
+    "streamList": "发现以下内封软字幕轨：",
+    "trackHeader": "轨道",
+    "codecHeader": "格式编码",
+    "langHeader": "语言",
+    "titleHeader": "标题描述",
+    "exportSelected": "导出所选字幕轨",
+    "selectAll": "全选",
+    "deselectAll": "取消全选"
+  },
+  "subtitleSync": {
+    "mode": "校准模式",
+    "modeOffset": "整体时间轴平移 (加减毫秒)",
+    "modeScale": "帧率比例伸缩 (校正渐进漂移)",
+    "modeTwoPoint": "首尾双锚点重采样",
+    "offsetInput": "平移量 (毫秒，正数延后，负数提前)",
+    "scaleRatioInput": "缩放比例 (如 24/25 = 0.96，25/24 = 1.04167)",
+    "p1Source": "第一句当前时间 (ms 或 00:00:00,000)",
+    "p1Target": "第一句目标时间 (ms 或 00:00:00,000)",
+    "p2Source": "最后一句当前时间 (ms 或 00:00:00,000)",
+    "p2Target": "最后一句目标时间 (ms 或 00:00:00,000)",
+    "startSync": "执行校准并导出",
+    "syncSuccess": "时间轴校准完成，共更新 {{count}} 条字幕"
+  },
+  "bilingualSubtitles": {
+    "action": "操作方式",
+    "actionMerge": "两份单语字幕合并为双语",
+    "actionSplit": "一份双语字幕拆离为两份单语",
+    "primaryFile": "主字幕 (主语言)",
+    "secondaryFile": "次字幕 (次语言)",
+    "position": "双语排列方式",
+    "posTop": "主字幕在上方，次字幕在下方",
+    "posBottom": "主字幕在下方，次字幕在上方",
+    "startMerge": "合并双语字幕",
+    "startSplit": "拆分单语字幕"
+  },
+  "videoCompressor": {
+    "preset": "压缩档位",
+    "presetWechat": "微信分享预设 (限制 25MB 以内，自适应降码率)",
+    "presetBalanced": "1080p 社交均衡压缩 (H.264 CRF 24 优化体积与画质)",
+    "presetFast": "720p 快速压缩 (体积更小，传输更快)",
+    "presetTarget": "指定目标文件体积",
+    "targetSize": "目标大小 (MB)",
+    "startCompress": "开始压缩视频"
+  },
+  "videoToGif": {
+    "fps": "动图帧率",
+    "width": "动图宽度",
+    "startExport": "生成高清 GIF",
+    "highQualityNotice": "采用双通道调色板算法 (PaletteGen)，避免噪点与失真"
+  }
+}
