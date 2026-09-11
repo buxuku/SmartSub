@@ -270,9 +270,9 @@ export default function LaunchpadPage() {
     return paths;
   };
 
-  /** 双类型解析拖放路径（媒体+字幕，含目录展开）：向导已支持混合配对输入 */
+  /** 三类型解析拖放路径（媒体+字幕+参考文稿，含目录展开）：向导已支持混合配对输入 */
   const resolveDroppedBothKinds = async (paths: string[]) => {
-    const [media, subtitles] = await Promise.all([
+    const [media, subtitles, manuscripts] = await Promise.all([
       window?.ipc?.invoke('getDroppedFiles', {
         files: paths,
         taskType: 'media',
@@ -281,8 +281,12 @@ export default function LaunchpadPage() {
         files: paths,
         taskType: 'translate',
       }),
+      window?.ipc?.invoke('getDroppedFiles', {
+        files: paths,
+        taskType: 'manuscript',
+      }),
     ]);
-    return [...(media ?? []), ...(subtitles ?? [])];
+    return [...(media ?? []), ...(subtitles ?? []), ...(manuscripts ?? [])];
   };
 
   const handleRecipeDrop = async (e: React.DragEvent, recipe: TaskRecipe) => {

@@ -46,6 +46,7 @@ import {
   type StageDef,
 } from './stageUtils';
 import { SPEAKER_DIARIZATION_METADATA_SAVE_FAILED } from '../../../types/speakerDiarization';
+import { ManuscriptRowBadge } from './ManuscriptRowBadge';
 
 interface TaskRowListProps {
   files: any[];
@@ -59,6 +60,11 @@ interface TaskRowListProps {
   onReleaseGate?: (file: any, gate: 'subtitle' | 'dubbing') => void;
   /** 打开配音工作台检查该文件的配音 */
   onInspectDubbing?: (file: any) => void;
+  onAssignManuscript?: (
+    file: any,
+    manuscriptPath: string,
+    manuscriptName?: string,
+  ) => void;
 }
 
 export function RailChips({
@@ -211,6 +217,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
   onRetry,
   onReleaseGate,
   onInspectDubbing,
+  onAssignManuscript,
 }) => {
   const { t } = useTranslation('tasks');
   const queueBusy =
@@ -408,6 +415,14 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
+                )}
+                {typeDef?.needsModel && (
+                  <ManuscriptRowBadge
+                    file={file}
+                    formData={formData}
+                    disabled={queueBusy}
+                    onAssignManuscript={onAssignManuscript}
+                  />
                 )}
                 {meta && (
                   <span className="hidden md:inline text-[11px] text-muted-foreground whitespace-nowrap flex-shrink-0">

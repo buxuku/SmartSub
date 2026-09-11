@@ -123,3 +123,162 @@ export function pairMediaWithSubtitles<
     ],
   };
 }
+
+export function isManuscriptPath(p: string): boolean {
+  return /\.(txt|md|markdown)$/i.test(p);
+}
+
+export interface ManuscriptPairingResult<
+  M extends PairableFile,
+  S extends PairableFile,
+> {
+  pairs: Array<{ media: M; manuscript: S }>;
+  unpairedMedia: M[];
+  unpairedManuscripts: S[];
+  skippedMedia: M[];
+}
+
+export function pairMediaWithManuscripts<
+  M extends PairableFile,
+  S extends PairableFile,
+>(
+  mediaFiles: M[],
+  manuscriptFiles: S[],
+  options?: { allowSingleFallback?: boolean },
+): ManuscriptPairingResult<M, S> {
+  const usable = manuscriptFiles.filter((s) => isManuscriptPath(s.filePath));
+  const ignored = manuscriptFiles.filter((s) => !isManuscriptPath(s.filePath));
+  const taken = new Set<string>();
+  const pairs: Array<{ media: M; manuscript: S }> = [];
+  const unpairedMedia: M[] = [];
+
+  const allowSingleFallback = options?.allowSingleFallback ?? true;
+
+  // 规则 3：单媒体 + 单文稿宽容配对（仅当整体仅有 1 个媒体与 1 个文稿时宽容关联）
+  if (allowSingleFallback && mediaFiles.length === 1 && usable.length === 1) {
+    return {
+      pairs: [{ media: mediaFiles[0], manuscript: usable[0] }],
+      unpairedMedia: [],
+      unpairedManuscripts: [...ignored],
+      skippedMedia: [],
+    };
+  }
+
+  for (const media of mediaFiles) {
+    // 规则 1：主干同名精准匹配
+    const exact = usable.find(
+      (s) => !taken.has(s.filePath) && s.fileName === media.fileName,
+    );
+    // 规则 2：主干前缀匹配（如 video.zh.md ↔ video.mp4）
+    const prefix = exact
+      ? undefined
+      : usable
+          .filter(
+            (s) =>
+              !taken.has(s.filePath) &&
+              s.fileName.startsWith(`${media.fileName}.`),
+          )
+          .sort((a, b) => a.fileName.localeCompare(b.fileName))[0];
+
+    const hit = exact ?? prefix;
+    if (hit) {
+      taken.add(hit.filePath);
+      pairs.push({ media, manuscript: hit });
+    } else {
+      unpairedMedia.push(media);
+    }
+  }
+
+  return {
+    pairs,
+    unpairedMedia,
+    unpairedManuscripts: [
+      ...usable.filter((s) => !taken.has(s.filePath)),
+      ...ignored,
+    ],
+    skippedMedia: [],
+  };
+}
+
+export function pairMediaWithManuscriptsManual<
+  M extends PairableFile,
+  S extends PairableFile,
+>(
+  mediaFiles: M[],
+  manuscriptFiles: S[],
+  manualPairs?: ReadonlyMap<string, string>,
+): ManuscriptPairingResult<M, S> {
+  if (!manualPairs || manualPairs.size === 0) {
+    return pairMediaWithManuscripts(mediaFiles, manuscriptFiles);
+  }
+
+  const usable = manuscriptFiles.filter((s) => isManuscriptPath(s.filePath));
+  const ignored = manuscriptFiles.filter((s) => !isManuscriptPath(s.filePath));
+  const manuscriptByPath = new Map(usable.map((s) => [s.filePath, s]));
+
+  const manualTaken = new Set<string>();
+  const manualByMedia = new Map<string, S>();
+  const skippedMedia: M[] = [];
+  const autoMedia: M[] = [];
+
+  for (const media of mediaFiles) {
+    const manualPath = manualPairs.get(media.filePath);
+    if (manualPath === '__none__') {
+      skippedMedia.push(media);
+    } else if (manualPath) {
+      const existing = manuscriptByPath.get(manualPath);
+      const manuscript =
+        existing ??
+        ({
+          filePath: manualPath,
+          fileName: manualPath
+            .split(/[\\/]/)
+            .pop()!
+            .replace(/\.[^.]+$/, ''),
+        } as unknown as S);
+      manualTaken.add(manualPath);
+      manualByMedia.set(media.filePath, manuscript);
+    } else {
+      autoMedia.push(media);
+    }
+  }
+
+  // 剩余媒体和文稿走自动配对
+  const remainingManuscripts = usable.filter(
+    (s) => !manualTaken.has(s.filePath),
+  );
+  const allowSingleFallback = mediaFiles.length === 1 && usable.length === 1;
+  const auto = pairMediaWithManuscripts(autoMedia, remainingManuscripts, {
+    allowSingleFallback,
+  });
+  const autoByMedia = new Map(
+    auto.pairs.map((p) => [p.media.filePath, p.manuscript]),
+  );
+
+  const pairs: Array<{ media: M; manuscript: S }> = [];
+  const unpairedMedia: M[] = [];
+
+  for (const media of mediaFiles) {
+    if (manualPairs.get(media.filePath) === '__none__') {
+      continue;
+    }
+    const manuscript =
+      manualByMedia.get(media.filePath) ?? autoByMedia.get(media.filePath);
+    if (manuscript) {
+      pairs.push({ media, manuscript });
+    } else {
+      unpairedMedia.push(media);
+    }
+  }
+
+  const allTaken = new Set(pairs.map((p) => p.manuscript.filePath));
+  return {
+    pairs,
+    unpairedMedia,
+    unpairedManuscripts: [
+      ...usable.filter((s) => !allTaken.has(s.filePath)),
+      ...ignored,
+    ],
+    skippedMedia,
+  };
+}
