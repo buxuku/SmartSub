@@ -5,6 +5,7 @@ export type ParameterType =
   | 'integer'
   | 'float'
   | 'boolean'
+  | 'object'
   | 'array';
 
 export function inferTypeFromValue(value: ParameterValue): ParameterType {
@@ -13,6 +14,7 @@ export function inferTypeFromValue(value: ParameterValue): ParameterType {
     return Number.isInteger(value) ? 'integer' : 'float';
   }
   if (Array.isArray(value)) return 'array';
+  if (value !== null && typeof value === 'object') return 'object';
   return 'string';
 }
 
@@ -26,6 +28,7 @@ export function resolveParameterType(
     if (registryType === 'number') return 'float';
     if (definition.type === 'boolean') return 'boolean';
     if (definition.type === 'array') return 'array';
+    if (definition.type === 'object') return 'object';
     if (definition.type === 'integer') return 'integer';
     if (definition.type === 'float') return 'float';
     return 'string';
@@ -49,10 +52,34 @@ export function parseDraftValue(
       return parseInt(raw, 10) || 0;
     case 'float':
       return parseFloat(raw) || 0;
-    case 'array':
-      return JSON.parse(raw) as ParameterValue;
+    case 'object':
+    case 'array': {
+      const parsed = JSON.parse(raw);
+      if (type === 'array' && !Array.isArray(parsed)) {
+        throw new Error('NOT_ARRAY');
+      }
+      if (
+        type === 'object' &&
+        (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
+      ) {
+        throw new Error('NOT_OBJECT');
+      }
+      return parsed;
+    }
     default:
       return raw;
+  }
+}
+
+export function validateJsonParameter(
+  raw: string,
+  type: 'object' | 'array',
+): string | null {
+  try {
+    parseDraftValue(raw, type);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : 'Invalid JSON';
   }
 }
 
@@ -73,11 +100,15 @@ export function formatValueForInput(
   value: ParameterValue,
   type: ParameterType,
 ): string {
-  if (type === 'array') {
+  if (
+    type === 'array' ||
+    type === 'object' ||
+    (value !== null && typeof value === 'object')
+  ) {
     try {
       return JSON.stringify(value);
     } catch {
-      return '[]';
+      return type === 'object' ? '{}' : '[]';
     }
   }
   if (type === 'boolean') return String(value);

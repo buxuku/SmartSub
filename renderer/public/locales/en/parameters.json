@@ -53,6 +53,7 @@
     "integer": "Integer",
     "float": "Float",
     "boolean": "Boolean",
+    "object": "Object",
     "array": "Array"
   },
   "table": {
@@ -66,12 +67,14 @@
     "numberPlaceholder": "e.g. 0.3",
     "arrayPlaceholder": "[1, 2, 3]",
     "arrayHint": "JSON array format, e.g. [1, 2, 3] or [\"a\", \"b\"]",
+    "objectPlaceholder": "{\"type\": \"enabled\"}",
+    "objectHint": "JSON object with nested objects and arrays.",
     "booleanHint": "Toggle for true / false",
     "duplicateKey": "This parameter key already exists",
     "emptyKey": "Please enter a parameter key",
     "addRowLabel": "New parameter",
     "addButton": "Add",
-    "addHint": "Fill in the key, type, and value in the \"New parameter\" row below, then click Add or press Enter to add more rows.",
+    "addHint": "Fill in the key, type, and value in the \"New parameter\" row, then click Add or press Enter. In JSON inputs, Enter adds a line; Ctrl/⌘ + Enter adds the parameter.",
     "delete": "Delete"
   },
   "categories": {
@@ -99,7 +102,8 @@
   "validation": {
     "valid": "Valid",
     "invalidJson": "Invalid JSON: {message}",
-    "notArray": "Value must be a JSON array, e.g. [1, 2, 3]"
+    "notArray": "Value must be a JSON array, e.g. [1, 2, 3]",
+    "notObject": "Value must be a JSON object, e.g. {\"type\": \"enabled\"}"
   },
   "placeholders": {
     "enterValue": "Enter {key}",
