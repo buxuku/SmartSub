@@ -8,6 +8,7 @@ import {
   inferTypeFromValue,
   parseDraftValue,
   resolveParameterType,
+  validateJsonParameter,
   type ParameterType,
 } from '../lib/parameterValueUtils';
 import { cn } from 'lib/utils';
@@ -36,6 +37,7 @@ const PARAMETER_TYPES: ParameterType[] = [
   'integer',
   'float',
   'boolean',
+  'object',
   'array',
 ];
 
@@ -64,7 +66,7 @@ function getRowType(
   return parameterTypes[key] ?? inferTypeFromValue(value);
 }
 
-function formatArrayError(
+function formatJsonError(
   error: string | null,
   t: (key: string, options?: Record<string, string>) => string,
 ): string | null {
@@ -72,20 +74,10 @@ function formatArrayError(
   if (error === 'NOT_ARRAY') {
     return t('validation.notArray');
   }
-  return t('validation.invalidJson', { message: error });
-}
-
-function validateArrayJson(raw: string): string | null {
-  if (!raw.trim()) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      return 'NOT_ARRAY';
-    }
-    return null;
-  } catch (error) {
-    return error instanceof Error ? error.message : 'Invalid JSON';
+  if (error === 'NOT_OBJECT') {
+    return t('validation.notObject');
   }
+  return t('validation.invalidJson', { message: error });
 }
 
 interface TypeSelectProps {
@@ -166,9 +158,9 @@ const ValueEditor: React.FC<ValueEditorProps> = ({
     );
   }
 
-  if (type === 'array') {
-    const jsonError = validateArrayJson(raw);
-    const jsonErrorMessage = formatArrayError(jsonError, t);
+  if (type === 'array' || type === 'object') {
+    const jsonError = validateJsonParameter(raw, type);
+    const jsonErrorMessage = formatJsonError(jsonError, t);
 
     return (
       <div className="space-y-1">
@@ -177,7 +169,7 @@ const ValueEditor: React.FC<ValueEditorProps> = ({
           data-draft-field={inputDataField}
           value={raw}
           disabled={disabled}
-          placeholder={t('table.arrayPlaceholder')}
+          placeholder={t(`table.${type}Placeholder`)}
           className={cn(
             'min-h-[72px] font-mono text-xs',
             jsonErrorMessage && 'border-destructive',
@@ -186,7 +178,9 @@ const ValueEditor: React.FC<ValueEditorProps> = ({
           onBlur={onCommit}
           onKeyDown={onKeyDown}
         />
-        <p className="text-xs text-muted-foreground">{t('table.arrayHint')}</p>
+        <p className="text-xs text-muted-foreground">
+          {t(`table.${type}Hint`)}
+        </p>
         {jsonErrorMessage ? (
           <p className="text-xs text-destructive">{jsonErrorMessage}</p>
         ) : null}
@@ -235,8 +229,8 @@ const ExistingValueCell: React.FC<ExistingValueCellProps> = ({
   }, [value, type]);
 
   const commit = useCallback(() => {
-    if (type === 'array') {
-      const error = validateArrayJson(raw);
+    if (type === 'array' || type === 'object') {
+      const error = validateJsonParameter(raw, type);
       if (error) return;
     }
     onUpdate(parameterKey, parseDraftValue(raw, type));
@@ -318,11 +312,11 @@ export const ParameterKvTable: React.FC<ParameterKvTableProps> = ({
       return;
     }
 
-    if (selectedType === 'array') {
-      const arrayError = validateArrayJson(raw);
-      if (arrayError) {
+    if (selectedType === 'array' || selectedType === 'object') {
+      const jsonError = validateJsonParameter(raw, selectedType);
+      if (jsonError) {
         setDraftError(
-          formatArrayError(arrayError, t) || t('validation.invalidJson'),
+          formatJsonError(jsonError, t) || t('validation.invalidJson'),
         );
         return;
       }
@@ -337,7 +331,12 @@ export const ParameterKvTable: React.FC<ParameterKvTableProps> = ({
       let value: ParameterValue;
       let type: ParameterType;
 
-      if (definition) {
+      // An explicitly selected JSON object must not be coerced through a
+      // legacy string definition (e.g. the thinking convenience parameter).
+      if (selectedType === 'object') {
+        value = parseDraftValue(raw, selectedType);
+        type = selectedType;
+      } else if (definition) {
         value = coerceParameterValue(raw, definition);
         type = resolveParameterType(definition, value);
       } else if (selectedType === 'boolean') {
@@ -368,7 +367,14 @@ export const ParameterKvTable: React.FC<ParameterKvTableProps> = ({
 
   const handleDraftKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
-      if (event.key === 'Enter') {
+      if (
+        event.key === 'Enter' &&
+        !(
+          event.target instanceof HTMLTextAreaElement &&
+          !event.ctrlKey &&
+          !event.metaKey
+        )
+      ) {
         event.preventDefault();
         void commitDraft();
       }
@@ -381,7 +387,7 @@ export const ParameterKvTable: React.FC<ParameterKvTableProps> = ({
     if (!key || !resolveDefinition) return;
 
     const definition = await resolveDefinition(key);
-    if (definition) {
+    if (definition && draftTypeRef.current !== 'object') {
       syncDraftType(resolveParameterType(definition));
     }
   }, [resolveDefinition, syncDraftType]);
