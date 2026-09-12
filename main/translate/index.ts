@@ -20,6 +20,7 @@ import { IFiles, IFormData } from '../../types';
 import { ensureTempDir } from '../helpers/fileUtils';
 import { isTaskCancelledError } from '../helpers/taskContext';
 import { assertValidTestTranslation } from './utils/error';
+import { sanitizeFallbackReason } from './services/providerFallback';
 import {
   getDesiredChineseScript,
   convertChineseText,
@@ -273,11 +274,22 @@ export async function testTranslation(
       provider.isAi ? collectMeta : undefined,
     );
 
+    const result = results[0];
+    if (!result) throw new Error('empty translation result');
+
     let translation: string;
-    if (provider.isAi && provider.useBatchTranslation) {
-      translation = (results as string[])[0];
+    if (typeof result === 'string') {
+      translation = result;
     } else {
-      translation = (results as TranslationResult[])[0].targetContent;
+      if (result.translationStatus === 'failed') {
+        throw new Error(
+          sanitizeFallbackReason(
+            result.translationError?.trim() || 'Translation failed',
+            [provider],
+          ),
+        );
+      }
+      translation = result.targetContent;
     }
 
     assertValidTestTranslation(translation);

@@ -13,6 +13,7 @@ const ts = require('typescript');
 
 const repoRoot = path.resolve(__dirname, '..');
 const capturedLogs = [];
+let testTranslator;
 const originalLoad = Module._load;
 const originalTsLoader = require.extensions['.ts'];
 
@@ -27,7 +28,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
       BrowserWindow: { getAllWindows: () => [] },
     };
   }
-  if (normalized.endsWith('/helpers/storeManager')) {
+  if (normalized.endsWith('/storeManager')) {
     return {
       logMessage: (message, type = 'info') => {
         capturedLogs.push({ message: String(message), type });
@@ -39,6 +40,10 @@ Module._load = function patchedLoad(request, parent, isMain) {
   }
   if (normalized.endsWith('/helpers/glossaryManager')) {
     return { logGlossaryMatches: () => undefined };
+  }
+  if (normalized === '../../service') {
+    const translate = (...args) => testTranslator(...args);
+    return { openaiTranslator: translate, googleTranslator: translate };
   }
   return originalLoad.call(this, request, parent, isMain);
 };
@@ -74,6 +79,8 @@ require.extensions['.ts'] = function transpileTypeScript(module, filename) {
 const {
   handleAIBatchTranslation,
 } = require('../main/translate/services/ai.ts');
+const { testTranslation } = require('../main/translate/index.ts');
+const providerService = require('../main/translate/services/translationProvider.ts');
 
 let passed = 0;
 let failed = 0;
@@ -447,6 +454,123 @@ async function testSameScriptWeakEvidenceStaysAccepted() {
   }
 }
 
+async function testProviderTestResults() {
+  for (const isAi of [false, true]) {
+    for (const useBatchTranslation of [false, true]) {
+      const testProvider = {
+        ...provider(),
+        type: isAi ? 'openai' : 'google',
+        isAi,
+        useBatchTranslation,
+      };
+      const scenario = `isAi=${isAi}, useBatchTranslation=${useBatchTranslation}`;
+      capturedLogs.length = 0;
+      testTranslator = async () => {
+        throw new Error('Connection error.');
+      };
+      let failure;
+      try {
+        await testTranslation(testProvider, 'en', 'zh');
+      } catch (error) {
+        failure = error;
+      }
+      ok(
+        failure?.message === 'Connection error.',
+        `provider test surfaces the failed batch error (${scenario})`,
+      );
+      if (isAi) {
+        ok(
+          capturedLogs.some(({ message }) =>
+            message.includes('AI批量翻译完成：共处理 1 条字幕，成功 0 条'),
+          ),
+          `failed AI batch is not counted as successful (${scenario})`,
+        );
+      }
+
+      testTranslator = async () =>
+        isAi ? JSON.stringify({ 1: '你好' }) : ['你好'];
+      let result;
+      try {
+        result = await testTranslation(testProvider, 'en', 'zh');
+      } catch (error) {
+        console.error(error.message);
+      }
+      ok(
+        result?.translation === '你好' && result.analysis.test_completed,
+        `provider test accepts successful results, including legacy API results without status (${scenario})`,
+      );
+    }
+  }
+
+  testTranslator = async () => ['[翻译失败:HTTP 429]'];
+  let legacyFailure;
+  try {
+    await testTranslation(
+      { ...provider(), type: 'google', isAi: false },
+      'en',
+      'zh',
+    );
+  } catch (error) {
+    legacyFailure = error;
+  }
+  ok(
+    legacyFailure?.message === 'HTTP 429',
+    'legacy failure prefixes are still rejected',
+  );
+
+  const apiKey = 'sk-offline-test-credential';
+  testTranslator = async () => {
+    throw new Error(`Connection error for ${apiKey}`);
+  };
+  let sanitizedFailure;
+  try {
+    await testTranslation(
+      { ...provider(), type: 'openai', apiKey },
+      'en',
+      'zh',
+    );
+  } catch (error) {
+    sanitizedFailure = error;
+  }
+  ok(
+    sanitizedFailure?.message === 'Connection error for [redacted]',
+    'failed provider tests do not expose the configured API key',
+  );
+}
+
+async function testLegacyProviderResultShapes() {
+  const originalTranslate = providerService.translateWithProvider;
+  try {
+    for (const [results, expectedTranslation, expectedError] of [
+      [['你好'], '你好', undefined],
+      [['[翻译失败:HTTP 429]'], undefined, 'HTTP 429'],
+      [[], undefined, 'empty translation result'],
+      [
+        [{ targetContent: 'Hello', translationStatus: 'failed' }],
+        undefined,
+        'Translation failed',
+      ],
+    ]) {
+      providerService.translateWithProvider = async () => results;
+      let translation;
+      let failure;
+      try {
+        translation = (
+          await testTranslation({ ...provider(), type: 'openai' }, 'en', 'zh')
+        ).translation;
+      } catch (error) {
+        failure = error.message;
+      }
+      ok(
+        translation === expectedTranslation && failure === expectedError,
+        `provider test handles result shape ${JSON.stringify(results)}`,
+      );
+    }
+  } finally {
+    providerService.translateWithProvider = originalTranslate;
+  }
+}
+
 async function main() {
   console.log('offline: real handleAIBatchTranslation flow');
   try {
@@ -456,6 +580,8 @@ async function main() {
     await testPromotedExactCopyFallsBackToOriginal();
     await testAutoSourceLanguageStillDetectsCopies();
     await testSameScriptWeakEvidenceStaysAccepted();
+    await testProviderTestResults();
+    await testLegacyProviderResultShapes();
   } finally {
     Module._load = originalLoad;
     if (originalTsLoader) require.extensions['.ts'] = originalTsLoader;
