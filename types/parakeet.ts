@@ -2,6 +2,7 @@ export const PARAKEET_MODEL_IDS = [
   'parakeet-tdt-0.6b-v3',
   'parakeet-tdt-0.6b-v2',
   'parakeet-tdt_ctc-0.6b-ja',
+  'orukeet-v0.1.0-int8',
 ] as const;
 
 export type ParakeetModelId = (typeof PARAKEET_MODEL_IDS)[number];
@@ -11,7 +12,7 @@ export const PARAKEET_DEFAULT_MODEL_ID: ParakeetModelId =
 export interface ParakeetModelDefinition {
   modelType: 'nemo_transducer' | 'nemo_ctc';
   languages: readonly string[];
-  license: 'CC-BY-4.0';
+  license: 'CC-BY-4.0' | 'CC-BY-SA-4.0';
   supportsPunctuation: boolean;
 }
 
@@ -61,6 +62,38 @@ export const PARAKEET_MODEL_DEFINITIONS: Record<
     modelType: 'nemo_ctc',
     languages: ['ja'],
     license: 'CC-BY-4.0',
+    supportsPunctuation: true,
+  },
+  'orukeet-v0.1.0-int8': {
+    modelType: 'nemo_transducer',
+    languages: [
+      'bg',
+      'hr',
+      'cs',
+      'da',
+      'nl',
+      'en',
+      'et',
+      'fi',
+      'fr',
+      'de',
+      'el',
+      'hu',
+      'it',
+      'lv',
+      'lt',
+      'mt',
+      'pl',
+      'pt',
+      'ro',
+      'sk',
+      'sl',
+      'es',
+      'sv',
+      'ru',
+      'uk',
+    ],
+    license: 'CC-BY-SA-4.0',
     supportsPunctuation: true,
   },
 };

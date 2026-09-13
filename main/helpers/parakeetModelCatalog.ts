@@ -29,8 +29,8 @@ export function getParakeetModelsRoot(): string {
   return root;
 }
 
-/** 官方 sherpa-onnx release 整包下载源。 */
-export type ParakeetModelSource = 'ghproxy' | 'github';
+/** 模型整包下载源。 */
+export type ParakeetModelSource = 'ghproxy' | 'github' | 'huggingface';
 
 /** 国内默认使用 GitHub 代理，失败时自动回退 GitHub。 */
 export const PARAKEET_DEFAULT_SOURCE: ParakeetModelSource = 'ghproxy';
@@ -39,7 +39,10 @@ const PARAKEET_SOURCE_ORDER: ParakeetModelSource[] = ['ghproxy', 'github'];
 
 export function getParakeetSourceOrder(
   selected: ParakeetModelSource,
+  spec?: ParakeetModelSpec,
 ): ParakeetModelSource[] {
+  if (spec?.huggingFace) return ['huggingface'];
+  if (selected === 'huggingface') return [...PARAKEET_SOURCE_ORDER];
   return [
     selected,
     ...PARAKEET_SOURCE_ORDER.filter((source) => source !== selected),
@@ -53,10 +56,15 @@ export interface ParakeetModelSpec extends ParakeetModelDefinition {
   languageCount: number;
   /** 用于解包进度估算。 */
   approxInstallBytes: number;
-  releasePath: string;
+  releasePath?: string;
   archiveName: string;
   archiveInnerDir: string;
   requiredFiles: string[];
+  huggingFace?: {
+    baseUrl: string;
+    manifestSha256: string;
+    archiveSha256: string;
+  };
 }
 
 const PARAKEET_RELEASE_PATH = 'k2-fsa/sherpa-onnx/releases/download/asr-models';
@@ -109,12 +117,43 @@ export const PARAKEET_MODELS: Record<ParakeetModelId, ParakeetModelSpec> = {
     archiveInnerDir: 'sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8',
     requiredFiles: ['model.int8.onnx', 'tokens.txt'],
   },
+  'orukeet-v0.1.0-int8': {
+    ...PARAKEET_MODEL_DEFINITIONS['orukeet-v0.1.0-int8'],
+    id: 'orukeet-v0.1.0-int8',
+    dirName: 'orukeet-v0.1.0-int8',
+    upstreamModel: 'oruk/orukeet',
+    languageCount: 25,
+    approxInstallBytes: 671_619_800,
+    archiveName: 'sherpa-onnx-orukeet-v0.1.0-int8.tar.bz2',
+    archiveInnerDir: 'sherpa-onnx-orukeet-v0.1.0-int8',
+    requiredFiles: [
+      'encoder.int8.onnx',
+      'decoder.int8.onnx',
+      'joiner.int8.onnx',
+      'tokens.txt',
+      'bpe.vocab',
+      'LICENSE-WEIGHTS',
+      'NOTICE.md',
+    ],
+    huggingFace: {
+      baseUrl:
+        'https://huggingface.co/oruk/orukeet/resolve/55a984d46f68323301837194ce647c702f55facc/onnx',
+      manifestSha256:
+        '7e80f93f0e9b923c392424b0f85d28a717feee0a4d2a6aa9bfa723693868e727',
+      archiveSha256:
+        'f9191f30178cc9122ce2f023bf9fefafc822028307b0efa4caff645ba3fe8d0a',
+    },
+  },
 };
 
 export function getParakeetArchiveUrl(
   spec: ParakeetModelSpec,
   source: ParakeetModelSource,
 ): string {
+  if (spec.huggingFace) {
+    return `${spec.huggingFace.baseUrl}/${spec.archiveName}`;
+  }
+  if (!spec.releasePath) throw new Error('Model release source is missing');
   const github = `${getGithubBase()}/${spec.releasePath}/${spec.archiveName}`;
   return source === 'ghproxy' ? `${getGithubProxyPrefix()}/${github}` : github;
 }

@@ -24,7 +24,7 @@ import {
   type ParakeetModelId,
 } from '../../../types/parakeet';
 
-type ParakeetModelSource = 'ghproxy' | 'github';
+type ParakeetModelSource = 'ghproxy' | 'github' | 'huggingface';
 
 const PARAKEET_MODEL_SOURCES: ParakeetModelSource[] = ['ghproxy', 'github'];
 const PARAKEET_SOURCE_STORAGE_KEY = 'parakeetModelDownloadSource';
@@ -105,19 +105,26 @@ const ParakeetModelSection: React.FC<{ onUpdate?: () => void }> = ({
     };
   }, [load, onUpdate]);
 
-  const sourceConfig: DownloadSourceConfig = {
-    value: source,
-    options: PARAKEET_MODEL_SOURCES.map((item) => ({
+  const modelSource = (id: ParakeetModelId): ParakeetModelSource =>
+    id === 'orukeet-v0.1.0-int8' ? 'huggingface' : source;
+
+  const sourceConfig = (id: ParakeetModelId): DownloadSourceConfig => ({
+    value: modelSource(id),
+    options: (id === 'orukeet-v0.1.0-int8'
+      ? ['huggingface']
+      : PARAKEET_MODEL_SOURCES
+    ).map((item) => ({
       value: item,
       label: t(`engines.parakeet.modelSources.${item}`),
     })),
-    onChange: (next) => handleSelectSource(next as ParakeetModelSource),
+    onChange: (next) => {
+      if (next === 'github' || next === 'ghproxy') handleSelectSource(next);
+    },
     label: t('engines.parakeet.downloadSource'),
     confirmLabel: commonT('startDownload'),
-    hint: t(`engines.parakeet.modelSourceHint.${source}`),
-    getCopyUrl: (next) =>
-      resolveModelDownloadUrl('parakeet', next, confirmId || undefined),
-  };
+    hint: t(`engines.parakeet.modelSourceHint.${modelSource(id)}`),
+    getCopyUrl: (next) => resolveModelDownloadUrl('parakeet', next, id),
+  });
 
   const handleDownload = async (id: ParakeetModelId) => {
     setConfirmId(null);
@@ -126,7 +133,7 @@ const ParakeetModelSection: React.FC<{ onUpdate?: () => void }> = ({
     try {
       const result = await window?.ipc?.invoke('downloadParakeetModel', {
         model: id,
-        source,
+        source: modelSource(id),
       });
       if (result?.success) {
         await load();
@@ -241,7 +248,7 @@ const ParakeetModelSection: React.FC<{ onUpdate?: () => void }> = ({
                       <DownloadSourcePopover
                         open={confirmId === id}
                         onOpenChange={(open) => setConfirmId(open ? id : null)}
-                        config={sourceConfig}
+                        config={sourceConfig(id)}
                         onConfirm={() => handleDownload(id)}
                       >
                         <Button

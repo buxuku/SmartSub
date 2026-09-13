@@ -1571,17 +1571,45 @@ for (const id of PARAKEET_MODEL_IDS) {
     spec.languages.length,
     `parakeet: ${id} language metadata`,
   );
-  eq(
-    getParakeetArchiveUrl(spec, 'github'),
-    `https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/${spec.archiveInnerDir}.tar.bz2`,
-    `parakeet: ${id} archive`,
-  );
+  if (!spec.huggingFace) {
+    eq(
+      getParakeetArchiveUrl(spec, 'github'),
+      `https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/${spec.archiveInnerDir}.tar.bz2`,
+      `parakeet: ${id} archive`,
+    );
+  }
   eq(
     resolveParakeetSelection(id, [...PARAKEET_MODEL_IDS]),
     { id },
     `parakeet: explicit ${id} preserved`,
   );
 }
+const ORUKEET = 'orukeet-v0.1.0-int8';
+eq(
+  getParakeetArchiveUrl(PARAKEET_MODELS[ORUKEET], 'ghproxy'),
+  'https://huggingface.co/oruk/orukeet/resolve/55a984d46f68323301837194ce647c702f55facc/onnx/sherpa-onnx-orukeet-v0.1.0-int8.tar.bz2',
+  'orukeet: pinned canonical archive regardless of saved GitHub source',
+);
+eq(
+  getParakeetSourceOrder('ghproxy', PARAKEET_MODELS[ORUKEET]),
+  ['huggingface'],
+  'orukeet: no unrelated mirror fallback',
+);
+eq(
+  PARAKEET_MODELS[ORUKEET].license,
+  'CC-BY-SA-4.0',
+  'orukeet: distinct weight license',
+);
+eq(
+  isParakeetLanguageMismatch(ORUKEET, 'ja'),
+  true,
+  'orukeet: Japanese unsupported',
+);
+eq(
+  isParakeetLanguageMismatch(ORUKEET, 'en'),
+  false,
+  'orukeet: English supported',
+);
 eq(
   getParakeetSourceOrder('github'),
   ['github', 'ghproxy'],
