@@ -745,17 +745,24 @@ export class PyEngineDownloader {
     remoteManifest: RemoteEngineManifest | null,
     variant: PyEngineVariant,
   ): PyEngineManifest {
+    // 若远端全局 manifest 因网络超时等原因获取失败（remoteManifest 为 null），
+    // 自动回退从包内自带的 manifest.json 读取版本与协议元数据，避免丢失版本信息
+    const embedded = readEngineManifest(this.engineId);
     return {
-      version: remoteManifest?.engineVersion ?? PY_ENGINE_TAG,
+      version:
+        remoteManifest?.engineVersion ??
+        embedded?.engineVersion ??
+        PY_ENGINE_TAG,
       platform: getPyEngineArtifactSuffix(),
       sha256,
       installedAt: new Date().toISOString(),
-      engineVersion: remoteManifest?.engineVersion,
-      protocolVersion: remoteManifest?.protocolVersion,
-      builtAt: remoteManifest?.builtAt,
-      gitSha: remoteManifest?.gitSha,
+      engineVersion: remoteManifest?.engineVersion ?? embedded?.engineVersion,
+      protocolVersion:
+        remoteManifest?.protocolVersion ?? embedded?.protocolVersion,
+      builtAt: remoteManifest?.builtAt ?? embedded?.builtAt,
+      gitSha: remoteManifest?.gitSha ?? embedded?.gitSha,
       engineId: this.engineId,
-      pythonAbi: remoteManifest?.pythonAbi ?? 'cp312',
+      pythonAbi: remoteManifest?.pythonAbi ?? embedded?.pythonAbi ?? 'cp312',
       variant,
     };
   }
