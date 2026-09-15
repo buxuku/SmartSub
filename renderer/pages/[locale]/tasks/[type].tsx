@@ -104,6 +104,7 @@ export default function TaskPage() {
   } | null>(null);
   const [taskStatus, setTaskStatus] = useState('idle');
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [refinePopoverOpen, setRefinePopoverOpen] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   /** 固定任务的配置快照（附加阶段/参考文稿）：阶段轨道与横幅按它渲染 */
   const [configSnapshot, setConfigSnapshot] = useState<any>(null);
@@ -814,6 +815,8 @@ export default function TaskPage() {
             asrProviders={asrProviders as any}
             typeDef={typeDef}
             useLocalWhisper={useLocalWhisper}
+            refineOpen={refinePopoverOpen}
+            onRefineOpenChange={setRefinePopoverOpen}
           />
         )}
       </div>
@@ -954,6 +957,12 @@ export default function TaskPage() {
             files={files}
             typeDef={typeDef}
             projectId={projectId}
+            providers={providers}
+            onOpenRefine={() => {
+              setRefinePopoverOpen(true);
+              const el = document.getElementById('ai-refine-control-container');
+              el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }}
             onStatusChange={handleStatusChange}
             onTaskDispatched={handleTaskDispatched}
             autoStart={autoStartPending}

@@ -30,7 +30,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Sparkles, TriangleAlert } from 'lucide-react';
 import { cn } from 'lib/utils';
-import { isProviderConfigured } from 'lib/providerUtils';
+import { validateRefineProviderConfig } from 'lib/subtitleRefineValidation';
 import { isSherpaEngine } from 'lib/subtitleOutcome';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import { useTranslation } from 'next-i18next';
@@ -114,32 +114,32 @@ const AiRefineControl: React.FC<AiRefineControlProps> = ({
     }
   };
 
-  // 服务商解析预览（与主进程 resolveRefineProvider 同一语义，仅展示与就地提示）
+  // 服务商解析与校验（统一调用 subtitleRefineValidation）
   const refineSetting = formData?.refineProvider || 'follow-translation';
   const aiProviders = providers.filter((p) => p?.isAi);
   const translateProviderObj = providers.find(
     (p) => p?.id === formData?.translateProvider,
   );
-  const followResolvable = Boolean(
-    typeDef.hasTranslate &&
-      formData?.translateProvider !== '-1' &&
-      translateProviderObj?.isAi,
+  const translateOn = Boolean(
+    typeDef.hasTranslate && formData?.translateProvider !== '-1',
   );
+  const validation = validateRefineProviderConfig({
+    formData,
+    providers,
+    translateOn,
+  });
+  const followValidation = validateRefineProviderConfig({
+    formData: { ...formData, refineProvider: 'follow-translation' },
+    providers,
+    translateOn,
+  });
+  const followResolvable = followValidation.valid;
+
   const providerName = (p?: Provider) =>
     p ? tCommon(`provider.${p.name}`, { defaultValue: p.name }) : '';
 
   const needsProvider = segAiOn || corrOn;
-  const explicitProvider = providers.find((p) => p?.id === refineSetting);
-  const explicitResolvable = Boolean(
-    explicitProvider &&
-      explicitProvider.isAi &&
-      isProviderConfigured(explicitProvider as any),
-  );
-  const hasRefineError =
-    needsProvider &&
-    (refineSetting === 'follow-translation'
-      ? !followResolvable
-      : !explicitResolvable);
+  const hasRefineError = needsProvider && !validation.valid;
 
   const sherpaApprox =
     isSherpaEngine(formData?.transcriptionEngine) ||
@@ -326,12 +326,11 @@ const AiRefineControl: React.FC<AiRefineControlProps> = ({
                   {t('refine.provider.followBlocked')}
                 </p>
               )}
-              {refineSetting !== 'follow-translation' &&
-                !explicitResolvable && (
-                  <p className="text-xs text-destructive">
-                    {t('wizard.blockRefineProviderInvalid')}
-                  </p>
-                )}
+              {refineSetting !== 'follow-translation' && !validation.valid && (
+                <p className="text-xs text-destructive">
+                  {t('wizard.blockRefineProviderInvalid')}
+                </p>
+              )}
             </div>
           )}
         </PopoverContent>

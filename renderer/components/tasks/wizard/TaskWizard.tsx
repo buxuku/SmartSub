@@ -67,6 +67,10 @@ import {
   hasUnavailableParakeetModel,
 } from 'lib/engineModels';
 import { canStartParakeetTask } from 'lib/parakeetTask';
+import {
+  validateRefineProviderConfig,
+  getRefineValidationErrorMessage,
+} from 'lib/subtitleRefineValidation';
 import InlineConfigBar from '@/components/tasks/InlineConfigBar';
 import useSystemInfo from 'hooks/useStystemInfo';
 import useLocalFormConfig from 'hooks/useLocalFormConfig';
@@ -857,124 +861,92 @@ export default function TaskWizard() {
       list.push({ key: 'goal', text: t('wizard.blockNoGoal') });
     }
     // AI 字幕精修（openspec: add-ai-subtitle-refine D9 即时校验）：
-    // 开启精修但「跟随翻译服务」不可解析（翻译未开启/非 AI 类型）且未显式指定，
+    // 开启精修但跟随不可解析（翻译未开启/非 AI 类型）且未显式指定，
     // 或显式指定的服务商已失效 → 阻断开始，避免运行时才降级。
-    if (
-      inputKind === 'media' &&
-      (formData?.aiSegmentation === true || formData?.aiCorrection === true)
-    ) {
-      const isSegOn = formData?.aiSegmentation === true;
-      const isCorrOn = formData?.aiCorrection === true;
-      const featureName =
-        isSegOn && isCorrOn
-          ? t('wizard.refineFeatureBoth')
-          : isCorrOn
-            ? t('wizard.refineFeatureCorrection')
-            : t('wizard.refineFeatureSegmentation');
+    if (inputKind === 'media') {
+      const refineValidation = validateRefineProviderConfig({
+        formData,
+        providers,
+        translateOn,
+      });
 
-      const refineSetting = formData?.refineProvider || 'follow-translation';
-      if (refineSetting === 'follow-translation') {
-        const tp = providers.find(
-          (p: any) => p.id === formData?.translateProvider,
+      if (!refineValidation.valid) {
+        const text = getRefineValidationErrorMessage(
+          refineValidation,
+          t,
+          commonT,
         );
-        if (!translateOn || !tp?.isAi) {
-          const providerDisplayName = tp
-            ? commonT(`provider.${tp.name}`, { defaultValue: tp.name })
-            : '';
-          const text = !translateOn
-            ? t('wizard.blockRefineFollowTranslationOff', {
-                feature: featureName,
-              })
-            : t('wizard.blockRefineFollowNeedsAi', {
-                feature: featureName,
-                provider: providerDisplayName,
-              });
+        const actions: BlockerAction[] = [];
 
-          const actions: BlockerAction[] = [];
-
-          // 快捷操作 A：一键关闭（解除阻断）
-          if (isSegOn && isCorrOn) {
-            actions.push({
-              label: t('wizard.refineActionDisableBoth'),
-              onClick: () => {
-                form.setValue('aiSegmentation', false, { shouldDirty: true });
-                form.setValue('aiCorrection', false, { shouldDirty: true });
-              },
-            });
-          } else if (isCorrOn) {
-            actions.push({
-              label: t('wizard.refineActionDisableCorrection'),
-              onClick: () => {
-                form.setValue('aiCorrection', false, { shouldDirty: true });
-              },
-            });
-          } else if (isSegOn) {
-            actions.push({
-              label: t('wizard.refineActionDisableSegmentation'),
-              onClick: () => {
-                form.setValue('aiSegmentation', false, { shouldDirty: true });
-              },
-            });
-          }
-
-          // 快捷操作 B：一键选用已配置的 AI 服务商（如果存在）
-          const availableAiProviders = providers.filter(
-            (p: any) => p?.isAi && isProviderConfigured(p),
-          );
-          if (availableAiProviders.length > 0) {
-            const candidate = availableAiProviders[0];
-            const candidateName = commonT(`provider.${candidate.name}`, {
-              defaultValue: candidate.name,
-            });
-            actions.push({
-              label: t('wizard.refineActionUseProvider', {
-                name: candidateName,
-              }),
-              onClick: () => {
-                form.setValue('refineProvider', candidate.id, {
-                  shouldDirty: true,
-                });
-              },
-            });
-          }
-
-          // 快捷操作 C：调整精修配置（唤起弹层并平滑滚动到控件）
+        // 快捷操作 A：一键关闭（解除阻断）
+        if (refineValidation.feature === 'both') {
           actions.push({
-            label: t('wizard.refineActionAdjust'),
+            label: t('wizard.refineActionDisableBoth'),
             onClick: () => {
-              setRefinePopoverOpen(true);
-              const el = document.getElementById('ai-refine-control-container');
-              el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              form.setValue('aiSegmentation', false, { shouldDirty: true });
+              form.setValue('aiCorrection', false, { shouldDirty: true });
             },
           });
+        } else if (refineValidation.feature === 'correction') {
+          actions.push({
+            label: t('wizard.refineActionDisableCorrection'),
+            onClick: () => {
+              form.setValue('aiCorrection', false, { shouldDirty: true });
+            },
+          });
+        } else if (refineValidation.feature === 'segmentation') {
+          actions.push({
+            label: t('wizard.refineActionDisableSegmentation'),
+            onClick: () => {
+              form.setValue('aiSegmentation', false, { shouldDirty: true });
+            },
+          });
+        }
 
-          list.push({
-            key: 'refine',
-            text,
-            actions,
+        // 快捷操作 B：一键选用已配置的 AI 服务商（如果存在）
+        const availableAiProviders = providers.filter(
+          (p: any) => p?.isAi && isProviderConfigured(p),
+        );
+        if (availableAiProviders.length > 0) {
+          const candidate =
+            availableAiProviders.find(
+              (p: any) => p.id !== formData?.refineProvider,
+            ) || availableAiProviders[0];
+          const candidateName = commonT(`provider.${candidate.name}`, {
+            defaultValue: candidate.name,
+          });
+          actions.push({
+            label: t('wizard.refineActionUseProvider', {
+              name: candidateName,
+            }),
+            onClick: () => {
+              form.setValue('refineProvider', candidate.id, {
+                shouldDirty: true,
+              });
+            },
           });
         }
-      } else {
-        const rp = providers.find((p: any) => p.id === refineSetting);
-        if (!rp?.isAi || !isProviderConfigured(rp)) {
-          list.push({
-            key: 'refine',
-            text: t('wizard.blockRefineProviderInvalid'),
-            href: `/${locale}/translation`,
-            actions: [
-              {
-                label: t('wizard.refineActionAdjust'),
-                onClick: () => {
-                  setRefinePopoverOpen(true);
-                  const el = document.getElementById(
-                    'ai-refine-control-container',
-                  );
-                  el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                },
-              },
-            ],
-          });
-        }
+
+        // 快捷操作 C：调整精修配置（唤起弹层并平滑滚动到控件）
+        actions.push({
+          label: t('wizard.refineActionAdjust'),
+          onClick: () => {
+            setRefinePopoverOpen(true);
+            const el = document.getElementById('ai-refine-control-container');
+            el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          },
+        });
+
+        list.push({
+          key: 'refine',
+          text,
+          actions,
+          href:
+            refineValidation.reason === 'provider-invalid' ||
+            refineValidation.reason === 'provider-unconfigured'
+              ? `/${locale}/translation`
+              : undefined,
+        });
       }
     }
     return list;

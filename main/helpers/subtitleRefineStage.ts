@@ -23,6 +23,7 @@ import { readWordTimelineSidecar } from './wordTimelineSidecar';
 import { collectSuspectWords } from './subtitleRefine/wordSources';
 import { runAiSegmentation } from './subtitleRefine/segmentationRunner';
 import { runAiCorrection } from './subtitleRefine/correctionRunner';
+import { isProviderConfigured } from '../../types/provider';
 import type { Provider } from '../translate/types';
 import type { IFiles } from '../../types';
 
@@ -85,6 +86,13 @@ export function resolveRefineProvider(
         reason: `翻译服务商 ${provider.name} 非 AI 类型，「跟随翻译服务」无法解析`,
       };
     }
+    if (!isProviderConfigured(provider as any)) {
+      return {
+        provider: null,
+        source: 'follow',
+        reason: `翻译服务商 ${provider.name} 未完成配置，「跟随翻译服务」无法解析`,
+      };
+    }
     return { provider, source: 'follow' };
   }
   const provider = providers.find((p) => p.id === setting);
@@ -100,6 +108,13 @@ export function resolveRefineProvider(
       provider: null,
       source: 'explicit',
       reason: `精修服务商 ${provider.name} 非 AI 类型`,
+    };
+  }
+  if (!isProviderConfigured(provider as any)) {
+    return {
+      provider: null,
+      source: 'explicit',
+      reason: `精修服务商 ${provider.name} 未完成配置`,
     };
   }
   return { provider, source: 'explicit' };
