@@ -149,6 +149,7 @@ const EngineModelTab: React.FC = () => {
   const taskBusyRef = useRef(false);
   const [updateInfo, setUpdateInfo] = useState<PyEngineUpdateInfo | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   // 运行库（sherpa-onnx）随包内置，不再做安装检测；各族状态只看「是否已下载模型」。
   const [funasrModelsReady, setFunasrModelsReady] = useState(false);
   const [qwenModelsReady, setQwenModelsReady] = useState(false);
@@ -414,6 +415,47 @@ const EngineModelTab: React.FC = () => {
       await refresh();
     } else {
       toast.error(result?.error || 'Failed to uninstall');
+    }
+  };
+
+  const handleImportRuntime = async () => {
+    setIsImporting(true);
+    try {
+      const result = await window?.ipc?.invoke('import-py-engine');
+      if (result?.canceled) return;
+      if (result?.success) {
+        toast.success(
+          t('engines.fasterWhisper.importSuccess', {
+            variant: t(
+              `engines.fasterWhisper.variant.${result.variant || 'cpu'}`,
+            ),
+          }),
+        );
+        if (result.variant === 'cuda') {
+          setDevice('auto');
+          try {
+            await window?.ipc?.invoke('set-faster-whisper-settings', {
+              device: 'auto',
+            });
+          } catch {}
+        }
+        await refresh();
+      } else {
+        toast.error(
+          t('engines.fasterWhisper.importFailed', {
+            error: result?.error || 'Unknown error',
+          }),
+        );
+      }
+    } catch (e) {
+      toast.error(
+        t('engines.fasterWhisper.importFailed', {
+          error: String(e),
+        }),
+      );
+    } finally {
+      setIsImporting(false);
+      await refresh();
     }
   };
 
@@ -689,6 +731,8 @@ const EngineModelTab: React.FC = () => {
     onUpgrade: handleUpgrade,
     onDeviceChange: handleDeviceChange,
     onComputeTypeChange: handleComputeTypeChange,
+    onImport: handleImportRuntime,
+    isImporting,
   };
 
   // 新建自定义 OpenAI 兼容实例并跳转到其条目（名称必填，Base URL 可选）。

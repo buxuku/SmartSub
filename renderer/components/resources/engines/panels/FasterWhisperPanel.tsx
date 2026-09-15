@@ -31,6 +31,7 @@ import {
   Info,
   Cpu,
   Zap,
+  FolderInput,
 } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { formatSize } from '@/components/settings/gpu/gpuUtils';
@@ -93,6 +94,9 @@ interface FasterWhisperPanelProps {
   onUpgrade: () => void;
   onDeviceChange: (v: string) => void;
   onComputeTypeChange: (v: string) => void;
+  /** 本地导入运行时 */
+  onImport?: () => void;
+  isImporting?: boolean;
 }
 
 const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
@@ -123,6 +127,8 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
   onUpgrade,
   onDeviceChange,
   onComputeTypeChange,
+  onImport,
+  isImporting = false,
 }) => {
   const { t } = useTranslation('resources');
   // 下载/修复 与 升级 各自的「下载源」气泡开关（点击对应按钮时弹出选源）。
@@ -249,40 +255,72 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
           !isDownloading &&
           !fasterBroken &&
           !showVerifying && (
+            <>
+              <DownloadSourcePopover
+                open={installPickerOpen}
+                onOpenChange={setInstallPickerOpen}
+                config={binarySourceConfig}
+                onConfirm={onDownload}
+              >
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setInstallPickerOpen(true)}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  {t('engines.fasterWhisper.download', {
+                    size: variantSize(selectedVariant),
+                  })}
+                </Button>
+              </DownloadSourcePopover>
+              {onImport && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  disabled={taskBusy || isImporting}
+                  onClick={onImport}
+                >
+                  <FolderInput className="h-3.5 w-3.5" />
+                  {isImporting
+                    ? t('engines.fasterWhisper.importing')
+                    : t('engines.fasterWhisper.importRuntime')}
+                </Button>
+              )}
+            </>
+          )}
+        {fasterBroken && (
+          <>
             <DownloadSourcePopover
               open={installPickerOpen}
               onOpenChange={setInstallPickerOpen}
               config={binarySourceConfig}
-              onConfirm={onDownload}
+              onConfirm={onRepair}
             >
               <Button
                 size="sm"
                 className="gap-1.5"
                 onClick={() => setInstallPickerOpen(true)}
               >
-                <Download className="h-3.5 w-3.5" />
-                {t('engines.fasterWhisper.download', {
-                  size: variantSize(selectedVariant),
-                })}
+                <RefreshCw className="h-3.5 w-3.5" />
+                {t('engines.fasterWhisper.repair')}
               </Button>
             </DownloadSourcePopover>
-          )}
-        {fasterBroken && (
-          <DownloadSourcePopover
-            open={installPickerOpen}
-            onOpenChange={setInstallPickerOpen}
-            config={binarySourceConfig}
-            onConfirm={onRepair}
-          >
-            <Button
-              size="sm"
-              className="gap-1.5"
-              onClick={() => setInstallPickerOpen(true)}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              {t('engines.fasterWhisper.repair')}
-            </Button>
-          </DownloadSourcePopover>
+            {onImport && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                disabled={taskBusy || isImporting}
+                onClick={onImport}
+              >
+                <FolderInput className="h-3.5 w-3.5" />
+                {isImporting
+                  ? t('engines.fasterWhisper.importing')
+                  : t('engines.fasterWhisper.importRuntime')}
+              </Button>
+            )}
+          </>
         )}
         {fasterBroken && uninstallButton}
       </div>
@@ -341,6 +379,20 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
             <span className="text-xs text-destructive">
               {t('engines.fasterWhisper.protocolUnsupported')}
             </span>
+          )}
+          {onImport && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              disabled={taskBusy || isImporting}
+              onClick={onImport}
+            >
+              <FolderInput className="h-3.5 w-3.5" />
+              {isImporting
+                ? t('engines.fasterWhisper.importing')
+                : t('engines.fasterWhisper.importRuntime')}
+            </Button>
           )}
           <span className="ml-auto">{uninstallButton}</span>
         </div>
