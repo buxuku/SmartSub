@@ -349,7 +349,9 @@ const EngineModelTab: React.FC = () => {
       toast.error(
         result?.error === 'engine_busy'
           ? t('engines.fasterWhisper.engineBusy')
-          : result?.error || 'Failed to start download',
+          : result?.error === 'operation_in_progress'
+            ? t('engines.fasterWhisper.operationInProgress')
+            : result?.error || 'Failed to start download',
       );
       return;
     }
@@ -414,7 +416,13 @@ const EngineModelTab: React.FC = () => {
       setUpdateInfo(null);
       await refresh();
     } else {
-      toast.error(result?.error || 'Failed to uninstall');
+      toast.error(
+        result?.error === 'engine_busy'
+          ? t('engines.fasterWhisper.engineBusy')
+          : result?.error === 'operation_in_progress'
+            ? t('engines.fasterWhisper.operationInProgress')
+            : result?.error || 'Failed to uninstall',
+      );
     }
   };
 
@@ -441,9 +449,15 @@ const EngineModelTab: React.FC = () => {
         }
         await refresh();
       } else {
+        const errorMsg =
+          result?.error === 'engine_busy'
+            ? t('engines.fasterWhisper.engineBusy')
+            : result?.error === 'operation_in_progress'
+              ? t('engines.fasterWhisper.operationInProgress')
+              : result?.error || 'Unknown error';
         toast.error(
           t('engines.fasterWhisper.importFailed', {
-            error: result?.error || 'Unknown error',
+            error: errorMsg,
           }),
         );
       }
@@ -600,6 +614,13 @@ const EngineModelTab: React.FC = () => {
     }
     const engine = view;
     if (engine === 'fasterWhisper') {
+      if (isImporting) {
+        return (
+          <Badge variant="secondary" className="shrink-0">
+            {t('engines.fasterWhisper.importing')}
+          </Badge>
+        );
+      }
       if (isDownloading) {
         return (
           <Badge variant="secondary" className="shrink-0">

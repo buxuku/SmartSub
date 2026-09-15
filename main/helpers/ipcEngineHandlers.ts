@@ -83,6 +83,9 @@ export function registerEngineIpcHandlers(): void {
           coerceEngineId(engineId),
           mainWindow || undefined,
         );
+        if (downloader.isBusy()) {
+          return { success: false, error: 'operation_in_progress' };
+        }
         // 不支持 cuda 的平台（macOS）会被 normalize 收敛为 cpu，避免下载不存在的产物。
         downloader
           .download(source, normalizePyEngineVariant(variant))
@@ -168,11 +171,18 @@ export function registerEngineIpcHandlers(): void {
         if (isTranscriptionBusy()) {
           return { success: false, error: 'engine_busy' };
         }
+        const engineId = coerceEngineId(payload?.engineId);
+        const downloader = getPyEngineDownloader(
+          engineId,
+          mainWindow || undefined,
+        );
+        if (downloader.isBusy()) {
+          return { success: false, error: 'operation_in_progress' };
+        }
         await shutdownPythonRuntime();
 
         // 整个引擎包目录（含内部 manifest.json）一并删除即回到未安装态；
         // 变体切换驻留的副本一并清理，避免卸载后残留大体积目录。
-        const engineId = coerceEngineId(payload?.engineId);
         const engineDir = getEngineDir(engineId);
         if (fs.existsSync(engineDir)) {
           fs.rmSync(engineDir, { recursive: true, force: true });
@@ -205,6 +215,15 @@ export function registerEngineIpcHandlers(): void {
         if (isTranscriptionBusy()) {
           return { success: false, error: 'engine_busy' };
         }
+        const engineId = coerceEngineId(payload?.engineId);
+        const downloader = getPyEngineDownloader(
+          engineId,
+          mainWindow || undefined,
+        );
+        if (downloader.isBusy()) {
+          return { success: false, error: 'operation_in_progress' };
+        }
+
         let sourcePath = payload?.sourcePath;
         if (!sourcePath) {
           const properties: Array<'openFile' | 'openDirectory'> =
@@ -228,11 +247,6 @@ export function registerEngineIpcHandlers(): void {
           sourcePath = picked.filePaths[0];
         }
 
-        const engineId = coerceEngineId(payload?.engineId);
-        const downloader = getPyEngineDownloader(
-          engineId,
-          mainWindow || undefined,
-        );
         return await downloader.importRuntime(sourcePath);
       } catch (error) {
         logMessage(`Error importing py-engine: ${error}`, 'error');
