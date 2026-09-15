@@ -181,8 +181,9 @@ const TaskControls = ({
         if (!refineValidation.valid) {
           const msg = getRefineValidationErrorMessage(
             refineValidation,
-            (key: string, opts?: any) => t(`tasks:${key}` as any, opts),
-            (key: string, opts?: any) => t(`common:${key}` as any, opts),
+            (key: string, opts?: any) => String(t(`tasks:${key}` as any, opts)),
+            (key: string, opts?: any) =>
+              String(t(`common:${key}` as any, opts)),
           );
           toast.error(msg, {
             action: onOpenRefine

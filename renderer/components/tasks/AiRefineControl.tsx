@@ -38,6 +38,7 @@ import { useTranslation } from 'next-i18next';
 interface Provider {
   id: string;
   name: string;
+  type?: string;
   isAi?: boolean;
   [key: string]: any;
 }
