@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, dialog } from 'electron';
 import fs from 'fs';
 import { logMessage, store } from './storeManager';
 import { listEngineAdapters } from './engines/registry';
@@ -188,6 +188,58 @@ export function registerEngineIpcHandlers(): void {
       } catch (error) {
         logMessage(`Error uninstalling py-engine: ${error}`, 'error');
         return { success: false, error: String(error) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'import-py-engine',
+    async (
+      _event,
+      payload?: {
+        engineId?: PyEngineId;
+        sourcePath?: string;
+      },
+    ) => {
+      try {
+        if (isTranscriptionBusy()) {
+          return { success: false, error: 'engine_busy' };
+        }
+        let sourcePath = payload?.sourcePath;
+        if (!sourcePath) {
+          const properties: Array<'openFile' | 'openDirectory'> =
+            process.platform === 'darwin'
+              ? ['openFile', 'openDirectory']
+              : ['openFile'];
+          const picked = await dialog.showOpenDialog(mainWindow ?? undefined, {
+            title: '选择 faster-whisper 运行时压缩包或目录',
+            properties,
+            filters: [
+              {
+                name: 'Runtime Package',
+                extensions: ['tar.gz', 'tgz', 'gz', 'tar', 'zip'],
+              },
+              { name: 'All Files', extensions: ['*'] },
+            ],
+          });
+          if (picked.canceled || picked.filePaths.length === 0) {
+            return { success: false, canceled: true };
+          }
+          sourcePath = picked.filePaths[0];
+        }
+
+        const engineId = coerceEngineId(payload?.engineId);
+        const downloader = getPyEngineDownloader(
+          engineId,
+          mainWindow || undefined,
+        );
+        return await downloader.importRuntime(sourcePath);
+      } catch (error) {
+        logMessage(`Error importing py-engine: ${error}`, 'error');
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
     },
   );
