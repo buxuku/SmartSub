@@ -172,9 +172,14 @@ function isDetectSkippableError(error: unknown): boolean {
     'insufficient',
     'enotfound',
     'econnrefused',
+    'econnreset',
     'eai_again',
     'etimedout',
     'timeout',
+    'timed out',
+    'connection error',
+    'network error',
+    'socket hang up',
     'fetch failed',
     '配置不完整',
   ].some((keyword) => raw.includes(keyword));
@@ -631,7 +636,11 @@ const ProvidersTab: React.FC = () => {
               }),
             );
             return;
-          } catch {
+          } catch (retryError) {
+            if (isDetectSkippableError(retryError)) {
+              error = retryError;
+              break;
+            }
             // 该模式也不行，继续下一个
           }
         }

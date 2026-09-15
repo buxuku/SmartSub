@@ -57,6 +57,12 @@ jobs:
       - name: Integration tests (translation proxy and failure reporting)
         run: yarn test:translation-proxy
 
+      - name: Integration tests (translation results)
+        run: yarn test:untranslated-flow
+
+      - name: Tests (provider connection test UI flow)
+        run: yarn test:provider-test-flow
+
       - name: Unit tests (free translators)
         run: yarn test:free-translators
 
