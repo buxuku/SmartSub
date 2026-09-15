@@ -10,6 +10,10 @@ import { useHotkeys } from 'hooks/useHotkeys';
 import { isProviderConfigured } from 'lib/providerUtils';
 import { canStartParakeetTask } from 'lib/parakeetTask';
 import {
+  validateRefineProviderConfig,
+  getRefineValidationErrorMessage,
+} from 'lib/subtitleRefineValidation';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -26,6 +30,10 @@ interface TaskControlsProps {
   typeDef: TaskTypeDef;
   projectId: string | null;
   className?: string;
+  /** 可选：任务页传入已缓存的翻译服务商列表，避免每次校验重新发起 IPC */
+  providers?: any[];
+  /** 可选：当阻断原因是精修配置异常时，唤起精修配置弹层并滚动聚焦 */
+  onOpenRefine?: () => void;
   /** 可选：状态变化时上抛（任务页用于联动重试按钮/完成横幅） */
   onStatusChange?: (status: string) => void;
   /** 任务成功派发时回传本轮配置；需要固定快照的任务可立即切换为只读展示。 */
@@ -41,6 +49,8 @@ const TaskControls = ({
   typeDef,
   projectId,
   className,
+  providers: cachedProviders,
+  onOpenRefine,
   onStatusChange,
   onTaskDispatched,
   autoStart,
@@ -155,45 +165,35 @@ const TaskControls = ({
         needsTranscription &&
         (formData?.aiSegmentation === true || formData?.aiCorrection === true)
       ) {
-        const providers =
-          (await window?.ipc?.invoke('getTranslationProviders')) || [];
-        const refineSetting = formData?.refineProvider || 'follow-translation';
-        if (refineSetting === 'follow-translation') {
-          const translateOn =
-            Boolean(formData?.translateProvider) &&
-            formData?.translateProvider !== '-1';
-          const tp = providers.find(
-            (p: any) => p.id === formData?.translateProvider,
+        const availableProviders =
+          cachedProviders ??
+          (await window?.ipc?.invoke('getTranslationProviders')) ??
+          [];
+        const translateOn =
+          Boolean(formData?.translateProvider) &&
+          formData?.translateProvider !== '-1';
+        const refineValidation = validateRefineProviderConfig({
+          formData,
+          providers: availableProviders,
+          translateOn,
+        });
+
+        if (!refineValidation.valid) {
+          const msg = getRefineValidationErrorMessage(
+            refineValidation,
+            (key: string, opts?: any) => t(`tasks:${key}` as any, opts),
+            (key: string, opts?: any) => t(`common:${key}` as any, opts),
           );
-          if (!translateOn || !tp?.isAi) {
-            const isSegOn = formData?.aiSegmentation === true;
-            const isCorrOn = formData?.aiCorrection === true;
-            const featureName =
-              isSegOn && isCorrOn
-                ? t('tasks:wizard.refineFeatureBoth')
-                : isCorrOn
-                  ? t('tasks:wizard.refineFeatureCorrection')
-                  : t('tasks:wizard.refineFeatureSegmentation');
-            const providerDisplayName = tp
-              ? t(`common:provider.${tp.name}`, { defaultValue: tp.name })
-              : '';
-            const msg = !translateOn
-              ? t('tasks:wizard.blockRefineFollowTranslationOff', {
-                  feature: featureName,
-                })
-              : t('tasks:wizard.blockRefineFollowNeedsAi', {
-                  feature: featureName,
-                  provider: providerDisplayName,
-                });
-            toast.error(msg);
-            return;
-          }
-        } else {
-          const rp = providers.find((p: any) => p.id === refineSetting);
-          if (!rp?.isAi || !isProviderConfigured(rp)) {
-            toast.error(t('tasks:wizard.blockRefineProviderInvalid'));
-            return;
-          }
+          toast.error(msg, {
+            action: onOpenRefine
+              ? {
+                  label: t('tasks:wizard.refineActionAdjust'),
+                  onClick: onOpenRefine,
+                }
+              : undefined,
+          });
+          onOpenRefine?.();
+          return;
         }
       }
       // 云端听写：音频会上传到第三方端点，首次开跑前弹确认（隐私/成本护栏）。
