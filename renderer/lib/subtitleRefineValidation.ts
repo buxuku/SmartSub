@@ -11,13 +11,21 @@ export type RefineValidationErrorReason =
 
 export type RefineActiveFeature = 'both' | 'segmentation' | 'correction' | null;
 
+export type RefineProviderLike = {
+  id: string;
+  name: string;
+  type?: string;
+  isAi?: boolean;
+  [key: string]: any;
+};
+
 export interface RefineValidationResult {
   valid: boolean;
   isRefineActive: boolean;
   feature: RefineActiveFeature;
   setting: string;
   isFollow: boolean;
-  provider: Provider | null;
+  provider: RefineProviderLike | null;
   reason?: RefineValidationErrorReason;
 }
 
@@ -41,7 +49,7 @@ export function validateRefineProviderConfig({
   translateOn,
 }: {
   formData?: Record<string, any>;
-  providers: Provider[];
+  providers: RefineProviderLike[];
   translateOn: boolean;
 }): RefineValidationResult {
   const isSegOn = formData?.aiSegmentation === true;
@@ -104,7 +112,7 @@ export function validateRefineProviderConfig({
       };
     }
 
-    if (!isProviderConfigured(tp)) {
+    if (!isProviderConfigured(tp as any)) {
       return {
         valid: false,
         isRefineActive: true,
@@ -152,7 +160,7 @@ export function validateRefineProviderConfig({
     };
   }
 
-  if (!isProviderConfigured(rp)) {
+  if (!isProviderConfigured(rp as any)) {
     return {
       valid: false,
       isRefineActive: true,
@@ -179,35 +187,42 @@ export function validateRefineProviderConfig({
  */
 export function getRefineValidationErrorMessage(
   result: RefineValidationResult,
-  t: (key: string, options?: any) => string,
-  commonT: (key: string, options?: any) => string,
+  t: (key: string, options?: any) => any,
+  commonT: (key: string, options?: any) => any,
 ): string {
   if (result.valid) return '';
 
-  const featureName =
+  const featureName = String(
     result.feature === 'both'
       ? t('wizard.refineFeatureBoth')
       : result.feature === 'correction'
         ? t('wizard.refineFeatureCorrection')
-        : t('wizard.refineFeatureSegmentation');
+        : t('wizard.refineFeatureSegmentation'),
+  );
 
   if (result.reason === 'translation-off') {
-    return t('wizard.blockRefineFollowTranslationOff', {
-      feature: featureName,
-    });
+    return String(
+      t('wizard.blockRefineFollowTranslationOff', {
+        feature: featureName,
+      }),
+    );
   }
 
   if (result.reason === 'translation-needs-ai') {
     const providerDisplayName = result.provider
-      ? commonT(`provider.${result.provider.name}`, {
-          defaultValue: result.provider.name,
-        })
+      ? String(
+          commonT(`provider.${result.provider.name}`, {
+            defaultValue: result.provider.name,
+          }),
+        )
       : '';
-    return t('wizard.blockRefineFollowNeedsAi', {
-      feature: featureName,
-      provider: providerDisplayName,
-    });
+    return String(
+      t('wizard.blockRefineFollowNeedsAi', {
+        feature: featureName,
+        provider: providerDisplayName,
+      }),
+    );
   }
 
-  return t('wizard.blockRefineProviderInvalid');
+  return String(t('wizard.blockRefineProviderInvalid'));
 }
