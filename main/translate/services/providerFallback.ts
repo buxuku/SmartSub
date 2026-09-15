@@ -23,7 +23,10 @@ export type ProviderFallbackRunnerOptions = {
   log?: (message: string, type: 'info' | 'warning' | 'error') => void;
 };
 
-function sanitizeFallbackReason(reason: string, providers: Provider[]): string {
+export function sanitizeFallbackReason(
+  reason: string,
+  providers: Provider[],
+): string {
   let sanitized = reason;
   for (const provider of providers) {
     for (const [key, value] of Object.entries(provider)) {

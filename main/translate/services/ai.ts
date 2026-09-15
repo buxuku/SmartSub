@@ -500,7 +500,7 @@ export async function handleAIBatchTranslation(
   });
 
   logMessage(
-    `AI批量翻译完成：共处理 ${results.length} 条字幕，成功 ${results.filter((r) => !r.targetContent.startsWith('[翻译失败:')).length} 条`,
+    `AI批量翻译完成：共处理 ${results.length} 条字幕，成功 ${results.filter((r) => r.translationStatus !== 'failed' && !r.targetContent.startsWith('[翻译失败:')).length} 条`,
     'info',
   );
 
