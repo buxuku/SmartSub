@@ -38,6 +38,9 @@ import {
   normalizeStagingLayout,
   verifyRuntimeCompatibility,
   buildImportedManifest,
+  detectBinaryArch,
+  extractEmbeddedPythonVersion,
+  readEngineManifestFromDir,
 } from '../main/helpers/pythonRuntime/runtimeImporter';
 import * as tar from 'tar';
 import {
@@ -7387,6 +7390,191 @@ function runRuntimeImportTests() {
         '0.4.0',
         'tar.gz import: manifest unpacked',
       );
+    }
+
+    // 11. detectBinaryArch: 识别 Mach-O, ELF, PE 头部架构
+    {
+      const binDir = nodePath.join(tmpRoot, 'binary-arch-tests');
+      fs.mkdirSync(binDir, { recursive: true });
+
+      // Mach-O x64
+      const machOX64 = nodePath.join(binDir, 'macho-x64');
+      const b1 = Buffer.alloc(32);
+      b1[0] = 0xcf;
+      b1[1] = 0xfa;
+      b1[2] = 0xed;
+      b1[3] = 0xfe;
+      b1.writeUInt32LE(0x01000007, 4);
+      fs.writeFileSync(machOX64, b1);
+      eq(detectBinaryArch(machOX64), 'x64', 'detectBinaryArch: mach-o x64');
+
+      // Mach-O arm64
+      const machOArm64 = nodePath.join(binDir, 'macho-arm64');
+      const b2 = Buffer.alloc(32);
+      b2[0] = 0xcf;
+      b2[1] = 0xfa;
+      b2[2] = 0xed;
+      b2[3] = 0xfe;
+      b2.writeUInt32LE(0x0100000c, 4);
+      fs.writeFileSync(machOArm64, b2);
+      eq(
+        detectBinaryArch(machOArm64),
+        'arm64',
+        'detectBinaryArch: mach-o arm64',
+      );
+
+      // Mach-O Universal
+      const machOFat = nodePath.join(binDir, 'macho-fat');
+      const b3 = Buffer.alloc(32);
+      b3[0] = 0xca;
+      b3[1] = 0xfe;
+      b3[2] = 0xba;
+      b3[3] = 0xbe;
+      fs.writeFileSync(machOFat, b3);
+      eq(
+        detectBinaryArch(machOFat),
+        'universal',
+        'detectBinaryArch: mach-o universal',
+      );
+
+      // ELF x64
+      const elfX64 = nodePath.join(binDir, 'elf-x64');
+      const b4 = Buffer.alloc(32);
+      b4[0] = 0x7f;
+      b4[1] = 0x45;
+      b4[2] = 0x4c;
+      b4[3] = 0x46;
+      b4.writeUInt16LE(0x3e, 18);
+      fs.writeFileSync(elfX64, b4);
+      eq(detectBinaryArch(elfX64), 'x64', 'detectBinaryArch: elf x64');
+
+      // ELF arm64
+      const elfArm64 = nodePath.join(binDir, 'elf-arm64');
+      const b5 = Buffer.alloc(32);
+      b5[0] = 0x7f;
+      b5[1] = 0x45;
+      b5[2] = 0x4c;
+      b5[3] = 0x46;
+      b5.writeUInt16LE(0xb7, 18);
+      fs.writeFileSync(elfArm64, b5);
+      eq(detectBinaryArch(elfArm64), 'arm64', 'detectBinaryArch: elf arm64');
+
+      // PE x64
+      const peX64 = nodePath.join(binDir, 'pe-x64.exe');
+      const b6 = Buffer.alloc(128);
+      b6[0] = 0x4d;
+      b6[1] = 0x5a;
+      b6.writeUInt32LE(0x40, 0x3c);
+      b6[0x40] = 0x50;
+      b6[0x41] = 0x45;
+      b6[0x42] = 0;
+      b6[0x43] = 0;
+      b6.writeUInt16LE(0x8664, 0x44);
+      fs.writeFileSync(peX64, b6);
+      eq(detectBinaryArch(peX64), 'x64', 'detectBinaryArch: pe x64');
+    }
+
+    // 12. verifyRuntimeCompatibility: 跨架构拦截（macOS arm64 拦截 x64 解释器）
+    {
+      const dir = nodePath.join(tmpRoot, 'arch-mismatch');
+      fs.mkdirSync(nodePath.join(dir, 'bin'), { recursive: true });
+      fs.mkdirSync(nodePath.join(dir, 'site-packages'), { recursive: true });
+      fs.writeFileSync(nodePath.join(dir, 'main.py'), '');
+
+      const x64Bin = nodePath.join(dir, 'bin', 'python3');
+      const buf = Buffer.alloc(32);
+      buf[0] = 0xcf;
+      buf[1] = 0xfa;
+      buf[2] = 0xed;
+      buf[3] = 0xfe;
+      buf.writeUInt32LE(0x01000007, 4); // x86_64
+      fs.writeFileSync(x64Bin, buf);
+
+      const res = verifyRuntimeCompatibility({
+        stagingDir: dir,
+        currentPlatform: 'macos-arm64',
+        currentOs: 'darwin',
+        currentArch: 'arm64',
+      });
+      eq(res.ok, false, 'verify import: rejects arch mismatch on unix');
+      eq(
+        res.error?.includes('架构'),
+        true,
+        'verify import: error message mentions architecture',
+      );
+    }
+
+    // 13. extractEmbeddedPythonVersion & 动态兜底
+    {
+      const dir = nodePath.join(tmpRoot, 'version-extract');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(
+        nodePath.join(dir, '_version.py'),
+        'ENGINE_VERSION = "0.9.8"\nPROTOCOL_VERSION = 1\n',
+      );
+
+      const parsed = extractEmbeddedPythonVersion(dir);
+      eq(parsed.engineVersion, '0.9.8', 'version extract: engineVersion');
+      eq(parsed.protocolVersion, 1, 'version extract: protocolVersion');
+
+      const manifest = buildImportedManifest({
+        pkgManifest: null,
+        currentPlatform: 'windows-x64',
+        variant: 'cpu',
+        stagingDir: dir,
+      });
+      eq(
+        manifest.engineVersion,
+        '0.9.8',
+        'buildImportedManifest: uses embedded version dynamically',
+      );
+    }
+
+    // 14. 即使无 manifest.json，_version.py 协议超前也会被拦截
+    {
+      const dir = nodePath.join(tmpRoot, 'embedded-proto-reject');
+      fs.mkdirSync(nodePath.join(dir, 'site-packages'), { recursive: true });
+      fs.writeFileSync(nodePath.join(dir, 'python.exe'), '');
+      fs.writeFileSync(nodePath.join(dir, 'main.py'), '');
+      fs.writeFileSync(
+        nodePath.join(dir, '_version.py'),
+        'ENGINE_VERSION = "2.0.0"\nPROTOCOL_VERSION = 99\n',
+      );
+
+      const res = verifyRuntimeCompatibility({
+        stagingDir: dir,
+        currentPlatform: 'windows-x64',
+        currentOs: 'win32',
+      });
+      eq(
+        res.ok,
+        false,
+        'verify import: rejects future protocol in _version.py',
+      );
+      eq(
+        res.error?.includes('协议版本'),
+        true,
+        'verify import: mentions protocol error from _version.py',
+      );
+    }
+
+    // 15. readEngineManifestFromDir
+    {
+      const dir = nodePath.join(tmpRoot, 'read-manifest-test');
+      fs.mkdirSync(dir, { recursive: true });
+      eq(
+        readEngineManifestFromDir(dir),
+        null,
+        'readEngineManifestFromDir: null when missing',
+      );
+
+      fs.writeFileSync(
+        nodePath.join(dir, 'manifest.json'),
+        JSON.stringify({ engineVersion: '1.2.3', variant: 'cuda' }),
+      );
+      const m = readEngineManifestFromDir(dir);
+      eq(m?.engineVersion, '1.2.3', 'readEngineManifestFromDir: reads version');
+      eq(m?.variant, 'cuda', 'readEngineManifestFromDir: reads variant');
     }
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });

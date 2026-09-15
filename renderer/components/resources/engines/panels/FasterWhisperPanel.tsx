@@ -148,7 +148,7 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
       variant="ghost"
       className="gap-1.5 text-muted-foreground"
       onClick={onUninstall}
-      disabled={taskBusy}
+      disabled={taskBusy || isImporting || isDownloading || showVerifying}
     >
       <Trash2 className="h-3.5 w-3.5" />
       {t('engines.fasterWhisper.uninstall')}
@@ -164,7 +164,9 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
       {isDownloading && downloadProgress && (
         <div className="space-y-2 rounded-lg bg-muted p-3">
           <p className="text-sm font-medium">
-            {t('engines.fasterWhisper.downloading')}
+            {isImporting
+              ? t('engines.fasterWhisper.importing')
+              : t('engines.fasterWhisper.downloading')}
           </p>
           <Progress value={downloadProgress.progress} />
           {downloadProgress.total > 0 && (
@@ -278,7 +280,9 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
                   size="sm"
                   variant="outline"
                   className="gap-1.5"
-                  disabled={taskBusy || isImporting}
+                  disabled={
+                    taskBusy || isImporting || isDownloading || showVerifying
+                  }
                   onClick={onImport}
                 >
                   <FolderInput className="h-3.5 w-3.5" />
@@ -289,7 +293,7 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
               )}
             </>
           )}
-        {fasterBroken && (
+        {fasterBroken && !isDownloading && !showVerifying && (
           <>
             <DownloadSourcePopover
               open={installPickerOpen}
@@ -300,6 +304,7 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
               <Button
                 size="sm"
                 className="gap-1.5"
+                disabled={taskBusy || isImporting}
                 onClick={() => setInstallPickerOpen(true)}
               >
                 <RefreshCw className="h-3.5 w-3.5" />
@@ -320,9 +325,9 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
                   : t('engines.fasterWhisper.importRuntime')}
               </Button>
             )}
+            {uninstallButton}
           </>
         )}
-        {fasterBroken && uninstallButton}
       </div>
 
       {fasterInstalled && !isDownloading && !showVerifying && (
@@ -385,7 +390,9 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
               size="sm"
               variant="outline"
               className="gap-1.5"
-              disabled={taskBusy || isImporting}
+              disabled={
+                taskBusy || isImporting || isDownloading || showVerifying
+              }
               onClick={onImport}
             >
               <FolderInput className="h-3.5 w-3.5" />

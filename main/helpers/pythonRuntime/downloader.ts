@@ -195,6 +195,7 @@ export class PyEngineDownloader {
   private engineId: PyEngineId;
   private mainWindow: BrowserWindow | null = null;
   private core: MirrorDownloader;
+  private isOperating = false;
 
   constructor(engineId: PyEngineId, mainWindow?: BrowserWindow) {
     this.engineId = engineId;
@@ -217,6 +218,16 @@ export class PyEngineDownloader {
     return this.core.getProgress() as PyEngineDownloadProgress;
   }
 
+  isBusy(): boolean {
+    if (this.isOperating) return true;
+    const status = this.core.getProgress().status;
+    return (
+      status === 'downloading' ||
+      status === 'extracting' ||
+      status === 'verifying'
+    );
+  }
+
   cancel(): void {
     this.core.cancel();
   }
@@ -230,24 +241,32 @@ export class PyEngineDownloader {
     source: PyEngineDownloadSource,
     variant: PyEngineVariant = 'cpu',
   ): Promise<void> {
-    const resolvedVariant = normalizePyEngineVariant(variant);
-    // 变体切换的免下载快路径：目标变体已有完好驻留副本时目录互换即完成，
-    // 秒级、零流量、可离线；副本可能落后远端 latest，由既有 checkUpdate 提示升级。
-    if (await this.trySwitchToParkedVariant(resolvedVariant)) {
-      return;
+    if (this.isBusy()) {
+      throw new Error('operation_in_progress');
     }
-    // 自包含运行时内嵌解释器，无外部基座依赖，可直接下载。
-    return this.core.runWithFallback(
-      source,
-      (s) => this.downloadFromSource(s, resolvedVariant),
-      (error) =>
-        (error instanceof Error ? error.message : String(error)) ===
-          'Download cancelled' ||
-        (error instanceof PythonEngineError &&
-          error.code === 'protocol_unsupported'),
-      'Py-engine download',
-      logMessage,
-    );
+    this.isOperating = true;
+    try {
+      const resolvedVariant = normalizePyEngineVariant(variant);
+      // 变体切换的免下载快路径：目标变体已有完好驻留副本时目录互换即完成，
+      // 秒级、零流量、可离线；副本可能落后远端 latest，由既有 checkUpdate 提示升级。
+      if (await this.trySwitchToParkedVariant(resolvedVariant)) {
+        return;
+      }
+      // 自包含运行时内嵌解释器，无外部基座依赖，可直接下载。
+      return await this.core.runWithFallback(
+        source,
+        (s) => this.downloadFromSource(s, resolvedVariant),
+        (error) =>
+          (error instanceof Error ? error.message : String(error)) ===
+            'Download cancelled' ||
+          (error instanceof PythonEngineError &&
+            error.code === 'protocol_unsupported'),
+        'Py-engine download',
+        logMessage,
+      );
+    } finally {
+      this.isOperating = false;
+    }
   }
 
   /**
@@ -261,31 +280,35 @@ export class PyEngineDownloader {
     version?: string;
     error?: string;
   }> {
-    if (!fs.existsSync(sourcePath)) {
-      return { success: false, error: `路径不存在: ${sourcePath}` };
+    if (this.isBusy()) {
+      return { success: false, error: 'operation_in_progress' };
     }
-
+    this.isOperating = true;
     const stagingDir = getPyEngineStagingDir(this.engineId);
-    if (fs.existsSync(stagingDir)) {
-      fs.rmSync(stagingDir, { recursive: true, force: true });
-    }
-    fs.mkdirSync(stagingDir, { recursive: true });
-
-    this.core.resetForDownload();
-    this.core.updateProgress({
-      status: 'extracting',
-      progress: 30,
-      downloaded: 0,
-      total: 0,
-      speed: 0,
-      eta: 0,
-      error: undefined,
-    });
-
-    const stat = fs.statSync(sourcePath);
-    const isDir = stat.isDirectory();
-
     try {
+      if (!fs.existsSync(sourcePath)) {
+        return { success: false, error: `路径不存在: ${sourcePath}` };
+      }
+
+      if (fs.existsSync(stagingDir)) {
+        fs.rmSync(stagingDir, { recursive: true, force: true });
+      }
+      fs.mkdirSync(stagingDir, { recursive: true });
+
+      this.core.resetForDownload();
+      this.core.updateProgress({
+        status: 'extracting',
+        progress: 30,
+        downloaded: 0,
+        total: 0,
+        speed: 0,
+        eta: 0,
+        error: undefined,
+      });
+
+      const stat = fs.statSync(sourcePath);
+      const isDir = stat.isDirectory();
+
       if (isDir) {
         await fse.copy(sourcePath, stagingDir, { overwrite: true });
       } else if (sourcePath.toLowerCase().endsWith('.zip')) {
@@ -337,6 +360,7 @@ export class PyEngineDownloader {
         variant: compat.variant,
         engineId: this.engineId,
         sha256,
+        stagingDir,
       });
 
       // 原子替换、macOS 重签与自检
@@ -370,6 +394,8 @@ export class PyEngineDownloader {
         }
       } catch {}
       return { success: false, error: errorMessage };
+    } finally {
+      this.isOperating = false;
     }
   }
 
@@ -805,6 +831,9 @@ export class PyEngineDownloader {
       file: tarPath,
       cwd: stagingDir,
     });
+
+    // 展平可能存在的单层包装目录（与 importRuntime 保持统一）
+    normalizeStagingLayout(stagingDir);
 
     // 自包含运行时：归档顶层即 内嵌解释器 + main.py + site-packages/（无外部基座）。
     const stagingMain = path.join(stagingDir, 'main.py');

@@ -83,7 +83,8 @@
       "upgradeConfirm": "This will download and upgrade the faster-whisper engine runtime. The engine is stopped before upgrading and automatically rolled back to the current version if it fails. Continue?",
       "serialNote": "To avoid VRAM contention, faster-whisper transcribes serially (concurrency = 1).",
       "protocolUnsupported": "This engine version requires a newer SmartSub. Please update SmartSub before installing or upgrading the engine.",
-      "engineBusy": "A task is running. Wait for it to finish before installing, upgrading, or uninstalling the engine.",
+      "engineBusy": "A task is running. Wait for it to finish before installing, upgrading, importing, or uninstalling the engine.",
+      "operationInProgress": "An operation is already in progress. Please wait for it to finish.",
       "checkFailed": "Failed to check for updates. Please try again later.",
       "uninstallConfirm": "Uninstalling removes the engine runtime (~170MB); you'll need to download it again to use faster-whisper. Continue?"
     },

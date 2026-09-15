@@ -83,7 +83,8 @@
       "upgradeConfirm": "将下载并升级 faster-whisper 引擎运行时。升级前会先停止引擎，失败时自动回滚到当前版本。是否继续？",
       "serialNote": "为避免显存争用，faster-whisper 转写串行执行（并发为 1）。",
       "protocolUnsupported": "该引擎版本需要更新版本的 SmartSub，请先升级 SmartSub 后再安装或升级引擎。",
-      "engineBusy": "有任务正在运行，请等待任务完成后再安装、升级或卸载引擎。",
+      "engineBusy": "有任务正在运行，请等待任务完成后再安装、升级、导入或卸载引擎。",
+      "operationInProgress": "已有下载或安装任务正在进行中，请等待其完成。",
       "checkFailed": "检查更新失败，请稍后重试。",
       "uninstallConfirm": "卸载后需重新下载约 170MB 引擎运行时才能再次使用 faster-whisper，确定卸载？"
     },
