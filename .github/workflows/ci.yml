@@ -54,6 +54,9 @@ jobs:
       - name: Unit tests (translation cancel)
         run: yarn test:translation-cancel
 
+      - name: Integration tests (translation proxy and failure reporting)
+        run: yarn test:translation-proxy
+
       - name: Unit tests (free translators)
         run: yarn test:free-translators
 
