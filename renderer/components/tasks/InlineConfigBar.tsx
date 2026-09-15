@@ -13,11 +13,12 @@ import {
 import { AlertCircle, CheckCircle2, Download, Languages } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { toast } from 'sonner';
 import Models from '@/components/Models';
 import AiRefineControl from '@/components/tasks/AiRefineControl';
 import ManuscriptControl from '@/components/tasks/ManuscriptControl';
 import SubtitleFormatSelect from '@/components/tasks/SubtitleFormatSelect';
-import { supportedLanguage } from 'lib/utils';
+import { cn, supportedLanguage } from 'lib/utils';
 import { isProviderConfigured } from 'lib/providerUtils';
 import {
   hasAnyModelAnyEngine,
@@ -45,6 +46,8 @@ interface InlineConfigBarProps {
   asrProviders?: Provider[];
   typeDef: TaskTypeDef;
   useLocalWhisper: boolean;
+  refineOpen?: boolean;
+  onRefineOpenChange?: (open: boolean) => void;
 }
 
 function ConfigItem({
@@ -81,6 +84,8 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
   asrProviders,
   typeDef,
   useLocalWhisper,
+  refineOpen,
+  onRefineOpenChange,
 }) => {
   const { t } = useTranslation('tasks');
   const { t: tHome } = useTranslation('home');
@@ -136,12 +141,82 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
     };
   }, [providers]);
 
-  const renderProviderItem = (provider: Provider, configured: boolean) => (
-    <SelectItem key={provider.id} value={provider.id} disabled={!configured}>
-      {tCommon(`provider.${provider.name}`, { defaultValue: provider.name })}
-      {!configured && t('notConfigured')}
-    </SelectItem>
+  const renderProviderItem = (provider: Provider, configured: boolean) => {
+    const displayName = tCommon(`provider.${provider.name}`, {
+      defaultValue: provider.name,
+    });
+    return (
+      <SelectItem
+        key={provider.id}
+        value={provider.id}
+        textValue={displayName}
+        disabled={!configured}
+      >
+        <div className="flex w-full items-center justify-between gap-3">
+          <span className="truncate">{displayName}</span>
+          <span className="flex flex-none items-center gap-1.5">
+            <span
+              className={cn(
+                'rounded px-1.5 py-0.5 text-[10px] font-medium leading-none',
+                provider.isAi
+                  ? 'bg-primary/10 text-primary'
+                  : 'bg-muted text-muted-foreground',
+              )}
+            >
+              {provider.isAi
+                ? t('configBar.tagAi')
+                : t('configBar.tagTraditional')}
+            </span>
+            {!configured && (
+              <span className="text-[10px] text-muted-foreground">
+                {t('notConfigured')}
+              </span>
+            )}
+          </span>
+        </div>
+      </SelectItem>
+    );
+  };
+
+  const handleTranslateProviderChange = (newProviderId: string) => {
+    setValue('translateProvider', newProviderId);
+    const newProvider = providers.find((p) => p.id === newProviderId);
+    const isRefineOn =
+      formData?.aiSegmentation === true || formData?.aiCorrection === true;
+    const refineSetting = formData?.refineProvider || 'follow-translation';
+    if (
+      isRefineOn &&
+      refineSetting === 'follow-translation' &&
+      newProvider &&
+      !newProvider.isAi
+    ) {
+      const featureName =
+        formData?.aiSegmentation && formData?.aiCorrection
+          ? t('wizard.refineFeatureBoth')
+          : formData?.aiCorrection
+            ? t('wizard.refineFeatureCorrection')
+            : t('wizard.refineFeatureSegmentation');
+      const pName = tCommon(`provider.${newProvider.name}`, {
+        defaultValue: newProvider.name,
+      });
+      toast.warning(
+        t('configBar.toastTraditionalRefineConflict', {
+          provider: pName,
+          feature: featureName,
+        }),
+        { duration: 6000 },
+      );
+    }
+  };
+
+  const selectedTranslateProvider = providers.find(
+    (p) => p.id === formData.translateProvider,
   );
+  const selectedTranslateProviderName = selectedTranslateProvider
+    ? tCommon(`provider.${selectedTranslateProvider.name}`, {
+        defaultValue: selectedTranslateProvider.name,
+      })
+    : undefined;
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-muted/30 px-3 py-2">
@@ -214,6 +289,8 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
             formData={formData}
             providers={providers}
             typeDef={typeDef}
+            open={refineOpen}
+            onOpenChange={onRefineOpenChange}
           />
           <ManuscriptControl form={form} formData={formData} />
         </>
@@ -255,10 +332,12 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
             {providers.length > 0 ? (
               <Select
                 value={formData.translateProvider}
-                onValueChange={(v) => setValue('translateProvider', v)}
+                onValueChange={handleTranslateProviderChange}
               >
                 <SelectTrigger className={triggerClass}>
-                  <SelectValue placeholder={tHome('pleaseSelect')} />
+                  <SelectValue placeholder={tHome('pleaseSelect')}>
+                    {selectedTranslateProviderName}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {configuredProviders.length > 0 && (

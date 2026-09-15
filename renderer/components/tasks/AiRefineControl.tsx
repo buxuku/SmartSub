@@ -28,8 +28,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, TriangleAlert } from 'lucide-react';
 import { cn } from 'lib/utils';
+import { isProviderConfigured } from 'lib/providerUtils';
 import { isSherpaEngine } from 'lib/subtitleOutcome';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import { useTranslation } from 'next-i18next';
@@ -46,6 +47,8 @@ interface AiRefineControlProps {
   formData: any;
   providers: Provider[];
   typeDef: TaskTypeDef;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 type SegmentationMode = 'smart' | 'unlimited' | 'custom' | 'ai';
@@ -55,11 +58,21 @@ const AiRefineControl: React.FC<AiRefineControlProps> = ({
   formData,
   providers,
   typeDef,
+  open: controlledOpen,
+  onOpenChange: onControlledOpenChange,
 }) => {
   const { t } = useTranslation('tasks');
   const { t: tHome } = useTranslation('home');
   const { t: tCommon } = useTranslation('common');
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = typeof controlledOpen === 'boolean';
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = (nextOpen: boolean) => {
+    if (!isControlled) {
+      setInternalOpen(nextOpen);
+    }
+    onControlledOpenChange?.(nextOpen);
+  };
 
   const setValue = (name: string, value: unknown) =>
     form.setValue(name, value, { shouldDirty: true });
@@ -116,6 +129,18 @@ const AiRefineControl: React.FC<AiRefineControlProps> = ({
     p ? tCommon(`provider.${p.name}`, { defaultValue: p.name }) : '';
 
   const needsProvider = segAiOn || corrOn;
+  const explicitProvider = providers.find((p) => p?.id === refineSetting);
+  const explicitResolvable = Boolean(
+    explicitProvider &&
+      explicitProvider.isAi &&
+      isProviderConfigured(explicitProvider as any),
+  );
+  const hasRefineError =
+    needsProvider &&
+    (refineSetting === 'follow-translation'
+      ? !followResolvable
+      : !explicitResolvable);
+
   const sherpaApprox =
     isSherpaEngine(formData?.transcriptionEngine) ||
     formData?.transcriptionEngine === 'localCli';
@@ -132,9 +157,15 @@ const AiRefineControl: React.FC<AiRefineControlProps> = ({
   const stateLabel = corrOn
     ? `${modeLabel}${t('refine.control.state.corrSuffix')}`
     : modeLabel;
+  const displayLabel = hasRefineError
+    ? `${stateLabel}${t('refine.control.state.warningSuffix')}`
+    : stateLabel;
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div
+      id="ai-refine-control-container"
+      className="flex items-center gap-1.5 scroll-mt-20"
+    >
       <span className="text-xs text-muted-foreground whitespace-nowrap">
         {t('refine.control.label')}
       </span>
@@ -146,12 +177,18 @@ const AiRefineControl: React.FC<AiRefineControlProps> = ({
             size="sm"
             className={cn(
               'h-8 gap-1.5 text-xs',
-              (segAiOn || corrOn) &&
-                'border-primary/50 bg-primary/[0.06] text-primary hover:text-primary',
+              hasRefineError
+                ? 'border-warning/60 bg-warning/10 text-warning hover:bg-warning/20 hover:text-warning'
+                : (segAiOn || corrOn) &&
+                    'border-primary/50 bg-primary/[0.06] text-primary hover:text-primary',
             )}
           >
-            <Sparkles className="h-3.5 w-3.5" />
-            {stateLabel}
+            {hasRefineError ? (
+              <TriangleAlert className="h-3.5 w-3.5 flex-none text-warning" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5 flex-none" />
+            )}
+            <span>{displayLabel}</span>
           </Button>
         </PopoverTrigger>
         <PopoverContent
@@ -289,6 +326,12 @@ const AiRefineControl: React.FC<AiRefineControlProps> = ({
                   {t('refine.provider.followBlocked')}
                 </p>
               )}
+              {refineSetting !== 'follow-translation' &&
+                !explicitResolvable && (
+                  <p className="text-xs text-destructive">
+                    {t('wizard.blockRefineProviderInvalid')}
+                  </p>
+                )}
             </div>
           )}
         </PopoverContent>

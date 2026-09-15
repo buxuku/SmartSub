@@ -380,6 +380,7 @@ export default function TaskWizard() {
 
   // ── 字幕段配置（本地表单 + InlineConfigBar 复用）─────────────────────────
   const { form, formData, loaded: formLoaded } = useLocalFormConfig();
+  const [refinePopoverOpen, setRefinePopoverOpen] = useState(false);
   const { systemInfo, loaded: systemInfoLoaded } = useSystemInfo();
   const [providers, setProviders] = useState<any[]>([]);
   const [asrProviders, setAsrProviders] = useState<AsrProvider[]>([]);
@@ -762,8 +763,21 @@ export default function TaskWizard() {
     return list;
   }, [inputKind, formData?.manuscriptPath, translateOn, dubOn, videoOn, t]);
 
+  interface BlockerAction {
+    label: string;
+    onClick: () => void;
+    variant?: 'outline' | 'default' | 'secondary' | 'ghost' | 'link';
+  }
+
+  interface BlockerItem {
+    key: string;
+    text: string;
+    href?: string;
+    actions?: BlockerAction[];
+  }
+
   const blockers = useMemo(() => {
-    const list: Array<{ key: string; text: string; href?: string }> = [];
+    const list: BlockerItem[] = [];
     if (!files.length) {
       list.push({ key: 'files', text: t('wizard.blockNoFiles') });
       return list;
@@ -849,15 +863,95 @@ export default function TaskWizard() {
       inputKind === 'media' &&
       (formData?.aiSegmentation === true || formData?.aiCorrection === true)
     ) {
+      const isSegOn = formData?.aiSegmentation === true;
+      const isCorrOn = formData?.aiCorrection === true;
+      const featureName =
+        isSegOn && isCorrOn
+          ? t('wizard.refineFeatureBoth')
+          : isCorrOn
+            ? t('wizard.refineFeatureCorrection')
+            : t('wizard.refineFeatureSegmentation');
+
       const refineSetting = formData?.refineProvider || 'follow-translation';
       if (refineSetting === 'follow-translation') {
         const tp = providers.find(
           (p: any) => p.id === formData?.translateProvider,
         );
         if (!translateOn || !tp?.isAi) {
+          const providerDisplayName = tp
+            ? commonT(`provider.${tp.name}`, { defaultValue: tp.name })
+            : '';
+          const text = !translateOn
+            ? t('wizard.blockRefineFollowTranslationOff', {
+                feature: featureName,
+              })
+            : t('wizard.blockRefineFollowNeedsAi', {
+                feature: featureName,
+                provider: providerDisplayName,
+              });
+
+          const actions: BlockerAction[] = [];
+
+          // 快捷操作 A：一键关闭（解除阻断）
+          if (isSegOn && isCorrOn) {
+            actions.push({
+              label: t('wizard.refineActionDisableBoth'),
+              onClick: () => {
+                form.setValue('aiSegmentation', false, { shouldDirty: true });
+                form.setValue('aiCorrection', false, { shouldDirty: true });
+              },
+            });
+          } else if (isCorrOn) {
+            actions.push({
+              label: t('wizard.refineActionDisableCorrection'),
+              onClick: () => {
+                form.setValue('aiCorrection', false, { shouldDirty: true });
+              },
+            });
+          } else if (isSegOn) {
+            actions.push({
+              label: t('wizard.refineActionDisableSegmentation'),
+              onClick: () => {
+                form.setValue('aiSegmentation', false, { shouldDirty: true });
+              },
+            });
+          }
+
+          // 快捷操作 B：一键选用已配置的 AI 服务商（如果存在）
+          const availableAiProviders = providers.filter(
+            (p: any) => p?.isAi && isProviderConfigured(p),
+          );
+          if (availableAiProviders.length > 0) {
+            const candidate = availableAiProviders[0];
+            const candidateName = commonT(`provider.${candidate.name}`, {
+              defaultValue: candidate.name,
+            });
+            actions.push({
+              label: t('wizard.refineActionUseProvider', {
+                name: candidateName,
+              }),
+              onClick: () => {
+                form.setValue('refineProvider', candidate.id, {
+                  shouldDirty: true,
+                });
+              },
+            });
+          }
+
+          // 快捷操作 C：调整精修配置（唤起弹层并平滑滚动到控件）
+          actions.push({
+            label: t('wizard.refineActionAdjust'),
+            onClick: () => {
+              setRefinePopoverOpen(true);
+              const el = document.getElementById('ai-refine-control-container');
+              el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            },
+          });
+
           list.push({
             key: 'refine',
-            text: t('wizard.blockRefineFollow'),
+            text,
+            actions,
           });
         }
       } else {
@@ -867,6 +961,18 @@ export default function TaskWizard() {
             key: 'refine',
             text: t('wizard.blockRefineProviderInvalid'),
             href: `/${locale}/translation`,
+            actions: [
+              {
+                label: t('wizard.refineActionAdjust'),
+                onClick: () => {
+                  setRefinePopoverOpen(true);
+                  const el = document.getElementById(
+                    'ai-refine-control-container',
+                  );
+                  el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                },
+              },
+            ],
           });
         }
       }
@@ -897,6 +1003,7 @@ export default function TaskWizard() {
     videoOn,
     locale,
     t,
+    form,
   ]);
 
   const canStart = files.length > 0 && blockers.length === 0;
@@ -1354,6 +1461,8 @@ export default function TaskWizard() {
               asrProviders={asrProviders as any}
               typeDef={configTypeDef}
               useLocalWhisper={useLocalWhisper}
+              refineOpen={refinePopoverOpen}
+              onRefineOpenChange={setRefinePopoverOpen}
             />
           </div>
         </Panel>
@@ -1673,12 +1782,14 @@ export default function TaskWizard() {
         <div className="flex flex-wrap items-center gap-3 p-2.5">
           <div className="min-w-0 flex-1 space-y-1">
             {blockers.map((blocker) => (
-              <p
+              <div
                 key={blocker.key}
-                className="flex items-center gap-1.5 text-xs text-warning"
+                className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-warning"
               >
-                <TriangleAlert className="h-3.5 w-3.5 flex-none" />
-                {blocker.text}
+                <div className="flex items-center gap-1.5">
+                  <TriangleAlert className="h-3.5 w-3.5 flex-none" />
+                  <span>{blocker.text}</span>
+                </div>
                 {blocker.href && (
                   <Link
                     href={blocker.href}
@@ -1688,7 +1799,19 @@ export default function TaskWizard() {
                     <ArrowRight className="h-3 w-3" />
                   </Link>
                 )}
-              </p>
+                {blocker.actions?.map((act, i) => (
+                  <Button
+                    key={i}
+                    type="button"
+                    variant={act.variant || 'outline'}
+                    size="sm"
+                    className="h-6 px-2 text-[11px] font-normal border-warning/40 text-foreground hover:bg-warning/15 hover:text-warning"
+                    onClick={act.onClick}
+                  >
+                    {act.label}
+                  </Button>
+                ))}
+              </div>
             ))}
             {!blockers.length && files.length > 0 && (
               <p className="text-xs text-muted-foreground">

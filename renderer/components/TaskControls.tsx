@@ -166,7 +166,26 @@ const TaskControls = ({
             (p: any) => p.id === formData?.translateProvider,
           );
           if (!translateOn || !tp?.isAi) {
-            toast.error(t('tasks:wizard.blockRefineFollow'));
+            const isSegOn = formData?.aiSegmentation === true;
+            const isCorrOn = formData?.aiCorrection === true;
+            const featureName =
+              isSegOn && isCorrOn
+                ? t('tasks:wizard.refineFeatureBoth')
+                : isCorrOn
+                  ? t('tasks:wizard.refineFeatureCorrection')
+                  : t('tasks:wizard.refineFeatureSegmentation');
+            const providerDisplayName = tp
+              ? t(`common:provider.${tp.name}`, { defaultValue: tp.name })
+              : '';
+            const msg = !translateOn
+              ? t('tasks:wizard.blockRefineFollowTranslationOff', {
+                  feature: featureName,
+                })
+              : t('tasks:wizard.blockRefineFollowNeedsAi', {
+                  feature: featureName,
+                  provider: providerDisplayName,
+                });
+            toast.error(msg);
             return;
           }
         } else {
