@@ -1,4 +1,6 @@
 import OpenAI from 'openai';
+import http from 'http';
+import https from 'https';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { TranslationResultSchema } from '../translate/constants/schema';
 import { ParameterProcessor } from '../helpers/parameterProcessor';
@@ -329,6 +331,10 @@ export async function translateWithOpenAI(
       ...(options?.beforeRequest ? { maxRetries: 0 } : {}),
       baseURL: normalizedApiUrl,
       apiKey: provider.apiKey,
+      // The SDK's own default agent bypasses the application's proxy settings.
+      httpAgent: normalizedApiUrl.startsWith('https:')
+        ? https.globalAgent
+        : http.globalAgent,
       defaultHeaders: {
         ...customHeaders, // Apply custom headers from parameter processor
       },

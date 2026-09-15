@@ -1,4 +1,6 @@
 import { AzureOpenAI } from 'openai';
+import http from 'http';
+import https from 'https';
 import { TRANSLATION_JSON_SCHEMA } from '../translate/constants/schema';
 import {
   TaskCancelledError,
@@ -69,12 +71,15 @@ export async function translateWithAzureOpenAI(
     const pathParts = url.pathname.split('/');
     const deploymentName = pathParts[pathParts.indexOf('deployments') + 1];
     const apiVersion = url.searchParams.get('api-version') || '2023-05-15';
-    const baseURL = `${url.protocol}//${url.host}/`;
+    const baseURL = url.origin;
 
     const openai = new AzureOpenAI({
       ...(options?.beforeRequest ? { maxRetries: 0 } : {}),
       endpoint: baseURL,
       apiKey: provider.apiKey,
+      // AzureOpenAI uses the same SDK-owned default agents as OpenAI.
+      httpAgent:
+        url.protocol === 'https:' ? https.globalAgent : http.globalAgent,
       deployment: deploymentName,
       apiVersion: apiVersion,
     });
