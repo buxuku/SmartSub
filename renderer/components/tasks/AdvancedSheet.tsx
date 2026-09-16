@@ -52,6 +52,10 @@ import {
   type FasterWhisperAdvancedSettingKey,
 } from '../../../types/transcriptionParams';
 import { isSpeakerDiarizationStandardTaskContext } from '../../../types/speakerDiarization';
+import {
+  detectCurrentPreset,
+  getScenarioPresetDef,
+} from '@/lib/scenarioPresets';
 
 interface AdvancedSheetProps {
   open: boolean;
@@ -342,6 +346,9 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
     settings,
   );
 
+  const currentScenarioPreset = detectCurrentPreset(formData);
+  const scenarioPresetDef = getScenarioPresetDef(currentScenarioPreset);
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -360,6 +367,23 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                 <form className="grid gap-4 pt-4">
                   {isMediaTask && (
                     <>
+                      <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2 text-xs">
+                        <div className="flex items-center gap-2">
+                          <SlidersHorizontal className="h-3.5 w-3.5 text-primary" />
+                          <span>
+                            {t('presets.title')}:{' '}
+                            <strong className="font-semibold text-foreground">
+                              {scenarioPresetDef
+                                ? t(scenarioPresetDef.nameKey)
+                                : currentScenarioPreset}
+                            </strong>
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground">
+                          {t('presets.customHint')}
+                        </span>
+                      </div>
+
                       <SectionTitle>{t('section.recognition')}</SectionTitle>
 
                       {/* 字幕效果档位：把 上下文/VAD/抗重复 收敛成一个意图单选（任务级） */}

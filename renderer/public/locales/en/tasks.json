@@ -447,6 +447,7 @@
   },
   "presets": {
     "title": "Scenario Presets",
+    "customHint": "Tuning parameters below switches to custom",
     "interview": {
       "name": "Meeting / Podcast",
       "desc": "Aggressive noise reduction, clean short sentences, speaker pauses preserved"

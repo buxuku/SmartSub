@@ -6,6 +6,7 @@
 import React, { useMemo } from 'react';
 import {
   AlertCircle,
+  ArrowRight,
   AudioLines,
   Diamond,
   FileText,
@@ -207,35 +208,165 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
   }, [snapshot, providers, t, tCommon]);
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-muted/30 px-3 py-2">
-      <SummaryItem
-        label={t('configBar.format')}
-        value={resolveSubtitleOutputFormats(snapshot)
-          .map((format) => format.toUpperCase())
-          .join(' + ')}
-      />
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="flex flex-none cursor-default items-center text-muted-foreground">
-              <Lock className="h-3.5 w-3.5" />
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-[320px]">
-            {t('snapshotBar.fixedTip')}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+    <div className="flex flex-col gap-1.5 w-full">
+      <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2 w-full overflow-x-auto">
+        {/* 左侧核心主干只读摘要 */}
+        <div className="flex items-center gap-2.5 shrink-0 flex-nowrap">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <SummaryItem
+              label={t('configBar.format')}
+              value={resolveSubtitleOutputFormats(snapshot)
+                .map((format) => format.toUpperCase())
+                .join(' + ')}
+            />
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="flex flex-none cursor-default items-center text-muted-foreground">
+                    <Lock className="h-3.5 w-3.5" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[320px]">
+                  {t('snapshotBar.fixedTip')}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
 
-      {needsTranscription && modelValue && (
-        <SummaryItem label={t('configBar.model')} value={modelValue} />
-      )}
+          {needsTranscription && modelValue && (
+            <SummaryItem label={t('configBar.model')} value={modelValue} />
+          )}
+
+          {snapshot?.sourceLanguage && (
+            <SummaryItem
+              label={
+                needsTranscription
+                  ? t('configBar.sourceLanguage')
+                  : t('configBar.subtitleSourceLanguage')
+              }
+              value={languageLabel(snapshot.sourceLanguage)}
+            />
+          )}
+
+          {translateOn && (
+            <>
+              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+              {snapshot?.targetLanguage && (
+                <SummaryItem
+                  label={t('configBar.targetLanguage')}
+                  value={languageLabel(snapshot.targetLanguage)}
+                />
+              )}
+              {providerValue && (
+                <SummaryItem
+                  label={t('configBar.provider')}
+                  value={providerValue}
+                />
+              )}
+              {styleValue && (
+                <SummaryItem label={t('configBar.style')} value={styleValue} />
+              )}
+            </>
+          )}
+        </div>
+
+        {/* 右侧扩展阶段与能力胶囊 */}
+        <div className="flex items-center gap-2 shrink-0 ml-auto flex-nowrap">
+          {needsTranscription && snapshot?.useEmbeddedSubtitles === false && (
+            <SummaryItem
+              label={t('configBar.embeddedSubtitles')}
+              value={t('snapshotBar.forceTranscription')}
+            />
+          )}
+
+          {needsTranscription && refineValue && (
+            <SummaryItem label={t('stage.refine')} value={refineValue} />
+          )}
+
+          {needsTranscription &&
+            snapshot?.speakerDiarization === true &&
+            isSpeakerDiarizationStandardTaskContext(snapshot) && (
+              <SummaryItem
+                label={t('speakerDiarization.summaryLabel')}
+                value={
+                  <span className="flex items-center gap-1">
+                    <Users className="h-3 w-3 flex-none text-muted-foreground" />
+                    {snapshot?.speakerDiarizationCount >= 2
+                      ? t('speakerDiarization.summaryKnown', {
+                          count: snapshot.speakerDiarizationCount,
+                        })
+                      : t('speakerDiarization.summaryAuto')}
+                    {' · '}
+                    {t(
+                      snapshot?.speakerDiarizationEmbedInSubtitle === true
+                        ? 'speakerDiarization.summaryEmbedded'
+                        : 'speakerDiarization.summaryMetadataOnly',
+                    )}
+                  </span>
+                }
+              />
+            )}
+
+          {needsTranscription && snapshot?.manuscriptPath && (
+            <SummaryItem
+              label={t('manuscript.label')}
+              value={
+                <span
+                  className="flex min-w-0 items-center gap-1"
+                  title={snapshot.manuscriptPath}
+                >
+                  <FileText className="h-3 w-3 flex-none text-muted-foreground" />
+                  <span className="truncate">
+                    {snapshot.manuscriptName ||
+                      String(snapshot.manuscriptPath).split(/[\\/]/).pop()}
+                  </span>
+                </span>
+              }
+            />
+          )}
+
+          {snapshot?.dub && dubValue && (
+            <SummaryItem
+              label={t('stage.dubbing')}
+              value={
+                <span className="flex items-center gap-1">
+                  <AudioLines className="h-3 w-3 flex-none text-muted-foreground" />
+                  {dubValue}
+                </span>
+              }
+            />
+          )}
+
+          {snapshot?.compose && composeValue && (
+            <SummaryItem
+              label={t('stage.compose')}
+              value={
+                <span className="flex items-center gap-1">
+                  <Film className="h-3 w-3 flex-none text-muted-foreground" />
+                  {composeValue}
+                </span>
+              }
+            />
+          )}
+
+          {manualGates.map((gate) => (
+            <span
+              key={gate}
+              className="flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+            >
+              <Diamond className="h-3 w-3" />
+              {gate}
+            </span>
+          ))}
+        </div>
+      </div>
+
       {needsTranscription &&
         snapshot?.transcriptionEngine === 'parakeet' &&
         isParakeetLanguageMismatch(snapshot.model, snapshot.sourceLanguage) && (
           <p
             role="status"
-            className="flex items-start gap-1.5 break-words text-xs text-muted-foreground"
+            className="flex items-start gap-1.5 break-words text-xs text-muted-foreground px-1"
           >
             <AlertCircle className="h-4 w-4 shrink-0" />
             {t('parakeet.languageMismatch', {
@@ -244,119 +375,6 @@ const SnapshotConfigBar: React.FC<SnapshotConfigBarProps> = ({
             })}
           </p>
         )}
-
-      {needsTranscription && snapshot?.useEmbeddedSubtitles === false && (
-        <SummaryItem
-          label={t('configBar.embeddedSubtitles')}
-          value={t('snapshotBar.forceTranscription')}
-        />
-      )}
-
-      {needsTranscription && refineValue && (
-        <SummaryItem label={t('stage.refine')} value={refineValue} />
-      )}
-
-      {needsTranscription &&
-        snapshot?.speakerDiarization === true &&
-        isSpeakerDiarizationStandardTaskContext(snapshot) && (
-          <SummaryItem
-            label={t('speakerDiarization.summaryLabel')}
-            value={
-              <span className="flex items-center gap-1">
-                <Users className="h-3 w-3 flex-none text-muted-foreground" />
-                {snapshot?.speakerDiarizationCount >= 2
-                  ? t('speakerDiarization.summaryKnown', {
-                      count: snapshot.speakerDiarizationCount,
-                    })
-                  : t('speakerDiarization.summaryAuto')}
-                {' · '}
-                {t(
-                  snapshot?.speakerDiarizationEmbedInSubtitle === true
-                    ? 'speakerDiarization.summaryEmbedded'
-                    : 'speakerDiarization.summaryMetadataOnly',
-                )}
-              </span>
-            }
-          />
-        )}
-
-      {needsTranscription && snapshot?.manuscriptPath && (
-        <SummaryItem
-          label={t('manuscript.label')}
-          value={
-            <span
-              className="flex min-w-0 items-center gap-1"
-              title={snapshot.manuscriptPath}
-            >
-              <FileText className="h-3 w-3 flex-none text-muted-foreground" />
-              <span className="truncate">
-                {snapshot.manuscriptName ||
-                  String(snapshot.manuscriptPath).split(/[\\/]/).pop()}
-              </span>
-            </span>
-          }
-        />
-      )}
-
-      {snapshot?.sourceLanguage && (
-        <SummaryItem
-          label={
-            needsTranscription
-              ? t('configBar.sourceLanguage')
-              : t('configBar.subtitleSourceLanguage')
-          }
-          value={languageLabel(snapshot.sourceLanguage)}
-        />
-      )}
-
-      {translateOn && snapshot?.targetLanguage && (
-        <SummaryItem
-          label={t('configBar.targetLanguage')}
-          value={languageLabel(snapshot.targetLanguage)}
-        />
-      )}
-
-      {translateOn && providerValue && (
-        <SummaryItem label={t('configBar.provider')} value={providerValue} />
-      )}
-
-      {translateOn && styleValue && (
-        <SummaryItem label={t('configBar.style')} value={styleValue} />
-      )}
-
-      {snapshot?.dub && dubValue && (
-        <SummaryItem
-          label={t('stage.dubbing')}
-          value={
-            <span className="flex items-center gap-1">
-              <AudioLines className="h-3 w-3 flex-none text-muted-foreground" />
-              {dubValue}
-            </span>
-          }
-        />
-      )}
-
-      {snapshot?.compose && composeValue && (
-        <SummaryItem
-          label={t('stage.compose')}
-          value={
-            <span className="flex items-center gap-1">
-              <Film className="h-3 w-3 flex-none text-muted-foreground" />
-              {composeValue}
-            </span>
-          }
-        />
-      )}
-
-      {manualGates.map((gate) => (
-        <span
-          key={gate}
-          className="flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
-        >
-          <Diamond className="h-3 w-3" />
-          {gate}
-        </span>
-      ))}
     </div>
   );
 };
