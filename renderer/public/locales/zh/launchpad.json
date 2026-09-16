@@ -1,12 +1,21 @@
 {
   "title": "您想做什么？",
-  "subtitle": "选择一个任务开始，文件也可以直接拖到卡片上",
+  "subtitle": "选择处理流程，或直接导入素材",
   "startPanel": {
     "title": "开始创作"
   },
   "globalDrop": {
-    "title": "松手立即导入 SmartSub",
-    "desc": "支持任意音视频、字幕或文稿，将自动暂存为创作草稿"
+    "entryTitle": "拖入启动台，开始创作",
+    "entryDesc": "音视频、字幕、文稿 · 整个启动台内容区均可接收",
+    "selectFiles": "选择文件",
+    "title": "松手导入素材",
+    "desc": "素材将暂存为草稿，接下来选择处理流程",
+    "recipeTitle": "松手导入至「{{name}}」",
+    "recipeDesc": "素材将使用此流程，缺少配置时先完成设置",
+    "importing": "正在导入素材…",
+    "unsupported": "未找到支持的音视频、字幕或文稿文件",
+    "subtitleRequired": "此流程仅接收字幕文件。音视频请拖到启动台空白处或转写任务卡上。",
+    "failed": "导入失败，请重试"
   },
   "quickDownload": {
     "title": "需要语音识别模型",
@@ -46,7 +55,7 @@
   "tips": {
     "title": "快速上手",
     "search": "全局搜索功能与任务，随处可唤起",
-    "drop": "把文件直接拖到任务卡上，立即开始",
+    "drop": "拖入启动台导入素材，拖到卡片使用指定流程",
     "shortcuts": "查看全部键盘快捷键",
     "settings": "打开设置"
   },
@@ -108,7 +117,7 @@
   "dropHint": "松手导入文件",
   "fileCount": "{{count}} 个文件",
   "recent": {
-    "footerHint": "把文件拖到上方任务卡即可开始新任务",
+    "footerHint": "拖入启动台即可导入素材，拖到任务卡可使用指定流程",
     "rename": "重命名",
     "delete": "删除",
     "deleteTitle": "删除这条任务记录？",
@@ -149,5 +158,5 @@
     "error": "出错",
     "review": "待校对"
   },
-  "noRecentTasksHint": "完成的任务会出现在这里，把文件拖到上方卡片即可开始"
+  "noRecentTasksHint": "完成的任务会出现在这里，拖入启动台即可导入素材"
 }

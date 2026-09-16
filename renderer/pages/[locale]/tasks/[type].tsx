@@ -600,6 +600,15 @@ export default function TaskPage() {
       retryingRef.current = true;
       try {
         if (
+          typeDef?.accepts === 'subtitle' &&
+          retryFiles.some(
+            (file) => !isSubtitleFile(file?.filePath?.toLowerCase()),
+          )
+        ) {
+          toast.error(t('subtitleFilesRequired'));
+          return;
+        }
+        if (
           !(await canStartParakeetTask(
             retryFiles,
             !!typeDef?.needsModel,
@@ -624,7 +633,7 @@ export default function TaskPage() {
         retryingRef.current = false;
       }
     },
-    [listFormData, projectId, typeDef?.needsModel, t],
+    [listFormData, projectId, typeDef?.needsModel, typeDef?.accepts, t],
   );
 
   const handleRetry = useCallback(

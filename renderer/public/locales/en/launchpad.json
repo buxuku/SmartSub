@@ -1,12 +1,21 @@
 {
   "title": "What would you like to do?",
-  "subtitle": "Pick a task to start — you can also drop files straight onto a card",
+  "subtitle": "Choose a workflow or import your files",
   "startPanel": {
     "title": "Start creating"
   },
   "globalDrop": {
-    "title": "Drop files to import into SmartSub",
-    "desc": "Supports video, audio, subtitles and scripts; saved as a draft instantly"
+    "entryTitle": "Drop into the launchpad to start",
+    "entryDesc": "Video, audio, subtitles, scripts. Drop anywhere in the launchpad content area.",
+    "selectFiles": "Choose files",
+    "title": "Release to import files",
+    "desc": "Files will be saved as a draft. Choose a workflow next.",
+    "recipeTitle": "Release to import into \"{{name}}\"",
+    "recipeDesc": "Files will use this workflow. Complete any missing setup first.",
+    "importing": "Importing files…",
+    "unsupported": "No supported video, audio, subtitle or script files found",
+    "subtitleRequired": "This workflow accepts subtitle files only. Drop audio or video into the launchpad background or onto a transcription task card.",
+    "failed": "Import failed. Please try again."
   },
   "quickDownload": {
     "title": "Speech Model Required",
@@ -46,7 +55,7 @@
   "tips": {
     "title": "Quick tips",
     "search": "Search features and tasks from anywhere",
-    "drop": "Drop files onto a task card to start instantly",
+    "drop": "Drop into the launchpad to import, or onto a card to use its workflow",
     "shortcuts": "See all keyboard shortcuts",
     "settings": "Open settings"
   },
@@ -108,7 +117,7 @@
   "dropHint": "Drop to import files",
   "fileCount": "{{count}} files",
   "recent": {
-    "footerHint": "Drop files onto a task card above to start a new task",
+    "footerHint": "Drop into the launchpad to import files, or onto a task card to use its workflow",
     "rename": "Rename",
     "delete": "Delete",
     "deleteTitle": "Delete this task record?",
@@ -149,5 +158,5 @@
     "error": "Error",
     "review": "Needs review"
   },
-  "noRecentTasksHint": "Finished tasks appear here. Drag files onto a card above to get started"
+  "noRecentTasksHint": "Finished tasks appear here. Drop files into the launchpad to get started"
 }

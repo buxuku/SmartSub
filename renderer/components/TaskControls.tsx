@@ -111,6 +111,13 @@ const TaskControls = ({
         });
         return;
       }
+      if (
+        typeDef.accepts === 'subtitle' &&
+        files.some((file) => !isSubtitleFile(file?.filePath?.toLowerCase()))
+      ) {
+        toast.error(t('tasks:subtitleFilesRequired'));
+        return;
+      }
       // 向导任务的配置快照（含 dub/compose）里 '-1' 是合法的「不翻译」语义
       const isSnapshotTask = Boolean(formData?.dub || formData?.compose);
       // 带翻译的任务必须有有效翻译服务商（'-1' 为历史「不翻译」残留值）
@@ -133,10 +140,13 @@ const TaskControls = ({
       }
       // 需要模型的任务必须已选模型：自动选择兜底后仍为空，说明确实没有可用模型，
       // 拦截并指引下载。配对模式文件自带字幕（跳过听写），不需要模型。
-      const needsTranscription = pendingFiles.some(
-        (file) =>
-          !isSubtitleFile(file?.filePath || '') && !file?.providedSubtitlePath,
-      );
+      const needsTranscription =
+        typeDef.needsModel &&
+        pendingFiles.some(
+          (file) =>
+            !isSubtitleFile(file?.filePath?.toLowerCase()) &&
+            !file?.providedSubtitlePath,
+        );
       if (
         !(await canStartParakeetTask(
           pendingFiles,

@@ -1,4 +1,5 @@
 {
+  "subtitleFilesRequired": "Subtitle translation accepts subtitle files only. Remove audio, video and other non-subtitle files from the list. Use a transcription task for audio or video.",
   "parakeet": {
     "modelUnavailable": "Model {{model}} is unavailable. Select an installed model in task settings. For a task with fixed settings, reinstall its model or create a new task.",
     "languageMismatch": "{{model}} does not support source language {{language}}. Results may be inaccurate. Your selection is unchanged."

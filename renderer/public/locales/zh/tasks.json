@@ -1,4 +1,5 @@
 {
+  "subtitleFilesRequired": "翻译已有字幕仅支持字幕文件。请先从列表移除音视频等非字幕文件；音视频请使用转写任务。",
   "parakeet": {
     "modelUnavailable": "模型 {{model}} 未就绪。请在任务配置中选择已安装的模型；固定配置任务可重新安装原模型或新建任务。",
     "languageMismatch": "{{model}} 不支持源语言 {{language}}，识别结果可能不准确。当前选择已保留。"
