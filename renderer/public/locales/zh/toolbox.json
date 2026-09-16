@@ -167,5 +167,27 @@
     "width": "动图宽度",
     "startExport": "生成高清 GIF",
     "highQualityNotice": "采用双通道调色板算法 (PaletteGen)，避免噪点与失真"
+  },
+  "finishBar": {
+    "title": "处理完成！",
+    "savedTo": "输出至：{{path}}",
+    "stats": "大小：{{original}} → {{compressed}} (省 {{saved}}%)",
+    "openFolder": "打开文件夹",
+    "goToSubtitle": "去做双语字幕",
+    "goToDubbing": "去做 AI 配音",
+    "goToProofread": "去校对字幕",
+    "goToBurn": "合成到视频",
+    "processNext": "继续处理下一个"
+  },
+  "videoCompressorQueue": {
+    "queueTitle": "待压缩视频队列",
+    "addFiles": "添加视频",
+    "clearAll": "清空队列",
+    "compressAll": "开始批量压缩",
+    "compressingItem": "正在压缩第 {{current}} / {{total}} 个...",
+    "itemOriginal": "原大小: {{size}}",
+    "itemCompressed": "压缩后: {{size}} (省 {{saved}}%)",
+    "itemFailed": "压缩失败",
+    "allFinished": "全部 {{count}} 个视频压缩完成！"
   }
 }

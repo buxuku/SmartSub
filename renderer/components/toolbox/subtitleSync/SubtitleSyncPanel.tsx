@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
+import ToolboxFinishBar from '../common/ToolboxFinishBar';
 import { FRAMERATE_RATIO_PRESETS } from '@/lib/framerates';
 import type {
   SubtitleSyncMode,
@@ -339,26 +340,15 @@ export default function SubtitleSyncPanel() {
             </div>
 
             {result?.success && (
-              <div className="space-y-2 rounded-lg bg-green-500/10 border border-green-500/20 p-3 text-xs">
-                <div className="flex items-center gap-1.5 font-medium text-green-600 dark:text-green-400">
-                  <CheckCircle2 className="h-4 w-4" />
-                  校准完成！
-                </div>
-                <p className="truncate text-[11px] text-muted-foreground">
-                  {result.outputPath}
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    window.ipc.invoke('toolbox:openFolder', result.outputPath)
-                  }
-                  className="w-full h-7 text-xs gap-1 mt-1"
-                >
-                  <FolderOpen className="h-3 w-3" />
-                  打开文件所在目录
-                </Button>
-              </div>
+              <ToolboxFinishBar
+                outputType="subtitle"
+                outputPath={result.outputPath}
+                summary={t('finishBar.title')}
+                onReset={() => {
+                  setResult(null);
+                  setFilePath(null);
+                }}
+              />
             )}
           </div>
 

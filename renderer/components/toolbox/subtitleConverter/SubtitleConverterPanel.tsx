@@ -30,6 +30,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
+import ToolboxFinishBar from '../common/ToolboxFinishBar';
 import type {
   SubtitleConvertItemConfig,
   SubtitleConvertItemResult,
@@ -50,8 +51,12 @@ export default function SubtitleConverterPanel() {
   const { t } = useTranslation('toolbox');
 
   const [files, setFiles] = useState<FileItem[]>([]);
-  const [targetFormat, setTargetFormat] = useState<'srt' | 'vtt' | 'ass' | 'lrc' | 'txt'>('srt');
-  const [targetEncoding, setTargetEncoding] = useState<'utf-8' | 'utf-8-bom' | 'gb18030'>('utf-8');
+  const [targetFormat, setTargetFormat] = useState<
+    'srt' | 'vtt' | 'ass' | 'lrc' | 'txt'
+  >('srt');
+  const [targetEncoding, setTargetEncoding] = useState<
+    'utf-8' | 'utf-8-bom' | 'gb18030'
+  >('utf-8');
   const [chineseMode, setChineseMode] = useState<ChineseConvertMode>('none');
   const [cleanFormatting, setCleanFormatting] = useState(false);
   const [includeTimestampsInTxt, setIncludeTimestampsInTxt] = useState(true);
@@ -69,46 +74,49 @@ export default function SubtitleConverterPanel() {
   } | null>(null);
 
   // 添加文件并探测编码
-  const addFiles = useCallback(async (newPaths: string[]) => {
-    if (!newPaths || newPaths.length === 0) return;
+  const addFiles = useCallback(
+    async (newPaths: string[]) => {
+      if (!newPaths || newPaths.length === 0) return;
 
-    const existingPaths = new Set(files.map((f) => f.filePath));
-    const toAdd = newPaths.filter((p) => !existingPaths.has(p));
-    if (toAdd.length === 0) return;
+      const existingPaths = new Set(files.map((f) => f.filePath));
+      const toAdd = newPaths.filter((p) => !existingPaths.has(p));
+      if (toAdd.length === 0) return;
 
-    const newItems: FileItem[] = toAdd.map((filePath) => {
-      const parts = filePath.split(/[/\\]/);
-      return {
-        id: Math.random().toString(36).slice(2),
-        filePath,
-        fileName: parts[parts.length - 1],
-        status: 'ready',
-      };
-    });
+      const newItems: FileItem[] = toAdd.map((filePath) => {
+        const parts = filePath.split(/[/\\]/);
+        return {
+          id: Math.random().toString(36).slice(2),
+          filePath,
+          fileName: parts[parts.length - 1],
+          status: 'ready',
+        };
+      });
 
-    setFiles((prev) => [...prev, ...newItems]);
+      setFiles((prev) => [...prev, ...newItems]);
 
-    // 异步逐一探测编码
-    for (const item of newItems) {
-      try {
-        const detectRes = await window.ipc.invoke(
-          'toolbox:detectEncoding',
-          item.filePath,
-        );
-        if (detectRes?.encoding) {
-          setFiles((prev) =>
-            prev.map((f) =>
-              f.filePath === item.filePath
-                ? { ...f, detectedEncoding: detectRes.encoding }
-                : f,
-            ),
+      // 异步逐一探测编码
+      for (const item of newItems) {
+        try {
+          const detectRes = await window.ipc.invoke(
+            'toolbox:detectEncoding',
+            item.filePath,
           );
+          if (detectRes?.encoding) {
+            setFiles((prev) =>
+              prev.map((f) =>
+                f.filePath === item.filePath
+                  ? { ...f, detectedEncoding: detectRes.encoding }
+                  : f,
+              ),
+            );
+          }
+        } catch (err) {
+          console.error('Failed to detect encoding:', err);
         }
-      } catch (err) {
-        console.error('Failed to detect encoding:', err);
       }
-    }
-  }, [files]);
+    },
+    [files],
+  );
 
   // 点击选择文件
   const handleSelectFiles = async () => {
@@ -132,7 +140,9 @@ export default function SubtitleConverterPanel() {
     const droppedFiles = Array.from(e.dataTransfer.files);
     const paths: string[] = [];
     for (const f of droppedFiles) {
-      const p = window.ipc?.getPathForFile ? window.ipc.getPathForFile(f) : (f as any).path;
+      const p = window.ipc?.getPathForFile
+        ? window.ipc.getPathForFile(f)
+        : (f as any).path;
       if (p) paths.push(p);
     }
     await addFiles(paths);
@@ -231,7 +241,9 @@ export default function SubtitleConverterPanel() {
       if (successCount === results.length) {
         toast.success(`转换完成，成功转换 ${successCount} 个文件`);
       } else {
-        toast.warning(`转换完成，成功 ${successCount} 个，失败 ${results.length - successCount} 个`);
+        toast.warning(
+          `转换完成，成功 ${successCount} 个，失败 ${results.length - successCount} 个`,
+        );
       }
     } catch (err: any) {
       toast.error(`转换失败: ${err.message || err}`);
@@ -259,7 +271,8 @@ export default function SubtitleConverterPanel() {
               {t('dropFilesHere')}
             </p>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              支持 SRT, VTT, ASS, SSA, LRC, TXT 等任意字幕格式，自动修正 ANSI/GBK 乱码
+              支持 SRT, VTT, ASS, SSA, LRC, TXT 等任意字幕格式，自动修正
+              ANSI/GBK 乱码
             </p>
           </div>
 
@@ -344,7 +357,9 @@ export default function SubtitleConverterPanel() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handlePreview(file.filePath, file.fileName)}
+                      onClick={() =>
+                        handlePreview(file.filePath, file.fileName)
+                      }
                       className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                       title="预览内容"
                     >
@@ -426,8 +441,12 @@ export default function SubtitleConverterPanel() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="utf-8">UTF-8 (标准推荐)</SelectItem>
-                  <SelectItem value="utf-8-bom">UTF-8 with BOM (兼容旧播放器)</SelectItem>
-                  <SelectItem value="gb18030">GB18030 / ANSI (Windows 专用)</SelectItem>
+                  <SelectItem value="utf-8-bom">
+                    UTF-8 with BOM (兼容旧播放器)
+                  </SelectItem>
+                  <SelectItem value="gb18030">
+                    GB18030 / ANSI (Windows 专用)
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -446,13 +465,27 @@ export default function SubtitleConverterPanel() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">{t('subtitleConverter.chineseNone')}</SelectItem>
-                  <SelectItem value="s2t">{t('subtitleConverter.chineseS2T')}</SelectItem>
-                  <SelectItem value="t2s">{t('subtitleConverter.chineseT2S')}</SelectItem>
-                  <SelectItem value="s2tw">{t('subtitleConverter.chineseS2TW')}</SelectItem>
-                  <SelectItem value="tw2s">{t('subtitleConverter.chineseTW2S')}</SelectItem>
-                  <SelectItem value="s2hk">{t('subtitleConverter.chineseS2HK')}</SelectItem>
-                  <SelectItem value="hk2s">{t('subtitleConverter.chineseHK2S')}</SelectItem>
+                  <SelectItem value="none">
+                    {t('subtitleConverter.chineseNone')}
+                  </SelectItem>
+                  <SelectItem value="s2t">
+                    {t('subtitleConverter.chineseS2T')}
+                  </SelectItem>
+                  <SelectItem value="t2s">
+                    {t('subtitleConverter.chineseT2S')}
+                  </SelectItem>
+                  <SelectItem value="s2tw">
+                    {t('subtitleConverter.chineseS2TW')}
+                  </SelectItem>
+                  <SelectItem value="tw2s">
+                    {t('subtitleConverter.chineseTW2S')}
+                  </SelectItem>
+                  <SelectItem value="s2hk">
+                    {t('subtitleConverter.chineseS2HK')}
+                  </SelectItem>
+                  <SelectItem value="hk2s">
+                    {t('subtitleConverter.chineseHK2S')}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -516,6 +549,18 @@ export default function SubtitleConverterPanel() {
                 </Button>
               </div>
             </div>
+            {/* 转换完成行动条 */}
+            {files.some((f) => f.status === 'done' && f.outputPath) &&
+              !isProcessing && (
+                <ToolboxFinishBar
+                  outputType="subtitle"
+                  outputPaths={files
+                    .filter((f) => f.status === 'done' && f.outputPath)
+                    .map((f) => f.outputPath!)}
+                  summary={t('finishBar.title')}
+                  onReset={clearFiles}
+                />
+              )}
           </div>
 
           {/* 底部转换执行按钮 */}
@@ -555,21 +600,37 @@ export default function SubtitleConverterPanel() {
           ) : (
             <div className="space-y-3 py-2">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>探测格式: <b className="text-foreground">{previewData?.format?.toUpperCase()}</b></span>
+                <span>
+                  探测格式:{' '}
+                  <b className="text-foreground">
+                    {previewData?.format?.toUpperCase()}
+                  </b>
+                </span>
                 <span>•</span>
-                <span>检测编码: <b className="text-foreground">{previewData?.encoding}</b></span>
+                <span>
+                  检测编码:{' '}
+                  <b className="text-foreground">{previewData?.encoding}</b>
+                </span>
               </div>
 
               <div className="max-h-64 overflow-y-auto space-y-2 rounded-lg border border-border bg-muted/30 p-3 font-mono text-[11px]">
                 {previewData?.cues?.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-4">无条目内容</p>
+                  <p className="text-muted-foreground text-center py-4">
+                    无条目内容
+                  </p>
                 ) : (
                   previewData?.cues?.map((cue, idx) => (
-                    <div key={idx} className="border-b border-border/50 pb-1.5 last:border-none">
+                    <div
+                      key={idx}
+                      className="border-b border-border/50 pb-1.5 last:border-none"
+                    >
                       <div className="text-primary/70 text-[10px]">
-                        #{idx + 1} ({Math.round(cue.startMs / 1000)}s - {Math.round(cue.endMs / 1000)}s)
+                        #{idx + 1} ({Math.round(cue.startMs / 1000)}s -{' '}
+                        {Math.round(cue.endMs / 1000)}s)
                       </div>
-                      <div className="text-foreground whitespace-pre-wrap">{cue.text}</div>
+                      <div className="text-foreground whitespace-pre-wrap">
+                        {cue.text}
+                      </div>
                     </div>
                   ))
                 )}

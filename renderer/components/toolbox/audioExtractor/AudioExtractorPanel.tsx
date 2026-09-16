@@ -22,7 +22,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import type { AudioExtractFormat, AudioExtractResult } from '../../../../types/toolbox';
+import ToolboxFinishBar from '../common/ToolboxFinishBar';
+import type {
+  AudioExtractFormat,
+  AudioExtractResult,
+} from '../../../../types/toolbox';
 
 interface AudioItem {
   id: string;
@@ -38,8 +42,12 @@ export default function AudioExtractorPanel() {
 
   const [files, setFiles] = useState<AudioItem[]>([]);
   const [format, setFormat] = useState<AudioExtractFormat>('mp3');
-  const [bitrate, setBitrate] = useState<'128k' | '192k' | '256k' | '320k'>('320k');
-  const [wavPreset, setWavPreset] = useState<'standard' | 'asr_16k_mono'>('standard');
+  const [bitrate, setBitrate] = useState<'128k' | '192k' | '256k' | '320k'>(
+    '320k',
+  );
+  const [wavPreset, setWavPreset] = useState<'standard' | 'asr_16k_mono'>(
+    'standard',
+  );
   const [outputDir, setOutputDir] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -85,7 +93,11 @@ export default function AudioExtractorPanel() {
     e.stopPropagation();
     const droppedFiles = Array.from(e.dataTransfer.files);
     const paths = droppedFiles
-      .map((f) => (window.ipc?.getPathForFile ? window.ipc.getPathForFile(f) : (f as any).path))
+      .map((f) =>
+        window.ipc?.getPathForFile
+          ? window.ipc.getPathForFile(f)
+          : (f as any).path,
+      )
       .filter(Boolean);
     addFiles(paths);
   };
@@ -100,7 +112,9 @@ export default function AudioExtractorPanel() {
       const file = files[i];
       setFiles((prev) =>
         prev.map((f) =>
-          f.id === file.id ? { ...f, status: 'extracting', error: undefined } : f,
+          f.id === file.id
+            ? { ...f, status: 'extracting', error: undefined }
+            : f,
         ),
       );
 
@@ -139,7 +153,9 @@ export default function AudioExtractorPanel() {
       } catch (err: any) {
         setFiles((prev) =>
           prev.map((f) =>
-            f.id === file.id ? { ...f, status: 'error', error: err.message || err } : f,
+            f.id === file.id
+              ? { ...f, status: 'error', error: err.message || err }
+              : f,
           ),
         );
       }
@@ -240,7 +256,12 @@ export default function AudioExtractorPanel() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => window.ipc.invoke('toolbox:openFolder', file.outputPath!)}
+                        onClick={() =>
+                          window.ipc.invoke(
+                            'toolbox:openFolder',
+                            file.outputPath!,
+                          )
+                        }
                         className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                       >
                         <FolderOpen className="h-3.5 w-3.5" />
@@ -250,7 +271,9 @@ export default function AudioExtractorPanel() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setFiles((prev) => prev.filter((f) => f.id !== file.id))}
+                      onClick={() =>
+                        setFiles((prev) => prev.filter((f) => f.id !== file.id))
+                      }
                       disabled={isProcessing}
                       className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                     >
@@ -295,7 +318,9 @@ export default function AudioExtractorPanel() {
             {/* MP3/AAC 码率 */}
             {['mp3', 'aac', 'm4a'].includes(format) && (
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">音频码率</Label>
+                <Label className="text-xs text-muted-foreground">
+                  音频码率
+                </Label>
                 <Select
                   value={bitrate}
                   onValueChange={(v: any) => setBitrate(v)}
@@ -317,7 +342,9 @@ export default function AudioExtractorPanel() {
             {/* WAV 预设 */}
             {format === 'wav' && (
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">WAV 音轨规范</Label>
+                <Label className="text-xs text-muted-foreground">
+                  WAV 音轨规范
+                </Label>
                 <Select
                   value={wavPreset}
                   onValueChange={(v: any) => setWavPreset(v)}
@@ -328,7 +355,9 @@ export default function AudioExtractorPanel() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="standard">原音频采样率与声道</SelectItem>
-                    <SelectItem value="asr_16k_mono">16kHz 单声道 (ASR 转写标准)</SelectItem>
+                    <SelectItem value="asr_16k_mono">
+                      16kHz 单声道 (ASR 转写标准)
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -357,6 +386,18 @@ export default function AudioExtractorPanel() {
                 </Button>
               </div>
             </div>
+            {/* 批量提取完成行动条 */}
+            {files.some((f) => f.status === 'done' && f.outputPath) &&
+              !isProcessing && (
+                <ToolboxFinishBar
+                  outputType="audio"
+                  outputPaths={files
+                    .filter((f) => f.status === 'done' && f.outputPath)
+                    .map((f) => f.outputPath!)}
+                  summary={t('finishBar.title')}
+                  onReset={() => setFiles([])}
+                />
+              )}
           </div>
 
           <div className="pt-4 border-t border-border">

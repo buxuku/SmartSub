@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
+import ToolboxFinishBar from '../common/ToolboxFinishBar';
 import type {
   EmbeddedSubtitleStreamInfo,
   ExtractEmbeddedSubtitleResult,
@@ -32,12 +33,15 @@ export default function EmbeddedSubtitlePanel() {
   const [videoPath, setVideoPath] = useState<string | null>(null);
   const [streams, setStreams] = useState<EmbeddedSubtitleStreamInfo[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
-  const [targetFormat, setTargetFormat] = useState<'srt' | 'ass' | 'vtt'>('srt');
+  const [targetFormat, setTargetFormat] = useState<'srt' | 'ass' | 'vtt'>(
+    'srt',
+  );
   const [outputDir, setOutputDir] = useState<string>('');
 
   const [isScanning, setIsScanning] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
-  const [extractedResult, setExtractedResult] = useState<ExtractEmbeddedSubtitleResult | null>(null);
+  const [extractedResult, setExtractedResult] =
+    useState<ExtractEmbeddedSubtitleResult | null>(null);
 
   const scanVideo = async (filePath: string) => {
     setVideoPath(filePath);
@@ -54,7 +58,9 @@ export default function EmbeddedSubtitlePanel() {
       setStreams(detected);
       if (detected.length > 0) {
         // 默认只选中可直接转为文本的字幕轨 (isText: true)
-        const textTracks = detected.filter((s) => s.isText).map((s) => s.subIndex);
+        const textTracks = detected
+          .filter((s) => s.isText)
+          .map((s) => s.subIndex);
         setSelectedIndices(textTracks);
       } else {
         toast.info('未在该视频中探测到内封软字幕轨');
@@ -100,7 +106,9 @@ export default function EmbeddedSubtitlePanel() {
 
   const toggleIndex = (stream: EmbeddedSubtitleStreamInfo) => {
     if (!stream.isText) {
-      toast.info(`轨道 #${stream.subIndex + 1} (${stream.codec}) 为位图字幕，不支持提取为纯文本`);
+      toast.info(
+        `轨道 #${stream.subIndex + 1} (${stream.codec}) 为位图字幕，不支持提取为纯文本`,
+      );
       return;
     }
     const idx = stream.subIndex;
@@ -151,7 +159,9 @@ export default function EmbeddedSubtitlePanel() {
               <UploadCloud className="h-6 w-6" />
             </div>
             <p className="mt-2.5 text-xs font-medium text-foreground">
-              {videoPath ? videoPath.split(/[/\\]/).pop() : '点击或拖拽 MKV/MP4 视频到此处扫描'}
+              {videoPath
+                ? videoPath.split(/[/\\]/).pop()
+                : '点击或拖拽 MKV/MP4 视频到此处扫描'}
             </p>
             <p className="mt-1 text-[11px] text-muted-foreground">
               快速扫描容器内嵌的 SubRip、ASS、WebVTT、mov_text 软字幕轨
@@ -169,7 +179,9 @@ export default function EmbeddedSubtitlePanel() {
                 onClick={toggleSelectAll}
                 className="h-7 text-xs text-muted-foreground hover:text-foreground"
               >
-                {selectedIndices.length === streams.length ? '取消全选' : '全选'}
+                {selectedIndices.length === streams.length
+                  ? '取消全选'
+                  : '全选'}
               </Button>
             )}
           </div>
@@ -183,7 +195,9 @@ export default function EmbeddedSubtitlePanel() {
             ) : streams.length === 0 ? (
               <div className="flex h-48 flex-col items-center justify-center text-center text-xs text-muted-foreground">
                 <FileSearch className="h-8 w-8 text-muted-foreground/40 mb-2" />
-                <span>{videoPath ? '未发现文本字幕轨' : '请先选择视频文件'}</span>
+                <span>
+                  {videoPath ? '未发现文本字幕轨' : '请先选择视频文件'}
+                </span>
               </div>
             ) : (
               <div className="divide-y divide-border/60">
@@ -213,11 +227,17 @@ export default function EmbeddedSubtitlePanel() {
                             <span className="text-xs font-medium text-foreground">
                               轨道 #{stream.subIndex + 1}
                             </span>
-                            <Badge variant="outline" className="text-[10px] font-mono py-0 h-4">
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] font-mono py-0 h-4"
+                            >
                               {stream.codec.toUpperCase()}
                             </Badge>
                             {stream.language && (
-                              <Badge variant="secondary" className="text-[10px] py-0 h-4">
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] py-0 h-4"
+                              >
                                 {stream.language}
                               </Badge>
                             )}
@@ -227,7 +247,10 @@ export default function EmbeddedSubtitlePanel() {
                               </Badge>
                             )}
                             {!isSelectable && (
-                              <Badge variant="outline" className="text-[10px] py-0 h-4 border-amber-500/40 text-amber-600 dark:text-amber-400">
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] py-0 h-4 border-amber-500/40 text-amber-600 dark:text-amber-400"
+                              >
                                 图形字幕 (不可提取为文本)
                               </Badge>
                             )}
@@ -256,7 +279,9 @@ export default function EmbeddedSubtitlePanel() {
             </h3>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">导出字幕格式</Label>
+              <Label className="text-xs text-muted-foreground">
+                导出字幕格式
+              </Label>
               <Select
                 value={targetFormat}
                 onValueChange={(v: any) => setTargetFormat(v)}
@@ -288,7 +313,9 @@ export default function EmbeddedSubtitlePanel() {
                   variant="outline"
                   size="sm"
                   onClick={async () => {
-                    const picked = await window.ipc.invoke('toolbox:selectFolder');
+                    const picked = await window.ipc.invoke(
+                      'toolbox:selectFolder',
+                    );
                     if (picked) setOutputDir(picked);
                   }}
                   disabled={isExtracting}
@@ -301,27 +328,19 @@ export default function EmbeddedSubtitlePanel() {
 
             {/* 提取结果展示 */}
             {extractedResult?.success && (
-              <div className="space-y-2 rounded-lg bg-green-500/10 border border-green-500/20 p-3 text-xs">
-                <div className="flex items-center gap-1.5 font-medium text-green-600 dark:text-green-400">
-                  <CheckCircle2 className="h-4 w-4" />
-                  提取完成！
-                </div>
-                <div className="space-y-1 max-h-32 overflow-y-auto">
-                  {extractedResult.extractedFiles.map((f, i) => (
-                    <div key={i} className="flex items-center justify-between text-[11px]">
-                      <span className="truncate max-w-[180px]">{f.outputPath.split(/[/\\]/).pop()}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => window.ipc.invoke('toolbox:openFolder', f.outputPath)}
-                        className="h-5 w-5 p-0"
-                      >
-                        <FolderOpen className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <ToolboxFinishBar
+                outputType="subtitle"
+                outputPaths={extractedResult.extractedFiles.map(
+                  (f) => f.outputPath,
+                )}
+                summary={t('finishBar.title')}
+                onReset={() => {
+                  setExtractedResult(null);
+                  setVideoPath(null);
+                  setStreams([]);
+                  setSelectedIndices([]);
+                }}
+              />
             )}
           </div>
 
@@ -329,7 +348,11 @@ export default function EmbeddedSubtitlePanel() {
             <Button
               className="w-full text-xs font-medium h-9"
               onClick={handleExtract}
-              disabled={streams.length === 0 || selectedIndices.length === 0 || isExtracting}
+              disabled={
+                streams.length === 0 ||
+                selectedIndices.length === 0 ||
+                isExtracting
+              }
             >
               {isExtracting ? (
                 <>

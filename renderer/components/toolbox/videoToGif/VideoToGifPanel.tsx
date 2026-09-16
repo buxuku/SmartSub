@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
+import ToolboxFinishBar from '../common/ToolboxFinishBar';
 import type { VideoToGifResult } from '../../../../types/toolbox';
 
 export default function VideoToGifPanel() {
@@ -108,19 +109,25 @@ export default function VideoToGifPanel() {
     setResult(null);
 
     try {
-      const res: VideoToGifResult = await window.ipc.invoke('toolbox:videoToGif', {
-        jobId,
-        config: {
-          videoPath,
-          startSec,
-          endSec,
-          fps,
-          width,
-          outputPath: outputDir
-            ? `${outputDir}/${videoPath.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, '')}_anim.gif`
-            : undefined,
+      const res: VideoToGifResult = await window.ipc.invoke(
+        'toolbox:videoToGif',
+        {
+          jobId,
+          config: {
+            videoPath,
+            startSec,
+            endSec,
+            fps,
+            width,
+            outputPath: outputDir
+              ? `${outputDir}/${videoPath
+                  .split(/[/\\]/)
+                  .pop()
+                  ?.replace(/\.[^.]+$/, '')}_anim.gif`
+              : undefined,
+          },
         },
-      });
+      );
       setResult(res);
       if (res.success) {
         toast.success('高清 GIF 动图生成成功！');
@@ -219,7 +226,9 @@ export default function VideoToGifPanel() {
 
             {/* 帧率 */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">动图帧率 (FPS)</Label>
+              <Label className="text-xs text-muted-foreground">
+                动图帧率 (FPS)
+              </Label>
               <Select
                 value={String(fps)}
                 onValueChange={(v) => setFps(parseInt(v, 10))}
@@ -239,7 +248,9 @@ export default function VideoToGifPanel() {
 
             {/* 宽度 */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">动图宽度 (等比缩放)</Label>
+              <Label className="text-xs text-muted-foreground">
+                动图宽度 (等比缩放)
+              </Label>
               <Select
                 value={String(width)}
                 onValueChange={(v) => setWidth(parseInt(v, 10))}
@@ -257,7 +268,8 @@ export default function VideoToGifPanel() {
             </div>
 
             <div className="rounded-lg bg-muted/40 p-3 text-[11px] text-muted-foreground leading-relaxed">
-              💡 采用双通道 PaletteGen 调色板渲染算法，避免传统 GIF 出现的彩点噪点和严重色斑。
+              💡 采用双通道 PaletteGen 调色板渲染算法，避免传统 GIF
+              出现的彩点噪点和严重色斑。
             </div>
 
             {/* 输出目录 */}
@@ -276,7 +288,9 @@ export default function VideoToGifPanel() {
                   variant="outline"
                   size="sm"
                   onClick={async () => {
-                    const picked = await window.ipc.invoke('toolbox:selectFolder');
+                    const picked = await window.ipc.invoke(
+                      'toolbox:selectFolder',
+                    );
                     if (picked) setOutputDir(picked);
                   }}
                   disabled={isExporting}
@@ -288,24 +302,15 @@ export default function VideoToGifPanel() {
             </div>
 
             {result?.success && (
-              <div className="space-y-2 rounded-lg bg-green-500/10 border border-green-500/20 p-3 text-xs">
-                <div className="flex items-center gap-1.5 font-medium text-green-600 dark:text-green-400">
-                  <CheckCircle2 className="h-4 w-4" />
-                  生成完成！
-                </div>
-                <p className="truncate text-[11px] text-muted-foreground">
-                  {result.outputPath}
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => window.ipc.invoke('toolbox:openFolder', result.outputPath)}
-                  className="w-full h-7 text-xs gap-1 mt-1"
-                >
-                  <FolderOpen className="h-3 w-3" />
-                  打开所在目录
-                </Button>
-              </div>
+              <ToolboxFinishBar
+                outputType="gif"
+                outputPath={result.outputPath}
+                summary={t('finishBar.title')}
+                onReset={() => {
+                  setResult(null);
+                  setVideoPath(null);
+                }}
+              />
             )}
           </div>
 

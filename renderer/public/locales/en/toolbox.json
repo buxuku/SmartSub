@@ -167,5 +167,27 @@
     "width": "GIF Width",
     "startExport": "Generate High-Quality GIF",
     "highQualityNotice": "Uses two-pass PaletteGen algorithm for vibrant, artifact-free GIFs"
+  },
+  "finishBar": {
+    "title": "Completed!",
+    "savedTo": "Output: {{path}}",
+    "stats": "Size: {{original}} → {{compressed}} (saved {{saved}}%)",
+    "openFolder": "Open Folder",
+    "goToSubtitle": "Generate Subtitles",
+    "goToDubbing": "AI Dubbing",
+    "goToProofread": "Proofread Subtitles",
+    "goToBurn": "Burn to Video",
+    "processNext": "Process Another"
+  },
+  "videoCompressorQueue": {
+    "queueTitle": "Compression Queue",
+    "addFiles": "Add Videos",
+    "clearAll": "Clear All",
+    "compressAll": "Batch Compress All",
+    "compressingItem": "Compressing {{current}} of {{total}}...",
+    "itemOriginal": "Original: {{size}}",
+    "itemCompressed": "Compressed: {{size}} (saved {{saved}}%)",
+    "itemFailed": "Compression failed",
+    "allFinished": "All {{count}} videos compressed successfully!"
   }
 }

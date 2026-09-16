@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { toast } from 'sonner';
+import ToolboxFinishBar from '../common/ToolboxFinishBar';
 import TimelineTrimmerBar from './TimelineTrimmerBar';
 import type { VideoTrimResult } from '../../../../types/toolbox';
 
@@ -102,7 +103,9 @@ export default function VideoTrimmerPanel() {
 
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
-  const [exportResult, setExportResult] = useState<VideoTrimResult | null>(null);
+  const [exportResult, setExportResult] = useState<VideoTrimResult | null>(
+    null,
+  );
   const currentJobIdRef = useRef<string>('');
   const isCancelledRef = useRef<boolean>(false);
 
@@ -124,14 +127,20 @@ export default function VideoTrimmerPanel() {
 
   // 微调入点与出点
   const stepInPoint = (delta: number) => {
-    const safe = Math.max(0, Math.min(outPoint - 0.1, Number((inPoint + delta).toFixed(2))));
+    const safe = Math.max(
+      0,
+      Math.min(outPoint - 0.1, Number((inPoint + delta).toFixed(2))),
+    );
     setInPoint(safe);
     playerRef.current?.seekTo(safe, 'seconds');
     setCurrentTime(safe);
   };
 
   const stepOutPoint = (delta: number) => {
-    const safe = Math.max(inPoint + 0.1, Math.min(totalDuration, Number((outPoint + delta).toFixed(2))));
+    const safe = Math.max(
+      inPoint + 0.1,
+      Math.min(totalDuration, Number((outPoint + delta).toFixed(2))),
+    );
     setOutPoint(safe);
     playerRef.current?.seekTo(safe, 'seconds');
     setCurrentTime(safe);
@@ -139,13 +148,19 @@ export default function VideoTrimmerPanel() {
 
   // 设定当前播放时刻为入点/出点
   const setCurrentAsIn = () => {
-    const safe = Math.max(0, Math.min(outPoint - 0.1, Number(currentTime.toFixed(2))));
+    const safe = Math.max(
+      0,
+      Math.min(outPoint - 0.1, Number(currentTime.toFixed(2))),
+    );
     setInPoint(safe);
     toast.info(`入点已设定为 ${formatSeconds(safe)}`);
   };
 
   const setCurrentAsOut = () => {
-    const safe = Math.max(inPoint + 0.1, Math.min(totalDuration, Number(currentTime.toFixed(2))));
+    const safe = Math.max(
+      inPoint + 0.1,
+      Math.min(totalDuration, Number(currentTime.toFixed(2))),
+    );
     setOutPoint(safe);
     toast.info(`出点已设定为 ${formatSeconds(safe)}`);
   };
@@ -155,7 +170,10 @@ export default function VideoTrimmerPanel() {
     setIsEditingIn(false);
     const parsed = parseTimeString(inInputText);
     if (parsed !== null) {
-      const safe = Math.max(0, Math.min(outPoint - 0.1, Number(parsed.toFixed(2))));
+      const safe = Math.max(
+        0,
+        Math.min(outPoint - 0.1, Number(parsed.toFixed(2))),
+      );
       setInPoint(safe);
       setInInputText(formatSeconds(safe));
       playerRef.current?.seekTo(safe, 'seconds');
@@ -169,7 +187,10 @@ export default function VideoTrimmerPanel() {
     setIsEditingOut(false);
     const parsed = parseTimeString(outInputText);
     if (parsed !== null) {
-      const safe = Math.max(inPoint + 0.1, Math.min(totalDuration, Number(parsed.toFixed(2))));
+      const safe = Math.max(
+        inPoint + 0.1,
+        Math.min(totalDuration, Number(parsed.toFixed(2))),
+      );
       setOutPoint(safe);
       setOutInputText(formatSeconds(safe));
       playerRef.current?.seekTo(safe, 'seconds');
@@ -428,7 +449,8 @@ export default function VideoTrimmerPanel() {
                     )}
                   </Button>
                   <span className="font-mono text-xs text-foreground">
-                    {formatSeconds(currentTime)} / {formatSeconds(totalDuration)}
+                    {formatSeconds(currentTime)} /{' '}
+                    {formatSeconds(totalDuration)}
                   </span>
                 </div>
               </div>
@@ -461,8 +483,16 @@ export default function VideoTrimmerPanel() {
                       onClick={handleTogglePlayClip}
                       className="h-7 text-xs px-2.5 gap-1.5"
                     >
-                      {isPlayingClip ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-                      <span>{isPlayingClip ? t('videoTrimmer.pausePreview') : t('videoTrimmer.previewClip')}</span>
+                      {isPlayingClip ? (
+                        <Pause className="h-3.5 w-3.5" />
+                      ) : (
+                        <Play className="h-3.5 w-3.5" />
+                      )}
+                      <span>
+                        {isPlayingClip
+                          ? t('videoTrimmer.pausePreview')
+                          : t('videoTrimmer.previewClip')}
+                      </span>
                     </Button>
                     <Button
                       variant="ghost"
@@ -481,12 +511,18 @@ export default function VideoTrimmerPanel() {
                   </div>
 
                   <div className="flex items-center gap-2.5">
-                    <span className="text-xs text-muted-foreground">{t('videoTrimmer.duration')}:</span>
-                    <Badge variant="secondary" className="font-mono text-xs px-2 py-0.5 font-semibold text-primary">
+                    <span className="text-xs text-muted-foreground">
+                      {t('videoTrimmer.duration')}:
+                    </span>
+                    <Badge
+                      variant="secondary"
+                      className="font-mono text-xs px-2 py-0.5 font-semibold text-primary"
+                    >
                       {formatSeconds(clipDuration)}
                     </Badge>
                     <span className="text-[11px] text-muted-foreground/80 font-mono">
-                      / {t('videoTrimmer.totalDuration')} {formatSeconds(totalDuration)}
+                      / {t('videoTrimmer.totalDuration')}{' '}
+                      {formatSeconds(totalDuration)}
                     </span>
                   </div>
                 </div>
@@ -508,14 +544,18 @@ export default function VideoTrimmerPanel() {
                         title="将当前播放位置设为入点 (快捷键 [ )"
                       >
                         <span>[ {t('videoTrimmer.setAsIn')}</span>
-                        <kbd className="rounded bg-muted px-1 text-[9px] text-muted-foreground border border-border/50">[</kbd>
+                        <kbd className="rounded bg-muted px-1 text-[9px] text-muted-foreground border border-border/50">
+                          [
+                        </kbd>
                       </Button>
                     </div>
 
                     <div className="flex items-center gap-1.5">
                       <Input
                         type="text"
-                        value={isEditingIn ? inInputText : formatSeconds(inPoint)}
+                        value={
+                          isEditingIn ? inInputText : formatSeconds(inPoint)
+                        }
                         onFocus={() => {
                           setIsEditingIn(true);
                           setInInputText(formatSeconds(inPoint));
@@ -529,10 +569,42 @@ export default function VideoTrimmerPanel() {
                         title="可直接输入秒数或分秒格式 (如 12.5 或 01:23.4)"
                       />
                       <div className="flex items-center gap-1 flex-1 justify-end">
-                        <Button variant="outline" size="sm" onClick={() => stepInPoint(-1)} className="h-7 px-1.5 text-[11px] font-mono" title="后退 1 秒">-1s</Button>
-                        <Button variant="outline" size="sm" onClick={() => stepInPoint(-0.1)} className="h-7 px-1.5 text-[11px] font-mono" title="后退 0.1 秒">-0.1s</Button>
-                        <Button variant="outline" size="sm" onClick={() => stepInPoint(0.1)} className="h-7 px-1.5 text-[11px] font-mono" title="前进 0.1 秒">+0.1s</Button>
-                        <Button variant="outline" size="sm" onClick={() => stepInPoint(1)} className="h-7 px-1.5 text-[11px] font-mono" title="前进 1 秒">+1s</Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => stepInPoint(-1)}
+                          className="h-7 px-1.5 text-[11px] font-mono"
+                          title="后退 1 秒"
+                        >
+                          -1s
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => stepInPoint(-0.1)}
+                          className="h-7 px-1.5 text-[11px] font-mono"
+                          title="后退 0.1 秒"
+                        >
+                          -0.1s
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => stepInPoint(0.1)}
+                          className="h-7 px-1.5 text-[11px] font-mono"
+                          title="前进 0.1 秒"
+                        >
+                          +0.1s
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => stepInPoint(1)}
+                          className="h-7 px-1.5 text-[11px] font-mono"
+                          title="前进 1 秒"
+                        >
+                          +1s
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -552,14 +624,18 @@ export default function VideoTrimmerPanel() {
                         title="将当前播放位置设为出点 (快捷键 ] )"
                       >
                         <span>] {t('videoTrimmer.setAsOut')}</span>
-                        <kbd className="rounded bg-muted px-1 text-[9px] text-muted-foreground border border-border/50">]</kbd>
+                        <kbd className="rounded bg-muted px-1 text-[9px] text-muted-foreground border border-border/50">
+                          ]
+                        </kbd>
                       </Button>
                     </div>
 
                     <div className="flex items-center gap-1.5">
                       <Input
                         type="text"
-                        value={isEditingOut ? outInputText : formatSeconds(outPoint)}
+                        value={
+                          isEditingOut ? outInputText : formatSeconds(outPoint)
+                        }
                         onFocus={() => {
                           setIsEditingOut(true);
                           setOutInputText(formatSeconds(outPoint));
@@ -573,10 +649,42 @@ export default function VideoTrimmerPanel() {
                         title="可直接输入秒数或分秒格式 (如 35.8 或 01:45.0)"
                       />
                       <div className="flex items-center gap-1 flex-1 justify-end">
-                        <Button variant="outline" size="sm" onClick={() => stepOutPoint(-1)} className="h-7 px-1.5 text-[11px] font-mono" title="后退 1 秒">-1s</Button>
-                        <Button variant="outline" size="sm" onClick={() => stepOutPoint(-0.1)} className="h-7 px-1.5 text-[11px] font-mono" title="后退 0.1 秒">-0.1s</Button>
-                        <Button variant="outline" size="sm" onClick={() => stepOutPoint(0.1)} className="h-7 px-1.5 text-[11px] font-mono" title="前进 0.1 秒">+0.1s</Button>
-                        <Button variant="outline" size="sm" onClick={() => stepOutPoint(1)} className="h-7 px-1.5 text-[11px] font-mono" title="前进 1 秒">+1s</Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => stepOutPoint(-1)}
+                          className="h-7 px-1.5 text-[11px] font-mono"
+                          title="后退 1 秒"
+                        >
+                          -1s
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => stepOutPoint(-0.1)}
+                          className="h-7 px-1.5 text-[11px] font-mono"
+                          title="后退 0.1 秒"
+                        >
+                          -0.1s
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => stepOutPoint(0.1)}
+                          className="h-7 px-1.5 text-[11px] font-mono"
+                          title="前进 0.1 秒"
+                        >
+                          +0.1s
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => stepOutPoint(1)}
+                          className="h-7 px-1.5 text-[11px] font-mono"
+                          title="前进 1 秒"
+                        >
+                          +1s
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -610,9 +718,16 @@ export default function VideoTrimmerPanel() {
                 disabled={isExporting}
               >
                 <div className="flex items-start space-x-2 rounded-lg border border-border p-2.5 transition-colors hover:bg-muted/30">
-                  <RadioGroupItem value="lossless" id="mode-lossless" className="mt-0.5" />
+                  <RadioGroupItem
+                    value="lossless"
+                    id="mode-lossless"
+                    className="mt-0.5"
+                  />
                   <div className="space-y-0.5">
-                    <Label htmlFor="mode-lossless" className="text-xs font-medium cursor-pointer">
+                    <Label
+                      htmlFor="mode-lossless"
+                      className="text-xs font-medium cursor-pointer"
+                    >
                       {t('videoTrimmer.modeLossless')}
                     </Label>
                     <p className="text-[11px] text-muted-foreground leading-normal">
@@ -622,9 +737,16 @@ export default function VideoTrimmerPanel() {
                 </div>
 
                 <div className="flex items-start space-x-2 rounded-lg border border-border p-2.5 transition-colors hover:bg-muted/30">
-                  <RadioGroupItem value="accurate" id="mode-accurate" className="mt-0.5" />
+                  <RadioGroupItem
+                    value="accurate"
+                    id="mode-accurate"
+                    className="mt-0.5"
+                  />
                   <div className="space-y-0.5">
-                    <Label htmlFor="mode-accurate" className="text-xs font-medium cursor-pointer">
+                    <Label
+                      htmlFor="mode-accurate"
+                      className="text-xs font-medium cursor-pointer"
+                    >
                       {t('videoTrimmer.modeAccurate')}
                     </Label>
                     <p className="text-[11px] text-muted-foreground leading-normal">
@@ -638,14 +760,18 @@ export default function VideoTrimmerPanel() {
             {/* 自定义精确时间调整 */}
             <div className="space-y-2 pt-2 border-t border-border">
               <div className="flex items-center justify-between">
-                <Label className="text-xs text-muted-foreground">起止秒数 (精准秒数)</Label>
+                <Label className="text-xs text-muted-foreground">
+                  起止秒数 (精准秒数)
+                </Label>
                 <span className="text-[10px] text-muted-foreground font-mono">
                   {formatSeconds(clipDuration)}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <span className="text-[10px] text-muted-foreground">起始秒</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    起始秒
+                  </span>
                   <Input
                     type="number"
                     step="0.01"
@@ -654,7 +780,10 @@ export default function VideoTrimmerPanel() {
                     value={Number(inPoint.toFixed(2))}
                     onChange={(e) => {
                       const val = parseFloat(e.target.value) || 0;
-                      const safe = Math.max(0, Math.min(outPoint - 0.1, Number(val.toFixed(2))));
+                      const safe = Math.max(
+                        0,
+                        Math.min(outPoint - 0.1, Number(val.toFixed(2))),
+                      );
                       setInPoint(safe);
                       playerRef.current?.seekTo(safe, 'seconds');
                       setCurrentTime(safe);
@@ -664,7 +793,9 @@ export default function VideoTrimmerPanel() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <span className="text-[10px] text-muted-foreground">结束秒</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    结束秒
+                  </span>
                   <Input
                     type="number"
                     step="0.01"
@@ -673,7 +804,10 @@ export default function VideoTrimmerPanel() {
                     value={Number(outPoint.toFixed(2))}
                     onChange={(e) => {
                       const val = parseFloat(e.target.value) || 0;
-                      const safe = Math.max(inPoint + 0.1, Math.min(totalDuration, Number(val.toFixed(2))));
+                      const safe = Math.max(
+                        inPoint + 0.1,
+                        Math.min(totalDuration, Number(val.toFixed(2))),
+                      );
                       setOutPoint(safe);
                       playerRef.current?.seekTo(safe, 'seconds');
                       setCurrentTime(safe);
@@ -711,35 +845,14 @@ export default function VideoTrimmerPanel() {
 
             {/* 导出完成与直达任务卡片 */}
             {exportResult?.success && (
-              <div className="space-y-2 rounded-lg bg-green-500/10 border border-green-500/20 p-3 text-xs">
-                <div className="flex items-center gap-1.5 font-medium text-green-600 dark:text-green-400">
-                  <CheckCircle2 className="h-4 w-4" />
-                  导出成功！
-                </div>
-                <p className="truncate text-[11px] text-muted-foreground">
-                  {exportResult.outputPath}
-                </p>
-                <div className="flex items-center gap-2 pt-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => window.ipc.invoke('toolbox:openFolder', exportResult.outputPath)}
-                    className="h-7 text-xs flex-1 gap-1"
-                  >
-                    <FolderOpen className="h-3 w-3" />
-                    打开文件
-                  </Button>
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={handleSendToTask}
-                    className="h-7 text-xs flex-1 gap-1 bg-green-600 hover:bg-green-700 text-white"
-                  >
-                    <Captions className="h-3 w-3" />
-                    新建任务
-                  </Button>
-                </div>
-              </div>
+              <ToolboxFinishBar
+                outputType="video"
+                outputPath={exportResult.outputPath}
+                onReset={() => {
+                  setExportResult(null);
+                  setVideoPath(null);
+                }}
+              />
             )}
           </div>
 
@@ -748,8 +861,12 @@ export default function VideoTrimmerPanel() {
             {isExporting ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">{t('videoTrimmer.exporting')}</span>
-                  <span className="font-mono font-medium">{exportProgress}%</span>
+                  <span className="text-muted-foreground">
+                    {t('videoTrimmer.exporting')}
+                  </span>
+                  <span className="font-mono font-medium">
+                    {exportProgress}%
+                  </span>
                 </div>
                 <Progress value={exportProgress} className="h-1.5" />
                 <Button

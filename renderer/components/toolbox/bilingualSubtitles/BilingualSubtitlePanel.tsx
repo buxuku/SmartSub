@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
+import ToolboxFinishBar from '../common/ToolboxFinishBar';
 import type { BilingualSubtitleResult } from '../../../../types/toolbox';
 
 export default function BilingualSubtitlePanel() {
@@ -361,34 +362,17 @@ export default function BilingualSubtitlePanel() {
             </div>
 
             {result?.success && (
-              <div className="space-y-2 rounded-lg bg-green-500/10 border border-green-500/20 p-3 text-xs">
-                <div className="flex items-center gap-1.5 font-medium text-green-600 dark:text-green-400">
-                  <CheckCircle2 className="h-4 w-4" />
-                  处理成功！
-                </div>
-                <div className="space-y-1">
-                  {result.outputPaths.map((p, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between text-[11px]"
-                    >
-                      <span className="truncate max-w-[180px]">
-                        {p.split(/[/\\]/).pop()}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          window.ipc.invoke('toolbox:openFolder', p)
-                        }
-                        className="h-5 w-5 p-0"
-                      >
-                        <FolderOpen className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <ToolboxFinishBar
+                outputType="subtitle"
+                outputPaths={result.outputPaths}
+                summary={t('finishBar.title')}
+                onReset={() => {
+                  setResult(null);
+                  setPrimaryPath(null);
+                  setSecondaryPath(null);
+                  setSplitPath(null);
+                }}
+              />
             )}
           </div>
 
