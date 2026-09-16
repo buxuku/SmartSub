@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
+import { FRAMERATE_RATIO_PRESETS } from '@/lib/framerates';
 import type {
   SubtitleSyncMode,
   SubtitleSyncResult,
@@ -153,18 +154,23 @@ export default function SubtitleSyncPanel() {
                     平移毫秒数 (正数延后，负数提前)
                   </Label>
                   <span className="font-mono text-xs font-medium text-primary">
-                    {offsetMs >= 0 ? `+${offsetMs}` : offsetMs} ms ({(offsetMs / 1000).toFixed(3)}s)
+                    {offsetMs >= 0 ? `+${offsetMs}` : offsetMs} ms (
+                    {(offsetMs / 1000).toFixed(3)}s)
                   </span>
                 </div>
                 <Input
                   type="number"
                   step="100"
                   value={offsetMs}
-                  onChange={(e) => setOffsetMs(parseInt(e.target.value, 10) || 0)}
+                  onChange={(e) =>
+                    setOffsetMs(parseInt(e.target.value, 10) || 0)
+                  }
                   className="h-8 text-xs font-mono"
                 />
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <span className="text-[11px] text-muted-foreground mr-1">快捷微调:</span>
+                  <span className="text-[11px] text-muted-foreground mr-1">
+                    快捷微调:
+                  </span>
                   {[
                     { label: '-1s', delta: -1000 },
                     { label: '-500ms', delta: -500 },
@@ -207,17 +213,16 @@ export default function SubtitleSyncPanel() {
                   type="number"
                   step="0.001"
                   value={scaleRatio}
-                  onChange={(e) => setScaleRatio(parseFloat(e.target.value) || 1.0)}
+                  onChange={(e) =>
+                    setScaleRatio(parseFloat(e.target.value) || 1.0)
+                  }
                   className="h-8 text-xs font-mono"
                 />
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <span className="text-[11px] text-muted-foreground mr-1">常用帧率校准预设:</span>
-                  {[
-                    { label: '23.976 → 25 fps', ratio: 24 / 25 },
-                    { label: '25 → 23.976 fps', ratio: 25 / 24 },
-                    { label: '24 → 23.976 fps', ratio: 1001 / 1000 },
-                    { label: '恢复 1.0', ratio: 1.0 },
-                  ].map((preset, idx) => (
+                  <span className="text-[11px] text-muted-foreground mr-1">
+                    常用帧率校准预设:
+                  </span>
+                  {FRAMERATE_RATIO_PRESETS.map((preset, idx) => (
                     <Button
                       key={idx}
                       variant="outline"
@@ -240,38 +245,54 @@ export default function SubtitleSyncPanel() {
                 </p>
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div className="space-y-1">
-                    <span className="text-muted-foreground text-[11px]">首句原时间 (ms)</span>
+                    <span className="text-muted-foreground text-[11px]">
+                      首句原时间 (ms)
+                    </span>
                     <Input
                       type="number"
                       value={p1SourceMs}
-                      onChange={(e) => setP1SourceMs(parseInt(e.target.value, 10) || 0)}
+                      onChange={(e) =>
+                        setP1SourceMs(parseInt(e.target.value, 10) || 0)
+                      }
                       className="h-8 font-mono text-xs"
                     />
                   </div>
                   <div className="space-y-1">
-                    <span className="text-muted-foreground text-[11px]">首句目标时间 (ms)</span>
+                    <span className="text-muted-foreground text-[11px]">
+                      首句目标时间 (ms)
+                    </span>
                     <Input
                       type="number"
                       value={p1TargetMs}
-                      onChange={(e) => setP1TargetMs(parseInt(e.target.value, 10) || 0)}
+                      onChange={(e) =>
+                        setP1TargetMs(parseInt(e.target.value, 10) || 0)
+                      }
                       className="h-8 font-mono text-xs"
                     />
                   </div>
                   <div className="space-y-1">
-                    <span className="text-muted-foreground text-[11px]">尾句原时间 (ms)</span>
+                    <span className="text-muted-foreground text-[11px]">
+                      尾句原时间 (ms)
+                    </span>
                     <Input
                       type="number"
                       value={p2SourceMs}
-                      onChange={(e) => setP2SourceMs(parseInt(e.target.value, 10) || 0)}
+                      onChange={(e) =>
+                        setP2SourceMs(parseInt(e.target.value, 10) || 0)
+                      }
                       className="h-8 font-mono text-xs"
                     />
                   </div>
                   <div className="space-y-1">
-                    <span className="text-muted-foreground text-[11px]">尾句目标时间 (ms)</span>
+                    <span className="text-muted-foreground text-[11px]">
+                      尾句目标时间 (ms)
+                    </span>
                     <Input
                       type="number"
                       value={p2TargetMs}
-                      onChange={(e) => setP2TargetMs(parseInt(e.target.value, 10) || 0)}
+                      onChange={(e) =>
+                        setP2TargetMs(parseInt(e.target.value, 10) || 0)
+                      }
                       className="h-8 font-mono text-xs"
                     />
                   </div>
@@ -304,7 +325,9 @@ export default function SubtitleSyncPanel() {
                   variant="outline"
                   size="sm"
                   onClick={async () => {
-                    const picked = await window.ipc.invoke('toolbox:selectFolder');
+                    const picked = await window.ipc.invoke(
+                      'toolbox:selectFolder',
+                    );
                     if (picked) setOutputDir(picked);
                   }}
                   disabled={isProcessing}
@@ -327,7 +350,9 @@ export default function SubtitleSyncPanel() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => window.ipc.invoke('toolbox:openFolder', result.outputPath)}
+                  onClick={() =>
+                    window.ipc.invoke('toolbox:openFolder', result.outputPath)
+                  }
                   className="w-full h-7 text-xs gap-1 mt-1"
                 >
                   <FolderOpen className="h-3 w-3" />

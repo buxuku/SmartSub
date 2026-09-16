@@ -12,6 +12,7 @@ import {
   pendingFileToSaveFormat,
 } from '@/lib/proofreadUtils';
 import { useConfirmOrUndo } from '../../hooks/useConfirmOrUndo';
+import { toast } from 'sonner';
 
 // 工作流阶段
 type WorkflowStage = 'import' | 'list' | 'edit';
@@ -156,31 +157,45 @@ export default function ProofreadPage() {
   }, []);
 
   // 保存任务
-  const handleSaveTask = useCallback(async () => {
+  const handleSaveTask = useCallback(async (): Promise<boolean> => {
     // 使用工具函数转换为保存格式
     const items = pendingFiles.map(pendingFileToSaveFormat);
 
-    if (savedTaskId) {
-      // 更新现有任务
-      await window.ipc.invoke('updateProofreadTask', {
-        taskId: savedTaskId,
-        updates: { items, name: taskName },
-      });
-    } else {
-      // 创建新任务
-      const result = await window.ipc.invoke('createProofreadTask', {
-        items,
-        name:
-          taskName ||
-          pendingFiles[0]?.fileName?.replace(/\.[^.]+$/, '') ||
-          'Untitled',
-      });
-      if (result.success) {
+    try {
+      if (savedTaskId) {
+        // 更新现有任务
+        const result = await window.ipc.invoke('updateProofreadTask', {
+          taskId: savedTaskId,
+          updates: { items, name: taskName },
+        });
+        if (!result?.success) {
+          console.error('Failed to update proofread task:', result?.error);
+          toast.error(t('saveFailed', { reason: result?.error || '' }));
+          return false;
+        }
+      } else {
+        // 创建新任务
+        const result = await window.ipc.invoke('createProofreadTask', {
+          items,
+          name:
+            taskName ||
+            pendingFiles[0]?.fileName?.replace(/\.[^.]+$/, '') ||
+            'Untitled',
+        });
+        if (!result?.success) {
+          console.error('Failed to create proofread task:', result?.error);
+          toast.error(t('saveFailed', { reason: result?.error || '' }));
+          return false;
+        }
         setSavedTaskId(result.data.id);
       }
+      return true;
+    } catch (error) {
+      console.error('Error invoking proofread save:', error);
+      toast.error(t('saveFailed'));
+      return false;
     }
-    return true;
-  }, [pendingFiles, savedTaskId, taskName]);
+  }, [pendingFiles, savedTaskId, taskName, t]);
 
   // 重置，开始新的导入（可撤销）
   const handleReset = useCallback(() => {
@@ -240,7 +255,7 @@ export default function ProofreadPage() {
 
       return () => clearTimeout(autoSaveTimeout);
     }
-  }, [pendingFiles, savedTaskId, stage]);
+  }, [pendingFiles, savedTaskId, stage, taskName, handleSaveTask]);
 
   // 渲染当前阶段
   const renderStage = () => {

@@ -83,7 +83,7 @@
     "gateSubtitleDesc": "字幕完成后先停下等你检查，再进行配音/合成",
     "gateDubbing": "配音确认",
     "gateDubbingDesc": "配音完成后先停下试听确认，再合成成片",
-    "gatesHint": "到点会通知你；校对/确认后点「放行」自动继续，全关则全自动",
+    "gatesHint": "到点会通知你；校对/确认后点「放行」自动继续。若需要全自动直通出片，可将把关开关全部关闭",
     "blockNoFiles": "请先放入要处理的文件",
     "blockNoModel": "还没有可用的语音模型",
     "blockNoProvider": "翻译服务尚未配置",
@@ -107,6 +107,8 @@
     "goConfigure": "去配置",
     "readyHint": "就绪：开始后 {{count}} 个文件将按流程自动处理",
     "clearFiles": "清空列表",
+    "draftRestored": "已恢复上次编辑的任务草稿（{{count}} 个文件）",
+    "clearDraft": "清空草稿",
     "start": "开始",
     "recipe": {
       "save": "存为配方",

@@ -29,6 +29,7 @@ import VideoInfo from '../subtitle/VideoInfo';
 import SubtitleList from '../subtitle/SubtitleList';
 import SubtitleEditToolbar from '../subtitle/SubtitleEditToolbar';
 import SpeakerToolbar, { type SpeakerFilter } from './SpeakerToolbar';
+import { useNavigationGuard } from '@/context/NavigationGuardContext';
 
 interface PendingFile {
   id: string;
@@ -250,8 +251,17 @@ export default function ProofreadEditor({
     setTriggerSplit(false);
   }, []);
 
-  // 未保存修改守卫
+  // 注册全局离开守卫（拦截侧栏 NavLink、Cmd+K 命令面板、浏览器前进后退等）
+  useNavigationGuard(`proofread-editor-${file.id}`, {
+    isDirty,
+    onSave: handleSave,
+    title: t('unsavedChangesTitle'),
+    description: t('unsavedChangesDesc'),
+  });
+
+  // 未保存修改守卫（用于页内返回）
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const [isSavingAndBack, setIsSavingAndBack] = useState(false);
 
   // 返回列表：有未保存修改时先拦截
   const handleBackClick = useCallback(() => {
@@ -263,25 +273,22 @@ export default function ProofreadEditor({
   }, [isDirty, onBack]);
 
   const handleSaveAndBack = useCallback(async () => {
-    const ok = await handleSave();
-    setShowUnsavedDialog(false);
-    if (ok) onBack();
+    setIsSavingAndBack(true);
+    try {
+      const ok = await handleSave();
+      if (ok) {
+        setShowUnsavedDialog(false);
+        onBack();
+      }
+    } finally {
+      setIsSavingAndBack(false);
+    }
   }, [handleSave, onBack]);
 
   const handleDiscardAndBack = useCallback(() => {
     setShowUnsavedDialog(false);
     onBack();
   }, [onBack]);
-
-  useEffect(() => {
-    if (!isDirty) return;
-    const handler = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [isDirty]);
 
   // 标记完成隐含保存：保证完成态文件与界面一致；保存失败则留在编辑器
   const handleMarkCompleteClick = useCallback(async () => {
@@ -556,19 +563,28 @@ export default function ProofreadEditor({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('keepEditing')}</AlertDialogCancel>
+            <AlertDialogCancel disabled={isSavingAndBack}>
+              {t('keepEditing')}
+            </AlertDialogCancel>
             <Button
               variant="outline"
+              disabled={isSavingAndBack}
               className="gap-1.5"
               onClick={handleDiscardAndBack}
             >
               <Undo2 className="h-4 w-4" />
               {t('discardAndBack')}
             </Button>
-            <AlertDialogAction className="gap-1.5" onClick={handleSaveAndBack}>
+            <Button
+              disabled={isSavingAndBack}
+              className="gap-1.5"
+              onClick={handleSaveAndBack}
+            >
               <Save className="h-4 w-4" />
-              {t('saveAndBack')}
-            </AlertDialogAction>
+              {isSavingAndBack
+                ? commonT('saving', '保存中...')
+                : t('saveAndBack')}
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

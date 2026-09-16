@@ -579,6 +579,14 @@ export default function LaunchpadPage() {
                           {t('needsModelBadge')}
                         </Badge>
                       )}
+                      {recipe.id === 'builtin-pipeline' && !block && (
+                        <Badge
+                          variant="outline"
+                          className="absolute right-2.5 top-2.5 border-primary/30 bg-primary/5 text-primary text-[10px]"
+                        >
+                          {t('qualityGateBadge')}
+                        </Badge>
+                      )}
                       {/* 用户配方管理：hover 重命名/删除（内置无） */}
                       {!recipe.builtin && !editing && (
                         <div className="absolute right-2 top-2 z-10 hidden gap-0.5 group-hover:flex">

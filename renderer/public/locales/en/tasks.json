@@ -83,7 +83,7 @@
     "gateSubtitleDesc": "Pause after subtitles for your check before dubbing/composing",
     "gateDubbing": "Dub review",
     "gateDubbingDesc": "Pause after dubbing for a listen before composing",
-    "gatesHint": "You'll be notified at each stop; release to continue automatically. Turn both off for fully automatic.",
+    "gatesHint": "You'll be notified at each stop; release to continue automatically. Turn both off for fully automatic direct output.",
     "blockNoFiles": "Add the files to process first",
     "blockNoModel": "No speech model available yet",
     "blockNoProvider": "Translation service is not configured",
@@ -107,6 +107,8 @@
     "goConfigure": "Configure",
     "readyHint": "Ready: {{count}} file(s) will be processed automatically",
     "clearFiles": "Clear list",
+    "draftRestored": "Restored previous task draft ({{count}} files)",
+    "clearDraft": "Clear draft",
     "start": "Start",
     "recipe": {
       "save": "Save as recipe",

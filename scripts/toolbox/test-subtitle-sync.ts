@@ -2,7 +2,11 @@ import assert from 'assert';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { syncCues, executeSubtitleSync } from '../../main/helpers/toolbox/subtitleSync';
+import {
+  syncCues,
+  executeSubtitleSync,
+} from '../../main/helpers/toolbox/subtitleSync';
+import { FRAMERATE_RATIO_PRESETS } from '../../main/helpers/toolbox/framerates';
 import type { SubtitleCue } from '../../main/helpers/subtitleFormats';
 
 async function runTests() {
@@ -48,7 +52,29 @@ async function runTests() {
   assert.strictEqual(twoPointCues[0].startMs, 2000);
   assert.strictEqual(twoPointCues[1].startMs, 10000);
 
-  // 4. 测试完整文件执行
+  // 4. 测试广播级分数帧率换算（23.976 -> 25 fps 无累积误差）
+  // 1 小时 = 3,600,000 ms
+  // 旧算法 24/25 = 0.96，计算得 3,456,000 ms (偏差高达 3453 ms = ~3.45 秒)
+  // 精确分数 (24000/1001)/25 = 960/1001，计算得 Math.round(3600000 * 960 / 1001) = 3452547 ms
+  const oneHourMs = 3600000;
+  const longCues: SubtitleCue[] = [
+    { startMs: 0, endMs: 2000, text: 'Start' },
+    { startMs: oneHourMs, endMs: oneHourMs + 2000, text: 'One Hour Mark' },
+  ];
+  const preset23976to25 = FRAMERATE_RATIO_PRESETS.find((p) =>
+    p.label.startsWith('23.976 → 25'),
+  );
+  assert.ok(preset23976to25, '23.976 -> 25 preset must exist');
+  const broadcastCues = syncCues(longCues, {
+    filePath: '',
+    mode: 'scale',
+    scaleRatio: preset23976to25.ratio,
+  });
+  const expectedOneHourScaled = Math.round(oneHourMs * (960 / 1001));
+  assert.strictEqual(expectedOneHourScaled, 3452547);
+  assert.strictEqual(broadcastCues[1].startMs, 3452547);
+
+  // 5. 测试完整文件执行
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smartsub-test-sync-'));
   try {
     const srtPath = path.join(tmpDir, 'test.srt');

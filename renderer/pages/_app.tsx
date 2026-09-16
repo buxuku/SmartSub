@@ -5,6 +5,7 @@ import Layout from '@/components/Layout';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { getStaticPaths, makeStaticProperties } from '../lib/get-static';
 import { ThemeProvider } from 'next-themes';
+import { NavigationGuardProvider } from '@/context/NavigationGuardContext';
 
 import '../styles/globals.css';
 import { UpdateNotification } from '@/components/UpdateNotification';
@@ -13,10 +14,12 @@ function MyApp({ Component, pageProps }: AppProps) {
   return (
     <ErrorBoundary>
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-        <Layout {...pageProps}>
-          <Component {...pageProps} />
-          <UpdateNotification />
-        </Layout>
+        <NavigationGuardProvider>
+          <Layout {...pageProps}>
+            <Component {...pageProps} />
+            <UpdateNotification />
+          </Layout>
+        </NavigationGuardProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

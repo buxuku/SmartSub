@@ -27,6 +27,7 @@ import {
   Info,
   Languages,
   Mic2,
+  Bookmark,
   Play,
   RotateCcw,
   Trash2,
@@ -151,6 +152,8 @@ interface PersistedDubbing {
 }
 
 const SPEED_OPTIONS = [0.75, 0.9, 1, 1.1, 1.25, 1.5];
+
+const TASK_WIZARD_DRAFT_KEY = 'smartsub_task_wizard_draft_v1';
 
 export default function TaskWizard() {
   const router = useRouter();
@@ -483,11 +486,15 @@ export default function TaskWizard() {
     [appendFiles],
   );
 
+  // 跟踪是否有外部来源（sessionStorage 交接、URL ?video= 或 ?preset=）以防草稿覆盖外部输入
+  const hasExternalSourceRef = useRef(false);
+
   // 启动台/下载页交接：sessionStorage 一次性消费
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem(WIZARD_DROP_KEY);
       if (raw) {
+        hasExternalSourceRef.current = true;
         sessionStorage.removeItem(WIZARD_DROP_KEY);
         const dropped = JSON.parse(raw) as IFiles[];
         if (Array.isArray(dropped) && dropped.length) appendFiles(dropped);
@@ -504,6 +511,7 @@ export default function TaskWizard() {
     const targetVideo =
       typeof router.query.video === 'string' ? router.query.video : null;
     if (targetVideo) {
+      hasExternalSourceRef.current = true;
       (async () => {
         try {
           const droppedMedia = await window?.ipc?.invoke('getDroppedFiles', {
@@ -549,7 +557,91 @@ export default function TaskWizard() {
     setGoals((prev) => (prev.video ? { ...prev, video: false } : prev));
   }, [videoAllowed]);
 
-  // ── 字幕段配置（本地表单 + InlineConfigBar 复用）─────────────────────────
+  // 草稿恢复与自动保存
+  const [restoredDraftCount, setRestoredDraftCount] = useState<number | null>(
+    null,
+  );
+  const draftInitializedRef = useRef(false);
+
+  // 1. 初始化时尝试恢复草稿（仅当没有外部来源交接时）
+  useEffect(() => {
+    if (draftInitializedRef.current || !router.isReady) return;
+
+    const hasSessionDrop =
+      hasExternalSourceRef.current ||
+      Boolean(sessionStorage.getItem(WIZARD_DROP_KEY));
+    const hasQueryVideo = Boolean(router.query.video);
+    const hasPreset = Boolean(router.query.preset);
+
+    if (hasSessionDrop || hasQueryVideo || hasPreset || files.length > 0) {
+      draftInitializedRef.current = true;
+      return;
+    }
+
+    try {
+      const raw = localStorage.getItem(TASK_WIZARD_DRAFT_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw);
+        if (Array.isArray(draft.files) && draft.files.length > 0) {
+          setFiles(draft.files);
+          if (draft.goals) setGoals(draft.goals);
+          if (Array.isArray(draft.manualPairs)) {
+            setManualPairs(new Map(draft.manualPairs));
+          }
+          if (Array.isArray(draft.manualManuscriptPairs)) {
+            setManualManuscriptPairs(new Map(draft.manualManuscriptPairs));
+          }
+          setRestoredDraftCount(draft.files.length);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to restore task wizard draft:', e);
+    } finally {
+      draftInitializedRef.current = true;
+    }
+  }, [router.isReady, router.query, files.length]);
+
+  // 2. 状态变动时防抖保存到草稿
+  useEffect(() => {
+    if (!draftInitializedRef.current) return;
+    const timer = setTimeout(() => {
+      try {
+        if (files.length > 0) {
+          const draft = {
+            files,
+            goals,
+            manualPairs: Array.from(manualPairs.entries()),
+            manualManuscriptPairs: Array.from(manualManuscriptPairs.entries()),
+            savedAt: Date.now(),
+          };
+          localStorage.setItem(TASK_WIZARD_DRAFT_KEY, JSON.stringify(draft));
+        } else {
+          localStorage.removeItem(TASK_WIZARD_DRAFT_KEY);
+        }
+      } catch (e) {
+        console.error('Failed to save task wizard draft:', e);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [files, goals, manualPairs, manualManuscriptPairs]);
+
+  const clearDraft = useCallback(() => {
+    try {
+      localStorage.removeItem(TASK_WIZARD_DRAFT_KEY);
+    } catch {
+      /* ignore */
+    }
+    setFiles([]);
+    setGoals({
+      translate: false,
+      dub: false,
+      video: false,
+    });
+    setManualPairs(new Map());
+    setManualManuscriptPairs(new Map());
+    setRestoredDraftCount(null);
+  }, []);
   const { form, formData, loaded: formLoaded } = useLocalFormConfig();
   const [refinePopoverOpen, setRefinePopoverOpen] = useState(false);
   const { systemInfo, loaded: systemInfoLoaded } = useSystemInfo();
@@ -1240,12 +1332,16 @@ export default function TaskWizard() {
                   return { ...m, manuscriptPath: '__none__' };
                 }
                 if (pairedScript) {
+                  const msPath = pairedScript.filePath;
+                  const msName =
+                    ('fileName' in pairedScript &&
+                    typeof pairedScript.fileName === 'string'
+                      ? pairedScript.fileName
+                      : null) || msPath.split(/[\\/]/).pop();
                   return {
                     ...m,
-                    manuscriptPath: pairedScript.filePath,
-                    manuscriptName:
-                      pairedScript.fileName ||
-                      pairedScript.filePath.split(/[\\/]/).pop(),
+                    manuscriptPath: msPath,
+                    manuscriptName: msName,
                   };
                 }
                 return m;
@@ -1311,6 +1407,12 @@ export default function TaskWizard() {
         formData: payload,
         projectId,
       });
+      // 成功启动任务后清除草稿
+      try {
+        localStorage.removeItem(TASK_WIZARD_DRAFT_KEY);
+      } catch {
+        /* ignore */
+      }
       router.push(`/${locale}/tasks/${typeDef.slug}?project=${projectId}`);
     } finally {
       setStarting(false);
@@ -1359,6 +1461,26 @@ export default function TaskWizard() {
 
   return (
     <div className="flex h-full flex-col gap-2.5 overflow-y-auto p-3">
+      {/* 草稿恢复提示条 */}
+      {restoredDraftCount !== null && restoredDraftCount > 0 && (
+        <div className="flex items-center justify-between rounded-md border border-primary/25 bg-primary/5 px-3 py-1.5 text-xs text-primary">
+          <div className="flex items-center gap-2">
+            <Bookmark className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              {t('wizard.draftRestored', { count: restoredDraftCount })}
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearDraft}
+            className="h-6 px-2 text-[11px] hover:bg-primary/10 hover:text-primary"
+          >
+            {t('wizard.clearDraft')}
+          </Button>
+        </div>
+      )}
+
       {/* 文件区 */}
       <Panel
         className={cn(
@@ -2244,10 +2366,7 @@ export default function TaskWizard() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => {
-                setFiles([]);
-                setManualPairs(new Map());
-              }}
+              onClick={clearDraft}
               className="flex-none"
             >
               <Trash2 className="h-3.5 w-3.5" />

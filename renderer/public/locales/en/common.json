@@ -22,7 +22,13 @@
   },
   "statusbar": {
     "engineReady": "Engine ready",
-    "gpuPending": "Detecting"
+    "gpuPending": "Detecting",
+    "modelReady": "Model ready",
+    "modelMissing": "No local model",
+    "serviceConfigured": "Cloud configured",
+    "serviceMissing": "No cloud service",
+    "gpuAccel": "GPU acceleration",
+    "cpuMode": "CPU mode"
   },
   "tasks": "Tasks",
   "modelManagement": "Model Management",
@@ -318,6 +324,14 @@
     "sampleNeedsModel": "Download a speech model in step 2 first",
     "sampleProjectName": "Sample · First subtitle",
     "sampleFailed": "Failed to set up the sample task. Try again or import a file manually."
+  },
+  "navigationGuard": {
+    "title": "Unsaved changes",
+    "desc": "You have unsaved changes that will be lost if you leave this page. Would you like to save them first?",
+    "keepEditing": "Stay on page",
+    "discardAndLeave": "Discard and leave",
+    "saveAndLeave": "Save and leave",
+    "saving": "Saving..."
   },
   "undo": "Undo",
   "checkingForUpdates": "Checking for updates…",

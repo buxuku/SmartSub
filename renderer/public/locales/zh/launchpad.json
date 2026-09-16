@@ -65,7 +65,7 @@
   },
   "card": {
     "pipeline": "视频 → 配音成片",
-    "pipelineDesc": "听写、翻译、配音、合成一条龙，全自动出成品视频",
+    "pipelineDesc": "听写、翻译、配音、合成一条龙，默认字幕阶段人工把关（可选全自动直通）",
     "generateTranslate": "视频 → 双语字幕",
     "generateTranslateDesc": "转写人声并翻译成目标语言，一步到位",
     "generate": "视频 → 原文字幕",
@@ -83,6 +83,7 @@
   },
   "fromDownload": "来自下载",
   "needsModelBadge": "需要模型",
+  "qualityGateBadge": "质量把关 · 停靠校对",
   "banner": {
     "noModel": "还没有语音模型——它负责把人声转写成文字，下载一个就能开始",
     "noModelCta": "下载推荐模型",

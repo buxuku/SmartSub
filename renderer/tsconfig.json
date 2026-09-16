@@ -6,6 +6,7 @@
     "baseUrl": ".",
     "paths": {
       "@/components/*": ["components/*"],
+      "@/context/*": ["context/*"],
       "@/lib/*": ["lib/*"],
       "lib/utils": ["lib/utils"],
       "utils": ["lib/utils"],

@@ -273,6 +273,8 @@ export default function ProofreadFileList({
       const success = await onSaveTask();
       if (success) {
         toast.success(t('taskSaved'));
+      } else {
+        toast.error(t('saveFailed'));
       }
     } catch (error) {
       toast.error(t('saveFailed'));

@@ -277,7 +277,8 @@ const Layout = ({ children }) => {
   const [showFaq, setShowFaq] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
-  const [lastSubtitleSlug, setLastSubtitleSlug] = useState('generate-translate');
+  const [lastSubtitleSlug, setLastSubtitleSlug] =
+    useState('generate-translate');
 
   useEffect(() => {
     const syncFromStorage = () => {
@@ -344,6 +345,11 @@ const Layout = ({ children }) => {
     status: string;
   } | null>(null);
   const [taskRunning, setTaskRunning] = useState(false);
+  // 多维健康度状态：本地模型是否具备、云服务是否已配置
+  const [hasLocalModels, setHasLocalModels] = useState<boolean | null>(null);
+  const [hasCloudProviders, setHasCloudProviders] = useState<boolean | null>(
+    null,
+  );
   // 在线视频下载全局摘要（状态栏 pill；主进程仅在内容变化时广播）
   const [videoDownload, setVideoDownload] = useState<{
     running: boolean;
@@ -603,6 +609,41 @@ const Layout = ({ children }) => {
       disposed = true;
       clearInterval(interval);
       cleanupComplete?.();
+    };
+  }, []);
+
+  // 检查引擎、模型与服务健康度
+  useEffect(() => {
+    let disposed = false;
+    const checkHealth = async () => {
+      try {
+        const [info, asrProviders, transProviders] = await Promise.all([
+          window?.ipc?.invoke('getSystemInfo', null).catch(() => null),
+          window?.ipc?.invoke('getAsrProviders').catch(() => []),
+          window?.ipc?.invoke('getTranslationProviders').catch(() => []),
+        ]);
+        if (!disposed) {
+          setHasLocalModels(hasAnyModelAnyEngine(info, asrProviders || []));
+          const configuredCloud = (transProviders || []).some((p: any) =>
+            Boolean(
+              p?.apiKey ||
+                p?.api_key ||
+                p?.secretKey ||
+                p?.secret_key ||
+                p?.appKey,
+            ),
+          );
+          setHasCloudProviders(configuredCloud);
+        }
+      } catch (err) {
+        console.error('Failed to check health in Layout:', err);
+      }
+    };
+    checkHealth();
+    const interval = setInterval(checkHealth, 10000);
+    return () => {
+      disposed = true;
+      clearInterval(interval);
     };
   }, []);
 
@@ -978,30 +1019,71 @@ const Layout = ({ children }) => {
         <Toaster />
       </div>
 
-      {/* 底部全宽状态栏：引擎/GPU/队列/下载常显，仪表盘式定位信息 */}
+      {/* 底部全宽状态栏：解耦引擎模型、云服务、GPU与队列指示 */}
       <footer className="titlebar-drag fixed bottom-0 inset-x-0 z-20 flex h-[26px] items-center gap-4 border-t border-border bg-chrome px-3 text-[11px] text-muted-foreground">
-        <span className="flex items-center gap-1.5 whitespace-nowrap">
+        {/* 本地模型指示 */}
+        <button
+          type="button"
+          onClick={() => router.push(`/${locale}/engines`)}
+          className="titlebar-no-drag flex items-center gap-1.5 whitespace-nowrap transition-colors hover:text-foreground"
+        >
           <span
             className={cn(
               'h-[7px] w-[7px] rounded-full',
-              accelBadge?.mode === 'warning'
+              hasLocalModels === false
                 ? 'bg-warning shadow-[0_0_0_3px_hsl(var(--warning)/0.15)]'
                 : 'bg-success shadow-[0_0_0_3px_hsl(var(--success)/0.15)]',
             )}
           />
-          {t('statusbar.engineReady')}
-        </span>
+          {hasLocalModels === false
+            ? t('statusbar.modelMissing')
+            : t('statusbar.modelReady')}
+        </button>
+
+        {/* 云服务指示 */}
+        <button
+          type="button"
+          onClick={() => router.push(`/${locale}/translation`)}
+          className="titlebar-no-drag flex items-center gap-1.5 whitespace-nowrap transition-colors hover:text-foreground"
+        >
+          <span
+            className={cn(
+              'h-[7px] w-[7px] rounded-full',
+              hasCloudProviders === false
+                ? 'bg-muted-foreground/60 shadow-[0_0_0_3px_hsl(var(--muted-foreground)/0.15)]'
+                : 'bg-success shadow-[0_0_0_3px_hsl(var(--success)/0.15)]',
+            )}
+          />
+          {hasCloudProviders === false
+            ? t('statusbar.serviceMissing')
+            : t('statusbar.serviceConfigured')}
+        </button>
+
+        {/* GPU / 硬件加速 */}
         {accelBadge && (
-          <span className="whitespace-nowrap">
-            GPU:{' '}
-            <span className="font-medium text-foreground">
+          <button
+            type="button"
+            onClick={() => router.push(`/${locale}/settings`)}
+            className="titlebar-no-drag flex items-center gap-1.5 whitespace-nowrap transition-colors hover:text-foreground"
+          >
+            <span
+              className={cn(
+                'h-[7px] w-[7px] rounded-full',
+                accelBadge.mode === 'accel'
+                  ? 'bg-success shadow-[0_0_0_3px_hsl(var(--success)/0.15)]'
+                  : accelBadge.mode === 'warning'
+                    ? 'bg-warning shadow-[0_0_0_3px_hsl(var(--warning)/0.15)]'
+                    : 'bg-muted-foreground/60 shadow-[0_0_0_3px_hsl(var(--muted-foreground)/0.15)]',
+              )}
+            />
+            <span>
               {accelBadge.mode === 'accel' && accelBadge.label
-                ? accelBadge.label
+                ? `${t('statusbar.gpuAccel')}: ${accelBadge.label}`
                 : accelBadge.mode === 'pending'
-                  ? t('statusbar.gpuPending')
-                  : 'CPU'}
+                  ? `GPU: ${t('statusbar.gpuPending')}`
+                  : t('statusbar.cpuMode')}
             </span>
-          </span>
+          </button>
         )}
         {taskRunning && (
           <button

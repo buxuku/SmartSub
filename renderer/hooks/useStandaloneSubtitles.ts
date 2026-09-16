@@ -414,7 +414,7 @@ export const useStandaloneSubtitles = (
   );
 
   // 保存字幕文件；返回是否全部写入成功
-  const handleSave = async (): Promise<boolean> => {
+  const handleSave = useCallback(async (): Promise<boolean> => {
     // 先把未提交的逐字编辑补入撤销历史，保证保存后仍可撤销
     flushPendingEdit();
     try {
@@ -517,7 +517,14 @@ export const useStandaloneSubtitles = (
       toast.error(t('saveFailed'));
       return false;
     }
-  };
+  }, [
+    flushPendingEdit,
+    config,
+    shouldShowTranslation,
+    mergedSubtitles,
+    embedSpeakerNames,
+    t,
+  ]);
 
   // 字幕统计
   const getSubtitleStats = (): SubtitleStats => {

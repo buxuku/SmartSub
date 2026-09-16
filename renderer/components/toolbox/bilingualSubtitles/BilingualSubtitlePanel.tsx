@@ -35,9 +35,22 @@ export default function BilingualSubtitlePanel() {
   // 拆分模式参数
   const [splitPath, setSplitPath] = useState<string>('');
 
+  // 拖拽激活状态
+  const [isDraggingSplit, setIsDraggingSplit] = useState(false);
+  const [isDraggingPrimary, setIsDraggingPrimary] = useState(false);
+  const [isDraggingSecondary, setIsDraggingSecondary] = useState(false);
+
   const [outputDir, setOutputDir] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [result, setResult] = useState<BilingualSubtitleResult | null>(null);
+
+  const extractFilePath = (file: File): string => {
+    return window.ipc?.getPathForFile
+      ? window.ipc.getPathForFile(file)
+      : (file as any).path || '';
+  };
+
+  const isSubtitleExt = (p: string) => /\.(srt|vtt|ass|ssa|sub)$/i.test(p);
 
   const selectFile = async (type: 'primary' | 'secondary' | 'split') => {
     const files = await window.ipc.invoke('toolbox:selectFile', {
@@ -49,6 +62,32 @@ export default function BilingualSubtitlePanel() {
       else if (type === 'secondary') setSecondaryPath(files[0]);
       else setSplitPath(files[0]);
       setResult(null);
+    }
+  };
+
+  const handleDropFile = (
+    e: React.DragEvent,
+    type: 'primary' | 'secondary' | 'split',
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (type === 'primary') setIsDraggingPrimary(false);
+    else if (type === 'secondary') setIsDraggingSecondary(false);
+    else setIsDraggingSplit(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      const p = extractFilePath(files[0]);
+      if (p) {
+        if (!isSubtitleExt(p)) {
+          toast.error('请拖入有效的字幕文件 (.srt / .vtt / .ass / .sub)');
+          return;
+        }
+        if (type === 'primary') setPrimaryPath(p);
+        else if (type === 'secondary') setSecondaryPath(p);
+        else setSplitPath(p);
+        setResult(null);
+      }
     }
   };
 
@@ -70,7 +109,10 @@ export default function BilingualSubtitlePanel() {
             secondaryPath,
             primaryPosition: position,
             outputPath: outputDir
-              ? `${outputDir}/${primaryPath.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, '')}_bilingual.srt`
+              ? `${outputDir}/${primaryPath
+                  .split(/[/\\]/)
+                  .pop()
+                  ?.replace(/\.[^.]+$/, '')}_bilingual.srt`
               : undefined,
           },
         );
@@ -132,13 +174,36 @@ export default function BilingualSubtitlePanel() {
                   主字幕 (上层 / 原语言)
                 </Label>
                 <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => selectFile('primary')}
-                  className="flex items-center justify-between rounded-lg border border-dashed border-border p-4 transition-colors hover:bg-muted/40 cursor-pointer"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      selectFile('primary');
+                    }
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDraggingPrimary(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    setIsDraggingPrimary(false);
+                  }}
+                  onDrop={(e) => handleDropFile(e, 'primary')}
+                  className={`flex items-center justify-between rounded-lg border border-dashed p-4 transition-colors cursor-pointer ${
+                    isDraggingPrimary
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:bg-muted/40'
+                  }`}
                 >
                   <div className="flex items-center gap-3 truncate">
                     <Languages className="h-5 w-5 text-primary shrink-0" />
                     <span className="text-xs truncate font-medium text-foreground">
-                      {primaryPath ? primaryPath.split(/[/\\]/).pop() : '点击选择主字幕文件 (.srt / .vtt / .ass)'}
+                      {primaryPath
+                        ? primaryPath.split(/[/\\]/).pop()
+                        : '点击或拖拽主字幕文件 (.srt / .vtt / .ass)'}
                     </span>
                   </div>
                   <Button variant="ghost" size="sm" className="h-7 text-xs">
@@ -153,13 +218,36 @@ export default function BilingualSubtitlePanel() {
                   次字幕 (下层 / 译文)
                 </Label>
                 <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => selectFile('secondary')}
-                  className="flex items-center justify-between rounded-lg border border-dashed border-border p-4 transition-colors hover:bg-muted/40 cursor-pointer"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      selectFile('secondary');
+                    }
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDraggingSecondary(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    setIsDraggingSecondary(false);
+                  }}
+                  onDrop={(e) => handleDropFile(e, 'secondary')}
+                  className={`flex items-center justify-between rounded-lg border border-dashed p-4 transition-colors cursor-pointer ${
+                    isDraggingSecondary
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:bg-muted/40'
+                  }`}
                 >
                   <div className="flex items-center gap-3 truncate">
                     <Languages className="h-5 w-5 text-primary/70 shrink-0" />
                     <span className="text-xs truncate font-medium text-foreground">
-                      {secondaryPath ? secondaryPath.split(/[/\\]/).pop() : '点击选择次字幕文件 (.srt / .vtt / .ass)'}
+                      {secondaryPath
+                        ? secondaryPath.split(/[/\\]/).pop()
+                        : '点击或拖拽次字幕文件 (.srt / .vtt / .ass)'}
                     </span>
                   </div>
                   <Button variant="ghost" size="sm" className="h-7 text-xs">
@@ -182,26 +270,51 @@ export default function BilingualSubtitlePanel() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="top">主语言在上方，次语言在下方 (推荐)</SelectItem>
-                    <SelectItem value="bottom">次语言在上方，主语言在下方</SelectItem>
+                    <SelectItem value="top">
+                      主语言在上方，次语言在下方 (推荐)
+                    </SelectItem>
+                    <SelectItem value="bottom">
+                      次语言在上方，主语言在下方
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
           ) : (
             <div className="space-y-4">
-              <Label className="text-xs text-foreground">
-                双语字幕源文件
-              </Label>
+              <Label className="text-xs text-foreground">双语字幕源文件</Label>
               <div
+                role="button"
+                tabIndex={0}
                 onClick={() => selectFile('split')}
-                className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border p-8 text-center transition-colors hover:bg-muted/40 cursor-pointer"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    selectFile('split');
+                  }
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDraggingSplit(true);
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  setIsDraggingSplit(false);
+                }}
+                onDrop={(e) => handleDropFile(e, 'split')}
+                className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center transition-colors cursor-pointer ${
+                  isDraggingSplit
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border hover:bg-muted/40'
+                }`}
               >
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
                   <UploadCloud className="h-6 w-6" />
                 </div>
                 <p className="mt-2 text-xs font-medium text-foreground">
-                  {splitPath ? splitPath.split(/[/\\]/).pop() : '点击或拖拽包含两行文字的双语字幕文件'}
+                  {splitPath
+                    ? splitPath.split(/[/\\]/).pop()
+                    : '点击或拖拽包含两行文字的双语字幕文件'}
                 </p>
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   自动将每条字幕中的两行文本拆解为 Part 1 与 Part 2 独立文件
@@ -234,7 +347,9 @@ export default function BilingualSubtitlePanel() {
                   variant="outline"
                   size="sm"
                   onClick={async () => {
-                    const picked = await window.ipc.invoke('toolbox:selectFolder');
+                    const picked = await window.ipc.invoke(
+                      'toolbox:selectFolder',
+                    );
                     if (picked) setOutputDir(picked);
                   }}
                   disabled={isProcessing}
@@ -253,12 +368,19 @@ export default function BilingualSubtitlePanel() {
                 </div>
                 <div className="space-y-1">
                   {result.outputPaths.map((p, idx) => (
-                    <div key={idx} className="flex items-center justify-between text-[11px]">
-                      <span className="truncate max-w-[180px]">{p.split(/[/\\]/).pop()}</span>
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between text-[11px]"
+                    >
+                      <span className="truncate max-w-[180px]">
+                        {p.split(/[/\\]/).pop()}
+                      </span>
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => window.ipc.invoke('toolbox:openFolder', p)}
+                        onClick={() =>
+                          window.ipc.invoke('toolbox:openFolder', p)
+                        }
                         className="h-5 w-5 p-0"
                       >
                         <FolderOpen className="h-3 w-3" />
