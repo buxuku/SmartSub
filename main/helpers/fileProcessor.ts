@@ -525,11 +525,14 @@ export async function processFile(
       logMessage(`resume: reuse subtitle segment for ${fileName}`, 'info');
       if (isSubtitleFile) {
         file.srtFile = filePath;
+        (file as any).prepareSubtitle = 'done';
         event.sender.send('taskFileChange', {
           ...file,
           prepareSubtitle: 'done',
         });
       } else {
+        (file as any).extractAudio = 'done';
+        (file as any).extractSubtitle = 'done';
         event.sender.send('taskFileChange', { ...file, extractAudio: 'done' });
         event.sender.send('taskFileChange', {
           ...file,
@@ -541,6 +544,7 @@ export async function processFile(
         settleSkippedManuscriptMatchStage(event, file, formData);
       }
       if (translationActive) {
+        (file as any).translateSubtitle = 'done';
         event.sender.send('taskFileChange', {
           ...file,
           translateSubtitle: 'done',
@@ -979,7 +983,7 @@ export async function processFile(
       });
       return;
     }
-    if (file.exportSubtitle === 'loading') {
+    if ((file as any).exportSubtitle === 'loading') {
       file.exportSubtitle = 'error';
       onError(event, file, 'exportSubtitle', error);
       return;
