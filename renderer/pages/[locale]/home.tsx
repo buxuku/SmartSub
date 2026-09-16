@@ -1,7 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { v4 as uuidv4 } from 'uuid';
+import GlobalDropOverlay from '@/components/launchpad/GlobalDropOverlay';
+import ModelQuickDownloadDialog from '@/components/launchpad/ModelQuickDownloadDialog';
+import { taskDraftManager } from '@/lib/taskDraftManager';
 import {
   BookMarked,
   ChevronRight,
@@ -160,6 +163,10 @@ export default function LaunchpadPage() {
   const [workItems, setWorkItems] = useState<WorkItem[]>([]);
   const [recentLoading, setRecentLoading] = useState(true);
   const [dragCard, setDragCard] = useState<string | null>(null);
+  const [globalDragging, setGlobalDragging] = useState(false);
+  const dragCounterRef = useRef(0);
+  const [quickDownloadOpen, setQuickDownloadOpen] = useState(false);
+  const [stagedDraftFiles, setStagedDraftFiles] = useState<any[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<WorkItem | null>(null);
@@ -289,51 +296,120 @@ export default function LaunchpadPage() {
     return [...(media ?? []), ...(subtitles ?? []), ...(manuscripts ?? [])];
   };
 
+  const handleGlobalDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current++;
+    if (e.dataTransfer.types.includes('Files')) {
+      setGlobalDragging(true);
+    }
+  };
+
+  const handleGlobalDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current--;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setGlobalDragging(false);
+    }
+  };
+
+  const handleGlobalDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleGlobalDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setGlobalDragging(false);
+    if (dragCard) return;
+
+    const paths = collectDropPaths(e);
+    if (!paths.length) return;
+
+    const dropped = await resolveDroppedBothKinds(paths);
+    if (!dropped.length) return;
+
+    const hasMedia = dropped.some(
+      (f: any) =>
+        !f.ext ||
+        !['srt', 'vtt', 'ass', 'lrc', 'txt', 'md'].includes(
+          String(f.ext).toLowerCase(),
+        ),
+    );
+
+    if (hasMedia && !readiness.hasModels) {
+      taskDraftManager.saveDraft({
+        files: dropped,
+        savedAt: Date.now(),
+      });
+      setStagedDraftFiles(dropped);
+      setQuickDownloadOpen(true);
+      return;
+    }
+
+    taskDraftManager.saveDraft({
+      files: dropped,
+      savedAt: Date.now(),
+    });
+    try {
+      sessionStorage.setItem(WIZARD_DROP_KEY, JSON.stringify(dropped));
+    } catch {
+      /* ignore */
+    }
+    router.push(`/${localeStr}/tasks/new`);
+  };
+
   const handleRecipeDrop = async (e: React.DragEvent, recipe: TaskRecipe) => {
     e.preventDefault();
     setDragCard(null);
     const loc = String(locale || 'zh');
+    const paths = collectDropPaths(e);
     const block = recipeBlock(recipe, readiness);
+
+    if (paths.length > 0) {
+      const dropped = await resolveDroppedBothKinds(paths);
+      if (dropped.length > 0) {
+        if (block === 'model') {
+          taskDraftManager.saveDraft({
+            files: dropped,
+            savedAt: Date.now(),
+          });
+          setStagedDraftFiles(dropped);
+          setQuickDownloadOpen(true);
+          return;
+        }
+
+        taskDraftManager.saveDraft({
+          files: dropped,
+          savedAt: Date.now(),
+        });
+
+        const slug = recipeSlug(recipe);
+        if (slug && !block) {
+          const typeDef = getTaskTypeBySlug(slug)!;
+          const id = uuidv4();
+          await window?.ipc?.invoke('saveTaskProject', {
+            id,
+            taskType: typeDef.taskType,
+            files: dropped,
+          });
+          router.push(`/${loc}/tasks/${slug}?project=${id}`);
+          return;
+        }
+
+        try {
+          sessionStorage.setItem(WIZARD_DROP_KEY, JSON.stringify(dropped));
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
     if (block) {
       router.push(recipeBlockHref(loc, block));
       return;
     }
     const target = recipeTarget(recipe, loc);
-    const paths = collectDropPaths(e);
-    if (!paths.length) {
-      router.push(target);
-      return;
-    }
-    const slug = recipeSlug(recipe);
-    if (slug) {
-      // 纯字幕配方：拖放直建工程（现状机制，功能面零回归；按配方输入类型过滤）
-      const dropped = await window?.ipc?.invoke('getDroppedFiles', {
-        files: paths,
-        taskType: recipe.accepts === 'subtitle' ? 'translate' : 'media',
-      });
-      if (!dropped?.length) {
-        router.push(target);
-        return;
-      }
-      const typeDef = getTaskTypeBySlug(slug)!;
-      const id = uuidv4();
-      await window?.ipc?.invoke('saveTaskProject', {
-        id,
-        taskType: typeDef.taskType,
-        files: dropped,
-      });
-      router.push(`/${loc}/tasks/${slug}?project=${id}`);
-      return;
-    }
-    // 含附加阶段（走向导）：媒体+字幕都收（向导自动配对），经 sessionStorage 交接
-    const dropped = await resolveDroppedBothKinds(paths);
-    if (dropped.length) {
-      try {
-        sessionStorage.setItem(WIZARD_DROP_KEY, JSON.stringify(dropped));
-      } catch {
-        /* ignore */
-      }
-    }
     router.push(target);
   };
 
@@ -346,6 +422,27 @@ export default function LaunchpadPage() {
     if (paths.length) {
       const dropped = await resolveDroppedBothKinds(paths);
       if (dropped.length) {
+        const hasMedia = dropped.some(
+          (f: any) =>
+            !f.ext ||
+            !['srt', 'vtt', 'ass', 'lrc', 'txt', 'md'].includes(
+              String(f.ext).toLowerCase(),
+            ),
+        );
+        if (hasMedia && !readiness.hasModels) {
+          taskDraftManager.saveDraft({
+            files: dropped,
+            savedAt: Date.now(),
+          });
+          setStagedDraftFiles(dropped);
+          setQuickDownloadOpen(true);
+          return;
+        }
+
+        taskDraftManager.saveDraft({
+          files: dropped,
+          savedAt: Date.now(),
+        });
         try {
           sessionStorage.setItem(WIZARD_DROP_KEY, JSON.stringify(dropped));
         } catch {
@@ -480,7 +577,23 @@ export default function LaunchpadPage() {
   ];
 
   return (
-    <div className="h-full overflow-auto">
+    <div
+      className="h-full overflow-auto relative"
+      onDragEnter={handleGlobalDragEnter}
+      onDragLeave={handleGlobalDragLeave}
+      onDragOver={handleGlobalDragOver}
+      onDrop={handleGlobalDrop}
+    >
+      <GlobalDropOverlay isDragging={globalDragging} />
+      <ModelQuickDownloadDialog
+        open={quickDownloadOpen}
+        onOpenChange={setQuickDownloadOpen}
+        stagedFilesCount={stagedDraftFiles.length}
+        onSuccess={() => {
+          setHasModels(true);
+          router.push(`/${localeStr}/tasks/new`);
+        }}
+      />
       {/* 窄屏：min-h-full，内容长时页面自然滚动；xl 双栏：h-full 锁定视口高度，
           最近任务在面板内滚动，右栏不再被超长列表撑高 */}
       <div className="flex min-h-full flex-col gap-2.5 p-3 xl:h-full">

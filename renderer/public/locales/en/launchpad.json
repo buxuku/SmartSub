@@ -4,6 +4,18 @@
   "startPanel": {
     "title": "Start creating"
   },
+  "globalDrop": {
+    "title": "Drop files to import into SmartSub",
+    "desc": "Supports video, audio, subtitles and scripts; saved as a draft instantly"
+  },
+  "quickDownload": {
+    "title": "Speech Model Required",
+    "desc": "Saved {{count}} file(s) as draft. Speech transcription requires the lightweight Whisper Base model (~140MB, takes ~15s).",
+    "downloading": "Downloading model ({{progress}}%)…",
+    "startDownload": "Install & Continue",
+    "installComplete": "Model installed! Navigating to your task…",
+    "cancel": "Cancel"
+  },
   "recipes": {
     "custom": "Custom flow",
     "customDesc": "Open the wizard, mix goals and settings, save as a recipe",

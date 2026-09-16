@@ -4,6 +4,18 @@
   "startPanel": {
     "title": "开始创作"
   },
+  "globalDrop": {
+    "title": "松手立即导入 SmartSub",
+    "desc": "支持任意音视频、字幕或文稿，将自动暂存为创作草稿"
+  },
+  "quickDownload": {
+    "title": "需要语音识别模型",
+    "desc": "已暂存 {{count}} 个文件。开启语音转写需安装轻量版 Whisper Base 模型（约 140MB，预计耗时 15 秒）。",
+    "downloading": "正在下载模型 ({{progress}}%)…",
+    "startDownload": "一键安装并继续",
+    "installComplete": "模型安装完成，正在进入创作任务…",
+    "cancel": "暂不下载"
+  },
   "recipes": {
     "custom": "自定义流程",
     "customDesc": "打开向导，自由组合目标与配置，可存为配方",
