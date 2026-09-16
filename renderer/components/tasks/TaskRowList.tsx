@@ -46,7 +46,12 @@ import {
   type RailItem,
   type StageDef,
 } from './stageUtils';
-import { SPEAKER_DIARIZATION_METADATA_SAVE_FAILED } from '../../../types/speakerDiarization';
+import {
+  SPEAKER_DIARIZATION_METADATA_SAVE_FAILED,
+  TRANSLATION_INCOMPLETE_PIPELINE_PAUSED,
+  TRANSLATION_INCOMPLETE_FOR_DUBBING,
+  TRANSLATION_INCOMPLETE_FOR_COMPOSE,
+} from '../../../types';
 import { ManuscriptRowBadge } from './ManuscriptRowBadge';
 
 interface TaskRowListProps {
@@ -150,6 +155,12 @@ export function RailChips({
               ),
             })
           : undefined;
+        const translationFailureCount = file?.translationFailures?.length || 0;
+        const translationFailureTitle = translationFailureCount
+          ? t('row.translationFailureWarning', {
+              count: translationFailureCount,
+            })
+          : undefined;
         return (
           <React.Fragment key={stage.key}>
             {index > 0 && <ChevronRight className="h-3 w-3 text-faint" />}
@@ -165,7 +176,9 @@ export function RailChips({
               title={
                 stage.key === 'extractSubtitle' && missedSpeechTitle
                   ? missedSpeechTitle
-                  : manuscriptTitle
+                  : stage.key === 'translateSubtitle' && translationFailureTitle
+                    ? translationFailureTitle
+                    : manuscriptTitle
               }
             >
               {status === 'loading' && (
@@ -199,6 +212,17 @@ export function RailChips({
                   <CircleAlert className="h-3 w-3" />
                   <span className="text-[10px]">
                     {missedSpeechSummary.count}
+                  </span>
+                </span>
+              ) : null}
+              {stage.key === 'translateSubtitle' && translationFailureCount > 0 ? (
+                <span
+                  className="inline-flex items-center gap-0.5 text-warning"
+                  title={translationFailureTitle}
+                >
+                  <CircleAlert className="h-3 w-3" />
+                  <span className="text-[10px]">
+                    {translationFailureCount}
                   </span>
                 </span>
               ) : null}
@@ -360,7 +384,17 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
         const failed = hasFileError(file, stages);
         const rawError = failed ? getFileError(file, stages) : '';
         const errorMsg =
-          rawError === 'TASK_INTERRUPTED' ? t('interrupted') : rawError;
+          rawError === 'TASK_INTERRUPTED'
+            ? t('interrupted')
+            : rawError === TRANSLATION_INCOMPLETE_PIPELINE_PAUSED
+              ? t('row.translationIncompletePipelinePaused', {
+                  count: file?.translationFailures?.length || 0,
+                })
+              : rawError === TRANSLATION_INCOMPLETE_FOR_DUBBING
+                ? t('row.translationIncompleteForDubbing')
+                : rawError === TRANSLATION_INCOMPLETE_FOR_COMPOSE
+                  ? t('row.translationIncompleteForCompose')
+                  : rawError;
         const rawWarning = getFileWarning(file, stages);
         const warningMsg =
           rawWarning === SPEAKER_DIARIZATION_METADATA_SAVE_FAILED
@@ -374,7 +408,17 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
               ),
             })
           : '';
-        const displayWarning = [warningMsg, missedSpeechWarning]
+        const translationFailureWarning =
+          !failed && file?.translationFailures?.length
+            ? t('row.translationFailureWarning', {
+                count: file.translationFailures.length,
+              })
+            : '';
+        const displayWarning = [
+          warningMsg,
+          missedSpeechWarning,
+          translationFailureWarning,
+        ]
           .filter(Boolean)
           .join(' · ');
         const started = stages.some(

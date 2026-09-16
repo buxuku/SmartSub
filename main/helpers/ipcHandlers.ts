@@ -26,6 +26,8 @@ import {
 } from '../../types/proofreadData';
 import { subtitleOutputFilesToSave } from '../../types/subtitleOutput';
 import { atomicReplaceTextFile } from './atomicFile';
+import { getWorkItems, saveWorkItem } from './workItemStore';
+import { isPipelineWorkItem } from '../../types/workItem';
 import {
   MANUSCRIPT_EXTENSIONS,
   ManuscriptFileError,
@@ -586,6 +588,48 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
               embedSpeakerNames,
             },
           );
+        }
+
+        const remainingFailures = (updated?.cues || []).filter(
+          (cue) =>
+            cue.translationStatus === 'failed' ||
+            Boolean(cue.target && /^\[翻译失败:/.test(cue.target.trim())),
+        );
+        const translationFailures = remainingFailures.map((cue) => ({
+          subtitleId: cue.id,
+          error: cue.translationError,
+        }));
+
+        for (const item of getWorkItems()) {
+          if (!isPipelineWorkItem(item)) continue;
+          let matched = false;
+          const pipelineFiles = (item.pipelineFiles || []).map((file) => {
+            if (
+              file.proofreadDataFile === proofreadDataFile ||
+              (file.proofreadDataFile &&
+                path.resolve(file.proofreadDataFile).toLowerCase() ===
+                  path.resolve(proofreadDataFile).toLowerCase())
+            ) {
+              matched = true;
+              event.sender.send('taskFileChange', {
+                ...file,
+                translationFailures,
+              });
+              return {
+                ...file,
+                translationFailures,
+              };
+            }
+            return file;
+          });
+          if (matched) {
+            saveWorkItem({
+              ...item,
+              pipelineFiles,
+              updatedAt: Date.now(),
+            });
+            break;
+          }
         }
 
         return { success: true };
