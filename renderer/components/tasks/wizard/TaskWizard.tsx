@@ -501,7 +501,8 @@ export default function TaskWizard() {
   // 支持 URL 参数直接预填媒体（如工具箱无损视频裁剪/提取后一键「新建任务」：?video=...）
   useEffect(() => {
     if (!router.isReady) return;
-    const targetVideo = typeof router.query.video === 'string' ? router.query.video : null;
+    const targetVideo =
+      typeof router.query.video === 'string' ? router.query.video : null;
     if (targetVideo) {
       (async () => {
         try {
@@ -1243,9 +1244,8 @@ export default function TaskWizard() {
                     ...m,
                     manuscriptPath: pairedScript.filePath,
                     manuscriptName:
-                      'fileName' in pairedScript
-                        ? pairedScript.fileName
-                        : pairedScript.filePath.split(/[\\/]/).pop(),
+                      pairedScript.fileName ||
+                      pairedScript.filePath.split(/[\\/]/).pop(),
                   };
                 }
                 return m;
@@ -1747,10 +1747,10 @@ export default function TaskWizard() {
                               );
                               setManualManuscriptPairs((prev) => {
                                 const next = new Map(prev);
-                                for (const [mPath, sPath] of prev.entries()) {
+                                prev.forEach((sPath, mPath) => {
                                   if (sPath === file.filePath)
                                     next.delete(mPath);
-                                }
+                                });
                                 return next;
                               });
                             }}
