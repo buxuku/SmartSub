@@ -444,5 +444,28 @@
   "meta": {
     "etaMin": "~{{min}} min left",
     "etaLessMin": "Almost done"
+  },
+  "presets": {
+    "title": "Scenario Presets",
+    "interview": {
+      "name": "Meeting / Podcast",
+      "desc": "Aggressive noise reduction, clean short sentences, speaker pauses preserved"
+    },
+    "lecture": {
+      "name": "Lecture / Tutorial",
+      "desc": "High precision, anti-hallucination, ideal for terminology and structured content"
+    },
+    "movie": {
+      "name": "Movie / Vlog",
+      "desc": "Natural sentence pacing, preserves conversational emotion and tone"
+    },
+    "balanced": {
+      "name": "Balanced",
+      "desc": "Balanced accuracy and speed, suitable for most general scenarios"
+    },
+    "custom": {
+      "name": "Expert Custom",
+      "desc": "Fine-tune Beam Size, VAD thresholds, and hallucination filters"
+    }
   }
 }

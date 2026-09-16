@@ -1,0 +1,125 @@
+import type {
+  ScenarioPresetId,
+  ScenarioPresetDef,
+  ScenarioPresetFields,
+} from '../../types/scenarioPresets';
+
+export type { ScenarioPresetId, ScenarioPresetDef, ScenarioPresetFields };
+
+export const ALL_PRESET_FIELD_KEYS: (keyof ScenarioPresetFields)[] = [
+  'subtitleOutcome',
+  'fasterWhisperBeamSize',
+  'fasterWhisperTemperature',
+  'fasterWhisperCompressionRatioThreshold',
+  'fasterWhisperLogProbThreshold',
+  'useVAD',
+  'vadThreshold',
+];
+
+export const SCENARIO_PRESETS: ScenarioPresetDef[] = [
+  {
+    id: 'interview',
+    nameKey: 'presets.interview.name',
+    descKey: 'presets.interview.desc',
+    iconName: 'Mic',
+    fields: {
+      subtitleOutcome: 'clean',
+      fasterWhisperBeamSize: 5,
+      fasterWhisperTemperature: 0,
+      useVAD: true,
+      vadThreshold: 0.35,
+    },
+  },
+  {
+    id: 'lecture',
+    nameKey: 'presets.lecture.name',
+    descKey: 'presets.lecture.desc',
+    iconName: 'GraduationCap',
+    fields: {
+      subtitleOutcome: 'accurate',
+      fasterWhisperBeamSize: 5,
+      fasterWhisperTemperature: 0,
+      fasterWhisperCompressionRatioThreshold: 2.2,
+      fasterWhisperLogProbThreshold: -0.8,
+    },
+  },
+  {
+    id: 'movie',
+    nameKey: 'presets.movie.name',
+    descKey: 'presets.movie.desc',
+    iconName: 'Film',
+    fields: {
+      subtitleOutcome: 'balanced',
+      fasterWhisperBeamSize: 3,
+      fasterWhisperTemperature: 0.2,
+    },
+  },
+  {
+    id: 'balanced',
+    nameKey: 'presets.balanced.name',
+    descKey: 'presets.balanced.desc',
+    iconName: 'Sliders',
+    fields: {
+      subtitleOutcome: 'balanced',
+    },
+  },
+  {
+    id: 'custom',
+    nameKey: 'presets.custom.name',
+    descKey: 'presets.custom.desc',
+    iconName: 'Settings2',
+    fields: {},
+  },
+];
+
+export function getScenarioPresetDef(
+  id: ScenarioPresetId,
+): ScenarioPresetDef | undefined {
+  return SCENARIO_PRESETS.find((p) => p.id === id);
+}
+
+export function applyScenarioPreset(
+  form: { setValue: (key: string, value: any, options?: any) => void },
+  presetId: ScenarioPresetId,
+): void {
+  const preset = getScenarioPresetDef(presetId);
+  if (!preset) return;
+
+  form.setValue('scenarioPreset', presetId, { shouldDirty: true });
+
+  if (presetId === 'custom') {
+    return;
+  }
+
+  ALL_PRESET_FIELD_KEYS.forEach((key) => {
+    const val = preset.fields[key];
+    form.setValue(key as string, val, { shouldDirty: true });
+  });
+}
+
+export function detectCurrentPreset(
+  formData: Record<string, any> | undefined,
+): ScenarioPresetId {
+  if (!formData) return 'balanced';
+  if (formData.scenarioPreset === 'custom') return 'custom';
+
+  const targetId: ScenarioPresetId = formData.scenarioPreset || 'balanced';
+  const preset = getScenarioPresetDef(targetId);
+  if (!preset || targetId === 'custom') return 'custom';
+
+  for (const key of ALL_PRESET_FIELD_KEYS) {
+    const expected = preset.fields[key];
+    const actual = formData[key];
+    if (expected !== undefined) {
+      if (actual !== expected) {
+        return 'custom';
+      }
+    } else {
+      if (actual !== undefined && actual !== null && actual !== '') {
+        return 'custom';
+      }
+    }
+  }
+
+  return targetId;
+}
