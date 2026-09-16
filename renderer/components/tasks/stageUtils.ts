@@ -269,8 +269,16 @@ export function isProofreadReady(
         return false;
       }
     }
-  } else if (file?.translateSubtitle !== 'done') {
+  } else if (file?.translateSubtitle === 'loading') {
     return false;
+  } else if (file?.translateSubtitle !== 'done') {
+    if (
+      file?.proofreadDataReady !== 'done' ||
+      file?.exportSubtitle !== 'done' ||
+      !file?.proofreadDataFile
+    ) {
+      return false;
+    }
   }
 
   // 角色分离会在 sidecar 落盘前保持 loading；必须等 done 才能进入校对。

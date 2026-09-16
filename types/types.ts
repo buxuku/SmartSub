@@ -165,6 +165,13 @@ export interface IFiles extends SubtitleOutputFiles {
   finalVideoPath?: string;
 }
 
+export const TRANSLATION_INCOMPLETE_PIPELINE_PAUSED =
+  'TRANSLATION_INCOMPLETE_PIPELINE_PAUSED';
+export const TRANSLATION_INCOMPLETE_FOR_DUBBING =
+  'TRANSLATION_INCOMPLETE_FOR_DUBBING';
+export const TRANSLATION_INCOMPLETE_FOR_COMPOSE =
+  'TRANSLATION_INCOMPLETE_FOR_COMPOSE';
+
 export type TaskProjectType =
   | 'generateAndTranslate'
   | 'generateOnly'
