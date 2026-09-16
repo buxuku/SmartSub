@@ -39,7 +39,7 @@ Module._load = function (request, parent, isMain) {
     return {
       app: {
         getVersion: () => 'test',
-        getPath: () => active.root,
+        getPath: () => active?.root || path.join(__dirname, '../node_modules/.cache'),
         getAppPath: () => process.cwd(),
       },
       ipcMain: { handle: (name, fn) => handlers.set(name, fn), on: () => {} },
@@ -47,7 +47,7 @@ Module._load = function (request, parent, isMain) {
     };
   if (req.endsWith('/storeManager'))
     return { logMessage() {}, store: { get: () => ({}) } };
-  if (parent?.filename.endsWith('taskManager.ts') && req === './workItemStore')
+  if (req.endsWith('/workItemStore') || req === './workItemStore')
     return {
       getWorkItems: () => workItems,
       saveWorkItem: (item) => {
