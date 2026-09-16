@@ -58,7 +58,7 @@ import { canStartParakeetTask } from 'lib/parakeetTask';
 import type { TranscriptionEngine } from '../../../../types/engine';
 import type { AsrProvider } from '../../../../types/asrProvider';
 import useSystemInfo from 'hooks/useStystemInfo';
-import useFormConfig from 'hooks/useFormConfig';
+import useUnifiedTaskConfig from 'hooks/useUnifiedTaskConfig';
 import useIpcCommunication from 'hooks/useIpcCommunication';
 import { useConfirmOrUndo } from 'hooks/useConfirmOrUndo';
 import { useHotkeys } from 'hooks/useHotkeys';
@@ -117,7 +117,7 @@ export default function TaskPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const { systemInfo, loaded: systemInfoLoaded } = useSystemInfo();
-  const { form, formData } = useFormConfig();
+  const { form, formData } = useUnifiedTaskConfig();
   /** 列表/横幅的有效配置：固定任务用快照，否则使用当前表单。 */
   const listFormData = configSnapshot ?? formData;
   /** 来自加载（而非用户/任务事件）的 files 引用，避免回写存储 */
@@ -843,7 +843,15 @@ export default function TaskPage() {
 
       await executeModeSwitch(targetSlug, false);
     },
-    [slug, isSwitchingMode, queueBusy, typeDef, files.length, t, executeModeSwitch],
+    [
+      slug,
+      isSwitchingMode,
+      queueBusy,
+      typeDef,
+      files.length,
+      t,
+      executeModeSwitch,
+    ],
   );
 
   const handleDragOver = (e: React.DragEvent) => {

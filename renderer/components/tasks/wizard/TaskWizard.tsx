@@ -75,7 +75,8 @@ import {
 } from 'lib/subtitleRefineValidation';
 import InlineConfigBar from '@/components/tasks/InlineConfigBar';
 import useSystemInfo from 'hooks/useStystemInfo';
-import useLocalFormConfig from 'hooks/useLocalFormConfig';
+import useUnifiedTaskConfig from 'hooks/useUnifiedTaskConfig';
+import { taskDraftManager } from '@/lib/taskDraftManager';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import { useTtsEngineOptions, parseEngineKey } from 'hooks/useTtsEngineOptions';
 import {
@@ -152,8 +153,6 @@ interface PersistedDubbing {
 }
 
 const SPEED_OPTIONS = [0.75, 0.9, 1, 1.1, 1.25, 1.5];
-
-const TASK_WIZARD_DRAFT_KEY = 'smartsub_task_wizard_draft_v1';
 
 export default function TaskWizard() {
   const router = useRouter();
@@ -579,20 +578,17 @@ export default function TaskWizard() {
     }
 
     try {
-      const raw = localStorage.getItem(TASK_WIZARD_DRAFT_KEY);
-      if (raw) {
-        const draft = JSON.parse(raw);
-        if (Array.isArray(draft.files) && draft.files.length > 0) {
-          setFiles(draft.files);
-          if (draft.goals) setGoals(draft.goals);
-          if (Array.isArray(draft.manualPairs)) {
-            setManualPairs(new Map(draft.manualPairs));
-          }
-          if (Array.isArray(draft.manualManuscriptPairs)) {
-            setManualManuscriptPairs(new Map(draft.manualManuscriptPairs));
-          }
-          setRestoredDraftCount(draft.files.length);
+      const draft = taskDraftManager.getDraft();
+      if (draft && Array.isArray(draft.files) && draft.files.length > 0) {
+        setFiles(draft.files);
+        if (draft.goals) setGoals(draft.goals as any);
+        if (Array.isArray(draft.manualPairs)) {
+          setManualPairs(new Map(draft.manualPairs));
         }
+        if (Array.isArray(draft.manualManuscriptPairs)) {
+          setManualManuscriptPairs(new Map(draft.manualManuscriptPairs));
+        }
+        setRestoredDraftCount(draft.files.length);
       }
     } catch (e) {
       console.error('Failed to restore task wizard draft:', e);
@@ -607,16 +603,15 @@ export default function TaskWizard() {
     const timer = setTimeout(() => {
       try {
         if (files.length > 0) {
-          const draft = {
+          taskDraftManager.saveDraft({
             files,
             goals,
             manualPairs: Array.from(manualPairs.entries()),
             manualManuscriptPairs: Array.from(manualManuscriptPairs.entries()),
             savedAt: Date.now(),
-          };
-          localStorage.setItem(TASK_WIZARD_DRAFT_KEY, JSON.stringify(draft));
+          });
         } else {
-          localStorage.removeItem(TASK_WIZARD_DRAFT_KEY);
+          taskDraftManager.clearDraft();
         }
       } catch (e) {
         console.error('Failed to save task wizard draft:', e);
@@ -627,11 +622,7 @@ export default function TaskWizard() {
   }, [files, goals, manualPairs, manualManuscriptPairs]);
 
   const clearDraft = useCallback(() => {
-    try {
-      localStorage.removeItem(TASK_WIZARD_DRAFT_KEY);
-    } catch {
-      /* ignore */
-    }
+    taskDraftManager.clearDraft();
     setFiles([]);
     setGoals({
       translate: false,
@@ -642,7 +633,7 @@ export default function TaskWizard() {
     setManualManuscriptPairs(new Map());
     setRestoredDraftCount(null);
   }, []);
-  const { form, formData, loaded: formLoaded } = useLocalFormConfig();
+  const { form, formData, loaded: formLoaded } = useUnifiedTaskConfig();
   const [refinePopoverOpen, setRefinePopoverOpen] = useState(false);
   const { systemInfo, loaded: systemInfoLoaded } = useSystemInfo();
   const [providers, setProviders] = useState<any[]>([]);
@@ -1408,11 +1399,7 @@ export default function TaskWizard() {
         projectId,
       });
       // 成功启动任务后清除草稿
-      try {
-        localStorage.removeItem(TASK_WIZARD_DRAFT_KEY);
-      } catch {
-        /* ignore */
-      }
+      taskDraftManager.clearDraft();
       router.push(`/${locale}/tasks/${typeDef.slug}?project=${projectId}`);
     } finally {
       setStarting(false);
