@@ -119,6 +119,13 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
     qwen: {
       fallbackModels: ['qwen-turbo', 'qwen-plus', 'qwen-max'],
     },
+    atlascloud: {
+      fallbackModels: [
+        'zai-org/glm-5',
+        'qwen/qwen3.5-35b-a3b',
+        'moonshotai/kimi-k2.6',
+      ],
+    },
   };
 
   // 批量翻译三参数（批量数量 / 并发 / 请求间隔）单独成行直显，说明收进 tooltip

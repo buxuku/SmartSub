@@ -11,7 +11,10 @@ import {
 // v23：新增独立的 Qwen-MT 机器翻译服务商
 // v24：同 type 服务实例与任务内回退链
 // v25：AI 翻译默认批次与并发调优；AI 断句复用服务商并发配置
-const CURRENT_PROVIDER_VERSION = 25;
+// v26：新增 Atlas Cloud（OpenAI 兼容）AI 翻译服务商
+const CURRENT_PROVIDER_VERSION = 26;
+
+const FREE_PROVIDER_IDS = ['autoFree', 'bingFree', 'googleFree'];
 
 export async function getAndInitializeProviders(): Promise<Provider[]> {
   try {
