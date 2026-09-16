@@ -74,7 +74,7 @@ export default function ToolboxFinishBar({
 
   const handleGoToBurn = () => {
     router.push(
-      `/${locale}/tasks/new?subtitle=${encodeURIComponent(primaryPath)}&goals=video`,
+      `/${locale}/subtitleMerge?subtitle=${encodeURIComponent(primaryPath)}`,
     );
   };
 

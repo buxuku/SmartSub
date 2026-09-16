@@ -115,7 +115,12 @@ export function detectCurrentPreset(
         return 'custom';
       }
     } else {
-      if (actual !== undefined && actual !== null && actual !== '') {
+      if (
+        actual !== undefined &&
+        actual !== null &&
+        actual !== '' &&
+        actual !== false
+      ) {
         return 'custom';
       }
     }

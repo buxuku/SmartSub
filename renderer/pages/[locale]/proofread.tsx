@@ -10,7 +10,10 @@ import {
   PendingFile,
   loadPendingFileFromItem,
   pendingFileToSaveFormat,
+  createPendingFileFromSubtitle,
+  createPendingFileFromVideo,
 } from '@/lib/proofreadUtils';
+import { isSubtitleFile } from 'lib/utils';
 import { useConfirmOrUndo } from '../../hooks/useConfirmOrUndo';
 import { toast } from 'sonner';
 
@@ -22,7 +25,7 @@ export type { PendingFile } from '@/lib/proofreadUtils';
 
 export default function ProofreadPage() {
   const router = useRouter();
-  const { workItem: workItemQuery } = router.query;
+  const { workItem: workItemQuery, file: fileQuery } = router.query;
   const { t } = useTranslation('home');
   const confirmOrUndo = useConfirmOrUndo();
 
@@ -72,6 +75,29 @@ export default function ProofreadPage() {
       cancelled = true;
     };
   }, [workItemQuery, handleLoadTask]);
+
+  // 从 URL 参数直接加载待校对文件（如工具箱转换/校准后一键进入：?file=...）
+  useEffect(() => {
+    if (typeof fileQuery !== 'string' || !fileQuery) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const isSub = isSubtitleFile(fileQuery);
+        const pending = isSub
+          ? await createPendingFileFromSubtitle(fileQuery)
+          : await createPendingFileFromVideo(fileQuery);
+        if (cancelled || !pending) return;
+        handleImportComplete([pending], isSub ? 'subtitle' : 'video');
+      } catch (error) {
+        console.error('Failed to load file from query into proofread:', error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fileQuery, handleImportComplete]);
 
   // 导入完成后进入列表
   const handleImportComplete = useCallback(

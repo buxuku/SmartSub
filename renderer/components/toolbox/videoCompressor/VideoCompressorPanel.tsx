@@ -206,6 +206,11 @@ export default function VideoCompressorPanel() {
         currentJobIdRef.current,
       );
     }
+    setFiles((prev) =>
+      prev.map((f) =>
+        f.status === 'processing' ? { ...f, status: 'idle', progress: 0 } : f,
+      ),
+    );
     setIsCompressing(false);
     toast.info('已取消批量视频压缩');
   };

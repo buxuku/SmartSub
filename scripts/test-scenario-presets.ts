@@ -77,6 +77,14 @@ assert.strictEqual(mockFormValues.vadThreshold, undefined);
 // 3. Test detectCurrentPreset
 assert.strictEqual(detectCurrentPreset(mockFormValues), 'lecture');
 
+// Verify boolean false on unconstrained fields does not trigger custom
+const lectureWithFalseVAD = { ...mockFormValues, useVAD: false };
+assert.strictEqual(
+  detectCurrentPreset(lectureWithFalseVAD),
+  'lecture',
+  'useVAD: false should not turn lecture into custom',
+);
+
 // Tamper with one field: change temperature
 const tamperedFormValues = { ...mockFormValues, fasterWhisperTemperature: 0.8 };
 assert.strictEqual(detectCurrentPreset(tamperedFormValues), 'custom');

@@ -504,11 +504,14 @@ export default function TaskWizard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 支持 URL 参数直接预填媒体（如工具箱无损视频裁剪/提取后一键「新建任务」：?video=...）
+  // 支持 URL 参数直接预填媒体（如工具箱无损视频裁剪/提取后一键「新建任务」：?video=...）或字幕（?subtitle=...）
   useEffect(() => {
     if (!router.isReady) return;
     const targetVideo =
       typeof router.query.video === 'string' ? router.query.video : null;
+    const targetSubtitle =
+      typeof router.query.subtitle === 'string' ? router.query.subtitle : null;
+
     if (targetVideo) {
       hasExternalSourceRef.current = true;
       (async () => {
@@ -525,7 +528,49 @@ export default function TaskWizard() {
         }
       })();
     }
-  }, [router.isReady, router.query.video, appendFiles]);
+
+    if (targetSubtitle) {
+      hasExternalSourceRef.current = true;
+      (async () => {
+        try {
+          const droppedSubtitles = await window?.ipc?.invoke(
+            'getDroppedFiles',
+            {
+              files: [targetSubtitle],
+              taskType: 'translate',
+            },
+          );
+          if (droppedSubtitles && droppedSubtitles.length) {
+            appendFiles(droppedSubtitles);
+          }
+        } catch (err) {
+          console.error('Failed to import subtitle from query:', err);
+        }
+      })();
+    }
+  }, [router.isReady, router.query.video, router.query.subtitle, appendFiles]);
+
+  // 支持 URL 参数预设目标产物（如工具箱一键去配音：?goals=dub 或 ?goals=video）
+  useEffect(() => {
+    if (!router.isReady) return;
+    const rawGoals = router.query.goals;
+    if (rawGoals) {
+      hasExternalSourceRef.current = true;
+      const goalList = (
+        Array.isArray(rawGoals) ? rawGoals.join(',') : String(rawGoals)
+      )
+        .split(',')
+        .map((g) => g.trim().toLowerCase());
+
+      setGoals((prev) => {
+        const next = { ...prev };
+        if (goalList.includes('translate')) next.translate = true;
+        if (goalList.includes('dub')) next.dub = true;
+        if (goalList.includes('video')) next.video = true;
+        return next;
+      });
+    }
+  }, [router.isReady, router.query.goals]);
 
   // 下载页交接来源（?fromDownload=<downloadWorkItemId>）：写入任务快照供回溯
   const sourceDownloadWorkItemId =
@@ -570,9 +615,18 @@ export default function TaskWizard() {
       hasExternalSourceRef.current ||
       Boolean(sessionStorage.getItem(WIZARD_DROP_KEY));
     const hasQueryVideo = Boolean(router.query.video);
+    const hasQuerySubtitle = Boolean(router.query.subtitle);
+    const hasQueryGoals = Boolean(router.query.goals);
     const hasPreset = Boolean(router.query.preset);
 
-    if (hasSessionDrop || hasQueryVideo || hasPreset || files.length > 0) {
+    if (
+      hasSessionDrop ||
+      hasQueryVideo ||
+      hasQuerySubtitle ||
+      hasQueryGoals ||
+      hasPreset ||
+      files.length > 0
+    ) {
       draftInitializedRef.current = true;
       return;
     }
