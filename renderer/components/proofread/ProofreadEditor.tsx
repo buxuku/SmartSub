@@ -252,7 +252,7 @@ export default function ProofreadEditor({
   }, []);
 
   // 注册全局离开守卫（拦截侧栏 NavLink、Cmd+K 命令面板、浏览器前进后退等）
-  useNavigationGuard(`proofread-editor-${file.id}`, {
+  const { isGuarded } = useNavigationGuard(`proofread-editor-${file.id}`, {
     isDirty,
     onSave: handleSave,
     title: t('unsavedChangesTitle'),
@@ -262,6 +262,13 @@ export default function ProofreadEditor({
   // 未保存修改守卫（用于页内返回）
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const [isSavingAndBack, setIsSavingAndBack] = useState(false);
+
+  // 全局守卫弹起时自动关闭页内返回弹窗，避免两个弹窗重叠层叠
+  useEffect(() => {
+    if (isGuarded) {
+      setShowUnsavedDialog(false);
+    }
+  }, [isGuarded]);
 
   // 返回列表：有未保存修改时先拦截
   const handleBackClick = useCallback(() => {

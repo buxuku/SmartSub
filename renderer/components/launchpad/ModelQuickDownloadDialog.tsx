@@ -96,7 +96,16 @@ export default function ModelQuickDownloadDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          handleCancel();
+        } else {
+          onOpenChange(true);
+        }
+      }}
+    >
       <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
           <div className="flex items-center gap-2 text-primary mb-1">

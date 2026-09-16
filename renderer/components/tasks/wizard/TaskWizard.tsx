@@ -667,10 +667,11 @@ export default function TaskWizard() {
     hydrateSnapshot,
   ]);
 
-  // 2. 状态变动时防抖保存到草稿
+  // 2. 状态变动时防抖保存到草稿（组件卸载时立即同步刷新保存）
   useEffect(() => {
     if (!draftInitializedRef.current) return;
-    const timer = setTimeout(() => {
+
+    const doSave = () => {
       try {
         if (files.length > 0) {
           taskDraftManager.saveDraft({
@@ -687,9 +688,14 @@ export default function TaskWizard() {
       } catch (e) {
         console.error('Failed to save task wizard draft:', e);
       }
-    }, 500);
+    };
 
-    return () => clearTimeout(timer);
+    const timer = setTimeout(doSave, 500);
+
+    return () => {
+      clearTimeout(timer);
+      doSave();
+    };
   }, [files, goals, manualPairs, manualManuscriptPairs, formData]);
 
   const clearDraft = useCallback(() => {
@@ -703,7 +709,8 @@ export default function TaskWizard() {
     setManualPairs(new Map());
     setManualManuscriptPairs(new Map());
     setRestoredDraftCount(null);
-  }, []);
+    form.reset({});
+  }, [form]);
   const [refinePopoverOpen, setRefinePopoverOpen] = useState(false);
   const { systemInfo, loaded: systemInfoLoaded } = useSystemInfo();
   const [providers, setProviders] = useState<any[]>([]);

@@ -348,7 +348,15 @@ export const useStandaloneSubtitles = (
         }
       });
     };
-  }, [isOpen, config.sourceSubtitlePath, config.targetSubtitlePath]);
+  }, [
+    isOpen,
+    config.sourceSubtitlePath,
+    config.targetSubtitlePath,
+    config.proofreadDataFile,
+    config.videoPath,
+    config.finalTargetSubtitlePath,
+    loadFiles,
+  ]);
 
   // 更新视频信息
   useEffect(() => {
