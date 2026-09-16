@@ -408,6 +408,14 @@
     "grid": "Grid view"
   },
   "listCleared": "File list cleared",
+  "modeSwitch": {
+    "confirmTitle": "Switch Task Mode",
+    "incompatibleDesc": "The current list contains files incompatible with the target mode. Switching will clear the list. Continue?",
+    "busyHint": "Cannot switch task mode while tasks are running",
+    "confirm": "Clear and switch",
+    "cancel": "Cancel",
+    "saveFailed": "Failed to save mode switch, please try again"
+  },
   "meta": {
     "etaMin": "~{{min}} min left",
     "etaLessMin": "Almost done"
