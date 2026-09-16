@@ -94,6 +94,19 @@ export default function useUnifiedTaskConfig(
   const formDataRef = useRef(formData);
   const [loaded, setLoaded] = useState(false);
   const loadedRef = useRef(false);
+  const snapshotHydratedRef = useRef(false);
+
+  const hydrateSnapshot = useCallback(
+    (snap: Record<string, any>) => {
+      snapshotHydratedRef.current = true;
+      form.reset(snap);
+      setFormData(snap);
+      formDataRef.current = snap;
+      loadedRef.current = true;
+      setLoaded(true);
+    },
+    [form],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -117,9 +130,11 @@ export default function useUnifiedTaskConfig(
         };
 
         if (!cancelled) {
-          form.reset(mergedConfig);
-          setFormData(mergedConfig);
-          formDataRef.current = mergedConfig;
+          if (!snapshotHydratedRef.current) {
+            form.reset(mergedConfig);
+            setFormData(mergedConfig);
+            formDataRef.current = mergedConfig;
+          }
           loadedRef.current = true;
           setLoaded(true);
         }
@@ -191,5 +206,6 @@ export default function useUnifiedTaskConfig(
     setValue,
     applyPreset,
     buildSnapshot,
+    hydrateSnapshot,
   };
 }

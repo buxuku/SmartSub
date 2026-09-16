@@ -79,7 +79,10 @@ export function getScenarioPresetDef(
 }
 
 export function applyScenarioPreset(
-  form: { setValue: (key: string, value: any, options?: any) => void },
+  form: {
+    setValue: (key: string, value: any, options?: any) => void;
+    resetField?: (key: string, options?: any) => void;
+  },
   presetId: ScenarioPresetId,
 ): void {
   const preset = getScenarioPresetDef(presetId);
@@ -92,9 +95,16 @@ export function applyScenarioPreset(
   }
 
   ALL_PRESET_FIELD_KEYS.forEach((key) => {
-    const val =
-      key === 'useVAD' ? (preset.fields.useVAD ?? false) : preset.fields[key];
-    form.setValue(key as string, val, { shouldDirty: true });
+    if (preset.fields[key] !== undefined) {
+      form.setValue(key as string, preset.fields[key], { shouldDirty: true });
+    } else if (key === 'useVAD') {
+      form.setValue('useVAD', false, { shouldDirty: true });
+    } else {
+      if (typeof form.resetField === 'function') {
+        form.resetField(key as string, { defaultValue: undefined });
+      }
+      form.setValue(key as string, undefined, { shouldDirty: true });
+    }
   });
 }
 

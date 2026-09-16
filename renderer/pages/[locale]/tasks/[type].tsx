@@ -122,6 +122,7 @@ export default function TaskPage() {
     form,
     formData,
     loaded: configLoaded,
+    hydrateSnapshot,
   } = useUnifiedTaskConfig({
     persistToGlobal: !isExistingProject && !configSnapshot,
   });
@@ -418,7 +419,7 @@ export default function TaskPage() {
       setEditingName(false);
       setProjectId(id);
       if (rawSnap && !isPinnedTaskConfigSnapshot(rawSnap)) {
-        form.reset(rawSnap);
+        hydrateSnapshot(rawSnap);
       }
       setConfigSnapshot(snapshot);
       setBannerDismissed(false);

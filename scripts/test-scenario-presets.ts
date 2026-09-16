@@ -52,9 +52,14 @@ assert.strictEqual(balanced.fields.subtitleOutcome, 'balanced');
 
 // 2. Test applyScenarioPreset
 const mockFormValues: Record<string, any> = {};
+const resetFields: string[] = [];
 const mockForm = {
   setValue: (key: string, value: any) => {
     mockFormValues[key] = value;
+  },
+  resetField: (key: string) => {
+    resetFields.push(key);
+    delete mockFormValues[key];
   },
 };
 
@@ -74,6 +79,7 @@ assert.strictEqual(mockFormValues.fasterWhisperCompressionRatioThreshold, 2.2);
 assert.strictEqual(mockFormValues.fasterWhisperLogProbThreshold, -0.8);
 assert.strictEqual(mockFormValues.useVAD, false);
 assert.strictEqual(mockFormValues.vadThreshold, undefined);
+assert(resetFields.includes('vadThreshold'), 'vadThreshold must be reset');
 
 // 3. Test detectCurrentPreset
 assert.strictEqual(detectCurrentPreset(mockFormValues), 'lecture');

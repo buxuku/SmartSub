@@ -598,6 +598,9 @@ export default function TaskWizard() {
     setGoals((prev) => (prev.video ? { ...prev, video: false } : prev));
   }, [videoAllowed]);
 
+  // 表单与统一配置状态机
+  const { form, formData, loaded: formLoaded } = useUnifiedTaskConfig();
+
   // 草稿恢复与自动保存
   const [restoredDraftCount, setRestoredDraftCount] = useState<number | null>(
     null,
@@ -631,6 +634,12 @@ export default function TaskWizard() {
         if (draft.goals && !hasQueryGoals) {
           setGoals(draft.goals as any);
         }
+        if (draft.config) {
+          form.reset({
+            ...form.getValues(),
+            ...draft.config,
+          });
+        }
         if (Array.isArray(draft.manualPairs)) {
           setManualPairs(new Map(draft.manualPairs));
         }
@@ -644,7 +653,7 @@ export default function TaskWizard() {
     } finally {
       draftInitializedRef.current = true;
     }
-  }, [router.isReady, router.query, files.length]);
+  }, [router.isReady, router.query, files.length, form]);
 
   // 2. 状态变动时防抖保存到草稿
   useEffect(() => {
@@ -657,6 +666,7 @@ export default function TaskWizard() {
             goals,
             manualPairs: Array.from(manualPairs.entries()),
             manualManuscriptPairs: Array.from(manualManuscriptPairs.entries()),
+            config: formData,
             savedAt: Date.now(),
           });
         } else {
@@ -668,7 +678,7 @@ export default function TaskWizard() {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [files, goals, manualPairs, manualManuscriptPairs]);
+  }, [files, goals, manualPairs, manualManuscriptPairs, formData]);
 
   const clearDraft = useCallback(() => {
     taskDraftManager.clearDraft();
@@ -682,7 +692,6 @@ export default function TaskWizard() {
     setManualManuscriptPairs(new Map());
     setRestoredDraftCount(null);
   }, []);
-  const { form, formData, loaded: formLoaded } = useUnifiedTaskConfig();
   const [refinePopoverOpen, setRefinePopoverOpen] = useState(false);
   const { systemInfo, loaded: systemInfoLoaded } = useSystemInfo();
   const [providers, setProviders] = useState<any[]>([]);
