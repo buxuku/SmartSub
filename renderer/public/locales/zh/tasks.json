@@ -408,6 +408,14 @@
     "grid": "网格视图"
   },
   "listCleared": "已清空文件列表",
+  "modeSwitch": {
+    "confirmTitle": "切换任务模式",
+    "incompatibleDesc": "当前列表包含与目标模式不兼容的文件，切换将清空列表。是否继续？",
+    "busyHint": "任务执行中，无法切换任务模式",
+    "confirm": "清空并切换",
+    "cancel": "取消",
+    "saveFailed": "切换模式保存失败，请重试"
+  },
   "meta": {
     "etaMin": "剩约 {{min}} 分",
     "etaLessMin": "即将完成"

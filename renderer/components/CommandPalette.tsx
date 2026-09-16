@@ -45,6 +45,7 @@ export default function CommandPalette({
   open,
   onOpenChange,
   locale,
+  lastSubtitleSlug = 'generate-translate',
   onCheckUpdates,
   onOpenLogs,
   onOpenShortcuts,
@@ -54,6 +55,7 @@ export default function CommandPalette({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   locale: string;
+  lastSubtitleSlug?: string;
   onCheckUpdates: () => void;
   onOpenLogs: () => void;
   onOpenShortcuts: () => void;
@@ -98,7 +100,7 @@ export default function CommandPalette({
     { href: 'home', label: t('nav.launchpad'), icon: Home },
     { href: 'download', label: t('nav.download'), icon: CloudDownload },
     {
-      href: 'tasks/generate-translate',
+      href: `tasks/${lastSubtitleSlug}`,
       label: t('nav.subtitles'),
       icon: Captions,
     },
@@ -183,10 +185,7 @@ export default function CommandPalette({
           </CommandItem>
           <CommandItem
             value={`action ${t('help.checkUpdates')}`}
-            onSelect={() => {
-              onOpenChange(false);
-              onCheckUpdates();
-            }}
+            onSelect={() => runDeferred(onCheckUpdates)}
           >
             <RefreshCw />
             <span>{t('help.checkUpdates')}</span>

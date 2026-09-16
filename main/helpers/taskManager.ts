@@ -124,6 +124,7 @@ export function setupTaskManager() {
       if (existing && isPipelineWorkItem(existing)) {
         const saved = saveWorkItem({
           ...existing,
+          type: taskType ? normalizeTaskType(taskType) : existing.type,
           pipelineFiles: files,
           status,
           updatedAt: now,

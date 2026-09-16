@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   AlertDialog,
@@ -287,6 +288,26 @@ export default function TaskPage() {
     }
   }, [typeDef, formData, form]);
 
+  // 记录最后访问的标准字幕模式，以便左侧导航栏智能联动
+  useEffect(() => {
+    if (
+      slug &&
+      ['generate-translate', 'generate', 'translate'].includes(slug) &&
+      !configSnapshot
+    ) {
+      try {
+        localStorage.setItem('lastSubtitleTaskType', slug);
+        window.dispatchEvent(
+          new CustomEvent('last-subtitle-task-type-changed', {
+            detail: slug,
+          }),
+        );
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [slug, configSnapshot]);
+
   // 带翻译的任务类型不存在「不翻译」：清理历史残留 '-1' 或已被删除的服务商 id
   useEffect(() => {
     if (!typeDef?.hasTranslate || !providers.length) return;
@@ -535,6 +556,109 @@ export default function TaskPage() {
     if (saved?.name) setProjectName(saved.name);
   };
 
+  // 模式切换确认弹窗与暂存目标
+  const [switchConfirmOpen, setSwitchConfirmOpen] = useState(false);
+  const [pendingTargetSlug, setPendingTargetSlug] = useState<string | null>(
+    null,
+  );
+  const [isSwitchingMode, setIsSwitchingMode] = useState(false);
+  const switchingModeRef = useRef(false);
+
+  const executeModeSwitch = useCallback(
+    async (targetSlug: string, shouldClearFiles: boolean) => {
+      const targetTypeDef = getTaskTypeBySlug(targetSlug);
+      if (!targetTypeDef) return;
+
+      switchingModeRef.current = true;
+      setIsSwitchingMode(true);
+
+      try {
+        try {
+          localStorage.setItem('lastSubtitleTaskType', targetSlug);
+          window.dispatchEvent(
+            new CustomEvent('last-subtitle-task-type-changed', {
+              detail: targetSlug,
+            }),
+          );
+        } catch {
+          /* ignore */
+        }
+
+        if (shouldClearFiles) {
+          if (projectId) {
+            try {
+              await window?.ipc?.invoke('deleteTaskProject', projectId);
+            } catch {
+              /* ignore */
+            }
+          }
+          setFiles([]);
+          setBannerDismissed(false);
+          loadedFilesRef.current = null;
+          projectIdRef.current = null;
+          setProjectId(null);
+          setProjectName(null);
+          form.setValue('taskType', targetTypeDef.taskType);
+          await router.push(`/${locale}/tasks/${targetSlug}`);
+        } else {
+          if (projectId && files.length > 0) {
+            try {
+              const saved = await window?.ipc?.invoke('saveTaskProject', {
+                id: projectId,
+                taskType: targetTypeDef.taskType,
+                files,
+              });
+              if (!saved) {
+                toast.error(t('modeSwitch.saveFailed'));
+                return;
+              }
+            } catch (err) {
+              console.error('Failed to save task project mode:', err);
+              toast.error(t('modeSwitch.saveFailed'));
+              return;
+            }
+          }
+          form.setValue('taskType', targetTypeDef.taskType);
+          const query =
+            projectId && files.length > 0
+              ? `?project=${encodeURIComponent(projectId)}`
+              : '';
+          await router.push(`/${locale}/tasks/${targetSlug}${query}`);
+        }
+      } finally {
+        switchingModeRef.current = false;
+        setIsSwitchingMode(false);
+      }
+    },
+    [locale, projectId, files, form, router, t],
+  );
+
+  const handleModeChange = useCallback(
+    async (targetSlug: string) => {
+      if (targetSlug === slug) return;
+      if (switchingModeRef.current || isSwitchingMode) return;
+      if (queueBusy) {
+        toast.warning(t('modeSwitch.busyHint'));
+        return;
+      }
+      const targetTypeDef = getTaskTypeBySlug(targetSlug);
+      if (!targetTypeDef || !typeDef) return;
+
+      const isCurrentMedia = typeDef.accepts === 'media';
+      const isTargetMedia = targetTypeDef.accepts === 'media';
+
+      // 媒体与字幕不兼容且当前列表中存在文件
+      if (isCurrentMedia !== isTargetMedia && files.length > 0) {
+        setPendingTargetSlug(targetSlug);
+        setSwitchConfirmOpen(true);
+        return;
+      }
+
+      await executeModeSwitch(targetSlug, false);
+    },
+    [slug, isSwitchingMode, queueBusy, typeDef, files.length, t, executeModeSwitch],
+  );
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -688,12 +812,44 @@ export default function TaskPage() {
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <h1
-            className="shrink-0 truncate text-lg font-semibold"
-            title={pageTitle}
-          >
-            {pageTitle}
-          </h1>
+          {configSnapshot ? (
+            <h1
+              className="shrink-0 truncate text-lg font-semibold"
+              title={pageTitle}
+            >
+              {pageTitle}
+            </h1>
+          ) : (
+            <Tabs
+              value={slug}
+              onValueChange={handleModeChange}
+              className="shrink-0"
+            >
+              <TabsList className="h-8">
+                <TabsTrigger
+                  value="generate-translate"
+                  disabled={queueBusy || isSwitchingMode}
+                  className="h-7 text-xs px-2.5 sm:px-3"
+                >
+                  {t('pageTitle.generate-translate')}
+                </TabsTrigger>
+                <TabsTrigger
+                  value="generate"
+                  disabled={queueBusy || isSwitchingMode}
+                  className="h-7 text-xs px-2.5 sm:px-3"
+                >
+                  {t('pageTitle.generate')}
+                </TabsTrigger>
+                <TabsTrigger
+                  value="translate"
+                  disabled={queueBusy || isSwitchingMode}
+                  className="h-7 text-xs px-2.5 sm:px-3"
+                >
+                  {t('pageTitle.translate')}
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
           {editingName ? (
             <div className="flex items-center gap-1 min-w-0">
               <Input
@@ -737,7 +893,7 @@ export default function TaskPage() {
               </Button>
             </div>
           ) : (
-            <span className="text-xs text-muted-foreground whitespace-nowrap">
+            <span className="text-xs text-muted-foreground whitespace-nowrap truncate">
               {t('newTaskHint')}
             </span>
           )}
@@ -1008,6 +1164,39 @@ export default function TaskPage() {
               }}
             >
               {t('gate.releaseAllConfirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 模式切换确认弹窗（媒体与字幕不兼容时） */}
+      <AlertDialog
+        open={switchConfirmOpen}
+        onOpenChange={(open) => {
+          setSwitchConfirmOpen(open);
+          if (!open) setPendingTargetSlug(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('modeSwitch.confirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('modeSwitch.incompatibleDesc')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingTargetSlug(null)}>
+              {t('modeSwitch.cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingTargetSlug) {
+                  executeModeSwitch(pendingTargetSlug, true);
+                  setPendingTargetSlug(null);
+                }
+              }}
+            >
+              {t('modeSwitch.confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
