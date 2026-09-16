@@ -265,9 +265,10 @@ export function NavigationGuardProvider({
       <AlertDialog
         open={showDialog}
         onOpenChange={(open) => {
-          setShowDialog(open);
           if (!open) {
-            setPendingUrl(null);
+            handleCancel();
+          } else {
+            setShowDialog(true);
           }
         }}
       >

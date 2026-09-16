@@ -44,7 +44,8 @@ export default function ToolboxFinishBar({
   className,
 }: ToolboxFinishBarProps) {
   const router = useRouter();
-  const { locale } = router.query;
+  const locale =
+    typeof router.query.locale === 'string' ? router.query.locale : 'zh';
   const { t } = useTranslation('toolbox');
 
   const primaryPath = outputPath || outputPaths?.[0] || '';

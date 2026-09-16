@@ -41,9 +41,9 @@ export default function ModelQuickDownloadDialog({
 
     const unsubProgress = window?.ipc?.on(
       'downloadProgress',
-      (data: { progress?: number; model?: string }) => {
-        if (typeof data?.progress === 'number') {
-          setProgress(Math.round(data.progress * 100));
+      (model: string, progressValue: number) => {
+        if (typeof progressValue === 'number') {
+          setProgress(Math.round(progressValue * 100));
         }
       },
     );

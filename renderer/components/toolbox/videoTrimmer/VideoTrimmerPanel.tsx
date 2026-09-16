@@ -73,7 +73,8 @@ function parseTimeString(val: string): number | null {
 export default function VideoTrimmerPanel() {
   const { t } = useTranslation('toolbox');
   const router = useRouter();
-  const { locale } = router.query;
+  const locale =
+    typeof router.query.locale === 'string' ? router.query.locale : 'zh';
 
   const playerRef = useRef<ReactPlayer>(null);
 
