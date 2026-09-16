@@ -555,7 +555,6 @@ export default function TaskWizard() {
     if (!router.isReady) return;
     const rawGoals = router.query.goals;
     if (rawGoals) {
-      hasExternalSourceRef.current = true;
       const goalList = (
         Array.isArray(rawGoals) ? rawGoals.join(',') : String(rawGoals)
       )
@@ -619,14 +618,10 @@ export default function TaskWizard() {
     const hasQueryGoals = Boolean(router.query.goals);
     const hasPreset = Boolean(router.query.preset);
 
-    if (
-      hasSessionDrop ||
-      hasQueryVideo ||
-      hasQuerySubtitle ||
-      hasQueryGoals ||
-      hasPreset ||
-      files.length > 0
-    ) {
+    const hasExternalFiles =
+      hasSessionDrop || hasQueryVideo || hasQuerySubtitle;
+
+    if (hasExternalFiles || hasPreset || files.length > 0) {
       draftInitializedRef.current = true;
       return;
     }
@@ -635,7 +630,9 @@ export default function TaskWizard() {
       const draft = taskDraftManager.getDraft();
       if (draft && Array.isArray(draft.files) && draft.files.length > 0) {
         setFiles(draft.files);
-        if (draft.goals) setGoals(draft.goals as any);
+        if (draft.goals && !hasQueryGoals) {
+          setGoals(draft.goals as any);
+        }
         if (Array.isArray(draft.manualPairs)) {
           setManualPairs(new Map(draft.manualPairs));
         }

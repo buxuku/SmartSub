@@ -117,8 +117,13 @@ export default function TaskPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const { systemInfo, loaded: systemInfoLoaded } = useSystemInfo();
-  const { form, formData } = useUnifiedTaskConfig({
-    persistToGlobal: !configSnapshot,
+  const isExistingProject = Boolean(router.query.project);
+  const {
+    form,
+    formData,
+    loaded: configLoaded,
+  } = useUnifiedTaskConfig({
+    persistToGlobal: !isExistingProject && !configSnapshot,
   });
   /** 列表/横幅的有效配置：固定任务用快照，否则使用当前表单。 */
   const listFormData = configSnapshot ?? formData;
@@ -1216,7 +1221,9 @@ export default function TaskPage() {
       </div>
 
       <div className="flex-shrink-0">
-        {configSnapshot ? (
+        {router.query.project && !projectIdRef.current ? (
+          <div className="h-12 w-full animate-pulse rounded-lg border bg-muted/20" />
+        ) : configSnapshot ? (
           // 固定任务：配置随首次派发快照锁定，只读展示实际生效参数。
           <SnapshotConfigBar
             snapshot={configSnapshot}

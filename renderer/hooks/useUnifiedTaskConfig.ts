@@ -93,6 +93,7 @@ export default function useUnifiedTaskConfig(
   );
   const formDataRef = useRef(formData);
   const [loaded, setLoaded] = useState(false);
+  const loadedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +120,7 @@ export default function useUnifiedTaskConfig(
           form.reset(mergedConfig);
           setFormData(mergedConfig);
           formDataRef.current = mergedConfig;
+          loadedRef.current = true;
           setLoaded(true);
         }
       } catch (err) {
@@ -127,6 +129,7 @@ export default function useUnifiedTaskConfig(
           err,
         );
         if (!cancelled) {
+          loadedRef.current = true;
           setLoaded(true);
         }
       }
@@ -138,6 +141,7 @@ export default function useUnifiedTaskConfig(
   }, []);
 
   const handleFormChange = useCallback((values: Record<string, any>) => {
+    if (!loadedRef.current) return;
     if (!isEqual(values, formDataRef.current)) {
       formDataRef.current = values;
       setFormData(values);
