@@ -34,6 +34,16 @@ export class TaskDraftManager {
     }
   }
 
+  patchDraft(partial: Partial<TaskDraft>): void {
+    const existing = this.getDraft() || { files: [], savedAt: Date.now() };
+    const merged: TaskDraft = {
+      ...existing,
+      ...partial,
+      savedAt: Date.now(),
+    };
+    this.saveDraft(merged);
+  }
+
   saveDraft(draft: TaskDraft): void {
     this.memoryDraft = draft;
     if (typeof window !== 'undefined' && window.localStorage) {

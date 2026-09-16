@@ -30,10 +30,11 @@ export interface NavigationGuardOptions {
   description?: string;
 }
 
-interface NavigationGuardContextValue {
+export interface NavigationGuardContextValue {
   registerGuard: (id: string, options: NavigationGuardOptions) => void;
   unregisterGuard: (id: string) => void;
   isGuarded: boolean;
+  isDialogOpen: boolean;
   bypassNextRoute: () => void;
 }
 
@@ -258,6 +259,7 @@ export function NavigationGuardProvider({
         registerGuard,
         unregisterGuard,
         isGuarded,
+        isDialogOpen: showDialog,
         bypassNextRoute,
       }}
     >

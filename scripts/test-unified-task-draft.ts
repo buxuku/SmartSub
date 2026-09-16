@@ -52,6 +52,22 @@ assert.strictEqual(
 );
 assert.strictEqual(deserialized.config?.scenarioPreset, 'lecture');
 
+// Test patchDraft preserves existing draft fields
+taskDraftManager.saveDraft(draftData);
+taskDraftManager.patchDraft({
+  files: [{ uuid: '3', filePath: '/media/video3.mp4', fileName: 'video3.mp4' }],
+});
+const patched = taskDraftManager.getDraft();
+assert(patched, 'Patched draft must exist');
+assert.strictEqual(patched.files.length, 1);
+assert.strictEqual(patched.files[0].fileName, 'video3.mp4');
+assert.strictEqual(patched.goals?.translate, true, 'Goals must be preserved');
+assert.strictEqual(
+  patched.config?.scenarioPreset,
+  'lecture',
+  'Config must be preserved',
+);
+
 // Test corrupted json recovery
 const corrupted = taskDraftManager.deserializeDraft('invalid-json{{{');
 assert.strictEqual(corrupted, null, 'Corrupted draft must return null');

@@ -338,18 +338,16 @@ export default function LaunchpadPage() {
     );
 
     if (hasMedia && !readiness.hasModels) {
-      taskDraftManager.saveDraft({
+      taskDraftManager.patchDraft({
         files: dropped,
-        savedAt: Date.now(),
       });
       setStagedDraftFiles(dropped);
       setQuickDownloadOpen(true);
       return;
     }
 
-    taskDraftManager.saveDraft({
+    taskDraftManager.patchDraft({
       files: dropped,
-      savedAt: Date.now(),
     });
     try {
       sessionStorage.setItem(WIZARD_DROP_KEY, JSON.stringify(dropped));
@@ -370,18 +368,16 @@ export default function LaunchpadPage() {
       const dropped = await resolveDroppedBothKinds(paths);
       if (dropped.length > 0) {
         if (block === 'model') {
-          taskDraftManager.saveDraft({
+          taskDraftManager.patchDraft({
             files: dropped,
-            savedAt: Date.now(),
           });
           setStagedDraftFiles(dropped);
           setQuickDownloadOpen(true);
           return;
         }
 
-        taskDraftManager.saveDraft({
+        taskDraftManager.patchDraft({
           files: dropped,
-          savedAt: Date.now(),
         });
 
         const slug = recipeSlug(recipe);
@@ -430,18 +426,16 @@ export default function LaunchpadPage() {
             ),
         );
         if (hasMedia && !readiness.hasModels) {
-          taskDraftManager.saveDraft({
+          taskDraftManager.patchDraft({
             files: dropped,
-            savedAt: Date.now(),
           });
           setStagedDraftFiles(dropped);
           setQuickDownloadOpen(true);
           return;
         }
 
-        taskDraftManager.saveDraft({
+        taskDraftManager.patchDraft({
           files: dropped,
-          savedAt: Date.now(),
         });
         try {
           sessionStorage.setItem(WIZARD_DROP_KEY, JSON.stringify(dropped));
