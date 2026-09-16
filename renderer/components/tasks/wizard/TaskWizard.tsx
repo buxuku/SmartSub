@@ -599,7 +599,12 @@ export default function TaskWizard() {
   }, [videoAllowed]);
 
   // 表单与统一配置状态机
-  const { form, formData, loaded: formLoaded } = useUnifiedTaskConfig();
+  const {
+    form,
+    formData,
+    loaded: formLoaded,
+    hydrateSnapshot,
+  } = useUnifiedTaskConfig();
 
   // 草稿恢复与自动保存
   const [restoredDraftCount, setRestoredDraftCount] = useState<number | null>(
@@ -607,9 +612,9 @@ export default function TaskWizard() {
   );
   const draftInitializedRef = useRef(false);
 
-  // 1. 初始化时尝试恢复草稿（仅当没有外部来源交接时）
+  // 1. 初始化时尝试恢复草稿（仅当没有外部来源交接且全局配置加载就绪时）
   useEffect(() => {
-    if (draftInitializedRef.current || !router.isReady) return;
+    if (draftInitializedRef.current || !router.isReady || !formLoaded) return;
 
     const hasSessionDrop =
       hasExternalSourceRef.current ||
@@ -635,7 +640,7 @@ export default function TaskWizard() {
           setGoals(draft.goals as any);
         }
         if (draft.config) {
-          form.reset({
+          hydrateSnapshot({
             ...form.getValues(),
             ...draft.config,
           });
@@ -653,7 +658,14 @@ export default function TaskWizard() {
     } finally {
       draftInitializedRef.current = true;
     }
-  }, [router.isReady, router.query, files.length, form]);
+  }, [
+    router.isReady,
+    formLoaded,
+    router.query,
+    files.length,
+    form,
+    hydrateSnapshot,
+  ]);
 
   // 2. 状态变动时防抖保存到草稿
   useEffect(() => {

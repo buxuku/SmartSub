@@ -1402,7 +1402,11 @@ export default function TaskPage() {
             }}
             onStatusChange={handleStatusChange}
             onTaskDispatched={handleTaskDispatched}
-            autoStart={autoStartPending}
+            autoStart={
+              autoStartPending &&
+              configLoaded &&
+              (!router.query.project || Boolean(projectIdRef.current))
+            }
           />
         </div>
       </div>
