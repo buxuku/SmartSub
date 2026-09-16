@@ -45,7 +45,12 @@ import {
 } from './stageUtils';
 import { RailChips } from './TaskRowList';
 import { ManuscriptRowBadge } from './ManuscriptRowBadge';
-import { SPEAKER_DIARIZATION_METADATA_SAVE_FAILED } from '../../../types/speakerDiarization';
+import {
+  SPEAKER_DIARIZATION_METADATA_SAVE_FAILED,
+  TRANSLATION_INCOMPLETE_PIPELINE_PAUSED,
+  TRANSLATION_INCOMPLETE_FOR_DUBBING,
+  TRANSLATION_INCOMPLETE_FOR_COMPOSE,
+} from '../../../types';
 
 interface TaskGridListProps {
   files: any[];
@@ -256,7 +261,17 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
         const failed = hasFileError(file, stages);
         const rawError = failed ? getFileError(file, stages) : '';
         const errorMsg =
-          rawError === 'TASK_INTERRUPTED' ? t('interrupted') : rawError;
+          rawError === 'TASK_INTERRUPTED'
+            ? t('interrupted')
+            : rawError === TRANSLATION_INCOMPLETE_PIPELINE_PAUSED
+              ? t('row.translationIncompletePipelinePaused', {
+                  count: file?.translationFailures?.length || 0,
+                })
+              : rawError === TRANSLATION_INCOMPLETE_FOR_DUBBING
+                ? t('row.translationIncompleteForDubbing')
+                : rawError === TRANSLATION_INCOMPLETE_FOR_COMPOSE
+                  ? t('row.translationIncompleteForCompose')
+                  : rawError;
         const rawWarning = getFileWarning(file, stages);
         const warningMsg =
           rawWarning === SPEAKER_DIARIZATION_METADATA_SAVE_FAILED
@@ -270,7 +285,17 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
               ),
             })
           : '';
-        const displayWarning = [warningMsg, missedSpeechWarning]
+        const translationFailureWarning =
+          !failed && file?.translationFailures?.length
+            ? t('row.translationFailureWarning', {
+                count: file.translationFailures.length,
+              })
+            : '';
+        const displayWarning = [
+          warningMsg,
+          missedSpeechWarning,
+          translationFailureWarning,
+        ]
           .filter(Boolean)
           .join(' · ');
         const started = stages.some(
@@ -300,7 +325,7 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
             className={cn(
               'group relative flex flex-col gap-2 rounded-lg border p-2 transition-colors hover:bg-muted/40',
               failed && 'border-destructive/30',
-              !failed && warningMsg && 'border-warning/30',
+              !failed && displayWarning && 'border-warning/30',
             )}
           >
             <div className="relative">

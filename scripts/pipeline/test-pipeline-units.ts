@@ -1,3 +1,5 @@
+/// <reference path="../test-globals.d.ts" />
+
 /**
  * 流水线阶段纯函数单元验证（无 electron/ffmpeg 依赖）。
  * 运行：yarn test:pipeline
@@ -28,6 +30,12 @@ import {
   filterReleasableFiles,
   countReviewFiles,
 } from '../../main/helpers/pipeline/gateLogic';
+import { isProofreadReady } from '../../renderer/components/tasks/stageUtils';
+import {
+  TRANSLATION_INCOMPLETE_PIPELINE_PAUSED,
+  TRANSLATION_INCOMPLETE_FOR_DUBBING,
+  TRANSLATION_INCOMPLETE_FOR_COMPOSE,
+} from '../../types';
 import type { SubtitleStyle } from '../../types/subtitleMerge';
 
 let failed = 0;
@@ -428,6 +436,187 @@ eq(
     'gate: 配音确认独立过滤',
   );
   eq(countReviewFiles(files), { subtitle: 2, dubbing: 1 }, 'gate: 待校对计数');
+}
+
+{
+  const translateTypeDef: any = {
+    taskType: 'generateAndTranslate',
+    hasTranslate: true,
+  };
+  eq(
+    isProofreadReady(
+      {
+        filePath: 'test.mp4',
+        extractSubtitle: 'done',
+        translateSubtitle: 'done',
+        exportSubtitle: 'done',
+        proofreadDataReady: 'done',
+        translationFailures: [{ subtitleId: '1', error: 'rate limit' }],
+      },
+      translateTypeDef,
+      { translateProvider: 'openai' },
+    ),
+    true,
+    'proofread: 翻译完成带失败行时校对入口解锁',
+  );
+  eq(
+    isProofreadReady(
+      {
+        filePath: 'test.mp4',
+        extractSubtitle: 'done',
+        translateSubtitle: 'error',
+        exportSubtitle: 'done',
+        proofreadDataReady: 'done',
+        proofreadDataFile: 'test.proofread.json',
+        translationFailures: [{ subtitleId: '1', error: 'rate limit' }],
+      },
+      translateTypeDef,
+      { translateProvider: 'openai' },
+    ),
+    true,
+    'proofread: 下游暂停或有错误但 sidecar 就绪时校对入口解锁',
+  );
+  eq(
+    isProofreadReady(
+      {
+        filePath: 'test.mp4',
+        extractSubtitle: 'done',
+        translateSubtitle: 'error',
+        exportSubtitle: 'done',
+        proofreadDataReady: 'done',
+        translationFailures: [{ subtitleId: '1', error: 'rate limit' }],
+      },
+      translateTypeDef,
+      { translateProvider: 'openai' },
+    ),
+    false,
+    'proofread: translateSubtitle 未完成且缺少 proofreadDataFile 时保持锁定',
+  );
+  eq(
+    isProofreadReady(
+      {
+        filePath: 'test.mp4',
+        extractSubtitle: 'done',
+        translateSubtitle: 'loading',
+        exportSubtitle: 'done',
+        proofreadDataReady: 'done',
+      },
+      translateTypeDef,
+      { translateProvider: 'openai' },
+    ),
+    false,
+    'proofread: 翻译仍在 loading 时校对入口保持锁定',
+  );
+
+  // 验证带有 translationFailures 时，resume 判定及 translateOk 计算
+  const computeResumeTranslateDone = (file: any) =>
+    (file as any).translateSubtitle === 'done' &&
+    !file.translationFailures?.length &&
+    Boolean(
+      file.tempTranslatedSrtFile ||
+        file.proofreadDataFile ||
+        file.translatedSrtFile,
+    );
+
+  eq(
+    computeResumeTranslateDone({
+      translateSubtitle: 'done',
+      translatedSrtFile: 'test.srt',
+      translationFailures: [{ subtitleId: '1' }],
+    }),
+    false,
+    'resume: 存在未翻译行时 translateDone 必须为 false（避免跳过翻译导致下游跑残缺内容）',
+  );
+  eq(
+    computeResumeTranslateDone({
+      translateSubtitle: 'done',
+      translatedSrtFile: 'test.srt',
+      translationFailures: [],
+    }),
+    true,
+    'resume: 翻译行全部成功时 translateDone 为 true',
+  );
+
+  const computeSkipTranslateOk = (file: any, translationActive: boolean) =>
+    !translationActive ||
+    Boolean(
+      (file as any).translateSubtitle === 'done' &&
+        !file.translationFailures?.length,
+    );
+
+  eq(
+    computeSkipTranslateOk(
+      {
+        translateSubtitle: 'done',
+        translationFailures: [{ subtitleId: '1' }],
+      },
+      true,
+    ),
+    false,
+    'skipSubtitleSegment: 带有失败行时 translateOk 必须为 false，避免直接穿透进配音/合成',
+  );
+  eq(
+    computeSkipTranslateOk(
+      {
+        translateSubtitle: 'done',
+        translationFailures: [],
+      },
+      true,
+    ),
+    true,
+    'skipSubtitleSegment: 无失败行时 translateOk 为 true',
+  );
+
+  // 验证 export retry 路径下，checkpoint.translateOk 能够根据最新的 translationFailures 刷新
+  const refreshCheckpointTranslateOk = (
+    checkpoint: { translateOk: boolean },
+    file: any,
+    translationActive: boolean,
+  ) => {
+    checkpoint.translateOk =
+      !translationActive ||
+      Boolean(
+        (file as any).translateSubtitle === 'done' &&
+          !file.translationFailures?.length,
+      );
+    return checkpoint.translateOk;
+  };
+
+  const checkpoint = { translateOk: false };
+  eq(
+    refreshCheckpointTranslateOk(
+      checkpoint,
+      {
+        translateSubtitle: 'done',
+        translationFailures: [],
+      },
+      true,
+    ),
+    true,
+    'checkpoint: 校对补全后重试导出，translateOk 成功刷新为 true',
+  );
+  eq(
+    refreshCheckpointTranslateOk(
+      checkpoint,
+      {
+        translateSubtitle: 'done',
+        translationFailures: [{ subtitleId: '2' }],
+      },
+      true,
+    ),
+    false,
+    'checkpoint: 仍有未翻译行时重试导出，translateOk 维持 false',
+  );
+
+  eq(
+    Boolean(
+      TRANSLATION_INCOMPLETE_PIPELINE_PAUSED &&
+        TRANSLATION_INCOMPLETE_FOR_DUBBING &&
+        TRANSLATION_INCOMPLETE_FOR_COMPOSE,
+    ),
+    true,
+    'error codes: 翻译失败暂停错误码已定义',
+  );
 }
 
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项断言失败 ❌`);

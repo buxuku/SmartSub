@@ -21,10 +21,18 @@ import {
   removeChineseSubtitlePunctuation,
 } from './chineseConvert';
 import translate from '../translate';
-import { IFiles } from '../../types';
+import {
+  IFiles,
+  TRANSLATION_INCOMPLETE_PIPELINE_PAUSED,
+  TRANSLATION_INCOMPLETE_FOR_DUBBING,
+  TRANSLATION_INCOMPLETE_FOR_COMPOSE,
+} from '../../types';
 import { resolveSubtitleOutputFormats } from '../../types/subtitleOutput';
 import { runSubtitleExportStage } from './subtitleExportStage';
-import { writeProofreadDataFromFiles } from './proofreadData';
+import {
+  readProofreadDataFile,
+  writeProofreadDataFromFiles,
+} from './proofreadData';
 import {
   runSubtitleRefineStage,
   settleSkippedRefineStage,
@@ -155,7 +163,7 @@ async function translateSubtitle(
   };
 
   try {
-    const completed = await translate(
+    await translate(
       event,
       file,
       formData,
@@ -165,16 +173,7 @@ async function translateSubtitle(
       fallbackProviders,
     );
 
-    if (!completed) {
-      event.sender.send('taskFileChange', {
-        ...file,
-        translateSubtitle: 'error',
-        translateSubtitleProgress: 100,
-      });
-      return false;
-    }
-
-    // 确保最终状态的正确发送
+    // 确保最终状态的正确发送（无论是否有部分行失败，翻译阶段产物均已生成并落盘）
     event.sender.send('taskProgressChange', file, 'translateSubtitle', 100);
     event.sender.send('taskFileChange', {
       ...file,
@@ -182,11 +181,21 @@ async function translateSubtitle(
       translateSubtitleProgress: 100,
     });
 
-    logMessage(
-      `Translation completed successfully for ${file.fileName}`,
-      'info',
+    const hasFailures = Boolean(
+      file.translationFailures && file.translationFailures.length > 0,
     );
-    return !(file.translationFailures && file.translationFailures.length > 0);
+    if (hasFailures) {
+      logMessage(
+        `Translation finished with ${file.translationFailures.length} failed line(s) for ${file.fileName}`,
+        'warning',
+      );
+    } else {
+      logMessage(
+        `Translation completed successfully for ${file.fileName}`,
+        'info',
+      );
+    }
+    return !hasFailures;
   } catch (error) {
     if (isTaskCancelledError(error) || isTaskCancelled()) {
       // 用户取消：翻译阶段回退为待处理，不计错误，并中止后续流程
@@ -225,6 +234,24 @@ export async function processFile(
     taskType,
   } = formData || {};
 
+  // 若校对中间态存在，基于其实际 cue 状态同步当前失败行（吸收用户在校对中重翻或手动修复的改动）
+  if (file.proofreadDataFile && fs.existsSync(file.proofreadDataFile)) {
+    try {
+      const proofreadData = await readProofreadDataFile(file.proofreadDataFile);
+      const remainingFailures = (proofreadData?.cues || []).filter(
+        (cue) =>
+          cue.translationStatus === 'failed' ||
+          Boolean(cue.target && /^\[翻译失败:/.test(cue.target.trim())),
+      );
+      file.translationFailures = remainingFailures.map((cue) => ({
+        subtitleId: cue.id,
+        error: cue.translationError,
+      }));
+    } catch {
+      // 忽略中间态读取失败，保持现有内存记录
+    }
+  }
+
   // 带附加阶段（配音/合成）的任务：重试时复用上游已完成阶段的产物直接续跑
   // （避免为重跑配音/合成而重新转写整个视频）。判定须在清理残留状态之前完成；
   // 无附加阶段任务不参与（维持既有全量重跑语义）。
@@ -252,6 +279,7 @@ export async function processFile(
           /\.srt$/i.test(file.srtFile!),
         translateDone:
           (file as any).translateSubtitle === 'done' &&
+          !file.translationFailures?.length &&
           Boolean(
             (file.tempTranslatedSrtFile &&
               fs.existsSync(file.tempTranslatedSrtFile)) ||
@@ -393,15 +421,36 @@ export async function processFile(
     const runPipelineStages = async (
       translateOk: boolean,
     ): Promise<boolean> => {
+      const hasDownstreamStages = Boolean(
+        formData?.dub ||
+          formData?.compose ||
+          shouldDockAtSubtitleGate(formData, file as any),
+      );
+
       if (translationActive && !translateOk) {
-        const msg = '翻译未完成，无法继续后续处理（请先在校对中重试失败行）';
-        event.sender.send(
-          'taskStatusChange',
-          file,
-          'translateSubtitle',
-          'error',
+        if (!hasDownstreamStages) {
+          // 纯字幕任务：下游无配音/合成阶段，不阻断任务完成
+          return true;
+        }
+
+        // 字幕校对检查点：若配置了人工检查点，停靠待校对
+        if (shouldDockAtSubtitleGate(formData, file as any)) {
+          dockAtGate('subtitle');
+          return false;
+        }
+
+        const targetStage = formData?.dub ? 'dubbing' : 'composeVideo';
+        const msg = formData?.dub
+          ? TRANSLATION_INCOMPLETE_FOR_DUBBING
+          : formData?.compose
+            ? TRANSLATION_INCOMPLETE_FOR_COMPOSE
+            : TRANSLATION_INCOMPLETE_PIPELINE_PAUSED;
+        event.sender.send('taskStatusChange', file, targetStage, 'error');
+        event.sender.send('taskErrorChange', file, targetStage, msg);
+        logMessage(
+          `pipeline paused for ${fileName} due to translation failure: ${msg}`,
+          'warning',
         );
-        event.sender.send('taskErrorChange', file, 'translateSubtitle', msg);
         return false;
       }
       // 字幕校对检查点：字幕段成功后、配音/合成前（翻译失败时交由下方报错）
@@ -411,12 +460,6 @@ export async function processFile(
       }
       if (formData?.dub) {
         throwIfTaskCancelled();
-        if (translationActive && !translateOk) {
-          const msg = '翻译未完成，无法配音（请先重试翻译）';
-          event.sender.send('taskStatusChange', file, 'dubbing', 'error');
-          event.sender.send('taskErrorChange', file, 'dubbing', msg);
-          throw new Error(msg);
-        }
         if (resume?.dubbingDone) {
           // 续跑：跳过批量合成但总是重建配音轨（吸收检查点里的行级修改）
           await rebuildDubTrackForFile(event, file, formData);
@@ -449,6 +492,13 @@ export async function processFile(
           ((file as any).translateSubtitle === 'done' &&
             !file.translationFailures?.length),
       };
+      // 总是根据当前最新的 translationFailures 刷新 translateOk（吸收校对修改）
+      file.subtitleExportCheckpoint.translateOk =
+        !translationActive ||
+        Boolean(
+          (file as any).translateSubtitle === 'done' &&
+            !file.translationFailures?.length,
+        );
       const { translateOk } = file.subtitleExportCheckpoint;
       await runSubtitleExportStage(
         event,
@@ -496,7 +546,13 @@ export async function processFile(
           translateSubtitle: 'done',
         });
       }
-      await runPipelineStages(true);
+      const translateOk =
+        !translationActive ||
+        Boolean(
+          (file as any).translateSubtitle === 'done' &&
+            !file.translationFailures?.length,
+        );
+      await runPipelineStages(translateOk);
       logMessage(`process file done ${fileName}`, 'info');
       return;
     }
