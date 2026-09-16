@@ -32,6 +32,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+const useIsomorphicLayoutEffect =
+  typeof window === 'undefined' ? React.useEffect : React.useLayoutEffect;
+
 const PARAMETER_TYPES: ParameterType[] = [
   'string',
   'integer',
@@ -56,6 +59,14 @@ export interface ParameterKvTableProps {
   onTypeChange: (key: string, type: ParameterType) => void;
   resolveDefinition?: (key: string) => Promise<ParameterDefinition | null>;
   errorsByKey?: Record<string, string>;
+  draftRef?: React.MutableRefObject<ParameterTableDraft | null>;
+  onDirtyChange?: (dirty: boolean) => void;
+}
+
+export interface ParameterTableDraft {
+  getIsDirty: () => boolean;
+  flush: () => Promise<boolean>;
+  discard: () => void;
 }
 
 function getRowType(
@@ -213,6 +224,8 @@ interface ExistingValueCellProps {
   type: ParameterType;
   disabled: boolean;
   onUpdate: (key: string, value: ParameterValue) => void;
+  onDirtyChange: (key: string, dirty: boolean) => void;
+  registerCommit: (key: string, commit: (() => boolean) | null) => void;
 }
 
 const ExistingValueCell: React.FC<ExistingValueCellProps> = ({
@@ -221,27 +234,48 @@ const ExistingValueCell: React.FC<ExistingValueCellProps> = ({
   type,
   disabled,
   onUpdate,
+  onDirtyChange,
+  registerCommit,
 }) => {
   const [raw, setRaw] = useState(() => formatValueForInput(value, type));
 
   React.useEffect(() => {
     setRaw(formatValueForInput(value, type));
-  }, [value, type]);
+    onDirtyChange(parameterKey, false);
+    return () => onDirtyChange(parameterKey, false);
+  }, [value, type, parameterKey, onDirtyChange]);
 
   const commit = useCallback(() => {
+    if (raw === formatValueForInput(value, type)) return true;
     if (type === 'array' || type === 'object') {
       const error = validateJsonParameter(raw, type);
-      if (error) return;
+      if (error) return false;
     }
     onUpdate(parameterKey, parseDraftValue(raw, type));
-  }, [onUpdate, parameterKey, raw, type]);
+    onDirtyChange(parameterKey, false);
+    return true;
+  }, [onUpdate, parameterKey, raw, type, value, onDirtyChange]);
+  useIsomorphicLayoutEffect(() => {
+    registerCommit(parameterKey, commit);
+    return () => registerCommit(parameterKey, null);
+  }, [registerCommit, parameterKey, commit]);
 
   return (
     <ValueEditor
       type={type}
       value={raw}
       disabled={disabled}
-      onChange={setRaw}
+      onChange={(next) => {
+        setRaw(next);
+        if (type === 'boolean') {
+          onUpdate(parameterKey, parseDraftValue(next, type));
+        } else {
+          onDirtyChange(
+            parameterKey,
+            next !== formatValueForInput(value, type),
+          );
+        }
+      }}
       onCommit={commit}
     />
   );
@@ -258,6 +292,8 @@ export const ParameterKvTable: React.FC<ParameterKvTableProps> = ({
   onTypeChange,
   resolveDefinition,
   errorsByKey = {},
+  draftRef,
+  onDirtyChange,
 }) => {
   const { t } = useTranslation('parameters');
   const draftRowId = useId();
@@ -267,20 +303,60 @@ export const ParameterKvTable: React.FC<ParameterKvTableProps> = ({
   const [draftValue, setDraftValue] = useState('');
   const [draftType, setDraftType] = useState<ParameterType>('string');
   const [draftError, setDraftError] = useState('');
-  const committingRef = useRef(false);
+  const committingRef = useRef<Promise<boolean> | null>(null);
+  const invalidRows = useRef(new Set<string>());
+  const rowCommits = useRef(new Map<string, () => boolean>());
+  const registerCommit = useCallback(
+    (key: string, commit: (() => boolean) | null) => {
+      if (commit) rowCommits.current.set(key, commit);
+      else rowCommits.current.delete(key);
+    },
+    [],
+  );
   const draftKeyRef = useRef('');
   const draftValueRef = useRef('');
   const draftTypeRef = useRef<ParameterType>('string');
+  const dirtyCallback = useRef(onDirtyChange);
+  dirtyCallback.current = onDirtyChange;
+  const getIsDirty = useCallback(
+    () =>
+      !!(
+        draftKeyRef.current ||
+        draftValueRef.current ||
+        invalidRows.current.size
+      ),
+    [],
+  );
+  const notifyDirty = useCallback(
+    () => dirtyCallback.current?.(getIsDirty()),
+    [getIsDirty],
+  );
+  const setRowDirty = useCallback(
+    (key: string, dirty: boolean) => {
+      if (dirty) invalidRows.current.add(key);
+      else invalidRows.current.delete(key);
+      notifyDirty();
+    },
+    [notifyDirty],
+  );
 
-  const syncDraftKey = useCallback((next: string) => {
-    draftKeyRef.current = next;
-    setDraftKey(next);
-  }, []);
+  const syncDraftKey = useCallback(
+    (next: string) => {
+      draftKeyRef.current = next;
+      setDraftKey(next);
+      notifyDirty();
+    },
+    [notifyDirty],
+  );
 
-  const syncDraftValue = useCallback((next: string) => {
-    draftValueRef.current = next;
-    setDraftValue(next);
-  }, []);
+  const syncDraftValue = useCallback(
+    (next: string) => {
+      draftValueRef.current = next;
+      setDraftValue(next);
+      notifyDirty();
+    },
+    [notifyDirty],
+  );
 
   const syncDraftType = useCallback((next: ParameterType) => {
     draftTypeRef.current = next;
@@ -289,71 +365,87 @@ export const ParameterKvTable: React.FC<ParameterKvTableProps> = ({
 
   const knownKeys = existingKeys ?? entries.map(([key]) => key);
 
-  const commitDraft = useCallback(async () => {
-    if (committingRef.current) return;
+  const commitDraft = useCallback(async (): Promise<boolean> => {
+    if (committingRef.current) return committingRef.current;
+    const run = async () => {
+      const key = draftKeyRef.current.trim();
+      const raw = draftValueRef.current;
+      const selectedType = draftTypeRef.current;
 
-    const key = draftKeyRef.current.trim();
-    const raw = draftValueRef.current;
-    const selectedType = draftTypeRef.current;
-
-    if (!key) {
-      if (raw.trim()) {
-        setDraftError(t('table.emptyKey'));
+      if (!key) {
+        if (raw.trim()) {
+          setDraftError(t('table.emptyKey'));
+        }
+        return !raw.trim();
       }
-      return;
-    }
 
-    if (!raw.trim() && selectedType !== 'boolean') {
-      return;
-    }
-
-    if (knownKeys.some((existingKey) => existingKey === key)) {
-      setDraftError(t('table.duplicateKey'));
-      return;
-    }
-
-    if (selectedType === 'array' || selectedType === 'object') {
-      const jsonError = validateJsonParameter(raw, selectedType);
-      if (jsonError) {
-        setDraftError(
-          formatJsonError(jsonError, t) || t('validation.invalidJson'),
-        );
-        return;
+      if (!raw.trim() && selectedType !== 'boolean') {
+        setDraftError(t('table.emptyValue'));
+        return false;
       }
-    }
 
-    committingRef.current = true;
+      if (knownKeys.some((existingKey) => existingKey === key)) {
+        setDraftError(t('table.duplicateKey'));
+        return false;
+      }
+
+      if (selectedType === 'array' || selectedType === 'object') {
+        const jsonError = validateJsonParameter(raw, selectedType);
+        if (jsonError) {
+          setDraftError(
+            formatJsonError(jsonError, t) || t('validation.invalidJson'),
+          );
+          return false;
+        }
+      }
+
+      try {
+        const definition = resolveDefinition
+          ? await resolveDefinition(key)
+          : null;
+        if (
+          key !== draftKeyRef.current.trim() ||
+          raw !== draftValueRef.current ||
+          selectedType !== draftTypeRef.current
+        )
+          return false;
+
+        let value: ParameterValue;
+        let type: ParameterType;
+
+        // An explicitly selected JSON object must not be coerced through a
+        // legacy string definition (e.g. the thinking convenience parameter).
+        if (selectedType === 'object') {
+          value = parseDraftValue(raw, selectedType);
+          type = selectedType;
+        } else if (definition) {
+          value = coerceParameterValue(raw, definition);
+          type = resolveParameterType(definition, value);
+        } else if (selectedType === 'boolean') {
+          value = parseDraftValue(raw || 'false', 'boolean');
+          type = 'boolean';
+        } else {
+          value = parseDraftValue(raw, selectedType);
+          type = selectedType;
+        }
+
+        onCommitNew(key, value, type);
+        syncDraftKey('');
+        syncDraftValue('');
+        syncDraftType('string');
+        setDraftError('');
+        return true;
+      } catch (error) {
+        setDraftError(error instanceof Error ? error.message : String(error));
+        return false;
+      }
+    };
+    const pending = run();
+    committingRef.current = pending;
     try {
-      const definition = resolveDefinition
-        ? await resolveDefinition(key)
-        : null;
-
-      let value: ParameterValue;
-      let type: ParameterType;
-
-      // An explicitly selected JSON object must not be coerced through a
-      // legacy string definition (e.g. the thinking convenience parameter).
-      if (selectedType === 'object') {
-        value = parseDraftValue(raw, selectedType);
-        type = selectedType;
-      } else if (definition) {
-        value = coerceParameterValue(raw, definition);
-        type = resolveParameterType(definition, value);
-      } else if (selectedType === 'boolean') {
-        value = parseDraftValue(raw || 'false', 'boolean');
-        type = 'boolean';
-      } else {
-        value = parseDraftValue(raw, selectedType);
-        type = selectedType;
-      }
-
-      onCommitNew(key, value, type);
-      syncDraftKey('');
-      syncDraftValue('');
-      syncDraftType('string');
-      setDraftError('');
+      return await pending;
     } finally {
-      committingRef.current = false;
+      committingRef.current = null;
     }
   }, [
     knownKeys,
@@ -363,6 +455,34 @@ export const ParameterKvTable: React.FC<ParameterKvTableProps> = ({
     syncDraftType,
     syncDraftValue,
     t,
+  ]);
+
+  useIsomorphicLayoutEffect(() => {
+    if (!draftRef) return;
+    draftRef.current = {
+      getIsDirty,
+      flush: async () => {
+        for (const commit of Array.from(rowCommits.current.values()))
+          if (!commit()) return false;
+        return await commitDraft();
+      },
+      discard: () => {
+        syncDraftKey('');
+        syncDraftValue('');
+        invalidRows.current.clear();
+        notifyDirty();
+      },
+    };
+    return () => {
+      draftRef.current = null;
+    };
+  }, [
+    draftRef,
+    getIsDirty,
+    commitDraft,
+    syncDraftKey,
+    syncDraftValue,
+    notifyDirty,
   ]);
 
   const handleDraftKeyDown = useCallback(
@@ -451,6 +571,8 @@ export const ParameterKvTable: React.FC<ParameterKvTableProps> = ({
                     type={type}
                     disabled={disabled}
                     onUpdate={onUpdate}
+                    onDirtyChange={setRowDirty}
+                    registerCommit={registerCommit}
                   />
                   {rowError ? (
                     <p className="mt-1 text-xs text-destructive">{rowError}</p>

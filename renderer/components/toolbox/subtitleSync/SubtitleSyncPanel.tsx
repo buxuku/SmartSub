@@ -1,19 +1,16 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'next-i18next';
-import {
-  UploadCloud,
-  Clock,
-  CheckCircle2,
-  FolderOpen,
-  Loader2,
-  Sparkles,
-} from 'lucide-react';
+import { UploadCloud, Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { toast } from 'sonner';
 import ToolboxFinishBar from '../common/ToolboxFinishBar';
+import ToolboxQueueList from '../common/ToolboxQueueList';
+import {
+  droppedToolboxPaths,
+  useToolboxQueue,
+} from '../../../hooks/useToolboxQueue';
 import { FRAMERATE_RATIO_PRESETS } from '@/lib/framerates';
 import type {
   SubtitleSyncMode,
@@ -23,8 +20,11 @@ import type {
 export default function SubtitleSyncPanel() {
   const { t } = useTranslation('toolbox');
 
-  const [filePath, setFilePath] = useState<string | null>(null);
-  const [fileName, setFileName] = useState<string>('');
+  const queueState = useToolboxQueue<
+    { filePath: string },
+    SubtitleSyncResult
+  >();
+  const { queue, items, running: isProcessing } = queueState;
   const [mode, setMode] = useState<SubtitleSyncMode>('offset');
 
   const [offsetMs, setOffsetMs] = useState<number>(0);
@@ -36,78 +36,54 @@ export default function SubtitleSyncPanel() {
   const [p2TargetMs, setP2TargetMs] = useState<number>(60000);
 
   const [outputDir, setOutputDir] = useState<string>('');
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [result, setResult] = useState<SubtitleSyncResult | null>(null);
 
   const handleSelectFile = async () => {
     const files = await window.ipc.invoke('toolbox:selectFile', {
       type: 'subtitle',
-      multiSelections: false,
+      multiSelections: true,
     });
     if (Array.isArray(files) && files.length > 0) {
-      setFilePath(files[0]);
-      setFileName(files[0].split(/[/\\]/).pop() || '');
-      setResult(null);
+      queue.add(files.map((filePath: string) => ({ filePath })));
     }
   };
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      const p = window.ipc?.getPathForFile
-        ? window.ipc.getPathForFile(files[0])
-        : (files[0] as any).path;
-      if (p) {
-        setFilePath(p);
-        setFileName(p.split(/[/\\]/).pop() || '');
-        setResult(null);
-      }
-    }
+    queue.add(droppedToolboxPaths(e).map((filePath) => ({ filePath })));
   };
 
-  const handleApplySync = async () => {
-    if (!filePath || isProcessing) return;
-
-    setIsProcessing(true);
-    setResult(null);
-
-    try {
-      const res: SubtitleSyncResult = await window.ipc.invoke(
-        'toolbox:syncSubtitleTime',
-        {
-          filePath,
-          mode,
-          offsetMs,
-          scaleRatio,
-          p1SourceMs,
-          p1TargetMs,
-          p2SourceMs,
-          p2TargetMs,
-          outputPath: outputDir
-            ? `${outputDir}/${fileName.replace(/\.[^.]+$/, '')}_synced.srt`
-            : undefined,
-        },
-      );
-      setResult(res);
-      if (res.success) {
-        toast.success(`时间轴校准成功，更新了 ${res.cuesCount} 条字幕！`);
-      } else {
-        toast.error(`校准失败: ${res.error}`);
-      }
-    } catch (err: any) {
-      toast.error(`校准异常: ${err.message || err}`);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+  const handleApplySync = (retryId?: string) =>
+    queue.run(
+      {
+        failureMessage: t('queue.failed'),
+        execute: ({ filePath }) =>
+          window.ipc.invoke('toolbox:syncSubtitleTime', {
+            filePath,
+            mode,
+            offsetMs,
+            scaleRatio,
+            scaleFraction: FRAMERATE_RATIO_PRESETS.find(
+              (preset) => preset.ratio === scaleRatio,
+            )?.fraction,
+            p1SourceMs,
+            p1TargetMs,
+            p2SourceMs,
+            p2TargetMs,
+            outputPath: outputDir
+              ? `${outputDir}/${filePath
+                  .split(/[/\\]/)
+                  .pop()!
+                  .replace(/(\.[^.]+)$/, '_synced$1')}`
+              : undefined,
+          }),
+      },
+      retryId,
+    );
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
-      <div className="flex flex-1 overflow-hidden p-6 gap-6">
+      <div className="flex min-h-0 flex-1 overflow-hidden p-4 gap-4">
         {/* 左侧：文件选择与操作模式 */}
-        <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card p-6 gap-6">
+        <div className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background p-4 gap-4">
           <div
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
@@ -118,14 +94,21 @@ export default function SubtitleSyncPanel() {
               <UploadCloud className="h-6 w-6" />
             </div>
             <p className="mt-2 text-xs font-medium text-foreground">
-              {fileName || '点击或拖拽需要校准时间轴的字幕文件到此处'}
+              点击或拖拽需要校准时间轴的字幕文件到此处
             </p>
             <p className="mt-1 text-[11px] text-muted-foreground">
               支持 SRT, VTT, ASS 格式，修复整篇字幕提前、滞后或帧率漂移
             </p>
           </div>
 
-          <div className="space-y-4">
+          <ToolboxQueueList
+            {...queueState}
+            onRetry={handleApplySync}
+            onRemove={(id) => queue.remove(id)}
+            onCancel={() => void queue.cancel()}
+            onClear={() => queue.clear()}
+          />
+          <fieldset disabled={isProcessing} className="space-y-4">
             <Label className="text-xs font-semibold text-foreground">
               校准模式
             </Label>
@@ -300,11 +283,11 @@ export default function SubtitleSyncPanel() {
                 </div>
               </div>
             )}
-          </div>
+          </fieldset>
         </div>
 
         {/* 右侧：保存控制与执行 */}
-        <div className="flex w-80 shrink-0 flex-col justify-between rounded-xl border border-border bg-card p-5">
+        <div className="flex min-h-0 w-72 shrink-0 flex-col gap-4 overflow-y-auto bg-muted/30 p-4">
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
               <Sparkles className="h-4 w-4 text-primary" />
@@ -339,15 +322,14 @@ export default function SubtitleSyncPanel() {
               </div>
             </div>
 
-            {result?.success && (
+            {items.some((item) => item.status === 'done') && !isProcessing && (
               <ToolboxFinishBar
                 outputType="subtitle"
-                outputPath={result.outputPath}
+                outputPaths={items
+                  .filter((item) => item.status === 'done')
+                  .map((item) => item.result!.outputPath)}
                 summary={t('finishBar.title')}
-                onReset={() => {
-                  setResult(null);
-                  setFilePath(null);
-                }}
+                onReset={() => queue.clear()}
               />
             )}
           </div>
@@ -355,8 +337,13 @@ export default function SubtitleSyncPanel() {
           <div className="pt-4 border-t border-border">
             <Button
               className="w-full text-xs font-medium h-9"
-              onClick={handleApplySync}
-              disabled={!filePath || isProcessing}
+              onClick={() => void handleApplySync()}
+              disabled={
+                !items.some(
+                  (item) =>
+                    item.status === 'pending' || item.status === 'cancelled',
+                ) || isProcessing
+              }
             >
               {isProcessing ? (
                 <>

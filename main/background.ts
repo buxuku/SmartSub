@@ -9,7 +9,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 import path from 'path';
-import { app, protocol } from 'electron';
+import { app, dialog, protocol } from 'electron';
 import serve from 'electron-serve';
 import { createWindow } from './helpers/create-window';
 import { setupIpcHandlers } from './helpers/ipcHandlers';
@@ -19,14 +19,18 @@ import { setupStoreHandlers, store, logMessage } from './helpers/storeManager';
 import { setupTaskManager } from './helpers/taskManager';
 import {
   initializeWorkItemStore,
-  setupWorkItemStoreLifecycle,
+  flushWorkItemStore,
 } from './helpers/workItemStore';
 import { setupWorkItemHandlers } from './helpers/workItemHandlers';
 import { setupRecipeHandlers } from './helpers/ipcRecipeHandlers';
 import { setupGlossaryHandlers } from './helpers/ipcGlossaryHandlers';
 import { setupAutoUpdater } from './helpers/updater';
 import { setupAppMenu } from './helpers/menu';
-import { setupWindowCloseBehavior, markQuitting } from './helpers/windowClose';
+import {
+  setupWindowCloseBehavior,
+  markQuitting,
+  confirmUnsavedWindows,
+} from './helpers/windowClose';
 import { setupParameterHandlers } from './helpers/ipcParameterHandlers';
 import { setupProofreadHandlers } from './helpers/ipcProofreadHandlers';
 import { setupSubtitleMergeHandlers } from './helpers/ipcSubtitleMergeHandlers';
@@ -106,6 +110,21 @@ if (isProd) {
 
 let runtimeShutdownDone = false;
 app.on('before-quit', (event) => {
+  if (!runtimeShutdownDone && !confirmUnsavedWindows()) {
+    event.preventDefault();
+    return;
+  }
+  try {
+    flushWorkItemStore();
+  } catch (error) {
+    event.preventDefault();
+    const zh = store.get('settings')?.language === 'zh';
+    dialog.showErrorBox(
+      zh ? '任务状态保存失败' : 'Task state could not be saved',
+      `${zh ? '退出已取消。请检查磁盘空间和目录权限后重试。' : 'Quit was cancelled. Check disk space and directory permissions, then retry.'}\n${String(error)}`,
+    );
+    return;
+  }
   // 真退出标记集中在 windowClose 模块，close 监听据此放行
   markQuitting();
   if (!runtimeShutdownDone) {
@@ -241,7 +260,6 @@ app.on('before-quit', (event) => {
   setupTaskProcessor(mainWindow);
   setupSystemInfoManager(mainWindow);
   initializeWorkItemStore();
-  setupWorkItemStoreLifecycle();
   setupWorkItemHandlers();
   setupRecipeHandlers();
   setupGlossaryHandlers(mainWindow);

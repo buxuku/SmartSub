@@ -4,7 +4,9 @@ import { IFiles } from '../../types';
 export default function useIpcCommunication(
   setFiles,
   appendFiles?: (incoming: IFiles[]) => void,
+  projectId?: string | null,
 ) {
+  const projectRef = useRef(projectId);
   // 始终调用最新的 appendFiles（含去重逻辑），避免事件订阅闭包过期
   const appendFilesRef = useRef(appendFiles);
   appendFilesRef.current = appendFiles;
@@ -15,6 +17,8 @@ export default function useIpcCommunication(
   // 的 files 持久化回写会把主进程镜像里的正确状态覆盖掉（进度永远缺一段）。
   // 这里将找不到文件的事件按 uuid 暂存为补丁，hydrateFiles 加载时合并回放。
   const pendingEventsRef = useRef<Map<string, Record<string, any>>>(new Map());
+  if (projectRef.current !== projectId) pendingEventsRef.current.clear();
+  projectRef.current = projectId;
 
   useEffect(() => {
     // 注意：stash 在 setFiles 更新器内调用（需要 prevFiles 判断是否命中），
@@ -44,6 +48,7 @@ export default function useIpcCommunication(
       key: string,
       status: string,
     ) => {
+      if (res.taskProjectId && res.taskProjectId !== projectRef.current) return;
       setFiles((prevFiles) => {
         let matched = false;
         const updatedFiles = prevFiles.map((file) => {
@@ -64,6 +69,7 @@ export default function useIpcCommunication(
       key: string,
       progress: number,
     ) => {
+      if (res.taskProjectId && res.taskProjectId !== projectRef.current) return;
       // 验证进度值的合理性
       const normalizedProgress = Math.min(Math.max(progress || 0, 0), 100);
 
@@ -104,6 +110,7 @@ export default function useIpcCommunication(
       key: string,
       errorMsg: string,
     ) => {
+      if (res.taskProjectId && res.taskProjectId !== projectRef.current) return;
       setFiles((prevFiles) => {
         const errorKey = `${key}Error`;
         let matched = false;
@@ -121,6 +128,7 @@ export default function useIpcCommunication(
     };
 
     const handleFileChange = (res: IFiles) => {
+      if (res.taskProjectId && res.taskProjectId !== projectRef.current) return;
       setFiles((prevFiles) => {
         let matched = false;
         const updatedFiles = prevFiles.map((file) => {

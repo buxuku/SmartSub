@@ -1,6 +1,12 @@
 import assert from 'assert';
 import {
+  buildLaunchpadDraft,
+  appendLaunchpadFiles,
+} from '../renderer/lib/launchpadDraft';
+import {
   taskDraftManager,
+  TaskDraftManager,
+  TASK_WIZARD_DRAFT_KEY,
   type TaskDraft,
 } from '../renderer/lib/taskDraftManager';
 import {
@@ -117,9 +123,16 @@ const readyResult = validateTaskConfigReady({
   },
   systemInfo: {
     fasterWhisperModelsInstalled: ['base'],
+    pythonEngineStatus: { state: 'ready' },
   },
   providers: [
-    { id: 'provider-1', name: 'OpenAI', isAi: true, isConfigured: true },
+    {
+      id: 'provider-1',
+      name: 'Local service',
+      type: 'deeplx',
+      isAi: false,
+      apiUrl: 'http://localhost:1188/translate',
+    },
   ],
 });
 
@@ -154,4 +167,147 @@ assert(noModelResult.errors.some((e) => e.includes('model')));
 
 console.log(
   '✓ All Unified Task Draft & State Machine tests passed successfully!',
+);
+
+for (const invalid of [
+  { goals: { translate: 'yes' } },
+  { manualPairs: [1] },
+  { manualManuscriptPairs: [['only-one-path']] },
+  { config: [] },
+  { pipeline: { subtitle: 'invalid' } },
+  { savedAt: -1 },
+  { files: [{ filePath: '', fileName: 'empty' }] },
+]) {
+  assert.equal(
+    taskDraftManager.deserializeDraft(
+      JSON.stringify({ ...draftData, ...invalid }),
+    ),
+    null,
+  );
+}
+const storage = new Map<string, string>();
+let storageBlocked = false;
+let readBlocked = false;
+(globalThis as any).window = {
+  localStorage: {
+    getItem: (key: string) => {
+      if (readBlocked) throw new Error('Test read unavailable');
+      return storage.get(key) ?? null;
+    },
+    setItem: (key: string, value: string) => {
+      if (storageBlocked) throw new Error('Test quota exceeded');
+      storage.set(key, value);
+    },
+    removeItem: (key: string) => {
+      if (storageBlocked) throw new Error('Test storage unavailable');
+      storage.delete(key);
+    },
+  },
+};
+const manager = new TaskDraftManager();
+assert.equal(manager.saveDraft(draftData), true);
+assert.equal(manager.storageFailed, false);
+assert.ok(new TaskDraftManager().getDraft()?.files.length);
+const returned = manager.getDraft()!;
+returned.files[0].filePath = '/caller-mutated.mp4';
+assert.notEqual(
+  manager.getDraft()!.files[0].filePath,
+  returned.files[0].filePath,
+);
+const changed = { ...draftData, goals: { translate: false } };
+storageBlocked = true;
+assert.equal(manager.saveDraft(changed), false);
+assert.equal(manager.storageFailed, true);
+assert.equal(
+  manager.getDraft()?.goals?.translate,
+  false,
+  'failed durable write retains latest memory draft',
+);
+assert.equal(
+  JSON.parse(storage.get(TASK_WIZARD_DRAFT_KEY)!).goals.translate,
+  true,
+);
+changed.goals.translate = true;
+assert.equal(
+  manager.getDraft()?.goals?.translate,
+  false,
+  'caller mutation cannot change memory snapshot',
+);
+assert.equal(manager.clearDraft(), false);
+assert.equal(
+  manager.getDraft(),
+  null,
+  'failed removal must not resurrect old saved draft',
+);
+storageBlocked = false;
+assert.equal(manager.saveDraft(draftData), true);
+assert.equal(manager.storageFailed, false);
+assert.equal(manager.clearDraft(), true);
+assert.equal(storage.has(TASK_WIZARD_DRAFT_KEY), false);
+console.log(
+  'Task draft schema, isolated snapshot, disk recovery, quota failure, memory fallback and failed removal tests passed.',
+);
+
+storage.set(TASK_WIZARD_DRAFT_KEY, 'unreadable-draft');
+const corruptManager = new TaskDraftManager();
+assert.equal(corruptManager.getDraft(), null);
+assert.equal(corruptManager.storageFailed, true);
+assert.equal(
+  corruptManager.saveDraft({ files: [], savedAt: Date.now() }),
+  false,
+);
+assert.equal(corruptManager.saveDraft(draftData), false);
+assert.equal(storage.get(TASK_WIZARD_DRAFT_KEY), 'unreadable-draft');
+assert.equal(corruptManager.clearDraft(), true, 'explicit discard is allowed');
+assert.equal(corruptManager.saveDraft(draftData), true);
+readBlocked = true;
+const unreadManager = new TaskDraftManager();
+assert.equal(unreadManager.getDraft(), null);
+assert.equal(
+  unreadManager.saveDraft({ files: [], savedAt: Date.now() }),
+  false,
+);
+assert.equal(storage.has(TASK_WIZARD_DRAFT_KEY), true);
+readBlocked = false;
+assert.equal(unreadManager.getDraft()?.files.length, 2);
+assert.equal(unreadManager.storageFailed, false);
+
+const launchDraft = buildLaunchpadDraft(sampleFiles, baseConfig, {
+  id: 'custom-recipe',
+  name: 'Full pipeline',
+  accepts: 'media',
+  goals: { translate: true, dub: true, video: true },
+  config: {
+    sourceLanguage: 'ja',
+    targetLanguage: 'en',
+    gates: { subtitle: 'auto', dubbing: 'manual' },
+    dub: {
+      engine: { kind: 'cloud', providerId: 'tts' },
+      voice: 'alloy',
+      language: 'en',
+      globalSpeed: 1.25,
+    },
+    compose: { subtitle: 'soft' },
+  },
+});
+assert.ok(launchDraft.id);
+assert.equal(launchDraft.config?.sourceLanguage, 'ja');
+assert.equal(launchDraft.pipeline?.dubbing.engineKey, 'cloud:tts');
+assert.equal(launchDraft.pipeline?.dubbing.globalSpeed, 1.25);
+assert.equal(launchDraft.pipeline?.subtitle, 'soft');
+assert.equal(launchDraft.pipeline?.subtitleGate, false);
+assert.equal(launchDraft.pipeline?.dubbingGate, true);
+assert.equal(launchDraft.pipeline?.recipeName, 'Full pipeline');
+assert.ok(manager.deserializeDraft(JSON.stringify(launchDraft)));
+const appended = appendLaunchpadFiles(launchDraft, [
+  ...sampleFiles,
+  { filePath: '/new.mp4', fileName: 'new' },
+]);
+assert.equal(appended.files.length, 3);
+assert.equal(appended.id, launchDraft.id);
+assert.deepEqual(appended.pipeline, launchDraft.pipeline);
+appended.config!.sourceLanguage = 'zh';
+assert.equal(launchDraft.config?.sourceLanguage, 'ja');
+console.log(
+  'Corrupt/unreadable draft preservation and complete launchpad recipe handoff passed.',
 );

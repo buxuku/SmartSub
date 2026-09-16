@@ -39,7 +39,8 @@ Module._load = function (request, parent, isMain) {
     return {
       app: {
         getVersion: () => 'test',
-        getPath: () => active?.root || path.join(__dirname, '../node_modules/.cache'),
+        getPath: () =>
+          active?.root || path.join(__dirname, '../node_modules/.cache'),
         getAppPath: () => process.cwd(),
       },
       ipcMain: { handle: (name, fn) => handlers.set(name, fn), on: () => {} },
@@ -71,6 +72,9 @@ Module._load = function (request, parent, isMain) {
     const stubs = {
       './audioProcessor': {
         extractAudioFromVideo: async (_event, file) => {
+          active.extractions++;
+          if (file.testExtractionFailure)
+            throw new Error('audio extraction failed');
           file.tempAudioFile = file.filePath;
           return file.filePath;
         },
@@ -124,7 +128,57 @@ Module._load = function (request, parent, isMain) {
       },
       './pipeline/gateManager': { notifyGateReview() {} },
       './speakerDiarization/stage': {
-        runSpeakerDiarizationStage: async () => ({}),
+        runSpeakerDiarizationStage: async ({ file, formData }) => {
+          active.speakers++;
+          if (file.testSpeakerFailure)
+            throw new Error('unexpected speaker failure');
+          if (formData.speakerDiarizationEmbedInSubtitle) {
+            const {
+              annotateCuesWithSpeakers,
+            } = require('../main/helpers/speakerDiarization/alignment.ts');
+            const {
+              parseSubtitleCues,
+              serializeSubtitleCues,
+            } = require('../main/helpers/subtitleFormats.ts');
+            for (const subtitlePath of new Set(
+              [
+                file.srtFile,
+                file.translatedSrtFile,
+                file.tempTranslatedSrtFile,
+              ].filter(Boolean),
+            )) {
+              if (
+                subtitlePath === file.filePath ||
+                subtitlePath === file.providedSubtitlePath
+              )
+                continue;
+              const cues = parseSubtitleCues(
+                await fs.promises.readFile(subtitlePath, 'utf8'),
+                'srt',
+              );
+              await fs.promises.writeFile(
+                subtitlePath,
+                serializeSubtitleCues(
+                  annotateCuesWithSpeakers(cues, [
+                    { start: 0, end: 6, speaker: 0 },
+                  ]),
+                  'srt',
+                ),
+              );
+            }
+          }
+          return file.testSpeakerReason
+            ? {
+                applied: false,
+                embedded: false,
+                reason: file.testSpeakerReason,
+              }
+            : {
+                applied: true,
+                embedded: false,
+                segments: [{ start: 0, end: 6, speaker: 0 }],
+              };
+        },
       },
     };
     if (Object.hasOwn(stubs, req)) return stubs[req];
@@ -179,7 +233,16 @@ async function fixture(root, name) {
   const dir = path.join(root, name);
   const cache = path.join(dir, 'cache');
   await fs.promises.mkdir(cache, { recursive: true });
-  active = { root: dir, cache, asr: 0, translations: 0, dubs: 0, composes: 0 };
+  active = {
+    root: dir,
+    cache,
+    asr: 0,
+    translations: 0,
+    dubs: 0,
+    composes: 0,
+    extractions: 0,
+    speakers: 0,
+  };
   return active;
 }
 async function task(root, name, config = {}, fileOverrides = {}, onEvent) {
@@ -630,6 +693,295 @@ async function run(root) {
     'paired source is not re-exported',
   );
 
+  const pairedRoles = await task(
+    root,
+    'paired-roles',
+    { speakerDiarization: true, dub: { engine: {} } },
+    { providedSubtitlePath: pairedPath },
+  );
+  check(
+    [active.asr, active.extractions, active.speakers, active.dubs],
+    [0, 1, 1, 1],
+    'paired roles extract audio without ASR',
+  );
+  check(pairedRoles.state.speakerDiarization, 'done');
+  const rolesData = await readProofreadDataFile(
+    pairedRoles.state.proofreadDataFile,
+  );
+  check(rolesData.speakers.length, 1, 'roles persisted to sidecar');
+  await processFile(
+    pairedRoles.event,
+    { ...pairedRoles.state },
+    pairedRoles.form,
+    false,
+    { id: 'test' },
+  );
+  check(
+    [active.extractions, active.speakers],
+    [1, 1],
+    'downstream resume reuses complete roles',
+  );
+  check(
+    pairedRoles.state.speakerDiarization,
+    'done',
+    'resume settles speaker status',
+  );
+  await fs.promises.unlink(pairedRoles.state.proofreadDataFile);
+  await processFile(
+    pairedRoles.event,
+    { ...pairedRoles.state },
+    pairedRoles.form,
+    false,
+    { id: 'test' },
+  );
+  check(active.speakers, 2, 'missing sidecar rebuilds speaker metadata');
+  check(
+    await fs.promises.readFile(pairedPath, 'utf8'),
+    source,
+    'role analysis preserves paired input',
+  );
+
+  for (const reason of [
+    'model-unavailable',
+    'inference-failed',
+    'empty-result',
+  ]) {
+    const warned = await task(
+      root,
+      `roles-${reason}`,
+      { speakerDiarization: true },
+      { providedSubtitlePath: pairedPath, testSpeakerReason: reason },
+    );
+    check(
+      warned.state.speakerDiarization,
+      'done',
+      'optional analysis warning continues subtitle export',
+    );
+    check(
+      warned.state.speakerDiarizationError,
+      `SPEAKER_DIARIZATION_${reason.replace(/-/g, '_').toUpperCase()}`,
+      'warning is durable UI state',
+    );
+    check(warned.state.exportSubtitle, 'done');
+  }
+  const extractFailed = await task(
+    root,
+    'paired-extract-failed',
+    { speakerDiarization: true },
+    { providedSubtitlePath: pairedPath, testExtractionFailure: true },
+  );
+  check(
+    extractFailed.state.extractAudio,
+    'error',
+    'failed paired extraction is not stuck loading',
+  );
+  check(extractFailed.state.extractAudioError, 'audio extraction failed');
+  check(extractFailed.counters.speakers, 0);
+  const rolesFailed = await task(
+    root,
+    'speaker-unexpected-failed',
+    { speakerDiarization: true },
+    { providedSubtitlePath: pairedPath, testSpeakerFailure: true },
+  );
+  check(
+    rolesFailed.state.speakerDiarization,
+    'error',
+    'unexpected speaker exception is not stuck loading',
+  );
+  check(
+    rolesFailed.state.speakerDiarizationError,
+    'unexpected speaker failure',
+  );
+
+  const wrapped = await task(root, 'two-line-layout', {
+    subtitleLayout: 'two-line',
+    subtitleLineWidth: 16,
+    subtitleOutputFormats: ['srt', 'vtt', 'ass'],
+  });
+  const wrappedData = await readProofreadDataFile(
+    wrapped.state.proofreadDataFile,
+  );
+  check(
+    wrappedData.cues[0].source,
+    'Hello\nsecond line',
+    'sidecar keeps original source, not delivery wrapping',
+  );
+  check(
+    wrappedData.meta.subtitleLayout,
+    'two-line',
+    'layout policy persists with sidecar',
+  );
+  check(
+    pickDubTextSource(
+      wrapped.state,
+      { ...wrapped.form, translateProvider: '-1' },
+      fs.existsSync,
+    ),
+    {
+      type: 'sidecar',
+      sidecarPath: wrapped.state.proofreadDataFile,
+      content: 'source',
+    },
+    'source dubbing uses unwrapped metadata',
+  );
+  for (const format of ['srt', 'vtt', 'ass']) {
+    const content = await fs.promises.readFile(
+      wrapped.state.sourceSubtitleFiles.find((file) =>
+        file.endsWith(`.${format}`),
+      ),
+      'utf8',
+    );
+    const cues = parseSubtitleCues(content, format);
+    check(cues[0].text.split('\n').length <= 2, true);
+    check(cues[0].text.replace(/\s/g, ''), 'Hellosecondline');
+    check(cues[0].startMs, format === 'ass' ? 1120 : 1123);
+  }
+  const editedRows = proofreadDataToSubtitleRows(wrappedData);
+  editedRows[0].sourceContent =
+    'This is a longer subtitle that needs two balanced lines.';
+  const layoutSave = await handlers.get('saveProofreadDataAndRender')(
+    {},
+    {
+      proofreadDataFile: wrapped.state.proofreadDataFile,
+      subtitles: editedRows,
+      outputs: [],
+    },
+  );
+  check(layoutSave.success, true);
+  const editedDelivery = parseSubtitleCues(
+    await fs.promises.readFile(wrapped.state.srtFile, 'utf8'),
+    'srt',
+  );
+  check(
+    editedDelivery[0].text.split('\n').length,
+    2,
+    'editor save retains task layout',
+  );
+  check(
+    (await readProofreadDataFile(wrapped.state.proofreadDataFile)).cues[0]
+      .source,
+    editedRows[0].sourceContent,
+    'editor sidecar text stays unwrapped',
+  );
+  const bilingualLayout = await task(root, 'bilingual-layout', {
+    taskType: 'generateAndTranslate',
+    translateContent: 'sourceAndTranslate',
+    subtitleLayout: 'two-line',
+    subtitleLineWidth: 16,
+  });
+  check(
+    parseSubtitleCues(
+      await fs.promises.readFile(
+        bilingualLayout.state.translatedSrtFile,
+        'utf8',
+      ),
+      'srt',
+    )[0].text,
+    'Hello second line\nBonjour',
+    'bilingual output uses exactly one line per language',
+  );
+  check(
+    parseSubtitleCues(
+      await fs.promises.readFile(
+        bilingualLayout.state.tempTranslatedSrtFile,
+        'utf8',
+      ),
+      'srt',
+    )[0].text,
+    'Bonjour',
+    'TTS cache remains pure translation',
+  );
+  const bilingualRoles = await task(root, 'bilingual-layout-roles', {
+    taskType: 'generateAndTranslate',
+    translateContent: 'sourceAndTranslate',
+    subtitleLayout: 'two-line',
+    subtitleLineWidth: 16,
+    speakerDiarization: true,
+    speakerDiarizationEmbedInSubtitle: true,
+    subtitleOutputFormats: ['srt', 'vtt', 'ass'],
+  });
+  for (const format of ['srt', 'vtt', 'ass']) {
+    const cues = parseSubtitleCues(
+      await fs.promises.readFile(
+        bilingualRoles.state.translatedSubtitleFiles.find((file) =>
+          file.endsWith(`.${format}`),
+        ),
+        'utf8',
+      ),
+      format,
+    );
+    check(
+      cues[0].text,
+      '[Speaker 1] Hello second line\nBonjour',
+      'bilingual delivery retains explicit role label',
+    );
+  }
+  const roleData = await readProofreadDataFile(
+    bilingualRoles.state.proofreadDataFile,
+  );
+  check(
+    roleData.cues[0].source,
+    'Hello\nsecond line',
+    'speaker labels do not leak into source metadata',
+  );
+  check(
+    roleData.cues[0].target,
+    'Bonjour',
+    'speaker labels do not leak into target metadata',
+  );
+  const roleRows = proofreadDataToSubtitleRows(roleData);
+  const namedSave = await handlers.get('saveProofreadDataAndRender')(
+    {},
+    {
+      proofreadDataFile: bilingualRoles.state.proofreadDataFile,
+      subtitles: roleRows,
+      speakers: [
+        {
+          ...roleData.speakers[0],
+          displayName: 'Lead speaker with a long name',
+        },
+      ],
+      embedSpeakerNames: true,
+      outputs: [],
+    },
+  );
+  check(namedSave.success, true);
+  for (const file of [
+    bilingualRoles.state.srtFile,
+    bilingualRoles.state.translatedSrtFile,
+  ]) {
+    const [cue] = parseSubtitleCues(
+      await fs.promises.readFile(file, 'utf8'),
+      'srt',
+    );
+    check(
+      cue.text.startsWith('[Lead speaker with a long name] '),
+      true,
+      'editor layout keeps custom role name atomic',
+    );
+    check(cue.text.split('\n').length <= 2, true);
+  }
+  await assert.rejects(
+    writeSubtitleDeliverables(
+      [
+        {
+          kind: 'source',
+          srtPath: pairedPath,
+          formats: ['vtt'],
+          layout: { subtitleLayout: 'two-line' },
+        },
+      ],
+      [pairedPath],
+    ),
+    /overwrite an input/,
+  );
+  passed++;
+  check(
+    await fs.promises.readFile(pairedPath, 'utf8'),
+    source,
+    'layout cannot modify protected canonical input even without SRT output',
+  );
+
   const txtOnly = await task(root, 'txt-only', {
     subtitleOutputFormats: ['txt'],
     dub: { engine: {} },
@@ -734,7 +1086,12 @@ async function run(root) {
   const failed = await task(
     root,
     'task-failure',
-    { subtitleOutputFormats: ['srt', 'txt'], compose: { subtitle: 'hard' } },
+    {
+      subtitleOutputFormats: ['srt', 'txt'],
+      compose: { subtitle: 'hard' },
+      subtitleLayout: 'two-line',
+      subtitleLineWidth: 16,
+    },
     {},
     (channel, payload) => {
       if (
@@ -759,6 +1116,10 @@ async function run(root) {
     'failed task preserves source SRT',
   );
   blockExport = false;
+  const beforeRetry = await fs.promises.readFile(
+    failed.state.subtitleExportCheckpoint.sourceSrtPath,
+    'utf8',
+  );
   await fs.promises.rmdir(path.join(active.root, 'clip.en.txt'));
   await processFile(failed.event, { ...failed.state }, failed.form, false, {
     id: 'test',
@@ -767,6 +1128,11 @@ async function run(root) {
     failed.state.exportSubtitle,
     'done',
     'retry completes the previously failed export stage',
+  );
+  check(
+    await fs.promises.readFile(failed.state.srtFile, 'utf8'),
+    beforeRetry,
+    'retry after conversion failure does not change laid-out canonical subtitle',
   );
   check(
     failed.state.exportSubtitleError,
@@ -829,7 +1195,7 @@ async function run(root) {
             ? to.endsWith('.txt')
             : phase === 'cache'
               ? /-(source|final)\.srt$/.test(to)
-              : to.endsWith('.json');
+              : to.endsWith('.json') && fs.existsSync(to);
         if (!injected && hit) {
           injected = true;
           throw new Error(`injected ${phase} failure`);

@@ -43,6 +43,8 @@ export interface ProofreadDataMeta extends SubtitleOutputFiles {
   targetLanguage?: string;
   translateContent?: string;
   outputFormat?: string;
+  subtitleLayout?: 'original' | 'two-line';
+  subtitleLineWidth?: number;
   sourceFile?: string;
   targetFile?: string;
   finalTargetFile?: string;

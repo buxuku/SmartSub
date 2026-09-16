@@ -3,8 +3,6 @@ import { useTranslation } from 'next-i18next';
 import {
   UploadCloud,
   Languages,
-  CheckCircle2,
-  FolderOpen,
   Loader2,
   Sparkles,
   ArrowUpDown,
@@ -21,6 +19,11 @@ import {
 } from '@/components/ui/select';
 import { toast } from 'sonner';
 import ToolboxFinishBar from '../common/ToolboxFinishBar';
+import ToolboxQueueList from '../common/ToolboxQueueList';
+import {
+  droppedToolboxPaths,
+  useToolboxQueue,
+} from '../../../hooks/useToolboxQueue';
 import type { BilingualSubtitleResult } from '../../../../types/toolbox';
 
 export default function BilingualSubtitlePanel() {
@@ -28,140 +31,121 @@ export default function BilingualSubtitlePanel() {
 
   const [action, setAction] = useState<'merge' | 'split'>('merge');
 
-  // 合并模式参数
-  const [primaryPath, setPrimaryPath] = useState<string>('');
-  const [secondaryPath, setSecondaryPath] = useState<string>('');
+  const mergeState = useToolboxQueue<
+    { filePath: string; secondaryPath?: string },
+    BilingualSubtitleResult
+  >();
+  const splitState = useToolboxQueue<
+    { filePath: string },
+    BilingualSubtitleResult
+  >();
+  const activeState = action === 'merge' ? mergeState : splitState;
+  const { queue, items, running: isProcessing } = activeState;
+  const [secondaryPaths, setSecondaryPaths] = useState<string[]>([]);
   const [position, setPosition] = useState<'top' | 'bottom'>('top');
-
-  // 拆分模式参数
-  const [splitPath, setSplitPath] = useState<string>('');
-
-  // 拖拽激活状态
+  const [outputDir, setOutputDir] = useState('');
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
   const [isDraggingPrimary, setIsDraggingPrimary] = useState(false);
   const [isDraggingSecondary, setIsDraggingSecondary] = useState(false);
 
-  const [outputDir, setOutputDir] = useState<string>('');
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [result, setResult] = useState<BilingualSubtitleResult | null>(null);
-
-  const extractFilePath = (file: File): string => {
-    return window.ipc?.getPathForFile
-      ? window.ipc.getPathForFile(file)
-      : (file as any).path || '';
-  };
-
-  const isSubtitleExt = (p: string) => /\.(srt|vtt|ass|ssa|sub)$/i.test(p);
-
-  const selectFile = async (type: 'primary' | 'secondary' | 'split') => {
-    const files = await window.ipc.invoke('toolbox:selectFile', {
-      type: 'subtitle',
-      multiSelections: false,
-    });
-    if (Array.isArray(files) && files.length > 0) {
-      if (type === 'primary') setPrimaryPath(files[0]);
-      else if (type === 'secondary') setSecondaryPath(files[0]);
-      else setSplitPath(files[0]);
-      setResult(null);
-    }
-  };
-
-  const handleDropFile = (
-    e: React.DragEvent,
+  const addFiles = (
+    paths: string[],
     type: 'primary' | 'secondary' | 'split',
   ) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (type === 'primary') setIsDraggingPrimary(false);
-    else if (type === 'secondary') setIsDraggingSecondary(false);
-    else setIsDraggingSplit(false);
-
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      const p = extractFilePath(files[0]);
-      if (p) {
-        if (!isSubtitleExt(p)) {
-          toast.error('请拖入有效的字幕文件 (.srt / .vtt / .ass / .sub)');
-          return;
-        }
-        if (type === 'primary') setPrimaryPath(p);
-        else if (type === 'secondary') setSecondaryPath(p);
-        else setSplitPath(p);
-        setResult(null);
-      }
-    }
+    if (isProcessing) return;
+    const valid = paths.filter((path) =>
+      /\.(srt|vtt|ass|ssa|sub)$/i.test(path),
+    );
+    if (valid.length !== paths.length) toast.error(t('queue.invalidSubtitles'));
+    if (type === 'secondary')
+      setSecondaryPaths((previous) =>
+        Array.from(new Set([...previous, ...valid])),
+      );
+    else if (type === 'primary')
+      mergeState.queue.add(valid.map((filePath) => ({ filePath })));
+    else splitState.queue.add(valid.map((filePath) => ({ filePath })));
   };
-
-  const handleStart = async () => {
-    setIsProcessing(true);
-    setResult(null);
-
-    try {
-      if (action === 'merge') {
-        if (!primaryPath || !secondaryPath) {
-          toast.error('请同时选择主语言和次语言字幕');
-          setIsProcessing(false);
-          return;
-        }
-        const res: BilingualSubtitleResult = await window.ipc.invoke(
-          'toolbox:mergeBilingualSubtitles',
-          {
-            primaryPath,
+  const selectFile = async (type: 'primary' | 'secondary' | 'split') => {
+    const paths = await window.ipc.invoke('toolbox:selectFile', {
+      type: 'subtitle',
+      multiSelections: true,
+    });
+    if (Array.isArray(paths)) addFiles(paths, type);
+  };
+  const handleDropFile = (
+    event: React.DragEvent,
+    type: 'primary' | 'secondary' | 'split',
+  ) => {
+    setIsDraggingSplit(false);
+    setIsDraggingPrimary(false);
+    setIsDraggingSecondary(false);
+    addFiles(droppedToolboxPaths(event), type);
+  };
+  const handleStart = (retryId?: string) => {
+    if (action === 'split')
+      return splitState.queue.run(
+        {
+          failureMessage: t('queue.failed'),
+          execute: ({ filePath }) =>
+            window.ipc.invoke('toolbox:splitBilingualSubtitles', {
+              filePath,
+              outputDir: outputDir || undefined,
+            }),
+        },
+        retryId,
+      );
+    return mergeState.queue.run(
+      {
+        failureMessage: t('queue.failed'),
+        execute: (input) => {
+          const secondaryPath =
+            input.secondaryPath ||
+            (mergeState.items.length === 1 && secondaryPaths.length === 1
+              ? secondaryPaths[0]
+              : undefined);
+          if (!secondaryPath) throw new Error(t('queue.choosePair'));
+          return window.ipc.invoke('toolbox:mergeBilingualSubtitles', {
+            primaryPath: input.filePath,
             secondaryPath,
             primaryPosition: position,
             outputPath: outputDir
-              ? `${outputDir}/${primaryPath
+              ? `${outputDir}/${input.filePath
                   .split(/[/\\]/)
-                  .pop()
-                  ?.replace(/\.[^.]+$/, '')}_bilingual.srt`
+                  .pop()!
+                  .replace(/\.[^.]+$/, '')}_bilingual.srt`
               : undefined,
-          },
-        );
-        setResult(res);
-        if (res.success) toast.success('双语合并完成！');
-        else toast.error(`合并失败: ${res.error}`);
-      } else {
-        if (!splitPath) {
-          toast.error('请选择需要拆分的双语字幕文件');
-          setIsProcessing(false);
-          return;
-        }
-        const res: BilingualSubtitleResult = await window.ipc.invoke(
-          'toolbox:splitBilingualSubtitles',
-          {
-            filePath: splitPath,
-            outputDir: outputDir || undefined,
-          },
-        );
-        setResult(res);
-        if (res.success) toast.success('拆分完成，已导出两份独立单语字幕！');
-        else toast.error(`拆分失败: ${res.error}`);
-      }
-    } catch (err: any) {
-      toast.error(`处理异常: ${err.message || err}`);
-    } finally {
-      setIsProcessing(false);
-    }
+          });
+        },
+      },
+      retryId,
+    );
   };
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
-      <div className="flex flex-1 overflow-hidden p-6 gap-6">
+      <div className="flex min-h-0 flex-1 overflow-hidden p-4 gap-4">
         {/* 左侧：操作面板 */}
-        <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card p-6 gap-5">
+        <div className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background p-4 gap-4">
           <Tabs
             value={action}
             onValueChange={(v: any) => {
               setAction(v);
-              setResult(null);
             }}
             className="w-full"
           >
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="merge" className="text-xs">
+              <TabsTrigger
+                value="merge"
+                className="text-xs"
+                disabled={isProcessing}
+              >
                 两份单语字幕合并为双语
               </TabsTrigger>
-              <TabsTrigger value="split" className="text-xs">
+              <TabsTrigger
+                value="split"
+                className="text-xs"
+                disabled={isProcessing}
+              >
                 一份双语字幕拆分为单语
               </TabsTrigger>
             </TabsList>
@@ -202,8 +186,8 @@ export default function BilingualSubtitlePanel() {
                   <div className="flex items-center gap-3 truncate">
                     <Languages className="h-5 w-5 text-primary shrink-0" />
                     <span className="text-xs truncate font-medium text-foreground">
-                      {primaryPath
-                        ? primaryPath.split(/[/\\]/).pop()
+                      {mergeState.items.length
+                        ? t('queue.files', { count: mergeState.items.length })
                         : '点击或拖拽主字幕文件 (.srt / .vtt / .ass)'}
                     </span>
                   </div>
@@ -246,8 +230,8 @@ export default function BilingualSubtitlePanel() {
                   <div className="flex items-center gap-3 truncate">
                     <Languages className="h-5 w-5 text-primary/70 shrink-0" />
                     <span className="text-xs truncate font-medium text-foreground">
-                      {secondaryPath
-                        ? secondaryPath.split(/[/\\]/).pop()
+                      {secondaryPaths.length
+                        ? t('queue.files', { count: secondaryPaths.length })
                         : '点击或拖拽次字幕文件 (.srt / .vtt / .ass)'}
                     </span>
                   </div>
@@ -266,6 +250,7 @@ export default function BilingualSubtitlePanel() {
                 <Select
                   value={position}
                   onValueChange={(v: any) => setPosition(v)}
+                  disabled={isProcessing}
                 >
                   <SelectTrigger className="h-8 text-xs">
                     <SelectValue />
@@ -313,8 +298,8 @@ export default function BilingualSubtitlePanel() {
                   <UploadCloud className="h-6 w-6" />
                 </div>
                 <p className="mt-2 text-xs font-medium text-foreground">
-                  {splitPath
-                    ? splitPath.split(/[/\\]/).pop()
+                  {splitState.items.length
+                    ? t('queue.files', { count: splitState.items.length })
                     : '点击或拖拽包含两行文字的双语字幕文件'}
                 </p>
                 <p className="mt-1 text-[11px] text-muted-foreground">
@@ -323,10 +308,62 @@ export default function BilingualSubtitlePanel() {
               </div>
             </div>
           )}
+          <ToolboxQueueList
+            {...activeState}
+            onRetry={handleStart}
+            onRemove={(id) => queue.remove(id)}
+            onCancel={() => void queue.cancel()}
+            onClear={() => {
+              queue.clear();
+              if (action === 'merge') setSecondaryPaths([]);
+            }}
+            renderInfo={
+              action === 'merge'
+                ? (item) => {
+                    const input = mergeState.items.find(
+                      (entry) => entry.id === item.id,
+                    )?.input;
+                    return (
+                      <Select
+                        disabled={isProcessing}
+                        value={
+                          input?.secondaryPath ||
+                          (mergeState.items.length === 1 &&
+                          secondaryPaths.length === 1
+                            ? secondaryPaths[0]
+                            : '')
+                        }
+                        onValueChange={(secondaryPath) => {
+                          if (input)
+                            mergeState.queue.updateInput(item.id, {
+                              ...input,
+                              secondaryPath,
+                            });
+                        }}
+                      >
+                        <SelectTrigger
+                          className="mt-1 h-8 w-full min-w-0 text-xs"
+                          aria-label={t('queue.choosePair')}
+                        >
+                          <SelectValue placeholder={t('queue.choosePair')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {secondaryPaths.map((path) => (
+                            <SelectItem key={path} value={path}>
+                              {path.split(/[/\\]/).pop()}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    );
+                  }
+                : undefined
+            }
+          />
         </div>
 
         {/* 右侧：保存控制 */}
-        <div className="flex w-80 shrink-0 flex-col justify-between rounded-xl border border-border bg-card p-5">
+        <div className="flex min-h-0 w-72 shrink-0 flex-col gap-4 overflow-y-auto bg-muted/30 p-4">
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
               <Sparkles className="h-4 w-4 text-primary" />
@@ -361,16 +398,16 @@ export default function BilingualSubtitlePanel() {
               </div>
             </div>
 
-            {result?.success && (
+            {items.some((item) => item.status === 'done') && !isProcessing && (
               <ToolboxFinishBar
                 outputType="subtitle"
-                outputPaths={result.outputPaths}
+                outputPaths={items
+                  .filter((item) => item.status === 'done')
+                  .flatMap((item) => item.result!.outputPaths)}
                 summary={t('finishBar.title')}
                 onReset={() => {
-                  setResult(null);
-                  setPrimaryPath(null);
-                  setSecondaryPath(null);
-                  setSplitPath(null);
+                  queue.clear();
+                  if (action === 'merge') setSecondaryPaths([]);
                 }}
               />
             )}
@@ -379,11 +416,12 @@ export default function BilingualSubtitlePanel() {
           <div className="pt-4 border-t border-border">
             <Button
               className="w-full text-xs font-medium h-9"
-              onClick={handleStart}
+              onClick={() => void handleStart()}
               disabled={
-                (action === 'merge' && (!primaryPath || !secondaryPath)) ||
-                (action === 'split' && !splitPath) ||
-                isProcessing
+                !items.some(
+                  (item) =>
+                    item.status === 'pending' || item.status === 'cancelled',
+                ) || isProcessing
               }
             >
               {isProcessing ? (

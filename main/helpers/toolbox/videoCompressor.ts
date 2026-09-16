@@ -5,6 +5,7 @@
  */
 
 import fs from 'fs';
+import { reserveToolboxOutput } from './outputPath';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
@@ -18,8 +19,14 @@ import type {
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
 
 const activeCompressProcesses = new Map<string, ChildProcess>();
+const preparingCompressJobs = new Map<string, AbortController>();
 
 export function cancelVideoCompress(jobId: string): boolean {
+  const preparing = preparingCompressJobs.get(jobId);
+  if (preparing) {
+    preparing.abort();
+    return true;
+  }
   const proc = activeCompressProcesses.get(jobId);
   if (proc) {
     try {
@@ -36,6 +43,7 @@ export function cancelVideoCompress(jobId: string): boolean {
 
 /** 取消并清理所有正在进行的视频压缩任务（应用退出时调用） */
 export function cancelAllCompressProcesses(): void {
+  preparingCompressJobs.forEach((controller) => controller.abort());
   for (const [jobId, proc] of activeCompressProcesses.entries()) {
     try {
       proc.kill('SIGKILL');
@@ -62,13 +70,29 @@ export async function executeVideoCompress(
     };
   }
 
-  const origInfo = await probeVideoInfo(videoPath);
+  const preparation = new AbortController();
+  preparingCompressJobs.set(jobId, preparation);
+  let origInfo: Awaited<ReturnType<typeof probeVideoInfo>>;
+  try {
+    origInfo = await probeVideoInfo(videoPath);
+  } finally {
+    preparingCompressJobs.delete(jobId);
+  }
+  if (preparation.signal.aborted)
+    return {
+      success: false,
+      outputPath: '',
+      originalSize: 0,
+      compressedSize: 0,
+      error: 'Cancelled',
+    };
   const dir = outputPath ? path.dirname(outputPath) : path.dirname(videoPath);
   const ext = path.extname(videoPath);
   const baseName = path.basename(videoPath, ext);
 
-  const targetOutput =
-    outputPath || path.join(dir, `${baseName}_compressed.mp4`);
+  const targetOutput = reserveToolboxOutput(
+    outputPath || path.join(dir, `${baseName}_compressed.mp4`),
+  );
 
   const args: string[] = ['-hide_banner', '-y', '-i', videoPath];
 
@@ -80,43 +104,66 @@ export async function executeVideoCompress(
     const audioBitrate = 96 * 1000;
     const videoBitrate = Math.max(
       150000,
-      Math.floor((totalBits / duration) - audioBitrate),
+      Math.floor(totalBits / duration - audioBitrate),
     );
 
     args.push(
-      '-c:v', 'libx264',
-      '-b:v', `${videoBitrate}`,
-      '-maxrate', `${Math.floor(videoBitrate * 1.3)}`,
-      '-bufsize', `${videoBitrate * 2}`,
-      '-vf', "scale='min(1280,iw)':-2",
-      '-preset', 'fast',
-      '-c:a', 'aac',
-      '-b:a', '96k',
+      '-c:v',
+      'libx264',
+      '-b:v',
+      `${videoBitrate}`,
+      '-maxrate',
+      `${Math.floor(videoBitrate * 1.3)}`,
+      '-bufsize',
+      `${videoBitrate * 2}`,
+      '-vf',
+      "scale='min(1280,iw)':-2",
+      '-preset',
+      'fast',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '96k',
     );
   } else if (preset === 'fast_720p') {
     args.push(
-      '-c:v', 'libx264',
-      '-crf', '26',
-      '-preset', 'veryfast',
-      '-vf', "scale='min(1280,iw)':-2",
-      '-c:a', 'aac',
-      '-b:a', '96k',
+      '-c:v',
+      'libx264',
+      '-crf',
+      '26',
+      '-preset',
+      'veryfast',
+      '-vf',
+      "scale='min(1280,iw)':-2",
+      '-c:a',
+      'aac',
+      '-b:a',
+      '96k',
     );
   } else {
     // balanced_1080p
     args.push(
-      '-c:v', 'libx264',
-      '-crf', '24',
-      '-preset', 'fast',
-      '-vf', "scale='min(1920,iw)':-2",
-      '-c:a', 'aac',
-      '-b:a', '128k',
+      '-c:v',
+      'libx264',
+      '-crf',
+      '24',
+      '-preset',
+      'fast',
+      '-vf',
+      "scale='min(1920,iw)':-2",
+      '-c:a',
+      'aac',
+      '-b:a',
+      '128k',
     );
   }
 
   args.push(targetOutput);
 
-  logMessage(`执行视频压缩 [${jobId}]: ${ffmpegPath} ${args.join(' ')}`, 'info');
+  logMessage(
+    `执行视频压缩 [${jobId}]: ${ffmpegPath} ${args.join(' ')}`,
+    'info',
+  );
 
   return new Promise((resolve, reject) => {
     const proc = spawn(ffmpegPath, args);
@@ -170,6 +217,9 @@ export async function executeVideoCompress(
 
     proc.on('error', (err) => {
       activeCompressProcesses.delete(jobId);
+      try {
+        fs.unlinkSync(targetOutput);
+      } catch {}
       reject(err);
     });
   });

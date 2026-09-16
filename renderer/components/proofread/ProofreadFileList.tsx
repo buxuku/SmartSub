@@ -135,6 +135,8 @@ interface ProofreadFileListProps {
   onRemoveFile: (index: number) => void;
   onAddFiles: (files: PendingFile[]) => void;
   onSaveTask: () => Promise<boolean>;
+  saveStatus: 'idle' | 'saving' | 'saved' | 'save_error';
+  isDirty: boolean;
   onReset: () => void;
 }
 
@@ -149,10 +151,13 @@ export default function ProofreadFileList({
   onRemoveFile,
   onAddFiles,
   onSaveTask,
+  saveStatus,
+  isDirty,
   onReset,
 }: ProofreadFileListProps) {
   const { t } = useTranslation('home');
-  const [saving, setSaving] = useState(false);
+  const { t: commonT } = useTranslation('common');
+  const saving = saveStatus === 'saving';
   const [showNameInput, setShowNameInput] = useState(false);
 
   // 手动选择源字幕
@@ -268,18 +273,13 @@ export default function ProofreadFileList({
 
   // 保存任务
   const handleSave = useCallback(async () => {
-    setSaving(true);
     try {
       const success = await onSaveTask();
       if (success) {
         toast.success(t('taskSaved'));
-      } else {
-        toast.error(t('saveFailed'));
       }
     } catch (error) {
       toast.error(t('saveFailed'));
-    } finally {
-      setSaving(false);
     }
   }, [onSaveTask, t]);
 
@@ -455,7 +455,7 @@ export default function ProofreadFileList({
                   variant="outline"
                   size="sm"
                   onClick={handleSave}
-                  disabled={saving || files.length === 0}
+                  disabled={saving || (files.length === 0 && !savedTaskId)}
                 >
                   {saving ? (
                     <Loader2 className="w-4 h-4 mr-1 animate-spin" />
@@ -473,11 +473,18 @@ export default function ProofreadFileList({
           <Badge variant="secondary">
             {completedCount}/{files.length} {t('completed')}
           </Badge>
-          {savedTaskId && (
-            <Badge variant="outline" className="text-success">
-              {t('saved')}
-            </Badge>
-          )}
+          <span
+            role="status"
+            className={
+              saveStatus === 'save_error'
+                ? 'text-xs text-destructive'
+                : 'text-xs text-muted-foreground'
+            }
+          >
+            {commonT(
+              `saveState.${saveStatus === 'idle' && isDirty ? 'dirty' : saveStatus}`,
+            )}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           {/* 追加文件 */}

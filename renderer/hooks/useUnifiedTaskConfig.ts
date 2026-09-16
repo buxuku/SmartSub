@@ -7,7 +7,8 @@ import {
   applyScenarioPreset,
   type ScenarioPresetId,
 } from '../lib/scenarioPresets';
-import type { TaskTypeDef } from '../lib/taskTypes';
+export { validateTaskConfigReady } from '../lib/taskReadiness';
+export type { ValidationReadyResult } from '../lib/taskReadiness';
 
 export interface UseUnifiedTaskConfigOptions {
   taskType?: string;
@@ -19,60 +20,11 @@ export function buildTaskSnapshotFromConfig(
   formData: Record<string, any> | undefined,
   extra?: Record<string, any>,
 ): Record<string, any> {
-  const base = formData ? { ...formData } : {};
-  return {
+  const base = formData || {};
+  return structuredClone({
     ...base,
     ...(extra || {}),
-  };
-}
-
-export interface ValidationReadyResult {
-  valid: boolean;
-  errors: string[];
-}
-
-export function validateTaskConfigReady({
-  files,
-  typeDef,
-  formData,
-  systemInfo,
-  providers,
-}: {
-  files: any[];
-  typeDef: TaskTypeDef;
-  formData: Record<string, any>;
-  systemInfo?: any;
-  providers?: any[];
-  asrProviders?: any[];
-}): ValidationReadyResult {
-  const errors: string[] = [];
-
-  if (!files || files.length === 0) {
-    errors.push('files_required');
-  }
-
-  if (typeDef.needsModel) {
-    const engine = formData?.transcriptionEngine;
-    const model = formData?.model;
-    if (engine !== 'parakeet' && !model) {
-      errors.push('model_required');
-    }
-  }
-
-  if (typeDef.hasTranslate) {
-    if (!formData?.targetLanguage) {
-      errors.push('target_language_required');
-    }
-    const provider = formData?.translateProvider;
-    if (!provider || provider === '-1') {
-      errors.push('provider_required');
-    }
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
+  });
 }
 
 export default function useUnifiedTaskConfig(
@@ -99,9 +51,10 @@ export default function useUnifiedTaskConfig(
   const hydrateSnapshot = useCallback(
     (snap: Record<string, any>) => {
       snapshotHydratedRef.current = true;
-      form.reset(snap);
-      setFormData(snap);
-      formDataRef.current = snap;
+      const snapshot = buildTaskSnapshotFromConfig(snap);
+      form.reset(snapshot);
+      setFormData(snapshot);
+      formDataRef.current = snapshot;
       loadedRef.current = true;
       setLoaded(true);
     },

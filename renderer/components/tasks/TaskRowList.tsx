@@ -161,6 +161,7 @@ export function RailChips({
               count: translationFailureCount,
             })
           : undefined;
+        const stageWarning = Boolean(file?.[`${stage.key}Error`]);
         return (
           <React.Fragment key={stage.key}>
             {index > 0 && <ChevronRight className="h-3 w-3 text-faint" />}
@@ -170,7 +171,7 @@ export function RailChips({
                 status === 'pending' && 'text-faint',
                 status === 'loading' && 'text-primary font-medium',
                 status === 'done' &&
-                  (manuscriptWarning ? 'text-warning' : 'text-success'),
+                  (stageWarning ? 'text-warning' : 'text-success'),
                 status === 'error' && 'text-destructive font-medium',
               )}
               title={
@@ -185,7 +186,7 @@ export function RailChips({
                 <Loader2 className="h-3 w-3 animate-spin" />
               )}
               {status === 'done' &&
-                (manuscriptWarning ? (
+                (stageWarning ? (
                   <CircleAlert className="h-3 w-3" />
                 ) : (
                   <CheckCircle2 className="h-3 w-3" />
@@ -215,15 +216,14 @@ export function RailChips({
                   </span>
                 </span>
               ) : null}
-              {stage.key === 'translateSubtitle' && translationFailureCount > 0 ? (
+              {stage.key === 'translateSubtitle' &&
+              translationFailureCount > 0 ? (
                 <span
                   className="inline-flex items-center gap-0.5 text-warning"
                   title={translationFailureTitle}
                 >
                   <CircleAlert className="h-3 w-3" />
-                  <span className="text-[10px]">
-                    {translationFailureCount}
-                  </span>
+                  <span className="text-[10px]">{translationFailureCount}</span>
                 </span>
               ) : null}
             </span>
@@ -396,10 +396,19 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                   ? t('row.translationIncompleteForCompose')
                   : rawError;
         const rawWarning = getFileWarning(file, stages);
-        const warningMsg =
-          rawWarning === SPEAKER_DIARIZATION_METADATA_SAVE_FAILED
+        const warningMsg = rawWarning.startsWith(
+          'AI_CORRECTION_VALIDATION_FAILED:',
+        )
+          ? t('row.aiCorrectionValidationFailed', {
+              count: Number(rawWarning.split(':')[1]),
+            })
+          : rawWarning === SPEAKER_DIARIZATION_METADATA_SAVE_FAILED
             ? t('row.speakerDiarizationMetadataSaveFailed')
-            : rawWarning;
+            : rawWarning.startsWith('SPEAKER_DIARIZATION_')
+              ? t(`speakerDiarization.warnings.${rawWarning}`, {
+                  defaultValue: rawWarning,
+                })
+              : rawWarning;
         const missedSpeechWarning = file?.missedSpeechSummary?.count
           ? t('row.missedSpeechWarning', {
               count: file.missedSpeechSummary.count,

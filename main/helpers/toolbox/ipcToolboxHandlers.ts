@@ -28,6 +28,8 @@ import {
 import {
   scanEmbeddedSubtitles,
   extractEmbeddedSubtitles,
+  cancelEmbeddedSubtitleExtraction,
+  cancelAllEmbeddedSubtitleExtractions,
 } from './embeddedSubtitleExtractor';
 import { executeSubtitleSync } from './subtitleSync';
 import {
@@ -105,10 +107,13 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
         properties.push('multiSelections');
       }
 
-      const res = await dialog.showOpenDialog(mainWindow || undefined as any, {
-        properties,
-        filters,
-      });
+      const res = await dialog.showOpenDialog(
+        mainWindow || (undefined as any),
+        {
+          properties,
+          filters,
+        },
+      );
 
       if (res.canceled) return [];
       return res.filePaths;
@@ -117,7 +122,7 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
 
   // 2. 选择目录
   ipcMain.handle('toolbox:selectFolder', async () => {
-    const res = await dialog.showOpenDialog(mainWindow || undefined as any, {
+    const res = await dialog.showOpenDialog(mainWindow || (undefined as any), {
       properties: ['openDirectory', 'createDirectory'],
     });
     if (res.canceled) return null;
@@ -205,10 +210,7 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
 
   ipcMain.handle(
     'toolbox:trimVideo',
-    async (
-      _event,
-      payload: { config: VideoTrimConfig; jobId: string },
-    ) => {
+    async (_event, payload: { config: VideoTrimConfig; jobId: string }) => {
       const { config, jobId } = payload;
       if (!config?.videoPath || !fs.existsSync(config.videoPath)) {
         return {
@@ -235,10 +237,7 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
   // 6. 音频提取
   ipcMain.handle(
     'toolbox:extractAudio',
-    async (
-      _event,
-      payload: { config: AudioExtractConfig; jobId: string },
-    ) => {
+    async (_event, payload: { config: AudioExtractConfig; jobId: string }) => {
       const { config, jobId } = payload;
       if (!config?.videoPath || !fs.existsSync(config.videoPath)) {
         return {
@@ -258,9 +257,12 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
     },
   );
 
-  ipcMain.handle('toolbox:cancelExtractAudio', async (_event, jobId: string) => {
-    return cancelAudioExtract(jobId);
-  });
+  ipcMain.handle(
+    'toolbox:cancelExtractAudio',
+    async (_event, jobId: string) => {
+      return cancelAudioExtract(jobId);
+    },
+  );
 
   // 7. 内封字幕探测与提取
   ipcMain.handle(
@@ -275,7 +277,7 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
 
   ipcMain.handle(
     'toolbox:extractEmbeddedSubtitles',
-    async (_event, config: ExtractEmbeddedSubtitleConfig) => {
+    async (event, config: ExtractEmbeddedSubtitleConfig, jobId?: string) => {
       if (!config?.videoPath || !fs.existsSync(config.videoPath)) {
         return {
           success: false,
@@ -283,8 +285,18 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
           error: `Video file not found: ${config?.videoPath}`,
         };
       }
-      return extractEmbeddedSubtitles(config);
+      return extractEmbeddedSubtitles(config, jobId, (percent) => {
+        if (!event.sender.isDestroyed())
+          event.sender.send('toolbox:embeddedSubtitleProgress', {
+            jobId,
+            percent,
+          });
+      });
     },
+  );
+
+  ipcMain.handle('toolbox:cancelEmbeddedSubtitles', (_event, jobId: string) =>
+    cancelEmbeddedSubtitleExtraction(jobId),
   );
 
   // 8. 字幕时间轴校准
@@ -313,10 +325,7 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
   // 10. 视频压缩
   ipcMain.handle(
     'toolbox:compressVideo',
-    async (
-      _event,
-      payload: { config: VideoCompressConfig; jobId: string },
-    ) => {
+    async (_event, payload: { config: VideoCompressConfig; jobId: string }) => {
       const { config, jobId } = payload;
       return executeVideoCompress(config, jobId, (percent) => {
         mainWindow?.webContents.send('toolbox:compressProgress', {
@@ -327,17 +336,17 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
     },
   );
 
-  ipcMain.handle('toolbox:cancelCompressVideo', async (_event, jobId: string) => {
-    return cancelVideoCompress(jobId);
-  });
+  ipcMain.handle(
+    'toolbox:cancelCompressVideo',
+    async (_event, jobId: string) => {
+      return cancelVideoCompress(jobId);
+    },
+  );
 
   // 11. 视频转 GIF
   ipcMain.handle(
     'toolbox:videoToGif',
-    async (
-      _event,
-      payload: { config: VideoToGifConfig; jobId: string },
-    ) => {
+    async (_event, payload: { config: VideoToGifConfig; jobId: string }) => {
       const { config, jobId } = payload;
       return executeVideoToGif(config, jobId, (percent) => {
         mainWindow?.webContents.send('toolbox:gifProgress', {
@@ -364,7 +373,11 @@ export function shutdownToolboxProcesses(): void {
     cancelAllAudioProcesses();
     cancelAllCompressProcesses();
     cancelAllGifProcesses();
-    logMessage('All active toolbox processes have been shut down cleanly', 'info');
+    cancelAllEmbeddedSubtitleExtractions();
+    logMessage(
+      'All active toolbox processes have been shut down cleanly',
+      'info',
+    );
   } catch (err) {
     logMessage(`Error shutting down toolbox processes: ${err}`, 'warning');
   }

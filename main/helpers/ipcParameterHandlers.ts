@@ -107,13 +107,7 @@ async function validateParameterConfiguration(
       providerId,
     );
 
-    // Convert validation result to ValidationError format
-    return result.errors.map((error) => ({
-      key: error.field || 'unknown',
-      type: 'validation' as const,
-      message: error.message,
-      suggestion: 'Check the parameter configuration and try again',
-    }));
+    return result.errors;
   } catch (error) {
     logMessage(
       `Error validating parameters for ${providerId}: ${error}`,

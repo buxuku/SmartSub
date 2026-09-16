@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import {
   Dialog,
   DialogContent,
@@ -9,15 +10,15 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Download, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
-import { toast } from 'sonner';
+import DownloadSourceSelector from '@/components/resources/engines/DownloadSourceSelector';
+import { Download, Loader2 } from 'lucide-react';
 import { useTranslation } from 'next-i18next';
 
 interface ModelQuickDownloadDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   stagedFilesCount: number;
-  onSuccess: () => void;
+  onSuccess: () => void | Promise<void>;
 }
 
 export default function ModelQuickDownloadDialog({
@@ -28,129 +29,167 @@ export default function ModelQuickDownloadDialog({
 }: ModelQuickDownloadDialogProps) {
   const { t } = useTranslation('launchpad');
   const [downloading, setDownloading] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [completed, setCompleted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [source, setSource] = useState('hf-mirror');
+  const requestRef = useRef<string | null>(null);
+  const activeRef = useRef(false);
+  const cancellingRef = useRef(false);
 
   useEffect(() => {
-    if (!open) {
-      setDownloading(false);
-      setProgress(0);
-      setCompleted(false);
-      return;
-    }
+    activeRef.current = open;
+    setDownloading(false);
+    setCancelling(false);
+    setProgress(0);
+    setError(null);
+    cancellingRef.current = false;
+    if (!open) return;
 
-    const unsubProgress = window?.ipc?.on(
+    const unsubscribe = window.ipc.on(
       'downloadProgress',
-      (model: string, progressValue: number) => {
-        if (typeof progressValue === 'number') {
-          setProgress(Math.round(progressValue * 100));
+      (model: string, value: number) => {
+        if (requestRef.current && model === 'base' && Number.isFinite(value)) {
+          setProgress(Math.max(0, Math.min(100, Math.round(value * 100))));
         }
       },
     );
-
     return () => {
-      unsubProgress?.();
+      activeRef.current = false;
+      unsubscribe?.();
+      const requestId = requestRef.current;
+      requestRef.current = null;
+      if (requestId)
+        void window.ipc
+          .invoke('cancelModelDownload', { requestId })
+          .catch(() => {});
     };
   }, [open]);
 
   const handleStartDownload = async () => {
+    if (requestRef.current || !activeRef.current) return;
+    const requestId = uuidv4();
+    requestRef.current = requestId;
+    setDownloading(true);
+    setProgress(0);
+    setError(null);
     try {
-      setDownloading(true);
-      setProgress(0);
-
-      const result = await window?.ipc?.invoke('downloadModel', {
+      const result = await window.ipc.invoke('downloadModel', {
         model: 'base',
+        source,
         needsCoreML: false,
+        requestId,
       });
-
-      if (result?.success) {
-        setProgress(100);
-        setCompleted(true);
-        toast.success(t('quickDownload.installComplete'));
-        setTimeout(() => {
-          onOpenChange(false);
-          onSuccess();
-        }, 1000);
-      } else {
-        setDownloading(false);
-        if (result?.error && !String(result.error).includes('cancelled')) {
-          toast.error(result.error);
-        }
+      if (
+        !activeRef.current ||
+        requestRef.current !== requestId ||
+        cancellingRef.current
+      )
+        return;
+      if (result?.success !== true) {
+        throw new Error(
+          result?.error === 'anotherDownloadInProgress'
+            ? t('quickDownload.busy')
+            : result?.error || t('quickDownload.failed'),
+        );
       }
-    } catch (err: any) {
-      console.error('Failed to quick download model:', err);
-      setDownloading(false);
-      toast.error(err?.message || 'Download failed');
+      const info = await window.ipc.invoke('getSystemInfo', null);
+      if (
+        !activeRef.current ||
+        requestRef.current !== requestId ||
+        cancellingRef.current
+      )
+        return;
+      if (!info?.modelsInstalled?.includes('base'))
+        throw new Error(t('quickDownload.notInstalled'));
+      setProgress(100);
+      await onSuccess();
+      if (activeRef.current) onOpenChange(false);
+    } catch (err) {
+      if (
+        activeRef.current &&
+        requestRef.current === requestId &&
+        !cancellingRef.current
+      ) {
+        setError(
+          err instanceof Error ? err.message : t('quickDownload.failed'),
+        );
+      }
+    } finally {
+      if (requestRef.current === requestId) {
+        requestRef.current = null;
+        if (activeRef.current) setDownloading(false);
+      }
     }
   };
 
   const handleCancel = async () => {
-    if (downloading) {
-      try {
-        await window?.ipc?.invoke('cancelModelDownload');
-      } catch {
-        /* ignore */
-      }
+    if (cancellingRef.current) return;
+    cancellingRef.current = true;
+    setCancelling(true);
+    try {
+      const requestId = requestRef.current;
+      if (requestId)
+        await window.ipc.invoke('cancelModelDownload', { requestId });
+      requestRef.current = null;
+      activeRef.current = false;
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('quickDownload.failed'));
+    } finally {
+      cancellingRef.current = false;
+      if (activeRef.current) setCancelling(false);
     }
-    onOpenChange(false);
   };
 
   return (
     <Dialog
       open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          handleCancel();
-        } else {
-          onOpenChange(true);
-        }
+      onOpenChange={(next) => {
+        if (!next) void handleCancel();
       }}
     >
       <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
-          <div className="flex items-center gap-2 text-primary mb-1">
-            <Sparkles className="h-5 w-5" />
-            <span className="text-xs font-semibold uppercase tracking-wider">
-              SmartSub Pro
-            </span>
-          </div>
           <DialogTitle>{t('quickDownload.title')}</DialogTitle>
           <DialogDescription className="text-xs leading-relaxed pt-1">
             {t('quickDownload.desc', { count: stagedFilesCount })}
           </DialogDescription>
         </DialogHeader>
-
-        <div className="py-3">
-          {downloading && (
-            <div className="space-y-2 rounded-lg border bg-muted/40 p-3">
-              <div className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                  {t('quickDownload.downloading', { progress })}
-                </span>
-                <span className="font-mono font-medium text-foreground">
-                  {progress}%
-                </span>
-              </div>
-              <Progress value={progress} className="h-2" />
-            </div>
-          )}
-
-          {completed && (
-            <div className="flex items-center gap-2 rounded-lg bg-success/10 border border-success/20 p-3 text-xs text-success font-medium">
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
-              {t('quickDownload.installComplete')}
-            </div>
-          )}
-        </div>
-
+        {downloading ? (
+          <div className="space-y-2 py-3">
+            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+              {t('quickDownload.downloading', { progress })}
+            </span>
+            <Progress value={progress} className="h-2" />
+          </div>
+        ) : (
+          <DownloadSourceSelector
+            label={t('quickDownload.source')}
+            value={source}
+            onChange={setSource}
+            options={[
+              { value: 'hf-mirror', label: t('quickDownload.mirror') },
+              { value: 'huggingface', label: 'Hugging Face' },
+            ]}
+          />
+        )}
+        {error && (
+          <div
+            role="alert"
+            className="break-words bg-destructive/10 p-3 text-xs text-destructive"
+          >
+            {error}
+          </div>
+        )}
         <DialogFooter className="gap-2 sm:gap-0">
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={handleCancel}
-            disabled={completed}
+            disabled={cancelling}
           >
             {t('quickDownload.cancel')}
           </Button>
@@ -158,7 +197,7 @@ export default function ModelQuickDownloadDialog({
             type="button"
             size="sm"
             onClick={handleStartDownload}
-            disabled={downloading || completed}
+            disabled={downloading || cancelling}
             className="gap-1.5"
           >
             <Download className="h-4 w-4" />

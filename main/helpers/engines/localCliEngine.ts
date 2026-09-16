@@ -6,6 +6,14 @@ import { logMessage, store } from '../storeManager';
 import { getTaskContext, TaskCancelledError } from '../taskContext';
 import { getWhisperLanguage } from './transcribeShared';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
+import { parseSubtitleCues } from '../subtitleFormats';
+import {
+  formatTime,
+  resplitSubtitleCues,
+  type TokenTriple,
+} from '../subtitleSegmentation';
+import { formatSrtContent } from '../fileUtils';
+import { atomicReplaceTextFile } from '../atomicFile';
 
 /** 在途 CLI 子进程集合：任务级并发下可能同时存在多个，取消须精确到进程。 */
 const activeLocalCliChildren = new Set<ChildProcess>();
@@ -125,16 +133,14 @@ function transcribeLocalCli(ctx: TranscribeContext): Promise<string> {
       if (stderrBuf.trim()) {
         logMessage(`generate subtitle stderr: ${stderrBuf}`, 'warning');
       }
-      logMessage(`generate subtitle done!`, 'info');
-
-      const md5BaseName = path.basename(tempAudioFile, '.wav');
-      const tempSrtFile = path.join(directory, `${md5BaseName}.srt`);
-      if (fs.existsSync(tempSrtFile)) {
-        fs.renameSync(tempSrtFile, srtFile);
+      try {
+        const md5BaseName = path.basename(tempAudioFile, '.wav');
+        const tempSrtFile = path.join(directory, `${md5BaseName}.srt`);
+        if (fs.existsSync(tempSrtFile)) fs.renameSync(tempSrtFile, srtFile);
+        resolve(srtFile);
+      } catch (error) {
+        reject(error);
       }
-
-      event.sender.send('taskFileChange', { ...file, extractSubtitle: 'done' });
-      resolve(srtFile);
     });
   });
 }
@@ -156,7 +162,34 @@ export const localCliEngineAdapter: TranscriptionEngineAdapter = {
   },
 
   async transcribe(ctx: TranscribeContext): Promise<string> {
-    return transcribeLocalCli(ctx);
+    const output = await transcribeLocalCli(ctx);
+    const signal = ctx.signal ?? getTaskContext()?.signal;
+    if (signal?.aborted) throw new TaskCancelledError();
+    const cues = parseSubtitleCues(
+      await fs.promises.readFile(output, 'utf-8'),
+      'srt',
+    ).map(
+      (cue): TokenTriple => [
+        formatTime(cue.startMs / 1000),
+        formatTime(cue.endMs / 1000),
+        cue.text,
+      ],
+    );
+    const split = resplitSubtitleCues(
+      cues,
+      ctx.formData as Record<string, unknown>,
+    );
+    if (split !== cues)
+      await atomicReplaceTextFile(output, formatSrtContent(split), {
+        signal,
+      });
+    if (signal?.aborted) throw new TaskCancelledError();
+    ctx.event.sender.send('taskFileChange', {
+      ...ctx.file,
+      extractSubtitle: 'done',
+    });
+    logMessage('generate subtitle done (local CLI)', 'info');
+    return output;
   },
 
   cancelActive(): void {

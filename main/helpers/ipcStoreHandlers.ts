@@ -36,6 +36,7 @@ import {
 import { sanitizeCustomLanguages } from '../../types/language';
 import { sanitizeSelectedCudaDevice } from '../../types/gpuDevice';
 import { applyCudaDeviceSelection } from './cudaDeviceSelection';
+import { getProviderHealth, recordProviderHealth } from './providerHealth';
 
 console.log(app.getVersion(), 'version');
 
@@ -103,6 +104,21 @@ export function setupStoreHandlers() {
     return getAndInitializeProviders();
   });
 
+  ipcMain.handle('getProviderHealth', async () => {
+    const translations = await getAndInitializeProviders();
+    return [
+      ...translations.map((provider) =>
+        getProviderHealth('translation', provider),
+      ),
+      ...getAsrProviders().map((provider) =>
+        getProviderHealth('asr', provider),
+      ),
+      ...getTtsProviders().map((provider) =>
+        getProviderHealth('tts', provider),
+      ),
+    ].filter(Boolean);
+  });
+
   // 云端听写（在线 ASR）服务商实例：多实例、含凭据，无自动初始化（缺省空列表）。
   ipcMain.on('setAsrProviders', async (event, providers) => {
     setAsrProviders(providers);
@@ -114,7 +130,14 @@ export function setupStoreHandlers() {
 
   // 云 ASR 实例连通性自测：跑在主进程规避渲染进程 CORS（对齐 testTranslation）。
   ipcMain.handle('testAsrProvider', async (_event, provider) => {
-    return testAsrConnection(provider);
+    try {
+      const result = await testAsrConnection(provider);
+      recordProviderHealth('asr', provider, result.ok);
+      return result;
+    } catch (error) {
+      recordProviderHealth('asr', provider, false);
+      throw error;
+    }
   });
 
   // 云端配音（TTS）服务商实例：语义对齐 asrProviders。
@@ -128,7 +151,14 @@ export function setupStoreHandlers() {
 
   // 云 TTS 实例连通性自测：真实合成一句短文本（无零成本探针）。
   ipcMain.handle('testTtsProvider', async (_event, provider) => {
-    return testTtsConnection(provider);
+    try {
+      const result = await testTtsConnection(provider);
+      recordProviderHealth('tts', provider, result.ok);
+      return result;
+    } catch (error) {
+      recordProviderHealth('tts', provider, false);
+      throw error;
+    }
   });
 
   // 在线拉取音色清单（voiceListMode 类型：ElevenLabs 账号音色 / Azure 区域全量）。

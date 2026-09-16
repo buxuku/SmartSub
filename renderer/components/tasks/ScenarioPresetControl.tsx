@@ -9,6 +9,7 @@ import {
   Mic,
   GraduationCap,
   Film,
+  Clapperboard,
   Sliders,
   Settings2,
   Check,
@@ -26,12 +27,14 @@ import {
 interface ScenarioPresetControlProps {
   form: any;
   formData: any;
+  onOpenAdvanced?: () => void;
 }
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Mic,
   GraduationCap,
   Film,
+  Clapperboard,
   Sliders,
   Settings2,
 };
@@ -39,6 +42,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
 export default function ScenarioPresetControl({
   form,
   formData,
+  onOpenAdvanced,
 }: ScenarioPresetControlProps) {
   const { t } = useTranslation('tasks');
   const [open, setOpen] = useState(false);
@@ -89,6 +93,7 @@ export default function ScenarioPresetControl({
               onClick={() => {
                 applyScenarioPreset(form, preset.id);
                 setOpen(false);
+                if (preset.id === 'custom') onOpenAdvanced?.();
               }}
               className={cn(
                 'flex w-full items-start gap-2.5 rounded-md p-2 text-left transition-colors',

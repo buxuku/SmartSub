@@ -144,7 +144,7 @@ describe('DynamicParameterInput', () => {
       const onChange = jest.fn();
       const definition: ParameterDefinition = {
         key: 'numberParam',
-        type: 'number',
+        type: 'float',
         category: 'performance',
         required: false,
         description: 'Test parameter',
@@ -157,6 +157,7 @@ describe('DynamicParameterInput', () => {
           parameterKey="numberParam"
           definition={definition}
           onChange={onChange}
+          value={42}
         />,
       );
 
@@ -188,7 +189,10 @@ describe('DynamicParameterInput', () => {
       );
 
       expect(screen.getByText('Type: boolean')).toBeInTheDocument();
-      expect(screen.getByText('Enabled')).toBeInTheDocument();
+      expect(screen.getByRole('switch')).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
       expect(screen.getByRole('switch')).toBeChecked();
     });
 
@@ -322,10 +326,10 @@ describe('DynamicParameterInput', () => {
       );
 
       expect(screen.getByText('Type: object')).toBeInTheDocument();
-      expect(screen.getByText('JSON Object Editor')).toBeInTheDocument();
-      expect(
-        screen.getByDisplayValue(JSON.stringify({ key: 'value' }, null, 2)),
-      ).toBeInTheDocument();
+      expect(screen.getByRole('textbox').tagName).toBe('TEXTAREA');
+      expect(screen.getByRole('textbox')).toHaveValue(
+        JSON.stringify({ key: 'value' }, null, 2),
+      );
     });
 
     it('handles valid JSON input for objects', async () => {
@@ -430,9 +434,12 @@ describe('DynamicParameterInput', () => {
       expect(screen.getByText('*')).toBeInTheDocument();
     });
 
-    it('shows valid state when no errors', () => {
+    it('shows valid state only after interaction and with no errors', () => {
       render(<DynamicParameterInput {...defaultProps} value="valid value" />);
-
+      expect(screen.queryByText('Valid')).not.toBeInTheDocument();
+      fireEvent.change(screen.getByRole('textbox'), {
+        target: { value: 'edited value' },
+      });
       expect(screen.getByText('Valid')).toBeInTheDocument();
       expect(screen.getByTestId('check-icon')).toBeInTheDocument();
     });

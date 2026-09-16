@@ -7,6 +7,7 @@
  */
 
 import fs from 'fs';
+import { reserveToolboxOutput } from './outputPath';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
@@ -116,11 +117,15 @@ export function executeAudioExtract(
     const ext = path.extname(videoPath);
     const baseName = path.basename(videoPath, ext);
 
-    const targetOutput =
-      outputPath || path.join(dir, `${baseName}.${format}`);
+    const targetOutput = reserveToolboxOutput(
+      outputPath || path.join(dir, `${baseName}.${format}`),
+    );
     const args = buildAudioExtractArgs(config, targetOutput);
 
-    logMessage(`执行音频提取 [${jobId}]: ${ffmpegPath} ${args.join(' ')}`, 'info');
+    logMessage(
+      `执行音频提取 [${jobId}]: ${ffmpegPath} ${args.join(' ')}`,
+      'info',
+    );
 
     const proc = spawn(ffmpegPath, args);
     activeExtractProcesses.set(jobId, proc);
@@ -133,7 +138,9 @@ export function executeAudioExtract(
       stderr += chunk;
 
       if (!totalDuration) {
-        const durMatch = /Duration:\s*(\d{2,}:\d{2}:\d{2}(?:\.\d+)?)/.exec(stderr);
+        const durMatch = /Duration:\s*(\d{2,}:\d{2}:\d{2}(?:\.\d+)?)/.exec(
+          stderr,
+        );
         if (durMatch) {
           totalDuration = parseTimemark(durMatch[1]);
         }
@@ -184,6 +191,9 @@ export function executeAudioExtract(
 
     proc.on('error', (err) => {
       activeExtractProcesses.delete(jobId);
+      try {
+        fs.unlinkSync(targetOutput);
+      } catch {}
       reject(err);
     });
   });

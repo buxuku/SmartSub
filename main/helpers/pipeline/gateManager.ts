@@ -4,7 +4,7 @@
 
 import { BrowserWindow, Notification } from 'electron';
 import { logMessage, store } from '../storeManager';
-import { getWorkItemById, saveWorkItem } from '../workItemStore';
+import { getWorkItemById } from '../workItemStore';
 import { enqueueProjectFiles } from '../taskProcessor';
 import {
   GATE_FIELD,
@@ -108,12 +108,11 @@ export function releaseGate(
   const updatedFiles = (item.pipelineFiles as IFiles[]).map((file) =>
     targetUuids.has(file.uuid) ? { ...file, [field]: 'passed' as const } : file,
   );
-  saveWorkItem({ ...item, pipelineFiles: updatedFiles });
-
   const releasedFiles = updatedFiles.filter((file) =>
     targetUuids.has(file.uuid),
   );
   const dispatched = enqueueProjectFiles(projectId, releasedFiles, snapshot);
+  if (!dispatched) return { error: 'TASK_GATE_SUBMISSION_FAILED' };
   logMessage(
     `gate released: ${gate} × ${releasedFiles.length} file(s) in ${projectId} (dispatched=${dispatched})`,
     'info',

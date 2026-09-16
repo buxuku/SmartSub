@@ -39,7 +39,7 @@ export function setupWorkItemHandlers(): void {
   ipcMain.handle('getWorkItem', (_event, id: string) => getWorkItemById(id));
 
   ipcMain.handle('saveWorkItem', (_event, item: WorkItem) =>
-    saveWorkItem(item),
+    saveWorkItem(item, { durable: true }),
   );
 
   ipcMain.handle('deleteWorkItem', (_event, id: string) => {

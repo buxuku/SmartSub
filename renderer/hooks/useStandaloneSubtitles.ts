@@ -3,13 +3,26 @@
  * 不依赖 IFiles，直接接收文件路径
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useLayoutEffect,
+} from 'react';
 import path from 'path';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
 import { Subtitle, SubtitleStats, PlayerSubtitleTrack } from './useSubtitles';
 import { useSubtitleHistory, computeRangeDiff } from './useSubtitleHistory';
 import { mergeSpeakerIds } from '../../types/speakerDiarization';
+import {
+  proofreadDraftKey,
+  readProofreadDraft,
+  writeProofreadDraft,
+  clearProofreadDraft,
+  type ProofreadDraft,
+} from '../lib/proofreadDraft';
 import {
   normalizeMissedSpeechWarnings,
   type MissedSpeechWarning,
@@ -114,7 +127,55 @@ export const useStandaloneSubtitles = (
   } | null>(null);
 
   // 自上次保存以来是否有未保存修改
-  const [isDirty, setIsDirty] = useState(false);
+  const [isDirty, setDirtyState] = useState(false);
+  const dirtyRef = useRef(false);
+  const setIsDirty = useCallback((dirty: boolean) => {
+    dirtyRef.current = dirty;
+    setDirtyState(dirty);
+  }, []);
+  const getIsDirty = useCallback(() => dirtyRef.current, []);
+  const [saveStatus, setSaveStatus] = useState<
+    'idle' | 'saving' | 'saved' | 'save_error'
+  >('idle');
+  const [saveError, setSaveError] = useState('');
+  const [recoveryDraft, setRecoveryDraft] = useState<ProofreadDraft | null>(
+    null,
+  );
+  const [draftStorageFailed, setDraftStorageFailed] = useState(false);
+  const savingRef = useRef<Promise<boolean> | null>(null);
+  const embedSpeakerNamesRef = useRef(embedSpeakerNames);
+  embedSpeakerNamesRef.current = embedSpeakerNames;
+  const draftKey = proofreadDraftKey(config);
+
+  useEffect(() => {
+    if (saveStatus !== 'saved') return;
+    const timer = setTimeout(() => setSaveStatus('idle'), 3000);
+    return () => clearTimeout(timer);
+  }, [saveStatus]);
+
+  const useDraftEffect =
+    typeof window === 'undefined' ? useEffect : useLayoutEffect;
+  useDraftEffect(() => {
+    if (!isDirty || isLoading || recoveryDraft) return;
+    setDraftStorageFailed(
+      !writeProofreadDraft(draftKey, {
+        subtitles: mergedSubtitles,
+        speakers,
+        embedSpeakerNames,
+        savedAt: Date.now(),
+      }),
+    );
+    if (saveStatus === 'saved') setSaveStatus('idle');
+  }, [
+    draftKey,
+    isDirty,
+    isLoading,
+    recoveryDraft,
+    mergedSubtitles,
+    speakers,
+    embedSpeakerNames,
+    saveStatus,
+  ]);
 
   // 光标位置（用于拆分功能）
   const cursorPositionRef = useRef(0);
@@ -319,6 +380,9 @@ export const useStandaloneSubtitles = (
       history.reset();
       pendingEditRef.current = null;
       setIsDirty(false);
+      setSaveStatus('idle');
+      setSaveError('');
+      setRecoveryDraft(readProofreadDraft(draftKey));
     } catch (error) {
       console.error('Error loading files:', error);
       toast.error(t('loadFileFailed'));
@@ -332,7 +396,24 @@ export const useStandaloneSubtitles = (
     applySubtitles,
     applySpeakers,
     history.reset,
+    draftKey,
   ]);
+
+  const restoreDraft = useCallback(() => {
+    if (!recoveryDraft) return;
+    applySubtitles(recoveryDraft.subtitles);
+    applySpeakers(recoveryDraft.speakers);
+    setEmbedSpeakerNames(recoveryDraft.embedSpeakerNames);
+    history.reset();
+    pendingEditRef.current = null;
+    setIsDirty(true);
+    setRecoveryDraft(null);
+  }, [recoveryDraft, applySubtitles, applySpeakers, history.reset]);
+
+  const discardDraft = useCallback(() => {
+    clearProofreadDraft(draftKey);
+    setRecoveryDraft(null);
+  }, [draftKey]);
 
   // 加载文件
   useEffect(() => {
@@ -422,10 +503,35 @@ export const useStandaloneSubtitles = (
   );
 
   // 保存字幕文件；返回是否全部写入成功
-  const handleSave = useCallback(async (): Promise<boolean> => {
+  const saveSnapshot = useCallback(async (): Promise<boolean> => {
     // 先把未提交的逐字编辑补入撤销历史，保证保存后仍可撤销
     flushPendingEdit();
+    const subtitles = subtitlesRef.current;
+    const savedSpeakers = speakersRef.current;
+    const savedEmbedNames = embedSpeakerNamesRef.current;
+    setSaveStatus('saving');
+    setSaveError('');
+    const assertSaved = (
+      result: { success?: boolean; error?: string } | undefined,
+    ) => {
+      if (result?.success !== true)
+        throw new Error(result?.error || t('saveFailed'));
+    };
+    const finishSave = () => {
+      const unchanged =
+        subtitlesRef.current === subtitles &&
+        speakersRef.current === savedSpeakers &&
+        embedSpeakerNamesRef.current === savedEmbedNames;
+      setIsDirty(!unchanged);
+      setSaveStatus(unchanged ? 'saved' : 'idle');
+      if (unchanged) clearProofreadDraft(draftKey);
+      toast.success(t('subtitleSavedSuccess'));
+      // Navigation must wait until the current revision, including edits during IPC, is saved.
+      return unchanged;
+    };
     try {
+      if (isLoading || recoveryDraft || !config.sourceSubtitlePath)
+        throw new Error(t('saveFailed'));
       if (config.proofreadDataFile) {
         const outputs: { filePath?: string; contentType?: string }[] = [];
         const finalTargetPath = config.finalTargetSubtitlePath;
@@ -457,31 +563,24 @@ export const useStandaloneSubtitles = (
 
         const result = await window.ipc.invoke('saveProofreadDataAndRender', {
           proofreadDataFile: config.proofreadDataFile,
-          subtitles: mergedSubtitles,
-          speakers: speakersRef.current,
-          embedSpeakerNames,
+          subtitles,
+          speakers: savedSpeakers,
+          embedSpeakerNames: savedEmbedNames,
           outputs: outputs.filter((output) => output.filePath),
         });
 
-        if (result?.error) {
-          console.error('Error saving proofread data:', result.error);
-          toast.error(t('saveFailed'));
-          return false;
-        }
-
-        setIsDirty(false);
-        toast.success(t('subtitleSavedSuccess'));
-        return true;
+        assertSaved(result);
+        return finishSave();
       }
 
-      const results: { error?: string }[] = [];
+      const results: { success?: boolean; error?: string }[] = [];
 
       // 保存源字幕
       if (config.sourceSubtitlePath) {
         results.push(
           await window.ipc.invoke('saveSubtitleFile', {
             filePath: config.sourceSubtitlePath,
-            subtitles: mergedSubtitles,
+            subtitles,
             contentType: 'source',
           }),
         );
@@ -492,7 +591,7 @@ export const useStandaloneSubtitles = (
         results.push(
           await window.ipc.invoke('saveSubtitleFile', {
             filePath: config.targetSubtitlePath,
-            subtitles: mergedSubtitles,
+            subtitles,
             contentType: 'onlyTranslate',
           }),
         );
@@ -504,24 +603,18 @@ export const useStandaloneSubtitles = (
         results.push(
           await window.ipc.invoke('saveSubtitleFile', {
             filePath: config.finalTargetSubtitlePath,
-            subtitles: mergedSubtitles,
+            subtitles,
             contentType,
           }),
         );
       }
 
-      const failed = results.find((result) => result && result.error);
-      if (failed) {
-        console.error('Error saving subtitles:', failed.error);
-        toast.error(t('saveFailed'));
-        return false;
-      }
-
-      setIsDirty(false);
-      toast.success(t('subtitleSavedSuccess'));
-      return true;
+      results.forEach(assertSaved);
+      return finishSave();
     } catch (error) {
       console.error('Error saving subtitles:', error);
+      setSaveStatus('save_error');
+      setSaveError(error instanceof Error ? error.message : String(error));
       toast.error(t('saveFailed'));
       return false;
     }
@@ -529,10 +622,20 @@ export const useStandaloneSubtitles = (
     flushPendingEdit,
     config,
     shouldShowTranslation,
-    mergedSubtitles,
-    embedSpeakerNames,
+    draftKey,
+    isLoading,
+    recoveryDraft,
     t,
   ]);
+
+  const handleSave = useCallback((): Promise<boolean> => {
+    if (savingRef.current) return savingRef.current;
+    const saving = saveSnapshot().finally(() => {
+      savingRef.current = null;
+    });
+    savingRef.current = saving;
+    return saving;
+  }, [saveSnapshot]);
 
   // 字幕统计
   const getSubtitleStats = (): SubtitleStats => {
@@ -1025,6 +1128,13 @@ export const useStandaloneSubtitles = (
     handleSubtitleChange,
     handleSave,
     isDirty,
+    saveStatus,
+    getIsDirty,
+    saveError,
+    recoveryDraft,
+    draftStorageFailed,
+    restoreDraft,
+    discardDraft,
     flushPendingEdit,
     getSubtitleStats,
     isTranslationFailed,

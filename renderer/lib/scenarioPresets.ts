@@ -3,6 +3,10 @@ import type {
   ScenarioPresetDef,
   ScenarioPresetFields,
 } from '../../types/scenarioPresets';
+import {
+  resolveEffectiveSettings,
+  TASK_VAD_FIELDS,
+} from '../../types/subtitleOutcome';
 
 export type { ScenarioPresetId, ScenarioPresetDef, ScenarioPresetFields };
 
@@ -13,7 +17,21 @@ export const ALL_PRESET_FIELD_KEYS: (keyof ScenarioPresetFields)[] = [
   'fasterWhisperCompressionRatioThreshold',
   'fasterWhisperLogProbThreshold',
   'useVAD',
-  'vadThreshold',
+  ...TASK_VAD_FIELDS,
+  'maxContext',
+  'reduceRepetition',
+  'maxSubtitleChars',
+  'subtitleMaxDuration',
+  'subtitleMaxGap',
+  'preserveSpeechPauses',
+  'speakerDiarization',
+  'speakerDiarizationCount',
+  'speakerDiarizationEmbedInSubtitle',
+  'aiCorrection',
+  'subtitleFillerPolicy',
+  'subtitleTranslationStyle',
+  'subtitleLayout',
+  'subtitleLineWidth',
 ];
 
 export const SCENARIO_PRESETS: ScenarioPresetDef[] = [
@@ -28,6 +46,13 @@ export const SCENARIO_PRESETS: ScenarioPresetDef[] = [
       fasterWhisperTemperature: 0,
       useVAD: true,
       vadThreshold: 0.35,
+      maxSubtitleChars: 28,
+      subtitleMaxDuration: 3,
+      subtitleMaxGap: 0.25,
+      preserveSpeechPauses: true,
+      speakerDiarization: true,
+      speakerDiarizationCount: 0,
+      speakerDiarizationEmbedInSubtitle: false,
     },
   },
   {
@@ -36,7 +61,10 @@ export const SCENARIO_PRESETS: ScenarioPresetDef[] = [
     descKey: 'presets.lecture.desc',
     iconName: 'GraduationCap',
     fields: {
-      subtitleOutcome: 'accurate',
+      subtitleOutcome: 'clean',
+      useVAD: true,
+      aiCorrection: true,
+      subtitleFillerPolicy: 'remove-hesitations',
       fasterWhisperBeamSize: 5,
       fasterWhisperTemperature: 0,
       fasterWhisperCompressionRatioThreshold: 2.2,
@@ -52,6 +80,29 @@ export const SCENARIO_PRESETS: ScenarioPresetDef[] = [
       subtitleOutcome: 'balanced',
       fasterWhisperBeamSize: 3,
       fasterWhisperTemperature: 0.2,
+      subtitleFillerPolicy: 'preserve',
+      subtitleTranslationStyle: 'conversational',
+      subtitleLayout: 'two-line',
+      subtitleLineWidth: 42,
+    },
+  },
+  {
+    id: 'shortDrama',
+    nameKey: 'presets.shortDrama.name',
+    descKey: 'presets.shortDrama.desc',
+    iconName: 'Clapperboard',
+    fields: {
+      subtitleOutcome: 'balanced',
+      fasterWhisperBeamSize: 3,
+      fasterWhisperTemperature: 0.2,
+      maxSubtitleChars: 32,
+      subtitleMaxDuration: 3,
+      subtitleMaxGap: 0.3,
+      preserveSpeechPauses: true,
+      subtitleFillerPolicy: 'preserve',
+      subtitleTranslationStyle: 'conversational',
+      subtitleLayout: 'two-line',
+      subtitleLineWidth: 32,
     },
   },
   {
@@ -82,6 +133,7 @@ export function applyScenarioPreset(
   form: {
     setValue: (key: string, value: any, options?: any) => void;
     resetField?: (key: string, options?: any) => void;
+    getValues?: () => Record<string, unknown>;
   },
   presetId: ScenarioPresetId,
 ): void {
@@ -91,6 +143,11 @@ export function applyScenarioPreset(
   form.setValue('scenarioPreset', presetId, { shouldDirty: true });
 
   if (presetId === 'custom') {
+    const values = form.getValues?.();
+    // Legacy/custom tasks still inherit global knobs. Do not freeze invented
+    // defaults before the advanced sheet has loaded those settings.
+    if (values?.subtitleOutcome && values.subtitleOutcome !== 'custom')
+      convertToCustomOutcome(form, values);
     return;
   }
 
@@ -106,6 +163,25 @@ export function applyScenarioPreset(
       form.setValue(key as string, undefined, { shouldDirty: true });
     }
   });
+}
+
+export function convertToCustomOutcome(
+  form: { setValue: (key: string, value: any, options?: any) => void },
+  values: Record<string, unknown>,
+  settings?: Record<string, unknown>,
+): void {
+  const effective = resolveEffectiveSettings(values, settings);
+  for (const key of [
+    'maxContext',
+    'useVAD',
+    'reduceRepetition',
+    ...TASK_VAD_FIELDS,
+  ]) {
+    if (effective[key] !== undefined)
+      form.setValue(key, effective[key], { shouldDirty: true });
+  }
+  form.setValue('subtitleOutcome', 'custom', { shouldDirty: true });
+  form.setValue('scenarioPreset', 'custom', { shouldDirty: true });
 }
 
 export function detectCurrentPreset(

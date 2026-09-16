@@ -54,7 +54,8 @@ import {
   isEngineModelSelected,
   pickDefaultEngineModel,
 } from 'lib/engineModels';
-import { canStartParakeetTask } from 'lib/parakeetTask';
+import { useTaskSubmission } from 'hooks/useTaskSubmission';
+import { buildTaskSnapshotFromConfig } from 'hooks/useUnifiedTaskConfig';
 import type { TranscriptionEngine } from '../../../../types/engine';
 import type { AsrProvider } from '../../../../types/asrProvider';
 import useSystemInfo from 'hooks/useStystemInfo';
@@ -62,6 +63,12 @@ import useUnifiedTaskConfig from 'hooks/useUnifiedTaskConfig';
 import useIpcCommunication from 'hooks/useIpcCommunication';
 import { useConfirmOrUndo } from 'hooks/useConfirmOrUndo';
 import { useHotkeys } from 'hooks/useHotkeys';
+import {
+  useTaskProjectPersistence,
+  taskProjectSaveKey,
+  type TaskProjectSave,
+} from 'hooks/useTaskProjectPersistence';
+import { useNavigationGuard } from '@/context/NavigationGuardContext';
 import TaskControls from '@/components/TaskControls';
 import InlineConfigBar from '@/components/tasks/InlineConfigBar';
 import SnapshotConfigBar from '@/components/tasks/SnapshotConfigBar';
@@ -79,6 +86,7 @@ import {
 import { getI18nProperties } from '../../../lib/get-static';
 import { IFiles } from '../../../../types';
 import { isPinnedTaskConfigSnapshot } from '../../../../types/taskSnapshot';
+import { omitTaskManuscript } from '../../../../types/taskConfig';
 import { getProofreadSourcePath } from '../../../../types/subtitleOutput';
 import { useTranslation } from 'next-i18next';
 import { toast } from 'sonner';
@@ -117,14 +125,13 @@ export default function TaskPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const { systemInfo, loaded: systemInfoLoaded } = useSystemInfo();
-  const isExistingProject = Boolean(router.query.project);
   const {
     form,
     formData,
     loaded: configLoaded,
     hydrateSnapshot,
   } = useUnifiedTaskConfig({
-    persistToGlobal: !isExistingProject && !configSnapshot,
+    persistToGlobal: false,
   });
   /** 列表/横幅的有效配置：固定任务用快照，否则使用当前表单。 */
   const listFormData = configSnapshot ?? formData;
@@ -132,6 +139,79 @@ export default function TaskPage() {
   const loadedFilesRef = useRef<any[] | null>(null);
   const projectIdRef = useRef<string | null>(null);
   const [manuscriptPool, setManuscriptPool] = useState<IFiles[]>([]);
+  const routeKey = `${slug}:${typeof router.query.project === 'string' ? router.query.project : ''}`;
+  const [hydratedRoute, setHydratedRoute] = useState<string | null>(null);
+  const [projectLoadError, setProjectLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const loadedSlugRef = useRef('');
+  const baselineRef = useRef('');
+  const editedProjectsRef = useRef(new Set<string>());
+  const projectReady = Boolean(
+    projectId && hydratedRoute === routeKey && configLoaded,
+  );
+  const projectPayload: TaskProjectSave | null =
+    projectReady && typeDef
+      ? {
+          id: projectId!,
+          taskType: typeDef.taskType,
+          files,
+          ...(configSnapshot
+            ? {}
+            : {
+                taskDraft: {
+                  config: buildTaskSnapshotFromConfig(formData, {
+                    taskType: typeDef.taskType,
+                  }),
+                  manuscripts: manuscriptPool,
+                },
+              }),
+          preserveTaskProgress: true,
+        }
+      : null;
+  if (
+    projectPayload &&
+    taskProjectSaveKey(projectPayload) !== baselineRef.current
+  )
+    editedProjectsRef.current.add(projectPayload.id);
+  const persistence = useTaskProjectPersistence(
+    projectPayload && editedProjectsRef.current.has(projectPayload.id)
+      ? projectPayload
+      : null,
+    (saved) => {
+      setProjectName(saved.name || null);
+    },
+  );
+  useNavigationGuard('task-project-save', {
+    isDirty: persistence.isDirty,
+    getIsDirty: persistence.getIsDirty,
+    onSave: persistence.save,
+    onDiscard: persistence.discard,
+  });
+  useEffect(() => {
+    if (
+      !projectReady ||
+      !projectName ||
+      persistence.isDirty ||
+      router.query.project === projectId
+    )
+      return;
+    void router
+      .replace(
+        {
+          pathname: router.pathname,
+          query: { ...router.query, project: projectId },
+        },
+        undefined,
+        { shallow: true },
+      )
+      .catch(() => {});
+  }, [
+    projectReady,
+    projectName,
+    persistence.isDirty,
+    router.query.project,
+    projectId,
+  ]);
 
   const handleIncomingMediaAndManuscripts = useCallback(
     (incomingMedia: IFiles[], incomingManuscripts: IFiles[]) => {
@@ -301,7 +381,11 @@ export default function TaskPage() {
     [files, typeDef?.needsModel, handleIncomingMediaAndManuscripts, t],
   );
 
-  const { hydrateFiles } = useIpcCommunication(setFiles, appendFiles);
+  const { hydrateFiles } = useIpcCommunication(
+    setFiles,
+    appendFiles,
+    typeof router.query.project === 'string' ? router.query.project : projectId,
+  );
 
   useEffect(() => {
     const load = async () => {
@@ -357,14 +441,19 @@ export default function TaskPage() {
     if (!router.isReady || !typeDef) return;
     const q =
       typeof router.query.project === 'string' ? router.query.project : '';
-    if (q && q === projectIdRef.current) return; // 首次保存后 URL 回填触发，无需重载
+    if (q && q === projectIdRef.current && slug === loadedSlugRef.current) {
+      setHydratedRoute(routeKey);
+      return;
+    }
 
     let cancelled = false;
+    setProjectLoadError(null);
     (async () => {
       let nextFiles: any[] = [];
       let name: string | null = null;
       let snapshot: any = null;
       let rawSnap: any = null;
+      let savedManuscripts: IFiles[] | undefined;
       const id = q || uuidv4();
       if (q) {
         const project = await window?.ipc?.invoke('getTaskProject', q);
@@ -373,21 +462,27 @@ export default function TaskPage() {
           name = project.name || null;
         }
         // 附加阶段、参考文稿及角色分离是任务级输入：创建后固定快照。
-        try {
-          const workItem = await window?.ipc?.invoke('getWorkItem', q);
-          rawSnap = workItem?.configSnapshot;
-          if (isPinnedTaskConfigSnapshot(rawSnap)) snapshot = rawSnap;
-        } catch {
-          /* ignore */
+        const workItem = await window?.ipc?.invoke('getWorkItem', q);
+        if (!workItem) throw new Error('TASK_PROJECT_NOT_FOUND');
+        rawSnap = workItem.configSnapshot;
+        if (isPinnedTaskConfigSnapshot(rawSnap)) snapshot = rawSnap;
+        if (!snapshot && workItem.taskDraft) {
+          rawSnap = workItem.taskDraft.config;
+          savedManuscripts = workItem.taskDraft.manuscripts;
         }
       }
+      if (!rawSnap)
+        rawSnap = omitTaskManuscript(
+          (await window.ipc.invoke('getUserConfig')) || {},
+        );
       if (cancelled) return;
       projectIdRef.current = id;
+      loadedSlugRef.current = slug;
       // 经 hydrateFiles 合并装载窗口内暂存的任务事件（向导起跑后立刻跳转时，
       // 秒级阶段事件先于文件加载到达），并以实际写入的数组标记「来自加载」。
       loadedFilesRef.current = hydrateFiles(nextFiles);
-      if (nextFiles && nextFiles.length > 0) {
-        const pool: IFiles[] = [];
+      const pool: IFiles[] = savedManuscripts || [];
+      if (!savedManuscripts && nextFiles && nextFiles.length > 0) {
         const seen = new Set<string>();
         for (const f of nextFiles) {
           if (
@@ -411,23 +506,41 @@ export default function TaskPage() {
             } as unknown as IFiles);
           }
         }
-        setManuscriptPool(pool);
-      } else {
-        setManuscriptPool([]);
       }
+      setManuscriptPool(pool);
       setProjectName(name);
       setEditingName(false);
       setProjectId(id);
-      if (rawSnap && !isPinnedTaskConfigSnapshot(rawSnap)) {
-        hydrateSnapshot(rawSnap);
-      }
+      const hydratedConfig = buildTaskSnapshotFromConfig(rawSnap, {
+        taskType: typeDef.taskType,
+      });
+      hydrateSnapshot(hydratedConfig);
       setConfigSnapshot(snapshot);
+      baselineRef.current = taskProjectSaveKey({
+        id,
+        taskType: typeDef.taskType,
+        files: loadedFilesRef.current,
+        ...(snapshot
+          ? {}
+          : { taskDraft: { config: hydratedConfig, manuscripts: pool } }),
+        preserveTaskProgress: true,
+      });
+      setHydratedRoute(routeKey);
       setBannerDismissed(false);
-    })();
+    })().catch((error) => {
+      if (!cancelled) setProjectLoadError(String(error));
+    });
     return () => {
       cancelled = true;
     };
-  }, [router.isReady, router.query.project, slug, typeDef, hydrateFiles]);
+  }, [
+    router.isReady,
+    router.query.project,
+    slug,
+    typeDef,
+    hydrateFiles,
+    loadAttempt,
+  ]);
 
   // ?autostart=1 一次性消费进 state 并从 URL 剥离:避免刷新/回退重新触发自动开始
   const [autoStartPending, setAutoStartPending] = useState(false);
@@ -443,33 +556,9 @@ export default function TaskPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router.isReady, router.query.autostart]);
 
-  // files 变更持久化到任务工程（清空即删除工程）
-  useEffect(() => {
-    if (!projectId || !typeDef) return;
-    if (loadedFilesRef.current === files) return;
-    (async () => {
-      const saved = await window?.ipc?.invoke('saveTaskProject', {
-        id: projectId,
-        taskType: typeDef.taskType,
-        files,
-      });
-      setProjectName(saved?.name || null);
-      if (saved && router.query.project !== projectId) {
-        router.replace(
-          {
-            pathname: router.pathname,
-            query: { ...router.query, project: projectId },
-          },
-          undefined,
-          { shallow: true },
-        );
-      }
-    })();
-  }, [files, projectId]);
-
   // 进入任务页 = 选择任务类型：同步到持久化配置
   useEffect(() => {
-    if (!typeDef) return;
+    if (!typeDef || !projectReady || configSnapshot) return;
     if (
       formData &&
       Object.keys(formData).length > 0 &&
@@ -477,7 +566,7 @@ export default function TaskPage() {
     ) {
       form.setValue('taskType', typeDef.taskType);
     }
-  }, [typeDef, formData, form]);
+  }, [typeDef, formData, form, projectReady, configSnapshot]);
 
   // 记录最后访问的标准字幕模式，以便左侧导航栏智能联动
   useEffect(() => {
@@ -501,7 +590,13 @@ export default function TaskPage() {
 
   // 带翻译的任务类型不存在「不翻译」：清理历史残留 '-1' 或已被删除的服务商 id
   useEffect(() => {
-    if (!typeDef?.hasTranslate || !providers.length) return;
+    if (
+      !projectReady ||
+      configSnapshot ||
+      !typeDef?.hasTranslate ||
+      !providers.length
+    )
+      return;
     if (!formData || Object.keys(formData).length === 0) return; // 配置未加载完
     const current = formData?.translateProvider;
     const valid = providers.some((p: any) => p.id === current);
@@ -511,13 +606,20 @@ export default function TaskPage() {
       current,
     );
     form.setValue('translateProvider', defaultId);
-  }, [typeDef, providers, formData?.translateProvider, form]);
+  }, [
+    typeDef,
+    providers,
+    formData?.translateProvider,
+    form,
+    projectReady,
+    configSnapshot,
+  ]);
 
   // 默认 (引擎,模型)：取"上次使用"（缺省 builtin + 该引擎首个可用模型），并校验当前
   // (引擎,模型) 仍在分组选项中；失配/未选则回填默认值，避免空模型或悬空引擎直接开跑报错。
   // systemInfo / useLocalWhisper / lastUsed 变化时复跑，修正残留旧选择。
   useEffect(() => {
-    if (!typeDef?.needsModel) return;
+    if (!projectReady || configSnapshot || !typeDef?.needsModel) return;
     // 分组数据源（本地模型清单 / 云实例 / lastUsed）未齐前不校正：早跑会把
     // 仍有效的选择（如云实例）误判失配、回填本地默认并随表单持久化，覆盖用户上次选择。
     if (!systemInfoLoaded || !providersLoaded) return;
@@ -560,18 +662,27 @@ export default function TaskPage() {
     formData?.model,
     formData?.asrProviderId,
     form,
+    projectReady,
+    configSnapshot,
   ]);
 
   // 「仅生成字幕」任务的源字幕就是最终交付物，不能用 noSave（任务结束会被清理删除）。
   // 修正默认/历史残留的 noSave 或空值，避免视频目录最终没有字幕文件，且下拉框不再显示为空。
   useEffect(() => {
-    if (typeDef?.taskType !== 'generateOnly') return;
+    if (!projectReady || configSnapshot || typeDef?.taskType !== 'generateOnly')
+      return;
     if (!formData || Object.keys(formData).length === 0) return;
     const opt = formData.sourceSrtSaveOption;
     if (!opt || opt === 'noSave') {
       form.setValue('sourceSrtSaveOption', 'fileName');
     }
-  }, [typeDef, formData?.sourceSrtSaveOption, form]);
+  }, [
+    typeDef,
+    formData?.sourceSrtSaveOption,
+    form,
+    projectReady,
+    configSnapshot,
+  ]);
 
   // 新一轮任务开始时恢复完成横幅
   useEffect(() => {
@@ -593,11 +704,10 @@ export default function TaskPage() {
     window?.ipc?.invoke('setSettings', { taskViewMode: mode });
   }, []);
 
-  const retryingRef = useRef(false);
+  const retrySubmission = useTaskSubmission();
   const handleRetryFiles = useCallback(
     async (retryFiles: any[]) => {
-      if (retryingRef.current) return;
-      retryingRef.current = true;
+      if (retrySubmission.starting) return;
       try {
         if (
           typeDef?.accepts === 'subtitle' &&
@@ -608,32 +718,25 @@ export default function TaskPage() {
           toast.error(t('subtitleFilesRequired'));
           return;
         }
-        if (
-          !(await canStartParakeetTask(
-            retryFiles,
-            !!typeDef?.needsModel,
-            listFormData,
-          ))
-        ) {
-          toast.error(
-            t('parakeet.modelUnavailable', {
-              model: listFormData?.model || 'Parakeet',
-            }),
-          );
+        const snapshot = buildTaskSnapshotFromConfig(listFormData);
+        const outcome = await retrySubmission.submit({
+          projectId,
+          files: retryFiles,
+          typeDef,
+          formData: { ...snapshot, taskType: typeDef.taskType },
+        });
+        if (outcome.status === 'invalid') {
+          toast.error(t(`readiness.${outcome.readiness.errors[0]}`));
           return;
         }
-        // 固定任务重试携带其创建时快照，普通任务仍使用当前表单。
-        window?.ipc?.send('handleTask', {
-          files: retryFiles,
-          formData: listFormData,
-          projectId,
-        });
-        setTaskStatus('running');
-      } finally {
-        retryingRef.current = false;
+        if (outcome.status !== 'accepted') return;
+        const status = await window.ipc.invoke('getTaskStatus', projectId);
+        setTaskStatus(status || 'idle');
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : String(error));
       }
     },
-    [listFormData, projectId, typeDef?.needsModel, typeDef?.accepts, t],
+    [listFormData, projectId, typeDef, retrySubmission, t],
   );
 
   const handleRetry = useCallback(
@@ -659,16 +762,23 @@ export default function TaskPage() {
 
   const handleReleaseGate = useCallback(
     async (gate: 'subtitle' | 'dubbing', fileUuids?: string[]) => {
-      if (!projectId) return;
-      const result = await window?.ipc?.invoke('pipeline:releaseGate', {
-        projectId,
-        gate,
-        fileUuids,
-      });
-      if (result?.success) {
-        if (result.data?.released > 0) setTaskStatus('running');
-      } else {
-        toast.error(result?.error || 'release failed');
+      if (!projectId) return false;
+      try {
+        const result = await window?.ipc?.invoke('pipeline:releaseGate', {
+          projectId,
+          gate,
+          fileUuids,
+        });
+        if (result?.success !== true)
+          throw new Error(result?.error || 'release failed');
+        if (result.data?.released > 0) {
+          const status = await window.ipc.invoke('getTaskStatus', projectId);
+          setTaskStatus(status || 'idle');
+        }
+        return true;
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : String(error));
+        return false;
       }
     },
     [projectId],
@@ -694,7 +804,7 @@ export default function TaskPage() {
 
   const handleReleaseAndNext = useCallback(async () => {
     if (!proofreadFile) return;
-    await handleReleaseGate('subtitle', [proofreadFile.uuid]);
+    if (!(await handleReleaseGate('subtitle', [proofreadFile.uuid]))) return;
     const next = subtitleReviewQueue.find((f) => f.uuid !== proofreadFile.uuid);
     setProofreadFile(next ?? null);
   }, [proofreadFile, subtitleReviewQueue, handleReleaseGate]);
@@ -781,6 +891,7 @@ export default function TaskPage() {
       setIsSwitchingMode(true);
 
       try {
+        if (!(await persistence.save())) return;
         try {
           localStorage.setItem('lastSubtitleTaskType', targetSlug);
           window.dispatchEvent(
@@ -797,7 +908,8 @@ export default function TaskPage() {
             try {
               await window?.ipc?.invoke('deleteTaskProject', projectId);
             } catch {
-              /* ignore */
+              toast.error(t('modeSwitch.saveFailed'));
+              return;
             }
           }
           setFiles([]);
@@ -809,12 +921,19 @@ export default function TaskPage() {
           form.setValue('taskType', targetTypeDef.taskType);
           await router.push(`/${locale}/tasks/${targetSlug}`);
         } else {
-          if (projectId && files.length > 0) {
+          if (projectId) {
             try {
               const saved = await window?.ipc?.invoke('saveTaskProject', {
                 id: projectId,
                 taskType: targetTypeDef.taskType,
                 files,
+                taskDraft: {
+                  config: buildTaskSnapshotFromConfig(form.getValues(), {
+                    taskType: targetTypeDef.taskType,
+                  }),
+                  manuscripts: manuscriptPool,
+                },
+                preserveTaskProgress: true,
               });
               if (!saved) {
                 toast.error(t('modeSwitch.saveFailed'));
@@ -826,11 +945,9 @@ export default function TaskPage() {
               return;
             }
           }
-          form.setValue('taskType', targetTypeDef.taskType);
-          const query =
-            projectId && files.length > 0
-              ? `?project=${encodeURIComponent(projectId)}`
-              : '';
+          const query = projectId
+            ? `?project=${encodeURIComponent(projectId)}`
+            : '';
           await router.push(`/${locale}/tasks/${targetSlug}${query}`);
         }
       } finally {
@@ -838,7 +955,16 @@ export default function TaskPage() {
         setIsSwitchingMode(false);
       }
     },
-    [locale, projectId, files, form, router, t],
+    [
+      locale,
+      projectId,
+      files,
+      form,
+      router,
+      t,
+      persistence.save,
+      manuscriptPool,
+    ],
   );
 
   const handleModeChange = useCallback(
@@ -1020,6 +1146,28 @@ export default function TaskPage() {
   }, [proofreadFile, typeDef, listFormData]);
 
   if (!typeDef) return null;
+  if (!projectReady)
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-4">
+        {projectLoadError ? (
+          <>
+            <p
+              role="alert"
+              className="max-w-full break-words text-sm text-destructive"
+            >
+              {projectLoadError}
+            </p>
+            <Button onClick={() => setLoadAttempt((value) => value + 1)}>
+              {t('projectSave.retryLoad')}
+            </Button>
+          </>
+        ) : (
+          <p role="status" className="text-sm text-muted-foreground">
+            {t('projectSave.loading')}
+          </p>
+        )}
+      </div>
+    );
 
   // 向导任务标题：来自已存配方的任务显示配方名，否则按快照的实际流程
   // （配音/成片）命名，而非固定的字幕段类型
@@ -1074,7 +1222,28 @@ export default function TaskPage() {
 
   return (
     <div className="flex h-full flex-col gap-2.5 p-3 overflow-hidden">
-      <div className="flex items-center justify-between gap-3 flex-shrink-0">
+      {persistence.error && (
+        <div
+          role="alert"
+          className="flex flex-none items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
+          <div className="min-w-0 flex-1">
+            {t('projectSave.failed')}
+            <details className="text-xs">
+              <summary>{t('projectSave.details')}</summary>
+              <p className="break-words">{persistence.error}</p>
+            </details>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void persistence.save()}
+          >
+            {t('projectSave.retry')}
+          </Button>
+        </div>
+      )}
+      <div className="flex flex-col items-stretch justify-between gap-2 flex-shrink-0 xl:flex-row xl:items-center xl:gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
           <TooltipProvider>
             <Tooltip>
@@ -1399,11 +1568,12 @@ export default function TaskPage() {
             {files.length > 0 ? t('taskCount', { count: files.length }) : ''}
           </span>
           <TaskControls
+            ready={projectReady}
+            beforeStart={persistence.save}
             formData={listFormData}
             files={files}
             typeDef={typeDef}
             projectId={projectId}
-            providers={providers}
             onOpenRefine={() => {
               setRefinePopoverOpen(true);
               const el = document.getElementById('ai-refine-control-container');
@@ -1421,6 +1591,7 @@ export default function TaskPage() {
       </div>
 
       <LogPanel className="flex-shrink-0" projectId={projectId} />
+      {retrySubmission.dialog}
 
       <AdvancedSheet
         open={advancedOpen}

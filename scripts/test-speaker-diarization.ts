@@ -162,8 +162,8 @@ equal(
     speakerDiarization: true,
     recipeName: 'pipeline-recipe',
   }),
-  false,
-  'unsupported pipeline contexts do not extract audio for diarization',
+  true,
+  'recipe pipelines extract audio for diarization',
 );
 
 equal(
@@ -217,7 +217,7 @@ equal(
     translateProvider: 'provider-1',
   }),
   { translateProvider: 'provider-1' },
-  'recipe and wizard sanitization removes every diarization setting',
+  'text-only sanitization removes every diarization setting',
 );
 
 equal(
@@ -227,8 +227,21 @@ equal(
     speakerDiarizationEmbedInSubtitle: true,
     dub: { engine: { kind: 'local', modelId: 'vits-zh' } },
   }),
-  { dub: { engine: { kind: 'local', modelId: 'vits-zh' } } },
-  'runtime boundary disables diarization for pipeline tasks',
+  {
+    speakerDiarization: true,
+    speakerDiarizationCount: 2,
+    speakerDiarizationEmbedInSubtitle: true,
+    dub: { engine: { kind: 'local', modelId: 'vits-zh' } },
+  },
+  'runtime preserves diarization for pipeline tasks',
+);
+equal(
+  enforceSpeakerDiarizationTaskBoundary({
+    taskType: 'translateOnly',
+    speakerDiarization: true,
+  }),
+  { taskType: 'translateOnly' },
+  'text-only tasks do not attempt audio analysis',
 );
 
 const generateOnly = {
@@ -282,8 +295,8 @@ equal(
     generateAndTranslate,
     { translateProvider: 'provider-1', speakerDiarization: true },
   ).map((stage) => stage.key),
-  ['translateSubtitle'],
-  'paired subtitle input does not expose the diarization stage',
+  ['extractAudio', 'translateSubtitle', 'speakerDiarization'],
+  'paired media extracts audio and exposes diarization without ASR',
 );
 
 equal(

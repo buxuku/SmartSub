@@ -82,7 +82,14 @@ async function materializeDubSubtitle(
   }
   if (source.type === 'sidecar') {
     const data = await readProofreadDataFile(source.sidecarPath);
-    const cues = cuesFromSidecarTargets(data?.cues ?? []);
+    const cues =
+      source.content === 'source'
+        ? data.cues.map((cue) => ({
+            startMs: cue.startMs,
+            endMs: cue.endMs,
+            text: cue.source.trim(),
+          }))
+        : cuesFromSidecarTargets(data?.cues ?? []);
     if (!cues.length || cues.every((c) => !c.text)) {
       throw new Error('配音文本源为空：校对数据中没有可用译文');
     }

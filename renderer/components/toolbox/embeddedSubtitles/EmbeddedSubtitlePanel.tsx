@@ -1,13 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'next-i18next';
-import {
-  UploadCloud,
-  FileSearch,
-  CheckCircle2,
-  FolderOpen,
-  Loader2,
-  Sparkles,
-} from 'lucide-react';
+import { UploadCloud, FileSearch, Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
@@ -20,8 +13,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { toast } from 'sonner';
 import ToolboxFinishBar from '../common/ToolboxFinishBar';
+import ToolboxQueueList from '../common/ToolboxQueueList';
+import {
+  droppedToolboxPaths,
+  useToolboxQueue,
+} from '../../../hooks/useToolboxQueue';
 import type {
   EmbeddedSubtitleStreamInfo,
   ExtractEmbeddedSubtitleResult,
@@ -30,125 +27,155 @@ import type {
 export default function EmbeddedSubtitlePanel() {
   const { t } = useTranslation('toolbox');
 
-  const [videoPath, setVideoPath] = useState<string | null>(null);
-  const [streams, setStreams] = useState<EmbeddedSubtitleStreamInfo[]>([]);
-  const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
+  const queueState = useToolboxQueue<
+    { filePath: string; selectedIndices?: number[] },
+    ExtractEmbeddedSubtitleResult & { exportKey?: string }
+  >('toolbox:embeddedSubtitleProgress');
+  const { queue, items, running: isExtracting } = queueState;
+  const [selectedId, setSelectedId] = useState<string>();
+  const selected = items.find((item) => item.id === selectedId) || items[0];
+  const videoPath = selected?.filePath;
+  const [scans, setScans] = useState<
+    Record<string, EmbeddedSubtitleStreamInfo[]>
+  >({});
+  const [scanError, setScanError] = useState<string>();
+  const [isScanning, setIsScanning] = useState(false);
+  const streams = videoPath ? scans[videoPath] || [] : [];
+  const selectedIndices =
+    selected?.input.selectedIndices ??
+    streams.filter((stream) => stream.isText).map((stream) => stream.subIndex);
   const [targetFormat, setTargetFormat] = useState<'srt' | 'ass' | 'vtt'>(
     'srt',
   );
-  const [outputDir, setOutputDir] = useState<string>('');
+  const [outputDir, setOutputDir] = useState('');
 
-  const [isScanning, setIsScanning] = useState(false);
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [extractedResult, setExtractedResult] =
-    useState<ExtractEmbeddedSubtitleResult | null>(null);
-
-  const scanVideo = async (filePath: string) => {
-    setVideoPath(filePath);
-    setIsScanning(true);
-    setStreams([]);
-    setSelectedIndices([]);
-    setExtractedResult(null);
-
-    try {
-      const detected: EmbeddedSubtitleStreamInfo[] = await window.ipc.invoke(
-        'toolbox:scanEmbeddedSubtitles',
-        filePath,
-      );
-      setStreams(detected);
-      if (detected.length > 0) {
-        // 默认只选中可直接转为文本的字幕轨 (isText: true)
-        const textTracks = detected
-          .filter((s) => s.isText)
-          .map((s) => s.subIndex);
-        setSelectedIndices(textTracks);
-      } else {
-        toast.info('未在该视频中探测到内封软字幕轨');
-      }
-    } catch (err: any) {
-      toast.error(`扫描失败: ${err.message || err}`);
-    } finally {
-      setIsScanning(false);
+  React.useEffect(() => {
+    let disposed = false;
+    setScanError(undefined);
+    setIsScanning(false);
+    if (videoPath && !scans[videoPath]) {
+      setIsScanning(true);
+      window.ipc
+        .invoke('toolbox:scanEmbeddedSubtitles', videoPath)
+        .then((detected: EmbeddedSubtitleStreamInfo[]) => {
+          if (!disposed)
+            setScans((previous) => ({ ...previous, [videoPath]: detected }));
+        })
+        .catch((error) => {
+          if (!disposed) setScanError(String(error));
+        })
+        .finally(() => {
+          if (!disposed) setIsScanning(false);
+        });
     }
-  };
+    return () => {
+      disposed = true;
+    };
+  }, [videoPath]);
 
   const handleSelectVideo = async () => {
-    const files = await window.ipc.invoke('toolbox:selectFile', {
+    const paths = await window.ipc.invoke('toolbox:selectFile', {
       type: 'video',
-      multiSelections: false,
+      multiSelections: true,
     });
-    if (Array.isArray(files) && files.length > 0) {
-      await scanVideo(files[0]);
-    }
+    if (Array.isArray(paths))
+      queue.add(paths.map((filePath: string) => ({ filePath })));
   };
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      const p = window.ipc?.getPathForFile
-        ? window.ipc.getPathForFile(files[0])
-        : (files[0] as any).path;
-      if (p) await scanVideo(p);
-    }
+  const handleDrop = (event: React.DragEvent) =>
+    queue.add(droppedToolboxPaths(event).map((filePath) => ({ filePath })));
+  const setSelectedIndices = (indices: number[]) => {
+    if (selected)
+      queue.updateInput(selected.id, {
+        ...selected.input,
+        selectedIndices: indices,
+      });
   };
-
   const toggleSelectAll = () => {
-    const textIndices = streams.filter((s) => s.isText).map((s) => s.subIndex);
-    if (textIndices.length === 0) return;
-    if (selectedIndices.length >= textIndices.length) {
-      setSelectedIndices([]);
-    } else {
-      setSelectedIndices(textIndices);
-    }
-  };
-
-  const toggleIndex = (stream: EmbeddedSubtitleStreamInfo) => {
-    if (!stream.isText) {
-      toast.info(
-        `轨道 #${stream.subIndex + 1} (${stream.codec}) 为位图字幕，不支持提取为纯文本`,
-      );
-      return;
-    }
-    const idx = stream.subIndex;
-    setSelectedIndices((prev) =>
-      prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx],
+    const indices = streams
+      .filter((stream) => stream.isText)
+      .map((stream) => stream.subIndex);
+    setSelectedIndices(
+      selectedIndices.length === indices.length ? [] : indices,
     );
   };
-
-  const handleExtract = async () => {
-    if (!videoPath || selectedIndices.length === 0 || isExtracting) return;
-
-    setIsExtracting(true);
-    try {
-      const result: ExtractEmbeddedSubtitleResult = await window.ipc.invoke(
-        'toolbox:extractEmbeddedSubtitles',
-        {
-          videoPath,
-          streamIndices: selectedIndices,
-          targetFormat,
-          outputDir: outputDir || undefined,
-        },
-      );
-      setExtractedResult(result);
-      if (result.success) {
-        toast.success(`成功提取 ${result.extractedFiles.length} 条字幕轨！`);
-      } else {
-        toast.error(`提取失败: ${result.error}`);
-      }
-    } catch (err: any) {
-      toast.error(`提取异常: ${err.message || err}`);
-    } finally {
-      setIsExtracting(false);
-    }
+  const toggleIndex = (stream: EmbeddedSubtitleStreamInfo) => {
+    if (!stream.isText || isExtracting) return;
+    setSelectedIndices(
+      selectedIndices.includes(stream.subIndex)
+        ? selectedIndices.filter((index) => index !== stream.subIndex)
+        : [...selectedIndices, stream.subIndex],
+    );
   };
+  const handleExtract = (retryId?: string) =>
+    queue.run(
+      {
+        failureMessage: t('queue.failed'),
+        cancel: (jobId) =>
+          window.ipc.invoke('toolbox:cancelEmbeddedSubtitles', jobId),
+        execute: async (input, jobId, signal, previous) => {
+          const detected: EmbeddedSubtitleStreamInfo[] =
+            await window.ipc.invoke(
+              'toolbox:scanEmbeddedSubtitles',
+              input.filePath,
+            );
+          signal.throwIfAborted();
+          const indices =
+            input.selectedIndices ??
+            detected
+              .filter((stream) => stream.isText)
+              .map((stream) => stream.subIndex);
+          if (!indices.length) throw new Error(t('queue.noTextTracks'));
+          if (
+            indices.some(
+              (index) =>
+                !detected.some(
+                  (stream) => stream.subIndex === index && stream.isText,
+                ),
+            )
+          )
+            throw new Error(t('queue.invalidTracks'));
+          const exportKey = JSON.stringify([targetFormat, outputDir, indices]);
+          const retained: ExtractEmbeddedSubtitleResult['extractedFiles'] = [];
+          if (previous?.exportKey === exportKey) {
+            for (const file of previous.extractedFiles) {
+              const response = await window.ipc.invoke('checkFileExists', {
+                filePath: file.outputPath,
+              });
+              if (response?.exists === true) retained.push(file);
+            }
+          }
+          signal.throwIfAborted();
+          const remaining = indices.filter(
+            (index) => !retained.some((file) => file.subIndex === index),
+          );
+          if (!remaining.length)
+            return { success: true, extractedFiles: retained, exportKey };
+          const result: ExtractEmbeddedSubtitleResult = await window.ipc.invoke(
+            'toolbox:extractEmbeddedSubtitles',
+            {
+              videoPath: input.filePath,
+              streamIndices: remaining,
+              targetFormat,
+              outputDir: outputDir || undefined,
+            },
+            jobId,
+          );
+          return {
+            ...result,
+            success: result?.success === true,
+            extractedFiles: [...retained, ...(result?.extractedFiles || [])],
+            exportKey,
+          };
+        },
+      },
+      retryId,
+    );
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
-      <div className="flex flex-1 overflow-hidden p-6 gap-6">
+      <div className="flex min-h-0 flex-1 overflow-hidden p-4 gap-4">
         {/* 左侧：视频与字幕轨表格 */}
-        <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-muted/20">
           <div
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
@@ -168,6 +195,23 @@ export default function EmbeddedSubtitlePanel() {
             </p>
           </div>
 
+          <ToolboxQueueList
+            {...queueState}
+            selectedId={selected?.id}
+            onSelect={setSelectedId}
+            onRetry={handleExtract}
+            onRemove={(id) => queue.remove(id)}
+            onCancel={() => void queue.cancel()}
+            onClear={() => queue.clear()}
+          />
+          {scanError && (
+            <p
+              role="alert"
+              className="break-words p-2 text-xs text-destructive"
+            >
+              {scanError}
+            </p>
+          )}
           <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2.5">
             <span className="text-xs font-medium text-foreground">
               发现字幕轨: {streams.length} 条
@@ -177,6 +221,7 @@ export default function EmbeddedSubtitlePanel() {
                 variant="ghost"
                 size="sm"
                 onClick={toggleSelectAll}
+                disabled={isExtracting}
                 className="h-7 text-xs text-muted-foreground hover:text-foreground"
               >
                 {selectedIndices.length === streams.length
@@ -219,7 +264,8 @@ export default function EmbeddedSubtitlePanel() {
                       <div className="flex items-center gap-3">
                         <Checkbox
                           checked={isChecked}
-                          disabled={!isSelectable}
+                          disabled={!isSelectable || isExtracting}
+                          onClick={(event) => event.stopPropagation()}
                           onCheckedChange={() => toggleIndex(stream)}
                         />
                         <div>
@@ -271,7 +317,7 @@ export default function EmbeddedSubtitlePanel() {
         </div>
 
         {/* 右侧：提取设置 */}
-        <div className="flex w-80 shrink-0 flex-col justify-between rounded-xl border border-border bg-card p-5">
+        <div className="flex min-h-0 w-72 shrink-0 flex-col gap-4 overflow-y-auto bg-muted/30 p-4">
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
               <Sparkles className="h-4 w-4 text-primary" />
@@ -327,31 +373,34 @@ export default function EmbeddedSubtitlePanel() {
             </div>
 
             {/* 提取结果展示 */}
-            {extractedResult?.success && (
-              <ToolboxFinishBar
-                outputType="subtitle"
-                outputPaths={extractedResult.extractedFiles.map(
-                  (f) => f.outputPath,
-                )}
-                summary={t('finishBar.title')}
-                onReset={() => {
-                  setExtractedResult(null);
-                  setVideoPath(null);
-                  setStreams([]);
-                  setSelectedIndices([]);
-                }}
-              />
-            )}
+            {items.some((item) => item.result?.extractedFiles?.length) &&
+              !isExtracting && (
+                <ToolboxFinishBar
+                  outputType="subtitle"
+                  outputPaths={items.flatMap((item) =>
+                    (item.result?.extractedFiles || []).map(
+                      (file) => file.outputPath,
+                    ),
+                  )}
+                  summary={t(
+                    items.some((item) => item.status !== 'done')
+                      ? 'finishBar.partial'
+                      : 'finishBar.title',
+                  )}
+                  onReset={() => queue.clear()}
+                />
+              )}
           </div>
 
           <div className="pt-4 border-t border-border">
             <Button
               className="w-full text-xs font-medium h-9"
-              onClick={handleExtract}
+              onClick={() => void handleExtract()}
               disabled={
-                streams.length === 0 ||
-                selectedIndices.length === 0 ||
-                isExtracting
+                !items.some(
+                  (item) =>
+                    item.status === 'pending' || item.status === 'cancelled',
+                ) || isExtracting
               }
             >
               {isExtracting ? (
@@ -360,7 +409,7 @@ export default function EmbeddedSubtitlePanel() {
                   提取中...
                 </>
               ) : (
-                `导出所选 (${selectedIndices.length} 条)`
+                t('queue.extractAll')
               )}
             </Button>
           </div>

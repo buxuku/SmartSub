@@ -63,6 +63,16 @@ export interface WorkItem {
   downloadEntries?: DownloadEntry[];
 
   configSnapshot?: Record<string, unknown>;
+  /** Editable next-run settings; never replaces an accepted execution snapshot. */
+  taskDraft?: {
+    config: Record<string, unknown>;
+    manuscripts: IFiles[];
+  };
+  taskSubmissions?: Array<{
+    requestId: string;
+    fingerprint: string;
+    acceptedAt: number;
+  }>;
   artifacts?: WorkItemArtifact[];
 }
 

@@ -12,7 +12,6 @@ import {
 } from '@/components/ui/select';
 import {
   AlertCircle,
-  ArrowRight,
   CheckCircle2,
   Download,
   Languages,
@@ -66,7 +65,7 @@ function ConfigItem({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-1.5 shrink-0">
+    <div className="flex min-w-0 flex-1 flex-col items-stretch gap-1">
       <span className="text-xs text-muted-foreground whitespace-nowrap">
         {label}
       </span>
@@ -75,9 +74,8 @@ function ConfigItem({
   );
 }
 
-const triggerClass = 'h-8 w-auto min-w-[90px] max-w-[140px] text-xs gap-1';
-const modelTriggerClass =
-  'h-8 w-auto min-w-[140px] max-w-[210px] text-xs gap-1';
+const triggerClass = 'h-8 w-full min-w-0 text-xs gap-1';
+const modelTriggerClass = triggerClass;
 
 const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
   form,
@@ -219,10 +217,16 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
     : undefined;
 
   return (
-    <div className="flex flex-col gap-1.5 w-full">
-      <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2 w-full overflow-x-auto">
+    <div
+      className="task-inspector flex min-w-0 flex-col gap-1.5 w-full"
+      data-testid="task-inspector"
+    >
+      <div className="inspector-sections grid min-w-0 items-end gap-3 bg-muted/30 px-3 py-2 w-full">
         {/* 左侧核心主干（必选且紧凑，绝对不折行） */}
-        <div className="flex items-center gap-2 shrink-0 flex-nowrap">
+        <div
+          className="flex min-w-0 items-end gap-3 flex-nowrap"
+          data-testid="task-inspector-core"
+        >
           {typeDef.needsModel && (
             <ConfigItem label={t('configBar.model')}>
               {hasModels || formData.transcriptionEngine === 'parakeet' ? (
@@ -285,7 +289,10 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
               value={formData.sourceLanguage}
               onValueChange={(v) => setValue('sourceLanguage', v)}
             >
-              <SelectTrigger className={triggerClass}>
+              <SelectTrigger
+                className={triggerClass}
+                aria-label={t('configBar.sourceLanguage')}
+              >
                 <SelectValue placeholder={tHome('pleaseSelect')} />
               </SelectTrigger>
               {languageItems(true)}
@@ -294,21 +301,20 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
 
           {typeDef.hasTranslate && (
             <>
-              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
-
               <ConfigItem label={t('configBar.targetLanguage')}>
                 <Select
                   value={formData.targetLanguage}
                   onValueChange={(v) => setValue('targetLanguage', v)}
                 >
-                  <SelectTrigger className={triggerClass}>
+                  <SelectTrigger
+                    className={triggerClass}
+                    aria-label={t('configBar.targetLanguage')}
+                  >
                     <SelectValue placeholder={tHome('pleaseSelect')} />
                   </SelectTrigger>
                   {languageItems(false)}
                 </Select>
               </ConfigItem>
-
-              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
 
               <ConfigItem label={t('configBar.provider')}>
                 {providers.length > 0 ? (
@@ -316,7 +322,10 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
                     value={formData.translateProvider}
                     onValueChange={handleTranslateProviderChange}
                   >
-                    <SelectTrigger className={triggerClass}>
+                    <SelectTrigger
+                      className={triggerClass}
+                      aria-label={t('configBar.provider')}
+                    >
                       <SelectValue placeholder={tHome('pleaseSelect')}>
                         {selectedTranslateProviderName}
                       </SelectValue>
@@ -365,10 +374,17 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
         </div>
 
         {/* 右侧能力开关胶囊（就地弹出卡片配置） */}
-        <div className="flex items-center gap-1.5 shrink-0 ml-auto flex-nowrap">
+        <div
+          className="flex min-w-0 items-center justify-end gap-1.5 flex-nowrap"
+          data-testid="task-inspector-actions"
+        >
           {typeDef.needsModel && (
             <>
-              <ScenarioPresetControl form={form} formData={formData} />
+              <ScenarioPresetControl
+                form={form}
+                formData={formData}
+                onOpenAdvanced={onOpenAdvanced}
+              />
               <AiRefineControl
                 form={form}
                 formData={formData}
@@ -395,6 +411,7 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
               onClick={onOpenAdvanced}
               className="h-8 px-2 text-xs gap-1"
               title={t('advancedSettings')}
+              aria-label={t('advancedSettings')}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
               <span className="hidden lg:inline">{t('advancedSettings')}</span>
@@ -402,6 +419,19 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
           )}
         </div>
       </div>
+      <style jsx>{`
+        .task-inspector {
+          container-type: inline-size;
+        }
+        .inspector-sections {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        @container (min-width: 1180px) {
+          .inspector-sections {
+            grid-template-columns: minmax(0, 1fr) auto;
+          }
+        }
+      `}</style>
 
       {typeDef.needsModel &&
         formData.transcriptionEngine === 'parakeet' &&

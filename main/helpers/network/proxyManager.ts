@@ -1,7 +1,7 @@
 import * as net from 'net';
 import * as tls from 'tls';
-import * as http from 'http';
-import * as https from 'https';
+import http from 'http';
+import https from 'https';
 import { once } from 'events';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { HttpProxyAgent } from 'http-proxy-agent';
@@ -54,7 +54,7 @@ class NoProxyHttpsAgent extends HttpsProxyAgent<string> {
   async connect(
     req: HttpsConnectReq,
     opts: HttpsConnectOpts,
-  ): ReturnType<HttpsConnect> {
+  ): Promise<Awaited<ReturnType<HttpsConnect>>> {
     const t = opts as ConnectTarget;
     if (hostInNoProxy(t.host, this.noProxy)) {
       if (t.secureEndpoint) {
@@ -85,11 +85,10 @@ class NoProxyHttpAgent extends HttpProxyAgent<string> {
     const t = opts as ConnectTarget;
     if (hostInNoProxy(t.host, this.noProxy)) {
       (
-        http.Agent.prototype.addRequest as unknown as (
-          r: HttpAddReq,
-          o: unknown,
-        ) => void
-      ).call(this, req, opts);
+        http.Agent.prototype as http.Agent & {
+          addRequest: HttpProxyAgent<string>['addRequest'];
+        }
+      ).addRequest.call(this, req, opts);
       return;
     }
     super.addRequest(req, opts);
@@ -97,7 +96,7 @@ class NoProxyHttpAgent extends HttpProxyAgent<string> {
   async connect(
     req: Parameters<HttpConnect>[0],
     opts: Parameters<HttpConnect>[1],
-  ): ReturnType<HttpConnect> {
+  ): Promise<Awaited<ReturnType<HttpConnect>>> {
     const t = opts as ConnectTarget;
     if (hostInNoProxy(t.host, this.noProxy)) {
       const socket = net.connect({ host: t.host, port: t.port });

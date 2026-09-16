@@ -26,6 +26,10 @@ import {
 } from '../../types/proofreadData';
 import { subtitleOutputFilesToSave } from '../../types/subtitleOutput';
 import { atomicReplaceTextFile } from './atomicFile';
+import {
+  layoutSubtitleColumns,
+  type SubtitleLayoutOptions,
+} from './subtitleLayout';
 import { getWorkItems, saveWorkItem } from './workItemStore';
 import { isPipelineWorkItem } from '../../types/workItem';
 import {
@@ -184,6 +188,7 @@ function buildSubtitleFileContent(
   speakerOptions?: {
     speakers?: SpeakerInfo[];
     embedSpeakerNames?: boolean;
+    layout?: SubtitleLayoutOptions;
   },
 ): string {
   const format = detectSubtitleFormat(filePath);
@@ -197,7 +202,16 @@ function buildSubtitleFileContent(
   };
   const buildText = (subtitle): string => {
     let text: string;
-    if (contentType === 'source') {
+    if (speakerOptions?.layout?.subtitleLayout === 'two-line') {
+      const prefix = withSpeakerPrefix(subtitle, '');
+      return layoutSubtitleColumns(
+        subtitle.sourceContent ?? '',
+        subtitle.targetContent ?? '',
+        contentType,
+        speakerOptions.layout,
+        prefix ? `${prefix} ` : '',
+      );
+    } else if (contentType === 'source') {
       text = subtitle.sourceContent ?? '';
     } else {
       const template =
@@ -253,6 +267,7 @@ async function writeSubtitleFile(
   speakerOptions?: {
     speakers?: SpeakerInfo[];
     embedSpeakerNames?: boolean;
+    layout?: SubtitleLayoutOptions;
   },
 ): Promise<void> {
   const content = buildSubtitleFileContent(
@@ -567,6 +582,16 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         );
 
         const rendered = new Set<string>();
+        const layoutPaths = new Set(
+          [
+            ...(updated.meta.sourceSubtitleFiles || []),
+            ...(updated.meta.translatedSubtitleFiles || []),
+            updated.meta.tempSrtFile,
+            updated.meta.tempFinalSubtitleFile,
+          ]
+            .filter(Boolean)
+            .map((filePath) => path.resolve(filePath!).toLowerCase()),
+        );
         for (const output of [
           ...subtitleOutputFilesToSave(
             updated.meta,
@@ -586,6 +611,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
             {
               speakers: updated.speakers,
               embedSpeakerNames,
+              layout: layoutPaths.has(key) ? updated.meta : undefined,
             },
           );
         }
@@ -623,11 +649,10 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
             return file;
           });
           if (matched) {
-            saveWorkItem({
-              ...item,
-              pipelineFiles,
-              updatedAt: Date.now(),
-            });
+            saveWorkItem(
+              { ...item, pipelineFiles, updatedAt: Date.now() },
+              { durable: true },
+            );
             break;
           }
         }

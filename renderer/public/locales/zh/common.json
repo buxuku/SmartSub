@@ -21,6 +21,13 @@
     "settings": "设置"
   },
   "statusbar": {
+    "checking": "检测中",
+    "checkFailed": "状态检测失败",
+    "unverified": "服务已配置 · 连接未验证",
+    "connected": "连接已验证（5 分钟内）",
+    "failed": "连接失败",
+    "serviceConnected": "{{count}} 个服务连接已验证",
+    "serviceFailed": "服务连接异常",
     "engineReady": "引擎就绪",
     "gpuPending": "待检测",
     "modelReady": "本地模型可用",
@@ -325,13 +332,34 @@
     "sampleProjectName": "示例 · 第一个字幕",
     "sampleFailed": "示例任务创建失败，请重试或手动导入文件"
   },
+  "draftRecovery": {
+    "readFailedTitle": "草稿无法读取",
+    "readFailedDescription": "草稿数据损坏或本地存储暂时不可用，原始数据已保留。可重试读取，或明确放弃这份草稿。",
+    "retryRead": "重试读取",
+    "title": "恢复未保存的工作？",
+    "description": "检测到此工作的未保存草稿，恢复后可以继续编辑。",
+    "restore": "恢复草稿",
+    "discard": "放弃草稿",
+    "storageFailed": "草稿存储失败，请在关闭应用前保存当前工作。",
+    "wizardStorageFailed": "草稿未写入本地存储，重启后可能丢失。请释放存储空间后重试保存。"
+  },
+  "saveState": {
+    "retry": "重试保存",
+    "idle": "",
+    "dirty": "未保存的修改",
+    "saving": "保存中...",
+    "saved": "已保存",
+    "save_error": "保存失败",
+    "details": "错误详情"
+  },
   "navigationGuard": {
     "title": "未保存的修改",
     "desc": "当前页面有尚未保存的内容，离开将丢失未保存的改动。是否先保存？",
     "keepEditing": "留在当前页",
     "discardAndLeave": "放弃并离开",
     "saveAndLeave": "保存并离开",
-    "saving": "保存中..."
+    "saving": "保存中...",
+    "changedDuringSave": "保存期间又有内容发生修改。请再次保存，或留在当前页检查。"
   },
   "undo": "撤销",
   "checkingForUpdates": "正在检查更新…",

@@ -15,15 +15,27 @@
     "importing": "Importing files…",
     "unsupported": "No supported video, audio, subtitle or script files found",
     "subtitleRequired": "This workflow accepts subtitle files only. Drop audio or video into the launchpad background or onto a transcription task card.",
-    "failed": "Import failed. Please try again."
+    "failed": "Import failed. Please try again.",
+    "existingTitle": "An unfinished task draft exists",
+    "existingDescription": "Adding files keeps the existing goals, recipe and settings. Starting a new task replaces the existing draft.",
+    "unreadableDescription": "The existing draft could not be read. Its original data is preserved. Cancel to retry later, or explicitly replace it with a new task.",
+    "replaceDraft": "Replace with new task",
+    "appendDraft": "Add to existing draft",
+    "storageFailed": "The draft could not be saved to disk. Installation and navigation have not started. Retry saving; existing draft data will not be silently removed.",
+    "retrySave": "Retry saving"
   },
   "quickDownload": {
     "title": "Speech Model Required",
-    "desc": "Saved {{count}} file(s) as draft. Speech transcription requires the lightweight Whisper Base model (~140MB, takes ~15s).",
+    "desc": "Saved {{count}} file(s) and task settings. Install Whisper Base (~140MB, about 15s on a fast connection; actual time depends on your network).",
     "downloading": "Downloading model ({{progress}}%)…",
     "startDownload": "Install & Continue",
     "installComplete": "Model installed! Navigating to your task…",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "source": "Download source",
+    "mirror": "China mirror",
+    "busy": "Another model is downloading. Please try again later.",
+    "failed": "Installation failed. Check your connection or switch download sources and retry. Your draft is preserved.",
+    "notInstalled": "Base is not installed yet. Please retry. Your draft is preserved."
   },
   "recipes": {
     "custom": "Custom flow",

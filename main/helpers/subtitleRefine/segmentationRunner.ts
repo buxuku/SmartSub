@@ -128,7 +128,15 @@ export async function runAiSegmentation(
 
   // 分窗（Tier 'word' 按词、Tier 'segment' 按 cue 边界）。
   const wordWindows = tier === 'word' ? splitWordsIntoWindows(words!) : [];
-  const cueRanges = tier === 'segment' ? splitCuesIntoWindows(cues) : [];
+  const cueRanges =
+    tier === 'segment'
+      ? splitCuesIntoWindows(cues, {
+          preserveGapMs:
+            formData.preserveSpeechPauses === true
+              ? (cueOptions?.maxGapSeconds ?? 0.5) * 1000
+              : Number.POSITIVE_INFINITY,
+        })
+      : [];
   const totalWindows = tier === 'word' ? wordWindows.length : cueRanges.length;
   if (totalWindows === 0) {
     return { cues, tier, totalWindows: 0, degradedWindows: 0, degraded: false };
@@ -204,7 +212,9 @@ export async function runAiSegmentation(
     const windowWords = wordWindows[index];
     if (!windowWords?.length) return [];
     const ruleCues = composeWordCues(wordsToTriples(windowWords), formData);
-    return ruleCues.map((cue) => ({ cue, words: windowWords }));
+    // Already composed from real word times; don't attach the entire window to
+    // every fallback cue or the guard can duplicate that window on a later cut.
+    return ruleCues.map((cue) => ({ cue }));
   };
 
   const results: AlignedCue[][] = new Array(totalWindows);
@@ -283,6 +293,7 @@ export async function runAiSegmentation(
   const guarded = applySegmentationGuards(aligned, {
     cueOptions,
     mergeOptions,
+    preserveSpeechPauses: formData.preserveSpeechPauses === true,
   });
   const approxNote = tier === 'segment' ? ', timeline=approximate/近似' : '';
   logMessage(

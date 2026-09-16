@@ -30,11 +30,12 @@ export interface FramerateRatioPreset {
   label: string;
   description?: string;
   ratio: number;
+  fraction: { numerator: number; denominator: number };
 }
 
 /**
  * 标准帧率缩放比率预设（精确无损分数）
- * scaleRatio = sourceDuration / targetDuration = targetFps / sourceFps (时间轴拉伸/缩短)
+ * scaleRatio = targetDuration / sourceDuration = sourceFps / targetFps
  * 当视频从 23.976 转为 25 fps 时，画面播放变快，字幕时间轴需相应乘 (24000/1001) / 25 = 960 / 1001
  */
 export const FRAMERATE_RATIO_PRESETS: readonly FramerateRatioPreset[] = [
@@ -42,30 +43,67 @@ export const FRAMERATE_RATIO_PRESETS: readonly FramerateRatioPreset[] = [
     label: '23.976 → 25 fps',
     description: 'NTSC 23.976 fps 转 PAL 25 fps (960 / 1001)',
     ratio: 960 / 1001, // (24000 / 1001) / 25
+    fraction: { numerator: 960, denominator: 1001 },
   },
   {
     label: '25 → 23.976 fps',
     description: 'PAL 25 fps 转 NTSC 23.976 fps (1001 / 960)',
     ratio: 1001 / 960, // 25 / (24000 / 1001)
+    fraction: { numerator: 1001, denominator: 960 },
   },
   {
     label: '24 → 23.976 fps',
     description: '标准 24 fps 转 23.976 fps (1001 / 1000)',
     ratio: 1001 / 1000,
+    fraction: { numerator: 1001, denominator: 1000 },
   },
   {
     label: '23.976 → 24 fps',
     description: '23.976 fps 转标准 24 fps (1000 / 1001)',
     ratio: 1000 / 1001,
+    fraction: { numerator: 1000, denominator: 1001 },
   },
   {
     label: '29.97 → 25 fps',
     description: 'NTSC 29.97 fps 转 PAL 25 fps (1200 / 1001)',
     ratio: 1200 / 1001, // (30000 / 1001) / 25
+    fraction: { numerator: 1200, denominator: 1001 },
+  },
+  {
+    label: '59.94 → 60 fps',
+    ratio: 1000 / 1001,
+    fraction: { numerator: 1000, denominator: 1001 },
   },
   {
     label: '恢复 1.0',
     description: '重置为原始比率',
     ratio: 1.0,
+    fraction: { numerator: 1, denominator: 1 },
   },
 ] as const;
+
+/** Scale each original timestamp independently; round once at the file's ms boundary. */
+export function scaleTimestampMs(
+  ms: number,
+  fraction: { numerator: number; denominator: number },
+): number {
+  const { numerator, denominator } = fraction;
+  if (
+    !Number.isSafeInteger(ms) ||
+    !Number.isSafeInteger(numerator) ||
+    !Number.isSafeInteger(denominator) ||
+    numerator <= 0 ||
+    denominator <= 0
+  ) {
+    throw new Error('Invalid rational timestamp or frame rate');
+  }
+  const product = BigInt(ms) * BigInt(numerator);
+  const divisor = BigInt(denominator);
+  const positive = product >= BigInt(0);
+  const magnitude = positive ? product : -product;
+  const rounded = (magnitude * BigInt(2) + divisor) / (divisor * BigInt(2));
+  const result = Number(positive ? rounded : -rounded);
+  if (!Number.isSafeInteger(result))
+    throw new Error('Timestamp exceeds integer precision');
+  return result;
+}

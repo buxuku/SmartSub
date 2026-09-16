@@ -80,6 +80,7 @@ export interface CorrectionParams {
   glossaryLabel?: string;
   /** anchored：低置信词标注（whisper token p 低于阈值的词，辅助定点修正）。 */
   suspectWords?: string[];
+  fillerPolicy?: 'remove-hesitations' | 'preserve';
   /** 每批开始前回调（与既有校对台进度事件语义一致：processedCount 为已完成数）。 */
   onBatchProgress?: (info: {
     processedCount: number;
@@ -121,6 +122,20 @@ const ANCHORED_CORRECTION_SYSTEM_PROMPT = `You are a professional subtitle proof
 </rules>
 
 Output format: return ONLY a valid JSON object. Keys must be exactly the input subtitle IDs. Each value is an object {"src": <exact copy of the input text>, "tr": <the corrected text>}. No markdown, no explanations.`;
+
+function anchoredCorrectionPrompt(
+  policy: CorrectionParams['fillerPolicy'],
+): string {
+  if (!policy) return ANCHORED_CORRECTION_SYSTEM_PROMPT;
+  const instruction =
+    policy === 'preserve'
+      ? 'Preserve all interjections, hesitation words, repetitions and non-verbal markers that express emotion, hesitation, emphasis or character voice; do not remove them for concision'
+      : 'Remove only semantically empty hesitation fillers (um, uh, 呃, 嗯, 啊, 就是) when context confirms they are speech disfluencies. Preserve meaningful agreement, answers, emotional interjections, emphasis and technical terminology; do not delete words by a simple word list';
+  return ANCHORED_CORRECTION_SYSTEM_PROMPT.replace(
+    'Remove hesitation filler words (um, uh, 呃, 嗯, 啊) and non-verbal markers',
+    instruction,
+  );
+}
 
 /** anchored 批次 schema：与 makeBatchSchema 同构（{src,tr}），description 换成校正语义。 */
 function makeCorrectionSchema(ids: string[]): Record<string, unknown> {
@@ -412,7 +427,7 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
           const anchoredProvider = {
             ...provider,
             systemPrompt: injectGlossaryPromptBlock(
-              ANCHORED_CORRECTION_SYSTEM_PROMPT,
+              anchoredCorrectionPrompt(params.fillerPolicy),
               correctionTermsBlock,
             ),
             useJsonMode: provider.useJsonMode !== false,

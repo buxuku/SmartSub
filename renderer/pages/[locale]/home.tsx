@@ -5,7 +5,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { toast } from 'sonner';
 import GlobalDropOverlay from '@/components/launchpad/GlobalDropOverlay';
 import ModelQuickDownloadDialog from '@/components/launchpad/ModelQuickDownloadDialog';
-import { taskDraftManager } from '@/lib/taskDraftManager';
+import { taskDraftManager, type TaskDraft } from '@/lib/taskDraftManager';
+import {
+  appendLaunchpadFiles,
+  buildLaunchpadDraft,
+} from '@/lib/launchpadDraft';
+import { useNavigationGuard } from '@/context/NavigationGuardContext';
 import {
   BookMarked,
   ChevronRight,
@@ -51,7 +56,6 @@ import {
   recipeSlug,
   recipeStageKeys,
   recipeTarget,
-  WIZARD_DROP_KEY,
 } from 'lib/recipes';
 import { isTtsProviderConfigured } from '../../../types/ttsProvider';
 import { backendDisplay } from '@/components/settings/gpu/gpuUtils';
@@ -173,7 +177,12 @@ export default function LaunchpadPage() {
   const importBusyRef = useRef(false);
   const [importing, setImporting] = useState(false);
   const [quickDownloadOpen, setQuickDownloadOpen] = useState(false);
-  const [stagedDraftFiles, setStagedDraftFiles] = useState<any[]>([]);
+  const [stagedDraft, setStagedDraft] = useState<TaskDraft | null>(null);
+  const [draftError, setDraftError] = useState(false);
+  const [pendingImport, setPendingImport] = useState<{
+    files: TaskDraft['files'];
+    recipe?: TaskRecipe;
+  } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<WorkItem | null>(null);
@@ -251,7 +260,8 @@ export default function LaunchpadPage() {
           isTtsProviderConfigured(p),
         );
         const ttsModelReady = Boolean(
-          ttsModelStatus?.models?.some((m: any) => m.installed),
+          ttsModelStatus?.engineInstalled === true &&
+            ttsModelStatus?.models?.some((m: any) => m.installed),
         );
         setTtsReady(ttsProviderReady || ttsModelReady);
         setUserRecipes(Array.isArray(recipes) ? recipes : []);
@@ -268,6 +278,23 @@ export default function LaunchpadPage() {
     getWorkItemTarget(item, String(locale));
 
   const readiness = { hasModels, hasProvider, ttsReady };
+
+  useNavigationGuard('launchpad-draft-storage', {
+    isDirty: Boolean(stagedDraft?.files.length && draftError),
+    getIsDirty: () =>
+      Boolean(stagedDraft?.files.length && taskDraftManager.storageFailed),
+    onSave: async () => {
+      if (!stagedDraft) return true;
+      const saved = taskDraftManager.saveDraft(stagedDraft);
+      setDraftError(!saved);
+      return saved;
+    },
+    onDiscard: () => {
+      taskDraftManager.clearDraft();
+      setStagedDraft(null);
+      setDraftError(false);
+    },
+  });
 
   const collectDropPaths = (e: React.DragEvent): string[] => {
     const paths: string[] = [];
@@ -333,6 +360,84 @@ export default function LaunchpadPage() {
     setDragCard(target?.getAttribute('data-drop-recipe') ?? null);
   };
 
+  const continueDraft = async (draft: TaskDraft, installed = false) => {
+    setStagedDraft(draft);
+    const saved = taskDraftManager.saveDraft(draft);
+    setDraftError(!saved);
+    if (!saved) return;
+
+    const hasMedia = draft.files.some(
+      (file) =>
+        !isSubtitleFile(file.filePath.toLowerCase()) &&
+        !isManuscriptPath(file.filePath),
+    );
+    const hasSubtitles = draft.files.some(
+      (file) =>
+        isSubtitleFile(file.filePath.toLowerCase()) &&
+        !isManuscriptPath(file.filePath),
+    );
+    // Paired inputs bypass ASR; missing translation/TTS is resolved in the draft.
+    if (hasMedia && !hasSubtitles && !installed) {
+      const [info, providers] = await Promise.all([
+        window.ipc.invoke('getSystemInfo', null),
+        window.ipc.invoke('getAsrProviders'),
+      ]);
+      const ready = hasAnyModelAnyEngine(info, providers || []);
+      setHasModels(ready);
+      if (!ready) {
+        setQuickDownloadOpen(true);
+        return;
+      }
+    }
+    await router.push(
+      `/${localeStr}/tasks/new?draft=${encodeURIComponent(draft.id!)}`,
+    );
+  };
+
+  const stageImport = async (
+    files: TaskDraft['files'],
+    recipe?: TaskRecipe,
+  ) => {
+    const existing = taskDraftManager.getDraft();
+    if (existing?.files.length || taskDraftManager.hasUnreadableDraft) {
+      setPendingImport({ files, recipe });
+      return;
+    }
+    const defaults = await window.ipc.invoke('getUserConfig');
+    await continueDraft(buildLaunchpadDraft(files, defaults || {}, recipe));
+  };
+
+  const resolvePendingImport = async (append: boolean) => {
+    if (!pendingImport || importBusyRef.current) return;
+    importBusyRef.current = true;
+    setImporting(true);
+    try {
+      const existing = taskDraftManager.getDraft();
+      if (taskDraftManager.hasUnreadableDraft) {
+        if (append || !taskDraftManager.clearDraft()) {
+          toast.error(t('globalDrop.storageFailed'));
+          return;
+        }
+      }
+      const draft =
+        append && existing
+          ? appendLaunchpadFiles(existing, pendingImport.files)
+          : buildLaunchpadDraft(
+              pendingImport.files,
+              await window.ipc.invoke('getUserConfig'),
+              pendingImport.recipe,
+            );
+      setPendingImport(null);
+      await continueDraft(draft);
+    } catch (error) {
+      console.error('Failed to continue launchpad draft:', error);
+      toast.error(t('globalDrop.failed'));
+    } finally {
+      importBusyRef.current = false;
+      setImporting(false);
+    }
+  };
+
   const importPaths = async (paths: string[]) => {
     if (!paths.length) return;
     const dropped = await resolveDroppedBothKinds(paths);
@@ -341,34 +446,11 @@ export default function LaunchpadPage() {
       return;
     }
 
-    const hasMedia = dropped.some(
-      (file) =>
-        !isSubtitleFile(file.filePath.toLowerCase()) &&
-        !isManuscriptPath(file.filePath),
-    );
-
-    if (hasMedia && !readiness.hasModels) {
-      taskDraftManager.patchDraft({
-        files: dropped,
-      });
-      setStagedDraftFiles(dropped);
-      setQuickDownloadOpen(true);
-      return;
-    }
-
-    taskDraftManager.patchDraft({
-      files: dropped,
-    });
-    try {
-      sessionStorage.setItem(WIZARD_DROP_KEY, JSON.stringify(dropped));
-    } catch {
-      /* ignore */
-    }
-    await router.push(`/${localeStr}/tasks/new`);
+    await stageImport(dropped);
   };
 
   const importFiles = async (paths?: string[]) => {
-    if (importBusyRef.current) return;
+    if (importBusyRef.current || quickDownloadOpen || pendingImport) return;
     importBusyRef.current = true;
     setImporting(true);
     try {
@@ -403,7 +485,12 @@ export default function LaunchpadPage() {
     e.preventDefault();
     e.stopPropagation();
     resetDrag();
-    if (!e.dataTransfer.types.includes('Files') || importBusyRef.current)
+    if (
+      !e.dataTransfer.types.includes('Files') ||
+      importBusyRef.current ||
+      quickDownloadOpen ||
+      pendingImport
+    )
       return;
     const loc = String(locale || 'zh');
     const paths = collectDropPaths(e);
@@ -436,40 +523,20 @@ export default function LaunchpadPage() {
         return;
       }
 
-      if (block === 'model') {
-        taskDraftManager.patchDraft({
-          files: dropped,
-        });
-        setStagedDraftFiles(dropped);
-        setQuickDownloadOpen(true);
-        return;
-      }
-
-      taskDraftManager.patchDraft({
-        files: dropped,
-      });
-
-      if (slug && !block) {
+      if (recipe.builtin && slug && !block) {
         const typeDef = getTaskTypeBySlug(slug)!;
         const id = uuidv4();
-        await window?.ipc?.invoke('saveTaskProject', {
+        const saved = await window?.ipc?.invoke('saveTaskProject', {
           id,
           taskType: typeDef.taskType,
           files: dropped,
         });
+        if (saved?.id !== id) throw new Error('Task project was not saved');
         await router.push(`/${loc}/tasks/${slug}?project=${id}`);
         return;
       }
 
-      try {
-        sessionStorage.setItem(WIZARD_DROP_KEY, JSON.stringify(dropped));
-      } catch {
-        /* ignore */
-      }
-
-      await router.push(
-        block ? recipeBlockHref(loc, block) : recipeTarget(recipe, loc),
-      );
+      await stageImport(dropped, recipe);
     } catch (error) {
       console.error('Failed to import recipe files:', error);
       toast.error(t('globalDrop.failed'));
@@ -637,24 +704,85 @@ export default function LaunchpadPage() {
       <ModelQuickDownloadDialog
         open={quickDownloadOpen}
         onOpenChange={setQuickDownloadOpen}
-        stagedFilesCount={stagedDraftFiles.length}
-        onSuccess={() => {
+        stagedFilesCount={stagedDraft?.files.length || 0}
+        onSuccess={async () => {
           setHasModels(true);
-          try {
-            sessionStorage.setItem(
-              WIZARD_DROP_KEY,
-              JSON.stringify(stagedDraftFiles),
-            );
-          } catch {
-            /* ignore */
-          }
-          router.push(`/${localeStr}/tasks/new`);
+          if (!stagedDraft) return;
+          await continueDraft(
+            {
+              ...stagedDraft,
+              config: {
+                ...stagedDraft.config,
+                transcriptionEngine: 'builtin',
+                model: 'base',
+                asrProviderId: '',
+              },
+            },
+            true,
+          );
         }}
       />
+      <AlertDialog
+        open={Boolean(pendingImport)}
+        onOpenChange={(open) => {
+          if (!open) setPendingImport(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('globalDrop.existingTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                taskDraftManager.hasUnreadableDraft
+                  ? 'globalDrop.unreadableDescription'
+                  : 'globalDrop.existingDescription',
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('recipes.cancel')}</AlertDialogCancel>
+            <Button
+              variant="outline"
+              disabled={importing}
+              onClick={() => void resolvePendingImport(false)}
+            >
+              {t('globalDrop.replaceDraft')}
+            </Button>
+            <Button
+              disabled={importing || taskDraftManager.hasUnreadableDraft}
+              onClick={() => void resolvePendingImport(true)}
+            >
+              {t('globalDrop.appendDraft')}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {/* 窄屏：min-h-full，内容长时页面自然滚动；xl 双栏：h-full 锁定视口高度，
           最近任务在面板内滚动，右栏不再被超长列表撑高 */}
       <div className="h-full overflow-auto">
         <div className="flex min-h-full flex-col gap-2.5 p-3 xl:h-full">
+          {draftError && (
+            <div
+              role="alert"
+              className="flex shrink-0 items-center gap-3 bg-warning/10 p-3 text-sm"
+            >
+              <span className="min-w-0 flex-1">
+                {t('globalDrop.storageFailed')}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (stagedDraft)
+                    void continueDraft(stagedDraft).catch(() =>
+                      toast.error(t('globalDrop.failed')),
+                    );
+                }}
+              >
+                {t('globalDrop.retrySave')}
+              </Button>
+            </div>
+          )}
           {/* 问候行：时间问候 + 日期 ｜ 任务统计 chips（首页仪表盘的「人味」层） */}
           <div className="flex flex-none flex-wrap items-end justify-between gap-2 px-1 pt-0.5">
             <div className="min-w-0">

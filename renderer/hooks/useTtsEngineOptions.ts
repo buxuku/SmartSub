@@ -70,7 +70,7 @@ export async function loadTtsEngineOptions(): Promise<DubbingEngineOption[]> {
         key: `local:${m.id}`,
         kind: 'local',
         label: m.displayName ?? m.id,
-        ready: !!m.installed,
+        ready: status.engineInstalled === true && m.installed === true,
         cloneOnly: !!m.cloneOnly,
         voices,
         defaultVoiceId: m.cloneOnly ? voices[0]?.id : m.defaultVoiceId,

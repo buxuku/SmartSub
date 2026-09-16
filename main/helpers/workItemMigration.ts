@@ -165,7 +165,7 @@ export function workItemToProofreadTask(item: WorkItem): ProofreadTask | null {
     name: item.name,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
-    items: item.proofreadEntries || [],
+    items: structuredClone(item.proofreadEntries || []),
     currentItemIndex: item.currentProofreadIndex ?? 0,
     status: item.status === 'done' ? 'completed' : 'in_progress',
   };

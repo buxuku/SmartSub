@@ -54,6 +54,7 @@ export interface ISystemInfo {
   parakeetModelsPath?: string;
   /** 可选角色分离模型（pyannote + 3D-Speaker）是否完整安装。 */
   speakerDiarizationModelInstalled?: boolean;
+  speakerDiarizationRuntimeInstalled?: boolean;
   /** 角色分离模型根目录。 */
   speakerDiarizationModelsPath?: string;
   /** userData 默认存储基座（「默认路径含中文」警示判定用） */
@@ -85,6 +86,8 @@ export interface ManuscriptMatchSummary {
 }
 
 export interface IFiles extends SubtitleOutputFiles {
+  /** Runtime event routing; file UUIDs can be reused by restored drafts. */
+  taskProjectId?: string;
   uuid: string;
   filePath: string;
   fileName: string;
@@ -97,6 +100,7 @@ export interface IFiles extends SubtitleOutputFiles {
   speakerDiarization?: '' | 'loading' | 'done' | 'error';
   speakerDiarizationProgress?: number;
   speakerDiarizationError?: string;
+  refineSubtitleError?: string;
   /** 配音附加阶段状态（运行时同其余阶段字段为 ''|loading|done|error 字符串） */
   dubbing?: boolean;
   /** 合成附加阶段状态（同上字符串状态机约定） */
@@ -259,6 +263,7 @@ export interface IFormData {
     | 'sourceAndTranslate'
     | 'translateAndSource';
   targetSrtSaveOption: string;
+  sourceSrtSaveOption?: string;
   customTargetSrtFileName: string;
   sourceLanguage: string;
   targetLanguage: string;
@@ -266,12 +271,19 @@ export interface IFormData {
   subtitleOutputFormat?: SubtitleOutputFormat;
   /** Missing on legacy tasks; the singular format remains the compatibility fallback. */
   subtitleOutputFormats?: SubtitleOutputFormat[];
+  subtitleLayout?: 'original' | 'two-line';
+  subtitleLineWidth?: number;
   /**
    * 生成字幕时单条字幕最大显示字数 / 宽度（CJK 记 2、其余记 1）。
    * 0 或空 = 智能断句（引擎默认）；-1 = 不限制长度（仅按停顿/标点断句，不按字数硬切）；
    * 正数 = 自定义上限（超出时在标点或词边界处拆分）。
    */
   maxSubtitleChars?: number;
+  /** Task-specific cue limits; missing values retain the engine defaults. */
+  subtitleMaxDuration?: number;
+  subtitleMaxGap?: number;
+  /** Keep detected pauses, without extending cue tails or merging across silence. */
+  preserveSpeechPauses?: boolean;
   /**
    * faster-whisper 解码高级参数（均为任务级、可选）。
    * 缺省时不下发，让引擎保留自身默认与 temperature 回退序列。
@@ -288,6 +300,10 @@ export interface IFormData {
   aiSegmentation?: boolean;
   /** AI 字幕校正（精修遍 B）。缺省关闭。 */
   aiCorrection?: boolean;
+  /** Missing retains the legacy correction policy; applied only to AI correction. */
+  subtitleFillerPolicy?: 'remove-hesitations' | 'preserve';
+  /** Task-local style for AI subtitle translation, never changes provider defaults. */
+  subtitleTranslationStyle?: 'neutral' | 'conversational';
   /** 精修服务商：缺省/'follow-translation' = 跟随翻译服务（AI 类型时解析为同一服务商），或显式 AI 服务商 id。 */
   refineProvider?: string;
   /** 角色分离：在转写/翻译后用本地 sherpa 模型分析角色并对齐字幕。 */

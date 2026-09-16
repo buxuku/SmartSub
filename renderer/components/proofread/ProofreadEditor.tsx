@@ -93,6 +93,13 @@ export default function ProofreadEditor({
     handleSubtitleChange,
     handleSave,
     isDirty,
+    getIsDirty,
+    saveStatus,
+    saveError,
+    recoveryDraft,
+    draftStorageFailed,
+    restoreDraft,
+    discardDraft,
     getSubtitleStats,
     isTranslationFailed,
     getFailedTranslationIndices,
@@ -255,6 +262,8 @@ export default function ProofreadEditor({
   const { isDialogOpen } = useNavigationGuard(`proofread-editor-${file.id}`, {
     isDirty,
     onSave: handleSave,
+    getIsDirty,
+    onDiscard: discardDraft,
     title: t('unsavedChangesTitle'),
     description: t('unsavedChangesDesc'),
   });
@@ -293,9 +302,10 @@ export default function ProofreadEditor({
   }, [handleSave, onBack]);
 
   const handleDiscardAndBack = useCallback(() => {
+    discardDraft();
     setShowUnsavedDialog(false);
     onBack();
-  }, [onBack]);
+  }, [onBack, discardDraft]);
 
   // 标记完成隐含保存：保证完成态文件与界面一致；保存失败则留在编辑器
   const handleMarkCompleteClick = useCallback(async () => {
@@ -359,6 +369,43 @@ export default function ProofreadEditor({
 
   return (
     <div className="h-full flex flex-col">
+      <AlertDialog open={Boolean(recoveryDraft)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {commonT('draftRecovery.title')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {commonT('draftRecovery.description')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button variant="outline" onClick={discardDraft}>
+              {commonT('draftRecovery.discard')}
+            </Button>
+            <Button onClick={restoreDraft}>
+              {commonT('draftRecovery.restore')}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {saveStatus === 'save_error' && (
+        <div
+          role="alert"
+          className="shrink-0 bg-destructive/10 px-4 py-2 text-sm text-destructive"
+        >
+          {t('saveFailed')}
+          <details>
+            <summary>{commonT('saveState.details')}</summary>
+            <p className="break-words">{saveError}</p>
+          </details>
+        </div>
+      )}
+      {draftStorageFailed && (
+        <div role="alert" className="shrink-0 bg-warning/10 px-4 py-2 text-sm">
+          {commonT('draftRecovery.storageFailed')}
+        </div>
+      )}
       <div className="sticky top-0 z-10 flex-shrink-0 bg-background border-b">
         {/* 顶部工具栏 */}
         <TooltipProvider>
@@ -383,6 +430,11 @@ export default function ProofreadEditor({
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <span role="status" className="text-xs text-muted-foreground">
+                {commonT(
+                  `saveState.${saveStatus === 'idle' && isDirty ? 'dirty' : saveStatus}`,
+                )}
+              </span>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -390,6 +442,7 @@ export default function ProofreadEditor({
                     size="sm"
                     className="gap-1.5"
                     onClick={handleSave}
+                    disabled={saveStatus === 'saving' || Boolean(recoveryDraft)}
                   >
                     <Save className="h-4 w-4" />
                     {t('saveSubtitles')}
@@ -406,6 +459,7 @@ export default function ProofreadEditor({
                     size="sm"
                     className="gap-1.5"
                     onClick={handleMarkCompleteClick}
+                    disabled={saveStatus === 'saving' || Boolean(recoveryDraft)}
                   >
                     <Check className="h-4 w-4" />
                     {t('markCompleteAndBack')}

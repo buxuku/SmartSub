@@ -1,4 +1,29 @@
 {
+  "projectSave": {
+    "loading": "正在读取任务草稿…",
+    "retryLoad": "重新读取",
+    "failed": "任务草稿保存失败。当前更改尚未写入磁盘。",
+    "details": "错误详情",
+    "retry": "重试保存"
+  },
+  "advancedSettings": "专家参数",
+  "readiness": {
+    "translation_style_requires_ai": "情感口语化翻译需要 AI 翻译服务。请选择 AI 服务，或在专家参数中切换为常规翻译。",
+    "speaker_diarization_unavailable": "角色分离模型或运行库未就绪。请在引擎页安装，或在专家参数中关闭角色分离。",
+    "tts_unavailable": "所选配音引擎不存在或配置不完整。",
+    "tts_voice_unavailable": "所选音色已不可用，请重新选择。",
+    "tts_language_unsupported": "所选配音引擎不支持当前配音语言。",
+    "files_required": "请先添加任务文件。",
+    "subtitle_files_required": "此任务仅接受字幕文件。",
+    "model_required": "请选择本次任务使用的模型。",
+    "model_unavailable": "所选引擎或模型未就绪。请重新安装，或选择另一个已就绪的模型。",
+    "local_command_required": "请先配置本地 Whisper 命令。",
+    "target_language_required": "请选择明确的翻译目标语言。",
+    "provider_required": "所选翻译服务不存在或配置不完整。",
+    "refine_provider_required": "请为 AI 精修选择已配置的 AI 服务，或关闭精修。",
+    "input_unavailable": "任务源文件已移动或删除，请重新选择。",
+    "paired_subtitle_unavailable": "配对字幕已移动或删除，请重新配对。"
+  },
   "subtitleFilesRequired": "翻译已有字幕仅支持字幕文件。请先从列表移除音视频等非字幕文件；音视频请使用转写任务。",
   "parakeet": {
     "modelUnavailable": "模型 {{model}} 未就绪。请在任务配置中选择已安装的模型；固定配置任务可重新安装原模型或新建任务。",
@@ -230,13 +255,13 @@
     "label": "语音活动检测（VAD）",
     "on": "更快更稳：内置 whisper 引擎只在检测到的语音段内识别，自动跳过静音/背景音，明显减少该处的重复或幻觉字幕；字幕按 token 对齐到语音段，时间轴贴合语音、较稳。",
     "off": "文本最完整：内置 whisper 引擎分段更细、标点更全（短 / 中文件、中文推荐）；静音处的多余字幕由能量兜底压低；faster-whisper 等其他引擎在静音/音乐处仍可能出现重复或幻觉字幕。",
-    "hint": "想要最完整文本、最细分段时可关闭；想要最稳时间轴、静音处最少杂字时建议开启。此为全局设置，对所有任务生效。"
+    "hint": "想要最完整文本、最细分段时可关闭；想要最稳时间轴、静音处最少杂字时建议开启。仅作用于当前任务。"
   },
   "reduceRepetition": {
     "label": "减少重复 / 幻觉字幕",
     "on": "已开启：断开上文条件并抑制重复，显著减少静音/重复段的循环字幕；干净语音的连贯性可能略降。",
     "off": "已关闭：使用引擎默认（保留上文连贯性）；长视频或静音处可能出现重复或幻觉字幕。",
-    "hint": "遇到字幕大段重复/鬼畜时开启。全局设置，对 faster-whisper 与 whisper.cpp 同时生效。"
+    "hint": "遇到字幕大段重复时开启。仅作用于当前任务，支持 faster-whisper 与 whisper.cpp。"
   },
   "fasterWhisperAdvanced": {
     "title": "高级解码参数",
@@ -295,11 +320,20 @@
     "hint": "把中文字幕里的中文标点（，。、？！等）替换为空格并去掉行尾空格，让字幕更清爽。源语言为中文时作用于源字幕，目标为中文时作用于译文。"
   },
   "speakerDiarization": {
+    "warnings": {
+      "SPEAKER_DIARIZATION_AUDIO_UNAVAILABLE": "角色分离未执行：媒体音频不可用，请检查源文件后重试。",
+      "SPEAKER_DIARIZATION_MODEL_UNAVAILABLE": "角色分离未执行：模型或运行库不可用，请在引擎页安装后重试。",
+      "SPEAKER_DIARIZATION_INFERENCE_FAILED": "角色分离失败，字幕已保留。请查看日志并重试。",
+      "SPEAKER_DIARIZATION_EMPTY_RESULT": "角色分离未检测到有效语音，字幕已保留。",
+      "SPEAKER_DIARIZATION_SUBTITLE_UNAVAILABLE": "角色已识别，但没有可写入标签的字幕。角色信息已保存到校对数据。",
+      "SPEAKER_DIARIZATION_ANNOTATION_FAILED": "角色标签写入失败，角色信息已保留到校对数据，请查看日志。",
+      "SPEAKER_DIARIZATION_IMPORTED_SUBTITLE_PROTECTED": "导入字幕保持不变，角色信息已保存到校对数据，未向原文件写入标签。"
+    },
     "label": "角色分离",
     "hint": "转写与翻译完成后，在本地分析整段音频，按不同角色分离发言并对齐到每条字幕。耗时与音频长度成正比，可选择是否将角色标签写入导出的字幕文件。",
     "modelReady": "运行库与模型已就绪",
     "modelMissing": "尚未就绪",
-    "modelMissingHint": "可以保存此设置，但运行时会安全跳过。请确认「资源中心 → 本地多模型引擎」运行库和角色分离模型均已安装。",
+    "modelMissingHint": "启动前需安装运行库与角色分离模型；也可关闭角色分离。请前往「引擎」页配置。",
     "speakerCount": "角色数量",
     "speakerCountHint": "已知人数时指定通常更稳定",
     "autoDetect": "自动判断",
@@ -375,6 +409,7 @@
     "releaseAllCancel": "取消"
   },
   "row": {
+    "aiCorrectionValidationFailed": "{{count}} 条 AI 校正未通过校验，已保留原文。请在校对页检查后重试。",
     "cancelling": "取消中…正在中断转写",
     "proofread": "校对",
     "openFolder": "打开所在文件夹",
@@ -447,19 +482,49 @@
     "etaLessMin": "即将完成"
   },
   "presets": {
+    "layout": {
+      "label": "交付字幕排版",
+      "original": "保留原换行",
+      "twoLine": "紧凑双行（双语各一行）",
+      "width": "单行目标宽度（中文计 2）"
+    },
+    "language": {
+      "fillers": "AI 校正语气词策略",
+      "legacy": "默认校正",
+      "removeHesitations": "智能去除无意义停顿词",
+      "preserve": "保留情绪语气词",
+      "translation": "翻译风格",
+      "neutral": "常规翻译",
+      "conversational": "情感口语化（AI）"
+    },
+    "controls": {
+      "vadThreshold": "VAD 语音阈值",
+      "vadMinSpeechDuration": "最短语音（毫秒）",
+      "vadMinSilenceDuration": "最短静音（毫秒）",
+      "vadMaxSpeechDuration": "最长语音（秒，0 为不限）",
+      "vadSpeechPad": "语音边缘留白（毫秒）",
+      "vadSamplesOverlap": "采样重叠（秒）",
+      "subtitleMaxDuration": "单条字幕最长时长（秒）",
+      "subtitleMaxGap": "停顿断句间隔（秒）",
+      "preserveSpeechPauses": "保留原声停顿"
+    },
     "title": "场景预设",
     "customHint": "微调以下参数将自动切换为自定义",
     "interview": {
       "name": "会议访谈 / 播客",
-      "desc": "强化降噪去杂音，短句切分，说话人原声停顿清晰"
+      "desc": "短句切分、本地说话人聚类、保留原声停顿；需角色分离模型"
     },
     "lecture": {
       "name": "网课演讲 / 教程",
-      "desc": "极高准确率，严谨去幻觉，适合术语较多的知识讲解"
+      "desc": "VAD 与抗重复、AI 术语校正、智能去停顿词；需 AI 精修服务"
     },
     "movie": {
-      "name": "影视短剧 / Vlog",
-      "desc": "均衡自然切句，保留情绪语气，适合口语化字幕"
+      "name": "影视 / Vlog",
+      "desc": "紧凑双行、自然切句、保留情绪；翻译时需 AI 口语化服务"
+    },
+    "shortDrama": {
+      "name": "短剧 / 短视频",
+      "desc": "紧凑双行短句、保留情绪和停顿；翻译时需 AI 口语化服务"
     },
     "balanced": {
       "name": "通用均衡",

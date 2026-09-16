@@ -53,6 +53,9 @@ import ActivityCenter from './ActivityCenter';
 import CommandPalette from './CommandPalette';
 import { cn, openUrl } from 'lib/utils';
 import { hasAnyModelAnyEngine } from 'lib/engineModels';
+import { isProviderConfigured } from '../../types/provider';
+import { isAsrProviderConfigured } from '../../types/asrProvider';
+import { isTtsProviderConfigured } from '../../types/ttsProvider';
 import { TASK_TYPES } from 'lib/taskTypes';
 import { useRouter } from 'next/router';
 import { toast } from 'sonner';
@@ -350,6 +353,10 @@ const Layout = ({ children }) => {
   const [hasCloudProviders, setHasCloudProviders] = useState<boolean | null>(
     null,
   );
+  const [healthError, setHealthError] = useState(false);
+  const [cloudHealth, setCloudHealth] = useState<
+    Array<{ name: string; status: string }>
+  >([]);
   // 在线视频下载全局摘要（状态栏 pill；主进程仅在内容变化时广播）
   const [videoDownload, setVideoDownload] = useState<{
     running: boolean;
@@ -369,7 +376,7 @@ const Layout = ({ children }) => {
     });
   }, [t]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const mac = window?.ipc?.platform === 'darwin' || isMacPlatform();
     const overlayPlatform =
       window?.ipc?.platform === 'win32' || window?.ipc?.platform === 'linux';
@@ -617,33 +624,57 @@ const Layout = ({ children }) => {
     let disposed = false;
     const checkHealth = async () => {
       try {
-        const [info, asrProviders, transProviders] = await Promise.all([
-          window?.ipc?.invoke('getSystemInfo', null).catch(() => null),
-          window?.ipc?.invoke('getAsrProviders').catch(() => []),
-          window?.ipc?.invoke('getTranslationProviders').catch(() => []),
-        ]);
+        const [info, asrProviders, transProviders, ttsProviders, health] =
+          await Promise.all([
+            window.ipc.invoke('getSystemInfo', null),
+            window.ipc.invoke('getAsrProviders'),
+            window.ipc.invoke('getTranslationProviders'),
+            window.ipc.invoke('getTtsProviders'),
+            window.ipc.invoke('getProviderHealth'),
+          ]);
         if (!disposed) {
-          setHasLocalModels(hasAnyModelAnyEngine(info, asrProviders || []));
-          const configuredCloud = (transProviders || []).some((p: any) =>
-            Boolean(
-              p?.apiKey ||
-                p?.api_key ||
-                p?.secretKey ||
-                p?.secret_key ||
-                p?.appKey,
-            ),
+          setHealthError(false);
+          setHasLocalModels(hasAnyModelAnyEngine(info));
+          const configured = [
+            ...(asrProviders || [])
+              .filter((p: any) => isAsrProviderConfigured(p))
+              .map((p: any) => ({ ...p, kind: 'asr' })),
+            ...(transProviders || [])
+              .filter((p: any) => isProviderConfigured(p))
+              .map((p: any) => ({ ...p, kind: 'translation' })),
+            ...(ttsProviders || [])
+              .filter((p: any) => isTtsProviderConfigured(p))
+              .map((p: any) => ({ ...p, kind: 'tts' })),
+          ];
+          setHasCloudProviders(configured.length > 0);
+          setCloudHealth(
+            configured.map((provider) => ({
+              name: provider.name,
+              status:
+                (health || []).find(
+                  (result: any) =>
+                    result.id === provider.id && result.kind === provider.kind,
+                )?.status || 'unverified',
+            })),
           );
-          setHasCloudProviders(configuredCloud);
         }
       } catch (err) {
         console.error('Failed to check health in Layout:', err);
+        if (!disposed) setHealthError(true);
       }
     };
     checkHealth();
     const interval = setInterval(checkHealth, 10000);
+    const cleanupDownload = window.ipc.on(
+      'downloadProgress',
+      (_model: string, progress: number) => {
+        if (progress === 1) void checkHealth();
+      },
+    );
     return () => {
       disposed = true;
       clearInterval(interval);
+      cleanupDownload?.();
     };
   }, []);
 
@@ -1030,33 +1061,61 @@ const Layout = ({ children }) => {
           <span
             className={cn(
               'h-[7px] w-[7px] rounded-full',
-              hasLocalModels === false
-                ? 'bg-warning shadow-[0_0_0_3px_hsl(var(--warning)/0.15)]'
-                : 'bg-success shadow-[0_0_0_3px_hsl(var(--success)/0.15)]',
+              healthError || hasLocalModels === null
+                ? 'bg-muted-foreground/60'
+                : hasLocalModels === false
+                  ? 'bg-warning shadow-[0_0_0_3px_hsl(var(--warning)/0.15)]'
+                  : 'bg-success shadow-[0_0_0_3px_hsl(var(--success)/0.15)]',
             )}
           />
-          {hasLocalModels === false
-            ? t('statusbar.modelMissing')
-            : t('statusbar.modelReady')}
+          {healthError
+            ? t('statusbar.checkFailed')
+            : hasLocalModels === null
+              ? t('statusbar.checking')
+              : hasLocalModels === false
+                ? t('statusbar.modelMissing')
+                : t('statusbar.modelReady')}
         </button>
 
         {/* 云服务指示 */}
         <button
           type="button"
           onClick={() => router.push(`/${locale}/translation`)}
+          title={cloudHealth
+            .map(
+              (provider) =>
+                `${provider.name}: ${t(`statusbar.${provider.status}`)}`,
+            )
+            .join('\n')}
           className="titlebar-no-drag flex items-center gap-1.5 whitespace-nowrap transition-colors hover:text-foreground"
         >
           <span
             className={cn(
               'h-[7px] w-[7px] rounded-full',
-              hasCloudProviders === false
+              healthError ||
+                cloudHealth.some((provider) => provider.status === 'failed') ||
+                !cloudHealth.some((provider) => provider.status === 'connected')
                 ? 'bg-muted-foreground/60 shadow-[0_0_0_3px_hsl(var(--muted-foreground)/0.15)]'
                 : 'bg-success shadow-[0_0_0_3px_hsl(var(--success)/0.15)]',
             )}
           />
-          {hasCloudProviders === false
-            ? t('statusbar.serviceMissing')
-            : t('statusbar.serviceConfigured')}
+          {healthError
+            ? t('statusbar.checkFailed')
+            : hasCloudProviders === null
+              ? t('statusbar.checking')
+              : hasCloudProviders === false
+                ? t('statusbar.serviceMissing')
+                : cloudHealth.some((provider) => provider.status === 'failed')
+                  ? t('statusbar.serviceFailed')
+                  : cloudHealth.some(
+                        (provider) => provider.status === 'connected',
+                      )
+                    ? t('statusbar.serviceConnected', {
+                        count: cloudHealth.filter(
+                          (provider) => provider.status === 'connected',
+                        ).length,
+                      })
+                    : t('statusbar.unverified')}
         </button>
 
         {/* GPU / 硬件加速 */}

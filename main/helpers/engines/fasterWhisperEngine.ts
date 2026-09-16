@@ -22,6 +22,8 @@ import {
   composeWordCues,
   getSubtitleCueOptions,
   wordsToTriples,
+  resplitSubtitleCues,
+  type TokenTriple,
   type TimedWord,
 } from '../subtitleSegmentation';
 import { writeWordTimelineSidecar } from '../wordTimelineSidecar';
@@ -325,9 +327,8 @@ async function transcribeFasterWhisper(
     throw new TaskCancelledError();
   }
 
-  // 任务级 maxSubtitleChars：仅「正数上限」才从词级时间戳重建成句（composeWordCues
-  // 统一出口，含硬切回溯，宽度由真实词时间保证）；0 = 智能断句与 -1 = 不限制长度都
-  // 沿用引擎段级断句——whisper 原生按句分段，本就不按宽度硬切。
+  // Explicit task limits use real word times when available. Legacy defaults
+  // retain native segment boundaries; missing word times use segment fallback.
   const segments = transcription?.segments || [];
   ctx.onDiagnostics?.({
     vadAvailable: false,
@@ -340,15 +341,31 @@ async function transcribeFasterWhisper(
   });
   const cueOptions = getSubtitleCueOptions(formData as Record<string, unknown>);
   let subtitles;
-  if (cueOptions && Number.isFinite(cueOptions.maxWidth)) {
-    const wordTriples = segments.flatMap((segment) => {
+  if (
+    cueOptions &&
+    (Number.isFinite(cueOptions.maxWidth) ||
+      cueOptions.maxDurationSeconds !== undefined ||
+      cueOptions.maxGapSeconds !== undefined ||
+      formData.preserveSpeechPauses === true)
+  ) {
+    const config = formData as Record<string, unknown>;
+    let pendingWords: TokenTriple[] = [];
+    subtitles = [] as TokenTriple[];
+    const flushWords = () => {
+      subtitles.push(...composeWordCues(pendingWords, config));
+      pendingWords = [];
+    };
+    for (const segment of segments) {
       const triples = wordsToTriples(segment?.words);
-      return triples.length > 0 ? triples : [subtitleCueFromSegment(segment)];
-    });
-    subtitles = composeWordCues(
-      wordTriples,
-      formData as Record<string, unknown>,
-    );
+      if (triples.length) pendingWords.push(...triples);
+      else {
+        flushWords();
+        subtitles.push(
+          ...resplitSubtitleCues([subtitleCueFromSegment(segment)], config),
+        );
+      }
+    }
+    flushWords();
   } else {
     subtitles = segments.map(subtitleCueFromSegment);
   }

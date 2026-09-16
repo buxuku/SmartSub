@@ -285,6 +285,8 @@ export function setupProofreadHandlers(): void {
     ) => {
       try {
         const task = updateProofreadTask(taskId, updates);
+        if (!task)
+          return { success: false, error: 'Proofread task no longer exists' };
         return { success: true, data: task };
       } catch (error) {
         logMessage(`Error updating proofread task: ${error}`, 'error');

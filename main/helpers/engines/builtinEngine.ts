@@ -13,6 +13,7 @@ import {
   groupTokenCues,
   mergeShortCues,
   enforceMinDisplayDuration,
+  getMinDisplayDurationOptions,
   getSubtitleCueOptions,
   getMergeShortCueOptions,
   resplitSubtitleCues,
@@ -367,7 +368,10 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       }
       // 词级路径不补文本级 resplit：宽度上限已由 groupTokenCues（含硬切回溯）在真实
       // token 时间上保证，叠比例插值只会劣化时间轴（resplit 仅留给下方段级回退）。
-      const spaced = enforceMinDisplayDuration(refined);
+      const spaced = enforceMinDisplayDuration(
+        refined,
+        getMinDisplayDurationOptions(formData as Record<string, unknown>),
+      );
       subtitles = trimSubtitleTrailingSilence(spaced, tempAudioFile);
     } else {
       logMessage(

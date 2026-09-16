@@ -94,6 +94,8 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
     Record<string, string[]>
   >({});
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [parametersOpen, setParametersOpen] = useState(false);
+  const parameterCloseGuard = useRef<(() => Promise<boolean>) | null>(null);
   const apiKeyRef = useRef<HTMLInputElement>(null);
   const didAutoFocus = useRef(false);
 
@@ -625,7 +627,17 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
             <label className="text-sm font-medium">
               {t('customParameters')}
             </label>
-            <Dialog>
+            <Dialog
+              open={parametersOpen}
+              onOpenChange={async (next) => {
+                if (
+                  next ||
+                  !parameterCloseGuard.current ||
+                  (await parameterCloseGuard.current())
+                )
+                  setParametersOpen(next);
+              }}
+            >
               <DialogTrigger asChild>
                 <Button
                   variant="outline"
@@ -645,7 +657,10 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
                     {t('customParametersTip')}
                   </DialogDescription>
                 </DialogHeader>
-                <CustomParameterEditor providerId={providerId} />
+                <CustomParameterEditor
+                  providerId={providerId}
+                  closeGuardRef={parameterCloseGuard}
+                />
               </DialogContent>
             </Dialog>
           </div>

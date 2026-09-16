@@ -1,94 +1,35 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'next-i18next';
-import {
-  UploadCloud,
-  Minimize2,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-  Sparkles,
-  Trash2,
-  Film,
-  Plus,
-} from 'lucide-react';
+import { UploadCloud, Minimize2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
-import { toast } from 'sonner';
 import ToolboxFinishBar from '../common/ToolboxFinishBar';
+import ToolboxQueueList from '../common/ToolboxQueueList';
+import {
+  droppedToolboxPaths,
+  useToolboxQueue,
+} from '../../../hooks/useToolboxQueue';
 import type {
   VideoCompressPreset,
   VideoCompressResult,
 } from '../../../../types/toolbox';
 
-export interface CompressQueueItem {
-  id: string;
-  filePath: string;
-  fileName: string;
-  status: 'idle' | 'processing' | 'done' | 'error';
-  progress: number;
-  result?: VideoCompressResult;
-  error?: string;
-}
-
-function formatFileSize(bytes?: number): string {
-  if (!bytes || bytes <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
-}
-
 export default function VideoCompressorPanel() {
   const { t } = useTranslation('toolbox');
 
-  const [files, setFiles] = useState<CompressQueueItem[]>([]);
+  const queueState = useToolboxQueue<{ filePath: string }, VideoCompressResult>(
+    'toolbox:compressProgress',
+  );
+  const { queue, items: files, running: isCompressing } = queueState;
   const [preset, setPreset] = useState<VideoCompressPreset>('wechat_25mb');
   const [targetSizeMb, setTargetSizeMb] = useState<number>(24);
   const [outputDir, setOutputDir] = useState<string>('');
 
-  const [isCompressing, setIsCompressing] = useState<boolean>(false);
-  const [currentIndex, setCurrentIndex] = useState<number>(0);
-  const [currentProgress, setCurrentProgress] = useState<number>(0);
-
-  const currentJobIdRef = useRef<string>('');
-  const cancelledRef = useRef<boolean>(false);
-
-  useEffect(() => {
-    const cleanup = window.ipc?.on(
-      'toolbox:compressProgress',
-      (data: { jobId: string; percent: number }) => {
-        if (data.jobId === currentJobIdRef.current) {
-          setCurrentProgress(data.percent);
-          setFiles((prev) =>
-            prev.map((f) =>
-              f.status === 'processing' ? { ...f, progress: data.percent } : f,
-            ),
-          );
-        }
-      },
-    );
-    return () => cleanup?.();
-  }, []);
-
   const addFilesToQueue = (filePaths: string[]) => {
-    const newItems: CompressQueueItem[] = filePaths.map((p) => ({
-      id: `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      filePath: p,
-      fileName: p.split(/[/\\]/).pop() || '',
-      status: 'idle',
-      progress: 0,
-    }));
-    setFiles((prev) => {
-      const existingPaths = new Set(prev.map((item) => item.filePath));
-      const filtered = newItems.filter(
-        (item) => !existingPaths.has(item.filePath),
-      );
-      return [...prev, ...filtered];
-    });
+    queue.add(filePaths.map((filePath) => ({ filePath })));
   };
 
   const handleSelectVideo = async () => {
@@ -102,126 +43,33 @@ export default function VideoCompressorPanel() {
   };
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const dropped = Array.from(e.dataTransfer.files);
-    const paths: string[] = [];
-    for (const f of dropped) {
-      const p = window.ipc?.getPathForFile
-        ? window.ipc.getPathForFile(f)
-        : (f as any).path;
-      if (p) paths.push(p);
-    }
-    if (paths.length > 0) {
-      addFilesToQueue(paths);
-    }
+    addFilesToQueue(droppedToolboxPaths(e));
   };
 
-  const handleStartCompress = async () => {
-    if (files.length === 0 || isCompressing) return;
-
-    setIsCompressing(true);
-    cancelledRef.current = false;
-
-    for (let i = 0; i < files.length; i++) {
-      if (cancelledRef.current) break;
-      const item = files[i];
-      if (item.status === 'done') continue;
-
-      setCurrentIndex(i);
-      setCurrentProgress(0);
-      setFiles((prev) =>
-        prev.map((f, idx) =>
-          idx === i ? { ...f, status: 'processing', progress: 0 } : f,
-        ),
-      );
-
-      const jobId = `compress_${Date.now()}_${i}`;
-      currentJobIdRef.current = jobId;
-
-      try {
-        const outPath = outputDir
-          ? `${outputDir}/${item.fileName.replace(/\.[^.]+$/, '')}_compressed.mp4`
-          : undefined;
-
-        const res: VideoCompressResult = await window.ipc.invoke(
-          'toolbox:compressVideo',
-          {
+  const handleStartCompress = (retryId?: string) =>
+    queue.run(
+      {
+        failureMessage: t('queue.failed'),
+        cancel: (jobId) =>
+          window.ipc.invoke('toolbox:cancelCompressVideo', jobId),
+        execute: ({ filePath }, jobId) =>
+          window.ipc.invoke('toolbox:compressVideo', {
             jobId,
             config: {
-              videoPath: item.filePath,
+              videoPath: filePath,
               preset,
               targetSizeMb,
-              outputPath: outPath,
+              outputPath: outputDir
+                ? `${outputDir}/${filePath
+                    .split(/[/\\]/)
+                    .pop()!
+                    .replace(/\.[^.]+$/, '')}_compressed.mp4`
+                : undefined,
             },
-          },
-        );
-
-        if (cancelledRef.current) {
-          break;
-        }
-
-        if (res.success) {
-          setFiles((prev) =>
-            prev.map((f, idx) =>
-              idx === i
-                ? { ...f, status: 'done', progress: 100, result: res }
-                : f,
-            ),
-          );
-        } else {
-          setFiles((prev) =>
-            prev.map((f, idx) =>
-              idx === i
-                ? {
-                    ...f,
-                    status: 'error',
-                    error: res.error || 'Compression failed',
-                  }
-                : f,
-            ),
-          );
-        }
-      } catch (err: any) {
-        if (!cancelledRef.current) {
-          setFiles((prev) =>
-            prev.map((f, idx) =>
-              idx === i
-                ? {
-                    ...f,
-                    status: 'error',
-                    error: err?.message || 'Error occurred',
-                  }
-                : f,
-            ),
-          );
-        }
-      }
-    }
-
-    setIsCompressing(false);
-  };
-
-  const handleCancel = async () => {
-    cancelledRef.current = true;
-    if (currentJobIdRef.current) {
-      await window.ipc.invoke(
-        'toolbox:cancelCompressVideo',
-        currentJobIdRef.current,
-      );
-    }
-    setFiles((prev) =>
-      prev.map((f) =>
-        f.status === 'processing' ? { ...f, status: 'idle', progress: 0 } : f,
-      ),
+          }),
+      },
+      retryId,
     );
-    setIsCompressing(false);
-    toast.info('已取消批量视频压缩');
-  };
-
-  const handleRemoveItem = (id: string) => {
-    setFiles((prev) => prev.filter((f) => f.id !== id));
-  };
 
   const doneItems = files.filter(
     (f) => f.status === 'done' && f.result?.success,
@@ -237,9 +85,9 @@ export default function VideoCompressorPanel() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
-      <div className="flex flex-1 overflow-hidden p-6 gap-6">
+      <div className="flex min-h-0 flex-1 overflow-hidden p-4 gap-4">
         {/* 左侧：文件列表与档位 */}
-        <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card p-6 gap-5">
+        <div className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background p-4 gap-4">
           {/* 拖拽上传区 */}
           <div
             onDragOver={(e) => e.preventDefault()}
@@ -258,132 +106,13 @@ export default function VideoCompressorPanel() {
             </p>
           </div>
 
-          {/* 视频队列列表 */}
-          {files.length > 0 && (
-            <div className="flex flex-1 flex-col overflow-hidden space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-foreground">
-                  {t('videoCompressorQueue.queueTitle')} ({files.length})
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleSelectVideo}
-                    disabled={isCompressing}
-                    className="h-6 text-xs gap-1 px-2 text-muted-foreground hover:text-foreground"
-                  >
-                    <Plus className="h-3 w-3" />
-                    {t('videoCompressorQueue.addFiles')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setFiles([])}
-                    disabled={isCompressing}
-                    className="h-6 text-xs gap-1 px-2 text-muted-foreground hover:text-destructive"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                    {t('videoCompressorQueue.clearAll')}
-                  </Button>
-                </div>
-              </div>
-
-              <ScrollArea className="flex-1 rounded-lg border border-border bg-muted/20 p-2">
-                <div className="space-y-1.5">
-                  {files.map((file) => (
-                    <div
-                      key={file.id}
-                      className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-card px-3 py-2 text-xs"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <Film className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium text-foreground">
-                            {file.fileName}
-                          </p>
-                          {file.status === 'processing' && (
-                            <div className="flex items-center gap-2 pt-1">
-                              <Progress
-                                value={file.progress}
-                                className="h-1 flex-1"
-                              />
-                              <span className="text-[10px] font-mono text-muted-foreground">
-                                {file.progress}%
-                              </span>
-                            </div>
-                          )}
-                          {file.status === 'done' && file.result && (
-                            <p className="text-[10px] text-muted-foreground">
-                              {formatFileSize(file.result.originalSize)} →{' '}
-                              <strong className="text-foreground">
-                                {formatFileSize(file.result.compressedSize)}
-                              </strong>{' '}
-                              (省{' '}
-                              {(
-                                ((file.result.originalSize -
-                                  file.result.compressedSize) /
-                                  file.result.originalSize) *
-                                100
-                              ).toFixed(1)}
-                              %)
-                            </p>
-                          )}
-                          {file.status === 'error' && (
-                            <p className="text-[10px] text-destructive truncate">
-                              {file.error}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        {file.status === 'done' && (
-                          <Badge
-                            variant="secondary"
-                            className="bg-green-500/10 text-green-600 dark:text-green-400 gap-1 text-[10px] h-5"
-                          >
-                            <CheckCircle2 className="h-3 w-3" />
-                            已完成
-                          </Badge>
-                        )}
-                        {file.status === 'processing' && (
-                          <Badge
-                            variant="outline"
-                            className="gap-1 text-[10px] h-5"
-                          >
-                            <Loader2 className="h-3 w-3 animate-spin text-primary" />
-                            处理中
-                          </Badge>
-                        )}
-                        {file.status === 'error' && (
-                          <Badge
-                            variant="destructive"
-                            className="gap-1 text-[10px] h-5"
-                          >
-                            <AlertCircle className="h-3 w-3" />
-                            失败
-                          </Badge>
-                        )}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRemoveItem(file.id)}
-                          disabled={isCompressing}
-                          className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
-            </div>
-          )}
+          <ToolboxQueueList
+            {...queueState}
+            onRetry={handleStartCompress}
+            onRemove={(id) => queue.remove(id)}
+            onCancel={() => void queue.cancel()}
+            onClear={() => queue.clear()}
+          />
 
           {/* 预设档位 */}
           <div className="space-y-2.5 shrink-0 pt-2 border-t border-border">
@@ -488,7 +217,7 @@ export default function VideoCompressorPanel() {
         </div>
 
         {/* 右侧：保存控制与执行 */}
-        <div className="flex w-80 shrink-0 flex-col justify-between rounded-xl border border-border bg-card p-5">
+        <div className="flex min-h-0 w-72 shrink-0 flex-col gap-4 overflow-y-auto bg-muted/30 p-4">
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
               <Sparkles className="h-4 w-4 text-primary" />
@@ -539,7 +268,7 @@ export default function VideoCompressorPanel() {
                   originalSize: totalOriginal,
                   compressedSize: totalCompressed,
                 }}
-                onReset={() => setFiles([])}
+                onReset={() => queue.clear()}
               />
             )}
           </div>
@@ -550,19 +279,32 @@ export default function VideoCompressorPanel() {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-muted-foreground">
                     {t('videoCompressorQueue.compressingItem', {
-                      current: currentIndex + 1,
+                      current:
+                        files.findIndex((file) => file.status === 'running') +
+                        1,
                       total: files.length,
                     })}
                   </span>
                   <span className="font-mono font-medium">
-                    {currentProgress}%
+                    {Math.round(
+                      files.find((file) => file.status === 'running')
+                        ?.progress || 0,
+                    )}
+                    %
                   </span>
                 </div>
-                <Progress value={currentProgress} className="h-1.5" />
+                <Progress
+                  value={
+                    files.find((file) => file.status === 'running')?.progress ||
+                    0
+                  }
+                  className="h-1.5"
+                />
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={handleCancel}
+                  onClick={() => void queue.cancel()}
+                  disabled={queueState.cancelling}
                   className="w-full h-8 text-xs text-destructive hover:text-destructive"
                 >
                   {t('cancel')}
@@ -571,8 +313,13 @@ export default function VideoCompressorPanel() {
             ) : (
               <Button
                 className="w-full text-xs font-medium h-9"
-                onClick={handleStartCompress}
-                disabled={files.length === 0}
+                onClick={() => void handleStartCompress()}
+                disabled={
+                  !files.some(
+                    (file) =>
+                      file.status === 'pending' || file.status === 'cancelled',
+                  )
+                }
               >
                 <Minimize2 className="mr-1.5 h-3.5 w-3.5" />
                 {files.length > 1

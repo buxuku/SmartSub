@@ -53,6 +53,38 @@ async function runTests() {
     assert.ok(part2.includes('你好世界'));
     assert.ok(!part2.includes('Hello World'));
 
+    const beforeFailure = fs.readdirSync(tmpDir).sort();
+    const originalOpen = fs.openSync;
+    try {
+      fs.openSync = ((file, ...args) => {
+        if (String(file).includes('_part2'))
+          throw Object.assign(new Error('Test output reservation denied'), {
+            code: 'EACCES',
+          });
+        return originalOpen(file, ...args);
+      }) as typeof fs.openSync;
+      const failed = await splitBilingualSubtitles({
+        filePath: mergeRes.outputPaths[0],
+        outputDir: tmpDir,
+      });
+      assert.equal(failed.success, false);
+      assert.match(failed.error!, /reservation denied/);
+      assert.deepEqual(
+        fs.readdirSync(tmpDir).sort(),
+        beforeFailure,
+        'second reservation failure removes first placeholder only',
+      );
+    } finally {
+      fs.openSync = originalOpen;
+    }
+    fs.writeFileSync(sPath, 'No subtitle timestamps');
+    const emptySecondary = await mergeBilingualSubtitles({
+      primaryPath: pPath,
+      secondaryPath: sPath,
+    });
+    assert.equal(emptySecondary.success, false);
+    assert.deepEqual(emptySecondary.outputPaths, []);
+
     console.log('All bilingualSubtitles tests passed successfully!');
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });

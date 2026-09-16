@@ -6,6 +6,7 @@
  */
 
 import fs from 'fs';
+import { reserveToolboxOutput, toolboxOutputDirectory } from './outputPath';
 import path from 'path';
 import { spawn } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
@@ -18,26 +19,48 @@ import type {
 } from '../../../types/toolbox';
 
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
+const activeExtractions = new Map<string, AbortController>();
+
+export function cancelEmbeddedSubtitleExtraction(jobId: string): boolean {
+  const controller = activeExtractions.get(jobId);
+  controller?.abort();
+  return Boolean(controller);
+}
+
+export function cancelAllEmbeddedSubtitleExtractions(): void {
+  for (const controller of activeExtractions.values()) controller.abort();
+}
 
 /**
  * 探测视频中的所有内封字幕轨
  */
 export function scanEmbeddedSubtitles(
   videoPath: string,
+  signal?: AbortSignal,
 ): Promise<EmbeddedSubtitleStreamInfo[]> {
   return new Promise((resolve, reject) => {
     if (!fs.existsSync(videoPath)) {
       return reject(new Error(`Video file not found: ${videoPath}`));
     }
 
-    const proc = spawn(ffmpegPath, ['-hide_banner', '-i', videoPath]);
+    const proc = spawn(ffmpegPath, ['-hide_banner', '-i', videoPath], {
+      signal,
+    });
     let stderr = '';
+    let processError: Error | undefined;
 
     proc.stderr.on('data', (data) => {
       stderr += data.toString();
     });
 
     proc.on('close', () => {
+      if (processError) return reject(processError);
+      if (signal?.aborted)
+        return reject(new Error('Subtitle extraction cancelled'));
+      if (!/Input #\d+/i.test(stderr))
+        return reject(
+          new Error(`Unable to scan subtitles: ${stderr.slice(-300)}`),
+        );
       const streams: EmbeddedSubtitleStreamInfo[] = [];
       const lines = stderr.split(/\r?\n/);
       let subIndex = 0;
@@ -89,7 +112,7 @@ export function scanEmbeddedSubtitles(
     });
 
     proc.on('error', (err) => {
-      reject(err);
+      processError = err;
     });
   });
 }
@@ -99,96 +122,137 @@ export function scanEmbeddedSubtitles(
  */
 export async function extractEmbeddedSubtitles(
   config: ExtractEmbeddedSubtitleConfig,
+  jobId?: string,
+  onProgress?: (percent: number) => void,
 ): Promise<ExtractEmbeddedSubtitleResult> {
   const { videoPath, streamIndices, targetFormat = 'srt', outputDir } = config;
-
-  if (!fs.existsSync(videoPath)) {
+  const extractedFiles: ExtractEmbeddedSubtitleResult['extractedFiles'] = [];
+  const errors: string[] = [];
+  if (jobId && activeExtractions.has(jobId))
     return {
       success: false,
-      extractedFiles: [],
-      error: `Video file not found: ${videoPath}`,
+      extractedFiles,
+      error: 'Subtitle extraction already running',
     };
-  }
+  const controller = new AbortController();
+  if (jobId) activeExtractions.set(jobId, controller);
+  try {
+    if (!['srt', 'ass', 'vtt'].includes(targetFormat))
+      throw new Error('Invalid subtitle format');
+    if (
+      !Array.isArray(streamIndices) ||
+      !streamIndices.length ||
+      streamIndices.some((index) => !Number.isSafeInteger(index) || index < 0)
+    )
+      throw new Error('Select valid subtitle tracks');
+    const dir = toolboxOutputDirectory(outputDir, videoPath);
+    const baseName = path.basename(videoPath, path.extname(videoPath));
+    const streams = await scanEmbeddedSubtitles(videoPath, controller.signal);
+    const indices = [...new Set(streamIndices)];
+    for (const [position, idx] of indices.entries()) {
+      if (controller.signal.aborted)
+        throw new Error('Subtitle extraction cancelled');
+      const stream = streams.find((s) => s.subIndex === idx);
+      if (!stream) {
+        errors.push(`未找到轨道 #${idx + 1}`);
+        continue;
+      }
 
-  const dir = outputDir && fs.existsSync(outputDir)
-    ? outputDir
-    : path.dirname(videoPath);
-  const ext = path.extname(videoPath);
-  const baseName = path.basename(videoPath, ext);
+      if (!stream.isText) {
+        errors.push(
+          `轨道 #${idx + 1} (${stream.codec}) 为位图字幕，不支持提取为纯文本`,
+        );
+        continue;
+      }
 
-  const streams = await scanEmbeddedSubtitles(videoPath);
-  const extractedFiles: Array<{
-    subIndex: number;
-    outputPath: string;
-    language?: string;
-  }> = [];
-  const errors: string[] = [];
+      const langTag = stream.language
+        ? `_${stream.language.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+        : `_track${idx + 1}`;
+      const outName = `${baseName}${langTag}.${targetFormat}`;
+      let outPath: string | undefined;
+      try {
+        outPath = reserveToolboxOutput(path.join(dir, outName));
 
-  for (const idx of streamIndices) {
-    const stream = streams.find((s) => s.subIndex === idx);
-    if (!stream) {
-      errors.push(`未找到轨道 #${idx + 1}`);
-      continue;
-    }
+        const codecArg =
+          targetFormat === 'srt'
+            ? 'subrip'
+            : targetFormat === 'ass'
+              ? 'ass'
+              : 'webvtt';
 
-    if (!stream.isText) {
-      errors.push(`轨道 #${idx + 1} (${stream.codec}) 为位图字幕，不支持提取为纯文本`);
-      continue;
-    }
+        const args = [
+          '-hide_banner',
+          '-y',
+          '-i',
+          videoPath,
+          '-map',
+          `0:s:${idx}`,
+          '-c:s',
+          codecArg,
+          outPath,
+        ];
 
-    const langTag = stream.language ? `_${stream.language}` : `_track${idx + 1}`;
-    const outName = `${baseName}${langTag}.${targetFormat}`;
-    const outPath = path.join(dir, outName);
+        logMessage(`执行提取内封字幕: ${ffmpegPath} ${args.join(' ')}`, 'info');
 
-    const codecArg = targetFormat === 'srt'
-      ? 'subrip'
-      : targetFormat === 'ass'
-        ? 'ass'
-        : 'webvtt';
-
-    const args = [
-      '-hide_banner',
-      '-y',
-      '-i',
-      videoPath,
-      '-map',
-      `0:s:${idx}`,
-      '-c:s',
-      codecArg,
-      outPath,
-    ];
-
-    logMessage(`执行提取内封字幕: ${ffmpegPath} ${args.join(' ')}`, 'info');
-
-    await new Promise<void>((resolve, reject) => {
-      const proc = spawn(ffmpegPath, args);
-      let stderr = '';
-      proc.stderr.on('data', (d) => (stderr += d.toString()));
-      proc.on('close', (code) => {
-        if (code === 0 && fs.existsSync(outPath)) {
-          extractedFiles.push({
-            subIndex: idx,
-            outputPath: outPath,
-            language: stream.language,
+        await new Promise<void>((resolve, reject) => {
+          const proc = spawn(ffmpegPath, args, { signal: controller.signal });
+          let stderr = '';
+          // Keep diagnostics bounded even for long or malformed media.
+          proc.stderr.on(
+            'data',
+            (d) => (stderr = (stderr + d.toString()).slice(-1000)),
+          );
+          let processError: Error | undefined;
+          proc.on('close', (code) => {
+            if (code === 0 && !controller.signal.aborted) {
+              resolve();
+            } else {
+              reject(
+                processError ||
+                  new Error(
+                    `提取字幕轨 #${idx + 1} 失败 (exit code ${code}): ${stderr.slice(-150)}`,
+                  ),
+              );
+            }
           });
-          resolve();
-        } else {
-          const failMsg = `提取字幕轨 #${idx + 1} 失败 (exit code ${code}): ${stderr.slice(-150)}`;
-          logMessage(failMsg, 'warning');
-          errors.push(failMsg);
-          resolve(); // 单轨失败不阻塞其它轨道
+          proc.on('error', (error) => {
+            // Wait for close before unlocking or removing the output.
+            processError = error;
+          });
+        });
+        if (fs.statSync(outPath).size === 0)
+          throw new Error('Extracted subtitle is empty');
+        extractedFiles.push({
+          subIndex: idx,
+          outputPath: outPath,
+          language: stream.language,
+        });
+      } catch (error) {
+        if (outPath) {
+          try {
+            fs.unlinkSync(outPath);
+          } catch {}
         }
-      });
-      proc.on('error', reject);
-    });
+        errors.push(
+          `Track #${idx + 1}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      onProgress?.(((position + 1) / indices.length) * 100);
+    }
+    if (controller.signal.aborted) errors.push('Subtitle extraction cancelled');
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  } finally {
+    if (jobId) activeExtractions.delete(jobId);
   }
 
   return {
-    success: extractedFiles.length > 0,
+    success: extractedFiles.length > 0 && errors.length === 0,
     extractedFiles,
-    error:
-      extractedFiles.length === 0
-        ? errors.join('; ') || 'No subtitles extracted'
-        : undefined,
+    error: errors.length
+      ? errors.join('; ')
+      : extractedFiles.length
+        ? undefined
+        : 'No subtitles extracted',
   };
 }

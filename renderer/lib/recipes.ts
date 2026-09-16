@@ -5,7 +5,6 @@
  */
 import type { IFormData } from '../../types';
 import type { RecipeGoals, TaskRecipe } from '../../types/recipe';
-import { stripSpeakerDiarizationConfig } from '../../types/speakerDiarization';
 import { resolveSubtitleOutputFormats } from '../../types/subtitleOutput';
 
 /** 启动台拖放带入向导的 sessionStorage 交接键 */
@@ -135,7 +134,7 @@ export function recipeToWizardPrefill(recipe: TaskRecipe): RecipeWizardPrefill {
     dubbingGateOn: gates ? gates.dubbing === 'manual' : false,
     config: recipe.config
       ? {
-          ...stripSpeakerDiarizationConfig(recipe.config),
+          ...recipe.config,
           ...(recipe.config.subtitleOutputFormat ||
           recipe.config.subtitleOutputFormats
             ? {

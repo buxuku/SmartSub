@@ -1,16 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'next-i18next';
 import ReactPlayer from 'react-player';
-import {
-  UploadCloud,
-  Film,
-  CheckCircle2,
-  FolderOpen,
-  Sparkles,
-} from 'lucide-react';
+import { Film, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import {
   Select,
@@ -19,8 +12,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { toast } from 'sonner';
 import ToolboxFinishBar from '../common/ToolboxFinishBar';
+import ToolboxQueueList from '../common/ToolboxQueueList';
+import {
+  droppedToolboxPaths,
+  useToolboxQueue,
+} from '../../../hooks/useToolboxQueue';
+import {
+  resolveToolboxVideoRange,
+  ToolboxVideoInput,
+  useToolboxVideoSelection,
+} from '../../../hooks/useToolboxVideoSelection';
 import type { VideoToGifResult } from '../../../../types/toolbox';
 
 export default function VideoToGifPanel() {
@@ -28,124 +30,92 @@ export default function VideoToGifPanel() {
 
   const playerRef = useRef<ReactPlayer>(null);
 
-  const [videoPath, setVideoPath] = useState<string | null>(null);
-  const [videoDuration, setVideoDuration] = useState<number>(0);
-  const [currentTime, setCurrentTime] = useState<number>(0);
-
-  const [startSec, setStartSec] = useState<number>(0);
-  const [endSec, setEndSec] = useState<number>(5);
-  const [fps, setFps] = useState<number>(12);
-  const [width, setWidth] = useState<number>(480);
-  const [outputDir, setOutputDir] = useState<string>('');
-
-  const [isExporting, setIsExporting] = useState<boolean>(false);
-  const [progress, setProgress] = useState<number>(0);
-  const [result, setResult] = useState<VideoToGifResult | null>(null);
-
-  const currentJobIdRef = useRef<string>('');
-
-  useEffect(() => {
-    const cleanup = window.ipc?.on(
-      'toolbox:gifProgress',
-      (data: { jobId: string; percent: number }) => {
-        if (data.jobId === currentJobIdRef.current) {
-          setProgress(data.percent);
-        }
-      },
-    );
-    return () => cleanup?.();
-  }, []);
+  const queueState = useToolboxQueue<ToolboxVideoInput, VideoToGifResult>(
+    'toolbox:gifProgress',
+  );
+  const { queue, items, running: isExporting } = queueState;
+  const selection = useToolboxVideoSelection(queue, items, 5);
+  const { videoPath, startSec, endSec, setStartSec, setEndSec } = selection;
+  const [currentTime, setCurrentTime] = useState(0);
+  useEffect(() => setCurrentTime(0), [selection.selectedId]);
+  const [fps, setFps] = useState(12);
+  const [width, setWidth] = useState(480);
+  const [outputDir, setOutputDir] = useState('');
+  const progress =
+    items.find((item) => item.status === 'running')?.progress || 0;
 
   const handleSelectVideo = async () => {
-    const files = await window.ipc.invoke('toolbox:selectFile', {
+    const paths = await window.ipc.invoke('toolbox:selectFile', {
       type: 'video',
-      multiSelections: false,
+      multiSelections: true,
     });
-    if (Array.isArray(files) && files.length > 0) {
-      await loadVideo(files[0]);
-    }
+    if (Array.isArray(paths))
+      queue.add(paths.map((filePath: string) => ({ filePath })));
   };
-
-  const loadVideo = async (filePath: string) => {
-    setVideoPath(filePath);
-    setResult(null);
-    try {
-      const info = await window.ipc.invoke('toolbox:getVideoInfo', filePath);
-      setVideoDuration(info.duration || 10);
-      setStartSec(0);
-      setEndSec(Math.min(5, info.duration || 5));
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      const p = window.ipc?.getPathForFile
-        ? window.ipc.getPathForFile(files[0])
-        : (files[0] as any).path;
-      if (p) loadVideo(p);
-    }
-  };
-
-  const handleStartGif = async () => {
-    if (!videoPath || isExporting) return;
-    if (endSec <= startSec) {
-      toast.error('结束时间必须大于起始时间');
-      return;
-    }
-    if (endSec - startSec > 30) {
-      toast.warning('动图片段建议在 10 秒以内，超长片段生成较慢且文件体积巨大');
-    }
-
-    const jobId = `gif_${Date.now()}`;
-    currentJobIdRef.current = jobId;
-
-    setIsExporting(true);
-    setProgress(0);
-    setResult(null);
-
-    try {
-      const res: VideoToGifResult = await window.ipc.invoke(
-        'toolbox:videoToGif',
-        {
-          jobId,
-          config: {
-            videoPath,
-            startSec,
-            endSec,
-            fps,
-            width,
-            outputPath: outputDir
-              ? `${outputDir}/${videoPath
-                  .split(/[/\\]/)
-                  .pop()
-                  ?.replace(/\.[^.]+$/, '')}_anim.gif`
-              : undefined,
-          },
+  const handleDrop = (event: React.DragEvent) =>
+    queue.add(droppedToolboxPaths(event).map((filePath) => ({ filePath })));
+  const handleStartGif = (retryId?: string) =>
+    queue.run(
+      {
+        failureMessage: t('queue.failed'),
+        cancel: (jobId) => window.ipc.invoke('toolbox:cancelVideoToGif', jobId),
+        execute: async (input, jobId, signal) => {
+          const range = await resolveToolboxVideoRange(input, 5);
+          signal.throwIfAborted();
+          return window.ipc.invoke('toolbox:videoToGif', {
+            jobId,
+            config: {
+              videoPath: input.filePath,
+              startSec: range.startSec,
+              endSec: range.endSec,
+              fps,
+              width,
+              outputPath: outputDir
+                ? `${outputDir}/${input.filePath
+                    .split(/[/\\]/)
+                    .pop()!
+                    .replace(/\.[^.]+$/, '')}_anim.gif`
+                : undefined,
+            },
+          });
         },
-      );
-      setResult(res);
-      if (res.success) {
-        toast.success('高清 GIF 动图生成成功！');
-      } else {
-        toast.error(`生成失败: ${res.error}`);
-      }
-    } catch (err: any) {
-      toast.error(`生成异常: ${err.message || err}`);
-    } finally {
-      setIsExporting(false);
-    }
-  };
+      },
+      retryId,
+    );
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
-      <div className="flex flex-1 overflow-hidden p-6 gap-6">
+      <div className="flex min-h-0 flex-1 overflow-hidden p-4 gap-4">
         {/* 左侧：播放器与时间区间 */}
-        <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card">
+        <div
+          className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={handleDrop}
+        >
+          {items.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isExporting}
+              onClick={handleSelectVideo}
+            >
+              {t('videoCompressorQueue.addFiles')}
+            </Button>
+          )}
+          <ToolboxQueueList
+            {...queueState}
+            selectedId={selection.selectedId}
+            onSelect={selection.select}
+            onRetry={handleStartGif}
+            onRemove={(id) => queue.remove(id)}
+            onCancel={() => void queue.cancel()}
+            onClear={() => queue.clear()}
+          />
+          {selection.loadError && (
+            <p role="alert" className="p-2 text-xs text-destructive">
+              {selection.loadError}
+            </p>
+          )}
           {!videoPath ? (
             <div
               onDragOver={(e) => e.preventDefault()}
@@ -164,9 +134,10 @@ export default function VideoToGifPanel() {
               </p>
             </div>
           ) : (
-            <div className="flex flex-1 flex-col overflow-hidden">
-              <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
+            <div className="flex flex-none flex-col">
+              <div className="relative aspect-video min-h-48 bg-black flex items-center justify-center overflow-hidden">
                 <ReactPlayer
+                  key={videoPath}
                   ref={playerRef}
                   url={`media://${encodeURIComponent(videoPath)}`}
                   width="100%"
@@ -184,6 +155,7 @@ export default function VideoToGifPanel() {
                       variant="outline"
                       size="sm"
                       onClick={() => setStartSec(currentTime)}
+                      disabled={isExporting || currentTime >= endSec}
                       className="h-7 text-xs px-2"
                     >
                       设当前为起点
@@ -205,6 +177,7 @@ export default function VideoToGifPanel() {
                       variant="outline"
                       size="sm"
                       onClick={() => setEndSec(currentTime)}
+                      disabled={isExporting || currentTime <= startSec}
                       className="h-7 text-xs px-2"
                     >
                       设当前为终点
@@ -217,7 +190,7 @@ export default function VideoToGifPanel() {
         </div>
 
         {/* 右侧：GIF 参数 */}
-        <div className="flex w-80 shrink-0 flex-col justify-between rounded-xl border border-border bg-card p-5">
+        <div className="flex min-h-0 w-72 shrink-0 flex-col gap-4 overflow-y-auto bg-muted/30 p-4">
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
               <Sparkles className="h-4 w-4 text-primary" />
@@ -301,15 +274,14 @@ export default function VideoToGifPanel() {
               </div>
             </div>
 
-            {result?.success && (
+            {items.some((item) => item.status === 'done') && !isExporting && (
               <ToolboxFinishBar
                 outputType="gif"
-                outputPath={result.outputPath}
+                outputPaths={items
+                  .filter((item) => item.status === 'done')
+                  .map((item) => item.result!.outputPath)}
                 summary={t('finishBar.title')}
-                onReset={() => {
-                  setResult(null);
-                  setVideoPath(null);
-                }}
+                onReset={() => queue.clear()}
               />
             )}
           </div>
@@ -326,8 +298,13 @@ export default function VideoToGifPanel() {
             ) : (
               <Button
                 className="w-full text-xs font-medium h-9"
-                onClick={handleStartGif}
-                disabled={!videoPath || endSec <= startSec}
+                onClick={() => void handleStartGif()}
+                disabled={
+                  !items.some(
+                    (item) =>
+                      item.status === 'pending' || item.status === 'cancelled',
+                  )
+                }
               >
                 <Film className="mr-1.5 h-3.5 w-3.5" />
                 生成高清 GIF

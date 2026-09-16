@@ -33,6 +33,17 @@ jobs:
       - name: Check i18n key parity
         run: yarn check:i18n
 
+      - name: Typecheck renderer and main process
+        run: yarn typecheck
+
+      - name: Tests (parameter UI and durable saves)
+        run: |
+          yarn test:renderer
+          yarn test:parameter-persistence
+
+      - name: Tests (Pro baseline and workflow reliability)
+        run: yarn test:pro-baseline
+
       - name: Unit tests (engines)
         run: yarn test:engines
 

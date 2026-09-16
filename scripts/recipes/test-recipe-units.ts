@@ -214,7 +214,16 @@ eq(recipeBlockHref('en', 'tts'), '/en/ttsServices', 'recipeBlockHref: tts');
       },
     }),
   );
-  eq(p.config, { sourceLanguage: 'en' }, 'prefill: 用户配方不回填角色分离字段');
+  eq(
+    p.config,
+    {
+      sourceLanguage: 'en',
+      speakerDiarization: true,
+      speakerDiarizationCount: 3,
+      speakerDiarizationEmbedInSubtitle: true,
+    },
+    'prefill: 用户配方保留角色分离字段',
+  );
 }
 
 // ── recipeStageKeys ─────────────────────────────────────────────────────────

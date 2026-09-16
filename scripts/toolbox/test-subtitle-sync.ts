@@ -7,6 +7,7 @@ import {
   executeSubtitleSync,
 } from '../../main/helpers/toolbox/subtitleSync';
 import { FRAMERATE_RATIO_PRESETS } from '../../main/helpers/toolbox/framerates';
+import { scaleTimestampMs } from '../../types/framerates';
 import type { SubtitleCue } from '../../main/helpers/subtitleFormats';
 
 async function runTests() {
@@ -73,6 +74,35 @@ async function runTests() {
   const expectedOneHourScaled = Math.round(oneHourMs * (960 / 1001));
   assert.strictEqual(expectedOneHourScaled, 3452547);
   assert.strictEqual(broadcastCues[1].startMs, 3452547);
+  for (const preset of FRAMERATE_RATIO_PRESETS) {
+    const { numerator, denominator } = preset.fraction;
+    for (const timestamp of [1, 500, 3600000, 7200000, 18000000, 86400000]) {
+      const expected = Number(
+        (BigInt(timestamp) * BigInt(numerator) * BigInt(2) +
+          BigInt(denominator)) /
+          (BigInt(denominator) * BigInt(2)),
+      );
+      assert.equal(scaleTimestampMs(timestamp, preset.fraction), expected);
+      assert.equal(
+        syncCues(
+          [{ startMs: timestamp, endMs: timestamp + 2000, text: 'Long film' }],
+          { filePath: '', mode: 'scale', scaleFraction: preset.fraction },
+        )[0].startMs,
+        expected,
+      );
+    }
+  }
+  assert.throws(() =>
+    syncCues(sampleCues, { filePath: '', mode: 'scale', scaleRatio: -1 }),
+  );
+  assert.throws(() =>
+    syncCues(sampleCues, {
+      filePath: '',
+      mode: 'two-point',
+      p1SourceMs: 1000,
+      p2SourceMs: 1000,
+    }),
+  );
 
   // 5. 测试完整文件执行
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smartsub-test-sync-'));

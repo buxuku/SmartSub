@@ -19,13 +19,16 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Save, Undo2 } from 'lucide-react';
+import { saveNavigationGuards } from '../lib/navigationSave';
 
 const useIsomorphicLayoutEffect =
   typeof window !== 'undefined' ? React.useLayoutEffect : React.useEffect;
 
 export interface NavigationGuardOptions {
   isDirty: boolean;
+  getIsDirty?: () => boolean;
   onSave?: () => Promise<boolean>;
+  onDiscard?: () => void;
   title?: string;
   description?: string;
 }
@@ -41,11 +44,12 @@ export interface NavigationGuardContextValue {
 const NavigationGuardContext =
   createContext<NavigationGuardContextValue | null>(null);
 
+const NAVIGATION_CANCEL_CODE = 'SMARTSUB_UNSAVED_NAVIGATION';
+
 const normalizePath = (p?: string | null): string => {
   if (!p) return '/';
-  const withoutQuery = p.split('?')[0];
-  const trimmed = withoutQuery.replace(/\/+$/, '');
-  return trimmed || '/';
+  const url = new URL(p, 'http://smartsub.local');
+  return (url.pathname.replace(/\/+$/, '') || '/') + url.search;
 };
 
 export function NavigationGuardProvider({
@@ -61,7 +65,55 @@ export function NavigationGuardProvider({
   const [showDialog, setShowDialog] = useState(false);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveChanged, setSaveChanged] = useState(false);
   const bypassRef = useRef(false);
+  const historyIndexRef = useRef(0);
+  const restoringHistoryRef = useRef(false);
+  const pendingHistoryRef = useRef<number | null>(null);
+  const [restoringHistory, setRestoringHistory] = useState(false);
+
+  useEffect(() => {
+    // Next Link leaves the rejected route promise unhandled. Suppress only our
+    // intentional cancellation so the development overlay cannot cover the dialog.
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      if (event.reason?.code !== NAVIGATION_CANCEL_CODE) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    window.addEventListener('unhandledrejection', handleRejection, true);
+    return () =>
+      window.removeEventListener('unhandledrejection', handleRejection, true);
+  }, []);
+
+  useEffect(() => {
+    const history = window.history;
+    const push = history.pushState;
+    const replace = history.replaceState;
+    const initialIndex = history.state?.smartsubGuardIndex ?? 0;
+    historyIndexRef.current = initialIndex;
+    replace.call(
+      history,
+      { ...history.state, smartsubGuardIndex: initialIndex },
+      '',
+    );
+    history.pushState = function (data, unused, url) {
+      const index = historyIndexRef.current + 1;
+      push.call(history, { ...data, smartsubGuardIndex: index }, unused, url);
+      historyIndexRef.current = index;
+    };
+    history.replaceState = function (data, unused, url) {
+      replace.call(
+        history,
+        { ...data, smartsubGuardIndex: historyIndexRef.current },
+        unused,
+        url,
+      );
+    };
+    return () => {
+      history.pushState = push;
+      history.replaceState = replace;
+    };
+  }, []);
 
   const updateDirtyCount = useCallback(() => {
     let count = 0;
@@ -90,7 +142,7 @@ export function NavigationGuardProvider({
   const getActiveDirtyGuard = useCallback((): NavigationGuardOptions | null => {
     let dirtyGuard: NavigationGuardOptions | null = null;
     guardsRef.current.forEach((guard) => {
-      if (!dirtyGuard && guard.isDirty) {
+      if (!dirtyGuard && (guard.getIsDirty?.() ?? guard.isDirty)) {
         dirtyGuard = guard;
       }
     });
@@ -98,6 +150,10 @@ export function NavigationGuardProvider({
   }, []);
 
   const isGuarded = dirtyCount > 0;
+
+  useEffect(() => {
+    window.ipc?.send('setUnsavedChanges', isGuarded);
+  }, [isGuarded]);
 
   const bypassNextRoute = useCallback(() => {
     bypassRef.current = true;
@@ -130,12 +186,12 @@ export function NavigationGuardProvider({
       if (normalizePath(url) === normalizePath(router.asPath)) return;
 
       // 阻止 Next.js 切换页面，携带标准 { cancelled: true } payload
-      const err = Object.assign(
-        new Error('routeChange aborted (unsaved changes guard)'),
-        { cancelled: true },
-      );
+      // Cancellation is a control-flow signal, not a runtime Error. Next's
+      // development listener runs before ours and renders Error instances.
+      const err = { cancelled: true, code: NAVIGATION_CANCEL_CODE };
       router.events.emit('routeChangeError', err, url, { shallow: false });
       setPendingUrl(url);
+      pendingHistoryRef.current = null;
       setShowDialog(true);
       throw err;
     };
@@ -148,27 +204,69 @@ export function NavigationGuardProvider({
 
   // 3. 浏览器前进/后退拦截 (beforePopState)
   useEffect(() => {
+    let restoreTimer: ReturnType<typeof setTimeout> | undefined;
+    const restoreCurrentEntry = () => {
+      clearTimeout(restoreTimer);
+      // Coalesce queued back/forward gestures before issuing another traversal.
+      restoreTimer = setTimeout(() => {
+        const current = window.history.state?.smartsubGuardIndex;
+        if (
+          typeof current === 'number' &&
+          current !== historyIndexRef.current
+        ) {
+          window.history.go(historyIndexRef.current - current);
+          return;
+        }
+        restoringHistoryRef.current = false;
+        setRestoringHistory(false);
+      }, 30);
+    };
     router.beforePopState(({ url, as }) => {
+      const targetIndex = window.history.state?.smartsubGuardIndex;
+      if (restoringHistoryRef.current) {
+        restoreCurrentEntry();
+        return false;
+      }
       if (bypassRef.current) {
-        bypassRef.current = false;
+        if (typeof targetIndex === 'number')
+          historyIndexRef.current = targetIndex;
         return true;
       }
 
       const activeGuard = getActiveDirtyGuard();
-      if (!activeGuard) return true;
+      if (!activeGuard) {
+        if (typeof targetIndex === 'number')
+          historyIndexRef.current = targetIndex;
+        return true;
+      }
 
       // 优先记录真实的展示 URL (as)，避免 [locale] 动态路由或 trailingSlash 导致跳转失真
       const target = as || url;
       if (normalizePath(target) === normalizePath(router.asPath)) {
+        if (typeof targetIndex === 'number')
+          historyIndexRef.current = targetIndex;
         return true;
       }
 
+      const delta =
+        typeof targetIndex === 'number'
+          ? historyIndexRef.current - targetIndex
+          : 0;
+      pendingHistoryRef.current = delta ? targetIndex : null;
+      if (delta) {
+        restoringHistoryRef.current = true;
+        setRestoringHistory(true);
+        restoreCurrentEntry();
+      } else {
+        window.history.replaceState(window.history.state, '', router.asPath);
+      }
       setPendingUrl(target);
       setShowDialog(true);
       return false;
     });
 
     return () => {
+      clearTimeout(restoreTimer);
       router.beforePopState(() => true);
     };
   }, [router, getActiveDirtyGuard]);
@@ -187,32 +285,39 @@ export function NavigationGuardProvider({
   }, [router]);
 
   const handleCancel = () => {
+    setSaveChanged(false);
     setShowDialog(false);
     setPendingUrl(null);
-    // 若浏览器地址栏因 popstate 已发生变更，平滑恢复回 router.asPath
-    if (
-      typeof window !== 'undefined' &&
-      normalizePath(window.location.pathname) !== normalizePath(router.asPath)
-    ) {
-      window.history.pushState(null, '', router.asPath);
-    }
+    pendingHistoryRef.current = null;
+  };
+
+  const leave = () => {
+    const target = pendingUrl;
+    const targetIndex = pendingHistoryRef.current;
+    pendingHistoryRef.current = null;
+    setPendingUrl(null);
+    setShowDialog(false);
+    if (!target) return;
+    bypassRef.current = true;
+    if (targetIndex !== null)
+      window.history.go(targetIndex - historyIndexRef.current);
+    else
+      void router.push(target).finally(() => {
+        bypassRef.current = false;
+      });
   };
 
   const handleDiscardAndLeave = () => {
-    setShowDialog(false);
-    const target = pendingUrl;
-    setPendingUrl(null);
-    if (target) {
-      bypassRef.current = true;
-      router.push(target);
-    }
+    guardsRef.current.forEach((guard) => {
+      if (guard.isDirty) guard.onDiscard?.();
+    });
+    leave();
   };
 
   const handleSaveAndLeave = async () => {
     const activeGuard = getActiveDirtyGuard();
     if (!activeGuard) {
-      setShowDialog(false);
-      setPendingUrl(null);
+      leave();
       return;
     }
 
@@ -224,10 +329,11 @@ export function NavigationGuardProvider({
     }
 
     setIsSaving(true);
+    setSaveChanged(false);
     try {
-      const ok = await activeGuard.onSave();
-      if (!ok) {
-        // 保存失败保持弹窗展开，供用户重试或放弃
+      const result = await saveNavigationGuards(guardsRef.current);
+      if (result !== 'saved') {
+        setSaveChanged(result === 'changed');
         setIsSaving(false);
         return;
       }
@@ -237,18 +343,8 @@ export function NavigationGuardProvider({
       return;
     }
 
-    // 成功保存后直接将 guard 的 dirty 标志置为 false，消除竞态
-    activeGuard.isDirty = false;
-    updateDirtyCount();
     setIsSaving(false);
-
-    setShowDialog(false);
-    const target = pendingUrl;
-    setPendingUrl(null);
-    if (target) {
-      bypassRef.current = true;
-      router.push(target);
-    }
+    leave();
   };
 
   const activeGuard = getActiveDirtyGuard();
@@ -268,7 +364,7 @@ export function NavigationGuardProvider({
         open={showDialog}
         onOpenChange={(open) => {
           if (!open) {
-            handleCancel();
+            if (!isSaving && !restoringHistory) handleCancel();
           } else {
             setShowDialog(true);
           }
@@ -287,13 +383,21 @@ export function NavigationGuardProvider({
                 )}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {saveChanged && (
+            <p role="alert" className="text-sm text-destructive">
+              {t('navigationGuard.changedDuringSave')}
+            </p>
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isSaving} onClick={handleCancel}>
+            <AlertDialogCancel
+              disabled={isSaving || restoringHistory}
+              onClick={handleCancel}
+            >
               {t('navigationGuard.keepEditing', '留在当前页')}
             </AlertDialogCancel>
             <Button
               variant="outline"
-              disabled={isSaving}
+              disabled={isSaving || restoringHistory}
               className="gap-1.5"
               onClick={handleDiscardAndLeave}
             >
@@ -302,7 +406,7 @@ export function NavigationGuardProvider({
             </Button>
             {activeGuard?.onSave && (
               <Button
-                disabled={isSaving}
+                disabled={isSaving || restoringHistory}
                 className="gap-1.5"
                 onClick={handleSaveAndLeave}
               >
@@ -324,22 +428,28 @@ export function useNavigationGuard(
   options: NavigationGuardOptions,
 ) {
   const context = useContext(NavigationGuardContext);
+  const registerGuard = context?.registerGuard;
+  const unregisterGuard = context?.unregisterGuard;
 
   // 在 useLayoutEffect 中注册与同步 options，保证在 paint 与用户事件前执行，避免 render 阶段触发 setState
   useIsomorphicLayoutEffect(() => {
-    if (!context) return;
-    context.registerGuard(id, options);
-    return () => {
-      context.unregisterGuard(id);
-    };
+    if (!registerGuard) return;
+    registerGuard(id, options);
   }, [
-    context,
+    registerGuard,
+    unregisterGuard,
     id,
     options.isDirty,
+    options.getIsDirty,
     options.onSave,
+    options.onDiscard,
     options.title,
     options.description,
   ]);
+  useIsomorphicLayoutEffect(
+    () => () => unregisterGuard?.(id),
+    [id, unregisterGuard],
+  );
 
   return context;
 }

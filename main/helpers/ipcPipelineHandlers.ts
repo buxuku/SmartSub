@@ -31,7 +31,10 @@ export function setupPipelineHandlers(mainWindow: BrowserWindow) {
         for (const file of item?.pipelineFiles ?? []) {
           if ((file as any)[field] === 'passed') {
             try {
-              mainWindow.webContents.send('taskFileChange', file);
+              mainWindow.webContents.send('taskFileChange', {
+                ...file,
+                taskProjectId: projectId,
+              });
             } catch {
               /* ignore */
             }

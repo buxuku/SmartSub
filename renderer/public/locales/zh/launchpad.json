@@ -15,15 +15,27 @@
     "importing": "正在导入素材…",
     "unsupported": "未找到支持的音视频、字幕或文稿文件",
     "subtitleRequired": "此流程仅接收字幕文件。音视频请拖到启动台空白处或转写任务卡上。",
-    "failed": "导入失败，请重试"
+    "failed": "导入失败，请重试",
+    "existingTitle": "已有未完成的任务草稿",
+    "existingDescription": "追加素材将保留原草稿的目标、配方和全部设置。新建任务将替换原草稿。",
+    "unreadableDescription": "原草稿无法读取，已保留原始数据。取消后可重试；选择替换将明确放弃原草稿并新建任务。",
+    "replaceDraft": "替换草稿并新建",
+    "appendDraft": "追加到原草稿",
+    "storageFailed": "草稿未能保存到磁盘，暂未开始安装或跳转。请重试；已有草稿不会被静默清除。",
+    "retrySave": "重试保存"
   },
   "quickDownload": {
     "title": "需要语音识别模型",
-    "desc": "已暂存 {{count}} 个文件。开启语音转写需安装轻量版 Whisper Base 模型（约 140MB，预计耗时 15 秒）。",
+    "desc": "已保存 {{count}} 个文件及任务设置。需安装 Whisper Base 模型（约 140MB，快速网络下约 15 秒，实际耗时取决于网络）。",
     "downloading": "正在下载模型 ({{progress}}%)…",
     "startDownload": "一键安装并继续",
     "installComplete": "模型安装完成，正在进入创作任务…",
-    "cancel": "暂不下载"
+    "cancel": "暂不下载",
+    "source": "下载源",
+    "mirror": "国内镜像",
+    "busy": "另一个模型正在下载，请稍后重试。",
+    "failed": "安装失败，请检查网络后重试或切换下载源。草稿已保留。",
+    "notInstalled": "尚未检测到 Base 模型安装成功，请重试。草稿已保留。"
   },
   "recipes": {
     "custom": "自定义流程",

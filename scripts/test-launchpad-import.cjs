@@ -21,6 +21,8 @@ require.extensions['.ts'] = (module, filename) => {
   );
 };
 const recipes = require('../renderer/lib/recipes.ts');
+const launchpadDraft = require('../renderer/lib/launchpadDraft.ts');
+const { hasAnyModelAnyEngine } = require('../renderer/lib/engineModels.ts');
 const { getTaskTypeBySlug } = require('../renderer/lib/taskTypes.ts');
 const { isSubtitleFile } = require('../renderer/lib/utils.ts');
 const { isManuscriptPath } = require('../renderer/lib/filePairing.ts');
@@ -70,6 +72,8 @@ const homeCode = loadHandlers('renderer/pages/[locale]/home.tsx', [
   'collectDropPaths',
   'resolveDroppedBothKinds',
   'resetDrag',
+  'continueDraft',
+  'stageImport',
   'importPaths',
   'importFiles',
   'handleGlobalDrop',
@@ -82,7 +86,12 @@ const retryCode = loadHandlers('renderer/pages/[locale]/tasks/[type].tsx', [
   'handleRetryFiles',
 ]);
 
-function simulate({ hasModels = true, hasProvider = true } = {}) {
+function simulate({
+  hasModels = true,
+  hasProvider = true,
+  existingDraft = null,
+  saved = true,
+} = {}) {
   const calls = [];
   const errors = [];
   const routes = [];
@@ -91,6 +100,8 @@ function simulate({ hasModels = true, hasProvider = true } = {}) {
   const t = (key) => key;
   const context = vm.createContext({
     ...recipes,
+    ...launchpadDraft,
+    hasAnyModelAnyEngine,
     getTaskTypeBySlug,
     isSubtitleFile,
     isManuscriptPath,
@@ -99,7 +110,14 @@ function simulate({ hasModels = true, hasProvider = true } = {}) {
     getFileStages,
     isFileDone,
     canStartParakeetTask: async () => true,
+    starting: false,
+    ready: true,
+    beforeStart: async () => true,
+    buildTaskSnapshotFromConfig: structuredClone,
+    rememberSelection() {},
+    onTaskDispatched() {},
     console,
+    encodeURIComponent,
     t,
     toast: Object.assign(() => {}, {
       error: (message) => errors.push(message),
@@ -108,6 +126,8 @@ function simulate({ hasModels = true, hasProvider = true } = {}) {
     locale: 'zh',
     localeStr: 'zh',
     readiness: { hasModels, hasProvider, ttsReady: true },
+    quickDownloadOpen: false,
+    pendingImport: null,
     importBusyRef: { current: false },
     dragCounterRef: { current: 0 },
     startingRef: { current: false },
@@ -115,11 +135,24 @@ function simulate({ hasModels = true, hasProvider = true } = {}) {
     setGlobalDragging() {},
     setDragCard() {},
     setImporting() {},
-    setStagedDraftFiles() {},
-    setQuickDownloadOpen() {},
+    setStagedDraft() {},
+    setDraftError() {},
+    setHasModels() {},
+    setPendingImport: (value) => {
+      context.pendingImport = value;
+    },
+    setQuickDownloadOpen: (value) => {
+      context.quickDownloadOpen = value;
+    },
     setStarting() {},
     setTaskStatus() {},
-    taskDraftManager: { patchDraft: (draft) => drafts.push(draft) },
+    taskDraftManager: {
+      getDraft: () => existingDraft,
+      saveDraft: (draft) => {
+        drafts.push(draft);
+        return saved;
+      },
+    },
     sessionStorage: { setItem() {} },
     uuidv4: () => 'test-project',
     window: {
@@ -127,6 +160,10 @@ function simulate({ hasModels = true, hasProvider = true } = {}) {
         getPathForFile: (file) => file.path,
         invoke: async (channel, options) => {
           calls.push({ channel, options });
+          if (channel === 'saveTaskProject') return { id: options.id };
+          if (channel === 'getSystemInfo')
+            return { modelsInstalled: hasModels ? ['base'] : [] };
+          if (channel === 'getUserConfig') return {};
           if (channel !== 'getDroppedFiles') return [];
           const filters = {
             media: /\.(wav|mp4)$/i,
@@ -151,6 +188,25 @@ function simulate({ hasModels = true, hasProvider = true } = {}) {
     onOpenRefine: undefined,
     dispatchTask: (files) => dispatched.push(files),
   });
+  const submission = {
+    starting: false,
+    async submit({ files, formData, typeDef }) {
+      const refine = validateRefineProviderConfig({
+        formData: typeDef.needsModel ? formData : {},
+        providers: [],
+        translateOn: typeDef.hasTranslate,
+      });
+      if (!refine.valid)
+        return {
+          status: 'invalid',
+          readiness: { refine, errors: ['refine_provider_required'] },
+        };
+      dispatched.push(files);
+      return { status: 'accepted', snapshot: formData };
+    },
+  };
+  context.submission = submission;
+  context.retrySubmission = submission;
   vm.runInContext(homeCode + startCode + retryCode, context);
   return { context, calls, errors, routes, drafts, dispatched };
 }
@@ -255,7 +311,9 @@ async function main() {
     const state = simulate();
     await vm.runInContext('importFiles(["/clip.wav"])', state.context);
     assert.equal(state.drafts[0].files[0].filePath, '/clip.wav');
-    assert.deepEqual(state.routes, ['/zh/tasks/new']);
+    assert.deepEqual(state.routes, [
+      `/zh/tasks/new?draft=${state.drafts[0].id}`,
+    ]);
   });
 
   await check(
@@ -264,7 +322,43 @@ async function main() {
       const state = simulate();
       await dropOnRecipe(state, 'builtin-pipeline', ['/mixed-folder']);
       assert.equal(state.drafts[0].files.length, 3);
-      assert.deepEqual(state.routes, ['/zh/tasks/new?recipe=builtin-pipeline']);
+      assert.deepEqual(state.routes, [
+        `/zh/tasks/new?draft=${state.drafts[0].id}`,
+      ]);
+      assert.equal(state.drafts[0].goals.dub, true);
+      assert.equal(state.drafts[0].pipeline.subtitleGate, true);
+    },
+  );
+
+  await check(
+    'Missing model preserves complete recipe before installation',
+    async () => {
+      const state = simulate({ hasModels: false });
+      await dropOnRecipe(state, 'builtin-pipeline', ['/clip.wav']);
+      assert.equal(state.context.quickDownloadOpen, true);
+      assert.equal(state.routes.length, 0);
+      assert.equal(state.drafts[0].goals.dub, true);
+    },
+  );
+  await check(
+    'Storage failure blocks installation and navigation',
+    async () => {
+      const state = simulate({ hasModels: false, saved: false });
+      await vm.runInContext('importFiles(["/clip.wav"])', state.context);
+      assert.equal(state.context.quickDownloadOpen, false);
+      assert.equal(state.routes.length, 0);
+    },
+  );
+  await check(
+    'Existing draft is untouched until the user chooses',
+    async () => {
+      const state = simulate({
+        existingDraft: { files: [{ filePath: '/old.wav' }] },
+      });
+      await vm.runInContext('importFiles(["/clip.wav"])', state.context);
+      assert.equal(state.drafts.length, 0);
+      assert.equal(state.routes.length, 0);
+      assert.equal(state.context.pendingImport.files.length, 1);
     },
   );
 

@@ -1,19 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'next-i18next';
-import {
-  UploadCloud,
-  Music,
-  FileAudio,
-  Trash2,
-  CheckCircle2,
-  AlertCircle,
-  FolderOpen,
-  Loader2,
-  Sparkles,
-} from 'lucide-react';
+import { UploadCloud, Music, Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
 import {
   Select,
   SelectContent,
@@ -21,26 +10,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { toast } from 'sonner';
 import ToolboxFinishBar from '../common/ToolboxFinishBar';
+import ToolboxQueueList from '../common/ToolboxQueueList';
+import {
+  droppedToolboxPaths,
+  useToolboxQueue,
+} from '../../../hooks/useToolboxQueue';
 import type {
   AudioExtractFormat,
   AudioExtractResult,
 } from '../../../../types/toolbox';
 
-interface AudioItem {
-  id: string;
-  filePath: string;
-  fileName: string;
-  status: 'ready' | 'extracting' | 'done' | 'error';
-  outputPath?: string;
-  error?: string;
-}
-
 export default function AudioExtractorPanel() {
   const { t } = useTranslation('toolbox');
 
-  const [files, setFiles] = useState<AudioItem[]>([]);
+  const queueState = useToolboxQueue<{ filePath: string }, AudioExtractResult>(
+    'toolbox:audioProgress',
+  );
+  const { queue, items: files, running: isProcessing } = queueState;
   const [format, setFormat] = useState<AudioExtractFormat>('mp3');
   const [bitrate, setBitrate] = useState<'128k' | '192k' | '256k' | '320k'>(
     '320k',
@@ -49,33 +36,8 @@ export default function AudioExtractorPanel() {
     'standard',
   );
   const [outputDir, setOutputDir] = useState<string>('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
-
-  const currentJobIdRef = useRef<string>('');
-
-  useEffect(() => {
-    const cleanup = window.ipc?.on(
-      'toolbox:audioProgress',
-      (data: { jobId: string; percent: number }) => {
-        if (data.jobId === currentJobIdRef.current) {
-          setProgress(data.percent);
-        }
-      },
-    );
-    return () => cleanup?.();
-  }, []);
-
   const addFiles = (paths: string[]) => {
-    const existing = new Set(files.map((f) => f.filePath));
-    const toAdd = paths.filter((p) => !existing.has(p));
-    const newItems: AudioItem[] = toAdd.map((p) => ({
-      id: Math.random().toString(36).slice(2),
-      filePath: p,
-      fileName: p.split(/[/\\]/).pop() || '',
-      status: 'ready',
-    }));
-    setFiles((prev) => [...prev, ...newItems]);
+    queue.add(paths.map((filePath) => ({ filePath })));
   };
 
   const handleSelectFiles = async () => {
@@ -89,81 +51,34 @@ export default function AudioExtractorPanel() {
   };
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const droppedFiles = Array.from(e.dataTransfer.files);
-    const paths = droppedFiles
-      .map((f) =>
-        window.ipc?.getPathForFile
-          ? window.ipc.getPathForFile(f)
-          : (f as any).path,
-      )
-      .filter(Boolean);
-    addFiles(paths);
+    addFiles(droppedToolboxPaths(e));
   };
 
-  const handleStartExtract = async () => {
-    if (files.length === 0 || isProcessing) return;
-
-    setIsProcessing(true);
-    setProgress(0);
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      setFiles((prev) =>
-        prev.map((f) =>
-          f.id === file.id
-            ? { ...f, status: 'extracting', error: undefined }
-            : f,
-        ),
-      );
-
-      const jobId = `audio_${Date.now()}_${i}`;
-      currentJobIdRef.current = jobId;
-
-      try {
-        const res: AudioExtractResult = await window.ipc.invoke(
-          'toolbox:extractAudio',
-          {
+  const handleStartExtract = (retryId?: string) =>
+    queue.run(
+      {
+        failureMessage: t('queue.failed'),
+        cancel: (jobId) =>
+          window.ipc.invoke('toolbox:cancelExtractAudio', jobId),
+        execute: ({ filePath }, jobId) =>
+          window.ipc.invoke('toolbox:extractAudio', {
             jobId,
             config: {
-              videoPath: file.filePath,
+              videoPath: filePath,
               format,
               bitrate,
               wavPreset: format === 'wav' ? wavPreset : undefined,
               outputPath: outputDir
-                ? `${outputDir}/${file.fileName.replace(/\.[^.]+$/, '')}.${format}`
+                ? `${outputDir}/${filePath
+                    .split(/[/\\]/)
+                    .pop()!
+                    .replace(/\.[^.]+$/, '')}.${format}`
                 : undefined,
             },
-          },
-        );
-
-        setFiles((prev) =>
-          prev.map((f) =>
-            f.id === file.id
-              ? {
-                  ...f,
-                  status: res.success ? 'done' : 'error',
-                  outputPath: res.outputPath,
-                  error: res.error,
-                }
-              : f,
-          ),
-        );
-      } catch (err: any) {
-        setFiles((prev) =>
-          prev.map((f) =>
-            f.id === file.id
-              ? { ...f, status: 'error', error: err.message || err }
-              : f,
-          ),
-        );
-      }
-    }
-
-    setIsProcessing(false);
-    toast.success('音频提取处理完毕');
-  };
+          }),
+      },
+      retryId,
+    );
 
   const handleSelectOutputDir = async () => {
     const picked = await window.ipc.invoke('toolbox:selectFolder');
@@ -172,9 +87,9 @@ export default function AudioExtractorPanel() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
-      <div className="flex flex-1 overflow-hidden p-6 gap-6">
+      <div className="flex min-h-0 flex-1 overflow-hidden p-4 gap-4">
         {/* 左侧：文件列表 */}
-        <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-muted/20">
           <div
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
@@ -200,7 +115,7 @@ export default function AudioExtractorPanel() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setFiles([])}
+                onClick={() => queue.clear()}
                 disabled={isProcessing}
                 className="h-7 text-xs text-muted-foreground hover:text-destructive"
               >
@@ -216,78 +131,19 @@ export default function AudioExtractorPanel() {
                 <span>暂无待处理的视频</span>
               </div>
             ) : (
-              files.map((file) => (
-                <div
-                  key={file.id}
-                  className="flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <FileAudio className="h-5 w-5 shrink-0 text-primary/80" />
-                    <div className="min-w-0">
-                      <span className="truncate text-xs font-medium text-foreground block">
-                        {file.fileName}
-                      </span>
-                      {file.outputPath && (
-                        <p className="truncate text-[11px] text-muted-foreground mt-0.5">
-                          {file.outputPath}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0 ml-4">
-                    {file.status === 'extracting' && (
-                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                    )}
-                    {file.status === 'done' && (
-                      <span className="flex items-center gap-1 text-[11px] font-medium text-green-600 dark:text-green-400">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        完成
-                      </span>
-                    )}
-                    {file.status === 'error' && (
-                      <span className="flex items-center gap-1 text-[11px] font-medium text-destructive">
-                        <AlertCircle className="h-3.5 w-3.5" />
-                        失败
-                      </span>
-                    )}
-
-                    {file.outputPath && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          window.ipc.invoke(
-                            'toolbox:openFolder',
-                            file.outputPath!,
-                          )
-                        }
-                        className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                      >
-                        <FolderOpen className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setFiles((prev) => prev.filter((f) => f.id !== file.id))
-                      }
-                      disabled={isProcessing}
-                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              ))
+              <ToolboxQueueList
+                {...queueState}
+                onRetry={handleStartExtract}
+                onRemove={(id) => queue.remove(id)}
+                onCancel={() => void queue.cancel()}
+                onClear={() => queue.clear()}
+              />
             )}
           </div>
         </div>
 
         {/* 右侧：提取设置 */}
-        <div className="flex w-80 shrink-0 flex-col justify-between rounded-xl border border-border bg-card p-5">
+        <div className="flex min-h-0 w-72 shrink-0 flex-col gap-4 overflow-y-auto bg-muted/30 p-4">
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
               <Sparkles className="h-4 w-4 text-primary" />
@@ -387,15 +243,15 @@ export default function AudioExtractorPanel() {
               </div>
             </div>
             {/* 批量提取完成行动条 */}
-            {files.some((f) => f.status === 'done' && f.outputPath) &&
+            {files.some((f) => f.status === 'done' && f.result?.outputPath) &&
               !isProcessing && (
                 <ToolboxFinishBar
                   outputType="audio"
                   outputPaths={files
-                    .filter((f) => f.status === 'done' && f.outputPath)
-                    .map((f) => f.outputPath!)}
+                    .filter((f) => f.status === 'done' && f.result?.outputPath)
+                    .map((f) => f.result!.outputPath)}
                   summary={t('finishBar.title')}
-                  onReset={() => setFiles([])}
+                  onReset={() => queue.clear()}
                 />
               )}
           </div>
@@ -403,8 +259,12 @@ export default function AudioExtractorPanel() {
           <div className="pt-4 border-t border-border">
             <Button
               className="w-full text-xs font-medium h-9"
-              onClick={handleStartExtract}
-              disabled={files.length === 0 || isProcessing}
+              onClick={() => void handleStartExtract()}
+              disabled={
+                !files.some(
+                  (f) => f.status === 'pending' || f.status === 'cancelled',
+                ) || isProcessing
+              }
             >
               {isProcessing ? (
                 <>
