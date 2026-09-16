@@ -117,7 +117,9 @@ export default function TaskPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const { systemInfo, loaded: systemInfoLoaded } = useSystemInfo();
-  const { form, formData } = useUnifiedTaskConfig();
+  const { form, formData } = useUnifiedTaskConfig({
+    persistToGlobal: !configSnapshot,
+  });
   /** 列表/横幅的有效配置：固定任务用快照，否则使用当前表单。 */
   const listFormData = configSnapshot ?? formData;
   /** 来自加载（而非用户/任务事件）的 files 引用，避免回写存储 */

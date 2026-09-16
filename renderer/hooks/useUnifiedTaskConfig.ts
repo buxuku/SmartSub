@@ -79,6 +79,11 @@ export default function useUnifiedTaskConfig(
   options: UseUnifiedTaskConfigOptions = {},
 ) {
   const { persistToGlobal = false, initialConfig } = options;
+  const persistToGlobalRef = useRef(persistToGlobal);
+  useEffect(() => {
+    persistToGlobalRef.current = persistToGlobal;
+  }, [persistToGlobal]);
+
   const form: UseFormReturn<any> = useForm({
     defaultValues: initialConfig || {},
   });
@@ -97,7 +102,10 @@ export default function useUnifiedTaskConfig(
           (await window?.ipc?.invoke('getUserConfig')) || {};
         const storeUserConfig = omitTaskManuscript(persistedConfig);
 
-        if (persistToGlobal && !isEqual(storeUserConfig, persistedConfig)) {
+        if (
+          persistToGlobalRef.current &&
+          !isEqual(storeUserConfig, persistedConfig)
+        ) {
           window?.ipc?.send('setUserConfig', storeUserConfig);
           store.setItem('userConfig', storeUserConfig);
         }
@@ -127,23 +135,20 @@ export default function useUnifiedTaskConfig(
     return () => {
       cancelled = true;
     };
-  }, [persistToGlobal]);
+  }, []);
 
-  const handleFormChange = useCallback(
-    (values: Record<string, any>) => {
-      if (!isEqual(values, formDataRef.current)) {
-        formDataRef.current = values;
-        setFormData(values);
+  const handleFormChange = useCallback((values: Record<string, any>) => {
+    if (!isEqual(values, formDataRef.current)) {
+      formDataRef.current = values;
+      setFormData(values);
 
-        if (persistToGlobal) {
-          const persistedValues = omitTaskManuscript(values);
-          window?.ipc?.send('setUserConfig', persistedValues);
-          store.setItem('userConfig', persistedValues);
-        }
+      if (persistToGlobalRef.current) {
+        const persistedValues = omitTaskManuscript(values);
+        window?.ipc?.send('setUserConfig', persistedValues);
+        store.setItem('userConfig', persistedValues);
       }
-    },
-    [persistToGlobal],
-  );
+    }
+  }, []);
 
   useEffect(() => {
     const subscription = form.watch(handleFormChange);

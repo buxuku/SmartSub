@@ -157,6 +157,10 @@ export default function VideoCompressorPanel() {
           },
         );
 
+        if (cancelledRef.current) {
+          break;
+        }
+
         if (res.success) {
           setFiles((prev) =>
             prev.map((f, idx) =>

@@ -76,6 +76,20 @@ export default function ProofreadPage() {
     };
   }, [workItemQuery, handleLoadTask]);
 
+  // 导入完成后进入列表
+  const handleImportComplete = useCallback(
+    (files: PendingFile[], type: 'video' | 'subtitle') => {
+      setPendingFiles(files);
+      setSavedTaskId(null);
+      setImportType(type);
+      // 默认任务名为第一个文件名（去除扩展名）
+      const defaultName = files[0]?.fileName?.replace(/\.[^.]+$/, '') || '';
+      setTaskName(defaultName);
+      setStage('list');
+    },
+    [],
+  );
+
   // 从 URL 参数直接加载待校对文件（如工具箱转换/校准后一键进入：?file=...）
   useEffect(() => {
     if (typeof fileQuery !== 'string' || !fileQuery) return;
@@ -98,20 +112,6 @@ export default function ProofreadPage() {
       cancelled = true;
     };
   }, [fileQuery, handleImportComplete]);
-
-  // 导入完成后进入列表
-  const handleImportComplete = useCallback(
-    (files: PendingFile[], type: 'video' | 'subtitle') => {
-      setPendingFiles(files);
-      setSavedTaskId(null);
-      setImportType(type);
-      // 默认任务名为第一个文件名（去除扩展名）
-      const defaultName = files[0]?.fileName?.replace(/\.[^.]+$/, '') || '';
-      setTaskName(defaultName);
-      setStage('list');
-    },
-    [],
-  );
 
   // 开始校对某个文件
   const handleStartProofread = useCallback((index: number) => {

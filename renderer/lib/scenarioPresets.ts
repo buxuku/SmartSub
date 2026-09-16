@@ -92,7 +92,8 @@ export function applyScenarioPreset(
   }
 
   ALL_PRESET_FIELD_KEYS.forEach((key) => {
-    const val = preset.fields[key];
+    const val =
+      key === 'useVAD' ? (preset.fields.useVAD ?? false) : preset.fields[key];
     form.setValue(key as string, val, { shouldDirty: true });
   });
 }

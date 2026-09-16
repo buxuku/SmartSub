@@ -72,6 +72,7 @@ assert.strictEqual(mockFormValues.scenarioPreset, 'lecture');
 assert.strictEqual(mockFormValues.subtitleOutcome, 'accurate');
 assert.strictEqual(mockFormValues.fasterWhisperCompressionRatioThreshold, 2.2);
 assert.strictEqual(mockFormValues.fasterWhisperLogProbThreshold, -0.8);
+assert.strictEqual(mockFormValues.useVAD, false);
 assert.strictEqual(mockFormValues.vadThreshold, undefined);
 
 // 3. Test detectCurrentPreset
