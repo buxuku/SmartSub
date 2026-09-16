@@ -363,6 +363,7 @@ export default function TaskPage() {
       let nextFiles: any[] = [];
       let name: string | null = null;
       let snapshot: any = null;
+      let rawSnap: any = null;
       const id = q || uuidv4();
       if (q) {
         const project = await window?.ipc?.invoke('getTaskProject', q);
@@ -373,8 +374,8 @@ export default function TaskPage() {
         // 附加阶段、参考文稿及角色分离是任务级输入：创建后固定快照。
         try {
           const workItem = await window?.ipc?.invoke('getWorkItem', q);
-          const snap = workItem?.configSnapshot;
-          if (isPinnedTaskConfigSnapshot(snap)) snapshot = snap;
+          rawSnap = workItem?.configSnapshot;
+          if (isPinnedTaskConfigSnapshot(rawSnap)) snapshot = rawSnap;
         } catch {
           /* ignore */
         }
@@ -416,6 +417,9 @@ export default function TaskPage() {
       setProjectName(name);
       setEditingName(false);
       setProjectId(id);
+      if (rawSnap && !isPinnedTaskConfigSnapshot(rawSnap)) {
+        form.reset(rawSnap);
+      }
       setConfigSnapshot(snapshot);
       setBannerDismissed(false);
     })();

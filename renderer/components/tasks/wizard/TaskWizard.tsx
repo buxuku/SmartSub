@@ -561,12 +561,10 @@ export default function TaskWizard() {
         .split(',')
         .map((g) => g.trim().toLowerCase());
 
-      setGoals((prev) => {
-        const next = { ...prev };
-        if (goalList.includes('translate')) next.translate = true;
-        if (goalList.includes('dub')) next.dub = true;
-        if (goalList.includes('video')) next.video = true;
-        return next;
+      setGoals({
+        translate: goalList.includes('translate'),
+        dub: goalList.includes('dub'),
+        video: goalList.includes('video'),
       });
     }
   }, [router.isReady, router.query.goals]);

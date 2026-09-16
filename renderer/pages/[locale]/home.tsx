@@ -591,6 +591,14 @@ export default function LaunchpadPage() {
         stagedFilesCount={stagedDraftFiles.length}
         onSuccess={() => {
           setHasModels(true);
+          try {
+            sessionStorage.setItem(
+              WIZARD_DROP_KEY,
+              JSON.stringify(stagedDraftFiles),
+            );
+          } catch {
+            /* ignore */
+          }
           router.push(`/${localeStr}/tasks/new`);
         }}
       />
