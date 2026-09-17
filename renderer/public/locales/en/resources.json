@@ -284,10 +284,10 @@
       }
     },
     "parakeet": {
-      "name": "NVIDIA Parakeet",
+      "name": "Parakeet / Orukeet",
       "builtinRuntime": "The runtime is bundled with the app and shared with the other sherpa ASR engines.",
       "desc": "English v2, multilingual v3 and Japanese CTC models with int8 quantization, local CPU transcription and punctuation. All share the sherpa-onnx runtime without Python and provide segment timestamps.",
-      "scenario": "Best for: English, European languages and Japanese, CC-BY-4.0",
+      "scenario": "Best for: English, European languages and Japanese. Model licenses vary.",
       "needsModels": "Models needed",
       "anotherDownload": "Another download is in progress. Please wait for it to finish.",
       "downloading": "Downloading…",
@@ -298,11 +298,13 @@
       "modelDelete": "Delete",
       "modelSources": {
         "ghproxy": "GitHub Mirror (China)",
-        "github": "GitHub"
+        "github": "GitHub",
+        "huggingface": "Hugging Face"
       },
       "modelSourceHint": {
         "ghproxy": "Downloads the official sherpa-onnx release through gh-proxy.com, then extracts it",
-        "github": "Direct official sherpa-onnx GitHub release; recommended outside mainland China"
+        "github": "Direct official sherpa-onnx GitHub release; recommended outside mainland China",
+        "huggingface": "Pinned Orukeet release with checksum verification"
       },
       "models": {
         "parakeet-tdt-0.6b-v3": {
@@ -316,6 +318,10 @@
         "parakeet-tdt_ctc-0.6b-ja": {
           "name": "Parakeet 0.6B Japanese (CTC, int8, ~656MB)",
           "desc": "Japanese with punctuation; uses the CTC branch of the hybrid TDT/CTC model. Download: ~489MB."
+        },
+        "orukeet-v0.1.0-int8": {
+          "name": "Orukeet v0.1 (int8, ~672MB)",
+          "desc": "25 European languages including English. Parakeet v3 fine-tune. Download: ~487MB. CC-BY-SA-4.0."
         }
       }
     },

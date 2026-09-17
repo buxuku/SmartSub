@@ -24,6 +24,12 @@ import { validateModelLayout } from './modelImport';
 import { commitStagedDirectory } from './download/atomicDirectoryInstall';
 import { DownloadSessionTracker } from './download/downloadSession';
 import {
+  readModelIntegrityManifest,
+  verifyInstalledModelFiles,
+  verifyModelFile,
+  type ModelIntegrityManifest,
+} from './download/modelIntegrity';
+import {
   downloadFileSingle,
   SINGLE_DOWNLOAD_CANCELLED,
 } from './download/singleFileDownloader';
@@ -184,7 +190,7 @@ export class ParakeetModelDownloader {
     });
 
     let lastError: unknown = null;
-    for (const currentSource of getParakeetSourceOrder(source)) {
+    for (const currentSource of getParakeetSourceOrder(source, spec)) {
       try {
         await this.downloadFromArchive(spec, currentSource, sessionId, signal);
         if (!isParakeetModelInstalled(id)) {
@@ -206,10 +212,10 @@ export class ParakeetModelDownloader {
       } catch (error) {
         lastError = error;
         const message = error instanceof Error ? error.message : String(error);
-        if (message === CANCELLED) {
+        if (signal.aborted || message === CANCELLED) {
           this.progress = { ...this.progress, status: 'idle' };
           this.sendFinal(sessionId, key, 1);
-          throw error;
+          throw new Error(CANCELLED);
         }
         logMessage(
           `parakeet model ${id} from ${currentSource} failed: ${message}`,
@@ -243,6 +249,7 @@ export class ParakeetModelDownloader {
       `.${spec.dirName}.download-${transactionId}.tar.bz2`,
     );
     const url = getParakeetArchiveUrl(spec, source);
+    const manifestPath = `${tmp}.manifest.json`;
     this.update(sessionId, {
       status: 'downloading',
       downloaded: 0,
@@ -254,7 +261,30 @@ export class ParakeetModelDownloader {
     try {
       await fs.promises.rm(stagedDir, { recursive: true, force: true });
       await fs.promises.rm(tmp, { force: true });
+      let manifest: ModelIntegrityManifest | undefined;
+      if (spec.huggingFace) {
+        await downloadFileSingle({
+          url: `${spec.huggingFace.baseUrl}/manifest.json`,
+          destPath: manifestPath,
+          signal,
+        });
+        manifest = await readModelIntegrityManifest(
+          manifestPath,
+          spec.huggingFace,
+          spec.archiveName,
+          spec.requiredFiles,
+          signal,
+        );
+      }
       await this.downloadArchive(url, tmp, sessionId, signal);
+      if (manifest) {
+        if ((await fs.promises.stat(tmp)).size !== manifest.archive_bytes) {
+          throw new Error(
+            'Model archive size does not match the selected release',
+          );
+        }
+        await verifyModelFile(tmp, manifest.archive_sha256, signal);
+      }
       this.progress = { ...this.progress, status: 'extracting' };
       this.sendExtract(sessionId, 0);
       await extractArchive({
@@ -272,6 +302,14 @@ export class ParakeetModelDownloader {
           `extracted Parakeet model is incomplete: ${validation.missing.join(', ')}`,
         );
       }
+      if (manifest) {
+        await verifyInstalledModelFiles(stagedDir, manifest, signal);
+        await fs.promises.copyFile(
+          manifestPath,
+          path.join(stagedDir, 'manifest.json'),
+        );
+      }
+      if (signal.aborted) throw new Error(CANCELLED);
       await commitStagedDirectory({
         stagedDir,
         destDir,
@@ -279,6 +317,7 @@ export class ParakeetModelDownloader {
         onCleanupWarning: (message) => logMessage(message, 'warning'),
       });
     } finally {
+      await fs.promises.rm(manifestPath, { force: true }).catch(() => {});
       await fs.promises.rm(tmp, { force: true }).catch(() => {});
       // commit 成功后 staging 已被 rename；失败时只清新目录，保留原模型。
       await fs.promises
