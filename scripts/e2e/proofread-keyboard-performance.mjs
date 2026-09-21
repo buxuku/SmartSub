@@ -12,9 +12,11 @@ import {
   hasCompleteSmoothWheelEvidence,
 } from './compositor-trace.mjs';
 
-const output = await fs.mkdtemp(
-  path.join(os.tmpdir(), 'smartsub-keyboard-perf-e2e-'),
-);
+const output = process.env.SMARTSUB_E2E_OUTPUT_DIR
+  ? path.resolve(process.env.SMARTSUB_E2E_OUTPUT_DIR)
+  : await fs.mkdtemp(path.join(os.tmpdir(), 'smartsub-keyboard-perf-e2e-'));
+await fs.mkdir(output, { recursive: true });
+const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
 const complex = process.argv.includes('--complex');
 const trace = process.argv.includes('--trace');
 const traceCategories = [
@@ -110,6 +112,7 @@ execFileSync(ffmpeg, [
 ]);
 const launchOptions = {
   args: [
+    ...(process.platform === 'linux' && process.env.CI ? ['--no-sandbox'] : []),
     '.',
     process.env.SMARTSUB_RENDERER_PORT || '8888',
     `--user-data-dir=${path.join(output, 'profile')}`,
@@ -235,6 +238,21 @@ try {
     await expect(roleButton).toBeFocused();
     await roleButton.click();
     await expect(page.getByRole('dialog')).toBeVisible();
+    const secondSpeaker = page.getByRole('checkbox', {
+      name: '切换 角色 Speaker 2 的字幕归属',
+      exact: true,
+    });
+    await expect(secondSpeaker).toBeChecked();
+    await secondSpeaker.locator('..').click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(secondSpeaker).not.toBeChecked();
+    await secondSpeaker.locator('..').click();
+    await expect(secondSpeaker).toBeChecked();
+    await page
+      .getByRole('dialog')
+      .getByText('分配角色', { exact: true })
+      .click();
+    await expect(page.getByRole('dialog')).toBeVisible();
     await roleButton.click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const warning = page.locator(
@@ -255,25 +273,25 @@ try {
   await expect(page.locator('#subtitle-tgt-0')).toBeFocused();
   await page.keyboard.press('Shift+Tab');
   await expect(page.locator('#subtitle-src-0')).toBeFocused();
-  await page.keyboard.press('Meta+Enter');
+  await page.keyboard.press(`${modifier}+Enter`);
   await expect(page.locator('#subtitle-src-1')).toBeFocused();
   await page.locator('#subtitle-src-1').fill('Second committed edit');
-  await page.keyboard.press('Meta+Enter');
+  await page.keyboard.press(`${modifier}+Enter`);
   await expect(page.locator('#subtitle-src-2')).toBeFocused();
-  await page.keyboard.press('Meta+z');
-  await page.keyboard.press('Meta+z');
+  await page.keyboard.press(`${modifier}+z`);
+  await page.keyboard.press(`${modifier}+z`);
   await page.locator('#subtitle-0').click({ position: { x: 4, y: 4 } });
   await expect(page.locator('#subtitle-src-0')).toHaveValue(original);
   await page.locator('#subtitle-src-0').focus();
-  await page.keyboard.press('Meta+Shift+z');
+  await page.keyboard.press(`${modifier}+Shift+z`);
   await expect(page.locator('#subtitle-src-0')).toHaveValue(
     'First committed edit',
   );
   await page.keyboard.press('Tab');
-  await page.keyboard.press('Meta+Enter');
+  await page.keyboard.press(`${modifier}+Enter`);
   await expect(page.locator('#subtitle-tgt-1')).toBeFocused();
   checks.push(
-    'Tab/Shift+Tab, Cmd+Enter source/translation focus, grouped undo and redo',
+    'Tab/Shift+Tab, Cmd/Ctrl+Enter source/translation focus, grouped undo and redo',
   );
 
   await page.locator('#subtitle-tgt-1').press('Space');
@@ -310,17 +328,17 @@ try {
   await page.locator('#subtitle-1').click({ position: { x: 4, y: 4 } });
   await page.getByRole('switch', { name: '只看失败' }).click();
   await page.locator('#subtitle-tgt-1').fill('Repaired translation');
-  await page.locator('#subtitle-tgt-1').press('Meta+Enter');
+  await page.locator('#subtitle-tgt-1').press(`${modifier}+Enter`);
   await expect(page.locator('#subtitle-tgt-3')).toBeFocused();
-  await page.keyboard.press('Meta+Enter');
+  await page.keyboard.press(`${modifier}+Enter`);
   await expect(page.locator('#subtitle-tgt-3')).toBeFocused();
   await page.getByRole('switch', { name: '只看失败' }).click();
   checks.push(
-    'Filtered Cmd+Enter after repairing pinned row, final visible row stays focused',
+    'Filtered Cmd/Ctrl+Enter after repairing pinned row, final visible row stays focused',
   );
 
   await page.locator('#subtitle-src-3').focus();
-  await page.keyboard.press('Meta+f');
+  await page.keyboard.press(`${modifier}+f`);
   const search = page.getByPlaceholder('输入搜索内容');
   await expect(search).toBeFocused();
   await search.pressSequentially('Needle9999');
@@ -331,14 +349,14 @@ try {
   metrics.searchToRowMs = performance.now() - searchStart;
   await search.fill('Native undo text');
   await search.pressSequentially('!');
-  await search.press('Meta+z');
+  await search.press(`${modifier}+z`);
   await expect(search).not.toHaveValue('Native undo text!');
   const draftsBefore = await page.evaluate(() =>
     Object.entries(localStorage)
       .filter(([key]) => key.startsWith('smartsub_proofread_draft'))
       .map(([key, value]) => [key, value]),
   );
-  await search.press('Meta+s');
+  await search.press(`${modifier}+s`);
   assert.deepEqual(
     await page.evaluate(() =>
       Object.entries(localStorage)
@@ -349,7 +367,7 @@ try {
   );
   await search.press('Escape');
   await page.locator('#subtitle-src-9999').focus();
-  await page.keyboard.press('Meta+Enter');
+  await page.keyboard.press(`${modifier}+Enter`);
   await expect(page.locator('#subtitle-src-9999')).toBeFocused();
   checks.push(
     'Search reaches offscreen final cue, search native undo, overlay blocks save, last-row commit',
@@ -645,9 +663,9 @@ try {
     }
     await page.screenshot({ path: path.join(output, `keyboard-${width}.png`) });
   }
-  await page.keyboard.press('Meta+b');
+  await page.keyboard.press(`${modifier}+b`);
   await expect(timeline).toHaveCount(0);
-  await page.keyboard.press('Meta+b');
+  await page.keyboard.press(`${modifier}+b`);
   await expect(timeline).toHaveAttribute('data-waveform-ready', 'true');
   metrics.heap = await page.evaluate(() =>
     performance.memory
@@ -663,7 +681,9 @@ try {
   const url = new URL(page.url()).pathname + new URL(page.url()).search;
   const appProcess = app.process();
   const exited = once(appProcess, 'exit');
-  appProcess.kill('SIGKILL');
+  if (process.platform === 'win32')
+    execFileSync('taskkill', ['/pid', String(appProcess.pid), '/T', '/F']);
+  else appProcess.kill('SIGKILL');
   await exited;
   app = null;
   app = await _electron.launch(launchOptions);
@@ -681,7 +701,7 @@ try {
   await page.getByRole('button', { name: '校对', exact: true }).click();
   await page.getByRole('button', { name: '恢复草稿', exact: true }).click();
   await unfocus();
-  await page.keyboard.press('Meta+f');
+  await page.keyboard.press(`${modifier}+f`);
   const recoveredSearch = page.getByPlaceholder('输入搜索内容');
   await recoveredSearch.fill('thirty keyboard events measured');
   await page.getByRole('button', { name: '搜索', exact: true }).click();
@@ -694,7 +714,7 @@ try {
   checks.push(
     'Whole-app SIGKILL and atomic draft recovery preserve the latest final-row keystroke',
   );
-  await page.keyboard.press('Meta+s');
+  await page.keyboard.press(`${modifier}+s`);
   await expect(
     page.getByRole('status').filter({ hasText: '已保存' }),
   ).toBeVisible();
@@ -782,6 +802,19 @@ try {
   );
   console.log(JSON.stringify({ success: true, output, checks, metrics }));
 } catch (error) {
+  await fs.writeFile(
+    path.join(output, 'failure.json'),
+    JSON.stringify(
+      {
+        checks,
+        metrics,
+        errors,
+        failure: error.stack || String(error),
+      },
+      null,
+      2,
+    ),
+  );
   console.error(JSON.stringify({ output, checks, metrics, errors }));
   console.error(
     'Row geometry',

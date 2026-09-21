@@ -126,7 +126,6 @@ export default function SpeakerCueControl({
             className="w-72 space-y-2 p-3"
             onClick={(event) => {
               event.stopPropagation();
-              setOpen((value) => !value);
             }}
           >
             <div>
