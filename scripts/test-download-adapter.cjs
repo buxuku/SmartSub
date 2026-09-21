@@ -82,7 +82,10 @@ async function main() {
   const result = await adapter.download('/yt-dlp', options);
   assert.deepEqual(Array.from(result.subtitlePaths), [official]);
   assert.ok(command.includes('--ignore-config'));
-  assert.ok(command.includes('all,-live_chat'));
+  assert.equal(
+    command[command.indexOf('--sub-langs') + 1],
+    'all,-live_chat,-rechat,-danmaku',
+  );
   assert.ok(!command.includes('--write-auto-subs'));
   report = false;
   assert.equal(
@@ -98,6 +101,20 @@ async function main() {
   );
   assert.ok(!command.includes('--write-subs'));
   const parsers = load('main/helpers/videoDownload/parsers.ts');
+  assert.deepEqual(
+    Array.from(
+      parsers.parseYtDlpSubtitlePaths(
+        `SMARTSUB-SUBS;${JSON.stringify({
+          en: { filepath: official },
+          danmaku: { filepath: path.join(dir, 'lesson [id].danmaku.srt') },
+          live_chat: { filepath: path.join(dir, 'lesson [id].live_chat.srt') },
+          rechat: { filepath: path.join(dir, 'lesson [id].rechat.srt') },
+        })}`,
+      ),
+    ),
+    [official],
+    'comment tracks never become official pipeline input even with a subtitle extension',
+  );
   for (const raw of [
     'SMARTSUB-SUBS;NA',
     'SMARTSUB-SUBS;[1]',

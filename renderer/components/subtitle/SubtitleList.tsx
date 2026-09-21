@@ -7,7 +7,7 @@ import React, {
   useLayoutEffect,
   memo,
 } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { measureElement, useVirtualizer } from '@tanstack/react-virtual';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -668,7 +668,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     (index: number) => (displayIndices ? displayIndices[index] : index),
     [displayIndices],
   );
-  const virtualizer = useVirtualizer({
+  const virtualizer = useVirtualizer<HTMLDivElement, HTMLElement>({
     directDomUpdates: true,
     count: displayCount,
     getScrollElement: () => scrollContainerRef.current,
@@ -676,6 +676,12 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     // Exact estimates avoid recalculating the remaining 10000 rows as each
     // new compact row enters view; expanded rows are measured dynamically.
     estimateSize: () => 40,
+    // New compact rows have a fixed height. Avoid a synchronous layout read
+    // for each mount; expanded/editing/Diff rows still use ResizeObserver.
+    measureElement: (element, entry, instance) =>
+      element.dataset.compact === 'true'
+        ? 40
+        : measureElement(element, entry, instance),
     overscan: 10,
     // 以真实索引作为 key，过滤切换/失败行减少时测量缓存仍对得上行
     getItemKey,
@@ -706,17 +712,22 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     }
   });
 
-  // 展开/收起全部或字号变化会改变行高，强制虚拟列表重算。
-  // 注意：measure() 清空缓存后依赖 ResizeObserver 回填，但「高度未变化」的当前展开行
-  // 不会触发 ResizeObserver，会停留在估算高度导致下一行压上来重叠。
-  // 因此清空后再对所有已渲染行强制重新测量，确保当前行也拿到真实高度。
-  useEffect(() => {
-    virtualizer.measure();
+  // Reset offscreen estimates when the presentation changes, and restore the
+  // mounted heights before paint. measureElement may skip reads while scrolling;
+  // unchanged AI/editing rows will never trigger ResizeObserver to fill that gap.
+  // Batch the reads before resizeItem writes positions to avoid layout thrashing.
+  useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    container
-      .querySelectorAll<HTMLElement>('[data-index]')
-      .forEach((node) => virtualizer.measureElement(node));
+    const sizes = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-index]'),
+      (node) => ({
+        index: Number(node.dataset.index),
+        height: node.dataset.compact === 'true' ? 40 : node.offsetHeight,
+      }),
+    );
+    virtualizer.measure();
+    sizes.forEach(({ index, height }) => virtualizer.resizeItem(index, height));
   }, [expandAll, fontScale, virtualizer]);
 
   // 多选区间（归一化 [lo, hi]，含两端）；anchor 为最后一次普通点击的行
@@ -1108,8 +1119,14 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                 <div
                   key={virtualItem.key}
                   data-index={virtualItem.index}
+                  data-compact={
+                    index !== currentSubtitleIndex &&
+                    !expandAll &&
+                    !inlineAi?.suggestions.get(index)
+                  }
                   ref={virtualizer.measureElement}
                   className="absolute left-0 top-0 w-full px-1 pb-1"
+                  style={{ contain: 'layout style' }}
                 >
                   <SubtitleRow
                     sourceLanguage={sourceLanguage}

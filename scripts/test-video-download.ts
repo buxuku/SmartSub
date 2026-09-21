@@ -266,7 +266,13 @@ function run(): void {
     parseYtDlpPreflightJson(
       JSON.stringify({
         title: 'Subbed',
-        subtitles: { 'zh-Hans': [{}], en: [{}], live_chat: [{}] },
+        subtitles: {
+          'zh-Hans': [{}],
+          en: [{}],
+          live_chat: [{}],
+          rechat: [{}],
+          danmaku: [{ ext: 'xml' }],
+        },
         automatic_captions: { ja: [{}], ko: [{}] },
       }),
     ),
@@ -286,7 +292,10 @@ function run(): void {
   );
   eq(
     parseYtDlpPreflightJson(
-      JSON.stringify({ title: 'LiveOnly', subtitles: { live_chat: [{}] } }),
+      JSON.stringify({
+        title: 'LiveOnly',
+        subtitles: { live_chat: [{}], rechat: [{}], danmaku: [{ ext: 'xml' }] },
+      }),
     ),
     { title: 'LiveOnly' },
     'ytdlp preflight: 仅 live_chat → 无 subtitleLangs',

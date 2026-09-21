@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import ffmpeg from 'ffmpeg-static';
 import { _electron, expect } from '@playwright/test';
+import { waitForAppPage, appOrigin } from './app-page.mjs';
 
 const downloader = process.env.SMARTSUB_E2E_YTDLP;
 assert.ok(downloader, 'Set SMARTSUB_E2E_YTDLP to a real yt-dlp executable');
@@ -69,7 +70,7 @@ const server = http.createServer((request, response) => {
         response
           .writeHead(200, { 'Content-Type': 'text/html' })
           .end(
-            `<!doctype html><html lang="en"><head><title>Download ${id}</title></head><body><video controls><source src="/${id}.mp4" type="video/mp4">${id === 'fallback' ? '' : '<track kind="subtitles" src="/en.vtt" srclang="en" label="English"><track kind="subtitles" src="/zh.vtt" srclang="zh" label="Chinese">'}</video></body></html>`,
+            `<!doctype html><html lang="en"><head><title>Download ${id}</title></head><body><video controls><source src="/${id}.mp4" type="video/mp4">${id === 'fallback' ? '' : '<track kind="subtitles" src="/en.vtt" srclang="en" label="English"><track kind="subtitles" src="/zh.vtt" srclang="zh" label="Chinese">'}<track kind="subtitles" src="/danmaku.xml" srclang="danmaku" label="Bullet comments"></video></body></html>`,
           );
         return;
       }
@@ -169,11 +170,16 @@ try {
       process.env.SMARTSUB_RENDERER_PORT || '8888',
       `--user-data-dir=${profile}`,
     ],
-    env: { ...process.env, NODE_ENV: 'development' },
+    env: {
+      ...process.env,
+      NODE_ENV: process.argv.includes('--production')
+        ? 'production'
+        : 'development',
+    },
   });
   page = await app.firstWindow();
   page.setDefaultTimeout(15000);
-  await page.waitForURL(/^http:\/\/localhost:\d+/);
+  await waitForAppPage(page);
   const userData = await app.evaluate(({ app, BrowserWindow, dialog }) => {
     for (const window of BrowserWindow.getAllWindows())
       window.webContents.closeDevTools();
@@ -181,7 +187,7 @@ try {
     return app.getPath('userData');
   });
   await page.getByRole('button', { name: '跳过', exact: true }).click();
-  const origin = new URL(page.url()).origin;
+  const origin = appOrigin(page);
   const binaryDir = path.join(userData, 'downloaders', 'yt-dlp', version);
   await fs.mkdir(binaryDir, { recursive: true });
   await fs.copyFile(downloader, path.join(binaryDir, 'yt-dlp'));
@@ -344,6 +350,11 @@ try {
   assert.equal(
     requests.filter((r) => r.path === '/v1/audio/transcriptions').length,
     0,
+  );
+  assert.equal(
+    requests.filter((r) => r.path === '/danmaku.xml').length,
+    0,
+    'yt-dlp must exclude comment tracks before download/conversion',
   );
   assert.ok(requests.some((r) => r.path === '/v1/audio/speech'));
   checks.push(
@@ -552,10 +563,15 @@ try {
       process.env.SMARTSUB_RENDERER_PORT || '8888',
       `--user-data-dir=${profile}`,
     ],
-    env: { ...process.env, NODE_ENV: 'development' },
+    env: {
+      ...process.env,
+      NODE_ENV: process.argv.includes('--production')
+        ? 'production'
+        : 'development',
+    },
   });
   page = await app.firstWindow();
-  await page.waitForURL(/^http:\/\/localhost:\d+/);
+  await waitForAppPage(page);
   await app.evaluate(({ BrowserWindow }) => {
     for (const window of BrowserWindow.getAllWindows())
       window.webContents.closeDevTools();

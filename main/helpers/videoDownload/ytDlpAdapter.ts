@@ -13,6 +13,7 @@ import {
   YTDLP_FILEPATH_PREFIX,
   YTDLP_PROGRESS_TEMPLATE,
   YTDLP_SUBTITLES_PREFIX,
+  YTDLP_SUBTITLE_LANGS,
   parseYtDlpSubtitlePaths,
 } from './parsers';
 import {
@@ -129,7 +130,7 @@ export const ytDlpAdapter: DownloadEngineAdapter = {
         ? [
             '--write-subs',
             '--sub-langs',
-            'all,-live_chat',
+            YTDLP_SUBTITLE_LANGS,
             '--convert-subs',
             'srt',
           ]

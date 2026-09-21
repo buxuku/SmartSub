@@ -21,6 +21,7 @@ jest.mock('@tanstack/react-virtual', () => ({
         ),
       getTotalSize: () => options.count * 34,
       measure: () => {},
+      resizeItem: () => {},
       measureElement: () => {},
       scrollToIndex: (index: number) => setStart(index),
     };

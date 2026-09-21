@@ -28,6 +28,8 @@
     "test:e2e:inline-ai": "node scripts/e2e/proofread-inline-ai.mjs",
     "test:e2e:waveform": "node scripts/e2e/proofread-waveform.mjs",
     "test:e2e:proofread-keyboard": "node scripts/e2e/proofread-keyboard-performance.mjs",
+    "test:compositor-trace": "node --test scripts/e2e/compositor-trace.test.mjs",
+    "test:e2e:download-live": "node scripts/e2e/download-live.mjs",
     "test:e2e:proofread-load": "node scripts/e2e/proofread-load-recovery.mjs",
     "test:e2e:proofread-batch-load": "node scripts/e2e/proofread-batch-load.mjs",
     "test:e2e:settings": "node scripts/e2e/settings-reliability.mjs",

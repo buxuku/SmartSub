@@ -7,11 +7,30 @@ import { once } from 'node:events';
 import ffmpeg from 'ffmpeg-static';
 import { _electron, expect } from '@playwright/test';
 import { waitForAppPage, appOrigin } from './app-page.mjs';
+import {
+  summarizeCompositorTrace,
+  hasCompleteSmoothWheelEvidence,
+} from './compositor-trace.mjs';
 
 const output = await fs.mkdtemp(
   path.join(os.tmpdir(), 'smartsub-keyboard-perf-e2e-'),
 );
 const complex = process.argv.includes('--complex');
+const trace = process.argv.includes('--trace');
+const traceCategories = [
+  'devtools.timeline',
+  'blink.user_timing',
+  'cc',
+  'benchmark',
+  'viz',
+  'input',
+  'latencyInfo',
+  'disabled-by-default-devtools.timeline.frame',
+];
+assert.ok(
+  !(trace && process.argv.includes('--profile')),
+  'Collect compositor traces and sampling CPU profiles in separate runs',
+);
 const roles = path.join(output, 'five-hours.proofread.json');
 const media = path.join(output, 'five-hours.flac');
 const source = path.join(output, 'five-hours.en.srt');
@@ -150,6 +169,17 @@ try {
     );
     dialog.showMessageBoxSync = () => 0;
   });
+  metrics.environment = await app.evaluate(
+    async ({ app, screen, BrowserWindow }) => ({
+      versions: process.versions,
+      platform: process.platform,
+      arch: process.arch,
+      display: screen.getDisplayMatching(
+        BrowserWindow.getAllWindows()[0].getBounds(),
+      ),
+      gpuFeatures: app.getGPUFeatureStatus(),
+    }),
+  );
   await page.getByRole('button', { name: '跳过', exact: true }).click();
   await page.evaluate(
     async ({ source, target, media, roles, complex }) => {
@@ -337,7 +367,7 @@ try {
         if (key.startsWith('smartsub_proofread_draft'))
           window.__storageTimings.push({
             ms: performance.now() - start,
-            bytes: value.length,
+            characters: value.length,
           });
       }
     };
@@ -367,8 +397,8 @@ try {
       storageMaxMs: Math.max(
         ...window.__storageTimings.map((entry) => entry.ms),
       ),
-      storageMaxBytes: Math.max(
-        ...window.__storageTimings.map((entry) => entry.bytes),
+      storageMaxCharacters: Math.max(
+        ...window.__storageTimings.map((entry) => entry.characters),
       ),
     };
   });
@@ -443,7 +473,29 @@ try {
   const profiler = process.argv.includes('--profile')
     ? await page.context().newCDPSession(page)
     : null;
+  const input = trace ? await page.context().newCDPSession(page) : null;
   if (profiler) await profiler.send('Profiler.enable');
+  const assertRowGeometry = async () => {
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const rows = [...document.querySelectorAll('[data-index]')];
+            return rows.every((row, index) => {
+              const rect = row.getBoundingClientRect();
+              const next = rows[index + 1]?.getBoundingClientRect();
+              return (
+                rect.height > 0 &&
+                (!next || Math.abs(rect.bottom - next.top) <= 1) &&
+                (row.dataset.compact !== 'true' ||
+                  Math.abs(rect.height - 40) <= 1)
+              );
+            });
+          }),
+        { message: 'Measured rows are contiguous after height changes' },
+      )
+      .toBe(true);
+  };
   for (const [width, height] of [
     [1024, 700],
     [1440, 900],
@@ -462,15 +514,113 @@ try {
       ),
       false,
     );
+    await assertRowGeometry();
+    await page.getByRole('button', { name: '展开全部', exact: true }).click();
+    await assertRowGeometry();
+    await page.getByRole('button', { name: '大', exact: true }).click();
+    await assertRowGeometry();
+    await page.getByRole('button', { name: '收起全部', exact: true }).click();
+    await assertRowGeometry();
+    await page.getByRole('button', { name: '中', exact: true }).click();
+    await assertRowGeometry();
+    if (trace)
+      await app.evaluate(
+        ({ contentTracing }, categories) =>
+          contentTracing.startRecording({ included_categories: categories }),
+        traceCategories,
+      );
+    await page.evaluate(() => performance.mark('smartsub:idle:start'));
     metrics[`idle${width}`] = await measureScroll(0);
+    await page.evaluate(() => performance.mark('smartsub:idle:end'));
     if (profiler) await profiler.send('Profiler.start');
+    await page.evaluate(() => performance.mark('smartsub:scroll:start'));
     metrics[`scroll${width}`] = await measureScroll(120);
+    await page.evaluate(() => performance.mark('smartsub:scroll:end'));
+    await page.evaluate(() => performance.mark('smartsub:stress:start'));
     metrics[`stressScroll${width}`] = await measureScroll(600);
+    await page.evaluate(() => performance.mark('smartsub:stress:end'));
     if (profiler) {
       const { profile } = await profiler.send('Profiler.stop');
       await fs.writeFile(
         path.join(output, `scroll-${width}.cpuprofile`),
         JSON.stringify(profile),
+      );
+    }
+    if (input) {
+      for (const [label, offset] of [
+        ['wheelDiff', 0],
+        ['wheelCompact', 50000],
+      ]) {
+        const point = await page.evaluate(async (offset) => {
+          const scroller =
+            document.querySelector('[data-index]').parentElement.parentElement;
+          scroller.scrollTop = offset;
+          await new Promise(requestAnimationFrame);
+          await new Promise(requestAnimationFrame);
+          const rect = scroller.getBoundingClientRect();
+          return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        }, offset);
+        await page.evaluate(
+          (label) => performance.mark(`smartsub:${label}:start`),
+          label,
+        );
+        await input.send('Input.synthesizeScrollGesture', {
+          ...point,
+          yDistance: -9000,
+          speed: 3000,
+          gestureSourceType: 'mouse',
+          preventFling: true,
+        });
+        await page.evaluate(
+          (label) => performance.mark(`smartsub:${label}:end`),
+          label,
+        );
+        metrics[`${label}${width}`] = await page.evaluate(() => {
+          const rows = [...document.querySelectorAll('[data-index]')];
+          const scroller = rows[0].parentElement.parentElement;
+          const viewport = scroller.getBoundingClientRect();
+          const rectangles = rows.map((row) => row.getBoundingClientRect());
+          return {
+            scrollTop: scroller.scrollTop,
+            mountedRows: rows.length,
+            coversViewport:
+              Math.min(...rectangles.map((rect) => rect.top)) <=
+                viewport.top + 1 &&
+              Math.max(...rectangles.map((rect) => rect.bottom)) >=
+                viewport.bottom - 1,
+          };
+        });
+        assert.ok(
+          metrics[`${label}${width}`].scrollTop >= offset + 8900,
+          'native wheel reaches requested distance',
+        );
+        assert.ok(
+          metrics[`${label}${width}`].coversViewport,
+          'virtual rows cover the viewport after native scrolling',
+        );
+        await assertRowGeometry();
+      }
+    }
+    if (trace) {
+      await app.evaluate(
+        ({ contentTracing }, file) => contentTracing.stopRecording(file),
+        path.join(output, `scroll-${width}.trace.json`),
+      );
+      const summary = summarizeCompositorTrace(
+        JSON.parse(
+          await fs.readFile(
+            path.join(output, `scroll-${width}.trace.json`),
+            'utf8',
+          ),
+        ),
+      );
+      metrics[`compositor${width}`] = summary;
+      metrics[`wheelSmooth${width}`] = ['wheelDiff', 'wheelCompact'].every(
+        (phase) => hasCompleteSmoothWheelEvidence(summary, phase),
+      );
+      await fs.writeFile(
+        path.join(output, `scroll-${width}.summary.json`),
+        JSON.stringify(summary, null, 2),
       );
     }
     assert.ok(
@@ -571,6 +721,61 @@ try {
       maxMs: frames.at(-1),
     };
   });
+  if (trace) {
+    const controlInput = await page.context().newCDPSession(page);
+    for (const [width, height] of [
+      [1024, 700],
+      [1440, 900],
+    ]) {
+      await app.evaluate(
+        ({ BrowserWindow }, size) =>
+          BrowserWindow.getAllWindows()[0].setContentSize(...size),
+        [width, height],
+      );
+      await page.setContent(
+        '<style>body{margin:0}.track{height:400000px;background:repeating-linear-gradient(#fff 0 39px,#888 39px 40px)}</style><div class="track"></div>',
+      );
+      await page.evaluate(async () => {
+        scrollTo(0, 0);
+        for (let i = 0; i < 30; i++) await new Promise(requestAnimationFrame);
+      });
+      await app.evaluate(
+        ({ contentTracing }, categories) =>
+          contentTracing.startRecording({ included_categories: categories }),
+        traceCategories,
+      );
+      await page.evaluate(() =>
+        performance.mark('smartsub:controlWheel:start'),
+      );
+      await controlInput.send('Input.synthesizeScrollGesture', {
+        x: width / 2,
+        y: height / 2,
+        yDistance: -9000,
+        speed: 3000,
+        gestureSourceType: 'mouse',
+        preventFling: true,
+      });
+      await page.evaluate(() => performance.mark('smartsub:controlWheel:end'));
+      assert.ok(await page.evaluate(() => scrollY >= 8900));
+      const file = path.join(output, `control-${width}.trace.json`);
+      await app.evaluate(
+        ({ contentTracing }, file) => contentTracing.stopRecording(file),
+        file,
+      );
+      const summary = summarizeCompositorTrace(
+        JSON.parse(await fs.readFile(file, 'utf8')),
+      );
+      metrics[`controlCompositor${width}`] = summary;
+      metrics[`controlWheelSmooth${width}`] = hasCompleteSmoothWheelEvidence(
+        summary,
+        'controlWheel',
+      );
+      await fs.writeFile(
+        path.join(output, `control-${width}.summary.json`),
+        JSON.stringify(summary, null, 2),
+      );
+    }
+  }
   await fs.writeFile(
     path.join(output, 'result.json'),
     JSON.stringify({ checks, metrics }, null, 2),
@@ -578,6 +783,24 @@ try {
   console.log(JSON.stringify({ success: true, output, checks, metrics }));
 } catch (error) {
   console.error(JSON.stringify({ output, checks, metrics, errors }));
+  console.error(
+    'Row geometry',
+    await page
+      .locator('[data-index]')
+      .evaluateAll((rows) =>
+        rows.map((row) => {
+          const rect = row.getBoundingClientRect();
+          return {
+            index: row.dataset.index,
+            compact: row.dataset.compact,
+            top: rect.top,
+            height: rect.height,
+            transform: row.style.transform,
+          };
+        }),
+      )
+      .catch(() => []),
+  );
   console.error(error);
   console.error(
     (
