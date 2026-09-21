@@ -9,5 +9,9 @@ export default function DownloadPage() {
   return <DownloadPanel />;
 }
 
-export const getStaticProps = makeStaticProperties(['common', 'download']);
+export const getStaticProps = makeStaticProperties([
+  'common',
+  'download',
+  'home',
+]);
 export { getStaticPaths };

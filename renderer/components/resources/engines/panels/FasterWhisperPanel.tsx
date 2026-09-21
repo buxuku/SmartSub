@@ -348,7 +348,7 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
 
       {/* 已安装：展示当前运行时变体并提供切换（GPU 仅 Win/Linux 可切）。 */}
       {fasterInstalled && !isDownloading && !showVerifying && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-card px-3 py-2">
           <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
             {installedVariant === 'cuda' ? (
               <Zap className="h-3.5 w-3.5" />
@@ -406,7 +406,7 @@ const FasterWhisperPanel: React.FC<FasterWhisperPanelProps> = ({
       )}
 
       {fasterInstalled && (
-        <Collapsible className="rounded-lg border bg-muted/30">
+        <Collapsible className="rounded-lg bg-card">
           <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 px-3 py-2 text-left">
             <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
               <SlidersHorizontal className="h-3.5 w-3.5" />

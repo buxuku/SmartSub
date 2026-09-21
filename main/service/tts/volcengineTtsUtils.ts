@@ -101,38 +101,125 @@ export interface VolcTtsStreamResult {
  * 从 chunked 响应全文提取顶层 JSON 分片（brace 扫描，兼容「按行分隔」与
  * 「无分隔直拼」两种形态），字符串内的花括号/转义按 JSON 语义跳过。
  */
-function extractJsonChunks(text: string): string[] {
-  const out: string[] = [];
+export function createVolcTtsChunkParser(strict = false) {
   let depth = 0;
-  let start = -1;
+  let pending = '';
   let inString = false;
   let escaped = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === '\\') escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') {
-      if (depth > 0) inString = true;
-      continue;
-    }
-    if (ch === '{') {
-      if (depth === 0) start = i;
-      depth += 1;
-    } else if (ch === '}') {
-      if (depth > 0) {
-        depth -= 1;
-        if (depth === 0 && start >= 0) {
-          out.push(text.slice(start, i + 1));
-          start = -1;
+  return {
+    push(text: string): string[] {
+      const out: string[] = [];
+      for (const ch of text) {
+        if (!depth && ch !== '{') {
+          if (strict && !/\s/.test(ch))
+            throw new Error('豆包 TTS: invalid JSON stream');
+          continue;
+        }
+        pending += ch;
+        if (strict && pending.length > 2 * 1024 * 1024)
+          throw new Error('豆包 TTS: JSON audio frame exceeds 2 MiB');
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (ch === '\\') escaped = true;
+          else if (ch === '"') inString = false;
+          continue;
+        }
+        if (ch === '"') inString = true;
+        else if (ch === '{') depth++;
+        else if (ch === '}' && --depth === 0) {
+          out.push(pending);
+          pending = '';
         }
       }
-    }
-  }
-  return out;
+      return out;
+    },
+    finish() {
+      if (strict && depth) throw new Error('豆包 TTS: truncated JSON stream');
+    },
+  };
+}
+
+function extractJsonChunks(text: string): string[] {
+  return createVolcTtsChunkParser().push(text);
+}
+
+/** Backpressure-aware PCM bridge. Cancelling preview immediately cancels the HTTP reader. */
+export function volcTtsPcmStream(
+  body: ReadableStream<Uint8Array>,
+): ReadableStream<Uint8Array> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  const parser = createVolcTtsChunkParser(true);
+  const frames: string[] = [];
+  let eof = false;
+  let ended = false;
+  let cancelled = false;
+  let pcmBytes = 0;
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        while (!cancelled) {
+          while (frames.length) {
+            const chunk = JSON.parse(frames.shift()!);
+            if (!chunk || typeof chunk !== 'object' || Array.isArray(chunk))
+              throw new Error('豆包 TTS: invalid response frame');
+            const code = Number(chunk.code ?? chunk.header?.code);
+            if (!Number.isFinite(code))
+              throw new Error('豆包 TTS: missing response code');
+            if (code !== 0 && code !== 20000000)
+              throw new Error(
+                volcTtsErrorHint(
+                  200,
+                  code,
+                  String(chunk.message ?? chunk.header?.message ?? ''),
+                ),
+              );
+            if (ended) throw new Error('豆包 TTS: data after completion');
+            if (code === 20000000) ended = true;
+            if (chunk.data != null && chunk.data !== '') {
+              if (typeof chunk.data !== 'string')
+                throw new Error('豆包 TTS: invalid base64 audio');
+              const pcm = Buffer.from(chunk.data, 'base64');
+              if (pcm.toString('base64') !== chunk.data)
+                throw new Error('豆包 TTS: invalid base64 audio');
+              if (pcm.length) {
+                pcmBytes += pcm.length;
+                controller.enqueue(pcm);
+                return;
+              }
+            }
+          }
+          if (eof) {
+            parser.finish();
+            if (!ended) throw new Error('豆包 TTS: incomplete audio response');
+            if (pcmBytes % 2)
+              throw new Error('豆包 TTS: incomplete PCM sample');
+            controller.close();
+            reader.releaseLock();
+            return;
+          }
+          const result = await reader.read();
+          if (cancelled) return;
+          eof = result.done;
+          frames.push(
+            ...parser.push(
+              eof
+                ? decoder.decode()
+                : decoder.decode(result.value, { stream: true }),
+            ),
+          );
+        }
+      } catch (error) {
+        if (!cancelled) controller.error(error);
+        await reader.cancel().catch(() => {});
+      }
+    },
+    async cancel() {
+      cancelled = true;
+      frames.length = 0;
+      await reader.cancel().catch(() => {});
+    },
+  });
 }
 
 /**

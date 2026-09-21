@@ -1,6 +1,7 @@
 import { Provider, PROVIDER_TYPES } from '../../types/provider';
 import { store } from './store';
 import { logMessage } from './logger';
+import { assertProviderList } from '../../types/providerPersistence';
 import {
   migrateProviders,
   normalizeFallbackProviderIds,
@@ -15,7 +16,9 @@ const CURRENT_PROVIDER_VERSION = 25;
 
 export async function getAndInitializeProviders(): Promise<Provider[]> {
   try {
-    const savedProviders = store.get('translationProviders') || [];
+    const stored = store.get('translationProviders');
+    const savedProviders = stored === undefined ? [] : stored;
+    assertProviderList(savedProviders);
     const savedVersion = store.get('providerVersion');
     // 如果是新安装或已经是最新版本，直接初始化
     if (savedProviders.length === 0) {
@@ -40,7 +43,7 @@ export async function getAndInitializeProviders(): Promise<Provider[]> {
     return migratedProviders;
   } catch (error) {
     logMessage(`Error initializing providers: ${error.message}`, 'error');
-    return [] as Provider[];
+    throw error;
   }
 }
 

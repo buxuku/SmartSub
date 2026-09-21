@@ -7,7 +7,13 @@ import {
   getTtsProviderType,
   isTtsProviderConfigured,
   resolveTtsVoiceLabel,
+  parseTtsVoices,
 } from '../../types/ttsProvider';
+import {
+  normalizeTtsVoiceMetadata,
+  parseTtsVoiceMetadata,
+  type TtsVoiceMetadata,
+} from '../../types/ttsVoice';
 import type { DubbingEngineSelection } from '../../types/dubbing';
 
 export interface DubbingEngineOption {
@@ -22,7 +28,7 @@ export interface DubbingEngineOption {
   providerType?: string;
   /** 克隆引擎（zipvoice）：voice 池 = 我的音色，空态引导创建。 */
   cloneOnly?: boolean;
-  voices: Array<{ id: string; label: string; lang?: string }>;
+  voices: Array<{ id: string; label: string } & TtsVoiceMetadata>;
   defaultVoiceId?: string;
 }
 
@@ -64,7 +70,7 @@ export async function loadTtsEngineOptions(): Promise<DubbingEngineOption[]> {
         : (m.voices ?? []).map((v: any) => ({
             id: v.id,
             label: v.label,
-            lang: v.lang,
+            ...normalizeTtsVoiceMetadata(v),
           }));
       opts.push({
         key: `local:${m.id}`,
@@ -82,20 +88,22 @@ export async function loadTtsEngineOptions(): Promise<DubbingEngineOption[]> {
   try {
     const providers = (await window.ipc.invoke('getTtsProviders')) ?? [];
     for (const p of providers) {
-      const voices: Array<{ id: string; label: string; lang?: string }> =
-        String(p.voices ?? '')
-          .split(/[,，、;；\n]/)
-          .map((s: string) => s.trim())
-          .filter(Boolean)
-          .map((v: string) => ({
-            id: v,
-            // voice_id 不可读的服务商（ElevenLabs）按名称映射展示。
-            label: resolveTtsVoiceLabel(p, v),
+      const metadata = parseTtsVoiceMetadata(p.voiceMetadata);
+      const voices: DubbingEngineOption['voices'] = parseTtsVoices(p).map(
+        (v: string) => ({
+          id: v,
+          // voice_id 不可读的服务商（ElevenLabs）按名称映射展示。
+          label: resolveTtsVoiceLabel(p, v),
+          ...normalizeTtsVoiceMetadata({
+            ...metadata[v],
             lang:
-              p.type === 'edge' || p.type === 'azureSpeech'
+              metadata[v]?.lang ??
+              (p.type === 'edge' || p.type === 'azureSpeech'
                 ? /^([a-z]{2,3}-[A-Za-z]{2,4})-/.exec(v)?.[1]
-                : undefined,
-          }));
+                : undefined),
+          }),
+        }),
+      );
       // 绑定该实例且就绪的云端克隆音色（火山 S_ 槽位 / EL voice_id）追加进音色池。
       for (const cv of clonedVoices) {
         if (
@@ -104,11 +112,17 @@ export async function loadTtsEngineOptions(): Promise<DubbingEngineOption[]> {
           cv.trainStatus === 'ready' &&
           cv.speakerId
         ) {
-          voices.push({
+          const existing = voices.findIndex(
+            (voice) => voice.id === cv.speakerId,
+          );
+          const entry = {
             id: cv.speakerId,
             label: cv.name,
             lang: cv.language,
-          });
+          };
+          if (existing >= 0)
+            voices[existing] = { ...voices[existing], ...entry };
+          else voices.push(entry);
         }
       }
       opts.push({

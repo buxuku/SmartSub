@@ -41,6 +41,9 @@ jobs:
           yarn test:renderer
           yarn test:parameter-persistence
 
+      - name: Install fonts for subtitle rendering tests
+        run: sudo apt-get update && sudo apt-get install -y fonts-dejavu-core fonts-noto-cjk
+
       - name: Tests (Pro baseline and workflow reliability)
         run: yarn test:pro-baseline
 

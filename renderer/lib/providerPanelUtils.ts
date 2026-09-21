@@ -140,28 +140,10 @@ export function formatProviderError(
 export async function syncTranslateProviderToUserConfig(
   providerId: string,
 ): Promise<void> {
-  const cfg = await window?.ipc?.invoke('getUserConfig');
-  if (!cfg || cfg.translateProvider === providerId) return;
-  window?.ipc?.send('setUserConfig', {
-    ...cfg,
-    translateProvider: providerId,
-  });
-}
-
-export async function syncTestLangsToUserConfig(
-  source: string,
-  target: string,
-): Promise<void> {
-  const cfg = await window?.ipc?.invoke('getUserConfig');
-  if (
-    !cfg ||
-    (cfg.sourceLanguage === source && cfg.targetLanguage === target)
-  ) {
-    return;
-  }
-  window?.ipc?.send('setUserConfig', {
-    ...cfg,
-    sourceLanguage: source,
-    targetLanguage: target,
-  });
+  const result = await window.ipc.invoke(
+    'setDefaultTranslationProvider',
+    providerId,
+  );
+  if (result?.success !== true)
+    throw new Error(result?.error || 'DEFAULT_PROVIDER_SAVE_FAILED');
 }

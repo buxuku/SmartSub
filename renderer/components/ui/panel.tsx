@@ -3,15 +3,14 @@ import * as React from 'react';
 import { cn } from 'lib/utils';
 
 /**
- * 面板原语：内容区的一级容器（四级层级中的「panel 面板」层）。
- * 页面内容不裸排：任何信息块都装进 Panel，由 PanelHeader 提供 36px 标题行。
+ * 一级内容分区使用中性底面；内部 Card 使用实色面，避免边框层层嵌套。
  */
 const Panel = React.forwardRef<HTMLElement, React.HTMLAttributes<HTMLElement>>(
   ({ className, ...props }, ref) => (
     <section
       ref={ref}
       className={cn(
-        'flex min-h-0 flex-col rounded-lg border bg-card text-card-foreground shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:shadow-none dark:[box-shadow:inset_0_1px_0_rgba(255,255,255,0.03)]',
+        'flex min-h-0 flex-col rounded-lg bg-muted/40 text-card-foreground',
         className,
       )}
       {...props}
@@ -34,7 +33,7 @@ function PanelHeader({
   return (
     <div
       className={cn(
-        'flex h-9 flex-none items-center gap-2 border-b border-border px-3',
+        'flex h-9 flex-none items-center gap-2 px-3',
         className,
       )}
     >

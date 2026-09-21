@@ -43,6 +43,18 @@ export const useVideoPlayer = (
   // 根据当前播放时间查找活跃字幕（二分索引，避免每个进度 tick 线性扫全表）
   useEffect(() => {
     if (currentTime >= 0 && mergedSubtitles.length > 0) {
+      if (
+        typeof document !== 'undefined' &&
+        document.activeElement?.closest('[data-subtitle-editor]')
+      )
+        return;
+      const selected = mergedSubtitles[currentSubtitleIndex];
+      if (
+        selected &&
+        (selected.startTimeInSeconds ?? 0) <= currentTime &&
+        currentTime < (selected.endTimeInSeconds ?? 0)
+      )
+        return;
       const index = findSubtitleIndexAtTime(mergedSubtitles, currentTime);
       if (index !== -1 && index !== currentSubtitleIndex) {
         // 仅更新索引；滚动统一交给 SubtitleList 的自动滚动 effect 处理，
@@ -58,7 +70,7 @@ export const useVideoPlayer = (
   };
 
   const togglePlay = () => {
-    setIsPlaying(!isPlaying);
+    setIsPlaying((playing) => !playing);
   };
 
   // 点击字幕跳转到对应时间点
@@ -66,6 +78,7 @@ export const useVideoPlayer = (
     if (index >= 0 && index < mergedSubtitles.length) {
       // 无论是否有视频，都要更新当前字幕索引
       setCurrentSubtitleIndex(index);
+      setCurrentTime(mergedSubtitles[index]?.startTimeInSeconds ?? 0);
 
       // 如果有视频播放器，跳转到对应时间点
       if (playerRef.current) {
@@ -74,7 +87,9 @@ export const useVideoPlayer = (
         // 这样可以确保视频播放器的字幕轨道只显示当前字幕
         // 必须显式传入 'seconds'：react-player 在 amount∈(0,1) 且未指定 type 时
         // 会把它当作「百分比」跳转（duration * amount），导致第一条字幕(<1s)跳到视频末尾
-        playerRef.current.seekTo(startTime + 0.01, 'seconds');
+        const endTime = mergedSubtitles[index]?.endTimeInSeconds ?? startTime;
+        const offset = Math.min(0.01, Math.max(0, (endTime - startTime) / 2));
+        playerRef.current.seekTo(startTime + offset, 'seconds');
       }
     }
   };
@@ -118,6 +133,7 @@ export const useVideoPlayer = (
     duration,
     setDuration,
     isPlaying,
+    setIsPlaying,
     playbackRate,
     playerRef,
     handleProgress,

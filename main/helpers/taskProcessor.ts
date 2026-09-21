@@ -130,6 +130,13 @@ export function isTranscriptionBusy(): boolean {
   return getTranscriptionBusyCount() > 0;
 }
 
+export function isTaskProjectBusy(projectId: string): boolean {
+  return (
+    (projectRuntimes.get(projectId)?.active || 0) > 0 ||
+    processingQueue.some((item) => item.projectId === projectId)
+  );
+}
+
 function ensureRuntime(projectId: string): ProjectRuntime {
   let runtime = projectRuntimes.get(projectId);
   if (!runtime) {
@@ -281,12 +288,12 @@ function startTaskRun(event: any, input: TaskSubmission): TaskSubmissionResult {
     Number.isInteger(concurrency) && concurrency > 0 ? concurrency : 3;
   if (!isProcessing) {
     isProcessing = true;
-    void initializeTaskRun(event, formData);
+    void initializeTaskRun(event, formData, files);
   }
   return result;
 }
 
-async function initializeTaskRun(event: any, formData: any) {
+async function initializeTaskRun(event: any, formData: any, files: IFiles[]) {
   try {
     hasOpenAiWhisper = await checkOpenAiWhisper();
   } catch (error) {
@@ -297,6 +304,16 @@ async function initializeTaskRun(event: any, formData: any) {
   // ensureStarted 成功后再 prewarm（按引擎预加载模型），与首个文件的音频抽取并行，
   // 避免 FunASR 等首个 transcribe 因首次加载原生库/ONNX 过慢而长时间卡在 0%。
   try {
+    if (
+      files.every(
+        (file) =>
+          file.providedSubtitlePath ||
+          /\.(srt|vtt|ass|ssa|txt)$/i.test(file.filePath),
+      )
+    ) {
+      processNextTasks(event);
+      return;
+    }
     // 按本批任务携带的引擎预热（缺省回退全局/默认）。
     const batchAdapter = getEngineAdapterForTask(formData);
     if (batchAdapter.requiresRuntime && batchAdapter.pyEngineId) {
@@ -342,6 +359,15 @@ export function enqueueProjectFiles(
     logMessage(`enqueueProjectFiles failed: ${error}`, 'error');
     return false;
   }
+}
+
+/** Durable, idempotent handoff from another main-process workflow. */
+export function enqueueTaskSubmission(
+  input: TaskSubmission,
+): TaskSubmissionResult {
+  if (!progressWindow || progressWindow.isDestroyed())
+    return { success: false, error: 'TASK_WINDOW_UNAVAILABLE' };
+  return startTaskRun({ sender: progressWindow.webContents }, input);
 }
 
 export function setupTaskProcessor(mainWindow: BrowserWindow) {

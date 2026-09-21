@@ -22,8 +22,6 @@ export interface RangeCommand {
   inserted: Subtitle[];
 }
 
-const MAX_HISTORY = 200;
-
 interface ProofreadCommand {
   range?: RangeCommand;
   speakersBefore?: SpeakerInfo[];
@@ -101,9 +99,9 @@ export function useSubtitleHistory() {
   const push = useCallback(
     (cmd: RangeCommand) => {
       // 新命令入栈：丢弃 redo 分支
-      const cmds = commandsRef.current.slice(0, cursorRef.current);
+      const cmds = commandsRef.current;
+      cmds.splice(cursorRef.current);
       cmds.push({ range: cmd });
-      while (cmds.length > MAX_HISTORY) cmds.shift();
       commandsRef.current = cmds;
       cursorRef.current = cmds.length;
       bump();
@@ -122,7 +120,8 @@ export function useSubtitleHistory() {
         computeRangeDiff(beforeSubtitles, afterSubtitles) || undefined;
       const speakersChanged = !speakerListsEqual(beforeSpeakers, afterSpeakers);
       if (!range && !speakersChanged) return;
-      const cmds = commandsRef.current.slice(0, cursorRef.current);
+      const cmds = commandsRef.current;
+      cmds.splice(cursorRef.current);
       cmds.push({
         range,
         ...(speakersChanged
@@ -132,7 +131,6 @@ export function useSubtitleHistory() {
             }
           : {}),
       });
-      while (cmds.length > MAX_HISTORY) cmds.shift();
       commandsRef.current = cmds;
       cursorRef.current = cmds.length;
       bump();
@@ -164,10 +162,14 @@ export function useSubtitleHistory() {
         reset();
         return null;
       }
-      const next = current.slice();
-      if (range) {
-        next.splice(range.start, range.inserted.length, ...range.removed);
-      }
+      const next = range
+        ? current
+            .slice(0, range.start)
+            .concat(
+              range.removed,
+              current.slice(range.start + range.inserted.length),
+            )
+        : current.slice();
       cursorRef.current -= 1;
       bump();
       return {
@@ -196,10 +198,14 @@ export function useSubtitleHistory() {
         reset();
         return null;
       }
-      const next = current.slice();
-      if (range) {
-        next.splice(range.start, range.removed.length, ...range.inserted);
-      }
+      const next = range
+        ? current
+            .slice(0, range.start)
+            .concat(
+              range.inserted,
+              current.slice(range.start + range.removed.length),
+            )
+        : current.slice();
       cursorRef.current += 1;
       bump();
       return {

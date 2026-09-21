@@ -15,9 +15,13 @@ import {
 } from '@/components/ui/collapsible';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { HelpHint } from '@/components/HelpHint';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, RotateCcw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ASS_PLAY_RES_Y, subtitleAnchor } from '../../../types/subtitleCanvas';
 import type { SubtitleStyle } from '../../../types/subtitleMerge';
 import { MARGIN_RANGE } from './constants';
+import { subtitleGlow } from '../../../types/subtitleAppearance';
+import { subtitleColorSwatch } from '../../../types/subtitleColor';
 
 interface AdvancedStyleSettingsProps {
   style: SubtitleStyle;
@@ -45,6 +49,138 @@ export default function AdvancedStyleSettings({
           />
         </CollapsibleTrigger>
         <CollapsibleContent className="space-y-4 pt-2">
+          <div className="space-y-2">
+            <Label htmlFor="subtitle-highlight-terms">
+              {t('highlightTerms')}
+            </Label>
+            <Input
+              id="subtitle-highlight-terms"
+              value={(style.highlightTerms || []).join(',')}
+              disabled={disabled}
+              onChange={(event) =>
+                onUpdateStyle({ highlightTerms: event.target.value.split(',') })
+              }
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="subtitle-highlight-color" className="text-xs">
+                  {t('highlightColor')}
+                </Label>
+                <Input
+                  id="subtitle-highlight-color"
+                  type="color"
+                  value={subtitleColorSwatch(style.highlightColor || '#FFFF00')}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    onUpdateStyle({ highlightColor: event.target.value })
+                  }
+                  className="h-8 p-1"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="subtitle-glow" className="text-xs">
+                  {t('outerGlow')}
+                </Label>
+                <Input
+                  id="subtitle-glow"
+                  type="number"
+                  min={0}
+                  max={10}
+                  step={0.5}
+                  value={subtitleGlow(style)}
+                  disabled={disabled}
+                  onChange={(event) => {
+                    if (Number.isFinite(event.target.valueAsNumber))
+                      onUpdateStyle({
+                        glow: Math.max(
+                          0,
+                          Math.min(10, event.target.valueAsNumber),
+                        ),
+                      });
+                  }}
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="subtitle-glow-color" className="flex-1 text-xs">
+                {t('glowColor')}
+              </Label>
+              <Input
+                id="subtitle-glow-color"
+                type="color"
+                value={subtitleColorSwatch(style.glowColor || '#FFFFFF')}
+                disabled={disabled || !subtitleGlow(style)}
+                className="h-8 w-10 p-1"
+                onChange={(event) =>
+                  onUpdateStyle({ glowColor: event.target.value })
+                }
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="subtitle-second-line"
+                checked={Boolean(style.secondLineColor)}
+                disabled={disabled}
+                onCheckedChange={(checked) =>
+                  onUpdateStyle({
+                    secondLineColor: checked ? '#FFFFFF' : undefined,
+                  })
+                }
+              />
+              <Label htmlFor="subtitle-second-line" className="flex-1 text-xs">
+                {t('secondLineColor')}
+              </Label>
+              <Input
+                aria-label={t('secondLineColor')}
+                type="color"
+                value={subtitleColorSwatch(style.secondLineColor || '#FFFFFF')}
+                disabled={disabled || !style.secondLineColor}
+                className="h-8 w-10 p-1"
+                onChange={(event) =>
+                  onUpdateStyle({ secondLineColor: event.target.value })
+                }
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="subtitle-position-y" className="flex-1 text-sm">
+              {t('canvas.positionY')}
+            </Label>
+            <Input
+              id="subtitle-position-y"
+              type="number"
+              min={0}
+              max={100}
+              step={0.1}
+              value={Number(
+                ((subtitleAnchor(style).y / ASS_PLAY_RES_Y) * 100).toFixed(3),
+              )}
+              disabled={disabled}
+              className="w-24"
+              onChange={(event) => {
+                const value = event.target.valueAsNumber;
+                if (Number.isFinite(value))
+                  onUpdateStyle({
+                    positionY: Math.max(0, Math.min(100, value)),
+                  });
+              }}
+            />
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label={t('canvas.resetPosition')}
+              title={t('canvas.resetPosition')}
+              disabled={disabled || style.positionY === undefined}
+              onClick={() =>
+                onUpdateStyle({
+                  positionY: undefined,
+                  positionReferenceY: undefined,
+                })
+              }
+            >
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+          </div>
           {/* 字体样式开关 */}
           <div className="flex flex-wrap gap-4">
             <div className="flex items-center gap-2">

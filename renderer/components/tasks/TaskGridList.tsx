@@ -332,7 +332,7 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
           <div
             key={file?.uuid}
             className={cn(
-              'group relative flex flex-col gap-2 rounded-lg border p-2 transition-colors hover:bg-muted/40',
+              'group relative flex flex-col gap-2 rounded-lg border border-transparent bg-card p-2 transition-colors hover:bg-muted/40',
               failed && 'border-destructive/30',
               !failed && displayWarning && 'border-warning/30',
             )}

@@ -1,15 +1,14 @@
 /**
  * 流水线配音阶段执行体：字幕生产段完成后，把文件的最终字幕批量配音为完整配音轨。
  *
- * - 文本源：纯译文优先（dubTextSource），统一拷贝到确定性路径（内容 hash 稳定，
+ * - 文本源：纯译文优先（dubTextSource），按内容 hash 保存不可变快照（
  *   重试时会话恢复只跑失败/未完成行；译文变化 → hash 不匹配 → 自动重建会话）。
  * - 执行：headless 配音会话（sessionId 挂在文件上，工作台可回开检视）→
  *   runDubbingBatch（行进度 → dubbing 阶段进度）→ buildDubTrack 产出配音轨与
  *   （时移发生时的）顺延字幕，路径落文件字段供合成阶段消费。
  * - 互斥：全局 dubStage 闸（本地 TTS 进程池与云端配额都不适合多文件并发），
  *   排队文件的听写/翻译照常并行。
- * - 全自动：过长行由 buildDubTrack 按 overflow 兜底；批量结束仍有失败行 →
- *   阶段 error（重试续跑）。
+ * - 过长行/失败行阻断成片；工作台显式解决后重试，已完成行保持复用。
  */
 
 import fs from 'fs';
@@ -22,16 +21,20 @@ import {
   throwIfTaskCancelled,
 } from '../taskContext';
 import { GroupMutex } from '../engines/transcribeGate';
+import { createComposeOutput } from '../compose/composeOutput';
 import {
   createDubbingSession,
-  restoreDubbingSession,
   deleteDubbingSessionData,
+  restoreDubbingSession,
   cancelDubbing,
   runDubbingBatch,
   buildDubTrack,
   flushDubbingSession,
   type DubbingSession,
 } from '../dubbing/dubbingProcessor';
+import { hashSubtitleContent } from '../dubbing/sessionStore';
+import { dubbingSessionOwnership } from '../dubbing/sessionOwnership';
+import { readConfigDraft, readCueDraft } from '../dubbing/configDraftStore';
 import {
   serializeSubtitleCues,
   parseSubtitleCues,
@@ -54,7 +57,22 @@ const dubStageMutex = new GroupMutex();
 
 const STAGE_KEY = 'dubbing';
 
+function reserveSession(sessionId: string): () => void {
+  const release = dubbingSessionOwnership.acquirePipeline(sessionId);
+  try {
+    if (readConfigDraft(sessionId) !== null || readCueDraft(sessionId) !== null)
+      throw new Error(
+        'Dubbing project has unconfirmed edits; restore or discard them in the dubbing workbench before retrying',
+      );
+    return release;
+  } catch (error) {
+    release();
+    throw error;
+  }
+}
+
 function emitStatus(event: any, file: IFiles, status: string) {
+  if (status === 'loading' || status === 'done') file.dubbingError = '';
   event.sender.send('taskFileChange', { ...file, [STAGE_KEY]: status });
 }
 
@@ -64,8 +82,7 @@ function emitError(event: any, file: IFiles, message: string) {
 }
 
 /**
- * 解析文本源并落到确定性路径（<tmp>/pipeline-dub/<uuid>.srt）。
- * 内容不变 → 会话 hash 稳定 → 重试恢复；内容变化 → 自动判 stale 重建。
+ * 按内容保留不可变文本快照。上游改变时新建会话，不删除旧修订和 WAV。
  */
 async function materializeDubSubtitle(
   file: IFiles,
@@ -74,13 +91,14 @@ async function materializeDubSubtitle(
   const source = pickDubTextSource(file, formData, (p) => fs.existsSync(p));
   const outDir = path.join(ensureTempDir(), 'pipeline-dub');
   fs.mkdirSync(outDir, { recursive: true });
-  const outPath = path.join(outDir, `${file.uuid}.srt`);
-
+  let content: string;
   if (source.type === 'ready') {
-    fs.copyFileSync(source.path, outPath);
-    return outPath;
-  }
-  if (source.type === 'sidecar') {
+    const raw = fs.readFileSync(source.path, 'utf-8');
+    content = serializeSubtitleCues(
+      parseSubtitleCues(raw, detectSubtitleFormatFromContent(source.path, raw)),
+      'srt',
+    );
+  } else if (source.type === 'sidecar') {
     const data = await readProofreadDataFile(source.sidecarPath);
     const cues =
       source.content === 'source'
@@ -93,76 +111,116 @@ async function materializeDubSubtitle(
     if (!cues.length || cues.every((c) => !c.text)) {
       throw new Error('配音文本源为空：校对数据中没有可用译文');
     }
-    fs.writeFileSync(outPath, serializeSubtitleCues(cues, 'srt'), 'utf-8');
+    content = serializeSubtitleCues(cues, 'srt');
     logMessage(`dub stage: rebuilt pure translation from sidecar`, 'info');
-    return outPath;
+  } else {
+    throw new Error(
+      source.reason === 'bilingual-unresolvable'
+        ? '无法获取纯译文文本（仅有双语交付物且校对数据缺失），请重跑翻译后再试'
+        : '找不到可配音的字幕文件',
+    );
   }
-  throw new Error(
-    source.reason === 'bilingual-unresolvable'
-      ? '无法获取纯译文文本（仅有双语交付物且校对数据缺失），请重跑翻译后再试'
-      : '找不到可配音的字幕文件',
+  const outPath = path.join(
+    outDir,
+    `${file.uuid}-${hashSubtitleContent(content)}.srt`,
   );
+  try {
+    fs.writeFileSync(outPath, content, { encoding: 'utf-8', flag: 'wx' });
+  } catch (error) {
+    if (
+      (error as NodeJS.ErrnoException).code !== 'EEXIST' ||
+      fs.readFileSync(outPath, 'utf-8') !== content
+    )
+      throw error;
+  }
+  return outPath;
 }
 
 /**
- * 顺延字幕的展示文本覆盖：合成阶段无时移时烧的是交付字幕（双语选双语），
- * 时移发生时烧顺延字幕——其文本若用配音源（纯译文）会丢掉用户选择的双语内容。
- * 这里按合成阶段同样的交付物优先级（译文交付物 → 源字幕 → 临时源字幕）解析
- * 展示文本，与会话 cue 数一致才覆盖；不一致（防御）回退纯译文，时间轴仍正确。
+ * 交付字幕保持原始展示时长和双语源文，只替换明确匹配的旧配音文本。
+ * 不明确的行结构/时间轴拒绝合成，避免把旧译文或错误对应静默写入成片。
  */
-function resolveShiftedDisplayTexts(
-  file: IFiles,
-  expectedCount: number,
-): Map<number, string> | undefined {
-  const candidates = [file.translatedSrtFile, file.srtFile, file.tempSrtFile];
+function resolveDubSubtitle(file: IFiles, session: DubbingSession) {
+  const original = parseSubtitleCues(
+    fs.readFileSync(session.subtitlePath, 'utf-8'),
+    'srt',
+  );
+  const candidates = [
+    file.tempFinalSubtitleFile,
+    file.translatedSrtFile,
+    file.tempSrtFile,
+    file.srtFile,
+  ];
+  const mode = session.cues.some(
+    (cue, index) => cue.text !== original[index]?.text,
+  )
+    ? ('always' as const)
+    : ('ifShifted' as const);
   for (const candidate of candidates) {
     if (!candidate || /\.txt$/i.test(candidate) || !fs.existsSync(candidate)) {
       continue;
     }
-    try {
-      const content = fs.readFileSync(candidate, 'utf-8');
-      const cues = parseSubtitleCues(
-        content,
-        detectSubtitleFormatFromContent(candidate, content),
-      );
-      if (cues.length !== expectedCount) {
-        logMessage(
-          `dub stage: shifted subtitle keeps dub text (deliverable cue count ${cues.length} != session ${expectedCount})`,
-          'warning',
+    const content = fs.readFileSync(candidate, 'utf-8');
+    const cues = parseSubtitleCues(
+      content,
+      detectSubtitleFormatFromContent(candidate, content),
+    );
+    if (
+      cues.length !== session.cues.length ||
+      original.length !== session.cues.length
+    )
+      throw new Error('交付字幕与配音行数不一致，请重新校对字幕后再导出');
+    const displayTextByIndex = new Map(
+      cues.map((cue, index) => {
+        const base = original[index];
+        const current = session.cues[index];
+        if (cue.startMs !== base.startMs || cue.endMs !== base.endMs)
+          throw new Error('交付字幕与配音时间轴不一致，请重新校对字幕后再导出');
+        if (current.text === base.text) return [current.index, cue.text];
+        // Replace a unique block of translation lines, retaining source lines.
+        const lines = cue.text.split('\n').map((line) => line.trim());
+        const oldLines = base.text.split('\n').map((line) => line.trim());
+        const matches = lines.flatMap((_, offset) =>
+          oldLines.every((line, i) => lines[offset + i] === line)
+            ? [offset]
+            : [],
         );
-        return undefined;
-      }
-      return new Map(cues.map((cue, index) => [index, cue.text]));
-    } catch {
-      return undefined;
-    }
+        if (matches.length !== 1)
+          throw new Error(
+            `第 ${index + 1} 行无法安全更新双语字幕，请在校对页统一文本后重试`,
+          );
+        lines.splice(matches[0], oldLines.length, current.text);
+        return [current.index, lines.join('\n')];
+      }),
+    );
+    return { mode, preserveOriginalWindows: true, displayTextByIndex };
   }
-  return undefined;
+  return { mode, preserveOriginalWindows: true };
 }
 
 /**
  * 无合成阶段的任务：配音轨即最终交付物，导出到输入文件旁 `<名>-dubbed.wav`
- * （会话目录里的 wav 对用户不可见）。重试/检查点重建时覆写同一路径。
+ * （会话目录里的 wav 对用户不可见）。每次发布保留已有交付物。
  */
-function exportDubbedAudioDeliverable(file: IFiles, trackPath: string): void {
-  const existing =
-    file.dubbedAudioPath && fs.existsSync(path.dirname(file.dubbedAudioPath))
-      ? file.dubbedAudioPath
-      : null;
-  let target = existing;
-  if (!target) {
-    const dir = path.dirname(file.filePath);
-    const stem = path.basename(file.filePath, path.extname(file.filePath));
-    target = path.join(dir, `${stem}-dubbed.wav`);
-    let n = 2;
-    while (fs.existsSync(target)) {
-      target = path.join(dir, `${stem}-dubbed-${n}.wav`);
-      n += 1;
-    }
+async function exportDubbedAudioDeliverable(
+  file: IFiles,
+  trackPath: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const dir = path.dirname(file.filePath);
+  const stem = path.basename(file.filePath, path.extname(file.filePath));
+  const output = createComposeOutput(path.join(dir, `${stem}-dubbed.wav`), [
+    file.filePath,
+    trackPath,
+  ]);
+  try {
+    await fs.promises.copyFile(trackPath, output.staged);
+    const target = await output.publish(signal ?? new AbortController().signal);
+    file.dubbedAudioPath = target;
+    logMessage(`dubbed audio deliverable: ${target}`, 'info');
+  } finally {
+    output.cleanup();
   }
-  fs.copyFileSync(trackPath, target);
-  file.dubbedAudioPath = target;
-  logMessage(`dubbed audio deliverable: ${target}`, 'info');
 }
 
 /** 获取或恢复该文件的配音会话（hash 一致恢复已完成行；不一致/缺失重建） */
@@ -174,7 +232,13 @@ async function ensureDubSession(
 ): Promise<DubbingSession> {
   if (file.dubbingSessionId) {
     const restored = restoreDubbingSession(file.dubbingSessionId);
-    if (restored.kind === 'ok') {
+    if (restored.kind === 'ok' && restored.session.running)
+      throw new Error('配音会话正在使用中，请等待工作台操作完成后重试');
+    if (
+      restored.kind === 'ok' &&
+      restored.session.subtitleHash ===
+        hashSubtitleContent(fs.readFileSync(subtitlePath, 'utf-8'))
+    ) {
       restored.session.subtitleLanguage =
         subtitleLanguage ?? restored.session.subtitleLanguage;
       logMessage(
@@ -183,8 +247,7 @@ async function ensureDubSession(
       );
       return restored.session;
     }
-    // stale（译文已变）/ missing：旧会话数据作废，重建
-    deleteDubbingSessionData(file.dubbingSessionId);
+    // Keep the previous revision and audio even if replacement creation fails.
   }
   return createDubbingSession(
     subtitlePath,
@@ -205,9 +268,30 @@ function toDubbingConfig(dub: PipelineDubConfig): DubbingConfig {
     background: 'mute',
     output: 'audioOnly',
     overflow: dub.overflow ?? 'truncate',
-    overlapMode: dub.overlapMode ?? 'shift',
+    overlapMode: dub.overlapMode ?? 'mix',
     exportShiftedSubtitle: false,
   };
+}
+
+function resolvePipelineConfig(
+  session: DubbingSession,
+  dub: PipelineDubConfig,
+): DubbingConfig {
+  const task = toDubbingConfig(dub);
+  const config = { ...task, ...session.lastConfig };
+  if (session.pipelineConfigSnapshot) {
+    for (const key of Object.keys(task) as Array<keyof DubbingConfig>) {
+      if (
+        JSON.stringify(task[key]) !==
+        JSON.stringify(session.pipelineConfigSnapshot[key])
+      )
+        Object.assign(config, { [key]: task[key] });
+    }
+  }
+  session.pipelineConfigSnapshot = task;
+  session.lastConfig = config;
+  flushDubbingSession(session);
+  return config;
 }
 
 /**
@@ -230,7 +314,7 @@ function applyHeadlessSpeakerVoiceFallback(session: DubbingSession): void {
 
 /**
  * 配音阶段已完成的续跑路径：跳过批量合成，但**总是**按会话当前行状态重建
- * 配音轨与顺延字幕——配音确认检查点里的行级修改（重生成/换音色/接受变速）
+ * 配音轨与顺延字幕——配音确认检查点里的行级修改（重生成/换音色/借空白）
  * 由此进入成片。会话不可恢复时退回完整配音阶段。
  */
 export async function rebuildDubTrackForFile(
@@ -238,48 +322,74 @@ export async function rebuildDubTrackForFile(
   file: IFiles,
   formData: IFormData & { translateProvider?: string },
 ): Promise<void> {
+  let release = () => {};
+  try {
+    release = file.dubbingSessionId
+      ? reserveSession(file.dubbingSessionId)
+      : () => {};
+    await rebuildReservedDubTrack(event, file, formData, release);
+  } catch (error) {
+    if (!(error instanceof TaskCancelledError) && !getTaskSignal()?.aborted)
+      emitError(
+        event,
+        file,
+        error instanceof Error ? error.message : String(error),
+      );
+    throw error;
+  } finally {
+    release();
+  }
+}
+
+async function rebuildReservedDubTrack(
+  event: any,
+  file: IFiles,
+  formData: IFormData & { translateProvider?: string },
+  release: () => void,
+): Promise<void> {
   const dub = formData.dub!;
+  const subtitlePath = await materializeDubSubtitle(file, formData);
   const restored = file.dubbingSessionId
     ? restoreDubbingSession(file.dubbingSessionId)
     : ({ kind: 'missing' } as const);
-  if (restored.kind !== 'ok') {
+  if (
+    restored.kind !== 'ok' ||
+    restored.session.subtitleHash !==
+      hashSubtitleContent(fs.readFileSync(subtitlePath, 'utf-8'))
+  ) {
     logMessage(
       `dub track rebuild: session unavailable (${restored.kind}), rerun dub stage`,
       'warning',
     );
+    release();
     await runDubStage(event, file, formData);
     return;
   }
   const session = restored.session;
+  if (session.running) throw new Error('配音会话正在使用中，请稍后重试');
   session.subtitleLanguage =
     pipelineDubLanguage(formData) ?? session.subtitleLanguage;
   const signal = getTaskSignal();
   emitStatus(event, file, 'loading');
   try {
     throwIfTaskCancelled();
+    const config = resolvePipelineConfig(session, dub);
     const track = await buildDubTrack(session, {
       // Review workbench settings are authoritative after a completed stage.
-      config: session.lastConfig ?? toDubbingConfig(dub),
-      overflow: dub.overflow ?? 'truncate',
-      overlapMode: dub.overlapMode ?? 'shift',
+      config,
+      overflow: config.overflow,
+      overlapMode: config.overlapMode,
       signal,
-      shiftedSubtitle: {
-        path: path.join(session.workDir, 'dubbed-shifted.srt'),
-        mode: 'ifShifted',
-        displayTextByIndex: resolveShiftedDisplayTexts(
-          file,
-          session.cues.length,
-        ),
-      },
+      shiftedSubtitle: resolveDubSubtitle(file, session),
     });
     flushDubbingSession(session);
     file.dubbedTrackPath = track.trackPath;
     file.shiftedSubtitlePath = track.shiftedSubtitlePath;
     if (!formData.compose) {
-      exportDubbedAudioDeliverable(file, track.trackPath);
+      await exportDubbedAudioDeliverable(file, track.trackPath, signal);
     }
     event.sender.send('taskProgressChange', file, STAGE_KEY, 100);
-    event.sender.send('taskFileChange', { ...file, [STAGE_KEY]: 'done' });
+    emitStatus(event, file, 'done');
     logMessage(`dub track rebuilt for ${file.fileName}`, 'info');
   } catch (error) {
     if (error instanceof TaskCancelledError || signal?.aborted) {
@@ -318,8 +428,12 @@ export async function runDubStage(
   const signal = getTaskSignal();
   let release: (() => void) | null = null;
   let session: DubbingSession | null = null;
+  let batchAbort: AbortController | null = null;
+  const reservations: Array<() => void> = [];
   const onAbort = () => {
-    if (session) cancelDubbing(session);
+    // Never cancel a later workbench operation after this batch has finished.
+    if (session && batchAbort && session.abort === batchAbort)
+      cancelDubbing(session);
   };
 
   try {
@@ -331,22 +445,38 @@ export async function runDubStage(
     release = await dubStageMutex.acquire(signal);
     throwIfTaskCancelled();
 
+    if (file.dubbingSessionId)
+      reservations.push(reserveSession(file.dubbingSessionId));
     session = await ensureDubSession(
       file,
       subtitlePath,
       isMediaInput,
       pipelineDubLanguage(formData),
     );
+    if (session.id !== file.dubbingSessionId)
+      reservations.push(reserveSession(session.id));
+    const previousSessionId = file.dubbingSessionId;
     file.dubbingSessionId = session.id;
-    event.sender.send('taskFileChange', { ...file, [STAGE_KEY]: 'loading' });
+    try {
+      event.sender.send('taskFileChange', { ...file, [STAGE_KEY]: 'loading' });
+      session.pendingTaskLink = false;
+    } catch (error) {
+      file.dubbingSessionId = previousSessionId;
+      if (session.id !== previousSessionId)
+        deleteDubbingSessionData(session.id);
+      throw error;
+    }
 
     signal?.addEventListener('abort', onAbort, { once: true });
 
-    const config = toDubbingConfig(dub);
+    const config = resolvePipelineConfig(session, dub);
     applyHeadlessSpeakerVoiceFallback(session);
-    const result = await runDubbingBatch(session, config, (e) => {
+    const batch = runDubbingBatch(session, config, (e) => {
       event.sender.send('taskProgressChange', file, STAGE_KEY, e.percent);
     });
+    batchAbort = session.abort;
+    const result = await batch;
+    batchAbort = null;
 
     if (result.cancelled || signal?.aborted) {
       throw new TaskCancelledError();
@@ -357,33 +487,23 @@ export async function runDubStage(
       );
     }
 
-    // 构建完整配音轨 + 顺延字幕（仅时移发生时产出；展示文本跟随交付字幕）
+    // Snapshot reviewed audio and display text for the downstream compose job.
     const track = await buildDubTrack(session, {
       config,
       overflow: config.overflow,
       overlapMode: config.overlapMode,
       signal,
-      shiftedSubtitle: {
-        path: path.join(session.workDir, 'dubbed-shifted.srt'),
-        mode: 'ifShifted',
-        displayTextByIndex: resolveShiftedDisplayTexts(
-          file,
-          session.cues.length,
-        ),
-      },
+      shiftedSubtitle: resolveDubSubtitle(file, session),
     });
     flushDubbingSession(session);
 
     file.dubbedTrackPath = track.trackPath;
     file.shiftedSubtitlePath = track.shiftedSubtitlePath;
     if (!formData.compose) {
-      exportDubbedAudioDeliverable(file, track.trackPath);
+      await exportDubbedAudioDeliverable(file, track.trackPath, signal);
     }
     event.sender.send('taskProgressChange', file, STAGE_KEY, 100);
-    event.sender.send('taskFileChange', {
-      ...file,
-      [STAGE_KEY]: 'done',
-    });
+    emitStatus(event, file, 'done');
     logMessage(
       `dub stage done: ${file.fileName} (track=${track.trackPath}, shifted=${track.shiftedSubtitlePath ?? 'none'})`,
       'info',
@@ -403,6 +523,7 @@ export async function runDubStage(
     throw error;
   } finally {
     signal?.removeEventListener('abort', onAbort);
+    reservations.reverse().forEach((release) => release());
     release?.();
   }
 }

@@ -6,11 +6,13 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import { getStaticPaths, makeStaticProperties } from '../lib/get-static';
 import { ThemeProvider } from 'next-themes';
 import { NavigationGuardProvider } from '@/context/NavigationGuardContext';
+import { useDubbingDraftCleanup } from '../hooks/useDubbingDraftCleanup';
 
 import '../styles/globals.css';
 import { UpdateNotification } from '@/components/UpdateNotification';
 
 function MyApp({ Component, pageProps }: AppProps) {
+  useDubbingDraftCleanup();
   return (
     <ErrorBoundary>
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>

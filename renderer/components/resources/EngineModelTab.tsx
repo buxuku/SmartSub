@@ -19,7 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from 'lib/utils';
 import { Input } from '@/components/ui/input';
@@ -49,6 +49,11 @@ import { resolveModelDownloadUrl } from 'lib/resolveModelDownloadUrl';
 import { useSherpaRuntime } from '@/components/resources/engines/useSherpaRuntime';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import useAsrProviders from 'hooks/useAsrProviders';
+import useEngineSettings from '../../hooks/useEngineSettings';
+import useEngineOperation from '../../hooks/useEngineOperation';
+import SettingsPersistenceStatus from '../settings/SettingsPersistenceStatus';
+import { useNavigationGuard } from '../../context/NavigationGuardContext';
+import ProviderPersistenceStatus from './ProviderPersistenceStatus';
 import {
   LOCAL_ENGINE_VIEWS,
   isEngineViewId,
@@ -129,10 +134,6 @@ const EngineModelTab: React.FC = () => {
 
   // 引擎运行时状态
   const [engineStatuses, setEngineStatuses] = useState<EngineStatuses>({});
-  const [device, setDevice] = useState<'auto' | 'cpu' | 'cuda'>('auto');
-  const [computeType, setComputeType] = useState('auto');
-  const [whisperCommand, setWhisperCommand] = useState('');
-  const [localCliEnabled, setLocalCliEnabled] = useState(false);
   const [platform, setPlatform] = useState('');
   // 运行时变体：cpu=默认包（所有平台），cuda=Full GPU 包（仅 Win/Linux，捆绑 cuBLAS/cuDNN）。
   // 下载前的选择记忆在本地；已安装变体以引擎状态(manifest)为准。
@@ -146,9 +147,13 @@ const EngineModelTab: React.FC = () => {
   const [showUninstallConfirm, setShowUninstallConfirm] = useState(false);
   const [taskBusy, setTaskBusy] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const taskBusyRef = useRef(false);
+  const statusEpoch = useRef(0);
+  const modelEpoch = useRef(0);
+  const [statusError, setStatusError] = useState('');
+  const [modelError, setModelError] = useState('');
+  const [statusLoaded, setStatusLoaded] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<PyEngineUpdateInfo | null>(null);
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const engineOperation = useEngineOperation();
   // 运行库（sherpa-onnx）随包内置，不再做安装检测；各族状态只看「是否已下载模型」。
   const [funasrModelsReady, setFunasrModelsReady] = useState(false);
   const [qwenModelsReady, setQwenModelsReady] = useState(false);
@@ -160,6 +165,13 @@ const EngineModelTab: React.FC = () => {
   const [addCustomOpen, setAddCustomOpen] = useState(false);
   const [customName, setCustomName] = useState('');
   const [customApiUrl, setCustomApiUrl] = useState('');
+  useNavigationGuard('asr-provider-create', {
+    isDirty: Boolean(customName || customApiUrl),
+    onDiscard: () => {
+      setCustomName('');
+      setCustomApiUrl('');
+    },
+  });
   const [binarySource, setBinarySource] = useState<DownloadSource>(() =>
     typeof window === 'undefined' ? 'github' : readPersistedDownloadSource(),
   );
@@ -172,67 +184,84 @@ const EngineModelTab: React.FC = () => {
   });
   const [systemInfoLoaded, setSystemInfoLoaded] = useState(false);
   const [globalDownloading, setGlobalDownloading] = useState(false);
+  const engineSettings = useEngineSettings(() => {
+    void refresh();
+  });
+  const {
+    fasterWhisperDevice: device,
+    fasterWhisperComputeType: computeType,
+    whisperCommand,
+    useLocalWhisper: localCliEnabled,
+  } = engineSettings.values;
 
   const updateSystemInfo = useCallback(async () => {
+    const token = ++modelEpoch.current;
     try {
       const res = await window?.ipc?.invoke('getSystemInfo', null);
-      if (res) setSystemInfo(res);
-    } catch (error) {
-      console.error('Failed to load system info:', error);
-    } finally {
+      if (token !== modelEpoch.current) return;
+      if (
+        !res ||
+        !Array.isArray(res.modelsInstalled) ||
+        !Array.isArray(res.downloadingModels)
+      )
+        throw new Error('INVALID_MODEL_STATUS');
+      setSystemInfo(res);
+      setModelError('');
       setSystemInfoLoaded(true);
+    } catch (error) {
+      if (token === modelEpoch.current) {
+        setModelError(error instanceof Error ? error.message : String(error));
+        setSystemInfoLoaded(false);
+      }
     }
   }, []);
 
   const refresh = useCallback(async () => {
+    const token = ++statusEpoch.current;
     // GPU 环境探测（首次含 nvidia-smi）较慢，独立异步加载、不进首屏 Promise.all，
     // 避免拖慢引擎/模型状态渲染；platform 就绪后再补设（仅用于平台相关展示）。
     void Promise.resolve(window?.ipc?.invoke('get-gpu-environment'))
       .then((env) => {
+        if (token !== statusEpoch.current) return;
         if (env?.platform) setPlatform(env.platform);
         setNvidiaSupported(!!env?.nvidia?.gpuSupport?.supported);
       })
       .catch(() => {});
     try {
-      const [statuses, settings, progress, taskStatus] = await Promise.all([
-        window?.ipc?.invoke('get-engine-status'),
-        window?.ipc?.invoke('getSettings'),
-        window?.ipc?.invoke('get-py-engine-download-progress'),
-        window?.ipc?.invoke('getTaskStatus'),
-      ]);
-      if (statuses) setEngineStatuses(statuses);
-      if (settings) {
-        setDevice(settings.fasterWhisperDevice || 'auto');
-        setComputeType(settings.fasterWhisperComputeType || 'auto');
-        setWhisperCommand(settings.whisperCommand || '');
-        setLocalCliEnabled(!!settings.useLocalWhisper);
-      }
+      const [statuses, progress, taskStatus, fr, qr, frr, pr] =
+        await Promise.all([
+          window?.ipc?.invoke('get-engine-status'),
+          window?.ipc?.invoke('get-py-engine-download-progress'),
+          window?.ipc?.invoke('getTaskStatus'),
+          window.ipc.invoke('getFunasrModelStatus'),
+          window.ipc.invoke('getQwenModelStatus'),
+          window.ipc.invoke('getFireRedModelStatus'),
+          window.ipc.invoke('getParakeetModelStatus'),
+        ]);
+      if (token !== statusEpoch.current) return;
+      if (
+        !statuses ||
+        typeof statuses !== 'object' ||
+        !statuses.fasterWhisper ||
+        typeof taskStatus !== 'string' ||
+        [fr, qr, frr, pr].some((result) => result?.success !== true)
+      )
+        throw new Error('INVALID_ENGINE_STATUS');
+      setEngineStatuses(statuses);
       if (progress) setDownloadProgress(progress);
       const busy = isQueueBusy(taskStatus);
       setTaskBusy(busy);
-      taskBusyRef.current = busy;
-
-      const fr = await window?.ipc?.invoke('getFunasrModelStatus');
-      if (fr?.success) {
-        setFunasrModelsReady(!!fr.ready);
-      }
-
-      const qr = await window?.ipc?.invoke('getQwenModelStatus');
-      if (qr?.success) {
-        setQwenModelsReady(!!qr.ready);
-      }
-
-      const frr = await window?.ipc?.invoke('getFireRedModelStatus');
-      if (frr?.success) {
-        setFireRedModelsReady(!!frr.ready);
-      }
-
-      const pr = await window?.ipc?.invoke('getParakeetModelStatus');
-      if (pr?.success) {
-        setParakeetModelsReady(!!pr.ready);
-      }
+      setFunasrModelsReady(!!fr.ready);
+      setQwenModelsReady(!!qr.ready);
+      setFireRedModelsReady(!!frr.ready);
+      setParakeetModelsReady(!!pr.ready);
+      setStatusLoaded(true);
+      setStatusError('');
     } catch (error) {
-      console.error('Failed to refresh engine status:', error);
+      if (token === statusEpoch.current) {
+        setStatusError(error instanceof Error ? error.message : String(error));
+        setStatusLoaded(false);
+      }
     }
   }, []);
 
@@ -275,7 +304,6 @@ const EngineModelTab: React.FC = () => {
     const unsubTask = window?.ipc?.on('taskStatusChange', (status: string) => {
       const busy = isQueueBusy(status);
       setTaskBusy(busy);
-      taskBusyRef.current = busy;
     });
     const unsubUpdate = window?.ipc?.on(
       'py-engine-update-available',
@@ -292,6 +320,8 @@ const EngineModelTab: React.FC = () => {
       },
     );
     return () => {
+      statusEpoch.current++;
+      modelEpoch.current++;
       unsubProgress?.();
       unsubTask?.();
       unsubUpdate?.();
@@ -306,24 +336,13 @@ const EngineModelTab: React.FC = () => {
   }, [updateSystemInfo, refresh]);
 
   const handleSaveWhisperCommand = async () => {
-    try {
-      await window?.ipc?.invoke('setSettings', { whisperCommand });
+    if (await engineSettings.persistence.save())
       toast.success(t('engines.localCli.commandSaved'));
-      void refresh();
-    } catch {
-      toast.error(t('engines.localCli.commandSaveFailed'));
-    }
   };
 
   // localCli「启用」沿用 useLocalWhisper：开启后任务页「引擎 ▸ 模型」选择器才会列出本地命令行。
-  const handleToggleLocalCli = async (value: boolean) => {
-    setLocalCliEnabled(value);
-    try {
-      await window?.ipc?.invoke('setSettings', { useLocalWhisper: value });
-      void refresh();
-    } catch {
-      setLocalCliEnabled(!value);
-    }
+  const handleToggleLocalCli = (value: boolean) => {
+    engineSettings.change({ useLocalWhisper: value });
   };
 
   // 当前已安装变体（manifest 来源）；未安装/老安装按 cpu 兜底。
@@ -336,33 +355,31 @@ const EngineModelTab: React.FC = () => {
    * 统一的运行时下载入口。coupleDevice=true（仅在「选择/切换变体」时）联动计算设备：
    * GPU 包→auto；CPU 包→cpu（CPU 包无 CUDA 运行库，置 cpu 可规避 cublas 加载报错）。
    */
-  const startEngineDownload = async (
+  const startEngineDownload = (
     variant: 'cpu' | 'cuda',
     coupleDevice = false,
   ) => {
-    const result = await window?.ipc?.invoke('start-py-engine-download', {
-      source: binarySource,
-      variant,
-    });
-    if (!result?.success) {
-      toast.error(
-        result?.error === 'engine_busy'
-          ? t('engines.fasterWhisper.engineBusy')
-          : result?.error || 'Failed to start download',
-      );
-      return;
-    }
-    if (coupleDevice) {
-      const nextDevice: 'auto' | 'cpu' = variant === 'cuda' ? 'auto' : 'cpu';
-      setDevice(nextDevice);
-      try {
-        await window?.ipc?.invoke('set-faster-whisper-settings', {
-          device: nextDevice,
+    return engineOperation.run(
+      async () => {
+        const result = await window.ipc.invoke('start-py-engine-download', {
+          source: binarySource,
+          variant,
         });
-      } catch {
-        // 设备偏好写入失败不影响下载本身
-      }
-    }
+        if (result?.success !== true)
+          throw new Error(
+            result?.error === 'engine_busy'
+              ? t('engines.fasterWhisper.engineBusy')
+              : result?.error || 'ENGINE_DOWNLOAD_FAILED',
+          );
+        return result;
+      },
+      () => {
+        if (coupleDevice)
+          engineSettings.change({
+            fasterWhisperDevice: variant === 'cuda' ? 'auto' : 'cpu',
+          });
+      },
+    );
   };
 
   const handleStartDownload = () =>
@@ -376,62 +393,66 @@ const EngineModelTab: React.FC = () => {
     return startEngineDownload(target, true);
   };
 
-  const handleCheckUpdate = async () => {
-    setCheckingUpdate(true);
-    try {
-      const result = await window?.ipc?.invoke('check-py-engine-update', {
-        source: binarySource,
-        variant: installedVariantOf(),
-      });
-      if (!result?.success) {
-        toast.error(t('engines.fasterWhisper.checkFailed'));
-        return;
-      }
-      const info = result.info as PyEngineUpdateInfo;
-      setUpdateInfo(info);
-      if (!info.protocolSupported) {
-        toast.error(t('engines.fasterWhisper.protocolUnsupported'));
-      } else if (info.hasUpdate) {
-        toast.success(t('engines.fasterWhisper.updateAvailable'));
-      } else {
-        toast.success(t('engines.fasterWhisper.upToDate'));
-      }
-    } catch {
-      toast.error(t('engines.fasterWhisper.checkFailed'));
-    } finally {
-      setCheckingUpdate(false);
-    }
-  };
+  const handleCheckUpdate = () =>
+    engineOperation.run(
+      async () => {
+        const result = await window.ipc.invoke('check-py-engine-update', {
+          source: binarySource,
+          variant: installedVariantOf(),
+        });
+        if (
+          result?.success !== true ||
+          !result.info ||
+          typeof result.info.hasUpdate !== 'boolean' ||
+          typeof result.info.protocolSupported !== 'boolean'
+        )
+          throw new Error(
+            result?.error || t('engines.fasterWhisper.checkFailed'),
+          );
+        if (!result.info.protocolSupported)
+          throw new Error(t('engines.fasterWhisper.protocolUnsupported'));
+        return result;
+      },
+      (result) => {
+        const info = result.info as PyEngineUpdateInfo;
+        setUpdateInfo(info);
+        if (info.hasUpdate) {
+          toast.success(t('engines.fasterWhisper.updateAvailable'));
+        } else {
+          toast.success(t('engines.fasterWhisper.upToDate'));
+        }
+      },
+    );
 
   const handleUpgrade = () => startEngineDownload(installedVariantOf());
 
-  const handleUninstall = async () => {
+  const handleUninstall = () => {
     setShowUninstallConfirm(false);
-    const result = await window?.ipc?.invoke('uninstall-py-engine');
-    if (result?.success) {
-      setVerifying(false);
-      setUpdateInfo(null);
-      await refresh();
-    } else {
-      toast.error(result?.error || 'Failed to uninstall');
-    }
+    return engineOperation.run(
+      async () => {
+        const result = await window.ipc.invoke('uninstall-py-engine');
+        if (result?.success !== true)
+          throw new Error(result?.error || 'ENGINE_UNINSTALL_FAILED');
+        return result;
+      },
+      () => {
+        setVerifying(false);
+        setUpdateInfo(null);
+        void refresh();
+      },
+    );
   };
 
-  const handleDeviceChange = async (value: string) => {
+  const handleDeviceChange = (value: string) => {
     const next = value as 'auto' | 'cpu' | 'cuda';
-    setDevice(next);
-    await window?.ipc?.invoke('set-faster-whisper-settings', { device: next });
+    engineSettings.change({ fasterWhisperDevice: next });
   };
 
-  const handleComputeTypeChange = async (value: string) => {
-    setComputeType(value);
-    await window?.ipc?.invoke('set-faster-whisper-settings', {
-      computeType: value,
-    });
+  const handleComputeTypeChange = (value: string) => {
+    engineSettings.change({ fasterWhisperComputeType: value });
   };
 
   const fasterStatus = engineStatuses.fasterWhisper;
-  const localCliStatus = engineStatuses.localCli;
   const installedVariant: 'cpu' | 'cuda' | undefined = fasterStatus?.variant;
   // GPU 包仅 Win/Linux 提供；其余平台强制 cpu。
   const gpuVariantAvailable = platform === 'win32' || platform === 'linux';
@@ -447,8 +468,9 @@ const EngineModelTab: React.FC = () => {
   const showVerifying = verifying || downloadProgress?.status === 'verifying';
   const hasUpdate = !!(updateInfo?.hasUpdate && updateInfo.protocolSupported);
   const localCliReady =
-    localCliEnabled &&
-    (localCliStatus?.state === 'ready' || whisperCommand.trim().length > 0);
+    engineSettings.persistence.loaded &&
+    engineSettings.acknowledged.useLocalWhisper &&
+    Boolean(engineSettings.acknowledged.whisperCommand.trim());
 
   // 安全网：引擎一旦确认 ready/broken，立即清掉「检测中」标志
   useEffect(() => {
@@ -546,6 +568,11 @@ const EngineModelTab: React.FC = () => {
   );
 
   const renderEngineBadge = (view: LocalEngineView) => {
+    if (
+      (!statusLoaded && view !== 'localCli') ||
+      (view === 'builtin' && !systemInfoLoaded)
+    )
+      return <Badge variant="secondary">{t('engines.statusUnknown')}</Badge>;
     if (view === 'sherpa') {
       // 组徽标：任一族就绪即视为可用；否则提示去下载模型（运行库已内置，无"未安装"态）。
       return sherpaAnyReady ? (
@@ -588,7 +615,7 @@ const EngineModelTab: React.FC = () => {
     }
     if (engine === 'localCli') {
       return localCliReady ? (
-        readyBadge
+        <Badge variant="secondary">{t('engines.cloud.configured')}</Badge>
       ) : (
         <Badge variant="outline" className="shrink-0 text-muted-foreground">
           {t('engines.localCli.notConfigured')}
@@ -605,6 +632,11 @@ const EngineModelTab: React.FC = () => {
   };
 
   const engineTone = (view: LocalEngineView): StatusTone => {
+    if (
+      (statusError && view !== 'localCli') ||
+      (modelError && view === 'builtin')
+    )
+      return 'error';
     if (view === 'sherpa') return sherpaAnyReady ? 'ready' : 'pending';
     if (view === 'fasterWhisper') {
       if (isDownloading || showVerifying) return 'downloading';
@@ -669,8 +701,8 @@ const EngineModelTab: React.FC = () => {
     fasterInstalled,
     fasterBroken,
     hasUpdate,
-    checkingUpdate,
-    taskBusy,
+    checkingUpdate: engineOperation.busy,
+    taskBusy: taskBusy || !statusLoaded || engineOperation.busy,
     device,
     computeType,
     deviceOptions,
@@ -698,6 +730,7 @@ const EngineModelTab: React.FC = () => {
       customName,
       customApiUrl,
     );
+    if (!id) return;
     setAddCustomOpen(false);
     setCustomName('');
     setCustomApiUrl('');
@@ -719,6 +752,11 @@ const EngineModelTab: React.FC = () => {
     null;
 
   const renderRuntimePanel = () => {
+    if (
+      !asr.loaded &&
+      (selectedRaw === 'cloud' || selectedRaw.startsWith('cloud:'))
+    )
+      return null;
     if (isOverview) {
       return (
         <EngineOverviewPanel
@@ -740,10 +778,12 @@ const EngineModelTab: React.FC = () => {
           onUpdateField={asr.updateInstanceField}
           onMaterialize={asr.addInstance}
           onRemove={asr.removeInstance}
+          drafts={asr.persistence}
         />
       );
     }
     if (effectiveLocalView === 'fasterWhisper') {
+      if (!engineSettings.persistence.loaded) return null;
       return <FasterWhisperPanel {...fasterWhisperPanelProps} />;
     }
     if (effectiveLocalView === 'sherpa') {
@@ -759,10 +799,13 @@ const EngineModelTab: React.FC = () => {
       );
     }
     if (effectiveLocalView === 'localCli') {
+      if (!engineSettings.persistence.loaded) return null;
       return (
         <LocalCliPanel
           whisperCommand={whisperCommand}
-          onCommandChange={setWhisperCommand}
+          onCommandChange={(value) =>
+            engineSettings.change({ whisperCommand: value }, null)
+          }
           onSave={handleSaveWhisperCommand}
           enabled={localCliEnabled}
           onToggleEnabled={handleToggleLocalCli}
@@ -775,217 +818,288 @@ const EngineModelTab: React.FC = () => {
   return (
     <TooltipProvider delayDuration={150}>
       {/* 主从双栏面板：左 = 听写引擎清单（总览 + 本地组 + 云端组），右 = 详情。 */}
-      <div className="grid h-full min-h-0 grid-cols-1 gap-2.5 md:grid-cols-[248px_minmax(0,1fr)]">
-        <Panel className="min-h-0 overflow-hidden">
-          <PanelHeader
-            title={t('engines.masterTitle')}
-            actions={
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                aria-label={t('cloudAsr.addCustom')}
-                onClick={() => setAddCustomOpen(true)}
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
-            }
-          />
-          <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1.5">
-            {/* 总览首项：三个配置页统一的落地视图 */}
-            <button
-              type="button"
-              aria-current={isOverview ? 'true' : undefined}
-              onClick={() => setSelectedView('overview' as EngineView)}
-              className={cn(
-                'relative flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[13px] transition-colors',
-                isOverview
-                  ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-2 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
-                  : 'text-foreground hover:bg-accent',
-              )}
+      <div className="flex h-full min-h-0 flex-col gap-2">
+        {engineOperation.error && (
+          <div
+            role="alert"
+            data-engine-operation-error
+            className="shrink-0 max-h-48 overflow-y-auto space-y-2 bg-destructive/10 p-3 text-sm"
+          >
+            <p>{t('engines.operationFailed')}</p>
+            <p>{t('engines.operationRepair')}</p>
+            <details>
+              <summary>{commonT('saveState.details')}</summary>
+              <p className="break-all whitespace-pre-wrap">
+                {engineOperation.error}
+              </p>
+            </details>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={engineOperation.busy}
+              onClick={engineOperation.retry}
             >
-              <span
+              <RefreshCw className="mr-2 h-4 w-4" />
+              {t('engines.operationRetry')}
+            </Button>
+          </div>
+        )}
+        {(statusError || modelError) && (
+          <div
+            role="alert"
+            data-engine-status-error
+            className="shrink-0 max-h-48 overflow-y-auto space-y-2 bg-destructive/10 p-3 text-sm"
+          >
+            <p>{t('engines.statusReadFailed')}</p>
+            <details>
+              <summary>{commonT('saveState.details')}</summary>
+              <p className="break-all whitespace-pre-wrap">
+                {[statusError, modelError].filter(Boolean).join('\n')}
+              </p>
+            </details>
+            <Button size="sm" variant="outline" onClick={handleResourcesUpdate}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              {t('engines.operationRetry')}
+            </Button>
+          </div>
+        )}
+        <ProviderPersistenceStatus
+          state={asr.persistence}
+          quiet={!activeCloudView}
+        />
+        {(engineSettings.persistence.loadError ||
+          engineSettings.persistence.error ||
+          engineSettings.persistence.isDirty ||
+          (!activeCloudView &&
+            !isOverview &&
+            ['localCli', 'fasterWhisper'].includes(effectiveLocalView))) && (
+          <SettingsPersistenceStatus state={engineSettings.persistence} />
+        )}
+        <div className="grid flex-1 min-h-0 grid-cols-1 gap-2.5 md:grid-cols-[248px_minmax(0,1fr)]">
+          <Panel className="min-h-0 overflow-hidden">
+            <PanelHeader
+              title={t('engines.masterTitle')}
+              actions={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  disabled={!asr.loaded}
+                  aria-label={t('cloudAsr.addCustom')}
+                  onClick={() => setAddCustomOpen(true)}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+              }
+            />
+            <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1.5">
+              {/* 总览首项：三个配置页统一的落地视图 */}
+              <button
+                type="button"
+                aria-current={isOverview ? 'true' : undefined}
+                onClick={() => setSelectedView('overview' as EngineView)}
                 className={cn(
-                  'flex h-6 w-6 flex-none items-center justify-center rounded-md',
+                  'relative flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[13px] transition-colors',
                   isOverview
-                    ? 'bg-primary/15 text-primary'
-                    : 'bg-muted text-muted-foreground',
+                    ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-2 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                    : 'text-foreground hover:bg-accent',
                 )}
               >
-                <LayoutGrid className="h-3.5 w-3.5" />
-              </span>
-              <span className="flex min-w-0 flex-col">
-                <span className="truncate">{t('engines.overview.name')}</span>
-                <span className="truncate text-[11px] font-normal text-muted-foreground">
-                  {t('engines.overview.subtitle')}
+                <span
+                  className={cn(
+                    'flex h-6 w-6 flex-none items-center justify-center rounded-md',
+                    isOverview
+                      ? 'bg-primary/15 text-primary'
+                      : 'bg-muted text-muted-foreground',
+                  )}
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
                 </span>
-              </span>
-            </button>
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate">{t('engines.overview.name')}</span>
+                  <span className="truncate text-[11px] font-normal text-muted-foreground">
+                    {t('engines.overview.subtitle')}
+                  </span>
+                </span>
+              </button>
 
-            <div className="label-caps px-2 pb-1 pt-2.5">
-              {t('engines.groups.local')}
-            </div>
-            {LOCAL_ENGINE_VIEWS.map((id) => {
-              const active =
-                !activeCloudView && !isOverview && effectiveLocalView === id;
-              const tone = engineTone(id);
-              const tags = engineTags(id);
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  aria-current={active ? 'true' : undefined}
-                  onClick={() => setSelectedView(id)}
-                  className={cn(
-                    'relative flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
-                    active
-                      ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-2 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
-                      : 'text-foreground hover:bg-accent',
-                  )}
-                >
-                  <EngineIcon engine={id} className="mt-1 h-4 w-4 shrink-0" />
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="flex items-center gap-2">
-                      <span className="min-w-0 truncate">{engineName(id)}</span>
-                      <span className="ml-auto flex shrink-0">
-                        <StatusDot tone={tone} label={statusLabel(tone)} />
-                      </span>
-                    </span>
-                    {tags.length > 0 && (
-                      <span className="mt-1 flex flex-wrap gap-1">
-                        {tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className={cn(
-                              'rounded px-1.5 py-0.5 text-[10px] font-normal leading-none',
-                              active
-                                ? 'bg-primary/15 text-primary'
-                                : 'bg-muted text-muted-foreground',
-                            )}
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </span>
+              <div className="label-caps px-2 pb-1 pt-2.5">
+                {t('engines.groups.local')}
+              </div>
+              {LOCAL_ENGINE_VIEWS.map((id) => {
+                const active =
+                  !activeCloudView && !isOverview && effectiveLocalView === id;
+                const tone = engineTone(id);
+                const tags = engineTags(id);
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-current={active ? 'true' : undefined}
+                    onClick={() => setSelectedView(id)}
+                    className={cn(
+                      'relative flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
+                      active
+                        ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-2 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                        : 'text-foreground hover:bg-accent',
                     )}
-                  </span>
-                </button>
-              );
-            })}
+                  >
+                    <EngineIcon engine={id} className="mt-1 h-4 w-4 shrink-0" />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="flex items-center gap-2">
+                        <span className="min-w-0 truncate">
+                          {engineName(id)}
+                        </span>
+                        <span className="ml-auto flex shrink-0">
+                          <StatusDot tone={tone} label={statusLabel(tone)} />
+                        </span>
+                      </span>
+                      {tags.length > 0 && (
+                        <span className="mt-1 flex flex-wrap gap-1">
+                          {tags.map((tag) => (
+                            <span
+                              key={tag}
+                              className={cn(
+                                'rounded px-1.5 py-0.5 text-[10px] font-normal leading-none',
+                                active
+                                  ? 'bg-primary/15 text-primary'
+                                  : 'bg-muted text-muted-foreground',
+                              )}
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
 
-            <div className="label-caps px-2 pb-1 pt-2.5">
-              {t('engines.groups.cloud')}
-            </div>
-            {cloudViews.map((v) => {
-              const active = activeCloudView?.viewId === v.viewId;
-              const tone: StatusTone = v.configured ? 'ready' : 'pending';
-              return (
-                <button
-                  key={v.viewId}
-                  type="button"
-                  aria-current={active ? 'true' : undefined}
-                  onClick={() => setSelectedView(v.viewId as EngineView)}
-                  className={cn(
-                    'relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
-                    active
-                      ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-1.5 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
-                      : 'text-foreground hover:bg-accent',
-                  )}
-                >
-                  <ProviderBrandIcon icon={v.icon} iconImg={v.iconImg} />
-                  <span className="min-w-0 flex-1 truncate" title={v.label}>
-                    {v.label}
-                  </span>
-                  <StatusDot tone={tone} label={statusLabel(tone)} />
-                </button>
-              );
-            })}
-            {/* 固定在云组末尾的「添加自定义」：接入任意 OpenAI 兼容端点 */}
-            <button
-              type="button"
-              onClick={() => setAddCustomOpen(true)}
-              className="flex w-full items-center gap-2 rounded-md border border-dashed border-border-strong px-2 py-1.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
-                <Plus className="h-4 w-4" />
-              </span>
-              <span className="min-w-0 flex-1 truncate">
-                {t('cloudAsr.addCustom')}
-              </span>
-            </button>
-          </nav>
-        </Panel>
+              <div className="label-caps px-2 pb-1 pt-2.5">
+                {t('engines.groups.cloud')}
+              </div>
+              {(asr.loaded ? cloudViews : []).map((v) => {
+                const active = activeCloudView?.viewId === v.viewId;
+                const tone: StatusTone = v.configured ? 'ready' : 'pending';
+                return (
+                  <button
+                    key={v.viewId}
+                    type="button"
+                    aria-current={active ? 'true' : undefined}
+                    onClick={() => setSelectedView(v.viewId as EngineView)}
+                    className={cn(
+                      'relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
+                      active
+                        ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-1.5 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                        : 'text-foreground hover:bg-accent',
+                    )}
+                  >
+                    <ProviderBrandIcon icon={v.icon} iconImg={v.iconImg} />
+                    <span className="min-w-0 flex-1 truncate" title={v.label}>
+                      {v.label}
+                    </span>
+                    <StatusDot
+                      tone={tone}
+                      label={
+                        v.configured
+                          ? t('engines.cloud.configured')
+                          : t('engines.cloud.notConfigured')
+                      }
+                    />
+                  </button>
+                );
+              })}
+              {/* 固定在云组末尾的「添加自定义」：接入任意 OpenAI 兼容端点 */}
+              <button
+                type="button"
+                onClick={() => setAddCustomOpen(true)}
+                disabled={!asr.loaded}
+                className="flex w-full items-center gap-2 rounded-md border border-dashed border-border-strong px-2 py-1.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
+                  <Plus className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1 truncate">
+                  {t('cloudAsr.addCustom')}
+                </span>
+              </button>
+            </nav>
+          </Panel>
 
-        {/* 右栏：选中引擎运行时 / 云服务商配置 + 模型清单（独立纵向滚动） */}
-        <Panel className="min-h-0 overflow-hidden">
-          <div className="flex flex-none flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2.5">
-            <div className="min-w-0">
-              <h2 className="text-[15px] font-semibold leading-tight">
-                {isOverview
-                  ? t('engines.overview.name')
-                  : activeCloudView
-                    ? activeCloudView.kind === 'brand'
-                      ? activeCloudView.type.name
-                      : activeCloudView.label
-                    : engineName(effectiveLocalView)}
-              </h2>
-              {/* 预设槽位/自定义条目以类型全名作副标题（标明协议归属） */}
-              {isOverview && (
-                <p className="text-xs text-muted-foreground">
-                  {t('engines.overview.subtitle')}
-                </p>
-              )}
-              {activeCloudView &&
-                (activeCloudView.kind === 'preset' ||
-                  activeCloudView.kind === 'custom') && (
+          {/* 右栏：选中引擎运行时 / 云服务商配置 + 模型清单（独立纵向滚动） */}
+          <Panel className="min-h-0 overflow-hidden">
+            <div className="flex flex-none flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2.5">
+              <div className="min-w-0">
+                <h2 className="text-[15px] font-semibold leading-tight">
+                  {isOverview
+                    ? t('engines.overview.name')
+                    : activeCloudView
+                      ? activeCloudView.kind === 'brand'
+                        ? activeCloudView.type.name
+                        : activeCloudView.label
+                      : engineName(effectiveLocalView)}
+                </h2>
+                {/* 预设槽位/自定义条目以类型全名作副标题（标明协议归属） */}
+                {isOverview && (
                   <p className="text-xs text-muted-foreground">
-                    {activeCloudView.type.name}
+                    {t('engines.overview.subtitle')}
                   </p>
                 )}
+                {activeCloudView &&
+                  (activeCloudView.kind === 'preset' ||
+                    activeCloudView.kind === 'custom') && (
+                    <p className="text-xs text-muted-foreground">
+                      {activeCloudView.type.name}
+                    </p>
+                  )}
+                {!isOverview &&
+                  !activeCloudView &&
+                  effectiveLocalView === 'sherpa' && (
+                    <p className="text-xs text-muted-foreground">
+                      {t('engines.sherpa.subtitle')}
+                    </p>
+                  )}
+              </div>
+              {!isOverview &&
+                (activeCloudView ? (
+                  activeCloudView.configured ? (
+                    <Badge variant="secondary">
+                      {t('engines.cloud.configured')}
+                    </Badge>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="border-primary/40 text-primary"
+                    >
+                      {t('engines.cloud.notConfigured')}
+                    </Badge>
+                  )
+                ) : (
+                  renderEngineBadge(effectiveLocalView)
+                ))}
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
+              {renderRuntimePanel()}
+
+              {/* sherpa 组的模型清单由组面板内联渲染；云服务商无本地模型清单（模型在面板内配置）。 */}
               {!isOverview &&
                 !activeCloudView &&
-                effectiveLocalView === 'sherpa' && (
-                  <p className="text-xs text-muted-foreground">
-                    {t('engines.sherpa.subtitle')}
-                  </p>
+                effectiveLocalView !== 'sherpa' && (
+                  <div className="border-t pt-4">
+                    <ModelLibrarySection
+                      engine={effectiveLocalView}
+                      systemInfo={systemInfo}
+                      systemInfoLoaded={systemInfoLoaded}
+                      globalDownloading={globalDownloading}
+                      onUpdate={handleResourcesUpdate}
+                    />
+                  </div>
                 )}
             </div>
-            {!isOverview &&
-              (activeCloudView ? (
-                activeCloudView.configured ? (
-                  readyBadge
-                ) : (
-                  <Badge
-                    variant="outline"
-                    className="border-primary/40 text-primary"
-                  >
-                    {t('engines.cloud.notConfigured')}
-                  </Badge>
-                )
-              ) : (
-                renderEngineBadge(effectiveLocalView)
-              ))}
-          </div>
-
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
-            {renderRuntimePanel()}
-
-            {/* sherpa 组的模型清单由组面板内联渲染；云服务商无本地模型清单（模型在面板内配置）。 */}
-            {!isOverview &&
-              !activeCloudView &&
-              effectiveLocalView !== 'sherpa' && (
-                <div className="border-t pt-4">
-                  <ModelLibrarySection
-                    engine={effectiveLocalView}
-                    systemInfo={systemInfo}
-                    systemInfoLoaded={systemInfoLoaded}
-                    globalDownloading={globalDownloading}
-                    onUpdate={handleResourcesUpdate}
-                  />
-                </div>
-              )}
-          </div>
-        </Panel>
+          </Panel>
+        </div>
       </div>
 
       {/* 添加自定义 OpenAI 兼容实例 */}

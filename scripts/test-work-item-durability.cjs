@@ -79,6 +79,10 @@ function harness(initial = { workItemsMigrationVersion: 1, workItems: [] }) {
       load(
         path.resolve(__dirname, '../main/helpers/taskManager.ts'),
       ).setupTaskManager(),
+    taskEvent: (...args) =>
+      load(
+        path.resolve(__dirname, '../main/helpers/taskManager.ts'),
+      ).applyTaskEventToProjects(...args),
     handlers,
     items: load(path.resolve(__dirname, '../main/helpers/workItemStore.ts')),
     proofread: load(
@@ -167,6 +171,37 @@ assert.equal(
   test.items.getWorkItemById('draft-project').configSnapshot.model,
   'base',
 );
+test.taskEvent('taskFileChange', {
+  uuid: 'clip',
+  dubbingSessionId: 'new-session',
+});
+assert.equal(
+  test.disk().workItems[0].pipelineFiles[0].dubbingSessionId,
+  'new-session',
+  'the session link is durable before synthesis starts',
+);
+test.fail(true);
+assert.throws(
+  () =>
+    test.taskEvent('taskFileChange', {
+      uuid: 'clip',
+      dubbingSessionId: 'replacement-session',
+    }),
+  /ENOSPC/,
+);
+assert.equal(
+  test.items.getWorkItemById('draft-project').pipelineFiles[0].dubbingSessionId,
+  'new-session',
+  'failed replacement does not publish its task reference',
+);
+test.fail(false);
+const linkWrites = test.writes.length;
+test.taskEvent('taskProgressChange', { uuid: 'clip' }, 'dubbing', 50);
+assert.equal(
+  test.writes.length,
+  linkWrites,
+  'ordinary progress remains batched',
+);
 test.items.deleteWorkItem('draft-project');
 const saved = test.items.saveWorkItem(item, { durable: true });
 assert.equal(
@@ -191,6 +226,29 @@ for (const operation of [
   assert.equal(test.disk().workItems[0].name, 'Original');
 }
 test.fail(false);
+const deletionEvents = [];
+test.items.setWorkItemDeletionHandler((items) => {
+  deletionEvents.push(['stage', items.map((item) => item.id)]);
+  return {
+    commit: () => deletionEvents.push(['commit']),
+    rollback: () => deletionEvents.push(['rollback']),
+  };
+});
+test.fail(true);
+assert.throws(() => test.items.deleteWorkItem(item.id), /ENOSPC/);
+assert.deepEqual(
+  deletionEvents.map(([event]) => event),
+  ['stage', 'rollback'],
+);
+assert.ok(test.items.getWorkItemById(item.id));
+test.fail(false);
+test.items.deleteWorkItem(item.id);
+assert.deepEqual(
+  deletionEvents.map(([event]) => event),
+  ['stage', 'rollback', 'stage', 'commit'],
+);
+test.items.saveWorkItem({ ...item, name: 'Original' }, { durable: true });
+test.items.setWorkItemDeletionHandler(undefined);
 const task = test.proofread.createProofreadTask(
   [
     {

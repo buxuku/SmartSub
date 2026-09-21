@@ -9,17 +9,7 @@ import {
 } from '../../../types/dubbing';
 import type { TtsSpeedControl } from '../../../types/ttsProvider';
 
-/**
- * 时间轴对齐引擎（纯函数，零 I/O，test:dubbing 单测覆盖）。
- *
- * 五层防线中的第 1/2/3 层在此实现决策，第 4 层产出过长行清单：
- *   第 1 层 合成期 speed 预控制（decideSpeedAction，预估驱动）
- *   第 2 层 复测（recheckAfterSynthesis，实测驱动：本地重合成 / 云端 atempo）
- *   第 3 层 间隙借用（computeSlots：槽位 = 本条 start 到下条 start）
- *   第 4 层 过长行（> ALIGN_OVERLONG_THRESHOLD 全部标记，0 漏报）
- * 最终 buildAlignmentPlan 以实测时长做 cursor 走查，产出可直接驱动
- * audioPipeline.assembleTrack 的槽位规划（重叠 cue 按 start 顺延不撞车）。
- */
+/** Original subtitle windows govern automatic fitting; silence borrowing is explicit. */
 
 // ── 输入形状（与 types/dubbing.ts 的 DubbingCue 结构兼容，避免 main→types 强耦合）──
 
@@ -28,6 +18,7 @@ export interface AlignCue {
   startMs: number;
   endMs: number;
   text: string;
+  borrowedMs?: number;
 }
 
 // ── 槽位计算（第 3 层：间隙借用 + 重叠检测）─────────────────────────────────
@@ -38,48 +29,93 @@ export interface CueSlot {
   startMs: number;
   /** 原字幕终点（ms）——mix 模式轨道分配按原始区间划分。 */
   endMs: number;
-  /** 可用槽位（ms）：到下条 start 的窗口（间隙并入）；重叠时回落自身时长。 */
+  /** Original window plus explicitly approved, still-valid silence borrowing. */
   slotMs: number;
+  availableGapMs: number;
   /** 与下条时间轴交叠（下条 start 早于本条 end）。 */
   overlapNext: boolean;
 }
 
 /** 无媒体总时长时末条槽位的尾部余量（ms）。 */
-export const DEFAULT_TAIL_PADDING_MS = 1000;
+export const DEFAULT_TAIL_PADDING_MS = 0;
 
 /**
  * 计算每条 cue 的可用槽位。输入无需有序，输出按 startMs 升序（同 start 按 index）。
- * - 间隙借用：slot = next.start − cur.start（静音间隙并入本条可用时长）；
- * - 末条：媒体总时长 − start；无媒体时长则自身时长 + tailPaddingMs；
- * - 重叠（next.start < cur.end）：本条不被挤压（slot 回落自身时长），
- *   冲突由拼接期「按 start 顺延后条」消解（见 buildAlignmentPlan）。
+ * O(n log n), including nested/unsorted overlaps. Unknown media tails are not
+ * assumed silent. Prefix maxima exclude the current cue when checking a gap.
  */
 export function computeSlots(
   cues: AlignCue[],
   opts?: { mediaDurationMs?: number; tailPaddingMs?: number },
 ): CueSlot[] {
-  const tailPadding = opts?.tailPaddingMs ?? DEFAULT_TAIL_PADDING_MS;
   const ordered = [...cues].sort(
     (a, b) => a.startMs - b.startMs || a.index - b.index,
   );
+  const mediaEnd = opts?.mediaDurationMs;
+  if (mediaEnd !== undefined && (!Number.isFinite(mediaEnd) || mediaEnd < 0))
+    throw new Error('Invalid media duration');
+  const boundedEnd = (cue: AlignCue) =>
+    Math.max(cue.startMs, Math.min(cue.endMs, mediaEnd ?? Infinity));
+  const prefix: Array<Array<{ index: number; end: number }>> = [[]];
+  const indexes = new Set<number>();
+  for (const cue of ordered) {
+    if (
+      !Number.isFinite(cue.startMs) ||
+      !Number.isFinite(cue.endMs) ||
+      cue.startMs < 0 ||
+      cue.endMs < cue.startMs ||
+      indexes.has(cue.index)
+    )
+      throw new Error('Invalid dubbing subtitle interval');
+    indexes.add(cue.index);
+    prefix.push(
+      [
+        ...prefix[prefix.length - 1],
+        {
+          index: cue.index,
+          end:
+            boundedEnd(cue) +
+            (Number.isFinite(cue.borrowedMs)
+              ? Math.max(0, cue.borrowedMs!)
+              : 0),
+        },
+      ]
+        .sort((a, b) => b.end - a.end)
+        .slice(0, 2),
+    );
+  }
   return ordered.map((cue, i) => {
-    const ownDuration = Math.max(0, cue.endMs - cue.startMs);
-    let windowMs: number;
-    if (i < ordered.length - 1) {
-      windowMs = ordered[i + 1].startMs - cue.startMs;
-    } else if (
-      opts?.mediaDurationMs !== undefined &&
-      opts.mediaDurationMs > cue.startMs
-    ) {
-      windowMs = opts.mediaDurationMs - cue.startMs;
-    } else {
-      windowMs = ownDuration + tailPadding;
+    const end = boundedEnd(cue);
+    const ownDuration = end - cue.startMs;
+    let low = 0;
+    let high = ordered.length;
+    while (low < high) {
+      const mid = (low + high) >>> 1;
+      if (ordered[mid].startMs < end) low = mid + 1;
+      else high = mid;
     }
+    const occupied = prefix[low].some(
+      (entry) => entry.index !== cue.index && entry.end > end,
+    );
+    const nextStart = Math.min(
+      ordered[low]?.startMs ?? Infinity,
+      mediaEnd ?? Infinity,
+    );
+    const availableGapMs =
+      ownDuration > 0 && !occupied && Number.isFinite(nextStart)
+        ? Math.max(0, nextStart - end)
+        : 0;
+    const borrowed = cue.borrowedMs ?? 0;
     return {
       index: cue.index,
       startMs: cue.startMs,
       endMs: cue.endMs,
-      slotMs: Math.max(windowMs, ownDuration),
+      slotMs:
+        ownDuration +
+        (Number.isFinite(borrowed) && borrowed > 0 && borrowed <= availableGapMs
+          ? borrowed
+          : 0),
+      availableGapMs,
       overlapNext: i < ordered.length - 1 && ordered[i + 1].startMs < cue.endMs,
     };
   });
@@ -172,14 +208,12 @@ export interface SpeedDecision {
 }
 
 /**
- * ratio 四档决策树（design 6.3）：
- *   ≤1.0 原速；≤1.15 预控制一次到位；≤1.5 预控制 + 复测；>1.5 过长候选。
- * speedControl='none' 的引擎无预控制，一律原速合成后走 atempo 复测。
+ * Estimates may inform UI, but must never alter the user's requested TTS speed.
  */
 export function decideSpeedAction(
   estimatedMs: number,
   slotMs: number,
-  speedControl: TtsSpeedControl,
+  _speedControl: TtsSpeedControl,
 ): SpeedDecision {
   if (estimatedMs <= 0) {
     return {
@@ -190,74 +224,27 @@ export function decideSpeedAction(
     };
   }
   const ratio = slotMs > 0 ? estimatedMs / slotMs : Number.POSITIVE_INFINITY;
-  const canPreControl = speedControl === 'native' || speedControl === 'ssml';
-
-  if (ratio <= 1.0) {
-    return {
-      preSpeed: 1,
-      needsRecheck: false,
-      estimatedOverlong: false,
-      ratio,
-    };
-  }
-  if (!canPreControl) {
-    // 无预控制：原速合成，复测阶段统一 atempo。
-    return {
-      preSpeed: 1,
-      needsRecheck: true,
-      estimatedOverlong: ratio > ALIGN_OVERLONG_THRESHOLD,
-      ratio,
-    };
-  }
-  if (ratio <= ALIGN_ONESHOT_THRESHOLD) {
-    return {
-      preSpeed: ratio,
-      needsRecheck: false,
-      estimatedOverlong: false,
-      ratio,
-    };
-  }
-  if (ratio <= ALIGN_OVERLONG_THRESHOLD) {
-    return {
-      preSpeed: ratio,
-      needsRecheck: true,
-      estimatedOverlong: false,
-      ratio,
-    };
-  }
-  // 过长候选：预控制封顶红线（保音质），残余交给复测/人工。
   return {
-    preSpeed: ALIGN_OVERLONG_THRESHOLD,
+    preSpeed: 1,
     needsRecheck: true,
-    estimatedOverlong: true,
+    estimatedOverlong: ratio > ALIGN_ONESHOT_THRESHOLD,
     ratio,
   };
 }
 
 // ── 第 2 层：复测决策（实测驱动）────────────────────────────────────────────
 
-/** 重合成的 speed 余量：speed 非线性（实测缩短量 < 理论 1/speed），上浮 5% 补偿。 */
-export const RESYNTH_MARGIN = 1.05;
-
 export type RecheckDecision =
   | { type: 'fit'; padMs: number }
-  | { type: 'resynthesize'; speed: number }
   | { type: 'atempo'; factor: number }
   | { type: 'overlong'; requiredFactor: number; residualFactor: number };
 
-/**
- * 实测复测：
- * - 落在槽位内 → fit（补静音）；
- * - 综合倍率（已用 speed × 残余倍率）≤ 红线：
- *     canResynthesize（本地，合成免费）→ 改 speed 重合成（带 5% 余量）；
- *     否则（云端，重合成花钱）→ 对已产出 wav atempo；
- * - 超红线 → overlong 进人工清单（不自动施加超红线变速）。
- */
+/** Measured excess <=15% is pitch-preserving DSP; larger excess needs a decision. */
 export function recheckAfterSynthesis(
   measuredMs: number,
   slotMs: number,
   appliedSpeed: number,
-  opts: { canResynthesize: boolean; alreadyResynthesized?: boolean },
+  _opts: { canResynthesize: boolean; alreadyResynthesized?: boolean },
 ): RecheckDecision {
   if (measuredMs <= 0) return { type: 'fit', padMs: Math.max(0, slotMs) };
   if (slotMs <= 0) {
@@ -268,21 +255,12 @@ export function recheckAfterSynthesis(
     };
   }
   const residual = measuredMs / slotMs;
-  if (residual <= 1.001) {
+  if (residual <= 1) {
     return { type: 'fit', padMs: Math.max(0, slotMs - measuredMs) };
   }
   const requiredFactor = appliedSpeed * residual;
   if (requiredFactor > ALIGN_OVERLONG_THRESHOLD + 1e-9) {
     return { type: 'overlong', requiredFactor, residualFactor: residual };
-  }
-  if (opts.canResynthesize && !opts.alreadyResynthesized) {
-    return {
-      type: 'resynthesize',
-      speed: Math.min(
-        requiredFactor * RESYNTH_MARGIN,
-        ALIGN_OVERLONG_THRESHOLD,
-      ),
-    };
   }
   return { type: 'atempo', factor: residual };
 }

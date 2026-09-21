@@ -84,12 +84,21 @@ export function applyTaskEventToProjects(
     return next as IFiles;
   });
 
-  saveWorkItem({
-    ...workItem,
-    pipelineFiles,
-    status: derivePipelineWorkItemStatus(pipelineFiles),
-    updatedAt: Date.now(),
-  });
+  // A new session must be reachable after a crash before synthesis may begin.
+  const linkChanged = pipelineFiles.some(
+    (next, index) =>
+      next.dubbingSessionId !==
+      workItem.pipelineFiles?.[index]?.dubbingSessionId,
+  );
+  saveWorkItem(
+    {
+      ...workItem,
+      pipelineFiles,
+      status: derivePipelineWorkItemStatus(pipelineFiles),
+      updatedAt: Date.now(),
+    },
+    { durable: linkChanged },
+  );
 }
 
 /** @deprecated 请使用 getWorkItems；保留兼容 shim */

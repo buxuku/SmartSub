@@ -19,6 +19,7 @@ import {
   List,
   Pencil,
   Play,
+  RotateCcw,
   SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
@@ -44,6 +45,7 @@ import {
 } from '@/components/ui/tooltip';
 import { cn, isSubtitleFile } from 'lib/utils';
 import { resolveDefaultTranslateProviderId } from 'lib/providerPanelUtils';
+import { releasePipelineGate } from 'lib/pipelineGate';
 import {
   TASK_TYPES,
   getPipelineTitleKey,
@@ -55,10 +57,12 @@ import {
   pickDefaultEngineModel,
 } from 'lib/engineModels';
 import { useTaskSubmission } from 'hooks/useTaskSubmission';
-import { buildTaskSnapshotFromConfig } from 'hooks/useUnifiedTaskConfig';
+import {
+  buildTaskSnapshotFromConfig,
+  readTaskDefaults,
+} from 'hooks/useUnifiedTaskConfig';
 import type { TranscriptionEngine } from '../../../../types/engine';
-import type { AsrProvider } from '../../../../types/asrProvider';
-import useSystemInfo from 'hooks/useStystemInfo';
+import useTaskDependencies from 'hooks/useTaskDependencies';
 import useUnifiedTaskConfig from 'hooks/useUnifiedTaskConfig';
 import useIpcCommunication from 'hooks/useIpcCommunication';
 import { useConfirmOrUndo } from 'hooks/useConfirmOrUndo';
@@ -73,6 +77,7 @@ import TaskControls from '@/components/TaskControls';
 import InlineConfigBar from '@/components/tasks/InlineConfigBar';
 import SnapshotConfigBar from '@/components/tasks/SnapshotConfigBar';
 import AdvancedSheet from '@/components/tasks/AdvancedSheet';
+import TaskLoadStatus from '@/components/tasks/TaskLoadStatus';
 import TaskRowList from '@/components/tasks/TaskRowList';
 import TaskGridList from '@/components/tasks/TaskGridList';
 import CompletionBanner from '@/components/tasks/CompletionBanner';
@@ -86,7 +91,7 @@ import {
 import { getI18nProperties } from '../../../lib/get-static';
 import { IFiles } from '../../../../types';
 import { isPinnedTaskConfigSnapshot } from '../../../../types/taskSnapshot';
-import { omitTaskManuscript } from '../../../../types/taskConfig';
+import { assertTaskConfig } from '../../../../types/taskConfig';
 import { getProofreadSourcePath } from '../../../../types/subtitleOutput';
 import { useTranslation } from 'next-i18next';
 import { toast } from 'sonner';
@@ -105,16 +110,6 @@ export default function TaskPage() {
   const [projectName, setProjectName] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
-  const [providers, setProviders] = useState([]);
-  const [asrProviders, setAsrProviders] = useState<AsrProvider[]>([]);
-  /** asrProviders/settings 首次加载是否完成（默认引擎校正须等它，避免按不完整分组误回填） */
-  const [providersLoaded, setProvidersLoaded] = useState(false);
-  const [useLocalWhisper, setUseLocalWhisper] = useState(false);
-  const [lastUsedTranscription, setLastUsedTranscription] = useState<{
-    engine?: TranscriptionEngine;
-    model?: string;
-    asrProviderId?: string;
-  } | null>(null);
   const [taskStatus, setTaskStatus] = useState('idle');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [refinePopoverOpen, setRefinePopoverOpen] = useState(false);
@@ -124,14 +119,19 @@ export default function TaskPage() {
   const [proofreadFile, setProofreadFile] = useState<IFiles | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
-  const { systemInfo, loaded: systemInfoLoaded } = useSystemInfo();
+  const dependencies = useTaskDependencies();
+  const { systemInfo, providers, asrProviders, settings } = dependencies;
+  const systemInfoLoaded = dependencies.loaded;
+  const providersLoaded = dependencies.loaded;
+  const useLocalWhisper = settings.useLocalWhisper || false;
+  const lastUsedTranscription = settings.lastUsedTranscription || null;
   const {
     form,
     formData,
     loaded: configLoaded,
     hydrateSnapshot,
   } = useUnifiedTaskConfig({
-    persistToGlobal: false,
+    autoLoad: false,
   });
   /** 列表/横幅的有效配置：固定任务用快照，否则使用当前表单。 */
   const listFormData = configSnapshot ?? formData;
@@ -388,29 +388,9 @@ export default function TaskPage() {
   );
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const storedProviders = await window?.ipc?.invoke(
-          'getTranslationProviders',
-        );
-        setProviders(storedProviders || []);
-        const storedAsrProviders = await window?.ipc?.invoke('getAsrProviders');
-        setAsrProviders(storedAsrProviders || []);
-        const settings = await window?.ipc?.invoke('getSettings');
-        setUseLocalWhisper(settings?.useLocalWhisper || false);
-        setLastUsedTranscription(settings?.lastUsedTranscription || null);
-        if (
-          settings?.taskViewMode === 'grid' ||
-          settings?.taskViewMode === 'list'
-        ) {
-          setViewMode(settings.taskViewMode);
-        }
-      } finally {
-        setProvidersLoaded(true);
-      }
-    };
-    load();
-  }, []);
+    if (settings.taskViewMode === 'grid' || settings.taskViewMode === 'list')
+      setViewMode(settings.taskViewMode);
+  }, [settings.taskViewMode]);
 
   // 任务状态按工程获取与监听
   useEffect(() => {
@@ -471,10 +451,8 @@ export default function TaskPage() {
           savedManuscripts = workItem.taskDraft.manuscripts;
         }
       }
-      if (!rawSnap)
-        rawSnap = omitTaskManuscript(
-          (await window.ipc.invoke('getUserConfig')) || {},
-        );
+      if (!rawSnap) rawSnap = await readTaskDefaults();
+      assertTaskConfig(rawSnap);
       if (cancelled) return;
       projectIdRef.current = id;
       loadedSlugRef.current = slug;
@@ -759,29 +737,98 @@ export default function TaskPage() {
   const [releaseAllGate, setReleaseAllGate] = useState<
     'subtitle' | 'dubbing' | null
   >(null);
+  const gateReleaseToken = useRef<object>();
+  const [gateReleaseError, setGateReleaseError] = useState<string | null>(null);
+  const [gateReleasing, setGateReleasing] = useState(false);
+  const lastGateRelease = useRef<{
+    gate: 'subtitle' | 'dubbing';
+    fileUuids?: string[];
+  }>();
+  useEffect(() => {
+    gateReleaseToken.current = undefined;
+    setGateReleaseError(null);
+    setGateReleasing(false);
+    lastGateRelease.current = undefined;
+    return () => {
+      gateReleaseToken.current = undefined;
+    };
+  }, [projectId]);
 
   const handleReleaseGate = useCallback(
     async (gate: 'subtitle' | 'dubbing', fileUuids?: string[]) => {
-      if (!projectId) return false;
+      if (!projectId || gateReleaseToken.current) return false;
+      const token = {};
+      gateReleaseToken.current = token;
+      lastGateRelease.current = { gate, fileUuids };
+      setGateReleasing(true);
+      setGateReleaseError(null);
       try {
-        const result = await window?.ipc?.invoke('pipeline:releaseGate', {
-          projectId,
-          gate,
-          fileUuids,
-        });
-        if (result?.success !== true)
-          throw new Error(result?.error || 'release failed');
-        if (result.data?.released > 0) {
-          const status = await window.ipc.invoke('getTaskStatus', projectId);
-          setTaskStatus(status || 'idle');
-        }
+        await releasePipelineGate(
+          {
+            projectId,
+            gate,
+            fileUuids,
+          },
+          () => gateReleaseToken.current === token,
+          setGateReleaseError,
+          (ids) => {
+            lastGateRelease.current = { gate, fileUuids: ids };
+          },
+        );
+        setGateReleaseError(null);
+        void window.ipc
+          .invoke('getTaskStatus', projectId)
+          .then((status) => {
+            if (projectIdRef.current === projectId)
+              setTaskStatus(status || 'idle');
+          })
+          .catch(() => {});
         return true;
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : String(error));
+        if (gateReleaseToken.current === token)
+          setGateReleaseError(
+            error instanceof Error ? error.message : String(error),
+          );
         return false;
+      } finally {
+        if (gateReleaseToken.current === token) {
+          gateReleaseToken.current = undefined;
+          setGateReleasing(false);
+        }
       }
     },
     [projectId],
+  );
+
+  const gateReleaseBanner = gateReleaseError && (
+    <div
+      role="alert"
+      className="flex shrink-0 items-start gap-2 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+    >
+      <div className="min-w-0 flex-1">
+        {t(
+          gateReleasing
+            ? 'common:gateRelease.pending'
+            : 'common:gateRelease.failed',
+        )}
+        <details className="mt-1">
+          <summary>{t('common:gateRelease.details')}</summary>
+          <p className="break-words">{gateReleaseError}</p>
+        </details>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={gateReleasing}
+        onClick={() => {
+          const last = lastGateRelease.current;
+          if (last) void handleReleaseGate(last.gate, last.fileUuids);
+        }}
+      >
+        <RotateCcw className="mr-1 h-3 w-3" />
+        {t('common:gateRelease.retry')}
+      </Button>
+    </div>
   );
 
   const handleInspectDubbing = useCallback(
@@ -1148,25 +1195,21 @@ export default function TaskPage() {
   if (!typeDef) return null;
   if (!projectReady)
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-4">
-        {projectLoadError ? (
-          <>
-            <p
-              role="alert"
-              className="max-w-full break-words text-sm text-destructive"
-            >
-              {projectLoadError}
-            </p>
-            <Button onClick={() => setLoadAttempt((value) => value + 1)}>
-              {t('projectSave.retryLoad')}
-            </Button>
-          </>
-        ) : (
-          <p role="status" className="text-sm text-muted-foreground">
-            {t('projectSave.loading')}
-          </p>
-        )}
-      </div>
+      <TaskLoadStatus
+        project
+        error={projectLoadError}
+        loading={!projectLoadError}
+        onRetry={() => setLoadAttempt((value) => value + 1)}
+      />
+    );
+
+  if (!dependencies.loaded)
+    return (
+      <TaskLoadStatus
+        error={dependencies.error}
+        loading={dependencies.loading}
+        onRetry={() => void dependencies.load()}
+      />
     );
 
   // 向导任务标题：来自已存配方的任务显示配方名，否则按快照的实际流程
@@ -1184,6 +1227,7 @@ export default function TaskPage() {
     );
     return (
       <div className="flex h-full flex-col gap-2 p-4">
+        {gateReleaseBanner}
         {atSubtitleGate && (
           <div className="flex flex-none flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/[0.06] px-3 py-2">
             <Diamond className="h-3.5 w-3.5 flex-none text-warning" />
@@ -1200,6 +1244,7 @@ export default function TaskPage() {
             <Button
               size="sm"
               className="h-7 gap-1 text-xs"
+              disabled={gateReleasing}
               onClick={handleReleaseAndNext}
             >
               <Play className="h-3 w-3" />
@@ -1211,6 +1256,7 @@ export default function TaskPage() {
         )}
         <div className="min-h-0 flex-1">
           <ProofreadEditor
+            projectId={projectId || undefined}
             file={pendingFileForProofread}
             onMarkComplete={() => setProofreadFile(null)}
             onBack={() => setProofreadFile(null)}
@@ -1222,6 +1268,7 @@ export default function TaskPage() {
 
   return (
     <div className="flex h-full flex-col gap-2.5 p-3 overflow-hidden">
+      {gateReleaseBanner}
       {persistence.error && (
         <div
           role="alert"
@@ -1515,7 +1562,7 @@ export default function TaskPage() {
 
       <div
         className={cn(
-          'relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card p-2.5 shadow-[0_1px_2px_rgba(16,24,40,0.04)] dark:shadow-none dark:[box-shadow:inset_0_1px_0_rgba(255,255,255,0.03)]',
+          'relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-muted/40 p-2.5',
           isDragging && 'border-2 border-dashed border-primary bg-primary/5',
         )}
         onDrop={handleDrop}

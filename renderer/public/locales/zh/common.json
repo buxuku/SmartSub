@@ -343,6 +343,16 @@
     "storageFailed": "草稿存储失败，请在关闭应用前保存当前工作。",
     "wizardStorageFailed": "草稿未写入本地存储，重启后可能丢失。请释放存储空间后重试保存。"
   },
+  "providerPersistence": {
+    "loading": "正在读取服务配置…",
+    "loadFailed": "服务配置读取失败，暂不可修改。",
+    "saveFailed": "服务配置未保存。",
+    "repair": "请检查配置目录权限与可用空间，修复后重试。当前修改仍保留。",
+    "conflict": "服务配置已被另一个窗口修改。当前输入仍保留；请核对后放弃本页修改并重新读取。",
+    "reload": "重新读取",
+    "discardReload": "放弃修改并重新读取",
+    "discardDescription": "这将放弃本页未保存的服务配置，并读取磁盘上的最新配置。"
+  },
   "saveState": {
     "retry": "重试保存",
     "idle": "",
@@ -353,6 +363,7 @@
     "details": "错误详情"
   },
   "navigationGuard": {
+    "discardFailed": "草稿未能放弃，请检查页面错误详情后重试，当前修改仍保留。",
     "title": "未保存的修改",
     "desc": "当前页面有尚未保存的内容，离开将丢失未保存的改动。是否先保存？",
     "keepEditing": "留在当前页",
@@ -377,6 +388,12 @@
   "cpuModeBadge": "CPU 模式",
   "cpuModeTip": "当前使用 CPU 转写，点击查看加速选项",
   "coarseTimeline": "粗粒度时间轴",
+  "gateRelease": {
+    "pending": "正在确认放行结果",
+    "failed": "未能确认放行结果",
+    "details": "详细信息",
+    "retry": "重试放行"
+  },
   "engineBadge": {
     "builtin": "Whisper.cpp",
     "fasterWhisper": "Faster-Whisper",

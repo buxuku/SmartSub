@@ -367,6 +367,8 @@ export default function GlossaryManager() {
                       {glossary.name}
                     </div>
                     <div className="truncate text-[11px] text-muted-foreground">
+                      {t(glossary.projectId ? 'scope.project' : 'scope.global')}{' '}
+                      ·{' '}
                       {t('list.entryCount', { count: glossary.entries.length })}
                     </div>
                   </div>
@@ -434,6 +436,9 @@ export default function GlossaryManager() {
                   <h2 className="truncate text-[15px] font-semibold">
                     {selected.name}
                   </h2>
+                  <Badge variant="outline">
+                    {t(selected.projectId ? 'scope.project' : 'scope.global')}
+                  </Badge>
                   <Badge variant={selected.enabled ? 'default' : 'outline'}>
                     {selected.enabled
                       ? t('status.enabled')

@@ -3,7 +3,6 @@ import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
 import {
   Dialog,
@@ -21,13 +20,10 @@ import {
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { isProviderConfigured } from 'lib/providerUtils';
 import {
   Search,
   Replace,
@@ -37,25 +33,17 @@ import {
   Combine,
   Split,
   Scissors,
-  Sparkles,
-  Loader2,
-  Wand2,
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
   ChevronsDownUp,
   PanelLeftClose,
   PanelLeftOpen,
-  RotateCcw,
   X,
-  Check,
-  CheckCircle2,
-  AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Subtitle } from '../../hooks/useSubtitles';
-import BatchAiOptimizeDialog from './BatchAiOptimizeDialog';
 
 /** 出现次数统计（支持大小写不敏感） */
 const countOccurrences = (
@@ -120,7 +108,6 @@ interface SubtitleEditToolbarProps {
   shouldShowTranslation: boolean;
   getCursorPosition?: () => number; // 获取当前光标位置
   // 外部触发器
-  triggerAiOptimize?: boolean;
   triggerSplit?: boolean;
   onTriggerHandled?: () => void; // 当触发器被处理后调用
   /** 外部请求打开搜索替换（Cmd/Ctrl+F）：token 递增时展开面板并聚焦搜索框 */
@@ -149,7 +136,6 @@ export default function SubtitleEditToolbar({
   onSplitSubtitle,
   shouldShowTranslation,
   getCursorPosition,
-  triggerAiOptimize,
   triggerSplit,
   onTriggerHandled,
   searchOpenToken,
@@ -203,66 +189,6 @@ export default function SubtitleEditToolbar({
   const [showMerge, setShowMerge] = useState(false);
   const [mergeStart, setMergeStart] = useState(currentSubtitleIndex);
   const [mergeEnd, setMergeEnd] = useState(currentSubtitleIndex + 1);
-
-  // AI 优化状态
-  const [showAiOptimize, setShowAiOptimize] = useState(false);
-  const [aiOptimizing, setAiOptimizing] = useState(false);
-  const [optimizedText, setOptimizedText] = useState('');
-  const [aiProviders, setAiProviders] = useState<any[]>([]);
-  const [selectedProviderId, setSelectedProviderId] = useState('');
-  const [showCustomPrompt, setShowCustomPrompt] = useState(false);
-  const [customPrompt, setCustomPrompt] = useState('');
-  const [isCustomPromptLoaded, setIsCustomPromptLoaded] = useState(false);
-
-  // 批量 AI 优化状态
-  const [showBatchOptimize, setShowBatchOptimize] = useState(false);
-
-  // 默认优化/翻译提示词模板（支持条件模板）
-  const defaultOptimizePrompt = `You are a professional subtitle translator and proofreader.
-
-Original text ({{sourceLanguage}}):
-{{sourceText}}
-
-{{#if targetText}}
-Current translation ({{targetLanguage}}):
-{{targetText}}
-
-Please improve the translation to:
-{{else}}
-Please translate the original text to {{targetLanguage}}:
-{{/if}}
-1. Accurately convey the meaning of the original
-2. Use natural and fluent {{targetLanguage}} expressions
-3. Be appropriate for subtitle display (concise but complete)
-4. Maintain the tone and style of the original
-
-Only respond with the translated/improved text, nothing else.`;
-
-  // 纯转写模式：优化对象是原文（修正转写错误），不做翻译
-  const isTranscriptMode = !shouldShowTranslation;
-
-  // 转写校对默认提示词（修正识别错误，不翻译不改写）
-  const defaultProofreadPrompt = `You are a professional subtitle proofreader.
-
-The following text is an automatic speech-to-text transcription ({{sourceLanguage}}) that may contain recognition errors:
-{{sourceText}}
-
-Please correct it:
-1. Fix misrecognized words based on context
-2. Fix punctuation and casing
-3. Keep the original meaning and wording as much as possible
-4. Do NOT translate, summarize, or rephrase
-
-Only respond with the corrected text, nothing else.`;
-
-  const activeDefaultPrompt = isTranscriptMode
-    ? defaultProofreadPrompt
-    : defaultOptimizePrompt;
-
-  // 提示词缓存 key（按模式区分，避免翻译/校对提示词互相覆盖）
-  const PROMPT_CACHE_KEY = isTranscriptMode
-    ? 'ai_proofread_custom_prompt'
-    : 'ai_optimize_custom_prompt';
 
   // 构建匹配列表：返回（条+字段）列表与总出现次数
   const buildMatches = useCallback(
@@ -495,88 +421,6 @@ Only respond with the corrected text, nothing else.`;
     setShowMerge(false);
   }, [mergeStart, mergeEnd, subtitles.length, onMergeSubtitles, t]);
 
-  // 加载 AI 服务商列表
-  const loadAiProviders = useCallback(async () => {
-    try {
-      const result = await window.ipc.invoke('getAiTranslationProviders');
-      if (result.success && result.data) {
-        setAiProviders(result.data);
-        // 默认优先选中已配置的服务商，避免默认落到不可用项
-        if (result.data.length > 0 && !selectedProviderId) {
-          const firstConfigured = result.data.find((p: any) =>
-            isProviderConfigured(p),
-          );
-          if (firstConfigured) setSelectedProviderId(firstConfigured.id);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load AI providers:', error);
-    }
-  }, [selectedProviderId]);
-
-  // 加载缓存的自定义提示词
-  const loadCachedPrompt = useCallback(() => {
-    if (isCustomPromptLoaded) return;
-
-    try {
-      const cached = localStorage.getItem(PROMPT_CACHE_KEY);
-      if (cached) {
-        setCustomPrompt(cached);
-        setShowCustomPrompt(true); // 如果有缓存的提示词，自动展开
-      } else {
-        setCustomPrompt(activeDefaultPrompt);
-      }
-      setIsCustomPromptLoaded(true);
-    } catch (error) {
-      console.error('Failed to load cached prompt:', error);
-      setCustomPrompt(activeDefaultPrompt);
-      setIsCustomPromptLoaded(true);
-    }
-  }, [isCustomPromptLoaded, activeDefaultPrompt, PROMPT_CACHE_KEY]);
-
-  // 保存自定义提示词到缓存
-  const savePromptToCache = useCallback(
-    (prompt: string) => {
-      try {
-        // 只有当提示词与默认不同时才缓存
-        if (prompt.trim() !== activeDefaultPrompt.trim()) {
-          localStorage.setItem(PROMPT_CACHE_KEY, prompt);
-        } else {
-          // 如果恢复为默认，清除缓存
-          localStorage.removeItem(PROMPT_CACHE_KEY);
-        }
-      } catch (error) {
-        console.error('Failed to save prompt to cache:', error);
-      }
-    },
-    [activeDefaultPrompt, PROMPT_CACHE_KEY],
-  );
-
-  // 处理提示词变化
-  const handlePromptChange = useCallback(
-    (value: string) => {
-      setCustomPrompt(value);
-      savePromptToCache(value);
-    },
-    [savePromptToCache],
-  );
-
-  // 重置为默认提示词
-  const handleResetPrompt = useCallback(() => {
-    setCustomPrompt(activeDefaultPrompt);
-    localStorage.removeItem(PROMPT_CACHE_KEY);
-  }, [activeDefaultPrompt, PROMPT_CACHE_KEY]);
-
-  // 打开 AI 优化对话框时加载服务商
-  const handleOpenAiOptimize = useCallback(() => {
-    if (currentSubtitleIndex >= 0) {
-      setOptimizedText('');
-      loadAiProviders();
-      loadCachedPrompt();
-      setShowAiOptimize(true);
-    }
-  }, [currentSubtitleIndex, loadAiProviders, loadCachedPrompt]);
-
   // 打开拆分对话框
   const handleOpenSplit = useCallback(() => {
     if (currentSubtitleIndex >= 0 && currentSubtitleIndex < subtitles.length) {
@@ -591,123 +435,12 @@ Only respond with the corrected text, nothing else.`;
     }
   }, [currentSubtitleIndex, subtitles, getCursorPosition]);
 
-  // 处理外部触发
-  useEffect(() => {
-    if (triggerAiOptimize && currentSubtitleIndex >= 0) {
-      handleOpenAiOptimize();
-      onTriggerHandled?.();
-    }
-  }, [
-    triggerAiOptimize,
-    currentSubtitleIndex,
-    handleOpenAiOptimize,
-    onTriggerHandled,
-  ]);
-
   useEffect(() => {
     if (triggerSplit && currentSubtitleIndex >= 0) {
       handleOpenSplit();
       onTriggerHandled?.();
     }
   }, [triggerSplit, currentSubtitleIndex, handleOpenSplit, onTriggerHandled]);
-
-  // AI 优化当前字幕
-  const handleAiOptimize = useCallback(async () => {
-    if (currentSubtitleIndex < 0 || currentSubtitleIndex >= subtitles.length) {
-      return;
-    }
-
-    const subtitle = subtitles[currentSubtitleIndex];
-    const sourceText = subtitle.sourceContent || '';
-    const targetText = subtitle.targetContent || '';
-
-    // 如果没有翻译内容，也可以使用 AI 生成翻译
-
-    if (!aiProviders.some((p) => isProviderConfigured(p))) {
-      toast.error(t('noAiProviderConfigured'));
-      return;
-    }
-
-    setAiOptimizing(true);
-    setOptimizedText('');
-
-    try {
-      // 调用 AI 优化服务（始终传递提示词）
-      // 纯转写模式必须带校对提示词，否则主进程会退化为翻译提示词
-      const result = await window.ipc.invoke('optimizeSubtitle', {
-        sourceText,
-        targetText: isTranscriptMode ? '' : targetText,
-        providerId: selectedProviderId || undefined,
-        mode: isTranscriptMode ? 'transcript' : 'translation',
-        customPrompt:
-          customPrompt.trim() ||
-          (isTranscriptMode ? defaultProofreadPrompt : undefined),
-      });
-
-      if (result.success && result.data) {
-        setOptimizedText(result.data);
-      } else {
-        toast.error(result.error || t('aiOptimizeFailed'));
-      }
-    } catch (error) {
-      console.error('AI optimize error:', error);
-      toast.error(t('aiOptimizeFailed'));
-    } finally {
-      setAiOptimizing(false);
-    }
-  }, [
-    currentSubtitleIndex,
-    subtitles,
-    t,
-    aiProviders,
-    selectedProviderId,
-    customPrompt,
-    isTranscriptMode,
-    defaultProofreadPrompt,
-  ]);
-
-  // 采纳 AI 优化结果（纯转写模式写回原文）
-  const handleAcceptOptimization = useCallback(() => {
-    if (!optimizedText || currentSubtitleIndex < 0) return;
-
-    const newSubtitles = [...subtitles];
-    newSubtitles[currentSubtitleIndex] = {
-      ...newSubtitles[currentSubtitleIndex],
-      ...(isTranscriptMode
-        ? { sourceContent: optimizedText }
-        : { targetContent: optimizedText }),
-    };
-    onSubtitlesChange(newSubtitles);
-    setShowAiOptimize(false);
-    setOptimizedText('');
-    toast.success(t('optimizationAccepted'));
-  }, [
-    optimizedText,
-    currentSubtitleIndex,
-    subtitles,
-    onSubtitlesChange,
-    isTranscriptMode,
-    t,
-  ]);
-
-  // 应用批量优化结果（纯转写模式写回原文）
-  const handleApplyBatchOptimizations = useCallback(
-    (optimizations: Array<{ index: number; targetContent: string }>) => {
-      const newSubtitles = [...subtitles];
-      optimizations.forEach(({ index, targetContent }) => {
-        if (index >= 0 && index < newSubtitles.length) {
-          newSubtitles[index] = {
-            ...newSubtitles[index],
-            ...(isTranscriptMode
-              ? { sourceContent: targetContent }
-              : { targetContent }),
-          };
-        }
-      });
-      onSubtitlesChange(newSubtitles);
-    },
-    [subtitles, onSubtitlesChange, isTranscriptMode],
-  );
 
   return (
     <div className="flex flex-wrap items-center gap-x-1 gap-y-1 p-2 border-b bg-muted/30">
@@ -1045,243 +778,6 @@ Only respond with the corrected text, nothing else.`;
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* AI 单条优化按钮和对话框（纯转写模式下为原文校对） */}
-      <Dialog open={showAiOptimize} onOpenChange={setShowAiOptimize}>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8"
-          onClick={handleOpenAiOptimize}
-          disabled={currentSubtitleIndex < 0}
-          title={t('aiOptimize')}
-        >
-          <Sparkles className="h-4 w-4 mr-1" />
-          {t('aiOptimize')}
-        </Button>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {isTranscriptMode ? t('aiProofreadTitle') : t('aiOptimizeTitle')}
-            </DialogTitle>
-            <DialogDescription>
-              {isTranscriptMode ? t('aiProofreadDesc') : t('aiOptimizeDesc')}
-            </DialogDescription>
-          </DialogHeader>
-          {currentSubtitleIndex >= 0 &&
-            currentSubtitleIndex < subtitles.length && (
-              <div className="space-y-4 py-4">
-                {/* AI 服务商选择 */}
-                <div className="space-y-2">
-                  <Label>{t('selectAiProvider')}</Label>
-                  {!aiProviders.some((p) => isProviderConfigured(p)) ? (
-                    <div className="p-3 border rounded bg-muted/30 text-sm text-muted-foreground italic">
-                      {t('noAiProviderConfigured')}
-                    </div>
-                  ) : (
-                    <Select
-                      value={selectedProviderId}
-                      onValueChange={setSelectedProviderId}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('selectProvider')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {aiProviders.some((p) => isProviderConfigured(p)) && (
-                          <SelectGroup>
-                            <SelectLabel className="flex items-center gap-1.5 pl-2 text-foreground">
-                              <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-                              {t('providerGroup.configured')}
-                            </SelectLabel>
-                            {aiProviders
-                              .filter((p) => isProviderConfigured(p))
-                              .map((provider) => (
-                                <SelectItem
-                                  key={provider.id}
-                                  value={provider.id}
-                                >
-                                  {provider.name}
-                                </SelectItem>
-                              ))}
-                          </SelectGroup>
-                        )}
-                        {aiProviders.some((p) => !isProviderConfigured(p)) && (
-                          <SelectGroup>
-                            <SelectLabel className="flex items-center gap-1.5 pl-2 text-muted-foreground">
-                              <AlertCircle className="h-3.5 w-3.5" />
-                              {t('providerGroup.notConfigured')}
-                            </SelectLabel>
-                            {aiProviders
-                              .filter((p) => !isProviderConfigured(p))
-                              .map((provider) => (
-                                <SelectItem
-                                  key={provider.id}
-                                  value={provider.id}
-                                  disabled
-                                >
-                                  {provider.name}
-                                  {t('notConfigured')}
-                                </SelectItem>
-                              ))}
-                          </SelectGroup>
-                        )}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
-
-                {/* 原文 */}
-                <div className="space-y-2">
-                  <Label>{t('sourceText')}</Label>
-                  <div className="p-3 border rounded bg-muted/30 text-sm">
-                    {subtitles[currentSubtitleIndex].sourceContent || (
-                      <span className="text-muted-foreground italic">
-                        {t('empty')}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* 当前翻译（纯转写模式无此区块） */}
-                {!isTranscriptMode && (
-                  <div className="space-y-2">
-                    <Label>{t('currentTranslation')}</Label>
-                    <div className="p-3 border rounded bg-muted/30 text-sm">
-                      {subtitles[currentSubtitleIndex].targetContent || (
-                        <span className="text-muted-foreground italic">
-                          {t('empty')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* 自定义提示词 */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>{t('customPrompt')}</Label>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="gap-1.5"
-                        onClick={handleResetPrompt}
-                        title={t('resetToDefault')}
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                        {t('resetToDefault')}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="gap-1.5"
-                        onClick={() => setShowCustomPrompt(!showCustomPrompt)}
-                      >
-                        {showCustomPrompt ? (
-                          <ChevronUp className="h-4 w-4" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4" />
-                        )}
-                        {showCustomPrompt
-                          ? t('hideCustomPrompt')
-                          : t('showCustomPrompt')}
-                      </Button>
-                    </div>
-                  </div>
-                  {showCustomPrompt && (
-                    <div className="space-y-2">
-                      <Textarea
-                        value={customPrompt}
-                        onChange={(e) => handlePromptChange(e.target.value)}
-                        placeholder={t('customPromptPlaceholder')}
-                        className="min-h-[200px] text-sm font-mono"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {t('customPromptHint')}
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* AI 优化结果 */}
-                <div className="space-y-2">
-                  <Label>{t('aiOptimizedResult')}</Label>
-                  {aiOptimizing ? (
-                    <div className="p-3 border rounded bg-muted/30 flex items-center justify-center">
-                      <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                      {t('optimizing')}
-                    </div>
-                  ) : optimizedText ? (
-                    <Textarea
-                      value={optimizedText}
-                      onChange={(e) => setOptimizedText(e.target.value)}
-                      className="min-h-[80px]"
-                    />
-                  ) : (
-                    <div className="p-3 border rounded bg-muted/30 text-sm text-muted-foreground italic">
-                      {t('clickOptimizeToStart')}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              className="gap-1.5"
-              onClick={() => setShowAiOptimize(false)}
-            >
-              <X className="h-4 w-4" />
-              {t('cancel')}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={handleAiOptimize}
-              disabled={
-                aiOptimizing ||
-                currentSubtitleIndex < 0 ||
-                !aiProviders.some((p) => isProviderConfigured(p))
-              }
-            >
-              {aiOptimizing ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4 mr-1" />
-              )}
-              {t('startOptimize')}
-            </Button>
-            <Button
-              className="gap-1.5"
-              onClick={handleAcceptOptimization}
-              disabled={!optimizedText || aiOptimizing}
-            >
-              <Check className="h-4 w-4" />
-              {t('acceptOptimization')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 批量 AI 优化按钮（纯转写模式下为全文校对） */}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-8"
-        onClick={() => setShowBatchOptimize(true)}
-        disabled={subtitles.length === 0}
-        title={isTranscriptMode ? t('batchAiProofread') : t('batchAiOptimize')}
-      >
-        <Wand2 className="h-4 w-4 mr-1" />
-        {isTranscriptMode ? t('batchAiProofread') : t('batchAiOptimize')}
-      </Button>
-
-      <BatchAiOptimizeDialog
-        open={showBatchOptimize}
-        onOpenChange={setShowBatchOptimize}
-        subtitles={subtitles}
-        onApplyOptimizations={handleApplyBatchOptimizations}
-        shouldShowTranslation={shouldShowTranslation}
-      />
 
       {/* 视图控制（右对齐）：折叠左侧面板 / 展开全部 / 字号 */}
       <div className="ml-auto flex flex-shrink-0 items-center gap-1">

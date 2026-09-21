@@ -264,7 +264,7 @@ try {
   );
   const session = await page.evaluate(
     (file) =>
-      window.ipc.invoke('dubbing:loadSubtitle', {
+      window.ipc.invoke('dubbing:getSession', {
         sessionId: file.dubbingSessionId,
         subtitlePath: file.srtFile,
         proofreadDataFile: file.proofreadDataFile,

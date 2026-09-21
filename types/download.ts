@@ -3,6 +3,9 @@
  * （main 与 renderer 皆从此引入；纯类型 + 少量纯函数，禁止 Node/Electron 依赖）。
  */
 
+import type { IFormData } from './types';
+import type { TaskSubmission } from './taskSubmission';
+
 /** 下载引擎标识 */
 export type DownloaderEngine = 'yt-dlp' | 'lux';
 
@@ -19,6 +22,7 @@ export type DownloadEntryStatus = '' | 'loading' | 'done' | 'error';
 
 /** 预检/下载过程中获得的媒体元数据 */
 export interface DownloadEntryMeta {
+  language?: string;
   title?: string;
   /** 秒 */
   duration?: number;
@@ -53,11 +57,30 @@ export interface DownloadEntry {
   meta?: DownloadEntryMeta;
   /** 完成后的媒体文件绝对路径 */
   outputPath?: string;
+  outputPaths?: string[];
   /** 同取的官方字幕文件绝对路径（与视频同目录同主干） */
   subtitlePaths?: string[];
   error?: string;
   /** 该 URL 是播放列表且用户确认展开全部（引擎侧传 --yes-playlist 语义） */
   expandPlaylist?: boolean;
+  pipeline?: {
+    projectId: string;
+    status: 'pending' | 'submitted' | 'error';
+    error?: string;
+    subtitlePaths?: string[];
+    /** Retain exactly the first prepared input through failed acceptance. */
+    submission?: TaskSubmission;
+  };
+}
+
+export interface DownloadPipelineConfig {
+  version: 1;
+  name: string;
+  formData: IFormData & {
+    translateProvider?: string;
+    sourceDownloadWorkItemId?: string;
+  };
+  cloudUploadConsent?: boolean;
 }
 
 /** 预检（不下载）单条结果 */
@@ -78,8 +101,7 @@ export interface DownloadConfigSnapshot {
   writeSubs?: boolean;
   /** 批次并发（1-5；design D6，开始下载时随批落快照并持久化到设置） */
   concurrency?: number;
-  /** 预留：链式自动化（本期不实现） */
-  autoChain?: Record<string, unknown>;
+  autoChain?: DownloadPipelineConfig;
 }
 
 // ── 下载器二进制分发 ────────────────────────────────────────────────────────

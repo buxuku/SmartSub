@@ -186,6 +186,8 @@ export default function LaunchpadPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<WorkItem | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [userRecipes, setUserRecipes] = useState<TaskRecipe[]>([]);
   const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
   const [recipeNameDraft, setRecipeNameDraft] = useState('');
@@ -606,12 +608,25 @@ export default function LaunchpadPage() {
   };
 
   const confirmDelete = async () => {
-    if (!deleteTarget) return;
-    await window?.ipc?.invoke('deleteWorkItem', deleteTarget.id);
-    setWorkItems((prev) =>
-      prev.filter((entry) => entry.id !== deleteTarget.id),
-    );
-    setDeleteTarget(null);
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const result = await window?.ipc?.invoke(
+        'deleteWorkItem',
+        deleteTarget.id,
+      );
+      if (result !== true && result !== false)
+        throw new Error('Deletion was not acknowledged');
+      setWorkItems((prev) =>
+        prev.filter((entry) => entry.id !== deleteTarget.id),
+      );
+      setDeleteTarget(null);
+    } catch (error) {
+      setDeleteError(String(error));
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const localeStr = String(locale || 'zh');
@@ -1200,7 +1215,10 @@ export default function LaunchpadPage() {
       <AlertDialog
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
+          if (!open && !deleting) {
+            setDeleteTarget(null);
+            setDeleteError(null);
+          }
         }}
       >
         <AlertDialogContent>
@@ -1210,9 +1228,27 @@ export default function LaunchpadPage() {
               {t('recent.deleteDesc', { name: deleteTarget?.name || '' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteError && (
+            <div role="alert" className="break-words text-sm text-destructive">
+              <p>{t('recent.deleteFailed')}</p>
+              <details>
+                <summary>{t('recent.errorDetails')}</summary>
+                {deleteError}
+              </details>
+            </div>
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('recent.cancel')}</AlertDialogCancel>
-            <AlertDialogAction className="gap-1.5" onClick={confirmDelete}>
+            <AlertDialogCancel disabled={deleting}>
+              {t('recent.cancel')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              className="gap-1.5"
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmDelete();
+              }}
+            >
               <Trash2 className="h-4 w-4" />
               {t('recent.delete')}
             </AlertDialogAction>

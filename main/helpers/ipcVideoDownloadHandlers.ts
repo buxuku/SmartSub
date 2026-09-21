@@ -1,5 +1,6 @@
 import { ipcMain, shell, dialog, BrowserWindow } from 'electron';
 import { logMessage } from './storeManager';
+import { getWorkItemById, saveWorkItem } from './workItemStore';
 import {
   cancelDownloaderInstall,
   fetchDownloaderManifest,
@@ -38,6 +39,12 @@ import type {
   DownloaderEngine,
 } from '../../types/download';
 import type { BinaryDownloadSource } from './downloadSourceOrder';
+import {
+  recoverDownloadHandoffs,
+  handoffDownloadEntry,
+  resolveDownloadPipeline,
+  downloadPipelineKey,
+} from './videoDownload/pipeline';
 
 const PREFLIGHT_CONCURRENCY = 3;
 
@@ -122,6 +129,49 @@ export function setupVideoDownloadHandlers(mainWindow: BrowserWindow): void {
       logMessage(`videoDownload emit failed: ${error}`, 'warning');
     }
   });
+  recoverDownloadHandoffs();
+  ipcMain.handle(
+    'videoDownload:preparePipeline',
+    (_event, recipeId: string) => {
+      const config = resolveDownloadPipeline(recipeId);
+      return {
+        configKey: downloadPipelineKey(config),
+        transcriptionEngine: config.formData.transcriptionEngine,
+      };
+    },
+  );
+  ipcMain.handle(
+    'videoDownload:retryPipeline',
+    (_event, { workItemId, entryId, cloudUploadConsent }) => {
+      if (cloudUploadConsent === true) {
+        const item = getWorkItemById(workItemId);
+        const config = item?.configSnapshot?.autoChain as
+          | import('../../types/download').DownloadPipelineConfig
+          | undefined;
+        if (
+          item?.type === 'download' &&
+          config?.formData.transcriptionEngine === 'cloud'
+        ) {
+          saveWorkItem(
+            {
+              ...item,
+              configSnapshot: {
+                ...item.configSnapshot,
+                autoChain: { ...config, cloudUploadConsent: true },
+              },
+            },
+            { durable: true },
+          );
+        }
+      }
+      handoffDownloadEntry(workItemId, entryId);
+      if (!mainWindow.isDestroyed())
+        mainWindow.webContents.send('videoDownload:itemChanged', {
+          workItemId,
+        });
+      return true;
+    },
+  );
 
   const sendInstallProgress = (payload: unknown) => {
     try {

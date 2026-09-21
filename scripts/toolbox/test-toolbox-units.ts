@@ -8,6 +8,7 @@ const testFiles = [
   'test-encoding-detector.ts',
   'test-subtitle-converter.ts',
   'test-video-trimmer.ts',
+  'test-media-probe.cjs',
   'test-subtitle-sync.ts',
   'test-bilingual-subtitles.ts',
   'test-audio-extractor.ts',

@@ -222,6 +222,29 @@ async function main() {
   );
   assert.ok(fs.existsSync(file.dubbedAudioPath));
   const reviewed = proc.getDubbingSession(file.dubbingSessionId);
+  const ownership =
+    require('../../main/helpers/dubbing/sessionOwnership.ts').dubbingSessionOwnership;
+  assert.equal(ownership.acquire(reviewed.id, 7, 'review'), true);
+  const beforeConcurrent = JSON.stringify(reviewed);
+  await assert.rejects(
+    pipeline.runDubStage(event, file, task),
+    /open in an editor/,
+  );
+  await assert.rejects(
+    pipeline.rebuildDubTrackForFile(event, file, task),
+    /open in an editor/,
+  );
+  assert.equal(JSON.stringify(reviewed), beforeConcurrent);
+  ownership.release(reviewed.id, 7, 'review');
+  const journal = store.getSessionDraftPath(reviewed.id, 'cue');
+  fs.mkdirSync(path.dirname(journal), { recursive: true });
+  fs.writeFileSync(journal, '{unconfirmed');
+  await assert.rejects(
+    pipeline.runDubStage(event, file, task),
+    /unconfirmed edits/,
+  );
+  assert.equal(ownership.isBusy(reviewed.id), false);
+  fs.unlinkSync(journal);
   const reviewConfig = { ...english, globalSpeed: 1.1 };
   proc.syncDubbingVoiceStaleness(reviewed, reviewConfig);
   reviewed.lastConfig = reviewConfig;
@@ -238,6 +261,113 @@ async function main() {
     beforeRebuild,
     'review resume reuses regenerated audio',
   );
+  const previousAudio = file.dubbedAudioPath;
+  fs.writeFileSync(previousAudio, 'user-edited prior export');
+  file.dubbingError = 'previous failed attempt';
+  await pipeline.runDubStage(event, file, task);
+  assert.equal(file.dubbingError, '');
+  assert.equal(
+    requests.length,
+    beforeRebuild,
+    'failed-stage retry also retains workbench config',
+  );
+  assert.equal(
+    fs.readFileSync(previousAudio, 'utf8'),
+    'user-edited prior export',
+  );
+  assert.notEqual(file.dubbedAudioPath, previousAudio);
+  assert.equal(
+    file.shiftedSubtitlePath,
+    undefined,
+    'unchanged captions retain original artifact and styles',
+  );
+  const oldTrack = file.dubbedTrackPath;
+  await pipeline.runDubStage(event, file, {
+    ...task,
+    dub: { ...task.dub, voice: '1' },
+  });
+  assert.equal(
+    requests.length,
+    beforeRebuild + 2,
+    'explicit task voice change regenerates',
+  );
+  assert.equal(
+    requests.at(-1).speed,
+    1.1,
+    'unchanged task speed preserves workbench repair',
+  );
+  assert.notEqual(file.dubbedTrackPath, oldTrack);
+  assert.ok(
+    fs.existsSync(oldTrack),
+    'in-flight consumers retain immutable old track',
+  );
+
+  const bilingual = path.join(temp, 'bilingual.srt');
+  fs.writeFileSync(
+    bilingual,
+    '1\n00:00:00,000 --> 00:00:10,000\nOriginal one\n90%\n\n2\n00:00:10,000 --> 00:00:20,000\nOriginal two\n2026年\n',
+  );
+  file.translatedSrtFile = bilingual;
+  await proc.resynthesizeCue(
+    reviewed,
+    0,
+    { text: 'Short.' },
+    reviewed.lastConfig,
+  );
+  await pipeline.runDubStage(event, file, {
+    ...task,
+    dub: { ...task.dub, voice: '1' },
+  });
+  assert.match(
+    fs.readFileSync(file.shiftedSubtitlePath, 'utf8'),
+    /Original one\nShort\./,
+  );
+  assert.doesNotMatch(fs.readFileSync(file.shiftedSubtitlePath, 'utf8'), /90%/);
+  assert.match(
+    fs.readFileSync(file.shiftedSubtitlePath, 'utf8'),
+    /00:00:10,000 --> 00:00:20,000/,
+  );
+  const goodBilingual = fs.readFileSync(bilingual, 'utf8');
+  fs.writeFileSync(bilingual, goodBilingual.replace('90%', '90%\n90%'));
+  await assert.rejects(
+    pipeline.rebuildDubTrackForFile(event, file, {
+      ...task,
+      dub: { ...task.dub, voice: '1' },
+    }),
+    /安全更新双语字幕/,
+  );
+  fs.writeFileSync(
+    bilingual,
+    goodBilingual.replace('00:00:10,000 -->', '00:00:11,000 -->'),
+  );
+  await assert.rejects(
+    pipeline.rebuildDubTrackForFile(event, file, {
+      ...task,
+      dub: { ...task.dub, voice: '1' },
+    }),
+    /时间轴不一致/,
+  );
+  fs.writeFileSync(bilingual, goodBilingual);
+  proc.disposeDubbingSession(reviewed.id);
+  const restoredReview = proc.restoreDubbingSession(reviewed.id).session;
+  assert.equal(restoredReview.pipelineConfigSnapshot.voice, '1');
+  assert.equal(restoredReview.lastConfig.globalSpeed, 1.1);
+  const oldSession = file.dubbingSessionId;
+  const oldSubtitle = reviewed.subtitlePath;
+  const oldWav = reviewed.cues[0].wavPath;
+  fs.writeFileSync(
+    subtitle,
+    fs.readFileSync(subtitle, 'utf8').replace('90%', 'Updated upstream.'),
+  );
+  file.translatedSrtFile = undefined;
+  await pipeline.rebuildDubTrackForFile(event, file, task);
+  assert.notEqual(
+    file.dubbingSessionId,
+    oldSession,
+    'upstream edits replace even an in-memory session',
+  );
+  assert.ok(fs.existsSync(oldWav));
+  assert.match(fs.readFileSync(oldSubtitle, 'utf8'), /90%/);
   const originalFile = {
     ...file,
     uuid: 'original-language',

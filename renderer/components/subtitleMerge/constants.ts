@@ -51,6 +51,57 @@ export const getDefaultStyle = (): SubtitleStyle => ({
  */
 export const STYLE_PRESETS: StylePreset[] = [
   {
+    id: 'bilibili_knowledge',
+    name: 'B站知识区',
+    nameKey: 'presetBilibili',
+    style: {
+      ...DEFAULT_STYLE,
+      fontName: 'Arial Unicode MS',
+      fontSize: 30,
+      bold: true,
+      borderStyle: 3,
+      backOpacity: 100,
+      outline: 3,
+      shadow: 0,
+      highlightColor: '#FFFF00',
+      highlightTerms: ['SmartSub'],
+    },
+  },
+  {
+    id: 'netflix_bilingual',
+    name: 'Netflix 双语',
+    nameKey: 'presetNetflix',
+    style: {
+      ...DEFAULT_STYLE,
+      fontName: 'Courier New',
+      fontSize: 22,
+      primaryColor: '#FFFF00',
+      secondLineColor: '#FFFFFF',
+      outline: 0.6,
+      shadow: 1,
+      backOpacity: 80,
+      marginV: 24,
+    },
+  },
+  {
+    id: 'variety_glow',
+    name: '综艺花字',
+    nameKey: 'presetVariety',
+    style: {
+      ...DEFAULT_STYLE,
+      fontName: 'Arial Unicode MS',
+      fontSize: 32,
+      bold: true,
+      italic: true,
+      primaryColor: '#FFFFFF',
+      outlineColor: '#80205D',
+      outline: 3.5,
+      shadow: 0,
+      glow: 3,
+      glowColor: '#F472B6',
+    },
+  },
+  {
     id: 'classic',
     name: '经典白字黑边',
     nameKey: 'presetClassic',
@@ -191,30 +242,6 @@ export const STYLE_PRESETS: StylePreset[] = [
       marginV: 20,
     },
   },
-];
-
-/**
- * 常用字体列表
- */
-export const FONT_LIST = [
-  // 系统通用字体
-  { value: 'Arial', label: 'Arial' },
-  { value: 'Helvetica', label: 'Helvetica' },
-  { value: 'Helvetica Neue', label: 'Helvetica Neue' },
-  { value: 'Georgia', label: 'Georgia' },
-  { value: 'Times New Roman', label: 'Times New Roman' },
-  { value: 'Verdana', label: 'Verdana' },
-  { value: 'Roboto', label: 'Roboto' },
-  { value: 'Impact', label: 'Impact' },
-  // 中文字体
-  { value: 'Microsoft YaHei', label: '微软雅黑' },
-  { value: 'SimHei', label: '黑体' },
-  { value: 'SimSun', label: '宋体' },
-  { value: 'KaiTi', label: '楷体' },
-  { value: 'PingFang SC', label: '苹方' },
-  { value: 'Noto Sans SC', label: 'Noto Sans SC' },
-  { value: 'Noto Sans CJK SC', label: 'Noto Sans CJK SC' },
-  { value: 'Source Han Sans SC', label: '思源黑体' },
 ];
 
 /**

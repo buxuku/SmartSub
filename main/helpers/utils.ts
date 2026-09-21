@@ -161,8 +161,9 @@ export const isAppleSilicon = () => {
 };
 
 export const getExtraResourcesPath = () => {
-  const isProd = process.env.NODE_ENV === 'production';
-  return isProd
+  // A production renderer can also run from `nextron build --no-pack`.
+  // Only packaged apps have resources copied into Electron's Resources folder.
+  return app.isPackaged
     ? path.join(process.resourcesPath, 'extraResources')
     : path.join(app.getAppPath(), 'extraResources');
 };

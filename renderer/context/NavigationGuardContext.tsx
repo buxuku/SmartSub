@@ -28,7 +28,7 @@ export interface NavigationGuardOptions {
   isDirty: boolean;
   getIsDirty?: () => boolean;
   onSave?: () => Promise<boolean>;
-  onDiscard?: () => void;
+  onDiscard?: () => void | boolean | Promise<void | boolean>;
   title?: string;
   description?: string;
 }
@@ -63,9 +63,11 @@ export function NavigationGuardProvider({
   const guardsRef = useRef<Map<string, NavigationGuardOptions>>(new Map());
   const [dirtyCount, setDirtyCount] = useState(0);
   const [showDialog, setShowDialog] = useState(false);
+  const [dialogCanSave, setDialogCanSave] = useState(false);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveChanged, setSaveChanged] = useState(false);
+  const [discardFailed, setDiscardFailed] = useState(false);
   const bypassRef = useRef(false);
   const historyIndexRef = useRef(0);
   const restoringHistoryRef = useRef(false);
@@ -191,6 +193,7 @@ export function NavigationGuardProvider({
       const err = { cancelled: true, code: NAVIGATION_CANCEL_CODE };
       router.events.emit('routeChangeError', err, url, { shallow: false });
       setPendingUrl(url);
+      setDialogCanSave(Boolean(activeGuard.onSave));
       pendingHistoryRef.current = null;
       setShowDialog(true);
       throw err;
@@ -261,6 +264,7 @@ export function NavigationGuardProvider({
         window.history.replaceState(window.history.state, '', router.asPath);
       }
       setPendingUrl(target);
+      setDialogCanSave(Boolean(activeGuard.onSave));
       setShowDialog(true);
       return false;
     });
@@ -286,6 +290,7 @@ export function NavigationGuardProvider({
 
   const handleCancel = () => {
     setSaveChanged(false);
+    setDiscardFailed(false);
     setShowDialog(false);
     setPendingUrl(null);
     pendingHistoryRef.current = null;
@@ -307,11 +312,26 @@ export function NavigationGuardProvider({
       });
   };
 
-  const handleDiscardAndLeave = () => {
-    guardsRef.current.forEach((guard) => {
-      if (guard.isDirty) guard.onDiscard?.();
-    });
-    leave();
+  const handleDiscardAndLeave = async () => {
+    setIsSaving(true);
+    try {
+      for (const guard of Array.from(guardsRef.current.values())) {
+        if (!(guard.getIsDirty?.() ?? guard.isDirty)) continue;
+        try {
+          if ((await guard.onDiscard?.()) === false) {
+            setDiscardFailed(true);
+            return;
+          }
+        } catch {
+          setDiscardFailed(true);
+          return;
+        }
+      }
+      setDiscardFailed(false);
+      leave();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSaveAndLeave = async () => {
@@ -388,6 +408,11 @@ export function NavigationGuardProvider({
               {t('navigationGuard.changedDuringSave')}
             </p>
           )}
+          {discardFailed && (
+            <p role="alert" className="text-sm text-destructive">
+              {t('navigationGuard.discardFailed')}
+            </p>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel
               disabled={isSaving || restoringHistory}
@@ -404,7 +429,7 @@ export function NavigationGuardProvider({
               <Undo2 className="h-4 w-4" />
               {t('navigationGuard.discardAndLeave', '放弃并离开')}
             </Button>
-            {activeGuard?.onSave && (
+            {(dialogCanSave || activeGuard?.onSave) && (
               <Button
                 disabled={isSaving || restoringHistory}
                 className="gap-1.5"

@@ -20,6 +20,7 @@ function harness(initial) {
   const cache = new Map();
   const processed = [];
   const events = [];
+  let warmups = 0;
   const store = {
     get: (key) => structuredClone(disk[key]),
     set(key, value) {
@@ -55,7 +56,11 @@ function harness(initial) {
     '../service/configurationManager': { configurationManager: {} },
     './audioProcessor': { killFfmpegForFiles() {} },
     './engines/registry': {
-      getEngineAdapterForTask: () => ({}),
+      getEngineAdapterForTask: () => ({
+        prewarm: () => {
+          warmups++;
+        },
+      }),
       listEngineAdapters: () => [],
     },
     './pythonRuntime': {},
@@ -119,6 +124,7 @@ function harness(initial) {
     processor,
     processed,
     events,
+    warmups: () => warmups,
     submit: (payload) => handlers.get('submitTask')({ sender }, payload),
     status: (id) => handlers.get('getTaskStatus')({}, id),
     disk: () => structuredClone(disk),
@@ -267,6 +273,27 @@ async function main() {
       'shared file UUID events update their own project',
     );
   }
+  const official = harness();
+  assert.equal(
+    official.submit({
+      ...originalRequest,
+      files: [
+        {
+          ...originalRequest.files[0],
+          providedSubtitlePath: '/tmp/official.en.srt',
+        },
+      ],
+    }).success,
+    true,
+  );
+  official.release();
+  await new Promise(setImmediate);
+  assert.equal(official.processed.length, 1);
+  assert.equal(official.warmups(), 0, 'official subtitles never warm up ASR');
+  assert.ok(
+    state.warmups() > 0,
+    'media without provided subtitles still warms up ASR',
+  );
   console.log(
     'Task submission: durable acceptance, rollback, replay, busy/config conflicts, snapshot isolation, restart and queue dispatch passed.',
   );

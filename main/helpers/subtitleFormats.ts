@@ -239,33 +239,81 @@ function normalizeLineEndings(text: string): string {
   return stripBom(text).replace(/\r\n?/g, '\n');
 }
 
+function assertTimestamp(raw: string): void {
+  const match = /^(?:(\d+):)?(\d{1,2}):(\d{2})(?:[,.](\d{1,6}))?$/.exec(
+    raw.trim(),
+  );
+  if (!match || Number(match[2]) >= 60 || Number(match[3]) >= 60)
+    throw new Error(`Invalid subtitle timestamp: ${raw}`);
+}
+
+function assertCue(cue: SubtitleCue): void {
+  if (
+    !Number.isSafeInteger(cue.startMs) ||
+    !Number.isSafeInteger(cue.endMs) ||
+    cue.startMs < 0 ||
+    cue.endMs <= cue.startMs
+  )
+    throw new Error('Invalid subtitle time range');
+}
+
 /** 解析 SRT / VTT（两者块结构一致，时间分隔符不同，统一处理）。 */
-function parseSrtVtt(content: string): SubtitleCue[] {
+function parseSrtVtt(
+  content: string,
+  strict = false,
+  format: SubtitleFormat = 'srt',
+): SubtitleCue[] {
   let text = normalizeLineEndings(content);
   // 去除 VTT 头部（WEBVTT 行及其后元数据，直到首个空行）
   if (/^WEBVTT/.test(text)) {
-    const firstBlank = text.indexOf('\n\n');
-    text = firstBlank >= 0 ? text.slice(firstBlank + 2) : '';
+    const headerEnd = /\n[ \t]*\n/.exec(text);
+    if (strict && !/^WEBVTT(?:[ \t]|\n|$)/.test(text))
+      throw new Error('Invalid WebVTT header');
+    if (
+      strict &&
+      (headerEnd ? text.slice(0, headerEnd.index) : text).includes('-->')
+    )
+      throw new Error('Missing blank line after WebVTT header');
+    text = headerEnd ? text.slice(headerEnd.index + headerEnd[0].length) : '';
   }
-  const blocks = text.split(/\n{2,}/);
+  const blocks = text.split(/\n[ \t]*\n/);
   const cues: SubtitleCue[] = [];
   for (const block of blocks) {
     const lines = block.split('\n').filter((l) => l.trim() !== '');
     if (lines.length === 0) continue;
     // VTT 的 NOTE / STYLE / REGION 块跳过
-    if (/^(NOTE|STYLE|REGION)\b/.test(lines[0])) continue;
+    if (
+      (!strict || format === 'vtt') &&
+      /^(NOTE|STYLE|REGION)(?:[ \t]|$)/.test(lines[0])
+    )
+      continue;
     const timingIndex = lines.findIndex((l) => TIMING_LINE_REGEX.test(l));
+    if (strict && (timingIndex < 0 || timingIndex > 1))
+      throw new Error(`Invalid subtitle block: ${lines[0]}`);
     if (timingIndex === -1) continue;
     const timingLine = lines[timingIndex];
     const [startPart, endPartRaw] = timingLine.split('-->');
     if (endPartRaw === undefined) continue;
     // VTT 时间行尾部可能带 cue setting（如 align:start position:50%），取第一个时间 token
     const endPart = endPartRaw.trim().split(/\s+/)[0];
+    if (strict) {
+      assertTimestamp(startPart);
+      assertTimestamp(endPart);
+      if (timingLine.split('-->').length !== 2)
+        throw new Error(`Invalid subtitle timing: ${timingLine}`);
+    }
     const startMs = parseTimeToMs(startPart);
     const endMs = parseTimeToMs(endPart);
     const textLines = lines.slice(timingIndex + 1);
-    if (textLines.length === 0) continue;
-    cues.push({ startMs, endMs, text: textLines.join('\n') });
+    if (
+      strict &&
+      textLines.some((line) => TIMING_LINE_PATTERN.exec(line)?.index === 0)
+    )
+      throw new Error('Missing blank line between subtitle cues');
+    if (!strict && textLines.length === 0) continue;
+    const cue = { startMs, endMs, text: textLines.join('\n') };
+    if (strict) assertCue(cue);
+    cues.push(cue);
   }
   return cues;
 }
@@ -279,7 +327,7 @@ function cleanAssText(raw: string): string {
     .trim();
 }
 
-function parseAss(content: string): SubtitleCue[] {
+function parseAss(content: string, strict = false): SubtitleCue[] {
   const lines = normalizeLineEndings(content).split('\n');
   const cues: SubtitleCue[] = [];
   let inEvents = false;
@@ -287,14 +335,20 @@ function parseAss(content: string): SubtitleCue[] {
   let idxStart = -1;
   let idxEnd = -1;
   let idxText = -1;
+  let hasSection = false;
 
   for (const line of lines) {
     const trimmed = line.trim();
     if (/^\[.*\]$/.test(trimmed)) {
+      hasSection = true;
       inEvents = /^\[events\]$/i.test(trimmed);
       continue;
     }
-    if (!inEvents) continue;
+    if (!inEvents) {
+      if (strict && /^Dialogue\s*:/i.test(trimmed))
+        throw new Error('ASS dialogue outside Events section');
+      continue;
+    }
 
     if (/^Format\s*:/i.test(trimmed)) {
       formatFields = trimmed
@@ -304,21 +358,40 @@ function parseAss(content: string): SubtitleCue[] {
       idxStart = formatFields.indexOf('start');
       idxEnd = formatFields.indexOf('end');
       idxText = formatFields.indexOf('text');
+      if (
+        strict &&
+        (idxStart < 0 || idxEnd < 0 || idxText !== formatFields.length - 1)
+      )
+        throw new Error('Invalid ASS Events format');
       continue;
     }
 
     if (/^Dialogue\s*:/i.test(trimmed)) {
+      if (strict && idxText === -1)
+        throw new Error('Missing ASS Events format');
       if (idxText === -1) continue; // 没有 Format 行无法解析
       const body = trimmed.slice(trimmed.indexOf(':') + 1);
       // 文本字段是最后一个且可能包含逗号，因此按字段数限制切分
       const parts = splitWithLimit(body, ',', formatFields.length);
+      if (strict) {
+        if (parts.length !== formatFields.length)
+          throw new Error('Incomplete ASS dialogue');
+        assertTimestamp(parts[idxStart]);
+        assertTimestamp(parts[idxEnd]);
+      }
       const startMs = parseTimeToMs(parts[idxStart] || '');
       const endMs = parseTimeToMs(parts[idxEnd] || '');
       const text = cleanAssText(parts[idxText] || '');
-      if (!text) continue;
-      cues.push({ startMs, endMs, text });
+      if (!strict && !text) continue;
+      const cue = { startMs, endMs, text };
+      if (strict) assertCue(cue);
+      cues.push(cue);
+    } else if (strict && trimmed && !/^(?:;|Comment\s*:)/i.test(trimmed)) {
+      throw new Error(`Invalid ASS event: ${trimmed}`);
     }
   }
+  if (strict && content.trim() && !hasSection)
+    throw new Error('Missing ASS section headers');
   return cues;
 }
 
@@ -341,7 +414,7 @@ function splitWithLimit(str: string, sep: string, limit: number): string[] {
   return result;
 }
 
-function parseLrc(content: string): SubtitleCue[] {
+function parseLrc(content: string, strict = false): SubtitleCue[] {
   const lines = normalizeLineEndings(content).split('\n');
   const tagRegex = /\[(\d{1,3}):(\d{1,2}(?:[.:]\d{1,3})?)\]/g;
   let offsetMs = 0;
@@ -365,10 +438,17 @@ function parseLrc(content: string): SubtitleCue[] {
     while ((m = tagRegex.exec(trimmed)) !== null) {
       const min = parseInt(m[1], 10) || 0;
       const sec = parseFloat(m[2].replace(':', '.')) || 0;
+      if (strict && sec >= 60)
+        throw new Error(`Invalid LRC timestamp: ${m[0]}`);
       times.push(min * 60000 + Math.round(sec * 1000));
     }
-    if (times.length === 0) continue;
+    if (times.length === 0) {
+      if (strict) throw new Error(`Invalid LRC line: ${trimmed}`);
+      continue;
+    }
     const lyric = trimmed.replace(tagRegex, '').trim();
+    if (strict && (!/^\[\d/.test(trimmed) || /\[\d[^\]]*\]/.test(lyric)))
+      throw new Error(`Invalid LRC timestamp: ${trimmed}`);
     for (const t of times) {
       entries.push({ startMs: t, text: lyric });
     }
@@ -383,7 +463,9 @@ function parseLrc(content: string): SubtitleCue[] {
         ? Math.max(startMs, entries[i + 1].startMs + offsetMs)
         : startMs + 4000; // 末行给一个默认时长
     if (entries[i].text === '') continue;
-    cues.push({ startMs, endMs, text: entries[i].text });
+    const cue = { startMs, endMs, text: entries[i].text };
+    if (strict) assertCue(cue);
+    cues.push(cue);
   }
   return cues;
 }
@@ -392,18 +474,21 @@ function parseLrc(content: string): SubtitleCue[] {
 export function parseSubtitleCues(
   content: string,
   format: SubtitleFormat,
+  options: { strict?: boolean } = {},
 ): SubtitleCue[] {
   switch (format) {
     case 'ass':
-      return parseAss(content);
+      return parseAss(content, options.strict);
     case 'lrc':
-      return parseLrc(content);
+      return parseLrc(content, options.strict);
     case 'txt':
+      if (options.strict && content.trim())
+        throw new Error('Plain text has no subtitle timeline');
       return []; // 纯文本无时间轴，不支持导入
     case 'srt':
     case 'vtt':
     default:
-      return parseSrtVtt(content);
+      return parseSrtVtt(content, options.strict, format);
   }
 }
 
@@ -411,8 +496,9 @@ export function parseSubtitleCues(
 export function parseSubtitleEntries(
   content: string,
   format: SubtitleFormat,
+  options: { strict?: boolean } = {},
 ): SubtitleEntry[] {
-  const cues = parseSubtitleCues(content, format);
+  const cues = parseSubtitleCues(content, format, options);
   return cues.map((cue, index) => ({
     id: String(index + 1),
     startEndTime: toSrtTimeRange(cue.startMs, cue.endMs),

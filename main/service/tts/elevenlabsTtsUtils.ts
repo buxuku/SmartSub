@@ -3,6 +3,11 @@
  * 与 ASR 侧 elevenlabsUtils 独立（端点与折算语义不同，互不复用）。
  */
 
+import {
+  normalizeTtsVoiceMetadata,
+  type TtsVoiceEntry,
+} from '../../../types/ttsVoice';
+
 const ELEVENLABS_DEFAULT_BASE = 'https://api.elevenlabs.io/v1';
 
 /** 文档推荐的 speed 保守区间；超界部分模型返回 422，残余交给 atempo 复测。 */
@@ -52,16 +57,23 @@ export function buildElevenLabsVoicesURL(baseURL: string): string {
 }
 
 /** /v1/voices 响应 → [{id, name}]（宽容解析，坏条目跳过）。 */
-export function mapElevenLabsVoices(
-  raw: unknown,
-): Array<{ id: string; name: string }> {
+export function mapElevenLabsVoices(raw: unknown): TtsVoiceEntry[] {
   const voices = (raw as { voices?: unknown })?.voices;
   if (!Array.isArray(voices)) return [];
-  const out: Array<{ id: string; name: string }> = [];
+  const out: TtsVoiceEntry[] = [];
   for (const v of voices) {
     const id = String((v as { voice_id?: unknown })?.voice_id ?? '').trim();
     const name = String((v as { name?: unknown })?.name ?? '').trim();
-    if (id) out.push({ id, name: name || id });
+    if (id)
+      out.push({
+        id,
+        name: name || id,
+        ...normalizeTtsVoiceMetadata({
+          lang: v?.labels?.language,
+          gender: v?.labels?.age === 'child' ? 'child' : v?.labels?.gender,
+          styles: [v?.labels?.use_case, v?.labels?.descriptive].filter(Boolean),
+        }),
+      });
   }
   return out;
 }

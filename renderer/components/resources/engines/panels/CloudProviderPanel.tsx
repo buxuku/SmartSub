@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import {
   Eraser,
@@ -24,8 +24,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { cn } from 'lib/utils';
+import type { ProviderTextDrafts } from '../../../../hooks/useProviderPersistence';
 import {
   buildInstanceFromPreset,
+  buildCloudViews,
   parseAsrModels,
   type AsrProvider,
   type AsrProviderField,
@@ -45,6 +47,7 @@ interface CloudProviderPanelProps {
   onMaterialize: (typeId: string, presetId?: string) => string | null;
   /** 删除实例（自定义条目删除后由父级收敛选中视图）。 */
   onRemove: (id: string) => void;
+  drafts?: ProviderTextDrafts<AsrProvider>;
 }
 
 /**
@@ -61,6 +64,7 @@ const CloudProviderPanel: React.FC<CloudProviderPanelProps> = ({
   onUpdateField,
   onMaterialize,
   onRemove,
+  drafts,
 }) => {
   const { t } = useTranslation('resources');
   const { t: commonT } = useTranslation('common');
@@ -68,7 +72,9 @@ const CloudProviderPanel: React.FC<CloudProviderPanelProps> = ({
   const { type, kind, preset, instance } = view;
 
   // 自由型模型标签录入的「输入中」草稿（回车/分隔符提交为标签，避免逗号手拼）。
-  const [modelDraft, setModelDraft] = useState('');
+  const [localModelDraft, setLocalModelDraft] = useState('');
+  const draftKey = `${view.viewId}:models`;
+  const modelDraft = drafts ? drafts.getDraft(draftKey) : localModelDraft;
   const [showPassword, setShowPassword] = useState<Record<string, boolean>>({});
   const [removeTarget, setRemoveTarget] = useState<AsrProvider | null>(null);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
@@ -76,11 +82,24 @@ const CloudProviderPanel: React.FC<CloudProviderPanelProps> = ({
   const [testResult, setTestResult] = useState<{
     ok: boolean;
     message: string;
+    details?: string;
   } | null>(null);
+  const operationEpoch = useRef(0);
+  const operationIdentity = JSON.stringify([view.viewId, instance]);
+  const identityRef = useRef(operationIdentity);
+  identityRef.current = operationIdentity;
+  useEffect(() => {
+    operationEpoch.current++;
+    setTesting(false);
+    setTestResult(null);
+    return () => {
+      operationEpoch.current++;
+    };
+  }, [operationIdentity]);
 
   // 切换条目时重置局部交互态。
   useEffect(() => {
-    setModelDraft('');
+    setLocalModelDraft('');
     setTestResult(null);
     setClearConfirmOpen(false);
   }, [view.viewId]);
@@ -105,6 +124,11 @@ const CloudProviderPanel: React.FC<CloudProviderPanelProps> = ({
   };
 
   const handleTest = async () => {
+    if (testing) return;
+    const token = ++operationEpoch.current;
+    const identity = identityRef.current;
+    const current = () =>
+      token === operationEpoch.current && identity === identityRef.current;
     // 未物化的条目用默认值临时实例自测（凭据为空 → 返回 needsConfig 提示）。
     const target = instance ?? defaults;
     setTesting(true);
@@ -117,6 +141,7 @@ const CloudProviderPanel: React.FC<CloudProviderPanelProps> = ({
         needsConfig?: boolean;
         detail?: string;
       };
+      if (!current()) return;
       if (res?.needsConfig) {
         setTestResult({ ok: false, message: t('cloudAsr.testNeedsConfig') });
       } else if (res?.ok) {
@@ -132,10 +157,15 @@ const CloudProviderPanel: React.FC<CloudProviderPanelProps> = ({
           message: res?.detail ? `${base} ${res.detail}` : base,
         });
       }
-    } catch {
-      setTestResult({ ok: false, message: t('cloudAsr.testFailed') });
+    } catch (cause) {
+      if (current())
+        setTestResult({
+          ok: false,
+          message: t('cloudAsr.testFailed'),
+          details: cause instanceof Error ? cause.message : String(cause),
+        });
     } finally {
-      setTesting(false);
+      if (current()) setTesting(false);
     }
   };
 
@@ -146,8 +176,38 @@ const CloudProviderPanel: React.FC<CloudProviderPanelProps> = ({
     handleField('models', models.join(', '));
   };
 
+  const setModelDraft = (raw: string) => {
+    if (!drafts) return setLocalModelDraft(raw);
+    drafts.stageDraft(draftKey, raw, (providers) => {
+      const target = buildCloudViews(providers).find(
+        (item) => item.viewId === view.viewId,
+      );
+      if (!target) throw new Error('PROVIDER_DRAFT_TARGET_MISSING');
+      const provider = target.instance ?? defaults;
+      const models = Array.from(
+        new Set([
+          ...parseAsrModels(provider),
+          ...raw.split(/[,，、;；\s]+/).filter(Boolean),
+        ]),
+      );
+      const updated = {
+        ...provider,
+        ...(target.preset ? { presetId: target.preset.id } : {}),
+        models: models.join(', '),
+      };
+      return target.instance
+        ? providers.map((entry) => (entry.id === provider.id ? updated : entry))
+        : [updated, ...providers];
+    });
+  };
+
   /** 把草稿按分隔符拆成标签并入清单（去空去重），供回车/分隔符/失焦提交。 */
   const commitModelDraft = (raw: string) => {
+    if (drafts) {
+      setModelDraft(raw);
+      drafts.commitDraft(draftKey);
+      return;
+    }
     const current = currentModels();
     const pieces = raw
       .split(/[,，、;；\s]+/)
@@ -286,6 +346,7 @@ const CloudProviderPanel: React.FC<CloudProviderPanelProps> = ({
           <div className="flex items-center gap-1.5">
             <Input
               type={showPassword[field.key] ? 'text' : 'password'}
+              aria-label={label}
               value={value}
               onChange={(e) => handleField(field.key, e.target.value)}
               placeholder={placeholder}
@@ -312,6 +373,7 @@ const CloudProviderPanel: React.FC<CloudProviderPanelProps> = ({
         ) : field.type === 'number' ? (
           <Input
             type="number"
+            aria-label={label}
             step={field.step}
             value={value}
             onChange={(e) => handleField(field.key, e.target.value)}
@@ -320,6 +382,7 @@ const CloudProviderPanel: React.FC<CloudProviderPanelProps> = ({
         ) : (
           <Input
             type={field.type === 'url' ? 'url' : 'text'}
+            aria-label={label}
             value={value}
             onChange={(e) => handleField(field.key, e.target.value)}
             placeholder={placeholder}
@@ -347,6 +410,7 @@ const CloudProviderPanel: React.FC<CloudProviderPanelProps> = ({
 
   const testResultBox = testResult && (
     <div
+      role={testResult.ok ? 'status' : 'alert'}
       className={cn(
         'rounded-md border px-3 py-2 text-sm',
         testResult.ok
@@ -355,6 +419,25 @@ const CloudProviderPanel: React.FC<CloudProviderPanelProps> = ({
       )}
     >
       {testResult.message}
+      {!testResult.ok && (
+        <>
+          <details>
+            <summary>{commonT('saveState.details')}</summary>
+            <p className="break-all">
+              {testResult.details || testResult.message}
+            </p>
+          </details>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={testing}
+            onClick={handleTest}
+          >
+            <FlaskConical className="mr-2 h-4 w-4" />
+            {t('cloudAsr.testConnection')}
+          </Button>
+        </>
+      )}
     </div>
   );
 
@@ -397,6 +480,7 @@ const CloudProviderPanel: React.FC<CloudProviderPanelProps> = ({
           <AlertDialogAction
             className="gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
             onClick={() => {
+              drafts?.stageDraft(draftKey, '', (providers) => providers);
               if (removeTarget) onRemove(removeTarget.id);
               setRemoveTarget(null);
             }}
@@ -514,6 +598,7 @@ const CloudProviderPanel: React.FC<CloudProviderPanelProps> = ({
             <AlertDialogAction
               className="gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
+                drafts?.stageDraft(draftKey, '', (providers) => providers);
                 if (instance) onRemove(instance.id);
                 setClearConfirmOpen(false);
               }}

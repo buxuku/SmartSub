@@ -27,7 +27,6 @@ import {
   shiftedTimeline,
   DEFAULT_SPEECH_RATES,
   DEFAULT_TAIL_PADDING_MS,
-  RESYNTH_MARGIN,
   type AlignCue,
 } from '../../main/helpers/dubbing/alignment';
 import {
@@ -287,8 +286,8 @@ function ok(cond: boolean, name: string): void {
   };
   eq(
     dubbingInputNeedsUpdate(undefined, key, cloud),
-    false,
-    'identity: retain legacy cloud audio without explicit language',
+    true,
+    'identity: legacy cloud alignment must be regenerated without deleting the WAV',
   );
   eq(
     dubbingInputNeedsUpdate(undefined, key, { ...cloud, language: 'zh' }),
@@ -428,10 +427,12 @@ function cue(
   const slots = computeSlots([cue(0, 1000, 3000), cue(1, 5000, 7000)], {
     mediaDurationMs: 10000,
   });
-  eq(slots[0].slotMs, 4000, 'slots: 间隙并入本条槽位');
+  eq(slots[0].slotMs, 2000, 'slots: 原字幕区间不自动借用空白');
+  eq(slots[0].availableGapMs, 2000, 'slots: 显式借用可用的空白');
   eq(slots[0].overlapNext, false, 'slots: 无重叠不标记');
   // 末条：媒体总长 10000 − start 5000 = 5000
-  eq(slots[1].slotMs, 5000, 'slots: 末条槽位 = 媒体总长 − start');
+  eq(slots[1].slotMs, 2000, 'slots: 末条仍使用原字幕时间窗');
+  eq(slots[1].availableGapMs, 3000, 'slots: 已知媒体尾部可显式借用');
 }
 
 {
@@ -440,7 +441,7 @@ function cue(
   eq(
     slots[0].slotMs,
     2000 + DEFAULT_TAIL_PADDING_MS,
-    'slots: 无媒体时长末条回落自身+余量',
+    'slots: 未知媒体尾部不增加假定空白',
   );
 }
 
@@ -451,7 +452,7 @@ function cue(
   });
   eq(slots[0].slotMs, 5000, 'slots: 重叠时本条槽位回落自身时长(不挤压)');
   eq(slots[0].overlapNext, true, 'slots: 重叠标记在前条');
-  eq(slots[1].slotMs, 7000, 'slots: 重叠后条槽位正常(到媒体末尾)');
+  eq(slots[1].slotMs, 5000, 'slots: 重叠后条保留原时间窗');
 }
 
 {
@@ -459,7 +460,7 @@ function cue(
   const slots = computeSlots([cue(0, 1000, 1000), cue(1, 2000, 3000)], {
     mediaDurationMs: 5000,
   });
-  eq(slots[0].slotMs, 1000, 'slots: 零长 cue 仍拿到到下条的窗口');
+  eq(slots[0].slotMs, 0, 'slots: 零长 cue 不自动借用后续窗口');
   // 完全同刻零长 + 有长下条:窗口为 0,回落自身 0
   const slots2 = computeSlots([cue(0, 1000, 1000), cue(1, 1000, 3000)], {
     mediaDurationMs: 5000,
@@ -518,46 +519,46 @@ function cue(
   eq(calibratedEstimate(1000, cal), 1000, 'calibration: 双向样本回归 1.0');
 }
 
-// ── decideSpeedAction:四档决策树 ────────────────────────────────────────────
+// Estimates never change the requested speech speed, including native/SSML.
 
 {
   // ≤1.0:原速
   eq(
     decideSpeedAction(900, 1000, 'native'),
-    { preSpeed: 1, needsRecheck: false, estimatedOverlong: false, ratio: 0.9 },
-    'decide: ratio≤1 原速无复测',
+    { preSpeed: 1, needsRecheck: true, estimatedOverlong: false, ratio: 0.9 },
+    'decide: 即使估计可用仍需实测',
   );
   // (1.0, 1.15]:预控制一次到位
   const d2 = decideSpeedAction(1100, 1000, 'native');
   eq(
     [d2.preSpeed, d2.needsRecheck, d2.estimatedOverlong],
-    [1.1, false, false],
-    'decide: ratio≤1.15 预控制一次到位',
+    [1, true, false],
+    'decide: ratio≤1.15 保持用户语速等待实测',
   );
   // (1.15, 1.5]:预控制 + 复测
   const d3 = decideSpeedAction(1400, 1000, 'native');
   eq(
     [d3.preSpeed, d3.needsRecheck, d3.estimatedOverlong],
-    [1.4, true, false],
-    'decide: ratio≤1.5 预控制+复测',
+    [1, true, true],
+    'decide: ratio=1.4 超限候选但不自动提速',
   );
   // >1.5:过长候选,预控制封顶红线
   const d4 = decideSpeedAction(2000, 1000, 'native');
   eq(
     [d4.preSpeed, d4.needsRecheck, d4.estimatedOverlong],
-    [ALIGN_OVERLONG_THRESHOLD, true, true],
-    'decide: ratio>1.5 过长候选,speed 封顶红线',
+    [1, true, true],
+    'decide: 大幅超限仍不自动提速',
   );
   // 边界值恰在阈值上
   eq(
     decideSpeedAction(1150, 1000, 'native').needsRecheck,
-    false,
-    'decide: ratio=1.15 归一次到位档',
+    true,
+    'decide: ratio=1.15 必须实测',
   );
   eq(
     decideSpeedAction(1500, 1000, 'native').estimatedOverlong,
-    false,
-    'decide: ratio=1.5 不判过长',
+    true,
+    'decide: ratio=1.5 是过长候选',
   );
 }
 
@@ -592,17 +593,11 @@ function cue(
     { type: 'fit', padMs: 100 },
     'recheck: 落槽补静音',
   );
-  // 本地超槽红线内:重合成(带 5% 余量)
-  const r = recheckAfterSynthesis(1200, 1000, 1.1, { canResynthesize: true });
-  ok(
-    r.type === 'resynthesize' &&
-      Math.abs((r as any).speed - Math.min(1.1 * 1.2 * RESYNTH_MARGIN, 1.5)) <
-        1e-9,
-    'recheck: 本地重合成 speed=已用×残余×1.05',
-  );
+  const r = recheckAfterSynthesis(1150, 1000, 1, { canResynthesize: true });
+  eq(r, { type: 'atempo', factor: 1.15 }, 'recheck: 恰好15%使用保持音高压缩');
   // 已重合成过仍超:不再迭代,转 atempo(保证终止)
   eq(
-    recheckAfterSynthesis(1100, 1000, 1.2, {
+    recheckAfterSynthesis(1100, 1000, 1, {
       canResynthesize: true,
       alreadyResynthesized: true,
     }),
@@ -611,8 +606,8 @@ function cue(
   );
   // 云端:atempo 残余倍率
   eq(
-    recheckAfterSynthesis(1200, 1000, 1.1, { canResynthesize: false }),
-    { type: 'atempo', factor: 1.2 },
+    recheckAfterSynthesis(1100, 1000, 1, { canResynthesize: false }),
+    { type: 'atempo', factor: 1.1 },
     'recheck: 云端超槽走 atempo',
   );
   // 综合倍率超红线:过长(零漏报)——1.4(已用)×1.2(残余)=1.68>1.5
@@ -633,6 +628,55 @@ function cue(
     { type: 'fit', padMs: 1000 },
     'recheck: 空音频视为落槽',
   );
+  eq(ALIGN_OVERLONG_THRESHOLD, 1.15, 'recheck: 自动压缩硬上限15%');
+  eq(
+    recheckAfterSynthesis(1151, 1000, 1, { canResynthesize: true }).type,
+    'overlong',
+    'recheck: 超过边界1ms不自动压缩',
+  );
+  eq(
+    recheckAfterSynthesis(1001, 1000, 1, { canResynthesize: false }).type,
+    'atempo',
+    'recheck: 小幅超限也不能静默截断',
+  );
+}
+
+{
+  const list = [
+    cue(0, 0, 5000),
+    cue(1, 1000, 2000),
+    cue(2, 3000, 4000),
+    cue(3, 8000, 9000),
+  ];
+  const slots = computeSlots(list.reverse());
+  eq(
+    slots.map((slot) => slot.availableGapMs),
+    [3000, 0, 0, 0],
+    'gap: 无序嵌套区间不把其他角色讲话当空白',
+  );
+  const borrowed = computeSlots([
+    { ...cue(0, 0, 2000), borrowedMs: 800 },
+    cue(1, 4000, 5000),
+  ]);
+  eq(borrowed[0].slotMs, 2800, 'gap: 只有显式借用增加时间窗');
+  eq(
+    computeSlots([
+      { ...cue(0, 0, 2000), borrowedMs: 2500 },
+      cue(1, 4000, 5000),
+    ])[0].slotMs,
+    2000,
+    'gap: 失效借用不延伸到后文',
+  );
+  eq(
+    computeSlots([cue(0, 0, 2000), cue(1, 2000, 3000)])[0].availableGapMs,
+    0,
+    'gap: 相邻行无空白',
+  );
+  eq(
+    computeSlots([cue(0, 0, 2000)], { mediaDurationMs: 1800 })[0].slotMs,
+    1800,
+    'gap: 不越过媒体结尾',
+  );
 }
 
 // ── buildAlignmentPlan:cursor 走查 ─────────────────────────────────────────
@@ -646,7 +690,7 @@ function cue(
       {
         index: 0,
         startMs: 1000,
-        durationMs: 3500,
+        durationMs: 1500,
         action: { type: 'none' },
         overlong: false,
       },
@@ -664,8 +708,8 @@ function cue(
   eq(
     plan.items.map((i) => [i.targetStartMs, i.durationMs, i.padMs]),
     [
-      [1000, 3500, 500],
-      [5000, 2000, 3000],
+      [1000, 1500, 500],
+      [5000, 2000, 0],
     ],
     'plan: 正常行锚定原 start,补静音=槽位-时长',
   );
@@ -1071,12 +1115,32 @@ function cue(
       { LocalName: 'NoId' },
     ]),
     [
-      { id: 'zh-CN-XiaoxiaoNeural', name: '晓晓 (zh-CN)' },
+      { id: 'zh-CN-XiaoxiaoNeural', name: '晓晓 (zh-CN)', lang: 'zh-CN' },
       { id: 'en-US-GuyNeural', name: 'Guy' },
     ],
     'azure: voices/list 映射(LocalName+locale、DisplayName 回落、缺 id 跳过)',
   );
   eq(mapAzureVoices({}), [], 'azure: 非数组响应返回空');
+  eq(
+    mapAzureVoices([
+      {
+        ShortName: 'declared',
+        Gender: 'Female',
+        Locale: 'en_US',
+        StyleList: ['newscast', 'narration-professional'],
+      },
+    ]),
+    [
+      {
+        id: 'declared',
+        name: 'declared',
+        lang: 'en-US',
+        gender: 'female',
+        styles: ['news', 'story'],
+      },
+    ],
+    'azure: declared voice metadata is normalized and retained',
+  );
 }
 
 // ── elevenlabsTtsUtils:base 规范化 / speed clamp / body 构造 ────────────────
@@ -1146,6 +1210,31 @@ function cue(
     'eleven: voices 响应宽容解析(空名回落 id、坏条目跳过)',
   );
   eq(mapElevenLabsVoices({}), [], 'eleven: 无 voices 字段返回空');
+  eq(
+    mapElevenLabsVoices({
+      voices: [
+        {
+          voice_id: 'child',
+          labels: {
+            age: 'child',
+            gender: 'female',
+            language: 'zh-CN',
+            use_case: 'animation',
+          },
+        },
+      ],
+    }),
+    [
+      {
+        id: 'child',
+        name: 'child',
+        lang: 'zh-CN',
+        gender: 'child',
+        styles: ['anime'],
+      },
+    ],
+    'eleven: declared child/language/style metadata is retained',
+  );
 
   const labeled = {
     type: 'elevenlabs',

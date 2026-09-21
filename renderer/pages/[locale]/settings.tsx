@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import { useTranslation } from 'next-i18next';
 import {
@@ -10,7 +10,6 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import {
@@ -81,6 +80,14 @@ import {
   validateStoragePath,
 } from '../../../types/pathValidation';
 import { invalidateDownloadEndpointsCache } from 'hooks/useDownloadEndpoints';
+import { useSettingsPersistence } from '../../hooks/useSettingsPersistence';
+import { useNavigationGuard } from '@/context/NavigationGuardContext';
+import {
+  sanitizeCustomLanguages,
+  type CustomLanguage,
+} from '../../../types/language';
+import { supportedLanguage } from '../../lib/utils';
+import { invalidVadSettings } from '../../../types/vadSettings';
 
 // 三档 VAD 环境预设。数值依据：标准=whisper.cpp 官方默认；
 // 安静=silero 0.3-0.4 灵敏区+短语保留；嘈杂=whisper.rn noisyEnv 推荐
@@ -145,7 +152,21 @@ const PROXY_PRESETS: { label: string; url: string }[] = [
 const Settings = () => {
   const router = useRouter();
   const { t, i18n } = useTranslation('settings');
+  const { t: commonT } = useTranslation('common');
+  const [operationError, setOperationError] = useState<{
+    message: string;
+    details: string;
+    retry?: () => void;
+  } | null>(null);
+  const reportError = (message: string, cause?: unknown, retry?: () => void) =>
+    setOperationError({
+      message,
+      details:
+        cause instanceof Error ? cause.message : String(cause || message),
+      retry,
+    });
   const [currentLanguage, setCurrentLanguage] = useState(router.locale);
+  const [customLanguages, setCustomLanguages] = useState<CustomLanguage[]>([]);
   const [tempDir, setTempDir] = useState('');
   const [customTempDir, setCustomTempDir] = useState('');
   const [useCustomTempDir, setUseCustomTempDir] = useState(false);
@@ -158,12 +179,20 @@ const Settings = () => {
   } | null>(null);
   const [checkUpdateOnStartup, setCheckUpdateOnStartup] = useState(true);
   const [preventSleepDuringTask, setPreventSleepDuringTask] = useState(true);
-  const [vadThreshold, setVADThreshold] = useState(0.5);
-  const [vadMinSpeechDuration, setVADMinSpeechDuration] = useState(250);
-  const [vadMinSilenceDuration, setVADMinSilenceDuration] = useState(100);
-  const [vadMaxSpeechDuration, setVADMaxSpeechDuration] = useState(0);
-  const [vadSpeechPad, setVADSpeechPad] = useState(200);
-  const [vadSamplesOverlap, setVADSamplesOverlap] = useState(0.1);
+  const [vadThreshold, setVADThreshold] = useState<number | string>(0.5);
+  const [vadMinSpeechDuration, setVADMinSpeechDuration] = useState<
+    number | string
+  >(250);
+  const [vadMinSilenceDuration, setVADMinSilenceDuration] = useState<
+    number | string
+  >(100);
+  const [vadMaxSpeechDuration, setVADMaxSpeechDuration] = useState<
+    number | string
+  >(0);
+  const [vadSpeechPad, setVADSpeechPad] = useState<number | string>(200);
+  const [vadSamplesOverlap, setVADSamplesOverlap] = useState<number | string>(
+    0.1,
+  );
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [proxyMode, setProxyMode] = useState<'none' | 'custom'>('none');
   const [proxyUrl, setProxyUrl] = useState('');
@@ -180,98 +209,148 @@ const Settings = () => {
   useEffect(() => {
     setIsMac(window?.ipc?.platform === 'darwin');
   }, []);
-  const form = useForm({
-    defaultValues: {
-      language: router.locale,
+  const persistence = useSettingsPersistence(
+    (settings: any) => {
+      setCustomLanguages(
+        sanitizeCustomLanguages(
+          settings.customLanguages,
+          supportedLanguage.map((language) => language.value),
+        ),
+      );
+      setCurrentLanguage(settings.language || router.locale);
+      setUseCustomTempDir(settings.useCustomTempDir || false);
+      setCustomTempDir(settings.customTempDir || '');
+      setStorageRoot(settings.storageRoot || '');
+      setCheckUpdateOnStartup(settings.checkUpdateOnStartup !== false);
+      setPreventSleepDuringTask(settings.preventSleepDuringTask !== false);
+      setVADThreshold(settings.vadThreshold ?? 0.5);
+      setVADMinSpeechDuration(settings.vadMinSpeechDuration ?? 250);
+      setVADMinSilenceDuration(settings.vadMinSilenceDuration ?? 100);
+      setVADMaxSpeechDuration(settings.vadMaxSpeechDuration ?? 0);
+      setVADSpeechPad(settings.vadSpeechPad ?? 200);
+      setVADSamplesOverlap(settings.vadSamplesOverlap ?? 0.1);
+      setProxyMode(settings.proxyMode === 'custom' ? 'custom' : 'none');
+      setProxyUrl(settings.proxyUrl || '');
+      setProxyNoProxy(settings.proxyNoProxy || '');
+      setDownloadEndpoints(
+        normalizeDownloadEndpoints(settings.downloadEndpoints),
+      );
+      setCloseAction(settings.closeAction || 'smart');
     },
+    (settings) => {
+      invalidateDownloadEndpointsCache();
+      const oldBase = storageRoot || userDataPath;
+      const newBase = String(settings.storageRoot || userDataPath);
+      if (oldBase && newBase && oldBase !== newBase)
+        setStorageMoveDialog({ oldBase, newBase });
+      if (
+        typeof settings.language === 'string' &&
+        settings.language !== i18n.language
+      )
+        void router
+          .push(`/${settings.language}/settings`)
+          .catch((cause) => reportError(t('saveFailed'), cause));
+    },
+  );
+  useNavigationGuard('settings-save', {
+    isDirty: persistence.isDirty,
+    getIsDirty: persistence.getIsDirty,
+    onSave: persistence.save,
+    onDiscard: persistence.discard,
   });
-
-  useEffect(() => {
-    const loadSettings = async () => {
-      const settings = await window?.ipc?.invoke('getSettings');
-      if (settings) {
-        form.reset(settings);
-        setCurrentLanguage(settings.language || router.locale);
-        setUseCustomTempDir(settings.useCustomTempDir || false);
-        setCustomTempDir(settings.customTempDir || '');
-        setStorageRoot(settings.storageRoot || '');
-        setCheckUpdateOnStartup(settings.checkUpdateOnStartup !== false);
-        setPreventSleepDuringTask(settings.preventSleepDuringTask !== false);
-        setVADThreshold(settings.vadThreshold ?? 0.5);
-        setVADMinSpeechDuration(settings.vadMinSpeechDuration ?? 250);
-        setVADMinSilenceDuration(settings.vadMinSilenceDuration ?? 100);
-        setVADMaxSpeechDuration(settings.vadMaxSpeechDuration ?? 0);
-        setVADSpeechPad(settings.vadSpeechPad ?? 200);
-        setVADSamplesOverlap(settings.vadSamplesOverlap ?? 0.1);
-        setProxyMode(settings.proxyMode === 'custom' ? 'custom' : 'none');
-        setProxyUrl(settings.proxyUrl || '');
-        setProxyNoProxy(settings.proxyNoProxy || '');
-        setDownloadEndpoints(
-          normalizeDownloadEndpoints(settings.downloadEndpoints),
-        );
-        setCloseAction(settings.closeAction || 'smart');
-      }
-
-      // 获取临时目录路径
-      const tempDirPath = await window?.ipc?.invoke('getTempDir');
-      setTempDir(tempDirPath || '');
-
-      // userData 默认基座：用于「默认路径含中文」警示（design D6-3）
-      const systemInfo = await window?.ipc?.invoke('getSystemInfo');
-      setUserDataPath(systemInfo?.userDataPath || '');
-    };
-    loadSettings();
+  const [pathsError, setPathsError] = useState('');
+  const pathsEpoch = useRef(0);
+  useEffect(
+    () => () => {
+      pathsEpoch.current++;
+    },
+    [],
+  );
+  const loadPaths = useCallback(async () => {
+    const version = ++pathsEpoch.current;
+    try {
+      const [directory, info] = await Promise.all([
+        window.ipc.invoke('getTempDir'),
+        window.ipc.invoke('getSystemInfo'),
+      ]);
+      if (version !== pathsEpoch.current) return;
+      if (
+        typeof directory !== 'string' ||
+        typeof info?.userDataPath !== 'string'
+      )
+        throw new Error('INVALID_SETTINGS_PATH_RESPONSE');
+      setTempDir(directory);
+      setUserDataPath(info.userDataPath);
+      setPathsError('');
+    } catch (cause) {
+      if (version !== pathsEpoch.current) return;
+      setPathsError(cause instanceof Error ? cause.message : String(cause));
+    }
   }, []);
+  useEffect(() => {
+    if (persistence.loaded) void loadPaths();
+  }, [
+    persistence.loaded,
+    loadPaths,
+    storageRoot,
+    customTempDir,
+    useCustomTempDir,
+  ]);
 
   useEffect(() => {
     setCurrentLanguage(i18n.language);
   }, [i18n.language]);
 
   const handleLanguageChange = async (value) => {
-    await window?.ipc?.invoke('setSettings', { language: value });
-    if (value !== i18n.language) {
-      router.push(`/${value}/settings`);
-    }
+    await persistence.persist({ language: value });
   };
 
   const handleClearConfig = async () => {
-    const result = await window?.ipc?.invoke('clearConfig');
-    if (result) {
-      router.push(`/${i18n.language}/home`);
+    try {
+      if (persistence.getIsDirty() && !(await persistence.save())) return;
+      const result = await window.ipc.invoke('clearConfig');
+      if (result !== true) throw new Error('CLEAR_CONFIG_FAILED');
+      await router.push(`/${i18n.language}/home`);
       toast.success(t('restoreDefaultsSuccess'));
-    } else {
-      toast.error(t('restoreDefaultsFailed'));
+    } catch (cause) {
+      reportError(t('restoreDefaultsFailed'), cause);
     }
   };
 
   // 有效临时目录随统一目录/自定义开关变化，操作后刷新展示
   const refreshTempDir = async () => {
-    const tempDirPath = await window?.ipc?.invoke('getTempDir');
-    setTempDir(tempDirPath || '');
+    await loadPaths();
   };
 
   // 选择自定义临时目录（先过中文路径硬校验，design D6）
   const handleSelectCustomTempDir = async () => {
-    const result = await window?.ipc?.invoke('selectDirectory');
-    if (result.canceled) return;
-
-    const selectedPath = result.directoryPath;
-    if (!validateStoragePath(selectedPath).ok) {
-      toast.error(t('pathContainsCjkError'));
-      return;
-    }
-    setCustomTempDir(selectedPath);
-
     try {
-      await window?.ipc?.invoke('setSettings', {
-        customTempDir: selectedPath,
-        useCustomTempDir: true,
-      });
+      const result = await window?.ipc?.invoke('selectDirectory');
+      if (result.canceled) return;
+
+      const selectedPath = result.directoryPath;
+      if (!validateStoragePath(selectedPath).ok) {
+        reportError(t('pathContainsCjkError'));
+        return;
+      }
+      setCustomTempDir(selectedPath);
+
+      if (
+        !(await persistence.persist({
+          customTempDir: selectedPath,
+          useCustomTempDir: true,
+        }))
+      )
+        return;
       setUseCustomTempDir(true);
       toast.success(t('tempDirSaved'));
       void refreshTempDir();
     } catch (error) {
-      toast.error(t('saveFailed'));
+      reportError(
+        t('saveFailed'),
+        error,
+        () => void handleSelectCustomTempDir(),
+      );
     }
   };
 
@@ -279,74 +358,76 @@ const Settings = () => {
   const handleCustomTempDirChange = async (checked: boolean) => {
     setUseCustomTempDir(checked);
     try {
-      await window?.ipc?.invoke('setSettings', { useCustomTempDir: checked });
+      if (!(await persistence.persist({ useCustomTempDir: checked }))) return;
       toast.success(
         checked ? t('useCustomTempDirEnabled') : t('useCustomTempDirDisabled'),
       );
       void refreshTempDir();
     } catch (error) {
-      toast.error(t('saveFailed'));
+      reportError(t('saveFailed'), error);
     }
   };
 
   // 选择统一存储根目录（中文路径硬校验，design D6；不迁移+对照引导，design D9）
   const handleSelectStorageRoot = async () => {
-    const result = await window?.ipc?.invoke('selectDirectory');
-    if (result.canceled) return;
-
-    const selectedPath = result.directoryPath;
-    if (!validateStoragePath(selectedPath).ok) {
-      toast.error(t('pathContainsCjkError'));
-      return;
-    }
     try {
-      const oldBase = storageRoot || userDataPath;
-      await window?.ipc?.invoke('setSettings', { storageRoot: selectedPath });
-      setStorageRoot(selectedPath);
-      if (oldBase && oldBase !== selectedPath) {
-        setStorageMoveDialog({ oldBase, newBase: selectedPath });
-      } else {
-        toast.success(t('storageRootSaved'), {
-          description: t('storageRootNoMigrateHint'),
-        });
+      const result = await window?.ipc?.invoke('selectDirectory');
+      if (result.canceled) return;
+
+      const selectedPath = result.directoryPath;
+      if (!validateStoragePath(selectedPath).ok) {
+        reportError(t('pathContainsCjkError'));
+        return;
       }
+      if (!(await persistence.persist({ storageRoot: selectedPath }))) return;
       void refreshTempDir();
     } catch (error) {
-      toast.error(t('saveFailed'));
+      reportError(t('saveFailed'), error, () => void handleSelectStorageRoot());
     }
   };
 
   // 清除统一存储根目录（恢复跟随系统默认）
   const handleClearStorageRoot = async () => {
     try {
-      const oldBase = storageRoot;
-      await window?.ipc?.invoke('setSettings', { storageRoot: '' });
-      setStorageRoot('');
-      if (oldBase && userDataPath && oldBase !== userDataPath) {
-        setStorageMoveDialog({ oldBase, newBase: userDataPath });
-      } else {
-        toast.success(t('storageRootCleared'), {
-          description: t('storageRootNoMigrateHint'),
-        });
-      }
+      if (!(await persistence.persist({ storageRoot: '' }))) return;
       void refreshTempDir();
     } catch (error) {
-      toast.error(t('saveFailed'));
+      reportError(t('saveFailed'), error);
     }
   };
 
   const handleOpenOldStorageBase = async () => {
     if (!storageMoveDialog) return;
-    const result = await window?.ipc?.invoke('openDirectoryPath', {
-      path: storageMoveDialog.oldBase,
-    });
-    if (!result?.success) {
-      toast.error(t('openOldDirFailed'));
+    setOperationError(null);
+    try {
+      const result = await window?.ipc?.invoke('openDirectoryPath', {
+        path: storageMoveDialog.oldBase,
+      });
+      if (!result?.success) {
+        throw new Error(result?.error || t('openOldDirFailed'));
+      }
+    } catch (cause) {
+      reportError(
+        t('openOldDirFailed'),
+        cause,
+        () => void handleOpenOldStorageBase(),
+      );
     }
   };
 
   const handleOpenStorageRoot = async () => {
-    await window?.ipc?.invoke('openStorageRoot');
+    setOperationError(null);
+    try {
+      const result = await window?.ipc?.invoke('openStorageRoot');
+      if (!result?.success)
+        throw new Error(result?.error || t('openOldDirFailed'));
+    } catch (cause) {
+      reportError(
+        t('openOldDirFailed'),
+        cause,
+        () => void handleOpenStorageRoot(),
+      );
+    }
   };
 
   // 默认存储基座含中文且未设置统一目录：常驻警示引导（design D6-3）
@@ -356,46 +437,61 @@ const Settings = () => {
   const handleCheckUpdateOnStartupChange = async (checked: boolean) => {
     setCheckUpdateOnStartup(checked);
     try {
-      await window?.ipc?.invoke('setSettings', {
-        checkUpdateOnStartup: checked,
-      });
+      if (
+        !(await persistence.persist({
+          checkUpdateOnStartup: checked,
+        }))
+      )
+        return;
       toast.success(
         checked
           ? t('checkUpdateOnStartupEnabled')
           : t('checkUpdateOnStartupDisabled'),
       );
     } catch (error) {
-      toast.error(t('saveFailed'));
+      reportError(t('saveFailed'), error);
     }
   };
 
   const handlePreventSleepDuringTaskChange = async (checked: boolean) => {
     setPreventSleepDuringTask(checked);
     try {
-      await window?.ipc?.invoke('setSettings', {
-        preventSleepDuringTask: checked,
-      });
+      if (
+        !(await persistence.persist({
+          preventSleepDuringTask: checked,
+        }))
+      )
+        return;
       toast.success(
         checked
           ? t('preventSleepDuringTaskEnabled')
           : t('preventSleepDuringTaskDisabled'),
       );
     } catch (error) {
-      toast.error(t('saveFailed'));
+      reportError(t('saveFailed'), error);
     }
   };
 
   // 添加清除缓存函数
   const handleClearCache = async () => {
+    setOperationError(null);
     try {
       const result = await window?.ipc?.invoke('clearCache');
       if (result) {
         toast.success(t('cacheClearedSuccess'));
       } else {
-        toast.error(t('cacheClearedFailed'));
+        reportError(
+          t('cacheClearedFailed'),
+          result,
+          () => void handleClearCache(),
+        );
       }
     } catch (error) {
-      toast.error(t('cacheClearedFailed'));
+      reportError(
+        t('cacheClearedFailed'),
+        error,
+        () => void handleClearCache(),
+      );
     }
   };
 
@@ -404,18 +500,16 @@ const Settings = () => {
   ) => {
     setCloseAction(value);
     try {
-      await window?.ipc?.invoke('setSettings', { closeAction: value });
+      if (!(await persistence.persist({ closeAction: value }))) return;
       toast.success(t('closeActionSaved'));
     } catch (error) {
-      toast.error(t('saveFailed'));
+      reportError(t('saveFailed'), error);
     }
   };
 
   // VAD 数字输入降噪：本地即时生效，500ms 静默期后批量持久化；成功静默，失败才打扰
-  const pendingVadRef = useRef<Record<string, number>>({});
-  const vadSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleVADSettingChange = (setting: string, value: number) => {
+  const handleVADSettingChange = (setting: string, raw: number | string) => {
+    const value = raw === '' ? '' : Number(raw);
     const settingMap = {
       vadThreshold: setVADThreshold,
       vadMinSpeechDuration: setVADMinSpeechDuration,
@@ -427,19 +521,16 @@ const Settings = () => {
 
     settingMap[setting]?.(value);
 
-    pendingVadRef.current[setting] = value;
-    if (vadSaveTimerRef.current) clearTimeout(vadSaveTimerRef.current);
-    vadSaveTimerRef.current = setTimeout(async () => {
-      const pending = pendingVadRef.current;
-      pendingVadRef.current = {};
-      vadSaveTimerRef.current = null;
-      try {
-        await window?.ipc?.invoke('setSettings', pending);
-      } catch (error) {
-        toast.error(t('saveFailed'));
-      }
-    }, 500);
+    persistence.stage({ [setting]: value });
   };
+  const invalidVadKeys = invalidVadSettings({
+    vadThreshold,
+    vadMinSpeechDuration,
+    vadMinSilenceDuration,
+    vadMaxSpeechDuration,
+    vadSpeechPad,
+    vadSamplesOverlap,
+  });
 
   // 应用预设：逐键走 handleVADSettingChange，复用本地更新 + debounce 持久化
   const applyVadPreset = (preset: VadPreset) => {
@@ -464,10 +555,10 @@ const Settings = () => {
     }>,
   ) => {
     try {
-      await window?.ipc?.invoke('setSettings', patch);
+      if (!(await persistence.persist(patch))) return;
       toast.success(t('proxySaved'));
     } catch {
-      toast.error(t('saveFailed'));
+      reportError(t('saveFailed'));
     }
   };
 
@@ -486,23 +577,33 @@ const Settings = () => {
   };
 
   const handleProxyTest = async () => {
+    setOperationError(null);
     setProxyTesting(true);
     try {
       // 先持久化当前输入，确保测试用的是最新代理
-      await window?.ipc?.invoke('setSettings', {
-        proxyMode,
-        proxyUrl,
-        proxyNoProxy,
-      });
+      if (
+        !(await persistence.persist({
+          proxyMode,
+          proxyUrl,
+          proxyNoProxy,
+        }))
+      )
+        return;
       const result = await window?.ipc?.invoke('proxy:test');
       if (result?.ok) {
         toast.success(t('proxyTestOk', { ms: result.ms }));
       } else {
-        toast.error(t('proxyTestFail', { error: result?.error || 'unknown' }));
+        reportError(
+          t('proxyTestFail', { error: result?.error || 'unknown' }),
+          result?.error,
+          () => void handleProxyTest(),
+        );
       }
     } catch (e) {
-      toast.error(
+      reportError(
         t('proxyTestFail', { error: e instanceof Error ? e.message : 'error' }),
+        e,
+        () => void handleProxyTest(),
       );
     } finally {
       setProxyTesting(false);
@@ -515,6 +616,15 @@ const Settings = () => {
     value: string,
   ) => {
     setDownloadEndpoints((prev) => ({ ...prev, [key]: value }));
+    persistence.stage(
+      {
+        downloadEndpoints: normalizeDownloadEndpoints({
+          ...downloadEndpoints,
+          [key]: value,
+        }),
+      },
+      null,
+    );
   };
 
   const persistDownloadEndpoints = async (next: DownloadEndpointConfig) => {
@@ -525,13 +635,16 @@ const Settings = () => {
       overrides[key] = normalized[key];
     });
     try {
-      await window?.ipc?.invoke('setSettings', {
-        downloadEndpoints: overrides,
-      });
+      if (
+        !(await persistence.persist({
+          downloadEndpoints: overrides,
+        }))
+      )
+        return;
       invalidateDownloadEndpointsCache();
       toast.success(t('downloadEndpointsSaved'));
     } catch {
-      toast.error(t('saveFailed'));
+      reportError(t('saveFailed'));
     }
   };
 
@@ -542,11 +655,11 @@ const Settings = () => {
   const handleEndpointsReset = async () => {
     setDownloadEndpoints(DEFAULT_DOWNLOAD_ENDPOINTS);
     try {
-      await window?.ipc?.invoke('setSettings', { downloadEndpoints: {} });
+      if (!(await persistence.persist({ downloadEndpoints: {} }))) return;
       invalidateDownloadEndpointsCache();
       toast.success(t('downloadEndpointsResetDone'));
     } catch {
-      toast.error(t('saveFailed'));
+      reportError(t('saveFailed'));
     }
   };
 
@@ -559,16 +672,19 @@ const Settings = () => {
   const [isImporting, setIsImporting] = useState(false);
 
   const handleExport = async () => {
+    if (isExporting) return;
+    setOperationError(null);
     if (!exportPassword) {
-      toast.error(t('passwordRequired'));
+      reportError(t('passwordRequired'));
       return;
     }
     if (exportPassword !== exportConfirmPassword) {
-      toast.error(t('passwordMismatch'));
+      reportError(t('passwordMismatch'));
       return;
     }
     setIsExporting(true);
     try {
+      if (persistence.getIsDirty() && !(await persistence.save())) return;
       const result = await window?.ipc?.invoke('exportConfig', exportPassword);
       if (result?.success) {
         toast.success(t('exportSuccess'));
@@ -578,47 +694,156 @@ const Settings = () => {
       } else if (result?.error === 'canceled') {
         toast.info(t('exportCanceled'));
       } else {
-        toast.error(t('exportFailed'));
+        reportError(t('exportFailed'), result?.error);
       }
-    } catch {
-      toast.error(t('exportFailed'));
+    } catch (cause) {
+      reportError(t('exportFailed'), cause);
     } finally {
       setIsExporting(false);
     }
   };
 
   const handleImport = async () => {
+    if (isImporting) return;
+    setOperationError(null);
     if (!importPassword) {
-      toast.error(t('passwordRequired'));
+      reportError(t('passwordRequired'));
       return;
     }
     setIsImporting(true);
     try {
+      if (persistence.getIsDirty() && !(await persistence.save())) return;
       const result = await window?.ipc?.invoke('importConfig', importPassword);
       if (result?.success) {
         toast.success(t('importSuccess'));
         setImportDialogOpen(false);
         setImportPassword('');
+        await persistence.load();
+        await loadPaths();
       } else if (result?.error === 'canceled') {
         toast.info(t('importCanceled'));
       } else if (result?.error === 'invalidPassword') {
-        toast.error(t('invalidPassword'));
+        reportError(t('invalidPassword'));
       } else if (result?.error === 'invalidConfigFile') {
-        toast.error(t('invalidConfigFile'));
+        reportError(t('invalidConfigFile'));
       } else {
-        toast.error(t('importFailed'));
+        reportError(t('importFailed'), result?.error);
       }
-    } catch {
-      toast.error(t('importFailed'));
+    } catch (cause) {
+      reportError(t('importFailed'), cause);
     } finally {
       setIsImporting(false);
     }
   };
 
+  const operationBanner = operationError && (
+    <div role="alert" className="space-y-2 bg-destructive/10 p-3 text-sm">
+      <p>{operationError.message}</p>
+      <p className="text-muted-foreground">{t('persistence.repair')}</p>
+      <details>
+        <summary>{commonT('saveState.details')}</summary>
+        <p className="break-all whitespace-pre-wrap">
+          {operationError.details}
+        </p>
+      </details>
+      {operationError.retry && (
+        <Button size="sm" variant="outline" onClick={operationError.retry}>
+          <RefreshCw className="mr-2 h-4 w-4" />
+          {t('persistence.retry')}
+        </Button>
+      )}
+    </div>
+  );
+  if (!persistence.loaded)
+    return (
+      <div className="p-3">
+        {persistence.loadError ? (
+          <div role="alert" className="space-y-3 bg-destructive/10 p-4 text-sm">
+            <p>{t('persistence.loadFailed')}</p>
+            <p>{t('persistence.repair')}</p>
+            <details>
+              <summary>{commonT('saveState.details')}</summary>
+              <p className="break-all">{persistence.loadError}</p>
+            </details>
+            <Button
+              disabled={persistence.loading}
+              onClick={() => void persistence.load()}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              {t('persistence.reload')}
+            </Button>
+          </div>
+        ) : (
+          <p role="status">{t('persistence.loading')}</p>
+        )}
+      </div>
+    );
+
   return (
     <TooltipProvider>
       <div className="mx-auto max-w-4xl space-y-2.5 p-3">
         <PageHeader title={t('settings')} description={t('settingsDesc')} />
+        <div className="sticky top-0 z-20 space-y-2 bg-background py-2">
+          <p role="status" className="text-xs text-muted-foreground">
+            {commonT(
+              `saveState.${persistence.saving ? 'saving' : persistence.error ? 'save_error' : persistence.isDirty ? 'dirty' : 'saved'}`,
+            )}
+          </p>
+          {persistence.error && (
+            <div
+              role="alert"
+              className="space-y-2 bg-destructive/10 p-3 text-sm"
+            >
+              <p>{t('saveFailed')}</p>
+              <p>
+                {t(
+                  persistence.error.startsWith('INVALID_VAD_SETTINGS:')
+                    ? 'persistence.invalidVad'
+                    : 'persistence.repair',
+                )}
+              </p>
+              <details>
+                <summary>{commonT('saveState.details')}</summary>
+                <p className="break-all whitespace-pre-wrap">
+                  {persistence.error}
+                </p>
+              </details>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={persistence.saving}
+                onClick={() => void persistence.save()}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                {commonT('saveState.retry')}
+              </Button>
+            </div>
+          )}
+          {pathsError && (
+            <div
+              role="alert"
+              className="space-y-2 bg-destructive/10 p-3 text-sm"
+            >
+              <p>{t('persistence.pathsFailed')}</p>
+              <details>
+                <summary>{commonT('saveState.details')}</summary>
+                <p className="break-all">{pathsError}</p>
+              </details>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void loadPaths()}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                {t('persistence.reload')}
+              </Button>
+            </div>
+          )}
+          {!exportDialogOpen &&
+            !importDialogOpen &&
+            !storageMoveDialog &&
+            operationBanner}
+        </div>
 
         <Card>
           <CardHeader>
@@ -644,7 +869,15 @@ const Settings = () => {
               </Select>
             </div>
 
-            <CustomLanguageManager />
+            <CustomLanguageManager
+              languages={customLanguages}
+              onSave={(next) => {
+                setCustomLanguages(next);
+                return persistence.persist({ customLanguages: next });
+              }}
+              saveError={persistence.error}
+              onRetry={persistence.save}
+            />
 
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -652,6 +885,7 @@ const Settings = () => {
                 <HelpHint text={t('checkUpdateOnStartupTip')} />
               </div>
               <Switch
+                aria-label={t('checkUpdateOnStartup')}
                 checked={checkUpdateOnStartup}
                 onCheckedChange={handleCheckUpdateOnStartupChange}
               />
@@ -663,6 +897,7 @@ const Settings = () => {
                 <HelpHint text={t('preventSleepDuringTaskTip')} />
               </div>
               <Switch
+                aria-label={t('preventSleepDuringTask')}
                 checked={preventSleepDuringTask}
                 onCheckedChange={handlePreventSleepDuringTaskChange}
               />
@@ -778,6 +1013,7 @@ const Settings = () => {
                 <div className="flex items-center justify-between">
                   <span>{t('useCustomTempDir')}</span>
                   <Switch
+                    aria-label={t('useCustomTempDir')}
                     checked={useCustomTempDir}
                     onCheckedChange={handleCustomTempDirChange}
                   />
@@ -858,7 +1094,11 @@ const Settings = () => {
                   <span>{t('proxyUrl')}</span>
                   <Input
                     value={proxyUrl}
-                    onChange={(e) => setProxyUrl(e.target.value)}
+                    aria-label={t('proxyUrl')}
+                    onChange={(e) => {
+                      setProxyUrl(e.target.value);
+                      persistence.stage({ proxyUrl: e.target.value }, null);
+                    }}
                     onBlur={handleProxyUrlBlur}
                     placeholder={t('proxyUrlPlaceholder')}
                     className="font-mono text-sm"
@@ -886,7 +1126,11 @@ const Settings = () => {
                   <span>{t('proxyNoProxy')}</span>
                   <Input
                     value={proxyNoProxy}
-                    onChange={(e) => setProxyNoProxy(e.target.value)}
+                    aria-label={t('proxyNoProxy')}
+                    onChange={(e) => {
+                      setProxyNoProxy(e.target.value);
+                      persistence.stage({ proxyNoProxy: e.target.value }, null);
+                    }}
                     onBlur={handleProxyUrlBlur}
                     placeholder={t('proxyNoProxyPlaceholder')}
                     className="font-mono text-sm"
@@ -943,6 +1187,7 @@ const Settings = () => {
                       />
                     </div>
                     <Input
+                      aria-label={t(`downloadEndpointFields.${key}.label`)}
                       value={downloadEndpoints[key]}
                       onChange={(e) =>
                         handleEndpointChange(key, e.target.value)
@@ -994,6 +1239,11 @@ const Settings = () => {
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   {t('vadSensitivityNote')}
                 </p>
+                {invalidVadKeys.length > 0 && (
+                  <p role="alert" className="text-sm text-destructive">
+                    {t('persistence.invalidVad')}
+                  </p>
+                )}
 
                 {/* 三档环境预设：VAD 开/关由「字幕效果」档位决定，这里只调灵敏度；与手动微调共存，当前值与某档全等时高亮 */}
                 <div className="flex flex-wrap items-center gap-2">
@@ -1029,16 +1279,15 @@ const Settings = () => {
                     <HelpHint text={t('vadThresholdTip')} />
                   </div>
                   <Input
+                    aria-label={t('vadThreshold')}
+                    aria-invalid={invalidVadKeys.includes('vadThreshold')}
                     type="number"
                     step="0.1"
                     min="0"
                     max="1"
                     value={vadThreshold}
                     onChange={(e) =>
-                      handleVADSettingChange(
-                        'vadThreshold',
-                        Number(e.target.value),
-                      )
+                      handleVADSettingChange('vadThreshold', e.target.value)
                     }
                     className="font-mono text-sm"
                   />
@@ -1050,13 +1299,17 @@ const Settings = () => {
                     <HelpHint text={t('vadMinSpeechDurationTip')} />
                   </div>
                   <Input
+                    aria-label={t('vadMinSpeechDuration')}
+                    aria-invalid={invalidVadKeys.includes(
+                      'vadMinSpeechDuration',
+                    )}
                     type="number"
                     min="0"
                     value={vadMinSpeechDuration}
                     onChange={(e) =>
                       handleVADSettingChange(
                         'vadMinSpeechDuration',
-                        Number(e.target.value),
+                        e.target.value,
                       )
                     }
                     className="font-mono text-sm"
@@ -1069,13 +1322,17 @@ const Settings = () => {
                     <HelpHint text={t('vadMinSilenceDurationTip')} />
                   </div>
                   <Input
+                    aria-label={t('vadMinSilenceDuration')}
+                    aria-invalid={invalidVadKeys.includes(
+                      'vadMinSilenceDuration',
+                    )}
                     type="number"
                     min="0"
                     value={vadMinSilenceDuration}
                     onChange={(e) =>
                       handleVADSettingChange(
                         'vadMinSilenceDuration',
-                        Number(e.target.value),
+                        e.target.value,
                       )
                     }
                     className="font-mono text-sm"
@@ -1088,13 +1345,17 @@ const Settings = () => {
                     <HelpHint text={t('vadMaxSpeechDurationTip')} />
                   </div>
                   <Input
+                    aria-label={t('vadMaxSpeechDuration')}
+                    aria-invalid={invalidVadKeys.includes(
+                      'vadMaxSpeechDuration',
+                    )}
                     type="number"
                     min="0"
                     value={vadMaxSpeechDuration}
                     onChange={(e) =>
                       handleVADSettingChange(
                         'vadMaxSpeechDuration',
-                        Number(e.target.value),
+                        e.target.value,
                       )
                     }
                     className="font-mono text-sm"
@@ -1107,14 +1368,13 @@ const Settings = () => {
                     <HelpHint text={t('vadSpeechPadTip')} />
                   </div>
                   <Input
+                    aria-label={t('vadSpeechPad')}
+                    aria-invalid={invalidVadKeys.includes('vadSpeechPad')}
                     type="number"
                     min="0"
                     value={vadSpeechPad}
                     onChange={(e) =>
-                      handleVADSettingChange(
-                        'vadSpeechPad',
-                        Number(e.target.value),
-                      )
+                      handleVADSettingChange('vadSpeechPad', e.target.value)
                     }
                     className="font-mono text-sm"
                   />
@@ -1126,6 +1386,8 @@ const Settings = () => {
                     <HelpHint text={t('vadSamplesOverlapTip')} />
                   </div>
                   <Input
+                    aria-label={t('vadSamplesOverlap')}
+                    aria-invalid={invalidVadKeys.includes('vadSamplesOverlap')}
                     type="number"
                     step="0.1"
                     min="0"
@@ -1134,7 +1396,7 @@ const Settings = () => {
                     onChange={(e) =>
                       handleVADSettingChange(
                         'vadSamplesOverlap',
-                        Number(e.target.value),
+                        e.target.value,
                       )
                     }
                     className="font-mono text-sm"
@@ -1158,14 +1420,20 @@ const Settings = () => {
             </p>
             <div className="flex gap-4">
               <Button
-                onClick={() => setExportDialogOpen(true)}
+                onClick={() => {
+                  setOperationError(null);
+                  setExportDialogOpen(true);
+                }}
                 className="flex items-center gap-1.5"
               >
                 <Upload className="h-4 w-4" />
                 {t('exportConfig')}
               </Button>
               <Button
-                onClick={() => setImportDialogOpen(true)}
+                onClick={() => {
+                  setOperationError(null);
+                  setImportDialogOpen(true);
+                }}
                 variant="outline"
                 className="flex items-center gap-1.5"
               >
@@ -1193,6 +1461,12 @@ const Settings = () => {
                 {t('enterPasswordForExportDescription')}
               </DialogDescription>
             </DialogHeader>
+            {operationBanner}
+            {persistence.error && (
+              <p role="alert" className="text-destructive">
+                {t('saveFailed')}
+              </p>
+            )}
             <div className="space-y-4 py-2">
               <Input
                 type="password"
@@ -1253,6 +1527,12 @@ const Settings = () => {
                 {t('enterPasswordForImportDescription')}
               </DialogDescription>
             </DialogHeader>
+            {operationBanner}
+            {persistence.error && (
+              <p role="alert" className="text-destructive">
+                {t('saveFailed')}
+              </p>
+            )}
             <div className="space-y-4 py-2">
               <Input
                 type="password"
@@ -1305,6 +1585,7 @@ const Settings = () => {
                 {t('storageMoveDialogDesc')}
               </DialogDescription>
             </DialogHeader>
+            {operationBanner}
             <div className="space-y-3 py-1">
               <div className="space-y-1.5">
                 <div className="text-xs text-muted-foreground">

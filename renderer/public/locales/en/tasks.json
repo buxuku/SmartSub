@@ -4,7 +4,8 @@
     "retryLoad": "Retry loading",
     "failed": "The task draft could not be saved. Current changes are not on disk.",
     "details": "Error details",
-    "retry": "Retry save"
+    "retry": "Retry save",
+    "loadFailed": "The task draft could not be loaded. Editing and running are unavailable."
   },
   "advancedSettings": "Expert settings",
   "readiness": {
@@ -422,7 +423,11 @@
     "translationIncompleteForDubbing": "Translation incomplete, cannot dub (please retry failed lines in proofread)",
     "translationIncompleteForCompose": "Translation incomplete, cannot compose video (please retry failed lines in proofread)",
     "missedSpeechWarning": "{{count}} suspected missed speech range(s) (highest level: {{level}}); open proofread to review",
-    "missedSpeechLevel": { "low": "low", "medium": "medium", "high": "high" },
+    "missedSpeechLevel": {
+      "low": "low",
+      "medium": "medium",
+      "high": "high"
+    },
     "proofreadTxtUnsupported": "TXT files do not include timing, so they cannot be proofread here. Generate SRT/VTT/ASS for proofreading, then export plain text after proofreading.",
     "proofreadTxtUnsupportedShort": "TXT not supported"
   },
@@ -534,5 +539,10 @@
       "name": "Expert Custom",
       "desc": "Fine-tune Beam Size, VAD thresholds, and hallucination filters"
     }
+  },
+  "configLoad": {
+    "loading": "Loading task configuration…",
+    "failed": "Task configuration could not be loaded. Editing and running are unavailable.",
+    "repair": "Check read access to the configuration directory and the storage device connection, then retry."
   }
 }

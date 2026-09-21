@@ -40,7 +40,11 @@ const handlerCode = ts.transpileModule(fragments.join('\n'), {
   compilerOptions: { target: ts.ScriptTarget.ES2020 },
 }).outputText;
 
-async function simulate(responses, hasStructuredOutput = true) {
+async function simulate(
+  responses,
+  hasStructuredOutput = true,
+  invalidateAt = -1,
+) {
   const calls = [];
   const results = [];
   const saved = [];
@@ -53,6 +57,9 @@ async function simulate(responses, hasStructuredOutput = true) {
     structuredOutput: 'json_schema',
   };
   const context = vm.createContext({
+    isTestLoading: false,
+    testEpoch: { current: 0 },
+    currentTestIdentity: { current: 'fixture' },
     Error,
     getCurrentProvider: () => provider,
     TEST_LANGS: { source: 'en', target: 'zh' },
@@ -68,6 +75,7 @@ async function simulate(responses, hasStructuredOutput = true) {
           assert.equal(channel, 'testTranslation');
           const index = calls.length;
           calls.push(args.provider.structuredOutput);
+          if (index === invalidateAt) context.testEpoch.current++;
           if (hasStructuredOutput)
             assert.equal(args.provider.strictStructuredOutput, true);
           const response = responses[Math.min(index, responses.length - 1)];
@@ -93,9 +101,9 @@ async function simulate(responses, hasStructuredOutput = true) {
   });
   vm.runInContext(handlerCode, context);
   await vm.runInContext('handleTestTranslation()', context);
-  assert.deepEqual(loading, [true, false]);
-  assert.equal(detecting.at(-1), null);
-  assert.equal(results.length, 1);
+  assert.deepEqual(loading, invalidateAt < 0 ? [true, false] : [true]);
+  if (invalidateAt < 0) assert.equal(detecting.at(-1), null);
+  assert.equal(results.length, invalidateAt < 0 ? 1 : 0);
   return { calls, result: results[0], saved, successes };
 }
 
@@ -140,6 +148,30 @@ async function main() {
 
   const unsupported = new Error(
     '400 response_format json_schema is unsupported',
+  );
+  await check(
+    'late first result after switching service is ignored',
+    async () => {
+      const { saved, successes } = await simulate(
+        [{ translation: 'late' }],
+        true,
+        0,
+      );
+      assert.deepEqual(saved, []);
+      assert.deepEqual(successes, []);
+    },
+  );
+  await check(
+    'late autodetection cannot write its old provider snapshot',
+    async () => {
+      const { saved, successes } = await simulate(
+        [unsupported, { translation: 'late' }],
+        true,
+        1,
+      );
+      assert.deepEqual(saved, []);
+      assert.deepEqual(successes, []);
+    },
   );
   await check(
     'network error during format detection stops remaining candidates',

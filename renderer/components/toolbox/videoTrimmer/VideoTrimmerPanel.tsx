@@ -405,7 +405,7 @@ export default function VideoTrimmerPanel() {
                 />
 
                 {/* 选区概览与预览控制栏 */}
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-card/60 border border-border px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-card px-3 py-2">
                   <div className="flex items-center gap-2">
                     <Button
                       variant={isPlayingClip ? 'default' : 'secondary'}
@@ -460,7 +460,7 @@ export default function VideoTrimmerPanel() {
                 {/* 入点与出点的数据精确微调卡片 */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   {/* 入点微调 */}
-                  <div className="rounded-lg border border-border bg-card/60 p-2.5 space-y-2">
+                  <div className="rounded-lg bg-card p-2.5 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-foreground flex items-center gap-1.5">
                         <span className="h-2 w-2 rounded-full bg-emerald-500" />
@@ -540,7 +540,7 @@ export default function VideoTrimmerPanel() {
                   </div>
 
                   {/* 出点微调 */}
-                  <div className="rounded-lg border border-border bg-card/60 p-2.5 space-y-2">
+                  <div className="rounded-lg bg-card p-2.5 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-foreground flex items-center gap-1.5">
                         <span className="h-2 w-2 rounded-full bg-amber-500" />

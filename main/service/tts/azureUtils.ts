@@ -6,6 +6,11 @@
  */
 
 /** Azure prosody rate 支持区间（官方文档：0.5–2 倍）。 */
+import {
+  normalizeTtsVoiceMetadata,
+  type TtsVoiceEntry,
+} from '../../../types/ttsVoice';
+
 export const AZURE_RATE_MIN = 0.5;
 export const AZURE_RATE_MAX = 2.0;
 
@@ -128,11 +133,9 @@ export function buildAzureVoicesListURL(
  * voices/list 响应 → [{id, name}]：id 取 ShortName（合成用 voice 名），
  * name 取本地化名 + locale（如「晓晓 (zh-CN)」）；坏条目跳过。
  */
-export function mapAzureVoices(
-  raw: unknown,
-): Array<{ id: string; name: string }> {
+export function mapAzureVoices(raw: unknown): TtsVoiceEntry[] {
   if (!Array.isArray(raw)) return [];
-  const out: Array<{ id: string; name: string }> = [];
+  const out: TtsVoiceEntry[] = [];
   for (const v of raw) {
     const id = String((v as { ShortName?: unknown })?.ShortName ?? '').trim();
     if (!id) continue;
@@ -143,7 +146,15 @@ export function mapAzureVoices(
     ).trim();
     const locale = String((v as { Locale?: unknown })?.Locale ?? '').trim();
     const name = local ? (locale ? `${local} (${locale})` : local) : id;
-    out.push({ id, name });
+    out.push({
+      id,
+      name,
+      ...normalizeTtsVoiceMetadata({
+        lang: locale,
+        gender: v?.Gender,
+        styles: v?.StyleList,
+      }),
+    });
   }
   return out;
 }

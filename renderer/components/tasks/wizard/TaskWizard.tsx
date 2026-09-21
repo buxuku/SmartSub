@@ -2,7 +2,7 @@
  * 新建任务向导（目标驱动，一屏）：
  * 拖入文件自动识别 → 勾选目标产物（字幕/翻译/配音/成品视频）→ 阶段链芯片可视化
  * → 分区就地配置（字幕段复用 InlineConfigBar；配音/合成为轻量行）→ 就绪校验 → 开始。
- * 配置为本地表单（useLocalFormConfig），随任务写入配置快照，不污染全局 userConfig。
+ * 配置为本地表单（useUnifiedTaskConfig），随任务写入配置快照，不污染全局 userConfig。
  */
 import React, {
   useCallback,
@@ -76,7 +76,8 @@ import {
 } from 'lib/subtitleRefineValidation';
 import InlineConfigBar from '@/components/tasks/InlineConfigBar';
 import AdvancedSheet from '@/components/tasks/AdvancedSheet';
-import useSystemInfo from 'hooks/useStystemInfo';
+import TaskLoadStatus from '@/components/tasks/TaskLoadStatus';
+import useTaskDependencies from 'hooks/useTaskDependencies';
 import useUnifiedTaskConfig from 'hooks/useUnifiedTaskConfig';
 import { useTaskSubmission } from 'hooks/useTaskSubmission';
 import { taskDraftManager, type TaskDraft } from '@/lib/taskDraftManager';
@@ -108,7 +109,6 @@ import {
 } from '@/components/subtitleMerge/constants';
 import { useTranslation } from 'next-i18next';
 import type { TranscriptionEngine } from '../../../../types/engine';
-import type { AsrProvider } from '../../../../types/asrProvider';
 import type {
   IFiles,
   IFormData,
@@ -620,6 +620,9 @@ export default function TaskWizard() {
     form,
     formData,
     loaded: formLoaded,
+    loading: formLoading,
+    loadError: formLoadError,
+    load: reloadForm,
     hydrateSnapshot,
   } = useUnifiedTaskConfig();
 
@@ -710,32 +713,12 @@ export default function TaskWizard() {
   }, [form]);
   const [refinePopoverOpen, setRefinePopoverOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const { systemInfo, loaded: systemInfoLoaded } = useSystemInfo();
-  const [providers, setProviders] = useState<any[]>([]);
-  const [asrProviders, setAsrProviders] = useState<AsrProvider[]>([]);
-  const [providersLoaded, setProvidersLoaded] = useState(false);
-  const [useLocalWhisper, setUseLocalWhisper] = useState(false);
-  const [lastUsedTranscription, setLastUsedTranscription] = useState<{
-    engine?: TranscriptionEngine;
-    model?: string;
-    asrProviderId?: string;
-  } | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        setProviders(
-          (await window?.ipc?.invoke('getTranslationProviders')) || [],
-        );
-        setAsrProviders((await window?.ipc?.invoke('getAsrProviders')) || []);
-        const settings = await window?.ipc?.invoke('getSettings');
-        setUseLocalWhisper(settings?.useLocalWhisper || false);
-        setLastUsedTranscription(settings?.lastUsedTranscription || null);
-      } finally {
-        setProvidersLoaded(true);
-      }
-    })();
-  }, []);
+  const dependencies = useTaskDependencies();
+  const { systemInfo, providers, asrProviders, settings } = dependencies;
+  const systemInfoLoaded = dependencies.loaded;
+  const providersLoaded = dependencies.loaded;
+  const useLocalWhisper = settings.useLocalWhisper || false;
+  const lastUsedTranscription = settings.lastUsedTranscription || null;
 
   const taskType =
     inputKind === 'subtitle'
@@ -937,7 +920,7 @@ export default function TaskWizard() {
     }
     const system =
       STYLE_PRESETS.find((p) => p.id === effectiveComposeStyleId) ??
-      STYLE_PRESETS[0];
+      STYLE_PRESETS.find((preset) => preset.id === 'classic')!;
     return {
       style:
         system.id === 'classic'
@@ -1126,6 +1109,7 @@ export default function TaskWizard() {
   };
 
   const persistWizardDraft = useCallback(() => {
+    if (!formLoaded) return false;
     const previous = taskDraftManager.getDraft();
     const saved = taskDraftManager.saveDraft({
       id: draftProjectIdRef.current,
@@ -1504,7 +1488,11 @@ export default function TaskWizard() {
     form,
   ]);
 
-  const canStart = files.length > 0 && blockers.length === 0;
+  const canStart =
+    formLoaded &&
+    dependencies.loaded &&
+    files.length > 0 &&
+    blockers.length === 0;
 
   // ── 存为配方：打包 {goals, accepts, config(字幕段+dub+compose+gates)} ─────
   const [recipeDialogOpen, setRecipeDialogOpen] = useState(false);
@@ -1722,6 +1710,24 @@ export default function TaskWizard() {
         : undefined,
     },
   ];
+
+  if (!formLoaded)
+    return (
+      <TaskLoadStatus
+        error={formLoadError}
+        loading={formLoading}
+        onRetry={() => void reloadForm()}
+      />
+    );
+
+  if (!dependencies.loaded)
+    return (
+      <TaskLoadStatus
+        error={dependencies.error}
+        loading={dependencies.loading}
+        onRetry={() => void dependencies.load()}
+      />
+    );
 
   return (
     <div className="flex h-full flex-col gap-2.5 overflow-y-auto p-3">

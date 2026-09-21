@@ -103,6 +103,7 @@ export interface IFiles extends SubtitleOutputFiles {
   refineSubtitleError?: string;
   /** 配音附加阶段状态（运行时同其余阶段字段为 ''|loading|done|error 字符串） */
   dubbing?: boolean;
+  dubbingError?: string;
   /** 合成附加阶段状态（同上字符串状态机约定） */
   composeVideo?: boolean;
   audioFile?: string;

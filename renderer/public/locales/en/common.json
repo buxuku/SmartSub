@@ -343,6 +343,16 @@
     "storageFailed": "Draft storage failed. Save your work before closing the application.",
     "wizardStorageFailed": "The draft was not written to local storage and may be lost after restarting. Free up storage space, then retry saving."
   },
+  "providerPersistence": {
+    "loading": "Loading service configuration...",
+    "loadFailed": "Service configuration could not be loaded. Editing is unavailable.",
+    "saveFailed": "Service configuration is not saved.",
+    "repair": "Check configuration directory permissions and available space, then retry. Your changes are retained.",
+    "conflict": "Another window changed the service configuration. Your input is retained. Review it before discarding and reloading.",
+    "reload": "Reload",
+    "discardReload": "Discard changes and reload",
+    "discardDescription": "Unsaved service configuration on this page will be discarded and the latest configuration will be loaded from disk."
+  },
   "saveState": {
     "retry": "Retry save",
     "idle": "",
@@ -353,6 +363,7 @@
     "details": "Error details"
   },
   "navigationGuard": {
+    "discardFailed": "The draft could not be discarded. Check the page error details and retry before leaving.",
     "title": "Unsaved changes",
     "desc": "You have unsaved changes that will be lost if you leave this page. Would you like to save them first?",
     "keepEditing": "Stay on page",
@@ -377,6 +388,12 @@
   "cpuModeBadge": "CPU mode",
   "cpuModeTip": "Transcription runs on CPU. Click to view acceleration options.",
   "coarseTimeline": "Coarse timeline",
+  "gateRelease": {
+    "pending": "Release confirmation pending",
+    "failed": "Release could not be confirmed",
+    "details": "Details",
+    "retry": "Retry release"
+  },
   "engineBadge": {
     "builtin": "Whisper.cpp",
     "fasterWhisper": "Faster-Whisper",

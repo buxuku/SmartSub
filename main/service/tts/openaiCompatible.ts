@@ -5,6 +5,7 @@ import type {
   TtsSegmentRequest,
 } from '../../../types/ttsProvider';
 import type { TtsSynthesizeResult } from './types';
+import { streamPreviewAudio } from './previewStream';
 import {
   transcodeToPcm16Wav,
   readWavInfo,
@@ -107,6 +108,7 @@ export async function synthesizeWithOpenAiCompatible(
       `Cloud TTS: HTTP ${res.status}${detail ? ` - ${detail}` : ''}`,
     );
   }
+  if (request.preview) return streamPreviewAudio(res.body, request);
   const audio = Buffer.from(await res.arrayBuffer());
   if (audio.length === 0) throw new Error('Cloud TTS: empty audio response');
 

@@ -73,6 +73,7 @@ import {
 } from './helpers/cudaDeviceSelection';
 import { sanitizeSelectedCudaDevice } from '../types/gpuDevice';
 import { cleanupOldLogs } from './helpers/logStorage';
+import { cancelProofreadWaveforms } from './helpers/proofreadWaveform';
 import {
   getHiddenNativeTitleBarOptions,
   setupWindowChromeHandlers,
@@ -133,6 +134,7 @@ app.on('before-quit', (event) => {
     // 同步终止下载器子进程并清理 cookie 临时副本（否则子进程变孤儿继续下载）
     shutdownVideoDownloads();
     shutdownToolboxProcesses();
+    cancelProofreadWaveforms();
     void shutdownPythonRuntime().finally(() => {
       app.exit(0);
     });
@@ -246,14 +248,11 @@ app.on('before-quit', (event) => {
   setupWindowCloseBehavior(mainWindow);
   setupWindowChromeHandlers(mainWindow);
 
-  if (isProd) {
-    await mainWindow.loadURL(`app://./${userLanguage}/home/`);
-  } else {
-    const port = process.argv[2];
-    await mainWindow.loadURL(`http://localhost:${port}/${userLanguage}/home/`);
-    mainWindow.webContents.openDevTools();
-  }
+  const rendererUrl = isProd
+    ? `app://./${userLanguage}/home/`
+    : `http://localhost:${process.argv[2]}/${userLanguage}/home/`;
 
+  // Register every renderer dependency before the first page can invoke IPC.
   setupAppMenu(mainWindow);
   setupIpcHandlers(mainWindow);
   setupNetworkHandlers();
@@ -265,7 +264,7 @@ app.on('before-quit', (event) => {
   setupGlossaryHandlers(mainWindow);
   setupTaskManager();
   setupAutoUpdater(mainWindow);
-  setupSubtitleMergeHandlers(mainWindow);
+  setupSubtitleMergeHandlers(mainWindow, rendererUrl);
   setupDubbingHandlers(mainWindow);
   setupPipelineHandlers(mainWindow);
   setupVoiceCloneHandlers(mainWindow);
@@ -274,6 +273,8 @@ app.on('before-quit', (event) => {
   setMainWindowForAddon(mainWindow);
   registerEngineIpcHandlers();
   setMainWindowForEngine(mainWindow);
+  await mainWindow.loadURL(rendererUrl);
+  if (!isProd) mainWindow.webContents.openDevTools();
   // 清理三层架构改造前遗留的旧 py-engine 目录/状态文件（幂等，失败静默）。
   cleanupLegacyPyEngine();
   // 启动后每日一次的节流静默检查 faster-whisper 运行时更新（非阻塞，失败静默）。

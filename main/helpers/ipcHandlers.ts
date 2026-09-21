@@ -469,39 +469,49 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
   });
 
   // 读取字幕文件（按扩展名自动识别 srt/vtt/ass/lrc 格式）
-  ipcMain.handle('readSubtitleFile', async (event, { filePath }) => {
-    try {
-      if (!fs.existsSync(filePath)) {
-        logMessage(`读取字幕文件失败: 文件不存在 ${filePath}`, 'error');
+  ipcMain.handle(
+    'readSubtitleFile',
+    async (event, { filePath, strict = false }) => {
+      try {
+        if (!fs.existsSync(filePath)) {
+          if (strict) throw new Error(`File not found: ${filePath}`);
+          logMessage(`读取字幕文件失败: 文件不存在 ${filePath}`, 'error');
+          return [];
+        }
+        const content = await fs.promises.readFile(filePath, 'utf-8');
+        const format = detectSubtitleFormatFromContent(filePath, content);
+        return parseSubtitleEntries(content, format, { strict });
+      } catch (error) {
+        logMessage(`读取字幕文件错误: ${error.message}`, 'error');
+        if (strict) throw error;
         return [];
       }
-      const content = await fs.promises.readFile(filePath, 'utf-8');
-      const format = detectSubtitleFormatFromContent(filePath, content);
-      return parseSubtitleEntries(content, format);
-    } catch (error) {
-      logMessage(`读取字幕文件错误: ${error.message}`, 'error');
-      return [];
-    }
-  });
+    },
+  );
 
-  ipcMain.handle('readProofreadDataFile', async (event, { filePath }) => {
-    try {
-      if (!filePath || !fs.existsSync(filePath)) {
-        logMessage(`读取校对中间态失败: 文件不存在 ${filePath}`, 'error');
+  ipcMain.handle(
+    'readProofreadDataFile',
+    async (event, { filePath, strict = false }) => {
+      try {
+        if (!filePath || !fs.existsSync(filePath)) {
+          if (strict) throw new Error(`File not found: ${filePath}`);
+          logMessage(`读取校对中间态失败: 文件不存在 ${filePath}`, 'error');
+          return [];
+        }
+        const proofreadData = await readProofreadDataFile(filePath, { strict });
+        return {
+          subtitles: proofreadDataToSubtitleRows(proofreadData),
+          speakers: proofreadData.speakers,
+          missedSpeechWarnings: proofreadData.missedSpeechWarnings || [],
+          missedSpeechSummary: proofreadData.missedSpeechSummary,
+        };
+      } catch (error) {
+        logMessage(`读取校对中间态错误: ${error.message}`, 'error');
+        if (strict) throw error;
         return [];
       }
-      const proofreadData = await readProofreadDataFile(filePath);
-      return {
-        subtitles: proofreadDataToSubtitleRows(proofreadData),
-        speakers: proofreadData.speakers,
-        missedSpeechWarnings: proofreadData.missedSpeechWarnings || [],
-        missedSpeechSummary: proofreadData.missedSpeechSummary,
-      };
-    } catch (error) {
-      logMessage(`读取校对中间态错误: ${error.message}`, 'error');
-      return [];
-    }
-  });
+    },
+  );
 
   // 读取任意字幕文件并转换为 WebVTT 文本（供播放器内嵌字幕轨道使用）
   ipcMain.handle('getSubtitleAsVtt', async (event, { filePath }) => {

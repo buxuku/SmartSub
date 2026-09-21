@@ -50,6 +50,8 @@ execFileSync(ffmpeg, [
 ]);
 const audio = await fs.readFile(wav);
 const speechRequests = [];
+let holdSpeech = false;
+const pendingSpeech = [];
 const server = http.createServer((request, response) => {
   if (request.url !== '/v1/audio/speech') {
     response.writeHead(404).end();
@@ -59,8 +61,12 @@ const server = http.createServer((request, response) => {
   request.on('data', (chunk) => chunks.push(chunk));
   request.on('end', () => {
     speechRequests.push(JSON.parse(Buffer.concat(chunks).toString()));
-    response.writeHead(200, { 'Content-Type': 'audio/wav' });
-    response.end(audio);
+    const respond = () => {
+      response.writeHead(200, { 'Content-Type': 'audio/wav' });
+      response.end(audio);
+    };
+    if (holdSpeech) pendingSpeech.push(respond);
+    else respond();
   });
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -208,6 +214,7 @@ try {
   await fs.chmod(profile, 0o500);
   locked = true;
   await page.getByRole('button', { name: '放行', exact: true }).click();
+  await page.getByRole('alert').getByText('详细信息', { exact: true }).click();
   await expect(
     page.getByText('TASK_GATE_SUBMISSION_FAILED', { exact: true }),
   ).toBeVisible();
@@ -216,11 +223,41 @@ try {
   await page.screenshot({
     path: path.join(output, 'release-failure-retains-review.png'),
   });
+  for (const [width, height] of [
+    [1024, 700],
+    [1440, 900],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await expect(
+      page.getByRole('button', { name: '重试放行', exact: true }),
+    ).toBeVisible();
+    assert.equal(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+      true,
+    );
+    await page.screenshot({
+      path: path.join(output, `release-failure-${width}.png`),
+    });
+  }
   await fs.chmod(profile, 0o700);
   locked = false;
-  await page.getByRole('button', { name: '放行', exact: true }).click();
+  await app.evaluate(({ ipcMain }) => {
+    const original = ipcMain._invokeHandlers.get('pipeline:releaseGate');
+    ipcMain._invokeHandlers.set('pipeline:releaseGate', async (...args) => {
+      const result = await original(...args);
+      ipcMain._invokeHandlers.set('pipeline:releaseGate', original);
+      if (result.success) throw new Error('Test: release reply lost');
+      return result;
+    });
+  });
+  await page.getByRole('button', { name: '重试放行', exact: true }).click();
   const manualFile = await finished(manual);
   assert.equal(manualFile.subtitleGate, 'passed');
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'release reply lost' }),
+  ).toHaveCount(0);
   const automatic = await start(false);
   const autoFile = await finished(automatic);
   assert.notEqual(autoFile.subtitleGate, 'review');
@@ -242,7 +279,23 @@ try {
     (await item(manualDub)).pipelineFiles[0].finalVideoPath,
     undefined,
   );
-  await page.getByRole('button', { name: '放行', exact: true }).click();
+  await page
+    .getByRole('button', { name: '检查配音', exact: true })
+    .first()
+    .click();
+  await expect(
+    page.getByRole('button', { name: '放行并继续', exact: true }),
+  ).toBeEnabled();
+  await app.evaluate(({ ipcMain }) => {
+    const original = ipcMain._invokeHandlers.get('pipeline:releaseGate');
+    ipcMain._invokeHandlers.set('pipeline:releaseGate', async (...args) => {
+      const result = await original(...args);
+      ipcMain._invokeHandlers.set('pipeline:releaseGate', original);
+      return result.success ? new Promise(() => {}) : result;
+    });
+  });
+  await page.getByRole('button', { name: '放行并继续', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`project=${manualDub}`));
   const manualDubFile = await finished(manualDub);
   assert.equal(manualDubFile.dubbingGate, 'passed');
   assert.equal(
@@ -250,8 +303,51 @@ try {
     1,
     'dubbing gate release reuses completed speech',
   );
+  holdSpeech = true;
   const autoDub = await start(false, true);
+  await expect.poll(() => pendingSpeech.length).toBe(1);
+  const runningFile = (await item(autoDub)).pipelineFiles[0];
+  assert.ok(runningFile.dubbingSessionId);
+  const persistedTask = JSON.parse(
+    await fs.readFile(path.join(profile, 'config.json'), 'utf8'),
+  ).workItems.find((task) => task.id === autoDub);
+  assert.equal(
+    persistedTask.pipelineFiles[0].dubbingSessionId,
+    runningFile.dubbingSessionId,
+  );
+  const denied = await page.evaluate(
+    async ({ projectId, sessionId }) => {
+      const loaded = await window.ipc.invoke('dubbing:loadSubtitle', {
+        sessionId,
+        leaseId: 'pipeline-test',
+      });
+      let deletion = '';
+      try {
+        await window.ipc.invoke('deleteWorkItem', projectId);
+      } catch (error) {
+        deletion = String(error);
+      }
+      return { loaded, deletion };
+    },
+    { projectId: autoDub, sessionId: runningFile.dubbingSessionId },
+  );
+  assert.equal(denied.loaded.data.locked, true);
+  assert.match(denied.deletion, /open or running/);
+  await page.evaluate(
+    (sessionId) => window.next.router.push(`/zh/dubbing/?session=${sessionId}`),
+    runningFile.dubbingSessionId,
+  );
+  await expect(
+    page
+      .getByRole('alert')
+      .filter({ hasText: '此配音项目正在其他窗口或流水线中使用' }),
+  ).toBeVisible();
+  holdSpeech = false;
+  pendingSpeech.splice(0).forEach((respond) => respond());
   await finished(autoDub);
+  await expect(
+    page.getByRole('button', { name: '重新合成', exact: true }),
+  ).toBeEnabled();
   assert.equal(speechRequests.length, 2);
   assert.ok(
     speechRequests.every(
@@ -274,6 +370,8 @@ try {
         'fresh TTS dependency removal blocks start',
         'subtitle and dubbing manual gates run and resume in sequence',
         'automatic dubbing and compose through local speech fixture',
+        'dubbing workbench gate atomically hands off its lease; active pipeline blocks editor acquisition and deletion, then waiting editor loads terminal state',
+        'lost task-page acknowledgement and hanging workbench acknowledgement reconcile passed targets without duplicate synthesis; first pipeline session link is durable during the actual HTTP request',
         'distinct nonempty decodable outputs',
         'source subtitle unchanged',
       ],
@@ -288,5 +386,6 @@ try {
 } finally {
   if (locked) await fs.chmod(profile, 0o700);
   await app.close();
+  server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));
 }

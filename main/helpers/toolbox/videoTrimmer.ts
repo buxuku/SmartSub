@@ -80,7 +80,10 @@ export function formatFfmpegTime(seconds: number): string {
 /**
  * 探测视频信息（不依赖外部 ffprobe）
  */
-export function probeVideoInfo(videoPath: string): Promise<{
+export function probeVideoInfo(
+  videoPath: string,
+  signal?: AbortSignal,
+): Promise<{
   duration: number;
   width: number;
   height: number;
@@ -102,14 +105,25 @@ export function probeVideoInfo(videoPath: string): Promise<{
       return reject(new Error(`Failed to access video file: ${err.message}`));
     }
 
-    const proc = spawn(ffmpegPath, ['-hide_banner', '-i', videoPath]);
+    const proc = spawn(ffmpegPath, ['-hide_banner', '-i', videoPath], {
+      signal,
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
     let stderr = '';
+    let processError: Error | undefined;
+    const timeout = setTimeout(() => {
+      processError = new Error('Media probe timed out');
+      proc.kill('SIGKILL');
+    }, 15000);
 
     proc.stderr.on('data', (data) => {
-      stderr += data.toString();
+      stderr = (stderr + data.toString()).slice(-1024 * 1024);
     });
 
     proc.on('close', (code) => {
+      clearTimeout(timeout);
+      if (processError) return reject(processError);
+      if (signal?.aborted) return reject(new Error('Media probe cancelled'));
       const durationMatch = /Duration:\s*(\d{2,}:\d{2}:\d{2}(?:\.\d+)?)/.exec(
         stderr,
       );
@@ -144,7 +158,7 @@ export function probeVideoInfo(videoPath: string): Promise<{
     });
 
     proc.on('error', (err) => {
-      reject(err);
+      processError = err;
     });
   });
 }

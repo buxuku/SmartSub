@@ -5,6 +5,7 @@ import path from 'path';
 import { spawn } from 'child_process';
 import { TaskCancelledError } from '../taskContext';
 import { stderrTail } from '../ffmpegErrorUtils';
+import { assertDubbingSpeakerSettings } from '../../../types/dubbing';
 
 // 与 audioProcessor 同源的 ffmpeg 路径设置（本模块可被独立引入）。
 const FFMPEG_BIN = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
@@ -274,7 +275,7 @@ export async function transcodeToPcm16Wav(
   await runSave(command, dst, opts?.signal);
 }
 
-/** atempo 变速（不保音高的时长压缩/拉伸），输出同采样率 16-bit PCM wav。 */
+/** Pitch-preserving tempo change, retaining the source sample rate. */
 export async function atempoWav(
   src: string,
   dst: string,
@@ -287,6 +288,78 @@ export async function atempoWav(
     .audioCodec('pcm_s16le')
     .outputOptions('-y');
   await runSave(command, dst, signal);
+}
+
+/** Flush the final analysis window before bounding a small automatic fit. */
+export async function fitSpeechWav(
+  src: string,
+  dst: string,
+  targetMs: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  const measured = wavDurationMs(src);
+  const factor = measured / targetMs;
+  if (!Number.isFinite(factor) || factor <= 1 || factor > 1.15 + 1e-9)
+    throw new Error('Automatic speech fitting is limited to 15%');
+  await runSave(
+    ffmpeg(src)
+      .audioFilters([
+        'apad=pad_dur=0.1',
+        `atempo=${factor.toFixed(12)}`,
+        'apad',
+        `atrim=duration=${targetMs / 1000}`,
+      ])
+      .audioCodec('pcm_s16le')
+      .outputOptions('-y'),
+    dst,
+    signal,
+  );
+}
+
+/** Portable FFmpeg pitch shift plus tempo correction, retaining the source sample rate. */
+export async function applySpeakerSettingsWav(
+  src: string,
+  dst: string,
+  settings: import('../../../types/dubbing').DubbingSpeakerSettings,
+  signal?: AbortSignal,
+): Promise<void> {
+  assertDubbingSpeakerSettings(settings);
+  const { sampleRate } = readWavInfo(src);
+  const shiftedRate = Math.round(sampleRate * 2 ** (settings.pitch / 12));
+  const pitchRatio = shiftedRate / sampleRate;
+  const filters = settings.pitch
+    ? [`asetrate=${shiftedRate}`, `aresample=${sampleRate}`]
+    : [];
+  filters.push(
+    ...buildAtempoChain(settings.speed / pitchRatio).map(
+      (factor) => `atempo=${factor}`,
+    ),
+  );
+  await runSave(
+    ffmpeg(src)
+      .audioFilters(filters)
+      .audioFrequency(sampleRate)
+      .audioCodec('pcm_s16le')
+      .outputOptions('-y'),
+    dst,
+    signal,
+  );
+}
+
+export async function trimPreviewWav(
+  src: string,
+  dst: string,
+  durationMs: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  await runSave(
+    ffmpeg(src)
+      .duration(durationMs / 1000)
+      .audioCodec('pcm_s16le')
+      .outputOptions('-y'),
+    dst,
+    signal,
+  );
 }
 
 // ── 槽位拼接（PCM 级，零 ffmpeg）───────────────────────────────────────────

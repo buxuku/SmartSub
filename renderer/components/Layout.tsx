@@ -230,7 +230,7 @@ function NavItem({
       aria-current={active ? 'page' : undefined}
       onClick={onClick}
       className={cn(
-        'titlebar-no-drag relative flex h-12 w-[52px] flex-col items-center justify-center gap-1 rounded-lg transition-colors',
+        'titlebar-no-drag relative flex h-12 w-[52px] shrink-0 flex-col items-center justify-center gap-1 rounded-lg transition-colors [@media(max-height:760px)]:h-10',
         active
           ? 'bg-primary/10 text-primary before:absolute before:inset-y-3 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
           : 'text-muted-foreground hover:bg-accent hover:text-foreground',
@@ -816,7 +816,7 @@ const Layout = ({ children }) => {
           底部预留 26px 给全宽状态栏。 */}
       <aside
         className={cn(
-          'titlebar-drag fixed left-0 top-0 bottom-[26px] z-20 flex w-16 flex-col items-center gap-0.5 border-r border-border bg-chrome px-1.5 pb-2',
+          'titlebar-drag fixed left-0 top-0 bottom-[26px] z-20 flex w-16 flex-col items-center gap-0.5 overflow-x-hidden overflow-y-auto border-r border-border bg-chrome px-1.5 pb-2',
           !isMac && 'pt-2.5',
         )}
       >
@@ -830,7 +830,7 @@ const Layout = ({ children }) => {
         <Link
           href={`/${locale}/home`}
           aria-label="Home"
-          className="titlebar-no-drag mb-2 flex h-9 w-9 items-center justify-center"
+          className="titlebar-no-drag mb-2 flex h-9 w-9 shrink-0 items-center justify-center"
         >
           <Image
             src="/images/brand/logo-mark.png"
@@ -841,7 +841,10 @@ const Layout = ({ children }) => {
             priority
           />
         </Link>
-        <nav className="flex flex-col items-center gap-0.5" aria-label="tasks">
+        <nav
+          className="flex shrink-0 flex-col items-center gap-0.5"
+          aria-label="tasks"
+        >
           {NAV_TASK_ITEMS.map((item) => {
             const isSubtitles = item.labelKey === 'nav.subtitles';
             const hrefOverride = isSubtitles
@@ -866,8 +869,14 @@ const Layout = ({ children }) => {
             );
           })}
         </nav>
-        <div className="my-1.5 h-px w-7 bg-border-strong" role="separator" />
-        <nav className="flex flex-col items-center gap-0.5" aria-label="config">
+        <div
+          className="my-1.5 h-px w-7 shrink-0 bg-border-strong"
+          role="separator"
+        />
+        <nav
+          className="flex shrink-0 flex-col items-center gap-0.5"
+          aria-label="config"
+        >
           {NAV_CONFIG_ITEMS.map((item) => (
             <NavItem
               key={item.href}
@@ -879,7 +888,10 @@ const Layout = ({ children }) => {
           ))}
         </nav>
         <div className="flex-1" />
-        <div className="mb-0.5 h-px w-7 bg-border-strong" role="separator" />
+        <div
+          className="mb-0.5 h-px w-7 shrink-0 bg-border-strong"
+          role="separator"
+        />
         <NavItem
           item={NAV_SETTINGS_ITEM}
           locale={locale}

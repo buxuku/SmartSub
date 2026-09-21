@@ -22,6 +22,7 @@ import {
 } from '../../types/speakerDiarization';
 import {
   PROOFREAD_DATA_VERSION,
+  assertValidProofreadData,
   hasExplicitSpeakerAssignment,
   normalizePrimarySpeakerId,
   normalizeProofreadData,
@@ -255,10 +256,12 @@ export async function writeProofreadDataFromFiles({
 
 export async function readProofreadDataFile(
   filePath: string,
+  options: { strict?: boolean } = {},
 ): Promise<ProofreadDataFile> {
   const content = await fs.promises.readFile(filePath, 'utf-8');
   try {
     const raw = JSON.parse(content);
+    if (options.strict) assertValidProofreadData(raw);
     const normalized = normalizeProofreadData(raw);
     // v1 was created while technical labels could still be embedded in the
     // source/target text. Keep migration idempotent and only strip labels from

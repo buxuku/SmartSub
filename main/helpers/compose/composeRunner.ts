@@ -14,6 +14,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { randomUUID } from 'crypto';
 import { logMessage } from '../storeManager';
 import { timemarkToSeconds } from '../fileUtils';
 import type {
@@ -33,23 +34,25 @@ import {
   buildHwCqArgs,
   buildVtBitrateArgs,
 } from '../hwEncoderDetector';
-import { detectSubtitleFormatFromContent } from '../subtitleFormats';
 import {
   MERGE_CANCELLED,
   buildAssForSubtitle,
-  buildForceStyle,
-  createSafeSubtitleCopy,
   cleanupTempSubtitle,
   escapeSubtitlePath,
   getVideoInfo,
 } from '../subtitleMerger';
-import { containsCJK, resolveBurnFontName } from '../fontResolver';
 import { buildAssStyleLine } from '../assStyleBuilder';
+import { translatedAssFilter } from '../assCanvas';
 import {
   buildComposePlan,
   type ComposePlan,
   type ComposePlanSubtitle,
 } from './composeCommandBuilder';
+import { createComposeOutput } from './composeOutput';
+import { scanEmbeddedSubtitles } from '../toolbox/embeddedSubtitleExtractor';
+import { probeVideoInfo } from '../toolbox/videoTrimmer';
+import { assertValidSubtitleStyle } from '../../../types/subtitleStyleValidation';
+import { prepareSubtitleFonts } from '../fontResolver';
 
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
 ffmpeg.setFfmpegPath(ffmpegPath);
@@ -245,20 +248,10 @@ function writeTempAssFile(assContent: string): string {
   if (!fs.existsSync(tmpDir)) {
     fs.mkdirSync(tmpDir, { recursive: true });
   }
-  const tmpPath = path.join(tmpDir, `burn_${Date.now()}.ass`);
-  fs.writeFileSync(tmpPath, assContent, 'utf-8');
+  const tmpPath = path.join(tmpDir, `burn_${randomUUID()}.ass`);
+  fs.writeFileSync(tmpPath, assContent, { encoding: 'utf-8', flag: 'wx' });
   logMessage(`生成临时 ASS 字幕文件: ${tmpPath}`, 'info');
   return tmpPath;
-}
-
-/** 判断路径是否包含需要特殊处理的字符（滤镜字符串解析不可靠字符） */
-function pathNeedsSafeCopy(filePath: string): boolean {
-  return /['\[\];,]/.test(filePath);
-}
-
-/** ASS/SSA 输入走 force_style 覆盖路径；其它格式走预生成 ASS 管线 */
-function isAssInput(subtitlePath: string, content: string): boolean {
-  return detectSubtitleFormatFromContent(subtitlePath, content) === 'ass';
 }
 
 /** 硬烧字幕解析产物：计划输入 + 需清理的临时文件 + 回退所需上下文 */
@@ -286,13 +279,17 @@ export async function runComposeJob(
   config: ComposeConfig,
   ctx: ComposeRunContext,
 ): Promise<string> {
-  const { videoPath, outputPath, subtitle, audio } = config;
+  const { videoPath, subtitle, audio } = config;
+  let output: ReturnType<typeof createComposeOutput> | undefined;
+  let outputPath = '';
+  const publication = new AbortController();
   const tempFiles: string[] = [];
   let cancelled = false;
   let currentCommand: ReturnType<typeof ffmpeg> | null = null;
 
   ctx.setCancel(() => {
     cancelled = true;
+    publication.abort();
     try {
       currentCommand?.kill('SIGKILL');
       logMessage('合成作业已被用户取消', 'warning');
@@ -402,6 +399,22 @@ export async function runComposeJob(
     );
 
   try {
+    if (subtitle.mode === 'hard') assertValidSubtitleStyle(subtitle.style);
+    const inputs = [
+      videoPath,
+      ...(subtitle.mode === 'none' ? [] : [subtitle.subtitlePath]),
+      ...(audio.mode === 'keep' ? [] : [audio.trackPath]),
+    ];
+    output = createComposeOutput(config.outputPath, inputs);
+    outputPath = output.staged;
+    const embeddedSubtitles =
+      subtitle.mode === 'soft'
+        ? await scanEmbeddedSubtitles(videoPath, publication.signal)
+        : undefined;
+    const hasOriginalAudio =
+      audio.mode === 'mix'
+        ? (await probeVideoInfo(videoPath, publication.signal)).hasAudio
+        : undefined;
     // ── 解析硬烧字幕（滤镜 + 编码参数），探测分辨率/时长 ─────────────────────
     let prepared: PreparedHardSubtitle | null = null;
     if (subtitle.mode === 'hard') {
@@ -417,12 +430,19 @@ export async function runComposeJob(
           ? { mode: 'soft', subtitlePath: subtitle.subtitlePath }
           : { mode: 'none' };
 
-    const plan = buildComposePlan({
-      videoPath,
-      outputPath,
-      subtitle: planSubtitle,
-      audio,
-    });
+    // This directory is unique to the job; never use an external ID as a path.
+    const planOptions = { tempTag: 'audio' };
+    const plan = buildComposePlan(
+      {
+        videoPath,
+        outputPath,
+        subtitle: planSubtitle,
+        audio,
+        embeddedSubtitles,
+        hasOriginalAudio,
+      },
+      planOptions,
+    );
 
     // ── prep 步骤：addTrack 的配音轨预编码 aac ──────────────────────────────
     if (plan.prep) {
@@ -462,33 +482,39 @@ export async function runComposeJob(
           prepared.videoQuality,
           prepared.videoHeight,
         );
-        const fallbackPlan = buildComposePlan({
-          videoPath,
-          outputPath,
-          subtitle: {
-            ...(prepared.plan as Extract<
-              ComposePlanSubtitle,
-              { mode: 'hard' }
-            >),
-            encoderArgs: cpuEncoding.args,
-            needsNv12: cpuEncoding.needsNv12,
+        const fallbackPlan = buildComposePlan(
+          {
+            videoPath,
+            outputPath,
+            subtitle: {
+              ...(prepared.plan as Extract<
+                ComposePlanSubtitle,
+                { mode: 'hard' }
+              >),
+              encoderArgs: cpuEncoding.args,
+              needsNv12: cpuEncoding.needsNv12,
+            },
+            audio,
+            hasOriginalAudio,
           },
-          audio,
-        });
+          planOptions,
+        );
         await runPlan(fallbackPlan);
       } else {
         throw error;
       }
     }
 
-    logMessage('合成作业完成', 'info');
+    if (cancelled) throw new Error(MERGE_CANCELLED);
+    const published = await output.publish(publication.signal);
+    logMessage(`合成作业完成: ${published}`, 'info');
     emit({ percent: 100, timeMark: '', targetSize: 0, status: 'completed' });
-    return outputPath;
+    return published;
   } catch (err) {
     const error = err as Error;
-    if (error.message === MERGE_CANCELLED) {
+    if (cancelled || error.message === MERGE_CANCELLED) {
       emit({ percent: 0, timeMark: '', targetSize: 0, status: 'idle' });
-      throw error;
+      throw new Error(MERGE_CANCELLED);
     }
     logMessage(`合成作业失败: ${error.message}`, 'error');
     emit({
@@ -500,6 +526,11 @@ export async function runComposeJob(
     });
     throw error;
   } finally {
+    try {
+      output?.cleanup();
+    } catch (error) {
+      logMessage(`清理合成临时目录失败: ${error}`, 'warning');
+    }
     for (const file of tempFiles) {
       if (file.endsWith('.m4a')) {
         try {
@@ -515,7 +546,7 @@ export async function runComposeJob(
 }
 
 /**
- * 解析硬烧字幕：探测分辨率/时长 → 生成 ASS 或 force_style 滤镜 → 解析编码参数。
+ * 解析硬烧字幕：探测分辨率/时长 → 生成共享 ASS → 解析编码参数。
  * 从 mergeSubtitleToVideo 的 hardcode 前置段迁移，行为不变。
  */
 async function prepareHardSubtitle(
@@ -535,13 +566,11 @@ async function prepareHardSubtitle(
   } = subtitle;
 
   // 分辨率/时长探测（ffprobe → 打包 ffmpeg 兜底）
-  let originalSize = '';
   let videoHeight = 0;
   let totalDurationSec = 0;
   try {
     const videoInfo = await getVideoInfo(videoPath);
     if (videoInfo.width > 0 && videoInfo.height > 0) {
-      originalSize = `:original_size=${videoInfo.width}x${videoInfo.height}`;
       videoHeight = videoInfo.height;
     }
     totalDurationSec = videoInfo.duration || 0;
@@ -555,9 +584,6 @@ async function prepareHardSubtitle(
     const probed = await probeResolutionViaFfmpeg(videoPath);
     if (probed) {
       videoHeight = probed.height;
-      if (!originalSize) {
-        originalSize = `:original_size=${probed.width}x${probed.height}`;
-      }
       if (totalDurationSec <= 0 && probed.durationSec > 0) {
         totalDurationSec = probed.durationSec;
       }
@@ -569,56 +595,26 @@ async function prepareHardSubtitle(
   }
   if (totalDurationSec > 0) onDuration(totalDurationSec);
 
-  // 字幕滤镜：预生成 ASS 管线（SRT/VTT/LRC）或 force_style 覆盖（ASS/SSA）
-  let subtitleContent = '';
-  let useAssPipeline = false;
+  // Preview and export consume the same ASS, including native ASS/SSA input.
+  const subtitleContent = fs.readFileSync(subtitlePath, 'utf-8');
+  await prepareSubtitleFonts();
+  const { assContent, effectiveStyle, translateY } = buildAssForSubtitle(
+    subtitleContent,
+    subtitlePath,
+    style,
+  );
+  let tmpAssPath: string;
   try {
-    subtitleContent = fs.readFileSync(subtitlePath, 'utf-8');
-    useAssPipeline = !isAssInput(subtitlePath, subtitleContent);
-  } catch (readErr) {
-    logMessage(
-      `读取字幕内容失败，回退 subtitles 滤镜路径: ${readErr}`,
-      'warning',
-    );
+    tmpAssPath = writeTempAssFile(assContent);
+  } catch (writeErr) {
+    throw new Error(`写入临时 ASS 文件失败: ${writeErr}`);
   }
-
-  let filter: string;
-  if (useAssPipeline) {
-    const { assContent, effectiveStyle } = buildAssForSubtitle(
-      subtitleContent,
-      subtitlePath,
-      style,
-    );
-    let tmpAssPath: string;
-    try {
-      tmpAssPath = writeTempAssFile(assContent);
-    } catch (writeErr) {
-      throw new Error(`写入临时 ASS 文件失败: ${writeErr}`);
-    }
-    tempFiles.push(tmpAssPath);
-    logMessage(`ASS Style: ${buildAssStyleLine(effectiveStyle)}`, 'info');
-    filter = `ass='${escapeSubtitlePath(tmpAssPath)}'`;
-  } else {
-    let effectiveStyle = style;
-    const hasCJK = containsCJK(subtitleContent);
-    const burnFont = resolveBurnFontName(style.fontName, hasCJK);
-    if (burnFont !== style.fontName) {
-      effectiveStyle = { ...style, fontName: burnFont };
-      logMessage(
-        `字幕含中文，但所选字体「${style.fontName}」在本机不可用/无 CJK 字形，已改用「${burnFont}」`,
-        'warning',
-      );
-    }
-    let actualSubPath = subtitlePath;
-    if (pathNeedsSafeCopy(subtitlePath)) {
-      const tmpSubPath = createSafeSubtitleCopy(subtitlePath);
-      tempFiles.push(tmpSubPath);
-      actualSubPath = tmpSubPath;
-    }
-    const forceStyle = buildForceStyle(effectiveStyle);
-    const escapedSubPath = escapeSubtitlePath(actualSubPath);
-    filter = `subtitles='${escapedSubPath}'${originalSize}:force_style='${forceStyle}'`;
-  }
+  tempFiles.push(tmpAssPath);
+  logMessage(`ASS Style: ${buildAssStyleLine(effectiveStyle)}`, 'info');
+  const filter = translatedAssFilter(
+    `ass='${escapeSubtitlePath(tmpAssPath)}'`,
+    translateY,
+  );
   logMessage(`subtitle filter: ${filter}`, 'info');
 
   const encoding = await resolveVideoEncoding({

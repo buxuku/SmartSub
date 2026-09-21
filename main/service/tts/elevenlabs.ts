@@ -3,6 +3,7 @@ import type {
   TtsSegmentRequest,
 } from '../../../types/ttsProvider';
 import type { TtsSynthesizeResult } from './types';
+import { streamPreviewAudio } from './previewStream';
 import { TaskCancelledError } from '../../helpers/taskContext';
 import { writePcmAsWav } from '../../helpers/dubbing/audioPipeline';
 import {
@@ -60,7 +61,10 @@ export async function synthesizeWithElevenLabs(
   if (!apiKey) throw new Error('ElevenLabs TTS: API key is required');
   const model = String(provider.model ?? '').trim() || 'eleven_multilingual_v2';
   const base = normalizeElevenLabsTtsBaseURL(provider.apiUrl);
-  const url = buildElevenLabsTtsURL(base, request.voice);
+  const url = buildElevenLabsTtsURL(base, request.voice).replace(
+    '?',
+    request.preview ? '/stream?' : '?',
+  );
   const timeoutMs = toPositiveNumber(provider.requestTimeoutSec, 60) * 1000;
 
   const signals = [AbortSignal.timeout(timeoutMs)];
@@ -108,6 +112,7 @@ export async function synthesizeWithElevenLabs(
       `ElevenLabs TTS: HTTP ${res.status}${detail ? ` - ${detail}` : ''}`,
     );
   }
+  if (request.preview) return streamPreviewAudio(res.body, request, true);
   const pcm = Buffer.from(await res.arrayBuffer());
   if (pcm.length === 0) {
     throw new Error('ElevenLabs TTS: empty audio response');
@@ -126,7 +131,7 @@ export async function synthesizeWithElevenLabs(
  */
 export async function listElevenLabsVoices(
   provider: TtsProvider,
-): Promise<Array<{ id: string; name: string }>> {
+): Promise<import('../../../types/ttsVoice').TtsVoiceEntry[]> {
   const apiKey = String(provider.apiKey ?? '').trim();
   if (!apiKey) throw new Error('ElevenLabs TTS: API key is required');
   const base = normalizeElevenLabsTtsBaseURL(provider.apiUrl);

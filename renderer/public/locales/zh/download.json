@@ -1,5 +1,33 @@
 {
   "pageTitle": "视频下载",
+  "pipeline": {
+    "enabled": "下载完成后自动启动创作流水线",
+    "recipe": "流水线配方",
+    "chooseRecipe": "选择已保存配方",
+    "createRecipe": "新建配方",
+    "draftFailed": "下载链接草稿未能保存，请检查本地存储空间。",
+    "repair": "修复下方错误后重试，已下载文件不会再次下载。",
+    "errors": {
+      "DOWNLOAD_PIPELINE_ASR_REQUIRED": "请在引擎与模型中安装配方指定的模型，或补齐云端听写配置后重试。",
+      "DOWNLOAD_PIPELINE_CLOUD_CONSENT_REQUIRED": "缺少云端上传授权，点击重试可确认本批次的上传权限。",
+      "DOWNLOAD_PIPELINE_TRANSLATION_REQUIRED": "请恢复配方使用的翻译服务及目标语言配置后重试。",
+      "DOWNLOAD_PIPELINE_REFINE_REQUIRED": "请恢复配方使用的 AI 精修服务后重试。",
+      "DOWNLOAD_PIPELINE_TTS_REQUIRED": "请在配音服务中安装模型或补齐服务配置后重试。",
+      "DOWNLOAD_PIPELINE_VOICE_REQUIRED": "请恢复配方选定的音色或克隆参考音频后重试。",
+      "DOWNLOAD_PIPELINE_SPEAKERS_REQUIRED": "请安装角色分离模型和运行库后重试。",
+      "DOWNLOAD_PIPELINE_TTS_LANGUAGE_REQUIRED": "配音模型不支持当前语言，请改用支持该语言的配方创建任务。",
+      "DOWNLOAD_PIPELINE_CONFIG_CHANGED": "配方或默认配置已变更，请重新开始下载并确认配置。"
+    },
+    "title": "创作流水线",
+    "pending": "等待提交",
+    "submitted": "已提交任务",
+    "error": "流水线未能启动，下载文件已保留",
+    "details": "详细信息",
+    "retry": "重试流水线",
+    "open": "打开任务",
+    "nativeSubtitles": "已选用官方字幕，跳过转写",
+    "taskMissing": "关联任务已删除，下载文件仍可使用。"
+  },
   "pageDesc": "粘贴在线视频链接批量下载，完成后一键送入字幕、翻译、配音流程",
   "setup": {
     "title": "安装下载引擎",

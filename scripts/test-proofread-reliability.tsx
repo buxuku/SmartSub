@@ -170,6 +170,53 @@ async function main() {
     assert.equal(await saveNavigationGuards(guards), 'saved'),
   );
   assert.equal(hook.getIsDirty(), false);
+  const beforeTime = hook.mergedSubtitles[0].startEndTime;
+  for (const [start, end] of [
+    [-1, 2],
+    [NaN, 2],
+    [1, Infinity],
+    [1, 1.0001],
+  ]) {
+    act(() =>
+      assert.equal(
+        hook.handleTimeChange(0, start, end),
+        'timeEditInvalidRange',
+      ),
+    );
+    assert.equal(hook.mergedSubtitles[0].startEndTime, beforeTime);
+    assert.equal(hook.getIsDirty(), false);
+  }
+  act(() => hook.handleTimeChange(0, 1.12345, 2.12345));
+  assert.equal(hook.mergedSubtitles[0].startTimeInSeconds, 1.123);
+  assert.equal(hook.mergedSubtitles[0].endTimeInSeconds, 2.123);
+  act(() => hook.handleUndo());
+  assert.equal(hook.mergedSubtitles[0].startEndTime, beforeTime);
+  for (const [point, time] of [
+    [0, 2],
+    [5000, 2],
+    [2, 1],
+    [2, 3],
+    [2, NaN],
+    [2, 1.0001],
+  ]) {
+    act(() => hook.handleSplitSubtitle(0, point, time));
+    assert.equal(hook.mergedSubtitles.length, 1);
+  }
+  act(() => hook.handleSplitSubtitle(0, 3, 2));
+  assert.equal(hook.mergedSubtitles.length, 2);
+  assert.equal(hook.mergedSubtitles[0].endTimeInSeconds, 2);
+  assert.equal(hook.mergedSubtitles[1].startTimeInSeconds, 2);
+  act(() =>
+    assert.equal(hook.handleTimeChange(1, 1.9, 3), 'timeEditOverlapPrev'),
+  );
+  act(() => hook.handleMergeSubtitles(0, 2));
+  assert.equal(hook.mergedSubtitles.length, 1);
+  act(() => hook.handleUndo());
+  assert.equal(hook.mergedSubtitles.length, 2);
+  act(() => hook.handleUndo());
+  assert.equal(hook.mergedSubtitles.length, 1);
+  act(() => hook.handleRedo());
+  assert.equal(hook.mergedSubtitles.length, 2);
   await act(async () => root.unmount());
   console.log(
     'Proofread reliability: malformed/failing responses, draft recovery, concurrent saves and edits during save passed.',

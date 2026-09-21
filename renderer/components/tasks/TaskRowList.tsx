@@ -459,7 +459,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
           <div
             key={file?.uuid}
             className={cn(
-              'group rounded-lg border px-3 py-2.5 transition-colors hover:bg-muted/40',
+              'group rounded-lg border border-transparent bg-card px-3 py-2.5 transition-colors hover:bg-muted/40',
               failed && 'border-destructive/30',
               !failed && displayWarning && 'border-warning/30',
             )}
@@ -576,6 +576,21 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                     </Button>
                   </>
                 )}
+                {failed &&
+                  file.dubbingSessionId &&
+                  onInspectDubbing &&
+                  !dockedGate && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1 text-xs"
+                      disabled={queueBusy}
+                      onClick={() => onInspectDubbing(file)}
+                    >
+                      <AudioLines className="h-3 w-3" />
+                      {t('gate.inspectDubbing')}
+                    </Button>
+                  )}
                 {failed && (
                   <Button
                     variant="outline"

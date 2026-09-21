@@ -8,7 +8,7 @@ import { useTranslation } from 'next-i18next';
 import ReactPlayer from 'react-player';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Loader2, CheckCircle, XCircle, Folder } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, Folder, RotateCcw } from 'lucide-react';
 import type {
   SubtitleStyle,
   VideoInfo,
@@ -18,6 +18,17 @@ import type {
 import SubtitlePreviewOverlay from './SubtitlePreviewOverlay';
 import { LIBASS_SRT_PLAYRES_Y, formatDuration } from './utils/styleUtils';
 import { useJassubPreview } from './hooks/useJassubPreview';
+import SubtitleCanvas from './SubtitleCanvas';
+import type { SubtitleSafeArea } from '../../../types/subtitleCanvas';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { getDefaultStyle } from './constants';
+import { useHotkeys } from '../../hooks/useHotkeys';
 
 /** 迷你时间轴最多渲染的字幕块数：超出时相邻合并，避免超长字幕列表拖慢渲染 */
 const MAX_TIMELINE_BLOCKS = 600;
@@ -38,6 +49,8 @@ interface VideoPreviewProps {
   onCancelMerge?: () => void;
   /** 打开输出文件夹 */
   onOpenOutputFolder?: () => void;
+  onUpdateStyle?: (update: Partial<SubtitleStyle>) => void;
+  softMux?: boolean;
 }
 
 interface PreviewCue {
@@ -88,6 +101,8 @@ export default function VideoPreview({
   isCancelling = false,
   onCancelMerge,
   onOpenOutputFolder,
+  onUpdateStyle,
+  softMux = false,
 }: VideoPreviewProps) {
   const { t } = useTranslation('subtitleMerge');
   const playerRef = useRef<ReactPlayer>(null);
@@ -95,7 +110,19 @@ export default function VideoPreview({
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [safeArea, setSafeArea] = useState<SubtitleSafeArea>('none');
+  const [dragStyle, setDragStyle] = useState<SubtitleStyle | null>(null);
+  const neutralStyle = useMemo(() => getDefaultStyle(), []);
+  const previewStyle = softMux ? neutralStyle : dragStyle || style;
   const [cues, setCues] = useState<PreviewCue[]>([]);
+  const [subtitleError, setSubtitleError] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [previewAttempt, setPreviewAttempt] = useState(0);
+  const [nativeInfo, setNativeInfo] = useState<{
+    width: number;
+    height: number;
+    duration: number;
+  } | null>(null);
   // 底层 <video> 元素（ReactPlayer onReady 后可取），供 JASSUB 预览引擎挂载
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   // 预览框尺寸：按可视区宽高拟合最大矩形，保证完整可见且不撑出滚动条
@@ -106,9 +133,20 @@ export default function VideoPreview({
 
   // 预览盒宽高比：优先用真实视频比例（非 16:9 视频也能所见即所得），否则回退 16:9
   const aspect =
-    videoInfo && videoInfo.width > 0 && videoInfo.height > 0
-      ? videoInfo.width / videoInfo.height
-      : 16 / 9;
+    nativeInfo && nativeInfo.width > 0 && nativeInfo.height > 0
+      ? nativeInfo.width / nativeInfo.height
+      : videoInfo && videoInfo.width > 0 && videoInfo.height > 0
+        ? videoInfo.width / videoInfo.height
+        : 16 / 9;
+
+  useEffect(() => {
+    setVideoEl(null);
+    setNativeInfo(null);
+    setVideoError(null);
+    setCurrentTime(0);
+    setIsPlaying(false);
+    setDragStyle(null);
+  }, [videoPath, previewAttempt]);
 
   // 监听预览区尺寸变化，重算最大可容纳的盒子（取按宽/按高撑满中较小者）
   useEffect(() => {
@@ -134,8 +172,9 @@ export default function VideoPreview({
 
   // 选中字幕文件后解析真实条目（清除则回退样例文字）
   useEffect(() => {
+    setCues([]);
+    setSubtitleError(null);
     if (!subtitlePath) {
-      setCues([]);
       return;
     }
     let stale = false;
@@ -160,17 +199,24 @@ export default function VideoPreview({
               Number.isFinite(cue.startSec) &&
               Number.isFinite(cue.endSec) &&
               cue.text.trim() !== '',
-          );
+          )
+          .sort((a, b) => a.startSec - b.startSec);
+        if (!parsed.length) throw new Error(t('previewEmptySubtitles'));
         setCues(parsed);
       } catch (error) {
         console.error('解析预览字幕失败:', error);
-        if (!stale) setCues([]);
+        if (!stale) {
+          setCues([]);
+          setSubtitleError(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
       }
     })();
     return () => {
       stale = true;
     };
-  }, [subtitlePath]);
+  }, [subtitlePath, previewAttempt, t]);
 
   // JASSUB（libass WASM）预览引擎：与烧录消费同一份生成的 ASS 内容，所见即所得。
   // 引擎就绪前/初始化失败时回退下方 CSS 模拟叠加层。
@@ -178,13 +224,14 @@ export default function VideoPreview({
     videoEl,
     subtitlePath,
     sampleText,
-    style,
+    style: previewStyle,
+    currentTime,
   });
 
   // 叠加层文字：有字幕文件时所见即所得（空档期不显示），否则用样例文字调样式
   const currentCue = cues.length > 0 ? findCueAtTime(cues, currentTime) : null;
-  const overlayText =
-    subtitlePath && cues.length > 0 ? (currentCue?.text ?? null) : sampleText;
+  const overlayText = subtitlePath ? (currentCue?.text ?? null) : sampleText;
+  const previewError = videoError || subtitleError || jassub.error;
 
   // 处理进度更新（原生控制条拖动同样会触发，保证字幕叠加层同步）
   const handleProgress = ({ playedSeconds }: { playedSeconds: number }) => {
@@ -192,9 +239,31 @@ export default function VideoPreview({
   };
 
   const isProcessing = status === 'processing';
+  useHotkeys([
+    {
+      combo: 'space',
+      preventDefault: false,
+      handler: (event) => {
+        const target = event.target as HTMLElement;
+        if (
+          document.querySelector('[role="dialog"], [role="alertdialog"]') ||
+          target.closest(
+            'button, [role="button"], [role="combobox"], [role="slider"], video',
+          )
+        )
+          return;
+        const video = playerRef.current?.getInternalPlayer();
+        if (!(video instanceof HTMLVideoElement) || videoError) return;
+        event.preventDefault();
+        if (video.paused)
+          void video.play().catch((error) => setVideoError(String(error)));
+        else video.pause();
+      },
+    },
+  ]);
 
   // ── 迷你时间轴：字幕块在片中的分布（只读展示 + 点击 seek）────────────
-  const duration = videoInfo?.duration || 0;
+  const duration = nativeInfo?.duration || videoInfo?.duration || 0;
   const timelineLaneRef = useRef<HTMLDivElement>(null);
 
   // 超长字幕列表按步长合并相邻条目，控制 DOM 数量
@@ -239,13 +308,90 @@ export default function VideoPreview({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {!softMux &&
+        !previewError &&
+        jassub.effectiveFont &&
+        jassub.fontSubstituted && (
+          <p
+            role="status"
+            data-font-substitution
+            className="mb-2 shrink-0 rounded bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-300"
+          >
+            {t('fontSubstitution', {
+              requested: style.fontName,
+              actual: jassub.effectiveFont,
+            })}
+          </p>
+        )}
+      {previewError && (
+        <div
+          role="alert"
+          data-preview-error
+          className="mb-2 flex shrink-0 items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive"
+        >
+          <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p>
+              {videoError
+                ? t('previewVideoFailed')
+                : t('previewSubtitleFailed')}
+            </p>
+            <details className="mt-1">
+              <summary className="cursor-pointer">
+                {t('previewErrorDetails')}
+              </summary>
+              <p className="mt-1 max-h-20 overflow-auto break-all">
+                {previewError}
+              </p>
+            </details>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 shrink-0 px-2 text-xs"
+            onClick={() => {
+              setPreviewAttempt((value) => value + 1);
+              jassub.retry();
+            }}
+          >
+            <RotateCcw className="mr-1 h-3 w-3" />
+            {t('previewRetry')}
+          </Button>
+        </div>
+      )}
+      <div className="mb-2 flex shrink-0 items-center justify-end gap-2">
+        {softMux && (
+          <p role="status" className="mr-auto text-xs text-muted-foreground">
+            {t('canvas.softPreview')}
+          </p>
+        )}
+        <Select
+          value={safeArea}
+          onValueChange={(value: SubtitleSafeArea) => setSafeArea(value)}
+        >
+          <SelectTrigger
+            aria-label={t('canvas.safeArea')}
+            className="h-8 w-[190px] shrink-0 text-xs"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">{t('canvas.none')}</SelectItem>
+            <SelectItem value="short-video">
+              {t('canvas.shortVideo')}
+            </SelectItem>
+            <SelectItem value="broadcast">{t('canvas.broadcast')}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
       {/* 预览区域 - 自适应高度，保持真实比例完整可见 */}
       <div
         ref={previewAreaRef}
         className="flex min-h-0 flex-1 items-center justify-center overflow-hidden"
       >
         <div
-          className="relative bg-black rounded-lg overflow-hidden"
+          className="group/canvas relative bg-black overflow-hidden"
+          data-video-canvas
           style={
             box.width > 0
               ? { width: box.width, height: box.height }
@@ -257,8 +403,9 @@ export default function VideoPreview({
               <>
                 {/* 视频播放器：原生控制条 */}
                 <ReactPlayer
+                  key={`${videoPath}:${previewAttempt}`}
                   ref={playerRef}
-                  url={`media://${encodeURIComponent(videoPath)}`}
+                  url={`media://${encodeURIComponent(videoPath)}?preview=${previewAttempt}`}
                   width="100%"
                   height="100%"
                   playing={isPlaying}
@@ -267,10 +414,24 @@ export default function VideoPreview({
                     const internal = playerRef.current?.getInternalPlayer();
                     if (internal instanceof HTMLVideoElement) {
                       setVideoEl(internal);
+                      setNativeInfo({
+                        width: internal.videoWidth,
+                        height: internal.videoHeight,
+                        duration: Number.isFinite(internal.duration)
+                          ? internal.duration
+                          : 0,
+                      });
                     }
                   }}
                   onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
+                  onError={(error) => {
+                    setIsPlaying(false);
+                    const detail =
+                      playerRef.current?.getInternalPlayer()?.error;
+                    setVideoError(detail?.message || String(error));
+                    setVideoEl(null);
+                  }}
                   onProgress={handleProgress}
                   progressInterval={100}
                   style={{ position: 'absolute', top: 0, left: 0 }}
@@ -278,9 +439,9 @@ export default function VideoPreview({
 
                 {/* CSS 模拟字幕叠加层（降级方案）：仅在 JASSUB 引擎未接管时显示。
                   scale=盒高/333：让预览字号随预览框大小等比缩放，≈烧录后字号 */}
-                {!jassub.active && overlayText !== null && (
+                {!jassub.active && !previewError && overlayText !== null && (
                   <SubtitlePreviewOverlay
-                    style={style}
+                    style={previewStyle}
                     text={overlayText}
                     scale={
                       box.height > 0 ? box.height / LIBASS_SRT_PLAYRES_Y : 1
@@ -294,6 +455,21 @@ export default function VideoPreview({
               </div>
             )}
           </div>
+
+          {videoPath && onUpdateStyle && (
+            <SubtitleCanvas
+              style={style}
+              text={overlayText ?? null}
+              width={box.width}
+              height={box.height}
+              safeArea={safeArea}
+              renderedBounds={jassub.bounds}
+              renderedPositionY={jassub.positionY}
+              disabled={isProcessing || softMux || Boolean(previewError)}
+              onUpdateStyle={onUpdateStyle}
+              onPreview={setDragStyle}
+            />
+          )}
 
           {/* 处理中浮层：不撑高布局，居中半透明面板 + 进度 + 取消 */}
           {isProcessing && (
@@ -349,15 +525,21 @@ export default function VideoPreview({
 
           {/* 错误浮层：底部条 */}
           {status === 'error' && progress?.errorMessage && (
-            <div className="absolute inset-x-2 bottom-2 z-20 flex items-start gap-2 rounded-lg border border-destructive/40 bg-background/95 px-3 py-2 shadow-lg">
+            <div
+              role="alert"
+              className="absolute inset-x-2 bottom-2 z-20 flex max-h-[80%] items-start gap-2 overflow-auto rounded-lg bg-background/95 px-3 py-2"
+            >
               <XCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-destructive" />
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-medium text-destructive">
                   {t('mergeError')}
                 </p>
-                <p className="mt-0.5 break-all text-[11px] text-destructive">
-                  {progress.errorMessage}
-                </p>
+                <details className="mt-0.5 text-[11px] text-destructive">
+                  <summary>{t('previewErrorDetails')}</summary>
+                  <p className="max-h-24 overflow-auto break-all">
+                    {progress.errorMessage}
+                  </p>
+                </details>
               </div>
             </div>
           )}

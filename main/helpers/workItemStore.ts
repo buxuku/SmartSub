@@ -69,6 +69,24 @@ let workItems: WorkItem[] = [];
 let writeTimer: NodeJS.Timeout | null = null;
 let initialized = false;
 let hasPendingWrite = false;
+type DeleteTransaction = { commit: () => void; rollback: () => void };
+let prepareDeletion: ((items: WorkItem[]) => DeleteTransaction) | undefined;
+export function setWorkItemDeletionHandler(
+  handler: typeof prepareDeletion,
+): void {
+  prepareDeletion = handler;
+}
+
+function commitDeletion(items: WorkItem[], next: WorkItem[]): void {
+  const transaction = prepareDeletion?.(items);
+  try {
+    commitWorkItems(next);
+  } catch (error) {
+    transaction?.rollback();
+    throw error;
+  }
+  transaction?.commit();
+}
 
 function scheduleWrite(delay = 800) {
   if (writeTimer) return;
@@ -215,7 +233,10 @@ export function saveWorkItem(
 export function deleteWorkItem(id: string): boolean {
   const index = workItems.findIndex((item) => item.id === id);
   if (index < 0) return false;
-  commitWorkItems(workItems.filter((item) => item.id !== id));
+  commitDeletion(
+    [workItems[index]],
+    workItems.filter((item) => item.id !== id),
+  );
   return true;
 }
 
@@ -232,5 +253,5 @@ export function renameWorkItem(id: string, name: string): WorkItem | null {
 
 export function clearAllWorkItems(): void {
   if (workItems.length === 0) return;
-  commitWorkItems([]);
+  commitDeletion(workItems, []);
 }

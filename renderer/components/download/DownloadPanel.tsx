@@ -59,6 +59,9 @@ import {
 } from '../../../types/download';
 import type { WorkItem, WorkItemArtifact } from '../../../types/workItem';
 import type { IFiles } from '../../../types';
+import type { TaskRecipe } from '../../../types/recipe';
+import { useTaskCloudConsent } from '../../hooks/useTaskCloudConsent';
+import { getWorkItemTarget } from '../../lib/workItemUtils';
 
 type Phase = 'compose' | 'review' | 'task';
 
@@ -133,6 +136,62 @@ export default function DownloadPanel() {
     useState<DownloadEngineChoice>('auto');
   const [concurrency, setConcurrency] = useState(2);
   const [writeSubs, setWriteSubs] = useState(true);
+  const [autoPipeline, setAutoPipeline] = useState(false);
+  const [recipeId, setRecipeId] = useState('');
+  const [recipes, setRecipes] = useState<TaskRecipe[]>([]);
+  const [startError, setStartError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  const startBusy = useRef(false);
+  const consent = useTaskCloudConsent();
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  useEffect(() => {
+    try {
+      const draft = JSON.parse(
+        localStorage.getItem('smartsub:download-draft:v1') || 'null',
+      );
+      if (draft && typeof draft.rawText === 'string') {
+        setRawText(draft.rawText);
+        setAutoPipeline(draft.autoPipeline === true);
+        if (typeof draft.recipeId === 'string') setRecipeId(draft.recipeId);
+      }
+    } catch {
+      // Unreadable drafts must not prevent starting a fresh download.
+    }
+    setDraftLoaded(true);
+  }, []);
+  useEffect(() => {
+    if (!draftLoaded) return;
+    try {
+      if (!rawText.trim())
+        localStorage.removeItem('smartsub:download-draft:v1');
+      else
+        localStorage.setItem(
+          'smartsub:download-draft:v1',
+          JSON.stringify({ rawText, autoPipeline, recipeId }),
+        );
+    } catch {
+      setStartError(t('pipeline.draftFailed'));
+    }
+  }, [draftLoaded, rawText, autoPipeline, recipeId, t]);
+  useEffect(() => {
+    let current = true;
+    window.ipc
+      .invoke('recipes:list')
+      .then((items: TaskRecipe[]) => {
+        if (current)
+          setRecipes(
+            items.filter(
+              (recipe) => recipe.accepts === 'media' && recipe.config,
+            ),
+          );
+      })
+      .catch((error) => {
+        if (current) setStartError(String(error));
+      });
+    return () => {
+      current = false;
+    };
+  }, []);
 
   // ── 站点 Cookie 档案 ────────────────────────────────────────────────────────
   const [cookieProfiles, setCookieProfiles] = useState<CookieProfileView[]>([]);
@@ -323,6 +382,7 @@ export default function DownloadPanel() {
         expandPlaylist?: boolean;
       }>,
     ) => {
+      if (startBusy.current) return;
       if (!savePath) {
         toast.warning(t('compose.noPathHint'));
         return;
@@ -331,6 +391,13 @@ export default function DownloadPanel() {
         toast.warning(t('review.noneSelectable'));
         return;
       }
+      if (autoPipeline && !recipeId) {
+        setStartError(t('pipeline.chooseRecipe'));
+        return;
+      }
+      startBusy.current = true;
+      setStarting(true);
+      setStartError(null);
       // 并发数不在此持久化：随 start payload 交给主进程写入（消除异步写设置的时序依赖）
       persistSetting({
         videoDownloadQuality: quality,
@@ -338,6 +405,14 @@ export default function DownloadPanel() {
         videoDownloadWriteSubs: writeSubs,
       });
       try {
+        const prepared = autoPipeline
+          ? await window.ipc.invoke('videoDownload:preparePipeline', recipeId)
+          : undefined;
+        const needsCloudConsent = prepared?.transcriptionEngine === 'cloud';
+        const uploadConsent = needsCloudConsent
+          ? await consent.requestConsent(true, 'cloud')
+          : false;
+        if (needsCloudConsent && !uploadConsent) return;
         const created: WorkItem = await window?.ipc?.invoke(
           'videoDownload:start',
           {
@@ -348,9 +423,19 @@ export default function DownloadPanel() {
             writeSubs,
             concurrency,
             entries,
+            ...(autoPipeline
+              ? {
+                  autoChain: {
+                    recipeId,
+                    cloudUploadConsent: uploadConsent,
+                    configKey: prepared.configKey,
+                  },
+                }
+              : {}),
           },
         );
         setItem(created);
+        setRawText('');
         setPhase('task');
         void router.replace(
           { query: { ...router.query, workItem: created.id } },
@@ -358,7 +443,10 @@ export default function DownloadPanel() {
           { shallow: true },
         );
       } catch (error) {
-        toast.error(String(error instanceof Error ? error.message : error));
+        setStartError(String(error instanceof Error ? error.message : error));
+      } finally {
+        startBusy.current = false;
+        setStarting(false);
       }
     },
     [
@@ -367,6 +455,9 @@ export default function DownloadPanel() {
       engineChoice,
       concurrency,
       writeSubs,
+      autoPipeline,
+      recipeId,
+      consent.requestConsent,
       buildBatchName,
       persistSetting,
       router,
@@ -523,10 +614,51 @@ export default function DownloadPanel() {
   const revealFile = useCallback((filePath: string) => {
     void window?.ipc?.invoke('videoDownload:revealFile', { filePath });
   }, []);
+  const [pipelineBusy, setPipelineBusy] = useState<string | null>(null);
+  const retryPipeline = async (entryId: string) => {
+    if (!itemIdRef.current || pipelineBusy) return;
+    setPipelineBusy(entryId);
+    try {
+      const needsConsent =
+        item?.downloadEntries?.find((entry) => entry.id === entryId)?.pipeline
+          ?.error === 'DOWNLOAD_PIPELINE_CLOUD_CONSENT_REQUIRED';
+      const uploadConsent = needsConsent
+        ? await consent.requestConsent(true, 'cloud')
+        : false;
+      if (needsConsent && !uploadConsent) return;
+      await window.ipc.invoke('videoDownload:retryPipeline', {
+        workItemId: itemIdRef.current,
+        entryId,
+        cloudUploadConsent: uploadConsent,
+      });
+      await loadItem(itemIdRef.current);
+    } catch (error) {
+      setStartError(String(error));
+    } finally {
+      setPipelineBusy(null);
+    }
+  };
+  const openPipeline = async (projectId: string) => {
+    try {
+      const project = await window.ipc.invoke('getWorkItem', projectId);
+      if (!project) throw new Error(t('pipeline.taskMissing'));
+      await router.push(getWorkItemTarget(project, locale));
+    } catch (error) {
+      setStartError(String(error));
+    }
+  };
 
   // ── 渲染 ──────────────────────────────────────────────────────────────────
   return (
     <div className="flex h-full flex-col gap-2.5 overflow-y-auto p-3">
+      {startError && (
+        <div
+          role="alert"
+          className="shrink-0 break-words bg-destructive/10 p-3 text-xs text-destructive"
+        >
+          {startError}
+        </div>
+      )}
       <EngineSetupCard
         statuses={statuses}
         onStatusesChange={() => void refreshStatuses(false)}
@@ -656,6 +788,57 @@ export default function DownloadPanel() {
                 )}
               </button>
             </div>
+            <div className="flex flex-wrap items-center gap-3 bg-muted/40 p-2 text-xs">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="download-auto-pipeline"
+                  checked={autoPipeline}
+                  onCheckedChange={(checked) =>
+                    setAutoPipeline(checked === true)
+                  }
+                  disabled={starting}
+                />
+                <label
+                  htmlFor="download-auto-pipeline"
+                  className="cursor-pointer"
+                >
+                  {t('pipeline.enabled')}
+                </label>
+              </div>
+              {autoPipeline && (
+                <>
+                  <Select
+                    value={recipeId}
+                    onValueChange={setRecipeId}
+                    disabled={starting}
+                  >
+                    <SelectTrigger
+                      aria-label={t('pipeline.recipe')}
+                      className="h-8 w-56 max-w-full"
+                    >
+                      <SelectValue placeholder={t('pipeline.chooseRecipe')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {recipes.map((recipe) => (
+                        <SelectItem key={recipe.id} value={recipe.id}>
+                          {recipe.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {!recipes.length && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => router.push(`/${locale}/tasks/new`)}
+                    >
+                      <Plus className="mr-1 h-3 w-3" />
+                      {t('pipeline.createRecipe')}
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
             <div className="flex items-center justify-end gap-2">
               {!anyEngineInstalled && statuses && (
                 <span className="mr-auto text-xs text-warning">
@@ -665,7 +848,13 @@ export default function DownloadPanel() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={!urls.length || !anyEngineInstalled || !savePath}
+                disabled={
+                  starting ||
+                  !urls.length ||
+                  !anyEngineInstalled ||
+                  !savePath ||
+                  (autoPipeline && !recipeId)
+                }
                 onClick={startDirect}
               >
                 <CloudDownload className="mr-1.5 h-4 w-4" />
@@ -673,7 +862,7 @@ export default function DownloadPanel() {
               </Button>
               <Button
                 size="sm"
-                disabled={!urls.length || !anyEngineInstalled}
+                disabled={starting || !urls.length || !anyEngineInstalled}
                 onClick={() => void runPreflight()}
               >
                 <Search className="mr-1.5 h-4 w-4" />
@@ -694,6 +883,7 @@ export default function DownloadPanel() {
           }
           onBack={() => setPhase('compose')}
           onStart={startFromReview}
+          starting={starting}
         />
       )}
 
@@ -727,6 +917,9 @@ export default function DownloadPanel() {
           onNewBatch={resetToCompose}
           onReveal={revealFile}
           onReimportCookie={reimportCookieForUrl}
+          onRetryPipeline={retryPipeline}
+          onOpenPipeline={openPipeline}
+          pipelineBusy={pipelineBusy}
         />
       )}
 
@@ -743,6 +936,7 @@ export default function DownloadPanel() {
         onChanged={loadCookieProfiles}
         focusProfileId={cookieFocusId}
       />
+      {consent.dialog}
     </div>
   );
 }
@@ -756,6 +950,7 @@ function ReviewList({
   onExpandChange,
   onBack,
   onStart,
+  starting,
 }: {
   urls: string[];
   results: Record<string, DownloadPreflightResult | 'pending'>;
@@ -763,6 +958,7 @@ function ReviewList({
   onExpandChange: (url: string, value: 'all' | 'single') => void;
   onBack: () => void;
   onStart: () => void;
+  starting: boolean;
 }) {
   const { t } = useTranslation('download');
   const pendingCount = urls.filter((u) => results[u] === 'pending').length;
@@ -785,7 +981,7 @@ function ReviewList({
             <Button
               size="sm"
               className="h-7"
-              disabled={okCount === 0 || pendingCount > 0}
+              disabled={starting || okCount === 0 || pendingCount > 0}
               onClick={onStart}
             >
               <CloudDownload className="mr-1.5 h-3.5 w-3.5" />
@@ -933,6 +1129,9 @@ function TaskView({
   onNewBatch,
   onReveal,
   onReimportCookie,
+  onRetryPipeline,
+  onOpenPipeline,
+  pipelineBusy,
 }: {
   item: WorkItem;
   videoArtifacts: WorkItemArtifact[];
@@ -951,6 +1150,9 @@ function TaskView({
   onNewBatch: () => void;
   onReveal: (path: string) => void;
   onReimportCookie: (url: string) => void;
+  onRetryPipeline: (entryId: string) => void;
+  onOpenPipeline: (projectId: string) => void;
+  pipelineBusy: string | null;
 }) {
   const { t } = useTranslation('download');
   const entries = item.downloadEntries || [];
@@ -1023,6 +1225,77 @@ function TaskView({
           ))}
         </div>
       </Panel>
+
+      {item.configSnapshot?.autoChain && (
+        <section
+          className="flex flex-col gap-2 bg-muted/40 p-3"
+          aria-label={t('pipeline.title')}
+        >
+          <h2 className="text-sm font-medium">{t('pipeline.title')}</h2>
+          {entries
+            .filter((entry) => entry.status === 'done')
+            .map((entry) => (
+              <div
+                key={entry.id}
+                className="flex flex-wrap items-start gap-2 text-xs"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="break-words">
+                    {entry.meta?.title ||
+                      fileNameOf(entry.outputPath || entry.url)}
+                  </p>
+                  <p
+                    className={
+                      entry.pipeline?.status === 'error'
+                        ? 'text-destructive'
+                        : 'text-muted-foreground'
+                    }
+                  >
+                    {t(`pipeline.${entry.pipeline?.status || 'pending'}`)}
+                  </p>
+                  {entry.pipeline?.subtitlePaths?.length > 0 && (
+                    <p className="text-muted-foreground">
+                      {t('pipeline.nativeSubtitles')}
+                    </p>
+                  )}
+                  {entry.pipeline?.error && (
+                    <>
+                      <p className="mt-1 text-destructive">
+                        {t(`pipeline.errors.${entry.pipeline.error}`, {
+                          defaultValue: t('pipeline.repair'),
+                        })}
+                      </p>
+                      <details className="mt-1 text-destructive">
+                        <summary>{t('pipeline.details')}</summary>
+                        <p className="break-words">{entry.pipeline.error}</p>
+                      </details>
+                    </>
+                  )}
+                </div>
+                {entry.pipeline?.status === 'submitted' ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onOpenPipeline(entry.pipeline!.projectId)}
+                  >
+                    <ArrowRight className="mr-1 h-3 w-3" />
+                    {t('pipeline.open')}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={Boolean(pipelineBusy)}
+                    onClick={() => onRetryPipeline(entry.id)}
+                  >
+                    <RotateCcw className="mr-1 h-3 w-3" />
+                    {t('pipeline.retry')}
+                  </Button>
+                )}
+              </div>
+            ))}
+        </section>
+      )}
 
       {entriesTerminal && videoArtifacts.length > 0 && (
         <Panel className="flex-none border-primary/30 bg-primary/[0.03]">

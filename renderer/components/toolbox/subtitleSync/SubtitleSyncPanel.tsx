@@ -132,7 +132,7 @@ export default function SubtitleSyncPanel() {
 
             {/* 整体平移内容 */}
             {mode === 'offset' && (
-              <div className="space-y-3 rounded-lg border border-border p-4 bg-muted/20">
+              <div className="space-y-3 rounded-lg p-4 bg-muted/40">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs text-foreground">
                     平移毫秒数 (正数延后，负数提前)
@@ -184,7 +184,7 @@ export default function SubtitleSyncPanel() {
 
             {/* 比例伸缩内容 */}
             {mode === 'scale' && (
-              <div className="space-y-3 rounded-lg border border-border p-4 bg-muted/20">
+              <div className="space-y-3 rounded-lg p-4 bg-muted/40">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs text-foreground">
                     时间轴伸缩比率
@@ -223,7 +223,7 @@ export default function SubtitleSyncPanel() {
 
             {/* 双锚点内容 */}
             {mode === 'two-point' && (
-              <div className="space-y-3 rounded-lg border border-border p-4 bg-muted/20">
+              <div className="space-y-3 rounded-lg p-4 bg-muted/40">
                 <p className="text-[11px] text-muted-foreground leading-normal">
                   分别输入第一句和最后一句当前的时间码与正确的目标时间码，算法将通过线性重采样修正全篇渐进式偏差。
                 </p>

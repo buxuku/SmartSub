@@ -26,6 +26,11 @@ import {
 import { ytDlpAdapter } from './ytDlpAdapter';
 import { luxAdapter } from './luxAdapter';
 import type { DownloadEngineAdapter } from './engineAdapter';
+import {
+  resolveDownloadPipeline,
+  handoffDownloadEntry,
+  downloadPipelineKey,
+} from './pipeline';
 
 const ADAPTERS: Record<DownloaderEngine, DownloadEngineAdapter> = {
   'yt-dlp': ytDlpAdapter,
@@ -130,7 +135,12 @@ function updateEntry(
   workItemId: string,
   entryId: string,
   patch: Partial<DownloadEntry>,
-  opts: { deriveItemStatus?: boolean; forceEmit?: boolean } = {},
+  opts: {
+    deriveItemStatus?: boolean;
+    forceEmit?: boolean;
+    durable?: boolean;
+    artifacts?: WorkItem['artifacts'];
+  } = {},
 ): DownloadEntry | null {
   const item = getWorkItemById(workItemId);
   if (!item || item.type !== 'download') return null;
@@ -142,6 +152,7 @@ function updateEntry(
     ...item,
     downloadEntries: entries,
     updatedAt: Date.now(),
+    ...(opts.artifacts ? { artifacts: opts.artifacts } : {}),
   };
   if (opts.deriveItemStatus) {
     next.status = deriveStatus(entries);
@@ -149,7 +160,7 @@ function updateEntry(
       next.finishedAt = Date.now();
     }
   }
-  saveWorkItem(next);
+  saveWorkItem(next, { durable: opts.durable });
 
   if (updated) {
     const now = Date.now();
@@ -201,6 +212,11 @@ function emitSummary(): void {
 }
 
 export interface StartDownloadPayload {
+  autoChain?: {
+    recipeId: string;
+    cloudUploadConsent?: boolean;
+    configKey: string;
+  };
   name: string;
   savePath: string;
   quality: DownloadQuality;
@@ -222,6 +238,17 @@ export interface StartDownloadPayload {
  * 未预检的播放列表 → 单 entry 交给引擎 --yes-playlist 兜底。
  */
 export function startDownloadBatch(payload: StartDownloadPayload): WorkItem {
+  const autoChain = payload.autoChain
+    ? resolveDownloadPipeline(
+        payload.autoChain.recipeId,
+        payload.autoChain.cloudUploadConsent === true,
+      )
+    : undefined;
+  if (
+    autoChain &&
+    downloadPipelineKey(autoChain) !== payload.autoChain!.configKey
+  )
+    throw new Error('DOWNLOAD_PIPELINE_CONFIG_CHANGED');
   if (!payload.savePath) throw new Error('savePath is required');
   fs.mkdirSync(payload.savePath, { recursive: true });
 
@@ -282,6 +309,7 @@ export function startDownloadBatch(payload: StartDownloadPayload): WorkItem {
     engine: payload.engine,
     writeSubs: payload.writeSubs !== false,
     concurrency,
+    ...(autoChain ? { autoChain } : {}),
   };
   const now = Date.now();
   const item: WorkItem = {
@@ -295,7 +323,7 @@ export function startDownloadBatch(payload: StartDownloadPayload): WorkItem {
     configSnapshot: snapshot as unknown as Record<string, unknown>,
     artifacts: [],
   };
-  saveWorkItem(item);
+  saveWorkItem(item, { durable: true });
   ensureRuntime(item.id).cancelled = false;
 
   queue.push(...entries.map((e) => ({ workItemId: item.id, entryId: e.id })));
@@ -369,6 +397,11 @@ export function cancelDownloadEntry(
   workItemId: string,
   entryId: string,
 ): boolean {
+  const entry = getWorkItemById(workItemId)?.downloadEntries?.find(
+    (item) => item.id === entryId,
+  );
+  if (!entry || (entry.status !== '' && entry.status !== 'loading'))
+    return false;
   queue = queue.filter(
     (j) => !(j.workItemId === workItemId && j.entryId === entryId),
   );
@@ -392,11 +425,22 @@ export function cancelDownloadEntry(
 /** 整批取消：清排队 + abort 执行中；未完成条目回到待下载，任务标记中断 */
 export function cancelDownloadBatch(workItemId: string): boolean {
   const item = getWorkItemById(workItemId);
-  if (!item || item.type !== 'download') return false;
+  if (item && item.type !== 'download') return false;
+  const existingRuntime = runtimes.get(workItemId);
+  if (!item && !existingRuntime) return false;
+  if (
+    item &&
+    !(item.downloadEntries || []).some(
+      (entry) => entry.status === '' || entry.status === 'loading',
+    )
+  )
+    return false;
   queue = queue.filter((j) => j.workItemId !== workItemId);
   const runtime = ensureRuntime(workItemId);
   runtime.cancelled = true;
   runtime.controllers.forEach((controller) => controller.abort());
+  // Deletion commits the work item before stopping its outstanding transfers.
+  if (!item) return true;
 
   const entries = (item.downloadEntries || []).map((entry) =>
     entry.status === '' || entry.status === 'loading'
@@ -435,10 +479,21 @@ function pump(): void {
     const job = takeNextJob();
     if (!job) break;
     activeCount += 1;
-    void runEntry(job).finally(() => {
-      activeCount -= 1;
-      pump();
-    });
+    void runEntry(job)
+      .catch((error) => {
+        logMessage(`Download state update failed: ${error}`, 'error');
+      })
+      .finally(() => {
+        activeCount -= 1;
+        lastEmitAt.delete(job.entryId);
+        const runtime = runtimes.get(job.workItemId);
+        if (
+          !runtime?.controllers.size &&
+          !queue.some((pending) => pending.workItemId === job.workItemId)
+        )
+          runtimes.delete(job.workItemId);
+        pump();
+      });
   }
   emitSummary();
 }
@@ -535,6 +590,7 @@ async function runEntry(job: QueuedJob): Promise<void> {
         }
       }
 
+      let downloaded = false;
       try {
         const result = await adapter.download(binaryPath, {
           url: entry.url,
@@ -554,13 +610,15 @@ async function runEntry(job: QueuedJob): Promise<void> {
             });
           },
         });
+        downloaded = true;
+        if (controller.signal.aborted) throw new Error(CANCELLED_ERROR);
 
         // 产物登记：主路径进 entry，全部路径进 artifacts（播放列表兜底可能多个）；
         // 同取字幕以 kind:'subtitle' 并列登记，路径去重保证重试/续传幂等
         const subtitlePaths = result.subtitlePaths || [];
         const latest = getWorkItemById(workItemId);
+        const artifacts = [...(latest?.artifacts || [])];
         if (latest && latest.type === 'download') {
-          const artifacts = [...(latest.artifacts || [])];
           for (const outputPath of result.outputPaths) {
             if (!artifacts.some((a) => a.path === outputPath)) {
               artifacts.push({ kind: 'video', path: outputPath });
@@ -571,7 +629,6 @@ async function runEntry(job: QueuedJob): Promise<void> {
               artifacts.push({ kind: 'subtitle', path: subtitlePath });
             }
           }
-          saveWorkItem({ ...latest, artifacts, updatedAt: Date.now() });
         }
         updateEntry(
           workItemId,
@@ -582,11 +639,17 @@ async function runEntry(job: QueuedJob): Promise<void> {
             speed: undefined,
             eta: undefined,
             outputPath: result.outputPaths[0],
-            ...(subtitlePaths.length ? { subtitlePaths } : {}),
+            outputPaths: result.outputPaths,
+            subtitlePaths,
           },
-          { deriveItemStatus: true, forceEmit: true },
+          { deriveItemStatus: true, forceEmit: true, durable: true, artifacts },
         );
         succeeded = true;
+        try {
+          handoffDownloadEntry(workItemId, entryId);
+        } catch (error) {
+          logMessage(`Download pipeline handoff deferred: ${error}`, 'error');
+        }
         break;
       } catch (error) {
         if (isCancelledError(error) || controller.signal.aborted) {
@@ -614,13 +677,14 @@ async function runEntry(job: QueuedJob): Promise<void> {
           `videoDownload entry failed via ${engine} (${entry.url}): ${message}`,
           'warning',
         );
+        // A completed transfer must not fall back to another downloader on a disk error.
+        if (downloaded) break;
       }
     }
   } finally {
     cleanupCookieTempFile(cookieFilePath);
+    runtime.controllers.delete(entryId);
   }
-
-  runtime.controllers.delete(entryId);
 
   if (!succeeded) {
     const combined = errors.join(' || ') || 'download failed';

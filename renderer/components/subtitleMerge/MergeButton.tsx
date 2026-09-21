@@ -40,12 +40,18 @@ import type {
   VideoQuality,
   EncoderMode,
   HwAccelInfo,
+  SubtitleStyle,
 } from '../../../types/subtitleMerge';
 import type { AudioTrackMode } from './hooks/useSubtitleMerge';
 
 interface MergeButtonProps {
+  disabled?: boolean;
+  invalidStyleFields?: (keyof SubtitleStyle)[];
+  hasOriginalAudio?: boolean;
   outputPath: string | null;
   outputMode: MergeOutputMode;
+  softContainer: 'mkv' | 'mp4';
+  onSoftContainerChange: (container: 'mkv' | 'mp4') => void;
   videoQuality: VideoQuality;
   /** 生效编码方式（偏好 hardware 但硬件不可用时上游已回落 cpu） */
   encoderMode: EncoderMode;
@@ -72,8 +78,13 @@ interface MergeButtonProps {
 }
 
 export default function MergeButton({
+  disabled = false,
+  invalidStyleFields = [],
+  hasOriginalAudio,
   outputPath,
   outputMode,
+  softContainer,
+  onSoftContainerChange,
   videoQuality,
   encoderMode,
   hwAccelInfo,
@@ -164,8 +175,7 @@ export default function MergeButton({
     },
   ];
   // mkv 容器约束提示：软封装或双音轨参与时输出为 mkv
-  const showMkvHint =
-    hasAudioTrack && audioTrackMode === 'addTrack' && outputMode !== 'softmux';
+  const showMkvHint = hasAudioTrack && audioTrackMode === 'addTrack';
 
   return (
     <TooltipProvider>
@@ -179,7 +189,7 @@ export default function MergeButton({
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    disabled={isProcessing}
+                    disabled={disabled || isProcessing}
                     onClick={() => onOutputModeChange(option.value)}
                     className={`flex items-center gap-1.5 rounded-[5px] px-2.5 text-xs transition-colors disabled:opacity-50 ${
                       active
@@ -197,6 +207,25 @@ export default function MergeButton({
           })}
         </div>
 
+        {!isHardcode && (
+          <Select
+            value={showMkvHint ? 'mkv' : softContainer}
+            onValueChange={onSoftContainerChange}
+            disabled={disabled || isProcessing || showMkvHint}
+          >
+            <SelectTrigger
+              className="h-8 w-24 text-xs"
+              aria-label={t('softContainer')}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="mkv">MKV</SelectItem>
+              <SelectItem value="mp4">MP4</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+
         {/* 导出画质（仅烧录硬字幕生效） */}
         {isHardcode && (
           <div className="flex flex-none items-center gap-1.5">
@@ -207,7 +236,7 @@ export default function MergeButton({
             <Select
               value={videoQuality}
               onValueChange={(v) => onVideoQualityChange(v as VideoQuality)}
-              disabled={isProcessing}
+              disabled={disabled || isProcessing}
             >
               <SelectTrigger className="w-[112px]">
                 <SelectValue />
@@ -234,7 +263,7 @@ export default function MergeButton({
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    disabled={isProcessing}
+                    disabled={disabled || isProcessing}
                     onClick={() => onEncoderModeChange('cpu')}
                     className={`flex items-center gap-1.5 rounded-[5px] px-2.5 text-xs transition-colors disabled:opacity-50 ${
                       encoderMode === 'cpu'
@@ -256,7 +285,7 @@ export default function MergeButton({
                   <span className="flex">
                     <button
                       type="button"
-                      disabled={isProcessing || !hwAvailable}
+                      disabled={disabled || isProcessing || !hwAvailable}
                       onClick={() => onEncoderModeChange('hardware')}
                       className={`flex items-center gap-1.5 rounded-[5px] px-2.5 text-xs transition-colors disabled:opacity-50 ${
                         encoderMode === 'hardware'
@@ -291,7 +320,7 @@ export default function MergeButton({
                     <TooltipTrigger asChild>
                       <button
                         type="button"
-                        disabled={isProcessing}
+                        disabled={disabled || isProcessing}
                         onClick={() => onAudioTrackModeChange(option.value)}
                         className={`flex items-center gap-1.5 rounded-[5px] px-2.5 text-xs transition-colors disabled:opacity-50 ${
                           active
@@ -322,6 +351,7 @@ export default function MergeButton({
             type="text"
             value={outputPath || ''}
             readOnly
+            disabled={disabled || isProcessing}
             placeholder={t('selectOutputPath')}
             className={`min-w-0 flex-1 font-mono text-xs ${
               needsOutputPath ? 'border-warning/60' : ''
@@ -333,6 +363,7 @@ export default function MergeButton({
             size="icon"
             onClick={onSelectOutputPath}
             className="flex-none"
+            disabled={disabled || isProcessing}
             aria-label={t('selectOutputPath')}
           >
             <FolderOpen className="h-4 w-4" />
@@ -344,7 +375,7 @@ export default function MergeButton({
           size="lg"
           className="min-w-[132px] flex-none"
           onClick={onStartMerge}
-          disabled={!canMerge || isProcessing}
+          disabled={disabled || !canMerge || isProcessing}
         >
           {isProcessing ? (
             <>
@@ -366,6 +397,35 @@ export default function MergeButton({
             {t('outputPathRequiredHint')}
           </p>
         )}
+
+        {invalidStyleFields.length > 0 && (
+          <p role="alert" className="w-full text-xs text-destructive">
+            {t('invalidStyle', {
+              fields: invalidStyleFields
+                .map((field) => t(`styleFields.${field}`))
+                .join(', '),
+            })}
+          </p>
+        )}
+        {!isHardcode && (
+          <p className="w-full text-[11.5px] text-muted-foreground">
+            {t(
+              softContainer === 'mp4' && !showMkvHint
+                ? 'mp4StreamPolicy'
+                : 'mkvStreamPolicy',
+            )}
+          </p>
+        )}
+        {hasAudioTrack &&
+          audioTrackMode === 'mix' &&
+          hasOriginalAudio === false && (
+            <p
+              role="status"
+              className="w-full text-[11.5px] text-muted-foreground"
+            >
+              {t('mixWithoutOriginal')}
+            </p>
+          )}
 
         {/* 双音轨参与：输出容器为 mkv 的约束提示 */}
         {showMkvHint && (

@@ -20,11 +20,17 @@ import {
   getComposeQueueSnapshot,
   setComposeEventListeners,
 } from './compose/composeQueue';
-import { loadFontData } from './fontResolver';
+import {
+  loadFontData,
+  embeddedFontContext,
+  listSubtitleFonts,
+  prepareSubtitleFonts,
+} from './fontResolver';
 import { getHwAccelInfo } from './hwEncoderDetector';
 import { store } from './store';
 import type { StoreType } from './store/types';
 import type { SubtitleStyle } from '../../types/subtitleMerge';
+import { assertValidSubtitleStyle } from '../../types/subtitleStyleValidation';
 import type {
   ComposeConfig,
   MergeConfig,
@@ -37,7 +43,9 @@ import type {
 
 function readStylePresets(): UserStylePreset[] {
   const list = store.get('mergeStylePresets');
-  return Array.isArray(list) ? list : [];
+  if (list === undefined) return [];
+  if (!Array.isArray(list)) throw new Error('Invalid saved style preset list');
+  return list;
 }
 
 /** MergeConfig（渲染层合成面板契约）→ ComposeConfig（统一合成引擎矩阵） */
@@ -71,25 +79,39 @@ function mergeConfigToComposeConfig(
 /**
  * 设置字幕合并相关的 IPC 处理函数
  */
-export function setupSubtitleMergeHandlers(mainWindow: BrowserWindow) {
+export function setupSubtitleMergeHandlers(
+  mainWindow: BrowserWindow,
+  rendererUrl = mainWindow.webContents.getURL(),
+) {
+  const ownerUrl = new URL(rendererUrl);
+  const ownerSession = mainWindow.webContents.session;
   // 合成队列事件出口：进度沿用既有 subtitleMerge:progress 通道（增量携带
   // jobId/source），队列快照走 compose:queue（排队位置展示）
   setComposeEventListeners({
     onProgress: (progress) => {
-      try {
-        mainWindow.webContents.send('subtitleMerge:progress', progress);
-      } catch {
-        /* 窗口销毁等场景忽略 */
-      }
+      broadcast('subtitleMerge:progress', progress);
     },
     onQueueChange: (snapshot) => {
-      try {
-        mainWindow.webContents.send('compose:queue', snapshot);
-      } catch {
-        /* ignore */
-      }
+      broadcast('compose:queue', snapshot);
     },
   });
+  function broadcast(channel: string, value: unknown) {
+    for (const window of BrowserWindow.getAllWindows()) {
+      // Only application windows in the same session receive local job paths.
+      try {
+        if (window.webContents.session !== ownerSession) continue;
+        const target = new URL(window.webContents.getURL());
+        if (
+          ownerUrl.protocol !== target.protocol ||
+          ownerUrl.host !== target.host
+        )
+          continue;
+        window.webContents.send(channel, value);
+      } catch {
+        /* A closing window must not interrupt the export or other listeners. */
+      }
+    }
+  }
 
   // 获取视频信息
   ipcMain.handle(
@@ -167,10 +189,21 @@ export function setupSubtitleMergeHandlers(mainWindow: BrowserWindow) {
           await fs.promises.mkdir(outputDir, { recursive: true });
         }
 
-        const { done } = enqueueCompose(
+        const { jobId, done } = enqueueCompose(
           mergeConfigToComposeConfig(config, outputPath),
           'subtitleMerge',
+          { requestId: config.requestId },
         );
+        if (config.requestId && !event.sender.isDestroyed()) {
+          try {
+            event.sender.send('subtitleMerge:queued', {
+              requestId: config.requestId,
+              jobId,
+            });
+          } catch {
+            /* Closing the renderer does not cancel its queued export. */
+          }
+        }
         const result = await done;
         if (result.cancelled) {
           return { success: true, cancelled: true };
@@ -263,13 +296,19 @@ export function setupSubtitleMergeHandlers(mainWindow: BrowserWindow) {
       if (!name || !payload?.style) {
         return { success: false, error: '样式名称与内容不能为空' };
       }
+      if (
+        payload.id !== undefined &&
+        (typeof payload.id !== 'string' || !payload.id.trim())
+      )
+        return { success: false, error: 'Invalid style preset id' };
+      assertValidSubtitleStyle(payload.style);
       const now = Date.now();
       const list = readStylePresets();
       const index = payload.id
         ? list.findIndex((p) => p.id === payload.id)
         : -1;
       const saved: UserStylePreset = {
-        id: index >= 0 ? payload.id! : randomUUID(),
+        id: payload.id || randomUUID(),
         name,
         style: payload.style,
         createdAt: index >= 0 ? (list[index].createdAt ?? now) : now,
@@ -288,7 +327,7 @@ export function setupSubtitleMergeHandlers(mainWindow: BrowserWindow) {
       const list = readStylePresets();
       const next = list.filter((p) => p.id !== id);
       if (next.length === list.length) {
-        return { success: false, error: '样式不存在' };
+        return { success: true, data: true };
       }
       store.set('mergeStylePresets', next);
       return { success: true, data: true };
@@ -309,7 +348,7 @@ export function setupSubtitleMergeHandlers(mainWindow: BrowserWindow) {
         });
 
         if (result.canceled || !result.filePath) {
-          return { success: false, error: '用户取消选择' };
+          return { success: true, cancelled: true };
         }
 
         return { success: true, data: result.filePath };
@@ -354,7 +393,7 @@ export function setupSubtitleMergeHandlers(mainWindow: BrowserWindow) {
       try {
         let content: string;
         let pathForFormat: string;
-        if (subtitlePath && fs.existsSync(subtitlePath)) {
+        if (subtitlePath) {
           content = await fs.promises.readFile(subtitlePath, 'utf-8');
           pathForFormat = subtitlePath;
         } else {
@@ -363,12 +402,28 @@ export function setupSubtitleMergeHandlers(mainWindow: BrowserWindow) {
           content = `1\n00:00:00,000 --> 99:00:00,000\n${text}\n`;
           pathForFormat = 'sample.srt';
         }
-        const { assContent } = buildAssForSubtitle(
-          content,
-          pathForFormat,
-          style,
-        );
-        return { success: true, data: assContent };
+        await prepareSubtitleFonts();
+        const {
+          assContent,
+          effectiveStyle,
+          fontNames,
+          embeddedFonts,
+          fontSubstituted,
+          translateY,
+        } = buildAssForSubtitle(content, pathForFormat, style);
+        return {
+          success: true,
+          data: assContent,
+          translateY,
+          fontName: effectiveStyle.fontName,
+          fontNames,
+          fontSubstituted,
+          embeddedFonts,
+        } as SubtitleMergeResponse<string> & {
+          fontName: string;
+          fontNames: string[];
+          fontSubstituted: boolean;
+        };
       } catch (error) {
         logMessage(`生成预览 ASS 失败: ${error}`, 'error');
         return { success: false, error: `生成预览 ASS 失败: ${error}` };
@@ -377,16 +432,35 @@ export function setupSubtitleMergeHandlers(mainWindow: BrowserWindow) {
   );
 
   // 读取字体文件数据（供 JASSUB WASM 预览加载真实字形；WASM 无法直接访问系统字体）
+  const subtitleFonts = async (subtitlePath?: string | null) =>
+    subtitlePath && /\.(ass|ssa)$/i.test(subtitlePath)
+      ? embeddedFontContext(await fs.promises.readFile(subtitlePath, 'utf8'))
+      : [];
+  ipcMain.handle(
+    'subtitleMerge:listFonts',
+    async (_event, payload?: { subtitlePath?: string }) => ({
+      success: true,
+      data: await listSubtitleFonts(await subtitleFonts(payload?.subtitlePath)),
+    }),
+  );
   ipcMain.handle(
     'subtitleMerge:getFontData',
     async (
       event,
-      { fontName }: { fontName: string },
+      { fontName, subtitlePath }: { fontName: string; subtitlePath?: string },
     ): Promise<
-      SubtitleMergeResponse<{ fontName: string; data: Uint8Array }>
+      SubtitleMergeResponse<{
+        fontName: string;
+        fullName: string;
+        postscriptName: string;
+        data: Uint8Array;
+        variants: Uint8Array[];
+      }>
     > => {
       try {
-        const resolved = loadFontData(fontName);
+        await prepareSubtitleFonts();
+        const context = await subtitleFonts(subtitlePath);
+        const resolved = loadFontData(fontName, context);
         if (!resolved) {
           return {
             success: false,
@@ -397,6 +471,9 @@ export function setupSubtitleMergeHandlers(mainWindow: BrowserWindow) {
           success: true,
           data: {
             fontName: resolved.fontName,
+            fullName: resolved.filePath ? resolved.fullName : '',
+            postscriptName: resolved.filePath ? resolved.postscriptName : '',
+            variants: resolved.variants.map((data) => new Uint8Array(data)),
             data: new Uint8Array(resolved.data),
           },
         };

@@ -1,5 +1,33 @@
 {
   "pageTitle": "Video Download",
+  "pipeline": {
+    "enabled": "Start creative pipeline after download",
+    "recipe": "Pipeline recipe",
+    "chooseRecipe": "Choose a saved recipe",
+    "createRecipe": "Create recipe",
+    "draftFailed": "Could not save the download link draft. Check local storage space.",
+    "repair": "Resolve the error below and retry. Downloaded files will not be downloaded again.",
+    "errors": {
+      "DOWNLOAD_PIPELINE_ASR_REQUIRED": "Install the selected model in Engines & Models, or restore the cloud transcription configuration, then retry.",
+      "DOWNLOAD_PIPELINE_CLOUD_CONSENT_REQUIRED": "Cloud upload consent is missing. Retry to confirm upload permission for this batch.",
+      "DOWNLOAD_PIPELINE_TRANSLATION_REQUIRED": "Restore the recipe's translation provider and target language before retrying.",
+      "DOWNLOAD_PIPELINE_REFINE_REQUIRED": "Restore the recipe's AI refinement provider before retrying.",
+      "DOWNLOAD_PIPELINE_TTS_REQUIRED": "Install the model or restore the provider in Speech Services, then retry.",
+      "DOWNLOAD_PIPELINE_VOICE_REQUIRED": "Restore the selected voice or its cloned reference audio, then retry.",
+      "DOWNLOAD_PIPELINE_SPEAKERS_REQUIRED": "Install the speaker diarization model and runtime, then retry.",
+      "DOWNLOAD_PIPELINE_TTS_LANGUAGE_REQUIRED": "The speech model does not support this language. Create a task using a compatible recipe.",
+      "DOWNLOAD_PIPELINE_CONFIG_CHANGED": "The recipe or defaults changed. Start the download again and confirm the configuration."
+    },
+    "title": "Creative pipeline",
+    "pending": "Awaiting submission",
+    "submitted": "Task submitted",
+    "error": "Pipeline could not start; download retained",
+    "details": "Details",
+    "retry": "Retry pipeline",
+    "open": "Open task",
+    "nativeSubtitles": "Official subtitles selected; transcription skipped",
+    "taskMissing": "The linked task has been deleted. Downloaded files are still available."
+  },
   "pageDesc": "Paste online video links to download in batch, then send them straight into subtitle, translation, or dubbing flows",
   "setup": {
     "title": "Install download engines",

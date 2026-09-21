@@ -5,14 +5,14 @@
  * 单次 ffmpeg 执行的结构化计划（ComposePlan）。本模块零 I/O、零 electron 依赖，
  * 可在纯 node 下单测（args 断言，无需真实执行 ffmpeg）。
  *
- * 等价性契约：audio=keep 的两条腿（soft+keep / hard+keep）必须与收敛前
- * subtitleMerger 的命令逐参数一致；audio 三形态在 subtitle=none 下必须与收敛前
+ * 字幕封装显式映射视频、音频和字幕，避免复制不兼容数据流；audio 三形态在 subtitle=none 下沿用
  * dubbing/audioPipeline 的 replaceAudioTrack / duckMixIntoVideo / addAudioTrack
  * 一致（addTrack 保持「先预编 aac 再全流拷贝混流」两步形制，避免 -c:a:N
  * 输出序号在原视频多音轨时错位）。
  */
 
 import * as path from 'path';
+import type { EmbeddedSubtitleStream } from '../embeddedSubtitleParser';
 
 /** 硬烧字幕的解析后输入：滤镜与编码参数由调用方（runner）解析完成后传入。 */
 export interface ComposeHardSubtitle {
@@ -44,6 +44,8 @@ export interface ComposePlanInput {
   outputPath: string;
   subtitle: ComposePlanSubtitle;
   audio: ComposePlanAudio;
+  embeddedSubtitles?: EmbeddedSubtitleStream[];
+  hasOriginalAudio?: boolean;
 }
 
 /** addTrack 模式的前置步骤：配音轨预编码为 aac 临时文件（主命令全流 -c copy） */
@@ -75,12 +77,12 @@ const AAC_ARGS = ['-c:a', 'aac', '-b:a', '192k'];
 
 const DEFAULT_DUCK_RATIO = 8;
 
-/** soft 字幕轨与双音轨均依赖 mkv 容器 */
+/** The dual-audio workflow retains its MKV container contract. */
 export function composePlanRequiresMkv(input: {
   subtitle: { mode: ComposePlanSubtitle['mode'] };
   audio: { mode: ComposePlanAudio['mode'] };
 }): boolean {
-  return input.subtitle.mode === 'soft' || input.audio.mode === 'addTrack';
+  return input.audio.mode === 'addTrack';
 }
 
 /**
@@ -95,9 +97,6 @@ function buildDuckMixFilters(duckRatio: number): string[] {
   ];
 }
 
-/** 软封字幕输出选项尾段（字幕流统一转 srt、默认开启） */
-const SOFT_SUBTITLE_TAIL = ['-c:s', 'srt', '-disposition:s:0', 'default'];
-
 /**
  * 组装合成计划。纯函数：不触盘、不探测；硬烧滤镜与编码参数须由调用方先解析。
  *
@@ -107,7 +106,35 @@ export function buildComposePlan(
   input: ComposePlanInput,
   opts?: { tempTag?: string },
 ): ComposePlan {
-  const { videoPath, outputPath, subtitle, audio } = input;
+  const { videoPath, outputPath, subtitle } = input;
+  const audio: ComposePlanAudio =
+    input.audio.mode === 'mix' && input.hasOriginalAudio === false
+      ? { ...input.audio, mode: 'replace' }
+      : input.audio;
+  const extension = path.extname(outputPath).toLowerCase();
+  if (subtitle.mode === 'soft' && !['.mkv', '.mp4'].includes(extension)) {
+    throw new Error('Soft subtitles require an MKV or MP4 output container');
+  }
+  const softSubtitleTail = [
+    extension === '.mp4' ? '-c:s' : '-c:s:0',
+    extension === '.mp4' ? 'mov_text' : 'srt',
+    '-disposition:s:0',
+    'default',
+  ];
+  if (
+    subtitle.mode === 'soft' &&
+    extension === '.mp4' &&
+    input.embeddedSubtitles?.some((stream) => !stream.isText)
+  ) {
+    throw new Error('MP4 cannot retain bitmap subtitle tracks; choose MKV');
+  }
+  for (const stream of input.embeddedSubtitles || []) {
+    if (stream.isDefault)
+      softSubtitleTail.push(
+        `-disposition:s:${stream.subIndex + 1}`,
+        '-default',
+      );
+  }
 
   if (subtitle.mode === 'none' && audio.mode === 'keep') {
     throw new Error('compose: nothing to do (subtitle=none, audio=keep)');
@@ -165,27 +192,32 @@ export function buildComposePlan(
       opt.push('-map', '0:v', '-map', '0:a?', '-map', '1:a');
       opt.push(...subtitle.encoderArgs, '-c:a', 'copy');
     } else {
-      // keep：与收敛前 subtitleMerger hardcode 分支逐参数一致（无显式 -map）
+      // Explicit maps retain every original audio track without also auto-selecting
+      // an embedded subtitle that a player could render over the burned text.
       videoFilter = chain;
+      opt.push('-map', '0:v', '-map', '0:a?');
       opt.push(...subtitle.encoderArgs, '-c:a', 'copy');
     }
     if (faststart) opt.push('-movflags', '+faststart');
   } else if (subtitle.mode === 'soft') {
+    // The new subtitle is s:0; original subtitles follow it, unchanged in MKV.
+    // MP4 text tracks use mov_text. Data and attachments are not MP4 media tracks.
     if (audio.mode === 'keep') {
-      // 与收敛前 softmux 分支逐参数一致
-      opt.push('-map', '0', '-map', '1', '-c', 'copy', ...SOFT_SUBTITLE_TAIL);
+      opt.push('-map', '0:v', '-map', '0:a?');
     } else if (audio.mode === 'replace') {
-      opt.push('-map', '0:v', '-map', '1:a', '-map', String(softSubIndex));
-      opt.push('-c:v', 'copy', ...AAC_ARGS, ...SOFT_SUBTITLE_TAIL);
+      opt.push('-map', '0:v', '-map', '1:a');
     } else if (audio.mode === 'mix') {
       complexFilter = buildDuckMixFilters(duckRatio);
-      opt.push('-map', '0:v', '-map', '[mix]', '-map', String(softSubIndex));
-      opt.push('-c:v', 'copy', ...AAC_ARGS, ...SOFT_SUBTITLE_TAIL);
+      opt.push('-map', '0:v', '-map', '[mix]');
     } else {
-      // addTrack：全流拷贝 + 附加音轨 + 字幕轨
-      opt.push('-map', '0', '-map', '1:a', '-map', String(softSubIndex));
-      opt.push('-c', 'copy', ...SOFT_SUBTITLE_TAIL);
+      opt.push('-map', '0:v', '-map', '0:a?', '-map', '1:a');
     }
+    opt.push('-map', `${softSubIndex}:s:0`, '-map', '0:s?');
+    if (extension === '.mkv') opt.push('-map', '0:t?');
+    opt.push('-c', 'copy');
+    if (audio.mode === 'replace' || audio.mode === 'mix') opt.push(...AAC_ARGS);
+    opt.push(...softSubtitleTail);
+    if (extension === '.mp4') opt.push('-movflags', '+faststart');
   } else {
     // subtitle=none：与收敛前 audioPipeline 三形态逐参数一致
     if (audio.mode === 'replace') {
