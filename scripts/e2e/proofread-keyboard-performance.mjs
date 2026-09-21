@@ -132,38 +132,42 @@ const metrics = {};
 const errors = [];
 page.on('pageerror', (error) => errors.push(error.message));
 const unfocus = () => page.evaluate(() => document.activeElement?.blur());
-const measureScroll = async (pixelsPerFrame) =>
-  page.evaluate(async (pixelsPerFrame) => {
-    const scroller =
-      document.querySelector('[data-index]')?.parentElement?.parentElement;
-    if (!scroller) throw new Error('Missing virtual list');
-    const frames = [];
-    let previous;
-    let maxRows = 0;
-    for (let index = 0; index < 180; index++) {
-      scroller.scrollTop = index * pixelsPerFrame;
-      // RAF timestamps measure callback cadence (a rendering proxy, not a
-      // compositor trace). performance.now adds earlier callbacks' varying work.
-      const now = await new Promise(requestAnimationFrame);
-      if (previous !== undefined) frames.push(now - previous);
-      previous = now;
-      maxRows = Math.max(
+const measureScroll = async (pixelsPerFrame, startOffset = 0) =>
+  page.evaluate(
+    async ({ pixelsPerFrame, startOffset }) => {
+      const scroller =
+        document.querySelector('[data-index]')?.parentElement?.parentElement;
+      if (!scroller) throw new Error('Missing virtual list');
+      const frames = [];
+      let previous;
+      let maxRows = 0;
+      for (let index = 0; index < 180; index++) {
+        scroller.scrollTop = startOffset + index * pixelsPerFrame;
+        // RAF timestamps measure callback cadence (a rendering proxy, not a
+        // compositor trace). performance.now adds earlier callbacks' varying work.
+        const now = await new Promise(requestAnimationFrame);
+        if (previous !== undefined) frames.push(now - previous);
+        previous = now;
+        maxRows = Math.max(
+          maxRows,
+          scroller.querySelectorAll('[data-index]').length,
+        );
+      }
+      const totalMs = frames.reduce((sum, value) => sum + value, 0);
+      frames.sort((a, b) => a - b);
+      return {
         maxRows,
-        scroller.querySelectorAll('[data-index]').length,
-      );
-    }
-    const totalMs = frames.reduce((sum, value) => sum + value, 0);
-    frames.sort((a, b) => a - b);
-    return {
-      maxRows,
-      pixelsPerFrame,
-      averageFps: (frames.length * 1000) / totalMs,
-      medianMs: frames[Math.floor(frames.length / 2)],
-      p95Ms: frames[Math.floor(frames.length * 0.95)],
-      maxMs: frames.at(-1),
-      over25Ms: frames.filter((value) => value > 25).length,
-    };
-  }, pixelsPerFrame);
+        pixelsPerFrame,
+        startOffset,
+        averageFps: (frames.length * 1000) / totalMs,
+        medianMs: frames[Math.floor(frames.length / 2)],
+        p95Ms: frames[Math.floor(frames.length * 0.95)],
+        maxMs: frames.at(-1),
+        over25Ms: frames.filter((value) => value > 25).length,
+      };
+    },
+    { pixelsPerFrame, startOffset },
+  );
 try {
   await waitForAppPage(page);
   await app.evaluate(({ BrowserWindow, dialog }) => {
@@ -405,6 +409,9 @@ try {
   await page
     .locator('#subtitle-src-9999')
     .pressSequentially(' thirty keyboard events measured', { delay: 35 });
+  await expect(page.locator('#subtitle-src-9999')).toHaveValue(
+    /thirty keyboard events measured/,
+  );
   metrics.typing = await page.evaluate(() => {
     const values = window.__editTimings.sort((a, b) => a - b);
     return {
@@ -557,6 +564,28 @@ try {
     await page.evaluate(() => performance.mark('smartsub:stress:start'));
     metrics[`stressScroll${width}`] = await measureScroll(600);
     await page.evaluate(() => performance.mark('smartsub:stress:end'));
+    await assertRowGeometry();
+    // Preserve the original jump-to-top stress above, and measure steady
+    // scrolling independently after settling at its own starting position.
+    await page.evaluate(async () => {
+      performance.mark('smartsub:jumpDiff:start');
+      const scroller =
+        document.querySelector('[data-index]').parentElement.parentElement;
+      scroller.scrollTop = 0;
+      for (let i = 0; i < 3; i++) await new Promise(requestAnimationFrame);
+      performance.mark('smartsub:jumpDiff:end');
+    });
+    await assertRowGeometry();
+    metrics[`diffMounted${width}`] = await page.locator('[data-index]').count();
+    await page.evaluate(async () => {
+      const scroller =
+        document.querySelector('[data-index]').parentElement.parentElement;
+      scroller.scrollTop = 50000;
+      for (let i = 0; i < 3; i++) await new Promise(requestAnimationFrame);
+    });
+    await page.evaluate(() => performance.mark('smartsub:steadyStress:start'));
+    metrics[`steadyStress${width}`] = await measureScroll(600, 50000);
+    await page.evaluate(() => performance.mark('smartsub:steadyStress:end'));
     if (profiler) {
       const { profile } = await profiler.send('Profiler.stop');
       await fs.writeFile(
@@ -568,6 +597,7 @@ try {
       for (const [label, offset] of [
         ['wheelDiff', 0],
         ['wheelCompact', 50000],
+        ['wheelReverseDiff', 9000],
       ]) {
         const point = await page.evaluate(async (offset) => {
           const scroller =
@@ -584,7 +614,7 @@ try {
         );
         await input.send('Input.synthesizeScrollGesture', {
           ...point,
-          yDistance: -9000,
+          yDistance: label === 'wheelReverseDiff' ? 9000 : -9000,
           speed: 3000,
           gestureSourceType: 'mouse',
           preventFling: true,
@@ -609,7 +639,9 @@ try {
           };
         });
         assert.ok(
-          metrics[`${label}${width}`].scrollTop >= offset + 8900,
+          label === 'wheelReverseDiff'
+            ? metrics[`${label}${width}`].scrollTop <= 100
+            : metrics[`${label}${width}`].scrollTop >= offset + 8900,
           'native wheel reaches requested distance',
         );
         assert.ok(
@@ -633,9 +665,11 @@ try {
         ),
       );
       metrics[`compositor${width}`] = summary;
-      metrics[`wheelSmooth${width}`] = ['wheelDiff', 'wheelCompact'].every(
-        (phase) => hasCompleteSmoothWheelEvidence(summary, phase),
-      );
+      metrics[`wheelSmooth${width}`] = [
+        'wheelDiff',
+        'wheelCompact',
+        'wheelReverseDiff',
+      ].every((phase) => hasCompleteSmoothWheelEvidence(summary, phase));
       await fs.writeFile(
         path.join(output, `scroll-${width}.summary.json`),
         JSON.stringify(summary, null, 2),
@@ -679,6 +713,29 @@ try {
     '10000 rows / 5-hour real media, bounded DOM, both viewports, panel remount',
   );
   const url = new URL(page.url()).pathname + new URL(page.url()).search;
+  const readDraftTail = () =>
+    page.evaluate(() =>
+      Object.entries(localStorage)
+        .filter(([key]) => key.startsWith('smartsub_proofread_draft'))
+        .map(([key, value]) => {
+          const draft = JSON.parse(value);
+          return {
+            key,
+            savedAt: draft.savedAt,
+            count: draft.subtitles.length,
+            last: draft.subtitles.at(-1),
+          };
+        }),
+    );
+  metrics.draftBeforeKill = await readDraftTail();
+  await fs.writeFile(
+    path.join(output, 'before-kill.json'),
+    JSON.stringify(metrics.draftBeforeKill, null, 2),
+  );
+  assert.match(
+    metrics.draftBeforeKill[0]?.last?.sourceContent || '',
+    /thirty keyboard events measured/,
+  );
   const appProcess = app.process();
   const exited = once(appProcess, 'exit');
   if (process.platform === 'win32')
@@ -691,6 +748,12 @@ try {
   page.setDefaultTimeout(20000);
   page.on('pageerror', (error) => errors.push(error.message));
   await waitForAppPage(page);
+  metrics.draftAfterRestart = await readDraftTail();
+  assert.deepEqual(
+    metrics.draftAfterRestart,
+    metrics.draftBeforeKill,
+    'crash preserves the complete last draft',
+  );
   await app.evaluate(({ BrowserWindow, dialog }) => {
     BrowserWindow.getAllWindows().forEach((window) =>
       window.webContents.closeDevTools(),
@@ -700,6 +763,11 @@ try {
   await page.evaluate((url) => window.next.router.push(url), url);
   await page.getByRole('button', { name: '校对', exact: true }).click();
   await page.getByRole('button', { name: '恢复草稿', exact: true }).click();
+  metrics.draftAfterRestore = await readDraftTail();
+  assert.match(
+    metrics.draftAfterRestore[0]?.last?.sourceContent || '',
+    /thirty keyboard events measured/,
+  );
   await unfocus();
   await page.keyboard.press(`${modifier}+f`);
   const recoveredSearch = page.getByPlaceholder('输入搜索内容');

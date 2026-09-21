@@ -7,7 +7,12 @@ import React, {
   useLayoutEffect,
   memo,
 } from 'react';
-import { measureElement, useVirtualizer } from '@tanstack/react-virtual';
+import {
+  measureElement,
+  useVirtualizer,
+  type Range,
+} from '@tanstack/react-virtual';
+import { subtitleVirtualRange } from '../../lib/subtitleVirtualRange';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -668,6 +673,19 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     (index: number) => (displayIndices ? displayIndices[index] : index),
     [displayIndices],
   );
+  const suggestions = inlineAi?.suggestions;
+  const rangeExtractor = useCallback(
+    (range: Range) =>
+      subtitleVirtualRange(range, (listIndex) => {
+        const index = displayIndices ? displayIndices[listIndex] : listIndex;
+        return (
+          expandAll ||
+          index === currentSubtitleIndex ||
+          !!suggestions?.has(index)
+        );
+      }),
+    [displayIndices, expandAll, currentSubtitleIndex, suggestions],
+  );
   const virtualizer = useVirtualizer<HTMLDivElement, HTMLElement>({
     directDomUpdates: true,
     count: displayCount,
@@ -683,6 +701,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
         ? 40
         : measureElement(element, entry, instance),
     overscan: 10,
+    rangeExtractor,
     // 以真实索引作为 key，过滤切换/失败行减少时测量缓存仍对得上行
     getItemKey,
   });
