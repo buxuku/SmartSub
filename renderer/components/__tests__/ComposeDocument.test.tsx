@@ -261,3 +261,32 @@ it('reads external writes and deletions instead of returning stale successful-wr
   localStorage.setItem(key, '{broken');
   expect(() => readComposeDraft(key)).toThrow();
 });
+
+it('accepts only the exported snapshot, preserves newer changes and guards failed commits', () => {
+  const { result } = renderHook(() => useComposeDocument(key, initial()));
+  act(() => result.current.update({ outputPath: '/export.mp4' }));
+  const exported = result.current.value;
+  act(() =>
+    result.current.update({ style: { ...exported.style, fontSize: 60 } }),
+  );
+  act(() => expect(result.current.acceptExport(exported)).toBe(true));
+  expect(result.current.getIsDirty()).toBe(true);
+  expect(readComposeDraft(key)?.saved).toEqual(exported);
+  expect(readComposeDraft(key)?.current.style.fontSize).toBe(60);
+  const write = jest
+    .spyOn(Storage.prototype, 'setItem')
+    .mockImplementation(() => {
+      throw new Error('Disk full');
+    });
+  act(() =>
+    expect(result.current.acceptExport(result.current.value)).toBe(false),
+  );
+  expect(result.current.getIsDirty()).toBe(true);
+  expect(result.current.error).toContain('Disk full');
+  expect(readComposeDraft(key)?.saved).toEqual(exported);
+  write.mockRestore();
+  act(() =>
+    expect(result.current.acceptExport(result.current.value)).toBe(true),
+  );
+  expect(result.current.getIsDirty()).toBe(false);
+});

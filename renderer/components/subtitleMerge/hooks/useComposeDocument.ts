@@ -177,14 +177,41 @@ export function useComposeDocument(key: string, initial: ComposeDocument) {
     () => moveHistory(future.current, history.current),
     [moveHistory],
   );
-  const save = useCallback(async () => {
-    if (isBlocked() || !persist(true)) return false;
-    saved.current = cloneCompose(current.current);
-    hasSaved.current = true;
-    endGroup();
-    render((value) => value + 1);
-    return true;
-  }, [isBlocked, persist, endGroup]);
+  const acceptExport = useCallback(
+    (snapshot: ComposeDocument) => {
+      if (isBlocked()) return false;
+      try {
+        writeComposeDraft(
+          key,
+          {
+            version: 1,
+            job: job.current,
+            current: current.current,
+            saved: snapshot,
+            dirty: !equal(current.current, snapshot),
+          },
+          true,
+        );
+        saved.current = cloneCompose(snapshot);
+        persistenceFailed.current = false;
+        hasSaved.current = true;
+        setError(null);
+        endGroup();
+        render((value) => value + 1);
+        return true;
+      } catch (cause) {
+        persistenceFailed.current = true;
+        setError(String(cause));
+        render((value) => value + 1);
+        return false;
+      }
+    },
+    [key, isBlocked, endGroup],
+  );
+  const save = useCallback(
+    async () => acceptExport(current.current),
+    [acceptExport],
+  );
   const discard = useCallback(() => {
     if (!ownsLock.current) return false;
     try {
@@ -250,6 +277,7 @@ export function useComposeDocument(key: string, initial: ComposeDocument) {
     undo,
     redo,
     save,
+    acceptExport,
     discard,
     restore,
     retryRead: read,

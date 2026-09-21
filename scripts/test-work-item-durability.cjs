@@ -292,6 +292,42 @@ for (const operation of [
   );
 }
 test.fail(false);
+// Batch saves use updateProofreadTask, not the single-item completion endpoint.
+let completedTask = test.proofread.updateProofreadTask(task.id, {
+  items: task.items.map((entry) => ({ ...entry, status: 'completed' })),
+});
+assert.equal(completedTask.status, 'completed');
+assert.equal(test.items.getWorkItemById(task.id).status, 'done');
+assert.equal(
+  test.disk().workItems.find((entry) => entry.id === task.id).status,
+  'done',
+);
+test.proofread.updateProofreadItem(task.id, 'cue-file', {
+  status: 'in_progress',
+});
+assert.equal(test.items.getWorkItemById(task.id).status, 'running');
+test.proofread.updateProofreadTask(task.id, {
+  items: [
+    { ...task.items[0], status: 'completed' },
+    { ...task.items[0], id: 'pending-file', status: 'pending' },
+  ],
+});
+assert.equal(test.items.getWorkItemById(task.id).status, 'running');
+test.proofread.removeItemFromTask(task.id, 'pending-file');
+assert.equal(test.items.getWorkItemById(task.id).status, 'done');
+const legacyProofread = harness({
+  workItemsMigrationVersion: 1,
+  workItems: [
+    {
+      ...test.items.getWorkItemById(task.id),
+      status: 'running',
+      finishedAt: undefined,
+    },
+  ],
+});
+legacyProofread.items.initializeWorkItemStore();
+assert.equal(legacyProofread.items.getWorkItemById(task.id).status, 'done');
+assert.equal(legacyProofread.disk().workItems[0].status, 'done');
 test.proofread.completeProofreadItem(task.id, 'cue-file');
 assert.equal(
   test.disk().workItems.find((entry) => entry.id === task.id).status,

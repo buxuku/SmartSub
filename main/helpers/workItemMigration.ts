@@ -1,5 +1,6 @@
 import type { IFiles, TaskProject } from '../../types';
 import type { ProofreadTask } from '../../types/proofread';
+import { deriveProofreadTaskStatus } from '../../types/proofread';
 import type { WorkItem, WorkItemStatus } from '../../types/workItem';
 import {
   PIPELINE_WORK_ITEM_TYPES,
@@ -92,7 +93,7 @@ export function taskProjectToWorkItem(project: TaskProject): WorkItem {
 
 export function proofreadTaskToWorkItem(task: ProofreadTask): WorkItem {
   const status: WorkItemStatus =
-    task.status === 'completed' ? 'done' : 'running';
+    deriveProofreadTaskStatus(task.items) === 'completed' ? 'done' : 'running';
 
   return {
     id: task.id,
@@ -167,6 +168,6 @@ export function workItemToProofreadTask(item: WorkItem): ProofreadTask | null {
     updatedAt: item.updatedAt,
     items: structuredClone(item.proofreadEntries || []),
     currentItemIndex: item.currentProofreadIndex ?? 0,
-    status: item.status === 'done' ? 'completed' : 'in_progress',
+    status: deriveProofreadTaskStatus(item.proofreadEntries || []),
   };
 }

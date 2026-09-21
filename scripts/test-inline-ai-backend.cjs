@@ -1,11 +1,16 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const Module = require('node:module');
 const { EventEmitter } = require('node:events');
 const ts = require('typescript');
 const originalLoad = Module._load;
 const originalTs = require.extensions['.ts'];
 const handlers = new Map();
+const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'smartsub-inline-ai-'));
+const ipcMain = new EventEmitter();
+ipcMain.handle = (name, fn) => handlers.set(name, fn);
 const provider = {
   id: 'fixture',
   isAi: true,
@@ -29,7 +34,7 @@ require.extensions['.ts'] = (module, filename) =>
   );
 Module._load = function (request, parent, isMain) {
   if (request === 'electron')
-    return { ipcMain: { handle: (name, fn) => handlers.set(name, fn) } };
+    return { app: { getPath: () => userData }, ipcMain };
   if (request.endsWith('/storeManager'))
     return {
       logMessage() {},
@@ -271,4 +276,5 @@ main()
   .finally(() => {
     Module._load = originalLoad;
     require.extensions['.ts'] = originalTs;
+    fs.rmSync(userData, { recursive: true, force: true });
   });

@@ -159,7 +159,10 @@ it('restores the terminal result by identity even when collision-safe publicatio
   const second = renderHook(() => useSubtitleMerge());
   await waitFor(() => expect(second.result.current.status).toBe('completed'));
   expect(second.result.current.outputPath).toBe('/result_2.mp4');
+  expect(second.result.current.document.getIsDirty()).toBe(false);
+  expect(readComposeDraft(composeDraftKey())?.dirty).toBe(false);
   act(() => second.result.current.updateStyle({ fontSize: 52 }));
+  expect(second.result.current.document.getIsDirty()).toBe(true);
   act(() => listeners.get('compose:queue')!([queuedJob('unrelated')]));
   expect(second.result.current.status).toBe('idle');
   expect(second.result.current.style.fontSize).toBe(52);
@@ -271,6 +274,73 @@ it('recovers a lost start response from the queue without unlocking or duplicati
   expect(invoke).toHaveBeenCalledWith('subtitleMerge:cancelMerge', {
     jobId: 'still-running',
   });
+});
+
+it('a reconnected job saves its exported snapshot when the queue reports completion', async () => {
+  const { result } = renderHook(() => useSubtitleMerge());
+  await act(async () => {
+    await result.current.setVideoPath('/first.mp4');
+    await result.current.setSubtitlePath('/first.srt');
+  });
+  act(() => result.current.setOutputPath('/result.mp4'));
+  act(() => listeners.get('compose:queue')!([queuedJob('reconnected')]));
+  act(() => result.current.reconnectJob('reconnected'));
+  expect(result.current.status).toBe('processing');
+  expect(result.current.document.getIsDirty()).toBe(true);
+  act(() =>
+    listeners.get('compose:queue')!([
+      {
+        ...queuedJob('reconnected'),
+        status: 'done',
+        outputPath: '/result_2.mp4',
+      },
+    ]),
+  );
+  expect(result.current.status).toBe('completed');
+  expect(result.current.outputPath).toBe('/result_2.mp4');
+  expect(result.current.document.getIsDirty()).toBe(false);
+  expect(readComposeDraft(composeDraftKey())?.saved.outputPath).toBe(
+    '/result_2.mp4',
+  );
+});
+
+it('successful video export retains the guard if saving its project fails', async () => {
+  const original = invoke.getMockImplementation()!;
+  let finish!: (value: unknown) => void;
+  invoke.mockImplementation((channel, payload) =>
+    channel === 'subtitleMerge:startMerge'
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : original(channel, payload),
+  );
+  const { result } = renderHook(() => useSubtitleMerge());
+  await act(async () => {
+    await result.current.setVideoPath('/first.mp4');
+    await result.current.setSubtitlePath('/first.srt');
+  });
+  act(() => result.current.setOutputPath('/result.mp4'));
+  let run!: Promise<void>;
+  act(() => {
+    run = result.current.startMerge();
+  });
+  const write = jest
+    .spyOn(Storage.prototype, 'setItem')
+    .mockImplementation(() => {
+      throw new Error('Disk full');
+    });
+  await act(async () => {
+    finish({ success: true, data: '/result.mp4' });
+    await run;
+  });
+  expect(result.current.status).toBe('completed');
+  expect(result.current.document.getIsDirty()).toBe(true);
+  expect(result.current.document.error).toContain('Disk full');
+  write.mockRestore();
+  await act(async () =>
+    expect(await result.current.document.save()).toBe(true),
+  );
+  expect(result.current.document.getIsDirty()).toBe(false);
 });
 
 it('does not enqueue an export when its recovery identity cannot be saved', async () => {
@@ -555,6 +625,7 @@ it('rejects duplicate submission and malformed successful responses', async () =
   });
   expect(result.current.status).toBe('error');
   expect(result.current.progress.errorMessage).toContain('output path');
+  expect(result.current.document.getIsDirty()).toBe(true);
 });
 
 it('binds progress and cancellation to the acknowledged job, ignoring unrelated and stale events', async () => {
@@ -715,11 +786,43 @@ it('uses the actual published collision path for the success UI and folder actio
   act(() => result.current.setOutputPath('/result.mp4'));
   await act(async () => result.current.startMerge());
   expect(result.current.outputPath).toBe('/result_2.mp4');
+  expect(result.current.document.getIsDirty()).toBe(false);
+  expect(readComposeDraft(composeDraftKey())?.dirty).toBe(false);
+  expect(readComposeDraft(composeDraftKey())?.saved.outputPath).toBe(
+    '/result_2.mp4',
+  );
   await act(async () => result.current.openOutputFolder());
   expect(invoke).toHaveBeenCalledWith('subtitleMerge:openOutputFolder', {
     filePath: '/result_2.mp4',
   });
+  act(() => result.current.updateStyle({ fontSize: 60 }));
+  expect(result.current.document.getIsDirty()).toBe(true);
 });
+
+it.each(['cancelled', 'failed'])(
+  '%s export keeps the unsaved project guarded',
+  async (outcome) => {
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((channel, payload) =>
+      channel === 'subtitleMerge:startMerge'
+        ? Promise.resolve(
+            outcome === 'cancelled'
+              ? { success: true, cancelled: true }
+              : { success: false, error: 'Export failed' },
+          )
+        : original(channel, payload),
+    );
+    const { result } = renderHook(() => useSubtitleMerge());
+    await act(async () => {
+      await result.current.setVideoPath('/first.mp4');
+      await result.current.setSubtitlePath('/first.srt');
+    });
+    act(() => result.current.setOutputPath('/result.mp4'));
+    await act(async () => result.current.startMerge());
+    expect(result.current.document.getIsDirty()).toBe(true);
+    expect(readComposeDraft(composeDraftKey())?.dirty).toBe(true);
+  },
+);
 
 it('retries failed folder actions and dialogs without unrelated preference writes; repeated retry is single-flight', async () => {
   const original = invoke.getMockImplementation()!;

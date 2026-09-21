@@ -9,6 +9,7 @@ import {
   ProofreadTask,
   ProofreadItem,
   ProofreadHistory,
+  deriveProofreadTaskStatus,
 } from '../../types/proofread';
 import { deleteWorkItem, getWorkItems, saveWorkItem } from './workItemStore';
 import {
@@ -19,6 +20,7 @@ import {
 const HISTORY_KEY = 'proofreadHistories';
 
 function persistProofreadTask(task: ProofreadTask): void {
+  task.status = deriveProofreadTaskStatus(task.items);
   saveWorkItem(proofreadTaskToWorkItem(task), { durable: true });
 }
 

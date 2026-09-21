@@ -1,6 +1,7 @@
 import { store } from './store';
 import type { IFiles, TaskProject } from '../../types';
 import type { ProofreadTask } from '../../types/proofread';
+import { deriveProofreadTaskStatus } from '../../types/proofread';
 import type { WorkItem } from '../../types/workItem';
 import { WORK_ITEM_MIGRATION_VERSION } from '../../types/workItem';
 import {
@@ -11,6 +12,20 @@ import {
 
 const WORK_ITEMS_KEY = 'workItems';
 const MIGRATION_VERSION_KEY = 'workItemsMigrationVersion';
+
+function normalizeProofreadStatus(item: WorkItem): WorkItem {
+  if (item.type !== 'proofread') return item;
+  const status =
+    deriveProofreadTaskStatus(item.proofreadEntries || []) === 'completed'
+      ? 'done'
+      : 'running';
+  return {
+    ...item,
+    status,
+    finishedAt:
+      status === 'done' ? (item.finishedAt ?? item.updatedAt) : undefined,
+  };
+}
 
 const STAGE_KEYS = [
   'extractAudio',
@@ -38,7 +53,7 @@ function markInterruptedFile(file: IFiles): IFiles {
 
 function applyInterruptedMarkToWorkItems() {
   workItems = workItems.map((item) => {
-    if (item.type === 'proofread') return item;
+    if (item.type === 'proofread') return normalizeProofreadStatus(item);
     if (item.type === 'download') {
       // 下载可断点续传：执行中的条目退回待下载（''），任务标记中断，
       // 「继续下载」时对未完成条目重新入列即可从断点恢复。
@@ -210,11 +225,11 @@ export function saveWorkItem(
 ): WorkItem {
   const index = workItems.findIndex((existing) => existing.id === item.id);
   const now = Date.now();
-  const next: WorkItem = {
+  const next: WorkItem = normalizeProofreadStatus({
     ...structuredClone(item),
     updatedAt: item.updatedAt || now,
     createdAt: item.createdAt || now,
-  };
+  });
 
   const updated = [...workItems];
   if (index >= 0) updated[index] = next;

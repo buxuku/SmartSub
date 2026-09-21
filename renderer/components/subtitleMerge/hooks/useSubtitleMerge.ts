@@ -109,6 +109,7 @@ export function useSubtitleMerge(options: UseSubtitleMergeOptions = {}) {
   const active = useRef(false);
   const submitting = useRef(false);
   const jobId = useRef<string | null>(null);
+  const exportSnapshot = useRef<ComposeDocument | null>(null);
   const handledTerminal = useRef<string | null>(null);
   const requestId = useRef<string | null>(null);
   const submission = useRef(0);
@@ -413,6 +414,8 @@ export function useSubtitleMerge(options: UseSubtitleMergeOptions = {}) {
         { system: true },
       );
       document.setJob({ requestId: job.requestId, jobId: job.id });
+      exportSnapshot.current = current.current;
+      if (job.status === 'done') document.acceptExport(current.current);
       jobId.current = job.id;
       handledTerminal.current = null;
       active.current = ['queued', 'running'].includes(job.status);
@@ -431,7 +434,7 @@ export function useSubtitleMerge(options: UseSubtitleMergeOptions = {}) {
         errorMessage: job.error,
       });
     },
-    [isBlocked, update, document.setJob],
+    [isBlocked, update, document.setJob, document.acceptExport, current],
   );
 
   useEffect(() => {
@@ -491,6 +494,11 @@ export function useSubtitleMerge(options: UseSubtitleMergeOptions = {}) {
         job.outputPath !== current.current.outputPath
       )
         update({ outputPath: job.outputPath }, { system: true });
+      if (job.status === 'done' && exportSnapshot.current)
+        document.acceptExport({
+          ...exportSnapshot.current,
+          outputPath: job.outputPath,
+        });
       setIsCancelling(false);
       setProgress({
         ...idle(),
@@ -578,6 +586,7 @@ export function useSubtitleMerge(options: UseSubtitleMergeOptions = {}) {
     reconnectJob,
     document.job,
     document.setJob,
+    document.acceptExport,
   ]);
 
   const setVideoPath = useCallback(
@@ -926,6 +935,7 @@ export function useSubtitleMerge(options: UseSubtitleMergeOptions = {}) {
       return;
     requestId.current = uuid();
     if (!document.setJob({ requestId: requestId.current })) return;
+    exportSnapshot.current = doc;
     active.current = true;
     submitting.current = true;
     jobId.current = null;
@@ -961,6 +971,7 @@ export function useSubtitleMerge(options: UseSubtitleMergeOptions = {}) {
           throw new Error('Merge completed without an output path');
         if (result.data !== current.current.outputPath)
           update({ outputPath: result.data }, { system: true });
+        document.acceptExport({ ...doc, outputPath: result.data });
         setProgress({ ...idle(), percent: 100, status: 'completed' });
         callbacks.current.onComplete?.(result.data);
       }
@@ -1009,6 +1020,7 @@ export function useSubtitleMerge(options: UseSubtitleMergeOptions = {}) {
     update,
     clearError,
     document.setJob,
+    document.acceptExport,
     reconnectJob,
   ]);
   const cancelMerge = useCallback(async () => {
