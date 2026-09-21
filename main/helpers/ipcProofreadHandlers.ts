@@ -2,7 +2,9 @@
  * 字幕校对相关的 IPC 处理器
  */
 
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
+import path from 'path';
+import { createProofreadDraftStore } from './proofreadDraftStore';
 import {
   detectSubtitlesForVideo,
   matchSubtitlesByRules,
@@ -69,6 +71,27 @@ const singleOptimizeConflictFingerprints = new WeakMap<object, string>();
  * 设置字幕校对相关的 IPC 处理器
  */
 export function setupProofreadHandlers(): void {
+  const drafts = createProofreadDraftStore(
+    path.join(app.getPath('userData'), 'proofread-drafts'),
+  );
+  ipcMain.on('proofread:draft-read', (event, key: string) => {
+    try {
+      event.returnValue = { success: true, raw: drafts.read(key) };
+    } catch (error) {
+      event.returnValue = { success: false, error: String(error) };
+    }
+  });
+  ipcMain.on(
+    'proofread:draft-write',
+    (event, key: string, raw: string | null) => {
+      try {
+        drafts.write(key, raw);
+        event.returnValue = { success: true, raw: null };
+      } catch (error) {
+        event.returnValue = { success: false, error: String(error) };
+      }
+    },
+  );
   const waveformOwners = new Set<number>();
   ipcMain.handle(
     'proofread:waveform',

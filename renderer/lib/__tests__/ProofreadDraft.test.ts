@@ -19,6 +19,7 @@ const key = 'smartsub_proofread_draft_v1:test';
 beforeEach(() => {
   jest.resetModules();
   localStorage.clear();
+  window.ipc = undefined as any;
 });
 afterEach(() => jest.restoreAllMocks());
 
@@ -116,4 +117,48 @@ test('malformed/null stored drafts do not recover as valid data and can be disca
     load().clearProofreadDraft(key);
     expect(localStorage.length).toBe(0);
   }
+});
+
+test('native snapshots survive loss of browser storage and tombstones prevent stale recovery', () => {
+  const disk = new Map<string, string>();
+  window.ipc = {
+    proofreadDraft: {
+      read: (key: string) => ({ success: true, raw: disk.get(key) ?? null }),
+      write: (key: string, raw: string | null) => {
+        disk.set(key, raw ?? 'null');
+        return { success: true, raw: null };
+      },
+    },
+  } as any;
+  const value = draft(2);
+  localStorage.setItem(key, JSON.stringify(value));
+  expect(load().readProofreadDraft(key)).toEqual(value); // legacy migration
+  const next = {
+    ...value,
+    subtitles: [{ ...value.subtitles[0], sourceContent: 'Latest character' }],
+  };
+  expect(load().writeProofreadDraft(key, next)).toBe(true);
+  expect(localStorage.getItem(key)).toBeNull();
+  jest.resetModules();
+  expect(load().readProofreadDraft(key)).toEqual(next);
+  load().clearProofreadDraft(key);
+  localStorage.setItem(key, JSON.stringify(value)); // simulate unflushed removal
+  jest.resetModules();
+  expect(load().readProofreadDraft(key)).toBeNull();
+});
+
+test('native read/write/clear failures cannot claim durable success or discard pending work', () => {
+  window.ipc = {
+    proofreadDraft: {
+      read: () => ({ success: false, error: 'EACCES' }),
+      write: () => ({ success: false, error: 'ENOSPC' }),
+    },
+  } as any;
+  expect(() => load().readProofreadDraft(key)).toThrow('EACCES');
+  const value = draft(2);
+  expect(load().writeProofreadDraft(key, value)).toBe(false);
+  expect(load().readProofreadDraft(key)).toEqual(value);
+  expect(() => load().clearProofreadDraft(key)).toThrow('ENOSPC');
+  expect(load().readProofreadDraft(key)).toEqual(value);
+  expect(localStorage.getItem(key)).toBeNull();
 });

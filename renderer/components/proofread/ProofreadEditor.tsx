@@ -530,6 +530,11 @@ export default function ProofreadEditor({
               {commonT('draftRecovery.description')}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {draftStorageFailed && (
+            <p role="alert" className="text-sm text-destructive">
+              {commonT('draftRecovery.storageFailed')}
+            </p>
+          )}
           <AlertDialogFooter>
             <Button variant="outline" onClick={discardDraft}>
               {commonT('draftRecovery.discard')}

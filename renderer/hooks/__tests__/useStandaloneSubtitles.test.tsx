@@ -27,6 +27,7 @@ let invoke: jest.Mock;
 beforeEach(() => {
   jest.clearAllMocks();
   localStorage.clear();
+  window.ipc = undefined as any;
   for (const sourceSubtitlePath of [
     '/source.srt',
     '/other.srt',
@@ -51,6 +52,47 @@ beforeEach(() => {
   window.ipc = { invoke } as any;
   URL.createObjectURL = jest.fn().mockReturnValue('blob:track');
   URL.revokeObjectURL = jest.fn();
+});
+
+test('draft disk read failure blocks load and retries without overwriting recovery data', async () => {
+  let failed = true;
+  window.ipc.proofreadDraft = {
+    read: () =>
+      failed
+        ? { success: false, error: 'EACCES draft' }
+        : { success: true, raw: null },
+    write: jest.fn(() => ({ success: true, raw: null })),
+  };
+  const { result } = renderHook(() => useStandaloneSubtitles(config, true));
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  expect(result.current.loadError).toContain('EACCES draft');
+  await act(async () => expect(await result.current.handleSave()).toBe(false));
+  expect(window.ipc.proofreadDraft.write).not.toHaveBeenCalled();
+  failed = false;
+  await act(async () => result.current.retryLoad());
+  expect(result.current.loadError).toBe('');
+});
+
+test('draft deletion failure keeps the editor dirty and explicit save can retry', async () => {
+  let failed = true;
+  window.ipc.proofreadDraft = {
+    read: () => ({ success: true, raw: null }),
+    write: (_key, raw) =>
+      raw === null && failed
+        ? { success: false, error: 'ENOSPC draft' }
+        : { success: true, raw: null },
+  };
+  const { result } = renderHook(() => useStandaloneSubtitles(config, true));
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  act(() =>
+    result.current.handleSubtitleChange(0, 'sourceContent', 'Keep last edit'),
+  );
+  await act(async () => expect(await result.current.handleSave()).toBe(false));
+  expect(result.current.isDirty).toBe(true);
+  expect(result.current.saveError).toContain('ENOSPC draft');
+  failed = false;
+  await act(async () => expect(await result.current.handleSave()).toBe(true));
+  expect(result.current.isDirty).toBe(false);
 });
 
 test.each(['targetSubtitlePath', 'finalTargetSubtitlePath'])(

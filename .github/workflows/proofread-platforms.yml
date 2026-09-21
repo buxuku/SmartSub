@@ -10,6 +10,12 @@ on:
       - 'renderer/components/proofread/**'
       - 'renderer/components/subtitle/**'
       - 'renderer/hooks/useHotkeys.ts'
+      - 'renderer/hooks/useStandaloneSubtitles.ts'
+      - 'renderer/lib/proofreadDraft.ts'
+      - 'renderer/lib/subtitleVirtualRange.ts'
+      - 'main/preload.ts'
+      - 'main/helpers/*Proofread*'
+      - 'main/helpers/proofreadDraftStore.ts'
 
 permissions:
   contents: read
@@ -49,7 +55,7 @@ jobs:
         run: npm run build
       - name: Run Windows keyboard, geometry and crash recovery
         if: runner.os == 'Windows'
-        run: npm run test:e2e:proofread-keyboard -- --production --complex
+        run: node scripts/e2e/proofread-keyboard-performance.mjs --production --complex
       - name: Run Linux keyboard, geometry and crash recovery
         if: runner.os == 'Linux'
         run: xvfb-run -a --server-args="-screen 0 1920x1080x24" npm run test:e2e:proofread-keyboard -- --production --complex

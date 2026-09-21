@@ -37,6 +37,11 @@ const roles = path.join(output, 'five-hours.proofread.json');
 const media = path.join(output, 'five-hours.flac');
 const source = path.join(output, 'five-hours.en.srt');
 const target = path.join(output, 'five-hours.fr.srt');
+const draftKey = `smartsub_proofread_draft_v1:${JSON.stringify([
+  complex ? roles : '',
+  source,
+  target,
+])}`;
 const stamp = (milliseconds) => {
   const hours = Math.floor(milliseconds / 3600000);
   const minutes = Math.floor(milliseconds / 60000) % 60;
@@ -355,18 +360,13 @@ try {
   await search.pressSequentially('!');
   await search.press(`${modifier}+z`);
   await expect(search).not.toHaveValue('Native undo text!');
-  const draftsBefore = await page.evaluate(() =>
-    Object.entries(localStorage)
-      .filter(([key]) => key.startsWith('smartsub_proofread_draft'))
-      .map(([key, value]) => [key, value]),
+  const draftsBefore = await page.evaluate(
+    (key) => window.ipc.proofreadDraft.read(key),
+    draftKey,
   );
   await search.press(`${modifier}+s`);
   assert.deepEqual(
-    await page.evaluate(() =>
-      Object.entries(localStorage)
-        .filter(([key]) => key.startsWith('smartsub_proofread_draft'))
-        .map(([key, value]) => [key, value]),
-    ),
+    await page.evaluate((key) => window.ipc.proofreadDraft.read(key), draftKey),
     draftsBefore,
   );
   await search.press('Escape');
@@ -377,22 +377,21 @@ try {
     'Search reaches offscreen final cue, search native undo, overlay blocks save, last-row commit',
   );
 
+  await app.evaluate(({ ipcMain }) => {
+    globalThis.draftWriteTimings = [];
+    const write = ipcMain.listeners('proofread:draft-write')[0];
+    ipcMain.removeListener('proofread:draft-write', write);
+    ipcMain.on('proofread:draft-write', (event, key, raw) => {
+      const start = performance.now();
+      write(event, key, raw);
+      globalThis.draftWriteTimings.push({
+        ms: performance.now() - start,
+        characters: raw?.length || 0,
+      });
+    });
+  });
   await page.evaluate(() => {
     window.__editTimings = [];
-    window.__storageTimings = [];
-    const setItem = Storage.prototype.setItem;
-    Storage.prototype.setItem = function (key, value) {
-      const start = performance.now();
-      try {
-        return setItem.call(this, key, value);
-      } finally {
-        if (key.startsWith('smartsub_proofread_draft'))
-          window.__storageTimings.push({
-            ms: performance.now() - start,
-            characters: value.length,
-          });
-      }
-    };
     document.addEventListener(
       'input',
       (event) => {
@@ -419,14 +418,20 @@ try {
       medianMs: values[Math.floor(values.length / 2)],
       p95Ms: values[Math.floor(values.length * 0.95)],
       maxMs: values.at(-1),
-      storageMaxMs: Math.max(
-        ...window.__storageTimings.map((entry) => entry.ms),
-      ),
-      storageMaxCharacters: Math.max(
-        ...window.__storageTimings.map((entry) => entry.characters),
-      ),
     };
   });
+  Object.assign(
+    metrics.typing,
+    await app.evaluate(() => ({
+      storage: 'native fsync + atomic rename (main process duration)',
+      storageMaxMs: Math.max(
+        ...globalThis.draftWriteTimings.map((entry) => entry.ms),
+      ),
+      storageMaxCharacters: Math.max(
+        ...globalThis.draftWriteTimings.map((entry) => entry.characters),
+      ),
+    })),
+  );
   await unfocus();
   if (complex) {
     // Deterministic service boundary; exercise real batch state and row Diff UI.
@@ -713,20 +718,31 @@ try {
     '10000 rows / 5-hour real media, bounded DOM, both viewports, panel remount',
   );
   const url = new URL(page.url()).pathname + new URL(page.url()).search;
+  // Make a fresh real edit immediately before the crash, after all profiling.
+  // Do not add a browser-storage flush or a settling delay to this test.
+  await unfocus();
+  await page.keyboard.press(`${modifier}+f`);
+  const crashSearch = page.getByPlaceholder('输入搜索内容');
+  await crashSearch.fill('Needle9999');
+  await page.getByRole('button', { name: '搜索', exact: true }).click();
+  await page.getByRole('button', { name: '下一处', exact: true }).click();
+  await crashSearch.press('Escape');
+  await page.locator('#subtitle-src-9999').focus();
+  await page.locator('#subtitle-src-9999').pressSequentially('CRASH_LAST_KEY');
   const readDraftTail = () =>
-    page.evaluate(() =>
-      Object.entries(localStorage)
-        .filter(([key]) => key.startsWith('smartsub_proofread_draft'))
-        .map(([key, value]) => {
-          const draft = JSON.parse(value);
-          return {
-            key,
-            savedAt: draft.savedAt,
-            count: draft.subtitles.length,
-            last: draft.subtitles.at(-1),
-          };
-        }),
-    );
+    page.evaluate((key) => {
+      const result = window.ipc.proofreadDraft.read(key);
+      if (!result.success) throw new Error(result.error);
+      const draft = JSON.parse(result.raw);
+      return [
+        {
+          key,
+          savedAt: draft.savedAt,
+          count: draft.subtitles.length,
+          last: draft.subtitles.at(-1),
+        },
+      ];
+    }, draftKey);
   metrics.draftBeforeKill = await readDraftTail();
   await fs.writeFile(
     path.join(output, 'before-kill.json'),
@@ -734,7 +750,7 @@ try {
   );
   assert.match(
     metrics.draftBeforeKill[0]?.last?.sourceContent || '',
-    /thirty keyboard events measured/,
+    /CRASH_LAST_KEY/,
   );
   const appProcess = app.process();
   const exited = once(appProcess, 'exit');
@@ -790,6 +806,16 @@ try {
     (await fs.readFile(source, 'utf8')).includes(
       'thirty keyboard events measured',
     ),
+  );
+  assert.equal(
+    (
+      await page.evaluate(
+        (key) => window.ipc.proofreadDraft.read(key),
+        draftKey,
+      )
+    ).raw,
+    'null',
+    'successful explicit save retires the recovery draft',
   );
   assert.deepEqual(errors, []);
   await page.goto('about:blank');

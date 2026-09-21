@@ -497,8 +497,9 @@ export const useStandaloneSubtitles = (
           ? proofreadDataSubtitles.some((sub) => !!sub.targetContent?.trim())
           : translatedSubtitles.length > 0,
       );
+      const recoveredDraft = readProofreadDraft(draftKey);
       loadedKey.current = documentKey;
-      setRecoveryDraft(readProofreadDraft(draftKey));
+      setRecoveryDraft(recoveredDraft);
       void retryTracks();
     } catch (error) {
       if (current())
@@ -539,8 +540,13 @@ export const useStandaloneSubtitles = (
   ]);
 
   const discardDraft = useCallback(() => {
-    clearProofreadDraft(draftKey);
-    setRecoveryDraft(null);
+    try {
+      clearProofreadDraft(draftKey);
+      setRecoveryDraft(null);
+      setDraftStorageFailed(false);
+    } catch {
+      setDraftStorageFailed(true);
+    }
   }, [draftKey]);
 
   // 加载文件
@@ -651,9 +657,10 @@ export const useStandaloneSubtitles = (
         subtitlesRef.current === subtitles &&
         speakersRef.current === savedSpeakers &&
         embedSpeakerNamesRef.current === savedEmbedNames;
+      if (unchanged) clearProofreadDraft(draftKey);
+      if (unchanged) setDraftStorageFailed(false);
       setIsDirty(!unchanged);
       setSaveStatus(unchanged ? 'saved' : 'idle');
-      if (unchanged) clearProofreadDraft(draftKey);
       toast.success(t('subtitleSavedSuccess'));
       // Navigation must wait until the current revision, including edits during IPC, is saved.
       return unchanged;

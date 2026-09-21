@@ -26,8 +26,13 @@ export function proofreadDraftKey(config: {
 
 export function readProofreadDraft(key: string): ProofreadDraft | null {
   if (memory.has(key)) return memory.get(key)!;
+  const storage = window.ipc?.proofreadDraft;
+  const result = storage?.read(key);
+  if (result?.success === false) throw new Error(result.error);
   try {
-    const raw = window.localStorage.getItem(key);
+    // Missing native file may be an older installation. A native tombstone
+    // ('null') is authoritative even if Chromium retained an old value.
+    const raw = result?.raw ?? window.localStorage.getItem(key);
     if (!raw) return null;
     const draft = JSON.parse(raw);
     if (
@@ -80,7 +85,19 @@ export function writeProofreadDraft(
 ): boolean {
   memory.set(key, draft);
   try {
-    window.localStorage.setItem(key, serializeDraft(key, draft));
+    const raw = serializeDraft(key, draft);
+    const storage = window.ipc?.proofreadDraft;
+    if (storage) {
+      const result = storage.write(key, raw);
+      if (result.success !== true) return false;
+      try {
+        window.localStorage.removeItem(key);
+      } catch {
+        /* Legacy cleanup only. */
+      }
+    } else {
+      window.localStorage.setItem(key, raw);
+    }
     return true;
   } catch {
     return false;
@@ -88,6 +105,8 @@ export function writeProofreadDraft(
 }
 
 export function clearProofreadDraft(key: string): void {
+  const result = window.ipc?.proofreadDraft?.write(key, null);
+  if (result?.success === false) throw new Error(result.error);
   memory.delete(key);
   serialized.delete(key);
   try {

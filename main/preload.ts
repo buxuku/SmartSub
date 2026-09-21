@@ -4,8 +4,17 @@ import {
   webUtils,
   IpcRendererEvent,
 } from 'electron';
+import type { ProofreadDraftStorageResult } from '../types/proofreadDraftStorage';
 
 const handler = {
+  proofreadDraft: {
+    read(key: string): ProofreadDraftStorageResult {
+      return ipcRenderer.sendSync('proofread:draft-read', key);
+    },
+    write(key: string, raw: string | null): ProofreadDraftStorageResult {
+      return ipcRenderer.sendSync('proofread:draft-write', key, raw);
+    },
+  },
   send(channel: string, value: unknown) {
     ipcRenderer.send(channel, value);
   },
