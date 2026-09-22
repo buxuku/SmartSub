@@ -28,6 +28,7 @@ try {
   page = await app.firstWindow();
   page.setDefaultTimeout(12000);
   await waitForAppPage(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
   await app.evaluate(({ BrowserWindow, dialog }) => {
     BrowserWindow.getAllWindows().forEach((w) => w.webContents.closeDevTools());
     dialog.showMessageBoxSync = () => 0;
@@ -116,7 +117,17 @@ try {
   );
   await fs.rename(reviewDirectory, reviewDirectory + '.backup');
   await fs.writeFile(reviewDirectory, 'blocked');
+  if (!(await page.getByLabel('处理状态', { exact: true }).isVisible()))
+    await page.getByRole('button', { name: /问题列表/ }).click();
   await page.getByLabel('处理状态', { exact: true }).selectOption('processed');
+  if (
+    await page
+      .getByRole('button', { name: '返回当前问题', exact: true })
+      .isVisible()
+  )
+    await page
+      .getByRole('button', { name: '返回当前问题', exact: true })
+      .click();
   await page.getByRole('button', { name: '保存字幕', exact: true }).click();
   await expect(
     page.getByRole('alert').filter({ hasText: '保存失败' }),

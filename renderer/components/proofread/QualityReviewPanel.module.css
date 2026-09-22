@@ -1,0 +1,50 @@
+.panel {
+  container-type: inline-size;
+}
+
+.workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.navigation {
+  display: none;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.detail {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.workspace[data-list-open='true'] .navigation {
+  display: flex;
+}
+
+.workspace[data-list-open='true'] .detail {
+  display: none;
+}
+
+@container (min-width: 760px) {
+  .navigation {
+    display: flex;
+    flex: 0 0 232px;
+    border-right: 1px solid hsl(var(--border));
+  }
+
+  .workspace[data-list-open='true'] .detail {
+    display: flex;
+  }
+
+  .listToggle {
+    display: none;
+  }
+}

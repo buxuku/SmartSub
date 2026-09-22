@@ -15,10 +15,22 @@ import {
   Plus,
   ListChecks,
   Loader2,
+  HelpCircle,
+  List,
+  ArrowLeft,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import styles from './QualityReviewPanel.module.css';
+import SpeechGapContext from './SpeechGapContext';
+import TimecodeInput from './TimecodeInput';
+import { formatTimecode, parseTimecode } from '../../lib/timecode';
 import type { QualityControl } from '../../hooks/useQualityReview';
 import type {
   QualityIssue,
@@ -51,6 +63,7 @@ interface Props {
     end: number,
     source: string,
     target?: string,
+    issue?: QualityIssue,
   ) => boolean;
   editor: React.ReactNode;
   onComplete: () => void;
@@ -68,9 +81,13 @@ export default function QualityReviewPanel(p: Props) {
   useEffect(() => {
     setActive(p.state.view.active || '');
   }, [p.state.view.active]);
-  const [context, setContext] = useState(false);
+  const [contextOverride, setContext] = useState<boolean | undefined>();
+  const [listOpen, setListOpen] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const gapContextRef = useRef<HTMLDivElement>(null);
   const insertion = p.state.insertionDrafts?.[active];
   const editInsertion = (patch: Partial<NonNullable<typeof insertion>>) => {
+    setActionError('');
     if (insertion) p.control.editInsertion(active, { ...insertion, ...patch });
   };
   const [actionError, setActionError] = useState('');
@@ -150,10 +167,11 @@ export default function QualityReviewPanel(p: Props) {
   const virtual = useVirtualizer({
     count: groups.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 48,
+    estimateSize: () => 88,
     overscan: 4,
   });
   const issue = p.control.current.get(active) || selected;
+  const context = contextOverride ?? issue?.kind === 'speech';
   const indices = useMemo(() => {
     if (!issue) return [];
     let found = locateQualityIssue(issue, p.rows);
@@ -185,10 +203,13 @@ export default function QualityReviewPanel(p: Props) {
   const select = (next: QualityIssue) => {
     selectedSnapshot.current = next;
     setActive(next.key);
-    setContext(false);
+    setContext(undefined);
     setActionError('');
     p.control.view({ active: next.key });
   };
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0 });
+  }, [active]);
   useEffect(() => {
     if (!active && eligible[0]) select(eligible[0]);
   }, [active, eligible]);
@@ -286,84 +307,83 @@ export default function QualityReviewPanel(p: Props) {
   const groupIndex = groups.findIndex((group) =>
     group.some((i) => i.key === active),
   );
+  useEffect(() => {
+    if (groupIndex < 0) return;
+    const frame = requestAnimationFrame(() =>
+      virtual.scrollToIndex(groupIndex, { align: 'auto' }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [groupIndex, listOpen, virtual]);
+  const processedCount = p.control.counts.fixed + p.control.counts.confirmed;
+  const totalCount =
+    processedCount + p.control.counts.pending + p.control.counts.skipped;
   return (
     <section
-      className="flex h-full min-h-0 flex-col overflow-auto rounded-md bg-card"
+      className={`${styles.panel} flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-card`}
       aria-label={q('title')}
       data-quality-panel
     >
-      <div className="shrink-0 space-y-2 border-b p-3 text-xs">
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            aria-label={q('statusFilter')}
-            className="h-8 rounded border bg-background px-2"
-            value={p.state.view.status}
-            onChange={(e) => {
-              setActive('');
-              selectedSnapshot.current = null;
-              p.control.view({
-                status: e.target.value as any,
-                active: undefined,
-              });
-            }}
-          >
-            {['pending', 'skipped', 'processed'].map((v) => (
-              <option key={v} value={v}>
-                {q(`filter.${v}`)}
-              </option>
-            ))}
-          </select>
-          <select
-            aria-label={q('typeFilter')}
-            className="h-8 rounded border bg-background px-2"
-            value={p.state.view.kind}
-            onChange={(e) => {
-              setActive('');
-              selectedSnapshot.current = null;
-              p.control.view({
-                kind: e.target.value as any,
-                active: undefined,
-              });
-            }}
-          >
-            {[
-              'all',
-              'translation',
-              'speech',
-              'speed',
-              'timing',
-              'glossary',
-            ].map((v) => (
-              <option key={v} value={v}>
-                {q(`kind.${v}`)}
-              </option>
-            ))}
-          </select>
-          <select
-            aria-label={q('sort')}
-            className="h-8 rounded border bg-background px-2"
-            value={p.state.view.sort}
-            onChange={(e) => p.control.view({ sort: e.target.value as any })}
-          >
-            <option value="time">{q('timeOrder')}</option>
-            <option value="priority">{q('priorityOrder')}</option>
-          </select>
-          <label className="flex items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={p.state.view.more}
-              onChange={(e) => p.control.view({ more: e.target.checked })}
-            />
-            {q('more')}
-          </label>
+      <header className="shrink-0 border-b px-4 py-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold">{q('workspaceTitle')}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {q('workflow')}
+            </p>
+          </div>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button size="sm" variant="ghost" className="shrink-0">
+                <HelpCircle className="h-4 w-4" />
+                {q('help')}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              className="max-h-[70vh] w-80 overflow-y-auto text-xs leading-relaxed"
+            >
+              <h3 className="mb-2 font-semibold">{q('help')}</h3>
+              <ol className="list-decimal space-y-2 pl-4">
+                <li>{q('helpListen')}</li>
+                <li>{q('helpEdit')}</li>
+                <li>{q('helpDecide')}</li>
+              </ol>
+              <h3 className="mb-1 mt-4 font-semibold">{q('coverage')}</h3>
+              <div className="space-y-2 text-muted-foreground">
+                <p>{q('localOnly')}</p>
+                {!p.onListen && <p>{q('noMedia')}</p>}
+                {!p.control.terms.length && !p.control.glossaryError && (
+                  <p>{q('noGlossary')}</p>
+                )}
+                {!p.control.catalog.some((i) => i.kind === 'speech') && (
+                  <p>{q('speechCoverage')}</p>
+                )}
+              </div>
+              {!configuredAi && (
+                <p className="text-muted-foreground">
+                  {q('noAi')}{' '}
+                  <Link
+                    className="text-primary underline"
+                    href={`/${router.query.locale || 'zh'}/translation`}
+                  >
+                    {q('configure')}
+                  </Link>
+                </p>
+              )}
+            </PopoverContent>
+          </Popover>
         </div>
         <div
-          className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground"
+          className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
           role="status"
         >
           {(['pending', 'fixed', 'confirmed', 'skipped'] as const).map((v) => (
-            <span key={v}>
-              {q(`status.${v}`)} {p.control.counts[v]}
+            <span
+              key={v}
+              className={v === 'pending' ? 'font-medium text-foreground' : ''}
+            >
+              {q(`status.${v}`)}{' '}
+              <span className="tabular-nums">{p.control.counts[v]}</span>
             </span>
           ))}
           {p.control.checking && (
@@ -373,19 +393,23 @@ export default function QualityReviewPanel(p: Props) {
             </span>
           )}
         </div>
-        <details className="text-muted-foreground">
-          <summary className="cursor-pointer">{q('coverage')}</summary>
-          <p className="mt-1">{q('localOnly')}</p>
-          {!p.onListen && <p>{q('noMedia')}</p>}
-          {!p.control.terms.length && !p.control.glossaryError && (
-            <p>{q('noGlossary')}</p>
-          )}
-          {!p.control.catalog.some((i) => i.kind === 'speech') && (
-            <p>{q('speechCoverage')}</p>
-          )}
-        </details>
+        <div
+          role="progressbar"
+          aria-label={q('progress')}
+          aria-valuemin={0}
+          aria-valuemax={Math.max(1, totalCount)}
+          aria-valuenow={processedCount}
+          className="mt-2 h-1 overflow-hidden rounded-full bg-muted"
+        >
+          <div
+            className="h-full rounded-full bg-success transition-[width]"
+            style={{
+              width: `${totalCount ? (processedCount / totalCount) * 100 : 0}%`,
+            }}
+          />
+        </div>
         {(p.control.error || p.control.glossaryError) && (
-          <div role="alert" className="text-destructive">
+          <div role="alert" className="mt-2 text-xs text-destructive">
             {q('partialFailure')}
             <details>
               <summary>{q('details')}</summary>
@@ -396,415 +420,698 @@ export default function QualityReviewPanel(p: Props) {
             </Button>
           </div>
         )}
-      </div>
-      <div
-        ref={scrollRef}
-        className="h-[72px] min-h-[48px] shrink-0 overflow-auto border-b"
-        tabIndex={0}
-        aria-label={q('issueList')}
-        onKeyDown={(e) => {
-          if ((e.target as HTMLElement).closest('input,textarea,select'))
-            return;
-          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-            e.preventDefault();
-            e.stopPropagation();
-            move(e.key === 'ArrowDown' ? 1 : -1);
-          }
-        }}
-      >
-        <div style={{ height: virtual.getTotalSize(), position: 'relative' }}>
-          {virtual.getVirtualItems().map((item) => {
-            const group = groups[item.index],
-              first = group.find((i) => i.key === active) || group[0];
-            return (
-              <button
-                key={first.start + ':' + first.end}
-                className={`absolute left-0 flex w-full items-center gap-3 px-3 text-left text-xs hover:bg-accent ${group.some((i) => i.key === active) ? 'bg-primary/10 text-primary' : ''}`}
-                style={{ top: item.start, height: item.size }}
-                onClick={(e) => {
-                  select(first);
-                  e.currentTarget.parentElement?.parentElement?.focus();
-                }}
-                aria-current={
-                  group.some((i) => i.key === active) ? 'true' : undefined
-                }
-              >
-                <span className="font-mono tabular-nums">
-                  {speechRangeTime(first.start * 1000)}
+      </header>
+      <div className={styles.workspace} data-list-open={listOpen}>
+        <aside
+          className={`${styles.navigation} bg-panel-2`}
+          aria-label={q('issueNavigation')}
+        >
+          <div className="shrink-0 space-y-3 border-b p-3 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-semibold">
+                {q('issueList')}{' '}
+                <span className="ml-1 font-normal text-muted-foreground">
+                  {groups.length}
                 </span>
-                <span className="min-w-0 flex-1 truncate">
-                  {Array.from(
-                    new Set(group.map((i) => q(`kind.${i.kind}`))),
-                  ).join(' · ')}
-                </span>
-                <span>
-                  {q(
-                    `status.${group.some((i) => p.control.status(i) === 'pending') ? 'pending' : group.some((i) => p.control.status(i) === 'skipped') ? 'skipped' : p.control.status(first)}`,
-                  )}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      {!issue ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
-          <ListChecks className="h-7 w-7" />
-          <p>
-            {p.control.checking
-              ? q('checking')
-              : p.control.catalog.length
-                ? q('emptyFilter')
-                : q('empty')}
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => p.control.view({ mode: 'all' })}
-          >
-            {q('all')}
-          </Button>
-          <Button size="sm" onClick={p.onComplete}>
-            {q('complete')}
-          </Button>
-        </div>
-      ) : (
-        <>
-          <div
-            className="max-h-[26vh] shrink-0 space-y-2 overflow-auto bg-panel-2 p-3 text-xs"
-            data-quality-detail
-          >
-            {related.map((i) => (
-              <div key={i.key} className="flex flex-wrap items-start gap-2">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
-                <div className="min-w-[180px] flex-1">
-                  <p>
-                    {i.field && (
-                      <button
-                        className="mr-1 font-medium text-primary underline-offset-2 hover:underline"
-                        onClick={() => select(i)}
-                      >
-                        {q(
-                          i.field === 'sourceContent'
-                            ? 'originalField'
-                            : 'translationField',
-                        )}
-                      </button>
-                    )}
-                    {reason(i)}
-                  </p>
-                  <span className="text-muted-foreground">
-                    {q(`status.${p.control.status(i)}`)}
-                  </span>
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  {p.control.status(i) === 'pending' ? (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={p.control.checking}
-                        onClick={() => p.control.decide(i, 'confirmed')}
-                      >
-                        {q('confirm')}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={p.control.checking}
-                        onClick={() => p.control.decide(i, 'skipped')}
-                      >
-                        {q('skip')}
-                      </Button>
-                      {i.kind === 'speech' && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={p.control.checking}
-                          onClick={() => p.control.decide(i, 'fixed')}
-                        >
-                          {q('markFixed')}
-                        </Button>
-                      )}
-                    </>
-                  ) : p.control.status(i) !== 'fixed' || i.kind === 'speech' ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={p.control.checking}
-                      onClick={() => p.control.decide(i)}
-                    >
-                      {q('reopen')}
-                    </Button>
-                  ) : (
-                    <Check className="h-4 w-4 text-success" />
-                  )}
-                </div>
-              </div>
-            ))}
-            <div className="flex flex-wrap items-center gap-1">
-              {p.onListen && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => p.onListen?.(issue)}
-                  >
-                    <Play className="mr-1 h-3.5 w-3.5" />
-                    {q('listen')}
-                  </Button>
-                  <label className="mx-1 flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      checked={p.loop}
-                      onChange={(e) => p.onLoop(e.target.checked)}
-                    />
-                    {q('loop')}
-                  </label>
-                </>
-              )}
-              {!!indices.length && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setContext((v) => !v)}
-                >
-                  {q(context ? 'hideContext' : 'context')}
-                </Button>
-              )}
-              {indices.length === 1 && (
-                <>
-                  {issue.kind === 'translation' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={translating}
-                      onClick={() => void retranslate()}
-                    >
-                      {translating ? (
-                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <RotateCcw className="mr-1 h-3.5 w-3.5" />
-                      )}
-                      {q('retranslate')}
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={p.ai.running || !configuredAi}
-                    onClick={() =>
-                      void p.ai.run(
-                        [indices[0]],
-                        issue.kind === 'speed' ? 'shorten' : 'polish',
-                        issue.field || 'sourceContent',
-                      )
-                    }
-                  >
-                    <Sparkles className="mr-1 h-3.5 w-3.5" />
-                    {q(
-                      issue.field === 'targetContent' ? 'aiTarget' : 'aiSource',
-                    )}
-                  </Button>
-                  {issue.detail.suggested && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        p.ai.propose(
-                          indices[0],
-                          issue.detail.suggested!,
-                          'sourceContent',
-                        )
-                      }
-                    >
-                      {q('suggestion')}
-                    </Button>
-                  )}
-                </>
-              )}
-              {issue.kind === 'glossary' && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() =>
-                    void navigator.clipboard
-                      .writeText(issue.detail.expected || '')
-                      .catch((e) => setActionError(String(e)))
-                  }
-                >
-                  {q('copyTerm')}
-                </Button>
-              )}
-              {issue.kind === 'speech' && !indices.length && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    if (!insertion)
-                      p.control.editInsertion(active, {
-                        start: String(issue.start),
-                        end: String(issue.end),
-                        source: issue.detail.suggested || '',
-                        target: '',
-                      });
-                  }}
-                >
-                  <Plus className="mr-1 h-3.5 w-3.5" />
-                  {q('insert')}
-                </Button>
-              )}
-            </div>
-            {!configuredAi && (
-              <p className="text-muted-foreground">
-                {q('noAi')}{' '}
-                <Link
-                  className="text-primary underline"
-                  href={`/${router.query.locale || 'zh'}/translation`}
-                >
-                  {q('configure')}
-                </Link>
-              </p>
-            )}
-            {translating && (
+              </h3>
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => {
-                  const id = request.current;
-                  request.current = null;
-                  setTranslating(false);
-                  if (id)
-                    void window.ipc.invoke('cancelProofreadBatch', {
-                      batchId: id,
-                    });
-                }}
+                className={styles.listToggle}
+                onClick={() => setListOpen(false)}
               >
-                {q('cancel')}
+                <ArrowLeft className="h-3.5 w-3.5" />
+                {q('backToIssue')}
               </Button>
-            )}
-            {actionError && (
-              <div role="alert" className="text-destructive">
-                {actionError}
-              </div>
-            )}
-            {insertion && (
-              <div className="space-y-2" data-quality-insert>
-                <div className="flex gap-2">
-                  <label className="flex-1">
-                    {q('start')}
-                    <Input
-                      type="number"
-                      step="0.001"
-                      value={insertion.start}
-                      onChange={(e) => editInsertion({ start: e.target.value })}
-                    />
-                  </label>
-                  <label className="flex-1">
-                    {q('end')}
-                    <Input
-                      type="number"
-                      step="0.001"
-                      value={insertion.end}
-                      onChange={(e) => editInsertion({ end: e.target.value })}
-                    />
-                  </label>
-                </div>
-                <Textarea
-                  aria-label={q('source')}
-                  value={insertion.source}
-                  onChange={(e) => editInsertion({ source: e.target.value })}
-                />
-                {p.translation && (
-                  <Textarea
-                    aria-label={q('target')}
-                    value={insertion.target}
-                    onChange={(e) => editInsertion({ target: e.target.value })}
-                  />
-                )}
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    if (
-                      !insertion.start.trim() ||
-                      !insertion.end.trim() ||
-                      !p.insert(
-                        Number(insertion.start),
-                        Number(insertion.end),
-                        insertion.source,
-                        insertion.target,
-                      )
-                    )
-                      setActionError(q('invalidInsert'));
-                    else {
-                      p.control.editInsertion(active);
-                      setActionError('');
-                    }
-                  }}
-                >
-                  {q('add')}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => p.control.editInsertion(active)}
-                >
-                  {q('cancel')}
-                </Button>
-              </div>
-            )}
-          </div>
-          <div className="min-h-[180px] flex-1">
-            {indices.length ? (
-              p.editor
-            ) : (
-              <div className="p-4 text-sm text-muted-foreground">
-                {q(issue.kind === 'speech' ? 'gap' : 'changedRange')}
-              </div>
-            )}
-          </div>
-          <div className="sticky bottom-0 z-10 flex shrink-0 items-center justify-between gap-2 border-t bg-card p-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={groupIndex <= 0}
-              onClick={() => move(-1)}
-            >
-              <ChevronUp className="mr-1 h-4 w-4" />
-              {q('previous')}
-            </Button>
-            <span className="text-xs text-muted-foreground">
-              {Math.max(0, groupIndex + 1)} / {groups.length}
-            </span>
-            {groupIndex < groups.length - 1 ? (
-              <Button size="sm" onClick={() => move(1)}>
-                {q('next')}
-                <ChevronDown className="ml-1 h-4 w-4" />
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  selectedSnapshot.current = null;
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                aria-label={q('statusFilter')}
+                className="h-8 min-w-0 rounded-md border bg-card px-2 text-xs"
+                value={p.state.view.status}
+                onChange={(e) => {
                   setActive('');
+                  selectedSnapshot.current = null;
                   p.control.view({
-                    status: p.control.counts.skipped ? 'skipped' : 'processed',
+                    status: e.target.value as any,
                     active: undefined,
                   });
                 }}
               >
-                {q(p.control.counts.skipped ? 'reviewSkipped' : 'reviewDone')}
-              </Button>
+                {['pending', 'skipped', 'processed'].map((v) => (
+                  <option key={v} value={v}>
+                    {q(`filter.${v}`)}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label={q('typeFilter')}
+                className="h-8 min-w-0 rounded-md border bg-card px-2 text-xs"
+                value={p.state.view.kind}
+                onChange={(e) => {
+                  setActive('');
+                  selectedSnapshot.current = null;
+                  p.control.view({
+                    kind: e.target.value as any,
+                    active: undefined,
+                  });
+                }}
+              >
+                {[
+                  'all',
+                  'translation',
+                  'speech',
+                  'speed',
+                  'timing',
+                  'glossary',
+                ].map((v) => (
+                  <option key={v} value={v}>
+                    {q(`kind.${v}`)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="w-full justify-between"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    {q('filterOptions')}
+                  </span>
+                  <span className="font-normal">
+                    {q(
+                      p.state.view.sort === 'time'
+                        ? 'timeOrder'
+                        : 'priorityOrder',
+                    )}
+                    {p.state.view.more ? ' · ' + q('more') : ''}
+                  </span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="space-y-3 text-xs">
+                <label className="flex items-center justify-between gap-2">
+                  {q('sort')}
+                  <select
+                    aria-label={q('sort')}
+                    className="h-8 min-w-0 rounded-md border bg-card px-2 text-xs"
+                    value={p.state.view.sort}
+                    onChange={(e) =>
+                      p.control.view({ sort: e.target.value as any })
+                    }
+                  >
+                    <option value="time">{q('timeOrder')}</option>
+                    <option value="priority">{q('priorityOrder')}</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    checked={p.state.view.more}
+                    onChange={(e) => p.control.view({ more: e.target.checked })}
+                  />
+                  {q('more')}
+                </label>
+                <p className="text-muted-foreground">{q('moreHelp')}</p>
+              </PopoverContent>
+            </Popover>
+          </div>
+          <div
+            ref={scrollRef}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+            id="quality-issue-list"
+            tabIndex={0}
+            aria-label={q('issueList')}
+            onKeyDown={(e) => {
+              if ((e.target as HTMLElement).closest('input,textarea,select'))
+                return;
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                e.stopPropagation();
+                move(e.key === 'ArrowDown' ? 1 : -1);
+              }
+            }}
+          >
+            {!groups.length && (
+              <div className="space-y-3 p-4 text-center text-xs text-muted-foreground">
+                <p>{q(p.control.checking ? 'checking' : 'emptyFilter')}</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    p.control.view({ status: 'pending', kind: 'all' })
+                  }
+                >
+                  {q('resetFilters')}
+                </Button>
+              </div>
             )}
-            {p.state.view.status === 'processed' && (
+            <div
+              style={{ height: virtual.getTotalSize(), position: 'relative' }}
+            >
+              {virtual.getVirtualItems().map((item) => {
+                const group = groups[item.index],
+                  first = group.find((i) => i.key === active) || group[0];
+                return (
+                  <button
+                    key={first.start + ':' + first.end}
+                    className={`absolute left-0 flex w-full flex-col justify-center gap-1 border-b border-l-2 px-3 text-left text-xs transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary ${group.some((i) => i.key === active) ? 'border-l-primary bg-primary/10' : 'border-l-transparent'}`}
+                    style={{ top: item.start, height: item.size }}
+                    onClick={() => {
+                      select(first);
+                      setListOpen(false);
+                      requestAnimationFrame(() => {
+                        const target = scrollRef.current?.offsetParent
+                          ? scrollRef.current
+                          : contentRef.current;
+                        target?.focus({ preventScroll: true });
+                      });
+                    }}
+                    aria-current={
+                      group.some((i) => i.key === active) ? 'true' : undefined
+                    }
+                  >
+                    <span className="flex w-full items-center justify-between gap-2">
+                      <span className="font-mono tabular-nums text-muted-foreground">
+                        {speechRangeTime(first.start * 1000)}
+                      </span>
+                      <span
+                        className={`text-[11px] ${group.some((i) => p.control.status(i) === 'pending') ? 'text-warning' : 'text-muted-foreground'}`}
+                      >
+                        {q(
+                          `status.${group.some((i) => p.control.status(i) === 'pending') ? 'pending' : group.some((i) => p.control.status(i) === 'skipped') ? 'skipped' : p.control.status(first)}`,
+                        )}
+                      </span>
+                    </span>
+                    <span className="w-full truncate font-medium">
+                      {Array.from(
+                        new Set(group.map((i) => q(`kind.${i.kind}`))),
+                      ).join(' · ')}
+                    </span>
+                    <span className="w-full truncate text-muted-foreground">
+                      {p.rows[first.indices[0]]?.sourceContent ||
+                        q(
+                          first.kind === 'speech'
+                            ? 'missingSubtitle'
+                            : 'viewIssue',
+                        )}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </aside>
+        <div className={styles.detail}>
+          <div
+            className={`${styles.listToggle} flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2`}
+          >
+            <Button
+              variant="outline"
+              size="sm"
+              aria-expanded={listOpen}
+              aria-controls="quality-issue-list"
+              onClick={() => setListOpen(true)}
+            >
+              <List className="h-4 w-4" />
+              {q('issueList')}
+              <span className="tabular-nums">{groups.length}</span>
+              <ChevronDown className="h-3.5 w-3.5" />
+            </Button>
+            <span className="truncate text-xs text-muted-foreground">
+              {q(`filter.${p.state.view.status}`)} ·{' '}
+              {q(`kind.${p.state.view.kind}`)}
+            </span>
+          </div>
+          {!issue ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
+              <ListChecks className="h-7 w-7" />
+              <p>
+                {p.control.checking
+                  ? q('checking')
+                  : p.control.catalog.length
+                    ? q('emptyFilter')
+                    : q('empty')}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => p.control.view({ mode: 'all' })}
+              >
+                {q('all')}
+              </Button>
               <Button size="sm" onClick={p.onComplete}>
                 {q('complete')}
               </Button>
-            )}
-          </div>
-        </>
-      )}
+            </div>
+          ) : (
+            <>
+              <div
+                ref={contentRef}
+                tabIndex={-1}
+                className="min-h-0 flex-1 overflow-y-auto overscroll-contain focus:outline-none"
+                data-quality-content
+              >
+                <div className="space-y-3 p-4 text-xs" data-quality-detail>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold">
+                      {q(`kind.${issue.kind}`)}
+                    </h3>
+                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                      {speechRangeTime(issue.start * 1000)} –{' '}
+                      {speechRangeTime(issue.end * 1000)}
+                    </span>
+                  </div>
+                  {related.map((i) => (
+                    <div
+                      key={i.key}
+                      className="flex flex-wrap items-start gap-2 rounded-md border border-warning/20 bg-warning/5 p-3"
+                    >
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                      <div className="min-w-0 basis-full flex-1 sm:basis-[200px]">
+                        <p>
+                          {i.field && (
+                            <button
+                              className="mr-1 font-medium text-primary underline-offset-2 hover:underline"
+                              onClick={() => select(i)}
+                            >
+                              {q(
+                                i.field === 'sourceContent'
+                                  ? 'originalField'
+                                  : 'translationField',
+                              )}
+                            </button>
+                          )}
+                          {reason(i)}
+                        </p>
+                        <span className="text-muted-foreground">
+                          {q(`status.${p.control.status(i)}`)}
+                        </span>
+                      </div>
+                      <div className="flex w-full flex-wrap items-center gap-1 pl-5">
+                        {p.control.status(i) === 'pending' ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={p.control.checking}
+                              title={q('confirmHelp')}
+                              onClick={() => p.control.decide(i, 'confirmed')}
+                            >
+                              {q('confirm')}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={p.control.checking}
+                              title={q('skipHelp')}
+                              onClick={() => p.control.decide(i, 'skipped')}
+                            >
+                              {q('skip')}
+                            </Button>
+                            {i.kind === 'speech' && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={p.control.checking}
+                                onClick={() => p.control.decide(i, 'fixed')}
+                              >
+                                {q('markFixed')}
+                              </Button>
+                            )}
+                          </>
+                        ) : p.control.status(i) !== 'fixed' ||
+                          i.kind === 'speech' ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={p.control.checking}
+                            onClick={() => p.control.decide(i)}
+                          >
+                            {q('reopen')}
+                          </Button>
+                        ) : (
+                          <Check className="h-4 w-4 text-success" />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  <p className="leading-relaxed text-muted-foreground">
+                    {q(
+                      !indices.length && issue.kind === 'speech'
+                        ? 'gap'
+                        : `guidance.${issue.kind}`,
+                    )}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {p.onListen && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => p.onListen?.(issue)}
+                        >
+                          <Play className="mr-1 h-3.5 w-3.5" />
+                          {q('listen')}
+                        </Button>
+                        <label className="mx-1 flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={p.loop}
+                            onChange={(e) => p.onLoop(e.target.checked)}
+                          />
+                          {q('loop')}
+                        </label>
+                      </>
+                    )}
+                    {!!indices.length && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setContext(!context)}
+                      >
+                        {q(context ? 'hideContext' : 'context')}
+                      </Button>
+                    )}
+                    {indices.length === 1 && (
+                      <>
+                        {issue.kind === 'translation' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={translating}
+                            onClick={() => void retranslate()}
+                          >
+                            {translating ? (
+                              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                            )}
+                            {q('retranslate')}
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={p.ai.running || !configuredAi}
+                          onClick={() =>
+                            void p.ai.run(
+                              [indices[0]],
+                              issue.kind === 'speed' ? 'shorten' : 'polish',
+                              issue.field || 'sourceContent',
+                            )
+                          }
+                        >
+                          <Sparkles className="mr-1 h-3.5 w-3.5" />
+                          {q(
+                            issue.field === 'targetContent'
+                              ? 'aiTarget'
+                              : 'aiSource',
+                          )}
+                        </Button>
+                        {issue.detail.suggested && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              p.ai.propose(
+                                indices[0],
+                                issue.detail.suggested!,
+                                'sourceContent',
+                              )
+                            }
+                          >
+                            {q('suggestion')}
+                          </Button>
+                        )}
+                      </>
+                    )}
+                    {issue.kind === 'glossary' && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          void navigator.clipboard
+                            .writeText(issue.detail.expected || '')
+                            .catch((e) => setActionError(String(e)))
+                        }
+                      >
+                        {q('copyTerm')}
+                      </Button>
+                    )}
+                    {issue.kind === 'speech' &&
+                      !indices.length &&
+                      !insertion && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            if (!insertion)
+                              p.control.editInsertion(active, {
+                                start: formatTimecode(issue.start),
+                                end: formatTimecode(issue.end),
+                                source: issue.detail.suggested || '',
+                                target: '',
+                              });
+                          }}
+                        >
+                          <Plus className="mr-1 h-3.5 w-3.5" />
+                          {q('insert')}
+                        </Button>
+                      )}
+                  </div>
+                  {translating && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        const id = request.current;
+                        request.current = null;
+                        setTranslating(false);
+                        if (id)
+                          void window.ipc.invoke('cancelProofreadBatch', {
+                            batchId: id,
+                          });
+                      }}
+                    >
+                      {q('cancel')}
+                    </Button>
+                  )}
+                  {actionError && !insertion && (
+                    <div role="alert" className="text-destructive">
+                      {actionError}
+                    </div>
+                  )}
+                  {issue.kind === 'speech' && !indices.length && (
+                    <div ref={gapContextRef}>
+                      <SpeechGapContext
+                        key={issue.key}
+                        issue={issue}
+                        rows={p.rows}
+                        translation={p.translation}
+                        onListen={p.onListen}
+                      />
+                    </div>
+                  )}
+                  {insertion && (
+                    <div
+                      className="space-y-4 rounded-lg border bg-panel-2 p-4"
+                      data-quality-insert
+                    >
+                      <div>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <h4 className="text-sm font-semibold">
+                            {q('insert')}
+                          </h4>
+                          {issue.kind === 'speech' && !indices.length && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                gapContextRef.current?.scrollIntoView({
+                                  block: 'start',
+                                })
+                              }
+                            >
+                              <ChevronUp className="h-3.5 w-3.5" />
+                              {q('gapContext.compare')}
+                            </Button>
+                          )}
+                        </div>
+                        <p className="mt-1 leading-relaxed text-muted-foreground">
+                          {q('insertHelp')}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <label className="min-w-0 flex-1 space-y-1">
+                          {q('start')}
+                          <TimecodeInput
+                            key={`${active}-start`}
+                            aria-describedby="quality-timecode-hint"
+                            aria-invalid={
+                              !!actionError &&
+                              parseTimecode(insertion.start) === null
+                            }
+                            value={insertion.start}
+                            onChange={(value) =>
+                              editInsertion({ start: value })
+                            }
+                          />
+                        </label>
+                        <label className="min-w-0 flex-1 space-y-1">
+                          {q('end')}
+                          <TimecodeInput
+                            key={`${active}-end`}
+                            aria-describedby="quality-timecode-hint"
+                            aria-invalid={
+                              !!actionError &&
+                              parseTimecode(insertion.end) === null
+                            }
+                            value={insertion.end}
+                            onChange={(value) => editInsertion({ end: value })}
+                          />
+                        </label>
+                      </div>
+                      <p
+                        id="quality-timecode-hint"
+                        className="text-muted-foreground"
+                      >
+                        {q('timecodeHint')}
+                      </p>
+                      <label className="block space-y-1.5">
+                        <span className="font-medium">{q('source')}</span>
+                        <Textarea
+                          autoFocus
+                          rows={4}
+                          className="min-h-[104px] bg-card text-sm"
+                          placeholder={q('sourcePlaceholder')}
+                          value={insertion.source}
+                          onChange={(e) =>
+                            editInsertion({ source: e.target.value })
+                          }
+                        />
+                      </label>
+                      {p.translation && (
+                        <label className="block space-y-1.5">
+                          <span>{q('target')}</span>
+                          <Textarea
+                            rows={3}
+                            className="bg-card text-sm"
+                            placeholder={q('targetPlaceholder')}
+                            value={insertion.target}
+                            onChange={(e) =>
+                              editInsertion({ target: e.target.value })
+                            }
+                          />
+                        </label>
+                      )}
+                      {actionError && (
+                        <p role="alert" className="text-destructive">
+                          {actionError}
+                        </p>
+                      )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            const start = parseTimecode(insertion.start);
+                            const end = parseTimecode(insertion.end);
+                            if (start === null || end === null) {
+                              setActionError(q('invalidTimecode'));
+                              return;
+                            }
+                            if (
+                              !p.insert(
+                                start,
+                                end,
+                                insertion.source,
+                                insertion.target,
+                                issue,
+                              )
+                            )
+                              setActionError(q('invalidInsert'));
+                            else {
+                              setActionError('');
+                            }
+                          }}
+                        >
+                          {q('add')}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => p.control.editInsertion(active)}
+                        >
+                          {q('cancel')}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {indices.length ? (
+                  <div className="border-t px-3 pb-4 pt-3">
+                    <h4 className="mb-2 px-1 text-xs font-medium text-muted-foreground">
+                      {q(context ? 'contextTitle' : 'editTitle')}
+                    </h4>
+                    {p.editor}
+                  </div>
+                ) : issue.kind !== 'speech' ? (
+                  <div className="p-4 text-sm text-muted-foreground">
+                    {q('changedRange')}
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t bg-card px-3 py-2.5">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={groupIndex <= 0}
+                  onClick={() => move(-1)}
+                >
+                  <ChevronUp className="mr-1 h-4 w-4" />
+                  {q('previous')}
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {Math.max(0, groupIndex + 1)} / {groups.length}
+                </span>
+                {groupIndex < groups.length - 1 ? (
+                  <Button size="sm" onClick={() => move(1)}>
+                    {q('next')}
+                    <ChevronDown className="ml-1 h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      selectedSnapshot.current = null;
+                      setActive('');
+                      p.control.view({
+                        status: p.control.counts.skipped
+                          ? 'skipped'
+                          : 'processed',
+                        active: undefined,
+                      });
+                    }}
+                  >
+                    {q(
+                      p.control.counts.skipped ? 'reviewSkipped' : 'reviewDone',
+                    )}
+                  </Button>
+                )}
+                {p.state.view.status === 'processed' && (
+                  <Button size="sm" onClick={p.onComplete}>
+                    {q('complete')}
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </section>
   );
 }

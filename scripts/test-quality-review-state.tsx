@@ -4,7 +4,7 @@ import { act, create } from 'react-test-renderer';
 import i18next from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { useStandaloneSubtitles } from '../renderer/hooks/useStandaloneSubtitles';
-import { emptyQualityReview } from '../types/qualityReview';
+import { emptyQualityReview, type QualityIssue } from '../types/qualityReview';
 
 async function main() {
   await i18next
@@ -173,6 +173,67 @@ async function main() {
   await act(async () =>
     assert.equal(hook!.insertSubtitle(2, 4, 'Overlap'), false),
   );
+  const gap: QualityIssue = {
+    key: 'gap-insert',
+    kind: 'speech',
+    start: 5,
+    end: 6,
+    evidence: 'missing speech',
+    more: false,
+    priority: 1,
+    indices: [],
+    detail: { reason: 'speech' },
+  };
+  await act(async () =>
+    hook!.updateQualityReview({
+      ...hook!.qualityReview,
+      insertionDrafts: {
+        ...hook!.qualityReview.insertionDrafts,
+        [gap.key]: {
+          start: '5',
+          end: '6',
+          source: 'Missing sentence',
+          target: '',
+        },
+      },
+    }),
+  );
+  await act(async () =>
+    assert.equal(hook!.insertSubtitle(2, 4, 'Overlap', '', gap), false),
+  );
+  assert.equal(hook!.qualityReview.decisions[gap.key], undefined);
+  assert.ok(
+    hook!.qualityReview.insertionDrafts?.[gap.key],
+    'invalid insertion retains draft',
+  );
+  const previousCount = hook!.mergedSubtitles.length;
+  await act(async () =>
+    assert.equal(hook!.insertSubtitle(5, 6, 'Missing sentence', '', gap), true),
+  );
+  assert.equal(hook!.qualityReview.decisions[gap.key].status, 'fixed');
+  assert.equal(
+    hook!.qualityReview.insertionDrafts?.[gap.key],
+    undefined,
+    'successful insertion clears only its draft',
+  );
+  assert.ok(
+    hook!.qualityReview.insertionDrafts?.gap,
+    'other drafts survive insertion',
+  );
+  await act(async () => hook!.handleUndo());
+  assert.equal(
+    hook!.mergedSubtitles.length,
+    previousCount,
+    'one undo removes the inserted subtitle',
+  );
+  assert.equal(
+    hook!.qualityReview.decisions[gap.key],
+    undefined,
+    'the same undo restores the review status',
+  );
+  await act(async () => hook!.handleRedo());
+  assert.equal(hook!.mergedSubtitles.length, previousCount + 1);
+  assert.equal(hook!.qualityReview.decisions[gap.key].status, 'fixed');
   await act(async () => assert.equal(await hook!.handleSave(), true));
   await act(async () => root.unmount());
   files.clear();

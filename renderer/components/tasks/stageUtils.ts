@@ -244,7 +244,10 @@ export function getFileWarning(file: any, stages: StageDef[]): string {
   for (const stage of stages) {
     if (
       getStageStatus(file, stage.key) === 'done' &&
-      file?.[`${stage.key}Error`]
+      file?.[`${stage.key}Error`] &&
+      // Older records can retain this marker after a successful retry.
+      // A completed stage no longer needs the user to resume it.
+      file[`${stage.key}Error`] !== 'TASK_INTERRUPTED'
     ) {
       return file[`${stage.key}Error`];
     }

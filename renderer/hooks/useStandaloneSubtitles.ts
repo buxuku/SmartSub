@@ -16,8 +16,10 @@ import {
   emptyQualityReview,
   parseQualityReview,
   type QualityReviewState,
+  type QualityIssue,
 } from '../../types/qualityReview';
 import { validCueRange } from '../lib/waveformEditing';
+import { qualityCheckSteps } from '../lib/qualityChecks';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
 import { Subtitle, SubtitleStats, PlayerSubtitleTrack } from './useSubtitles';
@@ -1042,7 +1044,13 @@ export const useStandaloneSubtitles = (
   }, [draftKey, applyQuality]);
 
   const insertSubtitle = useCallback(
-    (start: number, end: number, source: string, target = '') => {
+    (
+      start: number,
+      end: number,
+      source: string,
+      target = '',
+      issue?: QualityIssue,
+    ) => {
       const current = subtitlesRef.current;
       if (
         !Number.isFinite(start) ||
@@ -1071,15 +1079,61 @@ export const useStandaloneSubtitles = (
         targetContent: target,
       };
       flushPendingEdit();
-      history.push({ start: index, removed: [], inserted: [row] });
       const next = current.slice();
       next.splice(index, 0, row);
-      applySubtitles(renormalizeIds(next));
+      const normalized = renormalizeIds(next);
+      const before = qualityRef.current;
+      let after: QualityReviewState | undefined;
+      if (issue) {
+        // Inserting changes the finding's evidence. Record the new evidence so
+        // the next automatic check keeps this resolution, including after redo.
+        let resolvedIssue = issue;
+        const steps = qualityCheckSteps({
+          subtitles: normalized,
+          warnings: missedSpeechWarnings,
+          terms: [],
+          translation: false,
+        });
+        for (let step = steps.next(); !step.done; step = steps.next()) {
+          const updated = step.value.find(
+            (finding) => finding.key === issue.key,
+          );
+          if (updated) {
+            resolvedIssue = updated;
+            break;
+          }
+        }
+        const insertionDrafts = { ...before.insertionDrafts };
+        delete insertionDrafts[issue.key];
+        after = {
+          ...before,
+          insertionDrafts,
+          decisions: {
+            ...before.decisions,
+            [issue.key]: { evidence: resolvedIssue.evidence, status: 'fixed' },
+          },
+        };
+      }
+      history.push(
+        { start: index, removed: [], inserted: [row] },
+        after ? { before, after } : undefined,
+      );
+      if (after) {
+        applyQuality(after);
+        qualityLocallyChanged.current = true;
+      }
+      applySubtitles(normalized);
       setIsDirty(true);
       setCurrentSubtitleIndex(index);
       return true;
     },
-    [applySubtitles, flushPendingEdit, history.push],
+    [
+      applySubtitles,
+      applyQuality,
+      flushPendingEdit,
+      history.push,
+      missedSpeechWarnings,
+    ],
   );
 
   // 是否可以撤销/重做（合并窗口中有未提交输入也算可撤销）

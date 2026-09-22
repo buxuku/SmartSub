@@ -142,9 +142,16 @@ try {
   await page.getByRole('button', { name: '校对', exact: true }).click();
   await page.getByText('First original.', { exact: true }).click();
   const toolbar = page.locator('[data-ai-toolbar]');
+  const runAi = async (name) => {
+    await toolbar.getByRole('button', { name: 'AI 助手', exact: true }).click();
+    await page
+      .locator('[data-ai-actions]')
+      .getByRole('button', { name, exact: true })
+      .click();
+  };
   const row = (index) => page.locator(`#subtitle-${index}`);
   const review = (index) => row(index).locator('[data-ai-review]');
-  await toolbar.getByRole('button', { name: 'AI 优化', exact: true }).click();
+  await runAi('AI 优化');
   await expect(review(0)).toHaveAttribute('data-ai-review', 'ready');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(review(0).locator('del')).not.toHaveCount(0);
@@ -166,7 +173,7 @@ try {
   checks.push(
     'real provider HTTP, file languages, red/green inline diff, Enter accept and undo/redo',
   );
-  await toolbar.getByRole('button', { name: 'AI 缩短', exact: true }).click();
+  await runAi('AI 缩短');
   await expect(review(0)).toHaveAttribute('data-ai-review', 'ready');
   await expect(review(0).locator('[data-ai-diff="proposed"]')).toContainText(
     'Bref.',
@@ -179,7 +186,7 @@ try {
   await expect(review(0)).toHaveCount(0);
   checks.push('shorten intent, input Enter remains editing, Esc ignore');
   hold = true;
-  await toolbar.getByRole('button', { name: 'AI 优化', exact: true }).click();
+  await runAi('AI 优化');
   await expect.poll(() => held.length).toBe(1);
   await page.locator('#subtitle-tgt-0').fill('Manual edit while waiting.');
   held.shift()();
@@ -194,9 +201,7 @@ try {
   );
   await review(0).getByRole('button', { name: '忽略', exact: true }).click();
   checks.push('concurrent edit cannot be overwritten by a stale result');
-  await toolbar
-    .getByRole('button', { name: '全文 AI 优化', exact: true })
-    .click();
+  await runAi('全文 AI 优化');
   await expect(page.locator('[data-ai-review="ready"]')).toHaveCount(3);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   for (const [width, height] of [
@@ -242,7 +247,7 @@ try {
   );
   await page.locator('#subtitle-src-0').click();
   fail = true;
-  await toolbar.getByRole('button', { name: 'AI 优化', exact: true }).click();
+  await runAi('AI 优化');
   await expect(review(0)).toHaveAttribute('data-ai-review', 'error');
   await expect(review(0).getByRole('alert')).toBeVisible();
   fail = false;
@@ -250,13 +255,13 @@ try {
   await expect(review(0)).toHaveAttribute('data-ai-review', 'ready');
   await review(0).getByRole('button', { name: '忽略', exact: true }).click();
   hold = true;
-  await toolbar.getByRole('button', { name: 'AI 优化', exact: true }).click();
+  await runAi('AI 优化');
   await expect.poll(() => held.length).toBe(1);
   await toolbar.getByRole('button', { name: '取消', exact: true }).click();
   await expect(page.locator('[data-ai-review]')).toHaveCount(0);
   held.shift()();
   hold = false;
-  await toolbar.getByRole('button', { name: 'AI 优化', exact: true }).click();
+  await runAi('AI 优化');
   await expect(review(0)).toHaveAttribute('data-ai-review', 'ready');
   checks.push(
     'persistent service failure, retry, cancellation and fresh request',
@@ -275,19 +280,17 @@ try {
     'data-cps-warning',
     'false',
   );
-  await toolbar
-    .getByRole('button', { name: 'AI 润色配置', exact: true })
-    .click();
-  await page.getByRole('combobox', { name: '提示词范围', exact: true }).click();
-  await page.getByRole('option', { name: '全文 AI 优化', exact: true }).click();
+  await toolbar.getByRole('button', { name: 'AI 助手', exact: true }).click();
+  await page.getByRole('button', { name: 'AI 设置', exact: true }).click();
   await page
-    .getByRole('spinbutton', { name: '每批字幕数', exact: true })
+    .getByRole('button', { name: '高级设置（可选）', exact: true })
+    .click();
+  await page
+    .getByRole('spinbutton', { name: '全文处理时，每次发送', exact: true })
     .fill('1');
   await page.keyboard.press('Escape');
   hold = true;
-  await toolbar
-    .getByRole('button', { name: '全文 AI 优化', exact: true })
-    .click();
+  await runAi('全文 AI 优化');
   await expect.poll(() => held.length).toBe(1);
   held.shift()();
   await expect(review(0)).toHaveAttribute('data-ai-review', 'ready');
@@ -298,9 +301,7 @@ try {
   await expect(page.locator('[data-ai-review]')).toHaveCount(0);
   held.shift()();
   hold = false;
-  await toolbar
-    .getByRole('button', { name: '全文 AI 缩短', exact: true })
-    .click();
+  await runAi('全文 AI 缩短');
   await expect(page.locator('[data-ai-review="ready"]')).toHaveCount(3);
   await expect(review(0).locator('[data-ai-diff="proposed"]')).toContainText(
     'Short 1.',

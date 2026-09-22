@@ -469,14 +469,20 @@ try {
       );
     });
     const toolbar = page.locator('[data-ai-toolbar]');
-    await toolbar
-      .getByRole('button', { name: 'AI 润色配置', exact: true })
-      .click();
+    const runAi = async (name) => {
+      await toolbar
+        .getByRole('button', { name: 'AI 助手', exact: true })
+        .click();
+      await page
+        .locator('[data-ai-actions]')
+        .getByRole('button', { name, exact: true })
+        .click();
+    };
+    await toolbar.getByRole('button', { name: 'AI 助手', exact: true }).click();
+    await page.getByRole('button', { name: 'AI 设置', exact: true }).click();
     await page.keyboard.press('Escape');
     const start = performance.now();
-    await toolbar
-      .getByRole('button', { name: '全文 AI 优化', exact: true })
-      .click();
+    await runAi('全文 AI 优化');
     await expect(
       toolbar.getByRole('button', { name: '取消', exact: true }),
     ).toBeVisible();
@@ -545,6 +551,7 @@ try {
       false,
     );
     await assertRowGeometry();
+    await page.getByRole('button', { name: '视图', exact: true }).click();
     await page.getByRole('button', { name: '展开全部', exact: true }).click();
     await assertRowGeometry();
     await page.getByRole('button', { name: '大', exact: true }).click();
@@ -553,6 +560,7 @@ try {
     await assertRowGeometry();
     await page.getByRole('button', { name: '中', exact: true }).click();
     await assertRowGeometry();
+    await page.keyboard.press('Escape');
     if (trace)
       await app.evaluate(
         ({ contentTracing }, categories) =>

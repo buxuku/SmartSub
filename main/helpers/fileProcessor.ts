@@ -337,7 +337,13 @@ export async function processFile(
     'exportSubtitleProgress',
   ]) {
     if (retryExport && !k.startsWith('exportSubtitle')) continue;
-    delete (file as any)[k];
+    // IPC and saved task records merge patches: deleting a local error key
+    // leaves the previous value in those copies. Send an explicit reset.
+    if (k.endsWith('Error') || k.endsWith('ErrorDetail')) {
+      (file as any)[k] = undefined;
+    } else {
+      delete (file as any)[k];
+    }
   }
   file.exportSubtitle = '';
   file.exportSubtitleError = undefined;

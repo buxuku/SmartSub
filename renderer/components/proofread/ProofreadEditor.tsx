@@ -562,6 +562,7 @@ export default function ProofreadEditor({
 
   const subtitleEditor = (
     <SubtitleList
+      inline={qualityMode}
       visibleIndices={qualityMode ? qualityIndices : undefined}
       failureFilter={{
         enabled: qualityMode ? false : allFailedOnly,
@@ -652,7 +653,7 @@ export default function ProofreadEditor({
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full min-h-0 min-w-0 flex flex-col">
       <AlertDialog open={Boolean(recoveryDraft)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -823,15 +824,15 @@ export default function ProofreadEditor({
           onToggleExpandAll={toggleExpandAll}
           fontScale={fontScale}
           onFontScale={handleFontScale}
+          additionalTools={
+            <InlineAiToolbar
+              compact={qualityMode}
+              control={inlineAi}
+              currentIndex={currentSubtitleIndex}
+              count={mergedSubtitles.length}
+            />
+          }
         />
-        {!qualityMode && (
-          <InlineAiToolbar
-            compact={false}
-            control={inlineAi}
-            currentIndex={currentSubtitleIndex}
-            count={mergedSubtitles.length}
-          />
-        )}
       </div>
 
       <div
@@ -870,14 +871,6 @@ export default function ProofreadEditor({
                 count: quality.counts.pending + quality.counts.skipped,
               })}
         </span>
-        {qualityMode && (
-          <InlineAiToolbar
-            compact
-            control={inlineAi}
-            currentIndex={currentSubtitleIndex}
-            count={mergedSubtitles.length}
-          />
-        )}
         <Button variant="ghost" size="sm" onClick={quality.retry}>
           {t('quality.recheck')}
         </Button>
@@ -901,7 +894,11 @@ export default function ProofreadEditor({
       {/* 主内容区 - 复用原有布局 */}
       <div
         className={`grid gap-2 flex-1 overflow-auto min-h-0 p-4 ${
-          showLeftPanel ? 'grid-cols-2' : 'grid-cols-1'
+          showLeftPanel
+            ? qualityMode
+              ? 'grid-cols-[minmax(220px,0.8fr)_minmax(0,1.6fr)]'
+              : 'grid-cols-2'
+            : 'grid-cols-1'
         }`}
       >
         {/* 左侧：视频播放器和控制区域 */}
@@ -939,14 +936,28 @@ export default function ProofreadEditor({
               onTimeChange={handleTimeChange}
             />
 
-            {/* 视频信息和字幕统计组件 */}
-            <VideoInfo
-              fileName={videoInfo.fileName}
-              extension={videoInfo.extension}
-              duration={duration}
-              subtitleStats={getSubtitleStats()}
-              shouldShowTranslation={shouldShowTranslation}
-            />
+            {qualityMode ? (
+              <details className="mt-2 rounded-md border bg-card text-xs">
+                <summary className="cursor-pointer px-3 py-2 text-muted-foreground">
+                  {t('quality.mediaInfo')}
+                </summary>
+                <VideoInfo
+                  fileName={videoInfo.fileName}
+                  extension={videoInfo.extension}
+                  duration={duration}
+                  subtitleStats={getSubtitleStats()}
+                  shouldShowTranslation={shouldShowTranslation}
+                />
+              </details>
+            ) : (
+              <VideoInfo
+                fileName={videoInfo.fileName}
+                extension={videoInfo.extension}
+                duration={duration}
+                subtitleStats={getSubtitleStats()}
+                shouldShowTranslation={shouldShowTranslation}
+              />
+            )}
           </div>
         )}
 
@@ -1004,7 +1015,7 @@ export default function ProofreadEditor({
       </div>
 
       {/* 底部快捷键提示条 */}
-      <div className="flex-shrink-0 flex items-center justify-center gap-3 border-t bg-muted/30 px-4 py-1 text-[11px] text-muted-foreground select-none">
+      <div className="flex-shrink-0 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-t bg-muted/30 px-4 py-1 text-[11px] text-muted-foreground select-none">
         {hasVideo && (
           <span>
             <kbd className="rounded border bg-background px-1">Space</kbd>{' '}

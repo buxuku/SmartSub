@@ -136,13 +136,23 @@ try {
     '文字可能不匹配',
   );
   const list = page.getByLabel('问题列表', { exact: true });
+  if (!(await list.isVisible()))
+    await page.getByRole('button', { name: /问题列表/ }).click();
   await list.focus();
   await page.keyboard.press('ArrowDown');
   await expect(
-    page.getByRole('button', { name: '补一句字幕', exact: true }),
-  ).toBeVisible();
+    page.locator('[data-quality-panel] [aria-current=true]'),
+  ).toContainText('00:00:06');
   await list.focus();
   await page.keyboard.press('ArrowUp');
+  if (
+    !(await page
+      .getByRole('button', { name: '试听片段', exact: true })
+      .isVisible())
+  )
+    await page
+      .getByRole('button', { name: '返回当前问题', exact: true })
+      .click();
   await page.getByRole('button', { name: '试听片段', exact: true }).click();
   const player = page.locator(audioOnly ? 'audio[controls]' : 'video');
   await expect
@@ -179,7 +189,7 @@ try {
       .locator('[data-quality-panel]')
       .getByText('正在检查…', { exact: true }),
   ).toHaveCount(0);
-  await page.getByRole('button', { name: '已修复', exact: true }).click();
+  await page.getByRole('button', { name: '标记已修复', exact: true }).click();
   await expect(page.locator('[data-quality-detail]')).toContainText('已修复');
   await page.getByRole('button', { name: '下一处', exact: true }).click();
   await page.getByRole('button', { name: '补一句字幕', exact: true }).click();
@@ -203,8 +213,17 @@ try {
       .locator('[data-quality-panel]')
       .getByText('正在检查…', { exact: true }),
   ).toHaveCount(0);
-  await page.getByRole('button', { name: '已修复', exact: true }).click();
   await expect(page.locator('[data-quality-detail]')).toContainText('已修复');
+  await expect(
+    page
+      .locator('[data-quality-detail]')
+      .getByRole('button', { name: '标记已修复', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page
+      .locator('[data-quality-detail]')
+      .getByRole('button', { name: '恢复待检查', exact: true }),
+  ).toBeVisible();
   await page.getByRole('button', { name: '保存字幕', exact: true }).click();
   await expect(page.getByText('已保存', { exact: true }).first()).toBeVisible();
   assert.match(await fs.readFile(source, 'utf8'), /Missing words/);

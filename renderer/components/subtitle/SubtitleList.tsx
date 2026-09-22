@@ -64,6 +64,8 @@ import {
 } from '../../../types/proofreadData';
 
 interface SubtitleListProps {
+  /** Render the small review selection in its parent scroll area. */
+  inline?: boolean;
   visibleIndices?: number[];
   failureFilter?: { enabled: boolean; onChange: (enabled: boolean) => void };
   hideDiagnostics?: boolean;
@@ -490,6 +492,7 @@ const SubtitleRow = memo(function SubtitleRow({
 });
 
 const SubtitleList: React.FC<SubtitleListProps> = ({
+  inline = false,
   sourceLanguage,
   targetLanguage,
   inlineAi,
@@ -698,6 +701,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     [displayIndices, expandAll, currentSubtitleIndex, suggestions],
   );
   const virtualizer = useVirtualizer<HTMLDivElement, HTMLElement>({
+    enabled: !inline,
     directDomUpdates: true,
     count: displayCount,
     getScrollElement: () => scrollContainerRef.current,
@@ -738,6 +742,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     if (field) {
       focusRequest.current = null;
       field.focus({ preventScroll: true });
+      if (inline) field.scrollIntoView({ block: 'nearest' });
       field.select();
     }
   });
@@ -748,7 +753,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   // Batch the reads before resizeItem writes positions to avoid layout thrashing.
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
-    if (!container) return;
+    if (inline || !container) return;
     const sizes = Array.from(
       container.querySelectorAll<HTMLElement>('[data-index]'),
       (node) => ({
@@ -758,7 +763,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     );
     virtualizer.measure();
     sizes.forEach(({ index, height }) => virtualizer.resizeItem(index, height));
-  }, [expandAll, fontScale, virtualizer]);
+  }, [expandAll, fontScale, virtualizer, inline]);
 
   // 多选区间（归一化 [lo, hi]，含两端）；anchor 为最后一次普通点击的行
   const [selRange, setSelRange] = useState<[number, number] | null>(null);
@@ -955,6 +960,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   // 用户主动点击的字幕不滚动；等一帧让展开行完成测量后再定位
   // 过滤模式下需把真实索引映射为列表位置；不在列表中则不滚动
   useEffect(() => {
+    if (inline) return;
     if (skipNextAutoScrollRef.current) {
       skipNextAutoScrollRef.current = false;
       return;
@@ -970,12 +976,19 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     return () => cancelAnimationFrame(frame);
     // displayIndices 内容随失败行变化，仅在当前行/过滤开关变化时重定位
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSubtitleIndex, failedOnly, speakerFilter, virtualizer]);
+  }, [currentSubtitleIndex, failedOnly, speakerFilter, virtualizer, inline]);
 
-  const virtualItems = virtualizer.getVirtualItems();
+  const virtualItems = inline
+    ? Array.from({ length: displayCount }, (_, index) => ({
+        index,
+        key: getItemKey(index),
+      }))
+    : virtualizer.getVirtualItems();
 
   return (
-    <div className="h-full flex flex-col bg-card rounded-md overflow-hidden">
+    <div
+      className={`${inline ? '' : 'h-full overflow-hidden'} flex min-w-0 flex-col rounded-md bg-card`}
+    >
       {!hideDiagnostics && (
         <MissedSpeechControls warnings={warnings} onSeek={onSeekMissedSpeech} />
       )}
@@ -1121,7 +1134,10 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
       )}
 
       {/* 字幕列表（虚拟化；只看失败时为过滤视图） */}
-      <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
+      <div
+        className={inline ? '' : 'min-h-0 flex-1 overflow-y-auto'}
+        ref={scrollContainerRef}
+      >
         {displayCount === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-sm text-muted-foreground">
             <CheckCircle2 className="h-8 w-8 text-success" />
@@ -1140,7 +1156,10 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
             )}
           </div>
         ) : (
-          <div className="relative w-full" ref={virtualizer.containerRef}>
+          <div
+            className="relative w-full"
+            ref={inline ? undefined : virtualizer.containerRef}
+          >
             {virtualItems.map((virtualItem) => {
               const index = displayIndices
                 ? displayIndices[virtualItem.index]
@@ -1156,8 +1175,8 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
                     !expandAll &&
                     !inlineAi?.suggestions.get(index)
                   }
-                  ref={virtualizer.measureElement}
-                  className="absolute left-0 top-0 w-full px-1 pb-1"
+                  ref={inline ? undefined : virtualizer.measureElement}
+                  className={`${inline ? '' : 'absolute left-0 top-0'} w-full px-1 pb-1`}
                   style={{ contain: 'layout style' }}
                 >
                   <SubtitleRow
