@@ -154,6 +154,7 @@ const EngineModelTab: React.FC = () => {
   const [statusLoaded, setStatusLoaded] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<PyEngineUpdateInfo | null>(null);
   const engineOperation = useEngineOperation();
+  const [isImporting, setIsImporting] = useState(false);
   // 运行库（sherpa-onnx）随包内置，不再做安装检测；各族状态只看「是否已下载模型」。
   const [funasrModelsReady, setFunasrModelsReady] = useState(false);
   const [qwenModelsReady, setQwenModelsReady] = useState(false);
@@ -369,7 +370,9 @@ const EngineModelTab: React.FC = () => {
           throw new Error(
             result?.error === 'engine_busy'
               ? t('engines.fasterWhisper.engineBusy')
-              : result?.error || 'ENGINE_DOWNLOAD_FAILED',
+              : result?.error === 'operation_in_progress'
+                ? t('engines.fasterWhisper.operationInProgress')
+                : result?.error || 'ENGINE_DOWNLOAD_FAILED',
           );
         return result;
       },
@@ -432,7 +435,13 @@ const EngineModelTab: React.FC = () => {
       async () => {
         const result = await window.ipc.invoke('uninstall-py-engine');
         if (result?.success !== true)
-          throw new Error(result?.error || 'ENGINE_UNINSTALL_FAILED');
+          throw new Error(
+            result?.error === 'engine_busy'
+              ? t('engines.fasterWhisper.engineBusy')
+              : result?.error === 'operation_in_progress'
+                ? t('engines.fasterWhisper.operationInProgress')
+                : result?.error || 'ENGINE_UNINSTALL_FAILED',
+          );
         return result;
       },
       () => {
@@ -442,6 +451,43 @@ const EngineModelTab: React.FC = () => {
       },
     );
   };
+
+  const handleImportRuntime = () =>
+    engineOperation.run(
+      async () => {
+        setIsImporting(true);
+        try {
+          const result = await window.ipc.invoke('import-py-engine');
+          if (result?.canceled) return result;
+          if (result?.success !== true) {
+            const error =
+              result?.error === 'engine_busy'
+                ? t('engines.fasterWhisper.engineBusy')
+                : result?.error === 'operation_in_progress'
+                  ? t('engines.fasterWhisper.operationInProgress')
+                  : result?.error || 'ENGINE_IMPORT_FAILED';
+            throw new Error(t('engines.fasterWhisper.importFailed', { error }));
+          }
+          return result;
+        } finally {
+          setIsImporting(false);
+          void refresh();
+        }
+      },
+      (result) => {
+        if (result.canceled) return;
+        if (result.variant === 'cuda') {
+          engineSettings.change({ fasterWhisperDevice: 'auto' });
+        }
+        toast.success(
+          t('engines.fasterWhisper.importSuccess', {
+            variant: t(
+              `engines.fasterWhisper.variant.${result.variant || 'cpu'}`,
+            ),
+          }),
+        );
+      },
+    );
 
   const handleDeviceChange = (value: string) => {
     const next = value as 'auto' | 'cpu' | 'cuda';
@@ -585,6 +631,13 @@ const EngineModelTab: React.FC = () => {
     }
     const engine = view;
     if (engine === 'fasterWhisper') {
+      if (isImporting) {
+        return (
+          <Badge variant="secondary" className="shrink-0">
+            {t('engines.fasterWhisper.importing')}
+          </Badge>
+        );
+      }
       if (isDownloading) {
         return (
           <Badge variant="secondary" className="shrink-0">
@@ -639,7 +692,7 @@ const EngineModelTab: React.FC = () => {
       return 'error';
     if (view === 'sherpa') return sherpaAnyReady ? 'ready' : 'pending';
     if (view === 'fasterWhisper') {
-      if (isDownloading || showVerifying) return 'downloading';
+      if (isImporting || isDownloading || showVerifying) return 'downloading';
       if (fasterInstalled) return 'ready';
       if (fasterBroken) return 'error';
       return 'pending';
@@ -721,6 +774,8 @@ const EngineModelTab: React.FC = () => {
     onUpgrade: handleUpgrade,
     onDeviceChange: handleDeviceChange,
     onComputeTypeChange: handleComputeTypeChange,
+    onImport: handleImportRuntime,
+    isImporting,
   };
 
   // 新建自定义 OpenAI 兼容实例并跳转到其条目（名称必填，Base URL 可选）。

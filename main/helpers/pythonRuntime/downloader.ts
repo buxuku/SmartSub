@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as https from 'https';
 import * as http from 'http';
 import * as tar from 'tar';
+import fse from 'fs-extra';
 import { logMessage } from '../storeManager';
 import { calculateFileChecksum } from '../addonDownloader';
 import type {
@@ -32,12 +33,21 @@ import {
   readEngineManifestFromDir,
   getInstalledVariant,
   normalizePyEngineVariant,
+  isPyEngineVariantSupported,
 } from './paths';
 import { canFastSwitchVariant, planPreviousRuntimeDisposal } from './parking';
 import { adhocResignDir } from './macSign';
 import { getPythonRuntimeManager, shutdownPythonRuntime } from './index';
 import { PythonEngineError } from './manager';
-import { isRemoteProtocolInstallable } from './protocolSupport';
+import {
+  isRemoteProtocolInstallable,
+  isProtocolSupported,
+} from './protocolSupport';
+import {
+  normalizeStagingLayout,
+  verifyRuntimeCompatibility,
+  buildImportedManifest,
+} from './runtimeImporter';
 import { getSourceFallbackOrder } from '../downloadSourceOrder';
 import { MirrorDownloader } from '../download/mirrorDownloader';
 
@@ -185,6 +195,7 @@ export class PyEngineDownloader {
   private engineId: PyEngineId;
   private mainWindow: BrowserWindow | null = null;
   private core: MirrorDownloader;
+  private isOperating = false;
 
   constructor(engineId: PyEngineId, mainWindow?: BrowserWindow) {
     this.engineId = engineId;
@@ -207,6 +218,16 @@ export class PyEngineDownloader {
     return this.core.getProgress() as PyEngineDownloadProgress;
   }
 
+  isBusy(): boolean {
+    if (this.isOperating) return true;
+    const status = this.core.getProgress().status;
+    return (
+      status === 'downloading' ||
+      status === 'extracting' ||
+      status === 'verifying'
+    );
+  }
+
   cancel(): void {
     this.core.cancel();
   }
@@ -220,24 +241,162 @@ export class PyEngineDownloader {
     source: PyEngineDownloadSource,
     variant: PyEngineVariant = 'cpu',
   ): Promise<void> {
-    const resolvedVariant = normalizePyEngineVariant(variant);
-    // 变体切换的免下载快路径：目标变体已有完好驻留副本时目录互换即完成，
-    // 秒级、零流量、可离线；副本可能落后远端 latest，由既有 checkUpdate 提示升级。
-    if (await this.trySwitchToParkedVariant(resolvedVariant)) {
-      return;
+    if (this.isBusy()) {
+      throw new Error('operation_in_progress');
     }
-    // 自包含运行时内嵌解释器，无外部基座依赖，可直接下载。
-    return this.core.runWithFallback(
-      source,
-      (s) => this.downloadFromSource(s, resolvedVariant),
-      (error) =>
-        (error instanceof Error ? error.message : String(error)) ===
-          'Download cancelled' ||
-        (error instanceof PythonEngineError &&
-          error.code === 'protocol_unsupported'),
-      'Py-engine download',
-      logMessage,
-    );
+    this.isOperating = true;
+    try {
+      const resolvedVariant = normalizePyEngineVariant(variant);
+      // 变体切换的免下载快路径：目标变体已有完好驻留副本时目录互换即完成，
+      // 秒级、零流量、可离线；副本可能落后远端 latest，由既有 checkUpdate 提示升级。
+      if (await this.trySwitchToParkedVariant(resolvedVariant)) {
+        return;
+      }
+      // 自包含运行时内嵌解释器，无外部基座依赖，可直接下载。
+      return await this.core.runWithFallback(
+        source,
+        (s) => this.downloadFromSource(s, resolvedVariant),
+        (error) =>
+          (error instanceof Error ? error.message : String(error)) ===
+            'Download cancelled' ||
+          (error instanceof PythonEngineError &&
+            error.code === 'protocol_unsupported'),
+        'Py-engine download',
+        logMessage,
+      );
+    } finally {
+      this.isOperating = false;
+    }
+  }
+
+  /**
+   * 从本地压缩包（.tar.gz/.tgz/.zip）或目录导入运行时。
+   * 支持跨平台导入校验（平台/架构防呆）、协议校验、自动推断/补齐 manifest.json、
+   * 安全原子替换与 ping 探活自检。
+   */
+  async importRuntime(sourcePath: string): Promise<{
+    success: boolean;
+    variant?: PyEngineVariant;
+    version?: string;
+    error?: string;
+  }> {
+    if (this.isBusy()) {
+      return { success: false, error: 'operation_in_progress' };
+    }
+    this.isOperating = true;
+    const stagingDir = getPyEngineStagingDir(this.engineId);
+    try {
+      if (!fs.existsSync(sourcePath)) {
+        return { success: false, error: `路径不存在: ${sourcePath}` };
+      }
+
+      if (fs.existsSync(stagingDir)) {
+        fs.rmSync(stagingDir, { recursive: true, force: true });
+      }
+      fs.mkdirSync(stagingDir, { recursive: true });
+
+      this.core.resetForDownload();
+      this.core.updateProgress({
+        status: 'extracting',
+        progress: 30,
+        downloaded: 0,
+        total: 0,
+        speed: 0,
+        eta: 0,
+        error: undefined,
+      });
+
+      const stat = fs.statSync(sourcePath);
+      const isDir = stat.isDirectory();
+
+      if (isDir) {
+        await fse.copy(sourcePath, stagingDir, { overwrite: true });
+      } else if (sourcePath.toLowerCase().endsWith('.zip')) {
+        const decompress = (await import('decompress')).default;
+        await decompress(sourcePath, stagingDir);
+      } else {
+        await tar.extract({
+          file: sourcePath,
+          cwd: stagingDir,
+        });
+      }
+
+      // 如果解压后存在单层包装目录（如 faster-whisper/python.exe），自动展平到 stagingDir
+      normalizeStagingLayout(stagingDir);
+
+      const currentPlatform = getPyEngineArtifactSuffix();
+      const compat = verifyRuntimeCompatibility({
+        stagingDir,
+        currentPlatform,
+        currentOs: process.platform,
+      });
+      if (!compat.ok) {
+        throw new Error(compat.error || '运行时兼容性校验失败');
+      }
+
+      // Unix 权限保障
+      const pythonPath = getRuntimePythonPath(stagingDir);
+      if (process.platform !== 'win32' && fs.existsSync(pythonPath)) {
+        try {
+          fs.chmodSync(pythonPath, 0o755);
+        } catch {}
+      }
+
+      // 组装最终 manifest
+      let sha256 = '';
+      if (!isDir) {
+        try {
+          sha256 = await calculateFileChecksum(sourcePath);
+        } catch {
+          sha256 = compat.pkgManifest?.sha256 || '';
+        }
+      } else {
+        sha256 = compat.pkgManifest?.sha256 || '';
+      }
+
+      const finalManifest = buildImportedManifest({
+        pkgManifest: compat.pkgManifest,
+        currentPlatform,
+        variant: compat.variant,
+        engineId: this.engineId,
+        sha256,
+        stagingDir,
+      });
+
+      // 原子替换、macOS 重签与自检
+      await this.installFromStaging(
+        stagingDir,
+        sha256,
+        null,
+        compat.variant,
+        finalManifest,
+      );
+
+      this.core.updateProgress({ status: 'completed', progress: 100 });
+      logMessage(
+        `Py-engine[${this.engineId}] imported and installed from ${sourcePath} (variant=${compat.variant})`,
+        'info',
+      );
+
+      return {
+        success: true,
+        variant: compat.variant,
+        version: finalManifest.engineVersion,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.core.updateProgress({ status: 'error', error: errorMessage });
+      logMessage(`Py-engine import error: ${errorMessage}`, 'error');
+      try {
+        if (fs.existsSync(stagingDir)) {
+          fs.rmSync(stagingDir, { recursive: true, force: true });
+        }
+      } catch {}
+      return { success: false, error: errorMessage };
+    } finally {
+      this.isOperating = false;
+    }
   }
 
   /**
@@ -612,17 +771,24 @@ export class PyEngineDownloader {
     remoteManifest: RemoteEngineManifest | null,
     variant: PyEngineVariant,
   ): PyEngineManifest {
+    // 若远端全局 manifest 因网络超时等原因获取失败（remoteManifest 为 null），
+    // 自动回退从包内自带的 manifest.json 读取版本与协议元数据，避免丢失版本信息
+    const embedded = readEngineManifest(this.engineId);
     return {
-      version: remoteManifest?.engineVersion ?? PY_ENGINE_TAG,
+      version:
+        remoteManifest?.engineVersion ??
+        embedded?.engineVersion ??
+        PY_ENGINE_TAG,
       platform: getPyEngineArtifactSuffix(),
       sha256,
       installedAt: new Date().toISOString(),
-      engineVersion: remoteManifest?.engineVersion,
-      protocolVersion: remoteManifest?.protocolVersion,
-      builtAt: remoteManifest?.builtAt,
-      gitSha: remoteManifest?.gitSha,
+      engineVersion: remoteManifest?.engineVersion ?? embedded?.engineVersion,
+      protocolVersion:
+        remoteManifest?.protocolVersion ?? embedded?.protocolVersion,
+      builtAt: remoteManifest?.builtAt ?? embedded?.builtAt,
+      gitSha: remoteManifest?.gitSha ?? embedded?.gitSha,
       engineId: this.engineId,
-      pythonAbi: remoteManifest?.pythonAbi ?? 'cp312',
+      pythonAbi: remoteManifest?.pythonAbi ?? embedded?.pythonAbi ?? 'cp312',
       variant,
     };
   }
@@ -666,6 +832,9 @@ export class PyEngineDownloader {
       cwd: stagingDir,
     });
 
+    // 展平可能存在的单层包装目录（与 importRuntime 保持统一）
+    normalizeStagingLayout(stagingDir);
+
     // 自包含运行时：归档顶层即 内嵌解释器 + main.py + site-packages/（无外部基座）。
     const stagingMain = path.join(stagingDir, 'main.py');
     const stagingSite = path.join(stagingDir, 'site-packages');
@@ -697,6 +866,7 @@ export class PyEngineDownloader {
     sha256: string,
     remoteManifest: RemoteEngineManifest | null,
     variant: PyEngineVariant,
+    customManifest?: PyEngineManifest,
   ): Promise<void> {
     const currentDir = getEngineDir(this.engineId);
     const previousDir = getPyEnginePreviousDir(this.engineId);
@@ -734,7 +904,8 @@ export class PyEngineDownloader {
 
     // 4. 写新 manifest（写在引擎包目录内，随目录一起 swap/rollback）
     writeEngineManifest(
-      this.buildLocalManifest(sha256, remoteManifest, variant),
+      customManifest ||
+        this.buildLocalManifest(sha256, remoteManifest, variant),
       this.engineId,
     );
 

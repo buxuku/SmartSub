@@ -178,18 +178,8 @@ export function getEngineManifestPath(
   return path.join(getEngineDir(engineId), 'manifest.json');
 }
 
-/** 从任意运行时目录读 manifest.json（驻留副本/备份目录均携带自身 manifest）。 */
-export function readEngineManifestFromDir(
-  runtimeDir: string,
-): PyEngineManifest | null {
-  const p = path.join(runtimeDir, 'manifest.json');
-  if (!fs.existsSync(p)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(p, 'utf8')) as PyEngineManifest;
-  } catch {
-    return null;
-  }
-}
+import { readEngineManifestFromDir } from './runtimeImporter';
+export { readEngineManifestFromDir };
 
 export function readEngineManifest(
   engineId: PyEngineId = DEFAULT_ENGINE_ID,
