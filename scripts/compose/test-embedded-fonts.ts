@@ -105,7 +105,10 @@ async function main() {
   );
   const style = {
     ...DEFAULT_STYLE,
-    fontName: 'Arial',
+    // Use the same installed family before and after resolving inline fonts.
+    // Linux generally substitutes Arial, and libass can choose a different
+    // substitute from our explicit fallback.
+    fontName: resolveBurnFontName('Arial', false),
     fontSize: 40,
     outline: 0,
     shadow: 0,
@@ -116,7 +119,7 @@ async function main() {
       [{ startMs: 0, endMs: 1000, text: 'TEXT' }],
       style,
     ).replace('TEXT', `{\\fncodicon}${text}{\\r}TEXT`) + embedded;
-  const resolved = resolveAssFonts(original, 'Arial', context);
+  const resolved = resolveAssFonts(original, style.fontName, context);
   assert.match(resolved.content, /\\fncodicon/);
   assert.ok(resolved.fontNames.includes('codicon'));
   assert.deepEqual(readAssEmbeddedFonts(resolved.content)[0].data, data);
@@ -143,9 +146,10 @@ async function main() {
       'rawvideo',
       'pipe:1',
     ]);
-  assert.deepEqual(
-    render(beforeFile),
-    render(afterFile),
+  const originalFrame = render(beforeFile);
+  // Avoid generating an enormous assertion diff if raw pixel buffers differ.
+  assert.ok(
+    originalFrame.equals(render(afterFile)),
     'resolving inline fonts must preserve actual embedded glyphs',
   );
   const extended = normalizeAssFontSections(
@@ -155,16 +159,14 @@ async function main() {
   assert.deepEqual(readAssEmbeddedFonts(extended)[0].data, data);
   assert.equal(normalizeAssFontSections(extended), extended);
   await fs.writeFile(afterFile, extended);
-  assert.deepEqual(
-    render(beforeFile),
-    render(afterFile),
+  assert.ok(
+    originalFrame.equals(render(afterFile)),
     'unknown extension after fonts must not corrupt libass attachment',
   );
   const missing = original.replace(embedded, '');
   await fs.writeFile(afterFile, missing);
-  assert.notDeepEqual(
-    render(beforeFile),
-    render(afterFile),
+  assert.ok(
+    !originalFrame.equals(render(afterFile)),
     'font attachment must change visible output',
   );
   console.log(
