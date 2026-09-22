@@ -221,6 +221,7 @@
     "accurate": {
       "title": "文字最准",
       "desc": "断句最细、标点最完整，尽量保留每句话的原貌；静音/背景音处偶尔会多出一两条字幕。",
+      "fasterWhisperDesc": "优先保留短词和轻声，尽量减少内容遗漏；背景声音较多时可能多出字幕，识别耗时也可能增加。",
       "scene": "适合讲座、访谈、口播等以文字内容为主、追求最完整文本的视频"
     },
     "balanced": {
@@ -422,7 +423,9 @@
     "translationIncompletePipelinePaused": "翻译有 {{count}} 处未完成，已暂停后续处理（请在校对中重试失败行）",
     "translationIncompleteForDubbing": "翻译未完成，无法配音（请先在校对中重试失败行）",
     "translationIncompleteForCompose": "翻译未完成，无法合成视频（请先在校对中重试失败行）",
-    "missedSpeechWarning": "疑似漏听 {{count}} 处（最高等级：{{level}}），请打开校对复核",
+    "speechReviewing": "自动复核语音",
+    "speechRecovered": "已补回 {{count}} 段",
+    "missedSpeechWarning": "识别结果待复核 {{count}} 处（最高等级：{{level}}），请打开校对查看",
     "missedSpeechLevel": {
       "low": "低",
       "medium": "中",
@@ -544,5 +547,18 @@
     "loading": "正在读取任务配置…",
     "failed": "任务配置读取失败，暂不可编辑或运行。",
     "repair": "请检查配置目录的读取权限和存储设备连接，然后重试。"
+  },
+  "speechReview": {
+    "title": "自动复核结果",
+    "description": "以下内容已通过两次局部识别的一致性检查并自动补入。仍建议在校对时试听确认。",
+    "before": "原识别：",
+    "after": "复核后：",
+    "empty": "（无文字）",
+    "retimed": "已校正 {{count}} 段时间",
+    "original": "查看复核前字幕备份",
+    "openFailed": "无法打开备份位置",
+    "unavailable": "未完成自动复核",
+    "unavailableDetail": "已保留首次识别结果，可在校对页面检查疑似漏听。",
+    "timingDescription": "已在文字一致的前提下校正明显错位的时间。可在校对时试听，也可查看复核前的字幕备份。"
   }
 }

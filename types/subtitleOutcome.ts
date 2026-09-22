@@ -224,6 +224,11 @@ export function resolveEffectiveSettings(
   if (outcome === 'accurate') {
     return withTaskVad({
       ...base,
+      // Retain brief/quiet speech in faster-whisper's first pass. Only change
+      // detection sensitivity; keep the existing segmentation and padding.
+      ...(engine === 'fasterWhisper'
+        ? { vadThreshold: 0.35, vadMinSpeechDuration: 100 }
+        : {}),
       useVAD: builtin ? false : true,
       maxContext: -1,
       reduceRepetition: false,

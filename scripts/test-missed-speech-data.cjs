@@ -17,7 +17,7 @@ Module._load = function (request, parent, isMain) {
       BrowserWindow: { getAllWindows: () => [] },
     };
   }
-  if (normalized.endsWith('/helpers/storeManager')) {
+  if (normalized.endsWith('/storeManager')) {
     return { logMessage: () => undefined, store: { get: () => ({}) } };
   }
   return originalLoad.call(this, request, parent, isMain);
@@ -181,6 +181,30 @@ async function run() {
   ok(
     !oldData.missedSpeechWarnings,
     'old sidecar without warnings remains compatible',
+  );
+
+  const reviewed = await writeProofreadDataFromFiles({
+    file,
+    sourceFile,
+    targetFile,
+    missedSpeechWarnings: [
+      {
+        ...warning,
+        signals: ['speechReview', 'textMismatch'],
+        suggestedText: 'A quiet word.',
+        originalText: 'Another phrase.',
+      },
+    ],
+  });
+  const reviewData = await readProofreadDataFile(reviewed.filePath);
+  ok(
+    reviewData.missedSpeechWarnings[0]?.suggestedText === 'A quiet word.',
+    'review suggestion survives writing and reopening without invented energy evidence',
+  );
+  ok(
+    reviewData.missedSpeechWarnings[0]?.originalText === 'Another phrase.' &&
+      reviewData.missedSpeechWarnings[0]?.signals.includes('textMismatch'),
+    'original text and mismatch type survive writing and reopening',
   );
 
   await fs.promises.rm(root, { recursive: true, force: true });

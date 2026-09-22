@@ -221,6 +221,7 @@
     "accurate": {
       "title": "Most accurate text",
       "desc": "Finest segmentation and the most complete punctuation; keeps each sentence as faithfully as possible. May occasionally add a stray line over silence/background noise.",
+      "fasterWhisperDesc": "Prioritizes brief and quiet speech to reduce omissions. Background sounds may produce extra subtitles, and recognition may take longer.",
       "scene": "Best for lectures, interviews, talking-head videos where complete text matters most"
     },
     "balanced": {
@@ -422,7 +423,9 @@
     "translationIncompletePipelinePaused": "{{count}} subtitle(s) failed translation; subsequent processing paused (please retry failed lines in proofread)",
     "translationIncompleteForDubbing": "Translation incomplete, cannot dub (please retry failed lines in proofread)",
     "translationIncompleteForCompose": "Translation incomplete, cannot compose video (please retry failed lines in proofread)",
-    "missedSpeechWarning": "{{count}} suspected missed speech range(s) (highest level: {{level}}); open proofread to review",
+    "speechReviewing": "Reviewing speech",
+    "speechRecovered": "Recovered {{count}} passages",
+    "missedSpeechWarning": "{{count}} recognition ranges to review (highest level: {{level}}); open proofread to check",
     "missedSpeechLevel": {
       "low": "low",
       "medium": "medium",
@@ -544,5 +547,18 @@
     "loading": "Loading task configuration…",
     "failed": "Task configuration could not be loaded. Editing and running are unavailable.",
     "repair": "Check read access to the configuration directory and the storage device connection, then retry."
+  },
+  "speechReview": {
+    "title": "Automatic speech review",
+    "description": "These changes were added after two local decodes agreed. Listen again during proofreading to confirm the wording.",
+    "before": "Before: ",
+    "after": "After: ",
+    "empty": "(no text)",
+    "retimed": "Adjusted timing for {{count}} segments",
+    "original": "Show original subtitle backup",
+    "openFailed": "Could not open the backup location",
+    "unavailable": "Review unavailable",
+    "unavailableDetail": "The first recognition result was preserved. Check suspected omissions during proofreading.",
+    "timingDescription": "Timing was adjusted where the words matched the original. Listen during proofreading or inspect the original subtitle backup."
   }
 }

@@ -132,6 +132,23 @@ export interface IFiles extends SubtitleOutputFiles {
   wordTimelineFile?: string;
   missedSpeechSummary?: MissedSpeechSummary;
   missedSpeechWarnings?: MissedSpeechWarning[];
+  speechReviewStage?: 'checking' | 'reviewing' | 'complete';
+  /** Original recognition and automatic changes, for inspecting/recovering an edit. */
+  speechReviewFile?: string;
+  speechReviewOriginalFile?: string;
+  speechReviewSummary?: {
+    status: 'complete' | 'unavailable';
+    checked?: number;
+    recovered?: number;
+    retimed?: number;
+    pending?: number;
+    changes?: Array<{
+      start: number;
+      end: number;
+      original: string;
+      text: string;
+    }>;
+  };
   /** ASR 后参考文稿匹配阶段；缺省不存在即功能关闭。 */
   manuscriptMatch?: '' | 'loading' | 'done';
   /** 稳定的非致命回退码，renderer 据此本地化；不会令任务失败。 */

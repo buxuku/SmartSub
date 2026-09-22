@@ -44,9 +44,38 @@ export interface TranscribeResult {
   languageProbability?: number;
   duration?: number;
   segments: TranscribeSegment[];
+  beforeReviewSegments?: TranscribeSegment[];
+  reviewSpeechSegments?: Array<{ start: number; end: number }>;
+  speechReview?: {
+    status: 'complete' | 'unavailable';
+    checked?: number;
+    recovered?: number;
+    retimed?: number;
+    pending?: number;
+    seconds?: number;
+    changes?: Array<{
+      start: number;
+      end: number;
+      original: string;
+      text: string;
+    }>;
+    unresolved?: Array<{
+      start: number;
+      end: number;
+      reason: string;
+      suggestedText?: string;
+      originalText?: string;
+      issue?: 'timing' | 'text';
+    }>;
+  };
 }
 
 export interface TranscribeHandlers {
   onProgress?: (percent: number) => void;
   onSegment?: (segment: TranscribeSegment) => void;
+  onReview?: (review: {
+    stage: 'checking' | 'reviewing' | 'complete';
+    completed: number;
+    total: number;
+  }) => void;
 }

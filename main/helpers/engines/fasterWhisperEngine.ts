@@ -204,6 +204,7 @@ async function transcribeFasterWhisper(
     // faster-whisper #1119：开启词级时间戳，让 segment.end 对齐到真实末词，
     // 避免开 VAD 时段尾时间被拉到下一段开头。旧 sidecar 忽略该参数也无害。
     word_timestamps: true,
+    speech_review: true,
     vad: settings.useVAD !== false,
     vad_threshold: getNumericSetting(settings.vadThreshold, 0.5),
     vad_min_speech_duration_ms: getNumericSetting(
@@ -249,6 +250,11 @@ async function transcribeFasterWhisper(
     );
     let firstProgressLogged = false;
     const { id, result } = manager.transcribe(params, {
+      onReview: ({ stage }) => {
+        if (signal?.aborted) return;
+        file.speechReviewStage = stage;
+        event.sender.send('taskFileChange', { ...file });
+      },
       onProgress: (percent) => {
         if (!firstProgressLogged) {
           firstProgressLogged = true;
@@ -330,8 +336,67 @@ async function transcribeFasterWhisper(
   // Explicit task limits use real word times when available. Legacy defaults
   // retain native segment boundaries; missing word times use segment fallback.
   const segments = transcription?.segments || [];
+  file.speechReviewStage = undefined;
+  const review = transcription?.speechReview;
+  if (review && transcription.beforeReviewSegments) {
+    // Different tasks can share the same extracted WAV. Keep each task's
+    // original recognition available when a later task uses another model.
+    const reviewBase = `${tempAudioFile}.${file.uuid.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const reviewPath = `${reviewBase}.review.json`;
+    try {
+      await fs.promises.writeFile(
+        reviewPath,
+        JSON.stringify({
+          version: 1,
+          engine: 'fasterWhisper',
+          originalSegments: transcription.beforeReviewSegments,
+          review,
+        }),
+      );
+      file.speechReviewFile = reviewPath;
+      if (review.recovered || review.retimed) {
+        const originalPath = `${reviewBase}.before-review.srt`;
+        await fs.promises.writeFile(
+          originalPath,
+          formatSrtContent(
+            transcription.beforeReviewSegments.map(subtitleCueFromSegment),
+          ),
+        );
+        file.speechReviewOriginalFile = originalPath;
+      }
+    } catch (error) {
+      logMessage(`speech review audit save failed: ${error}`, 'warning');
+    }
+  }
+  file.speechReviewSummary = review
+    ? {
+        status: review.status,
+        checked: review.checked,
+        recovered: review.recovered,
+        retimed: review.retimed,
+        pending: review.pending,
+        changes: review.changes?.map(({ start, end, original, text }) => ({
+          start,
+          end,
+          original,
+          text,
+        })),
+      }
+    : undefined;
   ctx.onDiagnostics?.({
     vadAvailable: false,
+    reviewSpeechSegments: transcription?.reviewSpeechSegments?.map((s) => ({
+      startMs: s.start * 1000,
+      endMs: s.end * 1000,
+    })),
+    reviewCompleted: review?.status === 'complete',
+    reviewPending: review?.unresolved?.map((s) => ({
+      startMs: s.start * 1000,
+      endMs: s.end * 1000,
+      suggestedText: s.suggestedText,
+      originalText: s.originalText,
+      issue: s.issue,
+    })),
     wordSegments: segments.flatMap((segment: any) =>
       (segment?.words || []).map((word: any) => ({
         startMs: Number(word.start) * 1000,

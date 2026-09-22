@@ -91,21 +91,34 @@
   "extractAudio": "Extract Audio",
   "extractSubtitle": "Extract Subtitle",
   "missedSpeech": {
+    "suggestion": "Local recognition candidate (listen to verify):",
     "title": "Suspected missed speech",
     "count": "{{count}} suspected missed speech ranges",
     "range": "Suspected missed speech range",
-    "taskWarning": "{{count}} suspected missed speech ranges, highest level: {{level}}",
-    "caution": "For manual review only; this is not a definitive detection",
+    "taskWarning": "{{count}} recognition ranges to review, highest level: {{level}}",
+    "caution": "Listen to verify; a warning does not confirm an error",
     "previous": "Previous suspected missed speech range",
     "next": "Next suspected missed speech range",
     "listen": "Listen to this range",
-    "level": { "low": "low", "medium": "medium", "high": "high" },
+    "level": {
+      "low": "low",
+      "medium": "medium",
+      "high": "high"
+    },
     "signal": {
-      "energySpeech": "audio energy indicates speech",
+      "speechReview": "Speech detected during review",
+      "energySpeech": "Sound activity in the audio",
       "engineVad": "engine VAD detected speech",
       "subtitleGap": "subtitle coverage has a gap",
-      "wordGap": "word timeline has a gap"
-    }
+      "wordGap": "word timeline has a gap",
+      "timingMismatch": "Possible timing mismatch",
+      "textMismatch": "Recognition text differs"
+    },
+    "copy": "Copy suggested text",
+    "copied": "Suggested text copied",
+    "copyFailed": "Could not copy. Select the text manually.",
+    "reviewCount": "{{count}} ranges to review",
+    "original": "First recognition:"
   },
   "translateSubtitle": "Translate Subtitle",
   "noTask": "No tasks to be processed",

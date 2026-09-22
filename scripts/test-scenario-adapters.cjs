@@ -145,6 +145,40 @@ Module._load = function (request, parent, isMain) {
     assert.equal(cues.at(-1).endMs, 13000);
     assert.ok(fs.existsSync(faster.file.wordTimelineFile));
 
+    // Verify mode defaults reach the actual runtime dispatch, and task-level
+    // overrides still win. Mode changes must not mutate the stored settings.
+    settings = { vadThreshold: 0.5, vadMinSpeechDuration: 250 };
+    for (const [name, formData, threshold, minSpeech] of [
+      ['accurate', { subtitleOutcome: 'accurate' }, 0.35, 100],
+      ['balanced', { subtitleOutcome: 'balanced' }, 0.5, 250],
+      [
+        'accurate-override',
+        {
+          subtitleOutcome: 'accurate',
+          vadThreshold: 0.6,
+          vadMinSpeechDuration: 180,
+        },
+        0.6,
+        180,
+      ],
+    ]) {
+      const task = ctx(name);
+      delete task.formData.vadThreshold;
+      Object.assign(task.formData, formData);
+      await fasterWhisperEngineAdapter.transcribe(task);
+      assert.equal(dispatched.vad, true);
+      assert.equal(dispatched.vad_threshold, threshold, name);
+      assert.equal(dispatched.vad_min_speech_duration_ms, minSpeech, name);
+      assert.equal(dispatched.vad_min_silence_duration_ms, 100, name);
+      assert.equal(dispatched.vad_speech_pad_ms, 200, name);
+      assert.equal(dispatched.speech_review, true, name);
+      assert.equal(dispatched.condition_on_previous_text, undefined, name);
+    }
+    assert.deepEqual(settings, {
+      vadThreshold: 0.5,
+      vadMinSpeechDuration: 250,
+    });
+
     const cliScript = path.join(root, 'fixture.cjs');
     const longSrt =
       '1\n00:00:00,000 --> 00:00:09,000\nA long CLI subtitle with several words to split into short cues.\n';

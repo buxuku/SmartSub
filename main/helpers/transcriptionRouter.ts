@@ -39,12 +39,20 @@ export async function routeTranscription(
       vadAvailable: value.vadAvailable ?? diagnostics.vadAvailable,
       vadSegments: value.vadSegments ?? diagnostics.vadSegments,
       wordSegments: value.wordSegments ?? diagnostics.wordSegments,
+      reviewSpeechSegments:
+        value.reviewSpeechSegments ?? diagnostics.reviewSpeechSegments,
+      reviewCompleted: value.reviewCompleted ?? diagnostics.reviewCompleted,
+      reviewPending: value.reviewPending ?? diagnostics.reviewPending,
     };
   };
   let output: string;
   ctx.file.missedSpeechWarnings = [];
   ctx.file.missedSpeechSummary = undefined;
   ctx.file.wordTimelineFile = undefined;
+  ctx.file.speechReviewStage = undefined;
+  ctx.file.speechReviewSummary = undefined;
+  ctx.file.speechReviewFile = undefined;
+  ctx.file.speechReviewOriginalFile = undefined;
   try {
     output = await adapter.transcribe({
       ...ctx,
@@ -55,6 +63,7 @@ export async function routeTranscription(
       },
     });
   } finally {
+    ctx.file.speechReviewStage = undefined;
     release();
   }
   await runMissedSpeechCheck(ctx.file, diagnostics, signal);

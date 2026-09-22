@@ -454,7 +454,12 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                                         )}
                                       </div>
                                       <p className="text-xs text-muted-foreground">
-                                        {t(`outcome.${tier}.desc`)}
+                                        {t(
+                                          tier === 'accurate' &&
+                                            engine === 'fasterWhisper'
+                                            ? 'outcome.accurate.fasterWhisperDesc'
+                                            : `outcome.${tier}.desc`,
+                                        )}
                                       </p>
                                       {tier !== 'custom' && (
                                         <p className="text-[11px] text-muted-foreground">

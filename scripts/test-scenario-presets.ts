@@ -196,6 +196,67 @@ assert.strictEqual(
 );
 
 // Verify effective values, not only labels or serialized form fields.
+// The faster-whisper accurate preset must survive conversion to custom without
+// leaking into global settings or the next balanced task.
+{
+  const globalSettings = Object.freeze({
+    vadThreshold: 0.5,
+    vadMinSpeechDuration: 250,
+    vadMinSilenceDuration: 180,
+    vadSpeechPad: 320,
+  });
+  const accurate = Object.freeze({
+    transcriptionEngine: 'fasterWhisper',
+    subtitleOutcome: 'accurate',
+  });
+  const effective = resolveEffectiveSettings(accurate, globalSettings);
+  assert.equal(effective.useVAD, true);
+  assert.equal(effective.vadThreshold, 0.35);
+  assert.equal(effective.vadMinSpeechDuration, 100);
+  assert.equal(effective.vadMinSilenceDuration, 180);
+  assert.equal(effective.vadSpeechPad, 320);
+  const custom: Record<string, unknown> = { ...accurate };
+  convertToCustomOutcome(
+    {
+      setValue: (key, value) => {
+        custom[key] = value;
+      },
+    },
+    accurate,
+    globalSettings,
+  );
+  assert.equal(custom.subtitleOutcome, 'custom');
+  assert.deepEqual(resolveEffectiveSettings(custom, globalSettings), effective);
+  const overrides = resolveEffectiveSettings(
+    { ...accurate, vadThreshold: 0.6, vadMinSpeechDuration: 180 },
+    globalSettings,
+  );
+  assert.equal(overrides.vadThreshold, 0.6);
+  assert.equal(overrides.vadMinSpeechDuration, 180);
+  const invalid = resolveEffectiveSettings(
+    { ...accurate, vadThreshold: NaN, vadMinSpeechDuration: -1 },
+    globalSettings,
+  );
+  assert.equal(invalid.vadThreshold, 0.35);
+  assert.equal(invalid.vadMinSpeechDuration, 100);
+  for (const subtitleOutcome of ['balanced', 'clean', 'custom', undefined]) {
+    const settings = resolveEffectiveSettings(
+      { ...accurate, subtitleOutcome },
+      globalSettings,
+    );
+    assert.equal(settings.vadThreshold, 0.5);
+    assert.equal(settings.vadMinSpeechDuration, 250);
+  }
+  for (const transcriptionEngine of ['builtin', 'localCli']) {
+    const settings = resolveEffectiveSettings(
+      { ...accurate, transcriptionEngine },
+      globalSettings,
+    );
+    assert.equal(settings.vadThreshold, 0.5);
+    assert.equal(settings.vadMinSpeechDuration, 250);
+  }
+}
+
 for (const engine of [
   'builtin',
   'fasterWhisper',

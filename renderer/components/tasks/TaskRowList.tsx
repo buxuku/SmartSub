@@ -53,6 +53,7 @@ import {
   TRANSLATION_INCOMPLETE_FOR_COMPOSE,
 } from '../../../types';
 import { ManuscriptRowBadge } from './ManuscriptRowBadge';
+import { SpeechReviewBadge } from './SpeechReviewBadge';
 
 interface TaskRowListProps {
   files: any[];
@@ -192,7 +193,14 @@ export function RailChips({
                   <CheckCircle2 className="h-3 w-3" />
                 ))}
               {status === 'error' && <CircleAlert className="h-3 w-3" />}
-              {t(stage.labelKey)}
+              {stage.key === 'extractSubtitle' &&
+              status === 'loading' &&
+              file.speechReviewStage
+                ? t('row.speechReviewing')
+                : t(stage.labelKey)}
+              {stage.key === 'extractSubtitle' && status === 'done' ? (
+                <SpeechReviewBadge file={file} />
+              ) : null}
               {status === 'done' && manuscriptSummary && (
                 <span className="text-[10px]">
                   {manuscriptSummary.replacedCues}/{manuscriptSummary.totalCues}
