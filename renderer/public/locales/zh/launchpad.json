@@ -47,9 +47,8 @@
     "cancel": "取消",
     "confirmDelete": "删除"
   },
-  "tools": {
-    "title": "工具",
-    "panelTitle": "工具箱",
+  "quickLinks": {
+    "title": "快捷入口",
     "downloadHint": "粘贴链接批量下载在线视频",
     "proofreadHint": "逐句检查修改，AI 润色",
     "mergeHint": "把字幕烧录进画面",
@@ -64,12 +63,23 @@
     "statRunning": "{{count}} 个进行中",
     "statDone": "{{count}} 个已完成"
   },
-  "tips": {
+  "quickStart": {
     "title": "快速上手",
-    "search": "全局搜索功能与任务，随处可唤起",
-    "drop": "拖入启动台导入素材，拖到卡片使用指定流程",
-    "shortcuts": "查看全部键盘快捷键",
-    "settings": "打开设置"
+    "intro": "第一次使用？先试试生成一份原文字幕。",
+    "import": {
+      "title": "导入一段音视频",
+      "description": "点击下方按钮，导入一段简短、说话清晰的视频或音频。"
+    },
+    "configure": {
+      "title": "确认语言和模型",
+      "description": "选择音视频的语言和语音模型，其他设置先用默认值。",
+      "models": "还没有模型？前往安装或配置"
+    },
+    "result": {
+      "title": "开始处理，查看字幕",
+      "description": "点击开始；完成后点「打开文件夹」找到字幕，或点「去校对」检查错字。"
+    },
+    "start": "开始生成字幕"
   },
   "env": {
     "title": "环境就绪度",

@@ -18,13 +18,10 @@ import {
   CloudDownload,
   FolderOpen,
   History,
-  Keyboard,
   Loader2,
   MousePointerClick,
   Pencil,
   Plus,
-  Search,
-  Settings,
   Trash2,
   Upload,
 } from 'lucide-react';
@@ -71,8 +68,8 @@ import {
 import WorkItemList from '@/components/launchpad/WorkItemList';
 import WorkItemRowsSkeleton from '@/components/launchpad/WorkItemRowsSkeleton';
 import EnvReadiness, { type EnvRow } from '@/components/launchpad/EnvReadiness';
+import QuickStartGuide from '@/components/launchpad/QuickStartGuide';
 import { getWorkItemStatus, getWorkItemTarget } from 'lib/workItemUtils';
-import { isMacPlatform } from 'hooks/useHotkeys';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { useTranslation } from 'next-i18next';
 import type { WorkItem } from '../../../types/workItem';
@@ -122,14 +119,14 @@ const USER_RECIPE_VISUAL: RecipeVisual = {
 };
 
 /**
- * 独立工具：单文件精修工作台入口（与配方卡视觉分层）。
- * xl 宽屏在右栏以「工具箱」面板常显；窄屏右栏沉底，回退为开始创作面板底部的工具行。
+ * 常用页面的快捷入口（与配方卡视觉分层）。
+ * xl 宽屏在右栏常显；窄屏回退为开始创作面板底部的紧凑入口。
  */
-const TOOLS: Array<{
+const QUICK_LINKS: Array<{
   key: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
-  /** 工具箱面板的图标 chip 配色（沿用配方卡视觉语言，色相与配方卡错开） */
+  /** 快捷入口的图标 chip 配色（沿用配方卡视觉语言，色相与配方卡错开） */
   chip: string;
 }> = [
   {
@@ -193,10 +190,9 @@ export default function LaunchpadPage() {
   const [recipeNameDraft, setRecipeNameDraft] = useState('');
   const [deleteRecipeTarget, setDeleteRecipeTarget] =
     useState<TaskRecipe | null>(null);
-  // 问候语/日期/修饰键均依赖运行时环境，挂载后再填充避免水合不一致
+  // 问候语/日期依赖运行时环境，挂载后再填充避免水合不一致
   const [greetingKey, setGreetingKey] = useState<string | null>(null);
   const [dateLabel, setDateLabel] = useState('');
-  const [modKey, setModKey] = useState('⌘');
 
   useEffect(() => {
     const hour = new Date().getHours();
@@ -221,7 +217,6 @@ export default function LaunchpadPage() {
         weekday: 'long',
       }),
     );
-    setModKey(isMacPlatform() ? '⌘' : 'Ctrl');
   }, [locale]);
 
   useEffect(() => {
@@ -655,13 +650,6 @@ export default function LaunchpadPage() {
     return { running, done };
   }, [workItems]);
 
-  const tipRows = [
-    { icon: Search, label: t('tips.search'), kbd: `${modKey} K` },
-    { icon: MousePointerClick, label: t('tips.drop'), kbd: null },
-    { icon: Keyboard, label: t('tips.shortcuts'), kbd: '?' },
-    { icon: Settings, label: t('tips.settings'), kbd: `${modKey} ,` },
-  ];
-
   const envRows: EnvRow[] = [
     {
       key: 'model',
@@ -1049,12 +1037,12 @@ export default function LaunchpadPage() {
                     </p>
                   </Link>
                 </div>
-                {/* 窄屏工具行：右栏（工具箱面板）堆叠后沉底，这里保留紧凑入口兜底可见性 */}
+                {/* 窄屏快捷入口：右栏堆叠后沉底，这里保留紧凑入口兜底可见性 */}
                 <div className="flex flex-wrap items-center gap-1.5 border-t border-border px-3 py-2 xl:hidden">
                   <span className="text-[11px] text-faint">
-                    {t('tools.title')}
+                    {t('quickLinks.title')}
                   </span>
-                  {TOOLS.map((tool) => {
+                  {QUICK_LINKS.map((tool) => {
                     const ToolIcon = tool.icon;
                     return (
                       <Link
@@ -1135,27 +1123,27 @@ export default function LaunchpadPage() {
               </Panel>
             </div>
 
-            {/* 右栏固定三模块（环境+工具箱+上手），极矮窗口装不下时列内滚动兜底 */}
+            {/* 右栏固定三模块（环境+快捷入口+上手），矮窗口装不下时列内滚动 */}
             <div className="flex min-h-0 min-w-0 flex-col gap-2.5 xl:overflow-y-auto">
-              {/* flex-none：视口锁高后右栏空间有限时，常显仪表不被压缩，剩余高度全部交给快速上手 */}
+              {/* 常显仪表不被压缩，剩余高度交给快速上手 */}
               <EnvReadiness
                 className="flex-none"
                 title={t('env.title')}
                 readyBadge={hasModels ? t('env.canWork') : null}
                 rows={envRows}
               />
-              {/* 工具箱：三个独立工具的常显入口，紧跟环境就绪（xl 专属；窄屏由左栏工具行兜底）。
+              {/* 快捷入口：常用页面入口，紧跟环境就绪（xl 专属；窄屏由左栏紧凑入口兜底）。
                 行式布局带图标 chip + 名称 + 一句话说明，可见度与配方卡对齐但不抢「开始创作」主动线 */}
               <Panel className="hidden flex-none xl:flex">
-                <PanelHeader title={t('tools.panelTitle')} />
+                <PanelHeader title={t('quickLinks.title')} />
                 <div className="flex flex-col py-1">
-                  {TOOLS.map((tool) => {
+                  {QUICK_LINKS.map((tool) => {
                     const ToolIcon = tool.icon;
                     return (
                       <Link
                         key={tool.key}
                         href={`/${localeStr}/${tool.href}`}
-                        className="group flex items-center gap-2.5 px-3 py-2 transition-colors hover:bg-accent/60"
+                        className="group flex items-center gap-2.5 px-3 py-1.5 transition-colors hover:bg-accent/60"
                       >
                         <span
                           className={cn(
@@ -1170,7 +1158,7 @@ export default function LaunchpadPage() {
                             {t(`card.${tool.key}`)}
                           </span>
                           <span className="mt-0.5 block truncate text-[11px] leading-tight text-muted-foreground">
-                            {t(`tools.${tool.key}Hint`)}
+                            {t(`quickLinks.${tool.key}Hint`)}
                           </span>
                         </span>
                         <ChevronRight className="h-3.5 w-3.5 flex-none text-faint opacity-0 transition-opacity group-hover:opacity-100" />
@@ -1179,34 +1167,7 @@ export default function LaunchpadPage() {
                   })}
                 </div>
               </Panel>
-              {/* 快速上手：右栏收尾模块，面板边框拉到列底对齐左栏；
-                行距固定顶部对齐，面板再高条目也不会被均摊拉稀 */}
-              <Panel className="min-h-[150px] flex-1">
-                <PanelHeader title={t('tips.title')} />
-                <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1.5 py-1.5">
-                  {tipRows.map((tip) => {
-                    const TipIcon = tip.icon;
-                    return (
-                      <div
-                        key={tip.label}
-                        className="flex items-center gap-2.5 rounded-md px-2 py-[7px] text-[12.5px] transition-colors hover:bg-accent/60"
-                      >
-                        <span className="flex h-6 w-6 flex-none items-center justify-center rounded-md bg-muted text-muted-foreground">
-                          <TipIcon className="h-3.5 w-3.5" />
-                        </span>
-                        <span className="min-w-0 flex-1 break-words text-muted-foreground">
-                          {tip.label}
-                        </span>
-                        {tip.kbd && (
-                          <kbd className="tnum flex-none rounded border border-border bg-panel-2 px-1.5 py-0.5 font-mono text-[10px] leading-none text-faint">
-                            {tip.kbd}
-                          </kbd>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </Panel>
+              <QuickStartGuide locale={localeStr} />
             </div>
           </div>
         </div>

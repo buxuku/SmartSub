@@ -47,9 +47,8 @@
     "cancel": "Cancel",
     "confirmDelete": "Delete"
   },
-  "tools": {
-    "title": "Tools",
-    "panelTitle": "Toolbox",
+  "quickLinks": {
+    "title": "Quick links",
     "downloadHint": "Batch-download online videos from links",
     "proofreadHint": "Review line by line, AI polish",
     "mergeHint": "Burn subtitles into the picture",
@@ -64,12 +63,23 @@
     "statRunning": "{{count}} running",
     "statDone": "{{count}} done"
   },
-  "tips": {
-    "title": "Quick tips",
-    "search": "Search features and tasks from anywhere",
-    "drop": "Drop into the launchpad to import, or onto a card to use its workflow",
-    "shortcuts": "See all keyboard shortcuts",
-    "settings": "Open settings"
+  "quickStart": {
+    "title": "Quick start",
+    "intro": "New here? Create your first subtitles in three steps.",
+    "import": {
+      "title": "Add a video or audio file",
+      "description": "Use the button below to add a short clip with clear speech."
+    },
+    "configure": {
+      "title": "Choose a language and model",
+      "description": "Select the spoken language and a speech model. Leave other settings as they are.",
+      "models": "Need a model? Set one up"
+    },
+    "result": {
+      "title": "Start and find your subtitles",
+      "description": "Click “Start Task”. When done, “Open folder” finds your subtitles; “Proofread” lets you fix mistakes."
+    },
+    "start": "Create my first subtitles"
   },
   "env": {
     "title": "Environment",
