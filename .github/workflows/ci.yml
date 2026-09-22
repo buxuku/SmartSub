@@ -22,7 +22,8 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20.14.0
+          # @testing-library/jest-dom requires Node >=22.
+          node-version: 22.14.0
           cache: yarn
 
       # CI=true 时 postinstall 的 ensure-native 会自动跳过原生依赖下载；
