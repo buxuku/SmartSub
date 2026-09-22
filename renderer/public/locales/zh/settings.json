@@ -89,6 +89,15 @@
   "modelsPath": "模型存储路径",
   "selectPath": "浏览",
   "saveFailed": "设置保存失败",
+  "persistence": {
+    "invalidVad": "请填写有效的 VAD 数值：阈值与重叠比率为 0–1，时长与填充不得为负数。",
+    "loading": "正在读取设置…",
+    "loadFailed": "设置读取失败，暂不可修改。",
+    "pathsFailed": "存储目录信息读取失败。",
+    "repair": "请检查配置文件与目录权限，修复后重试。未确认保存的输入仍保留在当前页。",
+    "reload": "重新读取",
+    "retry": "重试操作"
+  },
   "storageLocationTitle": "存储位置",
   "storageLocationDesc": "统一管理模型、引擎运行时与临时文件的存放位置，一处设置全部生效",
   "storageRoot": "统一存储目录",

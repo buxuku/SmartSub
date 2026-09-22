@@ -36,11 +36,13 @@ import {
 } from 'lucide-react';
 import { useDubbing } from '../../hooks/useDubbing';
 import { getWorkItemTarget } from 'lib/workItemUtils';
+import { releasePipelineGate } from 'lib/pipelineGate';
 import type { DubbingExportView } from '../../../types/dubbing';
 import StepGuide from '@/components/StepGuide';
 import DubbingFileBar from './DubbingFileBar';
 import DubbingConfigPanel from './DubbingConfigPanel';
 import DubbingCueList from './DubbingCueList';
+import DubbingSpeakerVoices from './DubbingSpeakerVoices';
 import DubbingPlayer, { type DubbingPlayerHandle } from './DubbingPlayer';
 
 interface DubbingPanelProps {
@@ -87,6 +89,17 @@ export default function DubbingPanel({
   const [reviewQueue, setReviewQueue] = useState<any[]>([]);
   const [inspectorTaskName, setInspectorTaskName] = useState('');
   const [releaseAllOpen, setReleaseAllOpen] = useState(false);
+  const [releaseError, setReleaseError] = useState<string | null>(null);
+  const [releasing, setReleasing] = useState(false);
+  const releaseToken = useRef<object>();
+  useEffect(() => {
+    releaseToken.current = undefined;
+    setReleasing(false);
+    setReleaseError(null);
+    return () => {
+      releaseToken.current = undefined;
+    };
+  }, [gateProject, gateFile, dub.session?.leaseId]);
   const refreshReviewQueue = useCallback(async (): Promise<any[]> => {
     if (!gateProject) return [];
     try {
@@ -130,26 +143,80 @@ export default function DubbingPanel({
   const currentReviewIndex = reviewQueue.findIndex((f) => f?.uuid === gateFile);
 
   const releaseAndNext = useCallback(async () => {
-    if (!gateProject || !gateFile) return;
-    await window.ipc.invoke('pipeline:releaseGate', {
-      projectId: gateProject,
-      gate: 'dubbing',
-      fileUuids: [gateFile],
-    });
-    const queue = await refreshReviewQueue();
-    const next = queue.find((f: any) => f?.uuid !== gateFile);
-    if (next) gotoReviewFile(next);
-    else backToTask();
-  }, [gateProject, gateFile, refreshReviewQueue, gotoReviewFile, backToTask]);
+    if (!gateProject || !gateFile || releaseToken.current || !dub.canExport)
+      return;
+    const token = {};
+    releaseToken.current = token;
+    setReleasing(true);
+    setReleaseError(null);
+    try {
+      await releasePipelineGate(
+        {
+          projectId: gateProject,
+          gate: 'dubbing',
+          fileUuids: [gateFile],
+          leaseId: dub.session?.leaseId,
+        },
+        () => releaseToken.current === token,
+        setReleaseError,
+      );
+      setReleaseError(null);
+      const queue = await refreshReviewQueue();
+      if (releaseToken.current !== token) return;
+      const next = queue.find((f: any) => f?.uuid !== gateFile);
+      if (next) gotoReviewFile(next);
+      else backToTask();
+    } catch (error) {
+      if (releaseToken.current === token) setReleaseError(String(error));
+    } finally {
+      if (releaseToken.current === token) {
+        releaseToken.current = undefined;
+        setReleasing(false);
+      }
+    }
+  }, [
+    gateProject,
+    gateFile,
+    refreshReviewQueue,
+    gotoReviewFile,
+    backToTask,
+    releasing,
+    dub.canExport,
+    dub.session?.leaseId,
+  ]);
 
   const releaseAllDubbing = useCallback(async () => {
-    if (!gateProject) return;
-    await window.ipc.invoke('pipeline:releaseGate', {
-      projectId: gateProject,
-      gate: 'dubbing',
-    });
-    backToTask();
-  }, [gateProject, backToTask]);
+    if (!gateProject || releaseToken.current || dub.configBlocked) return;
+    const token = {};
+    releaseToken.current = token;
+    setReleasing(true);
+    setReleaseError(null);
+    try {
+      await releasePipelineGate(
+        {
+          projectId: gateProject,
+          gate: 'dubbing',
+          leaseId: dub.session?.leaseId,
+        },
+        () => releaseToken.current === token,
+        setReleaseError,
+      );
+      backToTask();
+    } catch (error) {
+      if (releaseToken.current === token) setReleaseError(String(error));
+    } finally {
+      if (releaseToken.current === token) {
+        releaseToken.current = undefined;
+        setReleasing(false);
+      }
+    }
+  }, [
+    gateProject,
+    backToTask,
+    releasing,
+    dub.configBlocked,
+    dub.session?.leaseId,
+  ]);
   // 导出结果横幅可手动关闭（按对象身份记忆；新一次导出再次展示）。
   const [dismissedResult, setDismissedResult] =
     useState<DubbingExportView | null>(null);
@@ -171,12 +238,13 @@ export default function DubbingPanel({
     router.push(`/${locale}/subtitleMerge?${params.toString()}`);
   }, [exportedVideo, dub.exportResult, dub.subtitlePath, router, locale]);
 
-  const { running, setSubtitlePath, setVideoPath } = dub;
+  const { running, exporting, speakerUpdating, setSubtitlePath, setVideoPath } =
+    dub;
   // 拖放（整页有效，含空态）：字幕扩展名进字幕槽，其余按视频/音频处理。
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-      if (running) return;
+      if (running || exporting || speakerUpdating || dub.configBlocked) return;
       for (const file of Array.from(e.dataTransfer.files)) {
         const p = window.ipc.getPathForFile(file);
         if (!p) continue;
@@ -184,7 +252,14 @@ export default function DubbingPanel({
         else setVideoPath(p);
       }
     },
-    [running, setSubtitlePath, setVideoPath],
+    [
+      running,
+      exporting,
+      speakerUpdating,
+      dub.configBlocked,
+      setSubtitlePath,
+      setVideoPath,
+    ],
   );
 
   const steps = [
@@ -204,10 +279,12 @@ export default function DubbingPanel({
         <div className="flex flex-shrink-0 flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/[0.06] px-3 py-2">
           <Diamond className="h-3.5 w-3.5 flex-none text-warning" />
           <span className="min-w-0 flex-1 truncate text-xs font-medium">
-            {t('inspector.label', {
-              index: Math.max(currentReviewIndex, 0) + 1,
-              total: Math.max(reviewQueue.length, 1),
-            })}
+            {currentReviewIndex < 0
+              ? t('inspector.repair')
+              : t('inspector.label', {
+                  index: Math.max(currentReviewIndex, 0) + 1,
+                  total: Math.max(reviewQueue.length, 1),
+                })}
             {inspectorTaskName && (
               <span className="ml-2 text-muted-foreground">
                 {inspectorTaskName}
@@ -219,7 +296,7 @@ export default function DubbingPanel({
               variant="outline"
               size="sm"
               className="h-7 text-xs"
-              disabled={currentReviewIndex <= 0}
+              disabled={currentReviewIndex <= 0 || releasing}
               onClick={() =>
                 gotoReviewFile(reviewQueue[currentReviewIndex - 1])
               }
@@ -233,6 +310,7 @@ export default function DubbingPanel({
               className="h-7 text-xs"
               disabled={
                 currentReviewIndex < 0 ||
+                releasing ||
                 currentReviewIndex >= reviewQueue.length - 1
               }
               onClick={() =>
@@ -245,7 +323,13 @@ export default function DubbingPanel({
             <Button
               size="sm"
               className="h-7 gap-1 text-xs"
-              disabled={dub.running || dub.exporting}
+              disabled={
+                currentReviewIndex < 0 ||
+                !dub.canExport ||
+                releasing ||
+                dub.running ||
+                dub.exporting
+              }
               onClick={releaseAndNext}
             >
               <Play className="h-3 w-3" />
@@ -258,6 +342,7 @@ export default function DubbingPanel({
                 variant="outline"
                 size="sm"
                 className="h-7 text-xs"
+                disabled={releasing || dub.configBlocked}
                 onClick={() => setReleaseAllOpen(true)}
               >
                 {t('inspector.releaseAll')}
@@ -280,8 +365,20 @@ export default function DubbingPanel({
       </div>
 
       {dub.loadError && (
-        <p className="flex-shrink-0 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <p
+          role="alert"
+          className="flex-shrink-0 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
           {dub.loadError}
+        </p>
+      )}
+
+      {dub.sessionLocked && (
+        <p
+          role="alert"
+          className="flex-shrink-0 rounded-md bg-warning/10 px-3 py-2 text-sm text-warning"
+        >
+          {t('sessionLocked')}
         </p>
       )}
 
@@ -296,8 +393,126 @@ export default function DubbingPanel({
         </p>
       )}
 
+      {releaseError && (
+        <div
+          role="alert"
+          className="shrink-0 break-words bg-destructive/10 p-2 text-xs text-destructive"
+        >
+          {t(
+            releasing
+              ? 'common:gateRelease.pending'
+              : 'common:gateRelease.failed',
+          )}
+          <details className="mt-1">
+            <summary>{t('common:gateRelease.details')}</summary>
+            <p className="break-words">{releaseError}</p>
+          </details>
+        </div>
+      )}
+      {dub.configRecovery && !dub.loading && (
+        <div
+          role="alert"
+          className="flex flex-shrink-0 flex-wrap items-center gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-warning"
+        >
+          <History className="h-4 w-4 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p>
+              {t(
+                dub.configRecovery === 'unreadable'
+                  ? 'configDraftUnreadable'
+                  : 'configDraftFound',
+              )}
+            </p>
+            {dub.configRecovery !== 'unreadable' && (
+              <p className="mt-1 break-words">
+                {t('configDraftSummary', {
+                  voice:
+                    dub.configRecovery.current.voice ||
+                    dub.configRecovery.current.engineKey,
+                  speed: dub.configRecovery.current.globalSpeed,
+                })}
+              </p>
+            )}
+            {dub.configError && (
+              <details className="mt-1 break-all">
+                <summary>{t('configErrorDetails')}</summary>
+                {dub.configError}
+              </details>
+            )}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={dub.running || dub.exporting || dub.configSaving}
+            onClick={
+              dub.configRecovery === 'unreadable'
+                ? dub.retryConfigDraft
+                : dub.restoreConfigDraft
+            }
+          >
+            <RotateCcw className="mr-1 h-3 w-3" />
+            {t(
+              dub.configRecovery === 'unreadable'
+                ? 'configDraftRetry'
+                : 'configDraftRestore',
+            )}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={dub.running || dub.exporting || dub.configSaving}
+            onClick={dub.discardConfig}
+          >
+            <X className="mr-1 h-3 w-3" />
+            {t('configDraftDiscard')}
+          </Button>
+        </div>
+      )}
+      {dub.configError && !dub.configRecovery && (
+        <div
+          role="alert"
+          className="flex flex-shrink-0 items-start gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p>{t('configSaveFailed')}</p>
+            <details className="mt-1 break-all">
+              <summary className="cursor-pointer">
+                {t('configErrorDetails')}
+              </summary>
+              {dub.configError}
+            </details>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={dub.configSaving}
+            onClick={dub.saveConfig}
+          >
+            <RotateCcw className="mr-1 h-3 w-3" />
+            {t('configRetry')}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={dub.configSaving}
+            onClick={dub.discardConfig}
+          >
+            <RotateCcw className="mr-1 h-3 w-3" />
+            {t('configDiscard')}
+          </Button>
+        </div>
+      )}
+      {dub.configSaving && (
+        <p role="status" className="text-xs text-muted-foreground">
+          {t('configSaving')}
+        </p>
+      )}
       {dub.actionError && (
-        <p className="flex-shrink-0 break-all rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <p
+          role="alert"
+          className="flex-shrink-0 break-all rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive"
+        >
           {dub.actionError}
         </p>
       )}
@@ -395,6 +610,7 @@ export default function DubbingPanel({
               {t('inspector.releaseAllCancel')}
             </AlertDialogCancel>
             <AlertDialogAction
+              disabled={releasing || dub.configBlocked}
               onClick={() => {
                 setReleaseAllOpen(false);
                 releaseAllDubbing();
@@ -450,7 +666,7 @@ export default function DubbingPanel({
         </AlertDialogContent>
       </AlertDialog>
 
-      {!dub.subtitlePath ? (
+      {dub.sessionLocked ? null : !dub.subtitlePath ? (
         /* 空态：统一三步引导组件 + 直接选文件 */
         <Card className="flex flex-1 items-center justify-center">
           <StepGuide
@@ -476,7 +692,8 @@ export default function DubbingPanel({
           </Card>
 
           {/* 右栏：播放器（有视频时）+ 行列表 */}
-          <div className="flex min-h-0 flex-col gap-3">
+          <div className="flex min-h-0 min-w-0 flex-col gap-3">
+            {dub.speakers.length > 0 && <DubbingSpeakerVoices dub={dub} />}
             {dub.videoPath && (
               <Card className="flex-shrink-0 overflow-hidden">
                 <DubbingPlayer

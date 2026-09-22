@@ -1,5 +1,6 @@
 import type { AsrProvider } from '../../types/asrProvider';
 import { store } from './store';
+import { assertProviderList } from '../../types/providerPersistence';
 
 /**
  * 云端听写（在线 ASR）服务商实例的读写管理。
@@ -8,11 +9,15 @@ import { store } from './store';
  * 内置实例（避免 electron-store 回灌空凭据实例污染下拉/就绪判定）。缺省即空列表。
  */
 export function getAsrProviders(): AsrProvider[] {
-  return store.get('asrProviders') || [];
+  const stored = store.get('asrProviders');
+  const providers = stored === undefined ? [] : stored;
+  assertProviderList(providers);
+  return providers;
 }
 
 export function setAsrProviders(providers: AsrProvider[]): void {
-  store.set('asrProviders', Array.isArray(providers) ? providers : []);
+  assertProviderList(providers);
+  store.set('asrProviders', providers);
 }
 
 export function getAsrProviderById(

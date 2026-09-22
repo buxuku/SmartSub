@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import VoiceLibrary from './VoiceLibrary';
 import {
   Play,
   Square,
@@ -25,6 +26,10 @@ import {
   Layers,
   Filter,
   ListMusic,
+  Sparkles,
+  MoveRight,
+  Save,
+  X,
 } from 'lucide-react';
 import { cn } from 'lib/utils';
 import type { UseDubbingReturn } from '../../hooks/useDubbing';
@@ -59,7 +64,7 @@ export default function DubbingCueList({
     activeEngine,
     running,
     resynthesizeCue,
-    acceptOverlong,
+    borrowSilence,
     setCueVoice,
     playCue,
     playingKey,
@@ -73,7 +78,14 @@ export default function DubbingCueList({
 
   const [filter, setFilter] = useState<CueFilter>('all');
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
-  const [draftText, setDraftText] = useState('');
+  const drafts = dub.cueDrafts;
+  const draftCount = Object.keys(drafts.entries).length;
+  const textBusy =
+    running ||
+    dub.exporting ||
+    dub.speakerUpdating ||
+    dub.loading ||
+    dub.sessionLocked;
 
   const visible = useMemo(() => {
     if (filter === 'overlong') {
@@ -109,7 +121,6 @@ export default function DubbingCueList({
         setExpandedIndex(null);
       } else {
         setExpandedIndex(cue.index);
-        setDraftText(cue.text);
       }
     },
     [expandedIndex],
@@ -141,7 +152,7 @@ export default function DubbingCueList({
       case 'overlong':
         return (
           <AlertTriangle
-            className="h-3.5 w-3.5 text-warning"
+            className="h-3.5 w-3.5 text-destructive"
             aria-label={t('statusOverlong')}
           />
         );
@@ -172,8 +183,67 @@ export default function DubbingCueList({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {(drafts.blocked() || drafts.error) && !dub.loading && (
+        <div
+          role="alert"
+          data-testid="cue-draft-banner"
+          className="flex shrink-0 flex-wrap items-center gap-2 bg-warning/10 px-3 py-2 text-xs"
+        >
+          <div className="min-w-0 flex-1">
+            <p>
+              {t(
+                drafts.recovery === 'unreadable'
+                  ? 'cueDraftUnreadable'
+                  : drafts.recovery
+                    ? 'cueDraftFound'
+                    : 'cueDraftPending',
+                {
+                  count:
+                    drafts.recovery && drafts.recovery !== 'unreadable'
+                      ? drafts.recovery.entries.length
+                      : draftCount,
+                },
+              )}
+            </p>
+            {drafts.error && (
+              <details className="mt-1 break-all text-destructive">
+                <summary>{t('configErrorDetails')}</summary>
+                {drafts.error}
+              </details>
+            )}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={textBusy}
+            onClick={() => {
+              if (drafts.recovery === 'unreadable') void drafts.retry();
+              else if (drafts.recovery) drafts.restore();
+              else void drafts.save();
+            }}
+          >
+            <Save className="mr-1 h-3 w-3" />
+            {t(
+              drafts.recovery === 'unreadable'
+                ? 'configDraftRetry'
+                : drafts.recovery
+                  ? 'cueDraftRestore'
+                  : 'cueSaveAll',
+            )}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={textBusy}
+            onClick={() => void drafts.discard()}
+          >
+            <X className="mr-1 h-3 w-3" />
+            {t('cueDiscardAll')}
+          </Button>
+        </div>
+      )}
       {/* 过滤条 */}
-      <div className="flex flex-shrink-0 items-center gap-1.5 border-b px-2 py-1.5 text-xs">
+      <div className="flex flex-shrink-0 flex-wrap items-center gap-1.5 border-b px-2 py-1.5 text-xs">
         <Filter className="h-3.5 w-3.5 text-muted-foreground" />
         <Button
           variant={filter === 'all' ? 'secondary' : 'ghost'}
@@ -239,7 +309,11 @@ export default function DubbingCueList({
       </div>
 
       {/* 虚拟列表 */}
-      <div ref={parentRef} className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={parentRef}
+        data-testid="dubbing-cue-scroll"
+        className="min-h-0 flex-1 overflow-y-auto"
+      >
         <div
           style={{
             height: virtualizer.getTotalSize(),
@@ -249,6 +323,7 @@ export default function DubbingCueList({
         >
           {virtualizer.getVirtualItems().map((vi) => {
             const cue = visible[vi.index];
+            const draftText = drafts.entries[cue.index]?.text ?? cue.text;
             const expanded = expandedIndex === cue.index;
             const isPlaybackRow = cue.index === activePlaybackIndex;
             const slotSec = cue.synthesizedMs
@@ -276,17 +351,18 @@ export default function DubbingCueList({
             return (
               <div
                 key={cue.index}
+                data-testid={`dubbing-cue-${cue.index}`}
                 data-index={vi.index}
                 ref={virtualizer.measureElement}
                 className={cn(
                   'absolute left-0 top-0 w-full border-b px-2 py-1.5',
                   isPlaybackRow && 'bg-primary/5',
-                  cue.status === 'overlong' && 'bg-warning/5',
+                  cue.status === 'overlong' && 'bg-destructive/5',
                   cue.status === 'failed' && 'bg-destructive/5',
                 )}
                 style={{ transform: `translateY(${vi.start}px)` }}
               >
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="w-8 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
                     {cue.index + 1}
                   </span>
@@ -333,7 +409,8 @@ export default function DubbingCueList({
                     />
                   )}
                   <button
-                    className="min-w-0 flex-1 truncate text-left text-sm hover:text-primary"
+                    data-testid={`dubbing-edit-${cue.index}`}
+                    className="min-w-24 flex-1 truncate text-left text-sm hover:text-primary"
                     onClick={() => toggleExpand(cue)}
                     title={cue.text}
                   >
@@ -343,7 +420,7 @@ export default function DubbingCueList({
                   </button>
 
                   {cue.status === 'overlong' && cue.requiredFactor && (
-                    <span className="shrink-0 rounded bg-warning/15 px-1 text-[11px] tabular-nums text-warning">
+                    <span className="shrink-0 rounded bg-destructive/15 px-1 text-[11px] tabular-nums text-destructive">
                       {cue.requiredFactor.toFixed(2)}x
                     </span>
                   )}
@@ -368,42 +445,37 @@ export default function DubbingCueList({
                   )}
 
                   {/* 行级 voice 覆盖 */}
-                  <Select
+                  <VoiceLibrary
+                    dub={dub}
+                    speakerId={primarySpeakerId}
                     value={cue.voiceId || '__follow__'}
-                    onValueChange={(v) =>
+                    onSelect={(v) =>
                       setCueVoice(cue.index, v === '__follow__' ? '' : v)
                     }
-                    disabled={running || !activeEngine}
-                  >
-                    <SelectTrigger
-                      className="h-6 w-44 shrink-0 px-2 text-xs"
-                      aria-label={t('cueVoiceFor', { index: cue.index + 1 })}
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-56">
-                      <SelectItem value="__follow__">
-                        {primarySpeaker
-                          ? t('voiceFollowSpeaker', {
-                              name: primarySpeaker.name,
-                              voice: resolvedVoiceLabel,
-                            })
-                          : t('voiceUnassignedGlobal', {
-                              voice: resolvedVoiceLabel,
-                            })}
-                      </SelectItem>
-                      {overrideUnavailable && cue.voiceId && (
-                        <SelectItem value={cue.voiceId} disabled>
-                          {t('voiceUnavailable')}
-                        </SelectItem>
-                      )}
-                      {(activeEngine?.voices ?? []).map((v) => (
-                        <SelectItem key={v.id} value={v.id}>
-                          {v.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    disabled={
+                      running ||
+                      dub.exporting ||
+                      dub.speakerUpdating ||
+                      dub.configBlocked ||
+                      !activeEngine
+                    }
+                    className="h-6 w-44 shrink-0 px-2 text-xs"
+                    label={t('cueVoiceFor', { index: cue.index + 1 })}
+                    placeholder={
+                      overrideUnavailable ? t('voiceUnavailable') : undefined
+                    }
+                    fallback={{
+                      id: '__follow__',
+                      label: primarySpeaker
+                        ? t('voiceFollowSpeaker', {
+                            name: primarySpeaker.name,
+                            voice: resolvedVoiceLabel,
+                          })
+                        : t('voiceUnassignedGlobal', {
+                            voice: resolvedVoiceLabel,
+                          }),
+                    }}
+                  />
 
                   <Button
                     variant="ghost"
@@ -427,7 +499,12 @@ export default function DubbingCueList({
                     title={t('regenerateCue')}
                     aria-label={t('regenerateCue')}
                     disabled={
-                      running || cue.status === 'synthesizing' || !activeEngine
+                      running ||
+                      dub.exporting ||
+                      dub.speakerUpdating ||
+                      dub.configBlocked ||
+                      cue.status === 'synthesizing' ||
+                      !activeEngine
                     }
                     onClick={() => resynthesizeCue(cue.index)}
                   >
@@ -435,7 +512,130 @@ export default function DubbingCueList({
                   </Button>
                 </div>
 
-                {cue.status === 'failed' && cue.error && (
+                {cue.status === 'overlong' && (
+                  <div
+                    className="ml-10 mt-2 space-y-1.5"
+                    data-testid={`overrun-${cue.index}`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-destructive">
+                      <span>
+                        {t('overrunDuration', {
+                          seconds: (
+                            Math.max(
+                              0,
+                              (cue.originalMeasuredMs ??
+                                cue.synthesizedMs ??
+                                0) -
+                                (cue.endMs - cue.startMs),
+                            ) / 1000
+                          ).toFixed(2),
+                        })}
+                      </span>
+                      <span className="tabular-nums">
+                        {(
+                          (cue.originalMeasuredMs ?? cue.synthesizedMs ?? 0) /
+                          1000
+                        ).toFixed(2)}
+                        s / {((cue.endMs - cue.startMs) / 1000).toFixed(2)}s
+                      </span>
+                    </div>
+                    <div
+                      className="relative h-1.5 w-full max-w-64 overflow-hidden rounded bg-destructive/60"
+                      aria-hidden="true"
+                    >
+                      <div
+                        className="h-full bg-muted-foreground/60"
+                        style={{
+                          width: `${Math.max(0, Math.min(100, (100 * (cue.endMs - cue.startMs)) / (cue.originalMeasuredMs ?? cue.synthesizedMs ?? 1)))}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Select
+                        value={dub.aiProviderId}
+                        onValueChange={dub.setAiProviderId}
+                        onOpenChange={(open) => {
+                          if (open) void dub.reloadAiProviders();
+                        }}
+                        disabled={
+                          running ||
+                          dub.speakerUpdating ||
+                          dub.exporting ||
+                          dub.configBlocked
+                        }
+                      >
+                        <SelectTrigger
+                          className="h-7 w-40 text-xs"
+                          aria-label={t('shortenProvider')}
+                        >
+                          <SelectValue placeholder={t('shortenProvider')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {dub.aiProviders.map((provider) => (
+                            <SelectItem key={provider.id} value={provider.id}>
+                              {provider.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 gap-1 text-xs"
+                        disabled={
+                          !dub.aiProviderId ||
+                          running ||
+                          dub.speakerUpdating ||
+                          dub.configBlocked ||
+                          dub.exporting
+                        }
+                        onClick={() =>
+                          resynthesizeCue(cue.index, {
+                            shortenProviderId: dub.aiProviderId,
+                          })
+                        }
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        {t('shortenAndRegenerate')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 gap-1 text-xs"
+                        disabled={
+                          cue.needsUpdate ||
+                          running ||
+                          dub.speakerUpdating ||
+                          dub.configBlocked ||
+                          dub.exporting
+                        }
+                        onClick={() => borrowSilence(cue.index)}
+                      >
+                        <MoveRight className="h-3.5 w-3.5" />
+                        {t('borrowSilence')}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {dub.shorteningIndex === cue.index && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="ml-10 mt-1 h-7 gap-1 text-xs"
+                    onClick={dub.cancelShortening}
+                  >
+                    <Square className="h-3 w-3" />
+                    {t('cancelShortening')}
+                  </Button>
+                )}
+                {!!cue.borrowedMs && (
+                  <p className="ml-10 mt-1 text-xs text-muted-foreground">
+                    {t('borrowedDuration', {
+                      seconds: (cue.borrowedMs / 1000).toFixed(2),
+                    })}
+                  </p>
+                )}
+                {cue.error && (
                   <p className="ml-10 mt-0.5 break-all text-xs text-destructive">
                     {cue.error}
                   </p>
@@ -445,40 +645,88 @@ export default function DubbingCueList({
                 {expanded && (
                   <div className="ml-10 mt-1.5 space-y-1.5 rounded-md border bg-muted/30 p-2">
                     <Textarea
+                      aria-label={t('cueText', { index: cue.index + 1 })}
                       value={draftText}
-                      onChange={(e) => setDraftText(e.target.value)}
+                      onChange={(e) => drafts.edit(cue, e.target.value)}
                       rows={2}
                       className="text-sm"
-                      disabled={running}
+                      disabled={textBusy || drafts.saving || !!drafts.recovery}
                     />
-                    <div className="flex items-center gap-1.5">
+                    {drafts.entries[cue.index] &&
+                      ((drafts.entries[cue.index].baseText !== cue.text &&
+                        drafts.entries[cue.index].text !== cue.text) ||
+                        drafts.entries[cue.index].startMs !== cue.startMs ||
+                        drafts.entries[cue.index].endMs !== cue.endMs) && (
+                        <div className="space-y-1">
+                          <p className="break-words text-xs text-destructive">
+                            {t('cueTextConflict', { text: cue.text })}
+                          </p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={textBusy}
+                            onClick={() => drafts.rebase(cue)}
+                          >
+                            <Save className="mr-1 h-3 w-3" />
+                            {t('cueKeepDraft')}
+                          </Button>
+                        </div>
+                      )}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7"
+                        disabled={
+                          textBusy ||
+                          !!drafts.recovery ||
+                          !drafts.entries[cue.index]
+                        }
+                        onClick={() => void drafts.save(cue.index)}
+                      >
+                        <Save className="mr-1 h-3 w-3" />
+                        {t('cueSaveText')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7"
+                        disabled={
+                          textBusy ||
+                          !!drafts.recovery ||
+                          !drafts.entries[cue.index]
+                        }
+                        onClick={() => void drafts.discard(cue.index)}
+                      >
+                        <RotateCcw className="mr-1 h-3 w-3" />
+                        {t('cueDiscardText')}
+                      </Button>
                       <Button
                         size="sm"
                         className="h-7"
-                        disabled={running || !draftText.trim() || !activeEngine}
+                        disabled={
+                          running ||
+                          dub.exporting ||
+                          dub.speakerUpdating ||
+                          dub.configOnlyBlocked ||
+                          !!drafts.recovery ||
+                          Object.keys(drafts.entries).some(
+                            (key) => Number(key) !== cue.index,
+                          ) ||
+                          !draftText.trim() ||
+                          !activeEngine
+                        }
                         onClick={async () => {
-                          await resynthesizeCue(cue.index, {
-                            text: draftText,
-                          });
-                          setExpandedIndex(null);
+                          if (
+                            await resynthesizeCue(cue.index, {
+                              text: draftText,
+                            })
+                          )
+                            setExpandedIndex(null);
                         }}
                       >
                         {t('saveAndRegenerate')}
                       </Button>
-                      {cue.status === 'overlong' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-warning"
-                          disabled={running}
-                          onClick={async () => {
-                            await acceptOverlong(cue.index);
-                            setExpandedIndex(null);
-                          }}
-                        >
-                          {t('acceptSpeedup')}
-                        </Button>
-                      )}
                       <Button
                         size="sm"
                         variant="ghost"

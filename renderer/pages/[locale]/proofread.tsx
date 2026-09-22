@@ -1,4 +1,10 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useMemo,
+} from 'react';
 import { useRouter } from 'next/router';
 import { useTranslation } from 'next-i18next';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
@@ -10,8 +16,15 @@ import {
   PendingFile,
   loadPendingFileFromItem,
   pendingFileToSaveFormat,
+  createPendingFileFromSubtitle,
+  createPendingFileFromVideo,
 } from '@/lib/proofreadUtils';
+import { isSubtitleFile } from 'lib/utils';
 import { useConfirmOrUndo } from '../../hooks/useConfirmOrUndo';
+import { toast } from 'sonner';
+import { useNavigationGuard } from '@/context/NavigationGuardContext';
+import { Button } from '@/components/ui/button';
+import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
 
 // 工作流阶段
 type WorkflowStage = 'import' | 'list' | 'edit';
@@ -21,70 +34,193 @@ export type { PendingFile } from '@/lib/proofreadUtils';
 
 export default function ProofreadPage() {
   const router = useRouter();
-  const { workItem: workItemQuery } = router.query;
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const { workItem: workItemQuery, file: fileQuery } = router.query;
+  const requestKey = JSON.stringify([workItemQuery || null, fileQuery || null]);
+  const request = useMemo(() => {
+    if (workItemQuery && fileQuery) return { invalid: true };
+    if (workItemQuery)
+      return typeof workItemQuery === 'string'
+        ? { taskId: workItemQuery }
+        : { invalid: true };
+    const paths = (Array.isArray(fileQuery) ? fileQuery : [fileQuery]).filter(
+      (file): file is string => typeof file === 'string' && Boolean(file),
+    );
+    return { paths: Array.from(new Set(paths)) };
+  }, [requestKey]);
+  if (!mounted || !router.isReady) return null;
+  // A route target owns its editor, pending reads, saves and undo callbacks.
+  return <ProofreadWorkspace key={requestKey} request={request} />;
+}
+
+function ProofreadWorkspace({
+  request,
+}: {
+  request: { taskId?: string; paths?: string[]; invalid?: boolean };
+}) {
+  const router = useRouter();
   const { t } = useTranslation('home');
+  const { t: commonT } = useTranslation('common');
   const confirmOrUndo = useConfirmOrUndo();
+  const hasRequest = !!(
+    request.taskId ||
+    request.paths?.length ||
+    request.invalid
+  );
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>(
+    hasRequest ? 'loading' : 'ready',
+  );
+  const [loadError, setLoadError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const epoch = useRef(0);
+  const mounted = useRef(false);
+  const translateRef = useRef(t);
+  translateRef.current = t;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      epoch.current++;
+    };
+  }, []);
 
   // 工作流状态
   const [stage, setStage] = useState<WorkflowStage>('import');
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [currentEditIndex, setCurrentEditIndex] = useState<number>(-1);
   const [savedTaskId, setSavedTaskId] = useState<string | null>(null);
+  const savedTaskIdRef = useRef(savedTaskId);
+  savedTaskIdRef.current = savedTaskId;
   const [taskName, setTaskName] = useState<string>('');
   const [importType, setImportType] = useState<'video' | 'subtitle'>('video');
-
-  // 从历史任务加载
-  const handleLoadTask = useCallback(async (task: ProofreadTask) => {
-    // 使用工具函数为每个项目加载可用字幕
-    const files: PendingFile[] = await Promise.all(
-      task.items.map((item) => loadPendingFileFromItem(item)),
-    );
-
-    // 判断导入类型
-    const hasVideo = task.items.some((item) => item.videoPath);
-    setImportType(hasVideo ? 'video' : 'subtitle');
-
-    setPendingFiles(files);
-    setSavedTaskId(task.id);
-    setTaskName(task.name);
-    setStage('list');
-  }, []);
-
-  // 从启动台 deep link 加载已保存的校对批次
+  const [savedBatch, setSavedBatch] = useState('');
+  const savedBatchRef = useRef(savedBatch);
+  savedBatchRef.current = savedBatch;
+  const batchSnapshot = JSON.stringify({
+    taskName,
+    items: pendingFiles.map(pendingFileToSaveFormat),
+  });
+  const batchSnapshotRef = useRef(batchSnapshot);
+  batchSnapshotRef.current = batchSnapshot;
+  const savingTaskRef = useRef<Promise<boolean> | null>(null);
+  const [saveStatus, setSaveStatus] = useState<
+    'idle' | 'saving' | 'saved' | 'save_error'
+  >('idle');
+  const [saveError, setSaveError] = useState('');
+  const isBatchDirty =
+    (pendingFiles.length > 0 || Boolean(savedTaskId)) &&
+    batchSnapshot !== savedBatch;
   useEffect(() => {
-    if (typeof workItemQuery !== 'string' || !workItemQuery) return;
+    if (saveStatus !== 'saved') return;
+    const timer = setTimeout(() => setSaveStatus('idle'), 3000);
+    return () => clearTimeout(timer);
+  }, [saveStatus]);
 
+  // 导入完成后进入列表
+  const handleImportComplete = useCallback(
+    (files: PendingFile[], type: 'video' | 'subtitle') => {
+      if (!mounted.current) return;
+      epoch.current++;
+      savingTaskRef.current = null;
+      setPendingFiles(files);
+      setSavedTaskId(null);
+      setImportType(type);
+      // 默认任务名为第一个文件名（去除扩展名）
+      const defaultName =
+        type === 'video'
+          ? files[0]?.fileName?.replace(/\.[^.]+$/, '') || ''
+          : files[0]?.fileName || '';
+      setTaskName(defaultName);
+      setSavedBatch('');
+      setSaveStatus('idle');
+      setSaveError('');
+      setCurrentEditIndex(-1);
+      setStage('list');
+    },
+    [],
+  );
+
+  // Publish a complete batch only after all child reads finish for this request.
+  useEffect(() => {
+    if (!hasRequest) return;
     let cancelled = false;
+    const version = ++epoch.current;
+    const current = () =>
+      !cancelled && mounted.current && version === epoch.current;
+    setLoadState('loading');
+    setLoadError('');
     (async () => {
       try {
-        const result = await window.ipc.invoke('getProofreadTaskById', {
-          id: workItemQuery,
-        });
-        if (cancelled || !result?.success || !result.data) return;
-        await handleLoadTask(result.data as ProofreadTask);
+        if (request.invalid)
+          throw new Error(
+            translateRef.current('proofreadBatchLoad.invalidLink'),
+          );
+        if (request.taskId) {
+          const result = await window.ipc.invoke('getProofreadTaskById', {
+            id: request.taskId,
+          });
+          if (!current()) return;
+          if (result?.success !== true)
+            throw new Error(result?.error || 'INVALID_PROOFREAD_TASK_RESPONSE');
+          if (!result.data)
+            throw new Error(
+              translateRef.current('proofreadBatchLoad.notFound'),
+            );
+          const task = result.data as ProofreadTask;
+          if (
+            task.id !== request.taskId ||
+            typeof task.name !== 'string' ||
+            !Array.isArray(task.items) ||
+            new Set(task.items.map((item) => item?.id)).size !==
+              task.items.length
+          )
+            throw new Error('INVALID_PROOFREAD_TASK_RESPONSE');
+          const files = await Promise.all(
+            task.items.map((item) =>
+              loadPendingFileFromItem(item, { strict: true }),
+            ),
+          );
+          if (!current()) return;
+          setImportType(
+            task.items.some((item) => item.videoPath) ? 'video' : 'subtitle',
+          );
+          setPendingFiles(files);
+          setSavedTaskId(task.id);
+          setTaskName(task.name);
+          setSavedBatch(
+            JSON.stringify({
+              taskName: task.name,
+              items: files.map(pendingFileToSaveFormat),
+            }),
+          );
+          setStage('list');
+        } else {
+          const files = await Promise.all(
+            request.paths!.map((file) =>
+              isSubtitleFile(file)
+                ? createPendingFileFromSubtitle(file, true, { strict: true })
+                : createPendingFileFromVideo(file, { strict: true }),
+            ),
+          );
+          if (!current()) return;
+          handleImportComplete(
+            files,
+            request.paths!.every(isSubtitleFile) ? 'subtitle' : 'video',
+          );
+        }
+        setLoadState('ready');
       } catch (error) {
-        console.error('Failed to load proofread work item:', error);
+        if (!current()) return;
+        setLoadError(error instanceof Error ? error.message : String(error));
+        setLoadState('error');
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [workItemQuery, handleLoadTask]);
-
-  // 导入完成后进入列表
-  const handleImportComplete = useCallback(
-    (files: PendingFile[], type: 'video' | 'subtitle') => {
-      setPendingFiles(files);
-      setSavedTaskId(null);
-      setImportType(type);
-      // 默认任务名为第一个文件名（去除扩展名）
-      const defaultName = files[0]?.fileName?.replace(/\.[^.]+$/, '') || '';
-      setTaskName(defaultName);
-      setStage('list');
-    },
-    [],
-  );
+  }, [request, hasRequest, loadAttempt, handleImportComplete]);
 
   // 开始校对某个文件
   const handleStartProofread = useCallback((index: number) => {
@@ -132,13 +268,14 @@ export default function ProofreadPage() {
   // 删除文件（可撤销）
   const handleRemoveFile = useCallback(
     (index: number) => {
+      const version = epoch.current;
       let removed: PendingFile | undefined;
       setPendingFiles((prev) => {
         removed = prev[index];
         return prev.filter((_, i) => i !== index);
       });
       confirmOrUndo(t('fileRemoved'), () => {
-        if (!removed) return;
+        if (!removed || !mounted.current || version !== epoch.current) return;
         const item = removed;
         setPendingFiles((prev) => {
           const next = [...prev];
@@ -156,34 +293,76 @@ export default function ProofreadPage() {
   }, []);
 
   // 保存任务
-  const handleSaveTask = useCallback(async () => {
+  const saveTaskSnapshot = useCallback(async (): Promise<boolean> => {
+    if (!mounted.current || loadState !== 'ready') return false;
+    const version = epoch.current;
+    const current = () => mounted.current && version === epoch.current;
     // 使用工具函数转换为保存格式
     const items = pendingFiles.map(pendingFileToSaveFormat);
+    setSaveStatus('saving');
+    setSaveError('');
 
-    if (savedTaskId) {
-      // 更新现有任务
-      await window.ipc.invoke('updateProofreadTask', {
-        taskId: savedTaskId,
-        updates: { items, name: taskName },
-      });
-    } else {
-      // 创建新任务
-      const result = await window.ipc.invoke('createProofreadTask', {
-        items,
-        name:
-          taskName ||
-          pendingFiles[0]?.fileName?.replace(/\.[^.]+$/, '') ||
-          'Untitled',
-      });
-      if (result.success) {
+    try {
+      if (savedTaskId) {
+        // 更新现有任务
+        const result = await window.ipc.invoke('updateProofreadTask', {
+          taskId: savedTaskId,
+          updates: { items, name: taskName },
+        });
+        if (!current()) return false;
+        if (result?.success !== true || result.data?.id !== savedTaskId)
+          throw new Error(result?.error || t('saveFailed'));
+      } else {
+        // 创建新任务
+        const result = await window.ipc.invoke('createProofreadTask', {
+          items,
+          name:
+            taskName ||
+            pendingFiles[0]?.fileName?.replace(/\.[^.]+$/, '') ||
+            'Untitled',
+        });
+        if (!current()) return false;
+        if (result?.success !== true || !result.data?.id)
+          throw new Error(result?.error || t('saveFailed'));
         setSavedTaskId(result.data.id);
+        savedTaskIdRef.current = result.data.id;
       }
+      savedBatchRef.current = batchSnapshot;
+      setSavedBatch(batchSnapshot);
+      const unchanged = batchSnapshotRef.current === batchSnapshot;
+      setSaveStatus(unchanged ? 'saved' : 'idle');
+      return unchanged;
+    } catch (error) {
+      if (!current()) return false;
+      console.error('Error invoking proofread save:', error);
+      setSaveStatus('save_error');
+      setSaveError(error instanceof Error ? error.message : String(error));
+      toast.error(t('saveFailed'));
+      return false;
     }
-    return true;
-  }, [pendingFiles, savedTaskId, taskName]);
+  }, [pendingFiles, savedTaskId, taskName, t, batchSnapshot, loadState]);
+
+  const handleSaveTask = useCallback((): Promise<boolean> => {
+    if (savingTaskRef.current) return savingTaskRef.current;
+    const promise = saveTaskSnapshot().finally(() => {
+      if (savingTaskRef.current === promise) savingTaskRef.current = null;
+    });
+    savingTaskRef.current = promise;
+    return promise;
+  }, [saveTaskSnapshot]);
+
+  useNavigationGuard('proofread-batch', {
+    isDirty: isBatchDirty,
+    getIsDirty: () =>
+      batchSnapshotRef.current !== savedBatchRef.current &&
+      (pendingFiles.length > 0 || Boolean(savedTaskId)),
+    onSave: handleSaveTask,
+  });
 
   // 重置，开始新的导入（可撤销）
   const handleReset = useCallback(() => {
+    const version = ++epoch.current;
+    savingTaskRef.current = null;
     const prev = {
       pendingFiles,
       currentEditIndex,
@@ -191,21 +370,29 @@ export default function ProofreadPage() {
       taskName,
       importType,
       stage,
+      savedBatch,
     };
     setPendingFiles([]);
     setCurrentEditIndex(-1);
     setSavedTaskId(null);
     setTaskName('');
+    setSavedBatch('');
+    setSaveStatus('idle');
+    setSaveError('');
     setImportType('video');
     setStage('import');
     if (prev.pendingFiles.length > 0) {
       confirmOrUndo(t('importReset'), () => {
+        if (!mounted.current || epoch.current !== version) return;
+        epoch.current++;
+        savingTaskRef.current = null;
         setPendingFiles(prev.pendingFiles);
         setCurrentEditIndex(prev.currentEditIndex);
         setSavedTaskId(prev.savedTaskId);
         setTaskName(prev.taskName);
         setImportType(prev.importType);
         setStage(prev.stage);
+        setSavedBatch(prev.savedBatch);
       });
     }
   }, [
@@ -215,6 +402,7 @@ export default function ProofreadPage() {
     taskName,
     importType,
     stage,
+    savedBatch,
     confirmOrUndo,
     t,
   ]);
@@ -228,8 +416,8 @@ export default function ProofreadPage() {
       return;
     }
 
-    // 只有在已保存任务且列表不为空时才自动保存
-    if (savedTaskId && pendingFiles.length > 0 && stage === 'list') {
+    // Empty lists must also persist deletions; failures wait for an edit or manual retry.
+    if (savedTaskId && isBatchDirty && stage === 'list') {
       const autoSaveTimeout = setTimeout(async () => {
         try {
           await handleSaveTask();
@@ -240,7 +428,14 @@ export default function ProofreadPage() {
 
       return () => clearTimeout(autoSaveTimeout);
     }
-  }, [pendingFiles, savedTaskId, stage]);
+  }, [
+    pendingFiles,
+    savedTaskId,
+    stage,
+    taskName,
+    handleSaveTask,
+    isBatchDirty,
+  ]);
 
   // 渲染当前阶段
   const renderStage = () => {
@@ -266,6 +461,8 @@ export default function ProofreadPage() {
             onRemoveFile={handleRemoveFile}
             onAddFiles={handleAddFiles}
             onSaveTask={handleSaveTask}
+            saveStatus={saveStatus}
+            isDirty={isBatchDirty}
             onReset={handleReset}
           />
         );
@@ -274,6 +471,15 @@ export default function ProofreadPage() {
         const currentFile = pendingFiles[currentEditIndex];
         return (
           <ProofreadEditor
+            projectId={savedTaskId || undefined}
+            ensureProject={async () => {
+              const version = epoch.current;
+              if (!savedTaskIdRef.current && !(await handleSaveTask()))
+                return undefined;
+              if (!mounted.current || epoch.current !== version)
+                return undefined;
+              return savedTaskIdRef.current || undefined;
+            }}
             file={currentFile}
             onMarkComplete={handleMarkComplete}
             onBack={handleBackToList}
@@ -287,7 +493,76 @@ export default function ProofreadPage() {
 
   return (
     <div className="h-full p-3 overflow-hidden flex flex-col gap-3">
-      <div className="flex-1 overflow-auto min-h-0">{renderStage()}</div>
+      {loadState !== 'ready' ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto">
+          <Button
+            variant="ghost"
+            className="self-start"
+            onClick={() =>
+              void router.push(`/${router.query.locale || 'zh'}/proofread/`)
+            }
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            {t('proofreadBatchLoad.back')}
+          </Button>
+          {loadState === 'loading' ? (
+            <div
+              role="status"
+              aria-label={t('proofreadBatchLoad.loading')}
+              className="flex flex-1 items-center justify-center"
+            >
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : (
+            <div
+              role="alert"
+              className="space-y-3 bg-destructive/10 p-4 text-sm"
+            >
+              <p>{t('proofreadBatchLoad.failed')}</p>
+              <p className="text-muted-foreground">
+                {t('proofreadBatchLoad.repair')}
+              </p>
+              <details>
+                <summary>{commonT('saveState.details')}</summary>
+                <p className="break-all whitespace-pre-wrap">{loadError}</p>
+              </details>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setLoadAttempt((value) => value + 1)}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                {t('proofreadLoad.retry')}
+              </Button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          {saveError && (
+            <div
+              role="alert"
+              className="flex shrink-0 items-start gap-3 bg-destructive/10 p-3 text-sm text-destructive"
+            >
+              <details open className="min-w-0 flex-1">
+                <summary>{commonT('saveState.save_error')}</summary>
+                <p className="break-words whitespace-pre-wrap pt-1 text-xs">
+                  {saveError}
+                </p>
+              </details>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={saveStatus === 'saving'}
+                onClick={() => void handleSaveTask()}
+              >
+                {commonT('saveState.retry')}
+              </Button>
+            </div>
+          )}
+          <div className="flex-1 overflow-auto min-h-0">{renderStage()}</div>
+        </>
+      )}
     </div>
   );
 }

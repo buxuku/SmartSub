@@ -273,10 +273,19 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
                   ? t('row.translationIncompleteForCompose')
                   : rawError;
         const rawWarning = getFileWarning(file, stages);
-        const warningMsg =
-          rawWarning === SPEAKER_DIARIZATION_METADATA_SAVE_FAILED
+        const warningMsg = rawWarning.startsWith(
+          'AI_CORRECTION_VALIDATION_FAILED:',
+        )
+          ? t('row.aiCorrectionValidationFailed', {
+              count: Number(rawWarning.split(':')[1]),
+            })
+          : rawWarning === SPEAKER_DIARIZATION_METADATA_SAVE_FAILED
             ? t('row.speakerDiarizationMetadataSaveFailed')
-            : rawWarning;
+            : rawWarning.startsWith('SPEAKER_DIARIZATION_')
+              ? t(`speakerDiarization.warnings.${rawWarning}`, {
+                  defaultValue: rawWarning,
+                })
+              : rawWarning;
         const missedSpeechWarning = file?.missedSpeechSummary?.count
           ? t('row.missedSpeechWarning', {
               count: file.missedSpeechSummary.count,
@@ -323,7 +332,7 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
           <div
             key={file?.uuid}
             className={cn(
-              'group relative flex flex-col gap-2 rounded-lg border p-2 transition-colors hover:bg-muted/40',
+              'group relative flex flex-col gap-2 rounded-lg border border-transparent bg-card p-2 transition-colors hover:bg-muted/40',
               failed && 'border-destructive/30',
               !failed && displayWarning && 'border-warning/30',
             )}

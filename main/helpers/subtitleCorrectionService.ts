@@ -63,6 +63,7 @@ export interface CorrectionItemOutcome {
 }
 
 export interface CorrectionParams {
+  projectId?: string;
   items: CorrectionItem[];
   provider: Provider;
   translator: TranslatorFunction;
@@ -80,6 +81,8 @@ export interface CorrectionParams {
   glossaryLabel?: string;
   /** anchored：低置信词标注（whisper token p 低于阈值的词，辅助定点修正）。 */
   suspectWords?: string[];
+  fillerPolicy?: 'remove-hesitations' | 'preserve';
+  onResult?: (result: CorrectionItemOutcome) => void;
   /** 每批开始前回调（与既有校对台进度事件语义一致：processedCount 为已完成数）。 */
   onBatchProgress?: (info: {
     processedCount: number;
@@ -121,6 +124,20 @@ const ANCHORED_CORRECTION_SYSTEM_PROMPT = `You are a professional subtitle proof
 </rules>
 
 Output format: return ONLY a valid JSON object. Keys must be exactly the input subtitle IDs. Each value is an object {"src": <exact copy of the input text>, "tr": <the corrected text>}. No markdown, no explanations.`;
+
+function anchoredCorrectionPrompt(
+  policy: CorrectionParams['fillerPolicy'],
+): string {
+  if (!policy) return ANCHORED_CORRECTION_SYSTEM_PROMPT;
+  const instruction =
+    policy === 'preserve'
+      ? 'Preserve all interjections, hesitation words, repetitions and non-verbal markers that express emotion, hesitation, emphasis or character voice; do not remove them for concision'
+      : 'Remove only semantically empty hesitation fillers (um, uh, 呃, 嗯, 啊, 就是) when context confirms they are speech disfluencies. Preserve meaningful agreement, answers, emotional interjections, emphasis and technical terminology; do not delete words by a simple word list';
+  return ANCHORED_CORRECTION_SYSTEM_PROMPT.replace(
+    'Remove hesitation filler words (um, uh, 呃, 嗯, 啊) and non-verbal markers',
+    instruction,
+  );
+}
 
 /** anchored 批次 schema：与 makeBatchSchema 同构（{src,tr}），description 换成校正语义。 */
 function makeCorrectionSchema(ids: string[]): Record<string, unknown> {
@@ -216,7 +233,7 @@ export async function runSubtitleCorrection(
   // 术语表：调用方决定是否启用（校对台仅 translation 模式；管线校正恒开）。
   let glossaryEntries: Parameters<typeof matchGlossaryEntries>[0] = [];
   if (params.useGlossary) {
-    const resolution = getActiveGlossaryResolution();
+    const resolution = getActiveGlossaryResolution(params.projectId);
     if (resolution) {
       logGlossaryConflicts(
         resolution.conflicts,
@@ -264,7 +281,7 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
     status: CorrectionItemOutcome['status'],
     error?: string,
   ) => {
-    results.push({
+    const result: CorrectionItemOutcome = {
       id: item.id,
       index: item.index,
       source: item.source,
@@ -272,7 +289,9 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
       corrected,
       status,
       ...(error ? { error } : {}),
-    });
+    };
+    results.push(result);
+    params.onResult?.(result);
   };
 
   for (let i = 0; i < items.length; i += batchSize) {
@@ -329,7 +348,11 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
             };
           });
 
-          let optimizePrompt = customPrompt || LEGACY_DEFAULT_BATCH_PROMPT;
+          let optimizePrompt =
+            customPrompt ||
+            (mode === 'transcript'
+              ? 'Correct transcription errors and punctuation in these {{sourceLanguage}} subtitles. Preserve meaning and wording. Do not translate. Return ONLY a JSON object with subtitle IDs as keys and corrected text as values.'
+              : LEGACY_DEFAULT_BATCH_PROMPT);
           optimizePrompt = optimizePrompt
             .replace(/\{\{sourceLanguage\}\}/g, sourceLanguage)
             .replace(/\{\{targetLanguage\}\}/g, targetLanguage);
@@ -366,27 +389,36 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
           );
 
           const parsedResponse = parseOptimizationResponse(responseText ?? '');
-          if (!parsedResponse || typeof parsedResponse !== 'object') {
+          if (
+            !parsedResponse ||
+            typeof parsedResponse !== 'object' ||
+            Array.isArray(parsedResponse)
+          ) {
             throw new Error('无法解析 AI 响应');
           }
           batch.forEach((item) => {
-            const optimized = parsedResponse[item.id];
-            if (optimized !== undefined) {
-              pushOutcome(
-                item,
-                typeof optimized === 'string'
-                  ? optimized
-                  : optimized?.target ||
-                      optimized?.translation ||
-                      String(optimized),
-                'success',
-              );
+            const optimized = Object.prototype.hasOwnProperty.call(
+              parsedResponse,
+              item.id,
+            )
+              ? parsedResponse[item.id]
+              : undefined;
+            const text =
+              typeof optimized === 'string'
+                ? optimized
+                : typeof optimized?.target === 'string'
+                  ? optimized.target
+                  : typeof optimized?.translation === 'string'
+                    ? optimized.translation
+                    : undefined;
+            if (text?.trim()) {
+              pushOutcome(item, text.trim(), 'success');
             } else {
               pushOutcome(
                 item,
                 item.target ?? '',
                 'skipped',
-                '未在响应中找到对应结果',
+                '响应未包含有效的非空字幕文本',
               );
             }
           });
@@ -412,7 +444,7 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
           const anchoredProvider = {
             ...provider,
             systemPrompt: injectGlossaryPromptBlock(
-              ANCHORED_CORRECTION_SYSTEM_PROMPT,
+              anchoredCorrectionPrompt(params.fillerPolicy),
               correctionTermsBlock,
             ),
             useJsonMode: provider.useJsonMode !== false,

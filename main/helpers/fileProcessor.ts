@@ -59,7 +59,7 @@ import {
 import { runSpeakerDiarizationStage } from './speakerDiarization/stage';
 import type { SpeakerDiarizationSegment } from './speakerDiarization/alignment';
 import {
-  isSpeakerDiarizationStandardTaskContext,
+  supportsSpeakerDiarizationTask,
   shouldExtractAudioForEmbeddedSubtitle,
   getSpeakerDiarizationMetadataWarning,
 } from '../../types/speakerDiarization';
@@ -295,6 +295,8 @@ export async function processFile(
 
   const previousProofreadDataReady = file.proofreadDataReady;
   const previousExportSubtitle = file.exportSubtitle;
+  const previousSpeakerDiarization = file.speakerDiarization;
+  const previousSpeakerDiarizationError = file.speakerDiarizationError;
   const retryExport =
     previousExportSubtitle === 'error' ||
     Boolean(file.subtitleExportCheckpoint && previousExportSubtitle !== 'done');
@@ -399,9 +401,8 @@ export async function processFile(
     const speakerDiarizationStageActive =
       !isSubtitleFile &&
       shouldGenerateSubtitle &&
-      !hasProvidedSubtitle &&
       formData?.speakerDiarization === true &&
-      isSpeakerDiarizationStandardTaskContext(formData);
+      supportsSpeakerDiarizationTask(formData);
 
     /** 文件停靠在人工检查点：置待校对、发聚合通知、结束本轮（不占并发槽） */
     const dockAtGate = (gate: 'subtitle' | 'dubbing') => {
@@ -518,10 +519,20 @@ export async function processFile(
         (previousExportSubtitle === undefined ||
           previousExportSubtitle === 'done') &&
         (isSubtitleFile ? true : resume.subtitleProduced) &&
-        (!translationActive || resume.translateDone),
+        (!translationActive || resume.translateDone) &&
+        (!speakerDiarizationStageActive ||
+          (previousSpeakerDiarization === 'done' &&
+            previousProofreadDataReady === 'done' &&
+            file.proofreadDataFile &&
+            fs.existsSync(file.proofreadDataFile))),
     );
     if (skipSubtitleSegment) {
       file.exportSubtitle = 'done';
+      if (speakerDiarizationStageActive) {
+        file.speakerDiarization = 'done';
+        file.speakerDiarizationProgress = 100;
+        file.speakerDiarizationError = previousSpeakerDiarizationError;
+      }
       logMessage(`resume: reuse subtitle segment for ${fileName}`, 'info');
       if (isSubtitleFile) {
         file.srtFile = filePath;
@@ -574,6 +585,21 @@ export async function processFile(
         'info',
       );
       file.srtFile = file.providedSubtitlePath;
+      if (speakerDiarizationStageActive) {
+        event.sender.send('taskFileChange', {
+          ...file,
+          extractAudio: 'loading',
+        });
+        try {
+          await extractAudioFromVideo(event, file);
+        } catch (error) {
+          if (!isTaskCancelledError(error) && !isTaskCancelled()) {
+            (file as any).extractAudio = 'error';
+            onError(event, file, 'extractAudio', error);
+          }
+          throw error;
+        }
+      }
       event.sender.send('taskFileChange', { ...file, extractAudio: 'done' });
       event.sender.send('taskFileChange', {
         ...file,
@@ -865,7 +891,8 @@ export async function processFile(
       await stripSourceSubtitlePunctuation(file.srtFile, fileName);
     }
 
-    // 可选角色分离：仅对标准字幕任务中本轮真实 ASR 的音频执行。放在翻译之后，
+    // Media tasks, including supplied/embedded subtitles, share local role analysis.
+    // 放在翻译之后，
     // 避免角色信息污染翻译提示；独立阶段保持 loading，直到 sidecar 写入完成后
     // 才置 done，从而保证校对入口不会抢先读到旧内容。
     let speakerSegments: SpeakerDiarizationSegment[] | undefined;
@@ -877,13 +904,26 @@ export async function processFile(
       delete file.speakerDiarizationError;
       event.sender.send('taskFileChange', { ...file });
       logMessage(`speaker diarization stage started: ${fileName}`, 'info');
-      const result = await runSpeakerDiarizationStage({
-        file,
-        formData,
-        signal: getTaskContext()?.signal,
-      });
-      speakerSegments = result.segments;
-      speakerDiarizationWarning = result.reason;
+      try {
+        if (!file.tempAudioFile || !fs.existsSync(file.tempAudioFile)) {
+          await extractAudioFromVideo(event, file);
+        }
+        const result = await runSpeakerDiarizationStage({
+          file,
+          formData,
+          signal: getTaskContext()?.signal,
+        });
+        speakerSegments = result.segments;
+        speakerDiarizationWarning = result.reason;
+        if (result.reason)
+          file.speakerDiarizationError = `SPEAKER_DIARIZATION_${result.reason.replace(/-/g, '_').toUpperCase()}`;
+      } catch (error) {
+        if (!isTaskCancelledError(error) && !isTaskCancelled()) {
+          file.speakerDiarization = 'error';
+          onError(event, file, 'speakerDiarization', error);
+        }
+        throw error;
+      }
     }
 
     throwIfTaskCancelled();
@@ -905,6 +945,8 @@ export async function processFile(
         targetLanguage,
         translateContent: formData?.translateContent,
         outputFormat: resolveSubtitleOutputFormats(formData)[0],
+        subtitleLayout: formData.subtitleLayout,
+        subtitleLineWidth: formData.subtitleLineWidth,
         speakerSegments,
         translationFailures: file.translationFailures,
         missedSpeechWarnings: file.missedSpeechWarnings,

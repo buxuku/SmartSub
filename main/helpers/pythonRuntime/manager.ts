@@ -324,6 +324,12 @@ export class PythonRuntimeManager {
             handlers.onProgress(Number(eventParams.percent) || 0);
           } else if (method === 'segment' && handlers?.onSegment) {
             handlers.onSegment(eventParams as unknown as TranscribeSegment);
+          } else if (method === 'review' && handlers?.onReview) {
+            handlers.onReview(
+              eventParams as unknown as Parameters<
+                NonNullable<TranscribeHandlers['onReview']>
+              >[0],
+            );
           }
         },
       },

@@ -1,5 +1,9 @@
 import { createHash } from 'crypto';
-import type { DubbingConfig } from '../../../types/dubbing';
+import { DUBBING_ALIGNMENT_RULES_VERSION } from '../../../types/dubbing';
+import type {
+  DubbingConfig,
+  DubbingSpeakerSettings,
+} from '../../../types/dubbing';
 import {
   TTS_TEXT_RULES_VERSION,
   normalizeTtsLanguage,
@@ -11,16 +15,29 @@ export function dubbingInputKey(
   voice: string,
   text: string,
   language?: string,
+  speakerSettings?: DubbingSpeakerSettings,
+  interval?: { startMs: number; endMs: number },
 ): string {
   return createHash('sha256')
     .update(
       JSON.stringify({
         engine: config.engine,
+        alignment: DUBBING_ALIGNMENT_RULES_VERSION,
+        interval,
         voice,
         text,
         language: normalizeTtsLanguage(language),
         rules: config.engine.kind === 'local' ? TTS_TEXT_RULES_VERSION : 1,
         speed: config.globalSpeed || 1,
+        speaker:
+          speakerSettings &&
+          (speakerSettings.speed !== 1 || speakerSettings.pitch !== 0)
+            ? {
+                speed: speakerSettings.speed,
+                pitch: speakerSettings.pitch,
+                processing: 1,
+              }
+            : undefined,
         quality:
           config.engine.kind === 'local' &&
           config.engine.modelId === 'zipvoice-distill-zh-en'
@@ -34,13 +51,10 @@ export function dubbingInputKey(
 export function dubbingInputNeedsUpdate(
   previous: string | undefined,
   current: string,
-  config: DubbingConfig,
+  _config: DubbingConfig,
 ): boolean {
   if (previous) return previous !== current;
-  // Legacy local audio predates the language-aware frontend. Preserve the WAV,
-  // but require regeneration instead of silently exporting unverifiable audio.
-  return (
-    config.engine.kind === 'local' ||
-    Boolean(normalizeTtsLanguage(config.language))
-  );
+  // Legacy audio may already have been sped up or fitted to implicit silence.
+  // Retain it for playback, but require regeneration under current rules.
+  return true;
 }

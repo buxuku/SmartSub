@@ -6,12 +6,16 @@
  */
 
 import fs from 'fs';
+import { reserveToolboxOutput } from './outputPath';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
 import { logMessage } from '../logger';
 import { formatFfmpegTime } from './videoTrimmer';
-import type { VideoToGifConfig, VideoToGifResult } from '../../../types/toolbox';
+import type {
+  VideoToGifConfig,
+  VideoToGifResult,
+} from '../../../types/toolbox';
 
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
 
@@ -49,7 +53,14 @@ export function executeVideoToGif(
   onProgress?: (percent: number) => void,
 ): Promise<VideoToGifResult> {
   return new Promise((resolve, reject) => {
-    const { videoPath, startSec, endSec, fps = 12, width = 480, outputPath } = config;
+    const {
+      videoPath,
+      startSec,
+      endSec,
+      fps = 12,
+      width = 480,
+      outputPath,
+    } = config;
 
     if (!fs.existsSync(videoPath)) {
       return resolve({
@@ -63,8 +74,9 @@ export function executeVideoToGif(
     const dir = outputPath ? path.dirname(outputPath) : path.dirname(videoPath);
     const baseName = path.basename(videoPath, path.extname(videoPath));
 
-    const targetOutput =
-      outputPath || path.join(dir, `${baseName}_clip.gif`);
+    const targetOutput = reserveToolboxOutput(
+      outputPath || path.join(dir, `${baseName}_clip.gif`),
+    );
 
     const duration = Math.max(0.1, endSec - startSec);
     const startStr = formatFfmpegTime(startSec);
@@ -76,15 +88,23 @@ export function executeVideoToGif(
     const args = [
       '-hide_banner',
       '-y',
-      '-ss', startStr,
-      '-t', durStr,
-      '-i', videoPath,
-      '-vf', filter,
-      '-loop', '0',
+      '-ss',
+      startStr,
+      '-t',
+      durStr,
+      '-i',
+      videoPath,
+      '-vf',
+      filter,
+      '-loop',
+      '0',
       targetOutput,
     ];
 
-    logMessage(`执行 GIF 生成 [${jobId}]: ${ffmpegPath} ${args.join(' ')}`, 'info');
+    logMessage(
+      `执行 GIF 生成 [${jobId}]: ${ffmpegPath} ${args.join(' ')}`,
+      'info',
+    );
 
     const proc = spawn(ffmpegPath, args);
     activeGifProcesses.set(jobId, proc);
@@ -135,6 +155,9 @@ export function executeVideoToGif(
 
     proc.on('error', (err) => {
       activeGifProcesses.delete(jobId);
+      try {
+        fs.unlinkSync(targetOutput);
+      } catch {}
       reject(err);
     });
   });

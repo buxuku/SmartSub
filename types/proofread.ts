@@ -72,6 +72,15 @@ export interface ProofreadTask {
   status: 'in_progress' | 'completed';
 }
 
+/** File completion is authoritative, including after reopening a finished batch. */
+export function deriveProofreadTaskStatus(
+  items: Pick<ProofreadItem, 'status'>[],
+): ProofreadTask['status'] {
+  return items.length > 0 && items.every((item) => item.status === 'completed')
+    ? 'completed'
+    : 'in_progress';
+}
+
 // 兼容旧版本的历史记录（将被迁移）
 export interface ProofreadHistory {
   id: string;

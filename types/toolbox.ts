@@ -146,6 +146,7 @@ export interface SubtitleSyncConfig {
   mode: SubtitleSyncMode;
   offsetMs?: number;
   scaleRatio?: number;
+  scaleFraction?: { numerator: number; denominator: number };
   p1SourceMs?: number;
   p1TargetMs?: number;
   p2SourceMs?: number;

@@ -22,6 +22,7 @@ export interface TranslationConfig {
   provider: Provider;
   translator: TranslatorFunction;
   glossaryEntries?: ResolvedGlossaryEntry[];
+  subtitleTranslationStyle?: 'neutral' | 'conversational';
   signal?: AbortSignal;
   /** 同一任务内按顺序尝试的备用实例；候选实例必须与 provider.type 相同。 */
   fallbackProviders?: Provider[];

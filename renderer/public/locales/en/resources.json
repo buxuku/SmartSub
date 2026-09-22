@@ -10,6 +10,11 @@
   "openModelsFolder": "Open models folder",
   "openFolderFailed": "Failed to open models folder",
   "engines": {
+    "operationFailed": "The engine operation did not complete.",
+    "operationRepair": "Check the network, directory permissions and active tasks, then retry.",
+    "operationRetry": "Retry operation",
+    "statusReadFailed": "Engine or model status could not be read. Check configuration and directory permissions, then retry.",
+    "statusUnknown": "Status unverified",
     "statusAvailable": "Available",
     "status": {
       "ready": "Ready",
@@ -342,6 +347,7 @@
       "commandSaveFailed": "Save failed"
     },
     "cloud": {
+      "configured": "Configured",
       "notConfigured": "Not configured"
     },
     "groups": {

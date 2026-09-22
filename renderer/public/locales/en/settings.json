@@ -89,6 +89,15 @@
   "modelsPath": "Models Path",
   "selectPath": "Browse",
   "saveFailed": "Failed to save settings",
+  "persistence": {
+    "invalidVad": "Enter valid VAD values: threshold and overlap must be between 0 and 1; durations and padding must be nonnegative.",
+    "loading": "Loading settings...",
+    "loadFailed": "Settings could not be loaded. Editing is unavailable.",
+    "pathsFailed": "Storage directory information could not be loaded.",
+    "repair": "Check the configuration file and directory permissions, then retry. Unconfirmed changes remain on this page.",
+    "reload": "Reload",
+    "retry": "Retry operation"
+  },
   "storageLocationTitle": "Storage Location",
   "storageLocationDesc": "Manage where models, engine runtimes, and temporary files are stored — set once, applies everywhere",
   "storageRoot": "Unified Storage Directory",

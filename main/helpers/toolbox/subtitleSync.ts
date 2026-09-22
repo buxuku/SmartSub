@@ -8,11 +8,13 @@
  */
 
 import fs from 'fs';
+import { reserveToolboxOutput, writeToolboxOutput } from './outputPath';
 import path from 'path';
 import {
-  decodeBufferToString,
-  encodeStringToBuffer,
-} from './encodingDetector';
+  FRAMERATE_RATIO_PRESETS,
+  scaleTimestampMs,
+} from '../../../types/framerates';
+import { decodeBufferToString, encodeStringToBuffer } from './encodingDetector';
 import {
   detectSubtitleFormatFromContent,
   parseSubtitleCues,
@@ -29,7 +31,32 @@ export function syncCues(
   cues: SubtitleCue[],
   config: SubtitleSyncConfig,
 ): SubtitleCue[] {
-  const { mode, offsetMs = 0, scaleRatio = 1, p1SourceMs = 0, p1TargetMs = 0, p2SourceMs = 1, p2TargetMs = 1 } = config;
+  const {
+    mode,
+    offsetMs = 0,
+    scaleRatio = 1,
+    p1SourceMs = 0,
+    p1TargetMs = 0,
+    p2SourceMs = 1,
+    p2TargetMs = 1,
+  } = config;
+  if (mode === 'scale' && (!Number.isFinite(scaleRatio) || scaleRatio <= 0))
+    throw new Error('Scale ratio must be positive and finite');
+  const fraction =
+    config.scaleFraction ||
+    FRAMERATE_RATIO_PRESETS.find((preset) => preset.ratio === scaleRatio)
+      ?.fraction;
+  const scale = (ms: number) =>
+    fraction ? scaleTimestampMs(ms, fraction) : Math.round(ms * scaleRatio);
+  if (mode === 'offset' && !Number.isFinite(offsetMs))
+    throw new Error('Offset must be finite');
+  if (
+    mode === 'two-point' &&
+    (![p1SourceMs, p1TargetMs, p2SourceMs, p2TargetMs].every(Number.isFinite) ||
+      p2SourceMs <= p1SourceMs ||
+      p2TargetMs <= p1TargetMs)
+  )
+    throw new Error('Anchor timestamps must be finite and increasing');
 
   return cues.map((cue) => {
     let newStart = cue.startMs;
@@ -39,8 +66,8 @@ export function syncCues(
       newStart = Math.max(0, cue.startMs + offsetMs);
       newEnd = Math.max(newStart + 10, cue.endMs + offsetMs);
     } else if (mode === 'scale') {
-      newStart = Math.max(0, Math.round(cue.startMs * scaleRatio));
-      newEnd = Math.max(newStart + 10, Math.round(cue.endMs * scaleRatio));
+      newStart = Math.max(0, scale(cue.startMs));
+      newEnd = Math.max(newStart + 10, scale(cue.endMs));
     } else if (mode === 'two-point') {
       const srcRange = p2SourceMs - p1SourceMs;
       const tgtRange = p2TargetMs - p1TargetMs;
@@ -94,20 +121,25 @@ export async function executeSubtitleSync(
     }
 
     const updatedCues = syncCues(cues, config);
-    const outputContent = serializeSubtitleCues(updatedCues, format as SubtitleFormat);
+    const outputContent = serializeSubtitleCues(
+      updatedCues,
+      format as SubtitleFormat,
+    );
 
     const dir = outputPath ? path.dirname(outputPath) : path.dirname(filePath);
     const ext = path.extname(filePath);
     const baseName = path.basename(filePath, ext);
 
-    const targetOutput = outputPath || path.join(dir, `${baseName}_synced${ext}`);
+    const targetOutput = reserveToolboxOutput(
+      outputPath || path.join(dir, `${baseName}_synced${ext}`),
+    );
 
     const outBuf = encodeStringToBuffer(
       outputContent,
       detectedEncoding.toLowerCase().includes('bom') ? 'utf-8-bom' : 'utf-8',
     );
 
-    await fs.promises.writeFile(targetOutput, outBuf);
+    await writeToolboxOutput(targetOutput, outBuf);
 
     return {
       success: true,

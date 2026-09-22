@@ -57,6 +57,18 @@ export interface SubtitleStyle {
   marginR: number;
   /** 上下边距 (px) */
   marginV: number;
+  /** Absolute vertical anchor as a percentage of frame height; absent uses alignment/marginV. */
+  positionY?: number;
+  /** Native ASS anchor captured by the canvas; all layers move by the same delta. */
+  positionReferenceY?: number;
+  /** Optional color for the second and following explicit lines. */
+  secondLineColor?: string;
+  highlightColor?: string;
+  /** Literal terms highlighted without modifying the source subtitle file. */
+  highlightTerms?: string[];
+  glowColor?: string;
+  /** Outer glow blur radius in ASS script units. Zero disables it. */
+  glow?: number;
 }
 
 /**
@@ -88,7 +100,7 @@ export interface UserStylePreset {
 /**
  * 输出方式
  * hardcode = 烧录硬字幕（重编码，所有播放器可见）
- * softmux = 封装软字幕（mkv 容器，秒级无损，播放器可开关）
+ * softmux = 封装软字幕（MKV/MP4 容器，视频流复制，播放器可开关）
  */
 export type MergeOutputMode = 'hardcode' | 'softmux';
 
@@ -185,7 +197,7 @@ export const VT_BITRATE_QUALITY_FACTOR: Record<VideoQuality, number> = {
 /**
  * 合成字幕维度：
  * - none = 不处理字幕
- * - soft = 软字幕封装（流复制进 mkv，播放器可开关）
+ * - soft = 软字幕封装（流复制进 MKV/MP4，播放器可开关）
  * - hard = 硬字幕烧录（重编码视频）
  */
 export type ComposeSubtitleMode = 'none' | 'soft' | 'hard';
@@ -223,7 +235,7 @@ export type ComposeAudioSpec =
 /**
  * 统一合成作业配置：一次 ffmpeg 执行完成「字幕 × 音轨」组合。
  * 约束：subtitle=none 且 audio=keep 为无效作业（无处理内容）；
- * soft 或 addTrack 参与时输出容器必须为 mkv（见 composeRequiresMkv）。
+ * soft 支持 MKV/MP4；addTrack 输出容器为 MKV。
  */
 export interface ComposeConfig {
   videoPath: string;
@@ -232,12 +244,12 @@ export interface ComposeConfig {
   audio: ComposeAudioSpec;
 }
 
-/** soft 字幕轨与双音轨均依赖 mkv 容器（mp4 系不支持 srt 字幕流/多轨语义受限） */
+/** 双音轨工作流保持 MKV 容器约束，MP4 软字幕使用 mov_text。 */
 export function composeRequiresMkv(config: {
   subtitle: { mode: ComposeSubtitleMode };
   audio: { mode: ComposeAudioMode };
 }): boolean {
-  return config.subtitle.mode === 'soft' || config.audio.mode === 'addTrack';
+  return config.audio.mode === 'addTrack';
 }
 
 /** 合成作业来源（队列 UI 展示与取消定位用） */
@@ -253,6 +265,7 @@ export type ComposeJobStatus =
 /** 队列快照中的作业视图（渲染层展示排队状态 + 页面重开时重连上下文） */
 export interface ComposeJobView {
   id: string;
+  requestId?: string;
   status: ComposeJobStatus;
   source: ComposeJobSource;
   outputPath: string;
@@ -262,6 +275,9 @@ export interface ComposeJobView {
   videoPath: string;
   subtitlePath?: string;
   subtitleMode: ComposeSubtitleMode;
+  style?: SubtitleStyle;
+  videoQuality?: VideoQuality;
+  encoderMode?: EncoderMode;
   audioTrack?: {
     mode: 'replace' | 'mix' | 'addTrack';
     trackPath: string;
@@ -272,6 +288,8 @@ export interface ComposeJobView {
  * 合并配置
  */
 export interface MergeConfig {
+  /** Renderer request identity, echoed with the assigned queue job. */
+  requestId?: string;
   /** 视频文件路径 */
   videoPath: string;
   /** 字幕文件路径 */
@@ -334,6 +352,8 @@ export interface MergeProgress {
  * 视频信息
  */
 export interface VideoInfo {
+  /** Undefined only for older cached metadata. */
+  hasAudio?: boolean;
   /** 视频路径 */
   path: string;
   /** 文件名 */

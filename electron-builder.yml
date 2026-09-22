@@ -25,6 +25,9 @@ mac:
     - provider: github
       channel: latest
   extraResources:
+    - from: ./extraResources/python-review/
+      to: ./extraResources/python-review/
+      filter: ['*.py']
     - from: ./extraResources/addons/
       to: ./extraResources/addons/
       filter:
@@ -41,6 +44,9 @@ win:
   target:
     - nsis
   extraResources:
+    - from: ./extraResources/python-review/
+      to: ./extraResources/python-review/
+      filter: ['*.py']
     - from: ./extraResources/addons/
       to: ./extraResources/addons/
       filter:
@@ -69,6 +75,9 @@ linux:
     - provider: github
       channel: latest
   extraResources:
+    - from: ./extraResources/python-review/
+      to: ./extraResources/python-review/
+      filter: ['*.py']
     - from: ./extraResources/addons/
       to: ./extraResources/addons/
       filter:

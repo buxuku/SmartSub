@@ -9,7 +9,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 import path from 'path';
-import { app, protocol } from 'electron';
+import { app, dialog, protocol } from 'electron';
 import serve from 'electron-serve';
 import { createWindow } from './helpers/create-window';
 import { setupIpcHandlers } from './helpers/ipcHandlers';
@@ -19,14 +19,18 @@ import { setupStoreHandlers, store, logMessage } from './helpers/storeManager';
 import { setupTaskManager } from './helpers/taskManager';
 import {
   initializeWorkItemStore,
-  setupWorkItemStoreLifecycle,
+  flushWorkItemStore,
 } from './helpers/workItemStore';
 import { setupWorkItemHandlers } from './helpers/workItemHandlers';
 import { setupRecipeHandlers } from './helpers/ipcRecipeHandlers';
 import { setupGlossaryHandlers } from './helpers/ipcGlossaryHandlers';
 import { setupAutoUpdater } from './helpers/updater';
 import { setupAppMenu } from './helpers/menu';
-import { setupWindowCloseBehavior, markQuitting } from './helpers/windowClose';
+import {
+  setupWindowCloseBehavior,
+  markQuitting,
+  confirmUnsavedWindows,
+} from './helpers/windowClose';
 import { setupParameterHandlers } from './helpers/ipcParameterHandlers';
 import { setupProofreadHandlers } from './helpers/ipcProofreadHandlers';
 import { setupSubtitleMergeHandlers } from './helpers/ipcSubtitleMergeHandlers';
@@ -69,6 +73,7 @@ import {
 } from './helpers/cudaDeviceSelection';
 import { sanitizeSelectedCudaDevice } from '../types/gpuDevice';
 import { cleanupOldLogs } from './helpers/logStorage';
+import { cancelProofreadWaveforms } from './helpers/proofreadWaveform';
 import {
   getHiddenNativeTitleBarOptions,
   setupWindowChromeHandlers,
@@ -106,6 +111,21 @@ if (isProd) {
 
 let runtimeShutdownDone = false;
 app.on('before-quit', (event) => {
+  if (!runtimeShutdownDone && !confirmUnsavedWindows()) {
+    event.preventDefault();
+    return;
+  }
+  try {
+    flushWorkItemStore();
+  } catch (error) {
+    event.preventDefault();
+    const zh = store.get('settings')?.language === 'zh';
+    dialog.showErrorBox(
+      zh ? '任务状态保存失败' : 'Task state could not be saved',
+      `${zh ? '退出已取消。请检查磁盘空间和目录权限后重试。' : 'Quit was cancelled. Check disk space and directory permissions, then retry.'}\n${String(error)}`,
+    );
+    return;
+  }
   // 真退出标记集中在 windowClose 模块，close 监听据此放行
   markQuitting();
   if (!runtimeShutdownDone) {
@@ -114,6 +134,7 @@ app.on('before-quit', (event) => {
     // 同步终止下载器子进程并清理 cookie 临时副本（否则子进程变孤儿继续下载）
     shutdownVideoDownloads();
     shutdownToolboxProcesses();
+    cancelProofreadWaveforms();
     void shutdownPythonRuntime().finally(() => {
       app.exit(0);
     });
@@ -227,27 +248,23 @@ app.on('before-quit', (event) => {
   setupWindowCloseBehavior(mainWindow);
   setupWindowChromeHandlers(mainWindow);
 
-  if (isProd) {
-    await mainWindow.loadURL(`app://./${userLanguage}/home/`);
-  } else {
-    const port = process.argv[2];
-    await mainWindow.loadURL(`http://localhost:${port}/${userLanguage}/home/`);
-    mainWindow.webContents.openDevTools();
-  }
+  const rendererUrl = isProd
+    ? `app://./${userLanguage}/home/`
+    : `http://localhost:${process.argv[2]}/${userLanguage}/home/`;
 
+  // Register every renderer dependency before the first page can invoke IPC.
   setupAppMenu(mainWindow);
   setupIpcHandlers(mainWindow);
   setupNetworkHandlers();
   setupTaskProcessor(mainWindow);
   setupSystemInfoManager(mainWindow);
   initializeWorkItemStore();
-  setupWorkItemStoreLifecycle();
   setupWorkItemHandlers();
   setupRecipeHandlers();
   setupGlossaryHandlers(mainWindow);
   setupTaskManager();
   setupAutoUpdater(mainWindow);
-  setupSubtitleMergeHandlers(mainWindow);
+  setupSubtitleMergeHandlers(mainWindow, rendererUrl);
   setupDubbingHandlers(mainWindow);
   setupPipelineHandlers(mainWindow);
   setupVoiceCloneHandlers(mainWindow);
@@ -256,6 +273,8 @@ app.on('before-quit', (event) => {
   setMainWindowForAddon(mainWindow);
   registerEngineIpcHandlers();
   setMainWindowForEngine(mainWindow);
+  await mainWindow.loadURL(rendererUrl);
+  if (!isProd) mainWindow.webContents.openDevTools();
   // 清理三层架构改造前遗留的旧 py-engine 目录/状态文件（幂等，失败静默）。
   cleanupLegacyPyEngine();
   // 启动后每日一次的节流静默检查 faster-whisper 运行时更新（非阻塞，失败静默）。

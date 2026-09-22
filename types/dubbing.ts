@@ -12,7 +12,7 @@ export type DubbingCueStatus =
   | 'synthesizing' // 合成中
   | 'done' // 完成（落在槽位内）
   | 'overlong' // 过长警告（所需倍率超红线，待人工处理）
-  | 'accepted' // 过长但用户已确认「接受变速」
+  | 'accepted' // 用户已显式借用后续空白
   | 'failed'; // 合成失败，可重试
 
 /** 角色明确选择“使用全局默认音色”，与尚未配置的 undefined 区分。 */
@@ -27,6 +27,43 @@ export interface DubbingSpeaker {
 }
 
 export type DubbingSpeakerVoiceMap = Record<string, string>;
+
+export interface DubbingSpeakerSettings {
+  /** Role-local tempo multiplier, independent of voice overrides. */
+  speed: number;
+  /** Semitones; duration is preserved when changing pitch alone. */
+  pitch: number;
+}
+export type DubbingSpeakerSettingsMap = Record<string, DubbingSpeakerSettings>;
+
+export function assertDubbingSpeakerSettings(
+  value: unknown,
+): asserts value is DubbingSpeakerSettings {
+  const settings = value as DubbingSpeakerSettings | null;
+  if (
+    !settings ||
+    !Number.isFinite(settings.speed) ||
+    settings.speed < 0.5 ||
+    settings.speed > 2 ||
+    !Number.isFinite(settings.pitch) ||
+    settings.pitch < -12 ||
+    settings.pitch > 12
+  )
+    throw new Error(
+      'Invalid speaker settings: speed must be 0.5-2 and pitch -12-12 semitones',
+    );
+}
+
+export function resolveDubbingSpeakerSettings(
+  cue: DubbingSpeakerCueLike,
+  settings: DubbingSpeakerSettingsMap = {},
+): DubbingSpeakerSettings {
+  const id = primaryDubbingSpeakerId(cue);
+  const value = id ? settings[String(id)] : undefined;
+  if (!value) return { speed: 1, pitch: 0 };
+  assertDubbingSpeakerSettings(value);
+  return value;
+}
 
 export interface DubbingSpeakerCueLike {
   speakerIds?: readonly number[];
@@ -208,7 +245,7 @@ export interface DubbingConfig {
   output: DubbingOutputMode;
   /** output = 'audioOnly' 时生效。 */
   audioFormat?: DubbingAudioFormat;
-  /** 兜底后仍超长的行截断还是顺延（默认截断）。 */
+  /** Legacy plan preference; unresolved overlong cues always block export. */
   overflow?: DubbingOverflowMode;
   /** 重叠 cue 消解策略（默认 shift 顺延）。 */
   overlapMode?: DubbingOverlapMode;
@@ -216,12 +253,58 @@ export interface DubbingConfig {
   exportShiftedSubtitle?: boolean;
 }
 
+export function assertDubbingConfig(
+  value: unknown,
+): asserts value is DubbingConfig {
+  const config = value as DubbingConfig | null;
+  const engine = config?.engine;
+  const id =
+    engine?.kind === 'local'
+      ? engine.modelId
+      : engine?.kind === 'cloud'
+        ? engine.providerId
+        : undefined;
+  if (
+    !config ||
+    typeof config !== 'object' ||
+    Array.isArray(config) ||
+    typeof id !== 'string' ||
+    !id.trim() ||
+    typeof config.voice !== 'string' ||
+    !config.voice.trim() ||
+    !Number.isFinite(config.globalSpeed) ||
+    config.globalSpeed < 0.5 ||
+    config.globalSpeed > 2 ||
+    !['mute', 'duck'].includes(config.background) ||
+    !['audioOnly', 'replaceTrack', 'mixTrack', 'addTrack'].includes(
+      config.output,
+    ) ||
+    (config.language !== undefined && typeof config.language !== 'string') ||
+    (config.cloneQuality !== undefined &&
+      !['standard', 'high'].includes(config.cloneQuality)) ||
+    (config.localConcurrency !== undefined &&
+      (!Number.isInteger(config.localConcurrency) ||
+        config.localConcurrency < 1 ||
+        config.localConcurrency > 3)) ||
+    (config.audioFormat !== undefined &&
+      !['wav', 'mp3'].includes(config.audioFormat)) ||
+    (config.overflow !== undefined &&
+      !['truncate', 'shift'].includes(config.overflow)) ||
+    (config.overlapMode !== undefined &&
+      !['shift', 'mix'].includes(config.overlapMode)) ||
+    (config.exportShiftedSubtitle !== undefined &&
+      typeof config.exportShiftedSubtitle !== 'boolean')
+  )
+    throw new Error('Invalid dubbing configuration');
+}
+
 // ── 对齐引擎（alignment.ts 纯函数的输入输出合同）────────────────────────────
 
-/** ratio 决策树阈值（design 定稿：6.3 单条字幕的决策树）。 */
+/** Roadmap 3.4: only measured excess <=15% may be compressed automatically. */
 export const ALIGN_PRE_SPEED_THRESHOLD = 1.0; // ≤1.0 原速
-export const ALIGN_ONESHOT_THRESHOLD = 1.15; // ≤1.15 预控制一次到位
-export const ALIGN_OVERLONG_THRESHOLD = 1.5; // >1.5 过长行进人工清单
+export const ALIGN_ONESHOT_THRESHOLD = 1.15;
+export const ALIGN_OVERLONG_THRESHOLD = 1.15;
+export const DUBBING_ALIGNMENT_RULES_VERSION = 2;
 
 /** 行级变速动作。 */
 export type AlignmentSpeedAction =
@@ -236,7 +319,7 @@ export interface AlignmentPlanItem {
   targetStartMs: number;
   /** 该条配音在音轨上的实际占用时长（ms，截断后）。 */
   durationMs: number;
-  /** 可用槽位（ms，含间隙借用：本条 start 到下条 start）。 */
+  /** Original interval plus explicitly approved following silence. */
   slotMs: number;
   /** 预估（或实测）时长 / 可用槽位。 */
   ratio: number;
@@ -301,6 +384,10 @@ export interface DubbingCueView {
   overlap: boolean;
   /** 实测最终时长（ms）。 */
   synthesizedMs?: number;
+  /** Duration after user speed/pitch, before automatic alignment. */
+  originalMeasuredMs?: number;
+  /** Explicitly borrowed following silence; never shifts other cues. */
+  borrowedMs?: number;
   /** 对齐层施加的综合额外倍率（不含整体语速）。 */
   appliedSpeed?: number;
   /** 过长行所需综合倍率。 */
@@ -312,6 +399,16 @@ export interface DubbingCueView {
 
 /** dubbing:loadSubtitle 返回。 */
 export interface DubbingSessionView {
+  operationRecovery?: {
+    requestId: string;
+    channel: string;
+    status: string;
+    result?: { success: boolean; data?: DubbingExportView; error?: string };
+    persistenceError?: string;
+  };
+  /** Present only for an editor that acquired this session, never a read-only snapshot. */
+  leaseId?: string;
+  workItemId?: string;
   sessionId: string;
   subtitlePath: string;
   videoPath?: string;
@@ -322,6 +419,8 @@ export interface DubbingSessionView {
   cues: DubbingCueView[];
   speakers: DubbingSpeaker[];
   speakerVoiceMap: DubbingSpeakerVoiceMap;
+  speakerSettings?: DubbingSpeakerSettingsMap;
+  speakerSettingsConflicts?: Record<string, DubbingSpeakerSettings[]>;
   /** 角色合并/重新归属后存在多个旧映射，必须由用户重新确认。 */
   speakerVoiceConflicts?: Record<string, string[]>;
   /** 批量合成正在后台进行（回开重连时渲染层据此恢复运行态） */
@@ -330,6 +429,7 @@ export interface DubbingSessionView {
 
 /** dubbing:progress 事件载荷（含可选行快照）。 */
 export interface DubbingProgressPayload extends DubbingProgressEvent {
+  leaseId: string;
   cue?: DubbingCueView;
 }
 
@@ -367,6 +467,8 @@ export interface PersistedDubbingCue {
   status: DubbingCueStatus;
   overlap: boolean;
   finalMs?: number;
+  originalMeasuredMs?: number;
+  borrowedMs?: number;
   appliedSpeed?: number;
   requiredFactor?: number;
   /** 合成产物文件名（相对会话目录；恢复时缺失该文件则该行降级待合成） */
@@ -377,6 +479,9 @@ export interface PersistedDubbingCue {
 
 /** 会话元数据文件（<sessionsRoot>/<sessionId>/session.json）。 */
 export interface DubbingSessionMeta {
+  /** Creation was not yet acknowledged by a durable task reference. */
+  pendingTaskLink?: boolean;
+  hasSavedTextEdits?: boolean;
   version: 1;
   sessionId: string;
   subtitlePath: string;
@@ -387,10 +492,15 @@ export interface DubbingSessionMeta {
   updatedAt: number;
   /** 最近一次使用的配音配置（恢复时回填工作台） */
   configSnapshot?: DubbingConfig;
+  /** Last task settings, used to merge explicit task changes with workbench edits. */
+  pipelineConfigSnapshot?: DubbingConfig;
   subtitleLanguage?: string;
+  detectedLanguage?: string;
   proofreadDataFile?: string;
   speakers?: DubbingSpeaker[];
   speakerVoiceMap?: DubbingSpeakerVoiceMap;
+  speakerSettings?: DubbingSpeakerSettingsMap;
+  speakerSettingsConflicts?: Record<string, DubbingSpeakerSettings[]>;
   speakerVoiceConflicts?: Record<string, string[]>;
   /**
    * 运行期语速校准累计（Σ预估/Σ实测）。可选：旧 session.json 无此字段，

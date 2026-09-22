@@ -285,7 +285,7 @@ export async function handleAIBatchTranslation(
             : '\n\n上一次响应存在未翻译或无法解析。请只返回一个 JSON 对象，键必须是输入字幕 ID，值必须是目标语言翻译结果且不能直接复制原文；不要返回 markdown、解释、注释或思考过程。';
         }
 
-        const systemPrompt = renderGlossarySystemPrompt(
+        let systemPrompt = renderGlossarySystemPrompt(
           provider.systemPrompt || defaultSystemPrompt,
           {
             sourceLanguage: sourceLanguageName,
@@ -294,6 +294,10 @@ export async function handleAIBatchTranslation(
           },
           glossaryBlock,
         );
+        if (config.subtitleTranslationStyle === 'conversational') {
+          systemPrompt +=
+            "\n\n<subtitle-style>Use natural, concise spoken dialogue in the target language. Preserve emotional interjections, hesitation, emphasis, humor and each character's tone. Do not flatten emotional speech into formal prose or invent meaning. Required glossary spellings and the output JSON schema take precedence; keep every subtitle ID and its source echo unchanged.</subtitle-style>";
+        }
 
         // 更新配置，保持原有的结构化输出设置
         const translationConfig = {

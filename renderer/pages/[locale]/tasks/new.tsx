@@ -3,14 +3,18 @@
  * `?recipe=<id>` 按配方预填目标/配置/把关（启动台配方卡入口）；
  * `?preset=full` 为旧入口兼容，预勾全部目标产物。
  */
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { getStaticPaths, makeStaticProperties } from '../../../lib/get-static';
 import TaskWizard from '@/components/tasks/wizard/TaskWizard';
 
 export default function NewTaskPage() {
   const router = useRouter();
-  if (!router.isReady) return null;
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  if (!mounted || !router.isReady) return null;
   return <TaskWizard />;
 }
 

@@ -22,6 +22,7 @@ import {
   resplitSubtitleCues,
   tokensToTriples,
   visualWidth,
+  getMinDisplayDurationOptions,
 } from '../subtitleSegmentation';
 import type { AlignedCue, RefineWord } from './types';
 
@@ -30,6 +31,7 @@ export interface GuardOptions {
   cueOptions?: GroupTokenCuesOptions;
   /** 任务级短碎片合并参数（与引擎侧 getMergeShortCueOptions 同源）。 */
   mergeOptions?: MergeShortCuesOptions;
+  preserveSpeechPauses?: boolean;
 }
 
 const DEFAULT_MAX_WIDTH = 40;
@@ -67,17 +69,30 @@ export function applySegmentationGuards(
     if (!text) continue;
     const overWidth = Number.isFinite(maxWidth) && visualWidth(text) > maxWidth;
     const overDuration = cueDurationSeconds(item.cue) > maxDuration;
-    if (!overWidth && !overDuration) {
+    const crossesPause =
+      options.preserveSpeechPauses === true &&
+      item.words?.some((word, index, words) => {
+        const previous = words[index - 1];
+        return (
+          previous?.end != null &&
+          word.start != null &&
+          word.start - previous.end >
+            (options.cueOptions?.maxGapSeconds ?? 0.5) * 1000
+        );
+      });
+    if (!overWidth && !overDuration && !crossesPause) {
       resplit.push(item.cue);
       continue;
     }
 
     if (item.words && item.words.length > 0) {
-      // 词级重切：关闭 gap 切分（LLM 的语义组合允许横跨停顿），
-      // 宽度/时长硬上限与标点回溯照常生效，时间仍为真实词时间。
+      // Keep semantic grouping across gaps unless the task explicitly preserves
+      // pauses. Width/duration cuts always retain authentic word timestamps.
       const regrouped = groupTokenCues(wordsToTokenTriples(item.words), {
         ...options.cueOptions,
-        maxGapSeconds: Number.POSITIVE_INFINITY,
+        maxGapSeconds: options.preserveSpeechPauses
+          ? (options.cueOptions?.maxGapSeconds ?? 0.5)
+          : Number.POSITIVE_INFINITY,
       });
       if (regrouped.length > 0) {
         resplit.push(...regrouped);
@@ -85,15 +100,24 @@ export function applySegmentationGuards(
       }
     }
     // 无词级支撑（近似模式/防御分支）：文本级比例插值兜底。
-    if (Number.isFinite(maxWidth)) {
-      resplit.push(
-        ...resplitSubtitleCues([item.cue], { maxSubtitleChars: maxWidth }),
-      );
-    } else {
-      resplit.push(item.cue);
-    }
+    resplit.push(
+      ...resplitSubtitleCues([item.cue], {
+        maxSubtitleChars: Number.isFinite(maxWidth) ? maxWidth : -1,
+        subtitleMaxDuration: maxDuration,
+      }),
+    );
   }
 
-  const merged = mergeShortCues(resplit, options.mergeOptions);
-  return enforceMinDisplayDuration(merged);
+  const merged = mergeShortCues(resplit, {
+    ...options.mergeOptions,
+    maxDurationSeconds: maxDuration,
+    ...(options.preserveSpeechPauses ? { maxJoinGapSeconds: 0 } : {}),
+  });
+  return enforceMinDisplayDuration(
+    merged,
+    getMinDisplayDurationOptions({
+      preserveSpeechPauses: options.preserveSpeechPauses,
+      subtitleMaxDuration: maxDuration,
+    }),
+  );
 }

@@ -1,6 +1,6 @@
 import { isSubtitleFile } from '../../lib/utils';
 import type { TaskTypeDef } from '../../lib/taskTypes';
-import { isSpeakerDiarizationStandardTaskContext } from '../../../types/speakerDiarization';
+import { supportsSpeakerDiarizationTask } from '../../../types/speakerDiarization';
 
 export type StageKey =
   | 'extractAudio'
@@ -33,6 +33,13 @@ export function getFileStages(
   // 配对模式（媒体携带既有字幕）：跳过提取/听写，不在轨道上展示
   const hasProvidedSubtitle = Boolean(file?.providedSubtitlePath);
   const stages: StageDef[] = [];
+  if (
+    !subtitleInput &&
+    hasProvidedSubtitle &&
+    formData?.speakerDiarization === true
+  ) {
+    stages.push({ key: 'extractAudio', labelKey: 'stage.extract' });
+  }
   if (!subtitleInput && !hasProvidedSubtitle) {
     stages.push({ key: 'extractAudio', labelKey: 'stage.extract' });
     stages.push({ key: 'extractSubtitle', labelKey: 'stage.transcribe' });
@@ -68,8 +75,7 @@ export function getFileStages(
   // 角色分离是标准转写任务的独立后处理阶段：翻译之后、任何附加阶段之前。
   if (
     !subtitleInput &&
-    !hasProvidedSubtitle &&
-    isSpeakerDiarizationStandardTaskContext(formData) &&
+    supportsSpeakerDiarizationTask(formData) &&
     (formData?.speakerDiarization === true ||
       file?.speakerDiarization !== undefined)
   ) {

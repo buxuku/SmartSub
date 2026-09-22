@@ -57,6 +57,7 @@
     "array": "Array"
   },
   "table": {
+    "emptyValue": "Enter a parameter value before saving.",
     "keyColumn": "Key",
     "valueColumn": "Value",
     "typeColumn": "Type",
@@ -85,10 +86,13 @@
     "saving": "Saving...",
     "saved": "Saved",
     "error": "Error",
+    "loadFailed": "Could not read parameter configuration. Editing is disabled until the read succeeds.",
+    "saveFailed": "Parameter changes have not been saved. Retry before leaving.",
+    "retry": "Retry",
+    "details": "Error details",
     "upToDate": "Up to date",
     "unsavedChanges": "Unsaved changes",
-    "savedAutomatically": "Saved automatically",
-    "saveFailed": "Save failed"
+    "savedAutomatically": "Saved automatically"
   },
   "summary": {
     "title": "Configuration Summary",

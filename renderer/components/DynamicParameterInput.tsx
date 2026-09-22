@@ -34,6 +34,7 @@ import {
   ValidationError,
 } from '../../types';
 import { cn } from 'lib/utils';
+import { parseDraftValue } from '../lib/parameterValueUtils';
 
 export interface DynamicParameterInputProps {
   /** Parameter key identifier */
@@ -74,6 +75,7 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [isJsonValid, setIsJsonValid] = useState(true);
   const [touched, setTouched] = useState(false);
+  const [jsonDraft, setJsonDraft] = useState<string | null>(null);
 
   // Determine the parameter type
   const parameterType = definition?.type || 'string';
@@ -82,35 +84,42 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
 
   // Clear validation state when value changes from parent (fixes stale validation errors)
   useEffect(() => {
-    if (parameterType === 'array') {
+    if (parameterType === 'array' || parameterType === 'object') {
       setJsonError(null);
       setIsJsonValid(true);
+      setJsonDraft(null);
     }
   }, [value, parameterType]);
 
   // Validate JSON input for array types
-  const validateJson = useCallback((jsonString: string): boolean => {
-    if (!jsonString.trim()) {
-      setJsonError(null);
-      setIsJsonValid(true);
-      return true;
-    }
+  const validateJson = useCallback(
+    (jsonString: string): boolean => {
+      if (!jsonString.trim()) {
+        setJsonError(null);
+        setIsJsonValid(true);
+        return true;
+      }
 
-    try {
-      JSON.parse(jsonString);
-      setJsonError(null);
-      setIsJsonValid(true);
-      return true;
-    } catch (error) {
-      setJsonError(
-        t('validation.invalidJson', {
-          message: error instanceof Error ? error.message : 'Unknown error',
-        }),
-      );
-      setIsJsonValid(false);
-      return false;
-    }
-  }, []);
+      try {
+        parseDraftValue(
+          jsonString,
+          parameterType === 'object' ? 'object' : 'array',
+        );
+        setJsonError(null);
+        setIsJsonValid(true);
+        return true;
+      } catch (error) {
+        setJsonError(
+          t('validation.invalidJson', {
+            message: error instanceof Error ? error.message : 'Unknown error',
+          }),
+        );
+        setIsJsonValid(false);
+        return false;
+      }
+    },
+    [parameterType, t],
+  );
 
   // Handle string input changes
   const handleStringChange = useCallback(
@@ -169,9 +178,14 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
   const handleJsonChange = useCallback(
     (jsonString: string) => {
       setTouched(true);
+      setJsonDraft(jsonString);
       if (validateJson(jsonString)) {
         try {
-          const parsedValue = jsonString.trim() ? JSON.parse(jsonString) : [];
+          const parsedValue = jsonString.trim()
+            ? JSON.parse(jsonString)
+            : parameterType === 'object'
+              ? {}
+              : [];
           onChange(parameterKey, parsedValue);
         } catch {
           // Keep the current value if JSON is invalid
@@ -358,6 +372,16 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
           </div>
         );
 
+      case 'object':
+        return (
+          <Textarea
+            value={jsonDraft ?? formatJsonValue(value)}
+            onChange={(e) => handleJsonChange(e.target.value)}
+            disabled={disabled}
+            className={cn(baseClassName, 'font-mono text-sm min-h-[100px]')}
+            rows={5}
+          />
+        );
       case 'array':
         if (Array.isArray(value)) {
           return (
@@ -412,7 +436,7 @@ export const DynamicParameterInput: React.FC<DynamicParameterInputProps> = ({
               <span>{t('arrayEditor.jsonArrayEditor')}</span>
             </div>
             <Textarea
-              value={formatJsonValue(value)}
+              value={jsonDraft ?? formatJsonValue(value)}
               onChange={(e) => handleJsonChange(e.target.value)}
               placeholder={placeholder || t('placeholders.jsonArray')}
               disabled={disabled}

@@ -7,16 +7,13 @@ import { ipcMain } from 'electron';
 import { randomUUID } from 'crypto';
 import { store, logMessage } from './storeManager';
 import type { TaskRecipe } from '../../types/recipe';
-import { stripSpeakerDiarizationConfig } from '../../types/speakerDiarization';
 
 function readRecipes(): TaskRecipe[] {
   const list = store.get('taskRecipes');
   return Array.isArray(list)
     ? list.map((recipe) => ({
         ...recipe,
-        config: recipe.config
-          ? stripSpeakerDiarizationConfig(recipe.config)
-          : undefined,
+        config: recipe.config ? structuredClone(recipe.config) : undefined,
       }))
     : [];
 }
@@ -33,9 +30,7 @@ export function setupRecipeHandlers(): void {
       name,
       goals: recipe.goals,
       accepts: recipe.accepts,
-      config: recipe.config
-        ? stripSpeakerDiarizationConfig(recipe.config)
-        : undefined,
+      config: recipe.config ? structuredClone(recipe.config) : undefined,
       createdAt: Date.now(),
     };
     const index = list.findIndex((r) => r.id === saved.id);

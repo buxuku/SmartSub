@@ -1,8 +1,41 @@
 {
   "title": "您想做什么？",
-  "subtitle": "选择一个任务开始，文件也可以直接拖到卡片上",
+  "subtitle": "选择处理流程，或直接导入素材",
   "startPanel": {
     "title": "开始创作"
+  },
+  "globalDrop": {
+    "entryTitle": "拖入启动台，开始创作",
+    "entryDesc": "音视频、字幕、文稿 · 整个启动台内容区均可接收",
+    "selectFiles": "选择文件",
+    "title": "松手导入素材",
+    "desc": "素材将暂存为草稿，接下来选择处理流程",
+    "recipeTitle": "松手导入至「{{name}}」",
+    "recipeDesc": "素材将使用此流程，缺少配置时先完成设置",
+    "importing": "正在导入素材…",
+    "unsupported": "未找到支持的音视频、字幕或文稿文件",
+    "subtitleRequired": "此流程仅接收字幕文件。音视频请拖到启动台空白处或转写任务卡上。",
+    "failed": "导入失败，请重试",
+    "existingTitle": "已有未完成的任务草稿",
+    "existingDescription": "追加素材将保留原草稿的目标、配方和全部设置。新建任务将替换原草稿。",
+    "unreadableDescription": "原草稿无法读取，已保留原始数据。取消后可重试；选择替换将明确放弃原草稿并新建任务。",
+    "replaceDraft": "替换草稿并新建",
+    "appendDraft": "追加到原草稿",
+    "storageFailed": "草稿未能保存到磁盘，暂未开始安装或跳转。请重试；已有草稿不会被静默清除。",
+    "retrySave": "重试保存"
+  },
+  "quickDownload": {
+    "title": "需要语音识别模型",
+    "desc": "已保存 {{count}} 个文件及任务设置。需安装 Whisper Base 模型（约 140MB，快速网络下约 15 秒，实际耗时取决于网络）。",
+    "downloading": "正在下载模型 ({{progress}}%)…",
+    "startDownload": "一键安装并继续",
+    "installComplete": "模型安装完成，正在进入创作任务…",
+    "cancel": "暂不下载",
+    "source": "下载源",
+    "mirror": "国内镜像",
+    "busy": "另一个模型正在下载，请稍后重试。",
+    "failed": "安装失败，请检查网络后重试或切换下载源。草稿已保留。",
+    "notInstalled": "尚未检测到 Base 模型安装成功，请重试。草稿已保留。"
   },
   "recipes": {
     "custom": "自定义流程",
@@ -14,9 +47,8 @@
     "cancel": "取消",
     "confirmDelete": "删除"
   },
-  "tools": {
-    "title": "工具",
-    "panelTitle": "工具箱",
+  "quickLinks": {
+    "title": "快捷入口",
     "downloadHint": "粘贴链接批量下载在线视频",
     "proofreadHint": "逐句检查修改，AI 润色",
     "mergeHint": "把字幕烧录进画面",
@@ -31,12 +63,23 @@
     "statRunning": "{{count}} 个进行中",
     "statDone": "{{count}} 个已完成"
   },
-  "tips": {
+  "quickStart": {
     "title": "快速上手",
-    "search": "全局搜索功能与任务，随处可唤起",
-    "drop": "把文件直接拖到任务卡上，立即开始",
-    "shortcuts": "查看全部键盘快捷键",
-    "settings": "打开设置"
+    "intro": "第一次使用？先试试生成一份原文字幕。",
+    "import": {
+      "title": "导入一段音视频",
+      "description": "点击下方按钮，导入一段简短、说话清晰的视频或音频。"
+    },
+    "configure": {
+      "title": "确认语言和模型",
+      "description": "选择音视频的语言和语音模型，其他设置先用默认值。",
+      "models": "还没有模型？前往安装或配置"
+    },
+    "result": {
+      "title": "开始处理，查看字幕",
+      "description": "点击开始；完成后点「打开文件夹」找到字幕，或点「去校对」检查错字。"
+    },
+    "start": "开始生成字幕"
   },
   "env": {
     "title": "环境就绪度",
@@ -65,7 +108,7 @@
   },
   "card": {
     "pipeline": "视频 → 配音成片",
-    "pipelineDesc": "听写、翻译、配音、合成一条龙，全自动出成品视频",
+    "pipelineDesc": "听写、翻译、配音、合成一条龙，默认字幕阶段人工把关（可选全自动直通）",
     "generateTranslate": "视频 → 双语字幕",
     "generateTranslateDesc": "转写人声并翻译成目标语言，一步到位",
     "generate": "视频 → 原文字幕",
@@ -83,6 +126,7 @@
   },
   "fromDownload": "来自下载",
   "needsModelBadge": "需要模型",
+  "qualityGateBadge": "质量把关 · 停靠校对",
   "banner": {
     "noModel": "还没有语音模型——它负责把人声转写成文字，下载一个就能开始",
     "noModelCta": "下载推荐模型",
@@ -95,11 +139,13 @@
   "dropHint": "松手导入文件",
   "fileCount": "{{count}} 个文件",
   "recent": {
-    "footerHint": "把文件拖到上方任务卡即可开始新任务",
+    "footerHint": "拖入启动台即可导入素材，拖到任务卡可使用指定流程",
     "rename": "重命名",
     "delete": "删除",
     "deleteTitle": "删除这条任务记录？",
-    "deleteDesc": "将删除「{{name}}」的任务记录，磁盘上的文件不受影响。",
+    "deleteDesc": "将删除「{{name}}」的任务记录及其内部配音音频、编辑和恢复草稿。源文件与已导出文件保留。",
+    "deleteFailed": "删除未完成。请关闭该项目的配音窗口、停止任务后重试，并检查磁盘权限。",
+    "errorDetails": "错误详情",
     "cancel": "取消",
     "viewAll": "查看全部（{{count}}）",
     "viewAllPage": "查看全部（{{count}}）",
@@ -123,7 +169,7 @@
     "loading": "加载中…",
     "clearAll": "清除全部",
     "clearAllTitle": "清除全部任务记录？",
-    "clearAllDesc": "将删除 {{count}} 条任务记录，磁盘上的文件不受影响。",
+    "clearAllDesc": "将删除 {{count}} 条任务记录及其内部配音音频、编辑和恢复草稿。源文件与已导出文件保留。",
     "clearAllConfirm": "确认清除",
     "emptyTitle": "暂无任务记录",
     "emptyHint": "返回启动台选择任务开始，处理完成后会出现在这里",
@@ -136,5 +182,5 @@
     "error": "出错",
     "review": "待校对"
   },
-  "noRecentTasksHint": "完成的任务会出现在这里，把文件拖到上方卡片即可开始"
+  "noRecentTasksHint": "完成的任务会出现在这里，拖入启动台即可导入素材"
 }

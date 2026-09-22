@@ -11,6 +11,7 @@ import {
   type TaskTypeDef,
 } from 'lib/taskTypes';
 import type { WorkItem, WorkItemType } from '../../types/workItem';
+import { deriveProofreadTaskStatus } from '../../types/proofread';
 
 export type RecentStatus = 'waiting' | 'running' | 'done' | 'error' | 'review';
 
@@ -132,11 +133,13 @@ export function getWorkItemTypeLabel(
 }
 
 export function getWorkItemStatus(item: WorkItem): RecentStatus {
-  if (
-    item.type === 'proofread' ||
-    item.type === 'dubbing' ||
-    item.type === 'download'
-  ) {
+  if (item.type === 'proofread') {
+    return deriveProofreadTaskStatus(item.proofreadEntries || []) ===
+      'completed'
+      ? 'done'
+      : 'running';
+  }
+  if (item.type === 'dubbing' || item.type === 'download') {
     if (item.status === 'done') return 'done';
     if (item.status === 'running') return 'running';
     if (item.status === 'error' || item.status === 'interrupted') {

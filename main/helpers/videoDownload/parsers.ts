@@ -43,6 +43,36 @@ export function parseYtDlpProgressLine(line: string): ParsedProgress | null {
 
 /** yt-dlp --print 最终文件路径行的机器可读前缀（after_move 模板） */
 export const YTDLP_FILEPATH_PREFIX = 'SMARTSUB-FILE;';
+export const YTDLP_SUBTITLES_PREFIX = 'SMARTSUB-SUBS;';
+
+// Extractors expose chat replays and Bilibili bullet comments as subtitle
+// tracks too. FFmpeg cannot convert their JSON/XML into dialogue subtitles.
+const NON_LANG_SUBTITLE_KEYS = new Set(['live_chat', 'rechat', 'danmaku']);
+export const YTDLP_SUBTITLE_LANGS = [
+  'all',
+  ...Array.from(NON_LANG_SUBTITLE_KEYS, (key) => `-${key}`),
+].join(',');
+
+/** Only files reported by this extraction are official subtitle candidates. */
+export function parseYtDlpSubtitlePaths(line: string): string[] {
+  if (!line.startsWith(YTDLP_SUBTITLES_PREFIX)) return [];
+  try {
+    const value: unknown = JSON.parse(
+      line.slice(YTDLP_SUBTITLES_PREFIX.length),
+    );
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+    return Object.entries(value).flatMap(([language, entry]) =>
+      !NON_LANG_SUBTITLE_KEYS.has(language) &&
+      entry &&
+      typeof entry === 'object' &&
+      typeof entry.filepath === 'string'
+        ? [entry.filepath]
+        : [],
+    );
+  } catch {
+    return [];
+  }
+}
 
 /**
  * 解析 `--print after_move:` 的文件路径哨兵行。
@@ -74,6 +104,7 @@ interface YtDlpJsonFormat {
 }
 
 interface YtDlpJson {
+  language?: string;
   _type?: string;
   title?: string;
   duration?: number;
@@ -85,13 +116,11 @@ interface YtDlpJson {
   subtitles?: Record<string, unknown>;
 }
 
-/** yt-dlp 把直播聊天回放也塞进 subtitles，非字幕语言，剔除 */
-const NON_LANG_SUBTITLE_KEYS = new Set(['live_chat', 'rechat']);
-
 /** yt-dlp -J（--flat-playlist）输出 → 预检元数据 */
 export function parseYtDlpPreflightJson(raw: string): DownloadEntryMeta {
   const data = JSON.parse(raw) as YtDlpJson;
   const meta: DownloadEntryMeta = {};
+  if (typeof data.language === 'string') meta.language = data.language;
   if (data.title) meta.title = data.title;
   if (typeof data.duration === 'number') meta.duration = data.duration;
   if (data.thumbnail) meta.thumbnail = data.thumbnail;

@@ -1,22 +1,11 @@
-/**
- * useParameterConfig Hook
- *
- * React hook for managing custom parameter configurations.
- * Provides CRUD operations, real-time validation, and IPC communication.
- */
-
 import { useState, useEffect, useCallback, useRef } from 'react';
-import {
+import { isEqual } from 'lodash';
+import type {
   CustomParameterConfig,
   ParameterValue,
   ValidationError,
   ParameterDefinition,
 } from '../../types/provider';
-import {
-  ParameterApplyResult,
-  IpcParameterMessage,
-  IpcParameterResponse,
-} from '../../types/parameterSystem';
 
 export interface ParameterConfigState {
   config: CustomParameterConfig | null;
@@ -26,61 +15,66 @@ export interface ParameterConfigState {
   lastSaved: number | null;
   saveStatus: 'idle' | 'saving' | 'saved' | 'error';
   saveMessage?: string;
+  providerId?: string;
+  loadError?: string;
 }
 
 export interface UseParameterConfigReturn {
-  // State
   state: ParameterConfigState;
-
-  // Configuration operations
   loadConfig: (providerId: string) => Promise<void>;
   saveConfig: (
     providerId: string,
     config: CustomParameterConfig,
   ) => Promise<boolean>;
   resetConfig: (providerId: string) => Promise<boolean>;
-
-  // Parameter operations
   addHeaderParameter: (key: string, value: ParameterValue) => void;
   updateHeaderParameter: (key: string, value: ParameterValue) => void;
   removeHeaderParameter: (key: string) => void;
-
   addBodyParameter: (key: string, value: ParameterValue) => void;
   updateBodyParameter: (key: string, value: ParameterValue) => void;
   removeBodyParameter: (key: string) => void;
-
-  // Template operations removed as requested
-
-  // Validation
   validateConfiguration: (
     providerId: string,
     config?: CustomParameterConfig,
   ) => Promise<ValidationError[]>;
-
-  // Utility
   getSupportedParameters: (
     providerId: string,
   ) => Promise<ParameterDefinition[]>;
   getParameterDefinition: (
     parameterKey: string,
   ) => Promise<ParameterDefinition | null>;
-
-  // Export/Import
   exportConfiguration: () => string | null;
   importConfiguration: (jsonString: string) => boolean;
-
-  // Auto-save control
   enableAutoSave: (providerId: string, intervalMs?: number) => void;
   disableAutoSave: () => void;
-
-  // Migration management
+  getIsDirty: () => boolean;
+  flush: () => Promise<boolean>;
+  discardChanges: () => void;
   getMigrationStatus: (providerId: string) => Promise<any>;
   getAppliedMigrations: () => Promise<any[]>;
   getAvailableMigrations: () => Promise<any[]>;
 }
 
+const emptyConfig = (): CustomParameterConfig => ({
+  headerParameters: {},
+  bodyParameters: {},
+  configVersion: '1.0.0',
+  lastModified: Date.now(),
+});
+const validConfig = (value: any): value is CustomParameterConfig =>
+  Boolean(
+    value &&
+      typeof value.configVersion === 'string' &&
+      Number.isFinite(value.lastModified) &&
+      value.headerParameters &&
+      typeof value.headerParameters === 'object' &&
+      !Array.isArray(value.headerParameters) &&
+      value.bodyParameters &&
+      typeof value.bodyParameters === 'object' &&
+      !Array.isArray(value.bodyParameters),
+  );
+
 export function useParameterConfig(): UseParameterConfigReturn {
-  // State management
   const [state, setState] = useState<ParameterConfigState>({
     config: null,
     isLoading: false,
@@ -89,629 +83,412 @@ export function useParameterConfig(): UseParameterConfigReturn {
     lastSaved: null,
     saveStatus: 'idle',
   });
+  const stateRef = useRef(state);
+  const provider = useRef<string | null>(null);
+  const loadVersion = useRef(0);
+  const autoSave = useRef(true);
+  const delay = useRef(2000);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const mounted = useRef(true);
+  const editSession = useRef(0);
+  const baseline = useRef<CustomParameterConfig | null>(null);
+  const publish = useCallback((patch: Partial<ParameterConfigState>) => {
+    stateRef.current = { ...stateRef.current, ...patch };
+    if (mounted.current) setState(stateRef.current);
+  }, []);
+  const clearTimer = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  }, []);
+  const fail = useCallback(
+    (cause: unknown) => {
+      publish({
+        isLoading: false,
+        saveStatus: 'error',
+        saveMessage: cause instanceof Error ? cause.message : String(cause),
+      });
+    },
+    [publish],
+  );
 
-  // Refs for tracking changes and auto-save
-  const configRef = useRef<CustomParameterConfig | null>(null);
-  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const currentProviderRef = useRef<string | null>(null);
-  const isAutoSaveEnabledRef = useRef<boolean>(true);
-
-  // Update config ref when state changes
-  useEffect(() => {
-    configRef.current = state.config;
-  }, [state.config]);
-
-  // Auto-save functionality
-  const triggerAutoSave = useCallback(
-    async (config: CustomParameterConfig, providerId: string) => {
-      console.log(
-        '🔄 [AUTO-SAVE] Triggered for provider:',
-        providerId,
-        'Config:',
-        JSON.stringify(config, null, 2),
-      );
-
-      if (!isAutoSaveEnabledRef.current) {
-        console.log('❌ [AUTO-SAVE] Auto-save disabled, skipping');
-        return;
-      }
-
-      if (!providerId) {
-        console.log('❌ [AUTO-SAVE] No providerId provided, skipping');
-        return;
-      }
-
-      // Clear any existing timeout
-      if (autoSaveTimeoutRef.current) {
-        console.log('🔄 [AUTO-SAVE] Clearing existing timeout');
-        clearTimeout(autoSaveTimeoutRef.current);
-      }
-
-      // Set new timeout for debounced save
-      autoSaveTimeoutRef.current = setTimeout(async () => {
+  const saveConfig = useCallback(
+    (id: string, config: CustomParameterConfig): Promise<boolean> => {
+      const snapshot = structuredClone(config);
+      const session = editSession.current;
+      const save = async () => {
+        if (session !== editSession.current) return false;
+        if (provider.current === id)
+          publish({ saveStatus: 'saving', saveMessage: undefined });
         try {
-          console.log('💾 [AUTO-SAVE] Starting save operation...');
-          setState((prev) => ({ ...prev, saveStatus: 'saving' }));
-
-          // Check if IPC is available
-          if (!window?.ipc) {
-            console.error('❌ [AUTO-SAVE] IPC not available');
-            setState((prev) => ({
-              ...prev,
-              saveStatus: 'error',
-              saveMessage: 'IPC not available',
-            }));
-            return;
-          }
-
-          console.log('📡 [AUTO-SAVE] Calling IPC config-manager:save with:', {
-            providerId,
-            config,
-          });
-          const result = await window.ipc.invoke(
+          const result = await window?.ipc?.invoke(
             'config-manager:save',
-            providerId,
-            config,
+            id,
+            snapshot,
           );
-          console.log('📡 [AUTO-SAVE] IPC response:', result);
-
-          const success = result?.success;
-
-          if (success) {
-            console.log('✅ [AUTO-SAVE] Save successful');
-            setState((prev) => ({
-              ...prev,
+          if (result?.success !== true)
+            throw new Error(result?.error || 'Failed to save configuration');
+          if (session !== editSession.current) return true;
+          if (provider.current === id) baseline.current = snapshot;
+          if (
+            provider.current === id &&
+            isEqual(stateRef.current.config, snapshot)
+          ) {
+            publish({
               hasUnsavedChanges: false,
+              isLoading: false,
               lastSaved: Date.now(),
               saveStatus: 'saved',
-              saveMessage: 'Changes saved automatically',
-            }));
-
-            // Clear "saved" status after 3 seconds
-            setTimeout(() => {
-              setState((prev) => ({
-                ...prev,
-                saveStatus: 'idle',
-                saveMessage: undefined,
-              }));
-            }, 3000);
-          } else {
-            console.error('❌ [AUTO-SAVE] Save failed - success=false');
-            setState((prev) => ({
-              ...prev,
-              saveStatus: 'error',
-              saveMessage: 'Failed to save changes',
-            }));
-
-            // Clear error status after 5 seconds to avoid persistent error state
-            setTimeout(() => {
-              setState((prev) => ({
-                ...prev,
-                saveStatus: 'idle',
-                saveMessage: undefined,
-              }));
-            }, 5000);
-          }
-        } catch (error) {
-          console.error('❌ [AUTO-SAVE] Exception during save:', error);
-          setState((prev) => ({
-            ...prev,
-            saveStatus: 'error',
-            saveMessage: `Auto-save failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          }));
-
-          // Clear error status after 5 seconds to avoid persistent error state
-          setTimeout(() => {
-            setState((prev) => ({
-              ...prev,
-              saveStatus: 'idle',
               saveMessage: undefined,
-            }));
-          }, 5000);
-        }
-      }, 2000); // 2-second delay
-    },
-    [],
-  );
-
-  // Cleanup auto-save on unmount — flush pending save instead of dropping edits
-  useEffect(() => {
-    return () => {
-      if (!autoSaveTimeoutRef.current) {
-        return;
-      }
-
-      clearTimeout(autoSaveTimeoutRef.current);
-      autoSaveTimeoutRef.current = null;
-
-      const providerId = currentProviderRef.current;
-      const config = configRef.current;
-      if (providerId && config && isAutoSaveEnabledRef.current && window?.ipc) {
-        void window.ipc.invoke('config-manager:save', providerId, config);
-      }
-    };
-  }, []);
-
-  // Load configuration for a provider
-  const loadConfig = useCallback(async (providerId: string) => {
-    console.log('📥 [CONFIG-LOAD] Loading config for provider:', providerId);
-    setState((prev) => ({ ...prev, isLoading: true }));
-
-    try {
-      if (!window?.ipc) {
-        console.error('❌ [CONFIG-LOAD] IPC not available');
-        throw new Error('IPC not available');
-      }
-
-      console.log(
-        '📡 [CONFIG-LOAD] Calling IPC config-manager:get with:',
-        providerId,
-      );
-      const config = await window.ipc.invoke('config-manager:get', providerId);
-      console.log('📡 [CONFIG-LOAD] IPC response:', config);
-
-      setState((prev) => ({
-        ...prev,
-        config,
-        isLoading: false,
-        hasUnsavedChanges: false,
-        validationErrors: [],
-        lastSaved: config?.lastModified || null,
-        saveStatus: 'idle',
-      }));
-
-      currentProviderRef.current = providerId;
-      console.log(
-        '✅ [CONFIG-LOAD] Config loaded successfully, provider set to:',
-        providerId,
-      );
-    } catch (error) {
-      console.error('❌ [CONFIG-LOAD] Failed to load parameter config:', error);
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        validationErrors: [
-          {
-            key: 'load',
-            type: 'system',
-            message: 'Failed to load configuration',
-            suggestion: 'Please try again or check your connection',
-          },
-        ],
-      }));
-    }
-  }, []);
-
-  // Save configuration
-  const saveConfig = useCallback(
-    async (providerId: string, config: CustomParameterConfig) => {
-      setState((prev) => ({ ...prev, isLoading: true }));
-
-      try {
-        const result = await window?.ipc?.invoke(
-          'config-manager:save',
-          providerId,
-          config,
-        );
-        const success = result?.success;
-
-        if (success) {
-          setState((prev) => ({
-            ...prev,
-            config: { ...config, lastModified: Date.now() },
-            isLoading: false,
-            hasUnsavedChanges: false,
-            lastSaved: Date.now(),
-          }));
+              validationErrors: [],
+            });
+            if (statusTimer.current) clearTimeout(statusTimer.current);
+            if (mounted.current)
+              statusTimer.current = setTimeout(() => {
+                if (
+                  provider.current === id &&
+                  stateRef.current.saveStatus === 'saved'
+                )
+                  publish({ saveStatus: 'idle' });
+              }, 3000);
+          } else if (provider.current === id) publish({ saveStatus: 'idle' });
           return true;
-        } else {
-          setState((prev) => ({
-            ...prev,
-            isLoading: false,
-            validationErrors: [
-              {
-                key: 'save',
-                type: 'system',
-                message: 'Failed to save configuration',
-                suggestion: 'Please try again or check your permissions',
-              },
-            ],
-          }));
+        } catch (error) {
+          if (session === editSession.current && provider.current === id)
+            fail(error);
           return false;
         }
-      } catch (error) {
-        console.error('Failed to save parameter config:', error);
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          validationErrors: [
-            {
-              key: 'save',
-              type: 'system',
-              message: 'Failed to save configuration',
-              suggestion: 'Please try again or check your connection',
-            },
-          ],
-        }));
-        return false;
-      }
+      };
+      const pending = queue.current.then(save, save);
+      queue.current = pending;
+      return pending;
     },
-    [],
+    [publish, fail],
   );
 
-  // Reset configuration
-  const resetConfig = useCallback(async (providerId: string) => {
-    setState((prev) => ({ ...prev, isLoading: true }));
+  const schedule = useCallback(() => {
+    clearTimer();
+    if (!autoSave.current || !provider.current) return;
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      if (
+        provider.current &&
+        stateRef.current.config &&
+        stateRef.current.hasUnsavedChanges
+      )
+        void saveConfig(provider.current, stateRef.current.config);
+    }, delay.current);
+  }, [clearTimer, saveConfig]);
 
-    try {
-      const result = await window?.ipc?.invoke(
-        'config-manager:delete',
-        providerId,
-      );
-      const success = result?.success;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      loadVersion.current++;
+      clearTimer();
+      if (statusTimer.current) clearTimeout(statusTimer.current);
+      if (
+        autoSave.current &&
+        provider.current &&
+        stateRef.current.hasUnsavedChanges &&
+        stateRef.current.config
+      )
+        void saveConfig(provider.current, stateRef.current.config);
+    };
+  }, [clearTimer, saveConfig]);
 
-      if (success) {
-        setState((prev) => ({
-          ...prev,
-          config: null,
+  const loadConfig = useCallback(
+    async (id: string) => {
+      const version = ++loadVersion.current;
+      clearTimer();
+      publish({ isLoading: true, loadError: undefined });
+      if (
+        provider.current &&
+        provider.current !== id &&
+        stateRef.current.hasUnsavedChanges &&
+        stateRef.current.config
+      ) {
+        if (!(await saveConfig(provider.current, stateRef.current.config)))
+          return;
+        if (version !== loadVersion.current) return;
+        if (stateRef.current.hasUnsavedChanges) {
+          publish({ isLoading: false });
+          return;
+        }
+      }
+      await queue.current;
+      if (version !== loadVersion.current) return;
+      try {
+        const result = await window.ipc.invoke('config-manager:get', id);
+        if (version !== loadVersion.current) return;
+        if (result !== null && !validConfig(result))
+          throw new Error('Invalid parameter configuration');
+        provider.current = id;
+        editSession.current++;
+        baseline.current = structuredClone(result || emptyConfig());
+        publish({
+          config: structuredClone(baseline.current),
+          providerId: id,
           isLoading: false,
           hasUnsavedChanges: false,
           validationErrors: [],
-          lastSaved: null,
-        }));
-        return true;
-      } else {
-        setState((prev) => ({ ...prev, isLoading: false }));
-        return false;
-      }
-    } catch (error) {
-      console.error('Failed to reset parameter config:', error);
-      setState((prev) => ({ ...prev, isLoading: false }));
-      return false;
-    }
-  }, []);
-
-  // Helper function to update config and mark as changed
-  const updateConfig = useCallback(
-    (updater: (config: CustomParameterConfig) => CustomParameterConfig) => {
-      console.log('🔧 [UPDATE-CONFIG] Starting config update...');
-
-      setState((prev) => {
-        const currentConfig = prev.config || {
-          headerParameters: {},
-          bodyParameters: {},
-          configVersion: '1.0.0',
-          lastModified: Date.now(),
-        };
-
-        console.log('🔧 [UPDATE-CONFIG] Current config:', currentConfig);
-        const newConfig = updater(currentConfig);
-        console.log('🔧 [UPDATE-CONFIG] New config:', newConfig);
-
-        // Trigger auto-save if provider is available
-        const providerId = currentProviderRef.current;
-        console.log('🔧 [UPDATE-CONFIG] Provider ID from ref:', providerId);
-
-        if (providerId) {
-          console.log('🔧 [UPDATE-CONFIG] Triggering auto-save...');
-          triggerAutoSave(newConfig, providerId);
-        } else {
-          console.warn(
-            '⚠️ [UPDATE-CONFIG] No provider ID available, skipping auto-save',
-          );
+          lastSaved: result?.lastModified || null,
+          saveStatus: 'idle',
+          saveMessage: undefined,
+        });
+      } catch (error) {
+        if (version === loadVersion.current) {
+          fail(error);
+          publish({
+            loadError: error instanceof Error ? error.message : String(error),
+          });
         }
-
-        return {
-          ...prev,
-          config: newConfig,
-          hasUnsavedChanges: true,
-          validationErrors: [], // Clear validation errors when config is updated
-        };
-      });
+      }
     },
-    [triggerAutoSave],
+    [clearTimer, saveConfig, publish, fail],
   );
 
-  // Header parameter operations
+  const update = useCallback(
+    (change: (config: CustomParameterConfig) => CustomParameterConfig) => {
+      if (
+        stateRef.current.isLoading ||
+        stateRef.current.loadError ||
+        !provider.current
+      )
+        return;
+      publish({
+        config: change(stateRef.current.config || emptyConfig()),
+        hasUnsavedChanges: true,
+        validationErrors: [],
+        saveStatus: 'idle',
+        saveMessage: undefined,
+      });
+      schedule();
+    },
+    [publish, schedule],
+  );
+  const setParameter = useCallback(
+    (
+      category: 'headerParameters' | 'bodyParameters',
+      key: string,
+      value: ParameterValue,
+    ) => {
+      update((config) => ({
+        ...config,
+        [category]: { ...config[category], [key]: value },
+      }));
+    },
+    [update],
+  );
+  const removeParameter = useCallback(
+    (category: 'headerParameters' | 'bodyParameters', key: string) => {
+      update((config) => {
+        const values = { ...config[category] };
+        delete values[key];
+        return { ...config, [category]: values };
+      });
+    },
+    [update],
+  );
   const addHeaderParameter = useCallback(
-    (key: string, value: ParameterValue) => {
-      updateConfig((config) => ({
-        ...config,
-        headerParameters: {
-          ...config.headerParameters,
-          [key]: value,
-        },
-      }));
-    },
-    [updateConfig],
+    (key: string, value: ParameterValue) =>
+      setParameter('headerParameters', key, value),
+    [setParameter],
   );
-
-  const updateHeaderParameter = useCallback(
-    (key: string, value: ParameterValue) => {
-      updateConfig((config) => ({
-        ...config,
-        headerParameters: {
-          ...config.headerParameters,
-          [key]: value,
-        },
-      }));
-    },
-    [updateConfig],
-  );
-
-  const removeHeaderParameter = useCallback(
-    (key: string) => {
-      updateConfig((config) => {
-        const { [key]: removed, ...rest } = config.headerParameters;
-        return {
-          ...config,
-          headerParameters: rest,
-        };
-      });
-    },
-    [updateConfig],
-  );
-
-  // Body parameter operations
   const addBodyParameter = useCallback(
-    (key: string, value: ParameterValue) => {
-      updateConfig((config) => ({
-        ...config,
-        bodyParameters: {
-          ...config.bodyParameters,
-          [key]: value,
-        },
-      }));
-    },
-    [updateConfig],
+    (key: string, value: ParameterValue) =>
+      setParameter('bodyParameters', key, value),
+    [setParameter],
   );
-
-  const updateBodyParameter = useCallback(
-    (key: string, value: ParameterValue) => {
-      updateConfig((config) => ({
-        ...config,
-        bodyParameters: {
-          ...config.bodyParameters,
-          [key]: value,
-        },
-      }));
-    },
-    [updateConfig],
+  const removeHeaderParameter = useCallback(
+    (key: string) => removeParameter('headerParameters', key),
+    [removeParameter],
   );
-
   const removeBodyParameter = useCallback(
-    (key: string) => {
-      updateConfig((config) => {
-        const { [key]: removed, ...rest } = config.bodyParameters;
-        return {
-          ...config,
-          bodyParameters: rest,
-        };
-      });
-    },
-    [updateConfig],
+    (key: string) => removeParameter('bodyParameters', key),
+    [removeParameter],
   );
 
-  // Template operations removed as requested
-
-  // Validation
-  const validateConfiguration = useCallback(
-    async (
-      providerId: string,
-      config?: CustomParameterConfig,
-    ): Promise<ValidationError[]> => {
-      const configToValidate = config || state.config;
-
-      if (!configToValidate) {
-        return [];
-      }
-
-      try {
-        const validation = await window?.ipc?.invoke(
-          'config-manager:validate',
-          configToValidate,
-        );
-        const errors = validation?.errors || [];
-
-        // Update state with validation errors if validating current config
-        if (!config) {
-          setState((prev) => ({ ...prev, validationErrors: errors }));
-        }
-
-        return errors;
-      } catch (error) {
-        console.error('Failed to validate configuration:', error);
-        const systemError = [
-          {
-            key: 'validation',
-            type: 'system' as const,
-            message: 'Failed to validate configuration',
-            suggestion: 'Please try again or check your connection',
-          },
-        ];
-
-        if (!config) {
-          setState((prev) => ({ ...prev, validationErrors: systemError }));
-        }
-
-        return systemError;
-      }
-    },
-    [state.config],
-  );
-
-  // Utility functions
-  const getSupportedParameters = useCallback(
-    async (providerId: string): Promise<ParameterDefinition[]> => {
-      try {
-        return (
-          (await window?.ipc?.invoke('getSupportedParameters', providerId)) ||
-          []
-        );
-      } catch (error) {
-        console.error('Failed to get supported parameters:', error);
-        return [];
-      }
-    },
-    [],
-  );
-
-  const getParameterDefinition = useCallback(
-    async (parameterKey: string): Promise<ParameterDefinition | null> => {
-      try {
-        return await window?.ipc?.invoke(
-          'getParameterDefinition',
-          parameterKey,
-        );
-      } catch (error) {
-        console.error('Failed to get parameter definition:', error);
-        return null;
-      }
-    },
-    [],
-  );
-
-  // Export/Import operations
-  const exportConfiguration = useCallback((): string | null => {
-    if (!state.config) {
-      return null;
-    }
-
-    try {
-      const exportData = {
-        version: '1.0.0',
-        exportedAt: new Date().toISOString(),
-        configuration: state.config,
-      };
-
-      return JSON.stringify(exportData, null, 2);
-    } catch (error) {
-      console.error('Failed to export configuration:', error);
-      return null;
-    }
-  }, [state.config]);
-
-  const importConfiguration = useCallback(
-    (jsonString: string): boolean => {
-      try {
-        const importData = JSON.parse(jsonString);
-
-        if (!importData.configuration) {
+  const resetConfig = useCallback(
+    async (id: string) => {
+      clearTimer();
+      const snapshot = stateRef.current.config;
+      const reset = async () => {
+        try {
+          const result = await window.ipc.invoke('config-manager:delete', id);
+          if (result?.success !== true)
+            throw new Error(result?.error || 'Failed to reset configuration');
+          if (provider.current === id) baseline.current = emptyConfig();
+          if (provider.current === id && stateRef.current.config === snapshot)
+            publish({
+              config: structuredClone(baseline.current),
+              hasUnsavedChanges: false,
+              isLoading: false,
+              validationErrors: [],
+              saveStatus: 'idle',
+              saveMessage: undefined,
+              lastSaved: null,
+            });
+          else schedule();
+          return true;
+        } catch (error) {
+          if (provider.current === id) fail(error);
           return false;
         }
-
-        const config: CustomParameterConfig = {
-          ...importData.configuration,
-          lastModified: Date.now(),
-        };
-
-        setState((prev) => ({
-          ...prev,
-          config,
-          hasUnsavedChanges: true,
-          validationErrors: [],
-        }));
-
-        // Trigger auto-save after import if provider is available
-        const providerId = currentProviderRef.current;
-        if (providerId) {
-          console.log(
-            '📥 [IMPORT] Triggering auto-save after import for provider:',
-            providerId,
-          );
-          triggerAutoSave(config, providerId);
-        } else {
-          console.warn(
-            '⚠️ [IMPORT] No provider ID available, skipping auto-save after import',
-          );
-        }
-
+      };
+      const pending = queue.current.then(reset, reset);
+      queue.current = pending;
+      return pending;
+    },
+    [clearTimer, publish, schedule, fail],
+  );
+  const validateConfiguration = useCallback(
+    async (
+      _id: string,
+      config?: CustomParameterConfig,
+    ): Promise<ValidationError[]> => {
+      const snapshot = config || stateRef.current.config;
+      if (!snapshot) return [];
+      let errors: ValidationError[];
+      try {
+        const result = await window.ipc.invoke(
+          'config-manager:validate',
+          snapshot,
+          undefined,
+          _id,
+        );
+        if (!Array.isArray(result?.errors))
+          throw new Error('Invalid validation response');
+        errors = result.errors;
+      } catch {
+        errors = [
+          {
+            key: 'validation',
+            type: 'system',
+            message: 'Failed to validate configuration',
+          },
+        ];
+      }
+      if (!config && stateRef.current.config === snapshot)
+        publish({ validationErrors: errors });
+      return errors;
+    },
+    [publish],
+  );
+  const exportConfiguration = useCallback(
+    () =>
+      stateRef.current.config
+        ? JSON.stringify(
+            {
+              version: '1.0.0',
+              exportedAt: new Date().toISOString(),
+              configuration: stateRef.current.config,
+            },
+            null,
+            2,
+          )
+        : null,
+    [],
+  );
+  const importConfiguration = useCallback(
+    (json: string) => {
+      try {
+        const imported = JSON.parse(json).configuration;
+        if (!validConfig(imported)) return false;
+        update(() => ({ ...imported, lastModified: Date.now() }));
         return true;
-      } catch (error) {
-        console.error('Failed to import configuration:', error);
+      } catch {
         return false;
       }
     },
-    [triggerAutoSave],
+    [update],
   );
-
-  // Auto-save functionality
-  const enableAutoSave = useCallback(
-    (providerId: string, intervalMs: number = 30000) => {
-      disableAutoSave(); // Clear any existing interval
-
-      autoSaveTimeoutRef.current = setInterval(async () => {
-        if (state.hasUnsavedChanges && configRef.current) {
-          await saveConfig(providerId, configRef.current);
-        }
-      }, intervalMs);
-    },
-    [state.hasUnsavedChanges, saveConfig],
-  );
-
   const disableAutoSave = useCallback(() => {
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-      autoSaveTimeoutRef.current = null;
-    }
-  }, []);
-
-  // Migration management functions
-  const getMigrationStatus = useCallback(async (providerId: string) => {
-    try {
-      return await window?.ipc?.invoke(
-        'config-manager:get-migration-status',
-        providerId,
-      );
-    } catch (error) {
-      console.error('Failed to get migration status:', error);
-      return null;
-    }
-  }, []);
-
-  const getAppliedMigrations = useCallback(async () => {
-    try {
-      return (
-        (await window?.ipc?.invoke('config-manager:get-applied-migrations')) ||
-        []
-      );
-    } catch (error) {
-      console.error('Failed to get applied migrations:', error);
-      return [];
-    }
-  }, []);
-
-  const getAvailableMigrations = useCallback(async () => {
-    try {
-      return (
-        (await window?.ipc?.invoke(
-          'config-manager:get-available-migrations',
-        )) || []
-      );
-    } catch (error) {
-      console.error('Failed to get available migrations:', error);
-      return [];
-    }
-  }, []);
-
+    autoSave.current = false;
+    clearTimer();
+  }, [clearTimer]);
+  const enableAutoSave = useCallback(
+    (id: string, intervalMs = 2000) => {
+      if (provider.current !== id) return;
+      autoSave.current = true;
+      delay.current = Math.max(0, intervalMs);
+      schedule();
+    },
+    [schedule],
+  );
+  const getIsDirty = useCallback(() => stateRef.current.hasUnsavedChanges, []);
+  const flush = useCallback(async () => {
+    clearTimer();
+    const current = stateRef.current;
+    if (!current.hasUnsavedChanges) return true;
+    if (!provider.current || !current.config) return false;
+    return (
+      (await saveConfig(provider.current, current.config)) &&
+      !stateRef.current.hasUnsavedChanges
+    );
+  }, [clearTimer, saveConfig]);
+  const discardChanges = useCallback(() => {
+    clearTimer();
+    editSession.current++;
+    publish({
+      config: structuredClone(baseline.current),
+      hasUnsavedChanges: false,
+      saveStatus: 'idle',
+      saveMessage: undefined,
+    });
+  }, [clearTimer, publish]);
+  const request = useCallback(
+    async (channel: string, fallback: any, ...args: any[]) => {
+      try {
+        return (await window.ipc.invoke(channel, ...args)) ?? fallback;
+      } catch {
+        return fallback;
+      }
+    },
+    [],
+  );
+  const getSupportedParameters = useCallback(
+    (id: string) => request('getSupportedParameters', [], id),
+    [request],
+  );
+  const getParameterDefinition = useCallback(
+    (key: string) => request('getParameterDefinition', null, key),
+    [request],
+  );
+  const getMigrationStatus = useCallback(
+    (id: string) => request('config-manager:get-migration-status', null, id),
+    [request],
+  );
+  const getAppliedMigrations = useCallback(
+    () => request('config-manager:get-applied-migrations', []),
+    [request],
+  );
+  const getAvailableMigrations = useCallback(
+    () => request('config-manager:get-available-migrations', []),
+    [request],
+  );
   return {
     state,
     loadConfig,
     saveConfig,
     resetConfig,
     addHeaderParameter,
-    updateHeaderParameter,
+    updateHeaderParameter: addHeaderParameter,
     removeHeaderParameter,
     addBodyParameter,
-    updateBodyParameter,
+    updateBodyParameter: addBodyParameter,
     removeBodyParameter,
     validateConfiguration,
-    getSupportedParameters,
-    getParameterDefinition,
     exportConfiguration,
     importConfiguration,
-    enableAutoSave,
     disableAutoSave,
+    enableAutoSave,
+    getIsDirty,
+    flush,
+    discardChanges,
+    getSupportedParameters,
+    getParameterDefinition,
     getMigrationStatus,
     getAppliedMigrations,
     getAvailableMigrations,

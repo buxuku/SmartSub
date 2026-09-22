@@ -69,6 +69,12 @@ export default function DubbingFileBar({
     summary,
     loading,
   } = dub;
+  const disabled =
+    running ||
+    dub.exporting ||
+    dub.speakerUpdating ||
+    loading ||
+    dub.configBlocked;
 
   const [recent, setRecent] = useState<RecentImportCandidate[]>([]);
   useEffect(() => {
@@ -95,7 +101,7 @@ export default function DubbingFileBar({
             </span>
             <button
               onClick={clearSubtitle}
-              disabled={running}
+              disabled={disabled}
               aria-label={t('clearSubtitle')}
               className="ml-0.5 rounded hover:bg-muted"
             >
@@ -103,7 +109,12 @@ export default function DubbingFileBar({
             </button>
           </Badge>
         ) : (
-          <Button variant="outline" size="sm" onClick={pickSubtitle}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={disabled}
+            onClick={pickSubtitle}
+          >
             {t('selectSubtitle')}
           </Button>
         )}
@@ -122,7 +133,7 @@ export default function DubbingFileBar({
             </span>
             <button
               onClick={clearVideo}
-              disabled={running}
+              disabled={disabled}
               aria-label={t('clearVideo')}
               className="ml-0.5 rounded hover:bg-muted"
             >
@@ -130,7 +141,12 @@ export default function DubbingFileBar({
             </button>
           </Badge>
         ) : (
-          <Button variant="outline" size="sm" onClick={pickVideo}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={disabled}
+            onClick={pickVideo}
+          >
             {t('selectVideoOptional')}
           </Button>
         )}
@@ -140,7 +156,7 @@ export default function DubbingFileBar({
       {recent.length > 0 && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" disabled={running}>
+            <Button variant="ghost" size="sm" disabled={disabled}>
               <History className="mr-1 h-3.5 w-3.5" />
               {t('importFromRecent')}
               <ChevronDown className="ml-0.5 h-3 w-3" />

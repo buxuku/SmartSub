@@ -10,6 +10,7 @@
  */
 
 import fs from 'fs';
+import { atomicReplaceTextFile } from './atomicFile';
 import { logMessage, store } from './storeManager';
 import { formatSrtContent } from './fileUtils';
 import { parseSubtitleCues } from './subtitleFormats';
@@ -234,6 +235,9 @@ export async function runSubtitleRefineStage(
         onProgress: (done, total) =>
           sendProgress(base + (done / Math.max(1, total)) * (100 - base)),
       });
+      if (outcome.degraded || outcome.failedCount) {
+        file.refineSubtitleError = `AI_CORRECTION_VALIDATION_FAILED:${outcome.failedCount || beforeCount}`;
+      }
       // 不变性断言（spec: ai-subtitle-correction）：校正不得改变条数与时间轴。
       const timesOk = outcome.cues.every(
         (cue, i) => cue?.[0] === cues[i]?.[0] && cue?.[1] === cues[i]?.[1],
@@ -248,7 +252,9 @@ export async function runSubtitleRefineStage(
       }
     }
 
-    await fs.promises.writeFile(file.srtFile, formatSrtContent(cues), 'utf-8');
+    await atomicReplaceTextFile(file.srtFile, formatSrtContent(cues), {
+      signal,
+    });
     sendProgress(100);
     sendState('done');
     logMessage(

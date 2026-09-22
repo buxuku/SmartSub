@@ -701,19 +701,15 @@ export class MigrationManager {
   }
 
   /**
-   * Parse version string to comparable format
-   */
-  private parseVersion(version: string): number[] {
-    return version.split('.').map((num) => parseInt(num, 10));
-  }
-
-  /**
    * Compare version arrays
    */
-  private compareVersions(a: number[], b: number[]): number {
-    for (let i = 0; i < Math.max(a.length, b.length); i++) {
-      const aVal = a[i] || 0;
-      const bVal = b[i] || 0;
+  private compareVersions(
+    a: { major: number; minor: number; patch: number },
+    b: { major: number; minor: number; patch: number },
+  ): number {
+    for (const key of ['major', 'minor', 'patch'] as const) {
+      const aVal = a[key];
+      const bVal = b[key];
 
       if (aVal !== bVal) {
         return aVal - bVal;

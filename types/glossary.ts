@@ -1,8 +1,8 @@
 /**
- * 全局翻译词库。
+ * 全局及项目翻译词库。
  *
- * 词库是应用级资源，不进入任务 formData / snapshot。所有启用词库按 order
- * 依次参与支持词库的翻译服务和 AI 校对；相同原文由排在最前的词库获胜。
+ * 缺少 projectId 的旧词库保持全局作用域。项目词库仅在匹配工作项中生效，
+ * 优先于全局词库；同一作用域内相同原文由排在最前的词库获胜。
  */
 
 export interface GlossaryEntry {
@@ -16,6 +16,7 @@ export interface GlossaryEntry {
 
 export interface Glossary {
   id: string;
+  projectId?: string;
   name: string;
   description?: string;
   enabled: boolean;

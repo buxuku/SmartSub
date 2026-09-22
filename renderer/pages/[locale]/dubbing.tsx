@@ -3,16 +3,18 @@
  * 支持 `?subtitle=&video=` query 预填（主流程完成横幅衔接），
  * `?session=&workItem=` 为最近任务回开的会话恢复参数。
  */
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { DubbingPanel } from '@/components/dubbing';
 
 export default function DubbingPage() {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   // 等 query 就绪再挂载面板，保证衔接入口的预填参数进入初始状态
-  if (!router.isReady) return null;
+  if (!mounted || !router.isReady) return null;
 
   const queryString = (key: string) =>
     typeof router.query[key] === 'string'

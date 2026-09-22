@@ -1,4 +1,25 @@
 {
+  "queue": {
+    "invalidSubtitles": "Select supported subtitle files (.srt / .vtt / .ass / .ssa / .sub).",
+    "choosePair": "Choose the matching secondary subtitle",
+    "files": "{{count}} files",
+    "noTextTracks": "No text subtitle tracks are selected or available.",
+    "invalidTracks": "The selected tracks are no longer available. Scan the video again.",
+    "extractAll": "Extract queued subtitles",
+    "title": "File queue",
+    "pending": "Queued",
+    "running": "Processing",
+    "done": "Completed",
+    "error": "Failed",
+    "cancelled": "Stopped",
+    "stop": "Stop queue",
+    "stopping": "Stopping...",
+    "clear": "Clear queue",
+    "retry": "Retry this file",
+    "remove": "Remove file",
+    "errorDetails": "Error details",
+    "failed": "The operation did not return a successful result."
+  },
   "title": "Toolbox",
   "subtitle": "Lightweight media utilities for audio, video, and subtitle workflows, processed 100% locally.",
   "categories": {
@@ -167,5 +188,29 @@
     "width": "GIF Width",
     "startExport": "Generate High-Quality GIF",
     "highQualityNotice": "Uses two-pass PaletteGen algorithm for vibrant, artifact-free GIFs"
+  },
+  "finishBar": {
+    "partial": "Some outputs completed. Review failed items.",
+    "importFailed": "Could not import outputs into the next task. Check that the files still exist.",
+    "title": "Completed!",
+    "savedTo": "Output: {{path}}",
+    "stats": "Size: {{original}} → {{compressed}} (saved {{saved}}%)",
+    "openFolder": "Open Folder",
+    "goToSubtitle": "Generate Subtitles",
+    "goToDubbing": "AI Dubbing",
+    "goToProofread": "Proofread Subtitles",
+    "goToBurn": "Burn to Video",
+    "processNext": "Process Another"
+  },
+  "videoCompressorQueue": {
+    "queueTitle": "Compression Queue",
+    "addFiles": "Add Videos",
+    "clearAll": "Clear All",
+    "compressAll": "Batch Compress All",
+    "compressingItem": "Compressing {{current}} of {{total}}...",
+    "itemOriginal": "Original: {{size}}",
+    "itemCompressed": "Compressed: {{size}} (saved {{saved}}%)",
+    "itemFailed": "Compression failed",
+    "allFinished": "All {{count}} videos compressed successfully!"
   }
 }

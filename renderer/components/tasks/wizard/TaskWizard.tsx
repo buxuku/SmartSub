@@ -2,7 +2,7 @@
  * 新建任务向导（目标驱动，一屏）：
  * 拖入文件自动识别 → 勾选目标产物（字幕/翻译/配音/成品视频）→ 阶段链芯片可视化
  * → 分区就地配置（字幕段复用 InlineConfigBar；配音/合成为轻量行）→ 就绪校验 → 开始。
- * 配置为本地表单（useLocalFormConfig），随任务写入配置快照，不污染全局 userConfig。
+ * 配置为本地表单（useUnifiedTaskConfig），随任务写入配置快照，不污染全局 userConfig。
  */
 import React, {
   useCallback,
@@ -27,11 +27,13 @@ import {
   Info,
   Languages,
   Mic2,
+  Bookmark,
   Play,
   RotateCcw,
   Trash2,
   TriangleAlert,
   Upload,
+  UsersRound,
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -67,15 +69,28 @@ import {
   pickDefaultEngineModel,
   hasUnavailableParakeetModel,
 } from 'lib/engineModels';
-import { canStartParakeetTask } from 'lib/parakeetTask';
+import { validateTaskConfigReady } from 'lib/taskReadiness';
 import {
   validateRefineProviderConfig,
   getRefineValidationErrorMessage,
 } from 'lib/subtitleRefineValidation';
 import InlineConfigBar from '@/components/tasks/InlineConfigBar';
-import useSystemInfo from 'hooks/useStystemInfo';
-import useLocalFormConfig from 'hooks/useLocalFormConfig';
-import useLocalStorageState from 'hooks/useLocalStorageState';
+import AdvancedSheet from '@/components/tasks/AdvancedSheet';
+import TaskLoadStatus from '@/components/tasks/TaskLoadStatus';
+import useTaskDependencies from 'hooks/useTaskDependencies';
+import useUnifiedTaskConfig from 'hooks/useUnifiedTaskConfig';
+import { useTaskSubmission } from 'hooks/useTaskSubmission';
+import { taskDraftManager, type TaskDraft } from '@/lib/taskDraftManager';
+import { taskSubmissionKey } from '../../../../types/taskSubmission';
+import { useNavigationGuard } from '@/context/NavigationGuardContext';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+} from '@/components/ui/alert-dialog';
 import { useTtsEngineOptions, parseEngineKey } from 'hooks/useTtsEngineOptions';
 import {
   BUILTIN_RECIPES,
@@ -94,7 +109,6 @@ import {
 } from '@/components/subtitleMerge/constants';
 import { useTranslation } from 'next-i18next';
 import type { TranscriptionEngine } from '../../../../types/engine';
-import type { AsrProvider } from '../../../../types/asrProvider';
 import type {
   IFiles,
   IFormData,
@@ -107,7 +121,7 @@ import type {
   UserStylePreset,
   VideoQuality,
 } from '../../../../types/subtitleMerge';
-import { stripSpeakerDiarizationConfig } from '../../../../types/speakerDiarization';
+import { enforceSpeakerDiarizationTaskBoundary } from '../../../../types/speakerDiarization';
 import DubbingLanguageSelect from '../../dubbing/DubbingLanguageSelect';
 import {
   localTtsLanguageError,
@@ -483,11 +497,20 @@ export default function TaskWizard() {
     [appendFiles],
   );
 
+  // 跟踪是否有外部来源（sessionStorage 交接、URL ?video= 或 ?preset=）以防草稿覆盖外部输入
+  const hasExternalSourceRef = useRef(false);
+
   // 启动台/下载页交接：sessionStorage 一次性消费
   useEffect(() => {
+    if (!router.isReady) return;
     try {
+      if (router.query.draft) {
+        sessionStorage.removeItem(WIZARD_DROP_KEY);
+        return;
+      }
       const raw = sessionStorage.getItem(WIZARD_DROP_KEY);
       if (raw) {
+        hasExternalSourceRef.current = true;
         sessionStorage.removeItem(WIZARD_DROP_KEY);
         const dropped = JSON.parse(raw) as IFiles[];
         if (Array.isArray(dropped) && dropped.length) appendFiles(dropped);
@@ -496,14 +519,18 @@ export default function TaskWizard() {
       /* ignore */
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [router.isReady, router.query.draft]);
 
-  // 支持 URL 参数直接预填媒体（如工具箱无损视频裁剪/提取后一键「新建任务」：?video=...）
+  // 支持 URL 参数直接预填媒体（如工具箱无损视频裁剪/提取后一键「新建任务」：?video=...）或字幕（?subtitle=...）
   useEffect(() => {
     if (!router.isReady) return;
     const targetVideo =
       typeof router.query.video === 'string' ? router.query.video : null;
+    const targetSubtitle =
+      typeof router.query.subtitle === 'string' ? router.query.subtitle : null;
+
     if (targetVideo) {
+      hasExternalSourceRef.current = true;
       (async () => {
         try {
           const droppedMedia = await window?.ipc?.invoke('getDroppedFiles', {
@@ -518,7 +545,46 @@ export default function TaskWizard() {
         }
       })();
     }
-  }, [router.isReady, router.query.video, appendFiles]);
+
+    if (targetSubtitle) {
+      hasExternalSourceRef.current = true;
+      (async () => {
+        try {
+          const droppedSubtitles = await window?.ipc?.invoke(
+            'getDroppedFiles',
+            {
+              files: [targetSubtitle],
+              taskType: 'translate',
+            },
+          );
+          if (droppedSubtitles && droppedSubtitles.length) {
+            appendFiles(droppedSubtitles);
+          }
+        } catch (err) {
+          console.error('Failed to import subtitle from query:', err);
+        }
+      })();
+    }
+  }, [router.isReady, router.query.video, router.query.subtitle, appendFiles]);
+
+  // 支持 URL 参数预设目标产物（如工具箱一键去配音：?goals=dub 或 ?goals=video）
+  useEffect(() => {
+    if (!router.isReady) return;
+    const rawGoals = router.query.goals;
+    if (rawGoals) {
+      const goalList = (
+        Array.isArray(rawGoals) ? rawGoals.join(',') : String(rawGoals)
+      )
+        .split(',')
+        .map((g) => g.trim().toLowerCase());
+
+      setGoals({
+        translate: goalList.includes('translate'),
+        dub: goalList.includes('dub'),
+        video: goalList.includes('video'),
+      });
+    }
+  }, [router.isReady, router.query.goals]);
 
   // 下载页交接来源（?fromDownload=<downloadWorkItemId>）：写入任务快照供回溯
   const sourceDownloadWorkItemId =
@@ -549,35 +615,110 @@ export default function TaskWizard() {
     setGoals((prev) => (prev.video ? { ...prev, video: false } : prev));
   }, [videoAllowed]);
 
-  // ── 字幕段配置（本地表单 + InlineConfigBar 复用）─────────────────────────
-  const { form, formData, loaded: formLoaded } = useLocalFormConfig();
-  const [refinePopoverOpen, setRefinePopoverOpen] = useState(false);
-  const { systemInfo, loaded: systemInfoLoaded } = useSystemInfo();
-  const [providers, setProviders] = useState<any[]>([]);
-  const [asrProviders, setAsrProviders] = useState<AsrProvider[]>([]);
-  const [providersLoaded, setProvidersLoaded] = useState(false);
-  const [useLocalWhisper, setUseLocalWhisper] = useState(false);
-  const [lastUsedTranscription, setLastUsedTranscription] = useState<{
-    engine?: TranscriptionEngine;
-    model?: string;
-    asrProviderId?: string;
-  } | null>(null);
+  // 表单与统一配置状态机
+  const {
+    form,
+    formData,
+    loaded: formLoaded,
+    loading: formLoading,
+    loadError: formLoadError,
+    load: reloadForm,
+    hydrateSnapshot,
+  } = useUnifiedTaskConfig();
 
+  // 草稿恢复与自动保存
+  const [restoredDraftCount, setRestoredDraftCount] = useState<number | null>(
+    null,
+  );
+  const draftInitializedRef = useRef(false);
+  const draftConsumedRef = useRef(false);
+  const draftProjectIdRef = useRef(uuidv4());
+  const [recoveryDraft, setRecoveryDraft] = useState<TaskDraft | null>(null);
+  const [draftReadFailed, setDraftReadFailed] = useState(false);
+  const [draftStorageFailed, setDraftStorageFailed] = useState(
+    taskDraftManager.storageFailed,
+  );
+
+  // 1. 初始化时尝试恢复草稿（仅当没有外部来源交接且全局配置加载就绪时）
   useEffect(() => {
-    (async () => {
-      try {
-        setProviders(
-          (await window?.ipc?.invoke('getTranslationProviders')) || [],
-        );
-        setAsrProviders((await window?.ipc?.invoke('getAsrProviders')) || []);
-        const settings = await window?.ipc?.invoke('getSettings');
-        setUseLocalWhisper(settings?.useLocalWhisper || false);
-        setLastUsedTranscription(settings?.lastUsedTranscription || null);
-      } finally {
-        setProvidersLoaded(true);
+    if (
+      draftInitializedRef.current ||
+      recoveryDraft ||
+      !router.isReady ||
+      !formLoaded
+    )
+      return;
+
+    let hasSessionDrop = hasExternalSourceRef.current;
+    try {
+      if (!router.query.draft)
+        hasSessionDrop ||= Boolean(sessionStorage.getItem(WIZARD_DROP_KEY));
+    } catch {
+      // The durable draft remains available if session storage is restricted.
+    }
+    const hasQueryVideo = Boolean(router.query.video);
+    const hasQuerySubtitle = Boolean(router.query.subtitle);
+    const hasPreset = Boolean(router.query.preset || router.query.recipe);
+
+    const hasExternalFiles =
+      hasSessionDrop || hasQueryVideo || hasQuerySubtitle;
+
+    if (hasExternalFiles || hasPreset || files.length > 0) {
+      draftInitializedRef.current = true;
+      return;
+    }
+
+    try {
+      const draft = taskDraftManager.getDraft();
+      if (draft && Array.isArray(draft.files) && draft.files.length > 0) {
+        setRecoveryDraft(draft);
+        return;
       }
-    })();
-  }, []);
+      if (taskDraftManager.hasUnreadableDraft) {
+        setDraftReadFailed(true);
+        return;
+      }
+    } catch (e) {
+      console.error('Failed to restore task wizard draft:', e);
+    }
+    draftInitializedRef.current = true;
+  }, [
+    router.isReady,
+    formLoaded,
+    router.query,
+    files.length,
+    form,
+    hydrateSnapshot,
+    recoveryDraft,
+  ]);
+
+  const clearDraft = useCallback(() => {
+    draftProjectIdRef.current = uuidv4();
+    taskDraftManager.clearDraft();
+    setFiles([]);
+    setGoals({
+      translate: false,
+      dub: false,
+      video: false,
+    });
+    setManualPairs(new Map());
+    setManualManuscriptPairs(new Map());
+    setRestoredDraftCount(null);
+    form.reset({});
+    setSubtitleGateOn(true);
+    setDubbingGateOn(false);
+    setComposeSubtitle('hard');
+    setComposeStyleId('classic');
+    setAppliedRecipeName(null);
+  }, [form]);
+  const [refinePopoverOpen, setRefinePopoverOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const dependencies = useTaskDependencies();
+  const { systemInfo, providers, asrProviders, settings } = dependencies;
+  const systemInfoLoaded = dependencies.loaded;
+  const providersLoaded = dependencies.loaded;
+  const useLocalWhisper = settings.useLocalWhisper || false;
+  const lastUsedTranscription = settings.lastUsedTranscription || null;
 
   const taskType =
     inputKind === 'subtitle'
@@ -586,10 +727,8 @@ export default function TaskWizard() {
         ? 'generateAndTranslate'
         : 'generateOnly';
   const typeDef = getTaskTypeByValue(taskType)!;
-  // 字幕段配置条：媒体输入（有转写配置）或勾了翻译时才有可配项；
-  // 配对模式跳过听写（无模型项），源语言标签按字幕语义展示
-  const showSubtitleConfig =
-    inputKind === 'media' || inputKind === null || translateOn;
+  // Paired inputs skip ASR but still expose output and speaker settings.
+  const showSubtitleConfig = inputKind !== 'subtitle' || translateOn;
   const configTypeDef =
     inputKind === 'paired'
       ? { ...typeDef, needsModel: false, accepts: 'subtitle' as const }
@@ -651,16 +790,15 @@ export default function TaskWizard() {
     );
   }, [translateOn, providers, formLoaded, formData?.translateProvider, form]);
 
-  // ── 配音配置（工作台同款记忆）─────────────────────────────────────────────
+  // Task-specific settings are recovered from this wizard's draft only.
   const { engineOptions } = useTtsEngineOptions();
-  const [dubPersisted, setDubPersisted] =
-    useLocalStorageState<PersistedDubbing>('dubbingConfig', {
-      engineKey: '',
-      voice: '',
-      globalSpeed: 1,
-      cloneQuality: 'standard',
-      localConcurrency: 1,
-    } as PersistedDubbing);
+  const [dubPersisted, setDubPersisted] = useState<PersistedDubbing>({
+    engineKey: '',
+    voice: '',
+    globalSpeed: 1,
+    cloneQuality: 'standard',
+    localConcurrency: 1,
+  } as PersistedDubbing);
   const activeEngine = useMemo(() => {
     const ready = engineOptions.filter((o) => o.ready);
     return (
@@ -782,7 +920,7 @@ export default function TaskWizard() {
     }
     const system =
       STYLE_PRESETS.find((p) => p.id === effectiveComposeStyleId) ??
-      STYLE_PRESETS[0];
+      STYLE_PRESETS.find((preset) => preset.id === 'classic')!;
     return {
       style:
         system.id === 'classic'
@@ -900,6 +1038,148 @@ export default function TaskWizard() {
     setPendingRecipeConfig(null);
   }, [pendingRecipeConfig, formLoaded, form, setDubPersisted]);
 
+  const restoreWizardDraft = () => {
+    const draft = recoveryDraft;
+    if (!draft) return;
+    draftInitializedRef.current = true;
+    setFiles(draft.files);
+    draftProjectIdRef.current = draft.id || uuidv4();
+    if (draft.goals && !router.query.goals)
+      setGoals({ translate: false, dub: false, video: false, ...draft.goals });
+    if (draft.config) hydrateSnapshot(draft.config);
+    if (Array.isArray(draft.manualPairs))
+      setManualPairs(new Map(draft.manualPairs));
+    if (Array.isArray(draft.manualManuscriptPairs))
+      setManualManuscriptPairs(new Map(draft.manualManuscriptPairs));
+    if (draft.pipeline) {
+      const pipeline = draft.pipeline;
+      setDubPersisted(pipeline.dubbing as PersistedDubbing);
+      setComposeSubtitle(pipeline.subtitle);
+      setComposeStyleId(pipeline.styleId);
+      setComposeQuality(pipeline.quality as VideoQuality);
+      setComposeEncoder(pipeline.encoder as EncoderMode);
+      composeMetaTouchedRef.current = true;
+      setSubtitleGateOn(pipeline.subtitleGate);
+      setDubbingGateOn(pipeline.dubbingGate);
+      setAppliedRecipeName(pipeline.recipeName);
+      // Pair detection must not replace the saved gate on the following render.
+      const hasMedia = draft.files.some(
+        (file) =>
+          !isSubtitleFile(file.filePath) && !isManuscriptPath(file.filePath),
+      );
+      const hasSubtitle = draft.files.some(
+        (file) =>
+          isSubtitleFile(file.filePath) && !isManuscriptPath(file.filePath),
+      );
+      prevKindRef.current =
+        hasMedia && hasSubtitle
+          ? 'paired'
+          : hasMedia
+            ? 'media'
+            : hasSubtitle
+              ? 'subtitle'
+              : null;
+    }
+    setRestoredDraftCount(draft.files.length);
+    setRecoveryDraft(null);
+  };
+
+  // An explicit launchpad handoff resumes the exact persisted snapshot. Ordinary
+  // visits still require confirmation before recovering an interrupted draft.
+  useEffect(() => {
+    if (recoveryDraft?.id && router.query.draft === recoveryDraft.id) {
+      restoreWizardDraft();
+    }
+  }, [recoveryDraft, router.query.draft]);
+
+  const discardWizardDraft = () => {
+    draftInitializedRef.current = true;
+    taskDraftManager.clearDraft();
+    setRecoveryDraft(null);
+    clearDraft();
+  };
+
+  const retryReadDraft = () => {
+    const draft = taskDraftManager.getDraft();
+    if (taskDraftManager.hasUnreadableDraft) return;
+    setDraftReadFailed(false);
+    setDraftStorageFailed(false);
+    if (draft?.files.length) setRecoveryDraft(draft);
+    else draftInitializedRef.current = true;
+  };
+
+  const persistWizardDraft = useCallback(() => {
+    if (!formLoaded) return false;
+    const previous = taskDraftManager.getDraft();
+    const saved = taskDraftManager.saveDraft({
+      id: draftProjectIdRef.current,
+      submission:
+        previous?.id === draftProjectIdRef.current
+          ? previous.submission
+          : undefined,
+      files,
+      goals,
+      manualPairs: Array.from(manualPairs.entries()),
+      manualManuscriptPairs: Array.from(manualManuscriptPairs.entries()),
+      config: formData,
+      pipeline: {
+        dubbing: dubPersisted,
+        subtitle: composeSubtitle,
+        styleId: composeStyleId,
+        quality: composeQuality,
+        encoder: composeEncoder,
+        subtitleGate: subtitleGateOn,
+        dubbingGate: dubbingGateOn,
+        recipeName: appliedRecipeName,
+      },
+      savedAt: Date.now(),
+    });
+    setDraftStorageFailed(!saved);
+    return saved;
+  }, [
+    files,
+    goals,
+    manualPairs,
+    manualManuscriptPairs,
+    formData,
+    formLoaded,
+    recoveryDraft,
+    dubPersisted,
+    composeSubtitle,
+    composeStyleId,
+    composeQuality,
+    composeEncoder,
+    subtitleGateOn,
+    dubbingGateOn,
+    appliedRecipeName,
+  ]);
+
+  // Persist the entire task intent after each committed change, including before refresh.
+  useEffect(() => {
+    if (
+      !draftInitializedRef.current ||
+      !formLoaded ||
+      recoveryDraft ||
+      draftReadFailed ||
+      draftConsumedRef.current
+    )
+      return;
+    persistWizardDraft();
+  }, [persistWizardDraft, formLoaded, recoveryDraft, draftReadFailed]);
+
+  useNavigationGuard('task-wizard-storage', {
+    getIsDirty: () =>
+      files.length > 0 &&
+      taskDraftManager.storageFailed &&
+      !draftConsumedRef.current,
+    isDirty:
+      files.length > 0 && draftStorageFailed && !draftConsumedRef.current,
+    onSave: async () => persistWizardDraft(),
+    onDiscard: () => {
+      taskDraftManager.clearDraft();
+    },
+  });
+
   // ── 阶段链与就绪校验 ──────────────────────────────────────────────────────
   const chips = useMemo(() => {
     const list: Array<{ key: string; label: string; icon: React.ElementType }> =
@@ -928,6 +1208,13 @@ export default function TaskWizard() {
         icon: Languages,
       });
     }
+    if (inputKind !== 'subtitle' && formData?.speakerDiarization === true) {
+      list.push({
+        key: 'speakerDiarization',
+        label: t('stage.speakerDiarization'),
+        icon: UsersRound,
+      });
+    }
     if (dubOn) {
       list.push({ key: 'dub', label: t('stage.dubbing'), icon: AudioLines });
     }
@@ -938,6 +1225,7 @@ export default function TaskWizard() {
   }, [
     inputKind,
     formData?.manuscriptPath,
+    formData?.speakerDiarization,
     pairedManuscriptByMediaPath,
     translateOn,
     dubOn,
@@ -965,9 +1253,15 @@ export default function TaskWizard() {
       return list;
     }
     if (inputKind === 'media') {
-      const groups = getEngineModelGroups(systemInfo, {
-        includeLocalCli: useLocalWhisper,
+      const readiness = validateTaskConfigReady({
+        files,
+        typeDef: configTypeDef,
+        formData,
+        systemInfo,
         asrProviders,
+        providers,
+        includeLocalCli: useLocalWhisper,
+        translateOn,
       });
       if (hasUnavailableParakeetModel(systemInfo, formData)) {
         list.push({
@@ -977,13 +1271,25 @@ export default function TaskWizard() {
           }),
           href: `/${locale}/engines`,
         });
-      } else if (!groups.length) {
+      } else if (readiness.errors.some((error) => error.startsWith('model_'))) {
         list.push({
           key: 'model',
           text: t('wizard.blockNoModel'),
           href: `/${locale}/engines`,
         });
       }
+    }
+    if (
+      inputKind !== 'subtitle' &&
+      formData?.speakerDiarization === true &&
+      (!systemInfo?.speakerDiarizationModelInstalled ||
+        !systemInfo?.speakerDiarizationRuntimeInstalled)
+    ) {
+      list.push({
+        key: 'speaker',
+        text: t('readiness.speaker_diarization_unavailable'),
+        href: `/${locale}/engines`,
+      });
     }
     // 配对模式：每个视频必须有同名字幕（缺配对的先移除或补字幕）
     if (pairing && pairing.unpairedMedia.length > 0) {
@@ -995,6 +1301,11 @@ export default function TaskWizard() {
       });
     }
     if (translateOn) {
+      if (!formData?.targetLanguage || formData.targetLanguage === 'auto')
+        list.push({
+          key: 'target-language',
+          text: t('readiness.target_language_required'),
+        });
       const provider = providers.find(
         (p: any) => p.id === formData?.translateProvider,
       );
@@ -1003,6 +1314,23 @@ export default function TaskWizard() {
           key: 'provider',
           text: t('wizard.blockNoProvider'),
           href: `/${locale}/translation`,
+        });
+      } else if (
+        formData?.subtitleTranslationStyle === 'conversational' &&
+        !provider.isAi
+      ) {
+        list.push({
+          key: 'translation-style',
+          text: t('readiness.translation_style_requires_ai'),
+          actions: [
+            {
+              label: t('presets.language.neutral'),
+              onClick: () =>
+                form.setValue('subtitleTranslationStyle', 'neutral', {
+                  shouldDirty: true,
+                }),
+            },
+          ],
         });
       }
     }
@@ -1138,11 +1466,15 @@ export default function TaskWizard() {
     translateOn,
     providers,
     formData?.translateProvider,
+    formData?.subtitleTranslationStyle,
     formData?.transcriptionEngine,
     formData?.model,
+    formData?.asrProviderId,
+    formData?.targetLanguage,
     formData?.aiSegmentation,
     formData?.aiCorrection,
     formData?.refineProvider,
+    formData?.speakerDiarization,
     dubOn,
     activeEngine,
     activeVoice,
@@ -1156,7 +1488,11 @@ export default function TaskWizard() {
     form,
   ]);
 
-  const canStart = files.length > 0 && blockers.length === 0;
+  const canStart =
+    formLoaded &&
+    dependencies.loaded &&
+    files.length > 0 &&
+    blockers.length === 0;
 
   // ── 存为配方：打包 {goals, accepts, config(字幕段+dub+compose+gates)} ─────
   const [recipeDialogOpen, setRecipeDialogOpen] = useState(false);
@@ -1169,9 +1505,9 @@ export default function TaskWizard() {
     try {
       const dubEngine =
         dubOn && activeEngine ? parseEngineKey(activeEngine.key) : null;
-      const config: Partial<IFormData> = stripSpeakerDiarizationConfig({
+      const config: Partial<IFormData> = {
         ...formData,
-      });
+      };
       delete config.taskType;
       delete config.dub;
       delete config.compose;
@@ -1218,11 +1554,20 @@ export default function TaskWizard() {
   };
 
   // ── 开始 ──────────────────────────────────────────────────────────────────
-  const [starting, setStarting] = useState(false);
+  const submission = useTaskSubmission({
+    readPending: () => taskDraftManager.getDraft()?.submission,
+    savePending: (pending) => {
+      if (!taskDraftManager.patchDraft({ submission: pending })) {
+        setDraftStorageFailed(true);
+        throw new Error(commonT('draftRecovery.wizardStorageFailed'));
+      }
+    },
+  });
+  const { starting } = submission;
   const handleStart = async () => {
     if (!canStart || starting) return;
-    setStarting(true);
     try {
+      const submittedDraft = taskDraftManager.getDraft();
       const taskFiles =
         inputKind === 'paired'
           ? pairing!.pairs.map((p) => ({
@@ -1240,35 +1585,25 @@ export default function TaskWizard() {
                   return { ...m, manuscriptPath: '__none__' };
                 }
                 if (pairedScript) {
+                  const msPath = pairedScript.filePath;
+                  const msName =
+                    ('fileName' in pairedScript &&
+                    typeof pairedScript.fileName === 'string'
+                      ? pairedScript.fileName
+                      : null) || msPath.split(/[\\/]/).pop();
                   return {
                     ...m,
-                    manuscriptPath: pairedScript.filePath,
-                    manuscriptName:
-                      pairedScript.fileName ||
-                      pairedScript.filePath.split(/[\\/]/).pop(),
+                    manuscriptPath: msPath,
+                    manuscriptName: msName,
                   };
                 }
                 return m;
               });
-      if (
-        !(await canStartParakeetTask(
-          taskFiles,
-          inputKind !== 'subtitle',
-          formData,
-        ))
-      ) {
-        toast.error(
-          t('parakeet.modelUnavailable', {
-            model: formData?.model || 'Parakeet',
-          }),
-        );
-        return;
-      }
-      const projectId = uuidv4();
+      const projectId = draftProjectIdRef.current;
       const dubEngine = dubOn ? parseEngineKey(activeEngine!.key) : null;
-      const payload = stripSpeakerDiarizationConfig({
+      const payload = enforceSpeakerDiarizationTaskBoundary({
         ...formData,
-        taskType,
+        taskType: typeDef.taskType,
         ...(inputKind !== 'media'
           ? { manuscriptPath: '', manuscriptName: '' }
           : {}),
@@ -1301,19 +1636,38 @@ export default function TaskWizard() {
             }
           : {}),
       });
-      await window?.ipc?.invoke('saveTaskProject', {
-        id: projectId,
-        taskType,
-        files: taskFiles,
-      });
-      window?.ipc?.send('handleTask', {
-        files: taskFiles,
-        formData: payload,
+      const outcome = await submission.submit({
         projectId,
+        files: taskFiles,
+        typeDef,
+        formData: payload,
+        translateOn,
       });
+      if (outcome.status === 'invalid') {
+        toast.error(t(`readiness.${outcome.readiness.errors[0]}`));
+        return;
+      }
+      if (outcome.status !== 'accepted') return;
+      // Edits made while confirmation/IPC was pending belong to the next draft.
+      draftConsumedRef.current = true;
+      const currentDraft = taskDraftManager.getDraft();
+      const intentKey = (draft: TaskDraft | null) => {
+        if (!draft) return '';
+        const { savedAt: _savedAt, submission: _submission, ...intent } = draft;
+        return taskSubmissionKey(intent);
+      };
+      if (intentKey(currentDraft) === intentKey(submittedDraft)) {
+        taskDraftManager.clearDraft();
+      } else if (currentDraft) {
+        taskDraftManager.saveDraft({
+          ...currentDraft,
+          id: uuidv4(),
+          submission: undefined,
+        });
+      }
       router.push(`/${locale}/tasks/${typeDef.slug}?project=${projectId}`);
-    } finally {
-      setStarting(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -1357,8 +1711,108 @@ export default function TaskWizard() {
     },
   ];
 
+  if (!formLoaded)
+    return (
+      <TaskLoadStatus
+        error={formLoadError}
+        loading={formLoading}
+        onRetry={() => void reloadForm()}
+      />
+    );
+
+  if (!dependencies.loaded)
+    return (
+      <TaskLoadStatus
+        error={dependencies.error}
+        loading={dependencies.loading}
+        onRetry={() => void dependencies.load()}
+      />
+    );
+
   return (
     <div className="flex h-full flex-col gap-2.5 overflow-y-auto p-3">
+      <AlertDialog open={draftReadFailed}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {commonT('draftRecovery.readFailedTitle')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {commonT('draftRecovery.readFailedDescription')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (!taskDraftManager.clearDraft()) return;
+                setDraftReadFailed(false);
+                setDraftStorageFailed(false);
+                clearDraft();
+                draftInitializedRef.current = true;
+              }}
+            >
+              {commonT('draftRecovery.discard')}
+            </Button>
+            <Button onClick={retryReadDraft}>
+              {commonT('draftRecovery.retryRead')}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={Boolean(recoveryDraft)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {commonT('draftRecovery.title')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {commonT('draftRecovery.description')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button variant="outline" onClick={discardWizardDraft}>
+              {commonT('draftRecovery.discard')}
+            </Button>
+            <Button onClick={restoreWizardDraft}>
+              {commonT('draftRecovery.restore')}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {draftStorageFailed && (
+        <div
+          role="alert"
+          className="flex shrink-0 items-center gap-3 bg-warning/10 p-3 text-sm"
+        >
+          <span className="min-w-0 flex-1">
+            {commonT('draftRecovery.wizardStorageFailed')}
+          </span>
+          <Button size="sm" variant="outline" onClick={persistWizardDraft}>
+            {commonT('saveState.retry')}
+          </Button>
+        </div>
+      )}
+      {/* 草稿恢复提示条 */}
+      {restoredDraftCount !== null && restoredDraftCount > 0 && (
+        <div className="flex items-center justify-between rounded-md border border-primary/25 bg-primary/5 px-3 py-1.5 text-xs text-primary">
+          <div className="flex items-center gap-2">
+            <Bookmark className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              {t('wizard.draftRestored', { count: restoredDraftCount })}
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearDraft}
+            className="h-6 px-2 text-[11px] hover:bg-primary/10 hover:text-primary"
+          >
+            {t('wizard.clearDraft')}
+          </Button>
+        </div>
+      )}
+
       {/* 文件区 */}
       <Panel
         className={cn(
@@ -1879,12 +2333,21 @@ export default function TaskWizard() {
               useLocalWhisper={useLocalWhisper}
               refineOpen={refinePopoverOpen}
               onRefineOpenChange={setRefinePopoverOpen}
+              onOpenAdvanced={() => setAdvancedOpen(true)}
             />
           </div>
         </Panel>
       )}
 
       {/* 配音配置 */}
+      <AdvancedSheet
+        open={advancedOpen}
+        onOpenChange={setAdvancedOpen}
+        form={form}
+        formData={formData}
+        typeDef={configTypeDef}
+        hasMediaInput={inputKind !== 'subtitle'}
+      />
       {dubOn && (
         <Panel className="flex-none">
           <PanelHeader title={t('wizard.dubConfigTitle')} />
@@ -2244,10 +2707,7 @@ export default function TaskWizard() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => {
-                setFiles([]);
-                setManualPairs(new Map());
-              }}
+              onClick={clearDraft}
               className="flex-none"
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -2275,6 +2735,7 @@ export default function TaskWizard() {
         </div>
       </Panel>
 
+      {submission.dialog}
       {/* 存为配方：命名对话框 */}
       <Dialog open={recipeDialogOpen} onOpenChange={setRecipeDialogOpen}>
         <DialogContent className="sm:max-w-md">

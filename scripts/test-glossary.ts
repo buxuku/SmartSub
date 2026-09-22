@@ -168,6 +168,84 @@ function testGlossaryReordering(): void {
   );
 }
 
+function testProjectScopes(): void {
+  const libraries = [
+    glossary('global', 'Global', 0, [
+      entry('g1', 'Alice', 'Global Alice'),
+      entry('g2', 'Bob', 'Global Bob'),
+    ]),
+    {
+      ...glossary('a', 'Project A', 1, [entry('a1', 'Alice', 'A Alice')]),
+      projectId: 'project-a',
+    },
+    {
+      ...glossary('b', 'Project B', 2, [entry('b1', 'Alice', 'B Alice')]),
+      projectId: 'project-b',
+    },
+    {
+      ...glossary('a-later', 'Project A later', 3, [
+        entry('al1', 'Alice', 'A later'),
+      ]),
+      projectId: 'project-a',
+    },
+    {
+      ...glossary(
+        'disabled',
+        'Disabled A',
+        -1,
+        [entry('d1', 'Alice', 'Disabled Alice')],
+        false,
+      ),
+      projectId: 'project-a',
+    },
+  ];
+  equal(
+    resolveEnabledGlossaryEntries(libraries).entries.map((e) => e.target),
+    ['Global Alice', 'Global Bob'],
+    'no project context includes only globals',
+  );
+  equal(
+    resolveEnabledGlossaryEntries(libraries, 'unknown').entries.map(
+      (e) => e.target,
+    ),
+    ['Global Alice', 'Global Bob'],
+    'unknown project cannot see other project terms',
+  );
+  equal(
+    resolveEnabledGlossaryEntries(libraries, 'project-a').entries.map(
+      (e) => e.target,
+    ),
+    ['A Alice', 'Global Bob'],
+    'project takes precedence over global, preserves ordering within scope',
+  );
+  equal(
+    resolveEnabledGlossaryEntries(libraries, 'project-b').entries.map(
+      (e) => e.target,
+    ),
+    ['B Alice', 'Global Bob'],
+    'project B is isolated from project A',
+  );
+  equal(
+    resolveEnabledGlossaryEntries(libraries, 'project-a').conflicts.map(
+      (e) => e.ignored.target,
+    ),
+    ['A later', 'Global Alice'],
+    'conflicts are scoped and ordered',
+  );
+  equal(
+    normalizeGlossaries(libraries).find((g) => g.id === 'a')?.projectId,
+    'project-a',
+    'scope survives normalization',
+  );
+  for (const projectId of [null, 0, {}, '', '   ']) {
+    equal(
+      normalizeGlossaries([{ ...libraries[0], projectId }]),
+      [],
+      'malformed project scope never becomes global',
+    );
+  }
+}
+
 function testPlainTextMatching(): void {
   ok(
     textContainsGlossarySource('Alice arrived', 'alice'),
@@ -576,6 +654,7 @@ function testTxtImportExport(): void {
 function main(): void {
   testNormalizationAndPriority();
   testGlossaryReordering();
+  testProjectScopes();
   testPlainTextMatching();
   testImportMergeSemantics();
   testPromptInjection();

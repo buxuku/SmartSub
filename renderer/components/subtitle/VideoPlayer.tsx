@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import ReactPlayer from 'react-player';
 import { useTranslation } from 'next-i18next';
 import { isAudioPath } from 'lib/utils';
@@ -7,6 +7,7 @@ interface VideoPlayerProps {
   videoPath: string;
   playerRef: React.RefObject<ReactPlayer>;
   isPlaying: boolean;
+  onPlayingChange?: (playing: boolean) => void;
   playbackRate: number;
   subtitleTracks?: Array<{
     kind: string;
@@ -29,12 +30,44 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   videoPath,
   playerRef,
   isPlaying,
+  onPlayingChange,
   playbackRate,
   subtitleTracks,
   handleProgress,
   setDuration,
 }) => {
   const { t } = useTranslation('home');
+  const [mediaElement, setMediaElement] = useState<HTMLMediaElement | null>(
+    null,
+  );
+  // ReactPlayer v2 caches file config by URL, so late/retried tracks need
+  // their own lifecycle without remounting the playing media element.
+  useEffect(() => {
+    if (!mediaElement) return;
+    const tracks = (subtitleTracks || []).map((track) => {
+      const element = document.createElement('track');
+      element.kind = track.kind;
+      element.src = track.src;
+      element.srclang = track.srcLang;
+      element.label = track.label;
+      element.default = !!track.default;
+      element.onload = () => {
+        element.track.mode = track.default ? 'showing' : 'disabled';
+      };
+      mediaElement.appendChild(element);
+      element.track.mode = track.default ? 'showing' : 'hidden';
+      return element;
+    });
+    return () =>
+      tracks.forEach((track) => {
+        track.onload = null;
+        track.remove();
+      });
+  }, [mediaElement, subtitleTracks]);
+  const onReady = (player: ReactPlayer) => {
+    const media = player.getInternalPlayer();
+    if (media instanceof HTMLMediaElement) setMediaElement(media);
+  };
 
   // 纯音频：渲染紧凑播放条（无黑色视频框/空白占位），使左侧首元素与右侧列表顶部对齐
   if (isAudioPath(videoPath)) {
@@ -48,12 +81,16 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             height="54px"
             playing={isPlaying}
             controls={true}
+            onPlay={() => onPlayingChange?.(true)}
+            onPause={() => onPlayingChange?.(false)}
+            onEnded={() => onPlayingChange?.(false)}
             playbackRate={playbackRate}
             onProgress={handleProgress}
             onDuration={setDuration}
+            onReady={onReady}
             progressInterval={100}
-            key={subtitleTracks?.[0]?.label}
-            config={{ file: { forceAudio: true, tracks: subtitleTracks } }}
+            key={videoPath}
+            config={{ file: { forceAudio: true } }}
           />
         </div>
       </div>
@@ -72,16 +109,15 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             style={{ maxHeight: '38.5vh' }}
             playing={isPlaying}
             controls={true}
+            onPlay={() => onPlayingChange?.(true)}
+            onPause={() => onPlayingChange?.(false)}
+            onEnded={() => onPlayingChange?.(false)}
             playbackRate={playbackRate}
             onProgress={handleProgress}
             onDuration={setDuration}
+            onReady={onReady}
             progressInterval={100}
-            key={subtitleTracks?.[0]?.label}
-            config={{
-              file: {
-                tracks: subtitleTracks,
-              },
-            }}
+            key={videoPath}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-white/70">

@@ -57,6 +57,7 @@
     "array": "数组"
   },
   "table": {
+    "emptyValue": "请输入参数值后再保存。",
     "keyColumn": "参数名",
     "valueColumn": "值",
     "typeColumn": "类型",
@@ -85,10 +86,13 @@
     "saving": "保存中...",
     "saved": "已保存",
     "error": "错误",
+    "loadFailed": "无法读取参数配置，读取成功前暂不可编辑。",
+    "saveFailed": "参数修改尚未保存，请重试后再离开。",
+    "retry": "重试",
+    "details": "错误详情",
     "upToDate": "已是最新",
     "unsavedChanges": "有未保存的更改",
-    "savedAutomatically": "自动保存成功",
-    "saveFailed": "保存失败"
+    "savedAutomatically": "自动保存成功"
   },
   "summary": {
     "title": "配置摘要",

@@ -9,13 +9,11 @@ import { ipcMain } from 'electron';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
-import type {
-  CustomParameterConfig,
-  ValidationError,
-  ParameterValidationResult,
-} from '../../types/provider';
+import type { CustomParameterConfig } from '../../types/provider';
+import type { ParameterValidationResult } from '../../types/parameterSystem';
 import { parameterValidator, ValidationContext } from './parameterValidator';
 import { migrationManager } from './migrationManager';
+import { atomicReplaceTextFile } from '../helpers/atomicFile';
 
 export interface ConfigurationMetadata {
   version: string;
@@ -44,17 +42,17 @@ export interface ConfigurationValidationOptions {
 export class ConfigurationManager {
   private readonly configDir: string;
   private readonly configurationsFile: string;
-  private readonly templatesFile: string;
   private readonly backupDir: string;
   private configurations: Map<string, StoredConfiguration> = new Map();
   // Templates functionality removed as requested
   private isInitialized = false;
+  private initialization: Promise<void> | null = null;
+  private writes: Promise<unknown> = Promise.resolve();
 
   constructor() {
     const userDataPath = app.getPath('userData');
     this.configDir = path.join(userDataPath, 'parameter-configs');
     this.configurationsFile = path.join(this.configDir, 'configurations.json');
-    this.templatesFile = path.join(this.configDir, 'templates.json');
     this.backupDir = path.join(this.configDir, 'backups');
 
     // Debug logging for path verification
@@ -62,7 +60,6 @@ export class ConfigurationManager {
     console.log('  📂 userData:', userDataPath);
     console.log('  📂 configDir:', this.configDir);
     console.log('  📄 configurationsFile:', this.configurationsFile);
-    console.log('  📄 templatesFile:', this.templatesFile);
     console.log('  📂 backupDir:', this.backupDir);
 
     this.setupIpcHandlers();
@@ -71,7 +68,17 @@ export class ConfigurationManager {
   /**
    * Initialize the configuration manager
    */
-  async initialize(): Promise<void> {
+  initialize(): Promise<void> {
+    if (!this.initialization) {
+      this.initialization = this.initializeFromDisk().catch((error) => {
+        this.initialization = null;
+        throw error;
+      });
+    }
+    return this.initialization;
+  }
+
+  private async initializeFromDisk(): Promise<void> {
     if (this.isInitialized) {
       console.log('🔧 [CONFIG-MANAGER] Already initialized, skipping');
       return;
@@ -95,9 +102,6 @@ export class ConfigurationManager {
 
       console.log('📥 [CONFIG-MANAGER] Loading configurations...');
       await this.loadConfigurations();
-
-      console.log('📄 [CONFIG-MANAGER] Loading templates...');
-      await this.loadTemplates();
 
       console.log('🔄 [CONFIG-MANAGER] Performing migrations...');
       await this.performMigrations();
@@ -133,8 +137,7 @@ export class ConfigurationManager {
 
     const stored = this.configurations.get(providerId);
     const result = stored ? stored.config : null;
-    console.log('📥 [CONFIG-MANAGER] Configuration found:', !!result, result);
-    return result;
+    return result ? structuredClone(result) : null;
   }
 
   /**
@@ -144,6 +147,17 @@ export class ConfigurationManager {
     providerId: string,
     config: CustomParameterConfig,
     options: ConfigurationValidationOptions = {},
+  ): Promise<void> {
+    const snapshot = structuredClone(config);
+    return this.enqueueWrite(() =>
+      this.saveInitializedConfiguration(providerId, snapshot, options),
+    );
+  }
+
+  private async saveInitializedConfiguration(
+    providerId: string,
+    config: CustomParameterConfig,
+    options: ConfigurationValidationOptions,
   ): Promise<void> {
     console.log(
       '💾 [CONFIG-MANAGER] Saving configuration for provider:',
@@ -179,7 +193,7 @@ export class ConfigurationManager {
     const stored: StoredConfiguration = {
       config,
       metadata: {
-        version: '1.0.0',
+        version: config.configVersion,
         createdAt:
           this.configurations.get(providerId)?.metadata.createdAt || now,
         lastModified: now,
@@ -188,10 +202,12 @@ export class ConfigurationManager {
     };
 
     console.log('🗃️ [CONFIG-MANAGER] Storing configuration in memory...');
-    this.configurations.set(providerId, stored);
+    const next = new Map(this.configurations);
+    next.set(providerId, stored);
 
     console.log('💿 [CONFIG-MANAGER] Persisting to disk...');
-    await this.persistConfigurations();
+    await this.persistConfigurations(next);
+    this.configurations = next;
     console.log('✅ [CONFIG-MANAGER] Save completed successfully');
   }
 
@@ -199,16 +215,16 @@ export class ConfigurationManager {
    * Delete configuration for a specific provider
    */
   async deleteConfiguration(providerId: string): Promise<boolean> {
-    await this.ensureInitialized();
-
-    if (this.configurations.has(providerId)) {
-      await this.createBackup(providerId);
-      this.configurations.delete(providerId);
-      await this.persistConfigurations();
+    return this.enqueueWrite(async () => {
+      if (this.configurations.has(providerId)) {
+        await this.createBackup(providerId);
+        const next = new Map(this.configurations);
+        next.delete(providerId);
+        await this.persistConfigurations(next);
+        this.configurations = next;
+      }
       return true;
-    }
-
-    return false;
+    });
   }
 
   /**
@@ -498,9 +514,9 @@ export class ConfigurationManager {
 
       if (unknownKeys.length > 0) {
         result.errors.push({
-          field: 'config',
+          key: 'config',
+          type: 'format',
           message: `Unknown configuration keys: ${unknownKeys.join(', ')}`,
-          code: 'UNKNOWN_KEYS',
         });
         result.isValid = false;
       }
@@ -517,12 +533,11 @@ export class ConfigurationManager {
 
     const configurations: Record<string, StoredConfiguration> = {};
     for (const [providerId, stored] of this.configurations) {
-      configurations[providerId] = stored;
+      configurations[providerId] = structuredClone(stored);
     }
 
     return {
       configurations,
-      templates: this.templates,
       exportedAt: new Date().toISOString(),
       version: '1.0.0',
     };
@@ -538,10 +553,19 @@ export class ConfigurationManager {
       validateBeforeImport?: boolean;
     } = {},
   ): Promise<{ imported: number; skipped: number; errors: string[] }> {
-    await this.ensureInitialized();
+    const snapshot = structuredClone(exportData);
+    return this.enqueueWrite(() =>
+      this.importInitializedConfigurations(snapshot, options),
+    );
+  }
 
+  private async importInitializedConfigurations(
+    exportData: ConfigurationExport,
+    options: { overwriteExisting?: boolean; validateBeforeImport?: boolean },
+  ): Promise<{ imported: number; skipped: number; errors: string[] }> {
     const { overwriteExisting = false, validateBeforeImport = true } = options;
     const results = { imported: 0, skipped: 0, errors: [] as string[] };
+    const next = new Map(this.configurations);
 
     // Create backup before import
     await this.createFullBackup();
@@ -566,34 +590,15 @@ export class ConfigurationManager {
           }
         }
 
-        this.configurations.set(providerId, stored);
+        next.set(providerId, stored);
         results.imported++;
       }
 
-      // Import templates
-      if (exportData.templates) {
-        for (const template of exportData.templates) {
-          const existingIndex = this.templates.findIndex(
-            (t) => t.id === template.id,
-          );
-          if (existingIndex >= 0) {
-            if (overwriteExisting) {
-              this.templates[existingIndex] = template;
-              results.imported++;
-            } else {
-              results.skipped++;
-            }
-          } else {
-            this.templates.push(template);
-            results.imported++;
-          }
-        }
-      }
-
       // Persist changes
-      await this.persistConfigurations();
-      await this.persistTemplates();
+      await this.persistConfigurations(next);
+      this.configurations = next;
     } catch (error) {
+      results.imported = 0;
       results.errors.push(
         `Import failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
@@ -633,7 +638,6 @@ export class ConfigurationManager {
 
     const fullBackup = {
       configurations: Object.fromEntries(this.configurations),
-      templates: this.templates,
       backupAt: new Date().toISOString(),
     };
 
@@ -739,10 +743,24 @@ export class ConfigurationManager {
     error?: string;
     restoredConfig?: CustomParameterConfig;
   }> {
-    await this.ensureInitialized();
+    return this.enqueueWrite(() =>
+      this.restoreInitializedBackup(providerId, backupFileName, options),
+    );
+  }
 
+  private async restoreInitializedBackup(
+    providerId: string,
+    backupFileName: string,
+    options: { createBackupBeforeRestore?: boolean },
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    restoredConfig?: CustomParameterConfig;
+  }> {
     try {
       const backupPath = path.join(this.backupDir, backupFileName);
+      if (path.basename(backupFileName) !== backupFileName)
+        throw new Error('Invalid backup filename');
 
       // Verify backup file exists
       try {
@@ -791,8 +809,10 @@ export class ConfigurationManager {
       stored.metadata.lastModified = new Date().toISOString();
 
       // Restore configuration
-      this.configurations.set(providerId, stored);
-      await this.persistConfigurations();
+      const next = new Map(this.configurations);
+      next.set(providerId, stored);
+      await this.persistConfigurations(next);
+      this.configurations = next;
 
       console.log(
         `✅ [CONFIG-MANAGER] Configuration restored from backup: ${backupFileName}`,
@@ -831,12 +851,10 @@ export class ConfigurationManager {
       const scheduledBackup = {
         type,
         configurations: Object.fromEntries(this.configurations),
-        templates: this.templates,
         metadata: {
           backupAt: new Date().toISOString(),
           totalConfigurations: this.configurations.size,
-          totalTemplates: this.templates.length,
-          version: this.getCurrentVersion(),
+          version: '1.0.0',
         },
       };
 
@@ -1023,7 +1041,7 @@ export class ConfigurationManager {
     config: CustomParameterConfig,
   ): Promise<string> {
     const crypto = await import('crypto');
-    const content = JSON.stringify(config, Object.keys(config).sort());
+    const content = JSON.stringify(config);
     return crypto.createHash('sha256').update(content).digest('hex');
   }
 
@@ -1042,50 +1060,31 @@ export class ConfigurationManager {
     try {
       const data = await fs.readFile(this.configurationsFile, 'utf8');
       const parsed = JSON.parse(data);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+        throw new Error('Invalid configuration storage');
+      for (const stored of Object.values(parsed) as StoredConfiguration[]) {
+        if (!stored?.config || !stored?.metadata)
+          throw new Error('Invalid stored configuration');
+      }
       this.configurations = new Map(Object.entries(parsed));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn('Failed to load configurations:', error);
+        throw error;
       }
       this.configurations = new Map();
     }
   }
 
   /**
-   * Load templates from disk
-   */
-  private async loadTemplates(): Promise<void> {
-    try {
-      const data = await fs.readFile(this.templatesFile, 'utf8');
-      this.templates = JSON.parse(data);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn('Failed to load templates:', error);
-      }
-      this.templates = [];
-    }
-  }
-
-  /**
    * Persist configurations to disk
    */
-  private async persistConfigurations(): Promise<void> {
-    const data = Object.fromEntries(this.configurations);
-    await fs.writeFile(
+  private async persistConfigurations(
+    configurations = this.configurations,
+  ): Promise<void> {
+    const data = Object.fromEntries(configurations);
+    await atomicReplaceTextFile(
       this.configurationsFile,
       JSON.stringify(data, null, 2),
-      'utf8',
-    );
-  }
-
-  /**
-   * Persist templates to disk
-   */
-  private async persistTemplates(): Promise<void> {
-    await fs.writeFile(
-      this.templatesFile,
-      JSON.stringify(this.templates, null, 2),
-      'utf8',
     );
   }
 
@@ -1102,9 +1101,8 @@ export class ConfigurationManager {
       if (needsMigration) {
         console.log('Performing configuration migrations...');
 
-        const result = await migrationManager.migrateConfigurations(
-          this.configurations,
-        );
+        const next = structuredClone(this.configurations);
+        const result = await migrationManager.migrateConfigurations(next);
 
         if (result.success) {
           console.log(
@@ -1112,14 +1110,12 @@ export class ConfigurationManager {
           );
 
           // Persist migrated configurations
-          await this.persistConfigurations();
+          await this.persistConfigurations(next);
+          this.configurations = next;
         } else {
-          console.error('Migration failed:', result.errors);
-
-          // Log errors but don't fail initialization
-          for (const error of result.errors) {
-            console.error('Migration error:', error);
-          }
+          throw new Error(
+            `Configuration migration failed: ${result.errors.join('; ')}`,
+          );
         }
 
         if (result.backupPath) {
@@ -1128,7 +1124,7 @@ export class ConfigurationManager {
       }
     } catch (error) {
       console.error('Migration process failed:', error);
-      // Don't fail initialization for migration errors
+      throw error;
     }
   }
 
@@ -1139,6 +1135,16 @@ export class ConfigurationManager {
     if (!this.isInitialized) {
       await this.initialize();
     }
+  }
+
+  private enqueueWrite<T>(operation: () => Promise<T>): Promise<T> {
+    const run = async () => {
+      await this.ensureInitialized();
+      return operation();
+    };
+    const pending = this.writes.then(run, run);
+    this.writes = pending.catch(() => undefined);
+    return pending;
   }
 
   /**
@@ -1152,7 +1158,6 @@ export class ConfigurationManager {
       );
       try {
         const result = await this.getConfiguration(providerId);
-        console.log('📡 [CONFIG-MANAGER] IPC get response:', result);
         return result;
       } catch (error) {
         console.error('❌ [CONFIG-MANAGER] IPC get error:', error);
@@ -1171,8 +1176,6 @@ export class ConfigurationManager {
         console.log(
           '📡 [CONFIG-MANAGER] IPC save request for provider:',
           providerId,
-          'config:',
-          JSON.stringify(config, null, 2),
         );
         try {
           await this.saveConfiguration(providerId, config, options);

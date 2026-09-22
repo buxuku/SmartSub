@@ -57,6 +57,7 @@ jest.mock('next-i18next', () => ({
 }));
 
 jest.mock('lucide-react', () => ({
+  ...jest.requireActual('lucide-react'),
   Search: () => <span data-testid="search-icon" />,
   RefreshCw: () => <span data-testid="refresh-icon" />,
   AlertTriangle: () => <span data-testid="alert-icon" />,
@@ -162,15 +163,24 @@ jest.mock('@/components/ui/dropdown-menu', () => ({
 
 jest.mock('@/components/ui/tabs', () => {
   const React = require('react');
-  const Context = React.createContext('body');
+  const Context = React.createContext({
+    value: 'headers',
+    onValueChange: (_: string) => {},
+  });
   return {
     Tabs: ({
       children,
       value,
+      onValueChange,
     }: {
       children: React.ReactNode;
       value: string;
-    }) => <Context.Provider value={value}>{children}</Context.Provider>,
+      onValueChange: (value: string) => void;
+    }) => (
+      <Context.Provider value={{ value, onValueChange }}>
+        {children}
+      </Context.Provider>
+    ),
     TabsList: ({ children }: { children: React.ReactNode }) => (
       <div role="tablist">{children}</div>
     ),
@@ -183,7 +193,12 @@ jest.mock('@/components/ui/tabs', () => {
     }) => {
       const active = React.useContext(Context);
       return (
-        <button role="tab" aria-selected={active === value} data-value={value}>
+        <button
+          role="tab"
+          aria-selected={active.value === value}
+          data-value={value}
+          onClick={() => active.onValueChange(value)}
+        >
           {children}
         </button>
       );
@@ -196,7 +211,7 @@ jest.mock('@/components/ui/tabs', () => {
       value: string;
     }) => {
       const active = React.useContext(Context);
-      return active === value ? (
+      return active.value === value ? (
         <div data-testid={`tab-content-${value}`}>{children}</div>
       ) : null;
     },
@@ -316,6 +331,8 @@ jest.mock('@/components/ui/alert-dialog', () => ({
 
 describe('CustomParameterEditor', () => {
   const mockConfig: CustomParameterConfig = {
+    configVersion: '1.0.0',
+    lastModified: 1,
     headerParameters: { Authorization: 'Bearer x' },
     bodyParameters: { temperature: 0.7 },
   };
@@ -328,6 +345,7 @@ describe('CustomParameterEditor', () => {
   ) => ({
     state: {
       config: mockConfig,
+      providerId: 'openai',
       isLoading: false,
       hasUnsavedChanges: false,
       validationErrors: [],
@@ -350,7 +368,8 @@ describe('CustomParameterEditor', () => {
       key.toLowerCase() === 'temperature' || key.toLowerCase() === 'max_tokens'
         ? {
             key: key.toLowerCase(),
-            type: 'number' as const,
+            description: 'Test parameter',
+            type: 'float' as const,
             category: 'behavior' as const,
             required: false,
             providerSupport: ['*'],
@@ -360,6 +379,9 @@ describe('CustomParameterEditor', () => {
     resetConfig: jest.fn(),
     enableAutoSave: jest.fn(),
     disableAutoSave: jest.fn(),
+    getIsDirty: jest.fn(() => false),
+    flush: jest.fn(async () => true),
+    discardChanges: jest.fn(),
     getMigrationStatus: jest.fn(),
     getAppliedMigrations: jest.fn(),
     getAvailableMigrations: jest.fn(),
@@ -385,27 +407,27 @@ describe('CustomParameterEditor', () => {
 
   it('commits draft row via addBodyParameter on blur', async () => {
     render(<CustomParameterEditor providerId="openai" />);
+    fireEvent.click(screen.getByRole('tab', { name: /请求体参数/ }));
 
     const keyInput = screen.getByPlaceholderText('例如 temperature');
-    const valueInput = screen.getByPlaceholderText('例如 0.3');
+    const valueInput = document.querySelector(
+      'input[data-draft-field="value"]',
+    )!;
 
     fireEvent.change(keyInput, { target: { value: 'max_tokens' } });
     fireEvent.change(valueInput, { target: { value: '1000' } });
     fireEvent.blur(valueInput);
 
     await waitFor(() => {
-      expect(addBodyParameter).toHaveBeenCalledWith(
-        'max_tokens',
-        1000,
-        'float',
-      );
+      expect(addBodyParameter).toHaveBeenCalledWith('max_tokens', 1000);
     });
   });
 
   it('allows adding a second body parameter', async () => {
     let bodyParameters: Record<string, ParameterValue> = {};
+    const headerParameters = {};
     const localAddBodyParameter = jest.fn(
-      (key: string, value: ParameterValue, _type: string) => {
+      (key: string, value: ParameterValue) => {
         bodyParameters = { ...bodyParameters, [key]: value };
       },
     );
@@ -413,8 +435,9 @@ describe('CustomParameterEditor', () => {
     mockUseParameterConfig.mockImplementation(() =>
       buildHookReturn({
         state: {
+          providerId: 'openai',
           config: {
-            headerParameters: {},
+            headerParameters,
             bodyParameters,
             configVersion: '1.0.0',
             lastModified: Date.now(),
@@ -431,7 +454,8 @@ describe('CustomParameterEditor', () => {
           if (normalized === 'temperature' || normalized === 'max_tokens') {
             return {
               key: normalized,
-              type: 'number' as const,
+              description: 'Test parameter',
+              type: 'float' as const,
               category: 'behavior' as const,
               required: false,
               providerSupport: ['*'],
@@ -443,10 +467,13 @@ describe('CustomParameterEditor', () => {
     );
 
     const { rerender } = render(<CustomParameterEditor providerId="openai" />);
+    fireEvent.click(screen.getByRole('tab', { name: /请求体参数/ }));
 
     const fillDraftRow = (key: string, value: string) => {
       const keyInput = screen.getByPlaceholderText('例如 temperature');
-      const valueInput = screen.getByPlaceholderText('例如 0.3');
+      const valueInput = document.querySelector(
+        'input[data-draft-field="value"]',
+      )!;
       fireEvent.change(keyInput, { target: { value: key } });
       fireEvent.change(valueInput, { target: { value } });
       fireEvent.blur(valueInput);
@@ -455,11 +482,7 @@ describe('CustomParameterEditor', () => {
     fillDraftRow('temperature', '0.3');
 
     await waitFor(() => {
-      expect(localAddBodyParameter).toHaveBeenCalledWith(
-        'temperature',
-        0.3,
-        'float',
-      );
+      expect(localAddBodyParameter).toHaveBeenCalledWith('temperature', 0.3);
     });
 
     rerender(<CustomParameterEditor providerId="openai" />);
@@ -470,7 +493,6 @@ describe('CustomParameterEditor', () => {
       expect(localAddBodyParameter).toHaveBeenLastCalledWith(
         'max_tokens',
         1000,
-        'float',
       );
       expect(Object.keys(bodyParameters)).toEqual(
         expect.arrayContaining(['temperature', 'max_tokens']),
@@ -480,6 +502,7 @@ describe('CustomParameterEditor', () => {
 
   it('calls removeBodyParameter when row remove is selected', () => {
     render(<CustomParameterEditor providerId="openai" />);
+    fireEvent.click(screen.getByRole('tab', { name: /请求体参数/ }));
 
     const bodyTab = screen.getByTestId('tab-content-body');
     const removeButton = within(bodyTab)

@@ -51,7 +51,7 @@ jobs:
       - name: Install Node.js, NPM and Yarn
         uses: actions/setup-node@v4
         with:
-          node-version: 20.14.0
+          node-version: 22.14.0
 
       - name: Prepare whisper addon (bundled)
         shell: bash
@@ -144,7 +144,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20.x # Or your preferred Node version for the script
+          node-version: 22.14.0
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v4

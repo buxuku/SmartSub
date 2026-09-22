@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -44,15 +44,25 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Label } from '@/components/ui/label';
-import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import {
   PendingFile,
   DetectedSubtitle,
   createPendingFileFromVideo,
-  selectBestSubtitles,
-  classifySubtitleLang,
+  createPendingFileFromSubtitle,
 } from '@/lib/proofreadUtils';
+import { useProofreadAction } from '../../hooks/useProofreadAction';
+import { ProofreadActionStatus } from './ProofreadActionStatus';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 const SUBTITLE_SELECT_TRIGGER_CLASS =
   'h-auto min-h-10 w-full min-w-0 max-w-full [&>span]:line-clamp-none [&>span]:flex [&>span]:min-w-0 [&>span]:flex-1 [&>span]:w-full';
@@ -135,6 +145,8 @@ interface ProofreadFileListProps {
   onRemoveFile: (index: number) => void;
   onAddFiles: (files: PendingFile[]) => void;
   onSaveTask: () => Promise<boolean>;
+  saveStatus: 'idle' | 'saving' | 'saved' | 'save_error';
+  isDirty: boolean;
   onReset: () => void;
 }
 
@@ -149,126 +161,144 @@ export default function ProofreadFileList({
   onRemoveFile,
   onAddFiles,
   onSaveTask,
+  saveStatus,
+  isDirty,
   onReset,
 }: ProofreadFileListProps) {
   const { t } = useTranslation('home');
-  const [saving, setSaving] = useState(false);
+  const { t: commonT } = useTranslation('common');
+  const saving = saveStatus === 'saving';
   const [showNameInput, setShowNameInput] = useState(false);
+  const action = useProofreadAction();
+  const filesRef = useRef(files);
+  filesRef.current = files;
+  const [selectionError, setSelectionError] = useState('');
+  const [replacement, setReplacement] = useState<{
+    file: PendingFile;
+    updates: Partial<PendingFile>;
+  } | null>(null);
 
-  // 手动选择源字幕
-  const handleSelectSourceSubtitle = useCallback(
-    async (index: number) => {
-      const result = await window.ipc.invoke('selectFiles', {
-        type: 'subtitle',
-        multiple: false,
-      });
-      if (result && !result.canceled && result.filePaths.length > 0) {
-        const filePath = result.filePaths[0];
-        const langResult = await window.ipc.invoke('detectLanguage', {
-          filePath,
+  const changeSubtitle = (
+    id: string,
+    type: 'source' | 'target',
+    filePath?: string,
+    language?: string,
+  ) => {
+    const index = filesRef.current.findIndex((file) => file.id === id);
+    const file = filesRef.current[index];
+    if (!file) return;
+    setSelectionError('');
+    if (
+      filePath &&
+      filePath ===
+        (type === 'source' ? file.selectedTarget : file.selectedSource)
+    ) {
+      setSelectionError(t('proofreadImportState.sameFile'));
+      return;
+    }
+    const previousPath =
+      type === 'source' ? file.selectedSource : file.selectedTarget;
+    if (previousPath === filePath) return;
+    const updates: Partial<PendingFile> = {
+      ...(type === 'source'
+        ? { selectedSource: filePath, sourceLanguage: language }
+        : { selectedTarget: filePath, targetLanguage: language }),
+      proofreadDataFile: undefined,
+      finalTargetPath: undefined,
+      translateContent: undefined,
+      status: 'pending',
+      ...(filePath &&
+      !file.detectedSubtitles.some((subtitle) => subtitle.filePath === filePath)
+        ? {
+            detectedSubtitles: [
+              ...file.detectedSubtitles,
+              {
+                filePath,
+                language,
+                type: type === 'source' ? 'source' : 'translated',
+                confidence: 100,
+              },
+            ],
+          }
+        : {}),
+    };
+    if (file.proofreadDataFile) setReplacement({ file, updates });
+    else onUpdateFile(index, updates);
+  };
+
+  const confirmReplacement = () => {
+    if (!replacement) return;
+    const index = filesRef.current.findIndex(
+      (file) => file.id === replacement.file.id,
+    );
+    const file = filesRef.current[index];
+    // A confirmation only applies to the document the user actually reviewed.
+    if (
+      file &&
+      file.selectedSource === replacement.file.selectedSource &&
+      file.selectedTarget === replacement.file.selectedTarget &&
+      file.proofreadDataFile === replacement.file.proofreadDataFile
+    )
+      onUpdateFile(index, replacement.updates);
+    setReplacement(null);
+  };
+
+  const handleSelectSubtitle = (index: number, type: 'source' | 'target') => {
+    setSelectionError('');
+    const id = files[index]?.id;
+    if (!id) return;
+    let selection: { canceled?: boolean; filePaths: string[] } | undefined;
+    void action.run(
+      async (invoke) => {
+        if (!filesRef.current.some((file) => file.id === id)) return null;
+        selection ||= await invoke('selectFiles', {
+          type: 'subtitle',
+          multiple: false,
         });
-        const language = langResult.success ? langResult.data?.code : undefined;
-
-        // 检查是否已存在于 detectedSubtitles 中
-        const file = files[index];
-        const exists = file.detectedSubtitles.some(
-          (s) => s.filePath === filePath,
-        );
-
-        const updates: Partial<PendingFile> = {
-          selectedSource: filePath,
-          sourceLanguage: language,
-        };
-
-        // 如果不存在，添加到 detectedSubtitles
-        if (!exists) {
-          updates.detectedSubtitles = [
-            ...file.detectedSubtitles,
-            {
-              filePath,
-              type: 'source' as const,
-              language,
-              confidence: 100, // 手动上传的置信度设为 100
-            },
-          ];
-        }
-
-        onUpdateFile(index, updates);
-      }
-    },
-    [files, onUpdateFile],
-  );
-
-  // 手动选择翻译字幕
-  const handleSelectTargetSubtitle = useCallback(
-    async (index: number) => {
-      const result = await window.ipc.invoke('selectFiles', {
-        type: 'subtitle',
-        multiple: false,
-      });
-      if (result && !result.canceled && result.filePaths.length > 0) {
-        const filePath = result.filePaths[0];
-        const langResult = await window.ipc.invoke('detectLanguage', {
-          filePath,
-        });
-        const language = langResult.success ? langResult.data?.code : undefined;
-
-        // 检查是否已存在于 detectedSubtitles 中
-        const file = files[index];
-        const exists = file.detectedSubtitles.some(
-          (s) => s.filePath === filePath,
-        );
-
-        const updates: Partial<PendingFile> = {
-          selectedTarget: filePath,
-          targetLanguage: language,
-        };
-
-        // 如果不存在，添加到 detectedSubtitles
-        if (!exists) {
-          updates.detectedSubtitles = [
-            ...file.detectedSubtitles,
-            {
-              filePath,
-              type: 'translated' as const,
-              language,
-              confidence: 100, // 手动上传的置信度设为 100
-            },
-          ];
-        }
-
-        onUpdateFile(index, updates);
-      }
-    },
-    [files, onUpdateFile],
-  );
+        if (selection?.canceled) return null;
+        if (!Array.isArray(selection?.filePaths))
+          throw new Error('INVALID_FILE_SELECTION');
+        const filePath = selection.filePaths[0];
+        if (!filePath) return null;
+        if ((await invoke('checkFileExists', { filePath }))?.exists !== true)
+          throw new Error(`File not found: ${filePath}`);
+        const language = await invoke('detectLanguage', { filePath });
+        if (language?.success !== true)
+          throw new Error(language?.error || 'INVALID_LANGUAGE_RESPONSE');
+        return { filePath, language: language.data?.code };
+      },
+      (result) => {
+        if (!result) return;
+        changeSubtitle(id, type, result.filePath, result.language);
+      },
+    );
+  };
+  const handleSelectSourceSubtitle = (index: number) =>
+    handleSelectSubtitle(index, 'source');
+  const handleSelectTargetSubtitle = (index: number) =>
+    handleSelectSubtitle(index, 'target');
 
   // 从下拉菜单选择字幕
-  const handleSelectFromDropdown = useCallback(
-    (index: number, type: 'source' | 'target', filePath: string) => {
-      const file = files[index];
-      const subtitle = file.detectedSubtitles.find(
-        (s) => s.filePath === filePath,
-      );
+  const handleSelectFromDropdown = (
+    index: number,
+    type: 'source' | 'target',
+    filePath: string,
+  ) => {
+    const file = files[index];
+    const subtitle = file.detectedSubtitles.find(
+      (s) => s.filePath === filePath,
+    );
 
-      if (type === 'source') {
-        onUpdateFile(index, {
-          selectedSource: filePath,
-          sourceLanguage: subtitle?.language,
-        });
-      } else {
-        onUpdateFile(index, {
-          selectedTarget: filePath === 'none' ? undefined : filePath,
-          targetLanguage: filePath === 'none' ? undefined : subtitle?.language,
-        });
-      }
-    },
-    [files, onUpdateFile],
-  );
+    changeSubtitle(
+      file.id,
+      type,
+      filePath === 'none' ? undefined : filePath,
+      filePath === 'none' ? undefined : subtitle?.language,
+    );
+  };
 
   // 保存任务
   const handleSave = useCallback(async () => {
-    setSaving(true);
     try {
       const success = await onSaveTask();
       if (success) {
@@ -276,95 +306,37 @@ export default function ProofreadFileList({
       }
     } catch (error) {
       toast.error(t('saveFailed'));
-    } finally {
-      setSaving(false);
     }
   }, [onSaveTask, t]);
 
   // 追加文件（根据 importType 自动选择类型）
-  const handleAppendFiles = useCallback(async () => {
-    try {
-      if (importType === 'video') {
-        // 追加视频
-        const result = await window.ipc.invoke('selectFiles', {
-          type: 'video',
+  const handleAppendFiles = () => {
+    setSelectionError('');
+    let selection: { canceled?: boolean; filePaths: string[] } | undefined;
+    void action.run(
+      async (invoke) => {
+        selection ||= await invoke('selectFiles', {
+          type: importType,
           multiple: true,
         });
-
-        if (!result || result.canceled || result.filePaths.length === 0) return;
-
-        // 使用工具函数创建 PendingFile
-        const newFiles = await Promise.all(
-          result.filePaths.map((videoPath: string) =>
-            createPendingFileFromVideo(videoPath),
+        if (selection?.canceled) return [];
+        if (!Array.isArray(selection?.filePaths))
+          throw new Error('INVALID_FILE_SELECTION');
+        const paths = Array.from(new Set(selection.filePaths));
+        if (!paths.length) return [];
+        return Promise.all(
+          paths.map((filePath) =>
+            importType === 'video'
+              ? createPendingFileFromVideo(filePath, { strict: true })
+              : createPendingFileFromSubtitle(filePath, true, { strict: true }),
           ),
         );
-
-        if (newFiles.length > 0) {
-          onAddFiles(newFiles);
-        }
-      } else {
-        // 追加字幕
-        const result = await window.ipc.invoke('selectFiles', {
-          type: 'subtitle',
-          multiple: true,
-        });
-
-        if (!result || result.canceled || result.filePaths.length === 0) return;
-
-        const allSubtitles: DetectedSubtitle[] = [];
-        // 取用户任务语向，用于判定每个字幕是原文还是译文
-        const userConfig = await window.ipc.invoke('getUserConfig');
-
-        for (const filePath of result.filePaths) {
-          const langResult = await window.ipc.invoke('detectLanguage', {
-            filePath,
-          });
-          const lang = langResult.success ? langResult.data?.code : undefined;
-          const type = classifySubtitleLang(
-            lang,
-            userConfig?.sourceLanguage,
-            userConfig?.targetLanguage,
-          );
-          allSubtitles.push({
-            filePath,
-            type,
-            language: lang,
-            confidence: lang ? 90 : 80,
-          });
-        }
-
-        // 使用工具函数选择最佳字幕
-        const { bestSource, bestTarget } = selectBestSubtitles(allSubtitles);
-        const sourceSubtitle = bestSource || allSubtitles[0];
-        const targetSubtitle =
-          bestTarget ||
-          allSubtitles.find(
-            (s) =>
-              s.type === 'translated' &&
-              s.filePath !== sourceSubtitle?.filePath,
-          );
-
-        const newFile: PendingFile = {
-          id: uuidv4(),
-          fileName:
-            path
-              .basename(sourceSubtitle?.filePath || 'Subtitles')
-              .replace(/\.[^.]+$/, '') || 'Subtitles',
-          detectedSubtitles: allSubtitles,
-          selectedSource: sourceSubtitle?.filePath,
-          selectedTarget: targetSubtitle?.filePath,
-          sourceLanguage: sourceSubtitle?.language,
-          targetLanguage: targetSubtitle?.language,
-          status: 'pending',
-        };
-
-        onAddFiles([newFile]);
-      }
-    } catch (error) {
-      console.error('Failed to append files:', error);
-    }
-  }, [importType, onAddFiles]);
+      },
+      (newFiles) => {
+        if (newFiles.length) onAddFiles(newFiles);
+      },
+    );
+  };
 
   // 获取状态显示
   const getStatusDisplay = (status: PendingFile['status']) => {
@@ -401,6 +373,33 @@ export default function ProofreadFileList({
 
   return (
     <div className="space-y-4">
+      <ProofreadActionStatus {...action} />
+      {selectionError && (
+        <p role="alert" className="bg-destructive/10 p-3 text-sm">
+          {selectionError}
+        </p>
+      )}
+      <AlertDialog
+        open={Boolean(replacement)}
+        onOpenChange={(open) => !open && setReplacement(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('proofreadImportState.replaceTitle')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('proofreadImportState.replaceDescription')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmReplacement}>
+              {t('proofreadImportState.replaceConfirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {/* 顶部工具栏 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -453,7 +452,7 @@ export default function ProofreadFileList({
                   variant="outline"
                   size="sm"
                   onClick={handleSave}
-                  disabled={saving || files.length === 0}
+                  disabled={saving || (files.length === 0 && !savedTaskId)}
                 >
                   {saving ? (
                     <Loader2 className="w-4 h-4 mr-1 animate-spin" />
@@ -471,15 +470,27 @@ export default function ProofreadFileList({
           <Badge variant="secondary">
             {completedCount}/{files.length} {t('completed')}
           </Badge>
-          {savedTaskId && (
-            <Badge variant="outline" className="text-success">
-              {t('saved')}
-            </Badge>
-          )}
+          <span
+            role="status"
+            className={
+              saveStatus === 'save_error'
+                ? 'text-xs text-destructive'
+                : 'text-xs text-muted-foreground'
+            }
+          >
+            {commonT(
+              `saveState.${saveStatus === 'idle' && isDirty ? 'dirty' : saveStatus}`,
+            )}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           {/* 追加文件 */}
-          <Button variant="outline" size="sm" onClick={handleAppendFiles}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={action.busy}
+            onClick={handleAppendFiles}
+          >
             <Plus className="w-4 h-4 mr-1" />
             {importType === 'video' ? t('appendVideos') : t('appendSubtitles')}
           </Button>
@@ -487,7 +498,7 @@ export default function ProofreadFileList({
       </div>
 
       {/* 文件列表表格 */}
-      <div className="border rounded-lg overflow-hidden">
+      <div className="rounded-lg bg-card overflow-hidden">
         <Table className="table-fixed w-full">
           <TableHeader>
             <TableRow>
@@ -534,14 +545,15 @@ export default function ProofreadFileList({
             {files.map((file, index) => {
               // 所有字幕都可以作为源字幕或翻译字幕选择
               // 源字幕优先显示 source 和 unknown 类型
-              const sourceOptions = file.detectedSubtitles.filter(
+              const availableSources = file.detectedSubtitles.filter(
+                (s) => s.filePath !== file.selectedTarget,
+              );
+              const sourceOptions = availableSources.filter(
                 (s) => s.type === 'source' || s.type === 'unknown',
               );
               // 如果没有 source 类型，显示所有字幕
               const effectiveSourceOptions =
-                sourceOptions.length > 0
-                  ? sourceOptions
-                  : file.detectedSubtitles;
+                sourceOptions.length > 0 ? sourceOptions : availableSources;
 
               // 翻译字幕可以选择任何字幕（除了已选为源的那个）
               // 优先显示 translated 类型，但也允许选择其他类型
@@ -591,6 +603,7 @@ export default function ProofreadFileList({
                       ) : effectiveSourceOptions.length > 0 ? (
                         <div className="min-w-0 flex-1">
                           <Select
+                            disabled={action.busy}
                             value={file.selectedSource || ''}
                             onValueChange={(v) =>
                               handleSelectFromDropdown(index, 'source', v)
@@ -643,6 +656,7 @@ export default function ProofreadFileList({
                           className="h-8 w-8"
                           onClick={() => handleSelectSourceSubtitle(index)}
                           title={t('uploadSubtitle')}
+                          disabled={action.busy}
                         >
                           <Upload className="w-4 h-4" />
                         </Button>
@@ -653,6 +667,7 @@ export default function ProofreadFileList({
                     <div className="flex min-w-0 items-center gap-2">
                       <div className="min-w-0 flex-1">
                         <Select
+                          disabled={action.busy}
                           value={file.selectedTarget || 'none'}
                           onValueChange={(v) =>
                             handleSelectFromDropdown(index, 'target', v)
@@ -702,6 +717,7 @@ export default function ProofreadFileList({
                         className="h-8 w-8"
                         onClick={() => handleSelectTargetSubtitle(index)}
                         title={t('uploadSubtitle')}
+                        disabled={action.busy}
                       >
                         <Upload className="w-4 h-4" />
                       </Button>

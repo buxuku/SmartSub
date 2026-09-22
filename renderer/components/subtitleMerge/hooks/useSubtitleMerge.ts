@@ -1,13 +1,8 @@
-/**
- * 字幕合并状态管理 Hook
- * 封装所有业务逻辑，便于组件复用
- */
-
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { v4 as uuid } from 'uuid';
 import type {
   SubtitleStyle,
   MergeProgress,
-  MergeStatus,
   VideoInfo,
   SubtitleInfo,
   MergeConfig,
@@ -16,936 +11,1112 @@ import type {
   EncoderMode,
   HwAccelInfo,
   UserStylePreset,
+  ComposeJobView,
 } from '../../../../types/subtitleMerge';
 import {
   getDefaultStyle,
   getPlatformDefaultFont,
   STYLE_PRESETS,
 } from '../constants';
+import {
+  composeDraftKey,
+  type ComposeDocument,
+} from '../../../lib/composeDraft';
+import { useComposeDocument } from './useComposeDocument';
+import { invalidSubtitleStyleFields } from '../../../../types/subtitleStyleValidation';
 
-/** 合成面板可选配音音轨的三种并入模式（keep 由"未选音轨"表达） */
 export type AudioTrackMode = 'replace' | 'mix' | 'addTrack';
-
-/**
- * Hook 返回的状态和方法
- */
-export interface UseSubtitleMergeReturn {
-  // 文件状态
-  videoPath: string | null;
-  subtitlePath: string | null;
-  videoInfo: VideoInfo | null;
-  subtitleInfo: SubtitleInfo | null;
-  /** 可选配音音轨（null=保留原声，行为与引入前一致） */
-  audioTrackPath: string | null;
-  /** 配音音轨并入模式（默认替换） */
-  audioTrackMode: AudioTrackMode;
-
-  // 样式状态
-  style: SubtitleStyle;
-  activePresetId: string | null;
-  /** 用户保存的样式预设（我的样式） */
-  userPresets: UserStylePreset[];
-
-  // 输出状态
-  outputPath: string | null;
-  outputMode: MergeOutputMode;
-  videoQuality: VideoQuality;
-  /** 生效的编码方式（持久化为 hardware 但本会话不可用时回落 cpu 显示） */
-  encoderMode: EncoderMode;
-  /** 硬件编码器探测结果（null=探测中） */
-  hwAccelInfo: HwAccelInfo | null;
-  /** 本次会话发生过「硬件编码失败自动回退 CPU」 */
-  hwFallbackOccurred: boolean;
-
-  // 进度状态
-  progress: MergeProgress;
-  status: MergeStatus;
-
-  // 文件操作方法
-  selectVideo: () => Promise<void>;
-  selectSubtitle: () => Promise<void>;
-  selectAudioTrack: () => Promise<void>;
-  setVideoPath: (path: string) => Promise<void>;
-  setSubtitlePath: (path: string) => Promise<void>;
-  setAudioTrackPath: (path: string) => void;
-  setAudioTrackMode: (mode: AudioTrackMode) => void;
-  clearFiles: () => void;
-  clearVideo: () => void;
-  clearSubtitle: () => void;
-  clearAudioTrack: () => void;
-
-  // 样式操作方法
-  setStyle: (style: SubtitleStyle) => void;
-  updateStyle: (updates: Partial<SubtitleStyle>) => void;
-  applyPreset: (presetId: string) => void;
-  resetStyle: () => void;
-  /** 把当前样式存为我的样式（成功返回保存的预设并选中） */
-  saveStylePreset: (name: string) => Promise<UserStylePreset | null>;
-  /** 删除我的样式 */
-  deleteStylePreset: (id: string) => Promise<boolean>;
-
-  // 输出操作方法
-  selectOutputPath: () => Promise<void>;
-  setOutputPath: (path: string) => void;
-  setOutputMode: (mode: MergeOutputMode) => void;
-  setVideoQuality: (quality: VideoQuality) => void;
-  setEncoderMode: (mode: EncoderMode) => void;
-
-  // 合并操作方法
-  startMerge: () => Promise<void>;
-  cancelMerge: () => Promise<void>;
-  isCancelling: boolean;
-  canMerge: boolean;
-
-  // 其他方法
-  openOutputFolder: () => Promise<void>;
-}
-
-/**
- * Hook 配置选项
- */
 export interface UseSubtitleMergeOptions {
-  /** 初始视频路径 */
   initialVideoPath?: string;
-  /** 初始字幕路径 */
   initialSubtitlePath?: string;
-  /** 初始样式 */
   initialStyle?: SubtitleStyle;
-  /** 进度回调 */
   onProgress?: (progress: MergeProgress) => void;
-  /** 完成回调 */
   onComplete?: (outputPath: string) => void;
-  /** 错误回调 */
   onError?: (error: string) => void;
 }
+const idle = (): MergeProgress => ({
+  percent: 0,
+  timeMark: '',
+  targetSize: 0,
+  status: 'idle',
+});
+const singleFlight = (action: () => Promise<void>) => {
+  let pending: Promise<void> | null = null;
+  return () =>
+    (pending ||= action().finally(() => {
+      pending = null;
+    }));
+};
+const extension = (path: string, doc: ComposeDocument): string => {
+  const ext =
+    doc.audioTrackPath && doc.audioTrackMode === 'addTrack'
+      ? '.mkv'
+      : doc.outputMode === 'softmux'
+        ? `.${doc.softContainer}`
+        : doc.videoPath?.match(/(\.[^./\\]+)$/)?.[1];
+  if (!ext) return path;
+  return /\.[^./\\]+$/.test(path)
+    ? path.replace(/\.[^./\\]+$/, ext)
+    : `${path}${ext}`;
+};
 
-/**
- * 字幕合并状态管理 Hook
- */
-export function useSubtitleMerge(
-  options: UseSubtitleMergeOptions = {},
-): UseSubtitleMergeReturn {
-  const {
-    initialVideoPath,
-    initialSubtitlePath,
-    initialStyle,
-    onProgress,
-    onComplete,
-    onError,
-  } = options;
-
-  // 文件状态
-  const [videoPath, setVideoPathState] = useState<string | null>(
-    initialVideoPath || null,
+export function useSubtitleMerge(options: UseSubtitleMergeOptions = {}) {
+  const { initialVideoPath, initialSubtitlePath, initialStyle } = options;
+  const document = useComposeDocument(
+    composeDraftKey(initialVideoPath, initialSubtitlePath),
+    {
+      videoPath: initialVideoPath || null,
+      subtitlePath: initialSubtitlePath || null,
+      audioTrackPath: null,
+      audioTrackMode: 'replace',
+      style: initialStyle || getDefaultStyle(),
+      activePresetId: 'classic',
+      outputPath: null,
+      outputMode: 'hardcode',
+      softContainer: 'mkv',
+      videoQuality: 'original',
+      encoderMode: 'cpu',
+    },
   );
-  const [subtitlePath, setSubtitlePathState] = useState<string | null>(
-    initialSubtitlePath || null,
-  );
+  const { value, current, update, isBlocked, touched, epoch } = document;
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [subtitleInfo, setSubtitleInfo] = useState<SubtitleInfo | null>(null);
-  // 可选配音音轨（合成矩阵音轨维度；null=保留原声）
-  const [audioTrackPath, setAudioTrackPathState] = useState<string | null>(
-    null,
-  );
-  const [audioTrackMode, setAudioTrackModeState] =
-    useState<AudioTrackMode>('replace');
-
-  // 样式状态
-  const [style, setStyleState] = useState<SubtitleStyle>(
-    () => initialStyle || getDefaultStyle(),
-  );
-  const [activePresetId, setActivePresetId] = useState<string | null>(
-    'classic',
-  );
-  // 用户样式预设（我的样式）：挂载时加载，保存/删除后就地维护
   const [userPresets, setUserPresets] = useState<UserStylePreset[]>([]);
-  useEffect(() => {
-    let mounted = true;
-    window.ipc
-      ?.invoke('subtitleMerge:listStylePresets')
-      .then((result) => {
-        if (mounted && result?.success && Array.isArray(result.data)) {
-          setUserPresets(result.data);
-        }
-      })
-      .catch(() => {
-        /* 加载失败仅少「我的样式」区块，不影响合成 */
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  // 输出状态
-  const [outputPath, setOutputPathState] = useState<string | null>(null);
-  const [outputMode, setOutputModeState] =
-    useState<MergeOutputMode>('hardcode');
-  // 烧录画质，默认原画质（CRF18），尽量贴近源文件画质（issue #331）
-  const [videoQuality, setVideoQualityState] =
-    useState<VideoQuality>('original');
-  // 编码方式偏好（原始持久化值；默认 CPU，硬件加速 opt-in）
-  const [encoderModeState, setEncoderModeState] = useState<EncoderMode>('cpu');
-  // 硬件编码器探测结果（null=探测中；挂载时异步获取，首个调用方触发主进程试编码）
   const [hwAccelInfo, setHwAccelInfo] = useState<HwAccelInfo | null>(null);
-  // 本次会话是否发生过硬件编码失败自动回退
   const [hwFallbackOccurred, setHwFallbackOccurred] = useState(false);
-  // 生效编码方式：偏好为 hardware 但本会话探测不可用时回落 cpu（不改写存储值）
-  const encoderMode: EncoderMode =
-    encoderModeState === 'hardware' && hwAccelInfo?.available
-      ? 'hardware'
-      : 'cpu';
-  // 供异步回调读取最新输出方式/音轨设置（生成默认路径时按组合定扩展名）
-  const outputModeRef = useRef<MergeOutputMode>('hardcode');
-  outputModeRef.current = outputMode;
-  const audioTrackPathRef = useRef<string | null>(null);
-  audioTrackPathRef.current = audioTrackPath;
-  const audioTrackModeRef = useRef<AudioTrackMode>('replace');
-  audioTrackModeRef.current = audioTrackMode;
-
-  // 软字幕封装与双音轨模式固定输出 .mkv；其余恢复视频原扩展名
-  const applyModeExtension = useCallback(
-    (
-      path: string,
-      opts: {
-        mode: MergeOutputMode;
-        trackPath: string | null;
-        trackMode: AudioTrackMode;
-      },
-      currentVideoPath: string | null,
-    ) => {
-      const requiresMkv =
-        opts.mode === 'softmux' ||
-        (Boolean(opts.trackPath) && opts.trackMode === 'addTrack');
-      if (requiresMkv) {
-        return path.replace(/\.[^./\\]+$/, '.mkv');
+  const [progress, setProgress] = useState<MergeProgress>(idle);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [reconnectJobs, setReconnectJobs] = useState<ComposeJobView[]>([]);
+  const queueSnapshot = useRef<ComposeJobView[]>([]);
+  const queueRevision = useRef(0);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isRetrying, setIsRetrying] = useState(false);
+  const retrying = useRef(false);
+  const retryActions = useRef(new Map<string, () => Promise<unknown> | void>());
+  const busy = useRef(new Set<string>());
+  const preferenceQueue = useRef(Promise.resolve());
+  const preferenceVersion = useRef(0);
+  const presetVersion = useRef(0);
+  const presetChanges = useRef(
+    new Map<string, { version: number; preset: UserStylePreset | null }>(),
+  );
+  const pendingPreset = useRef<{
+    id: string;
+    name: string;
+    style: SubtitleStyle;
+  } | null>(null);
+  const mounted = useRef(true);
+  const active = useRef(false);
+  const submitting = useRef(false);
+  const jobId = useRef<string | null>(null);
+  const exportSnapshot = useRef<ComposeDocument | null>(null);
+  const handledTerminal = useRef<string | null>(null);
+  const requestId = useRef<string | null>(null);
+  const submission = useRef(0);
+  const outputRevision = useRef(0);
+  const callbacks = useRef(options);
+  callbacks.current = options;
+  const fail = useCallback(
+    (scope: string, cause: unknown, action: () => Promise<unknown> | void) => {
+      if (mounted.current) {
+        retryActions.current.set(scope, action);
+        setErrors((previous) => ({ ...previous, [scope]: String(cause) }));
       }
-      const videoExtMatch = currentVideoPath?.match(/(\.[^./\\]+)$/);
-      return videoExtMatch
-        ? path.replace(/\.[^./\\]+$/, videoExtMatch[1])
-        : path;
     },
     [],
   );
-
-  /** 读取 refs 的当前扩展名约束（异步回调/事件处理器用） */
-  const currentExtensionOpts = useCallback(
-    () => ({
-      mode: outputModeRef.current,
-      trackPath: audioTrackPathRef.current,
-      trackMode: audioTrackModeRef.current,
-    }),
-    [],
-  );
-
-  // 进度状态
-  const [progress, setProgress] = useState<MergeProgress>({
-    percent: 0,
-    timeMark: '',
-    targetSize: 0,
-    status: 'idle',
-  });
-  const [isCancelling, setIsCancelling] = useState(false);
-
-  // 引用
-  const isMountedRef = useRef(true);
-
-  // 监听实时进度事件 (只更新进度百分比，不处理完成/错误状态)
-  useEffect(() => {
-    isMountedRef.current = true;
-
-    const handleProgress = (progressData: MergeProgress) => {
-      // 队列化后进度事件带来源：只消费合成面板自己的作业（配音导出等来源忽略）
-      if (progressData.source && progressData.source !== 'subtitleMerge') {
-        return;
-      }
-      if (!isMountedRef.current) return;
-      if (progressData.status === 'processing') {
-        // 硬件编码失败自动回退 CPU 的通知（界面提示，跨本次合成保留）
-        if (progressData.hwFallback) {
-          setHwFallbackOccurred(true);
-        }
-        setProgress(progressData);
-        onProgress?.(progressData);
-        return;
-      }
-      // 终态事件（completed/error/idle=取消）：页面离开后重连的场景靠它收尾
-      // （发起合成的 invoke promise 随页面卸载丢失，事件是唯一通知通道；
-      // 同页场景与 invoke 结果幂等覆盖，不重复触发回调）。
-      if (
-        progressData.status === 'completed' ||
-        progressData.status === 'error' ||
-        progressData.status === 'idle'
-      ) {
-        setProgress(progressData);
-        setIsCancelling(false);
-      }
-    };
-
-    const cleanup = window.ipc?.on('subtitleMerge:progress', handleProgress);
-
-    return () => {
-      isMountedRef.current = false;
-      cleanup?.();
-    };
-  }, [onProgress]);
-
-  // 挂载时：异步探测硬件编码器（首个调用触发主进程试编码，之后命中会话缓存），
-  // 恢复持久化合成偏好，并检查队列中是否有本面板来源的进行中作业（页面离开后
-  // 重开的重连：恢复文件区上下文与处理中状态，进度事件自动续接）
-  useEffect(() => {
-    let mounted = true;
-    window.ipc
-      ?.invoke('subtitleMerge:getHwAccelInfo')
-      .then((result) => {
-        if (mounted && result?.success && result.data) {
-          setHwAccelInfo(result.data);
-        }
-      })
-      .catch((error) => {
-        console.error('获取硬件加速信息失败:', error);
+  const clearError = useCallback((scope: string) => {
+    retryActions.current.delete(scope);
+    if (mounted.current)
+      setErrors((previous) => {
+        if (!(scope in previous)) return previous;
+        const next = { ...previous };
+        delete next[scope];
+        return next;
       });
-    (async () => {
-      try {
-        const result = await window.ipc?.invoke('subtitleMerge:getPreferences');
-        if (!mounted || !result?.success || !result.data) return;
-        const prefs = result.data as {
-          outputMode?: MergeOutputMode;
-          videoQuality?: VideoQuality;
-          encoderMode?: EncoderMode;
-        };
-        if (prefs.videoQuality) {
-          setVideoQualityState(prefs.videoQuality);
-        }
-        if (prefs.encoderMode) {
-          setEncoderModeState(prefs.encoderMode);
-        }
-        if (prefs.outputMode) {
-          setOutputModeState(prefs.outputMode);
-          // 手动同步 ref：覆盖「默认路径生成在本次渲染前发生」的窗口期
-          outputModeRef.current = prefs.outputMode;
-          setOutputPathState((prev) =>
-            prev
-              ? applyModeExtension(
-                  prev,
-                  { ...currentExtensionOpts(), mode: prefs.outputMode },
-                  videoPath,
-                )
-              : prev,
-          );
-        }
-      } catch (error) {
-        console.error('读取合成偏好失败:', error);
+  }, []);
+  const invoke = useCallback(async (channel: string, payload?: unknown) => {
+    const result = await window.ipc.invoke(channel, payload);
+    if (result?.success !== true)
+      throw new Error(result?.error || `${channel}: invalid response`);
+    return result;
+  }, []);
+  const editable = useCallback(
+    () => mounted.current && !active.current && !isBlocked(),
+    [isBlocked],
+  );
+  const edit = useCallback(
+    (patch: Parameters<typeof update>[0], group?: string) => {
+      if (!editable()) return false;
+      const changed = update(patch, { group });
+      if (changed) {
+        jobId.current = null;
+        setReconnectJobs([]);
+        setProgress(idle());
       }
-      // 重连检查放在偏好恢复之后：作业上下文覆盖偏好的 outputMode/路径联动
-      if (!mounted || initialVideoPath || initialSubtitlePath) return;
+      return changed;
+    },
+    [editable, update],
+  );
+  const persistPreferences = useCallback(() => {
+    const version = ++preferenceVersion.current;
+    const write = async () => {
+      if (!mounted.current || version !== preferenceVersion.current) return;
+      const doc = current.current;
       try {
-        const queueRes = await window.ipc?.invoke('subtitleMerge:getQueue');
-        if (!mounted || !queueRes?.success || !Array.isArray(queueRes.data)) {
-          return;
-        }
-        const jobs = queueRes.data as Array<{
-          id: string;
-          status: string;
-          source: string;
-          outputPath: string;
-          videoPath: string;
-          subtitlePath?: string;
-          subtitleMode: 'none' | 'soft' | 'hard';
-          audioTrack?: { mode: AudioTrackMode; trackPath: string };
-        }>;
-        const active = jobs.filter(
-          (j) => j.status === 'queued' || j.status === 'running',
-        );
-        const job = active.find((j) => j.source === 'subtitleMerge');
-        if (!job) return;
-
-        // 恢复文件区上下文与输出设置（与运行中作业保持一致）
-        setVideoPathState(job.videoPath);
-        setSubtitlePathState(job.subtitlePath ?? null);
-        if (job.audioTrack) {
-          setAudioTrackPathState(job.audioTrack.trackPath);
-          setAudioTrackModeState(job.audioTrack.mode);
-        }
-        if (job.subtitleMode !== 'none') {
-          const mode: MergeOutputMode =
-            job.subtitleMode === 'soft' ? 'softmux' : 'hardcode';
-          setOutputModeState(mode);
-          outputModeRef.current = mode;
-        }
-        setOutputPathState(job.outputPath);
-        setProgress({
-          percent: 0,
-          timeMark: '',
-          targetSize: 0,
-          status: 'processing',
-          queuedAhead: active.indexOf(job),
+        const result = await invoke('subtitleMerge:setPreferences', {
+          outputMode: doc.outputMode,
+          softContainer: doc.softContainer,
+          videoQuality: doc.videoQuality,
+          encoderMode: doc.encoderMode,
         });
-        // 文件信息补齐（不经 loadVideoInfo：避免重新生成默认输出路径）
-        const [videoInfoRes, subtitleInfoRes] = await Promise.all([
-          window.ipc
-            .invoke('subtitleMerge:getVideoInfo', { videoPath: job.videoPath })
-            .catch(() => null),
-          job.subtitlePath
-            ? window.ipc
-                .invoke('subtitleMerge:getSubtitleInfo', {
-                  subtitlePath: job.subtitlePath,
-                })
-                .catch(() => null)
-            : Promise.resolve(null),
-        ]);
-        if (!mounted) return;
-        if (videoInfoRes?.success && videoInfoRes.data) {
-          setVideoInfo(videoInfoRes.data);
-        }
-        if (subtitleInfoRes?.success && subtitleInfoRes.data) {
-          setSubtitleInfo(subtitleInfoRes.data);
-        }
+        if (result.data !== true) throw new Error('Preferences were not saved');
+        if (version === preferenceVersion.current)
+          clearError('preferencesWrite');
       } catch (error) {
-        console.error('检查合成队列失败:', error);
+        if (version === preferenceVersion.current)
+          fail('preferencesWrite', error, () => {
+            preferenceQueue.current = preferenceQueue.current.then(write);
+            return preferenceQueue.current;
+          });
       }
-    })();
-    return () => {
-      mounted = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    preferenceQueue.current = preferenceQueue.current.then(write);
+  }, [invoke, clearError, fail, current]);
+  const retryErrors = useCallback(async () => {
+    if (retrying.current) return;
+    retrying.current = true;
+    setIsRetrying(true);
+    try {
+      // Dialog retries run sequentially; a successful unrelated read cannot
+      // acknowledge a failed write or replace its original retry payload.
+      const attempted = new Set<() => Promise<unknown> | void>();
+      for (const [scope, action] of Array.from(retryActions.current)) {
+        if (!mounted.current) break;
+        if (
+          retryActions.current.get(scope) === action &&
+          !attempted.has(action)
+        ) {
+          attempted.add(action);
+          await action();
+        }
+      }
+    } finally {
+      retrying.current = false;
+      if (mounted.current) setIsRetrying(false);
+    }
   }, []);
 
-  // 持久化合成偏好（变更即写，失败静默——仅影响下次默认值）
-  const persistPreferences = useCallback(
-    (partial: {
-      outputMode?: MergeOutputMode;
-      videoQuality?: VideoQuality;
-      encoderMode?: EncoderMode;
-    }) => {
-      window.ipc?.invoke('subtitleMerge:setPreferences', partial).catch(() => {
-        // 持久化失败不影响本次合成
-      });
-    },
-    [],
-  );
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      submission.current++;
+    };
+  }, []);
+  useEffect(() => {
+    let live = true;
+    const readPresets = singleFlight(async () => {
+      if (!live) return;
+      const version = presetVersion.current;
+      await invoke('subtitleMerge:listStylePresets')
+        .then((result) => {
+          if (!Array.isArray(result.data))
+            throw new Error('Invalid style preset list');
+          if (live) {
+            const presets = new Map<string, UserStylePreset>(
+              result.data.map((preset: UserStylePreset) => [preset.id, preset]),
+            );
+            // Reconcile writes completed after this read began without losing
+            // untouched presets or resurrecting a concurrently deleted preset.
+            for (const [id, change] of Array.from(presetChanges.current)) {
+              if (change.version <= version) presetChanges.current.delete(id);
+              else if (change.preset) presets.set(id, change.preset);
+              else presets.delete(id);
+            }
+            setUserPresets(Array.from(presets.values()));
+            clearError('presetsRead');
+          }
+        })
+        .catch((error) => {
+          if (live) fail('presetsRead', error, readPresets);
+        });
+    });
+    const readHardware = singleFlight(async () => {
+      if (!live) return;
+      await invoke('subtitleMerge:getHwAccelInfo')
+        .then((result) => {
+          if (live) {
+            setHwAccelInfo(result.data);
+            clearError('hardware');
+          }
+        })
+        .catch((error) => {
+          if (live) fail('hardware', error, readHardware);
+        });
+    });
+    const readPreferences = singleFlight(async () => {
+      if (!live) return;
+      await invoke('subtitleMerge:getPreferences')
+        .then((result) => {
+          if (!live) return;
+          clearError('preferencesRead');
+          if (touched.current || active.current || isBlocked()) return;
+          const prefs = result.data || {};
+          update(
+            (doc) => {
+              const next = { ...doc };
+              if (['original', 'high', 'standard'].includes(prefs.videoQuality))
+                next.videoQuality = prefs.videoQuality;
+              if (['hardware', 'cpu'].includes(prefs.encoderMode))
+                next.encoderMode = prefs.encoderMode;
+              if (['mkv', 'mp4'].includes(prefs.softContainer))
+                next.softContainer = prefs.softContainer;
+              if (['softmux', 'hardcode'].includes(prefs.outputMode))
+                next.outputMode = prefs.outputMode;
+              if (next.outputPath)
+                next.outputPath = extension(next.outputPath, next);
+              return next;
+            },
+            { system: true },
+          );
+        })
+        .catch((error) => {
+          if (live) fail('preferencesRead', error, readPreferences);
+        });
+    });
+    void readPresets();
+    void readHardware();
+    void readPreferences();
+    return () => {
+      live = false;
+    };
+  }, [invoke, clearError, fail, update, isBlocked, touched, document.ready]);
 
-  // 加载视频信息
-  const loadVideoInfo = useCallback(
-    async (path: string) => {
+  // Metadata belongs to a media selection, not to a render or an old request.
+  const blocked = document.isBlocked();
+  useEffect(() => {
+    let live = true;
+    const path = value.videoPath;
+    const generation = epoch.current;
+    const outputVersion = outputRevision.current;
+    setVideoInfo(null);
+    if (!path) {
+      clearError('video');
+      clearError('outputDefault');
+    }
+    if (!path || blocked) return;
+    const readVideo = singleFlight(async () => {
+      if (!live || generation !== epoch.current) return;
       try {
-        const result = await window.ipc.invoke('subtitleMerge:getVideoInfo', {
+        const result = await invoke('subtitleMerge:getVideoInfo', {
           videoPath: path,
         });
-        if (result.success && result.data) {
+        if (live && generation === epoch.current) {
           setVideoInfo(result.data);
+          clearError('video');
         }
       } catch (error) {
-        console.error('加载视频信息失败:', error);
+        if (live && generation === epoch.current)
+          fail('video', error, readVideo);
       }
-      // 只要选了视频就生成默认输出路径（不依赖视频信息读取成功）
-      try {
-        const outputResult = await window.ipc.invoke(
-          'subtitleMerge:generateOutputPath',
-          {
-            videoPath: path,
-            suffix: '_subtitled',
-          },
-        );
-        if (outputResult.success && outputResult.data) {
-          setOutputPathState(
-            applyModeExtension(outputResult.data, currentExtensionOpts(), path),
-          );
-        }
-      } catch (error) {
-        console.error('生成默认输出路径失败:', error);
-      }
-    },
-    [applyModeExtension],
-  );
-
-  // 加载字幕信息
-  const loadSubtitleInfo = useCallback(async (path: string) => {
-    try {
-      const result = await window.ipc.invoke('subtitleMerge:getSubtitleInfo', {
-        subtitlePath: path,
-      });
-      if (result.success && result.data) {
-        setSubtitleInfo(result.data);
-      }
-    } catch (error) {
-      console.error('加载字幕信息失败:', error);
-    }
-  }, []);
-
-  // 预填路径（如从任务完成横幅跳转）需要主动加载文件信息
-  useEffect(() => {
-    if (initialVideoPath) {
-      loadVideoInfo(initialVideoPath);
-    }
-    if (initialSubtitlePath) {
-      loadSubtitleInfo(initialSubtitlePath);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // 换文件后旧的合成结果不再对应当前输入，复位完成/错误状态
-  const resetStaleProgress = useCallback(() => {
-    setProgress((prev) =>
-      prev.status === 'completed' || prev.status === 'error'
-        ? { percent: 0, timeMark: '', targetSize: 0, status: 'idle' }
-        : prev,
-    );
-  }, []);
-
-  // 选择视频文件
-  const selectVideo = useCallback(async () => {
-    try {
-      const result = await window.ipc.invoke('selectFile', {
-        type: 'video',
-        title: '选择视频文件',
-      });
-      if (!result.canceled && result.filePath) {
-        setVideoPathState(result.filePath);
-        resetStaleProgress();
-        await loadVideoInfo(result.filePath);
-      }
-    } catch (error) {
-      console.error('选择视频失败:', error);
-    }
-  }, [loadVideoInfo, resetStaleProgress]);
-
-  // 选择字幕文件
-  const selectSubtitle = useCallback(async () => {
-    try {
-      const result = await window.ipc.invoke('selectFile', {
-        type: 'subtitle',
-        title: '选择字幕文件',
-      });
-      if (!result.canceled && result.filePath) {
-        setSubtitlePathState(result.filePath);
-        resetStaleProgress();
-        await loadSubtitleInfo(result.filePath);
-      }
-    } catch (error) {
-      console.error('选择字幕失败:', error);
-    }
-  }, [loadSubtitleInfo, resetStaleProgress]);
-
-  // 设置视频路径
-  const setVideoPath = useCallback(
-    async (path: string) => {
-      setVideoPathState(path);
-      resetStaleProgress();
-      await loadVideoInfo(path);
-    },
-    [loadVideoInfo, resetStaleProgress],
-  );
-
-  // 设置字幕路径
-  const setSubtitlePath = useCallback(
-    async (path: string) => {
-      setSubtitlePathState(path);
-      resetStaleProgress();
-      await loadSubtitleInfo(path);
-    },
-    [loadSubtitleInfo, resetStaleProgress],
-  );
-
-  /** 音轨设置变化后按 mkv 约束联动输出扩展名 */
-  const reapplyOutputExtension = useCallback(
-    (trackPath: string | null, trackMode: AudioTrackMode) => {
-      setOutputPathState((prev) =>
-        prev
-          ? applyModeExtension(
-              prev,
-              { mode: outputModeRef.current, trackPath, trackMode },
-              videoPath,
-            )
-          : prev,
-      );
-    },
-    [applyModeExtension, videoPath],
-  );
-
-  // 设置配音音轨路径（可选输入；选中后按当前模式联动扩展名）
-  const setAudioTrackPath = useCallback(
-    (path: string) => {
-      setAudioTrackPathState(path);
-      resetStaleProgress();
-      reapplyOutputExtension(path, audioTrackModeRef.current);
-    },
-    [reapplyOutputExtension, resetStaleProgress],
-  );
-
-  // 选择配音音轨文件
-  const selectAudioTrack = useCallback(async () => {
-    try {
-      const result = await window.ipc.invoke('selectFile', {
-        type: 'audio',
-        title: '选择配音音轨',
-      });
-      if (!result.canceled && result.filePath) {
-        setAudioTrackPath(result.filePath);
-      }
-    } catch (error) {
-      console.error('选择配音音轨失败:', error);
-    }
-  }, [setAudioTrackPath]);
-
-  // 切换音轨并入模式（addTrack 强制 mkv 扩展名）
-  const setAudioTrackMode = useCallback(
-    (mode: AudioTrackMode) => {
-      setAudioTrackModeState(mode);
-      reapplyOutputExtension(audioTrackPathRef.current, mode);
-      resetStaleProgress();
-    },
-    [reapplyOutputExtension, resetStaleProgress],
-  );
-
-  // 清除配音音轨（回到保留原声，扩展名按输出方式恢复）
-  const clearAudioTrack = useCallback(() => {
-    setAudioTrackPathState(null);
-    reapplyOutputExtension(null, audioTrackModeRef.current);
-    resetStaleProgress();
-  }, [reapplyOutputExtension, resetStaleProgress]);
-
-  // 清空文件
-  const clearFiles = useCallback(() => {
-    setVideoPathState(null);
-    setSubtitlePathState(null);
-    setVideoInfo(null);
-    setSubtitleInfo(null);
-    setAudioTrackPathState(null);
-    setOutputPathState(null);
-    setProgress({
-      percent: 0,
-      timeMark: '',
-      targetSize: 0,
-      status: 'idle',
-    });
-  }, []);
-
-  // 单独清除视频：输出路径派生自视频一并清除；合成结果不再对应，进度复位
-  const clearVideo = useCallback(() => {
-    setVideoPathState(null);
-    setVideoInfo(null);
-    setOutputPathState(null);
-    setProgress({
-      percent: 0,
-      timeMark: '',
-      targetSize: 0,
-      status: 'idle',
-    });
-  }, []);
-
-  // 单独清除字幕
-  const clearSubtitle = useCallback(() => {
-    setSubtitlePathState(null);
-    setSubtitleInfo(null);
-    setProgress({
-      percent: 0,
-      timeMark: '',
-      targetSize: 0,
-      status: 'idle',
-    });
-  }, []);
-
-  // 设置完整样式
-  const setStyle = useCallback((newStyle: SubtitleStyle) => {
-    setStyleState(newStyle);
-    setActivePresetId(null);
-  }, []);
-
-  // 更新部分样式
-  const updateStyle = useCallback((updates: Partial<SubtitleStyle>) => {
-    setStyleState((prev) => ({ ...prev, ...updates }));
-    setActivePresetId(null);
-  }, []);
-
-  // 应用预设样式（系统预设 + 我的样式统一入口）
-  const applyPreset = useCallback(
-    (presetId: string) => {
-      const userPreset = userPresets.find((p) => p.id === presetId);
-      if (userPreset) {
-        // 与默认样式浅合并：老预设缺后续新增字段时有默认兜底
-        setStyleState({ ...getDefaultStyle(), ...userPreset.style });
-        setActivePresetId(presetId);
+      if (!live || generation !== epoch.current) return;
+      if (current.current.outputPath) {
+        clearError('outputDefault');
         return;
       }
-      const preset = STYLE_PRESETS.find((p) => p.id === presetId);
-      if (preset) {
-        // classic 预设字体跟随平台，避免 Arial 渲染不了 CJK
-        const nextStyle =
-          preset.id === 'classic'
-            ? { ...preset.style, fontName: getPlatformDefaultFont() }
-            : preset.style;
-        setStyleState(nextStyle);
-        setActivePresetId(presetId);
-      }
-    },
-    [userPresets],
-  );
-
-  // 把当前样式存为我的样式
-  const saveStylePreset = useCallback(
-    async (name: string): Promise<UserStylePreset | null> => {
       try {
-        const result = await window.ipc.invoke(
-          'subtitleMerge:saveStylePreset',
-          { name, style },
-        );
-        if (result?.success && result.data) {
-          const saved = result.data as UserStylePreset;
-          setUserPresets((prev) => {
-            const index = prev.findIndex((p) => p.id === saved.id);
-            if (index >= 0) {
-              const next = [...prev];
-              next[index] = saved;
-              return next;
-            }
-            return [...prev, saved];
+        const result = await invoke('subtitleMerge:generateOutputPath', {
+          videoPath: path,
+          suffix: '_subtitled',
+        });
+        if (
+          live &&
+          generation === epoch.current &&
+          outputVersion === outputRevision.current &&
+          current.current.videoPath === path &&
+          !current.current.outputPath
+        ) {
+          update((doc) => ({ outputPath: extension(result.data, doc) }), {
+            system: true,
           });
-          setActivePresetId(saved.id);
-          return saved;
+          clearError('outputDefault');
         }
       } catch (error) {
-        console.error('保存样式预设失败:', error);
+        if (
+          live &&
+          generation === epoch.current &&
+          outputVersion === outputRevision.current
+        )
+          fail('outputDefault', error, readVideo);
       }
-      return null;
-    },
-    [style],
-  );
+    });
+    void readVideo();
+    return () => {
+      live = false;
+    };
+  }, [
+    value.videoPath,
+    blocked,
+    epoch.current,
+    invoke,
+    current,
+    epoch,
+    update,
+    fail,
+    clearError,
+  ]);
+  useEffect(() => {
+    let live = true;
+    const path = value.subtitlePath;
+    setSubtitleInfo(null);
+    if (!path) clearError('subtitle');
+    if (!path || blocked) return;
+    const readSubtitle = singleFlight(async () => {
+      if (!live) return;
+      await invoke('subtitleMerge:getSubtitleInfo', { subtitlePath: path })
+        .then((result) => {
+          if (live) {
+            setSubtitleInfo(result.data);
+            clearError('subtitle');
+          }
+        })
+        .catch((error) => {
+          if (live) fail('subtitle', error, readSubtitle);
+        });
+    });
+    void readSubtitle();
+    return () => {
+      live = false;
+    };
+  }, [value.subtitlePath, blocked, epoch.current, invoke, fail, clearError]);
 
-  // 删除我的样式（当前选中被删时保留样式值、清除选中态）
-  const deleteStylePreset = useCallback(async (id: string) => {
-    try {
-      const result = await window.ipc.invoke(
-        'subtitleMerge:deleteStylePreset',
-        id,
+  const reconnectJob = useCallback(
+    (id: string) => {
+      if (isBlocked() || active.current || submitting.current) return;
+      const job = queueSnapshot.current.find(
+        (job) => job.id === id && job.source === 'subtitleMerge',
       );
-      if (result?.success) {
-        setUserPresets((prev) => prev.filter((p) => p.id !== id));
-        setActivePresetId((prev) => (prev === id ? null : prev));
-        return true;
-      }
-    } catch (error) {
-      console.error('删除样式预设失败:', error);
-    }
-    return false;
-  }, []);
-
-  // 重置样式
-  const resetStyle = useCallback(() => {
-    setStyleState(getDefaultStyle());
-    setActivePresetId('classic');
-  }, []);
-
-  // 选择输出路径
-  const selectOutputPath = useCallback(async () => {
-    try {
-      const result = await window.ipc.invoke('subtitleMerge:selectOutputPath', {
-        defaultPath: outputPath,
+      if (!job) return;
+      update(
+        {
+          videoPath: job.videoPath,
+          subtitlePath: job.subtitlePath || null,
+          outputPath: job.outputPath,
+          outputMode: job.subtitleMode === 'soft' ? 'softmux' : 'hardcode',
+          softContainer: /\.mp4$/i.test(job.outputPath) ? 'mp4' : 'mkv',
+          audioTrackPath: job.audioTrack?.trackPath || null,
+          audioTrackMode: job.audioTrack?.mode || 'replace',
+          ...(job.style ? { style: job.style, activePresetId: null } : {}),
+          ...(job.videoQuality ? { videoQuality: job.videoQuality } : {}),
+          ...(job.encoderMode ? { encoderMode: job.encoderMode } : {}),
+        },
+        { system: true },
+      );
+      document.setJob({ requestId: job.requestId, jobId: job.id });
+      exportSnapshot.current = current.current;
+      if (job.status === 'done') document.acceptExport(current.current);
+      jobId.current = job.id;
+      handledTerminal.current = null;
+      active.current = ['queued', 'running'].includes(job.status);
+      setReconnectJobs([]);
+      setProgress({
+        ...idle(),
+        jobId: job.id,
+        status: active.current
+          ? 'processing'
+          : job.status === 'done'
+            ? 'completed'
+            : job.status === 'error'
+              ? 'error'
+              : 'idle',
+        percent: job.status === 'done' ? 100 : 0,
+        errorMessage: job.error,
       });
-      if (result.success && result.data) {
-        setOutputPathState(result.data);
-      }
-    } catch (error) {
-      console.error('选择输出路径失败:', error);
-    }
-  }, [outputPath]);
-
-  // 设置输出路径
-  const setOutputPath = useCallback((path: string) => {
-    setOutputPathState(path);
-  }, []);
-
-  // 设置烧录画质（仅 hardcode 生效）
-  const setVideoQuality = useCallback(
-    (quality: VideoQuality) => {
-      setVideoQualityState(quality);
-      persistPreferences({ videoQuality: quality });
     },
-    [persistPreferences],
+    [isBlocked, update, document.setJob, document.acceptExport, current],
   );
 
-  // 设置编码方式（仅 hardcode 生效；持久化原始偏好）
-  const setEncoderMode = useCallback(
-    (mode: EncoderMode) => {
-      setEncoderModeState(mode);
-      persistPreferences({ encoderMode: mode });
-    },
-    [persistPreferences],
-  );
-
-  // 切换输出方式（联动输出扩展名；旧合成结果不再对应，复位状态）
-  const setOutputMode = useCallback(
-    (mode: MergeOutputMode) => {
-      setOutputModeState(mode);
-      setOutputPathState((prev) =>
-        prev
-          ? applyModeExtension(
-              prev,
-              { ...currentExtensionOpts(), mode },
-              videoPath,
+  useEffect(() => {
+    const handleQueue = (jobs: ComposeJobView[]) => {
+      if (!mounted.current || !Array.isArray(jobs)) return;
+      queueSnapshot.current = jobs;
+      if (isBlocked()) return;
+      const doc = current.current;
+      const same = (job: ComposeJobView) =>
+        job.videoPath === doc.videoPath &&
+        job.subtitlePath === doc.subtitlePath &&
+        job.outputPath === doc.outputPath;
+      if (!jobId.current) {
+        const reference = document.job.current;
+        const job = reference
+          ? jobs.find(
+              (job) =>
+                job.source === 'subtitleMerge' &&
+                (reference.jobId
+                  ? job.id === reference.jobId
+                  : job.requestId === reference.requestId),
             )
-          : prev,
-      );
-      resetStaleProgress();
-      persistPreferences({ outputMode: mode });
+          : undefined;
+        if (submitting.current) {
+          if (job) jobId.current = job.id;
+          return;
+        }
+        if (!job) {
+          const candidates = jobs.filter(
+            (job) =>
+              job.source === 'subtitleMerge' &&
+              ['queued', 'running'].includes(job.status) &&
+              (same(job) ||
+                (!touched.current && !doc.videoPath && !doc.subtitlePath)),
+          );
+          if (candidates.length === 1 && reference === undefined)
+            reconnectJob(candidates[0].id);
+          else setReconnectJobs(candidates);
+          return;
+        }
+        jobId.current = job.id;
+        reconnectJob(job.id);
+      }
+      const job = jobs.find((job) => job.id === jobId.current);
+      if (
+        !job ||
+        submitting.current ||
+        ['queued', 'running'].includes(job.status)
+      )
+        return;
+      if (handledTerminal.current === job.id) return;
+      handledTerminal.current = job.id;
+      active.current = false;
+      clearError('cancel');
+      if (
+        job.status === 'done' &&
+        job.outputPath !== current.current.outputPath
+      )
+        update({ outputPath: job.outputPath }, { system: true });
+      if (job.status === 'done' && exportSnapshot.current)
+        document.acceptExport({
+          ...exportSnapshot.current,
+          outputPath: job.outputPath,
+        });
+      setIsCancelling(false);
+      setProgress({
+        ...idle(),
+        status:
+          job.status === 'done'
+            ? 'completed'
+            : job.status === 'error'
+              ? 'error'
+              : 'idle',
+        percent: job.status === 'done' ? 100 : 0,
+        errorMessage: job.error,
+      });
+    };
+    const offQueue = window.ipc?.on(
+      'compose:queue',
+      (jobs: ComposeJobView[]) => {
+        queueRevision.current++;
+        handleQueue(jobs);
+      },
+    );
+    const offQueued = window.ipc?.on(
+      'subtitleMerge:queued',
+      (event: { requestId: string; jobId: string }) => {
+        if (
+          !mounted.current ||
+          !submitting.current ||
+          event.requestId !== requestId.current
+        )
+          return;
+        jobId.current = event.jobId;
+        document.setJob({ requestId: event.requestId, jobId: event.jobId });
+      },
+    );
+    const offProgress = window.ipc?.on(
+      'subtitleMerge:progress',
+      (event: MergeProgress) => {
+        if (
+          !mounted.current ||
+          !active.current ||
+          !jobId.current ||
+          event.jobId !== jobId.current ||
+          event.source !== 'subtitleMerge'
+        )
+          return;
+        if (event.hwFallback) setHwFallbackOccurred(true);
+        setProgress(event);
+        callbacks.current.onProgress?.(event);
+      },
+    );
+    let live = true;
+    const readQueue = singleFlight(async () => {
+      if (!live) return;
+      const version = queueRevision.current;
+      await invoke('subtitleMerge:getQueue')
+        .then((result) => {
+          if (!live || !Array.isArray(result.data)) return;
+          if (version !== queueRevision.current) {
+            clearError('queue');
+            return;
+          }
+          const jobs = result.data as ComposeJobView[];
+          handleQueue(jobs);
+          clearError('queue');
+        })
+        .catch((error) => {
+          if (live) fail('queue', error, readQueue);
+        });
+    });
+    void readQueue();
+    return () => {
+      live = false;
+      offQueue?.();
+      offQueued?.();
+      offProgress?.();
+    };
+  }, [
+    invoke,
+    current,
+    touched,
+    isBlocked,
+    update,
+    fail,
+    clearError,
+    blocked,
+    reconnectJob,
+    document.job,
+    document.setJob,
+    document.acceptExport,
+  ]);
+
+  const setVideoPath = useCallback(
+    async (path: string) => {
+      if (edit({ videoPath: path, outputPath: null })) outputRevision.current++;
+    },
+    [edit],
+  );
+  const setSubtitlePath = useCallback(
+    async (path: string) => {
+      edit({ subtitlePath: path });
+    },
+    [edit],
+  );
+  const withExtension = useCallback(
+    (patch: Partial<ComposeDocument>) =>
+      edit((doc) => {
+        const next = { ...doc, ...patch };
+        return {
+          ...patch,
+          outputPath: doc.outputPath ? extension(doc.outputPath, next) : null,
+        };
+      }),
+    [edit],
+  );
+  const setAudioTrackPath = useCallback(
+    (path: string) => {
+      withExtension({ audioTrackPath: path });
+    },
+    [withExtension],
+  );
+  const setAudioTrackMode = useCallback(
+    (mode: AudioTrackMode) => {
+      withExtension({ audioTrackMode: mode });
+    },
+    [withExtension],
+  );
+  const clearAudioTrack = useCallback(() => {
+    withExtension({ audioTrackPath: null });
+  }, [withExtension]);
+  const selectFile = useCallback(
+    async (type: 'video' | 'subtitle' | 'audio') => {
+      const generation = epoch.current;
+      const field =
+        type === 'video'
+          ? 'videoPath'
+          : type === 'subtitle'
+            ? 'subtitlePath'
+            : 'audioTrackPath';
+      const previousPath = current.current[field];
+      const scope = `selection:${type}`;
+      const valid = () =>
+        generation === epoch.current && current.current[field] === previousPath;
+      const attempt = async () => {
+        if (!valid()) {
+          clearError(scope);
+          return;
+        }
+        if (!editable() || busy.current.has('selection')) return;
+        busy.current.add('selection');
+        try {
+          const result = await window.ipc.invoke('selectFile', { type });
+          if (!editable() || !valid()) return;
+          if (result?.canceled || result?.cancelled) {
+            clearError(scope);
+            return;
+          }
+          if (typeof result?.filePath !== 'string' || !result.filePath)
+            throw new Error(result?.error || 'No file path returned');
+          if (type === 'video') await setVideoPath(result.filePath);
+          else if (type === 'subtitle') await setSubtitlePath(result.filePath);
+          else setAudioTrackPath(result.filePath);
+          clearError(scope);
+        } catch (error) {
+          if (valid()) fail(scope, error, attempt);
+        } finally {
+          busy.current.delete('selection');
+        }
+      };
+      await attempt();
     },
     [
-      applyModeExtension,
-      currentExtensionOpts,
-      videoPath,
-      resetStaleProgress,
-      persistPreferences,
+      editable,
+      epoch,
+      current,
+      setVideoPath,
+      setSubtitlePath,
+      setAudioTrackPath,
+      clearError,
+      fail,
     ],
   );
+  const selectVideo = useCallback(() => selectFile('video'), [selectFile]);
+  const selectSubtitle = useCallback(
+    () => selectFile('subtitle'),
+    [selectFile],
+  );
+  const selectAudioTrack = useCallback(() => selectFile('audio'), [selectFile]);
+  const clearFiles = useCallback(() => {
+    if (
+      edit({
+        videoPath: null,
+        subtitlePath: null,
+        audioTrackPath: null,
+        outputPath: null,
+      })
+    )
+      outputRevision.current++;
+  }, [edit]);
+  const clearVideo = useCallback(() => {
+    if (edit({ videoPath: null, outputPath: null })) outputRevision.current++;
+  }, [edit]);
+  const clearSubtitle = useCallback(() => {
+    edit({ subtitlePath: null });
+  }, [edit]);
+  const setStyle = useCallback(
+    (style: SubtitleStyle) => {
+      edit({ style, activePresetId: null });
+    },
+    [edit],
+  );
+  const updateStyle = useCallback(
+    (updates: Partial<SubtitleStyle>) => {
+      edit(
+        (doc) => ({
+          style: { ...doc.style, ...updates },
+          activePresetId: null,
+        }),
+        `style:${Object.keys(updates).sort().join(',')}`,
+      );
+    },
+    [edit],
+  );
+  const applyPreset = useCallback(
+    (id: string) => {
+      const preset =
+        userPresets.find((preset) => preset.id === id) ||
+        STYLE_PRESETS.find((preset) => preset.id === id);
+      if (preset)
+        edit({
+          style: {
+            ...getDefaultStyle(),
+            ...preset.style,
+            ...(id === 'classic' ? { fontName: getPlatformDefaultFont() } : {}),
+          },
+          activePresetId: id,
+        });
+    },
+    [userPresets, edit],
+  );
+  const resetStyle = useCallback(() => {
+    edit({ style: getDefaultStyle(), activePresetId: 'classic' });
+  }, [edit]);
+  const persistStylePreset = useCallback(
+    async function persist(
+      payload: { id: string; name: string; style: SubtitleStyle },
+      generation: number,
+    ): Promise<UserStylePreset | null> {
+      const scope = `presetSave:${payload.id}`;
+      if (
+        !editable() ||
+        busy.current.has(scope) ||
+        busy.current.has(`presetDelete:${payload.id}`)
+      )
+        return null;
+      busy.current.add(scope);
+      try {
+        const result = await invoke('subtitleMerge:saveStylePreset', payload);
+        if (!mounted.current) return null;
+        const preset = result.data as UserStylePreset;
+        if (
+          preset?.id !== payload.id ||
+          preset.name !== payload.name ||
+          JSON.stringify(preset.style) !== JSON.stringify(payload.style)
+        )
+          throw new Error('Invalid saved style');
+        presetChanges.current.set(preset.id, {
+          version: ++presetVersion.current,
+          preset,
+        });
+        setUserPresets((previous) => [
+          ...previous.filter((item) => item.id !== preset.id),
+          preset,
+        ]);
+        if (
+          generation === epoch.current &&
+          JSON.stringify(current.current.style) ===
+            JSON.stringify(payload.style)
+        )
+          edit({ activePresetId: preset.id });
+        if (pendingPreset.current?.id === payload.id)
+          pendingPreset.current = null;
+        clearError(scope);
+        return preset;
+      } catch (error) {
+        fail(scope, error, () => persist(payload, generation));
+        return null;
+      } finally {
+        busy.current.delete(scope);
+      }
+    },
+    [editable, current, epoch, invoke, edit, clearError, fail],
+  );
+  const saveStylePreset = useCallback(
+    async (name: string) => {
+      if (!editable()) return null;
+      const style = JSON.parse(JSON.stringify(current.current.style));
+      const previous = pendingPreset.current;
+      const payload =
+        previous &&
+        previous.name === name.trim() &&
+        JSON.stringify(previous.style) === JSON.stringify(style)
+          ? previous
+          : { id: uuid(), name: name.trim(), style };
+      pendingPreset.current = payload;
+      return persistStylePreset(payload, epoch.current);
+    },
+    [editable, current, epoch, persistStylePreset],
+  );
+  const deleteStylePreset = useCallback(
+    async function remove(id: string): Promise<boolean> {
+      const scope = `presetDelete:${id}`;
+      if (
+        !editable() ||
+        busy.current.has(scope) ||
+        busy.current.has(`presetSave:${id}`)
+      )
+        return false;
+      busy.current.add(scope);
+      try {
+        const response = await invoke('subtitleMerge:deleteStylePreset', id);
+        if (response.data !== true) throw new Error('Preset was not deleted');
+        if (!mounted.current) return false;
+        presetChanges.current.set(id, {
+          version: ++presetVersion.current,
+          preset: null,
+        });
+        setUserPresets((previous) => previous.filter((item) => item.id !== id));
+        if (current.current.activePresetId === id)
+          edit({ activePresetId: null });
+        clearError(scope);
+        clearError(`presetSave:${id}`);
+        if (pendingPreset.current?.id === id) pendingPreset.current = null;
+        return true;
+      } catch (error) {
+        fail(scope, error, () => remove(id));
+        return false;
+      } finally {
+        busy.current.delete(scope);
+      }
+    },
+    [editable, invoke, current, edit, clearError, fail],
+  );
+  const setOutputPath = useCallback(
+    (path: string) => {
+      if (edit({ outputPath: path })) outputRevision.current++;
+    },
+    [edit],
+  );
+  const selectOutputPath = useCallback(async () => {
+    const generation = epoch.current;
+    const video = current.current.videoPath;
+    const outputVersion = outputRevision.current;
+    const valid = () =>
+      generation === epoch.current &&
+      video === current.current.videoPath &&
+      outputVersion === outputRevision.current;
+    const attempt = async () => {
+      if (!valid()) {
+        clearError('outputSelection');
+        return;
+      }
+      if (!editable() || busy.current.has('outputSelection')) return;
+      busy.current.add('outputSelection');
+      try {
+        const result = await window.ipc.invoke(
+          'subtitleMerge:selectOutputPath',
+          {
+            defaultPath: current.current.outputPath,
+          },
+        );
+        if (!editable() || !valid()) return;
+        if (result?.canceled || result?.cancelled) {
+          clearError('outputSelection');
+          return;
+        }
+        if (
+          result?.success !== true ||
+          typeof result.data !== 'string' ||
+          !result.data
+        )
+          throw new Error(result?.error || 'No output path returned');
+        const doc = current.current;
+        setOutputPath(
+          doc.outputMode === 'softmux' ||
+            (doc.audioTrackPath && doc.audioTrackMode === 'addTrack')
+            ? extension(result.data, doc)
+            : result.data,
+        );
+        clearError('outputSelection');
+      } catch (error) {
+        if (valid()) fail('outputSelection', error, attempt);
+      } finally {
+        busy.current.delete('outputSelection');
+      }
+    };
+    await attempt();
+  }, [editable, epoch, current, setOutputPath, clearError, fail]);
+  const setOutputMode = useCallback(
+    (outputMode: MergeOutputMode) => {
+      if (withExtension({ outputMode })) persistPreferences();
+    },
+    [withExtension, persistPreferences],
+  );
+  const setSoftContainer = useCallback(
+    (softContainer: 'mkv' | 'mp4') => {
+      if (withExtension({ softContainer })) persistPreferences();
+    },
+    [withExtension, persistPreferences],
+  );
+  const setVideoQuality = useCallback(
+    (videoQuality: VideoQuality) => {
+      if (edit({ videoQuality })) persistPreferences();
+    },
+    [edit, persistPreferences],
+  );
+  const setEncoderMode = useCallback(
+    (encoderMode: EncoderMode) => {
+      if (edit({ encoderMode })) persistPreferences();
+    },
+    [edit, persistPreferences],
+  );
+  const encoderMode: EncoderMode =
+    value.encoderMode === 'hardware' && hwAccelInfo?.available
+      ? 'hardware'
+      : 'cpu';
 
-  // 开始合并
   const startMerge = useCallback(async () => {
-    if (!videoPath || !subtitlePath || !outputPath) return;
-
+    const doc = current.current;
+    if (!editable() || !doc.videoPath || !doc.subtitlePath || !doc.outputPath)
+      return;
+    if (
+      doc.outputMode === 'hardcode' &&
+      invalidSubtitleStyleFields(doc.style).length
+    )
+      return;
+    requestId.current = uuid();
+    if (!document.setJob({ requestId: requestId.current })) return;
+    exportSnapshot.current = doc;
+    active.current = true;
+    submitting.current = true;
+    jobId.current = null;
+    handledTerminal.current = null;
+    const request = ++submission.current;
+    let reconnected = false;
     setHwFallbackOccurred(false);
-    setProgress({
-      percent: 0,
-      timeMark: '',
-      targetSize: 0,
-      status: 'processing',
-    });
-
+    setProgress({ ...idle(), status: 'processing' });
     try {
       const config: MergeConfig = {
-        videoPath,
-        subtitlePath,
-        outputPath,
-        style,
-        outputMode,
-        videoQuality,
-        // 传生效值：偏好为 hardware 但本会话不可用时按 cpu 合成
+        requestId: requestId.current,
+        videoPath: doc.videoPath,
+        subtitlePath: doc.subtitlePath,
+        outputPath: doc.outputPath,
+        style: doc.style,
+        outputMode: doc.outputMode,
+        videoQuality: doc.videoQuality,
         encoderMode,
-        // 可选配音音轨：未选择时不传，行为与引入前完全一致
-        ...(audioTrackPath
+        ...(doc.audioTrackPath
           ? {
               audioTrack: {
-                mode: audioTrackMode,
-                trackPath: audioTrackPath,
+                mode: doc.audioTrackMode,
+                trackPath: doc.audioTrackPath,
               },
             }
           : {}),
       };
-      const result = await window.ipc.invoke(
-        'subtitleMerge:startMerge',
-        config,
-      );
-
-      if (result.success && result.cancelled) {
-        // 用户取消：静默复位，不算失败
-        setProgress({
-          percent: 0,
-          timeMark: '',
-          targetSize: 0,
-          status: 'idle',
-        });
-      } else if (result.success) {
-        // 合并成功
-        setProgress({
-          percent: 100,
-          timeMark: '',
-          targetSize: 0,
-          status: 'completed',
-        });
-        onComplete?.(outputPath);
-      } else {
-        // 合并失败
-        setProgress({
-          percent: 0,
-          timeMark: '',
-          targetSize: 0,
-          status: 'error',
-          errorMessage: result.error,
-        });
-        onError?.(result.error || '合并失败');
+      const result = await invoke('subtitleMerge:startMerge', config);
+      if (!mounted.current || request !== submission.current) return;
+      if (result.cancelled) setProgress(idle());
+      else {
+        if (typeof result.data !== 'string' || !result.data)
+          throw new Error('Merge completed without an output path');
+        if (result.data !== current.current.outputPath)
+          update({ outputPath: result.data }, { system: true });
+        document.acceptExport({ ...doc, outputPath: result.data });
+        setProgress({ ...idle(), percent: 100, status: 'completed' });
+        callbacks.current.onComplete?.(result.data);
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '合并失败';
-      setProgress({
-        percent: 0,
-        timeMark: '',
-        targetSize: 0,
-        status: 'error',
-        errorMessage,
-      });
-      onError?.(errorMessage);
+      if (!mounted.current || request !== submission.current) return;
+      try {
+        const revision = queueRevision.current;
+        const snapshot = await invoke('subtitleMerge:getQueue');
+        if (!mounted.current || request !== submission.current) return;
+        if (Array.isArray(snapshot.data)) {
+          if (revision === queueRevision.current)
+            queueSnapshot.current = snapshot.data;
+          const job = queueSnapshot.current.find(
+            (job) =>
+              job.source === 'subtitleMerge' &&
+              job.requestId === requestId.current,
+          );
+          if (job) {
+            active.current = false;
+            submitting.current = false;
+            reconnectJob(job.id);
+            reconnected = true;
+            return;
+          }
+        }
+      } catch {
+        // Preserve the original operation error when recovery cannot be verified.
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      setProgress({ ...idle(), status: 'error', errorMessage: message });
+      callbacks.current.onError?.(message);
     } finally {
-      setIsCancelling(false);
+      if (mounted.current && request === submission.current) {
+        if (!reconnected) active.current = false;
+        clearError('cancel');
+        submitting.current = false;
+        handledTerminal.current = active.current ? null : jobId.current;
+        setIsCancelling(false);
+      }
     }
   }, [
-    videoPath,
-    subtitlePath,
-    outputPath,
-    style,
-    outputMode,
-    videoQuality,
+    current,
+    editable,
     encoderMode,
-    audioTrackPath,
-    audioTrackMode,
-    onComplete,
-    onError,
+    invoke,
+    update,
+    clearError,
+    document.setJob,
+    document.acceptExport,
+    reconnectJob,
   ]);
-
-  // 取消合成
   const cancelMerge = useCallback(async () => {
-    if (progress.status !== 'processing' || isCancelling) return;
-    setIsCancelling(true);
-    try {
-      await window.ipc.invoke('subtitleMerge:cancelMerge');
-      // 复位由 startMerge 的 cancelled 分支完成
-    } catch (error) {
-      console.error('取消合成失败:', error);
-      setIsCancelling(false);
-    }
-  }, [progress.status, isCancelling]);
-
-  // 打开输出文件夹
+    const id = jobId.current;
+    const attempt = async () => {
+      if (!active.current || jobId.current !== id) {
+        clearError('cancel');
+        return;
+      }
+      if (!id || busy.current.has('cancel')) return;
+      busy.current.add('cancel');
+      setIsCancelling(true);
+      try {
+        const result = await invoke('subtitleMerge:cancelMerge', {
+          jobId: id,
+        });
+        if (!active.current || jobId.current !== id) return;
+        if (result.data !== true)
+          throw new Error('The job could not be cancelled');
+        clearError('cancel');
+      } catch (error) {
+        if (active.current && jobId.current === id) {
+          fail('cancel', error, attempt);
+          if (mounted.current) setIsCancelling(false);
+        }
+      } finally {
+        busy.current.delete('cancel');
+      }
+    };
+    await attempt();
+  }, [invoke, clearError, fail]);
   const openOutputFolder = useCallback(async () => {
-    if (!outputPath) return;
-    try {
-      await window.ipc.invoke('subtitleMerge:openOutputFolder', {
-        filePath: outputPath,
-      });
-    } catch (error) {
-      console.error('打开文件夹失败:', error);
+    const filePath = current.current.outputPath;
+    const attempt = async () => {
+      if (current.current.outputPath !== filePath) {
+        clearError('folder');
+        return;
+      }
+      if (!filePath || busy.current.has('folder')) return;
+      busy.current.add('folder');
+      try {
+        const result = await invoke('subtitleMerge:openOutputFolder', {
+          filePath,
+        });
+        if (result.data !== true)
+          throw new Error('Output folder was not opened');
+        clearError('folder');
+      } catch (error) {
+        if (current.current.outputPath === filePath)
+          fail('folder', error, attempt);
+      } finally {
+        busy.current.delete('folder');
+      }
+    };
+    await attempt();
+  }, [current, invoke, clearError, fail]);
+  const undo = useCallback(() => {
+    if (editable()) {
+      document.undo();
+      jobId.current = null;
+      setProgress(idle());
     }
-  }, [outputPath]);
-
-  // 是否可以开始合并
-  const canMerge = Boolean(
-    videoPath && subtitlePath && outputPath && progress.status !== 'processing',
-  );
-
+  }, [editable, document.undo]);
+  const redo = useCallback(() => {
+    if (editable()) {
+      document.redo();
+      jobId.current = null;
+      setProgress(idle());
+    }
+  }, [editable, document.redo]);
   return {
-    // 文件状态
-    videoPath,
-    subtitlePath,
+    ...value,
+    encoderMode,
     videoInfo,
     subtitleInfo,
-    audioTrackPath,
-    audioTrackMode,
-
-    // 样式状态
-    style,
-    activePresetId,
     userPresets,
-
-    // 输出状态
-    outputPath,
-    outputMode,
-    videoQuality,
-    encoderMode,
     hwAccelInfo,
     hwFallbackOccurred,
-
-    // 进度状态
     progress,
     status: progress.status,
-
-    // 文件操作方法
+    isCancelling,
+    reconnectJobs,
+    reconnectJob,
+    invalidStyleFields:
+      value.outputMode === 'hardcode'
+        ? invalidSubtitleStyleFields(value.style)
+        : [],
+    canMerge: Boolean(
+      value.videoPath &&
+        value.subtitlePath &&
+        value.outputPath &&
+        !active.current &&
+        (value.outputMode === 'softmux' ||
+          !invalidSubtitleStyleFields(value.style).length) &&
+        !blocked,
+    ),
     selectVideo,
     selectSubtitle,
     selectAudioTrack,
@@ -957,29 +1128,25 @@ export function useSubtitleMerge(
     clearVideo,
     clearSubtitle,
     clearAudioTrack,
-
-    // 样式操作方法
     setStyle,
     updateStyle,
     applyPreset,
     resetStyle,
     saveStylePreset,
     deleteStylePreset,
-
-    // 输出操作方法
     selectOutputPath,
     setOutputPath,
     setOutputMode,
+    setSoftContainer,
     setVideoQuality,
     setEncoderMode,
-
-    // 合并操作方法
     startMerge,
     cancelMerge,
-    isCancelling,
-    canMerge,
-
-    // 其他方法
     openOutputFolder,
+    document: { ...document, undo, redo },
+    operationError: Object.values(errors).join('\n'),
+    retryErrors,
+    isRetrying,
   };
 }
+export type UseSubtitleMergeReturn = ReturnType<typeof useSubtitleMerge>;

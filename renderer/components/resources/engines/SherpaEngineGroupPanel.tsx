@@ -198,7 +198,7 @@ const SherpaEngineGroupPanel: React.FC<SherpaEngineGroupPanelProps> = ({
           <Collapsible
             key={f.engine}
             defaultOpen={f.modelsReady || (!anyReady && index === 0)}
-            className="rounded-lg border"
+            className="rounded-lg bg-card"
           >
             <CollapsibleTrigger className="group flex w-full items-center gap-2 px-3 py-2.5 text-left">
               <EngineIcon engine={f.engine} className="h-4 w-4 shrink-0" />
@@ -225,7 +225,7 @@ const SherpaEngineGroupPanel: React.FC<SherpaEngineGroupPanelProps> = ({
         {/* 角色分离是所有 ASR 引擎都可选用的后处理能力，不属于某个模型族。 */}
         <Collapsible
           defaultOpen={systemInfo.speakerDiarizationModelInstalled === true}
-          className="rounded-lg border"
+          className="rounded-lg bg-card"
         >
           <CollapsibleTrigger className="group flex w-full items-center gap-2 px-3 py-2.5 text-left">
             <Users className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -264,7 +264,7 @@ const SherpaEngineGroupPanel: React.FC<SherpaEngineGroupPanelProps> = ({
       </div>
 
       {/* 合并的高级设置：线程数（各族统一）+ ITN（仅 FunASR） */}
-      <Collapsible className="rounded-lg border">
+      <Collapsible className="rounded-lg bg-card">
         <CollapsibleTrigger className="group flex w-full items-center gap-2 px-3 py-2.5 text-left">
           <Settings2 className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="text-sm font-medium">

@@ -26,6 +26,10 @@ import {
 } from '../../types/proofreadData';
 import { subtitleOutputFilesToSave } from '../../types/subtitleOutput';
 import { atomicReplaceTextFile } from './atomicFile';
+import {
+  layoutSubtitleColumns,
+  type SubtitleLayoutOptions,
+} from './subtitleLayout';
 import { getWorkItems, saveWorkItem } from './workItemStore';
 import { isPipelineWorkItem } from '../../types/workItem';
 import {
@@ -184,6 +188,7 @@ function buildSubtitleFileContent(
   speakerOptions?: {
     speakers?: SpeakerInfo[];
     embedSpeakerNames?: boolean;
+    layout?: SubtitleLayoutOptions;
   },
 ): string {
   const format = detectSubtitleFormat(filePath);
@@ -197,7 +202,16 @@ function buildSubtitleFileContent(
   };
   const buildText = (subtitle): string => {
     let text: string;
-    if (contentType === 'source') {
+    if (speakerOptions?.layout?.subtitleLayout === 'two-line') {
+      const prefix = withSpeakerPrefix(subtitle, '');
+      return layoutSubtitleColumns(
+        subtitle.sourceContent ?? '',
+        subtitle.targetContent ?? '',
+        contentType,
+        speakerOptions.layout,
+        prefix ? `${prefix} ` : '',
+      );
+    } else if (contentType === 'source') {
       text = subtitle.sourceContent ?? '';
     } else {
       const template =
@@ -253,6 +267,7 @@ async function writeSubtitleFile(
   speakerOptions?: {
     speakers?: SpeakerInfo[];
     embedSpeakerNames?: boolean;
+    layout?: SubtitleLayoutOptions;
   },
 ): Promise<void> {
   const content = buildSubtitleFileContent(
@@ -454,39 +469,49 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
   });
 
   // 读取字幕文件（按扩展名自动识别 srt/vtt/ass/lrc 格式）
-  ipcMain.handle('readSubtitleFile', async (event, { filePath }) => {
-    try {
-      if (!fs.existsSync(filePath)) {
-        logMessage(`读取字幕文件失败: 文件不存在 ${filePath}`, 'error');
+  ipcMain.handle(
+    'readSubtitleFile',
+    async (event, { filePath, strict = false }) => {
+      try {
+        if (!fs.existsSync(filePath)) {
+          if (strict) throw new Error(`File not found: ${filePath}`);
+          logMessage(`读取字幕文件失败: 文件不存在 ${filePath}`, 'error');
+          return [];
+        }
+        const content = await fs.promises.readFile(filePath, 'utf-8');
+        const format = detectSubtitleFormatFromContent(filePath, content);
+        return parseSubtitleEntries(content, format, { strict });
+      } catch (error) {
+        logMessage(`读取字幕文件错误: ${error.message}`, 'error');
+        if (strict) throw error;
         return [];
       }
-      const content = await fs.promises.readFile(filePath, 'utf-8');
-      const format = detectSubtitleFormatFromContent(filePath, content);
-      return parseSubtitleEntries(content, format);
-    } catch (error) {
-      logMessage(`读取字幕文件错误: ${error.message}`, 'error');
-      return [];
-    }
-  });
+    },
+  );
 
-  ipcMain.handle('readProofreadDataFile', async (event, { filePath }) => {
-    try {
-      if (!filePath || !fs.existsSync(filePath)) {
-        logMessage(`读取校对中间态失败: 文件不存在 ${filePath}`, 'error');
+  ipcMain.handle(
+    'readProofreadDataFile',
+    async (event, { filePath, strict = false }) => {
+      try {
+        if (!filePath || !fs.existsSync(filePath)) {
+          if (strict) throw new Error(`File not found: ${filePath}`);
+          logMessage(`读取校对中间态失败: 文件不存在 ${filePath}`, 'error');
+          return [];
+        }
+        const proofreadData = await readProofreadDataFile(filePath, { strict });
+        return {
+          subtitles: proofreadDataToSubtitleRows(proofreadData),
+          speakers: proofreadData.speakers,
+          missedSpeechWarnings: proofreadData.missedSpeechWarnings || [],
+          missedSpeechSummary: proofreadData.missedSpeechSummary,
+        };
+      } catch (error) {
+        logMessage(`读取校对中间态错误: ${error.message}`, 'error');
+        if (strict) throw error;
         return [];
       }
-      const proofreadData = await readProofreadDataFile(filePath);
-      return {
-        subtitles: proofreadDataToSubtitleRows(proofreadData),
-        speakers: proofreadData.speakers,
-        missedSpeechWarnings: proofreadData.missedSpeechWarnings || [],
-        missedSpeechSummary: proofreadData.missedSpeechSummary,
-      };
-    } catch (error) {
-      logMessage(`读取校对中间态错误: ${error.message}`, 'error');
-      return [];
-    }
-  });
+    },
+  );
 
   // 读取任意字幕文件并转换为 WebVTT 文本（供播放器内嵌字幕轨道使用）
   ipcMain.handle('getSubtitleAsVtt', async (event, { filePath }) => {
@@ -567,6 +592,16 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         );
 
         const rendered = new Set<string>();
+        const layoutPaths = new Set(
+          [
+            ...(updated.meta.sourceSubtitleFiles || []),
+            ...(updated.meta.translatedSubtitleFiles || []),
+            updated.meta.tempSrtFile,
+            updated.meta.tempFinalSubtitleFile,
+          ]
+            .filter(Boolean)
+            .map((filePath) => path.resolve(filePath!).toLowerCase()),
+        );
         for (const output of [
           ...subtitleOutputFilesToSave(
             updated.meta,
@@ -586,6 +621,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
             {
               speakers: updated.speakers,
               embedSpeakerNames,
+              layout: layoutPaths.has(key) ? updated.meta : undefined,
             },
           );
         }
@@ -623,11 +659,10 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
             return file;
           });
           if (matched) {
-            saveWorkItem({
-              ...item,
-              pipelineFiles,
-              updatedAt: Date.now(),
-            });
+            saveWorkItem(
+              { ...item, pipelineFiles, updatedAt: Date.now() },
+              { durable: true },
+            );
             break;
           }
         }

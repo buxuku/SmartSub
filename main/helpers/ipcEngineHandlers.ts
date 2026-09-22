@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow, dialog } from 'electron';
+import { invalidEngineSettings } from '../../types/engineSettings';
 import fs from 'fs';
 import { logMessage, store } from './storeManager';
 import { listEngineAdapters } from './engines/registry';
@@ -47,7 +48,7 @@ export function registerEngineIpcHandlers(): void {
       return statuses;
     } catch (error) {
       logMessage(`Error getting engine status: ${error}`, 'error');
-      return {};
+      throw error;
     }
   });
 
@@ -271,13 +272,18 @@ export function registerEngineIpcHandlers(): void {
       },
     ) => {
       try {
-        const settings = store.get('settings');
-        store.set('settings', {
-          ...settings,
+        const patch = {
           ...(device !== undefined ? { fasterWhisperDevice: device } : {}),
           ...(computeType !== undefined
             ? { fasterWhisperComputeType: computeType }
             : {}),
+        };
+        if (invalidEngineSettings(patch).length)
+          return { success: false, error: 'INVALID_ENGINE_SETTINGS' };
+        const settings = store.get('settings');
+        store.set('settings', {
+          ...settings,
+          ...patch,
         });
         return { success: true };
       } catch (error) {

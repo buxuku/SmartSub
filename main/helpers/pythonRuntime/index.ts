@@ -10,6 +10,7 @@ import {
   isRuntimeInstalled,
 } from './paths';
 import type { PyEngineId } from '../../../types/engine';
+import { getExtraResourcesPath } from '../utils';
 
 export * from './protocol';
 export { PythonRuntimeManager, PythonEngineError } from './manager';
@@ -41,7 +42,10 @@ function resolveEngineCommand(engineId: PyEngineId): EngineCommand {
   const runtimeDir = getEngineDir(engineId);
   return {
     command: getRuntimePythonPath(runtimeDir),
-    args: [getEngineMainPy(engineId)],
+    args: [
+      path.join(getExtraResourcesPath(), 'python-review', 'bootstrap.py'),
+      getEngineMainPy(engineId),
+    ],
     cwd: runtimeDir,
     pythonHome: runtimeDir,
     pythonPath: getEngineSitePackages(engineId),

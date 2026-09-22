@@ -148,10 +148,7 @@ async function main() {
       compilerOptions: {
         target: ts.ScriptTarget.ES2020,
         module: ts.ModuleKind.CommonJS,
-        // Match webpack's mutable Node module imports in the proxy manager.
-        esModuleInterop: !filename.endsWith(
-          `${path.sep}network${path.sep}proxyManager.ts`,
-        ),
+        esModuleInterop: true,
         resolveJsonModule: true,
       },
     });

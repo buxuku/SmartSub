@@ -58,6 +58,8 @@ export default function RecentTasksPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<WorkItem | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [clearAllOpen, setClearAllOpen] = useState(false);
   const [page, setPage] = useState(1);
 
@@ -139,18 +141,41 @@ export default function RecentTasksPage() {
   };
 
   const confirmDelete = async () => {
-    if (!deleteTarget) return;
-    await window?.ipc?.invoke('deleteWorkItem', deleteTarget.id);
-    setWorkItems((prev) =>
-      prev.filter((entry) => entry.id !== deleteTarget.id),
-    );
-    setDeleteTarget(null);
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const result = await window?.ipc?.invoke(
+        'deleteWorkItem',
+        deleteTarget.id,
+      );
+      if (result !== true && result !== false)
+        throw new Error('Deletion was not acknowledged');
+      setWorkItems((prev) =>
+        prev.filter((entry) => entry.id !== deleteTarget.id),
+      );
+      setDeleteTarget(null);
+    } catch (error) {
+      setDeleteError(String(error));
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const confirmClearAll = async () => {
-    await window?.ipc?.invoke('clearAllWorkItems');
-    setWorkItems([]);
-    setClearAllOpen(false);
+    if (deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      if ((await window?.ipc?.invoke('clearAllWorkItems')) !== true)
+        throw new Error('Deletion was not acknowledged');
+      setWorkItems([]);
+      setClearAllOpen(false);
+    } catch (error) {
+      setDeleteError(String(error));
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -302,7 +327,10 @@ export default function RecentTasksPage() {
       <AlertDialog
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
+          if (!open && !deleting) {
+            setDeleteTarget(null);
+            setDeleteError(null);
+          }
         }}
       >
         <AlertDialogContent>
@@ -312,12 +340,28 @@ export default function RecentTasksPage() {
               {t('recent.deleteDesc', { name: deleteTarget?.name || '' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteError && (
+            <div role="alert" className="break-words text-sm text-destructive">
+              <p>{t('recent.deleteFailed')}</p>
+              <details>
+                <summary>{t('recent.errorDetails')}</summary>
+                {deleteError}
+              </details>
+            </div>
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel className="gap-1.5">
+            <AlertDialogCancel disabled={deleting} className="gap-1.5">
               <X className="h-4 w-4" />
               {t('recent.cancel')}
             </AlertDialogCancel>
-            <AlertDialogAction className="gap-1.5" onClick={confirmDelete}>
+            <AlertDialogAction
+              disabled={deleting}
+              className="gap-1.5"
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmDelete();
+              }}
+            >
               <Trash2 className="h-4 w-4" />
               {t('recent.delete')}
             </AlertDialogAction>
@@ -325,7 +369,15 @@ export default function RecentTasksPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={clearAllOpen} onOpenChange={setClearAllOpen}>
+      <AlertDialog
+        open={clearAllOpen}
+        onOpenChange={(open) => {
+          if (!deleting) {
+            setClearAllOpen(open);
+            setDeleteError(null);
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('allTasks.clearAllTitle')}</AlertDialogTitle>
@@ -333,14 +385,27 @@ export default function RecentTasksPage() {
               {t('allTasks.clearAllDesc', { count: workItems.length })}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteError && (
+            <div role="alert" className="break-words text-sm text-destructive">
+              <p>{t('recent.deleteFailed')}</p>
+              <details>
+                <summary>{t('recent.errorDetails')}</summary>
+                {deleteError}
+              </details>
+            </div>
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel className="gap-1.5">
+            <AlertDialogCancel disabled={deleting} className="gap-1.5">
               <X className="h-4 w-4" />
               {t('recent.cancel')}
             </AlertDialogCancel>
             <AlertDialogAction
               className="gap-1.5 bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={confirmClearAll}
+              disabled={deleting}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmClearAll();
+              }}
             >
               <Trash2 className="h-4 w-4" />
               {t('allTasks.clearAllConfirm')}

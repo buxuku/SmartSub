@@ -7,6 +7,7 @@
  */
 
 import fs from 'fs';
+import { reserveToolboxOutput, toolboxOutputDirectory } from './outputPath';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
@@ -81,6 +82,7 @@ export function formatFfmpegTime(seconds: number): string {
  */
 export function probeVideoInfo(
   videoPath: string,
+  signal?: AbortSignal,
 ): Promise<{
   duration: number;
   width: number;
@@ -103,15 +105,28 @@ export function probeVideoInfo(
       return reject(new Error(`Failed to access video file: ${err.message}`));
     }
 
-    const proc = spawn(ffmpegPath, ['-hide_banner', '-i', videoPath]);
+    const proc = spawn(ffmpegPath, ['-hide_banner', '-i', videoPath], {
+      signal,
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
     let stderr = '';
+    let processError: Error | undefined;
+    const timeout = setTimeout(() => {
+      processError = new Error('Media probe timed out');
+      proc.kill('SIGKILL');
+    }, 15000);
 
     proc.stderr.on('data', (data) => {
-      stderr += data.toString();
+      stderr = (stderr + data.toString()).slice(-1024 * 1024);
     });
 
     proc.on('close', (code) => {
-      const durationMatch = /Duration:\s*(\d{2,}:\d{2}:\d{2}(?:\.\d+)?)/.exec(stderr);
+      clearTimeout(timeout);
+      if (processError) return reject(processError);
+      if (signal?.aborted) return reject(new Error('Media probe cancelled'));
+      const durationMatch = /Duration:\s*(\d{2,}:\d{2}:\d{2}(?:\.\d+)?)/.exec(
+        stderr,
+      );
       const videoMatch = /Video:[^\n]*?(\d{2,5})x(\d{2,5})/.exec(stderr);
       const audioMatch = /Audio:/i.test(stderr);
 
@@ -125,7 +140,9 @@ export function probeVideoInfo(
 
       const duration = parseTimemark(durationMatch[1]);
       if (duration <= 0) {
-        return reject(new Error(`Detected invalid video duration: ${duration}s`));
+        return reject(
+          new Error(`Detected invalid video duration: ${duration}s`),
+        );
       }
 
       const width = videoMatch ? parseInt(videoMatch[1], 10) : 0;
@@ -141,7 +158,7 @@ export function probeVideoInfo(
     });
 
     proc.on('error', (err) => {
-      reject(err);
+      processError = err;
     });
   });
 }
@@ -149,7 +166,10 @@ export function probeVideoInfo(
 /**
  * 构建裁剪命令行参数
  */
-export function buildTrimArgs(config: VideoTrimConfig, resolvedOutputPath: string): string[] {
+export function buildTrimArgs(
+  config: VideoTrimConfig,
+  resolvedOutputPath: string,
+): string[] {
   const { videoPath, startSec, endSec, mode } = config;
   const startTime = formatFfmpegTime(startSec);
   const duration = Math.max(0.01, endSec - startSec);
@@ -160,26 +180,40 @@ export function buildTrimArgs(config: VideoTrimConfig, resolvedOutputPath: strin
   if (mode === 'lossless') {
     // 极速无损流拷贝模式：-ss 放在 -i 前实现快寻至最近关键帧，-avoid_negative_ts 保证时间戳从 0 重新对齐
     args.push(
-      '-ss', startTime,
-      '-t', durationStr,
+      '-ss',
+      startTime,
+      '-t',
+      durationStr,
       '-accurate_seek',
-      '-i', videoPath,
-      '-c', 'copy',
-      '-avoid_negative_ts', 'make_zero',
+      '-i',
+      videoPath,
+      '-c',
+      'copy',
+      '-avoid_negative_ts',
+      'make_zero',
       resolvedOutputPath,
     );
   } else {
     // 精确重编码模式：-ss 放在 -i 之后逐帧精确解码并裁剪，保证严格帧级时间对齐
     args.push(
-      '-i', videoPath,
-      '-ss', startTime,
-      '-t', durationStr,
-      '-c:v', 'libx264',
-      '-preset', 'fast',
-      '-crf', '20',
-      '-c:a', 'aac',
-      '-b:a', '192k',
-      '-avoid_negative_ts', 'make_zero',
+      '-i',
+      videoPath,
+      '-ss',
+      startTime,
+      '-t',
+      durationStr,
+      '-c:v',
+      'libx264',
+      '-preset',
+      'fast',
+      '-crf',
+      '20',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '192k',
+      '-avoid_negative_ts',
+      'make_zero',
       resolvedOutputPath,
     );
   }
@@ -200,24 +234,30 @@ export function executeVideoTrim(
 
     const ext = path.extname(videoPath);
     const baseName = path.basename(videoPath, ext);
-    const targetDir = outputDir && fs.existsSync(outputDir)
-      ? outputDir
-      : outputPath
-        ? path.dirname(outputPath)
-        : path.dirname(videoPath);
+    const targetDir = toolboxOutputDirectory(
+      outputDir || (outputPath ? path.dirname(outputPath) : undefined),
+      videoPath,
+    );
 
     let targetOutput = outputPath;
-    if (!targetOutput || (fs.existsSync(targetOutput) && fs.statSync(targetOutput).isDirectory())) {
+    if (
+      !targetOutput ||
+      (fs.existsSync(targetOutput) && fs.statSync(targetOutput).isDirectory())
+    ) {
       targetOutput = path.join(
         targetDir,
         `${baseName}_trim_${Math.round(startSec)}s-${Math.round(endSec)}s${ext}`,
       );
     }
 
+    targetOutput = reserveToolboxOutput(targetOutput);
     const targetDuration = Math.max(0.01, endSec - startSec);
     const args = buildTrimArgs(config, targetOutput);
 
-    logMessage(`执行视频裁剪 [${jobId}]: ${ffmpegPath} ${args.join(' ')}`, 'info');
+    logMessage(
+      `执行视频裁剪 [${jobId}]: ${ffmpegPath} ${args.join(' ')}`,
+      'info',
+    );
 
     const proc = spawn(ffmpegPath, args);
     activeTrimProcesses.set(jobId, proc);
@@ -277,6 +317,9 @@ export function executeVideoTrim(
 
     proc.on('error', (err) => {
       activeTrimProcesses.delete(jobId);
+      try {
+        fs.unlinkSync(targetOutput);
+      } catch {}
       reject(err);
     });
   });

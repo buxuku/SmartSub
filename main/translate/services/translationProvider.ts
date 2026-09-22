@@ -76,7 +76,13 @@ export async function translateWithProvider(
   onResponseMeta?: TranslationConfig['onResponseMeta'],
   fallbackProviders?: Provider[],
   onProviderFallback?: TranslationConfig['onProviderFallback'],
+  subtitleTranslationStyle?: TranslationConfig['subtitleTranslationStyle'],
 ): Promise<TranslationResult[] | string[]> {
+  if (subtitleTranslationStyle === 'conversational' && !provider.isAi) {
+    throw new Error(
+      'Conversational subtitle translation requires an AI provider',
+    );
+  }
   const supportsGlossary = provider.isAi || provider.type === 'qwenMt';
   const glossaryResolution =
     supportsGlossary && useGlossary ? getActiveGlossaryResolution() : undefined;
@@ -93,6 +99,7 @@ export async function translateWithProvider(
     targetLanguage,
     translator,
     glossaryEntries,
+    subtitleTranslationStyle,
     signal: getTaskSignal(),
     onResponseMeta,
     fallbackProviders,

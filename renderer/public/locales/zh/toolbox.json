@@ -1,4 +1,25 @@
 {
+  "queue": {
+    "invalidSubtitles": "请选择支持的字幕文件（.srt / .vtt / .ass / .ssa / .sub）。",
+    "choosePair": "选择配对的次字幕",
+    "files": "{{count}} 个文件",
+    "noTextTracks": "未选择或未发现可提取的文本字幕轨。",
+    "invalidTracks": "所选字幕轨已不可用，请重新扫描视频。",
+    "extractAll": "批量导出字幕",
+    "title": "文件队列",
+    "pending": "等待处理",
+    "running": "处理中",
+    "done": "已完成",
+    "error": "失败",
+    "cancelled": "已停止",
+    "stop": "停止队列",
+    "stopping": "正在停止...",
+    "clear": "清空队列",
+    "retry": "重试此文件",
+    "remove": "移除文件",
+    "errorDetails": "错误详情",
+    "failed": "处理未返回成功结果。"
+  },
   "title": "周边工具箱",
   "subtitle": "提供常用音视频处理与字幕辅助周边轻量小工具，全本地极速处理",
   "categories": {
@@ -167,5 +188,29 @@
     "width": "动图宽度",
     "startExport": "生成高清 GIF",
     "highQualityNotice": "采用双通道调色板算法 (PaletteGen)，避免噪点与失真"
+  },
+  "finishBar": {
+    "partial": "部分输出已完成，请查看失败项",
+    "importFailed": "无法将产物导入后续任务，请检查文件是否存在。",
+    "title": "处理完成！",
+    "savedTo": "输出至：{{path}}",
+    "stats": "大小：{{original}} → {{compressed}} (省 {{saved}}%)",
+    "openFolder": "打开文件夹",
+    "goToSubtitle": "去做双语字幕",
+    "goToDubbing": "去做 AI 配音",
+    "goToProofread": "去校对字幕",
+    "goToBurn": "合成到视频",
+    "processNext": "继续处理下一个"
+  },
+  "videoCompressorQueue": {
+    "queueTitle": "待压缩视频队列",
+    "addFiles": "添加视频",
+    "clearAll": "清空队列",
+    "compressAll": "开始批量压缩",
+    "compressingItem": "正在压缩第 {{current}} / {{total}} 个...",
+    "itemOriginal": "原大小: {{size}}",
+    "itemCompressed": "压缩后: {{size}} (省 {{saved}}%)",
+    "itemFailed": "压缩失败",
+    "allFinished": "全部 {{count}} 个视频压缩完成！"
   }
 }

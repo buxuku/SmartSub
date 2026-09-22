@@ -18,7 +18,9 @@ const CATEGORIES: Array<{ key: ToolCategory; labelKey: string }> = [
   { key: 'audio', labelKey: 'categories.audio' },
 ];
 
-export default function ToolboxDashboard({ onSelectTool }: ToolboxDashboardProps) {
+export default function ToolboxDashboard({
+  onSelectTool,
+}: ToolboxDashboardProps) {
   const { t } = useTranslation('toolbox');
   const [selectedCategory, setSelectedCategory] = useState<ToolCategory>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -89,7 +91,7 @@ export default function ToolboxDashboard({ onSelectTool }: ToolboxDashboardProps
               <div
                 key={tool.id}
                 onClick={() => onSelectTool(tool.id)}
-                className="group relative flex flex-col justify-between overflow-hidden rounded-xl border border-border bg-card p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md cursor-pointer"
+                className="group relative flex flex-col justify-between overflow-hidden rounded-xl bg-card p-5 transition-all duration-200 hover:-translate-y-0.5 hover:ring-1 hover:ring-primary/50 hover:shadow-md cursor-pointer"
               >
                 <div>
                   <div className="mb-3.5 flex items-center justify-between">

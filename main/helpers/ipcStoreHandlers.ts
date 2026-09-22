@@ -36,6 +36,11 @@ import {
 import { sanitizeCustomLanguages } from '../../types/language';
 import { sanitizeSelectedCudaDevice } from '../../types/gpuDevice';
 import { applyCudaDeviceSelection } from './cudaDeviceSelection';
+import { getProviderHealth, recordProviderHealth } from './providerHealth';
+import { invalidVadSettings } from '../../types/vadSettings';
+import { invalidEngineSettings } from '../../types/engineSettings';
+import { assertProviderList } from '../../types/providerPersistence';
+import { saveProviderList } from './providerPersistence';
 
 console.log(app.getVersion(), 'version');
 
@@ -77,35 +82,92 @@ export function setupStoreHandlers() {
   }
 
   // 启动时初始化服务商配置
-  getAndInitializeProviders().then(async () => {
-    const osInfo = {
-      platform: os.platform(),
-      arch: os.arch(),
-      version: os.version(),
-      model: os.machine(),
-      cpuModel: os?.cpus()?.[0]?.model,
-      release: os.release(),
-      totalmem: os.totalmem(),
-      freemem: os.freemem(),
-      type: os.type(),
-      buildInfo: getBuildInfo(),
-    };
-    logMessage(`osInfo: ${JSON.stringify(osInfo, null, 2)}`, 'info');
-    logMessage('Translation providers initialized', 'info');
-  });
+  getAndInitializeProviders()
+    .then(async () => {
+      const osInfo = {
+        platform: os.platform(),
+        arch: os.arch(),
+        version: os.version(),
+        model: os.machine(),
+        cpuModel: os?.cpus()?.[0]?.model,
+        release: os.release(),
+        totalmem: os.totalmem(),
+        freemem: os.freemem(),
+        type: os.type(),
+        buildInfo: getBuildInfo(),
+      };
+      logMessage(`osInfo: ${JSON.stringify(osInfo, null, 2)}`, 'info');
+      logMessage('Translation providers initialized', 'info');
+    })
+    .catch(() => {
+      logMessage(
+        'Translation providers could not be initialized; configuration is preserved',
+        'error',
+      );
+    });
+
+  // Legacy send channels remain for existing integrations; editors use acknowledged invoke.
+  for (const [channel, read, write] of [
+    [
+      'setTranslationProviders',
+      () => store.get('translationProviders'),
+      (providers) => store.set('translationProviders', providers),
+    ],
+    ['setAsrProviders', getAsrProviders, setAsrProviders],
+    ['setTtsProviders', getTtsProviders, setTtsProviders],
+  ] as const) {
+    ipcMain.handle(channel, (_event, request) =>
+      saveProviderList(request, read, write),
+    );
+  }
 
   // Provider 相关处理
   ipcMain.on('setTranslationProviders', async (event, providers) => {
-    store.set('translationProviders', providers);
+    try {
+      assertProviderList(providers);
+      store.set('translationProviders', providers);
+    } catch {
+      logMessage('Legacy translation provider save failed', 'error');
+    }
   });
 
   ipcMain.handle('getTranslationProviders', async () => {
     return getAndInitializeProviders();
   });
+  ipcMain.handle('setDefaultTranslationProvider', (_event, providerId) => {
+    const providers = store.get('translationProviders');
+    assertProviderList(providers);
+    if (!providers.some((provider) => provider.id === providerId))
+      throw new Error('PROVIDER_NOT_FOUND');
+    store.set('userConfig', {
+      ...store.get('userConfig'),
+      translateProvider: providerId,
+    });
+    return { success: true };
+  });
+
+  ipcMain.handle('getProviderHealth', async () => {
+    const translations = await getAndInitializeProviders();
+    return [
+      ...translations.map((provider) =>
+        getProviderHealth('translation', provider),
+      ),
+      ...getAsrProviders().map((provider) =>
+        getProviderHealth('asr', provider),
+      ),
+      ...getTtsProviders().map((provider) =>
+        getProviderHealth('tts', provider),
+      ),
+    ].filter(Boolean);
+  });
 
   // 云端听写（在线 ASR）服务商实例：多实例、含凭据，无自动初始化（缺省空列表）。
   ipcMain.on('setAsrProviders', async (event, providers) => {
-    setAsrProviders(providers);
+    try {
+      setAsrProviders(providers);
+    } catch {
+      logMessage('Legacy ASR provider save failed', 'error');
+    }
   });
 
   ipcMain.handle('getAsrProviders', async () => {
@@ -114,12 +176,23 @@ export function setupStoreHandlers() {
 
   // 云 ASR 实例连通性自测：跑在主进程规避渲染进程 CORS（对齐 testTranslation）。
   ipcMain.handle('testAsrProvider', async (_event, provider) => {
-    return testAsrConnection(provider);
+    try {
+      const result = await testAsrConnection(provider);
+      recordProviderHealth('asr', provider, result.ok);
+      return result;
+    } catch (error) {
+      recordProviderHealth('asr', provider, false);
+      throw error;
+    }
   });
 
   // 云端配音（TTS）服务商实例：语义对齐 asrProviders。
   ipcMain.on('setTtsProviders', async (event, providers) => {
-    setTtsProviders(providers);
+    try {
+      setTtsProviders(providers);
+    } catch {
+      logMessage('Legacy TTS provider save failed', 'error');
+    }
   });
 
   ipcMain.handle('getTtsProviders', async () => {
@@ -128,7 +201,14 @@ export function setupStoreHandlers() {
 
   // 云 TTS 实例连通性自测：真实合成一句短文本（无零成本探针）。
   ipcMain.handle('testTtsProvider', async (_event, provider) => {
-    return testTtsConnection(provider);
+    try {
+      const result = await testTtsConnection(provider);
+      recordProviderHealth('tts', provider, result.ok);
+      return result;
+    } catch (error) {
+      recordProviderHealth('tts', provider, false);
+      throw error;
+    }
   });
 
   // 在线拉取音色清单（voiceListMode 类型：ElevenLabs 账号音色 / Azure 区域全量）。
@@ -190,6 +270,13 @@ export function setupStoreHandlers() {
         `Rejected storage path keys containing CJK characters: ${rejectedKeys.join(', ')}`,
         'warning',
       );
+    }
+    for (const key of [
+      ...invalidVadSettings(sanitized),
+      ...invalidEngineSettings(sanitized),
+    ]) {
+      delete sanitized[key];
+      rejectedKeys.push(key);
     }
     if (Object.prototype.hasOwnProperty.call(sanitized, 'customLanguages')) {
       sanitized.customLanguages = sanitizeCustomLanguages(

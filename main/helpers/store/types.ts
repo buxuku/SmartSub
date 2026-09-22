@@ -203,6 +203,7 @@ export type StoreType = {
    * 探测不可用时，UI 回落 CPU 显示且不改写存储值（换回有硬件的环境自动恢复）。
    */
   mergePreferences?: {
+    softContainer?: 'mkv' | 'mp4';
     outputMode?: MergeOutputMode;
     videoQuality?: VideoQuality;
     encoderMode?: EncoderMode;

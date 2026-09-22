@@ -3,7 +3,7 @@
  * 运行：yarn test:compose
  *
  * 等价性契约（与收敛前实现逐参数一致）：
- * - hard+keep / soft+keep ≡ 旧 subtitleMerger 的 hardcode / softmux 分支
+ * - hard+keep 显式保留视频/全部音轨；soft 保留原字幕并注入新的默认轨
  * - none+replace/mix/addTrack ≡ 旧 audioPipeline 的
  *   replaceAudioTrack / duckMixIntoVideo / addAudioTrack
  */
@@ -67,7 +67,31 @@ const DUCK_FILTERS = [
   '[bg][dub]amix=inputs=2:duration=first:normalize=0[mix]',
 ];
 
-// ── 等价性：hard+keep ≡ 旧 subtitleMerger hardcode 分支 ─────────────────────
+for (const subtitle of [
+  HARD,
+  { mode: 'none' as const },
+  { mode: 'soft' as const, subtitlePath: SUB },
+]) {
+  const plan = buildComposePlan({
+    videoPath: VIDEO,
+    outputPath: '/media/silent.mkv',
+    subtitle,
+    audio: { mode: 'mix', trackPath: TRACK },
+    hasOriginalAudio: false,
+  });
+  assertEqual(
+    plan.complexFilter,
+    undefined,
+    `${subtitle.mode}+mix silent source: no missing audio filter input`,
+  );
+  assertEqual(
+    plan.outputOptions.includes('1:a'),
+    true,
+    `${subtitle.mode}+mix silent source: selected voice track mapped`,
+  );
+}
+
+// ── hard+keep：显式音视频映射，防止额外选择原软字幕 ──────────────────────
 
 {
   const plan = buildComposePlan({
@@ -81,6 +105,10 @@ const DUCK_FILTERS = [
   assertDeepEqual(
     plan.outputOptions,
     [
+      '-map',
+      '0:v',
+      '-map',
+      '0:a?',
       '-c:v',
       'libx264',
       '-preset',
@@ -93,7 +121,7 @@ const DUCK_FILTERS = [
       '+faststart',
       '-y',
     ],
-    'hard+keep(mp4): 与旧 hardcode 分支逐参数一致（含 faststart）',
+    'hard+keep(mp4): 保留全部音轨，不额外封装软字幕（含 faststart）',
   );
   assertEqual(plan.prep, undefined, 'hard+keep: 无准备步骤');
 }
@@ -108,6 +136,10 @@ const DUCK_FILTERS = [
   assertDeepEqual(
     plan.outputOptions,
     [
+      '-map',
+      '0:v',
+      '-map',
+      '0:a?',
       '-c:v',
       'libx264',
       '-preset',
@@ -136,7 +168,7 @@ const DUCK_FILTERS = [
   );
 }
 
-// ── 等价性：soft+keep ≡ 旧 subtitleMerger softmux 分支 ──────────────────────
+// ── 软字幕显式映射 ──────────────────────────────────────────────────────
 
 {
   const plan = buildComposePlan({
@@ -150,18 +182,24 @@ const DUCK_FILTERS = [
     plan.outputOptions,
     [
       '-map',
-      '0',
+      '0:v',
       '-map',
-      '1',
+      '0:a?',
+      '-map',
+      '1:s:0',
+      '-map',
+      '0:s?',
+      '-map',
+      '0:t?',
       '-c',
       'copy',
-      '-c:s',
+      '-c:s:0',
       'srt',
       '-disposition:s:0',
       'default',
       '-y',
     ],
-    'soft+keep: 与旧 softmux 分支逐参数一致',
+    'soft+keep: 新默认字幕 + 原字幕/附件保留，排除数据流',
   );
   assertEqual(plan.videoFilter, undefined, 'soft+keep: 无视频滤镜');
 }
@@ -399,20 +437,24 @@ const DUCK_FILTERS = [
       '-map',
       '1:a',
       '-map',
-      '2',
-      '-c:v',
+      '2:s:0',
+      '-map',
+      '0:s?',
+      '-map',
+      '0:t?',
+      '-c',
       'copy',
       '-c:a',
       'aac',
       '-b:a',
       '192k',
-      '-c:s',
+      '-c:s:0',
       'srt',
       '-disposition:s:0',
       'default',
       '-y',
     ],
-    'soft+replace: 视频流复制 + 换轨 + 字幕轨',
+    'soft+replace: 视频流复制 + 换轨 + 新旧字幕轨',
   );
 }
 
@@ -435,20 +477,26 @@ const DUCK_FILTERS = [
     plan.outputOptions,
     [
       '-map',
-      '0',
+      '0:v',
+      '-map',
+      '0:a?',
       '-map',
       '1:a',
       '-map',
-      '2',
+      '2:s:0',
+      '-map',
+      '0:s?',
+      '-map',
+      '0:t?',
       '-c',
       'copy',
-      '-c:s',
+      '-c:s:0',
       'srt',
       '-disposition:s:0',
       'default',
       '-y',
     ],
-    'soft+addTrack: 全流拷贝 + 附加轨 + 字幕轨',
+    'soft+addTrack: 保留原音轨/字幕/附件 + 附加轨 + 新字幕轨',
   );
 }
 
@@ -470,9 +518,80 @@ assertEqual(
     subtitle: { mode: 'soft' },
     audio: { mode: 'keep' },
   }),
-  true,
-  'soft 需要 mkv',
+  false,
+  'soft 支持 MKV 或 MP4',
 );
+for (const mode of ['keep', 'replace', 'mix'] as const) {
+  const plan = buildComposePlan({
+    videoPath: VIDEO,
+    outputPath: '/media/out.mp4',
+    subtitle: { mode: 'soft', subtitlePath: SUB },
+    audio: mode === 'keep' ? { mode } : { mode, trackPath: TRACK },
+  });
+  assertEqual(
+    plan.outputOptions[plan.outputOptions.indexOf('-c:s') + 1],
+    'mov_text',
+    `MP4 soft+${mode}: mov_text subtitle codec`,
+  );
+  assertEqual(
+    plan.outputOptions.includes('libx264'),
+    false,
+    `MP4 soft+${mode}: no video encoding`,
+  );
+  assertEqual(
+    plan.outputOptions.includes('+faststart'),
+    true,
+    `MP4 soft+${mode}: faststart`,
+  );
+}
+assertThrows(
+  () =>
+    buildComposePlan({
+      videoPath: VIDEO,
+      outputPath: '/media/out.avi',
+      subtitle: { mode: 'soft', subtitlePath: SUB },
+      audio: { mode: 'keep' },
+    }),
+  'soft rejects unsupported containers',
+);
+{
+  const streams = [
+    {
+      subIndex: 0,
+      codec: 'hdmv_pgs_subtitle',
+      isText: false,
+      isDefault: true,
+      isForced: true,
+    },
+  ];
+  const input: ComposePlanInput = {
+    videoPath: VIDEO,
+    outputPath: '/media/out.mp4',
+    subtitle: { mode: 'soft', subtitlePath: SUB },
+    audio: { mode: 'keep' },
+    embeddedSubtitles: streams,
+  };
+  assertThrows(
+    () => buildComposePlan(input),
+    'MP4 rejects bitmap subtitles with MKV guidance',
+  );
+  const plan = buildComposePlan({ ...input, outputPath: '/media/out.mkv' });
+  assertEqual(
+    plan.outputOptions[plan.outputOptions.indexOf('-c:s:0') + 1],
+    'srt',
+    'MKV encodes only the injected track',
+  );
+  assertEqual(
+    plan.outputOptions.includes('-c:s'),
+    false,
+    'MKV existing bitmap/text tracks are copied',
+  );
+  assertEqual(
+    plan.outputOptions[plan.outputOptions.indexOf('-disposition:s:1') + 1],
+    '-default',
+    'original default flag removed without removing forced',
+  );
+}
 assertEqual(
   composePlanRequiresMkv({
     subtitle: { mode: 'hard' },

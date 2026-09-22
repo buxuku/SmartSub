@@ -17,6 +17,7 @@ import {
   moveGlossary,
   saveGlossaryEntry,
   updateGlossary,
+  addContextGlossaryEntry,
 } from './glossaryManager';
 import { logMessage, store } from './storeManager';
 
@@ -31,6 +32,18 @@ function safeFileName(name: string): string {
 
 export function setupGlossaryHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('glossaries:list', () => listGlossaries());
+  ipcMain.handle('glossaries:add-context-entry', (_event, input) => {
+    try {
+      const data = addContextGlossaryEntry(input || {});
+      return {
+        success: !data.conflict,
+        data,
+        ...(data.conflict ? { error: 'ENTRY_CONFLICT' } : {}),
+      };
+    } catch (error) {
+      return { success: false, error: errorCode(error) };
+    }
+  });
 
   ipcMain.handle('glossaries:create', (_event, input) => {
     try {

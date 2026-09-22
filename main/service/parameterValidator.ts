@@ -8,9 +8,26 @@
 import type {
   CustomParameterConfig,
   ParameterValue,
-  ValidationError,
-  ParameterValidationResult,
 } from '../../types/provider';
+import type { ParameterValidationResult } from '../../types/parameterSystem';
+
+interface ValidationError {
+  field: string;
+  code: string;
+  message: string;
+  severity?: 'error' | 'warning';
+}
+
+const publicErrors = (
+  errors: ValidationError[],
+): ParameterValidationResult['errors'] =>
+  errors
+    .filter((error) => error.severity !== 'warning')
+    .map((error) => ({
+      key: error.field,
+      type: 'format',
+      message: error.message,
+    }));
 
 export interface ValidationRules {
   maxParameterCount?: number;
@@ -37,12 +54,6 @@ export class ParameterValidator {
     maxValueLength: 2048,
     allowedValueTypes: ['string', 'number', 'boolean', 'object', 'array'],
     reservedKeys: [
-      'authorization',
-      'content-type',
-      'user-agent',
-      'accept',
-      'accept-encoding',
-      'accept-language',
       'connection',
       'host',
       'content-length',
@@ -55,15 +66,6 @@ export class ParameterValidator {
       'x-forwarded-proto',
     ],
     requireHttpsForSecrets: true,
-    disallowedPatterns: [
-      /password/i,
-      /secret/i,
-      /token/i,
-      /key/i,
-      /auth/i,
-      /credential/i,
-      /private/i,
-    ],
   };
 
   /**
@@ -130,8 +132,8 @@ export class ParameterValidator {
     }
 
     return {
-      isValid: errors.length === 0,
-      errors,
+      isValid: publicErrors(errors).length === 0,
+      errors: publicErrors(errors),
     };
   }
 
@@ -152,8 +154,9 @@ export class ParameterValidator {
 
     // Check for required fields structure
     if (
-      config.headerParameters &&
-      typeof config.headerParameters !== 'object'
+      !config.headerParameters ||
+      typeof config.headerParameters !== 'object' ||
+      Array.isArray(config.headerParameters)
     ) {
       errors.push({
         field: 'headerParameters',
@@ -162,7 +165,11 @@ export class ParameterValidator {
       });
     }
 
-    if (config.bodyParameters && typeof config.bodyParameters !== 'object') {
+    if (
+      !config.bodyParameters ||
+      typeof config.bodyParameters !== 'object' ||
+      Array.isArray(config.bodyParameters)
+    ) {
       errors.push({
         field: 'bodyParameters',
         message: 'Body parameters must be an object',
@@ -209,7 +216,7 @@ export class ParameterValidator {
         errors.push(...keyErrors);
       }
 
-      const valueErrors = this.validateParameterValue(
+      const valueErrors = this.validateConfiguredValue(
         key,
         value,
         parameterType,
@@ -276,7 +283,7 @@ export class ParameterValidator {
   /**
    * Validate parameter value
    */
-  private validateParameterValue(
+  private validateConfiguredValue(
     key: string,
     value: ParameterValue,
     parameterType: 'header' | 'body',
@@ -290,6 +297,13 @@ export class ParameterValidator {
     }
 
     const valueType = Array.isArray(value) ? 'array' : typeof value;
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      errors.push({
+        field: key,
+        code: 'NON_FINITE_NUMBER',
+        message: `Parameter '${key}' must be finite`,
+      });
+    }
 
     // Check allowed value types
     if (
@@ -407,6 +421,7 @@ export class ParameterValidator {
         field: 'parameters',
         message: `Duplicate parameter keys found in headers and body: ${duplicates.join(', ')}`,
         code: 'DUPLICATE_PARAMETER_KEYS',
+        severity: 'warning',
       });
     }
 
@@ -423,6 +438,7 @@ export class ParameterValidator {
         message:
           'Both Content-Type header and body parameters are specified. Ensure they are compatible',
         code: 'POTENTIAL_CONTENT_TYPE_CONFLICT',
+        severity: 'warning',
       });
     }
 
@@ -449,13 +465,11 @@ export class ParameterValidator {
       if (typeof value === 'string') {
         // Check for hardcoded credentials patterns
         if (this.containsCredentialPattern(key, value)) {
-          const severity =
-            context.securityLevel === 'high' ? 'error' : 'warning';
           errors.push({
             field: key,
             message: `Parameter '${key}' appears to contain hardcoded credentials. Use environment variables or secure configuration`,
             code: 'HARDCODED_CREDENTIALS',
-            severity,
+            severity: 'warning',
           });
         }
 
@@ -609,7 +623,7 @@ export class ParameterValidator {
 
     return {
       isValid: errors.length === 0,
-      errors,
+      errors: publicErrors(errors),
       convertedValue: errors.length === 0 ? convertedValue : undefined,
     };
   }

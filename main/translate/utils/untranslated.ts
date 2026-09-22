@@ -173,7 +173,7 @@ function isUppercaseLetter(character: string): boolean {
  * 避免标题式或全大写普通句被永久豁免。
  */
 function looksLikeProperName(text: string): boolean {
-  const words = text.match(WORD) || [];
+  const words: string[] = text.match(WORD) || [];
   if (words.length === 0 || words.length > 5) return false;
 
   return words.every((word) => {

@@ -133,9 +133,10 @@ async function cooperativeYield(signal?: AbortSignal): Promise<void> {
 export function getManuscriptConfig(
   formData?: Record<string, unknown>,
   file?: {
+    filePath?: string;
+    fileName?: string;
     manuscriptPath?: unknown;
     manuscriptName?: unknown;
-    [key: string]: unknown;
   } | null,
 ): ManuscriptConfig | null {
   // 文件专属配置优先于全局配置

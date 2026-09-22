@@ -343,6 +343,70 @@ const pauseGuarded = applySegmentationGuards(
 eq(pauseGuarded.length, 1, 'guards: 合规 cue 不被 gap 二次切碎');
 eq(pauseGuarded[0][2], pauseText, 'guards: 合规 cue 文本原样');
 
+const preservedPause = applySegmentationGuards(
+  [{ cue: ['00:00:00,000', '00:00:02,460', pauseText], words: pauseWords }],
+  {
+    cueOptions: { maxWidth: 40, maxGapSeconds: 0.25 },
+    preserveSpeechPauses: true,
+  },
+);
+ok(
+  preservedPause.length > 1,
+  'guards: explicit pause preservation also splits otherwise compliant AI cues',
+);
+eq(
+  preservedPause.map((cue) => cue[2]).join(''),
+  pauseText,
+  'guards: pause split preserves text',
+);
+const toMs = (t: string) => {
+  const [h, m, s] = t.replace(',', '.').split(':').map(Number);
+  return Math.round((h * 3600 + m * 60 + s) * 1000);
+};
+ok(
+  preservedPause.some(
+    (cue, i) => i > 0 && toMs(cue[0]) - toMs(preservedPause[i - 1][1]) >= 700,
+  ),
+  'guards: no merge or display extension consumes pause',
+);
+const pauseRanges = splitCuesIntoWindows(
+  [
+    ['00:00:00,000', '00:00:00,200', 'First'],
+    ['00:00:00,600', '00:00:00,800', 'I'],
+    ['00:00:01,200', '00:00:01,500', 'agree'],
+  ],
+  { preserveGapMs: 250 },
+);
+eq(
+  pauseRanges,
+  [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+  ],
+  'window-cue: segment-only AI cannot merge across explicit pause boundaries',
+);
+const durationGuarded = applySegmentationGuards(
+  [
+    {
+      cue: [
+        '00:00:00,000',
+        '00:00:09,000',
+        'This sentence has many words and takes a long time to say',
+      ],
+    },
+  ],
+  { cueOptions: { maxWidth: Infinity, maxDurationSeconds: 3 } },
+);
+ok(
+  durationGuarded.length >= 3,
+  'guards: segment-only duration cap works without width limit',
+);
+ok(
+  durationGuarded.every((cue) => toMs(cue[1]) - toMs(cue[0]) <= 3001),
+  'guards: duration cap survives fragment merge and display extension',
+);
+
 // 无词级支撑的超宽 cue：走文本级比例插值兜底。
 const approxGuarded = applySegmentationGuards(
   [

@@ -1,4 +1,31 @@
 {
+  "projectSave": {
+    "loading": "Loading task draft...",
+    "retryLoad": "Retry loading",
+    "failed": "The task draft could not be saved. Current changes are not on disk.",
+    "details": "Error details",
+    "retry": "Retry save",
+    "loadFailed": "The task draft could not be loaded. Editing and running are unavailable."
+  },
+  "advancedSettings": "Expert settings",
+  "readiness": {
+    "translation_style_requires_ai": "Conversational translation requires an AI provider. Select one, or choose standard translation in expert settings.",
+    "speaker_diarization_unavailable": "Speaker models or runtime are unavailable. Install them on the Engines page, or turn off speaker diarization in expert settings.",
+    "tts_unavailable": "The selected speech engine is missing or not configured.",
+    "tts_voice_unavailable": "The selected voice is no longer available. Select it again.",
+    "tts_language_unsupported": "The selected speech engine does not support the dubbing language.",
+    "files_required": "Add task files first.",
+    "subtitle_files_required": "This task accepts subtitle files only.",
+    "model_required": "Select a model for this task.",
+    "model_unavailable": "The selected engine or model is unavailable. Reinstall it or select a ready model.",
+    "local_command_required": "Configure the local Whisper command first.",
+    "target_language_required": "Select a translation target language.",
+    "provider_required": "The selected translation provider is missing or not configured.",
+    "refine_provider_required": "Select a configured AI provider for subtitle refinement or turn refinement off.",
+    "input_unavailable": "An input file was moved or deleted. Select it again.",
+    "paired_subtitle_unavailable": "A paired subtitle was moved or deleted. Pair it again."
+  },
+  "subtitleFilesRequired": "Subtitle translation accepts subtitle files only. Remove audio, video and other non-subtitle files from the list. Use a transcription task for audio or video.",
   "parakeet": {
     "modelUnavailable": "Model {{model}} is unavailable. Select an installed model in task settings. For a task with fixed settings, reinstall its model or create a new task.",
     "languageMismatch": "{{model}} does not support source language {{language}}. Results may be inaccurate. Your selection is unchanged."
@@ -83,7 +110,7 @@
     "gateSubtitleDesc": "Pause after subtitles for your check before dubbing/composing",
     "gateDubbing": "Dub review",
     "gateDubbingDesc": "Pause after dubbing for a listen before composing",
-    "gatesHint": "You'll be notified at each stop; release to continue automatically. Turn both off for fully automatic.",
+    "gatesHint": "You'll be notified at each stop; release to continue automatically. Turn both off for fully automatic direct output.",
     "blockNoFiles": "Add the files to process first",
     "blockNoModel": "No speech model available yet",
     "blockNoProvider": "Translation service is not configured",
@@ -107,6 +134,8 @@
     "goConfigure": "Configure",
     "readyHint": "Ready: {{count}} file(s) will be processed automatically",
     "clearFiles": "Clear list",
+    "draftRestored": "Restored previous task draft ({{count}} files)",
+    "clearDraft": "Clear draft",
     "start": "Start",
     "recipe": {
       "save": "Save as recipe",
@@ -192,6 +221,7 @@
     "accurate": {
       "title": "Most accurate text",
       "desc": "Finest segmentation and the most complete punctuation; keeps each sentence as faithfully as possible. May occasionally add a stray line over silence/background noise.",
+      "fasterWhisperDesc": "Prioritizes brief and quiet speech to reduce omissions. Background sounds may produce extra subtitles, and recognition may take longer.",
       "scene": "Best for lectures, interviews, talking-head videos where complete text matters most"
     },
     "balanced": {
@@ -227,13 +257,13 @@
     "label": "Voice activity detection (VAD)",
     "on": "Faster and steadier: the built-in whisper engine only transcribes inside detected speech, skipping silence/background noise and greatly reducing repeated or hallucinated lines there; lines are aligned token-by-token to the speech segments, so the timeline hugs the speech and stays stable.",
     "off": "Most complete text: the built-in whisper engine segments more finely with fuller punctuation (recommended for short/medium files and Chinese); stray lines over silence are curbed by an energy fallback; other engines such as faster-whisper may still produce repeated or hallucinated lines over silence/music.",
-    "hint": "Turn off for the most complete text and finest segmentation; keep on for the steadiest timeline and fewest stray lines over silence. This is a global setting and affects all tasks."
+    "hint": "Turn off for the most complete text and finest segmentation; keep on for the steadiest timeline and fewest stray lines over silence. Applies only to this task."
   },
   "reduceRepetition": {
     "label": "Reduce repetition / hallucinated lines",
     "on": "On: drops previous-text conditioning and suppresses repeats, greatly reducing looped lines over silence/repetition; coherence on clean speech may drop slightly.",
     "off": "Off: engine defaults (keeps cross-segment coherence); long videos or silence may produce repeated or hallucinated lines.",
-    "hint": "Turn on when subtitles loop or repeat heavily. Global setting; applies to both faster-whisper and whisper.cpp."
+    "hint": "Turn on when subtitles loop or repeat heavily. Applies only to this task, with faster-whisper or whisper.cpp."
   },
   "fasterWhisperAdvanced": {
     "title": "Advanced decoding parameters",
@@ -292,11 +322,20 @@
     "hint": "Replace Chinese punctuation (，。、？！ etc.) in Chinese subtitles with spaces and trim trailing spaces for cleaner subtitles. Applies to the source when the source language is Chinese, and to the translation when the target is Chinese."
   },
   "speakerDiarization": {
+    "warnings": {
+      "SPEAKER_DIARIZATION_AUDIO_UNAVAILABLE": "Speaker analysis skipped: media audio is unavailable. Check the source and retry.",
+      "SPEAKER_DIARIZATION_MODEL_UNAVAILABLE": "Speaker analysis skipped: models or runtime are unavailable. Install them on the Engines page and retry.",
+      "SPEAKER_DIARIZATION_INFERENCE_FAILED": "Speaker analysis failed. Subtitles were kept. Check the log and retry.",
+      "SPEAKER_DIARIZATION_EMPTY_RESULT": "Speaker analysis found no speech. Subtitles were kept.",
+      "SPEAKER_DIARIZATION_SUBTITLE_UNAVAILABLE": "Speakers were detected but no subtitles could receive labels. Roles were saved in proofreading data.",
+      "SPEAKER_DIARIZATION_ANNOTATION_FAILED": "Speaker labels could not be saved. Roles remain in proofreading data. Check the log.",
+      "SPEAKER_DIARIZATION_IMPORTED_SUBTITLE_PROTECTED": "Imported subtitles were kept unchanged. Roles were saved in proofreading data without adding labels to the input file."
+    },
     "label": "Speaker diarization",
     "hint": "After transcription and translation, analyze the full audio locally and align each cue with its speakers. Processing time scales with audio length; you can choose whether to write speaker labels into exported subtitle files.",
     "modelReady": "Runtime and model ready",
     "modelMissing": "Not ready",
-    "modelMissingHint": "You can save this setting, but the run will safely skip diarization. Make sure both the runtime and speaker diarization model are installed under Resources → Local multi-model engine.",
+    "modelMissingHint": "Install the runtime and speaker models on the Engines page before starting, or turn off speaker diarization.",
     "speakerCount": "Number of speakers",
     "speakerCountHint": "Specifying a known count is usually more stable",
     "autoDetect": "Auto detect",
@@ -372,6 +411,7 @@
     "releaseAllCancel": "Cancel"
   },
   "row": {
+    "aiCorrectionValidationFailed": "AI correction failed validation for {{count}} cue(s); original text retained. Review in the editor before retrying.",
     "cancelling": "Cancelling… interrupting transcription",
     "proofread": "Proofread",
     "openFolder": "Show in folder",
@@ -383,8 +423,14 @@
     "translationIncompletePipelinePaused": "{{count}} subtitle(s) failed translation; subsequent processing paused (please retry failed lines in proofread)",
     "translationIncompleteForDubbing": "Translation incomplete, cannot dub (please retry failed lines in proofread)",
     "translationIncompleteForCompose": "Translation incomplete, cannot compose video (please retry failed lines in proofread)",
-    "missedSpeechWarning": "{{count}} suspected missed speech range(s) (highest level: {{level}}); open proofread to review",
-    "missedSpeechLevel": { "low": "low", "medium": "medium", "high": "high" },
+    "speechReviewing": "Reviewing speech",
+    "speechRecovered": "Recovered {{count}} passages",
+    "missedSpeechWarning": "{{count}} recognition ranges to review (highest level: {{level}}); open proofread to check",
+    "missedSpeechLevel": {
+      "low": "low",
+      "medium": "medium",
+      "high": "high"
+    },
     "proofreadTxtUnsupported": "TXT files do not include timing, so they cannot be proofread here. Generate SRT/VTT/ASS for proofreading, then export plain text after proofreading.",
     "proofreadTxtUnsupportedShort": "TXT not supported"
   },
@@ -442,5 +488,77 @@
   "meta": {
     "etaMin": "~{{min}} min left",
     "etaLessMin": "Almost done"
+  },
+  "presets": {
+    "layout": {
+      "label": "Delivery subtitle layout",
+      "original": "Keep original line breaks",
+      "twoLine": "Compact two lines (one per language)",
+      "width": "Target line width (CJK counts as 2)"
+    },
+    "language": {
+      "fillers": "AI correction filler policy",
+      "legacy": "Default correction",
+      "removeHesitations": "Remove empty hesitations",
+      "preserve": "Preserve emotional interjections",
+      "translation": "Translation style",
+      "neutral": "Standard translation",
+      "conversational": "Emotional dialogue (AI)"
+    },
+    "controls": {
+      "vadThreshold": "VAD threshold",
+      "vadMinSpeechDuration": "Minimum speech (ms)",
+      "vadMinSilenceDuration": "Minimum silence (ms)",
+      "vadMaxSpeechDuration": "Maximum speech (s, 0 = unlimited)",
+      "vadSpeechPad": "Speech padding (ms)",
+      "vadSamplesOverlap": "Sample overlap (s)",
+      "subtitleMaxDuration": "Maximum cue duration (s)",
+      "subtitleMaxGap": "Split at pause (s)",
+      "preserveSpeechPauses": "Preserve speech pauses"
+    },
+    "title": "Scenario Presets",
+    "customHint": "Tuning parameters below switches to custom",
+    "interview": {
+      "name": "Meeting / Podcast",
+      "desc": "Short cues, local speaker clustering and original pauses; requires speaker models"
+    },
+    "lecture": {
+      "name": "Lecture / Tutorial",
+      "desc": "VAD, anti-repetition, glossary correction and fewer hesitations; requires AI refinement"
+    },
+    "movie": {
+      "name": "Movie / Vlog",
+      "desc": "Compact two-line layout, natural pacing and emotion; translation requires AI"
+    },
+    "shortDrama": {
+      "name": "Short Drama / Shorts",
+      "desc": "Compact two-line cues, pauses and emotion; translation requires AI"
+    },
+    "balanced": {
+      "name": "Balanced",
+      "desc": "Balanced accuracy and speed, suitable for most general scenarios"
+    },
+    "custom": {
+      "name": "Expert Custom",
+      "desc": "Fine-tune Beam Size, VAD thresholds, and hallucination filters"
+    }
+  },
+  "configLoad": {
+    "loading": "Loading task configuration…",
+    "failed": "Task configuration could not be loaded. Editing and running are unavailable.",
+    "repair": "Check read access to the configuration directory and the storage device connection, then retry."
+  },
+  "speechReview": {
+    "title": "Automatic speech review",
+    "description": "These changes were added after two local decodes agreed. Listen again during proofreading to confirm the wording.",
+    "before": "Before: ",
+    "after": "After: ",
+    "empty": "(no text)",
+    "retimed": "Adjusted timing for {{count}} segments",
+    "original": "Show original subtitle backup",
+    "openFailed": "Could not open the backup location",
+    "unavailable": "Review unavailable",
+    "unavailableDetail": "The first recognition result was preserved. Check suspected omissions during proofreading.",
+    "timingDescription": "Timing was adjusted where the words matched the original. Listen during proofreading or inspect the original subtitle backup."
   }
 }

@@ -1,275 +1,652 @@
-/**
- * 字体解析模块：
- *   1. 烧录/预览共用的 CJK 字体兜底（从 subtitleMerger 抽出，供 ASS 生成与预览 IPC 复用）；
- *   2. 按字体名解析本机字体文件（供 JASSUB WASM 预览加载真实字形）。
- */
-
 import * as fs from 'fs';
 import * as path from 'path';
+import * as fontkit from 'fontkit';
+import * as os from 'os';
+import { readAssEmbeddedFonts } from './assEmbeddedFonts';
 
-// 纯拉丁字体（不含 CJK 字形）。中文字幕若用这些字体烧录，libass 找不到字形会渲染成
-// 豆腐块/乱码（issue: mac 中文烧录乱码）。命中且字幕含 CJK 时回退到平台 CJK 字体。
-const LATIN_ONLY_FONTS = new Set([
-  'arial',
-  'helvetica',
-  'helvetica neue',
-  'georgia',
-  'times new roman',
-  'verdana',
-  'roboto',
-  'impact',
-  'tahoma',
-  'courier new',
-]);
+const MAC_FONTS: Record<string, string[]> = {
+  'PingFang SC': ['/System/Library/Fonts/PingFang.ttc'],
+  'Hiragino Sans GB': ['/System/Library/Fonts/Hiragino Sans GB.ttc'],
+  'Heiti SC': ['/System/Library/Fonts/STHeiti Medium.ttc'],
+  'Songti SC': ['/System/Library/Fonts/Supplemental/Songti.ttc'],
+  'Arial Unicode MS': ['/System/Library/Fonts/Supplemental/Arial Unicode.ttf'],
+  Helvetica: ['/System/Library/Fonts/Helvetica.ttc'],
+  'Helvetica Neue': ['/System/Library/Fonts/HelveticaNeue.ttc'],
+  ...Object.fromEntries(
+    [
+      'Arial',
+      'Georgia',
+      'Times New Roman',
+      'Verdana',
+      'Impact',
+      'Tahoma',
+      'Courier New',
+    ].map((name) => [name, [`/System/Library/Fonts/Supplemental/${name}.ttf`]]),
+  ),
+};
+const WINDOWS_FONTS: Record<string, string[]> = Object.fromEntries(
+  Object.entries({
+    'Microsoft YaHei': ['msyh.ttc', 'msyh.ttf'],
+    SimHei: ['simhei.ttf'],
+    SimSun: ['simsun.ttc'],
+    KaiTi: ['simkai.ttf'],
+    Arial: ['arial.ttf'],
+    Verdana: ['verdana.ttf'],
+    Georgia: ['georgia.ttf'],
+    'Times New Roman': ['times.ttf'],
+    Impact: ['impact.ttf'],
+    Tahoma: ['tahoma.ttf'],
+    'Courier New': ['cour.ttf'],
+  }).map(([name, files]) => [
+    name,
+    files.map((file) =>
+      path.join(process.env.WINDIR || 'C:\\Windows', 'Fonts', file),
+    ),
+  ]),
+);
+const LINUX_FONTS: Record<string, string[]> = {
+  'DejaVu Sans': ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'],
+  'DejaVu Sans Mono': ['/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf'],
+  'Liberation Sans': [
+    '/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+  ],
+  'Liberation Mono': [
+    '/usr/share/fonts/truetype/liberation2/LiberationMono-Regular.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf',
+  ],
+  'Noto Sans CJK SC': [
+    '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+    '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+    '/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf',
+  ],
+  'Noto Sans SC': [
+    '/usr/share/fonts/truetype/noto/NotoSansSC-Regular.ttf',
+    '/usr/share/fonts/opentype/noto/NotoSansSC-Regular.otf',
+  ],
+};
 
-/** 文本是否包含 CJK（中日韩）字符 */
+interface FontFaceInfo {
+  familyName: string;
+  subfamilyName: string;
+  postscriptName: string;
+  fullName: string;
+  hasGlyphForCodePoint(code: number): boolean;
+  name?: { records?: { preferredFamily?: Record<string, string> } };
+}
+interface FontRecord {
+  fontName: string;
+  filePath: string;
+  face: FontFaceInfo;
+  data?: Buffer;
+  id?: string;
+}
+export type FontContext = readonly FontRecord[];
+const faceNames = (face: FontFaceInfo) =>
+  [
+    face.familyName,
+    face.fullName,
+    face.postscriptName,
+    ...Object.values(face.name?.records?.preferredFamily || {}),
+  ].filter(Boolean);
+
+export function embeddedFontContext(content: string): FontContext {
+  return readAssEmbeddedFonts(content).flatMap((entry) => {
+    try {
+      const font = fontkit.create(entry.data);
+      const faces: FontFaceInfo[] = font.fonts || [font];
+      if (!faces.length || faces.some((face) => !face.familyName))
+        throw new Error('Missing font family');
+      if (faces.some((face) => /[{}\\,\r\n]/.test(face.familyName)))
+        throw new Error('Invalid ASS font family');
+      return faces.map((face) => ({
+        fontName: face.familyName,
+        filePath: '',
+        face,
+        data: entry.data,
+        id: entry.id,
+      }));
+    } catch (cause) {
+      throw new Error(
+        `Invalid ASS embedded font ${entry.name}: ${String(cause)}`,
+      );
+    }
+  });
+}
+const records = new Map<
+  string,
+  { stamp: string; size: number; faces: FontFaceInfo[] }
+>();
+const aliases = new Map<string, string>();
+const installedFamilies = new Map<string, Set<string>>();
+const catalog = new Map<string, { stamp: string; faces: FontFaceInfo[] }>();
+const SAMPLE_TEXT = 'SmartSub 字幕示例 123';
+const yieldToApp = () => new Promise<void>((resolve) => setImmediate(resolve));
+let discovery: Promise<void> | undefined;
+let cachedBytes = 0;
+let scannedAt = 0;
+const normalize = (value: string) => value.trim().toLowerCase();
+const candidates =
+  process.platform === 'darwin'
+    ? MAC_FONTS
+    : process.platform === 'win32'
+      ? WINDOWS_FONTS
+      : LINUX_FONTS;
+
+function registerFaces(filePath: string, faces: FontFaceInfo[]) {
+  for (const face of faces) {
+    if (!face.familyName || face.familyName.startsWith('.')) continue;
+    for (const name of faceNames(face)) {
+      const key = normalize(name);
+      if (
+        !aliases.has(key) ||
+        /^(regular|normal|book|roman)$/i.test(face.subfamilyName)
+      )
+        aliases.set(key, filePath);
+    }
+    const family = installedFamilies.get(face.familyName) || new Set<string>();
+    family.add(filePath);
+    installedFamilies.set(face.familyName, family);
+  }
+}
+
+function rememberFont(
+  filePath: string,
+  stamp: string,
+  size: number,
+  faces: FontFaceInfo[],
+) {
+  const previous = records.get(filePath);
+  if (previous) {
+    records.delete(filePath);
+    cachedBytes -= previous.size;
+  }
+  if (size <= 64 * 1024 * 1024) {
+    while (
+      records.size &&
+      (records.size >= 32 || cachedBytes + size > 64 * 1024 * 1024)
+    ) {
+      const [key, oldest] = records.entries().next().value!;
+      records.delete(key);
+      cachedBytes -= oldest.size;
+    }
+    records.set(filePath, { stamp, size, faces });
+    cachedBytes += size;
+  }
+  registerFaces(filePath, faces);
+}
+
+function readFaces(filePath: string): FontFaceInfo[] {
+  const stat = fs.statSync(filePath);
+  const stamp = `${stat.mtimeMs}:${stat.size}:${stat.ctimeMs}`;
+  const cached = records.get(filePath);
+  if (cached?.stamp === stamp) {
+    records.delete(filePath);
+    records.set(filePath, cached);
+    return cached.faces;
+  }
+  const font = fontkit.openSync(filePath);
+  const faces: FontFaceInfo[] = font.fonts || [font];
+  rememberFont(filePath, stamp, stat.size, faces);
+  return faces;
+}
+
+/** Coalesce discovery and yield between font files; never scan a library on a sync lookup. */
+export async function prepareSubtitleFonts(force = false): Promise<void> {
+  if (discovery) return discovery;
+  if (!force && scannedAt && Date.now() - scannedAt < 30000) return;
+  discovery = discoverInstalledFonts().finally(() => {
+    discovery = undefined;
+  });
+  return discovery;
+}
+
+async function discoverInstalledFonts() {
+  const roots =
+    process.platform === 'darwin'
+      ? [
+          '/System/Library/Fonts',
+          '/Library/Fonts',
+          path.join(os.homedir(), 'Library/Fonts'),
+        ]
+      : process.platform === 'win32'
+        ? [
+            path.join(process.env.WINDIR || 'C:\\Windows', 'Fonts'),
+            path.join(
+              process.env.LOCALAPPDATA ||
+                path.join(os.homedir(), 'AppData/Local'),
+              'Microsoft/Windows/Fonts',
+            ),
+          ]
+        : [
+            '/usr/share/fonts',
+            '/usr/local/share/fonts',
+            path.join(os.homedir(), '.fonts'),
+            path.join(
+              process.env.XDG_DATA_HOME ||
+                path.join(os.homedir(), '.local/share'),
+              'fonts',
+            ),
+          ];
+  let count = 0;
+  const next = new Map<string, { stamp: string; faces: FontFaceInfo[] }>();
+  const visit = async (directory: string, depth: number) => {
+    if (depth > 8 || count >= 4096) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) await visit(file, depth + 1);
+      else if (entry.isFile() && /\.(ttf|otf|ttc|otc)$/i.test(entry.name)) {
+        if (++count > 4096) return;
+        try {
+          const stat = await fs.promises.stat(file);
+          const stamp = `${stat.mtimeMs}:${stat.size}:${stat.ctimeMs}`;
+          const previous = catalog.get(file);
+          if (previous?.stamp === stamp) {
+            next.set(file, previous);
+            continue;
+          }
+          if (stat.size > 64 * 1024 * 1024) continue;
+          const font = fontkit.create(await fs.promises.readFile(file));
+          const faces: FontFaceInfo[] = font.fonts || [font];
+          // Keep lightweight names/sample coverage, not thousands of font buffers.
+          const metadata = faces.map((face) => {
+            const codes = new Set(
+              Array.from(SAMPLE_TEXT)
+                .map((c) => c.codePointAt(0)!)
+                .filter((code) => face.hasGlyphForCodePoint(code)),
+            );
+            return {
+              familyName: face.familyName,
+              fullName: face.fullName,
+              postscriptName: face.postscriptName,
+              subfamilyName: face.subfamilyName,
+              name: {
+                records: {
+                  preferredFamily: { ...face.name?.records?.preferredFamily },
+                },
+              },
+              hasGlyphForCodePoint: (code: number) => codes.has(code),
+            };
+          });
+          next.set(file, { stamp, faces: metadata });
+        } catch {
+          /* Ignore unreadable or unsupported installed fonts. */
+        }
+        await yieldToApp();
+      }
+    }
+  };
+  for (const root of roots) await visit(root, 0);
+  aliases.clear();
+  installedFamilies.clear();
+  catalog.clear();
+  for (const [file, entry] of next) {
+    catalog.set(file, entry);
+    registerFaces(file, entry.faces);
+  }
+  scannedAt = Date.now();
+}
+
+export function resolveFontFilePath(fontName: string): string | null {
+  const key = normalize(fontName || '');
+  const cached = aliases.get(key);
+  if (cached && fs.existsSync(cached)) return cached;
+  const entry = Object.entries(candidates).find(
+    ([name]) => normalize(name) === key,
+  );
+  return entry?.[1].find((file) => fs.existsSync(file)) || null;
+}
+
+function resolveFace(
+  fontName: string,
+  context: FontContext = [],
+): FontRecord | null {
+  const embedded = context.filter((font) =>
+    faceNames(font.face).some(
+      (name) => normalize(name) === normalize(fontName),
+    ),
+  );
+  if (embedded.length)
+    return (
+      embedded.find((font) =>
+        /^(regular|normal|book|roman)$/i.test(font.face.subfamilyName),
+      ) || embedded[0]
+    );
+  let filePath = resolveFontFilePath(fontName);
+  if (!filePath) {
+    // Persisted resolved family names may differ from the platform's display alias.
+    for (const files of Object.values(candidates)) {
+      const file = files.find((file) => fs.existsSync(file));
+      if (file) {
+        try {
+          readFaces(file);
+        } catch {
+          /* Skip damaged font files. */
+        }
+      }
+    }
+    filePath = resolveFontFilePath(fontName);
+  }
+  if (!filePath) return null;
+  try {
+    const key = normalize(fontName);
+    const allFaces = readFaces(filePath);
+    const exact = allFaces.filter(
+      (face) =>
+        normalize(face.fullName) === key ||
+        normalize(face.postscriptName) === key,
+    );
+    const faces = exact.length
+      ? exact
+      : allFaces.filter((face) =>
+          faceNames(face).some((name) => normalize(name) === key),
+        );
+    const face =
+      faces.find((face) =>
+        /^(regular|normal|book|roman)$/i.test(face.subfamilyName),
+      ) || faces[0];
+    return face ? { fontName: face.familyName, filePath, face } : null;
+  } catch {
+    return null;
+  }
+}
+
 export function containsCJK(text: string): boolean {
   return /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/.test(
     text,
   );
 }
 
-/** 选中字体是否为纯拉丁字体（无 CJK 字形） */
-export function isLatinOnlyFont(fontName: string): boolean {
-  return LATIN_ONLY_FONTS.has((fontName || '').trim().toLowerCase());
-}
-
-/**
- * macOS 上「确有字体文件」的常见 CJK 字体（按优先级）。
- * 关键点：PingFang 在部分 macOS 上没有可被 fontconfig 索引的字体文件
- * （仅 CoreText 可见），libass 解析「PingFang SC」会回退到 Helvetica → 中文渲染成乱码。
- * 因此烧录前必须挑一个「文件确实存在」的 CJK 字体，按 family 名交给 libass。
- * family 名取自 libass/fontconfig 对相应文件的实际解析结果（已实测）。
- */
-const MAC_CJK_FONTS: Array<{ name: string; files: string[] }> = [
-  { name: 'PingFang SC', files: ['/System/Library/Fonts/PingFang.ttc'] },
-  {
-    name: 'Hiragino Sans GB',
-    files: ['/System/Library/Fonts/Hiragino Sans GB.ttc'],
-  },
-  {
-    name: 'Heiti SC',
-    files: [
-      '/System/Library/Fonts/STHeiti Medium.ttc',
-      '/System/Library/Fonts/STHeiti Light.ttc',
-    ],
-  },
-  {
-    name: 'Songti SC',
-    files: ['/System/Library/Fonts/Supplemental/Songti.ttc'],
-  },
-  {
-    name: 'Arial Unicode MS',
-    files: ['/System/Library/Fonts/Supplemental/Arial Unicode.ttf'],
-  },
-];
-
-let cachedMacCJKFont: string | null = null;
-
-function fileExists(p: string): boolean {
-  try {
-    return fs.existsSync(p);
-  } catch {
-    return false;
+export function resolveSharedFont(
+  fontName: string,
+  _hasCJK = false,
+  context: FontContext = [],
+): FontRecord | null {
+  const direct = resolveFace(fontName, context);
+  if (direct) return direct;
+  const fallbackNames = /courier|mono/i.test(fontName)
+    ? ['Courier New', 'DejaVu Sans Mono', 'Liberation Mono']
+    : /arial|helvetica|georgia|times|verdana|roboto|impact|tahoma|sans|serif/i.test(
+          fontName,
+        ) && !/cjk|hiragino|noto|han/i.test(fontName)
+      ? ['Arial', 'DejaVu Sans', 'Liberation Sans']
+      : [
+          'Arial Unicode MS',
+          'Heiti SC',
+          'Microsoft YaHei',
+          'Noto Sans CJK SC',
+          'Noto Sans SC',
+          'Arial',
+          'DejaVu Sans',
+          'Liberation Sans',
+        ];
+  for (const name of fallbackNames) {
+    const font = resolveFace(name, context);
+    if (font) return font;
   }
+  return null;
 }
 
-/** macOS：返回第一个字体文件确实存在的 CJK 字体名（结果缓存） */
-export function resolveMacCJKFont(): string {
-  if (cachedMacCJKFont) return cachedMacCJKFont;
-  const found = MAC_CJK_FONTS.find((f) => f.files.some(fileExists));
-  cachedMacCJKFont = found?.name ?? 'Arial Unicode MS';
-  return cachedMacCJKFont;
-}
-
-/** 该字体在 macOS 上是否为「文件存在」的已知 CJK 字体（可被 libass 正常解析） */
-export function isMacResolvableCJKFont(fontName: string): boolean {
-  const norm = (fontName || '').trim().toLowerCase();
-  const matched = MAC_CJK_FONTS.find((f) => f.name.toLowerCase() === norm);
-  return Boolean(matched && matched.files.some(fileExists));
-}
-
-/** 按运行平台返回一个稳定可用的 CJK 字体名 */
-export function getPlatformCJKFont(): string {
-  switch (process.platform) {
-    case 'darwin':
-      return resolveMacCJKFont();
-    case 'win32':
-      return 'Microsoft YaHei';
-    default:
-      return 'Noto Sans CJK SC';
-  }
-}
-
-/**
- * 为「含 CJK 的字幕」决定最终烧录字体：
- * - 不含 CJK：原样使用用户所选字体；
- * - macOS：所选字体若不是「文件存在的已知 CJK 字体」（含用户默认 PingFang 在本机缺失的情况），
- *   一律换成 resolveMacCJKFont() 解析出的可用 CJK 字体；
- * - 其它平台：仅当所选为纯拉丁字体时回退到平台 CJK 字体。
- */
+/** Resolve the actual family stored in the font, not only its OS display alias. */
 export function resolveBurnFontName(
   chosenFont: string,
   hasCJK: boolean,
+  context: FontContext = [],
 ): string {
-  if (!hasCJK) return chosenFont;
-  if (process.platform === 'darwin') {
-    return isMacResolvableCJKFont(chosenFont)
-      ? chosenFont
-      : resolveMacCJKFont();
-  }
-  return isLatinOnlyFont(chosenFont) ? getPlatformCJKFont() : chosenFont;
-}
-
-// ----------------------------- 字体文件解析（预览用） -----------------------------
-
-/** Windows 常见字体名 → 系统字体文件名映射 */
-const WIN_FONT_FILES: Record<string, string[]> = {
-  'microsoft yahei': ['msyh.ttc', 'msyh.ttf'],
-  simhei: ['simhei.ttf'],
-  simsun: ['simsun.ttc'],
-  kaiti: ['simkai.ttf'],
-  arial: ['arial.ttf'],
-  verdana: ['verdana.ttf'],
-  georgia: ['georgia.ttf'],
-  'times new roman': ['times.ttf'],
-  impact: ['impact.ttf'],
-  tahoma: ['tahoma.ttf'],
-  'courier new': ['cour.ttf'],
-};
-
-/** macOS 常见拉丁字体名 → 字体文件路径映射（Supplemental 目录） */
-const MAC_LATIN_FONT_FILES: Record<string, string[]> = {
-  arial: ['/System/Library/Fonts/Supplemental/Arial.ttf'],
-  helvetica: ['/System/Library/Fonts/Helvetica.ttc'],
-  'helvetica neue': ['/System/Library/Fonts/HelveticaNeue.ttc'],
-  georgia: ['/System/Library/Fonts/Supplemental/Georgia.ttf'],
-  'times new roman': ['/System/Library/Fonts/Supplemental/Times New Roman.ttf'],
-  verdana: ['/System/Library/Fonts/Supplemental/Verdana.ttf'],
-  impact: ['/System/Library/Fonts/Supplemental/Impact.ttf'],
-  tahoma: ['/System/Library/Fonts/Supplemental/Tahoma.ttf'],
-  'courier new': ['/System/Library/Fonts/Supplemental/Courier New.ttf'],
-};
-
-/** Linux 常见 CJK/通用字体文件搜索路径 */
-const LINUX_FONT_CANDIDATES: Record<string, string[]> = {
-  'noto sans cjk sc': [
-    '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-    '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
-    '/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf',
-  ],
-  'noto sans sc': [
-    '/usr/share/fonts/truetype/noto/NotoSansSC-Regular.ttf',
-    '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-  ],
-};
-
-/**
- * 按字体名解析本机字体文件路径。
- * 返回 null 表示无法定位（调用方应回退到平台 CJK 字体）。
- */
-export function resolveFontFilePath(fontName: string): string | null {
-  const norm = (fontName || '').trim().toLowerCase();
-  if (!norm) return null;
-
-  if (process.platform === 'darwin') {
-    const cjk = MAC_CJK_FONTS.find((f) => f.name.toLowerCase() === norm);
-    if (cjk) {
-      const file = cjk.files.find(fileExists);
-      if (file) return file;
-    }
-    const latinFiles = MAC_LATIN_FONT_FILES[norm];
-    return latinFiles?.find(fileExists) ?? null;
-  }
-
-  if (process.platform === 'win32') {
-    const fontsDir = path.join(process.env.WINDIR || 'C:\\Windows', 'Fonts');
-    const files = WIN_FONT_FILES[norm];
-    if (!files) return null;
-    const found = files.map((f) => path.join(fontsDir, f)).find(fileExists);
-    return found ?? null;
-  }
-
-  const linuxFiles = LINUX_FONT_CANDIDATES[norm];
-  return linuxFiles?.find(fileExists) ?? null;
+  const resolved = resolveSharedFont(chosenFont, hasCJK, context);
+  if (!resolved)
+    throw new Error(`No preview/export font available for: ${chosenFont}`);
+  return resolved.fontName;
 }
 
 export interface ResolvedFontData {
-  /** 实际解析到的字体 family 名（可能是兜底字体） */
   fontName: string;
-  /** 字体文件路径 */
+  fullName: string;
+  postscriptName: string;
   filePath: string;
-  /** 字体文件内容 */
   data: Buffer;
+  variants: Buffer[];
 }
-
-/**
- * 预览专用 CJK 兜底字体（按平台，必须是单面 TTF/OTF）。
- * 实测 JASSUB（libass WASM）的内存字体加载对 .ttc 集合文件无效
- * （注册后 fontselect 找不到 family），因此预览侧只能喂单面字体文件。
- * 烧录侧不受影响（fontconfig 按 family 名解析系统字体，支持 ttc）。
- */
-const PREVIEW_CJK_FALLBACKS: Array<{ name: string; files: string[] }> =
-  process.platform === 'darwin'
-    ? [
-        {
-          name: 'Arial Unicode MS',
-          files: ['/System/Library/Fonts/Supplemental/Arial Unicode.ttf'],
-        },
-      ]
-    : process.platform === 'win32'
-      ? [
-          {
-            name: 'SimHei',
-            files: [
-              path.join(
-                process.env.WINDIR || 'C:\\Windows',
-                'Fonts',
-                'simhei.ttf',
-              ),
-            ],
-          },
-        ]
-      : [
-          {
-            name: 'Noto Sans SC',
-            files: [
-              '/usr/share/fonts/truetype/noto/NotoSansSC-Regular.ttf',
-              '/usr/share/fonts/opentype/noto/NotoSansSC-Regular.otf',
-            ],
-          },
-        ];
-
-/** JASSUB 内存字体无法解析 .ttc 集合文件，预览侧跳过 */
-function isPreviewLoadableFontFile(filePath: string): boolean {
-  return !filePath.toLowerCase().endsWith('.ttc');
-}
-
-/**
- * 解析字体名对应的字体文件数据（供 JASSUB WASM 预览加载）。
- * 所选字体无法定位或为 .ttc 集合文件时，回退到平台预览兜底字体（单面 TTF/OTF）。
- * 全部失败时返回 null（渲染层降级到 CSS 预览）。
- */
-export function loadFontData(fontName: string): ResolvedFontData | null {
-  const tryLoadFile = (
-    name: string,
-    filePath: string | null,
-  ): ResolvedFontData | null => {
-    if (!filePath || !isPreviewLoadableFontFile(filePath)) return null;
-    try {
-      return { fontName: name, filePath, data: fs.readFileSync(filePath) };
-    } catch {
-      return null;
-    }
-  };
-
-  const direct = tryLoadFile(fontName, resolveFontFilePath(fontName));
-  if (direct) return direct;
-
-  for (const fallback of PREVIEW_CJK_FALLBACKS) {
-    const file = fallback.files.find(fileExists);
-    const loaded = tryLoadFile(fallback.name, file ?? null);
-    if (loaded) return loaded;
+export function loadFontData(
+  fontName: string,
+  context: FontContext = [],
+): ResolvedFontData | null {
+  const resolved = resolveSharedFont(fontName, false, context);
+  if (!resolved) return null;
+  try {
+    if (resolved.data)
+      return {
+        fontName: resolved.fontName,
+        fullName: resolved.face.fullName,
+        postscriptName: resolved.face.postscriptName,
+        filePath: '',
+        data: resolved.data,
+        variants: Array.from(
+          new Set(
+            context
+              .filter(
+                (font) =>
+                  font.fontName === resolved.fontName &&
+                  font.data !== resolved.data,
+              )
+              .map((font) => font.data!),
+          ),
+        ),
+      };
+    // Standalone families keep bold/italic faces in adjacent files. Load those
+    // faces so preview does not synthesize a different weight from FFmpeg.
+    const basename = path.basename(
+      resolved.filePath,
+      path.extname(resolved.filePath),
+    );
+    const siblings = Array.from(
+      new Set([
+        ...Array.from(installedFamilies.get(resolved.fontName) || []),
+        ...(path.extname(resolved.filePath).toLowerCase() === '.ttc'
+          ? []
+          : fs
+              .readdirSync(path.dirname(resolved.filePath))
+              .filter(
+                (file) =>
+                  /\.(ttf|otf)$/i.test(file) &&
+                  path.basename(file, path.extname(file)).startsWith(basename),
+              )
+              .map((file) => path.join(path.dirname(resolved.filePath), file))),
+      ]),
+    ).filter((file) => {
+      if (file === resolved.filePath) return false;
+      try {
+        return readFaces(file).some(
+          (face) => face.familyName === resolved.fontName,
+        );
+      } catch {
+        return false;
+      }
+    });
+    return {
+      fontName: resolved.fontName,
+      fullName: resolved.face.fullName,
+      postscriptName: resolved.face.postscriptName,
+      filePath: resolved.filePath,
+      data: fs.readFileSync(resolved.filePath),
+      variants: siblings.map((file) => fs.readFileSync(file)),
+    };
+  } catch {
+    return null;
   }
-  return null;
+}
+
+export function fallbackFontForText(
+  fontName: string,
+  text: string,
+  context: FontContext = [],
+): string | undefined {
+  const primary = resolveFace(fontName, context);
+  const missing = Array.from(
+    new Set(Array.from(text).map((character) => character.codePointAt(0)!)),
+  ).filter((code) => code >= 32 && !primary?.face.hasGlyphForCodePoint(code));
+  if (!missing.length) return undefined;
+  for (const name of [
+    ...context.map((font) => font.fontName),
+    'Arial Unicode MS',
+    'Heiti SC',
+    'Microsoft YaHei',
+    'Noto Sans CJK SC',
+    'Noto Sans SC',
+    'SimHei',
+    'DejaVu Sans',
+  ]) {
+    const fallback = resolveFace(name, context);
+    if (
+      fallback &&
+      missing.every((code) => fallback.face.hasGlyphForCodePoint(code))
+    )
+      return fallback.fontName;
+  }
+  throw new Error(
+    `No installed subtitle font contains glyphs: ${missing.map((code) => `U+${code.toString(16).toUpperCase()}`).join(', ')}`,
+  );
+}
+
+export function fontTextRuns(
+  text: string,
+  fontName: string,
+  context: FontContext = [],
+): Array<{ text: string; fontName: string }> {
+  const primary = resolveFace(fontName, context);
+  const fallback = fallbackFontForText(fontName, text, context);
+  if (!fallback) return [{ text, fontName }];
+  const runs: Array<{ text: string; fontName: string }> = [];
+  for (const character of Array.from(text)) {
+    const name =
+      character.codePointAt(0)! < 32 ||
+      primary?.face.hasGlyphForCodePoint(character.codePointAt(0)!)
+        ? fontName
+        : fallback;
+    const last = runs[runs.length - 1];
+    if (last?.fontName === name) last.text += character;
+    else runs.push({ text: character, fontName: name });
+  }
+  return runs;
+}
+
+export async function listSubtitleFonts(context: FontContext = []) {
+  await prepareSubtitleFonts();
+  const listedFace = (name: string): FontRecord | null => {
+    const key = normalize(name);
+    const embedded = context.find((font) =>
+      faceNames(font.face).some((name) => normalize(name) === key),
+    );
+    if (embedded) return embedded;
+    const filePath = resolveFontFilePath(name);
+    if (!filePath) return null;
+    const faces = catalog.get(filePath)?.faces;
+    const matches = faces?.filter((face) =>
+      faceNames(face).some((name) => normalize(name) === key),
+    );
+    const face =
+      matches?.find((face) =>
+        /^(regular|normal|book|roman)$/i.test(face.subfamilyName),
+      ) || matches?.[0];
+    return face
+      ? { fontName: face.familyName, face, filePath }
+      : resolveFace(name);
+  };
+  const names = Array.from(
+    new Set([
+      ...Object.keys(MAC_FONTS),
+      ...Object.keys(WINDOWS_FONTS),
+      ...Object.keys(LINUX_FONTS),
+      ...context.map((font) => font.fontName),
+      ...Array.from(installedFamilies.keys()),
+    ]),
+  );
+  const options = [];
+  for (const name of names) {
+    const font = listedFace(name);
+    let sampleRuns: Array<{
+      text: string;
+      fontName: string;
+      fullName?: string;
+      postscriptName?: string;
+    }> = [];
+    if (font) {
+      try {
+        const missing = Array.from(SAMPLE_TEXT).filter(
+          (char) => !font.face.hasGlyphForCodePoint(char.codePointAt(0)!),
+        );
+        const fallback = missing.length
+          ? [
+              ...context.map((f) => f.fontName),
+              'Arial Unicode MS',
+              'Heiti SC',
+              'Microsoft YaHei',
+              'Noto Sans CJK SC',
+              'Noto Sans SC',
+              'SimHei',
+              'DejaVu Sans',
+            ]
+              .map(listedFace)
+              .find(
+                (f) =>
+                  f &&
+                  missing.every((char) =>
+                    f.face.hasGlyphForCodePoint(char.codePointAt(0)!),
+                  ),
+              )
+          : font;
+        if (!fallback) throw new Error('No sample fallback');
+        for (const char of Array.from(SAMPLE_TEXT)) {
+          const selected = font.face.hasGlyphForCodePoint(char.codePointAt(0)!)
+            ? font
+            : fallback;
+          const last = sampleRuns.at(-1);
+          if (last?.fontName === selected.fontName) last.text += char;
+          else
+            sampleRuns.push({
+              text: char,
+              fontName: selected.fontName,
+              fullName: selected.data ? undefined : selected.face.fullName,
+              postscriptName: selected.data
+                ? undefined
+                : selected.face.postscriptName,
+            });
+        }
+      } catch {
+        /* A Latin-only installation can still select Latin fonts. */
+      }
+    }
+    options.push({
+      name,
+      resolvedName: font?.fontName,
+      embeddedId: font?.id,
+      sampleRuns,
+      available: Boolean(font),
+      ...(!font
+        ? {
+            reason: resolveFontFilePath(name)
+              ? ('unsupported' as const)
+              : ('missing' as const),
+          }
+        : {}),
+    });
+    if (options.length % 32 === 0) await yieldToApp();
+  }
+  return options.sort(
+    (a, b) =>
+      Number(b.available) - Number(a.available) || a.name.localeCompare(b.name),
+  );
+}
+
+export function isFontAvailable(
+  fontName: string,
+  context: FontContext = [],
+): boolean {
+  return Boolean(resolveFace(fontName, context));
 }

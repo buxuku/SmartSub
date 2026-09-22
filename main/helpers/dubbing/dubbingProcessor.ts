@@ -1,11 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
+import { parseDubbingCueEdits } from '../../../types/dubbingCueDraft';
 import { logMessage } from '../storeManager';
 import { ensureTempDir } from '../fileUtils';
 import { TaskCancelledError } from '../taskContext';
 import {
   getSessionDir,
+  assertSessionAvailable,
   hashSubtitleContent,
   persistSessionMeta,
   flushSessionMeta,
@@ -34,8 +36,6 @@ import {
   estimateDurationMs,
   createCalibration,
   updateCalibration,
-  calibratedEstimate,
-  decideSpeedAction,
   recheckAfterSynthesis,
   buildAlignmentPlan,
   shiftedTimeline,
@@ -46,12 +46,19 @@ import {
 import {
   wavDurationMs,
   atempoWav,
+  fitSpeechWav,
+  applySpeakerSettingsWav,
+  trimPreviewWav,
   assembleTrack,
   amixWavs,
   encodeMp3,
   probeMediaDurationMs,
 } from './audioPipeline';
 import { enqueueCompose, cancelComposeJob } from '../compose/composeQueue';
+import {
+  createComposeOutput,
+  type ComposePublicationState,
+} from '../compose/composeOutput';
 import type {
   AlignmentPlan,
   AlignmentSpeedAction,
@@ -91,6 +98,11 @@ import {
   missingDubbingSpeakerVoiceIds,
   primaryDubbingSpeakerId,
   resolveDubbingVoiceId,
+  resolveDubbingSpeakerSettings,
+  assertDubbingSpeakerSettings,
+  assertDubbingConfig,
+  type DubbingSpeakerSettings,
+  type DubbingSpeakerSettingsMap,
   type DubbingSpeaker,
   type DubbingSpeakerVoiceMap,
 } from '../../../types/dubbing';
@@ -116,6 +128,8 @@ export interface SessionCue {
   overlap: boolean;
   /** 实测最终时长（ms，含一切变速后）。 */
   finalMs?: number;
+  originalMeasuredMs?: number;
+  borrowedMs?: number;
   /** 对齐层施加的综合额外倍率（不含用户整体语速）。 */
   appliedSpeed?: number;
   wavPath?: string;
@@ -126,6 +140,8 @@ export interface SessionCue {
 }
 
 export interface DubbingSession {
+  pendingTaskLink?: boolean;
+  hasSavedTextEdits?: boolean;
   id: string;
   subtitlePath: string;
   /** 字幕内容 hash（会话持久化恢复的合法性依据） */
@@ -136,12 +152,15 @@ export interface DubbingSession {
   proofreadDataFile?: string;
   speakers: DubbingSpeaker[];
   speakerVoiceMap: DubbingSpeakerVoiceMap;
+  speakerSettings?: DubbingSpeakerSettingsMap;
+  speakerSettingsConflicts?: Record<string, DubbingSpeakerSettings[]>;
   speakerVoiceConflicts: Record<string, string[]>;
   workDir: string;
   running: boolean;
   abort: AbortController | null;
   calibration: RateCalibration;
   lastConfig?: DubbingConfig;
+  pipelineConfigSnapshot?: DubbingConfig;
   subtitleLanguage?: string;
   detectedLanguage?: string;
   workItemId?: string;
@@ -156,6 +175,7 @@ export interface DubbingSession {
 const sessions = new Map<string, DubbingSession>();
 
 export function getDubbingSession(id: string): DubbingSession | undefined {
+  assertSessionAvailable(id);
   return sessions.get(id);
 }
 
@@ -202,9 +222,9 @@ export function syncDubbingVoiceStaleness(
   session: DubbingSession,
   config: DubbingConfig,
 ): number {
-  session.detectedLanguage = detectDubbingLanguage(
-    session.cues.map((c) => c.text).join('\n'),
-  );
+  session.detectedLanguage =
+    detectDubbingLanguage(session.cues.map((c) => c.text).join('\n')) ??
+    session.detectedLanguage;
   let count = 0;
   for (const cue of session.cues) {
     if (!cue.wavPath) continue;
@@ -212,13 +232,21 @@ export function syncDubbingVoiceStaleness(
       cue.synthesizedVoiceId || session.lastConfig?.voice;
     if (!cue.synthesizedVoiceId) cue.synthesizedVoiceId = synthesizedVoiceId;
     const voiceId = resolvedSessionCueVoice(session, cue, config.voice);
+    const settings = resolveDubbingSpeakerSettings(
+      cue,
+      session.speakerSettings,
+    );
     const key = dubbingInputKey(
       config,
       voiceId,
       normalizeDubbingSpeechText(cue.text),
       resolvedDubbingLanguage(config, voiceId, session),
+      settings,
+      { startMs: cue.startMs, endMs: cue.endMs },
     );
     cue.needsUpdate =
+      (!cue.synthesizedInputKey &&
+        (settings.speed !== 1 || settings.pitch !== 0)) ||
       dubbingInputNeedsUpdate(cue.synthesizedInputKey, key, config) ||
       dubbingVoiceNeedsUpdate(
         cue,
@@ -235,6 +263,8 @@ export function syncDubbingVoiceStaleness(
 function toSessionMeta(session: DubbingSession): DubbingSessionMeta {
   return {
     version: 1,
+    pendingTaskLink: session.pendingTaskLink,
+    hasSavedTextEdits: session.hasSavedTextEdits,
     sessionId: session.id,
     subtitlePath: session.subtitlePath,
     subtitleHash: session.subtitleHash,
@@ -242,10 +272,14 @@ function toSessionMeta(session: DubbingSession): DubbingSessionMeta {
     mediaDurationMs: session.mediaDurationMs,
     updatedAt: Date.now(),
     configSnapshot: session.lastConfig,
+    pipelineConfigSnapshot: session.pipelineConfigSnapshot,
     subtitleLanguage: session.subtitleLanguage,
+    detectedLanguage: session.detectedLanguage,
     proofreadDataFile: session.proofreadDataFile,
     speakers: session.speakers,
     speakerVoiceMap: session.speakerVoiceMap,
+    speakerSettings: session.speakerSettings,
+    speakerSettingsConflicts: session.speakerSettingsConflicts,
     speakerVoiceConflicts: session.speakerVoiceConflicts,
     // 校准随会话落盘：半成品会话重开后续行的语速预估不从零开始
     calibration: session.calibration,
@@ -264,6 +298,8 @@ function toSessionMeta(session: DubbingSession): DubbingSessionMeta {
       status: c.status === 'synthesizing' ? 'pending' : c.status,
       overlap: c.overlap,
       finalMs: c.finalMs,
+      originalMeasuredMs: c.originalMeasuredMs,
+      borrowedMs: c.borrowedMs,
       appliedSpeed: c.appliedSpeed,
       requiredFactor: c.requiredFactor,
       wavFile: c.wavPath ? path.basename(c.wavPath) : undefined,
@@ -312,6 +348,7 @@ export async function createDubbingSession(
 
   const session: DubbingSession = {
     id,
+    pendingTaskLink: true,
     subtitlePath,
     subtitleHash: hashSubtitleContent(content),
     subtitleLanguage:
@@ -357,7 +394,12 @@ export async function createDubbingSession(
     if (slot.overlapNext) session.cues[slot.index].overlap = true;
   }
   sessions.set(id, session);
-  flushDubbingSession(session);
+  try {
+    flushSessionMeta(toSessionMeta(session), true);
+  } catch (error) {
+    deleteDubbingSessionData(id);
+    throw error;
+  }
   return session;
 }
 
@@ -371,7 +413,11 @@ export type RestoreSessionResult =
  * 按 sessionId 恢复会话：字幕内容 hash 一致才恢复行状态与产物；
  * 单行 wav 缺失仅该行降级待合成。已在内存中的会话直接复用。
  */
-export function restoreDubbingSession(sessionId: string): RestoreSessionResult {
+export function restoreDubbingSession(
+  sessionId: string,
+  options?: { cache?: boolean },
+): RestoreSessionResult {
+  assertSessionAvailable(sessionId);
   const existing = sessions.get(sessionId);
   if (existing) return { kind: 'ok', session: existing };
 
@@ -405,6 +451,8 @@ export function restoreDubbingSession(sessionId: string): RestoreSessionResult {
   const speakerVoiceConflicts: Record<string, string[]> = {
     ...(meta.speakerVoiceConflicts || {}),
   };
+  const speakerSettings = { ...meta.speakerSettings };
+  const speakerSettingsConflicts = { ...meta.speakerSettingsConflicts };
 
   // A renamed role keeps the same ID and therefore its mapping. If assignments
   // changed (for example a merge), collect all old candidate voices for the new
@@ -420,12 +468,40 @@ export function restoreDubbingSession(sessionId: string): RestoreSessionResult {
       }
     }
     const candidates = new Map<number, Set<string>>();
+    for (const speakerId of Object.keys(speakerSettingsConflicts)) {
+      if (!activeSpeakerIds.has(speakerId))
+        delete speakerSettingsConflicts[speakerId];
+    }
+    const settingsCandidates = new Map<
+      number,
+      Map<string, DubbingSpeakerSettings>
+    >();
     meta.cues.forEach((persisted, index) => {
       const newAssignment = refreshed.assignments[index];
       if (!newAssignment) return;
       const newPrimary = primaryDubbingSpeakerId(newAssignment);
       const oldPrimary = primaryDubbingSpeakerId(persisted);
       if (!newPrimary) return;
+      const choices =
+        settingsCandidates.get(newPrimary) ||
+        new Map<string, DubbingSpeakerSettings>();
+      const addSettings = (value: DubbingSpeakerSettings) => {
+        assertDubbingSpeakerSettings(value);
+        choices.set(`${value.speed}:${value.pitch}`, value);
+      };
+      if (speakerSettings[String(newPrimary)])
+        addSettings(speakerSettings[String(newPrimary)]);
+      if (oldPrimary)
+        addSettings(
+          resolveDubbingSpeakerSettings(persisted, meta.speakerSettings),
+        );
+      for (const id of new Set([newPrimary, oldPrimary])) {
+        if (id)
+          (meta.speakerSettingsConflicts?.[String(id)] || []).forEach(
+            addSettings,
+          );
+      }
+      settingsCandidates.set(newPrimary, choices);
       const values = candidates.get(newPrimary) || new Set<string>();
       const currentVoice = speakerVoiceMap[String(newPrimary)];
       const previousVoice = oldPrimary
@@ -442,6 +518,16 @@ export function restoreDubbingSession(sessionId: string): RestoreSessionResult {
       } else if (voices.size > 1) {
         delete speakerVoiceMap[String(speakerId)];
         speakerVoiceConflicts[String(speakerId)] = Array.from(voices);
+      }
+    }
+    for (const [speakerId, choices] of settingsCandidates) {
+      if (choices.size === 1) {
+        speakerSettings[String(speakerId)] = Array.from(choices.values())[0];
+        delete speakerSettingsConflicts[String(speakerId)];
+      } else if (choices.size > 1) {
+        speakerSettingsConflicts[String(speakerId)] = Array.from(
+          choices.values(),
+        );
       }
     }
   }
@@ -469,12 +555,18 @@ export function restoreDubbingSession(sessionId: string): RestoreSessionResult {
           }
         : createCalibration(),
     lastConfig: meta.configSnapshot,
+    pendingTaskLink: meta.pendingTaskLink,
+    hasSavedTextEdits: meta.hasSavedTextEdits,
+    pipelineConfigSnapshot: meta.pipelineConfigSnapshot,
     subtitleLanguage:
       meta.subtitleLanguage ??
       dubbingSubtitleLanguage(meta.subtitlePath, meta.proofreadDataFile),
+    detectedLanguage: meta.detectedLanguage,
     proofreadDataFile: refreshed.proofreadDataFile || meta.proofreadDataFile,
     speakers: hasRefreshedMetadata ? refreshed.speakers : meta.speakers || [],
     speakerVoiceMap,
+    speakerSettings,
+    speakerSettingsConflicts,
     speakerVoiceConflicts,
     cues: meta.cues.map((persisted) => {
       const resolved = resolvePersistedCue(meta.sessionId, persisted);
@@ -499,6 +591,8 @@ export function restoreDubbingSession(sessionId: string): RestoreSessionResult {
         status: resolved.status,
         overlap: resolved.overlap,
         finalMs: resolved.finalMs,
+        originalMeasuredMs: resolved.originalMeasuredMs,
+        borrowedMs: resolved.borrowedMs,
         appliedSpeed: resolved.appliedSpeed,
         requiredFactor: resolved.requiredFactor,
         wavPath: resolved.wavPath,
@@ -509,7 +603,7 @@ export function restoreDubbingSession(sessionId: string): RestoreSessionResult {
   };
   if (session.lastConfig)
     syncDubbingVoiceStaleness(session, session.lastConfig);
-  sessions.set(session.id, session);
+  if (options?.cache !== false) sessions.set(session.id, session);
   logMessage(
     `dubbing session restored: ${session.id} (${session.cues.filter((c) => c.wavPath).length}/${session.cues.length} cues with artifacts)`,
     'info',
@@ -534,11 +628,19 @@ export function disposeDubbingSession(
   }
   session.abort?.abort();
   sessions.delete(id);
-  // 从未产出任何行级结果的会话没有可恢复价值：直接清理目录，防止空目录堆积
   const hasArtifacts = session.cues.some(
     (c) => c.wavPath || c.status === 'failed',
   );
-  if (hasArtifacts) {
+  const hasRoleSettings =
+    Object.keys(session.speakerVoiceMap).length > 0 ||
+    Object.keys(session.speakerSettings || {}).length > 0;
+  if (
+    hasArtifacts ||
+    hasRoleSettings ||
+    session.workItemId ||
+    session.lastConfig ||
+    session.hasSavedTextEdits
+  ) {
     flushDubbingSession(session);
   } else {
     session.disposed = true;
@@ -548,6 +650,11 @@ export function disposeDubbingSession(
 
 /** 彻底删除会话数据（工作项删除联动/用户确认重建）。 */
 export function deleteDubbingSessionData(id: string): void {
+  deleteSessionData(id);
+  forgetDubbingSession(id);
+}
+
+export function forgetDubbingSession(id: string): void {
   const session = sessions.get(id);
   if (session) {
     // 先置 disposed 再 abort：进行中批量被中断后，其 finally/行级落盘
@@ -556,14 +663,11 @@ export function deleteDubbingSessionData(id: string): void {
     session.abort?.abort();
     sessions.delete(id);
   }
-  deleteSessionData(id);
 }
 
 // ── 引擎适配（本地 worker / 云端 service 收敛为统一 synth 函数）──────────────
 
 interface EngineAdapter {
-  speedControl: 'native' | 'ssml' | 'none';
-  canResynthesize: boolean;
   concurrency: number;
   synthesize: (
     text: string,
@@ -572,6 +676,7 @@ interface EngineAdapter {
     outWavPath: string,
     signal?: AbortSignal,
     language?: string,
+    preview?: import('../../../types/ttsProvider').TtsSegmentRequest['preview'],
   ) => Promise<{ durationMs: number }>;
 }
 
@@ -625,8 +730,6 @@ function buildEngineAdapter(
       const { getClonedVoiceById } =
         require('../voiceClone/voiceCloneManager') as typeof import('../voiceClone/voiceCloneManager');
       return {
-        speedControl: 'none',
-        canResynthesize: false, // 重合成不能改语速 → 复测直接 atempo
         concurrency: localConcurrency, // 进程池并行（每路一份模型内存）
         synthesize: async (
           text,
@@ -693,8 +796,6 @@ function buildEngineAdapter(
     }
 
     return {
-      speedControl: 'native',
-      canResynthesize: true, // 本地合成免费 → 复测走重合成
       concurrency: localConcurrency, // 进程池并行（每路一份模型内存）
       synthesize: async (
         text,
@@ -739,10 +840,16 @@ function buildEngineAdapter(
   const gate = getCloudProviderGate(`tts:${provider.id}`);
   gate.setLimits(concurrency, resolveTtsRequestIntervalMs(provider));
   return {
-    speedControl: caps.speedControl,
-    canResynthesize: false, // 云端重合成花钱 → 复测走 atempo
     concurrency,
-    synthesize: async (text, voiceId, speed, outWavPath, signal, language) => {
+    synthesize: async (
+      text,
+      voiceId,
+      speed,
+      outWavPath,
+      signal,
+      language,
+      preview,
+    ) => {
       const release = await gate.acquire(signal);
       try {
         const r = await synthesizeSegment(provider, {
@@ -752,6 +859,7 @@ function buildEngineAdapter(
           speed,
           outWavPath,
           signal,
+          preview,
         });
         return { durationMs: r.durationMs };
       } finally {
@@ -770,138 +878,160 @@ async function synthesizeAndAlignCue(
   adapter: EngineAdapter,
   config: DubbingConfig,
   signal?: AbortSignal,
+  retainPreviousArtifact = false,
 ): Promise<void> {
   const globalSpeed =
     Number.isFinite(config.globalSpeed) && config.globalSpeed > 0
       ? config.globalSpeed
       : 1;
   const voiceId = resolvedSessionCueVoice(session, cue, config.voice);
+  const speakerSettings = resolveDubbingSpeakerSettings(
+    cue,
+    session.speakerSettings,
+  );
   const previousWavPath = cue.wavPath;
   const attemptId = `${Date.now()}-${randomUUID().slice(0, 8)}`;
   const wavPath = path.join(
     session.workDir,
     `cue-${cue.index}-${attemptId}.wav`,
   );
-  // 会话/展示字幕保留 `[Speaker N]`；仅在估时与 TTS 的最终输入边界剥离。
-  const speechText = normalizeDubbingSpeechText(cue.text);
-  const language = resolvedDubbingLanguage(config, voiceId, session);
-  const inputKey = dubbingInputKey(config, voiceId, speechText, language);
+  const attemptPaths = new Set([wavPath]);
+  try {
+    // 会话/展示字幕保留 `[Speaker N]`；仅在估时与 TTS 的最终输入边界剥离。
+    const speechText = normalizeDubbingSpeechText(cue.text);
+    const language = resolvedDubbingLanguage(config, voiceId, session);
+    const inputKey = dubbingInputKey(
+      config,
+      voiceId,
+      speechText,
+      language,
+      speakerSettings,
+      { startMs: cue.startMs, endMs: cue.endMs },
+    );
 
-  if (!speechText) {
-    // 空行：静音占位，无需合成。
-    cue.status = 'done';
-    cue.finalMs = 0;
-    cue.appliedSpeed = 1;
-    cue.wavPath = undefined;
+    if (!speechText) {
+      // 空行：静音占位，无需合成。
+      cue.status = 'done';
+      cue.finalMs = 0;
+      cue.originalMeasuredMs = 0;
+      cue.borrowedMs = undefined;
+      cue.requiredFactor = undefined;
+      cue.appliedSpeed = 1;
+      cue.wavPath = undefined;
+      cue.synthesizedVoiceId = voiceId;
+      cue.synthesizedInputKey = inputKey;
+      cue.needsUpdate = false;
+      cue.action = { type: 'none' };
+      return;
+    }
+
+    const est = estimateDurationMs(speechText);
+    let appliedExtra = 1;
+    const synthSpeed = globalSpeed;
+    const r = await adapter.synthesize(
+      speechText,
+      voiceId,
+      synthSpeed,
+      wavPath,
+      signal,
+      language,
+    );
+    // 校准样本：折回 1.0x 等效时长（实测 × 综合速度）。
+    // 并发安全不变式：读旧值与写新值必须保持在同一条同步语句内（中间不得插入
+    // await），Node 单线程下即原子累加；拆开会在并行合成时丢样本。
+    session.calibration = updateCalibration(
+      session.calibration,
+      est,
+      Math.round(r.durationMs * synthSpeed),
+    );
+
+    let currentWav = wavPath;
+    const applyRole = async () => {
+      currentWav = wavPath;
+      if (speakerSettings.speed === 1 && speakerSettings.pitch === 0) return;
+      const rolePath = path.join(
+        session.workDir,
+        `cue-${cue.index}-${attemptId}-role.wav`,
+      );
+      attemptPaths.add(rolePath);
+      await applySpeakerSettingsWav(wavPath, rolePath, speakerSettings, signal);
+      currentWav = rolePath;
+    };
+    await applyRole();
+    let action: AlignmentSpeedAction = { type: 'none' };
+    let overlong = false;
+    let requiredFactor: number | undefined;
+    const originalMeasuredMs = wavDurationMs(currentWav);
+
+    // Measure at user speed; never resynthesize or borrow silence automatically.
+    for (;;) {
+      if (signal?.aborted) throw new TaskCancelledError();
+      const measured = wavDurationMs(currentWav);
+      const recheck = recheckAfterSynthesis(
+        measured,
+        slot.slotMs,
+        appliedExtra,
+        {
+          canResynthesize: false,
+        },
+      );
+      if (recheck.type === 'fit') break;
+      if (recheck.type === 'overlong') {
+        overlong = true;
+        requiredFactor = recheck.requiredFactor;
+        break;
+      }
+      // atempo：对已产出 wav 后处理变速。
+      const tempoPath = path.join(
+        session.workDir,
+        `cue-${cue.index}-${attemptId}-atempo.wav`,
+      );
+      attemptPaths.add(tempoPath);
+      await fitSpeechWav(currentWav, tempoPath, slot.slotMs, signal);
+      currentWav = tempoPath;
+      appliedExtra *= recheck.factor;
+      action = { type: 'atempo', factor: recheck.factor };
+      break;
+    }
+
+    const finalMs = wavDurationMs(currentWav);
+    if (signal?.aborted || session.disposed) throw new TaskCancelledError();
+    cue.wavPath = currentWav;
+    cue.finalMs = finalMs;
+    cue.originalMeasuredMs = originalMeasuredMs;
+    cue.borrowedMs = undefined;
+    cue.appliedSpeed = appliedExtra;
+    cue.action = action;
+    cue.requiredFactor = requiredFactor;
+    cue.status = overlong ? 'overlong' : 'done';
+    cue.error = undefined;
     cue.synthesizedVoiceId = voiceId;
     cue.synthesizedInputKey = inputKey;
     cue.needsUpdate = false;
-    cue.action = { type: 'none' };
-    return;
-  }
-
-  // 第 1 层：预估（含校准与整体语速）→ speed 预控制。
-  const est = calibratedEstimate(
-    estimateDurationMs(speechText),
-    session.calibration,
-  );
-  const estAtGlobal = Math.round(est / globalSpeed);
-  const decision = decideSpeedAction(
-    estAtGlobal,
-    slot.slotMs,
-    adapter.speedControl,
-  );
-
-  let appliedExtra = decision.preSpeed;
-  let synthSpeed = globalSpeed * decision.preSpeed;
-  let r = await adapter.synthesize(
-    speechText,
-    voiceId,
-    synthSpeed,
-    wavPath,
-    signal,
-    language,
-  );
-  // 校准样本：折回 1.0x 等效时长（实测 × 综合速度）。
-  // 并发安全不变式：读旧值与写新值必须保持在同一条同步语句内（中间不得插入
-  // await），Node 单线程下即原子累加；拆开会在并行合成时丢样本。
-  session.calibration = updateCalibration(
-    session.calibration,
-    est,
-    Math.round(r.durationMs * synthSpeed),
-  );
-
-  let currentWav = wavPath;
-  let action: AlignmentSpeedAction =
-    decision.preSpeed > 1
-      ? { type: 'preSpeed', speed: decision.preSpeed }
-      : { type: 'none' };
-  let overlong = false;
-  let requiredFactor: number | undefined;
-  let resynthesized = false;
-
-  // 第 2 层复测环：重合成至多一次，其后 atempo 兜底；超红线判过长。
-  for (;;) {
-    if (signal?.aborted) throw new TaskCancelledError();
-    const measured = wavDurationMs(currentWav);
-    const recheck = recheckAfterSynthesis(measured, slot.slotMs, appliedExtra, {
-      canResynthesize: adapter.canResynthesize,
-      alreadyResynthesized: resynthesized,
-    });
-    if (recheck.type === 'fit') break;
-    if (recheck.type === 'overlong') {
-      overlong = true;
-      requiredFactor = recheck.requiredFactor;
-      break;
-    }
-    if (recheck.type === 'resynthesize') {
-      synthSpeed = globalSpeed * recheck.speed;
-      r = await adapter.synthesize(
-        speechText,
-        voiceId,
-        synthSpeed,
-        wavPath,
-        signal,
-        language,
-      );
-      appliedExtra = recheck.speed;
-      action = { type: 'preSpeed', speed: recheck.speed };
-      resynthesized = true;
-      currentWav = wavPath;
-      continue;
-    }
-    // atempo：对已产出 wav 后处理变速。
-    const tempoPath = path.join(
-      session.workDir,
-      `cue-${cue.index}-${attemptId}-atempo.wav`,
-    );
-    await atempoWav(currentWav, tempoPath, recheck.factor, signal);
-    currentWav = tempoPath;
-    appliedExtra *= recheck.factor;
-    action = { type: 'atempo', factor: recheck.factor };
-    break;
-  }
-
-  cue.wavPath = currentWav;
-  cue.finalMs = wavDurationMs(currentWav);
-  cue.appliedSpeed = appliedExtra;
-  cue.action = action;
-  cue.requiredFactor = requiredFactor;
-  cue.status = overlong ? 'overlong' : 'done';
-  cue.error = undefined;
-  cue.synthesizedVoiceId = voiceId;
-  cue.synthesizedInputKey = inputKey;
-  cue.needsUpdate = false;
-  if (previousWavPath && previousWavPath !== currentWav) {
-    try {
-      if (
-        path.dirname(previousWavPath) === session.workDir &&
-        fs.existsSync(previousWavPath)
-      ) {
-        fs.unlinkSync(previousWavPath);
+    if (
+      !retainPreviousArtifact &&
+      previousWavPath &&
+      previousWavPath !== currentWav
+    ) {
+      try {
+        if (
+          path.dirname(previousWavPath) === session.workDir &&
+          fs.existsSync(previousWavPath)
+        ) {
+          fs.unlinkSync(previousWavPath);
+        }
+      } catch {
+        // The new artifact is already authoritative; stale-file cleanup is best effort.
       }
-    } catch {
-      // The new artifact is already authoritative; stale-file cleanup is best effort.
+    }
+  } finally {
+    for (const file of attemptPaths) {
+      if (file === cue.wavPath) continue;
+      try {
+        fs.unlinkSync(file);
+      } catch {
+        // Only paths from this attempt are eligible for cleanup.
+      }
     }
   }
 }
@@ -927,7 +1057,9 @@ export async function runDubbingBatch(
   onProgress: (e: DubbingProgressEvent) => void,
   opts?: { force?: boolean; staleOnly?: boolean; speakerId?: number },
 ): Promise<BatchResult> {
-  if (session.running) throw new Error('该会话已有合成任务进行中');
+  if (session.running || session.disposed)
+    throw new Error('该会话已有合成任务进行中或已关闭');
+  assertSpeakerConflictsResolved(session);
   const missingSpeakers = missingDubbingSpeakerVoiceIds(
     session.speakers,
     session.speakerVoiceMap,
@@ -945,15 +1077,18 @@ export async function runDubbingBatch(
   session.lastConfig = config;
   const signal = session.abort.signal;
 
-  const slots = computeSlots(session.cues, {
-    mediaDurationMs: session.mediaDurationMs || undefined,
-  });
+  const slots = computeSlots(
+    session.cues.map((c) => ({ ...c, borrowedMs: undefined })),
+    {
+      mediaDurationMs: session.mediaDurationMs || undefined,
+    },
+  );
   const slotByIndex = new Map(slots.map((s) => [s.index, s]));
 
   const targets = session.cues.filter((cue) => {
     if (
       opts?.speakerId !== undefined &&
-      !cueInheritsSpeaker(cue, opts.speakerId)
+      primaryDubbingSpeakerId(cue) !== opts.speakerId
     ) {
       return false;
     }
@@ -979,6 +1114,7 @@ export async function runDubbingBatch(
 
   const runOne = async (cue: SessionCue) => {
     if (signal.aborted) return;
+    const previous = { ...cue };
     cue.status = 'synthesizing';
     emit(cue, 'synthesize');
     try {
@@ -989,7 +1125,33 @@ export async function runDubbingBatch(
         adapter,
         config,
         signal,
+        true,
       );
+      try {
+        flushSessionMeta(toSessionMeta(session), true);
+      } catch (error) {
+        const generated = cue.wavPath;
+        Object.assign(cue, previous);
+        if (generated && generated !== previous.wavPath) {
+          try {
+            fs.unlinkSync(generated);
+          } catch {
+            /* attempt cleanup */
+          }
+        }
+        throw error;
+      }
+      if (
+        previous.wavPath &&
+        previous.wavPath !== cue.wavPath &&
+        path.dirname(previous.wavPath) === session.workDir
+      ) {
+        try {
+          fs.unlinkSync(previous.wavPath);
+        } catch {
+          /* stale artifact cleanup */
+        }
+      }
     } catch (e) {
       if (e instanceof TaskCancelledError || signal.aborted) {
         cancelled = true;
@@ -1062,28 +1224,49 @@ export async function runDubbingBatch(
 export async function resynthesizeCue(
   session: DubbingSession,
   index: number,
-  overrides: { text?: string; voiceId?: string },
+  overrides: {
+    text?: string;
+    voiceId?: string;
+    expectedCue?: {
+      text: string;
+      wavPath?: string;
+      synthesizedInputKey?: string;
+      voiceId?: string;
+    };
+  },
   config: DubbingConfig,
 ): Promise<SessionCue> {
+  assertSpeakerConflictsResolved(session);
   const cue = session.cues.find((c) => c.index === index);
   if (!cue) throw new Error(`行不存在：${index}`);
-  if (session.running) throw new Error('批量合成进行中，无法单行重生成');
+  if (session.running || session.disposed)
+    throw new Error('Dubbing session is busy or unavailable');
+  if (
+    overrides.expectedCue &&
+    Object.entries(overrides.expectedCue).some(
+      ([key, value]) => cue[key] !== value,
+    )
+  )
+    throw new Error('配音行已在其他窗口变化，请重新缩写');
   const hadPreviousArtifact = Boolean(cue.wavPath);
 
   const adapter = buildEngineAdapter(config.engine, {
     cloneQuality: config.cloneQuality,
   });
-  if (overrides.text !== undefined) cue.text = overrides.text.trim();
-  if (overrides.voiceId !== undefined) {
-    // '' = 清除行级覆盖，回落全局 voice。
-    cue.voiceId = overrides.voiceId || undefined;
-  }
-  syncDubbingVoiceStaleness(session, config);
-  session.lastConfig = config;
-
-  const slots = computeSlots(session.cues, {
-    mediaDurationMs: session.mediaDurationMs || undefined,
+  // Save the requested edit before generating audio; a failed attempt remains retryable.
+  commitSpeakerChange(session, config, () => {
+    if (overrides.text !== undefined) cue.text = overrides.text;
+    if (overrides.voiceId !== undefined)
+      cue.voiceId = overrides.voiceId || undefined;
   });
+  const previous = { ...cue };
+
+  const slots = computeSlots(
+    session.cues.map((c) => ({ ...c, borrowedMs: undefined })),
+    {
+      mediaDurationMs: session.mediaDurationMs || undefined,
+    },
+  );
   const slot = slots.find((s) => s.index === index)!;
 
   session.abort = new AbortController();
@@ -1097,7 +1280,33 @@ export async function resynthesizeCue(
       adapter,
       config,
       session.abort.signal,
+      true,
     );
+    try {
+      flushSessionMeta(toSessionMeta(session), true);
+    } catch (error) {
+      const generated = cue.wavPath;
+      Object.assign(cue, previous);
+      if (generated && generated !== previous.wavPath) {
+        try {
+          fs.unlinkSync(generated);
+        } catch {
+          /* attempt cleanup */
+        }
+      }
+      throw error;
+    }
+    if (
+      previous.wavPath &&
+      previous.wavPath !== cue.wavPath &&
+      path.dirname(previous.wavPath) === session.workDir
+    ) {
+      try {
+        fs.unlinkSync(previous.wavPath);
+      } catch {
+        /* stale artifact cleanup */
+      }
+    }
   } catch (e) {
     if (e instanceof TaskCancelledError) {
       cue.status = 'pending';
@@ -1121,10 +1330,15 @@ export function setCueVoiceOverride(
   index: number,
   voiceId: string,
 ): SessionCue {
+  if (session.running || session.disposed)
+    throw new Error('Dubbing session is busy or unavailable');
+  if (typeof voiceId !== 'string') throw new Error('Invalid voice ID');
   const cue = session.cues.find((c) => c.index === index);
   if (!cue) throw new Error(`行不存在：${index}`);
-  cue.voiceId = voiceId || undefined;
-  persistDubbingSession(session);
+  commitSpeakerChange(session, session.lastConfig, () => {
+    cue.voiceId = voiceId || undefined;
+    if (cue.wavPath) cue.needsUpdate = true;
+  });
   return cue;
 }
 
@@ -1133,39 +1347,221 @@ export function setSpeakerVoiceMapping(
   speakerId: number,
   voiceId: string,
   globalVoiceId: string,
+  config?: DubbingConfig,
 ): { affectedCount: number } {
+  if (session.running || session.disposed)
+    throw new Error('Dubbing session is busy or unavailable');
   if (!session.speakers.some((speaker) => speaker.id === speakerId)) {
     throw new Error(`角色不存在：${speakerId}`);
   }
-  if (!voiceId) throw new Error('角色音色不能为空');
-  session.speakerVoiceMap = {
-    ...session.speakerVoiceMap,
-    [String(speakerId)]: voiceId,
-  };
-  delete session.speakerVoiceConflicts[String(speakerId)];
-
-  let affectedCount = 0;
-  for (const cue of session.cues) {
-    if (!cueInheritsSpeaker(cue, speakerId) || !cue.wavPath) continue;
-    const resolved = resolvedSessionCueVoice(session, cue, globalVoiceId);
-    const synthesizedVoiceId =
-      cue.synthesizedVoiceId || session.lastConfig?.voice;
-    cue.needsUpdate =
-      Boolean(cue.needsUpdate) ||
-      Boolean(synthesizedVoiceId && synthesizedVoiceId !== resolved);
-    if (cue.needsUpdate) affectedCount += 1;
-  }
-  persistDubbingSession(session);
+  if (typeof voiceId !== 'string' || !voiceId.trim())
+    throw new Error('角色音色不能为空');
+  commitSpeakerChange(session, config, () => {
+    session.speakerVoiceMap = {
+      ...session.speakerVoiceMap,
+      [String(speakerId)]: voiceId,
+    };
+    session.speakerVoiceConflicts = { ...session.speakerVoiceConflicts };
+    delete session.speakerVoiceConflicts[String(speakerId)];
+    if (!config) {
+      for (const cue of session.cues) {
+        if (!cueInheritsSpeaker(cue, speakerId) || !cue.wavPath) continue;
+        const resolved = resolvedSessionCueVoice(session, cue, globalVoiceId);
+        const synthesizedVoiceId =
+          cue.synthesizedVoiceId || session.lastConfig?.voice;
+        cue.needsUpdate =
+          Boolean(cue.needsUpdate) ||
+          Boolean(synthesizedVoiceId && synthesizedVoiceId !== resolved);
+      }
+    }
+  });
+  const affectedCount = session.cues.filter(
+    (cue) =>
+      cueInheritsSpeaker(cue, speakerId) && cue.wavPath && cue.needsUpdate,
+  ).length;
   return { affectedCount };
 }
 
-/** 过长行「接受变速」：按所需残余倍率 atempo 对齐进槽位，状态转 accepted。 */
-export async function acceptOverlongCue(
+export function saveDubbingCueTexts(
+  session: DubbingSession,
+  value: unknown,
+): void {
+  if (session.running || session.disposed)
+    throw new Error('Dubbing session is busy or unavailable');
+  const edits = parseDubbingCueEdits(value);
+  const cuesByIndex = new Map(session.cues.map((cue) => [cue.index, cue]));
+  const changes = edits.map((edit) => {
+    const cue = cuesByIndex.get(edit.index);
+    if (
+      !cue ||
+      cue.startMs !== edit.startMs ||
+      cue.endMs !== edit.endMs ||
+      (cue.text !== edit.baseText && cue.text !== edit.text)
+    )
+      throw new Error(
+        `Dubbing cue ${edit.index + 1} changed; review the saved text before retrying`,
+      );
+    return { cue, edit };
+  });
+  // Validate the entire batch first. Identical replay is safe after a lost reply.
+  commitSpeakerChange(session, session.lastConfig, () => {
+    for (const { cue, edit } of changes) {
+      if (cue.text === edit.text) continue;
+      cue.text = edit.text;
+      if (cue.wavPath) cue.needsUpdate = true;
+    }
+    if (changes.length) session.hasSavedTextEdits = true;
+    if (!session.lastConfig)
+      session.detectedLanguage =
+        detectDubbingLanguage(session.cues.map((cue) => cue.text).join('\n')) ??
+        session.detectedLanguage;
+  });
+}
+
+export function saveDubbingConfig(
+  session: DubbingSession,
+  config: DubbingConfig,
+): void {
+  if (session.running || session.disposed)
+    throw new Error('Dubbing session is busy or unavailable');
+  assertDubbingConfig(config);
+  commitSpeakerChange(session, structuredClone(config), () => {});
+}
+
+function commitSpeakerChange(
+  session: DubbingSession,
+  config: DubbingConfig | undefined,
+  change: () => void,
+): void {
+  const previous = {
+    speakerVoiceMap: session.speakerVoiceMap,
+    speakerVoiceConflicts: session.speakerVoiceConflicts,
+    speakerSettings: session.speakerSettings,
+    speakerSettingsConflicts: session.speakerSettingsConflicts,
+    detectedLanguage: session.detectedLanguage,
+    lastConfig: session.lastConfig,
+    hasSavedTextEdits: session.hasSavedTextEdits,
+  };
+  const cueStates = session.cues.map((cue) => ({
+    text: cue.text,
+    voiceId: cue.voiceId,
+    needsUpdate: cue.needsUpdate,
+    synthesizedVoiceId: cue.synthesizedVoiceId,
+  }));
+  try {
+    change();
+    if (config) {
+      syncDubbingVoiceStaleness(session, config);
+      session.lastConfig = config;
+    }
+    flushSessionMeta(toSessionMeta(session), true);
+  } catch (error) {
+    Object.assign(session, previous);
+    session.cues.forEach((cue, index) => Object.assign(cue, cueStates[index]));
+    throw error;
+  }
+}
+
+export function setSpeakerSettings(
+  session: DubbingSession,
+  speakerId: number,
+  settings: DubbingSpeakerSettings,
+  config: DubbingConfig,
+): void {
+  if (session.running || session.disposed)
+    throw new Error('Dubbing session is busy or unavailable');
+  if (!session.speakers.some((speaker) => speaker.id === speakerId))
+    throw new Error(`Unknown speaker: ${speakerId}`);
+  assertDubbingSpeakerSettings(settings);
+  commitSpeakerChange(session, config, () => {
+    session.speakerSettings = {
+      ...session.speakerSettings,
+      [String(speakerId)]: { speed: settings.speed, pitch: settings.pitch },
+    };
+    session.speakerSettingsConflicts = { ...session.speakerSettingsConflicts };
+    delete session.speakerSettingsConflicts[String(speakerId)];
+  });
+}
+
+export async function setDubbingMedia(
+  session: DubbingSession,
+  videoPath: string | undefined,
+): Promise<void> {
+  if (session.running || session.disposed)
+    throw new Error('Dubbing session is busy or unavailable');
+  session.running = true;
+  const previous = {
+    videoPath: session.videoPath,
+    mediaDurationMs: session.mediaDurationMs,
+  };
+  const previousCues = session.cues.map((cue) => ({ ...cue }));
+  try {
+    if (videoPath && !fs.statSync(videoPath).isFile())
+      throw new Error('媒体路径不是文件');
+    const mediaDurationMs = videoPath
+      ? await probeMediaDurationMs(videoPath)
+      : 0;
+    if (videoPath && mediaDurationMs <= 0) throw new Error('无法读取媒体时长');
+    if (session.disposed || sessions.get(session.id) !== session)
+      throw new Error('Dubbing session is unavailable');
+    session.videoPath = videoPath;
+    session.mediaDurationMs = mediaDurationMs;
+    const slots = computeSlots(session.cues, {
+      mediaDurationMs: mediaDurationMs || undefined,
+    });
+    const slotByIndex = new Map(slots.map((slot) => [slot.index, slot]));
+    for (const cue of session.cues) {
+      if (
+        !cue.wavPath ||
+        !['done', 'accepted', 'overlong'].includes(cue.status)
+      )
+        continue;
+      const duration = wavDurationMs(cue.wavPath);
+      const slot = slotByIndex.get(cue.index)!;
+      if (duration > slot.slotMs) {
+        cue.borrowedMs = undefined;
+        cue.status = 'overlong';
+        cue.requiredFactor =
+          slot.slotMs > 0 ? duration / slot.slotMs : Infinity;
+      } else if (cue.status === 'overlong') {
+        cue.status = 'done';
+        cue.requiredFactor = undefined;
+      }
+    }
+    flushSessionMeta(toSessionMeta(session), true);
+  } catch (error) {
+    Object.assign(session, previous);
+    session.cues.forEach((cue, index) =>
+      Object.assign(cue, previousCues[index]),
+    );
+    throw error;
+  } finally {
+    session.running = false;
+  }
+}
+
+function assertSpeakerConflictsResolved(session: DubbingSession): void {
+  const unresolved = session.speakers.some(
+    (speaker) =>
+      (session.speakerVoiceConflicts[String(speaker.id)]?.length || 0) > 1 ||
+      (session.speakerSettingsConflicts?.[String(speaker.id)]?.length || 0) > 1,
+  );
+  if (unresolved) throw new Error('请先确认合并角色的音色和语速/音高设置');
+}
+
+/** Keep the complete WAV, extending only this cue into verified following silence. */
+export function borrowFollowingSilence(
   session: DubbingSession,
   index: number,
-): Promise<SessionCue> {
+  config: DubbingConfig,
+): SessionCue {
+  if (session.running || session.disposed)
+    throw new Error('Dubbing session is busy or unavailable');
+  assertSpeakerConflictsResolved(session);
+  syncDubbingVoiceStaleness(session, config);
   const cue = session.cues.find((c) => c.index === index);
   if (!cue) throw new Error(`行不存在：${index}`);
+  if (cue.needsUpdate) throw new Error('请先重新生成已变化的配音');
   if (cue.status !== 'overlong' || !cue.wavPath) {
     throw new Error('该行不是待处理的过长行');
   }
@@ -1174,17 +1570,22 @@ export async function acceptOverlongCue(
   });
   const slot = slots.find((s) => s.index === index)!;
   const measured = wavDurationMs(cue.wavPath);
-  const factor = slot.slotMs > 0 ? measured / slot.slotMs : 1;
-  if (factor > 1.001) {
-    const outPath = path.join(session.workDir, `cue-${index}-accepted.wav`);
-    await atempoWav(cue.wavPath, outPath, factor);
-    cue.wavPath = outPath;
-    cue.finalMs = wavDurationMs(outPath);
-    cue.appliedSpeed = (cue.appliedSpeed ?? 1) * factor;
-    cue.action = { type: 'atempo', factor };
+  const needed = measured - slot.slotMs;
+  if (needed <= 0 || needed > slot.availableGapMs)
+    throw new Error(
+      '后续空白不足，无法在不覆盖其他字幕或超出媒体结尾的前提下延长',
+    );
+  const previous = { ...cue };
+  try {
+    cue.borrowedMs = needed;
+    cue.finalMs = measured;
+    cue.status = 'accepted';
+    cue.error = undefined;
+    flushSessionMeta(toSessionMeta(session), true);
+  } catch (error) {
+    Object.assign(cue, previous);
+    throw error;
   }
-  cue.status = 'accepted';
-  persistDubbingSession(session);
   return cue;
 }
 
@@ -1237,25 +1638,69 @@ export interface DubTrackResult {
  */
 export async function buildDubTrack(
   session: DubbingSession,
-  opts: {
-    /** Current task/workbench synthesis settings, used to reject stale artifacts. */
-    config: DubbingConfig;
-    overflow?: DubbingOverflowMode;
-    overlapMode?: DubbingOverlapMode;
-    signal?: AbortSignal;
-    /**
-     * 顺延字幕输出：always=只要请求就写（工作台导出语义）；
-     * ifShifted=仅当规划实际改变了时间轴才写（流水线语义）。
-     * displayTextByIndex=展示文本覆盖（cue index → 文本）：流水线用交付字幕
-     * 文本（如双语）替换配音用的纯译文，时间轴仍取规划结果；缺省用会话行文本。
-     */
-    shiftedSubtitle?: {
-      path: string;
-      mode: 'always' | 'ifShifted';
-      displayTextByIndex?: Map<number, string>;
-    };
-  },
+  opts: DubTrackOptions,
 ): Promise<DubTrackResult> {
+  if (
+    session.disposed ||
+    (session.running && (!opts.signal || session.abort?.signal !== opts.signal))
+  )
+    throw new Error('配音会话正在使用中或已关闭，请稍后重试');
+  const ownsLock = !session.running;
+  const controller = ownsLock ? new AbortController() : session.abort!;
+  const onAbort = () => controller.abort();
+  if (ownsLock) {
+    session.running = true;
+    session.abort = controller;
+    opts.signal?.addEventListener('abort', onAbort, { once: true });
+    if (opts.signal?.aborted) controller.abort();
+  }
+  let directory: string | undefined;
+  try {
+    controller.signal.throwIfAborted();
+    directory = fs.mkdtempSync(path.join(session.workDir, 'dub-track-'));
+    return await buildDubTrackUnlocked(
+      session,
+      { ...opts, signal: controller.signal },
+      directory,
+    );
+  } catch (error) {
+    if (directory) fs.rmSync(directory, { recursive: true, force: true });
+    throw error;
+  } finally {
+    if (ownsLock) {
+      opts.signal?.removeEventListener('abort', onAbort);
+      session.running = false;
+      session.abort = null;
+    }
+  }
+}
+
+interface DubTrackOptions {
+  /** Current task/workbench synthesis settings, used to reject stale artifacts. */
+  config: DubbingConfig;
+  overflow?: DubbingOverflowMode;
+  overlapMode?: DubbingOverlapMode;
+  signal?: AbortSignal;
+  /**
+   * 顺延字幕输出：always=只要请求就写（工作台导出语义）；
+   * ifShifted=仅当规划实际改变了时间轴才写（流水线语义）。
+   * displayTextByIndex=展示文本覆盖（cue index → 文本）：流水线用交付字幕
+   * 文本（如双语）替换配音用的纯译文，时间轴仍取规划结果；缺省用会话行文本。
+   */
+  shiftedSubtitle?: {
+    path?: string;
+    mode: 'always' | 'ifShifted';
+    displayTextByIndex?: Map<number, string>;
+    preserveOriginalWindows?: boolean;
+  };
+}
+
+async function buildDubTrackUnlocked(
+  session: DubbingSession,
+  opts: DubTrackOptions,
+  directory: string,
+): Promise<DubTrackResult> {
+  assertSpeakerConflictsResolved(session);
   const staleCount = syncDubbingVoiceStaleness(session, opts.config);
   if (staleCount > 0) {
     flushDubbingSession(session);
@@ -1263,17 +1708,36 @@ export async function buildDubTrack(
       `还有 ${staleCount} 条配音的语言、文本或合成设置已变化，请先重新生成`,
     );
   }
+  const slots = computeSlots(session.cues, {
+    mediaDurationMs: session.mediaDurationMs || undefined,
+  });
+  const slotByIndex = new Map(slots.map((slot) => [slot.index, slot]));
+  const unresolved = session.cues.filter((cue) => {
+    if (!normalizeDubbingSpeechText(cue.text)) return false;
+    return (
+      !cue.wavPath ||
+      !['done', 'accepted'].includes(cue.status) ||
+      wavDurationMs(cue.wavPath) > (slotByIndex.get(cue.index)?.slotMs ?? 0)
+    );
+  });
+  if (unresolved.length)
+    throw new Error(
+      `还有 ${unresolved.length} 条配音未生成、失败或超限，请先处理后再导出`,
+    );
   const withWav = session.cues.filter((c) => c.wavPath && c.finalMs);
   if (withWav.length === 0) {
     throw new Error('没有可导出的配音行，请先开始配音');
   }
   const overflow = opts.overflow ?? 'truncate';
-  const overlapMode = opts.overlapMode ?? 'shift';
+  // Borrowing must not move any later cue, including pre-existing overlapping dialogue.
+  const overlapMode = session.cues.some((cue) => cue.borrowedMs)
+    ? 'mix'
+    : (opts.overlapMode ?? 'mix');
   const signal = opts.signal;
   const plan = buildSessionPlan(session, overflow, overlapMode);
   const wavByIndex = new Map(session.cues.map((c) => [c.index, c.wavPath]));
 
-  const trackPath = path.join(session.workDir, 'dub-track.wav');
+  const trackPath = path.join(directory, 'dub-track.wav');
   const totalDurationMs =
     session.mediaDurationMs ||
     Math.max(...plan.items.map((i) => i.targetStartMs + i.durationMs), 0);
@@ -1307,7 +1771,7 @@ export async function buildDubTrack(
     // 多轨：逐轨拼接（统一总时长）→ amix 合为单条配音轨（限幅防削波）。
     const laneTracks: string[] = [];
     for (const lane of lanes) {
-      const lanePath = path.join(session.workDir, `dub-lane-${lane}.wav`);
+      const lanePath = path.join(directory, `dub-lane-${lane}.wav`);
       await assembleTrack(laneSegments.get(lane)!, lanePath, {
         totalDurationMs,
         signal,
@@ -1315,12 +1779,29 @@ export async function buildDubTrack(
       laneTracks.push(lanePath);
     }
     await amixWavs(laneTracks, trackPath, signal);
+    for (const lanePath of laneTracks) fs.unlinkSync(lanePath);
   }
+  signal?.throwIfAborted();
 
   // 顺延字幕：按规划后的时间轴序列化；ifShifted 模式仅在时间轴实际变化时产出
   let shiftedSubtitlePath: string | undefined;
   if (opts.shiftedSubtitle) {
-    const timeline = shiftedTimeline(plan);
+    let timeline = shiftedTimeline(plan);
+    if (opts.shiftedSubtitle.preserveOriginalWindows) {
+      const planned = new Map(timeline.map((item) => [item.index, item]));
+      timeline = session.cues.map((cue) => {
+        const item = planned.get(cue.index);
+        const startMs = item?.startMs ?? cue.startMs;
+        return {
+          index: cue.index,
+          startMs,
+          endMs: Math.max(
+            cue.endMs + startMs - cue.startMs,
+            item?.endMs ?? cue.endMs,
+          ),
+        };
+      });
+    }
     const originalByIndex = new Map(
       session.cues.map((c) => [c.index, c] as const),
     );
@@ -1342,7 +1823,8 @@ export async function buildDubTrack(
           endMs: t.endMs,
           text: displayByIndex?.get(t.index) ?? textByIndex.get(t.index) ?? '',
         }));
-      shiftedSubtitlePath = opts.shiftedSubtitle.path;
+      shiftedSubtitlePath =
+        opts.shiftedSubtitle.path ?? path.join(directory, 'dubbed-shifted.srt');
       fs.mkdirSync(path.dirname(shiftedSubtitlePath), { recursive: true });
       fs.writeFileSync(shiftedSubtitlePath, serializeSubtitleCues(cues, 'srt'));
     }
@@ -1364,8 +1846,12 @@ export async function exportDubbing(
   session: DubbingSession,
   config: DubbingConfig,
   onProgress: (e: DubbingProgressEvent) => void,
+  onPublication?: (
+    state: ComposePublicationState & { skippedIndexes: number[] },
+  ) => void,
 ): Promise<ExportResult> {
-  if (session.running) throw new Error('合成进行中，请先等待或取消');
+  if (session.running || session.disposed)
+    throw new Error('合成进行中或会话已关闭，请先等待或取消');
   const withWav = session.cues.filter((c) => c.wavPath && c.finalMs);
   if (withWav.length === 0) {
     throw new Error('没有可导出的配音行，请先开始配音');
@@ -1381,18 +1867,33 @@ export async function exportDubbing(
   const emit = (stage: DubbingStage, percent: number) =>
     onProgress({ taskId: session.id, stage, percent });
 
+  let output: ReturnType<typeof createComposeOutput> | undefined;
+  let track: DubTrackResult | undefined;
   try {
     emit('concat', 10);
-    const outputPath = resolveOutputPath(session, config);
-    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-    const track = await buildDubTrack(session, {
+    output = createComposeOutput(
+      resolveOutputPath(session, config),
+      [
+        session.subtitlePath,
+        ...(session.videoPath ? [session.videoPath] : []),
+        ...withWav.map((cue) => cue.wavPath!),
+      ],
+      onPublication
+        ? (state) =>
+            onPublication({
+              ...state,
+              skippedIndexes: track?.skippedIndexes || [],
+            })
+        : undefined,
+    );
+    track = await buildDubTrack(session, {
       config,
       overflow: config.overflow,
       overlapMode: config.overlapMode,
       signal,
       shiftedSubtitle: config.exportShiftedSubtitle
         ? {
-            path: outputPath.replace(/\.[^.]+$/, '') + '.dubbed.srt',
+            path: path.join(output.directory, 'aligned.srt'),
             mode: 'always',
           }
         : undefined,
@@ -1402,9 +1903,9 @@ export async function exportDubbing(
     emit('mux', 60);
     if (config.output === 'audioOnly') {
       if ((config.audioFormat ?? 'wav') === 'mp3') {
-        await encodeMp3(trackPath, outputPath, signal);
+        await encodeMp3(trackPath, output.staged, signal);
       } else {
-        fs.copyFileSync(trackPath, outputPath);
+        await fs.promises.copyFile(trackPath, output.staged);
       }
     } else {
       // 视频形态（替换/混音/双轨）经统一合成队列执行（全局单编码槽，可排队）；
@@ -1418,7 +1919,7 @@ export async function exportDubbing(
       const { jobId, done } = enqueueCompose(
         {
           videoPath: session.videoPath!,
-          outputPath,
+          outputPath: output.staged,
           subtitle: { mode: 'none' },
           audio: { mode: audioMode, trackPath },
         },
@@ -1431,25 +1932,48 @@ export async function exportDubbing(
         if (composeResult.cancelled || signal.aborted) {
           throw new TaskCancelledError();
         }
-        if (!composeResult.success) {
+        if (!composeResult.success || !composeResult.outputPath) {
           throw new Error(composeResult.error || '合成音轨封装失败');
         }
+        if (composeResult.outputPath !== output.staged)
+          await fs.promises.copyFile(composeResult.outputPath, output.staged);
       } finally {
         signal.removeEventListener('abort', onAbort);
       }
     }
 
+    const outputPath = await output.publish(
+      signal,
+      track.shiftedSubtitlePath
+        ? [{ stagedPath: track.shiftedSubtitlePath, suffix: '.dubbed.srt' }]
+        : [],
+    );
+    const shiftedSubtitlePath = track.shiftedSubtitlePath
+      ? path.join(
+          path.dirname(outputPath),
+          path.parse(outputPath).name + '.dubbed.srt',
+        )
+      : undefined;
     emit('done', 100);
     return {
       outputPath,
-      shiftedSubtitlePath: track.shiftedSubtitlePath,
+      shiftedSubtitlePath,
       skippedIndexes: track.skippedIndexes,
       plan: track.plan,
     };
   } finally {
-    session.running = false;
-    session.abort = null;
-    flushDubbingSession(session);
+    try {
+      output?.cleanup();
+      if (track)
+        fs.rmSync(path.dirname(track.trackPath), {
+          recursive: true,
+          force: true,
+        });
+    } finally {
+      session.running = false;
+      session.abort = null;
+      flushDubbingSession(session);
+    }
   }
 }
 
@@ -1472,13 +1996,7 @@ function resolveOutputPath(
       : config.output === 'addTrack'
         ? '.mkv'
         : path.extname(session.videoPath!) || '.mp4';
-  let candidate = path.join(dir, `${stem}-dubbed${ext}`);
-  let n = 2;
-  while (fs.existsSync(candidate)) {
-    candidate = path.join(dir, `${stem}-dubbed-${n}${ext}`);
-    n += 1;
-  }
-  return candidate;
+  return path.join(dir, `${stem}-dubbed${ext}`);
 }
 
 /** 试听合成：临时 wav（不进会话），返回路径供 media:// 播放。 */
@@ -1491,9 +2009,14 @@ export async function previewVoice(
     language?: string;
     subtitleLanguage?: string;
     detectedLanguage?: string;
+    speakerSettings?: DubbingSpeakerSettings;
+    signal?: AbortSignal;
+    maxDurationMs?: number;
+    onPcm?: (pcm: Uint8Array, sampleRate: number) => void;
   },
 ): Promise<{ wavPath: string; durationMs: number }> {
   const adapter = buildEngineAdapter(engine, opts);
+  if (opts?.speakerSettings) assertDubbingSpeakerSettings(opts.speakerSettings);
   const language = resolvedDubbingLanguage(
     { engine, language: opts?.language },
     voiceId,
@@ -1512,18 +2035,71 @@ export async function previewVoice(
   const outWavPath = path.join(
     ensureTempDir(),
     'dubbing',
-    `preview-${Date.now()}.wav`,
+    `preview-${randomUUID()}.wav`,
   );
   fs.mkdirSync(path.dirname(outWavPath), { recursive: true });
-  const r = await adapter.synthesize(
-    normalizeDubbingSpeechText(sample),
-    voiceId,
-    1,
-    outWavPath,
-    undefined,
-    language,
-  );
-  return { wavPath: outWavPath, durationMs: r.durationMs };
+  const paths = [outWavPath];
+  let resultPath: string | undefined;
+  let streamed = false;
+  try {
+    await adapter.synthesize(
+      normalizeDubbingSpeechText(sample),
+      voiceId,
+      1,
+      outWavPath,
+      opts?.signal,
+      language,
+      opts?.onPcm
+        ? {
+            settings: opts.speakerSettings,
+            onPcm: (pcm, rate) => {
+              streamed = true;
+              opts.onPcm!(pcm, rate);
+            },
+          }
+        : undefined,
+    );
+    let currentPath = outWavPath;
+    if (
+      !streamed &&
+      opts?.speakerSettings &&
+      (opts.speakerSettings.speed !== 1 || opts.speakerSettings.pitch !== 0)
+    ) {
+      const adjusted = outWavPath.replace(/\.wav$/, '-role.wav');
+      paths.push(adjusted);
+      await applySpeakerSettingsWav(
+        outWavPath,
+        adjusted,
+        opts.speakerSettings,
+        opts.signal,
+      );
+      currentPath = adjusted;
+    }
+    if (!streamed && opts?.maxDurationMs) {
+      const clipped = outWavPath.replace(/\.wav$/, '-clip.wav');
+      paths.push(clipped);
+      await trimPreviewWav(
+        currentPath,
+        clipped,
+        Math.min(3000, Math.max(100, opts.maxDurationMs)),
+        opts.signal,
+      );
+      currentPath = clipped;
+    }
+    if (opts?.signal?.aborted) throw new TaskCancelledError();
+    const durationMs = wavDurationMs(currentPath);
+    resultPath = currentPath;
+    return { wavPath: currentPath, durationMs };
+  } finally {
+    for (const file of paths) {
+      if (file === resultPath) continue;
+      try {
+        fs.unlinkSync(file);
+      } catch {
+        /* only this preview's files */
+      }
+    }
+  }
 }
 
 /** 取消会话当前批量/导出。 */

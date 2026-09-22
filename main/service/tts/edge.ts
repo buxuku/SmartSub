@@ -5,6 +5,7 @@ import type {
   TtsSegmentRequest,
 } from '../../../types/ttsProvider';
 import type { TtsSynthesizeResult } from './types';
+import { streamPreviewAudio } from './previewStream';
 import { TaskCancelledError } from '../../helpers/taskContext';
 import {
   transcodeToPcm16Wav,
@@ -49,7 +50,9 @@ export async function synthesizeWithEdge(
     speedToEdgeRate(request.speed),
     timeoutMs,
     request.signal,
+    request.preview ? request : undefined,
   );
+  if (!Buffer.isBuffer(mp3)) return mp3;
 
   const tmp = `${request.outWavPath}.edge-${Date.now()}.mp3`;
   fs.writeFileSync(tmp, mp3);
@@ -76,17 +79,20 @@ function synthesizeEdgeMp3(
   rate: string,
   timeoutMs: number,
   signal?: AbortSignal,
-): Promise<Buffer> {
-  return new Promise<Buffer>((resolve, reject) => {
+  previewRequest?: TtsSegmentRequest,
+): Promise<Buffer | TtsSynthesizeResult> {
+  return new Promise<Buffer | TtsSynthesizeResult>((resolve, reject) => {
     if (signal?.aborted) {
       reject(new TaskCancelledError());
       return;
     }
     const tts = new MsEdgeTTS();
+    const previewAbort = new AbortController();
     let settled = false;
     const finish = (fn: () => void) => {
       if (settled) return;
       settled = true;
+      previewAbort.abort();
       clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
       try {
@@ -115,7 +121,27 @@ function synthesizeEdgeMp3(
         voice,
         OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3,
       );
+      if (settled) return;
       const { audioStream } = await tts.toStream(text, { rate });
+      if (settled) {
+        audioStream.destroy();
+        return;
+      }
+      if (previewRequest) {
+        try {
+          const result = await streamPreviewAudio(audioStream, {
+            ...previewRequest,
+            signal: AbortSignal.any([
+              previewAbort.signal,
+              ...(signal ? [signal] : []),
+            ]),
+          });
+          finish(() => resolve(result));
+        } catch (error) {
+          finish(() => reject(error));
+        }
+        return;
+      }
       const chunks: Buffer[] = [];
       audioStream.on('data', (c: Buffer) => chunks.push(c));
       audioStream.on('end', () =>

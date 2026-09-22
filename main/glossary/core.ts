@@ -69,6 +69,11 @@ export function normalizeGlossaries(raw: unknown): Glossary[] {
     .map((item, index): (Glossary & { __index: number }) | null => {
       if (!item || typeof item !== 'object') return null;
       const input = item as Partial<Glossary>;
+      if (
+        input.projectId !== undefined &&
+        (typeof input.projectId !== 'string' || !input.projectId.trim())
+      )
+        return null;
       const id = cleanString(input.id, 120);
       const name = cleanString(input.name, GLOSSARY_LIMITS.name);
       if (!id || !name) return null;
@@ -81,6 +86,7 @@ export function normalizeGlossaries(raw: unknown): Glossary[] {
 
       return {
         id,
+        ...(input.projectId ? { projectId: input.projectId } : {}),
         name,
         ...(cleanString(input.description, GLOSSARY_LIMITS.description)
           ? {
@@ -135,13 +141,22 @@ export function glossarySourceKey(source: string): string {
  */
 export function resolveEnabledGlossaryEntries(
   glossaries: Glossary[],
+  projectId?: string,
 ): GlossaryResolution {
   const entries: ResolvedGlossaryEntry[] = [];
   const conflicts: GlossaryConflict[] = [];
   const firstBySource = new Map<string, ResolvedGlossaryEntry>();
 
   normalizeGlossaries(glossaries)
-    .filter((glossary) => glossary.enabled)
+    .filter(
+      (glossary) =>
+        glossary.enabled &&
+        (!glossary.projectId || glossary.projectId === projectId),
+    )
+    .sort(
+      (a, b) =>
+        Number(!!b.projectId) - Number(!!a.projectId) || a.order - b.order,
+    )
     .forEach((glossary) => {
       glossary.entries.forEach((entry, entryOrder) => {
         const resolved: ResolvedGlossaryEntry = {

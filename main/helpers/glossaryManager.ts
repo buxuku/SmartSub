@@ -16,6 +16,8 @@ import {
   resolveEnabledGlossaryEntries,
 } from '../glossary/core';
 import { logMessage, store } from './storeManager';
+import { getTaskContext } from './taskContext';
+import { getWorkItemById } from './workItemStore';
 
 export class GlossaryManagerError extends Error {
   constructor(public readonly code: string) {
@@ -286,8 +288,100 @@ export function importGlossaryEntries(
 }
 
 /** 读取运行期快照；日志由每次翻译/优化操作在自己的边界显式记录。 */
-export function getActiveGlossaryResolution(): GlossaryResolution {
-  return resolveEnabledGlossaryEntries(listGlossaries());
+export function getActiveGlossaryResolution(
+  projectId = getTaskContext()?.projectId,
+): GlossaryResolution {
+  return resolveEnabledGlossaryEntries(listGlossaries(), projectId);
+}
+
+/** Save both a new collection and its first entry in one durable store write. */
+export function addContextGlossaryEntry(input: {
+  source: string;
+  target: string;
+  scope: 'project' | 'global';
+  projectId?: string;
+  expectedTarget?: string;
+}): { entry: GlossaryEntry; glossary: Glossary; conflict?: boolean } {
+  if (input.scope !== 'project' && input.scope !== 'global')
+    throw new GlossaryManagerError('INVALID_SCOPE');
+  if (
+    typeof input.source !== 'string' ||
+    input.source.trim().length > GLOSSARY_LIMITS.source ||
+    typeof input.target !== 'string' ||
+    input.target.trim().length > GLOSSARY_LIMITS.target
+  )
+    throw new GlossaryManagerError('ENTRY_TOO_LONG');
+  const { source, target } = normalizeEntryInput(input);
+  const project =
+    input.scope === 'project' &&
+    typeof input.projectId === 'string' &&
+    input.projectId
+      ? getWorkItemById(input.projectId)
+      : null;
+  if (input.scope === 'project' && !project)
+    throw new GlossaryManagerError('PROJECT_NOT_FOUND');
+  const projectId = project?.id;
+  const glossaries = listGlossaries();
+  const collections = glossaries.filter(
+    (item) => item.enabled && item.projectId === projectId,
+  );
+  let glossary =
+    collections.find((item) =>
+      item.entries.some(
+        (entry) =>
+          glossarySourceKey(entry.source) === glossarySourceKey(source),
+      ),
+    ) || collections[0];
+  const now = Date.now();
+  if (!glossary) {
+    const label =
+      store.get('settings')?.language === 'en' ? 'Proofread terms' : '校对术语';
+    const name = cleaned(
+      project ? `${project.name} · ${label}` : label,
+      GLOSSARY_LIMITS.name,
+    );
+    let uniqueName = name;
+    for (
+      let n = 2;
+      glossaries.some(
+        (item) => item.name.toLowerCase() === uniqueName.toLowerCase(),
+      );
+      n++
+    ) {
+      const suffix = ` (${n})`;
+      uniqueName = `${name.slice(0, GLOSSARY_LIMITS.name - suffix.length)}${suffix}`;
+    }
+    glossary = {
+      id: randomUUID(),
+      name: uniqueName,
+      ...(projectId ? { projectId } : {}),
+      enabled: true,
+      order: glossaries.length,
+      entries: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    glossaries.push(glossary);
+  }
+  const existing = glossary.entries.find(
+    (entry) => glossarySourceKey(entry.source) === glossarySourceKey(source),
+  );
+  if (existing?.target === target) return { entry: existing, glossary };
+  if (existing && input.expectedTarget !== existing.target)
+    return { entry: existing, glossary, conflict: true };
+  const entry: GlossaryEntry = {
+    ...(existing || {}),
+    id: existing?.id || randomUUID(),
+    source,
+    target,
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+  };
+  if (existing) glossary.entries[glossary.entries.indexOf(existing)] = entry;
+  else glossary.entries.push(entry);
+  glossary.updatedAt = now;
+  writeGlossaries(glossaries);
+  return { entry, glossary };
 }
 
 export function logGlossaryConflicts(

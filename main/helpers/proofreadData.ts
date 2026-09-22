@@ -22,6 +22,7 @@ import {
 } from '../../types/speakerDiarization';
 import {
   PROOFREAD_DATA_VERSION,
+  assertValidProofreadData,
   hasExplicitSpeakerAssignment,
   normalizePrimarySpeakerId,
   normalizeProofreadData,
@@ -171,6 +172,8 @@ export async function writeProofreadDataFromFiles({
   targetLanguage,
   translateContent,
   outputFormat,
+  subtitleLayout,
+  subtitleLineWidth,
   speakerSegments,
   translationFailures,
   missedSpeechWarnings,
@@ -184,6 +187,8 @@ export async function writeProofreadDataFromFiles({
   targetLanguage?: string;
   translateContent?: string;
   outputFormat?: string;
+  subtitleLayout?: 'original' | 'two-line';
+  subtitleLineWidth?: number;
   speakerSegments?: SpeakerDiarizationSegment[];
   translationFailures?: Array<{ subtitleId: string; error?: string }>;
   missedSpeechWarnings?: MissedSpeechWarning[];
@@ -217,6 +222,8 @@ export async function writeProofreadDataFromFiles({
         targetLanguage,
         translateContent,
         outputFormat,
+        subtitleLayout,
+        subtitleLineWidth,
         sourceFile,
         targetFile,
         finalTargetFile,
@@ -231,10 +238,9 @@ export async function writeProofreadDataFromFiles({
     await fs.promises.mkdir(path.dirname(proofreadDataFile), {
       recursive: true,
     });
-    await fs.promises.writeFile(
+    await atomicReplaceTextFile(
       proofreadDataFile,
       JSON.stringify(proofreadData, null, 2),
-      'utf-8',
     );
     logMessage(`proofread data written: ${proofreadDataFile}`, 'info');
     return { ok: true, filePath: proofreadDataFile };
@@ -250,10 +256,12 @@ export async function writeProofreadDataFromFiles({
 
 export async function readProofreadDataFile(
   filePath: string,
+  options: { strict?: boolean } = {},
 ): Promise<ProofreadDataFile> {
   const content = await fs.promises.readFile(filePath, 'utf-8');
   try {
     const raw = JSON.parse(content);
+    if (options.strict) assertValidProofreadData(raw);
     const normalized = normalizeProofreadData(raw);
     // v1 was created while technical labels could still be embedded in the
     // source/target text. Keep migration idempotent and only strip labels from
@@ -415,11 +423,7 @@ export async function updateProofreadDataFromSubtitles(
     }),
   });
 
-  await fs.promises.writeFile(
-    filePath,
-    JSON.stringify(updated, null, 2),
-    'utf-8',
-  );
+  await atomicReplaceTextFile(filePath, JSON.stringify(updated, null, 2));
   logMessage(`proofread data updated: ${filePath}`, 'info');
   return updated;
 }

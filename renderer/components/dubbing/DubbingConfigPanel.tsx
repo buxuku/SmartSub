@@ -24,6 +24,7 @@ import {
 import {
   Volume2,
   Loader2,
+  Square,
   AlertTriangle,
   Mic2,
   ChevronDown,
@@ -35,8 +36,8 @@ import type {
   DubbingOverlapMode,
 } from '../../../types/dubbing';
 import CloneVoiceWizard from '../voiceClone/CloneVoiceWizard';
-import DubbingSpeakerVoices from './DubbingSpeakerVoices';
 import DubbingLanguageSelect from './DubbingLanguageSelect';
+import VoiceLibrary from './VoiceLibrary';
 import { ttsBaseLanguage } from '../../../types/ttsLanguage';
 
 export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
@@ -73,7 +74,14 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
   const langName = (l: string) =>
     commonT(`language.${ttsBaseLanguage(l)}`, { defaultValue: l });
 
-  const disabled = running || exporting;
+  const disabled =
+    running ||
+    exporting ||
+    dub.loading ||
+    dub.sessionLocked ||
+    !!dub.configRecovery ||
+    dub.speakerUpdating ||
+    !dub.configReady;
   // 无媒体或媒体为纯音频（无视频流）：只能导出纯音频。
   const outputLocked = !videoPath || mediaIsAudio;
   const effectiveOutput: DubbingOutputMode = outputLocked
@@ -94,7 +102,7 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
           onValueChange={(v) => updateConfig({ engineKey: v, voice: '' })}
           disabled={disabled}
         >
-          <SelectTrigger>
+          <SelectTrigger aria-label={t('engine')}>
             <SelectValue placeholder={t('engineEmpty')} />
           </SelectTrigger>
           <SelectContent>
@@ -108,6 +116,11 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
             ))}
           </SelectContent>
         </Select>
+        {config.engineKey && !activeEngine && (
+          <p role="alert" className="break-words text-xs text-destructive">
+            {t('savedEngineUnavailable', { engine: config.engineKey })}
+          </p>
+        )}
         {engineOptions.filter((o) => o.ready).length === 0 && (
           <p className="text-xs text-muted-foreground">{t('noEngineHint')}</p>
         )}
@@ -147,40 +160,39 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
       <div className="space-y-1.5">
         <label className="text-sm font-medium">{t('voice')}</label>
         <div className="flex items-center gap-1.5">
-          <Select
+          <VoiceLibrary
+            dub={dub}
+            label={t('voice')}
             value={activeVoice}
-            onValueChange={(v) => updateConfig({ voice: v })}
+            onSelect={(v) => updateConfig({ voice: v })}
             disabled={disabled || !activeEngine}
-          >
-            <SelectTrigger className="flex-1">
-              <SelectValue placeholder={t('voicePlaceholder')} />
-            </SelectTrigger>
-            <SelectContent className="max-h-64">
-              {(activeEngine?.voices ?? []).map((v) => (
-                <SelectItem key={v.id} value={v.id}>
-                  {v.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            className="flex-1"
+          />
           <Button
             variant="outline"
             size="icon"
             className="shrink-0"
-            title={t('previewVoice')}
-            aria-label={t('previewVoice')}
-            disabled={
-              disabled || previewing || !activeVoice || !!unsupportedLanguage
-            }
-            onClick={() => previewVoice()}
+            title={t(previewing ? 'stopPreview' : 'previewVoice')}
+            aria-label={t(previewing ? 'stopPreview' : 'previewVoice')}
+            disabled={disabled || !activeVoice || !!unsupportedLanguage}
+            onClick={() => (previewing ? dub.stopPreview() : previewVoice())}
           >
             {previewing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              dub.previewLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Square className="h-4 w-4" />
+              )
             ) : (
               <Volume2 className="h-4 w-4" />
             )}
           </Button>
         </div>
+        {activeEngine && config.voice && !activeVoice && (
+          <p role="alert" className="break-words text-xs text-destructive">
+            {t('savedVoiceUnavailable', { voice: config.voice })}
+          </p>
+        )}
         {/* 克隆引擎：音色即「我的音色」，空态/追加都从这里进向导 */}
         {activeEngine?.cloneOnly && (
           <Button
@@ -206,13 +218,6 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
         )}
       </div>
 
-      {dub.speakerMode && (
-        <>
-          <Separator />
-          <DubbingSpeakerVoices dub={dub} />
-        </>
-      )}
-
       {/* 整体语速 */}
       <div className="space-y-1.5">
         <label className="flex items-center justify-between text-sm font-medium">
@@ -222,6 +227,7 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
           </span>
         </label>
         <Slider
+          aria-label={t('globalSpeed')}
           min={0.5}
           max={2}
           step={0.05}
@@ -246,7 +252,7 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
           }
           disabled={disabled || outputLocked}
         >
-          <SelectTrigger>
+          <SelectTrigger aria-label={t('outputMode')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -279,7 +285,7 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
             }
             disabled={disabled}
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label={t('audioFormat')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -405,34 +411,13 @@ export default function DubbingConfigPanel({ dub }: { dub: UseDubbingReturn }) {
             </div>
           )}
 
-          {/* 超长处置 */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">{t('overflow')}</label>
-            <Select
-              value={config.overflow}
-              onValueChange={(v) =>
-                updateConfig({ overflow: v as 'truncate' | 'shift' })
-              }
-              disabled={disabled}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="truncate">
-                  {t('overflowTruncate')}
-                </SelectItem>
-                <SelectItem value="shift">{t('overflowShift')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
           {/* 顺延字幕 */}
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium">
               {t('exportShiftedSubtitle')}
             </label>
             <Switch
+              aria-label={t('exportShiftedSubtitle')}
               checked={config.exportShiftedSubtitle}
               onCheckedChange={(v) =>
                 updateConfig({ exportShiftedSubtitle: v })

@@ -43,6 +43,8 @@ export interface ProofreadDataMeta extends SubtitleOutputFiles {
   targetLanguage?: string;
   translateContent?: string;
   outputFormat?: string;
+  subtitleLayout?: 'original' | 'two-line';
+  subtitleLineWidth?: number;
   sourceFile?: string;
   targetFile?: string;
   finalTargetFile?: string;
@@ -243,6 +245,49 @@ export function normalizeSpeakerRoster(
     roster.push(createDefaultSpeaker(id));
   }
   return roster;
+}
+
+/** Editing must reject corrupted persisted values before normalization repairs them. */
+export function assertValidProofreadData(input: unknown): void {
+  if (!input || typeof input !== 'object' || Array.isArray(input))
+    throw new Error('Invalid proofread data');
+  const raw = input as ProofreadDataFileInput;
+  if ((raw.version !== 1 && raw.version !== 2) || !Array.isArray(raw.cues))
+    throw new Error('Unsupported proofread data version');
+  for (const cue of raw.cues) {
+    if (
+      !cue ||
+      typeof cue !== 'object' ||
+      !Number.isSafeInteger(cue.startMs) ||
+      !Number.isSafeInteger(cue.endMs) ||
+      cue.startMs < 0 ||
+      cue.endMs <= cue.startMs ||
+      typeof cue.source !== 'string' ||
+      (cue.target !== undefined && typeof cue.target !== 'string') ||
+      (cue.speakerIds !== undefined &&
+        (!Array.isArray(cue.speakerIds) ||
+          !cue.speakerIds.every(isValidSpeakerId))) ||
+      (cue.primarySpeakerId !== undefined &&
+        !isValidSpeakerId(cue.primarySpeakerId))
+    )
+      throw new Error('Invalid proofread cue');
+  }
+  if (raw.version === 2 && raw.speakers !== undefined) {
+    const seen = new Set<number>();
+    if (!Array.isArray(raw.speakers))
+      throw new Error('Invalid proofread speakers');
+    for (const speaker of raw.speakers) {
+      if (
+        !speaker ||
+        !isValidSpeakerId(speaker.id) ||
+        seen.has(speaker.id) ||
+        typeof speaker.displayName !== 'string' ||
+        typeof speaker.color !== 'string'
+      )
+        throw new Error('Invalid proofread speaker');
+      seen.add(speaker.id);
+    }
+  }
 }
 
 /** Accept v1/v2 sidecars and return the single canonical v2 shape. */

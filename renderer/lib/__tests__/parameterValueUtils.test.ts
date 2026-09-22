@@ -10,7 +10,7 @@ describe('parameterValueUtils', () => {
   it('coerces temperature string to number via registry definition', () => {
     const def = {
       key: 'temperature',
-      type: 'number',
+      type: 'float',
       category: 'behavior',
       required: false,
       description: 'temperature',

@@ -12,6 +12,9 @@ import {
   tailForError,
   YTDLP_FILEPATH_PREFIX,
   YTDLP_PROGRESS_TEMPLATE,
+  YTDLP_SUBTITLES_PREFIX,
+  YTDLP_SUBTITLE_LANGS,
+  parseYtDlpSubtitlePaths,
 } from './parsers';
 import {
   ffmpegLocation,
@@ -36,33 +39,34 @@ function qualityArgs(quality: DownloadQuality): string[] {
 }
 
 function commonArgs(): string[] {
-  const args = ['--no-warnings', '--newline'];
+  const args = ['--ignore-config', '--no-warnings', '--newline'];
   const proxy = getProxyUrl();
   if (proxy) args.push('--proxy', proxy);
   return args;
 }
 
 /**
- * 按视频最终路径认领同目录的字幕文件（--write-subs 产物：`主干.lang.srt`）。
- * 扫描失败不阻断下载结果（字幕是增益产物）。
+ * Restrict recognition to requested_subtitles reported after conversion/move.
+ * Matching old files in the output directory are never implicitly claimed.
  */
-async function scanSubtitleFiles(videoPaths: string[]): Promise<string[]> {
+async function claimReportedSubtitles(
+  videoPaths: string[],
+  reported: string[],
+): Promise<string[]> {
   const claimed: string[] = [];
-  const dirCache = new Map<string, string[]>();
   for (const videoPath of videoPaths) {
     const dir = path.dirname(videoPath);
     try {
-      let names = dirCache.get(dir);
-      if (!names) {
-        names = await fs.promises.readdir(dir);
-        dirCache.set(dir, names);
-      }
+      const names = reported
+        .filter((file) => path.dirname(file) === dir)
+        .map((file) => path.basename(file));
       for (const name of claimSubtitleFileNames(
         path.basename(videoPath),
         names,
       )) {
         const full = path.join(dir, name);
-        if (!claimed.includes(full)) claimed.push(full);
+        if (!claimed.includes(full) && (await fs.promises.stat(full)).isFile())
+          claimed.push(full);
       }
     } catch {
       // 目录读取失败：跳过该视频的字幕认领
@@ -117,22 +121,34 @@ export const ytDlpAdapter: DownloadEngineAdapter = {
       '--no-simulate',
       '--print',
       `after_move:${YTDLP_FILEPATH_PREFIX}%(filepath)j`,
+      '--print',
+      `after_move:${YTDLP_SUBTITLES_PREFIX}%(requested_subtitles)j`,
       ...qualityArgs(opts.quality),
       // 官方字幕直取：仅人工字幕（不开 --write-auto-subs），统一转 srt
       // （依赖已注入的 --ffmpeg-location；转换失败 yt-dlp 保留原格式）
-      ...(opts.writeSubs ? ['--write-subs', '--convert-subs', 'srt'] : []),
+      ...(opts.writeSubs
+        ? [
+            '--write-subs',
+            '--sub-langs',
+            YTDLP_SUBTITLE_LANGS,
+            '--convert-subs',
+            'srt',
+          ]
+        : []),
       opts.expandPlaylist ? '--yes-playlist' : '--no-playlist',
       '--',
       opts.url,
     ];
 
     const outputPaths: string[] = [];
+    const reportedSubtitles: string[] = [];
     let lineBuffer = '';
     const handleStdout = (chunk: string) => {
       lineBuffer += chunk;
       const lines = lineBuffer.split(/\r?\n/);
       lineBuffer = lines.pop() ?? '';
       for (const line of lines) {
+        reportedSubtitles.push(...parseYtDlpSubtitlePaths(line));
         const filePath = parseYtDlpFilePathLine(line);
         if (filePath) {
           outputPaths.push(filePath);
@@ -157,7 +173,10 @@ export const ytDlpAdapter: DownloadEngineAdapter = {
       throw new Error('yt-dlp finished without reporting output file');
     }
     if (!opts.writeSubs) return { outputPaths };
-    const subtitlePaths = await scanSubtitleFiles(outputPaths);
+    const subtitlePaths = await claimReportedSubtitles(
+      outputPaths,
+      reportedSubtitles,
+    );
     return {
       outputPaths,
       ...(subtitlePaths.length ? { subtitlePaths } : {}),

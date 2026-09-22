@@ -219,6 +219,7 @@ export default async function translate(
             : `翻译服务「${fallback.from.name}」暂时不可用，已切换到「${fallback.to.name}」继续翻译`,
         );
       },
+      formData.subtitleTranslationStyle,
     );
 
     logMessage('Translation completed', 'info');

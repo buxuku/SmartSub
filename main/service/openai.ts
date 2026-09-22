@@ -314,7 +314,6 @@ export async function translateWithOpenAI(
     throw new Error('OpenAI API key is required');
   }
   const normalizedApiUrl = normalizeOpenAIBaseURL(provider.apiUrl);
-  console.log('translateWithOpenAI', text, provider);
   try {
     throwIfSignalCancelled(options?.signal);
     console.log('Provider config:', {
@@ -355,10 +354,7 @@ export async function translateWithOpenAI(
           processedParams.validationErrors.length > 0
             ? processedParams.validationErrors
             : 'none',
-        finalBodyParams:
-          Object.keys(processedParams.body).length > 0
-            ? processedParams.body
-            : 'none',
+        bodyParameterKeys: Object.keys(processedParams.body),
       });
     } else {
       console.log('No custom parameters configured for this provider');
@@ -396,10 +392,7 @@ export async function translateWithOpenAI(
                 model: baseParams.model,
                 temperature: baseParams.temperature,
                 structuredOutputMode: mode,
-                customHeaders:
-                  Object.keys(customHeaders).length > 0
-                    ? customHeaders
-                    : 'none',
+                customHeaderNames: Object.keys(customHeaders),
               });
               return mode === 'json_schema'
                 ? callWithJsonSchema(openai, baseParams, options)

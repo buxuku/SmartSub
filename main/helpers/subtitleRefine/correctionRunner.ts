@@ -29,6 +29,7 @@ export interface AiCorrectionOutcome {
   changed: number;
   /** 整体降级（服务商不可用等）：cues 与输入一致。 */
   degraded: boolean;
+  failedCount?: number;
 }
 
 /** 模型偶发在校正文本里带换行：字幕单条内折叠为空格，避免交付层格式扰动。 */
@@ -75,6 +76,11 @@ export async function runAiCorrection(
     useGlossary: true,
     glossaryLabel: 'AI 字幕校正',
     suspectWords,
+    fillerPolicy:
+      formData.subtitleFillerPolicy === 'preserve' ||
+      formData.subtitleFillerPolicy === 'remove-hesitations'
+        ? formData.subtitleFillerPolicy
+        : undefined,
     onBatchProgress: (info) =>
       onProgress?.(info.processedCount, info.totalCount),
   });
@@ -85,7 +91,7 @@ export async function runAiCorrection(
   let errorCount = 0;
   const out: TokenTriple[] = cues.map((cue, i): TokenTriple => {
     const r = byIndex.get(i);
-    if (r?.status === 'error') errorCount += 1;
+    if (r?.status !== 'success') errorCount += 1;
     const corrected =
       r?.status === 'success' ? sanitizeCorrectedText(r.corrected) : '';
     const text = corrected || (cue?.[2] ?? '');
@@ -99,5 +105,5 @@ export async function runAiCorrection(
     `AI correction done: ${changed}/${cues.length} entries changed, errors ${errorCount}${degraded ? ' (degraded)' : ''}`,
     degraded ? 'warning' : 'info',
   );
-  return { cues: out, changed, degraded };
+  return { cues: out, changed, degraded, failedCount: errorCount };
 }

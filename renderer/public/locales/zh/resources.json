@@ -10,6 +10,11 @@
   "openModelsFolder": "打开模型目录",
   "openFolderFailed": "打开模型目录失败",
   "engines": {
+    "operationFailed": "引擎操作未完成。",
+    "operationRepair": "请检查网络、目录权限及当前任务状态，修复后重试。",
+    "operationRetry": "重试操作",
+    "statusReadFailed": "引擎或模型状态读取失败，请检查配置和目录权限后重试。",
+    "statusUnknown": "状态未确认",
     "statusAvailable": "可用",
     "status": {
       "ready": "已就绪",
@@ -342,6 +347,7 @@
       "commandSaveFailed": "保存失败"
     },
     "cloud": {
+      "configured": "已配置",
       "notConfigured": "未配置"
     },
     "groups": {

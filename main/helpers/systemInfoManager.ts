@@ -116,6 +116,7 @@ import { getTempDir } from './fileUtils';
 import { logMessage, store } from './storeManager';
 import { resolveModelRoot, type StorageKind } from './storagePaths';
 import { testTranslation } from '../translate';
+import { recordProviderHealth } from './providerHealth';
 import { getBuildInfo } from './buildInfo';
 import { getSpeakerDiarizationModelDownloader } from './speakerDiarization/modelDownloader';
 import {
@@ -131,6 +132,7 @@ import {
 import { getSpeakerDiarizationRuntime } from './speakerDiarization/runtime';
 
 let downloadingModels = new Set<string>();
+let quickDownloadOwner: { senderId: number; requestId: string } | null = null;
 
 /** 可文件夹导入的引擎类型（builtin 走单文件导入，不在此列）。 */
 type FolderImportEngine =
@@ -303,6 +305,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       parakeetModelsInstalled: getInstalledParakeetModels(),
       parakeetModelsPath: getParakeetModelsRoot(),
       speakerDiarizationModelInstalled: isSpeakerDiarizationModelInstalled(),
+      speakerDiarizationRuntimeInstalled: isSherpaLibInstalled(),
       speakerDiarizationModelsPath: getSpeakerDiarizationModelsRoot(),
     };
   });
@@ -320,12 +323,16 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
 
   ipcMain.handle(
     'downloadModel',
-    async (event, { model, source, needsCoreML }) => {
+    async (event, { model, source, needsCoreML, requestId }) => {
       if (downloadingModels.size > 0) {
         return { success: false, error: 'anotherDownloadInProgress' };
       }
 
       downloadingModels.add(model);
+      quickDownloadOwner =
+        typeof requestId === 'string'
+          ? { senderId: event.sender.id, requestId }
+          : null;
       try {
         await modelDownloader.download(
           model?.toLowerCase(),
@@ -338,6 +345,8 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
         logMessage(`Model download error: ${error}`, 'error');
         downloadingModels.delete(model);
         return { success: false, error: String(error) };
+      } finally {
+        quickDownloadOwner = null;
       }
     },
   );
@@ -754,21 +763,33 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     },
   );
 
-  ipcMain.handle('cancelModelDownload', async () => {
-    modelDownloader.cancel();
-    ct2ModelDownloader.cancel();
-    funasrModelDownloader.cancel();
-    qwenModelDownloader.cancel();
-    fireRedModelDownloader.cancel();
-    ttsModelDownloader.cancel();
-    speakerDiarizationModelDownloader.cancel();
-    // Parakeet 等待当前会话真正退出并完成 finally 清理，避免取消后立即重试时
-    // 旧任务清掉新任务的进度键/互斥状态。
-    await parakeetModelDownloader.cancel();
-    // 不提前清空下载锁：各下载 session 在真正响应 abort 并退出后自行移除 key。
-    // 否则 UI 可立即启动新任务，让旧异步链复用新 controller / 混写进度与文件。
-    return true;
-  });
+  ipcMain.handle(
+    'cancelModelDownload',
+    async (event, request?: { requestId?: string }) => {
+      // Quick-install cancellation must never abort another window's download.
+      if (request?.requestId) {
+        if (
+          quickDownloadOwner?.senderId === event.sender.id &&
+          quickDownloadOwner.requestId === request.requestId
+        )
+          modelDownloader.cancel();
+        return true;
+      }
+      modelDownloader.cancel();
+      ct2ModelDownloader.cancel();
+      funasrModelDownloader.cancel();
+      qwenModelDownloader.cancel();
+      fireRedModelDownloader.cancel();
+      ttsModelDownloader.cancel();
+      speakerDiarizationModelDownloader.cancel();
+      // Parakeet 等待当前会话真正退出并完成 finally 清理，避免取消后立即重试时
+      // 旧任务清掉新任务的进度键/互斥状态。
+      await parakeetModelDownloader.cancel();
+      // 不提前清空下载锁：各下载 session 在真正响应 abort 并退出后自行移除 key。
+      // 否则 UI 可立即启动新任务，让旧异步链复用新 controller / 混写进度与文件。
+      return true;
+    },
+  );
 
   ipcMain.handle(
     'importModel',
@@ -981,8 +1002,19 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   ipcMain.handle('testTranslation', async (_, args) => {
     const { provider, sourceLanguage, targetLanguage } = args;
     try {
-      return await testTranslation(provider, sourceLanguage, targetLanguage);
+      const result = await testTranslation(
+        provider,
+        sourceLanguage,
+        targetLanguage,
+      );
+      recordProviderHealth(
+        'translation',
+        provider,
+        Boolean(result?.translation),
+      );
+      return result;
     } catch (error) {
+      recordProviderHealth('translation', provider, false);
       throw error;
     }
   });

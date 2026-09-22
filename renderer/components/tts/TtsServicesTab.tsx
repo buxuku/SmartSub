@@ -43,6 +43,8 @@ import { Panel, PanelHeader } from '@/components/ui/panel';
 import ProviderBrandIcon from '@/components/ProviderBrandIcon';
 import useLocalStorageState from 'hooks/useLocalStorageState';
 import useTtsProviders from 'hooks/useTtsProviders';
+import { useNavigationGuard } from '../../context/NavigationGuardContext';
+import ProviderPersistenceStatus from '../resources/ProviderPersistenceStatus';
 import useClonedVoices from 'hooks/useClonedVoices';
 import useTtsModels from './useTtsModels';
 import TtsModelPanel from './TtsModelPanel';
@@ -104,6 +106,13 @@ const TtsServicesTab: React.FC = () => {
   const [addCustomOpen, setAddCustomOpen] = useState(false);
   const [customName, setCustomName] = useState('');
   const [customApiUrl, setCustomApiUrl] = useState('');
+  useNavigationGuard('tts-provider-create', {
+    isDirty: Boolean(customName || customApiUrl),
+    onDiscard: () => {
+      setCustomName('');
+      setCustomApiUrl('');
+    },
+  });
   const [wizardOpen, setWizardOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
 
@@ -181,6 +190,7 @@ const TtsServicesTab: React.FC = () => {
       customName,
       customApiUrl,
     );
+    if (!id) return;
     setAddCustomOpen(false);
     setCustomName('');
     setCustomApiUrl('');
@@ -205,352 +215,366 @@ const TtsServicesTab: React.FC = () => {
 
   return (
     <TooltipProvider delayDuration={150}>
-      <div className="grid h-full min-h-0 grid-cols-1 gap-2.5 overflow-hidden md:grid-cols-[248px_minmax(0,1fr)]">
-        <Panel className="min-h-0 overflow-hidden">
-          <PanelHeader
-            title={t('ttsServices.masterTitle')}
-            actions={
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                aria-label={t('ttsServices.addCustom')}
-                onClick={() => setAddCustomOpen(true)}
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
-            }
-          />
-          <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1.5">
-            {/* 总览（默认落地视图，不属于任何分组） */}
-            <button
-              type="button"
-              aria-current={selectedView === OVERVIEW_VIEW ? 'true' : undefined}
-              onClick={() => setSelectedView(OVERVIEW_VIEW)}
-              className={cn(
-                'relative flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[13px] transition-colors',
-                selectedView === OVERVIEW_VIEW
-                  ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-2 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
-                  : 'text-foreground hover:bg-accent',
-              )}
-            >
-              <span
-                className={cn(
-                  'flex h-6 w-6 flex-none items-center justify-center rounded-md',
-                  selectedView === OVERVIEW_VIEW
-                    ? 'bg-primary/15 text-primary'
-                    : 'bg-muted text-muted-foreground',
-                )}
-              >
-                <LayoutGrid className="h-3.5 w-3.5" />
-              </span>
-              <span className="flex min-w-0 flex-col">
-                <span className="truncate">{t('ttsServices.overview')}</span>
-                <span className="truncate text-[11px] font-normal text-muted-foreground">
-                  {t('ttsServices.overviewSubtitle')}
-                </span>
-              </span>
-            </button>
-
-            {/* 本地模型组 */}
-            <div className="label-caps px-2 pb-1 pt-2.5">
-              {t('ttsServices.groupLocal')}
-            </div>
-            {modelsApi.models.map((m) => {
-              const viewId = `${MODEL_VIEW_PREFIX}${m.id}`;
-              const active = selectedView === viewId;
-              return (
-                <button
-                  key={viewId}
-                  type="button"
-                  aria-current={active ? 'true' : undefined}
-                  onClick={() => setSelectedView(viewId)}
-                  className={cn(
-                    'relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
-                    active
-                      ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-1.5 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
-                      : 'text-foreground hover:bg-accent',
-                  )}
-                >
-                  <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
-                    <HardDrive className="h-4 w-4" />
-                  </span>
-                  <span
-                    className="min-w-0 flex-1 truncate"
-                    title={m.displayName}
+      <div className="flex h-full min-h-0 flex-col gap-2">
+        <ProviderPersistenceStatus state={tts.persistence} />
+        {tts.loaded && (
+          <div className="grid flex-1 min-h-0 grid-cols-1 gap-2.5 overflow-hidden md:grid-cols-[248px_minmax(0,1fr)]">
+            <Panel className="min-h-0 overflow-hidden">
+              <PanelHeader
+                title={t('ttsServices.masterTitle')}
+                actions={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    aria-label={t('ttsServices.addCustom')}
+                    onClick={() => setAddCustomOpen(true)}
                   >
-                    {m.displayName}
-                  </span>
-                  <StatusDot
-                    ready={m.installed}
-                    label={
-                      m.installed
-                        ? t('dubbingBlock.installed')
-                        : t('engines.status.pending')
-                    }
-                  />
-                </button>
-              );
-            })}
-
-            {/* 在线服务组：每个服务商一个平级入口 + 添加自定义 */}
-            <div className="label-caps px-2 pb-1 pt-2.5">
-              {t('ttsServices.groupCloud')}
-            </div>
-            {providerViews.map((v) => {
-              const active = selectedView === v.viewId;
-              return (
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                }
+              />
+              <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1.5">
+                {/* 总览（默认落地视图，不属于任何分组） */}
                 <button
-                  key={v.viewId}
                   type="button"
-                  aria-current={active ? 'true' : undefined}
-                  onClick={() => setSelectedView(v.viewId)}
+                  aria-current={
+                    selectedView === OVERVIEW_VIEW ? 'true' : undefined
+                  }
+                  onClick={() => setSelectedView(OVERVIEW_VIEW)}
                   className={cn(
-                    'relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
-                    active
-                      ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-1.5 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                    'relative flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-[13px] transition-colors',
+                    selectedView === OVERVIEW_VIEW
+                      ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-2 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
                       : 'text-foreground hover:bg-accent',
                   )}
                 >
-                  <ProviderBrandIcon icon={v.icon} iconImg={v.iconImg} />
-                  <span className="min-w-0 flex-1 truncate" title={v.label}>
-                    {v.label}
+                  <span
+                    className={cn(
+                      'flex h-6 w-6 flex-none items-center justify-center rounded-md',
+                      selectedView === OVERVIEW_VIEW
+                        ? 'bg-primary/15 text-primary'
+                        : 'bg-muted text-muted-foreground',
+                    )}
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5" />
                   </span>
-                  {v.unstable && (
-                    <span className="shrink-0 rounded bg-warning/15 px-1 text-[10px] leading-4 text-warning">
-                      {t('dubbingBlock.unstable')}
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate">
+                      {t('ttsServices.overview')}
                     </span>
-                  )}
-                  <StatusDot
-                    ready={v.configured}
-                    label={
-                      v.configured
-                        ? t('engines.statusAvailable')
-                        : t('engines.status.pending')
-                    }
-                  />
+                    <span className="truncate text-[11px] font-normal text-muted-foreground">
+                      {t('ttsServices.overviewSubtitle')}
+                    </span>
+                  </span>
                 </button>
-              );
-            })}
-            <button
-              type="button"
-              onClick={() => setAddCustomOpen(true)}
-              className="flex w-full items-center gap-2 rounded-md border border-dashed border-border-strong px-2 py-1.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
-                <Plus className="h-4 w-4" />
-              </span>
-              <span className="min-w-0 flex-1 truncate">
-                {t('ttsServices.addCustom')}
-              </span>
-            </button>
 
-            {/* 我的音色组：克隆音色逐条 + 单一「添加音色」入口（创建/导入/取回三合一） */}
-            <div className="label-caps px-2 pb-1 pt-2.5">
-              {cloneT('groupMyVoices')}
-            </div>
-            {clones.voices.map((v) => {
-              const viewId = `${CLONE_VIEW_PREFIX}${v.id}`;
-              const active = selectedView === viewId;
-              const ready =
-                v.engine === 'zipvoice' ? true : v.trainStatus === 'ready';
-              return (
+                {/* 本地模型组 */}
+                <div className="label-caps px-2 pb-1 pt-2.5">
+                  {t('ttsServices.groupLocal')}
+                </div>
+                {modelsApi.models.map((m) => {
+                  const viewId = `${MODEL_VIEW_PREFIX}${m.id}`;
+                  const active = selectedView === viewId;
+                  return (
+                    <button
+                      key={viewId}
+                      type="button"
+                      aria-current={active ? 'true' : undefined}
+                      onClick={() => setSelectedView(viewId)}
+                      className={cn(
+                        'relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
+                        active
+                          ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-1.5 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                          : 'text-foreground hover:bg-accent',
+                      )}
+                    >
+                      <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
+                        <HardDrive className="h-4 w-4" />
+                      </span>
+                      <span
+                        className="min-w-0 flex-1 truncate"
+                        title={m.displayName}
+                      >
+                        {m.displayName}
+                      </span>
+                      <StatusDot
+                        ready={m.installed}
+                        label={
+                          m.installed
+                            ? t('dubbingBlock.installed')
+                            : t('engines.status.pending')
+                        }
+                      />
+                    </button>
+                  );
+                })}
+
+                {/* 在线服务组：每个服务商一个平级入口 + 添加自定义 */}
+                <div className="label-caps px-2 pb-1 pt-2.5">
+                  {t('ttsServices.groupCloud')}
+                </div>
+                {providerViews.map((v) => {
+                  const active = selectedView === v.viewId;
+                  return (
+                    <button
+                      key={v.viewId}
+                      type="button"
+                      aria-current={active ? 'true' : undefined}
+                      onClick={() => setSelectedView(v.viewId)}
+                      className={cn(
+                        'relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
+                        active
+                          ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-1.5 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                          : 'text-foreground hover:bg-accent',
+                      )}
+                    >
+                      <ProviderBrandIcon icon={v.icon} iconImg={v.iconImg} />
+                      <span className="min-w-0 flex-1 truncate" title={v.label}>
+                        {v.label}
+                      </span>
+                      {v.unstable && (
+                        <span className="shrink-0 rounded bg-warning/15 px-1 text-[10px] leading-4 text-warning">
+                          {t('dubbingBlock.unstable')}
+                        </span>
+                      )}
+                      <StatusDot
+                        ready={v.configured}
+                        label={
+                          v.configured
+                            ? t('engines.cloud.configured')
+                            : t('engines.status.pending')
+                        }
+                      />
+                    </button>
+                  );
+                })}
                 <button
-                  key={viewId}
                   type="button"
-                  aria-current={active ? 'true' : undefined}
-                  onClick={() => setSelectedView(viewId)}
-                  className={cn(
-                    'relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
-                    active
-                      ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-1.5 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
-                      : 'text-foreground hover:bg-accent',
-                  )}
-                >
-                  <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
-                    <Mic2 className="h-4 w-4" />
-                  </span>
-                  <span className="min-w-0 flex-1 truncate" title={v.name}>
-                    {v.name}
-                  </span>
-                  <StatusDot
-                    ready={ready}
-                    label={ready ? cloneT('trainReady') : cloneT('training')}
-                  />
-                </button>
-              );
-            })}
-            {/* 添加音色：三种获得方式收敛为一个入口（创建 / 导入 / 从平台取回） */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
+                  onClick={() => setAddCustomOpen(true)}
                   className="flex w-full items-center gap-2 rounded-md border border-dashed border-border-strong px-2 py-1.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 >
                   <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
                     <Plus className="h-4 w-4" />
                   </span>
                   <span className="min-w-0 flex-1 truncate">
-                    {cloneT('addVoice')}
+                    {t('ttsServices.addCustom')}
                   </span>
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
                 </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                className="w-[--radix-dropdown-menu-trigger-width] min-w-48"
-              >
-                <DropdownMenuItem
-                  className="gap-2"
-                  onSelect={() => setWizardOpen(true)}
-                >
-                  <Mic2 className="h-4 w-4" />
-                  <div className="min-w-0">
-                    <p>{cloneT('createVoice')}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {cloneT('createVoiceHint')}
-                    </p>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="gap-2"
-                  onSelect={handleImportVoice}
-                >
-                  <HardDriveUpload className="h-4 w-4" />
-                  <div className="min-w-0">
-                    <p>{cloneT('importVoicePack')}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {cloneT('importVoiceHint')}
-                    </p>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="gap-2"
-                  onSelect={() => setLinkOpen(true)}
-                >
-                  <CloudDownload className="h-4 w-4" />
-                  <div className="min-w-0">
-                    <p>{cloneT('linkEntry')}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {cloneT('linkEntryHint')}
-                    </p>
-                  </div>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </nav>
-        </Panel>
 
-        {/* 右栏 */}
-        <Panel className="min-h-0 overflow-hidden">
-          <div className="flex flex-none flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2.5">
-            <div className="min-w-0">
-              <h2 className="text-[15px] font-semibold leading-tight">
-                {selectedView === OVERVIEW_VIEW
-                  ? t('ttsServices.overview')
-                  : activeModel
-                    ? activeModel.displayName
-                    : activeClone
-                      ? activeClone.name
-                      : (activeProviderView?.kind === 'brand'
-                          ? activeProviderView.type.name
-                          : activeProviderView?.label) || ''}
-              </h2>
-              {selectedView === OVERVIEW_VIEW && (
-                <p className="text-xs text-muted-foreground">
-                  {t('ttsServices.overviewSubtitle')}
-                </p>
-              )}
-              {activeProviderView &&
-                (activeProviderView.kind === 'preset' ||
-                  activeProviderView.kind === 'custom') && (
-                  <p className="text-xs text-muted-foreground">
-                    {activeProviderView.type.name}
-                  </p>
-                )}
-              {activeModel && (
-                <p className="text-xs text-muted-foreground">
-                  {t('ttsServices.localSubtitle')}
-                </p>
-              )}
-              {activeClone && (
-                <p className="text-xs text-muted-foreground">
-                  {activeClone.engine === 'zipvoice'
-                    ? cloneT('engineZipvoice')
-                    : activeClone.engine === 'elevenlabs'
-                      ? cloneT('engineElevenlabs')
-                      : cloneT('engineVolcengine')}
-                </p>
-              )}
-            </div>
-            {activeModel ? (
-              activeModel.installed ? (
-                readyBadge
-              ) : (
-                <Badge
-                  variant="outline"
-                  className="border-primary/40 text-primary"
-                >
-                  {t('engines.fasterWhisper.notInstalled')}
-                </Badge>
-              )
-            ) : activeClone ? (
-              readyBadge
-            ) : activeProviderView ? (
-              activeProviderView.configured ? (
-                readyBadge
-              ) : (
-                <Badge
-                  variant="outline"
-                  className="border-primary/40 text-primary"
-                >
-                  {t('engines.cloud.notConfigured')}
-                </Badge>
-              )
-            ) : null}
-          </div>
+                {/* 我的音色组：克隆音色逐条 + 单一「添加音色」入口（创建/导入/取回三合一） */}
+                <div className="label-caps px-2 pb-1 pt-2.5">
+                  {cloneT('groupMyVoices')}
+                </div>
+                {clones.voices.map((v) => {
+                  const viewId = `${CLONE_VIEW_PREFIX}${v.id}`;
+                  const active = selectedView === viewId;
+                  const ready =
+                    v.engine === 'zipvoice' ? true : v.trainStatus === 'ready';
+                  return (
+                    <button
+                      key={viewId}
+                      type="button"
+                      aria-current={active ? 'true' : undefined}
+                      onClick={() => setSelectedView(viewId)}
+                      className={cn(
+                        'relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors',
+                        active
+                          ? 'bg-primary/10 font-medium text-primary before:absolute before:inset-y-1.5 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
+                          : 'text-foreground hover:bg-accent',
+                      )}
+                    >
+                      <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
+                        <Mic2 className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1 truncate" title={v.name}>
+                        {v.name}
+                      </span>
+                      <StatusDot
+                        ready={ready}
+                        label={
+                          ready ? cloneT('trainReady') : cloneT('training')
+                        }
+                      />
+                    </button>
+                  );
+                })}
+                {/* 添加音色：三种获得方式收敛为一个入口（创建 / 导入 / 从平台取回） */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md border border-dashed border-border-strong px-2 py-1.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                      <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center">
+                        <Plus className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {cloneT('addVoice')}
+                      </span>
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="w-[--radix-dropdown-menu-trigger-width] min-w-48"
+                  >
+                    <DropdownMenuItem
+                      className="gap-2"
+                      onSelect={() => setWizardOpen(true)}
+                    >
+                      <Mic2 className="h-4 w-4" />
+                      <div className="min-w-0">
+                        <p>{cloneT('createVoice')}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {cloneT('createVoiceHint')}
+                        </p>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="gap-2"
+                      onSelect={handleImportVoice}
+                    >
+                      <HardDriveUpload className="h-4 w-4" />
+                      <div className="min-w-0">
+                        <p>{cloneT('importVoicePack')}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {cloneT('importVoiceHint')}
+                        </p>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="gap-2"
+                      onSelect={() => setLinkOpen(true)}
+                    >
+                      <CloudDownload className="h-4 w-4" />
+                      <div className="min-w-0">
+                        <p>{cloneT('linkEntry')}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {cloneT('linkEntryHint')}
+                        </p>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </nav>
+            </Panel>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            {selectedView === OVERVIEW_VIEW ? (
-              <TtsOverviewPanel
-                models={modelsApi.models}
-                providerViews={providerViews}
-                voices={clones.voices}
-                onOpenModel={(id) =>
-                  setSelectedView(`${MODEL_VIEW_PREFIX}${id}`)
-                }
-                onOpenProviderView={setSelectedView}
-                onOpenClone={(id) =>
-                  setSelectedView(`${CLONE_VIEW_PREFIX}${id}`)
-                }
-                onCreateVoice={() => setWizardOpen(true)}
-              />
-            ) : activeModel ? (
-              <TtsModelPanel
-                model={activeModel}
-                onUpdate={modelsApi.refresh}
-                onCreateVoice={() => setWizardOpen(true)}
-              />
-            ) : activeClone ? (
-              <ClonedVoicePanel
-                voice={activeClone}
-                onRename={clones.rename}
-                onRemove={clones.remove}
-                onRegenerateSample={clones.regenerateSample}
-                onVolcRefreshStatus={clones.volcRefreshStatus}
-                onVolcRetrain={clones.volcRetrain}
-                onExport={clones.exportVoice}
-              />
-            ) : activeProviderView ? (
-              <TtsProviderPanel
-                view={activeProviderView}
-                onUpdateField={tts.updateInstanceField}
-                onMaterialize={tts.addInstance}
-                onRemove={tts.removeInstance}
-              />
-            ) : null}
+            {/* 右栏 */}
+            <Panel className="min-h-0 overflow-hidden">
+              <div className="flex flex-none flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2.5">
+                <div className="min-w-0">
+                  <h2 className="text-[15px] font-semibold leading-tight">
+                    {selectedView === OVERVIEW_VIEW
+                      ? t('ttsServices.overview')
+                      : activeModel
+                        ? activeModel.displayName
+                        : activeClone
+                          ? activeClone.name
+                          : (activeProviderView?.kind === 'brand'
+                              ? activeProviderView.type.name
+                              : activeProviderView?.label) || ''}
+                  </h2>
+                  {selectedView === OVERVIEW_VIEW && (
+                    <p className="text-xs text-muted-foreground">
+                      {t('ttsServices.overviewSubtitle')}
+                    </p>
+                  )}
+                  {activeProviderView &&
+                    (activeProviderView.kind === 'preset' ||
+                      activeProviderView.kind === 'custom') && (
+                      <p className="text-xs text-muted-foreground">
+                        {activeProviderView.type.name}
+                      </p>
+                    )}
+                  {activeModel && (
+                    <p className="text-xs text-muted-foreground">
+                      {t('ttsServices.localSubtitle')}
+                    </p>
+                  )}
+                  {activeClone && (
+                    <p className="text-xs text-muted-foreground">
+                      {activeClone.engine === 'zipvoice'
+                        ? cloneT('engineZipvoice')
+                        : activeClone.engine === 'elevenlabs'
+                          ? cloneT('engineElevenlabs')
+                          : cloneT('engineVolcengine')}
+                    </p>
+                  )}
+                </div>
+                {activeModel ? (
+                  activeModel.installed ? (
+                    readyBadge
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="border-primary/40 text-primary"
+                    >
+                      {t('engines.fasterWhisper.notInstalled')}
+                    </Badge>
+                  )
+                ) : activeClone ? (
+                  readyBadge
+                ) : activeProviderView ? (
+                  activeProviderView.configured ? (
+                    <Badge variant="secondary">
+                      {t('engines.cloud.configured')}
+                    </Badge>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="border-primary/40 text-primary"
+                    >
+                      {t('engines.cloud.notConfigured')}
+                    </Badge>
+                  )
+                ) : null}
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                {selectedView === OVERVIEW_VIEW ? (
+                  <TtsOverviewPanel
+                    models={modelsApi.models}
+                    providerViews={providerViews}
+                    voices={clones.voices}
+                    onOpenModel={(id) =>
+                      setSelectedView(`${MODEL_VIEW_PREFIX}${id}`)
+                    }
+                    onOpenProviderView={setSelectedView}
+                    onOpenClone={(id) =>
+                      setSelectedView(`${CLONE_VIEW_PREFIX}${id}`)
+                    }
+                    onCreateVoice={() => setWizardOpen(true)}
+                  />
+                ) : activeModel ? (
+                  <TtsModelPanel
+                    model={activeModel}
+                    onUpdate={modelsApi.refresh}
+                    onCreateVoice={() => setWizardOpen(true)}
+                  />
+                ) : activeClone ? (
+                  <ClonedVoicePanel
+                    voice={activeClone}
+                    onRename={clones.rename}
+                    onRemove={clones.remove}
+                    onRegenerateSample={clones.regenerateSample}
+                    onVolcRefreshStatus={clones.volcRefreshStatus}
+                    onVolcRetrain={clones.volcRetrain}
+                    onExport={clones.exportVoice}
+                  />
+                ) : activeProviderView ? (
+                  <TtsProviderPanel
+                    view={activeProviderView}
+                    onUpdateField={tts.updateInstanceField}
+                    onMaterialize={tts.addInstance}
+                    onRemove={tts.removeInstance}
+                    drafts={tts.persistence}
+                  />
+                ) : null}
+              </div>
+            </Panel>
           </div>
-        </Panel>
+        )}
       </div>
 
       {/* 创建克隆音色向导 */}

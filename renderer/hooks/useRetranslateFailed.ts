@@ -18,6 +18,8 @@ export interface RetranslateControl {
 }
 
 interface UseRetranslateFailedOptions {
+  documentKey?: string;
+  projectId?: string;
   /** 读取最新字幕数组（避免异步结束后拿过期快照） */
   getSubtitles: () => Subtitle[];
   getFailedTranslationIndices: () => number[];
@@ -28,6 +30,8 @@ interface UseRetranslateFailedOptions {
 }
 
 export function useRetranslateFailed({
+  documentKey,
+  projectId,
   getSubtitles,
   getFailedTranslationIndices,
   updateSubtitles,
@@ -40,9 +44,33 @@ export function useRetranslateFailed({
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
   const batchIdRef = useRef<string | null>(null);
+  const contextKey = JSON.stringify([
+    documentKey,
+    projectId,
+    sourceLanguage,
+    targetLanguage,
+  ]);
+  const contextRef = useRef(contextKey);
+  contextRef.current = contextKey;
+
+  useEffect(() => {
+    setRunning(false);
+    setCancelling(false);
+    setDone(0);
+    setTotal(0);
+    return () => {
+      const batchId = batchIdRef.current;
+      batchIdRef.current = null;
+      if (batchId)
+        void window.ipc
+          .invoke('cancelProofreadBatch', { batchId })
+          .catch(() => {});
+    };
+  }, [contextKey]);
 
   // 最新依赖引用，保持 start/cancel 引用稳定
   const latestRef = useRef({
+    projectId,
     getSubtitles,
     getFailedTranslationIndices,
     updateSubtitles,
@@ -50,6 +78,7 @@ export function useRetranslateFailed({
     targetLanguage,
   });
   latestRef.current = {
+    projectId,
     getSubtitles,
     getFailedTranslationIndices,
     updateSubtitles,
@@ -90,9 +119,11 @@ export function useRetranslateFailed({
       getFailedTranslationIndices: getFailed,
       sourceLanguage: from,
       targetLanguage: to,
+      projectId: contextProjectId,
     } = latestRef.current;
 
     const current = getSubs();
+    const requestContext = contextRef.current;
     const failedIndices = getFailed();
     if (failedIndices.length === 0) return;
 
@@ -106,6 +137,14 @@ export function useRetranslateFailed({
       }));
 
     const batchId = `retranslate-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const snapshots = new Map(
+      failedIndices.map((index) => [index, JSON.stringify(current[index])]),
+    );
+    const structure = JSON.stringify(
+      current.map((row) => [row.id, row.startEndTime]),
+    );
+    const isCurrent = () =>
+      batchIdRef.current === batchId && contextRef.current === requestContext;
     batchIdRef.current = batchId;
     setRunning(true);
     setCancelling(false);
@@ -114,11 +153,13 @@ export function useRetranslateFailed({
 
     try {
       const result = await window.ipc.invoke('retranslateSubtitles', {
+        projectId: contextProjectId,
         subtitles: payload,
         sourceLanguage: from,
         targetLanguage: to,
         batchId,
       });
+      if (!isCurrent()) return;
 
       if (!result?.success && result?.error === 'NO_DEFAULT_PROVIDER') {
         toast.error(t('retranslateNoProvider'));
@@ -147,11 +188,17 @@ export function useRetranslateFailed({
       let applied = 0;
       if (resultMap.size > 0) {
         const latest = latestRef.current.getSubtitles();
-        const next = latest.map((row) => {
+        if (
+          JSON.stringify(latest.map((row) => [row.id, row.startEndTime])) !==
+          structure
+        )
+          return;
+        const next = latest.map((row, index) => {
           const hit = resultMap.get(`${row.id}|${row.startEndTime}`);
           // 只回填仍为空的行，避免覆盖用户在重翻期间手动填写的内容
           if (
             hit &&
+            snapshots.get(index) === JSON.stringify(row) &&
             (row.translationStatus === 'failed' ||
               !row.targetContent ||
               !row.targetContent.trim() ||
@@ -186,12 +233,15 @@ export function useRetranslateFailed({
         toast.warning(t('retranslateNoResult'));
       }
     } catch (error) {
+      if (!isCurrent()) return;
       console.error('Retranslate error:', error);
       toast.error(t('retranslateFailed'));
     } finally {
-      setRunning(false);
-      setCancelling(false);
-      batchIdRef.current = null;
+      if (isCurrent()) {
+        setRunning(false);
+        setCancelling(false);
+        batchIdRef.current = null;
+      }
     }
   }, [t]);
 

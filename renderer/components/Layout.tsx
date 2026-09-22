@@ -53,6 +53,9 @@ import ActivityCenter from './ActivityCenter';
 import CommandPalette from './CommandPalette';
 import { cn, openUrl } from 'lib/utils';
 import { hasAnyModelAnyEngine } from 'lib/engineModels';
+import { isProviderConfigured } from '../../types/provider';
+import { isAsrProviderConfigured } from '../../types/asrProvider';
+import { isTtsProviderConfigured } from '../../types/ttsProvider';
 import { TASK_TYPES } from 'lib/taskTypes';
 import { useRouter } from 'next/router';
 import { toast } from 'sonner';
@@ -227,7 +230,7 @@ function NavItem({
       aria-current={active ? 'page' : undefined}
       onClick={onClick}
       className={cn(
-        'titlebar-no-drag relative flex h-12 w-[52px] flex-col items-center justify-center gap-1 rounded-lg transition-colors',
+        'titlebar-no-drag relative flex h-12 w-[52px] shrink-0 flex-col items-center justify-center gap-1 rounded-lg transition-colors [@media(max-height:760px)]:h-10',
         active
           ? 'bg-primary/10 text-primary before:absolute before:inset-y-3 before:-left-1.5 before:w-[3px] before:rounded-r-full before:bg-primary'
           : 'text-muted-foreground hover:bg-accent hover:text-foreground',
@@ -277,7 +280,8 @@ const Layout = ({ children }) => {
   const [showFaq, setShowFaq] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
-  const [lastSubtitleSlug, setLastSubtitleSlug] = useState('generate-translate');
+  const [lastSubtitleSlug, setLastSubtitleSlug] =
+    useState('generate-translate');
 
   useEffect(() => {
     const syncFromStorage = () => {
@@ -344,6 +348,15 @@ const Layout = ({ children }) => {
     status: string;
   } | null>(null);
   const [taskRunning, setTaskRunning] = useState(false);
+  // 多维健康度状态：本地模型是否具备、云服务是否已配置
+  const [hasLocalModels, setHasLocalModels] = useState<boolean | null>(null);
+  const [hasCloudProviders, setHasCloudProviders] = useState<boolean | null>(
+    null,
+  );
+  const [healthError, setHealthError] = useState(false);
+  const [cloudHealth, setCloudHealth] = useState<
+    Array<{ name: string; status: string }>
+  >([]);
   // 在线视频下载全局摘要（状态栏 pill；主进程仅在内容变化时广播）
   const [videoDownload, setVideoDownload] = useState<{
     running: boolean;
@@ -363,7 +376,7 @@ const Layout = ({ children }) => {
     });
   }, [t]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const mac = window?.ipc?.platform === 'darwin' || isMacPlatform();
     const overlayPlatform =
       window?.ipc?.platform === 'win32' || window?.ipc?.platform === 'linux';
@@ -606,6 +619,65 @@ const Layout = ({ children }) => {
     };
   }, []);
 
+  // 检查引擎、模型与服务健康度
+  useEffect(() => {
+    let disposed = false;
+    const checkHealth = async () => {
+      try {
+        const [info, asrProviders, transProviders, ttsProviders, health] =
+          await Promise.all([
+            window.ipc.invoke('getSystemInfo', null),
+            window.ipc.invoke('getAsrProviders'),
+            window.ipc.invoke('getTranslationProviders'),
+            window.ipc.invoke('getTtsProviders'),
+            window.ipc.invoke('getProviderHealth'),
+          ]);
+        if (!disposed) {
+          setHealthError(false);
+          setHasLocalModels(hasAnyModelAnyEngine(info));
+          const configured = [
+            ...(asrProviders || [])
+              .filter((p: any) => isAsrProviderConfigured(p))
+              .map((p: any) => ({ ...p, kind: 'asr' })),
+            ...(transProviders || [])
+              .filter((p: any) => isProviderConfigured(p))
+              .map((p: any) => ({ ...p, kind: 'translation' })),
+            ...(ttsProviders || [])
+              .filter((p: any) => isTtsProviderConfigured(p))
+              .map((p: any) => ({ ...p, kind: 'tts' })),
+          ];
+          setHasCloudProviders(configured.length > 0);
+          setCloudHealth(
+            configured.map((provider) => ({
+              name: provider.name,
+              status:
+                (health || []).find(
+                  (result: any) =>
+                    result.id === provider.id && result.kind === provider.kind,
+                )?.status || 'unverified',
+            })),
+          );
+        }
+      } catch (err) {
+        console.error('Failed to check health in Layout:', err);
+        if (!disposed) setHealthError(true);
+      }
+    };
+    checkHealth();
+    const interval = setInterval(checkHealth, 10000);
+    const cleanupDownload = window.ipc.on(
+      'downloadProgress',
+      (_model: string, progress: number) => {
+        if (progress === 1) void checkHealth();
+      },
+    );
+    return () => {
+      disposed = true;
+      clearInterval(interval);
+      cleanupDownload?.();
+    };
+  }, []);
+
   // 视频下载摘要（下载页外持续可见）
   useEffect(() => {
     const unsub = window?.ipc?.on(
@@ -744,7 +816,7 @@ const Layout = ({ children }) => {
           底部预留 26px 给全宽状态栏。 */}
       <aside
         className={cn(
-          'titlebar-drag fixed left-0 top-0 bottom-[26px] z-20 flex w-16 flex-col items-center gap-0.5 border-r border-border bg-chrome px-1.5 pb-2',
+          'titlebar-drag fixed left-0 top-0 bottom-[26px] z-20 flex w-16 flex-col items-center gap-0.5 overflow-x-hidden overflow-y-auto border-r border-border bg-chrome px-1.5 pb-2',
           !isMac && 'pt-2.5',
         )}
       >
@@ -758,7 +830,7 @@ const Layout = ({ children }) => {
         <Link
           href={`/${locale}/home`}
           aria-label="Home"
-          className="titlebar-no-drag mb-2 flex h-9 w-9 items-center justify-center"
+          className="titlebar-no-drag mb-2 flex h-9 w-9 shrink-0 items-center justify-center"
         >
           <Image
             src="/images/brand/logo-mark.png"
@@ -769,7 +841,10 @@ const Layout = ({ children }) => {
             priority
           />
         </Link>
-        <nav className="flex flex-col items-center gap-0.5" aria-label="tasks">
+        <nav
+          className="flex shrink-0 flex-col items-center gap-0.5"
+          aria-label="tasks"
+        >
           {NAV_TASK_ITEMS.map((item) => {
             const isSubtitles = item.labelKey === 'nav.subtitles';
             const hrefOverride = isSubtitles
@@ -794,8 +869,14 @@ const Layout = ({ children }) => {
             );
           })}
         </nav>
-        <div className="my-1.5 h-px w-7 bg-border-strong" role="separator" />
-        <nav className="flex flex-col items-center gap-0.5" aria-label="config">
+        <div
+          className="my-1.5 h-px w-7 shrink-0 bg-border-strong"
+          role="separator"
+        />
+        <nav
+          className="flex shrink-0 flex-col items-center gap-0.5"
+          aria-label="config"
+        >
           {NAV_CONFIG_ITEMS.map((item) => (
             <NavItem
               key={item.href}
@@ -807,7 +888,10 @@ const Layout = ({ children }) => {
           ))}
         </nav>
         <div className="flex-1" />
-        <div className="mb-0.5 h-px w-7 bg-border-strong" role="separator" />
+        <div
+          className="mb-0.5 h-px w-7 shrink-0 bg-border-strong"
+          role="separator"
+        />
         <NavItem
           item={NAV_SETTINGS_ITEM}
           locale={locale}
@@ -978,30 +1062,99 @@ const Layout = ({ children }) => {
         <Toaster />
       </div>
 
-      {/* 底部全宽状态栏：引擎/GPU/队列/下载常显，仪表盘式定位信息 */}
+      {/* 底部全宽状态栏：解耦引擎模型、云服务、GPU与队列指示 */}
       <footer className="titlebar-drag fixed bottom-0 inset-x-0 z-20 flex h-[26px] items-center gap-4 border-t border-border bg-chrome px-3 text-[11px] text-muted-foreground">
-        <span className="flex items-center gap-1.5 whitespace-nowrap">
+        {/* 本地模型指示 */}
+        <button
+          type="button"
+          onClick={() => router.push(`/${locale}/engines`)}
+          className="titlebar-no-drag flex items-center gap-1.5 whitespace-nowrap transition-colors hover:text-foreground"
+        >
           <span
             className={cn(
               'h-[7px] w-[7px] rounded-full',
-              accelBadge?.mode === 'warning'
-                ? 'bg-warning shadow-[0_0_0_3px_hsl(var(--warning)/0.15)]'
+              healthError || hasLocalModels === null
+                ? 'bg-muted-foreground/60'
+                : hasLocalModels === false
+                  ? 'bg-warning shadow-[0_0_0_3px_hsl(var(--warning)/0.15)]'
+                  : 'bg-success shadow-[0_0_0_3px_hsl(var(--success)/0.15)]',
+            )}
+          />
+          {healthError
+            ? t('statusbar.checkFailed')
+            : hasLocalModels === null
+              ? t('statusbar.checking')
+              : hasLocalModels === false
+                ? t('statusbar.modelMissing')
+                : t('statusbar.modelReady')}
+        </button>
+
+        {/* 云服务指示 */}
+        <button
+          type="button"
+          onClick={() => router.push(`/${locale}/translation`)}
+          title={cloudHealth
+            .map(
+              (provider) =>
+                `${provider.name}: ${t(`statusbar.${provider.status}`)}`,
+            )
+            .join('\n')}
+          className="titlebar-no-drag flex items-center gap-1.5 whitespace-nowrap transition-colors hover:text-foreground"
+        >
+          <span
+            className={cn(
+              'h-[7px] w-[7px] rounded-full',
+              healthError ||
+                cloudHealth.some((provider) => provider.status === 'failed') ||
+                !cloudHealth.some((provider) => provider.status === 'connected')
+                ? 'bg-muted-foreground/60 shadow-[0_0_0_3px_hsl(var(--muted-foreground)/0.15)]'
                 : 'bg-success shadow-[0_0_0_3px_hsl(var(--success)/0.15)]',
             )}
           />
-          {t('statusbar.engineReady')}
-        </span>
+          {healthError
+            ? t('statusbar.checkFailed')
+            : hasCloudProviders === null
+              ? t('statusbar.checking')
+              : hasCloudProviders === false
+                ? t('statusbar.serviceMissing')
+                : cloudHealth.some((provider) => provider.status === 'failed')
+                  ? t('statusbar.serviceFailed')
+                  : cloudHealth.some(
+                        (provider) => provider.status === 'connected',
+                      )
+                    ? t('statusbar.serviceConnected', {
+                        count: cloudHealth.filter(
+                          (provider) => provider.status === 'connected',
+                        ).length,
+                      })
+                    : t('statusbar.unverified')}
+        </button>
+
+        {/* GPU / 硬件加速 */}
         {accelBadge && (
-          <span className="whitespace-nowrap">
-            GPU:{' '}
-            <span className="font-medium text-foreground">
+          <button
+            type="button"
+            onClick={() => router.push(`/${locale}/settings`)}
+            className="titlebar-no-drag flex items-center gap-1.5 whitespace-nowrap transition-colors hover:text-foreground"
+          >
+            <span
+              className={cn(
+                'h-[7px] w-[7px] rounded-full',
+                accelBadge.mode === 'accel'
+                  ? 'bg-success shadow-[0_0_0_3px_hsl(var(--success)/0.15)]'
+                  : accelBadge.mode === 'warning'
+                    ? 'bg-warning shadow-[0_0_0_3px_hsl(var(--warning)/0.15)]'
+                    : 'bg-muted-foreground/60 shadow-[0_0_0_3px_hsl(var(--muted-foreground)/0.15)]',
+              )}
+            />
+            <span>
               {accelBadge.mode === 'accel' && accelBadge.label
-                ? accelBadge.label
+                ? `${t('statusbar.gpuAccel')}: ${accelBadge.label}`
                 : accelBadge.mode === 'pending'
-                  ? t('statusbar.gpuPending')
-                  : 'CPU'}
+                  ? `GPU: ${t('statusbar.gpuPending')}`
+                  : t('statusbar.cpuMode')}
             </span>
-          </span>
+          </button>
         )}
         {taskRunning && (
           <button
