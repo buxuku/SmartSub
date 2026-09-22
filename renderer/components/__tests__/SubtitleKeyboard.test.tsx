@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import SubtitleList from '../subtitle/SubtitleList';
 import type { Subtitle } from '../../hooks/useSubtitles';
+import type { InlineAiControl } from '../../hooks/useInlineAi';
+import { cueSnapshot, cueStructure } from '../../lib/inlineAi';
 
 jest.mock('next-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -38,11 +40,18 @@ const initial: Subtitle[] = Array.from({ length: 5 }, (_, index) => ({
   endTimeInSeconds: index * 2 + 1,
   startEndTime: '00:00:00,000 --> 00:00:01,000',
 }));
-function Harness({ translated = true }: { translated?: boolean }) {
+function Harness({
+  translated = true,
+  inlineAi,
+}: {
+  translated?: boolean;
+  inlineAi?: InlineAiControl;
+}) {
   const [current, setCurrent] = useState(0);
   const [subtitles, setSubtitles] = useState(initial);
   return (
     <SubtitleList
+      inlineAi={inlineAi}
       mergedSubtitles={subtitles}
       currentSubtitleIndex={current}
       shouldShowTranslation={translated}
@@ -75,6 +84,32 @@ beforeEach(() => {
     configurable: true,
   });
 });
+
+test.each(['error', 'stale'])(
+  'retry of %s original suggestion preserves field and intent in bilingual subtitles',
+  (kind) => {
+    const run = jest.fn();
+    const suggestion = {
+      requestId: 'original-job',
+      index: 0,
+      snapshot: kind === 'stale' ? 'old' : cueSnapshot(initial[0]),
+      structure: cueStructure(initial),
+      field: 'sourceContent',
+      intent: 'shorten',
+      original: initial[0].sourceContent,
+      status: kind === 'error' ? 'error' : 'ready',
+      proposed: 'Suggestion',
+      error: kind === 'error' ? 'Service unavailable' : undefined,
+    };
+    render(
+      <Harness
+        inlineAi={{ suggestions: new Map([[0, suggestion]]), run } as any}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'waveform.retry' }));
+    expect(run).toHaveBeenCalledWith([0], 'shorten', 'sourceContent');
+  },
+);
 
 test('Tab stays in current row and Cmd+Enter preserves field across virtual rows', () => {
   render(<Harness />);

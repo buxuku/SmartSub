@@ -55,6 +55,7 @@ async function main() {
   const cancelled: string[] = [];
   const listeners = new Map<string, (...args: any[]) => void>();
   const storage = new Map<string, string>();
+  storage.set('ai_proofread_custom_prompt', 'Saved original correction prompt');
   (globalThis as any).localStorage = {
     getItem: (key: string) => storage.get(key),
     setItem: (key: string, value: string) => storage.set(key, value),
@@ -129,6 +130,66 @@ async function main() {
   assert.equal(cues[0].translationError, undefined);
   assert.equal(cues[1].targetContent, 'Target 2');
   assert.equal(updates, 1);
+  act(() => {
+    pending = control!.run([0], 'polish', 'sourceContent');
+  });
+  assert.equal(calls.at(-1)?.payload.mode, 'transcript');
+  assert.equal(
+    calls.at(-1)?.payload.customPrompt,
+    'Saved original correction prompt',
+    'bilingual original actions load transcript settings',
+  );
+  assert.equal(control!.suggestions.get(0)?.field, 'sourceContent');
+  await act(async () => {
+    calls.at(-1)!.resolve({ success: true, data: 'Corrected source' });
+    await pending;
+  });
+  act(() => assert.equal(control!.accept(0), true));
+  assert.equal(cues[0].sourceContent, 'Corrected source');
+  assert.equal(cues[0].targetContent, 'Edited 1');
+  act(() => control!.propose(0, 'Review suggestion', 'sourceContent'));
+  cues[0] = { ...cues[0], sourceContent: 'Manual correction' };
+  act(() => assert.equal(control!.accept(0), false));
+  act(() => control!.dismiss(0));
+
+  act(() =>
+    control!.changePrompt(
+      false,
+      'shorten',
+      'Custom original shortening',
+      'sourceContent',
+    ),
+  );
+  assert.equal(
+    control!.getPrompt(false, 'shorten', 'sourceContent'),
+    'Custom original shortening',
+  );
+  assert.notEqual(
+    control!.getPrompt(false, 'shorten', 'targetContent'),
+    'Custom original shortening',
+  );
+  act(() => {
+    pending = control!.run([0], 'shorten', 'sourceContent');
+  });
+  assert.equal(
+    calls.at(-1)?.payload.customPrompt,
+    'Custom original shortening',
+  );
+  await act(async () => {
+    calls.at(-1)!.resolve({ success: false, error: 'Try again' });
+    await pending;
+  });
+  act(() => control!.resetPrompt(false, 'shorten', 'sourceContent'));
+  assert.match(
+    control!.getPrompt(false, 'shorten', 'sourceContent'),
+    /fewer characters/,
+  );
+  assert.equal(
+    storage.get('ai_proofread_custom_prompt_shorten'),
+    control!.getPrompt(false, 'shorten', 'sourceContent'),
+  );
+  act(() => control!.dismiss(0));
+
   act(() => {
     pending = control!.run([1]);
   });
@@ -214,6 +275,48 @@ async function main() {
     await pending;
   });
   assert.equal(control!.suggestions.size, 0);
+  act(() =>
+    control!.changePrompt(
+      true,
+      'polish',
+      'Original batch custom',
+      'sourceContent',
+    ),
+  );
+  act(() =>
+    control!.changePrompt(
+      false,
+      'polish',
+      'Original custom persisted',
+      'sourceContent',
+    ),
+  );
+  await act(async () => root!.update(<Harness key="prompt-reopen" />));
+  assert.equal(
+    control!.getPrompt(false, 'polish', 'sourceContent'),
+    'Original custom persisted',
+  );
+  assert.equal(
+    control!.getPrompt(true, 'polish', 'sourceContent'),
+    'Original batch custom',
+  );
+  assert.notEqual(
+    control!.getPrompt(false, 'polish', 'targetContent'),
+    'Original custom persisted',
+  );
+  act(() => {
+    pending = control!.run([0, 1], 'polish', 'sourceContent');
+  });
+  assert.equal(calls.at(-1)!.payload.customPrompt, 'Original batch custom');
+  assert.equal(calls.at(-1)!.payload.mode, 'transcript');
+  await act(async () => {
+    calls.at(-1)!.resolve({ success: false, error: 'Fixture failed' });
+    await pending;
+  });
+  act(() => {
+    control!.dismiss(0);
+    control!.dismiss(1);
+  });
   act(() => {
     pending = control!.run([0]);
   });

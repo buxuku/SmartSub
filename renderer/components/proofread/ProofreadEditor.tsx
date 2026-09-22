@@ -1,4 +1,10 @@
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import React, {
+  useMemo,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+} from 'react';
 import { useTranslation } from 'next-i18next';
 import { Button } from '@/components/ui/button';
 import {
@@ -46,6 +52,9 @@ import { timelineSplitPoint } from '../../lib/waveformEditing';
 import { useInlineAi } from '../../hooks/useInlineAi';
 import InlineAiToolbar from './InlineAiToolbar';
 import ContextGlossary from './ContextGlossary';
+import { useQualityReview } from '../../hooks/useQualityReview';
+import QualityReviewPanel from './QualityReviewPanel';
+import type { QualityIssue } from '../../../types/qualityReview';
 
 interface PendingFile {
   id: string;
@@ -97,6 +106,11 @@ export default function ProofreadEditor({
   // 使用独立的字幕 hook
   const {
     mergedSubtitles,
+    qualityReview,
+    updateQualityReview,
+    qualityLoadError,
+    retryQualityLoad,
+    insertSubtitle,
     missedSpeechWarnings,
     updateSubtitles,
     getSubtitles,
@@ -150,7 +164,12 @@ export default function ProofreadEditor({
     // 光标位置
     handleCursorPositionChange,
     getCursorPosition,
-  } = useStandaloneSubtitles(config, true);
+  } = useStandaloneSubtitles(config, true, true);
+  const qualityMode = qualityReview.view.mode === 'issues';
+  const [qualityIndices, setQualityIndices] = useState<number[]>([]);
+  const [loopReview, setLoopReview] = useState(false);
+  const reviewRange = useRef<{ start: number; end: number } | null>(null);
+  const pendingListen = useRef<QualityIssue | null>(null);
 
   const inlineAi = useInlineAi({
     projectId,
@@ -204,12 +223,80 @@ export default function ProofreadEditor({
     mergedSubtitles,
     currentSubtitleIndex,
     setCurrentSubtitleIndex,
+    qualityMode,
   );
+
+  const quality = useQualityReview({
+    documentKey:
+      file.id +
+      ':' +
+      (file.selectedSource || '') +
+      ':' +
+      (file.selectedTarget || ''),
+    enabled: !isLoading && !loadError && !recoveryDraft && !qualityLoadError,
+    projectId,
+    state: qualityReview,
+    update: updateQualityReview,
+    subtitles: mergedSubtitles,
+    warnings: missedSpeechWarnings,
+    translation: shouldShowTranslation,
+    sourceLanguage: file.sourceLanguage,
+    targetLanguage: file.targetLanguage,
+    duration,
+  });
+  const onReviewProgress = (progress: { playedSeconds: number }) => {
+    handleProgress(progress);
+    const range = reviewRange.current;
+    if (range && progress.playedSeconds >= range.end) {
+      if (loopReview) playerRef.current?.seekTo(range.start, 'seconds');
+      else {
+        setIsPlaying(false);
+        reviewRange.current = null;
+      }
+    }
+  };
+  const selectQuality = (issue: QualityIssue, indices: number[]) => {
+    flushPendingEdit();
+    setIsPlaying(false);
+    reviewRange.current = null;
+    if (indices.length) setCurrentSubtitleIndex(indices[0]);
+    playerRef.current?.seekTo(issue.start, 'seconds');
+  };
+  const listenQuality = (issue: QualityIssue) => {
+    const range = {
+      start: Math.max(0, issue.start - 1),
+      end: duration > 0 ? Math.min(duration, issue.end + 1) : issue.end + 1,
+    };
+    reviewRange.current = range;
+    playerRef.current?.seekTo(range.start, 'seconds');
+    setIsPlaying(true);
+  };
+  useEffect(() => {
+    reviewRange.current = null;
+    pendingListen.current = null;
+  }, [qualityMode, file.id]);
+
+  const previousMode = useRef(qualityMode);
+  const allSubtitlePosition = useRef(-1);
+  useEffect(() => {
+    if (qualityMode && !previousMode.current)
+      allSubtitlePosition.current = currentSubtitleIndex;
+    if (
+      !qualityMode &&
+      previousMode.current &&
+      allSubtitlePosition.current >= 0
+    )
+      setCurrentSubtitleIndex(
+        Math.min(allSubtitlePosition.current, mergedSubtitles.length - 1),
+      );
+    previousMode.current = qualityMode;
+  }, [qualityMode]);
 
   // 是否有视频
   const hasVideo = !!videoPath;
   const seekTimeline = useCallback(
     (time: number, index?: number) => {
+      reviewRange.current = null;
       playerRef.current?.seekTo(time, 'seconds');
       handleProgress({ playedSeconds: time });
       if (index !== undefined) setCurrentSubtitleIndex(index);
@@ -237,6 +324,7 @@ export default function ProofreadEditor({
   const [expandAll, setExpandAll] = useState(false);
   const [fontScale, setFontScale] = useState<'s' | 'm' | 'l'>('m');
   const [speakerFilter, setSpeakerFilter] = useState<SpeakerFilter>('all');
+  const [allFailedOnly, setAllFailedOnly] = useState(false);
 
   useEffect(() => {
     if (!speakerFilter.startsWith('speaker:')) return;
@@ -472,6 +560,51 @@ export default function ProofreadEditor({
     },
   ]);
 
+  const subtitleEditor = (
+    <SubtitleList
+      visibleIndices={qualityMode ? qualityIndices : undefined}
+      failureFilter={{
+        enabled: qualityMode ? false : allFailedOnly,
+        onChange: setAllFailedOnly,
+      }}
+      hideDiagnostics={qualityMode}
+      sourceLanguage={file.sourceLanguage}
+      targetLanguage={file.targetLanguage}
+      inlineAi={inlineAi}
+      mergedSubtitles={mergedSubtitles}
+      missedSpeechWarnings={missedSpeechWarnings}
+      onSeekMissedSpeech={
+        hasVideo
+          ? (startMs) => {
+              playerRef.current?.seekTo(startMs / 1000, 'seconds');
+            }
+          : undefined
+      }
+      currentSubtitleIndex={currentSubtitleIndex}
+      shouldShowTranslation={shouldShowTranslation}
+      handleSubtitleClick={handleSubtitleClick}
+      handleSubtitleChange={handleSubtitleChange}
+      onCommitRow={flushPendingEdit}
+      isTranslationFailed={isTranslationFailed}
+      getFailedTranslationIndices={getFailedTranslationIndices}
+      goToNextFailedTranslation={goToNextFailedTranslation}
+      goToPreviousFailedTranslation={goToPreviousFailedTranslation}
+      onCursorPositionChange={handleCursorPositionChange}
+      onAiOptimizeClick={handleAiOptimizeClick}
+      onSplitClick={handleSplitClick}
+      onDeleteClick={handleDeleteSubtitle}
+      onTimeChange={handleTimeChange}
+      retranslate={retranslate}
+      onMergeRange={handleMergeSubtitles}
+      expandAll={expandAll}
+      fontScale={fontScale}
+      speakers={speakers}
+      speakerFilter={qualityMode ? 'all' : speakerFilter}
+      onCueSpeakersChange={handleSetCueSpeakers}
+      onCreateSpeaker={handleCreateSpeaker}
+    />
+  );
+
   const modLabel = isMacPlatform() ? '⌘' : 'Ctrl';
 
   if (isLoading || loadError) {
@@ -652,7 +785,7 @@ export default function ProofreadEditor({
         </TooltipProvider>
 
         {/* 编辑工具栏 */}
-        {hasSpeakerData && (
+        {hasSpeakerData && !qualityMode && (
           <SpeakerToolbar
             speakers={speakers}
             subtitles={mergedSubtitles}
@@ -691,13 +824,80 @@ export default function ProofreadEditor({
           fontScale={fontScale}
           onFontScale={handleFontScale}
         />
-        <InlineAiToolbar
-          control={inlineAi}
-          currentIndex={currentSubtitleIndex}
-          count={mergedSubtitles.length}
-        />
+        {!qualityMode && (
+          <InlineAiToolbar
+            compact={false}
+            control={inlineAi}
+            currentIndex={currentSubtitleIndex}
+            count={mergedSubtitles.length}
+          />
+        )}
       </div>
 
+      <div
+        className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2"
+        data-quality-tabs
+      >
+        <div
+          role="tablist"
+          aria-label={t('quality.title')}
+          className="flex rounded-md bg-muted p-0.5"
+        >
+          <Button
+            role="tab"
+            aria-selected={!qualityMode}
+            variant={!qualityMode ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => quality.view({ mode: 'all' })}
+          >
+            {t('quality.all')}
+          </Button>
+          <Button
+            role="tab"
+            aria-selected={qualityMode}
+            variant={qualityMode ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => quality.view({ mode: 'issues' })}
+          >
+            {t('quality.title')}{' '}
+            <span className="ml-1 tabular-nums">{quality.counts.pending}</span>
+          </Button>
+        </div>
+        <span className="text-xs text-muted-foreground" role="status">
+          {quality.checking
+            ? t('quality.checking')
+            : t('quality.remaining', {
+                count: quality.counts.pending + quality.counts.skipped,
+              })}
+        </span>
+        {qualityMode && (
+          <InlineAiToolbar
+            compact
+            control={inlineAi}
+            currentIndex={currentSubtitleIndex}
+            count={mergedSubtitles.length}
+          />
+        )}
+        <Button variant="ghost" size="sm" onClick={quality.retry}>
+          {t('quality.recheck')}
+        </Button>
+        {qualityLoadError && (
+          <div role="alert" className="w-full text-xs text-destructive">
+            {t('quality.loadFailed')}
+            <details>
+              <summary>{t('quality.details')}</summary>
+              {qualityLoadError}
+            </details>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void retryQualityLoad()}
+            >
+              {t('quality.retry')}
+            </Button>
+          </div>
+        )}
+      </div>
       {/* 主内容区 - 复用原有布局 */}
       <div
         className={`grid gap-2 flex-1 overflow-auto min-h-0 p-4 ${
@@ -713,12 +913,17 @@ export default function ProofreadEditor({
               playerRef={playerRef}
               isPlaying={isPlaying}
               onPlayingChange={setIsPlaying}
+              onMediaReady={() => {
+                const issue = pendingListen.current;
+                pendingListen.current = null;
+                if (issue) listenQuality(issue);
+              }}
               playbackRate={playbackRate}
               togglePlay={togglePlay}
               goToNextSubtitle={goToNextSubtitle}
               goToPreviousSubtitle={goToPreviousSubtitle}
               seekVideo={seekVideo}
-              handleProgress={handleProgress}
+              handleProgress={onReviewProgress}
               setDuration={setDuration}
               changePlaybackRate={changePlaybackRate}
               setPlaybackRate={setPlaybackRate}
@@ -758,42 +963,43 @@ export default function ProofreadEditor({
           getSubtitles={getSubtitles}
           updateSubtitles={updateSubtitles}
         >
-          <SubtitleList
-            sourceLanguage={file.sourceLanguage}
-            targetLanguage={file.targetLanguage}
-            inlineAi={inlineAi}
-            mergedSubtitles={mergedSubtitles}
-            missedSpeechWarnings={missedSpeechWarnings}
-            onSeekMissedSpeech={
-              hasVideo
-                ? (startMs) => {
-                    playerRef.current?.seekTo(startMs / 1000, 'seconds');
-                  }
-                : undefined
-            }
-            currentSubtitleIndex={currentSubtitleIndex}
-            shouldShowTranslation={shouldShowTranslation}
-            handleSubtitleClick={handleSubtitleClick}
-            handleSubtitleChange={handleSubtitleChange}
-            onCommitRow={flushPendingEdit}
-            isTranslationFailed={isTranslationFailed}
-            getFailedTranslationIndices={getFailedTranslationIndices}
-            goToNextFailedTranslation={goToNextFailedTranslation}
-            goToPreviousFailedTranslation={goToPreviousFailedTranslation}
-            onCursorPositionChange={handleCursorPositionChange}
-            onAiOptimizeClick={handleAiOptimizeClick}
-            onSplitClick={handleSplitClick}
-            onDeleteClick={handleDeleteSubtitle}
-            onTimeChange={handleTimeChange}
-            retranslate={retranslate}
-            onMergeRange={handleMergeSubtitles}
-            expandAll={expandAll}
-            fontScale={fontScale}
-            speakers={speakers}
-            speakerFilter={speakerFilter}
-            onCueSpeakersChange={handleSetCueSpeakers}
-            onCreateSpeaker={handleCreateSpeaker}
-          />
+          {qualityMode ? (
+            <QualityReviewPanel
+              control={quality}
+              state={qualityReview}
+              rows={mergedSubtitles}
+              onSelect={selectQuality}
+              onVisible={setQualityIndices}
+              onListen={
+                hasVideo
+                  ? (issue) => {
+                      if (!showLeftPanel) {
+                        pendingListen.current = issue;
+                        setVideoCollapsed(false);
+                      } else listenQuality(issue);
+                    }
+                  : undefined
+              }
+              onLoop={setLoopReview}
+              loop={loopReview}
+              ai={inlineAi}
+              projectId={projectId}
+              documentKey={JSON.stringify([
+                file.id,
+                file.selectedSource,
+                file.selectedTarget,
+              ])}
+              sourceLanguage={file.sourceLanguage}
+              targetLanguage={file.targetLanguage}
+              translation={shouldShowTranslation}
+              getSubtitles={getSubtitles}
+              insert={insertSubtitle}
+              editor={subtitleEditor}
+              onComplete={handleMarkCompleteClick}
+            />
+          ) : (
+            subtitleEditor
+          )}
         </ContextGlossary>
       </div>
 
@@ -807,7 +1013,9 @@ export default function ProofreadEditor({
         )}
         <span>
           <kbd className="rounded border bg-background px-1">↑↓</kbd>{' '}
-          {commonT('shortcuts.prevNextSubtitle')}
+          {qualityMode
+            ? t('quality.keyboard')
+            : commonT('shortcuts.prevNextSubtitle')}
         </span>
         <span>
           <kbd className="rounded border bg-background px-1">Tab</kbd>{' '}

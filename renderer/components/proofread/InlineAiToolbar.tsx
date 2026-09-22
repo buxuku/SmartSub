@@ -31,10 +31,12 @@ export default function InlineAiToolbar({
   control,
   currentIndex,
   count,
+  compact = false,
 }: {
   control: InlineAiControl;
   currentIndex: number;
   count: number;
+  compact?: boolean;
 }) {
   const { t } = useTranslation('home');
   const [batch, setBatch] = useState(false);
@@ -44,53 +46,57 @@ export default function InlineAiToolbar({
       className="flex flex-wrap items-center gap-1 bg-muted/20 px-2 py-1"
       data-ai-toolbar
     >
-      <Button
-        size="sm"
-        variant="ghost"
-        className="h-8 gap-1"
-        disabled={currentIndex < 0 || control.running}
-        onClick={() => void control.run([currentIndex])}
-      >
-        <Sparkles className="h-4 w-4" />
-        {t('aiOptimize')}
-      </Button>
-      <Button
-        size="sm"
-        variant="ghost"
-        className="h-8 gap-1"
-        disabled={currentIndex < 0 || control.running}
-        onClick={() => void control.run([currentIndex], 'shorten')}
-      >
-        <Minimize2 className="h-4 w-4" />
-        {t('inlineAi.shorten')}
-      </Button>
-      <Button
-        size="sm"
-        variant="ghost"
-        className="h-8 gap-1"
-        disabled={!count || control.running}
-        onClick={() =>
-          void control.run(Array.from({ length: count }, (_, i) => i))
-        }
-      >
-        <Wand2 className="h-4 w-4" />
-        {t('batchAiOptimize')}
-      </Button>
-      <Button
-        size="sm"
-        variant="ghost"
-        className="h-8 gap-1"
-        disabled={!count || control.running}
-        onClick={() =>
-          void control.run(
-            Array.from({ length: count }, (_, i) => i),
-            'shorten',
-          )
-        }
-      >
-        <Minimize2 className="h-4 w-4" />
-        {t('inlineAi.batchShorten')}
-      </Button>
+      {!compact && (
+        <>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 gap-1"
+            disabled={currentIndex < 0 || control.running}
+            onClick={() => void control.run([currentIndex])}
+          >
+            <Sparkles className="h-4 w-4" />
+            {t('aiOptimize')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 gap-1"
+            disabled={currentIndex < 0 || control.running}
+            onClick={() => void control.run([currentIndex], 'shorten')}
+          >
+            <Minimize2 className="h-4 w-4" />
+            {t('inlineAi.shorten')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 gap-1"
+            disabled={!count || control.running}
+            onClick={() =>
+              void control.run(Array.from({ length: count }, (_, i) => i))
+            }
+          >
+            <Wand2 className="h-4 w-4" />
+            {t('batchAiOptimize')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 gap-1"
+            disabled={!count || control.running}
+            onClick={() =>
+              void control.run(
+                Array.from({ length: count }, (_, i) => i),
+                'shorten',
+              )
+            }
+          >
+            <Minimize2 className="h-4 w-4" />
+            {t('inlineAi.batchShorten')}
+          </Button>
+        </>
+      )}
       <Popover>
         <PopoverTrigger asChild>
           <Button
@@ -108,6 +114,28 @@ export default function InlineAiToolbar({
           className="w-[360px] max-w-[calc(100vw-32px)] space-y-3"
           align="start"
         >
+          <label className="block space-y-1 text-xs">
+            {t('inlineAi.promptField')}
+            <select
+              aria-label={t('inlineAi.promptField')}
+              className="h-8 w-full rounded border bg-background px-2"
+              value={control.promptField}
+              onChange={(e) =>
+                control.setPromptField(
+                  e.target.value as 'sourceContent' | 'targetContent',
+                )
+              }
+            >
+              <option value="sourceContent">
+                {t('quality.originalField')}
+              </option>
+              {control.defaultField === 'targetContent' && (
+                <option value="targetContent">
+                  {t('quality.translationField')}
+                </option>
+              )}
+            </select>
+          </label>
           <label className="block space-y-1 text-xs">
             {t('selectAiProvider')}
             <Select
@@ -185,16 +213,23 @@ export default function InlineAiToolbar({
             <Textarea
               aria-label={t('customPrompt')}
               className="h-36 resize-y"
-              value={control.getPrompt(batch, intent)}
+              value={control.getPrompt(batch, intent, control.promptField)}
               onChange={(e) =>
-                control.changePrompt(batch, intent, e.target.value)
+                control.changePrompt(
+                  batch,
+                  intent,
+                  e.target.value,
+                  control.promptField,
+                )
               }
             />
           </label>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => control.resetPrompt(batch, intent)}
+            onClick={() =>
+              control.resetPrompt(batch, intent, control.promptField)
+            }
             className="gap-1"
           >
             <RotateCcw className="h-3 w-3" />

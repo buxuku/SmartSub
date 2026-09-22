@@ -1,4 +1,5 @@
 import type { ProofreadDraft } from '../proofreadDraft';
+import { emptyQualityReview } from '../../../types/qualityReview';
 
 const load = (): typeof import('../proofreadDraft') =>
   require('../proofreadDraft');
@@ -22,6 +23,56 @@ beforeEach(() => {
   window.ipc = undefined as any;
 });
 afterEach(() => jest.restoreAllMocks());
+
+test('invalid optional review metadata never hides recoverable subtitle text', () => {
+  const value = draft(2);
+  localStorage.setItem(
+    key,
+    JSON.stringify({ ...value, qualityReview: { version: 99 } }),
+  );
+  expect(load().readProofreadDraft(key)?.subtitles).toEqual(value.subtitles);
+});
+
+test('oversized legacy review catalogs recover subtitles and insertion drafts', () => {
+  const value = draft(1);
+  const review = emptyQualityReview();
+  review.catalog = Array.from({ length: 60000 }, (_, i) => ({
+    key: String(i),
+    evidence: 'same',
+    kind: 'translation',
+    start: i,
+    end: i + 1,
+    indices: [i],
+    more: false,
+    priority: 0,
+    detail: { reason: 'translation' },
+  }));
+  review.insertionDrafts = {
+    gap: { start: '5', end: '6', source: 'Pending text', target: '' },
+  };
+  let raw = JSON.stringify({ ...value, qualityReview: review });
+  window.ipc = {
+    proofreadDraft: {
+      read: () => ({ success: true, raw }),
+      write: (_key, value) => {
+        raw = value;
+        return { success: true };
+      },
+    },
+  } as any;
+  const recovered = load().readProofreadDraft(key);
+  expect(recovered?.subtitles).toEqual(value.subtitles);
+  expect(recovered?.qualityReview?.insertionDrafts).toEqual(
+    review.insertionDrafts,
+  );
+  expect(recovered!.qualityReview!.catalog.length).toBeLessThanOrEqual(50000);
+  expect(
+    load().writeProofreadDraft(key, { ...value, qualityReview: review }),
+  ).toBe(true);
+  expect(JSON.parse(raw).qualityReview.catalog.length).toBeLessThanOrEqual(
+    50000,
+  );
+});
 
 test.each([0, 2, 128, 129, 10000])(
   '%i-cue drafts retain the legacy atomic format and recover',

@@ -8,6 +8,7 @@ interface VideoPlayerProps {
   playerRef: React.RefObject<ReactPlayer>;
   isPlaying: boolean;
   onPlayingChange?: (playing: boolean) => void;
+  onMediaReady?: () => void;
   playbackRate: number;
   subtitleTracks?: Array<{
     kind: string;
@@ -31,6 +32,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   playerRef,
   isPlaying,
   onPlayingChange,
+  onMediaReady,
   playbackRate,
   subtitleTracks,
   handleProgress,
@@ -67,6 +69,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const onReady = (player: ReactPlayer) => {
     const media = player.getInternalPlayer();
     if (media instanceof HTMLMediaElement) setMediaElement(media);
+    onMediaReady?.();
   };
 
   // 纯音频：渲染紧凑播放条（无黑色视频框/空白占位），使左侧首元素与右侧列表顶部对齐

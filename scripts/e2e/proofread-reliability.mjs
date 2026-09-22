@@ -1,3 +1,4 @@
+import { waitForAppPage, appOrigin } from './app-page.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -20,7 +21,12 @@ const app = await _electron.launch({
     process.env.SMARTSUB_RENDERER_PORT || '8888',
     `--user-data-dir=${path.join(output, 'profile')}`,
   ],
-  env: { ...process.env, NODE_ENV: 'development' },
+  env: {
+    ...process.env,
+    NODE_ENV: process.argv.includes('--production')
+      ? 'production'
+      : 'development',
+  },
 });
 const page = await app.firstWindow();
 page.on('dialog', (dialog) => {
@@ -28,7 +34,7 @@ page.on('dialog', (dialog) => {
   // a browser dialog for Playwright's automatic dismiss to handle.
   if (dialog.type() !== 'beforeunload') void dialog.dismiss().catch(() => {});
 });
-await page.waitForURL(/^http:\/\/localhost:\d+/);
+await waitForAppPage(page);
 await app.evaluate(({ BrowserWindow, dialog }) => {
   globalThis.nativeConfirmations = [];
   globalThis.nativeResponse = 1;
@@ -41,7 +47,7 @@ await app.evaluate(({ BrowserWindow, dialog }) => {
   );
 });
 page.setDefaultTimeout(12000);
-const origin = new URL(page.url()).origin;
+const origin = appOrigin(page);
 const route = `/zh/proofread/?file=${encodeURIComponent(source)}`;
 const marker = 'Saved by SmartSub real Electron E2E.';
 

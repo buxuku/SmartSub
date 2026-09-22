@@ -1,3 +1,8 @@
+import {
+  parseQualityReview,
+  compactQualityReview,
+  type QualityReviewState,
+} from '../../types/qualityReview';
 import type { Subtitle } from '../hooks/useSubtitles';
 import type { SpeakerInfo } from '../../types/proofreadData';
 
@@ -6,10 +11,21 @@ export interface ProofreadDraft {
   speakers: SpeakerInfo[];
   embedSpeakerNames: boolean;
   savedAt: number;
+  qualityReview?: QualityReviewState;
 }
 
 const memory = new Map<string, ProofreadDraft>();
 const chunkSize = 128;
+const reviewSerialized = new WeakMap<QualityReviewState, string>();
+function serializeReview(review?: QualityReviewState) {
+  if (!review) return '';
+  let raw = reviewSerialized.get(review);
+  if (!raw) {
+    raw = JSON.stringify(compactQualityReview(review));
+    reviewSerialized.set(review, raw);
+  }
+  return `,"qualityReview":${raw}`;
+}
 const serialized = new Map<string, { rows: Subtitle[]; chunks: string[] }>();
 
 export function proofreadDraftKey(config: {
@@ -51,6 +67,14 @@ export function readProofreadDraft(key: string): ProofreadDraft | null {
       !Number.isFinite(draft.savedAt)
     )
       return null;
+    if (draft.qualityReview) {
+      try {
+        draft.qualityReview = parseQualityReview(draft.qualityReview);
+      } catch {
+        // Optional derived metadata must never hide valid subtitle edits.
+        delete draft.qualityReview;
+      }
+    }
     memory.set(key, draft);
     return draft;
   } catch {
@@ -76,7 +100,7 @@ function serializeDraft(key: string, draft: ProofreadDraft): string {
   serialized.set(key, { rows: draft.subtitles, chunks });
   // Reuse serialized immutable rows, but keep a single atomic storage value.
   // Cross-window writes cannot leave an index referencing retired chunks.
-  return `{"subtitles":[${chunks.join(',')}],"speakers":${JSON.stringify(draft.speakers)},"embedSpeakerNames":${JSON.stringify(draft.embedSpeakerNames)},"savedAt":${JSON.stringify(draft.savedAt)}}`;
+  return `{"subtitles":[${chunks.join(',')}],"speakers":${JSON.stringify(draft.speakers)},"embedSpeakerNames":${JSON.stringify(draft.embedSpeakerNames)},"savedAt":${JSON.stringify(draft.savedAt)}${serializeReview(draft.qualityReview)}}`;
 }
 
 export function writeProofreadDraft(
