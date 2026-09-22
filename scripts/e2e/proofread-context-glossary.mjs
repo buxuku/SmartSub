@@ -316,7 +316,14 @@ try {
   checks.push('unfinished term dismissal confirmation retains entered text');
 
   const toolbar = page.locator('[data-ai-toolbar]');
-  await toolbar.getByRole('button', { name: 'AI 优化', exact: true }).click();
+  const runAi = async (name) => {
+    await toolbar.getByRole('button', { name: 'AI 助手', exact: true }).click();
+    await page
+      .locator('[data-ai-actions]')
+      .getByRole('button', { name, exact: true })
+      .click();
+  };
+  await runAi('AI 优化');
   await expect(page.locator('[data-ai-review="ready"]')).toHaveCount(1);
   assert.ok(JSON.stringify(requests.at(-1)).includes('爱丽丝'));
   assert.ok(JSON.stringify(requests.at(-1)).includes('鲍勃'));
@@ -325,7 +332,7 @@ try {
     .getByRole('button', { name: '忽略', exact: true })
     .click();
   await openEditor(tasks[1]);
-  await toolbar.getByRole('button', { name: 'AI 优化', exact: true }).click();
+  await runAi('AI 优化');
   await expect(page.locator('[data-ai-review="ready"]')).toHaveCount(1);
   assert.equal(JSON.stringify(requests.at(-1)).includes('爱丽丝'), false);
   assert.ok(JSON.stringify(requests.at(-1)).includes('鲍勃'));

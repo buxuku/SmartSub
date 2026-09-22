@@ -46,12 +46,7 @@ import {
   type RailItem,
   type StageDef,
 } from './stageUtils';
-import {
-  SPEAKER_DIARIZATION_METADATA_SAVE_FAILED,
-  TRANSLATION_INCOMPLETE_PIPELINE_PAUSED,
-  TRANSLATION_INCOMPLETE_FOR_DUBBING,
-  TRANSLATION_INCOMPLETE_FOR_COMPOSE,
-} from '../../../types';
+import { formatTaskMessage } from './taskMessages';
 import { ManuscriptRowBadge } from './ManuscriptRowBadge';
 import { SpeechReviewBadge } from './SpeechReviewBadge';
 
@@ -391,32 +386,16 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
         const percent = getFilePercent(file, stages);
         const failed = hasFileError(file, stages);
         const rawError = failed ? getFileError(file, stages) : '';
-        const errorMsg =
-          rawError === 'TASK_INTERRUPTED'
-            ? t('interrupted')
-            : rawError === TRANSLATION_INCOMPLETE_PIPELINE_PAUSED
-              ? t('row.translationIncompletePipelinePaused', {
-                  count: file?.translationFailures?.length || 0,
-                })
-              : rawError === TRANSLATION_INCOMPLETE_FOR_DUBBING
-                ? t('row.translationIncompleteForDubbing')
-                : rawError === TRANSLATION_INCOMPLETE_FOR_COMPOSE
-                  ? t('row.translationIncompleteForCompose')
-                  : rawError;
-        const rawWarning = getFileWarning(file, stages);
-        const warningMsg = rawWarning.startsWith(
-          'AI_CORRECTION_VALIDATION_FAILED:',
-        )
-          ? t('row.aiCorrectionValidationFailed', {
-              count: Number(rawWarning.split(':')[1]),
-            })
-          : rawWarning === SPEAKER_DIARIZATION_METADATA_SAVE_FAILED
-            ? t('row.speakerDiarizationMetadataSaveFailed')
-            : rawWarning.startsWith('SPEAKER_DIARIZATION_')
-              ? t(`speakerDiarization.warnings.${rawWarning}`, {
-                  defaultValue: rawWarning,
-                })
-              : rawWarning;
+        const errorMsg = formatTaskMessage(
+          rawError,
+          t,
+          file?.translationFailures?.length || 0,
+        );
+        const warningMsg = formatTaskMessage(
+          getFileWarning(file, stages),
+          t,
+          file?.translationFailures?.length || 0,
+        );
         const missedSpeechWarning = file?.missedSpeechSummary?.count
           ? t('row.missedSpeechWarning', {
               count: file.missedSpeechSummary.count,

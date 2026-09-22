@@ -42,15 +42,19 @@ const initial: Subtitle[] = Array.from({ length: 5 }, (_, index) => ({
 }));
 function Harness({
   translated = true,
+  inline = false,
   inlineAi,
 }: {
   translated?: boolean;
+  inline?: boolean;
   inlineAi?: InlineAiControl;
 }) {
   const [current, setCurrent] = useState(0);
   const [subtitles, setSubtitles] = useState(initial);
   return (
     <SubtitleList
+      inline={inline}
+      visibleIndices={inline ? [0, 2, 4] : undefined}
       inlineAi={inlineAi}
       mergedSubtitles={subtitles}
       currentSubtitleIndex={current}
@@ -169,4 +173,29 @@ test('IME, repeats and unrelated modifiers do not advance; plain Enter remains n
   expect(
     screen.getByRole('textbox', { name: 'originalSubtitle 2' }),
   ).toHaveFocus();
+});
+
+test('review context keeps all visible rows in document flow and keyboard editing follows the filtered selection', () => {
+  const scrollIntoView = jest.fn();
+  const previous = HTMLElement.prototype.scrollIntoView;
+  HTMLElement.prototype.scrollIntoView = scrollIntoView;
+  try {
+    render(<Harness inline />);
+    const source = screen.getByRole('textbox', { name: 'originalSubtitle 1' });
+    source.focus();
+    fireEvent.keyDown(source, { key: 'Enter', metaKey: true });
+    expect(clicked).toHaveBeenLastCalledWith(2);
+    expect(
+      screen.getByRole('textbox', { name: 'originalSubtitle 3' }),
+    ).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: 'Enter', metaKey: true });
+    expect(clicked).toHaveBeenLastCalledWith(4);
+    expect(
+      screen.getByRole('textbox', { name: 'originalSubtitle 5' }),
+    ).toHaveFocus();
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(commit).toHaveBeenCalledTimes(2);
+  } finally {
+    HTMLElement.prototype.scrollIntoView = previous;
+  }
 });

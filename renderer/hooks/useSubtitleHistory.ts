@@ -103,11 +103,18 @@ export function useSubtitleHistory() {
   const bump = useCallback(() => setVersion((v) => v + 1), []);
 
   const push = useCallback(
-    (cmd: RangeCommand) => {
+    (
+      cmd: RangeCommand,
+      quality?: { before: QualityReviewState; after: QualityReviewState },
+    ) => {
       // 新命令入栈：丢弃 redo 分支
       const cmds = commandsRef.current;
       cmds.splice(cursorRef.current);
-      cmds.push({ range: cmd });
+      cmds.push({
+        range: cmd,
+        qualityBefore: quality?.before,
+        qualityAfter: quality?.after,
+      });
       commandsRef.current = cmds;
       cursorRef.current = cmds.length;
       bump();

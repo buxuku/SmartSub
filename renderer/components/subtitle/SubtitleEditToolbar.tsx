@@ -39,6 +39,7 @@ import {
   ChevronsDownUp,
   PanelLeftClose,
   PanelLeftOpen,
+  SlidersHorizontal,
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -122,6 +123,7 @@ interface SubtitleEditToolbarProps {
   onToggleExpandAll?: () => void;
   fontScale?: 's' | 'm' | 'l';
   onFontScale?: (scale: 's' | 'm' | 'l') => void;
+  additionalTools?: React.ReactNode;
 }
 
 export default function SubtitleEditToolbar({
@@ -147,6 +149,7 @@ export default function SubtitleEditToolbar({
   onToggleExpandAll,
   fontScale,
   onFontScale,
+  additionalTools,
 }: SubtitleEditToolbarProps) {
   const { t } = useTranslation('home');
 
@@ -443,28 +446,37 @@ export default function SubtitleEditToolbar({
   }, [triggerSplit, currentSubtitleIndex, handleOpenSplit, onTriggerHandled]);
 
   return (
-    <div className="flex flex-wrap items-center gap-x-1 gap-y-1 p-2 border-b bg-muted/30">
-      {/* 撤销/重做 */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8"
-        onClick={onUndo}
-        disabled={!canUndo}
-        title={t('undo')}
-      >
-        <Undo2 className="h-4 w-4" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8"
-        onClick={onRedo}
-        disabled={!canRedo}
-        title={t('redo')}
-      >
-        <Redo2 className="h-4 w-4" />
-      </Button>
+    <div
+      className="flex flex-wrap items-center gap-1 border-b bg-muted/20 px-3 py-2"
+      role="group"
+      aria-label={t('editorToolbar.label')}
+      data-edit-toolbar
+    >
+      <div className="flex items-center gap-0.5">
+        {/* 撤销/重做 */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={onUndo}
+          disabled={!canUndo}
+          title={t('undo')}
+          aria-label={t('undo')}
+        >
+          <Undo2 className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={onRedo}
+          disabled={!canRedo}
+          title={t('redo')}
+          aria-label={t('redo')}
+        >
+          <Redo2 className="h-4 w-4" />
+        </Button>
+      </div>
 
       <div className="w-px h-6 bg-border mx-1" />
 
@@ -598,7 +610,7 @@ export default function SubtitleEditToolbar({
             title={t('timeOffset')}
           >
             <Clock className="h-4 w-4 mr-1" />
-            {t('timeOffset')}
+            {t('editorToolbar.timeAdjust')}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-72">
@@ -779,62 +791,97 @@ export default function SubtitleEditToolbar({
         </DialogContent>
       </Dialog>
 
-      {/* 视图控制（右对齐）：折叠左侧面板 / 展开全部 / 字号 */}
-      <div className="ml-auto flex flex-shrink-0 items-center gap-1">
-        {hasVideo && onToggleVideoCollapsed && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8"
-            onClick={onToggleVideoCollapsed}
-            title={videoCollapsed ? t('showPanel') : t('hidePanel')}
+      {additionalTools && (
+        <>
+          <div className="mx-1 h-5 w-px bg-border" />
+          {additionalTools}
+        </>
+      )}
+
+      {/* 低频视图设置集中收纳，为字幕编辑保留空间。 */}
+      <div className="ml-auto flex shrink-0 items-center">
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-8 gap-1.5">
+              <SlidersHorizontal className="h-4 w-4" />
+              {t('editorToolbar.view')}
+              <ChevronDown className="h-3 w-3 text-muted-foreground" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="end"
+            className="w-64 space-y-1 p-2"
+            aria-label={t('editorToolbar.view')}
           >
-            {videoCollapsed ? (
-              <PanelLeftOpen className="h-4 w-4 mr-1" />
-            ) : (
-              <PanelLeftClose className="h-4 w-4 mr-1" />
-            )}
-            {videoCollapsed ? t('showPanel') : t('hidePanel')}
-          </Button>
-        )}
-        {onToggleExpandAll && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8"
-            onClick={onToggleExpandAll}
-            title={expandAll ? t('collapseAll') : t('expandAll')}
-          >
-            {expandAll ? (
-              <ChevronsDownUp className="h-4 w-4 mr-1" />
-            ) : (
-              <ChevronsUpDown className="h-4 w-4 mr-1" />
-            )}
-            {expandAll ? t('collapseAll') : t('expandAll')}
-          </Button>
-        )}
-        {onFontScale && (
-          <div className="flex items-center overflow-hidden rounded-md border">
-            {(['s', 'm', 'l'] as const).map((scale) => (
-              <button
-                key={scale}
-                type="button"
-                onClick={() => onFontScale(scale)}
-                className={`px-2 py-1 text-xs transition-colors ${
-                  fontScale === scale
-                    ? 'bg-primary/5 text-primary font-medium'
-                    : 'text-muted-foreground hover:bg-accent/50'
-                }`}
+            <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
+              {t('editorToolbar.view')}
+            </p>
+            {hasVideo && onToggleVideoCollapsed && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 w-full justify-start"
+                onClick={onToggleVideoCollapsed}
+                title={videoCollapsed ? t('showPanel') : t('hidePanel')}
+                aria-pressed={!videoCollapsed}
               >
-                {scale === 's'
-                  ? t('fontSizeSmall')
-                  : scale === 'm'
-                    ? t('fontSizeMedium')
-                    : t('fontSizeLarge')}
-              </button>
-            ))}
-          </div>
-        )}
+                {videoCollapsed ? (
+                  <PanelLeftOpen className="h-4 w-4 mr-1" />
+                ) : (
+                  <PanelLeftClose className="h-4 w-4 mr-1" />
+                )}
+                {videoCollapsed ? t('showPanel') : t('hidePanel')}
+              </Button>
+            )}
+            {onToggleExpandAll && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 w-full justify-start"
+                onClick={onToggleExpandAll}
+                title={expandAll ? t('collapseAll') : t('expandAll')}
+                aria-pressed={expandAll}
+              >
+                {expandAll ? (
+                  <ChevronsDownUp className="h-4 w-4 mr-1" />
+                ) : (
+                  <ChevronsUpDown className="h-4 w-4 mr-1" />
+                )}
+                {expandAll ? t('collapseAll') : t('expandAll')}
+              </Button>
+            )}
+            {onFontScale && (
+              <div className="flex items-center justify-between gap-3 border-t px-2 pt-3 pb-1">
+                <span className="text-sm">{t('editorToolbar.fontSize')}</span>
+                <div
+                  role="group"
+                  aria-label={t('editorToolbar.fontSize')}
+                  className="flex items-center overflow-hidden rounded-md border"
+                >
+                  {(['s', 'm', 'l'] as const).map((scale) => (
+                    <button
+                      key={scale}
+                      type="button"
+                      aria-pressed={fontScale === scale}
+                      onClick={() => onFontScale(scale)}
+                      className={`px-2 py-1 text-xs transition-colors ${
+                        fontScale === scale
+                          ? 'bg-primary/5 text-primary font-medium'
+                          : 'text-muted-foreground hover:bg-accent/50'
+                      }`}
+                    >
+                      {scale === 's'
+                        ? t('fontSizeSmall')
+                        : scale === 'm'
+                          ? t('fontSizeMedium')
+                          : t('fontSizeLarge')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
       </div>
     </div>
   );

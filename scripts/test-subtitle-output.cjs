@@ -286,6 +286,45 @@ async function task(root, name, config = {}, fileOverrides = {}, onEvent) {
 }
 
 async function run(root) {
+  for (const previousError of ['TASK_INTERRUPTED', 'recognition failed']) {
+    const uuid = `retry-${previousError}`;
+    workItems = [
+      {
+        id: uuid,
+        type: 'generateOnly',
+        status: 'error',
+        pipelineFiles: [
+          {
+            uuid,
+            extractSubtitle: 'error',
+            extractSubtitleError: previousError,
+          },
+        ],
+      },
+    ];
+    const retried = await task(
+      root,
+      uuid,
+      {},
+      {
+        extractSubtitle: 'error',
+        extractSubtitleError: previousError,
+      },
+      (...args) => applyTaskEventToProjects(...args),
+    );
+    check(retried.state.extractSubtitle, 'done', 'retry completes recognition');
+    check(
+      retried.state.extractSubtitleError,
+      undefined,
+      'retry clears the old error in renderer event merges',
+    );
+    check(
+      workItems[0].pipelineFiles[0].extractSubtitleError,
+      undefined,
+      'retry clears the old error in saved task records',
+    );
+  }
+
   for (const [exportSubtitle, expected] of [
     ['loading', 'running'],
     ['error', 'error'],
