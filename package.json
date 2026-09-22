@@ -121,7 +121,6 @@
     "test:renderer": "jest --runInBand",
     "test:parameter-persistence": "node scripts/test-parameter-persistence.cjs",
     "test:e2e:parameters": "node scripts/e2e/parameter-persistence.mjs",
-    "test:e2e:engine-settings": "node scripts/e2e/engine-settings.mjs",
     "typecheck": "tsc --noEmit -p renderer/tsconfig.json && tsc --noEmit -p main/tsconfig.json",
     "test:storage-paths": "tsc scripts/test-storage-paths.ts --outDir node_modules/.cache/storage-paths-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/storage-paths-tests/scripts/test-storage-paths.js",
     "test:video-download": "tsc scripts/test-video-download.ts --outDir node_modules/.cache/video-download-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/video-download-tests/scripts/test-video-download.js",
@@ -152,7 +151,12 @@
     "poc:zipvoice": "node scripts/voice-clone/zipvoice-poc.mjs",
     "smoke:voice-clone": "tsc scripts/voice-clone/pipeline-smoke.ts --outDir node_modules/.cache/voice-clone-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/voice-clone-tests/scripts/voice-clone/pipeline-smoke.js",
     "smoke:utility": "electron scripts/voice-clone/utility-smoke-main.js",
-    "test:voice-clone": "tsc scripts/voice-clone/test-voice-clone-units.ts --outDir node_modules/.cache/voice-clone-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/voice-clone-tests/scripts/voice-clone/test-voice-clone-units.js"
+    "test:voice-clone": "tsc scripts/voice-clone/test-voice-clone-units.ts --outDir node_modules/.cache/voice-clone-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/voice-clone-tests/scripts/voice-clone/test-voice-clone-units.js",
+    "test:quality-review": "tsx --tsconfig renderer/tsconfig.json scripts/test-quality-review.ts && tsx --tsconfig renderer/tsconfig.json scripts/test-quality-review-state.tsx && tsx --tsconfig renderer/tsconfig.json scripts/test-quality-review-controller.tsx",
+    "test:e2e:quality-review": "node scripts/e2e/quality-review.mjs",
+    "test:e2e:quality-media": "node scripts/e2e/quality-review-media.mjs",
+    "test:e2e:quality-performance": "node scripts/e2e/quality-review-performance.mjs",
+    "test:e2e:quality-translation": "node scripts/e2e/quality-review-translation.mjs"
   },
   "dependencies": {
     "@alicloud/alimt20181012": "^1.3.0",

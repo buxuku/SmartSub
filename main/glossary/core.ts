@@ -214,7 +214,8 @@ function normalizeMatchText(value: unknown): string {
     .toLowerCase();
 }
 
-function normalizedTextContainsGlossarySource(
+/** For bulk checks: callers normalize both arguments with glossarySourceKey once. */
+export function normalizedTextContainsGlossarySource(
   haystack: string,
   needle: string,
 ): boolean {

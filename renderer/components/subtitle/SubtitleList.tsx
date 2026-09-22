@@ -64,6 +64,9 @@ import {
 } from '../../../types/proofreadData';
 
 interface SubtitleListProps {
+  visibleIndices?: number[];
+  failureFilter?: { enabled: boolean; onChange: (enabled: boolean) => void };
+  hideDiagnostics?: boolean;
   sourceLanguage?: string;
   targetLanguage?: string;
   inlineAi?: InlineAiControl;
@@ -492,6 +495,9 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   inlineAi,
   mergedSubtitles,
   missedSpeechWarnings = emptyWarnings,
+  visibleIndices,
+  failureFilter,
+  hideDiagnostics = false,
   onSeekMissedSpeech,
   currentSubtitleIndex,
   shouldShowTranslation,
@@ -534,6 +540,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
     void aiRef.current?.run(
       [index],
       aiRef.current.suggestions.get(index)?.intent,
+      aiRef.current.suggestions.get(index)?.field,
     );
   }, []);
   const warnings = useMemo(
@@ -571,15 +578,17 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   const hasFailedTranslations = failedIndices.length > 0;
 
   // 只看失败：开启时记录基线 N0，随失败行减少展示"已处理 x/N0"
-  const [failedOnly, setFailedOnly] = useState(false);
+  const [localFailedOnly, setFailedOnly] = useState(false);
+  const failedOnly = failureFilter?.enabled ?? localFailedOnly;
   const [failedBaseline, setFailedBaseline] = useState(0);
 
   const handleFailedOnlyChange = useCallback(
     (on: boolean) => {
       setFailedOnly(on);
+      failureFilter?.onChange(on);
       setFailedBaseline(on ? failedIndices.length : 0);
     },
-    [failedIndices.length],
+    [failedIndices.length, failureFilter],
   );
 
   const processedCount = Math.max(0, failedBaseline - failedIndices.length);
@@ -617,6 +626,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
   // 过滤映射：null = 不过滤（虚拟索引即真实索引）
   const pinned = pinnedIndexRef.current;
   const displayIndices = useMemo(() => {
+    if (visibleIndices) return visibleIndices;
     if (!failedOnly) return speakerFilteredIndices;
     const failedDisplayIndices =
       pinned >= 0 && !failedIndices.includes(pinned)
@@ -626,6 +636,7 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
       ? failedDisplayIndices.filter((index) => speakerFilteredSet.has(index))
       : failedDisplayIndices;
   }, [
+    visibleIndices,
     failedOnly,
     failedIndices,
     pinned,
@@ -965,10 +976,12 @@ const SubtitleList: React.FC<SubtitleListProps> = ({
 
   return (
     <div className="h-full flex flex-col bg-card rounded-md overflow-hidden">
-      <MissedSpeechControls warnings={warnings} onSeek={onSeekMissedSpeech} />
+      {!hideDiagnostics && (
+        <MissedSpeechControls warnings={warnings} onSeek={onSeekMissedSpeech} />
+      )}
       {/* 状态/失败操作栏（视图控制已上移至编辑工具栏；窄宽下换行避免重叠）
           纯转写模式无翻译状态与失败操作，整条隐藏避免空栏 */}
-      {shouldShowTranslation && (
+      {shouldShowTranslation && !hideDiagnostics && (
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 p-2 bg-muted/40 flex-shrink-0">
           <div className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground">
             <>

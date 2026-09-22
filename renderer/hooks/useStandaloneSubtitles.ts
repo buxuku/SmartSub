@@ -12,6 +12,11 @@ import {
   useMemo,
 } from 'react';
 import path from 'path';
+import {
+  emptyQualityReview,
+  parseQualityReview,
+  type QualityReviewState,
+} from '../../types/qualityReview';
 import { validCueRange } from '../lib/waveformEditing';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
@@ -95,6 +100,7 @@ const TIME_EPSILON = 0.0005;
 export const useStandaloneSubtitles = (
   input: StandaloneSubtitlesConfig,
   isOpen: boolean,
+  qualityEnabled = false,
 ) => {
   const { t } = useTranslation('home');
   const translateRef = useRef(t);
@@ -112,7 +118,7 @@ export const useStandaloneSubtitles = (
       input.proofreadDataFile,
     ],
   );
-  const documentKey = JSON.stringify([config, isOpen]);
+  const documentKey = JSON.stringify([config, isOpen, qualityEnabled]);
   const activeKey = useRef(documentKey);
   activeKey.current = documentKey;
   const loadVersion = useRef(0);
@@ -143,6 +149,20 @@ export const useStandaloneSubtitles = (
 
   // 撤销/重做历史（命令模式：区间 diff 命令栈）
   const history = useSubtitleHistory();
+  const [qualityReview, setQualityState] = useState(emptyQualityReview);
+  const qualityRef = useRef(qualityReview);
+  const [qualityLoadError, setQualityLoadError] = useState('');
+  const qualityErrorRef = useRef('');
+  const qualityLocallyChanged = useRef(false);
+  const savedDocument = useRef<{
+    subtitles: Subtitle[];
+    speakers: SpeakerInfo[];
+    embed: boolean;
+  } | null>(null);
+  const applyQuality = useCallback((value: QualityReviewState) => {
+    qualityRef.current = value;
+    setQualityState(value);
+  }, []);
 
   // 字幕数组的同步镜像：所有变更经 applySubtitles 落盘，
   // 命令构造/合并窗口等同步逻辑读它，避免依赖异步 setState
@@ -197,6 +217,7 @@ export const useStandaloneSubtitles = (
         subtitles: mergedSubtitles,
         speakers,
         embedSpeakerNames,
+        ...(qualityEnabled ? { qualityReview } : {}),
         savedAt: Date.now(),
       }),
     );
@@ -209,6 +230,8 @@ export const useStandaloneSubtitles = (
     mergedSubtitles,
     speakers,
     embedSpeakerNames,
+    qualityReview,
+    qualityEnabled,
     saveStatus,
     documentKey,
   ]);
@@ -383,6 +406,11 @@ export const useStandaloneSubtitles = (
     setTracksLoading(false);
     setMissedSpeechWarnings([]);
     setLoadError('');
+    applyQuality(emptyQualityReview());
+    qualityLocallyChanged.current = false;
+    setQualityLoadError('');
+    qualityErrorRef.current = '';
+    savedDocument.current = null;
     applySubtitles([]);
     applySpeakers([]);
     setCurrentSubtitleIndex(-1);
@@ -497,6 +525,27 @@ export const useStandaloneSubtitles = (
           ? proofreadDataSubtitles.some((sub) => !!sub.targetContent?.trim())
           : translatedSubtitles.length > 0,
       );
+      savedDocument.current = {
+        subtitles: subtitlesRef.current,
+        speakers: speakersRef.current,
+        embed: false,
+      };
+      if (qualityEnabled) {
+        try {
+          const review = await window.ipc.invoke(
+            'qualityReview:read',
+            draftKey,
+          );
+          if (!current()) return;
+          if (!review?.success)
+            throw new Error(review?.error || 'QUALITY_READ_FAILED');
+          applyQuality(parseQualityReview(review.data));
+        } catch (error) {
+          if (!current()) return;
+          qualityErrorRef.current = String(error);
+          setQualityLoadError(String(error));
+        }
+      }
       const recoveredDraft = readProofreadDraft(draftKey);
       loadedKey.current = documentKey;
       setRecoveryDraft(recoveredDraft);
@@ -520,6 +569,8 @@ export const useStandaloneSubtitles = (
     applySpeakers,
     history.reset,
     draftKey,
+    qualityEnabled,
+    applyQuality,
   ]);
 
   const restoreDraft = useCallback(() => {
@@ -527,6 +578,10 @@ export const useStandaloneSubtitles = (
     applySubtitles(recoveryDraft.subtitles);
     applySpeakers(recoveryDraft.speakers);
     setEmbedSpeakerNames(recoveryDraft.embedSpeakerNames);
+    if (qualityEnabled) {
+      applyQuality(recoveryDraft.qualityReview || qualityRef.current);
+      qualityLocallyChanged.current = true;
+    }
     history.reset();
     pendingEditRef.current = null;
     setIsDirty(true);
@@ -537,6 +592,8 @@ export const useStandaloneSubtitles = (
     applySpeakers,
     history.reset,
     documentKey,
+    qualityEnabled,
+    applyQuality,
   ]);
 
   const discardDraft = useCallback(() => {
@@ -617,6 +674,14 @@ export const useStandaloneSubtitles = (
       next[index] = {
         ...row,
         [field]: value,
+        ...(field === 'targetContent' &&
+        value.trim() &&
+        !/^\[翻译失败:/.test(value.trim())
+          ? {
+              translationStatus: 'success' as const,
+              translationError: undefined,
+            }
+          : {}),
         content: field === 'sourceContent' ? value.split('\n') : row.content,
       };
       applySubtitles(next);
@@ -643,6 +708,7 @@ export const useStandaloneSubtitles = (
     const subtitles = subtitlesRef.current;
     const savedSpeakers = speakersRef.current;
     const savedEmbedNames = embedSpeakerNamesRef.current;
+    const savedQuality = qualityRef.current;
     setSaveStatus('saving');
     setSaveError('');
     const assertSaved = (
@@ -651,12 +717,28 @@ export const useStandaloneSubtitles = (
       if (result?.success !== true)
         throw new Error(result?.error || t('saveFailed'));
     };
-    const finishSave = () => {
+    const finishSave = async () => {
+      if (!current()) return false;
+      if (qualityEnabled) {
+        assertSaved(
+          await window.ipc.invoke('qualityReview:save', {
+            key: draftKey,
+            state: savedQuality,
+          }),
+        );
+      }
+
       if (!current()) return false;
       const unchanged =
         subtitlesRef.current === subtitles &&
         speakersRef.current === savedSpeakers &&
-        embedSpeakerNamesRef.current === savedEmbedNames;
+        embedSpeakerNamesRef.current === savedEmbedNames &&
+        (!qualityEnabled || qualityRef.current === savedQuality);
+      savedDocument.current = {
+        subtitles,
+        speakers: savedSpeakers,
+        embed: savedEmbedNames,
+      };
       if (unchanged) clearProofreadDraft(draftKey);
       if (unchanged) setDraftStorageFailed(false);
       setIsDirty(!unchanged);
@@ -666,8 +748,18 @@ export const useStandaloneSubtitles = (
       return unchanged;
     };
     try {
+      if (qualityEnabled && qualityErrorRef.current)
+        throw new Error(qualityErrorRef.current);
       if (isLoading || recoveryDraft || !config.sourceSubtitlePath)
         throw new Error(t('saveFailed'));
+      const baseline = savedDocument.current;
+      if (
+        qualityEnabled &&
+        baseline?.subtitles === subtitles &&
+        baseline.speakers === savedSpeakers &&
+        baseline.embed === savedEmbedNames
+      )
+        return await finishSave();
       if (config.proofreadDataFile) {
         const outputs: { filePath?: string; contentType?: string }[] = [];
         const finalTargetPath = config.finalTargetSubtitlePath;
@@ -706,7 +798,7 @@ export const useStandaloneSubtitles = (
         });
 
         assertSaved(result);
-        return finishSave();
+        return await finishSave();
       }
 
       const results: { success?: boolean; error?: string }[] = [];
@@ -748,7 +840,7 @@ export const useStandaloneSubtitles = (
       }
 
       results.forEach(assertSaved);
-      return finishSave();
+      return await finishSave();
     } catch (error) {
       if (!current()) return false;
       console.error('Error saving subtitles:', error);
@@ -761,6 +853,7 @@ export const useStandaloneSubtitles = (
     flushPendingEdit,
     config,
     shouldShowTranslation,
+    qualityEnabled,
     draftKey,
     isLoading,
     recoveryDraft,
@@ -867,22 +960,127 @@ export const useStandaloneSubtitles = (
     flushPendingEdit();
     const next = history.undo(subtitlesRef.current, speakersRef.current);
     if (next) {
-      applySubtitles(renormalizeIds(next.subtitles));
+      if (next.subtitles !== subtitlesRef.current)
+        applySubtitles(renormalizeIds(next.subtitles));
       applySpeakers(next.speakers);
+      if (next.qualityReview) {
+        applyQuality({
+          ...next.qualityReview,
+          insertionDrafts: qualityRef.current.insertionDrafts,
+        });
+        qualityLocallyChanged.current = true;
+      }
       setIsDirty(true);
     }
-  }, [applySpeakers, applySubtitles, flushPendingEdit, history.undo]);
+  }, [
+    applySpeakers,
+    applySubtitles,
+    applyQuality,
+    flushPendingEdit,
+    history.undo,
+  ]);
 
   // 重做：合并窗口若有内容会作为新命令清空 redo 分支（与主流编辑器一致）
   const handleRedo = useCallback(() => {
     flushPendingEdit();
     const next = history.redo(subtitlesRef.current, speakersRef.current);
     if (next) {
-      applySubtitles(renormalizeIds(next.subtitles));
+      if (next.subtitles !== subtitlesRef.current)
+        applySubtitles(renormalizeIds(next.subtitles));
       applySpeakers(next.speakers);
+      if (next.qualityReview) {
+        applyQuality({
+          ...next.qualityReview,
+          insertionDrafts: qualityRef.current.insertionDrafts,
+        });
+        qualityLocallyChanged.current = true;
+      }
       setIsDirty(true);
     }
-  }, [applySpeakers, applySubtitles, flushPendingEdit, history.redo]);
+  }, [
+    applySpeakers,
+    applySubtitles,
+    applyQuality,
+    flushPendingEdit,
+    history.redo,
+  ]);
+
+  const updateQualityReview = useCallback(
+    (next: QualityReviewState, record = false, dirty = true) => {
+      if (qualityRef.current === next) return;
+      if (record) {
+        flushPendingEdit();
+        history.pushQuality(qualityRef.current, next);
+      }
+      applyQuality(next);
+      if (dirty) {
+        qualityLocallyChanged.current = true;
+        setIsDirty(true);
+      }
+    },
+    [applyQuality, flushPendingEdit, history.pushQuality],
+  );
+
+  const retryQualityLoad = useCallback(async () => {
+    const version = loadVersion.current;
+    try {
+      const result = await window.ipc.invoke('qualityReview:read', draftKey);
+      if (version !== loadVersion.current) return;
+      if (!result?.success)
+        throw new Error(result?.error || 'QUALITY_READ_FAILED');
+      const saved = parseQualityReview(result.data);
+      // A successful read clears the error, but recovery/edits remain authoritative.
+      if (!qualityLocallyChanged.current) applyQuality(saved);
+      qualityErrorRef.current = '';
+      setQualityLoadError('');
+    } catch (error) {
+      if (version === loadVersion.current) {
+        qualityErrorRef.current = String(error);
+        setQualityLoadError(String(error));
+      }
+    }
+  }, [draftKey, applyQuality]);
+
+  const insertSubtitle = useCallback(
+    (start: number, end: number, source: string, target = '') => {
+      const current = subtitlesRef.current;
+      if (
+        !Number.isFinite(start) ||
+        !Number.isFinite(end) ||
+        start < 0 ||
+        !validCueRange(start, end) ||
+        !source.trim() ||
+        current.some(
+          (row) =>
+            (row.startTimeInSeconds ?? 0) < end &&
+            (row.endTimeInSeconds ?? 0) > start,
+        )
+      )
+        return false;
+      let index = current.findIndex(
+        (row) => (row.startTimeInSeconds ?? 0) >= end,
+      );
+      if (index < 0) index = current.length;
+      const row: Subtitle = {
+        id: String(index + 1),
+        startTimeInSeconds: start,
+        endTimeInSeconds: end,
+        startEndTime: `${secondsToTime(start)} --> ${secondsToTime(end)}`,
+        content: source.split('\n'),
+        sourceContent: source,
+        targetContent: target,
+      };
+      flushPendingEdit();
+      history.push({ start: index, removed: [], inserted: [row] });
+      const next = current.slice();
+      next.splice(index, 0, row);
+      applySubtitles(renormalizeIds(next));
+      setIsDirty(true);
+      setCurrentSubtitleIndex(index);
+      return true;
+    },
+    [applySubtitles, flushPendingEdit, history.push],
+  );
 
   // 是否可以撤销/重做（合并窗口中有未提交输入也算可撤销）
   const canUndo = history.canUndo || pendingEditRef.current !== null;
@@ -1263,6 +1461,11 @@ export const useStandaloneSubtitles = (
 
   return {
     mergedSubtitles,
+    qualityReview,
+    updateQualityReview,
+    qualityLoadError,
+    retryQualityLoad,
+    insertSubtitle,
     missedSpeechWarnings,
     setMergedSubtitles,
     updateSubtitles,

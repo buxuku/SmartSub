@@ -5,6 +5,7 @@
 import { app, ipcMain } from 'electron';
 import path from 'path';
 import { createProofreadDraftStore } from './proofreadDraftStore';
+import { createQualityReviewStore } from './qualityReviewStore';
 import {
   detectSubtitlesForVideo,
   matchSubtitlesByRules,
@@ -71,6 +72,24 @@ const singleOptimizeConflictFingerprints = new WeakMap<object, string>();
  * 设置字幕校对相关的 IPC 处理器
  */
 export function setupProofreadHandlers(): void {
+  const reviews = createQualityReviewStore(
+    path.join(app.getPath('userData'), 'quality-reviews'),
+  );
+  ipcMain.handle('qualityReview:read', (_event, key: string) => {
+    try {
+      return { success: true, data: reviews.read(key) };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+  ipcMain.handle('qualityReview:save', (_event, { key, state }) => {
+    try {
+      reviews.save(key, state);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
   const drafts = createProofreadDraftStore(
     path.join(app.getPath('userData'), 'proofread-drafts'),
   );

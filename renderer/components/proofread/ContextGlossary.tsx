@@ -224,6 +224,7 @@ export default function ContextGlossary(props: Props) {
       }
       if (result?.success !== true || !result.data?.entry?.id)
         throw new Error(result?.error || t('contextGlossary.saveFailed'));
+      window.dispatchEvent(new Event('smartsub:glossary-changed'));
       dirtyRef.current = false;
       setSaved(true);
       setConflict(undefined);

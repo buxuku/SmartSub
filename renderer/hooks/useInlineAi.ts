@@ -38,7 +38,11 @@ export function useInlineAi(options: Options) {
   const [progress, setProgress] = useState(0);
   const jobs = useRef(new Map<string, { key: string; batch: boolean }>());
   const mounted = useRef(true);
-  const mode = options.shouldShowTranslation ? 'translation' : 'transcript';
+  const defaultField = options.shouldShowTranslation
+    ? 'targetContent'
+    : 'sourceContent';
+  const [promptField, setPromptField] =
+    useState<InlineAiSuggestion['field']>(defaultField);
   const [prompts, setPrompts] = useState<Record<string, string>>({});
 
   const publish = useCallback((next: Map<number, InlineAiSuggestion>) => {
@@ -98,20 +102,23 @@ export function useInlineAi(options: Options) {
   useEffect(() => {
     cancel();
     publish(new Map());
+    setPromptField(defaultField);
     const cached: Record<string, string> = {};
-    for (const batch of [false, true]) {
-      for (const intent of ['polish', 'shorten'] as const) {
-        const key = promptKey(mode, batch, intent);
-        try {
-          cached[key] =
-            localStorage.getItem(key) || aiPrompt(mode, batch, intent);
-        } catch {
-          cached[key] = aiPrompt(mode, batch, intent);
+    for (const promptMode of ['translation', 'transcript'] as const) {
+      for (const batch of [false, true]) {
+        for (const intent of ['polish', 'shorten'] as const) {
+          const key = promptKey(promptMode, batch, intent);
+          try {
+            cached[key] =
+              localStorage.getItem(key) || aiPrompt(promptMode, batch, intent);
+          } catch {
+            cached[key] = aiPrompt(promptMode, batch, intent);
+          }
         }
       }
     }
     setPrompts(cached);
-  }, [options.documentKey, mode, cancel, publish]);
+  }, [options.documentKey, defaultField, cancel, publish]);
 
   const settle = useCallback(
     (id: string, index: number, proposed?: string, failure?: string) => {
@@ -176,7 +183,11 @@ export function useInlineAi(options: Options) {
   );
 
   const run = useCallback(
-    async (indices: number[], intent: AiIntent = 'polish') => {
+    async (
+      indices: number[],
+      intent: AiIntent = 'polish',
+      requestedField?: 'sourceContent' | 'targetContent',
+    ) => {
       if (
         !providers.some((p) => p.id === providerId && isProviderConfigured(p))
       ) {
@@ -194,9 +205,12 @@ export function useInlineAi(options: Options) {
         return;
       const id = crypto.randomUUID();
       const structure = cueStructure(cues);
-      const field = context.shouldShowTranslation
-        ? 'targetContent'
-        : 'sourceContent';
+      const field =
+        requestedField ||
+        (context.shouldShowTranslation ? 'targetContent' : 'sourceContent');
+      const requestMode =
+        field === 'sourceContent' ? 'transcript' : 'translation';
+      setPromptField(field);
       const next = new Map(suggestionRef.current);
       for (const index of selected)
         next.set(index, {
@@ -214,9 +228,6 @@ export function useInlineAi(options: Options) {
       setRunning(true);
       setError('');
       setProgress(0);
-      const requestMode = context.shouldShowTranslation
-        ? 'translation'
-        : 'transcript';
       const settings = {
         projectId: context.projectId,
         providerId,
@@ -244,9 +255,10 @@ export function useInlineAi(options: Options) {
           : await window.ipc.invoke('optimizeSubtitle', {
               ...settings,
               sourceText: cues[selected[0]].sourceContent || '',
-              targetText: context.shouldShowTranslation
-                ? cues[selected[0]].targetContent || ''
-                : '',
+              targetText:
+                field === 'targetContent'
+                  ? cues[selected[0]].targetContent || ''
+                  : '',
             });
         if (!result?.success)
           throw new Error(result?.error || t('aiOptimizeFailed'));
@@ -275,6 +287,27 @@ export function useInlineAi(options: Options) {
       }
     },
     [providers, providerId, batchSize, prompts, publish, settle, t],
+  );
+
+  const propose = useCallback(
+    (index: number, text: string, field: 'sourceContent' | 'targetContent') => {
+      const cues = latest.current.getSubtitles();
+      if (!cues[index]) return;
+      const next = new Map(suggestionRef.current);
+      next.set(index, {
+        requestId: crypto.randomUUID(),
+        index,
+        snapshot: cueSnapshot(cues[index]),
+        structure: cueStructure(cues),
+        original: cues[index][field] || '',
+        field,
+        intent: 'polish',
+        status: 'ready',
+        proposed: text,
+      });
+      publish(next);
+    },
+    [publish],
   );
 
   const dismiss = useCallback(
@@ -311,8 +344,17 @@ export function useInlineAi(options: Options) {
     },
     [dismiss],
   );
-  const changePrompt = (batch: boolean, intent: AiIntent, value: string) => {
-    const key = promptKey(mode, batch, intent);
+  const changePrompt = (
+    batch: boolean,
+    intent: AiIntent,
+    value: string,
+    field: InlineAiSuggestion['field'] = defaultField,
+  ) => {
+    const key = promptKey(
+      field === 'sourceContent' ? 'transcript' : 'translation',
+      batch,
+      intent,
+    );
     setPrompts((previous) => ({ ...previous, [key]: value }));
     try {
       localStorage.setItem(key, value);
@@ -331,15 +373,42 @@ export function useInlineAi(options: Options) {
     running,
     progress,
     run,
+    propose,
     cancel,
     accept,
     dismiss,
     loadProviders,
     changePrompt,
-    getPrompt: (batch: boolean, intent: AiIntent) =>
-      prompts[promptKey(mode, batch, intent)] || aiPrompt(mode, batch, intent),
-    resetPrompt: (batch: boolean, intent: AiIntent) =>
-      changePrompt(batch, intent, aiPrompt(mode, batch, intent)),
+    defaultField,
+    promptField,
+    setPromptField,
+    getPrompt: (
+      batch: boolean,
+      intent: AiIntent,
+      field: InlineAiSuggestion['field'] = defaultField,
+    ) => {
+      const promptMode =
+        field === 'sourceContent' ? 'transcript' : 'translation';
+      return (
+        prompts[promptKey(promptMode, batch, intent)] ||
+        aiPrompt(promptMode, batch, intent)
+      );
+    },
+    resetPrompt: (
+      batch: boolean,
+      intent: AiIntent,
+      field: InlineAiSuggestion['field'] = defaultField,
+    ) =>
+      changePrompt(
+        batch,
+        intent,
+        aiPrompt(
+          field === 'sourceContent' ? 'transcript' : 'translation',
+          batch,
+          intent,
+        ),
+        field,
+      ),
   };
 }
 

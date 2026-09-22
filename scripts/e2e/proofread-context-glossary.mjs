@@ -1,3 +1,4 @@
+import { waitForAppPage } from './app-page.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -62,11 +63,16 @@ async function launch() {
       process.env.SMARTSUB_RENDERER_PORT || '8888',
       `--user-data-dir=${profile}`,
     ],
-    env: { ...process.env, NODE_ENV: 'development' },
+    env: {
+      ...process.env,
+      NODE_ENV: process.argv.includes('--production')
+        ? 'production'
+        : 'development',
+    },
   });
   page = await app.firstWindow();
   page.setDefaultTimeout(15000);
-  await page.waitForURL(/^http:\/\/localhost:\d+/);
+  await waitForAppPage(page);
   await app.evaluate(({ BrowserWindow, dialog }) => {
     BrowserWindow.getAllWindows().forEach((window) =>
       window.webContents.closeDevTools(),
@@ -196,7 +202,7 @@ try {
     await app.evaluate(
       ({ BrowserWindow }, size) =>
         BrowserWindow.getAllWindows()
-          .find((window) => window.webContents.getURL().startsWith('http:'))
+          .find((window) => /^(http:|app:)/.test(window.webContents.getURL()))
           .setContentSize(...size),
       [width, height],
     );

@@ -33,6 +33,7 @@ export const useVideoPlayer = (
   mergedSubtitles: Subtitle[],
   currentSubtitleIndex: number,
   setCurrentSubtitleIndex: (index: number) => void,
+  lockSelection = false,
 ) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -42,7 +43,7 @@ export const useVideoPlayer = (
 
   // 根据当前播放时间查找活跃字幕（二分索引，避免每个进度 tick 线性扫全表）
   useEffect(() => {
-    if (currentTime >= 0 && mergedSubtitles.length > 0) {
+    if (!lockSelection && currentTime >= 0 && mergedSubtitles.length > 0) {
       if (
         typeof document !== 'undefined' &&
         document.activeElement?.closest('[data-subtitle-editor]')
