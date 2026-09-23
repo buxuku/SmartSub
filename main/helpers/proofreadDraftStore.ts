@@ -42,6 +42,9 @@ export function createProofreadDraftStore(directory: string) {
         fs.fsyncSync(fd);
         fs.closeSync(fd);
         fd = undefined;
+        // Keep the key separately so non-window editors can detect which file
+        // has unsaved work without loading or changing the draft wire format.
+        fs.writeFileSync(`${file}.key`, key, { mode: 0o600 });
         fs.renameSync(temp, file);
       } finally {
         if (fd !== undefined) fs.closeSync(fd);

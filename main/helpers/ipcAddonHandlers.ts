@@ -1,4 +1,5 @@
-import { ipcMain, BrowserWindow, dialog } from 'electron';
+import { ipcMain } from '../automation/handlers';
+import { BrowserWindow, dialog } from 'electron';
 import { logMessage } from './storeManager';
 import {
   getCudaEnvironment,

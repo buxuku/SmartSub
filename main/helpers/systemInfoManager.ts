@@ -1,4 +1,6 @@
-import { app, ipcMain, BrowserWindow, dialog, shell } from 'electron';
+import { dialogWindow } from '../automation/events';
+import { ipcMain } from '../automation/handlers';
+import { app, BrowserWindow, dialog, shell } from 'electron';
 import os from 'os';
 import { randomUUID } from 'crypto';
 import { getModelsInstalled, getPath, deleteModel } from './whisper';
@@ -132,6 +134,9 @@ import {
 import { getSpeakerDiarizationRuntime } from './speakerDiarization/runtime';
 
 let downloadingModels = new Set<string>();
+export function isModelDownloadBusy() {
+  return downloadingModels.size > 0;
+}
 let quickDownloadOwner: { senderId: number; requestId: string } | null = null;
 
 /** 可文件夹导入的引擎类型（builtin 走单文件导入，不在此列）。 */
@@ -798,16 +803,21 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       options?: {
         engine?: 'builtin' | FolderImportEngine;
         modelId?: string;
+        sourcePath?: string;
       },
     ) => {
       const engine = options?.engine;
 
       // builtin（默认/无参）：维持单文件导入（.bin / .mlmodelc → builtin 模型目录）
       if (!engine || engine === 'builtin') {
-        const result = await dialog.showOpenDialog(mainWindow, {
-          properties: ['openFile'],
-          filters: [{ name: 'Model Files', extensions: ['bin', 'mlmodelc'] }],
-        });
+        const result = options?.sourcePath
+          ? { canceled: false, filePaths: [options.sourcePath] }
+          : await dialog.showOpenDialog(dialogWindow(mainWindow), {
+              properties: ['openFile'],
+              filters: [
+                { name: 'Model Files', extensions: ['bin', 'mlmodelc'] },
+              ],
+            });
 
         if (!result.canceled && result.filePaths.length > 0) {
           const sourcePath = result.filePaths[0];
@@ -832,9 +842,11 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
         return { success: false, reason: 'invalid-model' };
       }
 
-      const picked = await dialog.showOpenDialog(mainWindow, {
-        properties: ['openDirectory'],
-      });
+      const picked = options?.sourcePath
+        ? { canceled: false, filePaths: [options.sourcePath] }
+        : await dialog.showOpenDialog(dialogWindow(mainWindow), {
+            properties: ['openDirectory'],
+          });
       if (picked.canceled || picked.filePaths.length === 0) {
         return { success: false, canceled: true };
       }

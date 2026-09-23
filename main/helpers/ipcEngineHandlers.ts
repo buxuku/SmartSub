@@ -1,4 +1,6 @@
-import { ipcMain, BrowserWindow, dialog } from 'electron';
+import { dialogWindow } from '../automation/events';
+import { ipcMain } from '../automation/handlers';
+import { BrowserWindow, dialog } from 'electron';
 import { invalidEngineSettings } from '../../types/engineSettings';
 import fs from 'fs';
 import { logMessage, store } from './storeManager';
@@ -231,17 +233,20 @@ export function registerEngineIpcHandlers(): void {
             process.platform === 'darwin'
               ? ['openFile', 'openDirectory']
               : ['openFile'];
-          const picked = await dialog.showOpenDialog(mainWindow ?? undefined, {
-            title: '选择 faster-whisper 运行时压缩包或目录',
-            properties,
-            filters: [
-              {
-                name: 'Runtime Package',
-                extensions: ['tar.gz', 'tgz', 'gz', 'tar', 'zip'],
-              },
-              { name: 'All Files', extensions: ['*'] },
-            ],
-          });
+          const picked = await dialog.showOpenDialog(
+            mainWindow ? dialogWindow(mainWindow) : undefined,
+            {
+              title: '选择 faster-whisper 运行时压缩包或目录',
+              properties,
+              filters: [
+                {
+                  name: 'Runtime Package',
+                  extensions: ['tar.gz', 'tgz', 'gz', 'tar', 'zip'],
+                },
+                { name: 'All Files', extensions: ['*'] },
+              ],
+            },
+          );
           if (picked.canceled || picked.filePaths.length === 0) {
             return { success: false, canceled: true };
           }

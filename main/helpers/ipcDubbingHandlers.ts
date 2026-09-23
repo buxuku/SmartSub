@@ -1,9 +1,11 @@
+import { dialogWindow } from '../automation/events';
+import { ipcMain } from '../automation/handlers';
 /**
  * 配音工作台 IPC（dubbing: 命名空间）：invoke 统一返回
  * `{success, data?, error?, cancelled?}`，进度经 `dubbing:progress` 事件推送
  * （形制 ipcSubtitleMergeHandlers）。
  */
-import { ipcMain, app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
@@ -421,7 +423,7 @@ export function setupDubbingHandlers(mainWindow: BrowserWindow) {
                 ],
               },
             ];
-      const result = await dialog.showOpenDialog(mainWindow, {
+      const result = await dialog.showOpenDialog(dialogWindow(mainWindow), {
         properties: ['openFile'],
         filters,
       });

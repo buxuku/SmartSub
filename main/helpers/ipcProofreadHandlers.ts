@@ -1,8 +1,9 @@
+import { ipcMain } from '../automation/handlers';
 /**
  * 字幕校对相关的 IPC 处理器
  */
 
-import { app, ipcMain } from 'electron';
+import { app } from 'electron';
 import path from 'path';
 import { createProofreadDraftStore } from './proofreadDraftStore';
 import { createQualityReviewStore } from './qualityReviewStore';

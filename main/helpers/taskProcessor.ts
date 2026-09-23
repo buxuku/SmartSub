@@ -1,5 +1,7 @@
+import { ipcMain } from '../automation/handlers';
 import fse from 'fs-extra';
-import { ipcMain, BrowserWindow, Notification } from 'electron';
+import { backgroundEvent } from '../automation/events';
+import { BrowserWindow, Notification } from 'electron';
 import { processFile } from './fileProcessor';
 import { checkOpenAiWhisper, getPath } from './whisper';
 import { logMessage, store } from './storeManager';
@@ -46,6 +48,8 @@ function wrapTaskEvent(event: any) {
   return {
     ...event,
     sender: {
+      id: sender.id,
+      isAutomation: sender.isAutomation,
       send: (channel: string, ...args: any[]) => {
         if (TASK_EVENT_CHANNELS.has(channel)) {
           applyTaskEventToProjects(channel, ...args);
@@ -140,6 +144,13 @@ export function isTaskProjectBusy(projectId: string): boolean {
     (projectRuntimes.get(projectId)?.active || 0) > 0 ||
     processingQueue.some((item) => item.projectId === projectId)
   );
+}
+
+/** Capture the accepted run's signal; it survives removal of a drained runtime. */
+export function getTaskProjectSignal(
+  projectId: string,
+): AbortSignal | undefined {
+  return projectRuntimes.get(projectId)?.controller.signal;
 }
 
 function ensureRuntime(projectId: string): ProjectRuntime {
@@ -348,11 +359,7 @@ export function enqueueProjectFiles(
   files: IFiles[],
   formData: any,
 ): boolean {
-  if (!progressWindow || progressWindow.isDestroyed()) {
-    logMessage('enqueueProjectFiles: no window available', 'warning');
-    return false;
-  }
-  const event = { sender: progressWindow.webContents };
+  const event = backgroundEvent;
   try {
     return startTaskRun(event, {
       files,
@@ -370,9 +377,7 @@ export function enqueueProjectFiles(
 export function enqueueTaskSubmission(
   input: TaskSubmission,
 ): TaskSubmissionResult {
-  if (!progressWindow || progressWindow.isDestroyed())
-    return { success: false, error: 'TASK_WINDOW_UNAVAILABLE' };
-  return startTaskRun({ sender: progressWindow.webContents }, input);
+  return startTaskRun(backgroundEvent, input);
 }
 
 export function setupTaskProcessor(mainWindow: BrowserWindow) {
@@ -470,6 +475,7 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
           'warning',
         );
       } else {
+        if (removedCount > 0) runtime?.controller.abort();
         projectRuntimes.delete(id);
         sendTaskComplete(event, id, 'cancelled');
       }
@@ -523,6 +529,7 @@ export function setupTaskProcessor(mainWindow: BrowserWindow) {
 
 /** 工程执行排空且应用不在前台时发系统通知（有停靠文件时表达「等待校对」） */
 function notifyProjectDone(event, projectId?: string) {
+  if (event.sender?.isAutomation) return;
   try {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win?.isFocused()) return;

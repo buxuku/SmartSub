@@ -1,4 +1,6 @@
-import { ipcMain, shell, dialog, BrowserWindow } from 'electron';
+import { dialogWindow } from '../automation/events';
+import { ipcMain } from '../automation/handlers';
+import { shell, dialog, BrowserWindow } from 'electron';
 import { logMessage } from './storeManager';
 import { getWorkItemById, saveWorkItem } from './workItemStore';
 import {
@@ -344,15 +346,24 @@ export function setupVideoDownloadHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(
     'videoDownload:cookieProfiles:importFile',
-    async (_event, payload: { id: string; customDef?: CustomDefPayload }) => {
-      const picked = await dialog.showOpenDialog(mainWindow, {
-        title: 'Select cookies.txt',
-        properties: ['openFile'],
-        filters: [
-          { name: 'Cookies', extensions: ['txt'] },
-          { name: 'All Files', extensions: ['*'] },
-        ],
-      });
+    async (
+      _event,
+      payload: {
+        id: string;
+        sourcePath?: string;
+        customDef?: CustomDefPayload;
+      },
+    ) => {
+      const picked = payload.sourcePath
+        ? { canceled: false, filePaths: [payload.sourcePath] }
+        : await dialog.showOpenDialog(dialogWindow(mainWindow), {
+            title: 'Select cookies.txt',
+            properties: ['openFile'],
+            filters: [
+              { name: 'Cookies', extensions: ['txt'] },
+              { name: 'All Files', extensions: ['*'] },
+            ],
+          });
       if (picked.canceled || !picked.filePaths[0]) {
         return { cancelled: true };
       }

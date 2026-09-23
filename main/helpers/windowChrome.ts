@@ -62,6 +62,8 @@ export function getTitleBarOverlayForTheme(theme: 'light' | 'dark') {
 export function setupWindowChromeHandlers(mainWindow: BrowserWindow): void {
   if (!usesTitleBarOverlay()) return;
 
+  ipcMain.removeHandler('sync-title-bar-overlay');
+
   ipcMain.handle(
     'sync-title-bar-overlay',
     (event, theme: 'light' | 'dark' | undefined) => {

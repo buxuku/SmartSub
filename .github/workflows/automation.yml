@@ -1,0 +1,45 @@
+name: MCP and CLI integration
+on:
+  pull_request:
+    paths:
+      - 'automation/**'
+      - 'main/**'
+      - 'types/**'
+      - 'scripts/*automation*'
+      - 'package*.json'
+      - 'yarn.lock'
+      - '.github/workflows/automation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  automation:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: npm
+      - run: npm ci
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2 fonts-noto-cjk
+      - run: npm run typecheck
+      - run: npm run build
+      - if: runner.os != 'Linux'
+        run: npm run test:automation
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:automation
+      - if: runner.os != 'Linux'
+        run: npm run test:automation:desktop
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:automation:desktop

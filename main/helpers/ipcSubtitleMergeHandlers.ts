@@ -1,8 +1,10 @@
+import { dialogWindow, automationEvents } from '../automation/events';
+import { ipcMain } from '../automation/handlers';
 /**
  * 字幕合并功能 IPC 处理函数
  */
 
-import { ipcMain, dialog, BrowserWindow, shell } from 'electron';
+import { dialog, BrowserWindow, shell } from 'electron';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -96,6 +98,7 @@ export function setupSubtitleMergeHandlers(
     },
   });
   function broadcast(channel: string, value: unknown) {
+    automationEvents.emit('event', channel, value);
     for (const window of BrowserWindow.getAllWindows()) {
       // Only application windows in the same session receive local job paths.
       try {
@@ -339,7 +342,7 @@ export function setupSubtitleMergeHandlers(
     'subtitleMerge:selectOutputPath',
     async (event, { defaultPath }): Promise<SubtitleMergeResponse<string>> => {
       try {
-        const result = await dialog.showSaveDialog(mainWindow, {
+        const result = await dialog.showSaveDialog(dialogWindow(mainWindow), {
           title: '选择保存位置',
           defaultPath: defaultPath || undefined,
           filters: [

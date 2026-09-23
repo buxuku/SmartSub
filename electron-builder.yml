@@ -4,6 +4,9 @@ copyright: Copyright © 2024 buxuku
 directories:
   output: dist
   buildResources: resources
+extraResources:
+  - from: app/automation
+    to: automation
 files:
   - from: .
     filter:

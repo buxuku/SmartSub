@@ -1,10 +1,12 @@
+import { ipcMain } from '../../automation/handlers';
+import { dialogWindow } from '../../automation/events';
 /**
  * 工具箱 IPC 统一处理函数
  *
  * 注册 toolbox:* 命名空间，提供文件对话框、转码调度、进度推送及任务取消能力。
  */
 
-import { ipcMain, dialog, BrowserWindow, shell } from 'electron';
+import { dialog, BrowserWindow, shell } from 'electron';
 import fs from 'fs';
 import { trackToolOperation } from '../processingHistory';
 import path from 'path';
@@ -109,7 +111,7 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
       }
 
       const res = await dialog.showOpenDialog(
-        mainWindow || (undefined as any),
+        dialogWindow(mainWindow) || (undefined as any),
         {
           properties,
           filters,
@@ -123,9 +125,12 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
 
   // 2. 选择目录
   ipcMain.handle('toolbox:selectFolder', async () => {
-    const res = await dialog.showOpenDialog(mainWindow || (undefined as any), {
-      properties: ['openDirectory', 'createDirectory'],
-    });
+    const res = await dialog.showOpenDialog(
+      dialogWindow(mainWindow) || (undefined as any),
+      {
+        properties: ['openDirectory', 'createDirectory'],
+      },
+    );
     if (res.canceled) return null;
     return res.filePaths[0] || null;
   });

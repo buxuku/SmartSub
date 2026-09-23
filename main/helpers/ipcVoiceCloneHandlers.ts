@@ -1,9 +1,11 @@
+import { dialogWindow } from '../automation/events';
+import { ipcMain } from '../automation/handlers';
 /**
  * 声音克隆 IPC（voiceClone: 命名空间）：invoke 统一返回 `{success, data?, error?}`
  * （形制 ipcDubbingHandlers）。分析会话（帧级数据）驻留 main 内存，跨 IPC 只传
  * 会话 id 与轻量视图；向导关闭/换素材时 disposeAnalysis 释放。
  */
-import { ipcMain, BrowserWindow, dialog, systemPreferences } from 'electron';
+import { BrowserWindow, dialog, systemPreferences } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { logMessage } from './storeManager';
@@ -170,7 +172,7 @@ async function pollVolcTraining(
 export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
   // 选择克隆素材（音频或视频文件）。
   ipcMain.handle('voiceClone:pickSource', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
+    const result = await dialog.showOpenDialog(dialogWindow(mainWindow), {
       properties: ['openFile'],
       filters: [
         {
@@ -897,14 +899,19 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
   // 导出音色（.svoice 单文件：元信息 + 参考文本 + wav base64）。
   ipcMain.handle(
     'voiceClone:export',
-    async (_event, { id }: { id: string }): Promise<VoiceCloneResponse> => {
+    async (
+      _event,
+      { id, outputPath }: { id: string; outputPath?: string },
+    ): Promise<VoiceCloneResponse> => {
       const voice = getClonedVoiceById(id);
       if (!voice) return { success: false, error: '克隆音色不存在' };
       try {
-        const result = await dialog.showSaveDialog(mainWindow, {
-          defaultPath: `${voice.name}.${SVOICE_EXT}`,
-          filters: [{ name: 'SmartSub Voice', extensions: [SVOICE_EXT] }],
-        });
+        const result = outputPath
+          ? { canceled: false, filePath: outputPath }
+          : await dialog.showSaveDialog(dialogWindow(mainWindow), {
+              defaultPath: `${voice.name}.${SVOICE_EXT}`,
+              filters: [{ name: 'SmartSub Voice', extensions: [SVOICE_EXT] }],
+            });
         if (result.canceled || !result.filePath) {
           return { success: false, cancelled: true };
         }
@@ -917,7 +924,9 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
           readB64(voice.refWavPath),
           readB64(voice.sampleWavPath),
         );
-        fs.writeFileSync(result.filePath, JSON.stringify(pkg));
+        fs.writeFileSync(result.filePath, JSON.stringify(pkg), {
+          flag: outputPath ? 'wx' : 'w',
+        });
         return { success: true, data: result.filePath };
       } catch (error) {
         logMessage(`voiceClone export failed: ${error}`, 'error');
@@ -927,84 +936,94 @@ export function setupVoiceCloneHandlers(mainWindow: BrowserWindow) {
   );
 
   // 导入音色（生成新 id，不覆盖既有；火山音色重绑本机豆包实例）。
-  ipcMain.handle('voiceClone:import', async (): Promise<VoiceCloneResponse> => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      properties: ['openFile'],
-      filters: [{ name: 'SmartSub Voice', extensions: [SVOICE_EXT] }],
-    });
-    if (result.canceled || result.filePaths.length === 0) {
-      return { success: false, cancelled: true };
-    }
-    let dir: string | null = null;
-    try {
-      let payload: unknown;
+  ipcMain.handle(
+    'voiceClone:import',
+    async (
+      _event,
+      input?: { sourcePath?: string },
+    ): Promise<VoiceCloneResponse> => {
+      const result = input?.sourcePath
+        ? { canceled: false, filePaths: [input.sourcePath] }
+        : await dialog.showOpenDialog(dialogWindow(mainWindow), {
+            properties: ['openFile'],
+            filters: [{ name: 'SmartSub Voice', extensions: [SVOICE_EXT] }],
+          });
+      if (result.canceled || result.filePaths.length === 0) {
+        return { success: false, cancelled: true };
+      }
+      let dir: string | null = null;
       try {
-        payload = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf-8'));
-      } catch {
-        return {
-          success: false,
-          error: '文件不是有效的音色包（JSON 解析失败）',
-        };
-      }
-      const parsed = parseSvoicePackage(payload);
-      if (!parsed.ok || !parsed.pkg) {
-        return {
-          success: false,
-          error: `音色包校验失败（${parsed.error ?? 'unknown'}）`,
-        };
-      }
-      const pkg = parsed.pkg;
-      const id = newClonedVoiceId();
-      dir = getClonedVoiceDir(id);
-      const voice: ClonedVoice = {
-        id,
-        name: pkg.voice.name,
-        engine: pkg.voice.engine,
-        language: pkg.voice.language,
-        refText: pkg.voice.refText,
-        quality: pkg.voice.quality,
-        createdAt: Date.now(),
-      };
-      if (pkg.refWavBase64) {
-        voice.refWavPath = path.join(dir, 'ref.wav');
-        fs.writeFileSync(
-          voice.refWavPath,
-          Buffer.from(pkg.refWavBase64, 'base64'),
-        );
-      }
-      if (pkg.sampleWavBase64) {
-        voice.sampleWavPath = path.join(dir, 'sample.wav');
-        fs.writeFileSync(
-          voice.sampleWavPath,
-          Buffer.from(pkg.sampleWavBase64, 'base64'),
-        );
-      }
-      if (pkg.voice.engine !== 'zipvoice') {
-        voice.speakerId = pkg.voice.speakerId;
-        // 云端音色属账号资产：重绑本机已配置的同品牌实例（品牌单例），状态按
-        // 就绪（导出前提是已训练/已创建），刷新可校正。
-        const brandType =
-          pkg.voice.engine === 'volcengine' ? TTS_VOLCENGINE : TTS_ELEVENLABS;
-        const brandProvider = getTtsProviders().find(
-          (p) => p.type === brandType,
-        );
-        voice.providerId = brandProvider ? String(brandProvider.id) : undefined;
-        voice.trainStatus = 'ready';
-      }
-      saveClonedVoice(voice);
-      return { success: true, data: voice };
-    } catch (error) {
-      if (dir) {
+        let payload: unknown;
         try {
-          fs.rmSync(dir, { recursive: true, force: true });
+          payload = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf-8'));
         } catch {
-          /* ignore */
+          return {
+            success: false,
+            error: '文件不是有效的音色包（JSON 解析失败）',
+          };
         }
+        const parsed = parseSvoicePackage(payload);
+        if (!parsed.ok || !parsed.pkg) {
+          return {
+            success: false,
+            error: `音色包校验失败（${parsed.error ?? 'unknown'}）`,
+          };
+        }
+        const pkg = parsed.pkg;
+        const id = newClonedVoiceId();
+        dir = getClonedVoiceDir(id);
+        const voice: ClonedVoice = {
+          id,
+          name: pkg.voice.name,
+          engine: pkg.voice.engine,
+          language: pkg.voice.language,
+          refText: pkg.voice.refText,
+          quality: pkg.voice.quality,
+          createdAt: Date.now(),
+        };
+        if (pkg.refWavBase64) {
+          voice.refWavPath = path.join(dir, 'ref.wav');
+          fs.writeFileSync(
+            voice.refWavPath,
+            Buffer.from(pkg.refWavBase64, 'base64'),
+          );
+        }
+        if (pkg.sampleWavBase64) {
+          voice.sampleWavPath = path.join(dir, 'sample.wav');
+          fs.writeFileSync(
+            voice.sampleWavPath,
+            Buffer.from(pkg.sampleWavBase64, 'base64'),
+          );
+        }
+        if (pkg.voice.engine !== 'zipvoice') {
+          voice.speakerId = pkg.voice.speakerId;
+          // 云端音色属账号资产：重绑本机已配置的同品牌实例（品牌单例），状态按
+          // 就绪（导出前提是已训练/已创建），刷新可校正。
+          const brandType =
+            pkg.voice.engine === 'volcengine' ? TTS_VOLCENGINE : TTS_ELEVENLABS;
+          const brandProvider = getTtsProviders().find(
+            (p) => p.type === brandType,
+          );
+          voice.providerId = brandProvider
+            ? String(brandProvider.id)
+            : undefined;
+          voice.trainStatus = 'ready';
+        }
+        saveClonedVoice(voice);
+        return { success: true, data: voice };
+      } catch (error) {
+        if (dir) {
+          try {
+            fs.rmSync(dir, { recursive: true, force: true });
+          } catch {
+            /* ignore */
+          }
+        }
+        logMessage(`voiceClone import failed: ${error}`, 'error');
+        return fail(error);
       }
-      logMessage(`voiceClone import failed: ${error}`, 'error');
-      return fail(error);
-    }
-  });
+    },
+  );
 
   logMessage('声音克隆 IPC 处理函数已注册', 'info');
 }
