@@ -59,21 +59,21 @@ describe.each([
       const { container, rerender } = render(
         view({ ...completedFile, extractSubtitle: 'error' }),
       );
-      expect(screen.getByText(t('interrupted'))).toBeVisible();
+      expect(screen.getByTestId('task-activity')).toHaveTextContent(
+        t('interrupted'),
+      );
       expect(container.textContent).not.toContain('TASK_INTERRUPTED');
 
       // Old saved records can retain an interruption even though retry succeeded.
       rerender(view(completedFile));
       expect(container.textContent).not.toContain('TASK_INTERRUPTED');
       expect(screen.queryByText(t('interrupted'))).toBeNull();
-      expect(
-        screen.getByText(
-          t('row.missedSpeechWarning', {
-            count: 14,
-            level: t('row.missedSpeechLevel.medium'),
-          }),
-        ),
-      ).toBeVisible();
+      expect(screen.getByTestId('task-activity')).toHaveTextContent(
+        t('row.missedSpeechWarning', {
+          count: 14,
+          level: t('row.missedSpeechLevel.medium'),
+        }),
+      );
 
       rerender(
         view({
@@ -95,7 +95,9 @@ describe.each([
           extractSubtitleError: 'Connection timed out',
         }),
       );
-      expect(screen.getByText('Connection timed out')).toBeVisible();
+      expect(screen.getByTestId('task-activity')).toHaveTextContent(
+        'Connection timed out',
+      );
     },
   );
 });

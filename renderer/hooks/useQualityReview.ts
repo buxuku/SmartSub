@@ -169,10 +169,11 @@ export function useQualityReview(
   );
   const view = useCallback((patch: Partial<QualityReviewState['view']>) => {
     const context = latest.current;
-    context.update({
-      ...context.state,
-      view: { ...context.state.view, ...patch },
-    });
+    context.update(
+      { ...context.state, view: { ...context.state.view, ...patch } },
+      false,
+      false,
+    );
   }, []);
   const editInsertion = useCallback(
     (key: string, draft?: QualityInsertionDraft) => {

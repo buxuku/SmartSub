@@ -200,7 +200,9 @@
     "goToDubbing": "AI Dubbing",
     "goToProofread": "Proofread Subtitles",
     "goToBurn": "Burn to Video",
-    "processNext": "Process Another"
+    "processNext": "Process Another",
+    "statsIncreased": "Size: {{original}} → {{compressed}} ({{saved}}% larger)",
+    "statsUnchanged": "Size: {{original}} → {{compressed}} (no size reduction)"
   },
   "videoCompressorQueue": {
     "queueTitle": "Compression Queue",
@@ -211,6 +213,16 @@
     "itemOriginal": "Original: {{size}}",
     "itemCompressed": "Compressed: {{size}} (saved {{saved}}%)",
     "itemFailed": "Compression failed",
-    "allFinished": "All {{count}} videos compressed successfully!"
+    "allFinished": "All {{count}} videos compressed successfully!",
+    "skipped": "Already within the size limit; original file kept",
+    "finished": "{{count}} videos processed; {{skipped}} already within the limit"
+  },
+  "leaveQueue": {
+    "title": "Leave this tool?",
+    "pending": "Leaving clears the current queue. Source files and completed outputs will be kept.",
+    "running": "Leaving cancels processing and clears the queue. Source files and completed outputs will be kept.",
+    "stay": "Keep working",
+    "cancelAndLeave": "Cancel processing and leave",
+    "clearAndLeave": "Clear queue and leave"
   }
 }

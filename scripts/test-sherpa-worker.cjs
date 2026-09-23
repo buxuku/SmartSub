@@ -139,6 +139,18 @@ async function main() {
   );
 
   h.send({ type: 'transcribe', id: 'active', audioFile: 'test.wav', ...ctc });
+  const activeDetails = h.messages
+    .filter((m) => m.id === 'active' && m.type === 'activity')
+    .map((m) => m.detail);
+  assert.ok(activeDetails.some((d) => d.phase === 'loadingModel'));
+  assert.ok(activeDetails.some((d) => d.phase === 'readingAudio'));
+  assert.equal(activeDetails.at(-1).phase, 'recognizing');
+  assert.equal(
+    activeDetails.at(-1).units[0].id,
+    1,
+    'publish segment start before decoder returns',
+  );
+  assert.equal(activeDetails.at(-1).processedSeconds, 0);
   const before = h.configs.length;
   h.send({ type: 'load', ...tdt('v2') });
   assert.equal(
@@ -156,6 +168,11 @@ async function main() {
   h.resolve();
   await settle();
   const result = h.messages.find((m) => m.id === 'active' && m.type === 'done');
+  const completedDetail = h.messages
+    .filter((m) => m.id === 'active' && m.type === 'activity')
+    .at(-1).detail;
+  assert.equal(completedDetail.processedSeconds, 0.032);
+  assert.deepEqual(completedDetail.units, []);
   assert.deepEqual(result.segments, [
     { start: 0, end: 0.032, text: 'recognized text' },
   ]);

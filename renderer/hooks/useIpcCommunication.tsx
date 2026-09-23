@@ -1,3 +1,7 @@
+import {
+  latestTaskActivity,
+  type TaskActivity,
+} from '../../types/taskActivity';
 import { useCallback, useEffect, useRef } from 'react';
 import { IFiles } from '../../types';
 
@@ -42,6 +46,29 @@ export default function useIpcCommunication(
         }
       },
     );
+
+    const handleActivityChange = (res: IFiles, activity: TaskActivity) => {
+      if (res.taskProjectId && res.taskProjectId !== projectRef.current) return;
+      setFiles((files) => {
+        let matched = false;
+        const next = files.map((file) => {
+          if (file.uuid !== res.uuid) return file;
+          matched = true;
+          return {
+            ...file,
+            taskActivity: latestTaskActivity(file.taskActivity, activity),
+          };
+        });
+        if (!matched)
+          stashPendingEvent(res.uuid, {
+            taskActivity: latestTaskActivity(
+              pendingEventsRef.current.get(res.uuid)?.taskActivity,
+              activity,
+            ),
+          });
+        return matched ? next : files;
+      });
+    };
 
     const handleTaskStatusChange = (
       res: IFiles,
@@ -134,7 +161,11 @@ export default function useIpcCommunication(
         const updatedFiles = prevFiles.map((file) => {
           if (file.uuid === res?.uuid) {
             matched = true;
-            const updatedFile = { ...file, ...res };
+            const updatedFile = {
+              ...file,
+              ...res,
+              taskActivity: file.taskActivity,
+            };
 
             // 状态一致性检查：如果状态变为 'done'，确保进度为100%
             Object.keys(res).forEach((key) => {
@@ -168,7 +199,8 @@ export default function useIpcCommunication(
           return file;
         });
         if (!matched) {
-          stashPendingEvent(res?.uuid, { ...res });
+          const { taskActivity: _activity, ...patch } = res;
+          stashPendingEvent(res?.uuid, patch);
           return prevFiles;
         }
         return updatedFiles;
@@ -177,6 +209,7 @@ export default function useIpcCommunication(
 
     const cleanups = [
       cleanupFileSelected,
+      window?.ipc?.on('taskActivityChange', handleActivityChange),
       window?.ipc?.on('taskStatusChange', handleTaskStatusChange),
       window?.ipc?.on('taskProgressChange', handleTaskProgressChange),
       window?.ipc?.on('taskErrorChange', handleTaskErrorChange),
@@ -198,7 +231,14 @@ export default function useIpcCommunication(
       const merged = pending.size
         ? loaded.map((file) =>
             pending.has(file.uuid)
-              ? { ...file, ...pending.get(file.uuid) }
+              ? {
+                  ...file,
+                  ...pending.get(file.uuid),
+                  taskActivity: latestTaskActivity(
+                    file.taskActivity,
+                    pending.get(file.uuid)?.taskActivity,
+                  ),
+                }
               : file,
           )
         : loaded;

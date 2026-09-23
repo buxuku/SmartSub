@@ -12,6 +12,8 @@ export function formatTaskMessage(
   translationFailureCount = 0,
 ): string {
   switch (message) {
+    case 'AI_SEGMENTATION_FALLBACK':
+      return t('activity.fallbackWarning');
     case 'TASK_INTERRUPTED':
       return t('interrupted');
     case TRANSLATION_INCOMPLETE_PIPELINE_PAUSED:

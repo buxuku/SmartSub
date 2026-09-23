@@ -1,3 +1,4 @@
+import { latestTaskActivity } from '../../types/taskActivity';
 import { ipcMain } from 'electron';
 import { IFiles, TaskProject, TaskProjectType } from '../../types';
 import { isPipelineWorkItem, type WorkItem } from '../../types/workItem';
@@ -38,8 +39,8 @@ function listTaskProjects(): TaskProject[] {
     .filter((project): project is TaskProject => project !== null);
 }
 
-function findWorkItemByFileUuid(uuid: string) {
-  const projectId = getTaskContext()?.projectId;
+function findWorkItemByFileUuid(uuid: string, owner?: string) {
+  const projectId = getTaskContext()?.projectId ?? owner;
   return getWorkItems().find(
     (item) =>
       (!projectId || item.id === projectId) &&
@@ -59,13 +60,16 @@ export function applyTaskEventToProjects(
   const uuid = file?.uuid;
   if (!uuid) return;
 
-  const workItem = findWorkItemByFileUuid(uuid);
+  const workItem = findWorkItemByFileUuid(uuid, file.taskProjectId);
   if (!workItem || !isPipelineWorkItem(workItem)) return;
 
   const pipelineFiles = (workItem.pipelineFiles || []).map((item) => {
     if (item.uuid !== uuid) return item;
     const next: Record<string, any> = { ...item };
     switch (channel) {
+      case 'taskActivityChange':
+        next.taskActivity = latestTaskActivity(item.taskActivity, args[1]);
+        break;
       case 'taskStatusChange':
         next[args[1]] = args[2];
         break;
@@ -76,7 +80,7 @@ export function applyTaskEventToProjects(
         next[`${args[1]}Error`] = args[2];
         break;
       case 'taskFileChange':
-        Object.assign(next, file);
+        Object.assign(next, file, { taskActivity: item.taskActivity });
         break;
       default:
         return item;

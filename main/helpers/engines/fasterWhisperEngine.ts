@@ -238,6 +238,11 @@ async function transcribeFasterWhisper(
       `fasterWhisperParams: ${JSON.stringify(params, null, 2)}`,
       'info',
     );
+    ctx.onActivity?.({
+      phase: 'preparing',
+      units: [],
+      processedSeconds: undefined,
+    });
     event.sender.send('taskProgressChange', file, 'extractSubtitle', 0);
 
     // 诊断：记录「下发 transcribe → sidecar 首个 progress」的墙钟间隔。首任务卡 0% 时，
@@ -250,12 +255,28 @@ async function transcribeFasterWhisper(
     );
     let firstProgressLogged = false;
     const { id, result } = manager.transcribe(params, {
-      onReview: ({ stage }) => {
+      onSegment: (segment) => {
+        if (!signal?.aborted && Number.isFinite(segment.end))
+          ctx.onActivity?.({
+            phase: 'recognizing',
+            processedSeconds: segment.end,
+            durationSeconds: (file as any).duration,
+          });
+      },
+      onReview: ({ stage, completed, total }) => {
         if (signal?.aborted) return;
+        ctx.onActivity?.({
+          phase: 'reviewing',
+          completed,
+          total,
+          unit: 'chunks',
+        });
         file.speechReviewStage = stage;
         event.sender.send('taskFileChange', { ...file });
       },
       onProgress: (percent) => {
+        if (signal?.aborted) return;
+        if (!file.speechReviewStage) ctx.onActivity?.({ phase: 'recognizing' });
         if (!firstProgressLogged) {
           firstProgressLogged = true;
           logMessage(
@@ -335,6 +356,7 @@ async function transcribeFasterWhisper(
 
   // Explicit task limits use real word times when available. Legacy defaults
   // retain native segment boundaries; missing word times use segment fallback.
+  ctx.onActivity?.({ phase: 'organizing', units: [] });
   const segments = transcription?.segments || [];
   file.speechReviewStage = undefined;
   const review = transcription?.speechReview;
@@ -436,6 +458,7 @@ async function transcribeFasterWhisper(
   }
   subtitles = trimSubtitleTrailingSilence(subtitles, tempAudioFile);
   const formattedSrt = formatSrtContent(subtitles);
+  ctx.onActivity?.({ phase: 'saving' });
   await fs.promises.writeFile(srtFile, formattedSrt);
 
   // 词级时间轴 sidecar（openspec: add-ai-subtitle-refine D6）：word_timestamps 恒开，

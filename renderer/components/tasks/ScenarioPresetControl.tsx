@@ -28,6 +28,7 @@ interface ScenarioPresetControlProps {
   form: any;
   formData: any;
   onOpenAdvanced?: () => void;
+  className?: string;
 }
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -43,6 +44,7 @@ export default function ScenarioPresetControl({
   form,
   formData,
   onOpenAdvanced,
+  className,
 }: ScenarioPresetControlProps) {
   const { t } = useTranslation('tasks');
   const [open, setOpen] = useState(false);
@@ -63,20 +65,23 @@ export default function ScenarioPresetControl({
           variant="outline"
           size="sm"
           className={cn(
-            'h-8 text-xs gap-1.5 px-2.5 font-normal',
+            'h-8 w-full min-w-0 text-xs gap-1 px-2.5 font-normal justify-between',
             isCustom
               ? 'border-dashed text-muted-foreground hover:text-foreground'
               : 'border-primary/30 text-foreground bg-primary/5 hover:bg-primary/10',
+            className,
           )}
         >
-          <CurrentIcon
-            className={cn(
-              'h-3.5 w-3.5 shrink-0',
-              isCustom ? 'text-muted-foreground' : 'text-primary',
-            )}
-          />
-          <span className="truncate max-w-[120px]">{displayName}</span>
-          <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+          <div className="flex items-center gap-1.5 min-w-0 truncate">
+            <CurrentIcon
+              className={cn(
+                'h-3.5 w-3.5 shrink-0',
+                isCustom ? 'text-muted-foreground' : 'text-primary',
+              )}
+            />
+            <span className="truncate">{displayName}</span>
+          </div>
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-50 ml-1" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-2 space-y-1">

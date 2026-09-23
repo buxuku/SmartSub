@@ -77,6 +77,7 @@ export async function translateWithProvider(
   fallbackProviders?: Provider[],
   onProviderFallback?: TranslationConfig['onProviderFallback'],
   subtitleTranslationStyle?: TranslationConfig['subtitleTranslationStyle'],
+  onActivity?: TranslationConfig['onActivity'],
 ): Promise<TranslationResult[] | string[]> {
   if (subtitleTranslationStyle === 'conversational' && !provider.isAi) {
     throw new Error(
@@ -94,6 +95,7 @@ export async function translateWithProvider(
   }
   const glossaryEntries = glossaryResolution?.entries;
   const config: TranslationConfig = {
+    onActivity,
     provider,
     sourceLanguage,
     targetLanguage,

@@ -308,7 +308,7 @@
     "step2": "Proofread line by line",
     "step2Desc": "Edit text and timing against the video, with AI batch polish",
     "step3": "Save and export",
-    "step3Desc": "Changes save automatically; export subtitles or continue to compose / dubbing"
+    "step3Desc": "Recovery drafts save locally. Use Save subtitles to write changes to the file, then continue to compose or dubbing."
   },
   "saved": "Saved",
   "updateTaskTip": "Sync the current file list and progress to this saved task",
@@ -636,5 +636,22 @@
     },
     "timecodeHint": "Hours:minutes:seconds.milliseconds, e.g. 00:06:57.200. Pasted seconds are converted when you leave the field.",
     "invalidTimecode": "Enter a valid timecode, e.g. 00:06:57.200. Minutes and seconds must be below 60."
+  },
+  "outputTranslationOnly": "Translation only",
+  "outputTranslationFirst": "Bilingual · translation first",
+  "outputSourceFirst": "Bilingual · source first",
+  "outputExample": "Layout example (actual languages follow task settings)",
+  "outputExampleSource": "Welcome to SmartSub.",
+  "outputExampleTarget": "欢迎使用妙幕。",
+  "freeTranslationNetworkHint": "Online translation sends subtitle text to the service",
+  "useTranslationService": "Use {{name}} for this task",
+  "configureTaskResources": "Configure required resources",
+  "subtitleSaveState": {
+    "idle": "Subtitle file unchanged",
+    "dirty": "Changes not yet written to subtitle file",
+    "saving": "Saving subtitle file…",
+    "saved": "Subtitle file saved",
+    "save_error": "Could not save subtitle file",
+    "discarding": "Discarding changes…"
   }
 }

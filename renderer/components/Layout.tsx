@@ -100,7 +100,10 @@ const NAV_TASK_ITEMS: NavItemDef[] = [
     href: 'home',
     labelKey: 'nav.launchpad',
     icon: Home,
-    isActive: (p) => p.includes('home') || p.includes('recent-tasks'),
+    isActive: (p) =>
+      p.includes('home') ||
+      p.includes('recent-tasks') ||
+      p.includes('/processing-result'),
   },
   {
     href: 'download',

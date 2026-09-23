@@ -162,7 +162,9 @@ export const localCliEngineAdapter: TranscriptionEngineAdapter = {
   },
 
   async transcribe(ctx: TranscribeContext): Promise<string> {
+    ctx.onActivity?.({ phase: 'requesting' });
     const output = await transcribeLocalCli(ctx);
+    ctx.onActivity?.({ phase: 'organizing' });
     const signal = ctx.signal ?? getTaskContext()?.signal;
     if (signal?.aborted) throw new TaskCancelledError();
     const cues = parseSubtitleCues(
@@ -179,6 +181,7 @@ export const localCliEngineAdapter: TranscriptionEngineAdapter = {
       cues,
       ctx.formData as Record<string, unknown>,
     );
+    ctx.onActivity?.({ phase: 'saving' });
     if (split !== cues)
       await atomicReplaceTextFile(output, formatSrtContent(split), {
         signal,

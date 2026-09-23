@@ -73,8 +73,35 @@ async function main() {
     height: 180,
     size: fs.statSync(silent).size,
     hasAudio: false,
+    videoCodec: 'h264',
+    audioCodec: undefined,
   });
   assert.equal((await probeVideoInfo(audible)).hasAudio, true);
+  const {
+    executeVideoCompress,
+  } = require('../../main/helpers/toolbox/videoCompressor.ts');
+  const small = await executeVideoCompress(
+    { videoPath: audible, preset: 'wechat_25mb' },
+    'small',
+  );
+  assert.equal(small.success, true);
+  assert.equal(small.skipped, true);
+  assert.equal(small.outputPath, audible);
+  assert.equal(small.originalSize, small.compressedSize);
+  const recoded = await executeVideoCompress(
+    { videoPath: audible, preset: 'fast_720p' },
+    'recode',
+  );
+  assert.equal(recoded.success, true);
+  assert.notEqual(recoded.outputPath, audible);
+  assert.notEqual(recoded.skipped, true);
+  const aboveTarget = await executeVideoCompress(
+    { videoPath: audible, preset: 'target_size', targetSizeMb: 0.001 },
+    'above-target',
+  );
+  assert.equal(aboveTarget.success, true);
+  assert.notEqual(aboveTarget.skipped, true);
+  assert.notEqual(aboveTarget.outputPath, audible);
   const invalid = path.join(output, 'invalid.mp4');
   fs.writeFileSync(invalid, 'not a media file');
   await assert.rejects(probeVideoInfo(invalid), /Unable to parse/);

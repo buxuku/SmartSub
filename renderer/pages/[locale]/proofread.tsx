@@ -233,20 +233,6 @@ function ProofreadWorkspace({
     setStage('edit');
   }, []);
 
-  // 标记完成，返回列表
-  const handleMarkComplete = useCallback(() => {
-    setPendingFiles((prev) => {
-      const next = [...prev];
-      next[currentEditIndex] = {
-        ...next[currentEditIndex],
-        status: 'completed',
-      };
-      return next;
-    });
-    setCurrentEditIndex(-1);
-    setStage('list');
-  }, [currentEditIndex]);
-
   // 返回列表（不标记完成）
   const handleBackToList = useCallback(() => {
     setCurrentEditIndex(-1);
@@ -293,54 +279,65 @@ function ProofreadWorkspace({
   }, []);
 
   // 保存任务
-  const saveTaskSnapshot = useCallback(async (): Promise<boolean> => {
-    if (!mounted.current || loadState !== 'ready') return false;
-    const version = epoch.current;
-    const current = () => mounted.current && version === epoch.current;
-    // 使用工具函数转换为保存格式
-    const items = pendingFiles.map(pendingFileToSaveFormat);
-    setSaveStatus('saving');
-    setSaveError('');
+  const saveTaskSnapshot = useCallback(
+    async (completedFiles?: PendingFile[]): Promise<boolean> => {
+      if (!mounted.current || loadState !== 'ready') return false;
+      const version = epoch.current;
+      const current = () => mounted.current && version === epoch.current;
+      // 使用工具函数转换为保存格式
+      const items = (completedFiles || pendingFiles).map(
+        pendingFileToSaveFormat,
+      );
+      const savingSnapshot = JSON.stringify({ taskName, items });
+      setSaveStatus('saving');
+      setSaveError('');
 
-    try {
-      if (savedTaskId) {
-        // 更新现有任务
-        const result = await window.ipc.invoke('updateProofreadTask', {
-          taskId: savedTaskId,
-          updates: { items, name: taskName },
-        });
+      try {
+        const taskId = savedTaskIdRef.current;
+        if (taskId) {
+          // 更新现有任务
+          const result = await window.ipc.invoke('updateProofreadTask', {
+            taskId,
+            updates: { items, name: taskName },
+          });
+          if (!current()) return false;
+          if (result?.success !== true || result.data?.id !== taskId)
+            throw new Error(result?.error || t('saveFailed'));
+        } else {
+          // 创建新任务
+          const result = await window.ipc.invoke('createProofreadTask', {
+            items,
+            name:
+              taskName ||
+              pendingFiles[0]?.fileName?.replace(/\.[^.]+$/, '') ||
+              'Untitled',
+          });
+          if (!current()) return false;
+          if (result?.success !== true || !result.data?.id)
+            throw new Error(result?.error || t('saveFailed'));
+          setSavedTaskId(result.data.id);
+          savedTaskIdRef.current = result.data.id;
+        }
+        if (completedFiles) {
+          setPendingFiles(completedFiles);
+          batchSnapshotRef.current = savingSnapshot;
+        }
+        savedBatchRef.current = savingSnapshot;
+        setSavedBatch(savingSnapshot);
+        const unchanged = batchSnapshotRef.current === savingSnapshot;
+        setSaveStatus(unchanged ? 'saved' : 'idle');
+        return unchanged;
+      } catch (error) {
         if (!current()) return false;
-        if (result?.success !== true || result.data?.id !== savedTaskId)
-          throw new Error(result?.error || t('saveFailed'));
-      } else {
-        // 创建新任务
-        const result = await window.ipc.invoke('createProofreadTask', {
-          items,
-          name:
-            taskName ||
-            pendingFiles[0]?.fileName?.replace(/\.[^.]+$/, '') ||
-            'Untitled',
-        });
-        if (!current()) return false;
-        if (result?.success !== true || !result.data?.id)
-          throw new Error(result?.error || t('saveFailed'));
-        setSavedTaskId(result.data.id);
-        savedTaskIdRef.current = result.data.id;
+        console.error('Error invoking proofread save:', error);
+        setSaveStatus('save_error');
+        setSaveError(error instanceof Error ? error.message : String(error));
+        toast.error(t('saveFailed'));
+        return false;
       }
-      savedBatchRef.current = batchSnapshot;
-      setSavedBatch(batchSnapshot);
-      const unchanged = batchSnapshotRef.current === batchSnapshot;
-      setSaveStatus(unchanged ? 'saved' : 'idle');
-      return unchanged;
-    } catch (error) {
-      if (!current()) return false;
-      console.error('Error invoking proofread save:', error);
-      setSaveStatus('save_error');
-      setSaveError(error instanceof Error ? error.message : String(error));
-      toast.error(t('saveFailed'));
-      return false;
-    }
-  }, [pendingFiles, savedTaskId, taskName, t, batchSnapshot, loadState]);
+    },
+    [pendingFiles, taskName, t, loadState],
+  );
 
   const handleSaveTask = useCallback((): Promise<boolean> => {
     if (savingTaskRef.current) return savingTaskRef.current;
@@ -350,6 +347,23 @@ function ProofreadWorkspace({
     savingTaskRef.current = promise;
     return promise;
   }, [saveTaskSnapshot]);
+
+  // Completion includes the batch status write; failed saves keep the editor open.
+  const handleMarkComplete = useCallback(async () => {
+    if (savingTaskRef.current && !(await savingTaskRef.current)) return;
+    const next = pendingFiles.map((file, index) =>
+      index === currentEditIndex
+        ? { ...file, status: 'completed' as const }
+        : file,
+    );
+    const promise = saveTaskSnapshot(next).finally(() => {
+      if (savingTaskRef.current === promise) savingTaskRef.current = null;
+    });
+    savingTaskRef.current = promise;
+    if (!(await promise)) return;
+    setCurrentEditIndex(-1);
+    setStage('list');
+  }, [pendingFiles, currentEditIndex, saveTaskSnapshot]);
 
   useNavigationGuard('proofread-batch', {
     isDirty: isBatchDirty,

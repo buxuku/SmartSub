@@ -84,6 +84,7 @@ export default function DubbingPanel({
   });
   const playerRef = useRef<DubbingPlayerHandle>(null);
   const [currentTimeMs, setCurrentTimeMs] = useState(-1);
+  const [timingReviewRequest, setTimingReviewRequest] = useState(0);
 
   // ── 检查员模式：待检清单每次动作前实时拉取（不缓存陈旧状态）──────────────
   const [reviewQueue, setReviewQueue] = useState<any[]>([]);
@@ -361,7 +362,11 @@ export default function DubbingPanel({
       )}
 
       <div className="flex-shrink-0">
-        <DubbingFileBar dub={dub} hideExport={inspector} />
+        <DubbingFileBar
+          dub={dub}
+          hideExport={inspector}
+          onReviewTiming={() => setTimingReviewRequest((value) => value + 1)}
+        />
       </div>
 
       {dub.loadError && (
@@ -706,6 +711,7 @@ export default function DubbingPanel({
             <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <CardContent className="min-h-0 flex-1 p-0">
                 <DubbingCueList
+                  timingReviewRequest={timingReviewRequest}
                   dub={dub}
                   currentTimeMs={dub.videoPath ? currentTimeMs : -1}
                   onSeek={dub.videoPath ? handleSeek : undefined}

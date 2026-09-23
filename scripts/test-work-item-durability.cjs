@@ -392,6 +392,70 @@ for (const stage of [
 ]) {
   assert.equal(migration.disk().workItems[0].pipelineFiles[0][stage], 'error');
 }
+// Activity snapshots are owned by execution events, never by stale renderer saves.
+const activityStore = harness();
+activityStore.items.initializeWorkItemStore();
+activityStore.setupTasks();
+const activity = {
+  run: 100,
+  sequence: 2,
+  stage: 'refineSubtitle',
+  phase: 'segmenting',
+  status: 'running',
+  startedAt: 100,
+  phaseStartedAt: 100,
+  updatedAt: 100,
+  units: [],
+};
+activityStore.items.saveWorkItem(
+  { ...item, pipelineFiles: [{ uuid: 'shared', refineSubtitle: 'loading' }] },
+  { durable: true },
+);
+activityStore.items.saveWorkItem(
+  { ...item, id: 'other', pipelineFiles: [{ uuid: 'shared' }] },
+  { durable: true },
+);
+activityStore.taskEvent(
+  'taskActivityChange',
+  { uuid: 'shared', taskProjectId: item.id },
+  activity,
+);
+activityStore.taskEvent(
+  'taskActivityChange',
+  { uuid: 'shared', taskProjectId: item.id },
+  { ...activity, run: 99, sequence: 999 },
+);
+activityStore.taskEvent('taskFileChange', {
+  uuid: 'shared',
+  taskProjectId: item.id,
+  taskActivity: { ...activity, run: 99 },
+});
+assert.equal(
+  activityStore.items.getWorkItemById(item.id).pipelineFiles[0].taskActivity
+    .run,
+  100,
+);
+assert.equal(
+  activityStore.items.getWorkItemById('other').pipelineFiles[0].taskActivity,
+  undefined,
+);
+activityStore.handlers.get('saveTaskProject')(
+  {},
+  {
+    id: item.id,
+    files: [{ uuid: 'shared', taskActivity: { ...activity, run: 98 } }],
+    preserveTaskProgress: true,
+  },
+);
+activityStore.items.flushWorkItemStore();
+const restarted = harness(activityStore.disk());
+restarted.items.initializeWorkItemStore();
+const interrupted = restarted.items.getWorkItemById(item.id).pipelineFiles[0];
+assert.equal(interrupted.refineSubtitle, 'error');
+assert.equal(interrupted.taskActivity.status, 'interrupted');
+assert.equal(interrupted.taskActivity.sequence, 3);
+assert.equal(interrupted.taskActivity.units.length, 0);
+
 console.log(
   'Work item durability: immediate persistence, error rollback, identity, deferred retry, quit flush and atomic migration passed.',
 );

@@ -89,6 +89,8 @@ export function probeVideoInfo(
   height: number;
   size: number;
   hasAudio: boolean;
+  videoCodec?: string;
+  audioCodec?: string;
 }> {
   return new Promise((resolve, reject) => {
     if (!fs.existsSync(videoPath)) {
@@ -154,6 +156,8 @@ export function probeVideoInfo(
         height,
         size: stats.size,
         hasAudio: audioMatch,
+        videoCodec: /Video:\s*(\w+)/.exec(stderr)?.[1],
+        audioCodec: /Audio:\s*(\w+)/.exec(stderr)?.[1],
       });
     });
 

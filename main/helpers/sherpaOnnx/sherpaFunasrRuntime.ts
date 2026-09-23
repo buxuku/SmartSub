@@ -1,3 +1,4 @@
+import type { ActivityObserver } from '../../../types/taskActivity';
 import path from 'path';
 import { utilityProcess, type UtilityProcess } from 'electron';
 import { logMessage } from '../storeManager';
@@ -90,6 +91,7 @@ class SherpaFunasrRuntime {
       resolve: (s: TranscriptionResult) => void;
       reject: (e: Error) => void;
       onProgress?: (p: number) => void;
+      onActivity?: ActivityObserver;
     }
   >();
 
@@ -142,7 +144,9 @@ class SherpaFunasrRuntime {
     if (msg.type === 'ready') return;
     const entry = this.pending.get(msg.id);
     if (!entry) return;
-    if (msg.type === 'progress') {
+    if (msg.type === 'activity') {
+      entry.onActivity?.(msg.detail);
+    } else if (msg.type === 'progress') {
       entry.onProgress?.(msg.percent);
     } else if (msg.type === 'done') {
       this.pending.delete(msg.id);
@@ -173,11 +177,12 @@ class SherpaFunasrRuntime {
     model: SherpaModelRequest,
     audioFile: string,
     onProgress?: (p: number) => void,
+    onActivity?: ActivityObserver,
   ): { id: string; result: Promise<TranscriptionResult> } {
     const w = this.ensureWorker();
     const id = `t${++this.seq}`;
     const result = new Promise<TranscriptionResult>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, onProgress });
+      this.pending.set(id, { resolve, reject, onProgress, onActivity });
     });
     w.postMessage({ type: 'transcribe', id, audioFile, ...model });
     return { id, result };

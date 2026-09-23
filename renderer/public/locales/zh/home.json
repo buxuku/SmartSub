@@ -308,7 +308,7 @@
     "step2": "逐句校对",
     "step2Desc": "视频对照逐句修改文本与时间轴，支持 AI 批量润色",
     "step3": "保存导出",
-    "step3Desc": "修改自动保存，完成后导出字幕或衔接合成、配音"
+    "step3Desc": "恢复草稿自动保存在本机；点击「保存字幕」写入文件，再衔接合成或配音"
   },
   "saved": "已保存",
   "updateTaskTip": "将当前文件列表与进度同步到已保存的历史任务",
@@ -636,5 +636,22 @@
     },
     "timecodeHint": "时:分:秒.毫秒，例如 00:06:57.200；也可粘贴秒数，离开输入框后自动转换。",
     "invalidTimecode": "请输入有效时间码，例如 00:06:57.200。分钟和秒应小于 60。"
+  },
+  "outputTranslationOnly": "仅译文",
+  "outputTranslationFirst": "双语 · 译文在上",
+  "outputSourceFirst": "双语 · 原文在上",
+  "outputExample": "排版示例（实际语言以任务设置为准）",
+  "outputExampleSource": "Welcome to SmartSub.",
+  "outputExampleTarget": "欢迎使用妙幕。",
+  "freeTranslationNetworkHint": "通过网络翻译，将发送字幕文本",
+  "useTranslationService": "本次改用 {{name}}",
+  "configureTaskResources": "配置所需资源",
+  "subtitleSaveState": {
+    "idle": "字幕文件未修改",
+    "dirty": "有未写入字幕文件的修改",
+    "saving": "正在保存字幕文件…",
+    "saved": "字幕文件已保存",
+    "save_error": "字幕文件保存失败",
+    "discarding": "正在放弃修改…"
   }
 }

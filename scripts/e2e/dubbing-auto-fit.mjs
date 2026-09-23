@@ -250,6 +250,16 @@ try {
   assert.equal(state.cues[1].synthesizedMs, 2800);
   assert.ok(requests.every((request) => request.speed === 1));
   const oldWav = state.cues[1].wavPath;
+  const requestCount = requests.length;
+  await page.getByRole('button', { name: '检查时长', exact: true }).click();
+  await expect(overrun(1)).toBeVisible();
+  await expect(overrun(2)).toBeVisible();
+  assert.equal(
+    requests.length,
+    requestCount,
+    'timing review must not resynthesize existing audio',
+  );
+  await page.getByRole('button', { name: '全部 4', exact: true }).click();
   for (const [width, height] of [
     [1024, 700],
     [1440, 900],
@@ -279,8 +289,12 @@ try {
   state = await snapshot();
   assert.equal(state.cues[1].wavPath, oldWav);
   assert.equal(state.cues[1].borrowedMs, 800);
-  await overrun(2).getByRole('button', { name: '借用后续空白' }).click();
-  await expect(page.getByText(/后续空白不足/).first()).toBeVisible();
+  await expect(
+    overrun(2).getByRole('button', { name: '借用后续空白' }),
+  ).toBeDisabled();
+  await expect(
+    overrun(2).getByRole('button', { name: '借用后续空白' }),
+  ).toHaveAttribute('title', /后续空白不足/);
   assert.equal((await snapshot()).cues[2].status, 'overlong');
   failAi = true;
   await overrun(2).getByRole('button', { name: 'AI 缩写并重生成' }).click();
@@ -429,6 +443,20 @@ try {
         'start/cancel/export transport rejection and retry without pageerror, original window fit, red overrun at 1024/1440, disk failure/retry, gap collision rejection, AI failure/cancel/retry, actual PCM tail and next-cue timestamps, repeated WAV/MP3 and paired caption collision protection, export permission failure/retry, reload persistence',
     }),
   );
+} catch (error) {
+  console.error('Dubbing evidence:', output);
+  if (page && !page.isClosed()) {
+    await page
+      .screenshot({ path: path.join(output, 'failure.png') })
+      .catch(() => {});
+    console.error(
+      await page
+        .locator('body')
+        .innerText()
+        .catch(() => ''),
+    );
+  }
+  throw error;
 } finally {
   if (locked) await fs.chmod(locked, 0o700);
   for (const send of held) send();

@@ -51,9 +51,11 @@ function collectRecentCandidates(items: WorkItem[]): RecentImportCandidate[] {
 export default function DubbingFileBar({
   dub,
   hideExport = false,
+  onReviewTiming,
 }: {
   dub: UseDubbingReturn;
   hideExport?: boolean;
+  onReviewTiming?: () => void;
 }) {
   const { t } = useTranslation('dubbing');
   const {
@@ -189,7 +191,8 @@ export default function DubbingFileBar({
         <span className="text-xs text-muted-foreground">
           {t('cueSummary', {
             total: summary.total,
-            done: summary.done,
+            generated: summary.generated,
+            ready: summary.done,
           })}
           {summary.overlong > 0 && (
             <span className="ml-1 text-warning">
@@ -207,7 +210,11 @@ export default function DubbingFileBar({
       {/* 右上角主操作簇：开始/继续/重跑 + 导出 + 进度 */}
       {subtitlePath && (
         <div className="ml-auto">
-          <DubbingActionBar dub={dub} hideExport={hideExport} />
+          <DubbingActionBar
+            dub={dub}
+            hideExport={hideExport}
+            onReviewTiming={onReviewTiming}
+          />
         </div>
       )}
     </div>

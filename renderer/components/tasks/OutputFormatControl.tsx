@@ -6,7 +6,6 @@ import {
 } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -28,12 +27,14 @@ interface OutputFormatControlProps {
   form: any;
   formData: any;
   typeDef: TaskTypeDef;
+  className?: string;
 }
 
 export default function OutputFormatControl({
   form,
   formData,
   typeDef,
+  className,
 }: OutputFormatControlProps) {
   const { t } = useTranslation('tasks');
   const { t: tHome } = useTranslation('home');
@@ -56,6 +57,12 @@ export default function OutputFormatControl({
   };
 
   const formatSummary = selectedFormats.map((f) => f.toUpperCase()).join(', ');
+  const contentKey =
+    formData.translateContent === 'onlyTranslate'
+      ? 'outputTranslationOnly'
+      : formData.translateContent === 'translateAndSource'
+        ? 'outputTranslationFirst'
+        : 'outputSourceFirst';
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -65,13 +72,19 @@ export default function OutputFormatControl({
           variant="outline"
           size="sm"
           aria-label={tHome('subtitleOutputFormat')}
-          className="h-8 text-xs gap-1.5 px-2.5 font-normal max-w-[190px] justify-between"
+          className={cn(
+            'h-8 w-full min-w-0 text-xs gap-1 px-2.5 font-normal justify-between',
+            className,
+          )}
         >
-          <div className="flex items-center gap-1.5 truncate">
+          <div className="flex items-center gap-1.5 min-w-0 truncate">
             <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span className="truncate">{formatSummary}</span>
+            <span className="truncate">
+              {typeDef.hasTranslate ? `${tHome(contentKey)} · ` : ''}
+              {formatSummary}
+            </span>
           </div>
-          <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+          <ChevronDown className="h-3 w-3 shrink-0 opacity-50 ml-1" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 p-3 space-y-3">
@@ -84,11 +97,12 @@ export default function OutputFormatControl({
             {SUBTITLE_OUTPUT_FORMATS.map((format) => {
               const isChecked = selectedFormats.includes(format);
               return (
-                <Badge
+                <button
+                  type="button"
                   key={format}
-                  variant={isChecked ? 'default' : 'outline'}
+                  aria-pressed={isChecked}
                   className={cn(
-                    'cursor-pointer text-xs uppercase px-2 py-0.5 select-none transition-colors',
+                    'rounded-md border cursor-pointer text-xs uppercase px-2 py-1 select-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     isChecked
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:border-foreground/40',
@@ -96,7 +110,7 @@ export default function OutputFormatControl({
                   onClick={() => toggleFormat(format)}
                 >
                   {format}
-                </Badge>
+                </button>
               );
             })}
           </div>
@@ -129,6 +143,20 @@ export default function OutputFormatControl({
                 </SelectItem>
               </SelectContent>
             </Select>
+            <div
+              className="rounded bg-muted p-2 text-xs space-y-1"
+              aria-label={tHome('outputExample')}
+            >
+              <p className="text-muted-foreground">{tHome('outputExample')}</p>
+              {(formData.translateContent === 'onlyTranslate'
+                ? [tHome('outputExampleTarget')]
+                : formData.translateContent === 'translateAndSource'
+                  ? [tHome('outputExampleTarget'), tHome('outputExampleSource')]
+                  : [tHome('outputExampleSource'), tHome('outputExampleTarget')]
+              ).map((line, index) => (
+                <p key={index}>{line}</p>
+              ))}
+            </div>
           </div>
         )}
 

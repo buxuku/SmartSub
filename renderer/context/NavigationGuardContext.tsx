@@ -31,6 +31,8 @@ export interface NavigationGuardOptions {
   onDiscard?: () => void | boolean | Promise<void | boolean>;
   title?: string;
   description?: string;
+  stayLabel?: string;
+  discardLabel?: string;
 }
 
 export interface NavigationGuardContextValue {
@@ -418,7 +420,8 @@ export function NavigationGuardProvider({
               disabled={isSaving || restoringHistory}
               onClick={handleCancel}
             >
-              {t('navigationGuard.keepEditing', '留在当前页')}
+              {activeGuard?.stayLabel ||
+                t('navigationGuard.keepEditing', '留在当前页')}
             </AlertDialogCancel>
             <Button
               variant="outline"
@@ -427,7 +430,8 @@ export function NavigationGuardProvider({
               onClick={handleDiscardAndLeave}
             >
               <Undo2 className="h-4 w-4" />
-              {t('navigationGuard.discardAndLeave', '放弃并离开')}
+              {activeGuard?.discardLabel ||
+                t('navigationGuard.discardAndLeave', '放弃并离开')}
             </Button>
             {(dialogCanSave || activeGuard?.onSave) && (
               <Button

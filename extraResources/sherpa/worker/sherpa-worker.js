@@ -260,6 +260,12 @@ function ensureLoaded(req) {
         req.params,
       );
     }
+    if (req.id)
+      channel.post({
+        type: 'activity',
+        id: req.id,
+        detail: { phase: 'loadingModel' },
+      });
     recognizer = new sherpa.OfflineRecognizer(config);
     cacheKey = key;
   }
@@ -267,6 +273,12 @@ function ensureLoaded(req) {
   // 避免「同模型不同 VAD」复用 worker 时静默沿用旧 VAD 参数。
   const vKey = buildVadKey(req);
   if (!vad || vKey !== vadKey) {
+    if (req.id)
+      channel.post({
+        type: 'activity',
+        id: req.id,
+        detail: { phase: 'loadingModel' },
+      });
     vad = new sherpa.Vad(buildVadConfig(req.vadModel, req.params), 60);
     vadKey = vKey;
   }
@@ -283,12 +295,23 @@ function postCancelled(id) {
 }
 
 async function transcribe(req) {
+  const activity = (detail) =>
+    channel.post({ type: 'activity', id: req.id, detail });
   ensureLoaded(req);
+  activity({ phase: 'readingAudio' });
   vad.reset();
   // Electron worker 下必须 enableExternalBuffer=false（否则 readWave/vad.front 抛错）。
   const wave = sherpa.readWave(req.audioFile, false);
   const samples = wave.samples;
   const total = samples.length;
+  let decoded = 0;
+  let processedSeconds = 0;
+  activity({
+    phase: 'recognizing',
+    processedSeconds,
+    durationSeconds: total / SAMPLE_RATE,
+    units: [],
+  });
   const segments = [];
   let lastPercent = -1;
   const vadSegments = [];
@@ -300,9 +323,25 @@ async function transcribe(req) {
       vad.pop();
       const stream = recognizer.createStream();
       stream.acceptWaveform({ samples: seg.samples, sampleRate: SAMPLE_RATE });
+      activity({
+        phase: 'recognizing',
+        processedSeconds,
+        durationSeconds: total / SAMPLE_RATE,
+        units: [
+          { id: decoded + 1, phase: 'recognizing', startedAt: Date.now() },
+        ],
+      });
       const r = await recognizer.decodeAsync(stream);
+      decoded += 1;
       const start = seg.start / SAMPLE_RATE;
       const end = (seg.start + seg.samples.length) / SAMPLE_RATE;
+      processedSeconds = end;
+      activity({
+        phase: 'recognizing',
+        processedSeconds,
+        durationSeconds: total / SAMPLE_RATE,
+        units: [],
+      });
       vadSegments.push({ start, end });
       const text = r && r.text ? r.text.trim() : '';
       if (text) segments.push({ start, end, text });

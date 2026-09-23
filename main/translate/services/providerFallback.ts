@@ -113,6 +113,7 @@ export class ProviderFallbackRunner {
       provider: Provider,
       translator: TranslatorFunction,
     ) => Promise<T>,
+    onWaiting?: () => void,
   ): Promise<T> {
     if (this.exhaustedError) throw this.exhaustedError;
     let index = this.activeIndex;
@@ -132,6 +133,7 @@ export class ProviderFallbackRunner {
         throw new Error(`Unknown translation provider: ${provider.type}`);
       }
 
+      onWaiting?.();
       const release = await acquireProviderRequestSlot(provider, this.signal);
       try {
         if (this.exhaustedError) throw this.exhaustedError;

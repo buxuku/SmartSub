@@ -87,9 +87,16 @@ export default function WorkItemList({
                 className="h-7 text-xs min-w-0 flex-1"
               />
             ) : (
-              <span className="truncate text-sm min-w-0 flex-1">
+              <button
+                type="button"
+                className="truncate text-left text-sm min-w-0 flex-1 rounded focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpen(item);
+                }}
+              >
                 {item.name}
-              </span>
+              </button>
             )}
             <span className="hidden sm:inline text-[11px] text-muted-foreground rounded bg-muted px-1.5 py-0.5 flex-shrink-0">
               {getWorkItemTypeLabel(item, tLaunchpad, tTasks)}

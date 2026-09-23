@@ -19,11 +19,14 @@ await fs.writeFile(
   '1\n00:00:01,000 --> 00:00:03,000\n一个服务正常工作。\n\n2\n00:00:04,000 --> 00:00:06,000\n[翻译失败: test]\n\n3\n00:00:07,000 --> 00:00:09,000\n完成。\n',
 );
 const errors = [];
+const runMode = process.argv.includes('--development')
+  ? 'development'
+  : 'production';
 let app, page;
 try {
   app = await _electron.launch({
     args: ['.', '8888', `--user-data-dir=${path.join(output, 'profile')}`],
-    env: { ...process.env, NODE_ENV: 'production' },
+    env: { ...process.env, NODE_ENV: runMode },
   });
   page = await app.firstWindow();
   page.setDefaultTimeout(12000);
@@ -88,7 +91,9 @@ try {
     'typing keeps focus',
   );
   await page.getByRole('button', { name: '保存字幕', exact: true }).click();
-  await expect(page.getByText('已保存', { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByText('字幕文件已保存', { exact: true }).first(),
+  ).toBeVisible();
   assert.match(await fs.readFile(target, 'utf8'), /你好。/);
   const review = await page.evaluate(
     async ({ source, target }) =>
@@ -135,7 +140,9 @@ try {
   await fs.unlink(reviewDirectory);
   await fs.rename(reviewDirectory + '.backup', reviewDirectory);
   await page.getByRole('button', { name: '保存字幕', exact: true }).click();
-  await expect(page.getByText('已保存', { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByText('字幕文件已保存', { exact: true }).first(),
+  ).toBeVisible();
   await page.locator('#subtitle-tgt-1').fill('恢复最新文本');
   const killed = app;
   app = undefined;
@@ -143,7 +150,7 @@ try {
   await new Promise((resolve) => killed.process().once('exit', resolve));
   app = await _electron.launch({
     args: ['.', '8888', `--user-data-dir=${path.join(output, 'profile')}`],
-    env: { ...process.env, NODE_ENV: 'production' },
+    env: { ...process.env, NODE_ENV: runMode },
   });
   page = await app.firstWindow();
   page.setDefaultTimeout(12000);

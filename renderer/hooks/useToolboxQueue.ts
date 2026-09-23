@@ -1,5 +1,6 @@
 import { useEffect, useId, useState, useSyncExternalStore } from 'react';
 import { useNavigationGuard } from '../context/NavigationGuardContext';
+import { useTranslation } from 'next-i18next';
 import {
   ToolboxQueue,
   ToolboxQueueInput,
@@ -10,6 +11,7 @@ export function useToolboxQueue<
   I extends ToolboxQueueInput,
   R extends ToolboxQueueResult,
 >(progressChannel?: string) {
+  const { t } = useTranslation('toolbox');
   const [queue] = useState(() => new ToolboxQueue<I, R>());
   const state = useSyncExternalStore(
     queue.subscribe,
@@ -18,6 +20,12 @@ export function useToolboxQueue<
   );
   const id = useId();
   useNavigationGuard(`toolbox-queue-${id}`, {
+    title: t('leaveQueue.title'),
+    description: t(state.running ? 'leaveQueue.running' : 'leaveQueue.pending'),
+    stayLabel: t('leaveQueue.stay'),
+    discardLabel: t(
+      state.running ? 'leaveQueue.cancelAndLeave' : 'leaveQueue.clearAndLeave',
+    ),
     getIsDirty: () => {
       const current = queue.getSnapshot();
       return (

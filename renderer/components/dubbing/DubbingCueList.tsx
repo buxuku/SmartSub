@@ -2,7 +2,14 @@
  * 字幕行列表（虚拟滚动）：行状态 / 行级 voice / 试听 / 重生成 / 过长兜底。
  * 点击行展开编辑区（改文案重合成、接受变速）。
  */
-import React, { useMemo, useRef, useState, useCallback } from 'react';
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from 'react';
+import { computeSlots } from '../../../main/helpers/dubbing/alignment';
 import { useTranslation } from 'next-i18next';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '@/components/ui/button';
@@ -52,11 +59,13 @@ export default function DubbingCueList({
   dub,
   currentTimeMs,
   onSeek,
+  timingReviewRequest = 0,
 }: {
   dub: UseDubbingReturn;
   /** 播放器当前进度（ms，无视频时 -1）。 */
   currentTimeMs: number;
   onSeek?: (ms: number) => void;
+  timingReviewRequest?: number;
 }) {
   const { t } = useTranslation('dubbing');
   const {
@@ -77,6 +86,21 @@ export default function DubbingCueList({
   } = dub;
 
   const [filter, setFilter] = useState<CueFilter>('all');
+  useEffect(() => {
+    if (timingReviewRequest) {
+      setFilter('overlong');
+      parentRef.current?.scrollTo?.({ top: 0 });
+    }
+  }, [timingReviewRequest]);
+  const slots = useMemo(
+    () =>
+      new Map(
+        computeSlots(cues, {
+          mediaDurationMs: dub.session?.mediaDurationMs || undefined,
+        }).map((slot) => [slot.index, slot]),
+      ),
+    [cues, dub.session?.mediaDurationMs],
+  );
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const drafts = dub.cueDrafts;
   const draftCount = Object.keys(drafts.entries).length;
@@ -323,6 +347,10 @@ export default function DubbingCueList({
         >
           {virtualizer.getVirtualItems().map((vi) => {
             const cue = visible[vi.index];
+            const slot = slots.get(cue.index);
+            const extraMs = (cue.synthesizedMs || 0) - (slot?.slotMs || 0);
+            const canBorrow =
+              extraMs > 0 && extraMs <= (slot?.availableGapMs || 0);
             const draftText = drafts.entries[cue.index]?.text ?? cue.text;
             const expanded = expandedIndex === cue.index;
             const isPlaybackRow = cue.index === activePlaybackIndex;
@@ -603,6 +631,7 @@ export default function DubbingCueList({
                         variant="outline"
                         className="h-7 gap-1 text-xs"
                         disabled={
+                          !canBorrow ||
                           cue.needsUpdate ||
                           running ||
                           dub.speakerUpdating ||
@@ -610,6 +639,7 @@ export default function DubbingCueList({
                           dub.exporting
                         }
                         onClick={() => borrowSilence(cue.index)}
+                        title={canBorrow ? undefined : t('insufficientSilence')}
                       >
                         <MoveRight className="h-3.5 w-3.5" />
                         {t('borrowSilence')}

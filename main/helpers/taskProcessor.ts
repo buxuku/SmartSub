@@ -30,6 +30,7 @@ import {
 } from './powerSaveManager';
 
 const TASK_EVENT_CHANNELS = new Set([
+  'taskActivityChange',
   'taskStatusChange',
   'taskProgressChange',
   'taskErrorChange',
@@ -48,7 +49,11 @@ function wrapTaskEvent(event: any) {
       send: (channel: string, ...args: any[]) => {
         if (TASK_EVENT_CHANNELS.has(channel)) {
           applyTaskEventToProjects(channel, ...args);
-          args[0] = { ...args[0], taskProjectId: getTaskContext()?.projectId };
+          args[0] = {
+            ...args[0],
+            taskProjectId:
+              getTaskContext()?.projectId ?? args[0]?.taskProjectId,
+          };
         }
         try {
           sender.send(channel, ...args);

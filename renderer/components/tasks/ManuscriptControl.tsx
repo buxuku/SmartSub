@@ -2,17 +2,13 @@ import React, { useState } from 'react';
 import { FileText, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { cn } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
 
 interface ManuscriptControlProps {
   form: any;
   formData: any;
+  className?: string;
 }
 
 interface ManuscriptSelection {
@@ -25,6 +21,7 @@ interface ManuscriptSelection {
 const ManuscriptControl: React.FC<ManuscriptControlProps> = ({
   form,
   formData,
+  className,
 }) => {
   const { t } = useTranslation('tasks');
   const [selecting, setSelecting] = useState(false);
@@ -80,56 +77,78 @@ const ManuscriptControl: React.FC<ManuscriptControlProps> = ({
   };
 
   return (
-    <div className="flex items-center gap-1.5 min-w-0">
-      <span className="text-xs text-muted-foreground whitespace-nowrap">
-        {t('manuscript.label')}
-      </span>
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 max-w-[210px] gap-1.5 px-2 text-xs"
-              onClick={selectManuscript}
-              disabled={selecting}
-            >
-              {selecting ? (
-                <Loader2 className="h-3.5 w-3.5 flex-none animate-spin" />
-              ) : (
-                <FileText className="h-3.5 w-3.5 flex-none" />
-              )}
-              <span className="truncate">
-                {manuscriptName || t('manuscript.select')}
-              </span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-[360px] space-y-1">
-            <p className="text-xs font-medium">{t('manuscript.globalHint')}</p>
-            {manuscriptPath ? (
-              <p className="break-all text-[11px] text-muted-foreground">
+    <div className={cn('space-y-2', className)}>
+      <div className="flex items-center justify-between">
+        <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+          {t('manuscript.globalLabel')}
+        </label>
+        {manuscriptPath && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={clearManuscript}
+            className="h-6 px-1.5 text-xs text-muted-foreground hover:text-destructive"
+          >
+            <X className="h-3.5 w-3.5 mr-1" />
+            {t('manuscript.clear')}
+          </Button>
+        )}
+      </div>
+
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        {t('manuscript.globalAdvancedHint')}
+      </p>
+
+      {manuscriptPath ? (
+        <div className="flex items-center justify-between gap-2 rounded-lg border bg-muted/40 p-2.5 text-xs">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <FileText className="h-4 w-4 flex-none text-primary" />
+            <div className="min-w-0 flex-1">
+              <div
+                className="font-medium text-foreground truncate"
+                title={manuscriptName}
+              >
+                {manuscriptName}
+              </div>
+              <div
+                className="text-[11px] text-muted-foreground truncate"
+                title={manuscriptPath}
+              >
                 {manuscriptPath}
-              </p>
+              </div>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={selectManuscript}
+            disabled={selecting}
+            className="h-7 px-2 text-xs flex-none"
+          >
+            {selecting ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
-              <p className="text-[11px] leading-relaxed text-muted-foreground">
-                {t('manuscript.hint')}
-              </p>
+              t('manuscript.changeScript')
             )}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-      {manuscriptPath && (
+          </Button>
+        </div>
+      ) : (
         <Button
           type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 flex-none text-muted-foreground hover:text-destructive"
-          aria-label={t('manuscript.clear')}
-          title={t('manuscript.clear')}
-          onClick={clearManuscript}
+          variant="outline"
+          size="sm"
+          onClick={selectManuscript}
+          disabled={selecting}
+          className="w-full justify-center text-xs h-9 gap-1.5 border-dashed"
         >
-          <X className="h-3.5 w-3.5" />
+          {selecting ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <FileText className="h-3.5 w-3.5" />
+          )}
+          <span>{t('manuscript.select')}</span>
         </Button>
       )}
     </div>

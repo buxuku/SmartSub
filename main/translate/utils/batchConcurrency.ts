@@ -5,6 +5,7 @@ import {
 } from '../../helpers/taskContext';
 import { logMessage } from '../../helpers/storeManager';
 import { ProviderFallbackExhaustedError } from '../services/providerFallback';
+import type { TranslationActivity } from './translationActivity';
 
 export type TranslationBatch = {
   index: number;
@@ -53,6 +54,7 @@ export function createTranslationBatches(
 }
 
 type RunTranslationBatchesOptions = {
+  activity?: TranslationActivity;
   batches: TranslationBatch[];
   concurrency: number;
   requestIntervalMs: number;
@@ -63,6 +65,7 @@ type RunTranslationBatchesOptions = {
 };
 
 export async function runTranslationBatchesInOrder({
+  activity,
   batches,
   concurrency,
   requestIntervalMs,
@@ -91,6 +94,10 @@ export async function runTranslationBatchesInOrder({
     nextRequestStartAt = targetStartAt + requestIntervalMs;
 
     if (waitMs > 0) {
+      activity?.update(displayIndex, {
+        phase: 'interval',
+        waitUntil: targetStartAt,
+      });
       logMessage(
         `批次 ${displayIndex} 等待 ${(waitMs / 1000).toFixed(2)}s (请求间隔)`,
         'info',
@@ -103,7 +110,11 @@ export async function runTranslationBatchesInOrder({
     while (completedBatches[nextFlushIndex] !== undefined) {
       const batchResults = completedBatches[nextFlushIndex]!;
       if (onTranslationResult) {
+        activity?.update(batches[nextFlushIndex].displayIndex, {
+          phase: 'saving',
+        });
         await onTranslationResult(batchResults);
+        activity?.saved(batches[nextFlushIndex].displayIndex);
       }
       results.push(...batchResults);
       completedBatches[nextFlushIndex] = undefined;
@@ -124,11 +135,18 @@ export async function runTranslationBatchesInOrder({
       if (batchIndex >= batches.length) return;
 
       const batch = batches[batchIndex];
+      activity?.update(batch.displayIndex, { phase: 'queued' });
       await waitForRequestSlot(batch.displayIndex);
       throwIfTaskCancelled();
       if (failure) return;
 
       const batchResults = await processBatch(batch);
+      throwIfTaskCancelled();
+      activity?.received(
+        batch.displayIndex,
+        batchResults.filter((result) => result.translationStatus === 'failed')
+          .length,
+      );
       completedBatches[batch.index] = batchResults;
       processedSubtitles += batch.subtitles.length;
 
@@ -163,7 +181,9 @@ export async function runTranslationBatchesInOrder({
       for (let index = nextFlushIndex; index < batches.length; index++) {
         const batchResults = completedBatches[index];
         if (batchResults && onTranslationResult) {
+          activity?.update(batches[index].displayIndex, { phase: 'saving' });
           await onTranslationResult(batchResults);
+          activity?.saved(batches[index].displayIndex);
         }
       }
     }

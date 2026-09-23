@@ -206,5 +206,7 @@
     "Unknown_translation_provider": "Unknown translation provider",
     "unauthorized": "Authentication failed — check your API key",
     "api_key_not_valid": "Invalid API key — please enter a valid key"
-  }
+  },
+  "setAsDefault": "Set as default for new tasks",
+  "currentDefault": "Default for new tasks"
 }

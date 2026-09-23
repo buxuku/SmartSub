@@ -206,7 +206,19 @@ async function runTool(id, files, startName, setup) {
     0,
   );
   const outputs = await fs.readdir(output);
-  assert.ok(outputs.length >= files.length, `${id}: missing output files`);
+  if (id === 'video-compressor') {
+    assert.deepEqual(
+      outputs,
+      [],
+      'small compatible videos keep their original files',
+    );
+    await expect(
+      page.getByText('已满足体积上限，无需压缩，保留原文件', { exact: true }),
+    ).toHaveCount(files.length);
+    for (const file of files) assert.ok((await fs.stat(file)).size > 0);
+  } else {
+    assert.ok(outputs.length >= files.length, `${id}: missing output files`);
+  }
   for (const file of outputs)
     assert.ok((await fs.stat(path.join(output, file))).size > 0);
   await bounds(id);
@@ -411,7 +423,13 @@ try {
   ).toBeVisible();
   await page.getByRole('button', { name: '返回工具箱', exact: true }).click();
   await expect(page.getByRole('alertdialog')).toBeVisible();
-  await page.getByRole('button', { name: '留在当前页', exact: true }).click();
+  await expect(page.getByRole('alertdialog')).toContainText(
+    '离开将清空当前待处理列表',
+  );
+  await expect(
+    page.getByRole('button', { name: '保存并离开', exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole('button', { name: '继续处理', exact: true }).click();
   await fs.writeFile(broken, subtitle);
   await page.getByRole('button', { name: '重试此文件', exact: true }).click();
   await expect(

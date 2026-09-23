@@ -1,3 +1,4 @@
+import type { ActivityObserver, ActivityUnit } from '../../types/taskActivity';
 /**
  * 字幕批量校正共享服务（openspec: add-ai-subtitle-refine D7）。
  *
@@ -63,6 +64,7 @@ export interface CorrectionItemOutcome {
 }
 
 export interface CorrectionParams {
+  onActivity?: ActivityObserver;
   projectId?: string;
   items: CorrectionItem[];
   provider: Provider;
@@ -326,12 +328,33 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
       );
     }
 
+    const activity = (
+      phase: ActivityUnit['phase'],
+      extra: Partial<ActivityUnit> = {},
+    ) => {
+      if (!signal?.aborted)
+        params.onActivity?.({
+          phase: 'correcting',
+          completed: processedCount,
+          total: items.length,
+          unit: 'cues',
+          units: [{ id: currentBatch, phase, startedAt: Date.now(), ...extra }],
+        });
+    };
     let retryCount = 0;
     let batchDone = false;
     // anchored：大面积错位的整批重试独立于 maxRetries（对齐翻译框架 D7）。
     let alignmentRetryUsed = false;
 
     while (!batchDone && retryCount <= maxRetries) {
+      activity(alignmentRetryUsed && !retryCount ? 'retrying' : 'requesting', {
+        requestStartedAt: Date.now(),
+        ...(retryCount
+          ? { retry: retryCount, maxRetries, reason: 'request' as const }
+          : alignmentRetryUsed
+            ? { retry: 1, maxRetries: 1, reason: 'validation' as const }
+            : {}),
+      });
       if (signal?.aborted) {
         cancelled = true;
         break;
@@ -498,6 +521,12 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
             validation.flagged.length > Math.ceil(batch.length / 3) &&
             !alignmentRetryUsed
           ) {
+            activity('retrying', {
+              retry: 1,
+              maxRetries: 1,
+              reason: 'validation',
+              requestStartedAt: Date.now(),
+            });
             alignmentRetryUsed = true;
             logMessage(
               `Correction batch ${currentBatch} misaligned ${validation.flagged.length}/${batch.length}, full-batch retry once`,
@@ -535,6 +564,12 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
             'warning',
           );
           try {
+            activity('interval', {
+              retry: retryCount,
+              maxRetries,
+              reason: 'request',
+              waitUntil: Date.now() + 1000 * retryCount,
+            });
             await waitForTaskDelay(1000 * retryCount, signal);
           } catch (delayError) {
             if (isTaskCancelledError(delayError)) {
@@ -562,6 +597,13 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
       }
     }
     if (cancelled) break;
+    params.onActivity?.({
+      phase: 'correcting',
+      completed: processedCount,
+      total: items.length,
+      unit: 'cues',
+      units: [],
+    });
   }
 
   return { results, cancelled, processedCount };

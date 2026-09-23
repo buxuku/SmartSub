@@ -30,6 +30,7 @@ export const BUILTIN_RECIPES: TaskRecipe[] = [
     builtin: true,
     goals: { translate: true, dub: false, video: false },
     accepts: 'media',
+    config: { translateContent: 'sourceAndTranslate' },
   },
   {
     id: 'builtin-generate',

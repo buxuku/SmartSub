@@ -203,6 +203,7 @@ export interface VideoCompressResult {
   outputPath: string;
   originalSize: number;
   compressedSize: number;
+  skipped?: boolean;
   error?: string;
 }
 

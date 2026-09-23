@@ -229,8 +229,8 @@ export const defaultUserConfig = {
   model: 'tiny',
   // 默认优先直提媒体内封文本字幕；用户可按任务关闭并强制走 ASR。
   useEmbeddedSubtitles: true,
-  translateProvider: 'baidu',
-  translateContent: 'onlyTranslate',
+  translateProvider: 'autoFree',
+  translateContent: 'sourceAndTranslate',
   maxConcurrentTasks: 1,
   sourceSrtSaveOption: 'noSave',
   targetSrtSaveOption: 'fileNameWithLang',

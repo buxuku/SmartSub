@@ -1,3 +1,4 @@
+import { TaskActivityDetails } from './TaskActivityDetails';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AudioLines,
@@ -32,6 +33,7 @@ import {
   getFileStages,
   getFileRail,
   getStageStatus,
+  getTaskDisplayStatus,
   getDockedGate,
   getFilePercent,
   getFileError,
@@ -252,6 +254,12 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
         const stages = getFileStages(file, typeDef, formData);
         const rail = getFileRail(file, typeDef, formData);
         const dockedGate = getDockedGate(file, formData);
+        const status = getTaskDisplayStatus(
+          file,
+          stages,
+          taskStatus,
+          dockedGate,
+        );
         const percent = getFilePercent(file, stages);
         const failed = hasFileError(file, stages);
         const rawError = failed ? getFileError(file, stages) : '';
@@ -383,34 +391,23 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
               </span>
             </div>
 
-            {failed && errorMsg && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <p className="cursor-default truncate text-xs text-destructive">
-                      {errorMsg}
-                    </p>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-md">
-                    <p className="break-all">{errorMsg}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-            {!failed && displayWarning && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <p className="cursor-default truncate text-xs text-warning">
-                      {displayWarning}
-                    </p>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-md">
-                    <p className="break-all">{displayWarning}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
+            <TaskActivityDetails
+              activity={file.taskActivity}
+              state={status.state}
+              stage={status.stage}
+              statusText={
+                errorMsg ||
+                t(`activity.status.${status.state}`, {
+                  stage: status.labelKey ? t(status.labelKey) : '',
+                })
+              }
+              warning={displayWarning}
+              progress={
+                file.taskActivity?.stage
+                  ? file[`${file.taskActivity.stage}Progress`]
+                  : undefined
+              }
+            />
 
             <div className="mt-auto flex items-center justify-end gap-1">
               {dockedGate && (

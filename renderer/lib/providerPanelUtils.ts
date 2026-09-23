@@ -96,7 +96,7 @@ export function resolveDefaultTranslateProviderId(
   };
   return (
     pick(preferredId) ??
-    pick(readStoredProviderId()) ??
+    pick('autoFree') ??
     pick('google') ??
     providers.find((p) => isProviderConfigured(p))?.id ??
     ''

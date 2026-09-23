@@ -6,6 +6,7 @@
 
 import { ipcMain, dialog, BrowserWindow, shell } from 'electron';
 import fs from 'fs';
+import { trackToolOperation } from '../processingHistory';
 import path from 'path';
 import { logMessage } from '../logger';
 import {
@@ -189,14 +190,24 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
           error: `File not found: ${config?.filePath}`,
         };
       }
-      return convertSubtitleFile(config);
+      return trackToolOperation(
+        'subtitle-converter',
+        [config.filePath],
+        { ...config },
+        () => convertSubtitleFile(config),
+      );
     },
   );
 
   ipcMain.handle(
     'toolbox:batchConvertSubtitles',
     async (_event, configs: SubtitleConvertItemConfig[]) => {
-      return batchConvertSubtitles(configs || []);
+      return trackToolOperation(
+        'subtitle-converter',
+        (configs || []).map((config) => config.filePath),
+        { configs },
+        () => batchConvertSubtitles(configs || []),
+      );
     },
   );
 
@@ -221,12 +232,18 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
           error: `Video file not found: ${config?.videoPath}`,
         };
       }
-      return executeVideoTrim(config, jobId, (progress) => {
-        mainWindow?.webContents.send('toolbox:trimProgress', {
-          jobId,
-          ...progress,
-        });
-      });
+      return trackToolOperation(
+        'video-trimmer',
+        [config.videoPath],
+        { ...config },
+        () =>
+          executeVideoTrim(config, jobId, (progress) => {
+            mainWindow?.webContents.send('toolbox:trimProgress', {
+              jobId,
+              ...progress,
+            });
+          }),
+      );
     },
   );
 
@@ -248,12 +265,18 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
           error: `Video file not found: ${config?.videoPath}`,
         };
       }
-      return executeAudioExtract(config, jobId, (percent) => {
-        mainWindow?.webContents.send('toolbox:audioProgress', {
-          jobId,
-          percent,
-        });
-      });
+      return trackToolOperation(
+        'audio-extractor',
+        [config.videoPath],
+        { ...config },
+        () =>
+          executeAudioExtract(config, jobId, (percent) => {
+            mainWindow?.webContents.send('toolbox:audioProgress', {
+              jobId,
+              percent,
+            });
+          }),
+      );
     },
   );
 
@@ -285,13 +308,19 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
           error: `Video file not found: ${config?.videoPath}`,
         };
       }
-      return extractEmbeddedSubtitles(config, jobId, (percent) => {
-        if (!event.sender.isDestroyed())
-          event.sender.send('toolbox:embeddedSubtitleProgress', {
-            jobId,
-            percent,
-          });
-      });
+      return trackToolOperation(
+        'embedded-subtitles',
+        [config.videoPath],
+        { ...config },
+        () =>
+          extractEmbeddedSubtitles(config, jobId, (percent) => {
+            if (!event.sender.isDestroyed())
+              event.sender.send('toolbox:embeddedSubtitleProgress', {
+                jobId,
+                percent,
+              });
+          }),
+      );
     },
   );
 
@@ -303,7 +332,12 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
   ipcMain.handle(
     'toolbox:syncSubtitleTime',
     async (_event, config: SubtitleSyncConfig) => {
-      return executeSubtitleSync(config);
+      return trackToolOperation(
+        'subtitle-sync',
+        [config.filePath],
+        { ...config },
+        () => executeSubtitleSync(config),
+      );
     },
   );
 
@@ -311,14 +345,24 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
   ipcMain.handle(
     'toolbox:mergeBilingualSubtitles',
     async (_event, config: BilingualSubtitleMergeConfig) => {
-      return mergeBilingualSubtitles(config);
+      return trackToolOperation(
+        'bilingual-subtitles',
+        [config.primaryPath, config.secondaryPath],
+        { ...config },
+        () => mergeBilingualSubtitles(config),
+      );
     },
   );
 
   ipcMain.handle(
     'toolbox:splitBilingualSubtitles',
     async (_event, config: BilingualSubtitleSplitConfig) => {
-      return splitBilingualSubtitles(config);
+      return trackToolOperation(
+        'bilingual-subtitles',
+        [config.filePath],
+        { ...config },
+        () => splitBilingualSubtitles(config),
+      );
     },
   );
 
@@ -327,12 +371,18 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
     'toolbox:compressVideo',
     async (_event, payload: { config: VideoCompressConfig; jobId: string }) => {
       const { config, jobId } = payload;
-      return executeVideoCompress(config, jobId, (percent) => {
-        mainWindow?.webContents.send('toolbox:compressProgress', {
-          jobId,
-          percent,
-        });
-      });
+      return trackToolOperation(
+        'video-compressor',
+        [config.videoPath],
+        { ...config },
+        () =>
+          executeVideoCompress(config, jobId, (percent) => {
+            mainWindow?.webContents.send('toolbox:compressProgress', {
+              jobId,
+              percent,
+            });
+          }),
+      );
     },
   );
 
@@ -348,12 +398,18 @@ export function setupToolboxHandlers(mainWindow?: BrowserWindow | null): void {
     'toolbox:videoToGif',
     async (_event, payload: { config: VideoToGifConfig; jobId: string }) => {
       const { config, jobId } = payload;
-      return executeVideoToGif(config, jobId, (percent) => {
-        mainWindow?.webContents.send('toolbox:gifProgress', {
-          jobId,
-          percent,
-        });
-      });
+      return trackToolOperation(
+        'video-to-gif',
+        [config.videoPath],
+        { ...config },
+        () =>
+          executeVideoToGif(config, jobId, (percent) => {
+            mainWindow?.webContents.send('toolbox:gifProgress', {
+              jobId,
+              percent,
+            });
+          }),
+      );
     },
   );
 

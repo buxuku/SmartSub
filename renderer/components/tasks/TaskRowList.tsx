@@ -1,3 +1,4 @@
+import { TaskActivityDetails } from './TaskActivityDetails';
 import React, { useRef } from 'react';
 import {
   AudioLines,
@@ -32,6 +33,7 @@ import {
   getFileStages,
   getFileRail,
   getStageStatus,
+  getTaskDisplayStatus,
   getGateStatus,
   getDockedGate,
   getFilePercent,
@@ -383,6 +385,12 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
         const stages = getFileStages(file, typeDef, formData);
         const rail = getFileRail(file, typeDef, formData);
         const dockedGate = getDockedGate(file, formData);
+        const status = getTaskDisplayStatus(
+          file,
+          stages,
+          taskStatus,
+          dockedGate,
+        );
         const percent = getFilePercent(file, stages);
         const failed = hasFileError(file, stages);
         const rawError = failed ? getFileError(file, stages) : '';
@@ -420,9 +428,6 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
         const started = stages.some(
           (s) => getStageStatus(file, s.key) !== 'pending',
         );
-        const cancelling =
-          taskStatus === 'cancelling' &&
-          stages.some((s) => getStageStatus(file, s.key) === 'loading');
         const meta = [
           formatBytes(file?.fileSize),
           formatMediaDuration(file?.duration),
@@ -630,40 +635,23 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
               </div>
             </div>
 
-            {cancelling && (
-              <p className="mt-1.5 pl-5 text-xs text-warning">
-                {t('row.cancelling')}
-              </p>
-            )}
-
-            {failed && errorMsg && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <p className="mt-1.5 pl-5 text-xs text-destructive truncate cursor-default">
-                      {errorMsg}
-                    </p>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-md">
-                    <p className="break-all">{errorMsg}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-            {!failed && displayWarning && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <p className="mt-1.5 pl-5 text-xs text-warning truncate cursor-default">
-                      {displayWarning}
-                    </p>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="max-w-md">
-                    <p className="break-all">{displayWarning}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
+            <TaskActivityDetails
+              activity={file.taskActivity}
+              state={status.state}
+              stage={status.stage}
+              statusText={
+                errorMsg ||
+                t(`activity.status.${status.state}`, {
+                  stage: status.labelKey ? t(status.labelKey) : '',
+                })
+              }
+              warning={displayWarning}
+              progress={
+                file.taskActivity?.stage
+                  ? file[`${file.taskActivity.stage}Progress`]
+                  : undefined
+              }
+            />
           </div>
         );
       })}

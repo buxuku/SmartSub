@@ -1,6 +1,8 @@
+import type { TaskActivityReporter } from './taskActivity';
 import { AsyncLocalStorage } from 'async_hooks';
 
 export interface TaskRunContext {
+  activity?: TaskActivityReporter;
   projectId?: string;
   fileUuid?: string;
   /** 取消信号：翻译批次边界与阶段边界检查 */

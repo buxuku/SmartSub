@@ -1,3 +1,4 @@
+import type { TaskActivity } from './taskActivity';
 import type { EngineStatus, TranscriptionEngine } from './engine';
 import type { MissedSpeechSummary, MissedSpeechWarning } from './missedSpeech';
 import type {
@@ -88,6 +89,7 @@ export interface ManuscriptMatchSummary {
 export interface IFiles extends SubtitleOutputFiles {
   /** Runtime event routing; file UUIDs can be reused by restored drafts. */
   taskProjectId?: string;
+  taskActivity?: TaskActivity;
   uuid: string;
   filePath: string;
   fileName: string;

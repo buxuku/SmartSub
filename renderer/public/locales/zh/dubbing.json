@@ -20,8 +20,8 @@
   "clearVideo": "清除视频",
   "loadingSubtitle": "解析字幕中…",
   "importFromRecent": "从最近任务导入",
-  "cueSummary": "共 {{total}} 行 · 已完成 {{done}}",
-  "overlongCount": "过长 {{count}}",
+  "cueSummary": "语音已生成 {{generated}} / {{total}} 行 · 可交付 {{ready}} 行",
+  "overlongCount": "需调整时长 {{count}} 行",
   "failedCount": "失败 {{count}}",
   "startDubbing": "开始配音",
   "resumeDubbing": "继续合成",
@@ -199,5 +199,7 @@
   "cueDraftFound": "发现 {{count}} 句未保存的文本草稿",
   "cueDraftUnreadable": "无法读取文本草稿",
   "cueDraftRestore": "恢复文本草稿",
-  "cueKeepDraft": "确认保留我的文本"
+  "cueKeepDraft": "确认保留我的文本",
+  "reviewTiming": "检查时长",
+  "insufficientSilence": "后续空白不足，请修改文字或语速后重新生成"
 }

@@ -109,6 +109,7 @@ export default function RecentTasksPage() {
     if (value === 'proofread') return t('card.proofread');
     if (value === 'dubbing') return t('card.dubbing');
     if (value === 'download') return t('card.download');
+    if (value === 'compose' || value === 'toolbox') return t(`card.${value}`);
     const slug =
       value === 'generateAndTranslate'
         ? 'generate-translate'
