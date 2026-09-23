@@ -3,6 +3,9 @@ import './helpers/uvThreadPool';
 import { backgroundOnly } from './automation/bootstrap';
 import { createWindowPort } from './automation/events';
 import { startAutomationServer } from './automation/server';
+import { AutomationService } from './automation/service';
+import { setupAssistantHandlers } from './assistant/ipc';
+import { setupMcpConfigHandlers } from './automation/mcpSetup';
 
 // 在最开始加载环境变量（仅开发模式；路径相对 app/ 编译产物）
 if (process.env.NODE_ENV !== 'production') {
@@ -298,7 +301,10 @@ app.on('before-quit', (event) => {
   setMainWindowForAddon(mainWindow);
   registerEngineIpcHandlers();
   setMainWindowForEngine(mainWindow);
-  await startAutomationServer();
+  const automationService = new AutomationService();
+  setupAssistantHandlers(automationService);
+  setupMcpConfigHandlers();
+  await startAutomationServer(automationService);
   if (desktopRequested) await showDesktop();
   app.on('activate', () => {
     desktopRequested = true;

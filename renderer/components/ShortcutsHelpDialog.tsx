@@ -29,6 +29,7 @@ const GROUPS: ShortcutGroup[] = [
     groupKey: 'shortcuts.groupGlobal',
     items: [
       { keys: ['mod', 'K'], labelKey: 'shortcuts.commandPalette' },
+      { keys: ['mod', 'J'], labelKey: 'shortcuts.toggleAssistant' },
       { keys: ['mod', ','], labelKey: 'shortcuts.openSettings' },
       { keys: ['?'], labelKey: 'shortcuts.showShortcuts' },
     ],

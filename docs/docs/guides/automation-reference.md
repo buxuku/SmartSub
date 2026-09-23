@@ -11,7 +11,7 @@ sidebar_position: 21
 
 ## system.info
 
-Application version, platform, profile, installed models, providers and automation health.
+Application version, platform, profile, engine runtime paths (e.g. faster-whisper python runtime and binaries), storage topology (userData, storageRoot, temp, logs, models), installed models, hardware environment, providers, and architecture notes.
 
 - CLI：`smartsub system info`
 - MCP：`smartsub_system_info`
@@ -68,6 +68,15 @@ Read redacted application logs.
       "minimum": 1,
       "maximum": 500,
       "default": 100
+    },
+    "types": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["info", "warning", "error"]
+      },
+      "maxItems": 3,
+      "description": "Filter by log level. Use [\"error\", \"warning\"] to diagnose failures quickly."
     }
   },
   "additionalProperties": false,
@@ -308,7 +317,7 @@ Delete a completed task record; does not delete input media.
 
 ## transcribe
 
-Transcribe audio/video using an installed local engine or explicitly selected cloud provider. Returns a job ID.
+Generate original-language subtitles using an installed local ASR engine or configured cloud ASR provider. AI segmentation/correction is opt-in and requires config.refineProvider. Inspect settings.get, engines.list, models.list and providers.list before selecting resources. Returns a job ID.
 
 - CLI：`smartsub transcribe`
 - MCP：`smartsub_transcribe`
@@ -355,7 +364,8 @@ Transcribe audio/video using an installed local engine or explicitly selected cl
     },
     "providerId": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "For transcribe: cloud ASR provider ID (requires engine=\"cloud\"). For translate/pipeline.run: translation provider ID. Use config.asrProviderId and config.translateProvider for pipelines that need both; use config.refineProvider for AI segmentation/correction."
     },
     "outputDir": {
       "type": "string",
@@ -445,7 +455,8 @@ Transcribe audio/video using an installed local engine or explicitly selected cl
             }
           },
           "required": ["engine", "voice"],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "description": "Opt-in dubbing. Use models.list for local TTS or providers.list(kind=\"tts\") for cloud; choose a compatible voice with tts.voices or voices.list. Chat and ASR services cannot provide TTS."
         },
         "compose": {
           "type": "object",
@@ -592,11 +603,13 @@ Transcribe audio/video using an installed local engine or explicitly selected cl
         },
         "asrProviderId": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "Cloud ASR provider ID from providers.list(kind=\"asr\"). Requires engine=\"cloud\" and a model in that provider's models list. Independent from translation/refinement/chat."
         },
         "translateProvider": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "Translation provider ID from providers.list(kind=\"translation\"). Required for translate and translating pipelines; \"-1\" is not a valid translation selection."
         },
         "useEmbeddedSubtitles": {
           "type": "boolean"
@@ -634,20 +647,30 @@ Transcribe audio/video using an installed local engine or explicitly selected cl
           "minimum": 0
         },
         "preserveSpeechPauses": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Preserve speech gaps during subtitle segmentation. Does not require an AI provider by itself."
         },
         "aiSegmentation": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Opt-in AI semantic segmentation of ASR output. Defaults to false for automation. Requires a configured AI refineProvider; do not enable just to generate original SRT."
         },
         "aiCorrection": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Opt-in AI correction of ASR text. Defaults to false for automation. Requires a configured AI refineProvider."
         },
         "refineProvider": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "AI provider ID from providers.list(kind=\"translation\") with isAi=true and configured=true. Required for AI segmentation/correction. Omitted or \"follow-translation\" uses the task translation provider. The in-app assistant can use its current AI service when omitted and no task service resolves. Explicit selections are never replaced."
+        },
+        "subtitleTranslationStyle": {
+          "type": "string",
+          "enum": ["neutral", "conversational"],
+          "description": "Defaults to neutral. Conversational style requires a configured AI translation provider, including translate-only tasks."
         },
         "speakerDiarization": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Opt-in speaker identification for media. Requires installed speaker models and Sherpa runtime; inspect models.list before enabling."
         },
         "speakerDiarizationCount": {
           "type": "integer",
@@ -664,7 +687,7 @@ Transcribe audio/video using an installed local engine or explicitly selected cl
         }
       },
       "additionalProperties": true,
-      "description": "Advanced IFormData overrides: dub, compose, gates, transcription parameters, glossary and refinement settings."
+      "description": "Task overrides. Optional refinement, speaker identification, dubbing, composition and manuscript inputs are disabled unless explicitly supplied. Engine/model/provider preferences come from settings.get.defaults. Pass the desired task/recipe config here to reuse its advanced stages."
     }
   },
   "required": ["files"],
@@ -675,7 +698,7 @@ Transcribe audio/video using an installed local engine or explicitly selected cl
 
 ## translate
 
-Translate subtitle files using a configured translation provider. Returns a job ID.
+Translate subtitle files using a configured translation provider and explicit targetLanguage. A missing provider is an error; translation is never silently skipped. Conversational style requires an AI provider. Returns a job ID.
 
 - CLI：`smartsub translate`
 - MCP：`smartsub_translate`
@@ -722,7 +745,8 @@ Translate subtitle files using a configured translation provider. Returns a job 
     },
     "providerId": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "For transcribe: cloud ASR provider ID (requires engine=\"cloud\"). For translate/pipeline.run: translation provider ID. Use config.asrProviderId and config.translateProvider for pipelines that need both; use config.refineProvider for AI segmentation/correction."
     },
     "outputDir": {
       "type": "string",
@@ -812,7 +836,8 @@ Translate subtitle files using a configured translation provider. Returns a job 
             }
           },
           "required": ["engine", "voice"],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "description": "Opt-in dubbing. Use models.list for local TTS or providers.list(kind=\"tts\") for cloud; choose a compatible voice with tts.voices or voices.list. Chat and ASR services cannot provide TTS."
         },
         "compose": {
           "type": "object",
@@ -959,11 +984,13 @@ Translate subtitle files using a configured translation provider. Returns a job 
         },
         "asrProviderId": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "Cloud ASR provider ID from providers.list(kind=\"asr\"). Requires engine=\"cloud\" and a model in that provider's models list. Independent from translation/refinement/chat."
         },
         "translateProvider": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "Translation provider ID from providers.list(kind=\"translation\"). Required for translate and translating pipelines; \"-1\" is not a valid translation selection."
         },
         "useEmbeddedSubtitles": {
           "type": "boolean"
@@ -1001,20 +1028,30 @@ Translate subtitle files using a configured translation provider. Returns a job 
           "minimum": 0
         },
         "preserveSpeechPauses": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Preserve speech gaps during subtitle segmentation. Does not require an AI provider by itself."
         },
         "aiSegmentation": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Opt-in AI semantic segmentation of ASR output. Defaults to false for automation. Requires a configured AI refineProvider; do not enable just to generate original SRT."
         },
         "aiCorrection": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Opt-in AI correction of ASR text. Defaults to false for automation. Requires a configured AI refineProvider."
         },
         "refineProvider": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "AI provider ID from providers.list(kind=\"translation\") with isAi=true and configured=true. Required for AI segmentation/correction. Omitted or \"follow-translation\" uses the task translation provider. The in-app assistant can use its current AI service when omitted and no task service resolves. Explicit selections are never replaced."
+        },
+        "subtitleTranslationStyle": {
+          "type": "string",
+          "enum": ["neutral", "conversational"],
+          "description": "Defaults to neutral. Conversational style requires a configured AI translation provider, including translate-only tasks."
         },
         "speakerDiarization": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Opt-in speaker identification for media. Requires installed speaker models and Sherpa runtime; inspect models.list before enabling."
         },
         "speakerDiarizationCount": {
           "type": "integer",
@@ -1031,7 +1068,7 @@ Translate subtitle files using a configured translation provider. Returns a job 
         }
       },
       "additionalProperties": true,
-      "description": "Advanced IFormData overrides: dub, compose, gates, transcription parameters, glossary and refinement settings."
+      "description": "Task overrides. Optional refinement, speaker identification, dubbing, composition and manuscript inputs are disabled unless explicitly supplied. Engine/model/provider preferences come from settings.get.defaults. Pass the desired task/recipe config here to reuse its advanced stages."
     }
   },
   "required": ["files", "targetLanguage"],
@@ -1042,7 +1079,7 @@ Translate subtitle files using a configured translation provider. Returns a job 
 
 ## pipeline.run
 
-Run transcription/translation with optional dubbing and video composition. Default review gates are automatic.
+Run transcription/translation with opt-in AI refinement, speaker identification, dubbing and video composition. Select ASR, translation/refinement and TTS providers separately. Pass desired advanced stages in config; default review gates are automatic.
 
 - CLI：`smartsub pipeline run`
 - MCP：`smartsub_pipeline_run`
@@ -1089,7 +1126,8 @@ Run transcription/translation with optional dubbing and video composition. Defau
     },
     "providerId": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "For transcribe: cloud ASR provider ID (requires engine=\"cloud\"). For translate/pipeline.run: translation provider ID. Use config.asrProviderId and config.translateProvider for pipelines that need both; use config.refineProvider for AI segmentation/correction."
     },
     "outputDir": {
       "type": "string",
@@ -1179,7 +1217,8 @@ Run transcription/translation with optional dubbing and video composition. Defau
             }
           },
           "required": ["engine", "voice"],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "description": "Opt-in dubbing. Use models.list for local TTS or providers.list(kind=\"tts\") for cloud; choose a compatible voice with tts.voices or voices.list. Chat and ASR services cannot provide TTS."
         },
         "compose": {
           "type": "object",
@@ -1326,11 +1365,13 @@ Run transcription/translation with optional dubbing and video composition. Defau
         },
         "asrProviderId": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "Cloud ASR provider ID from providers.list(kind=\"asr\"). Requires engine=\"cloud\" and a model in that provider's models list. Independent from translation/refinement/chat."
         },
         "translateProvider": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "Translation provider ID from providers.list(kind=\"translation\"). Required for translate and translating pipelines; \"-1\" is not a valid translation selection."
         },
         "useEmbeddedSubtitles": {
           "type": "boolean"
@@ -1368,20 +1409,30 @@ Run transcription/translation with optional dubbing and video composition. Defau
           "minimum": 0
         },
         "preserveSpeechPauses": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Preserve speech gaps during subtitle segmentation. Does not require an AI provider by itself."
         },
         "aiSegmentation": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Opt-in AI semantic segmentation of ASR output. Defaults to false for automation. Requires a configured AI refineProvider; do not enable just to generate original SRT."
         },
         "aiCorrection": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Opt-in AI correction of ASR text. Defaults to false for automation. Requires a configured AI refineProvider."
         },
         "refineProvider": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "AI provider ID from providers.list(kind=\"translation\") with isAi=true and configured=true. Required for AI segmentation/correction. Omitted or \"follow-translation\" uses the task translation provider. The in-app assistant can use its current AI service when omitted and no task service resolves. Explicit selections are never replaced."
+        },
+        "subtitleTranslationStyle": {
+          "type": "string",
+          "enum": ["neutral", "conversational"],
+          "description": "Defaults to neutral. Conversational style requires a configured AI translation provider, including translate-only tasks."
         },
         "speakerDiarization": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Opt-in speaker identification for media. Requires installed speaker models and Sherpa runtime; inspect models.list before enabling."
         },
         "speakerDiarizationCount": {
           "type": "integer",
@@ -1398,7 +1449,7 @@ Run transcription/translation with optional dubbing and video composition. Defau
         }
       },
       "additionalProperties": true,
-      "description": "Advanced IFormData overrides: dub, compose, gates, transcription parameters, glossary and refinement settings."
+      "description": "Task overrides. Optional refinement, speaker identification, dubbing, composition and manuscript inputs are disabled unless explicitly supplied. Engine/model/provider preferences come from settings.get.defaults. Pass the desired task/recipe config here to reuse its advanced stages."
     },
     "taskType": {
       "type": "string",
@@ -2685,7 +2736,7 @@ Delete a subtitle style preset.
 
 ## providers.list
 
-List configured providers without secret values.
+List saved providers without secret values. configured reports local configuration completeness (not network health); translation isAi providers support AI refinement, while ASR and TTS use separate provider kinds.
 
 - CLI：`smartsub providers list`
 - MCP：`smartsub_providers_list`
@@ -3152,7 +3203,7 @@ List voices for a configured cloud TTS provider or installed local models.
 
 ## tts.synthesize
 
-Synthesize text to an audio file with a configured cloud TTS provider or local model.
+Synthesize text to an audio file. Select exactly one of model (installed local TTS, from models.list) or providerId (configured cloud TTS, from providers.list(kind="tts")). Select voice via tts.voices or voices.list and set language to the spoken language.
 
 - CLI：`smartsub tts synthesize`
 - MCP：`smartsub_tts_synthesize`
@@ -5242,7 +5293,8 @@ Save a workflow recipe: name,goals,accepts,config.
                 }
               },
               "required": ["engine", "voice"],
-              "additionalProperties": false
+              "additionalProperties": false,
+              "description": "Opt-in dubbing. Use models.list for local TTS or providers.list(kind=\"tts\") for cloud; choose a compatible voice with tts.voices or voices.list. Chat and ASR services cannot provide TTS."
             },
             "compose": {
               "type": "object",
@@ -5389,11 +5441,13 @@ Save a workflow recipe: name,goals,accepts,config.
             },
             "asrProviderId": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "description": "Cloud ASR provider ID from providers.list(kind=\"asr\"). Requires engine=\"cloud\" and a model in that provider's models list. Independent from translation/refinement/chat."
             },
             "translateProvider": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "description": "Translation provider ID from providers.list(kind=\"translation\"). Required for translate and translating pipelines; \"-1\" is not a valid translation selection."
             },
             "useEmbeddedSubtitles": {
               "type": "boolean"
@@ -5435,20 +5489,30 @@ Save a workflow recipe: name,goals,accepts,config.
               "minimum": 0
             },
             "preserveSpeechPauses": {
-              "type": "boolean"
+              "type": "boolean",
+              "description": "Preserve speech gaps during subtitle segmentation. Does not require an AI provider by itself."
             },
             "aiSegmentation": {
-              "type": "boolean"
+              "type": "boolean",
+              "description": "Opt-in AI semantic segmentation of ASR output. Defaults to false for automation. Requires a configured AI refineProvider; do not enable just to generate original SRT."
             },
             "aiCorrection": {
-              "type": "boolean"
+              "type": "boolean",
+              "description": "Opt-in AI correction of ASR text. Defaults to false for automation. Requires a configured AI refineProvider."
             },
             "refineProvider": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "description": "AI provider ID from providers.list(kind=\"translation\") with isAi=true and configured=true. Required for AI segmentation/correction. Omitted or \"follow-translation\" uses the task translation provider. The in-app assistant can use its current AI service when omitted and no task service resolves. Explicit selections are never replaced."
+            },
+            "subtitleTranslationStyle": {
+              "type": "string",
+              "enum": ["neutral", "conversational"],
+              "description": "Defaults to neutral. Conversational style requires a configured AI translation provider, including translate-only tasks."
             },
             "speakerDiarization": {
-              "type": "boolean"
+              "type": "boolean",
+              "description": "Opt-in speaker identification for media. Requires installed speaker models and Sherpa runtime; inspect models.list before enabling."
             },
             "speakerDiarizationCount": {
               "type": "integer",
@@ -5465,7 +5529,7 @@ Save a workflow recipe: name,goals,accepts,config.
             }
           },
           "additionalProperties": true,
-          "description": "Task overrides. Further IFormData fields are accepted for compatibility; see types/types.ts."
+          "description": "Task overrides. Optional AI refinement, speaker identification, dubbing, composition and manuscript inputs are disabled unless supplied here. Engine/model/provider preferences are inherited from settings.get.defaults. Further IFormData fields are accepted for compatibility; see types/types.ts."
         }
       },
       "required": ["name", "goals", "accepts"],

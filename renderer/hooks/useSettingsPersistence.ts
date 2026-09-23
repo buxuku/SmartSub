@@ -73,6 +73,14 @@ export function useSettingsPersistence(
       clearTimer();
     };
   }, [load, clearTimer]);
+  useEffect(
+    () =>
+      window.ipc?.on?.('assistant:event', (event: any) => {
+        if (event.type === 'changed' && event.operation === 'settings.update')
+          void load();
+      }),
+    [load],
+  );
 
   const getIsDirty = useCallback(() => pending.current.size > 0, []);
   const save = useCallback((): Promise<boolean> => {

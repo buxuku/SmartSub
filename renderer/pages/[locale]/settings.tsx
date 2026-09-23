@@ -67,6 +67,7 @@ import PageHeader from '@/components/PageHeader';
 import HelpHint from '@/components/HelpHint';
 import IconChip from '@/components/IconChip';
 import CustomLanguageManager from '@/components/settings/CustomLanguageManager';
+import McpConnectionCard from '@/components/settings/McpConnectionCard';
 import { openUrl } from 'lib/utils';
 import packageInfo from '../../../package.json';
 import {
@@ -934,6 +935,8 @@ const Settings = () => {
             )}
           </CardContent>
         </Card>
+
+        <McpConnectionCard />
 
         <Card>
           <CardHeader>

@@ -166,7 +166,9 @@
     "test:automation": "npm run test:automation:regressions && node scripts/test-automation.mjs",
     "test:automation:desktop": "node scripts/test-automation-desktop.mjs",
     "docs:automation": "tsx scripts/generate-automation-reference.ts",
-    "test:automation:regressions": "node scripts/test-automation-regressions.cjs"
+    "test:automation:regressions": "node scripts/test-automation-regressions.cjs && node scripts/test-mcp-config.cjs",
+    "test:assistant": "tsx scripts/test-assistant.ts",
+    "test:e2e:assistant": "node scripts/e2e/assistant.mjs"
   },
   "dependencies": {
     "@alicloud/alimt20181012": "^1.3.0",
@@ -227,9 +229,11 @@
     "opencc-js": "^1.3.1",
     "react-hook-form": "^7.51.4",
     "react-i18next": "^15.0.2",
+    "react-markdown": "^10.1.0",
     "react-player": "^2.16.0",
     "really-relaxed-json": "^0.3.2",
     "regenerator-runtime": "^0.14.1",
+    "remark-gfm": "^4.0.1",
     "sonner": "^1.4.41",
     "srt-webvtt": "^2.0.0",
     "systeminformation": "^5.27.7",

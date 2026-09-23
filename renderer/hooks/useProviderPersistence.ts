@@ -103,6 +103,17 @@ export default function useProviderPersistence<T extends ProviderRecord>(
       clearTimer();
     };
   }, [load, clearTimer]);
+  useEffect(
+    () =>
+      window.ipc?.on?.('assistant:event', (event: any) => {
+        if (
+          event.type === 'changed' &&
+          event.operation.startsWith('providers.')
+        )
+          void load();
+      }),
+    [load],
+  );
 
   const persist = useCallback((): Promise<boolean> => {
     clearTimer();

@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import { useRouter } from 'next/router';
+import { useAssistantSource } from '@/context/AssistantContext';
 import Link from 'next/link';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -148,6 +149,48 @@ export default function TaskPage() {
   const routeKey = `${slug}:${typeof router.query.project === 'string' ? router.query.project : ''}`;
   const [hydratedRoute, setHydratedRoute] = useState<string | null>(null);
   const [projectLoadError, setProjectLoadError] = useState<string | null>(null);
+  const taskErrors = [
+    projectLoadError,
+    ...files.flatMap((file) => [
+      file.exportSubtitleError
+        ? `${file.fileName}: ${file.exportSubtitleError}`
+        : undefined,
+      file.refineSubtitleError
+        ? `${file.fileName}: ${file.refineSubtitleError}`
+        : undefined,
+      file.speakerDiarizationError
+        ? `${file.fileName}: ${file.speakerDiarizationError}`
+        : undefined,
+      file.dubbingError ? `${file.fileName}: ${file.dubbingError}` : undefined,
+      ...(file.translationFailures || []).map((tf) =>
+        tf.error ? `${file.fileName}: ${tf.error}` : undefined,
+      ),
+    ]),
+  ].filter((entry): entry is string => Boolean(entry));
+  useAssistantSource(
+    {
+      priority: 10,
+      snapshot: () => ({
+        projectId: projectId || undefined,
+        files: files.map((file) => file.filePath).filter(Boolean),
+        task: {
+          name: projectName,
+          status: taskStatus,
+          config: listFormData,
+          ...(taskErrors.length ? { errors: taskErrors.slice(0, 5) } : {}),
+        },
+        ...(taskErrors.length ? { recentErrors: taskErrors.slice(0, 5) } : {}),
+      }),
+    },
+    [
+      projectId,
+      projectName,
+      files,
+      taskStatus,
+      listFormData,
+      taskErrors.join('|'),
+    ],
+  );
   const [loadAttempt, setLoadAttempt] = useState(0);
   const loadedSlugRef = useRef('');
   const baselineRef = useRef('');

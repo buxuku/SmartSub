@@ -20,9 +20,29 @@ async function main() {
     subtitleHealth('一二三四五六七八', 0, 1, 'zh-CN').tooFast,
     false,
   );
-  assert.equal(subtitleHealth('一二三四五六七八九', 0, 1, 'zh').tooFast, true);
+  // 9 chars in 1s is 9.0 CPS <= 8 * 1.15 (9.2), within tolerance
+  assert.equal(subtitleHealth('一二三四五六七八九', 0, 1, 'zh').tooFast, false);
+  // 10 chars in 1s is 10.0 CPS > 9.2, exceeds tolerance
+  assert.equal(
+    subtitleHealth('一二三四五六七八九十', 0, 1, 'zh').tooFast,
+    true,
+  );
+  // English: 20 chars in 1s is 20.0 CPS <= 20
   assert.equal(subtitleHealth('a'.repeat(20), 0, 1, 'en').tooFast, false);
-  assert.equal(subtitleHealth('a'.repeat(21), 0, 1, 'en').tooFast, true);
+  // 23 chars in 1s is 23.0 CPS <= 20 * 1.15 (23.0), within tolerance
+  assert.equal(subtitleHealth('a'.repeat(23), 0, 1, 'en').tooFast, false);
+  // 24 chars in 1s is 24.0 CPS > 23.0, exceeds tolerance
+  assert.equal(subtitleHealth('a'.repeat(24), 0, 1, 'en').tooFast, true);
+  // Spaces are excluded from readingCharacters but included in characters
+  const enWithSpaces = subtitleHealth(
+    'I hope will resonate with other things',
+    8.84,
+    10.59,
+    'en',
+  );
+  assert.equal(enWithSpaces.characters, 38);
+  assert.equal(enWithSpaces.readingCharacters, 32);
+  assert.equal(enWithSpaces.tooFast, false);
   assert.equal(subtitleHealth('一二三四五六七八九', 0, 1).threshold, 8);
   assert.equal(subtitleHealth('e\u0301', 0, 1).characters, 1);
   assert.equal(subtitleHealth('a b\r\ncd', 0, 2).characters, 5);

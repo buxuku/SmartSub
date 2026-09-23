@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import { useAssistantSource } from '../../context/AssistantContext';
 import { useTranslation } from 'next-i18next';
 import {
   Paintbrush,
@@ -138,6 +139,17 @@ export default function SubtitleMergePanel({
     retryErrors,
     isRetrying,
   } = useSubtitleMerge(hookOptions);
+
+  useAssistantSource(
+    {
+      priority: 10,
+      snapshot: () => ({
+        files: [videoPath, subtitlePath, audioTrackPath].filter(Boolean),
+        task: { kind: 'compose', status, outputPath },
+      }),
+    },
+    [videoPath, subtitlePath, audioTrackPath, status, outputPath],
+  );
 
   const guard = useNavigationGuard('subtitle-merge', {
     isDirty: composeDocument.dirty,
