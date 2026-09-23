@@ -7,6 +7,14 @@ SmartSub 提供 **111 个 MCP 工具及对应 CLI 命令**，覆盖转写、翻�
 
 ## 安装 CLI 和连接 AI 工具
 
+桌面软件中打开 **设置 → 连接 AI 工具（MCP）**：
+
+- **Cursor**：点击「一键导入 Cursor」，在 Cursor 打开的导入页面确认添加；未安装 Cursor 时可复制 JSON 手动配置。
+- **Codex**：点击「复制配置」，将 TOML 合并到 `~/.codex/config.toml`（或自定义 `CODEX_HOME` 下的 `config.toml`）。已有 `smartsub` 条目时替换该条目，保留其他设置，再重新连接 MCP 或重启 Codex。
+- **其他客户端**：复制通用 JSON，将 `smartsub` 条目合并到客户端的 `mcpServers` 配置。
+
+配置自动包含当前安装路径与数据目录，无需另装 Node.js。可展开「配置预览」检查内容；移动软件或更换数据目录后重新导入。Cursor 使用官方 [MCP 安装链接协议](https://cursor.com/docs/mcp/install-links)，Codex 使用官方 [MCP TOML 配置格式](https://developers.openai.com/codex/mcp)。
+
 先将应用安装到固定位置，再运行它附带的启动器。macOS 示例：
 
 ```sh
@@ -107,9 +115,17 @@ smartsub pipeline run --input-json /absolute/pipeline.json --wait
 
 新提交的自动化流水线默认自动放行。显式设置 `manual` 时，任务停在 `review`；检查/编辑后调用 `pipeline.release`，原任务 ID 继续更新。配音工作台拥有会话或存在未确认草稿时返回 `SESSION_BUSY` / `UNSAVED_EDITS`，先在工作台保存并关闭编辑器。
 
+引擎、模型和服务选择沿用 `settings.get.defaults`；AI 分段、纠错、说话人识别、配音、合成、口语化翻译和参考文稿必须通过 `config` 显式启用，不继承上次界面的开启状态。要复用任务或配方的高级步骤，请传入对应配置。
+
+`transcribe.providerId` 表示云 ASR 服务，要求 `engine="cloud"`；`translate` 和 `pipeline.run` 的 `providerId` 表示翻译服务。组合任务请分别传 `config.asrProviderId` 和 `config.translateProvider`。AI 分段／纠错还需可用的 `config.refineProvider`（来自 `providers.list` 的 `translation` 分类，`isAi=true` 且 `configured=true`）；缺省时沿用任务的精修／AI 翻译服务。外部 MCP 不会自动选择聊天服务。「保留停顿」无需精修服务。
+
+翻译必须有有效服务和明确目标语言；不会因为选择了 `-1` 就跳过翻译。仅翻译接受字幕文件，音视频翻译应使用 `pipeline.run` 的 `generateAndTranslate`。依赖校验失败会在处理文件前返回缺失资源和查询方式；修正参数后重新提交。
+
 ### 服务商和资源
 
 `providers.types` 返回各类型的字段、必填项和能力。用 `providers.save` 写入 `{kind, provider}`，`provider.id` 唯一标识实例；更新时省略的凭据会保留，读取时凭据脱敏。密钥优先经 JSON 文件或 stdin 传入，避免出现在 shell 历史中。`providers.test` 会发出真实请求，是否收费取决于所选服务商。
+
+`providers.list` 返回每个服务的 `configured` 标志，表示必填配置是否完整，不代表网络连接已测试成功。
 
 `models.list/install/import/delete` 管理本地模型；`engines.*` 管理 faster-whisper 运行时；`downloads.*` 管理下载器、批次及 Cookie；`glossaries.*`、`recipes.*`、`voices.*` 管理词库、配方和克隆音色。导入/导出必须给显式文件路径，不会弹出文件选择框。
 

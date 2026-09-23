@@ -126,13 +126,14 @@ export function validateDownloadDependencies(submission: TaskSubmission): void {
   )
     throw new Error('DOWNLOAD_PIPELINE_SPEAKERS_REQUIRED');
   if (
-    form.taskType === 'generateAndTranslate' &&
+    form.taskType !== 'generateOnly' &&
+    form.translateProvider !== '-1' &&
     form.subtitleTranslationStyle === 'conversational'
   ) {
     const provider = (store.get('translationProviders') || []).find(
       (p) => p.id === form.translateProvider,
     );
-    if (!provider?.isAi)
+    if (!provider?.isAi || !isProviderConfigured(provider))
       throw new Error('DOWNLOAD_PIPELINE_TRANSLATION_STYLE_REQUIRED');
   }
   const dub = form.dub;
@@ -161,7 +162,7 @@ export function validateDownloadDependencies(submission: TaskSubmission): void {
       const language = resolveTtsLanguage({
         language: dub.language,
         subtitleLanguage:
-          form.taskType === 'generateAndTranslate'
+          form.taskType !== 'generateOnly' && form.translateProvider !== '-1'
             ? form.targetLanguage
             : form.sourceLanguage,
         voiceLanguage: 'lang' in voice ? voice.lang : voice.language,

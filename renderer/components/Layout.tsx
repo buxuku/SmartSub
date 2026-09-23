@@ -38,6 +38,7 @@ import {
   Search,
   ScrollText,
   Settings,
+  Sparkles,
   X,
   Zap,
   type LucideIcon,
@@ -50,6 +51,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ThemeToggle } from './ThemeToggle';
 import ActivityCenter from './ActivityCenter';
+import AssistantPanel from './assistant/AssistantPanel';
+import { useAssistant } from '../context/AssistantContext';
 import CommandPalette from './CommandPalette';
 import { cn, openUrl } from 'lib/utils';
 import { hasAnyModelAnyEngine } from 'lib/engineModels';
@@ -250,6 +253,7 @@ function NavItem({
 const openAfterMenuClose = (open: () => void) => setTimeout(open, 0);
 
 const Layout = ({ children }) => {
+  const assistant = useAssistant();
   const { t, i18n } = useTranslation('common');
   const { resolvedTheme } = useTheme();
   const locale = i18n.language;
@@ -1058,11 +1062,29 @@ const Layout = ({ children }) => {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={t('assistant.title')}
+              title={`${t('assistant.title')} (${isMac ? '⌘J' : 'Ctrl+J'})`}
+              aria-keyshortcuts={isMac ? 'Meta+J' : 'Control+J'}
+              data-assistant-toggle
+              aria-expanded={assistant?.open || false}
+              onClick={() => assistant?.setOpen(!assistant.open)}
+            >
+              <Sparkles className="mr-1.5 h-4 w-4 text-primary" />
+              {t('assistant.title')}
+            </Button>
             <ThemeToggle />
           </div>
         </header>
-        <main className="flex-1 min-h-0 overflow-auto">{children}</main>
-        <Toaster />
+        <div className="flex flex-1 min-h-0 min-w-0 overflow-hidden">
+          <main className="flex-1 min-h-0 min-w-0 overflow-auto">
+            {children}
+          </main>
+          <AssistantPanel />
+        </div>
+        <Toaster position={assistant?.open ? 'top-center' : 'bottom-right'} />
       </div>
 
       {/* 底部全宽状态栏：解耦引擎模型、云服务、GPU与队列指示 */}

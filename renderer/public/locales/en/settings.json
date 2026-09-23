@@ -341,5 +341,25 @@
   "about": "About",
   "modelsPathMoved": "Model storage path is now managed in the Resource Hub",
   "gpuAccelerationTitle": "GPU Acceleration",
-  "gpuAccelerationMoved": "GPU acceleration settings are now in Resource Hub → Acceleration"
+  "gpuAccelerationMoved": "GPU acceleration settings are now in Resource Hub → Acceleration",
+  "mcp": {
+    "title": "Connect AI tools (MCP)",
+    "description": "Let Cursor, Codex and other AI tools use SmartSub transcription, translation, dubbing and composition.",
+    "client": "Choose an AI client",
+    "other": "Other clients",
+    "cursorHint": "Open the Cursor MCP installation page and confirm in Cursor. You can also copy JSON and merge the smartsub entry into Cursor’s mcp.json.",
+    "codexHint": "Copy the TOML into ~/.codex/config.toml (or your custom CODEX_HOME). Replace an existing smartsub entry while keeping other settings, then reconnect MCP or restart Codex.",
+    "otherHint": "Copy the JSON and merge the smartsub entry into your client’s mcpServers configuration, keeping other servers. Works with clients that support local stdio MCP.",
+    "installCursor": "Add to Cursor",
+    "copyConfig": "Copy configuration",
+    "copied": "MCP configuration copied",
+    "cursorOpened": "Requested Cursor to open. Confirm adding the server in Cursor.",
+    "cursorFailed": "Could not open Cursor. Check that it is installed, or copy the configuration and add it manually.",
+    "copyFailed": "Could not copy. Expand the configuration preview to copy it manually.",
+    "loadFailed": "Could not generate MCP configuration. Check your installation; in development, build the automation entrypoint first and retry.",
+    "preview": "Configuration preview",
+    "loading": "Generating configuration…",
+    "retry": "Retry",
+    "locationHint": "Connects to this SmartSub profile’s services and tasks. No separate Node.js installation needed. Reimport after moving the app or changing profiles."
+  }
 }

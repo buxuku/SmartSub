@@ -266,6 +266,20 @@ const EngineModelTab: React.FC = () => {
     }
   }, []);
 
+  useEffect(
+    () =>
+      window.ipc?.on?.('assistant:event', (event: any) => {
+        if (
+          event.type === 'changed' &&
+          /^(models|engines)\./.test(event.operation)
+        ) {
+          void refresh();
+          void updateSystemInfo();
+        }
+      }),
+    [refresh, updateSystemInfo],
+  );
+
   useEffect(() => {
     refresh();
     updateSystemInfo();

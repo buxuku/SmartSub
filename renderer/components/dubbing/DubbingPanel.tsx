@@ -3,6 +3,7 @@
  * + 左栏配置 + 右栏（行列表 + 播放器）。
  */
 import React, { useRef, useState, useCallback, useEffect } from 'react';
+import { useAssistantSource } from '../../context/AssistantContext';
 import { useTranslation } from 'next-i18next';
 import { useRouter } from 'next/router';
 import { Card, CardContent } from '@/components/ui/card';
@@ -83,6 +84,18 @@ export default function DubbingPanel({
     workItemId,
   });
   const playerRef = useRef<DubbingPlayerHandle>(null);
+  useAssistantSource(
+    {
+      priority: 10,
+      snapshot: () => ({
+        projectId: workItemId,
+        sessionId: dub.session?.sessionId,
+        files: [dub.subtitlePath, dub.videoPath].filter(Boolean),
+        task: { kind: 'dubbing' },
+      }),
+    },
+    [workItemId, dub.session?.sessionId, dub.subtitlePath, dub.videoPath],
+  );
   const [currentTimeMs, setCurrentTimeMs] = useState(-1);
   const [timingReviewRequest, setTimingReviewRequest] = useState(0);
 

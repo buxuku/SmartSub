@@ -1,6 +1,6 @@
 const createJestConfig = require('next/jest')({ dir: './renderer' });
 
-module.exports = createJestConfig({
+const config = createJestConfig({
   testEnvironment: 'jsdom',
   testMatch: [
     '<rootDir>/renderer/**/__tests__/*.test.{ts,tsx}',
@@ -15,3 +15,14 @@ module.exports = createJestConfig({
   setupFilesAfterEnv: ['<rootDir>/scripts/jest-setup.cjs'],
   clearMocks: true,
 });
+
+module.exports = async () => {
+  const resolved = await config();
+  // react-markdown's unified/remark dependency tree is ESM-only.
+  const markdownModules =
+    'react-markdown|remark-.+|rehype-.+|unified|bail|devlop|extend|is-plain-obj|trough|vfile.*|unist-.+|mdast-.+|hast-.+|micromark.*|decode-named-character-reference|character-entities.*|ccount|escape-string-regexp|markdown-table|property-information|space-separated-tokens|comma-separated-tokens|zwitch|trim-lines|html-url-attributes|estree-util-is-identifier-name|longest-streak';
+  resolved.transformIgnorePatterns = [
+    `/node_modules/(?!(${markdownModules})/)`,
+  ];
+  return resolved;
+};

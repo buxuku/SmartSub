@@ -341,5 +341,25 @@
   "about": "关于",
   "modelsPathMoved": "模型存储路径已移至资源中心管理",
   "gpuAccelerationTitle": "GPU 加速",
-  "gpuAccelerationMoved": "GPU 加速设置已移至资源中心 → 加速 Tab"
+  "gpuAccelerationMoved": "GPU 加速设置已移至资源中心 → 加速 Tab",
+  "mcp": {
+    "title": "连接 AI 工具（MCP）",
+    "description": "让 Cursor、Codex 等 AI 工具直接调用 SmartSub 的转写、翻译、配音和合成能力。",
+    "client": "选择 AI 客户端",
+    "other": "其他客户端",
+    "cursorHint": "一键打开 Cursor 的 MCP 导入页面，在 Cursor 中确认即可。也可复制 JSON，将 smartsub 条目合并到 Cursor 的 mcp.json。",
+    "codexHint": "复制 TOML 配置，合并到 ~/.codex/config.toml（自定义 CODEX_HOME 时使用该目录）。如果已有 smartsub 条目，请替换该条目，保留其他配置，然后重新连接 MCP 或重启 Codex。",
+    "otherHint": "复制通用 JSON，将 smartsub 条目合并到客户端的 mcpServers 配置中，保留其他服务。支持本地 stdio MCP 的客户端可使用。",
+    "installCursor": "一键导入 Cursor",
+    "copyConfig": "复制配置",
+    "copied": "MCP 配置已复制",
+    "cursorOpened": "已请求打开 Cursor，请在 Cursor 中确认添加",
+    "cursorFailed": "无法打开 Cursor，请确认已安装，或复制配置手动添加。",
+    "copyFailed": "复制失败，可展开配置预览后手动复制。",
+    "loadFailed": "无法生成 MCP 配置，请确认安装包完整；开发环境请先构建 automation 入口，然后重试。",
+    "preview": "配置预览",
+    "loading": "正在生成配置…",
+    "retry": "重试",
+    "locationHint": "连接当前 SmartSub 的服务配置与任务，无需另装 Node.js。移动软件或更换数据目录后，请重新导入配置。"
+  }
 }

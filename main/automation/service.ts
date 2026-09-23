@@ -45,7 +45,17 @@ import {
   previewVoice,
 } from '../helpers/dubbing/dubbingProcessor';
 import { TTS_MODELS, getInstalledTtsModels } from '../helpers/ttsModelCatalog';
-import { parseTtsVoices, TTS_PROVIDER_TYPES } from '../../types/ttsProvider';
+import {
+  isTtsProviderConfigured,
+  parseTtsVoices,
+  TTS_PROVIDER_TYPES,
+} from '../../types/ttsProvider';
+import {
+  automationDependencyError,
+  isSubtitleInput,
+  resolvePipelineForm,
+  type AutomationCallOptions,
+} from './pipelineConfig';
 import { validateDownloadDependencies } from '../helpers/videoDownload/pipelineReadiness';
 import { atomicReplaceTextFile } from '../helpers/atomicFile';
 import { isModelDownloadBusy } from '../helpers/systemInfoManager';
@@ -183,12 +193,18 @@ export class AutomationService {
           : [],
     };
   }
-  async call(name: string, input: unknown) {
+  async call(
+    name: string,
+    input: unknown,
+    options: AutomationCallOptions = {},
+  ) {
     const op = operationMap.get(name);
     if (!op) throw new Error('UNKNOWN_OPERATION');
     const args = op.schema.parse(input || {});
     if (op.long)
-      return this.jobs.submit(name, args, (ctx) => this.execute(op, args, ctx));
+      return this.jobs.submit(name, args, (ctx) =>
+        this.execute(op, args, ctx, options),
+      );
     const event = createServiceEvent();
     try {
       return redact(
@@ -215,37 +231,30 @@ export class AutomationService {
   ): Promise<any[]> {
     return this.invoke(providerChannels[kind][0], ctx);
   }
-  private async pipeline(op: string, a: any, ctx: AutomationContext) {
-    const form = {
-      ...(store.get('userConfig') || {}),
-      ...a.config,
-      taskType:
-        op === 'transcribe'
-          ? 'generateOnly'
-          : op === 'translate'
-            ? 'translateOnly'
-            : a.taskType,
-      gates: a.config?.gates || { subtitle: 'auto', dubbing: 'auto' },
-      sourceSrtSaveOption: 'fileNameWithLang',
-      targetSrtSaveOption: 'fileNameWithLang',
-    } as any;
-    for (const [key, target] of [
-      ['engine', 'transcriptionEngine'],
-      ['model', 'model'],
-      ['sourceLanguage', 'sourceLanguage'],
-      ['targetLanguage', 'targetLanguage'],
-    ])
-      if (a[key] !== undefined) form[target] = a[key];
-    if (a.providerId)
-      form[
-        form.transcriptionEngine === 'cloud' && op === 'transcribe'
-          ? 'asrProviderId'
-          : 'translateProvider'
-      ] = a.providerId;
+  private async pipeline(
+    op: string,
+    a: any,
+    ctx: AutomationContext,
+    options: AutomationCallOptions,
+  ) {
+    const form = resolvePipelineForm(
+      op,
+      a,
+      store.get('userConfig') || {},
+      store.get('translationProviders') || [],
+      options,
+    );
     for (const file of a.files) assertInput(file);
     if (
+      form.taskType === 'translateOnly' &&
+      a.files.some((file: string) => !isSubtitleInput(file))
+    )
+      throw new Error(
+        'SUBTITLE_INPUT_REQUIRED: translate/translateOnly accepts subtitle files. For audio/video use pipeline.run with taskType="generateAndTranslate", or transcribe first and translate its subtitle output.',
+      );
+    if (
       form.taskType !== 'translateOnly' &&
-      a.files.some((p: string) => !/\.(srt|vtt|ass|ssa|txt|lrc)$/i.test(p))
+      a.files.some((p: string) => !isSubtitleInput(p))
     ) {
       const adapter = getEngineAdapter(form.transcriptionEngine);
       if (!adapter) throw new Error('ENGINE_UNAVAILABLE: use engines.list');
@@ -254,7 +263,9 @@ export class AutomationService {
           (p) => p.id === form.asrProviderId,
         );
         if (!isAsrProviderConfigured(provider))
-          throw new Error('ASR_PROVIDER_REQUIRED');
+          throw new Error(
+            'ASR_PROVIDER_REQUIRED: Read providers.list(kind="asr") and set config.asrProviderId to a configured ASR provider ID. Choose model from its models list.',
+          );
       } else {
         const info = await this.invoke('getSystemInfo', ctx);
         const keys = {
@@ -277,14 +288,18 @@ export class AutomationService {
           );
       }
     }
-    if (form.taskType !== 'generateOnly' && form.translateProvider !== '-1') {
+    if (form.taskType !== 'generateOnly') {
       const provider = (await this.providerList('translation', ctx)).find(
         (p) => p.id === form.translateProvider,
       );
       if (!isProviderConfigured(provider))
-        throw new Error('TRANSLATION_PROVIDER_REQUIRED');
+        throw new Error(
+          'TRANSLATION_PROVIDER_REQUIRED: This task requests translation. Read providers.list(kind="translation") and select a configured provider via providerId or config.translateProvider; use transcribe for original-only subtitles.',
+        );
       if (!form.targetLanguage || form.targetLanguage === 'auto')
-        throw new Error('TARGET_LANGUAGE_REQUIRED');
+        throw new Error(
+          'TARGET_LANGUAGE_REQUIRED: Translation requires an explicit targetLanguage other than auto. Read system.languages for supported codes.',
+        );
     }
     const outputDir =
       a.outputDir ||
@@ -296,22 +311,26 @@ export class AutomationService {
         outputDir,
         `${index + 1}-${path.basename(file, path.extname(file))}`,
       );
-      fs.mkdirSync(directory, { recursive: true });
-      if (fs.readdirSync(directory).length)
+      if (fs.existsSync(directory) && fs.readdirSync(directory).length)
         throw new Error(`OUTPUT_EXISTS: ${directory}`);
       return { ...wrapFileObject(file), uuid: randomUUID(), directory };
     });
     const projectId = ctx.jobId!;
-    validateDownloadDependencies({
-      projectId,
-      requestId: a.requestId || projectId,
-      formData: form,
-      files: files.map((file: any) =>
-        /\.(srt|vtt|ass|ssa|txt|lrc)$/i.test(file.filePath)
-          ? { ...file, providedSubtitlePath: file.filePath }
-          : file,
-      ),
-    });
+    try {
+      validateDownloadDependencies({
+        projectId,
+        requestId: a.requestId || projectId,
+        formData: form,
+        files: files.map((file: any) =>
+          isSubtitleInput(file.filePath)
+            ? { ...file, providedSubtitlePath: file.filePath }
+            : file,
+        ),
+      });
+    } catch (error) {
+      throw automationDependencyError(error);
+    }
+    for (const file of files) fs.mkdirSync(file.directory, { recursive: true });
     const job = this.jobs.get(projectId)!;
     job.projectId = projectId;
     this.jobs.save(job);
@@ -379,12 +398,13 @@ export class AutomationService {
     op: OperationDefinition,
     a: any,
     ctx: AutomationContext,
+    options: AutomationCallOptions = {},
   ): Promise<any> {
     const name = op.name;
     if (name === 'system.logs')
       return redactDiagnostics(await this.invoke(op.channel!, ctx, a));
     if (['transcribe', 'translate', 'pipeline.run'].includes(name))
-      return this.pipeline(name, a, ctx);
+      return this.pipeline(name, a, ctx, options);
     if (name === 'system.capabilities')
       return operations.map(({ schema, ...rest }) => rest);
     if (name === 'system.info')
@@ -530,7 +550,18 @@ export class AutomationService {
       const kinds = a.kind ? [a.kind] : Object.keys(providerChannels);
       return Object.fromEntries(
         await Promise.all(
-          kinds.map(async (k) => [k, await this.providerList(k, ctx)]),
+          kinds.map(async (k) => [
+            k,
+            (await this.providerList(k, ctx)).map((provider) => ({
+              ...provider,
+              configured:
+                k === 'translation'
+                  ? isProviderConfigured(provider)
+                  : k === 'asr'
+                    ? isAsrProviderConfigured(provider)
+                    : isTtsProviderConfigured(provider),
+            })),
+          ]),
         ),
       );
     }

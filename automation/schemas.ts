@@ -79,7 +79,11 @@ export const dubbingConfig = pipelineDub.extend({
 });
 export const pipelineConfig = z
   .object({
-    dub: pipelineDub.optional(),
+    dub: pipelineDub
+      .optional()
+      .describe(
+        'Opt-in dubbing. Use models.list for local TTS or providers.list(kind="tts") for cloud; choose a compatible voice with tts.voices or voices.list. Chat and ASR services cannot provide TTS.',
+      ),
     compose: z
       .object({
         subtitle: z.enum(['hard', 'soft', 'none']),
@@ -96,8 +100,16 @@ export const pipelineConfig = z
         dubbing: z.enum(['auto', 'manual']).default('auto'),
       })
       .optional(),
-    asrProviderId: str.optional(),
-    translateProvider: str.optional(),
+    asrProviderId: str
+      .optional()
+      .describe(
+        'Cloud ASR provider ID from providers.list(kind="asr"). Requires engine="cloud" and a model in that provider\'s models list. Independent from translation/refinement/chat.',
+      ),
+    translateProvider: str
+      .optional()
+      .describe(
+        'Translation provider ID from providers.list(kind="translation"). Required for translate and translating pipelines; "-1" is not a valid translation selection.',
+      ),
     useEmbeddedSubtitles: z.boolean().optional(),
     translateContent: z
       .enum(['onlyTranslate', 'sourceAndTranslate', 'translateAndSource'])
@@ -111,18 +123,48 @@ export const pipelineConfig = z
     maxSubtitleChars: z.number().min(-1).optional(),
     subtitleMaxDuration: z.number().positive().optional(),
     subtitleMaxGap: z.number().min(0).optional(),
-    preserveSpeechPauses: z.boolean().optional(),
-    aiSegmentation: z.boolean().optional(),
-    aiCorrection: z.boolean().optional(),
-    refineProvider: str.optional(),
-    speakerDiarization: z.boolean().optional(),
+    preserveSpeechPauses: z
+      .boolean()
+      .optional()
+      .describe(
+        'Preserve speech gaps during subtitle segmentation. Does not require an AI provider by itself.',
+      ),
+    aiSegmentation: z
+      .boolean()
+      .optional()
+      .describe(
+        'Opt-in AI semantic segmentation of ASR output. Defaults to false for automation. Requires a configured AI refineProvider; do not enable just to generate original SRT.',
+      ),
+    aiCorrection: z
+      .boolean()
+      .optional()
+      .describe(
+        'Opt-in AI correction of ASR text. Defaults to false for automation. Requires a configured AI refineProvider.',
+      ),
+    refineProvider: str
+      .optional()
+      .describe(
+        'AI provider ID from providers.list(kind="translation") with isAi=true and configured=true. Required for AI segmentation/correction. Omitted or "follow-translation" uses the task translation provider. The in-app assistant can use its current AI service when omitted and no task service resolves. Explicit selections are never replaced.',
+      ),
+    subtitleTranslationStyle: z
+      .enum(['neutral', 'conversational'])
+      .optional()
+      .describe(
+        'Defaults to neutral. Conversational style requires a configured AI translation provider, including translate-only tasks.',
+      ),
+    speakerDiarization: z
+      .boolean()
+      .optional()
+      .describe(
+        'Opt-in speaker identification for media. Requires installed speaker models and Sherpa runtime; inspect models.list before enabling.',
+      ),
     speakerDiarizationCount: z.number().int().min(0).max(8).optional(),
     speakerDiarizationEmbedInSubtitle: z.boolean().optional(),
     manuscriptPath: file.optional(),
   })
   .passthrough()
   .describe(
-    'Task overrides. Further IFormData fields are accepted for compatibility; see types/types.ts.',
+    'Task overrides. Optional AI refinement, speaker identification, dubbing, composition and manuscript inputs are disabled unless supplied here. Engine/model/provider preferences are inherited from settings.get.defaults. Further IFormData fields are accepted for compatibility; see types/types.ts.',
   );
 export const mediaConfigs = {
   trim: z

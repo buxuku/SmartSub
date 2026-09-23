@@ -127,6 +127,15 @@ try {
   const info = await call('system.info');
   assert.equal(info.profile, profile);
   assert.equal(info.background, true);
+  assert.ok(info.storageTopology?.userData);
+  assert.ok(info.storageTopology?.pyEnginesRoot);
+  assert.ok(info.engineRuntimes?.fasterWhisper?.engineDir);
+  assert.ok(info.engineRuntimes?.fasterWhisper?.pythonExecutable);
+  assert.equal(info.engineRuntimes?.fasterWhisper?.requiresExternalPython, false);
+  assert.ok(info.engineRuntimes?.sherpaOnnx);
+  assert.ok(info.hardwareEnvironment?.platform);
+  assert.ok(info.architectureNotes?.qualityRules?.includes('CPS'));
+  assert.ok(info.architectureNotes?.storageRule);
   evidence.push('cold start without BrowserWindow');
   await call('settings.update', {
     settings: {
@@ -244,6 +253,10 @@ try {
     },
   });
   const providers = await call('providers.list', { kind: 'tts' });
+  assert.equal(
+    providers.tts.find((p) => p.id === 'edge-test').configured,
+    true,
+  );
   assert.ok(!JSON.stringify(providers).includes('secret-never-echo'));
   assert.ok(
     (await call('tts.voices', { providerId: 'edge-test' })).voices.some(
@@ -468,6 +481,39 @@ try {
       models: 'fixture',
     },
   });
+  const rejectedRefinement = await call('transcribe', {
+    files: [video],
+    engine: 'cloud',
+    providerId: 'mock-asr',
+    model: 'fixture',
+    config: {
+      aiSegmentation: true,
+      preserveSpeechPauses: true,
+      refineProvider: 'missing-ai',
+    },
+  });
+  const refinementFailure = await call('tasks.wait', {
+    id: rejectedRefinement.id,
+    timeoutMs: 25000,
+  });
+  assert.equal(refinementFailure.status, 'failed');
+  assert.equal(refinementFailure.error.code, 'REFINE_PROVIDER_REQUIRED');
+  assert.match(refinementFailure.error.message, /providers.list/);
+  assert.equal(refinementFailure.projectId, undefined);
+  assert.deepEqual(refinementFailure.artifacts, []);
+  const invalidTranslation = await call('translate', {
+    files: [video],
+    targetLanguage: 'zh',
+    providerId: '-1',
+  });
+  const translationFailure = await call('tasks.wait', {
+    id: invalidTranslation.id,
+    timeoutMs: 25000,
+  });
+  assert.equal(translationFailure.error.code, 'SUBTITLE_INPUT_REQUIRED');
+  evidence.push(
+    'real MCP rejects unresolved refinement and wrong translation input before processing',
+  );
   const pipeline = await call('pipeline.run', {
     files: [video],
     taskType: 'generateOnly',

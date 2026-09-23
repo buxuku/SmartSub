@@ -6,6 +6,7 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import { getStaticPaths, makeStaticProperties } from '../lib/get-static';
 import { ThemeProvider } from 'next-themes';
 import { NavigationGuardProvider } from '@/context/NavigationGuardContext';
+import { AssistantProvider } from '@/context/AssistantContext';
 import { useDubbingDraftCleanup } from '../hooks/useDubbingDraftCleanup';
 
 import '../styles/globals.css';
@@ -17,10 +18,12 @@ function MyApp({ Component, pageProps }: AppProps) {
     <ErrorBoundary>
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
         <NavigationGuardProvider>
-          <Layout {...pageProps}>
-            <Component {...pageProps} />
-            <UpdateNotification />
-          </Layout>
+          <AssistantProvider>
+            <Layout {...pageProps}>
+              <Component {...pageProps} />
+              <UpdateNotification />
+            </Layout>
+          </AssistantProvider>
         </NavigationGuardProvider>
       </ThemeProvider>
     </ErrorBoundary>

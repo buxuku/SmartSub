@@ -47,6 +47,7 @@ import SubtitleList from '../subtitle/SubtitleList';
 import SubtitleEditToolbar from '../subtitle/SubtitleEditToolbar';
 import SpeakerToolbar, { type SpeakerFilter } from './SpeakerToolbar';
 import { useNavigationGuard } from '@/context/NavigationGuardContext';
+import { useAssistantEditor } from '../../hooks/useAssistantEditor';
 import WaveformTimeline from './WaveformTimeline';
 import { timelineSplitPoint } from '../../lib/waveformEditing';
 import { useInlineAi } from '../../hooks/useInlineAi';
@@ -225,6 +226,42 @@ export default function ProofreadEditor({
     setCurrentSubtitleIndex,
     qualityMode,
   );
+
+  useAssistantEditor({
+    documentId: JSON.stringify([
+      file.id,
+      file.selectedSource,
+      file.selectedTarget,
+      file.proofreadDataFile,
+    ]),
+    projectId,
+    files: [
+      file.videoPath,
+      file.selectedSource,
+      file.selectedTarget,
+      file.proofreadDataFile,
+      file.finalTargetPath,
+    ].filter(Boolean),
+    getSubtitles,
+    getIsDirty,
+    selectedIndex: currentSubtitleIndex,
+    currentTime,
+    sourceLanguage: file.sourceLanguage,
+    targetLanguage: file.targetLanguage,
+    editableFields: shouldShowTranslation
+      ? ['sourceContent', 'targetContent']
+      : ['sourceContent'],
+    ready: !isLoading && !loadError && !recoveryDraft,
+    updateSubtitles,
+    locate: (index) => {
+      setCurrentSubtitleIndex(index);
+      playerRef.current?.seekTo(
+        getSubtitles()[index].startTimeInSeconds || 0,
+        'seconds',
+      );
+    },
+    save: handleSave,
+  });
 
   const quality = useQualityReview({
     documentKey:

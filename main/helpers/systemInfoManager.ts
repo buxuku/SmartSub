@@ -21,6 +21,11 @@ import {
   readEngineManifest,
   getEngineDownloadUrl,
   normalizePyEngineVariant,
+  getEngineDir,
+  getRuntimePythonPath,
+  getEngineSitePackages,
+  getEngineMainPy,
+  getPyEnginesRoot,
 } from './pythonRuntime/paths';
 import { getHfHost, getModelScopeBase } from './config/downloadConfig';
 import type { EngineStatus, PyEngineVariant } from '../../types/engine';
@@ -274,6 +279,31 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     const userDataPath = app.getPath('userData');
     const sourceOf = (kind: StorageKind) =>
       resolveModelRoot(kind, settingsSnapshot, userDataPath).source;
+
+    let logsDir = '';
+    try {
+      logsDir = app.getPath('logs');
+    } catch {
+      logsDir = path.join(userDataPath, 'logs');
+    }
+
+    const fasterWhisperDir = getEngineDir('faster-whisper');
+    const fasterWhisperInstalled = isRuntimeInstalled('faster-whisper');
+    const fasterWhisperManifest = readEngineManifest('faster-whisper');
+    const fasterWhisperVariant = normalizePyEngineVariant(
+      settingsSnapshot?.fasterWhisperEngineVariant,
+    );
+    const isGpuVariantSupported =
+      process.platform === 'win32' || process.platform === 'linux';
+
+    const ttsModelsPath = resolveModelRoot(
+      'tts',
+      settingsSnapshot,
+      userDataPath,
+    ).path;
+    const tempDir = getTempDir();
+    const cpus = os.cpus() || [];
+
     return {
       modelsInstalled: getModelsInstalled(),
       modelsPath: getPath('modelsPath'),
@@ -312,6 +342,82 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
       speakerDiarizationModelInstalled: isSpeakerDiarizationModelInstalled(),
       speakerDiarizationRuntimeInstalled: isSherpaLibInstalled(),
       speakerDiarizationModelsPath: getSpeakerDiarizationModelsRoot(),
+      // 增强的拓扑结构，供 AI 助手、自动化工具与问题排查全面反射
+      storageTopology: {
+        userData: userDataPath,
+        storageRoot: settingsSnapshot?.storageRoot?.trim() || null,
+        pyEnginesRoot: getPyEnginesRoot(),
+        logsDir,
+        tempDir,
+        modelsDirs: {
+          whisper: getPath('modelsPath'),
+          fasterWhisper: getFasterWhisperModelsPath(),
+          funasr: getFunasrModelsRoot(),
+          qwen: getQwenModelsRoot(),
+          firered: getFireRedModelsRoot(),
+          parakeet: getParakeetModelsRoot(),
+          speakerDiarization: getSpeakerDiarizationModelsRoot(),
+          tts: ttsModelsPath,
+        },
+      },
+      engineRuntimes: {
+        fasterWhisper: {
+          engineType: 'python-portable',
+          engineDir: fasterWhisperDir,
+          pythonExecutable: getRuntimePythonPath(fasterWhisperDir),
+          sitePackages: getEngineSitePackages('faster-whisper'),
+          mainScript: getEngineMainPy('faster-whisper'),
+          installed: fasterWhisperInstalled,
+          version: fasterWhisperManifest?.version || null,
+          activeVariant: fasterWhisperVariant,
+          supportedVariants: isGpuVariantSupported ? ['cpu', 'cuda'] : ['cpu'],
+          requiresExternalPython: false,
+          notes:
+            'Isolated self-contained portable Python runtime. Does not depend on system Python. CUDA GPU acceleration is supported only on Windows and Linux with NVIDIA drivers. Inactive variants are parked locally in .parked/ for offline switching.',
+        },
+        sherpaOnnx: {
+          engineType: 'sherpa-onnx-native',
+          engines: ['funasr', 'qwen', 'firered', 'parakeet'],
+          installed: isSherpaLibInstalled(),
+          requiresExternalPython: false,
+          notes:
+            'Native C++ dynamic addon bindings via sherpa-onnx. Completely offline and requires no Python.',
+        },
+        whisperCpp: {
+          engineType: 'whisper-cpp-native',
+          requiresExternalPython: false,
+          notes: 'Native C/C++ binary runtime loading GGML models.',
+        },
+      },
+      hardwareEnvironment: {
+        platform: process.platform,
+        arch: process.arch,
+        osRelease: os.release(),
+        totalMemoryGB: Math.round(os.totalmem() / (1024 * 1024 * 1024)),
+        freeMemoryGB: Math.round(os.freemem() / (1024 * 1024 * 1024)),
+        cpuCount: cpus.length,
+        cpuModel: cpus[0]?.model || 'unknown',
+        gpuAcceleration:
+          process.platform === 'darwin'
+            ? 'Apple Silicon (Metal/CoreML acceleration available, NVIDIA CUDA not available on macOS)'
+            : 'NVIDIA CUDA acceleration available for faster-whisper when NVIDIA GPU and driver are present; CPU fallback supported',
+      },
+      architectureNotes: {
+        storageRule:
+          'Settings storageRoot takes precedence over userData for all model, runtime, and temp directories. Modifying storageRoot changes where new files are saved and looked up, but does not move existing files automatically.',
+        qualityRules:
+          'Reading speed (CPS) calculates non-whitespace characters / duration. Standard reference thresholds are 8 CPS for Chinese and 20 CPS for English/other languages. A 15% tolerance buffer is applied before warning (Chinese warns at >9.2 CPS, English at >23.0 CPS).',
+        pipelineStages:
+          'Pipeline order: Media -> Extract Audio -> VAD Speech Detection -> ASR Transcription -> AI Refine/Segmentation -> Translation -> Dubbing -> Video Composition. ASR works completely offline with local engines. AI Refinement and Translation require a configured cloud or local LLM translation provider. Standard tasks pause at review gates for user proofreading before downstream steps.',
+        troubleshootingTips: {
+          downloadFailed:
+            'Switch download source to mirror in Settings -> Advanced Download Sources, or configure a network proxy.',
+          cudaOnMac:
+            'macOS hardware does not have NVIDIA CUDA support; faster-whisper on macOS always runs in CPU mode with Apple Silicon optimizations.',
+          modelMissingAfterPathChange:
+            'If models disappeared after setting a unified storage root, either move existing model folders into the new storage directory or re-download them.',
+        },
+      },
     };
   });
 

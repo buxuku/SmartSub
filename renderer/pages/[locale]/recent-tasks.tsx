@@ -78,6 +78,13 @@ export default function RecentTasksPage() {
   useEffect(() => {
     loadItems();
   }, [loadItems]);
+  useEffect(
+    () =>
+      window.ipc?.on?.('assistant:event', (event: any) => {
+        if (event.type === 'changed') void loadItems();
+      }),
+    [loadItems],
+  );
 
   const filteredItems = useMemo(
     () => filterWorkItems(workItems, query, typeFilter),

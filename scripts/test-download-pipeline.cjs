@@ -571,6 +571,61 @@ check(
   },
 );
 check(
+  'translate-only checks conversational AI and uses target language for dubbing',
+  () => {
+    const h = harness();
+    const { validateDownloadDependencies } = h.load(
+      'main/helpers/videoDownload/pipelineReadiness.ts',
+    );
+    const submission = {
+      projectId: 'translate',
+      requestId: 'translate',
+      files: [{ filePath: en, providedSubtitlePath: en }],
+      formData: {
+        taskType: 'translateOnly',
+        translateProvider: 'translation',
+        sourceLanguage: 'en',
+        targetLanguage: 'zh',
+        subtitleTranslationStyle: 'conversational',
+      },
+    };
+    h.store.set('translationProviders', [
+      { id: 'translation', type: 'google', isAi: false },
+    ]);
+    assert.throws(
+      () => validateDownloadDependencies(submission),
+      /TRANSLATION_STYLE_REQUIRED/,
+    );
+    h.store.set('translationProviders', [
+      {
+        id: 'translation',
+        name: 'AI',
+        type: 'openai',
+        isAi: true,
+        apiUrl: 'https://example.test/v1',
+        apiKey: 'test',
+        modelName: 'model',
+        prompt: '${content}',
+      },
+    ]);
+    validateDownloadDependencies(submission);
+    h.readiness.sherpa = true;
+    h.readiness.tts = true;
+    submission.formData.dub = {
+      engine: { kind: 'local', modelId: 'vits-zh-aishell3' },
+      voice: '0',
+      globalSpeed: 1,
+    };
+    validateDownloadDependencies(submission); // English source becomes Chinese speech.
+    submission.formData.sourceLanguage = 'zh';
+    submission.formData.targetLanguage = 'en';
+    assert.throws(
+      () => validateDownloadDependencies(submission),
+      /TTS_LANGUAGE_REQUIRED/,
+    );
+  },
+);
+check(
   'every local ASR family requires the selected model and its runtime',
   () => {
     for (const engine of [

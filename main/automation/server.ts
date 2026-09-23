@@ -10,8 +10,7 @@ import { isComposeBusy } from '../helpers/compose/composeQueue';
 import { isVideoDownloadBusy } from '../helpers/videoDownload/scheduler';
 import { isPyEngineDownloadBusy } from '../helpers/pythonRuntime/downloader';
 
-export async function startAutomationServer() {
-  const service = new AutomationService();
+export async function startAutomationServer(service = new AutomationService()) {
   const token = randomBytes(32).toString('hex');
   const directory = path.join(app.getPath('userData'), 'automation');
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });

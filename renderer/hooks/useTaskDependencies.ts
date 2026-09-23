@@ -65,5 +65,16 @@ export default function useTaskDependencies() {
       epoch.current++;
     };
   }, [load]);
+  useEffect(
+    () =>
+      window.ipc?.on?.('assistant:event', (event: any) => {
+        if (
+          event.type === 'changed' &&
+          /^(providers|settings|models|engines)\./.test(event.operation)
+        )
+          void load();
+      }),
+    [load],
+  );
   return { ...data, loaded, loading, error, load };
 }

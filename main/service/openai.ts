@@ -47,7 +47,7 @@ type OpenAIProvider = {
  * - 去除误粘的 /chat/completions 后缀（SDK 会自动拼接）
  * - 对模型详情页 / 模型端点（/models、/models/xxx）给出可读报错
  */
-function normalizeOpenAIBaseURL(apiUrl?: string): string {
+export function normalizeOpenAIBaseURL(apiUrl?: string): string {
   const trimmedUrl = apiUrl?.trim();
   if (!trimmedUrl) {
     throw new Error('OpenAI-compatible API base URL is required');

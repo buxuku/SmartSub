@@ -92,7 +92,11 @@ const pipeline = {
   model: str.optional(),
   sourceLanguage: str.optional(),
   targetLanguage: str.optional(),
-  providerId: str.optional(),
+  providerId: str
+    .optional()
+    .describe(
+      'For transcribe: cloud ASR provider ID (requires engine="cloud"). For translate/pipeline.run: translation provider ID. Use config.asrProviderId and config.translateProvider for pipelines that need both; use config.refineProvider for AI segmentation/correction.',
+    ),
   outputDir: file
     .optional()
     .describe(
@@ -103,12 +107,12 @@ const pipeline = {
   config: pipelineConfig
     .optional()
     .describe(
-      'Advanced IFormData overrides: dub, compose, gates, transcription parameters, glossary and refinement settings.',
+      'Task overrides. Optional refinement, speaker identification, dubbing, composition and manuscript inputs are disabled unless explicitly supplied. Engine/model/provider preferences come from settings.get.defaults. Pass the desired task/recipe config here to reuse its advanced stages.',
     ),
 };
 read(
   'system.info',
-  'Application version, platform, profile, installed models, providers and automation health.',
+  'Application version, platform, profile, engine runtime paths (e.g. faster-whisper python runtime and binaries), storage topology (userData, storageRoot, temp, logs, models), installed models, hardware environment, providers, and architecture notes.',
 );
 read(
   'system.capabilities',
@@ -121,6 +125,13 @@ read(
     projectId: str.optional(),
     date: str.optional(),
     limit: z.number().int().min(1).max(500).default(100),
+    types: z
+      .array(z.enum(['info', 'warning', 'error']))
+      .max(3)
+      .optional()
+      .describe(
+        'Filter by log level. Use ["error", "warning"] to diagnose failures quickly.',
+      ),
   },
   'getLogs',
 );
@@ -172,19 +183,19 @@ add(
 );
 add(
   'transcribe',
-  'Transcribe audio/video using an installed local engine or explicitly selected cloud provider. Returns a job ID.',
+  'Generate original-language subtitles using an installed local ASR engine or configured cloud ASR provider. AI segmentation/correction is opt-in and requires config.refineProvider. Inspect settings.get, engines.list, models.list and providers.list before selecting resources. Returns a job ID.',
   pipeline,
   { long: true },
 );
 add(
   'translate',
-  'Translate subtitle files using a configured translation provider. Returns a job ID.',
+  'Translate subtitle files using a configured translation provider and explicit targetLanguage. A missing provider is an error; translation is never silently skipped. Conversational style requires an AI provider. Returns a job ID.',
   { ...pipeline, targetLanguage: str },
   { long: true },
 );
 add(
   'pipeline.run',
-  'Run transcription/translation with optional dubbing and video composition. Default review gates are automatic.',
+  'Run transcription/translation with opt-in AI refinement, speaker identification, dubbing and video composition. Select ASR, translation/refinement and TTS providers separately. Pass desired advanced stages in config; default review gates are automatic.',
   {
     ...pipeline,
     taskType: z
@@ -478,9 +489,13 @@ mapped(
   id,
   { argument: 'id' },
 );
-read('providers.list', 'List configured providers without secret values.', {
-  kind: providerKind.optional(),
-});
+read(
+  'providers.list',
+  'List saved providers without secret values. configured reports local configuration completeness (not network health); translation isAi providers support AI refinement, while ASR and TTS use separate provider kinds.',
+  {
+    kind: providerKind.optional(),
+  },
+);
 read(
   'providers.types',
   'Discover provider types, supported capabilities and configuration fields before creating an instance.',
@@ -587,7 +602,7 @@ read(
 );
 add(
   'tts.synthesize',
-  'Synthesize text to an audio file with a configured cloud TTS provider or local model.',
+  'Synthesize text to an audio file. Select exactly one of model (installed local TTS, from models.list) or providerId (configured cloud TTS, from providers.list(kind="tts")). Select voice via tts.voices or voices.list and set language to the spoken language.',
   {
     text: str,
     providerId: str.optional(),

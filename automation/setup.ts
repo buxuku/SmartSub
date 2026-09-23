@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createMcpServerConfig } from './mcpConfig';
 
 function quote(value: string) {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -41,17 +42,13 @@ export async function setup(kind: string, options: any) {
   }
   if (kind !== 'mcp' || !['codex', 'claude'].includes(options.client))
     throw new Error('Use setup mcp --client codex|claude');
-  const args = [
+  const config = createMcpServerConfig({
+    executable,
     entry,
-    'mcp',
-    ...(options.dataDir ? ['--data-dir', path.resolve(options.dataDir)] : []),
-  ];
-  const env: Record<string, string> = {
-    ELECTRON_RUN_AS_NODE: '1',
-    SMARTSUB_APP_PATH: executable,
-    ...(process.env.SMARTSUB_DEV === '1' ? { SMARTSUB_DEV: '1' } : {}),
-  };
-  const config = { command: executable, args, env };
+    dataDir: options.dataDir ? path.resolve(options.dataDir) : undefined,
+    dev: process.env.SMARTSUB_DEV === '1',
+  });
+  const { args, env } = config;
   if (!options.install)
     return {
       client: options.client,

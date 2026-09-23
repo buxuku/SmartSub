@@ -58,6 +58,16 @@ async function main() {
         translation: false,
         sourceLanguage: 'zh',
       })
+    ).length,
+    0,
+    '9 Chinese chars in 1s is within 15% tolerance of 8 threshold',
+  );
+  assert.equal(
+    (
+      await run([cue('一二三四五六七八九十', '', 0, 1)], {
+        translation: false,
+        sourceLanguage: 'zh',
+      })
     )[0].kind,
     'speed',
   );
