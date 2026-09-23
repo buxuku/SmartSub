@@ -117,6 +117,7 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
         `CoreML first run for model ${whisperModel}: system (ANE) compilation may take minutes to tens of minutes, progress will stay at the start meanwhile`,
         'info',
       );
+      ctx.onActivity?.({ phase: 'preparing', coremlFirstRun: true });
       event.sender.send('message', 'coremlFirstRunHint');
     }
 
@@ -183,6 +184,7 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       progress_callback: (progress: number) => {
         clearWatchdog();
         if (signal?.aborted) return;
+        ctx.onActivity?.({ phase: 'recognizing', coremlFirstRun: false });
         event.sender.send(
           'taskProgressChange',
           file,
@@ -215,12 +217,19 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
           `builtin chunk ${i + 1}/${chunkList.length}: ${chunk.startOffsetSec.toFixed(1)}s -> ${chunk.endOffsetSec.toFixed(1)}s`,
           'info',
         );
+        ctx.onActivity?.({
+          phase: 'recognizing',
+          completed: i,
+          total: chunkList.length,
+          unit: 'chunks',
+        });
         const chunkParams = {
           ...whisperParams,
           fname_inp: chunk.path,
           progress_callback: (progress: number) => {
             clearWatchdog();
             if (signal?.aborted) return;
+            ctx.onActivity?.({ phase: 'recognizing', coremlFirstRun: false });
             event.sender.send(
               'taskProgressChange',
               file,
@@ -290,6 +299,7 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       throw new TaskCancelledError();
     }
 
+    ctx.onActivity?.({ phase: 'organizing', units: [], coremlFirstRun: false });
     // CoreML 跑通一次即视为编译完成，后续该模型不再弹「首次编译耗时」提示
     if (coremlFirstRun && whisperModel) {
       const compiled: string[] = store.get('coremlCompiledModels') || [];
@@ -387,6 +397,7 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       );
     }
     const formattedSrt = formatSrtContent(subtitles);
+    ctx.onActivity?.({ phase: 'saving' });
     await fs.promises.writeFile(srtFile, formattedSrt);
 
     // 词级时间轴 sidecar（openspec: add-ai-subtitle-refine D6）：供 AI 语义断句精确

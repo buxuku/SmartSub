@@ -1,3 +1,4 @@
+import type { ActivityObserver } from '../../../types/taskActivity';
 import type {
   TranscriptionEngine,
   EngineStatus,
@@ -8,6 +9,7 @@ import type { IFiles } from '../../../types';
 import type { TranscriptionDiagnostics } from '../missedSpeechWarning';
 
 export interface TranscribeContext {
+  onActivity?: ActivityObserver;
   event: IpcMainInvokeEvent;
   file: IFiles;
   formData: Record<string, unknown>;

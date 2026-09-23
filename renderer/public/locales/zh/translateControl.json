@@ -206,5 +206,7 @@
     "Unknown_translation_provider": "未知翻译服务商",
     "unauthorized": "认证失败，请检查 API Key",
     "api_key_not_valid": "API Key 无效，请填写正确的密钥"
-  }
+  },
+  "setAsDefault": "设为新任务默认",
+  "currentDefault": "当前新任务默认"
 }

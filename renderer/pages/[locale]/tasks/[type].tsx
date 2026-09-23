@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -91,7 +92,11 @@ import {
 import { getI18nProperties } from '../../../lib/get-static';
 import { IFiles } from '../../../../types';
 import { isPinnedTaskConfigSnapshot } from '../../../../types/taskSnapshot';
-import { assertTaskConfig } from '../../../../types/taskConfig';
+import {
+  assertTaskConfig,
+  newTaskDefaults,
+} from '../../../../types/taskConfig';
+import { validateTaskConfigReady } from 'lib/taskReadiness';
 import { getProofreadSourcePath } from '../../../../types/subtitleOutput';
 import { useTranslation } from 'next-i18next';
 import { toast } from 'sonner';
@@ -104,6 +109,7 @@ export default function TaskPage() {
   const typeDef = getTaskTypeBySlug(slug);
 
   const { t } = useTranslation('tasks');
+  const { t: tHome } = useTranslation('home');
   const confirmOrUndo = useConfirmOrUndo();
   const [files, setFiles] = useState([]);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -451,7 +457,8 @@ export default function TaskPage() {
           savedManuscripts = workItem.taskDraft.manuscripts;
         }
       }
-      if (!rawSnap) rawSnap = await readTaskDefaults();
+      if (!rawSnap)
+        rawSnap = newTaskDefaults(await readTaskDefaults(), typeDef.taskType);
       assertTaskConfig(rawSnap);
       if (cancelled) return;
       projectIdRef.current = id;
@@ -1192,6 +1199,43 @@ export default function TaskPage() {
     };
   }, [proofreadFile, typeDef, listFormData]);
 
+  const readiness =
+    typeDef && dependencies.loaded
+      ? validateTaskConfigReady({
+          files,
+          typeDef,
+          formData: listFormData,
+          systemInfo,
+          providers,
+          asrProviders,
+          includeLocalCli: useLocalWhisper,
+          whisperCommand: settings.whisperCommand,
+        })
+      : null;
+  const readinessErrors =
+    readiness?.errors.filter((error) => error !== 'files_required') || [];
+  const suggestedProvider = providers.find(
+    (provider) => provider.id === resolveDefaultTranslateProviderId(providers),
+  );
+  const readinessResource = readinessErrors.some((error) =>
+    [
+      'provider_required',
+      'refine_provider_required',
+      'translation_style_requires_ai',
+    ].includes(error),
+  )
+    ? 'translation'
+    : readinessErrors.some((error) =>
+          [
+            'model_required',
+            'model_unavailable',
+            'local_command_required',
+            'speaker_diarization_unavailable',
+          ].includes(error),
+        )
+      ? 'engines'
+      : null;
+
   if (!typeDef) return null;
   if (!projectReady)
     return (
@@ -1436,17 +1480,35 @@ export default function TaskPage() {
             <Trash2 className="h-3.5 w-3.5" />
             {t('clearList')}
           </Button>
-          {!configSnapshot && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs gap-1.5"
-              onClick={() => setAdvancedOpen(true)}
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              {t('advanced')}
-            </Button>
-          )}
+          {!configSnapshot &&
+            (() => {
+              const hasActiveManuscript = Boolean(
+                formData?.manuscriptPath &&
+                  formData.manuscriptPath !== '__none__',
+              );
+              return (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="relative h-8 text-xs gap-1.5"
+                  onClick={() => setAdvancedOpen(true)}
+                  title={
+                    hasActiveManuscript
+                      ? `${t('advanced')} (${t('manuscript.label')})`
+                      : t('advanced')
+                  }
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                  {t('advanced')}
+                  {hasActiveManuscript && (
+                    <span
+                      className="absolute -top-1 -right-1 flex h-2 w-2 rounded-full bg-primary"
+                      aria-hidden="true"
+                    />
+                  )}
+                </Button>
+              );
+            })()}
         </div>
       </div>
 
@@ -1473,6 +1535,7 @@ export default function TaskPage() {
             useLocalWhisper={useLocalWhisper}
             refineOpen={refinePopoverOpen}
             onRefineOpenChange={setRefinePopoverOpen}
+            onOpenAdvanced={() => setAdvancedOpen(true)}
           />
         )}
       </div>
@@ -1610,12 +1673,54 @@ export default function TaskPage() {
             />
           )}
         </ScrollArea>
+        {files.length > 0 &&
+          !configSnapshot &&
+          taskStatus !== 'running' &&
+          readinessErrors.length > 0 && (
+            <div
+              role="status"
+              className="mt-2 flex flex-wrap items-center gap-2 text-xs text-warning"
+            >
+              {readinessErrors.map((error) => (
+                <span key={error}>{t(`readiness.${error}`)}</span>
+              ))}
+              {readinessErrors.includes('provider_required') &&
+                suggestedProvider &&
+                !configSnapshot && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      form.setValue('translateProvider', suggestedProvider.id, {
+                        shouldDirty: true,
+                      })
+                    }
+                  >
+                    {tHome('useTranslationService', {
+                      name: suggestedProvider.name,
+                    })}
+                  </Button>
+                )}
+              {readinessResource && (
+                <Link
+                  className="underline"
+                  href={`/${locale}/${readinessResource}`}
+                >
+                  {tHome('configureTaskResources')}
+                </Link>
+              )}
+            </div>
+          )}
         <div className="mt-3 flex items-center justify-between flex-shrink-0">
           <span className="text-xs text-muted-foreground">
             {files.length > 0 ? t('taskCount', { count: files.length }) : ''}
           </span>
           <TaskControls
-            ready={projectReady}
+            ready={
+              projectReady &&
+              dependencies.loaded &&
+              (Boolean(configSnapshot) || Boolean(readiness?.valid))
+            }
             beforeStart={persistence.save}
             formData={listFormData}
             files={files}

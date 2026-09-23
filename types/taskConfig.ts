@@ -9,6 +9,25 @@ export function assertTaskConfig(
     throw new Error('INVALID_USER_CONFIG_RESPONSE');
 }
 
+/** Apply a goal only when creating a task; restored drafts and execution snapshots bypass this. */
+export function newTaskDefaults(
+  preferences: Record<string, any>,
+  taskType: string,
+): Record<string, any> {
+  return {
+    ...preferences,
+    taskType,
+    ...(taskType === 'generateAndTranslate'
+      ? {
+          translateContent:
+            preferences.translateContent === 'translateAndSource'
+              ? 'translateAndSource'
+              : 'sourceAndTranslate',
+        }
+      : {}),
+  };
+}
+
 export function omitTaskManuscript<
   T extends Record<string, any> | null | undefined,
 >(config: T): Record<string, any> {

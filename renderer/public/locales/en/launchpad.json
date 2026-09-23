@@ -122,7 +122,8 @@
     "mergeDesc": "Burn subtitles into the picture so they always show",
     "dubbing": "Dubbing",
     "dubbingDesc": "Synthesize speech line by line and align it to the timeline",
-    "download": "Video download"
+    "compose": "Video composition",
+    "toolbox": "Toolbox"
   },
   "fromDownload": "From download",
   "needsModelBadge": "Needs a model",
@@ -182,5 +183,19 @@
     "error": "Error",
     "review": "Needs review"
   },
-  "noRecentTasksHint": "Finished tasks appear here. Drop files into the launchpad to get started"
+  "noRecentTasksHint": "Finished tasks appear here. Drop files into the launchpad to get started",
+  "result": {
+    "back": "Back to all tasks",
+    "loading": "Loading processing record…",
+    "unavailable": "This processing record is unavailable or deleted",
+    "retry": "Reload",
+    "outputs": "Output files",
+    "inputs": "Source files",
+    "noOutputs": "No completed output files yet",
+    "openFolder": "Show in folder",
+    "fileMissing": "File moved or deleted: {{path}}",
+    "openFailed": "Could not open the file location",
+    "openCompose": "Open source files in the composer",
+    "openTool": "Open tool"
+  }
 }

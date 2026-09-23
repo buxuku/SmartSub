@@ -16,6 +16,10 @@ import {
 } from '../powerSaveManager';
 import { MERGE_CANCELLED } from '../subtitleMerger';
 import { runComposeJob } from './composeRunner';
+import {
+  startProcessingHistory,
+  updateProcessingHistory,
+} from '../processingHistory';
 import type {
   ComposeConfig,
   ComposeJobSource,
@@ -167,6 +171,21 @@ export function enqueueCompose(
     settle,
     done,
   };
+  if (source === 'subtitleMerge') {
+    startProcessingHistory({
+      id: job.id,
+      type: 'compose',
+      inputPaths: [
+        config.videoPath,
+        ...(config.subtitle.mode !== 'none'
+          ? [config.subtitle.subtitlePath]
+          : []),
+        ...(config.audio.mode !== 'keep' ? [config.audio.trackPath] : []),
+      ],
+      config: { ...config },
+      status: 'waiting',
+    });
+  }
   jobs.push(job);
   logMessage(
     `合成作业入列: ${job.id} (source=${source}, output=${config.outputPath})`,
@@ -200,6 +219,8 @@ export function cancelComposeJob(
 
   if (target.status === 'queued') {
     target.status = 'cancelled';
+    if (target.source === 'subtitleMerge')
+      updateProcessingHistory(target.id, 'interrupted');
     logMessage(`合成作业已从队列移除: ${target.id}`, 'warning');
     target.settle({ success: true, cancelled: true });
     // 排队取消也要给该作业发 idle 进度：渲染层等待 done 的同时靠它复位展示
@@ -230,6 +251,8 @@ async function pump(): Promise<void> {
       if (!next) break;
       runningJob = next;
       next.status = 'running';
+      if (next.source === 'subtitleMerge')
+        updateProcessingHistory(next.id, 'running');
       broadcastQueue();
       acquireTaskPowerSaveBlocker(COMPOSE_POWER_SAVE_REASON);
       try {
@@ -246,15 +269,21 @@ async function pump(): Promise<void> {
         });
         next.status = 'done';
         next.resultPath = outputPath;
+        if (next.source === 'subtitleMerge')
+          updateProcessingHistory(next.id, 'done', [outputPath]);
         next.settle({ success: true, outputPath });
       } catch (err) {
         const error = err as Error;
         if (error.message === MERGE_CANCELLED) {
           next.status = 'cancelled';
+          if (next.source === 'subtitleMerge')
+            updateProcessingHistory(next.id, 'interrupted');
           next.settle({ success: true, cancelled: true });
         } else {
           next.status = 'error';
           next.error = error.message;
+          if (next.source === 'subtitleMerge')
+            updateProcessingHistory(next.id, 'error', [], error.message);
           next.settle({ success: false, error: error.message });
         }
       } finally {

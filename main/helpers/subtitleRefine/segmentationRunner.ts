@@ -1,3 +1,7 @@
+import type {
+  ActivityObserver,
+  ActivityUnit,
+} from '../../../types/taskActivity';
 /**
  * 断句遍编排（遍 A，design D1/D3/D5/D8）：分窗 → LLM 插标 → 校验反馈循环 →
  * 对齐回时间轴 → 物理护栏。**非纯逻辑层**（依赖翻译服务客户端与任务上下文），
@@ -54,6 +58,7 @@ import {
 const MAX_FEEDBACK_ROUNDS = 2;
 
 export interface AiSegmentationParams {
+  onActivity?: ActivityObserver;
   /** 规则断句结果（兜底 + Tier 'segment' 输入）。 */
   cues: TokenTriple[];
   /** 词级序列（sidecar 读出）；null = 近似模式。 */
@@ -87,19 +92,21 @@ function wordsToTriples(words: RefineWord[]): TokenTriple[] {
 export async function runAiSegmentation(
   params: AiSegmentationParams,
 ): Promise<AiSegmentationOutcome> {
-  const { cues, words, formData, provider, signal, onProgress } = params;
+  const { cues, words, formData, provider, signal, onProgress, onActivity } =
+    params;
   const tier: RefineTier = words && words.length > 0 ? 'word' : 'segment';
   const cueOptions = getSubtitleCueOptions(formData);
   const mergeOptions = getMergeShortCueOptions(formData);
   const limits = limitsFromCueOptions(cueOptions);
 
+  let plannedWindows = 0;
   const fallbackOutcome = (reason: string): AiSegmentationOutcome => {
     logMessage(`AI segmentation degraded to rule cues: ${reason}`, 'warning');
     return {
       cues,
       tier,
-      totalWindows: 0,
-      degradedWindows: 0,
+      totalWindows: plannedWindows,
+      degradedWindows: plannedWindows,
       degraded: true,
     };
   };
@@ -138,6 +145,7 @@ export async function runAiSegmentation(
         })
       : [];
   const totalWindows = tier === 'word' ? wordWindows.length : cueRanges.length;
+  plannedWindows = totalWindows;
   if (totalWindows === 0) {
     return { cues, tier, totalWindows: 0, degradedWindows: 0, degraded: false };
   }
@@ -147,6 +155,28 @@ export async function runAiSegmentation(
   let completed = 0;
   /** 配置类错误（密钥缺失等）：后续窗口没有重试意义，整阶段降级。 */
   let fatalError: Error | null = null;
+  let acceptingActivity = true;
+  const active = new Map<number, ActivityUnit>();
+  const publish = () => {
+    if (!acceptingActivity || signal?.aborted) return;
+    onActivity?.({
+      phase: 'segmenting',
+      completed,
+      total: totalWindows,
+      unit: 'batches',
+      units: [...active.values()],
+    });
+  };
+  const unitState = (
+    index: number,
+    phase: ActivityUnit['phase'],
+    extra: Partial<ActivityUnit> = {},
+  ) => {
+    const id = index + 1;
+    active.set(id, { id, phase, startedAt: Date.now(), ...extra });
+    publish();
+  };
+  publish();
 
   /** 单窗：LLM 插标 → 校验（≤2 轮反馈）→ 对齐。null = 该窗降级。 */
   const processWindow = async (index: number): Promise<AlignedCue[] | null> => {
@@ -165,6 +195,16 @@ export async function runAiSegmentation(
 
     for (let round = 0; round <= MAX_FEEDBACK_ROUNDS; round += 1) {
       throwIfSignalCancelled(signal);
+      unitState(index, round ? 'retrying' : 'requesting', {
+        requestStartedAt: Date.now(),
+        ...(round
+          ? {
+              retry: round,
+              maxRetries: MAX_FEEDBACK_ROUNDS,
+              reason: 'validation' as const,
+            }
+          : {}),
+      });
       const responseOrigin = await translator(
         userPrompt,
         segProvider,
@@ -176,6 +216,7 @@ export async function runAiSegmentation(
       lastResponse = Array.isArray(responseOrigin)
         ? responseOrigin.join('\n')
         : String(responseOrigin ?? '');
+      unitState(index, 'validating');
       lastSegments = parseBrSegments(lastResponse);
       lastValidation = validateSegmentation(text, lastSegments, limits);
       if (lastValidation.ok) break;
@@ -196,6 +237,7 @@ export async function runAiSegmentation(
     // 交物理护栏在真实词时间上二次切分（design D8「宽进严出」）。
     if (!lastValidation || !lastValidation.contentOk) return null;
 
+    unitState(index, 'aligning');
     if (tier === 'word') {
       return alignSegmentsToWords(windowWords!, lastSegments);
     }
@@ -226,12 +268,15 @@ export async function runAiSegmentation(
     Math.max(0, +(provider.requestInterval || 0)) * 1000;
   // 速率限制：串行化「请求起始时间」，窗口完成后并发照常。
   let nextAllowedStartAt = 0;
-  const awaitStartSlot = async () => {
+  const awaitStartSlot = async (index: number) => {
     if (requestIntervalMs <= 0) return;
     const now = Date.now();
     const wait = Math.max(0, nextAllowedStartAt - now);
     nextAllowedStartAt = Math.max(now, nextAllowedStartAt) + requestIntervalMs;
-    if (wait > 0) await waitForTaskDelay(wait, signal);
+    if (wait > 0) {
+      unitState(index, 'interval', { waitUntil: now + wait });
+      await waitForTaskDelay(wait, signal);
+    }
   };
 
   let cursor = 0;
@@ -246,7 +291,7 @@ export async function runAiSegmentation(
       const index = cursor;
       cursor += 1;
       if (index >= totalWindows || fatalError) break;
-      await awaitStartSlot();
+      await awaitStartSlot(index);
       try {
         const aligned = await processWindow(index);
         if (aligned === null) {
@@ -274,10 +319,17 @@ export async function runAiSegmentation(
         );
       }
       completed += 1;
-      onProgress?.(completed, totalWindows);
+      active.delete(index + 1);
+      publish();
+      if (acceptingActivity && !signal?.aborted)
+        onProgress?.(completed, totalWindows);
     }
   });
-  await Promise.all(workers);
+  try {
+    await Promise.all(workers);
+  } finally {
+    acceptingActivity = false;
+  }
   throwIfSignalCancelled(signal);
 
   if (fatalError) {
@@ -289,6 +341,7 @@ export async function runAiSegmentation(
     return fallbackOutcome('all windows failed (service unreachable?)');
   }
 
+  onActivity?.({ phase: 'aligning', units: [] });
   const aligned = results.flat().filter(Boolean);
   const guarded = applySegmentationGuards(aligned, {
     cueOptions,

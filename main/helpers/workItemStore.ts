@@ -48,6 +48,18 @@ function markInterruptedFile(file: IFiles): IFiles {
       next[`${key}Error`] = 'TASK_INTERRUPTED';
     }
   }
+  if (
+    next.taskActivity &&
+    ['running', 'cancelling'].includes(next.taskActivity.status)
+  ) {
+    next.taskActivity = {
+      ...next.taskActivity,
+      status: 'interrupted',
+      units: [],
+      sequence: next.taskActivity.sequence + 1,
+      updatedAt: Date.now(),
+    };
+  }
   return next as IFiles;
 }
 
@@ -64,6 +76,11 @@ function applyInterruptedMarkToWorkItems() {
       return item.status === 'running'
         ? { ...item, downloadEntries, status: 'interrupted' as const }
         : { ...item, downloadEntries };
+    }
+    if (item.type === 'compose' || item.type === 'toolbox') {
+      return item.status === 'running' || item.status === 'waiting'
+        ? { ...item, status: 'interrupted' as const }
+        : item;
     }
     if (item.type === 'dubbing') {
       // 配音是会话级工作项（无 pipelineFiles）：上次退出时仍在跑 → 标记中断。

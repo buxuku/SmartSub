@@ -88,10 +88,11 @@ export default function ToolboxDashboard({
           {filteredTools.map((tool) => {
             const Icon = tool.iconComponent;
             return (
-              <div
+              <button
+                type="button"
                 key={tool.id}
                 onClick={() => onSelectTool(tool.id)}
-                className="group relative flex flex-col justify-between overflow-hidden rounded-xl bg-card p-5 transition-all duration-200 hover:-translate-y-0.5 hover:ring-1 hover:ring-primary/50 hover:shadow-md cursor-pointer"
+                className="text-left focus-visible:ring-2 focus-visible:ring-ring group relative flex flex-col justify-between overflow-hidden rounded-xl bg-card p-5 transition-all duration-200 hover:-translate-y-0.5 hover:ring-1 hover:ring-primary/50 hover:shadow-md cursor-pointer"
               >
                 <div>
                   <div className="mb-3.5 flex items-center justify-between">
@@ -121,7 +122,7 @@ export default function ToolboxDashboard({
                   <span>进入工具</span>
                   <ArrowRight className="h-3 w-3" />
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>

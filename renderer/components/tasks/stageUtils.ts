@@ -108,6 +108,48 @@ export function getStageStatus(file: any, key: StageKey): StageStatus {
   return 'pending';
 }
 
+/** One persistent status slot for every task lifecycle state. */
+export function getTaskDisplayStatus(
+  file: any,
+  stages: StageDef[],
+  taskStatus: string,
+  gate: GateDef | null,
+) {
+  const loading = stages.find(
+    (stage) => getStageStatus(file, stage.key) === 'loading',
+  );
+  const failed = stages.find(
+    (stage) => getStageStatus(file, stage.key) === 'error',
+  );
+  const done =
+    stages.length > 0 &&
+    stages.every((stage) => getStageStatus(file, stage.key) === 'done');
+  const state = failed
+    ? 'error'
+    : gate
+      ? 'gate'
+      : loading
+        ? taskStatus === 'cancelling'
+          ? 'cancelling'
+          : 'running'
+        : done
+          ? 'done'
+          : file?.taskActivity?.status === 'cancelled'
+            ? 'cancelled'
+            : file?.taskActivity?.status === 'interrupted'
+              ? 'interrupted'
+              : taskStatus === 'paused'
+                ? 'paused'
+                : taskStatus === 'running'
+                  ? 'queued'
+                  : 'idle';
+  return {
+    state,
+    stage: loading?.key ?? null,
+    labelKey: loading?.labelKey ?? gate?.labelKey,
+  };
+}
+
 // ── 人工检查点（白话：字幕校对 / 配音确认）────────────────────────────────
 
 export type GateKey = 'subtitleGate' | 'dubbingGate';

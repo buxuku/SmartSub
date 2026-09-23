@@ -72,7 +72,7 @@ try {
   await page.getByText('Review original.', { exact: true }).click();
   await page.locator('textarea').fill(marker);
   await expect(
-    page.getByRole('status').filter({ hasText: '未保存的修改' }),
+    page.getByRole('status').filter({ hasText: '有未写入字幕文件的修改' }),
   ).toBeVisible();
   await page.getByRole('link', { name: '启动台', exact: true }).click();
   await expect(page.getByRole('alertdialog')).toBeVisible();

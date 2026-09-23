@@ -28,7 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Sparkles, TriangleAlert } from 'lucide-react';
+import { ChevronDown, Sparkles, TriangleAlert } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { validateRefineProviderConfig } from 'lib/subtitleRefineValidation';
 import { isSherpaEngine } from 'lib/subtitleOutcome';
@@ -50,6 +50,7 @@ interface AiRefineControlProps {
   typeDef: TaskTypeDef;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  className?: string;
 }
 
 type SegmentationMode = 'smart' | 'unlimited' | 'custom' | 'ai';
@@ -61,6 +62,7 @@ const AiRefineControl: React.FC<AiRefineControlProps> = ({
   typeDef,
   open: controlledOpen,
   onOpenChange: onControlledOpenChange,
+  className,
 }) => {
   const { t } = useTranslation('tasks');
   const { t: tHome } = useTranslation('home');
@@ -165,11 +167,8 @@ const AiRefineControl: React.FC<AiRefineControlProps> = ({
   return (
     <div
       id="ai-refine-control-container"
-      className="flex items-center gap-1.5 scroll-mt-20"
+      className={cn('w-full min-w-0 scroll-mt-20', className)}
     >
-      <span className="text-xs text-muted-foreground whitespace-nowrap">
-        {t('refine.control.label')}
-      </span>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
@@ -177,19 +176,22 @@ const AiRefineControl: React.FC<AiRefineControlProps> = ({
             variant="outline"
             size="sm"
             className={cn(
-              'h-8 gap-1.5 text-xs',
+              'h-8 w-full min-w-0 text-xs gap-1 px-2.5 font-normal justify-between',
               hasRefineError
                 ? 'border-warning/60 bg-warning/10 text-warning hover:bg-warning/20 hover:text-warning'
                 : (segAiOn || corrOn) &&
                     'border-primary/50 bg-primary/[0.06] text-primary hover:text-primary',
             )}
           >
-            {hasRefineError ? (
-              <TriangleAlert className="h-3.5 w-3.5 flex-none text-warning" />
-            ) : (
-              <Sparkles className="h-3.5 w-3.5 flex-none" />
-            )}
-            <span>{displayLabel}</span>
+            <div className="flex items-center gap-1.5 min-w-0 truncate">
+              {hasRefineError ? (
+                <TriangleAlert className="h-3.5 w-3.5 flex-none text-warning" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5 flex-none" />
+              )}
+              <span className="truncate">{displayLabel}</span>
+            </div>
+            <ChevronDown className="h-3 w-3 shrink-0 opacity-50 ml-1" />
           </Button>
         </PopoverTrigger>
         <PopoverContent

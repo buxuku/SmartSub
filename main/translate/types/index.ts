@@ -1,5 +1,6 @@
 import type { ResolvedGlossaryEntry } from '../../../types/glossary';
 import type { ProviderFallbackRunner } from '../services/providerFallback';
+import type { ActivityObserver } from '../../../types/taskActivity';
 
 export interface Subtitle {
   id: string;
@@ -17,6 +18,7 @@ export interface TranslationResult {
 }
 
 export interface TranslationConfig {
+  onActivity?: ActivityObserver;
   sourceLanguage: string;
   targetLanguage: string;
   provider: Provider;

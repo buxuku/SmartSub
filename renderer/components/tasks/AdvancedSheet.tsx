@@ -37,6 +37,7 @@ import { Check, ChevronDown, SlidersHorizontal } from 'lucide-react';
 import { cn } from 'lib/utils';
 import SavePathNotice from '@/components/SavePathNotice';
 import SubtitleFormatSelect from '@/components/tasks/SubtitleFormatSelect';
+import ManuscriptControl from '@/components/tasks/ManuscriptControl';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import {
   SUBTITLE_OUTCOME_TIERS,
@@ -931,6 +932,11 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                       )}
                     />
                   )}
+
+                  {isMediaTask && (
+                    <ManuscriptControl form={form} formData={formData} />
+                  )}
+
                   {typeDef.hasTranslate && (
                     <FormField
                       control={form.control}

@@ -2044,7 +2044,12 @@ export function useDubbing(options?: {
       if (len === 0) continue;
       totalRows += 1;
       totalChars += len;
-      if (c.needsUpdate || (c.status !== 'done' && c.status !== 'accepted')) {
+      if (
+        c.needsUpdate ||
+        !c.wavPath ||
+        c.status === 'failed' ||
+        c.status === 'pending'
+      ) {
         pendingRows += 1;
         pendingChars += len;
       }

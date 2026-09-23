@@ -108,6 +108,13 @@ export default function VideoCompressorPanel() {
 
           <ToolboxQueueList
             {...queueState}
+            renderInfo={(item) =>
+              item.result?.skipped ? (
+                <p className="text-xs text-muted-foreground">
+                  {t('videoCompressorQueue.skipped')}
+                </p>
+              ) : null
+            }
             onRetry={handleStartCompress}
             onRemove={(id) => queue.remove(id)}
             onCancel={() => void queue.cancel()}
@@ -261,8 +268,10 @@ export default function VideoCompressorPanel() {
                     .map((d) => d.result?.outputPath)
                     .filter(Boolean) as string[]
                 }
-                summary={t('videoCompressorQueue.allFinished', {
+                summary={t('videoCompressorQueue.finished', {
                   count: doneItems.length,
+                  skipped: doneItems.filter((item) => item.result?.skipped)
+                    .length,
                 })}
                 stats={{
                   originalSize: totalOriginal,

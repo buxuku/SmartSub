@@ -203,6 +203,26 @@ const ProvidersTab: React.FC = () => {
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [selectionError, setSelectionError] = useState('');
   const [selectionDirty, setSelectionDirty] = useState(false);
+  const [defaultProviderId, setDefaultProviderId] = useState<string | null>(
+    null,
+  );
+  useEffect(() => {
+    let disposed = false;
+    const loadDefault = () =>
+      window.ipc
+        .invoke('getUserConfig')
+        .then((config) => {
+          if (!disposed)
+            setDefaultProviderId(config?.translateProvider || null);
+        })
+        .catch(() => {});
+    void loadDefault();
+    window.addEventListener('focus', loadDefault);
+    return () => {
+      disposed = true;
+      window.removeEventListener('focus', loadDefault);
+    };
+  }, []);
   const pendingSelection = useRef<string | null>(null);
   const selectionEpoch = useRef(0);
   useEffect(
@@ -301,6 +321,7 @@ const ProvidersTab: React.FC = () => {
       if (token !== selectionEpoch.current) return false;
       await syncTranslateProviderToUserConfig(providerId);
       if (token !== selectionEpoch.current) return false;
+      setDefaultProviderId(providerId);
       pendingSelection.current = null;
       setSelectionDirty(false);
       setSelectionError('');
@@ -325,13 +346,16 @@ const ProvidersTab: React.FC = () => {
     },
   });
 
-  const selectProvider = (providerId: string, syncDefault = true) => {
+  const selectProvider = (providerId: string) => {
     setSelectedProvider(providerId);
     setLastSelectedId(providerId);
     setTestResult(null);
     setIsRenaming(false);
     setMobileShowPanel(true);
-    if (syncDefault && !isFallbackProviderInstance(providers, providerId)) {
+  };
+
+  const makeDefault = (providerId: string) => {
+    if (!isFallbackProviderInstance(providers, providerId)) {
       selectionEpoch.current++;
       pendingSelection.current = providerId;
       setSelectionDirty(true);
@@ -436,7 +460,7 @@ const ProvidersTab: React.FC = () => {
       ),
     ]);
     persistNow(updatedProviders);
-    selectProvider(clone.id, false);
+    selectProvider(clone.id);
     setAutoFocusField(
       type.fields.find((field) => isProviderCredentialField(field.key))?.key ??
         null,
@@ -978,11 +1002,11 @@ const ProvidersTab: React.FC = () => {
                         key={provider.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => selectProvider(provider.id, false)}
+                        onClick={() => selectProvider(provider.id)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
-                            selectProvider(provider.id, false);
+                            selectProvider(provider.id);
                           }
                         }}
                         className={cn(
@@ -1236,6 +1260,25 @@ const ProvidersTab: React.FC = () => {
                         )}
                       </h1>
                     </div>
+                    {!isFallbackProviderInstance(
+                      providers,
+                      selectedProvider,
+                    ) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={
+                          selectionDirty ||
+                          !currentProviderConfigured ||
+                          defaultProviderId === selectedProvider
+                        }
+                        onClick={() => makeDefault(selectedProvider)}
+                      >
+                        {defaultProviderId === selectedProvider
+                          ? t('currentDefault')
+                          : t('setAsDefault')}
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       className="gap-1.5 shrink-0"
@@ -1364,7 +1407,7 @@ const ProvidersTab: React.FC = () => {
                         onChange={(ids) =>
                           handleInputChange('fallbackProviderIds', ids)
                         }
-                        onSelectProvider={(id) => selectProvider(id, false)}
+                        onSelectProvider={(id) => selectProvider(id)}
                         onAddFallback={handleAddFallbackProvider}
                       />
                     )}

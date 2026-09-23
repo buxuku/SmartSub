@@ -1,3 +1,4 @@
+import type { ActivityObserver } from '../../../types/taskActivity';
 /**
  * 校正遍编排（遍 B，design D7）：cues 文本 → 共享校正服务（anchored 协议）→ 写回。
  * **非纯逻辑层**（依赖翻译客户端/任务上下文），不经 index.ts 导出。
@@ -14,6 +15,7 @@ import { TRANSLATOR_MAP } from '../../translate/services/translationProvider';
 import type { Provider, TranslatorFunction } from '../../translate/types';
 
 export interface AiCorrectionParams {
+  onActivity?: ActivityObserver;
   cues: TokenTriple[];
   formData: Record<string, unknown>;
   provider: Provider;
@@ -81,6 +83,7 @@ export async function runAiCorrection(
       formData.subtitleFillerPolicy === 'remove-hesitations'
         ? formData.subtitleFillerPolicy
         : undefined,
+    onActivity: params.onActivity,
     onBatchProgress: (info) =>
       onProgress?.(info.processedCount, info.totalCount),
   });

@@ -1310,10 +1310,28 @@ export default function TaskWizard() {
         (p: any) => p.id === formData?.translateProvider,
       );
       if (!provider || !isProviderConfigured(provider)) {
+        const alternative = providers.find(
+          (candidate: any) =>
+            candidate.id ===
+            resolveDefaultTranslateProviderId(providers as any[]),
+        );
         list.push({
           key: 'provider',
           text: t('wizard.blockNoProvider'),
           href: `/${locale}/translation`,
+          actions: alternative
+            ? [
+                {
+                  label: t('home:useTranslationService', {
+                    name: alternative.name,
+                  }),
+                  onClick: () =>
+                    form.setValue('translateProvider', alternative.id, {
+                      shouldDirty: true,
+                    }),
+                },
+              ]
+            : undefined,
         });
       } else if (
         formData?.subtitleTranslationStyle === 'conversational' &&

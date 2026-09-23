@@ -54,6 +54,8 @@
     "addon:fetch": "node scripts/fetch-whisper-addon.mjs",
     "native:fetch": "node scripts/fetch-sherpa-native.mjs && node scripts/fetch-whisper-addon.mjs",
     "size:check": "node scripts/check-bundle-size.mjs",
+    "test:task-activity": "node scripts/test-task-activity.cjs && node scripts/test-translation-activity.cjs && jest --runInBand renderer/components/__tests__/TaskActivity.test.tsx",
+    "test:e2e:task-activity": "node scripts/e2e/task-activity.mjs",
     "test:engines": "tsc scripts/test-engine-units.ts --outDir node_modules/.cache/engine-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/engine-tests/scripts/test-engine-units.js && node scripts/test-sherpa-worker.cjs && node scripts/test-qwen-scaffold.cjs",
     "test:speech-review": "python3 -m unittest discover -s scripts/asr-review -p 'test_*.py' && node scripts/asr-review/test-adapter.cjs",
     "test:missed-speech": "tsc scripts/test-missed-speech-diagnostics.ts --outDir node_modules/.cache/missed-speech-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/missed-speech-tests/scripts/test-missed-speech-diagnostics.js && node scripts/test-missed-speech-data.cjs",

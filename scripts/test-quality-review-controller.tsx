@@ -44,13 +44,17 @@ async function main() {
   const warnings = [];
   let input = { documentKey: 'a', subtitles: [row] };
   let control: ReturnType<typeof useQualityReview>;
+  const updates: Array<{ record?: boolean; dirty?: boolean }> = [];
   function Harness() {
     const [state, update] = useState(emptyQualityReview);
     control = useQualityReview({
       ...input,
       warnings,
       state,
-      update,
+      update: (next, record, dirty) => {
+        updates.push({ record, dirty });
+        update(next);
+      },
       translation: true,
       enabled: true,
     });
@@ -66,6 +70,12 @@ async function main() {
   });
   await settle();
   assert.equal(control!.counts.pending, 1);
+  await act(async () => control!.view({ mode: 'issues' }));
+  assert.equal(
+    updates.at(-1)?.dirty,
+    false,
+    'view changes must not dirty the subtitle document',
+  );
   const issue = control!.issues[0];
   await act(async () => control!.decide(issue, 'skipped'));
   assert.equal(control!.counts.skipped, 1);

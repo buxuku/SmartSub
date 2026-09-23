@@ -25,6 +25,11 @@ export function setupWorkItemHandlers(): void {
     const allIds = [...new Set(items.flatMap(workItemSessionIds))];
     if (
       items.some(
+        (item) =>
+          (item.type === 'compose' || item.type === 'toolbox') &&
+          ['waiting', 'running'].includes(item.status),
+      ) ||
+      items.some(
         (item) => item.type !== 'download' && isTaskProjectBusy(item.id),
       ) ||
       allIds.some(

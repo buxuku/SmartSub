@@ -74,7 +74,7 @@ export async function executeVideoCompress(
   preparingCompressJobs.set(jobId, preparation);
   let origInfo: Awaited<ReturnType<typeof probeVideoInfo>>;
   try {
-    origInfo = await probeVideoInfo(videoPath);
+    origInfo = await probeVideoInfo(videoPath, preparation.signal);
   } finally {
     preparingCompressJobs.delete(jobId);
   }
@@ -86,6 +86,26 @@ export async function executeVideoCompress(
       compressedSize: 0,
       error: 'Cancelled',
     };
+  const targetBytes =
+    (preset === 'wechat_25mb' ? 24 : targetSizeMb) * 1024 * 1024;
+  const sizeOnly = preset === 'wechat_25mb' || preset === 'target_size';
+  // Reuse only already-compatible MP4 files. Other formats still need conversion.
+  if (
+    sizeOnly &&
+    origInfo.size <= targetBytes &&
+    /\.mp4$/i.test(videoPath) &&
+    origInfo.videoCodec === 'h264' &&
+    (!origInfo.hasAudio || origInfo.audioCodec === 'aac')
+  ) {
+    onProgress?.(100);
+    return {
+      success: true,
+      skipped: true,
+      outputPath: videoPath,
+      originalSize: origInfo.size,
+      compressedSize: origInfo.size,
+    };
+  }
   const dir = outputPath ? path.dirname(outputPath) : path.dirname(videoPath);
   const ext = path.extname(videoPath);
   const baseName = path.basename(videoPath, ext);

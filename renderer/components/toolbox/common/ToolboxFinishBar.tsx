@@ -101,19 +101,22 @@ export default function ToolboxFinishBar({
   let statsText = '';
   if (stats?.originalSize && stats?.compressedSize) {
     const saved =
-      stats.savedPercent ??
-      Math.max(
-        0,
-        Math.round(
-          ((stats.originalSize - stats.compressedSize) / stats.originalSize) *
-            100,
-        ),
-      );
-    statsText = t('finishBar.stats', {
-      original: formatBytes(stats.originalSize),
-      compressed: formatBytes(stats.compressedSize),
-      saved,
-    });
+      Math.round(
+        ((stats.originalSize - stats.compressedSize) / stats.originalSize) *
+          1000,
+      ) / 10;
+    statsText = t(
+      saved < 0
+        ? 'finishBar.statsIncreased'
+        : saved === 0
+          ? 'finishBar.statsUnchanged'
+          : 'finishBar.stats',
+      {
+        original: formatBytes(stats.originalSize),
+        compressed: formatBytes(stats.compressedSize),
+        saved: Math.abs(saved),
+      },
+    );
   }
 
   return (

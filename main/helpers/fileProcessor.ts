@@ -1,3 +1,5 @@
+import { TaskActivityReporter } from './taskActivity';
+import { runWithTaskContext } from './taskContext';
 import path from 'path';
 import fs from 'fs';
 import { logMessage } from './storeManager';
@@ -142,6 +144,10 @@ async function translateSubtitle(
   provider,
   fallbackProviders = [],
 ): Promise<boolean> {
+  const activity = getTaskContext()?.activity?.start(
+    'translateSubtitle',
+    'preparing',
+  );
   // 强制发送翻译开始状态
   event.sender.send('taskFileChange', {
     ...file,
@@ -153,7 +159,7 @@ async function translateSubtitle(
   event.sender.send('taskProgressChange', file, 'translateSubtitle', 0);
 
   const onProgress = (progress) => {
-    const normalizedProgress = Math.min(Math.max(progress, 0), 100);
+    const normalizedProgress = Math.min(Math.max(progress, 0), 99);
     event.sender.send(
       'taskProgressChange',
       file,
@@ -171,7 +177,10 @@ async function translateSubtitle(
       onProgress,
       undefined,
       fallbackProviders,
+      activity?.update,
     );
+    throwIfTaskCancelled();
+    activity?.finish();
 
     // 确保最终状态的正确发送（无论是否有部分行失败，翻译阶段产物均已生成并落盘）
     event.sender.send('taskProgressChange', file, 'translateSubtitle', 100);
@@ -197,6 +206,9 @@ async function translateSubtitle(
     }
     return !hasFailures;
   } catch (error) {
+    activity?.finish(
+      isTaskCancelledError(error) || isTaskCancelled() ? 'cancelled' : 'error',
+    );
     if (isTaskCancelledError(error) || isTaskCancelled()) {
       // 用户取消：翻译阶段回退为待处理，不计错误，并中止后续流程
       event.sender.send('taskFileChange', {
@@ -215,7 +227,7 @@ async function translateSubtitle(
 /**
  * 处理文件
  */
-export async function processFile(
+async function processFileImpl(
   event,
   file: IFiles,
   formData,
@@ -1042,4 +1054,30 @@ export async function processFile(
       message: error,
     });
   }
+}
+
+/** Keep activity ownership alive even when the task page is closed. */
+export async function processFile(...args: Parameters<typeof processFileImpl>) {
+  const [event, file] = args;
+  const context = getTaskContext();
+  return runWithTaskContext({ ...context }, async () => {
+    const reporter = new TaskActivityReporter(
+      Math.max(Date.now(), (file.taskActivity?.run ?? 0) + 1),
+      (activity) => {
+        file.taskActivity = activity;
+        event.sender.send(
+          'taskActivityChange',
+          { uuid: file.uuid, taskProjectId: context?.projectId },
+          activity,
+        );
+      },
+      context?.signal,
+    );
+    getTaskContext()!.activity = reporter;
+    try {
+      return await processFileImpl(...args);
+    } finally {
+      reporter.close();
+    }
+  });
 }

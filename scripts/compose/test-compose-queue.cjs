@@ -5,6 +5,7 @@ const ts = require('typescript');
 const originalLoad = Module._load;
 const originalTs = require.extensions['.ts'];
 const running = new Map();
+const history = new Map();
 let acquired = 0,
   released = 0;
 require.extensions['.ts'] = (module, filename) =>
@@ -20,6 +21,16 @@ require.extensions['.ts'] = (module, filename) =>
   );
 Module._load = function (request, parent, isMain) {
   if (parent?.filename.endsWith('/composeQueue.ts')) {
+    if (request === '../processingHistory')
+      return {
+        startProcessingHistory(input) {
+          history.set(input.id, input);
+          return input.id;
+        },
+        updateProcessingHistory(id, status, outputPaths) {
+          history.set(id, { ...history.get(id), status, outputPaths });
+        },
+      };
     if (request === '../storeManager') return { logMessage() {} };
     if (request === '../powerSaveManager')
       return {
@@ -96,6 +107,9 @@ async function main() {
   );
   running.get(one.jobId).resolve('/out_2.mp4');
   assert.equal((await one.done).outputPath, '/out_2.mp4');
+  assert.equal(history.get(one.jobId).status, 'done');
+  assert.deepEqual(history.get(one.jobId).outputPaths, ['/out_2.mp4']);
+  assert.equal(history.get(two.jobId).status, 'interrupted');
   assert.equal(
     getComposeQueueSnapshot().find((job) => job.id === one.jobId).requestId,
     'one',

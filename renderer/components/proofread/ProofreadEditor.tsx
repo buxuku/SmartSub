@@ -74,7 +74,7 @@ interface ProofreadEditorProps {
   projectId?: string;
   ensureProject?: () => Promise<string | undefined>;
   file: PendingFile;
-  onMarkComplete: () => void;
+  onMarkComplete: () => void | Promise<void>;
   onBack: () => void;
 }
 
@@ -463,10 +463,17 @@ export default function ProofreadEditor({
   }, [onBack, discardDraft]);
 
   // 标记完成隐含保存：保证完成态文件与界面一致；保存失败则留在编辑器
+  const [completing, setCompleting] = useState(false);
   const handleMarkCompleteClick = useCallback(async () => {
-    const ok = await handleSave();
-    if (ok) onMarkComplete();
-  }, [handleSave, onMarkComplete]);
+    if (completing) return;
+    setCompleting(true);
+    try {
+      const ok = await handleSave();
+      if (ok) await onMarkComplete();
+    } finally {
+      setCompleting(false);
+    }
+  }, [handleSave, onMarkComplete, completing]);
 
   // Cmd/Ctrl+F：递增 token 通知工具栏展开搜索替换
   const [searchOpenToken, setSearchOpenToken] = useState(0);
@@ -743,8 +750,8 @@ export default function ProofreadEditor({
             </div>
             <div className="flex items-center gap-2">
               <span role="status" className="text-xs text-muted-foreground">
-                {commonT(
-                  `saveState.${saveStatus === 'idle' && isDirty ? 'dirty' : saveStatus}`,
+                {t(
+                  `subtitleSaveState.${saveStatus === 'idle' && isDirty ? 'dirty' : saveStatus}`,
                 )}
               </span>
               <Tooltip>
@@ -754,7 +761,11 @@ export default function ProofreadEditor({
                     size="sm"
                     className="gap-1.5"
                     onClick={handleSave}
-                    disabled={saveStatus === 'saving' || Boolean(recoveryDraft)}
+                    disabled={
+                      completing ||
+                      saveStatus === 'saving' ||
+                      Boolean(recoveryDraft)
+                    }
                   >
                     <Save className="h-4 w-4" />
                     {t('saveSubtitles')}
@@ -771,7 +782,11 @@ export default function ProofreadEditor({
                     size="sm"
                     className="gap-1.5"
                     onClick={handleMarkCompleteClick}
-                    disabled={saveStatus === 'saving' || Boolean(recoveryDraft)}
+                    disabled={
+                      completing ||
+                      saveStatus === 'saving' ||
+                      Boolean(recoveryDraft)
+                    }
                   >
                     <Check className="h-4 w-4" />
                     {t('markCompleteAndBack')}

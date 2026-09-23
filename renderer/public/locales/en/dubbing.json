@@ -20,8 +20,8 @@
   "clearVideo": "Clear video",
   "loadingSubtitle": "Parsing subtitle…",
   "importFromRecent": "Import from recent tasks",
-  "cueSummary": "{{total}} lines · {{done}} done",
-  "overlongCount": "{{count}} overlong",
+  "cueSummary": "Audio generated {{generated}} / {{total}} · {{ready}} ready",
+  "overlongCount": "{{count}} need timing adjustments",
   "failedCount": "{{count}} failed",
   "startDubbing": "Start dubbing",
   "resumeDubbing": "Resume",
@@ -199,5 +199,7 @@
   "cueDraftFound": "Found {{count}} unsaved text drafts",
   "cueDraftUnreadable": "Text draft could not be read",
   "cueDraftRestore": "Restore text drafts",
-  "cueKeepDraft": "Confirm keeping my text"
+  "cueKeepDraft": "Confirm keeping my text",
+  "reviewTiming": "Review timing",
+  "insufficientSilence": "Not enough following silence. Edit the text or speed and regenerate."
 }

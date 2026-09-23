@@ -31,6 +31,8 @@ export const WORK_ITEM_TYPE_FILTERS: Array<'all' | WorkItemType> = [
   'proofread',
   'dubbing',
   'download',
+  'compose',
+  'toolbox',
 ];
 
 function getProjectTypeDef(project: { taskType?: string }): TaskTypeDef {
@@ -72,6 +74,9 @@ function getProjectStatus(project: {
 }
 
 export function getWorkItemTarget(item: WorkItem, locale: string): string {
+  if (item.type === 'compose' || item.type === 'toolbox') {
+    return `/${locale}/processing-result?workItem=${encodeURIComponent(item.id)}`;
+  }
   if (item.type === 'proofread') {
     return `/${locale}/proofread?workItem=${item.id}`;
   }
@@ -100,6 +105,8 @@ export function getWorkItemTarget(item: WorkItem, locale: string): string {
 }
 
 export function getWorkItemFileCount(item: WorkItem): number {
+  if (item.type === 'compose' || item.type === 'toolbox')
+    return item.processing?.inputPaths.length || 0;
   if (item.type === 'proofread') {
     return item.proofreadEntries?.length || 0;
   }
@@ -113,6 +120,8 @@ export function getWorkItemTypeLabel(
   tLaunchpad: (key: string) => string,
   tTasks: (key: string) => string,
 ): string {
+  if (item.type === 'compose' || item.type === 'toolbox')
+    return tLaunchpad(`card.${item.type}`);
   if (item.type === 'proofread') {
     return tLaunchpad('card.proofread');
   }
@@ -139,7 +148,12 @@ export function getWorkItemStatus(item: WorkItem): RecentStatus {
       ? 'done'
       : 'running';
   }
-  if (item.type === 'dubbing' || item.type === 'download') {
+  if (
+    item.type === 'dubbing' ||
+    item.type === 'download' ||
+    item.type === 'compose' ||
+    item.type === 'toolbox'
+  ) {
     if (item.status === 'done') return 'done';
     if (item.status === 'running') return 'running';
     if (item.status === 'error' || item.status === 'interrupted') {

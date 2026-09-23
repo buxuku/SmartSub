@@ -122,7 +122,8 @@
     "mergeDesc": "把字幕烧录进画面，永久显示",
     "dubbing": "配音",
     "dubbingDesc": "把字幕逐条合成语音，对齐时间轴生成配音",
-    "download": "视频下载"
+    "compose": "视频合成",
+    "toolbox": "工具箱"
   },
   "fromDownload": "来自下载",
   "needsModelBadge": "需要模型",
@@ -182,5 +183,19 @@
     "error": "出错",
     "review": "待校对"
   },
-  "noRecentTasksHint": "完成的任务会出现在这里，拖入启动台即可导入素材"
+  "noRecentTasksHint": "完成的任务会出现在这里，拖入启动台即可导入素材",
+  "result": {
+    "back": "返回全部任务",
+    "loading": "正在读取处理记录…",
+    "unavailable": "处理记录不存在或已删除",
+    "retry": "重新读取",
+    "outputs": "输出文件",
+    "inputs": "输入素材",
+    "noOutputs": "暂无已完成的输出文件",
+    "openFolder": "打开所在文件夹",
+    "fileMissing": "文件已移动或删除：{{path}}",
+    "openFailed": "无法打开文件位置",
+    "openCompose": "使用原素材打开合成工作台",
+    "openTool": "打开对应工具"
+  }
 }

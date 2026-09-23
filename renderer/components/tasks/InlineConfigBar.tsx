@@ -10,18 +10,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  AlertCircle,
-  CheckCircle2,
-  Download,
-  Languages,
-  SlidersHorizontal,
-} from 'lucide-react';
+import { AlertCircle, CheckCircle2, Download, Languages } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import Models from '@/components/Models';
 import AiRefineControl from '@/components/tasks/AiRefineControl';
-import ManuscriptControl from '@/components/tasks/ManuscriptControl';
 import ScenarioPresetControl from '@/components/tasks/ScenarioPresetControl';
 import OutputFormatControl from '@/components/tasks/OutputFormatControl';
 import { cn, supportedLanguage } from 'lib/utils';
@@ -221,10 +214,9 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
       className="task-inspector flex min-w-0 flex-col gap-1.5 w-full"
       data-testid="task-inspector"
     >
-      <div className="inspector-sections grid min-w-0 items-end gap-3 bg-muted/30 px-3 py-2 w-full">
-        {/* 左侧核心主干（必选且紧凑，绝对不折行） */}
+      <div className="inspector-sections bg-muted/30 px-3 py-2 w-full rounded-md overflow-x-auto">
         <div
-          className="flex min-w-0 items-end gap-3 flex-nowrap"
+          className="flex min-w-0 items-end gap-2.5 flex-nowrap w-full"
           data-testid="task-inspector-core"
         >
           {typeDef.needsModel && (
@@ -317,6 +309,11 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
               </ConfigItem>
 
               <ConfigItem label={t('configBar.provider')}>
+                {formData.translateProvider === 'autoFree' && (
+                  <p className="text-[11px] text-muted-foreground">
+                    {tHome('freeTranslationNetworkHint')}
+                  </p>
+                )}
                 {providers.length > 0 ? (
                   <Select
                     value={formData.translateProvider}
@@ -371,65 +368,41 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
               </ConfigItem>
             </>
           )}
-        </div>
 
-        {/* 右侧能力开关胶囊（就地弹出卡片配置） */}
-        <div
-          className="flex min-w-0 items-center justify-end gap-1.5 flex-nowrap"
-          data-testid="task-inspector-actions"
-        >
           {typeDef.needsModel && (
             <>
-              <ScenarioPresetControl
-                form={form}
-                formData={formData}
-                onOpenAdvanced={onOpenAdvanced}
-              />
-              <AiRefineControl
-                form={form}
-                formData={formData}
-                providers={providers}
-                typeDef={typeDef}
-                open={refineOpen}
-                onOpenChange={onRefineOpenChange}
-              />
-              <ManuscriptControl form={form} formData={formData} />
+              <ConfigItem label={t('configBar.scenario')}>
+                <ScenarioPresetControl
+                  form={form}
+                  formData={formData}
+                  onOpenAdvanced={onOpenAdvanced}
+                />
+              </ConfigItem>
+              <ConfigItem label={t('refine.control.label')}>
+                <AiRefineControl
+                  form={form}
+                  formData={formData}
+                  providers={providers}
+                  typeDef={typeDef}
+                  open={refineOpen}
+                  onOpenChange={onRefineOpenChange}
+                />
+              </ConfigItem>
             </>
           )}
 
-          <OutputFormatControl
-            form={form}
-            formData={formData}
-            typeDef={typeDef}
-          />
-
-          {onOpenAdvanced && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onOpenAdvanced}
-              className="h-8 px-2 text-xs gap-1"
-              title={t('advancedSettings')}
-              aria-label={t('advancedSettings')}
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              <span className="hidden lg:inline">{t('advancedSettings')}</span>
-            </Button>
-          )}
+          <ConfigItem label={t('configBar.format')}>
+            <OutputFormatControl
+              form={form}
+              formData={formData}
+              typeDef={typeDef}
+            />
+          </ConfigItem>
         </div>
       </div>
       <style jsx>{`
         .task-inspector {
           container-type: inline-size;
-        }
-        .inspector-sections {
-          grid-template-columns: minmax(0, 1fr);
-        }
-        @container (min-width: 1180px) {
-          .inspector-sections {
-            grid-template-columns: minmax(0, 1fr) auto;
-          }
         }
       `}</style>
 

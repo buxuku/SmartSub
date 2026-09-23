@@ -200,7 +200,9 @@
     "goToDubbing": "去做 AI 配音",
     "goToProofread": "去校对字幕",
     "goToBurn": "合成到视频",
-    "processNext": "继续处理下一个"
+    "processNext": "继续处理下一个",
+    "statsIncreased": "大小：{{original}} → {{compressed}}（增加 {{saved}}%）",
+    "statsUnchanged": "大小：{{original}} → {{compressed}}（体积未减小）"
   },
   "videoCompressorQueue": {
     "queueTitle": "待压缩视频队列",
@@ -211,6 +213,16 @@
     "itemOriginal": "原大小: {{size}}",
     "itemCompressed": "压缩后: {{size}} (省 {{saved}}%)",
     "itemFailed": "压缩失败",
-    "allFinished": "全部 {{count}} 个视频压缩完成！"
+    "allFinished": "全部 {{count}} 个视频压缩完成！",
+    "skipped": "已满足体积上限，无需压缩，保留原文件",
+    "finished": "已处理 {{count}} 个视频，其中 {{skipped}} 个无需压缩"
+  },
+  "leaveQueue": {
+    "title": "离开当前工具？",
+    "pending": "离开将清空当前待处理列表，原文件和已生成的文件不受影响。",
+    "running": "离开将取消当前处理并清空待处理列表；原文件和已完成的输出会保留。",
+    "stay": "继续处理",
+    "cancelAndLeave": "取消处理并离开",
+    "clearAndLeave": "清空列表并离开"
   }
 }
