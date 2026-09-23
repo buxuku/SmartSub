@@ -1005,6 +1005,12 @@ export class PyEngineDownloader {
 
 const downloaderInstances = new Map<PyEngineId, PyEngineDownloader>();
 
+export function isPyEngineDownloadBusy(): boolean {
+  return [...downloaderInstances.values()].some((instance) =>
+    instance.isBusy(),
+  );
+}
+
 export function getPyEngineDownloader(
   engineId: PyEngineId,
   mainWindow?: BrowserWindow,

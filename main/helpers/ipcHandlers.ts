@@ -1,4 +1,6 @@
-import { app, ipcMain, BrowserWindow, dialog, shell } from 'electron';
+import { dialogWindow } from '../automation/events';
+import { ipcMain } from '../automation/handlers';
+import { app, BrowserWindow, dialog, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createMessageSender } from './messageHandler';
@@ -385,7 +387,7 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
    * 编码和非空校验；运行阶段会再次读取校验，以覆盖文件被移动/修改的情况。
    */
   ipcMain.handle('manuscript:select', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
+    const result = await dialog.showOpenDialog(dialogWindow(mainWindow), {
       properties: ['openFile'],
       filters: [
         {

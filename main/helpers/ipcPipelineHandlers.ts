@@ -1,9 +1,10 @@
+import { ipcMain } from '../automation/handlers';
 /**
  * 流水线人工检查点 IPC：放行（单文件/批量）。
  * 放行后以主窗口 webContents 广播文件状态变更，打开中的任务页即时刷新。
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 import { logMessage } from './storeManager';
 import { releaseGate } from './pipeline/gateManager';
 import { getWorkItemById } from './workItemStore';

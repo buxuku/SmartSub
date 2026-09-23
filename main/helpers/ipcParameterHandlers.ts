@@ -1,3 +1,4 @@
+import { ipcMain } from '../automation/handlers';
 /**
  * IPC Handlers for Parameter Management
  *
@@ -5,7 +6,6 @@
  * custom parameter configuration management.
  */
 
-import { ipcMain } from 'electron';
 import { store } from './store';
 import { ParameterProcessor } from './parameterProcessor';
 import { configurationManager } from '../service/configurationManager';

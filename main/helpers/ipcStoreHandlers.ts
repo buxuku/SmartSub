@@ -1,4 +1,5 @@
-import { app, ipcMain } from 'electron';
+import { ipcMain } from '../automation/handlers';
+import { app } from 'electron';
 import os from 'os';
 import { store } from './store';
 import { defaultUserConfig, supportedLanguage } from './utils';

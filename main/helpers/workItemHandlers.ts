@@ -1,4 +1,5 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain } from '../automation/handlers';
+import { BrowserWindow } from 'electron';
 import {
   deleteWorkItem,
   getWorkItemById,

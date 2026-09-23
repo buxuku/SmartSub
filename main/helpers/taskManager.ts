@@ -1,5 +1,5 @@
+import { ipcMain } from '../automation/handlers';
 import { latestTaskActivity } from '../../types/taskActivity';
-import { ipcMain } from 'electron';
 import { IFiles, TaskProject, TaskProjectType } from '../../types';
 import { isPipelineWorkItem, type WorkItem } from '../../types/workItem';
 import { getTaskContext } from './taskContext';
