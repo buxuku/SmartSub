@@ -62,6 +62,7 @@ import {
 import { cn, isSubtitleFile } from 'lib/utils';
 import { getTaskTypeByValue } from 'lib/taskTypes';
 import { isProviderConfigured } from 'lib/providerUtils';
+import { validateSummaryProvider } from '../../../../types/summaryProvider';
 import { resolveDefaultTranslateProviderId } from 'lib/providerPanelUtils';
 import {
   getEngineModelGroups,
@@ -1385,26 +1386,18 @@ export default function TaskWizard() {
       list.push({ key: 'goal', text: t('wizard.blockNoGoal') });
     }
     if (translateOn && formData?.generateSummary === true) {
-      const summarySetting = formData?.summaryProvider || 'follow-translation';
-      if (summarySetting === 'follow-translation') {
-        const tp = providers.find(
-          (p: any) => p.id === formData?.translateProvider,
-        );
-        if (!tp?.isAi || !isProviderConfigured(tp)) {
-          list.push({
-            key: 'summary',
-            text: t('wizard.blockSummaryFollow'),
-          });
-        }
-      } else {
-        const sp = providers.find((p: any) => p.id === summarySetting);
-        if (!sp?.isAi || !isProviderConfigured(sp)) {
-          list.push({
-            key: 'summary',
-            text: t('wizard.blockSummaryProviderInvalid'),
-            href: `/${locale}/translation`,
-          });
-        }
+      const summaryBlock = validateSummaryProvider(formData, providers);
+      if (summaryBlock === 'follow') {
+        list.push({
+          key: 'summary',
+          text: t('wizard.blockSummaryFollow'),
+        });
+      } else if (summaryBlock === 'invalid') {
+        list.push({
+          key: 'summary',
+          text: t('wizard.blockSummaryProviderInvalid'),
+          href: `/${locale}/translation`,
+        });
       }
     }
     // AI 字幕精修（openspec: add-ai-subtitle-refine D9 即时校验）：

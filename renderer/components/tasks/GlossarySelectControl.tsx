@@ -15,11 +15,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { BookOpenText } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
+import type { UseFormReturn } from 'react-hook-form';
 import { useGlossaries } from 'hooks/useGlossaries';
+import type { IFormData } from '../../../types/types';
 
 interface GlossarySelectControlProps {
-  form: any;
-  formData: any;
+  form: Pick<UseFormReturn<IFormData>, 'setValue'>;
+  formData: IFormData | undefined;
 }
 
 const GlossarySelectControl: React.FC<GlossarySelectControlProps> = ({
@@ -31,9 +33,6 @@ const GlossarySelectControl: React.FC<GlossarySelectControlProps> = ({
   const { locale } = router.query;
   const [open, setOpen] = useState(false);
   const { glossaries, loading } = useGlossaries();
-
-  const setValue = (name: string, value: unknown) =>
-    form.setValue(name, value, { shouldDirty: true });
 
   const rawIds = formData?.glossaryIds;
   const isExplicit = Array.isArray(rawIds);
@@ -53,11 +52,11 @@ const GlossarySelectControl: React.FC<GlossarySelectControlProps> = ({
         ? current
         : [...current, id]
       : current.filter((item) => item !== id);
-    setValue('glossaryIds', next);
+    form.setValue('glossaryIds', next, { shouldDirty: true });
   };
 
   const restoreDefault = () => {
-    setValue('glossaryIds', undefined);
+    form.setValue('glossaryIds', undefined, { shouldDirty: true });
   };
 
   const selectedGlossaries = isExplicit

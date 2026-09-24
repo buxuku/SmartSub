@@ -8,8 +8,6 @@ import { isTaskCancelledError } from './taskContext';
 import { stripAIThinkingContent } from '../translate/utils/aiResponseParser';
 import { DEFAULT_BATCH_SIZE } from '../translate/constants';
 import { BATCH_SCHEMA_MAX_PROPERTIES } from '../translate/constants/schema';
-import type { Provider } from '../../types/provider';
-import { isProviderConfigured } from '../../types/providerUtils';
 
 function effectiveAiBatchSize(providerBatchSize: unknown): number {
   const parsed =
@@ -23,7 +21,6 @@ function effectiveAiBatchSize(providerBatchSize: unknown): number {
   return Math.min(Math.max(1, requested), BATCH_SCHEMA_MAX_PROPERTIES);
 }
 import {
-  FOLLOW_TRANSLATION_PROVIDER,
   SUMMARY_GLOSSARY_HEADING,
   SUMMARY_MAX_UNITS,
   SUMMARY_MIN_BATCHES,
@@ -460,46 +457,8 @@ export function shouldUseEpisodeSummary(
   );
 }
 
-export interface SummaryProviderResolution {
-  provider: Provider | null;
-  source: 'follow' | 'explicit';
-  reason?: SummaryErrorCode;
-}
-
-function summaryProviderSetting(
-  formData: Record<string, unknown> | undefined,
-): string {
-  return String(formData?.summaryProvider || FOLLOW_TRANSLATION_PROVIDER);
-}
-
-function providerForSummarySource(
-  source: 'follow' | 'explicit',
-  formData: Record<string, unknown> | undefined,
-  providers: Provider[],
-): Provider | undefined {
-  const id =
-    source === 'follow'
-      ? String(formData?.translateProvider ?? '-1')
-      : summaryProviderSetting(formData);
-  return providers.find((item) => item.id === id);
-}
-
-/** 未找到、非 AI、必填项未填时降级；顺序固定，非 AI 不再查配置。 */
-function decideSummaryProvider(
-  source: 'follow' | 'explicit',
-  provider: Provider | undefined,
-): SummaryProviderResolution {
-  if (!provider) {
-    return { provider: null, source, reason: 'provider-unresolved' };
-  }
-  if (!provider.isAi) {
-    return { provider: null, source, reason: 'provider-not-ai' };
-  }
-  if (!isProviderConfigured(provider)) {
-    return { provider: null, source, reason: 'provider-unconfigured' };
-  }
-  return { provider, source };
-}
+export { pickSummaryProvider } from '../../types/summaryProvider';
+export type { SummaryProviderResolution } from '../../types/summaryProvider';
 
 /**
  * 摘要服务商与翻译阶段已加载的扩展服务商是同一个时，复用其 customParameters。
@@ -511,21 +470,6 @@ export function shouldReuseTranslationProvider(
 ): boolean {
   return Boolean(
     translationProvider && translationProvider.id === summaryProviderId,
-  );
-}
-
-/** 纯判定。跟随翻译服务，或按 id 取显式摘要服务。 */
-export function pickSummaryProvider(
-  formData: Record<string, unknown> | undefined,
-  providers: Provider[],
-): SummaryProviderResolution {
-  const source =
-    summaryProviderSetting(formData) === FOLLOW_TRANSLATION_PROVIDER
-      ? 'follow'
-      : 'explicit';
-  return decideSummaryProvider(
-    source,
-    providerForSummarySource(source, formData, providers),
   );
 }
 
