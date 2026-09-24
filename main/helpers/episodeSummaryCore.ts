@@ -2,6 +2,7 @@
  * 通读摘要的无 electron 纯函数（可被 tsc+node 单测）。
  * 调模型、读 store 的编排在 episodeSummary.ts。
  */
+import { createHash } from 'crypto';
 import { renderTemplate } from './template';
 import { stripAIThinkingContent } from '../translate/utils/aiResponseParser';
 import { DEFAULT_BATCH_SIZE } from '../translate/constants';
@@ -88,4 +89,82 @@ export function settleSummaryText(
   if (stripped) return { ok: true, text: stripped };
   const hadThink = /<think>/i.test(joined);
   return { ok: false, error: hadThink ? 'empty-after-think-strip' : 'empty' };
+}
+
+export function computeSummaryFingerprint(input: {
+  source: string;
+  prompt: string;
+  providerId: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+}): string {
+  const payload = JSON.stringify([
+    input.source,
+    input.prompt,
+    input.providerId,
+    input.sourceLanguage,
+    input.targetLanguage,
+  ]);
+  return createHash('sha1').update(payload, 'utf8').digest('hex');
+}
+
+export function clearedSummaryFields(): {
+  episodeSummary: undefined;
+  summaryUsage: undefined;
+  summarySourceHash: undefined;
+} {
+  return {
+    episodeSummary: undefined,
+    summaryUsage: undefined,
+    summarySourceHash: undefined,
+  };
+}
+
+export function disabledSummaryPatch(): {
+  episodeSummary: undefined;
+  summaryUsage: undefined;
+  summarySourceHash: undefined;
+  summarizeEpisode: undefined;
+  summarizeEpisodeError: undefined;
+} {
+  return {
+    ...clearedSummaryFields(),
+    summarizeEpisode: undefined,
+    summarizeEpisodeError: undefined,
+  };
+}
+
+export function decideSummaryReuse(input: {
+  existing: string;
+  storedHash: string | undefined;
+  fingerprint: string;
+}): 'reuse' | 'regenerate' {
+  if (input.existing.trim() === '') return 'regenerate';
+  if (typeof input.storedHash !== 'string' || input.storedHash === '') {
+    return 'regenerate';
+  }
+  return input.storedHash === input.fingerprint ? 'reuse' : 'regenerate';
+}
+
+export function isSummaryStageActive(input: {
+  generateSummary?: boolean;
+  taskType?: string;
+  translateProvider?: string;
+}): boolean {
+  return (
+    input.generateSummary === true &&
+    (input.taskType === 'generateAndTranslate' ||
+      input.taskType === 'translateOnly') &&
+    input.translateProvider !== '-1'
+  );
+}
+
+export function shouldUseEpisodeSummary(
+  formData: { generateSummary?: boolean } | null | undefined,
+  file: { episodeSummary?: string } | null | undefined,
+): boolean {
+  return (
+    formData?.generateSummary === true &&
+    String(file?.episodeSummary || '').trim() !== ''
+  );
 }

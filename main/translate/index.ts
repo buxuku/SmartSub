@@ -17,6 +17,7 @@ import {
 import { getSrtFileName, renderTemplate } from '../helpers/utils';
 import { logMessage, store } from '../helpers/storeManager';
 import { IFiles, IFormData } from '../../types';
+import { shouldUseEpisodeSummary } from '../helpers/episodeSummaryCore';
 import { ensureTempDir } from '../helpers/fileUtils';
 import { isTaskCancelledError } from '../helpers/taskContext';
 import type { ActivityObserver } from '../../types/taskActivity';
@@ -225,8 +226,12 @@ export default async function translate(
       onActivity,
       {
         glossaryIds: formData?.glossaryIds,
-        episodeSummary: file.episodeSummary,
-        summarySkipReason: file.summarizeEpisodeError,
+        ...(shouldUseEpisodeSummary(formData, file)
+          ? { episodeSummary: file.episodeSummary }
+          : {}),
+        ...(formData?.generateSummary === true
+          ? { summarySkipReason: file.summarizeEpisodeError }
+          : {}),
       },
     );
 
