@@ -9,6 +9,7 @@ import {
   Settings2,
   SlidersHorizontal,
   Sparkles,
+  Wrench,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +26,7 @@ interface AiAssistantGuideProps {
 const PAIN_POINTS = [
   { key: 'modelSelection', icon: Cpu },
   { key: 'paramTuning', icon: SlidersHorizontal },
+  { key: 'troubleshooting', icon: Wrench },
   { key: 'omnipresent', icon: HelpCircle },
 ] as const;
 
@@ -73,13 +75,19 @@ export default function AiAssistantGuide({
   const shortcut = isMac ? '⌘J' : 'Ctrl+J';
   const isOpen = Boolean(assistant?.open);
 
-  const handleToggle = () => {
+  const handleToggle = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     assistant?.setOpen(!isOpen);
+  };
+
+  const handlePainPointClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    assistant?.setOpen(true);
   };
 
   return (
     <Panel
-      className={cn('min-h-fit flex-1', className)}
+      className={cn('flex flex-1 min-h-0 flex-col', className)}
       aria-label={t('aiGuide.title')}
     >
       <PanelHeader
@@ -98,49 +106,43 @@ export default function AiAssistantGuide({
           </Badge>
         }
       />
-      <div className="flex flex-1 flex-col justify-between p-3 pt-1">
-        <div className="space-y-2.5">
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            {t('aiGuide.desc')}
-          </p>
+      <div className="flex flex-1 min-h-0 flex-col p-3">
+        <p className="mb-2 text-[11.5px] leading-relaxed text-muted-foreground">
+          {t('aiGuide.desc')}
+        </p>
 
-          <ul className="space-y-2">
-            {PAIN_POINTS.map((item) => {
-              const ItemIcon = item.icon;
-              return (
-                <li key={item.key} className="flex items-start gap-2 text-xs">
-                  <span className="flex h-5 w-5 flex-none items-center justify-center rounded-md bg-primary/10 text-primary">
-                    <ItemIcon className="h-3 w-3" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-medium leading-5 text-foreground">
-                      {t(`aiGuide.painPoints.${item.key}.title`)}
-                    </h3>
-                    <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
-                      {t(`aiGuide.painPoints.${item.key}.desc`)}
-                    </p>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
+        <ul className="space-y-1.5">
+          {PAIN_POINTS.map((item) => {
+            const ItemIcon = item.icon;
+            return (
+              <li
+                key={item.key}
+                onClick={handlePainPointClick}
+                className="group flex h-[30px] items-center gap-2 rounded-md border border-border/35 bg-accent/30 px-2.5 text-xs text-foreground transition-all hover:border-primary/40 hover:bg-accent/60 cursor-pointer"
+              >
+                <ItemIcon className="h-3.5 w-3.5 flex-none text-primary transition-transform duration-150 group-hover:scale-110" />
+                <span className="truncate text-[11.5px]">
+                  {t(`aiGuide.painPoints.${item.key}`)}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
 
-        <div className="mt-3 border-t border-border/60 pt-2.5">
+        <div className="mt-auto border-t border-border/60 pt-2.5">
           {hasProvider === false ? (
-            <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.06] p-2.5 text-xs dark:bg-amber-500/10">
-              <div className="flex items-center gap-1.5 font-semibold text-amber-700 dark:text-amber-300">
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-[11.5px] text-amber-600 dark:text-amber-400">
                 <AlertCircle className="h-3.5 w-3.5 flex-none" />
-                <span>{t('aiGuide.notConfigured.title')}</span>
+                <span className="truncate font-medium">
+                  {t('aiGuide.notConfigured.title')}
+                </span>
               </div>
-              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                {t('aiGuide.notConfigured.desc')}
-              </p>
-              <div className="mt-2.5 flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <Button
                   asChild
                   size="sm"
-                  className="h-7.5 flex-1 gap-1 text-xs"
+                  className="h-8 flex-1 gap-1.5 text-xs font-medium shadow-sm"
                 >
                   <Link href={`/${locale}/translation`}>
                     <Settings2 className="h-3.5 w-3.5" />
@@ -151,7 +153,9 @@ export default function AiAssistantGuide({
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-7.5 gap-1 text-xs"
+                  className="h-8 gap-1.5 text-xs font-medium"
+                  data-assistant-toggle
+                  aria-expanded={isOpen}
                   onClick={handleToggle}
                 >
                   <Bot className="h-3.5 w-3.5" />
@@ -164,7 +168,7 @@ export default function AiAssistantGuide({
           ) : (
             <div className="space-y-2">
               <div className="flex items-center justify-between px-0.5 text-xs">
-                <span className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+                <span className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground font-medium">
                   <span className="h-2 w-2 rounded-full bg-success shadow-[0_0_0_2px_hsl(var(--success)/0.2)]" />
                   {t('aiGuide.configured.title')}
                 </span>
@@ -178,8 +182,10 @@ export default function AiAssistantGuide({
               <Button
                 type="button"
                 size="sm"
-                className="w-full gap-1.5 shadow-sm"
+                className="h-8 w-full gap-1.5 shadow-sm text-xs font-medium"
                 aria-keyshortcuts={isMac ? 'Meta+J' : 'Control+J'}
+                data-assistant-toggle
+                aria-expanded={isOpen}
                 onClick={handleToggle}
               >
                 <Sparkles className="h-3.5 w-3.5" />
