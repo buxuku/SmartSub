@@ -63,6 +63,7 @@ export type SummaryErrorCode =
   | 'empty'
   | 'empty-after-think-strip'
   | 'skipped-trivial'
+  | 'skipped-resume'
   | 'provider-unresolved'
   | 'provider-not-ai'
   | 'call-failed';

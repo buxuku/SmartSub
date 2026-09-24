@@ -21,6 +21,7 @@ import {
   clearedSummaryFields,
   disabledSummaryPatch,
   isSummaryStageActive,
+  resolveResumeSummaryState,
 } from '../main/helpers/episodeSummaryCore';
 import {
   buildSummaryPromptBlock,
@@ -577,6 +578,170 @@ ok(
     translateProvider: '-1',
   }),
   'generateAndTranslate with provider -1 does not run the summary stage',
+);
+
+// ── resolveResumeSummaryState ─────────────────────────────────────────────
+
+equal(
+  resolveResumeSummaryState({
+    stageActive: false,
+    existing: '本集摘要',
+    storedHash: 'abc',
+    fingerprint: 'abc',
+  }),
+  null,
+  'inactive stage emits nothing even when the summary could be reused',
+);
+equal(
+  resolveResumeSummaryState({
+    stageActive: false,
+    existing: undefined,
+    storedHash: undefined,
+    fingerprint: null,
+  }),
+  null,
+  'inactive stage emits nothing when fingerprint and summary are missing',
+);
+
+{
+  const reused = resolveResumeSummaryState({
+    stageActive: true,
+    existing: '  本集摘要  ',
+    storedHash: 'abc',
+    fingerprint: 'abc',
+  });
+  equal(
+    reused,
+    { summarizeEpisode: 'done', summarizeEpisodeError: undefined },
+    'matching fingerprint marks the resumed summary done',
+  );
+  ok(
+    reused !== null &&
+      'summarizeEpisodeError' in reused &&
+      reused.summarizeEpisodeError === undefined &&
+      !('episodeSummary' in reused) &&
+      !('summaryUsage' in reused) &&
+      !('summarySourceHash' in reused),
+    'reuse patch clears summarizeEpisodeError and leaves the summary',
+  );
+}
+
+function expectSkippedResume(
+  input: {
+    stageActive: boolean;
+    existing: string | undefined;
+    storedHash: string | undefined;
+    fingerprint: string | null;
+  },
+  name: string,
+): void {
+  const patch = resolveResumeSummaryState(input);
+  if (
+    patch === null ||
+    !('summarizeEpisodeError' in patch) ||
+    patch.summarizeEpisodeError !== 'skipped-resume'
+  ) {
+    ok(false, name);
+    console.error(
+      `  expected skipped-resume patch, got ${JSON.stringify(patch)}`,
+    );
+    return;
+  }
+  equal(patch.summarizeEpisode, 'done', `${name}: stage is done`);
+  equal(
+    patch.summarizeEpisodeError,
+    'skipped-resume',
+    `${name}: error is skipped-resume`,
+  );
+  for (const key of [
+    'episodeSummary',
+    'summaryUsage',
+    'summarySourceHash',
+  ] as const) {
+    ok(key in patch, `${name}: keeps ${key}`);
+    equal(patch[key], undefined, `${name}: ${key} is cleared to undefined`);
+  }
+  const merged = {
+    episodeSummary: '旧摘要',
+    summaryUsage: { output_tokens: 3 },
+    summarySourceHash: 'old-hash',
+    summarizeEpisodeError: 'call-failed',
+    fileName: 'keep',
+    ...patch,
+  };
+  ok(
+    merged.summarizeEpisode === 'done' &&
+      merged.summarizeEpisodeError === 'skipped-resume' &&
+      merged.episodeSummary === undefined &&
+      merged.summaryUsage === undefined &&
+      merged.summarySourceHash === undefined &&
+      merged.fileName === 'keep',
+    `${name}: spreading the patch clears the stale summary and sets skipped-resume`,
+  );
+}
+
+expectSkippedResume(
+  {
+    stageActive: true,
+    existing: '旧摘要',
+    storedHash: 'abc',
+    fingerprint: null,
+  },
+  'null fingerprint skips instead of regenerating',
+);
+expectSkippedResume(
+  {
+    stageActive: true,
+    existing: '',
+    storedHash: 'abc',
+    fingerprint: 'abc',
+  },
+  'empty summary skips instead of regenerating',
+);
+expectSkippedResume(
+  {
+    stageActive: true,
+    existing: '   ',
+    storedHash: 'abc',
+    fingerprint: 'abc',
+  },
+  'blank summary skips instead of regenerating',
+);
+expectSkippedResume(
+  {
+    stageActive: true,
+    existing: undefined,
+    storedHash: 'abc',
+    fingerprint: 'abc',
+  },
+  'missing summary skips instead of regenerating',
+);
+expectSkippedResume(
+  {
+    stageActive: true,
+    existing: '旧摘要',
+    storedHash: undefined,
+    fingerprint: 'abc',
+  },
+  'legacy summary with no stored hash skips instead of regenerating',
+);
+expectSkippedResume(
+  {
+    stageActive: true,
+    existing: '旧摘要',
+    storedHash: '',
+    fingerprint: 'abc',
+  },
+  'empty stored hash skips instead of regenerating',
+);
+expectSkippedResume(
+  {
+    stageActive: true,
+    existing: '旧摘要',
+    storedHash: 'abc',
+    fingerprint: 'xyz',
+  },
+  'fingerprint mismatch skips instead of regenerating',
 );
 
 console.log(`\n${passed} passed, ${failed} failed`);

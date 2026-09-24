@@ -416,6 +416,7 @@
   "summarize": {
     "error": {
       "skipped-trivial": "File is short or fits in one batch; summary skipped",
+      "skipped-resume": "Resumed with existing translation; summary not generated",
       "empty": "Summary was empty; translation continued",
       "empty-after-think-strip": "Summary contained only thinking text; skipped",
       "provider-unresolved": "Summary provider could not be resolved; skipped",

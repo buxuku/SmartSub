@@ -43,10 +43,14 @@ import {
   runManuscriptMatchingStage,
   settleSkippedManuscriptMatchStage,
 } from './manuscriptMatchingStage';
-import { runEpisodeSummaryStage } from './episodeSummary';
+import {
+  currentSummaryFingerprint,
+  runEpisodeSummaryStage,
+} from './episodeSummary';
 import {
   disabledSummaryPatch,
   isSummaryStageActive,
+  resolveResumeSummaryState,
   shouldUseEpisodeSummary,
 } from './episodeSummaryCore';
 import { runDubStage, rebuildDubTrackForFile } from './pipeline/dubStage';
@@ -592,16 +596,38 @@ async function processFileImpl(
         // 首轮文稿匹配同样已写入 SRT，续跑不重新读取可能变化的外部文稿。
         settleSkippedManuscriptMatchStage(event, file, formData);
       }
-      if (formData?.generateSummary === true || file.summarizeEpisode) {
+      // 译文已复用，摘要不补打。指纹一致标 done，否则 skipped-resume 并清掉旧摘要。
+      if (
+        isSummaryStageActive({
+          generateSummary: formData?.generateSummary,
+          taskType,
+          translateProvider,
+        })
+      ) {
         const summaryActivity = getTaskContext()?.activity?.start(
           'summarizeEpisode',
           'organizing',
         );
-        summaryActivity?.finish();
-        event.sender.send('taskFileChange', {
-          ...file,
-          summarizeEpisode: 'done',
-        });
+        try {
+          const fingerprint = await currentSummaryFingerprint({
+            file,
+            formData,
+            sourceLanguage,
+            targetLanguage,
+          });
+          const patch = resolveResumeSummaryState({
+            stageActive: true,
+            existing: file.episodeSummary,
+            storedHash: file.summarySourceHash,
+            fingerprint,
+          });
+          if (patch) {
+            Object.assign(file, patch);
+            event.sender.send('taskFileChange', { ...file });
+          }
+        } finally {
+          summaryActivity?.finish();
+        }
       }
       if (translationActive) {
         (file as any).translateSubtitle = 'done';
