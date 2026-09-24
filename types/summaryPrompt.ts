@@ -66,6 +66,7 @@ export type SummaryErrorCode =
   | 'skipped-resume'
   | 'provider-unresolved'
   | 'provider-not-ai'
+  | 'provider-unconfigured'
   | 'call-failed';
 
 /** 出厂稿「不得超过 400 字」的运行时上限。CJK 按码点，其它语言按词。 */

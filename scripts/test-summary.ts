@@ -32,6 +32,7 @@ import { defaultSystemPrompt } from '../types/provider';
 import { createDebouncedPersist } from '../renderer/lib/debouncedPersist';
 import { equal, ok, reportSummaryTests } from './summaryTestHarness';
 import { runSummaryCapTests } from './test-summary-cap';
+import { runSummaryProviderTests } from './test-summary-provider';
 
 // ── resolveSummaryPrompt ──────────────────────────────────────────────────
 
@@ -725,6 +726,7 @@ expectSkippedResume(
   'fingerprint mismatch skips instead of regenerating',
 );
 
+runSummaryProviderTests();
 runSummaryCapTests()
   .then(() => {
     reportSummaryTests();

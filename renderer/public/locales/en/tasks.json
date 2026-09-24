@@ -421,6 +421,7 @@
       "empty-after-think-strip": "Summary contained only thinking text; skipped",
       "provider-unresolved": "Summary provider could not be resolved; skipped",
       "provider-not-ai": "Summary provider is not an AI service; skipped",
+      "provider-unconfigured": "Summary provider is not fully configured; skipped",
       "call-failed": "Summary call failed; translation continued"
     }
   },

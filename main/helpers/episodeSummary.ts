@@ -19,7 +19,6 @@ import { DEFAULT_BATCH_SIZE } from '../translate/constants';
 import type { Provider, TranslatorFunction } from '../translate/types';
 import { getCustomLanguageName } from '../../types/language';
 import {
-  FOLLOW_TRANSLATION_PROVIDER,
   SUMMARY_MAX_UNITS,
   isCjkSummaryTarget,
   resolveSummaryPrompt,
@@ -44,16 +43,20 @@ import {
   enforceSummaryCap,
   estimateSummaryBatches,
   normalizeReusedSummary,
+  pickSummaryProvider,
   settleSummaryText,
+  shouldReuseTranslationProvider,
   shouldSkipTrivialSummary,
+  type SummaryProviderResolution,
 } from './episodeSummaryCore';
+import { createExtendedProvider } from './extendedProvider';
+import type {
+  ExtendedProvider,
+  Provider as StoreProvider,
+} from '../../types/provider';
 import type { IFiles } from '../../types';
 
-export interface SummaryProviderResolution {
-  provider: Provider | null;
-  source: 'follow' | 'explicit';
-  reason?: string;
-}
+export type { SummaryProviderResolution };
 
 function getLanguageName(code: string): string {
   const normalized = (code || '').toLowerCase();
@@ -82,31 +85,9 @@ function getLanguageName(code: string): string {
 
 export function resolveSummaryProvider(
   formData?: Record<string, unknown>,
+  providers: StoreProvider[] = store.get('translationProviders') || [],
 ): SummaryProviderResolution {
-  const providers: Provider[] = store.get('translationProviders') || [];
-  const setting = String(
-    formData?.summaryProvider || FOLLOW_TRANSLATION_PROVIDER,
-  );
-  if (setting === FOLLOW_TRANSLATION_PROVIDER) {
-    const translateId = String(formData?.translateProvider ?? '-1');
-    const provider = providers.find((item) => item.id === translateId);
-    if (!provider) {
-      return {
-        provider: null,
-        source: 'follow',
-        reason: 'provider-unresolved',
-      };
-    }
-    if (!provider.isAi) {
-      return { provider: null, source: 'follow', reason: 'provider-not-ai' };
-    }
-    return { provider, source: 'follow' };
-  }
-  const provider = providers.find((item) => item.id === setting);
-  if (!provider?.isAi) {
-    return { provider: null, source: 'explicit', reason: 'provider-not-ai' };
-  }
-  return { provider, source: 'explicit' };
+  return pickSummaryProvider(formData, providers);
 }
 
 function addOutputTokens(
@@ -136,6 +117,20 @@ function summaryRequestConfig(provider: Provider) {
     useJsonMode: false,
     structuredOutput: 'disabled' as const,
   };
+}
+
+/** 同一服务商复用翻译阶段已带上的 customParameters，否则现读。 */
+async function resolveSummaryCallProvider(
+  provider: Provider,
+  translationProvider?: ExtendedProvider,
+): Promise<ExtendedProvider> {
+  if (
+    translationProvider &&
+    shouldReuseTranslationProvider(provider.id, translationProvider)
+  ) {
+    return translationProvider;
+  }
+  return createExtendedProvider(provider);
 }
 
 /** 超限后的第二次调用：同一服务商、同一信号，正文是上一轮摘要。 */
@@ -279,6 +274,7 @@ export async function runEpisodeSummaryStage(params: {
   formData: Record<string, unknown>;
   sourceLanguage: string;
   targetLanguage: string;
+  translationProvider?: ExtendedProvider;
 }): Promise<void> {
   const { event, file, formData, sourceLanguage, targetLanguage } = params;
   if (formData?.generateSummary !== true) return;
@@ -459,11 +455,15 @@ export async function runEpisodeSummaryStage(params: {
 
     throwIfTaskCancelled();
     activity?.update({ phase: 'requesting' });
+    const callProvider = await resolveSummaryCallProvider(
+      provider,
+      params.translationProvider,
+    );
     let usage: { input_tokens?: number; output_tokens?: number } | undefined;
     const signal = getTaskSignal() || getTaskContext()?.signal;
     const modelRaw = await translator(
       userText,
-      { ...summaryRequestConfig(provider), systemPrompt: instructions },
+      { ...summaryRequestConfig(callProvider), systemPrompt: instructions },
       sourceLanguage,
       targetLanguage,
       {
@@ -502,7 +502,7 @@ export async function runEpisodeSummaryStage(params: {
       targetLang: targetLanguage,
       compress: compressSettledSummary({
         translator,
-        provider,
+        provider: callProvider,
         sourceLanguage,
         targetLanguage,
         signal,
