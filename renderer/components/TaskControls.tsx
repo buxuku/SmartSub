@@ -10,7 +10,7 @@ import { useHotkeys } from 'hooks/useHotkeys';
 import { useTaskSubmission } from 'hooks/useTaskSubmission';
 import { buildTaskSnapshotFromConfig } from 'hooks/useUnifiedTaskConfig';
 import { getRefineValidationErrorMessage } from 'lib/subtitleRefineValidation';
-import { isProviderConfigured } from 'lib/providerUtils';
+import { validateSummaryProvider } from '../../types/summaryProvider';
 
 interface TaskControlsProps {
   files: any[];
@@ -116,22 +116,17 @@ const TaskControls = ({
       if (typeDef.hasTranslate && formData?.generateSummary === true) {
         const summaryProviders =
           (await window?.ipc?.invoke('getTranslationProviders')) || [];
-        const summarySetting =
-          formData?.summaryProvider || 'follow-translation';
-        if (summarySetting === 'follow-translation') {
-          const tp = summaryProviders.find(
-            (p: any) => p.id === formData?.translateProvider,
-          );
-          if (!tp?.isAi || !isProviderConfigured(tp)) {
-            toast.error(t('tasks:wizard.blockSummaryFollow'));
-            return;
-          }
-        } else {
-          const sp = summaryProviders.find((p: any) => p.id === summarySetting);
-          if (!sp?.isAi || !isProviderConfigured(sp)) {
-            toast.error(t('tasks:wizard.blockSummaryProviderInvalid'));
-            return;
-          }
+        const summaryBlock = validateSummaryProvider(
+          formData,
+          summaryProviders,
+        );
+        if (summaryBlock === 'follow') {
+          toast.error(t('tasks:wizard.blockSummaryFollow'));
+          return;
+        }
+        if (summaryBlock === 'invalid') {
+          toast.error(t('tasks:wizard.blockSummaryProviderInvalid'));
+          return;
         }
       }
       const snapshot = buildTaskSnapshotFromConfig(formData);

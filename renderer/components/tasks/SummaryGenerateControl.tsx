@@ -12,20 +12,18 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useTranslation } from 'next-i18next';
-import { isProviderConfigured } from 'lib/providerUtils';
+import type { UseFormReturn } from 'react-hook-form';
 import { FOLLOW_TRANSLATION_PROVIDER } from '../../../types/summaryPrompt';
-
-interface Provider {
-  id: string;
-  name: string;
-  isAi?: boolean;
-  [key: string]: any;
-}
+import {
+  isUsableSummaryProvider,
+  type SummaryControlProvider,
+} from '../../../types/summaryProvider';
+import type { IFormData } from '../../../types/types';
 
 interface SummaryGenerateControlProps {
-  form: any;
-  formData: any;
-  providers: Provider[];
+  form: Pick<UseFormReturn<IFormData>, 'setValue'>;
+  formData: IFormData | undefined;
+  providers: SummaryControlProvider[];
 }
 
 const SummaryGenerateControl: React.FC<SummaryGenerateControlProps> = ({
@@ -36,24 +34,19 @@ const SummaryGenerateControl: React.FC<SummaryGenerateControlProps> = ({
   const { t } = useTranslation('tasks');
   const { t: tCommon } = useTranslation('common');
 
-  const setValue = (name: string, value: unknown) =>
-    form.setValue(name, value, { shouldDirty: true });
-
   const enabled = formData?.generateSummary === true;
-  const aiProviders = providers.filter(
-    (provider) => provider.isAi && isProviderConfigured(provider as any),
+  const aiProviders = providers.filter((provider) =>
+    isUsableSummaryProvider(provider),
   );
   const translateProvider = providers.find(
     (provider) => provider.id === formData?.translateProvider,
   );
-  const translateIsAi = Boolean(
-    translateProvider?.isAi && isProviderConfigured(translateProvider as any),
-  );
+  const translateIsAi = isUsableSummaryProvider(translateProvider);
   const setting = formData?.summaryProvider || FOLLOW_TRANSLATION_PROVIDER;
   const following = setting === FOLLOW_TRANSLATION_PROVIDER;
   const selectValue = following
     ? translateIsAi
-      ? translateProvider!.id
+      ? translateProvider?.id || ''
       : ''
     : setting;
   const injectsIntoTranslate = Boolean(translateProvider?.isAi);
@@ -66,7 +59,9 @@ const SummaryGenerateControl: React.FC<SummaryGenerateControlProps> = ({
         </span>
         <Switch
           checked={enabled}
-          onCheckedChange={(checked) => setValue('generateSummary', checked)}
+          onCheckedChange={(checked) =>
+            form.setValue('generateSummary', checked, { shouldDirty: true })
+          }
         />
       </div>
       {enabled && (
@@ -78,7 +73,9 @@ const SummaryGenerateControl: React.FC<SummaryGenerateControlProps> = ({
             {aiProviders.length > 0 ? (
               <Select
                 value={selectValue || undefined}
-                onValueChange={(value) => setValue('summaryProvider', value)}
+                onValueChange={(value) =>
+                  form.setValue('summaryProvider', value, { shouldDirty: true })
+                }
               >
                 <SelectTrigger className="h-8 w-auto min-w-[140px] max-w-[220px] text-xs gap-1">
                   <SelectValue

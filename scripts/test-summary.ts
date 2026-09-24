@@ -29,10 +29,11 @@ import {
   renderTranslationSystemPrompt,
 } from '../main/glossary/core';
 import { defaultSystemPrompt } from '../types/provider';
-import { createDebouncedPersist } from '../renderer/lib/debouncedPersist';
+import { createDebouncedPersist } from '../types/debouncedPersist';
 import { equal, ok, reportSummaryTests } from './summaryTestHarness';
 import { runSummaryCapTests } from './test-summary-cap';
 import { runSummaryProviderTests } from './test-summary-provider';
+import { runSummaryValidateTests } from './test-summary-validate';
 import { runSummaryUsageTests } from './test-summary-usage';
 
 // ── resolveSummaryPrompt ──────────────────────────────────────────────────
@@ -728,6 +729,7 @@ expectSkippedResume(
 );
 
 runSummaryProviderTests();
+runSummaryValidateTests();
 runSummaryUsageTests();
 runSummaryCapTests()
   .then(() => {

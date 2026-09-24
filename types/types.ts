@@ -300,6 +300,8 @@ export interface IFormData {
   sourceLanguage: string;
   targetLanguage: string;
   translateRetryTimes: string;
+  /** 翻译服务商 id。'-1' 表示不翻译。 */
+  translateProvider?: string;
   subtitleOutputFormat?: SubtitleOutputFormat;
   /** Missing on legacy tasks; the singular format remains the compatibility fallback. */
   subtitleOutputFormats?: SubtitleOutputFormat[];
