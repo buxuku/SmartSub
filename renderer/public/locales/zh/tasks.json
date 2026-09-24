@@ -416,6 +416,7 @@
   "summarize": {
     "error": {
       "skipped-trivial": "字幕较短或可在一个批次内译完，已跳过摘要",
+      "skipped-resume": "续跑复用了已有译文，未生成摘要",
       "empty": "摘要结果为空，已继续翻译",
       "empty-after-think-strip": "摘要只含思考内容，已跳过",
       "provider-unresolved": "摘要服务无法解析，已跳过",

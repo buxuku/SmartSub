@@ -25,6 +25,7 @@ import {
   SUMMARY_MIN_CUES,
 } from '../../types/summaryPrompt';
 import type { ResolvedGlossaryEntry } from '../../types/glossary';
+import type { SummaryErrorCode } from '../../types/summaryPrompt';
 
 export function buildSummaryInput(
   cues: Array<{ id: string; text: string }>,
@@ -157,6 +158,45 @@ export function isSummaryStageActive(input: {
       input.taskType === 'translateOnly') &&
     input.translateProvider !== '-1'
   );
+}
+
+/**
+ * 续跑快路径的摘要阶段态。译文已经复用，这里不补打摘要。
+ * 阶段未开启返回 null（调用方不发事件）；指纹可复用则标 done，
+ * 并把 summarizeEpisodeError 写成 undefined，清掉渲染层上的旧提示；
+ * 否则标 done + skipped-resume，并清掉旧摘要。
+ */
+export function resolveResumeSummaryState(input: {
+  stageActive: boolean;
+  existing: string | undefined;
+  storedHash: string | undefined;
+  fingerprint: string | null;
+}):
+  | null
+  | { summarizeEpisode: 'done'; summarizeEpisodeError: undefined }
+  | {
+      summarizeEpisode: 'done';
+      summarizeEpisodeError: SummaryErrorCode;
+      episodeSummary: undefined;
+      summaryUsage: undefined;
+      summarySourceHash: undefined;
+    } {
+  if (!input.stageActive) return null;
+  if (
+    input.fingerprint !== null &&
+    decideSummaryReuse({
+      existing: input.existing ?? '',
+      storedHash: input.storedHash,
+      fingerprint: input.fingerprint,
+    }) === 'reuse'
+  ) {
+    return { summarizeEpisode: 'done', summarizeEpisodeError: undefined };
+  }
+  return {
+    summarizeEpisode: 'done',
+    summarizeEpisodeError: 'skipped-resume',
+    ...clearedSummaryFields(),
+  };
 }
 
 export function shouldUseEpisodeSummary(

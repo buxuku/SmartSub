@@ -128,6 +128,79 @@ function cuesFromRaw(
   }));
 }
 
+type SummaryFingerprintParams = {
+  file: IFiles;
+  formData: Record<string, unknown>;
+  sourceLanguage: string;
+  targetLanguage: string;
+};
+
+type SummaryFingerprintLoad =
+  | { kind: 'missing-srt' }
+  | { kind: 'provider-unresolved'; reason: string }
+  | {
+      kind: 'ready';
+      srtFile: string;
+      raw: string;
+      provider: Provider;
+      prompt: string;
+      fingerprint: string;
+    };
+
+/**
+ * 字幕、服务商、提示词和指纹的唯一入口。
+ * 正式摘要和续跑快路径都走这里，避免两套判定分叉。
+ */
+async function loadSummaryFingerprint(
+  params: SummaryFingerprintParams,
+): Promise<SummaryFingerprintLoad> {
+  const srtFile = params.file.srtFile;
+  if (!srtFile || !fs.existsSync(srtFile)) {
+    return { kind: 'missing-srt' };
+  }
+  const raw = await fs.promises.readFile(srtFile, 'utf-8');
+  const resolved = resolveSummaryProvider(params.formData);
+  const provider = resolved.provider;
+  if (!provider) {
+    return {
+      kind: 'provider-unresolved',
+      reason: resolved.reason || 'provider-unresolved',
+    };
+  }
+  const settings = store.get('settings');
+  const prompt = resolveSummaryPrompt(settings?.summaryPrompt);
+  // 指纹覆盖原始字幕、解析后的提示词、服务商和语言；任一变化都重新生成。
+  const fingerprint = computeSummaryFingerprint({
+    source: raw,
+    prompt,
+    providerId: provider.id,
+    sourceLanguage: params.sourceLanguage,
+    targetLanguage: params.targetLanguage,
+  });
+  return { kind: 'ready', srtFile, raw, provider, prompt, fingerprint };
+}
+
+/**
+ * 续跑快路径用的摘要指纹。字幕缺失或服务商无法解析时返回 null。
+ * 读取失败只记日志，不抛出。
+ */
+export async function currentSummaryFingerprint(
+  params: SummaryFingerprintParams,
+): Promise<string | null> {
+  try {
+    const loaded = await loadSummaryFingerprint(params);
+    return loaded.kind === 'ready' ? loaded.fingerprint : null;
+  } catch (error) {
+    logMessage(
+      `episode summary fingerprint unavailable for ${params.file.fileName}: ${
+        error instanceof Error ? error.message : error
+      }`,
+      'warning',
+    );
+    return null;
+  }
+}
+
 export async function runEpisodeSummaryStage(params: {
   event?: { sender: { send: (channel: string, payload: IFiles) => void } };
   file: IFiles;
@@ -146,8 +219,13 @@ export async function runEpisodeSummaryStage(params: {
   try {
   try {
     throwIfTaskCancelled();
-    const srtFile = file.srtFile;
-    if (!srtFile || !fs.existsSync(srtFile)) {
+    const loaded = await loadSummaryFingerprint({
+      file,
+      formData,
+      sourceLanguage,
+      targetLanguage,
+    });
+    if (loaded.kind === 'missing-srt') {
       applySummaryState(
         file,
         {
@@ -163,37 +241,24 @@ export async function runEpisodeSummaryStage(params: {
       );
       return;
     }
-
-    const raw = await fs.promises.readFile(srtFile, 'utf-8');
-    const resolved = resolveSummaryProvider(formData);
-    const provider = resolved.provider;
-    if (!provider) {
+    if (loaded.kind === 'provider-unresolved') {
       applySummaryState(
         file,
         {
           ...clearedSummaryFields(),
           summarizeEpisode: 'done',
-          summarizeEpisodeError: resolved.reason || 'provider-unresolved',
+          summarizeEpisodeError: loaded.reason,
         },
         event,
       );
       logMessage(
-        `episode summary degraded (${resolved.reason}) for ${file.fileName}`,
+        `episode summary degraded (${loaded.reason}) for ${file.fileName}`,
         'warning',
       );
       return;
     }
 
-    const settings = store.get('settings');
-    const prompt = resolveSummaryPrompt(settings?.summaryPrompt);
-    // 指纹覆盖原始字幕、解析后的提示词、服务商和语言；任一变化都重新生成。
-    const fingerprint = computeSummaryFingerprint({
-      source: raw,
-      prompt,
-      providerId: provider.id,
-      sourceLanguage,
-      targetLanguage,
-    });
+    const { srtFile, raw, provider, prompt, fingerprint } = loaded;
     const existing = String(file.episodeSummary || '');
     if (
       decideSummaryReuse({
