@@ -421,6 +421,7 @@
       "empty-after-think-strip": "摘要只含思考内容，已跳过",
       "provider-unresolved": "摘要服务无法解析，已跳过",
       "provider-not-ai": "摘要服务不是 AI，已跳过",
+      "provider-unconfigured": "摘要服务未完成配置，已跳过",
       "call-failed": "摘要调用失败，已继续翻译"
     }
   },

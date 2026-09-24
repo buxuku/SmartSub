@@ -945,6 +945,7 @@ async function processFileImpl(
         formData,
         sourceLanguage,
         targetLanguage,
+        translationProvider: provider,
       });
     }
 
