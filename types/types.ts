@@ -165,6 +165,8 @@ export interface IFiles extends SubtitleOutputFiles {
   /** 本文件通读摘要正文；resume 时非空则跳过再打。 */
   episodeSummary?: string;
   summaryUsage?: { input_tokens?: number; output_tokens?: number };
+  /** 摘要源指纹（sha1）；与本次字幕、提示词、服务商和语言一致才复用。 */
+  summarySourceHash?: string;
   /** 仅供日志/tooltip 兜底的诊断细节，不参与本地化键。 */
   manuscriptMatchErrorDetail?: string;
   manuscriptMatchSummary?: ManuscriptMatchSummary;

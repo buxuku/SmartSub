@@ -15,6 +15,12 @@ import {
   estimateSummaryBatches,
   shouldSkipTrivialSummary,
   settleSummaryText,
+  shouldUseEpisodeSummary,
+  computeSummaryFingerprint,
+  decideSummaryReuse,
+  clearedSummaryFields,
+  disabledSummaryPatch,
+  isSummaryStageActive,
 } from '../main/helpers/episodeSummaryCore';
 import {
   buildSummaryPromptBlock,
@@ -313,6 +319,265 @@ equal(estimateSummaryBatches(20, 10), 2, '20 / 10 = 2 batches');
 }
 
 equal(buildSummaryPromptBlock(''), '', 'empty summary builds no block');
+
+// ── shouldUseEpisodeSummary ───────────────────────────────────────────────
+
+ok(
+  shouldUseEpisodeSummary(
+    { generateSummary: true },
+    { episodeSummary: '  本集讲了撤退  ' },
+  ),
+  'injects summary only when generateSummary is on and text is non-empty',
+);
+ok(
+  !shouldUseEpisodeSummary(
+    { generateSummary: false },
+    { episodeSummary: '旧摘要' },
+  ),
+  'generateSummary false ignores a non-empty episodeSummary',
+);
+ok(
+  !shouldUseEpisodeSummary(undefined, { episodeSummary: '旧摘要' }),
+  'missing generateSummary ignores a non-empty episodeSummary',
+);
+ok(
+  !shouldUseEpisodeSummary({ generateSummary: true }, { episodeSummary: '   ' }),
+  'blank episodeSummary is not injected',
+);
+ok(
+  !shouldUseEpisodeSummary({ generateSummary: true }, {}),
+  'missing episodeSummary is not injected',
+);
+
+// ── computeSummaryFingerprint ─────────────────────────────────────────────
+
+{
+  const base = {
+    source: '1\n2',
+    prompt: '提示${sourceLanguage}',
+    providerId: 'prov-1',
+    sourceLanguage: 'en',
+    targetLanguage: 'zh-CN',
+  };
+  const fingerprint = computeSummaryFingerprint(base);
+  equal(
+    fingerprint,
+    '520fac0d4efbe907e1195d87df15a46f41a25b50',
+    'fingerprint is sha1 of the five fields in order',
+  );
+  equal(
+    computeSummaryFingerprint(base),
+    fingerprint,
+    'same fingerprint inputs produce the same hash',
+  );
+  ok(
+    /^[0-9a-f]{40}$/.test(fingerprint),
+    'fingerprint is lowercase sha1 hex',
+  );
+  const changed = [
+    ['source', { source: '1\n2x' }],
+    ['prompt', { prompt: '提示${targetLanguage}' }],
+    ['providerId', { providerId: 'prov-2' }],
+    ['sourceLanguage', { sourceLanguage: 'fr' }],
+    ['targetLanguage', { targetLanguage: 'zh-TW' }],
+  ] as const;
+  for (const [field, patch] of changed) {
+    ok(
+      computeSummaryFingerprint({ ...base, ...patch }) !== fingerprint,
+      `changing ${field} changes the fingerprint`,
+    );
+  }
+  ok(
+    computeSummaryFingerprint({
+      ...base,
+      source: 'a","',
+      prompt: 'b',
+    }) !==
+      computeSummaryFingerprint({
+        ...base,
+        source: 'a',
+        prompt: '","b',
+      }),
+    'json array encoding keeps adjacent fields unambiguous',
+  );
+}
+
+// ── decideSummaryReuse ────────────────────────────────────────────────────
+
+equal(
+  decideSummaryReuse({
+    existing: '  本集摘要  ',
+    storedHash: 'abc',
+    fingerprint: 'abc',
+  }),
+  'reuse',
+  'reuses when trimmed summary is non-empty and hash matches',
+);
+equal(
+  decideSummaryReuse({
+    existing: '旧摘要',
+    storedHash: undefined,
+    fingerprint: 'abc',
+  }),
+  'regenerate',
+  'legacy summary with no storedHash regenerates',
+);
+equal(
+  decideSummaryReuse({
+    existing: '旧摘要',
+    storedHash: '',
+    fingerprint: 'abc',
+  }),
+  'regenerate',
+  'empty storedHash regenerates',
+);
+equal(
+  decideSummaryReuse({
+    existing: '旧摘要',
+    storedHash: 'abc',
+    fingerprint: 'xyz',
+  }),
+  'regenerate',
+  'hash mismatch regenerates',
+);
+equal(
+  decideSummaryReuse({
+    existing: '   ',
+    storedHash: 'abc',
+    fingerprint: 'abc',
+  }),
+  'regenerate',
+  'blank summary regenerates even when the hash matches',
+);
+equal(
+  decideSummaryReuse({
+    existing: '',
+    storedHash: 'abc',
+    fingerprint: 'abc',
+  }),
+  'regenerate',
+  'empty summary regenerates',
+);
+
+// ── clearedSummaryFields ──────────────────────────────────────────────────
+
+{
+  const patch = clearedSummaryFields();
+  for (const key of [
+    'episodeSummary',
+    'summaryUsage',
+    'summarySourceHash',
+  ] as const) {
+    ok(key in patch, `cleared patch keeps ${key}`);
+    equal(patch[key], undefined, `${key} is cleared to undefined`);
+  }
+  const merged = {
+    episodeSummary: '旧摘要',
+    summaryUsage: { output_tokens: 3 },
+    summarySourceHash: 'old-hash',
+    fileName: 'keep',
+    ...patch,
+  };
+  ok(
+    merged.episodeSummary === undefined &&
+      merged.summaryUsage === undefined &&
+      merged.summarySourceHash === undefined &&
+      merged.fileName === 'keep',
+    'spreading the cleared patch overwrites stale summary fields',
+  );
+}
+
+// ── disabledSummaryPatch ──────────────────────────────────────────────────
+
+{
+  const patch = disabledSummaryPatch();
+  for (const key of [
+    'episodeSummary',
+    'summaryUsage',
+    'summarySourceHash',
+    'summarizeEpisode',
+    'summarizeEpisodeError',
+  ] as const) {
+    ok(key in patch, `disabled summary patch keeps ${key}`);
+    equal(patch[key], undefined, `disabled summary patch clears ${key}`);
+  }
+  const merged = {
+    episodeSummary: '旧摘要',
+    summaryUsage: { output_tokens: 3 },
+    summarySourceHash: 'old-hash',
+    summarizeEpisode: 'done' as const,
+    summarizeEpisodeError: 'skipped-trivial',
+    fileName: 'keep',
+    ...patch,
+  };
+  ok(
+    merged.summarizeEpisode === undefined &&
+      merged.summarizeEpisodeError === undefined &&
+      merged.episodeSummary === undefined &&
+      merged.summaryUsage === undefined &&
+      merged.summarySourceHash === undefined &&
+      merged.fileName === 'keep',
+    'spreading the disabled patch clears stage status and the error tooltip',
+  );
+}
+
+// ── isSummaryStageActive ──────────────────────────────────────────────────
+
+ok(
+  !isSummaryStageActive({
+    generateSummary: true,
+    taskType: 'generateOnly',
+    translateProvider: 'openai',
+  }),
+  'generateOnly with summary on does not run the summary stage',
+);
+ok(
+  !isSummaryStageActive({
+    generateSummary: true,
+    taskType: 'translateOnly',
+    translateProvider: '-1',
+  }),
+  'translateOnly with provider -1 does not run the summary stage',
+);
+ok(
+  isSummaryStageActive({
+    generateSummary: true,
+    taskType: 'generateAndTranslate',
+    translateProvider: 'openai',
+  }),
+  'generateAndTranslate with a real provider runs the summary stage',
+);
+ok(
+  isSummaryStageActive({
+    generateSummary: true,
+    taskType: 'translateOnly',
+    translateProvider: 'openai',
+  }),
+  'translateOnly with a real provider runs the summary stage',
+);
+ok(
+  !isSummaryStageActive({
+    generateSummary: false,
+    taskType: 'generateAndTranslate',
+    translateProvider: 'openai',
+  }),
+  'summary off does not run the summary stage',
+);
+ok(
+  !isSummaryStageActive({
+    taskType: 'generateAndTranslate',
+    translateProvider: 'openai',
+  }),
+  'missing generateSummary does not run the summary stage',
+);
+ok(
+  !isSummaryStageActive({
+    generateSummary: true,
+    taskType: 'generateAndTranslate',
+    translateProvider: '-1',
+  }),
+  'generateAndTranslate with provider -1 does not run the summary stage',
+);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

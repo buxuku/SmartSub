@@ -44,6 +44,11 @@ import {
   settleSkippedManuscriptMatchStage,
 } from './manuscriptMatchingStage';
 import { runEpisodeSummaryStage } from './episodeSummary';
+import {
+  disabledSummaryPatch,
+  isSummaryStageActive,
+  shouldUseEpisodeSummary,
+} from './episodeSummaryCore';
 import { runDubStage, rebuildDubTrackForFile } from './pipeline/dubStage';
 import { runComposeStage } from './pipeline/composeStage';
 import {
@@ -362,6 +367,18 @@ async function processFileImpl(
   }
   file.exportSubtitle = '';
   file.exportSubtitleError = undefined;
+  // 摘要阶段不会运行时清掉旧正文、阶段状态和错误码。写成 undefined，
+  // 后续 {...file} 才能清掉渲染层里的旧值。这些键不能放进上面的 delete：
+  // 缺键不会覆盖 {...prev, ...res} 的旧值。
+  if (
+    !isSummaryStageActive({
+      generateSummary: formData?.generateSummary,
+      taskType,
+      translateProvider,
+    })
+  ) {
+    Object.assign(file, disabledSummaryPatch());
+  }
 
   try {
     const { filePath, fileName, fileExtension, directory } = file;
@@ -889,9 +906,11 @@ async function processFileImpl(
 
     // 通读摘要：翻译前、精修/文稿匹配之后。失败降级，不阻断。
     if (
-      formData?.generateSummary === true &&
-      shouldTranslateSubtitle &&
-      translateProvider !== '-1'
+      isSummaryStageActive({
+        generateSummary: formData?.generateSummary,
+        taskType,
+        translateProvider,
+      })
     ) {
       throwIfTaskCancelled();
       await runEpisodeSummaryStage({
@@ -1000,7 +1019,9 @@ async function processFileImpl(
         missedSpeechWarnings: file.missedSpeechWarnings,
         missedSpeechSummary: file.missedSpeechSummary,
         glossaryIds: formData?.glossaryIds,
-        episodeSummary: file.episodeSummary,
+        ...(shouldUseEpisodeSummary(formData, file)
+          ? { episodeSummary: file.episodeSummary }
+          : {}),
       });
       if ('filePath' in proofreadDataResult) {
         file.proofreadDataFile = proofreadDataResult.filePath;

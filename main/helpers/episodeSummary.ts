@@ -36,6 +36,9 @@ import {
   buildSummaryGlossaryBlock,
   buildSummaryInput,
   buildSummaryInstructions,
+  clearedSummaryFields,
+  computeSummaryFingerprint,
+  decideSummaryReuse,
   estimateSummaryBatches,
   settleSummaryText,
   shouldSkipTrivialSummary,
@@ -111,10 +114,10 @@ function applySummaryState(
   event?.sender.send('taskFileChange', { ...file });
 }
 
-async function readCues(
+function cuesFromRaw(
   srtFile: string,
-): Promise<Array<{ id: string; text: string }>> {
-  const raw = await fs.promises.readFile(srtFile, 'utf-8');
+  raw: string,
+): Array<{ id: string; text: string }> {
   const entries = parseSubtitleEntries(
     raw,
     detectSubtitleFormatFromContent(srtFile, raw),
@@ -141,38 +144,17 @@ export async function runEpisodeSummaryStage(params: {
   );
   let activityStatus: 'done' | 'cancelled' = 'done';
   try {
-  const existing = String(file.episodeSummary || '').trim();
-  if (existing) {
-    applySummaryState(
-      file,
-      {
-        summarizeEpisode: 'done',
-        ...(file.summarizeEpisodeError
-          ? {}
-          : { summarizeEpisodeError: undefined }),
-      },
-      event,
-    );
-    logMessage(
-      `resume: reuse episode summary for ${file.fileName} (${existing.length} chars)`,
-      'info',
-    );
-    return;
-  }
-
-  applySummaryState(
-    file,
-    { summarizeEpisode: 'loading', summarizeEpisodeError: undefined },
-    event,
-  );
-
   try {
     throwIfTaskCancelled();
     const srtFile = file.srtFile;
     if (!srtFile || !fs.existsSync(srtFile)) {
       applySummaryState(
         file,
-        { summarizeEpisode: 'done', summarizeEpisodeError: 'empty' },
+        {
+          ...clearedSummaryFields(),
+          summarizeEpisode: 'done',
+          summarizeEpisodeError: 'empty',
+        },
         event,
       );
       logMessage(
@@ -182,13 +164,14 @@ export async function runEpisodeSummaryStage(params: {
       return;
     }
 
-    const cues = await readCues(srtFile);
+    const raw = await fs.promises.readFile(srtFile, 'utf-8');
     const resolved = resolveSummaryProvider(formData);
     const provider = resolved.provider;
     if (!provider) {
       applySummaryState(
         file,
         {
+          ...clearedSummaryFields(),
           summarizeEpisode: 'done',
           summarizeEpisodeError: resolved.reason || 'provider-unresolved',
         },
@@ -201,6 +184,53 @@ export async function runEpisodeSummaryStage(params: {
       return;
     }
 
+    const settings = store.get('settings');
+    const prompt = resolveSummaryPrompt(settings?.summaryPrompt);
+    // 指纹覆盖原始字幕、解析后的提示词、服务商和语言；任一变化都重新生成。
+    const fingerprint = computeSummaryFingerprint({
+      source: raw,
+      prompt,
+      providerId: provider.id,
+      sourceLanguage,
+      targetLanguage,
+    });
+    const existing = String(file.episodeSummary || '');
+    if (
+      decideSummaryReuse({
+        existing,
+        storedHash: file.summarySourceHash,
+        fingerprint,
+      }) === 'reuse'
+    ) {
+      applySummaryState(
+        file,
+        {
+          summarizeEpisode: 'done',
+          ...(file.summarizeEpisodeError
+            ? {}
+            : { summarizeEpisodeError: undefined }),
+        },
+        event,
+      );
+      logMessage(
+        `resume: reuse episode summary for ${file.fileName} (${existing.trim().length} chars)`,
+        'info',
+      );
+      return;
+    }
+
+    applySummaryState(
+      file,
+      {
+        ...clearedSummaryFields(),
+        summarizeEpisode: 'loading',
+        summarizeEpisodeError: undefined,
+      },
+      event,
+    );
+
+    const cues = cuesFromRaw(srtFile, raw);
+
     const translators: Provider[] = store.get('translationProviders') || [];
     const translateProvider = translators.find(
       (item) => item.id === formData?.translateProvider,
@@ -212,7 +242,11 @@ export async function runEpisodeSummaryStage(params: {
     if (shouldSkipTrivialSummary(cues.length, translateBatchSize)) {
       applySummaryState(
         file,
-        { summarizeEpisode: 'done', summarizeEpisodeError: 'skipped-trivial' },
+        {
+          ...clearedSummaryFields(),
+          summarizeEpisode: 'done',
+          summarizeEpisodeError: 'skipped-trivial',
+        },
         event,
       );
       const batches = estimateSummaryBatches(cues.length, translateBatchSize);
@@ -229,7 +263,11 @@ export async function runEpisodeSummaryStage(params: {
     if (!translator) {
       applySummaryState(
         file,
-        { summarizeEpisode: 'done', summarizeEpisodeError: 'call-failed' },
+        {
+          ...clearedSummaryFields(),
+          summarizeEpisode: 'done',
+          summarizeEpisodeError: 'call-failed',
+        },
         event,
       );
       logMessage(
@@ -254,8 +292,6 @@ export async function runEpisodeSummaryStage(params: {
       selection.omittedCount,
     );
     const glossaryBlock = buildSummaryGlossaryBlock(selection.included);
-    const settings = store.get('settings');
-    const prompt = resolveSummaryPrompt(settings?.summaryPrompt);
     const sourceName = getLanguageName(sourceLanguage);
     const targetName = getLanguageName(targetLanguage);
     const instructions = buildSummaryInstructions({
@@ -274,7 +310,7 @@ export async function runEpisodeSummaryStage(params: {
     throwIfTaskCancelled();
     activity?.update({ phase: 'requesting' });
     let usage: { input_tokens?: number; output_tokens?: number } | undefined;
-    const raw = await translator(
+    const modelRaw = await translator(
       userText,
       {
         ...provider,
@@ -295,11 +331,12 @@ export async function runEpisodeSummaryStage(params: {
       },
     );
 
-    const settled = settleSummaryText(raw);
+    const settled = settleSummaryText(modelRaw);
     if (settled.ok === false) {
       applySummaryState(
         file,
         {
+          ...clearedSummaryFields(),
           summarizeEpisode: 'done',
           summarizeEpisodeError: settled.error,
           summaryUsage: usage,
@@ -320,6 +357,7 @@ export async function runEpisodeSummaryStage(params: {
         summarizeEpisodeError: undefined,
         episodeSummary: settled.text,
         summaryUsage: usage,
+        summarySourceHash: fingerprint,
       },
       event,
     );
@@ -346,7 +384,11 @@ export async function runEpisodeSummaryStage(params: {
     }
     applySummaryState(
       file,
-      { summarizeEpisode: 'done', summarizeEpisodeError: 'call-failed' },
+      {
+        ...clearedSummaryFields(),
+        summarizeEpisode: 'done',
+        summarizeEpisodeError: 'call-failed',
+      },
       event,
     );
     logMessage(
