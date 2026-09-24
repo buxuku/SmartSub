@@ -36,6 +36,10 @@ function selectClient(name: string) {
 
 test('Cursor import uses dedicated IPC and each client copies its matching configuration', async () => {
   render(<McpConnectionCard />);
+  expect(screen.getByTestId('mcp-connection-card')).toHaveAttribute(
+    'id',
+    'mcp',
+  );
   fireEvent.click(
     await screen.findByRole('button', { name: 'mcp.installCursor' }),
   );

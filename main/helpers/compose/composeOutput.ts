@@ -125,11 +125,26 @@ export function createComposeOutput(
       const stat = fs.statSync(sources[index]);
       if (!stat.isFile() || !stat.size)
         throw new Error('FFmpeg produced no output');
-      const completed = fs.openSync(sources[index], 'r');
       try {
-        fs.fsyncSync(completed);
-      } finally {
-        fs.closeSync(completed);
+        const completed = fs.openSync(sources[index], 'r+');
+        try {
+          fs.fsyncSync(completed);
+        } finally {
+          fs.closeSync(completed);
+        }
+      } catch (error) {
+        if (
+          ![
+            'EPERM',
+            'EACCES',
+            'EBADF',
+            'EINVAL',
+            'ENOTSUP',
+            'EOPNOTSUPP',
+          ].includes((error as NodeJS.ErrnoException).code || '')
+        ) {
+          throw error;
+        }
       }
     }
     const publishOne = async (

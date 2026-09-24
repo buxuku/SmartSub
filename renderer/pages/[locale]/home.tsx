@@ -21,6 +21,7 @@ import {
   Loader2,
   MousePointerClick,
   Pencil,
+  Plug,
   Plus,
   Trash2,
   Upload,
@@ -68,7 +69,7 @@ import {
 import WorkItemList from '@/components/launchpad/WorkItemList';
 import WorkItemRowsSkeleton from '@/components/launchpad/WorkItemRowsSkeleton';
 import EnvReadiness, { type EnvRow } from '@/components/launchpad/EnvReadiness';
-import QuickStartGuide from '@/components/launchpad/QuickStartGuide';
+import AiAssistantGuide from '@/components/launchpad/AiAssistantGuide';
 import { getWorkItemStatus, getWorkItemTarget } from 'lib/workItemUtils';
 import { getStaticPaths, makeStaticProperties } from '../../lib/get-static';
 import { useTranslation } from 'next-i18next';
@@ -129,6 +130,12 @@ const QUICK_LINKS: Array<{
   /** 快捷入口的图标 chip 配色（沿用配方卡视觉语言，色相与配方卡错开） */
   chip: string;
 }> = [
+  {
+    key: 'mcp',
+    href: 'settings#mcp',
+    icon: Plug,
+    chip: 'bg-gradient-to-br from-emerald-500/20 via-emerald-500/10 to-transparent ring-1 ring-inset ring-emerald-500/25 text-emerald-600 dark:text-emerald-400',
+  },
   {
     key: 'download',
     href: 'download',
@@ -1167,7 +1174,7 @@ export default function LaunchpadPage() {
                   })}
                 </div>
               </Panel>
-              <QuickStartGuide locale={localeStr} />
+              <AiAssistantGuide locale={localeStr} />
             </div>
           </div>
         </div>

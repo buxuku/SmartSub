@@ -49,10 +49,42 @@
   },
   "quickLinks": {
     "title": "快捷入口",
+    "mcpHint": "连接 Cursor / Codex 扩展外部 AI 能力",
     "downloadHint": "粘贴链接批量下载在线视频",
     "proofreadHint": "逐句检查修改，AI 润色",
     "mergeHint": "把字幕烧录进画面",
     "dubbingHint": "字幕逐条合成语音"
+  },
+  "aiGuide": {
+    "title": "AI 助手",
+    "shortcutHint": "快捷键 {{shortcut}}",
+    "desc": "遇到难题不知所措？AI 助手已接入全局上下文，在任何界面随时协助你创作与解决问题。",
+    "painPoints": {
+      "modelSelection": {
+        "title": "不知道下载什么模型？",
+        "desc": "不同模型对显存与速度要求不同，随时询问 AI 为你推荐最适合的模型。"
+      },
+      "paramTuning": {
+        "title": "不知道如何设置参数？",
+        "desc": "VAD 静音阈值、温度、提示词不知如何搭配？AI 针对具体音视频提供调优建议。"
+      },
+      "omnipresent": {
+        "title": "任意界面随时协助",
+        "desc": "无论是首页、任务向导还是校对界面，AI 均可感知当前上下文协助排错与创作。"
+      }
+    },
+    "notConfigured": {
+      "title": "尚未配置 AI 服务",
+      "desc": "配置大模型即可解锁全功能智能助手（支持 DeepSeek、OpenAI、Claude、Ollama 等）。",
+      "action": "前往配置 AI 服务"
+    },
+    "configured": {
+      "title": "AI 服务已就绪",
+      "desc": "在任何界面按 {{shortcut}} 或点击顶栏图标，随时呼出 AI 助手。"
+    },
+    "openAssistant": "打开 AI 助手",
+    "closeAssistant": "收起 AI 助手",
+    "manageProviders": "管理服务"
   },
   "hero": {
     "morning": "早上好",
@@ -115,6 +147,7 @@
     "generateDesc": "只转写人声，不翻译",
     "translate": "翻译已有字幕",
     "translateDesc": "把 SRT 等字幕文件翻译成其它语言",
+    "mcp": "MCP 连接",
     "download": "视频下载",
     "proofread": "校对字幕",
     "proofreadDesc": "逐句检查修改，支持视频对照与 AI 润色",

@@ -67,7 +67,11 @@ export default function McpConnectionCard() {
     }
   };
   return (
-    <Card data-testid="mcp-connection-card">
+    <Card
+      id="mcp"
+      data-testid="mcp-connection-card"
+      className="scroll-mt-16 transition-shadow target:ring-2 target:ring-primary/50 target:shadow-md"
+    >
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <IconChip icon={Plug} />

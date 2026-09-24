@@ -49,10 +49,42 @@
   },
   "quickLinks": {
     "title": "Quick links",
+    "mcpHint": "Connect Cursor, Codex, or external AI tools",
     "downloadHint": "Batch-download online videos from links",
     "proofreadHint": "Review line by line, AI polish",
     "mergeHint": "Burn subtitles into the picture",
     "dubbingHint": "Turn subtitle lines into speech"
+  },
+  "aiGuide": {
+    "title": "AI Assistant",
+    "shortcutHint": "Shortcut {{shortcut}}",
+    "desc": "Stuck or unsure? The AI assistant has full app context to help you create and solve problems on any screen.",
+    "painPoints": {
+      "modelSelection": {
+        "title": "Unsure which model to download?",
+        "desc": "Different models have varying VRAM and speed needs. Ask AI to recommend the best match."
+      },
+      "paramTuning": {
+        "title": "Unsure how to set parameters?",
+        "desc": "Confused about VAD threshold, temperature, or prompts? AI provides tailored tuning advice."
+      },
+      "omnipresent": {
+        "title": "Assistance on any screen",
+        "desc": "Whether on the home screen, task setup, or proofreading, AI senses your context to help resolve issues."
+      }
+    },
+    "notConfigured": {
+      "title": "AI service not configured",
+      "desc": "Configure an LLM provider to unlock the smart assistant (supports DeepSeek, OpenAI, Claude, Ollama, etc.).",
+      "action": "Configure AI Service"
+    },
+    "configured": {
+      "title": "AI service ready",
+      "desc": "Press {{shortcut}} or click the top-bar icon on any screen to summon the AI assistant anytime."
+    },
+    "openAssistant": "Open AI Assistant",
+    "closeAssistant": "Close AI Assistant",
+    "manageProviders": "Manage Services"
   },
   "hero": {
     "morning": "Good morning",
@@ -115,6 +147,7 @@
     "generateDesc": "Transcribe speech only, no translation",
     "translate": "Translate existing subtitles",
     "translateDesc": "Translate SRT and other subtitle files into another language",
+    "mcp": "MCP Connection",
     "download": "Video download",
     "proofread": "Proofread subtitles",
     "proofreadDesc": "Review line by line, with video preview and AI polish",

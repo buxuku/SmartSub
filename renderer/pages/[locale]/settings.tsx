@@ -267,6 +267,20 @@ const Settings = () => {
     },
     [],
   );
+  useEffect(() => {
+    if (!persistence.loaded) return;
+    const handleScroll = () => {
+      const hash = typeof window !== 'undefined' ? window.location.hash : '';
+      if (hash === '#mcp' || router.asPath.includes('#mcp')) {
+        const el = document.getElementById('mcp');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    };
+    const timer = setTimeout(handleScroll, 100);
+    return () => clearTimeout(timer);
+  }, [persistence.loaded, router.asPath]);
   const loadPaths = useCallback(async () => {
     const version = ++pathsEpoch.current;
     try {
