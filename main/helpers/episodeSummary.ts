@@ -34,6 +34,7 @@ import {
   logGlossaryMatches,
 } from './glossaryManager';
 import {
+  accumulateSummaryUsage,
   buildSummaryGlossaryBlock,
   buildSummaryInput,
   buildSummaryInstructions,
@@ -90,14 +91,6 @@ export function resolveSummaryProvider(
   return pickSummaryProvider(formData, providers);
 }
 
-function addOutputTokens(
-  first: number | undefined,
-  second: number | undefined,
-): number | undefined {
-  if (typeof first !== 'number' && typeof second !== 'number') return undefined;
-  return (first ?? 0) + (second ?? 0);
-}
-
 /** 超限重试：压到 N 个单位以内，专名保持源文写法，只出摘要。 */
 function summaryCompressionPrompt(
   targetLanguage: string,
@@ -140,7 +133,10 @@ function compressSettledSummary(options: {
   sourceLanguage: string;
   targetLanguage: string;
   signal: AbortSignal | undefined;
-  onRetryTokens: (completionTokens: number | undefined) => void;
+  onRetryTokens: (retryMeta: {
+    promptTokens?: number;
+    completionTokens?: number;
+  }) => void;
 }): (summary: string, maxUnits: number) => Promise<string | string[]> {
   const requestConfig = summaryRequestConfig(options.provider);
   return (summary, maxUnits) => {
@@ -156,7 +152,7 @@ function compressSettledSummary(options: {
       {
         signal: options.signal,
         onResponseMeta: (meta) => {
-          options.onRetryTokens(meta.completionTokens);
+          options.onRetryTokens(meta);
         },
       },
     );
@@ -470,7 +466,7 @@ export async function runEpisodeSummaryStage(params: {
         signal,
         onResponseMeta: (meta) => {
           usage = {
-            input_tokens: undefined,
+            input_tokens: meta.promptTokens,
             output_tokens: meta.completionTokens,
           };
         },
@@ -496,7 +492,7 @@ export async function runEpisodeSummaryStage(params: {
       return;
     }
 
-    const firstOutput = usage?.output_tokens;
+    const firstUsage = usage;
     const capped = await enforceSummaryCap({
       text: settled.text,
       targetLang: targetLanguage,
@@ -506,12 +502,9 @@ export async function runEpisodeSummaryStage(params: {
         sourceLanguage,
         targetLanguage,
         signal,
-        onRetryTokens: (completionTokens) => {
+        onRetryTokens: (retryMeta) => {
           // 同一次调用若回传多次，后来的覆盖先前的；两次调用再相加。
-          usage = {
-            input_tokens: undefined,
-            output_tokens: addOutputTokens(firstOutput, completionTokens),
-          };
+          usage = accumulateSummaryUsage(firstUsage, retryMeta);
         },
       }),
     });

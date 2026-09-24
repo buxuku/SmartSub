@@ -33,6 +33,7 @@ import { createDebouncedPersist } from '../renderer/lib/debouncedPersist';
 import { equal, ok, reportSummaryTests } from './summaryTestHarness';
 import { runSummaryCapTests } from './test-summary-cap';
 import { runSummaryProviderTests } from './test-summary-provider';
+import { runSummaryUsageTests } from './test-summary-usage';
 
 // ── resolveSummaryPrompt ──────────────────────────────────────────────────
 
@@ -727,6 +728,7 @@ expectSkippedResume(
 );
 
 runSummaryProviderTests();
+runSummaryUsageTests();
 runSummaryCapTests()
   .then(() => {
     reportSummaryTests();

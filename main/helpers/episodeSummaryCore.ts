@@ -528,3 +528,26 @@ export function pickSummaryProvider(
     providerForSummarySource(source, formData, providers),
   );
 }
+
+/** 两侧都不是数字时保持 undefined，否则缺的一侧按 0 相加。 */
+function addOptionalCount(
+  first: number | undefined,
+  second: number | undefined,
+): number | undefined {
+  if (typeof first !== 'number' && typeof second !== 'number') return undefined;
+  return (first ?? 0) + (second ?? 0);
+}
+
+/** 第一次摘要调用与压缩重试的 input/output token 相加。 */
+export function accumulateSummaryUsage(
+  first: { input_tokens?: number; output_tokens?: number } | undefined,
+  retryMeta: { promptTokens?: number; completionTokens?: number } | undefined,
+): { input_tokens?: number; output_tokens?: number } {
+  return {
+    input_tokens: addOptionalCount(first?.input_tokens, retryMeta?.promptTokens),
+    output_tokens: addOptionalCount(
+      first?.output_tokens,
+      retryMeta?.completionTokens,
+    ),
+  };
+}

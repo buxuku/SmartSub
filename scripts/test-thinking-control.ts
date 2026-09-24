@@ -10,6 +10,7 @@
  * - 会话级拒绝缓存写入/命中/清除
  * - appendNoThinkSoftSwitch 仅命中 qwen3 且 L1 不可用时注入
  * - v21 → v22 迁移的 enableThinking 写入语义（displayed via provider defaults）
+ * - extractOpenAIResponseMeta / extractOllamaResponseMeta 记录 prompt tokens，缺省不估算
  */
 import {
   resolveThinkingParams,
@@ -21,6 +22,8 @@ import {
   isThinkingOnlyModelName,
   shouldRetryWithoutAutomaticThinkingParams,
   runWithThinkingParamFallback,
+  extractOpenAIResponseMeta,
+  extractOllamaResponseMeta,
 } from '../main/service/thinkingControl';
 import { isThinkingActiveFromMeta } from '../main/helpers/thinkingModeDetector';
 import { ParameterProcessor } from '../main/helpers/parameterProcessor';
@@ -645,6 +648,155 @@ async function run(): Promise<void> {
   eq(migrationSemantics(undefined), false, 'migrate: undefined → false');
   eq(migrationSemantics(false), false, 'migrate: false → false');
   eq(migrationSemantics(true), true, 'migrate: explicit true preserved');
+
+  // ==========================================================
+  // 响应元数据里的 prompt tokens（摘要 usage 要原样记下，不估算）
+  // ==========================================================
+  eq(
+    extractOpenAIResponseMeta({
+      choices: [
+        {
+          message: {
+            content: '答案 <think>内部',
+            reasoning_content: ' 内部 ',
+          },
+        },
+      ],
+      usage: {
+        prompt_tokens: 128,
+        completion_tokens: 40,
+        completion_tokens_details: { reasoning_tokens: 7 },
+      },
+    }),
+    {
+      reasoningContentPresent: true,
+      reasoningTokens: 7,
+      completionTokens: 40,
+      contentThinkTagPresent: true,
+      promptTokens: 128,
+    },
+    'openai meta: prompt_tokens is recorded and existing fields stay',
+  );
+  const missingUsage = extractOpenAIResponseMeta({
+    choices: [{ message: { content: 'plain' } }],
+  });
+  eq(
+    missingUsage,
+    {
+      reasoningContentPresent: false,
+      reasoningTokens: 0,
+      completionTokens: 0,
+      contentThinkTagPresent: false,
+    },
+    'openai meta: missing usage keeps completion and reasoning defaults',
+  );
+  eq(
+    missingUsage.promptTokens,
+    undefined,
+    'openai meta: missing usage leaves promptTokens undefined',
+  );
+  eq(
+    extractOpenAIResponseMeta({
+      choices: [{ message: { content: '' } }],
+      usage: { prompt_tokens: Number.NaN, completion_tokens: 3 },
+    }).promptTokens,
+    undefined,
+    'openai meta: NaN prompt_tokens stays undefined',
+  );
+  eq(
+    extractOpenAIResponseMeta({
+      choices: [{ message: { content: '' } }],
+      usage: { prompt_tokens: Number.POSITIVE_INFINITY, completion_tokens: 3 },
+    }).promptTokens,
+    undefined,
+    'openai meta: infinite prompt_tokens stays undefined',
+  );
+  eq(
+    extractOpenAIResponseMeta({
+      choices: [{ message: { content: '' } }],
+      usage: { prompt_tokens: '128', completion_tokens: 3 },
+    }).promptTokens,
+    undefined,
+    'openai meta: non-number prompt_tokens stays undefined',
+  );
+  eq(
+    extractOpenAIResponseMeta({
+      choices: [{ message: { content: '' } }],
+      usage: { prompt_tokens: 0, completion_tokens: 0 },
+    }).promptTokens,
+    0,
+    'openai meta: zero prompt_tokens is kept',
+  );
+  eq(
+    extractOllamaResponseMeta({
+      message: {
+        content: '  答案 <think>内部  ',
+        thinking: '  想过  ',
+      },
+      prompt_eval_count: 50,
+      eval_count: 9,
+    }),
+    {
+      reasoningContentPresent: true,
+      contentThinkTagPresent: true,
+      promptTokens: 50,
+      completionTokens: 9,
+    },
+    'ollama meta: prompt_eval_count and eval_count are recorded',
+  );
+  const ollamaBare = extractOllamaResponseMeta({
+    message: { content: 'plain', thinking: '   ' },
+  });
+  eq(
+    ollamaBare,
+    {
+      reasoningContentPresent: false,
+      contentThinkTagPresent: false,
+    },
+    'ollama meta: blank thinking and no think tag stay inactive',
+  );
+  eq(
+    ollamaBare.promptTokens,
+    undefined,
+    'ollama meta: missing prompt_eval_count stays undefined',
+  );
+  eq(
+    ollamaBare.completionTokens,
+    undefined,
+    'ollama meta: missing eval_count stays undefined',
+  );
+  eq(
+    extractOllamaResponseMeta({
+      message: { content: 'plain' },
+      prompt_eval_count: Number.NaN,
+      eval_count: '4',
+    }).promptTokens,
+    undefined,
+    'ollama meta: non-finite prompt_eval_count stays undefined',
+  );
+  eq(
+    extractOllamaResponseMeta({
+      message: { content: 'plain' },
+      prompt_eval_count: Number.NaN,
+      eval_count: '4',
+    }).completionTokens,
+    undefined,
+    'ollama meta: non-number eval_count stays undefined',
+  );
+  eq(
+    extractOllamaResponseMeta({
+      message: { content: '' },
+      prompt_eval_count: 0,
+      eval_count: 0,
+    }),
+    {
+      reasoningContentPresent: false,
+      contentThinkTagPresent: false,
+      promptTokens: 0,
+      completionTokens: 0,
+    },
+    'ollama meta: zero eval counts are kept',
+  );
 
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
