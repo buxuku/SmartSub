@@ -15,6 +15,7 @@ import {
   resolveThinkingParams,
   runWithThinkingParamFallback,
   appendNoThinkSoftSwitch,
+  extractOllamaResponseMeta,
 } from './thinkingControl';
 
 interface OllamaConfig {
@@ -158,15 +159,9 @@ export default async function translateWithOllama(
 
     if (response.data && response.data.message) {
       throwIfSignalCancelled(options?.signal);
-      const message = response.data.message;
-      const content = message?.content?.trim();
-      options?.onResponseMeta?.({
-        // Ollama ≥0.9 把思考放在 message.thinking 独立字段
-        reasoningContentPresent:
-          typeof message?.thinking === 'string' &&
-          message.thinking.trim() !== '',
-        contentThinkTagPresent: /<think>/i.test(content || ''),
-      });
+      const content = response.data.message?.content?.trim();
+      // Ollama ≥0.9 把思考放在 message.thinking 独立字段
+      options?.onResponseMeta?.(extractOllamaResponseMeta(response.data));
       return content;
     } else {
       throw new Error(

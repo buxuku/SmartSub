@@ -64,6 +64,8 @@ export interface TranslationResponseMeta {
   /** usage.completion_tokens_details.reasoning_tokens */
   reasoningTokens?: number;
   completionTokens?: number;
+  /** 输入 token（usage.prompt_tokens / ollama prompt_eval_count），不回传则保持 undefined */
+  promptTokens?: number;
   /** 思考内联进 content 的情况（<think> 标签），同样视为思考发生 */
   contentThinkTagPresent?: boolean;
 }
