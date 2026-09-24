@@ -30,12 +30,13 @@ import { validateAnchoredBatch } from '../translate/utils/alignment';
 import { BATCH_SCHEMA_MAX_PROPERTIES } from '../translate/constants/schema';
 import {
   buildGlossaryPromptBlock,
+  describeGlossaryContext,
   injectGlossaryPromptBlock,
   matchGlossaryEntries,
   selectGlossaryPromptEntries,
 } from '../glossary/core';
 import {
-  getActiveGlossaryResolution,
+  getTaskGlossaryResolution,
   logGlossaryConflicts,
   logGlossaryMatches,
 } from './glossaryManager';
@@ -79,6 +80,8 @@ export interface CorrectionParams {
   maxRetries?: number;
   signal?: AbortSignal;
   useGlossary?: boolean;
+  /** 本次任务选用词库；undefined = 回落全部已启用。 */
+  glossaryIds?: string[];
   /** 术语冲突/命中日志的场景标签（如「校对页批量 AI 优化」/「AI 字幕校正」）。 */
   glossaryLabel?: string;
   /** anchored：低置信词标注（whisper token p 低于阈值的词，辅助定点修正）。 */
@@ -231,16 +234,21 @@ export async function runSubtitleCorrection(
   );
   const maxRetries = Math.max(0, params.maxRetries ?? 2);
   const echoEnabled = provider.echoAnchoring !== false;
+  const glossaryLabel = params.glossaryLabel || '字幕校正';
+  const glossaryContext = describeGlossaryContext(
+    glossaryLabel,
+    params.glossaryIds,
+  );
 
   // 术语表：调用方决定是否启用（校对台仅 translation 模式；管线校正恒开）。
   let glossaryEntries: Parameters<typeof matchGlossaryEntries>[0] = [];
   if (params.useGlossary) {
-    const resolution = getActiveGlossaryResolution(params.projectId);
+    const resolution = getTaskGlossaryResolution(
+      params.glossaryIds,
+      params.projectId,
+    );
     if (resolution) {
-      logGlossaryConflicts(
-        resolution.conflicts,
-        params.glossaryLabel || '字幕校正',
-      );
+      logGlossaryConflicts(resolution.conflicts, glossaryContext);
       glossaryEntries = resolution.entries;
     }
   }
@@ -267,7 +275,7 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
     : '';
   if (correctionTerms.length > 0) {
     logMessage(
-      `${params.glossaryLabel || '字幕校正'}: 注入 ${correctionTerms.length} 条术语原文标准写法（不含译文）`,
+      `${glossaryContext}: 注入 ${correctionTerms.length} 条术语原文标准写法（不含译文）`,
       'info',
     );
   }
@@ -323,7 +331,10 @@ ${correctionTerms.map((term) => `- ${term}`).join('\n')}`
       glossaryBlock = buildGlossaryPromptBlock(glossarySelection.included);
       logGlossaryMatches(
         glossarySelection.included,
-        `${params.glossaryLabel || '字幕校正'} ${currentBatch}/${totalBatches}`,
+        describeGlossaryContext(
+          `${glossaryLabel} ${currentBatch}/${totalBatches}`,
+          params.glossaryIds,
+        ),
         glossarySelection.omittedCount,
       );
     }

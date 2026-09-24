@@ -43,6 +43,16 @@ import {
   runManuscriptMatchingStage,
   settleSkippedManuscriptMatchStage,
 } from './manuscriptMatchingStage';
+import {
+  currentSummaryFingerprint,
+  runEpisodeSummaryStage,
+} from './episodeSummary';
+import {
+  disabledSummaryPatch,
+  isSummaryStageActive,
+  resolveResumeSummaryState,
+  shouldUseEpisodeSummary,
+} from './episodeSummaryCore';
 import { runDubStage, rebuildDubTrackForFile } from './pipeline/dubStage';
 import { runComposeStage } from './pipeline/composeStage';
 import {
@@ -322,6 +332,7 @@ async function processFileImpl(
     'prepareSubtitle',
     'refineSubtitle',
     'manuscriptMatch',
+    'summarizeEpisode',
     'translateSubtitle',
     'speakerDiarization',
     'dubbing',
@@ -339,6 +350,7 @@ async function processFileImpl(
     'refineSubtitleError',
     'manuscriptMatchError',
     'manuscriptMatchErrorDetail',
+    'summarizeEpisodeError',
     'translateSubtitleError',
     'speakerDiarizationError',
     'dubbingError',
@@ -359,6 +371,18 @@ async function processFileImpl(
   }
   file.exportSubtitle = '';
   file.exportSubtitleError = undefined;
+  // 摘要阶段不会运行时清掉旧正文、阶段状态和错误码。写成 undefined，
+  // 后续 {...file} 才能清掉渲染层里的旧值。这些键不能放进上面的 delete：
+  // 缺键不会覆盖 {...prev, ...res} 的旧值。
+  if (
+    !isSummaryStageActive({
+      generateSummary: formData?.generateSummary,
+      taskType,
+      translateProvider,
+    })
+  ) {
+    Object.assign(file, disabledSummaryPatch());
+  }
 
   try {
     const { filePath, fileName, fileExtension, directory } = file;
@@ -571,6 +595,39 @@ async function processFileImpl(
         settleSkippedRefineStage(event, file, formData);
         // 首轮文稿匹配同样已写入 SRT，续跑不重新读取可能变化的外部文稿。
         settleSkippedManuscriptMatchStage(event, file, formData);
+      }
+      // 译文已复用，摘要不补打。指纹一致标 done，否则 skipped-resume 并清掉旧摘要。
+      if (
+        isSummaryStageActive({
+          generateSummary: formData?.generateSummary,
+          taskType,
+          translateProvider,
+        })
+      ) {
+        const summaryActivity = getTaskContext()?.activity?.start(
+          'summarizeEpisode',
+          'organizing',
+        );
+        try {
+          const fingerprint = await currentSummaryFingerprint({
+            file,
+            formData,
+            sourceLanguage,
+            targetLanguage,
+          });
+          const patch = resolveResumeSummaryState({
+            stageActive: true,
+            existing: file.episodeSummary,
+            storedHash: file.summarySourceHash,
+            fingerprint,
+          });
+          if (patch) {
+            Object.assign(file, patch);
+            event.sender.send('taskFileChange', { ...file });
+          }
+        } finally {
+          summaryActivity?.finish();
+        }
       }
       if (translationActive) {
         (file as any).translateSubtitle = 'done';
@@ -873,6 +930,25 @@ async function processFileImpl(
       await stripSourceSubtitlePunctuation(file.srtFile, fileName);
     }
 
+    // 通读摘要：翻译前、精修/文稿匹配之后。失败降级，不阻断。
+    if (
+      isSummaryStageActive({
+        generateSummary: formData?.generateSummary,
+        taskType,
+        translateProvider,
+      })
+    ) {
+      throwIfTaskCancelled();
+      await runEpisodeSummaryStage({
+        event,
+        file,
+        formData,
+        sourceLanguage,
+        targetLanguage,
+        translationProvider: provider,
+      });
+    }
+
     // 翻译字幕（取消后不再进入）
     throwIfTaskCancelled();
     let translateOk = !translationActive;
@@ -969,6 +1045,10 @@ async function processFileImpl(
         translationFailures: file.translationFailures,
         missedSpeechWarnings: file.missedSpeechWarnings,
         missedSpeechSummary: file.missedSpeechSummary,
+        glossaryIds: formData?.glossaryIds,
+        ...(shouldUseEpisodeSummary(formData, file)
+          ? { episodeSummary: file.episodeSummary }
+          : {}),
       });
       if ('filePath' in proofreadDataResult) {
         file.proofreadDataFile = proofreadDataResult.filePath;

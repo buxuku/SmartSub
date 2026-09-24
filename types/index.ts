@@ -7,3 +7,4 @@ export * from './workItem';
 export * from './transcriptionParams';
 export * from './taskSnapshot';
 export * from './speakerDiarization';
+export * from './summaryPrompt';

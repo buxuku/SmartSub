@@ -29,8 +29,9 @@ import {
 } from '../../service';
 import { DEFAULT_BATCH_SIZE } from '../constants';
 import { getTaskSignal } from '../../helpers/taskContext';
+import { describeGlossarySource } from '../../glossary/core';
 import {
-  getActiveGlossaryResolution,
+  getTaskGlossaryResolution,
   logGlossaryConflicts,
 } from '../../helpers/glossaryManager';
 import { ProviderFallbackRunner } from './providerFallback';
@@ -78,6 +79,11 @@ export async function translateWithProvider(
   onProviderFallback?: TranslationConfig['onProviderFallback'],
   subtitleTranslationStyle?: TranslationConfig['subtitleTranslationStyle'],
   onActivity?: TranslationConfig['onActivity'],
+  options?: {
+    glossaryIds?: string[];
+    episodeSummary?: string;
+    summarySkipReason?: string;
+  },
 ): Promise<TranslationResult[] | string[]> {
   if (subtitleTranslationStyle === 'conversational' && !provider.isAi) {
     throw new Error(
@@ -86,11 +92,14 @@ export async function translateWithProvider(
   }
   const supportsGlossary = provider.isAi || provider.type === 'qwenMt';
   const glossaryResolution =
-    supportsGlossary && useGlossary ? getActiveGlossaryResolution() : undefined;
+    supportsGlossary && useGlossary
+      ? getTaskGlossaryResolution(options?.glossaryIds)
+      : undefined;
+  const glossarySourceLabel = describeGlossarySource(options?.glossaryIds);
   if (glossaryResolution) {
     logGlossaryConflicts(
       glossaryResolution.conflicts,
-      provider.type === 'qwenMt' ? 'Qwen-MT 翻译' : 'AI 翻译',
+      `${provider.type === 'qwenMt' ? 'Qwen-MT 翻译' : 'AI 翻译'}，${glossarySourceLabel}`,
     );
   }
   const glossaryEntries = glossaryResolution?.entries;
@@ -102,6 +111,13 @@ export async function translateWithProvider(
     translator,
     glossaryEntries,
     subtitleTranslationStyle,
+    ...(options ? { glossarySourceLabel } : {}),
+    ...(options?.episodeSummary
+      ? { episodeSummary: options.episodeSummary }
+      : {}),
+    ...(options?.summarySkipReason
+      ? { summarySkipReason: options.summarySkipReason }
+      : {}),
     signal: getTaskSignal(),
     onResponseMeta,
     fallbackProviders,
@@ -135,6 +151,12 @@ export async function translateWithProvider(
     'info',
   );
   onProgress && onProgress(0);
+  if (options?.episodeSummary && !provider.isAi) {
+    logMessage(
+      `翻译服务 ${provider.name} 非 AI（机翻 / Qwen-MT），摘要未注入，仅供对照`,
+      'info',
+    );
+  }
   if (provider.isAi) {
     return handleAIBatchTranslation(
       subtitles,

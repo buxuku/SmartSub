@@ -37,5 +37,7 @@ export function formatTaskMessage(
       defaultValue: message,
     });
   }
+  const summaryText = t(`summarize.error.${message}`, { defaultValue: '' });
+  if (summaryText) return summaryText;
   return message;
 }

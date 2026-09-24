@@ -155,6 +155,18 @@ export interface IFiles extends SubtitleOutputFiles {
   manuscriptMatch?: '' | 'loading' | 'done';
   /** 稳定的非致命回退码，renderer 据此本地化；不会令任务失败。 */
   manuscriptMatchError?: string;
+  /**
+   * 通读摘要阶段。字段名必须与 StageKey 同名。
+   * 降级也结算为 done，原因写在 summarizeEpisodeError。
+   */
+  summarizeEpisode?: '' | 'loading' | 'done' | 'error';
+  /** 摘要降级原因的稳定码；阶段仍为 done，不令任务失败。 */
+  summarizeEpisodeError?: string;
+  /** 本文件通读摘要正文；resume 时非空则跳过再打。 */
+  episodeSummary?: string;
+  summaryUsage?: { input_tokens?: number; output_tokens?: number };
+  /** 摘要源指纹（sha1）；与本次字幕、提示词、服务商和语言一致才复用。 */
+  summarySourceHash?: string;
   /** 仅供日志/tooltip 兜底的诊断细节，不参与本地化键。 */
   manuscriptMatchErrorDetail?: string;
   manuscriptMatchSummary?: ManuscriptMatchSummary;
@@ -288,6 +300,8 @@ export interface IFormData {
   sourceLanguage: string;
   targetLanguage: string;
   translateRetryTimes: string;
+  /** 翻译服务商 id。'-1' 表示不翻译。 */
+  translateProvider?: string;
   subtitleOutputFormat?: SubtitleOutputFormat;
   /** Missing on legacy tasks; the singular format remains the compatibility fallback. */
   subtitleOutputFormats?: SubtitleOutputFormat[];
@@ -339,4 +353,13 @@ export interface IFormData {
   manuscriptPath?: string;
   /** 创建快照时的显示名；运行时仍以 manuscriptPath 为唯一数据源。 */
   manuscriptName?: string;
+  /** 本次任务参与匹配的词库 id；undefined = 回落「全部已启用」（旧行为） */
+  glossaryIds?: string[];
+  /** 通读摘要开关；缺省 false，旧快照 / 旧配方无此键即关闭。 */
+  generateSummary?: boolean;
+  /**
+   * 摘要服务商：缺省 / 'follow-translation' = 跟随翻译服务（须 AI），
+   * 或显式 AI 服务商 id。
+   */
+  summaryProvider?: string;
 }

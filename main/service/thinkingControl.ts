@@ -330,6 +330,13 @@ export function appendNoThinkSoftSwitch(
 // 响应元数据提取（design D7）
 // ============================================================
 
+/** 只收下有限数字。缺省、NaN、Infinity 和非数字都视为未回传，不做估算。 */
+function finiteTokenCount(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
 /** 从 OpenAI 兼容响应提取思考元数据，openai/azureOpenai 共用 */
 export function extractOpenAIResponseMeta(
   completion: any,
@@ -344,5 +351,28 @@ export function extractOpenAIResponseMeta(
       completion?.usage?.completion_tokens_details?.reasoning_tokens || 0,
     completionTokens: completion?.usage?.completion_tokens || 0,
     contentThinkTagPresent: /<think>/i.test(content),
+    promptTokens: finiteTokenCount(completion?.usage?.prompt_tokens),
+  };
+}
+
+/** 从 Ollama chat 响应提取思考元数据。prompt_eval_count / eval_count 仅在有限数字时写入。 */
+export function extractOllamaResponseMeta(
+  data:
+    | {
+        message?: { thinking?: unknown; content?: string };
+        prompt_eval_count?: unknown;
+        eval_count?: unknown;
+      }
+    | null
+    | undefined,
+): TranslationResponseMeta {
+  const message = data?.message;
+  const content = message?.content?.trim();
+  return {
+    reasoningContentPresent:
+      typeof message?.thinking === 'string' && message.thinking.trim() !== '',
+    contentThinkTagPresent: /<think>/i.test(content || ''),
+    promptTokens: finiteTokenCount(data?.prompt_eval_count),
+    completionTokens: finiteTokenCount(data?.eval_count),
   };
 }

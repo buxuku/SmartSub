@@ -7,7 +7,14 @@ const originalLoad = Module._load;
 Module._load = function (request, parent, isMain) {
   if (request.endsWith('/storeManager'))
     return { logMessage() {}, store: { get: () => ({}) } };
-  if (request.endsWith('/glossaryManager')) return { logGlossaryMatches() {} };
+  if (request.endsWith('/glossaryManager'))
+    return {
+      // This fixture never supplied a glossary. No ids keeps that empty resolution.
+      getActiveGlossaryResolution: () => ({ entries: [], conflicts: [] }),
+      getTaskGlossaryResolution: () => ({ entries: [], conflicts: [] }),
+      logGlossaryConflicts() {},
+      logGlossaryMatches() {},
+    };
   return originalLoad.call(this, request, parent, isMain);
 };
 require.extensions['.ts'] = (module, filename) =>

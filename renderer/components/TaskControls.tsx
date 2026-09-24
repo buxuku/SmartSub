@@ -10,6 +10,7 @@ import { useHotkeys } from 'hooks/useHotkeys';
 import { useTaskSubmission } from 'hooks/useTaskSubmission';
 import { buildTaskSnapshotFromConfig } from 'hooks/useUnifiedTaskConfig';
 import { getRefineValidationErrorMessage } from 'lib/subtitleRefineValidation';
+import { validateSummaryProvider } from '../../types/summaryProvider';
 
 interface TaskControlsProps {
   files: any[];
@@ -111,6 +112,22 @@ const TaskControls = ({
           description: t('home:allFilesProcessed'),
         });
         return;
+      }
+      if (typeDef.hasTranslate && formData?.generateSummary === true) {
+        const summaryProviders =
+          (await window?.ipc?.invoke('getTranslationProviders')) || [];
+        const summaryBlock = validateSummaryProvider(
+          formData,
+          summaryProviders,
+        );
+        if (summaryBlock === 'follow') {
+          toast.error(t('tasks:wizard.blockSummaryFollow'));
+          return;
+        }
+        if (summaryBlock === 'invalid') {
+          toast.error(t('tasks:wizard.blockSummaryProviderInvalid'));
+          return;
+        }
       }
       const snapshot = buildTaskSnapshotFromConfig(formData);
       const outcome = await submission.submit({

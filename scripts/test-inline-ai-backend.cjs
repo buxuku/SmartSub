@@ -55,6 +55,11 @@ Module._load = function (request, parent, isMain) {
         glossaryScopes.push(projectId);
         return { entries: [], conflicts: [] };
       },
+      // No ids records the same project scope the old getActiveGlossaryResolution mock did.
+      getTaskGlossaryResolution: (ids, projectId) => {
+        glossaryScopes.push(projectId);
+        return { entries: [], conflicts: [] };
+      },
       logGlossaryConflicts() {},
       logGlossaryMatches() {},
     };

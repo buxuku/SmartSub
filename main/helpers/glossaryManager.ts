@@ -13,7 +13,7 @@ import {
   mergeGlossaryImportEntry,
   normalizeGlossaries,
   reorderGlossaries,
-  resolveEnabledGlossaryEntries,
+  resolveTaskGlossaryEntries,
 } from '../glossary/core';
 import { logMessage, store } from './storeManager';
 import { getTaskContext } from './taskContext';
@@ -287,11 +287,19 @@ export function importGlossaryEntries(
   return { glossary, added, updated, skipped };
 }
 
+/** 按任务选用读取运行期快照；`ids === undefined` 回落全部已启用。 */
+export function getTaskGlossaryResolution(
+  ids?: string[],
+  projectId = getTaskContext()?.projectId,
+): GlossaryResolution {
+  return resolveTaskGlossaryEntries(listGlossaries(), ids, projectId);
+}
+
 /** 读取运行期快照；日志由每次翻译/优化操作在自己的边界显式记录。 */
 export function getActiveGlossaryResolution(
   projectId = getTaskContext()?.projectId,
 ): GlossaryResolution {
-  return resolveEnabledGlossaryEntries(listGlossaries(), projectId);
+  return getTaskGlossaryResolution(undefined, projectId);
 }
 
 /** Save both a new collection and its first entry in one durable store write. */

@@ -54,7 +54,12 @@ export interface ActivityDetail {
 export interface TaskActivity extends ActivityDetail {
   run: number;
   sequence: number;
-  stage: 'extractSubtitle' | 'refineSubtitle' | 'translateSubtitle' | null;
+  stage:
+    | 'extractSubtitle'
+    | 'refineSubtitle'
+    | 'summarizeEpisode'
+    | 'translateSubtitle'
+    | null;
   status:
     | 'running'
     | 'cancelling'
