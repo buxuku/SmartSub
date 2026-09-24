@@ -20,6 +20,8 @@ import type { Provider, TranslatorFunction } from '../translate/types';
 import { getCustomLanguageName } from '../../types/language';
 import {
   FOLLOW_TRANSLATION_PROVIDER,
+  SUMMARY_MAX_UNITS,
+  isCjkSummaryTarget,
   resolveSummaryPrompt,
 } from '../../types/summaryPrompt';
 import {
@@ -39,7 +41,9 @@ import {
   clearedSummaryFields,
   computeSummaryFingerprint,
   decideSummaryReuse,
+  enforceSummaryCap,
   estimateSummaryBatches,
+  normalizeReusedSummary,
   settleSummaryText,
   shouldSkipTrivialSummary,
 } from './episodeSummaryCore';
@@ -103,6 +107,74 @@ export function resolveSummaryProvider(
     return { provider: null, source: 'explicit', reason: 'provider-not-ai' };
   }
   return { provider, source: 'explicit' };
+}
+
+function addOutputTokens(
+  first: number | undefined,
+  second: number | undefined,
+): number | undefined {
+  if (typeof first !== 'number' && typeof second !== 'number') return undefined;
+  return (first ?? 0) + (second ?? 0);
+}
+
+/** 超限重试：压到 N 个单位以内，专名保持源文写法，只出摘要。 */
+function summaryCompressionPrompt(
+  targetLanguage: string,
+  maxUnits: number,
+): string {
+  const unit = isCjkSummaryTarget(targetLanguage) ? '字' : 'words';
+  const langName = getLanguageName(targetLanguage);
+  return (
+    `把给定摘要压缩到 ${maxUnits} ${unit}以内，用${langName}输出。` +
+    '人名、地名、建制、称谓保持源文写法。只输出摘要正文。'
+  );
+}
+
+function summaryRequestConfig(provider: Provider) {
+  return {
+    ...provider,
+    useJsonMode: false,
+    structuredOutput: 'disabled' as const,
+  };
+}
+
+/** 超限后的第二次调用：同一服务商、同一信号，正文是上一轮摘要。 */
+function compressSettledSummary(options: {
+  translator: TranslatorFunction;
+  provider: Provider;
+  sourceLanguage: string;
+  targetLanguage: string;
+  signal: AbortSignal | undefined;
+  onRetryTokens: (completionTokens: number | undefined) => void;
+}): (summary: string, maxUnits: number) => Promise<string | string[]> {
+  const requestConfig = summaryRequestConfig(options.provider);
+  return (summary, maxUnits) => {
+    throwIfTaskCancelled();
+    return options.translator(
+      summary,
+      {
+        ...requestConfig,
+        systemPrompt: summaryCompressionPrompt(options.targetLanguage, maxUnits),
+      },
+      options.sourceLanguage,
+      options.targetLanguage,
+      {
+        signal: options.signal,
+        onResponseMeta: (meta) => {
+          options.onRetryTokens(meta.completionTokens);
+        },
+      },
+    );
+  };
+}
+
+function formatSummaryCapLog(
+  originalUnits: number,
+  retryUnits: number | undefined,
+  finalUnits: number,
+): string {
+  const retry = retryUnits === undefined ? '-' : String(retryUnits);
+  return `摘要长度 原=${originalUnits} 重试=${retry} 最终=${finalUnits} (limit=${SUMMARY_MAX_UNITS})`;
 }
 
 function applySummaryState(
@@ -267,18 +339,31 @@ export async function runEpisodeSummaryStage(params: {
         fingerprint,
       }) === 'reuse'
     ) {
+      // 复用只截断，不再请求模型。不写 summarySourceHash，沿用已有指纹。
+      const normalized = normalizeReusedSummary(existing, targetLanguage);
       applySummaryState(
         file,
         {
           summarizeEpisode: 'done',
+          ...(normalized.changed ? { episodeSummary: normalized.text } : {}),
           ...(file.summarizeEpisodeError
             ? {}
             : { summarizeEpisodeError: undefined }),
         },
         event,
       );
+      if (normalized.changed) {
+        logMessage(
+          formatSummaryCapLog(
+            normalized.originalUnits,
+            undefined,
+            normalized.finalUnits,
+          ),
+          'info',
+        );
+      }
       logMessage(
-        `resume: reuse episode summary for ${file.fileName} (${existing.trim().length} chars)`,
+        `resume: reuse episode summary for ${file.fileName} (${normalized.text.length} chars)`,
         'info',
       );
       return;
@@ -375,18 +460,14 @@ export async function runEpisodeSummaryStage(params: {
     throwIfTaskCancelled();
     activity?.update({ phase: 'requesting' });
     let usage: { input_tokens?: number; output_tokens?: number } | undefined;
+    const signal = getTaskSignal() || getTaskContext()?.signal;
     const modelRaw = await translator(
       userText,
-      {
-        ...provider,
-        systemPrompt: instructions,
-        useJsonMode: false,
-        structuredOutput: 'disabled' as const,
-      },
+      { ...summaryRequestConfig(provider), systemPrompt: instructions },
       sourceLanguage,
       targetLanguage,
       {
-        signal: getTaskSignal() || getTaskContext()?.signal,
+        signal,
         onResponseMeta: (meta) => {
           usage = {
             input_tokens: undefined,
@@ -415,23 +496,56 @@ export async function runEpisodeSummaryStage(params: {
       return;
     }
 
+    const firstOutput = usage?.output_tokens;
+    const capped = await enforceSummaryCap({
+      text: settled.text,
+      targetLang: targetLanguage,
+      compress: compressSettledSummary({
+        translator,
+        provider,
+        sourceLanguage,
+        targetLanguage,
+        signal,
+        onRetryTokens: (completionTokens) => {
+          // 同一次调用若回传多次，后来的覆盖先前的；两次调用再相加。
+          usage = {
+            input_tokens: undefined,
+            output_tokens: addOutputTokens(firstOutput, completionTokens),
+          };
+        },
+      }),
+    });
+
     applySummaryState(
       file,
       {
         summarizeEpisode: 'done',
         summarizeEpisodeError: undefined,
-        episodeSummary: settled.text,
+        episodeSummary: capped.text,
         summaryUsage: usage,
         summarySourceHash: fingerprint,
       },
       event,
     );
+    if (capped.retryError) {
+      logMessage(`摘要压缩失败，已截断第一轮: ${capped.retryError}`, 'warning');
+    }
+    if (capped.retried || capped.truncated) {
+      logMessage(
+        formatSummaryCapLog(
+          capped.originalUnits,
+          capped.retryUnits,
+          capped.finalUnits,
+        ),
+        'info',
+      );
+    }
     logMessage(
-      `✓ 摘要完成 ${file.fileName} chars=${settled.text.length}`,
+      `✓ 摘要完成 ${file.fileName} chars=${capped.text.length}`,
       'info',
     );
     if (translateProvider?.isAi) {
-      const extra = Math.ceil(settled.text.length / 1.5) * batches;
+      const extra = Math.ceil(capped.text.length / 1.5) * batches;
       logMessage(
         `摘要将随 ${batches} 个翻译批次重发，约 ${extra} token`,
         'info',

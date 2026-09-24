@@ -30,27 +30,8 @@ import {
 } from '../main/glossary/core';
 import { defaultSystemPrompt } from '../types/provider';
 import { createDebouncedPersist } from '../renderer/lib/debouncedPersist';
-
-let passed = 0;
-let failed = 0;
-
-function ok(value: unknown, name: string): void {
-  if (value) {
-    passed++;
-  } else {
-    failed++;
-    console.error(`x ${name}`);
-  }
-}
-
-function equal<T>(actual: T, expected: T, name: string): void {
-  const success = JSON.stringify(actual) === JSON.stringify(expected);
-  ok(success, name);
-  if (!success) {
-    console.error(`  expected: ${JSON.stringify(expected)}`);
-    console.error(`  actual:   ${JSON.stringify(actual)}`);
-  }
-}
+import { equal, ok, reportSummaryTests } from './summaryTestHarness';
+import { runSummaryCapTests } from './test-summary-cap';
 
 // ── resolveSummaryPrompt ──────────────────────────────────────────────────
 
@@ -744,5 +725,11 @@ expectSkippedResume(
   'fingerprint mismatch skips instead of regenerating',
 );
 
-console.log(`\n${passed} passed, ${failed} failed`);
-if (failed) process.exit(1);
+runSummaryCapTests()
+  .then(() => {
+    reportSummaryTests();
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });

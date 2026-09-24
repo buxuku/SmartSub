@@ -68,6 +68,111 @@ export type SummaryErrorCode =
   | 'provider-not-ai'
   | 'call-failed';
 
+/** 出厂稿「不得超过 400 字」的运行时上限。CJK 按码点，其它语言按词。 */
+export const SUMMARY_MAX_UNITS = 400;
+
+const CJK_PRIMARY_SUBTAGS = new Set(['zh', 'ja', 'ko', 'yue']);
+
+/**
+ * 词边界分词器。结构化类型 + 运行时探测，不依赖 TS lib 的 Intl.Segmenter 声明。
+ * 与 subtitleSegmentation 的词边界分词器同一写法。
+ */
+interface SummaryWordSegment {
+  segment: string;
+  index: number;
+  isWordLike?: boolean;
+}
+interface SummaryWordSegmenter {
+  segment(input: string): Iterable<SummaryWordSegment>;
+}
+type SummarySegmenterCtor = new (
+  locale?: string,
+  options?: { granularity?: 'word' | 'grapheme' | 'sentence' },
+) => SummaryWordSegmenter;
+
+const segmenterCache = new Map<string, SummaryWordSegmenter>();
+
+/** 词边界分词器。构造失败或运行时没有 Segmenter 时返回 null，调用方按空白切分。 */
+export function summaryWordSegmenter(locale: string): SummaryWordSegmenter | null {
+  const ctor =
+    typeof Intl !== 'undefined'
+      ? (Intl as { Segmenter?: SummarySegmenterCtor }).Segmenter
+      : undefined;
+  if (typeof ctor !== 'function') return null;
+  const key = locale || '';
+  const cached = segmenterCache.get(key);
+  if (cached) return cached;
+  try {
+    const created = new ctor(locale || undefined, { granularity: 'word' });
+    segmenterCache.set(key, created);
+    return created;
+  } catch {
+    return null;
+  }
+}
+
+/** 主子标签（小写，按 '-' 或 '_' 切开的第一段）属于中日韩或粤语。 */
+export function isCjkSummaryTarget(targetLang: string): boolean {
+  const primary = String(targetLang || '')
+    .trim()
+    .toLowerCase()
+    .split(/[-_]/)[0];
+  return CJK_PRIMARY_SUBTAGS.has(primary);
+}
+
+export function isSummaryWhitespace(ch: string): boolean {
+  return /^\s$/.test(ch);
+}
+
+/** 从 index 取出一个 Unicode 码点，不拆开代理对。 */
+export function nextSummaryCodePoint(
+  text: string,
+  index: number,
+): { ch: string; end: number } {
+  const cp = text.codePointAt(index) as number;
+  const width = cp > 0xffff ? 2 : 1;
+  return { ch: text.slice(index, index + width), end: index + width };
+}
+
+function countNonSpaceCodePoints(text: string): number {
+  let count = 0;
+  for (let i = 0; i < text.length; ) {
+    const step = nextSummaryCodePoint(text, i);
+    if (!isSummaryWhitespace(step.ch)) count += 1;
+    i = step.end;
+  }
+  return count;
+}
+
+function countWordsFallback(text: string): number {
+  const parts = text.trim().match(/\S+/g);
+  return parts ? parts.length : 0;
+}
+
+function countWords(text: string, targetLang: string): number {
+  const segmenter = summaryWordSegmenter(targetLang.trim());
+  if (!segmenter) return countWordsFallback(text);
+  let count = 0;
+  const parts = Array.from(segmenter.segment(text));
+  for (let i = 0; i < parts.length; i += 1) {
+    if (parts[i].isWordLike) count += 1;
+  }
+  return count;
+}
+
+/**
+ * 摘要长度。
+ * CJK 目标按 Unicode 码点计：先 trim，再去掉空白（含换行、全角空格）。
+ * 换行不计入，避免排版把篇幅撑过上限；一个代理对算一个码点。
+ * 其它目标按词计（Segmenter 的 isWordLike）。运行时没有 Segmenter 时按空白切分。
+ */
+export function measureSummary(text: string, targetLang: string): number {
+  const trimmed = String(text ?? '').trim();
+  if (!trimmed) return 0;
+  if (isCjkSummaryTarget(targetLang)) return countNonSpaceCodePoints(trimmed);
+  return countWords(trimmed, targetLang);
+}
+
 /** 空 / 空白 / 非字符串一律回落出厂稿。 */
 export function resolveSummaryPrompt(stored?: unknown): string {
   if (typeof stored !== 'string') return defaultSummaryPrompt;
