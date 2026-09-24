@@ -21,12 +21,15 @@ export function subtitleHealth(
   let readingCharacters = 0;
   const lengths = lines.map((line) => {
     let length = 0;
-    for (const segment of graphemes.segment(line)) {
+    const iterator = graphemes.segment(line)[Symbol.iterator]();
+    let item = iterator.next();
+    while (!item.done) {
       length++;
       // 阅读速度（CPS）衡量视线与认知负荷，空白字符（空格/换行/制表符）不作为阅读字数计算
-      if (!whitespace.test(segment.segment)) {
+      if (!whitespace.test(item.value.segment)) {
         readingCharacters++;
       }
+      item = iterator.next();
     }
     return length;
   });

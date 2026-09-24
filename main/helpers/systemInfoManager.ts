@@ -291,7 +291,7 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     const fasterWhisperInstalled = isRuntimeInstalled('faster-whisper');
     const fasterWhisperManifest = readEngineManifest('faster-whisper');
     const fasterWhisperVariant = normalizePyEngineVariant(
-      settingsSnapshot?.fasterWhisperEngineVariant,
+      fasterWhisperManifest?.variant,
     );
     const isGpuVariantSupported =
       process.platform === 'win32' || process.platform === 'linux';
