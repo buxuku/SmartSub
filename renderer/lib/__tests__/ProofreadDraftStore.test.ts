@@ -21,9 +21,10 @@ test('complete snapshots and cleared tombstones survive a fresh store with safe 
   expect(createProofreadDraftStore(directory).read(key)).toBe('{"version":1}');
   store.write(key, '{"version":2}');
   expect(createProofreadDraftStore(directory).read(key)).toBe('{"version":2}');
-  const files = fs.readdirSync(directory);
-  expect(files).toHaveLength(1);
+  const files = fs.readdirSync(directory).sort();
+  expect(files).toHaveLength(2);
   expect(files[0]).toMatch(/^[a-f0-9]{64}\.json$/);
+  expect(files[1]).toBe(`${files[0]}.key`);
   if (process.platform !== 'win32')
     expect(fs.statSync(path.join(directory, files[0])).mode & 0o777).toBe(
       0o600,
@@ -45,7 +46,10 @@ test.each(['writeFileSync', 'fsyncSync', 'renameSync'] as const)(
     expect(() => store.write(key, null)).toThrow('Disk failure');
     failure.mockRestore();
     expect(createProofreadDraftStore(directory).read(key)).toBe('previous');
-    expect(fs.readdirSync(directory)).toHaveLength(1);
+    const remaining = fs.readdirSync(directory).sort();
+    expect(remaining).toHaveLength(2);
+    expect(remaining[0]).toMatch(/^[a-f0-9]{64}\.json$/);
+    expect(remaining[1]).toBe(`${remaining[0]}.key`);
     store.write(key, 'retry');
     expect(createProofreadDraftStore(directory).read(key)).toBe('retry');
   },
