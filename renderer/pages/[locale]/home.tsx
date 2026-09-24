@@ -769,7 +769,7 @@ export default function LaunchpadPage() {
       </AlertDialog>
       {/* 窄屏：min-h-full，内容长时页面自然滚动；xl 双栏：h-full 锁定视口高度，
           最近任务在面板内滚动，右栏不再被超长列表撑高 */}
-      <div className="h-full overflow-auto">
+      <div className="h-full overflow-y-auto xl:overflow-hidden">
         <div className="flex min-h-full flex-col gap-2.5 p-3 xl:h-full">
           {draftError && (
             <div
@@ -1065,7 +1065,7 @@ export default function LaunchpadPage() {
                 </div>
               </Panel>
 
-              <Panel className="min-h-[240px] flex-1">
+              <Panel className="min-h-0 flex-1">
                 <PanelHeader
                   title={t('recentTasks')}
                   meta={
@@ -1131,7 +1131,7 @@ export default function LaunchpadPage() {
             </div>
 
             {/* 右栏固定三模块（环境+快捷入口+上手），矮窗口装不下时列内滚动 */}
-            <div className="flex min-h-0 min-w-0 flex-col gap-2.5 xl:overflow-y-auto">
+            <div className="flex min-h-0 min-w-0 flex-col gap-2 xl:overflow-y-auto">
               {/* 常显仪表不被压缩，剩余高度交给快速上手 */}
               <EnvReadiness
                 className="flex-none"
@@ -1143,28 +1143,28 @@ export default function LaunchpadPage() {
                 行式布局带图标 chip + 名称 + 一句话说明，可见度与配方卡对齐但不抢「开始创作」主动线 */}
               <Panel className="hidden flex-none xl:flex">
                 <PanelHeader title={t('quickLinks.title')} />
-                <div className="flex flex-col py-1">
+                <div className="flex flex-col gap-0.5 p-1.5 pt-0">
                   {QUICK_LINKS.map((tool) => {
                     const ToolIcon = tool.icon;
                     return (
                       <Link
                         key={tool.key}
                         href={`/${localeStr}/${tool.href}`}
-                        className="group flex items-center gap-2.5 px-3 py-1.5 transition-colors hover:bg-accent/60"
+                        className="group flex h-10 items-center gap-2.5 rounded-lg px-2.5 transition-colors hover:bg-accent/60"
                       >
                         <span
                           className={cn(
-                            'flex h-8 w-8 flex-none items-center justify-center rounded-lg transition-transform duration-200 group-hover:scale-105',
+                            'flex h-7.5 w-7.5 flex-none items-center justify-center rounded-lg transition-transform duration-200 group-hover:scale-105',
                             tool.chip,
                           )}
                         >
-                          <ToolIcon className="h-[18px] w-[18px]" />
+                          <ToolIcon className="h-4 w-4" />
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[12.5px] font-medium leading-tight">
                             {t(`card.${tool.key}`)}
                           </span>
-                          <span className="mt-0.5 block truncate text-[11px] leading-tight text-muted-foreground">
+                          <span className="mt-0.5 block truncate text-[10.5px] leading-tight text-muted-foreground">
                             {t(`quickLinks.${tool.key}Hint`)}
                           </span>
                         </span>

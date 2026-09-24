@@ -55,13 +55,16 @@ describe('AiAssistantGuide', () => {
     expect(screen.getByText('aiGuide.title')).toBeInTheDocument();
     expect(screen.getByText('aiGuide.desc')).toBeInTheDocument();
     expect(
-      screen.getByText('aiGuide.painPoints.modelSelection.title'),
+      screen.getByText('aiGuide.painPoints.modelSelection'),
     ).toBeInTheDocument();
     expect(
-      screen.getByText('aiGuide.painPoints.paramTuning.title'),
+      screen.getByText('aiGuide.painPoints.paramTuning'),
     ).toBeInTheDocument();
     expect(
-      screen.getByText('aiGuide.painPoints.omnipresent.title'),
+      screen.getByText('aiGuide.painPoints.troubleshooting'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('aiGuide.painPoints.omnipresent'),
     ).toBeInTheDocument();
 
     await waitFor(() => {
@@ -89,8 +92,6 @@ describe('AiAssistantGuide', () => {
       ).toBeInTheDocument();
     });
 
-    expect(screen.getByText('aiGuide.notConfigured.desc')).toBeInTheDocument();
-
     const configLink = screen.getByRole('link', {
       name: /aiGuide\.notConfigured\.action/,
     });
@@ -100,6 +101,8 @@ describe('AiAssistantGuide', () => {
       name: /aiGuide\.openAssistant/,
     });
     expect(openButton).toBeInTheDocument();
+    expect(openButton).toHaveAttribute('data-assistant-toggle');
+    expect(openButton).toHaveAttribute('aria-expanded', 'false');
   });
 
   test('shows ready state and toggles assistant when AI service is configured', async () => {
@@ -137,19 +140,22 @@ describe('AiAssistantGuide', () => {
     const toggleBtn = screen.getByRole('button', {
       name: /aiGuide\.openAssistant/,
     });
+    expect(toggleBtn).toHaveAttribute('data-assistant-toggle');
+    expect(toggleBtn).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(toggleBtn);
 
     expect(screen.getByTestId('assistant-state')).toHaveTextContent('open');
 
     // Button label reflects open state
-    expect(
-      screen.getByRole('button', { name: /aiGuide\.closeAssistant/ }),
-    ).toBeInTheDocument();
+    const closeBtn = screen.getByRole('button', {
+      name: /aiGuide\.closeAssistant/,
+    });
+    expect(closeBtn).toBeInTheDocument();
+    expect(closeBtn).toHaveAttribute('data-assistant-toggle');
+    expect(closeBtn).toHaveAttribute('aria-expanded', 'true');
 
     // Clicking again closes it
-    fireEvent.click(
-      screen.getByRole('button', { name: /aiGuide\.closeAssistant/ }),
-    );
+    fireEvent.click(closeBtn);
     expect(screen.getByTestId('assistant-state')).toHaveTextContent('closed');
   });
 
