@@ -22,6 +22,7 @@
   "distilLabel": "Distil",
   "fasterWhisperModelTip": "faster-whisper uses HuggingFace CT2 models, stored separately from ggml models",
   "fasterWhisperModelsPath": "faster-whisper model path",
+  "fasterWhisperModelsPathHint": "Models are saved in the hub subfolder of this path, so to share another app's HuggingFace cache, choose the folder that contains hub (its HF_HOME), not hub itself.",
   "modelManagement": "Model Management",
   "format": {
     "ggml": "whisper.cpp (ggml)",
