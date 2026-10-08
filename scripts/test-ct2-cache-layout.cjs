@@ -8,10 +8,13 @@
  * so a cache shared with other HuggingFace tools was rewritten as soon as the
  * path was set and the UI refreshed.
  *
- * The same rule covers deleting: SmartSub only removes what it created, which
- * is everything under hub/ plus its own app-data cache. A models--* folder at
- * the root of the model path is never deleted; deleteCt2Model reports it back
- * so the UI can explain why the model is still listed.
+ * Deleting follows the model, not who created the folder: pointing the model
+ * path at a shared cache is a deliberate choice, and the user confirms every
+ * delete. deleteCt2Model therefore removes that one models--<repo> folder
+ * wherever SmartSub finds it (under hub/, at the root of the model path, in its
+ * app-data cache). Other repos in the same cache and HuggingFace's .locks
+ * folder are never touched, and an id outside the catalog never reaches the
+ * file system.
  *
  * Drives the real modelCatalog.ts and fasterWhisperModelDownloader.ts together
  * with the real storagePaths, snapshot validation and faster-whisper catalog.
@@ -253,59 +256,88 @@ function run() {
     },
   );
 
-  step('deleting a model leaves a shared HuggingFace cache alone', () => {
-    modelRoot = newModelRoot('delete-shared');
-    makeSharedHfCache(modelRoot);
-    const before = treeOf(modelRoot);
+  step(
+    'deleting a model in a shared HuggingFace cache removes that model only',
+    () => {
+      modelRoot = newModelRoot('delete-shared');
+      makeSharedHfCache(modelRoot);
+      const neighbours = [
+        'models--sentence-transformers--all-MiniLM-L6-v2',
+        'models--openai--clip-vit-base-patch32',
+        '.locks',
+      ].map((name) => [name, treeOf(path.join(modelRoot, name))]);
 
-    const result = downloader.deleteCt2Model('large-v3');
+      downloader.deleteCt2Model('large-v3');
 
-    assertTreeUntouched(
-      before,
-      modelRoot,
-      'a models--* folder SmartSub did not create must survive "delete"',
-    );
-    assert.deepEqual(result.removed, []);
-    assert.deepEqual(
-      result.skipped,
-      [path.join(modelRoot, LARGE_V3)],
-      'the caller is told which folder was kept, so the UI can say why',
-    );
-  });
+      assert.equal(
+        fs.existsSync(path.join(modelRoot, LARGE_V3)),
+        false,
+        'the user chose this folder and confirmed the delete, so the model goes',
+      );
+      for (const [name, before] of neighbours) {
+        assertTreeUntouched(
+          before,
+          path.join(modelRoot, name),
+          `${name} belongs to another tool and stays`,
+        );
+      }
+      assert.deepEqual(
+        catalog.getFasterWhisperModelsInstalled(),
+        [],
+        'the model list stops reporting a model that was deleted',
+      );
+    },
+  );
 
   step(
-    "deleting removes SmartSub's own copy under hub/ and nothing else",
+    'deleting removes every copy of the model, under hub/ and at the root',
     () => {
       modelRoot = newModelRoot('delete-both');
       const hub = path.join(modelRoot, 'hub');
-      // Same model twice: one at the root that is not SmartSub's, one it downloaded.
+      // Same model twice: the root one is what the import used to write.
       makeCt2Repo(modelRoot, LARGE_V3, 'imported');
       makeCt2Repo(hub, LARGE_V3);
       makeCt2Repo(hub, BASE);
-      const rootCopy = treeOf(path.join(modelRoot, LARGE_V3));
       const otherModel = treeOf(path.join(hub, BASE));
 
-      const result = downloader.deleteCt2Model('large-v3');
+      downloader.deleteCt2Model('large-v3');
 
+      assert.equal(fs.existsSync(path.join(hub, LARGE_V3)), false);
       assert.equal(
-        fs.existsSync(path.join(hub, LARGE_V3)),
+        fs.existsSync(path.join(modelRoot, LARGE_V3)),
         false,
-        'the copy under hub/ is what "delete" removes',
-      );
-      assertTreeUntouched(
-        rootCopy,
-        path.join(modelRoot, LARGE_V3),
-        'the root-level copy is not SmartSub\u2019s to delete',
+        'a copy left behind would keep the model listed as installed',
       );
       assertTreeUntouched(
         otherModel,
         path.join(hub, BASE),
-        'other models under hub/ stay',
+        'other models stay',
       );
-      assert.deepEqual(result.removed, [path.join(hub, LARGE_V3)]);
-      assert.deepEqual(result.skipped, [path.join(modelRoot, LARGE_V3)]);
+      assert.deepEqual(catalog.getFasterWhisperModelsInstalled(), ['base']);
     },
   );
+
+  step('an id outside the model catalog never reaches the file system', () => {
+    modelRoot = newModelRoot('delete-unknown');
+    makeSharedHfCache(modelRoot);
+    const before = treeOf(modelRoot);
+
+    // Includes the exact folder name of another tool's repo: only catalog ids
+    // map to a folder, so naming the folder instead of the model deletes nothing.
+    for (const id of [
+      '../hub',
+      'models--openai--clip-vit-base-patch32',
+      'openai/clip-vit-base-patch32',
+      '',
+    ]) {
+      assert.throws(
+        () => downloader.deleteCt2Model(id),
+        /Unknown faster-whisper model/,
+        `delete(${JSON.stringify(id)})`,
+      );
+    }
+    assertTreeUntouched(before, modelRoot, 'a made-up id removes nothing');
+  });
 
   step(
     'deleting still cleans the engine cache SmartSub keeps in app data',

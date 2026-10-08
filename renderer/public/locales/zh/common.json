@@ -138,7 +138,6 @@
   "downloading": "下载中",
   "confirmDeleteModel": "确认删除该模型？",
   "deleteModelDesc": "删除之后，如果您需要再次使用该模型，需要重新下载。",
-  "deleteModelKeptExternal": "未删除：该模型位于 SmartSub 不管理的目录（{{path}}），可能与其他 HuggingFace 软件共用。如果确实不再需要，请自行在该目录中删除。",
   "cancel": "取消",
   "delete": "删除",
   "download": "下载",
