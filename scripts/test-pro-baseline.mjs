@@ -28,6 +28,7 @@ const scripts = [
   'test:task-project',
   'test:task-readiness',
   'test:task-submission',
+  'test:task-defaults',
   'test:scenario-presets',
   'test:pipeline',
   'test:recipes',

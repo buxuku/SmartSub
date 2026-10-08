@@ -1,7 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { isEqual } from 'lodash';
-import { assertTaskConfig, omitTaskManuscript } from '../../types/taskConfig';
+import {
+  assertTaskConfig,
+  omitTaskManuscript,
+  toRememberedTaskDefaults,
+} from '../../types/taskConfig';
 import {
   applyScenarioPreset,
   type ScenarioPresetId,
@@ -28,7 +32,27 @@ export async function readTaskDefaults(): Promise<Record<string, any>> {
   return omitTaskManuscript(config);
 }
 
-/** Task edits belong to a project/wizard draft, never to global preferences. */
+/**
+ * The one explicit moment settings leave a task and become the defaults of the next new
+ * task ("last used"): call it only after the main process acknowledged a task the user
+ * started from an editable draft. Resolves only once the defaults are durably saved.
+ */
+export async function rememberTaskDefaults(
+  config: Record<string, any>,
+): Promise<void> {
+  const result = await window.ipc.invoke(
+    'rememberTaskDefaults',
+    toRememberedTaskDefaults(config),
+  );
+  if (result?.success !== true)
+    throw new Error(result?.error || 'TASK_DEFAULTS_NOT_SAVED');
+}
+
+/**
+ * Task edits belong to a project/wizard draft: editing never writes global preferences,
+ * and a failed read never publishes defaults. Only `rememberTaskDefaults` does, once, when
+ * the user starts the task.
+ */
 export default function useUnifiedTaskConfig(
   options: UseUnifiedTaskConfigOptions = {},
 ) {

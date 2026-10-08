@@ -1776,6 +1776,7 @@ export default function TaskPage() {
             }}
             onStatusChange={handleStatusChange}
             onTaskDispatched={handleTaskDispatched}
+            rememberDefaults={!configSnapshot}
             autoStart={
               autoStartPending &&
               configLoaded &&

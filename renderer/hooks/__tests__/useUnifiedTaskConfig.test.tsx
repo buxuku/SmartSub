@@ -1,6 +1,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
-import useUnifiedTaskConfig from '../useUnifiedTaskConfig';
+import useUnifiedTaskConfig, {
+  rememberTaskDefaults,
+} from '../useUnifiedTaskConfig';
 
 const config = { sourceLanguage: 'en', targetLanguage: 'zh' };
 const deferred = () => {
@@ -124,4 +126,42 @@ test('a response after unmount cannot publish form state', async () => {
   unmount();
   await act(async () => pending.resolve(config));
   expect(reset).not.toHaveBeenCalled();
+});
+
+describe('rememberTaskDefaults', () => {
+  test('sends only the reusable configuration through the acknowledged channel', async () => {
+    invoke.mockResolvedValueOnce({ success: true });
+    await rememberTaskDefaults({
+      sourceLanguage: 'ja',
+      taskType: 'generateOnly',
+      manuscriptPath: '/project/script.txt',
+    });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith('rememberTaskDefaults', {
+      sourceLanguage: 'ja',
+    });
+    expect(window.ipc.send).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [undefined, 'TASK_DEFAULTS_NOT_SAVED'],
+    [{}, 'TASK_DEFAULTS_NOT_SAVED'],
+    [{ success: false }, 'TASK_DEFAULTS_NOT_SAVED'],
+    [{ success: false, error: 'EACCES' }, 'EACCES'],
+  ])(
+    'an unacknowledged save (%j) is reported, never assumed',
+    async (response, message) => {
+      invoke.mockResolvedValueOnce(response);
+      await expect(
+        rememberTaskDefaults({ sourceLanguage: 'ja' }),
+      ).rejects.toThrow(message);
+    },
+  );
+
+  test('a configuration with nothing reusable never reaches the main process', async () => {
+    await expect(
+      rememberTaskDefaults({ taskType: 'generateOnly' }),
+    ).rejects.toThrow('INVALID_TASK_DEFAULTS');
+    expect(invoke).not.toHaveBeenCalled();
+  });
 });

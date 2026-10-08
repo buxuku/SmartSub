@@ -8,7 +8,10 @@ import type { TaskTypeDef } from 'lib/taskTypes';
 import { getFileStages, isFileDone } from './tasks/stageUtils';
 import { useHotkeys } from 'hooks/useHotkeys';
 import { useTaskSubmission } from 'hooks/useTaskSubmission';
-import { buildTaskSnapshotFromConfig } from 'hooks/useUnifiedTaskConfig';
+import {
+  buildTaskSnapshotFromConfig,
+  rememberTaskDefaults,
+} from 'hooks/useUnifiedTaskConfig';
 import { getRefineValidationErrorMessage } from 'lib/subtitleRefineValidation';
 import { validateSummaryProvider } from '../../types/summaryProvider';
 
@@ -24,6 +27,11 @@ interface TaskControlsProps {
   onStatusChange?: (status: string) => void;
   /** 任务成功派发时回传本轮配置；需要固定快照的任务可立即切换为只读展示。 */
   onTaskDispatched?: (snapshot: any) => void;
+  /**
+   * 任务启动并被确认后，是否把本次配置记为「新任务默认值」（上次用什么，下次默认什么）。
+   * 仅供可编辑草稿开启；固定快照的重启只是重放旧配置，不应改写默认值。
+   */
+  rememberDefaults?: boolean;
   autoStart?: boolean;
   ready?: boolean;
   beforeStart?: () => Promise<boolean>;
@@ -40,6 +48,7 @@ const TaskControls = ({
   onOpenRefine,
   onStatusChange,
   onTaskDispatched,
+  rememberDefaults = false,
   autoStart,
   ready = true,
   beforeStart,
@@ -161,6 +170,7 @@ const TaskControls = ({
       }
       if (outcome.status !== 'accepted') return;
       rememberSelection(snapshot);
+      if (rememberDefaults) rememberConfig(outcome.snapshot);
       onTaskDispatched?.(outcome.snapshot);
       const status = await window.ipc.invoke('getTaskStatus', projectId);
       setTaskStatus(status || 'idle');
@@ -186,6 +196,14 @@ const TaskControls = ({
           console.error('Failed to remember transcription selection:', error),
         );
     }
+  };
+
+  // 「上次用什么,下次默认什么」:任务被主进程确认后才记忆。尽力而为——失败只记日志,
+  // 绝不影响已经启动的任务。
+  const rememberConfig = (accepted: Record<string, any>) => {
+    void rememberTaskDefaults(accepted).catch((error) =>
+      console.error('Failed to remember task defaults:', error),
+    );
   };
 
   // ?autostart=1 进入页面时自动开始一次(仅 idle 态,ref 防 StrictMode/重渲染重复触发)

@@ -27,7 +27,10 @@ import { rebuildAppMenu } from './menu';
 import { shutdownPythonRuntime } from './pythonRuntime';
 import { applyProxyFromSettings } from './network/proxyManager';
 import { syncTaskPowerSaveBlocker } from './powerSaveManager';
-import { omitTaskManuscript } from '../../types/taskConfig';
+import {
+  omitTaskManuscript,
+  toRememberedTaskDefaults,
+} from '../../types/taskConfig';
 import {
   isFactoryDefaultGgmlPath,
   resolveModelRoot,
@@ -235,6 +238,13 @@ export function setupStoreHandlers() {
   // 用户配置相关处理
   ipcMain.on('setUserConfig', async (_event, config) => {
     store.set('userConfig', omitTaskManuscript(config));
+  });
+
+  // 任务页启动任务并被确认后，把该任务的可复用配置记为新任务默认值（"上次使用"）。
+  // 这是唯一的隐式写入点：草稿编辑、读取失败、向导与重试都不会改动默认值。
+  ipcMain.handle('rememberTaskDefaults', async (_event, config) => {
+    store.set('userConfig', toRememberedTaskDefaults(config));
+    return { success: true };
   });
 
   ipcMain.handle('getUserConfig', async () => {
