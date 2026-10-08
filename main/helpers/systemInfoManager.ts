@@ -427,9 +427,9 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
   });
 
   ipcMain.handle('deleteCt2Model', async (_event, modelId) => {
-    const { skipped } = deleteCt2Model(modelId);
+    deleteCt2Model(modelId);
     await shutdownPythonRuntime();
-    return { success: true, skipped };
+    return true;
   });
 
   ipcMain.handle(

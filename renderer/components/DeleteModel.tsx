@@ -12,7 +12,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Trash2, X } from 'lucide-react';
 import { useTranslation } from 'next-i18next';
-import { toast } from 'sonner';
 import type { ModelDownloadFormat } from '@/components/DownModel';
 
 interface DeleteModelProps {
@@ -33,16 +32,8 @@ const DeleteModel = ({
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault();
     const channel = format === 'ct2' ? 'deleteCt2Model' : 'deleteModel';
-    const result = await window?.ipc?.invoke(channel, modelName);
+    await window?.ipc?.invoke(channel, modelName);
     setVisibility(false);
-    // 模型路径根下不是 SmartSub 创建的 models--*（可能与其他软件共用的缓存）不会被删。
-    // 列表刷新后它仍显示为已安装，这里说明原因，避免“点了删除却没反应”。
-    const kept: string[] = result?.skipped ?? [];
-    if (kept.length > 0) {
-      toast.warning(t('deleteModelKeptExternal', { path: kept.join(', ') }), {
-        duration: 8000,
-      });
-    }
     callBack?.();
   };
   return (

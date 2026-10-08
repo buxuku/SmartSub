@@ -633,52 +633,37 @@ export function getFasterWhisperModelDownloader(
   return ct2DownloaderInstance;
 }
 
-export interface Ct2DeleteResult {
-  /** 已删除的目录。 */
-  removed: string[];
-  /** 存在但有意保留的目录，调用方据此告知用户。 */
-  skipped: string[];
-}
-
 /**
- * 删除一个 CT2 模型，只动 SmartSub 自己创建的位置：模型路径下的 hub/（下载与导入都
- * 写这里），以及应用数据目录里引擎早期的缓存。
+ * 删除一个 CT2 模型：不论它在哪个位置，都真实删除。
  *
- * 直接位于模型路径根下的 models--* 不删：SmartSub 从不在那里写入，常见来源是与其他
- * HuggingFace 软件共用的缓存（#519）。读取侧仍把它识别为已安装，所以把路径放进
- * skipped 交给调用方告知用户，是否清理由用户到该目录里自行决定。
+ * 位置包括模型路径下的 hub/（下载与导入写这里）、模型路径本身（路径直接指向
+ * HuggingFace 缓存时，models--* 就在这里），以及应用数据目录里引擎早期的缓存。
+ *
+ * 不区分目录是不是 SmartSub 创建的：用户把模型路径指向与其他软件共用的缓存，是有意
+ * 让 SmartSub 管理其中的模型，点击删除并确认后就应该真的删掉，否则列表里会留着一个
+ * 删不掉的模型（#519）。影响范围只是这个模型自己的 models--<repo> 目录：id 必须是模型
+ * 目录里的条目（否则 toCt2CacheDirName 直接抛错），同目录下别的仓库和 HuggingFace 的
+ * .locks 都不会被碰。
  */
-export function deleteCt2Model(modelId: string): Ct2DeleteResult {
+export function deleteCt2Model(modelId: string): void {
   const cacheDirName = toCt2CacheDirName(modelId);
-  const ownedRoots = [
+  const roots = [
     getFasterWhisperHubDir(),
+    getFasterWhisperModelsPath(),
     path.join(app.getPath('userData'), 'py-engine-cache', 'hub'),
     path.join(app.getPath('userData'), 'py-engine-cache'),
   ];
 
-  const removed: string[] = [];
-  for (const root of ownedRoots) {
+  for (const root of roots) {
     const cacheDir = path.join(root, cacheDirName);
     if (fs.existsSync(cacheDir)) {
       fs.rmSync(cacheDir, { recursive: true, force: true });
-      removed.push(cacheDir);
       logMessage(`Deleted CT2 model cache: ${cacheDir}`, 'info');
     }
-  }
-
-  const skipped: string[] = [];
-  const externalDir = path.join(getFasterWhisperModelsPath(), cacheDirName);
-  if (fs.existsSync(externalDir)) {
-    skipped.push(externalDir);
-    logMessage(
-      `Kept CT2 model cache not created by SmartSub: ${externalDir}`,
-      'info',
-    );
   }
 
   const state = readDownloadState();
   if (state?.modelId === modelId) {
     saveDownloadState(null);
   }
-  return { removed, skipped };
 }
