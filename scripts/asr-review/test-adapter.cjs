@@ -9,14 +9,20 @@ const root = path.resolve(__dirname, '../..');
 const output = fs.mkdtempSync(
   path.join(os.tmpdir(), 'smartsub-review-adapter-'),
 );
-let runtimeResult, abortBeforeResult, paramsSent;
+let runtimeResult, abortBeforeResult, paramsSent, timeline;
 const originalLoad = Module._load;
 const manager = {
   ensureStarted: async () => ({ engines: { faster_whisper: true } }),
   cancel: () => {},
   transcribe: (params, handlers) => {
     paramsSent = params;
+    // The sidecar's real order: recognition progress, the review starts, then
+    // the review reports plain progress while it scans the audio.
+    timeline.push('progress 10');
+    handlers.onProgress?.(10);
     handlers.onReview?.({ stage: 'checking', completed: 0, total: 0 });
+    timeline.push('progress 91');
+    handlers.onProgress?.(91);
     return {
       id: 'review-test',
       result: Promise.resolve().then(() => {
@@ -128,6 +134,7 @@ async function run(id, signal) {
   };
   let diagnostic;
   const events = [];
+  timeline = [];
   await adapter.transcribe({
     file,
     formData: {
@@ -137,11 +144,12 @@ async function run(id, signal) {
     },
     signal,
     event: { sender: { send: (...e) => events.push(e) } },
+    onActivity: (a) => timeline.push(a.phase),
     onDiagnostics: (d) => {
       diagnostic = d;
     },
   });
-  return { file, diagnostic, events };
+  return { file, diagnostic, events, timeline };
 }
 (async () => {
   runtimeResult = good;
@@ -155,6 +163,13 @@ async function run(id, signal) {
   assert.equal(first.file.speechReviewSummary.changes[0].text, 'Recovered.');
   assert.equal(first.file.speechReviewStage, undefined);
   assert.equal(first.diagnostic.reviewCompleted, true);
+  // Recognition progress is recognition activity; once the review has started,
+  // every progress event must keep refreshing the review activity instead.
+  // Otherwise the UI reports "no update" after a minute of a long audio scan.
+  const nextPhase = (marker) =>
+    first.timeline[first.timeline.indexOf(marker) + 1];
+  assert.equal(nextPhase('progress 10'), 'recognizing');
+  assert.equal(nextPhase('progress 91'), 'reviewing');
   const second = await run('task-b');
   assert.notEqual(
     first.file.speechReviewOriginalFile,

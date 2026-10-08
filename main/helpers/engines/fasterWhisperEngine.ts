@@ -276,7 +276,11 @@ async function transcribeFasterWhisper(
       },
       onProgress: (percent) => {
         if (signal?.aborted) return;
-        if (!file.speechReviewStage) ctx.onActivity?.({ phase: 'recognizing' });
+        // 语音复核期间（长音频的 VAD 扫描尤其久）sidecar 只发 progress、不发 review，
+        // 这里同样要刷新活动时间，否则 60 秒后界面会提示「暂未收到新的处理进度」。
+        ctx.onActivity?.({
+          phase: file.speechReviewStage ? 'reviewing' : 'recognizing',
+        });
         if (!firstProgressLogged) {
           firstProgressLogged = true;
           logMessage(
