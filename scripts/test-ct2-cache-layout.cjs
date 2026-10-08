@@ -8,8 +8,14 @@
  * so a cache shared with other HuggingFace tools was rewritten as soon as the
  * path was set and the UI refreshed.
  *
- * Drives the real modelCatalog.ts together with the real storagePaths, snapshot
- * validation and faster-whisper catalog. Only electron, the electron-store
+ * The same rule covers deleting: SmartSub only removes what it created, which
+ * is everything under hub/ plus its own app-data cache. A models--* folder at
+ * the root of the model path is never deleted; deleteCt2Model reports it back
+ * so the UI can explain why the model is still listed.
+ *
+ * Drives the real modelCatalog.ts and fasterWhisperModelDownloader.ts together
+ * with the real storagePaths, snapshot validation and faster-whisper catalog.
+ * Only electron, the electron-store
  * backed storeManager and whisper.ts (a native-addon import chain that
  * modelCatalog only needs for the ggml path) are replaced. Every scenario gets
  * its own model path, so a failure never hides the rest.
@@ -137,7 +143,8 @@ function treeOf(dir, prefix = '') {
 }
 
 function assertTreeUntouched(before, dir, message) {
-  const after = treeOf(dir);
+  // A folder that was deleted outright is the clearest "removed", not an ENOENT.
+  const after = fs.existsSync(dir) ? treeOf(dir) : [];
   const gone = before.filter((line) => !after.includes(line));
   const appeared = after.filter((line) => !before.includes(line));
   const show = (lines) => lines.slice(0, 3).join(', ') || '-';
@@ -161,6 +168,7 @@ function lookUp(catalog, modelId) {
 
 function run() {
   const catalog = require('../main/helpers/modelCatalog.ts');
+  const downloader = require('../main/helpers/fasterWhisperModelDownloader.ts');
 
   step('a shared HuggingFace cache is left exactly as it was', () => {
     modelRoot = newModelRoot('shared');
@@ -242,6 +250,87 @@ function run() {
       );
       assert.equal(catalog.resolveCt2ModelSnapshotDir('base'), hubSnapshot);
       assertTreeUntouched(before, modelRoot, 'neither layout is rewritten');
+    },
+  );
+
+  step('deleting a model leaves a shared HuggingFace cache alone', () => {
+    modelRoot = newModelRoot('delete-shared');
+    makeSharedHfCache(modelRoot);
+    const before = treeOf(modelRoot);
+
+    const result = downloader.deleteCt2Model('large-v3');
+
+    assertTreeUntouched(
+      before,
+      modelRoot,
+      'a models--* folder SmartSub did not create must survive "delete"',
+    );
+    assert.deepEqual(result.removed, []);
+    assert.deepEqual(
+      result.skipped,
+      [path.join(modelRoot, LARGE_V3)],
+      'the caller is told which folder was kept, so the UI can say why',
+    );
+  });
+
+  step(
+    "deleting removes SmartSub's own copy under hub/ and nothing else",
+    () => {
+      modelRoot = newModelRoot('delete-both');
+      const hub = path.join(modelRoot, 'hub');
+      // Same model twice: one at the root that is not SmartSub's, one it downloaded.
+      makeCt2Repo(modelRoot, LARGE_V3, 'imported');
+      makeCt2Repo(hub, LARGE_V3);
+      makeCt2Repo(hub, BASE);
+      const rootCopy = treeOf(path.join(modelRoot, LARGE_V3));
+      const otherModel = treeOf(path.join(hub, BASE));
+
+      const result = downloader.deleteCt2Model('large-v3');
+
+      assert.equal(
+        fs.existsSync(path.join(hub, LARGE_V3)),
+        false,
+        'the copy under hub/ is what "delete" removes',
+      );
+      assertTreeUntouched(
+        rootCopy,
+        path.join(modelRoot, LARGE_V3),
+        'the root-level copy is not SmartSub\u2019s to delete',
+      );
+      assertTreeUntouched(
+        otherModel,
+        path.join(hub, BASE),
+        'other models under hub/ stay',
+      );
+      assert.deepEqual(result.removed, [path.join(hub, LARGE_V3)]);
+      assert.deepEqual(result.skipped, [path.join(modelRoot, LARGE_V3)]);
+    },
+  );
+
+  step(
+    'deleting still cleans the engine cache SmartSub keeps in app data',
+    () => {
+      modelRoot = newModelRoot('delete-app-data');
+      // The stubbed userData is `base`; this is where the engine cached models
+      // before SmartSub had its own downloader.
+      const engineCache = path.join(base, 'py-engine-cache');
+      fs.rmSync(engineCache, { recursive: true, force: true });
+      makeCt2Repo(path.join(engineCache, 'hub'), LARGE_V3);
+      makeCt2Repo(engineCache, LARGE_V3);
+      makeCt2Repo(engineCache, BASE);
+
+      downloader.deleteCt2Model('large-v3');
+
+      assert.equal(
+        fs.existsSync(path.join(engineCache, 'hub', LARGE_V3)),
+        false,
+      );
+      assert.equal(fs.existsSync(path.join(engineCache, LARGE_V3)), false);
+      assert.ok(
+        fs.existsSync(path.join(engineCache, BASE)),
+        'only the model that was asked for goes',
+      );
+      fs.rmSync(engineCache, { recursive: true, force: true });
     },
   );
 }

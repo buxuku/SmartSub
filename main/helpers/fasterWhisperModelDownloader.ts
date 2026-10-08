@@ -7,6 +7,7 @@ import { logMessage } from './storeManager';
 import type { ModelDownloadProgress } from './modelDownloader';
 import {
   getCt2ModelCacheDir,
+  getFasterWhisperHubDir,
   getFasterWhisperModelsPath,
   resolveCt2ModelSnapshotDir,
   toCt2CacheDirName,
@@ -632,25 +633,52 @@ export function getFasterWhisperModelDownloader(
   return ct2DownloaderInstance;
 }
 
-export function deleteCt2Model(modelId: string): void {
+export interface Ct2DeleteResult {
+  /** 已删除的目录。 */
+  removed: string[];
+  /** 存在但有意保留的目录，调用方据此告知用户。 */
+  skipped: string[];
+}
+
+/**
+ * 删除一个 CT2 模型，只动 SmartSub 自己创建的位置：模型路径下的 hub/（下载与导入都
+ * 写这里），以及应用数据目录里引擎早期的缓存。
+ *
+ * 直接位于模型路径根下的 models--* 不删：SmartSub 从不在那里写入，常见来源是与其他
+ * HuggingFace 软件共用的缓存（#519）。读取侧仍把它识别为已安装，所以把路径放进
+ * skipped 交给调用方告知用户，是否清理由用户到该目录里自行决定。
+ */
+export function deleteCt2Model(modelId: string): Ct2DeleteResult {
   const cacheDirName = toCt2CacheDirName(modelId);
-  const roots = [
-    path.join(getFasterWhisperModelsPath(), 'hub'),
-    getFasterWhisperModelsPath(),
+  const ownedRoots = [
+    getFasterWhisperHubDir(),
     path.join(app.getPath('userData'), 'py-engine-cache', 'hub'),
     path.join(app.getPath('userData'), 'py-engine-cache'),
   ];
 
-  for (const root of roots) {
+  const removed: string[] = [];
+  for (const root of ownedRoots) {
     const cacheDir = path.join(root, cacheDirName);
     if (fs.existsSync(cacheDir)) {
       fs.rmSync(cacheDir, { recursive: true, force: true });
+      removed.push(cacheDir);
       logMessage(`Deleted CT2 model cache: ${cacheDir}`, 'info');
     }
+  }
+
+  const skipped: string[] = [];
+  const externalDir = path.join(getFasterWhisperModelsPath(), cacheDirName);
+  if (fs.existsSync(externalDir)) {
+    skipped.push(externalDir);
+    logMessage(
+      `Kept CT2 model cache not created by SmartSub: ${externalDir}`,
+      'info',
+    );
   }
 
   const state = readDownloadState();
   if (state?.modelId === modelId) {
     saveDownloadState(null);
   }
+  return { removed, skipped };
 }
