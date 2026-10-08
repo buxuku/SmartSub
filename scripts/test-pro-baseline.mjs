@@ -35,6 +35,7 @@ const scripts = [
   'test:toolbox',
   'test:video-download',
   'test:download-pipeline',
+  'test:ct2-cache-layout',
   'test:refine',
   'test:speaker-diarization',
   'test:manuscript',
