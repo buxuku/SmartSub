@@ -10,6 +10,7 @@ import time
 import wave
 
 from review_core import (
+    WordIndexCache,
     agree_edits,
     apply_edit,
     confidence,
@@ -275,9 +276,12 @@ def review(model, result, params, emit, cancelled):
     deferred_timing, skipped = [], []
     recovered, retimed, checked, unresolved = [], [], [], []
     total = min(24, len(candidates))
+    # Every candidate, including those that are only recorded as skipped, needs
+    # the words around it. Index the transcript once per repair, not per window.
+    word_indexes = WordIndexCache()
     for candidate in candidates:
         check_cancel(cancelled)
-        a, b = window_for(candidate, duration, segments=current)
+        a, b = window_for(candidate, duration, segments=word_indexes.get(current))
         if len(checked) >= 24 or consumed + (b - a) > budget:
             skipped.append({**candidate, "reason": "candidate_limit" if len(checked) >= 24 else "audio_budget"})
             if candidate["kind"] == "speech" and not candidate.get("brief"):
@@ -316,7 +320,7 @@ def review(model, result, params, emit, cancelled):
                 continue
             proposal = propose_edit(current, first, candidate, speech, duration)
             if proposal:
-                c, d = window_for(candidate, duration, 2, current)
+                c, d = window_for(candidate, duration, 2, word_indexes.get(current))
                 reason = "budget"
                 independent = abs(c - a) + abs(d - b) >= 0.5
                 if not independent:
@@ -395,7 +399,7 @@ def review(model, result, params, emit, cancelled):
         reason = "unconfirmed"
         if timing:
             a, b = check["window"]
-            c, d = window_for(candidate, duration, 2, current)
+            c, d = window_for(candidate, duration, 2, word_indexes.get(current))
             independent = abs(c - a) + abs(d - b) >= .5
             reason = "budget" if independent else "context"
             if (independent and short_timing_confirmations < 4
