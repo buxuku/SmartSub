@@ -38,6 +38,7 @@ const scripts = [
   'test:refine',
   'test:speaker-diarization',
   'test:manuscript',
+  'test:audio-cache',
 ];
 
 for (const script of scripts) {
