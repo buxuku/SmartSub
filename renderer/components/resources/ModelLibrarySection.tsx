@@ -1258,6 +1258,9 @@ const ModelLibrarySection: React.FC<ModelLibrarySectionProps> = ({
                   </button>
                 </>
               )}
+              {isFasterWhisper && (
+                <p className="basis-full">{t('fasterWhisperModelsPathHint')}</p>
+              )}
             </div>
           )}
 
