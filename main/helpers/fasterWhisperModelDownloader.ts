@@ -634,18 +634,17 @@ export function getFasterWhisperModelDownloader(
 }
 
 /**
- * 删除一个 CT2 模型：不论它在哪个位置，都真实删除。
+ * 删除一个 CT2 模型时会动到的目录（只列实际存在的）：模型路径下的 hub/（下载与导入
+ * 写这里）、模型路径本身（路径直接指向 HuggingFace 缓存时，models--* 就在这里），
+ * 以及应用数据目录里引擎早期的缓存。
  *
- * 位置包括模型路径下的 hub/（下载与导入写这里）、模型路径本身（路径直接指向
- * HuggingFace 缓存时，models--* 就在这里），以及应用数据目录里引擎早期的缓存。
+ * 只读，不创建任何目录。删除确认框用它预览，deleteCt2Model 用它执行，保证“提示要删
+ * 的”和“真正删掉的”是同一份清单。
  *
- * 不区分目录是不是 SmartSub 创建的：用户把模型路径指向与其他软件共用的缓存，是有意
- * 让 SmartSub 管理其中的模型，点击删除并确认后就应该真的删掉，否则列表里会留着一个
- * 删不掉的模型（#519）。影响范围只是这个模型自己的 models--<repo> 目录：id 必须是模型
- * 目录里的条目（否则 toCt2CacheDirName 直接抛错），同目录下别的仓库和 HuggingFace 的
- * .locks 都不会被碰。
+ * 影响范围只是这个模型自己的 models--<repo> 目录：id 必须是模型目录里的条目（否则
+ * toCt2CacheDirName 直接抛错），同目录下别的仓库和 HuggingFace 的 .locks 都不在清单里。
  */
-export function deleteCt2Model(modelId: string): void {
+export function getCt2DeleteTargets(modelId: string): string[] {
   const cacheDirName = toCt2CacheDirName(modelId);
   const roots = [
     getFasterWhisperHubDir(),
@@ -653,13 +652,21 @@ export function deleteCt2Model(modelId: string): void {
     path.join(app.getPath('userData'), 'py-engine-cache', 'hub'),
     path.join(app.getPath('userData'), 'py-engine-cache'),
   ];
+  const dirs = new Set(roots.map((root) => path.join(root, cacheDirName)));
+  return [...dirs].filter((dir) => fs.existsSync(dir));
+}
 
-  for (const root of roots) {
-    const cacheDir = path.join(root, cacheDirName);
-    if (fs.existsSync(cacheDir)) {
-      fs.rmSync(cacheDir, { recursive: true, force: true });
-      logMessage(`Deleted CT2 model cache: ${cacheDir}`, 'info');
-    }
+/**
+ * 删除一个 CT2 模型：不论它在哪个位置，都真实删除（位置见 getCt2DeleteTargets）。
+ *
+ * 不区分目录是不是 SmartSub 创建的：用户把模型路径指向与其他软件共用的缓存，是有意
+ * 让 SmartSub 管理其中的模型，点击删除并确认后就应该真的删掉，否则列表里会留着一个
+ * 删不掉的模型（#519）。
+ */
+export function deleteCt2Model(modelId: string): void {
+  for (const cacheDir of getCt2DeleteTargets(modelId)) {
+    fs.rmSync(cacheDir, { recursive: true, force: true });
+    logMessage(`Deleted CT2 model cache: ${cacheDir}`, 'info');
   }
 
   const state = readDownloadState();

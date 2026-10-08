@@ -138,6 +138,8 @@
   "downloading": "下载中",
   "confirmDeleteModel": "确认删除该模型？",
   "deleteModelDesc": "删除之后，如果您需要再次使用该模型，需要重新下载。",
+  "deleteModelFolders": "将从磁盘删除以下目录：",
+  "deleteModelSharedNote": "如果某个目录与其他 HuggingFace 软件共用，对方也将无法再使用这个模型。",
   "cancel": "取消",
   "delete": "删除",
   "download": "下载",

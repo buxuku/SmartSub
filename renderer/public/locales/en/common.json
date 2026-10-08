@@ -138,6 +138,8 @@
   "downloading": "Downloading",
   "confirmDeleteModel": "Confirm Delete Model",
   "deleteModelDesc": "After deletion, if you need to use the model again, you need to re-download.",
+  "deleteModelFolders": "These folders will be deleted from disk:",
+  "deleteModelSharedNote": "If a folder is shared with other HuggingFace apps, they lose this model too.",
   "cancel": "Cancel",
   "delete": "Delete",
   "download": "Download",
