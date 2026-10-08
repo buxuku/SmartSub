@@ -138,6 +138,7 @@
   "downloading": "Downloading",
   "confirmDeleteModel": "Confirm Delete Model",
   "deleteModelDesc": "After deletion, if you need to use the model again, you need to re-download.",
+  "deleteModelKeptExternal": "Not deleted: this model is in a folder SmartSub does not manage ({{path}}). It may be shared with other HuggingFace apps, so remove it there yourself if you no longer need it.",
   "cancel": "Cancel",
   "delete": "Delete",
   "download": "Download",
