@@ -5,6 +5,7 @@ import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { logMessage } from './storeManager';
 import { getMd5, ensureTempDir, timemarkToSeconds } from './fileUtils';
+import { getAudioCacheKey } from './audioCacheKey';
 import { getTaskContext, TaskCancelledError } from './taskContext';
 import { energySpeechSegments } from './subtitleTiming';
 import { computeChunkBoundaries } from './cloudAudioChunking';
@@ -162,14 +163,23 @@ export async function extractAudioFromVideo(event, file) {
   const tempDir = ensureTempDir();
 
   logMessage(`tempDir: ${tempDir}`, 'info');
-  const md5FileName = getMd5(filePath);
+  // 缓存键含文件大小与 mtime：同路径换了视频不会再命中旧音频（issue #510）。
+  // 读不到文件状态（null）就无法证明缓存仍对应当前文件：不复用，直接重新抽取。
+  const cacheKey = getAudioCacheKey(filePath);
+  const md5FileName = cacheKey ?? getMd5(filePath);
   const tempAudioFile = path.join(tempDir, `${md5FileName}.wav`);
   file.tempAudioFile = tempAudioFile;
 
-  if (fs.existsSync(tempAudioFile)) {
+  if (cacheKey && fs.existsSync(tempAudioFile)) {
     logMessage(`Using existing audio file: ${tempAudioFile}`, 'info');
     event.sender.send('taskFileChange', { ...file, extractAudio: 'done' });
     return tempAudioFile;
+  }
+  if (!cacheKey) {
+    logMessage(
+      `audio cache bypassed, cannot stat source: ${filePath}`,
+      'warning',
+    );
   }
 
   await extractAudio(filePath, tempAudioFile, event, file);
