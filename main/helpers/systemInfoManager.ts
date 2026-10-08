@@ -34,6 +34,7 @@ import {
   getCt2ProgressKey,
   getFasterWhisperModelDownloader,
   deleteCt2Model,
+  getCt2DeleteTargets,
 } from './fasterWhisperModelDownloader';
 import {
   getFunasrModelDownloader,
@@ -425,6 +426,11 @@ export function setupSystemInfoManager(mainWindow: BrowserWindow) {
     await deleteModel(modelName?.toLowerCase());
     return true;
   });
+
+  // 删除确认框的预览：只读，列出 deleteCt2Model 将删除的目录。
+  ipcMain.handle('getCt2DeleteTargets', (_event, modelId) =>
+    getCt2DeleteTargets(modelId),
+  );
 
   ipcMain.handle('deleteCt2Model', async (_event, modelId) => {
     deleteCt2Model(modelId);

@@ -330,14 +330,72 @@ function run() {
       'openai/clip-vit-base-patch32',
       '',
     ]) {
-      assert.throws(
-        () => downloader.deleteCt2Model(id),
-        /Unknown faster-whisper model/,
-        `delete(${JSON.stringify(id)})`,
-      );
+      for (const call of ['getCt2DeleteTargets', 'deleteCt2Model']) {
+        assert.throws(
+          () => downloader[call](id),
+          /Unknown faster-whisper model/,
+          `${call}(${JSON.stringify(id)})`,
+        );
+      }
     }
     assertTreeUntouched(before, modelRoot, 'a made-up id removes nothing');
   });
+
+  step(
+    'the folders shown before a delete are exactly the ones it removes',
+    () => {
+      modelRoot = newModelRoot('targets');
+      const hub = path.join(modelRoot, 'hub');
+      const engineCache = path.join(base, 'py-engine-cache');
+      fs.rmSync(engineCache, { recursive: true, force: true });
+      makeCt2Repo(hub, LARGE_V3);
+      makeCt2Repo(modelRoot, LARGE_V3, 'imported');
+      makeCt2Repo(path.join(engineCache, 'hub'), LARGE_V3);
+      makeCt2Repo(engineCache, LARGE_V3);
+      makeCt2Repo(hub, BASE); // another model: not part of this delete
+      const before = treeOf(modelRoot);
+
+      const targets = downloader.getCt2DeleteTargets('large-v3');
+
+      assert.deepEqual(targets, [
+        path.join(hub, LARGE_V3),
+        path.join(modelRoot, LARGE_V3),
+        path.join(engineCache, 'hub', LARGE_V3),
+        path.join(engineCache, LARGE_V3),
+      ]);
+      assertTreeUntouched(before, modelRoot, 'listing is read-only');
+
+      downloader.deleteCt2Model('large-v3');
+
+      for (const dir of targets) {
+        assert.equal(fs.existsSync(dir), false, `${dir} should be gone`);
+      }
+      assert.deepEqual(downloader.getCt2DeleteTargets('large-v3'), []);
+      assert.ok(
+        fs.existsSync(path.join(hub, BASE)),
+        'a model that was not asked for is not listed and not deleted',
+      );
+      fs.rmSync(engineCache, { recursive: true, force: true });
+    },
+  );
+
+  step(
+    'listing the folders of a model that is not on disk creates nothing',
+    () => {
+      modelRoot = newModelRoot('targets-empty');
+      fs.rmSync(path.join(base, 'py-engine-cache'), {
+        recursive: true,
+        force: true,
+      });
+
+      assert.deepEqual(downloader.getCt2DeleteTargets('large-v3'), []);
+      assert.deepEqual(
+        treeOf(modelRoot),
+        [],
+        'a preview must not create hub/ in the user\u2019s folder',
+      );
+    },
+  );
 
   step(
     'deleting still cleans the engine cache SmartSub keeps in app data',
