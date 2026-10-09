@@ -66,6 +66,11 @@ async function main() {
   const published = await runComposeJob({ ...base, subtitle: { mode: 'hard', subtitlePath: sub, style: { ...DEFAULT_STYLE, fontName: 'Arial' }, encoderMode: 'hardware' }, audio: { mode: 'addTrack', trackPath: voice } }, context());
   assert.equal(published, path.join(root, 'result_2.mkv'));
   assert.equal(progress.some(event => event.hwFallback), true, 'injected unavailable encoder takes actual CPU retry');
+  assert.equal(
+    logs.some(entry => entry.level === 'warning' && /自动切换 CPU 编码重试: ffmpeg exited with code 1: .*Unknown encoder 'smartsub_injected_unavailable_encoder'/s.test(entry.message)),
+    true,
+    'the hardware-fallback warning names the real reason instead of an empty "exited with code 1: "',
+  );
   let streams = '';
   try { execFileSync(ffmpeg, ['-hide_banner', '-i', published], { stdio: ['ignore', 'ignore', 'pipe'] }); } catch (error) { streams = error.stderr.toString(); }
   assert.equal((streams.match(/Audio:/g) || []).length, 2, 'CPU fallback reuses the prepared second audio track');
@@ -88,6 +93,20 @@ async function main() {
   const dubbedStreams = probe(dubbed);
   assert.match(dubbedStreams, /Video: vp9/, 'the dubbing export copies the VP9 video');
   assert.match(dubbedStreams, /Audio: aac/, 'the dubbing export writes AAC');
+  // #521: an odd-width yuv420p source fails libx264 with the very same "Conversion failed!"; the real reason must reach the UI and the log
+  const odd = path.join(root, 'odd-width.mkv');
+  run(['-f', 'lavfi', '-i', 'color=black:s=640x360:r=25:d=3', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3', '-vf', 'scale=853:480,format=yuv420p', '-c:v', 'ffv1', '-c:a', 'aac', '-shortest', odd]);
+  assert.match(probe(odd), /Video: ffv1.*yuv420p.*853x480/, 'the fixture really is an odd-width yuv420p stream');
+  progress = [];
+  logs.length = 0;
+  await assert.rejects(runComposeJob({ videoPath: odd, outputPath: path.join(root, 'odd_subtitled.mp4'), subtitle: burn, audio: { mode: 'keep' } }, context()), error => {
+    assert.match(error.message, /^ffmpeg exited with code 1: /);
+    assert.match(error.message, /width not divisible by 2 \(853x480\)/, 'the thrown error names the real reason');
+    return true;
+  });
+  assert.match(progress.at(-1).errorMessage, /width not divisible by 2 \(853x480\)/, 'the UI error event carries the real reason');
+  const stderrTail = logs.find(entry => entry.level === 'error' && entry.message.includes('Stream mapping:'));
+  assert.ok(stderrTail && /width not divisible by 2/.test(stderrTail.message), 'the tail of ffmpeg stderr is logged at error level');
   const long = path.join(root, 'long.mp4');
   run(['-stream_loop', '399', '-i', video, '-c', 'copy', long]);
   let cancelled = false;
@@ -98,6 +117,6 @@ async function main() {
   assert.equal(fs.readFileSync(existing, 'utf8'), 'existing result');
   assert.equal(hash(video), before);
   assert.equal(fs.readdirSync(root).some(name => name.startsWith('.smartsub-compose-')), false);
-  console.log(JSON.stringify({ root, checks: 'real FFmpeg source rejection, invalid style/subtitle failure, silent-source mix with hard/soft/none and CPU fallback, injected hardware failure + CPU/addTrack retry, VP9+Opus WebM source burned to H.264+AAC MP4 and WebM/Ogg output rejected before ffmpeg or staging, dubbing-shape WebM copy to MP4, mid-encode cancellation, original hashes and private-directory cleanup' }));
+  console.log(JSON.stringify({ root, checks: 'real FFmpeg source rejection, invalid style/subtitle failure, silent-source mix with hard/soft/none and CPU fallback, injected hardware failure + CPU/addTrack retry, VP9+Opus WebM source burned to H.264+AAC MP4 and WebM/Ogg output rejected before ffmpeg or staging, dubbing-shape WebM copy to MP4, real ffmpeg failure reason (odd-width libx264) in the thrown error, UI event and error log, hardware-fallback warning naming the unknown encoder, mid-encode cancellation, original hashes and private-directory cleanup' }));
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => { Module._load = originalLoad; require.extensions['.ts'] = originalTs; });
