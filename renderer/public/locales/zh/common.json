@@ -233,7 +233,13 @@
     "reveal": "在文件夹中显示",
     "reportIssue": "在 GitHub 反馈问题",
     "close": "关闭",
-    "failed": "导出失败：{{error}}"
+    "failed": "导出失败：{{error}}",
+    "previousRun": {
+      "title": "上次运行似乎意外结束了",
+      "description": "找到了崩溃记录。导出诊断包发给开发者，能帮助定位原因；文件不会自动上传。",
+      "descriptionDetail": "找到了崩溃记录（{{detail}}）。导出诊断包发给开发者，能帮助定位原因；文件不会自动上传。",
+      "action": "导出诊断包"
+    }
   },
   "faq": {
     "title": "常见问题",

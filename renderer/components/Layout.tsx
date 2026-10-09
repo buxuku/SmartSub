@@ -68,6 +68,7 @@ import { useTheme } from 'next-themes';
 import { UpdateDialog } from './UpdateDialog';
 import { LogDialog } from './LogDialog';
 import { DiagnosticsDialog } from './diagnostics/DiagnosticsDialog';
+import { PreviousRunNoticeToast } from './diagnostics/PreviousRunNoticeToast';
 import OnboardingDialog from './onboarding/OnboardingDialog';
 import ShortcutsHelpDialog from './ShortcutsHelpDialog';
 import FaqDialog from './FaqDialog';
@@ -1285,6 +1286,7 @@ const Layout = ({ children }) => {
         open={showDiagnostics}
         onOpenChange={setShowDiagnostics}
       />
+      <PreviousRunNoticeToast />
       <ShortcutsHelpDialog
         open={showShortcuts}
         onOpenChange={setShowShortcuts}

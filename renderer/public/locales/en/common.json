@@ -233,7 +233,13 @@
     "reveal": "Show in folder",
     "reportIssue": "Report on GitHub",
     "close": "Close",
-    "failed": "Export failed: {{error}}"
+    "failed": "Export failed: {{error}}",
+    "previousRun": {
+      "title": "The app seems to have closed unexpectedly last time",
+      "description": "A crash record was found. Exporting a diagnostics bundle for the developer helps find the cause; nothing is uploaded automatically.",
+      "descriptionDetail": "A crash record was found ({{detail}}). Exporting a diagnostics bundle for the developer helps find the cause; nothing is uploaded automatically.",
+      "action": "Export diagnostics"
+    }
   },
   "faq": {
     "title": "Frequently Asked Questions",
