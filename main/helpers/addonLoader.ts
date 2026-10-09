@@ -23,13 +23,16 @@ import {
   partitionCandidates,
 } from './crash/addonSuppression';
 import { usesGpu } from './crash/breaker';
+import { partitionByCudaCompat } from './crash/cudaCompat';
 import {
   beginNativeCall,
+  isBreakerDisabledByEnv,
   lookupSuppression,
   recordNativeSuccess,
 } from './crash/nativeGuard';
 import type {
   AddonVariant,
+  GpuEnvironment,
   GpuMode,
   WhisperBackend,
   AddonSource,
@@ -330,16 +333,40 @@ export async function loadBestAddon(
 
   const failedAttempts: AddonLoadAttempt[] = [];
 
-  // 崩溃熔断：上次因某个后端崩溃（或连续异常退出）的候选不再尝试，直接走降级链
-  let gpuFp: string | undefined;
+  let gpuEnv: GpuEnvironment | null = null;
   if (candidates.some((c) => usesGpu(candidateKeyOf(c)))) {
     try {
-      gpuFp = gpuFingerprint(await getGpuEnvironment());
+      gpuEnv = await getGpuEnvironment();
     } catch {
       // 拿不到显卡信息不影响其余判断
     }
   }
-  const { usable, skipped } = partitionCandidates(candidates, (key) =>
+  const gpuFp = gpuEnv ? gpuFingerprint(gpuEnv) : undefined;
+
+  // 显卡算力低于 CUDA 包的最低要求：加载也许成功，一跑核函数就会中止进程，
+  // 所以在加载前剔除、交给降级链；算力未知时不剔。回退开关同时关闭这一步。
+  const { kept, incompatible } = isBreakerDisabledByEnv()
+    ? { kept: candidates, incompatible: [] }
+    : partitionByCudaCompat(
+        candidates,
+        gpuEnv?.gpus ?? [],
+        store.get('settings')?.selectedCudaDevice,
+      );
+  for (const { candidate, incompatibility } of incompatible) {
+    logMessage(
+      `Skipping addon candidate (${candidate.backend} @ ${candidate.path}): ${incompatibility.reason}`,
+      'warning',
+    );
+    failedAttempts.push({
+      backend: candidate.backend,
+      path: candidate.path,
+      error: incompatibility.reason,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // 崩溃熔断：上次因某个后端崩溃（或连续异常退出）的候选不再尝试，直接走降级链
+  const { usable, skipped } = partitionCandidates(kept, (key) =>
     lookupSuppression(key, gpuFp),
   );
   for (const { candidate, suppression } of skipped) {
