@@ -4,6 +4,7 @@ import path from 'node:path';
 import {
   createNodeProbeDeps,
   runCommand,
+  runCommandOrThrow,
 } from '../../main/helpers/crash/cpuFeaturesNode';
 import { unknownFeatures } from '../../main/helpers/crash/cpuFeatures';
 import { assert, finish, test } from './testkit';
@@ -47,6 +48,55 @@ async function main() {
     );
     assert.equal(out, null);
     assert.ok(Date.now() - started < 10_000, '应当在超时后很快返回');
+  });
+
+  await test('runCommandOrThrow：成功返回标准输出；失败带着原因抛出（起不来、非零退出、超时）', async () => {
+    assert.equal(
+      await runCommandOrThrow(
+        process.execPath,
+        ['-e', 'process.stdout.write("ok")'],
+        10_000,
+      ),
+      'ok',
+    );
+    const reasons: string[] = [];
+    for (const run of [
+      () => runCommandOrThrow('/definitely/not/a/real/command', [], 5000),
+      () =>
+        runCommandOrThrow(
+          process.execPath,
+          ['-e', 'console.error("boom\\nsecond line"); process.exit(3)'],
+          10_000,
+        ),
+      () =>
+        runCommandOrThrow(
+          process.execPath,
+          ['-e', 'setTimeout(() => {}, 30000)'],
+          300,
+        ),
+    ]) {
+      try {
+        await run();
+        reasons.push('(没有抛错)');
+      } catch (error) {
+        reasons.push((error as Error).message);
+      }
+    }
+    assert.equal(reasons[0], 'could not start (ENOENT)');
+    assert.equal(reasons[1], 'exit code 3: boom');
+    assert.equal(reasons[2], 'timed out after 300 ms');
+  });
+
+  await test('探测依赖的 run 是会抛错的版本，sysctl 仍是返回 null 的版本', async () => {
+    const deps = createNodeProbeDeps({ translated: false, cacheFile: null });
+    await assert.rejects(
+      () => deps.run('/definitely/not/a/real/command', [], 5000),
+      /could not start/,
+    );
+    assert.equal(
+      await deps.sysctl('definitely.not.a.real.oid').catch(() => 'threw'),
+      null,
+    );
   });
 
   await test('readFile：不存在的文件返回 null', async () => {
