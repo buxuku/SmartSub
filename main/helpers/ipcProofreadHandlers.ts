@@ -66,6 +66,7 @@ import {
   logGlossaryMatches,
 } from './glossaryManager';
 import { readProofreadDataFile } from './proofreadData';
+import { setProofreadDataRoot } from './proofreadDataStorage';
 import { loadSidecarGlossaryIds } from './sidecarGlossaryIds';
 
 // 校对批量操作（批量 AI 优化 / 重翻失败）取消注册表
@@ -98,6 +99,9 @@ async function readSidecarGlossaryIds(
  * 设置字幕校对相关的 IPC 处理器
  */
 export function setupProofreadHandlers(): void {
+  // 新生成的校对 sidecar 放在应用数据目录，不再写进用户视频旁；
+  // 位置固定，不跟随 storageRoot（见 openspec manage-proofread-data-storage）。
+  setProofreadDataRoot(path.join(app.getPath('userData'), 'proofread-data'));
   const reviews = createQualityReviewStore(
     path.join(app.getPath('userData'), 'quality-reviews'),
   );

@@ -12,6 +12,10 @@ import {
 import { logMessage } from './storeManager';
 import { atomicReplaceTextFile } from './atomicFile';
 import {
+  LEGACY_PROOFREAD_DIR,
+  getProofreadDataRoot,
+} from './proofreadDataStorage';
+import {
   speakerIdsForCues,
   stripSpeakerLabelPrefix,
   type SpeakerDiarizationSegment,
@@ -108,7 +112,10 @@ export function getProofreadDataPath(file: IFiles): string {
     file.fileName || path.basename(file.filePath),
   );
   const id = safeFileNamePart(file.uuid || hashId(file.filePath || baseName));
-  return path.join(dir, '.smartsub-proofread', `${baseName}.${id}.json`);
+  // 宿主注入托管目录后，新 sidecar 一律写到那里；未注入（脚本、单测）时
+  // 回落到视频旁的旧目录。已存在的 sidecar 靠各自记录的绝对路径读写，不受影响。
+  const folder = getProofreadDataRoot() ?? path.join(dir, LEGACY_PROOFREAD_DIR);
+  return path.join(folder, `${baseName}.${id}.json`);
 }
 
 async function readSubtitleEntries(

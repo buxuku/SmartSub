@@ -2,10 +2,10 @@
 
 ## 1. 托管目录与写入路径（P1）
 
-- [ ] 1.1 新建 `main/helpers/proofreadDataStorage.ts`（零 Electron 依赖）：导出 `LEGACY_PROOFREAD_DIR`（`.smartsub-proofread`）、`setProofreadDataRoot` / `getProofreadDataRoot`
-- [ ] 1.2 改造 `main/helpers/proofreadData.ts` 的 `getProofreadDataPath`：已注入根目录时返回 `<根>/<name>.<id>.json`，未注入时回落旧邻居路径，其余命名规则不变
-- [ ] 1.3 在 `main/helpers/ipcProofreadHandlers.ts` 的 `setupProofreadHandlers()` 内注入 `path.join(app.getPath('userData'), 'proofread-data')`
-- [ ] 1.4 新增 `scripts/test-proofread-storage.cjs`，在 `package.json` 登记 `test:proofread-storage`，并加入 `scripts/test-pro-baseline.mjs`；覆盖：注入后路径落在托管根、未注入回落旧路径、命名规则不变、真实写入后视频目录旁不出现 `.smartsub-proofread/`
+- [x] 1.1 新建 `main/helpers/proofreadDataStorage.ts`（零 Electron 依赖）：导出 `LEGACY_PROOFREAD_DIR`（`.smartsub-proofread`）、`setProofreadDataRoot` / `getProofreadDataRoot`
+- [x] 1.2 改造 `main/helpers/proofreadData.ts` 的 `getProofreadDataPath`：已注入根目录时返回 `<根>/<name>.<id>.json`，未注入时回落旧邻居路径，其余命名规则不变
+- [x] 1.3 在 `main/helpers/ipcProofreadHandlers.ts` 的 `setupProofreadHandlers()` 内注入 `path.join(app.getPath('userData'), 'proofread-data')`
+- [x] 1.4 新增 `scripts/test-proofread-storage.cjs`，在 `package.json` 登记 `test:proofread-storage`，并加入 `scripts/test-pro-baseline.mjs`；覆盖：注入后路径落在托管根、未注入回落旧路径、命名规则不变、真实写入后视频目录旁不出现 `.smartsub-proofread/`
 
 ## 2. 配音发现顺序（P2）
 
