@@ -5,6 +5,7 @@ const scripts = [
   'test:proofread-reliability',
   'test:proofread-load',
   'test:proofread-cue-timing',
+  'test:proofread-storage',
   'test:proofread-waveform',
   'test:compositor-trace',
   'test:inline-ai',
