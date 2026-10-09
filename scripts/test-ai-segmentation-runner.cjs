@@ -31,6 +31,13 @@ const ts = require('typescript');
 const repoRoot = path.resolve(__dirname, '..');
 const mainDir = path.join(repoRoot, 'main');
 
+// The services print their config and every completion; keep the report readable.
+const report = (line) => process.stdout.write(`${line}\n`);
+const reportError = (line) => process.stderr.write(`${line}\n`);
+console.log = () => {};
+console.warn = () => {};
+console.error = () => {};
+
 /** Everything the app logged through storeManager.logMessage. */
 const logs = [];
 /** Replaces translationProvider's registry (and every service it would pull in). */
@@ -385,6 +392,245 @@ test('cancellation during a retry still cancels the stage', async () => {
   );
 });
 
+// ----------------------------------------------------------- request limits --
+// Root cause 2 — the OpenAI SDK waits 10 minutes per attempt and re-sends a
+// timed-out request twice, so one stalled request held a window for 30 minutes.
+
+test('the first request is time-bounded and keeps the SDK retries for transient errors', async () => {
+  const calls = installLlm(VALID_ANSWER);
+  await segment(wordsOf(SENTENCE));
+  const { timeoutMs, maxRetries } = calls[0].options;
+  assert.ok(
+    Number.isFinite(timeoutMs) && timeoutMs > 0 && timeoutMs < 10 * 60_000,
+    `expected a bounded timeoutMs below the SDK default, got ${timeoutMs}`,
+  );
+  assert.equal(maxRetries, undefined, '429 / 5xx keep the SDK backoff retries');
+});
+
+test('a retry that only tries to improve a usable answer gets a tighter limit and no transport retries', async () => {
+  const calls = installLlm((index) => [GOOD_BUT_LONG, VALID_ANSWER][index]);
+  await segment(wordsOf(SENTENCE));
+  assert.equal(calls.length, 2);
+  // The usable answer is already in hand: the retry is a nice-to-have (this is
+  // exactly where #507 lost 30 minutes per window).
+  assert.ok(
+    calls[1].options.timeoutMs < calls[0].options.timeoutMs,
+    `retry ${calls[1].options.timeoutMs} should be tighter than first ${calls[0].options.timeoutMs}`,
+  );
+  assert.equal(calls[1].options.maxRetries, 0);
+});
+
+test('the limit for an improving retry follows how slow the provider has been', async () => {
+  const realNow = Date.now;
+  let skewMs = 0;
+  Date.now = () => realNow() + skewMs;
+  try {
+    const improvingLimit = async (firstRequestMs) => {
+      skewMs = 0;
+      const calls = installLlm((index) => {
+        if (index === 0) {
+          skewMs += firstRequestMs; // the first request "takes" this long
+          return GOOD_BUT_LONG;
+        }
+        return VALID_ANSWER;
+      });
+      await segment(wordsOf(SENTENCE));
+      return calls[1].options.timeoutMs;
+    };
+    assert.equal(await improvingLimit(5_000), 60_000, 'floor of one minute');
+    assert.equal(
+      await improvingLimit(100_000),
+      200_000,
+      'twice the slowest request',
+    );
+    assert.equal(
+      await improvingLimit(250_000),
+      300_000,
+      'never above the first-request limit',
+    );
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('a retry that has to rescue damaged text keeps the generous limit', async () => {
+  const calls = installLlm((index) => [GARBAGE, VALID_ANSWER][index]);
+  const outcome = await segment(wordsOf(SENTENCE));
+  assert.equal(calls.length, 2);
+  assert.equal(outcome.degradedWindows, 0);
+  assert.equal(calls[1].options.timeoutMs, calls[0].options.timeoutMs);
+  assert.equal(calls[1].options.maxRetries, undefined);
+});
+
+// Service level — the limits really reach the SDK and make it give up.
+
+/** An OpenAI-compatible endpoint; `handler` decides how (or whether) to answer. */
+async function startServer(handler) {
+  const http = require('node:http');
+  const sockets = new Set();
+  let requestCount = 0;
+  const server = http.createServer((req, res) => {
+    requestCount += 1;
+    handler(req, res);
+  });
+  server.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  return {
+    port,
+    requests: () => requestCount,
+    close: async () => {
+      for (const socket of sockets) socket.destroy();
+      await new Promise((resolve) => server.close(resolve));
+    },
+  };
+}
+const neverAnswer = () => {};
+const answerWith = (content) => (_req, res) => {
+  res.setHeader('content-type', 'application/json');
+  res.end(
+    JSON.stringify({
+      id: 'chatcmpl-test',
+      object: 'chat.completion',
+      created: 0,
+      model: 'm',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'stop',
+          message: { role: 'assistant', content },
+        },
+      ],
+    }),
+  );
+};
+const openAiProvider = (port) => ({
+  id: 'local-openai',
+  apiKey: 'sk-test',
+  apiUrl: `http://127.0.0.1:${port}/v1`,
+  modelName: 'm',
+  systemPrompt: 's',
+  useJsonMode: false,
+  structuredOutput: 'disabled',
+});
+const azureProvider = (port) => ({
+  id: 'local-azure',
+  apiKey: 'test-key',
+  apiUrl: `http://127.0.0.1:${port}/openai/deployments/dep/chat/completions?api-version=2024-02-01`,
+  modelName: 'dep',
+  systemPrompt: 's',
+  useJsonMode: false,
+  structuredOutput: 'disabled',
+});
+
+test('toSdkRequestOptions forwards only what the caller set', async () => {
+  const {
+    toSdkRequestOptions,
+  } = require('../main/service/sdkRequestOptions.ts');
+  const signal = new AbortController().signal;
+  assert.deepEqual(toSdkRequestOptions(undefined), { signal: undefined });
+  assert.deepEqual(toSdkRequestOptions({ signal }), { signal });
+  assert.deepEqual(
+    toSdkRequestOptions({ signal, timeoutMs: 5000, maxRetries: 0 }),
+    { signal, timeout: 5000, maxRetries: 0 },
+  );
+  assert.deepEqual(
+    toSdkRequestOptions({ timeoutMs: 0, maxRetries: -1 }),
+    { signal: undefined },
+    'nonsensical values fall back to the SDK defaults',
+  );
+});
+
+test('translateWithOpenAI gives up on a stalled request after timeoutMs', async () => {
+  const translateWithOpenAI = require('../main/service/openai.ts').default;
+  const server = await startServer(neverAnswer);
+  try {
+    const startedAt = Date.now();
+    await assert.rejects(
+      () =>
+        translateWithOpenAI('hello', openAiProvider(server.port), 'en', 'zh', {
+          timeoutMs: 150,
+          maxRetries: 0,
+        }),
+      /timed out/i,
+    );
+    assert.ok(
+      Date.now() - startedAt < 5000,
+      'must give up quickly instead of waiting for the SDK 10 minute default',
+    );
+    assert.equal(server.requests(), 1, 'maxRetries: 0 means no re-send');
+  } finally {
+    await server.close();
+  }
+});
+
+test('without maxRetries the SDK re-sends a timed-out request (why the option exists)', async () => {
+  const translateWithOpenAI = require('../main/service/openai.ts').default;
+  const server = await startServer(neverAnswer);
+  try {
+    await assert.rejects(
+      () =>
+        translateWithOpenAI('hello', openAiProvider(server.port), 'en', 'zh', {
+          timeoutMs: 100,
+        }),
+      /timed out/i,
+    );
+    assert.equal(
+      server.requests(),
+      3,
+      'SDK default: the original request plus two re-sends',
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test('translateWithAzureOpenAI gives up on a stalled request after timeoutMs', async () => {
+  const {
+    translateWithAzureOpenAI,
+  } = require('../main/service/azureOpenai.ts');
+  const server = await startServer(neverAnswer);
+  try {
+    const startedAt = Date.now();
+    await assert.rejects(
+      () =>
+        translateWithAzureOpenAI(
+          'hello',
+          azureProvider(server.port),
+          'en',
+          'zh',
+          { timeoutMs: 150, maxRetries: 0 },
+        ),
+      /timed out/i,
+    );
+    assert.ok(Date.now() - startedAt < 5000);
+    assert.equal(server.requests(), 1);
+  } finally {
+    await server.close();
+  }
+});
+
+test('limits do not disturb a healthy request', async () => {
+  const translateWithOpenAI = require('../main/service/openai.ts').default;
+  const server = await startServer(answerWith('segmented<br>text'));
+  try {
+    const answer = await translateWithOpenAI(
+      'hello',
+      openAiProvider(server.port),
+      'en',
+      'zh',
+      { timeoutMs: 5000, maxRetries: 0 },
+    );
+    assert.equal(answer, 'segmented<br>text');
+    assert.equal(server.requests(), 1);
+  } finally {
+    await server.close();
+  }
+});
+
 // ------------------------------------------------------------------ driver --
 
 /** A hung test must fail the run, not block CI until its job timeout. */
@@ -411,13 +657,13 @@ function withDeadline(promise) {
       passed += 1;
     } catch (error) {
       failed += 1;
-      console.error(
+      reportError(
         `✗ ${name}\n    ${String((error && error.message) || error)
           .split('\n')
           .join('\n    ')}`,
       );
     }
   }
-  console.log(`ai segmentation runner: ${passed} passed, ${failed} failed`);
+  report(`ai segmentation runner: ${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);
 })();

@@ -61,6 +61,18 @@ import {
 /** 校验失败的反馈重试轮数上限（不含首轮，spec: ≤2）。 */
 const MAX_FEEDBACK_ROUNDS = 2;
 
+/**
+ * 单次请求的超时上限（毫秒）。OpenAI SDK 默认每次尝试等 10 分钟并把超时再重发
+ * 两次，一个卡住的窗口会被占住 30 分钟（#507 日志里的两个窗口）。健康请求通常
+ * 一两分钟内完成；300 秒与 Ollama 的上限一致，给慢速本地模型留足余量。
+ */
+const REQUEST_TIMEOUT_MS = 300_000;
+/**
+ * 手里已有可用答案时，重试只是为了把超长段再切好一点，不值得久等：超时取
+ * 「此前最慢请求的 2 倍」，但不低于该下限，也不超过 REQUEST_TIMEOUT_MS。
+ */
+const MIN_IMPROVEMENT_TIMEOUT_MS = 60_000;
+
 /** 一轮请求的产物：模型原文、解析出的分段与校验结果。 */
 interface SegmentationAttempt {
   response: string;
@@ -213,12 +225,27 @@ export async function runAiSegmentation(
     let best: SegmentationAttempt | null = null;
     const seenResponses = new Set<string>();
     let rounds = 0;
+    let slowestRequestMs = 0;
     let userPrompt = buildSegmentationUserPrompt(text);
 
     for (let round = 0; round < totalRounds; round += 1) {
       throwIfSignalCancelled(signal);
+      // 手里已有可用答案时本轮只是锦上添花：限时更紧，且不做传输层重发（失败
+      // 就沿用已有答案）。首轮与抢救受损文本的重试用宽松限时，瞬时错误
+      // （429/5xx）仍享有 SDK 的退避重发。
+      const improving = best?.validation.contentOk === true;
+      const requestLimits = improving
+        ? {
+            timeoutMs: Math.min(
+              REQUEST_TIMEOUT_MS,
+              Math.max(MIN_IMPROVEMENT_TIMEOUT_MS, 2 * slowestRequestMs),
+            ),
+            maxRetries: 0,
+          }
+        : { timeoutMs: REQUEST_TIMEOUT_MS };
+      const requestStartedAt = Date.now();
       unitState(index, round ? 'retrying' : 'requesting', {
-        requestStartedAt: Date.now(),
+        requestStartedAt,
         ...(round
           ? {
               retry: round,
@@ -234,11 +261,15 @@ export async function runAiSegmentation(
           segProvider,
           sourceLanguage,
           targetLanguage,
-          { signal },
+          { signal, ...requestLimits },
         );
         response = Array.isArray(responseOrigin)
           ? responseOrigin.join('\n')
           : String(responseOrigin ?? '');
+        slowestRequestMs = Math.max(
+          slowestRequestMs,
+          Date.now() - requestStartedAt,
+        );
       } catch (error) {
         // 重试轮的请求失败（超时 / 网络抖动）且已有可用答案：沿用它，不让一次
         // 失败的重试把整窗扔掉，也不计入「服务不可达」。首轮失败、取消与配置
