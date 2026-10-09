@@ -5,6 +5,7 @@ import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import ffmpeg from 'ffmpeg-static';
 import { _electron, expect } from '@playwright/test';
+import { waitForAppPage } from './app-page.mjs';
 
 const output = await fs.mkdtemp(
   path.join(os.tmpdir(), 'smartsub-proofread-load-e2e-'),
@@ -60,7 +61,12 @@ const app = await _electron.launch({
     process.env.SMARTSUB_RENDERER_PORT || '8888',
     `--user-data-dir=${path.join(output, 'profile')}`,
   ],
-  env: { ...process.env, NODE_ENV: 'development' },
+  env: {
+    ...process.env,
+    NODE_ENV: process.argv.includes('--production')
+      ? 'production'
+      : 'development',
+  },
 });
 const page = await app.firstWindow();
 page.setDefaultTimeout(20000);
@@ -110,7 +116,7 @@ async function assertBlocked() {
   assert.equal(await fs.readFile(source, 'utf8'), sourceBytes);
 }
 try {
-  await page.waitForURL(/^http:\/\/localhost:\d+/);
+  await waitForAppPage(page);
   await app.evaluate(({ BrowserWindow, dialog }) => {
     BrowserWindow.getAllWindows().forEach((window) =>
       window.webContents.closeDevTools(),
@@ -177,7 +183,7 @@ try {
     await app.evaluate(
       ({ BrowserWindow }, size) =>
         BrowserWindow.getAllWindows()
-          .find((window) => window.webContents.getURL().startsWith('http:'))
+          .find((window) => /^(http:|app:)/.test(window.webContents.getURL()))
           .setContentSize(...size),
       [width, height],
     );
@@ -319,29 +325,19 @@ try {
     'Malformed JSON and corrupt sidecar fields never fall back or normalize into data loss; repair restores translation and roster',
   );
 
-  await app.evaluate(({ ipcMain }) => {
-    const original = ipcMain._invokeHandlers.get('getSubtitleAsVtt');
-    globalThis.previewFault = true;
-    globalThis.previewFaultCalls = 0;
-    ipcMain.removeHandler('getSubtitleAsVtt');
-    ipcMain.handle('getSubtitleAsVtt', (...args) => {
-      if (globalThis.previewFault) {
-        globalThis.previewFaultCalls++;
-        return { error: 'Injected VTT failure' };
-      }
-      return original(...args);
-    });
-  });
   await enter();
-  const previewFailure = page
-    .getByRole('alert')
-    .filter({ hasText: '播放器字幕预览不可用' });
-  await expect(previewFailure).toBeVisible();
-  assert.ok(await app.evaluate(() => globalThis.previewFaultCalls > 0));
   await page.locator('#subtitle-0').click();
-  await page
-    .locator('#subtitle-src-0')
-    .fill('Edit preserved through preview retry');
+  const defaultTrack = () =>
+    page.locator('video track[default]').evaluate((track) => ({
+      state: track.readyState,
+      text: track.track.cues?.[0]?.text,
+      mode: track.track.mode,
+    }));
+  // The player previews the editor document (sidecar text), not the SRT files.
+  await expect(page.locator('video track')).toHaveCount(2);
+  await expect
+    .poll(defaultTrack)
+    .toEqual({ state: 2, text: 'Sidecar translation.', mode: 'showing' });
   await expect
     .poll(() => page.locator('video').evaluate((video) => video.readyState))
     .toBeGreaterThan(0);
@@ -349,15 +345,17 @@ try {
     window.__previewVideo = video;
     video.currentTime = 1;
   });
-  await previewFailure.locator('summary').click();
-  await page.screenshot({ path: path.join(output, 'preview-error.png') });
-  await app.evaluate(() => {
-    globalThis.previewFault = false;
+  await page
+    .locator('#subtitle-src-0')
+    .fill('Edit preserved through save retry');
+  await page
+    .locator('#subtitle-tgt-0')
+    .fill('Translation edit reaches the player');
+  await expect.poll(defaultTrack).toEqual({
+    state: 2,
+    text: 'Translation edit reaches the player',
+    mode: 'showing',
   });
-  await previewFailure
-    .getByRole('button', { name: '重试字幕预览', exact: true })
-    .click();
-  await expect(previewFailure).toHaveCount(0);
   await expect(page.locator('video track')).toHaveCount(2);
   await expect
     .poll(() =>
@@ -366,15 +364,6 @@ try {
         .evaluateAll((tracks) => tracks.map((track) => track.track.mode)),
     )
     .toEqual(['disabled', 'showing']);
-  await expect
-    .poll(() =>
-      page.locator('video track[default]').evaluate((track) => ({
-        state: track.readyState,
-        text: track.track.cues?.[0]?.text,
-        mode: track.track.mode,
-      })),
-    )
-    .toEqual({ state: 2, text: 'Translated subtitle.', mode: 'showing' });
   assert.equal(
     await page
       .locator('video')
@@ -385,12 +374,12 @@ try {
     .poll(() => page.locator('video').evaluate((video) => video.currentTime))
     .toBe(1);
   await expect(page.locator('#subtitle-src-0')).toHaveValue(
-    'Edit preserved through preview retry',
+    'Edit preserved through save retry',
   );
   await expect
     .poll(() => page.locator('video').evaluate((video) => video.readyState))
     .toBeGreaterThanOrEqual(2);
-  await page.screenshot({ path: path.join(output, 'preview-recovered.png') });
+  await page.screenshot({ path: path.join(output, 'preview-edited.png') });
   await app.evaluate(({ ipcMain }) => {
     const original = ipcMain._invokeHandlers.get('saveProofreadDataAndRender');
     globalThis.saveFault = true;
@@ -407,7 +396,7 @@ try {
   await saveFailure.locator('summary').click();
   await expect(saveFailure).toContainText('Injected output write failure');
   await expect(page.locator('#subtitle-src-0')).toHaveValue(
-    'Edit preserved through preview retry',
+    'Edit preserved through save retry',
   );
   assert.equal(await fs.readFile(sidecar, 'utf8'), sidecarBytes);
   await page.screenshot({ path: path.join(output, 'save-error.png') });
@@ -422,15 +411,14 @@ try {
   ).toBeVisible();
   assert.match(
     await fs.readFile(source, 'utf8'),
-    /Edit preserved through preview retry/,
+    /Edit preserved through save retry/,
   );
   assert.match(
     await fs.readFile(sidecar, 'utf8'),
-    /Edit preserved through preview retry/,
+    /Edit preserved through save retry/,
   );
   checks.push(
-    'Optional VTT failure banner retries independently and preserves dirty text plus real sidecar save',
-    'Preview retry updates real video tracks without remounting the player or resetting its playhead',
+    'Player preview shows the sidecar document and follows edits through real video tracks without remounting the player or resetting its playhead',
     'Save failure retains dirty data with permanent details and explicit retry commits to disk',
   );
   assert.deepEqual(errors, []);

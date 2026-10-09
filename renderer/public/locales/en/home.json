@@ -282,9 +282,7 @@
     "extraTranslations": "The translation has more cues than the source. Return to the file list and select matching subtitle files to avoid losing translation text.",
     "failed": "Subtitle data could not be loaded. Editing and saving are unavailable.",
     "repair": "Restore the original file or its read permissions, then retry. Return to the file list to check the selected paths.",
-    "retry": "Retry loading",
-    "previewFailed": "Player subtitle preview is unavailable. Subtitle editing is unaffected.",
-    "retryPreview": "Retry subtitle preview"
+    "retry": "Retry loading"
   },
   "importVideos": "Import Videos",
   "importVideosDesc": "Import video files and auto-detect associated subtitles",

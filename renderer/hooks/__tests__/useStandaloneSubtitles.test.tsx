@@ -45,7 +45,6 @@ beforeEach(() => {
   );
   invoke = jest.fn(async (channel: string, payload: any) => {
     if (channel === 'readSubtitleFile') return [row(payload.filePath)];
-    if (channel === 'getSubtitleAsVtt') return { content: 'WEBVTT\n\n' };
     if (channel === 'saveSubtitleFile') return { success: true };
     throw new Error(`Unexpected IPC ${channel}`);
   });
@@ -252,38 +251,6 @@ test('a late save cannot mark a different document saved or discard its draft', 
   expect(result.current.mergedSubtitles[0].sourceContent).toBe('New edit');
 });
 
-test('VTT failures are non-destructive and retry never replaces edited subtitles', async () => {
-  const normal = invoke.getMockImplementation()!;
-  let failed = true;
-  invoke.mockImplementation((channel, payload) =>
-    channel === 'getSubtitleAsVtt' && failed
-      ? Promise.resolve({ error: 'Preview unavailable' })
-      : normal(channel, payload),
-  );
-  const { result, unmount } = renderHook(() =>
-    useStandaloneSubtitles(
-      { sourceSubtitlePath: '/source.srt', sourceLanguage: 'en' },
-      true,
-    ),
-  );
-  await waitFor(() =>
-    expect(result.current.trackError).toContain('Preview unavailable'),
-  );
-  expect(result.current.loadError).toBe('');
-  act(() =>
-    result.current.handleSubtitleChange(0, 'sourceContent', 'Keep this edit'),
-  );
-  failed = false;
-  await act(async () => result.current.retryTracks());
-  expect(result.current.trackError).toBe('');
-  expect(result.current.mergedSubtitles[0].sourceContent).toBe(
-    'Keep this edit',
-  );
-  expect(result.current.subtitleTracksForPlayer).toHaveLength(1);
-  unmount();
-  expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:track');
-});
-
 test.each([
   undefined,
   { error: 'Read failed' },
@@ -448,67 +415,6 @@ test('a stale successful save does not dispatch its remaining translation output
   ).toHaveLength(1);
 });
 
-test('late preview URLs are released after unmount without reading another track', async () => {
-  const normal = invoke.getMockImplementation()!;
-  let release!: (response: any) => void;
-  invoke.mockImplementation((channel, payload) =>
-    channel === 'getSubtitleAsVtt'
-      ? new Promise((resolve) => {
-          release = resolve;
-        })
-      : normal(channel, payload),
-  );
-  const { result, unmount } = renderHook(() =>
-    useStandaloneSubtitles(
-      { ...config, sourceLanguage: 'en', targetLanguage: 'fr' },
-      true,
-    ),
-  );
-  await waitFor(() => expect(result.current.tracksLoading).toBe(true));
-  unmount();
-  await act(async () => release({ content: 'WEBVTT\n\n' }));
-  expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:track');
-  expect(
-    invoke.mock.calls.filter(([channel]) => channel === 'getSubtitleAsVtt'),
-  ).toHaveLength(1);
-});
-
-test('out-of-order preview retries release stale URLs and retain the latest result', async () => {
-  const normal = invoke.getMockImplementation()!;
-  const pending: Array<(response: any) => void> = [];
-  invoke.mockImplementation((channel, payload) =>
-    channel === 'getSubtitleAsVtt'
-      ? new Promise((resolve) => {
-          pending.push(resolve);
-        })
-      : normal(channel, payload),
-  );
-  let urlIndex = 0;
-  URL.createObjectURL = jest.fn(() => `blob:${++urlIndex}`);
-  const { result, unmount } = renderHook(() =>
-    useStandaloneSubtitles(
-      { sourceSubtitlePath: '/source.srt', sourceLanguage: 'en' },
-      true,
-    ),
-  );
-  await waitFor(() => expect(pending).toHaveLength(1));
-  let retry!: Promise<void>;
-  act(() => {
-    retry = result.current.retryTracks();
-  });
-  expect(pending).toHaveLength(2);
-  await act(async () => {
-    pending[1]({ content: 'WEBVTT\n\nNew' });
-    await retry;
-  });
-  await act(async () => pending[0]({ content: 'WEBVTT\n\nOld' }));
-  expect(result.current.subtitleTracksForPlayer[0].src).toBe('blob:1');
-  expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:2');
-  expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:1');
-  unmount();
-  expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:1');
-});
-
 test('duplicate timestamps preserve each translation and reserve exact matches before positional fallback', async () => {
   const later = '00:00:04,000 --> 00:00:06,000';
   const last = '00:00:07,000 --> 00:00:09,000';
@@ -557,3 +463,315 @@ test.each([0, 1])(
     ).toBe(false);
   },
 );
+
+describe('player preview', () => {
+  type PreviewResult = {
+    current: { subtitleTracksForPlayer: Array<{ src: string }> };
+  };
+  const languages = { sourceLanguage: 'en', targetLanguage: 'fr' };
+  const previewBlobs = new Map<string, Blob>();
+  const readBlob = (blob: Blob) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(blob);
+    });
+  // VTT text of every published track, in player order (source, then translation)
+  const vttOf = (result: PreviewResult) =>
+    Promise.all(
+      result.current.subtitleTracksForPlayer.map((track) =>
+        readBlob(previewBlobs.get(track.src)!),
+      ),
+    );
+  const createdUrls = () =>
+    (URL.createObjectURL as jest.Mock).mock.calls.length;
+  const sleep = (ms: number) =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+    });
+
+  beforeEach(() => {
+    let counter = 0;
+    previewBlobs.clear();
+    URL.createObjectURL = jest.fn((blob: Blob | MediaSource) => {
+      const url = `blob:preview-${++counter}`;
+      previewBlobs.set(url, blob as Blob);
+      return url;
+    });
+  });
+
+  test('is built from the loaded document even when no language is known', async () => {
+    const { result } = renderHook(() => useStandaloneSubtitles(config, true));
+    await waitFor(() =>
+      expect(result.current.subtitleTracksForPlayer).toHaveLength(2),
+    );
+
+    expect(result.current.subtitleTracksForPlayer).toMatchObject([
+      { kind: 'subtitles', srcLang: 'und', label: 'source', default: false },
+      { kind: 'subtitles', srcLang: 'und', label: 'target', default: true },
+    ]);
+    const [source, target] = await vttOf(result);
+    expect(source).toContain('/source.srt');
+    expect(target).toContain('/target.srt');
+  });
+
+  test('previews a sidecar document from its own rows instead of the SRT on disk', async () => {
+    const normal = invoke.getMockImplementation()!;
+    invoke.mockImplementation((channel, payload) =>
+      channel === 'readProofreadDataFile'
+        ? Promise.resolve({
+            subtitles: [
+              {
+                ...row('Sidecar source'),
+                sourceContent: 'Sidecar source',
+                targetContent: 'Sidecar translation',
+                startTimeInSeconds: 1,
+                endTimeInSeconds: 3,
+              },
+            ],
+            speakers: [],
+          })
+        : normal(channel, payload),
+    );
+    const { result } = renderHook(() =>
+      useStandaloneSubtitles(
+        { ...config, ...languages, proofreadDataFile: '/data.json' },
+        true,
+      ),
+    );
+    await waitFor(() =>
+      expect(result.current.subtitleTracksForPlayer).toHaveLength(2),
+    );
+
+    const [source, target] = await vttOf(result);
+    expect(source).toContain('Sidecar source');
+    expect(target).toContain('Sidecar translation');
+    expect(invoke.mock.calls.map(([channel]) => channel)).not.toContain(
+      'getSubtitleAsVtt',
+    );
+  });
+
+  test('follows edits to either column after a short pause', async () => {
+    const { result } = renderHook(() =>
+      useStandaloneSubtitles({ ...config, ...languages }, true),
+    );
+    await waitFor(() =>
+      expect(result.current.subtitleTracksForPlayer).toHaveLength(2),
+    );
+    const before = result.current.subtitleTracksForPlayer;
+    expect(before).toMatchObject([
+      { srcLang: 'en', label: '(en)', default: false },
+      { srcLang: 'fr', label: '(fr)', default: true },
+    ]);
+
+    act(() =>
+      result.current.handleSubtitleChange(0, 'sourceContent', 'Fixed typo'),
+    );
+    act(() =>
+      result.current.handleSubtitleChange(0, 'targetContent', 'Faute corrigee'),
+    );
+
+    await waitFor(async () =>
+      expect((await vttOf(result))[0]).toContain('Fixed typo'),
+    );
+    expect(await vttOf(result)).toEqual([
+      'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nFixed typo\n\n',
+      'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nFaute corrigee\n\n',
+    ]);
+    before.forEach((track) =>
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith(track.src),
+    );
+  });
+
+  test('publishes only the final text of a burst of edits', async () => {
+    const { result } = renderHook(() =>
+      useStandaloneSubtitles({ ...config, ...languages }, true),
+    );
+    await waitFor(() =>
+      expect(result.current.subtitleTracksForPlayer).toHaveLength(2),
+    );
+    const created = createdUrls();
+
+    for (const text of ['F', 'Fi', 'Fin', 'Final']) {
+      act(() => result.current.handleSubtitleChange(0, 'sourceContent', text));
+    }
+
+    await waitFor(async () =>
+      expect((await vttOf(result))[0]).toContain('Final'),
+    );
+    expect(createdUrls()).toBe(created + 2);
+  });
+
+  test('follows undo and redo', async () => {
+    const { result } = renderHook(() =>
+      useStandaloneSubtitles({ ...config, ...languages }, true),
+    );
+    await waitFor(() =>
+      expect(result.current.subtitleTracksForPlayer).toHaveLength(2),
+    );
+
+    act(() =>
+      result.current.handleSubtitleChange(0, 'sourceContent', 'Edited'),
+    );
+    await waitFor(async () =>
+      expect((await vttOf(result))[0]).toContain('Edited'),
+    );
+    act(() => result.current.handleUndo());
+    await waitFor(async () =>
+      expect((await vttOf(result))[0]).toContain('/source.srt'),
+    );
+    act(() => result.current.handleRedo());
+    await waitFor(async () =>
+      expect((await vttOf(result))[0]).toContain('Edited'),
+    );
+  });
+
+  test('follows time changes and deleted cues', async () => {
+    invoke.mockImplementation(async (_channel, payload) => [
+      row(`${payload.filePath} one`),
+      {
+        ...row(`${payload.filePath} two`),
+        id: '2',
+        startEndTime: '00:00:05,000 --> 00:00:06,000',
+      },
+    ]);
+    const { result } = renderHook(() =>
+      useStandaloneSubtitles({ ...config, ...languages }, true),
+    );
+    await waitFor(() =>
+      expect(result.current.subtitleTracksForPlayer).toHaveLength(2),
+    );
+
+    act(() => expect(result.current.handleTimeChange(0, 1.5, 2.5)).toBeNull());
+    await waitFor(async () =>
+      expect((await vttOf(result))[0]).toContain(
+        '00:00:01.500 --> 00:00:02.500',
+      ),
+    );
+    act(() => result.current.handleDeleteSubtitle(0));
+    await waitFor(async () => {
+      const [source] = await vttOf(result);
+      expect(source).not.toContain('one');
+      expect(source).toContain('two');
+    });
+  });
+
+  test('does not rebuild for changes that cannot affect what is shown', async () => {
+    const { result } = renderHook(() =>
+      useStandaloneSubtitles({ ...config, ...languages }, true),
+    );
+    await waitFor(() =>
+      expect(result.current.subtitleTracksForPlayer).toHaveLength(2),
+    );
+    const tracks = result.current.subtitleTracksForPlayer;
+    const created = createdUrls();
+
+    act(() => result.current.handleSetCueSpeakers(0, [1], 1));
+    await sleep(400);
+    expect(result.current.mergedSubtitles[0].speakerIds).toEqual([1]);
+    expect(createdUrls()).toBe(created);
+    expect(result.current.subtitleTracksForPlayer).toBe(tracks);
+
+    act(() =>
+      result.current.handleSubtitleChange(0, 'sourceContent', 'Now visible'),
+    );
+    await waitFor(async () =>
+      expect((await vttOf(result))[0]).toContain('Now visible'),
+    );
+    expect(createdUrls()).toBe(created + 2);
+  });
+
+  test('releases its URLs on unmount and cancels a pending rebuild', async () => {
+    const { result, unmount } = renderHook(() =>
+      useStandaloneSubtitles({ ...config, ...languages }, true),
+    );
+    await waitFor(() =>
+      expect(result.current.subtitleTracksForPlayer).toHaveLength(2),
+    );
+    const urls = result.current.subtitleTracksForPlayer.map(
+      (track) => track.src,
+    );
+    act(() =>
+      result.current.handleSubtitleChange(0, 'sourceContent', 'Pending edit'),
+    );
+
+    unmount();
+    urls.forEach((url) =>
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith(url),
+    );
+    const created = createdUrls();
+    await sleep(400);
+    expect(createdUrls()).toBe(created);
+  });
+
+  test('drops the previous document tracks while another document loads', async () => {
+    const { result, rerender } = renderHook(
+      ({ source }) =>
+        useStandaloneSubtitles(
+          { sourceSubtitlePath: source, sourceLanguage: 'en' },
+          true,
+        ),
+      { initialProps: { source: '/source.srt' } },
+    );
+    await waitFor(() =>
+      expect(result.current.subtitleTracksForPlayer).toHaveLength(1),
+    );
+    const previous = result.current.subtitleTracksForPlayer[0].src;
+
+    rerender({ source: '/other.srt' });
+    expect(result.current.subtitleTracksForPlayer).toEqual([]);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(previous);
+
+    await waitFor(async () =>
+      expect((await vttOf(result))[0]).toContain('/other.srt'),
+    );
+  });
+
+  test('a preview failure never blocks editing and recovers on the next change', async () => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    (URL.createObjectURL as jest.Mock).mockImplementationOnce(() => {
+      throw new Error('blob unavailable');
+    });
+    const { result } = renderHook(() =>
+      useStandaloneSubtitles({ ...config, ...languages }, true),
+    );
+    await waitFor(() =>
+      expect(log).toHaveBeenCalledWith(
+        expect.stringContaining('player preview'),
+        expect.any(Error),
+      ),
+    );
+    expect(result.current.loadError).toBe('');
+    expect(result.current.subtitleTracksForPlayer).toEqual([]);
+
+    act(() =>
+      result.current.handleSubtitleChange(0, 'sourceContent', 'Still editable'),
+    );
+    expect(result.current.mergedSubtitles[0].sourceContent).toBe(
+      'Still editable',
+    );
+    await waitFor(async () =>
+      expect((await vttOf(result))[0]).toContain('Still editable'),
+    );
+    log.mockRestore();
+  });
+
+  test('does not leak the first URL when the second track cannot be created', async () => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const create = URL.createObjectURL as jest.Mock;
+    create
+      .mockImplementationOnce(create.getMockImplementation()!)
+      .mockImplementationOnce(() => {
+        throw new Error('second track failed');
+      });
+    const { result } = renderHook(() =>
+      useStandaloneSubtitles({ ...config, ...languages }, true),
+    );
+    await waitFor(() => expect(log).toHaveBeenCalled());
+
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:preview-1');
+    expect(result.current.subtitleTracksForPlayer).toEqual([]);
+    log.mockRestore();
+  });
+});
