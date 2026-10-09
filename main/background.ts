@@ -36,6 +36,7 @@ import {
   initCrashDiagnostics,
   markCrashMonitorShuttingDown,
 } from './helpers/crash/crashReporting';
+import { markCleanExit } from './helpers/crash/runLifecycle';
 import { setupAppMenu } from './helpers/menu';
 import {
   setupWindowCloseBehavior,
@@ -156,8 +157,12 @@ app.on('before-quit', (event) => {
     shutdownToolboxProcesses();
     cancelProofreadWaveforms();
     void shutdownPythonRuntime().finally(() => {
+      // 走到这里才算“正常退出”：之后进程被收尾崩溃的话，下次启动仍能看到证据
+      markCleanExit();
       app.exit(0);
     });
+  } else {
+    markCleanExit();
   }
 });
 
