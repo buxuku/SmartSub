@@ -27,6 +27,7 @@ import {
   type CrashMonitor,
   type UtilityExitReport,
 } from './crashMonitor';
+import { applyNativeCrashEnv } from './nativeEnv';
 import { beginRun } from './runLifecycle';
 
 /** 回退开关：SMARTSUB_DISABLE_CRASH_REPORTER=true 不启动 crashReporter（监听与事件记录仍保留） */
@@ -35,6 +36,8 @@ const DISABLE_ENV = 'SMARTSUB_DISABLE_CRASH_REPORTER';
 let reporterStarted = false;
 let monitor: CrashMonitor | null = null;
 let listenersInstalled = false;
+/** 本次启动为原生代码设置的环境变量，随诊断日志一并记下 */
+let nativeEnvApplied: string[] = [];
 
 /** Crashpad 数据库目录（含 .dmp）。 */
 export function getCrashDumpsDir(): string {
@@ -121,6 +124,8 @@ export function startCrashReporting(): void {
   } catch (error) {
     console.error('[crash] failed to install listeners:', error);
   }
+  // 早于任何 addon 加载与 utilityProcess 创建：子进程继承主进程环境
+  nativeEnvApplied = applyNativeCrashEnv(process.env, process.platform);
   if (reporterStarted) return;
   if (process.env[DISABLE_ENV] === 'true') return;
   try {
@@ -157,6 +162,9 @@ export function initCrashDiagnostics(sink?: CrashLogSink): void {
     pruneDumpFiles(getCrashDumpsDir());
   } catch (error) {
     console.error('[crash] failed to prune diagnostics:', error);
+  }
+  if (nativeEnvApplied.length > 0) {
+    sink?.(`Native crash env applied: ${nativeEnvApplied.join(', ')}`, 'info');
   }
   sink?.(
     reporterStarted

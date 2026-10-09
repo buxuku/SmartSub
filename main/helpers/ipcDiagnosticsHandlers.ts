@@ -27,6 +27,7 @@ import {
   getPreviousRunNotice,
 } from './crash/runLifecycle';
 import { snapshotBreaker } from './crash/nativeGuard';
+import { getCpuFeatureReport } from './crash/cpuFeaturesService';
 import { buildCrashSnapshot } from './crash/crashSnapshot';
 import { describeExit } from './crash/exitClassifier';
 import { summarizeMinidumpFile } from './crash/minidumpSummary';
@@ -49,6 +50,8 @@ import type {
 
 /** 显卡环境的探测要跑外部命令，偶尔很慢；诊断包不能因此卡住。 */
 const GPU_PROBE_TIMEOUT_MS = 8000;
+/** Windows 首次探测 CPU 指令集要起 PowerShell（实测 1.3 到 2.1 秒），多留一些余量。 */
+const CPU_FEATURES_TIMEOUT_MS = 12000;
 
 /** 本次运行里由我们生成的诊断包路径：只允许对这些路径做“在文件夹中显示”。 */
 const exportedFiles = new Set<string>();
@@ -123,6 +126,12 @@ function createSources(): DiagnosticsSources {
       app: appInfo(),
       buildInfo: getBuildInfo(),
       ...(await gatherSystemInfo()),
+      // 内置 whisper 需要的指令集探测结果（Windows 上首次探测要几秒，带超时）
+      cpuFeatures: await withTimeout(
+        getCpuFeatureReport(),
+        CPU_FEATURES_TIMEOUT_MS,
+        'cpu features',
+      ).catch((error) => ({ error: errorText(error) })),
     }),
     gpu: () =>
       withTimeout(getGpuEnvironment(), GPU_PROBE_TIMEOUT_MS, 'gpu detection'),

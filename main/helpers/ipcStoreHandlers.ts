@@ -22,6 +22,7 @@ import {
   LogQuery,
 } from './logStorage';
 import { getBuildInfo } from './buildInfo';
+import { getCpuFeatureReport } from './crash/cpuFeaturesService';
 import { exportConfig, importConfig } from './configExporter';
 import { rebuildAppMenu } from './menu';
 import { shutdownPythonRuntime } from './pythonRuntime';
@@ -47,6 +48,24 @@ import { assertProviderList } from '../../types/providerPersistence';
 import { saveProviderList } from './providerPersistence';
 
 console.log(app.getVersion(), 'version');
+
+/**
+ * 把 CPU 指令集探测结果写进日志：用户提 issue 时附上的日志里就带着证据。
+ * 推迟几秒再做，避开启动最忙的时候；Windows 上首次探测要起一次 PowerShell。
+ */
+const CPU_FEATURES_LOG_DELAY_MS = 5000;
+
+function logCpuFeaturesLater(): void {
+  setTimeout(() => {
+    getCpuFeatureReport()
+      .then((report) => {
+        logMessage(`cpuFeatures: ${JSON.stringify(report)}`, 'info');
+      })
+      .catch(() => {
+        // 探测失败不影响任何功能
+      });
+  }, CPU_FEATURES_LOG_DELAY_MS).unref();
+}
 
 export function setupStoreHandlers() {
   // gpuMode 一次性迁移：
@@ -98,9 +117,12 @@ export function setupStoreHandlers() {
         totalmem: os.totalmem(),
         freemem: os.freemem(),
         type: os.type(),
+        // x64 版本在 ARM 设备上经转译运行（Rosetta、Windows 的 x64 模拟）
+        translated: app.runningUnderARM64Translation === true,
         buildInfo: getBuildInfo(),
       };
       logMessage(`osInfo: ${JSON.stringify(osInfo, null, 2)}`, 'info');
+      logCpuFeaturesLater();
       logMessage('Translation providers initialized', 'info');
     })
     .catch(() => {
