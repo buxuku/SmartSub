@@ -32,6 +32,7 @@ import GpuDownloadProgress from './gpu/GpuDownloadProgress';
 import GpuInstalledList from './gpu/GpuInstalledList';
 import GpuCustomAddonSection from './gpu/GpuCustomAddonSection';
 import GpuDiagnosticsPanel from './gpu/GpuDiagnosticsPanel';
+import SuppressedBackends from './gpu/SuppressedBackends';
 import {
   persistDownloadSource,
   readPersistedDownloadSource,
@@ -603,6 +604,7 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
 
         {heroEl}
         {progressEl}
+        <SuppressedBackends />
 
         {isDesktopGpuPlatform ? (
           <>
@@ -651,6 +653,7 @@ const GpuAccelerationCard: React.FC<GpuAccelerationCardProps> = ({
 
       {heroEl}
       {progressEl}
+      <SuppressedBackends />
 
       {isDesktopGpuPlatform && (
         <>

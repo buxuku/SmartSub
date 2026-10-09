@@ -511,7 +511,7 @@ This bundle was generated locally by SmartSub. Nothing is uploaded automatically
 - gpu.json         显卡与加速环境 / GPU and acceleration environment
 - settings.json    部分设置（白名单；不含 API Key、服务商配置，路径只说明是否自定义）
                    A whitelisted subset of settings (no API keys or provider configs; paths are not included)
-- addon.json       whisper 加速包的加载记录 / whisper addon load history
+- addon.json       whisper 加速包的加载记录与崩溃熔断状态 / whisper addon load history and crash-breaker state
 
 隐私 / Privacy
 - 不含 API Key、翻译 / 配音 / 听写服务商配置，也不含媒体与字幕文件。

@@ -238,7 +238,10 @@
       "title": "The app seems to have closed unexpectedly last time",
       "description": "A crash record was found. Exporting a diagnostics bundle for the developer helps find the cause; nothing is uploaded automatically.",
       "descriptionDetail": "A crash record was found ({{detail}}). Exporting a diagnostics bundle for the developer helps find the cause; nothing is uploaded automatically.",
-      "action": "Export diagnostics"
+      "action": "Export diagnostics",
+      "suppressedFamily": "The built-in speech recognition addons were disabled (this computer's CPU may lack an instruction set they need). Use cloud speech recognition instead, or retry from the “GPU Acceleration” settings.",
+      "suppressedBackends": "Disabled automatically: {{backends}}. Transcription will use something else; you can retry from the “GPU Acceleration” settings.",
+      "listSeparator": ", "
     }
   },
   "faq": {
