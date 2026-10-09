@@ -536,7 +536,7 @@ export default function VideoPreview({
                 </p>
                 <details className="mt-0.5 text-[11px] text-destructive">
                   <summary>{t('previewErrorDetails')}</summary>
-                  <p className="max-h-24 overflow-auto break-all">
+                  <p className="max-h-24 overflow-auto whitespace-pre-wrap break-all">
                     {progress.errorMessage}
                   </p>
                 </details>

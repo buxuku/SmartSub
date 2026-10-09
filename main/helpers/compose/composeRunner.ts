@@ -49,6 +49,8 @@ import {
   type ComposePlanSubtitle,
 } from './composeCommandBuilder';
 import { createComposeOutput } from './composeOutput';
+import { withFfmpegFailureReason } from './ffmpegFailure';
+import { stderrTail } from '../ffmpegErrorUtils';
 import { scanEmbeddedSubtitles } from '../toolbox/embeddedSubtitleExtractor';
 import { probeVideoInfo } from '../toolbox/videoTrimmer';
 import { assertValidSubtitleStyle } from '../../../types/subtitleStyleValidation';
@@ -57,6 +59,9 @@ import { prepareSubtitleFonts } from '../fontResolver';
 
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
 ffmpeg.setFfmpegPath(ffmpegPath);
+
+/** ffmpeg 失败时写进日志的输出行数 */
+const FAILURE_LOG_LINES = 40;
 
 /** 4K（高度≥1800）在画质档位基准上 CRF +2：高像素密度下感知质量冗余，控制体积 */
 const CRF_4K_HEIGHT_THRESHOLD = 1800;
@@ -85,6 +90,19 @@ function cleanupPartialOutput(outputPath: string): void {
   } catch (cleanupErr) {
     logMessage(`删除未完成输出文件失败: ${cleanupErr}`, 'warning');
   }
+}
+
+/**
+ * ffmpeg 失败时把输出末尾写进日志。界面与错误消息只给提炼后的原因，
+ * 完整上下文（输入流、滤镜与编码器的状态）留给日志排查。
+ */
+function logFfmpegFailureOutput(stderr?: string | null): void {
+  const tail = stderrTail(stderr ?? undefined, FAILURE_LOG_LINES);
+  if (!tail) return;
+  logMessage(
+    `FFmpeg 失败输出（末尾 ${tail.split('\n').length} 行）:\n${tail}`,
+    'error',
+  );
 }
 
 /** CPU 编码方案：libx264 + 画质档位 CRF（含 4K 偏移），维持既有行为 */
@@ -361,7 +379,7 @@ export async function runComposeJob(
           currentCommand = null;
           resolve();
         })
-        .on('error', (err) => {
+        .on('error', (err, _stdout, stderr) => {
           currentCommand = null;
           if (cancelled) {
             cleanupPartialOutput(outPath);
@@ -369,7 +387,10 @@ export async function runComposeJob(
             return;
           }
           cleanupPartialOutput(outPath);
-          reject(err);
+          // fluent-ffmpeg 拼的 err.message 会丢掉带 `[xxx @ 0x…]` 前缀的原因行（#521），
+          // 真实原因要从 stderr 里取；硬件回退日志、作业失败日志与界面都读这个 message
+          logFfmpegFailureOutput(stderr);
+          reject(withFfmpegFailureReason(err, stderr));
         });
       currentCommand = command;
       command.save(outPath);
