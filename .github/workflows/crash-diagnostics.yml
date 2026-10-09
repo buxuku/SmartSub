@@ -38,7 +38,6 @@ jobs:
       run:
         shell: bash
     env:
-      SMOKE_WORK_DIR: ${{ runner.temp }}/crash-smoke
       # CI 里编不出 boom 样本就是失败，不是跳过
       SMOKE_REQUIRE_NATIVE: '1'
       # 失败时要上传现场；通过时目录不大，也一并保留，便于对照数据
@@ -60,6 +59,10 @@ jobs:
 
       - name: Download the Electron binary
         run: node node_modules/electron/install.js
+
+      # job 级 env 里不能用 runner 上下文，只能在运行时从环境变量取
+      - name: Smoke working directory
+        run: echo "SMOKE_WORK_DIR=$RUNNER_TEMP/crash-smoke" >> "$GITHUB_ENV"
 
       - name: Machine info
         run: |
