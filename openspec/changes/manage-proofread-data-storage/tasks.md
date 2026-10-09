@@ -9,9 +9,9 @@
 
 ## 2. 配音发现顺序（P2）
 
-- [ ] 2.1 改造 `main/helpers/dubbing/speakerMetadata.ts` 的 `findDubbingProofreadDataFile`：显式路径 → 托管根 → 字幕旁旧邻居目录，同一位置多个命中取 mtime 最新
-- [ ] 2.2 托管目录扫描按 `(路径, mtimeMs, size)` 缓存 meta 路径摘要，并在每次扫描后清理已不存在的条目
-- [ ] 2.3 扩展 `scripts/dubbing/test-dubbing-units.ts`：覆盖托管优先、回落旧目录、多命中取最新、显式路径优先，既有邻居目录用例保持通过
+- [x] 2.1 改造 `main/helpers/dubbing/speakerMetadata.ts` 的 `findDubbingProofreadDataFile`：显式路径 → 托管根 → 字幕旁旧邻居目录，同一位置多个命中取 mtime 最新
+- [x] 2.2 托管目录扫描按 `(路径, mtimeMs, size)` 缓存 meta 路径摘要，并在每次扫描后清理已不存在的条目
+- [x] 2.3 扩展 `scripts/dubbing/test-dubbing-units.ts`：覆盖托管优先、回落旧目录、多命中取最新、显式路径优先，既有邻居目录用例保持通过
 
 ## 3. 随工作项删除回收（P3）
 
