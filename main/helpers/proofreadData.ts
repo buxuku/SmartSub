@@ -300,6 +300,16 @@ export async function readProofreadDataFile(
   const content = await fs.promises.readFile(filePath, 'utf-8');
   try {
     const raw = JSON.parse(content);
+    // Sidecars written before cue timings were repaired (3.9.0) can hold
+    // zero-length cues. Repair them in memory only, never on disk, so those
+    // files open again; any other corruption is still rejected below.
+    if (Array.isArray(raw?.cues)) {
+      const { cues, repairs } = repairNonPositiveCueDurations(raw.cues);
+      if (repairs.length) {
+        raw.cues = cues;
+        logCueTimingRepairs(repairs, filePath);
+      }
+    }
     if (options.strict) assertValidProofreadData(raw);
     const normalized = normalizeProofreadData(raw);
     // v1 was created while technical labels could still be embedded in the
