@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import ffmpegStatic from 'ffmpeg-static';
 import ffmpeg from 'fluent-ffmpeg';
 import { logMessage, store } from '../storeManager';
+import { withCrashContext } from '../crash/crashContext';
 import { ensureTempDir } from '../fileUtils';
 import {
   getInstalledFunasrAsrModels,
@@ -254,24 +255,33 @@ async function transcribeWithBuiltinWhisper(
 
   const settings = (store.get('settings') || {}) as Record<string, unknown>;
   const gpuMode = (settings.gpuMode as string) || 'auto';
-  const result = await whisperAsync({
-    language: getWhisperLanguage(language),
-    model: modelPath,
-    fname_inp: wavPath,
-    use_gpu: gpuMode !== 'cpu',
-    flash_attn: shouldUseFlashAttn(backend),
-    no_prints: true,
-    comma_in_time: false,
-    translate: false,
-    no_timestamps: false,
-    audio_ctx: 0,
-    token_timestamps: false,
-    max_len: 0,
-    print_progress: false,
-    prompt: '',
-    vad: false,
-    signal,
-  });
+  const result = await withCrashContext(
+    {
+      engine: 'whisper-reference',
+      backend,
+      model,
+      phase: 'voice-clone-reference',
+    },
+    () =>
+      whisperAsync({
+        language: getWhisperLanguage(language),
+        model: modelPath,
+        fname_inp: wavPath,
+        use_gpu: gpuMode !== 'cpu',
+        flash_attn: shouldUseFlashAttn(backend),
+        no_prints: true,
+        comma_in_time: false,
+        translate: false,
+        no_timestamps: false,
+        audio_ctx: 0,
+        token_timestamps: false,
+        max_len: 0,
+        print_progress: false,
+        prompt: '',
+        vad: false,
+        signal,
+      }),
+  );
 
   if (isWhisperCancelledResult(result) || signal?.aborted) {
     throw new TaskCancelledError();
