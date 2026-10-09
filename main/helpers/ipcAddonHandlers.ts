@@ -36,6 +36,7 @@ import {
   getPackageDownloadSize,
 } from './addonVersions';
 import { resetSuppressions, snapshotBreaker } from './crash/nativeGuard';
+import { getCpuAdvisory } from './crash/cpuFeaturesService';
 import type {
   AddonVariant,
   DownloadSource,
@@ -213,6 +214,9 @@ export function registerAddonIpcHandlers(): void {
       return { success: false, error: String(error) };
     }
   });
+
+  // CPU 指令集预警：只有探测明确缺失才会有 missing；探测不到一律视为“不知道”
+  ipcMain.handle('get-cpu-advisory', () => getCpuAdvisory());
 
   // 因崩溃（或连续异常退出）被自动停用的后端：设置页展示，并允许手动重新尝试
   ipcMain.handle('get-suppressed-backends', (): SuppressedBackendInfo[] =>
