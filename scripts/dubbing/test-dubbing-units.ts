@@ -84,7 +84,14 @@ import {
   parseTtsVoiceLabels,
   resolveTtsVoiceLabel,
 } from '../../types/ttsProvider';
-import { loadDubbingSpeakerMetadata } from '../../main/helpers/dubbing/speakerMetadata';
+import {
+  findDubbingProofreadDataFile,
+  loadDubbingSpeakerMetadata,
+} from '../../main/helpers/dubbing/speakerMetadata';
+import {
+  LEGACY_PROOFREAD_DIR,
+  setProofreadDataRoot,
+} from '../../main/helpers/proofreadDataStorage';
 import { resolveTtsModelRequestForVoice } from '../../main/helpers/dubbing/ttsLanguageRules';
 import {
   detectDubbingLanguage,
@@ -1564,6 +1571,156 @@ function cue(
     'speaker voice: 角色预计总时长按 cue 累计',
   );
   fs.rmSync(root, { recursive: true, force: true });
+}
+
+// ── sidecar 自动发现：显式路径 → 托管目录 → 字幕旁旧目录；同一位置多个命中取最近修改 ──
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dub-sidecar-order-'));
+  const managedRoot = path.join(root, 'userData', 'proofread-data');
+  const videoDir = path.join(root, 'videos');
+  const legacyDir = path.join(videoDir, LEGACY_PROOFREAD_DIR);
+  fs.mkdirSync(managedRoot, { recursive: true });
+  fs.mkdirSync(legacyDir, { recursive: true });
+  const subtitlePath = path.join(videoDir, 'episode.srt');
+  const otherSubtitlePath = path.join(videoDir, 'other.srt');
+  fs.writeFileSync(subtitlePath, 'fixture');
+
+  const sidecarJson = (targetFile: string) =>
+    JSON.stringify({
+      version: 2,
+      meta: {
+        createdAt: '2026-10-01T00:00:00.000Z',
+        updatedAt: '2026-10-01T00:00:00.000Z',
+        targetFile,
+      },
+      speakers: [{ id: 1, displayName: '主持人', color: '#2563eb' }],
+      cues: [
+        {
+          id: '1',
+          startMs: 0,
+          endMs: 1000,
+          source: '',
+          target: '你好',
+          speakerIds: [1],
+          primarySpeakerId: 1,
+        },
+      ],
+    });
+  const baseSeconds = Math.floor(Date.now() / 1000) - 3600;
+  const touch = (filePath: string, age: number) => {
+    const seconds = baseSeconds + age;
+    fs.utimesSync(filePath, seconds, seconds);
+  };
+  const put = (dir: string, name: string, targetFile: string, age: number) => {
+    const filePath = path.join(dir, name);
+    fs.writeFileSync(filePath, sidecarJson(targetFile));
+    touch(filePath, age);
+    return filePath;
+  };
+  const found = (explicitPath?: string) =>
+    findDubbingProofreadDataFile(subtitlePath, explicitPath)?.filePath ?? null;
+
+  try {
+    setProofreadDataRoot(undefined);
+    const legacyOld = put(legacyDir, 'a-old.json', subtitlePath, 10);
+    const legacyNew = put(legacyDir, 'b-new.json', subtitlePath, 20);
+    eq(
+      found(),
+      legacyNew,
+      'sidecar discovery: 旧目录有多个命中时取最近修改，而不是目录遍历的第一个',
+    );
+
+    setProofreadDataRoot(managedRoot);
+    eq(
+      found(),
+      legacyNew,
+      'sidecar discovery: 托管目录没有匹配项时回落字幕旁的旧目录',
+    );
+
+    const managedA = put(managedRoot, 'a.json', subtitlePath, 5);
+    eq(
+      found(),
+      managedA,
+      'sidecar discovery: 托管目录优先于旧目录，即使旧目录的更新',
+    );
+
+    const managedB = put(managedRoot, 'b.json', subtitlePath, 30);
+    eq(found(), managedB, 'sidecar discovery: 托管目录有多个命中时取最近修改');
+
+    touch(managedA, 40);
+    eq(
+      found(),
+      managedA,
+      'sidecar discovery: 修改时间变化后重新选择最近修改的一份',
+    );
+
+    put(managedRoot, 'unrelated.json', otherSubtitlePath, 100);
+    const broken = path.join(managedRoot, 'broken.json');
+    fs.writeFileSync(broken, '{ not json');
+    touch(broken, 110);
+    eq(
+      found(),
+      managedA,
+      'sidecar discovery: 属于其他字幕或无法解析的文件即使最新也被忽略',
+    );
+
+    eq(
+      found(legacyOld),
+      legacyOld,
+      'sidecar discovery: 显式给定且可解析的路径优先于托管目录',
+    );
+    eq(
+      found(path.join(root, 'missing.json')),
+      managedA,
+      'sidecar discovery: 显式路径不存在时继续按托管目录查找',
+    );
+    eq(
+      found(broken),
+      managedA,
+      'sidecar discovery: 显式路径无法解析时继续按托管目录查找',
+    );
+
+    const metadata = loadDubbingSpeakerMetadata(subtitlePath, [
+      { startMs: 0, endMs: 1000, text: '你好' },
+    ]);
+    eq(
+      metadata.proofreadDataFile,
+      managedA,
+      'sidecar discovery: 角色信息读取的是托管目录里的那份',
+    );
+    eq(
+      metadata.speakers.map((speaker) => speaker.name),
+      ['主持人'],
+      'sidecar discovery: 托管目录里的角色名称照常带入配音',
+    );
+
+    // 同一份 sidecar 被改写成不再匹配：缓存的路径摘要必须随之失效
+    fs.writeFileSync(managedA, sidecarJson(otherSubtitlePath));
+    touch(managedA, 200);
+    eq(
+      found(),
+      managedB,
+      'sidecar discovery: 改写后不再匹配的 sidecar 不会被缓存继续命中',
+    );
+
+    fs.rmSync(managedB);
+    eq(
+      found(),
+      legacyNew,
+      'sidecar discovery: 被删除的 sidecar 不会被缓存继续命中，回落旧目录',
+    );
+
+    setProofreadDataRoot(undefined);
+    put(managedRoot, 'c.json', subtitlePath, 300);
+    eq(
+      found(),
+      legacyNew,
+      'sidecar discovery: 宿主没有注入托管目录时只在旧目录里找',
+    );
+  } finally {
+    setProofreadDataRoot(undefined);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 }
 
 // ── sessionStore：会话持久化（元数据往返 / hash 校验 / 产物缺失降级 / 删除）──

@@ -2,6 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import type { SubtitleCue } from '../subtitleFormats';
 import {
+  LEGACY_PROOFREAD_DIR,
+  getProofreadDataRoot,
+} from '../proofreadDataStorage';
+import {
   normalizePrimarySpeakerId,
   normalizeProofreadData,
   normalizeSpeakerIds,
@@ -20,14 +24,13 @@ export interface DubbingSpeakerMetadata {
   assignments: DubbingCueSpeakerAssignment[];
 }
 
-function samePath(left: string | undefined, right: string): boolean {
-  if (!left) return false;
+/** Absolute, lower-cased form used to decide whether two paths are the same file. */
+function normalizeForCompare(filePath: string | undefined): string | null {
+  if (!filePath) return null;
   try {
-    return (
-      path.resolve(left).toLowerCase() === path.resolve(right).toLowerCase()
-    );
+    return path.resolve(filePath).toLowerCase();
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -41,7 +44,103 @@ function readSidecar(filePath: string): ProofreadDataFileV2 | null {
   }
 }
 
-/** Find the sidecar whose recorded source/target path owns this subtitle. */
+interface SidecarFingerprint {
+  mtimeMs: number;
+  size: number;
+  /** Normalized meta.sourceFile / targetFile / finalTargetFile; null if the file is not a readable sidecar. */
+  ownedPaths: string[] | null;
+}
+
+/**
+ * Per-folder memo of which subtitles each sidecar owns, keyed by the file's
+ * mtime and size. The managed folder is shared by every task, so without it
+ * each lookup would parse every sidecar again.
+ */
+const sidecarFingerprints = new Map<string, Map<string, SidecarFingerprint>>();
+const MAX_REMEMBERED_FOLDERS = 32;
+
+function readOwnedPaths(filePath: string): string[] | null {
+  const data = readSidecar(filePath);
+  if (!data) return null;
+  return [data.meta.sourceFile, data.meta.targetFile, data.meta.finalTargetFile]
+    .map(normalizeForCompare)
+    .filter((candidate): candidate is string => candidate !== null);
+}
+
+/** Sidecars in `dir` that own `subtitlePath`, most recently modified first. */
+function findOwningSidecars(
+  dir: string,
+  subtitlePath: string,
+): Array<{ filePath: string; mtimeMs: number }> {
+  let names: string[];
+  try {
+    names = fs
+      .readdirSync(dir)
+      .filter((name) => name.toLowerCase().endsWith('.json'));
+  } catch {
+    sidecarFingerprints.delete(dir);
+    return [];
+  }
+  const target = normalizeForCompare(subtitlePath);
+  const previous = sidecarFingerprints.get(dir);
+  // Rebuilt on every scan, so files that were deleted drop out of the memo.
+  const current = new Map<string, SidecarFingerprint>();
+  const owners: Array<{ filePath: string; mtimeMs: number }> = [];
+  for (const name of names) {
+    const filePath = path.join(dir, name);
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(filePath);
+    } catch {
+      continue;
+    }
+    if (!stat.isFile()) continue;
+    let fingerprint = previous?.get(filePath);
+    if (
+      !fingerprint ||
+      fingerprint.mtimeMs !== stat.mtimeMs ||
+      fingerprint.size !== stat.size
+    ) {
+      fingerprint = {
+        mtimeMs: stat.mtimeMs,
+        size: stat.size,
+        ownedPaths: readOwnedPaths(filePath),
+      };
+    }
+    current.set(filePath, fingerprint);
+    if (target !== null && fingerprint.ownedPaths?.includes(target)) {
+      owners.push({ filePath, mtimeMs: stat.mtimeMs });
+    }
+  }
+  sidecarFingerprints.delete(dir);
+  sidecarFingerprints.set(dir, current);
+  if (sidecarFingerprints.size > MAX_REMEMBERED_FOLDERS) {
+    const oldest = sidecarFingerprints.keys().next().value;
+    if (oldest !== undefined) sidecarFingerprints.delete(oldest);
+  }
+  // Equal timestamps fall back to the path so the pick stays stable.
+  return owners.sort(
+    (a, b) => b.mtimeMs - a.mtimeMs || (a.filePath < b.filePath ? 1 : -1),
+  );
+}
+
+function findInDirectory(
+  dir: string,
+  subtitlePath: string,
+): { filePath: string; data: ProofreadDataFileV2 } | null {
+  for (const { filePath } of findOwningSidecars(dir, subtitlePath)) {
+    const data = readSidecar(filePath);
+    if (data) return { filePath, data };
+  }
+  return null;
+}
+
+/**
+ * Find the sidecar whose recorded source/target path owns this subtitle.
+ * Looks at the explicit path first, then the managed folder, then the folder
+ * next to the subtitle that older versions wrote to. When one folder holds
+ * several matches, the most recently modified one wins.
+ */
 export function findDubbingProofreadDataFile(
   subtitlePath: string,
   explicitPath?: string,
@@ -51,33 +150,16 @@ export function findDubbingProofreadDataFile(
     if (data) return { filePath: explicitPath, data };
   }
 
-  const sidecarDir = path.join(
-    path.dirname(subtitlePath),
-    '.smartsub-proofread',
+  const managedRoot = getProofreadDataRoot();
+  if (managedRoot) {
+    const managed = findInDirectory(managedRoot, subtitlePath);
+    if (managed) return managed;
+  }
+
+  return findInDirectory(
+    path.join(path.dirname(subtitlePath), LEGACY_PROOFREAD_DIR),
+    subtitlePath,
   );
-  if (!fs.existsSync(sidecarDir)) return null;
-  let candidates: string[] = [];
-  try {
-    candidates = fs
-      .readdirSync(sidecarDir)
-      .filter((name) => name.toLowerCase().endsWith('.json'))
-      .map((name) => path.join(sidecarDir, name));
-  } catch {
-    return null;
-  }
-  for (const filePath of candidates) {
-    const data = readSidecar(filePath);
-    if (!data) continue;
-    const metaPaths = [
-      data.meta.sourceFile,
-      data.meta.targetFile,
-      data.meta.finalTargetFile,
-    ];
-    if (metaPaths.some((candidate) => samePath(candidate, subtitlePath))) {
-      return { filePath, data };
-    }
-  }
-  return null;
 }
 
 function cueKey(startMs: number, endMs: number): string {
