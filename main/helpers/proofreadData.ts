@@ -28,7 +28,9 @@ import {
   normalizeProofreadData,
   normalizeSpeakerIds,
   normalizeSpeakerRoster,
+  repairNonPositiveCueDurations,
   shouldRealignSpeakerAssignment,
+  type CueTimingRepair,
   type ProofreadDataCue,
   type ProofreadDataFileV2,
   type SpeakerInfo,
@@ -65,6 +67,27 @@ export type ProofreadDataWriteResult =
       reason: 'source-unavailable' | 'write-failed';
       error?: string;
     };
+
+const MAX_LOGGED_CUE_REPAIRS = 5;
+
+function logCueTimingRepairs(
+  repairs: CueTimingRepair[],
+  filePath: string,
+): void {
+  if (!repairs.length) return;
+  const ids = repairs
+    .slice(0, MAX_LOGGED_CUE_REPAIRS)
+    .map((repair) => repair.id)
+    .join(', ');
+  const more =
+    repairs.length > MAX_LOGGED_CUE_REPAIRS
+      ? `, +${repairs.length - MAX_LOGGED_CUE_REPAIRS} more`
+      : '';
+  logMessage(
+    `proofread data: repaired ${repairs.length} cue(s) whose end was not after the start (ids: ${ids}${more}): ${filePath}`,
+    'warning',
+  );
+}
 
 function safeFileNamePart(input: string): string {
   const cleaned = input
@@ -210,12 +233,17 @@ export async function writeProofreadDataFromFiles({
 
     const targetEntries = await readSubtitleEntries(targetFile);
     const now = new Date().toISOString();
-    const cues = buildCues(
-      sourceEntries,
-      targetEntries,
-      speakerSegments,
-      translationFailures,
-      missedSpeechWarnings,
+    // buildCues matches target text on the original times; only afterwards do
+    // zero-length or inverted cues get a visible duration, so the sidecar never
+    // holds a cue the strict reader (proofread panel) would refuse.
+    const { cues, repairs } = repairNonPositiveCueDurations(
+      buildCues(
+        sourceEntries,
+        targetEntries,
+        speakerSegments,
+        translationFailures,
+        missedSpeechWarnings,
+      ),
     );
     const proofreadData: ProofreadDataFile = normalizeProofreadData({
       version: PROOFREAD_DATA_VERSION,
@@ -240,7 +268,12 @@ export async function writeProofreadDataFromFiles({
       ...(missedSpeechSummary ? { missedSpeechSummary } : {}),
     });
 
+    // Tripwire: whatever else slips through must fail here, with a reason,
+    // instead of leaving a sidecar that can never be opened.
+    assertValidProofreadData(proofreadData);
+
     const proofreadDataFile = getProofreadDataPath(file);
+    logCueTimingRepairs(repairs, proofreadDataFile);
     await fs.promises.mkdir(path.dirname(proofreadDataFile), {
       recursive: true,
     });
@@ -358,7 +391,7 @@ export async function updateProofreadDataFromSubtitles(
   const existing = await readProofreadDataFile(filePath);
   const existingById = new Map(existing.cues.map((cue) => [cue.id, cue]));
   const now = new Date().toISOString();
-  const updated: ProofreadDataFile = normalizeProofreadData({
+  const built: ProofreadDataFile = normalizeProofreadData({
     ...existing,
     version: PROOFREAD_DATA_VERSION,
     meta: {
@@ -428,6 +461,19 @@ export async function updateProofreadDataFromSubtitles(
       };
     }),
   });
+
+  // Rows can arrive without a duration (the editor's time-offset tool clamps
+  // shifted cues at 00:00:00,000). Repair them like the writer does, then
+  // refuse anything the strict reader would still reject, so a bad save never
+  // reaches the disk.
+  const { cues: repairedCues, repairs } = repairNonPositiveCueDurations(
+    built.cues,
+  );
+  const updated: ProofreadDataFile = repairs.length
+    ? normalizeProofreadData({ ...built, cues: repairedCues })
+    : built;
+  assertValidProofreadData(updated);
+  logCueTimingRepairs(repairs, filePath);
 
   await atomicReplaceTextFile(filePath, JSON.stringify(updated, null, 2));
   logMessage(`proofread data updated: ${filePath}`, 'info');
