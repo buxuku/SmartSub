@@ -3,6 +3,7 @@ import fs from 'fs';
 import type { EngineStatus } from '../../../types/engine';
 import { getPath, loadWhisperAddon } from '../whisper';
 import { logMessage, store } from '../storeManager';
+import { withCrashContext } from '../crash/crashContext';
 import { formatSrtContent } from '../fileUtils';
 import {
   trimSubtitleTrailingSilence,
@@ -242,7 +243,15 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
         startWatchdog();
         let chunkResult;
         try {
-          chunkResult = await whisperAsync(chunkParams);
+          chunkResult = await withCrashContext(
+            {
+              engine: 'whisper-builtin',
+              backend: whisperBackend,
+              model: whisperModel,
+              phase: 'transcribe-chunk',
+            },
+            () => whisperAsync(chunkParams),
+          );
         } finally {
           clearWatchdog();
         }
@@ -282,7 +291,15 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
     } else {
       startWatchdog();
       try {
-        result = await whisperAsync(whisperParams);
+        result = await withCrashContext(
+          {
+            engine: 'whisper-builtin',
+            backend: whisperBackend,
+            model: whisperModel,
+            phase: 'transcribe',
+          },
+          () => whisperAsync(whisperParams),
+        );
       } finally {
         clearWatchdog();
       }
