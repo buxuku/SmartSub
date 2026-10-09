@@ -1,9 +1,15 @@
 import type { ActivityObserver } from '../../../types/taskActivity';
 import path from 'path';
-import { utilityProcess, type UtilityProcess } from 'electron';
 import { logMessage } from '../storeManager';
 import { getExtraResourcesPath } from '../utils';
 import { getSherpaLibDir, isSherpaLibInstalled } from './sherpaLibPaths';
+import { spawnAppUtilityHost } from '../crash/appUtilityHost';
+import { beginCrashContext } from '../crash/crashContext';
+import {
+  buildSherpaWorkerEnv,
+  describeHostExit,
+  type UtilityHost,
+} from '../crash/utilityHost';
 import type { FunasrAddonParams } from '../engines/funasrParams';
 import type { QwenAddonParams } from '../engines/qwenParams';
 import type { FireRedAddonParams } from '../engines/fireRedParams';
@@ -83,7 +89,7 @@ function workerPath(): string {
  * 不再带崩整个应用。
  */
 class SherpaFunasrRuntime {
-  private worker: UtilityProcess | null = null;
+  private worker: UtilityHost | null = null;
   private seq = 0;
   private pending = new Map<
     string,
@@ -95,32 +101,20 @@ class SherpaFunasrRuntime {
     }
   >();
 
-  private ensureWorker(): UtilityProcess {
+  private ensureWorker(): UtilityHost {
     if (this.worker) return this.worker;
     if (!isSherpaLibInstalled()) {
       throw new Error('sherpa native lib not installed');
     }
-    const libDir = getSherpaLibDir();
-    const w = utilityProcess.fork(workerPath(), [], {
+    // fork / stderr 日志 / 退出分类 / Linux core 限制由共用底座处理（crash/utilityHost.ts）
+    const w = spawnAppUtilityHost({
+      workerFile: workerPath(),
       serviceName: 'smartsub-asr-worker',
-      stdio: 'pipe',
-      env: {
-        ...process.env,
-        SHERPA_ONNX_LIB_DIR: libDir,
-        // Windows DLL / Linux SO 依赖解析（macOS 靠 @loader_path 重写）。
-        PATH: `${libDir}${path.delimiter}${process.env.PATH ?? ''}`,
-        LD_LIBRARY_PATH: `${libDir}${path.delimiter}${
-          process.env.LD_LIBRARY_PATH ?? ''
-        }`,
-      },
+      logLabel: 'asr worker',
+      env: buildSherpaWorkerEnv(getSherpaLibDir()),
     });
-    w.on('message', (msg: any) => this.onMessage(msg));
-    // native 崩溃前的 stderr 是关键诊断线索（onnxruntime/sherpa 报错都走这里）。
-    w.stderr?.on('data', (d: Buffer) => {
-      const line = String(d).trim();
-      if (line) logMessage(`asr worker stderr: ${line}`, 'warning');
-    });
-    w.on('exit', (code) => {
+    w.onMessage((msg: any) => this.onMessage(msg));
+    w.onExit((info) => {
       // dispose() 先置 this.worker=null 再 kill：此时的非零退出码是信号终止的
       // 垃圾值，属预期停止（模型删除/导入前释放），不按异常处理。
       const expected = this.worker !== w;
@@ -128,11 +122,16 @@ class SherpaFunasrRuntime {
         this.failAll(new Error('本地转写引擎已释放（模型切换），请重试'));
         return;
       }
-      if (code !== 0) {
+      if (info.code !== 0) {
         this.failAll(
-          new Error(`本地转写引擎异常退出（code ${code}），已自动重置，请重试`),
+          new Error(
+            `本地转写引擎异常退出（code ${info.code}），已自动重置，请重试`,
+          ),
         );
-        logMessage(`asr worker exited abnormally (code ${code})`, 'error');
+        logMessage(
+          `asr worker exited abnormally (${describeHostExit(info)})`,
+          'error',
+        );
       }
       this.worker = null;
     });
@@ -184,6 +183,13 @@ class SherpaFunasrRuntime {
     const result = new Promise<TranscriptionResult>((resolve, reject) => {
       this.pending.set(id, { resolve, reject, onProgress, onActivity });
     });
+    // 崩溃现场：请求结束时移除（then 的两个分支都接住，不派生无人处理的 rejection）
+    const endContext = beginCrashContext({
+      engine: 'sherpa-asr',
+      model: model.modelType,
+      phase: 'transcribe',
+    });
+    result.then(endContext, endContext);
     w.postMessage({ type: 'transcribe', id, audioFile, ...model });
     return { id, result };
   }
@@ -207,6 +213,12 @@ class SherpaFunasrRuntime {
     }>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
     });
+    const endContext = beginCrashContext({
+      engine: 'sherpa-asr',
+      model: vadModel,
+      phase: 'detect-speech',
+    });
+    result.then(endContext, endContext);
     w.postMessage({ type: 'detectSpeech', id, audioFile, vadModel, params });
     return { id, result };
   }
@@ -228,6 +240,12 @@ class SherpaFunasrRuntime {
         reject,
       });
     });
+    const endContext = beginCrashContext({
+      engine: 'sherpa-asr',
+      model: denoiseModel,
+      phase: 'denoise',
+    });
+    result.then(endContext, endContext);
     w.postMessage({ type: 'denoise', id, audioFile, denoiseModel, outFile });
     return { id, result };
   }
