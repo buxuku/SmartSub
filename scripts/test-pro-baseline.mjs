@@ -12,6 +12,7 @@ const scripts = [
   'test:glossary',
   'test:context-glossary',
   'test:subtitle-appearance',
+  'test:compose',
   'test:compose-canvas',
   'test:compose-output',
   'test:compose-presets',
