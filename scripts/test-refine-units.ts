@@ -24,7 +24,10 @@ import {
   isMainlyCjk,
   RefineWord,
 } from '../main/helpers/subtitleRefine/types';
-import { validateSegmentation } from '../main/helpers/subtitleRefine/validator';
+import {
+  compareValidations,
+  validateSegmentation,
+} from '../main/helpers/subtitleRefine/validator';
 import {
   alignSegmentsToWords,
   alignSegmentsToCues,
@@ -206,6 +209,60 @@ eq(
   validateSegmentation('abc', [], limits).ok,
   false,
   'validator: 空结果不通过',
+);
+
+// ---------------- validator · compareValidations（#507：保留最好的一次） ----------------
+
+const halfLong = '一二三四五六七八九十';
+const cmpOneLong = validateSegmentation(longCjk, [longCjk], limits); // 内容一致，1 个超长段
+const cmpTwoLong = validateSegmentation(
+  longCjk + longCjk,
+  [longCjk, longCjk],
+  limits,
+); // 内容一致，2 个超长段（各超 2）
+const cmpOneHuge = validateSegmentation(
+  longCjk + longCjk,
+  [longCjk + longCjk],
+  limits,
+); // 内容一致，1 个超长段（超 22）
+const cmpValid = validateSegmentation(longCjk, [halfLong, halfLong], limits); // 完全合规
+const cmpBroken = validateSegmentation(
+  '大家好今天我们聊聊',
+  ['大家好'],
+  limits,
+); // 截断，内容不可用
+const cmpOvershoot4 = validateSegmentation(
+  longCjk + '一二',
+  [longCjk + '一二'],
+  limits,
+);
+const cmpOvershoot3 = validateSegmentation(
+  longCjk + '一二',
+  [longCjk + '一', '二'],
+  limits,
+);
+
+ok(
+  compareValidations(cmpOneLong, vModified) > 0 &&
+    compareValidations(vModified, cmpOneLong) < 0,
+  'compare: 内容可用（即便超长）优于内容被改写',
+);
+ok(
+  compareValidations(cmpValid, cmpOneLong) > 0,
+  'compare: 完全合规优于带超长段',
+);
+ok(
+  compareValidations(cmpOneHuge, cmpTwoLong) > 0,
+  'compare: 超长段更少者优先（即使单段超得更多）',
+);
+ok(
+  compareValidations(cmpOvershoot3, cmpOvershoot4) > 0,
+  'compare: 超长段数相同时超出量更小者优先',
+);
+eq(compareValidations(cmpOneLong, cmpOneLong), 0, 'compare: 同一结果打平');
+ok(
+  compareValidations(vModified, cmpBroken) > 0,
+  'compare: 都不可用时相似度更高者优先',
 );
 
 // ---------------- alignment · 精确（词级） ----------------
