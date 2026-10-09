@@ -50,6 +50,7 @@ const {
   proofreadDataToSubtitleRows,
   readProofreadDataFile,
   updateProofreadDataFromSubtitles,
+  updateProofreadDataOutputs,
   writeProofreadDataFromFiles,
 } = require('../main/helpers/proofreadData.ts');
 const { assertValidProofreadData } = require('../types/proofreadData.ts');
@@ -406,6 +407,140 @@ async function testSavingUnrepairableTimesIsRejected(sidecarPath) {
   );
 }
 
+function legacySidecar(version, cues) {
+  return {
+    version,
+    meta: {
+      createdAt: '2026-10-01T00:00:00.000Z',
+      updatedAt: '2026-10-01T00:00:00.000Z',
+    },
+    ...(version === 2 ? { speakers: [] } : {}),
+    cues: cues.map(([id, startMs, endMs, source]) => ({
+      id,
+      startMs,
+      endMs,
+      source,
+      target: source.toUpperCase(),
+      ...(version === 2 ? { translationStatus: 'success' } : {}),
+    })),
+  };
+}
+
+async function writeLegacy(root, name, content) {
+  const filePath = path.join(root, `${name}.json`);
+  const text =
+    typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+  await fs.promises.writeFile(filePath, text, 'utf8');
+  return { filePath, text };
+}
+
+async function testLegacySidecarsOpen(root) {
+  // Exactly what 3.9.0 left on disk: valid JSON holding cues the strict
+  // reader refused. Upgrading must be enough to open them again.
+  const v2 = await writeLegacy(
+    root,
+    'legacy-v2',
+    legacySidecar(2, [
+      ['1', 0, 1000, 'first'],
+      ['2', 5200, 5200, 'oh'],
+      ['3', 9000, 4000, 'third'],
+    ]),
+  );
+  const v1 = await writeLegacy(
+    root,
+    'legacy-v1',
+    legacySidecar(1, [['1', 0, 0, 'only']]),
+  );
+  const expectations = [
+    { name: 'v2', file: v2, ends: [1000, 6000, 9800], repaired: 2 },
+    { name: 'v1', file: v1, ends: [800], repaired: 1 },
+  ];
+  for (const { name, file, ends, repaired } of expectations) {
+    for (const strict of [true, false]) {
+      const mode = strict ? 'strict' : 'lenient';
+      logs.length = 0;
+      const read = await attempt(() =>
+        readProofreadDataFile(file.filePath, { strict }),
+      );
+      ok(
+        !read.error,
+        `${mode} read opens a legacy ${name} sidecar with non-positive cues (${errorText(read.error)})`,
+      );
+      same(
+        read.value && read.value.cues.map((cue) => cue.endMs),
+        ends,
+        `${mode} read of the legacy ${name} sidecar repairs the end times`,
+      );
+      ok(
+        logs.some(
+          (entry) =>
+            entry.type === 'warning' &&
+            entry.message.includes(`repaired ${repaired} cue`),
+        ),
+        `${mode} read of the legacy ${name} sidecar logs the repair`,
+      );
+    }
+    same(
+      await fs.promises.readFile(file.filePath, 'utf8'),
+      file.text,
+      `reading the legacy ${name} sidecar never rewrites it`,
+    );
+  }
+
+  // The export stage rewrites the sidecar's bookkeeping, which heals the file.
+  await updateProofreadDataOutputs({
+    proofreadDataFile: v2.filePath,
+    srtFile: path.join(root, 'legacy-v2.srt'),
+  });
+  const healed = await readJson(v2.filePath);
+  const contract = await attempt(() => assertValidProofreadData(healed));
+  ok(
+    !contract.error,
+    `the export stage leaves a legacy sidecar valid on disk (${errorText(contract.error)})`,
+  );
+}
+
+async function testCorruptionIsStillRejected(root) {
+  const valid = legacySidecar(2, [['1', 0, 1000, 'first']]);
+  const corrupt = {
+    'truncated JSON': '{"version":2,',
+    'text start time': {
+      ...valid,
+      cues: [{ ...valid.cues[0], startMs: 'corrupt' }],
+    },
+    'negative start time': {
+      ...valid,
+      cues: [{ ...valid.cues[0], startMs: -5, endMs: 10 }],
+    },
+    'missing end time': {
+      ...valid,
+      cues: [{ ...valid.cues[0], endMs: null }],
+    },
+    'unsupported version': { ...valid, version: 3 },
+    'non-text source': {
+      ...valid,
+      cues: [{ ...valid.cues[0], source: { text: 'lost' } }],
+    },
+  };
+  for (const [name, content] of Object.entries(corrupt)) {
+    const file = await writeLegacy(
+      root,
+      `corrupt-${name.replace(/ /g, '-')}`,
+      content,
+    );
+    const read = await attempt(() =>
+      readProofreadDataFile(file.filePath, { strict: true }),
+    );
+    ok(
+      read.error &&
+        errorText(read.error).startsWith(
+          `Invalid proofread data file: ${file.filePath}`,
+        ),
+      `strict read still rejects ${name}`,
+    );
+  }
+}
+
 async function run() {
   const root = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), 'smartsub-cue-timing-'),
@@ -414,6 +549,8 @@ async function run() {
     const sidecarPath = await testZeroLengthCueWithTranslation(root);
     await testCueShapes(root);
     await testUnreadableSidecarIsNeverWritten(root);
+    await testLegacySidecarsOpen(root);
+    await testCorruptionIsStillRejected(root);
     if (sidecarPath) {
       await testSavingRowsWithoutDuration(sidecarPath);
       await testSavingUnrepairableTimesIsRejected(sidecarPath);
