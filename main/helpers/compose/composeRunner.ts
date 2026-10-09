@@ -52,6 +52,7 @@ import { createComposeOutput } from './composeOutput';
 import { scanEmbeddedSubtitles } from '../toolbox/embeddedSubtitleExtractor';
 import { probeVideoInfo } from '../toolbox/videoTrimmer';
 import { assertValidSubtitleStyle } from '../../../types/subtitleStyleValidation';
+import { assertComposeOutputWritable } from '../../../types/composeContainer';
 import { prepareSubtitleFonts } from '../fontResolver';
 
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
@@ -400,6 +401,8 @@ export async function runComposeJob(
 
   try {
     if (subtitle.mode === 'hard') assertValidSubtitleStyle(subtitle.style);
+    // WebM/Ogg 写不下 H.264/AAC：在建暂存目录、启动 ffmpeg 之前拒绝（#521）
+    assertComposeOutputWritable(config.outputPath);
     const inputs = [
       videoPath,
       ...(subtitle.mode === 'none' ? [] : [subtitle.subtitlePath]),

@@ -258,6 +258,106 @@ eq(
   }
 }
 
+// #521：WebM/Ogg 容器写不下硬烧的 H.264 与配音的 AAC，成品不再沿用这类源扩展名
+for (const [sourceName, expectedFinal] of [
+  ['clip.webm', '/v/clip-final.mp4'],
+  ['CLIP.WEBM', '/v/CLIP-final.mp4'],
+  ['clip.mp4', '/v/clip-final.mp4'],
+  ['clip.mkv', '/v/clip-final.mkv'],
+  ['clip.MOV', '/v/clip-final.MOV'],
+] as const) {
+  const derived = deriveComposeConfig({
+    file: {
+      filePath: `/v/${sourceName}`,
+      fileExtension: sourceName.slice(sourceName.lastIndexOf('.')),
+      translatedSrtFile: '/v/clip.zh.srt',
+    } as any,
+    compose: { subtitle: 'hard' },
+    style: STYLE,
+    videoQuality: 'original',
+    encoderMode: 'cpu',
+    exists: existsIn(['/v/clip.zh.srt']),
+  });
+  eq(derived.ok, true, `硬烧 ${sourceName}: 可行`);
+  if (derived.ok) {
+    eq(
+      derived.config.outputPath,
+      expectedFinal,
+      `硬烧 ${sourceName}: 成品 ${expectedFinal}（WebM/Ogg 回落 mp4，其余沿用源容器）`,
+    );
+  }
+}
+
+{
+  const derived = deriveComposeConfig({
+    file: {
+      filePath: '/v/clip.webm',
+      fileExtension: '.webm',
+      translatedSrtFile: '/v/clip.zh.srt',
+    } as any,
+    compose: { subtitle: 'soft' },
+    style: STYLE,
+    exists: existsIn(['/v/clip.zh.srt']),
+  });
+  eq(derived.ok, true, '软封 clip.webm: 可行');
+  if (derived.ok) {
+    eq(
+      derived.config.outputPath,
+      '/v/clip-final.mkv',
+      '软封 clip.webm: 仍为 mkv',
+    );
+  }
+}
+
+{
+  // 配音（none + replace：视频直拷 + AAC）同样写不进 WebM
+  const derived = deriveComposeConfig({
+    file: {
+      filePath: '/v/clip.webm',
+      fileExtension: '.webm',
+      dubbedTrackPath: '/sess/dub-track.wav',
+    } as any,
+    compose: { subtitle: 'none' },
+    style: STYLE,
+    exists: existsIn(['/sess/dub-track.wav']),
+  });
+  eq(derived.ok, true, '配音成片 clip.webm: 可行');
+  if (derived.ok) {
+    eq(
+      derived.config.outputPath,
+      '/v/clip-final.mp4',
+      '配音成片 clip.webm: 成品 -final.mp4',
+    );
+    eq(
+      derived.config.audio,
+      { mode: 'replace', trackPath: '/sess/dub-track.wav' },
+      '配音成片 clip.webm: 替换音轨',
+    );
+  }
+}
+
+{
+  // 防覆盖递增针对改写后的扩展名判断
+  const derived = deriveComposeConfig({
+    file: {
+      filePath: '/v/clip.webm',
+      fileExtension: '.webm',
+      translatedSrtFile: '/v/clip.zh.srt',
+    } as any,
+    compose: { subtitle: 'hard' },
+    style: STYLE,
+    exists: existsIn(['/v/clip.zh.srt', '/v/clip-final.mp4']),
+  });
+  eq(derived.ok, true, '硬烧 clip.webm（-final.mp4 已存在）: 可行');
+  if (derived.ok) {
+    eq(
+      derived.config.outputPath,
+      '/v/clip-final-2.mp4',
+      '硬烧 clip.webm: -final.mp4 已存在时递增',
+    );
+  }
+}
+
 eq(
   deriveComposeConfig({
     file: { filePath: '/v/ep3.mp4', fileExtension: '.mp4' } as any,

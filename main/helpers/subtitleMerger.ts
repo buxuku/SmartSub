@@ -34,6 +34,7 @@ import {
 } from './fontResolver';
 import { probeVideoInfo } from './toolbox/videoTrimmer';
 import { assertValidSubtitleStyle } from '../../types/subtitleStyleValidation';
+import { writableComposeExtension } from '../../types/composeContainer';
 
 // 设置 ffmpeg 路径
 const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
@@ -260,7 +261,8 @@ export function generateOutputPath(
   const dir = path.dirname(videoPath);
   const ext = path.extname(videoPath);
   const baseName = path.basename(videoPath, ext);
-  return path.join(dir, `${baseName}${suffix}${ext}`);
+  // 沿用源容器；WebM/Ogg 写不下硬烧的 H.264 与配音的 AAC，回落 MP4（#521）
+  return path.join(dir, `${baseName}${suffix}${writableComposeExtension(ext)}`);
 }
 
 /**

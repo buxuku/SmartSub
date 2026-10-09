@@ -76,7 +76,7 @@
     "test:e2e:compose-multiwindow": "node scripts/e2e/compose-multiwindow.mjs",
     "test:e2e:compose-reconnect": "node scripts/e2e/compose-reconnect.mjs",
     "test:compose": "tsc scripts/compose/test-compose-builder.ts --outDir node_modules/.cache/compose-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/compose-tests/scripts/compose/test-compose-builder.js",
-    "test:compose-output": "tsx scripts/compose/test-compose-output.ts && tsx scripts/compose/test-publication-recovery.ts && node scripts/compose/test-compose-runner.cjs",
+    "test:compose-output": "tsx scripts/compose/test-compose-output.ts && tsx scripts/compose/test-publication-recovery.ts && tsx scripts/compose/test-compose-container.ts && node scripts/compose/test-compose-runner.cjs",
     "test:compose-presets": "node scripts/compose/test-compose-presets.cjs",
     "test:compose-queue": "node scripts/compose/test-compose-queue.cjs",
     "test:embedded-fonts": "tsx scripts/compose/test-embedded-fonts.ts && node scripts/compose/test-installed-fonts.cjs",

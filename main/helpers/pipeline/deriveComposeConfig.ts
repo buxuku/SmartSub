@@ -5,10 +5,12 @@
  * - 有配音轨 → audio=replace；无配音 → audio=keep
  * - 烧录字幕优先级：顺延版字幕（配音时移时产出）→ 译文交付物 → 源字幕
  * - subtitle='none' 要求存在配音轨（否则无事可做，配置错误）
- * - 输出 `<原名>-final.<ext>`（防覆盖递增）；soft 参与强制 mkv
+ * - 输出 `<原名>-final.<ext>`（防覆盖递增）；soft 参与强制 mkv；
+ *   WebM/Ogg 源写不下硬烧的 H.264 与配音的 AAC，成品回落 mp4（#521）
  */
 
 import * as path from 'path';
+import { writableComposeExtension } from '../../../types/composeContainer';
 import type {
   ComposeConfig,
   EncoderMode,
@@ -202,9 +204,10 @@ export function deriveComposeConfig(
           };
   }
 
-  // 容器：沿用源扩展名；soft 参与强制 mkv（addTrack P2 不参与）
+  // 容器：沿用源扩展名（WebM/Ogg 回落 mp4）；soft 参与强制 mkv（addTrack P2 不参与）
   const sourceExt = path.extname(file.filePath) || '.mp4';
-  const ext = subtitle.mode === 'soft' ? '.mkv' : sourceExt;
+  const ext =
+    subtitle.mode === 'soft' ? '.mkv' : writableComposeExtension(sourceExt);
   const outputPath = finalOutputPath(file.filePath, ext, exists);
 
   return {

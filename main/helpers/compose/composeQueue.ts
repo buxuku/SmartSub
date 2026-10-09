@@ -15,6 +15,7 @@ import {
   releaseTaskPowerSaveBlocker,
 } from '../powerSaveManager';
 import { MERGE_CANCELLED } from '../subtitleMerger';
+import { assertComposeOutputWritable } from '../../../types/composeContainer';
 import { runComposeJob } from './composeRunner';
 import {
   startProcessingHistory,
@@ -140,6 +141,8 @@ export function enqueueCompose(
   source: ComposeJobSource,
   opts?: { requestId?: string; onProgress?: (progress: MergeProgress) => void },
 ): { jobId: string; done: Promise<ComposeJobResult> } {
+  // WebM/Ogg 写不下 H.264/AAC：入口同步拒绝，不排队、不进历史、不建暂存目录（#521）
+  assertComposeOutputWritable(config.outputPath);
   if (opts?.requestId !== undefined) {
     if (
       typeof opts.requestId !== 'string' ||

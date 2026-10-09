@@ -44,6 +44,26 @@ function assertThrows(fn: () => unknown, label: string) {
   }
 }
 
+/** 抛错且消息匹配：区分「新防护抛出的错」与「别处的无关错误」。 */
+function assertThrowsMatching(
+  fn: () => unknown,
+  pattern: RegExp,
+  label: string,
+) {
+  try {
+    fn();
+    failed++;
+    console.log(`❌ ${label} | expected to throw`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const ok = pattern.test(message);
+    if (!ok) failed++;
+    console.log(
+      `${ok ? '✅' : '❌'} ${label}${ok ? '' : ` | message=${message}`}`,
+    );
+  }
+}
+
 const VIDEO = '/media/movie.mp4';
 const TRACK = '/media/dub.wav';
 const SUB = '/media/movie.srt';
@@ -607,6 +627,133 @@ assertEqual(
   }),
   false,
   'hard+replace 不强制 mkv',
+);
+
+// ── #521：WebM/Ogg 容器写不下合成引擎产出的 H.264/AAC，构建期即拒绝 ─────────
+
+for (const outputPath of [
+  '/media/out.webm',
+  '/media/OUT.WEBM',
+  '/media/out.ogv',
+  '/media/out.ogg',
+]) {
+  for (const [label, subtitle, audio] of [
+    ['hard+keep', HARD, { mode: 'keep' }],
+    ['hard+replace', HARD, { mode: 'replace', trackPath: TRACK }],
+    ['hard+mix', HARD, { mode: 'mix', trackPath: TRACK }],
+    ['hard+addTrack', HARD, { mode: 'addTrack', trackPath: TRACK }],
+    ['none+replace', { mode: 'none' }, { mode: 'replace', trackPath: TRACK }],
+    ['none+mix', { mode: 'none' }, { mode: 'mix', trackPath: TRACK }],
+    ['none+addTrack', { mode: 'none' }, { mode: 'addTrack', trackPath: TRACK }],
+  ] as const) {
+    assertThrowsMatching(
+      () => buildComposePlan({ videoPath: VIDEO, outputPath, subtitle, audio }),
+      /WebM\/Ogg/,
+      `${label}: ${outputPath} 被拒绝（WebM/Ogg 写不下 H.264/AAC）`,
+    );
+  }
+}
+assertThrows(
+  () =>
+    buildComposePlan({
+      videoPath: VIDEO,
+      outputPath: '/media/out.webm',
+      subtitle: { mode: 'soft', subtitlePath: SUB },
+      audio: { mode: 'keep' },
+    }),
+  'soft: .webm 仍被软字幕容器规则拒绝',
+);
+
+// ── #521：hard+keep 的音频规则——WebM/Ogg 源写 MP4 系输出才转 AAC ───────────
+
+function hardKeepAudioArgs(
+  videoPath: string,
+  outputPath: string,
+  subtitle: typeof HARD = HARD,
+): string[] {
+  const { outputOptions } = buildComposePlan({
+    videoPath,
+    outputPath,
+    subtitle,
+    audio: { mode: 'keep' },
+  });
+  const index = outputOptions.indexOf('-c:a');
+  return outputOptions.slice(
+    index,
+    outputOptions[index + 1] === 'aac' ? index + 4 : index + 2,
+  );
+}
+
+for (const [source, output] of [
+  ['/media/clip.webm', '/media/clip_subtitled.mp4'],
+  ['/media/clip.WEBM', '/media/clip_subtitled.MP4'],
+  ['/media/clip.webm', '/media/clip_subtitled.mov'],
+  ['/media/clip.webm', '/media/clip_subtitled.m4v'],
+  ['/media/clip.ogv', '/media/clip_subtitled.mp4'],
+  ['/media/clip.ogg', '/media/clip_subtitled.mp4'],
+]) {
+  assertDeepEqual(
+    hardKeepAudioArgs(source, output),
+    ['-c:a', 'aac', '-b:a', '192k'],
+    `hard+keep ${source.split('.').pop()}→${output.split('.').pop()}: Opus/Vorbis 转 AAC 192k`,
+  );
+}
+assertDeepEqual(
+  hardKeepAudioArgs('/media/clip.webm', '/media/clip_subtitled.mp4', HW_HARD),
+  ['-c:a', 'aac', '-b:a', '192k'],
+  'hard(硬件)+keep webm→mp4: AAC 规则与编码器无关',
+);
+for (const [source, output] of [
+  // 用户手动选 .mkv：Matroska 接受 Opus/Vorbis，保持直拷
+  ['/media/clip.webm', '/media/clip_subtitled.mkv'],
+  ['/media/clip.mp4', '/media/clip_subtitled.mp4'],
+  ['/media/clip.mkv', '/media/clip_subtitled.mp4'],
+  ['/media/clip.mov', '/media/clip_subtitled.mp4'],
+  ['/media/clip.avi', '/media/clip_subtitled.avi'],
+]) {
+  assertDeepEqual(
+    hardKeepAudioArgs(source, output),
+    ['-c:a', 'copy'],
+    `hard+keep ${source.split('.').pop()}→${output.split('.').pop()}: 保持 -c:a copy（既有行为）`,
+  );
+}
+assertDeepEqual(
+  buildComposePlan({
+    videoPath: '/media/clip.webm',
+    outputPath: '/media/clip_subtitled.mp4',
+    subtitle: HARD,
+    audio: { mode: 'keep' },
+  }).outputOptions,
+  [
+    '-map',
+    '0:v',
+    '-map',
+    '0:a?',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'medium',
+    '-crf',
+    '18',
+    '-c:a',
+    'aac',
+    '-b:a',
+    '192k',
+    '-movflags',
+    '+faststart',
+    '-y',
+  ],
+  'hard+keep webm→mp4: 完整参数（libx264 + AAC + faststart）',
+);
+assertEqual(
+  buildComposePlan({
+    videoPath: '/media/clip.webm',
+    outputPath: '/media/clip_subtitled.mkv',
+    subtitle: HARD,
+    audio: { mode: 'keep' },
+  }).outputOptions.includes('-movflags'),
+  false,
+  'hard+keep webm→mkv: 非 MP4 系无 faststart',
 );
 
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项断言失败 ❌`);

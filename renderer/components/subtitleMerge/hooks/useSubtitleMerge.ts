@@ -24,6 +24,7 @@ import {
 } from '../../../lib/composeDraft';
 import { useComposeDocument } from './useComposeDocument';
 import { invalidSubtitleStyleFields } from '../../../../types/subtitleStyleValidation';
+import { writableComposeExtension } from '../../../../types/composeContainer';
 
 export type AudioTrackMode = 'replace' | 'mix' | 'addTrack';
 export interface UseSubtitleMergeOptions {
@@ -48,12 +49,14 @@ const singleFlight = (action: () => Promise<void>) => {
     }));
 };
 const extension = (path: string, doc: ComposeDocument): string => {
+  const sourceExt = doc.videoPath?.match(/(\.[^./\\]+)$/)?.[1];
   const ext =
     doc.audioTrackPath && doc.audioTrackMode === 'addTrack'
       ? '.mkv'
       : doc.outputMode === 'softmux'
         ? `.${doc.softContainer}`
-        : doc.videoPath?.match(/(\.[^./\\]+)$/)?.[1];
+        : // 硬烧沿用源容器；WebM/Ogg 写不下 H.264/AAC，回落 MP4（#521）
+          sourceExt && writableComposeExtension(sourceExt);
   if (!ext) return path;
   return /\.[^./\\]+$/.test(path)
     ? path.replace(/\.[^./\\]+$/, ext)

@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { parseDubbingCueEdits } from '../../../types/dubbingCueDraft';
+import { writableComposeExtension } from '../../../types/composeContainer';
 import { logMessage } from '../storeManager';
 import { ensureTempDir } from '../fileUtils';
 import { TaskCancelledError } from '../taskContext';
@@ -1995,7 +1996,8 @@ function resolveOutputPath(
         : '.wav'
       : config.output === 'addTrack'
         ? '.mkv'
-        : path.extname(session.videoPath!) || '.mp4';
+        : // 沿用源容器；WebM/Ogg 写不下配音的 AAC，回落 MP4（#521）
+          writableComposeExtension(path.extname(session.videoPath!) || '.mp4');
   return path.join(dir, `${stem}-dubbed${ext}`);
 }
 
