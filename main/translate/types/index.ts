@@ -72,6 +72,19 @@ export interface TranslationResponseMeta {
 
 export interface TranslationRequestOptions {
   signal?: AbortSignal;
+  /**
+   * Per-attempt timeout (ms) for the OpenAI-compatible SDK services.
+   * The SDK waits 10 minutes per attempt and re-sends a timed-out request
+   * twice, so a stalled request can hold its caller for 30 minutes (#507).
+   * Unset keeps the SDK default; services without an SDK ignore it.
+   */
+  timeoutMs?: number;
+  /**
+   * SDK-level re-sends after a transient failure (timeout, 429, 5xx) for the
+   * OpenAI-compatible services. Unset keeps the SDK default (2). Callers that
+   * can live without the answer (an optional retry) set 0.
+   */
+  maxRetries?: number;
   /** Fallback scheduler hook for each SDK request, including format retries. */
   beforeRequest?: () => Promise<void>;
   /** 支持原生术语参数的非 AI 翻译服务可读取当前批次的词库。 */
