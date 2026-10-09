@@ -65,6 +65,9 @@ export function buildSanitizedEnv(
     PYTHONIOENCODING: 'utf-8',
     PYTHONDONTWRITEBYTECODE: '1',
     PYTHONUNBUFFERED: '1',
+    // 原生扩展（ctranslate2 / onnxruntime 等）崩溃时让 Python 把各线程的回溯写到 stderr，
+    // sidecar 的 stderr 会进应用日志，崩溃排查才有现场可看。
+    PYTHONFAULTHANDLER: '1',
     // 散装 site-packages 下 numpy/ctranslate2/onnxruntime 可能各带一份 Intel
     // OpenMP(libiomp5md)。容忍重复加载，规避 Windows 上 "OMP: Error #15 ...
     // already initialized" 直接 abort/卡死。
