@@ -15,6 +15,19 @@ import {
   hasDependentLibs,
   getCustomAddonPath,
 } from './addonManager';
+import {
+  buildAllSuppressedError,
+  candidateKeyOf,
+  describeSuppressed,
+  gpuFingerprint,
+  partitionCandidates,
+} from './crash/addonSuppression';
+import { usesGpu } from './crash/breaker';
+import {
+  beginNativeCall,
+  lookupSuppression,
+  recordNativeSuccess,
+} from './crash/nativeGuard';
 import type {
   AddonVariant,
   GpuMode,
@@ -230,6 +243,37 @@ function tryLoadCandidate(candidate: AddonCandidate): WhisperFn {
   return module.exports.whisper as WhisperFn;
 }
 
+/**
+ * 给每次原生转写登记在途标记：进程在调用期间崩溃的话，下次启动据此知道崩在哪个后端上。
+ * 三个调用点（内置引擎、分片转写、参考音频转写）都经由这里，无需各自改动。
+ */
+function guardNativeCall(
+  native: WhisperAsyncFn,
+  candidate: AddonCandidate,
+): WhisperAsyncFn {
+  const key = candidateKeyOf(candidate);
+  return async (params) => {
+    const model =
+      typeof params?.model === 'string' ? path.basename(params.model) : '';
+    const end = beginNativeCall({
+      engine: 'whisper',
+      backend: candidate.backend,
+      candidateKey: key,
+      candidatePath: candidate.path,
+      phase: 'transcribe',
+      ...(model ? { model } : {}),
+    });
+    try {
+      const result = await native(params);
+      // 顺利跑完一次：这个后端之前累计的“异常退出”计数不再算数
+      recordNativeSuccess(key);
+      return result;
+    } finally {
+      end();
+    }
+  };
+}
+
 function pushHistory(entry: AddonLoadHistoryEntry): void {
   const history: AddonLoadHistoryEntry[] = store.get('addonLoadHistory') || [];
   history.push(entry);
@@ -286,18 +330,66 @@ export async function loadBestAddon(
 
   const failedAttempts: AddonLoadAttempt[] = [];
 
-  for (let i = 0; i < candidates.length; i++) {
-    const candidate = candidates[i];
+  // 崩溃熔断：上次因某个后端崩溃（或连续异常退出）的候选不再尝试，直接走降级链
+  let gpuFp: string | undefined;
+  if (candidates.some((c) => usesGpu(candidateKeyOf(c)))) {
     try {
-      const whisper = tryLoadCandidate(candidate);
+      gpuFp = gpuFingerprint(await getGpuEnvironment());
+    } catch {
+      // 拿不到显卡信息不影响其余判断
+    }
+  }
+  const { usable, skipped } = partitionCandidates(candidates, (key) =>
+    lookupSuppression(key, gpuFp),
+  );
+  for (const { candidate, suppression } of skipped) {
+    const reason = describeSuppressed(suppression);
+    logMessage(
+      `Skipping addon candidate (${candidate.backend} @ ${candidate.path}): ${reason}`,
+      'warning',
+    );
+    failedAttempts.push({
+      backend: candidate.backend,
+      path: candidate.path,
+      error: reason,
+      timestamp: new Date().toISOString(),
+    });
+  }
+  if (usable.length === 0 && skipped.length > 0) {
+    throw buildAllSuppressedError(skipped, {
+      language: store.get('settings')?.language === 'zh' ? 'zh' : 'en',
+      gpuOnly: ctx.gpuMode === 'gpu-only',
+    });
+  }
+
+  for (const candidate of usable) {
+    try {
+      // dlopen 阶段也可能崩（静态初始化里就用到了不支持的指令）
+      const endLoad = beginNativeCall({
+        engine: 'whisper-load',
+        backend: candidate.backend,
+        candidateKey: candidateKeyOf(candidate),
+        candidatePath: candidate.path,
+        phase: 'dlopen',
+      });
+      let whisper: WhisperFn;
+      try {
+        whisper = tryLoadCandidate(candidate);
+      } finally {
+        endLoad();
+      }
       const loadedAt = new Date().toISOString();
       const result: AddonLoadResult = {
-        whisperAsync: promisify(whisper) as WhisperAsyncFn,
+        whisperAsync: guardNativeCall(
+          promisify(whisper) as WhisperAsyncFn,
+          candidate,
+        ),
         backend: candidate.backend,
         variant: candidate.variant,
         source: candidate.source,
         path: candidate.path,
-        fallback: i > 0,
+        // 首选被抑制而落到后面的候选，同样算降级
+        fallback: candidate !== candidates[0],
         failedAttempts,
         loadedAt,
       };
