@@ -194,7 +194,12 @@ function runScenario(
     let output = '';
     child.stdout.on('data', (d) => (output += d));
     child.stderr.on('data', (d) => (output += d));
-    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+    // 记下是不是被我们的超时杀掉的：被超时杀掉不能算“进程自己崩溃退出”
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, timeoutMs);
     child.on('exit', (code, signal) => {
       clearTimeout(timer);
       const resultFile = path.join(scenarioDir, `result-${scenario}.json`);
@@ -202,7 +207,7 @@ function runScenario(
         ? JSON.parse(fs.readFileSync(resultFile, 'utf8'))
         : null;
       resolve({
-        exit: { code, signal, ms: Date.now() - started },
+        exit: { code, signal, ms: Date.now() - started, timedOut },
         result,
         output,
         dir: scenarioDir,
@@ -321,10 +326,15 @@ const handlers = {
   async 'main-crash'() {
     const run = await runScenario('main-crash');
     const dir = path.join(run.dir, 'userData', 'crash-dumps');
-    await check('主进程崩溃：进程非正常退出', () => {
+    await check('主进程崩溃：进程自己非正常退出（不是被超时杀掉的）', () => {
       assert.ok(
         run.exit.code !== 0 || run.exit.signal !== null,
         `退出信息：${JSON.stringify(run.exit)}`,
+      );
+      assert.equal(
+        run.exit.timedOut,
+        false,
+        `崩溃后一直不退出，被超时杀掉：${JSON.stringify(run.exit)}`,
       );
     });
     const dumps = await waitForDumps(dir, 15_000);
@@ -402,15 +412,23 @@ const handlers = {
       console.log(`    · 转储异常 ${s.exception.name || s.exception.codeHex}`);
     });
     if (process.platform === 'linux') {
+      // 先看加固有没有设上，再看崩溃后多久退出：两件事分开，失败时才知道坏在哪一步
+      await check('Linux：崩溃前 worker 的 core 软限制已被宿主设为 1', () => {
+        assert.match(
+          String(r.exit.coreLimitBeforeCrash),
+          /Max core file size 1 /,
+          `崩溃前取样：atArmed=${r.exit.coreLimitAtArmed} beforeCrash=${r.exit.coreLimitBeforeCrash}；日志：${JSON.stringify(r.logs)}`,
+        );
+      });
       await check('Linux：加固（RLIMIT_CORE=1）生效，崩溃后 5 秒内退出', () => {
         assert.ok(
           r.exit.msAfterCrash >= 0 && r.exit.msAfterCrash < 5000,
-          `崩溃后 ${r.exit.msAfterCrash} ms 才退出；日志：${JSON.stringify(r.logs)}`,
+          `崩溃后 ${r.exit.msAfterCrash} ms 才退出（超时时进程状态 ${r.exit.procStateAtTimeout}）；日志：${JSON.stringify(r.logs)}`,
         );
       });
     }
     console.log(
-      `    · 实测：宿主收到退出 code=${info?.code}，崩溃后 ${r.exit.msAfterCrash} ms\n    · 分类：${JSON.stringify(info?.classification)}\n    · gone=${JSON.stringify(r.gone)}`,
+      `    · 实测：宿主收到退出 code=${info?.code}，崩溃后 ${r.exit.msAfterCrash} ms${r.exit.coreLimitBeforeCrash ? `；崩溃前 ${r.exit.coreLimitBeforeCrash}` : ''}\n    · 分类：${JSON.stringify(info?.classification)}\n    · gone=${JSON.stringify(r.gone)}`,
     );
   },
 
@@ -422,6 +440,11 @@ const handlers = {
       assert.ok(
         first.exit.code !== 0 || first.exit.signal !== null,
         JSON.stringify(first.exit),
+      );
+      assert.equal(
+        first.exit.timedOut,
+        false,
+        `崩溃后一直不退出，被超时杀掉：${JSON.stringify(first.exit)}`,
       );
       const state = first.result?.state;
       assert.ok(state, `没有结果。输出：\n${first.output.slice(-1500)}`);

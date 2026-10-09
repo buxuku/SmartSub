@@ -84,6 +84,50 @@ async function waitFor(predicate, timeoutMs) {
   return false;
 }
 
+/**
+ * Linux：core_pattern 把 core 管道给 systemd-coredump / apport 的机器上（GitHub runner 就是），
+ * 崩溃的进程要等 core 写完才退出，实测几十秒到几分钟。这只是系统层行为，与被测的崩溃记录无关，
+ * 所以烟测里让“被测之外的崩溃”提前把 core 缩到几 KB（coredump_filter=0）。
+ * Crashpad 转储不受影响（它自己读进程内存）。被测的 utility-ill 场景不用它，要看产品自己的加固。
+ */
+function shrinkSystemCore(pid) {
+  if (process.platform !== 'linux') return 'not-linux';
+  try {
+    fs.writeFileSync(`/proc/${pid}/coredump_filter`, '0');
+    return 'ok';
+  } catch (error) {
+    return `failed: ${error.code || error.message}`;
+  }
+}
+
+/** Linux：读 /proc/<pid>/limits 里的 core 软限制，用来判断加固（RLIMIT_CORE=1）在崩溃前是否已经生效。 */
+function readCoreLimit(pid) {
+  if (process.platform !== 'linux' || !pid) return null;
+  try {
+    const line = fs
+      .readFileSync(`/proc/${pid}/limits`, 'utf8')
+      .split('\n')
+      .find((l) => l.startsWith('Max core file size'));
+    return line ? line.replace(/\s+/g, ' ') : null;
+  } catch (error) {
+    return `unreadable: ${error.code || error.message}`;
+  }
+}
+
+/** Linux：进程当前状态（S sleeping / D disk sleep / Z zombie ...），崩溃后迟迟不退出时用来看它卡在哪。 */
+function readProcState(pid) {
+  if (process.platform !== 'linux' || !pid) return null;
+  try {
+    const line = fs
+      .readFileSync(`/proc/${pid}/status`, 'utf8')
+      .split('\n')
+      .find((l) => l.startsWith('State:'));
+    return line ? line.replace(/\s+/g, ' ') : null;
+  } catch (error) {
+    return `unreadable: ${error.code || error.message}`;
+  }
+}
+
 /** 在 utilityProcess 里触发真实的原生崩溃（Electron 的 process.crash 在子进程里可用）。 */
 async function crashUtility(serviceName) {
   const workerFile = path.join(work, `crash-worker-${serviceName}.js`);
@@ -94,6 +138,10 @@ async function crashUtility(serviceName) {
   const child = utilityProcess.fork(workerFile, [], {
     serviceName,
     stdio: 'pipe',
+  });
+  // 这个场景看的是 Electron 与应用层对原生崩溃的上报，不是宿主加固：让系统 core 尽快写完
+  child.once('spawn', () => {
+    if (child.pid !== undefined) shrinkSystemCore(child.pid);
   });
   const started = Date.now();
   const exit = await new Promise((resolve) => {
@@ -130,8 +178,17 @@ async function crashUtilityHost(serviceName) {
     expectKill: m.expectUtilityKill,
   });
   let armedAt = 0;
+  // Linux：崩溃前后各取一次 core 软限制与进程状态，加固没生效时能看出是没设上还是设上了仍不退出
+  const samples = {};
   host.onMessage((message) => {
-    if (message && message.type === 'armed') armedAt = Date.now();
+    if (message && message.type === 'armed') {
+      armedAt = Date.now();
+      samples.coreLimitAtArmed = readCoreLimit(host.pid);
+      // worker 在 200 ms 后崩溃，崩溃前 50 ms 再取一次
+      setTimeout(() => {
+        samples.coreLimitBeforeCrash = readCoreLimit(host.pid);
+      }, 150);
+    }
   });
   const exit = await new Promise((resolve) => {
     host.onExit((info) =>
@@ -139,10 +196,18 @@ async function crashUtilityHost(serviceName) {
         info,
         // 从 worker 报告“要崩了”到宿主收到退出，减去它自己等的 200 ms
         msAfterCrash: armedAt ? Date.now() - armedAt - 200 : null,
+        ...samples,
       }),
     );
     setTimeout(
-      () => resolve({ info: null, msAfterCrash: -1, timedOut: true }),
+      () =>
+        resolve({
+          info: null,
+          msAfterCrash: -1,
+          timedOut: true,
+          ...samples,
+          procStateAtTimeout: readProcState(host.pid),
+        }),
       60000,
     );
   });
@@ -168,6 +233,7 @@ app.whenReady().then(async () => {
     // 主进程原生崩溃（访问违例）：本进程会死，转储与退出码由 smoke.mjs 在外面检查。
     // 有 boom 样本就走 process.dlopen（贴近 addon 崩溃）；没有就退回 Electron 自带的 process.crash
     const via = boomDir ? 'boom-segv' : 'process.crash';
+    shrinkSystemCore('self');
     writeResult({ ...base, note: 'about-to-crash', via });
     setTimeout(
       () => (boomDir ? dlopenBoom('boom-segv') : process.crash()),
@@ -220,6 +286,7 @@ app.whenReady().then(async () => {
       candidatePath: fakeAddon,
       phase: 'transcribe',
     });
+    shrinkSystemCore('self');
     writeResult({ ...base, note: 'about-to-crash', state: readState() });
     setTimeout(() => dlopenBoom('boom-ill'), 300);
     return;
