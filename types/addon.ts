@@ -48,6 +48,8 @@ export interface GpuInfo {
   index?: number;
   /** Stable NVIDIA GPU UUID used by CUDA_VISIBLE_DEVICES. */
   uuid?: string;
+  /** CUDA compute capability such as 6.1 or 8.9; absent when the driver cannot report it. */
+  computeCapability?: number;
 }
 
 /**
