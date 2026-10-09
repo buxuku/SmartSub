@@ -12,6 +12,10 @@
  */
 
 import * as path from 'path';
+import {
+  assertComposeOutputWritable,
+  sourceAudioNeedsAac,
+} from '../../../types/composeContainer';
 import type { EmbeddedSubtitleStream } from '../embeddedSubtitleParser';
 
 /** 硬烧字幕的解析后输入：滤镜与编码参数由调用方（runner）解析完成后传入。 */
@@ -115,6 +119,8 @@ export function buildComposePlan(
   if (subtitle.mode === 'soft' && !['.mkv', '.mp4'].includes(extension)) {
     throw new Error('Soft subtitles require an MKV or MP4 output container');
   }
+  // 纵深防御：WebM/Ogg 写不下这里产出的 H.264/AAC，构建期拒绝而不是等 ffmpeg 写头失败（#521）
+  assertComposeOutputWritable(outputPath);
   const softSubtitleTail = [
     extension === '.mp4' ? '-c:s' : '-c:s:0',
     extension === '.mp4' ? 'mov_text' : 'srt',
@@ -196,7 +202,14 @@ export function buildComposePlan(
       // an embedded subtitle that a player could render over the burned text.
       videoFilter = chain;
       opt.push('-map', '0:v', '-map', '0:a?');
-      opt.push(...subtitle.encoderArgs, '-c:a', 'copy');
+      // WebM/Ogg 源的 Opus/Vorbis 写进 MP4 系容器时转 AAC（兼容性/部分容器无法直拷）；
+      // 其余组合保持直拷，用户手动选的 .mkv 也一样（#521）。
+      opt.push(
+        ...subtitle.encoderArgs,
+        ...(sourceAudioNeedsAac(path.extname(videoPath), extension)
+          ? AAC_ARGS
+          : ['-c:a', 'copy']),
+      );
     }
     if (faststart) opt.push('-movflags', '+faststart');
   } else if (subtitle.mode === 'soft') {

@@ -99,6 +99,24 @@ async function main() {
       enqueueCompose(config, 'subtitleMerge', { requestId: 'x'.repeat(129) }),
     /Invalid/,
   );
+  // #521: WebM/Ogg cannot hold the H.264/AAC a compose job writes — fail fast at the
+  // entry, before anything is queued, recorded in history or handed to the runner.
+  const queuedBefore = getComposeQueueSnapshot().length;
+  const historyBefore = history.size;
+  const acquiredBefore = acquired;
+  for (const outputPath of ['/out.webm', '/OUT.WEBM', '/out.ogv', '/out.ogg']) {
+    assert.throws(
+      () =>
+        enqueueCompose({ ...config, outputPath }, 'subtitleMerge', {
+          requestId: 'rejected',
+        }),
+      /WebM\/Ogg/,
+      `${outputPath} is rejected synchronously`,
+    );
+  }
+  assert.equal(getComposeQueueSnapshot().length, queuedBefore);
+  assert.equal(history.size, historyBefore);
+  assert.equal(acquired, acquiredBefore);
   assert.equal(cancelComposeJob(two.jobId), true);
   assert.equal((await two.done).cancelled, true);
   assert.equal(

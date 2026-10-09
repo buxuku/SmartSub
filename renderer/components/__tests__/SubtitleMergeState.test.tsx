@@ -491,6 +491,60 @@ it('restores soft container preferences before asynchronous default path generat
   expect(result.current.softContainer).toBe('mp4');
 });
 
+it('never defaults a WebM source to a WebM output: hard export gets MP4, soft mux keeps its container, and switching back returns to MP4 (#521)', async () => {
+  const original = invoke.getMockImplementation()!;
+  // The IPC default mirrors the source extension; the renderer must not trust it for WebM.
+  invoke.mockImplementation((channel, payload) =>
+    channel === 'subtitleMerge:generateOutputPath'
+      ? Promise.resolve({
+          success: true,
+          data: payload.videoPath.replace('.webm', '_subtitled.webm'),
+        })
+      : original(channel, payload),
+  );
+  const { result } = renderHook(() => useSubtitleMerge());
+  await act(async () => result.current.setVideoPath('/v/clip.webm'));
+  await waitFor(() =>
+    expect(result.current.outputPath).toBe('/v/clip_subtitled.mp4'),
+  );
+  await act(async () => result.current.setOutputMode('softmux'));
+  expect(result.current.outputPath).toBe('/v/clip_subtitled.mkv');
+  await act(async () => result.current.setSoftContainer('mp4'));
+  expect(result.current.outputPath).toBe('/v/clip_subtitled.mp4');
+  await act(async () => result.current.setSoftContainer('mkv'));
+  await act(async () => result.current.setOutputMode('hardcode'));
+  expect(result.current.outputPath).toBe('/v/clip_subtitled.mp4');
+  act(() => result.current.setAudioTrackPath('/voice.wav'));
+  act(() => result.current.setAudioTrackMode('addTrack'));
+  expect(result.current.outputPath).toBe('/v/clip_subtitled.mkv');
+  act(() => result.current.clearAudioTrack());
+  expect(result.current.outputPath).toBe('/v/clip_subtitled.mp4');
+});
+
+it('keeps following the source container for every other format (#521 only changes WebM/Ogg)', async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((channel, payload) =>
+    channel === 'subtitleMerge:generateOutputPath'
+      ? Promise.resolve({
+          success: true,
+          data: payload.videoPath.replace(/(\.[^./\\]+)$/, '_subtitled$1'),
+        })
+      : original(channel, payload),
+  );
+  for (const [video, expected] of [
+    ['/v/clip.mov', '/v/clip_subtitled.mov'],
+    ['/v/clip.MKV', '/v/clip_subtitled.MKV'],
+    ['/v/clip.ogv', '/v/clip_subtitled.mp4'],
+    ['/v/CLIP.WEBM', '/v/CLIP_subtitled.mp4'],
+  ]) {
+    clearComposeDraft(composeDraftKey());
+    const { result, unmount } = renderHook(() => useSubtitleMerge());
+    await act(async () => result.current.setVideoPath(video));
+    await waitFor(() => expect(result.current.outputPath).toBe(expected));
+    unmount();
+  }
+});
+
 it('preserves a hard export format chosen in the save dialog, and adds a missing soft extension', async () => {
   const original = invoke.getMockImplementation()!;
   let destination = '/custom.mkv';

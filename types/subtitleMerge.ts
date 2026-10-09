@@ -235,7 +235,8 @@ export type ComposeAudioSpec =
 /**
  * 统一合成作业配置：一次 ffmpeg 执行完成「字幕 × 音轨」组合。
  * 约束：subtitle=none 且 audio=keep 为无效作业（无处理内容）；
- * soft 支持 MKV/MP4；addTrack 输出容器为 MKV。
+ * soft 支持 MKV/MP4；addTrack 输出容器为 MKV；
+ * 输出容器不能是 WebM/Ogg（写不下 H.264/AAC，见 types/composeContainer）。
  */
 export interface ComposeConfig {
   videoPath: string;

@@ -9,11 +9,12 @@ const ts = require('typescript');
 const ffmpeg = require('ffmpeg-static');
 const originalLoad = Module._load;
 const originalTs = require.extensions['.ts'];
+const logs = [];
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, esModuleInterop: true } }).outputText, filename);
 const { buildAssDocument } = require('../../main/helpers/assStyleBuilder.ts');
 const { DEFAULT_STYLE } = require('../../renderer/components/subtitleMerge/constants.ts');
 Module._load = function (request, parent, isMain) {
-  if (/\/(storeManager|logger)$/.test(request)) return { logMessage() {} };
+  if (/\/(storeManager|logger)$/.test(request)) return { logMessage(message, level) { logs.push({ message: String(message), level }); } };
   if (request.endsWith('/fileUtils')) return { timemarkToSeconds: value => value.split(':').reduce((total, n) => total * 60 + Number(n), 0) };
   if (request.endsWith('/subtitleMerger')) return {
     MERGE_CANCELLED: 'MERGE_CANCELLED',
@@ -36,6 +37,7 @@ async function main() {
   const voice = path.join(root, 'voice.wav');
   const existing = path.join(root, 'result.mkv');
   const run = args => execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', ...args]);
+  const probe = file => { try { execFileSync(ffmpeg, ['-hide_banner', '-i', file], { stdio: ['ignore', 'ignore', 'pipe'] }); } catch (error) { return error.stderr.toString(); } return ''; };
   run(['-f', 'lavfi', '-i', 'color=black:s=640x360:r=25:d=3', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3', '-c:v', 'libx264', '-c:a', 'aac', '-shortest', video]);
   run(['-f', 'lavfi', '-i', 'sine=frequency=880:duration=3', voice]);
   fs.writeFileSync(sub, '1\n00:00:00,100 --> 00:00:02,900\nRunner\n');
@@ -68,6 +70,24 @@ async function main() {
   try { execFileSync(ffmpeg, ['-hide_banner', '-i', published], { stdio: ['ignore', 'ignore', 'pipe'] }); } catch (error) { streams = error.stderr.toString(); }
   assert.equal((streams.match(/Audio:/g) || []).length, 2, 'CPU fallback reuses the prepared second audio track');
   assert.equal(fs.readFileSync(existing, 'utf8'), 'existing result');
+  // #521: a VP9+Opus WebM source (what the yt-dlp downloader produces) cannot be re-encoded to H.264 inside a .webm
+  const webm = path.join(root, 'download.webm');
+  run(['-f', 'lavfi', '-i', 'color=black:s=640x360:r=25:d=3', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3', '-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '45', '-deadline', 'realtime', '-cpu-used', '8', '-c:a', 'libopus', '-shortest', webm]);
+  const burn = { mode: 'hard', subtitlePath: sub, style: { ...DEFAULT_STYLE, fontName: 'Arial' } };
+  const burned = await runComposeJob({ videoPath: webm, outputPath: path.join(root, 'download_subtitled.mp4'), subtitle: burn, audio: { mode: 'keep' } }, context());
+  const burnedStreams = probe(burned);
+  assert.match(burnedStreams, /Video: h264/, 'a WebM source is burned to H.264 in the MP4 deliverable');
+  assert.match(burnedStreams, /Audio: aac/, 'the Opus audio of a WebM source is re-encoded to AAC for the MP4 deliverable');
+  const guardedDir = path.join(root, 'never-created');
+  logs.length = 0;
+  await assert.rejects(runComposeJob({ videoPath: webm, outputPath: path.join(guardedDir, 'download_subtitled.webm'), subtitle: burn, audio: { mode: 'keep' } }, context()), /WebM\/Ogg/);
+  assert.equal(fs.existsSync(guardedDir), false, 'a rejected .webm output never creates its directory or a staging area');
+  assert.equal(logs.some(entry => entry.message.startsWith('FFmpeg 命令:')), false, 'ffmpeg is never started for a rejected container');
+  // The dubbing export shape (none + replace = video copy + AAC) works once the container is MP4
+  const dubbed = await runComposeJob({ videoPath: webm, outputPath: path.join(root, 'download-dubbed.mp4'), subtitle: { mode: 'none' }, audio: { mode: 'replace', trackPath: voice } }, context());
+  const dubbedStreams = probe(dubbed);
+  assert.match(dubbedStreams, /Video: vp9/, 'the dubbing export copies the VP9 video');
+  assert.match(dubbedStreams, /Audio: aac/, 'the dubbing export writes AAC');
   const long = path.join(root, 'long.mp4');
   run(['-stream_loop', '399', '-i', video, '-c', 'copy', long]);
   let cancelled = false;
@@ -78,6 +98,6 @@ async function main() {
   assert.equal(fs.readFileSync(existing, 'utf8'), 'existing result');
   assert.equal(hash(video), before);
   assert.equal(fs.readdirSync(root).some(name => name.startsWith('.smartsub-compose-')), false);
-  console.log(JSON.stringify({ root, checks: 'real FFmpeg source rejection, invalid style/subtitle failure, silent-source mix with hard/soft/none and CPU fallback, injected hardware failure + CPU/addTrack retry, mid-encode cancellation, original hashes and private-directory cleanup' }));
+  console.log(JSON.stringify({ root, checks: 'real FFmpeg source rejection, invalid style/subtitle failure, silent-source mix with hard/soft/none and CPU fallback, injected hardware failure + CPU/addTrack retry, VP9+Opus WebM source burned to H.264+AAC MP4 and WebM/Ogg output rejected before ffmpeg or staging, dubbing-shape WebM copy to MP4, mid-encode cancellation, original hashes and private-directory cleanup' }));
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => { Module._load = originalLoad; require.extensions['.ts'] = originalTs; });
