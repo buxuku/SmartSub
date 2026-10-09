@@ -128,6 +128,7 @@
     "test:custom-parameters": "tsc renderer/lib/parameterValueUtils.ts main/helpers/parameterProcessor.ts --outDir node_modules/.cache/custom-parameter-tests --module commonjs --moduleResolution node --target es2020 --esModuleInterop --skipLibCheck && node scripts/test-custom-parameters.cjs",
     "test:renderer": "jest --runInBand",
     "test:parameter-persistence": "node scripts/test-parameter-persistence.cjs",
+    "test:crash": "tsx scripts/crash/test-exit-classifier.ts && tsx scripts/crash/test-minidump.ts",
     "test:e2e:parameters": "node scripts/e2e/parameter-persistence.mjs",
     "typecheck": "tsc --noEmit -p renderer/tsconfig.json && tsc --noEmit -p main/tsconfig.json && tsc --noEmit -p automation/tsconfig.json",
     "test:storage-paths": "tsc scripts/test-storage-paths.ts --outDir node_modules/.cache/storage-paths-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/storage-paths-tests/scripts/test-storage-paths.js",
