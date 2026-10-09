@@ -5,12 +5,27 @@
  * 被 crashReporting 在 app ready 之后调用——此时已抢到单实例锁，第二个实例不会走到这里，
  * 不会把主实例的状态文件改乱。
  */
-import type { PreviousRunNotice } from '../../../types/diagnostics';
+import type {
+  PreviousRunNotice,
+  PreviousRunSuppressed,
+} from '../../../types/diagnostics';
+import {
+  describeBreakerChange,
+  emptyBreaker,
+  reconcileBreaker,
+  type BreakerEnv,
+  type BreakerTable,
+} from './breaker';
 import { listDumpFiles } from './crashDumps';
 import { appendCrashEvent, readCrashEvents } from './crashEvents';
 import type { CrashLogSink } from './crashMonitor';
 import { summarizeMinidumpFile } from './minidumpSummary';
 import { assessPreviousRun, type PreviousRunAssessment } from './previousRun';
+import {
+  bindNativeGuard,
+  isBreakerDisabledByEnv,
+  unbindNativeGuard,
+} from './nativeGuard';
 import { createRunStateStore, type RunStateStore } from './runState';
 
 export interface BeginRunOptions {
@@ -22,6 +37,8 @@ export interface BeginRunOptions {
   arch: string;
   log?: CrashLogSink;
   now?: () => number;
+  /** 熔断用的环境信息；缺省表示不启用熔断 */
+  breakerEnv?: () => BreakerEnv;
 }
 
 let store: RunStateStore | null = null;
@@ -37,6 +54,8 @@ export function beginRun(
 ): PreviousRunAssessment | null {
   const now = options.now ?? Date.now;
   let assessment: PreviousRunAssessment | null = null;
+  let breaker: BreakerTable | undefined;
+  const suppressed: PreviousRunSuppressed[] = [];
   try {
     store = createRunStateStore(options.stateFile, now);
     const previous = store.previous;
@@ -59,13 +78,45 @@ export function beginRun(
     if (assessment.log) {
       options.log?.(assessment.log.message, assessment.log.level);
     }
-    pendingNotice = assessment.notice;
+
+    // 把上次的证据并入熔断表。只在能拿到环境信息、且没被关掉时做。
+    if (options.breakerEnv && !isBreakerDisabledByEnv()) {
+      try {
+        const result = reconcileBreaker(
+          previous?.breaker ?? emptyBreaker(),
+          assessment,
+          options.breakerEnv(),
+          now(),
+        );
+        breaker = result.table;
+        for (const change of result.changes) {
+          const line = describeBreakerChange(change);
+          options.log?.(line.message, line.level);
+          if (change.kind === 'suppressed') {
+            const s = change.suppression;
+            suppressed.push({ scope: s.scope, reason: s.reason, key: s.key });
+          }
+        }
+      } catch (error) {
+        console.error('[crash] failed to reconcile the crash breaker:', error);
+      }
+    }
+
+    pendingNotice = assessment.notice
+      ? {
+          ...assessment.notice,
+          ...(suppressed.length ? { suppressed } : {}),
+        }
+      : null;
     lastAssessment = assessment;
   } catch (error) {
     console.error('[crash] failed to assess the previous run:', error);
   }
   try {
-    store?.markStarted(options.appVersion);
+    store?.markStarted(options.appVersion, breaker);
+    if (store && options.breakerEnv) {
+      bindNativeGuard(store, options.breakerEnv, options.log, now);
+    }
   } catch (error) {
     console.error('[crash] failed to record the run start:', error);
   }
@@ -101,6 +152,7 @@ export function dismissPreviousRunNotice(): void {
 
 /** 仅供单测：清掉进程内的单例状态。 */
 export function resetRunLifecycleForTests(): void {
+  unbindNativeGuard();
   store = null;
   pendingNotice = null;
   lastAssessment = null;
