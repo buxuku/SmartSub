@@ -56,3 +56,24 @@ export function isDiagnosticsExported(
 ): result is DiagnosticsExported {
   return result.ok === true;
 }
+
+export type PreviousRunEvidenceKind = 'dump' | 'in-flight' | 'event';
+
+/**
+ * 上次运行异常结束、并且找到了崩溃证据时，给用户看的一次性提示的内容。
+ * 只有“没走完退出流程”本身不足以提示（强杀、安装程序关闭、断电都会这样）。
+ */
+export interface PreviousRunNotice {
+  /** 大致发生时间（毫秒时间戳）：取最新一条证据的时间 */
+  at: number;
+  evidence: PreviousRunEvidenceKind[];
+  /** 分类，例如 illegal-instruction、access-violation；没有可归类的异常时缺省 */
+  kind?: string;
+  /** 简短标签，例如 ILLEGAL_INSTRUCTION */
+  label?: string;
+  /** 转储里的出错模块，例如 addon.node */
+  faultModule?: string;
+  /** 崩溃时正在运行的引擎与后端（来自在途标记或崩溃事件的现场） */
+  engine?: string;
+  backend?: string;
+}

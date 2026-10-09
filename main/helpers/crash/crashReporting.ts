@@ -26,6 +26,7 @@ import {
   type CrashMonitor,
   type UtilityExitReport,
 } from './crashMonitor';
+import { beginRun } from './runLifecycle';
 
 /** 回退开关：SMARTSUB_DISABLE_CRASH_REPORTER=true 不启动 crashReporter（监听与事件记录仍保留） */
 const DISABLE_ENV = 'SMARTSUB_DISABLE_CRASH_REPORTER';
@@ -42,6 +43,11 @@ export function getCrashDumpsDir(): string {
 /** 崩溃事件文件。放在 logs/ 下，但文件名不符合“日期.jsonl”，不会被 7 天清理误删。 */
 export function getCrashEventsFile(): string {
   return path.join(app.getPath('userData'), 'logs', 'crash-events.jsonl');
+}
+
+/** 运行状态文件：记录上次是否正常退出，以及崩溃时仍在进行的原生调用。 */
+export function getRunStateFile(): string {
+  return path.join(app.getPath('userData'), 'crash-state.json');
 }
 
 export function isCrashReporterStarted(): boolean {
@@ -115,6 +121,16 @@ export function startCrashReporting(): void {
  */
 export function initCrashDiagnostics(sink?: CrashLogSink): void {
   if (sink) getMonitor().setLogSink(sink);
+  // 先回顾上一次是怎么结束的，再清理：清理可能删掉用来判断的转储与事件
+  beginRun({
+    stateFile: getRunStateFile(),
+    dumpsDir: getCrashDumpsDir(),
+    eventsFile: getCrashEventsFile(),
+    appVersion: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+    log: sink,
+  });
   try {
     pruneCrashEvents(getCrashEventsFile());
     pruneDumpFiles(getCrashDumpsDir());

@@ -21,6 +21,10 @@ import {
   rotatedFileOf,
 } from './crash/crashEvents';
 import { listDumpFiles } from './crash/crashDumps';
+import {
+  dismissPreviousRunNotice,
+  getPreviousRunNotice,
+} from './crash/runLifecycle';
 import { describeExit } from './crash/exitClassifier';
 import { summarizeMinidumpFile } from './crash/minidumpSummary';
 import { gatherSystemInfo } from './crash/systemInfo';
@@ -222,6 +226,13 @@ export function setupDiagnosticsHandlers(mainWindow: BrowserWindow): void {
       }
     },
   );
+
+  // 上次异常退出的一次性提示：渲染进程主动来取（拉取式），窗口晚于主进程就绪也不会错过
+  ipcMain.handle('crash:previous-run-notice', () => getPreviousRunNotice());
+  ipcMain.handle('crash:dismiss-previous-run-notice', () => {
+    dismissPreviousRunNotice();
+    return true;
+  });
 
   ipcMain.handle('diagnostics:reveal', (_event, filePath: unknown) => {
     if (typeof filePath !== 'string' || !exportedFiles.has(filePath)) {
