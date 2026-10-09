@@ -294,6 +294,111 @@ export function assertValidProofreadData(input: unknown): void {
   }
 }
 
+/** Display time given to a cue whose end was not after its start (the engines' 0.8 s minimum). */
+export const REPAIRED_CUE_DURATION_MS = 800;
+/** Silence kept before the next cue, like the engines' 0.1 s guard gap. */
+export const REPAIRED_CUE_GUARD_MS = 100;
+
+export interface CueTimingRepair {
+  /** Zero-based position in the cue array. */
+  index: number;
+  id: string;
+  startMs: number;
+  /** End time found in the data (not after `startMs`). */
+  endMs: number;
+  repairedEndMs: number;
+}
+
+interface TimedCueLike {
+  id?: unknown;
+  startMs?: unknown;
+  endMs?: unknown;
+}
+
+function isCueTime(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value);
+}
+
+/** First start strictly after `startMs` in an ascending list, if any. */
+function nextStartAfter(
+  sortedStarts: readonly number[],
+  startMs: number,
+): number | undefined {
+  let low = 0;
+  let high = sortedStarts.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (sortedStarts[mid] <= startMs) low = mid + 1;
+    else high = mid;
+  }
+  return low < sortedStarts.length ? sortedStarts[low] : undefined;
+}
+
+/**
+ * `assertValidProofreadData` requires `endMs > startMs`, yet ASR and
+ * segmentation can emit zero-length (or inverted) cues. Dropping them would
+ * lose text and refusing the whole file would lock the user out of the very
+ * panel meant to fix them, so such a cue keeps its start and gets a visible
+ * duration: `min(start + 800 ms, next distinct start - 100 ms)`, or exactly the
+ * next start when that leaves no room. It never overlaps a later cue.
+ *
+ * Only plain non-negative integer ranges are touched; any other corruption is
+ * returned as-is for the strict validation to reject. Pure (inputs are never
+ * mutated, unchanged cues are returned as the same objects) and idempotent.
+ */
+export function repairNonPositiveCueDurations<T>(cues: readonly T[]): {
+  cues: T[];
+  repairs: CueTimingRepair[];
+} {
+  const starts: number[] = [];
+  for (let index = 0; index < cues.length; index++) {
+    const cue = cues[index] as TimedCueLike | null | undefined;
+    if (
+      cue &&
+      typeof cue === 'object' &&
+      isCueTime(cue.startMs) &&
+      cue.startMs >= 0
+    ) {
+      starts.push(cue.startMs);
+    }
+  }
+  starts.sort((a, b) => a - b);
+
+  const repaired = cues.slice();
+  const repairs: CueTimingRepair[] = [];
+  for (let index = 0; index < cues.length; index++) {
+    const cue = cues[index] as TimedCueLike | null | undefined;
+    if (!cue || typeof cue !== 'object') continue;
+    const { startMs, endMs } = cue;
+    if (
+      !isCueTime(startMs) ||
+      !isCueTime(endMs) ||
+      startMs < 0 ||
+      endMs > startMs
+    ) {
+      continue;
+    }
+    const nextStart = nextStartAfter(starts, startMs);
+    let repairedEndMs = startMs + REPAIRED_CUE_DURATION_MS;
+    if (nextStart !== undefined) {
+      repairedEndMs =
+        nextStart - REPAIRED_CUE_GUARD_MS > startMs
+          ? Math.min(repairedEndMs, nextStart - REPAIRED_CUE_GUARD_MS)
+          : nextStart;
+    }
+    if (!Number.isSafeInteger(repairedEndMs)) continue;
+    repairs.push({
+      index,
+      id: String(cue.id || index + 1),
+      startMs,
+      endMs,
+      repairedEndMs,
+    });
+    repaired[index] = { ...cue, endMs: repairedEndMs } as unknown as T;
+  }
+  return { cues: repaired, repairs };
+}
+
 /**
  * 归一化 sidecar meta.glossaryIds。
  * 非数组 → undefined（旧 sidecar / 回落全部已启用）；

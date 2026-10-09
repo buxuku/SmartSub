@@ -8,6 +8,7 @@ import {
 import {
   assertValidProofreadData,
   normalizeProofreadData,
+  repairNonPositiveCueDurations,
 } from '../types/proofreadData';
 
 const cue = { startMs: 1000, endMs: 3000, text: 'Original\nsubtitle' };
@@ -148,4 +149,186 @@ for (const speakers of [
   assert.throws(() => assertValidProofreadData({ ...data, speakers }));
   checks++;
 }
-console.log(`Proofread strict parsing: ${checks + 9} checks passed`);
+
+// Cue timing repair: the strict reader above rejects `endMs <= startMs`, so a
+// sidecar must never carry such a cue. Zero-length and inverted cues get a
+// visible duration instead of being dropped or blocking the whole file.
+let repairChecks = 0;
+function expectEqual<T>(actual: T, expected: T, message: string): void {
+  assert.deepEqual(actual, expected, message);
+  repairChecks++;
+}
+function expectValid(cues: unknown[], message: string): void {
+  assert.doesNotThrow(
+    () => assertValidProofreadData({ version: 2, speakers: [], cues }),
+    message,
+  );
+  repairChecks++;
+}
+function timed(id: string, startMs: number, endMs: number) {
+  return { id, startMs, endMs, source: `source ${id}`, target: `target ${id}` };
+}
+
+const wellFormed = [timed('1', 0, 1000), timed('2', 1000, 2000)];
+const wellFormedResult = repairNonPositiveCueDurations(wellFormed);
+expectEqual(wellFormedResult.repairs, [], 'valid cues need no repair');
+expectEqual(wellFormedResult.cues, wellFormed, 'valid cues keep their values');
+assert.ok(
+  wellFormedResult.cues.every((item, index) => item === wellFormed[index]),
+  'valid cues are returned as the very same objects',
+);
+repairChecks++;
+expectEqual(
+  repairNonPositiveCueDurations([]),
+  { cues: [], repairs: [] },
+  'empty input stays empty',
+);
+
+// end = min(start + 800 ms, next distinct start - 100 ms); when the next cue
+// starts within 100 ms the cue ends exactly where the next one starts.
+const repairCases: Array<{
+  name: string;
+  cues: ReturnType<typeof timed>[];
+  ends: number[];
+}> = [
+  {
+    name: 'zero-length cue in the middle',
+    cues: [
+      timed('1', 0, 1000),
+      timed('2', 5200, 5200),
+      timed('3', 9000, 10000),
+    ],
+    ends: [1000, 6000, 10000],
+  },
+  {
+    name: 'zero-length last cue',
+    cues: [timed('1', 0, 1000), timed('2', 5200, 5200)],
+    ends: [1000, 6000],
+  },
+  {
+    name: 'zero-length first cue stops before the next start',
+    cues: [timed('1', 0, 0), timed('2', 500, 1500)],
+    ends: [400, 1500],
+  },
+  {
+    name: 'only cue',
+    cues: [timed('1', 0, 0)],
+    ends: [800],
+  },
+  {
+    name: 'inverted cue',
+    cues: [timed('1', 5200, 4800), timed('2', 9000, 10000)],
+    ends: [6000, 10000],
+  },
+  {
+    name: 'next start within the guard gap touches the next start',
+    cues: [timed('1', 1000, 1000), timed('2', 1050, 2000)],
+    ends: [1050, 2000],
+  },
+  {
+    name: 'next start leaves room for the 100 ms guard',
+    cues: [timed('1', 1000, 1000), timed('2', 1300, 2000)],
+    ends: [1200, 2000],
+  },
+  {
+    name: 'stacked identical starts share the next distinct start',
+    cues: [
+      timed('1', 5200, 5200),
+      timed('2', 5200, 5200),
+      timed('3', 9000, 10000),
+    ],
+    ends: [6000, 6000, 10000],
+  },
+  {
+    name: 'consecutive zero-length cues',
+    cues: [
+      timed('1', 1000, 1000),
+      timed('2', 1500, 1500),
+      timed('3', 3000, 3500),
+    ],
+    ends: [1400, 2300, 3500],
+  },
+  {
+    name: 'array order does not matter',
+    cues: [timed('b', 9000, 10000), timed('a', 5200, 5200)],
+    ends: [10000, 6000],
+  },
+];
+for (const { name, cues, ends } of repairCases) {
+  const repaired = repairNonPositiveCueDurations(cues);
+  expectEqual(
+    repaired.cues.map((cue) => cue.endMs),
+    ends,
+    `${name}: end times`,
+  );
+  expectEqual(
+    repaired.cues.map((cue) => cue.startMs),
+    cues.map((cue) => cue.startMs),
+    `${name}: start times are never moved`,
+  );
+  expectValid(repaired.cues, `${name}: repaired cues pass the strict reader`);
+  expectEqual(
+    repairNonPositiveCueDurations(repaired.cues).repairs,
+    [],
+    `${name}: repairing twice changes nothing`,
+  );
+}
+
+expectEqual(
+  repairNonPositiveCueDurations([
+    timed('1', 0, 1000),
+    timed('2', 5200, 5200),
+    timed('3', 9000, 4000),
+  ]).repairs,
+  [
+    { index: 1, id: '2', startMs: 5200, endMs: 5200, repairedEndMs: 6000 },
+    { index: 2, id: '3', startMs: 9000, endMs: 4000, repairedEndMs: 9800 },
+  ],
+  'repairs report what was found and what it became',
+);
+
+const frozen = Object.freeze({
+  ...timed('2', 5200, 5200),
+  speakerIds: [1],
+  primarySpeakerId: 1,
+});
+expectEqual(
+  repairNonPositiveCueDurations([frozen]).cues[0],
+  { ...frozen, endMs: 6000 },
+  'a repaired cue keeps every other field and the input is not mutated',
+);
+
+// Anything that is not a plain non-negative integer range is a real
+// corruption, not a timing quirk: leave it for the strict reader to reject.
+const corrupt: unknown[] = [
+  { ...timed('1', 1000, 1000), startMs: '1000' },
+  { ...timed('2', 1000, 1000), endMs: null },
+  timed('3', -5, -5),
+  timed('4', 1000.5, 1000.5),
+  timed('5', Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER),
+  null,
+  'text',
+];
+const corruptResult = repairNonPositiveCueDurations(corrupt);
+expectEqual(corruptResult.repairs, [], 'corrupt cues are not repaired');
+assert.ok(
+  corruptResult.cues.every((item, index) => item === corrupt[index]),
+  'corrupt cues are returned untouched',
+);
+repairChecks++;
+for (const item of corrupt) {
+  assert.throws(
+    () =>
+      assertValidProofreadData({
+        version: 2,
+        speakers: [],
+        cues: repairNonPositiveCueDurations([item]).cues,
+      }),
+    `corrupt cue ${JSON.stringify(item)} is still rejected`,
+  );
+  repairChecks++;
+}
+
+console.log(
+  `Proofread strict parsing: ${checks + 9 + repairChecks} checks passed`,
+);

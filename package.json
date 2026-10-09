@@ -21,6 +21,7 @@
     "test:pro-baseline": "node scripts/test-pro-baseline.mjs",
     "test:proofread-reliability": "tsx --tsconfig renderer/tsconfig.json scripts/test-proofread-reliability.tsx",
     "test:proofread-load": "tsx scripts/test-proofread-load.ts",
+    "test:proofread-cue-timing": "node scripts/test-proofread-cue-timing.cjs",
     "test:proofread-waveform": "tsx scripts/test-proofread-waveform.ts",
     "test:inline-ai": "tsx --tsconfig renderer/tsconfig.json scripts/test-inline-ai.tsx && node scripts/test-inline-ai-backend.cjs",
     "test:context-glossary": "tsx --tsconfig renderer/tsconfig.json scripts/test-context-glossary.tsx && node scripts/test-context-glossary-backend.cjs",
