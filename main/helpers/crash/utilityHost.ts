@@ -10,11 +10,17 @@
  *    异常退出时连同分类一起写进 crash-events.jsonl（child-process-gone 事件里没有这部分）。
  * 2. 主动终止（kill）先打标记并登记。实测 Electron 对主动 kill 同样会触发 child-process-gone，
  *    不登记的话每次回收 worker 都会冒出一条“被杀”事件。
- * 3. Linux 上给子进程设置 RLIMIT_CORE 软限制为 1。PoC 在 ubuntu-24.04 上实测：默认的管道式
- *    core_pattern 会让崩溃的 worker 在 20 秒内都不退出（主进程误以为任务仍在跑）；
- *    执行 `prlimit --pid <pid> --core=1:` 后崩溃的 worker 在约 70 ms 内退出，
- *    且 Crashpad 转储不受影响。没有 prlimit 命令时只记一次日志（该情形未验证）。
+ * 3. Linux 上让崩溃的子进程尽快退出。默认的管道式 core_pattern（systemd-coredump / apport）
+ *    会让崩溃的进程等 core 写完才退出，worker 崩了而主进程误以为任务仍在跑。两层办法：
+ *    - 先同步写 /proc/<pid>/coredump_filter = 0：没有进程启动延迟，core 只剩十几 KB。
+ *      GitHub ubuntu-24.04 实测崩溃后约 130 ms 退出；
+ *    - 再异步执行 `prlimit --pid <pid> --core=1:`：RLIMIT_CORE=1 让内核直接放弃把 core 交给
+ *      管道程序，实测约 65 ms 退出。但 prlimit 要起一个外部进程，机器忙时会晚于崩得快的 worker
+ *      （CI 里机器被前面几个还在写 core 的崩溃进程拖慢时，出现过 60 秒不退出，当时限制要到
+ *      worker 启动后约 150 ms 才取得到，推断是输给了崩溃），所以它只是第二层。
+ *    两种办法都不影响 Crashpad 转储（它自己读进程内存）。两种都不可用时只记一次日志（该情形未验证）。
  */
+import fs from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import type { UtilityProcess } from 'electron';
@@ -52,6 +58,8 @@ export interface HostDeps {
     options: Electron.ForkOptions,
   ) => UtilityProcess;
   platform: NodeJS.Platform;
+  /** 同步把系统 core 的内容缩到最小（coredump_filter = 0）；返回错误文本，成功返回 null */
+  shrinkCoreDump: (pid: number) => string | null;
   /** 给 pid 设置 core 软限制；返回错误文本，成功返回 null */
   limitCore: (pid: number) => Promise<string | null>;
 }
@@ -86,6 +94,20 @@ export function buildSherpaWorkerEnv(
   };
 }
 
+/** 导出仅为单测：默认实现，写 /proc/<pid>/coredump_filter。 */
+export function shrinkCoreDumpViaProc(pid: number): string | null {
+  try {
+    fs.writeFileSync(`/proc/${pid}/coredump_filter`, '0');
+    return null;
+  } catch (error) {
+    return (
+      (error as NodeJS.ErrnoException).code ||
+      (error instanceof Error ? error.message.split('\n')[0] : '') ||
+      'write failed'
+    );
+  }
+}
+
 function limitCoreWithPrlimit(pid: number): Promise<string | null> {
   return new Promise((resolve) => {
     execFile(
@@ -113,6 +135,7 @@ function defaultDeps(): HostDeps {
         options,
       ),
     platform: process.platform,
+    shrinkCoreDump: shrinkCoreDumpViaProc,
     limitCore: limitCoreWithPrlimit,
   };
 }
@@ -144,11 +167,19 @@ export class UtilityHost {
       this.proc.on('spawn', () => {
         const pid = this.proc.pid;
         if (pid === undefined) return;
-        void deps.limitCore(pid).then((error) => {
-          if (!error || coreLimitWarned) return;
+        // 先做同步的那一步：它赶得上崩得最快的 worker；prlimit 要起外部进程，只能作为第二层
+        let filterError: string | null;
+        try {
+          filterError = deps.shrinkCoreDump(pid);
+        } catch (error) {
+          filterError = error instanceof Error ? error.message : String(error);
+        }
+        void deps.limitCore(pid).then((limitError) => {
+          // 两层里有一层生效就不提示
+          if (!limitError || !filterError || coreLimitWarned) return;
           coreLimitWarned = true;
           options.log(
-            `${options.logLabel}: could not lower RLIMIT_CORE (${error}); on systems that pipe core dumps a crashed worker may take a long time to exit`,
+            `${options.logLabel}: could not lower RLIMIT_CORE (${limitError}) or coredump_filter (${filterError}); on systems that pipe core dumps a crashed worker may take a long time to exit`,
             'warning',
           );
         });

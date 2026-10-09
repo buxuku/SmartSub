@@ -100,7 +100,7 @@ function shrinkSystemCore(pid) {
   }
 }
 
-/** Linux：读 /proc/<pid>/limits 里的 core 软限制，用来判断加固（RLIMIT_CORE=1）在崩溃前是否已经生效。 */
+/** Linux：读 /proc/<pid>/limits 里的 core 软限制（宿主侧取样，只用于诊断，不做断言）。 */
 function readCoreLimit(pid) {
   if (process.platform !== 'linux' || !pid) return null;
   try {
@@ -153,17 +153,31 @@ async function crashUtility(serviceName) {
 
 /**
  * 经应用真正使用的宿主底座起一个 utilityProcess，让它加载 boom-ill 样本，
- * 观察：宿主的退出分类、崩溃事件、转储，以及 Linux 上“崩溃后多久退出”（RLIMIT_CORE 加固是否生效）。
+ * 观察：宿主的退出分类、崩溃事件、转储，以及 Linux 上“崩溃后多久退出”（宿主的 core 加固是否生效）。
  */
 async function crashUtilityHost(serviceName) {
   const workerFile = path.join(work, `ill-worker-${serviceName}.js`);
+  const selfViewFile = path.join(work, `ill-worker-${serviceName}-self.json`);
   fs.writeFileSync(
     workerFile,
     [
+      "const fs = require('fs');",
       `const boom = ${JSON.stringify(boomFile('boom-ill'))};`,
+      `const selfViewFile = ${JSON.stringify(selfViewFile)};`,
       "console.error('smoke: the worker is about to load the illegal-instruction module');",
       "process.parentPort.postMessage({ type: 'armed' });",
-      'setTimeout(() => process.dlopen({ exports: {} }, boom), 200);',
+      'setTimeout(() => {',
+      // 崩溃前一刻 worker 自己看到的 core 设置：同步写文件，崩溃后宿主来读。
+      // 这才是内核随后会用到的值；宿主侧在 armed 之后取的样会受宿主事件循环延迟影响
+      '  try {',
+      "    const limit = fs.readFileSync('/proc/self/limits', 'utf8').split('\\n').find((l) => l.startsWith('Max core file size'));",
+      "    const filter = fs.readFileSync('/proc/self/coredump_filter', 'utf8').trim();",
+      "    fs.writeFileSync(selfViewFile, JSON.stringify({ limit: limit ? limit.replace(/\\s+/g, ' ') : null, filter }));",
+      '  } catch (error) {',
+      '    fs.writeFileSync(selfViewFile, JSON.stringify({ error: String((error && error.code) || error) }));',
+      '  }',
+      '  process.dlopen({ exports: {} }, boom);',
+      '}, 200);',
       'setInterval(() => {}, 1000);',
       '',
     ].join('\n'),
@@ -190,6 +204,13 @@ async function crashUtilityHost(serviceName) {
       }, 150);
     }
   });
+  const readSelfView = () => {
+    try {
+      return JSON.parse(fs.readFileSync(selfViewFile, 'utf8'));
+    } catch {
+      return null;
+    }
+  };
   const exit = await new Promise((resolve) => {
     host.onExit((info) =>
       resolve({
@@ -211,6 +232,7 @@ async function crashUtilityHost(serviceName) {
       60000,
     );
   });
+  exit.workerSelfView = readSelfView();
   return exit;
 }
 

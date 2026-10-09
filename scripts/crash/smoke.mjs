@@ -412,23 +412,32 @@ const handlers = {
       console.log(`    · 转储异常 ${s.exception.name || s.exception.codeHex}`);
     });
     if (process.platform === 'linux') {
-      // 先看加固有没有设上，再看崩溃后多久退出：两件事分开，失败时才知道坏在哪一步
-      await check('Linux：崩溃前 worker 的 core 软限制已被宿主设为 1', () => {
-        assert.match(
-          String(r.exit.coreLimitBeforeCrash),
-          /Max core file size 1 /,
-          `崩溃前取样：atArmed=${r.exit.coreLimitAtArmed} beforeCrash=${r.exit.coreLimitBeforeCrash}；日志：${JSON.stringify(r.logs)}`,
-        );
-      });
-      await check('Linux：加固（RLIMIT_CORE=1）生效，崩溃后 5 秒内退出', () => {
+      // 先看加固有没有在崩溃前生效，再看崩溃后多久退出：两件事分开，失败时才知道坏在哪一步。
+      // 取 worker 自己在崩溃前一刻读到的值（宿主侧在 armed 之后取的样会被宿主事件循环的延迟带偏）
+      const view = r.exit.workerSelfView;
+      const filterValue =
+        view && typeof view.filter === 'string'
+          ? parseInt(view.filter, 16)
+          : null;
+      const limitOne = /Max core file size 1 /.test(String(view?.limit));
+      await check(
+        'Linux：崩溃前一刻 worker 自己读到的 core 设置已被加固（coredump_filter=0 或 RLIMIT_CORE=1）',
+        () => {
+          assert.ok(
+            filterValue === 0 || limitOne,
+            `worker 自述 ${JSON.stringify(view)}；宿主侧取样 atArmed=${r.exit.coreLimitAtArmed} 之后=${r.exit.coreLimitBeforeCrash}；日志：${JSON.stringify(r.logs)}`,
+          );
+        },
+      );
+      await check('Linux：加固生效，崩溃后 5 秒内退出', () => {
         assert.ok(
           r.exit.msAfterCrash >= 0 && r.exit.msAfterCrash < 5000,
-          `崩溃后 ${r.exit.msAfterCrash} ms 才退出（超时时进程状态 ${r.exit.procStateAtTimeout}）；日志：${JSON.stringify(r.logs)}`,
+          `崩溃后 ${r.exit.msAfterCrash} ms 才退出（超时时进程状态 ${r.exit.procStateAtTimeout}）；worker 自述 ${JSON.stringify(view)}；日志：${JSON.stringify(r.logs)}`,
         );
       });
     }
     console.log(
-      `    · 实测：宿主收到退出 code=${info?.code}，崩溃后 ${r.exit.msAfterCrash} ms${r.exit.coreLimitBeforeCrash ? `；崩溃前 ${r.exit.coreLimitBeforeCrash}` : ''}\n    · 分类：${JSON.stringify(info?.classification)}\n    · gone=${JSON.stringify(r.gone)}`,
+      `    · 实测：宿主收到退出 code=${info?.code}，崩溃后 ${r.exit.msAfterCrash} ms${r.exit.workerSelfView ? `；崩溃前 worker 自述 ${JSON.stringify(r.exit.workerSelfView)}` : ''}\n    · 分类：${JSON.stringify(info?.classification)}\n    · gone=${JSON.stringify(r.gone)}`,
     );
   },
 
