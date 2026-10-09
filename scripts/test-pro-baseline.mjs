@@ -4,6 +4,7 @@ const scripts = [
   'test:launchpad-import',
   'test:proofread-reliability',
   'test:proofread-load',
+  'test:proofread-cue-timing',
   'test:proofread-waveform',
   'test:compositor-trace',
   'test:inline-ai',
