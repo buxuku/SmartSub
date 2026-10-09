@@ -523,5 +523,16 @@
       "unreadable": "Could not access the file. Check that it is still available locally.",
       "ATTACHMENT_UNSUPPORTED": "Unsupported format. Choose media, subtitles, TXT/MD manuscripts, JSON files or images."
     }
+  },
+  "cpuAdvisory": {
+    "missing": {
+      "title": "This computer's CPU may not support built-in speech recognition",
+      "description": "Built-in speech recognition needs a CPU with {{features}}, which was not detected on this computer. Continuing may crash the app. Consider cloud speech recognition or another engine."
+    },
+    "translated": {
+      "title": "Running under translation",
+      "descriptionMac": "This is the Intel (x64) build running through Rosetta on Apple silicon. It is slower, and the translation layer may not provide every instruction set built-in speech recognition needs, which can crash the app. Consider the Apple silicon (arm64) build.",
+      "descriptionOther": "This is the x64 build running through translation on an ARM device. It is slower, and the translation layer may not provide every instruction set built-in speech recognition needs, which can crash the app. Consider cloud speech recognition or another engine."
+    }
   }
 }

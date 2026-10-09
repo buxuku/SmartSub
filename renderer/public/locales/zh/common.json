@@ -523,5 +523,16 @@
       "unreadable": "无法访问文件，请确认文件仍在本地。",
       "ATTACHMENT_UNSUPPORTED": "不支持此格式。请添加音视频、字幕、TXT／MD 文稿、JSON 文件或图片。"
     }
+  },
+  "cpuAdvisory": {
+    "missing": {
+      "title": "这台电脑的 CPU 可能不支持内置语音识别",
+      "description": "内置语音识别需要 CPU 支持 {{features}} 指令集，但没有在这台电脑上检测到。继续使用可能导致应用闪退。建议改用云端语音识别或其他引擎。"
+    },
+    "translated": {
+      "title": "当前通过转译方式运行",
+      "descriptionMac": "这是 Intel（x64）版本，正在 Apple 芯片上通过 Rosetta 转译运行：速度较慢，且转译环境不一定提供内置语音识别需要的全部指令集，可能导致闪退。建议改用 Apple 芯片（arm64）版本。",
+      "descriptionOther": "这是 x64 版本，正在 ARM 设备上通过转译运行：速度较慢，且转译环境不一定提供内置语音识别需要的全部指令集，可能导致闪退。建议改用云端语音识别或其他引擎。"
+    }
   }
 }
