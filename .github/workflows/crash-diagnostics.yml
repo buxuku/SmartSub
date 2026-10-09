@@ -80,7 +80,7 @@ jobs:
           echo "SMOKE_NO_SANDBOX=1" >> "$GITHUB_ENV"
           echo "core_pattern: $(cat /proc/sys/kernel/core_pattern)"
           echo "ulimit -c: $(ulimit -c)"
-          command -v prlimit || echo "(没有 prlimit：RLIMIT_CORE 加固无法生效)"
+          command -v prlimit || echo "(没有 prlimit：宿主只剩 coredump_filter 一层加固)"
 
       # 三个平台各跑一遍：Windows 与 macOS 上的路径、换行、文件锁和 Linux 不同
       - name: Unit tests (crash diagnostics)
