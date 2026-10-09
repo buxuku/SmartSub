@@ -20,6 +20,10 @@ import {
 } from '../../types/qualityReview';
 import { validCueRange } from '../lib/waveformEditing';
 import { qualityCheckSteps } from '../lib/qualityChecks';
+import {
+  buildPreviewTrackSpecs,
+  type PreviewTrackSpec,
+} from '../lib/subtitlePreview';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
 import { Subtitle, SubtitleStats, PlayerSubtitleTrack } from './useSubtitles';
@@ -99,6 +103,9 @@ const secondsToTime = (seconds: number): string => {
 // 时间相等容差（SRT 精度为毫秒）
 const TIME_EPSILON = 0.0005;
 
+// 编辑停顿多久后重建播放器字幕预览
+const PREVIEW_DEBOUNCE_MS = 250;
+
 export const useStandaloneSubtitles = (
   input: StandaloneSubtitlesConfig,
   isOpen: boolean,
@@ -127,10 +134,9 @@ export const useStandaloneSubtitles = (
   const loadedKey = useRef<string | null>(null);
   const [loadedDocument, setLoadedDocument] = useState<string | null>(null);
   const [loadError, setLoadError] = useState('');
-  const [trackError, setTrackError] = useState('');
-  const [tracksLoading, setTracksLoading] = useState(false);
-  const trackVersion = useRef(0);
   const tracksRef = useRef<PlayerSubtitleTrack[]>([]);
+  // 已发布预览的内容签名；null 表示尚未发布（刚加载文档或已释放）
+  const previewSignature = useRef<string | null>(null);
   const [mergedSubtitles, setMergedSubtitles] = useState<Subtitle[]>([]);
   const [videoPath, setVideoPath] = useState<string>('');
   const [currentSubtitleIndex, setCurrentSubtitleIndex] = useState(-1);
@@ -325,74 +331,34 @@ export const useStandaloneSubtitles = (
     };
   };
 
-  // 创建播放器字幕轨道
-  const createPlayerTrack = async (
-    srtPath: string | undefined,
-    language: string,
-    isDefault?: boolean,
-  ): Promise<PlayerSubtitleTrack | null> => {
-    if (!srtPath) return null;
-    const result = await window.ipc.invoke('getSubtitleAsVtt', {
-      filePath: srtPath,
-    });
-    if (
-      result?.error ||
-      typeof result?.content !== 'string' ||
-      !result.content.startsWith('WEBVTT')
-    )
-      throw new Error(`${srtPath}: ${result?.error || 'INVALID_VTT_RESPONSE'}`);
-    const vttBlob = new Blob([result.content], { type: 'text/vtt' });
-    const vttUrl = URL.createObjectURL(vttBlob);
-    return {
-      kind: 'subtitles',
-      src: vttUrl,
-      srcLang: language,
-      label: `(${language})`,
-      default: isDefault,
-    };
-  };
-
   const releaseTracks = useCallback(() => {
     tracksRef.current.forEach((track) => URL.revokeObjectURL(track.src));
     tracksRef.current = [];
+    previewSignature.current = null;
     setSubtitleTracksForPlayer([]);
   }, []);
 
-  const retryTracks = useCallback(async () => {
-    if (loadedKey.current !== documentKey) return;
-    const version = ++trackVersion.current;
-    const playerTracks: PlayerSubtitleTrack[] = [];
-    const errors: string[] = [];
-    const current = () =>
-      version === trackVersion.current && activeKey.current === documentKey;
-    setTracksLoading(true);
-    for (const [filePath, language, isDefault] of [
-      [
-        config.sourceSubtitlePath,
-        config.sourceLanguage,
-        !config.targetSubtitlePath,
-      ],
-      [config.targetSubtitlePath, config.targetLanguage, true],
-    ] as const) {
-      if (!current()) break;
-      if (!filePath || !language) continue;
-      try {
-        const track = await createPlayerTrack(filePath, language, isDefault);
-        if (track) playerTracks.push(track);
-      } catch (error) {
-        errors.push(error instanceof Error ? error.message : String(error));
+  // 发布新的预览轨道：全部创建成功后才替换并释放旧 URL，失败时保留现有预览
+  const publishPreview = useCallback((specs: PreviewTrackSpec[]) => {
+    const created: PlayerSubtitleTrack[] = [];
+    try {
+      for (const spec of specs) {
+        created.push({
+          kind: 'subtitles',
+          src: URL.createObjectURL(new Blob([spec.vtt], { type: 'text/vtt' })),
+          srcLang: spec.srcLang,
+          label: spec.label,
+          default: spec.default,
+        });
       }
+    } catch (error) {
+      created.forEach((track) => URL.revokeObjectURL(track.src));
+      throw error;
     }
-    if (!current()) {
-      playerTracks.forEach((track) => URL.revokeObjectURL(track.src));
-      return;
-    }
-    releaseTracks();
-    tracksRef.current = playerTracks;
-    setSubtitleTracksForPlayer(playerTracks);
-    setTrackError(errors.join('\n'));
-    setTracksLoading(false);
-  }, [config, documentKey, releaseTracks]);
+    tracksRef.current.forEach((track) => URL.revokeObjectURL(track.src));
+    tracksRef.current = created;
+    setSubtitleTracksForPlayer(created);
+  }, []);
 
   // 加载文件
   const loadFiles = useCallback(async () => {
@@ -402,10 +368,7 @@ export const useStandaloneSubtitles = (
     const current = () =>
       version === loadVersion.current && activeKey.current === documentKey;
     loadedKey.current = null;
-    trackVersion.current++;
     releaseTracks();
-    setTrackError('');
-    setTracksLoading(false);
     setMissedSpeechWarnings([]);
     setLoadError('');
     applyQuality(emptyQualityReview());
@@ -551,7 +514,6 @@ export const useStandaloneSubtitles = (
       const recoveredDraft = readProofreadDraft(draftKey);
       loadedKey.current = documentKey;
       setRecoveryDraft(recoveredDraft);
-      void retryTracks();
     } catch (error) {
       if (current())
         setLoadError(error instanceof Error ? error.message : String(error));
@@ -566,7 +528,6 @@ export const useStandaloneSubtitles = (
     documentKey,
     isOpen,
     releaseTracks,
-    retryTracks,
     applySubtitles,
     applySpeakers,
     history.reset,
@@ -613,13 +574,55 @@ export const useStandaloneSubtitles = (
     void loadFiles();
     return () => {
       loadVersion.current++;
-      trackVersion.current++;
       loadedKey.current = null;
       savingRef.current = null;
       tracksRef.current.forEach((track) => URL.revokeObjectURL(track.src));
       tracksRef.current = [];
+      previewSignature.current = null;
     };
   }, [loadFiles]);
+
+  // 播放器预览是编辑器内存文档的投影：文档（文本/时间/语言标签）变化后防抖重建，
+  // 不读磁盘、不依赖语言元数据；内容未变（如仅改说话人）不重建。预览失败只记日志，不影响编辑
+  useEffect(() => {
+    if (!isOpen || isLoading || loadedKey.current !== documentKey) return;
+    const timer = setTimeout(
+      () => {
+        try {
+          const specs = buildPreviewTrackSpecs(mergedSubtitles, {
+            source: config.sourceLanguage,
+            target: config.targetLanguage,
+          });
+          const signature = specs
+            .map((spec) =>
+              [
+                spec.role,
+                spec.default,
+                spec.srcLang,
+                spec.label,
+                spec.vtt,
+              ].join('|'),
+            )
+            .join('\0');
+          if (signature === previewSignature.current) return;
+          publishPreview(specs);
+          previewSignature.current = signature;
+        } catch (error) {
+          console.error('[proofread] player preview unavailable', error);
+        }
+      },
+      previewSignature.current === null ? 0 : PREVIEW_DEBOUNCE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [
+    mergedSubtitles,
+    isOpen,
+    isLoading,
+    documentKey,
+    config.sourceLanguage,
+    config.targetLanguage,
+    publishPreview,
+  ]);
 
   // 更新视频信息
   useEffect(() => {
@@ -1539,9 +1542,6 @@ export const useStandaloneSubtitles = (
     isLoading,
     loadError,
     retryLoad: loadFiles,
-    trackError,
-    tracksLoading,
-    retryTracks,
     handleSubtitleChange,
     handleSave,
     isDirty,

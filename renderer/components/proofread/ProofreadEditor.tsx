@@ -127,9 +127,6 @@ export default function ProofreadEditor({
     isLoading,
     loadError,
     retryLoad,
-    trackError,
-    tracksLoading,
-    retryTracks,
     handleSubtitleChange,
     flushPendingEdit,
     handleSave,
@@ -744,24 +741,6 @@ export default function ProofreadEditor({
       {draftStorageFailed && (
         <div role="alert" className="shrink-0 bg-warning/10 px-4 py-2 text-sm">
           {commonT('draftRecovery.storageFailed')}
-        </div>
-      )}
-      {trackError && (
-        <div role="alert" className="shrink-0 bg-warning/10 px-4 py-2 text-sm">
-          <p>{t('proofreadLoad.previewFailed')}</p>
-          <details>
-            <summary>{commonT('saveState.details')}</summary>
-            <p className="break-all whitespace-pre-wrap">{trackError}</p>
-          </details>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={tracksLoading}
-            onClick={() => void retryTracks()}
-          >
-            <RefreshCw className="mr-2 h-4 w-4" />
-            {t('proofreadLoad.retryPreview')}
-          </Button>
         </div>
       )}
       <div className="sticky top-0 z-10 flex-shrink-0 bg-background border-b">
