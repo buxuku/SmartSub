@@ -141,7 +141,12 @@ const SIGNAL_KINDS: Record<string, ExitKind> = {
   SIGSYS: 'crash-unknown',
 };
 
-const KILL_SIGNALS = new Set(['SIGKILL', 'SIGTERM', 'SIGINT', 'SIGHUP']);
+/**
+ * 没有 reason 时（例如只拿到 utilityProcess 的 exit 事件）才靠退出码推断“被杀”。
+ * 只收 SIGKILL(9) 与 SIGTERM(15)：SIGHUP(1) 与 SIGINT(2) 的编号同时是进程最常见的
+ * 退出码（process.exit(1) 通用失败、2 用法错误），无法区分，宁可按普通非零退出处理。
+ */
+const KILL_SIGNALS = new Set(['SIGKILL', 'SIGTERM']);
 
 export function formatNtStatus(code: number): string {
   return `0x${(code >>> 0).toString(16).toUpperCase().padStart(8, '0')}`;

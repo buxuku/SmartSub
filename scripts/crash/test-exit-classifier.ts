@@ -179,10 +179,21 @@ async function main() {
     const term = classifyExit({ platform: 'linux', exitCode: 15 });
     assert.equal(term.kind, 'killed');
     assert.equal(term.isCrash, false);
-    const plain = classifyExit({ platform: 'linux', exitCode: 2 });
-    assert.equal(plain.kind, 'killed'); // SIGINT
-    const odd = classifyExit({ platform: 'linux', exitCode: 42 });
-    assert.equal(odd.kind, 'exit-nonzero');
+    const kill = classifyExit({ platform: 'linux', exitCode: 9 });
+    assert.equal(kill.kind, 'killed'); // SIGKILL
+    // 1 与 2 同时是 SIGHUP / SIGINT 的编号和最常见的退出码（process.exit(1)），无 reason 时无法区分，
+    // 按普通非零退出处理，不能误判成“被杀”
+    for (const exitCode of [1, 2, 42]) {
+      const c = classifyExit({ platform: 'linux', exitCode });
+      assert.equal(c.kind, 'exit-nonzero', `exitCode ${exitCode}`);
+      assert.equal(c.isCrash, false);
+      assert.equal(c.abnormal, true);
+    }
+    // 明确带 reason: killed 时仍按信号解码标签
+    assert.equal(
+      classifyExit({ platform: 'linux', exitCode: 1, reason: 'killed' }).label,
+      'SIGHUP',
+    );
   });
 
   await test('Linux 与 macOS 的 7 / 10 号信号含义不同', () => {
