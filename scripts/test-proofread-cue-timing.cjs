@@ -502,27 +502,44 @@ async function testLegacySidecarsOpen(root) {
 
 async function testCorruptionIsStillRejected(root) {
   const valid = legacySidecar(2, [['1', 0, 1000, 'first']]);
-  const corrupt = {
-    'truncated JSON': '{"version":2,',
-    'text start time': {
-      ...valid,
-      cues: [{ ...valid.cues[0], startMs: 'corrupt' }],
+  const withCue = (change) => ({
+    ...valid,
+    cues: [{ ...valid.cues[0], ...change }],
+  });
+  const cueLabel = '#1 (id=1, startMs=0, endMs=1000)';
+  const corrupt = [
+    // The reason is whatever JSON.parse says; it only has to be passed on.
+    { name: 'truncated JSON', content: '{"version":2,' },
+    {
+      name: 'text start time',
+      content: withCue({ startMs: 'corrupt' }),
+      reason:
+        'Invalid proofread cue #1 (id=1, startMs="corrupt", endMs=1000): startMs is not an integer',
     },
-    'negative start time': {
-      ...valid,
-      cues: [{ ...valid.cues[0], startMs: -5, endMs: 10 }],
+    {
+      name: 'negative start time',
+      content: withCue({ startMs: -5, endMs: 10 }),
+      reason:
+        'Invalid proofread cue #1 (id=1, startMs=-5, endMs=10): startMs is negative',
     },
-    'missing end time': {
-      ...valid,
-      cues: [{ ...valid.cues[0], endMs: null }],
+    {
+      name: 'missing end time',
+      content: withCue({ endMs: null }),
+      reason:
+        'Invalid proofread cue #1 (id=1, startMs=0, endMs=null): endMs is not an integer',
     },
-    'unsupported version': { ...valid, version: 3 },
-    'non-text source': {
-      ...valid,
-      cues: [{ ...valid.cues[0], source: { text: 'lost' } }],
+    {
+      name: 'unsupported version',
+      content: { ...valid, version: 3 },
+      reason: 'Unsupported proofread data version',
     },
-  };
-  for (const [name, content] of Object.entries(corrupt)) {
+    {
+      name: 'non-text source',
+      content: withCue({ source: { text: 'lost' } }),
+      reason: `Invalid proofread cue ${cueLabel}: source is not text`,
+    },
+  ];
+  for (const { name, content, reason } of corrupt) {
     const file = await writeLegacy(
       root,
       `corrupt-${name.replace(/ /g, '-')}`,
@@ -531,13 +548,18 @@ async function testCorruptionIsStillRejected(root) {
     const read = await attempt(() =>
       readProofreadDataFile(file.filePath, { strict: true }),
     );
-    ok(
-      read.error &&
-        errorText(read.error).startsWith(
-          `Invalid proofread data file: ${file.filePath}`,
-        ),
-      `strict read still rejects ${name}`,
+    ok(read.error, `strict read still rejects ${name}`);
+    if (!read.error) continue;
+    const cause = read.error.cause;
+    ok(cause instanceof Error, `${name}: the original error is kept as cause`);
+    same(
+      errorText(read.error),
+      `Invalid proofread data file: ${file.filePath} (${cause && cause.message})`,
+      `${name}: the message says why the sidecar was rejected`,
     );
+    if (reason) {
+      same(cause && cause.message, reason, `${name}: the reason is specific`);
+    }
   }
 }
 

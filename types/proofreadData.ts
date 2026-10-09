@@ -251,6 +251,71 @@ export function normalizeSpeakerRoster(
   return roster;
 }
 
+interface TimedCueLike {
+  id?: unknown;
+  startMs?: unknown;
+  endMs?: unknown;
+}
+
+interface RawCue extends TimedCueLike {
+  source?: unknown;
+  target?: unknown;
+  speakerIds?: unknown;
+  primarySpeakerId?: unknown;
+}
+
+function isCueTime(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value);
+}
+
+/** Longest value copied into an error message, so a garbage field cannot flood the log. */
+const MAX_PREVIEW_LENGTH = 40;
+
+function previewValue(value: unknown): string {
+  let text: string;
+  try {
+    text = JSON.stringify(value) ?? String(value);
+  } catch {
+    text = Object.prototype.toString.call(value);
+  }
+  return text.length > MAX_PREVIEW_LENGTH
+    ? `${text.slice(0, MAX_PREVIEW_LENGTH - 3)}...`
+    : text;
+}
+
+/** "#3 (id=3, startMs=5200, endMs=5200)": enough to find the cue in the file. */
+function describeCue(input: unknown, index: number): string {
+  const position = `#${index + 1}`;
+  if (!input || typeof input !== 'object')
+    return `${position} (${previewValue(input)})`;
+  const cue = input as TimedCueLike;
+  return `${position} (id=${String(cue.id || index + 1)}, startMs=${previewValue(cue.startMs)}, endMs=${previewValue(cue.endMs)})`;
+}
+
+/** The first rule a persisted cue breaks, or undefined when it holds them all. */
+function cueProblem(input: unknown): string | undefined {
+  if (!input || typeof input !== 'object') return 'not an object';
+  const cue = input as RawCue;
+  if (!isCueTime(cue.startMs)) return 'startMs is not an integer';
+  if (!isCueTime(cue.endMs)) return 'endMs is not an integer';
+  if (cue.startMs < 0) return 'startMs is negative';
+  if (cue.endMs <= cue.startMs) return 'endMs is not after startMs';
+  if (typeof cue.source !== 'string') return 'source is not text';
+  if (cue.target !== undefined && typeof cue.target !== 'string')
+    return 'target is not text';
+  if (
+    cue.speakerIds !== undefined &&
+    (!Array.isArray(cue.speakerIds) || !cue.speakerIds.every(isValidSpeakerId))
+  )
+    return 'speakerIds is invalid';
+  if (
+    cue.primarySpeakerId !== undefined &&
+    !isValidSpeakerId(cue.primarySpeakerId)
+  )
+    return 'primarySpeakerId is invalid';
+  return undefined;
+}
+
 /** Editing must reject corrupted persisted values before normalization repairs them. */
 export function assertValidProofreadData(input: unknown): void {
   if (!input || typeof input !== 'object' || Array.isArray(input))
@@ -258,23 +323,12 @@ export function assertValidProofreadData(input: unknown): void {
   const raw = input as ProofreadDataFileInput;
   if ((raw.version !== 1 && raw.version !== 2) || !Array.isArray(raw.cues))
     throw new Error('Unsupported proofread data version');
-  for (const cue of raw.cues) {
-    if (
-      !cue ||
-      typeof cue !== 'object' ||
-      !Number.isSafeInteger(cue.startMs) ||
-      !Number.isSafeInteger(cue.endMs) ||
-      cue.startMs < 0 ||
-      cue.endMs <= cue.startMs ||
-      typeof cue.source !== 'string' ||
-      (cue.target !== undefined && typeof cue.target !== 'string') ||
-      (cue.speakerIds !== undefined &&
-        (!Array.isArray(cue.speakerIds) ||
-          !cue.speakerIds.every(isValidSpeakerId))) ||
-      (cue.primarySpeakerId !== undefined &&
-        !isValidSpeakerId(cue.primarySpeakerId))
-    )
-      throw new Error('Invalid proofread cue');
+  for (let index = 0; index < raw.cues.length; index++) {
+    const problem = cueProblem(raw.cues[index]);
+    if (problem)
+      throw new Error(
+        `Invalid proofread cue ${describeCue(raw.cues[index], index)}: ${problem}`,
+      );
   }
   if (raw.version === 2 && raw.speakers !== undefined) {
     const seen = new Set<number>();
@@ -307,16 +361,6 @@ export interface CueTimingRepair {
   /** End time found in the data (not after `startMs`). */
   endMs: number;
   repairedEndMs: number;
-}
-
-interface TimedCueLike {
-  id?: unknown;
-  startMs?: unknown;
-  endMs?: unknown;
-}
-
-function isCueTime(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value);
 }
 
 /** First start strictly after `startMs` in an ascending list, if any. */

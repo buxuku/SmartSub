@@ -329,6 +329,100 @@ for (const item of corrupt) {
   repairChecks++;
 }
 
+// Rejections must say which cue broke which rule: issue #511 only ever showed
+// a file path, which made a perfectly valid JSON file look corrupted.
+let messageChecks = 0;
+const rejectionCases: Array<{ name: string; cue: unknown; message: string }> = [
+  {
+    name: 'zero-length cue',
+    cue: timed('b', 5200, 5200),
+    message:
+      'Invalid proofread cue #2 (id=b, startMs=5200, endMs=5200): endMs is not after startMs',
+  },
+  {
+    name: 'inverted cue',
+    cue: timed('c', 5200, 4800),
+    message:
+      'Invalid proofread cue #2 (id=c, startMs=5200, endMs=4800): endMs is not after startMs',
+  },
+  {
+    name: 'text start time',
+    cue: { ...timed('d', 1000, 2000), startMs: '1000' },
+    message:
+      'Invalid proofread cue #2 (id=d, startMs="1000", endMs=2000): startMs is not an integer',
+  },
+  {
+    name: 'missing end time',
+    cue: { ...timed('e', 0, 1), endMs: null },
+    message:
+      'Invalid proofread cue #2 (id=e, startMs=0, endMs=null): endMs is not an integer',
+  },
+  {
+    name: 'negative start time',
+    cue: timed('f', -5, 10),
+    message:
+      'Invalid proofread cue #2 (id=f, startMs=-5, endMs=10): startMs is negative',
+  },
+  {
+    name: 'non-text source',
+    cue: { ...timed('g', 0, 1), source: { text: 'lost' } },
+    message:
+      'Invalid proofread cue #2 (id=g, startMs=0, endMs=1): source is not text',
+  },
+  {
+    name: 'non-text target',
+    cue: { ...timed('h', 0, 1), target: ['lost'] },
+    message:
+      'Invalid proofread cue #2 (id=h, startMs=0, endMs=1): target is not text',
+  },
+  {
+    name: 'invalid speaker ids',
+    cue: { ...timed('i', 0, 1), speakerIds: [0] },
+    message:
+      'Invalid proofread cue #2 (id=i, startMs=0, endMs=1): speakerIds is invalid',
+  },
+  {
+    name: 'invalid primary speaker',
+    cue: { ...timed('j', 0, 1), primarySpeakerId: '1' },
+    message:
+      'Invalid proofread cue #2 (id=j, startMs=0, endMs=1): primarySpeakerId is invalid',
+  },
+  {
+    name: 'cue without an id falls back to its position',
+    cue: { startMs: 5, endMs: 5, source: '' },
+    message:
+      'Invalid proofread cue #2 (id=2, startMs=5, endMs=5): endMs is not after startMs',
+  },
+  {
+    name: 'null cue',
+    cue: null,
+    message: 'Invalid proofread cue #2 (null): not an object',
+  },
+  {
+    name: 'text instead of a cue',
+    cue: 'text',
+    message: 'Invalid proofread cue #2 ("text"): not an object',
+  },
+  {
+    name: 'long garbage values are shortened',
+    cue: { ...timed('k', 0, 1), startMs: 'x'.repeat(100) },
+    message: `Invalid proofread cue #2 (id=k, startMs="${'x'.repeat(36)}..., endMs=1): startMs is not an integer`,
+  },
+];
+for (const { name, cue, message } of rejectionCases) {
+  assert.throws(
+    () =>
+      assertValidProofreadData({
+        version: 2,
+        speakers: [],
+        cues: [timed('a', 0, 1000), cue],
+      }),
+    { message },
+    `${name}: the message names the cue and the broken rule`,
+  );
+  messageChecks++;
+}
+
 console.log(
-  `Proofread strict parsing: ${checks + 9 + repairChecks} checks passed`,
+  `Proofread strict parsing: ${checks + 9 + repairChecks + messageChecks} checks passed`,
 );
