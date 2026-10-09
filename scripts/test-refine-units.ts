@@ -24,6 +24,7 @@ import {
   isMainlyCjk,
   RefineWord,
 } from '../main/helpers/subtitleRefine/types';
+import { anchorSegmentsToOriginal } from '../main/helpers/subtitleRefine/anchoring';
 import {
   compareValidations,
   validateSegmentation,
@@ -264,6 +265,334 @@ ok(
   compareValidations(vModified, cmpBroken) > 0,
   'compare: 都不可用时相似度更高者优先',
 );
+
+// ---------------- anchoring · 容差内的偏差按模型断点重锚定到原文（#507） ----------------
+
+const driftOriginal =
+  'So, the first thing we did was add a cache layer. In front of the database, and that alone cut the response time by almost forty percent. Then we moved on to the next problem, which was the slow image resizing job that blocked every upload.';
+// 模型的断点（无标点、全小写）：断在语义处。
+const driftBreaks = [
+  'so the first thing we did',
+  'was add a cache layer',
+  'in front of the database',
+  'and that alone cut the response time',
+  'by almost forty percent',
+  'then we moved on to the next problem',
+  'which was the slow image resizing job',
+  'that blocked every upload',
+];
+// 期望：原文的标点与大小写原样保留，收尾标点归属它收尾的那一段。
+const driftExpected = [
+  'So, the first thing we did',
+  'was add a cache layer.',
+  'In front of the database,',
+  'and that alone cut the response time',
+  'by almost forty percent.',
+  'Then we moved on to the next problem,',
+  'which was the slow image resizing job',
+  'that blocked every upload.',
+];
+
+const anchoredPunct = anchorSegmentsToOriginal(driftOriginal, driftBreaks);
+eq(
+  anchoredPunct?.segments,
+  driftExpected,
+  'anchor: 标点/大小写差异——断点落到原文，标点留在原文位置',
+);
+eq(anchoredPunct?.similarity, 1, 'anchor: 骨架一致时相似度 1');
+eq(anchoredPunct?.editedChars, 0, 'anchor: 骨架一致时无改动字符');
+
+// 个别字母被改（拼写“纠正”/笔误）：仍按原文切分，原文文字不受影响。
+const typoBreaks = driftBreaks.map((segment) =>
+  segment.replace('forty', 'fourty').replace('next', 'nxt'),
+);
+const anchoredTypo = anchorSegmentsToOriginal(driftOriginal, typoBreaks);
+eq(anchoredTypo?.segments, driftExpected, 'anchor: 少量改字不影响断点位置');
+eq(anchoredTypo?.editedChars, 2, 'anchor: 统计改动字符数（插 r、删 e）');
+ok(
+  (anchoredTypo?.similarity ?? 0) > 0.99 && (anchoredTypo?.similarity ?? 1) < 1,
+  'anchor: 少量改字的相似度略低于 1',
+);
+
+// 删词 + 换词（口头语被清理、同义替换）仍在容差内。
+const editedBreaks = driftBreaks.map((segment) =>
+  segment.replace('alone ', '').replace('job', 'task'),
+);
+eq(
+  anchorSegmentsToOriginal(driftOriginal, editedBreaks)?.segments,
+  driftExpected,
+  'anchor: 删词与换词仍在容差内',
+);
+
+// 超出容差：整句被删 / 完全无关 / 空输出 → 不重锚定（走原有的拒绝与反馈）。
+eq(
+  anchorSegmentsToOriginal(driftOriginal, driftBreaks.slice(0, 3)),
+  null,
+  'anchor: 丢掉大半文本被拒绝',
+);
+eq(
+  anchorSegmentsToOriginal(driftOriginal, [
+    'Sorry, I am unable to help with that request.',
+  ]),
+  null,
+  'anchor: 完全无关的文本被拒绝',
+);
+eq(anchorSegmentsToOriginal(driftOriginal, []), null, 'anchor: 空输出被拒绝');
+eq(anchorSegmentsToOriginal('', ['abc']), null, 'anchor: 空原文被拒绝');
+// 容差随文本规模缩放：短文本的一处改动就超限，与既有「一字之差即拒」的断言一致。
+eq(
+  anchorSegmentsToOriginal('大家好今天我们聊聊', ['大家好', '今天我们聊聊天']),
+  null,
+  'anchor: 短文本的一处改动不放行',
+);
+
+// 标点归属：收尾标点归左；起始括号 / 引号 / 货币符号归右。
+const quoteOriginal =
+  'He said, "Hello there." Then (quietly) left. It costs $5.';
+eq(
+  anchorSegmentsToOriginal(quoteOriginal, [
+    'he said',
+    'hello there',
+    'then quietly',
+    'left',
+    'it costs',
+    '5',
+  ])?.segments,
+  ['He said,', '"Hello there."', 'Then (quietly)', 'left.', 'It costs', '$5.'],
+  'anchor: 收尾标点归左，起始引号/括号/货币符号归右',
+);
+
+// 只有标点的段不产生断点。
+eq(
+  anchorSegmentsToOriginal('Hello... world again', [
+    'hello',
+    '...',
+    'world again',
+  ])?.segments,
+  ['Hello...', 'world again'],
+  'anchor: 纯标点段并入前一段，不产生空段',
+);
+
+// 全角/半角、变音符的组合与分解形式视为同一字符。
+eq(
+  anchorSegmentsToOriginal('Ｈｅｌｌｏ Wörld again', ['hello', 'wörld again'])
+    ?.segments,
+  ['Ｈｅｌｌｏ', 'Wörld again'],
+  'anchor: 全角字母与预组合/分解的变音符等价',
+);
+
+// 辅助平面汉字（代理对）不会被从中间切开。
+eq(
+  anchorSegmentsToOriginal('𠀀𠀁，𠀂𠀃', ['𠀀𠀁', '𠀂𠀃'])?.segments,
+  ['𠀀𠀁，', '𠀂𠀃'],
+  'anchor: 代理对不被切开',
+);
+
+// 校验器集成：严格等值路径不变；容差内偏差放行并把对齐用的分段换成原文切片。
+const exactSegments = ['so the first thing we did', 'was add a cache layer'];
+const vExact = validateSegmentation(
+  'so the first thing we did was add a cache layer',
+  exactSegments,
+  limits,
+);
+eq(vExact.ok, true, 'validator: 严格等值照旧通过');
+eq(vExact.tolerated, false, 'validator: 严格等值路径不标记容差');
+eq(vExact.alignSegments, exactSegments, 'validator: 严格等值路径沿用模型分段');
+
+const vDrift = validateSegmentation(driftOriginal, driftBreaks, limits);
+eq(vDrift.ok, true, 'validator: 标点/大小写偏差放行');
+eq(vDrift.contentOk, true, 'validator: 偏差在容差内 contentOk');
+eq(vDrift.tolerated, true, 'validator: 标记为容差放行');
+eq(vDrift.alignSegments, driftExpected, 'validator: 对齐用原文切片');
+eq(vDrift.similarity, 1, 'validator: 骨架一致相似度为 1');
+eq(vDrift.feedback, '', 'validator: 放行时无反馈');
+
+// 超长检查针对对齐分段：容差内的偏差同样要被限长约束。
+const vDriftLong = validateSegmentation(
+  driftOriginal,
+  [
+    driftBreaks[0],
+    driftBreaks[1],
+    driftBreaks[2],
+    driftBreaks.slice(3).join(' '),
+  ],
+  limits,
+);
+eq(vDriftLong.contentOk, true, 'validator: 偏差放行但仍检查限长');
+eq(vDriftLong.ok, false, 'validator: 超长段使其不 ok');
+eq(vDriftLong.lengthViolations.length, 1, 'validator: 只有合并出的超长段违规');
+ok(
+  vDriftLong.feedback.includes('Length violations') &&
+    !vDriftLong.feedback.includes('Content was modified'),
+  'validator: 反馈只提长度，不提内容被改',
+);
+
+// 真被改写的内容仍然被拒绝并定位（既有行为）。
+const vRewritten = validateSegmentation(
+  driftOriginal,
+  driftBreaks.slice(0, 3),
+  limits,
+);
+eq(vRewritten.contentOk, false, 'validator: 丢掉大半文本仍判内容不通过');
+ok(
+  vRewritten.feedback.includes('Content was modified'),
+  'validator: 被拒绝时仍给出定位反馈',
+);
+
+// 同等条件下严格等值优于容差放行。
+const cmpExact = validateSegmentation(longCjk, [longCjk], limits);
+const cmpTolerated = { ...cmpExact, tolerated: true };
+ok(
+  compareValidations(cmpExact, cmpTolerated) > 0 &&
+    compareValidations(cmpTolerated, cmpExact) < 0,
+  'compare: 其余相同时严格等值优先于容差放行',
+);
+
+// 固定种子的随机性质测试：手写例子覆盖不到的 Unicode / 标点边界错位靠它抓。
+{
+  let seed = 20260928;
+  const rnd = (): number => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 2 ** 32;
+  };
+  const int = (lo: number, hi: number): number =>
+    lo + Math.floor(rnd() * (hi - lo + 1));
+  const pick = <T>(items: T[]): T => items[Math.floor(rnd() * items.length)];
+
+  const LATIN = [
+    ...'the first thing we did was add a cache layer in front of database and that alone cut response time by almost forty percent'.split(
+      ' ',
+    ),
+    'café',
+    'naïve',
+    "don't",
+    'U.S.',
+    '50%',
+    '$5',
+    '(note)',
+    '"quoted"',
+    'ﬁne',
+    'Ｈｅｌｌｏ',
+  ];
+  const CJK = Array.from(
+    '我们在生产环境里面遇到了一个特别奇怪的问题就是每次到晚上八点左右整个服务的响应时间就会突然涨上去',
+  );
+  const ASTRAL = ['𠀀', '𠀁', '😀'];
+  const PUNCT = ['', '', '', ',', '.', '!', '?', ';', '…', '。', '，'];
+
+  const skeleton = (text: string): string =>
+    Array.from(text.normalize('NFKD').toLowerCase())
+      .filter((ch) => /[\p{L}\p{N}\p{M}]/u.test(ch))
+      .join('');
+  const squash = (text: string): string => text.replace(/\s+/g, '');
+  const hasLoneSurrogate = (text: string): boolean => {
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i);
+      if (code >= 0xd800 && code <= 0xdbff) {
+        const next = text.charCodeAt(i + 1);
+        if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
+        i++;
+      } else if (code >= 0xdc00 && code <= 0xdfff) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const problems: string[] = [];
+  const stats = { wild: 0, wildAccepted: 0, faithful: 0, faithfulRejected: 0 };
+
+  for (let iteration = 0; iteration < 4000; iteration++) {
+    const kind = pick(['latin', 'cjk', 'mixed']);
+    const words: string[] = [];
+    for (let i = int(20, 100); i > 0; i--) {
+      if (kind === 'cjk' || (kind === 'mixed' && rnd() < 0.5)) {
+        let word = '';
+        for (let k = int(1, 4); k > 0; k--) {
+          word += rnd() < 0.05 ? pick(ASTRAL) : pick(CJK);
+        }
+        words.push(word + pick(PUNCT));
+      } else {
+        words.push(pick(LATIN) + pick(PUNCT));
+      }
+    }
+    const joiner = kind === 'cjk' ? '' : ' ';
+    const original = words.join(joiner);
+
+    const cuts = new Set<number>();
+    for (let b = int(0, 10); b > 0; b--) cuts.add(int(1, words.length - 1));
+    const bounds = [...cuts].sort((x, y) => x - y).concat(words.length);
+
+    const mode = pick(['exact', 'nopunct', 'nopunct', 'edits', 'wild']);
+    const produced: string[] = [];
+    let from = 0;
+    for (const cut of bounds) {
+      let segment = words.slice(from, cut).join(joiner);
+      from = cut;
+      if (mode !== 'exact') {
+        segment = segment.replace(/[\p{P}\p{S}]/gu, '').toLowerCase();
+      }
+      if (mode === 'edits' && segment.length > 4 && rnd() < 0.3) {
+        const chars = Array.from(segment);
+        const at = int(1, chars.length - 2);
+        if (/\p{L}/u.test(chars[at])) chars[at] = chars[at] + chars[at];
+        segment = chars.join('');
+      }
+      if (mode === 'wild') {
+        segment = Array.from(segment)
+          .filter(() => rnd() > 0.15)
+          .join('');
+      }
+      if (segment.trim()) produced.push(segment);
+    }
+
+    let anchored: ReturnType<typeof anchorSegmentsToOriginal>;
+    try {
+      anchored = anchorSegmentsToOriginal(original, produced);
+    } catch (error) {
+      problems.push(`threw on ${JSON.stringify({ original, produced })}`);
+      continue;
+    }
+
+    if (mode === 'wild') {
+      stats.wild++;
+      if (anchored) stats.wildAccepted++;
+    }
+    if (mode === 'exact' || mode === 'nopunct') {
+      stats.faithful++;
+      if (!anchored) {
+        stats.faithfulRejected++;
+        problems.push(`rejected a faithful copy ${JSON.stringify(produced)}`);
+        continue;
+      }
+    }
+    if (!anchored) continue;
+
+    // 不丢字、不重复、不产生空段或被切开的代理对。
+    if (squash(anchored.segments.join('')) !== squash(original)) {
+      problems.push(`text lost/duplicated: ${JSON.stringify(anchored)}`);
+    } else if (
+      anchored.segments.some((s) => !s.trim() || hasLoneSurrogate(s))
+    ) {
+      problems.push(`bad segment: ${JSON.stringify(anchored.segments)}`);
+    } else if (
+      (mode === 'exact' || mode === 'nopunct') &&
+      JSON.stringify(anchored.segments.map(skeleton)) !==
+        JSON.stringify(produced.map(skeleton).filter(Boolean))
+    ) {
+      // 只丢标点/改大小写时，断点必须落在模型给的位置上。
+      problems.push(`breaks moved: ${JSON.stringify({ produced, anchored })}`);
+    }
+  }
+
+  eq(problems.slice(0, 3), [], 'anchor 随机性质: 无丢字/错位/异常');
+  eq(stats.faithfulRejected, 0, 'anchor 随机性质: 只丢标点/大小写从不被拒绝');
+  ok(stats.faithful > 1000, 'anchor 随机性质: 忠实样本量足够');
+  ok(
+    stats.wildAccepted / stats.wild < 0.02,
+    'anchor 随机性质: 随机丢 15% 字符基本全部被拒绝',
+  );
+}
 
 // ---------------- alignment · 精确（词级） ----------------
 
