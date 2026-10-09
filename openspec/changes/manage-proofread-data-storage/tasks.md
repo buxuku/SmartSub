@@ -21,8 +21,8 @@
 
 ## 4. 文档与验证（P5）
 
-- [ ] 4.1 在 `docs/docs/features/proofreading.md` 新增「校对数据保存在哪里」一节：新位置 `userData/proofread-data`、随任务删除、升级前的旧文件原地保留
-- [ ] 4.2 `npm run typecheck` 通过
-- [ ] 4.3 相关测试通过：`test:proofread-storage`、`test:proofread-cue-timing`、`test:proofread-data`、`test:missed-speech`、`test:dubbing`、`test:dubbing-speakers`、`test:pipeline`、`test:work-item-durability`
-- [ ] 4.4 `npm run test:pro-baseline` 通过
-- [ ] 4.5 冒烟验证：跑一个短任务后文件出现在 `userData/proofread-data/` 且视频旁没有 `.smartsub-proofread/`；删除任务后文件消失；升级前任务的旧 sidecar 仍能打开
+- [x] 4.1 在 `docs/docs/features/proofreading.md` 新增「校对数据保存在哪里」一节：新位置 `userData/proofread-data`、随任务删除、升级前的旧文件原地保留
+- [x] 4.2 `npm run typecheck` 通过
+- [x] 4.3 相关测试通过：`test:proofread-storage`、`test:proofread-cue-timing`、`test:proofread-data`、`test:missed-speech`、`test:dubbing`、`test:dubbing-speakers`、`test:pipeline`、`test:work-item-durability`
+- [x] 4.4 `npm run test:pro-baseline` 通过
+- [x] 4.5 冒烟验证：跑一个短任务后文件出现在 `userData/proofread-data/` 且视频旁没有 `.smartsub-proofread/`；删除任务后文件消失；升级前任务的旧 sidecar 仍能打开
