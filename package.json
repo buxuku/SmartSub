@@ -130,6 +130,7 @@
     "test:parameter-persistence": "node scripts/test-parameter-persistence.cjs",
     "test:crash": "tsx scripts/crash/test-crash-units.ts",
     "test:crash:probe-cpu": "tsx scripts/crash/probe-cpu.ts",
+    "test:crash:smoke": "node scripts/crash/smoke.mjs",
     "test:e2e:parameters": "node scripts/e2e/parameter-persistence.mjs",
     "typecheck": "tsc --noEmit -p renderer/tsconfig.json && tsc --noEmit -p main/tsconfig.json && tsc --noEmit -p automation/tsconfig.json",
     "test:storage-paths": "tsc scripts/test-storage-paths.ts --outDir node_modules/.cache/storage-paths-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/storage-paths-tests/scripts/test-storage-paths.js",
