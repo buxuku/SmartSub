@@ -26,6 +26,10 @@ import type {
 } from '../../types/addon';
 import { AVAILABLE_CUDA_VERSIONS } from '../../types/addon';
 import { parseNvidiaSmiGpuList } from '../../types/gpuDevice';
+import {
+  attachComputeCapabilities,
+  parseNvidiaSmiComputeCaps,
+} from './crash/cudaCompat';
 
 /**
  * 开发模式模拟配置
@@ -426,6 +430,27 @@ const NVIDIA_GPU_QUERY_ARGS = [
   '--format=csv,noheader,nounits',
 ];
 
+/**
+ * 单独查询各显卡的算力（compute capability）。故意不并入上面 index,uuid,name 那条查询：
+ * 较老的驱动不认识 compute_cap 字段，会让整条查询失败，连累显卡枚举与设备选择。
+ * 查询失败时返回空表，调用方把算力当作未知（未知时不会据此过滤任何加速包）。
+ */
+async function queryNvidiaComputeCaps(
+  timeoutMs = 5000,
+): Promise<Map<string, number>> {
+  if (!isPlatformCudaCapable()) return new Map();
+  try {
+    const { stdout } = await execFileAsync(
+      'nvidia-smi',
+      ['--query-gpu=uuid,compute_cap', '--format=csv,noheader,nounits'],
+      { encoding: 'utf8', timeout: timeoutMs },
+    );
+    return parseNvidiaSmiComputeCaps(String(stdout));
+  } catch {
+    return new Map();
+  }
+}
+
 export interface NvidiaGpuEnumerationResult {
   status: 'success' | 'failed';
   gpus: GpuInfo[];
@@ -495,9 +520,20 @@ async function detectGpus(): Promise<GpuInfo[]> {
     return [{ name: `Simulated ${vendor.toUpperCase()} GPU`, vendor }];
   }
 
-  const nvidiaGpusPromise = enumerateNvidiaGpus(10000).then(
-    (result) => result.gpus,
-  );
+  const nvidiaGpusPromise = enumerateNvidiaGpus(10000).then(async (result) => {
+    if (result.gpus.length === 0) return result.gpus;
+    const caps = await queryNvidiaComputeCaps();
+    const gpus = attachComputeCapabilities(result.gpus, caps);
+    logMessage(
+      caps.size > 0
+        ? `NVIDIA compute capability: ${gpus
+            .map((gpu) => `${gpu.name}=${gpu.computeCapability ?? 'unknown'}`)
+            .join(', ')}`
+        : 'NVIDIA compute capability unavailable (driver does not report compute_cap)',
+      'info',
+    );
+    return gpus;
+  });
   try {
     const graphics = await Promise.race([
       si.graphics(),
