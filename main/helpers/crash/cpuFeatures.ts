@@ -23,8 +23,13 @@ import { parseProcCpuinfo } from './cpuInfo';
 
 export { REQUIRED_X64_FEATURES };
 
-/** 外部命令（PowerShell 冷启动 + Add-Type 编译，实测 1.3 到 2.1 秒）的超时上限。 */
-export const WINDOWS_PROBE_TIMEOUT_MS = 10_000;
+/**
+ * 外部命令（PowerShell 冷启动 + Add-Type 编译）的超时上限。
+ * 真机 CI 上多数是 0.3 到 2.3 秒，但第一次跑遇到过一台 10 秒也没完成（之后三台都正常，原因没能复现，
+ * 推断是该 VM 上 PowerShell 冷启动偶发很慢）。探测在后台跑，不挡启动和界面，所以放宽到 30 秒；
+ * 超时也只是“不知道”，不会出预警。
+ */
+export const WINDOWS_PROBE_TIMEOUT_MS = 30_000;
 
 /**
  * Windows 上 IsProcessorFeaturePresent 认识 AVX（39）、AVX2（40）要 Windows 10 2004（构建号 19041）及以上。
@@ -63,7 +68,10 @@ export interface CpuProbeDeps {
   readFile: (file: string) => Promise<string | null>;
   /** 读 sysctl 的值；oid 不存在或失败返回 null */
   sysctl: (key: string) => Promise<string | null>;
-  /** 跑外部命令取标准输出；失败、超时、非零退出都返回 null */
+  /**
+   * 跑外部命令取标准输出；失败、超时、非零退出返回 null，或抛出带原因的错误
+   * （原因会写进探测报告的 note，方便从诊断包里看出是超时还是起不来）。
+   */
   run: (
     file: string,
     args: string[],
@@ -168,6 +176,12 @@ function cacheKey(deps: CpuProbeDeps): string {
   return `${deps.cpuModel ?? ''}|${deps.osRelease}`;
 }
 
+/** 错误原因压成一行短文本，写进 note（报告会进诊断包）。 */
+function failureText(error: unknown): string {
+  const text = error instanceof Error ? error.message : String(error);
+  return text.replace(/\s+/g, ' ').trim().slice(0, 200);
+}
+
 async function attempt<T>(run: () => Promise<T> | T): Promise<T | null> {
   try {
     return await run();
@@ -243,9 +257,13 @@ async function detectWindows(deps: CpuProbeDeps): Promise<CpuFeatureReport> {
 
   const { file, args } = buildWindowsProbeCommand(deps.systemRoot);
   const startedAt = deps.now();
-  const output = await attempt(() =>
-    deps.run(file, args, WINDOWS_PROBE_TIMEOUT_MS),
-  );
+  let output: string | null = null;
+  let failure: string | null = null;
+  try {
+    output = await deps.run(file, args, WINDOWS_PROBE_TIMEOUT_MS);
+  } catch (error) {
+    failure = failureText(error);
+  }
   const detectMs = deps.now() - startedAt;
   const parsed = parseWindowsProbeOutput(output);
   const features: CpuFeatures = {
@@ -271,7 +289,7 @@ async function detectWindows(deps: CpuProbeDeps): Promise<CpuFeatureReport> {
     note: known
       ? 'FMA, F16C and BMI2 have no IsProcessorFeaturePresent constant'
       : output === null
-        ? 'powershell probe failed or timed out'
+        ? `powershell probe failed${failure ? `: ${failure}` : ' or timed out'}`
         : 'powershell probe output could not be parsed',
   };
 }

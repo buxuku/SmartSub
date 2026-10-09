@@ -4,7 +4,7 @@
  */
 import fs from 'fs';
 import os from 'os';
-import { execFile } from 'child_process';
+import { execFile, type ExecFileException } from 'child_process';
 import { parseCpuCache, type CpuProbeDeps } from './cpuFeatures';
 
 const SYSCTL = '/usr/sbin/sysctl';
@@ -17,13 +17,30 @@ export interface NodeProbeOptions {
   cacheFile: string | null;
 }
 
-/** 跑外部命令取标准输出；失败、超时、非零退出都返回 null。不弹控制台窗口。 */
-export function runCommand(
+/** execFile 失败的原因压成一行：超时、非零退出（带 stderr 第一行）、起不来。 */
+export function describeCommandFailure(
+  error: ExecFileException,
+  stderr: unknown,
+  timeoutMs: number,
+): string {
+  if (error.killed) return `timed out after ${timeoutMs} ms`;
+  if (typeof error.code === 'number') {
+    const line = String(stderr ?? '')
+      .split(/\r?\n/)
+      .map((text) => text.trim())
+      .find(Boolean);
+    return `exit code ${error.code}${line ? `: ${line.slice(0, 200)}` : ''}`;
+  }
+  return `could not start (${error.code ?? error.message})`;
+}
+
+/** 跑外部命令取标准输出；失败（超时、非零退出、起不来）带着原因抛出。不弹控制台窗口。 */
+export function runCommandOrThrow(
   file: string,
   args: string[],
   timeoutMs: number,
-): Promise<string | null> {
-  return new Promise((resolve) => {
+): Promise<string> {
+  return new Promise((resolve, reject) => {
     try {
       execFile(
         file,
@@ -34,12 +51,24 @@ export function runCommand(
           encoding: 'utf8',
           maxBuffer: 1024 * 1024,
         },
-        (error, stdout) => resolve(error ? null : String(stdout)),
+        (error, stdout, stderr) => {
+          if (!error) return resolve(String(stdout));
+          reject(new Error(describeCommandFailure(error, stderr, timeoutMs)));
+        },
       );
-    } catch {
-      resolve(null);
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error(String(error)));
     }
   });
+}
+
+/** 跑外部命令取标准输出；失败、超时、非零退出都返回 null。不弹控制台窗口。 */
+export function runCommand(
+  file: string,
+  args: string[],
+  timeoutMs: number,
+): Promise<string | null> {
+  return runCommandOrThrow(file, args, timeoutMs).catch(() => null);
 }
 
 export function createNodeProbeDeps(options: NodeProbeOptions): CpuProbeDeps {
@@ -61,7 +90,8 @@ export function createNodeProbeDeps(options: NodeProbeOptions): CpuProbeDeps {
       const out = await runCommand(SYSCTL, ['-n', key], SYSCTL_TIMEOUT_MS);
       return out === null ? null : out.trim();
     },
-    run: runCommand,
+    // 探测报告的 note 要写失败原因，所以这里用会抛错的版本（sysctl 仍走返回 null 的 runCommand）
+    run: runCommandOrThrow,
     ...(cacheFile
       ? {
           cache: {
