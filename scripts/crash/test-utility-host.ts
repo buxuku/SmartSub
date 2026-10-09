@@ -179,6 +179,21 @@ async function main() {
     assert.equal(h.records[0].classification.kind, 'illegal-instruction');
   });
 
+  await test('Windows：exit 事件的崩溃码低位已丢（windows-latest 实测 18446744072635810000）：记为崩溃，但不冒充指令集问题', () => {
+    const h = setup({}, 'win32');
+    h.proc.stderr.write('about to crash');
+    h.proc.emit('exit', 18446744072635810000);
+    assert.equal(h.exits[0].classification.isCrash, true);
+    assert.equal(h.exits[0].classification.isIsa, false);
+    assert.equal(h.exits[0].classification.realCodeLost, true);
+    assert.equal(h.records.length, 1);
+    assert.equal(h.records[0].classification.kind, 'crash-unknown');
+    assert.equal(
+      describeHostExit(h.exits[0]),
+      'crash-unknown (NTSTATUS_ERROR ~0xC0000000), code 18446744072635810000',
+    );
+  });
+
   await test('正常退出不记录，但仍通知宿主', () => {
     const h = setup();
     h.proc.emit('exit', 0);

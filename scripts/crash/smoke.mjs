@@ -367,14 +367,26 @@ const handlers = {
     });
     if (!r) return;
     const info = r.exit.info;
-    await check('宿主把退出分类为崩溃，并认定为指令集问题', () => {
-      assert.ok(info, JSON.stringify(r.exit));
-      assert.equal(info.killedByUs, false);
-      assert.equal(info.classification.abnormal, true, JSON.stringify(info));
-      assert.equal(info.classification.isCrash, true, JSON.stringify(info));
-      assert.equal(info.classification.isIsa, true, JSON.stringify(info));
-      assert.equal(info.classification.kind, 'illegal-instruction');
-    });
+    // Windows：utilityProcess 的 exit 事件把 NTSTATUS 转成 double 时低位已丢（windows-latest 上
+    // 实测 18446744072635810000，非法指令与访问违例同值），宿主只能认出“崩溃”，认不出指令集；
+    // 指令集要看下面 child-process-gone（int32，精确）与转储两项
+    const lossyHostCode = (c) => c.realCodeLost === true && c.isIsa === false;
+    await check(
+      '宿主把退出分类为崩溃（认得出具体异常码时认定为指令集问题）',
+      () => {
+        assert.ok(info, JSON.stringify(r.exit));
+        assert.equal(info.killedByUs, false);
+        assert.equal(info.classification.abnormal, true, JSON.stringify(info));
+        assert.equal(info.classification.isCrash, true, JSON.stringify(info));
+        if (lossyHostCode(info.classification)) {
+          assert.equal(process.platform, 'win32', JSON.stringify(info));
+          assert.equal(info.classification.kind, 'crash-unknown');
+        } else {
+          assert.equal(info.classification.isIsa, true, JSON.stringify(info));
+          assert.equal(info.classification.kind, 'illegal-instruction');
+        }
+      },
+    );
     await check('stderr 尾部被收集（原生崩溃前最后的线索）', () => {
       assert.ok(
         info.stderrTail.includes(
@@ -390,7 +402,11 @@ const handlers = {
           (e) => e.source === 'utility-exit' && e.name === 'smoke-ill',
         );
         assert.ok(ev, JSON.stringify(r.events));
-        assert.equal(ev.classification.isIsa, true);
+        assert.equal(ev.classification.isCrash, true);
+        assert.ok(
+          ev.classification.isIsa === true || lossyHostCode(ev.classification),
+          JSON.stringify(ev),
+        );
         assert.ok(String(ev.detail).includes('illegal-instruction module'));
       },
     );

@@ -5,6 +5,10 @@
  * - Windows：崩溃的退出码是 NTSTATUS。只有主进程启动了 crashReporter，真实异常码才会保留；
  *   否则 Crashpad 会把它改写成 0xFFFF70xx（0xFFFF7003 = 未连接），非法指令与访问违例无法区分。
  *   对负数形式的 NTSTATUS（有符号 32 位）要先 >>> 0 再查表。
+ *   child-process-gone 的 exitCode 是有符号 32 位，精确；但 utilityProcess 的 exit 事件不是：
+ *   Electron 30.5.1 在 windows-latest 上实测，0xC000001D 与 0xC0000005 的 exit 码都是
+ *   18446744072635810000（= 2^64 - 2^30），即符号扩展成 64 位后再变成 double，低位已被舍入掉，
+ *   见 classifyLossyNtStatus。
  * - Linux / macOS：被信号杀死时退出码等于信号编号；Linux 上进程产生了 core dump 时是原始
  *   wait status（bit7 = 已 core dump，例如 SIGABRT 无 dump 为 6、有 dump 为 134）。
  * - 一律以 child-process-gone 的 exitCode 与 reason 为准；自己 kill 的打 killedByUs，不参与分类
@@ -57,7 +61,10 @@ export interface ExitClassification {
   signal?: string;
   /** Linux：已 core dump（wait status bit7） */
   core?: boolean;
-  /** 崩溃了，但真实异常码因 crashReporter 未连接而丢失（Windows 的 0xFFFF70xx） */
+  /**
+   * 崩溃了，但真实异常码丢了：crashReporter 未连接（Windows 的 0xFFFF70xx），
+   * 或 utilityProcess 的 exit 事件把 NTSTATUS 转成 double 时丢了低位。
+   */
   realCodeLost?: boolean;
 }
 
@@ -170,11 +177,32 @@ export function buildClassification(
   };
 }
 
+const TWO_POW_64 = 18446744073709551616;
+const TWO_POW_30 = 1073741824;
+
+/**
+ * utilityProcess 的 exit 事件在 Windows 上交出来的崩溃码：负的 NTSTATUS 被符号扩展成 64 位无符号数，
+ * 再变成 JS 的 double（2^64 - k）。double 在 2^64 附近的间隔是 2048，k 的低位已被舍入掉：
+ * 0xC000001D（非法指令）与 0xC0000005（访问违例）都变成 2^64 - 2^30，分不出来。
+ * 所以这里只能认出“NTSTATUS 错误级别（0xC0000000 及以上）的异常退出”，认不出具体异常码，
+ * 更不能当作指令集问题；具体异常码要看 child-process-gone 的 exitCode（精确）与转储。
+ */
+function classifyLossyNtStatus(raw: number): ExitClassification | null {
+  const k = TWO_POW_64 - raw;
+  if (!(raw > 0xffffffff && k > 0 && k <= TWO_POW_30)) return null;
+  return buildClassification('crash-unknown', 'NTSTATUS_ERROR', {
+    code: '~0xC0000000',
+    realCodeLost: true,
+  });
+}
+
 function classifyWindows(
   raw: number | null,
   reason: string | undefined,
 ): ExitClassification {
   if (raw !== null && Number.isFinite(raw)) {
+    const lossy = classifyLossyNtStatus(raw);
+    if (lossy) return lossy;
     const unsigned = raw >>> 0;
     const named = WINDOWS_STATUS[unsigned];
     if (named) {

@@ -6,7 +6,8 @@ import {
 import { assert, finish, test } from './testkit';
 
 // 退出码样本来自 PoC 在 windows-latest / ubuntu-24.04 / macOS arm64 上的实测，
-// 以及 Electron 在 Windows 上把 NTSTATUS 当作有符号 32 位整数上报的行为。
+// 以及 Electron 在 Windows 上上报 NTSTATUS 的两种形式：child-process-gone 是有符号 32 位整数，
+// utilityProcess 的 exit 事件是符号扩展后再变成 double 的 64 位数（低位已丢，见下方用例）。
 
 async function main() {
   await test('Windows：NTSTATUS 的有符号与无符号写法等价', () => {
@@ -59,6 +60,48 @@ async function main() {
       assert.equal(c.isCrash, true);
       assert.equal(c.isIsa, false);
     }
+  });
+
+  await test('Windows：utilityProcess exit 事件的崩溃码低位已丢（2^64 - 2^30）：认出是崩溃，但不冒充具体异常', () => {
+    // windows-latest + Electron 30.5.1 实测：非法指令与访问违例都是这一个数
+    const measured = 18446744072635810000;
+    assert.equal(measured, 2 ** 64 - 2 ** 30);
+    for (const exitCode of [
+      measured,
+      2 ** 64 - 2048,
+      2 ** 64 - 2 ** 30 + 2 ** 20,
+    ]) {
+      const c = classifyExit({ platform: 'win32', exitCode });
+      assert.equal(c.kind, 'crash-unknown', `exitCode ${exitCode}`);
+      assert.equal(c.isCrash, true);
+      assert.equal(c.abnormal, true);
+      assert.equal(c.isIsa, false, '低位已丢，不能当作指令集问题');
+      assert.equal(c.realCodeLost, true);
+      assert.equal(c.label, 'NTSTATUS_ERROR');
+      assert.equal(c.code, '~0xC0000000');
+    }
+    assert.equal(
+      describeExit(classifyExit({ platform: 'win32', exitCode: measured })),
+      'crash-unknown (NTSTATUS_ERROR ~0xC0000000)',
+    );
+
+    // 不是 0xC0000000 及以上的错误级别，或根本不在 2^64 附近：照旧按非零退出处理
+    for (const exitCode of [
+      2 ** 64 - 2 ** 31, // 对应 0x80000000，警告级别
+      2 ** 64 - 2 ** 30 - 4096, // 对应 0xBFFFF000，不是错误级别
+      2 ** 64, // 恰好 2^64
+      4294967296 + 5, // 刚过 32 位的垃圾值
+      1e10,
+    ]) {
+      const c = classifyExit({ platform: 'win32', exitCode });
+      assert.equal(c.kind, 'exit-nonzero', `exitCode ${exitCode}`);
+      assert.equal(c.isCrash, false);
+    }
+    // 精确的 32 位写法不受影响
+    assert.equal(
+      classifyExit({ platform: 'win32', exitCode: -1073741795 }).kind,
+      'illegal-instruction',
+    );
   });
 
   await test('Windows：Node 的 process.abort 实现为 _exit(134)，按 abort 归类', () => {
