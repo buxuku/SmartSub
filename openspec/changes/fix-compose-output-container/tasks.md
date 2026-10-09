@@ -24,10 +24,11 @@
 - [x] 4.2 `test-compose-builder.ts`：hard/replace/mix 写 `.webm` 抛错、AAC 与 copy 矩阵；`test-compose-queue.cjs`：入队即失败；`test-pipeline-units.ts`：`clip.webm` 硬烧得 `-final.mp4`、软封仍为 `.mkv`、`.mp4` 不变
 - [x] 4.3 `test-compose-runner.cjs`（真实 ffmpeg）：VP9+Opus 的 `.webm` 硬烧到 `.mp4` 得 H.264 + AAC；`.webm` 输出在 ffmpeg 启动前被拒绝且不留暂存目录；配音形态 `.webm` → `.mp4`；853x480 yuv420p 失败时消息、UI 事件与错误日志含 `width not divisible by 2`；硬件回退告警含 `Unknown encoder`
 - [x] 4.4 `renderer/components/__tests__/SubtitleMergeState.test.tsx`：`/v/clip.webm` 默认得 `clip_subtitled.mp4`，软封切 mkv，切回 mp4
-- [ ] 4.5 把 `test:compose`（命令构建器）加入 `scripts/test-pro-baseline.mjs`
+- [x] 4.5 把 `test:compose`（命令构建器）加入 `scripts/test-pro-baseline.mjs`
 
 ## 5. 验证
 
-- [ ] 5.1 `npm run typecheck` 通过
-- [ ] 5.2 相关测试通过：`test:compose`、`test:compose-output`、`test:compose-queue`、`test:pipeline`、`test:subtitle-output`、`test:automation:regressions`、`test:renderer`
-- [ ] 5.3 端到端：真实 VP9+Opus `.webm` 经 `runComposeJob` 烧录为 `.mp4`，用 ffmpeg 核对成品为 H.264 + AAC
+- [x] 5.1 `npm run typecheck` 通过
+- [x] 5.2 相关测试通过：`test:pro-baseline`（42 条命令，含 `test:compose`、`test:compose-output`、`test:compose-queue`、`test:compose-presets`、`test:pipeline`）、`test:subtitle-output`、`test:automation:regressions`、`test:dubbing`、`test:engines`、`test:renderer`（64 个套件）、`test:parameter-persistence`
+- [x] 5.3 端到端：真实 1280x720 VP9+Opus `.webm` 经 `runComposeJob` 默认命名为 `.mp4` 并硬烧，成品为 H.264 + AAC，抽帧可见字幕；显式 `.webm` 输出在 ffmpeg 启动前被拒绝；旧命令形状的真实报错能提炼出 `Only VP8 or VP9 or AV1 video and Vorbis or Opus audio … supported for WebM`
+- [x] 5.4 CI 的其余步骤：`check:i18n` 与 `build`（renderer + main + CLI/MCP 入口）通过
