@@ -174,3 +174,33 @@ export function validateSegmentation(
     feedback: ok ? '' : feedbackParts.join('\n'),
   };
 }
+
+/** 超长段超出上限的总量（越小越接近合规）。 */
+function lengthOvershoot(validation: SegmentationValidation): number {
+  return validation.lengthViolations.reduce(
+    (sum, violation) => sum + (violation.count - violation.limit),
+    0,
+  );
+}
+
+/**
+ * 比较两次校验结果的优劣：>0 表示 a 更好，<0 表示 b 更好，0 打平。
+ *
+ * 反馈重试循环据此保留「最好的一次」而不是「最后一次」——重试轮的输出可能比
+ * 首轮更差（改坏文本、截断），不应让一次退步把已有的可用答案扔掉（#507）。
+ *  1. 内容可对齐（contentOk）的永远优于不可对齐的：后者对断句毫无用处；
+ *  2. 都可对齐时，超长段更少者更好，其次是超长总量更小者（软约束，由护栏兜底）；
+ *  3. 都不可对齐时，相似度更高者更好（只决定回喂与日志展示哪一次）。
+ */
+export function compareValidations(
+  a: SegmentationValidation,
+  b: SegmentationValidation,
+): number {
+  if (a.contentOk !== b.contentOk) return a.contentOk ? 1 : -1;
+  if (a.contentOk) {
+    const byCount = b.lengthViolations.length - a.lengthViolations.length;
+    if (byCount !== 0) return byCount;
+    return lengthOvershoot(b) - lengthOvershoot(a);
+  }
+  return a.similarity - b.similarity;
+}
