@@ -13,6 +13,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { app, crashReporter } from 'electron';
+import type { BreakerEnv } from './breaker';
 import { snapshotCrashContext } from './crashContext';
 import { pruneDumpFiles } from './crashDumps';
 import {
@@ -43,6 +44,25 @@ export function getCrashDumpsDir(): string {
 /** 崩溃事件文件。放在 logs/ 下，但文件名不符合“日期.jsonl”，不会被 7 天清理误删。 */
 export function getCrashEventsFile(): string {
   return path.join(app.getPath('userData'), 'logs', 'crash-events.jsonl');
+}
+
+/** 熔断用的环境信息：CPU 型号、系统与应用版本、addon 文件的大小与修改时间。 */
+function createBreakerEnv(): BreakerEnv {
+  return {
+    platform: process.platform,
+    arch: process.arch,
+    cpuModel: os.cpus()[0]?.model?.trim() || undefined,
+    osRelease: os.release(),
+    appVersion: app.getVersion(),
+    statFile: (file) => {
+      try {
+        const stat = fs.statSync(file);
+        return { size: stat.size, mtimeMs: stat.mtimeMs };
+      } catch {
+        return null;
+      }
+    },
+  };
 }
 
 /** 运行状态文件：记录上次是否正常退出，以及崩溃时仍在进行的原生调用。 */
@@ -130,6 +150,7 @@ export function initCrashDiagnostics(sink?: CrashLogSink): void {
     platform: process.platform,
     arch: process.arch,
     log: sink,
+    breakerEnv: createBreakerEnv,
   });
   try {
     pruneCrashEvents(getCrashEventsFile());

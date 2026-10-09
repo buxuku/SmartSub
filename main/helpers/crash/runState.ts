@@ -10,6 +10,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { emptyBreaker, parseBreaker, type BreakerTable } from './breaker';
 
 export const RUN_STATE_VERSION = 1;
 
@@ -22,8 +23,10 @@ export interface InFlightMark {
   /** 只放模型名，不放路径 */
   model?: string;
   phase?: string;
-  /** 候选 addon 的路径，用来把崩溃归到具体的后端（熔断按它抑制） */
+  /** 候选 addon 的路径：熔断据此给 addon 文件打指纹（含用户目录，不进诊断包） */
   candidatePath?: string;
+  /** 候选的稳定键（来源:后端[:变体]，见 breaker.candidateKey）：熔断按它把崩溃归到具体后端 */
+  candidateKey?: string;
   startedAt: number;
 }
 
@@ -35,6 +38,8 @@ export interface RunState {
   endedAt?: number;
   appVersion?: string;
   inFlight: InFlightMark[];
+  /** 熔断表：和“这一次运行”无关，要跨运行保留，所以 markStarted 会原样带过去 */
+  breaker: BreakerTable;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -52,7 +57,13 @@ function parseMark(value: unknown): InFlightMark | null {
     engine: value.engine,
     startedAt: value.startedAt,
   };
-  for (const key of ['backend', 'model', 'phase', 'candidatePath'] as const) {
+  for (const key of [
+    'backend',
+    'model',
+    'phase',
+    'candidatePath',
+    'candidateKey',
+  ] as const) {
     const field = value[key];
     if (typeof field === 'string' && field) mark[key] = field;
   }
@@ -84,6 +95,7 @@ export function parseRunState(text: string): RunState | null {
       ? { appVersion: raw.appVersion }
       : {}),
     inFlight,
+    breaker: parseBreaker(raw.breaker),
   };
 }
 
@@ -125,9 +137,12 @@ export interface RunStateStore {
   readonly previous: RunState | null;
   /** 当前运行的内存状态（返回副本，修改请走 update） */
   current(): RunState;
-  /** 开始本次运行：写入 cleanExit=false，并清空在途标记 */
-  markStarted(appVersion?: string): void;
-  /** 走完正常退出流程：写入 cleanExit=true */
+  /**
+   * 开始本次运行：写入 cleanExit=false，并清空在途标记。
+   * 熔断表跨运行保留：传入对账后的新表，不传则沿用上次的。
+   */
+  markStarted(appVersion?: string, breaker?: BreakerTable): void;
+  /** 走完正常退出流程：写入 cleanExit=true（此时仍在途的调用只是被正常退出打断，标记一并清掉） */
   markCleanExit(): void;
   /** 修改当前状态并立即同步落盘 */
   update(mutator: (state: RunState) => void): void;
@@ -143,25 +158,34 @@ export function createRunStateStore(
     cleanExit: false,
     startedAt: now(),
     inFlight: [],
+    breaker: previous?.breaker ?? emptyBreaker(),
   };
   const persist = () => {
     writeRunStateSync(file, state);
   };
   return {
     previous,
-    current: () => ({ ...state, inFlight: [...state.inFlight] }),
-    markStarted(appVersion) {
+    current: () => ({
+      ...state,
+      inFlight: [...state.inFlight],
+      breaker: {
+        suppressions: [...state.breaker.suppressions],
+        strikes: [...state.breaker.strikes],
+      },
+    }),
+    markStarted(appVersion, breaker) {
       state = {
         version: RUN_STATE_VERSION,
         cleanExit: false,
         startedAt: now(),
         ...(appVersion ? { appVersion } : {}),
         inFlight: [],
+        breaker: breaker ?? previous?.breaker ?? emptyBreaker(),
       };
       persist();
     },
     markCleanExit() {
-      state = { ...state, cleanExit: true, endedAt: now() };
+      state = { ...state, cleanExit: true, endedAt: now(), inFlight: [] };
       persist();
     },
     update(mutator) {
