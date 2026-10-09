@@ -1,15 +1,16 @@
 import path from 'path';
-import { utilityProcess, type UtilityProcess } from 'electron';
 import { getExtraResourcesPath } from '../utils';
 import {
   getSherpaLibDir,
   isSherpaLibInstalled,
 } from '../sherpaOnnx/sherpaLibPaths';
-import { logMessage } from '../storeManager';
+import { spawnAppUtilityHost } from '../crash/appUtilityHost';
+import { beginCrashContext } from '../crash/crashContext';
+import { buildSherpaWorkerEnv, type UtilityHost } from '../crash/utilityHost';
 import type { SpeakerDiarizationSegment } from './alignment';
 
 interface PendingDiarization {
-  process: UtilityProcess;
+  process: UtilityHost;
   resolve: (segments: SpeakerDiarizationSegment[]) => void;
   reject: (error: Error) => void;
   settled: boolean;
@@ -54,18 +55,18 @@ class SpeakerDiarizationRuntime {
     }
 
     const id = `sd${++this.seq}`;
-    const libDir = getSherpaLibDir();
-    const child = utilityProcess.fork(workerPath(), [], {
+    // fork / stderr 日志 / 退出分类 / Linux core 限制由共用底座处理（crash/utilityHost.ts）
+    const child = spawnAppUtilityHost({
+      workerFile: workerPath(),
       serviceName: 'smartsub-speaker-diarization',
-      stdio: 'pipe',
-      env: {
-        ...process.env,
-        SHERPA_ONNX_LIB_DIR: libDir,
-        PATH: `${libDir}${path.delimiter}${process.env.PATH ?? ''}`,
-        LD_LIBRARY_PATH: `${libDir}${path.delimiter}${
-          process.env.LD_LIBRARY_PATH ?? ''
-        }`,
-      },
+      logLabel: 'speaker diarization worker',
+      env: buildSherpaWorkerEnv(getSherpaLibDir()),
+    });
+    // 崩溃现场：请求结束（成功、失败、取消、进程退出）时移除
+    const endContext = beginCrashContext({
+      engine: 'speaker-diarization',
+      model: input.segmentationModel,
+      phase: 'diarize',
     });
 
     const result = new Promise<{ segments: SpeakerDiarizationSegment[] }>(
@@ -78,7 +79,7 @@ class SpeakerDiarizationRuntime {
         };
         this.pending.set(id, entry);
 
-        child.on('message', (message: SpeakerDiarizationWorkerMessage) => {
+        child.onMessage((message: SpeakerDiarizationWorkerMessage) => {
           if (message?.id !== id || entry.settled) return;
           if (message.type === 'done') {
             entry.settled = true;
@@ -92,13 +93,7 @@ class SpeakerDiarizationRuntime {
             child.kill();
           }
         });
-        child.stderr?.on('data', (data: Buffer) => {
-          const line = String(data).trim();
-          if (line) {
-            logMessage(`speaker diarization worker stderr: ${line}`, 'warning');
-          }
-        });
-        child.on('exit', (code) => {
+        child.onExit(({ code }) => {
           if (entry.settled) return;
           entry.settled = true;
           this.pending.delete(id);
@@ -114,6 +109,7 @@ class SpeakerDiarizationRuntime {
         child.postMessage({ type: 'diarize', id, ...input });
       },
     );
+    result.then(endContext, endContext);
 
     return { id, result };
   }
