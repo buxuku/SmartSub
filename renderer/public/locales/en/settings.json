@@ -213,6 +213,18 @@
     "customAddonDllTip": "Tip: If the pack includes DLL/SO dependencies, ensure they are in the same directory as addon.node",
     "downloadPackageUrl": "Download Packs",
     "crashTip": "If the app crashes after enabling acceleration, try switching to a different version or disabling GPU acceleration",
+    "suppressed": {
+      "title": "Acceleration backends disabled automatically",
+      "description": "These backends crashed the app during earlier runs. To stop the app from crashing again they are disabled for now and transcription uses something else. They are retried automatically after a hardware change, an app upgrade or a driver update.",
+      "family": "Built-in speech recognition addons (Vulkan, CUDA, CPU)",
+      "reasonIsa": "this computer's CPU lacks an instruction set it needs",
+      "reasonCrash": "it crashed the app while running",
+      "reasonWeak": "it was in use both times the app ended abnormally in a row",
+      "detail": "Crash type: {{detail}}",
+      "retry": "Retry disabled backends",
+      "retried": "Reset. These backends will be tried again on the next transcription.",
+      "retryFailed": "Reset failed: {{error}}"
+    },
     "liteEdition": "Lite",
     "fullEdition": "Full",
     "switchToFull": "Switch to Full",

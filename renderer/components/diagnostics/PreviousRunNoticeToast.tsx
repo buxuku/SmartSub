@@ -2,9 +2,26 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'next-i18next';
 import { toast } from 'sonner';
 import type { PreviousRunNotice } from '../../../types/diagnostics';
+import { suppressedBackendLabel } from '../settings/gpu/gpuUtils';
 
 /** 提示里带“导出诊断包”按钮，给用户足够的时间看到并点击。 */
 const NOTICE_DURATION_MS = 30000;
+
+/** 因这次崩溃被自动停用的后端说明；没有停用时返回空串。 */
+function suppressedLine(
+  notice: PreviousRunNotice,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  const list = notice.suppressed ?? [];
+  if (list.length === 0) return '';
+  if (list.some((item) => item.scope === 'family')) {
+    return t('diagnostics.previousRun.suppressedFamily');
+  }
+  const backends = Array.from(
+    new Set(list.map((item) => suppressedBackendLabel(item.key))),
+  ).join(t('diagnostics.previousRun.listSeparator'));
+  return t('diagnostics.previousRun.suppressedBackends', { backends });
+}
 
 /**
  * 上次运行异常结束、并且主进程找到了崩溃证据时，弹一次提示并引导导出诊断包。
@@ -29,10 +46,16 @@ export function PreviousRunNoticeToast() {
           .filter(Boolean)
           .join(' · ');
         const translate = tRef.current;
+        const base = detail
+          ? translate('diagnostics.previousRun.descriptionDetail', { detail })
+          : translate('diagnostics.previousRun.description');
+        const extra = suppressedLine(notice, translate);
         toast.warning(translate('diagnostics.previousRun.title'), {
-          description: detail
-            ? translate('diagnostics.previousRun.descriptionDetail', { detail })
-            : translate('diagnostics.previousRun.description'),
+          description: extra ? `${base}\n${extra}` : base,
+          // 多了一行“已停用的后端”时按换行显示
+          ...(extra
+            ? { classNames: { description: 'whitespace-pre-line' } }
+            : {}),
           duration: NOTICE_DURATION_MS,
           action: {
             label: translate('diagnostics.previousRun.action'),

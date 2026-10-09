@@ -23,8 +23,11 @@ import {
 import { listDumpFiles } from './crash/crashDumps';
 import {
   dismissPreviousRunNotice,
+  getPreviousRunAssessment,
   getPreviousRunNotice,
 } from './crash/runLifecycle';
+import { snapshotBreaker } from './crash/nativeGuard';
+import { buildCrashSnapshot } from './crash/crashSnapshot';
 import { describeExit } from './crash/exitClassifier';
 import { summarizeMinidumpFile } from './crash/minidumpSummary';
 import { gatherSystemInfo } from './crash/systemInfo';
@@ -131,6 +134,7 @@ function createSources(): DiagnosticsSources {
       active: getActiveBackend(),
       lastLoadResult: store.get('lastAddonLoadResult') ?? null,
       history: store.get('addonLoadHistory') ?? [],
+      ...buildCrashSnapshot(snapshotBreaker(), getPreviousRunAssessment()),
     }),
   };
 }

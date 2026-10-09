@@ -238,7 +238,10 @@
       "title": "上次运行似乎意外结束了",
       "description": "找到了崩溃记录。导出诊断包发给开发者，能帮助定位原因；文件不会自动上传。",
       "descriptionDetail": "找到了崩溃记录（{{detail}}）。导出诊断包发给开发者，能帮助定位原因；文件不会自动上传。",
-      "action": "导出诊断包"
+      "action": "导出诊断包",
+      "suppressedFamily": "内置语音识别加速包已被停用（这台电脑的 CPU 可能缺少所需的指令集）。请改用云端语音识别，或在“GPU 加速”设置中重新尝试。",
+      "suppressedBackends": "{{backends}} 加速后端已被自动停用，转写会改用其他方式。可在“GPU 加速”设置中重新尝试。",
+      "listSeparator": "、"
     }
   },
   "faq": {
