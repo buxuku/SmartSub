@@ -15,9 +15,9 @@
 
 ## 3. 随工作项删除回收（P3）
 
-- [ ] 3.1 在 `proofreadDataStorage.ts` 新增 `isManagedProofreadPath`（可注入 `path` 实现，覆盖 win32 大小写）、`collectProofreadDataFiles`（引用收集）、`planManagedDeletion`（引用计数）、`removeManagedProofreadData`（护栏 + 失败只记日志）
-- [ ] 3.2 在 `main/helpers/workItemHandlers.ts` 的删除处理器接入：只在 `commit()` 里删除，`rollback()` 不动文件
-- [ ] 3.3 在 `scripts/test-proofread-storage.cjs` 补单测：独占删除、共享保留、配音 `configSnapshot` 引用保留、旧目录不删、越界 / 符号链接 / 非 `.json` 拒绝、清空全部、持久化失败不删除、删除失败不抛；`npm run test:work-item-durability` 保持通过
+- [x] 3.1 在 `proofreadDataStorage.ts` 新增 `isManagedProofreadPath`（可注入 `path` 实现，覆盖 win32 大小写）、`collectProofreadDataFiles`（引用收集）、`planManagedDeletion`（引用计数）、`removeManagedProofreadData`（护栏 + 失败只记日志）
+- [x] 3.2 在 `main/helpers/workItemHandlers.ts` 的删除处理器接入：只在 `commit()` 里删除，`rollback()` 不动文件
+- [x] 3.3 在 `scripts/test-proofread-storage.cjs` 补单测：独占删除、共享保留、配音 `configSnapshot` 引用保留、旧目录不删、越界 / 符号链接 / 非 `.json` 拒绝、清空全部、持久化失败不删除、删除失败不抛；`npm run test:work-item-durability` 保持通过
 
 ## 4. 文档与验证（P5）
 
