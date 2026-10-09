@@ -30,6 +30,7 @@ import {
 import { setupWorkItemHandlers } from './helpers/workItemHandlers';
 import { setupRecipeHandlers } from './helpers/ipcRecipeHandlers';
 import { setupGlossaryHandlers } from './helpers/ipcGlossaryHandlers';
+import { setupDiagnosticsHandlers } from './helpers/ipcDiagnosticsHandlers';
 import { setupAutoUpdater } from './helpers/updater';
 import {
   initCrashDiagnostics,
@@ -299,6 +300,7 @@ app.on('before-quit', (event) => {
   setupWorkItemHandlers();
   setupRecipeHandlers();
   setupGlossaryHandlers(mainWindow);
+  setupDiagnosticsHandlers(mainWindow);
   setupTaskManager();
   setupSubtitleMergeHandlers(mainWindow, rendererUrl);
   setupDubbingHandlers(mainWindow);
