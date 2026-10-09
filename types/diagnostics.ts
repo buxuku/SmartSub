@@ -76,4 +76,26 @@ export interface PreviousRunNotice {
   /** 崩溃时正在运行的引擎与后端（来自在途标记或崩溃事件的现场） */
   engine?: string;
   backend?: string;
+  /** 因这次崩溃而被自动停用的加速后端（没有停用任何后端时缺省） */
+  suppressed?: PreviousRunSuppressed[];
+}
+
+export interface PreviousRunSuppressed {
+  /** family：整个预编译加速包族（CPU 指令集不满足）；candidate：单个后端 */
+  scope: 'family' | 'candidate';
+  /** isa：CPU 指令集不满足；crash：其他崩溃 */
+  reason: 'isa' | 'crash';
+  /** 候选键，例如 builtin:vulkan（不含路径） */
+  key: string;
+}
+
+/** 设置页展示的“已被自动停用的后端”。 */
+export interface SuppressedBackendInfo {
+  scope: 'family' | 'candidate';
+  key: string;
+  reason: 'isa' | 'crash';
+  /** strong：转储证明崩了；weak：连续异常退出时都在用它 */
+  evidence: 'strong' | 'weak';
+  since: number;
+  detail?: string;
 }

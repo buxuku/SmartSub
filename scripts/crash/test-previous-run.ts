@@ -27,6 +27,7 @@ function previous(extra: Partial<RunState> = {}): RunState {
     startedAt: STARTED,
     appVersion: '2.1.0',
     inFlight: [],
+    breaker: { suppressions: [], strikes: [] },
     ...extra,
   };
 }

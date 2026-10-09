@@ -36,6 +36,7 @@ const SAMPLE: RunState = {
       startedAt: 1500,
     },
   ],
+  breaker: { suppressions: [], strikes: [] },
 };
 
 async function main() {
