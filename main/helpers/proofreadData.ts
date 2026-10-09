@@ -327,8 +327,13 @@ export async function readProofreadDataFile(
       );
     }
     return normalized;
-  } catch {
-    throw new Error(`Invalid proofread data file: ${filePath}`);
+  } catch (error) {
+    // Say why: a syntactically valid file rejected for one bad cue used to be
+    // indistinguishable from a truncated one (issue #511).
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`Invalid proofread data file: ${filePath} (${reason})`, {
+      cause: error,
+    });
   }
 }
 
