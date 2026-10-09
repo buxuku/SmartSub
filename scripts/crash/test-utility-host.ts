@@ -1,10 +1,13 @@
+import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
 import { PassThrough } from 'node:stream';
 import {
   UtilityHost,
   buildSherpaWorkerEnv,
   describeHostExit,
   resetUtilityHostStateForTest,
+  shrinkCoreDumpViaProc,
   type HostExitInfo,
   type HostLogLevel,
   type SpawnHostOptions,
@@ -36,21 +39,28 @@ interface Harness {
   records: UtilityExitRecord[];
   kills: string[];
   limitCalls: number[];
+  /** 对 coredump_filter 与 prlimit 的调用顺序，如 ['filter:4242', 'limit:4242'] */
+  coreSteps: string[];
   forkArgs: { file: string; args: string[]; options: any } | null;
   exits: HostExitInfo[];
   order: string[];
 }
 
+/**
+ * filterResult：coredump_filter 那一步的结果，null 成功、字符串是失败原因、Error 表示直接抛出。
+ */
 function setup(
   overrides: Partial<SpawnHostOptions> = {},
   platform: NodeJS.Platform = 'linux',
   limitResult: string | null = null,
+  filterResult: string | null | Error = null,
 ): Harness {
   const proc = new FakeProc();
   const logs: Harness['logs'] = [];
   const records: UtilityExitRecord[] = [];
   const kills: string[] = [];
   const limitCalls: number[] = [];
+  const coreSteps: string[] = [];
   const exits: HostExitInfo[] = [];
   const order: string[] = [];
   const harness = { forkArgs: null } as Harness;
@@ -71,7 +81,13 @@ function setup(
         return proc as any;
       },
       platform,
+      shrinkCoreDump: (pid) => {
+        coreSteps.push(`filter:${pid}`);
+        if (filterResult instanceof Error) throw filterResult;
+        return filterResult;
+      },
       limitCore: async (pid) => {
+        coreSteps.push(`limit:${pid}`);
         limitCalls.push(pid);
         return limitResult;
       },
@@ -89,6 +105,7 @@ function setup(
     records,
     kills,
     limitCalls,
+    coreSteps,
     exits,
     order,
   });
@@ -220,9 +237,11 @@ async function main() {
     assert.deepEqual(h.proc.posted, [{ type: 'load' }]);
   });
 
-  await test('Linux：spawn 后对子进程降低 core 限制；其它平台与没有 pid 时不做', async () => {
+  await test('Linux：spawn 后对子进程缩小 core（先同步写 coredump_filter，再 prlimit）；其它平台与没有 pid 时不做', async () => {
     const linux = setup({}, 'linux');
     linux.proc.emit('spawn');
+    // 同步那一步在 spawn 事件处理里就做完，不等任何异步；prlimit 紧随其后发起
+    assert.deepEqual(linux.coreSteps, ['filter:4242', 'limit:4242']);
     await tick();
     assert.deepEqual(linux.limitCalls, [4242]);
 
@@ -230,19 +249,68 @@ async function main() {
       const other = setup({}, platform);
       other.proc.emit('spawn');
       await tick();
-      assert.deepEqual(other.limitCalls, []);
+      assert.deepEqual(other.coreSteps, []);
     }
 
     const noPid = setup({}, 'linux');
     noPid.proc.pid = undefined;
     noPid.proc.emit('spawn');
     await tick();
-    assert.deepEqual(noPid.limitCalls, []);
+    assert.deepEqual(noPid.coreSteps, []);
   });
 
-  await test('prlimit 不可用：整个应用运行期只提示一次，且不影响后续流程', async () => {
+  await test('默认实现：写不了时返回原因文本而不是抛错', () => {
+    // 进程不存在（或根本没有 /proc）：各平台都应得到一个非空的原因
+    const reason = shrinkCoreDumpViaProc(0x7fffffff);
+    assert.equal(typeof reason, 'string');
+    assert.ok(reason && reason.length > 0);
+  });
+
+  if (process.platform === 'linux') {
+    await test('默认实现（Linux 真机）：子进程的 coredump_filter 被写成 0', async () => {
+      const child = spawn(process.execPath, [
+        '-e',
+        'setInterval(() => {}, 1000)',
+      ]);
+      try {
+        await new Promise((resolve) => child.once('spawn', resolve));
+        assert.equal(shrinkCoreDumpViaProc(child.pid as number), null);
+        const value = fs
+          .readFileSync(`/proc/${child.pid}/coredump_filter`, 'utf8')
+          .trim();
+        assert.equal(parseInt(value, 16), 0, value);
+      } finally {
+        child.kill();
+      }
+    });
+  }
+
+  await test('coredump_filter 那一步抛错：不传播，prlimit 照常发起', async () => {
     resetUtilityHostStateForTest();
-    const first = setup({}, 'linux', 'spawn prlimit ENOENT');
+    const h = setup({}, 'linux', null, new Error('EPERM: denied'));
+    assert.doesNotThrow(() => h.proc.emit('spawn'));
+    await tick();
+    assert.deepEqual(h.coreSteps, ['filter:4242', 'limit:4242']);
+    // prlimit 成功，所以不提示
+    assert.equal(h.logs.length, 0);
+  });
+
+  await test('只坏了一层（没有 prlimit 或写不了 coredump_filter）：另一层生效就不提示', async () => {
+    resetUtilityHostStateForTest();
+    const noPrlimit = setup({}, 'linux', 'spawn prlimit ENOENT', null);
+    noPrlimit.proc.emit('spawn');
+    await tick();
+    assert.equal(noPrlimit.logs.length, 0);
+
+    const noFilter = setup({}, 'linux', null, 'EACCES');
+    noFilter.proc.emit('spawn');
+    await tick();
+    assert.equal(noFilter.logs.length, 0);
+  });
+
+  await test('两层都不可用：整个应用运行期只提示一次（带两个原因），且不影响后续流程', async () => {
+    resetUtilityHostStateForTest();
+    const first = setup({}, 'linux', 'spawn prlimit ENOENT', 'EACCES');
     first.proc.emit('spawn');
     await tick();
     const warnings = first.logs.filter((l) =>
@@ -251,18 +319,22 @@ async function main() {
     assert.equal(warnings.length, 1);
     assert.equal(warnings[0].level, 'warning');
     assert.ok(warnings[0].message.includes('ENOENT'));
+    assert.ok(warnings[0].message.includes('EACCES'));
 
-    const second = setup({}, 'linux', 'spawn prlimit ENOENT');
+    const second = setup({}, 'linux', 'spawn prlimit ENOENT', 'EACCES');
     second.proc.emit('spawn');
     await tick();
     assert.equal(
       second.logs.filter((l) => l.message.includes('RLIMIT_CORE')).length,
       0,
     );
+    // 提示过之后宿主仍照常工作
+    second.proc.emit('exit', 11);
+    assert.equal(second.exits.length, 1);
 
-    // 设置成功时不提示
+    // 两层都成功时不提示
     resetUtilityHostStateForTest();
-    const ok = setup({}, 'linux', null);
+    const ok = setup({}, 'linux', null, null);
     ok.proc.emit('spawn');
     await tick();
     assert.equal(ok.logs.length, 0);
