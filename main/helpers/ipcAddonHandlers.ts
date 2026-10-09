@@ -35,11 +35,13 @@ import {
   getRemoteVersionInfo,
   getPackageDownloadSize,
 } from './addonVersions';
+import { resetSuppressions, snapshotBreaker } from './crash/nativeGuard';
 import type {
   AddonVariant,
   DownloadSource,
   DownloadConfig,
 } from '../../types/addon';
+import type { SuppressedBackendInfo } from '../../types/diagnostics';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -210,6 +212,29 @@ export function registerAddonIpcHandlers(): void {
       logMessage(`Error removing addon: ${error}`, 'error');
       return { success: false, error: String(error) };
     }
+  });
+
+  // 因崩溃（或连续异常退出）被自动停用的后端：设置页展示，并允许手动重新尝试
+  ipcMain.handle('get-suppressed-backends', (): SuppressedBackendInfo[] =>
+    snapshotBreaker().suppressions.map((s) => ({
+      scope: s.scope,
+      key: s.key,
+      reason: s.reason,
+      evidence: s.evidence,
+      since: s.since,
+      ...(s.detail ? { detail: s.detail } : {}),
+    })),
+  );
+
+  ipcMain.handle('reset-suppressed-backends', () => {
+    const cleared = resetSuppressions();
+    // 下一次转写要重新解析候选，否则缓存里的降级结果会一直生效
+    clearAddonLoadCache();
+    logMessage(
+      `Suppressed whisper backends reset by the user (${cleared} entries cleared)`,
+      'info',
+    );
+    return cleared;
   });
 
   // 检查加速包更新
