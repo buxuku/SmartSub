@@ -6,7 +6,11 @@
  * 然后按 SMOKE_SCENARIO 触发真实的原生崩溃，把观察到的现象写进 result-<场景>.json，
  * 由 smoke.mjs 在进程退出后读取并断言。
  *
- * 环境变量：SMOKE_SCENARIO、SMOKE_WORK（工作目录）、SMOKE_BUNDLE（esbuild 产物目录）。
+ * 所有被测模块来自 SMOKE_BUNDLE 里的同一个 CJS：nativeGuard、runLifecycle 这类持有进程内状态的模块
+ * 只能有一份实例，否则“在途标记”写进的和启动对账读到的会不是同一个。
+ *
+ * 环境变量：SMOKE_SCENARIO、SMOKE_WORK（工作目录）、SMOKE_BUNDLE（esbuild 产物）、
+ * SMOKE_BOOM_DIR（boom 样本库目录，需要真实原生崩溃的场景才用）。
  */
 const { app, utilityProcess } = require('electron');
 const fs = require('fs');
@@ -15,6 +19,7 @@ const path = require('path');
 const scenario = process.env.SMOKE_SCENARIO;
 const work = process.env.SMOKE_WORK;
 const bundle = process.env.SMOKE_BUNDLE;
+const boomDir = process.env.SMOKE_BOOM_DIR || '';
 
 if (!scenario || !work || !bundle) {
   console.error('缺少 SMOKE_SCENARIO / SMOKE_WORK / SMOKE_BUNDLE');
@@ -29,28 +34,45 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 app.setPath('userData', path.join(work, 'userData'));
 app.dock?.hide();
 
-const reporting = require(path.join(bundle, 'crashReporting.cjs'));
+const m = require(bundle);
 // 与 bootstrap.ts 一致：userData 之后、任何子进程之前
-reporting.startCrashReporting();
+m.startCrashReporting();
 
 const logs = [];
 const gone = [];
 app.on('child-process-gone', (_event, details) => gone.push(details));
 
+const boomFile = (name) => path.join(boomDir, `${name}.node`);
+
+/**
+ * 在本进程里加载 boom 样本：与加载 whisper addon 一样走 process.dlopen，
+ * 崩溃发生在库加载之后的 napi_register_module_v1 里（在 JS 调用栈内）。
+ */
+function dlopenBoom(name) {
+  const file = boomFile(name);
+  if (!boomDir || !fs.existsSync(file))
+    throw new Error(`缺少 boom 样本：${file}`);
+  process.dlopen({ exports: {} }, file);
+}
+
 function listDumps() {
-  const dir = reporting.getCrashDumpsDir();
-  const found = [];
-  const walk = (d) => {
-    for (const e of fs.existsSync(d)
-      ? fs.readdirSync(d, { withFileTypes: true })
-      : []) {
-      const p = path.join(d, e.name);
-      if (e.isDirectory()) walk(p);
-      else if (e.name.endsWith('.dmp')) found.push(p);
-    }
-  };
-  walk(dir);
-  return found;
+  return m.listDumpFiles(m.getCrashDumpsDir()).map((d) => d.file);
+}
+
+function readEvents() {
+  const file = m.getCrashEventsFile();
+  return fs.existsSync(file)
+    ? fs
+        .readFileSync(file, 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+    : [];
+}
+
+function readState() {
+  const file = m.getRunStateFile();
+  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
 }
 
 async function waitFor(predicate, timeoutMs) {
@@ -81,25 +103,76 @@ async function crashUtility(serviceName) {
   return exit;
 }
 
-app.whenReady().then(async () => {
-  reporting.initCrashDiagnostics((message, level) =>
-    logs.push({ level, message }),
+/**
+ * 经应用真正使用的宿主底座起一个 utilityProcess，让它加载 boom-ill 样本，
+ * 观察：宿主的退出分类、崩溃事件、转储，以及 Linux 上“崩溃后多久退出”（RLIMIT_CORE 加固是否生效）。
+ */
+async function crashUtilityHost(serviceName) {
+  const workerFile = path.join(work, `ill-worker-${serviceName}.js`);
+  fs.writeFileSync(
+    workerFile,
+    [
+      `const boom = ${JSON.stringify(boomFile('boom-ill'))};`,
+      "console.error('smoke: the worker is about to load the illegal-instruction module');",
+      "process.parentPort.postMessage({ type: 'armed' });",
+      'setTimeout(() => process.dlopen({ exports: {} }, boom), 200);',
+      'setInterval(() => {}, 1000);',
+      '',
+    ].join('\n'),
   );
+  const host = m.spawnUtilityHost({
+    workerFile,
+    serviceName,
+    logLabel: 'smoke worker',
+    env: process.env,
+    log: (message, level) => logs.push({ level, message }),
+    recordExit: m.recordUtilityExit,
+    expectKill: m.expectUtilityKill,
+  });
+  let armedAt = 0;
+  host.onMessage((message) => {
+    if (message && message.type === 'armed') armedAt = Date.now();
+  });
+  const exit = await new Promise((resolve) => {
+    host.onExit((info) =>
+      resolve({
+        info,
+        // 从 worker 报告“要崩了”到宿主收到退出，减去它自己等的 200 ms
+        msAfterCrash: armedAt ? Date.now() - armedAt - 200 : null,
+      }),
+    );
+    setTimeout(
+      () => resolve({ info: null, msAfterCrash: -1, timedOut: true }),
+      60000,
+    );
+  });
+  return exit;
+}
+
+app.whenReady().then(async () => {
+  m.initCrashDiagnostics((message, level) => logs.push({ level, message }));
 
   const base = {
     scenario,
     platform: process.platform,
     arch: process.arch,
     electron: process.versions.electron,
-    reporterStarted: reporting.isCrashReporterStarted(),
+    reporterStarted: m.isCrashReporterStarted(),
     crashDumpsPath: app.getPath('crashDumps'),
-    expectedCrashDumpsDir: reporting.getCrashDumpsDir(),
+    expectedCrashDumpsDir: m.getCrashDumpsDir(),
   };
+  const fakeAddon = path.join(work, 'fake-addon.node');
+  const candidateKey = 'builtin:cpu';
 
   if (scenario === 'main-crash') {
-    // 主进程原生崩溃：本进程会死，转储与退出码由 smoke.mjs 在外面检查
-    writeResult({ ...base, note: 'about-to-crash' });
-    setTimeout(() => process.crash(), 300);
+    // 主进程原生崩溃（访问违例）：本进程会死，转储与退出码由 smoke.mjs 在外面检查。
+    // 有 boom 样本就走 process.dlopen（贴近 addon 崩溃）；没有就退回 Electron 自带的 process.crash
+    const via = boomDir ? 'boom-segv' : 'process.crash';
+    writeResult({ ...base, note: 'about-to-crash', via });
+    setTimeout(
+      () => (boomDir ? dlopenBoom('boom-segv') : process.crash()),
+      300,
+    );
     return;
   }
 
@@ -109,22 +182,100 @@ app.whenReady().then(async () => {
     await waitFor(() => gone.length > 0, 5000);
     // 事件已同步落盘；转储由 Crashpad 子进程写，稍等一会儿
     await waitFor(() => listDumps().length > 0, 8000);
-    const eventsFile = reporting.getCrashEventsFile();
-    const events = fs.existsSync(eventsFile)
-      ? fs
-          .readFileSync(eventsFile, 'utf8')
-          .split('\n')
-          .filter(Boolean)
-          .map((l) => JSON.parse(l))
-      : [];
     writeResult({
       ...base,
       exit,
       gone,
-      events,
+      events: readEvents(),
       logs,
       dumps: listDumps(),
     });
+    app.exit(0);
+    return;
+  }
+
+  if (scenario === 'utility-ill') {
+    const exit = await crashUtilityHost('smoke-ill');
+    await waitFor(() => gone.length > 0, 5000);
+    await waitFor(() => listDumps().length > 0, 10000);
+    writeResult({
+      ...base,
+      exit,
+      gone,
+      events: readEvents(),
+      logs,
+      dumps: listDumps(),
+    });
+    app.exit(0);
+    return;
+  }
+
+  if (scenario === 'restart-crash') {
+    // 第一次运行：模拟“whisper 转写进行中”（在途标记），然后在主进程里撞上非法指令
+    fs.writeFileSync(fakeAddon, 'not a real addon');
+    m.beginNativeCall({
+      engine: 'whisper-builtin',
+      backend: 'cpu',
+      candidateKey,
+      candidatePath: fakeAddon,
+      phase: 'transcribe',
+    });
+    writeResult({ ...base, note: 'about-to-crash', state: readState() });
+    setTimeout(() => dlopenBoom('boom-ill'), 300);
+    return;
+  }
+
+  if (scenario === 'restart-check') {
+    // 第二次运行（同一个 userData）：应当发现上次异常退出、抑制该候选，并能手动解除
+    const assessment = m.getPreviousRunAssessment();
+    const notice = m.getPreviousRunNotice();
+    const suppression = m.lookupSuppression(candidateKey);
+    const candidate = {
+      backend: 'cpu',
+      variant: null,
+      source: 'builtin',
+      path: fakeAddon,
+    };
+    const partition = m.partitionCandidates([candidate], (key) =>
+      m.lookupSuppression(key),
+    );
+    const stateAfterStart = readState();
+    const snapshot = m.snapshotBreaker();
+    const cleared = m.resetSuppressions();
+    const afterReset = m.lookupSuppression(candidateKey);
+    m.markCleanExit();
+    writeResult({
+      ...base,
+      assessment,
+      notice,
+      suppression,
+      usable: partition.usable.length,
+      skipped: partition.skipped.length,
+      skippedReason: partition.skipped[0]
+        ? m.describeSuppressed(partition.skipped[0].suppression)
+        : null,
+      stateAfterStart,
+      snapshot,
+      cleared,
+      afterReset,
+      events: readEvents(),
+      logs,
+    });
+    app.exit(0);
+    return;
+  }
+
+  if (scenario === 'restart-clean') {
+    // 第三次运行：上一次是正常退出，不应再有提示与抑制
+    const assessment = m.getPreviousRunAssessment();
+    writeResult({
+      ...base,
+      assessment,
+      notice: m.getPreviousRunNotice(),
+      suppression: m.lookupSuppression(candidateKey),
+      stateAfterStart: readState(),
+    });
+    m.markCleanExit();
     app.exit(0);
     return;
   }
