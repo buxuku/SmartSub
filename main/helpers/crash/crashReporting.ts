@@ -24,6 +24,7 @@ import {
   createCrashMonitor,
   type CrashLogSink,
   type CrashMonitor,
+  type UtilityExitReport,
 } from './crashMonitor';
 
 /** 回退开关：SMARTSUB_DISABLE_CRASH_REPORTER=true 不启动 crashReporter（监听与事件记录仍保留） */
@@ -131,4 +132,14 @@ export function initCrashDiagnostics(sink?: CrashLogSink): void {
 /** 应用已确认退出：此后不再记录退出过程中的“被杀”。 */
 export function markCrashMonitorShuttingDown(): void {
   monitor?.markShuttingDown();
+}
+
+/** utilityProcess 宿主异常退出：记一条带 stderr 尾部的事件（只落盘，日志由宿主自己写）。 */
+export function recordUtilityExit(report: UtilityExitReport): void {
+  getMonitor().onUtilityExit(report);
+}
+
+/** 宿主即将主动终止某个 utilityProcess：登记后，随后的“被杀”事件不算异常。 */
+export function expectUtilityKill(name: string): void {
+  getMonitor().expectKill(name);
 }

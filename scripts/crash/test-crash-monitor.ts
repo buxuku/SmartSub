@@ -5,6 +5,7 @@ import {
   type CrashMonitorOptions,
 } from '../../main/helpers/crash/crashMonitor';
 import type { CrashEvent } from '../../main/helpers/crash/crashEvents';
+import { classifyExit } from '../../main/helpers/crash/exitClassifier';
 import { assert, finish, test } from './testkit';
 
 interface Harness {
@@ -302,6 +303,119 @@ async function main() {
         assert.ok(!/[{}]/.test(line), line);
       }
     }
+  });
+
+  await test('宿主异常退出：记一条带 stderr 尾部的事件，只落盘不写应用日志', () => {
+    const { monitor, events, logs } = setup();
+    const stderr = Array.from(
+      { length: 40 },
+      (_, i) => `line ${i} C:\\Users\\Alice\\x`,
+    ).join('\n');
+    const event = monitor.onUtilityExit({
+      name: 'smartsub-tts-worker',
+      exitCode: ILLEGAL,
+      classification: classifyExit({ platform: 'win32', exitCode: ILLEGAL }),
+      stderrTail: stderr,
+    });
+    assert.ok(event);
+    assert.equal(events.length, 1);
+    assert.equal(event.source, 'utility-exit');
+    assert.equal(event.name, 'smartsub-tts-worker');
+    assert.equal(event.classification?.isIsa, true);
+    assert.equal(logs.length, 0);
+    // 只保留最后 20 行，路径已脱敏
+    const lines = (event.detail ?? '').split('\n');
+    assert.equal(lines.length, 20);
+    assert.equal(lines[19], 'line 39 ~\\x');
+    assert.ok(!event.detail?.includes('Alice'));
+  });
+
+  await test('宿主退出：被我们终止的不记；退出过程中只记崩溃', () => {
+    const { monitor, events } = setup({ platform: 'linux' });
+    assert.equal(
+      monitor.onUtilityExit({
+        name: 'w',
+        exitCode: 15,
+        classification: classifyExit({
+          platform: 'linux',
+          exitCode: 15,
+          killedByUs: true,
+        }),
+      }),
+      null,
+    );
+    monitor.markShuttingDown();
+    assert.equal(
+      monitor.onUtilityExit({
+        name: 'w',
+        exitCode: 1,
+        classification: classifyExit({ platform: 'linux', exitCode: 1 }),
+      }),
+      null,
+    );
+    assert.ok(
+      monitor.onUtilityExit({
+        name: 'w',
+        exitCode: 11,
+        classification: classifyExit({ platform: 'linux', exitCode: 11 }),
+      }),
+    );
+    assert.equal(events.length, 1);
+  });
+
+  await test('主动终止登记：抵消一次同名的“被杀”，其余不受影响', () => {
+    const { monitor, events, clock } = setup({ platform: 'linux' });
+    monitor.expectKill('smartsub-tts-worker');
+    // 登记过的“被杀”被抵消一次
+    assert.equal(
+      monitor.onChildProcessGone({
+        type: 'Utility',
+        reason: 'killed',
+        exitCode: 15,
+        name: 'smartsub-tts-worker',
+      }),
+      null,
+    );
+    // 一次登记只抵消一次
+    assert.ok(
+      monitor.onChildProcessGone({
+        type: 'Utility',
+        reason: 'killed',
+        exitCode: 15,
+        name: 'smartsub-tts-worker',
+      }),
+    );
+    // 其他名字不受影响
+    monitor.expectKill('a');
+    assert.ok(
+      monitor.onChildProcessGone({
+        type: 'Utility',
+        reason: 'killed',
+        exitCode: 15,
+        name: 'b',
+      }),
+    );
+    // 即使登记过，真正的崩溃也照记
+    monitor.expectKill('smartsub-tts-worker');
+    const crashed = monitor.onChildProcessGone({
+      type: 'Utility',
+      reason: 'crashed',
+      exitCode: 11,
+      name: 'smartsub-tts-worker',
+    });
+    assert.ok(crashed);
+    assert.equal(events.length, 3);
+    // 登记超过 10 秒后失效（进程没有产生事件的情况）
+    monitor.expectKill('late');
+    clock.now += 11_000;
+    assert.ok(
+      monitor.onChildProcessGone({
+        type: 'Utility',
+        reason: 'killed',
+        exitCode: 15,
+        name: 'late',
+      }),
+    );
   });
 
   finish('crashMonitor');

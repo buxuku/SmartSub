@@ -49,10 +49,28 @@ export interface CrashMonitorOptions {
   now?: () => number;
 }
 
+/** utilityProcess 宿主（utilityHost.ts）上报的一次异常退出。 */
+export interface UtilityExitReport {
+  name: string;
+  exitCode?: number;
+  classification: ExitClassification;
+  stderrTail?: string;
+}
+
 export interface CrashMonitor {
   onChildProcessGone(details: ChildGoneDetails): CrashEvent | null;
   onRenderProcessGone(details: RenderGoneDetails): CrashEvent | null;
   onUncaughtException(error: unknown, origin?: string): CrashEvent | null;
+  /**
+   * 宿主异常退出时调用：记一条带 stderr 尾部的事件。只落盘不写应用日志——
+   * 宿主已经按自己的文案记过日志，stderr 也已逐行记过。
+   */
+  onUtilityExit(report: UtilityExitReport): CrashEvent | null;
+  /**
+   * 登记一次主动终止：随后 10 秒内同名进程的“被杀”不算异常。
+   * 实测 Electron 对 utilityProcess.kill() 同样会触发 child-process-gone（reason: killed）。
+   */
+  expectKill(name: string): void;
   /** 应用已确认退出：此后只记崩溃，不再记“被杀”这类退出过程中的正常现象 */
   markShuttingDown(): void;
   /** 接入应用日志；接入之前产生的日志先缓存，接入时按序补发 */
@@ -66,6 +84,9 @@ const MAX_UNCAUGHT_PER_SESSION = 50;
 const MAX_MESSAGE_CHARS = 500;
 const MAX_STACK_LINES = 8;
 const MAX_STACK_CHARS = 1500;
+const EXPECTED_KILL_WINDOW_MS = 10_000;
+const STDERR_TAIL_LINES = 20;
+const STDERR_TAIL_CHARS = 1500;
 
 function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
@@ -76,6 +97,15 @@ function stackTop(stack: string): string {
     stack.split('\n').slice(0, MAX_STACK_LINES).join('\n'),
     MAX_STACK_CHARS,
   );
+}
+
+/** 取 stderr 的最后若干行：崩溃前最后写出的内容最有价值。 */
+function stderrTailLines(text: string): string {
+  const lines = text.split('\n').filter((l) => l.trim());
+  const tail = lines.slice(-STDERR_TAIL_LINES).join('\n');
+  return tail.length > STDERR_TAIL_CHARS
+    ? `…${tail.slice(-STDERR_TAIL_CHARS)}`
+    : tail;
 }
 
 function describeContext(context: CrashContextEntry[] | undefined): string {
@@ -141,15 +171,35 @@ export function createCrashMonitor(options: CrashMonitorOptions): CrashMonitor {
     }
   }
 
-  function commit(event: CrashEvent, level: CrashLogLevel): CrashEvent {
+  /** level 为 null 时只落盘、不写应用日志。 */
+  function commit(event: CrashEvent, level: CrashLogLevel | null): CrashEvent {
     recorded++;
     try {
       options.append(event);
     } catch (error) {
       console.error('[crash] append failed:', error);
     }
-    emitLog(formatCrashEventForLog(event), level);
+    if (level) emitLog(formatCrashEventForLog(event), level);
     return event;
+  }
+
+  // 主动终止的登记：名字 → 登记时间（一次登记抵消一次“被杀”）
+  const expectedKills = new Map<string, number[]>();
+
+  function consumeExpectedKill(name: string | undefined): boolean {
+    if (!name) return false;
+    const stamps = expectedKills.get(name);
+    if (!stamps) return false;
+    const t = now();
+    const fresh = stamps.filter((s) => t - s < EXPECTED_KILL_WINDOW_MS);
+    if (fresh.length === 0) {
+      expectedKills.delete(name);
+      return false;
+    }
+    fresh.shift();
+    if (fresh.length === 0) expectedKills.delete(name);
+    else expectedKills.set(name, fresh);
+    return true;
   }
 
   function base(source: CrashEventSource): CrashEvent {
@@ -185,6 +235,14 @@ export function createCrashMonitor(options: CrashMonitorOptions): CrashMonitor {
           reason: details.reason,
         });
         if (!shouldRecord(classification)) return null;
+        // 我们自己终止的 utilityProcess：Electron 同样会发 child-process-gone（reason: killed），
+        // 只抵消“被杀”，真正的崩溃不受影响
+        if (
+          classification.kind === 'killed' &&
+          consumeExpectedKill(details.name)
+        ) {
+          return null;
+        }
         const event: CrashEvent = {
           ...base('child-process-gone'),
           ...(details.type ? { processType: details.type } : {}),
@@ -264,6 +322,36 @@ export function createCrashMonitor(options: CrashMonitorOptions): CrashMonitor {
         );
         return null;
       }
+    },
+
+    onUtilityExit(report) {
+      try {
+        if (!shouldRecord(report.classification)) return null;
+        const tail = report.stderrTail
+          ? stderrTailLines(report.stderrTail)
+          : '';
+        const event: CrashEvent = {
+          ...base('utility-exit'),
+          processType: 'Utility',
+          name: report.name,
+          ...(typeof report.exitCode === 'number'
+            ? { exitCode: report.exitCode }
+            : {}),
+          classification: report.classification,
+          ...(tail ? { detail: redact(tail) } : {}),
+        };
+        return commit(event, null);
+      } catch (error) {
+        console.error('[crash] utility-exit handler failed:', error);
+        return null;
+      }
+    },
+
+    expectKill(name) {
+      const stamps = expectedKills.get(name) ?? [];
+      stamps.push(now());
+      // 防止登记了却没有对应事件的进程无限累积
+      expectedKills.set(name, stamps.slice(-20));
     },
 
     markShuttingDown() {
