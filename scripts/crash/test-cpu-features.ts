@@ -270,6 +270,44 @@ async function main() {
     assert.equal(report.features.avx2, true);
   });
 
+  await test('Windows：探测失败时 note 带着原因（超时 / 起不来），拿不到原因时保持旧文案', async () => {
+    const cases: Array<[() => Promise<string | null>, string]> = [
+      [
+        async () => {
+          throw new Error('timed out after 30000 ms');
+        },
+        'powershell probe failed: timed out after 30000 ms',
+      ],
+      [
+        async () => {
+          throw new Error('exit code 1:\r\n  Add-Type : blocked  ');
+        },
+        'powershell probe failed: exit code 1: Add-Type : blocked',
+      ],
+      [async () => null, 'powershell probe failed or timed out'],
+    ];
+    for (const [run, note] of cases) {
+      const { deps } = makeDeps({
+        platform: 'win32',
+        osRelease: '10.0.19045',
+        run,
+      });
+      const report = await detectCpuFeatures(deps);
+      assert.equal(report.source, 'unavailable');
+      assert.equal(report.note, note);
+    }
+    // 原因很长也只留一小段，报告会进诊断包
+    const long = makeDeps({
+      platform: 'win32',
+      osRelease: '10.0.19045',
+      run: async () => {
+        throw new Error('x'.repeat(5000));
+      },
+    });
+    const note = (await detectCpuFeatures(long.deps)).note ?? '';
+    assert.ok(note.length < 300, `note 长度 ${note.length}`);
+  });
+
   await test('Windows：探测失败、超时、输出乱码都是 unknown，不缓存，不抛错', async () => {
     for (const run of [
       async () => null,
