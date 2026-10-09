@@ -73,10 +73,9 @@ const REQUEST_TIMEOUT_MS = 300_000;
  */
 const MIN_IMPROVEMENT_TIMEOUT_MS = 60_000;
 
-/** 一轮请求的产物：模型原文、解析出的分段与校验结果。 */
+/** 一轮请求的产物：模型原文与校验结果（对齐用的分段在 validation.alignSegments）。 */
 interface SegmentationAttempt {
   response: string;
-  segments: string[];
   validation: SegmentationValidation;
 }
 
@@ -293,7 +292,7 @@ export async function runAiSegmentation(
       const segments = parseBrSegments(response);
       const validation = validateSegmentation(text, segments, limits);
       if (!best || compareValidations(validation, best.validation) > 0) {
-        best = { response, segments, validation };
+        best = { response, validation };
       }
       if (validation.ok) break;
       logMessage(
@@ -327,6 +326,11 @@ export async function runAiSegmentation(
       );
       return null;
     }
+    if (best.validation.tolerated) {
+      logMessage(
+        `${label} copy drifted from the transcript (similarity ${(best.validation.similarity * 100).toFixed(1)}%, within tolerance); breaks were re-anchored to the original text`,
+      );
+    }
     if (!best.validation.ok) {
       logMessage(
         `${label} accepted with ${best.validation.lengthViolations.length} over-long segment(s) after ${rounds} round(s); the length guard will re-split them`,
@@ -334,11 +338,14 @@ export async function runAiSegmentation(
     }
 
     unitState(index, 'aligning');
+    // 对齐用校验器给出的分段：严格等值时是模型分段，容差内偏差时是按断点
+    // 切开的原文，所以字幕文字始终来自转写本身。
+    const alignSegments = best.validation.alignSegments;
     let aligned: AlignedCue[] | null;
     if (tier === 'word') {
-      aligned = alignSegmentsToWords(windowWords!, best.segments);
+      aligned = alignSegmentsToWords(windowWords!, alignSegments);
     } else {
-      const alignedCues = alignSegmentsToCues(cues, best.segments, range);
+      const alignedCues = alignSegmentsToCues(cues, alignSegments, range);
       aligned = alignedCues ? alignedCues.map((cue) => ({ cue })) : null;
     }
     if (!aligned) {

@@ -392,6 +392,104 @@ test('cancellation during a retry still cancels the stage', async () => {
   );
 });
 
+// ------------------------------------------------------------------- drift --
+// Root cause 3 — the model rarely copies the text byte for byte. Punctuation,
+// case and the odd letter change, and the window used to be rejected for it
+// (then rejected again on every retry, because the model repeats the drift).
+
+const PUNCTUATED =
+  'So, the first thing we did was add a cache layer. In front of the database, and that alone cut the response time by almost forty percent.';
+/** Lower case, no punctuation: what chat models tend to return. */
+const PUNCTUATED_ANSWER = VALID_ANSWER;
+const PUNCTUATED_CUES = [
+  'So, the first thing we did',
+  'was add a cache layer.',
+  'In front of the database,',
+  'and that alone cut the response time',
+  'by almost forty percent.',
+];
+
+test('punctuation and case drift is accepted without a retry and the original text is kept', async () => {
+  const calls = installLlm(PUNCTUATED_ANSWER);
+  const outcome = await segment(wordsOf(PUNCTUATED));
+  assert.equal(calls.length, 1, 'no feedback round needed');
+  assert.equal(outcome.degradedWindows, 0);
+  assert.deepEqual(cueTexts(outcome), PUNCTUATED_CUES);
+  assert.equal(outcome.cues[0][0], '00:00:00,000', 'real word timestamps');
+});
+
+test('a few changed letters are accepted and never reach the cues', async () => {
+  // Two insertions: the copy is two characters longer than the transcript, so
+  // counting characters (what alignment does) cannot line them up by luck.
+  const drifted = VALID_ANSWER.replace('forty', 'fourty').replace(
+    'layer',
+    'layers',
+  );
+  const calls = installLlm(drifted);
+  const outcome = await segment(wordsOf(SENTENCE));
+  assert.equal(calls.length, 1);
+  assert.equal(outcome.degradedWindows, 0);
+  assert.equal(
+    joinedCueText(outcome),
+    SENTENCE,
+    'the cue text is the transcript, not the model copy',
+  );
+  assert.deepEqual(cueTexts(outcome), VALID_ANSWER.split('<br>'));
+});
+
+test('accepting drifted text is logged', async () => {
+  installLlm(PUNCTUATED_ANSWER);
+  await segment(wordsOf(PUNCTUATED));
+  assert.ok(
+    logLines('info').some((line) => /window 1\/1 .*drift/i.test(line)),
+    `expected a note about tolerated drift: ${JSON.stringify(logLines())}`,
+  );
+});
+
+test('a rewrite beyond the tolerance still degrades the window', async () => {
+  // About a fifth of the letters differ: a paraphrase, not a copy.
+  const paraphrases = [
+    'so the initial step we took<br>was adding a caching tier<br>before the db<br>and that alone cut latency<br>by roughly forty percent',
+    'so the opening move we made<br>was adding a caching tier<br>before the db<br>and that alone cut latency<br>by roughly forty percent',
+    'so the earliest thing we tried<br>was adding a caching tier<br>before the db<br>and that alone cut latency<br>by roughly forty percent',
+  ];
+  const calls = installLlm((index) => paraphrases[index]);
+  const outcome = await segment(wordsOf(SENTENCE));
+  assert.equal(calls.length, 3);
+  assert.equal(outcome.degradedWindows, 1);
+  assert.ok(
+    logLines('warning').some((line) =>
+      /window 1\/1 degraded to rule cues: content differs/i.test(line),
+    ),
+  );
+});
+
+test('segment-level timelines keep the original text too', async () => {
+  const cues = [
+    ['00:00:00,000', '00:00:03,000', 'So, the first thing we did was add'],
+    [
+      '00:00:03,000',
+      '00:00:06,000',
+      'a cache layer. In front of the database,',
+    ],
+    [
+      '00:00:06,000',
+      '00:00:10,000',
+      'and that alone cut the response time by almost forty percent.',
+    ],
+  ];
+  installLlm(PUNCTUATED_ANSWER);
+  const outcome = await runAiSegmentation({
+    cues,
+    words: null,
+    formData: {},
+    provider: makeProvider(),
+  });
+  assert.equal(outcome.tier, 'segment');
+  assert.equal(outcome.degradedWindows, 0);
+  assert.equal(joinedCueText(outcome), PUNCTUATED);
+});
+
 // ----------------------------------------------------------- request limits --
 // Root cause 2 — the OpenAI SDK waits 10 minutes per attempt and re-sends a
 // timed-out request twice, so one stalled request held a window for 30 minutes.

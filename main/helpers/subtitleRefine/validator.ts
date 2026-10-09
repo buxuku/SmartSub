@@ -2,7 +2,9 @@
  * 断句遍校验器（design D3）：等值比对 + 差异定位 + 逐段限长。
  *
  * 判定分两级（与降级策略配合，见 segmentationRunner）：
- *  - contentOk：规范化（去空白）后逐字等值——精确 offset 对齐（D4）的前提，硬性要求；
+ *  - contentOk：内容可对齐——规范化（去空白）后逐字等值，或偏差在容差内（标点 /
+ *    大小写 / 全半角 / 少量改字，见 anchoring.ts；此时按模型断点把原文重新切开）。
+ *    这是精确 offset 对齐（D4）的前提，硬性要求；
  *  - lengthOk：逐段限长（CJK 字数 / 拉丁词数）——软性要求：重试耗尽仍超长但 contentOk
  *    时可接受，交物理护栏（guards）在真实词时间上二次切分。
  *
@@ -10,6 +12,7 @@
  * 供 agent loop 回喂模型自我纠正（借鉴卡卡的 diff 反馈机制）。
  */
 
+import { anchorSegmentsToOriginal } from './anchoring';
 import {
   RefineLimits,
   cjkCharCount,
@@ -30,13 +33,23 @@ export interface LengthViolation {
 export interface SegmentationValidation {
   /** contentOk && （限长关闭或无超长段）。 */
   ok: boolean;
-  /** 规范化等值（精确对齐的前提）。 */
+  /** 内容可对齐：规范化等值，或偏差在容差内（见 tolerated）。 */
   contentOk: boolean;
-  /** 0~1，公共前后缀占比的相似度近似（日志/诊断用）。 */
+  /**
+   * 0~1（日志/诊断用）。可对齐时是骨架相似度（1 = 仅标点/空白/大小写差异）；
+   * 不可对齐时是公共前后缀占比的粗略近似。
+   */
   similarity: number;
   lengthViolations: LengthViolation[];
   /** ok=false 时的回喂反馈；ok=true 为空串。 */
   feedback: string;
+  /**
+   * 交给时间轴对齐的分段。严格等值时就是模型的分段；偏差在容差内时是按模型
+   * 断点在**原文**上重新切出的分段（保留原文的标点与大小写）。
+   */
+  alignSegments: string[];
+  /** 模型输出与原文有偏差（标点/大小写/全半角/少量改字），但在容差内放行。 */
+  tolerated: boolean;
 }
 
 /** 差异展示的上下文与片段截断长度。 */
@@ -131,26 +144,41 @@ export function validateSegmentation(
       lengthViolations: [],
       feedback:
         'No segments found. Output the COMPLETE original text with <br> inserted between segments.',
+      alignSegments: segments,
+      tolerated: false,
     };
   }
 
   const normOriginal = normalizeForCompare(originalText);
   const normProduced = normalizeForCompare(segments.join(''));
-  const contentOk = normOriginal === normProduced;
+  let contentOk = normOriginal === normProduced;
+  let alignSegments = segments;
+  let tolerated = false;
 
   let similarity = 1;
   const feedbackParts: string[] = [];
   if (!contentOk) {
-    const diff = locateDifference(normOriginal, normProduced);
-    similarity = diff.similarity;
-    feedbackParts.push(
-      `Content was modified (similarity ${(diff.similarity * 100).toFixed(1)}%): ${diff.message}.`,
-      'Keep the original text EXACTLY unchanged; only insert <br> between words.',
-    );
+    // 模型几乎从不逐字复制：标点、大小写、全半角，偶尔还有个别字会变。断句只需要
+    // 它的断点位置，所以偏差在容差内时按断点把**原文**重新切开——最终字幕文字
+    // 仍是原文，时间轴仍是真实词时间（design D3/D4：容忍轻微差异，diff 对齐兜底）。
+    const anchored = anchorSegmentsToOriginal(originalText, segments);
+    if (anchored) {
+      contentOk = true;
+      tolerated = true;
+      alignSegments = anchored.segments;
+      similarity = anchored.similarity;
+    } else {
+      const diff = locateDifference(normOriginal, normProduced);
+      similarity = diff.similarity;
+      feedbackParts.push(
+        `Content was modified (similarity ${(diff.similarity * 100).toFixed(1)}%): ${diff.message}.`,
+        'Keep the original text EXACTLY unchanged; only insert <br> between words.',
+      );
+    }
   }
 
   const lengthViolations = limits.lengthCheckEnabled
-    ? checkSegmentLengths(segments, limits)
+    ? checkSegmentLengths(alignSegments, limits)
     : [];
   if (lengthViolations.length > 0) {
     const lines = lengthViolations
@@ -172,6 +200,8 @@ export function validateSegmentation(
     similarity,
     lengthViolations,
     feedback: ok ? '' : feedbackParts.join('\n'),
+    alignSegments,
+    tolerated,
   };
 }
 
@@ -189,7 +219,8 @@ function lengthOvershoot(validation: SegmentationValidation): number {
  * 反馈重试循环据此保留「最好的一次」而不是「最后一次」——重试轮的输出可能比
  * 首轮更差（改坏文本、截断），不应让一次退步把已有的可用答案扔掉（#507）。
  *  1. 内容可对齐（contentOk）的永远优于不可对齐的：后者对断句毫无用处；
- *  2. 都可对齐时，超长段更少者更好，其次是超长总量更小者（软约束，由护栏兜底）；
+ *  2. 都可对齐时，超长段更少者更好，其次是超长总量更小者（软约束，由护栏兜底），
+ *     再其次是严格等值优于容差放行（后者在改动处的断点位置有少许不确定）；
  *  3. 都不可对齐时，相似度更高者更好（只决定回喂与日志展示哪一次）。
  */
 export function compareValidations(
@@ -200,7 +231,10 @@ export function compareValidations(
   if (a.contentOk) {
     const byCount = b.lengthViolations.length - a.lengthViolations.length;
     if (byCount !== 0) return byCount;
-    return lengthOvershoot(b) - lengthOvershoot(a);
+    const byOvershoot = lengthOvershoot(b) - lengthOvershoot(a);
+    if (byOvershoot !== 0) return byOvershoot;
+    if (a.tolerated !== b.tolerated) return a.tolerated ? -1 : 1;
+    return 0;
   }
   return a.similarity - b.similarity;
 }
