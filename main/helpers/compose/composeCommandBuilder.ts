@@ -21,7 +21,10 @@ import type { EmbeddedSubtitleStream } from '../embeddedSubtitleParser';
 /** 硬烧字幕的解析后输入：滤镜与编码参数由调用方（runner）解析完成后传入。 */
 export interface ComposeHardSubtitle {
   mode: 'hard';
-  /** 完整字幕滤镜（`ass='…'` 或 `subtitles='…':force_style='…'`），不含 format=nv12 */
+  /**
+   * 完整字幕滤镜（`ass='…'` 或 `subtitles='…':force_style='…'`），
+   * 不含偶数宽高裁剪与 format=nv12（由 buildComposePlan 依次追加）
+   */
   filter: string;
   /** 从 -c:v 起的完整视频编码参数（libx264 或硬件编码器 + 画质参数） */
   encoderArgs: string[];
@@ -78,6 +81,28 @@ const FASTSTART_EXTENSIONS = new Set(['.mp4', '.mov', '.m4v']);
 
 /** 配音轨统一编码参数（与既有配音导出一致） */
 const AAC_ARGS = ['-c:a', 'aac', '-b:a', '192k'];
+
+/**
+ * 硬烧重编码时映射的视频流。`V`（大写）只匹配真正的视频流，排除封面图（attached pic）；
+ * 小写 `v` 会把封面一起映射，封面也被送进字幕滤镜和 libx264，写 MP4 头时失败
+ * （`Could not find tag for codec h264 in stream #1`，旧版界面只剩 "Conversion failed!"）。
+ * yt-dlp --embed-thumbnail、YoutubeDownloader 等下载的 MP4 常带封面。
+ *
+ * 仅用于重编码分支：软封装/无字幕是 -c copy，封面原样保留，仍用 0:v；
+ * hard+mix 走 filter_complex 的 `[0:v]` 标签，只取第一路视频流，不会带上其后的封面。
+ */
+const REENCODED_VIDEO_MAP = '0:V';
+
+/**
+ * 硬烧重编码前把宽高向下取偶。libx264（yuv420p）拒绝奇数宽/高：
+ * `[libx264] width not divisible by 2 (853x480)`，旧版界面只剩 "Conversion failed!"；
+ * VP9/AV1/MPEG-4 等源可以是奇数分辨率。`crop` 丢掉右/下多出的 1 像素，不缩放、不加黑边，
+ * 宽高本来就是偶数时是空操作（x/y 显式写 0，不依赖默认的居中取整）。
+ *
+ * 放在字幕滤镜之后：字幕仍按原始画面渲染，位置不变；放在 `format=nv12` 之前：
+ * 硬件编码器同样拿到偶数宽高。软封装/无字幕是 -c copy，没有滤镜链，不受影响。
+ */
+const EVEN_DIMENSIONS_FILTER = 'crop=trunc(iw/2)*2:trunc(ih/2)*2:0:0';
 
 const DEFAULT_DUCK_RATIO = 8;
 
@@ -177,9 +202,11 @@ export function buildComposePlan(
   const opt: string[] = [];
 
   if (subtitle.mode === 'hard') {
-    const chain = subtitle.needsNv12
-      ? `${subtitle.filter},format=nv12`
-      : subtitle.filter;
+    const chain = [
+      subtitle.filter,
+      EVEN_DIMENSIONS_FILTER,
+      ...(subtitle.needsNv12 ? ['format=nv12'] : []),
+    ].join(',');
     if (audio.mode === 'mix') {
       // -vf 与 -filter_complex 不能并用：视频滤镜并入 complex 图
       complexFilter = [
@@ -190,18 +217,18 @@ export function buildComposePlan(
       opt.push(...subtitle.encoderArgs, ...AAC_ARGS);
     } else if (audio.mode === 'replace') {
       videoFilter = chain;
-      opt.push('-map', '0:v', '-map', '1:a');
+      opt.push('-map', REENCODED_VIDEO_MAP, '-map', '1:a');
       opt.push(...subtitle.encoderArgs, ...AAC_ARGS);
     } else if (audio.mode === 'addTrack') {
       videoFilter = chain;
       // 原音轨全部保留 + 预编 aac 配音轨；音频统一流拷贝（无 -c:a:N 序号错位）
-      opt.push('-map', '0:v', '-map', '0:a?', '-map', '1:a');
+      opt.push('-map', REENCODED_VIDEO_MAP, '-map', '0:a?', '-map', '1:a');
       opt.push(...subtitle.encoderArgs, '-c:a', 'copy');
     } else {
       // Explicit maps retain every original audio track without also auto-selecting
       // an embedded subtitle that a player could render over the burned text.
       videoFilter = chain;
-      opt.push('-map', '0:v', '-map', '0:a?');
+      opt.push('-map', REENCODED_VIDEO_MAP, '-map', '0:a?');
       // WebM/Ogg 源的 Opus/Vorbis 写进 MP4 系容器时转 AAC（兼容性/部分容器无法直拷）；
       // 其余组合保持直拷，用户手动选的 .mkv 也一样（#521）。
       opt.push(
