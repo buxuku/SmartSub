@@ -5,8 +5,8 @@
  * 输出：几百字节的 JSON，包含异常码、故障模块、CPU family / model / stepping、模块名。
  * 诊断包默认只带这份摘要；原始 .dmp 由用户勾选后才带。
  *
- * 移植自 PoC（scripts/whisper-isolation-poc/isa-validation/minidump-summary.js），已用
- * windows-latest 与 ubuntu-24.04 上取回的 55 个真实转储逐个对照，输出与 PoC 完全一致：
+ * 移植自 PoC 阶段的独立脚本 minidump-summary.js（PoC 没有入库），已用
+ * windows-latest 与 ubuntu-24.04 上取回的 55 个真实转储逐个对照，输出与该脚本完全一致：
  * - Windows 的 ExceptionAddress 就是出错指令的地址，故障模块可靠（10/10 个样本解析到模块）；
  * - Linux 上硬件触发的 SIGILL 能解析出故障模块（7/7）；而 kill / raise 发出的信号、以及
  *   SIGSEGV / SIGBUS，地址字段是数据地址或“发送者 uid<<32|pid”，不在任何模块里，模块不可解析；
