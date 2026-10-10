@@ -1,0 +1,69 @@
+name: Windows GPU probe
+
+# GPU 枚举在 Windows 上的真机验证。
+#   1. 单测在真实 Windows 上全部通过（子进程、路径、平台伪装都按 Windows 的语义跑）
+#   2. 真实的 powershell.exe + Get-CimInstance Win32_VideoController 能跑通、能解析、耗时在预算内
+# ci.yml 只在 ubuntu 上跑，覆盖不到只会在 Windows 上出现的问题（启动即弹 “write EPIPE”）。
+# 只在相关文件变化时触发，不拖慢其他 PR。不使用任何 secrets，不发布任何产物。
+on:
+  pull_request:
+    paths:
+      - 'main/helpers/gpuEnumeration.ts'
+      - 'main/helpers/runCommand.ts'
+      - 'main/helpers/singleFlightCache.ts'
+      - 'main/helpers/cudaUtils.ts'
+      - 'main/helpers/pythonRuntime/manager.ts'
+      - 'scripts/gpu/**'
+      - 'scripts/test-python-engine-stdin.ts'
+      - '.github/workflows/windows-gpu.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'main/helpers/gpuEnumeration.ts'
+      - 'main/helpers/runCommand.ts'
+      - 'main/helpers/singleFlightCache.ts'
+      - 'main/helpers/cudaUtils.ts'
+      - 'main/helpers/pythonRuntime/manager.ts'
+      - 'scripts/gpu/**'
+      - 'scripts/test-python-engine-stdin.ts'
+      - '.github/workflows/windows-gpu.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-gpu-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows GPU enumeration (real PowerShell)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: yarn
+
+      # 这些测试不依赖 Electron 二进制和原生库：不跑 postinstall
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-scripts
+
+      - name: Machine info
+        run: |
+          node -e "const os=require('os');const c=os.cpus();console.log(process.platform,process.arch,os.release(),'| CPU:',c[0].model,'x'+c.length,'| memory GB:',(os.totalmem()/2**30).toFixed(1))"
+
+      - name: Unit tests (GPU enumeration and stdin EPIPE hardening)
+        run: yarn test:gpu-enumeration
+
+      - name: GPU enumeration on the real machine
+        run: yarn test:gpu-probe
