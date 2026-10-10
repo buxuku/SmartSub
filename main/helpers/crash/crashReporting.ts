@@ -8,12 +8,20 @@
  * 为什么必须启用 crashReporter（PoC 在 windows-latest 上实测）：
  * 不启用时，子进程崩溃的退出码会被 Crashpad 改写成 0xFFFF7003，真实异常码丢失，
  * 也没有任何转储；启用后退出码恢复为真实 NTSTATUS（如 0xC000001D），并产生 .dmp。
+ *
+ * Linux 上 crashReporter 启动后还会缩小本进程的系统 core（见 coreDump.ts）：崩溃现场已经由
+ * Crashpad 转储记录，而管道式 core_pattern 会让崩溃的主进程等 core 写完才退出，窗口卡住几十秒。
  */
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { app, crashReporter } from 'electron';
 import type { BreakerEnv } from './breaker';
+import {
+  describeCoreDumpShrink,
+  shrinkOwnCoreDump,
+  type CoreDumpShrink,
+} from './coreDump';
 import { snapshotCrashContext } from './crashContext';
 import { pruneDumpFiles } from './crashDumps';
 import {
@@ -38,6 +46,8 @@ let monitor: CrashMonitor | null = null;
 let listenersInstalled = false;
 /** 本次启动为原生代码设置的环境变量，随诊断日志一并记下 */
 let nativeEnvApplied: string[] = [];
+/** 对本进程系统 core 的处理结果；crashReporter 没启动时为 null（没有处理） */
+let coreDumpShrink: CoreDumpShrink | null = null;
 
 /** Crashpad 数据库目录（含 .dmp）。 */
 export function getCrashDumpsDir(): string {
@@ -75,6 +85,10 @@ export function getRunStateFile(): string {
 
 export function isCrashReporterStarted(): boolean {
   return reporterStarted;
+}
+
+export function getCoreDumpShrink(): CoreDumpShrink | null {
+  return coreDumpShrink;
 }
 
 function getMonitor(): CrashMonitor {
@@ -138,6 +152,10 @@ export function startCrashReporting(): void {
   } catch (error) {
     console.error('[crash] crashReporter failed to start:', error);
   }
+  // 崩溃现场从此由 crashReporter 的转储记录，系统 core 不必再带内存。
+  // 放在 crashReporter 启动之后：启动失败时不要连唯一的现场记录也一起放弃。
+  // 子进程继承这个设置，所以也早于任何 utilityProcess 的创建。
+  if (reporterStarted) coreDumpShrink = shrinkOwnCoreDump();
 }
 
 /**
@@ -166,6 +184,8 @@ export function initCrashDiagnostics(sink?: CrashLogSink): void {
   if (nativeEnvApplied.length > 0) {
     sink?.(`Native crash env applied: ${nativeEnvApplied.join(', ')}`, 'info');
   }
+  const coreLine = coreDumpShrink && describeCoreDumpShrink(coreDumpShrink);
+  if (coreLine) sink?.(coreLine.message, coreLine.level);
   sink?.(
     reporterStarted
       ? 'Crash diagnostics ready: crashReporter started (local only, no upload)'

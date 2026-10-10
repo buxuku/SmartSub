@@ -11,6 +11,8 @@
  *
  * 环境变量：SMOKE_SCENARIO、SMOKE_WORK（工作目录）、SMOKE_BUNDLE（esbuild 产物）、
  * SMOKE_BOOM_DIR（boom 样本库目录，需要真实原生崩溃的场景才用）。
+ * 另外会透传产品自己的开关 SMARTSUB_KEEP_SYSTEM_CORE：smoke.mjs 用它关掉主进程的系统 core 加固，
+ * 单独检验宿主底座对 worker 的那两层加固。
  */
 const { app, utilityProcess } = require('electron');
 const fs = require('fs');
@@ -85,18 +87,17 @@ async function waitFor(predicate, timeoutMs) {
 }
 
 /**
- * Linux：core_pattern 把 core 管道给 systemd-coredump / apport 的机器上（GitHub runner 就是），
- * 崩溃的进程要等 core 写完才退出，实测几十秒到几分钟。这只是系统层行为，与被测的崩溃记录无关，
- * 所以烟测里让“被测之外的崩溃”提前把 core 缩到几 KB（coredump_filter=0）。
- * Crashpad 转储不受影响（它自己读进程内存）。被测的 utility-ill 场景不用它，要看产品自己的加固。
+ * Linux：读 /proc/<pid|self>/coredump_filter（十六进制文本）。
+ * core_pattern 把 core 管道给 systemd-coredump / apport 的机器上（GitHub runner 就是），
+ * 崩溃的进程要等 core 写完才退出；产品在 startCrashReporting 里把主进程的该值写成 0，子进程继承。
+ * 烟测不替产品做这件事，只读出来供断言，所以几个崩溃场景能否快速退出就是对产品加固的真实检验。
  */
-function shrinkSystemCore(pid) {
-  if (process.platform !== 'linux') return 'not-linux';
+function readCoreFilter(target) {
+  if (process.platform !== 'linux') return null;
   try {
-    fs.writeFileSync(`/proc/${pid}/coredump_filter`, '0');
-    return 'ok';
+    return fs.readFileSync(`/proc/${target}/coredump_filter`, 'utf8').trim();
   } catch (error) {
-    return `failed: ${error.code || error.message}`;
+    return `unreadable: ${error.code || error.message}`;
   }
 }
 
@@ -135,20 +136,22 @@ async function crashUtility(serviceName) {
     workerFile,
     'setTimeout(() => process.crash(), 100);\nsetInterval(() => {}, 1000);\n',
   );
+  // 刻意绕开宿主底座、也不替它加固：这个场景看的是 Electron 与应用层对原生崩溃的上报，
+  // 以及“只靠主进程自己的 core 加固，被它起的子进程就能快速退出”（子进程继承 coredump_filter）
   const child = utilityProcess.fork(workerFile, [], {
     serviceName,
     stdio: 'pipe',
   });
-  // 这个场景看的是 Electron 与应用层对原生崩溃的上报，不是宿主加固：让系统 core 尽快写完
+  let coreFilterAtSpawn = null;
   child.once('spawn', () => {
-    if (child.pid !== undefined) shrinkSystemCore(child.pid);
+    if (child.pid !== undefined) coreFilterAtSpawn = readCoreFilter(child.pid);
   });
   const started = Date.now();
   const exit = await new Promise((resolve) => {
     child.once('exit', (code) => resolve({ code, ms: Date.now() - started }));
     setTimeout(() => resolve({ code: null, ms: -1, timedOut: true }), 30000);
   });
-  return exit;
+  return { ...exit, coreFilterAtSpawn };
 }
 
 /**
@@ -247,6 +250,9 @@ app.whenReady().then(async () => {
     reporterStarted: m.isCrashReporterStarted(),
     crashDumpsPath: app.getPath('crashDumps'),
     expectedCrashDumpsDir: m.getCrashDumpsDir(),
+    // 主进程自己的系统 core 加固（Linux）：产品在 startCrashReporting 里做，这里只取结果
+    coreDumpShrink: m.getCoreDumpShrink(),
+    coreFilter: readCoreFilter('self'),
   };
   const fakeAddon = path.join(work, 'fake-addon.node');
   const candidateKey = 'builtin:cpu';
@@ -255,7 +261,6 @@ app.whenReady().then(async () => {
     // 主进程原生崩溃（访问违例）：本进程会死，转储与退出码由 smoke.mjs 在外面检查。
     // 有 boom 样本就走 process.dlopen（贴近 addon 崩溃）；没有就退回 Electron 自带的 process.crash
     const via = boomDir ? 'boom-segv' : 'process.crash';
-    shrinkSystemCore('self');
     writeResult({ ...base, note: 'about-to-crash', via });
     setTimeout(
       () => (boomDir ? dlopenBoom('boom-segv') : process.crash()),
@@ -308,7 +313,6 @@ app.whenReady().then(async () => {
       candidatePath: fakeAddon,
       phase: 'transcribe',
     });
-    shrinkSystemCore('self');
     writeResult({ ...base, note: 'about-to-crash', state: readState() });
     setTimeout(() => dlopenBoom('boom-ill'), 300);
     return;

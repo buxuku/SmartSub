@@ -11,10 +11,13 @@
  *
  * 用法：node scripts/crash/smoke.mjs [场景 ...]   （缺省运行全部场景）
  * 场景：
- *   utility-crash        utilityProcess 里 process.crash()：child-process-gone 分类、转储、应用日志
- *   main-crash           主进程加载 boom-segv（访问违例）：转储与摘要（没有 boom 时退回 process.crash）
+ *   utility-crash        utilityProcess 里 process.crash()：child-process-gone 分类、转储、应用日志；
+ *                        Linux 上还验证直接起的子进程继承了主进程的 core 加固、崩溃后很快退出
+ *   main-crash           主进程加载 boom-segv（访问违例）：转储与摘要（没有 boom 时退回 process.crash）；
+ *                        Linux 上还验证主进程自己的 core 加固生效、崩溃后很快退出
  *   utility-ill          经应用的宿主底座起 utilityProcess 并加载 boom-ill（非法指令）：
- *                        主进程存活、退出被分类为指令集问题、stderr 尾部入事件、Linux 上崩溃后秒退
+ *                        主进程存活、退出被分类为指令集问题、stderr 尾部入事件、Linux 上崩溃后秒退；
+ *                        Linux 上再跑一遍 SMARTSUB_KEEP_SYSTEM_CORE=true（主进程不加固），单独检验宿主自己的加固
  *   restart-suppression  三次启动：在途标记加非法指令崩溃 → 重启后检测到异常退出并抑制该后端 → 解除后恢复正常
  * 环境变量：
  *   SMOKE_WORK_DIR=<目录>    指定工作目录（CI 里用它上传失败现场）；缺省是系统临时目录下的随机目录
@@ -172,7 +175,7 @@ function buildBoom() {
 /** 启动 Electron 跑一个场景，返回退出信息与结果文件内容。 */
 function runScenario(
   scenario,
-  { dirName = scenario, timeoutMs = 90_000 } = {},
+  { dirName = scenario, timeoutMs = 90_000, env: extraEnv = {} } = {},
 ) {
   const scenarioDir = path.join(work, dirName);
   fs.mkdirSync(scenarioDir, { recursive: true });
@@ -188,6 +191,9 @@ function runScenario(
         SMOKE_WORK: scenarioDir,
         SMOKE_BUNDLE: electronBundle,
         SMOKE_BOOM_DIR: boomDir || '',
+        // 默认让产品的主进程加固生效，不受外面 shell 里同名开关的影响；要关闭的场景自己通过 env 传入
+        SMARTSUB_KEEP_SYSTEM_CORE: undefined,
+        ...extraEnv,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -257,6 +263,46 @@ const expectedOs = { win32: 'windows', darwin: 'macos', linux: 'linux' }[
   process.platform
 ];
 
+/**
+ * Linux：崩溃后应该很快退出。管道式 core_pattern 下没加固的失败形态是几十秒、甚至一直不退出
+ * （被超时杀掉），10 秒的界限给慢机器留足余量，又远小于失败形态。
+ */
+const QUICK_EXIT_MS = 10_000;
+
+/** coredump_filter 的十六进制文本 → 数值；读不到时是 NaN，断言会失败并带上原文。 */
+const filterValue = (text) => parseInt(String(text), 16);
+
+/** 本脚本自己的 coredump_filter：没被加固的子进程会原样继承它（Linux）。 */
+const harnessCoreFilter = () =>
+  fs.readFileSync('/proc/self/coredump_filter', 'utf8').trim();
+
+/**
+ * Linux：宿主起的 worker 在崩溃前一刻自己读到的 core 设置，以及崩溃后多久退出。
+ * 先看加固有没有在崩溃前生效，再看崩溃后多久退出：两件事分开，失败时才知道坏在哪一步。
+ */
+async function checkLinuxWorkerHardening(r, label) {
+  // 取 worker 自己在崩溃前一刻读到的值（宿主侧在 armed 之后取的样会被宿主事件循环的延迟带偏）
+  const view = r.exit.workerSelfView;
+  const filter =
+    view && typeof view.filter === 'string' ? parseInt(view.filter, 16) : null;
+  const limitOne = /Max core file size 1 /.test(String(view?.limit));
+  await check(
+    `${label}崩溃前一刻 worker 自己读到的 core 设置已被加固（coredump_filter=0 或 RLIMIT_CORE=1）`,
+    () => {
+      assert.ok(
+        filter === 0 || limitOne,
+        `worker 自述 ${JSON.stringify(view)}；宿主侧取样 atArmed=${r.exit.coreLimitAtArmed} 之后=${r.exit.coreLimitBeforeCrash}；日志：${JSON.stringify(r.logs)}`,
+      );
+    },
+  );
+  await check(`${label}加固生效，崩溃后 5 秒内退出`, () => {
+    assert.ok(
+      r.exit.msAfterCrash >= 0 && r.exit.msAfterCrash < 5000,
+      `崩溃后 ${r.exit.msAfterCrash} ms 才退出（超时时进程状态 ${r.exit.procStateAtTimeout}）；worker 自述 ${JSON.stringify(view)}；日志：${JSON.stringify(r.logs)}`,
+    );
+  });
+}
+
 const handlers = {
   async 'utility-crash'() {
     const run = await runScenario('utility-crash');
@@ -318,6 +364,23 @@ const handlers = {
         `    · 转储 ${(s.bytes / 1024).toFixed(0)} KB，异常 ${s.exception.name || s.exception.codeHex}，故障模块 ${s.faultModule?.name ?? '无法解析'}`,
       );
     });
+    if (process.platform === 'linux') {
+      // 这个场景绕开了宿主底座，子进程只有一条路快速退出：继承主进程自己的 core 加固
+      await check(
+        'Linux：直接起的 utilityProcess 继承了主进程的 coredump_filter=0，崩溃后很快退出',
+        () => {
+          assert.equal(
+            filterValue(r.exit.coreFilterAtSpawn),
+            0,
+            `子进程 coredump_filter=${r.exit.coreFilterAtSpawn}；主进程 ${JSON.stringify(r.coreDumpShrink)} filter=${r.coreFilter}`,
+          );
+          assert.ok(
+            !r.exit.timedOut && r.exit.ms >= 0 && r.exit.ms < QUICK_EXIT_MS,
+            `exit=${JSON.stringify(r.exit)}`,
+          );
+        },
+      );
+    }
     console.log(
       `    · 实测：exit=${JSON.stringify(r.exit)} gone=${JSON.stringify(r.gone)}\n    · 分类：${JSON.stringify(r.events[0]?.classification)}`,
     );
@@ -325,6 +388,7 @@ const handlers = {
 
   async 'main-crash'() {
     const run = await runScenario('main-crash');
+    const r = run.result;
     const dir = path.join(run.dir, 'userData', 'crash-dumps');
     await check('主进程崩溃：进程自己非正常退出（不是被超时杀掉的）', () => {
       assert.ok(
@@ -337,6 +401,36 @@ const handlers = {
         `崩溃后一直不退出，被超时杀掉：${JSON.stringify(run.exit)}`,
       );
     });
+    await check(
+      process.platform === 'linux'
+        ? 'Linux：主进程在崩溃前已缩小自己的系统 core（coredump_filter=0），崩溃后很快退出'
+        : '非 Linux：不碰 core 设置',
+      () => {
+        assert.ok(r, `没有结果文件。输出：\n${run.output.slice(-1500)}`);
+        if (process.platform === 'linux') {
+          assert.deepEqual(
+            r.coreDumpShrink,
+            { status: 'applied' },
+            JSON.stringify(r.coreDumpShrink),
+          );
+          assert.equal(
+            filterValue(r.coreFilter),
+            0,
+            `主进程 coredump_filter=${r.coreFilter}`,
+          );
+          assert.ok(
+            run.exit.ms < QUICK_EXIT_MS,
+            `崩溃后 ${run.exit.ms} ms 才退出：${JSON.stringify(run.exit)}`,
+          );
+        } else {
+          assert.deepEqual(r.coreDumpShrink, {
+            status: 'skipped',
+            reason: 'not-linux',
+          });
+          assert.equal(r.coreFilter, null);
+        }
+      },
+    );
     const dumps = await waitForDumps(dir, 15_000);
     await check('主进程崩溃留下了转储（在约定目录里）', () => {
       assert.ok(dumps.length >= 1, `目录 ${dir} 里没有 .dmp`);
@@ -428,33 +522,53 @@ const handlers = {
       console.log(`    · 转储异常 ${s.exception.name || s.exception.codeHex}`);
     });
     if (process.platform === 'linux') {
-      // 先看加固有没有在崩溃前生效，再看崩溃后多久退出：两件事分开，失败时才知道坏在哪一步。
-      // 取 worker 自己在崩溃前一刻读到的值（宿主侧在 armed 之后取的样会被宿主事件循环的延迟带偏）
-      const view = r.exit.workerSelfView;
-      const filterValue =
-        view && typeof view.filter === 'string'
-          ? parseInt(view.filter, 16)
-          : null;
-      const limitOne = /Max core file size 1 /.test(String(view?.limit));
       await check(
-        'Linux：崩溃前一刻 worker 自己读到的 core 设置已被加固（coredump_filter=0 或 RLIMIT_CORE=1）',
+        'Linux：主进程在崩溃前已缩小自己的系统 core（子进程由此继承）',
         () => {
-          assert.ok(
-            filterValue === 0 || limitOne,
-            `worker 自述 ${JSON.stringify(view)}；宿主侧取样 atArmed=${r.exit.coreLimitAtArmed} 之后=${r.exit.coreLimitBeforeCrash}；日志：${JSON.stringify(r.logs)}`,
+          assert.deepEqual(
+            r.coreDumpShrink,
+            { status: 'applied' },
+            JSON.stringify(r.coreDumpShrink),
+          );
+          assert.equal(
+            filterValue(r.coreFilter),
+            0,
+            `主进程 coredump_filter=${r.coreFilter}`,
           );
         },
       );
-      await check('Linux：加固生效，崩溃后 5 秒内退出', () => {
-        assert.ok(
-          r.exit.msAfterCrash >= 0 && r.exit.msAfterCrash < 5000,
-          `崩溃后 ${r.exit.msAfterCrash} ms 才退出（超时时进程状态 ${r.exit.procStateAtTimeout}）；worker 自述 ${JSON.stringify(view)}；日志：${JSON.stringify(r.logs)}`,
-        );
-      });
+      await checkLinuxWorkerHardening(r, 'Linux：');
     }
     console.log(
       `    · 实测：宿主收到退出 code=${info?.code}，崩溃后 ${r.exit.msAfterCrash} ms${r.exit.workerSelfView ? `；崩溃前 worker 自述 ${JSON.stringify(r.exit.workerSelfView)}` : ''}\n    · 分类：${JSON.stringify(info?.classification)}\n    · gone=${JSON.stringify(r.gone)}`,
     );
+
+    if (process.platform === 'linux') {
+      // 回退开关：主进程不加固（保持系统默认）时，宿主底座对 worker 的两层加固仍然独立生效
+      const keep = await runScenario('utility-ill', {
+        dirName: 'utility-ill-keep-core',
+        env: { SMARTSUB_KEEP_SYSTEM_CORE: 'true' },
+      });
+      const k = keep.result;
+      await check(
+        'Linux（SMARTSUB_KEEP_SYSTEM_CORE=true）：主进程保持系统默认的 core 设置，不加固',
+        () => {
+          assert.ok(k, `没有结果文件。输出：\n${keep.output.slice(-1500)}`);
+          assert.equal(keep.exit.code, 0, keep.output.slice(-1500));
+          assert.deepEqual(
+            k.coreDumpShrink,
+            { status: 'skipped', reason: 'kept-by-env' },
+            JSON.stringify(k.coreDumpShrink),
+          );
+          // 主进程没被改动：与本脚本自己（它的子进程默认继承来的值）一致
+          assert.equal(k.coreFilter, harnessCoreFilter());
+        },
+      );
+      if (k) await checkLinuxWorkerHardening(k, 'Linux（主进程不加固）：');
+      console.log(
+        `    · 实测（主进程不加固）：主进程 filter=${k?.coreFilter}（本脚本 ${harnessCoreFilter()}），崩溃后 ${k?.exit.msAfterCrash} ms；崩溃前 worker 自述 ${JSON.stringify(k?.exit.workerSelfView)}`,
+      );
+    }
   },
 
   async 'restart-suppression'() {
@@ -477,6 +591,22 @@ const handlers = {
       assert.equal(state.inFlight.length, 1);
       assert.equal(state.inFlight[0].candidateKey, 'builtin:cpu');
     });
+    if (process.platform === 'linux') {
+      await check(
+        'Linux：主进程撞上非法指令后很快退出（靠主进程自己的 core 加固，不是烟测代劳）',
+        () => {
+          assert.deepEqual(
+            first.result?.coreDumpShrink,
+            { status: 'applied' },
+            JSON.stringify(first.result?.coreDumpShrink),
+          );
+          assert.ok(
+            first.exit.ms < QUICK_EXIT_MS,
+            `崩溃后 ${first.exit.ms} ms 才退出：${JSON.stringify(first.exit)}`,
+          );
+        },
+      );
+    }
     const dumps = await waitForDumps(
       path.join(dir, 'userData', 'crash-dumps'),
       20_000,
