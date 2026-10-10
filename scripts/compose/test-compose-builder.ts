@@ -81,6 +81,9 @@ const HW_HARD = {
   needsNv12: true,
 };
 
+/** buildComposePlan 在字幕滤镜之后追加的偶数宽高裁剪（libx264 拒绝奇数宽/高）。 */
+const EVEN = 'crop=trunc(iw/2)*2:trunc(ih/2)*2:0:0';
+
 const DUCK_FILTERS = [
   '[1:a]asplit=2[sc][dub]',
   '[0:a][sc]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=300[bg]',
@@ -121,7 +124,11 @@ for (const subtitle of [
     audio: { mode: 'keep' },
   });
   assertDeepEqual(plan.inputs, [VIDEO], 'hard+keep: 单视频输入');
-  assertEqual(plan.videoFilter, "ass='/tmp/burn.ass'", 'hard+keep: 字幕滤镜');
+  assertEqual(
+    plan.videoFilter,
+    `ass='/tmp/burn.ass',${EVEN}`,
+    'hard+keep: 字幕滤镜 + 偶数宽高裁剪',
+  );
   assertDeepEqual(
     plan.outputOptions,
     [
@@ -183,8 +190,8 @@ for (const subtitle of [
   });
   assertEqual(
     plan.videoFilter,
-    "ass='/tmp/burn.ass',format=nv12",
-    'hard(硬件)+keep: 滤镜链追加 format=nv12',
+    `ass='/tmp/burn.ass',${EVEN},format=nv12`,
+    'hard(硬件)+keep: 偶数裁剪之后追加 format=nv12',
   );
 }
 
@@ -331,7 +338,7 @@ for (const subtitle of [
   assertDeepEqual(plan.inputs, [VIDEO, TRACK], 'hard+replace: 两输入');
   assertEqual(
     plan.videoFilter,
-    "ass='/tmp/burn.ass'",
+    `ass='/tmp/burn.ass',${EVEN}`,
     'hard+replace: -vf 滤镜',
   );
   assertDeepEqual(
@@ -370,7 +377,7 @@ for (const subtitle of [
   assertDeepEqual(
     plan.complexFilter,
     [
-      "[0:v]ass='/tmp/burn.ass',format=nv12[vout]",
+      `[0:v]ass='/tmp/burn.ass',${EVEN},format=nv12[vout]`,
       '[1:a]asplit=2[sc][dub]',
       '[0:a][sc]sidechaincompress=threshold=0.03:ratio=12:attack=20:release=300[bg]',
       '[bg][dub]amix=inputs=2:duration=first:normalize=0[mix]',
@@ -789,6 +796,68 @@ for (const [label, audio] of [
     false,
     `hard+${label}: 不映射 0:v（会把 attached pic 一并重编码）`,
   );
+}
+
+// ── 硬烧输出宽高必须是偶数 ──────────────────────────────────────────────────
+
+// libx264 在 yuv420p 下拒绝奇数宽/高：`[libx264] width not divisible by 2 (853x480)`。
+// VP9/AV1/MPEG-4 等源可以是奇数分辨率，旧版界面只剩 "Conversion failed!"。
+// 字幕滤镜之后接 crop 把宽高向下取偶（丢掉右/下多出的 1 像素，不缩放、不加黑边；
+// 本来就是偶数时是空操作）；字幕仍按原始画面渲染，位置不变。
+// 硬件编码器的 format=nv12 仍在链末，所以它们同样拿到偶数宽高。
+// 软封装/无字幕是 -c copy，没有滤镜链。
+
+/** 取出 plan 里作用于视频的滤镜链（-vf，或 hard+mix 并入 complex 图的第一行）。 */
+function videoChain(plan: ReturnType<typeof buildComposePlan>): string {
+  if (plan.videoFilter !== undefined) return plan.videoFilter;
+  const line = plan.complexFilter?.[0] ?? '';
+  return line.replace(/^\[0:v\]/, '').replace(/\[vout\]$/, '');
+}
+
+for (const [encoder, subtitle] of [
+  ['cpu', HARD],
+  ['hw', HW_HARD],
+] as const) {
+  for (const audio of [
+    { mode: 'keep' },
+    { mode: 'replace', trackPath: TRACK },
+    { mode: 'addTrack', trackPath: TRACK },
+    { mode: 'mix', trackPath: TRACK },
+  ] as const) {
+    const plan = buildComposePlan(
+      { videoPath: VIDEO, outputPath: '/media/out.mp4', subtitle, audio },
+      { tempTag: 'T' },
+    );
+    assertEqual(
+      videoChain(plan),
+      `ass='/tmp/burn.ass',${EVEN}${subtitle.needsNv12 ? ',format=nv12' : ''}`,
+      `hard(${encoder})+${audio.mode}: 字幕滤镜 → 偶数宽高裁剪${subtitle.needsNv12 ? ' → format=nv12' : ''}`,
+    );
+  }
+}
+
+for (const subtitle of [
+  { mode: 'none' },
+  { mode: 'soft', subtitlePath: SUB },
+] as const) {
+  for (const audio of [
+    { mode: 'keep' },
+    { mode: 'replace', trackPath: TRACK },
+    { mode: 'addTrack', trackPath: TRACK },
+    { mode: 'mix', trackPath: TRACK },
+  ] as const) {
+    // none+keep 无事可做，构建器直接拒绝（见上方用例）。
+    if (subtitle.mode === 'none' && audio.mode === 'keep') continue;
+    const plan = buildComposePlan(
+      { videoPath: VIDEO, outputPath: '/media/out.mkv', subtitle, audio },
+      { tempTag: 'T' },
+    );
+    assertEqual(
+      /crop=/.test(JSON.stringify(plan)),
+      false,
+      `${subtitle.mode}+${audio.mode}: 流拷贝路径不插入偶数裁剪（不重编码视频）`,
+    );
+  }
 }
 
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项断言失败 ❌`);
