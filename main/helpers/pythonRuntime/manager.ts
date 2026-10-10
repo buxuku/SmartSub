@@ -175,6 +175,16 @@ export class PythonRuntimeManager {
       });
       this.proc = proc;
 
+      // 写 stdin 失败（引擎已退出时的 EPIPE）是异步的 'error' 事件，write() 外面的 try/catch
+      // 接不住；没有监听器它就是主进程里的未捕获异常（弹 “write EPIPE” 对话框）。
+      // 这里只记日志：引擎真的没了，'exit' 会负责拒绝在途请求并清理状态。
+      proc.stdin.on('error', (error) => {
+        if (this.proc !== proc) return;
+        this.logger(
+          `Python engine stdin error: ${error.message}`,
+          this.stopping ? 'info' : 'warning',
+        );
+      });
       proc.on('error', (error) => {
         this.handleExit(`spawn error: ${error.message}`);
       });
