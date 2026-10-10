@@ -93,20 +93,30 @@ async function main() {
   const dubbedStreams = probe(dubbed);
   assert.match(dubbedStreams, /Video: vp9/, 'the dubbing export copies the VP9 video');
   assert.match(dubbedStreams, /Audio: aac/, 'the dubbing export writes AAC');
-  // #521: an odd-width yuv420p source fails libx264 with the very same "Conversion failed!"; the real reason must reach the UI and the log
-  const odd = path.join(root, 'odd-width.mkv');
-  run(['-f', 'lavfi', '-i', 'color=black:s=640x360:r=25:d=3', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3', '-vf', 'scale=853:480,format=yuv420p', '-c:v', 'ffv1', '-c:a', 'aac', '-shortest', odd]);
-  assert.match(probe(odd), /Video: ffv1.*yuv420p.*853x480/, 'the fixture really is an odd-width yuv420p stream');
+  // #521: a muxer that cannot hold the re-encoded H.264 (GIF here; WebM is refused up front now) fails with the very same bare "Conversion failed!"; the real reason must reach the UI and the log
   progress = [];
   logs.length = 0;
-  await assert.rejects(runComposeJob({ videoPath: odd, outputPath: path.join(root, 'odd_subtitled.mp4'), subtitle: burn, audio: { mode: 'keep' } }, context()), error => {
+  await assert.rejects(runComposeJob({ videoPath: video, outputPath: path.join(root, 'gif_subtitled.gif'), subtitle: burn, audio: { mode: 'keep' } }, context()), error => {
     assert.match(error.message, /^ffmpeg exited with code 1: /);
-    assert.match(error.message, /width not divisible by 2 \(853x480\)/, 'the thrown error names the real reason');
+    assert.match(error.message, /Could not write header \(incorrect codec parameters \?\)/, 'the thrown error names the real reason');
     return true;
   });
-  assert.match(progress.at(-1).errorMessage, /width not divisible by 2 \(853x480\)/, 'the UI error event carries the real reason');
+  assert.match(progress.at(-1).errorMessage, /Could not write header \(incorrect codec parameters \?\)/, 'the UI error event carries the real reason');
   const stderrTail = logs.find(entry => entry.level === 'error' && entry.message.includes('Stream mapping:'));
-  assert.ok(stderrTail && /width not divisible by 2/.test(stderrTail.message), 'the tail of ffmpeg stderr is logged at error level');
+  assert.ok(stderrTail && /GIF muxer supports only a single video GIF stream/.test(stderrTail.message), 'the tail of ffmpeg stderr, with the muxer\'s own explanation, is logged at error level');
+  // An odd width/height (VP9/AV1/MPEG-4 sources can have them) used to fail libx264 with "width not divisible by 2 (853x480)" and the same bare message.
+  // Burning crops the 1 extra pixel row/column after the subtitle filter instead, so the job succeeds with even dimensions.
+  for (const [width, height, expected] of [[853, 480, '852x480'], [640, 361, '640x360'], [853, 481, '852x480']]) {
+    const odd = path.join(root, `odd-${width}x${height}.mkv`);
+    run(['-f', 'lavfi', '-i', 'color=black:s=640x360:r=25:d=3', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3', '-vf', `scale=${width}:${height},format=yuv420p`, '-c:v', 'ffv1', '-c:a', 'aac', '-shortest', odd]);
+    assert.match(probe(odd), new RegExp(`Video: ffv1.*yuv420p.*${width}x${height}`), `the fixture really is a ${width}x${height} yuv420p stream`);
+    const evened = await runComposeJob({ videoPath: odd, outputPath: path.join(root, `odd-${width}x${height}_subtitled.mp4`), subtitle: burn, audio: { mode: 'keep' } }, context());
+    const evenedStreams = probe(evened);
+    assert.match(evenedStreams, new RegExp(`Video: h264.*${expected}`), `${width}x${height} is burned to H.264 at ${expected}`);
+    assert.match(evenedStreams, /Audio: aac/, `${width}x${height}: the audio track is kept`);
+  }
+  const untouched = await runComposeJob({ videoPath: video, outputPath: path.join(root, 'even_subtitled.mp4'), subtitle: burn, audio: { mode: 'keep' } }, context());
+  assert.match(probe(untouched), /Video: h264.*640x360/, 'an even-sized source keeps its dimensions');
   // An MP4 with an embedded cover picture (YoutubeDownloader, yt-dlp --embed-thumbnail) carries a second `Video: mjpeg (attached pic)` stream.
   // Burning re-encodes every mapped video stream, so mapping the cover too made the MP4 muxer reject its h264 re-encode with a bare "Conversion failed!".
   const cover = path.join(root, 'cover.jpg');
@@ -131,6 +141,6 @@ async function main() {
   assert.equal(fs.readFileSync(existing, 'utf8'), 'existing result');
   assert.equal(hash(video), before);
   assert.equal(fs.readdirSync(root).some(name => name.startsWith('.smartsub-compose-')), false);
-  console.log(JSON.stringify({ root, checks: 'real FFmpeg source rejection, invalid style/subtitle failure, silent-source mix with hard/soft/none and CPU fallback, injected hardware failure + CPU/addTrack retry, VP9+Opus WebM source burned to H.264+AAC MP4 and WebM/Ogg output rejected before ffmpeg or staging, dubbing-shape WebM copy to MP4, real ffmpeg failure reason (odd-width libx264) in the thrown error, UI event and error log, MP4 with an embedded cover picture burned to a single video stream (keep/replace/addTrack), hardware-fallback warning naming the unknown encoder, mid-encode cancellation, original hashes and private-directory cleanup' }));
+  console.log(JSON.stringify({ root, checks: 'real FFmpeg source rejection, invalid style/subtitle failure, silent-source mix with hard/soft/none and CPU fallback, injected hardware failure + CPU/addTrack retry, VP9+Opus WebM source burned to H.264+AAC MP4 and WebM/Ogg output rejected before ffmpeg or staging, dubbing-shape WebM copy to MP4, real ffmpeg failure reason (GIF muxer rejecting H.264) in the thrown error, UI event and error log, odd-width/odd-height sources burned to even dimensions while even sources keep theirs, MP4 with an embedded cover picture burned to a single video stream (keep/replace/addTrack), hardware-fallback warning naming the unknown encoder, mid-encode cancellation, original hashes and private-directory cleanup' }));
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => { Module._load = originalLoad; require.extensions['.ts'] = originalTs; });

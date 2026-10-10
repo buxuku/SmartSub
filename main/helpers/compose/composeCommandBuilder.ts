@@ -21,7 +21,10 @@ import type { EmbeddedSubtitleStream } from '../embeddedSubtitleParser';
 /** 硬烧字幕的解析后输入：滤镜与编码参数由调用方（runner）解析完成后传入。 */
 export interface ComposeHardSubtitle {
   mode: 'hard';
-  /** 完整字幕滤镜（`ass='…'` 或 `subtitles='…':force_style='…'`），不含 format=nv12 */
+  /**
+   * 完整字幕滤镜（`ass='…'` 或 `subtitles='…':force_style='…'`），
+   * 不含偶数宽高裁剪与 format=nv12（由 buildComposePlan 依次追加）
+   */
   filter: string;
   /** 从 -c:v 起的完整视频编码参数（libx264 或硬件编码器 + 画质参数） */
   encoderArgs: string[];
@@ -89,6 +92,17 @@ const AAC_ARGS = ['-c:a', 'aac', '-b:a', '192k'];
  * hard+mix 走 filter_complex 的 `[0:v]` 标签，只取第一路视频流，不会带上其后的封面。
  */
 const REENCODED_VIDEO_MAP = '0:V';
+
+/**
+ * 硬烧重编码前把宽高向下取偶。libx264（yuv420p）拒绝奇数宽/高：
+ * `[libx264] width not divisible by 2 (853x480)`，旧版界面只剩 "Conversion failed!"；
+ * VP9/AV1/MPEG-4 等源可以是奇数分辨率。`crop` 丢掉右/下多出的 1 像素，不缩放、不加黑边，
+ * 宽高本来就是偶数时是空操作（x/y 显式写 0，不依赖默认的居中取整）。
+ *
+ * 放在字幕滤镜之后：字幕仍按原始画面渲染，位置不变；放在 `format=nv12` 之前：
+ * 硬件编码器同样拿到偶数宽高。软封装/无字幕是 -c copy，没有滤镜链，不受影响。
+ */
+const EVEN_DIMENSIONS_FILTER = 'crop=trunc(iw/2)*2:trunc(ih/2)*2:0:0';
 
 const DEFAULT_DUCK_RATIO = 8;
 
@@ -188,9 +202,11 @@ export function buildComposePlan(
   const opt: string[] = [];
 
   if (subtitle.mode === 'hard') {
-    const chain = subtitle.needsNv12
-      ? `${subtitle.filter},format=nv12`
-      : subtitle.filter;
+    const chain = [
+      subtitle.filter,
+      EVEN_DIMENSIONS_FILTER,
+      ...(subtitle.needsNv12 ? ['format=nv12'] : []),
+    ].join(',');
     if (audio.mode === 'mix') {
       // -vf 与 -filter_complex 不能并用：视频滤镜并入 complex 图
       complexFilter = [
