@@ -6,6 +6,9 @@
  * 下次启动读到仍在的标记，就知道上次崩在什么上面（见 breaker.ts 的判定）。
  *
  * 回退开关：SMARTSUB_DISABLE_CRASH_BREAKER=true 关闭熔断（不写标记、不抑制、不对账）。
+ * 它同时也是 addonLoader 里“按显卡算力提前剔除 CUDA 包”（partitionByCudaCompat）的回退开关：
+ * 两项加载前的保护共用这一个总闸，设置后整体回到改动前的行为。
+ * 只想重试被抑制的后端时不要用它，用设置里 GPU 部分的手动重置（reset-suppressed-backends → resetSuppressions）。
  * 状态与对账都发生在 runLifecycle.beginRun 里，这里只持有绑定后的引用。
  */
 import {
@@ -34,6 +37,7 @@ interface Binding {
 let binding: Binding | null = null;
 let sequence = 0;
 
+/** 熔断的回退开关；addonLoader 也用它同时关闭 CUDA 算力的提前剔除（见文件头说明）。 */
 export function isBreakerDisabledByEnv(): boolean {
   return process.env[DISABLE_BREAKER_ENV] === 'true';
 }
