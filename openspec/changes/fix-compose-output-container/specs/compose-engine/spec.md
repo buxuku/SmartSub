@@ -55,10 +55,10 @@
 
 合成作业因 ffmpeg 非零退出而失败时，错误消息 SHALL 形如 `ffmpeg exited with code N: <原因>`，其中原因取自 ffmpeg 输出里真正的失败行（去掉对象地址 `@ 0x…`、版本横幅、进度与 `Conversion failed!` 等包装行，至多 8 行），MUST NOT 只剩 `Conversion failed!` 或空白。该消息 SHALL 同时作为作业事件的 `errorMessage`（合成页错误详情）、硬件回退日志与作业失败日志的内容。引擎还 SHALL 以 error 级别把 ffmpeg 输出的末尾约 40 行写入日志；合成页错误详情 SHALL 保留换行显示。取不到可用原因时 MUST 保持原错误不变；用户取消、被信号终止与启动失败 MUST NOT 受影响。
 
-#### Scenario: 奇数宽度源硬烧失败说明原因
+#### Scenario: 封装器拒绝编码结果时说明原因
 
-- **WHEN** 对 853x480 的 yuv420p 源用 libx264 硬烧而失败
-- **THEN** 错误消息包含 `width not divisible by 2 (853x480)`，合成页错误详情逐行显示，日志含 ffmpeg 输出的末尾
+- **WHEN** 硬烧成品的容器写不下 H.264 而失败（例如输出扩展名为 `.gif`）
+- **THEN** 错误消息包含 `Could not write header (incorrect codec parameters ?)` 等真实原因，合成页错误详情逐行显示，日志含 ffmpeg 输出的末尾（含封装器自己的说明 `GIF muxer supports only a single video GIF stream`）
 
 #### Scenario: 硬件回退日志说明真实原因
 
