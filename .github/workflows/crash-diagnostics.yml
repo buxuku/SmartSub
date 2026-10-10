@@ -1,0 +1,99 @@
+name: Crash diagnostics
+
+# 崩溃诊断的真机验证：真实的 Electron、真实的原生崩溃（scripts/crash/boom 里的样本库）、真实的 CPU 探测。
+# 单测（ci.yml 里的 yarn test:crash）只能验证逻辑；崩溃后各平台上的退出码、转储落点、
+# Crashpad 是否真的启动，只有在真机上跑一遍才知道。
+# 与 release.yml 完全分开：不使用任何 secrets，不发布任何产物。
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'main/helpers/crash/**'
+      - 'main/helpers/addonLoader.ts'
+      - 'main/helpers/cudaUtils.ts'
+      - 'scripts/crash/**'
+      - 'package.json'
+      - '.github/workflows/crash-diagnostics.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crash-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    env:
+      # CI 里编不出 boom 样本就是失败，不是跳过
+      SMOKE_REQUIRE_NATIVE: '1'
+      # 失败时要上传现场；通过时目录不大，也一并保留，便于对照数据
+      SMOKE_KEEP: '1'
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: yarn
+
+      # 不跑 postinstall（electron-builder install-app-deps、下载原生依赖都与本验证无关），
+      # 只单独取 Electron 二进制
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-scripts
+
+      - name: Download the Electron binary
+        run: node node_modules/electron/install.js
+
+      # job 级 env 里不能用 runner 上下文，只能在运行时从环境变量取
+      - name: Smoke working directory
+        run: echo "SMOKE_WORK_DIR=$RUNNER_TEMP/crash-smoke" >> "$GITHUB_ENV"
+
+      - name: Machine info
+        run: |
+          node -e "const os=require('os');const c=os.cpus();console.log(process.platform,process.arch,os.release(),'| CPU:',c[0].model,'x'+c.length,'| memory GB:',(os.totalmem()/2**30).toFixed(1))"
+          node -p "'electron ' + require('electron/package.json').version"
+
+      # Linux：Electron 需要显示（Xvfb）；runner 上不能用 chrome-sandbox（SMOKE_NO_SANDBOX 加 --no-sandbox）
+      - name: Linux display and core dump setup
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb
+          Xvfb :99 -screen 0 1280x720x24 >/dev/null 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          echo "SMOKE_NO_SANDBOX=1" >> "$GITHUB_ENV"
+          echo "core_pattern: $(cat /proc/sys/kernel/core_pattern)"
+          echo "ulimit -c: $(ulimit -c)"
+          command -v prlimit || echo "(没有 prlimit：宿主只剩 coredump_filter 一层加固)"
+
+      # 三个平台各跑一遍：Windows 与 macOS 上的路径、换行、文件锁和 Linux 不同
+      - name: Unit tests (crash diagnostics)
+        run: yarn test:crash
+
+      - name: CPU feature probe on the real machine
+        run: yarn test:crash:probe-cpu
+
+      - name: Smoke (real Electron, real native crashes)
+        run: yarn test:crash:smoke
+
+      - name: Upload the smoke working directory
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-smoke-${{ matrix.os }}
+          path: ${{ runner.temp }}/crash-smoke
+          retention-days: 7
+          if-no-files-found: warn

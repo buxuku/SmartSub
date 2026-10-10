@@ -30,7 +30,13 @@ import {
 import { setupWorkItemHandlers } from './helpers/workItemHandlers';
 import { setupRecipeHandlers } from './helpers/ipcRecipeHandlers';
 import { setupGlossaryHandlers } from './helpers/ipcGlossaryHandlers';
+import { setupDiagnosticsHandlers } from './helpers/ipcDiagnosticsHandlers';
 import { setupAutoUpdater } from './helpers/updater';
+import {
+  initCrashDiagnostics,
+  markCrashMonitorShuttingDown,
+} from './helpers/crash/crashReporting';
+import { markCleanExit } from './helpers/crash/runLifecycle';
 import { setupAppMenu } from './helpers/menu';
 import {
   setupWindowCloseBehavior,
@@ -141,6 +147,8 @@ app.on('before-quit', (event) => {
   }
   // 真退出标记集中在 windowClose 模块，close 监听据此放行
   markQuitting();
+  // 退出过程中子进程被终止属于正常现象，崩溃监视器此后只记真正的崩溃
+  markCrashMonitorShuttingDown();
   if (!runtimeShutdownDone) {
     event.preventDefault();
     runtimeShutdownDone = true;
@@ -149,8 +157,12 @@ app.on('before-quit', (event) => {
     shutdownToolboxProcesses();
     cancelProofreadWaveforms();
     void shutdownPythonRuntime().finally(() => {
+      // 走到这里才算“正常退出”：之后进程被收尾崩溃的话，下次启动仍能看到证据
+      markCleanExit();
       app.exit(0);
     });
+  } else {
+    markCleanExit();
   }
 });
 
@@ -213,6 +225,8 @@ app.on('before-quit', (event) => {
   });
 
   setupStoreHandlers();
+  // 崩溃事件接入应用日志，并清理过期的崩溃事件与转储（crashReporter 已在 bootstrap 中启动）
+  initCrashDiagnostics(logMessage);
   // 日志已迁移到按日 JSONL 文件：清理过期文件，并移除旧版本遗留在 config.json 中的 logs 键
   void cleanupOldLogs();
   const legacyStore = store as unknown as {
@@ -291,6 +305,7 @@ app.on('before-quit', (event) => {
   setupWorkItemHandlers();
   setupRecipeHandlers();
   setupGlossaryHandlers(mainWindow);
+  setupDiagnosticsHandlers(mainWindow);
   setupTaskManager();
   setupSubtitleMergeHandlers(mainWindow, rendererUrl);
   setupDubbingHandlers(mainWindow);

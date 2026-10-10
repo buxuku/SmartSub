@@ -101,6 +101,10 @@ jobs:
       - name: Unit tests (voice clone and number normalization)
         run: yarn test:voice-clone
 
+      # 崩溃诊断的纯逻辑单测；真机上的原生崩溃验证见 crash-diagnostics.yml
+      - name: Unit tests (crash diagnostics)
+        run: yarn test:crash
+
       - name: Compile application (renderer + main)
         run: yarn build
 

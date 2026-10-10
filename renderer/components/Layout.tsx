@@ -67,6 +67,8 @@ import { useTranslation } from 'next-i18next';
 import { useTheme } from 'next-themes';
 import { UpdateDialog } from './UpdateDialog';
 import { LogDialog } from './LogDialog';
+import { DiagnosticsDialog } from './diagnostics/DiagnosticsDialog';
+import { PreviousRunNoticeToast } from './diagnostics/PreviousRunNoticeToast';
 import OnboardingDialog from './onboarding/OnboardingDialog';
 import ShortcutsHelpDialog from './ShortcutsHelpDialog';
 import FaqDialog from './FaqDialog';
@@ -283,6 +285,7 @@ const Layout = ({ children }) => {
     gpuMode: GpuMode;
   } | null>(null);
   const [showLogs, setShowLogs] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showFaq, setShowFaq] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -459,6 +462,9 @@ const Layout = ({ children }) => {
     // 设置页「关于」卡触发的查看日志
     const handleAppOpenLogs = () => setShowLogs(true);
     window.addEventListener('app-open-logs', handleAppOpenLogs);
+    // 设置页「关于」卡与异常退出提示触发的导出诊断包
+    const handleAppOpenDiagnostics = () => setShowDiagnostics(true);
+    window.addEventListener('app-open-diagnostics', handleAppOpenDiagnostics);
 
     const backendLabels: Record<string, string> = {
       cuda: 'CUDA',
@@ -600,6 +606,10 @@ const Layout = ({ children }) => {
       );
       window.removeEventListener('app-check-updates', handleAppCheckUpdates);
       window.removeEventListener('app-open-logs', handleAppOpenLogs);
+      window.removeEventListener(
+        'app-open-diagnostics',
+        handleAppOpenDiagnostics,
+      );
     };
   }, [t, checkUpdatesManually]);
 
@@ -1272,6 +1282,11 @@ const Layout = ({ children }) => {
         releaseNotes={releaseNotes}
       />
       <LogDialog open={showLogs} onOpenChange={setShowLogs} />
+      <DiagnosticsDialog
+        open={showDiagnostics}
+        onOpenChange={setShowDiagnostics}
+      />
+      <PreviousRunNoticeToast />
       <ShortcutsHelpDialog
         open={showShortcuts}
         onOpenChange={setShowShortcuts}

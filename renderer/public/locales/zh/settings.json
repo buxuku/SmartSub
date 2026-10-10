@@ -213,6 +213,18 @@
     "customAddonDllTip": "提示：如果加速包包含 DLL/SO 依赖库，请确保它们与 addon.node 在同一目录下",
     "downloadPackageUrl": "下载加速包",
     "crashTip": "如果启用加速后运行闪退，请尝试切换其他版本的加速包或关闭 GPU 加速",
+    "suppressed": {
+      "title": "已自动停用的加速后端",
+      "description": "这些后端在之前的运行中导致应用崩溃。为避免反复闪退，已暂时停用，转写会改用其他方式。更换硬件、升级应用或更新驱动后会自动重新尝试。",
+      "family": "内置语音识别加速包（Vulkan、CUDA、CPU）",
+      "reasonIsa": "这台电脑的 CPU 不支持它需要的指令集",
+      "reasonCrash": "运行时导致应用崩溃",
+      "reasonWeak": "应用连续 2 次异常退出时，都在使用它",
+      "detail": "崩溃类型：{{detail}}",
+      "retry": "重新尝试被停用的后端",
+      "retried": "已重置，下次转写会重新尝试这些后端",
+      "retryFailed": "重置失败：{{error}}"
+    },
     "liteEdition": "轻量版",
     "fullEdition": "完整版",
     "switchToFull": "切换为完整版",

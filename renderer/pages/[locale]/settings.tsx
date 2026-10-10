@@ -26,6 +26,7 @@ import {
   Globe,
   MessageSquareWarning,
   ScrollText,
+  FileArchive,
   FolderOpen,
   SlidersHorizontal,
   RotateCcw,
@@ -1720,6 +1721,17 @@ const Settings = () => {
               >
                 <ScrollText className="h-4 w-4" />
                 {t('common:viewLogs')}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-muted-foreground hover:text-foreground"
+                onClick={() =>
+                  window.dispatchEvent(new CustomEvent('app-open-diagnostics'))
+                }
+              >
+                <FileArchive className="h-4 w-4" />
+                {t('common:diagnostics.action')}
               </Button>
             </div>
           </CardContent>

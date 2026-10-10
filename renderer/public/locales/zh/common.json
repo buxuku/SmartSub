@@ -207,6 +207,43 @@
     "checkUpdates": "检查更新",
     "reportIssue": "反馈问题"
   },
+  "diagnostics": {
+    "action": "导出诊断包",
+    "title": "导出诊断包",
+    "description": "把最近的日志、崩溃记录和环境信息打包成一个 zip，方便排查闪退等问题。文件只保存在你选择的位置，不会自动上传。",
+    "loading": "正在读取…",
+    "contentsTitle": "包里会有什么",
+    "logs": "最近 {{count}} 天的应用日志（约 {{size}}）",
+    "logsNone": "暂无应用日志",
+    "events": "{{count}} 条崩溃记录",
+    "eventsNone": "暂无崩溃记录",
+    "dumpSummaries": "{{count}} 份崩溃转储的摘要（异常码、故障模块、CPU 型号）",
+    "dumpSummariesNone": "暂无崩溃转储",
+    "system": "系统、CPU 指令集、显卡与加速环境",
+    "settings": "部分设置（不含 API Key 与服务商配置，路径只说明是否自定义）",
+    "privacy": "日志中的用户目录已替换为 ~，API Key 已脱敏。日志里仍可能出现文件名等信息，发给他人前可以先解压检查。",
+    "rawDumps": "附带原始崩溃转储（{{count}} 个，共 {{size}}）",
+    "rawDumpsWarning": "原始转储可能包含崩溃时的内存片段，默认不包含。仅在开发者要求时勾选。",
+    "crashReporterOff": "崩溃转储记录已被环境变量关闭，不会产生新的转储。",
+    "export": "导出",
+    "exporting": "正在导出…",
+    "doneTitle": "诊断包已导出",
+    "doneDesc": "文件大小 {{size}}。请把 zip 发给开发者，或在 GitHub 反馈问题时拖进去上传。",
+    "warnings": "有 {{count}} 项信息没能收集到，其余内容已正常导出。",
+    "reveal": "在文件夹中显示",
+    "reportIssue": "在 GitHub 反馈问题",
+    "close": "关闭",
+    "failed": "导出失败：{{error}}",
+    "previousRun": {
+      "title": "上次运行似乎意外结束了",
+      "description": "找到了崩溃记录。导出诊断包发给开发者，能帮助定位原因；文件不会自动上传。",
+      "descriptionDetail": "找到了崩溃记录（{{detail}}）。导出诊断包发给开发者，能帮助定位原因；文件不会自动上传。",
+      "action": "导出诊断包",
+      "suppressedFamily": "内置语音识别加速包已被停用（这台电脑的 CPU 可能缺少所需的指令集）。请改用云端语音识别，或在“GPU 加速”设置中重新尝试。",
+      "suppressedBackends": "{{backends}} 加速后端已被自动停用，转写会改用其他方式。可在“GPU 加速”设置中重新尝试。",
+      "listSeparator": "、"
+    }
+  },
   "faq": {
     "title": "常见问题",
     "macDamagedQ": "macOS 提示「应用程序已损坏，无法打开」？",
@@ -485,6 +522,17 @@
       "ATTACHMENT_NOT_FILE": "请选择文件，暂不支持文件夹。",
       "unreadable": "无法访问文件，请确认文件仍在本地。",
       "ATTACHMENT_UNSUPPORTED": "不支持此格式。请添加音视频、字幕、TXT／MD 文稿、JSON 文件或图片。"
+    }
+  },
+  "cpuAdvisory": {
+    "missing": {
+      "title": "这台电脑的 CPU 可能不支持内置语音识别",
+      "description": "内置语音识别需要 CPU 支持 {{features}} 指令集，但没有在这台电脑上检测到。继续使用可能导致应用闪退。建议改用云端语音识别或其他引擎。"
+    },
+    "translated": {
+      "title": "当前通过转译方式运行",
+      "descriptionMac": "这是 Intel（x64）版本，正在 Apple 芯片上通过 Rosetta 转译运行：速度较慢，且转译环境不一定提供内置语音识别需要的全部指令集，可能导致闪退。建议改用 Apple 芯片（arm64）版本。",
+      "descriptionOther": "这是 x64 版本，正在 ARM 设备上通过转译运行：速度较慢，且转译环境不一定提供内置语音识别需要的全部指令集，可能导致闪退。建议改用云端语音识别或其他引擎。"
     }
   }
 }

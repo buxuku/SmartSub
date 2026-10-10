@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'next-i18next';
 import { GpuAccelerationCard } from '@/components/settings';
+import CpuAdvisoryNotice from '@/components/diagnostics/CpuAdvisoryNotice';
 
 /**
  * builtin（whisper.cpp）引擎面板。
@@ -16,6 +17,7 @@ const BuiltinPanel: React.FC = () => {
       <p className="text-sm text-muted-foreground">
         {t('engines.builtin.desc')}
       </p>
+      <CpuAdvisoryNotice />
       <div className="border-t pt-4">
         <GpuAccelerationCard variant="embedded" />
       </div>
