@@ -14,9 +14,6 @@ on:
       - 'scripts/crash/**'
       - 'package.json'
       - '.github/workflows/crash-diagnostics.yml'
-  push:
-    # 临时：验证期间让本分支的 push 触发 Actions；合并前删掉这三行
-    branches: [feat/crash-diagnostics]
 
 permissions:
   contents: read
