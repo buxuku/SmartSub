@@ -53,6 +53,7 @@ export const TRANSLATOR_MAP = {
   Gemini: openaiTranslator,
   qwen: openaiTranslator,
   siliconflow: openaiTranslator,
+  atlascloud: openaiTranslator,
   google: googleTranslator,
   bingFree: bingFreeTranslator,
   googleFree: googleFreeTranslator,
