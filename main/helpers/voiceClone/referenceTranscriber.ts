@@ -30,7 +30,10 @@ import {
 import { isRuntimeInstalled } from '../pythonRuntime/paths';
 import { getPythonRuntimeManager } from '../pythonRuntime';
 import { getModelsInstalled, getPath, loadWhisperAddon } from '../whisper';
-import { getWhisperLanguage } from '../engines/transcribeShared';
+import {
+  getWhisperLanguage,
+  shouldUseFlashAttn,
+} from '../engines/transcribeShared';
 import {
   isTaskCancelledError,
   isWhisperCancelledResult,
@@ -246,7 +249,7 @@ async function transcribeWithBuiltinWhisper(
   const modelPath = path.join(getPath('modelsPath'), `ggml-${model}.bin`);
   if (!fs.existsSync(modelPath)) return null;
 
-  const { whisperAsync } = await loadWhisperAddon(model);
+  const { whisperAsync, backend } = await loadWhisperAddon(model);
   throwIfSignalCancelled(signal);
 
   const settings = (store.get('settings') || {}) as Record<string, unknown>;
@@ -256,7 +259,7 @@ async function transcribeWithBuiltinWhisper(
     model: modelPath,
     fname_inp: wavPath,
     use_gpu: gpuMode !== 'cpu',
-    flash_attn: false,
+    flash_attn: shouldUseFlashAttn(backend),
     no_prints: true,
     comma_in_time: false,
     translate: false,

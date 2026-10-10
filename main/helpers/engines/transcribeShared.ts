@@ -1,7 +1,9 @@
 /**
- * 各引擎转写实现共用的纯工具：数值兜底、语言归一、SRT 时间格式化、VAD 设置归一。
+ * 各引擎转写实现共用的纯工具：数值兜底、语言归一、SRT 时间格式化、VAD 设置归一、
+ * whisper.cpp flash attention 的后端判定。
  * 不依赖任何引擎实现，供 builtin / faster-whisper / localCli 适配器复用。
  */
+import type { WhisperBackend } from '../../../types/addon';
 
 export function getNumericSetting(
   value: unknown,
@@ -24,6 +26,26 @@ export function getWhisperLanguage(language?: string): string {
   }
 
   return normalized;
+}
+
+/**
+ * 内置 whisper.cpp 是否开启 flash attention（上下文参数 `flash_attn`）。
+ *
+ * 上游自 v1.8.0 起默认开启。上游同机 A/B 基准里，Metal 与 CUDA 的编码器 / 解码器耗时
+ * 都明显下降（CUDA 的基准目前只有 Blackwell 显卡），所以对这两类后端开启。
+ * CoreML 的编码器跑在 ANE 上，FA 只作用于走 Metal 的解码器。
+ *
+ * 其余后端维持原行为（关闭）——没有收益数据，或存在已知风险：
+ * - cpu：没有基准数据；
+ * - vulkan：已发布 addon 的 ggml 早于 Vulkan FA 共享内存越界写的修复
+ *   （llama.cpp #29988，症状为 NVIDIA DeviceLost 崩溃，随 whisper.cpp v1.9.5 发布）；
+ * - custom：用户自备的 addon，构建版本未知。
+ * 放开其它后端前，应先用对应后端的 addon 做 A/B（耗时 + 转写文本）。
+ *
+ * 本应用只用普通 token_timestamps；FA 只与 DTW token 时间戳互斥，不受影响。
+ */
+export function shouldUseFlashAttn(backend: WhisperBackend): boolean {
+  return backend === 'metal' || backend === 'coreml' || backend === 'cuda';
 }
 
 export function secondsToSrtTime(seconds: number): string {
