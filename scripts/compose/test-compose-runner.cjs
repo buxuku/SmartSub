@@ -107,6 +107,20 @@ async function main() {
   assert.match(progress.at(-1).errorMessage, /width not divisible by 2 \(853x480\)/, 'the UI error event carries the real reason');
   const stderrTail = logs.find(entry => entry.level === 'error' && entry.message.includes('Stream mapping:'));
   assert.ok(stderrTail && /width not divisible by 2/.test(stderrTail.message), 'the tail of ffmpeg stderr is logged at error level');
+  // An MP4 with an embedded cover picture (YoutubeDownloader, yt-dlp --embed-thumbnail) carries a second `Video: mjpeg (attached pic)` stream.
+  // Burning re-encodes every mapped video stream, so mapping the cover too made the MP4 muxer reject its h264 re-encode with a bare "Conversion failed!".
+  const cover = path.join(root, 'cover.jpg');
+  const coverSource = path.join(root, 'with-cover.mp4');
+  run(['-f', 'lavfi', '-i', 'color=red:s=1280x720', '-frames:v', '1', '-pix_fmt', 'yuvj420p', cover]);
+  run(['-i', video, '-i', sub, '-i', cover, '-map', '0:v', '-map', '0:a', '-map', '1:s', '-map', '2:v', '-c', 'copy', '-c:s', 'mov_text', '-disposition:v:1', 'attached_pic', coverSource]);
+  assert.match(probe(coverSource), /Video: mjpeg.*\(attached pic\)/, 'the fixture really carries an attached cover picture');
+  for (const [name, audio, extension] of [['keep', { mode: 'keep' }, 'mp4'], ['replace', { mode: 'replace', trackPath: voice }, 'mp4'], ['addTrack', { mode: 'addTrack', trackPath: voice }, 'mkv']]) {
+    const covered = await runComposeJob({ videoPath: coverSource, outputPath: path.join(root, `with-cover_${name}.${extension}`), subtitle: burn, audio }, context());
+    const coveredStreams = probe(covered);
+    assert.equal((coveredStreams.match(/Video:/g) || []).length, 1, `${name}: only the real video stream is re-encoded`);
+    assert.match(coveredStreams, /Video: h264/, `${name}: the burned video is H.264`);
+    assert.doesNotMatch(coveredStreams, /attached pic/, `${name}: the cover picture is not carried into the burned output`);
+  }
   const long = path.join(root, 'long.mp4');
   run(['-stream_loop', '399', '-i', video, '-c', 'copy', long]);
   let cancelled = false;
@@ -117,6 +131,6 @@ async function main() {
   assert.equal(fs.readFileSync(existing, 'utf8'), 'existing result');
   assert.equal(hash(video), before);
   assert.equal(fs.readdirSync(root).some(name => name.startsWith('.smartsub-compose-')), false);
-  console.log(JSON.stringify({ root, checks: 'real FFmpeg source rejection, invalid style/subtitle failure, silent-source mix with hard/soft/none and CPU fallback, injected hardware failure + CPU/addTrack retry, VP9+Opus WebM source burned to H.264+AAC MP4 and WebM/Ogg output rejected before ffmpeg or staging, dubbing-shape WebM copy to MP4, real ffmpeg failure reason (odd-width libx264) in the thrown error, UI event and error log, hardware-fallback warning naming the unknown encoder, mid-encode cancellation, original hashes and private-directory cleanup' }));
+  console.log(JSON.stringify({ root, checks: 'real FFmpeg source rejection, invalid style/subtitle failure, silent-source mix with hard/soft/none and CPU fallback, injected hardware failure + CPU/addTrack retry, VP9+Opus WebM source burned to H.264+AAC MP4 and WebM/Ogg output rejected before ffmpeg or staging, dubbing-shape WebM copy to MP4, real ffmpeg failure reason (odd-width libx264) in the thrown error, UI event and error log, MP4 with an embedded cover picture burned to a single video stream (keep/replace/addTrack), hardware-fallback warning naming the unknown encoder, mid-encode cancellation, original hashes and private-directory cleanup' }));
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => { Module._load = originalLoad; require.extensions['.ts'] = originalTs; });
