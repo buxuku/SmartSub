@@ -19,11 +19,13 @@
  *      （CI 里机器被前面几个还在写 core 的崩溃进程拖慢时，出现过 60 秒不退出，当时限制要到
  *      worker 启动后约 150 ms 才取得到，推断是输给了崩溃），所以它只是第二层。
  *    两种办法都不影响 Crashpad 转储（它自己读进程内存）。两种都不可用时只记一次日志（该情形未验证）。
+ *    主进程启动时自己也缩小了 coredump_filter（见 coreDump.ts），子进程会继承；这里仍然独立做一遍，
+ *    主进程的加固被 SMARTSUB_KEEP_SYSTEM_CORE 关掉或写失败时，worker 照样能快速退出。
  */
-import fs from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import type { UtilityProcess } from 'electron';
+import { writeCoreDumpFilter } from './coreDump';
 import {
   classifyExit,
   describeExit,
@@ -94,20 +96,6 @@ export function buildSherpaWorkerEnv(
   };
 }
 
-/** 导出仅为单测：默认实现，写 /proc/<pid>/coredump_filter。 */
-export function shrinkCoreDumpViaProc(pid: number): string | null {
-  try {
-    fs.writeFileSync(`/proc/${pid}/coredump_filter`, '0');
-    return null;
-  } catch (error) {
-    return (
-      (error as NodeJS.ErrnoException).code ||
-      (error instanceof Error ? error.message.split('\n')[0] : '') ||
-      'write failed'
-    );
-  }
-}
-
 function limitCoreWithPrlimit(pid: number): Promise<string | null> {
   return new Promise((resolve) => {
     execFile(
@@ -135,7 +123,7 @@ function defaultDeps(): HostDeps {
         options,
       ),
     platform: process.platform,
-    shrinkCoreDump: shrinkCoreDumpViaProc,
+    shrinkCoreDump: (pid) => writeCoreDumpFilter(pid),
     limitCore: limitCoreWithPrlimit,
   };
 }

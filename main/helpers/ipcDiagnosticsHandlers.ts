@@ -11,6 +11,7 @@ import { getBuildInfo } from './buildInfo';
 import { getGpuEnvironment } from './cudaUtils';
 import { getActiveBackend } from './addonLoader';
 import {
+  getCoreDumpShrink,
   getCrashDumpsDir,
   getCrashEventsFile,
   isCrashReporterStarted,
@@ -101,6 +102,8 @@ function appInfo() {
     node: process.versions.node,
     v8: process.versions.v8,
     crashReporterStarted: isCrashReporterStarted(),
+    // Linux：主进程的系统 core 是否已缩小（applied / skipped / failed），排查“崩溃后卡住不退出”时用
+    coreDump: getCoreDumpShrink(),
     // 数据目录的路径本身不导出，只说明会不会因为非 ASCII / 空格出问题
     userDataPath: { nonAscii: userData.nonAscii, hasSpace: userData.hasSpace },
   };
