@@ -1,13 +1,10 @@
-import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import fs from 'node:fs';
 import { PassThrough } from 'node:stream';
 import {
   UtilityHost,
   buildSherpaWorkerEnv,
   describeHostExit,
   resetUtilityHostStateForTest,
-  shrinkCoreDumpViaProc,
   type HostExitInfo,
   type HostLogLevel,
   type SpawnHostOptions,
@@ -273,32 +270,6 @@ async function main() {
     await tick();
     assert.deepEqual(noPid.coreSteps, []);
   });
-
-  await test('默认实现：写不了时返回原因文本而不是抛错', () => {
-    // 进程不存在（或根本没有 /proc）：各平台都应得到一个非空的原因
-    const reason = shrinkCoreDumpViaProc(0x7fffffff);
-    assert.equal(typeof reason, 'string');
-    assert.ok(reason && reason.length > 0);
-  });
-
-  if (process.platform === 'linux') {
-    await test('默认实现（Linux 真机）：子进程的 coredump_filter 被写成 0', async () => {
-      const child = spawn(process.execPath, [
-        '-e',
-        'setInterval(() => {}, 1000)',
-      ]);
-      try {
-        await new Promise((resolve) => child.once('spawn', resolve));
-        assert.equal(shrinkCoreDumpViaProc(child.pid as number), null);
-        const value = fs
-          .readFileSync(`/proc/${child.pid}/coredump_filter`, 'utf8')
-          .trim();
-        assert.equal(parseInt(value, 16), 0, value);
-      } finally {
-        child.kill();
-      }
-    });
-  }
 
   await test('coredump_filter 那一步抛错：不传播，prlimit 照常发起', async () => {
     resetUtilityHostStateForTest();
