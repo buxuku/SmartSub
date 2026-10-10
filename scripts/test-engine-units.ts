@@ -3,7 +3,7 @@
  * 引擎纯逻辑单元测试（无 Electron / 无模型依赖）。
  *
  * 覆盖 Phase 4 重构中抽取/搬迁的共享逻辑（回归风险最高的部分）：
- *  - transcribeShared: 时间格式化 / 语言归一 / 数值兜底 / VAD 设置
+ *  - transcribeShared: 时间格式化 / 语言归一 / 数值兜底 / VAD 设置 / flash attention 后端判定
  *  - modelMap: ggml→CT2 显式映射（含 large-v3-turbo、量化后缀）
  *  - protocolSupport: 协议区间校验（安装/启动门禁）
  *
@@ -16,7 +16,9 @@ import {
   getWhisperLanguage,
   secondsToSrtTime,
   getVadSettings,
+  shouldUseFlashAttn,
 } from '../main/helpers/engines/transcribeShared';
+import type { WhisperBackend } from '../types/addon';
 import {
   buildFasterWhisperAdvancedParams,
   FASTER_WHISPER_ADVANCED_PARAM_SPECS,
@@ -521,6 +523,24 @@ eq(
   0.8,
   'vad: custom threshold passthrough',
 );
+
+// --- shouldUseFlashAttn ---
+// Record<WhisperBackend, boolean>：新增后端时这里会编译失败，逼着作者为它明确做出 FA 开/关的决定。
+const expectedFlashAttn: Record<WhisperBackend, boolean> = {
+  metal: true,
+  coreml: true,
+  cuda: true,
+  cpu: false,
+  vulkan: false,
+  custom: false,
+};
+for (const [backend, expected] of Object.entries(expectedFlashAttn)) {
+  eq(
+    shouldUseFlashAttn(backend as WhisperBackend),
+    expected,
+    `flash attn: ${backend} -> ${expected}`,
+  );
+}
 
 // --- faster-whisper advanced transcription params ---
 eq(

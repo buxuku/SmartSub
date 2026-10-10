@@ -35,6 +35,7 @@ import {
   getVadSettings,
   isReduceRepetitionEnabled,
   getNumericSetting,
+  shouldUseFlashAttn,
 } from './transcribeShared';
 import { resolveEffectiveSettings } from './outcomePresets';
 import {
@@ -153,7 +154,7 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
       model: modelPath,
       fname_inp: tempAudioFile,
       use_gpu: backend !== 'cpu',
-      flash_attn: false,
+      flash_attn: shouldUseFlashAttn(backend),
       no_prints: false,
       comma_in_time: false,
       translate: false,
