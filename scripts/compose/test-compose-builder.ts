@@ -126,7 +126,7 @@ for (const subtitle of [
     plan.outputOptions,
     [
       '-map',
-      '0:v',
+      '0:V',
       '-map',
       '0:a?',
       '-c:v',
@@ -157,7 +157,7 @@ for (const subtitle of [
     plan.outputOptions,
     [
       '-map',
-      '0:v',
+      '0:V',
       '-map',
       '0:a?',
       '-c:v',
@@ -338,7 +338,7 @@ for (const subtitle of [
     plan.outputOptions,
     [
       '-map',
-      '0:v',
+      '0:V',
       '-map',
       '1:a',
       '-c:v',
@@ -418,7 +418,7 @@ for (const subtitle of [
     plan.outputOptions,
     [
       '-map',
-      '0:v',
+      '0:V',
       '-map',
       '0:a?',
       '-map',
@@ -726,7 +726,7 @@ assertDeepEqual(
   }).outputOptions,
   [
     '-map',
-    '0:v',
+    '0:V',
     '-map',
     '0:a?',
     '-c:v',
@@ -755,6 +755,41 @@ assertEqual(
   false,
   'hard+keep webm→mkv: 非 MP4 系无 faststart',
 );
+
+// ── 带封面图的 MP4（attached pic）：硬烧只重编码真正的视频流 ────────────────
+
+/** 取出所有 `-map` 的目标，如 ['0:V', '0:a?', '1:a']。 */
+function mapTargets(outputOptions: string[]): string[] {
+  return outputOptions.flatMap((option, index) =>
+    option === '-map' ? [outputOptions[index + 1]] : [],
+  );
+}
+
+// yt-dlp --embed-thumbnail、YoutubeDownloader 等会给 MP4 嵌一路 `Video: mjpeg … (attached pic)` 封面。
+// 硬烧要把被映射的每一路视频都过字幕滤镜并交给 libx264：`-map 0:v` 会连封面一起映射，
+// MP4 写头失败（`Could not find tag for codec h264 in stream #1`），旧版界面只剩 "Conversion failed!"。
+// `0:V`（大写）只匹配真正的视频流。软封装/无字幕是 -c copy，封面原样保留，仍用 0:v（见上方各用例）。
+for (const [label, audio] of [
+  ['keep', { mode: 'keep' }],
+  ['replace', { mode: 'replace', trackPath: TRACK }],
+  ['addTrack', { mode: 'addTrack', trackPath: TRACK }],
+] as const) {
+  const { outputOptions } = buildComposePlan(
+    { videoPath: VIDEO, outputPath: '/media/out.mp4', subtitle: HARD, audio },
+    { tempTag: 'T' },
+  );
+  const targets = mapTargets(outputOptions);
+  assertEqual(
+    targets.includes('0:V'),
+    true,
+    `hard+${label}: 只映射真正的视频流（-map 0:V），封面图不进 libx264`,
+  );
+  assertEqual(
+    targets.includes('0:v'),
+    false,
+    `hard+${label}: 不映射 0:v（会把 attached pic 一并重编码）`,
+  );
+}
 
 console.log(failed === 0 ? '\n全部通过 ✅' : `\n${failed} 项断言失败 ❌`);
 process.exit(failed === 0 ? 0 : 1);
