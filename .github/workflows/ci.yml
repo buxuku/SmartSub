@@ -51,6 +51,10 @@ jobs:
       - name: Unit tests (engines)
         run: yarn test:engines
 
+      # 显卡枚举与 stdin 管道的 EPIPE 防护；Windows 真机验证见 windows-gpu.yml
+      - name: Unit tests (GPU enumeration and stdin EPIPE hardening)
+        run: yarn test:gpu-enumeration
+
       - name: Tests (local speech review and warning persistence)
         run: |
           yarn test:speech-review
