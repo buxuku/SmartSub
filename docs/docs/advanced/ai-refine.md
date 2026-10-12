@@ -54,5 +54,5 @@ keywords: [AI 断句, 语义断句, 字幕校正, LLM 字幕, 词级时间戳, �
 - 简繁转换与「中文去标点」在精修之后执行，你的字形与标点选项始终最终生效
 - 服务不可达、密钥无效、校验重试耗尽：自动降级为规则断句并记录日志，任务不失败
 - 每次请求最多等待 5 分钟；某个窗口已经有可用答案后，后续重试限时更短，重试失败也不会丢掉已有答案
-- 想确认断句有没有生效：在任务日志里搜索 `AI segmentation`。结尾的 `degradedWindows=N` 是回退规则断句的窗口数，每个降级窗口前都有一行原因（`content differs` 模型改写过多、`request failed` 请求失败或超时、`could not be aligned` 无法对齐）；`copy drifted ... re-anchored` 表示模型有细小出入、已按转写原文校正后采用
+- 想确认断句有没有生效：在任务日志里搜索 `AI segmentation`。结尾的 `degradedWindows=N` 是回退规则断句的窗口数，每个降级窗口前都有一行原因（`content differs` 模型改写过多、`request failed` 请求失败或超时、`could not be aligned` 无法对齐）；`copy drifted ... re-anchored` 表示模型有细小出入、已按转写原文校正后采用。`validation failed` 里的 `similarity` 是原文与模型副本的字母数字相似度，`<75%` 表示整段被改写、不再逐词比对；`content differs` 之后会带上第一处具体差异，例如 `"…want to [talk] about…" was changed to "[speak]"`，方括号里是原文被改动的词和模型写的词
 - 任务配置快照与配方（Recipe）会记录精修设置；「跟随翻译服务」保存的是跟随语义本身，换任务时随新的翻译服务商重新解析

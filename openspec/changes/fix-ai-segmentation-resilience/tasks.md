@@ -30,3 +30,14 @@
 - [x] 4.4 相关测试通过：`test:refine`（108 + 30 + 25）、`test:translation-cancel`、`test:provider-fallback`、`test:translation-proxy`、`test:custom-parameters`
 - [x] 4.5 `npm run test:pro-baseline` 通过（41 条测试命令，含新增的运行器测试）
 - [ ] 4.6 真实服务商冒烟：用 #507 的素材（faster-whisper + SiliconFlow、12 个窗口）跑一次，对比 `degradedWindows`。**尚未执行**：以上全部验证基于脚本化的假模型与随机性质测试，没有请求过真实模型
+
+## 5. 失败诊断（P5，PR 合入后追加，见 design D7）
+
+- [x] 5.1 `anchoring.ts`：抽出放行与诊断共用的骨架比对（`diffSkeletons`）；新增 `describeDifferences` 与 `REPORT_MIN_SIMILARITY`（0.75）：预算内给精确相似度与逐处差异（扩成整词、合并碎片、重复字母夹在词界时向外取邻词）；超出预算给整块区域与相似度下界（`exact = false`）
+- [x] 5.2 `validator.ts`：被拒绝的反馈首行带真实相似度、放行阈值、差异处数与第一处差异，其余最多 4 处在下一行，超出写 `and N more`；`SegmentationValidation` 新增 `similarityExact`，`formatSimilarity` 负责日志展示（整段被改写写 `<75%`）；删除按前后缀估算的 `locateDifference`；`clip` 不再劈开代理对
+- [x] 5.3 `segmentationRunner.ts`：校验失败日志改用 `formatSimilarity`
+- [x] 5.4 先写失败测试再实现（改动前：三处改词、真实相似度 88.5% 的复制被记成 15.7%，整段无关回复记成 0.0%，降级原因是一整串去掉空白的字母）。`scripts/test-refine-units.ts`：200 词窗口十处同义词替换（94.5% 记成 94.5%、十处逐一列出、排在整段重写的答案之前）、`describeDifferences` 手写用例（换词 / 词间插入 / 删词 / CJK / 多处 / 超出预算 / 空输入 / 大窗口耗时上限）、随机性质测试扩展（新增整段倒序改写模式；逐例核对不抛异常、相似度与独立的完整 diff 一致且超出预算时是下界、逐处差异里没有被劈开的代理对、没有空差异、没有两侧一样的差异）
+- [x] 5.5 `scripts/test-ai-segmentation-runner.cjs`：近似复制按真实相似度记日志且三处差异都回喂模型；整段无关回复的日志写 `<75%`；降级原因带第一处具体差异
+- [x] 5.6 变异检验：把诊断预算调到 0.97、关掉重复字母的扩词，测试均能抓到
+- [x] 5.7 `docs/docs/advanced/ai-refine.md` 补充 `similarity` 与降级原因里差异的读法；proposal 与 design 更正「窗口 2、8 是模型在大幅改写」这一未经证实的推断
+- [x] 5.8 验证：`test:refine`（170 + 30 + 28）、`test:pro-baseline`（42 条命令全部通过）、`npm run typecheck`、`openspec validate fix-ai-segmentation-resilience --strict`；诊断耗时抽样：500 词的窗口一次失败校验中位数 ≤ 55 ms
