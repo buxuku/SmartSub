@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, FileText, Plus, Slash, Undo2, X } from 'lucide-react';
+import { Check, FileText, Slash, Undo2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'next-i18next';
 import {
@@ -25,6 +25,23 @@ interface ManuscriptRowBadgeProps {
     manuscriptName?: string,
   ) => void;
 }
+
+/** Pills of a compact (grid) badge give way to the meta text beside them. */
+const pillSize = (compact: boolean) =>
+  compact ? 'min-w-0 max-w-[130px]' : 'max-w-[180px] flex-shrink-0';
+
+/**
+ * The "+ reference script" chip. In a grid card it is always laid out and only
+ * fades in on hover, keyboard focus or while its menu is open, so hovering a
+ * card never changes its height (display:none <-> inline-flex did).
+ */
+const addChipClass = (compact: boolean) =>
+  cn(
+    'inline-flex flex-shrink-0 cursor-pointer items-center whitespace-nowrap rounded border border-dashed border-muted-foreground/30 px-1.5 py-0.5 text-[11px] text-muted-foreground/70 hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+    compact
+      ? 'opacity-0 transition-[opacity,color,border-color] group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100'
+      : 'transition-colors',
+  );
 
 export const ManuscriptRowBadge: React.FC<ManuscriptRowBadgeProps> = ({
   file,
@@ -130,8 +147,8 @@ export const ManuscriptRowBadge: React.FC<ManuscriptRowBadgeProps> = ({
             type="button"
             disabled={disabled}
             className={cn(
-              'inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/20 flex-shrink-0 cursor-pointer',
-              compact ? 'max-w-[130px]' : 'max-w-[180px]',
+              'inline-flex cursor-pointer items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/20',
+              pillSize(compact),
             )}
             title={file.manuscriptPath}
           >
@@ -191,7 +208,10 @@ export const ManuscriptRowBadge: React.FC<ManuscriptRowBadgeProps> = ({
           <button
             type="button"
             disabled={disabled}
-            className="inline-flex items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted flex-shrink-0 cursor-pointer"
+            className={cn(
+              'inline-flex cursor-pointer items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted',
+              compact ? 'min-w-0 max-w-[130px]' : 'flex-shrink-0',
+            )}
           >
             <Slash className="h-3 w-3 flex-none" />
             <span className="truncate">{t('manuscript.skipScript')}</span>
@@ -237,8 +257,8 @@ export const ManuscriptRowBadge: React.FC<ManuscriptRowBadgeProps> = ({
             type="button"
             disabled={disabled}
             className={cn(
-              'inline-flex items-center gap-1 rounded border border-dashed border-primary/30 bg-muted/30 px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted flex-shrink-0 cursor-pointer',
-              compact ? 'max-w-[130px]' : 'max-w-[180px]',
+              'inline-flex cursor-pointer items-center gap-1 rounded border border-dashed border-primary/30 bg-muted/30 px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted',
+              pillSize(compact),
             )}
             title={formData.manuscriptPath}
           >
@@ -271,7 +291,8 @@ export const ManuscriptRowBadge: React.FC<ManuscriptRowBadgeProps> = ({
     );
   }
 
-  // 4. 无文稿且全局无文稿：若不禁用且非 compact，提供轻量 + 参考文稿按钮
+  // 4. 无文稿且全局无文稿：队列空闲时提供轻量「+ 参考文稿」入口
+  //    （网格卡片里它常驻布局、仅悬停时淡入，见 addChipClass）
   if (disabled) return null;
 
   if (manuscriptPool && manuscriptPool.length > 0) {
@@ -280,14 +301,10 @@ export const ManuscriptRowBadge: React.FC<ManuscriptRowBadgeProps> = ({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className={cn(
-              'inline-flex items-center gap-1 rounded border border-dashed border-muted-foreground/30 px-1.5 py-0.5 text-[11px] text-muted-foreground/70 transition-colors hover:border-primary/50 hover:text-primary flex-shrink-0 cursor-pointer',
-              compact && 'hidden group-hover:inline-flex',
-            )}
+            className={addChipClass(compact)}
             title={t('manuscript.addScript')}
           >
-            <Plus className="h-3 w-3 flex-none" />
-            <span>{t('manuscript.addScript')}</span>
+            {t('manuscript.addScript')}
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -317,14 +334,10 @@ export const ManuscriptRowBadge: React.FC<ManuscriptRowBadgeProps> = ({
     <button
       type="button"
       onClick={handlePickScript}
-      className={cn(
-        'inline-flex items-center gap-1 rounded border border-dashed border-muted-foreground/30 px-1.5 py-0.5 text-[11px] text-muted-foreground/70 transition-colors hover:border-primary/50 hover:text-primary flex-shrink-0 cursor-pointer',
-        compact && 'hidden group-hover:inline-flex',
-      )}
+      className={addChipClass(compact)}
       title={t('manuscript.addScript')}
     >
-      <Plus className="h-3 w-3 flex-none" />
-      <span>{t('manuscript.addScript')}</span>
+      {t('manuscript.addScript')}
     </button>
   );
 };
