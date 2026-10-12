@@ -172,3 +172,27 @@ export function resolveDubbingScript(
     targetLanguage: normalizeTtsLanguage(sidecar.meta.targetLanguage),
   };
 }
+
+/**
+ * The text of a cue in the exported shifted subtitle.
+ *
+ * Dubbing speaks only the translation of a bilingual cue, but the subtitle
+ * exported next to the dub keeps the layout of the file that was loaded. A cue
+ * that was not edited is restored verbatim; after an edit in the workbench the
+ * new text replaces only the translation lines.
+ */
+export function composeDisplayText(cue: {
+  text: string;
+  display?: BilingualCueDisplay;
+}): string {
+  const { display } = cue;
+  if (!display) return cue.text;
+  const spoken = display.lines.slice(display.from, display.to).join(' ');
+  if (cue.text === spoken) return display.lines.join('\n');
+  const edited = flatten(cue.text);
+  return [
+    ...display.lines.slice(0, display.from),
+    ...(edited ? [edited] : []),
+    ...display.lines.slice(display.to),
+  ].join('\n');
+}

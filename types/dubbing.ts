@@ -470,6 +470,8 @@ export interface PersistedDubbingCue {
   startMs: number;
   endMs: number;
   text: string;
+  /** 仅双语交付字幕且成功定位译文行时存在；旧 session.json 没有此字段 */
+  display?: BilingualCueDisplay;
   voiceId?: string;
   speakerIds?: number[];
   primarySpeakerId?: number;

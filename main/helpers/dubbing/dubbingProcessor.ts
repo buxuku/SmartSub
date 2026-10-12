@@ -16,7 +16,10 @@ import {
   deleteSessionData,
   resolvePersistedCue,
 } from './sessionStore';
-import type { DubbingSessionMeta } from '../../../types/dubbing';
+import type {
+  BilingualCueDisplay,
+  DubbingSessionMeta,
+} from '../../../types/dubbing';
 import {
   parseSubtitleCues,
   detectSubtitleFormat,
@@ -96,7 +99,7 @@ import {
   findDubbingProofreadDataFile,
   loadDubbingSpeakerMetadata,
 } from './speakerMetadata';
-import { resolveDubbingScript } from './bilingualScript';
+import { composeDisplayText, resolveDubbingScript } from './bilingualScript';
 import {
   cueInheritsSpeaker,
   dubbingVoiceNeedsUpdate,
@@ -123,6 +126,8 @@ export interface SessionCue {
   startMs: number;
   endMs: number;
   text: string;
+  /** 双语交付字幕的版面：text 只含译文，导出的顺延字幕据此保留原文行。 */
+  display?: BilingualCueDisplay;
   voiceId?: string;
   speakerIds?: number[];
   primarySpeakerId?: number;
@@ -293,6 +298,7 @@ function toSessionMeta(session: DubbingSession): DubbingSessionMeta {
       startMs: c.startMs,
       endMs: c.endMs,
       text: c.text,
+      display: c.display,
       voiceId: c.voiceId,
       speakerIds: c.speakerIds,
       primarySpeakerId: c.primarySpeakerId,
@@ -395,6 +401,9 @@ export async function createDubbingSession(
         startMs: c.startMs,
         endMs: c.endMs,
         text: script.cues[index].text,
+        ...(script.cues[index].display
+          ? { display: script.cues[index].display }
+          : {}),
         ...(Object.prototype.hasOwnProperty.call(assignment, 'speakerIds')
           ? { speakerIds: [...(assignment.speakerIds || [])] }
           : {}),
@@ -599,6 +608,7 @@ export function restoreDubbingSession(
         startMs: resolved.startMs,
         endMs: resolved.endMs,
         text: resolved.text,
+        ...(resolved.display ? { display: resolved.display } : {}),
         voiceId: resolved.voiceId,
         ...(Object.prototype.hasOwnProperty.call(assignment, 'speakerIds')
           ? { speakerIds: [...(assignment.speakerIds || [])] }
@@ -1706,7 +1716,8 @@ interface DubTrackOptions {
    * 顺延字幕输出：always=只要请求就写（工作台导出语义）；
    * ifShifted=仅当规划实际改变了时间轴才写（流水线语义）。
    * displayTextByIndex=展示文本覆盖（cue index → 文本）：流水线用交付字幕
-   * 文本（如双语）替换配音用的纯译文，时间轴仍取规划结果；缺省用会话行文本。
+   * 文本（如双语）替换配音用的纯译文，工作台对双语字幕也这样做（见
+   * bilingualScript.composeDisplayText），时间轴仍取规划结果；缺省用会话行文本。
    */
   shiftedSubtitle?: {
     path?: string;
@@ -1916,6 +1927,12 @@ export async function exportDubbing(
         ? {
             path: path.join(output.directory, 'aligned.srt'),
             mode: 'always',
+            // 双语交付字幕：配音只念译文，对齐后的字幕仍保留原文行（#537）
+            displayTextByIndex: new Map(
+              session.cues
+                .filter((cue) => cue.display)
+                .map((cue) => [cue.index, composeDisplayText(cue)] as const),
+            ),
           }
         : undefined,
     });

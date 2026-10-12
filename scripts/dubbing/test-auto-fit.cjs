@@ -358,6 +358,102 @@ async function main() {
     };
   }
   proc.disposeDubbingSession(session.id);
+
+  // #537: a bilingual deliverable is spoken as its translation only, yet the
+  // shifted subtitle exported next to the audio keeps both languages (the one
+  // that is burned into the video). Editing a line replaces only its translation.
+  {
+    const dir = path.join(root, 'bilingual');
+    fs.mkdirSync(dir, { recursive: true });
+    const delivered = path.join(dir, 'bi.srt');
+    const sidecar = path.join(dir, 'bi.proofread.json');
+    fs.writeFileSync(
+      delivered,
+      '1\n00:00:00,000 --> 00:00:02,000\nHello there.\n你好。\n\n2\n00:00:04,000 --> 00:00:06,000\nSecond one.\n第二句。\n',
+    );
+    fs.writeFileSync(
+      sidecar,
+      JSON.stringify({
+        version: 2,
+        speakers: [],
+        meta: {
+          createdAt: '2026-10-01T00:00:00.000Z',
+          updatedAt: '2026-10-01T00:00:00.000Z',
+          targetLanguage: 'zh',
+          translateContent: 'sourceAndTranslate',
+          finalTargetFile: delivered,
+          translatedSubtitleFiles: [delivered],
+        },
+        cues: [
+          {
+            id: '1',
+            startMs: 0,
+            endMs: 2000,
+            source: 'Hello there.',
+            target: '你好。',
+          },
+          {
+            id: '2',
+            startMs: 4000,
+            endMs: 6000,
+            source: 'Second one.',
+            target: '第二句。',
+          },
+        ],
+      }),
+    );
+    const zhConfig = {
+      ...exportConfig,
+      voice: 'zh-CN-XiaoxiaoNeural',
+    };
+    const bilingual = await proc.createDubbingSession(
+      delivered,
+      undefined,
+      sidecar,
+    );
+    assert.deepEqual(
+      bilingual.cues.map((cue) => cue.text),
+      ['你好。', '第二句。'],
+    );
+    source = tone(1500);
+    await proc.resynthesizeCue(bilingual, 0, {}, zhConfig);
+    await proc.resynthesizeCue(bilingual, 1, {}, zhConfig);
+    assert.deepEqual(
+      requests.slice(-2).map((request) => request.text),
+      ['你好。', '第二句。'],
+      'only the translation reaches the synthesis engine',
+    );
+    // The text of every cue of the exported subtitle. The timeline follows the
+    // measured audio and is covered elsewhere.
+    const exportedTexts = async (target) =>
+      fs
+        .readFileSync(
+          (await proc.exportDubbing(target, zhConfig, () => {}))
+            .shiftedSubtitlePath,
+          'utf8',
+        )
+        .trim()
+        .split(/\n\n+/)
+        .map((block) => block.split('\n').slice(2).join('\n'));
+    assert.deepEqual(await exportedTexts(bilingual), [
+      'Hello there.\n你好。',
+      'Second one.\n第二句。',
+    ]);
+    await proc.resynthesizeCue(bilingual, 0, { text: '您好。' }, zhConfig);
+    assert.deepEqual(
+      await exportedTexts(bilingual),
+      ['Hello there.\n您好。', 'Second one.\n第二句。'],
+      'an edit replaces only the translation line',
+    );
+    proc.disposeDubbingSession(bilingual.id);
+    const reopened = proc.restoreDubbingSession(bilingual.id).session;
+    assert.deepEqual(
+      await exportedTexts(reopened),
+      ['Hello there.\n您好。', 'Second one.\n第二句。'],
+      'bilingual layout survives reopening the session',
+    );
+    proc.disposeDubbingSession(reopened.id);
+  }
   console.log(
     JSON.stringify({
       root,
