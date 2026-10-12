@@ -5,6 +5,7 @@ import {
   Captions,
   CheckCircle2,
   ChevronRight,
+  Circle,
   CircleAlert,
   Diamond,
   Edit2,
@@ -95,6 +96,8 @@ export function RailChips({
             <React.Fragment key={item.gate.key}>
               {index > 0 && <ChevronRight className="h-3 w-3 text-faint" />}
               <span
+                data-testid="rail-chip"
+                data-status={status}
                 className={cn(
                   'inline-flex items-center gap-1 text-xs whitespace-nowrap',
                   status === 'pending' && 'text-faint',
@@ -175,6 +178,8 @@ export function RailChips({
           <React.Fragment key={stage.key}>
             {index > 0 && <ChevronRight className="h-3 w-3 text-faint" />}
             <span
+              data-testid="rail-chip"
+              data-status={status}
               className={cn(
                 'inline-flex items-center gap-1 text-xs whitespace-nowrap',
                 status === 'pending' && 'text-faint',
@@ -191,6 +196,8 @@ export function RailChips({
                     : summarizeTitle || manuscriptTitle
               }
             >
+              {/* 每种状态都占同样大小的图标位：阶段推进时标签不会左右跳动 */}
+              {status === 'pending' && <Circle className="h-3 w-3" />}
               {status === 'loading' && (
                 <Loader2 className="h-3 w-3 animate-spin" />
               )}
@@ -524,13 +531,16 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                   {started ? `${percent}%` : '--'}
                 </span>
               </div>
-              {etaMinutes != null && (
-                <span className="text-[11px] text-muted-foreground whitespace-nowrap flex-shrink-0">
-                  {etaMinutes < 1
+              {/* 固定宽度槽位：某行开始计时不会把它的进度条推向别的行 */}
+              <span
+                data-testid="task-eta"
+                className="w-16 shrink-0 whitespace-nowrap text-right text-[11px] text-muted-foreground"
+              >
+                {etaMinutes != null &&
+                  (etaMinutes < 1
                     ? t('meta.etaLessMin')
-                    : t('meta.etaMin', { min: Math.ceil(etaMinutes) })}
-                </span>
-              )}
+                    : t('meta.etaMin', { min: Math.ceil(etaMinutes) }))}
+              </span>
 
               <div className="flex items-center gap-1 flex-shrink-0">
                 {/* 停靠在检查点：校对/检查配音 + 放行 */}
@@ -601,27 +611,30 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                     {t('row.retry')}
                   </Button>
                 )}
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          aria-label={t('row.proofread')}
-                          disabled={proofreadDisabled}
-                          onClick={() => onProofread(file)}
-                        >
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-[280px]">
-                      {proofreadTooltip}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                {/* 字幕检查点的「校对」按钮就是同一个动作，不再并排放第二个铅笔图标 */}
+                {dockedGate?.key !== 'subtitleGate' && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            aria-label={t('row.proofread')}
+                            disabled={proofreadDisabled}
+                            onClick={() => onProofread(file)}
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-[280px]">
+                        {proofreadTooltip}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>

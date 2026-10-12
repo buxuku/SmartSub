@@ -126,11 +126,61 @@ describe.each([
     expect(ext).toHaveClass('shrink-0');
   });
 
+  it('gives every pipeline chip an icon so its width stays put while running', async () => {
+    await renderList(Component, [idle, running, failed, done], {
+      taskStatus: 'running',
+    });
+    const chips = screen.getAllByTestId('rail-chip');
+    expect(chips).toHaveLength(8);
+    for (const chip of chips) {
+      expect(chip.firstElementChild?.tagName.toLowerCase()).toBe('svg');
+    }
+  });
+
   it('shows a single plus in the add-script chip', async () => {
     const { t } = await renderList(Component, [idle]);
     const chip = screen.getByTitle(t('manuscript.addScript'));
     expect(chip.querySelector('svg')).toBeNull();
     expect(chip.textContent).toBe(t('manuscript.addScript'));
+  });
+
+  it('reveals the remove button for keyboard users', async () => {
+    const { t } = await renderList(Component, [idle]);
+    expect(screen.getByRole('button', { name: t('row.remove') })).toHaveClass(
+      'focus-visible:opacity-100',
+    );
+  });
+
+  it('does not repeat the proofread action next to the gate review button', async () => {
+    const atGate = {
+      ...media,
+      uuid: 'gate',
+      extractAudio: 'done',
+      extractSubtitle: 'done',
+      subtitleGate: 'review',
+    };
+    await renderList(Component, [atGate], {
+      language: 'en',
+      taskStatus: 'running',
+      formData: {
+        taskType: 'generateOnly',
+        compose: {},
+        gates: { subtitle: 'manual' },
+      },
+    });
+    expect(screen.getByRole('button', { name: 'Review' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Proofread' })).toBeNull();
+  });
+
+  it('lets a failed dubbing run be inspected', async () => {
+    const { t } = await renderList(
+      Component,
+      [{ ...failed, uuid: 'failed-dub', dubbingSessionId: 'session-1' }],
+      { onInspectDubbing: jest.fn() },
+    );
+    expect(
+      screen.getByRole('button', { name: t('gate.inspectDubbing') }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -183,6 +233,13 @@ describe('list rows', () => {
   it('separates rows by 8px', async () => {
     await renderList(TaskRowList, [idle, done]);
     expect(screen.getByTestId('task-list')).toHaveClass('space-y-2');
+  });
+
+  it('reserves the ETA slot so progress bars line up across rows', async () => {
+    await renderList(TaskRowList, [idle, running], { taskStatus: 'running' });
+    const slots = screen.getAllByTestId('task-eta');
+    expect(slots).toHaveLength(2);
+    for (const slot of slots) expect(slot).toHaveClass('w-16', 'shrink-0');
   });
 
   it('aligns the status line with the file name and the chevron with the action icons', async () => {
