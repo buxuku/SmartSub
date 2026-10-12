@@ -50,6 +50,7 @@ import {
 } from './stageUtils';
 import { formatTaskMessage } from './taskMessages';
 import { ROW_TONE_BAR, ROW_TONE_BORDER, getRowTone } from './rowTone';
+import { TaskFileName } from './TaskFileName';
 import { ManuscriptRowBadge } from './ManuscriptRowBadge';
 import { SpeechReviewBadge } from './SpeechReviewBadge';
 
@@ -480,19 +481,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="cursor-default truncate text-sm font-medium min-w-0">
-                        {file?.fileName}
-                        {file?.fileExtension}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" className="max-w-md">
-                      <p className="break-all">{file?.filePath}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <TaskFileName file={file} className="text-sm font-medium" />
                 {file?.embeddedSubtitle && (
                   <TooltipProvider>
                     <Tooltip>
@@ -653,6 +642,8 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
             </div>
 
             <TaskActivityDetails
+              // 状态文字对齐文件名（跳过 ✕ 按钮占位），箭头对齐右侧操作图标
+              className="pl-5 pr-1.5"
               activity={file.taskActivity}
               state={status.state}
               stage={status.stage}

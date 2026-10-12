@@ -331,3 +331,24 @@ it('shows translation receipt, saving, retries and seconds without reanimating t
   expect(screen.getByTestId('task-activity-message')).toBe(message);
   expect(message).toHaveTextContent('等待 2 秒');
 });
+
+it('lets a list place the fixed status slot without recreating it', () => {
+  const { rerender } = render(
+    <TaskActivityDetails
+      state="idle"
+      statusText="等待开始"
+      className="pl-5 pr-1.5"
+    />,
+  );
+  const slot = screen.getByTestId('task-activity');
+  expect(slot).toHaveClass('h-6', 'pl-5', 'pr-1.5');
+  rerender(
+    <TaskActivityDetails
+      state="done"
+      statusText="已完成"
+      className="pl-5 pr-1.5"
+    />,
+  );
+  expect(screen.getByTestId('task-activity')).toBe(slot);
+  expect(slot).toHaveClass('h-6', 'pl-5', 'pr-1.5');
+});

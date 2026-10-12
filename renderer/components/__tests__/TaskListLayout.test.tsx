@@ -117,6 +117,15 @@ describe.each([
     expect(screen.getByRole('progressbar').firstChild).toHaveClass(barClass);
   });
 
+  it('keeps the extension visible when a long name is truncated', async () => {
+    await renderList(Component, [idle]);
+    const name = screen.getByTestId('task-name');
+    expect(within(name).getByText(longName)).toHaveClass('truncate');
+    const ext = within(name).getByTestId('task-name-ext');
+    expect(ext).toHaveTextContent('.mp4');
+    expect(ext).toHaveClass('shrink-0');
+  });
+
   it('shows a single plus in the add-script chip', async () => {
     const { t } = await renderList(Component, [idle]);
     const chip = screen.getByTitle(t('manuscript.addScript'));
@@ -126,6 +135,15 @@ describe.each([
 });
 
 describe('grid cards', () => {
+  it('lays the cards out by minimum width instead of window breakpoints', async () => {
+    await renderList(TaskGridList, [idle]);
+    const grid = screen.getByTestId('task-grid');
+    expect(grid.className).toContain(
+      'grid-cols-[repeat(auto-fill,minmax(16rem,1fr))]',
+    );
+    expect(grid.className).not.toMatch(/(^|\s)lg:grid-cols-4(\s|$)/);
+  });
+
   it('keeps the manuscript chip in a fixed-height meta row and reveals it with opacity only', async () => {
     const { t } = await renderList(TaskGridList, [idle]);
     const meta = screen.getByTestId('task-card-meta');
@@ -149,11 +167,26 @@ describe('grid cards', () => {
     expect(meta).toHaveClass('h-6');
     expect(within(meta).queryByRole('button')).toBeNull();
   });
+
+  it('insets the text column and aligns the action icons with it', async () => {
+    await renderList(TaskGridList, [idle]);
+    expect(screen.getByTestId('task-card')).toHaveClass('p-3');
+    expect(screen.getByTestId('task-card-body')).toHaveClass('px-1.5');
+    expect(screen.getByTestId('task-actions')).toHaveClass(
+      '-mr-1.5',
+      'flex-wrap',
+    );
+  });
 });
 
 describe('list rows', () => {
   it('separates rows by 8px', async () => {
     await renderList(TaskRowList, [idle, done]);
     expect(screen.getByTestId('task-list')).toHaveClass('space-y-2');
+  });
+
+  it('aligns the status line with the file name and the chevron with the action icons', async () => {
+    await renderList(TaskRowList, [idle]);
+    expect(screen.getByTestId('task-activity')).toHaveClass('pl-5', 'pr-1.5');
   });
 });

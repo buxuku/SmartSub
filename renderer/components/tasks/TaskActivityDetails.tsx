@@ -7,6 +7,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import type { ActivityUnit, TaskActivity } from '../../../types/taskActivity';
+import { cn } from 'lib/utils';
 
 const clockTime = (seconds: number) => {
   const value = Math.max(0, Math.floor(seconds));
@@ -21,6 +22,7 @@ export const TaskActivityDetails = memo(function TaskActivityDetails({
   stage,
   statusText,
   warning,
+  className,
 }: {
   activity?: TaskActivity;
   progress?: number;
@@ -28,6 +30,8 @@ export const TaskActivityDetails = memo(function TaskActivityDetails({
   stage?: string | null;
   statusText?: string;
   warning?: string;
+  /** Places the fixed slot (e.g. insets that line it up with its row). */
+  className?: string;
 }) {
   const { t } = useTranslation('tasks');
   const [now, setNow] = useState(Date.now);
@@ -202,7 +206,11 @@ export const TaskActivityDetails = memo(function TaskActivityDetails({
   return (
     <Popover>
       <div
-        className={`mt-1.5 flex h-6 min-w-0 items-center overflow-hidden text-xs ${tone}`}
+        className={cn(
+          'mt-1.5 flex h-6 min-w-0 items-center overflow-hidden text-xs',
+          tone,
+          className,
+        )}
         data-testid="task-activity"
       >
         <span className="sr-only" role="status" aria-live="polite">
