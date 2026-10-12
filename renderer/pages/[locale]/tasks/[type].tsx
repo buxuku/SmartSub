@@ -68,6 +68,7 @@ import useTaskDependencies from 'hooks/useTaskDependencies';
 import useUnifiedTaskConfig from 'hooks/useUnifiedTaskConfig';
 import useIpcCommunication from 'hooks/useIpcCommunication';
 import { useConfirmOrUndo } from 'hooks/useConfirmOrUndo';
+import { useUndoableFileRemoval } from 'hooks/useUndoableFileRemoval';
 import { useHotkeys } from 'hooks/useHotkeys';
 import {
   useTaskProjectPersistence,
@@ -943,31 +944,22 @@ export default function TaskPage() {
   };
 
   // 移除单个文件：立即生效，5 秒内可撤销并按原位置恢复（与「清空列表」同一套交互）
-  const handleRemoveFile = useCallback(
-    (uuid: string) => {
-      const index = files.findIndex((f) => f.uuid === uuid);
-      if (index < 0) return;
-      const removed = files[index];
-      const owner = projectIdRef.current;
-      setFiles((prev) => prev.filter((f) => f.uuid !== uuid));
+  const announceFileRemoved = useCallback(
+    (file: { fileName?: string; fileExtension?: string }, undo: () => void) =>
       confirmOrUndo(
         t('rowRemoved', {
-          name: `${removed.fileName ?? ''}${removed.fileExtension ?? ''}`,
+          name: `${file.fileName ?? ''}${file.fileExtension ?? ''}`,
         }),
-        () => {
-          // 5 秒内切到了别的工程：不要把文件塞进去
-          if (projectIdRef.current !== owner) return;
-          setFiles((prev) => {
-            if (prev.some((f) => f.uuid === uuid)) return prev;
-            const next = [...prev];
-            next.splice(Math.min(index, next.length), 0, removed);
-            return next;
-          });
-        },
-      );
-    },
-    [files, confirmOrUndo, t],
+        undo,
+      ),
+    [confirmOrUndo, t],
   );
+  const handleRemoveFile = useUndoableFileRemoval({
+    files,
+    setFiles,
+    projectIdRef,
+    onRemoved: announceFileRemoved,
+  });
 
   const handleProofread = useCallback(
     (file: IFiles) => {
