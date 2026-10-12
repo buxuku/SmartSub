@@ -109,6 +109,7 @@ import {
 import { pipelineDubLanguage } from '../../main/helpers/pipeline/dubTextSource';
 import {
   bilingualContentType,
+  composeDisplayText,
   resolveDubbingScript,
 } from '../../main/helpers/dubbing/bilingualScript';
 import type { DubbingConfig } from '../../types/dubbing';
@@ -2219,6 +2220,54 @@ function cue(
       bilingualContentType({ ...meta, translateContent: undefined }, delivered),
       undefined,
       'bilingual script: 交付内容未知时不猜',
+    );
+  }
+
+  // 顺延字幕展示文本：没改过原样还原，改过只替换译文行
+  {
+    const display = { lines: ['Hello there.', '你好。'], from: 1, to: 2 };
+    eq(
+      composeDisplayText({ text: '你好。', display }),
+      'Hello there.\n你好。',
+      'display: 未编辑时还原交付字幕的双语',
+    );
+    eq(
+      composeDisplayText({ text: '您好。', display }),
+      'Hello there.\n您好。',
+      'display: 编辑后只替换译文行，原文行保留',
+    );
+    eq(
+      composeDisplayText({ text: '  ', display }),
+      'Hello there.',
+      'display: 译文被清空时只剩原文行',
+    );
+    eq(
+      composeDisplayText({ text: '你好。' }),
+      '你好。',
+      'display: 没有展示结构时取会话文本',
+    );
+    const multi = {
+      lines: ['Line one,', 'line two.', '你好，', '你好吗？'],
+      from: 2,
+      to: 4,
+    };
+    eq(
+      composeDisplayText({ text: '你好， 你好吗？', display: multi }),
+      'Line one,\nline two.\n你好，\n你好吗？',
+      'display: 多行译文未编辑时逐行原样还原',
+    );
+    eq(
+      composeDisplayText({ text: '新的译文', display: multi }),
+      'Line one,\nline two.\n新的译文',
+      'display: 多行译文编辑后合并成一行',
+    );
+    eq(
+      composeDisplayText({
+        text: '改',
+        display: { lines: ['你好。', 'Hello there.'], from: 0, to: 1 },
+      }),
+      '改\nHello there.',
+      'display: 译文在前时替换第一行',
     );
   }
 }

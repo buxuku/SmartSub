@@ -472,6 +472,11 @@ async function main() {
         'zh',
         `${name}: language is detected from the spoken text`,
       );
+      assert.deepEqual(
+        found.cues.map((cue) => cue.display),
+        wbRows.map((lines) => ({ lines, from: 1, to: 2 })),
+        `${name}: bilingual layout is kept for the exported subtitle`,
+      );
       proc.disposeDubbingSession(found.id);
     }
 
@@ -490,6 +495,11 @@ async function main() {
     );
     proc.disposeDubbingSession(wbSession.id);
     const wbReopened = proc.restoreDubbingSession(wbSession.id).session;
+    assert.deepEqual(
+      wbReopened.cues.map((cue) => cue.display),
+      wbSession.cues.map((cue) => cue.display),
+      'bilingual layout survives reopening the session',
+    );
     assert.deepEqual(
       wbReopened.cues.map((cue) => cue.text),
       wbChinese,
@@ -512,6 +522,10 @@ async function main() {
       wbPureSession.cues.map((cue) => cue.text),
       wbChinese,
     );
+    assert.equal(
+      wbPureSession.cues.some((cue) => cue.display),
+      false,
+    );
     assert.equal(wbPureSession.subtitleLanguage, 'zh-Hant');
     proc.disposeDubbingSession(wbPureSession.id);
 
@@ -529,6 +543,7 @@ async function main() {
       wbPartial.cues.map((cue) => cue.text),
       [wbChinese[0], 'Edited source. 改过的译文'],
     );
+    assert.equal(wbPartial.cues[1].display, undefined);
     proc.disposeDubbingSession(wbPartial.id);
 
     // Nothing records which line of an external bilingual file is the
