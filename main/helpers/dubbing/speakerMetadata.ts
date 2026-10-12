@@ -12,6 +12,7 @@ import {
   type ProofreadDataFileV2,
 } from '../../../types/proofreadData';
 import type { DubbingSpeaker } from '../../../types/dubbing';
+import { subtitleOutputFilesToSave } from '../../../types/subtitleOutput';
 
 export interface DubbingCueSpeakerAssignment {
   speakerIds?: number[];
@@ -25,7 +26,9 @@ export interface DubbingSpeakerMetadata {
 }
 
 /** Absolute, lower-cased form used to decide whether two paths are the same file. */
-function normalizeForCompare(filePath: string | undefined): string | null {
+export function normalizeForCompare(
+  filePath: string | undefined,
+): string | null {
   if (!filePath) return null;
   try {
     return path.resolve(filePath).toLowerCase();
@@ -47,7 +50,7 @@ function readSidecar(filePath: string): ProofreadDataFileV2 | null {
 interface SidecarFingerprint {
   mtimeMs: number;
   size: number;
-  /** Normalized meta.sourceFile / targetFile / finalTargetFile; null if the file is not a readable sidecar. */
+  /** Normalized paths of every subtitle the task wrote; null if the file is not a readable sidecar. */
   ownedPaths: string[] | null;
 }
 
@@ -62,7 +65,17 @@ const MAX_REMEMBERED_FOLDERS = 32;
 function readOwnedPaths(filePath: string): string[] | null {
   const data = readSidecar(filePath);
   if (!data) return null;
-  return [data.meta.sourceFile, data.meta.targetFile, data.meta.finalTargetFile]
+  const { meta } = data;
+  // Not only the primary files: a second output format and the timed copy kept
+  // for composition are loaded into the workbench just the same.
+  return [
+    meta.sourceFile,
+    meta.targetFile,
+    meta.finalTargetFile,
+    ...subtitleOutputFilesToSave(meta, meta.translateContent).map(
+      (output) => output.filePath,
+    ),
+  ]
     .map(normalizeForCompare)
     .filter((candidate): candidate is string => candidate !== null);
 }
@@ -166,37 +179,59 @@ function cueKey(startMs: number, endMs: number): string {
   return `${Math.round(startMs)}:${Math.round(endMs)}`;
 }
 
-/** Align sidecar role metadata to parsed dubbing cues without reading labels from text. */
-export function loadDubbingSpeakerMetadata(
-  subtitlePath: string,
-  parsedCues: readonly SubtitleCue[],
-  explicitPath?: string,
-): DubbingSpeakerMetadata {
-  const found = findDubbingProofreadDataFile(subtitlePath, explicitPath);
-  if (!found) {
-    return { speakers: [], assignments: parsedCues.map(() => ({})) };
-  }
-
+/**
+ * Pair every parsed cue with the sidecar cue it came from: the same start and
+ * end first (each sidecar cue is used once), otherwise the same position when
+ * both lists are equally long. `undefined` means there is no safe pairing.
+ */
+export function alignSidecarCues(
+  parsedCues: ReadonlyArray<{ startMs: number; endMs: number }>,
+  sidecarCues: ReadonlyArray<{ startMs: number; endMs: number }>,
+): Array<number | undefined> {
   const byTime = new Map<string, number[]>();
-  found.data.cues.forEach((cue, index) => {
+  sidecarCues.forEach((cue, index) => {
     const key = cueKey(cue.startMs, cue.endMs);
     const indexes = byTime.get(key) || [];
     indexes.push(index);
     byTime.set(key, indexes);
   });
   const used = new Set<number>();
-  const assignments = parsedCues.map((cue, index) => {
+  return parsedCues.map((cue, index) => {
     const exact = (byTime.get(cueKey(cue.startMs, cue.endMs)) || []).find(
       (candidate) => !used.has(candidate),
     );
     const sidecarIndex =
       exact !== undefined
         ? exact
-        : found.data.cues.length === parsedCues.length
+        : sidecarCues.length === parsedCues.length
           ? index
           : undefined;
-    if (sidecarIndex === undefined) return {};
+    if (sidecarIndex === undefined) return undefined;
     used.add(sidecarIndex);
+    return sidecarIndex;
+  });
+}
+
+/** Align sidecar role metadata to parsed dubbing cues without reading labels from text. */
+export function loadDubbingSpeakerMetadata(
+  subtitlePath: string,
+  parsedCues: readonly SubtitleCue[],
+  explicitPath?: string,
+  /** The caller's own lookup (null = none exists), so the sidecar is not searched for twice. */
+  lookedUp?: { filePath: string; data: ProofreadDataFileV2 } | null,
+): DubbingSpeakerMetadata {
+  const found =
+    lookedUp !== undefined
+      ? lookedUp
+      : findDubbingProofreadDataFile(subtitlePath, explicitPath);
+  if (!found) {
+    return { speakers: [], assignments: parsedCues.map(() => ({})) };
+  }
+
+  const aligned = alignSidecarCues(parsedCues, found.data.cues);
+  const assignments = parsedCues.map((_cue, index) => {
+    const sidecarIndex = aligned[index];
+    if (sidecarIndex === undefined) return {};
     const sidecarCue = found.data.cues[sidecarIndex];
     const speakerIds = normalizeSpeakerIds(sidecarCue.speakerIds);
     if (!speakerIds.length) {

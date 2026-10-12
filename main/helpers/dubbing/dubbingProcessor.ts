@@ -92,7 +92,11 @@ import { getSherpaTtsRuntime } from '../sherpaOnnx/ttsRuntime';
 import { getTtsProviderById } from '../ttsProviderManager';
 import { synthesizeSegment } from '../../service/tts';
 import { getCloudProviderGate } from '../engines/cloudProviderGate';
-import { loadDubbingSpeakerMetadata } from './speakerMetadata';
+import {
+  findDubbingProofreadDataFile,
+  loadDubbingSpeakerMetadata,
+} from './speakerMetadata';
+import { resolveDubbingScript } from './bilingualScript';
 import {
   cueInheritsSpeaker,
   dubbingVoiceNeedsUpdate,
@@ -336,11 +340,26 @@ export async function createDubbingSession(
     throw new Error('字幕文件为空或无法解析');
   }
   const mediaDurationMs = videoPath ? await probeMediaDurationMs(videoPath) : 0;
+  const sidecar = findDubbingProofreadDataFile(subtitlePath, proofreadDataFile);
   const speakerMetadata = loadDubbingSpeakerMetadata(
     subtitlePath,
     parsed,
     proofreadDataFile,
+    sidecar,
   );
+  // 双语交付字幕只念译文行；与流水线重建纯译文字幕的结果一致（issue #537）。
+  const script = resolveDubbingScript(subtitlePath, parsed, sidecar?.data);
+  if (script.unresolved.length) {
+    logMessage(
+      `dubbing: ${script.unresolved.length}/${parsed.length} cues of ${path.basename(subtitlePath)} are bilingual but their translation line was not found, so the whole text is dubbed`,
+      'warning',
+    );
+  }
+  // 只有真正定位到译文行时，才把 sidecar 的目标语言当作配音语言。
+  const scriptLanguage =
+    script.bilingual && script.unresolved.length < parsed.length
+      ? script.targetLanguage
+      : undefined;
 
   const id = randomUUID();
   // 持久会话目录（应用数据目录下）：dispose 不删除，重开可恢复
@@ -354,9 +373,10 @@ export async function createDubbingSession(
     subtitleHash: hashSubtitleContent(content),
     subtitleLanguage:
       subtitleLanguage ??
+      scriptLanguage ??
       dubbingSubtitleLanguage(subtitlePath, proofreadDataFile),
     detectedLanguage: detectDubbingLanguage(
-      parsed.map((c) => c.text).join('\n'),
+      script.cues.map((c) => c.text).join('\n'),
     ),
     videoPath,
     mediaDurationMs,
@@ -374,7 +394,7 @@ export async function createDubbingSession(
         index,
         startMs: c.startMs,
         endMs: c.endMs,
-        text: c.text.replace(/\n+/g, ' ').trim(),
+        text: script.cues[index].text,
         ...(Object.prototype.hasOwnProperty.call(assignment, 'speakerIds')
           ? { speakerIds: [...(assignment.speakerIds || [])] }
           : {}),

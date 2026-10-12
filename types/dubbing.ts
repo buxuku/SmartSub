@@ -452,6 +452,18 @@ export interface DubbingExportView {
 
 // ── 会话持久化（session.json，P1：重开可恢复行级状态与产物）──────────────────
 
+/**
+ * 双语交付字幕中某一行的版面：配音只念 [from, to) 区间的译文行，
+ * 导出的顺延字幕按它还原原文行（见 main/helpers/dubbing/bilingualScript.ts）。
+ */
+export interface BilingualCueDisplay {
+  /** 交付字幕该行 trim 后的非空行 */
+  lines: string[];
+  /** 译文占据 lines[from..to) */
+  from: number;
+  to: number;
+}
+
 /** 持久化的单行记录（wavFile 为相对会话目录的文件名）。 */
 export interface PersistedDubbingCue {
   index: number;
