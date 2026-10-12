@@ -365,22 +365,29 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
               </Tooltip>
             </TooltipProvider>
 
-            {meta && (
-              <span className="text-[11px] text-muted-foreground">{meta}</span>
-            )}
-
-            {typeDef?.needsModel && (
-              <div className="flex items-center min-w-0">
-                <ManuscriptRowBadge
-                  file={file}
-                  formData={formData}
-                  disabled={queueBusy}
-                  compact
-                  manuscriptPool={manuscriptPool}
-                  onAssignManuscript={onAssignManuscript}
-                />
-              </div>
-            )}
+            {/* 固定高度：「+ 参考文稿」悬停时只淡入，卡片高度不随悬停变化 */}
+            <div
+              data-testid="task-card-meta"
+              className="flex h-6 min-w-0 items-center gap-2"
+            >
+              {meta && (
+                <span className="shrink-0 whitespace-nowrap text-[11px] text-muted-foreground">
+                  {meta}
+                </span>
+              )}
+              {typeDef?.needsModel && (
+                <div className="ml-auto flex min-w-0 justify-end">
+                  <ManuscriptRowBadge
+                    file={file}
+                    formData={formData}
+                    disabled={queueBusy}
+                    compact
+                    manuscriptPool={manuscriptPool}
+                    onAssignManuscript={onAssignManuscript}
+                  />
+                </div>
+              )}
+            </div>
 
             <RailChips file={file} rail={rail} t={t} className="flex-wrap" />
 
