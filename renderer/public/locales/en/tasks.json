@@ -512,6 +512,7 @@
     "grid": "Grid view"
   },
   "listCleared": "File list cleared",
+  "rowRemoved": "Removed “{{name}}”",
   "modeSwitch": {
     "confirmTitle": "Switch Task Mode",
     "incompatibleDesc": "The current list contains files incompatible with the target mode. Switching will clear the list. Continue?",
