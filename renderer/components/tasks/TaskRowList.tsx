@@ -49,6 +49,7 @@ import {
   type StageDef,
 } from './stageUtils';
 import { formatTaskMessage } from './taskMessages';
+import { ROW_TONE_BAR, ROW_TONE_BORDER, getRowTone } from './rowTone';
 import { ManuscriptRowBadge } from './ManuscriptRowBadge';
 import { SpeechReviewBadge } from './SpeechReviewBadge';
 
@@ -389,7 +390,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
   }
 
   return (
-    <div className="space-y-1.5">
+    <div data-testid="task-list" className="space-y-2">
       {files.map((file) => {
         const stages = getFileStages(file, typeDef, formData);
         const rail = getFileRail(file, typeDef, formData);
@@ -434,6 +435,7 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
         ]
           .filter(Boolean)
           .join(' · ');
+        const tone = getRowTone(status.state, failed, Boolean(displayWarning));
         const started = stages.some(
           (s) => getStageStatus(file, s.key) !== 'pending',
         );
@@ -459,10 +461,12 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
         return (
           <div
             key={file?.uuid}
+            data-testid="task-row"
+            data-tone={tone}
+            data-state={status.state}
             className={cn(
-              'group rounded-lg border border-transparent bg-card px-3 py-2.5 transition-colors hover:bg-muted/40',
-              failed && 'border-destructive/30',
-              !failed && displayWarning && 'border-warning/30',
+              'group rounded-lg border bg-card px-3 py-2.5 transition-colors hover:bg-muted/40',
+              ROW_TONE_BORDER[tone],
             )}
           >
             <div className="flex items-center gap-3">
@@ -522,7 +526,11 @@ const TaskRowList: React.FC<TaskRowListProps> = ({
               <RailChips file={file} rail={rail} t={t} />
 
               <div className="flex items-center gap-2 w-[160px] flex-shrink-0">
-                <Progress value={percent} className="h-1.5" />
+                <Progress
+                  value={percent}
+                  className="h-1.5"
+                  indicatorClassName={ROW_TONE_BAR[tone]}
+                />
                 <span className="text-[11px] tabular-nums text-muted-foreground w-[34px] text-right">
                   {started ? `${percent}%` : '--'}
                 </span>

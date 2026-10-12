@@ -24,6 +24,26 @@ const media = {
   duration: 34,
 };
 const idle = { ...media, uuid: 'idle' };
+const running = {
+  ...media,
+  uuid: 'running',
+  extractAudio: 'done',
+  extractSubtitle: 'loading',
+  extractSubtitleProgress: 40,
+};
+const failed = {
+  ...media,
+  uuid: 'failed',
+  extractAudio: 'done',
+  extractSubtitle: 'error',
+  extractSubtitleError: 'Connection timed out',
+};
+const done = {
+  ...media,
+  uuid: 'done',
+  extractAudio: 'done',
+  extractSubtitle: 'done',
+};
 
 beforeAll(() => {
   global.IntersectionObserver = class {
@@ -70,9 +90,33 @@ async function renderList(
 }
 
 describe.each([
-  ['list', TaskRowList],
-  ['grid', TaskGridList],
-] as const)('%s entries', (_mode, Component) => {
+  ['list', TaskRowList, 'task-row'],
+  ['grid', TaskGridList, 'task-card'],
+] as const)('%s entries', (_mode, Component, shellId) => {
+  it('outlines every entry so neighbouring entries can be told apart', async () => {
+    await renderList(Component, [idle, done]);
+    const shells = screen.getAllByTestId(shellId);
+    expect(shells).toHaveLength(2);
+    for (const shell of shells) {
+      expect(shell).toHaveClass('border', 'border-border-strong');
+      expect(shell).not.toHaveClass('border-transparent');
+    }
+  });
+
+  it.each([
+    ['running', running, 'running', 'border-primary/50', 'bg-primary'],
+    ['failed', failed, 'error', 'border-destructive/50', 'bg-destructive'],
+    ['finished', done, 'done', 'border-border-strong', 'bg-success'],
+  ])('tints a %s entry', async (_label, file, tone, borderClass, barClass) => {
+    await renderList(Component, [file], {
+      taskStatus: file === running ? 'running' : 'idle',
+    });
+    const shell = screen.getByTestId(shellId);
+    expect(shell).toHaveAttribute('data-tone', tone);
+    expect(shell).toHaveClass(borderClass);
+    expect(screen.getByRole('progressbar').firstChild).toHaveClass(barClass);
+  });
+
   it('shows a single plus in the add-script chip', async () => {
     const { t } = await renderList(Component, [idle]);
     const chip = screen.getByTitle(t('manuscript.addScript'));
@@ -104,5 +148,12 @@ describe('grid cards', () => {
     const meta = screen.getByTestId('task-card-meta');
     expect(meta).toHaveClass('h-6');
     expect(within(meta).queryByRole('button')).toBeNull();
+  });
+});
+
+describe('list rows', () => {
+  it('separates rows by 8px', async () => {
+    await renderList(TaskRowList, [idle, done]);
+    expect(screen.getByTestId('task-list')).toHaveClass('space-y-2');
   });
 });
