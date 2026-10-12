@@ -352,7 +352,7 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
               <button
                 type="button"
                 aria-label={t('row.remove')}
-                className="absolute right-1 top-1 rounded bg-background/80 p-0.5 text-muted-foreground opacity-0 backdrop-blur transition-opacity hover:text-destructive group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-0"
+                className="absolute right-1 top-1 rounded bg-background/80 p-0.5 text-muted-foreground opacity-0 backdrop-blur transition-opacity hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-0"
                 disabled={queueBusy}
                 onClick={() => onDelete(file?.uuid)}
               >
@@ -470,6 +470,21 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
                     </Button>
                   </>
                 )}
+                {failed &&
+                  file.dubbingSessionId &&
+                  onInspectDubbing &&
+                  !dockedGate && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1 text-xs"
+                      disabled={queueBusy}
+                      onClick={() => onInspectDubbing(file)}
+                    >
+                      <AudioLines className="h-3 w-3" />
+                      {t('gate.inspectDubbing')}
+                    </Button>
+                  )}
                 {failed && (
                   <Button
                     variant="outline"
@@ -482,27 +497,30 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
                     {t('row.retry')}
                   </Button>
                 )}
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          aria-label={t('row.proofread')}
-                          disabled={proofreadDisabled}
-                          onClick={() => onProofread(file)}
-                        >
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-[280px]">
-                      {proofreadTooltip}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                {/* 字幕检查点的「校对」按钮就是同一个动作，不再并排放第二个铅笔图标 */}
+                {dockedGate?.key !== 'subtitleGate' && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            aria-label={t('row.proofread')}
+                            disabled={proofreadDisabled}
+                            onClick={() => onProofread(file)}
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-[280px]">
+                        {proofreadTooltip}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
