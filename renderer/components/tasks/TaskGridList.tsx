@@ -48,6 +48,7 @@ import {
 import { RailChips } from './TaskRowList';
 import { ManuscriptRowBadge } from './ManuscriptRowBadge';
 import { formatTaskMessage } from './taskMessages';
+import { ROW_TONE_BAR, ROW_TONE_BORDER, getRowTone } from './rowTone';
 
 interface TaskGridListProps {
   files: any[];
@@ -294,6 +295,7 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
         ]
           .filter(Boolean)
           .join(' · ');
+        const tone = getRowTone(status.state, failed, Boolean(displayWarning));
         const started = stages.some(
           (s) => getStageStatus(file, s.key) !== 'pending',
         );
@@ -318,10 +320,12 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
         return (
           <div
             key={file?.uuid}
+            data-testid="task-card"
+            data-tone={tone}
+            data-state={status.state}
             className={cn(
-              'group relative flex flex-col gap-2 rounded-lg border border-transparent bg-card p-2 transition-colors hover:bg-muted/40',
-              failed && 'border-destructive/30',
-              !failed && displayWarning && 'border-warning/30',
+              'group relative flex flex-col gap-2 rounded-lg border bg-card p-2 transition-colors hover:bg-muted/40',
+              ROW_TONE_BORDER[tone],
             )}
           >
             <div className="relative">
@@ -392,7 +396,11 @@ const TaskGridList: React.FC<TaskGridListProps> = ({
             <RailChips file={file} rail={rail} t={t} className="flex-wrap" />
 
             <div className="flex items-center gap-2">
-              <Progress value={percent} className="h-1.5" />
+              <Progress
+                value={percent}
+                className="h-1.5"
+                indicatorClassName={ROW_TONE_BAR[tone]}
+              />
               <span className="w-[34px] text-right text-[11px] tabular-nums text-muted-foreground">
                 {started ? `${percent}%` : '--'}
               </span>

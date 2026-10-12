@@ -23,3 +23,15 @@ it('exposes determinate values and updates them with the visual indicator', () =
   rerender(<Progress value={null} />);
   expect(screen.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
 });
+
+it('lets callers tint the indicator and keeps the primary colour by default', () => {
+  const { rerender } = render(<Progress value={40} />);
+  expect(screen.getByRole('progressbar').firstChild).toHaveClass('bg-primary');
+  rerender(<Progress value={40} indicatorClassName="bg-success" />);
+  const indicator = screen.getByRole('progressbar').firstChild;
+  expect(indicator).toHaveClass('bg-success');
+  expect(indicator).not.toHaveClass('bg-primary');
+  expect(screen.getByRole('progressbar')).not.toHaveAttribute(
+    'indicatorclassname',
+  );
+});
