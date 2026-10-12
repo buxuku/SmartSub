@@ -942,6 +942,33 @@ export default function TaskPage() {
     });
   };
 
+  // 移除单个文件：立即生效，5 秒内可撤销并按原位置恢复（与「清空列表」同一套交互）
+  const handleRemoveFile = useCallback(
+    (uuid: string) => {
+      const index = files.findIndex((f) => f.uuid === uuid);
+      if (index < 0) return;
+      const removed = files[index];
+      const owner = projectIdRef.current;
+      setFiles((prev) => prev.filter((f) => f.uuid !== uuid));
+      confirmOrUndo(
+        t('rowRemoved', {
+          name: `${removed.fileName ?? ''}${removed.fileExtension ?? ''}`,
+        }),
+        () => {
+          // 5 秒内切到了别的工程：不要把文件塞进去
+          if (projectIdRef.current !== owner) return;
+          setFiles((prev) => {
+            if (prev.some((f) => f.uuid === uuid)) return prev;
+            const next = [...prev];
+            next.splice(Math.min(index, next.length), 0, removed);
+            return next;
+          });
+        },
+      );
+    },
+    [files, confirmOrUndo, t],
+  );
+
   const handleProofread = useCallback(
     (file: IFiles) => {
       if (!typeDef) return;
@@ -1105,6 +1132,9 @@ export default function TaskPage() {
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
+    // 指针移到面板内的子元素上也会触发 dragleave；只有真正离开面板才收起浮层，
+    // 否则拖动时浮层会随经过每一行/卡片而闪烁。
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
     setIsDragging(false);
   };
 
@@ -1667,14 +1697,21 @@ export default function TaskPage() {
       )}
 
       <div
-        className={cn(
-          'relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-muted/40 p-2.5',
-          isDragging && 'border-2 border-dashed border-primary bg-primary/5',
-        )}
+        data-testid="task-list-panel"
+        className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-muted/40 p-2.5"
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
       >
+        {/* 拖入提示是脱离文档流的浮层：不占位，列表内容不会因为边框出现而重排 */}
+        <div
+          aria-hidden="true"
+          data-testid="task-list-drop-overlay"
+          className={cn(
+            'pointer-events-none absolute inset-0 z-10 rounded-lg border-2 border-dashed border-primary bg-primary/5 opacity-0 transition-opacity',
+            isDragging && 'opacity-100',
+          )}
+        />
         <ScrollArea className="flex-1 min-h-0">
           {viewMode === 'grid' ? (
             <TaskGridList
@@ -1684,9 +1721,7 @@ export default function TaskPage() {
               taskStatus={taskStatus}
               manuscriptPool={manuscriptPool}
               onProofread={handleProofread}
-              onDelete={(uuid) =>
-                setFiles((prev) => prev.filter((f) => f.uuid !== uuid))
-              }
+              onDelete={handleRemoveFile}
               onRetry={handleRetry}
               onReleaseGate={(file, gate) =>
                 handleReleaseGate(gate, [file.uuid])
@@ -1703,9 +1738,7 @@ export default function TaskPage() {
               taskStatus={taskStatus}
               manuscriptPool={manuscriptPool}
               onProofread={handleProofread}
-              onDelete={(uuid) =>
-                setFiles((prev) => prev.filter((f) => f.uuid !== uuid))
-              }
+              onDelete={handleRemoveFile}
               onRetry={handleRetry}
               onReleaseGate={(file, gate) =>
                 handleReleaseGate(gate, [file.uuid])
