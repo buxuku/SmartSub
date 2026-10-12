@@ -464,6 +464,97 @@ test('a rewrite beyond the tolerance still degrades the window', async () => {
   );
 });
 
+// ------------------------------------------------------------ diagnostics --
+// A rejected copy used to be reported with a prefix/suffix estimate: three
+// words "polished" in the middle of a window read as a 4% match in the log, and
+// the retry feedback named only the first of them.
+
+/** Three words "polished" (first, cache, almost); the rest is a verbatim copy. */
+const NEAR_MISS =
+  'so the initial thing we did<br>was add a memory layer<br>in front of the database<br>and that alone cut the response time<br>by nearly forty percent';
+
+test('a near-miss copy is logged with its real similarity and every difference reaches the model', async () => {
+  const calls = installLlm((index) => [NEAR_MISS, VALID_ANSWER][index]);
+  const outcome = await segment(wordsOf(SENTENCE));
+  assert.equal(calls.length, 2, 'one feedback round fixes it');
+  assert.equal(outcome.degradedWindows, 0);
+  assert.equal(joinedCueText(outcome), SENTENCE);
+
+  const failure = logLines('warning').find((line) =>
+    /validation failed \(round 1\/3/.test(line),
+  );
+  assert.ok(
+    failure,
+    `the rejected round is logged: ${JSON.stringify(logLines())}`,
+  );
+  const logged = /similarity (\d+(?:\.\d+)?)%/.exec(failure);
+  assert.ok(
+    logged && Number(logged[1]) > 85 && Number(logged[1]) < 92,
+    `about 88% of the letters match and the log must say so: ${failure}`,
+  );
+
+  for (const [from, to] of [
+    ['first', 'initial'],
+    ['cache', 'memory'],
+    ['almost', 'nearly'],
+  ]) {
+    assert.ok(
+      calls[1].prompt.includes(`[${from}]`) &&
+        calls[1].prompt.includes(`"[${to}]"`),
+      `the feedback names ${from} -> ${to}: ${calls[1].prompt}`,
+    );
+  }
+});
+
+test('a rewrite far from the text is logged as below the diagnostic floor, not as a made-up percentage', async () => {
+  installLlm((index) => [GARBAGE, GARBAGE_2, GARBAGE_3][index]);
+  const outcome = await segment(wordsOf(SENTENCE));
+  assert.equal(outcome.degradedWindows, 1);
+  const failures = logLines('warning').filter((line) =>
+    /validation failed/.test(line),
+  );
+  assert.equal(failures.length, 3, 'every round is logged');
+  for (const line of failures) {
+    assert.ok(
+      /similarity <75%/.test(line),
+      `expected the floor instead of an estimate: ${line}`,
+    );
+  }
+  const degradeLine = logLines('warning').find((line) =>
+    /window 1\/1 degraded to rule cues: content differs/i.test(line),
+  );
+  assert.ok(
+    degradeLine && /below 75%/.test(degradeLine),
+    `the degrade reason repeats the floor: ${degradeLine}`,
+  );
+});
+
+test('the degrade reason of a close but rejected copy names the first difference', async () => {
+  // Every round repeats the near-miss: the window ends up degraded, and the
+  // reason in the log says what was changed instead of just "content differs".
+  const nearMisses = [
+    NEAR_MISS,
+    NEAR_MISS.replace('memory', 'cache'),
+    NEAR_MISS.replace('memory', 'caching'),
+  ];
+  installLlm((index) => nearMisses[index]);
+  const outcome = await segment(wordsOf(SENTENCE));
+  assert.equal(outcome.degradedWindows, 1);
+  const degradeLine = logLines('warning').find((line) =>
+    /window 1\/1 degraded to rule cues: content differs/i.test(line),
+  );
+  assert.ok(
+    degradeLine &&
+      /\[first\]/.test(degradeLine) &&
+      /"\[initial\]"/.test(degradeLine),
+    `the log names the first changed word: ${degradeLine}`,
+  );
+  assert.ok(
+    /% of the letters match/.test(degradeLine),
+    `and how close the copy was: ${degradeLine}`,
+  );
+});
+
 test('segment-level timelines keep the original text too', async () => {
   const cues = [
     ['00:00:00,000', '00:00:03,000', 'So, the first thing we did was add'],

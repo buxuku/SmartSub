@@ -46,6 +46,7 @@ import {
 } from './protocol';
 import {
   compareValidations,
+  formatSimilarity,
   validateSegmentation,
   type SegmentationValidation,
 } from './validator';
@@ -296,7 +297,7 @@ export async function runAiSegmentation(
       }
       if (validation.ok) break;
       logMessage(
-        `${label} validation failed (round ${round + 1}/${totalRounds}, contentOk=${validation.contentOk}, similarity ${(validation.similarity * 100).toFixed(1)}%, lengthViolations ${validation.lengthViolations.length})`,
+        `${label} validation failed (round ${round + 1}/${totalRounds}, contentOk=${validation.contentOk}, similarity ${formatSimilarity(validation)}, lengthViolations ${validation.lengthViolations.length})`,
         'warning',
       );
       // 模型把同一个答案原样重复：重试没有改变任何东西（确定性后端），省掉后续请求。
