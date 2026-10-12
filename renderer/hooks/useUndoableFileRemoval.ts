@@ -27,6 +27,11 @@ export function restoreRemovedFile<T extends RemovableFile>(
 interface UndoableFileRemovalOptions<T extends RemovableFile> {
   files: T[];
   setFiles: Dispatch<SetStateAction<T[]>>;
+  /**
+   * A task is running, paused or being cancelled: the main process may still be
+   * working on the file, so the list must not lose it (same rule as "clear list").
+   */
+  locked: boolean;
   /** The project the list belongs to; an undo is dropped once it has changed. */
   projectIdRef: MutableRefObject<string | null>;
   /** Called after a removal; `undo` puts the file back. */
@@ -41,11 +46,13 @@ interface UndoableFileRemovalOptions<T extends RemovableFile> {
 export function useUndoableFileRemoval<T extends RemovableFile>({
   files,
   setFiles,
+  locked,
   projectIdRef,
   onRemoved,
 }: UndoableFileRemovalOptions<T>) {
   return useCallback(
     (uuid: string) => {
+      if (locked) return;
       const index = files.findIndex((file) => file.uuid === uuid);
       if (index < 0) return;
       const removed = files[index];
@@ -57,6 +64,6 @@ export function useUndoableFileRemoval<T extends RemovableFile>({
         setFiles((prev) => restoreRemovedFile(prev, removed, index));
       });
     },
-    [files, setFiles, projectIdRef, onRemoved],
+    [files, setFiles, locked, projectIdRef, onRemoved],
   );
 }
