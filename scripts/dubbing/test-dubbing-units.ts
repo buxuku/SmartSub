@@ -112,6 +112,10 @@ import {
   composeDisplayText,
   resolveDubbingScript,
 } from '../../main/helpers/dubbing/bilingualScript';
+import { layoutSubtitleColumns } from '../../main/helpers/subtitleLayout';
+import { renderTemplate } from '../../main/helpers/template';
+import { CONTENT_TEMPLATES } from '../../main/translate/constants';
+import { prefixTextWithSpeakerNames } from '../../types/proofreadData';
 import type { DubbingConfig } from '../../types/dubbing';
 import type { ProofreadDataFileV2 } from '../../types/proofreadData';
 
@@ -2220,6 +2224,98 @@ function cue(
       bilingualContentType({ ...meta, translateContent: undefined }, delivered),
       undefined,
       'bilingual script: 交付内容未知时不猜',
+    );
+  }
+
+  // 生产环境的排版函数写出的交付字幕（组合方式与 ipcHandlers 的
+  // buildSubtitleFileContent 一致）：两种顺序 × 模板/两行布局 × 有无说话人名。
+  // 不管怎么折行、有没有名字前缀，都要定位到译文，导出时还能原样还原。
+  {
+    const pairs: Array<[string, string, string]> = [
+      ['en-zh', 'Hello there.', '你好。'],
+      [
+        'en-zh 长句',
+        'Hello there, welcome to our show, we have a lot to cover today.',
+        '你好，欢迎来到我们的节目，今天我们有很多内容要讲。',
+      ],
+      ['ja-en', 'こんにちは、元気ですか。', 'Hello, how are you?'],
+      ['de-fr', 'Guten Morgen, wie geht es dir?', 'Bonjour, comment vas-tu ?'],
+      [
+        'zh-ja',
+        '你好，欢迎收看。',
+        'こんにちは、ご覧いただきありがとうございます。',
+      ],
+      [
+        '多行双列',
+        'Hello there,\nwelcome to the show.',
+        '你好，\n欢迎来到节目。',
+      ],
+      ['多行原文', 'Hello there,\nwelcome.', '你好，欢迎。'],
+      ['原文译文相同', 'OK', 'OK'],
+      ['纯括号内容', '[Music]', '[音乐]'],
+    ];
+    const speakers = [{ id: 1, displayName: 'Alice', color: '#2563eb' }];
+    const failures: string[] = [];
+    let combinations = 0;
+    for (const content of [
+      'sourceAndTranslate',
+      'translateAndSource',
+    ] as const) {
+      for (const layout of ['template', 'two-line'] as const) {
+        for (const named of [false, true]) {
+          for (const [name, source, target] of pairs) {
+            combinations++;
+            const cue = { speakerIds: named ? [1] : [] };
+            const label = named
+              ? `${prefixTextWithSpeakerNames('', cue, speakers)} `
+              : '';
+            const text =
+              layout === 'two-line'
+                ? layoutSubtitleColumns(
+                    source,
+                    target,
+                    content,
+                    { subtitleLayout: 'two-line', subtitleLineWidth: 42 },
+                    label,
+                  )
+                : prefixTextWithSpeakerNames(
+                    renderTemplate(CONTENT_TEMPLATES[content], {
+                      sourceContent: source,
+                      targetContent: target,
+                    }).replace(/\n+$/, ''),
+                    cue,
+                    speakers,
+                  );
+            const script = resolveDubbingScript(
+              delivered,
+              parsed([text]),
+              sidecarOf(content, [{ source, target }]),
+            );
+            const spoken = script.cues[0].text;
+            // 说话人名写在整段文本之前：译文在前时它属于译文行，否则不属于。
+            const expected =
+              (content === 'translateAndSource' ? label : '') + target;
+            const restored = composeDisplayText({
+              text: spoken,
+              display: script.cues[0].display,
+            });
+            if (
+              script.unresolved.length ||
+              spoken.replace(/\s+/g, '') !== expected.replace(/\s+/g, '') ||
+              restored !== text
+            )
+              failures.push(
+                `${content} / ${layout} / ${named ? '带说话人名' : '无说话人名'} / ${name}`,
+              );
+          }
+        }
+      }
+    }
+    eq(combinations, 72, 'bilingual script: 生产排版的组合数');
+    eq(
+      failures,
+      [],
+      'bilingual script: 生产排版写出的双语字幕都能定位译文并原样还原',
     );
   }
 
