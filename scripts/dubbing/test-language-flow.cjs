@@ -386,6 +386,166 @@ async function main() {
   proc.disposeDubbingSession(reviewed.id);
   proc.disposeDubbingSession(originalFile.dubbingSessionId);
 
+  // Workbench (#537): a bilingual deliverable is dubbed from its translation
+  // only. The pipeline above already rebuilds a pure-translation subtitle.
+  const proofreadStorage = require('../../main/helpers/proofreadDataStorage.ts');
+  const wbDir = path.join(temp, 'workbench-bilingual');
+  const wbManaged = path.join(wbDir, 'proofread-data');
+  fs.mkdirSync(path.join(wbDir, 'tmp'), { recursive: true });
+  fs.mkdirSync(wbManaged, { recursive: true });
+  const wbRows = [
+    ['Hello there, welcome to our show.', '你好，欢迎来到我们的节目。'],
+    [
+      'How was your day today, I hope everything went well.',
+      '你今天过得怎么样，希望一切顺利。',
+    ],
+  ];
+  const wbChinese = wbRows.map(([, zh]) => zh);
+  const wbTime = (index) =>
+    `00:00:${String(index * 10).padStart(2, '0')},000 --> 00:00:${String(index * 10 + 10).padStart(2, '0')},000`;
+  const wbSrtOf = (texts) =>
+    texts
+      .map((text, index) => `${index + 1}\n${wbTime(index)}\n${text}\n`)
+      .join('\n');
+  const wbBilingualSrt = wbSrtOf(wbRows.map(([en, zh]) => `${en}\n${zh}`));
+  const wbSrt = path.join(wbDir, 'episode.zh-en.srt');
+  const wbVtt = path.join(wbDir, 'episode.zh-en.vtt');
+  const wbPure = path.join(wbDir, 'tmp', 'episode.zh.srt');
+  const wbTempFinal = path.join(wbDir, 'tmp', 'episode.final.srt');
+  fs.writeFileSync(wbSrt, wbBilingualSrt);
+  fs.writeFileSync(wbTempFinal, wbBilingualSrt);
+  fs.writeFileSync(wbPure, wbSrtOf(wbChinese));
+  fs.writeFileSync(
+    wbVtt,
+    'WEBVTT\n\n' +
+      wbRows
+        .map(
+          ([en, zh], index) =>
+            `${wbTime(index).replaceAll(',', '.')}\n${en}\n${zh}\n`,
+        )
+        .join('\n'),
+  );
+  fs.writeFileSync(
+    path.join(wbManaged, 'episode.json'),
+    JSON.stringify({
+      version: 2,
+      speakers: [],
+      meta: {
+        createdAt: '2026-10-01T00:00:00.000Z',
+        updatedAt: '2026-10-01T00:00:00.000Z',
+        sourceLanguage: 'en',
+        targetLanguage: 'zh-Hant',
+        translateContent: 'sourceAndTranslate',
+        targetFile: wbPure,
+        finalTargetFile: wbSrt,
+        translatedSubtitleFiles: [wbSrt, wbVtt],
+        tempFinalSubtitleFile: wbTempFinal,
+      },
+      cues: wbRows.map(([en, zh], index) => ({
+        id: String(index + 1),
+        startMs: index * 10000,
+        endMs: index * 10000 + 10000,
+        source: en,
+        target: zh,
+      })),
+    }),
+  );
+  proofreadStorage.setProofreadDataRoot(wbManaged);
+  try {
+    // Every delivered file is recognised without being handed the sidecar,
+    // including the second format and the compose-oriented temp file.
+    for (const delivered of [wbSrt, wbVtt, wbTempFinal]) {
+      const found = await proc.createDubbingSession(delivered);
+      const name = path.basename(delivered);
+      assert.deepEqual(
+        found.cues.map((cue) => cue.text),
+        wbChinese,
+        `${name}: only the translation is dubbed`,
+      );
+      assert.equal(
+        found.subtitleLanguage,
+        'zh-Hant',
+        `${name}: target language`,
+      );
+      assert.equal(
+        found.detectedLanguage,
+        'zh',
+        `${name}: language is detected from the spoken text`,
+      );
+      proc.disposeDubbingSession(found.id);
+    }
+
+    const wbSession = await proc.createDubbingSession(wbSrt);
+    const beforeWorkbench = requests.length;
+    await proc.runDubbingBatch(wbSession, config, () => {});
+    assert.deepEqual(
+      requests.slice(beforeWorkbench).map((request) => request.text),
+      wbChinese,
+      'the synthesis engine never receives the source line',
+    );
+    assert.ok(
+      requests
+        .slice(beforeWorkbench)
+        .every((request) => request.language === 'zh-Hant'),
+    );
+    proc.disposeDubbingSession(wbSession.id);
+    const wbReopened = proc.restoreDubbingSession(wbSession.id).session;
+    assert.deepEqual(
+      wbReopened.cues.map((cue) => cue.text),
+      wbChinese,
+    );
+    assert.equal(
+      proc.syncDubbingVoiceStaleness(wbReopened, config),
+      0,
+      'reopened bilingual session reuses its audio',
+    );
+    proc.disposeDubbingSession(wbReopened.id);
+
+    // The pipeline hands over its own sidecar together with a rebuilt
+    // pure-translation subtitle: that file must not be treated as bilingual.
+    const wbPureSession = await proc.createDubbingSession(
+      wbPure,
+      undefined,
+      path.join(wbManaged, 'episode.json'),
+    );
+    assert.deepEqual(
+      wbPureSession.cues.map((cue) => cue.text),
+      wbChinese,
+    );
+    assert.equal(wbPureSession.subtitleLanguage, 'zh-Hant');
+    proc.disposeDubbingSession(wbPureSession.id);
+
+    // A cue edited in both columns cannot be located: it keeps its whole text
+    // while the remaining cues are still reduced to the translation.
+    fs.writeFileSync(
+      wbTempFinal,
+      wbSrtOf([
+        `${wbRows[0][0]}\n${wbRows[0][1]}`,
+        'Edited source.\n改过的译文',
+      ]),
+    );
+    const wbPartial = await proc.createDubbingSession(wbTempFinal);
+    assert.deepEqual(
+      wbPartial.cues.map((cue) => cue.text),
+      [wbChinese[0], 'Edited source. 改过的译文'],
+    );
+    proc.disposeDubbingSession(wbPartial.id);
+
+    // Nothing records which line of an external bilingual file is the
+    // translation, so it keeps its whole text.
+    proofreadStorage.setProofreadDataRoot(undefined);
+    const wbExternal = path.join(wbDir, 'external.srt');
+    fs.writeFileSync(wbExternal, wbBilingualSrt);
+    const wbExternalSession = await proc.createDubbingSession(wbExternal);
+    assert.deepEqual(
+      wbExternalSession.cues.map((cue) => cue.text),
+      wbRows.map(([en, zh]) => `${en} ${zh}`),
+    );
+    proc.disposeDubbingSession(wbExternalSession.id);
+  } finally {
+    proofreadStorage.setProofreadDataRoot(undefined);
+  }
+
   // Execute the actual worker with a fake native boundary to observe exactly
   // what reaches generateAsync for target text and reference transcription.
   const generated = [];
