@@ -957,6 +957,7 @@ export default function TaskPage() {
   const handleRemoveFile = useUndoableFileRemoval({
     files,
     setFiles,
+    locked: queueBusy,
     projectIdRef,
     onRemoved: announceFileRemoved,
   });

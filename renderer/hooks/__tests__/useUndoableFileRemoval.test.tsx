@@ -12,28 +12,33 @@ const item = (uuid: string): Item => ({ uuid });
 const ids = (list: Item[]) => list.map((entry) => entry.uuid).join(',');
 
 /** The task page in miniature: a file list, the open project and the undo toasts. */
-function setup(initial: string[]) {
+function setup(initial: string[], locked = false) {
   const projectIdRef = { current: 'project-1' as string | null };
   const toasts: { file: Item; undo: () => void }[] = [];
   const onRemoved = (file: Item, undo: () => void) => {
     toasts.push({ file, undo });
   };
-  const view = renderHook(() => {
-    const [files, setFiles] = useState(initial.map(item));
-    const remove = useUndoableFileRemoval({
-      files,
-      setFiles,
-      projectIdRef,
-      onRemoved,
-    });
-    return { files, remove };
-  });
+  const view = renderHook(
+    (props: { locked: boolean }) => {
+      const [files, setFiles] = useState(initial.map(item));
+      const remove = useUndoableFileRemoval({
+        files,
+        setFiles,
+        locked: props.locked,
+        projectIdRef,
+        onRemoved,
+      });
+      return { files, remove };
+    },
+    { initialProps: { locked } },
+  );
   return {
     projectIdRef,
     toasts,
     list: () => ids(view.result.current.files),
     remove: (uuid: string) => act(() => view.result.current.remove(uuid)),
     undo: (index = toasts.length - 1) => act(() => toasts[index].undo()),
+    setLocked: (next: boolean) => view.rerender({ locked: next }),
   };
 }
 
@@ -83,6 +88,21 @@ test('an unknown file is ignored and offers no undo', () => {
   page.remove('missing');
   expect(page.list()).toBe('a');
   expect(page.toasts).toHaveLength(0);
+});
+
+test('refuses to remove a file while the queue is busy', () => {
+  const page = setup(['a', 'b', 'c'], true);
+  page.remove('b');
+  expect(page.list()).toBe('a,b,c');
+  expect(page.toasts).toHaveLength(0);
+});
+
+test('removes again once the queue is idle', () => {
+  const page = setup(['a', 'b', 'c'], true);
+  page.setLocked(false);
+  page.remove('b');
+  expect(page.list()).toBe('a,c');
+  expect(page.toasts).toHaveLength(1);
 });
 
 describe('restoreRemovedFile', () => {
