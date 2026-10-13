@@ -8,6 +8,7 @@ import {
   buildSettingsSnapshot,
   collectDiagnosticsInput,
   describePathSetting,
+  describeRuntimePaths,
   diagnosticsFileName,
   formatStamp,
   previewDiagnostics,
@@ -235,6 +236,46 @@ async function main() {
       nonAscii: false,
       hasSpace: true,
     });
+  });
+
+  await test('运行路径标志：数据 / 安装 / 临时目录只导出 nonAscii 与 hasSpace，不含路径本身', () => {
+    // Windows 用户名含中文：数据目录与默认临时目录含非 ASCII；装在 Program Files 则含空格
+    const flags = describeRuntimePaths({
+      userData: 'C:\\Users\\张三\\AppData\\Roaming\\SmartSub',
+      install: 'C:\\Program Files\\SmartSub\\resources',
+      temp: 'C:\\Users\\张三\\AppData\\Local\\Temp\\whisper-subtitles',
+    });
+    assert.deepEqual(flags, {
+      userDataPath: { nonAscii: true, hasSpace: false },
+      installPath: { nonAscii: false, hasSpace: true },
+      tempPath: { nonAscii: true, hasSpace: false },
+    });
+    assert.ok(!JSON.stringify(flags).includes('张三'));
+    assert.ok(!JSON.stringify(flags).includes('SmartSub'));
+
+    // 安装目录含中文（把应用装在 D:\\软件）也要能看出来，随包的 VAD / 降噪模型就在那里
+    assert.deepEqual(
+      describeRuntimePaths({
+        userData: 'C:\\SmartSub\\data',
+        install: 'D:\\软件\\SmartSub',
+        temp: 'C:\\SmartSub\\temp',
+      }),
+      {
+        userDataPath: { nonAscii: false, hasSpace: false },
+        installPath: { nonAscii: true, hasSpace: false },
+        tempPath: { nonAscii: false, hasSpace: false },
+      },
+    );
+
+    // 取不到路径时不抛错，也不冒充"有问题"
+    assert.deepEqual(
+      describeRuntimePaths({ userData: undefined, install: '', temp: null }),
+      {
+        userDataPath: { nonAscii: false, hasSpace: false },
+        installPath: { nonAscii: false, hasSpace: false },
+        tempPath: { nonAscii: false, hasSpace: false },
+      },
+    );
   });
 
   await test('应用日志：逐行脱敏并保持一行一条；坏行保留并折成单行', () => {

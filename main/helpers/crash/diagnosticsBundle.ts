@@ -298,6 +298,36 @@ export function describePathSetting(value: unknown): {
   };
 }
 
+export interface PathFlags {
+  nonAscii: boolean;
+  hasSpace: boolean;
+}
+
+/**
+ * 运行时实际使用的几个目录：数据目录（userData）、安装目录（随包的 VAD / 降噪模型与原生库在这里）、
+ * 临时目录（抽出的 16k wav 放这里）。路径本身不导出，只说明会不会因非 ASCII / 空格出问题。
+ * Windows 用户名含中文时，默认的数据目录与临时目录都含非 ASCII 字符，是原生库打不开文件的常见原因。
+ */
+export function describeRuntimePaths(inputs: {
+  userData: unknown;
+  install: unknown;
+  temp: unknown;
+}): {
+  userDataPath: PathFlags;
+  installPath: PathFlags;
+  tempPath: PathFlags;
+} {
+  const flags = (value: unknown): PathFlags => {
+    const { nonAscii, hasSpace } = describePathSetting(value);
+    return { nonAscii, hasSpace };
+  };
+  return {
+    userDataPath: flags(inputs.userData),
+    installPath: flags(inputs.install),
+    tempPath: flags(inputs.temp),
+  };
+}
+
 export function buildSettingsSnapshot(
   settings: unknown,
   userConfig: unknown,
