@@ -76,7 +76,7 @@
 
 ### Requirement: 升级迁移
 
-服务商配置迁移 SHALL 随服务商版本号递增执行一次：为已有用户补齐 `youdaoFree` 服务商，并将其纳入免费源的默认请求间隔补齐；`autoFree` 的 `fallbackChain` 仅当（忽略空白后）恰好等于历史默认值 `bingFree,googleFree,deeplx` 时才更新为新默认链，其它任何取值（自定义顺序、增删源）MUST 原样保留。迁移 MUST 幂等，且 MUST NOT 修改 `autoFree` 的批量大小、并发与请求间隔。
+服务商配置迁移 SHALL 随服务商版本号递增执行一次：为已有用户补齐 `youdaoFree` 服务商，并将其纳入免费源的默认请求间隔补齐；`autoFree` 的 `fallbackChain` 仅当（忽略空白后）恰好等于历史默认值 `bingFree,googleFree,deeplx` 时才更新为新默认链，其它任何取值（自定义顺序、增删源）MUST 原样保留。本变更涉及的迁移步骤 MUST 幂等：对迁移结果再次执行迁移，免费源（`autoFree`、`youdaoFree`、`bingFree`、`googleFree`）的配置不再变化。迁移整体不是幂等的，这是既有行为（例如火山、Azure 的批量大小每次迁移都会被重设），不在本变更范围内。迁移 MUST NOT 修改 `autoFree` 的批量大小、并发与请求间隔。
 
 #### Scenario: 未自定义的旧默认链被更新
 
@@ -96,7 +96,7 @@
 #### Scenario: 迁移幂等
 
 - **WHEN** 对迁移结果再次执行迁移
-- **THEN** 结果与第一次迁移完全相同
+- **THEN** `autoFree`、`youdaoFree`、`bingFree`、`googleFree` 的配置与第一次迁移后完全相同
 
 #### Scenario: 性能字段不被改动
 

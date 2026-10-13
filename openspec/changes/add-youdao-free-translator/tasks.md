@@ -28,24 +28,24 @@
 
 ## 5. Provider registration and migration
 
-- [ ] 5.1 Export `youdaoFreeTranslator` from `main/service/index.ts` and register `youdaoFree` in `TRANSLATOR_MAP`.
-- [ ] 5.2 Add the `youdaoFree` entry to `PROVIDER_TYPES` in `types/provider.ts` (`group: 'free'`, no credentials, batch 30 / concurrency 2 / interval 0.2 / window 0) and extend `apiBatchFields` with an optional concurrency default.
-- [ ] 5.3 Update `DEFAULT_FREE_FALLBACK_CHAIN`, the `autoFree.fallbackChain` default and `phFallbackChain` to the confirmed order; leave the `autoFree` batch, concurrency and interval defaults unchanged.
-- [ ] 5.4 Bump `CURRENT_PROVIDER_VERSION` to 26 with a version comment, add `youdaoFree` to `FREE_PROVIDER_IDS`, and migrate `autoFree.fallbackChain` only when it equals the legacy default (whitespace-insensitive).
+- [x] 5.1 Export `youdaoFreeTranslator` from `main/service/index.ts` and register `youdaoFree` in `TRANSLATOR_MAP`.
+- [x] 5.2 Add the `youdaoFree` entry to `PROVIDER_TYPES` in `types/provider.ts` (`group: 'free'`, no credentials, batch 30 / concurrency 2 / interval 0.2 / window 0) and extend `apiBatchFields` with an optional concurrency default.
+- [x] 5.3 Update `DEFAULT_FREE_FALLBACK_CHAIN`, the `autoFree.fallbackChain` default and `phFallbackChain` to the confirmed order; leave the `autoFree` batch, concurrency and interval defaults unchanged.
+- [x] 5.4 Bump `CURRENT_PROVIDER_VERSION` to 26 with a version comment, add `youdaoFree` to `FREE_PROVIDER_IDS`, and migrate `autoFree.fallbackChain` only when it equals the legacy default (whitespace-insensitive).
 
 ## 6. autoFree integration and UI
 
-- [ ] 6.1 Add `youdaoFree` to `SOURCE_MAP` in `main/translate/services/fallback.ts` and make `isSourceUnavailable` skip it while the breaker is cooling down.
-- [ ] 6.2 Add `youdaoFree` to `FREE_CHAIN_SOURCES` in `renderer/components/ProviderForm.tsx`.
-- [ ] 6.3 Add the zh and en strings `provider.youdaoFree`, `chainSource.youdaoFree` and `batchSizeYoudaoFreeTips`, and refresh `batchSizeAutoFreeTips` and `fallbackChainTips`.
-- [ ] 6.4 Use an emoji placeholder icon (no brand SVG) unless OQ2 is resolved otherwise.
+- [x] 6.1 Add `youdaoFree` to `SOURCE_MAP` in `main/translate/services/fallback.ts` and make `isSourceUnavailable` skip it while the breaker is cooling down.
+- [x] 6.2 Add `youdaoFree` to `FREE_CHAIN_SOURCES` in `renderer/components/ProviderForm.tsx`, with a jest test (`renderer/components/__tests__/ProviderFormChain.test.tsx`) that the chain editor offers, adds, moves and removes it and lists it first by default.
+- [x] 6.3 Add the zh and en strings `provider.youdaoFree`, `chainSource.youdaoFree` and `batchSizeYoudaoFreeTips`, and refresh `batchSizeAutoFreeTips` and `fallbackChainTips`.
+- [x] 6.4 Use an emoji placeholder icon (no brand SVG) unless OQ2 is resolved otherwise.
 
 ## 7. Tests
 
 - [x] 7.1 Add `scripts/test-youdao-free.cjs` (same mock-`axios` and TypeScript-transpile setup as `test-free-translators.cjs`) and chain it into `test:free-translators`: protocol vectors (a self-encrypted fixture built from fake key material, with both the valid nested and the flat decoy shape), session credentials (cache/TTL/single-flight, cookie pass-through, no cookie fabricated, probe pass / decoy / mismatch, `code` 50 and decoy rebuild-and-retry, failure after rebuild), and batching with alignment (match, count mismatch, echo mismatch, per-paragraph failure, 5,000-character chunking, full-width echo).
 - [x] 7.2 Add protection and restoration tests mirroring the design D4 table plus tag pairing, hard-break merge, bracket lines and the all-lines-skipped zero-request case; add Chinese post-processing and language mapping tests (a `null` mapping sends no request; codes 21/40).
 - [x] 7.3 Add tests for rate-limit spacing, timeout, cancellation, error classification and the circuit breaker (fake clock for the 120 s cooldown), plus a log-privacy test (no subtitle text, translations, cookie, key material or signature).
-- [ ] 7.4 Extend `scripts/test-provider-fallback.ts` for chain integration (source map, default order, cooldown skip, aggregated error) and migration (legacy default updated, custom chain kept, idempotent, performance fields untouched, `youdaoFree` backfilled).
+- [x] 7.4 Extend `scripts/test-provider-fallback.ts` for the provider definition and migration (legacy default updated, custom chain kept, free sources stable on a second run, performance fields untouched, `youdaoFree` backfilled), and add the chain integration tests (registry, default order, cooldown skip, unsupported-language routing, aggregated error) to `scripts/test-youdao-free.cjs`, where the real `fallback.ts` and provider registry run behind fake sibling sources and the fake Youdao service.
 - [ ] 7.5 Make sure no CI test touches the network, then run `yarn check:i18n`, `yarn typecheck`, `yarn test:free-translators`, `yarn test:provider-fallback`, `yarn test:provider-test-flow`, `yarn test:task-defaults` and `yarn test:renderer`.
 
 ## 8. Documentation

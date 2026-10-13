@@ -3,22 +3,39 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const Module = require('node:module');
+const path = require('node:path');
 const ts = require('typescript');
 
 const originalLoad = Module._load;
 const originalTsLoader = require.extensions['.ts'];
+const repoRoot = path.resolve(__dirname, '..');
+const noop = () => {};
 
 // Everything the translator logs ends up here instead of the Electron log store.
 const logs = [];
 // A test can set this to make a log call misbehave (an unexpected internal error).
 let onLog = null;
+// While the chain section loads the real fallback orchestration and provider
+// registry, `main/service` (every other translator) is replaced by this object.
+let chainServices = null;
 
 Module._load = function (request, parent, isMain) {
+  const absolute =
+    request.startsWith('.') && parent
+      ? path.resolve(path.dirname(parent.filename), request)
+      : '';
   if (request === 'electron') {
-    return { app: {} };
+    return {
+      app: {
+        getAppPath: () => repoRoot,
+        getPath: () => path.join(repoRoot, 'node_modules/.cache'),
+      },
+      BrowserWindow: { getAllWindows: () => [] },
+    };
   }
   if (/helpers\/storeManager$/.test(request)) {
     return {
+      store: { get: () => undefined },
       logMessage: (message, type = 'info') => {
         const entry = {
           message: message instanceof Error ? message.message : String(message),
@@ -28,6 +45,23 @@ Module._load = function (request, parent, isMain) {
         if (onLog) onLog(entry);
       },
     };
+  }
+  if (chainServices && absolute === path.join(repoRoot, 'main/service')) {
+    return chainServices;
+  }
+  if (absolute === path.join(repoRoot, 'main/helpers/store')) {
+    return { store: { get: () => undefined } };
+  }
+  if (absolute === path.join(repoRoot, 'main/helpers/glossaryManager')) {
+    return {
+      getActiveGlossaryResolution: noop,
+      getTaskGlossaryResolution: noop,
+      logGlossaryConflicts: noop,
+      logGlossaryMatches: noop,
+    };
+  }
+  if (absolute === path.join(repoRoot, 'main/helpers/fileUtils')) {
+    return { ensureTempDir: noop };
   }
   return originalLoad.call(this, request, parent, isMain);
 };
@@ -40,6 +74,7 @@ require.extensions['.ts'] = function transpile(module, filename) {
       module: ts.ModuleKind.CommonJS,
       moduleResolution: ts.ModuleResolutionKind.NodeJs,
       esModuleInterop: true,
+      resolveJsonModule: true,
     },
   });
   module._compile(output.outputText, filename);
@@ -1107,6 +1142,205 @@ test('logs and errors never contain subtitle text, translations, cookie, keys or
     ];
     for (const secret of secrets) {
       assert(!everything.includes(secret), `leaked: ${secret}`);
+    }
+  }));
+
+// ---------------------------------------------------------------------------
+// autoFree chain: the real fallback orchestration and provider registry with
+// fake sibling sources, so registration, default order, skipping and error
+// aggregation are exercised end to end. Youdao itself is the real translator
+// talking to the fake service above.
+// ---------------------------------------------------------------------------
+
+const siblings = { bing: null, google: null, deeplx: null };
+const siblingCalls = [];
+const fakeSibling = (name) => async (list, proof, from, to, options) => {
+  siblingCalls.push({ name, proof, list });
+  return siblings[name](list, proof, from, to, options);
+};
+
+chainServices = {
+  bingFreeTranslator: fakeSibling('bing'),
+  googleFreeTranslator: fakeSibling('google'),
+  deeplxTranslator: fakeSibling('deeplx'),
+  youdaoFreeTranslator: youdaoFree,
+};
+const {
+  TRANSLATOR_MAP,
+  DEFAULT_FREE_FALLBACK_CHAIN,
+} = require('../main/translate/services/translationProvider.ts');
+chainServices = null;
+
+const autoFree = (
+  query,
+  { from = 'en', to = 'zh', proof = {}, options } = {},
+) =>
+  TRANSLATOR_MAP.autoFree(
+    query,
+    { id: 'autoFree', ...proof },
+    from,
+    to,
+    options,
+  );
+const attemptedSources = () =>
+  logs
+    .filter((entry) => entry.message.startsWith('autoFree trying source: '))
+    .map((entry) => entry.message.slice('autoFree trying source: '.length));
+const failingYoudao = (request) =>
+  request.text === PROBE_TEXT ? undefined : { throws: httpError(500) };
+
+function withChain(fn) {
+  return withServer({}, async (server) => {
+    siblingCalls.length = 0;
+    siblings.bing = (list) => list.map((item) => `bing:${item}`);
+    siblings.google = (list) => list.map((item) => `google:${item}`);
+    siblings.deeplx = (list) => list.map((item) => `deeplx:${item}`);
+    await fn(server);
+  });
+}
+
+test('youdaoFree is registered and leads the default free chain', () => {
+  assert.equal(TRANSLATOR_MAP.youdaoFree, youdaoFree);
+  assert.deepEqual(DEFAULT_FREE_FALLBACK_CHAIN, [
+    'youdaoFree',
+    'bingFree',
+    'googleFree',
+    'deeplx',
+  ]);
+});
+
+test('autoFree without a fallbackChain tries the default order and aggregates the failures', () =>
+  withChain(async (server) => {
+    server.respond = failingYoudao;
+    siblings.bing = () => {
+      throw new Error('Bing free translate failed (network): 429');
+    };
+    siblings.google = () => {
+      throw new Error('Google free translate failed (network): timeout');
+    };
+    await assert.rejects(
+      () => autoFree(['Hello.']),
+      (error) => {
+        assert.match(
+          error.message,
+          /^All free translation sources failed \(network\)/,
+        );
+        for (const part of [
+          'youdaoFree: Youdao free translate failed (network)',
+          'bingFree: Bing free translate failed (network): 429',
+          'googleFree: Google free translate failed (network): timeout',
+          'deeplx: no endpoint',
+        ]) {
+          assert(error.message.includes(part), `missing: ${part}`);
+        }
+        return true;
+      },
+    );
+    assert.deepEqual(attemptedSources(), [
+      'youdaoFree',
+      'bingFree',
+      'googleFree',
+    ]);
+  }));
+
+test('a working Youdao answers first and the later sources are not called', () =>
+  withChain(async () => {
+    const result = await autoFree(['Hello.'], {
+      proof: { fallbackChain: 'youdaoFree,bingFree' },
+    });
+    assert.deepEqual(result, ['T:Hello.']);
+    assert.equal(siblingCalls.length, 0);
+    assert.deepEqual(attemptedSources(), ['youdaoFree']);
+    assert(!logs.some((entry) => entry.message.includes('fell back')));
+  }));
+
+test('a Youdao failure falls back to Bing and the fallback is logged', () =>
+  withChain(async (server) => {
+    server.respond = failingYoudao;
+    const result = await autoFree(['Hello.'], {
+      proof: { fallbackChain: 'youdaoFree,bingFree' },
+    });
+    assert.deepEqual(result, ['bing:Hello.']);
+    assert.deepEqual(attemptedSources(), ['youdaoFree', 'bingFree']);
+    assert.equal(
+      realRequests(server).length,
+      1,
+      'Youdao really was asked first',
+    );
+    assert(
+      logs.some((entry) => entry.message === 'autoFree fell back to bingFree'),
+    );
+    assert.equal(siblingCalls[0].proof.id, 'bingFree');
+  }));
+
+test('an unsupported source language routes to Bing without touching Youdao', () =>
+  withChain(async (server) => {
+    const result = await autoFree(['Merhaba.'], {
+      from: 'tr',
+      proof: { fallbackChain: 'youdaoFree,bingFree' },
+    });
+    assert.deepEqual(result, ['bing:Merhaba.']);
+    assert.deepEqual(attemptedSources(), ['youdaoFree', 'bingFree']);
+    assert(
+      logs.some(
+        (entry) =>
+          entry.message ===
+          'autoFree source youdaoFree failed: not supported language',
+      ),
+      'Youdao was tried and refused the language',
+    );
+    assert.equal(
+      server.log.pages.length,
+      0,
+      'not even credentials were requested',
+    );
+    assert.equal(server.log.translations.length, 0);
+    assert.equal(yt.breakerState().failures, 0, 'not a service failure');
+  }));
+
+test('a Youdao in cooldown is skipped without a request', () =>
+  withChain(async (server) => {
+    const clock = useFakeClock();
+    try {
+      server.respond = failingYoudao;
+      for (let i = 0; i < 3; i += 1) {
+        await assert.rejects(() => call(['Hello.']), /500/);
+      }
+      const before = server.log.translations.length;
+      logs.length = 0;
+
+      const result = await autoFree(['Hello.'], {
+        proof: { fallbackChain: 'youdaoFree,bingFree' },
+      });
+      assert.deepEqual(result, ['bing:Hello.']);
+      assert.equal(
+        server.log.translations.length,
+        before,
+        'no request while cooling',
+      );
+      assert(
+        logs.some(
+          (entry) =>
+            entry.type === 'info' &&
+            entry.message.startsWith('autoFree skip youdaoFree: cooling down'),
+        ),
+        'the skip is an info line, not a warning',
+      );
+      assert.deepEqual(attemptedSources(), ['bingFree']);
+
+      // the reason is part of the aggregated error when nothing else works
+      siblings.bing = () => {
+        throw new Error('Bing free translate failed (network): down');
+      };
+      await assert.rejects(
+        () =>
+          autoFree(['Hello.'], {
+            proof: { fallbackChain: 'youdaoFree,bingFree' },
+          }),
+        /All free translation sources failed \(network\).*youdaoFree: cooling down/,
+      );
+    } finally {
+      clock.restore();
     }
   }));
 
