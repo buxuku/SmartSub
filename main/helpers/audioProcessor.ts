@@ -22,6 +22,7 @@ import {
   pickSilenceCut,
   boundariesFromCuts,
   CUT_SEARCH_WINDOW_SECONDS,
+  type ChunkPlanOptions,
 } from './builtinAudioChunking';
 
 // 设置ffmpeg路径
@@ -555,10 +556,12 @@ export async function splitWavAtBoundaries(
  *  - 超阈值 → 按 ~1h 均衡片数定目标切点，每个切点在 ±45s 窗口内吸附到「最长静音 run 中点」
  *    （避免把一句完整的话切成两段），ffmpeg 切片后返回带偏移的切片列表。
  * WAV 头不可解析 → null（保持旧行为，交由 addon 自行处理）。
+ * `plan` 可覆盖默认的激活阈值 / 片长：音频以 PCM 缓冲喂给 addon 时（Windows 非 ASCII 路径）
+ * 缓冲会被拷贝数份，需要更早分片以限制内存。
  */
 export async function prepareBuiltinChunks(
   audioPath: string,
-  opts?: { signal?: AbortSignal },
+  opts?: { signal?: AbortSignal; plan?: ChunkPlanOptions },
 ): Promise<CloudAudioChunk[] | null> {
   let info: WavInfo;
   try {
@@ -571,7 +574,7 @@ export async function prepareBuiltinChunks(
     return null;
   }
   const durationSec = info.durationMs / 1000;
-  const targets = planEvenChunkTargets(durationSec);
+  const targets = planEvenChunkTargets(durationSec, opts?.plan);
   if (targets.length === 0) return null;
 
   const cuts = targets.map((target) => {
