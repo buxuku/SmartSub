@@ -7697,6 +7697,351 @@ function runRuntimeImportTests() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Windows 非 ASCII 路径：sherpa-onnx 的 C++ 层用窄字符 API 打开文件，
+// 系统代码页不是 UTF-8 时中文路径会"不存在"（`vad is nullptr` 的根因）。
+// 随包的小模型（silero VAD / gtcrn）改为复制到纯 ASCII 目录后再交给原生库。
+// ---------------------------------------------------------------------------
+import {
+  ensureNativeSafeModelPath,
+  hasNonAscii,
+  needsNativeSafe,
+  resetNativeSafePathCacheForTest,
+  stageBundledModel,
+  stagingBaseDirs,
+} from '../main/helpers/sherpaOnnx/nativeSafePath';
+
+function runNativeSafePathTests(): void {
+  // 1. hasNonAscii：只认真正的非 ASCII，空格 / 标点 / DEL 都不算
+  eq(hasNonAscii(''), false, 'hasNonAscii: empty string');
+  eq(
+    hasNonAscii('C:\\Users\\bob smith\\AppData\\Roaming\\SmartSub'),
+    false,
+    'hasNonAscii: ASCII path with space',
+  );
+  eq(hasNonAscii('C:\\Users\\张三\\x.wav'), true, 'hasNonAscii: CJK');
+  eq(hasNonAscii('C:\\Users\\José\\x.wav'), true, 'hasNonAscii: Latin-1');
+  eq(hasNonAscii('/tmp/😀/x.wav'), true, 'hasNonAscii: astral emoji');
+  eq(hasNonAscii('\u007f'), false, 'hasNonAscii: DEL is still ASCII');
+  eq(hasNonAscii('\u0080'), true, 'hasNonAscii: first non-ASCII code point');
+
+  // 2. needsNativeSafe：只在 Windows 且路径含非 ASCII 时介入
+  eq(
+    needsNativeSafe('C:\\Users\\张三\\m.onnx', 'win32'),
+    true,
+    'needsNativeSafe: win32 + CJK',
+  );
+  eq(
+    needsNativeSafe('C:\\Users\\bob\\m.onnx', 'win32'),
+    false,
+    'needsNativeSafe: win32 + ASCII',
+  );
+  eq(
+    needsNativeSafe('/Users/张三/m.onnx', 'darwin'),
+    false,
+    'needsNativeSafe: darwin + CJK is untouched',
+  );
+  eq(
+    needsNativeSafe('/home/张三/m.onnx', 'linux'),
+    false,
+    'needsNativeSafe: linux + CJK is untouched',
+  );
+
+  // 3. stagingBaseDirs：候选顺序固定，自身含非 ASCII 的候选被剔除
+  const winEnv = {
+    ProgramData: 'C:\\ProgramData',
+    PUBLIC: 'C:\\Users\\Public',
+    SystemDrive: 'C:',
+  };
+  const asciiUserData = 'C:\\Users\\bob\\AppData\\Roaming\\SmartSub';
+  const expectedAll = [
+    nodePath.join(asciiUserData, 'native-models'),
+    nodePath.join('C:\\ProgramData', 'SmartSub', 'native-models'),
+    nodePath.join('C:\\Users\\Public', 'SmartSub', 'native-models'),
+    nodePath.join('C:' + nodePath.sep, 'SmartSub', 'native-models'),
+  ];
+  eq(
+    stagingBaseDirs({
+      platform: 'win32',
+      userDataDir: asciiUserData,
+      env: winEnv,
+    }),
+    expectedAll,
+    'stagingBaseDirs: userData first, then ProgramData / Public / SystemDrive',
+  );
+  eq(
+    stagingBaseDirs({
+      platform: 'win32',
+      userDataDir: 'C:\\Users\\张三\\AppData\\Roaming\\SmartSub',
+      env: winEnv,
+    }),
+    expectedAll.slice(1),
+    'stagingBaseDirs: a CJK userData directory is dropped',
+  );
+  eq(
+    stagingBaseDirs({
+      platform: 'win32',
+      userDataDir: asciiUserData,
+      env: { ...winEnv, ProgramData: 'D:\\数据' },
+    }),
+    [expectedAll[0], expectedAll[2], expectedAll[3]],
+    'stagingBaseDirs: a CJK ProgramData is dropped',
+  );
+  eq(
+    stagingBaseDirs({ platform: 'win32', env: { SystemDrive: 'C:' } }),
+    [expectedAll[3]],
+    'stagingBaseDirs: missing env vars / userData are skipped',
+  );
+  eq(
+    stagingBaseDirs({
+      platform: 'win32',
+      userDataDir: nodePath.join('C:\\ProgramData', 'SmartSub'),
+      env: { ProgramData: 'C:\\ProgramData' },
+    }),
+    [nodePath.join('C:\\ProgramData', 'SmartSub', 'native-models')],
+    'stagingBaseDirs: duplicate candidates are collapsed',
+  );
+  eq(
+    stagingBaseDirs({
+      platform: 'darwin',
+      userDataDir: asciiUserData,
+      env: winEnv,
+    }),
+    [],
+    'stagingBaseDirs: nothing to stage to on non-Windows',
+  );
+
+  // 4. stageBundledModel：真实文件系统（用 JS fs 建中文目录，所有平台都能建）
+  const tmpRoot = fs.mkdtempSync(
+    nodePath.join(os.tmpdir(), 'smartsub-native-safe-'),
+  );
+  try {
+    const cjkDir = nodePath.join(tmpRoot, '中文用户-测试');
+    fs.mkdirSync(cjkDir, { recursive: true });
+    const model = nodePath.join(cjkDir, 'silero_vad.onnx');
+    const modelBytes = Buffer.from(
+      Array.from({ length: 4096 }, (_, i) => (i * 31 + 7) & 0xff),
+    );
+    fs.writeFileSync(model, modelBytes);
+
+    const baseA = nodePath.join(tmpRoot, 'stage-a');
+    const baseB = nodePath.join(tmpRoot, 'stage-b');
+    const logs: Array<{ message: string; level: string }> = [];
+    const log = (message: string, level: string) =>
+      logs.push({ message, level });
+    const opts = { platform: 'win32' as const, baseDirs: [baseA, baseB], log };
+
+    // 4a. ASCII 源路径与非 Windows 平台：原样返回，不创建任何目录
+    const asciiModel = nodePath.join(tmpRoot, 'plain.onnx');
+    fs.writeFileSync(asciiModel, modelBytes);
+    eq(
+      ensureNativeSafeModelPath(asciiModel, opts),
+      asciiModel,
+      'ensureNativeSafeModelPath: ASCII path is returned untouched',
+    );
+    eq(
+      ensureNativeSafeModelPath(model, { ...opts, platform: 'darwin' }),
+      model,
+      'ensureNativeSafeModelPath: non-Windows is returned untouched',
+    );
+    eq(
+      ensureNativeSafeModelPath('', opts),
+      '',
+      'ensureNativeSafeModelPath: empty path is returned untouched',
+    );
+    eq(
+      fs.existsSync(baseA),
+      false,
+      'ensureNativeSafeModelPath: nothing is staged when not needed',
+    );
+
+    // 4b. 首次暂存：复制到 <base>/<hash16>/<name>，内容一致，没有残留 tmp
+    resetNativeSafePathCacheForTest();
+    const staged = ensureNativeSafeModelPath(model, opts);
+    eq(
+      nodePath.dirname(nodePath.dirname(staged)),
+      baseA,
+      'stageBundledModel: lands under the first base directory',
+    );
+    eq(
+      /^[0-9a-f]{16}$/.test(nodePath.basename(nodePath.dirname(staged))),
+      true,
+      'stageBundledModel: content-addressed directory name',
+    );
+    eq(
+      nodePath.basename(staged),
+      'silero_vad.onnx',
+      'stageBundledModel: keeps the ASCII file name',
+    );
+    eq(
+      fs.readFileSync(staged).equals(modelBytes),
+      true,
+      'stageBundledModel: staged copy has identical content',
+    );
+    eq(
+      fs.readdirSync(nodePath.dirname(staged)),
+      ['silero_vad.onnx'],
+      'stageBundledModel: no temporary files are left behind',
+    );
+    eq(
+      logs.filter((l) => l.level === 'info').length,
+      1,
+      'stageBundledModel: logs the staging once',
+    );
+
+    // 4c. 同一进程内再次调用：走缓存，不再记日志
+    eq(
+      ensureNativeSafeModelPath(model, opts),
+      staged,
+      'stageBundledModel: cached within the process',
+    );
+    eq(
+      logs.filter((l) => l.level === 'info').length,
+      1,
+      'stageBundledModel: cached call does not log again',
+    );
+
+    // 4d. 新进程（清缓存）：副本完好则不重写
+    fs.utimesSync(staged, 1000, 1000);
+    const mtimeBefore = fs.statSync(staged).mtimeMs;
+    resetNativeSafePathCacheForTest();
+    eq(
+      ensureNativeSafeModelPath(model, opts),
+      staged,
+      'stageBundledModel: idempotent across processes (same path)',
+    );
+    eq(
+      fs.statSync(staged).mtimeMs,
+      mtimeBefore,
+      'stageBundledModel: an intact copy is not rewritten',
+    );
+
+    // 4e. 副本被篡改（同尺寸）/ 被截断 / 被删除：重建为正确内容
+    fs.writeFileSync(staged, Buffer.alloc(modelBytes.length, 0x41));
+    resetNativeSafePathCacheForTest();
+    eq(
+      ensureNativeSafeModelPath(model, opts),
+      staged,
+      'stageBundledModel: tampered copy -> same path',
+    );
+    eq(
+      fs.readFileSync(staged).equals(modelBytes),
+      true,
+      'stageBundledModel: tampered copy is rebuilt',
+    );
+    fs.writeFileSync(staged, modelBytes.subarray(0, 100));
+    resetNativeSafePathCacheForTest();
+    ensureNativeSafeModelPath(model, opts);
+    eq(
+      fs.readFileSync(staged).equals(modelBytes),
+      true,
+      'stageBundledModel: truncated copy is rebuilt',
+    );
+    fs.rmSync(staged);
+    eq(
+      ensureNativeSafeModelPath(model, opts),
+      staged,
+      'stageBundledModel: deleted copy is re-staged even when cached',
+    );
+    eq(
+      fs.readFileSync(staged).equals(modelBytes),
+      true,
+      'stageBundledModel: deleted copy is restored',
+    );
+
+    // 4f. 不同内容、同文件名：落在不同目录（内容寻址，更新随包模型时不会拿到旧副本）
+    const model2Dir = nodePath.join(tmpRoot, '另一个目录');
+    fs.mkdirSync(model2Dir, { recursive: true });
+    const model2 = nodePath.join(model2Dir, 'silero_vad.onnx');
+    fs.writeFileSync(model2, Buffer.concat([modelBytes, Buffer.from('v2')]));
+    const staged2 = ensureNativeSafeModelPath(model2, opts);
+    eq(
+      staged2 === staged,
+      false,
+      'stageBundledModel: different content maps to a different directory',
+    );
+
+    // 4g. 首选目录不可用（路径上有个普通文件挡着）：回退到下一个候选
+    resetNativeSafePathCacheForTest();
+    const blocker = nodePath.join(tmpRoot, 'blocked-base');
+    fs.writeFileSync(blocker, 'not a directory');
+    const fallback = ensureNativeSafeModelPath(model, {
+      ...opts,
+      baseDirs: [blocker, baseB],
+    });
+    eq(
+      nodePath.dirname(nodePath.dirname(fallback)),
+      baseB,
+      'stageBundledModel: falls back to the next base directory',
+    );
+    eq(
+      fs.readFileSync(fallback).equals(modelBytes),
+      true,
+      'stageBundledModel: fallback copy has identical content',
+    );
+
+    // 4h. 所有候选都失败：返回原路径并给出 warning（行为不比修复前更差）
+    resetNativeSafePathCacheForTest();
+    logs.length = 0;
+    eq(
+      ensureNativeSafeModelPath(model, { ...opts, baseDirs: [blocker] }),
+      model,
+      'stageBundledModel: every base failed -> original path',
+    );
+    eq(
+      logs.some((l) => l.level === 'warning' && l.message.includes(model)),
+      true,
+      'stageBundledModel: every base failed -> warning mentions the model',
+    );
+    resetNativeSafePathCacheForTest();
+    eq(
+      ensureNativeSafeModelPath(model, { ...opts, baseDirs: [] }),
+      model,
+      'stageBundledModel: no candidate directory -> original path',
+    );
+
+    // 4i. 源文件不存在 / 过大：不抛错，原路径交给原生库自己报错
+    resetNativeSafePathCacheForTest();
+    const missing = nodePath.join(cjkDir, 'missing.onnx');
+    eq(
+      ensureNativeSafeModelPath(missing, opts),
+      missing,
+      'stageBundledModel: missing source -> original path',
+    );
+    eq(
+      ensureNativeSafeModelPath(model, { ...opts, maxBytes: 16 }),
+      model,
+      'stageBundledModel: oversized source is never staged',
+    );
+
+    // 4j. 非 ASCII 文件名被换成 ASCII，扩展名保留
+    const cjkNamed = nodePath.join(cjkDir, '模型.onnx');
+    fs.writeFileSync(cjkNamed, modelBytes);
+    resetNativeSafePathCacheForTest();
+    const stagedNamed = stageBundledModel(cjkNamed, opts);
+    eq(
+      hasNonAscii(nodePath.basename(stagedNamed)),
+      false,
+      'stageBundledModel: file name is made ASCII',
+    );
+    eq(
+      nodePath.extname(stagedNamed),
+      '.onnx',
+      'stageBundledModel: extension is preserved',
+    );
+    eq(
+      fs.readFileSync(stagedNamed).equals(modelBytes),
+      true,
+      'stageBundledModel: renamed copy has identical content',
+    );
+  } finally {
+    resetNativeSafePathCacheForTest();
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+runNativeSafePathTests();
+
 runRuntimeImportTests();
 
 runAsyncConcurrencyTests()
