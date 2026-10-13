@@ -286,7 +286,7 @@ export const ProviderForm: React.FC<ProviderFormProps> = ({
     );
   };
 
-  const FREE_CHAIN_SOURCES = ['bingFree', 'googleFree', 'deeplx'];
+  const FREE_CHAIN_SOURCES = ['youdaoFree', 'bingFree', 'googleFree', 'deeplx'];
 
   const renderChainEditor = (
     value: string,

@@ -49,6 +49,7 @@
   "newVersionAvailable": "New version available",
   "provider": {
     "autoFree": "Free (Auto)",
+    "youdaoFree": "Youdao (Free)",
     "bingFree": "Bing (Free)",
     "googleFree": "Google (Free)",
     "baidu": "Baidu",

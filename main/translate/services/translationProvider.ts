@@ -21,6 +21,7 @@ import {
   googleTranslator,
   bingFreeTranslator,
   googleFreeTranslator,
+  youdaoFreeTranslator,
   doubaoTranslator,
   niutransTranslator,
   tencentTranslator,
@@ -36,8 +37,18 @@ import {
 } from '../../helpers/glossaryManager';
 import { ProviderFallbackRunner } from './providerFallback';
 
-/** autoFree 默认回退链：Bing 免费 → Google 免费 → DeepLX */
-export const DEFAULT_FREE_FALLBACK_CHAIN = ['bingFree', 'googleFree', 'deeplx'];
+/**
+ * autoFree 默认回退链：有道免费 → Bing 免费 → Google 免费 → DeepLX。
+ * 有道在前是速度优先（批量请求，远快于逐条的必应），代价是译文略逊于必应。
+ * 改顺序时同步 types/provider.ts 中 autoFree 的 fallbackChain 默认值、
+ * translateControl.json 的 phFallbackChain，以及 providerMigration.ts 的目标链。
+ */
+export const DEFAULT_FREE_FALLBACK_CHAIN = [
+  'youdaoFree',
+  'bingFree',
+  'googleFree',
+  'deeplx',
+];
 
 export const TRANSLATOR_MAP = {
   volc: volcTranslator,
@@ -54,6 +65,7 @@ export const TRANSLATOR_MAP = {
   qwen: openaiTranslator,
   siliconflow: openaiTranslator,
   google: googleTranslator,
+  youdaoFree: youdaoFreeTranslator,
   bingFree: bingFreeTranslator,
   googleFree: googleFreeTranslator,
   autoFree: createFallbackTranslator(DEFAULT_FREE_FALLBACK_CHAIN),

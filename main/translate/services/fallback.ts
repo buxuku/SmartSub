@@ -1,10 +1,12 @@
 import { TranslatorFunction } from '../types';
 import { logMessage } from '../../helpers/storeManager';
 import {
+  youdaoFreeTranslator,
   bingFreeTranslator,
   googleFreeTranslator,
   deeplxTranslator,
 } from '../../service';
+import { getYoudaoFreeAvailability } from '../../service/youdaoFree';
 import {
   isTaskCancelledError,
   throwIfSignalCancelled,
@@ -22,6 +24,7 @@ import type { TranslationRequestOptions } from '../types';
  */
 
 const SOURCE_MAP: Record<string, TranslatorFunction> = {
+  youdaoFree: youdaoFreeTranslator as unknown as TranslatorFunction,
   bingFree: bingFreeTranslator as unknown as TranslatorFunction,
   googleFree: googleFreeTranslator as unknown as TranslatorFunction,
   deeplx: deeplxTranslator as unknown as TranslatorFunction,
@@ -44,6 +47,16 @@ function parseChain(chainRaw: unknown, defaultChain: string[]): string[] {
 function isSourceUnavailable(sourceId: string, proof: any): string | null {
   if (sourceId === 'deeplx' && !proof?.apiUrl) {
     return 'no endpoint';
+  }
+  if (sourceId === 'youdaoFree') {
+    // 快速失效冷却期内直接跳过，避免每个批次都先失败一次才切到下一源
+    const availability = getYoudaoFreeAvailability();
+    if (!availability.available) {
+      const seconds = Math.ceil((availability.retryAfterMs ?? 0) / 1000);
+      return seconds > 0
+        ? `cooling down (retry in ${seconds} s)`
+        : 'cooling down';
+    }
   }
   return null;
 }

@@ -12,7 +12,8 @@ import {
 // v23：新增独立的 Qwen-MT 机器翻译服务商
 // v24：同 type 服务实例与任务内回退链
 // v25：AI 翻译默认批次与并发调优；AI 断句复用服务商并发配置
-const CURRENT_PROVIDER_VERSION = 25;
+// v26：新增有道免费翻译 youdaoFree；autoFree 未自定义的旧默认回退链改为有道在前
+const CURRENT_PROVIDER_VERSION = 26;
 
 export async function getAndInitializeProviders(): Promise<Provider[]> {
   try {
