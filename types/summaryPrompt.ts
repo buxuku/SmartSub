@@ -94,7 +94,9 @@ type SummarySegmenterCtor = new (
 const segmenterCache = new Map<string, SummaryWordSegmenter>();
 
 /** 词边界分词器。构造失败或运行时没有 Segmenter 时返回 null，调用方按空白切分。 */
-export function summaryWordSegmenter(locale: string): SummaryWordSegmenter | null {
+export function summaryWordSegmenter(
+  locale: string,
+): SummaryWordSegmenter | null {
   const ctor =
     typeof Intl !== 'undefined'
       ? (Intl as { Segmenter?: SummarySegmenterCtor }).Segmenter
@@ -179,4 +181,12 @@ export function resolveSummaryPrompt(stored?: unknown): string {
   if (typeof stored !== 'string') return defaultSummaryPrompt;
   const trimmed = stored.trim();
   return trimmed || defaultSummaryPrompt;
+}
+
+/**
+ * settings 里存的是不是一份有别于出厂稿的改写版。
+ * 空 / 缺省 / 与出厂稿一致都算未自定义，与编辑器的持久化口径一致。
+ */
+export function isSummaryPromptCustomized(stored?: unknown): boolean {
+  return resolveSummaryPrompt(stored).trim() !== defaultSummaryPrompt.trim();
 }

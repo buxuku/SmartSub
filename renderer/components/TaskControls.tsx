@@ -23,6 +23,8 @@ interface TaskControlsProps {
   className?: string;
   /** 可选：当阻断原因是精修配置异常时，唤起精修配置弹层并滚动聚焦 */
   onOpenRefine?: () => void;
+  /** 可选：当阻断原因是摘要服务不可用时，唤起「生成摘要」弹层并滚动聚焦 */
+  onOpenSummary?: () => void;
   /** 可选：状态变化时上抛（任务页用于联动重试按钮/完成横幅） */
   onStatusChange?: (status: string) => void;
   /** 任务成功派发时回传本轮配置；需要固定快照的任务可立即切换为只读展示。 */
@@ -46,6 +48,7 @@ const TaskControls = ({
   projectId,
   className,
   onOpenRefine,
+  onOpenSummary,
   onStatusChange,
   onTaskDispatched,
   rememberDefaults = false,
@@ -129,12 +132,23 @@ const TaskControls = ({
           formData,
           summaryProviders,
         );
-        if (summaryBlock === 'follow') {
-          toast.error(t('tasks:wizard.blockSummaryFollow'));
-          return;
-        }
-        if (summaryBlock === 'invalid') {
-          toast.error(t('tasks:wizard.blockSummaryProviderInvalid'));
+        if (summaryBlock) {
+          toast.error(
+            t(
+              summaryBlock === 'follow'
+                ? 'tasks:wizard.blockSummaryFollow'
+                : 'tasks:wizard.blockSummaryProviderInvalid',
+            ),
+            {
+              action: onOpenSummary
+                ? {
+                    label: t('tasks:wizard.summaryActionAdjust'),
+                    onClick: onOpenSummary,
+                  }
+                : undefined,
+            },
+          );
+          onOpenSummary?.();
           return;
         }
       }
