@@ -461,8 +461,8 @@ export const PROVIDER_TYPES: ProviderType[] = [
     isBuiltin: true,
     isAi: false,
     group: 'free',
-    // 先用 emoji 占位，不引入品牌图标（授权未确认，见 openspec add-youdao-free-translator OQ2）
     icon: '📖',
+    iconImg: '/images/providers/youdao.png',
     fields: [
       {
         key: 'windowMaxRequests',

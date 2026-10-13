@@ -175,7 +175,7 @@
 
 - `types/provider.ts` 新增 `youdaoFree`（`group: 'free'`、`isAi: false`、无凭据字段）；`apiBatchFields` 增加可选的并发默认值参数（向后兼容），以便 `batchConcurrency` 默认 2。
 - 资源：`common.json` 的 `provider.youdaoFree`（有道免费翻译 / Youdao (Free)）；`translateControl.json` 的 `chainSource.youdaoFree`、`batchSizeYoudaoFreeTips`，并更新 `batchSizeAutoFreeTips` 与 `fallbackChainTips` 里对「谁支持批量」的描述。
-- 图标：先用 emoji 占位，不引入品牌 SVG，避免商标或授权问题（OQ2）。
+- 图标：使用有道品牌图标，与其他服务商保持一致（OQ2，2026-10-13 由维护者决定；原先因授权未确认用 emoji 占位）。文件是 `renderer/public/images/providers/youdao.png`（96×96 PNG，即 `fanyi.youdao.com` 页面头部声明的官方站点图标，2026-10-13 取得），`types/provider.ts` 里 `youdaoFree` 配 `iconImg`；与其它第三方品牌图标一样，仅用于标识该服务。`scripts/test-provider-fallback.ts` 校验每个服务商的 `iconImg` 文件都真实存在，缺失时界面会静默回落成 emoji。
 - 文档：`free.md` 增加有道行、默认链顺序、「非官方接口、不承诺可用性、文本会发送至有道」的披露与替代建议，并更新页脚日期；`overview.md` 的「免费起步」、`subtitle-translation.md`、README 三语中「必应 / 谷歌」补上有道。服务商总数表述不变，因为内置免费源在文档里合并为一个条目。
 
 ### D11 · 测试策略
@@ -222,7 +222,7 @@ CI 与单测一律不访问真实网络，沿用 `scripts/test-free-translators.
 ## Open Questions
 
 - **OQ1 · 默认顺序与迁移范围（已确认：方案 A，2026-10-13）。** 备选如下，A：`youdaoFree,bingFree,googleFree,deeplx`，迁移未自定义的旧默认链；整集约 18 s 对约 13 分钟（推算），代价是免费路径整体译文略降。B：`bingFree,youdaoFree,googleFree,deeplx`，无质量回退，有道只作必应故障时的兜底与手动选用，默认路径的提速基本丢失。C：新装用 A，已有用户的旧默认链迁移成 B 的顺序，升级不改变其主译文来源，但需要在文档里说明两种默认。已选 A；若日后更看重「升级不改变既有输出」，改为 C 只需调整 spec 的两条场景、D9 与迁移目标串。
-- **OQ2 · 图标。** 是否使用有道官方图标，取决于授权；默认 emoji 占位。
+- **OQ2 · 图标（已确认：使用品牌图标，2026-10-13）。** 原先因授权未确认而用 emoji 占位；维护者要求与其他服务商保持一致，改用有道品牌图标，见 D10。
 - **OQ3 · 海外网络。** 可达性与延迟未验证；是否需要一次海外出口的补测。
 - **OQ4 · `autoFree` 默认批量。** 是否随首位源从 10 提到 30（整集约 18 s → 约 6 s）。推荐不动：收益小，且会改变必应与谷歌的失败重做粒度。
 - **OQ5 · 预设。** 是否在 `autoFree` 上提供「速度优先 / 质量优先」一键预设，作为后续独立变更。

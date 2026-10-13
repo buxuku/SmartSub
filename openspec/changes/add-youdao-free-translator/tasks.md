@@ -38,7 +38,7 @@
 - [x] 6.1 Add `youdaoFree` to `SOURCE_MAP` in `main/translate/services/fallback.ts` and make `isSourceUnavailable` skip it while the breaker is cooling down.
 - [x] 6.2 Add `youdaoFree` to `FREE_CHAIN_SOURCES` in `renderer/components/ProviderForm.tsx`, with a jest test (`renderer/components/__tests__/ProviderFormChain.test.tsx`) that the chain editor offers, adds, moves and removes it and lists it first by default.
 - [x] 6.3 Add the zh and en strings `provider.youdaoFree`, `chainSource.youdaoFree` and `batchSizeYoudaoFreeTips`, and refresh `batchSizeAutoFreeTips` and `fallbackChainTips`.
-- [x] 6.4 Use an emoji placeholder icon (no brand SVG) unless OQ2 is resolved otherwise.
+- [x] 6.4 Show `youdaoFree` with the Youdao brand icon like the other providers (OQ2 was resolved on 2026-10-13; it started as an emoji placeholder): add `renderer/public/images/providers/youdao.png`, set `iconImg` in `types/provider.ts`, and check in `scripts/test-provider-fallback.ts` that every provider type's icon file exists.
 
 ## 7. Tests
 

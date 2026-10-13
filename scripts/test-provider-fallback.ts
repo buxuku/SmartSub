@@ -447,6 +447,19 @@ function testYoudaoFreeProviderDefinition() {
   }
 }
 
+function testProviderBrandIcons() {
+  // Every provider is listed with its brand image, and the file really ships
+  // in renderer/public (a missing one silently falls back to an emoji).
+  const publicDir = path.join(process.cwd(), 'renderer/public');
+  for (const type of PROVIDER_TYPES) {
+    assert(type.iconImg, `${type.id} should use a brand icon image`);
+    assert(
+      fs.existsSync(path.join(publicDir, type.iconImg)),
+      `${type.id} icon ${type.iconImg} should exist under renderer/public`,
+    );
+  }
+}
+
 function testYoudaoFreeMigration() {
   const autoFree = (overrides: Partial<Provider> = {}): Provider => ({
     id: 'autoFree',
@@ -845,6 +858,7 @@ export async function runProviderFallbackTests() {
   testMigrationPreservesProviderInstances();
   testDeepLXGetsConservativeRateLimitDefault();
   testYoudaoFreeProviderDefinition();
+  testProviderBrandIcons();
   testYoudaoFreeMigration();
   testAiPerformanceDefaults();
   await testDraftFallbackIsSkipped();
