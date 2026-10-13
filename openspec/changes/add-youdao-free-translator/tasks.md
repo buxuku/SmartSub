@@ -56,6 +56,6 @@
 
 ## 9. Verification
 
-- [ ] 9.1 Manual live smoke test (at most 200 requests in total, no credentials persisted): the provider test button for `youdaoFree`, then a 50-line sample SRT through `youdaoFree` and through the default `autoFree`, checking alignment, tags and the log lines.
-- [ ] 9.2 Failure drill: block `dict.youdao.com` and confirm fallback to Bing, breaker entry and exit logs and no per-batch warning spam; run a Turkish-source sample and confirm it routes to Bing.
+- [x] 9.1 Manual live smoke test (at most 200 requests in total, no credentials persisted): the provider test button for `youdaoFree`, then a 50-line sample SRT through `youdaoFree` and through the default `autoFree`, checking alignment, tags and the log lines.
+- [x] 9.2 Failure drill: block `dict.youdao.com` and confirm fallback to Bing, breaker entry and exit logs and no per-batch warning spam; run a Turkish-source sample and confirm it routes to Bing.
 - [ ] 9.3 Confirm the logs and the persisted store contain no subtitle text, key material or signatures; run the CI-equivalent checks (`yarn build`, docs `yarn build`) and `openspec validate add-youdao-free-translator`.
