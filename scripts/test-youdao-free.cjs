@@ -234,6 +234,31 @@ test('Chinese output: trailing newline, punctuation next to Han and full-width d
   assert.equal(n('Hello!'), 'Hello!');
 });
 
+// ---------------------------------------------------------------------------
+// Language mapping (live-probed 2026-10-13: every supportedLanguage code was
+// tried as source and as target; codes the service rejects both ways are null)
+// ---------------------------------------------------------------------------
+
+test('youdao language column keeps only live-verified languages', () => {
+  const { supportedLanguage, convertLanguageCode } = require('../main/helpers/utils.ts');
+  const verified = new Set([
+    'zh', 'zh-Hant', 'en', 'ja', 'ko', 'fr', 'de', 'es', 'ru', 'pt', 'it',
+    'nl', 'hi', 'th', 'vi', 'id', 'ar',
+  ]);
+  for (const { value } of supportedLanguage) {
+    const mapped = convertLanguageCode(value, 'youdao');
+    if (verified.has(value)) {
+      assert.equal(typeof mapped, 'string', `${value} should be supported`);
+    } else {
+      assert.equal(mapped, null, `${value} should map to null`);
+    }
+  }
+  assert.equal(convertLanguageCode('zh', 'youdao'), 'zh-CHS');
+  assert.equal(convertLanguageCode('zh-Hant', 'youdao'), 'zh-CHT');
+  assert.equal(convertLanguageCode('en', 'youdao'), 'en');
+  assert.equal(convertLanguageCode('tr', 'youdao'), null);
+});
+
 (async () => {
   let failed = 0;
   for (const { name, fn } of tests) {

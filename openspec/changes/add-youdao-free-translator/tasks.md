@@ -23,8 +23,8 @@
 
 ## 4. Language support
 
-- [ ] 4.1 Add `'youdao'` to `TranslateProvider` and a `youdao` column to `supportedLanguage` in `main/helpers/utils.ts` (`zh-CHS`, `zh-CHT`, explicit `null` for unsupported languages).
-- [ ] 4.2 Probe every `supportedLanguage` entry against the live endpoint once per direction (to and from Simplified Chinese or English, `auto` source; about 100 requests, stop at the first throttle signal), set failures to `null` and record the table in design D6.
+- [x] 4.1 Add `'youdao'` to `TranslateProvider` and a `youdao` column to `supportedLanguage` in `main/helpers/utils.ts` (`zh-CHS`, `zh-CHT`, explicit `null` for unsupported languages).
+- [x] 4.2 Probe every `supportedLanguage` entry against the live endpoint once per direction (to and from Simplified Chinese or English, `auto` source; about 100 requests, stop at the first throttle signal), set failures to `null` and record the table in design D6. (Done 2026-10-13: 100 requests, no throttle signal; 17 languages kept, 33 mapped to `null`.)
 
 ## 5. Provider registration and migration
 
