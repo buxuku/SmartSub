@@ -14,12 +14,12 @@
 
 ## 3. Translator
 
-- [ ] 3.1 Add `main/service/youdaoFree.ts`: session credential establishment (home-page `Set-Cookie` → key material → fixed two-paragraph probe) with in-memory cache (30 min cap) and single-flight, signed request and response decryption using Node `crypto` and `axios`; export `__test__` helpers (`resetSession`, protocol primitives) like `bingFree`.
-- [ ] 3.2 Implement the call flow: language mapping and validation before any request, paragraph build, chunking at 5,000 characters, newline-joined POST, echo alignment check, per-paragraph downgrade, aggregate failure and order-preserving reassembly.
-- [ ] 3.3 Implement response validation (nested `translateResult` shape; flat decoy rejected) and self-healing (`code` 50, decoy, decrypt/parse failure or empty result → rebuild credentials and retry once), plus error classification (`Youdao free translate failed (network): …`; `not supported language` for null mappings and codes 21/40 without credential rebuild or breaker counting).
-- [ ] 3.4 Call `acquire('youdaoFree:<providerId>', resolveRateLimitConfig(proof), signal)` before every translation request, apply a dedicated 15 s timeout and propagate the abort signal.
-- [ ] 3.5 Implement the module-level circuit breaker (3 consecutive request-level failures → 120 s cooldown → single probe) and export `getYoudaoFreeAvailability()`.
-- [ ] 3.6 Log only the source id, counts, HTTP status, downgrades, credential rebuilds, decoy rejections, probe results and breaker transitions; never subtitle text, translations, the visitor cookie, keys or signatures.
+- [x] 3.1 Add `main/service/youdaoFree.ts`: session credential establishment (home-page `Set-Cookie` → key material → fixed two-paragraph probe) with in-memory cache (30 min cap) and single-flight, signed request and response decryption using Node `crypto` and `axios`; export `__test__` helpers like `bingFree` (`reset` clears the session and the breaker, `breakerState`, `KEY_GETTER_SECRET`).
+- [x] 3.2 Implement the call flow: language mapping and validation before any request, paragraph build, chunking at 5,000 characters, newline-joined POST, echo alignment check, per-paragraph downgrade, aggregate failure and order-preserving reassembly.
+- [x] 3.3 Implement response validation (nested `translateResult` shape; flat decoy rejected) and self-healing (`code` 50, decoy, decrypt/parse failure or empty result → rebuild credentials and retry once), plus error classification (`Youdao free translate failed (network): …`; `not supported language` for null mappings and codes 21/40 without credential rebuild or breaker counting).
+- [x] 3.4 Call `acquire('youdaoFree:<providerId>', resolveRateLimitConfig(proof), signal)` before every translation request, apply a dedicated 15 s timeout and propagate the abort signal.
+- [x] 3.5 Implement the module-level circuit breaker (3 consecutive request-level failures → 120 s cooldown → single probe) and export `getYoudaoFreeAvailability()`.
+- [x] 3.6 Log only the source id, counts, HTTP status, downgrades, credential rebuilds, decoy rejections, probe results and breaker transitions; never subtitle text, translations, the visitor cookie, keys or signatures.
 
 ## 4. Language support
 
@@ -42,9 +42,9 @@
 
 ## 7. Tests
 
-- [ ] 7.1 Add `scripts/test-youdao-free.cjs` (same mock-`axios` and TypeScript-transpile setup as `test-free-translators.cjs`) and chain it into `test:free-translators`: protocol vectors (a self-encrypted fixture built from fake key material, with both the valid nested and the flat decoy shape), session credentials (cache/TTL/single-flight, cookie pass-through, no cookie fabricated, probe pass / decoy / mismatch, `code` 50 and decoy rebuild-and-retry, failure after rebuild), and batching with alignment (match, count mismatch, echo mismatch, per-paragraph failure, 5,000-character chunking, full-width echo).
-- [ ] 7.2 Add protection and restoration tests mirroring the design D4 table plus tag pairing, hard-break merge, bracket lines and the all-lines-skipped zero-request case; add Chinese post-processing and language mapping tests (a `null` mapping sends no request; codes 21/40).
-- [ ] 7.3 Add tests for rate-limit spacing, timeout, cancellation, error classification and the circuit breaker (fake clock for the 120 s cooldown), plus a log-privacy test (no subtitle text, translations, cookie, key material or signature).
+- [x] 7.1 Add `scripts/test-youdao-free.cjs` (same mock-`axios` and TypeScript-transpile setup as `test-free-translators.cjs`) and chain it into `test:free-translators`: protocol vectors (a self-encrypted fixture built from fake key material, with both the valid nested and the flat decoy shape), session credentials (cache/TTL/single-flight, cookie pass-through, no cookie fabricated, probe pass / decoy / mismatch, `code` 50 and decoy rebuild-and-retry, failure after rebuild), and batching with alignment (match, count mismatch, echo mismatch, per-paragraph failure, 5,000-character chunking, full-width echo).
+- [x] 7.2 Add protection and restoration tests mirroring the design D4 table plus tag pairing, hard-break merge, bracket lines and the all-lines-skipped zero-request case; add Chinese post-processing and language mapping tests (a `null` mapping sends no request; codes 21/40).
+- [x] 7.3 Add tests for rate-limit spacing, timeout, cancellation, error classification and the circuit breaker (fake clock for the 120 s cooldown), plus a log-privacy test (no subtitle text, translations, cookie, key material or signature).
 - [ ] 7.4 Extend `scripts/test-provider-fallback.ts` for chain integration (source map, default order, cooldown skip, aggregated error) and migration (legacy default updated, custom chain kept, idempotent, performance fields untouched, `youdaoFree` backfilled).
 - [ ] 7.5 Make sure no CI test touches the network, then run `yarn check:i18n`, `yarn typecheck`, `yarn test:free-translators`, `yarn test:provider-fallback`, `yarn test:provider-test-flow`, `yarn test:task-defaults` and `yarn test:renderer`.
 
