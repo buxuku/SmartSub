@@ -29,6 +29,7 @@ Make every frame speak beautifully
 SmartSub is an open-source subtitle and dubbing tool that packs the whole pipeline — **speech-to-text → subtitle translation → proofreading → AI dubbing → burn-in** — into one desktop app, with a built-in online video downloader: paste a YouTube / Bilibili link and the source video is fetched for you. Transcription runs on local models (whisper.cpp, sherpa-onnx and more), so your files never leave your machine. It handles batch jobs, accelerates on NVIDIA / AMD / Intel / Apple Silicon GPUs, and runs on Windows, macOS, and Linux.
 
 SmartSub deeply integrates modern AI copilot and agentic automation capabilities:
+
 - **In-App AI Creative Assistant (Copilot)**: Toggle anytime via keyboard shortcut with deep workspace context awareness, multimodal screenshot diagnostics, real-time undoable subtitle editing, and agentic tool execution using natural language.
 - **MCP Protocol & CLI Automation**: Full Model Context Protocol support with 111 production-grade tools and matching CLI commands. Ships with its own Electron/Node runtime (zero external Node.js config required), connecting seamlessly with Cursor, Claude Code, OpenAI Codex, and headless automated scripts.
 
@@ -36,16 +37,16 @@ SmartSub deeply integrates modern AI copilot and agentic automation capabilities
 
 ## What can it do for you?
 
-| Your goal                                     | How SmartSub handles it                                                                    |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Your goal                                     | How SmartSub handles it                                                                                                                                    |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Polish subtitles & troubleshoot with AI       | Summon the in-app AI assistant anytime with workspace context & vision screenshot diagnostics; rephrase dialogue, fix jargon, or dispatch tasks hands-free |
-| Automate workflows with Cursor / Claude / CLI | Use 111 MCP tools & CLI commands to let external AI agents or terminal scripts transcribe, translate, dub, and burn videos automatically |
-| Watch foreign videos or lectures without subs | Drop in the video, transcribe locally, translate — get bilingual subtitles instantly       |
-| Subtitle an online video (YouTube / Bilibili) | Paste the link — the video downloads in-app, official subs auto-pair, no third-party tools |
-| Localize content for other markets            | Translate subtitles, then dub them into a new audio track with TTS                         |
-| Narrate videos in your own voice              | Record a short sample, clone your voice, and have it read the whole video                  |
-| Archive podcasts, courses, meeting recordings | Batch-transcribe into SRT files for editing, search, or archiving                          |
-| Ship videos with polished subtitles           | Proofread line by line, then hardcode or soft-mux with WYSIWYG styling                     |
+| Automate workflows with Cursor / Claude / CLI | Use 111 MCP tools & CLI commands to let external AI agents or terminal scripts transcribe, translate, dub, and burn videos automatically                   |
+| Watch foreign videos or lectures without subs | Drop in the video, transcribe locally, translate — get bilingual subtitles instantly                                                                       |
+| Subtitle an online video (YouTube / Bilibili) | Paste the link — the video downloads in-app, official subs auto-pair, no third-party tools                                                                 |
+| Localize content for other markets            | Translate subtitles, then dub them into a new audio track with TTS                                                                                         |
+| Narrate videos in your own voice              | Record a short sample, clone your voice, and have it read the whole video                                                                                  |
+| Archive podcasts, courses, meeting recordings | Batch-transcribe into SRT files for editing, search, or archiving                                                                                          |
+| Ship videos with polished subtitles           | Proofread line by line, then hardcode or soft-mux with WYSIWYG styling                                                                                     |
 
 ## Features
 
@@ -101,6 +102,7 @@ Online video **download** / local media → **transcribe** → **translate** →
 ### 🎙️ AI Assistant & Automation Synergies
 
 Beyond conventional UI operations, SmartSub provides a cutting-edge copilot experience and developer automation:
+
 - **Real-Time Collaboration (Copilot)**: Summon the assistant on any page to refine subtitle phrasing, troubleshoot failed jobs, or explain domain-specific jargon.
 - **Visual Diagnostics (Multimodal Vision)**: Click the camera button to snapshot dialogs, error toasts, or parameter settings for visual inspection and guidance by vision LLMs.
 - **External AI & Script Automation (MCP & CLI)**: Drive batch processing and end-to-end pipelines through Cursor, Claude Code, or terminal shell scripts without opening the UI window.
@@ -316,6 +318,7 @@ When you create a cloned voice, the reference audio is automatically quality-che
 #### 2. Connecting External AI Tools (Cursor / Codex / Claude Code)
 
 Go to **Settings → Connect AI Tools (MCP)**:
+
 - **Cursor**: Click "Import to Cursor" to initiate one-click deep link registration with Cursor's MCP protocol.
 - **OpenAI Codex**: Click "Copy Configuration" and merge the generated TOML block into your `~/.codex/config.toml`.
 - **Claude Code**: Run the bundled installer in your terminal:
