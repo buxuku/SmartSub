@@ -1,8 +1,10 @@
 import type { ActivityObserver } from '../../../types/taskActivity';
 import path from 'path';
+import { app } from 'electron';
 import { logMessage } from '../storeManager';
 import { getExtraResourcesPath } from '../utils';
 import { getSherpaLibDir, isSherpaLibInstalled } from './sherpaLibPaths';
+import { ensureNativeSafeModelPath } from './nativeSafePath';
 import { spawnAppUtilityHost } from '../crash/appUtilityHost';
 import { beginCrashContext } from '../crash/crashContext';
 import {
@@ -79,6 +81,24 @@ function workerPath(): string {
     'worker',
     'sherpa-worker.js',
   );
+}
+
+/**
+ * 随包的小模型（silero VAD / gtcrn 降噪）交给原生库前的路径处理：
+ * Windows 上路径含非 ASCII（用户名是中文时默认安装目录就是）时，原生库打不开它，
+ * VAD 会静默得到 `vad is nullptr`。此时换成纯 ASCII 目录里的副本（详见 nativeSafePath.ts）。
+ */
+function nativeSafeModelPath(modelPath: string): string {
+  let userDataDir: string | undefined;
+  try {
+    userDataDir = app.getPath('userData');
+  } catch {
+    userDataDir = undefined;
+  }
+  return ensureNativeSafeModelPath(modelPath, {
+    userDataDir,
+    log: logMessage,
+  });
 }
 
 /**
@@ -166,7 +186,11 @@ class SherpaFunasrRuntime {
   /** 预热：仅 load 模型，不转写。失败非致命。 */
   prewarm(model: SherpaModelRequest): void {
     try {
-      this.ensureWorker().postMessage({ type: 'load', ...model });
+      this.ensureWorker().postMessage({
+        type: 'load',
+        ...model,
+        vadModel: nativeSafeModelPath(model.vadModel),
+      });
     } catch (e) {
       logMessage(`sherpa prewarm skipped: ${e}`, 'warning');
     }
@@ -179,6 +203,8 @@ class SherpaFunasrRuntime {
     onActivity?: ActivityObserver,
   ): { id: string; result: Promise<TranscriptionResult> } {
     const w = this.ensureWorker();
+    // 先处理路径再登记请求：这里抛错不会留下永远不结束的 pending 项
+    const vadModel = nativeSafeModelPath(model.vadModel);
     const id = `t${++this.seq}`;
     const result = new Promise<TranscriptionResult>((resolve, reject) => {
       this.pending.set(id, { resolve, reject, onProgress, onActivity });
@@ -190,7 +216,13 @@ class SherpaFunasrRuntime {
       phase: 'transcribe',
     });
     result.then(endContext, endContext);
-    w.postMessage({ type: 'transcribe', id, audioFile, ...model });
+    w.postMessage({
+      type: 'transcribe',
+      id,
+      audioFile,
+      ...model,
+      vadModel,
+    });
     return { id, result };
   }
 
@@ -207,6 +239,7 @@ class SherpaFunasrRuntime {
     result: Promise<{ segments: Array<{ start: number; end: number }> }>;
   } {
     const w = this.ensureWorker();
+    const nativeVadModel = nativeSafeModelPath(vadModel);
     const id = `v${++this.seq}`;
     const result = new Promise<{
       segments: Array<{ start: number; end: number }>;
@@ -219,7 +252,13 @@ class SherpaFunasrRuntime {
       phase: 'detect-speech',
     });
     result.then(endContext, endContext);
-    w.postMessage({ type: 'detectSpeech', id, audioFile, vadModel, params });
+    w.postMessage({
+      type: 'detectSpeech',
+      id,
+      audioFile,
+      vadModel: nativeVadModel,
+      params,
+    });
     return { id, result };
   }
 
@@ -233,6 +272,7 @@ class SherpaFunasrRuntime {
     outFile: string,
   ): { id: string; result: Promise<void> } {
     const w = this.ensureWorker();
+    const nativeDenoiseModel = nativeSafeModelPath(denoiseModel);
     const id = `d${++this.seq}`;
     const result = new Promise<void>((resolve, reject) => {
       this.pending.set(id, {
@@ -246,7 +286,13 @@ class SherpaFunasrRuntime {
       phase: 'denoise',
     });
     result.then(endContext, endContext);
-    w.postMessage({ type: 'denoise', id, audioFile, denoiseModel, outFile });
+    w.postMessage({
+      type: 'denoise',
+      id,
+      audioFile,
+      denoiseModel: nativeDenoiseModel,
+      outFile,
+    });
     return { id, result };
   }
 
