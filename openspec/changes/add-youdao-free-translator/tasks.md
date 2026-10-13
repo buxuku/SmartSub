@@ -46,7 +46,7 @@
 - [x] 7.2 Add protection and restoration tests mirroring the design D4 table plus tag pairing, hard-break merge, bracket lines and the all-lines-skipped zero-request case; add Chinese post-processing and language mapping tests (a `null` mapping sends no request; codes 21/40).
 - [x] 7.3 Add tests for rate-limit spacing, timeout, cancellation, error classification and the circuit breaker (fake clock for the 120 s cooldown), plus a log-privacy test (no subtitle text, translations, cookie, key material or signature).
 - [x] 7.4 Extend `scripts/test-provider-fallback.ts` for the provider definition and migration (legacy default updated, custom chain kept, free sources stable on a second run, performance fields untouched, `youdaoFree` backfilled), and add the chain integration tests (registry, default order, cooldown skip, unsupported-language routing, aggregated error) to `scripts/test-youdao-free.cjs`, where the real `fallback.ts` and provider registry run behind fake sibling sources and the fake Youdao service.
-- [ ] 7.5 Make sure no CI test touches the network, then run `yarn check:i18n`, `yarn typecheck`, `yarn test:free-translators`, `yarn test:provider-fallback`, `yarn test:provider-test-flow`, `yarn test:task-defaults` and `yarn test:renderer`.
+- [x] 7.5 Make sure no CI test touches the network (checked by running the script tests and the new jest test behind a guard that fails the process on any non-loopback connection, DNS lookup or `fetch`), then run `yarn check:i18n`, `yarn typecheck`, `yarn test:free-translators`, `yarn test:provider-fallback`, `yarn test:provider-test-flow`, `yarn test:task-defaults` and `yarn test:renderer`.
 
 ## 8. Documentation
 
