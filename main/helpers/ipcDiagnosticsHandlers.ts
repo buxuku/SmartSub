@@ -5,7 +5,8 @@ import { app, BrowserWindow, dialog, shell } from 'electron';
 import { dialogWindow } from '../automation/events';
 import { ipcMain } from '../automation/handlers';
 import { logMessage, store } from './storeManager';
-import { sanitizeLogMessage } from './utils';
+import { getExtraResourcesPath, sanitizeLogMessage } from './utils';
+import { resolveTempDir } from './storagePaths';
 import { flushLogWrites, listLogFiles, readLogFileText } from './logStorage';
 import { getBuildInfo } from './buildInfo';
 import { getGpuEnvironment } from './cudaUtils';
@@ -37,7 +38,7 @@ import {
   buildBundleEntries,
   buildIssueUrl,
   collectDiagnosticsInput,
-  describePathSetting,
+  describeRuntimePaths,
   diagnosticsFileName,
   previewDiagnostics,
   writeZipFile,
@@ -93,7 +94,7 @@ function createRedactor() {
 }
 
 function appInfo() {
-  const userData = describePathSetting(app.getPath('userData'));
+  const settings = store.get('settings');
   return {
     version: app.getVersion(),
     isPackaged: app.isPackaged,
@@ -104,8 +105,18 @@ function appInfo() {
     crashReporterStarted: isCrashReporterStarted(),
     // Linux：主进程的系统 core 是否已缩小（applied / skipped / failed），排查“崩溃后卡住不退出”时用
     coreDump: getCoreDumpShrink(),
-    // 数据目录的路径本身不导出，只说明会不会因为非 ASCII / 空格出问题
-    userDataPath: { nonAscii: userData.nonAscii, hasSpace: userData.hasSpace },
+    // 数据 / 安装 / 临时目录的路径本身不导出，只说明会不会因为非 ASCII / 空格出问题
+    // （Windows 用户名含中文时，数据目录与默认临时目录都含非 ASCII，原生库会打不开其中的文件）
+    ...describeRuntimePaths({
+      userData: app.getPath('userData'),
+      install: getExtraResourcesPath(),
+      temp: resolveTempDir({
+        useCustomTempDir: settings?.useCustomTempDir,
+        customTempDir: settings?.customTempDir,
+        storageRoot: settings?.storageRoot,
+        systemTempDir: app.getPath('temp'),
+      }).path,
+    }),
   };
 }
 
