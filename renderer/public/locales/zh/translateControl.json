@@ -147,9 +147,9 @@
     "deeplx": "DeepLX"
   },
   "windowMaxRequestsTips": "滑动 60 秒窗口内允许的最大请求数，用于降低被免费接口按 IP 限流（429）的概率。设为 0 表示不限制。",
-  "batchSizeAutoFreeTips": "每批翻译的字幕条数。实际批量能力取决于命中的源（有道、必应支持批量，谷歌为逐条），建议 10 左右。",
+  "batchSizeAutoFreeTips": "每批翻译的字幕条数。实际批量能力取决于命中的源（有道支持批量，必应、谷歌为逐条），建议 10 左右。",
   "batchSizeYoudaoFreeTips": "有道免费翻译支持一次多条，建议设置为 30 左右；返回结果与原文对不上时会自动改为逐段重试。",
-  "batchSizeBingFreeTips": "必应（Edge）免费翻译原生支持一次多条，建议设置为 10 左右。",
+  "batchSizeBingFreeTips": "必应免费接口为逐条翻译，批量值仅影响进度粒度；量大时建议配合请求间隔避免被限流。",
   "batchSizeGoogleFreeTips": "谷歌免费接口为逐条翻译，批量值仅影响进度粒度；量大时建议配合请求间隔避免被限流。",
   "providerRemoved": "已删除服务商「{{name}}」",
   "confirmRemoveProvider": "确认删除该服务商？",

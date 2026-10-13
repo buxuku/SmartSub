@@ -145,9 +145,9 @@
     "deeplx": "DeepLX"
   },
   "windowMaxRequestsTips": "Max number of requests allowed within a sliding 60-second window, to reduce the chance of IP-based rate limiting (429) by free endpoints. Set to 0 for no limit.",
-  "batchSizeAutoFreeTips": "Subtitle lines per batch. Actual batching depends on the matched source (Youdao and Bing support batching, Google is per-line). Around 10 is recommended.",
+  "batchSizeAutoFreeTips": "Subtitle lines per batch. Actual batching depends on the matched source (Youdao supports batching; Bing and Google translate one line at a time). Around 10 is recommended.",
   "batchSizeYoudaoFreeTips": "Youdao free translation accepts multiple lines per request. Around 30 is recommended. If the result does not line up with the source, it automatically retries paragraph by paragraph.",
-  "batchSizeBingFreeTips": "Bing (Edge) free translation natively supports multiple texts per request. Around 10 is recommended.",
+  "batchSizeBingFreeTips": "The Bing free endpoint translates one line at a time; batch size only affects progress granularity. For large volumes, pair it with a request interval to avoid rate limiting.",
   "batchSizeGoogleFreeTips": "The Google free endpoint translates one line at a time; batch size only affects progress granularity. For large volumes, pair it with a request interval to avoid rate limiting.",
   "batchSizeTip": "Subtitle lines per translation batch. AI defaults to 20 to balance context and speed; use 5–10 for local models or smaller context windows.",
   "batchConcurrencyTip": "Number of translation batches to run at the same time, capped at 10. The default depends on the provider; higher values improve speed but require quota and may trigger rate limits.",
