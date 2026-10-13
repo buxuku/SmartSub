@@ -39,8 +39,11 @@ export default function ToolboxDashboard({
     });
   }, [selectedCategory, searchQuery, t]);
 
+  // 根节点必须用 h-full：父容器（toolbox.tsx 里的 flex-1 overflow-hidden min-h-0）
+  // 是块级而非 flex，flex-1 在这里不生效；没有确定高度 overflow-y-auto 就不会滚动，
+  // 最小窗口（1024×700）下第 3 行卡片会被父级 overflow-hidden 裁掉且无法到达。
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-6">
+    <div className="h-full overflow-y-auto px-6 py-6">
       {/* 顶部搜索与分类过滤 */}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         {/* 分类 Tabs */}
