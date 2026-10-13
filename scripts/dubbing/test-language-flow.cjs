@@ -571,6 +571,7 @@ async function main() {
     'extraResources/sherpa/worker/tts-worker.js',
   );
   const ttsConfig = require('../../extraResources/sherpa/worker/tts-config.js');
+  const wavIo = require('../../extraResources/sherpa/worker/wav-io.js');
   vm.runInNewContext(fs.readFileSync(workerFile, 'utf8'), {
     __dirname: path.dirname(workerFile),
     process: {
@@ -586,19 +587,21 @@ async function main() {
         ? path
         : name.endsWith('tts-config.js')
           ? ttsConfig
-          : {
-              OfflineTts: class {
-                async generateAsync(req) {
-                  generated.push(req);
-                  return { samples: new Float32Array(10), sampleRate: 24000 };
-                }
+          : name.endsWith('wav-io.js')
+            ? wavIo
+            : {
+                OfflineTts: class {
+                  async generateAsync(req) {
+                    generated.push(req);
+                    return { samples: new Float32Array(10), sampleRate: 24000 };
+                  }
+                },
+                readWave: () => ({
+                  samples: new Float32Array(10),
+                  sampleRate: 24000,
+                }),
+                writeWave() {},
               },
-              readWave: () => ({
-                samples: new Float32Array(10),
-                sampleRate: 24000,
-              }),
-              writeWave() {},
-            },
   });
   const result = await new Promise((resolve) => {
     complete = resolve;

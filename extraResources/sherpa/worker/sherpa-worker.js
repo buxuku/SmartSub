@@ -22,6 +22,8 @@ const channel = (() => {
 })();
 
 const sherpa = require(path.join(__dirname, '..', 'vendor', 'sherpa-onnx.js'));
+// wav 读写：Windows 非 ASCII 路径上原生 readWave/writeWave 打不开，改由 JS 读写（见 wav-io.js）。
+const wavIo = require(path.join(__dirname, 'wav-io.js'));
 
 const SAMPLE_RATE = 16000;
 const VAD_WINDOW_SIZE = 512;
@@ -301,7 +303,7 @@ async function transcribe(req) {
   activity({ phase: 'readingAudio' });
   vad.reset();
   // Electron worker 下必须 enableExternalBuffer=false（否则 readWave/vad.front 抛错）。
-  const wave = sherpa.readWave(req.audioFile, false);
+  const wave = wavIo.readWave(sherpa, req.audioFile, false);
   const samples = wave.samples;
   const total = samples.length;
   let decoded = 0;
@@ -387,7 +389,7 @@ function denoise(req) {
     });
     denoiserKey = req.denoiseModel;
   }
-  const wave = sherpa.readWave(req.audioFile, false);
+  const wave = wavIo.readWave(sherpa, req.audioFile, false);
   const out = denoiser.run({
     samples: wave.samples,
     sampleRate: wave.sampleRate,
@@ -401,7 +403,7 @@ function denoise(req) {
     });
     return;
   }
-  sherpa.writeWave(req.outFile, {
+  wavIo.writeWave(sherpa, req.outFile, {
     samples: out.samples,
     sampleRate: out.sampleRate,
   });
@@ -418,7 +420,7 @@ async function detectSpeech(req) {
   const v = ensureVadOnly(req);
   v.reset();
   // Electron worker 下 enableExternalBuffer=false（同 transcribe，否则 readWave/vad.front 抛错）。
-  const wave = sherpa.readWave(req.audioFile, false);
+  const wave = wavIo.readWave(sherpa, req.audioFile, false);
   const samples = wave.samples;
   const total = samples.length;
   const segments = [];
