@@ -52,10 +52,26 @@
 
 - [x] 8.1 Update `docs/docs/guides/translation/free.md` (Youdao row, default chain order, unofficial-interface disclosure, alternatives, footer date) and the free-start path in `overview.md`.
 - [x] 8.2 Update `docs/docs/features/subtitle-translation.md`, `docs/docs/intro/introduction.md` (its free-route table repeated the "Bing / Google" wording) and the zh/en/ja READMEs to mention Youdao next to Bing and Google without changing the provider counts.
-- [ ] 8.3 Add the release note following the project's changelog process.
+- [ ] 8.3 Add the release note following the project's changelog process. Deferred until the release version is chosen: `Changelog/<tag>-release-note.md` carries the version in its title and download links, and `docs/docs/changelog.md` is updated per release, so no file is created on this branch. Draft for the maintainer to paste under `## feat` and `## fix` (the repository's format: a Chinese bullet with an indented English line, PR numbers added once a PR exists):
+
+  ```text
+  ## feat
+
+  - 新增有道免费翻译源，并作为「自动免费翻译」的首选：整批一次请求，速度明显快于逐条请求的必应与谷歌；失效时自动回退到必应、谷歌，连续失败会暂停使用约 2 分钟。有道为非官方网页接口，不承诺可用性
+     Add Youdao as a free translation source and make it the first choice of Auto Free: one request per batch, much faster than Bing and Google, which translate line by line. It falls back to Bing and Google automatically and pauses itself for about 2 minutes after repeated failures. Youdao is an unofficial web endpoint with no availability guarantee
+  - 升级后，未自定义的「自动免费翻译」默认回退链会调整为「有道 → 必应 → 谷歌 → DeepLX」，自定义过的回退链保持不变
+     After upgrading, an untouched Auto Free default chain becomes "Youdao → Bing → Google → DeepLX"; customized chains are kept as they are
+
+  ## fix
+
+  - 修正免费翻译服务的批量大小提示：必应免费接口为逐条翻译，批量值仅影响进度粒度
+     Fix the batch-size tips of the free translation services: the Bing free endpoint translates one line at a time, so the batch size only affects progress granularity
+  ```
+
+  Also refresh the screenshot `/img/v3/translation/auto-free.webp` (it still shows the old chain) when the release is cut.
 
 ## 9. Verification
 
 - [x] 9.1 Manual live smoke test (at most 200 requests in total, no credentials persisted): the provider test button for `youdaoFree`, then a 50-line sample SRT through `youdaoFree` and through the default `autoFree`, checking alignment, tags and the log lines.
 - [x] 9.2 Failure drill: block `dict.youdao.com` and confirm fallback to Bing, breaker entry and exit logs and no per-batch warning spam; run a Turkish-source sample and confirm it routes to Bing.
-- [ ] 9.3 Confirm the logs and the persisted store contain no subtitle text, key material or signatures; run the CI-equivalent checks (`yarn build`, docs `yarn build`) and `openspec validate add-youdao-free-translator`.
+- [x] 9.3 Confirm the logs and the persisted store contain no subtitle text, key material or signatures; run the CI-equivalent checks (`yarn build`, docs `yarn build`) and `openspec validate add-youdao-free-translator`.
