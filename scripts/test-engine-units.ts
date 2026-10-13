@@ -7758,7 +7758,7 @@ function runNativeSafePathTests(): void {
     nodePath.join(asciiUserData, 'native-models'),
     nodePath.join('C:\\ProgramData', 'SmartSub', 'native-models'),
     nodePath.join('C:\\Users\\Public', 'SmartSub', 'native-models'),
-    nodePath.join('C:' + nodePath.sep, 'SmartSub', 'native-models'),
+    nodePath.join('C:', 'SmartSub', 'native-models'),
   ];
   eq(
     stagingBaseDirs({
