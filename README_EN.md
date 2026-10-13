@@ -88,7 +88,7 @@ Online video **download** / local media → **transcribe** → **translate** →
 
 ### Subtitle translation
 
-- 20 translation services: built-in free translation (Bing / Google free endpoints with automatic fallback and rate limiting), Baidu, Aliyun, Tencent, iFlytek, Volcano Engine, Doubao, NiuTrans, DeepLX, Azure, Google, plus LLM services such as Ollama (local models), DeepSeek, Gemini, Qwen, SiliconFlow, Azure OpenAI, and [DeerAPI](https://api.deerapi.com/register?aff=QvHM)
+- 20 translation services: built-in free translation (Youdao / Bing / Google free endpoints with automatic fallback and rate limiting), Baidu, Aliyun, Tencent, iFlytek, Volcano Engine, Doubao, NiuTrans, DeepLX, Azure, Google, plus LLM services such as Ollama (local models), DeepSeek, Gemini, Qwen, SiliconFlow, Azure OpenAI, and [DeerAPI](https://api.deerapi.com/register?aff=QvHM)
 - Compatible with any OpenAI-style API — bring your own endpoint
 - Output translation only, or bilingual "original + translation" subtitles
 - Per-service custom request parameters configured right in the UI, with import/export — no code changes
@@ -140,13 +140,13 @@ Beyond conventional UI operations, SmartSub provides a cutting-edge copilot expe
 
 If you're cost-conscious, this route costs nothing and requires no sign-ups:
 
-| Step           | Free option                                                                            | Notes                                     |
-| -------------- | -------------------------------------------------------------------------------------- | ----------------------------------------- |
-| Video download | yt-dlp / lux open-source engines                                                       | Installed in-app with one click, free     |
-| Transcription  | whisper.cpp / faster-whisper / FunASR / Qwen3-ASR / FireRedASR / Parakeet local models | Download a model once, works offline      |
-| Translation    | Built-in free translation (Bing / Google endpoints with fallback), Ollama, DeepLX      | Free translation works with zero setup    |
-| TTS dubbing    | Local Kokoro / VITS / ZipVoice voice cloning; Edge TTS free tier                       | Local synthesis is offline, no usage caps |
-| Burn-in        | Bundled ffmpeg                                                                         | Fully local                               |
+| Step           | Free option                                                                                | Notes                                     |
+| -------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| Video download | yt-dlp / lux open-source engines                                                           | Installed in-app with one click, free     |
+| Transcription  | whisper.cpp / faster-whisper / FunASR / Qwen3-ASR / FireRedASR / Parakeet local models     | Download a model once, works offline      |
+| Translation    | Built-in free translation (Youdao / Bing / Google endpoints with fallback), Ollama, DeepLX | Free translation works with zero setup    |
+| TTS dubbing    | Local Kokoro / VITS / ZipVoice voice cloning; Edge TTS free tier                           | Local synthesis is offline, no usage caps |
+| Burn-in        | Bundled ffmpeg                                                                             | Fully local                               |
 
 Paid cloud services (OpenAI, ElevenLabs, Volcengine, Tencent Cloud, and others) are optional upgrades — use them only if you want them.
 
