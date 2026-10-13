@@ -23,6 +23,7 @@ import {
   partitionCandidates,
 } from './crash/addonSuppression';
 import { usesGpu } from './crash/breaker';
+import { withNativeSafeAudioInput } from './engines/whisperAudioInput';
 import { partitionByCudaCompat } from './crash/cudaCompat';
 import {
   beginNativeCall,
@@ -407,9 +408,11 @@ export async function loadBestAddon(
       }
       const loadedAt = new Date().toISOString();
       const result: AddonLoadResult = {
-        whisperAsync: guardNativeCall(
-          promisify(whisper) as WhisperAsyncFn,
-          candidate,
+        // 最外层做输入适配：Windows 上含非 ASCII 的音频路径原生打不开，改传 PCM 缓冲
+        // （见 engines/whisperAudioInput.ts）。覆盖所有调用方，包括声音克隆的参考音频转写。
+        whisperAsync: withNativeSafeAudioInput(
+          guardNativeCall(promisify(whisper) as WhisperAsyncFn, candidate),
+          { log: logMessage },
         ),
         backend: candidate.backend,
         variant: candidate.variant,

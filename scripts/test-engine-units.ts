@@ -8042,6 +8042,309 @@ function runNativeSafePathTests(): void {
 
 runNativeSafePathTests();
 
+// ---------------------------------------------------------------------------
+// 内置 whisper.cpp 在 Windows 上的非 ASCII 音频路径：
+// addon 用 miniaudio 的窄字符 API 解码文件，路径打不开时只打印
+// `failed to read audio file` 然后以 0 段结果「成功」返回（静默失败）。
+// 这种路径改由 JS 解码，以 pcmf32（Float32Array）喂给 addon。
+// ---------------------------------------------------------------------------
+import {
+  PCM_INPUT_CHUNK_PLAN,
+  adaptWhisperAudioInput,
+  needsPcmInput,
+  readPcm16Wav,
+} from '../main/helpers/engines/whisperAudioInput';
+
+function runWhisperAudioInputTests(): void {
+  const wavBytes = (
+    samples: number[],
+    opts: {
+      sampleRate?: number;
+      channels?: number;
+      format?: number;
+      bits?: number;
+      listChunk?: boolean;
+      declaredDataBytes?: number;
+    } = {},
+  ): Buffer => {
+    const {
+      sampleRate = 16000,
+      channels = 1,
+      format = 1,
+      bits = 16,
+      listChunk = false,
+      declaredDataBytes,
+    } = opts;
+    const data = Buffer.alloc(samples.length * (bits / 8));
+    samples.forEach((value, i) => {
+      if (bits === 16) data.writeInt16LE(value, i * 2);
+      else if (bits === 8) data.writeUInt8(value, i);
+      else data.writeFloatLE(value, i * 4);
+    });
+    const blockAlign = (channels * bits) / 8;
+    const fmt = Buffer.alloc(24);
+    fmt.write('fmt ', 0, 'ascii');
+    fmt.writeUInt32LE(16, 4);
+    fmt.writeUInt16LE(format, 8);
+    fmt.writeUInt16LE(channels, 10);
+    fmt.writeUInt32LE(sampleRate, 12);
+    fmt.writeUInt32LE(sampleRate * blockAlign, 16);
+    fmt.writeUInt16LE(blockAlign, 20);
+    fmt.writeUInt16LE(bits, 22);
+    // 奇数长度的 LIST 块（7 字节 + 1 字节补位），用来验证块对齐
+    const list = listChunk
+      ? Buffer.concat([
+          Buffer.from('LIST', 'ascii'),
+          Buffer.from([7, 0, 0, 0]),
+          Buffer.from('INFOabc', 'ascii'),
+          Buffer.alloc(1),
+        ])
+      : Buffer.alloc(0);
+    const dataHead = Buffer.alloc(8);
+    dataHead.write('data', 0, 'ascii');
+    dataHead.writeUInt32LE(declaredDataBytes ?? data.length, 4);
+    const body = Buffer.concat([
+      Buffer.from('WAVE', 'ascii'),
+      fmt,
+      list,
+      dataHead,
+      data,
+    ]);
+    const riffHead = Buffer.alloc(8);
+    riffHead.write('RIFF', 0, 'ascii');
+    riffHead.writeUInt32LE(body.length, 4);
+    return Buffer.concat([riffHead, body]);
+  };
+
+  // 1. needsPcmInput：与原生库打不开的路径同一判据
+  eq(
+    needsPcmInput('C:\\Users\\张三\\t.wav', 'win32'),
+    true,
+    'needsPcmInput: win32 + CJK',
+  );
+  eq(
+    needsPcmInput('C:\\Users\\bob\\t.wav', 'win32'),
+    false,
+    'needsPcmInput: win32 + ASCII',
+  );
+  eq(
+    needsPcmInput('/Users/张三/t.wav', 'darwin'),
+    false,
+    'needsPcmInput: darwin + CJK',
+  );
+  eq(needsPcmInput('', 'win32'), false, 'needsPcmInput: empty path');
+  eq(
+    needsPcmInput(undefined as unknown as string, 'win32'),
+    false,
+    'needsPcmInput: missing path',
+  );
+
+  // 2. 分片计划：兜底路径把单次转写的上限从 4 小时降到 1 小时
+  eq(
+    planEvenChunkTargets(3600, PCM_INPUT_CHUNK_PLAN).length,
+    0,
+    'PCM chunk plan: 1h stays single pass',
+  );
+  eq(
+    planEvenChunkTargets(3601, PCM_INPUT_CHUNK_PLAN).length,
+    2,
+    'PCM chunk plan: just over 1h -> 3 chunks of <= 30 min',
+  );
+  eq(
+    planEvenChunkTargets(7200, PCM_INPUT_CHUNK_PLAN).length,
+    3,
+    'PCM chunk plan: 2h -> 4 chunks',
+  );
+  eq(
+    planEvenChunkTargets(7200).length,
+    0,
+    'default chunk plan is untouched (2h is still a single pass)',
+  );
+
+  const tmpRoot = fs.mkdtempSync(
+    nodePath.join(os.tmpdir(), 'smartsub-whisper-pcm-'),
+  );
+  try {
+    const cjkDir = nodePath.join(tmpRoot, '中文用户-测试');
+    fs.mkdirSync(cjkDir, { recursive: true });
+
+    // 3. readPcm16Wav：与 sherpa wav-io 同口径（/32768、取第一声道）
+    const mono = nodePath.join(cjkDir, 'mono.wav');
+    fs.writeFileSync(mono, wavBytes([0, 16384, -16384, 32767, -32768]));
+    const monoPcm = readPcm16Wav(mono);
+    eq(monoPcm?.sampleRate, 16000, 'readPcm16Wav: sample rate');
+    eq(
+      monoPcm?.samples instanceof Float32Array,
+      true,
+      'readPcm16Wav: returns a Float32Array',
+    );
+    eq(
+      Array.from(monoPcm?.samples ?? []),
+      [0, 0.5, -0.5, 32767 / 32768, -1],
+      'readPcm16Wav: 16-bit PCM is normalised by 32768',
+    );
+
+    const stereo = nodePath.join(cjkDir, 'stereo.wav');
+    fs.writeFileSync(
+      stereo,
+      wavBytes([16384, -16384, 8192, -8192], { channels: 2 }),
+    );
+    eq(
+      Array.from(readPcm16Wav(stereo)?.samples ?? []),
+      [0.5, 0.25],
+      'readPcm16Wav: keeps the first channel only',
+    );
+
+    const withList = nodePath.join(cjkDir, 'list.wav');
+    fs.writeFileSync(withList, wavBytes([16384, -16384], { listChunk: true }));
+    eq(
+      Array.from(readPcm16Wav(withList)?.samples ?? []),
+      [0.5, -0.5],
+      'readPcm16Wav: skips an odd-sized LIST chunk',
+    );
+
+    const streamed = nodePath.join(cjkDir, 'streamed.wav');
+    fs.writeFileSync(
+      streamed,
+      wavBytes([100, 200, 300], { declaredDataBytes: 0xffffffff }),
+    );
+    eq(
+      readPcm16Wav(streamed)?.samples.length,
+      3,
+      'readPcm16Wav: an over-declared data size falls back to the file size',
+    );
+
+    const rate44k = nodePath.join(cjkDir, '44k.wav');
+    fs.writeFileSync(rate44k, wavBytes([1, 2, 3], { sampleRate: 44100 }));
+    eq(
+      readPcm16Wav(rate44k)?.sampleRate,
+      44100,
+      'readPcm16Wav: reports the real sample rate',
+    );
+
+    const float = nodePath.join(cjkDir, 'float.wav');
+    fs.writeFileSync(float, wavBytes([0.25], { format: 3, bits: 32 }));
+    eq(readPcm16Wav(float), null, 'readPcm16Wav: float wav -> null');
+    const eightBit = nodePath.join(cjkDir, '8bit.wav');
+    fs.writeFileSync(eightBit, wavBytes([128], { bits: 8 }));
+    eq(readPcm16Wav(eightBit), null, 'readPcm16Wav: 8-bit wav -> null');
+    const garbage = nodePath.join(cjkDir, 'garbage.wav');
+    fs.writeFileSync(garbage, 'definitely not a wav file');
+    eq(readPcm16Wav(garbage), null, 'readPcm16Wav: not a RIFF file -> null');
+    eq(
+      readPcm16Wav(nodePath.join(cjkDir, 'missing.wav')),
+      null,
+      'readPcm16Wav: unreadable file -> null',
+    );
+
+    // 4. adaptWhisperAudioInput：只改 fname_inp / pcmf32，其余参数原样保留
+    const abort = new AbortController();
+    const baseParams = {
+      language: 'en',
+      model: 'ggml-tiny.bin',
+      fname_inp: mono,
+      use_gpu: false,
+      signal: abort.signal,
+      progress_callback: () => undefined,
+    };
+    const logs: Array<{ message: string; level: string }> = [];
+    const log = (message: string, level: string) =>
+      logs.push({ message, level });
+
+    const adapted = adaptWhisperAudioInput(baseParams, {
+      platform: 'win32',
+      log,
+    }) as typeof baseParams & { pcmf32?: Float32Array };
+    eq(adapted.fname_inp, '', 'adapt: fname_inp becomes an empty string');
+    eq(
+      Array.from(adapted.pcmf32 ?? []),
+      [0, 0.5, -0.5, 32767 / 32768, -1],
+      'adapt: pcmf32 carries the decoded audio',
+    );
+    eq(
+      adapted.signal === abort.signal &&
+        adapted.progress_callback === baseParams.progress_callback &&
+        adapted.language === 'en' &&
+        adapted.model === 'ggml-tiny.bin' &&
+        adapted.use_gpu === false,
+      true,
+      'adapt: every other parameter is preserved',
+    );
+    eq(baseParams.fname_inp, mono, 'adapt: the input object is not mutated');
+    eq(
+      logs.filter((l) => l.level === 'info').length,
+      1,
+      'adapt: logs once that the PCM buffer is used',
+    );
+
+    // 不需要 / 不适用：原样返回同一个对象
+    const asciiParams = {
+      ...baseParams,
+      fname_inp: nodePath.join(tmpRoot, 'a.wav'),
+    };
+    fs.writeFileSync(asciiParams.fname_inp, wavBytes([1, 2, 3]));
+    eq(
+      adaptWhisperAudioInput(asciiParams, { platform: 'win32', log }) ===
+        asciiParams,
+      true,
+      'adapt: ASCII path -> untouched',
+    );
+    eq(
+      adaptWhisperAudioInput(baseParams, { platform: 'darwin', log }) ===
+        baseParams,
+      true,
+      'adapt: non-Windows -> untouched',
+    );
+    const alreadyBuffer = { ...baseParams, pcmf32: new Float32Array(4) };
+    eq(
+      adaptWhisperAudioInput(alreadyBuffer, { platform: 'win32', log }) ===
+        alreadyBuffer,
+      true,
+      'adapt: caller-supplied pcmf32 -> untouched',
+    );
+    const noInput = { language: 'en' };
+    eq(
+      adaptWhisperAudioInput(noInput, { platform: 'win32', log }) === noInput,
+      true,
+      'adapt: no fname_inp -> untouched',
+    );
+
+    // 解不了（缺文件 / 不是 16 kHz / 空音频 / 非 PCM16）：保持原参数，给 warning，不比修复前更差
+    logs.length = 0;
+    for (const [name, file] of [
+      ['missing file', nodePath.join(cjkDir, 'missing.wav')],
+      ['44.1 kHz audio', rate44k],
+      ['float wav', float],
+      ['not a wav', garbage],
+    ] as const) {
+      const params = { ...baseParams, fname_inp: file };
+      eq(
+        adaptWhisperAudioInput(params, { platform: 'win32', log }) === params,
+        true,
+        `adapt: ${name} -> untouched`,
+      );
+    }
+    eq(
+      logs.filter((l) => l.level === 'warning').length,
+      4,
+      'adapt: every undecodable input is reported as a warning',
+    );
+    const emptyWav = nodePath.join(cjkDir, 'empty.wav');
+    fs.writeFileSync(emptyWav, wavBytes([]));
+    const emptyParams = { ...baseParams, fname_inp: emptyWav };
+    eq(
+      adaptWhisperAudioInput(emptyParams, { platform: 'win32', log }) ===
+        emptyParams,
+      true,
+      'adapt: zero-length audio -> untouched',
+    );
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+runWhisperAudioInputTests();
+
 runRuntimeImportTests();
 
 runAsyncConcurrencyTests()

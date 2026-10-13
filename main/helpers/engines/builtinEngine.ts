@@ -54,6 +54,7 @@ import {
 import type { NativeToken, TokenTriple } from '../subtitleSegmentation';
 import { writeWordTimelineSidecar } from '../wordTimelineSidecar';
 import { refineWordsFromNativeTokens } from '../subtitleRefine';
+import { PCM_INPUT_CHUNK_PLAN, needsPcmInput } from './whisperAudioInput';
 import type { TranscribeContext, TranscriptionEngineAdapter } from './types';
 
 /**
@@ -279,7 +280,12 @@ async function transcribeBuiltin(ctx: TranscribeContext): Promise<string> {
     // resize 整段 f32 缓冲，约 9.3h 起超过 PartitionAlloc 的 2GiB 单笔分配上限必崩
     // （SIGTRAP @ operator new，与空闲内存无关）；whisper 内部 VAD 还会整段复制音频。
     // 常规时长返回 null → 原单次调用路径，零行为变化。
-    const chunks = await prepareBuiltinChunks(tempAudioFile, { signal });
+    // Windows 上音频路径含非 ASCII 时 whisperAsync 会以 PCM 缓冲喂给 addon（原生解码打不开
+    // 该路径，见 whisperAudioInput.ts），缓冲会被拷贝数份，所以更早分片（1 小时起）。
+    const chunks = await prepareBuiltinChunks(tempAudioFile, {
+      signal,
+      plan: needsPcmInput(tempAudioFile) ? PCM_INPUT_CHUNK_PLAN : undefined,
+    });
 
     let result;
     if (chunks) {
