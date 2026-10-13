@@ -62,7 +62,7 @@
     "test:task-activity": "node scripts/test-task-activity.cjs && node scripts/test-translation-activity.cjs && jest --runInBand renderer/components/__tests__/TaskActivity.test.tsx",
     "test:e2e:task-activity": "node scripts/e2e/task-activity.mjs",
     "test:e2e:task-list-layout": "node scripts/e2e/task-list-layout.mjs",
-    "test:engines": "tsc scripts/test-engine-units.ts --outDir node_modules/.cache/engine-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/engine-tests/scripts/test-engine-units.js && node scripts/test-sherpa-worker.cjs && node scripts/test-wav-io.cjs && node scripts/test-qwen-scaffold.cjs",
+    "test:engines": "tsc scripts/test-engine-units.ts --outDir node_modules/.cache/engine-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/engine-tests/scripts/test-engine-units.js && node scripts/test-sherpa-worker.cjs && node scripts/test-sherpa-runtime-failures.cjs && node scripts/test-wav-io.cjs && node scripts/test-qwen-scaffold.cjs",
     "test:gpu-enumeration": "tsx scripts/gpu/test-gpu-enumeration.ts && tsx scripts/gpu/test-single-flight.ts && tsx scripts/gpu/test-cuda-wiring.ts && tsx scripts/test-python-engine-stdin.ts",
     "test:gpu-probe": "tsx scripts/gpu/probe-gpu.ts",
     "test:audio-cache": "node scripts/test-audio-cache.cjs",

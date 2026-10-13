@@ -149,6 +149,60 @@ async function main() {
     ]);
   });
 
+  await test('stderr：onStderrLine 按行回调（跨块拼接、CRLF、空行忽略），整块日志照旧', async () => {
+    const lines: string[] = [];
+    const h = setup({ onStderrLine: (line) => lines.push(line) });
+    h.proc.stderr.write('first\nsecond ');
+    await tick();
+    assert.deepEqual(lines, ['first']); // 没有换行结尾的半行先留着
+    h.proc.stderr.write('half\r\n\r\n  third  \n');
+    await tick();
+    assert.deepEqual(lines, ['first', 'second half', 'third']);
+    assert.deepEqual(
+      h.logs.map((log) => log.message),
+      [
+        'test worker stderr: first\nsecond',
+        'test worker stderr: half\r\n\r\n  third',
+      ],
+    );
+  });
+
+  await test('stderr：退出时没有换行结尾的最后一行也交出去', async () => {
+    const lines: string[] = [];
+    const h = setup({ onStderrLine: (line) => lines.push(line) });
+    h.proc.stderr.write('complete line\nlast words without newline');
+    await tick();
+    assert.deepEqual(lines, ['complete line']);
+    h.proc.emit('exit', 0);
+    assert.deepEqual(lines, ['complete line', 'last words without newline']);
+  });
+
+  await test('stderr：onStderrLine 抛错不影响日志、尾部记录与退出处理', async () => {
+    const h = setup({
+      onStderrLine: () => {
+        throw new Error('listener bug');
+      },
+    });
+    h.proc.stderr.write('boom\n');
+    await tick();
+    assert.equal(h.logs.length, 1);
+    h.proc.emit('exit', 11);
+    assert.ok(h.records[0].stderrTail?.includes('boom'));
+    assert.equal(h.exits.length, 1);
+  });
+
+  await test('stderr：没有换行的超长输出不会无限累积（超过上限整段当一行交出）', async () => {
+    const lines: string[] = [];
+    const h = setup({ onStderrLine: (line) => lines.push(line) });
+    h.proc.stderr.write('x'.repeat(20_000));
+    await tick();
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].length, 20_000);
+    h.proc.stderr.write('tail\n');
+    await tick();
+    assert.deepEqual(lines.slice(1), ['tail']);
+  });
+
   await test('异常退出：先落盘（含 stderr 尾部与分类）再通知宿主', async () => {
     const h = setup();
     h.proc.stderr.write('last words before crash');

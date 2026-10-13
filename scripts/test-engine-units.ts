@@ -8345,6 +8345,317 @@ function runWhisperAudioInputTests(): void {
 
 runWhisperAudioInputTests();
 
+// ---------------------------------------------------------------------------
+// sherpa 原生库的"静默失败"：VAD 构造函数配置校验失败时不抛错，只往 stderr 写原因，
+// 之后每次使用都打印 `vad is nullptr` 并得到零个语音段。把它转成带原因的明确错误，
+// 路径含非 ASCII 时再给出处理建议。
+// ---------------------------------------------------------------------------
+import {
+  NativeStderrWatch,
+  collectNativePaths,
+  describeNullVad,
+  withNonAsciiPathHint,
+} from '../main/helpers/sherpaOnnx/nativeFailure';
+
+function runNativeFailureTests(): void {
+  // 真实 Windows 现场（GitHub Actions windows-latest，ACP 1252，路径含中文）逐字摘录
+  const WIN_REASON =
+    "D:\\a\\sherpa-onnx\\sherpa-onnx\\sherpa-onnx\\csrc\\silero-vad-model-config.cc:Validate:60 Silero vad model file 'D:\\a\\_temp\\smartsub\\中文用户-测试\\silero_vad.onnx' does not exist";
+  const WIN_GENERIC =
+    'D:\\a\\sherpa-onnx\\sherpa-onnx\\sherpa-onnx\\c-api\\c-api.cc:SherpaOnnxCreateVoiceActivityDetector:1330 Errors in config';
+  const REASON_TEXT =
+    "Silero vad model file 'D:\\a\\_temp\\smartsub\\中文用户-测试\\silero_vad.onnx' does not exist";
+
+  // 1. NativeStderrWatch：计数 + 原因快照
+  {
+    const watch = new NativeStderrWatch();
+    watch.push(WIN_REASON);
+    watch.push(WIN_GENERIC);
+    for (let i = 0; i < 643; i++) watch.push('vad is nullptr');
+    eq(
+      watch.nullVadCount,
+      643,
+      'native failure: counts every `vad is nullptr` line',
+    );
+    eq(
+      Array.from(watch.nullVadReasons),
+      [REASON_TEXT],
+      'native failure: reason = the specific line without the source location, generic "Errors in config" dropped',
+    );
+  }
+  {
+    const watch = new NativeStderrWatch();
+    watch.push(WIN_GENERIC);
+    watch.push('vad is nullptr');
+    eq(
+      Array.from(watch.nullVadReasons),
+      ['Errors in config'],
+      'native failure: the generic line is kept when it is the only explanation',
+    );
+  }
+  {
+    const watch = new NativeStderrWatch();
+    watch.push(
+      "/home/runner/work/sherpa-onnx/sherpa-onnx/sherpa-onnx/csrc/silero-vad-model-config.cc:Validate:60 Silero vad model file '/m/silero_vad.onnx' does not exist",
+    );
+    watch.push('vad is nullptr');
+    eq(
+      Array.from(watch.nullVadReasons),
+      ["Silero vad model file '/m/silero_vad.onnx' does not exist"],
+      'native failure: POSIX style source location is stripped too',
+    );
+  }
+  {
+    const watch = new NativeStderrWatch();
+    watch.push('plain failure text without a source location: failed to open');
+    watch.push('vad is nullptr');
+    eq(
+      Array.from(watch.nullVadReasons),
+      ['plain failure text without a source location: failed to open'],
+      'native failure: a line without source location is kept verbatim',
+    );
+  }
+  {
+    const watch = new NativeStderrWatch();
+    watch.push('onnxruntime: initialising provider cpu');
+    watch.push('   ');
+    watch.push('');
+    watch.push('VAD IS NULLPTR');
+    eq(
+      watch.nullVadCount,
+      1,
+      'native failure: match is case-insensitive and blank lines are ignored',
+    );
+    eq(
+      Array.from(watch.nullVadReasons),
+      [],
+      'native failure: unrelated lines are not reported as the reason',
+    );
+  }
+  {
+    const watch = new NativeStderrWatch();
+    watch.push('first.cc:Validate:1 first thing does not exist');
+    watch.push('second.cc:Validate:2 second thing does not exist');
+    watch.push('third.cc:Validate:3 third thing does not exist');
+    watch.push('vad is nullptr');
+    eq(
+      Array.from(watch.nullVadReasons),
+      ['second thing does not exist', 'third thing does not exist'],
+      'native failure: at most two reasons, the most recent ones, in order',
+    );
+    watch.push('later.cc:Validate:9 later thing does not exist');
+    watch.push('vad is nullptr');
+    eq(
+      Array.from(watch.nullVadReasons),
+      ['second thing does not exist', 'third thing does not exist'],
+      'native failure: the reason snapshot belongs to the first failure and is not overwritten',
+    );
+    eq(
+      watch.nullVadCount,
+      2,
+      'native failure: counting continues after the snapshot',
+    );
+  }
+  {
+    const watch = new NativeStderrWatch();
+    for (let i = 0; i < 500; i++) watch.push(`noise line ${i}`);
+    watch.push("x.cc:Validate:1 model 'a' does not exist");
+    watch.push('vad is nullptr');
+    eq(
+      Array.from(watch.nullVadReasons),
+      ["model 'a' does not exist"],
+      'native failure: a long stretch of unrelated stderr does not hide the reason',
+    );
+    watch.reset();
+    eq(
+      [watch.nullVadCount, Array.from(watch.nullVadReasons)],
+      [0, []],
+      'native failure: reset clears the count and the reasons',
+    );
+    watch.push('vad is nullptr');
+    eq(
+      [watch.nullVadCount, Array.from(watch.nullVadReasons)],
+      [1, []],
+      'native failure: nothing from before the reset leaks into the next failure',
+    );
+  }
+
+  // 2. describeNullVad：错误文案
+  const cjkVad = 'C:\\Users\\张三\\AppData\\Local\\SmartSub\\silero_vad.onnx';
+  const zhWin = describeNullVad({
+    reasons: [REASON_TEXT],
+    paths: [cjkVad],
+    language: 'zh',
+    platform: 'win32',
+  });
+  eq(
+    zhWin.startsWith('本地语音活动检测（VAD）模型加载失败'),
+    true,
+    'native failure: zh message names the VAD model',
+  );
+  eq(
+    zhWin.includes(REASON_TEXT),
+    true,
+    'native failure: zh message carries the native reason',
+  );
+  eq(
+    zhWin.includes('统一存储目录'),
+    true,
+    'native failure: zh message points at the unified storage directory when the path is non-ASCII on Windows',
+  );
+  const enWin = describeNullVad({
+    reasons: [REASON_TEXT],
+    paths: [cjkVad],
+    language: 'en',
+    platform: 'win32',
+  });
+  eq(
+    enWin.startsWith(
+      'The local voice activity detection (VAD) model failed to load',
+    ),
+    true,
+    'native failure: en message names the VAD model',
+  );
+  eq(
+    enWin.includes('Unified Storage Directory'),
+    true,
+    'native failure: en message carries the hint',
+  );
+  const asciiOnly = describeNullVad({
+    reasons: [REASON_TEXT],
+    paths: ['C:\\SmartSub\\silero_vad.onnx'],
+    language: 'en',
+    platform: 'win32',
+  });
+  eq(
+    asciiOnly.includes('Unified Storage Directory'),
+    false,
+    'native failure: no path hint when every path is ASCII',
+  );
+  const macCjk = describeNullVad({
+    reasons: [],
+    paths: ['/Users/张三/silero_vad.onnx'],
+    language: 'en',
+    platform: 'darwin',
+  });
+  eq(
+    macCjk,
+    'The local voice activity detection (VAD) model failed to load, so no speech could be detected.',
+    'native failure: no reason and no hint -> a clean sentence, and no hint off Windows',
+  );
+  eq(
+    describeNullVad({
+      reasons: [],
+      paths: [],
+      language: 'zh',
+      platform: 'linux',
+    }),
+    '本地语音活动检测（VAD）模型加载失败，无法检测语音。',
+    'native failure: zh sentence without reason',
+  );
+
+  // 3. withNonAsciiPathHint：只在"原生库打不开文件"类失败 + Windows + 非 ASCII 路径时追加
+  const cjkModel = 'D:\\模型\\sense-voice\\model.onnx';
+  const hinted = withNonAsciiPathHint('Please check your config!', [cjkModel], {
+    language: 'en',
+    platform: 'win32',
+  });
+  eq(
+    hinted.startsWith('Please check your config! ') &&
+      hinted.includes('Unified Storage Directory'),
+    true,
+    'native failure: "Please check your config!" gets the hint appended',
+  );
+  eq(
+    withNonAsciiPathHint('Please check your config!', [cjkModel], {
+      language: 'zh',
+      platform: 'win32',
+    }).includes('统一存储目录'),
+    true,
+    'native failure: zh hint',
+  );
+  eq(
+    withNonAsciiPathHint(
+      "TypeError: Failed to read 'D:\\音频\\a.wav'",
+      ['D:\\音频\\a.wav'],
+      {
+        language: 'en',
+        platform: 'win32',
+      },
+    ).includes('Unified Storage Directory'),
+    true,
+    'native failure: a "Failed to read" error gets the hint',
+  );
+  eq(
+    withNonAsciiPathHint('Please check your config!', ['D:\\models\\m.onnx'], {
+      language: 'en',
+      platform: 'win32',
+    }),
+    'Please check your config!',
+    'native failure: ASCII paths -> message unchanged',
+  );
+  eq(
+    withNonAsciiPathHint('Please check your config!', [cjkModel], {
+      language: 'en',
+      platform: 'darwin',
+    }),
+    'Please check your config!',
+    'native failure: non-Windows -> message unchanged',
+  );
+  eq(
+    withNonAsciiPathHint('Please check your config!', [], {
+      language: 'en',
+      platform: 'win32',
+    }),
+    'Please check your config!',
+    'native failure: no paths -> message unchanged',
+  );
+  for (const message of [
+    'cancelled',
+    'ASR worker is busy',
+    'denoise produced empty audio',
+  ]) {
+    eq(
+      withNonAsciiPathHint(message, [cjkModel], {
+        language: 'en',
+        platform: 'win32',
+      }),
+      message,
+      `native failure: unrelated error "${message}" is left alone`,
+    );
+  }
+  eq(
+    withNonAsciiPathHint(hinted, [cjkModel], {
+      language: 'en',
+      platform: 'win32',
+    }),
+    hinted,
+    'native failure: the hint is never appended twice',
+  );
+
+  // 4. collectNativePaths：递归收集请求里的字符串
+  eq(
+    collectNativePaths('a', undefined, null, { x: 'b', y: { z: 'c' }, n: 3 }, [
+      'd',
+      1,
+      ['e'],
+    ]),
+    ['a', 'b', 'c', 'd', 'e'],
+    'native failure: collects nested string values only',
+  );
+  {
+    const cyclic: Record<string, unknown> = { path: 'p' };
+    cyclic.self = cyclic;
+    eq(
+      collectNativePaths(cyclic).includes('p'),
+      true,
+      'native failure: a cyclic structure does not hang the collector',
+    );
+  }
+}
+
+runNativeFailureTests();
+
 runRuntimeImportTests();
 
 runAsyncConcurrencyTests()
