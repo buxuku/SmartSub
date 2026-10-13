@@ -99,6 +99,7 @@ import {
   newTaskDefaults,
 } from '../../../../types/taskConfig';
 import { validateTaskConfigReady } from 'lib/taskReadiness';
+import { isTaskRouteHydrated, taskRouteKey } from 'lib/taskRoute';
 import { getProofreadSourcePath } from '../../../../types/subtitleOutput';
 import { useTranslation } from 'next-i18next';
 import { toast } from 'sonner';
@@ -147,7 +148,9 @@ export default function TaskPage() {
   const loadedFilesRef = useRef<any[] | null>(null);
   const projectIdRef = useRef<string | null>(null);
   const [manuscriptPool, setManuscriptPool] = useState<IFiles[]>([]);
-  const routeKey = `${slug}:${typeof router.query.project === 'string' ? router.query.project : ''}`;
+  const queryProject =
+    typeof router.query.project === 'string' ? router.query.project : '';
+  const routeKey = taskRouteKey(slug, queryProject);
   const [hydratedRoute, setHydratedRoute] = useState<string | null>(null);
   const [projectLoadError, setProjectLoadError] = useState<string | null>(null);
   const taskErrors = [
@@ -196,8 +199,12 @@ export default function TaskPage() {
   const loadedSlugRef = useRef('');
   const baselineRef = useRef('');
   const editedProjectsRef = useRef(new Set<string>());
+  // 首次自动保存后页面会把 ?project= 补进 URL：工程已装载，不能因此退回整页加载态，
+  // 否则配置条被卸载重建，已打开的弹层（词库等）会被关掉（见 lib/taskRoute）。
   const projectReady = Boolean(
-    projectId && hydratedRoute === routeKey && configLoaded,
+    projectId &&
+      isTaskRouteHydrated({ hydratedRoute, slug, queryProject, projectId }) &&
+      configLoaded,
   );
   const projectPayload: TaskProjectSave | null =
     projectReady && typeDef
