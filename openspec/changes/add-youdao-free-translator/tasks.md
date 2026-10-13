@@ -7,10 +7,10 @@
 
 ## 2. Text handling (pure functions)
 
-- [ ] 2.1 Add `main/service/youdaoFreeText.ts` with line tokenization (leading/trailing HTML tags, ASS blocks, ♪/♫, dialogue dashes, whole-line brackets) and the skip rule for lines without letters.
-- [ ] 2.2 Implement tag pairing: drop a leading/trailing tag together with its partner when the partner sits mid-line, keep the source shape for cross-cue unbalanced tags, and always restore positioning blocks such as `{\an8}`.
-- [ ] 2.3 Implement paragraph building (dialogue lines, bracket lines and lines after sentence-final punctuation stay separate; soft-wrapped continuations merge) and restoration (first-line lead plus last-line trail; merged paragraphs collapse to one line).
-- [ ] 2.4 Implement the echo-comparison normalization (NFKC, strip whitespace and punctuation) and the Chinese-target post-processing (trailing newline, half-width → full-width punctuation next to Han characters, full-width digits → half-width).
+- [x] 2.1 Add `main/service/youdaoFreeText.ts` with line tokenization (leading/trailing HTML tags, ASS blocks, ♪/♫, dialogue dashes, whole-line brackets) and the skip rule for lines without letters.
+- [x] 2.2 Implement tag pairing: drop a leading/trailing tag together with its partner when the partner sits mid-line, keep the source shape for cross-cue unbalanced tags, and always restore positioning blocks such as `{\an8}`.
+- [x] 2.3 Implement paragraph building (dialogue lines, bracket lines and lines after sentence-final punctuation stay separate; soft-wrapped continuations merge) and restoration (first-line lead plus last-line trail; merged paragraphs collapse to one line).
+- [x] 2.4 Implement the echo-comparison normalization (NFKC, strip whitespace and punctuation) and the Chinese-target post-processing (trailing newline, half-width → full-width punctuation next to Han characters, full-width digits → half-width).
 
 ## 3. Translator
 
