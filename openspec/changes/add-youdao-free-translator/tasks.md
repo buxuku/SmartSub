@@ -50,7 +50,7 @@
 
 ## 8. Documentation
 
-- [ ] 8.1 Update `docs/docs/guides/translation/free.md` (Youdao row, default chain order, unofficial-interface disclosure, alternatives, footer date) and the free-start path in `overview.md`.
+- [x] 8.1 Update `docs/docs/guides/translation/free.md` (Youdao row, default chain order, unofficial-interface disclosure, alternatives, footer date) and the free-start path in `overview.md`.
 - [ ] 8.2 Update `docs/docs/features/subtitle-translation.md` and the zh/en/ja READMEs to mention Youdao next to Bing and Google without changing the provider counts.
 - [ ] 8.3 Add the release note following the project's changelog process.
 
