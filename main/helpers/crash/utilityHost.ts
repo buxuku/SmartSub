@@ -35,6 +35,8 @@ import {
 export type HostLogLevel = 'info' | 'warning' | 'error';
 
 const STDERR_TAIL_CHARS = 8 * 1024;
+/** 没有换行结尾的 stderr 残段累积到这么长就当一行交出，避免无限增长。 */
+const MAX_PARTIAL_STDERR_LINE_CHARS = 16 * 1024;
 
 /** 子进程退出时交给宿主回调的信息。 */
 export interface HostExitInfo {
@@ -78,6 +80,12 @@ export interface SpawnHostOptions {
   recordExit?: (record: UtilityExitRecord) => void;
   /** 主动终止前登记，使随后的“被杀”事件不被当作异常 */
   expectKill?: (serviceName: string) => void;
+  /**
+   * 逐行回调 worker 的 stderr（按换行切分、跨数据块拼接、去掉首尾空白、忽略空行；
+   * 退出时把没有换行结尾的最后一行也交出）。原生库的失败原因只写在 stderr，宿主靠它
+   * 把"静默失败"转成明确的错误。回调抛错不影响日志与退出处理；原有的整块日志不变。
+   */
+  onStderrLine?: (line: string) => void;
   deps?: Partial<HostDeps>;
 }
 
@@ -140,6 +148,8 @@ export class UtilityHost {
   private readonly proc: UtilityProcess;
   private killedByUs = false;
   private stderrTail = '';
+  /** 还没等到换行的 stderr 残段（只在设置了 onStderrLine 时使用） */
+  private stderrPartial = '';
   private exitListeners: Array<(info: HostExitInfo) => void> = [];
 
   constructor(options: SpawnHostOptions) {
@@ -180,9 +190,12 @@ export class UtilityHost {
       this.stderrTail = (this.stderrTail + text).slice(-STDERR_TAIL_CHARS);
       const line = text.trim();
       if (line) options.log(`${options.logLabel} stderr: ${line}`, 'warning');
+      this.feedStderrLines(text);
     });
 
     this.proc.on('exit', (code) => {
+      // 最后一行可能没有换行结尾：交给回调后再通知宿主
+      this.feedStderrLines('', true);
       const classification = classifyExit({
         platform: deps.platform,
         exitCode: code,
@@ -209,6 +222,27 @@ export class UtilityHost {
       }
       for (const listener of this.exitListeners) listener(info);
     });
+  }
+
+  /** 把 stderr 文本按行交给 onStderrLine；flush 时连残段一起交出。 */
+  private feedStderrLines(text: string, flush = false): void {
+    const onLine = this.options.onStderrLine;
+    if (!onLine) return;
+    const parts = (this.stderrPartial + text).split(/\r?\n/);
+    this.stderrPartial = parts.pop() ?? '';
+    if (flush || this.stderrPartial.length > MAX_PARTIAL_STDERR_LINE_CHARS) {
+      parts.push(this.stderrPartial);
+      this.stderrPartial = '';
+    }
+    for (const part of parts) {
+      const line = part.trim();
+      if (!line) continue;
+      try {
+        onLine(line);
+      } catch {
+        // 观察者的问题不能影响宿主的日志与退出处理
+      }
+    }
   }
 
   get pid(): number | undefined {

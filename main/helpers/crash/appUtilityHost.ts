@@ -13,7 +13,7 @@ import {
 export function spawnAppUtilityHost(
   options: Pick<
     SpawnHostOptions,
-    'workerFile' | 'serviceName' | 'logLabel' | 'env'
+    'workerFile' | 'serviceName' | 'logLabel' | 'env' | 'onStderrLine'
   >,
 ): UtilityHost {
   return spawnUtilityHost({
