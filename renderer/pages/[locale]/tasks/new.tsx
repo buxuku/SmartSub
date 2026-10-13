@@ -19,11 +19,13 @@ export default function NewTaskPage() {
 }
 
 // home 命名空间为 InlineConfigBar 的历史文案（输出内容/格式下拉等）所需；
-// subtitleMerge 为合成配置的样式预设名/画质/编码文案所需
+// subtitleMerge 为合成配置的样式预设名/画质/编码文案所需；
+// translateControl 为「生成摘要」弹层里的摘要提示词编辑弹窗所需
 export const getStaticProps = makeStaticProperties([
   'common',
   'home',
   'tasks',
   'subtitleMerge',
+  'translateControl',
 ]);
 export { getStaticPaths };

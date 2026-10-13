@@ -122,6 +122,7 @@ export default function TaskPage() {
   const [taskStatus, setTaskStatus] = useState('idle');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [refinePopoverOpen, setRefinePopoverOpen] = useState(false);
+  const [summaryPopoverOpen, setSummaryPopoverOpen] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   /** 固定任务的配置快照（附加阶段/参考文稿）：阶段轨道与横幅按它渲染 */
   const [configSnapshot, setConfigSnapshot] = useState<any>(null);
@@ -1608,6 +1609,8 @@ export default function TaskPage() {
             useLocalWhisper={useLocalWhisper}
             refineOpen={refinePopoverOpen}
             onRefineOpenChange={setRefinePopoverOpen}
+            summaryOpen={summaryPopoverOpen}
+            onSummaryOpenChange={setSummaryPopoverOpen}
             onOpenAdvanced={() => setAdvancedOpen(true)}
           />
         )}
@@ -1807,6 +1810,11 @@ export default function TaskPage() {
               const el = document.getElementById('ai-refine-control-container');
               el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }}
+            onOpenSummary={() => {
+              setSummaryPopoverOpen(true);
+              const el = document.getElementById('summary-control-container');
+              el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }}
             onStatusChange={handleStatusChange}
             onTaskDispatched={handleTaskDispatched}
             rememberDefaults={!configSnapshot}
@@ -1913,6 +1921,12 @@ export function getStaticPaths() {
 
 export async function getStaticProps(context) {
   return {
-    props: await getI18nProperties(context, ['common', 'home', 'tasks']),
+    // translateControl：「生成摘要」弹层里的摘要提示词编辑弹窗所需
+    props: await getI18nProperties(context, [
+      'common',
+      'home',
+      'tasks',
+      'translateControl',
+    ]),
   };
 }

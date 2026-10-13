@@ -10,8 +10,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { AlertCircle, CheckCircle2, Download, Languages } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import Models from '@/components/Models';
 import AiRefineControl from '@/components/tasks/AiRefineControl';
@@ -49,21 +55,76 @@ interface InlineConfigBarProps {
   useLocalWhisper: boolean;
   refineOpen?: boolean;
   onRefineOpenChange?: (open: boolean) => void;
+  /** 受控展开「生成摘要」弹层：被摘要配置阻断时由外部唤起。 */
+  summaryOpen?: boolean;
+  onSummaryOpenChange?: (open: boolean) => void;
   onOpenAdvanced?: () => void;
 }
 
+/**
+ * 标签旁的 ⓘ 提示：说明文字收进悬停/聚焦提示，不占纵向空间。
+ * 图标按钮与标签同高（h-4 = text-xs 的行高），出现与否都不会撑高标签行。
+ * 按钮的可访问名称就是提示正文，读屏用户无需悬停也能听到。
+ */
+function ConfigItemHint({ text }: { text: string }) {
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={text}
+            data-testid="config-item-hint"
+            className="inline-flex h-4 w-4 flex-none items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <Info className="h-3 w-3" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent
+          side="top"
+          align="start"
+          className="max-w-[260px] text-xs leading-relaxed"
+        >
+          {text}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+/**
+ * 标签在上、控件在下。默认等分剩余宽度（flex-1）；
+ * 内容窄且形态固定的控件（词库、摘要）通过 className 改成定宽，
+ * 避免其内容变化挤压整条单行配置条。
+ *
+ * 标签单行截断（title 给出全称）：窄窗口下列宽不够时以省略号收尾，
+ * 不会溢出盖住相邻控件。补充说明用 hint（标签旁 ⓘ）承载，而不是在控件上方
+ * 另起一段文字——后者会随状态把整条配置条撑高。
+ */
 function ConfigItem({
   label,
+  hint,
   children,
+  className,
 }: {
   label: string;
+  hint?: string;
   children: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="flex min-w-0 flex-1 flex-col items-stretch gap-1">
-      <span className="text-xs text-muted-foreground whitespace-nowrap">
-        {label}
-      </span>
+    <div
+      className={cn(
+        'flex min-w-0 flex-1 flex-col items-stretch gap-1',
+        className,
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-1">
+        <span title={label} className="truncate text-xs text-muted-foreground">
+          {label}
+        </span>
+        {hint && <ConfigItemHint text={hint} />}
+      </div>
       {children}
     </div>
   );
@@ -82,6 +143,8 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
   useLocalWhisper,
   refineOpen,
   onRefineOpenChange,
+  summaryOpen,
+  onSummaryOpenChange,
   onOpenAdvanced,
 }) => {
   const { t } = useTranslation('tasks');
@@ -261,11 +324,13 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
                   asChild
                   variant="outline"
                   size="sm"
-                  className="h-8 text-xs gap-1.5"
+                  className="h-8 w-full min-w-0 px-2 text-xs"
                 >
-                  <Link href={`/${locale}/engines`}>
-                    <Download className="h-4 w-4" />
-                    {t('goDownloadModel')}
+                  <Link
+                    href={`/${locale}/engines`}
+                    title={t('goDownloadModel')}
+                  >
+                    <span className="truncate">{t('goDownloadModel')}</span>
                   </Link>
                 </Button>
               )}
@@ -310,12 +375,14 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
                 </Select>
               </ConfigItem>
 
-              <ConfigItem label={t('configBar.provider')}>
-                {formData.translateProvider === 'autoFree' && (
-                  <p className="text-[11px] text-muted-foreground">
-                    {tHome('freeTranslationNetworkHint')}
-                  </p>
-                )}
+              <ConfigItem
+                label={t('configBar.provider')}
+                hint={
+                  formData.translateProvider === 'autoFree'
+                    ? tHome('freeTranslationNetworkHint')
+                    : undefined
+                }
+              >
                 {providers.length > 0 ? (
                   <Select
                     value={formData.translateProvider}
@@ -359,21 +426,39 @@ const InlineConfigBar: React.FC<InlineConfigBarProps> = ({
                     asChild
                     variant="outline"
                     size="sm"
-                    className="h-8 text-xs gap-1.5"
+                    className="h-8 w-full min-w-0 px-2 text-xs"
                   >
-                    <Link href={`/${locale}/translation`}>
-                      <Languages className="h-4 w-4" />
-                      {t('goConfigureProvider')}
+                    <Link
+                      href={`/${locale}/translation`}
+                      title={t('goConfigureProvider')}
+                    >
+                      <span className="truncate">
+                        {t('goConfigureProvider')}
+                      </span>
                     </Link>
                   </Button>
                 )}
               </ConfigItem>
-              <GlossarySelectControl form={form} formData={formData} />
-              <SummaryGenerateControl
-                form={form}
-                formData={formData}
-                providers={providers}
-              />
+              {/* 定宽：最小窗口(1024)下与其余控件同样紧凑，宽屏(≥1280)多给 8~16px，
+                  让默认文案「全局已启用」「DeepSeek」不被省略号截断 */}
+              <ConfigItem
+                label={t('configBar.glossary')}
+                className="w-[120px] flex-none xl:w-[128px]"
+              >
+                <GlossarySelectControl form={form} formData={formData} />
+              </ConfigItem>
+              <ConfigItem
+                label={t('configBar.generateSummary')}
+                className="w-[112px] flex-none xl:w-[128px]"
+              >
+                <SummaryGenerateControl
+                  form={form}
+                  formData={formData}
+                  providers={providers}
+                  open={summaryOpen}
+                  onOpenChange={onSummaryOpenChange}
+                />
+              </ConfigItem>
             </>
           )}
 

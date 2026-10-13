@@ -4,6 +4,7 @@
  */
 import {
   defaultSummaryPrompt,
+  isSummaryPromptCustomized,
   resolveSummaryPrompt,
   SUMMARY_GLOSSARY_HEADING,
   SUMMARY_BLOCK_HEADING,
@@ -53,6 +54,27 @@ equal(
   'custom draft',
   'non-empty store is kept as-is',
 );
+
+// 入口处的「已自定义」徽标：与编辑器的持久化口径一致，空 / 缺省 / 等于出厂稿都不算
+ok(!isSummaryPromptCustomized(undefined), 'missing store is not customized');
+ok(
+  !isSummaryPromptCustomized(''),
+  'factory restore (empty store) is not customized',
+);
+ok(!isSummaryPromptCustomized('   \n'), 'whitespace store is not customized');
+ok(
+  !isSummaryPromptCustomized(defaultSummaryPrompt),
+  'a store equal to the factory prompt is not customized',
+);
+ok(
+  !isSummaryPromptCustomized(`${defaultSummaryPrompt}\n  `),
+  'trailing whitespace around the factory prompt is not customized',
+);
+ok(
+  isSummaryPromptCustomized('custom draft'),
+  'a rewritten prompt is customized',
+);
+ok(!isSummaryPromptCustomized(42), 'non-string stores fall back to factory');
 ok(
   defaultSummaryPrompt.includes('${sourceLanguage}') &&
     defaultSummaryPrompt.includes('${targetLanguage}'),
@@ -326,7 +348,10 @@ ok(
   'missing generateSummary ignores a non-empty episodeSummary',
 );
 ok(
-  !shouldUseEpisodeSummary({ generateSummary: true }, { episodeSummary: '   ' }),
+  !shouldUseEpisodeSummary(
+    { generateSummary: true },
+    { episodeSummary: '   ' },
+  ),
   'blank episodeSummary is not injected',
 );
 ok(
@@ -355,10 +380,7 @@ ok(
     fingerprint,
     'same fingerprint inputs produce the same hash',
   );
-  ok(
-    /^[0-9a-f]{40}$/.test(fingerprint),
-    'fingerprint is lowercase sha1 hex',
-  );
+  ok(/^[0-9a-f]{40}$/.test(fingerprint), 'fingerprint is lowercase sha1 hex');
   const changed = [
     ['source', { source: '1\n2x' }],
     ['prompt', { prompt: '提示${targetLanguage}' }],

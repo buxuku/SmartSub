@@ -188,6 +188,7 @@ function simulate({
     projectId: 'test-project',
     cachedProviders: [],
     onOpenRefine: undefined,
+    onOpenSummary: undefined,
     dispatchTask: (files) => dispatched.push(files),
   });
   const submission = {

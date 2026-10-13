@@ -1,8 +1,11 @@
 /**
  * 任务配置条的词库多选。未交互时 formData.glossaryIds 保持 undefined
  * （回落全部已启用）；勾选后写入显式 id 数组，取消最后一项得到 []。
+ *
+ * 只渲染控件本身（标签由 InlineConfigBar 的 ConfigItem 提供），触发器宽度跟随容器，
+ * 与场景 / 断句与精修 / 字幕格式同构：不依赖内容撑宽，状态变化不会挤压整条配置条。
  */
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
@@ -12,7 +15,7 @@ import {
 } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { BookOpenText } from 'lucide-react';
+import { BookOpenText, ChevronDown } from 'lucide-react';
 import { cn } from 'lib/utils';
 import { useTranslation } from 'next-i18next';
 import type { UseFormReturn } from 'react-hook-form';
@@ -32,6 +35,7 @@ const GlossarySelectControl: React.FC<GlossarySelectControlProps> = ({
   const router = useRouter();
   const { locale } = router.query;
   const [open, setOpen] = useState(false);
+  const idBase = useId();
   const { glossaries, loading } = useGlossaries();
 
   const rawIds = formData?.glossaryIds;
@@ -71,94 +75,109 @@ const GlossarySelectControl: React.FC<GlossarySelectControlProps> = ({
         ? selectedGlossaries[0].name
         : t('configBar.glossaryCount', { count: selectedGlossaries.length });
 
+  // 还没有词库：只留一个去建词库的入口；“还没有词库”的说明放在 title，不占横向空间
   if (!loading && glossaries.length === 0) {
     return (
-      <div className="flex items-center gap-1.5">
-        <span className="text-xs text-muted-foreground whitespace-nowrap">
-          {t('configBar.glossary')}
-        </span>
-        <Button
-          asChild
-          variant="outline"
-          size="sm"
-          className="h-8 text-xs gap-1.5"
+      <Button
+        asChild
+        variant="outline"
+        size="sm"
+        className="h-8 w-full min-w-0 justify-between gap-1 px-2.5 text-xs font-normal"
+      >
+        <Link
+          href={`/${locale}/glossary`}
+          title={t('configBar.glossaryEmpty')}
+          aria-label={`${t('configBar.glossary')}: ${t('configBar.glossaryEmpty')}`}
         >
-          <Link href={`/${locale}/glossary`}>
-            <BookOpenText className="h-3.5 w-3.5" />
-            {t('configBar.glossaryGoManage')}
-          </Link>
-        </Button>
-        <span className="text-xs text-muted-foreground">
-          {t('configBar.glossaryEmpty')}
-        </span>
-      </div>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <BookOpenText className="h-3.5 w-3.5 flex-none" />
+            <span className="truncate">{t('configBar.glossaryGoManage')}</span>
+          </span>
+        </Link>
+      </Button>
     );
   }
 
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-xs text-muted-foreground whitespace-nowrap">
-        {t('configBar.glossary')}
-      </span>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className={cn(
-              'h-8 gap-1.5 text-xs',
-              isExplicit &&
-                'border-primary/50 bg-primary/[0.06] text-primary hover:text-primary',
-            )}
-          >
-            <BookOpenText className="h-3.5 w-3.5" />
-            {stateLabel}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent
-          align="start"
-          collisionPadding={12}
-          className="w-[280px] max-h-[min(420px,calc(var(--radix-popover-content-available-height)-8px))] overflow-y-auto space-y-2"
-        >
-          <div>
-            <p className="text-sm font-medium">{t('configBar.glossary')}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {t('configBar.glossaryIntro')}
-            </p>
-          </div>
-
-          {isExplicit && (
-            <button
-              type="button"
-              className="text-xs text-muted-foreground hover:text-foreground"
-              onClick={restoreDefault}
-            >
-              {t('configBar.glossaryRestoreDefault')}
-            </button>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          title={stateLabel}
+          aria-label={`${t('configBar.glossary')}: ${stateLabel}`}
+          className={cn(
+            'h-8 w-full min-w-0 justify-between gap-1 px-2.5 text-xs font-normal',
+            isExplicit &&
+              'border-primary/50 bg-primary/[0.06] text-primary hover:text-primary',
           )}
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <BookOpenText className="h-3.5 w-3.5 flex-none" />
+            <span className="truncate">{stateLabel}</span>
+          </span>
+          <ChevronDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        collisionPadding={12}
+        className="w-[280px] max-h-[min(420px,calc(var(--radix-popover-content-available-height)-8px))] overflow-y-auto space-y-2"
+      >
+        <div>
+          <p className="text-sm font-medium">{t('configBar.glossary')}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {t('configBar.glossaryIntro')}
+          </p>
+        </div>
 
-          <div className="space-y-1">
-            {glossaries.map((glossary) => (
-              <div key={glossary.id} className="flex items-center gap-2 py-1">
+        {isExplicit && (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground hover:text-foreground"
+            onClick={restoreDefault}
+          >
+            {t('configBar.glossaryRestoreDefault')}
+          </button>
+        )}
+
+        <div className="space-y-0.5">
+          {glossaries.map((glossary) => {
+            const inputId = `${idBase}-${glossary.id}`;
+            // 复选框自带一层 <label>（包住隐藏的 input），不能再把整行包进 <label>，
+            // 否则是嵌套 label。改用 htmlFor 把名称关联到同一个 input：
+            // 点名称即可切换，同时让复选框拥有可访问名称。
+            return (
+              <div
+                key={glossary.id}
+                className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted/60"
+              >
                 <Checkbox
+                  id={inputId}
                   checked={isChecked(glossary.id)}
                   onCheckedChange={(checked) =>
                     toggle(glossary.id, checked === true)
                   }
                 />
-                <span className="text-sm truncate">{glossary.name}</span>
-                {glossary.enabled === false && (
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    {t('configBar.glossaryDisabled')}
-                  </span>
-                )}
+                <label
+                  htmlFor={inputId}
+                  title={glossary.name}
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-2"
+                >
+                  <span className="truncate text-sm">{glossary.name}</span>
+                  {glossary.enabled === false && (
+                    <span className="whitespace-nowrap text-xs text-muted-foreground">
+                      {t('configBar.glossaryDisabled')}
+                    </span>
+                  )}
+                </label>
               </div>
-            ))}
-          </div>
-        </PopoverContent>
-      </Popover>
-    </div>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 };
 
