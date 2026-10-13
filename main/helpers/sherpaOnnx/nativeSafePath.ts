@@ -83,10 +83,8 @@ export function stagingBaseDirs(
     candidates.push(path.join(env.PUBLIC, 'SmartSub', STAGING_SUBDIR));
   }
   if (env.SystemDrive) {
-    // 必须补分隔符：path.join('C:', 'x') 得到的是"C 盘当前目录下的 x"（C:x）
-    candidates.push(
-      path.join(env.SystemDrive + path.sep, 'SmartSub', STAGING_SUBDIR),
-    );
+    // SystemDrive 形如 `C:`；join 会补分隔符，得到绝对路径 C:\SmartSub\native-models
+    candidates.push(path.join(env.SystemDrive, 'SmartSub', STAGING_SUBDIR));
   }
   return candidates.filter(
     (dir, index) => !hasNonAscii(dir) && candidates.indexOf(dir) === index,

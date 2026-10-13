@@ -8,7 +8,7 @@
 ## 2. 修复
 
 - [x] 2.1 随包模型暂存：新增 `nativeSafePath.ts`（`hasNonAscii`、`needsNativeSafe`、`stagingBaseDirs`、`stageBundledModel`、`ensureNativeSafeModelPath`）；`sherpaFunasrRuntime.ts` 的 prewarm / transcribe / detectSpeech / denoise 在交给 worker 前接入
-- [x] 2.2 单测先于实现（`scripts/test-engine-units.ts`）：候选目录剔除含非 ASCII 项并去重、`SystemDrive` 补分隔符（`path.join('C:', x)` 得到的是 `C:x`）、内容寻址、逐字节复用、篡改 / 截断 / 删除后重建、候选目录回退、全部失败回原路径并记 warning、超过 64 MiB 不暂存、文件名 ASCII 化、跨进程幂等、非 Windows 与 ASCII 路径不创建任何文件
+- [x] 2.2 单测先于实现（`scripts/test-engine-units.ts`）：候选目录顺序固定、剔除含非 ASCII 项并去重、缺少环境变量时跳过、内容寻址、逐字节复用、篡改 / 截断 / 删除后重建、候选目录回退、全部失败回原路径并记 warning、超过 64 MiB 不暂存、文件名 ASCII 化、跨进程幂等、非 Windows 与 ASCII 路径不创建任何文件
 - [x] 2.3 wav 读写：新增 `extraResources/sherpa/worker/wav-io.js`，接入 `sherpa-worker.js`、`tts-worker.js`、`speaker-diarization-worker.js`；`writeWave` 失败从返回 `false` 改为异常；`SMARTSUB_FORCE_JS_WAV=1` 可在任何平台强制走 JS
 - [x] 2.4 新增 `scripts/test-wav-io.cjs`（22 项）：编码固定向量（与 sherpa-onnx 的 `WriteWave` 逐字节一致）、各种位深 / 声道 / `WAVE_FORMAT_EXTENSIBLE` / 跳过 `JUNK`、`LIST` 块 / 不完整尾帧 / 坏输入的可读报错、编码再解码的往返；读写分派（仅 Windows 且路径含非 ASCII，或强制开关时才走 JS，其余路径原生库不被触碰）；JS 写入失败抛错，原生返回 `false` 也不再被忽略。更新 `scripts/test-sherpa-worker.cjs` 与 `scripts/dubbing/test-language-flow.cjs` 的假 `require`
 - [x] 2.5 本机另用 macOS 原生 sherpa 对拍（一次性核对，未入库）：写出的文件与原生写入器逐字节相同，读到的样本与原生读取器完全一致；Windows 上由 CI 的 `verify-sherpa` 对拍（见 3.1）
