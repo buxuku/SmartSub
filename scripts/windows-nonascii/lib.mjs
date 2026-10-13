@@ -207,6 +207,31 @@ export function sampleLines(text, { exclude, limit = 6 } = {}) {
   return out;
 }
 
+/**
+ * 断言收集器：一项失败不会中断，跑完全部再汇总（process.exitCode 由调用方按 failed 设置）。
+ * 输出每项 PASS / FAIL，并保留给 job summary 使用。
+ */
+export function createChecks() {
+  const rows = [];
+  return {
+    rows,
+    check(name, ok, detail = '') {
+      rows.push({ name, ok: Boolean(ok), detail });
+      console.log(
+        `${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `\n        ${detail}` : ''}`,
+      );
+      return Boolean(ok);
+    },
+    /** 仅供参考的信息，不计入通过 / 失败 */
+    note(message) {
+      console.log(`INFO  ${message}`);
+    },
+    get failed() {
+      return rows.filter((r) => !r.ok).length;
+    },
+  };
+}
+
 /** 追加到 GitHub Actions 的 job summary（本地运行时忽略）。 */
 export function appendSummary(markdown) {
   const file = process.env.GITHUB_STEP_SUMMARY;
