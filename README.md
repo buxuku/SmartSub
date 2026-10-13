@@ -88,7 +88,7 @@
 
 ### 字幕翻译
 
-- 20 个翻译服务：内置免费翻译（必应 / 谷歌免费接口，自动回退与限速）、百度、阿里云、腾讯、讯飞、火山引擎、豆包、小牛、DeepLX、Azure、Google，以及 Ollama（本地模型）、DeepSeek、Gemini、通义千问、SiliconFlow、Azure OpenAI、[DeerAPI](https://api.deerapi.com/register?aff=QvHM) 等大模型服务
+- 20 个翻译服务：内置免费翻译（有道 / 必应 / 谷歌免费接口，自动回退与限速）、百度、阿里云、腾讯、讯飞、火山引擎、豆包、小牛、DeepLX、Azure、Google，以及 Ollama（本地模型）、DeepSeek、Gemini、通义千问、SiliconFlow、Azure OpenAI、[DeerAPI](https://api.deerapi.com/register?aff=QvHM) 等大模型服务
 - 兼容任意 OpenAI 风格 API，可接入自有服务
 - 输出纯译文，或「原文 + 译文」双语字幕
 - 每个 AI 服务可在界面直接配置自定义请求参数，支持导出导入，无需改代码
@@ -144,7 +144,7 @@
 | -------- | ---------------------------------------------------------------------------------- | ---------------------------- |
 | 视频下载 | yt-dlp / lux 开源引擎                                                              | 应用内一键安装，免费使用     |
 | 语音转写 | whisper.cpp / faster-whisper / FunASR / Qwen3-ASR / FireRedASR / Parakeet 本地模型 | 模型下载一次，离线可用       |
-| 字幕翻译 | 内置免费翻译（必应 / 谷歌接口，自动回退）、Ollama 本地大模型、DeepLX               | 免费翻译开箱即用，零配置     |
+| 字幕翻译 | 内置免费翻译（有道 / 必应 / 谷歌接口，自动回退）、Ollama 本地大模型、DeepLX        | 免费翻译开箱即用，零配置     |
 | TTS 配音 | 本地 Kokoro / VITS / ZipVoice 声音克隆；Edge TTS 免费档                            | 本地模型离线合成，无用量限制 |
 | 字幕烧录 | 内置 ffmpeg                                                                        | 本地合成                     |
 
