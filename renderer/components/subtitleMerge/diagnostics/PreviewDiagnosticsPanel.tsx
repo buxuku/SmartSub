@@ -280,9 +280,12 @@ export default function PreviewDiagnosticsPanel() {
       </div>
 
       <ol className="list-decimal space-y-0.5 pl-4 leading-snug text-muted-foreground">
-        <li>把鼠标移到本面板，复现黑屏。</li>
-        <li>点「现在是黑屏」（或按 F8），会自动取证。</li>
-        <li>勾选下面的实验，看画面是否恢复；再点「现在正常」（F9）。</li>
+        <li>本测试版已包含修复：把鼠标移到本面板，画面应保持正常。</li>
+        <li>若仍然黑屏：点「现在是黑屏」（或按 F8），会自动取证。</li>
+        <li>
+          想对照：把下面的 desynchronized 改为「强制 true」（即 3.9.0
+          的原行为），应能复现黑屏；再改回「随正式版」。
+        </li>
         <li>最后点「导出诊断包」发给开发者。</li>
       </ol>
 
@@ -382,11 +385,12 @@ export default function PreviewDiagnosticsPanel() {
             />
             <Pick
               flag="jassubDesync"
-              label="WebGL desynchronized（默认 true）"
+              label="画布 desynchronized（Windows 默认 false）"
               value={flags.jassubDesync}
               options={[
-                { value: 'unchanged', label: '不改' },
-                { value: 'false', label: '改为 false' },
+                { value: 'unchanged', label: '随正式版' },
+                { value: 'true', label: '强制 true（3.9.0 原行为）' },
+                { value: 'false', label: '强制 false' },
               ]}
               onChange={(value) => set({ jassubDesync: value })}
             />

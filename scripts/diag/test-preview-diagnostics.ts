@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import vm from 'node:vm';
 import {
   GPU_PRESETS,
   findGpuPreset,
@@ -82,9 +83,9 @@ test('诊断安装包按可执行文件名识别，也可用环境变量显式�
   );
 });
 
-// ───────────── 默认开关 = 3.9.0 ─────────────
+// ───────────── 默认开关：不改变任何行为 ─────────────
 
-test('默认开关与 3.9.0 的行为一致（守护测试）', () => {
+test('默认开关不改变任何行为（守护测试）', () => {
   assert.deepEqual(
     { ...DEFAULT_FLAGS },
     {
@@ -141,6 +142,20 @@ test('jassubDiagOption 只带上被改动的 JASSUB 参数', () => {
       powerPreference: 'low-power',
     },
   );
+});
+
+test('jassubDesync 可强制为 true（复现 3.9.0 黑屏）或 false；「不改」不下发任何选项', () => {
+  const forceTrue = normalizeFlags({ jassubDesync: 'true' });
+  const forceFalse = normalizeFlags({ jassubDesync: 'false' });
+  assert.equal(forceTrue.jassubDesync, 'true');
+  assert.deepEqual(jassubDiagOption(forceTrue), { desynchronized: true });
+  assert.deepEqual(jassubDiagOption(forceFalse), { desynchronized: false });
+  assert.equal(
+    jassubDiagOption(normalizeFlags({ jassubDesync: 'unchanged' })),
+    undefined,
+  );
+  assert.notEqual(jassubDiagKey(forceTrue), jassubDiagKey(forceFalse));
+  assert.deepEqual(changedFlags(forceTrue), { jassubDesync: 'true' });
 });
 
 test('「全部缓解」是合法开关，且确实改变了东西', () => {
@@ -590,13 +605,16 @@ test('patch-jassub：打补丁幂等、可还原、锚点缺失时失败退出',
   );
   assert.match(worker, /__SMARTSUB_JASSUB_DIAG__/);
   assert.match(worker, /smartsub-jassub-diag/);
-  assert.match(
-    fs.readFileSync(
-      path.join(copy, 'dist/worker/renderers/webgl2-renderer.js'),
-      'utf8',
-    ),
-    /desynchronized: \(globalThis/,
-  );
+  assert.match(worker, /OffscreenCanvas\.prototype\.getContext/);
+  assert.match(worker, /requestedAttributes/);
+  // 渲染器源码必须保持原样：正式版的 webpack loader（修复 Windows 黑屏）要在
+  // 它们身上找到 `desynchronized: true`，诊断开关改在 getContext 处统一应用。
+  for (const rel of files.filter((file) => file.includes('/renderers/')))
+    assert.equal(
+      fs.readFileSync(path.join(copy, rel), 'utf8'),
+      original[rel],
+      `${rel} must stay untouched by the diagnostic patch`,
+    );
   assert.match(
     fs.readFileSync(path.join(copy, 'dist/jassub.js'), 'utf8'),
     /diag: opts\.diag \?\? null/,
@@ -619,24 +637,186 @@ test('patch-jassub：打补丁幂等、可还原、锚点缺失时失败退出',
       original[rel],
       rel,
     );
-  // 锚点被破坏时拒绝打补丁，且不留下半成品
-  const broken = path.join(copy, 'dist/worker/renderers/webgl1-renderer.js');
+  // 锚点被破坏时拒绝打补丁，且不留下半成品（先于它处理的文件也不会被改动）
+  const broken = path.join(copy, 'dist/worker/worker.js');
   fs.writeFileSync(
     broken,
-    original['dist/worker/renderers/webgl1-renderer.js'].replace(
-      'desynchronized: true,',
-      'desynchronized: false,',
+    original['dist/worker/worker.js'].replace(
+      'this.debug = data.debug;',
+      'this.debug = !!data.debug;',
     ),
   );
   const failed = run();
   assert.equal(failed.status, 1);
   assert.match(failed.stderr, /expected exactly 1 anchor/);
   assert.equal(
-    fs.readFileSync(path.join(copy, 'dist/worker/worker.js'), 'utf8'),
-    original['dist/worker/worker.js'],
+    fs.readFileSync(path.join(copy, 'dist/jassub.js'), 'utf8'),
+    original['dist/jassub.js'],
     '失败时其它文件不应被改动',
   );
   fs.rmSync(copy, { recursive: true, force: true });
+});
+
+// 诊断补丁装在 worker 里的 getContext 拦截器：既要正确应用诊断开关，
+// 也要在开关为默认值时原样透传（默认路径 = 正式版行为，包括 Windows 修复）。
+const WINDOWS_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) smartsub/3.9.0 Chrome/124.0.6367.243 Electron/30.5.1 Safari/537.36';
+const MAC_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) smartsub/3.9.0 Chrome/124.0.6367.243 Electron/30.5.1 Safari/537.36';
+const INTERPOSER_BEGIN = '// smartsub-diag:getContext-interposer:begin';
+const INTERPOSER_END = '// smartsub-diag:getContext-interposer:end';
+
+type ContextCall = { type: string; attrs: Record<string, unknown> | undefined };
+
+/** vm 沙箱里创建的对象原型与宿主不同，deepEqual 会因此失败：先转成宿主里的普通对象。 */
+const plain = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+
+let cachedInterposerBlock: string | undefined;
+
+/** 在临时副本上打补丁，取出补丁后 worker.js 里的拦截器代码块（只做一次）。 */
+function patchedInterposerBlock(): string {
+  cachedInterposerBlock ??= buildInterposerBlock();
+  return cachedInterposerBlock;
+}
+
+function buildInterposerBlock(): string {
+  const source = path.resolve('node_modules/jassub');
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'diag-interposer-'));
+  try {
+    for (const rel of [
+      'package.json',
+      'dist/jassub.js',
+      'dist/worker/worker.js',
+    ]) {
+      fs.mkdirSync(path.dirname(path.join(copy, rel)), { recursive: true });
+      fs.copyFileSync(path.join(source, rel), path.join(copy, rel));
+    }
+    const patched = spawnSync(
+      process.execPath,
+      ['scripts/diag/patch-jassub.mjs'],
+      {
+        env: { ...process.env, SMARTSUB_JASSUB_DIR: copy },
+        encoding: 'utf8',
+      },
+    );
+    assert.equal(patched.status, 0, patched.stderr);
+    const worker = fs.readFileSync(
+      path.join(copy, 'dist/worker/worker.js'),
+      'utf8',
+    );
+    const begin = worker.indexOf(INTERPOSER_BEGIN);
+    const end = worker.indexOf(INTERPOSER_END);
+    assert.ok(begin >= 0 && end > begin, 'interposer markers present');
+    return worker.slice(begin, end + INTERPOSER_END.length);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+}
+
+/** 在沙箱里装上拦截器；返回一块「画布」与底层 getContext 实际收到的调用。 */
+function installInterposer(diag: Record<string, unknown>) {
+  const received: ContextCall[] = [];
+  class FakeOffscreenCanvas {
+    getContext(type: string, attrs?: Record<string, unknown>) {
+      received.push({ type, attrs });
+      return {};
+    }
+  }
+  const sandbox: Record<string, unknown> = {
+    OffscreenCanvas: FakeOffscreenCanvas,
+    __SMARTSUB_JASSUB_DIAG__: diag,
+  };
+  vm.runInNewContext(patchedInterposerBlock(), sandbox);
+  return {
+    canvas: new FakeOffscreenCanvas(),
+    received,
+    requests: () =>
+      plain(
+        sandbox.__SMARTSUB_JASSUB_REQUESTS__ as Array<Record<string, unknown>>,
+      ),
+  };
+}
+
+test('getContext 拦截器：开关为默认值时原样透传，并记录渲染器真正的请求', () => {
+  const { canvas, received, requests } = installInterposer({});
+  const attrs = {
+    alpha: true,
+    desynchronized: false,
+    powerPreference: 'high-performance',
+  };
+  canvas.getContext('webgl2', attrs);
+  canvas.getContext('webgl2'); // JASSUB 的探测调用：不带属性
+  assert.equal(received.length, 2);
+  assert.equal(received[0].attrs, attrs, '默认不应复制或改写属性对象');
+  assert.equal(received[1].attrs, undefined);
+  assert.deepEqual(requests(), [
+    {
+      type: 'webgl2',
+      desynchronized: false,
+      powerPreference: 'high-performance',
+    },
+  ]);
+});
+
+test('getContext 拦截器：强制开关覆盖渲染器的请求，且不改动原对象', () => {
+  const { canvas, received, requests } = installInterposer({
+    desynchronized: true,
+    powerPreference: 'low-power',
+  });
+  const webgl = {
+    alpha: true,
+    desynchronized: false,
+    powerPreference: 'high-performance',
+  };
+  canvas.getContext('webgl2', webgl);
+  assert.deepEqual(plain(received[0].attrs), {
+    alpha: true,
+    desynchronized: true,
+    powerPreference: 'low-power',
+  });
+  assert.equal(webgl.desynchronized, false, '原对象不应被改写');
+  // 2D 上下文没有 powerPreference：不凭空添加
+  canvas.getContext('2d', { alpha: true, desynchronized: false });
+  assert.deepEqual(plain(received[1].attrs), {
+    alpha: true,
+    desynchronized: true,
+  });
+  assert.deepEqual(
+    requests().map((request) => request.desynchronized),
+    [true, true],
+  );
+});
+
+test('诊断拦截器叠在正式版 loader 之上：默认=修复后的行为，强制开关仍可对照', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const loader = require('../../renderer/lib/jassub-sync-canvas-loader.js') as (
+    this: { resourcePath: string },
+    source: string,
+  ) => string;
+  const rendererPath = path.resolve(
+    'node_modules/jassub/dist/worker/renderers/webgl2-renderer.js',
+  );
+  const transformed = loader.call(
+    { resourcePath: rendererPath },
+    fs.readFileSync(rendererPath, 'utf8'),
+  );
+  const call = /canvas\.getContext\((['"])webgl2\1,\s*\{[^}]*\}\)/.exec(
+    transformed,
+  );
+  assert.ok(call, 'display-canvas getContext call found');
+  const requested = (diag: Record<string, unknown>, userAgent: string) => {
+    const { canvas, received } = installInterposer(diag);
+    vm.runInNewContext(call[0], { canvas, navigator: { userAgent } });
+    return received.at(-1)?.attrs?.desynchronized;
+  };
+  assert.equal(requested({}, WINDOWS_UA), false, 'Windows 默认（修复）');
+  assert.equal(requested({}, MAC_UA), true, '其它平台保持上游行为');
+  assert.equal(
+    requested({ desynchronized: true }, WINDOWS_UA),
+    true,
+    '强制 true 可复现 3.9.0',
+  );
+  assert.equal(requested({ desynchronized: false }, MAC_UA), false);
 });
 
 // ───────────── 运行 ─────────────

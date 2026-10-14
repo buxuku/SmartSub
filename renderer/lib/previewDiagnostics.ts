@@ -2,14 +2,15 @@
  * 视频合成预览「黑屏」诊断：渲染进程这一侧的实验开关、事件日志、主进程信息缓存。
  *
  * 设计约束：
- *  - 所有开关的默认值 = 3.9.0 的行为。正式版里没有人会改它们，诊断面板也不会出现，
+ *  - 所有开关默认都不改变任何行为，即与正式版一致（其中包含 Windows 下关闭 JASSUB 低延迟画布的修复，
+ *    见 renderer/lib/jassub-sync-canvas-loader.js）。正式版里没有人会改它们，诊断面板也不会出现，
  *    所以这里的代码在正式版是惰性的（diagLog 直接返回，开关永远是默认值）。
  *  - 一次只改一个变量：每个开关都对应一个具体假设（见各字段注释），面板里逐个勾选对照。
  *  - 开关只存在于内存里，不持久化：每次启动都是 3.9.0 的默认行为，不会因为上次忘了关而困惑。
  */
 import { useEffect, useSyncExternalStore } from 'react';
 
-export type DesyncMode = 'unchanged' | 'false';
+export type DesyncMode = 'unchanged' | 'true' | 'false';
 export type PowerMode = 'unchanged' | 'default' | 'low-power';
 export type RendererMode = 'auto' | 'webgl2' | 'webgl1' | '2d';
 export type HandleMode = 'hover' | 'pinned' | 'hidden';
@@ -21,7 +22,11 @@ export interface PreviewDiagFlags {
   jassubHideCanvas: boolean;
   /** 3.9.0 新增的字幕范围测量：每 100ms 从 JASSUB 画布 drawImage + getImageData 回读。关掉 ⇒ 排除回读。 */
   boundsReadback: boolean;
-  /** WebGL 上下文的 desynchronized（JASSUB 默认 true）。上游 JASSUB#70：Windows 上它会导致黑屏。 */
+  /**
+   * 画布上下文的 desynchronized。unchanged = 随正式版（Windows 下为 false，其它平台为 JASSUB 默认的 true）；
+   * true = 强制低延迟画布（3.9.0 的原行为，用来复现黑屏做对照）；false = 强制关闭。
+   * 上游 JASSUB#70：Windows 上 desynchronized:true 会导致黑屏。
+   */
   jassubDesync: DesyncMode;
   /** WebGL 上下文的 powerPreference（JASSUB 默认 high-performance）。双显卡笔记本上会选独显。 */
   jassubPower: PowerMode;
@@ -68,7 +73,7 @@ export const MITIGATE_ALL_FLAGS: Readonly<Partial<PreviewDiagFlags>> =
   });
 
 const ENUMS: Record<string, readonly string[]> = {
-  jassubDesync: ['unchanged', 'false'],
+  jassubDesync: ['unchanged', 'true', 'false'],
   jassubPower: ['unchanged', 'default', 'low-power'],
   jassubRenderer: ['auto', 'webgl2', 'webgl1', '2d'],
   handleMode: ['hover', 'pinned', 'hidden'],
@@ -117,7 +122,8 @@ export function jassubDiagOption(
   flags: PreviewDiagFlags,
 ): JassubDiagOption | undefined {
   const option: JassubDiagOption = {};
-  if (flags.jassubDesync === 'false') option.desynchronized = false;
+  if (flags.jassubDesync !== 'unchanged')
+    option.desynchronized = flags.jassubDesync === 'true';
   if (flags.jassubPower !== 'unchanged')
     option.powerPreference = flags.jassubPower;
   if (flags.jassubRenderer !== 'auto') option.renderer = flags.jassubRenderer;
