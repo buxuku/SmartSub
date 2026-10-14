@@ -13,6 +13,7 @@ import { desktopCapturer, screen, type BrowserWindow } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { lumaStats, type LumaStats } from './luminance';
+import { findOwnWindowSource } from './sourceMatch';
 
 /** 相对页面左上角的矩形，单位 CSS 像素（getBoundingClientRect 的结果）。 */
 export interface CssRect {
@@ -193,6 +194,18 @@ export async function captureViz(
   }
 }
 
+/** HWND 的十进制写法（getNativeWindowHandle 给的是按指针宽度小端排列的字节）；拿不到返回 null。 */
+function nativeHandleOf(win: BrowserWindow): string | null {
+  try {
+    const bytes = win.getNativeWindowHandle();
+    if (bytes.length >= 8) return bytes.readBigUInt64LE(0).toString();
+    if (bytes.length >= 4) return String(bytes.readUInt32LE(0));
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** 系统层：只在 Windows 上做（macOS 上会触发屏幕录制授权弹窗）。 */
 export async function captureOs(
   win: BrowserWindow,
@@ -228,12 +241,20 @@ export async function captureOs(
       OS_CAPTURE_TIMEOUT_MS,
       'desktopCapturer.getSources',
     );
-    const mine = sources.find((source) => source.id === win.getMediaSourceId());
+    const mediaSourceId = win.getMediaSourceId();
+    const mine = findOwnWindowSource(sources, {
+      mediaSourceId,
+      nativeHandle: nativeHandleOf(win),
+      title: win.getTitle(),
+    });
     if (!mine || mine.thumbnail.isEmpty()) {
       throw new Error(
         mine
           ? 'window thumbnail is empty'
-          : `window source not found (${sources.length} sources)`,
+          : // id 只是句柄数字，不含窗口标题：别的窗口叫什么是用户的隐私，不进日志
+            `window source not found: own ${mediaSourceId}, listed [${sources
+              .map((source) => source.id)
+              .join(', ')}]`,
       );
     }
     // 缩略图是整个窗口（含边框），页面内容相对窗口左上角有一点偏移

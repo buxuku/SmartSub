@@ -27,6 +27,10 @@ import {
 } from '../../main/helpers/previewDiagnostics/logWriter';
 import { parseRegQuery } from '../../main/helpers/previewDiagnostics/regQuery';
 import {
+  findOwnWindowSource,
+  windowHandleOf,
+} from '../../main/helpers/previewDiagnostics/sourceMatch';
+import {
   DEFAULT_FLAGS,
   MITIGATE_ALL_FLAGS,
   changedFlags,
@@ -376,6 +380,78 @@ test('parseRegQuery 解析键、值名（含空格）、类型与数据', () => 
   });
   assert.deepEqual(dump.values.Empty, { type: 'REG_SZ', data: '' });
   assert.deepEqual(parseRegQuery(''), []);
+});
+
+// ───────────── 系统层截图：认出自己的窗口 ─────────────
+
+test('windowHandleOf 只取窗口句柄这一段', () => {
+  assert.equal(windowHandleOf('window:1324:0'), '1324');
+  assert.equal(windowHandleOf('window:197190:42'), '197190');
+  assert.equal(windowHandleOf('screen:1:0'), null);
+  assert.equal(windowHandleOf('window:abc:0'), null);
+  assert.equal(windowHandleOf(''), null);
+});
+
+test('findOwnWindowSource：句柄相同、尾段不同也认得出（CI 上踩过的坑）', () => {
+  // getMediaSourceId() 的尾段是 aura 窗口号，desktopCapturer 列出的恒为 0
+  const sources = [{ id: 'window:1324:0', name: 'SmartSub' }];
+  assert.equal(
+    findOwnWindowSource(sources, { mediaSourceId: 'window:1324:7' }),
+    sources[0],
+  );
+  // 整串比较（旧写法）在这里找不到
+  assert.equal(
+    sources.find((source) => source.id === 'window:1324:7'),
+    undefined,
+  );
+});
+
+test('findOwnWindowSource：按 getNativeWindowHandle 的句柄兜底', () => {
+  const sources = [
+    { id: 'window:11:0', name: 'Other' },
+    { id: 'window:2222:0', name: 'Whatever' },
+  ];
+  assert.equal(
+    findOwnWindowSource(sources, {
+      mediaSourceId: 'window:0:0',
+      nativeHandle: '2222',
+    }),
+    sources[1],
+  );
+});
+
+test('findOwnWindowSource：句柄对不上时只在标题唯一时才按标题认', () => {
+  const unique = [
+    { id: 'window:1:0', name: 'Notepad' },
+    { id: 'window:2:0', name: 'SmartSub' },
+  ];
+  assert.equal(
+    findOwnWindowSource(unique, {
+      mediaSourceId: 'window:9:0',
+      title: 'SmartSub',
+    }),
+    unique[1],
+  );
+  const twins = [
+    { id: 'window:1:0', name: 'SmartSub' },
+    { id: 'window:2:0', name: 'SmartSub' },
+  ];
+  assert.equal(
+    findOwnWindowSource(twins, {
+      mediaSourceId: 'window:9:0',
+      title: 'SmartSub',
+    }),
+    null,
+    '同名窗口有两个时宁可没找到，也不把别人当成自己',
+  );
+  assert.equal(
+    findOwnWindowSource(unique, { mediaSourceId: 'window:9:0' }),
+    null,
+  );
+  assert.equal(
+    findOwnWindowSource([], { mediaSourceId: 'window:9:0', title: 'x' }),
+    null,
+  );
 });
 
 // ───────────── JASSUB 诊断补丁 ─────────────
