@@ -22,8 +22,21 @@ autoUpdater.logger = {
 };
 
 import { getBuildInfo } from './buildInfo';
+import { isDiagnosticBuild } from './previewDiagnostics/config';
 
 export function setupAutoUpdater(mainWindow: BrowserWindow) {
+  // 预览黑屏诊断安装包：不检查、不下载、不安装更新。否则它会把自己「更新」成正式版，
+  // 诊断就白做了；通道仍然注册，避免渲染进程调用时报 No handler registered。
+  if (isDiagnosticBuild()) {
+    ipcMain.handle('check-for-updates', async () => null);
+    ipcMain.handle('download-update', async () => ({
+      success: false,
+      error: 'diagnostic build',
+    }));
+    ipcMain.handle('install-update', async () => ({ success: false }));
+    return { checkForUpdates: async () => null };
+  }
+
   // 针对Mac平台的特殊处理
   const isMacOS = process.platform === 'darwin';
   const buildInfo = getBuildInfo(); // buildInfo 仍用于日志记录

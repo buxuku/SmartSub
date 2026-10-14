@@ -1,6 +1,8 @@
 // 必须是第一个 import：放大 libuv 线程池（首个异步 I/O 后定型，不可再改）
 import './helpers/uvThreadPool';
 import { backgroundOnly } from './automation/bootstrap';
+// 预览黑屏诊断版的 GPU 启动参数预设：须在 userData 确定之后、app ready 之前应用；正式版里什么都不做
+import './helpers/previewDiagnostics/earlyInit';
 import { createWindowPort } from './automation/events';
 import { startAutomationServer } from './automation/server';
 import { AutomationService } from './automation/service';
@@ -31,6 +33,7 @@ import { setupWorkItemHandlers } from './helpers/workItemHandlers';
 import { setupRecipeHandlers } from './helpers/ipcRecipeHandlers';
 import { setupGlossaryHandlers } from './helpers/ipcGlossaryHandlers';
 import { setupDiagnosticsHandlers } from './helpers/ipcDiagnosticsHandlers';
+import { setupPreviewDiagnosticsHandlers } from './helpers/previewDiagnostics/ipc';
 import { setupAutoUpdater } from './helpers/updater';
 import {
   initCrashDiagnostics,
@@ -306,6 +309,7 @@ app.on('before-quit', (event) => {
   setupRecipeHandlers();
   setupGlossaryHandlers(mainWindow);
   setupDiagnosticsHandlers(mainWindow);
+  setupPreviewDiagnosticsHandlers(mainWindow);
   setupTaskManager();
   setupSubtitleMergeHandlers(mainWindow, rendererUrl);
   setupDubbingHandlers(mainWindow);
