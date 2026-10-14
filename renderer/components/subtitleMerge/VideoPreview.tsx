@@ -29,6 +29,13 @@ import {
 } from '@/components/ui/select';
 import { getDefaultStyle } from './constants';
 import { useHotkeys } from '../../hooks/useHotkeys';
+import {
+  jassubDiagOption,
+  usePreviewDiagFlags,
+  usePreviewDiagInfo,
+} from '@/lib/previewDiagnostics';
+import { attachDiagVideo } from './diagnostics/recorder';
+import PreviewDiagMarker from './diagnostics/PreviewDiagMarker';
 
 /** 迷你时间轴最多渲染的字幕块数：超出时相邻合并，避免超长字幕列表拖慢渲染 */
 const MAX_TIMELINE_BLOCKS = 600;
@@ -125,6 +132,14 @@ export default function VideoPreview({
   } | null>(null);
   // 底层 <video> 元素（ReactPlayer onReady 后可取），供 JASSUB 预览引擎挂载
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  // 预览黑屏诊断（仅诊断安装包生效）：开关默认值 = 正式版行为，见 renderer/lib/previewDiagnostics.ts
+  const diag = usePreviewDiagFlags();
+  const diagInfo = usePreviewDiagInfo();
+  const diagEnabled = Boolean(diagInfo?.enabled);
+  useEffect(() => {
+    if (!videoEl || !diagEnabled) return;
+    return attachDiagVideo(videoEl);
+  }, [videoEl, diagEnabled]);
   // 预览框尺寸：按可视区宽高拟合最大矩形，保证完整可见且不撑出滚动条
   const [box, setBox] = useState<{ width: number; height: number }>({
     width: 0,
@@ -226,6 +241,12 @@ export default function VideoPreview({
     sampleText,
     style: previewStyle,
     currentTime,
+    diag: {
+      disabled: diag.disableJassub,
+      hideCanvas: diag.jassubHideCanvas,
+      boundsReadback: diag.boundsReadback,
+      jassub: jassubDiagOption(diag),
+    },
   });
 
   // 叠加层文字：有字幕文件时所见即所得（空档期不显示），否则用样例文字调样式
@@ -307,7 +328,7 @@ export default function VideoPreview({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col" data-diag-region="stage">
       {!softMux &&
         !previewError &&
         jassub.effectiveFont &&
@@ -390,13 +411,16 @@ export default function VideoPreview({
         className="flex min-h-0 flex-1 items-center justify-center overflow-hidden"
       >
         <div
-          className="group/canvas relative bg-black overflow-hidden"
+          className={`group/canvas relative bg-black overflow-hidden${
+            diag.roundedClip ? ' rounded-lg' : ''
+          }`}
           data-video-canvas
-          style={
-            box.width > 0
+          style={{
+            ...(box.width > 0
               ? { width: box.width, height: box.height }
-              : { width: '100%', aspectRatio: String(aspect) }
-          }
+              : { width: '100%', aspectRatio: String(aspect) }),
+            ...(diag.ancestorFilter ? { filter: 'opacity(0.999)' } : {}),
+          }}
         >
           <div className="absolute inset-0 flex items-center justify-center">
             {videoPath ? (
@@ -456,7 +480,7 @@ export default function VideoPreview({
             )}
           </div>
 
-          {videoPath && onUpdateStyle && (
+          {videoPath && onUpdateStyle && diag.subtitleLayer && (
             <SubtitleCanvas
               style={style}
               text={overlayText ?? null}
@@ -468,8 +492,11 @@ export default function VideoPreview({
               disabled={isProcessing || softMux || Boolean(previewError)}
               onUpdateStyle={onUpdateStyle}
               onPreview={setDragStyle}
+              handleMode={diag.handleMode}
             />
           )}
+
+          {diag.marker && <PreviewDiagMarker />}
 
           {/* 处理中浮层：不撑高布局，居中半透明面板 + 进度 + 取消 */}
           {isProcessing && (

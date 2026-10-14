@@ -22,6 +22,8 @@ interface Props {
   disabled: boolean;
   onUpdateStyle: (update: Partial<SubtitleStyle>) => void;
   onPreview: (style: SubtitleStyle | null) => void;
+  /** 预览黑屏诊断：手柄显示方式。hover = 默认（鼠标进入视频才显示）；pinned = 常显；hidden = 不渲染。 */
+  handleMode?: 'hover' | 'pinned' | 'hidden';
 }
 
 export default function SubtitleCanvas({
@@ -35,6 +37,7 @@ export default function SubtitleCanvas({
   disabled,
   onUpdateStyle,
   onPreview,
+  handleMode = 'hover',
 }: Props) {
   const { t } = useTranslation('subtitleMerge');
   const [dragY, setDragY] = useState<number>();
@@ -125,6 +128,9 @@ export default function SubtitleCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disabled, text, style]);
 
+  const showHandle =
+    !!text && !disabled && width > 0 && height > 0 && handleMode !== 'hidden';
+
   return (
     <div
       className="pointer-events-none absolute inset-0 z-10"
@@ -156,7 +162,7 @@ export default function SubtitleCanvas({
           />
         </>
       )}
-      {!!text && !disabled && width > 0 && height > 0 && (
+      {showHandle && (
         <button
           type="button"
           data-subtitle-drag
@@ -167,7 +173,9 @@ export default function SubtitleCanvas({
             ...hitbox,
             ...(dragY !== undefined
               ? { opacity: 1, borderColor: 'white' }
-              : {}),
+              : handleMode === 'pinned'
+                ? { opacity: 1 }
+                : {}),
           }}
           onPointerDown={(event) => {
             if (event.button !== 0) return;

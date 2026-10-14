@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type JASSUB from 'jassub';
 import type { SubtitleStyle } from '../../../../types/subtitleMerge';
 import { useSubtitleBounds } from './useSubtitleBounds';
+import { diagLog, type JassubDiagOption } from '@/lib/previewDiagnostics';
 import {
   assEventPositionY,
   assMarginPositionY,
@@ -14,6 +15,17 @@ interface UseJassubPreviewOptions {
   sampleText?: string;
   style: SubtitleStyle;
   currentTime?: number;
+  /** 预览黑屏诊断用的实验开关；不传（正式版）时行为不变。 */
+  diag?: {
+    /** 完全不创建 JASSUB */
+    disabled?: boolean;
+    /** 画布保留但永不显示 */
+    hideCanvas?: boolean;
+    /** 字幕范围回读（默认开） */
+    boundsReadback?: boolean;
+    /** 覆盖 JASSUB 的 WebGL 上下文参数 / 渲染后端（需要诊断补丁） */
+    jassub?: JassubDiagOption;
+  };
 }
 
 interface PreviewSession {
@@ -28,6 +40,7 @@ interface PreviewSession {
 }
 
 function destroyPreview(session: PreviewSession) {
+  if (session.instance) diagLog('jassub-state', { ev: 'destroy' });
   session.removeWorkerListeners?.();
   session.removeWorkerListeners = undefined;
   const instance = session.instance;
@@ -49,7 +62,13 @@ export function useJassubPreview({
   sampleText,
   style,
   currentTime = 0,
+  diag,
 }: UseJassubPreviewOptions) {
+  const diagDisabled = diag?.disabled ?? false;
+  const diagHideCanvas = diag?.hideCanvas ?? false;
+  const diagJassub = diag?.jassub;
+  // 改动会让 JASSUB 重建：WebGL 上下文属性只在创建时生效
+  const diagKey = diagJassub ? JSON.stringify(diagJassub) : '';
   const sessionRef = useRef<PreviewSession | null>(null);
   const [active, setActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +77,11 @@ export function useJassubPreview({
   const [attempt, setAttempt] = useState(0);
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
   const [translateY, setTranslateY] = useState(0);
-  const bounds = useSubtitleBounds(canvas, translateY);
+  const bounds = useSubtitleBounds(
+    canvas,
+    translateY,
+    diag?.boundsReadback ?? true,
+  );
   const [track, setTrack] = useState<{
     resY: number;
     style: SubtitleStyle;
@@ -114,7 +137,12 @@ export function useJassubPreview({
       destroyPreview(session);
       if (sessionRef.current === session) sessionRef.current = null;
     };
-  }, [videoEl, subtitlePath, attempt]);
+  }, [videoEl, subtitlePath, attempt, diagKey, diagDisabled]);
+
+  useEffect(() => {
+    // 诊断：隐藏 JASSUB 画布（引擎仍在运行），用来区分「画布本身」和「引擎」
+    if (canvas) canvas.style.display = diagHideCanvas ? 'none' : '';
+  }, [canvas, diagHideCanvas]);
 
   useEffect(() => {
     // An incomplete field may fail preview while typing. A new style is a new
@@ -124,12 +152,16 @@ export function useJassubPreview({
 
   useEffect(() => {
     const session = sessionRef.current;
-    if (!videoEl || !session || session.failed) return;
+    if (!videoEl || !session || session.failed || diagDisabled) return;
     let cancelled = false;
     const current = () => !cancelled && !session.disposed && !session.failed;
     const fail = (cause: unknown) => {
       if (session.disposed || session.failed) return;
       session.failed = true;
+      diagLog('jassub-state', {
+        ev: 'fail',
+        message: cause instanceof Error ? cause.message : String(cause),
+      });
       destroyPreview(session);
       setError(cause instanceof Error ? cause.message : String(cause));
       setActive(false);
@@ -216,6 +248,7 @@ export function useJassubPreview({
               pointerEvents: 'none',
               visibility: 'hidden',
             });
+            if (diagHideCanvas) canvas.style.display = 'none';
             videoEl.insertAdjacentElement('afterend', canvas);
             session.canvas = canvas;
             // Attach video only after ready so an initialization rejection is
@@ -226,8 +259,14 @@ export function useJassubPreview({
               fonts,
               defaultFont: fontName,
               queryFonts: false,
+              // 仅诊断版有效：覆盖 WebGL 上下文属性 / 渲染后端；默认不传，行为与原版一致
+              ...(diagJassub ? { diag: diagJassub } : {}),
             });
             session.instance = instance;
+            diagLog('jassub-state', {
+              ev: 'created',
+              diag: diagJassub ?? null,
+            });
             // JASSUB's internal video/resize callbacks do not await these promises.
             // Attach rejection observers while preserving the promise for callers.
             for (const method of ['manualRender', 'resize'] as const) {
@@ -263,6 +302,7 @@ export function useJassubPreview({
               if (!session.disposed) destroyPreview(session);
               return;
             }
+            diagLog('jassub-state', { ev: 'ready' });
             await instance.setVideo(videoEl);
           } else {
             if (fonts.length) {
@@ -316,6 +356,11 @@ export function useJassubPreview({
             instance;
           setActive(true);
           setCanvas(session.canvas);
+          diagLog('jassub-state', {
+            ev: 'active',
+            width: session.canvas?.width,
+            height: session.canvas?.height,
+          });
         } catch (cause) {
           destroyPreview(session);
           if (!current()) return;
@@ -329,7 +374,15 @@ export function useJassubPreview({
     };
     // styleKey is the serialized value, avoiding reference-only restarts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoEl, subtitlePath, sampleText, styleKey, attempt]);
+  }, [
+    videoEl,
+    subtitlePath,
+    sampleText,
+    styleKey,
+    attempt,
+    diagKey,
+    diagDisabled,
+  ]);
 
   return {
     active,

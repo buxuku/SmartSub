@@ -182,6 +182,16 @@
   background: transparent;
 }
 
+/* 预览黑屏诊断实验（仅诊断面板里勾选后才生效，见 renderer/lib/previewDiagnostics.ts）：
+   上面的 *:hover 规则会让鼠标经过的整条祖先链改变 scrollbar-color，这里把悬停时的值钉死，
+   用来排除「悬停引起的全局样式变化」。 */
+html.diag-no-hover-scrollbar *:hover {
+  scrollbar-color: transparent transparent;
+}
+html.diag-no-hover-scrollbar *:hover::-webkit-scrollbar-thumb {
+  background-color: transparent;
+}
+
 /* Compact mode for smaller screens (height <= 800px).
    只收紧自有 spacing 变量与 .compact-form，不覆盖 Tailwind 原子类语义。 */
 @media (max-height: 800px) {

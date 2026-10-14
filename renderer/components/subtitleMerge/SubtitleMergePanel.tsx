@@ -45,6 +45,7 @@ import BasicStyleSettings from './BasicStyleSettings';
 import EffectStyleSettings from './EffectStyleSettings';
 import AdvancedStyleSettings from './AdvancedStyleSettings';
 import VideoPreview from './VideoPreview';
+import PreviewDiagnosticsPanel from './diagnostics/PreviewDiagnosticsPanel';
 import MergeButton from './MergeButton';
 import {
   useSubtitleMerge,
@@ -400,6 +401,7 @@ export default function SubtitleMergePanel({
         <section
           className={`${collapsed ? 'hidden' : 'flex'} min-h-0 flex-col overflow-hidden bg-muted/40`}
           data-testid="compose-inspector"
+          data-diag-region="inspector"
         >
           <PanelHeader
             title={t('styleInspector')}
@@ -407,6 +409,8 @@ export default function SubtitleMergePanel({
           />
           <ScrollArea className="min-h-0 flex-1">
             <div className="space-y-3 p-3">
+              {/* 预览黑屏诊断面板：仅诊断安装包里渲染，正式版返回 null */}
+              <PreviewDiagnosticsPanel />
               {/* 预设样式（系统预设 + 我的样式） */}
               <StylePresets
                 activePresetId={activePresetId}

@@ -39,11 +39,13 @@ export function alphaBounds(
 export function useSubtitleBounds(
   canvas: HTMLCanvasElement | null,
   translateY = 0,
+  /** 预览黑屏诊断：关掉回读循环（正式版恒为 true） */
+  enabled = true,
 ) {
   const [bounds, setBounds] = useState<SubtitleBounds | null>(null);
   useEffect(() => {
     setBounds(null);
-    if (!canvas) return;
+    if (!canvas || !enabled) return;
     const sample = document.createElement('canvas');
     const context = sample.getContext('2d', { willReadFrequently: true });
     if (!context) return;
@@ -75,6 +77,6 @@ export function useSubtitleBounds(
     };
     frame = requestAnimationFrame(measure);
     return () => cancelAnimationFrame(frame);
-  }, [canvas, translateY]);
+  }, [canvas, translateY, enabled]);
   return bounds;
 }
