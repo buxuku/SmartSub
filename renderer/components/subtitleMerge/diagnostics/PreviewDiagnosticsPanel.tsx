@@ -30,7 +30,13 @@ const TRACE_SECONDS = 6;
 function formatLayer(layer: LayerReading | undefined): string {
   if (!layer) return '未测';
   if (!layer.ok || !layer.video) return `未取到（${layer.error ?? '无数据'}）`;
-  return `暗像素 ${Math.round(layer.video.darkRatio * 100)}%，平均亮度 ${layer.video.mean}`;
+  const how =
+    layer.method === 'screen'
+      ? '（整屏截取）'
+      : layer.method === 'window'
+        ? '（窗口截取）'
+        : '';
+  return `暗像素 ${Math.round(layer.video.darkRatio * 100)}%，平均亮度 ${layer.video.mean}${how}`;
 }
 
 function Check({

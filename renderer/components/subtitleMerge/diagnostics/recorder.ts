@@ -315,6 +315,8 @@ export type MarkKind = 'black' | 'normal';
 export interface LayerReading {
   ok: boolean;
   error?: string;
+  /** 仅系统层：整屏截取后裁剪（screen），或按窗口截取（window） */
+  method?: 'screen' | 'window';
   file?: string;
   video: { mean: number; darkRatio: number } | null;
 }

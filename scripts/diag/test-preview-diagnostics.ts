@@ -28,6 +28,8 @@ import {
 import { parseRegQuery } from '../../main/helpers/previewDiagnostics/regQuery';
 import {
   findOwnWindowSource,
+  pickScreenSource,
+  screenCaptureGeometry,
   windowHandleOf,
 } from '../../main/helpers/previewDiagnostics/sourceMatch';
 import {
@@ -392,17 +394,29 @@ test('windowHandleOf 只取窗口句柄这一段', () => {
   assert.equal(windowHandleOf(''), null);
 });
 
-test('findOwnWindowSource：句柄相同、尾段不同也认得出（CI 上踩过的坑）', () => {
-  // getMediaSourceId() 的尾段是 aura 窗口号，desktopCapturer 列出的恒为 0
+test('findOwnWindowSource：只认窗口句柄，尾段（1=本进程 / 0=其它进程）不参与比较', () => {
   const sources = [{ id: 'window:1324:0', name: 'SmartSub' }];
   assert.equal(
-    findOwnWindowSource(sources, { mediaSourceId: 'window:1324:7' }),
+    findOwnWindowSource(sources, { mediaSourceId: 'window:1324:1' }),
     sources[0],
   );
-  // 整串比较（旧写法）在这里找不到
+  // 整串比较在尾段不一致时找不到
   assert.equal(
-    sources.find((source) => source.id === 'window:1324:7'),
+    sources.find((source) => source.id === 'window:1324:1'),
     undefined,
+  );
+});
+
+test('findOwnWindowSource：别的进程的窗口不会被当成自己（CI 上列出的就是别人的窗口）', () => {
+  // Windows CI 的真实数据：own window:524694:1，列出的只有 [window:131584:0]
+  const sources = [{ id: 'window:131584:0', name: 'Console' }];
+  assert.equal(
+    findOwnWindowSource(sources, {
+      mediaSourceId: 'window:524694:1',
+      nativeHandle: '524694',
+      title: 'SmartSub',
+    }),
+    null,
   );
 });
 
@@ -450,6 +464,93 @@ test('findOwnWindowSource：句柄对不上时只在标题唯一时才按标题�
   );
   assert.equal(
     findOwnWindowSource([], { mediaSourceId: 'window:9:0', title: 'x' }),
+    null,
+  );
+});
+
+test('pickScreenSource：按 display_id 找；取不到时只有一块屏幕才用，多块屏幕不猜', () => {
+  const two = [
+    { id: 'screen:0:0', display_id: '2528732444' },
+    { id: 'screen:1:0', display_id: '2779098405' },
+  ];
+  assert.equal(pickScreenSource(two, 2779098405), two[1]);
+  assert.equal(pickScreenSource(two, '2528732444'), two[0]);
+  assert.equal(pickScreenSource(two, 42), null, '多块屏幕又对不上时宁可没有');
+
+  const lonely = [{ id: 'screen:0:0', display_id: '' }];
+  assert.equal(pickScreenSource(lonely, 42), lonely[0]);
+  assert.equal(pickScreenSource([], 42), null);
+  assert.equal(
+    pickScreenSource([{ id: 'window:1:0', display_id: '' }], 42),
+    null,
+    '窗口源不算屏幕',
+  );
+});
+
+test('screenCaptureGeometry：1 倍缩放下，窗口与视频区域换算到整屏缩略图', () => {
+  const geometry = screenCaptureGeometry({
+    windowBounds: { x: 100, y: 50, width: 1280, height: 900 },
+    contentBounds: { x: 108, y: 81, width: 1264, height: 861 },
+    displayBounds: { x: 0, y: 0, width: 1920, height: 1080 },
+    imageSize: { width: 1920, height: 1080 },
+    videoRect: { x: 300, y: 120, width: 640, height: 360 },
+  });
+  assert.deepEqual(geometry?.crop, { x: 100, y: 50, width: 1280, height: 900 });
+  // 内容区相对窗口外框偏移 (8, 31)，再加页面内偏移
+  assert.deepEqual(geometry?.video, {
+    x: 308,
+    y: 151,
+    width: 640,
+    height: 360,
+  });
+});
+
+test('screenCaptureGeometry：高分屏（DIP 与像素 1.25 倍）与副屏偏移', () => {
+  const geometry = screenCaptureGeometry({
+    // 副屏：DIP 原点在 (1536, 0)；缩略图 1920x1080 对应 1536x864 DIP
+    windowBounds: { x: 1616, y: 40, width: 1000, height: 700 },
+    contentBounds: { x: 1616, y: 40, width: 1000, height: 700 },
+    displayBounds: { x: 1536, y: 0, width: 1536, height: 864 },
+    imageSize: { width: 1920, height: 1080 },
+    videoRect: { x: 80, y: 40, width: 400, height: 200 },
+  });
+  assert.deepEqual(geometry?.crop, { x: 100, y: 50, width: 1250, height: 875 });
+  assert.deepEqual(geometry?.video, { x: 100, y: 50, width: 500, height: 250 });
+});
+
+test('screenCaptureGeometry：窗口部分在屏幕外时裁到图内，视频区域坐标随之平移', () => {
+  const geometry = screenCaptureGeometry({
+    windowBounds: { x: -100, y: -50, width: 1280, height: 900 },
+    contentBounds: { x: -100, y: -50, width: 1280, height: 900 },
+    displayBounds: { x: 0, y: 0, width: 1920, height: 1080 },
+    imageSize: { width: 1920, height: 1080 },
+    videoRect: { x: 300, y: 120, width: 640, height: 360 },
+  });
+  assert.deepEqual(geometry?.crop, { x: 0, y: 0, width: 1180, height: 850 });
+  // 视频区域在屏幕坐标是 (200, 70)；裁剪起点就是屏幕原点，所以不再多减
+  assert.deepEqual(geometry?.video, { x: 200, y: 70, width: 640, height: 360 });
+});
+
+test('screenCaptureGeometry：窗口完全在屏幕外 / 输入退化时返回 null', () => {
+  const base = {
+    contentBounds: { x: 0, y: 0, width: 100, height: 100 },
+    displayBounds: { x: 0, y: 0, width: 1920, height: 1080 },
+    imageSize: { width: 1920, height: 1080 },
+    videoRect: { x: 0, y: 0, width: 10, height: 10 },
+  };
+  assert.equal(
+    screenCaptureGeometry({
+      ...base,
+      windowBounds: { x: 2000, y: 0, width: 500, height: 500 },
+    }),
+    null,
+  );
+  assert.equal(
+    screenCaptureGeometry({
+      ...base,
+      windowBounds: { x: 0, y: 0, width: 500, height: 500 },
+      imageSize: { width: 0, height: 0 },
+    }),
     null,
   );
 });
