@@ -106,6 +106,7 @@ jobs:
       - name: E2E on Windows (unpackaged)
         id: e2e
         continue-on-error: true
+        timeout-minutes: 25
         env:
           SMARTSUB_E2E_OUTPUT: ${{ runner.temp }}/diag-e2e
         run: node scripts/e2e/compose-preview-diagnostics.mjs --production
@@ -124,6 +125,7 @@ jobs:
       - name: Smoke test the packaged app
         id: smoke
         continue-on-error: true
+        timeout-minutes: 10
         run: |
           node scripts/diag/smoke-packaged.mjs \
             "dist/win-unpacked/${DIAG_PRODUCT_NAME}.exe" \
