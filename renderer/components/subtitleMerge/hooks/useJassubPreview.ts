@@ -176,12 +176,21 @@ export function useJassubPreview({
       // newest style. Every async boundary also checks the owning session.
       session.queue = session.queue.then(async () => {
         if (!current()) return;
+        // 诊断：每个初始化阶段距开始过了多久，用来看哪一步在这台机器上慢
+        const startedAt = performance.now();
+        const step = (name: string, extra: Record<string, unknown> = {}) =>
+          diagLog('jassub-step', {
+            step: name,
+            ms: Math.round(performance.now() - startedAt),
+            ...extra,
+          });
         try {
           const response = await window.ipc.invoke(
             'subtitleMerge:buildPreviewAss',
             { subtitlePath: subtitlePath || null, sampleText, style },
           );
           if (!current()) return;
+          step('ass-built');
           if (!response?.success || typeof response.data !== 'string') {
             throw new Error(response?.error || 'Subtitle preview unavailable');
           }
@@ -236,11 +245,13 @@ export function useJassubPreview({
             fonts.push(new Uint8Array(response.data.data));
             for (const variant of response.data.variants || [])
               fonts.push(new Uint8Array(variant));
+            step('font-data', { font: name, bytes: response.data.data.length });
           }
           let instance = session.instance;
           if (!instance) {
             const { default: JASSUBCtor } = await import('jassub');
             if (!current()) return;
+            step('module-loaded');
             const canvas = document.createElement('canvas');
             canvas.className = 'JASSUB';
             Object.assign(canvas.style, {
@@ -303,7 +314,9 @@ export function useJassubPreview({
               return;
             }
             diagLog('jassub-state', { ev: 'ready' });
+            step('worker-ready');
             await instance.setVideo(videoEl);
+            step('video-set');
           } else {
             if (fonts.length) {
               await instance.renderer.addFonts(fonts);
@@ -330,10 +343,12 @@ export function useJassubPreview({
               },
               true,
             );
+            step('first-render');
           }
           if (!current()) return;
           const events = await instance.renderer.getEvents();
           if (!current()) return;
+          step('events');
           const resY = Number(
             /^\s*PlayResY\s*:\s*(\d+)/im.exec(response.data)?.[1] || 288,
           );
