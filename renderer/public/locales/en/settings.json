@@ -213,7 +213,7 @@
     "customAddonDllTip": "Tip: If the pack includes DLL/SO dependencies, ensure they are in the same directory as addon.node",
     "downloadPackageUrl": "Download Packs",
     "legacyCpuPackUrl": "Legacy CPU pack",
-    "customAddonLegacyTip": "Older CPUs without AVX2 (for example 2nd / 3rd generation Intel Core): open the “Legacy CPU pack” link above, download the .node file as described there and select it below. No need to extract it. Keep the acceleration mode on Auto (Recommended).",
+    "customAddonLegacyTip": "Older CPUs without AVX2 (for example 2nd / 3rd generation Intel Core): open the “Legacy CPU pack” link above, download the .node file as described there and select it below. No need to extract it.",
     "crashTip": "If the app crashes after enabling acceleration, try switching to a different version or disabling GPU acceleration",
     "suppressed": {
       "title": "Acceleration backends disabled automatically",
