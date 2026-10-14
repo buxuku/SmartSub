@@ -60,7 +60,7 @@ export interface LoadContext {
   coremlEligible: boolean;
 }
 
-interface AddonCandidate {
+export interface AddonCandidate {
   backend: WhisperBackend;
   variant: AddonVariant | null;
   source: AddonSource;
@@ -124,10 +124,14 @@ function setupLibraryPath(addonDir: string): void {
  *
  * win/linux auto：custom → selected（CUDA 需 N 卡驱动可用）→ userData vulkan → 内置 vulkan → 内置 CPU
  * win/linux gpu-only：同 auto 但去掉内置 CPU
- * win/linux cpu-only：仅内置 CPU
+ * win/linux cpu-only：custom → 内置 CPU（不用 GPU，见 loadBestAddon 对 use_gpu 的处理）
  * darwin：custom → CoreML（可用时）→ 内置（arm64 为 Metal，intel 为 CPU），不受 gpuMode 影响
+ *
+ * 导出仅供单测（scripts/gpu/test-addon-candidates.ts）。
  */
-async function resolveCandidates(ctx: LoadContext): Promise<AddonCandidate[]> {
+export async function resolveCandidates(
+  ctx: LoadContext,
+): Promise<AddonCandidate[]> {
   const platform = getEffectivePlatform();
   const candidates: AddonCandidate[] = [];
   const builtinDefault: AddonCandidate = {
@@ -159,11 +163,9 @@ async function resolveCandidates(ctx: LoadContext): Promise<AddonCandidate[]> {
     return candidates;
   }
 
-  if (ctx.gpuMode === 'cpu-only') {
-    return [builtinDefault];
-  }
-
-  // custom 无条件最高优先级（修复旧版非 NVIDIA 环境忽略自定义路径的问题）
+  // custom 无条件最高优先级（修复旧版非 NVIDIA 环境忽略自定义路径的问题）。
+  // 「仅 CPU」也不例外：用户明确指定的加速包优先于模式选择，内置 CPU 留作兜底；
+  // “不用 GPU”由 loadBestAddon 在每次原生调用上压 use_gpu=false 来保证。
   const customPath = getCustomAddonPath();
   if (customPath) {
     candidates.push({
@@ -172,6 +174,11 @@ async function resolveCandidates(ctx: LoadContext): Promise<AddonCandidate[]> {
       source: 'custom',
       path: customPath,
     });
+  }
+
+  if (ctx.gpuMode === 'cpu-only') {
+    candidates.push(builtinDefault);
+    return candidates;
   }
 
   const gpuEnv = await getGpuEnvironment();
@@ -276,6 +283,16 @@ function guardNativeCall(
       end();
     }
   };
+}
+
+/**
+ * 「仅 CPU」的承诺是“彻底关闭 GPU 加速”。自定义加速包优先于加速模式、而且可能是 GPU 版，
+ * 光靠候选链保证不了，所以在 win/linux 上把每次原生调用的 use_gpu 压成 false（调用方漏传也一样）。
+ * 所有转写调用方（内置引擎、分片转写、参考音频转写）都经由 whisperAsync，不必各自判断 gpuMode；
+ * 内置 CPU 包本来就不用 GPU，不受影响。
+ */
+function disableGpu(native: WhisperAsyncFn): WhisperAsyncFn {
+  return (params) => native({ ...params, use_gpu: false });
 }
 
 function pushHistory(entry: AddonLoadHistoryEntry): void {
@@ -390,6 +407,10 @@ export async function loadBestAddon(
     });
   }
 
+  // 「仅 CPU」只在 win/linux 有意义：macOS 不受 gpuMode 影响（见 resolveCandidates）
+  const gpuDisabled =
+    ctx.gpuMode === 'cpu-only' && getEffectivePlatform() !== 'darwin';
+
   for (const candidate of usable) {
     try {
       // dlopen 阶段也可能崩（静态初始化里就用到了不支持的指令）
@@ -407,13 +428,14 @@ export async function loadBestAddon(
         endLoad();
       }
       const loadedAt = new Date().toISOString();
+      // 输入适配：Windows 上含非 ASCII 的音频路径原生打不开，改传 PCM 缓冲
+      // （见 engines/whisperAudioInput.ts）。覆盖所有调用方，包括声音克隆的参考音频转写。
+      const whisperAsync = withNativeSafeAudioInput(
+        guardNativeCall(promisify(whisper) as WhisperAsyncFn, candidate),
+        { log: logMessage },
+      );
       const result: AddonLoadResult = {
-        // 最外层做输入适配：Windows 上含非 ASCII 的音频路径原生打不开，改传 PCM 缓冲
-        // （见 engines/whisperAudioInput.ts）。覆盖所有调用方，包括声音克隆的参考音频转写。
-        whisperAsync: withNativeSafeAudioInput(
-          guardNativeCall(promisify(whisper) as WhisperAsyncFn, candidate),
-          { log: logMessage },
-        ),
+        whisperAsync: gpuDisabled ? disableGpu(whisperAsync) : whisperAsync,
         backend: candidate.backend,
         variant: candidate.variant,
         source: candidate.source,

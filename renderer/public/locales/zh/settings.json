@@ -213,7 +213,7 @@
     "customAddonDllTip": "提示：如果加速包包含 DLL/SO 依赖库，请确保它们与 addon.node 在同一目录下",
     "downloadPackageUrl": "下载加速包",
     "legacyCpuPackUrl": "旧 CPU 兼容包",
-    "customAddonLegacyTip": "CPU 不支持 AVX2 的旧电脑（如第 2、3 代 Intel 酷睿）：请点上方的「旧 CPU 兼容包」，按页面说明下载 .node 文件，无需解压，直接在下方选择即可；加速模式请保持「自动（推荐）」。",
+    "customAddonLegacyTip": "CPU 不支持 AVX2 的旧电脑（如第 2、3 代 Intel 酷睿）：请点上方的「旧 CPU 兼容包」，按页面说明下载 .node 文件，无需解压，直接在下方选择即可。",
     "crashTip": "如果启用加速后运行闪退，请尝试切换其他版本的加速包或关闭 GPU 加速",
     "suppressed": {
       "title": "已自动停用的加速后端",

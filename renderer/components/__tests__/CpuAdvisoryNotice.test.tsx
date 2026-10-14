@@ -117,11 +117,12 @@ test('AVX present but AVX2 missing on Windows: offers the experimental Legacy CP
   expect(box).toHaveTextContent('cloud speech recognition or another engine');
   expect(box).toHaveTextContent('experimental');
   expect(box).toHaveTextContent('Legacy CPU pack');
-  // 路径、模式提示要和界面上的真实标签一致，并提醒保持自动模式（仅 CPU 模式会忽略自定义加速包）
+  // 路径要和界面上的真实标签一致；自定义加速包在所有加速模式下都优先加载，
+  // 不需要（也不应该）再叮嘱用户把模式保持在自动
   expect(box).toHaveTextContent(
     'Engines → whisper.cpp (built-in) → GPU acceleration · Manage / Advanced → Custom Addon',
   );
-  expect(box).toHaveTextContent('keep the acceleration mode on Auto');
+  expect(box.textContent).not.toMatch(/acceleration mode|\bAuto\b/);
   expect(box.textContent).not.toContain('MISSING:');
 
   expect(send).not.toHaveBeenCalled();

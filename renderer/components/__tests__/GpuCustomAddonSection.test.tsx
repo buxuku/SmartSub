@@ -48,13 +48,14 @@ test('links to both release pages: the standard packs, and the legacy CPU pack f
   expect(send).toHaveBeenCalledTimes(2);
 });
 
-test('the tip tells people on older CPUs which link to use, that nothing needs extracting, and to keep Auto mode', () => {
+test('the tip tells people on older CPUs which link to use and that nothing needs extracting, without asking to keep any acceleration mode', () => {
   const { container } = setup();
 
   const tip = screen.getByText(/Older CPUs without AVX2/);
   expect(tip).toHaveTextContent('open the “Legacy CPU pack” link above');
   expect(tip).toHaveTextContent('No need to extract it');
-  expect(tip).toHaveTextContent('Keep the acceleration mode on Auto');
+  // 自定义加速包在所有加速模式下都优先加载，不必再提醒用户保持自动模式
+  expect(tip.textContent).not.toMatch(/acceleration mode|\bAuto\b/);
   expect(container.textContent).not.toContain('MISSING:');
 });
 
