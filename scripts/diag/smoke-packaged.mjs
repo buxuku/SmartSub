@@ -191,7 +191,7 @@ try {
         path.join(result.userData, 'preview-diagnostics', 'events.ndjson'),
         'utf8',
       );
-      result.jassubTimeline = text
+      const events = text
         .split('\n')
         .filter(Boolean)
         .map((line) => {
@@ -201,11 +201,31 @@ try {
             return null;
           }
         })
-        .filter(
-          (event) =>
-            event &&
-            ['jassub-step', 'jassub-state', 'jassub'].includes(event.type),
-        );
+        .filter(Boolean);
+      result.jassubTimeline = events.filter((event) =>
+        ['jassub-step', 'jassub-state', 'jassub'].includes(event.type),
+      );
+      // 系统层是怎么取到（或为什么取不到）的：取法、两种取法各自的错误、读数
+      result.probes = events
+        .filter((event) => event.type === 'probe')
+        .map((event) => ({
+          label: event.label,
+          verdict: event.verdict?.verdict,
+          os: {
+            ok: event.os?.ok,
+            method: event.os?.method,
+            error: event.os?.error,
+            fallbackFrom: event.os?.fallbackFrom,
+            video: event.os?.video,
+            elapsedMs: event.os?.elapsedMs,
+          },
+          viz: {
+            ok: event.viz?.ok,
+            error: event.viz?.error,
+            video: event.viz?.video,
+            elapsedMs: event.viz?.elapsedMs,
+          },
+        }));
     } catch {
       // 页面已经没了就算了
     }
