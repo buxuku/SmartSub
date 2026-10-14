@@ -1,0 +1,168 @@
+name: Windows diagnostic build
+
+# 视频合成「预览黑屏」（仅 Windows）的诊断安装包：带诊断面板，用来在出问题的真机上取证。
+# 与 release.yml 完全分开：只出 Windows x64 一个安装包，不使用任何 secrets，不发布到 Releases，
+# 产物只作为本次运行的 artifact（14 天），需要登录 GitHub 才能下载。
+#
+# 诊断版与正式版并存、互不影响：
+#   - productName / appId 不同 → 安装目录、开始菜单、卸载项都是独立的；
+#   - 数据目录独立（%APPDATA%\SmartSub Diagnostic），不碰正式版的设置和任务；
+#   - 自动更新被关掉（否则它会把自己「更新」成正式版）。
+# 诊断面板由「可执行文件名含 Diagnostic」自动启用；正式版里这些代码是惰性的。
+#
+# 触发：推送到 diag/** 分支，或手动运行（Use workflow from 选 diag/** 分支）。
+on:
+  push:
+    branches:
+      - 'diag/**'
+  workflow_dispatch:
+    inputs:
+      label:
+        description: '诊断包序号，出现在版本号里（3.9.0-diag.<序号>）；留空则用本次运行编号'
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-diagnostic-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: SmartSub Diagnostic (Windows x64)
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      ELECTRON_BUILDER_HTTP_TIMEOUT: 6000000
+      ELECTRON_MIRROR: 'https://npmmirror.com/mirrors/electron/'
+      DIAG_PRODUCT_NAME: SmartSub Diagnostic
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: yarn
+
+      - name: Compute the diagnostic version
+        id: version
+        env:
+          LABEL_INPUT: ${{ github.event.inputs.label }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          base=$(node -p "require('./package.json').version")
+          label="${LABEL_INPUT:-$RUN_NUMBER}"
+          if [[ ! "$label" =~ ^[A-Za-z0-9.-]+$ ]]; then
+            echo "::error::诊断包序号只能包含字母、数字、点和连字符：$label"
+            exit 1
+          fi
+          echo "version=${base}-diag.${label}" >> "$GITHUB_OUTPUT"
+          echo "Diagnostic version: ${base}-diag.${label}"
+
+      - name: Inject build info
+        run: |
+          export BUILD_PLATFORM=win32
+          export BUILD_ARCH=x64
+          node scripts/inject-build-info.js
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Typecheck renderer and main process
+        run: yarn typecheck
+
+      - name: Unit tests (preview diagnostics)
+        run: yarn test:preview-diagnostics
+
+      # 诊断补丁打在 node_modules/jassub 上（不进仓库）：让 JASSUB 的 WebGL 上下文属性、渲染后端可以
+      # 在诊断面板里切换，并回报真实使用的上下文。默认行为与原版完全一致。
+      - name: Apply the JASSUB diagnostic patch
+        run: node scripts/diag/patch-jassub.mjs
+
+      - name: Compile application code
+        run: yarn build
+
+      # CI 里 ensure-native 会跳过下载（见 scripts/ensure-native.mjs），release.yml 有显式步骤。
+      # 这里照做，让诊断包的内容和正式版一致；视频合成预览用不到它们，所以拿不到也不阻断出包。
+      - name: Prepare whisper addon (best effort)
+        continue-on-error: true
+        timeout-minutes: 15
+        run: node scripts/fetch-whisper-addon.mjs --arch=x64
+
+      - name: Prepare sherpa native libs (best effort)
+        continue-on-error: true
+        timeout-minutes: 15
+        run: yarn sherpa:fetch
+
+      # 在真实 Windows 上把诊断面板的全部链路跑一遍（未打包）。runner 没有真显示器，
+      # 系统层截图读数只记录不判定；其余（开关生效、日志、快照、追踪、导出、GPU 预设）必须通过。
+      # 失败不阻断出包：现场会上传，先看现场再决定。
+      - name: E2E on Windows (unpackaged)
+        id: e2e
+        continue-on-error: true
+        env:
+          SMARTSUB_E2E_OUTPUT: ${{ runner.temp }}/diag-e2e
+        run: node scripts/e2e/compose-preview-diagnostics.mjs --production
+
+      - name: Build the installer
+        run: |
+          yarn run electron-builder --win --x64 --publish never \
+            -c.productName="$DIAG_PRODUCT_NAME" \
+            -c.appId=com.example.smartsub.diagnostic \
+            -c.extraMetadata.version="${{ steps.version.outputs.version }}" \
+            -c.win.artifactName='SmartSub-Diagnostic_Windows_${version}_${arch}.${ext}' \
+            -c.nsis.deleteAppDataOnUninstall=false
+          ls -l dist
+
+      # 打包后才会出现的部分：靠文件名识别、数据目录独立、更新关闭、取证链路（含注册表读取）
+      - name: Smoke test the packaged app
+        id: smoke
+        continue-on-error: true
+        run: |
+          node scripts/diag/smoke-packaged.mjs \
+            "dist/win-unpacked/${DIAG_PRODUCT_NAME}.exe" \
+            "$RUNNER_TEMP/diag-smoke"
+
+      - name: Stage the installer
+        run: |
+          mkdir staging
+          cp dist/SmartSub-Diagnostic_Windows_*.exe staging/
+          ls -l staging
+
+      - name: Upload the diagnostic installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartsub-diagnostic-windows-x64
+          path: staging/*.exe
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload the verification output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-verification-output
+          path: |
+            ${{ runner.temp }}/diag-e2e
+            ${{ runner.temp }}/diag-smoke
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Windows diagnostic build"
+            echo ""
+            echo "- 版本：\`${{ steps.version.outputs.version }}\`"
+            echo "- 未打包 e2e：\`${{ steps.e2e.outcome }}\`"
+            echo "- 打包后冒烟：\`${{ steps.smoke.outcome }}\`"
+            echo ""
+            echo "安装包在本页底部 Artifacts 的 \`smartsub-diagnostic-windows-x64\`；两项验证的现场在 \`diagnostic-verification-output\`。"
+          } >> "$GITHUB_STEP_SUMMARY"
