@@ -23,6 +23,19 @@ module.exports = {
       ),
     );
 
+    // jassub 的 WebGL2 / WebGL1 / 2D 渲染器在 Worker 里写死 `desynchronized: true`（低延迟画布），
+    // 在 Windows 上会被提升为独立的 DirectComposition 叠加层，使整块视频预览呈现为纯黑。
+    // 不改写 jassub 的源码：在它的 Worker 入口最前面注入一行 `import guard`，
+    // 由守卫在运行时把「请求 desynchronized」改成「Windows 下不请求」，其它平台保持上游行为。
+    // 根因、证据与取舍见 lib/jassub/syncCanvasGuard.ts；
+    // 规则是否仍命中真实的 jassub Worker 入口，由 lib/__tests__/jassubWorkerGuardWiring.test.ts 把关。
+    config.module.rules.push({
+      test: /node_modules[\\/]jassub[\\/]dist[\\/]worker[\\/]worker\.js$/,
+      enforce: 'pre',
+      loader: path.resolve(__dirname, 'lib/jassub-worker-guard-loader.js'),
+      options: { guard: path.resolve(__dirname, 'lib/jassub/workerGuard.ts') },
+    });
+
     // 确保 TypeScript 文件被正确处理
     config.module.rules.push({
       test: /\.tsx?$/,

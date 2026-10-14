@@ -75,6 +75,7 @@
     "test:e2e:compose-font-menu": "node scripts/e2e/compose-font-menu.mjs",
     "test:e2e:embedded-fonts": "node scripts/e2e/compose-embedded-fonts.mjs",
     "test:e2e:compose-canvas": "node scripts/e2e/compose-canvas.mjs",
+    "test:e2e:compose-sync-canvas": "node scripts/e2e/compose-sync-canvas.mjs",
     "test:e2e:compose-document": "node scripts/e2e/compose-document.mjs",
     "test:e2e:compose-multiwindow": "node scripts/e2e/compose-multiwindow.mjs",
     "test:e2e:compose-reconnect": "node scripts/e2e/compose-reconnect.mjs",
