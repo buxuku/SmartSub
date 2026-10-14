@@ -130,11 +130,18 @@ case "$TARGET" in
     GITCODE_REPO="${GITCODE_REPO:-smartsub-py-engine}"
     USE_GHPROXY="${USE_GHPROXY:-0}"
     REQUIRED_CMDS=(curl jq)
+    # FILES 必须覆盖上游 checksums.sha256 的全部条目，否则 do_verify 的 sha256sum -c 会报
+    # 「No such file」。上游新增平台/变体产物时，同步在此追加。
+    # *-cuda 为 Full GPU(CUDA12) 运行时（仅 windows-x64 / linux-x64，各 ~1.5GB）：应用的
+    # GitCode 源也会请求它们（main/helpers/pythonRuntime/paths.ts getEngineArtifactName），
+    # 不镜像则国内 GPU 用户只能回退 ghproxy/GitHub 下载。
     FILES=(
       "smartsub-faster-whisper-runtime-windows-x64.tar.gz"
+      "smartsub-faster-whisper-runtime-windows-x64-cuda.tar.gz"
       "smartsub-faster-whisper-runtime-macos-arm64.tar.gz"
       "smartsub-faster-whisper-runtime-macos-x64.tar.gz"
       "smartsub-faster-whisper-runtime-linux-x64.tar.gz"
+      "smartsub-faster-whisper-runtime-linux-x64-cuda.tar.gz"
       "manifest.json"
       "checksums.sha256"
     )
