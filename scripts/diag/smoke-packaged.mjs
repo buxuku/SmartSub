@@ -17,8 +17,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import ffmpeg from 'ffmpeg-static';
-import { _electron, expect } from '@playwright/test';
+import { _electron, expect as baseExpect } from '@playwright/test';
 import { appPageUrl } from '../e2e/app-page.mjs';
+
+// CI 的 Windows 虚拟机很慢，默认的 5 秒断言超时不够
+const expect = baseExpect.configure({ timeout: 30000 });
 
 const exe = process.argv[2];
 assert.ok(exe, '用法：node scripts/diag/smoke-packaged.mjs <exe> [输出目录]');
@@ -103,10 +106,20 @@ try {
   const hud = page.locator('[data-diag-hud]');
   await expect(hud).toBeVisible();
   await expect(page.locator('[data-video-canvas]')).toBeVisible();
-  await expect
-    .poll(() => page.evaluate(() => Boolean(window.__jassubPreview)))
-    .toBe(true);
-  result.jassubActive = true;
+  // JASSUB 是否可用只记录、不作为通过条件：本脚本验证的是取证链路，而 CI 虚拟机上
+  // JASSUB 初始化（字体 IPC、wasm worker）可能很慢；各阶段耗时见 jassubTimeline。
+  const jassubStarted = Date.now();
+  try {
+    await expect
+      .poll(() => page.evaluate(() => Boolean(window.__jassubPreview)), {
+        timeout: 90000,
+      })
+      .toBe(true);
+    result.jassubReadyMs = Date.now() - jassubStarted;
+  } catch {
+    result.jassubReadyMs = null;
+  }
+  result.jassubActive = result.jassubReadyMs !== null;
 
   // 取证链路：先正常基线，再黑屏标记
   await page.locator('[data-video-canvas]').hover();
@@ -170,6 +183,33 @@ try {
       .catch(() => {});
   process.exitCode = 1;
 } finally {
+  // JASSUB 各阶段耗时与它真实拿到的 WebGL 上下文属性，来自诊断日志（尽力而为）
+  if (page && result.userData) {
+    try {
+      await page.evaluate(() => window.__previewDiag?.flush?.());
+      const text = await fs.readFile(
+        path.join(result.userData, 'preview-diagnostics', 'events.ndjson'),
+        'utf8',
+      );
+      result.jassubTimeline = text
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          try {
+            return JSON.parse(line);
+          } catch {
+            return null;
+          }
+        })
+        .filter(
+          (event) =>
+            event &&
+            ['jassub-step', 'jassub-state', 'jassub'].includes(event.type),
+        );
+    } catch {
+      // 页面已经没了就算了
+    }
+  }
   if (result.userData)
     await fs
       .cp(

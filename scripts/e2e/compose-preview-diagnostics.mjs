@@ -19,8 +19,12 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import ffmpeg from 'ffmpeg-static';
-import { _electron, expect } from '@playwright/test';
+import { _electron, expect as baseExpect } from '@playwright/test';
 import { waitForAppPage } from './app-page.mjs';
+
+// CI 的 Windows 虚拟机上 JASSUB 初始化（字体 IPC、wasm worker）远不止默认的 5 秒；
+// 把断言和轮询的默认超时放宽，真正卡死时仍会在这里失败。
+const expect = baseExpect.configure({ timeout: 30000 });
 
 // CI 里用 SMARTSUB_E2E_OUTPUT 指定输出目录，失败时整个现场（日志、截图、追踪）一起上传
 const output = process.env.SMARTSUB_E2E_OUTPUT
@@ -67,6 +71,8 @@ const DEFAULT_FLAGS = {
 
 const checks = [];
 const apps = [];
+// 每次启动后 JASSUB 多久才可用（毫秒）：慢机器上排查「为什么超时」要靠它
+const timings = [];
 
 async function launch({ diag, profile, firstRun = true }) {
   const env = {
@@ -92,7 +98,7 @@ async function launch({ diag, profile, firstRun = true }) {
     else if (dialog.type() !== 'beforeunload')
       void dialog.dismiss().catch(() => {});
   });
-  page.setDefaultTimeout(20000);
+  page.setDefaultTimeout(30000);
   await waitForAppPage(page);
   await app.evaluate(({ BrowserWindow, dialog, shell }) => {
     BrowserWindow.getAllWindows().forEach((window) =>
@@ -114,9 +120,17 @@ async function launch({ diag, profile, firstRun = true }) {
     { media, subtitle },
   );
   await expect(page.locator('[data-subtitle-drag]')).toBeAttached();
+  const waitStarted = Date.now();
   await expect
-    .poll(() => page.evaluate(() => Boolean(window.__jassubPreview)))
+    .poll(() => page.evaluate(() => Boolean(window.__jassubPreview)), {
+      message: 'JASSUB preview becomes active',
+      timeout: 120000,
+    })
     .toBe(true);
+  timings.push({
+    launch: diag ? 'diag' : 'normal',
+    jassubReadyMs: Date.now() - waitStarted,
+  });
   return { app, page };
 }
 
@@ -158,7 +172,7 @@ async function waitForEvent(page, profile, predicate, label) {
         found = (await readEvents(profile)).find(predicate);
         return Boolean(found);
       },
-      { message: `event: ${label}`, timeout: 15000 },
+      { message: `event: ${label}`, timeout: 60000 },
     )
     .toBe(true);
   return found;
@@ -437,7 +451,7 @@ try {
       window.__readbacks = 0;
     });
     await expect
-      .poll(() => page.evaluate(() => window.__readbacks), { timeout: 5000 })
+      .poll(() => page.evaluate(() => window.__readbacks), { timeout: 20000 })
       .toBeGreaterThan(3);
     await flag('boundsReadback').uncheck();
     await page.waitForTimeout(300);
@@ -452,7 +466,7 @@ try {
     );
     await flag('boundsReadback').check();
     await expect
-      .poll(() => page.evaluate(() => window.__readbacks), { timeout: 5000 })
+      .poll(() => page.evaluate(() => window.__readbacks), { timeout: 20000 })
       .toBeGreaterThan(3);
     checks.push('B5: bounds-readback flag really stops/starts getImageData');
 
@@ -737,9 +751,11 @@ try {
     );
   }
 
-  console.log(JSON.stringify({ success: true, output, checks }, null, 2));
+  console.log(
+    JSON.stringify({ success: true, output, checks, timings }, null, 2),
+  );
 } catch (error) {
-  console.error(JSON.stringify({ output, checks }, null, 2));
+  console.error(JSON.stringify({ output, checks, timings }, null, 2));
   for (const app of apps) {
     const page = app.windows()[0];
     if (!page) continue;
