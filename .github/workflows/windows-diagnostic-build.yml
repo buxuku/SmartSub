@@ -10,10 +10,10 @@ name: Windows diagnostic build
 #   - 自动更新被关掉（否则它会把自己「更新」成正式版）。
 # 诊断面板由「可执行文件名含 Diagnostic」自动启用；正式版里这些代码是惰性的。
 #
-# 修复验证：本分支在诊断版之上带有「Windows 下关闭 JASSUB 低延迟画布」的正式修复
-# （renderer/lib/jassub-sync-canvas-loader.js）。诊断面板的默认开关不改任何行为，所以默认路径就是
-# 将要发布的那份代码；面板里可以把 desynchronized 强制为 true（3.9.0 的原行为）做对照，
-# 万一修复无效，同一个包里的取证功能还能直接留下证据。
+# 修复验证：本分支在诊断版之上带有「Windows 下关闭 JASSUB 低延迟画布」的正式修复：
+# JASSUB 的 Worker 里装一个 getContext 守卫（renderer/lib/jassub/syncCanvasGuard.ts），不改 JASSUB 源码。
+# 诊断面板的默认开关不改任何行为，所以默认路径就是将要发布的那份代码；面板里可以把 desynchronized
+# 强制为 true（3.9.0 的原行为）做对照，万一修复无效，同一个包里的取证功能还能直接留下证据。
 #
 # 触发：推送到 diag/** 分支，或手动运行（Use workflow from 选 diag/** 分支）。
 on:
@@ -85,14 +85,15 @@ jobs:
       - name: Unit tests (preview diagnostics)
         run: yarn test:preview-diagnostics
 
-      # 修复本身的单元测试：对着 node_modules 里真实的 jassub 渲染器源码验证 loader 的改写，
+      # 修复本身的单元测试：守卫的行为，以及「注入规则仍命中真实的 JASSUB Worker 入口」的接线检查，
       # 必须在诊断补丁之前运行（此时 jassub 还是原样）。
-      - name: Unit tests (JASSUB sync-canvas loader)
-        run: yarn jest --runInBand renderer/lib/__tests__/jassubSyncCanvasLoader.test.ts
+      - name: Unit tests (JASSUB sync-canvas guard)
+        run: yarn jest --runInBand renderer/lib/jassub renderer/lib/__tests__/jassubWorkerGuardWiring.test.ts
 
-      # 诊断补丁打在 node_modules/jassub 上（不进仓库）：在 worker 里装一个 getContext 拦截器，
-      # 让 desynchronized / powerPreference、渲染后端可以在诊断面板里切换，并回报渲染器真正请求的
-      # 与实际得到的上下文属性。不改渲染器源码，默认路径与正式版（含 Windows 修复）完全一致。
+      # 诊断补丁打在 node_modules/jassub 上（不进仓库）：把诊断开关带进 worker、选择渲染后端，
+      # 并回报渲染器真正请求的与实际得到的上下文属性（覆盖上下文属性的 getContext 拦截器在
+      # renderer/lib/jassub/diagInterposer.ts，装在守卫里面）。不改渲染器源码，默认路径与正式版
+      # （含 Windows 修复）完全一致。
       - name: Apply the JASSUB diagnostic patch
         run: node scripts/diag/patch-jassub.mjs
 
@@ -143,6 +144,16 @@ jobs:
             "dist/win-unpacked/${DIAG_PRODUCT_NAME}.exe" \
             "$RUNNER_TEMP/diag-smoke"
 
+      # 守卫能否被 webpack 打进 JASSUB 的 Worker 入口、是否先于渲染器执行，只有跑构建产物才知道：
+      # 在真实 Windows 上，分别用 Windows 与非 Windows 的 UA 打开合成页，到 Worker 里核对原生
+      # getContext 实际收到的 desynchronized。它会临时改动 app/ 里的 Worker chunk 并在结束时还原，
+      # 所以放在安装包构建之后，保证不会混进安装包。失败不阻断出包。
+      - name: E2E guard inside the JASSUB worker (production build)
+        id: guard
+        continue-on-error: true
+        timeout-minutes: 10
+        run: node scripts/e2e/compose-sync-canvas.mjs
+
       - name: Stage the installer
         run: |
           mkdir staging
@@ -177,6 +188,7 @@ jobs:
             echo "- 版本：\`${{ steps.version.outputs.version }}\`"
             echo "- 未打包 e2e：\`${{ steps.e2e.outcome }}\`"
             echo "- 打包后冒烟：\`${{ steps.smoke.outcome }}\`"
+            echo "- Worker 守卫 e2e（构建产物）：\`${{ steps.guard.outcome }}\`"
             echo ""
             echo "安装包在本页底部 Artifacts 的 \`smartsub-diagnostic-windows-x64\`；两项验证的现场在 \`diagnostic-verification-output\`。"
           } >> "$GITHUB_STEP_SUMMARY"

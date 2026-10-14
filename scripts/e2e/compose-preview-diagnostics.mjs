@@ -7,7 +7,7 @@
  * 验证四件事：
  *  A. 没有开诊断时（正式版）完全惰性：没有面板、没有日志、没有目录，页面结构与 3.9.0 相同；
  *  B. 开了诊断：默认开关 = 正式版（页面结构与 3.9.0 相同，画布 desynchronized 由正式版的
- *     webpack loader 决定：Windows 为 false，其它平台为 true）；每个实验开关真的改变了它声称要改的东西；
+ *     Worker 里的守卫决定：Windows 为 false，其它平台为 true）；每个实验开关真的改变了它声称要改的东西；
  *     取证（标记 / 快照 / 追踪 / 导出）真的产出可用的文件；
  *  C. 「GPU 启动参数」写入后，下次启动真的被应用；
  *  D. JASSUB 补丁：diag 选项一路传到 worker，渲染器真正请求的与实际得到的上下文属性被回报。
@@ -476,7 +476,7 @@ try {
       (await readEvents(profile)).filter(
         (event) => event.type === 'jassub' && event.ev === 'context',
       );
-    // 默认路径 = 正式版：渲染器真正请求的 desynchronized 由构建期 loader 决定
+    // 默认路径 = 正式版：渲染器真正请求的 desynchronized 由 Worker 里的守卫决定
     // （Windows 为 false，其它平台保持 JASSUB 默认的 true）。这里验证的是安装包里
     // 实际运行的那份代码，而不只是源码。
     const expectedDefaultDesync = process.platform !== 'win32';
@@ -555,7 +555,7 @@ try {
     assert.equal(twoD.backend, '2d');
     assert.ok(
       allDesync(twoD, expectedDefaultDesync),
-      `2d renderer follows the shipped loader, got ${JSON.stringify(twoD.requestedAttributes)}`,
+      `2d renderer follows the shipped guard, got ${JSON.stringify(twoD.requestedAttributes)}`,
     );
     await expect
       .poll(() => page.evaluate(() => Boolean(window.__jassubPreview)))
@@ -573,7 +573,7 @@ try {
     assert.equal(gl1.backend, 'webgl1');
     assert.ok(
       allDesync(gl1, expectedDefaultDesync),
-      `webgl1 renderer follows the shipped loader, got ${JSON.stringify(gl1.requestedAttributes)}`,
+      `webgl1 renderer follows the shipped guard, got ${JSON.stringify(gl1.requestedAttributes)}`,
     );
     await flag('jassubRenderer').selectOption('auto');
 
@@ -598,7 +598,7 @@ try {
       .toEqual({});
     assert.ok(lastContext);
     checks.push(
-      `B6: diag options reach the JASSUB worker (desync true/false, power, renderer), backend reported (${gl1.backend}/${twoD.backend}); defaults send nothing and the shipped loader requests desynchronized:${expectedDefaultDesync} on ${process.platform} for webgl2/webgl1/2d`,
+      `B6: diag options reach the JASSUB worker (desync true/false, power, renderer), backend reported (${gl1.backend}/${twoD.backend}); defaults send nothing and the shipped guard requests desynchronized:${expectedDefaultDesync} on ${process.platform} for webgl2/webgl1/2d`,
     );
 
     // 全部缓解 / 还原默认
