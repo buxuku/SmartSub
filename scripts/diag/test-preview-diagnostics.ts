@@ -9,7 +9,6 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import vm from 'node:vm';
 import {
   GPU_PRESETS,
   findGpuPreset,
@@ -33,6 +32,10 @@ import {
   screenCaptureGeometry,
   windowHandleOf,
 } from '../../main/helpers/previewDiagnostics/sourceMatch';
+import {
+  installDiagInterposer,
+  type DiagScope,
+} from '../../renderer/lib/jassub/diagInterposer';
 import {
   DEFAULT_FLAGS,
   MITIGATE_ALL_FLAGS,
@@ -605,10 +608,11 @@ test('patch-jassub：打补丁幂等、可还原、锚点缺失时失败退出',
   );
   assert.match(worker, /__SMARTSUB_JASSUB_DIAG__/);
   assert.match(worker, /smartsub-jassub-diag/);
-  assert.match(worker, /OffscreenCanvas\.prototype\.getContext/);
   assert.match(worker, /requestedAttributes/);
-  // 渲染器源码必须保持原样：正式版的 webpack loader（修复 Windows 黑屏）要在
-  // 它们身上找到 `desynchronized: true`，诊断开关改在 getContext 处统一应用。
+  // getContext 拦截器不再由补丁装在 worker 里：它由 workerGuard 在正式版守卫之前装好
+  // （离原生 getContext 更近，强制 true 才不会被守卫改回去）。补丁若又装一个，就会盖在守卫外面。
+  assert.doesNotMatch(worker, /OffscreenCanvas\.prototype\.getContext/);
+  // 渲染器源码保持原样：诊断开关统一应用在 getContext 处，不改渲染器里的字面量。
   for (const rel of files.filter((file) => file.includes('/renderers/')))
     assert.equal(
       fs.readFileSync(path.join(copy, rel), 'utf8'),
@@ -657,88 +661,53 @@ test('patch-jassub：打补丁幂等、可还原、锚点缺失时失败退出',
   fs.rmSync(copy, { recursive: true, force: true });
 });
 
-// 诊断补丁装在 worker 里的 getContext 拦截器：既要正确应用诊断开关，
-// 也要在开关为默认值时原样透传（默认路径 = 正式版行为，包括 Windows 修复）。
+// 诊断拦截器（renderer/lib/jassub/diagInterposer.ts）：既要正确应用诊断开关，
+// 也要在开关为默认值时原样透传（默认路径 = 正式版行为，包括 Windows 的守卫）。
 const WINDOWS_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) smartsub/3.9.0 Chrome/124.0.6367.243 Electron/30.5.1 Safari/537.36';
 const MAC_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) smartsub/3.9.0 Chrome/124.0.6367.243 Electron/30.5.1 Safari/537.36';
-const INTERPOSER_BEGIN = '// smartsub-diag:getContext-interposer:begin';
-const INTERPOSER_END = '// smartsub-diag:getContext-interposer:end';
 
 type ContextCall = { type: string; attrs: Record<string, unknown> | undefined };
+type FakeCanvas = {
+  getContext(type: string, attrs?: Record<string, unknown>): unknown;
+};
 
-/** vm 沙箱里创建的对象原型与宿主不同，deepEqual 会因此失败：先转成宿主里的普通对象。 */
+/** 沙箱对象的原型与宿主可能不同，deepEqual 会因此失败：先转成普通对象。 */
 const plain = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
-let cachedInterposerBlock: string | undefined;
-
-/** 在临时副本上打补丁，取出补丁后 worker.js 里的拦截器代码块（只做一次）。 */
-function patchedInterposerBlock(): string {
-  cachedInterposerBlock ??= buildInterposerBlock();
-  return cachedInterposerBlock;
-}
-
-function buildInterposerBlock(): string {
-  const source = path.resolve('node_modules/jassub');
-  const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'diag-interposer-'));
-  try {
-    for (const rel of [
-      'package.json',
-      'dist/jassub.js',
-      'dist/worker/worker.js',
-    ]) {
-      fs.mkdirSync(path.dirname(path.join(copy, rel)), { recursive: true });
-      fs.copyFileSync(path.join(source, rel), path.join(copy, rel));
-    }
-    const patched = spawnSync(
-      process.execPath,
-      ['scripts/diag/patch-jassub.mjs'],
-      {
-        env: { ...process.env, SMARTSUB_JASSUB_DIR: copy },
-        encoding: 'utf8',
-      },
-    );
-    assert.equal(patched.status, 0, patched.stderr);
-    const worker = fs.readFileSync(
-      path.join(copy, 'dist/worker/worker.js'),
-      'utf8',
-    );
-    const begin = worker.indexOf(INTERPOSER_BEGIN);
-    const end = worker.indexOf(INTERPOSER_END);
-    assert.ok(begin >= 0 && end > begin, 'interposer markers present');
-    return worker.slice(begin, end + INTERPOSER_END.length);
-  } finally {
-    fs.rmSync(copy, { recursive: true, force: true });
-  }
-}
-
-/** 在沙箱里装上拦截器；返回一块「画布」与底层 getContext 实际收到的调用。 */
-function installInterposer(diag: Record<string, unknown>) {
+/** 一块只记录「原生 getContext 实际收到什么」的 OffscreenCanvas 替身。 */
+function createFakeCanvasClass() {
   const received: ContextCall[] = [];
-  class FakeOffscreenCanvas {
+  class FakeOffscreenCanvas implements FakeCanvas {
     getContext(type: string, attrs?: Record<string, unknown>) {
       received.push({ type, attrs });
       return {};
     }
   }
-  const sandbox: Record<string, unknown> = {
+  return { FakeOffscreenCanvas, received };
+}
+
+function installDiagOnFakeScope(diag?: Record<string, unknown>) {
+  const { FakeOffscreenCanvas, received } = createFakeCanvasClass();
+  const scope: DiagScope & { __SMARTSUB_JASSUB_REQUESTS__?: unknown } = {
     OffscreenCanvas: FakeOffscreenCanvas,
     __SMARTSUB_JASSUB_DIAG__: diag,
   };
-  vm.runInNewContext(patchedInterposerBlock(), sandbox);
+  assert.equal(installDiagInterposer(scope), true);
   return {
+    scope,
     canvas: new FakeOffscreenCanvas(),
     received,
     requests: () =>
       plain(
-        sandbox.__SMARTSUB_JASSUB_REQUESTS__ as Array<Record<string, unknown>>,
+        scope.__SMARTSUB_JASSUB_REQUESTS__ as Array<Record<string, unknown>>,
       ),
   };
 }
 
-test('getContext 拦截器：开关为默认值时原样透传，并记录渲染器真正的请求', () => {
-  const { canvas, received, requests } = installInterposer({});
+test('诊断拦截器：开关为默认值时原样透传，并记录渲染器真正的请求', () => {
+  const { canvas, received, requests } = installDiagOnFakeScope({});
   const attrs = {
     alpha: true,
     desynchronized: false,
@@ -758,8 +727,8 @@ test('getContext 拦截器：开关为默认值时原样透传，并记录渲染
   ]);
 });
 
-test('getContext 拦截器：强制开关覆盖渲染器的请求，且不改动原对象', () => {
-  const { canvas, received, requests } = installInterposer({
+test('诊断拦截器：强制开关覆盖渲染器的请求，且不改动原对象', () => {
+  const { canvas, received, requests } = installDiagOnFakeScope({
     desynchronized: true,
     powerPreference: 'low-power',
   });
@@ -787,36 +756,129 @@ test('getContext 拦截器：强制开关覆盖渲染器的请求，且不改动
   );
 });
 
-test('诊断拦截器叠在正式版 loader 之上：默认=修复后的行为，强制开关仍可对照', () => {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const loader = require('../../renderer/lib/jassub-sync-canvas-loader.js') as (
-    this: { resourcePath: string },
-    source: string,
-  ) => string;
-  const rendererPath = path.resolve(
-    'node_modules/jassub/dist/worker/renderers/webgl2-renderer.js',
+test('诊断拦截器：每次调用时才读取开关（Worker 要到 init 才知道它们）', () => {
+  const { scope, canvas, received } = installDiagOnFakeScope(undefined);
+  canvas.getContext('webgl2', { desynchronized: false });
+  assert.equal(received[0].attrs?.desynchronized, false, '尚未下发开关时透传');
+  scope.__SMARTSUB_JASSUB_DIAG__ = { desynchronized: true };
+  canvas.getContext('webgl2', { desynchronized: false });
+  assert.equal(received[1].attrs?.desynchronized, true, '开关下发后生效');
+});
+
+test('诊断拦截器不重复安装，也不在没有 OffscreenCanvas 的环境里抛错', () => {
+  assert.equal(installDiagInterposer({}), false);
+  const { scope } = installDiagOnFakeScope({});
+  const installed = scope.OffscreenCanvas!.prototype.getContext;
+  assert.equal(installDiagInterposer(scope), false);
+  assert.equal(scope.OffscreenCanvas!.prototype.getContext, installed);
+});
+
+type WorkerGlobalName =
+  | 'OffscreenCanvas'
+  | 'navigator'
+  | '__SMARTSUB_JASSUB_DIAG__'
+  | '__SMARTSUB_JASSUB_REQUESTS__';
+
+/**
+ * 按真实接线加载 renderer/lib/jassub/workerGuard.ts（loader 注入进 JASSUB Worker 入口的那个模块），
+ * 在假的 Worker 全局里观察原生 getContext 最终收到什么。
+ */
+function inWorker<T>(
+  userAgent: string,
+  diag: Record<string, unknown>,
+  run: (worker: {
+    canvas: FakeCanvas;
+    received: ContextCall[];
+    requests: () => Array<Record<string, unknown>>;
+  }) => T,
+): T {
+  const names: WorkerGlobalName[] = [
+    'OffscreenCanvas',
+    'navigator',
+    '__SMARTSUB_JASSUB_DIAG__',
+    '__SMARTSUB_JASSUB_REQUESTS__',
+  ];
+  const saved = names.map(
+    (name) =>
+      [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const,
   );
-  const transformed = loader.call(
-    { resourcePath: rendererPath },
-    fs.readFileSync(rendererPath, 'utf8'),
-  );
-  const call = /canvas\.getContext\((['"])webgl2\1,\s*\{[^}]*\}\)/.exec(
-    transformed,
-  );
-  assert.ok(call, 'display-canvas getContext call found');
-  const requested = (diag: Record<string, unknown>, userAgent: string) => {
-    const { canvas, received } = installInterposer(diag);
-    vm.runInNewContext(call[0], { canvas, navigator: { userAgent } });
-    return received.at(-1)?.attrs?.desynchronized;
+  const define = (name: WorkerGlobalName, value: unknown) =>
+    Object.defineProperty(globalThis, name, {
+      value,
+      configurable: true,
+      writable: true,
+    });
+  const { FakeOffscreenCanvas, received } = createFakeCanvasClass();
+  define('OffscreenCanvas', FakeOffscreenCanvas);
+  define('navigator', { userAgent });
+  define('__SMARTSUB_JASSUB_DIAG__', diag);
+  const guardModule = require.resolve('../../renderer/lib/jassub/workerGuard');
+  delete require.cache[guardModule];
+  try {
+    require(guardModule);
+    return run({
+      canvas: new FakeOffscreenCanvas(),
+      received,
+      requests: () =>
+        plain(
+          (globalThis as unknown as Record<string, unknown>)
+            .__SMARTSUB_JASSUB_REQUESTS__ as Array<Record<string, unknown>>,
+        ),
+    });
+  } finally {
+    for (const [name, descriptor] of saved) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+      else delete (globalThis as unknown as Record<string, unknown>)[name];
+    }
+  }
+}
+
+test('workerGuard 接线：诊断拦截器在守卫里面，所以默认走修复、强制 true 仍能复现 3.9.0', () => {
+  const rendererRequest = {
+    alpha: true,
+    desynchronized: true,
+    powerPreference: 'high-performance',
   };
-  assert.equal(requested({}, WINDOWS_UA), false, 'Windows 默认（修复）');
-  assert.equal(requested({}, MAC_UA), true, '其它平台保持上游行为');
-  assert.equal(
-    requested({ desynchronized: true }, WINDOWS_UA),
-    true,
-    '强制 true 可复现 3.9.0',
+  const nativeDesync = (
+    userAgent: string,
+    diag: Record<string, unknown>,
+  ): [unknown, unknown] =>
+    inWorker(userAgent, diag, ({ canvas, received, requests }) => {
+      canvas.getContext('webgl2', rendererRequest);
+      return [
+        received.at(-1)?.attrs?.desynchronized,
+        requests().at(-1)?.desynchronized,
+      ];
+    });
+
+  assert.deepEqual(
+    nativeDesync(WINDOWS_UA, {}),
+    [false, false],
+    'Windows 默认（修复）',
   );
-  assert.equal(requested({ desynchronized: false }, MAC_UA), false);
+  assert.deepEqual(
+    nativeDesync(MAC_UA, {}),
+    [true, true],
+    '其它平台保持上游行为',
+  );
+  assert.deepEqual(
+    nativeDesync(WINDOWS_UA, { desynchronized: true }),
+    [true, true],
+    '强制 true 越过守卫，原生收到 true（复现 3.9.0）',
+  );
+  assert.deepEqual(nativeDesync(WINDOWS_UA, { desynchronized: false }), [
+    false,
+    false,
+  ]);
+  assert.deepEqual(nativeDesync(MAC_UA, { desynchronized: false }), [
+    false,
+    false,
+  ]);
+  assert.equal(
+    rendererRequest.desynchronized,
+    true,
+    '渲染器传入的对象不应被改写',
+  );
 });
 
 // ───────────── 运行 ─────────────

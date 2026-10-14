@@ -6,18 +6,17 @@
  * 渲染后端的选择也不可配置。上游 JASSUB#70 记录了「Windows 上 desynchronized:true 会导致黑屏」，
  * 我们要在用户机器上验证它是不是我们遇到的问题，就必须能在运行时改这几个参数。
  *
- * 补丁做三件事（默认行为与不打补丁完全一致，只有传了 diag 选项才会变）：
- *   1. 构造选项里多一个 `diag`，经 worker 参数转交给渲染器；
- *   2. worker 里装一个 OffscreenCanvas.prototype.getContext 拦截器：按 diag.desynchronized /
- *      diag.powerPreference 覆盖渲染器的请求，并记录渲染器「最终」传给 getContext 的属性；
+ * 补丁做两件事（默认行为与不打补丁完全一致，只有传了 diag 选项才会变）：
+ *   1. 构造选项里多一个 `diag`，经 worker 参数转交给渲染器，worker 里放进 globalThis.__SMARTSUB_JASSUB_DIAG__；
  *      渲染后端（diag.renderer）在 worker 里选择；
- *   3. worker 创建上下文后，用 BroadcastChannel('smartsub-jassub-diag') 回报：真实的上下文属性、
+ *   2. worker 创建上下文后，用 BroadcastChannel('smartsub-jassub-diag') 回报：真实的上下文属性、
  *      渲染器请求过的属性（requestedAttributes）、实际使用的渲染后端、GPU 型号、上下文丢失事件。
  *
- * 注意：不再改写渲染器源码里的 `desynchronized: true`。正式版用 webpack loader
- * （renderer/lib/jassub-sync-canvas-loader.js）在构建期把它改成「Windows 下为 false」，
- * 补丁要让这条修复保持为默认路径（诊断版因此就是被验证的那份代码），
- * 再叠加一个强制开关用来对照——所以覆盖放在 getContext 处，而不是改渲染器里的字面量。
+ * 覆盖渲染器上下文属性的 getContext 拦截器不在这里：它是 renderer/lib/jassub/diagInterposer.ts，
+ * 由 workerGuard 在正式版守卫之前装好（离原生更近，强制 true 才不会被守卫改回去）。
+ * 补丁也不改写渲染器源码里的 `desynchronized: true`：正式版靠守卫
+ * （renderer/lib/jassub/syncCanvasGuard.ts）在运行时把 Windows 下的请求压成 false，
+ * 诊断版因此跑的就是将要发布的那份代码，再叠加一个强制开关用来对照。
  *
  * 用法：
  *   node scripts/diag/patch-jassub.mjs            # 打补丁（幂等）
@@ -44,37 +43,6 @@ const backupDir = path.join(pkgDir, '.smartsub-diag-backup');
 
 const DIAG = `(globalThis.__SMARTSUB_JASSUB_DIAG__ || {})`;
 
-/**
- * getContext 拦截器（装在 worker 里，先于任何渲染器创建上下文）。
- *  - 诊断开关为默认值时，属性对象原样透传：默认路径 = 正式版（含 webpack loader 的 Windows 修复）。
- *  - 只覆盖渲染器本来就带了的键（2D 上下文没有 powerPreference，不凭空添加），且不改动原对象。
- *  - 只记录带属性对象的调用（JASSUB 的探测调用 getContext('webgl2') 不带属性）。
- * 两条 marker 注释让单元测试能把这一段单独取出来在沙箱里执行。
- */
-const INTERPOSER = [
-  `        // smartsub-diag:getContext-interposer:begin`,
-  `        {`,
-  `            const diag = globalThis.__SMARTSUB_JASSUB_DIAG__;`,
-  `            const original = OffscreenCanvas.prototype.getContext;`,
-  `            const requests = (globalThis.__SMARTSUB_JASSUB_REQUESTS__ = []);`,
-  `            OffscreenCanvas.prototype.getContext = function (type, attrs) {`,
-  `                let next = attrs;`,
-  `                if (attrs && typeof attrs === 'object') {`,
-  `                    const forceDesync = diag.desynchronized !== undefined && 'desynchronized' in attrs;`,
-  `                    const forcePower = diag.powerPreference !== undefined && 'powerPreference' in attrs;`,
-  `                    if (forceDesync || forcePower) {`,
-  `                        next = { ...attrs };`,
-  `                        if (forceDesync) next.desynchronized = diag.desynchronized;`,
-  `                        if (forcePower) next.powerPreference = diag.powerPreference;`,
-  `                    }`,
-  `                    requests.push({ type, desynchronized: next.desynchronized, powerPreference: next.powerPreference });`,
-  `                }`,
-  `                return original.call(this, type, next);`,
-  `            };`,
-  `        }`,
-  `        // smartsub-diag:getContext-interposer:end`,
-].join('\n');
-
 /** 每个文件一组 [旧文本, 新文本]；旧文本必须在文件里恰好出现一次。 */
 const PATCHES = {
   'dist/jassub.js': [
@@ -89,7 +57,6 @@ const PATCHES = {
       [
         `this.debug = data.debug;`,
         `        globalThis.__SMARTSUB_JASSUB_DIAG__ = data.diag || {};`,
-        INTERPOSER,
         ``,
       ].join('\n'),
     ],
