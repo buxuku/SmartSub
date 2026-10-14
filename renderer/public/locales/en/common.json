@@ -528,7 +528,15 @@
   "cpuAdvisory": {
     "missing": {
       "title": "This computer's CPU may not support built-in speech recognition",
-      "description": "Built-in speech recognition needs a CPU with {{features}}, which was not detected on this computer. Continuing may crash the app. Consider cloud speech recognition or another engine."
+      "description": "Built-in speech recognition needs a CPU with {{features}}, which was not detected on this computer. Continuing may crash the app. Consider cloud speech recognition or another engine.",
+      "legacyPack": {
+        "description": "You can also try the experimental “Legacy CPU pack” (it only needs AVX, but is much slower): download it, then import it under Engines → whisper.cpp (built-in) → GPU acceleration · Manage / Advanced → Custom Addon, and keep the acceleration mode on Auto (Recommended).",
+        "action": "Download and import guide"
+      },
+      "customAddon": {
+        "title": "A custom addon is enabled",
+        "description": "This computer's CPU is missing {{features}}, which the built-in acceleration packs need. Make sure the addon you imported is the Legacy CPU pack (its file name contains “-avx”). If transcription still crashes, clear the custom addon and use cloud speech recognition or another engine."
+      }
     },
     "translated": {
       "title": "Running under translation",
