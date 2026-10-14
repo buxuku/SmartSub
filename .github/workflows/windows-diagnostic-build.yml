@@ -10,6 +10,11 @@ name: Windows diagnostic build
 #   - 自动更新被关掉（否则它会把自己「更新」成正式版）。
 # 诊断面板由「可执行文件名含 Diagnostic」自动启用；正式版里这些代码是惰性的。
 #
+# 修复验证：本分支在诊断版之上带有「Windows 下关闭 JASSUB 低延迟画布」的正式修复
+# （renderer/lib/jassub-sync-canvas-loader.js）。诊断面板的默认开关不改任何行为，所以默认路径就是
+# 将要发布的那份代码；面板里可以把 desynchronized 强制为 true（3.9.0 的原行为）做对照，
+# 万一修复无效，同一个包里的取证功能还能直接留下证据。
+#
 # 触发：推送到 diag/** 分支，或手动运行（Use workflow from 选 diag/** 分支）。
 on:
   push:
@@ -80,8 +85,14 @@ jobs:
       - name: Unit tests (preview diagnostics)
         run: yarn test:preview-diagnostics
 
-      # 诊断补丁打在 node_modules/jassub 上（不进仓库）：让 JASSUB 的 WebGL 上下文属性、渲染后端可以
-      # 在诊断面板里切换，并回报真实使用的上下文。默认行为与原版完全一致。
+      # 修复本身的单元测试：对着 node_modules 里真实的 jassub 渲染器源码验证 loader 的改写，
+      # 必须在诊断补丁之前运行（此时 jassub 还是原样）。
+      - name: Unit tests (JASSUB sync-canvas loader)
+        run: yarn jest --runInBand renderer/lib/__tests__/jassubSyncCanvasLoader.test.ts
+
+      # 诊断补丁打在 node_modules/jassub 上（不进仓库）：在 worker 里装一个 getContext 拦截器，
+      # 让 desynchronized / powerPreference、渲染后端可以在诊断面板里切换，并回报渲染器真正请求的
+      # 与实际得到的上下文属性。不改渲染器源码，默认路径与正式版（含 Windows 修复）完全一致。
       - name: Apply the JASSUB diagnostic patch
         run: node scripts/diag/patch-jassub.mjs
 
@@ -101,7 +112,8 @@ jobs:
         run: yarn sherpa:fetch
 
       # 在真实 Windows 上把诊断面板的全部链路跑一遍（未打包）。runner 没有真显示器，
-      # 系统层截图读数只记录不判定；其余（开关生效、日志、快照、追踪、导出、GPU 预设）必须通过。
+      # 系统层截图读数只记录不判定；其余（开关生效、日志、快照、追踪、导出、GPU 预设，
+      # 以及默认路径下 WebGL2 / WebGL1 / 2D 渲染器请求的 desynchronized 在 Windows 上为 false）必须通过。
       # 失败不阻断出包：现场会上传，先看现场再决定。
       - name: E2E on Windows (unpackaged)
         id: e2e

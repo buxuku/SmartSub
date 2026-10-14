@@ -5,11 +5,12 @@
  * 然后：node scripts/e2e/compose-preview-diagnostics.mjs --production
  *
  * 验证四件事：
- *  A. 没有开诊断时（正式版）完全惰性：没有面板、没有日志、没有目录，行为与 3.9.0 相同；
- *  B. 开了诊断：默认开关 = 3.9.0；每个实验开关真的改变了它声称要改的东西；
+ *  A. 没有开诊断时（正式版）完全惰性：没有面板、没有日志、没有目录，页面结构与 3.9.0 相同；
+ *  B. 开了诊断：默认开关 = 正式版（页面结构与 3.9.0 相同，画布 desynchronized 由正式版的
+ *     webpack loader 决定：Windows 为 false，其它平台为 true）；每个实验开关真的改变了它声称要改的东西；
  *     取证（标记 / 快照 / 追踪 / 导出）真的产出可用的文件；
  *  C. 「GPU 启动参数」写入后，下次启动真的被应用；
- *  D. JASSUB 补丁：diag 选项一路传到 worker，上下文属性被回报。
+ *  D. JASSUB 补丁：diag 选项一路传到 worker，渲染器真正请求的与实际得到的上下文属性被回报。
  */
 import assert from 'node:assert/strict';
 import fsSync from 'node:fs';
@@ -475,6 +476,32 @@ try {
       (await readEvents(profile)).filter(
         (event) => event.type === 'jassub' && event.ev === 'context',
       );
+    // 默认路径 = 正式版：渲染器真正请求的 desynchronized 由构建期 loader 决定
+    // （Windows 为 false，其它平台保持 JASSUB 默认的 true）。这里验证的是安装包里
+    // 实际运行的那份代码，而不只是源码。
+    const expectedDefaultDesync = process.platform !== 'win32';
+    const desyncOf = (event) =>
+      (event.requestedAttributes ?? []).map(
+        (request) => request.desynchronized,
+      );
+    const allDesync = (event, expected) =>
+      desyncOf(event).length > 0 &&
+      desyncOf(event).every((value) => value === expected);
+    const shipped = await waitForEvent(
+      page,
+      profile,
+      (event) =>
+        event.type === 'jassub' &&
+        event.ev === 'context' &&
+        Object.keys(event.requested ?? {}).length === 0 &&
+        (event.requestedAttributes?.length ?? 0) > 0,
+      'context at default flags with requestedAttributes',
+    );
+    assert.ok(
+      allDesync(shipped, expectedDefaultDesync),
+      `default flags request desynchronized:${expectedDefaultDesync} on ${process.platform}, got ${JSON.stringify(shipped.requestedAttributes)}`,
+    );
+
     const before = (await contextEvents()).length;
     await flag('jassubDesync').selectOption('false');
     const desync = await waitForEvent(
@@ -488,6 +515,28 @@ try {
     );
     assert.ok((await contextEvents()).length > before, 'JASSUB was rebuilt');
     assert.ok(desync.attributes, 'real context attributes are reported');
+    assert.ok(
+      allDesync(desync, false),
+      `forced false reaches getContext, got ${JSON.stringify(desync.requestedAttributes)}`,
+    );
+    await expect
+      .poll(() => page.evaluate(() => Boolean(window.__jassubPreview)))
+      .toBe(true);
+    // 强制 true = 3.9.0 的原行为：用来在 Windows 上复现黑屏做对照
+    await flag('jassubDesync').selectOption('true');
+    const forcedTrue = await waitForEvent(
+      page,
+      profile,
+      (event) =>
+        event.type === 'jassub' &&
+        event.ev === 'context' &&
+        event.requested?.desynchronized === true,
+      'context with desynchronized:true forced',
+    );
+    assert.ok(
+      allDesync(forcedTrue, true),
+      `forced true reaches getContext, got ${JSON.stringify(forcedTrue.requestedAttributes)}`,
+    );
     await expect
       .poll(() => page.evaluate(() => Boolean(window.__jassubPreview)))
       .toBe(true);
@@ -504,6 +553,10 @@ try {
       'context with 2d renderer requested',
     );
     assert.equal(twoD.backend, '2d');
+    assert.ok(
+      allDesync(twoD, expectedDefaultDesync),
+      `2d renderer follows the shipped loader, got ${JSON.stringify(twoD.requestedAttributes)}`,
+    );
     await expect
       .poll(() => page.evaluate(() => Boolean(window.__jassubPreview)))
       .toBe(true);
@@ -518,6 +571,10 @@ try {
       'context with webgl1 requested',
     );
     assert.equal(gl1.backend, 'webgl1');
+    assert.ok(
+      allDesync(gl1, expectedDefaultDesync),
+      `webgl1 renderer follows the shipped loader, got ${JSON.stringify(gl1.requestedAttributes)}`,
+    );
     await flag('jassubRenderer').selectOption('auto');
 
     await flag('jassubPower').selectOption('low-power');
@@ -541,7 +598,7 @@ try {
       .toEqual({});
     assert.ok(lastContext);
     checks.push(
-      `B6: diag options reach the JASSUB worker (desync/power/renderer), backend reported (${gl1.backend}/${twoD.backend}), defaults send nothing`,
+      `B6: diag options reach the JASSUB worker (desync true/false, power, renderer), backend reported (${gl1.backend}/${twoD.backend}); defaults send nothing and the shipped loader requests desynchronized:${expectedDefaultDesync} on ${process.platform} for webgl2/webgl1/2d`,
     );
 
     // 全部缓解 / 还原默认
@@ -567,7 +624,7 @@ try {
     ).filter((event) => event.type === 'flags');
     assert.ok(flagEvents.some((event) => event.reason === 'mitigate-all'));
     checks.push(
-      'B7: mitigate-all flips every suspect at once; reset restores 3.9.0',
+      'B7: mitigate-all flips every suspect at once; reset restores the defaults',
     );
 
     // 环境快照
