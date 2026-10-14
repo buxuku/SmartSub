@@ -23,6 +23,16 @@ module.exports = {
       ),
     );
 
+    // jassub 的 WebGL2 / WebGL1 / 2D 渲染器写死 `desynchronized: true`（低延迟画布），
+    // 在 Windows 上会被提升为独立的 DirectComposition 叠加层，使整块视频预览呈现为纯黑。
+    // 构建期把它改写为「Windows 下为 false、其它平台保持不变」。
+    // 根因、证据与取舍见 lib/jassub-sync-canvas-loader.js；上游写法变化时该 loader 会让构建失败。
+    config.module.rules.push({
+      test: /node_modules[\\/]jassub[\\/]dist[\\/]worker[\\/]renderers[\\/](?:2d|webgl1|webgl2)-renderer\.js$/,
+      enforce: 'pre',
+      loader: path.resolve(__dirname, 'lib/jassub-sync-canvas-loader.js'),
+    });
+
     // 确保 TypeScript 文件被正确处理
     config.module.rules.push({
       test: /\.tsx?$/,
