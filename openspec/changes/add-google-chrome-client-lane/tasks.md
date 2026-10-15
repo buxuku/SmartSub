@@ -14,12 +14,12 @@
 
 ## 3. Translator
 
-- [ ] 3.1 Refactor `main/service/googleFree.ts` to run each chunk through a lane selector: chrome first, gtx per chunk as the fallback. The gtx lane keeps today's request, 5,000-character truncation and 60 s timeout. Call `axios.get(url, config)` with the query already in the URL so the mock-`axios` tests see the exact request.
-- [ ] 3.2 Add the per-lane health state: blocked backoff 10 → 20 → 40 → 60 min (cap), 3 consecutive other failures → 120 s, one probe after the cooldown, success clears, cancellation and unsupported language excluded, probe flag released in `finally`; take time from `Date.now()`.
-- [ ] 3.3 Call `acquire('googleFree:<providerId>', resolveRateLimitConfig(proof), signal)` before every HTTP request on both lanes (including probes and switched resends), give the chrome lane its own 15 s timeout and pass the abort signal through.
-- [ ] 3.4 When both lanes are unavailable send nothing and throw `Google free translate failed (network): temporarily unavailable (both lanes cooling down, retry in N s)`; export `getGoogleFreeAvailability()` with the same shape as `getYoudaoFreeAvailability()`.
-- [ ] 3.5 Keep every runtime error prefixed with `Google free translate failed (network): `, throw `not supported language` only before any request, and never put subtitle text or response bodies into an error message.
-- [ ] 3.6 Log only the lane id, status class, cooldown seconds, recovery and counts, one line per state change (cooldown entry as warning, recovery as info); never URLs, text, translations or bodies. Export `__test__` helpers (`reset`, `laneState`) like `youdaoFree`.
+- [x] 3.1 Refactor `main/service/googleFree.ts` to run each chunk through a lane selector: chrome first, gtx per chunk as the fallback. The gtx lane keeps today's request, 5,000-character truncation and 60 s timeout. Call `axios.get(url, config)` with the query already in the URL so the mock-`axios` tests see the exact request.
+- [x] 3.2 Add the per-lane health state: blocked backoff 10 → 20 → 40 → 60 min (cap), 3 consecutive other failures → 120 s, one probe after the cooldown, success clears, cancellation and unsupported language excluded, probe flag released in `finally`; take time from `Date.now()`.
+- [x] 3.3 Call `acquire('googleFree:<providerId>', resolveRateLimitConfig(proof), signal)` before every HTTP request on both lanes (including probes and switched resends), give the chrome lane its own 15 s timeout and pass the abort signal through.
+- [x] 3.4 When both lanes are unavailable send nothing and throw `Google free translate failed (network): temporarily unavailable (both lanes cooling down, retry in N s)`; export `getGoogleFreeAvailability()` with the same shape as `getYoudaoFreeAvailability()`.
+- [x] 3.5 Keep every runtime error prefixed with `Google free translate failed (network): `, throw `not supported language` only before any request, and never put subtitle text or response bodies into an error message.
+- [x] 3.6 Log only the lane id, status class, cooldown seconds, recovery and counts, one line per state change (cooldown entry as warning, recovery as info); never URLs, text, translations or bodies. Export `__test__` helpers (`reset`, `laneState`) like `youdaoFree`.
 
 ## 4. autoFree integration
 
@@ -41,9 +41,9 @@
 ## 6. Tests
 
 - [x] 6.1 Add `scripts/test-google-free.cjs` (same mock-`axios` and TypeScript-transpile setup as `test-free-translators.cjs`) and chain it into `test:free-translators` in `package.json`. First cover the pure functions: the query string (repeated `q`, no `q[]`, encoding of `&`, `#`, `+`, `%`, newline and emoji), chunking (50 lines, 6,000 bytes, oversize single line, blank positions), parsing (both shapes and every malformed shape) and abuse classification.
-- [ ] 6.2 Add translator tests: chrome-only success with zero gtx requests; chrome blocked → gtx, with later chunks skipping chrome; the reverse direction (gtx blocked, chrome healthy); mixed lanes inside one call with the order preserved; count mismatch, bad shape and all-empty → gtx; the `sl=auto` shape; blank-line restoration; both lanes failing; both lanes cooling → zero requests.
-- [ ] 6.3 Add health tests with a fake clock (stub `Date.now`): 10/20/40/60/60-minute backoff, 3 strikes → 120 s, a single probe with concurrent callers, success reset, cancellation not counted and the probe flag released, a plain 429/403 without a marker, and the `getGoogleFreeAvailability()` values.
-- [ ] 6.4 Add tests for the shared rate-limit key, the 15 s chrome timeout, cancellation, error classification (`(network)` prefix, `isConfigurationError` false, `not supported language` with zero requests) and log privacy (no subtitle text, URL, translation or body in logs or errors).
+- [x] 6.2 Add translator tests: chrome-only success with zero gtx requests; chrome blocked → gtx, with later chunks skipping chrome; the reverse direction (gtx blocked, chrome healthy); mixed lanes inside one call with the order preserved; count mismatch, bad shape and all-empty → gtx; the `sl=auto` shape; blank-line restoration; both lanes failing; both lanes cooling → zero requests.
+- [x] 6.3 Add health tests with a fake clock (stub `Date.now`): 10/20/40/60/60-minute backoff, 3 strikes → 120 s, a single probe with concurrent callers, success reset, cancellation not counted and the probe flag released, a plain 429/403 without a marker, and the `getGoogleFreeAvailability()` values.
+- [x] 6.4 Add tests for the shared rate-limit key, the 15 s chrome timeout, cancellation, error classification (`(network)` prefix, `isConfigurationError` false, `not supported language` with zero requests) and log privacy (no subtitle text, URL, translation or body in logs or errors).
 - [ ] 6.5 Add chain integration tests with the real `fallback.ts` and fake sibling sources: `googleFree` is skipped while both lanes cool down and is used again after recovery.
 - [ ] 6.6 Make sure no CI test touches the network (run the script tests behind a guard that fails the process on any non-loopback connection, DNS lookup or `fetch`), then run `yarn check:i18n`, `yarn typecheck`, `yarn test:free-translators`, `yarn test:provider-fallback`, `yarn test:provider-test-flow`, `yarn test:task-defaults` and `yarn test:renderer`.
 
