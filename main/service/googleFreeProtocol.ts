@@ -107,9 +107,13 @@ export function planChromeChunks(
   return chunks;
 }
 
+/**
+ * 每个成员把对方的字段声明为 `undefined`：仓库以 `strict: false` 编译，`ok` 无法收窄联合类型，
+ * 所以 `reason` 与 `translations` 在两个成员上都必须可读。
+ */
 export type ChromeParseResult =
-  | { ok: true; translations: string[] }
-  | { ok: false; reason: string };
+  | { ok: true; translations: string[]; reason?: undefined }
+  | { ok: false; reason: string; translations?: undefined };
 
 /**
  * 合法响应是长度等于 q 个数的数组，元素是字符串（显式 sl），或首项为字符串的数组
