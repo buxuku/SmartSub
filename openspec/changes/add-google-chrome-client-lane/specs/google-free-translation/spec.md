@@ -76,7 +76,7 @@ chrome 通道的每个请求 MUST 是对 `https://translate.googleapis.com/trans
 
 ### Requirement: chrome 通道的响应解析与对齐
 
-chrome 响应 MUST 是长度等于本块 `q` 个数的数组；每个元素 MUST 是字符串（显式 `sl`），或首元素为字符串的数组（`sl=auto` 时附带检测到的语言），两种形状都 MUST 被接受。长度不符、元素形状不符，或本块所有非空输入对应的译文均为空，MUST 被视为 chrome 通道在本块失败并计入该通道的失败计数，该块 MUST 改走 gtx 通道；系统 MUST NOT 返回该块的部分 chrome 结果。译文 MUST NOT 被二次改写。
+chrome 响应 MUST 是长度等于本块 `q` 个数的数组；每个元素 MUST 是字符串（显式 `sl`），或首元素为字符串的数组（`sl=auto` 时附带检测到的语言），两种形状都 MUST 被接受。长度不符、元素形状不符，或任何一项译文为空（空串或全空白），MUST 被视为 chrome 通道在本块失败并计入该通道的失败计数，该块 MUST 改走 gtx 通道；系统 MUST NOT 返回该块的部分 chrome 结果。译文 MUST NOT 被二次改写。
 
 #### Scenario: 显式源语言的字符串数组
 
@@ -102,6 +102,16 @@ chrome 响应 MUST 是长度等于本块 `q` 个数的数组；每个元素 MUST
 
 - **WHEN** 本块 3 个非空输入对应的译文都是空串
 - **THEN** 视为协议异常，该块改走 gtx 通道
+
+#### Scenario: 部分译文为空
+
+- **WHEN** 本块 20 个非空输入中有 8 项译文是空串或全空白，其余 12 项正常
+- **THEN** 整块 chrome 结果被丢弃，不使用其中任何一项；该块改走 gtx 通道，chrome 通道的失败计数加 1；gtx 通道也失败时，调用以 `(network)` 错误失败，不返回带空行的结果
+
+#### Scenario: 不可译的行返回原文是有效答案
+
+- **WHEN** 本块含 `♪`、`...`、`{\an8}` 这类无法翻译的行，响应对它们返回原文
+- **THEN** 这些项是有效译文，不触发回退
 
 ### Requirement: 通道健康与冷却
 

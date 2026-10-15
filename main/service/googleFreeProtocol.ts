@@ -117,8 +117,12 @@ export type ChromeParseResult =
 
 /**
  * 合法响应是长度等于 q 个数的数组，元素是字符串（显式 sl），或首项为字符串的数组
- * （sl=auto 时的 [译文, 检测语言]）。条数不符、形状不符或译文全空都是协议异常，
+ * （sl=auto 时的 [译文, 检测语言]）。条数不符、形状不符或任何一项译文为空都是协议异常，
  * 绝不返回部分结果。失败原因只含计数，不含响应内容。
+ *
+ * 响应的每一项都对应一条非空白输入（空白条目不进请求），而服务对无法翻译的行
+ * （♪、...、{\an8}）返回原文，所以空译文是降级答案而不是结果：2026-10-15 的实网冒烟里
+ * 有一批 20 条的响应出现过 8 项空串，其余 12 项正常。
  */
 export function parseChromeResponse(
   data: unknown,
@@ -143,8 +147,12 @@ export function parseChromeResponse(
       return { ok: false, reason: 'unexpected item shape' };
     }
   }
-  if (translations.every((translation) => !translation.trim())) {
-    return { ok: false, reason: 'empty translations' };
+  const empty = translations.filter((translation) => !translation.trim());
+  if (empty.length > 0) {
+    return {
+      ok: false,
+      reason: `${empty.length} of ${expected} translations are empty`,
+    };
   }
   return { ok: true, translations };
 }
