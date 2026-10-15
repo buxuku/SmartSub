@@ -36,6 +36,12 @@
  * workerUrl，实际运行的 Worker 碰不到这条注入，守卫就不会装上。目前应用不传，
  * renderer/lib/__tests__/jassubWorkerGuardWiring.test.ts 里有用例盯着。
  *
+ * 规则一旦匹配不到，构建不会报错，守卫就悄悄没了，所以「它真的在生效」分三层检查：
+ *  - 单测（上面那个 wiring 测试）：规则命中 jassub 真实的 Worker 入口，应用不传自定义 workerUrl；
+ *  - 构建后检查（scripts/check-jassub-worker-guard.mjs，CI 在 yarn build 之后运行）：产物里确实带着守卫；
+ *  - e2e（scripts/e2e/compose-sync-canvas.mjs，手动运行）：守卫在 Worker 里先于渲染器执行，
+ *    交给原生 getContext 的属性里没有 desynchronized: true。
+ *
  * 其它平台保持上游行为不变（问题只在 Windows 上观察到，门禁只是把改动面压到最小）。
  * 代价：字幕画布不再走低延迟呈现，而是与页面同步合成——对编辑预览没有可感知的影响。
  *
@@ -49,7 +55,10 @@
  *    但没有 WebGL、API 也不同（预览依赖 manualRender / addFonts / setTrack / getEvents 等 JASSUB 专有
  *    接口），要重写预览管线并重测字体和性能，改动面远大于一个 getContext 守卫。留作兜底。
  *
- * 上游若提供了该选项或修复了问题，请删除 renderer/next.config.js 里对应的规则连同本目录。
+ * 上游若提供了该选项或修复了问题，请把整套一起删掉：renderer/next.config.js 里对应的规则、本目录、
+ * renderer/lib/jassub-worker-guard-loader.js、scripts/check-jassub-worker-guard.mjs 和
+ * scripts/e2e/compose-sync-canvas.mjs，以及它们的单测（renderer/lib/__tests__/jassubWorkerGuard*）、
+ * package.json 里的 check:jassub-guard / test:e2e:compose-sync-canvas 和 ci.yml 里对应的步骤。
  */
 
 // 其它代码（例如 e2e）可以用它判断 Worker 里是否已装上守卫。
