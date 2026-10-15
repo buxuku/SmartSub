@@ -17,6 +17,7 @@
     "postinstall": "electron-builder install-app-deps && node scripts/ensure-native.mjs",
     "format": "prettier --write .",
     "check:i18n": "node scripts/check-i18n.mjs",
+    "check:jassub-guard": "node scripts/check-jassub-worker-guard.mjs",
     "test:launchpad-import": "node scripts/test-launchpad-import.cjs",
     "test:pro-baseline": "node scripts/test-pro-baseline.mjs",
     "test:proofread-reliability": "tsx --tsconfig renderer/tsconfig.json scripts/test-proofread-reliability.tsx",

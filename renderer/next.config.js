@@ -28,7 +28,9 @@ module.exports = {
     // 不改写 jassub 的源码：在它的 Worker 入口最前面注入一行 `import guard`，
     // 由守卫在运行时把「请求 desynchronized」改成「Windows 下不请求」，其它平台保持上游行为。
     // 根因、证据与取舍见 lib/jassub/syncCanvasGuard.ts；
-    // 规则是否仍命中真实的 jassub Worker 入口，由 lib/__tests__/jassubWorkerGuardWiring.test.ts 把关。
+    // 规则是否仍命中真实的 jassub Worker 入口，由 lib/__tests__/jassubWorkerGuardWiring.test.ts 把关；
+    // 规则命中不了时构建不会报错，所以产物里是否真的带着守卫，另由 CI 在 yarn build 之后跑
+    // scripts/check-jassub-worker-guard.mjs 把关。
     config.module.rules.push({
       test: /node_modules[\\/]jassub[\\/]dist[\\/]worker[\\/]worker\.js$/,
       enforce: 'pre',

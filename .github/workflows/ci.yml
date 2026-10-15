@@ -112,6 +112,11 @@ jobs:
       - name: Compile application (renderer + main)
         run: yarn build
 
+      # Windows 合成预览黑屏的守卫靠 webpack 规则注入 JASSUB 的 Worker；规则不再命中时构建不会报错，
+      # 单测也看不出来，所以在产物里确认它还在。运行时行为的 e2e 见 scripts/e2e/compose-sync-canvas.mjs
+      - name: Check the JASSUB worker guard is in the build output
+        run: yarn check:jassub-guard
+
   docs:
     name: Docs build (Docusaurus)
     runs-on: ubuntu-22.04
