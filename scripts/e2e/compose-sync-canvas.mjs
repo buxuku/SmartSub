@@ -6,9 +6,13 @@
 // 是否先于渲染器执行，只有跑构建产物才知道。
 //
 // 为了看到「交给原生 getContext 的是什么」，会临时在 Worker 入口 chunk 的最前面塞一个记录钩子
-// （它比守卫更靠近原生，所以守卫改过的结果才会被记下），跑完立刻还原。
+// （它比守卫更靠近原生，所以守卫改过的结果才会被记下），跑完立刻还原；Ctrl-C / kill 也会还原，
+// 且只在文件仍是被我们改写过的样子时才还原，不会覆盖别的进程（比如并行的 yarn build）重写的内容。
+// 被 SIGKILL 强杀时来不及还原：下次运行会清掉残留并提示，scripts/check-jassub-worker-guard.mjs
+// 也会把残留的钩子报出来。
 // 需要先 `yarn build`；用 `yarn test:e2e:compose-sync-canvas` 运行。
 import assert from 'node:assert/strict';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -47,12 +51,53 @@ assert.ok(
   `找不到 JASSUB Worker 的构建产物（${chunksDir}/jassub-worker.*.js），请先 yarn build`,
 );
 const workerChunkPath = path.join(chunksDir, workerChunk);
-const pristine = (await fs.readFile(workerChunkPath, 'utf8')).replace(
-  new RegExp(`^${HOOK_MARK.replace(/[*/]/g, '\\$&')}[^\\n]*\\n`),
-  '',
-);
+const onDisk = await fs.readFile(workerChunkPath, 'utf8');
+// 被强杀（SIGKILL）的上一次运行可能把钩子留在 chunk 里：先剥掉，把剩下的当作原始内容。
+const leftover = onDisk.startsWith(HOOK_MARK);
+const pristine = leftover
+  ? onDisk.replace(
+      new RegExp(`^${HOOK_MARK.replace(/[*/]/g, '\\$&')}[^\\n]*\\n`),
+      '',
+    )
+  : onDisk;
+if (leftover)
+  console.warn(
+    '⚠ 清掉了上一次被中断的 e2e 留在 JASSUB Worker chunk 里的记录钩子',
+  );
 
-const output = await fs.mkdtemp(
+// 只在文件仍是被我们改写过的样子时才还原：别的进程（比如并行的 yarn build）已经重写过它，就不去覆盖。
+function restoreWorkerChunk() {
+  try {
+    if (readFileSync(workerChunkPath, 'utf8').startsWith(HOOK_MARK))
+      writeFileSync(workerChunkPath, pristine);
+  } catch {
+    // 文件不在了（正在重新构建）：没有什么可还原的。
+  }
+}
+// 临时目录（视频、字幕和 Electron 的 profile），建好之后才赋值。
+let output;
+// 'exit' 里只能同步干活；被信号打断时 finally 不会执行，所以临时目录也在这里一并清掉。
+function cleanUpOnExit() {
+  restoreWorkerChunk();
+  if (!output) return;
+  try {
+    rmSync(output, { recursive: true, force: true });
+  } catch {
+    // 尽力而为：Electron 可能还没被 Playwright 的 exit 钩子杀掉，还在往里写。
+  }
+}
+// Ctrl-C / kill 要显式走到 exit，否则 Node 直接退出，exit 钩子不会执行；
+// Electron 由 Playwright 自己的 exit 钩子杀掉。
+// 先登记再写钩子，这样钩子写进去之后的任何时刻被打断都能还原。
+process.once('exit', cleanUpOnExit);
+for (const [signal, code] of [
+  ['SIGINT', 130],
+  ['SIGTERM', 143],
+  ['SIGHUP', 129],
+])
+  process.once(signal, () => process.exit(code));
+
+output = await fs.mkdtemp(
   path.join(os.tmpdir(), 'smartsub-compose-sync-canvas-e2e-'),
 );
 const media = path.join(output, 'sync-canvas.mp4');
@@ -167,6 +212,6 @@ try {
     JSON.stringify(results, null, 2),
   );
 } finally {
-  await fs.writeFile(workerChunkPath, pristine);
+  restoreWorkerChunk();
   await fs.rm(output, { recursive: true, force: true });
 }
