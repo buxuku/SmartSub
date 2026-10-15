@@ -7,6 +7,7 @@ import {
   deeplxTranslator,
 } from '../../service';
 import { getYoudaoFreeAvailability } from '../../service/youdaoFree';
+import { getGoogleFreeAvailability } from '../../service/googleFree';
 import {
   isTaskCancelledError,
   throwIfSignalCancelled,
@@ -43,20 +44,27 @@ function parseChain(chainRaw: unknown, defaultChain: string[]): string[] {
   return defaultChain;
 }
 
+/** 自带冷却机制的源：冷却期内报告不可用，回退链据此直接跳过 */
+const AVAILABILITY: Record<
+  string,
+  () => { available: boolean; retryAfterMs?: number }
+> = {
+  youdaoFree: getYoudaoFreeAvailability,
+  googleFree: getGoogleFreeAvailability,
+};
+
 /** 判断某源在当前配置下是否可用（不可用则跳过，不计失败） */
 function isSourceUnavailable(sourceId: string, proof: any): string | null {
   if (sourceId === 'deeplx' && !proof?.apiUrl) {
     return 'no endpoint';
   }
-  if (sourceId === 'youdaoFree') {
-    // 快速失效冷却期内直接跳过，避免每个批次都先失败一次才切到下一源
-    const availability = getYoudaoFreeAvailability();
-    if (!availability.available) {
-      const seconds = Math.ceil((availability.retryAfterMs ?? 0) / 1000);
-      return seconds > 0
-        ? `cooling down (retry in ${seconds} s)`
-        : 'cooling down';
-    }
+  // 快速失效冷却期内直接跳过，避免每个批次都先失败一次才切到下一源
+  const availability = AVAILABILITY[sourceId]?.();
+  if (availability && !availability.available) {
+    const seconds = Math.ceil((availability.retryAfterMs ?? 0) / 1000);
+    return seconds > 0
+      ? `cooling down (retry in ${seconds} s)`
+      : 'cooling down';
   }
   return null;
 }

@@ -23,7 +23,7 @@
 
 ## 4. autoFree integration
 
-- [ ] 4.1 In `main/translate/services/fallback.ts`, make `isSourceUnavailable('googleFree')` skip the source while `getGoogleFreeAvailability()` reports it unavailable (info log, `cooling down (retry in N s)`), the same way `youdaoFree` is skipped.
+- [x] 4.1 In `main/translate/services/fallback.ts`, make `isSourceUnavailable('googleFree')` skip the source while `getGoogleFreeAvailability()` reports it unavailable (info log, `cooling down (retry in N s)`), the same way `youdaoFree` is skipped.
 
 ## 5. UI copy and documentation
 
@@ -44,7 +44,7 @@
 - [x] 6.2 Add translator tests: chrome-only success with zero gtx requests; chrome blocked → gtx, with later chunks skipping chrome; the reverse direction (gtx blocked, chrome healthy); mixed lanes inside one call with the order preserved; count mismatch, bad shape and all-empty → gtx; the `sl=auto` shape; blank-line restoration; both lanes failing; both lanes cooling → zero requests.
 - [x] 6.3 Add health tests with a fake clock (stub `Date.now`): 10/20/40/60/60-minute backoff, 3 strikes → 120 s, a single probe with concurrent callers, success reset, cancellation not counted and the probe flag released, a plain 429/403 without a marker, and the `getGoogleFreeAvailability()` values.
 - [x] 6.4 Add tests for the shared rate-limit key, the 15 s chrome timeout, cancellation, error classification (`(network)` prefix, `isConfigurationError` false, `not supported language` with zero requests) and log privacy (no subtitle text, URL, translation or body in logs or errors).
-- [ ] 6.5 Add chain integration tests with the real `fallback.ts` and fake sibling sources: `googleFree` is skipped while both lanes cool down and is used again after recovery.
+- [x] 6.5 Add chain integration tests with the real `fallback.ts` and fake sibling sources: `googleFree` is skipped while both lanes cool down and is used again after recovery. (Done 2026-10-15: `scripts/test-google-free.cjs` has 65 tests, all green; 31 hand-made mutations of `googleFree.ts` and `fallback.ts` were all caught.)
 - [ ] 6.6 Make sure no CI test touches the network (run the script tests behind a guard that fails the process on any non-loopback connection, DNS lookup or `fetch`), then run `yarn check:i18n`, `yarn typecheck`, `yarn test:free-translators`, `yarn test:provider-fallback`, `yarn test:provider-test-flow`, `yarn test:task-defaults` and `yarn test:renderer`.
 
 ## 7. Verification

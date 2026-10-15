@@ -59,8 +59,15 @@ globalThis.fetch = function guardedFetch(input) {
 const logs = [];
 // A test can set this to make a log call misbehave (an unexpected internal error).
 let onLog = null;
+// While the chain section loads the real fallback orchestration, `main/service`
+// (every other translator) is replaced by this object.
+let chainServices = null;
 
 Module._load = function (request, parent, isMain) {
+  const absolute =
+    request.startsWith('.') && parent
+      ? path.resolve(path.dirname(parent.filename), request)
+      : '';
   if (request === 'electron') {
     return {
       app: {
@@ -82,6 +89,9 @@ Module._load = function (request, parent, isMain) {
         if (onLog) onLog(entry);
       },
     };
+  }
+  if (chainServices && absolute === path.join(repoRoot, 'main/service')) {
+    return chainServices;
   }
   return originalLoad.call(this, request, parent, isMain);
 };
@@ -1438,6 +1448,110 @@ test('ordinary failures log their cooldown once and classify it as a failure', (
       );
       assert.equal(entries.length, 1);
       assert.equal(entries[0].type, 'warning');
+    } finally {
+      clock.restore();
+    }
+  }));
+
+// ---------------------------------------------------------------------------
+// autoFree chain: the real fallback orchestration with fake sibling sources, so
+// skipping a cooling Google and using it again after recovery run end to end.
+// ---------------------------------------------------------------------------
+
+const siblingCalls = [];
+const fakeSibling = (name) => async (list) => {
+  siblingCalls.push({ name, list });
+  return list.map((item) => `${name}:${item}`);
+};
+chainServices = {
+  youdaoFreeTranslator: fakeSibling('youdao'),
+  bingFreeTranslator: fakeSibling('bing'),
+  googleFreeTranslator: googleFree,
+  deeplxTranslator: fakeSibling('deeplx'),
+};
+const {
+  createFallbackTranslator,
+} = require('../main/translate/services/fallback.ts');
+chainServices = null;
+
+const chainProof = {
+  id: 'autoFree',
+  fallbackChain: 'googleFree,deeplx',
+  apiUrl: 'http://127.0.0.1:1188/translate',
+};
+const autoFree = createFallbackTranslator(['googleFree', 'deeplx']);
+const runChain = (list, proof = chainProof) =>
+  autoFree(list, proof, 'en', 'zh');
+const attemptedSources = () =>
+  logs
+    .filter((entry) => entry.message.startsWith('autoFree trying source: '))
+    .map((entry) => entry.message.slice('autoFree trying source: '.length));
+
+test('autoFree skips Google without a request while both lanes cool down and uses it again after recovery', () =>
+  withServer(async (server) => {
+    const clock = useFakeClock();
+    try {
+      siblingCalls.length = 0;
+      server.chrome = () => blocked();
+      server.gtx = () => blocked();
+
+      // both lanes fail on this batch: Google is tried, fails, deeplx answers
+      assert.deepEqual(await runChain(['Hello.']), ['deeplx:Hello.']);
+      assert(
+        logs.some(
+          (entry) =>
+            entry.type === 'warning' &&
+            /^autoFree source googleFree failed: Google free translate failed \(network\)/.test(
+              entry.message,
+            ),
+        ),
+      );
+
+      // now both lanes cool down: skipped quietly, no request
+      const before = server.log.requests.length;
+      logs.length = 0;
+      assert.deepEqual(await runChain(['Hello again.']), [
+        'deeplx:Hello again.',
+      ]);
+      assert.equal(
+        server.log.requests.length,
+        before,
+        'no request while cooling',
+      );
+      const skip = logs.find((entry) =>
+        entry.message.startsWith('autoFree skip googleFree'),
+      );
+      assert(skip, 'the skip is logged');
+      assert.equal(skip.type, 'info');
+      assert.match(
+        skip.message,
+        /^autoFree skip googleFree: cooling down \(retry in 600 s\)$/,
+      );
+      assert.deepEqual(attemptedSources(), ['deeplx']);
+
+      // recovery: the cooldown ends, the probe succeeds and Google is used again
+      clock.advance(10 * MINUTE + 1000);
+      server.chrome = null;
+      server.gtx = null;
+      logs.length = 0;
+      assert.deepEqual(await runChain(['Back.']), ['C:Back.']);
+      assert.deepEqual(attemptedSources(), ['googleFree']);
+      assert(!logs.some((entry) => /fell back/.test(entry.message)));
+    } finally {
+      clock.restore();
+    }
+  }));
+
+test('autoFree keeps using Google while one lane still works', () =>
+  withServer(async (server) => {
+    const clock = useFakeClock();
+    try {
+      server.chrome = () => blocked();
+      assert.deepEqual(await runChain(['One.']), ['G:One.']);
+      logs.length = 0;
+      assert.deepEqual(await runChain(['Two.']), ['G:Two.']);
+      assert.deepEqual(attemptedSources(), ['googleFree']);
+      assert(!logs.some((entry) => entry.message.startsWith('autoFree skip')));
     } finally {
       clock.restore();
     }
