@@ -27,8 +27,8 @@
 
 ## 5. UI copy and documentation
 
-- [ ] 5.1 Update the zh and en strings `batchSizeGoogleFreeTips` (batch lane first, per-line fallback when limited), `batchSizeAutoFreeTips` (Youdao and Google can batch, Bing translates line by line) and `fallbackChainTips` (Google is skipped for a while when both lanes are limited); run `yarn check:i18n`.
-- [ ] 5.2 Update `docs/docs/guides/translation/free.md`: the Google rows (batch lane first, per-line fallback, the request interval applies per request), the unofficial-interface disclosure for both lanes and the footer date.
+- [x] 5.1 Update the zh and en strings `batchSizeGoogleFreeTips` (batch lane first, per-line fallback when limited), `batchSizeAutoFreeTips` (Youdao and Google can batch, Bing translates line by line) and `fallbackChainTips` (Google is skipped for a while when both lanes are limited); run `yarn check:i18n`.
+- [x] 5.2 Update `docs/docs/guides/translation/free.md`: the Google rows (batch lane first, per-line fallback, the request interval applies per request), the unofficial-interface disclosure for both lanes and the footer date. (Done 2026-10-15; the footer already reads 2026-10, so the date needed no change.)
 - [ ] 5.3 Add the release note following the project's changelog process. Deferred until the release version is chosen: `Changelog/<tag>-release-note.md` carries the version in its title and download links, and `docs/docs/changelog.md` is updated per release, so no file is created on this branch. Draft for the maintainer to paste under `## feat` (the repository's format: a Chinese bullet with an indented English line, PR numbers added once a PR exists):
 
   ```text
