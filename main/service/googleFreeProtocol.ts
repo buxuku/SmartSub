@@ -112,8 +112,18 @@ export function planChromeChunks(
  * 所以 `reason` 与 `translations` 在两个成员上都必须可读。
  */
 export type ChromeParseResult =
-  | { ok: true; translations: string[]; reason?: undefined }
-  | { ok: false; reason: string; translations?: undefined };
+  | {
+      ok: true;
+      translations: string[];
+      reason?: undefined;
+      emptyItems?: undefined;
+    }
+  | {
+      ok: false;
+      reason: string;
+      emptyItems: number;
+      translations?: undefined;
+    };
 
 /**
  * 合法响应是长度等于 q 个数的数组，元素是字符串（显式 sl），或首项为字符串的数组
@@ -123,18 +133,22 @@ export type ChromeParseResult =
  * 响应的每一项都对应一条非空白输入（空白条目不进请求），而服务对无法翻译的行
  * （♪、...、{\an8}）返回原文，所以空译文是降级答案而不是结果：2026-10-15 的实网冒烟里
  * 有一批 20 条的响应出现过 8 项空串，其余 12 项正常。
+ *
+ * 被拒绝时 `emptyItems` 是空译文的个数：只有这一类拒绝（大于 0）是偶发的降级答案，值得
+ * 用同样的请求再问一次；条数、形状与非数组的拒绝是结构性的，`emptyItems` 为 0。
  */
 export function parseChromeResponse(
   data: unknown,
   expected: number,
 ): ChromeParseResult {
   if (!Array.isArray(data)) {
-    return { ok: false, reason: 'unexpected response' };
+    return { ok: false, reason: 'unexpected response', emptyItems: 0 };
   }
   if (data.length !== expected) {
     return {
       ok: false,
       reason: `expected ${expected} translations, got ${data.length}`,
+      emptyItems: 0,
     };
   }
   const translations: string[] = [];
@@ -144,7 +158,7 @@ export function parseChromeResponse(
     } else if (Array.isArray(item) && typeof item[0] === 'string') {
       translations.push(item[0]);
     } else {
-      return { ok: false, reason: 'unexpected item shape' };
+      return { ok: false, reason: 'unexpected item shape', emptyItems: 0 };
     }
   }
   const empty = translations.filter((translation) => !translation.trim());
@@ -152,6 +166,7 @@ export function parseChromeResponse(
     return {
       ok: false,
       reason: `${empty.length} of ${expected} translations are empty`,
+      emptyItems: empty.length,
     };
   }
   return { ok: true, translations };
