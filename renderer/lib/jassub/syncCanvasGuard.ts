@@ -32,6 +32,9 @@
  * 就不可更改，且画布是交给 Worker 创建上下文的，所以只能在 Worker 内、创建的那一刻拦截。
  * 这个模块由 renderer/lib/jassub-worker-guard-loader.js 注入到 JASSUB Worker 入口的最前面，
  * 因此先于任何渲染器执行；Worker 只在合成预览存在时才会被创建，影响面仅限于它。
+ * 注入只对 JASSUB 默认的 Worker 入口（dist/worker/worker.js）有效：应用若给 JASSUB 传了自定义的
+ * workerUrl，实际运行的 Worker 碰不到这条注入，守卫就不会装上。目前应用不传，
+ * renderer/lib/__tests__/jassubWorkerGuardWiring.test.ts 里有用例盯着。
  *
  * 其它平台保持上游行为不变（问题只在 Windows 上观察到，门禁只是把改动面压到最小）。
  * 代价：字幕画布不再走低延迟呈现，而是与页面同步合成——对编辑预览没有可感知的影响。

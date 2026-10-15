@@ -149,3 +149,51 @@ describe('JASSUB package shape the guard relies on (real jassub)', () => {
     ).toBe(true);
   });
 });
+
+// JASSUB 允许用 opts.workerUrl 换一个自定义的 Worker 脚本（jassub/dist/jassub.js）。那样 webpack 的
+// pre-loader 就碰不到实际运行的 Worker，守卫不会装上，Windows 黑屏会悄悄回来。目前应用从不传它；
+// 将来真要传，得先让那份自定义 Worker 同样装上守卫，再来调整这条用例。
+describe('how the app constructs JASSUB', () => {
+  const RENDERER_DIR = path.resolve(__dirname, '../..');
+  const IGNORED_DIRS = new Set([
+    'node_modules',
+    '.next',
+    'out',
+    'public',
+    '__tests__',
+  ]);
+  const isSource = (name: string) =>
+    /\.(?:[cm]?[jt]s|[jt]sx)$/.test(name) &&
+    !/\.(?:test|d)\.[cm]?[jt]sx?$/.test(name);
+  const IMPORTS_JASSUB =
+    /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*)(['"])jassub(?:\/[^'"]*)?\1/;
+
+  function sourceFiles(dir: string): string[] {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory())
+        return IGNORED_DIRS.has(entry.name) ? [] : sourceFiles(full);
+      return isSource(entry.name) ? [full] : [];
+    });
+  }
+
+  const importers = sourceFiles(RENDERER_DIR).filter((file) =>
+    IMPORTS_JASSUB.test(fs.readFileSync(file, 'utf8')),
+  );
+
+  it('finds the code that imports JASSUB (so the check below is not vacuous)', () => {
+    expect(
+      importers.map((file) => path.relative(RENDERER_DIR, file)),
+    ).toContain(
+      path.join('components', 'subtitleMerge', 'hooks', 'useJassubPreview.ts'),
+    );
+  });
+
+  it('never passes a custom workerUrl, which would bypass the worker guard', () => {
+    expect(
+      importers
+        .filter((file) => /\bworkerUrl\b/.test(fs.readFileSync(file, 'utf8')))
+        .map((file) => path.relative(RENDERER_DIR, file)),
+    ).toEqual([]);
+  });
+});
