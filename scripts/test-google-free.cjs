@@ -323,6 +323,40 @@ test('a response with any empty item is rejected as a whole', () => {
   assert.doesNotMatch(partly.reason, /一|三/, 'the reason carries counts only');
 });
 
+// The lane asks again only when the rejection is about empty items: a degraded answer that the
+// same request is expected to fix. A wrong count or shape is structural and goes straight to gtx.
+test('a rejection that is only about empty items says how many items are empty', () => {
+  assert.equal(
+    protocol.parseChromeResponse(['一', '', '三', ''], 4).emptyItems,
+    2,
+  );
+  assert.equal(protocol.parseChromeResponse(['', ''], 2).emptyItems, 2);
+  assert.equal(
+    protocol.parseChromeResponse(
+      [
+        ['一', 'en'],
+        ['  ', 'en'],
+      ],
+      2,
+    ).emptyItems,
+    1,
+  );
+});
+
+test('count, shape and non-array rejections never claim empty items', () => {
+  for (const [name, data, expected] of [
+    ['wrong count', ['一'], 2],
+    ['wrong count that also has an empty item', ['一', ''], 3],
+    ['not an array', '<html></html>', 2],
+    ['bad item shape', ['一', 5], 2],
+    ['bad item shape beside an empty item', ['', 5], 2],
+  ]) {
+    const result = protocol.parseChromeResponse(data, expected);
+    assert.equal(result.ok, false, name);
+    assert.equal(result.emptyItems, 0, name);
+  }
+});
+
 test('a response without empty items is still accepted', () => {
   assert.deepEqual(protocol.parseChromeResponse(['一', '♪', '...'], 3), {
     ok: true,
@@ -771,19 +805,12 @@ test('chrome serves everything while gtx is blocked and gtx is never asked', () 
     assert.equal(gt.laneState('gtx').coolUntil, 0);
   }));
 
-test('a wrong count, a bad shape or empty answers send the whole chunk to gtx', () =>
+test('a wrong count or a bad shape sends the whole chunk to gtx without asking chrome again', () =>
   withServer(async (server) => {
     const answers = {
       'wrong count': () => ({ data: ['只有一条'] }),
       'html page': () => ({ data: '<html><body>hello</body></html>' }),
       'json object': () => ({ data: { error: 'nope' } }),
-      'all empty': (request) => ({ data: request.texts.map(() => '') }),
-      'one empty': (request) => ({
-        data: request.texts.map((text, i) => (i === 1 ? '' : `C:${text}`)),
-      }),
-      'one blank': (request) => ({
-        data: request.texts.map((text, i) => (i === 2 ? ' \n' : `C:${text}`)),
-      }),
     };
     for (const [name, answer] of Object.entries(answers)) {
       gt.reset();
@@ -806,9 +833,279 @@ test('a wrong count, a bad shape or empty answers send the whole chunk to gtx', 
     }
   }));
 
-test('a batch answered with some empty lines never reaches the output as empty lines', () =>
+// Empty items are the one rejection that is asked for again: the glitch of 2026-10-15 did not come
+// back when the same 20 lines were sent five more times.
+test('an answer that stays degraded after the second ask sends the whole chunk to gtx as one failure', () =>
+  withServer(async (server) => {
+    const answers = {
+      'all empty': (request) => ({ data: request.texts.map(() => '') }),
+      'one empty': (request) => ({
+        data: request.texts.map((text, i) => (i === 1 ? '' : `C:${text}`)),
+      }),
+      'one blank': (request) => ({
+        data: request.texts.map((text, i) => (i === 2 ? ' \n' : `C:${text}`)),
+      }),
+    };
+    for (const [name, answer] of Object.entries(answers)) {
+      gt.reset();
+      server.log.requests.length = 0;
+      server.chrome = answer;
+      const batch = ['One.', 'Two.', 'Three.'];
+      assert.deepEqual(
+        await call(batch),
+        batch.map((text) => `G:${text}`),
+        name,
+      );
+      assert.equal(
+        server.of('chrome').length,
+        2,
+        `${name}: asked once more, not twice`,
+      );
+      assert.equal(server.of('gtx').length, 3, name);
+      assert.equal(
+        gt.laneState('chrome').failures,
+        1,
+        `${name}: one failure, not two`,
+      );
+      assert.equal(
+        gt.laneState('chrome').coolUntil,
+        0,
+        `${name}: not cooling yet`,
+      );
+    }
+  }));
+
+test('a degraded answer is asked for again once and the clean second answer is used', () =>
   withServer(async (server) => {
     // the shape of the live observation: 8 empty answers among 20, the rest fine
+    const emptyAt = new Set([6, 7, 9, 12, 13, 16, 17, 19]);
+    let asked = 0;
+    server.chrome = (request) => {
+      asked += 1;
+      return asked === 1
+        ? {
+            data: request.texts.map((text, i) =>
+              emptyAt.has(i) ? '' : `C:${text}`,
+            ),
+          }
+        : undefined; // the default, clean answer
+    };
+    const batch = lines(20);
+    assert.deepEqual(
+      await call(batch),
+      batch.map((text) => `C:${text}`),
+      'every line comes from the second answer',
+    );
+    assert.equal(server.of('chrome').length, 2);
+    assert.equal(server.of('gtx').length, 0);
+    const [first, second] = server.of('chrome');
+    assert.equal(second.url, first.url, 'the same request is sent again');
+    assert.equal(gt.laneState('chrome').failures, 0);
+    assert.equal(gt.laneState('chrome').coolUntil, 0);
+    assert.deepEqual(logs, [], 'asking again writes no log line');
+  }));
+
+test('every chunk gets its own second ask', () =>
+  withServer(async (server) => {
+    // 60 lines are two chunks (50 + 10); asks 1 and 3 are degraded, asks 2 and 4 are clean
+    let asked = 0;
+    server.chrome = (request) => {
+      asked += 1;
+      return asked % 2 === 1
+        ? {
+            data: request.texts.map((text, i) => (i === 0 ? '' : `C:${text}`)),
+          }
+        : undefined;
+    };
+    const batch = lines(60);
+    assert.deepEqual(
+      await call(batch),
+      batch.map((text) => `C:${text}`),
+    );
+    assert.equal(server.of('chrome').length, 4);
+    assert.equal(server.of('gtx').length, 0);
+    assert.equal(gt.laneState('chrome').failures, 0);
+  }));
+
+test('the second ask is preceded by an acquire on the shared key', () =>
+  withServer(async (server) => {
+    const realAcquire = rateLimiter.acquire;
+    rateLimiter.acquire = async (key, cfg, signal) => {
+      server.events.push(`acquire:${key}`);
+      return realAcquire(key, cfg, signal);
+    };
+    try {
+      const proof = nextProof();
+      let asked = 0;
+      server.chrome = (request) => {
+        asked += 1;
+        return asked === 1 ? { data: request.texts.map(() => '') } : undefined;
+      };
+      await call(['One.', 'Two.'], { proof });
+      const key = `acquire:googleFree:${proof.id}`;
+      assert.deepEqual(server.events, [
+        key,
+        'request:chrome',
+        key,
+        'request:chrome',
+      ]);
+    } finally {
+      rateLimiter.acquire = realAcquire;
+    }
+  }));
+
+test('cancelling while the second ask waits for the rate limiter stops it without a failure', () =>
+  withServer(async (server) => {
+    const controller = new AbortController();
+    const proof = nextProof({ requestInterval: 1 });
+    server.chrome = (request) => {
+      setTimeout(() => controller.abort(), 100);
+      return { data: request.texts.map(() => '') };
+    };
+    const started = Date.now();
+    await assert.rejects(
+      () =>
+        call(['One.', 'Two.'], {
+          proof,
+          options: { signal: controller.signal },
+        }),
+      (error) => isTaskCancelledError(error),
+    );
+    assert(Date.now() - started < 700, 'did not wait out the interval');
+    assert.equal(server.of('chrome').length, 1, 'the second ask is not sent');
+    assert.equal(server.of('gtx').length, 0, 'no fallback after a cancel');
+    assert.equal(gt.laneState('chrome').failures, 0);
+    assert.equal(gt.laneState('chrome').coolUntil, 0);
+  }));
+
+test('a second ask that fails counts as the one failure of the chunk', () =>
+  withServer(async (server) => {
+    let asked = 0;
+    server.chrome = (request) => {
+      asked += 1;
+      return asked === 1 ? { data: request.texts.map(() => '') } : failing(500);
+    };
+    const batch = ['One.', 'Two.'];
+    assert.deepEqual(
+      await call(batch),
+      batch.map((text) => `G:${text}`),
+    );
+    assert.equal(server.of('chrome').length, 2);
+    assert.equal(server.of('gtx').length, 2);
+    assert.equal(gt.laneState('chrome').failures, 1);
+  }));
+
+test('a second ask that is blocked cools the lane as a block', () =>
+  withServer(async (server) => {
+    const clock = useFakeClock();
+    try {
+      let asked = 0;
+      server.chrome = (request) => {
+        asked += 1;
+        return asked === 1 ? { data: request.texts.map(() => '') } : blocked();
+      };
+      const batch = ['One.', 'Two.'];
+      assert.deepEqual(
+        await call(batch),
+        batch.map((text) => `G:${text}`),
+      );
+      assert.equal(server.of('chrome').length, 2);
+      assert.equal(gt.laneState('chrome').level, 1);
+      assert.equal(coolFor('chrome'), 10 * MINUTE);
+      const warnings = logs.filter((entry) => entry.type === 'warning');
+      assert.equal(warnings.length, 1);
+      assert.match(
+        warnings[0].message,
+        /chrome lane blocked, cooling down for 600 s/,
+      );
+    } finally {
+      clock.restore();
+    }
+  }));
+
+test('a probe whose first answer is degraded recovers the lane when the second ask is clean', () =>
+  withServer(async (server) => {
+    const clock = useFakeClock();
+    try {
+      server.chrome = () => blocked();
+      await call(['One.']);
+      clock.advance(10 * MINUTE + 1000);
+      const before = server.of('chrome').length;
+      let asked = 0;
+      server.chrome = (request) => {
+        asked += 1;
+        return asked === 1 ? { data: request.texts.map(() => '') } : undefined;
+      };
+      assert.deepEqual(await call(['Back.']), ['C:Back.']);
+      assert.equal(server.of('chrome').length - before, 2);
+      assert.equal(gt.laneState('chrome').coolUntil, 0);
+      assert.equal(gt.laneState('chrome').probing, false);
+      const recovered = logs.filter((entry) =>
+        /chrome lane recovered/.test(entry.message),
+      );
+      assert.equal(recovered.length, 1);
+    } finally {
+      clock.restore();
+    }
+  }));
+
+test('a probe whose second ask is degraded too fails once, cools for 120 s and keeps the block level', () =>
+  withServer(async (server) => {
+    const clock = useFakeClock();
+    try {
+      server.chrome = () => blocked();
+      await call(['One.']);
+      clock.advance(10 * MINUTE + 1000);
+      const before = server.of('chrome').length;
+      server.chrome = (request) => ({ data: request.texts.map(() => '') });
+      assert.deepEqual(await call(['Two.']), ['G:Two.']);
+      assert.equal(server.of('chrome').length - before, 2);
+      assert.equal(coolFor('chrome'), 120_000);
+      assert.equal(gt.laneState('chrome').level, 1);
+      assert.equal(gt.laneState('chrome').probing, false);
+    } finally {
+      clock.restore();
+    }
+  }));
+
+test('the probe slot is held until the second ask ends', () =>
+  withServer(async (server) => {
+    const clock = useFakeClock();
+    try {
+      server.chrome = () => blocked();
+      await call(['One.']);
+      clock.advance(10 * MINUTE + 1000);
+
+      let release;
+      const gate = new Promise((resolve) => {
+        release = resolve;
+      });
+      let asked = 0;
+      server.chrome = (request) => {
+        asked += 1;
+        if (asked === 1) return { data: request.texts.map(() => '') };
+        return gate.then(() => undefined); // answered cleanly once released
+      };
+      const probe = call(['Probe.']);
+      // the blocked call + the probe's two asks; bounded, so a missing second ask fails fast
+      for (let i = 0; i < 200 && server.of('chrome').length < 3; i += 1) {
+        await sleep(5);
+      }
+      assert.equal(server.of('chrome').length, 3, 'the probe asked twice');
+      // chrome is still held by the probe: another call goes straight to gtx
+      assert.deepEqual(await call(['Other.']), ['G:Other.']);
+      assert.equal(server.of('chrome').length, 3);
+      release();
+      assert.deepEqual(await probe, ['C:Probe.']);
+      assert.equal(gt.laneState('chrome').coolUntil, 0);
+    } finally {
+      clock.restore();
+    }
+  }));
+
+test('a batch answered with some empty lines never reaches the output as empty lines', () =>
+  withServer(async (server) => {
+    // the shape of the live observation: 8 empty answers among 20, the rest fine, both times
     const emptyAt = new Set([6, 7, 9, 12, 13, 16, 17, 19]);
     server.chrome = (request) => ({
       data: request.texts.map((text, i) => (emptyAt.has(i) ? '' : `C:${text}`)),
@@ -824,7 +1121,7 @@ test('a batch answered with some empty lines never reaches the output as empty l
       result.every((line) => line.trim() !== ''),
       'no empty line is returned',
     );
-    assert.equal(server.of('chrome').length, 1);
+    assert.equal(server.of('chrome').length, 2, 'asked once more, not twice');
     assert.equal(server.of('gtx').length, 20);
   }));
 

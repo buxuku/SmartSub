@@ -37,6 +37,8 @@ const GTX_ENDPOINT = 'https://translate.googleapis.com/translate_a/single';
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const CHROME_TIMEOUT_MS = 15_000;
+/** 一块在 chrome 上最多问 2 次：只有因空项被拒绝的块才会问第二次（见 requestChrome）。 */
+const CHROME_MAX_ASKS = 2;
 const BLOCKED_BASE_COOLDOWN_MS = 10 * 60_000;
 const BLOCKED_MAX_COOLDOWN_MS = 60 * 60_000;
 const FAILURE_THRESHOLD = 3;
@@ -199,33 +201,38 @@ export function getGoogleFreeAvailability(): {
 // 两条通道的请求
 // ---------------------------------------------------------------------------
 
-/** chrome 通道：一块一个请求，整块有效或整块作废。 */
+/**
+ * chrome 通道：一块一个请求，整块有效或整块作废。仅因空项被拒绝的块（偶发的降级答案）用
+ * 同样的请求整块再问一次，不混用两次的响应；条数与形状异常不重发。再问一次与其它请求一样先
+ * `acquire`、响应取消、不写日志；两次合计在通道上最多算一次失败（由调用方记录）。
+ */
 async function requestChrome(
   texts: string[],
   sl: string,
   tl: string,
   ctx: CallContext,
 ): Promise<string[]> {
-  await acquire(ctx.rateKey, ctx.rateCfg, ctx.signal);
-  let response;
-  try {
-    response = await axios.get(
-      `${CHROME_ENDPOINT}?${buildChromeQuery(texts, sl, tl)}`,
-      {
+  const url = `${CHROME_ENDPOINT}?${buildChromeQuery(texts, sl, tl)}`;
+  for (let ask = 1; ; ask += 1) {
+    await acquire(ctx.rateKey, ctx.rateCfg, ctx.signal);
+    let response;
+    try {
+      response = await axios.get(url, {
         headers: { 'User-Agent': USER_AGENT },
         timeout: CHROME_TIMEOUT_MS,
         signal: ctx.signal,
-      },
-    );
-  } catch (error) {
+      });
+    } catch (error) {
+      throwIfSignalCancelled(ctx.signal);
+      throw toLaneFailure(error);
+    }
     throwIfSignalCancelled(ctx.signal);
-    throw toLaneFailure(error);
-  }
-  throwIfSignalCancelled(ctx.signal);
 
-  const parsed = parseChromeResponse(response.data, texts.length);
-  if (!parsed.ok) throw new LaneFailure('failure', parsed.reason);
-  return parsed.translations;
+    const parsed = parseChromeResponse(response.data, texts.length);
+    if (parsed.ok) return parsed.translations;
+    if (parsed.emptyItems > 0 && ask < CHROME_MAX_ASKS) continue;
+    throw new LaneFailure('failure', parsed.reason);
+  }
 }
 
 /** gtx 通道：沿用原有请求，一条文本一个请求；任何一条失败则整块失败。 */
