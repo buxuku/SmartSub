@@ -300,22 +300,34 @@ test('responses with [text, language] pairs are accepted and the language is ign
   });
 });
 
-test('a partly empty answer is kept, an all-empty one is rejected', () => {
-  assert.deepEqual(protocol.parseChromeResponse(['一', ''], 2), {
-    ok: true,
-    translations: ['一', ''],
-  });
-  for (const data of [
-    ['', ''],
-    ['  ', '\n'],
-    [
-      ['', 'en'],
+// Every item of a chunk answers a non-blank input, and the service returns the input itself for
+// lines it cannot translate (♪, ..., {\an8}), so an empty item is a degraded answer, not a result.
+// A live smoke on 2026-10-15 got 8 empty items out of 20 once; the other 12 were correct.
+test('a response with any empty item is rejected as a whole', () => {
+  for (const [name, data] of Object.entries({
+    'one of two': ['一', ''],
+    'first of two': ['', '二'],
+    'all empty': ['', ''],
+    'whitespace only': ['一', '  \n'],
+    'pair with empty text': [
+      ['一', 'en'],
       ['', 'en'],
     ],
-  ]) {
+  })) {
     const result = protocol.parseChromeResponse(data, 2);
-    assert.equal(result.ok, false, JSON.stringify(data));
+    assert.equal(result.ok, false, name);
+    assert(!('translations' in result), `${name}: no partial result`);
   }
+  const partly = protocol.parseChromeResponse(['一', '', '三', ''], 4);
+  assert.equal(partly.reason, '2 of 4 translations are empty');
+  assert.doesNotMatch(partly.reason, /一|三/, 'the reason carries counts only');
+});
+
+test('a response without empty items is still accepted', () => {
+  assert.deepEqual(protocol.parseChromeResponse(['一', '♪', '...'], 3), {
+    ok: true,
+    translations: ['一', '♪', '...'],
+  });
 });
 
 test('a wrong count is a protocol failure without partial results', () => {
@@ -766,6 +778,12 @@ test('a wrong count, a bad shape or empty answers send the whole chunk to gtx', 
       'html page': () => ({ data: '<html><body>hello</body></html>' }),
       'json object': () => ({ data: { error: 'nope' } }),
       'all empty': (request) => ({ data: request.texts.map(() => '') }),
+      'one empty': (request) => ({
+        data: request.texts.map((text, i) => (i === 1 ? '' : `C:${text}`)),
+      }),
+      'one blank': (request) => ({
+        data: request.texts.map((text, i) => (i === 2 ? ' \n' : `C:${text}`)),
+      }),
     };
     for (const [name, answer] of Object.entries(answers)) {
       gt.reset();
@@ -786,6 +804,37 @@ test('a wrong count, a bad shape or empty answers send the whole chunk to gtx', 
         `${name}: not cooling yet`,
       );
     }
+  }));
+
+test('a batch answered with some empty lines never reaches the output as empty lines', () =>
+  withServer(async (server) => {
+    // the shape of the live observation: 8 empty answers among 20, the rest fine
+    const emptyAt = new Set([6, 7, 9, 12, 13, 16, 17, 19]);
+    server.chrome = (request) => ({
+      data: request.texts.map((text, i) => (emptyAt.has(i) ? '' : `C:${text}`)),
+    });
+    const batch = lines(20);
+    const result = await call(batch);
+    assert.deepEqual(
+      result,
+      batch.map((text) => `G:${text}`),
+      'the whole chunk is translated again, line by line',
+    );
+    assert(
+      result.every((line) => line.trim() !== ''),
+      'no empty line is returned',
+    );
+    assert.equal(server.of('chrome').length, 1);
+    assert.equal(server.of('gtx').length, 20);
+  }));
+
+test('a batch answered with some empty lines fails the call when gtx is blocked, instead of returning them', () =>
+  withServer(async (server) => {
+    server.chrome = (request) => ({
+      data: request.texts.map((text, i) => (i % 3 === 0 ? '' : `C:${text}`)),
+    });
+    server.gtx = () => blocked();
+    await rejectsMessage(() => call(lines(6)), NETWORK_PREFIX);
   }));
 
 test('when gtx fails halfway the chunk fails and chrome is not asked again', () =>
