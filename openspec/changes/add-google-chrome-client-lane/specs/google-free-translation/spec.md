@@ -76,7 +76,7 @@ chrome 通道的每个请求 MUST 是对 `https://translate.googleapis.com/trans
 
 ### Requirement: chrome 通道的响应解析与对齐
 
-chrome 响应 MUST 是长度等于本块 `q` 个数的数组；每个元素 MUST 是字符串（显式 `sl`），或首元素为字符串的数组（`sl=auto` 时附带检测到的语言），两种形状都 MUST 被接受。长度不符、元素形状不符，或任何一项译文为空（空串或全空白），MUST 被视为 chrome 通道在本块失败并计入该通道的失败计数，该块 MUST 改走 gtx 通道；系统 MUST NOT 返回该块的部分 chrome 结果。译文 MUST NOT 被二次改写。
+chrome 响应 MUST 是长度等于本块 `q` 个数的数组；每个元素 MUST 是字符串（显式 `sl`），或首元素为字符串的数组（`sl=auto` 时附带检测到的语言），两种形状都 MUST 被接受。长度不符、元素形状不符，或任何一项译文为空（空串或全空白），MUST 被视为 chrome 通道在本块失败并计入该通道的失败计数，该块 MUST 改走 gtx 通道；系统 MUST NOT 返回该块的部分 chrome 结果。唯一的例外是仅因译文为空而被拒绝的块：系统 MUST 在 chrome 通道内用相同的请求把该块重发一次，且仅一次；重发得到有效响应则 MUST 使用它，且这一块不算失败；重发的响应仍被拒绝、或重发的请求本身失败，则按上述规则处理，且该块在 chrome 通道上最多计一次失败。长度不符与元素形状不符 MUST NOT 重发。重发 MUST 与其它请求一样先 `acquire`、响应取消，且 MUST NOT 产生额外日志。译文 MUST NOT 被二次改写。
 
 #### Scenario: 显式源语言的字符串数组
 
@@ -100,13 +100,33 @@ chrome 响应 MUST 是长度等于本块 `q` 个数的数组；每个元素 MUST
 
 #### Scenario: 全部译文为空
 
-- **WHEN** 本块 3 个非空输入对应的译文都是空串
-- **THEN** 视为协议异常，该块改走 gtx 通道
+- **WHEN** 本块 3 个非空输入对应的译文都是空串，重发的响应同样全空
+- **THEN** 共发出 2 个 chrome 请求后视为协议异常，该块改走 gtx 通道，chrome 通道的失败计数加 1
 
-#### Scenario: 部分译文为空
+#### Scenario: 部分译文为空，重发后恢复
 
-- **WHEN** 本块 20 个非空输入中有 8 项译文是空串或全空白，其余 12 项正常
-- **THEN** 整块 chrome 结果被丢弃，不使用其中任何一项；该块改走 gtx 通道，chrome 通道的失败计数加 1；gtx 通道也失败时，调用以 `(network)` 错误失败，不返回带空行的结果
+- **WHEN** 本块 20 个非空输入中有 8 项译文是空串或全空白，其余 12 项正常；同样的请求重发一次，响应的 20 项都正常
+- **THEN** 使用重发的响应，不使用首次响应里的任何一项；该块不改走 gtx 通道，chrome 通道的失败计数不变，共 2 个 chrome 请求、0 个 gtx 请求，且不产生额外日志
+
+#### Scenario: 重发后仍有空项
+
+- **WHEN** 首次响应与重发的响应都含空项
+- **THEN** 不再重发；该块改走 gtx 通道，chrome 通道的失败计数只加 1（不是 2）；gtx 通道也失败时，调用以 `(network)` 错误失败，不返回带空行的结果
+
+#### Scenario: 条数或形状不符不重发
+
+- **WHEN** 响应条数不符，或形状异常
+- **THEN** 只发出 1 个 chrome 请求，该块直接改走 gtx 通道
+
+#### Scenario: 重发遵守限速与取消
+
+- **WHEN** 首次响应含空项，重发尚未发出
+- **THEN** 重发与其它请求一样先 `acquire`；此时任务被取消则不再发出重发请求，调用以任务取消错误结束，不计入通道失败
+
+#### Scenario: 探测中的重发属于同一次探测
+
+- **WHEN** 冷却结束后的探测请求得到含空项的响应，重发的响应正常
+- **THEN** 通道恢复，只记一条「recovered」日志；若重发仍含空项，则这次探测算失败，通道再冷却 120 秒，退避等级不变
 
 #### Scenario: 不可译的行返回原文是有效答案
 
@@ -202,7 +222,7 @@ chrome 响应 MUST 是长度等于本块 `q` 个数的数组；每个元素 MUST
 
 ### Requirement: 限速、超时与取消
 
-两条通道 MUST 共用限速键 `googleFree:<providerId>`（`providerId` 取服务商配置的 `id`，缺省为 `googleFree`），每个 HTTP 请求（chrome 一块、gtx 一条、探测、切换后的重发）发出前 MUST 先 `acquire`；`windowMaxRequests` 按请求数而不是按行数计。chrome 通道的请求超时 MUST 为 15 秒；gtx 通道的超时 MUST 保持现有取值。请求 MUST 使用与现状相同的 `axios`（自动跟随全局代理）与同一个 UA，MUST NOT 新增请求头。取消信号 MUST 贯穿请求与限速等待。
+两条通道 MUST 共用限速键 `googleFree:<providerId>`（`providerId` 取服务商配置的 `id`，缺省为 `googleFree`），每个 HTTP 请求（chrome 一块、chrome 空项重发、gtx 一条、探测、切换后的重发）发出前 MUST 先 `acquire`；`windowMaxRequests` 按请求数而不是按行数计。chrome 通道的请求超时 MUST 为 15 秒；gtx 通道的超时 MUST 保持现有取值。请求 MUST 使用与现状相同的 `axios`（自动跟随全局代理）与同一个 UA，MUST NOT 新增请求头。取消信号 MUST 贯穿请求与限速等待。
 
 #### Scenario: 两条通道共用限速键
 
