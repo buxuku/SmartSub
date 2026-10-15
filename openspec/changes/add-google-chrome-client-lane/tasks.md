@@ -3,14 +3,14 @@
 ## 1. Decisions and provenance
 
 - [x] 1.1 Confirm the scope (two lanes inside `googleFree`, option B) and the lane order (chrome first) with the maintainer. (Confirmed 2026-10-15; recorded in design OQ1 and OQ2.)
-- [ ] 1.2 Before coding, re-probe the chrome lane live with a handful of requests (one canary per client, a 5-line batch with both `sl` forms, a request near the 6,000-byte budget) and note the date in the PR description. Write the implementation from the facts in design "证据"; do not read or copy third-party implementation code.
+- [x] 1.2 Before coding, re-probe the chrome lane live with a handful of requests (one canary per client, a 5-line batch with both `sl` forms, a request near the 6,000-byte budget) and note the date in the PR description. Write the implementation from the facts in design "证据"; do not read or copy third-party implementation code. (Done 2026-10-15, 9 requests: gtx canary 429 + Sorry page; chrome canary 200; 5-line batch 200 in both `sl` forms, aligned; a single `q` with `sl=auto` returns `[["译文","en"]]`, the same pair shape as a batch; 14 `q` / 4,017 B and 20 `q` / 5,727 B both 200 and aligned.)
 
 ## 2. Protocol module (pure functions)
 
-- [ ] 2.1 Add `main/service/googleFreeProtocol.ts` with `buildChromeQuery`: a hand-built query string with a repeated `q` (never `q[]`), percent-encoded text and per-line truncation to 5,000 characters.
-- [ ] 2.2 Add chunk planning: at most 50 `q` and 6,000 encoded bytes per request (counting `client`, `sl` and `tl`), an oversize single line alone in its chunk, blank lines left out of the request and restored by position.
-- [ ] 2.3 Add response parsing for both shapes (string items and `[text, language]` items) that validates the count, the item shape and the all-empty case, and returns a typed protocol failure instead of partial results.
-- [ ] 2.4 Add abuse-page classification: 429 or 403 plus `unusual traffic`, `automated queries` or `/sorry/` (case-insensitive; string or already-parsed object bodies); everything else is an ordinary failure.
+- [x] 2.1 Add `main/service/googleFreeProtocol.ts` with `buildChromeQuery`: a hand-built query string with a repeated `q` (never `q[]`), percent-encoded text and per-line truncation to 5,000 characters.
+- [x] 2.2 Add chunk planning: at most 50 `q` and 6,000 encoded bytes per request (counting `client`, `sl` and `tl`), an oversize single line alone in its chunk, blank lines left out of the request and restored by position.
+- [x] 2.3 Add response parsing for both shapes (string items and `[text, language]` items) that validates the count, the item shape and the all-empty case, and returns a typed protocol failure instead of partial results.
+- [x] 2.4 Add abuse-page classification: 429 or 403 plus `unusual traffic`, `automated queries` or `/sorry/` (case-insensitive; string or already-parsed object bodies); everything else is an ordinary failure.
 
 ## 3. Translator
 
@@ -40,7 +40,7 @@
 
 ## 6. Tests
 
-- [ ] 6.1 Add `scripts/test-google-free.cjs` (same mock-`axios` and TypeScript-transpile setup as `test-free-translators.cjs`) and chain it into `test:free-translators` in `package.json`. First cover the pure functions: the query string (repeated `q`, no `q[]`, encoding of `&`, `#`, `+`, `%`, newline and emoji), chunking (50 lines, 6,000 bytes, oversize single line, blank positions), parsing (both shapes and every malformed shape) and abuse classification.
+- [x] 6.1 Add `scripts/test-google-free.cjs` (same mock-`axios` and TypeScript-transpile setup as `test-free-translators.cjs`) and chain it into `test:free-translators` in `package.json`. First cover the pure functions: the query string (repeated `q`, no `q[]`, encoding of `&`, `#`, `+`, `%`, newline and emoji), chunking (50 lines, 6,000 bytes, oversize single line, blank positions), parsing (both shapes and every malformed shape) and abuse classification.
 - [ ] 6.2 Add translator tests: chrome-only success with zero gtx requests; chrome blocked → gtx, with later chunks skipping chrome; the reverse direction (gtx blocked, chrome healthy); mixed lanes inside one call with the order preserved; count mismatch, bad shape and all-empty → gtx; the `sl=auto` shape; blank-line restoration; both lanes failing; both lanes cooling → zero requests.
 - [ ] 6.3 Add health tests with a fake clock (stub `Date.now`): 10/20/40/60/60-minute backoff, 3 strikes → 120 s, a single probe with concurrent callers, success reset, cancellation not counted and the probe flag released, a plain 429/403 without a marker, and the `getGoogleFreeAvailability()` values.
 - [ ] 6.4 Add tests for the shared rate-limit key, the 15 s chrome timeout, cancellation, error classification (`(network)` prefix, `isConfigurationError` false, `not supported language` with zero requests) and log privacy (no subtitle text, URL, translation or body in logs or errors).
