@@ -1,0 +1,113 @@
+# TEMPORARY — only for verifying issue #547; do not merge into main.
+#
+# 在 GitHub 托管 runner 上用 Fedora 44 容器复刻提问者的用户态环境
+# （NVIDIA 官方 Fedora 44 源的 CUDA 13.4 运行时，不安装 NCCL，无显卡），验证：
+#   1. 复现：当前 latest 的 Linux CUDA addon 加载失败，报 libnccl.so.2 缺失
+#   2. 临时方案：引入 NCCL 之前的历史 addon 能正常加载
+#   3. 对照：给坏包补一个 stub libnccl.so.2 后能加载（排除环境本身的问题）
+name: addon-load-repro (temporary)
+
+on:
+  push:
+    branches: [tmp/verify-nccl-addon]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: addon-load-repro-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REPO: buxuku/whisper.cpp
+  ASSET: addon-linux-cuda-1302-optimized.node.gz
+  # 当前 latest；提问者装的就是这一版（解压后 219572144 字节）
+  BAD_TAG: release-20261013-135642
+  # 引入 NCCL 之前的最后一次构建
+  GOOD_TAG: release-20260611-130108
+  IMAGE: quay.io/fedora/fedora:44
+
+jobs:
+  load-test:
+    name: Fedora 44 + CUDA 13.4 runtime (no NCCL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/addon-load-repro
+
+      - name: Download the addons and check them against GitHub's recorded digests
+        run: |
+          set -euo pipefail
+          mkdir -p work/bad work/good
+          digest() { gh release view "$1" --repo "$REPO" --json assets --jq ".assets[] | select(.name==\"$ASSET\") | .digest"; }
+          for pair in "bad:$BAD_TAG" "good:$GOOD_TAG"; do
+            name=${pair%%:*}; tag=${pair#*:}
+            curl -fsSL --retry 3 --retry-delay 5 --max-time 900 \
+              -o "work/$name/addon.node.gz" \
+              "https://github.com/$REPO/releases/download/$tag/$ASSET"
+            got="sha256:$(sha256sum "work/$name/addon.node.gz" | cut -d' ' -f1)"
+            want="$(digest "$tag")"
+            echo "$name ($tag): downloaded=$got github=$want"
+            [ "$got" = "$want" ] || { echo "::error::digest mismatch for $name"; exit 1; }
+            gunzip -f "work/$name/addon.node.gz"
+            ls -l "work/$name/addon.node"
+          done
+          echo "latest digest        : $(digest latest)"
+          echo "$BAD_TAG digest: $(digest "$BAD_TAG")"
+          if [ "$(digest latest)" = "$(digest "$BAD_TAG")" ]; then
+            echo "latest is identical to $BAD_TAG"
+          else
+            echo "::warning::latest no longer matches $BAD_TAG"
+          fi
+          echo "bad addon size: $(stat -c%s work/bad/addon.node) bytes (the reporter's installed 13.0.2 addon: 219572144)"
+
+      - name: Static view of the addons (readelf / nm)
+        run: |
+          for name in bad good; do
+            echo "===== $name"
+            readelf -d "work/$name/addon.node" | grep -E 'NEEDED|RUNPATH|RPATH|SONAME'
+            echo "--- versioned library requirements (File: lines):"
+            readelf -V "work/$name/addon.node" | grep -E 'File:' || true
+            echo "--- NCCL symbols imported:"
+            nm -D --undefined-only "work/$name/addon.node" | grep -i nccl || echo "(none)"
+          done
+
+      - name: Build a stub libnccl.so.2 (control case only)
+        run: |
+          set -euo pipefail
+          mkdir -p work/stub
+          # Only the nccl* symbols the bad addon really imports; nothing is ever called.
+          nm -D --undefined-only work/bad/addon.node | awk '$1=="U" && $2 ~ /^nccl/ {print $2}' | sort -u > work/stub/imports.txt
+          cat work/stub/imports.txt
+          sed 's/@.*//' work/stub/imports.txt | sort -u | awk '{printf "int %s(void) { return 0; }\n", $1}' > work/stub/stub.c
+          gcc -shared -fPIC -Wl,-soname,libnccl.so.2 -o work/stub/libnccl.so.2 work/stub/stub.c
+          readelf -d work/stub/libnccl.so.2 | grep SONAME
+          nm -D --defined-only work/stub/libnccl.so.2
+
+      - name: Load the addons in a clean Fedora 44 container
+        run: |
+          docker run --rm \
+            -e BAD_TAG -e GOOD_TAG \
+            -v "$PWD/work:/work" \
+            -v "$PWD/.github/addon-load-repro/run-in-container.sh:/run.sh:ro" \
+            "$IMAGE" bash /run.sh
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## addon load repro — Fedora 44 + CUDA 13.4 runtime, no NCCL"
+            echo
+            if [ -f work/verdict.md ]; then cat work/verdict.md; fi
+            echo
+            echo '| case | dlopen mode | result | message |'
+            echo '|---|---|---|---|'
+            if [ -f work/results.tsv ]; then
+              awk -F'\t' '{printf "| %s | %s | %s | `%s` |\n", $1, $2, $3, $4}' work/results.tsv
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
