@@ -193,7 +193,6 @@
     "@alicloud/openapi-client": "^0.4.14",
     "@alicloud/tea-typescript": "^1.8.0",
     "@alicloud/tea-util": "^1.4.10",
-    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@hookform/resolvers": "^3.4.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@radix-ui/react-alert-dialog": "^1.0.5",
@@ -265,6 +264,7 @@
     "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@playwright/test": "^1.63.0",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^6.10.0",

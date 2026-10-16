@@ -7,11 +7,33 @@ directories:
 extraResources:
   - from: app/automation
     to: automation
+    filter:
+      - '**/*'
+      # source map 运行时不会被读取（无 source-map-support / --enable-source-maps）
+      - '!**/*.map'
 files:
   - from: .
     filter:
       - package.json
       - app
+      # ---- 以下均为运行时不会加载的文件，排除不影响任何功能 ----
+      # source map 同上（background / preload）
+      - '!app/{background,preload}.js.map'
+      # app/automation 打包后只从 extraResources（Resources/automation）读取：
+      # main/automation/mcpSetup.ts 中 app.isPackaged 时取 process.resourcesPath/automation，
+      # asar 内 app/automation 仅开发模式使用，asar 里的这份是重复拷贝（含 cli.cjs.map）。
+      # macOS / Linux 上 electron-builder 会因上面 extraResources 的 filter 隐式排除它，
+      # Windows 上该隐式排除不生效，这里显式排除，保证各平台一致
+      - '!app/automation{,/**/*}'
+      # tinyld：代码只 `import 'tinyld'`（require 条件 => dist/tinyld.normal.node.js），
+      # heavy / light / browser 构建、playground、集成测试与截图都不会被加载
+      - '!node_modules/tinyld/{playground,tests-integration}{,/**/*}'
+      - '!node_modules/tinyld/dist/tinyld.heavy.*'
+      - '!node_modules/tinyld/dist/tinyld.light.*'
+      - '!node_modules/tinyld/dist/*.browser.js'
+      - '!node_modules/tinyld/*.png'
+      # fluent-ffmpeg：只需要 lib/ 与入口，覆盖率报告 / 文档 / 工具脚本 / 旧版代码无用
+      - '!node_modules/fluent-ffmpeg/{coverage,doc,tools,OLD}{,/**/*}'
 publish:
   - provider: github
 generateUpdatesFilesForAllChannels: true
@@ -43,6 +65,11 @@ mac:
       to: ./extraResources/sherpa/
       filter:
         - '**/*'
+        # 无版本号的 libonnxruntime.dylib 与 libonnxruntime.<ver>.dylib 是同一个库的两份拷贝
+        # （去掉 ad-hoc 签名后逐字节相同，install name 也相同）。sherpa-onnx.node /
+        # libsherpa-onnx-{c,cxx}-api 均以 @loader_path/libonnxruntime.<ver>.dylib 链接，
+        # 代码中也无按无版本名加载的逻辑，保留带版本号的一份即可
+        - '!**/libonnxruntime.dylib'
 win:
   target:
     - nsis
