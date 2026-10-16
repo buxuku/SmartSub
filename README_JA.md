@@ -16,7 +16,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square&logo=electron&logoColor=white)](https://github.com/buxuku/SmartSub/releases)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](https://github.com/buxuku/SmartSub/blob/master/LICENSE)
 
-[中文](README.md) | [English](README_EN.md) | [日本語](README_JA.md)
+[中文](README.md) | [English](README_EN.md) | [日本語](README_JA.md) | [Türkçe](README_TR.md)
 
 [ダウンロード](#ダウンロードとインストール) · [機能](#機能) · [AI アシスタント＆自動化](#-ai-創作アシスタントコパイロット) · [無料ワークフロー](#完全無料のワークフロー) · [FAQ](#faq) · [更新履歴](https://github.com/buxuku/SmartSub/releases)
 
