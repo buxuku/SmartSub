@@ -1,0 +1,160 @@
+# TEMPORARY — only for verifying issue #547; do not merge into main.
+#
+# 验证 whisper.cpp 的【真实 dry-run 构建】（workflow_dispatch + publish=false，不发布）产出的 Linux CUDA addon：
+#   1. 构建本身成功，且发布步骤全部被跳过（没有创建 release、没有动 latest）
+#   2. addon 的 DT_NEEDED 里没有 libnccl；构建里用的守卫放行新包、仍然拒绝已知坏包；Full tar.gz 内容正确
+#   3. 提问者的环境（Fedora 44 + CUDA 13.4，无 NCCL）里新 1302 能 dlopen，而坏包在同一环境里复现 libnccl 报错
+#   4. Ubuntu 22.04 + CUDA 12.4 运行时（无 NCCL）里新 1240 能 dlopen
+#   5. Full 包放进没有 CUDA toolkit 的干净容器：包内容自洽；应用的加载方式能不能找到包里的库
+#
+# 产物只保留 1 天（builder.yml 里 retention-days: 1），要在构建结束后一天内跑完。
+# matrix 里 run 为空的那一行是 selftest：用 2026-06-11 的旧 addon 顶替“新构建”，只为先把容器里的脚本跑通，不是证据。
+name: addon-build-verify (temporary)
+
+on:
+  push:
+    branches: [tmp/verify-nccl-addon]
+    paths:
+      - .github/workflows/addon-build-verify.yml
+      - .github/addon-build-verify/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: addon-build-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WCPP_REPO: buxuku/whisper.cpp
+  # 已知坏包：2026-10-13 的构建，带 libnccl.so.2（固定 tag，不用会变的 latest）
+  BAD_TAG: release-20261013-135642
+  # 已知好包：引入 NCCL 之前的最后一次构建
+  GOOD_TAG: release-20260611-130108
+
+jobs:
+  verify:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: selftest (06-11 addons stand in for a new build)
+            run: ''
+            expect_origin: 'no'
+            expect_a: 'info'
+    steps:
+      - name: Checkout the verification scripts
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/addon-build-verify
+            .github/addon-preflight
+
+      - name: Fetch the published known-bad (2026-10-13) and known-good (2026-06-11) addons
+        run: |
+          set -euo pipefail
+          mkdir -p work/in
+          for v in 1240 1302; do
+            for kind in bad good; do
+              if [ "$kind" = bad ]; then tag="$BAD_TAG"; else tag="$GOOD_TAG"; fi
+              curl -fL --retry 3 -o "work/in/$kind-$v.node.gz" \
+                "https://github.com/$WCPP_REPO/releases/download/$tag/addon-linux-cuda-$v-optimized.node.gz"
+              gunzip -f "work/in/$kind-$v.node.gz"
+            done
+          done
+          ls -l work/in
+
+      - name: "Build under test: inspect the run, download and check the artifacts (host)"
+        if: ${{ matrix.run != '' }}
+        env:
+          RUN: ${{ matrix.run }}
+          EXPECT_ORIGIN: ${{ matrix.expect_origin }}
+        run: bash .github/addon-build-verify/static-checks.sh
+
+      - name: Selftest inputs (old addons in place of a new build)
+        if: ${{ matrix.run == '' }}
+        run: |
+          for v in 1240 1302; do
+            mkdir -p work/out/$v
+            cp work/in/good-$v.node work/out/$v/addon.node
+          done
+
+      - name: Extract the libcuda driver stubs from the nvidia/cuda devel images
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          versions="1240:12.4.0"
+          if [ -n "${{ matrix.run }}" ]; then versions="$versions 1302:13.0.2"; fi
+          for pair in $versions; do
+            v=${pair%%:*}; cuda=${pair#*:}
+            mkdir -p "work/out/$v/stubs"
+            docker run --rm -v "$PWD/work/out/$v/stubs:/stubs" "nvidia/cuda:$cuda-devel-ubuntu22.04" \
+              bash -c 'cp -L /usr/local/cuda/lib64/stubs/libcuda.so /stubs/libcuda.so.1'
+            ls -l "work/out/$v/stubs"
+          done
+
+      - name: "Stage A: Fedora 44 + CUDA 13.4 runtime, no NCCL (the reporter's environment) — addon 1302"
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          mkdir -p work/fedora/bad work/fedora/good work/fedora/new
+          cp work/in/bad-1302.node work/fedora/bad/addon.node
+          cp work/in/good-1302.node work/fedora/good/addon.node
+          cp work/out/1302/addon.node work/fedora/new/addon.node
+          docker run --rm \
+            -v "$PWD/work/fedora:/work" \
+            -v "$PWD/.github/addon-preflight:/pf:ro" \
+            -v "$PWD/.github/addon-build-verify:/bv:ro" \
+            quay.io/fedora/fedora:44 bash /bv/fedora-load.sh
+
+      - name: "Stage B: Ubuntu 22.04 + CUDA 12.4 runtime, no NCCL — addon 1240"
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          mkdir -p work/ubuntu/stubs
+          cp work/in/bad-1240.node work/ubuntu/bad.node
+          cp work/in/good-1240.node work/ubuntu/good.node
+          cp work/out/1240/addon.node work/ubuntu/new.node
+          cp work/out/1240/stubs/libcuda.so.1 work/ubuntu/stubs/libcuda.so.1
+          docker run --rm \
+            -v "$PWD/work/ubuntu:/work" \
+            -v "$PWD/.github/addon-preflight:/pf:ro" \
+            -v "$PWD/.github/addon-build-verify:/bv:ro" \
+            nvidia/cuda:12.4.0-base-ubuntu22.04 bash /bv/ubuntu-load.sh
+
+      - name: "Stage C: the Full packs in a clean Debian 12 + Node 22 (no CUDA toolkit, no NCCL)"
+        if: ${{ !cancelled() && matrix.run != '' }}
+        env:
+          EXPECT_A: ${{ matrix.expect_a }}
+        run: |
+          rc=0
+          for v in 1240 1302; do
+            echo "################ Full pack $v"
+            docker run --rm -e EXPECT_A \
+              -v "$PWD/work/out/$v:/work/out" \
+              -v "$PWD/.github/addon-preflight:/pf:ro" \
+              node:22-bookworm-slim bash /pf/clean-stage.sh || rc=1
+          done
+          exit $rc
+
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "### ${{ matrix.label }} (whisper.cpp run: ${{ matrix.run || 'none' }})"
+            for f in work/out/static-results.tsv work/fedora/fedora-results.tsv work/ubuntu/ubuntu-results.tsv \
+                     work/out/1240/clean-results.tsv work/out/1302/clean-results.tsv; do
+              [ -f "$f" ] || continue
+              echo
+              echo "**$f**"
+              echo
+              echo "| check | expected | actual | verdict | note |"
+              echo "|---|---|---|---|---|"
+              awk -F'\t' '{ e=substr($2,1,70); a=substr($3,1,70); n=substr($5,1,200); gsub(/\|/,"\\|",e); gsub(/\|/,"\\|",a); gsub(/\|/,"\\|",n); printf "| %s | %s | %s | %s | %s |\n", $1,e,a,$4,n }' "$f"
+            done
+          } >>"$GITHUB_STEP_SUMMARY"

@@ -68,8 +68,12 @@ mkdir -p /pack-d && cp /pack/addon.node /pack-d/addon.node
 run "D control: addon only, no libs" FAIL env LD_LIBRARY_PATH=/pack-d node "$J" /pack-d/addon.node
 # B 进程启动前就设好 LD_LIBRARY_PATH：证明包里的库本身是完整的
 run "B LD_LIBRARY_PATH set before the process starts" OK env LD_LIBRARY_PATH=/pack node "$J" /pack/addon.node
-# A SmartSub 现在的做法：加载前才在运行中的进程里改 LD_LIBRARY_PATH（结论只看实测，所以只记录）
-run "A SmartSub today: env mutated in-process, then dlopen" info env -u LD_LIBRARY_PATH node "$J" /pack/addon.node --smartsub-env
+# A SmartSub 现在的做法：加载前才在运行中的进程里改 LD_LIBRARY_PATH（结论只看实测）
+# EXPECT_A：OK / FAIL / info（默认 info 只记录）。被测 addon 自带 $ORIGIN RUNPATH 时应为 OK。
+echo "--- RUNPATH of the unpacked addon: $(patchelf --print-rpath /pack/addon.node)"
+run "A SmartSub today: env mutated in-process, then dlopen" "${EXPECT_A:-info}" env -u LD_LIBRARY_PATH node "$J" /pack/addon.node --smartsub-env
+# A0 什么环境变量都不设：只靠 addon 自己的 RUNPATH 能不能找到包里的库
+run "A0 no env at all, plain dlopen of the unpacked addon" "${EXPECT_A:-info}" env -u LD_LIBRARY_PATH node "$J" /pack/addon.node
 
 # C 构建期给 addon 加 $ORIGIN RUNPATH 之后，同样的包不设任何环境变量
 cp -a /pack /pack-c
