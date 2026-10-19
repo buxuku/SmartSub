@@ -45,6 +45,21 @@ runpath() { readelf -d "$1" | grep -E '\((RUNPATH|RPATH)\)' | sed -n 's/.*\[\(.*
 oneline() { tr '\n' ' ' | sed 's/ *$//'; }
 
 # ------------------------------------------------------------------ 1. the build run
+# WAIT_MIN>0：构建还没跑完就每分钟轮询一次（Linux CUDA 构建要一个小时左右），最多等 WAIT_MIN 分钟
+if [ -z "${SKIP_GH:-}" ] && [ "${WAIT_MIN:-0}" -gt 0 ]; then
+  deadline=$((SECONDS + WAIT_MIN * 60))
+  while :; do
+    st=$(gh run view "$RUN" --repo "$WCPP_REPO" --json status --jq .status 2>/dev/null || echo unknown)
+    [ "$st" = completed ] && break
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      echo "::error::run $RUN is still '$st' after ${WAIT_MIN} minutes"
+      break
+    fi
+    echo "$(date -u +%H:%M:%SZ) run $RUN is '$st', waiting..."
+    sleep 60
+  done
+fi
+
 if [ -z "${SKIP_GH:-}" ]; then
   group "Build run $RUN"
   if ! gh run view "$RUN" --repo "$WCPP_REPO" --json status,conclusion,event,headBranch,headSha,url,jobs >"$W/run.json"; then
@@ -147,6 +162,10 @@ for V in 1240 1302; do
   rec "[$V] new addon: no NCCL in DT_NEEDED" 0 "$n_nccl"
   rec "[$V] new addon needs libcudart.so.$MAJ and libcublas.so.$MAJ" yes \
     "$(grep -qx "libcudart.so.$MAJ" "$o/needed-new.txt" && grep -qx "libcublas.so.$MAJ" "$o/needed-new.txt" && echo yes || echo no)"
+  # DT_NEEDED 之外再看一眼符号：没有任何 nccl* 未定义符号，说明是真的没链 NCCL，而不是只把依赖项藏起来了
+  n_sym=$(nm -D --undefined-only "$addon" 2>/dev/null | grep -ci 'nccl' || true)
+  rec "[$V] new addon imports no nccl* symbols" 0 "$n_sym"
+  rec "[$V] size of the new addon (bytes)" info "$(stat -c%s "$addon")" "known-bad: $(stat -c%s "$bad" 2>/dev/null || echo n/a)"
 
   # --- 守卫：构建里用的那个脚本，对新包放行，对已知坏包仍然报错
   bash "$GUARD" ${flag[@]+"${flag[@]}"} "$addon" >"$o/guard-new.log" 2>&1

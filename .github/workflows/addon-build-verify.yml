@@ -36,7 +36,7 @@ jobs:
   verify:
     name: ${{ matrix.label }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 150
     env:
       GH_TOKEN: ${{ github.token }}
     strategy:
@@ -47,6 +47,17 @@ jobs:
             run: ''
             expect_origin: 'no'
             expect_a: 'info'
+          # 第一轮：tmp/nccl-off（已约定的 3 个提交）。Full 包里的库在 Linux 上现在加载不了（应用进程内改 LD_LIBRARY_PATH 无效），
+          # 所以 A（应用现在的做法）只记录，不当判据
+          - label: 'tmp/nccl-off (3 commits)'
+            run: '39186189531'
+            expect_origin: 'no'
+            expect_a: 'info'
+          # 第二轮：tmp/nccl-off-origin（再加 $ORIGIN RUNPATH 的可选提交）：RUNPATH 必须有 $ORIGIN，A 必须加载成功
+          - label: 'tmp/nccl-off-origin (+ $ORIGIN RUNPATH)'
+            run: '39187260664'
+            expect_origin: 'yes'
+            expect_a: 'OK'
     steps:
       - name: Checkout the verification scripts
         uses: actions/checkout@v4
@@ -86,6 +97,7 @@ jobs:
         env:
           RUN: ${{ matrix.run }}
           EXPECT_ORIGIN: ${{ matrix.expect_origin }}
+          WAIT_MIN: '100'
         run: bash .github/addon-build-verify/static-checks.sh
 
       - name: Selftest inputs (old addons in place of a new build)
