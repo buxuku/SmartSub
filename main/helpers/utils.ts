@@ -3,6 +3,7 @@ import { app } from 'electron';
 import os from 'os';
 import { spawn } from 'child_process';
 import { renderTemplate } from './template';
+import { DEFAULT_TRANSLATE_CONTENT } from '../../types/translateContent';
 
 export { renderTemplate } from './template';
 
@@ -230,7 +231,8 @@ export const defaultUserConfig = {
   // 默认优先直提媒体内封文本字幕；用户可按任务关闭并强制走 ASR。
   useEmbeddedSubtitles: true,
   translateProvider: 'autoFree',
-  translateContent: 'sourceAndTranslate',
+  // 出厂默认仅输出译文（3.8 行为）；双语排版由用户显式选择并记住，不由任务类型强制。
+  translateContent: DEFAULT_TRANSLATE_CONTENT,
   maxConcurrentTasks: 1,
   sourceSrtSaveOption: 'noSave',
   targetSrtSaveOption: 'fileNameWithLang',

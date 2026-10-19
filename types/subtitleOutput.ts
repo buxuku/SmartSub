@@ -1,3 +1,5 @@
+import { DEFAULT_TRANSLATE_CONTENT } from './translateContent';
+
 export const SUBTITLE_OUTPUT_FORMATS = [
   'srt',
   'vtt',
@@ -50,7 +52,8 @@ export function getProofreadSourcePath(
 
 export function subtitleOutputFilesToSave(
   files: SubtitleOutputFiles,
-  translateContent = 'onlyTranslate',
+  // Typed as string on purpose: callers pass values read back from stored metadata.
+  translateContent: string = DEFAULT_TRANSLATE_CONTENT,
 ): SubtitleOutputFile[] {
   return [
     ...(Array.isArray(files.sourceSubtitleFiles)

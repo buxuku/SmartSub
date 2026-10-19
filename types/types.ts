@@ -12,6 +12,7 @@ import type {
   SubtitleOutputFiles,
   SubtitleOutputFormat,
 } from './subtitleOutput';
+import type { TranslateContent } from './translateContent';
 
 export interface ISystemInfo {
   modelsInstalled: string[];
@@ -290,10 +291,7 @@ export interface IFormData {
   asrProviderId?: string;
   /** 优先直提媒体内封文本字幕；显式 false 时忽略内封字幕并强制使用 ASR。缺省 true。 */
   useEmbeddedSubtitles?: boolean;
-  translateContent:
-    | 'onlyTranslate'
-    | 'sourceAndTranslate'
-    | 'translateAndSource';
+  translateContent: TranslateContent;
   targetSrtSaveOption: string;
   sourceSrtSaveOption?: string;
   customTargetSrtFileName: string;
