@@ -252,10 +252,16 @@ try {
 
   // 2. A video with them asks first; cancelling starts nothing and asks nothing more.
   await openWizard(withSubtitles);
+  const clicked = Date.now();
   await startButton.click();
   await expect(embeddedDialog).toBeVisible();
+  const clickToDialogMs = Date.now() - clicked;
   const found = (await probes())[1].result;
   assert.equal(found.status, 'found');
+  assert.ok(
+    found.elapsedMs < 1000,
+    `the probe stays inside its budget (${found.elapsedMs} ms)`,
+  );
   assert.match(found.hit.filePath, /with-subtitles\.mp4$/);
   assert.deepEqual(found.hit.tracks, [{ language: 'eng', codec: 'mov_text' }]);
   await expect(embeddedDialog).toContainText('with-subtitles.mp4');
@@ -315,6 +321,41 @@ try {
     'an answer that is not remembered leaves the defaults alone',
   );
   assert.notEqual((await settings()).embeddedSubtitlePrompt, false);
+
+  // 4b. A task whose configuration is already pinned keeps its stored snapshot when it is
+  // started again, so there is nothing left to choose and nothing is probed either.
+  const pinnedFiles = await page.evaluate(
+    async (media) =>
+      window.ipc.invoke('getDroppedFiles', {
+        files: [media],
+        taskType: 'media',
+      }),
+    withSubtitles,
+  );
+  await page.evaluate(
+    async ({ id, files, config }) => {
+      const item = await window.ipc.invoke('getWorkItem', id);
+      await window.ipc.invoke('saveWorkItem', {
+        ...item,
+        pipelineFiles: files,
+        status: 'waiting',
+        configSnapshot: { ...config, subtitleOutputFormats: ['srt'] },
+      });
+    },
+    { id: used.projectId, files: pinnedFiles, config },
+  );
+  await page.goto(`${origin}/zh/tasks/generate/?project=${used.projectId}`);
+  const beforePinned = (await probes()).length;
+  await page.getByRole('button', { name: '开始任务', exact: true }).click();
+  await expect(consentDialog).toBeVisible();
+  await expect(embeddedDialog).toHaveCount(0);
+  assert.equal(
+    (await probes()).length,
+    beforePinned,
+    'a pinned page does not probe',
+  );
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+  assert.equal((await dispatched()).length, 2);
 
   // 5. "Remember" stores the choice as the default and stops asking, probing included.
   await openWizard(withSubtitles);
@@ -382,11 +423,15 @@ try {
   console.log(
     JSON.stringify({
       evidence: output,
+      // What the user waits between pressing Start and seeing the question.
+      clickToDialogMs,
+      probeMs: found.elapsedMs,
       checks: [
         'a video without embedded subtitles starts without a question',
         'a video with them asks; cancelling starts nothing',
         'using them is applied to that task and no audio is uploaded',
         'transcribing instead is applied to that task and uses the engine',
+        'a task whose configuration is pinned is not asked again',
         'remembering stores the default, stops asking and stops probing',
         'Advanced options turns the question back on',
       ],
