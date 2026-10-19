@@ -97,6 +97,7 @@ function simulate({
   const routes = [];
   const drafts = [];
   const dispatched = [];
+  const submitOptions = [];
   const t = (key) => key;
   const context = vm.createContext({
     ...recipes,
@@ -192,7 +193,8 @@ function simulate({
   });
   const submission = {
     starting: false,
-    async submit({ files, formData, typeDef }) {
+    async submit({ files, formData, typeDef }, options) {
+      submitOptions.push(options);
       const refine = validateRefineProviderConfig({
         formData: typeDef.needsModel ? formData : {},
         providers: [],
@@ -210,7 +212,7 @@ function simulate({
   context.submission = submission;
   context.retrySubmission = submission;
   vm.runInContext(homeCode + startCode + retryCode, context);
-  return { context, calls, errors, routes, drafts, dispatched };
+  return { context, calls, errors, routes, drafts, dispatched, submitOptions };
 }
 
 function drop(paths) {
@@ -386,6 +388,22 @@ async function main() {
       await vm.runInContext('handleTask()', state.context);
       assert.deepEqual(state.errors, []);
       assert.equal(state.dispatched.length, 1);
+    },
+  );
+
+  await check(
+    'Starting may ask about embedded subtitles, a retry never does',
+    async () => {
+      const state = simulate();
+      taskContext(state, 'translate', ['/clip.SRT']);
+      await vm.runInContext('handleTask()', state.context);
+      await vm.runInContext('handleRetryFiles(files)', state.context);
+      assert.deepEqual(state.errors, []);
+      // Objects made inside the vm context have another prototype: compare the values.
+      assert.deepEqual(
+        state.submitOptions.map((options) => options.promptEmbeddedSubtitles),
+        [true, false],
+      );
     },
   );
 

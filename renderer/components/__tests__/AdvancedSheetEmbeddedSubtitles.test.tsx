@@ -120,6 +120,14 @@ test('a task that does not transcribe has nothing to switch', async () => {
   expect(screen.queryByRole('switch', { name: SWITCH })).toBeNull();
 });
 
+test('nor does a media task that never runs speech recognition', async () => {
+  // No such task exists today; the switch is about transcription, not about media.
+  await mount({
+    typeDef: { ...getTaskTypeBySlug('generate')!, needsModel: false },
+  });
+  expect(screen.queryByRole('switch', { name: SWITCH })).toBeNull();
+});
+
 test('neither does a wizard run whose input is subtitle files', async () => {
   await mount({
     typeDef: getTaskTypeBySlug('generate')!,
