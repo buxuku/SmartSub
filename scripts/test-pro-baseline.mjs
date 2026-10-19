@@ -44,6 +44,7 @@ const scripts = [
   'test:speaker-diarization',
   'test:manuscript',
   'test:audio-cache',
+  'test:embedded-subtitle-scan',
 ];
 
 for (const script of scripts) {

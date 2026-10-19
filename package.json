@@ -68,6 +68,7 @@
     "test:gpu-enumeration": "tsx scripts/gpu/test-gpu-enumeration.ts && tsx scripts/gpu/test-single-flight.ts && tsx scripts/gpu/test-cuda-wiring.ts && tsx scripts/gpu/test-addon-candidates.ts && tsx scripts/test-python-engine-stdin.ts",
     "test:gpu-probe": "tsx scripts/gpu/probe-gpu.ts",
     "test:audio-cache": "node scripts/test-audio-cache.cjs",
+    "test:embedded-subtitle-scan": "node scripts/test-embedded-subtitle-scan.cjs",
     "test:speech-review": "python3 -m unittest discover -s scripts/asr-review -p 'test_*.py' && node scripts/asr-review/test-adapter.cjs",
     "test:missed-speech": "tsc scripts/test-missed-speech-diagnostics.ts --outDir node_modules/.cache/missed-speech-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/missed-speech-tests/scripts/test-missed-speech-diagnostics.js && node scripts/test-missed-speech-data.cjs",
     "test:ass-builder": "tsc scripts/test-ass-builder.ts --outDir node_modules/.cache/ass-builder-tests --module commonjs --moduleResolution node --target es2019 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.cache/ass-builder-tests/scripts/test-ass-builder.js",
