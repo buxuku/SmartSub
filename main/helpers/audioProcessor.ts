@@ -9,11 +9,6 @@ import { getAudioCacheKey } from './audioCacheKey';
 import { getTaskContext, TaskCancelledError } from './taskContext';
 import { energySpeechSegments } from './subtitleTiming';
 import { computeChunkBoundaries } from './cloudAudioChunking';
-import { spawn } from 'child_process';
-import {
-  parseSubtitleStreams,
-  EmbeddedSubtitleStream,
-} from './embeddedSubtitleParser';
 import { stderrTail, toFriendlyFfmpegError } from './ffmpegErrorUtils';
 import { readWavInfo, type WavInfo } from './dubbing/audioPipeline';
 import { windowFrameDb } from './wavWindowEnergy';
@@ -188,56 +183,9 @@ export async function extractAudioFromVideo(event, file) {
   return tempAudioFile;
 }
 
-/**
- * 探测视频内封字幕流：spawn 内置 ffmpeg `-i` 解析 stderr，永不 reject。
- * ffmpeg 因无输出文件以非零码退出属正常，照常解析 stderr。带超时保护。
- */
-export function probeEmbeddedSubtitles(
-  videoPath: string,
-  timeoutMs = 15000,
-): Promise<EmbeddedSubtitleStream[]> {
-  return new Promise((resolve) => {
-    let stderr = '';
-    let settled = false;
-    let timer: NodeJS.Timeout;
-    const done = (result: EmbeddedSubtitleStream[]) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(result);
-    };
-    let child;
-    try {
-      child = spawn(ffmpegPath, ['-hide_banner', '-i', videoPath]);
-    } catch (err) {
-      logMessage(`probe embedded subtitle spawn failed: ${err}`, 'warning');
-      resolve([]);
-      return;
-    }
-    timer = setTimeout(() => {
-      try {
-        child.kill('SIGKILL');
-      } catch {}
-      logMessage(`probe embedded subtitle timeout: ${videoPath}`, 'warning');
-      done([]);
-    }, timeoutMs);
-    child.stderr.on('data', (d) => {
-      stderr += d.toString();
-    });
-    child.on('error', (err) => {
-      logMessage(`probe embedded subtitle error: ${err}`, 'warning');
-      done([]);
-    });
-    child.on('close', () => {
-      try {
-        done(parseSubtitleStreams(stderr));
-      } catch (err) {
-        logMessage(`parse subtitle streams failed: ${err}`, 'warning');
-        done([]);
-      }
-    });
-  });
-}
+// 探测函数已搬到只依赖 ffmpeg-static 的独立模块（便于单测与开始前的批量探测）；
+// 此处原样再导出，流水线与既有测试桩的引用路径不变。
+export { probeEmbeddedSubtitles } from './embeddedSubtitleProbe';
 
 /**
  * 抽取指定内封字幕轨为 SRT（-map 0:s:N -c:s srt）。复用 runningCommands 支持取消；

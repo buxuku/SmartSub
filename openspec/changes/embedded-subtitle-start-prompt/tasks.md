@@ -2,10 +2,10 @@
 
 ## 1. 共用类型与主进程
 
-- [ ] 1.1 `types/embeddedSubtitle.ts`（新增）：探测请求 `{ filePaths }`、命中信息 `{ filePath, tracks: [{ language?, codec }] }`、结果 `{ status: 'found' | 'none' | 'unknown', hit?, checked, candidates, elapsedMs }`
-- [ ] 1.2 `main/helpers/embeddedSubtitleProbe.ts`（新增）：从 `audioProcessor.ts` 搬出 `probeEmbeddedSubtitles`，只依赖 `ffmpeg-static` 与 `child_process`；新增可选 `AbortSignal`（已中止则不 spawn；中止即终止子进程并返回空，不记警告）与 `windowsHide: true`；行为与超时语义不变。`audioProcessor.ts` 原样再导出，`fileProcessor.ts` 不改
-- [ ] 1.3 `main/helpers/embeddedSubtitleScan.ts`（新增，纯逻辑）：`scanForEmbeddedSubtitles(filePaths, { probe, concurrency = 4, budgetMs = 1000 })`——去重、按 `canHaveEmbeddedSubtitle` 过滤容器、固定大小的工作池、只把文本字幕轨算命中、首个命中即中止其余、预算到点即中止；返回 `found | none | unknown`；探测函数抛错按「该文件无结果」处理
-- [ ] 1.4 `main/helpers/ipcEmbeddedSubtitleHandlers.ts`（新增）：`findEmbeddedSubtitles` 校验入参（字符串数组，去重并限量）、调用调度、记一条日志（检查数 / 候选数 / 用时）；`main/background.ts` 注册；`main/helpers/store/types.ts` 的 `settings` 新增可选 `embeddedSubtitlePrompt`（`false` 表示不再提示，缺省为提示）；不加进 `automation/catalog.ts`
+- [x] 1.1 `types/embeddedSubtitle.ts`（新增）：探测请求 `{ filePaths }`、命中信息 `{ filePath, tracks: [{ language?, codec }] }`、结果 `{ status: 'found' | 'none' | 'unknown', hit?, checked, candidates, elapsedMs }`
+- [x] 1.2 `main/helpers/embeddedSubtitleProbe.ts`（新增）：从 `audioProcessor.ts` 搬出 `probeEmbeddedSubtitles`，只依赖 `ffmpeg-static` 与 `child_process`；新增可选 `AbortSignal`（已中止则不 spawn；中止即终止子进程并返回空，不记警告）与 `windowsHide: true`；行为与超时语义不变。`audioProcessor.ts` 原样再导出，`fileProcessor.ts` 不改
+- [x] 1.3 `main/helpers/embeddedSubtitleScan.ts`（新增，纯逻辑）：`scanForEmbeddedSubtitles(filePaths, { probe, concurrency = 4, budgetMs = 1000 })`——去重、按 `canHaveEmbeddedSubtitle` 过滤容器、固定大小的工作池、只把文本字幕轨算命中、首个命中即中止其余、预算到点即中止；返回 `found | none | unknown`；探测函数抛错按「该文件无结果」处理
+- [x] 1.4 `main/helpers/ipcEmbeddedSubtitleHandlers.ts`（新增）：`findEmbeddedSubtitles` 校验入参（字符串数组，去重并限量）、调用调度、记一条日志（检查数 / 候选数 / 用时）；`main/background.ts` 注册；`main/helpers/store/types.ts` 的 `settings` 新增可选 `embeddedSubtitlePrompt`（`false` 表示不再提示，缺省为提示）；不加进 `automation/catalog.ts`
 
 ## 2. 渲染进程
 
@@ -17,7 +17,7 @@
 
 ## 3. 测试
 
-- [ ] 3.1 `scripts/test-embedded-subtitle-scan.ts`（新增，`test:embedded-subtitle-scan`，加入 `test:pro-baseline`）：调度——命中即停并中止其余、并发上限、容器过滤与去重、位图轨不算命中、预算到点返回 `unknown` 且中止在途探测、外部中止、探测抛错按无结果、全部检查完才是 `none`、空输入；真实 ffmpeg——生成带文本字幕轨 / 无字幕轨 / 仅图像轨的小文件，验证探测、中止与 `found | none`
+- [x] 3.1 `scripts/test-embedded-subtitle-scan.ts`（新增，`test:embedded-subtitle-scan`，加入 `test:pro-baseline`）：调度——命中即停并中止其余、并发上限、容器过滤与去重、位图轨不算命中、预算到点返回 `unknown` 且中止在途探测、外部中止、探测抛错按无结果、全部检查完才是 `none`、空输入；真实 ffmpeg——生成带文本字幕轨 / 无字幕轨 / 仅图像轨的小文件，验证探测、中止与 `found | none`
 - [ ] 3.2 `scripts/test-task-submission-ui.tsx`：给 mock 补 `findEmbeddedSubtitles`；断言不弹窗的情形零探测（`useEmbeddedSubtitles: false`、提示已关闭、翻译类、重试、无可探测文件）、探测出错 / 返回 `none` / `unknown` 仍照常提交
 - [ ] 3.3 `renderer/hooks/__tests__/useTaskSubmissionEmbeddedPrompt.test.tsx`（新增，jest + 真实对话框）：命中后弹窗且内容含文件名与轨道；使用 / 改用只改本次载荷且不写任何设置；取消不提交；勾选「记住」只写 `embeddedSubtitlePrompt` 与 `useEmbeddedSubtitles` 两项；勾选后取消不写；写入失败仍提交；校验失败不弹窗；弹窗在云端上传确认之前；探测与校验并行
 - [ ] 3.4 `renderer/components/__tests__/EmbeddedSubtitleControl.test.tsx`（新增）：开关写表单、复选框写设置并可回滚、开关关闭时复选框置灰、读设置失败时的显示
