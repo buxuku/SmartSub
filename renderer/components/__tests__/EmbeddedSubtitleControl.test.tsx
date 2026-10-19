@@ -165,11 +165,15 @@ describe('asking before a start', () => {
     await mount();
     await tick(); // off: this write is still in flight
     await tick(); // on again: stored at once
+    await tick(); // off once more: the latest word
+    // The first write fails now. Rolling back to what it replaced would show "on",
+    // which is neither the stored value nor what the user last chose.
     await act(async () => failures[0]());
-    expect(prompt()).toBeChecked();
+    expect(prompt()).not.toBeChecked();
     expect(writes).toEqual([
       { embeddedSubtitlePrompt: false },
       { embeddedSubtitlePrompt: true },
+      { embeddedSubtitlePrompt: false },
     ]);
   });
 
