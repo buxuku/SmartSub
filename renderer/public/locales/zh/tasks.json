@@ -103,6 +103,7 @@
     "composeEncoder": "编码方式",
     "composeEncoderUnavailable": "（本机不可用）",
     "composeAudioHint": "配音完成后将自动替换视频原声",
+    "composeContentHint": "成片字幕内容跟随「输出内容」设置：{{content}}",
     "composeStyleHint": "样式可在合成工作台微调并保存为「我的样式」，",
     "composeStyleLink": "去调整样式",
     "gatesTitle": "人工把关（可选）",
