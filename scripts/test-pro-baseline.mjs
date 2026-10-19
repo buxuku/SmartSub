@@ -32,6 +32,7 @@ const scripts = [
   'test:task-readiness',
   'test:task-submission',
   'test:task-defaults',
+  'test:translate-content',
   'test:scenario-presets',
   'test:pipeline',
   'test:recipes',
