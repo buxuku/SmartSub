@@ -42,8 +42,11 @@ install_rc=$?
 endgroup
 rec "dnf install of node + CUDA 13.4 runtime" 0 "$install_rc"
 [ "$install_rc" -eq 0 ] || exit 1
-# 没有显卡驱动：用 CUDA 自带的 libcuda 桩顶替 libcuda.so.1，仅用于让依赖可被解析
-ln -sf "$CUDA_LIB/stubs/libcuda.so" "$CUDA_LIB/libcuda.so.1"
+# 没有显卡驱动：用 CUDA 自带的 libcuda 桩顶替 libcuda.so.1，仅用于让依赖可被解析。
+# 真实机器上驱动把 libcuda.so.1 放在系统标准目录，所以这里也装进 /usr/lib64 并刷新 ld.so 缓存
+# （不依赖 LD_LIBRARY_PATH：cudart / cublas 本来就由 NVIDIA 的 RPM 注册进了 ld.so 缓存）
+install -m755 "$CUDA_LIB/stubs/libcuda.so" /usr/lib64/libcuda.so.1
+ldconfig
 
 group "Installed environment"
 rpm -q glibc nodejs libgomp cuda-cudart-13-4 libcublas-13-4 cuda-driver-devel-13-4

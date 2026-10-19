@@ -69,6 +69,18 @@ jobs:
           done
           ls -l work/in
 
+      # 先确认这个 workflow 的 github.token 能不能跨仓库读 whisper.cpp 的 run 和产物（只在 selftest 行跑）。
+      # 用第一轮 dry-run 里已经上传完的小产物 addon-linux-vulkan 探路。
+      - name: Probe cross-repo access (selftest only)
+        if: ${{ matrix.run == '' }}
+        run: |
+          set -euo pipefail
+          probe=39186189531
+          gh run view "$probe" --repo "$WCPP_REPO" --json status,conclusion,event,headBranch,headSha,jobs \
+            --jq '"run \(.status)/\(.conclusion) \(.event) \(.headBranch) \(.headSha[0:7])", (.jobs[] | "  \(.name): \(.status)/\(.conclusion)")'
+          gh run download "$probe" --repo "$WCPP_REPO" -n addon-linux-vulkan -D work/probe
+          find work/probe -type f -exec ls -l {} \;
+
       - name: "Build under test: inspect the run, download and check the artifacts (host)"
         if: ${{ matrix.run != '' }}
         env:
