@@ -81,7 +81,7 @@ try {
     window.ipc.invoke('getUserConfig'),
   );
   assert.equal(defaults.translateProvider, 'autoFree');
-  assert.equal(defaults.translateContent, 'sourceAndTranslate');
+  assert.equal(defaults.translateContent, 'onlyTranslate');
   await route('/zh/tasks/generate-translate/');
   await expect(
     page.getByRole('button', { name: '字幕输出格式' }),

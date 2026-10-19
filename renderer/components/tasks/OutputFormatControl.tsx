@@ -21,6 +21,8 @@ import {
   resolveSubtitleOutputFormats,
   type SubtitleOutputFormat,
 } from '../../../types/subtitleOutput';
+import { normalizeTranslateContent } from '../../../types/translateContent';
+import { translateContentLabelKey } from 'lib/translateContentLabel';
 import type { TaskTypeDef } from 'lib/taskTypes';
 
 interface OutputFormatControlProps {
@@ -57,12 +59,9 @@ export default function OutputFormatControl({
   };
 
   const formatSummary = selectedFormats.map((f) => f.toUpperCase()).join(', ');
-  const contentKey =
-    formData.translateContent === 'onlyTranslate'
-      ? 'outputTranslationOnly'
-      : formData.translateContent === 'translateAndSource'
-        ? 'outputTranslationFirst'
-        : 'outputSourceFirst';
+  // 未保存样式时与主进程一致地视为默认（仅译文），摘要、选择框与示例同源。
+  const translateContent = normalizeTranslateContent(formData.translateContent);
+  const contentKey = translateContentLabelKey(translateContent);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -123,7 +122,7 @@ export default function OutputFormatControl({
               {t('configBar.style')}
             </label>
             <Select
-              value={formData.translateContent || 'sourceAndTranslate'}
+              value={translateContent}
               onValueChange={(v) =>
                 form.setValue('translateContent', v, { shouldDirty: true })
               }
@@ -148,9 +147,9 @@ export default function OutputFormatControl({
               aria-label={tHome('outputExample')}
             >
               <p className="text-muted-foreground">{tHome('outputExample')}</p>
-              {(formData.translateContent === 'onlyTranslate'
+              {(translateContent === 'onlyTranslate'
                 ? [tHome('outputExampleTarget')]
-                : formData.translateContent === 'translateAndSource'
+                : translateContent === 'translateAndSource'
                   ? [tHome('outputExampleTarget'), tHome('outputExampleSource')]
                   : [tHome('outputExampleSource'), tHome('outputExampleTarget')]
               ).map((line, index) => (
