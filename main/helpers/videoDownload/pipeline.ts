@@ -18,6 +18,7 @@ import type { TaskRecipe } from '../../../types/recipe';
 import type { TaskSubmission } from '../../../types/taskSubmission';
 import type { WorkItem } from '../../../types/workItem';
 import { taskSubmissionKey } from '../../../types/taskSubmission';
+import { normalizeTranslateContent } from '../../../types/translateContent';
 import { defaultUserConfig } from '../utils';
 import { validateDownloadDependencies } from './pipelineReadiness';
 import { resolveComposeRunOptions } from '../pipeline/deriveComposeConfig';
@@ -50,7 +51,7 @@ export function resolveDownloadPipeline(
     cloudUploadConsent,
     formData: {
       ...config,
-      translateContent: config.translateContent || 'onlyTranslate',
+      translateContent: normalizeTranslateContent(config.translateContent),
       targetSrtSaveOption: config.targetSrtSaveOption || 'fileNameWithLang',
       customTargetSrtFileName:
         config.customTargetSrtFileName || '${fileName}.${targetLanguage}',

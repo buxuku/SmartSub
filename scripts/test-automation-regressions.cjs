@@ -43,6 +43,7 @@ const real = new Set(
     'automation/catalog.ts',
     'automation/schemas.ts',
     'types/taskSubmission.ts',
+    'types/translateContent.ts',
     'types/workItem.ts',
     'main/helpers/pythonRuntime/downloader.ts',
   ].map(definition),
@@ -302,6 +303,11 @@ async function main() {
     assert.equal(form[key], undefined);
   assert.equal(form.subtitleTranslationStyle, 'neutral');
   assert.equal(
+    form.translateContent,
+    undefined,
+    'a transcribe-only task is given no output style',
+  );
+  assert.equal(
     configValues.get('userConfig').aiSegmentation,
     true,
     'saved preferences are not mutated',
@@ -424,6 +430,11 @@ async function main() {
   assert.equal(submissions.at(-1).formData.asrProviderId, asr.id);
   assert.equal(submissions.at(-1).formData.translateProvider, ai.id);
   assert.equal(submissions.at(-1).formData.refineProvider, ai.id);
+  assert.equal(
+    submissions.at(-1).formData.translateContent,
+    'onlyTranslate',
+    'saved preferences without an output style still yield one for a translating task',
+  );
   const mismatch = await runPipeline('transcribe', {
     files: [inputAudio],
     providerId: ai.id,
