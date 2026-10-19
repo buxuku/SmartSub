@@ -9,23 +9,17 @@ export function assertTaskConfig(
     throw new Error('INVALID_USER_CONFIG_RESPONSE');
 }
 
-/** Apply a goal only when creating a task; restored drafts and execution snapshots bypass this. */
+/**
+ * Seed a new task from the saved preferences. The task type only says which page/goal
+ * the task belongs to: the output style is the user's saved choice for every type, and
+ * when nothing was saved the factory default (translation only) is already in the
+ * preferences. Restored drafts and execution snapshots bypass this.
+ */
 export function newTaskDefaults(
   preferences: Record<string, any>,
   taskType: string,
 ): Record<string, any> {
-  return {
-    ...preferences,
-    taskType,
-    ...(taskType === 'generateAndTranslate'
-      ? {
-          translateContent:
-            preferences.translateContent === 'translateAndSource'
-              ? 'translateAndSource'
-              : 'sourceAndTranslate',
-        }
-      : {}),
-  };
+  return { ...preferences, taskType };
 }
 
 export function omitTaskManuscript<

@@ -85,16 +85,16 @@ try {
   await route('/zh/tasks/generate-translate/');
   await expect(
     page.getByRole('button', { name: '字幕输出格式' }),
-  ).toContainText('双语 · 原文在上');
+  ).toContainText('仅译文');
   await expect(page.getByRole('combobox', { name: '翻译服务' })).toContainText(
     '自动免费翻译',
   );
   await page.screenshot({
-    path: path.join(output, 'bilingual-default.png'),
+    path: path.join(output, 'translation-only-default.png'),
     scale: 'css',
   });
   checks.push(
-    'new bilingual tasks use visible bilingual output and configured free translation',
+    'new translation tasks default to translation-only output and configured free translation',
   );
 
   await route('/zh/translation/');
@@ -157,6 +157,8 @@ try {
           ...defaults,
           taskType: 'generateAndTranslate',
           translateProvider: 'deeplx',
+          // Bilingual lines are an explicit choice; the default is translation only.
+          translateContent: 'sourceAndTranslate',
         },
       });
     },

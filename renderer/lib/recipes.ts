@@ -30,7 +30,7 @@ export const BUILTIN_RECIPES: TaskRecipe[] = [
     builtin: true,
     goals: { translate: true, dub: false, video: false },
     accepts: 'media',
-    config: { translateContent: 'sourceAndTranslate' },
+    // 不固定 translateContent：卡片与任务页等价，输出样式沿用用户保存的偏好。
   },
   {
     id: 'builtin-generate',
