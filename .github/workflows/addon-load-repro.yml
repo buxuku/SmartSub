@@ -10,6 +10,10 @@ name: addon-load-repro (temporary)
 on:
   push:
     branches: [tmp/verify-nccl-addon]
+    # 只在自己的文件变化时重跑，别的验证 workflow 的提交不要连带触发它
+    paths:
+      - .github/workflows/addon-load-repro.yml
+      - .github/addon-load-repro/**
   workflow_dispatch:
 
 permissions:
