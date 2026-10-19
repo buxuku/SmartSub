@@ -43,11 +43,18 @@ describe('the output style summary', () => {
     expect(trigger()).toHaveTextContent(label);
   });
 
+  // Opening the popover is by far the slowest thing in this file (jsdom selector matching
+  // across Radix's portal), so everything that needs it open is asserted in this one test.
   test('explains an unset style with the translation-only layout example', () => {
     renderControl({});
     fireEvent.click(trigger());
     const example = screen.getByLabelText('outputExample');
     expect(within(example).getByText('outputExampleTarget')).toBeVisible();
     expect(within(example).queryByText('outputExampleSource')).toBeNull();
+    // The embedded subtitles switch moved to Advanced options; this popover is only the
+    // output format and style now.
+    expect(screen.getByText('configBar.format')).toBeVisible();
+    expect(screen.queryByRole('switch')).toBeNull();
+    expect(screen.queryByText('configBar.embeddedSubtitles')).toBeNull();
   });
 });

@@ -168,7 +168,7 @@
     "toastTraditionalRefineConflict": "已切换为「{{provider}}」。因开启了「{{feature}}」，传统接口无法执行精修，建议在「断句与精修」中单独选择 AI 模型或关闭该功能。",
     "style": "输出内容",
     "format": "字幕格式",
-    "embeddedSubtitles": "优先内封字幕",
+    "embeddedSubtitles": "优先使用内封字幕",
     "glossary": "词库",
     "glossaryAllEnabled": "全局已启用",
     "glossaryNone": "不使用词库",
@@ -286,6 +286,11 @@
     "recognition": "转写",
     "output": "输出与保存",
     "execution": "执行"
+  },
+  "embeddedSubtitleSetting": {
+    "description": "视频自带文本字幕轨时直接提取，跳过语音识别；没有字幕轨的视频照常识别。",
+    "promptLabel": "开始前提示我选择",
+    "promptDescription": "检测到视频带内封字幕时，开始前先问一次。"
   },
   "vad": {
     "label": "语音活动检测（VAD）",
