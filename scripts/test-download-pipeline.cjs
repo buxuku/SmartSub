@@ -284,6 +284,42 @@ check(
   },
 );
 check(
+  'snapshot output style is always valid; a saved choice wins over the factory default',
+  () => {
+    const styleOf = (userConfig, recipeConfig) => {
+      const h = harness();
+      h.store.set('userConfig', userConfig);
+      if (recipeConfig) {
+        const [recipe] = h.store.get('taskRecipes');
+        h.store.set('taskRecipes', [
+          { ...recipe, config: { ...recipe.config, ...recipeConfig } },
+        ]);
+      }
+      return h.pipeline.resolveDownloadPipeline('recipe').formData
+        .translateContent;
+    };
+    assert.equal(styleOf({}), 'onlyTranslate', 'nothing saved');
+    assert.equal(
+      styleOf({ translateContent: 'both' }),
+      'onlyTranslate',
+      'an unknown saved value',
+    );
+    assert.equal(
+      styleOf({ translateContent: 'translateAndSource' }),
+      'translateAndSource',
+      'a saved choice',
+    );
+    assert.equal(
+      styleOf(
+        { translateContent: 'sourceAndTranslate' },
+        { translateContent: 'onlyTranslate' },
+      ),
+      'onlyTranslate',
+      'a recipe that states its own style',
+    );
+  },
+);
+check(
   'official subtitles bypass missing ASR and never duplicate accepted or deleted child',
   () => {
     const h = harness();

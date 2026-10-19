@@ -1,5 +1,6 @@
 import { isProviderConfigured, type Provider } from '../../types/provider';
 import type { TaskSubmission } from '../../types/taskSubmission';
+import { withValidTranslateContent } from '../../types/translateContent';
 
 export interface AutomationCallOptions {
   /** Trusted in-app context, never inferred from an external tool argument. */
@@ -82,7 +83,8 @@ export function resolvePipelineForm(
         'REFINE_PROVIDER_REQUIRED: AI segmentation/correction requires a configured AI refinement service. Read providers.list(kind="translation") and set config.refineProvider to an isAi=true, configured=true provider ID. preserveSpeechPauses alone does not require AI. Keep requested features enabled; disable them only if the user did not request them.',
       );
   }
-  return form;
+  // The saved preference may predate the output style; a translating task still needs one.
+  return withValidTranslateContent(form);
 }
 
 /** Preserve desktop/download error codes there; give automation callers actionable errors. */

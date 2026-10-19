@@ -20,7 +20,12 @@ import { IFiles, IFormData } from '../../types';
 import { shouldUseEpisodeSummary } from '../helpers/episodeSummaryCore';
 import { ensureTempDir } from '../helpers/fileUtils';
 import { isTaskCancelledError } from '../helpers/taskContext';
+import { assertOutputDoesNotOverwriteInput } from '../helpers/subtitleOutputGuard';
 import type { ActivityObserver } from '../../types/taskActivity';
+import {
+  isTranslateContent,
+  normalizeTranslateContent,
+} from '../../types/translateContent';
 import { assertValidTestTranslation } from './utils/error';
 import { sanitizeFallbackReason } from './services/providerFallback';
 import {
@@ -49,13 +54,13 @@ export default async function translate(
   onActivity?: ActivityObserver,
 ): Promise<boolean> {
   const {
-    translateContent,
     targetSrtSaveOption,
     customTargetSrtFileName,
     sourceLanguage,
     targetLanguage,
     translateRetryTimes,
   } = formData || {};
+  const requestedContent: unknown = formData?.translateContent;
   const { fileName, directory, srtFile } = file;
   file.translationFailures = [];
 
@@ -66,6 +71,18 @@ export default async function translate(
       : translateRetryTimes
         ? parseInt(translateRetryTimes)
         : 0;
+  // 样式缺失/未知时按默认（仅译文）交付，而不是让模板为 undefined 把译文写成空文件。
+  const translateContent = normalizeTranslateContent(requestedContent);
+  if (
+    requestedContent != null &&
+    requestedContent !== '' &&
+    !isTranslateContent(requestedContent)
+  ) {
+    logMessage(
+      `Unknown output style "${String(requestedContent)}", using ${translateContent}`,
+      'warning',
+    );
+  }
   const renderContentTemplate = CONTENT_TEMPLATES[translateContent];
 
   // 译文后处理：
@@ -140,6 +157,8 @@ export default async function translate(
     );
 
     const fileSave = path.join(directory, `${targetSrtFileName}.srt`);
+    // 写入前会先清空目标文件：目标就是正在翻译的源字幕时必须先拒绝，避免抹掉用户的源文件。
+    assertOutputDoesNotOverwriteInput(fileSave, [srtFile]);
     file.translatedSrtFile = fileSave;
     await createOrClearFile(fileSave);
 
@@ -171,7 +190,8 @@ export default async function translate(
       let concatContent = '';
       let tempTranslatedContent = '';
 
-      results.forEach(async (result) => {
+      // 用普通循环而非 forEach(async)：后处理/渲染出错要沿调用链抛给任务，而不是被吞掉后留下空文件。
+      for (const result of results) {
         // 目标译文后处理（简繁归一 + 可选中文标点去除）
         const targetContent = postProcessTarget(result.targetContent);
         // 双语内嵌源文行后处理（仅生成并翻译 + 中文源 + 开关开启时去标点）
@@ -190,7 +210,7 @@ export default async function translate(
         // 对临时文件，只添加纯翻译内容
         const pureTranslatedContent = `${result.id}\n${result.startEndTime}\n${targetContent}\n\n`;
         tempTranslatedContent += pureTranslatedContent;
-      });
+      }
 
       // 保存到目标文件
       logMessage(`append to file ${fileSave}`);

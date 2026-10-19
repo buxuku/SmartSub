@@ -11,6 +11,7 @@ import {
 } from '../../types/workItem';
 import { isPinnedTaskConfigSnapshot } from '../../types/taskSnapshot';
 import { enforceSpeakerDiarizationTaskBoundary } from '../../types/speakerDiarization';
+import { withValidTranslateContent } from '../../types/translateContent';
 import {
   buildTaskName,
   derivePipelineWorkItemStatus,
@@ -72,11 +73,15 @@ export function persistTaskSubmission(
   }
   if (ids.some((id) => busyFileUuids.has(id)))
     throw new Error('TASK_FILES_BUSY');
-  const formData = enforceSpeakerDiarizationTaskBoundary(
-    structuredClone(
-      isPinnedTaskConfigSnapshot(existing?.configSnapshot)
-        ? existing.configSnapshot
-        : input.formData,
+  // 所有入口（任务页、自动化、下载流水线、旧版遗留快照）都经过这里：
+  // 翻译类任务在此补全缺失/未知的输出样式，之后阶段只会看到合法值。
+  const formData = withValidTranslateContent(
+    enforceSpeakerDiarizationTaskBoundary(
+      structuredClone(
+        isPinnedTaskConfigSnapshot(existing?.configSnapshot)
+          ? existing.configSnapshot
+          : input.formData,
+      ),
     ),
   ) as TaskSubmission['formData'];
   if (
