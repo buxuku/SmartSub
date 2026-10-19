@@ -502,6 +502,19 @@
     "confirmOnce": "本次上传",
     "confirmRemember": "上传并不再提醒"
   },
+  "embeddedPrompt": {
+    "title": "检测到视频内封了字幕",
+    "description": "「{{name}}」里内封了文本字幕：{{tracks}}。本次选择对列表中所有带内封字幕的视频生效，没有内封字幕的视频仍会语音识别。",
+    "unknownLanguage": "未标注语言",
+    "trackSeparator": "、",
+    "moreTracks": "，另有 {{count}} 条",
+    "useTitle": "使用内封字幕",
+    "useDescription": "直接提取，几秒完成，不做语音识别。字幕保持视频里的原文，不做 AI 断句与文稿匹配；有多条字幕轨时取第一条。",
+    "asrTitle": "改用语音识别",
+    "asrDescription": "忽略内封字幕、重新听写，耗时更长；字幕语言与断句按你的设置处理。",
+    "hint": "之后可以在「高级选项 › 转写」里调整。",
+    "remember": "记住我的选择，不再提示"
+  },
   "quality": {
     "title": "建议检查",
     "all": "全部字幕",
