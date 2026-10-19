@@ -121,6 +121,83 @@ rec "bundle closure: nothing else needed" none "$(echo "${residual:-none}" | tr 
 cp -L /usr/local/cuda/lib64/stubs/libcuda.so "$OUT/stubs/libcuda.so.1"
 echo "libcuda stub: $(readelf -d "$OUT/stubs/libcuda.so.1" | grep SONAME)"
 
+# ------------------------------------------------- 4. --require-origin（只有带 $ORIGIN 改动的分支才有这个选项）
+# EXPECT_ORIGIN=yes：被测分支应该带 --require-origin；=no：被测分支没有这个改动，不测
+if [ "${EXPECT_ORIGIN:-no}" = yes ]; then
+  group "Guard --require-origin vs the known-good addon (it has no \$ORIGIN, must be rejected)"
+  bash "$GUARD" --require-origin /work/in/good.node >"$OUT/guard-origin.log" 2>&1
+  rc=$?
+  tail -n 6 "$OUT/guard-origin.log"
+  endgroup
+  rec "guard --require-origin rejects addon w/o ORIGIN" 1 "$rc"
+  grep -q 'RUNPATH 里没有 \$ORIGIN' "$OUT/guard-origin.log" && x=yes || x=no
+  rec "guard --require-origin names the missing ORIGIN" yes "$x"
+fi
+
+# ------------------------------------------------- 5. RUNPATH 探针
+# builder.yml 的 "Build" 步骤把 matrix.cmake_flags 原样替换进 bash 脚本（双引号里），再 read -a 分词，交给 cmake-js；
+# cmake-js 用不经 shell 的 spawn 把 --CDX=Y 变成 -DX=Y 传给 cmake，装了 ninja 时用 Ninja 生成器。
+# 这里把真实 "Build" 步骤的脚本抽出来，只把 `npx cmake-js compile` 那行换成等价的 cmake 调用，
+# 在一个最小的共享库工程（链 CUDA::cudart / CUDA::cublas，和 addon 的链接方式一样）上看 RUNPATH 里到底有什么。
+# 真正的证据是整包构建出来的 addon（见 build-verify），这个探针只是先把「转义/传参」这条链路验掉。
+group "RUNPATH probe: what does the real Build step's flag handling put into a CUDA shared lib's RUNPATH?"
+apt-get install -y -qq python3-pip ninja-build >/dev/null
+pip3 install -q 'cmake==3.31.*' >/dev/null 2>&1
+cmake --version | head -1
+mkdir -p /tmp/probe
+cat >/tmp/probe/probe.cpp <<'EOF'
+#include <cuda_runtime.h>
+#include <cublas_v2.h>
+extern "C" int probe_fn() { int n = 0; cudaGetDeviceCount(&n); cublasHandle_t h; cublasCreate(&h); return n; }
+EOF
+cat >/tmp/probe/CMakeLists.txt <<'EOF'
+cmake_minimum_required(VERSION 3.18)
+project(probe CXX)
+find_package(CUDAToolkit REQUIRED)
+add_library(probe SHARED probe.cpp)
+set_target_properties(probe PROPERTIES PREFIX "" SUFFIX ".node")
+target_link_libraries(probe PRIVATE CUDA::cudart CUDA::cublas)
+EOF
+CUDA_VERSION="$CUDA_VERSION" python3 - <<'PY'
+import os, re, sys, yaml
+
+want = os.environ["CUDA_VERSION"]
+d = yaml.safe_load(open("/wcpp/.github/workflows/builder.yml"))
+job = d["jobs"]["build-linux"]
+image = f"nvidia/cuda:{want}-devel-ubuntu22.04"
+entry = next(e for e in job["strategy"]["matrix"]["include"] if e.get("container") == image)
+step = next(s for s in job["steps"] if s.get("name") == "Build")
+script = re.sub(r"\$\{\{\s*matrix\.(\w+)\s*\}\}", lambda m: str(entry.get(m.group(1), "")), step["run"])
+out = []
+for ln in script.splitlines():
+    if ln.lstrip().startswith("npx cmake-js compile"):
+        out += [
+            'printf "param: %s\\n" "${BUILD_PARAMS[@]}"',
+            'CMAKE_ARGS=(); for a in "${BUILD_PARAMS[@]}"; do case "$a" in --CD*) CMAKE_ARGS+=("-D${a#--CD}");; esac; done',
+            'cmake -S /tmp/probe -B /tmp/probe/build -G Ninja --no-warn-unused-cli "${CMAKE_ARGS[@]}"',
+            'cmake --build /tmp/probe/build',
+        ]
+        break
+    out.append(ln)
+else:
+    sys.exit("no 'npx cmake-js compile' line found in the Build step")
+open("/tmp/probe-build.sh", "w").write("\n".join(out) + "\n")
+print("--- Build step (up to the cmake-js line), matrix values substituted, cmake-js line replaced ---")
+print("\n".join(out))
+PY
+rc=$?
+rec "probe: extracted the real Build step" 0 "$rc"
+(cd /tmp/probe && bash --noprofile --norc -e -o pipefail /tmp/probe-build.sh) >"$OUT/probe.log" 2>&1
+rc=$?
+tail -n 25 "$OUT/probe.log"
+rec "probe: cmake configure + build succeeded" 0 "$rc"
+echo "--- RUNPATH of the probe lib:"
+readelf -d /tmp/probe/build/probe.node | grep -E '\((NEEDED|RUNPATH|RPATH)\)' || true
+rp=$(readelf -d /tmp/probe/build/probe.node | grep -E '\((RUNPATH|RPATH)\)' | sed -n 's/.*\[\(.*\)\]/\1/p' | head -1)
+if tr ':' '\n' <<<"$rp" | grep -qx '\$ORIGIN'; then x=yes; else x=no; fi
+rec "probe: RUNPATH has a literal \$ORIGIN entry" "${EXPECT_ORIGIN:-no}" "$x" "RUNPATH=${rp:-<none>}"
+endgroup
+
 echo
 if awk -F'\t' '$4=="FAIL"{f=1} END{exit f?0:1}' "$RES"; then
   echo "::error::devel-stage: at least one expectation failed"

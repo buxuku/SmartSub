@@ -12,6 +12,8 @@ rec() { # name expected(info=只记录) actual [note]
   local verdict
   if [ "$2" = info ]; then verdict=INFO; elif [ "$2" = "$3" ]; then verdict=PASS; else verdict=FAIL; fi
   printf '%-52s expected=%-5s actual=%-5s %s\n' "$1" "$2" "$3" "$verdict"
+  # INFO / FAIL 要把原因直接打进日志（只进 step summary 的话，日志里看不出为什么）
+  if [ "$verdict" != PASS ] && [ -n "${4:-}" ]; then printf '    -> %s\n' "${4:0:400}"; fi
   printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$verdict" "${4:-}" >>"$RES"
 }
 group() { echo "::group::$*"; }
@@ -71,9 +73,9 @@ run "A SmartSub today: env mutated in-process, then dlopen" info env -u LD_LIBRA
 
 # C 构建期给 addon 加 $ORIGIN RUNPATH 之后，同样的包不设任何环境变量
 cp -a /pack /pack-c
-echo "--- RUNPATH before: $(readelf -d /pack-c/addon.node | grep RUNPATH | sed 's/.*\[\(.*\)\]/\1/')"
+echo "--- RUNPATH before: $(patchelf --print-rpath /pack-c/addon.node)"
 patchelf --add-rpath '$ORIGIN' /pack-c/addon.node
-echo "--- RUNPATH after : $(readelf -d /pack-c/addon.node | grep RUNPATH | sed 's/.*\[\(.*\)\]/\1/')"
+echo "--- RUNPATH after : $(patchelf --print-rpath /pack-c/addon.node)"
 run "C addon has \$ORIGIN in RUNPATH, no env at all" info env -u LD_LIBRARY_PATH node "$J" /pack-c/addon.node
 run "C' same, through SmartSub's in-process env mutation" info env -u LD_LIBRARY_PATH node "$J" /pack-c/addon.node --smartsub-env
 
