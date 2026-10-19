@@ -21,6 +21,11 @@ async function main() {
   let release: (() => void) | undefined;
   let readDelayed = false;
   let releaseRead: (() => void) | undefined;
+  // The start-time embedded-subtitle probe; this suite never has a hit, so it only has to
+  // be asked, be awaited, and be unable to launch a task after the page is gone.
+  const scans: any[] = [];
+  let scanDelayed = false;
+  let releaseScan: (() => void) | undefined;
   let pending: PendingTaskSubmission | undefined;
   (globalThis as any).window = {
     ipc: {
@@ -38,6 +43,14 @@ async function main() {
         )
           return [];
         if (channel === 'getSettings') return {};
+        if (channel === 'findEmbeddedSubtitles') {
+          scans.push(structuredClone(payload));
+          if (scanDelayed)
+            await new Promise<void>((resolve) => {
+              releaseScan = resolve;
+            });
+          return { status: 'none', checked: 1, candidates: 1, elapsedMs: 1 };
+        }
         if (channel === 'checkFileExists') return { exists: true };
         if (channel === 'submitTask') {
           sent.push(structuredClone(payload));
@@ -151,6 +164,40 @@ async function main() {
     before,
     'unmount during preflight cannot launch a task later',
   );
+  assert.ok(
+    scans.length > 0,
+    'a start probes the media files for embedded subtitles',
+  );
+  assert.ok(
+    scans.every(
+      (scan) =>
+        scan.filePaths.length === 1 && scan.filePaths[0] === '/input.mp4',
+    ),
+    'only the media file is probed',
+  );
+  readDelayed = false;
+  await act(async () => {
+    root = create(<Harness />);
+  });
+  scanDelayed = true;
+  act(() => {
+    running = hook.submit(input);
+  });
+  await act(async () => {
+    await new Promise(setImmediate);
+  });
+  assert.equal(hook.phase, 'confirming', 'a slow probe holds the start');
+  await act(async () => {
+    root.unmount();
+  });
+  scanDelayed = false;
+  releaseScan!();
+  assert.equal((await running).status, 'cancelled');
+  assert.equal(
+    sent.length,
+    before,
+    'unmount while probing cannot launch a task later',
+  );
   const listeners = new Map<string, (...args: any[]) => void>();
   (window.ipc as any).on = (
     channel: string,
@@ -200,7 +247,7 @@ async function main() {
   );
   await act(async () => root.unmount());
   console.log(
-    'Task submission UI: strict acknowledgement, retry identity, restored request, concurrency, immutable snapshot and unmount cancellation passed.',
+    'Task submission UI: strict acknowledgement, retry identity, restored request, concurrency, immutable snapshot, unmount cancellation and the embedded-subtitle probe passed.',
   );
 }
 main().catch((error) => {

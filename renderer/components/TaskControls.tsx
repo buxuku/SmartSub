@@ -29,6 +29,11 @@ interface TaskControlsProps {
   autoStart?: boolean;
   ready?: boolean;
   beforeStart?: () => Promise<boolean>;
+  /**
+   * 开始前是否允许询问「使用内封字幕还是语音识别」。配置已固定的任务（只读快照页）
+   * 每次开始都沿用已存的快照，主进程不会采纳新的选择，所以没有什么可问的。
+   */
+  promptEmbeddedSubtitles?: boolean;
 }
 
 type TaskCompletePayload = { projectId?: string; status?: string } | string;
@@ -46,6 +51,7 @@ const TaskControls = ({
   autoStart,
   ready = true,
   beforeStart,
+  promptEmbeddedSubtitles = true,
 }: TaskControlsProps) => {
   const [taskStatus, setTaskStatusState] = useState('idle');
   const submission = useTaskSubmission();
@@ -144,12 +150,15 @@ const TaskControls = ({
         }
       }
       const snapshot = buildTaskSnapshotFromConfig(formData);
-      const outcome = await submission.submit({
-        projectId,
-        files: pendingFiles,
-        typeDef,
-        formData: { ...snapshot, taskType: typeDef.taskType },
-      });
+      const outcome = await submission.submit(
+        {
+          projectId,
+          files: pendingFiles,
+          typeDef,
+          formData: { ...snapshot, taskType: typeDef.taskType },
+        },
+        { promptEmbeddedSubtitles },
+      );
       if (outcome.status === 'invalid') {
         const { readiness } = outcome;
         if (!readiness.refine.valid) {

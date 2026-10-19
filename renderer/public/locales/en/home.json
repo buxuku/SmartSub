@@ -502,6 +502,19 @@
     "confirmOnce": "Upload this time",
     "confirmRemember": "Upload and don't ask again"
   },
+  "embeddedPrompt": {
+    "title": "Embedded subtitles found",
+    "description": "\"{{name}}\" carries text subtitles: {{tracks}}. Your choice applies to every video in the list that has embedded subtitles; videos without them are still transcribed.",
+    "unknownLanguage": "Unknown language",
+    "trackSeparator": ", ",
+    "moreTracks": ", and {{count}} more",
+    "useTitle": "Use embedded subtitles",
+    "useDescription": "Extracted directly in seconds, with no speech recognition. Subtitles stay as written in the video, with no AI line breaking or script matching; the first track is used when there are several.",
+    "asrTitle": "Use speech recognition instead",
+    "asrDescription": "Ignore the embedded subtitles and transcribe again: slower, and the language and line breaks follow your settings.",
+    "hint": "You can change this later in Advanced options › Transcription.",
+    "remember": "Remember my choice and don't ask again"
+  },
   "quality": {
     "title": "Suggested checks",
     "all": "All subtitles",

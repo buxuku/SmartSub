@@ -767,12 +767,17 @@ export default function TaskPage() {
           return;
         }
         const snapshot = buildTaskSnapshotFromConfig(listFormData);
-        const outcome = await retrySubmission.submit({
-          projectId,
-          files: retryFiles,
-          typeDef,
-          formData: { ...snapshot, taskType: typeDef.taskType },
-        });
+        // A retry reproduces the configuration the task already ran with, so it never
+        // asks again whether to use the embedded subtitles.
+        const outcome = await retrySubmission.submit(
+          {
+            projectId,
+            files: retryFiles,
+            typeDef,
+            formData: { ...snapshot, taskType: typeDef.taskType },
+          },
+          { promptEmbeddedSubtitles: false },
+        );
         if (outcome.status === 'invalid') {
           toast.error(t(`readiness.${outcome.readiness.errors[0]}`));
           return;
@@ -1812,6 +1817,7 @@ export default function TaskPage() {
               (Boolean(configSnapshot) || Boolean(readiness?.valid))
             }
             beforeStart={persistence.save}
+            promptEmbeddedSubtitles={!configSnapshot}
             formData={listFormData}
             files={files}
             typeDef={typeDef}

@@ -157,3 +157,19 @@ test('editing the draft never writes defaults through the controls', async () =>
   view.rerender(controls({}, { ...draft, maxContext: 9 }));
   expect(defaultsWrites()).toEqual([]);
 });
+
+test.each([
+  ['by default the start may ask about embedded subtitles', {}, true],
+  [
+    'a page whose configuration is pinned never asks: the stored snapshot wins in the main process',
+    { promptEmbeddedSubtitles: false },
+    false,
+  ],
+])('%s', async (_label, props, expected) => {
+  render(controls(props));
+  await start();
+  await waitFor(() => expect(mockSubmit).toHaveBeenCalledTimes(1));
+  expect(mockSubmit.mock.calls[0][1]).toEqual({
+    promptEmbeddedSubtitles: expected,
+  });
+});

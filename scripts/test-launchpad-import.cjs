@@ -113,6 +113,7 @@ function simulate({
     starting: false,
     ready: true,
     beforeStart: async () => true,
+    promptEmbeddedSubtitles: true,
     buildTaskSnapshotFromConfig: structuredClone,
     rememberSelection() {},
     onTaskDispatched() {},

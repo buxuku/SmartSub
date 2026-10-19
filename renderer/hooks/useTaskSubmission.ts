@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { createElement, Fragment, useEffect, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useTaskCloudConsent } from './useTaskCloudConsent';
+import { useEmbeddedSubtitlePrompt } from './useEmbeddedSubtitlePrompt';
+import { findEmbeddedSubtitleHit } from '../lib/embeddedSubtitleScan';
 import {
   validateTaskStart,
   type TaskReadinessInput,
@@ -30,6 +32,13 @@ type SubmissionOutcome =
     }
   | { status: 'invalid'; readiness: ValidationReadyResult }
   | { status: 'cancelled' };
+interface SubmitOptions {
+  /**
+   * Ask whether to use the embedded subtitles a video carries before starting. A retry
+   * turns it off: it must reproduce the configuration the task already ran with.
+   */
+  promptEmbeddedSubtitles?: boolean;
+}
 
 /** Shared start/retry state machine. Only an acknowledged durable submission is accepted. */
 export function useTaskSubmission(options?: {
@@ -41,6 +50,7 @@ export function useTaskSubmission(options?: {
   const mounted = useRef(false);
   const pending = useRef<PendingTaskSubmission | null>(null);
   const consent = useTaskCloudConsent();
+  const embeddedPrompt = useEmbeddedSubtitlePrompt();
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -50,12 +60,21 @@ export function useTaskSubmission(options?: {
   const transition = (next: SubmissionPhase) => {
     if (mounted.current) setPhase(next);
   };
-  const submit = async (input: SubmissionInput): Promise<SubmissionOutcome> => {
+  const submit = async (
+    input: SubmissionInput,
+    { promptEmbeddedSubtitles = true }: SubmitOptions = {},
+  ): Promise<SubmissionOutcome> => {
     if (busy.current || !mounted.current) return { status: 'cancelled' };
     busy.current = true;
     try {
       const snapshot = structuredClone(input);
       transition('validating');
+      // Probed while the configuration is validated, so the wait is the slower of the
+      // two instead of their sum. Never rejects and is bounded, so abandoning it when
+      // validation fails costs nothing.
+      const embeddedHit = promptEmbeddedSubtitles
+        ? findEmbeddedSubtitleHit(snapshot)
+        : Promise.resolve(null);
       let readiness = await validateTaskStart(snapshot);
       if (!mounted.current) return { status: 'cancelled' };
       if (!readiness.valid) {
@@ -63,6 +82,18 @@ export function useTaskSubmission(options?: {
         return { status: 'invalid', readiness };
       }
       transition('confirming');
+      // The answer only shapes this submission; the second validation below and the
+      // idempotency key both see the payload that is actually sent.
+      const hit = await embeddedHit;
+      if (!mounted.current) return { status: 'cancelled' };
+      if (hit) {
+        const choice = await embeddedPrompt.requestChoice(hit);
+        if (choice === 'cancel' || !mounted.current) {
+          transition('idle');
+          return { status: 'cancelled' };
+        }
+        snapshot.formData.useEmbeddedSubtitles = choice === 'use';
+      }
       if (
         !(await consent.requestConsent(
           readiness.needsTranscription,
@@ -134,6 +165,11 @@ export function useTaskSubmission(options?: {
       phase === 'validating' ||
       phase === 'confirming' ||
       phase === 'submitting',
-    dialog: consent.dialog,
+    dialog: createElement(
+      Fragment,
+      null,
+      consent.dialog,
+      embeddedPrompt.dialog,
+    ),
   };
 }
