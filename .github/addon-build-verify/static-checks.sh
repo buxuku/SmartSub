@@ -117,9 +117,9 @@ flag=()
 for V in 1240 1302; do
   MAJ=$([ "$V" = 1240 ] && echo 12 || echo 13)
   o="$W/out/$V"
-  d="$W/dl/linux-cuda-$V-optimized"
-  gz="$d/addon-linux-cuda-$V-optimized.node.gz"
-  tgz="$d/linux-cuda-$V-optimized.tar.gz"
+  # gh run download 对多个产物会分子目录，只有一个时直接平铺；不依赖这个细节，按文件名找
+  gz=$(find "$W/dl" -type f -name "addon-linux-cuda-$V-optimized.node.gz" | head -1)
+  tgz=$(find "$W/dl" -type f -name "linux-cuda-$V-optimized.tar.gz" | head -1)
   bad="$W/in/bad-$V.node"
   echo
   echo "################ $V (CUDA $MAJ.x)"
