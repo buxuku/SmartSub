@@ -83,6 +83,18 @@ if [ -z "${SKIP_GH:-}" ]; then
   nonok=$(jq -r '[.jobs[] | select(.conclusion != "success") | "\(.name)=\(.conclusion)"] | join(" ")' "$W/run.json")
   rec "every job of the run succeeded" none "${nonok:-none}"
 
+  # 守卫和新的 Copy CUDA libs 真的接进了 CI：在两个 CUDA job 里执行并通过，在不带 CUDA 的 job 里被 if: 跳过
+  jstep() { # job 名 步骤名 -> 结论
+    jq -r --arg j "$1" --arg s "$2" '[.jobs[] | select(.name == $j) | .steps[] | select(.name == $s)][0].conclusion // "missing"' "$W/run.json"
+  }
+  for j in linux-cuda-12.4 linux-cuda-13.0; do
+    rec "job $j: step 'Verify shared library dependencies' passed" success "$(jstep "$j" 'Verify shared library dependencies')"
+    rec "job $j: step 'Copy CUDA libs' passed" success "$(jstep "$j" 'Copy CUDA libs')"
+  done
+  for j in linux-x64 linux-vulkan; do
+    rec "job $j: guard step skipped (not a CUDA build)" skipped "$(jstep "$j" 'Verify shared library dependencies')"
+  done
+
   step() { # 发布 job 里某个步骤的结论
     jq -r --arg s "$1" '[.jobs[] | select(.name | test("create-update-release")) | .steps[] | select(.name == $s)][0].conclusion // "missing"' "$W/run.json"
   }
