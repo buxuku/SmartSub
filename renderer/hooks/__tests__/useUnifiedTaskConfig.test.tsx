@@ -1,8 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
-import useUnifiedTaskConfig, {
-  rememberTaskDefaults,
-} from '../useUnifiedTaskConfig';
+import useUnifiedTaskConfig from '../useUnifiedTaskConfig';
 
 const config = { sourceLanguage: 'en', targetLanguage: 'zh' };
 const deferred = () => {
@@ -128,40 +126,248 @@ test('a response after unmount cannot publish form state', async () => {
   expect(reset).not.toHaveBeenCalled();
 });
 
-describe('rememberTaskDefaults', () => {
-  test('sends only the reusable configuration through the acknowledged channel', async () => {
-    invoke.mockResolvedValueOnce({ success: true });
-    await rememberTaskDefaults({
-      sourceLanguage: 'ja',
-      taskType: 'generateOnly',
-      manuscriptPath: '/project/script.txt',
+describe('syncDefaults (task pages remember what the user adjusts)', () => {
+  const SETTLE_MS = 400;
+  const options = { autoLoad: false, syncDefaults: true } as const;
+  const updates = () =>
+    invoke.mock.calls
+      .filter(([channel]) => channel === 'updateTaskDefaults')
+      .map(([, patch]) => patch);
+  const settle = () =>
+    act(async () => {
+      await jest.advanceTimersByTimeAsync(SETTLE_MS);
     });
-    expect(invoke).toHaveBeenCalledTimes(1);
-    expect(invoke).toHaveBeenCalledWith('rememberTaskDefaults', {
-      sourceLanguage: 'ja',
-    });
+  const hydrated = (hookOptions: Record<string, any> = options) => {
+    const view = renderHook(() => useUnifiedTaskConfig(hookOptions));
+    act(() => view.result.current.hydrateSnapshot(config));
+    return view;
+  };
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    invoke.mockImplementation(async (channel: string) =>
+      channel === 'updateTaskDefaults'
+        ? { success: true }
+        : structuredClone(config),
+    );
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test('an edit reaches the main process as a patch, without running anything', async () => {
+    const { result } = hydrated();
+    act(() => result.current.setValue('targetLanguage', 'ja'));
+    expect(updates()).toEqual([]);
+    await settle();
+    expect(updates()).toEqual([{ targetLanguage: 'ja' }]);
     expect(window.ipc.send).not.toHaveBeenCalled();
   });
 
-  test.each([
-    [undefined, 'TASK_DEFAULTS_NOT_SAVED'],
-    [{}, 'TASK_DEFAULTS_NOT_SAVED'],
-    [{ success: false }, 'TASK_DEFAULTS_NOT_SAVED'],
-    [{ success: false, error: 'EACCES' }, 'EACCES'],
-  ])(
-    'an unacknowledged save (%j) is reported, never assumed',
-    async (response, message) => {
-      invoke.mockResolvedValueOnce(response);
-      await expect(
-        rememberTaskDefaults({ sourceLanguage: 'ja' }),
-      ).rejects.toThrow(message);
-    },
-  );
+  test('without the option the hook never writes defaults, not even when it unmounts', async () => {
+    const { result, unmount } = hydrated({ autoLoad: false });
+    act(() => result.current.setValue('targetLanguage', 'ja'));
+    await settle();
+    unmount();
+    expect(updates()).toEqual([]);
+    expect(window.ipc.send).not.toHaveBeenCalled();
+  });
 
-  test('a configuration with nothing reusable never reaches the main process', async () => {
-    await expect(
-      rememberTaskDefaults({ taskType: 'generateOnly' }),
-    ).rejects.toThrow('INVALID_TASK_DEFAULTS');
-    expect(invoke).not.toHaveBeenCalled();
+  test('a burst of edits is written once, with only the changed keys', async () => {
+    const { result } = hydrated();
+    act(() => result.current.setValue('targetLanguage', 'ja'));
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(SETTLE_MS - 100);
+    });
+    act(() => result.current.setValue('targetLanguage', 'fr'));
+    act(() => result.current.setValue('sourceLanguage', 'ko'));
+    await settle();
+    expect(updates()).toEqual([{ targetLanguage: 'fr', sourceLanguage: 'ko' }]);
+  });
+
+  test('editing a key back to what it was writes nothing', async () => {
+    const { result } = hydrated();
+    act(() => result.current.setValue('targetLanguage', 'ja'));
+    act(() => result.current.setValue('targetLanguage', 'zh'));
+    await settle();
+    expect(updates()).toEqual([]);
+  });
+
+  test('hydrating a project, even over older values, writes nothing', async () => {
+    const { result } = hydrated();
+    act(() =>
+      result.current.hydrateSnapshot({
+        ...config,
+        targetLanguage: 'ja',
+        manuscriptPath: '/project/script.txt',
+      }),
+    );
+    await settle();
+    expect(updates()).toEqual([]);
+  });
+
+  test('an old project edited in one field writes only that field', async () => {
+    const { result } = hydrated();
+    act(() =>
+      result.current.hydrateSnapshot({
+        ...config,
+        targetLanguage: 'ja',
+        maxContext: 9,
+      }),
+    );
+    act(() => result.current.setValue('sourceLanguage', 'ko'));
+    await settle();
+    expect(updates()).toEqual([{ sourceLanguage: 'ko' }]);
+  });
+
+  test('unmounting saves the pending edit right away', () => {
+    const { result, unmount } = hydrated();
+    act(() => result.current.setValue('targetLanguage', 'ja'));
+    expect(updates()).toEqual([]);
+    unmount();
+    expect(updates()).toEqual([{ targetLanguage: 'ja' }]);
+  });
+
+  test('closing the window saves the pending edit right away', () => {
+    const { result } = hydrated();
+    act(() => result.current.setValue('targetLanguage', 'ja'));
+    window.dispatchEvent(new Event('beforeunload'));
+    expect(updates()).toEqual([{ targetLanguage: 'ja' }]);
+  });
+
+  test('switching to another project saves the pending edit of the previous one first', async () => {
+    const { result } = hydrated();
+    act(() => result.current.setValue('targetLanguage', 'ja'));
+    act(() =>
+      result.current.hydrateSnapshot({ ...config, targetLanguage: 'de' }),
+    );
+    expect(updates()).toEqual([{ targetLanguage: 'ja' }]);
+    await settle();
+    expect(updates()).toEqual([{ targetLanguage: 'ja' }]);
+  });
+
+  test('flushDefaults saves the pending edit and resolves once it is saved', async () => {
+    const { result } = hydrated();
+    act(() => result.current.setValue('targetLanguage', 'ja'));
+    await act(async () => {
+      await result.current.flushDefaults();
+    });
+    expect(updates()).toEqual([{ targetLanguage: 'ja' }]);
+  });
+
+  test('an automatic correction changes the form but is not remembered; a later edit is', async () => {
+    const { result } = hydrated();
+    act(() => result.current.correctValue('targetLanguage', 'fr'));
+    expect(result.current.formData.targetLanguage).toBe('fr');
+    await settle();
+    expect(updates()).toEqual([]);
+    act(() => result.current.setValue('targetLanguage', 'de'));
+    await settle();
+    expect(updates()).toEqual([{ targetLanguage: 'de' }]);
+  });
+
+  test('a correction does not hide an edit made in the same burst', async () => {
+    const { result } = hydrated();
+    act(() => result.current.correctValue('targetLanguage', 'fr'));
+    act(() => result.current.setValue('sourceLanguage', 'ko'));
+    await settle();
+    expect(updates()).toEqual([{ sourceLanguage: 'ko' }]);
+  });
+
+  test('corrections and edits before the form is loaded are ignored', async () => {
+    const { result } = renderHook(() => useUnifiedTaskConfig(options));
+    act(() => result.current.correctValue('targetLanguage', 'fr'));
+    act(() => result.current.setValue('targetLanguage', 'ja'));
+    await settle();
+    expect(result.current.formData).toEqual({});
+    expect(updates()).toEqual([]);
+  });
+
+  test('a failed default read publishes nothing to write', async () => {
+    invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'updateTaskDefaults') return { success: true };
+      throw new Error('EACCES');
+    });
+    const { result } = renderHook(() =>
+      useUnifiedTaskConfig({ syncDefaults: true }),
+    );
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.loadError).toBe('EACCES');
+    act(() => result.current.setValue('targetLanguage', 'ja'));
+    await settle();
+    expect(updates()).toEqual([]);
+  });
+
+  test('switching the option off stops later edits from being remembered', async () => {
+    const view = renderHook(
+      ({ syncDefaults }) =>
+        useUnifiedTaskConfig({ autoLoad: false, syncDefaults }),
+      { initialProps: { syncDefaults: true } },
+    );
+    act(() => view.result.current.hydrateSnapshot(config));
+    view.rerender({ syncDefaults: false });
+    act(() => view.result.current.setValue('targetLanguage', 'ja'));
+    await settle();
+    expect(updates()).toEqual([]);
+  });
+
+  test('keeps working through a StrictMode remount', async () => {
+    const view = renderHook(() => useUnifiedTaskConfig(options), {
+      wrapper: StrictMode,
+    });
+    act(() => view.result.current.hydrateSnapshot(config));
+    act(() => view.result.current.setValue('targetLanguage', 'ja'));
+    await settle();
+    expect(updates()).toEqual([{ targetLanguage: 'ja' }]);
+  });
+
+  describe('when the main process does not save', () => {
+    let log: jest.SpyInstance;
+    beforeEach(() => {
+      log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    });
+    afterEach(() => {
+      log.mockRestore();
+    });
+
+    test.each([
+      [undefined, 'TASK_DEFAULTS_NOT_SAVED'],
+      [{}, 'TASK_DEFAULTS_NOT_SAVED'],
+      [{ success: false }, 'TASK_DEFAULTS_NOT_SAVED'],
+      [{ success: false, error: 'EACCES' }, 'EACCES'],
+    ])(
+      'an unacknowledged save (%j) is logged, never assumed, and editing goes on',
+      async (response, message) => {
+        const { result } = hydrated();
+        invoke.mockImplementation(async (channel: string) =>
+          channel === 'updateTaskDefaults' ? response : structuredClone(config),
+        );
+        act(() => result.current.setValue('targetLanguage', 'ja'));
+        await settle();
+        expect(log).toHaveBeenCalledWith(
+          'Failed to update task defaults:',
+          expect.objectContaining({ message }),
+        );
+        expect(result.current.formData.targetLanguage).toBe('ja');
+      },
+    );
+
+    test('a rejected save is retried by the next edit together with what was lost', async () => {
+      const { result } = hydrated();
+      invoke.mockImplementationOnce(async () => {
+        throw new Error('ENOSPC');
+      });
+      act(() => result.current.setValue('targetLanguage', 'ja'));
+      await settle();
+      expect(log).toHaveBeenCalledTimes(1);
+      act(() => result.current.setValue('sourceLanguage', 'ko'));
+      await settle();
+      expect(updates()).toEqual([
+        { targetLanguage: 'ja' },
+        { targetLanguage: 'ja', sourceLanguage: 'ko' },
+      ]);
+    });
   });
 });

@@ -5,8 +5,9 @@ import path from 'node:path';
 import { _electron, expect } from '@playwright/test';
 
 /**
- * Advanced settings changed on the task page must survive into the next new task, but only
- * once the task has actually been started: editing a draft never touches the defaults.
+ * Advanced settings changed on a task page become the defaults of the next new task as they
+ * are changed (the 3.8 behaviour): the task never has to be started, leaving the page right
+ * after an edit does not lose it, and what belongs to a single task stays with that task.
  */
 const evidence = await fs.mkdtemp(
   path.join(os.tmpdir(), 'smartsub-task-defaults-e2e-'),
@@ -61,15 +62,24 @@ try {
   assert.equal(initial.translateRetryTimes, undefined);
   assert.equal(initial.maxConcurrentTasks, 1);
 
-  // Open a translation task and change two advanced settings in the real UI.
+  // Open a translation task and change an advanced setting in the real UI.
   await page.evaluate(() => window.next.router.push('/zh/tasks/translate/'));
   await page.getByRole('button', { name: '导入', exact: true }).first().click();
   await expect(page).toHaveURL(/project=/);
   const projectId = new URL(page.url()).searchParams.get('project');
   await page.getByRole('button', { name: '高级选项' }).click();
   await page.getByLabel('翻译重试次数').fill('7');
-  await page.getByLabel('最大并发任务数').fill('3');
-  await page.keyboard.press('Escape');
+  // The task is never started: the edit alone updates the defaults of the next new task.
+  await expect
+    .poll(async () => Number((await userConfig()).translateRetryTimes), {
+      timeout: 10000,
+    })
+    .toBe(7);
+  assert.equal(
+    await app.evaluate(() => globalThis.submissions.length),
+    0,
+    'the task was never started',
+  );
   await expect
     .poll(async () =>
       Number(
@@ -82,36 +92,42 @@ try {
       ),
     )
     .toBe(7);
-  assert.deepEqual(
-    await userConfig(),
-    initial,
-    'editing a draft never changes the defaults',
-  );
 
-  // Starting the task is the moment its settings become the next defaults.
-  const start = page.getByRole('button', { name: '开始任务', exact: true });
-  await expect(start).toBeEnabled();
-  await start.click();
+  // Leaving the page straight after an edit does not lose it either. The draft may still be
+  // unsaved at that moment, in which case the page asks before it lets go of it.
+  await page.getByLabel('最大并发任务数').fill('3');
+  await page.keyboard.press('Escape');
+  await page.evaluate(
+    () => void window.next.router.push('/zh/tasks/translate/').catch(() => {}),
+  );
+  const saveAndLeave = page.getByRole('button', {
+    name: '保存并离开',
+    exact: true,
+  });
+  await expect(async () => {
+    if (await saveAndLeave.isVisible()) await saveAndLeave.click();
+    await expect(page).not.toHaveURL(/project=/, { timeout: 1000 });
+  }).toPass({ timeout: 20000 });
   await expect
-    .poll(() => app.evaluate(() => globalThis.submissions.length))
-    .toBe(1);
-  await expect
-    .poll(async () => Number((await userConfig()).translateRetryTimes), {
+    .poll(async () => Number((await userConfig()).maxConcurrentTasks), {
       timeout: 10000,
     })
-    .toBe(7);
+    .toBe(3);
   const remembered = await userConfig();
-  assert.equal(Number(remembered.maxConcurrentTasks), 3);
+  assert.equal(Number(remembered.translateRetryTimes), 7);
   assert.equal(remembered.taskType, undefined, 'task type is per task');
   assert.equal(
     remembered.manuscriptPath,
     undefined,
     'manuscripts are per task',
   );
+  assert.equal(
+    await app.evaluate(() => globalThis.submissions.length),
+    0,
+    'no task was started',
+  );
 
   // A brand new task starts from what the last one used.
-  await page.evaluate(() => window.next.router.push('/zh/tasks/translate/'));
-  await expect(page).not.toHaveURL(/project=/);
   await page.getByRole('button', { name: '高级选项' }).click();
   await expect(page.getByLabel('翻译重试次数')).toHaveValue('7');
   await expect(page.getByLabel('最大并发任务数')).toHaveValue('3');
@@ -126,8 +142,8 @@ try {
     JSON.stringify({
       evidence,
       checks: [
-        'draft edits never change the defaults',
-        'starting a task remembers its settings',
+        'an edit updates the defaults without starting the task',
+        'leaving the page right after an edit keeps the edit',
         'per-task inputs are not remembered',
         'a new task inherits the advanced settings',
       ],

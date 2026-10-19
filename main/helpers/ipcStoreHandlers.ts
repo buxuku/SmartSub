@@ -29,8 +29,8 @@ import { shutdownPythonRuntime } from './pythonRuntime';
 import { applyProxyFromSettings } from './network/proxyManager';
 import { syncTaskPowerSaveBlocker } from './powerSaveManager';
 import {
+  applyTaskDefaultsPatch,
   omitTaskManuscript,
-  toRememberedTaskDefaults,
 } from '../../types/taskConfig';
 import {
   isFactoryDefaultGgmlPath,
@@ -262,10 +262,15 @@ export function setupStoreHandlers() {
     store.set('userConfig', omitTaskManuscript(config));
   });
 
-  // 任务页启动任务并被确认后，把该任务的可复用配置记为新任务默认值（"上次使用"）。
-  // 这是唯一的隐式写入点：草稿编辑、读取失败、向导与重试都不会改动默认值。
-  ipcMain.handle('rememberTaskDefaults', async (_event, config) => {
-    store.set('userConfig', toRememberedTaskDefaults(config));
+  // 任务页上用户改动的参数实时记为新任务默认值（"上次使用"）：渲染进程只发送改过的键，
+  // 这里把补丁合并进已存配置，不会补写别的键；存储里缺的出厂默认与字幕效果档仍由
+  // getUserConfig 读取时叠加。逐任务字段会被丢弃，写入失败直接抛给调用方（不吞掉）。
+  // 向导、打开旧工程与读取失败都不会走到这里。
+  ipcMain.handle('updateTaskDefaults', async (_event, patch) => {
+    store.set(
+      'userConfig',
+      applyTaskDefaultsPatch(store.get('userConfig'), patch),
+    );
     return { success: true };
   });
 

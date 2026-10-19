@@ -11,8 +11,9 @@ import TaskControls from '../TaskControls';
 import { getTaskTypeBySlug } from '../../lib/taskTypes';
 
 /**
- * Settings picked while editing a task belong to that task. Starting it is the one
- * explicit moment they become the defaults of the next new task ("last used").
+ * The defaults of the next new task follow the user's edits live (`syncDefaults` of
+ * `useUnifiedTaskConfig`). Starting a task is not a moment that writes them: the only
+ * thing TaskControls remembers is the last used engine and model.
  */
 const mockSubmit = jest.fn();
 
@@ -35,7 +36,7 @@ const typeDef = getTaskTypeBySlug('generate')!;
 const files = [
   { uuid: 'file-1', filePath: '/media/lesson.mp4', fileName: 'lesson' },
 ];
-const reusable = {
+const draft = {
   sourceLanguage: 'ja',
   targetLanguage: 'zh',
   transcriptionEngine: 'builtin',
@@ -44,25 +45,29 @@ const reusable = {
   speakerDiarization: true,
   maxContext: 6,
   customParameters: { temperature: 0.2 },
-};
-const draft = {
-  ...reusable,
   taskType: 'generateOnly',
   manuscriptPath: '/media/script.txt',
 };
 
 let invoke: jest.Mock;
-let remembered: () => unknown[][];
+/** Every channel through which a default of the next task could be written. */
+const DEFAULTS_CHANNELS = [
+  'rememberTaskDefaults',
+  'updateTaskDefaults',
+  'setUserConfig',
+];
+const defaultsWrites = () =>
+  [
+    ...invoke.mock.calls.map(([channel]) => channel),
+    ...(window.ipc.send as jest.Mock).mock.calls.map(([channel]) => channel),
+  ].filter((channel) => DEFAULTS_CHANNELS.includes(channel));
 
 beforeEach(() => {
   invoke = jest.fn(async (channel: string) => {
     if (channel === 'getTaskStatus') return 'idle';
-    if (channel === 'rememberTaskDefaults') return { success: true };
     if (channel === 'setSettings') return {};
     throw new Error(`Unexpected IPC ${channel}`);
   });
-  remembered = () =>
-    invoke.mock.calls.filter(([channel]) => channel === 'rememberTaskDefaults');
   window.ipc = { invoke, send: jest.fn(), on: jest.fn(() => jest.fn()) } as any;
   mockSubmit.mockReset();
   mockSubmit.mockImplementation(async (input) => ({
@@ -91,41 +96,26 @@ async function start() {
   });
 }
 
-test('a task the main process accepted becomes the default of the next new task', async () => {
-  const dispatched = jest.fn();
-  render(controls({ rememberDefaults: true, onTaskDispatched: dispatched }));
-  await start();
-  await waitFor(() => expect(remembered()).toHaveLength(1));
-  // Per-task inputs (task type, reference manuscript) are not preferences.
-  expect(remembered()[0]).toEqual(['rememberTaskDefaults', reusable]);
-  expect(dispatched).toHaveBeenCalledTimes(1);
-  // The existing engine/model memory keeps working alongside it.
-  expect(invoke).toHaveBeenCalledWith('setSettings', {
-    lastUsedTranscription: { engine: 'builtin', model: 'base' },
-  });
-});
-
-test('nothing is remembered before the main process acknowledges the task', async () => {
-  let accept!: (outcome: unknown) => void;
-  mockSubmit.mockReturnValue(
-    new Promise((resolve) => {
-      accept = resolve;
-    }),
-  );
-  render(controls({ rememberDefaults: true }));
-  await start();
-  expect(remembered()).toHaveLength(0);
-  await act(async () => {
-    accept({
-      status: 'accepted',
-      snapshot: { ...draft, maxContext: 9 },
-      projectId: 'project-1',
+test.each([
+  ['by default', {}],
+  // The 3.10 start-time memory had a prop; asking for it must not bring it back.
+  [
+    'even when a host still asks to remember on start',
+    { rememberDefaults: true },
+  ],
+])(
+  'a task the main process accepted records the engine and model, never the defaults (%s)',
+  async (_label, props) => {
+    const dispatched = jest.fn();
+    render(controls({ ...props, onTaskDispatched: dispatched }));
+    await start();
+    await waitFor(() => expect(dispatched).toHaveBeenCalledTimes(1));
+    expect(invoke).toHaveBeenCalledWith('setSettings', {
+      lastUsedTranscription: { engine: 'builtin', model: 'base' },
     });
-  });
-  await waitFor(() => expect(remembered()).toHaveLength(1));
-  // What is remembered is the configuration that was actually accepted.
-  expect(remembered()[0][1]).toEqual({ ...reusable, maxContext: 9 });
-});
+    expect(defaultsWrites()).toEqual([]);
+  },
+);
 
 test.each([
   [
@@ -136,70 +126,34 @@ test.each([
     },
   ],
   ['cancelled', { status: 'cancelled' }],
-])('a %s start leaves the defaults alone', async (_label, outcome) => {
-  mockSubmit.mockResolvedValue(outcome);
-  render(controls({ rememberDefaults: true }));
-  await start();
-  await waitFor(() => expect(mockSubmit).toHaveBeenCalledTimes(1));
-  expect(remembered()).toHaveLength(0);
-});
+])(
+  'a %s start records nothing and writes no defaults',
+  async (_label, outcome) => {
+    mockSubmit.mockResolvedValue(outcome);
+    render(controls());
+    await start();
+    await waitFor(() => expect(mockSubmit).toHaveBeenCalledTimes(1));
+    expect(invoke).not.toHaveBeenCalledWith('setSettings', expect.anything());
+    expect(defaultsWrites()).toEqual([]);
+  },
+);
 
-test('a start the main process rejected is reported and leaves the defaults alone', async () => {
+test('a start the main process rejected is reported and writes nothing', async () => {
   mockSubmit.mockRejectedValue(new Error('TASK_SUBMISSION_NOT_ACKNOWLEDGED'));
-  render(controls({ rememberDefaults: true }));
+  render(controls());
   await start();
   await waitFor(() =>
     expect(toast.error).toHaveBeenCalledWith(
       'TASK_SUBMISSION_NOT_ACKNOWLEDGED',
     ),
   );
-  expect(remembered()).toHaveLength(0);
+  expect(invoke).not.toHaveBeenCalledWith('setSettings', expect.anything());
+  expect(defaultsWrites()).toEqual([]);
 });
 
-test.each([
-  ['a pinned snapshot is restarted', { rememberDefaults: false }],
-  ['the host does not ask for it', {}],
-])('nothing is remembered when %s', async (_label, props) => {
-  const dispatched = jest.fn();
-  render(controls({ ...props, onTaskDispatched: dispatched }));
-  await start();
-  await waitFor(() => expect(dispatched).toHaveBeenCalledTimes(1));
-  expect(remembered()).toHaveLength(0);
-});
-
-test.each([
-  ['rejects', () => Promise.reject(new Error('EACCES'))],
-  ['is not acknowledged', () => Promise.resolve({ success: false })],
-])(
-  'a save that %s never turns a started task into a failure',
-  async (_label, outcome) => {
-    invoke.mockImplementation(async (channel: string) => {
-      if (channel === 'getTaskStatus') return 'idle';
-      if (channel === 'rememberTaskDefaults') return outcome();
-      return {};
-    });
-    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
-    const dispatched = jest.fn();
-    render(controls({ rememberDefaults: true, onTaskDispatched: dispatched }));
-    await start();
-    await waitFor(() =>
-      expect(log).toHaveBeenCalledWith(
-        'Failed to remember task defaults:',
-        expect.any(Error),
-      ),
-    );
-    expect(dispatched).toHaveBeenCalledTimes(1);
-    expect(toast.error).not.toHaveBeenCalled();
-    log.mockRestore();
-  },
-);
-
-test('editing a draft never writes the defaults; only starting does', async () => {
-  const view = render(controls({ rememberDefaults: true }));
+test('editing the draft never writes defaults through the controls', async () => {
+  const view = render(controls());
   await screen.findByRole('button', { name: 'home:startTask' });
-  view.rerender(
-    controls({ rememberDefaults: true }, { ...draft, maxContext: 9 }),
-  );
-  expect(remembered()).toHaveLength(0);
-  expect(window.ipc.send).not.toHaveBeenCalled();
+  view.rerender(controls({}, { ...draft, maxContext: 9 }));
+  expect(defaultsWrites()).toEqual([]);
 });

@@ -42,6 +42,24 @@ try {
     (config) => window.ipc.send('setUserConfig', config),
     defaults,
   );
+  // Count the task page's live saves of its settings as the next defaults.
+  await app.evaluate(({ ipcMain }) => {
+    globalThis.defaultsWrites = { saved: 0, failed: 0 };
+    const original = ipcMain._invokeHandlers.get('updateTaskDefaults');
+    ipcMain.removeHandler('updateTaskDefaults');
+    ipcMain.handle('updateTaskDefaults', async (...args) => {
+      try {
+        const result = await original(...args);
+        globalThis.defaultsWrites.saved++;
+        return result;
+      } catch (error) {
+        globalThis.defaultsWrites.failed++;
+        throw error;
+      }
+    });
+  });
+  const userConfig = () =>
+    page.evaluate(() => window.ipc.invoke('getUserConfig'));
   await page.evaluate(() => window.next.router.push('/zh/tasks/generate/'));
   const choosePreset = async (current, next) => {
     await page.getByRole('button', { name: current, exact: true }).click();
@@ -55,10 +73,15 @@ try {
   await expect
     .poll(async () => (await item())?.taskDraft?.config?.scenarioPreset)
     .toBe('movie');
-  assert.deepEqual(
-    await page.evaluate(() => window.ipc.invoke('getUserConfig')),
-    defaults,
-    'ordinary task edits never mutate defaults',
+  // What the user picks is remembered as the next defaults while the task is still a
+  // draft, but the task's own type is not.
+  await expect
+    .poll(async () => (await userConfig()).scenarioPreset, { timeout: 10000 })
+    .toBe('movie');
+  assert.equal(
+    (await userConfig()).taskType,
+    defaults.taskType,
+    'the task type is per task and never becomes a default',
   );
   const movieName = await page
     .getByRole('button', { name: /^影视/ })
@@ -74,9 +97,14 @@ try {
   await expect(
     page.getByRole('button', { name: movieName, exact: true }),
   ).toBeVisible();
+  // A new task is a fresh draft that starts from the remembered defaults, so it may show
+  // the preset the user picked last.
   await page.evaluate(() => window.next.router.push('/zh/tasks/generate/'));
+  await expect(page).not.toHaveURL(/project=/);
   await expect(
-    page.getByRole('button', { name: /^(通用均衡|专家自定义)$/, exact: true }),
+    page
+      .getByRole('button', { name: /^(通用均衡|专家自定义)$/ })
+      .or(page.getByRole('button', { name: movieName, exact: true })),
   ).toBeVisible();
   await page.evaluate(
     (id) => window.next.router.push(`/zh/tasks/generate/?project=${id}`),
@@ -111,6 +139,7 @@ try {
     'file import retains project settings',
   );
   if (process.platform !== 'win32') {
+    const beforeLock = await userConfig();
     locked = path.dirname(configPath);
     await fs.chmod(locked, 0o500);
     await choosePreset(movieName, '网课');
@@ -118,6 +147,18 @@ try {
       page.getByRole('alert').filter({ hasText: '任务草稿保存失败' }),
     ).toBeVisible();
     assert.equal((await item()).taskDraft.config.scenarioPreset, 'movie');
+    // The defaults take the same disk failure: the write is attempted and fails quietly,
+    // and what was saved before stays intact.
+    await expect
+      .poll(() => app.evaluate(() => globalThis.defaultsWrites.failed), {
+        timeout: 10000,
+      })
+      .toBeGreaterThan(0);
+    assert.deepEqual(
+      await userConfig(),
+      beforeLock,
+      'a failed defaults write leaves the saved defaults intact',
+    );
     await page.getByRole('link', { name: '启动台', exact: true }).click();
     await expect(page.getByRole('alertdialog')).toBeVisible();
     await page.getByRole('button', { name: '保存并离开', exact: true }).click();
@@ -157,9 +198,19 @@ try {
       path: path.join(evidence, `restored-${width}.png`),
     });
   }
-  assert.deepEqual(
-    await page.evaluate(() => window.ipc.invoke('getUserConfig')),
-    defaults,
+  if (process.platform !== 'win32') {
+    // Leaving the page saves again what the failed write could not.
+    await page.evaluate(() => window.next.router.push('/zh/home'));
+    await expect
+      .poll(async () => (await userConfig()).scenarioPreset, {
+        timeout: 10000,
+      })
+      .toBe('lecture');
+  }
+  assert.equal(
+    (await userConfig()).taskType,
+    defaults.taskType,
+    'switching modes never turns the task type into a default',
   );
   const saved = JSON.parse(
     await fs.readFile(configPath, 'utf8'),
@@ -330,7 +381,7 @@ try {
         'import preserves config',
         'real disk failure and navigation guard',
         'retry',
-        'default isolation',
+        'live defaults: remembered while editing, failed disk write, retried when leaving',
         '1024 and 1440 layout',
         'SIGKILL and restart',
         'English long labels: per-control bounds and hit tests at 1024/1440',

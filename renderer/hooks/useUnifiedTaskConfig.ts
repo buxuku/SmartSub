@@ -1,15 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { isEqual } from 'lodash';
-import {
-  assertTaskConfig,
-  omitTaskManuscript,
-  toRememberedTaskDefaults,
-} from '../../types/taskConfig';
+import { assertTaskConfig, omitTaskManuscript } from '../../types/taskConfig';
 import {
   applyScenarioPreset,
   type ScenarioPresetId,
 } from '../lib/scenarioPresets';
+import { createTaskDefaultsSync } from '../lib/taskDefaultsSync';
 export { validateTaskConfigReady } from '../lib/taskReadiness';
 export type { ValidationReadyResult } from '../lib/taskReadiness';
 
@@ -17,6 +14,11 @@ export interface UseUnifiedTaskConfigOptions {
   /** Project pages load their own snapshot before falling back to defaults. */
   autoLoad?: boolean;
   initialConfig?: Record<string, any>;
+  /**
+   * Task pages: remember what the user adjusts as the defaults of the next new task,
+   * live ("last used"). Off for editors with their own draft semantics (the wizard).
+   */
+  syncDefaults?: boolean;
 }
 
 export function buildTaskSnapshotFromConfig(
@@ -33,30 +35,27 @@ export async function readTaskDefaults(): Promise<Record<string, any>> {
 }
 
 /**
- * The one explicit moment settings leave a task and become the defaults of the next new
- * task ("last used"): call it only after the main process acknowledged a task the user
- * started from an editable draft. Resolves only once the defaults are durably saved.
+ * Save the reusable settings the user just changed as defaults of the next new task.
+ * Resolves only once the main process confirmed they are stored.
  */
-export async function rememberTaskDefaults(
-  config: Record<string, any>,
+export async function updateTaskDefaults(
+  patch: Record<string, any>,
 ): Promise<void> {
-  const result = await window.ipc.invoke(
-    'rememberTaskDefaults',
-    toRememberedTaskDefaults(config),
-  );
+  const result = await window.ipc.invoke('updateTaskDefaults', patch);
   if (result?.success !== true)
     throw new Error(result?.error || 'TASK_DEFAULTS_NOT_SAVED');
 }
 
 /**
- * Task edits belong to a project/wizard draft: editing never writes global preferences,
- * and a failed read never publishes defaults. Only `rememberTaskDefaults` does, once, when
- * the user starts the task.
+ * A task's form belongs to its project/wizard draft: a failed read never publishes
+ * defaults, and the wizard never writes global preferences. Task pages opt in to
+ * `syncDefaults`, which saves what the user changes as the defaults of the next new task
+ * (see `taskDefaultsSync` for what is and is not remembered).
  */
 export default function useUnifiedTaskConfig(
   options: UseUnifiedTaskConfigOptions = {},
 ) {
-  const { autoLoad = true } = options;
+  const { autoLoad = true, syncDefaults = false } = options;
   const initialConfig = useRef(
     buildTaskSnapshotFromConfig(options.initialConfig),
   );
@@ -73,6 +72,15 @@ export default function useUnifiedTaskConfig(
   const loadedRef = useRef(false);
   const aliveRef = useRef(false);
   const loadEpochRef = useRef(0);
+  // Live "last used" memory of the task page; the option is read when an edit happens.
+  const syncDefaultsRef = useRef(syncDefaults);
+  syncDefaultsRef.current = syncDefaults;
+  const syncRef = useRef<ReturnType<typeof createTaskDefaultsSync> | null>(
+    null,
+  );
+  if (!syncRef.current)
+    syncRef.current = createTaskDefaultsSync({ send: updateTaskDefaults });
+  const sync = syncRef.current;
 
   const hydrateSnapshot = useCallback(
     (snap: Record<string, any>) => {
@@ -84,12 +92,15 @@ export default function useUnifiedTaskConfig(
       form.reset(snapshot);
       formDataRef.current = buildTaskSnapshotFromConfig(snapshot);
       setFormData(formDataRef.current);
+      // A loaded form is a new session: what it holds is not a user edit, and the edits
+      // the previous one still had pending are saved first.
+      sync.start(formDataRef.current);
       loadedRef.current = true;
       setLoaded(true);
       setLoading(false);
       setLoadError('');
     },
-    [form],
+    [form, sync],
   );
 
   const load = useCallback(async () => {
@@ -128,10 +139,23 @@ export default function useUnifiedTaskConfig(
         // RHF can mutate nested values in place; draft snapshots must stay stable.
         formDataRef.current = buildTaskSnapshotFromConfig(values);
         setFormData(formDataRef.current);
+        if (syncDefaultsRef.current) sync.edit(formDataRef.current);
       }
     });
     return () => subscription.unsubscribe();
-  }, [form]);
+  }, [form, sync]);
+
+  // Leaving the page or closing the window must not lose the last edit to the debounce.
+  useEffect(() => {
+    const flush = () => {
+      void sync.flush();
+    };
+    window.addEventListener('beforeunload', flush);
+    return () => {
+      window.removeEventListener('beforeunload', flush);
+      flush();
+    };
+  }, [sync]);
 
   const setValue = useCallback(
     (name: string, value: unknown, setOptions?: any) => {
@@ -144,6 +168,23 @@ export default function useUnifiedTaskConfig(
     },
     [form],
   );
+
+  /**
+   * Change a top-level value because the code decided to (healing a stale selection),
+   * not because the user chose it: it is never remembered as a default.
+   */
+  const correctValue = useCallback(
+    (name: string, value: unknown) => {
+      if (!loadedRef.current) return;
+      // Baseline first: the watch callback runs synchronously inside setValue.
+      sync.correct(name, value);
+      form.setValue(name, value);
+    },
+    [form, sync],
+  );
+
+  /** Save pending default edits now; resolves once they are saved (or have failed). */
+  const flushDefaults = useCallback(() => sync.flush(), [sync]);
 
   const applyPreset = useCallback(
     (presetId: ScenarioPresetId) => {
@@ -166,6 +207,8 @@ export default function useUnifiedTaskConfig(
     loadError,
     load,
     setValue,
+    correctValue,
+    flushDefaults,
     applyPreset,
     buildSnapshot,
     hydrateSnapshot,

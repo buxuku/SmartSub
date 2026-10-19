@@ -114,8 +114,8 @@ function harness(initialUserConfig) {
 }
 
 async function main() {
-  // What the user picked on the task page, i.e. what 3.9 used to forget.
-  const started = {
+  // What the user changes on the task page, i.e. what 3.9 used to forget.
+  const changed = {
     sourceLanguage: 'ja',
     targetLanguage: 'zh',
     translateProvider: 'deepseek',
@@ -138,55 +138,123 @@ async function main() {
     cloudUploadConsent: true,
   };
 
-  const first = harness({ sourceLanguage: 'en', leftover: 'from-last-time' });
+  const first = harness({
+    sourceLanguage: 'en',
+    maxConcurrentTasks: 4,
+    leftover: 'from-last-time',
+    manuscriptPath: '/old/script.txt',
+  });
   assert.ok(
-    first.registered('rememberTaskDefaults'),
-    'the task page remembers defaults through the rememberTaskDefaults channel',
+    first.registered('updateTaskDefaults'),
+    'the task page syncs defaults through the updateTaskDefaults channel',
   );
+  assert.ok(
+    !first.registered('rememberTaskDefaults'),
+    'the start-time channel is gone: edits are the only way defaults change',
+  );
+  assert.ok(
+    first.registered('setUserConfig'),
+    'the legacy full-replace channel stays for existing integrations',
+  );
+
   assert.deepEqual(
-    await first.call('rememberTaskDefaults', { ...started, ...perTask }),
+    await first.call('updateTaskDefaults', { ...changed, ...perTask }),
     { success: true },
-    'the save is acknowledged',
+    'the sync is acknowledged',
   );
+  let expected = {
+    maxConcurrentTasks: 4,
+    leftover: 'from-last-time',
+    ...changed,
+  };
   assert.deepEqual(
     first.stored(),
-    started,
-    'the started task replaces the stored defaults; per-task inputs never persist',
+    expected,
+    'the patch merges into the stored defaults; settings it does not mention stay; per-task inputs and old manuscripts never persist',
   );
+
+  await first.call('updateTaskDefaults', { maxContext: 9 });
+  expected = { ...expected, maxContext: 9 };
+  assert.deepEqual(
+    first.stored(),
+    expected,
+    'a patch with one key changes that key and nothing else',
+  );
+
+  await first.call('updateTaskDefaults', { leftover: undefined });
+  const { leftover: _leftover, ...withoutLeftover } = expected;
+  expected = withoutLeftover;
+  assert.deepEqual(
+    first.stored(),
+    expected,
+    'an undefined value removes the stored key',
+  );
+
   const next = await first.call('getUserConfig');
-  for (const [key, value] of Object.entries(started))
+  for (const [key, value] of Object.entries(expected))
     assert.deepEqual(
       next[key],
       value,
       `the next new task is seeded with ${key}`,
     );
-  assert.equal(next.maxConcurrentTasks, 1, 'untouched factory defaults remain');
+  assert.equal(next.maxConcurrentTasks, 4, 'the saved value beats the factory');
   assert.equal(next.leftover, undefined, 'cleared settings do not linger');
+  assert.equal(next.taskType, undefined, 'task type is per task');
 
-  for (const bad of [undefined, null, [], 'x', {}, perTask]) {
+  assert.deepEqual(
+    await first.call('updateTaskDefaults', perTask),
+    { success: true },
+    'a patch of per-task inputs alone is a harmless no-op',
+  );
+  assert.deepEqual(first.stored(), expected, 'per-task inputs change nothing');
+
+  for (const bad of [undefined, null, [], 'x', 5]) {
     await assert.rejects(
-      first.call('rememberTaskDefaults', bad),
+      first.call('updateTaskDefaults', bad),
       /INVALID_TASK_DEFAULTS/,
       `refuses ${JSON.stringify(bad)}`,
     );
-    assert.deepEqual(first.stored(), started, 'a refused call never wipes');
+    assert.deepEqual(first.stored(), expected, 'a refused call never rewrites');
   }
 
   first.failWrites(true);
   await assert.rejects(
-    first.call('rememberTaskDefaults', { sourceLanguage: 'fr' }),
+    first.call('updateTaskDefaults', { sourceLanguage: 'fr' }),
     /ENOSPC/,
     'a failed disk write is reported, not swallowed',
   );
   first.failWrites(false);
   assert.deepEqual(
     first.stored(),
-    started,
+    expected,
     'a failed write keeps the old defaults',
   );
 
+  const fresh = harness({});
+  await fresh.call('updateTaskDefaults', { maxContext: 6, ...perTask });
+  assert.deepEqual(
+    fresh.stored(),
+    { maxContext: 6 },
+    'the store keeps only what the user set, never a frozen copy of the factory defaults',
+  );
+  const seeded = await fresh.call('getUserConfig');
+  assert.equal(seeded.maxContext, 6);
+  assert.equal(
+    seeded.maxConcurrentTasks,
+    1,
+    'untouched factory defaults remain',
+  );
+
+  const corrupt = harness('not-an-object');
+  await corrupt.call('updateTaskDefaults', { maxContext: 6, ...perTask });
+  assert.deepEqual(
+    corrupt.stored(),
+    { maxContext: 6 },
+    'an unusable stored config is rebuilt from the patch',
+  );
+
   console.log(
-    'Task defaults: started tasks become the next defaults; per-task inputs, empty and failed saves never touch them.',
+    'Task defaults: task-page edits patch the stored defaults; per-task inputs, invalid payloads and failed writes never corrupt them.',
   );
 }
 
