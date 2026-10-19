@@ -125,6 +125,7 @@ import type {
 } from '../../../../types/subtitleMerge';
 import { enforceSpeakerDiarizationTaskBoundary } from '../../../../types/speakerDiarization';
 import DubbingLanguageSelect from '../../dubbing/DubbingLanguageSelect';
+import ComposeContentHint from './ComposeContentHint';
 import {
   localTtsLanguageError,
   resolveTtsLanguage,
@@ -2662,6 +2663,11 @@ export default function TaskWizard() {
                 {t('wizard.composeAudioHint')}
               </span>
             )}
+            <ComposeContentHint
+              translateOn={translateOn}
+              composeSubtitle={composeSubtitle}
+              translateContent={formData?.translateContent}
+            />
             {composeSubtitle === 'hard' && (
               <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                 <Info className="h-3 w-3" />

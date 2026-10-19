@@ -103,6 +103,7 @@
     "composeEncoder": "Encoder",
     "composeEncoderUnavailable": "(unavailable on this device)",
     "composeAudioHint": "The dub track will replace the original audio automatically",
+    "composeContentHint": "Subtitles in the final video follow the \"Output content\" setting: {{content}}",
     "composeStyleHint": "Fine-tune styles in the compose workbench and save them as my styles. ",
     "composeStyleLink": "Adjust style",
     "gatesTitle": "Manual review (optional)",
