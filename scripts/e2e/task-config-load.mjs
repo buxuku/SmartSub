@@ -68,6 +68,19 @@ try {
       return original(...args);
     });
     ipcMain.on('setUserConfig', () => globalThis.configWrites++);
+    // The task page's live "last used" save is a global preference write too.
+    const updateDefaults = ipcMain._invokeHandlers.get('updateTaskDefaults');
+    ipcMain.removeHandler('updateTaskDefaults');
+    ipcMain.handle('updateTaskDefaults', async (...args) => {
+      globalThis.configWrites++;
+      return updateDefaults(...args);
+    });
+  });
+  // The counter has to see the live-save channel, or "no writes" below would prove nothing.
+  await page.evaluate(() => window.ipc.invoke('updateTaskDefaults', {}));
+  assert.equal(await app.evaluate(() => globalThis.configWrites), 1);
+  await app.evaluate(() => {
+    globalThis.configWrites = 0;
   });
   const origin = appOrigin(page);
   for (const [route, message] of [

@@ -140,8 +140,12 @@ export default function TaskPage() {
     formData,
     loaded: configLoaded,
     hydrateSnapshot,
+    correctValue,
+    flushDefaults,
   } = useUnifiedTaskConfig({
     autoLoad: false,
+    // 用户在任务页调整的参数实时记为新任务默认值；固定快照页只读，不记。
+    syncDefaults: !configSnapshot,
   });
   /** 列表/横幅的有效配置：固定任务用快照，否则使用当前表单。 */
   const listFormData = configSnapshot ?? formData;
@@ -509,8 +513,11 @@ export default function TaskPage() {
           savedManuscripts = workItem.taskDraft.manuscripts;
         }
       }
-      if (!rawSnap)
+      if (!rawSnap) {
+        // 刚在上一个任务里改完参数就新建任务：先把还在防抖中的改动写进默认值，再读取。
+        await flushDefaults();
         rawSnap = newTaskDefaults(await readTaskDefaults(), typeDef.taskType);
+      }
       assertTaskConfig(rawSnap);
       if (cancelled) return;
       projectIdRef.current = id;
@@ -593,7 +600,8 @@ export default function TaskPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router.isReady, router.query.autostart]);
 
-  // 进入任务页 = 选择任务类型：同步到持久化配置
+  // 进入任务页 = 选择任务类型：表单里的 taskType 跟随页面（它属于单个任务，
+  // 不会被记为新任务默认值，新任务的类型由所进入的页面决定）。
   useEffect(() => {
     if (!typeDef || !projectReady || configSnapshot) return;
     if (
@@ -642,12 +650,13 @@ export default function TaskPage() {
       providers as any[],
       current,
     );
-    form.setValue('translateProvider', defaultId);
+    // 自动纠正不是用户的选择：只改表单，不记为新任务默认值。
+    correctValue('translateProvider', defaultId);
   }, [
     typeDef,
     providers,
     formData?.translateProvider,
-    form,
+    correctValue,
     projectReady,
     configSnapshot,
   ]);
@@ -683,9 +692,10 @@ export default function TaskPage() {
         : (lastUsedTranscription ?? undefined),
     );
     if (next) {
-      form.setValue('transcriptionEngine', next.engine);
-      form.setValue('model', next.model);
-      form.setValue('asrProviderId', next.asrProviderId ?? '');
+      // 自动回填不是用户的选择：只改表单，不记为新任务默认值。
+      correctValue('transcriptionEngine', next.engine);
+      correctValue('model', next.model);
+      correctValue('asrProviderId', next.asrProviderId ?? '');
     }
   }, [
     typeDef,
@@ -698,7 +708,7 @@ export default function TaskPage() {
     formData?.transcriptionEngine,
     formData?.model,
     formData?.asrProviderId,
-    form,
+    correctValue,
     projectReady,
     configSnapshot,
   ]);
@@ -711,12 +721,13 @@ export default function TaskPage() {
     if (!formData || Object.keys(formData).length === 0) return;
     const opt = formData.sourceSrtSaveOption;
     if (!opt || opt === 'noSave') {
-      form.setValue('sourceSrtSaveOption', 'fileName');
+      // 只对本页生效的修正：不能把 'fileName' 记进翻译类任务的默认值。
+      correctValue('sourceSrtSaveOption', 'fileName');
     }
   }, [
     typeDef,
     formData?.sourceSrtSaveOption,
-    form,
+    correctValue,
     projectReady,
     configSnapshot,
   ]);
@@ -1817,7 +1828,6 @@ export default function TaskPage() {
             }}
             onStatusChange={handleStatusChange}
             onTaskDispatched={handleTaskDispatched}
-            rememberDefaults={!configSnapshot}
             autoStart={
               autoStartPending &&
               configLoaded &&

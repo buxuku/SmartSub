@@ -115,8 +115,6 @@ function simulate({
     beforeStart: async () => true,
     buildTaskSnapshotFromConfig: structuredClone,
     rememberSelection() {},
-    rememberDefaults: true,
-    rememberConfig() {},
     onTaskDispatched() {},
     console,
     encodeURIComponent,
