@@ -116,7 +116,7 @@
 
 ### Requirement: 记忆只来自可编辑的任务页
 
-只有可编辑的任务页 SHALL 写入默认配置。新建任务向导 MUST NOT 写入（只读取默认值）；展示固定快照的只读任务页 MUST NOT 写入；开始任务本身 MUST NOT 另外写入默认配置。主进程收到不是普通对象的补丁时 SHALL 以 `INVALID_TASK_DEFAULTS` 拒绝，已存配置保持不变。任务被接受时记录的「最近使用的转写引擎 / 模型」（`lastUsedTranscription`）不受影响。
+只有可编辑的任务页 SHALL 写入默认配置。新建任务向导 MUST NOT 写入（只读取默认值）；展示固定快照的只读任务页 MUST NOT 写入；开始任务本身 MUST NOT 另外写入默认配置。主进程收到不是普通对象的补丁时 SHALL 以 `INVALID_TASK_DEFAULTS` 拒绝，已存配置保持不变。任务被接受时记录的「最近使用的转写引擎 / 模型」（`lastUsedTranscription`）不受影响。唯一的例外：开始任务前的内封字幕确认对话框里，用户**显式勾选**「记住我的选择，不再提示」时，会写入 `useEmbeddedSubtitles` 这一个键（见 `embedded-subtitle-prompt`）；未勾选、取消、向导里的其它参数都不写。
 
 #### Scenario: 向导只读取
 
