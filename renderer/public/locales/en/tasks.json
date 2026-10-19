@@ -287,6 +287,11 @@
     "output": "Output & saving",
     "execution": "Execution"
   },
+  "embeddedSubtitleSetting": {
+    "description": "When a video carries a text subtitle track, extract it instead of running speech recognition. Videos without one are transcribed as usual.",
+    "promptLabel": "Ask me before starting",
+    "promptDescription": "When a video has embedded subtitles, ask once before the task starts."
+  },
   "vad": {
     "label": "Voice activity detection (VAD)",
     "on": "Faster and steadier: the built-in whisper engine only transcribes inside detected speech, skipping silence/background noise and greatly reducing repeated or hallucinated lines there; lines are aligned token-by-token to the speech segments, so the timeline hugs the speech and stays stable.",

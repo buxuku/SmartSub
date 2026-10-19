@@ -5,7 +5,6 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -156,31 +155,6 @@ export default function OutputFormatControl({
                 <p key={index}>{line}</p>
               ))}
             </div>
-          </div>
-        )}
-
-        {/* 内封软字幕 */}
-        {typeDef.needsModel && (
-          <div className="flex items-center justify-between pt-2 border-t border-border">
-            <div className="space-y-0.5">
-              <span className="text-xs font-medium text-foreground">
-                {t('configBar.embeddedSubtitles')}
-              </span>
-              <p className="text-[10px] text-muted-foreground">
-                {t('configBar.embeddedSubtitlesTip', {
-                  defaultValue: '封装进视频作为独立可切换字幕轨',
-                })}
-              </p>
-            </div>
-            <Switch
-              checked={formData.useEmbeddedSubtitles !== false}
-              onCheckedChange={(checked) =>
-                form.setValue('useEmbeddedSubtitles', checked, {
-                  shouldDirty: true,
-                })
-              }
-              aria-label={t('configBar.embeddedSubtitles')}
-            />
           </div>
         )}
       </PopoverContent>

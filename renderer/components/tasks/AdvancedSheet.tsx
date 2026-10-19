@@ -38,6 +38,7 @@ import { cn } from 'lib/utils';
 import SavePathNotice from '@/components/SavePathNotice';
 import SubtitleFormatSelect from '@/components/tasks/SubtitleFormatSelect';
 import ManuscriptControl from '@/components/tasks/ManuscriptControl';
+import EmbeddedSubtitleControl from '@/components/tasks/EmbeddedSubtitleControl';
 import type { TaskTypeDef } from 'lib/taskTypes';
 import {
   SUBTITLE_OUTCOME_TIERS,
@@ -392,6 +393,18 @@ const AdvancedSheet: React.FC<AdvancedSheetProps> = ({
                       </div>
 
                       <SectionTitle>{t('section.recognition')}</SectionTitle>
+
+                      {/* 视频自带文本字幕轨时直接提取、跳过识别；决定了下面的识别参数对哪些视频生效 */}
+                      {typeDef.needsModel && hasMediaInput && (
+                        <EmbeddedSubtitleControl
+                          enabled={formData?.useEmbeddedSubtitles !== false}
+                          onEnabledChange={(checked) =>
+                            form.setValue('useEmbeddedSubtitles', checked, {
+                              shouldDirty: true,
+                            })
+                          }
+                        />
+                      )}
 
                       {/* 字幕效果档位：把 上下文/VAD/抗重复 收敛成一个意图单选（任务级） */}
                       <FormField
